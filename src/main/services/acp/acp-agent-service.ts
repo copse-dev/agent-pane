@@ -973,7 +973,7 @@ async function runAcpAgentTurn(
     } else if (sessionBridge && bridgeMounted) {
       if (markAcpBridgeAvailable(sessionBridge)) {
         copseToolsNote = acpCopseToolsConnectedPromptNote(
-          acpCopseToolsSteering(sandboxed, readonlyCheckout, listedToolNames),
+          acpCopseToolsSteering(sandboxed, contained, readonlyCheckout, listedToolNames),
         )
       }
     } else if (
@@ -1038,6 +1038,7 @@ async function runAcpAgentTurn(
         : unseenAcpTranscript(options.priorMessages, entry.transcriptCheckpoint),
       {
         sandboxed,
+        contained,
         // The tools the agent actually listed (#4144), not the ones offered:
         // the notes steer to Copse's tools only when there are some, and the
         // GitHub steer names them, or says plainly that GitHub is out of reach
@@ -1920,11 +1921,12 @@ const ACP_SANDBOX_PROMPT_NOTE_WITHOUT_COPSE_TOOLS = `${ACP_SANDBOX_CONFINES_NOTE
  */
 function acpCopseToolsSteering(
   sandboxed: boolean,
+  contained: boolean,
   readonlyCheckout: boolean,
   bridgeToolNames: readonly string[],
 ): string {
   const toolsNote = sandboxed
-    ? `${ACP_COPSE_TOOLS_PROMPT_NOTE}\n\n${ACP_SANDBOX_COPSE_SHELL_NOTE}\n\n${acpSandboxGithubSteer(bridgeToolNames)}`
+    ? `${ACP_COPSE_TOOLS_PROMPT_NOTE}\n\n${ACP_SANDBOX_COPSE_SHELL_NOTE}\n\n${acpSandboxGithubSteer(bridgeToolNames, { contained })}`
     : ACP_COPSE_TOOLS_PROMPT_NOTE
   return toolsNote + (readonlyCheckout ? `\n\n${ACP_READONLY_CHECKOUT_PROMPT_NOTE}` : '')
 }
@@ -1944,6 +1946,8 @@ export function buildAcpPrompt(
   priorMessages: LLMMessage[],
   opts?: {
     sandboxed?: boolean
+    /** The turn runs in an unattended container, whose shell has no network. */
+    contained?: boolean
     /**
      * The tools the agent has listed from the "copse" MCP server this session
      * (#4144). The notes steer it to Copse's tools only when there are some,
@@ -1968,7 +1972,7 @@ export function buildAcpPrompt(
       ? (copseTools ? ACP_TURN_PROMPT_NOTE : ACP_TURN_PROMPT_NOTE_WITHOUT_COPSE_TOOLS) +
         (opts?.sandboxed
           ? `\n\n${copseTools ? ACP_SANDBOX_PROMPT_NOTE : ACP_SANDBOX_PROMPT_NOTE_WITHOUT_COPSE_TOOLS}` +
-            `\n\n${acpSandboxGithubSteer(bridgeToolNames)}`
+            `\n\n${acpSandboxGithubSteer(bridgeToolNames, { contained: opts.contained ?? false })}`
           : '') +
         (opts?.readonlyCheckout
           ? `\n\n${copseTools ? ACP_READONLY_CHECKOUT_PROMPT_NOTE : ACP_READONLY_CHECKOUT_UNAVAILABLE_PROMPT_NOTE}`
@@ -2009,6 +2013,7 @@ export function buildAcpPromptContent(
   priorMessages: LLMMessage[],
   opts?: {
     sandboxed?: boolean
+    contained?: boolean
     bridgeToolNames?: readonly string[]
     readonlyCheckout?: boolean
     includeNotes?: boolean
@@ -2020,6 +2025,7 @@ export function buildAcpPromptContent(
 ): ContentBlock[] {
   const text = buildAcpPrompt(userPrompt, priorMessages, {
     ...(opts?.sandboxed !== undefined ? { sandboxed: opts.sandboxed } : {}),
+    ...(opts?.contained ? { contained: true } : {}),
     ...(opts?.bridgeToolNames !== undefined ? { bridgeToolNames: opts.bridgeToolNames } : {}),
     ...(opts?.readonlyCheckout ? { readonlyCheckout: true } : {}),
     ...(opts?.includeNotes !== undefined ? { includeNotes: opts.includeNotes } : {}),

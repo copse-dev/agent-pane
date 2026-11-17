@@ -48,6 +48,7 @@ import {
   runWithAcpRetry,
   sliceLines,
 } from './acp-agent-service.ts'
+import { acpSandboxGithubSteer } from './acp-network-denial-steer.ts'
 import { resolveAcpPermissionMode } from './acp-agent-registry.ts'
 import { AcpReadonlyCheckoutUnavailableError } from './acp-write-access.ts'
 
@@ -516,6 +517,18 @@ describe('buildAcpPrompt', () => {
     assert.doesNotMatch(prompt, /delivered when the\s+next turn starts/i)
     assert.match(prompt, /reaped after ~10 idle minutes/)
     assert.match(prompt, /targeted searches/)
+  })
+
+  it('steers a contained turn away from GitHub instead of to run_shell', () => {
+    const prompt = buildAcpPrompt('hello', [], {
+      sandboxed: true,
+      contained: true,
+      bridgeToolNames: ['read_file', 'run_shell'],
+    })
+    assert.ok(
+      prompt.includes(acpSandboxGithubSteer(['read_file', 'run_shell'], { contained: true })),
+    )
+    assert.doesNotMatch(prompt, /run `gh` through/)
   })
 
   it('adds the sandbox note only for sandboxed turns', () => {

@@ -316,9 +316,9 @@ describe('ACP native bridge mount (#4144)', () => {
       const first = await turn('sandboxed-late', registry)
       assert.match(first.prompt, /Environment note: this session runs inside a filesystem sandbox/)
       assert.doesNotMatch(first.prompt, /run_shell tool for commands/)
-      // Offered but never connected: the GitHub steer stays, names none of
-      // the offered tools, and says GitHub is out of reach (#4145).
-      assert.ok(first.prompt.includes(acpSandboxGithubSteer([])))
+      // This sandbox is an unattended container, whose shell has no network:
+      // the GitHub steer says GitHub is out of reach, listed tools or not (#4145).
+      assert.ok(first.prompt.includes(acpSandboxGithubSteer([], { contained: true })))
       assert.doesNotMatch(first.prompt, /Offered here/)
 
       await runTurn('sandboxed-late', registry, { userPrompt: 'list-mcp-tools' })
@@ -329,23 +329,22 @@ describe('ACP native bridge mount (#4144)', () => {
       assert.ok(restored, `the prompt says the tools are back: ${after.prompt}`)
       assert.ok(restored.includes(ACP_COPSE_TOOLS_PROMPT_NOTE))
       assert.match(restored, /use its run_shell tool for commands/)
-      assert.match(restored, LISTED_GITHUB_ROUTE)
-      assert.doesNotMatch(restored, /"copse" MCP server is not available/)
+      assert.ok(restored.includes(acpSandboxGithubSteer(GITHUB_ROUTE_TOOLS, { contained: true })))
+      assert.doesNotMatch(restored, LISTED_GITHUB_ROUTE)
     })
   })
 
-  it("hands a sandboxed agent's GitHub steer the tools it listed", async () => {
-    // The wiring the steer depends on: drop the listed names at the turn's
-    // call site and this prompt says GitHub is out of reach instead.
+  it("keeps a contained agent's GitHub steer off the tools it listed", async () => {
+    // The guest's run_shell has no network and refuses every approval prompt,
+    // so pointing a contained agent at it, or at bridged GitHub tools, for
+    // GitHub work leaves it a route that cannot work. The call site must pass
+    // the run's containment through to the steer.
     await useFixtureAgent(['--mcp-http', '--list-mcp-tools'])
     await sandboxedRun('sandboxed-lists', async () => {
       const { prompt } = await turn('sandboxed-lists', registryWithBridgedTools(GITHUB_ROUTE_TOOLS))
-      assert.match(prompt, LISTED_GITHUB_ROUTE)
-      assert.match(
-        prompt,
-        /For anything they do not cover, run `gh` through the "copse" MCP server's run_shell tool/,
-      )
-      assert.doesNotMatch(prompt, /"copse" MCP server is not available/)
+      assert.ok(prompt.includes(acpSandboxGithubSteer(GITHUB_ROUTE_TOOLS, { contained: true })))
+      assert.doesNotMatch(prompt, LISTED_GITHUB_ROUTE)
+      assert.doesNotMatch(prompt, /run `gh` through/)
       assert.ok(prompt.includes(ACP_COPSE_TOOLS_PROMPT_NOTE))
     })
   })

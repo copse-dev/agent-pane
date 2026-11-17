@@ -594,7 +594,9 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   since `run_shell` can ask to run `gh` outside the sandbox. If it listed no Copse
   tools, because no bridge was offered or the agent never connected to the one
   that was, the note says the session has no signed-in route to GitHub and tells
-  the agent to tell the user instead of retrying. Serving `gh` reads to the agent
+  the agent to tell the user instead of retrying. An unattended container run
+  gets that same answer whatever it listed: the guest offers no GitHub tools,
+  and its `run_shell` has no network and refuses every approval prompt. Serving `gh` reads to the agent
   process through the host (#3873's per-thread `GH_CONFIG_DIR` and socket) waits
   on that draft.
 - **SSH workspaces are opt-in.** Off by default, ACP agents stay hidden from the

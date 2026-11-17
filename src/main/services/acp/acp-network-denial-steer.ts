@@ -148,12 +148,28 @@ const GITHUB_NO_DIRECT_EGRESS =
  * way forward, so the copy names the listed GitHub tools, falls back to
  * `run_shell` (which can ask to run `gh` outside the sandbox), and with neither,
  * including a bridge the agent never connected to, says plainly that GitHub is
- * out of reach.
+ * out of reach. So does a `contained` (unattended container) run, whatever it
+ * lists.
  */
-export function acpSandboxGithubSteer(bridgeToolNames: readonly string[]): string {
+export function acpSandboxGithubSteer(
+  bridgeToolNames: readonly string[],
+  opts: { contained?: boolean } = {},
+): string {
+  if (opts.contained) return GITHUB_UNREACHABLE_IN_CONTAINER
   const route = githubRoute(bridgeToolNames)
   return `${route} ${GH_OWN_SHELL_DENIAL} ${GITHUB_NO_DIRECT_EGRESS}`
 }
+
+/**
+ * The steer for an unattended container run. The guest offers no GitHub tools,
+ * its run_shell has no network and refuses every approval prompt, and there is
+ * no seatbelt or sandbox.allowedDomains to talk about, so no route exists.
+ */
+const GITHUB_UNREACHABLE_IN_CONTAINER =
+  'For GitHub work (pull requests, issues, Actions, `gh`): this run is in a disposable ' +
+  'container with no network, so nothing in it can reach GitHub, the "copse" MCP ' +
+  "server's tools included. Do not try. Finish the local work and say what GitHub " +
+  "work is left for the user, who reviews this run's commits."
 
 function githubRoute(bridgeToolNames: readonly string[]): string {
   const githubTools = bridgeToolNames.filter(isGithubBridgeTool)

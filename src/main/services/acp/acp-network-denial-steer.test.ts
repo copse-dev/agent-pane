@@ -141,6 +141,15 @@ describe('acpSandboxGithubSteer (issue #4145)', () => {
     assert.doesNotMatch(steer, /gh_api_read|git_fetch|Offered here/)
   })
 
+  it('says GitHub is out of reach in an unattended container, even with run_shell', () => {
+    // The guest's shell has no network and its approval prompts are always
+    // refused, so neither run_shell nor an outside-sandbox ask reaches GitHub.
+    const steer = acpSandboxGithubSteer(['read_file', 'run_shell'], { contained: true })
+    assert.match(steer, /disposable container with no network/)
+    assert.match(steer, /Do not try/)
+    assert.doesNotMatch(steer, /run_shell tool|ask the user|allowedDomains|gh auth login/)
+  })
+
   it('says GitHub is out of reach when nothing bridged can reach it', () => {
     // No bridge, or one the agent never listed (#4144): no tools either way.
     const noBridge = acpSandboxGithubSteer([])
