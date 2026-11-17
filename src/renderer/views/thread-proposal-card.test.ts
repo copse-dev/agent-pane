@@ -217,6 +217,7 @@ describe('model-proposed thread card', () => {
   for (const args of [
     { server: 'other', tool: 'propose_thread', arguments: PROPOSAL_ARGS },
     { server: 'copse-other', tool: 'propose_thread', arguments: PROPOSAL_ARGS },
+    { server: 'COPSE', tool: 'propose_thread', arguments: PROPOSAL_ARGS },
     { server: 'copse', tool: 'other', arguments: PROPOSAL_ARGS },
     { server: 'copse', tool: 'propose_thread', arguments: { title: 'Still streaming' } },
     { server: 'copse', tool: 'propose_thread', arguments: null },

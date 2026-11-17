@@ -17,11 +17,14 @@ const COPSE_WRAPPED_TOOL = new RegExp(
 /**
  * Whether `server` names Copse's bridge in an MCP dispatch envelope
  * (`{ server, tool, arguments }`, as Codex ACP records it): the bare `copse` of
- * threads recorded before #4125, or a `copse-<nonce>` name since.
+ * threads recorded before #4125, or a `copse-<nonce>` name since. Exact case:
+ * the envelope carries the mounted name verbatim, and Copse mounts it in lower
+ * case, so `COPSE` is some other server.
  */
 export function isCopseServerName(server: unknown): boolean {
-  return typeof server === 'string' && COPSE_SERVER_NAME.test(server)
+  return typeof server === 'string' && ENVELOPE_SERVER_NAME.test(server)
 }
+const ENVELOPE_SERVER_NAME = new RegExp(`^${COPSE_SERVER}$`)
 
 /**
  * Display/behavior identity only; never rewrite the persisted execution name.

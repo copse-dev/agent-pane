@@ -117,7 +117,18 @@ test('acpDelegateKind reads subagent_type verbatim, and acpDelegatePrompt prefer
 })
 
 test('names the bridge server in a dispatch envelope, bare or nonce-named', () => {
-  for (const server of ['copse', 'copse-k3v9x2mq', 'COPSE']) assert.ok(isCopseServerName(server))
-  for (const server of ['other', 'copse-other', 'copse-k3v9x2mq-x', 'copse.git', '', null, 1])
+  for (const server of ['copse', 'copse-k3v9x2mq']) assert.ok(isCopseServerName(server))
+  // The envelope names the mounted server verbatim, and Copse mounts it in lower case.
+  for (const server of [
+    'COPSE',
+    'Copse-K3V9X2MQ',
+    'other',
+    'copse-other',
+    'copse-k3v9x2mq-x',
+    'copse.git',
+    '',
+    null,
+    1,
+  ])
     assert.equal(isCopseServerName(server), false, String(server))
 })

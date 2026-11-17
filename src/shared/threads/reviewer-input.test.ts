@@ -155,6 +155,7 @@ test('ACP envelopes preserve saved questions only for the matching Copse tool', 
   for (const args of [
     { server: 'other', tool: 'ask_user', arguments: deferred.args },
     { server: 'copse-other', tool: 'ask_user', arguments: deferred.args },
+    { server: 'COPSE', tool: 'ask_user', arguments: deferred.args },
     { server: 'copse', tool: 'request_review_input', arguments: deferred.args },
     { server: 'copse', tool: 'ask_user', arguments: null },
   ])
