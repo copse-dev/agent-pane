@@ -1,7 +1,7 @@
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import { baseSandboxConfig, refreshGitConfigIncludeReadPaths } from './config.ts'
 import { recordNetworkDenial } from './network-scope.ts'
-import { setProjectSandboxEnabled } from './spawn.ts'
+import { SANDBOX_VIOLATION_MONITOR, setProjectSandboxEnabled } from './spawn.ts'
 import { shutdownSandboxFsServer } from './sandbox-fs-server.ts'
 import { reapOrphanedSandboxBridges } from './orphaned-bridges.ts'
 import { isProjectSandboxPlatform, setProjectSandboxInitFailure } from './state.ts'
@@ -14,6 +14,7 @@ export {
   afterSandboxedCommand,
   isProjectSandboxEnabled,
   sandboxViolationCountForCommand,
+  settledSandboxViolationCount,
 } from './spawn.ts'
 export {
   gatewayReadFile,
@@ -68,9 +69,8 @@ export async function initProjectSandbox(): Promise<void> {
       // The macOS log monitor is the only producer of the violation store that
       // a verified sandbox block is judged from (`sandboxViolationCountForCommand`).
       // With it off, every count read 0, so no block ever offered the outside
-      // retry `docs/shell-permissions.md` describes. Linux keeps it off: its
-      // seccomp observer is a separate runtime path, not yet validated here.
-      process.platform === 'darwin',
+      // retry `docs/shell-permissions.md` describes.
+      SANDBOX_VIOLATION_MONITOR,
     )
     await refreshGitConfigIncludeReadPaths()
     setProjectSandboxEnabled(true)

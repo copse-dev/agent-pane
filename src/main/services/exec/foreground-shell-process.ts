@@ -6,6 +6,7 @@ import {
   afterSandboxedCommand,
   isProjectSandboxEnabled,
   sandboxViolationCountForCommand,
+  settledSandboxViolationCount,
   spawnShellInProjectSandbox,
 } from '../../project-sandbox/index.ts'
 import {
@@ -364,17 +365,25 @@ export async function runShellOnce(
         // terminal is still waiting for the process to actually exit.
         if (!detached) observer?.exit({ exitCode: code, signal: closeSignal })
         cleanup()
-        const violationCount = sandboxViolationCount()
         finish()
         if (settled) return
-        settled = true
         const exitCode = exitCodeFor(code, closeSignal)
-        if (stopped) reportPhase('cancelled')
-        else reportPhase('exited', { exitCode })
-        resolve({
-          output: outputAcc.toString(),
-          exitCode,
-          sandboxViolationCount: violationCount,
+        // A denial can reach the store a few ms after the close: give a failed
+        // attempt that long before judging whether the sandbox blocked it.
+        void (
+          violationId && exitCode !== 0
+            ? settledSandboxViolationCount(violationId)
+            : Promise.resolve(sandboxViolationCount())
+        ).then((violationCount) => {
+          if (settled) return
+          settled = true
+          if (stopped) reportPhase('cancelled')
+          else reportPhase('exited', { exitCode })
+          resolve({
+            output: outputAcc.toString(),
+            exitCode,
+            sandboxViolationCount: violationCount,
+          })
         })
       })
 

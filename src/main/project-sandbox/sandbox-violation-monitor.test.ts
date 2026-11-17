@@ -62,14 +62,15 @@ describe('macOS sandbox violation monitor', () => {
       return
     }
 
-    // `log stream` attaches asynchronously: wait until a denial outside the
-    // workspace is seen, so the assertions below are not racing its start.
+    // `log stream` attaches asynchronously and a denial before that is never
+    // reported: repeat a denied write outside the workspace until one is seen,
+    // so the assertions below are not racing its start. Each attempt is a real
+    // sandboxed spawn, so the attempts themselves give it time.
     const outside = join(tmpdir(), '..', `copse-violation-monitor-${String(process.pid)}`)
     let warm: ShellRunResult | undefined
-    for (let attempt = 0; attempt < 20; attempt++) {
+    for (let attempt = 0; attempt < 200; attempt++) {
       warm = await run(`touch '${outside}'`, project)
       if (warm.sandboxViolationCount) break
-      await new Promise((resolve) => setTimeout(resolve, 500))
     }
     assert.ok(warm?.sandboxViolationCount, 'the log monitor never reported a denial')
     assert.equal(existsSync(outside), false)
@@ -89,9 +90,17 @@ describe('macOS sandbox violation monitor', () => {
     )
     assert.equal(existsSync(join(project, '.git')), false)
 
-    // Each attempt counts its own violations, not every earlier run's.
-    const again = await run('git init', project)
-    assert.equal(again.sandboxViolationCount, init.sandboxViolationCount)
+    // Each attempt counts its own violations, not every earlier run's, and a
+    // denial that reaches the store just after the close still counts (about 1
+    // run in 20 before the settle wait).
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const again = await run('git init', project)
+      assert.equal(
+        again.sandboxViolationCount,
+        init.sandboxViolationCount,
+        `attempt ${String(attempt)}`,
+      )
+    }
 
     // An ordinary failure trips only incidental denials, so it is not a block.
     const missing = await run('ls does-not-exist', project)

@@ -691,7 +691,9 @@ to the agent. Approval authorizes one outside execution; rejection keeps the con
 A verified block is a non-zero exit plus at least one denial the OS sandbox itself reported for that
 attempt. On macOS, ASRT's log monitor (started with the project sandbox) reads each seatbelt
 denial from the unified log and attributes it to the attempt by a per-attempt id baked into the
-profile, so an earlier run of the same command never counts. Only file and network denials count:
+profile, so an earlier run of the same command never counts. A denial can reach that store a few
+milliseconds after the process closes, so a failed `run_shell` attempt with none yet waits up to
+200 ms for one, ending as soon as one arrives. Only file and network denials count:
 every sandboxed process also trips incidental ones such as `sysctl-read kern.iossupportversion`,
 and counting those would make any ordinary failure look like a block. A typical case is `git
 init` in a folder that is not yet a repository, because the sandbox protects `.git`. Linux does not

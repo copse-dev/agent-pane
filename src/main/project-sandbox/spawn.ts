@@ -487,6 +487,54 @@ export function sandboxViolationCountForCommand(attribution: string): number {
   }
 }
 
+/**
+ * Whether ASRT's violation monitor runs with the project sandbox. Only the macOS
+ * log monitor is started; Linux's seccomp observer is a separate path not yet
+ * validated here.
+ */
+export const SANDBOX_VIOLATION_MONITOR = process.platform === 'darwin'
+
+/**
+ * The log monitor delivers a denial asynchronously: in 250 refused `git init`
+ * runs, 14 denials arrived after the process closed, all within 5 ms. A failed
+ * attempt with no blocking violation yet waits at most this long for one.
+ */
+const LATE_VIOLATION_WAIT_MS = 200
+
+/**
+ * {@link sandboxViolationCountForCommand} for an attempt that has just exited
+ * non-zero, once a late denial has had time to arrive. Resolves as soon as one
+ * does, and at once when one already has or no monitor runs.
+ */
+export async function settledSandboxViolationCount(attribution: string): Promise<number> {
+  const now = sandboxViolationCountForCommand(attribution)
+  if (now > 0 || !SANDBOX_VIOLATION_MONITOR || !isProjectSandboxEnabled()) return now
+  let store: ReturnType<typeof SandboxManager.getSandboxViolationStore>
+  try {
+    store = SandboxManager.getSandboxViolationStore()
+  } catch {
+    return now
+  }
+  return new Promise((resolve) => {
+    let done = false
+    const timer = setTimeout(() => {
+      finish()
+    }, LATE_VIOLATION_WAIT_MS)
+    // `subscribe` calls the listener once before returning, with the same store
+    // the count above just read as 0, so `finish` never runs before this binds.
+    const unsubscribe = store.subscribe(() => {
+      if (sandboxViolationCountForCommand(attribution) > 0) finish()
+    })
+    function finish(): void {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      unsubscribe()
+      resolve(sandboxViolationCountForCommand(attribution))
+    }
+  })
+}
+
 export function afterSandboxedCommand(): void {
   if (isProjectSandboxEnabled()) {
     SandboxManager.cleanupAfterCommand()
