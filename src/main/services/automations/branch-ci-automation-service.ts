@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 import { randomUUID } from 'node:crypto'
 import { sha256Hex } from '@copse/std/sha256.ts'
 import {
@@ -1092,7 +1093,7 @@ export function createBranchCiAutomationService(
       const records = (await inboxStore.list(projectId))
         .filter((record) => record.binding.automationId === id)
         .sort((a, b) => b.receivedAt - a.receivedAt)
-        .slice(0, Math.max(1, Math.min(limit, 100)))
+        .slice(0, clamp(limit, 1, 100))
       return records.map((record): EventDeliverySummary => {
         const facts = record.delivery.facts
         const number = factNumber(record, 'number')

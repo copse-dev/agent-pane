@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 import { el, clear, on } from '../dom/helpers.ts'
 import { chevronDownIcon } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
@@ -519,7 +520,7 @@ export function mountFooterBranchStatus(
 
   function clampActiveIndex(): void {
     const count = rowCount()
-    activeIndex = count === 0 ? 0 : Math.max(0, Math.min(count - 1, activeIndex))
+    activeIndex = count === 0 ? 0 : clamp(activeIndex, 0, count - 1)
   }
 
   function scrollActiveRowIntoView(): void {
@@ -564,7 +565,7 @@ export function mountFooterBranchStatus(
   function moveActive(direction: -1 | 1): void {
     const count = rowCount()
     if (count === 0) return
-    activeIndex = Math.max(0, Math.min(count - 1, activeIndex + direction))
+    activeIndex = clamp(activeIndex + direction, 0, count - 1)
     renderMenu()
   }
 

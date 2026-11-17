@@ -4,6 +4,7 @@
 // `path-exists`, `sha256`) stay out of it so the barrel also loads in a browser.
 export * from './array-utils.ts'
 export * from './assert-never.ts'
+export * from './clamp.ts'
 export * from './errors.ts'
 export * from './member-of.ts'
 export * from './nullish.ts'

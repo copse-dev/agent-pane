@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 import { execFile, spawn } from 'node:child_process'
 import { access, mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { cpus, setPriority } from 'node:os'
@@ -88,7 +89,7 @@ export function gortexIndexKillTimeoutMs(): number {
 /** Number of worker threads the indexer may use, capped for CPU fairness (#517). */
 export function semanticThreadCap(): number {
   const cores = Math.max(1, cpus().length)
-  return Math.max(1, Math.min(SEMANTIC_MAX_THREADS, Math.floor(cores / 2)))
+  return clamp(Math.floor(cores / 2), 1, SEMANTIC_MAX_THREADS)
 }
 
 /**
