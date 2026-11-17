@@ -1,8 +1,7 @@
-import { readTextOrNull } from '@copse/std/read-text-or-null.ts'
 import { randomUUID } from 'node:crypto'
 import { sha256Hex } from '@copse/std/sha256.ts'
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { mkdirSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   decisionLogManifest,
@@ -22,6 +21,14 @@ import { runSerialized } from '../storage/write-queue.ts'
 import { currentThreadExecutionContext } from '../thread-execution-context-store.ts'
 import { getActiveRunThread } from '../thread-models.ts'
 import { appendSpineDecision } from '../thread-store.ts'
+
+function safeRead(path: string): string | null {
+  try {
+    return readFileSync(path, 'utf8')
+  } catch {
+    return null
+  }
+}
 
 /**
  * Durable control-plane decision log (issue #656). Appended as `decision` lines
@@ -208,7 +215,7 @@ function collectThreadDecisionEvents(projectId: string): DecisionEvent[] {
 
   const out: DecisionEvent[] = []
   for (const threadId of entries) {
-    const raw = readTextOrNull(join(root, threadId, 'events.jsonl'))
+    const raw = safeRead(join(root, threadId, 'events.jsonl'))
     if (raw === null) continue
     for (const entry of parseSpineEntries(raw)) {
       if (entry.line?.type === 'decision') {
@@ -232,7 +239,7 @@ export function readThreadDecisionLog(
   threadId: string,
 ): Promise<DecisionEvent[]> {
   return runSerialized(queueKey(projectId), () => {
-    const raw = readTextOrNull(join(projectStoreDir(projectId), threadId, 'events.jsonl'))
+    const raw = safeRead(join(projectStoreDir(projectId), threadId, 'events.jsonl'))
     if (raw === null) return []
     const out: DecisionEvent[] = []
     for (const entry of parseSpineEntries(raw)) {
