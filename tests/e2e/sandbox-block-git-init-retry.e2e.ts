@@ -14,7 +14,11 @@ const PROJECT_ID = 'e2e-sandbox-block-git-init'
 // (it denies writes to `.git/hooks`), so `git init` cannot create it inside.
 const ROOT = join(tmpdir(), 'copse-e2e', 'no-repository-workspace')
 
-describe('a sandbox block on git init', () => {
+// Only the macOS seatbelt reports its denials (ASRT's log monitor), so only there
+// can a contained command's block be verified. Linux CI has no monitor running.
+const describeVerifiedBlock = process.platform === 'darwin' ? describe : describe.skip
+
+describeVerifiedBlock('a sandbox block on git init', () => {
   before(async () => {
     resetUserData()
     removeE2eTree(ROOT)
