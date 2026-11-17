@@ -480,6 +480,19 @@ describe('screenshot refresh plan CLI', () => {
     }
   })
 
+  it('holds an empty hand commit on top of the refresh commit', () => {
+    const { dir, refresh } = repository()
+    try {
+      const main = gitIn(dir, 'rev-parse', 'HEAD')
+      gitIn(dir, 'checkout', '--quiet', '-b', 'empty-hand', refresh)
+      gitIn(dir, 'commit', '--quiet', '--allow-empty', '-m', 'retrigger CI')
+      // It changes no file, but it is a push the nightly must not discard.
+      assert.equal(liveDecisions(gitIn(dir, 'rev-parse', 'HEAD'), main, dir), null)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('refuses inputs that do not name the checked-out main or one PR head', () => {
     const { dir, refresh } = repository()
     try {

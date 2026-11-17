@@ -198,7 +198,8 @@ function manifestAt(ref: string, cwd?: string): ScreenshotManifest | null {
 /**
  * The reviewed screenshots `tip` commits on top of the `main` it rendered that
  * `main` has not changed since, sorted. Null when `tip` changes any other file
- * (a hand push) or a manifest cannot be read, which keeps the branch held.
+ * or adds any other commit (a hand push), or a manifest cannot be read, which
+ * keeps the branch held.
  * Accepting the README hero also rewrites its URL in README.md, so a README
  * that is exactly that rewrite belongs to the reviewed commit; any other README
  * edit is a hand push.
@@ -206,6 +207,7 @@ function manifestAt(ref: string, cwd?: string): ScreenshotManifest | null {
 export function liveDecisions(tip: string, main: string, cwd?: string): string[] | null {
   const rendered = git(['merge-base', tip, main], cwd)
   if (!rendered) return null
+  if (!onlyRefreshOrChangingCommits(rendered, tip, cwd)) return null
   const files = git(['diff', '--name-only', rendered, tip], cwd)
   if (
     files === null ||
@@ -224,6 +226,26 @@ export function liveDecisions(tip: string, main: string, cwd?: string): string[]
   }
   const changedOnMain = new Set(changedManifestNames(base, current))
   return changedManifestNames(base, reviewed).filter((name) => !changedOnMain.has(name))
+}
+
+/**
+ * Whether every commit `tip` adds on `rendered` is the workflow's own empty
+ * refresh commit or a single-parent commit that changes a file. An empty
+ * commit pushed by hand (to re-run CI, say) or a merge is a push the nightly
+ * must not discard, though the tree diff alone cannot see it.
+ */
+function onlyRefreshOrChangingCommits(rendered: string, tip: string, cwd?: string): boolean {
+  const commits = git(['rev-list', '--parents', `${rendered}..${tip}`], cwd)
+  if (commits === null) return false
+  for (const line of commits.split('\n')) {
+    if (line === '') continue
+    const [commit, parent, ...others] = line.split(' ')
+    if (!commit || !parent || others.length > 0) return false
+    if (isRefreshCommit(commit, cwd)) continue
+    const files = git(['diff', '--name-only', parent, commit], cwd)
+    if (files === null || files === '') return false
+  }
+  return true
 }
 
 /**
