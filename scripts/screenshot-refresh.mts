@@ -207,7 +207,7 @@ function manifestAt(ref: string, cwd?: string): ScreenshotManifest | null {
 export function liveDecisions(tip: string, main: string, cwd?: string): string[] | null {
   const rendered = git(['merge-base', tip, main], cwd)
   if (!rendered) return null
-  if (!onlyRefreshOrChangingCommits(rendered, tip, cwd)) return null
+  if (!onlyRefreshOrReviewCommits(rendered, tip, cwd)) return null
   const files = git(['diff', '--name-only', rendered, tip], cwd)
   if (
     files === null ||
@@ -218,23 +218,20 @@ export function liveDecisions(tip: string, main: string, cwd?: string): string[]
   const reviewed = manifestAt(tip, cwd)
   const current = manifestAt(main, cwd)
   if (!base || !reviewed || !current) return null
-  if (files.split('\n').includes(README)) {
-    const before = gitRaw(['show', `${rendered}:${README}`], cwd)
-    const after = gitRaw(['show', `${tip}:${README}`], cwd)
-    if (before === null || after === null) return null
-    if (after !== updateScreenshotReadme(before, base, reviewed)) return null
-  }
+  if (files.split('\n').includes(README) && !readmeIsHeroRewrite(rendered, tip, cwd)) return null
   const changedOnMain = new Set(changedManifestNames(base, current))
   return changedManifestNames(base, reviewed).filter((name) => !changedOnMain.has(name))
 }
 
 /**
  * Whether every commit `tip` adds on `rendered` is the workflow's own empty
- * refresh commit or a single-parent commit that changes a file. An empty
- * commit pushed by hand (to re-run CI, say) or a merge is a push the nightly
- * must not discard, though the tree diff alone cannot see it.
+ * refresh commit or a reviewed-screenshot commit: one parent, changing the
+ * manifest and, beside it, at most README.md's accepted hero rewrite. Anything
+ * else is someone's push the nightly must not discard, even when the tree diff
+ * cannot see it: an empty commit pushed to re-run CI, a merge, or a hand edit a
+ * later commit reverts.
  */
-function onlyRefreshOrChangingCommits(rendered: string, tip: string, cwd?: string): boolean {
+function onlyRefreshOrReviewCommits(rendered: string, tip: string, cwd?: string): boolean {
   const commits = git(['rev-list', '--parents', `${rendered}..${tip}`], cwd)
   if (commits === null) return false
   for (const line of commits.split('\n')) {
@@ -242,10 +239,31 @@ function onlyRefreshOrChangingCommits(rendered: string, tip: string, cwd?: strin
     const [commit, parent, ...others] = line.split(' ')
     if (!commit || !parent || others.length > 0) return false
     if (isRefreshCommit(commit, cwd)) continue
-    const files = git(['diff', '--name-only', parent, commit], cwd)
-    if (files === null || files === '') return false
+    if (!isReviewCommit(parent, commit, cwd)) return false
   }
   return true
+}
+
+/** Whether `commit` changes the manifest and nothing but README.md's matching hero rewrite. */
+function isReviewCommit(parent: string, commit: string, cwd?: string): boolean {
+  const files = git(['diff', '--name-only', parent, commit], cwd)?.split('\n').filter(Boolean)
+  if (!files?.includes(SCREENSHOT_MANIFEST)) return false
+  if (files.some((file) => file !== SCREENSHOT_MANIFEST && file !== README)) return false
+  if (!files.includes(README)) return true
+  return readmeIsHeroRewrite(parent, commit, cwd)
+}
+
+/**
+ * Whether README.md at `to` is exactly README.md at `from` with the hero URL
+ * moved to the manifest's new hash, compared byte for byte.
+ */
+function readmeIsHeroRewrite(from: string, to: string, cwd?: string): boolean {
+  const before = gitRaw(['show', `${from}:${README}`], cwd)
+  const after = gitRaw(['show', `${to}:${README}`], cwd)
+  const fromManifest = manifestAt(from, cwd)
+  const toManifest = manifestAt(to, cwd)
+  if (before === null || after === null || !fromManifest || !toManifest) return false
+  return after === updateScreenshotReadme(before, fromManifest, toManifest)
 }
 
 /**

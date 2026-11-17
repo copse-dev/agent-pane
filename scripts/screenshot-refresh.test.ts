@@ -480,13 +480,22 @@ describe('screenshot refresh plan CLI', () => {
     }
   })
 
-  it('holds an empty hand commit on top of the refresh commit', () => {
+  it('holds an empty or reverted hand commit on top of the refresh commit', () => {
     const { dir, refresh } = repository()
     try {
       const main = gitIn(dir, 'rev-parse', 'HEAD')
       gitIn(dir, 'checkout', '--quiet', '-b', 'empty-hand', refresh)
       gitIn(dir, 'commit', '--quiet', '--allow-empty', '-m', 'retrigger CI')
       // It changes no file, but it is a push the nightly must not discard.
+      assert.equal(liveDecisions(gitIn(dir, 'rev-parse', 'HEAD'), main, dir), null)
+
+      // Nor is a hand edit that a later commit reverts: the tree diff is empty,
+      // but both commits are someone's work.
+      gitIn(dir, 'checkout', '--quiet', '-b', 'reverted-hand', refresh)
+      writeFileSync(join(dir, 'README.md'), 'readme\nhand edit\n')
+      gitIn(dir, 'commit', '--quiet', '-am', 'hand edit')
+      writeFileSync(join(dir, 'README.md'), 'readme\n')
+      gitIn(dir, 'commit', '--quiet', '-am', 'revert hand edit')
       assert.equal(liveDecisions(gitIn(dir, 'rev-parse', 'HEAD'), main, dir), null)
     } finally {
       rmSync(dir, { recursive: true, force: true })
