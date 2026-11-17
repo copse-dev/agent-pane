@@ -7,6 +7,7 @@ import { expectBoolean, expectRecord, expectString } from '@shared/unknown-value
 import type { CanvasArtefactIdentity } from '@shared/types/canvas.ts'
 import { CANVAS_TRANSPARENT_ROOT_PROBE, canvasGuestTextCss } from '@shared/canvas/guest-surface.ts'
 import { fillBrowserForm, type BrowserFormField } from './browser-form.ts'
+import { withTimeout } from '@copse/std/with-timeout.ts'
 
 const MAX_TABS = 8
 const DEFAULT_WIDTH = 1280
@@ -58,19 +59,9 @@ function previewLayoutScript(width: number): string {
 
 /** Bound native IPC even when the renderer cannot run its own deadline. */
 async function waitForPreviewOperation(operation: Promise<unknown>): Promise<unknown> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  try {
-    return await Promise.race([
-      operation,
-      new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => {
-          reject(new Error('Preview capture timed out'))
-        }, 5000)
-      }),
-    ])
-  } finally {
-    clearTimeout(timer)
-  }
+  return withTimeout(operation, 5000, () => {
+    throw new Error('Preview capture timed out')
+  })
 }
 
 /**

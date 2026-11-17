@@ -1,4 +1,5 @@
 import type { RecordingCapture } from './surface-recorder.ts'
+import { withTimeout } from '@copse/std/with-timeout.ts'
 
 /** The Browser-pane recording calls the preload exposes (absent on demo/site hosts). */
 export interface ScreencastApi {
@@ -74,17 +75,9 @@ export async function openScreencastCapture(
 
   try {
     await api.startRecording(webContentsId)
-    let timer = 0
-    const timedOut = new Promise<'timeout'>((resolve) => {
-      timer = window.setTimeout(() => {
-        resolve('timeout')
-      }, FIRST_FRAME_TIMEOUT_MS)
-    })
-    const outcome = await Promise.race([firstFrame, timedOut])
-    window.clearTimeout(timer)
-    if (outcome === 'timeout') {
+    await withTimeout(firstFrame, FIRST_FRAME_TIMEOUT_MS, () => {
       throw new Error('The tab is not painting. Show the Browser pane and try again.')
-    }
+    })
   } catch (error) {
     dispose()
     throw error

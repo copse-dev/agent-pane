@@ -30,6 +30,7 @@ import { semanticIndexAllowed, semanticIndexPending } from './workspace-index-ga
 import { isNonNull } from '@shared/nullish.ts'
 import { isNonEmptyString } from '@shared/nullish.ts'
 import { sleep } from '@copse/std/sleep.ts'
+import { withTimeout } from '@copse/std/with-timeout.ts'
 
 /**
  * Hard ceiling on semantic-index worker threads. Without a cap the native
@@ -453,17 +454,11 @@ function runDaemonSpawningCommand(
 
 async function abortGortexRuns(runs: readonly DaemonSpawningRun[]): Promise<void> {
   for (const run of runs) run.abort()
-  let timer: ReturnType<typeof setTimeout> | undefined
-  try {
-    await Promise.race([
-      Promise.allSettled(runs.map((run) => run.settled)),
-      new Promise<void>((resolve_) => {
-        timer = setTimeout(resolve_, DAEMON_SPAWN_SETTLE_MS)
-      }),
-    ])
-  } finally {
-    clearTimeout(timer)
-  }
+  await withTimeout(
+    Promise.allSettled(runs.map((run) => run.settled)),
+    DAEMON_SPAWN_SETTLE_MS,
+    () => undefined,
+  )
 }
 
 async function probeWithOpts(

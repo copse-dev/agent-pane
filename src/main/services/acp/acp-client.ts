@@ -81,6 +81,7 @@ import {
   ensureWorkspaceTmpDir,
   refreshGitConfigIncludeReadPaths,
 } from '../../project-sandbox/config.ts'
+import { withTimeout } from '@copse/std/with-timeout.ts'
 
 /**
  * Copse intentionally advertises no notice or compaction session capability.
@@ -1151,17 +1152,12 @@ export function cancelAgentInitiatedTurn(
         resolve('acknowledged')
       }
     })
-    let graceTimer: ReturnType<typeof setTimeout> | undefined
-    const graceExpired = new Promise<'grace-expired'>((resolve) => {
-      graceTimer = setTimeout(() => {
-        resolve('grace-expired')
-      }, cancelGraceMs)
-    })
-    const settled = Promise.race([acknowledged, graceExpired]).then(async (outcome) => {
-      clearTimeout(graceTimer)
-      if (outcome === 'grace-expired') await open.dispose()
-      delete open.agentInitiatedCancel
-    })
+    const settled = withTimeout(acknowledged, cancelGraceMs, () => 'grace-expired').then(
+      async (outcome) => {
+        if (outcome === 'grace-expired') await open.dispose()
+        delete open.agentInitiatedCancel
+      },
+    )
     open.agentInitiatedCancel = { settled, acknowledge }
   }
   return true
