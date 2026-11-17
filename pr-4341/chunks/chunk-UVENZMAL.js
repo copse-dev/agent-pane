@@ -32652,6 +32652,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'apodex-1-1', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 13.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'apodex-1-1', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       "apriel-v1-5-15b-thinker": [
@@ -34260,6 +34266,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         }
       ],
+      "deepseek-v4-pro-high": [
+        {
+          value: 20.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'deepseek-v4-pro-high', fetched 2026-11-17",
+          asOf: "2026-11-17"
+        }
+      ],
       "deepseek-v4-pro-non-reasoning": [
         {
           value: 20.4,
@@ -35168,6 +35182,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-29"
         }
       ],
+      "gemini-4-argon-medium": [
+        {
+          value: 47.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-4-argon-medium', fetched 2026-11-17",
+          asOf: "2026-11-17"
+        }
+      ],
       "gemini-4-carbon": [
         {
           value: 60,
@@ -35190,6 +35212,38 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v5",
           source: "Artificial Analysis API (index v5), model 'gemini-4-carbon-medium', fetched 2026-11-10",
           asOf: "2026-11-10"
+        }
+      ],
+      "gemini-4-hydrogen": [
+        {
+          value: 53.9,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-4-hydrogen', fetched 2026-11-17",
+          asOf: "2026-11-17"
+        }
+      ],
+      "gemini-4-hydrogen-high": [
+        {
+          value: 50.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-4-hydrogen-high', fetched 2026-11-17",
+          asOf: "2026-11-17"
+        }
+      ],
+      "gemini-4-hydrogen-low": [
+        {
+          value: 26.9,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-4-hydrogen-low', fetched 2026-11-17",
+          asOf: "2026-11-17"
+        }
+      ],
+      "gemini-4-hydrogen-medium": [
+        {
+          value: 41.2,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-4-hydrogen-medium', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       "gemma-3-1b": [
@@ -35768,6 +35822,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gemma-4-e4b', fetched 2026-09-11",
           asOf: "2026-09-11"
+        },
+        {
+          value: 4.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemma-4-e4b', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       "gpt-35-turbo": [
@@ -38128,6 +38188,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'jt-4-1-flash-236b-a21b', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 19,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'jt-4-1-flash-236b-a21b', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       "jt-4-1-flash-236b-a21b-non-reasoning": [
@@ -38164,6 +38230,14 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'k-exaone', fetched 2026-09-11",
           asOf: "2026-09-11"
+        }
+      ],
+      "k-exaone-2-0": [
+        {
+          value: 7.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'k-exaone-2-0', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       "k-exaone-2-0-0803": [
@@ -38748,6 +38822,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'ling-3-1-flash', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 29.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'ling-3-1-flash', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       "ling-3-1-flash-1019": [
@@ -41806,6 +41886,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'qwen3-8-flash-next', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 28.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'qwen3-8-flash-next', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       "qwen3-8-max": [
@@ -42158,6 +42244,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         }
       ],
+      "qwen4-max": [
+        {
+          value: 42.9,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'qwen4-max', fetched 2026-11-17",
+          asOf: "2026-11-17"
+        }
+      ],
       "qwq-32b": [
         {
           value: 13.4,
@@ -42458,6 +42552,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'solar-pro4', fetched 2026-10-20",
           asOf: "2026-10-20"
+        },
+        {
+          value: 14.2,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'solar-pro4', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       sonar: [
