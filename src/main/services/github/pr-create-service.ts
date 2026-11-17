@@ -27,6 +27,7 @@ import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
 import type { PrCreateRequest, PrCreateResult } from '@shared/types/git.ts'
 import type { ThreadExecutionContext } from '../thread-execution-context.ts'
 import { getAgentExecutionRoot } from '../execution-root.ts'
+import { sleep } from '@copse/std/sleep.ts'
 
 /**
  * The lookups this service steers by. Injectable (mirroring
@@ -193,7 +194,7 @@ export async function createPrForThread(
   // mutation still reports a blank/unresolved head SHA. One bounded retry keeps
   // that propagation window from leaking out as four misleading GraphQL errors.
   if (publishesCurrentBranch && !result.ok && isUnresolvedHeadError(result.message)) {
-    await new Promise((resolvePromise) => setTimeout(resolvePromise, 500))
+    await sleep(500)
     result = await deps.createPullRequest(root, input)
     if (!result.ok && isUnresolvedHeadError(result.message)) {
       result = {

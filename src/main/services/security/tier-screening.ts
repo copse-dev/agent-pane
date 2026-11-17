@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import { SHELL_DECISION_SUBJECT } from '@shared/threads/decision-log.ts'
 import { screeningClassifierId } from '../classifiers/classifier-service.ts'
 import { getSetting } from '../storage/settings.ts'
@@ -158,7 +158,7 @@ export function shadowTierScreening(
         threadId,
         projectId,
         detail: {
-          commandSha256: createHash('sha256').update(command).digest('hex'),
+          commandSha256: sha256Hex(command),
           probabilities: verdict.probabilities,
           harm: harmAction,
           wouldApproveLocalWrite: wouldApprove,

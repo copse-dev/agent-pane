@@ -2,6 +2,7 @@
 // `ELECTRON_RUN_AS_NODE=1 <Copse> package-firewall.js <command> [args…]`.
 import '../../../disable-brotli-decoding.ts' // first: this process decodes registry metadata on Electron's Node
 import { FIREWALL_LOG_PREFIX, runPackageFirewall } from './run.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 const log = (line: string): void => {
   process.stderr.write(`${line}\n`)
@@ -12,7 +13,7 @@ runPackageFirewall(process.argv.slice(2), process.env, log).then(
     process.exitCode = status
   },
   (error: unknown) => {
-    log(`${FIREWALL_LOG_PREFIX} failed: ${error instanceof Error ? error.message : String(error)}`)
+    log(`${FIREWALL_LOG_PREFIX} failed: ${errorMessage(error)}`)
     process.exitCode = 70
   },
 )

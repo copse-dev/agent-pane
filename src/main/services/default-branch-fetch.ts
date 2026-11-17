@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import { mkdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { runCommand, type CommandResult } from './exec/command-runner.ts'
@@ -176,7 +176,7 @@ export async function fetchFromOriginOnHost(
   const parent = join(copseCacheDir(), 'default-branch-fetch')
   await mkdir(parent, { recursive: true })
   // The sandbox rejects redirected grants, so name the scratch by its real path.
-  const id = createHash('sha256').update(projectRoot).digest('hex').slice(0, 16)
+  const id = sha256Hex(projectRoot).slice(0, 16)
   const scratch = join(await realpath(parent), `${id}${scratchSuffix}.git`)
   return fetchThroughScratchRepository({ projectRoot, url, refs, scratch, projectGit })
 }

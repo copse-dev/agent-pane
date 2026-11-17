@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import type { PermissionSnapshot, SupervisedTaskMeta } from '@shared/supervisor/task-schema.ts'
 import { isTerminalTaskState } from '@shared/supervisor/task-schema.ts'
 import type { ThreadExecutionOwner } from '../thread-execution-context.ts'
@@ -123,7 +124,7 @@ export function createReadonlyWorkerTurn(supervisor: TaskSupervisor): {
             maxAttempts: 1,
             restartPolicy: 'block',
             resourceBudget: { maxDurationMs: READONLY_WORKER_MAX_DURATION_MS, maxAttempts: 1 },
-            contentHash: createHash('sha256').update(JSON.stringify(worker.request)).digest('hex'),
+            contentHash: sha256Hex(JSON.stringify(worker.request)),
           })
           // Abort can win while the enqueue write is pending, before cancel can see it.
           if (signal.aborted) await supervisor.cancel(owner.projectId, worker.id)

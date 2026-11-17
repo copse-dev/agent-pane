@@ -15,6 +15,7 @@ import {
 import { lastExchange } from './last-exchange.ts'
 import { startReview } from '../controller/review-actions.ts'
 import { showErrorToast, showToast } from './toast.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 /** Open the changeset reviewer pane (mirrors the diff-conflict banner path). */
 function openChangesReviewer(store: AppStore): void {
@@ -69,7 +70,7 @@ async function createPrFromBubble(
     if (!result.ok)
       showToast(`Could not open the pull request: ${result.message}`, { variant: 'error' })
   } catch (err) {
-    settlePrCard(store, card, 'error', err instanceof Error ? err.message : String(err))
+    settlePrCard(store, card, 'error', errorMessage(err))
     showErrorToast('Could not open the pull request', err)
   }
 }

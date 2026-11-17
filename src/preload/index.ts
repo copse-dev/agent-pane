@@ -10,6 +10,7 @@ import type { AppleSuggestionAnswer } from '@shared/types/apple-development.ts'
 import { exposePerfBridge, installPreloadPerfTracing } from './perf-bridge.ts'
 import { createWorkspaceNavigation } from './workspace-navigation.ts'
 import { installRemoteReadRelay } from './remote-interface.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 // DEBUG BRANCH (`COPSE_PERF=1` only): patch `invoke` before the API object below
 // captures it, so every channel the renderer calls is timed. No-op otherwise.
@@ -274,7 +275,7 @@ const api: ApiClient = {
             ipcRenderer.send('plugins:browser-tab-ready', {
               requestId: request.requestId,
               ok: false,
-              error: error instanceof Error ? error.message : String(error),
+              error: errorMessage(error),
             })
           },
         )

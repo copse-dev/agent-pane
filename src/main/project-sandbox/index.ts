@@ -5,6 +5,7 @@ import { setProjectSandboxEnabled } from './spawn.ts'
 import { shutdownSandboxFsServer } from './sandbox-fs-server.ts'
 import { reapOrphanedSandboxBridges } from './orphaned-bridges.ts'
 import { isProjectSandboxPlatform, setProjectSandboxInitFailure } from './state.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 export {
   spawnInProjectSandbox,
@@ -77,7 +78,7 @@ export async function initProjectSandbox(): Promise<void> {
     )
   } catch (err) {
     setProjectSandboxEnabled(false)
-    setProjectSandboxInitFailure(err instanceof Error ? err.message : String(err))
+    setProjectSandboxInitFailure(errorMessage(err))
     console.warn('[project-sandbox] ASRT init failed — project commands run unsandboxed:', err)
   }
 }

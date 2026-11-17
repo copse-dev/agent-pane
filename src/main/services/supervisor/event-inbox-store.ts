@@ -1,4 +1,5 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import {
   existsSync,
   mkdirSync,
@@ -18,7 +19,7 @@ import { projectStoreDir } from '../storage/copse-paths.ts'
 import { runSerialized } from '../storage/write-queue.ts'
 
 export function eventDigest(text: string): string {
-  return createHash('sha256').update(text).digest('hex')
+  return sha256Hex(text)
 }
 
 export function eventInboxKey(record: Pick<EventInboxRecord, 'binding' | 'delivery'>): string {

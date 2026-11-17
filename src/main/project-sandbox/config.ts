@@ -4,6 +4,7 @@ import { readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
+import { isPathWithin, relativeWithin } from '@copse/std/path-containment.ts'
 import { getApplySeccompBinaryPath } from '@anthropic-ai/sandbox-runtime/dist/sandbox/generate-seccomp-filter.js'
 import { expandScratchPath } from '@shared/acp-scratch-paths.ts'
 import type { AcpAgentSandboxConfig } from '@shared/types/acp.ts'
@@ -193,11 +194,9 @@ function gitCredentialDenyReadPaths(): string[] {
  * cannot create a new sibling between enumeration and execution.
  */
 function nestedCheckoutSiblingDenyPaths(checkoutRoot: string, executionRoot: string): string[] {
-  const relativeRoot = relative(checkoutRoot, executionRoot)
+  const relativeRoot = relativeWithin(checkoutRoot, executionRoot)
+  if (!relativeRoot) return []
   const segments = relativeRoot.split(sep).filter(Boolean)
-  if (segments.length === 0 || relativeRoot.startsWith(`..${sep}`) || relativeRoot === '..') {
-    return []
-  }
 
   const denyPaths: string[] = []
   let cursor = checkoutRoot
@@ -270,8 +269,8 @@ export function readOnlyTreeExcluding(root: string, carveOuts: readonly string[]
   const carved = new Set<string>()
   const chainDirs = new Set<string>()
   for (const carveOut of carveOuts) {
-    const rel = relative(root, carveOut)
-    if (!rel || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) continue
+    const rel = relativeWithin(root, carveOut)
+    if (!rel) continue
     carved.add(rel)
     const segments = rel.split(sep)
     for (let i = 1; i < segments.length; i++) chainDirs.add(segments.slice(0, i).join(sep))
@@ -391,9 +390,7 @@ export function uncoveredSiblingDenyPaths(
   const denyRoot = canonicalizeWorkspaceRoot(broadReadDenyRoot)
   return siblingRoots.flatMap((siblingRoot) => {
     const sibling = canonicalizeWorkspaceRoot(siblingRoot)
-    const rel = relative(denyRoot, sibling)
-    const covered = rel === '' || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${sep}`))
-    return covered ? [] : [sibling, `${sibling}/**`]
+    return isPathWithin(denyRoot, sibling) ? [] : [sibling, `${sibling}/**`]
   })
 }
 
@@ -542,12 +539,6 @@ export function baseSandboxConfig(): SandboxRuntimeConfig {
       allowGitConfig: true,
     },
   }
-}
-
-/** Whether `dir` is `target` itself or one of its ancestors. */
-function coversPath(dir: string, target: string): boolean {
-  const rel = relative(dir, target)
-  return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
 }
 
 /** Where `path` sits relative to `home`: covering it (home or an ancestor), inside it, or apart. */
@@ -972,11 +963,8 @@ export function gitBackupSandboxOverlay(workspaceRoot: string): Partial<SandboxR
   if (!fs) throw new Error('readOnlyWorkspaceSandboxOverlay must define a filesystem config')
   const registration = getInternalWorkspaceRootRegistration(root)
   const commonGitDir = realpathSync.native(registration?.commonGitDir ?? join(root, '.git'))
-  const commonRelative = relative(root, commonGitDir)
-  if (
-    !registration &&
-    (isAbsolute(commonRelative) || commonRelative === '..' || commonRelative.startsWith(`..${sep}`))
-  ) {
+  const commonInsideRoot = isPathWithin(root, commonGitDir)
+  if (!registration && !commonInsideRoot) {
     throw new Error('Backup Git metadata escapes its allowed directory')
   }
   const gitWrites = ['objects', 'refs', 'logs'].map((entry) => join(commonGitDir, entry))
@@ -985,8 +973,7 @@ export function gitBackupSandboxOverlay(workspaceRoot: string): Partial<SandboxR
   for (const path of gitWrites) {
     const entry = lstatSync(path, { throwIfNoEntry: false })
     const canonical = entry ? realpathSync.native(path) : path
-    const rel = relative(commonGitDir, canonical)
-    if (entry?.isSymbolicLink() || isAbsolute(rel) || rel === '..' || rel.startsWith(`..${sep}`)) {
+    if (entry?.isSymbolicLink() || !isPathWithin(commonGitDir, canonical)) {
       throw new Error('Backup Git metadata escapes its allowed directory')
     }
   }
@@ -997,16 +984,13 @@ export function gitBackupSandboxOverlay(workspaceRoot: string): Partial<SandboxR
       ...fs,
       // On Linux a read bind of the checkout would shadow the writable Git
       // subdirectories. Split that read tree around the metadata carve-outs.
-      allowRead:
-        commonRelative !== '..' &&
-        !commonRelative.startsWith(`..${sep}`) &&
-        !isAbsolute(commonRelative)
-          ? [
-              ...(fs.allowRead ?? []).filter((path) => path !== root && path !== `${root}/**`),
-              ...readOnlyTreeExcluding(root, gitWrites),
-              ...gitWrites.flatMap((path) => [path, `${path}/**`]),
-            ]
-          : fs.allowRead,
+      allowRead: commonInsideRoot
+        ? [
+            ...(fs.allowRead ?? []).filter((path) => path !== root && path !== `${root}/**`),
+            ...readOnlyTreeExcluding(root, gitWrites),
+            ...gitWrites.flatMap((path) => [path, `${path}/**`]),
+          ]
+        : fs.allowRead,
       allowWrite: [scratch, `${scratch}/**`, ...gitWrites.flatMap((path) => [path, `${path}/**`])],
     },
   }
@@ -1197,7 +1181,7 @@ function grantableStateDirs(stateDirs: readonly string[]): string[] {
   if (!chatStoreRoot) return []
   return stateDirs.flatMap((dir) => {
     const canonical = canonicalizeReadTarget(dir)
-    return canonical !== chatStoreRoot && coversPath(chatStoreRoot, canonical) ? [canonical] : []
+    return canonical !== chatStoreRoot && isPathWithin(chatStoreRoot, canonical) ? [canonical] : []
   })
 }
 
@@ -1316,8 +1300,7 @@ export function readAllowedSandboxOverlay(
 /** Whether `path` is the chat store itself or lies beneath it. */
 function isChatStorePath(chatStoreRoot: string, path: string): boolean {
   if (!isAbsolute(path)) return false
-  const rel = relative(chatStoreRoot, path)
-  return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel)
+  return isPathWithin(chatStoreRoot, path)
 }
 
 export function workspaceSandboxOverlay(
