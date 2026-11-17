@@ -32652,6 +32652,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'apodex-1-1', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 13.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'apodex-1-1', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       "apriel-v1-5-15b-thinker": [
@@ -34260,6 +34266,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         }
       ],
+      "deepseek-v4-pro-high": [
+        {
+          value: 20.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'deepseek-v4-pro-high', fetched 2026-11-17",
+          asOf: "2026-11-17"
+        }
+      ],
       "deepseek-v4-pro-non-reasoning": [
         {
           value: 20.4,
@@ -35168,6 +35182,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-29"
         }
       ],
+      "gemini-4-argon-medium": [
+        {
+          value: 47.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-4-argon-medium', fetched 2026-11-17",
+          asOf: "2026-11-17"
+        }
+      ],
       "gemini-4-carbon": [
         {
           value: 60,
@@ -35190,6 +35212,38 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v5",
           source: "Artificial Analysis API (index v5), model 'gemini-4-carbon-medium', fetched 2026-11-10",
           asOf: "2026-11-10"
+        }
+      ],
+      "gemini-4-hydrogen": [
+        {
+          value: 53.9,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-4-hydrogen', fetched 2026-11-17",
+          asOf: "2026-11-17"
+        }
+      ],
+      "gemini-4-hydrogen-high": [
+        {
+          value: 50.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-4-hydrogen-high', fetched 2026-11-17",
+          asOf: "2026-11-17"
+        }
+      ],
+      "gemini-4-hydrogen-low": [
+        {
+          value: 26.9,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-4-hydrogen-low', fetched 2026-11-17",
+          asOf: "2026-11-17"
+        }
+      ],
+      "gemini-4-hydrogen-medium": [
+        {
+          value: 41.2,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-4-hydrogen-medium', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       "gemma-3-1b": [
@@ -35768,6 +35822,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gemma-4-e4b', fetched 2026-09-11",
           asOf: "2026-09-11"
+        },
+        {
+          value: 4.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemma-4-e4b', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       "gpt-35-turbo": [
@@ -38128,6 +38188,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'jt-4-1-flash-236b-a21b', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 19,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'jt-4-1-flash-236b-a21b', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       "jt-4-1-flash-236b-a21b-non-reasoning": [
@@ -38164,6 +38230,14 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'k-exaone', fetched 2026-09-11",
           asOf: "2026-09-11"
+        }
+      ],
+      "k-exaone-2-0": [
+        {
+          value: 7.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'k-exaone-2-0', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       "k-exaone-2-0-0803": [
@@ -38748,6 +38822,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'ling-3-1-flash', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 29.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'ling-3-1-flash', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       "ling-3-1-flash-1019": [
@@ -41806,6 +41886,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'qwen3-8-flash-next', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 28.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'qwen3-8-flash-next', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       "qwen3-8-max": [
@@ -42158,6 +42244,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         }
       ],
+      "qwen4-max": [
+        {
+          value: 42.9,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'qwen4-max', fetched 2026-11-17",
+          asOf: "2026-11-17"
+        }
+      ],
       "qwq-32b": [
         {
           value: 13.4,
@@ -42458,6 +42552,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'solar-pro4', fetched 2026-10-20",
           asOf: "2026-10-20"
+        },
+        {
+          value: 14.2,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'solar-pro4', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       sonar: [
@@ -46091,11 +46191,7 @@ function renderChart(points, gutters, tooltip, size = {}, costAxis = "blended", 
   try {
     return points.length > 0 ? renderFrontierSvg(points, size, gutters, tooltip, costAxis, labelMode) : el("p", { class: "field-hint" }, "No models with a sourced intellect score yet.");
   } catch (err) {
-    return el(
-      "p",
-      { class: "field-hint" },
-      `The value map failed to render: ${err instanceof Error ? err.message : String(err)}`
-    );
+    return el("p", { class: "field-hint" }, `The value map failed to render: ${errorMessage(err)}`);
   }
 }
 var SVG_NS, WIDTH, HEIGHT, MARGIN, LABEL_LINE_GAP, POINT_SPLAY_COLUMN_PX, POINT_SPLAY_STEP_PX, POINT_SPLAY_MAX_PX, UNPRICED_GUTTER_W, UNSCORED_ROW_LIMIT, UNPRICED_GUTTER_LIMIT;
@@ -46104,6 +46200,7 @@ var init_intellect_frontier_chart = __esm({
     init_model_intellect();
     init_helpers();
     init_intellect_frontier_tooltip();
+    init_errors4();
     SVG_NS = "http://www.w3.org/2000/svg";
     WIDTH = 460;
     HEIGHT = 290;
@@ -51873,6 +51970,15 @@ var init_acp_agents_list = __esm({
   }
 });
 
+// src/shared/slug.ts
+function slugify2(text) {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64);
+}
+var init_slug = __esm({
+  "src/shared/slug.ts"() {
+  }
+});
+
 // src/shared/acp-registry.ts
 var ACP_REGISTRY_URL;
 var init_acp_registry = __esm({
@@ -52076,9 +52182,6 @@ function parseArgsText(text) {
 }
 function formatArgsText(args) {
   return (args ?? []).join("\n");
-}
-function slugify2(value) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64);
 }
 function upsertAgent(list, agent) {
   const idx = list.findIndex((a4) => a4.id === agent.id);
@@ -52391,7 +52494,7 @@ function createAcpAgentsSection(api, opts = {}) {
         ].filter(Boolean);
         setInlineStatus(modelStatus, "ok", `Detected ${bits.join(", ")}.`);
       }).catch((err) => {
-        setInlineStatus(modelStatus, "error", err instanceof Error ? err.message : String(err));
+        setInlineStatus(modelStatus, "error", errorMessage(err));
       }).finally(() => {
         detectModels.disabled = !canDetectModels;
       });
@@ -52652,7 +52755,9 @@ var init_acp_agents_section = __esm({
     init_inline_markdown();
     init_inline_status();
     init_model_picker();
+    init_slug();
     init_acp_registry_browser();
+    init_errors4();
     AGENT_DATA_POLICY_URLS = {
       "claude-acp": "https://github.com/anthropics/claude-code#data-collection-usage-and-retention",
       "claude-code-acp": "https://github.com/anthropics/claude-code#data-collection-usage-and-retention",
@@ -68301,7 +68406,7 @@ function createAppleDevelopmentPanel(store, api, options) {
       await action();
       await refresh();
     } catch (error62) {
-      const message = error62 instanceof Error ? error62.message : String(error62);
+      const message = errorMessage(error62);
       host.querySelector(".apple-development-error")?.remove();
       host.append(el("p", { class: "apple-development-error", role: "alert" }, message));
     } finally {
@@ -68475,7 +68580,7 @@ function createAppleDevelopmentPanel(store, api, options) {
             destination.replaceChildren(el("option", { value: "" }, "No destinations available"));
             destination.disabled = true;
             save.disabled = true;
-            destinationStatus.textContent = error62 instanceof Error ? error62.message : String(error62);
+            destinationStatus.textContent = errorMessage(error62);
             destinationStatus.hidden = false;
           }
         };
@@ -68677,11 +68782,7 @@ function createAppleDevelopmentPanel(store, api, options) {
       }
       host.hidden = false;
       host.replaceChildren(
-        el(
-          "p",
-          { class: "apple-development-error", role: "alert" },
-          error62 instanceof Error ? error62.message : String(error62)
-        )
+        el("p", { class: "apple-development-error", role: "alert" }, errorMessage(error62))
       );
     }
   };
@@ -68696,6 +68797,7 @@ var init_apple_development_panel = __esm({
     init_helpers();
     init_icons();
     init_ipc_error_message();
+    init_errors4();
   }
 });
 
@@ -72420,6 +72522,15 @@ var init_working_brief = __esm({
   }
 });
 
+// packages/std/src/sleep.ts
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+var init_sleep = __esm({
+  "packages/std/src/sleep.ts"() {
+  }
+});
+
 // src/renderer/controller/active-thread-owner.ts
 function getActiveThreadOwner(store) {
   const { activeProjectId, activeThreadId } = store.getState();
@@ -75017,6 +75128,8 @@ export {
   workingBriefFromUserContent,
   nextWorkingBrief,
   init_working_brief,
+  sleep,
+  init_sleep,
   getActiveThreadOwner,
   requireActiveThreadOwner,
   activeThreadOf,
