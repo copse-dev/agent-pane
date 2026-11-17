@@ -10,7 +10,8 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs'
-import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { join, resolve } from 'node:path'
+import { isPathWithin } from '@copse/std/path-containment.ts'
 import {
   parseSupervisedTaskMeta,
   serializeSupervisedTaskAuditEvent,
@@ -67,8 +68,7 @@ function containedTaskDir(projectId: string, taskId: string, env: NodeJS.Process
   }
   const root = resolve(projectStoreDir(projectId, env), TASKS_DIR)
   const candidate = resolve(root, taskId)
-  const rel = relative(root, candidate)
-  if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+  if (!isPathWithin(root, candidate, { allowSelf: false })) {
     throw new Error('Task id resolves outside the project task store')
   }
   return candidate
@@ -80,8 +80,7 @@ function containedArchivePath(projectId: string, taskId: string, env: NodeJS.Pro
   }
   const root = resolve(projectStoreDir(projectId, env), ARCHIVE_DIR)
   const candidate = resolve(root, `${taskId}.json`)
-  const rel = relative(root, candidate)
-  if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+  if (!isPathWithin(root, candidate, { allowSelf: false })) {
     throw new Error('Task id resolves outside the project task archive')
   }
   return candidate

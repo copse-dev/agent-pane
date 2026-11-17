@@ -18,7 +18,8 @@ export interface CursorCloudModelOption {
   label: string
 }
 
-function cursorAuthHeader(apiKey: string): string {
+/** HTTP Basic auth for the Cursor API: the API key as username, empty password. */
+export function cursorAuthHeader(apiKey: string): string {
   return `Basic ${Buffer.from(`${apiKey}:`).toString('base64')}`
 }
 

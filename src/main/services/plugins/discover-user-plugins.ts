@@ -35,7 +35,8 @@
 //     re-hashed here before discovery, so editing their immutable payload fails
 //     closed before skills or MCP servers can register.
 import * as fsp from 'node:fs/promises'
-import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { join, resolve } from 'node:path'
+import { isPathWithin } from '@copse/std/path-containment.ts'
 import { copseDataRoot } from '../storage/copse-paths.ts'
 import {
   AGENT_PLUGIN_MANIFEST_FILE,
@@ -58,6 +59,7 @@ import {
 import { hashPluginToolSource } from '@copse/plugin-sdk/plugin-tool-source.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
 import { isRecord } from '@shared/unknown-value.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 /** Environment override for the plugin root (tests, relocation). */
 export const COPSE_PLUGINS_DIR_ENV = 'COPSE_PLUGINS_DIR'
@@ -134,10 +136,6 @@ export interface UserPluginDiscovery {
   readonly failures: readonly UserPluginFailure[]
 }
 
-function describeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
 /**
  * §4.1: every package path a client reads must stay within the *filesystem
  * resolved* plugin root. The spec permits symlinks whose targets land inside the
@@ -147,10 +145,7 @@ function describeError(error: unknown): string {
 async function resolveWithinRoot(root: string, candidate: string): Promise<string | null> {
   const resolved = await fsp.realpath(candidate).catch(() => null)
   if (!resolved) return null
-  const rel = relative(root, resolved)
-  if (rel === '') return resolved
-  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null
-  return resolved
+  return isPathWithin(root, resolved) ? resolved : null
 }
 
 async function readManifestFile(manifestPath: string): Promise<unknown> {
@@ -305,7 +300,7 @@ async function readMcpServers(
     warnings.push(...parsed.warnings)
     return parsed.servers
   } catch (error) {
-    warnings.push(`Disabling MCP for this plugin: ${describeError(error)}`)
+    warnings.push(`Disabling MCP for this plugin: ${errorMessage(error)}`)
     return new Map()
   }
 }
@@ -408,7 +403,7 @@ export async function discoverUserPlugins(root = userPluginsRoot()): Promise<Use
       const reason =
         error instanceof AgentPluginManifestError
           ? `${error.kind === 'copse-extension' ? 'Copse extension' : 'Agent Plugins manifest'}: ${error.message}`
-          : describeError(error)
+          : errorMessage(error)
       failures.push({ pluginRoot: pluginPath, reason })
     }
   }

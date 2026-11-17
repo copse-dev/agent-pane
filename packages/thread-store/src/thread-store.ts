@@ -1,4 +1,5 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import {
   existsSync,
   mkdirSync,
@@ -159,8 +160,6 @@ const CONTENT_DIRS = ['messages', 'blobs', 'subagents']
 const UNREFERENCED_BLOB_PREFIXES = ['blobs/media/', 'blobs/archives/']
 /** Directories a spine ref may point into (plan artifacts are refs but never pruned). */
 const REF_DIRS = [...CONTENT_DIRS, 'plans']
-
-const sha256 = (input: string): string => createHash('sha256').update(input, 'utf8').digest('hex')
 
 function projectDir(projectId: string): string {
   return resolveProjectDir(threadStoreEnvironment().workspaceRoot(), projectId)
@@ -493,7 +492,7 @@ function writeThread(projectId: string, thread: Thread): void {
   for (const contentDir of REF_DIRS) assertStorePath(join(dir, contentDir))
   mkdirSync(dir, { recursive: true })
 
-  const { spine, files } = explodeThread(thread.messages, sha256)
+  const { spine, files } = explodeThread(thread.messages, sha256Hex)
   // Resolve every path before writing any, so a bad ref leaves nothing behind.
   const targets = files.map((file) => ({
     path: contentFilePathForWrite(dir, file.ref),
@@ -703,7 +702,7 @@ async function readThread(
   }
   try {
     const thread = foldThread(meta, spine, resolve, {
-      hash: sha256,
+      hash: sha256Hex,
       onIntegrityFailure: (ref) => {
         console.warn(
           `[thread-store] Thread ${threadId}: ${ref} failed its hash check; showing that tool call as unavailable`,
@@ -2169,7 +2168,7 @@ async function appendMessageUnqueued(
 ): Promise<boolean> {
   const dir = threadDir(projectId, threadId)
   await fsPromises.mkdir(dir, { recursive: true })
-  const { line, files } = explodeMessage(message, sha256)
+  const { line, files } = explodeMessage(message, sha256Hex)
   const targets = files.map((file) => ({
     path: contentFilePathForWrite(dir, file.ref),
     contents: file.contents,
@@ -2826,7 +2825,7 @@ function readPlanBody(
   if (!artifact || artifact.ref !== planRevisionPath(planId, revision))
     throw new Error('Invalid plan revision reference')
   const body = safeRead(join(dir, artifact.ref))
-  if (body === null || sha256(body) !== artifact.sha256)
+  if (body === null || sha256Hex(body) !== artifact.sha256)
     throw new Error('Plan revision integrity check failed')
   return body
 }
@@ -2846,7 +2845,7 @@ function readStoredPlan(dir: string, threadId: string, planId: string): StoredTh
   const state = raw === null ? null : safeJsonParse(raw, decodeWithSchema(planStateSchema))
   if (
     !state ||
-    sha256(raw ?? '') !== line.state.sha256 ||
+    sha256Hex(raw ?? '') !== line.state.sha256 ||
     state.meta.planId !== planId ||
     state.meta.threadId !== threadId ||
     state.meta.currentRevision !== line.revision
@@ -2854,7 +2853,7 @@ function readStoredPlan(dir: string, threadId: string, planId: string): StoredTh
     throw new Error('Plan state integrity check failed')
   }
   const body = readPlanBody(dir, planId, state.meta.currentRevision, line.artifact)
-  const contentHash = sha256(body)
+  const contentHash = sha256Hex(body)
   const { meta, approval, completion } = state
   if (meta.status === 'draft' && approval) throw new Error('Draft plan has an approval record')
   if (
@@ -2945,14 +2944,14 @@ async function commitPlan(
   const id = randomUUID()
   const artifact = {
     ref: planRevisionPath(meta.planId, meta.currentRevision),
-    sha256: sha256(body),
+    sha256: sha256Hex(body),
   }
   // A failed pre-commit write can leave an orphan revision. Only committed refs are readable.
   if (action === 'create' || action === 'revise')
     await writeFileEnsuringDirAsync(join(dir, artifact.ref), body)
   const state: PlanState = { meta, comments, approval, completion }
   const raw = `${JSON.stringify(state)}\n`
-  const stateRef = { ref: `plans/${meta.planId}/states/${id}.json`, sha256: sha256(raw) }
+  const stateRef = { ref: `plans/${meta.planId}/states/${id}.json`, sha256: sha256Hex(raw) }
   await writeFileEnsuringDirAsync(join(dir, stateRef.ref), raw)
   options.assertIdle?.()
   await appendJsonlLine(
@@ -3014,7 +3013,7 @@ export function createThreadPlan(
       {
         meta,
         body: input.body,
-        contentHash: sha256(input.body),
+        contentHash: sha256Hex(input.body),
         comments: [],
         approval: null,
         completion: null,
@@ -3055,7 +3054,7 @@ export function reviseThreadPlan(
       {
         ...current,
         body: input.body,
-        contentHash: sha256(input.body),
+        contentHash: sha256Hex(input.body),
         meta: {
           ...current.meta,
           title: input.title.trim(),

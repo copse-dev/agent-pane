@@ -18,6 +18,7 @@ import { fsServerSandboxOverlay } from './config.ts'
 import { afterSandboxedCommand, spawnInProjectSandbox } from './spawn.ts'
 import { sandboxFsWorkerPath, SANDBOX_FS_WORKER_STDOUT_MAX_BYTES } from './sandbox-fs-client.ts'
 import { isRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 export const SANDBOX_FS_SERVER_ENV = 'COPSE_SANDBOX_FS_SERVER'
 
@@ -280,7 +281,7 @@ export async function requestViaServer(
   } catch (err) {
     throw err instanceof SandboxFsServerUnavailable
       ? err
-      : new SandboxFsServerUnavailable(err instanceof Error ? err.message : String(err))
+      : new SandboxFsServerUnavailable(errorMessage(err))
   }
   return sendToWorker(worker, request)
 }
