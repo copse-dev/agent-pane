@@ -698,7 +698,9 @@ every sandboxed process also trips incidental ones such as `sysctl-read kern.ios
 and counting those would make any ordinary failure look like a block. A typical case is `git
 init` in a folder that is not yet a repository, because the sandbox protects `.git`. Linux does not
 start the runtime's seccomp observer yet, so there only the denial signatures below can verify a
-block.
+block. A verified block is real evidence, but of an access the policy refused, such as a read of a
+protected credential, so its retry outside still asks in Guarded YOLO. Guarded YOLO answers the retry
+itself only when the sandbox wrapper failed to start the command.
 
 Some sandboxed failures come from a broker or helper that does not increment the OS sandbox's
 violation counter. After a non-zero attempt, `run_shell` may recognise the bounded denial signatures

@@ -33,6 +33,7 @@ import {
   SANDBOX_DENIAL_RETRY_NOTE,
   sandboxDenialRetryClassification,
   sandboxForwardEscalationMaySkipApproval,
+  sandboxRetryEvidence,
   sandboxRetryMaySkipApproval,
 } from '../services/security/sandbox-denial-signatures.ts'
 import {
@@ -245,7 +246,10 @@ async function maybeRetryUnsandboxed(
     }
     return null
   }
-  const evidence = runnerDetection.likely ? 'runner' : 'signature'
+  const evidence = sandboxRetryEvidence({
+    likely: runnerDetection.likely,
+    spawnFailed: result.spawnFailed ?? false,
+  })
   const approved =
     sandboxRetryMaySkipApproval(evidence, options.guardedYolo, options.unattendedContainer) ||
     (await promptUnsandboxedShell(rawCommand, detection.reasons, signal, {

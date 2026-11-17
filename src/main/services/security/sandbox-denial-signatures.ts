@@ -297,15 +297,32 @@ export function sandboxDenialRetryClassification(
   return classifySandboxDenial(output, command)
 }
 
-export type SandboxRetryEvidence = 'runner' | 'signature'
+/**
+ * Why a failed contained attempt is thought to have been blocked:
+ * - `runner`: the sandbox wrapper itself failed to start the command;
+ * - `violation`: the OS sandbox reported denying an operation the attempt made;
+ * - `signature`: only the command's own output looked like a denial.
+ */
+export type SandboxRetryEvidence = 'runner' | 'violation' | 'signature'
 export type SandboxForwardEscalationSource = 'model-hint' | 'denial-cache'
+
+/** Which {@link SandboxRetryEvidence} a failed attempt's runner-side detection gives. */
+export function sandboxRetryEvidence(runner: {
+  likely: boolean
+  spawnFailed: boolean
+}): SandboxRetryEvidence {
+  if (!runner.likely) return 'signature'
+  return runner.spawnFailed ? 'runner' : 'violation'
+}
 
 /**
  * Whether a retry may bypass its approval prompt in an explicitly unattended
- * mode. Guarded YOLO may trust the sandbox runner's own non-forgeable evidence,
- * but never a signature copied from command output: a sandboxed executable can
- * print that text itself and must not thereby earn an unsandboxed rerun. An
- * unattended container has no host sandbox to escape, so either evidence kind
+ * mode. Guarded YOLO may trust a wrapper that failed to start the command, but
+ * not a denial: a violation is non-forgeable evidence of an access the policy
+ * refused (a protected credential, say), so escaping it still asks, as a
+ * signature copied from command output does. A sandboxed executable can print
+ * that text itself and must not thereby earn an unsandboxed rerun. An
+ * unattended container has no host sandbox to escape, so any evidence kind
  * retries only inside the same disposable guest.
  */
 export function sandboxRetryMaySkipApproval(
