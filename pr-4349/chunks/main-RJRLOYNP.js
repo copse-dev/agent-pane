@@ -54265,6 +54265,9 @@ function detachedTitle(detached) {
   }
   return detached.recovery ? `This checkout is detached from ${detached.branch} because a ${detached.recovery} stopped part-way. Continue it in a terminal for this thread; it puts the checkout back on the branch when it finishes.` : `This checkout is detached from ${detached.branch}. Your files are preserved. Reattach to put it back on the branch.`;
 }
+function onBaseBranchTitle(onBase) {
+  return `This checkout is on ${onBase.baseBranch}, its base branch, instead of ${onBase.branch}. Copse will not run in it, so no edit lands on ${onBase.baseBranch}. Your files are preserved. Check out ${onBase.branch} in this checkout to continue.`;
+}
 function recoveryCommand(detached, recovery) {
   if (recovery === "bisect") return "git bisect reset";
   const pick = detached.uncommittedPick;
@@ -54471,6 +54474,15 @@ function mountFooterBranchStatus(host, store2, api2) {
   function renderReattach() {
     const current = activeDetached();
     const visible = current !== null && !isPickerMode() && !wrap2.hidden;
+    if (current?.state === "on-base-branch") {
+      reattachButton.hidden = true;
+      trigger.classList.toggle("is-detached", visible);
+      if (!visible) return;
+      const title2 = onBaseBranchTitle(current);
+      trigger.title = title2;
+      trigger.setAttribute("aria-label", `${title2} Copy branch name.`);
+      return;
+    }
     const shown = visible && !agentCanTouchCheckout(current);
     reattachButton.hidden = !shown;
     trigger.classList.toggle("is-detached", visible);
@@ -54544,7 +54556,7 @@ function mountFooterBranchStatus(host, store2, api2) {
   async function reattach() {
     const owner = getActiveThreadOwner(store2);
     const current = activeDetached();
-    if (!owner || !current || agentCanTouchCheckout(current) || reattaching || activeRecoveryRunId() !== null)
+    if (!owner || !current || current.state === "on-base-branch" || agentCanTouchCheckout(current) || reattaching || activeRecoveryRunId() !== null)
       return;
     if (current.state === "detached" && current.recovery) {
       const runId = globalThis.crypto.randomUUID();
