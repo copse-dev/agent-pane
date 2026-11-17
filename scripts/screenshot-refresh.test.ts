@@ -7,7 +7,13 @@ import { describe, it } from 'node:test'
 import { runInNewContext } from 'node:vm'
 import { load } from 'js-yaml'
 import { z } from 'zod'
-import { SCREENSHOT_MANIFEST, serializeScreenshotManifest } from './lib/screenshot-manifest.mts'
+import {
+  parseScreenshotManifest,
+  SCREENSHOT_MANIFEST,
+  SCREENSHOT_PUBLIC_URL,
+  serializeScreenshotManifest,
+} from './lib/screenshot-manifest.mts'
+import { updateScreenshotReadme } from './lib/screenshot-review-manifest.mts'
 import {
   decideRefresh,
   isRefreshCommit,
@@ -420,6 +426,49 @@ describe('screenshot refresh plan CLI', () => {
         'the empty refresh commit holds nothing',
       )
       assert.equal(liveDecisions('0'.repeat(40), base, dir), null)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('counts the accepted README hero update as part of a reviewed commit, not a hand push', () => {
+    const { dir } = repository()
+    const hero = 'landing-cupcake-changes.png'
+    const readmeFor = (from: string, to: string): string =>
+      updateScreenshotReadme(
+        readFileSync(join(dir, 'README.md'), 'utf8'),
+        parseScreenshotManifest(from),
+        parseScreenshotManifest(to),
+      )
+    try {
+      const seed = manifest('a', { [hero]: 'c' })
+      const url = `${SCREENSHOT_PUBLIC_URL}/screenshots/sha256/${'c'.repeat(64)}.png`
+      writeFileSync(join(dir, 'README.md'), `![hero](${url})\n`)
+      writeFileSync(join(dir, SCREENSHOT_MANIFEST), seed)
+      gitIn(dir, 'commit', '--quiet', '-am', 'hero on main')
+      const rendered = gitIn(dir, 'rev-parse', 'HEAD')
+
+      gitIn(dir, 'checkout', '--quiet', '-b', 'reviewed', rendered)
+      gitIn(dir, 'commit', '--quiet', '--allow-empty', '-m', SCREENSHOT_REFRESH_SUBJECT)
+      const accepted = manifest('a', { [hero]: 'd' })
+      writeFileSync(join(dir, 'README.md'), readmeFor(seed, accepted))
+      writeFileSync(join(dir, SCREENSHOT_MANIFEST), accepted)
+      gitIn(dir, 'commit', '--quiet', '-am', 'chore(e2e): commit ticked screenshots')
+      const reviewed = gitIn(dir, 'rev-parse', 'HEAD')
+      assert.match(readFileSync(join(dir, 'README.md'), 'utf8'), /d{64}/)
+      assert.deepEqual(liveDecisions(reviewed, rendered, dir), [hero])
+
+      gitIn(dir, 'checkout', '--quiet', 'main')
+      writeFileSync(join(dir, SCREENSHOT_MANIFEST), manifest('a', { [hero]: 'e' }))
+      gitIn(dir, 'commit', '--quiet', '-am', 'main supersedes the hero')
+      const main = gitIn(dir, 'rev-parse', 'HEAD')
+      assert.deepEqual(liveDecisions(reviewed, main, dir), [], 'main superseded the decision')
+
+      // Any other README edit beside the manifest is still a hand push.
+      gitIn(dir, 'checkout', '--quiet', '-b', 'edited', reviewed)
+      writeFileSync(join(dir, 'README.md'), `${readmeFor(seed, accepted)}more prose\n`)
+      gitIn(dir, 'commit', '--quiet', '-am', 'chore(e2e): commit ticked screenshots')
+      assert.equal(liveDecisions(gitIn(dir, 'rev-parse', 'HEAD'), main, dir), null)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

@@ -38,7 +38,10 @@ import {
   SCREENSHOT_MANIFEST,
   type ScreenshotManifest,
 } from './lib/screenshot-manifest.mts'
+import { updateScreenshotReadme } from './lib/screenshot-review-manifest.mts'
 import { changedFiles, computePlan, computeSelection } from './test-oracle.mts'
+
+const README = 'README.md'
 
 /** The refresh PR's head branch. ci.yml keys the full, unscoped render on it. */
 export const SCREENSHOT_REFRESH_BRANCH = 'screenshot-refresh/main'
@@ -191,6 +194,9 @@ function manifestAt(ref: string, cwd?: string): ScreenshotManifest | null {
  * The reviewed screenshots `tip` commits on top of the `main` it rendered that
  * `main` has not changed since, sorted. Null when `tip` changes any other file
  * (a hand push) or a manifest cannot be read, which keeps the branch held.
+ * Accepting the README hero also rewrites its URL in README.md, so a README
+ * that is exactly that rewrite belongs to the reviewed commit; any other README
+ * edit is a hand push.
  */
 export function liveDecisions(tip: string, main: string, cwd?: string): string[] | null {
   const rendered = git(['merge-base', tip, main], cwd)
@@ -198,13 +204,19 @@ export function liveDecisions(tip: string, main: string, cwd?: string): string[]
   const files = git(['diff', '--name-only', rendered, tip], cwd)
   if (
     files === null ||
-    files.split('\n').some((file) => file !== '' && file !== SCREENSHOT_MANIFEST)
+    files.split('\n').some((file) => file !== '' && file !== SCREENSHOT_MANIFEST && file !== README)
   )
     return null
   const base = manifestAt(rendered, cwd)
   const reviewed = manifestAt(tip, cwd)
   const current = manifestAt(main, cwd)
   if (!base || !reviewed || !current) return null
+  if (files.split('\n').includes(README)) {
+    const before = git(['show', `${rendered}:${README}`], cwd)
+    const after = git(['show', `${tip}:${README}`], cwd)
+    if (before === null || after === null) return null
+    if (after !== updateScreenshotReadme(before, base, reviewed).trim()) return null
+  }
   const changedOnMain = new Set(changedManifestNames(base, current))
   return changedManifestNames(base, reviewed).filter((name) => !changedOnMain.has(name))
 }
