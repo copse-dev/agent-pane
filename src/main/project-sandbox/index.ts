@@ -65,7 +65,12 @@ export async function initProjectSandbox(): Promise<void> {
         console.warn(`[project-sandbox] network denied: ${host}:${String(port ?? '?')}`)
         return Promise.resolve(false)
       },
-      false,
+      // The macOS log monitor is the only producer of the violation store that
+      // a verified sandbox block is judged from (`sandboxViolationCountForCommand`).
+      // With it off, every count read 0, so no block ever offered the outside
+      // retry `docs/shell-permissions.md` describes. Linux keeps it off: its
+      // seccomp observer is a separate runtime path, not yet validated here.
+      process.platform === 'darwin',
     )
     await refreshGitConfigIncludeReadPaths()
     setProjectSandboxEnabled(true)

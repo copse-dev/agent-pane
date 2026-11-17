@@ -194,19 +194,31 @@ describe('run_shell unsandboxed retry of a piped command (pipefail)', () => {
     })
 
     const executed = `set -o pipefail\n${command}`
+    // Violations belong to the attempt id the spawn attributed the executed
+    // (pipefail) line with, never to the command text.
+    const attempts = new Set<string>()
     mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
     mock.method(SandboxManager, 'cleanupAfterCommand', () => undefined)
-    mock.method(SandboxManager, 'wrapWithSandboxArgv', () =>
-      Promise.resolve({
-        argv: ['/bin/sh', '-c', `echo '${SANDBOXED_OUTPUT}'; exit 1`],
-        env: { ...process.env },
-      }),
+    mock.method(
+      SandboxManager,
+      'wrapWithSandboxArgv',
+      (
+        wrapped: string,
+        ...rest: [unknown, unknown, unknown, unknown, { commandId?: string } | undefined]
+      ) => {
+        const commandId = rest[4]?.commandId
+        if (wrapped === executed && commandId) attempts.add(commandId)
+        return Promise.resolve({
+          argv: ['/bin/sh', '-c', `echo '${SANDBOXED_OUTPUT}'; exit 1`],
+          env: { ...process.env },
+        })
+      },
     )
     mock.method(
       SandboxManager.getSandboxViolationStore(),
       'getViolationsForCommand',
       (c: string) =>
-        c === executed ? [{ line: 'deny(1) network-outbound', timestamp: new Date() }] : [],
+        attempts.has(c) ? [{ line: 'deny(1) network-outbound', timestamp: new Date() }] : [],
     )
     setProjectSandboxEnabled(true)
     cleanups.push(() => {

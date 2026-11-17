@@ -688,6 +688,16 @@ expectation, not a confirmed sandbox failure. A cached denial instead retains ‚Ä
 sandbox?‚Äù and states that a previous denial was recorded, without attributing a new request
 to the agent. Approval authorizes one outside execution; rejection keeps the contained attempt.
 
+A verified block is a non-zero exit plus at least one denial the OS sandbox itself reported for that
+attempt. On macOS, ASRT's log monitor (started with the project sandbox) reads each seatbelt
+denial from the unified log and attributes it to the attempt by a per-attempt id baked into the
+profile, so an earlier run of the same command never counts. Only file and network denials count:
+every sandboxed process also trips incidental ones such as `sysctl-read kern.iossupportversion`,
+and counting those would make any ordinary failure look like a block. A typical case is `git
+init` in a folder that is not yet a repository, because the sandbox protects `.git`. Linux does not
+start the runtime's seccomp observer yet, so there only the denial signatures below can verify a
+block.
+
 Some sandboxed failures come from a broker or helper that does not increment the OS sandbox's
 violation counter. After a non-zero attempt, `run_shell` may recognise the bounded denial signatures
 for a Git network read, GitHub CLI config access, or a package install unable to download from inside the sandbox and offer the

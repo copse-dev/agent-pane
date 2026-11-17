@@ -260,6 +260,12 @@ export async function spawnShellInProjectSandbox(
      * contained way to honour that request, so it fails instead.
      */
     readonlyCheckout?: boolean
+    /**
+     * Unique host-owned attempt id for runner-side violation attribution. Without
+     * it violations are keyed by the command text, so an earlier run of the same
+     * command would count toward this one.
+     */
+    violationId?: string
     executionTarget?: ExecutionTarget
   } & Pick<SpawnOptions, 'stdio'>,
 ): Promise<ChildProcess> {
@@ -312,6 +318,8 @@ export async function spawnShellInProjectSandbox(
     customConfig,
     tmpDir,
     opts.signal,
+    undefined,
+    opts.violationId ? { commandId: opts.violationId } : undefined,
   )
 
   const file = argv[0]
@@ -445,18 +453,35 @@ export async function spawnBackgroundProcess(
 }
 
 /**
- * Number of sandbox policy violations the runner (ASRT) recorded for a command.
- * This is a runner/kernel-side signal — it is NOT derived from the command's own
- * stdout/stderr, so a command cannot forge it by echoing "operation not permitted"
- * to trick the user into an unsandboxed re-run (issue #104).
+ * A seatbelt denial of something other than a file or network operation. The
+ * runtime itself trips some on every command (`sysctl-read
+ * kern.iossupportversion` from each process that starts), so counting them
+ * would make any ordinary failure, a red test run or a `grep` with no match,
+ * look like a sandbox block and offer to run it outside.
+ */
+const INCIDENTAL_SEATBELT_DENIAL = /\bdeny\(\d+\) (?!file-|network-)\S/
+
+/** Violations that can be what made a sandboxed command fail. */
+export function countBlockingViolations(violations: readonly { line: string }[]): number {
+  return violations.filter((violation) => !INCIDENTAL_SEATBELT_DENIAL.test(violation.line)).length
+}
+
+/**
+ * Number of sandbox policy violations the runner (ASRT) recorded for a command
+ * that can have blocked it (see {@link countBlockingViolations}). `attribution`
+ * is the per-attempt `violationId` the spawn was given, or else the command
+ * text. This is a runner/kernel-side signal — it is NOT derived from the
+ * command's own stdout/stderr, so a command cannot forge it by echoing
+ * "operation not permitted" to trick the user into an unsandboxed re-run
+ * (issue #104).
  *
  * Returns 0 when the sandbox is inactive or no violation log is available.
  */
-export function sandboxViolationCountForCommand(command: string): number {
+export function sandboxViolationCountForCommand(attribution: string): number {
   if (!isProjectSandboxEnabled()) return 0
   try {
     const store = SandboxManager.getSandboxViolationStore()
-    return store.getViolationsForCommand(command).length
+    return countBlockingViolations(store.getViolationsForCommand(attribution))
   } catch {
     return 0
   }

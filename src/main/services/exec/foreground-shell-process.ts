@@ -1,5 +1,6 @@
 import { errorMessage } from '@shared/errors.ts'
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { randomUUID } from 'node:crypto'
 import { constants } from 'node:os'
 import {
   afterSandboxedCommand,
@@ -127,6 +128,9 @@ export async function runShellOnce(
       }
       signal.addEventListener('abort', cancelSpawn, { once: true })
       reportPhase('starting')
+      // Each sandboxed attempt gets its own attribution, so violations from an
+      // earlier run of the same command text never count toward this one.
+      const violationId = unsandboxed ? undefined : randomUUID()
       let proc
       try {
         proc = await spawnShellInProjectSandbox(command, {
@@ -139,6 +143,7 @@ export async function runShellOnce(
           unsandboxed,
           readGrantTargets,
           ...(readonlyCheckout ? { readonlyCheckout } : {}),
+          ...(violationId ? { violationId } : {}),
           signal: spawnController.signal,
         })
       } catch (err) {
@@ -317,7 +322,7 @@ export async function runShellOnce(
       if (yieldOptions) yieldTimer = setTimeout(detach, yieldOptions.yieldAfterMs)
 
       const sandboxViolationCount = (): number =>
-        unsandboxed ? 0 : sandboxViolationCountForCommand(command)
+        violationId ? sandboxViolationCountForCommand(violationId) : 0
 
       const finish = (): void => {
         if (!unsandboxed) afterSandboxedCommand()
