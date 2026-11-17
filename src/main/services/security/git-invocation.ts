@@ -17,6 +17,8 @@ const INTERNAL_GIT_COMMANDS = new Set([
   // User-requested commits go through a permission-gated execution profile, so
   // hooks/signing work there. Only automatic commit-tree snapshots belong here.
   'commit-tree',
+  // Only `check-attr -z --stdin filter`, which `assertAttributeRead` admits.
+  'check-attr',
   'config',
   'diff',
   'fetch',
@@ -116,6 +118,7 @@ export function withGitInvocationArgs(
   }
   if (command === 'clone') assertLocalSubmoduleClone(rest)
   if (command === 'hash-object') assertReadOnlyHashObject(rest)
+  if (command === 'check-attr') assertAttributeRead(rest)
   // A caller cannot prepend -c/--config-env to undo the policy. Diff flags go
   // before revisions/pathspecs, never after a caller's `--` separator.
   const diffFlags =
@@ -167,12 +170,24 @@ function assertLocalSubmoduleClone(args: string[]): void {
  *
  * Config-execution audit: hashing applies the repository's clean filters, the
  * same programs `add` (already admitted) runs on the same files, so this adds no
- * new program surface. `-w`, `--literally`, `-t` and `--path` are refused
- * rather than enumerated, so it never writes an object.
+ * new program surface. Its one caller, the only-copy audit, still skips every
+ * path with a `filter` attribute (read with `check-attr`) so that ending a turn
+ * runs no filter. `-w`, `--literally`, `-t` and `--path` are refused rather
+ * than enumerated, so it never writes an object.
  */
 function assertReadOnlyHashObject(args: string[]): void {
   if (args.length !== 1 || args[0] !== '--stdin-paths') {
     throw new Error('Unsupported internal Git hash-object')
+  }
+}
+
+/**
+ * Admit exactly `check-attr -z --stdin filter`: it reads which paths have a
+ * clean filter, runs no program and writes nothing.
+ */
+function assertAttributeRead(args: string[]): void {
+  if (args.length !== 3 || args[0] !== '-z' || args[1] !== '--stdin' || args[2] !== 'filter') {
+    throw new Error('Unsupported internal Git check-attr')
   }
 }
 

@@ -1,6 +1,7 @@
 import { describe, beforeEach, afterEach, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { at } from '@shared/array-utils.ts'
+import { existsSync } from 'node:fs'
 import { lstat, mkdtemp, readFile, writeFile, rm, mkdir, symlink } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
@@ -1215,6 +1216,23 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
       assert.ok(Date.now() - started < 10_000, 'a link to /dev/zero is never read')
       assert.ok(missing, 'git answered')
       assert.deepEqual([...missing].sort(), ['"a.txt"', 'a.txt\r', 'two\nlines.txt'])
+    },
+  )
+  ownedIt(
+    'listWorktreePathsMissingFromGit never runs a clean filter, and skips the filtered paths',
+    async () => {
+      // A clean filter is an external program (Git LFS, say). Hashing a filtered
+      // path runs it, so ending a turn would run it on a file nobody added.
+      const ran = join(tempRoot, 'clean-filter-ran')
+      git(tempRoot, ['config', 'filter.marker.clean', `sh -c 'touch "${ran}"; cat'`])
+      await writeFile(join(tempRoot, '.gitattributes'), '*.dat filter=marker\n', 'utf-8')
+      await writeFile(join(workspaceRoot, 'blob.dat'), 'filtered\n', 'utf-8')
+      await writeFile(join(workspaceRoot, 'plain.txt'), 'plain\n', 'utf-8')
+
+      const missing = await listWorktreePathsMissingFromGit(['blob.dat', 'plain.txt'])
+      assert.ok(missing, 'git answered')
+      assert.deepEqual([...missing], ['plain.txt'])
+      assert.equal(existsSync(ran), false, 'the clean filter must not run')
     },
   )
 })

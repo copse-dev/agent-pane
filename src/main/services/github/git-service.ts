@@ -842,7 +842,11 @@ export async function getGitStatus(
  * repository's clean filters so the hash matches what `git add` would store.
  * Only regular files are hashed: hashing follows a symlink, so one to a FIFO
  * or `/dev/zero` would block the audit, and git stores a link as its target
- * text anyway. Links and special files are never reported. Returns null when
+ * text anyway. A path with a `filter` attribute is skipped too, because hashing
+ * it runs that clean filter (Git LFS, say), an external program nobody asked to
+ * run on it. Links, special files and filtered paths are never reported. Git's
+ * own end-of-line and `ident` conversions still apply, so a hash matches what
+ * `git add` would store. Returns null when
  * git can't answer, including for a path that is no longer there, so callers
  * say nothing rather than guess.
  */
@@ -861,7 +865,11 @@ export async function findPathsMissingFromGit(
     ),
   )
   if (kinds.includes('gone')) return null
-  const files = paths.filter((_path, index) => kinds[index] === 'file')
+  const regular = paths.filter((_path, index) => kinds[index] === 'file')
+  if (regular.length === 0) return new Set()
+  const filtered = await filteredPaths(root, regular)
+  if (filtered === null) return null
+  const files = regular.filter((path) => !filtered.has(path))
   if (files.length === 0) return new Set()
   // `--stdin-paths` reads paths relative to the repository top, not the cwd.
   const prefix = await workTreePrefix(root)
@@ -884,6 +892,27 @@ export async function findPathsMissingFromGit(
     if (path !== undefined && line.endsWith(' missing')) missing.add(path)
   })
   return missing
+}
+
+/**
+ * Which of `paths` (relative to `root`) carry a `filter` attribute, so hashing
+ * them would run a clean filter. Paths travel NUL-separated, so no name needs
+ * quoting. Null when git can't answer.
+ */
+async function filteredPaths(root: string, paths: readonly string[]): Promise<Set<string> | null> {
+  const attrs = await runGitRead(['check-attr', '-z', '--stdin', 'filter'], root, {
+    stdin: Buffer.from(paths.map((path) => `${path}\0`).join('')),
+  })
+  if (attrs.code !== 0) return null
+  // Records are `<path> NUL filter NUL <value> NUL`.
+  const fields = attrs.stdout.split('\0')
+  const filtered = new Set<string>()
+  for (let index = 0; index + 2 < fields.length; index += 3) {
+    const path = fields[index]
+    const value = fields[index + 2]
+    if (path !== undefined && value !== 'unspecified' && value !== 'unset') filtered.add(path)
+  }
+  return filtered
 }
 
 /**

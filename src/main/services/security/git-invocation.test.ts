@@ -111,6 +111,24 @@ describe('internal Git policy', () => {
     )
   })
 
+  it('admits check-attr only as a NUL-separated read of the filter attribute', () => {
+    assert.deepEqual(withGitInvocationArgs(['check-attr', '-z', '--stdin', 'filter']).slice(-4), [
+      'check-attr',
+      '-z',
+      '--stdin',
+      'filter',
+    ])
+    for (const args of [
+      ['check-attr', '--stdin', 'filter'],
+      ['check-attr', '-z', '--stdin', '--all'],
+      ['check-attr', '-z', '--stdin', 'filter', 'diff'],
+      ['check-attr', 'filter', '--', 'a.txt'],
+      ['check-attr'],
+    ]) {
+      assert.throws(() => withGitInvocationArgs(args), /Unsupported internal Git check-attr/)
+    }
+  })
+
   it('admits hash-object only as a read-only --stdin-paths hash', () => {
     assert.deepEqual(withGitInvocationArgs(['hash-object', '--stdin-paths']).slice(-2), [
       'hash-object',
