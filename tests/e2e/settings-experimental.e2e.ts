@@ -181,5 +181,12 @@ describe('experimental settings section', () => {
     assert.match(classifierHintText, /add a little usage/i)
 
     await saveElementScreenshot('#settings-dialog', 'settings-experimental.png')
+
+    // The section opens far above the classifier, so the dialog capture above
+    // never shows its hint. Frame the fieldset itself as evidence for that copy.
+    const classifierFieldset = '#settings-dialog fieldset:has(input[name="modelClassifierEnabled"])'
+    await $(classifierFieldset).scrollIntoView({ block: 'center' })
+    await expect($(classifierFieldset).$('.field-hint')).toBeDisplayed()
+    await saveElementScreenshot(classifierFieldset, 'settings-experimental-model-classifier.png')
   })
 })
