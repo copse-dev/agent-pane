@@ -247,13 +247,22 @@ export function mountFooterBranchStatus(
     return thread ? isBlankThread(thread) : false
   }
 
+  /** Whether the active thread still reads the user's checkout (a deferred worktree). */
+  function readsCheckout(): boolean {
+    const thread = getActiveThread()
+    return thread ? isWorktreeDeferralPending(thread) : false
+  }
+
   /**
    * The branch the widget speaks for: the branch this thread will start from,
-   * else the thread's binding, else the checkout.
+   * else, while it still reads the checkout, the checkout's live branch, else
+   * the thread's binding, else the checkout.
    */
   function getDisplayBranch(): string | null {
+    const liveCheckoutBranch = readsCheckout() ? status?.currentBranch : undefined
     return (
       activeBaseBranch() ??
+      liveCheckoutBranch ??
       getActiveThreadBranch() ??
       getActiveThread()?.worktree?.branch ??
       status?.currentBranch ??
@@ -299,8 +308,7 @@ export function mountFooterBranchStatus(
     const displayBranch = getDisplayBranch()
     const pickerMode = isPickerMode()
     const pr = getVisiblePr()
-    const activeThread = getActiveThread()
-    deferredNote.hidden = !activeThread || !isWorktreeDeferralPending(activeThread)
+    deferredNote.hidden = !readsCheckout()
 
     if (!displayBranch) {
       wrap.hidden = true
@@ -310,8 +318,10 @@ export function mountFooterBranchStatus(
       return
     }
 
+    // A thread still reading the checkout follows it wherever it is, as the
+    // send path does, so a switched checkout is not a mismatch.
     const mismatch = threadGitBranchMismatch(threadBranch, currentBranch, {
-      isolatedWorktree: Boolean(getActiveThread()?.worktree),
+      isolatedWorktree: Boolean(getActiveThread()?.worktree) || readsCheckout(),
     })
     // `mismatch` is only true when threadBranch is a non-empty string, but that
     // implication can't survive into the branches below — capture the message

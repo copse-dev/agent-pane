@@ -803,7 +803,10 @@ describe('footer branch status', () => {
       seededFromDirtyProject: false,
     }
 
-    function mountWith(threads: Thread[]): { host: HTMLElement; store: AppStore } {
+    function mountWith(
+      threads: Thread[],
+      currentBranch = 'main',
+    ): { host: HTMLElement; store: AppStore } {
       const store = createStore({
         workspaceRoot: '/repo',
         activeProjectId: 'project-1',
@@ -812,7 +815,7 @@ describe('footer branch status', () => {
       })
       const host = document.createElement('div')
       document.body.append(host)
-      mountFooterBranchStatus(host, store, createApi({ currentBranch: 'main', pr: null }))
+      mountFooterBranchStatus(host, store, createApi({ currentBranch, pr: null }))
       return { host, store }
     }
 
@@ -845,6 +848,25 @@ describe('footer branch status', () => {
 
       assert.equal(note(host).hidden, true)
       assert.equal(qsRequired(host, '.footer-branch-label').textContent, WORKTREE.branch)
+    })
+
+    it("shows the checkout's live branch beside the note, without a mismatch", async () => {
+      // First sent on main; the user has since switched their checkout. The
+      // thread reads that checkout, so the branch beside the note is its.
+      const deferred: Thread = {
+        ...thread('main', true),
+        worktreeChoice: 'automatic',
+        deferredWorktree: { baseBranch: 'main', requestedAt: 1 },
+      }
+      const { host } = mountWith([deferred], 'feature/user-work')
+      await settle()
+
+      assert.equal(note(host).hidden, false)
+      assert.equal(qsRequired(host, '.footer-branch-label').textContent, 'feature/user-work')
+      assert.equal(
+        qsRequired(host, '.branch-picker-trigger').classList.contains('is-mismatch'),
+        false,
+      )
     })
 
     it('stays quiet for blank, shared and eagerly isolated threads', async () => {
