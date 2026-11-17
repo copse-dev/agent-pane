@@ -1,5 +1,6 @@
 import { storageCleanup } from '../storage-cleanup.ts'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import { z } from 'zod'
 import {
   APPLE_DEVELOPMENT_PLUGIN_ID,
@@ -44,6 +45,7 @@ import {
 import { showSimulatorDesktop } from '../simulator-desktop/simulator-desktop-panel.ts'
 import { getPluginService } from '../plugins/plugin-service.ts'
 import { getProjectRoot } from '../workspace.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 const STORE_KEY = 'plugin.copse.apple-development.state'
 const APPLE_HANDLER = 'apple_operation'
@@ -171,7 +173,7 @@ function threadState(
 }
 
 function payloadHash(input: AppleExecuteInput): string {
-  return createHash('sha256').update(JSON.stringify(input)).digest('hex')
+  return sha256Hex(JSON.stringify(input))
 }
 
 function isRemoteProject(projectId: string): boolean {
@@ -864,7 +866,7 @@ export class AppleDevelopmentService {
         }
       }
     } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error)
+      const reason = errorMessage(error)
       await this.updateOperation(
         task.projectId,
         task.threadId,

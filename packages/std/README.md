@@ -25,6 +25,10 @@ package is the one home, and the copies are gone.
   `noUncheckedIndexedAccess`.
 - **`errors.ts`** — `errorMessage`, safe message extraction from a caught
   `unknown`.
+- **`path-containment.ts`** — `relativeWithin` and `isPathWithin`, the one
+  lexical "is this path inside that directory" check (rejecting `..`, `../…` and
+  cross-drive results while keeping names like `..cache` inside). Uses
+  `node:path`, so main-process and package code import the subpath directly.
 
 ## Imports
 

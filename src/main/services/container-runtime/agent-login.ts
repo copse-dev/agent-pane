@@ -23,20 +23,12 @@
  * for as long as that took. The sign-in is a few small files; only they cross.
  */
 import { existsSync, cpSync, chmodSync, mkdirSync, rmSync } from 'node:fs'
-import { access, chmod, copyFile, mkdir, rm } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { pathExists } from '@copse/std/path-exists.ts'
 
 /** Where the run directory keeps the staged sign-in; a bare name, no secrets. */
 export const LOGIN_STAGE_DIR = 'login'
-
-async function exists(path: string): Promise<boolean> {
-  try {
-    await access(path)
-    return true
-  } catch {
-    return false
-  }
-}
 
 /**
  * Host side: copy every sign-in file that exists under `homeDir` into the run
@@ -55,7 +47,7 @@ export async function stageAgentLogin(
   try {
     for (const file of files) {
       const source = join(homeDir, file)
-      if (!(await exists(source))) continue
+      if (!(await pathExists(source))) continue
       const target = join(stageRoot, file)
       // The guest reads as a uid the host does not know; the whole stage is
       // deleted when the run ends (see removeStagedLogin).

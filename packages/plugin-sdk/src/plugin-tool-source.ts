@@ -8,6 +8,7 @@ import {
   type PluginManifest,
   type RegisteredPlugin,
 } from '@copse/agent/plugins/plugin-manifest.ts'
+import { isPathWithin } from '@copse/std/path-containment.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { zPluginHookRegistrations } from './plugin-tool-protocol.ts'
 import {
@@ -15,6 +16,7 @@ import {
   COPSE_EXTENSION_NAMESPACE,
   parseAgentPluginManifest,
 } from '@copse/agent/plugins/agent-plugin-manifest.ts'
+import { errorMessage } from '@copse/std/errors.ts'
 
 /** Compatibility filename. New packages use root plugin.json (Agent Plugins). */
 export const PLUGIN_MANIFEST_FILE = 'copse-plugin.json'
@@ -107,8 +109,7 @@ function ensureContained(root: string, candidate: string, label: string): string
     throw new PluginToolSourceError(`${label} must be relative to the plugin root.`)
   }
   const resolved = resolve(root, candidate)
-  const rel = relative(root, resolved)
-  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+  if (!isPathWithin(root, resolved)) {
     throw new PluginToolSourceError(`${label} escapes the plugin root.`)
   }
   return resolved
@@ -159,9 +160,7 @@ async function readManifest(manifestPath: string): Promise<PluginToolSourceJson>
     }
     bytes = await fsp.readFile(manifestPath)
   } catch (error) {
-    throw new PluginToolSourceError(
-      `Could not read ${filename}: ${error instanceof Error ? error.message : String(error)}`,
-    )
+    throw new PluginToolSourceError(`Could not read ${filename}: ${errorMessage(error)}`)
   }
   if (bytes.byteLength > MAX_MANIFEST_BYTES) {
     throw new PluginToolSourceError(`${filename} exceeds 1 MB.`)

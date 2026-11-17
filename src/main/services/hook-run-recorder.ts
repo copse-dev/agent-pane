@@ -1,4 +1,5 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import type { LLMTool } from '@shared/types'
 import type { HookRunRecord } from '@copse/agent/hooks/canonical-events.ts'
 import type {
@@ -35,8 +36,6 @@ import { storageGet } from './storage/storage.ts'
  * poking the permission gate directly) are skipped because there is no thread
  * directory to attribute them to.
  */
-
-const sha256 = (input: string): string => createHash('sha256').update(input, 'utf8').digest('hex')
 
 /** Keep spine lines small: error strings are summaries, not dumps. */
 const MAX_ERROR_CHARS = 500
@@ -246,11 +245,11 @@ export function setHookRunStep(step: number): void {
  * line that references it, so a run in which no hook fires stores nothing.
  */
 export function setHookRunToolset(tools: readonly LLMTool[]): void {
-  if (current) current.toolset = fingerprintToolset(tools, sha256)
+  if (current) current.toolset = fingerprintToolset(tools, sha256Hex)
 }
 
 function blobRef(ref: string, contents: string): ContentRef {
-  return { ref, sha256: sha256(contents) }
+  return { ref, sha256: sha256Hex(contents) }
 }
 
 /** Blob holding what the hook was handed (command stdin / function payload). */
