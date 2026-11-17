@@ -26,6 +26,9 @@
  * | `report-env:A,B` | reply `env:{"A":…,"B":…}`: those vars as this process got them |
  * | `echo-prompt`    | reply `prompt:` and the whole prompt text, Copse's notes included |
  * | `say:TEXT`       | reply TEXT (the rest of that line), and nothing else            |
+ * | `fail-auth-after:TEXT` | stream TEXT as one id-stamped message, then fail the prompt |
+ * |                  | with `-32000 Authentication required`, as Claude Agent ACP does |
+ * |                  | when the CLI's OAuth refresh fails mid-turn                     |
  * | `refuse-copse-tool:NAME TEXT` | call `mcp__<offered copse server>__NAME` and fail it as Claude Code does |
  * |                  | for a tool not in its list, then reply TEXT (rest of the line) |
  * | `list-mcp-tools` | list each offered http server's tools now, then reply `listed`  |
@@ -36,8 +39,8 @@
  * | `crash`          | write to stderr and exit non-zero **mid-turn**                 |
  * | anything else    | echo it back as an agent message chunk                         |
  *
- * `report-env:`, `refuse-copse-tool:`, `say:`, `list-mcp-tools` and `echo-prompt`
- * are checked first: a
+ * `report-env:`, `refuse-copse-tool:`, `fail-auth-after:`, `say:`, `list-mcp-tools`
+ * and `echo-prompt` are checked first: a
  * turn driven through Copse's own prompt builder carries a preamble whose words
  * (`task`, …) would otherwise trip the substring branches below.
  *
@@ -57,7 +60,13 @@
  * No permission request ever runs anything: the agent only reports the
  * client's answer.
  */
-import { agent, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk/unstable'
+import {
+  agent,
+  methods,
+  ndJsonStream,
+  PROTOCOL_VERSION,
+  RequestError,
+} from '@agentclientprotocol/sdk/unstable'
 import { Writable } from 'node:stream'
 
 /** Bridge Node's stdin to the SDK's Web Stream type (mirrors node-readable-stream.ts). */
@@ -220,6 +229,22 @@ agent({ name: 'mock-acp-agent' })
       })
       await say(refuse[2].trim() || 'used my own tools')
       return { stopReason: 'end_turn' }
+    }
+
+    // Claude Agent ACP when the CLI cannot refresh its OAuth token mid-turn: the
+    // CLI's synthetic API-error message streams as ordinary prose under its own
+    // message id, and only then does the prompt fail, with a bare auth code.
+    const failAuth = /fail-auth-after:([^\n]*)/.exec(text)
+    if (failAuth) {
+      await ctx.client.notify(methods.client.session.update, {
+        sessionId,
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: `mock-auth-error-${String(Date.now())}`,
+          content: { type: 'text', text: failAuth[1].trim() },
+        },
+      })
+      throw RequestError.authRequired()
     }
 
     const sayLine = /say:([^\n]*)/.exec(text)

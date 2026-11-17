@@ -94,7 +94,6 @@ describe('thread explainer', () => {
     resetUserData()
     seedEmptyProject(seedStableWorkspace(), 'e2e-thread-explainer', {
       model: 'claude-sonnet-4-6',
-      mcpUiCanvasEnabled: true,
       theme: 'dark',
       autoPortraitRightPanel: false,
       rightPanelPosition: 'side',
