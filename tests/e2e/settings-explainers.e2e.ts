@@ -41,8 +41,8 @@ describe('experimental explainer setting', function () {
   this.timeout(90_000)
   beforeEach(async () => {
     resetUserData()
-    // Existing Canvas user, with no explainer setting in the stored profile.
-    seedEmptyProject(process.cwd(), 'e2e-settings-explainers', { mcpUiCanvasEnabled: true })
+    // Existing Canvas user (on by default), with no explainer setting stored.
+    seedEmptyProject(process.cwd(), 'e2e-settings-explainers')
     await browser.reloadSession()
   })
   after(() => {

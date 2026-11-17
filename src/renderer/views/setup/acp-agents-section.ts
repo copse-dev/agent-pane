@@ -14,7 +14,9 @@ import { inlineStatus, setInlineStatus } from '../../dom/inline-status.ts'
 import type { ModelOption } from '../model-options.ts'
 import { mountModelSelectPicker } from '../model-picker.ts'
 import type { AcpRegistryEntry } from '@shared/acp-registry.ts'
+import { slugify } from '@shared/slug.ts'
 import { createAcpRegistryBrowser } from './acp-registry-browser.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 // Settings panel for the coding agents installed on the user's own device that
 // Copse drives as a client (the `acp:<id>` models). It scans the device
@@ -126,14 +128,6 @@ export function parseArgsText(text: string): string[] {
 
 export function formatArgsText(args?: string[]): string {
   return (args ?? []).join('\n')
-}
-
-export function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64)
 }
 
 /** Replace the agent with the same id, or append it. */
@@ -562,7 +556,7 @@ export function createAcpAgentsSection(
           setInlineStatus(modelStatus, 'ok', `Detected ${bits.join(', ')}.`)
         })
         .catch((err: unknown) => {
-          setInlineStatus(modelStatus, 'error', err instanceof Error ? err.message : String(err))
+          setInlineStatus(modelStatus, 'error', errorMessage(err))
         })
         .finally(() => {
           detectModels.disabled = !canDetectModels

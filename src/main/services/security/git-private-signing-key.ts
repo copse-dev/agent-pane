@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import type { Stats } from 'node:fs'
 import { lstat, mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -58,17 +58,12 @@ export async function leaseGitPrivateSigningKey(
   const before = await lstat(sourcePath)
   if (!before.isFile() || before.size <= 0 || before.size > MAX_PRIVATE_KEY_BYTES)
     throw new Error('The configured SSH signing key is not a bounded regular file.')
-  const executableHash = createHash('sha256')
-    .update(await readFile(SIGNER))
-    .digest('hex')
+  const executableHash = sha256Hex(await readFile(SIGNER))
   const assertIdentity = async (): Promise<void> => {
     if (
       (await realpath(source)) !== sourcePath ||
       !sameFile(before, await lstat(sourcePath)) ||
-      executableHash !==
-        createHash('sha256')
-          .update(await readFile(SIGNER))
-          .digest('hex')
+      executableHash !== sha256Hex(await readFile(SIGNER))
     )
       throw new Error(
         'Git signing key changed during approval or signing; request authorization again.',

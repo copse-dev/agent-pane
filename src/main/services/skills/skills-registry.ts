@@ -14,7 +14,8 @@ import {
   listBundledCursorPluginRoots,
 } from './bundled-cursor-skills.ts'
 import { getBuiltinSkillsRoot } from './builtin-skills.ts'
-import { pathExists, walkForContainerRoots, walkForFiles } from '../discovery/container-scan.ts'
+import { pathExists } from '@copse/std/path-exists.ts'
+import { walkForContainerRoots, walkForFiles } from '../discovery/container-scan.ts'
 import { getSetting } from '../storage/settings.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
 import {

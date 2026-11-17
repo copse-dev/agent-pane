@@ -14,6 +14,7 @@ import { spawn } from 'node:child_process'
 import { nodeReadableStream, nodeWritableStream } from './node-byte-streams.ts'
 import { acpSshTarget, spawnRemoteAcpTransport } from './acp-ssh-transport.ts'
 import type { AcpContinuitySnapshot } from './acp-continuity-probe.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 /**
  * Tier-1 ACP **capability probe** (issue #264): spawn an external ACP agent,
@@ -437,11 +438,7 @@ export async function probeAgentCapabilities(
 
     return { ...base, ok: true, snapshot }
   } catch (err) {
-    const reason = state.timedOut
-      ? `timed out after ${String(timeoutMs)}ms`
-      : err instanceof Error
-        ? err.message
-        : String(err)
+    const reason = state.timedOut ? `timed out after ${String(timeoutMs)}ms` : errorMessage(err)
     return { ...base, ok: false, error: reason }
   } finally {
     clearTimeout(timer)

@@ -273,6 +273,45 @@ describe('footer branch status', () => {
       assert.match(button.title, /no longer available/)
     })
 
+    it('warns, without a repair button, when the checkout is on its base branch (#1882)', async () => {
+      const reattachCalls: string[] = []
+      const host = mountDetached({
+        branchStatus: async () => {
+          throw new Error(
+            "Error invoking remote method 'git:branch-status': ThreadWorktreeOnBaseBranchError: on main",
+          )
+        },
+        worktreeAttachment: async () => ({
+          state: 'on-base-branch',
+          branch: 'copse/thread-branch',
+          baseBranch: 'main',
+        }),
+        reattachWorktree: async (projectId, threadId) => {
+          reattachCalls.push(`${projectId}/${threadId}`)
+          return { branch: 'copse/thread-branch', keptDetachedCommits: false, backupBranch: null }
+        },
+      })
+      await settle()
+
+      const trigger = qsRequired<HTMLButtonElement>(host, '.footer-branch-status')
+      assert.ok(trigger.classList.contains('is-detached'))
+      assert.equal(
+        trigger.title,
+        'This checkout is on main, its base branch, instead of copse/thread-branch. Copse will not run in it, so no edit lands on main. Your files are preserved. Check out copse/thread-branch in this checkout to continue.',
+      )
+      assert.equal(trigger.getAttribute('aria-label'), `${trigger.title} Copy branch name.`)
+      assert.equal(
+        trigger.querySelector('.footer-branch-label')?.textContent,
+        'copse/thread-branch',
+      )
+      const button = qsRequired<HTMLButtonElement>(host, '.branch-reattach-button')
+      assert.equal(button.hidden, true)
+      button.click()
+      await settle()
+      assert.deepEqual(reattachCalls, [])
+      assert.equal(document.querySelector('.toast-error'), null)
+    })
+
     it('offers a reattach that puts the checkout back on its branch', async () => {
       let attached = false
       const reattachCalls: string[] = []
