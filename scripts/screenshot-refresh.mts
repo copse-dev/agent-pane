@@ -150,6 +150,11 @@ export function decideRefresh({ main, pull, force, changes }: RefreshInput): Ref
 
 /** Run git in the working directory; null on any failure, including a non-zero exit. */
 function git(args: string[], cwd?: string): string | null {
+  return gitRaw(args, cwd)?.trim() ?? null
+}
+
+/** {@link git} without trimming, for comparing file content byte for byte. */
+function gitRaw(args: string[], cwd?: string): string | null {
   try {
     return execFileSync('git', args, {
       encoding: 'utf8',
@@ -157,7 +162,7 @@ function git(args: string[], cwd?: string): string | null {
       maxBuffer: 8 * 1024 * 1024,
       stdio: ['ignore', 'pipe', 'ignore'],
       ...(cwd ? { cwd } : {}),
-    }).trim()
+    })
   } catch {
     return null
   }
@@ -212,10 +217,10 @@ export function liveDecisions(tip: string, main: string, cwd?: string): string[]
   const current = manifestAt(main, cwd)
   if (!base || !reviewed || !current) return null
   if (files.split('\n').includes(README)) {
-    const before = git(['show', `${rendered}:${README}`], cwd)
-    const after = git(['show', `${tip}:${README}`], cwd)
+    const before = gitRaw(['show', `${rendered}:${README}`], cwd)
+    const after = gitRaw(['show', `${tip}:${README}`], cwd)
     if (before === null || after === null) return null
-    if (after !== updateScreenshotReadme(before, base, reviewed).trim()) return null
+    if (after !== updateScreenshotReadme(before, base, reviewed)) return null
   }
   const changedOnMain = new Set(changedManifestNames(base, current))
   return changedManifestNames(base, reviewed).filter((name) => !changedOnMain.has(name))

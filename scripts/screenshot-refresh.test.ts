@@ -464,11 +464,17 @@ describe('screenshot refresh plan CLI', () => {
       const main = gitIn(dir, 'rev-parse', 'HEAD')
       assert.deepEqual(liveDecisions(reviewed, main, dir), [], 'main superseded the decision')
 
-      // Any other README edit beside the manifest is still a hand push.
-      gitIn(dir, 'checkout', '--quiet', '-b', 'edited', reviewed)
-      writeFileSync(join(dir, 'README.md'), `${readmeFor(seed, accepted)}more prose\n`)
-      gitIn(dir, 'commit', '--quiet', '-am', 'chore(e2e): commit ticked screenshots')
-      assert.equal(liveDecisions(gitIn(dir, 'rev-parse', 'HEAD'), main, dir), null)
+      // Any other README edit beside the manifest is still a hand push, down to
+      // a trailing blank line.
+      for (const [branch, extra] of [
+        ['edited', 'more prose\n'],
+        ['blank-line', '\n'],
+      ] as const) {
+        gitIn(dir, 'checkout', '--quiet', '-b', branch, reviewed)
+        writeFileSync(join(dir, 'README.md'), `${readmeFor(seed, accepted)}${extra}`)
+        gitIn(dir, 'commit', '--quiet', '-am', 'chore(e2e): commit ticked screenshots')
+        assert.equal(liveDecisions(gitIn(dir, 'rev-parse', 'HEAD'), main, dir), null, branch)
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -553,7 +559,11 @@ describe('screenshot-refresh.yml workflow invariants', () => {
     // The hold notice comments with GITHUB_TOKEN, whose events start no workflow.
     assert.deepEqual(heldJob.permissions, { 'pull-requests': 'write' })
     assert.equal(heldJob.needs, 'plan')
-    assert.equal(heldJob.if, "needs.plan.outputs.held != ''")
+    // Every open refresh PR, so the notice is deleted once nothing holds it.
+    assert.equal(heldJob.if, "needs.plan.outputs.pull-open == 'true'")
+    const notice = heldJob.steps[0]?.with?.['script']
+    assert.ok(typeof notice === 'string')
+    assert.match(notice, /if \(held\.length === 0\) \{[\s\S]*?deleteComment[\s\S]*?return;\s*\}/)
     assert.equal(heldJob.steps.length, 1)
     assert.equal(heldJob.steps[0]?.uses, 'actions/github-script@v9')
     assert.doesNotMatch(
@@ -565,6 +575,7 @@ describe('screenshot-refresh.yml workflow invariants', () => {
       'main-sha': '${{ steps.main.outputs.sha }}',
       'branch-sha': '${{ steps.find.outputs.branch-sha }}',
       'pull-number': '${{ steps.find.outputs.pull-number }}',
+      'pull-open': '${{ steps.find.outputs.pull-open }}',
       held: '${{ steps.decide.outputs.held }}',
     })
     const planText = JSON.stringify(planJob)
