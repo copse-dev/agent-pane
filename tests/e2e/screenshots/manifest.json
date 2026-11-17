@@ -1177,6 +1177,10 @@
       "sha256": "db4b01b89c6aaebe33e67bd231a6153f1682c3a49f608f1b12046a13d3e826a6",
       "bytes": 342387
     },
+    "canvas-blocked-script-notice.png": {
+      "sha256": "b6bf6af46ee708eefe4b80c7ea245b695a1a710ae81dc68511f2917cbf71bbd1",
+      "bytes": 1084715
+    },
     "canvas-preview-thread-isolation.png": {
       "sha256": "8cdaacadd125240f4b7c6f0d36f5672f9e3b255330d9a6a6c8f135c07ef8dac8",
       "bytes": 303845
