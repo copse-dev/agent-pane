@@ -23,6 +23,7 @@
 // This module lives host-side (`src/main/services/hooks/`) per execution-guidance
 // rule 4: synthesizing wire payloads + spawning is Electron-adjacent, never
 // `packages/agent`.
+import { collapseWhitespace } from '@copse/std/one-line-text.ts'
 import { dirname, join } from 'node:path'
 import type { CommandHook, HookDialect } from '@copse/agent/hooks/command-executor.ts'
 import type {
@@ -372,7 +373,7 @@ function marshalDryRun(
 
 /** Truncate a message for the one-line outcome summary. */
 function clip(text: string, max = 120): string {
-  const oneLine = text.replace(/\s+/g, ' ').trim()
+  const oneLine = collapseWhitespace(text)
   return oneLine.length > max ? `${oneLine.slice(0, max)}…` : oneLine
 }
 
