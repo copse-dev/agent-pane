@@ -54394,8 +54394,13 @@ function mountFooterBranchStatus(host, store2, api2) {
     const thread = getActiveThread2();
     return thread ? isBlankThread(thread) : false;
   }
+  function readsCheckout() {
+    const thread = getActiveThread2();
+    return thread ? isWorktreeDeferralPending(thread) : false;
+  }
   function getDisplayBranch() {
-    return activeBaseBranch() ?? getActiveThreadBranch() ?? getActiveThread2()?.worktree?.branch ?? status?.currentBranch ?? null;
+    const liveCheckoutBranch = readsCheckout() ? status?.currentBranch : void 0;
+    return activeBaseBranch() ?? liveCheckoutBranch ?? getActiveThreadBranch() ?? getActiveThread2()?.worktree?.branch ?? status?.currentBranch ?? null;
   }
   function getVisiblePr() {
     const pr = status?.pr;
@@ -54424,8 +54429,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     const displayBranch = getDisplayBranch();
     const pickerMode = isPickerMode();
     const pr = getVisiblePr();
-    const activeThread = getActiveThread2();
-    deferredNote.hidden = !activeThread || !isWorktreeDeferralPending(activeThread);
+    deferredNote.hidden = !readsCheckout();
     if (!displayBranch) {
       wrap2.hidden = true;
       branchToCopy = null;
@@ -54434,7 +54438,7 @@ function mountFooterBranchStatus(host, store2, api2) {
       return;
     }
     const mismatch = threadGitBranchMismatch(threadBranch, currentBranch, {
-      isolatedWorktree: Boolean(getActiveThread2()?.worktree)
+      isolatedWorktree: Boolean(getActiveThread2()?.worktree) || readsCheckout()
     });
     const mismatchMessage = mismatch && threadBranch ? threadGitBranchMismatchMessage(threadBranch) : "";
     wrap2.hidden = false;
