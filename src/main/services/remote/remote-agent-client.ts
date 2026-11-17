@@ -33,6 +33,7 @@ import {
 import { isImportedCursorAgentThread } from '@shared/remote-agent-link.ts'
 import { firstNonEmptyString, isRecord } from '@shared/unknown-value.ts'
 import { z } from 'zod'
+import { optionalNumber, optionalString } from '@shared/zod-null-optional.ts'
 import { sleepMs } from '@copse/llm/stream-retry.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { getApiKey, getSetting } from '../storage/settings.ts'
@@ -138,14 +139,6 @@ interface RemoteAgentSession {
   url?: string
 }
 
-const optionalString = z.preprocess(
-  (value) => (value === null ? undefined : value),
-  z.string().optional(),
-)
-const optionalNumber = z.preprocess(
-  (value) => (value === null ? undefined : value),
-  z.number().optional(),
-)
 const runSchema = z.object({ id: optionalString, agentId: optionalString })
 const cursorCreateAgentResponseSchema = z
   .object({
