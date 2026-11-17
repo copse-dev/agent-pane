@@ -1,3 +1,4 @@
+import { readTextOrNull } from '@copse/std/read-text-or-null.ts'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { randomUUID } from 'node:crypto'
 import {
@@ -52,14 +53,6 @@ export interface SupervisedTaskStore {
   saveTransition: (meta: SupervisedTaskMeta, audit: SupervisedTaskAuditEvent) => Promise<void>
   compactTerminalTasks: (before: number) => Promise<number>
   loadTaskArchive: (projectId: string) => Promise<SupervisedTaskArchive[]>
-}
-
-function safeRead(path: string): string | null {
-  try {
-    return readFileSync(path, 'utf8')
-  } catch {
-    return null
-  }
 }
 
 function containedTaskDir(projectId: string, taskId: string, env: NodeJS.ProcessEnv): string {
@@ -149,7 +142,7 @@ export class FileSupervisedTaskStore implements SupervisedTaskStore {
   get(projectId: string, taskId: string): Promise<SupervisedTaskMeta | null> {
     return runSerialized(queueKey(projectId, taskId), () => {
       const path = join(containedTaskDir(projectId, taskId, this.env), META_FILE)
-      const raw = safeRead(path)
+      const raw = readTextOrNull(path)
       if (raw === null) return null
       try {
         return parseSupervisedTaskMeta(JSON.parse(raw) as unknown)
@@ -239,7 +232,7 @@ export class FileSupervisedTaskStore implements SupervisedTaskStore {
       const archived: SupervisedTaskArchive[] = []
       for (const entry of readdirSync(root, { withFileTypes: true })) {
         if (!entry.isFile() || !entry.name.endsWith('.json')) continue
-        const raw = safeRead(join(root, entry.name))
+        const raw = readTextOrNull(join(root, entry.name))
         if (raw === null) continue
         try {
           const parsed = supervisedTaskArchiveSchema.safeParse(JSON.parse(raw) as unknown)
@@ -270,7 +263,7 @@ export class FileSupervisedTaskStore implements SupervisedTaskStore {
         continue
       }
       const path = join(dir, META_FILE)
-      const raw = safeRead(path)
+      const raw = readTextOrNull(path)
       if (raw === null) {
         diagnostics.push({ path, reason: 'missing or unreadable meta.json' })
         continue

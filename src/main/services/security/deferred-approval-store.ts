@@ -1,5 +1,6 @@
+import { readTextOrNull } from '@copse/std/read-text-or-null.ts'
 import { randomUUID } from 'node:crypto'
-import { appendFileSync, mkdirSync, readFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import {
   DEFERRED_APPROVAL_SCHEMA_VERSION,
@@ -52,14 +53,6 @@ function bucketOf(projectId: string | null): string {
   return projectId ?? NO_PROJECT_BUCKET
 }
 
-function safeRead(path: string): string {
-  try {
-    return readFileSync(path, 'utf8')
-  } catch {
-    return ''
-  }
-}
-
 function appendEntry(projectId: string, entry: DeferredApproval): void {
   const path = queuePath(projectId)
   mkdirSync(dirname(path), { recursive: true })
@@ -78,7 +71,9 @@ export function deferApproval(
 ): Promise<DeferredApproval> {
   const projectId = bucketOf(opts.projectId)
   return runSerialized(queueKey(projectId), () => {
-    const existing = pendingDeferrals(parseDeferredApprovals(safeRead(queuePath(projectId))))
+    const existing = pendingDeferrals(
+      parseDeferredApprovals(readTextOrNull(queuePath(projectId)) ?? ''),
+    )
     const key = deferredRequestKey(input)
     const duplicate = existing.find((entry) => deferredRequestKey(entry) === key)
     if (duplicate) return duplicate
@@ -106,7 +101,7 @@ export function deferApproval(
 export function readDeferredApprovals(projectId: string | null): Promise<DeferredApproval[]> {
   const resolved = bucketOf(projectId)
   return runSerialized(queueKey(resolved), () =>
-    foldDeferredApprovals(parseDeferredApprovals(safeRead(queuePath(resolved)))),
+    foldDeferredApprovals(parseDeferredApprovals(readTextOrNull(queuePath(resolved)) ?? '')),
   )
 }
 
@@ -117,7 +112,9 @@ export function readPendingDeferrals(opts: {
 }): Promise<DeferredApproval[]> {
   const resolved = bucketOf(opts.projectId)
   return runSerialized(queueKey(resolved), () => {
-    const pending = pendingDeferrals(parseDeferredApprovals(safeRead(queuePath(resolved))))
+    const pending = pendingDeferrals(
+      parseDeferredApprovals(readTextOrNull(queuePath(resolved)) ?? ''),
+    )
     return opts.threadId ? pending.filter((entry) => entry.threadId === opts.threadId) : pending
   })
 }
@@ -135,7 +132,9 @@ export function resolveDeferral(
 ): Promise<DeferredApproval | null> {
   const projectId = bucketOf(opts.projectId)
   return runSerialized(queueKey(projectId), () => {
-    const current = foldDeferredApprovals(parseDeferredApprovals(safeRead(queuePath(projectId))))
+    const current = foldDeferredApprovals(
+      parseDeferredApprovals(readTextOrNull(queuePath(projectId)) ?? ''),
+    )
     const entry = current.find((candidate) => candidate.id === id)
     if (!entry || entry.status !== 'pending') return null
 
