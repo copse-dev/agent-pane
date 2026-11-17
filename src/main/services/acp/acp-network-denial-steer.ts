@@ -181,19 +181,28 @@ function githubRoute(bridgeToolNames: readonly string[]): string {
   if (githubTools.length > 0) {
     const sentences = [
       'For GitHub work (pull requests, issues, Actions, CI), use the "copse" MCP ' +
-        "server's GitHub tools: they run on Copse's host gh login and need no github.com " +
-        `entry in this agent's sandbox.allowedDomains. Offered here: ${githubTools.join(', ')}.`,
+        "server's GitHub tools: they run on Copse's host, outside this sandbox, and need no " +
+        `github.com entry in this agent's sandbox.allowedDomains. Offered here: ${githubTools.join(', ')}.`,
     ]
     if (githubTools.includes('gh_api_read')) {
       sentences.push(
         'Use gh_api_read for any other GitHub read (instead of `gh api`/`gh api graphql`).',
       )
     }
+    if (githubTools.some((name) => name.startsWith('gh_'))) {
+      sentences.push("The gh_* tools use Copse's own gh login.")
+    }
     if (githubTools.includes('git_fetch')) {
       sentences.push('Use git_fetch to fetch branches or PR heads from origin.')
     }
     if (githubTools.includes('git_push')) {
       sentences.push('Use git_push to push the current branch to origin.')
+    }
+    if (githubTools.includes('git_fetch') || githubTools.includes('git_push')) {
+      sentences.push(
+        "Those run git with the checkout's own Git credentials, not the gh login, " +
+          'so they fail where origin needs credentials the checkout does not have.',
+      )
     }
     if (shellFallback) sentences.push(`For anything they do not cover, ${shellFallback}`)
     return sentences.join(' ')

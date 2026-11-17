@@ -134,7 +134,10 @@ describe('acpSandboxGithubSteer (issue #4145)', () => {
   it('names git_push as a GitHub route when it is the only one listed', () => {
     const steer = acpSandboxGithubSteer(['read_file', 'git_push'])
     assert.match(steer, /Offered here: git_push\./)
-    assert.match(steer, /Use git_push to push the current branch to origin\./)
+    assert.match(steer, /Use git_push to push the current branch to origin/)
+    // git_push runs git with the checkout's credentials, not Copse's gh login.
+    assert.match(steer, /the checkout's own Git credentials/)
+    assert.doesNotMatch(steer, /they run on Copse's host gh login/)
     assert.doesNotMatch(steer, /no signed-in route to GitHub|offers no GitHub or shell tools/)
   })
 
