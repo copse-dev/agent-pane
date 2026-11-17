@@ -85,9 +85,11 @@ export function configureShellScopeEnvironment(next: ShellScopeEnvironment = {})
  * `commandWord` (it names a program — `ssh`, `curl`, `pnpm install`) whose word
  * appears only as text in inert reads (`grep -rn ssh src`, `sed -n 1p
  * services/exec/a.ts`) or as a project script's argument (`pnpm test -- ssh`)
- * reports an ambiguous reason instead. That decision uses
- * only the shell parser's own reading and fails closed to the hard verdict
- * whenever the parser cannot give one (see `textOnlyMentionTest`). Ambiguous
+ * reports an ambiguous reason instead. A word found only inside a compound name
+ * in a file path operand (`mkdir src/ssh-config`, `cd ~/agent-exec-test`) is
+ * not a signal at all. Those decisions use
+ * only the shell parser's own reading and fail closed to the hard verdict
+ * whenever the parser cannot give one (see `wordMentionTest`). Ambiguous
  * still prompts without an OS sandbox and still blocks deterministic
  * auto-approval, which requires `sandbox`.
  */
@@ -679,18 +681,51 @@ function runsItsInput(argv: readonly string[]): boolean {
 }
 
 /**
- * A test for whether a matcher's word appears in this command only as text, or
- * null when no such judgement is safe: the parser cannot give a reading
- * (`parsedShellSegments`), a variable decides which program a segment runs
- * (`$x host`), or a pipe feeds an interpreter or `xargs`, where
- * `echo ssh host | sh` turns the echoed text into a command.
- *
- * The word counts as text when at least one parsed segment contains it and every
- * one that does is an inert read (`isInertReadArgv`) or hands it to a project
- * script as an argument (`runsProjectScript`). A match the segments cannot
- * account for keeps the hard verdict.
+ * How a `commandWord` matcher's word appears in a command, by the parser's reading:
+ * - `name-fragment`: only inside a compound name in a file path argument
+ *   (`src/curl-helpers.ts`, `cd ~/agent-exec-test`), where it is no more a
+ *   program than any other file name;
+ * - `text`: as text an inert read prints or a project script receives;
+ * - `command`: anywhere else, including where the segments cannot account for it.
  */
-function textOnlyMentionTest(command: string): ((re: RegExp) => boolean) | null {
+type WordMention = 'name-fragment' | 'text' | 'command'
+
+// An operand that is plainly a file path: a slash and only name characters. No
+// option (`-exec`), quoting, `=`, `:` or `$`, all of which can hand a word on to
+// something that runs it (`--rsh=ssh`, `host:dir`). A bare name is not enough,
+// even with an extension: `xargs curl-wrapper.sh` runs it from PATH.
+const PATH_OPERAND = /^(?!-)[\w.~+-]*(?:\/[\w.~+-]*)+$/
+// A path component joining two or more name parts (`agent-exec-test`,
+// `curl-helpers.ts`). A bare component (`/usr/bin/curl`, `services/exec/`) or a
+// dotfile (`.ssh`) is left as it is: it can still be the program itself.
+const COMPOUND_NAME = /\w[-.]\w/
+
+/** `operand` with every compound name in it blanked, when it is a file path. */
+function withoutCompoundNames(operand: string): string {
+  if (!PATH_OPERAND.test(operand)) return operand
+  return operand
+    .split('/')
+    .map((part) => (COMPOUND_NAME.test(part) ? '_' : part))
+    .join('/')
+}
+
+/**
+ * A test for how a matcher's word appears in this command ({@link WordMention}),
+ * or null when no such judgement is safe: the parser cannot give a reading
+ * (`parsedShellSegments`) or a variable decides which program a segment runs
+ * (`$x host`).
+ *
+ * A segment holds the word when its argv matches once compound names in its path
+ * operands are blanked; the program word itself (`argv[0]`) is never blanked. The
+ * word is a name fragment when some segment matches before blanking and none
+ * after. It is text when at least one segment holds it and every one that does
+ * is an inert read (`isInertReadArgv`) or hands it to a project script as an
+ * argument (`runsProjectScript`), and no pipe feeds an interpreter or `xargs`,
+ * where `echo ssh host | sh` turns the echoed text into a command. A name
+ * fragment needs no such care: run, `…/agent-exec-test/x` is that file, never
+ * `exec`. A match the segments cannot account for keeps the hard verdict.
+ */
+function wordMentionTest(command: string): ((re: RegExp) => WordMention) | null {
   const segments = parsedShellSegments(command)
   if (segments === null) return null
   const unknownProgram = segments.some(
@@ -701,17 +736,28 @@ function textOnlyMentionTest(command: string): ((re: RegExp) => boolean) | null 
     (segment) =>
       segment.after !== null && PIPE_OPERATORS.has(segment.after) && runsItsInput(segment.argv),
   )
-  if (feedsExecution) return null
-  const texts = segments.map((segment) => {
-    const text = rewriteLocalPnpmExec(segment.argv.join(' '))
-    return { argv: segment.argv, variants: [text, normalizeShellCommandForAnalysis(text)] }
+  const readings = (argv: readonly string[]): string[] => {
+    const text = rewriteLocalPnpmExec(argv.join(' '))
+    return [text, normalizeShellCommandForAnalysis(text)]
+  }
+  const texts = segments.map(({ argv }) => {
+    const [program = '', ...operands] = argv
+    return {
+      argv,
+      variants: readings(argv),
+      blanked: readings([program, ...operands.map(withoutCompoundNames)]),
+    }
   })
   return (re) => {
-    const holding = texts.filter(({ variants }) => variants.some((text) => re.test(text)))
-    return (
-      holding.length > 0 &&
-      holding.every(({ argv }) => isInertReadArgv(argv) || runsProjectScript(argv))
-    )
+    const matches = (variants: readonly string[]): boolean => variants.some((t) => re.test(t))
+    const holding = texts.filter(({ blanked }) => matches(blanked))
+    if (holding.length === 0) {
+      return texts.some(({ variants }) => matches(variants)) ? 'name-fragment' : 'command'
+    }
+    if (feedsExecution) return 'command'
+    return holding.every(({ argv }) => isInertReadArgv(argv) || runsProjectScript(argv))
+      ? 'text'
+      : 'command'
   }
 }
 
@@ -745,13 +791,16 @@ function collectExternalReasons(command: string): { reasons: ScopeReason[]; hasH
     rewriteLocalPnpmExec,
   )
   // Built on first use: most commands match no `commandWord` matcher at all.
-  let textOnly: ((re: RegExp) => boolean) | null | undefined
+  let mention: ((re: RegExp) => WordMention) | null | undefined
   for (const text of variants) {
     for (const { re, reason, ambiguous, commandWord } of EXTERNAL_PATTERNS) {
       if (!re.test(text) || reasons.includes(reason)) continue
       if (commandWord && !ambiguous) {
-        if (textOnly === undefined) textOnly = textOnlyMentionTest(shellCommand)
-        if (textOnly?.(re)) {
+        if (mention === undefined) mention = wordMentionTest(shellCommand)
+        const how = mention?.(re) ?? 'command'
+        // Part of a file's name, like any other: no signal at all.
+        if (how === 'name-fragment') continue
+        if (how === 'text') {
           namedAsText = true
           continue
         }

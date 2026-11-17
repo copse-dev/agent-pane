@@ -144,7 +144,6 @@ describe('analyzeShellCommand', () => {
       'ls tests/e2e | grep -i -E "terminal|ssh|acp" | head -30; sed -n 584,660p src/main/services/acp/acp-ssh-transport.test.ts',
       'grep -n -A12 -i "^## Environment\\|pnpm install\\|make setup" docs/agent-development.md | head -40',
       'ls src/main/services/acp/ | grep -E "env-gate|ssh-transport"; grep -n "describe(\\|it(" src/main/services/acp/acp-remote-env-gate.test.ts | head -30',
-      'git log --oneline -3 -- src/main/services/acp/acp-ssh-transport.ts',
       'echo "next: curl the endpoint"',
       'rg -n "kubectl|docker run" docs',
       // Handed to a project script as a test filter or flag value.
@@ -168,7 +167,7 @@ describe('analyzeShellCommand', () => {
       "python3 - <<'EOF'",
       "p='src/main/services/acp/acp-ssh-transport.ts'",
       'EOF',
-      'grep -n "label" src/main/services/ssh-workspace/hosts.ts | head -5',
+      'grep -n "ssh" src/main/services/ssh-workspace/hosts.ts | head -5',
     ].join('\n')
     assert.deepEqual(analyzeShellCommand(heredoc, root).reasons, [
       'heredoc script fed to an interpreter',
@@ -219,6 +218,57 @@ describe('analyzeShellCommand', () => {
     }
     // Destructive and privileged commands are not program-word matchers.
     assert.equal(analyzeShellCommand('grep -rn sudo docs', root).verdict, 'external')
+  })
+
+  it('ignores a program word inside a compound name in a file path', () => {
+    // A checkout at `…/agent-pane-agent-exec` made every `cd` into it, and every
+    // file under it, read as the `exec` builtin: "Run outside sandbox?" for
+    // `cd … && pnpm test`. The same held for any file named after a program.
+    const checkout = '/Users/me/agent-pane-agent-exec'
+    for (const command of [
+      `cd ${checkout} && pnpm test`,
+      `git -C ${checkout} status`,
+      `cat ${checkout}/notes.md`,
+      'mkdir -p build/exec-cache',
+      'touch src/exec-plan.ts',
+      'mkdir -p src/ssh-config',
+      'touch src/curl-helpers.ts',
+      'mkdir -p src/eval-results',
+      'git log --oneline -3 -- src/main/services/acp/acp-ssh-transport.ts',
+      // Fed to xargs it is still a file name: run, it is that file, not `exec`.
+      `grep -rl . ${checkout}/dir2 | xargs wc -l`,
+    ]) {
+      assert.equal(analyzeShellCommand(command, checkout).verdict, 'sandbox', command)
+    }
+    for (const command of [
+      // The program itself, however it is reached.
+      'echo hi && exec-foo',
+      'xargs ssh-copy-id host',
+      'timeout 5 ssh-copy-id host',
+      'find . -exec rm {} +',
+      'nohup /usr/bin/curl https://x.test',
+      // A bare name may be a program on PATH, extension or not.
+      'xargs -I{} curl-wrapper.sh {}',
+      'mkdir agent-exec-test',
+      // Not plainly a path: an option value, `host:dir`, quoting.
+      'rsync -e ssh a b',
+      'git -c core.sshCommand=ssh fetch',
+      'cp host:src/ssh-x .',
+      'bash -c "ssh host"',
+      // Another segment still runs it.
+      'mkdir src/ssh-x && ssh host',
+      "bash <<'EOF'\nssh host\nEOF\nmkdir src/ssh-x",
+      // Printed as a word and piped to a shell, it runs.
+      'echo src/ssh-x ssh host | sh',
+      // No reading to judge by: process substitution fails closed.
+      `comm -23 <(ls ${checkout}/a) <(ls ${checkout}/b)`,
+    ]) {
+      assert.equal(analyzeShellCommand(command, checkout).verdict, 'external', command)
+    }
+    // A bare directory named after the program is not a compound name.
+    assert.equal(analyzeShellCommand('sed -n 1p services/exec/a.ts', checkout).verdict, 'ambiguous')
+    // Destructive and privileged matchers never relax.
+    assert.equal(analyzeShellCommand('mkdir docs/sudo-notes', checkout).verdict, 'external')
   })
 
   it('flags git push', () => {

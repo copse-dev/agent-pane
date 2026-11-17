@@ -344,6 +344,16 @@ anything else (`grep x f; ssh host`, `bash -c "ssh host"`, `timeout 5 ssh host`,
 variable in an operand or redirect target (`grep ssh $FILE > $TMPDIR/out`) names no program.
 Destructive and privileged matchers (`sudo`, `rm -rf`, `kill -9`, `chmod 777`, `dd`) never relax.
 
+A word found only inside a compound name in a file path operand is no signal at all, in any
+segment: `mkdir -p src/ssh-config`, `touch src/curl-helpers.ts` and, in a checkout at
+`~/agent-pane-agent-exec`, `cd ~/agent-pane-agent-exec && pnpm test` score `sandbox`. A path
+operand has a slash and only name characters; a compound name joins parts with `-` or `.`. The
+word still counts as the program itself (`exec-foo`, `/usr/bin/curl`), as a bare name another
+command may run from PATH (`xargs ssh-copy-id`, `xargs curl-wrapper.sh`), as a bare directory
+(`services/exec/a.ts`), and inside an option, `host:dir`, quotes or `$`. A pipe into `xargs` or a
+shell does not change this: run, `src/ssh-config/x` is that file, never `ssh`. The same
+fail-closed cases as above keep the hard reason, process substitution included.
+
 `rm` prompts inside an active sandbox as a recursive delete when it is recursive (`-r`, `-R`,
 `--recursive`). A forced `rm -f` without `-r` deletes exactly what a plain `rm` does, which runs
 contained, so `rm -f e2e-failure-artifacts/demo-failure.png` does too when every `rm` on the line
