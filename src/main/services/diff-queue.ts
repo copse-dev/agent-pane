@@ -7,7 +7,7 @@ import { assertWriteTargetWithinRoot, resolvePathWithinRoot } from './workspace.
 import { getActiveWorkspaceFs } from './workspace-fs/get-workspace-fs.ts'
 import { readWorkspaceFileContent, writeWorkspaceFileContent } from './workspace-fs/file-content.ts'
 import { buildIndex } from './search/file-index.ts'
-import { findPathsMissingFromGit, getGitStatus } from './github/git-service.ts'
+import { findGitContentStates, getGitStatus, type GitContentState } from './github/git-service.ts'
 import type { GitChangeStatus } from '@shared/types/git.ts'
 import { assertMainFrameSender, parseIpcArgs, zProjectId, zThreadId } from '../ipc/ipc-guards.ts'
 import { isAgentRunReadonly } from './agent-run-readonly.ts'
@@ -775,14 +775,14 @@ export async function listWorktreeChangesSince(
 }
 
 /**
- * Which of these workspace-relative paths hold content git has no copy of, in
- * the active thread's checkout; see {@link findPathsMissingFromGit}. Null when
- * git can't say.
+ * What git holds of these workspace-relative paths' current content, in the
+ * active thread's checkout; see {@link findGitContentStates}. Null when git
+ * can't say.
  */
-export async function listWorktreePathsMissingFromGit(
+export async function listWorktreeGitContentStates(
   paths: readonly string[],
-): Promise<Set<string> | null> {
-  return findPathsMissingFromGit(executionRootFor(stateFor()), paths)
+): Promise<Map<string, GitContentState> | null> {
+  return findGitContentStates(executionRootFor(stateFor()), paths)
 }
 
 /**

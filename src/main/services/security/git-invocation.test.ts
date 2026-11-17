@@ -111,17 +111,22 @@ describe('internal Git policy', () => {
     )
   })
 
-  it('admits check-attr only as a NUL-separated read of the filter attribute', () => {
-    assert.deepEqual(withGitInvocationArgs(['check-attr', '-z', '--stdin', 'filter']).slice(-4), [
+  it('admits check-attr only as the conversion-attribute read', () => {
+    const read = [
       'check-attr',
       '-z',
       '--stdin',
       'filter',
-    ])
+      'text',
+      'eol',
+      'ident',
+      'working-tree-encoding',
+    ]
+    assert.deepEqual(withGitInvocationArgs(read).slice(-read.length), read)
     for (const args of [
-      ['check-attr', '--stdin', 'filter'],
+      ['check-attr', '-z', '--stdin', 'filter'],
       ['check-attr', '-z', '--stdin', '--all'],
-      ['check-attr', '-z', '--stdin', 'filter', 'diff'],
+      [...read, 'diff'],
       ['check-attr', 'filter', '--', 'a.txt'],
       ['check-attr'],
     ]) {
@@ -129,20 +134,15 @@ describe('internal Git policy', () => {
     }
   })
 
-  it('admits hash-object only as a read-only --stdin-paths hash', () => {
-    assert.deepEqual(withGitInvocationArgs(['hash-object', '--stdin-paths']).slice(-2), [
-      'hash-object',
-      '--stdin-paths',
-    ])
+  it('admits no hash-object: the only-copy audit hashes files itself', () => {
     for (const args of [
-      ['hash-object', '-w', '--stdin-paths'],
-      ['hash-object', '--stdin-paths', '-w'],
+      ['hash-object', '--stdin-paths'],
       ['hash-object', '-w', 'file.txt'],
-      ['hash-object', '--literally', '--stdin-paths'],
-      ['hash-object', 'file.txt'],
-      ['hash-object'],
     ]) {
-      assert.throws(() => withGitInvocationArgs(args), /Unsupported internal Git hash-object/)
+      assert.throws(
+        () => withGitInvocationArgs(args),
+        /Unsupported internal Git command: hash-object/,
+      )
     }
   })
 

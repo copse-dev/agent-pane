@@ -15,7 +15,13 @@ const writes: BypassedWrite[] = [
 
 describe('formatBypassedWriteAudit (#4006)', () => {
   it('says which file is the only copy and which git can give back', () => {
-    const text = formatBypassedWriteAudit(writes, new Set(['docs/plan.md']))
+    const text = formatBypassedWriteAudit(
+      writes,
+      new Map([
+        ['docs/plan.md', 'only-copy'],
+        ['src/a.ts', 'in-git'],
+      ]),
+    )
     assert.match(
       text,
       /- docs\/plan\.md \(new, untracked\): this version is in no commit, so the file on disk is the only copy/,
@@ -34,7 +40,18 @@ describe('formatBypassedWriteAudit (#4006)', () => {
   })
 
   it('leaves out the deletion warning when git holds every file', () => {
-    assert.doesNotMatch(formatBypassedWriteAudit(writes, new Set()), /not a duplicate/)
+    const held = new Map([
+      ['docs/plan.md', 'in-git'],
+      ['src/a.ts', 'in-git'],
+    ] as const)
+    assert.doesNotMatch(formatBypassedWriteAudit(writes, held), /not a duplicate/)
+  })
+
+  it('claims nothing about a file whose state git left unknown', () => {
+    // A link, or content git would convert on `add`, is in neither state.
+    const text = formatBypassedWriteAudit(writes, new Map([['docs/plan.md', 'only-copy']]))
+    assert.match(text, /- src\/a\.ts \(edited\)\n/)
+    assert.doesNotMatch(text, /src\/a\.ts \(edited\): git already has/)
   })
 
   it('asks git only about files still on disk, and not about thousands', () => {

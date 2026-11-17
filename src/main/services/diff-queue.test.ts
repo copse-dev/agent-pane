@@ -4,6 +4,7 @@ import { at } from '@shared/array-utils.ts'
 import { existsSync } from 'node:fs'
 import { lstat, mkdtemp, readFile, writeFile, rm, mkdir, symlink } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
+import { gitBlobIdOfRegularFile, type GitContentState } from './github/git-service.ts'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
@@ -22,7 +23,7 @@ import {
   getPendingAfterContent,
   getStagedDiffEntry,
   listWorktreeChangesSince,
-  listWorktreePathsMissingFromGit,
+  listWorktreeGitContentStates,
   parseDiffQueueOwner,
   runWithStagedDiffResolver,
   setStagedDiffResolver,
@@ -61,6 +62,15 @@ function git(cwd: string, args: string[]): void {
 function initCommittedRepo(root: string): void {
   git(root, ['init'])
   git(root, ['commit', '--allow-empty', '-m', 'initial'])
+}
+
+/** A content-state map as sorted path lists, so a path left unknown shows by its absence. */
+function byState(states: ReadonlyMap<string, GitContentState>): Record<GitContentState, string[]> {
+  const out: Record<GitContentState, string[]> = { 'only-copy': [], 'in-git': [] }
+  for (const [path, state] of states) out[state].push(path)
+  out['only-copy'].sort()
+  out['in-git'].sort()
+  return out
 }
 
 describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
@@ -1156,7 +1166,7 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
     },
   )
   ownedIt(
-    'listWorktreePathsMissingFromGit names files whose content git has no copy of (#4006)',
+    'listWorktreeGitContentStates names files whose content git has no copy of (#4006)',
     async () => {
       await writeFile(join(workspaceRoot, 'a.txt'), 'one\n', 'utf-8')
       git(tempRoot, ['add', 'packages/app/a.txt'])
@@ -1170,14 +1180,17 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
       git(tempRoot, ['hash-object', '-w', 'packages/app/pushed.md'])
       await writeFile(join(workspaceRoot, 'reverted.txt'), 'one\n', 'utf-8')
 
-      const missing = await listWorktreePathsMissingFromGit([
+      const missing = await listWorktreeGitContentStates([
         'a.txt',
         'scratch.txt',
         'pushed.md',
         'reverted.txt',
       ])
       assert.ok(missing, 'git answered')
-      assert.deepEqual([...missing].sort(), ['a.txt', 'scratch.txt'])
+      assert.deepEqual(byState(missing), {
+        'only-copy': ['a.txt', 'scratch.txt'],
+        'in-git': ['pushed.md', 'reverted.txt'],
+      })
       // Asking wrote nothing into the object store.
       const scratchBlob = execFileSync('git', ['hash-object', 'packages/app/scratch.txt'], {
         cwd: tempRoot,
@@ -1186,11 +1199,11 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
       assert.throws(() =>
         execFileSync('git', ['cat-file', '-e', scratchBlob], { cwd: tempRoot, stdio: 'ignore' }),
       )
-      assert.equal(await listWorktreePathsMissingFromGit(['gone.txt']), null)
+      assert.equal(await listWorktreeGitContentStates(['gone.txt']), null)
     },
   )
   ownedIt(
-    'listWorktreePathsMissingFromGit hashes names git would unquote, and skips links and special files',
+    'listWorktreeGitContentStates hashes names git would unquote, and skips links and special files',
     async () => {
       await writeFile(join(workspaceRoot, 'a.txt'), 'tracked\n', 'utf-8')
       git(tempRoot, ['add', 'packages/app/a.txt'])
@@ -1205,7 +1218,7 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
       await symlink('a.txt', join(workspaceRoot, 'alias.txt'))
 
       const started = Date.now()
-      const missing = await listWorktreePathsMissingFromGit([
+      const missing = await listWorktreeGitContentStates([
         '"a.txt"',
         'a.txt\r',
         'two\nlines.txt',
@@ -1215,11 +1228,15 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
       ])
       assert.ok(Date.now() - started < 10_000, 'a link to /dev/zero is never read')
       assert.ok(missing, 'git answered')
-      assert.deepEqual([...missing].sort(), ['"a.txt"', 'a.txt\r', 'two\nlines.txt'])
+      // Links are unknown: the card makes no claim about them.
+      assert.deepEqual(byState(missing), {
+        'only-copy': ['"a.txt"', 'a.txt\r', 'two\nlines.txt'],
+        'in-git': ['a.txt'],
+      })
     },
   )
   ownedIt(
-    'listWorktreePathsMissingFromGit never runs a clean filter, and skips the filtered paths',
+    'listWorktreeGitContentStates never runs a clean filter, and skips the filtered paths',
     async () => {
       // A clean filter is an external program (Git LFS, say). Hashing a filtered
       // path runs it, so ending a turn would run it on a file nobody added.
@@ -1229,14 +1246,15 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
       await writeFile(join(workspaceRoot, 'blob.dat'), 'filtered\n', 'utf-8')
       await writeFile(join(workspaceRoot, 'plain.txt'), 'plain\n', 'utf-8')
 
-      const missing = await listWorktreePathsMissingFromGit(['blob.dat', 'plain.txt'])
+      const missing = await listWorktreeGitContentStates(['blob.dat', 'plain.txt'])
       assert.ok(missing, 'git answered')
-      assert.deepEqual([...missing], ['plain.txt'])
+      // The filtered path is unknown, not "in git".
+      assert.deepEqual(byState(missing), { 'only-copy': ['plain.txt'], 'in-git': [] })
       assert.equal(existsSync(ran), false, 'the clean filter must not run')
     },
   )
   ownedIt(
-    'listWorktreePathsMissingFromGit runs no clean filter literally named unspecified or unset',
+    'listWorktreeGitContentStates runs no clean filter literally named unspecified or unset',
     async () => {
       // check-attr prints the same words for "no filter" and for a filter of
       // that name, so only the configured driver tells them apart.
@@ -1252,16 +1270,16 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
       await writeFile(join(workspaceRoot, 'b.bin'), 'filtered\n', 'utf-8')
       await writeFile(join(workspaceRoot, 'plain.txt'), 'plain\n', 'utf-8')
 
-      const missing = await listWorktreePathsMissingFromGit(['a.dat', 'b.bin', 'plain.txt'])
+      const missing = await listWorktreeGitContentStates(['a.dat', 'b.bin', 'plain.txt'])
       assert.equal(existsSync(ran), false, 'the clean filter must not run')
       // An unattributed path reads `unspecified` too, so with such a driver
       // configured every path is skipped: the audit says nothing rather than
       // risk running it.
-      assert.deepEqual(missing && [...missing], [])
+      assert.equal(missing?.size, 0)
     },
   )
   ownedIt(
-    'listWorktreePathsMissingFromGit runs no clean filter when the attribute read is cut short',
+    'listWorktreeGitContentStates runs no clean filter when the attribute read is cut short',
     async () => {
       // 200 long filtered paths give check-attr more output than the command
       // runner keeps; a path whose record was cut off must not be hashed.
@@ -1277,9 +1295,42 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
         paths.push(path)
       }
 
-      const missing = await listWorktreePathsMissingFromGit(paths)
+      const missing = await listWorktreeGitContentStates(paths)
       assert.equal(existsSync(ran), false, 'the clean filter must not run')
       assert.ok(missing === null || missing.size === 0)
+    },
+  )
+  ownedIt('listWorktreeGitContentStates leaves content git would convert unknown', async () => {
+    await writeFile(join(tempRoot, '.gitattributes'), '*.md text\n', 'utf-8')
+    await writeFile(join(workspaceRoot, 'notes.md'), 'line\r\n', 'utf-8')
+    await writeFile(join(workspaceRoot, 'raw.txt'), 'raw\n', 'utf-8')
+    const states = await listWorktreeGitContentStates(['notes.md', 'raw.txt'])
+    assert.ok(states, 'git answered')
+    assert.deepEqual(byState(states), { 'only-copy': ['raw.txt'], 'in-git': [] })
+
+    git(tempRoot, ['config', 'core.autocrlf', 'true'])
+    assert.equal((await listWorktreeGitContentStates(['raw.txt']))?.size, 0)
+  })
+  ownedIt(
+    'gitBlobIdOfRegularFile hashes as git does and refuses what is not a regular file',
+    async () => {
+      const file = join(workspaceRoot, 'blob.txt')
+      await writeFile(file, 'content\n', 'utf-8')
+      const expected = execFileSync('git', ['hash-object', '--no-filters', file], {
+        cwd: tempRoot,
+        encoding: 'utf-8',
+      }).trim()
+      assert.equal(await gitBlobIdOfRegularFile(file, 'sha1'), expected)
+      // What a writer could swap in after the audit's lstat: never followed,
+      // and a FIFO with no writer is not waited on.
+      const fifo = join(workspaceRoot, 'pipe')
+      execFileSync('mkfifo', [fifo])
+      const link = join(workspaceRoot, 'swapped.txt')
+      await symlink('/dev/zero', link)
+      const started = Date.now()
+      assert.equal(await gitBlobIdOfRegularFile(link, 'sha1'), null)
+      assert.equal(await gitBlobIdOfRegularFile(fifo, 'sha1'), null)
+      assert.ok(Date.now() - started < 5_000, 'neither is read')
     },
   )
 })

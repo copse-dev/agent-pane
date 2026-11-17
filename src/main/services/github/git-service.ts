@@ -1,4 +1,6 @@
 import * as fsp from 'node:fs/promises'
+import { constants as fsConstants } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { errorMessage } from '@shared/errors.ts'
@@ -830,31 +832,31 @@ export async function getGitStatus(
   return normalizeGitStatusForWorkspace(parsePorcelainV1(stdout), prefix)
 }
 
+/** What git holds of a changed file's current content (#4006). */
+export type GitContentState = 'only-copy' | 'in-git'
+
 /**
- * Which of `paths` (workspace-relative, as {@link getGitStatus} reports them)
- * hold content git has no object for. No commit can contain such a file's
- * current version, so the copy on disk is the only one (#4006). A path git
- * does hold may still be in no commit (staged only, or written with
- * `hash-object -w`), but git can give it back, so only the missing case is
- * reported.
+ * Git's hold on the current content of `paths` (workspace-relative, as
+ * {@link getGitStatus} reports them). `only-copy`: git has no object for it, so
+ * no commit can contain this version and the copy on disk is the only one.
+ * `in-git`: git has the object, so it can give it back, even if no commit
+ * holds it yet (staged only, or written with `hash-object -w`). A path left out
+ * of the map is unknown, and callers must claim nothing about it.
  *
- * Read-only: `hash-object` without `-w` stores nothing, and it applies the
- * repository's clean filters so the hash matches what `git add` would store.
- * Only regular files are hashed: hashing follows a symlink, so one to a FIFO
- * or `/dev/zero` would block the audit, and git stores a link as its target
- * text anyway. A path with a `filter` attribute is skipped too, because hashing
- * it runs that clean filter (Git LFS, say), an external program nobody asked to
- * run on it. Links, special files and filtered paths are never reported. Git's
- * own end-of-line and `ident` conversions still apply, so a hash matches what
- * `git add` would store. Returns null when
- * git can't answer, including for a path that is no longer there, so callers
- * say nothing rather than guess.
+ * Nothing here runs a program or follows a link. Copse reads each file itself,
+ * opened without following a final symlink and without blocking on a FIFO, and
+ * hashes the bytes of a regular file as git's blob id. A path git would convert
+ * on `add` (a clean `filter`, `text`, `eol`, `ident` or `working-tree-encoding`
+ * attribute, or `core.autocrlf`) would hash differently from what git stores,
+ * so it is left unknown, as are links, special files and anything that stops
+ * being a regular file before it is read. Returns null when git can't answer,
+ * including for a path that is no longer there.
  */
-export async function findPathsMissingFromGit(
+export async function findGitContentStates(
   root: string | null,
   paths: readonly string[],
-): Promise<Set<string> | null> {
-  if (paths.length === 0) return new Set()
+): Promise<Map<string, GitContentState> | null> {
+  if (paths.length === 0) return new Map()
   if (!root) return null
   const kinds = await Promise.all(
     paths.map((path) =>
@@ -866,82 +868,130 @@ export async function findPathsMissingFromGit(
   )
   if (kinds.includes('gone')) return null
   const regular = paths.filter((_path, index) => kinds[index] === 'file')
-  if (regular.length === 0) return new Set()
-  const filtered = await filteredPaths(root, regular)
-  if (filtered === null) return null
-  const files = regular.filter((path) => !filtered.has(path))
-  if (files.length === 0) return new Set()
-  // `--stdin-paths` reads paths relative to the repository top, not the cwd.
-  const prefix = await workTreePrefix(root)
-  if (prefix === null) return null
-  const hashed = await runGitRead(['hash-object', '--stdin-paths'], root, {
-    stdin: Buffer.from(files.map((path) => `${cQuotePath(`${prefix}${path}`)}\n`).join('')),
+  if (regular.length === 0) return new Map()
+  const unconverted = await unconvertedPaths(root, regular)
+  if (unconverted === null) return null
+  if (unconverted.length === 0) return new Map()
+  const format = await runGitRead(['rev-parse', '--show-object-format'], root)
+  const algorithm = format.code === 0 ? format.stdout.trim() : ''
+  if (algorithm !== 'sha1' && algorithm !== 'sha256') return null
+  const ids = await Promise.all(
+    unconverted.map((path) => gitBlobIdOfRegularFile(join(root, path), algorithm)),
+  )
+  const files: string[] = []
+  const hashes: string[] = []
+  unconverted.forEach((path, index) => {
+    const id = ids[index]
+    if (id) {
+      files.push(path)
+      hashes.push(id)
+    }
   })
-  if (hashed.code !== 0) return null
-  const hashes = hashed.stdout.split('\n').filter(Boolean)
-  if (hashes.length !== files.length) return null
+  if (files.length === 0) return new Map()
   const checked = await runGitRead(['cat-file', '--batch-check=%(objectname)'], root, {
     stdin: Buffer.from(hashes.map((hash) => `${hash}\n`).join('')),
   })
   if (checked.code !== 0) return null
   const lines = checked.stdout.split('\n').filter(Boolean)
   if (lines.length !== hashes.length) return null
-  const missing = new Set<string>()
+  const states = new Map<string, GitContentState>()
   lines.forEach((line, index) => {
     const path = files[index]
-    if (path !== undefined && line.endsWith(' missing')) missing.add(path)
+    if (path !== undefined) states.set(path, line.endsWith(' missing') ? 'only-copy' : 'in-git')
   })
-  return missing
+  return states
 }
 
 /**
- * Which of `paths` (relative to `root`) carry a `filter` attribute, so hashing
- * them would run a clean filter. Paths travel NUL-separated, so no name needs
- * quoting. Null when git can't answer, including when any path has no record:
- * the command runner caps output, and a path cut off the end would otherwise
- * read as unfiltered and be hashed. A record cut mid-value reads as filtered,
- * which only skips the path. A driver configured under the name `unspecified`
- * or `unset` makes those values count as filtered too; since a path with no
- * filter also reads `unspecified`, such a repository skips every path.
+ * Git's blob id for the regular file at `path`, read through one descriptor:
+ * opened without following a final symlink or blocking on a FIFO, then checked
+ * to be a regular file on that same descriptor, so a path swapped for a link or
+ * device after an earlier check is refused rather than read. Null when it is
+ * not a regular file, cannot be read, or shrinks while being read.
  */
-async function filteredPaths(root: string, paths: readonly string[]): Promise<Set<string> | null> {
-  const attrs = await runGitRead(['check-attr', '-z', '--stdin', 'filter'], root, {
-    stdin: Buffer.from(paths.map((path) => `${path}\0`).join('')),
-  })
-  if (attrs.code !== 0) return null
-  // `unspecified` and `unset` mean "no filter", unless a driver is configured
-  // under that very name, which check-attr cannot tell apart.
+export async function gitBlobIdOfRegularFile(
+  path: string,
+  algorithm: 'sha1' | 'sha256',
+): Promise<string | null> {
+  // Windows defines neither flag; there `fstat` alone refuses a non-file.
+  const flags =
+    process.platform === 'win32'
+      ? fsConstants.O_RDONLY
+      : fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | fsConstants.O_NONBLOCK
+  let handle: fsp.FileHandle
+  try {
+    handle = await fsp.open(path, flags)
+  } catch {
+    return null
+  }
+  try {
+    const stat = await handle.stat()
+    if (!stat.isFile()) return null
+    const hash = createHash(algorithm).update(`blob ${String(stat.size)}\0`)
+    const buffer = Buffer.alloc(Math.min(1024 * 1024, Math.max(1, stat.size)))
+    let position = 0
+    while (position < stat.size) {
+      const { bytesRead } = await handle.read(
+        buffer,
+        0,
+        Math.min(buffer.length, stat.size - position),
+        position,
+      )
+      if (bytesRead === 0) return null
+      hash.update(buffer.subarray(0, bytesRead))
+      position += bytesRead
+    }
+    return hash.digest('hex')
+  } catch {
+    return null
+  } finally {
+    await handle.close()
+  }
+}
+
+/** Attributes that make `git add` store something other than the file's bytes. */
+const CONVERSION_ATTRIBUTES = ['filter', 'text', 'eol', 'ident', 'working-tree-encoding'] as const
+
+/**
+ * The subset of `paths` (relative to `root`) git would store byte for byte:
+ * none of {@link CONVERSION_ATTRIBUTES} applies and `core.autocrlf` is off.
+ * Paths travel NUL-separated, so no name needs quoting. Null when git can't
+ * answer, including when any path lacks a record: the command runner caps
+ * output, and a path cut off the end must not read as unconverted. A record
+ * cut mid-value reads as converted, which only leaves the path unknown.
+ *
+ * `unspecified` and `unset` are also the values of a filter literally named
+ * that, so a driver configured under either name makes every path count as
+ * filtered: with such a repository the audit claims nothing.
+ */
+async function unconvertedPaths(root: string, paths: readonly string[]): Promise<string[] | null> {
+  const autocrlf = await runGitRead(['config', '--get', 'core.autocrlf'], root)
+  if (autocrlf.code !== 0 && autocrlf.code !== 1) return null
+  if (autocrlf.code === 0 && autocrlf.stdout.trim().toLowerCase() !== 'false') return []
   const drivers = await runGitRead(
     ['config', '--name-only', '--get-regexp', '^filter\\.(unspecified|unset)\\.(clean|process)$'],
     root,
   )
-  // Exit 1 is "no such key"; anything else but success is an unknown answer.
   if (drivers.code !== 0 && drivers.code !== 1) return null
-  const namedDrivers = new Set(
-    drivers.code === 0 ? drivers.stdout.split('\n').map((key) => key.split('.')[1]) : [],
-  )
-  // Records are `<path> NUL filter NUL <value> NUL`.
+  if (drivers.code === 0 && drivers.stdout.trim() !== '') return []
+  const attrs = await runGitRead(['check-attr', '-z', '--stdin', ...CONVERSION_ATTRIBUTES], root, {
+    stdin: Buffer.from(paths.map((path) => `${path}\0`).join('')),
+  })
+  if (attrs.code !== 0) return null
+  // Records are `<path> NUL <attribute> NUL <value> NUL`, one per attribute.
   const fields = attrs.stdout.split('\0')
-  const filtered = new Set<string>()
-  const classified = new Set<string>()
+  const converted = new Set<string>()
+  const records = new Map<string, number>()
   for (let index = 0; index + 2 < fields.length; index += 3) {
     const path = fields[index]
+    const attribute = fields[index + 1]
     const value = fields[index + 2]
-    if (path === undefined || value === undefined) continue
-    classified.add(path)
-    const noFilter = (value === 'unspecified' || value === 'unset') && !namedDrivers.has(value)
-    if (!noFilter) filtered.add(path)
+    if (path === undefined || attribute === undefined || value === undefined) continue
+    records.set(path, (records.get(path) ?? 0) + 1)
+    if (value !== 'unspecified' && !(value === 'unset' && attribute !== 'eol')) converted.add(path)
   }
-  return paths.every((path) => classified.has(path)) ? filtered : null
-}
-
-/**
- * Quote a path the way `--stdin-paths` unquotes it. Unquoted, a line starting
- * with `"` is read as a C-quoted name, a trailing CR is dropped and a newline
- * splits the path, so each of those would hash some other file.
- */
-function cQuotePath(path: string): string {
-  return `"${path.replace(/[\\"]/g, (ch) => `\\${ch}`).replace(/\n/g, '\\n')}"`
+  if (!paths.every((path) => records.get(path) === CONVERSION_ATTRIBUTES.length)) return null
+  return paths.filter((path) => !converted.has(path))
 }
 
 const THREAD_CHANGE_GIT_TIMEOUT_MS = 10_000

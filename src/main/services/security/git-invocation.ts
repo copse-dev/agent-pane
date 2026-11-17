@@ -17,14 +17,12 @@ const INTERNAL_GIT_COMMANDS = new Set([
   // User-requested commits go through a permission-gated execution profile, so
   // hooks/signing work there. Only automatic commit-tree snapshots belong here.
   'commit-tree',
-  // Only `check-attr -z --stdin filter`, which `assertAttributeRead` admits.
+  // Only the conversion-attribute read `assertAttributeRead` admits.
   'check-attr',
   'config',
   'diff',
   'fetch',
   'for-each-ref',
-  // Only `hash-object --stdin-paths`, which `assertReadOnlyHashObject` admits.
-  'hash-object',
   'log',
   'init',
   'ls-files',
@@ -117,7 +115,6 @@ export function withGitInvocationArgs(
     throw new Error(`Unsupported internal Git command: ${command ?? '(missing)'}`)
   }
   if (command === 'clone') assertLocalSubmoduleClone(rest)
-  if (command === 'hash-object') assertReadOnlyHashObject(rest)
   if (command === 'check-attr') assertAttributeRead(rest)
   // A caller cannot prepend -c/--config-env to undo the policy. Diff flags go
   // before revisions/pathspecs, never after a caller's `--` separator.
@@ -164,29 +161,27 @@ function assertLocalSubmoduleClone(args: string[]): void {
   }
 }
 
-/**
- * Admit exactly `hash-object --stdin-paths`, which hashes files without storing
- * them (#4006 asks whether git already holds a file's content).
- *
- * Config-execution audit: hashing applies the repository's clean filters, the
- * same programs `add` (already admitted) runs on the same files, so this adds no
- * new program surface. Its one caller, the only-copy audit, still skips every
- * path with a `filter` attribute (read with `check-attr`) so that ending a turn
- * runs no filter. `-w`, `--literally`, `-t` and `--path` are refused rather
- * than enumerated, so it never writes an object.
- */
-function assertReadOnlyHashObject(args: string[]): void {
-  if (args.length !== 1 || args[0] !== '--stdin-paths') {
-    throw new Error('Unsupported internal Git hash-object')
-  }
-}
+/** The attribute read the only-copy audit makes (`git-service.ts`). */
+const ADMITTED_ATTRIBUTE_READ = [
+  '-z',
+  '--stdin',
+  'filter',
+  'text',
+  'eol',
+  'ident',
+  'working-tree-encoding',
+]
 
 /**
- * Admit exactly `check-attr -z --stdin filter`: it reads which paths have a
- * clean filter, runs no program and writes nothing.
+ * Admit exactly `check-attr -z --stdin filter text eol ident
+ * working-tree-encoding`: it reads which paths git would convert on `add`, runs
+ * no program and writes nothing.
  */
 function assertAttributeRead(args: string[]): void {
-  if (args.length !== 3 || args[0] !== '-z' || args[1] !== '--stdin' || args[2] !== 'filter') {
+  if (
+    args.length !== ADMITTED_ATTRIBUTE_READ.length ||
+    args.some((arg, index) => arg !== ADMITTED_ATTRIBUTE_READ[index])
+  ) {
     throw new Error('Unsupported internal Git check-attr')
   }
 }

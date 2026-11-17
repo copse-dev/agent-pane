@@ -110,7 +110,7 @@ import {
   awaitStagedDiffDecision,
   captureWorktreeBaseline,
   listWorktreeChangesSince,
-  listWorktreePathsMissingFromGit,
+  listWorktreeGitContentStates,
   stageDiff,
 } from '../diff-queue.ts'
 import { auditablePaths, formatBypassedWriteAudit, type BypassedWrite } from './acp-edit-audit.ts'
@@ -1687,9 +1687,7 @@ async function emitBypassedWriteAudit(
   // Whether git holds each file's content is extra detail; without it the
   // card still names the files.
   const auditable = auditablePaths(bypassed)
-  const missing = auditable
-    ? await listWorktreePathsMissingFromGit(auditable).catch(() => null)
-    : null
+  const states = auditable ? await listWorktreeGitContentStates(auditable).catch(() => null) : null
   const id = `acp-edit-audit-${randomUUID()}`
   onChunk({
     type: 'tool_call',
@@ -1705,7 +1703,7 @@ async function emitBypassedWriteAudit(
   onChunk({
     type: 'tool_result',
     toolCallId: id,
-    result: formatBypassedWriteAudit(bypassed, missing),
+    result: formatBypassedWriteAudit(bypassed, states),
     isError: false,
   })
 }
