@@ -140,8 +140,21 @@ test('ACP envelopes preserve saved questions only for the matching Copse tool', 
     )?.question,
     'Wrap the title?',
   )
+  // Since #4125 the bridge is mounted under a nonce name.
+  assert.deepEqual(
+    reviewerInputRequestsForCall(
+      {
+        ...wrapped,
+        name: 'mcp__copse-k3v9x2mq__ask_user',
+        args: { server: 'copse-k3v9x2mq', tool: 'ask_user', arguments: deferred.args },
+      },
+      'm',
+    ),
+    reviewerInputRequestsForCall(deferred, 'm'),
+  )
   for (const args of [
     { server: 'other', tool: 'ask_user', arguments: deferred.args },
+    { server: 'copse-other', tool: 'ask_user', arguments: deferred.args },
     { server: 'copse', tool: 'request_review_input', arguments: deferred.args },
     { server: 'copse', tool: 'ask_user', arguments: null },
   ])

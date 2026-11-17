@@ -15,6 +15,15 @@ const COPSE_WRAPPED_TOOL = new RegExp(
 )
 
 /**
+ * Whether `server` names Copse's bridge in an MCP dispatch envelope
+ * (`{ server, tool, arguments }`, as Codex ACP records it): the bare `copse` of
+ * threads recorded before #4125, or a `copse-<nonce>` name since.
+ */
+export function isCopseServerName(server: unknown): boolean {
+  return typeof server === 'string' && COPSE_SERVER_NAME.test(server)
+}
+
+/**
  * Display/behavior identity only; never rewrite the persisted execution name.
  * ACP clients flatten Copse's MCP server into different names
  * (`mcp__copse-k3v9x2mq__tool`, `copse.tool`, `copse-tool: <title>`, ...), so

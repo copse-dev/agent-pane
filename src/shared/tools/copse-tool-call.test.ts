@@ -5,6 +5,7 @@ import {
   acpDelegatePrompt,
   copseToolCallName,
   isAcpDelegateToolCall,
+  isCopseServerName,
   isCopseToolCall,
   normalizeCopseToolName,
 } from './copse-tool-call.ts'
@@ -113,4 +114,10 @@ test('acpDelegateKind reads subagent_type verbatim, and acpDelegatePrompt prefer
     'Local file-tree utilities',
   )
   assert.equal(acpDelegatePrompt({ args: {} }), '')
+})
+
+test('names the bridge server in a dispatch envelope, bare or nonce-named', () => {
+  for (const server of ['copse', 'copse-k3v9x2mq', 'COPSE']) assert.ok(isCopseServerName(server))
+  for (const server of ['other', 'copse-other', 'copse-k3v9x2mq-x', 'copse.git', '', null, 1])
+    assert.equal(isCopseServerName(server), false, String(server))
 })
