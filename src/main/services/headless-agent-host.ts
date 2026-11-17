@@ -330,11 +330,8 @@ export async function runHeadlessAgent(
                         })
                         const wait = run.waitForMachineContinuations
                         let machineContinuations = 0
-                        let resolveMachineWait: (() => void) | null = null
-                        const machineWait = wait
-                          ? new Promise<void>((resolve) => {
-                              resolveMachineWait = resolve
-                            })
+                        const machineWait: PromiseWithResolvers<void> | null = wait
+                          ? Promise.withResolvers()
                           : null
                         const dispatchAndWait = async (): Promise<void> => {
                           await dispatcher.dispatch({
@@ -348,7 +345,7 @@ export async function runHeadlessAgent(
                             },
                           })
                           if (wait && machineWait) {
-                            await withTimeout(machineWait, wait.timeoutMs, () => {
+                            await withTimeout(machineWait.promise, wait.timeoutMs, () => {
                               throw new Error(
                                 `Timed out waiting for ${String(wait.count)} machine continuations`,
                               )
@@ -375,7 +372,7 @@ export async function runHeadlessAgent(
                             if (result === 'completed' || result === 'observed') {
                               machineContinuations += 1
                               if (machineContinuations >= wait.count) {
-                                resolveMachineWait?.()
+                                machineWait?.resolve()
                               }
                             }
                             return result

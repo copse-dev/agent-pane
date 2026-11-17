@@ -275,12 +275,11 @@ export class DesktopControlService {
   private async start(): Promise<RunningHelper> {
     const child = await this.launch()
     const pending = new Map<number, Pending>()
-    let markReady: (permissions: DesktopPermissions) => void = () => undefined
-    let failReady: (error: Error) => void = () => undefined
-    const ready = new Promise<DesktopPermissions>((resolve, reject) => {
-      markReady = resolve
-      failReady = reject
-    })
+    const {
+      promise: ready,
+      resolve: markReady,
+      reject: failReady,
+    } = Promise.withResolvers<DesktopPermissions>()
     const helper: RunningHelper = { child, ready, pending, stderr: '' }
     this.helper = helper
     const readyTimer = setTimeout(() => {

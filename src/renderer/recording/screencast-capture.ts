@@ -33,10 +33,7 @@ export async function openScreencastCapture(
   let requested = 0
   let drawn = 0
   let disposed = false
-  let resolveFirstFrame: (() => void) | null = null
-  const firstFrame = new Promise<void>((resolve) => {
-    resolveFirstFrame = resolve
-  })
+  const firstFrame: PromiseWithResolvers<void> = Promise.withResolvers()
 
   const stopFrames = api.onRecordingFrame((id, jpeg) => {
     if (id !== webContentsId || disposed) return
@@ -54,7 +51,7 @@ export async function openScreencastCapture(
         }
         context.drawImage(bitmap, 0, 0)
         bitmap.close()
-        resolveFirstFrame?.()
+        firstFrame.resolve()
       },
       () => {
         // A frame that fails to decode is skipped; the next paint replaces it.
@@ -75,7 +72,7 @@ export async function openScreencastCapture(
 
   try {
     await api.startRecording(webContentsId)
-    await withTimeout(firstFrame, FIRST_FRAME_TIMEOUT_MS, () => {
+    await withTimeout(firstFrame.promise, FIRST_FRAME_TIMEOUT_MS, () => {
       throw new Error('The tab is not painting. Show the Browser pane and try again.')
     })
   } catch (error) {
