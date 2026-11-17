@@ -76,8 +76,10 @@ describe('a sandboxed ACP agent installed as a symlink in a home bin directory',
     const neighbour = await run(['cat', join(bin, 'other-tool')])
     assert.notEqual(neighbour.code, 0)
     assert.doesNotMatch(neighbour.output, /not for the agent/)
+    // macOS refuses the listing outright; bubblewrap mounts the one file into an
+    // otherwise empty directory, so `ls` succeeds and shows only that file.
     const listing = await run(['ls', bin])
-    assert.notEqual(listing.code, 0, listing.output)
+    assert.doesNotMatch(listing.output, /other-tool/)
     const planted = join(bin, 'planted')
     const plant = await run(['touch', planted])
     assert.notEqual(plant.code, 0)
