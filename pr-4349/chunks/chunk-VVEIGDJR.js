@@ -22351,7 +22351,7 @@ var init_thread_proposal = __esm({
 
 // src/shared/tools/copse-tool-call.ts
 function isCopseServerName(server) {
-  return typeof server === "string" && COPSE_SERVER_NAME.test(server);
+  return typeof server === "string" && ENVELOPE_SERVER_NAME.test(server);
 }
 function normalizeCopseToolName(name) {
   const server = /^mcp__([\w.-]+?)__/i.exec(name)?.[1];
@@ -22385,7 +22385,7 @@ function acpDelegateKind(call) {
 function acpDelegatePrompt(call) {
   return call.title ?? stringArg(call.args, "prompt") ?? stringArg(call.args, "description") ?? "";
 }
-var COPSE_SERVER, COPSE_SERVER_NAME, COPSE_WRAPPED_TOOL;
+var COPSE_SERVER, COPSE_SERVER_NAME, COPSE_WRAPPED_TOOL, ENVELOPE_SERVER_NAME;
 var init_copse_tool_call = __esm({
   "src/shared/tools/copse-tool-call.ts"() {
     init_unknown_value3();
@@ -22395,6 +22395,7 @@ var init_copse_tool_call = __esm({
       `^(?:mcp[^a-z0-9]+)?${COPSE_SERVER}[^a-z0-9]+([a-z][a-z0-9_.-]*)`,
       "i"
     );
+    ENVELOPE_SERVER_NAME = new RegExp(`^${COPSE_SERVER}$`);
   }
 });
 
