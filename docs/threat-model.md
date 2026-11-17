@@ -179,6 +179,15 @@ authorization and only built-in HTTP(S), SSH and file transports are enabled. Th
 option that names a program, and the `file` transport alone.
 Configuration inspection reads real values without invoking the configured helpers.
 
+Container-run carry-in, carry-out and adoption, and the hosted (OpenAI) source
+transfer and import, run on the host checkout outside the project sandbox. They use
+the same policy through one runner (`security/internal-git-exec.ts`). Adoption's
+`cherry-pick` is admitted only as `--no-edit` with full SHAs (no merge strategy
+program), so the checkout's hooks and signer do not run and adopted commits are
+unsigned. It is app plumbing, not the gated `git_commit` profile. Guest-side Git
+(`worker-main.ts`, the hosted workers) runs on repositories the guest created, beside
+an agent that can already run any program there, so it keeps its own wrappers.
+
 Worktree bookkeeping uses the available project sandbox, with grants for Git
 administration, the selected destination and temporary indexes. Metadata and checkout
 redirections are rejected. Config writes are limited to branch recovery metadata and
@@ -303,9 +312,9 @@ and platforms without socket-level confinement get no scoped escalation. They ke
 ordinary project access; deliberate host execution remains a separate shell approval.
 
 This is not a general allowlist of every Git configuration key or helper. Content
-filters such as Git LFS retain Git's normal conversion semantics and rely on the
-available sandbox; automatic Git without OS containment still has that residual
-risk. Silently bypassing filters would corrupt committed/restored content. Background
+filters such as Git LFS, and merge drivers for internal `switch` and `cherry-pick`,
+retain Git's normal semantics and rely on the available sandbox; automatic Git
+without OS containment still has that residual risk. Silently bypassing filters would corrupt committed/restored content. Background
 operations do not acquire helper grants from repository-supplied configuration.
 
 Regression tests cover hostile fsmonitor, included config, diff/textconv, hooks and

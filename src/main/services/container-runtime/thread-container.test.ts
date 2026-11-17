@@ -1583,3 +1583,67 @@ describe('rebase carry-in', () => {
     }
   })
 })
+
+describe('host-side carry-in, carry-out and adoption under the internal Git policy', () => {
+  // Regression: these ran unhardened on the user's checkout in the main
+  // process, so a checkout-configured fsmonitor, hook or signer ran on the host
+  // whenever a container run started or its commits were applied.
+  it("never runs the checkout's fsmonitor, hooks or signer", async () => {
+    const repo = initRepo()
+    const outside = mkdtempSync(join(tmpdir(), 'copse-tc-hostile-'))
+    try {
+      const marker = join(outside, 'marker')
+      const script = join(outside, 'helper.sh')
+      writeFileSync(script, `#!/bin/sh\nprintf '%s\\n' "$0" >> '${marker}'\nexit 0\n`, {
+        mode: 0o700,
+      })
+      const hooks = join(outside, 'hooks')
+      mkdirSync(hooks)
+      for (const hook of ['reference-transaction', 'prepare-commit-msg', 'post-commit']) {
+        writeFileSync(join(hooks, hook), `#!/bin/sh\nexec '${script}'\n`, { mode: 0o700 })
+      }
+      const base = git(repo, ['rev-parse', 'HEAD'])
+      // The run's commits, made before the hostile config exists.
+      git(repo, ['checkout', '--quiet', '--detach', base])
+      writeFileSync(join(repo, 'guest.txt'), 'guest\n')
+      git(repo, ['add', '-A'])
+      git(repo, ['commit', '--quiet', '-m', 'guest: add guest.txt'])
+      git(repo, ['update-ref', 'refs/heads/work', 'HEAD'])
+      git(repo, ['checkout', '--quiet', 'main'])
+      git(repo, ['bundle', 'create', join(outside, 'out.bundle'), 'refs/heads/work'])
+      git(repo, ['branch', '--quiet', '-D', 'work'])
+      // An included file, as the GitSpawn shape uses, so a plain scan of
+      // .git/config would not see it either.
+      const included = join(outside, 'included.config')
+      git(repo, ['config', '--file', included, 'core.fsmonitor', script])
+      git(repo, ['config', '--file', included, 'core.hooksPath', hooks])
+      git(repo, ['config', '--file', included, 'commit.gpgSign', 'true'])
+      git(repo, ['config', '--file', included, 'gpg.program', script])
+      git(repo, ['config', 'include.path', included])
+      // The fixture must bite without the policy.
+      git(repo, ['status', '--porcelain'])
+      assert.equal(existsSync(marker), true, 'fixture must execute without the policy')
+      rmSync(marker)
+
+      writeFileSync(join(repo, 'dirty.txt'), 'untracked\n')
+      await writeCarryInBundle(repo, 'run-hostile', join(outside, 'in.bundle'))
+      rmSync(join(repo, 'dirty.txt'))
+      const ref = await fetchCarryOut(repo, 'run-hostile', join(outside, 'out.bundle'))
+      const adopted = await adoptCarryOut(repo, ref, base)
+
+      assert.equal(adopted.applied.length, 1)
+      assert.equal(existsSync(marker), false, 'a checkout-configured program ran on the host')
+      assert.equal(
+        execFileSync('git', ['-c', 'core.fsmonitor=false', 'cat-file', 'commit', 'HEAD'], {
+          cwd: repo,
+          encoding: 'utf8',
+        }).includes('gpgsig'),
+        false,
+        'the adopted commit is not signed with the checkout signer',
+      )
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+})
