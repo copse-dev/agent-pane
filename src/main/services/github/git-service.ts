@@ -900,13 +900,26 @@ export async function findPathsMissingFromGit(
  * quoting. Null when git can't answer, including when any path has no record:
  * the command runner caps output, and a path cut off the end would otherwise
  * read as unfiltered and be hashed. A record cut mid-value reads as filtered,
- * which only skips the path.
+ * which only skips the path. A driver configured under the name `unspecified`
+ * or `unset` makes those values count as filtered too; since a path with no
+ * filter also reads `unspecified`, such a repository skips every path.
  */
 async function filteredPaths(root: string, paths: readonly string[]): Promise<Set<string> | null> {
   const attrs = await runGitRead(['check-attr', '-z', '--stdin', 'filter'], root, {
     stdin: Buffer.from(paths.map((path) => `${path}\0`).join('')),
   })
   if (attrs.code !== 0) return null
+  // `unspecified` and `unset` mean "no filter", unless a driver is configured
+  // under that very name, which check-attr cannot tell apart.
+  const drivers = await runGitRead(
+    ['config', '--name-only', '--get-regexp', '^filter\\.(unspecified|unset)\\.(clean|process)$'],
+    root,
+  )
+  // Exit 1 is "no such key"; anything else but success is an unknown answer.
+  if (drivers.code !== 0 && drivers.code !== 1) return null
+  const namedDrivers = new Set(
+    drivers.code === 0 ? drivers.stdout.split('\n').map((key) => key.split('.')[1]) : [],
+  )
   // Records are `<path> NUL filter NUL <value> NUL`.
   const fields = attrs.stdout.split('\0')
   const filtered = new Set<string>()
@@ -914,9 +927,10 @@ async function filteredPaths(root: string, paths: readonly string[]): Promise<Se
   for (let index = 0; index + 2 < fields.length; index += 3) {
     const path = fields[index]
     const value = fields[index + 2]
-    if (path === undefined) continue
+    if (path === undefined || value === undefined) continue
     classified.add(path)
-    if (value !== 'unspecified' && value !== 'unset') filtered.add(path)
+    const noFilter = (value === 'unspecified' || value === 'unset') && !namedDrivers.has(value)
+    if (!noFilter) filtered.add(path)
   }
   return paths.every((path) => classified.has(path)) ? filtered : null
 }

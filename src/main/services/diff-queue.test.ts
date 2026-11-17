@@ -1236,6 +1236,31 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
     },
   )
   ownedIt(
+    'listWorktreePathsMissingFromGit runs no clean filter literally named unspecified or unset',
+    async () => {
+      // check-attr prints the same words for "no filter" and for a filter of
+      // that name, so only the configured driver tells them apart.
+      const ran = join(tempRoot, 'clean-filter-ran')
+      for (const name of ['unspecified', 'unset'])
+        git(tempRoot, ['config', `filter.${name}.clean`, `sh -c 'touch "${ran}"; cat'`])
+      await writeFile(
+        join(tempRoot, '.gitattributes'),
+        '*.dat filter=unspecified\n*.bin filter=unset\n',
+        'utf-8',
+      )
+      await writeFile(join(workspaceRoot, 'a.dat'), 'filtered\n', 'utf-8')
+      await writeFile(join(workspaceRoot, 'b.bin'), 'filtered\n', 'utf-8')
+      await writeFile(join(workspaceRoot, 'plain.txt'), 'plain\n', 'utf-8')
+
+      const missing = await listWorktreePathsMissingFromGit(['a.dat', 'b.bin', 'plain.txt'])
+      assert.equal(existsSync(ran), false, 'the clean filter must not run')
+      // An unattributed path reads `unspecified` too, so with such a driver
+      // configured every path is skipped: the audit says nothing rather than
+      // risk running it.
+      assert.deepEqual(missing && [...missing], [])
+    },
+  )
+  ownedIt(
     'listWorktreePathsMissingFromGit runs no clean filter when the attribute read is cut short',
     async () => {
       // 200 long filtered paths give check-attr more output than the command
