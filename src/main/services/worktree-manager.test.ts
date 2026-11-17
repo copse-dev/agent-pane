@@ -1534,16 +1534,20 @@ describe('worktree manager', () => {
         return true
       },
     )
+    // The footer's inspection reports the state instead of throwing, so the
+    // thread can say so before the user sends a message.
+    const input = { projectId: 'project-1', threadId: 'thread-1', projectRoot: repo, worktree }
+    assert.deepEqual(await inspectThreadWorktreeAttachment(input), {
+      state: 'on-base-branch',
+      branch: worktree.branch,
+      baseBranch: 'main',
+    })
 
     // Returning to the thread branch is the whole recovery.
     git(worktree.path, ['checkout', '-q', worktree.branch])
-    const validated = await validateThreadWorktree({
-      projectId: 'project-1',
-      threadId: 'thread-1',
-      projectRoot: repo,
-      worktree,
-    })
+    const validated = await validateThreadWorktree(input)
     assert.equal(validated.branch, worktree.branch)
+    assert.deepEqual(await inspectThreadWorktreeAttachment(input), { state: 'attached' })
   })
 
   it('rejects a detached HEAD and other foreign persisted worktree authority', async () => {

@@ -150,6 +150,7 @@ import {
 } from '../thread-execution-context.ts'
 import { ensureWritableThreadCheckout } from '../deferred-worktree.ts'
 import { acpAgentCanDeferCheckout } from './acp-deferred-checkout.ts'
+import { EMPTY_ACP_TURN_PROSE, nextAcpTurnProse, type AcpTurnProse } from './acp-turn-prose.ts'
 import {
   ACP_READONLY_CHECKOUT_PROMPT_NOTE,
   ACP_READONLY_CHECKOUT_UNAVAILABLE_PROMPT_NOTE,
@@ -327,11 +328,19 @@ export function acpTurnUsage(
  * `classifyAgentError` and the UI don't collapse actionable subprocess stderr
  * into a bare "Internal error".
  */
+export interface AcpTurnPartial {
+  /** All of the agent's prose the turn streamed ({@link AcpTurnProse.text}). */
+  assistantText: string
+  /**
+   * The agent's last message before the failure ({@link AcpTurnProse.finalMessage}).
+   * The error classifier reads it for a cause the JSON-RPC error leaves out.
+   */
+  finalMessageText: string
+  usage: { inputTokens: number; outputTokens: number }
+}
+
 export class AcpTurnFailure extends Error {
-  readonly partial: {
-    assistantText: string
-    usage: { inputTokens: number; outputTokens: number }
-  }
+  readonly partial: AcpTurnPartial
   /**
    * The turn spawned the agent under Copse's own OS sandbox on this machine
    * (not remote, not unsandboxed), as decided when the turn started. The error
@@ -342,7 +351,7 @@ export class AcpTurnFailure extends Error {
 
   constructor(
     cause: unknown,
-    partial: { assistantText: string; usage: { inputTokens: number; outputTokens: number } },
+    partial: AcpTurnPartial,
     options: { readonly sandboxed?: boolean } = {},
   ) {
     super(acpErrorMessage(cause), { cause })
@@ -613,6 +622,8 @@ export async function runAcpTurnWithContinuation(
       err.cause,
       {
         assistantText: `${earlier}${err.partial.assistantText}`,
+        // The continuation failed, so its own last message is the turn's last.
+        finalMessageText: err.partial.finalMessageText,
         usage: {
           inputTokens: result.usage.inputTokens + err.partial.usage.inputTokens,
           outputTokens: result.usage.outputTokens + err.partial.usage.outputTokens,
@@ -772,12 +783,14 @@ async function runAcpAgentTurn(
     gateRemoteAcpEnvForward(agent.id, spawnConfig, options.signal),
   )
 
-  // Accumulate streamed assistant text so the turn contributes to thread history
-  // (the external agent owns the model loop, so this is the only transcript we
-  // see) and so the next turn's preamble can replay it. `sawChunk` gates the
-  // retry below: once anything reached the UI, re-running the turn would
-  // duplicate streamed text and re-execute tool calls.
-  let assistantText = ''
+  // Accumulate the agent's streamed prose so the turn contributes to thread
+  // history (the external agent owns the model loop, so this is the only
+  // transcript we see) and so the next turn's preamble can replay it. Prose
+  // stamped with a message id arrives as `acp_content`, not `text`, and counts
+  // the same (see `acp-turn-prose.ts`). `sawChunk` gates the retry below: once
+  // anything reached the UI, re-running the turn would duplicate streamed text
+  // and re-execute tool calls.
+  let prose: AcpTurnProse = EMPTY_ACP_TURN_PROSE
   let sawChunk = false
   // Read afresh: sawChunk is set inside the onChunk callback, which TypeScript's
   // narrowing cannot see, so a direct read after the await looks always-false.
@@ -802,8 +815,8 @@ async function runAcpAgentTurn(
       // A delegation still waiting now was never executed through the bridge.
       dropAcpBridgeDelegation(options.threadId, chunk.toolCallId)
     }
+    prose = nextAcpTurnProse(prose, chunk)
     if (chunk.type === 'text') {
-      assistantText += chunk.text
       if (pendingApprovalCountForThread(options.threadId) > 0) {
         heldText += chunk.text
         return
@@ -1097,7 +1110,7 @@ async function runAcpAgentTurn(
     // The turn died mid-flight. Attribute what it visibly consumed (estimated —
     // the agent never got to report usage) and hand the partial transcript to
     // the caller so history and the usage panel don't pretend it never ran.
-    const turn = hasProgress() ? acpTurnUsage(null, lastPrompt, assistantText) : null
+    const turn = hasProgress() ? acpTurnUsage(null, lastPrompt, prose.text) : null
     if (turn) {
       options.onChunk({
         type: 'usage',
@@ -1116,7 +1129,8 @@ async function runAcpAgentTurn(
     throw new AcpTurnFailure(
       remoteAcpAuthRequiredHint(err, sshTarget, options.agentId) ?? err,
       {
-        assistantText,
+        assistantText: prose.text,
+        finalMessageText: prose.finalMessage,
         usage: turn
           ? { inputTokens: turn.inputTokens, outputTokens: turn.outputTokens }
           : { inputTokens: 0, outputTokens: 0 },
@@ -1138,7 +1152,7 @@ async function runAcpAgentTurn(
   // is optional/experimental (e.g. Cursor's adapter omits it), so when it's absent
   // we fall back to a local ~4 chars/token estimate of what we sent and received —
   // flagged `estimated` so the panel can mark it as approximate.
-  const turn = acpTurnUsage(usage, lastPrompt, assistantText)
+  const turn = acpTurnUsage(usage, lastPrompt, prose.text)
   if (turn.inputTokens || turn.outputTokens) {
     options.onChunk({
       type: 'usage',
@@ -1158,8 +1172,8 @@ async function runAcpAgentTurn(
     // Drop Cursor ACP trailing transport RetriableError lines from history so
     // the next turn does not replay them; the UI demotes the same noise from
     // the stored message body at display time.
-    messages: assistantText
-      ? [{ role: 'assistant', content: stripCursorAcpTransportNoise(assistantText) }]
+    messages: prose.text
+      ? [{ role: 'assistant', content: stripCursorAcpTransportNoise(prose.text) }]
       : [],
     usage: { inputTokens: turn.inputTokens, outputTokens: turn.outputTokens },
     startedReadonly: readonlyCheckout,
