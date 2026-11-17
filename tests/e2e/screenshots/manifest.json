@@ -41,6 +41,10 @@
       "sha256": "6993f20ec85e47771cd24b7f14fe665665ac7a2c704e95dfe1075a11e5f6af6d",
       "bytes": 176994
     },
+    "acp-auth-expired-mid-turn.png": {
+      "sha256": "12cfa533a8d2167e5b62502a174de583d0147f81744f426f62407224f36a86df",
+      "bytes": 194729
+    },
     "acp-auto-install-approval.png": {
       "sha256": "34d3d109daaf6129847e347c05726bfb92e5e0aa76bf98b32f6cd390d01510ae",
       "bytes": 278015
@@ -1177,6 +1181,10 @@
       "sha256": "db4b01b89c6aaebe33e67bd231a6153f1682c3a49f608f1b12046a13d3e826a6",
       "bytes": 342387
     },
+    "canvas-blocked-script-notice.png": {
+      "sha256": "b6bf6af46ee708eefe4b80c7ea245b695a1a710ae81dc68511f2917cbf71bbd1",
+      "bytes": 1084715
+    },
     "canvas-preview-thread-isolation.png": {
       "sha256": "8cdaacadd125240f4b7c6f0d36f5672f9e3b255330d9a6a6c8f135c07ef8dac8",
       "bytes": 303845
@@ -2020,6 +2028,10 @@
     "footer-branch-missing-worktree.png": {
       "sha256": "5ac117355943adb781c94d796ff332f362d724312b031c9ec50f08bbb30962f6",
       "bytes": 18419
+    },
+    "footer-branch-on-base-branch.png": {
+      "sha256": "3c2405abb5daaa1c5ab4d5c9021d9b5ff84a3cfa47fc774b69d46c5ffbaa5038",
+      "bytes": 24020
     },
     "footer-branch-picker-compact-220.png": {
       "sha256": "7620a9902b86a2c328e9cc249ed3b066a183ded727bc79f68b94b8dbcab20c60",

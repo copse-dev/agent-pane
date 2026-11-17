@@ -495,9 +495,13 @@ anywhere accepts or merges screenshots.
   a new review), or opens a new draft when none is open. It skips the night when the `main` commit
   the newest refresh PR rendered is current, or when nothing since it reaches a render: no committed
   hash changed and the test oracle plans `skip`, the same answer that runs no e2e on a PR. It never
-  moves the branch while the open PR carries anything but its own empty commit, so committed
-  screenshots are never discarded: merge or close the PR first. If its CI failed, re-run it, or
-  dispatch the workflow with `force`.
+  moves the branch while the open PR carries a hand push, or a committed screenshot `main` has not
+  changed since, so no decision `main` lacks is discarded: merge or close the PR first. Once `main`
+  has changed every screenshot the PR committed, the branch moves again, because those reviews
+  are superseded and merging them would put older renders back. While reviewed screenshots hold
+  the branch after `main` has moved, the workflow keeps one comment on the PR naming them: a held
+  refresh renders none of `main`'s newer drift, which then reaches feature PRs (#3985 held it for 16
+  nights unnoticed). If its CI failed, re-run it, or dispatch the workflow with `force`.
 
 ### Triage a recurring candidate before re-baselining
 
