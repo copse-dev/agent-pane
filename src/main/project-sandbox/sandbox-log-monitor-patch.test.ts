@@ -22,48 +22,59 @@ describe('sandbox-runtime macOS log monitor (patched)', () => {
   const event = (details: string, command: string): string =>
     `2026-11-17 16:08:05.633 E  kernel[0:1] (Sandbox) Sandbox: ${details}\\n${tag(command)}\\n`
 
-  it('reports every violation in a chunk, and one split across two chunks', async (t) => {
-    if (process.platform === 'win32') {
-      t.skip('no POSIX shell for the stub')
-      return
-    }
-    const dir = mkdtempSync(join(realpathSync(tmpdir()), 'copse-log-stub-'))
-    const originalPath = process.env['PATH']
-    const seen: Array<{ line: string; command: string | undefined }> = []
-    let stop: (() => void) | undefined
-    try {
-      const split = event('cat(3) deny(1) file-read-data /home/someone/.ssh/id_ed25519', 'cat key')
-      const cut = split.indexOf('file-read-')
-      writeFileSync(
-        join(dir, 'log'),
-        [
-          '#!/bin/sh',
-          // One write, two events: the second is the one that verifies the block.
-          `printf '${event('git(1) deny(1) sysctl-read kern.iossupportversion', 'git init')}${event('git(1) deny(1) file-write-create /tmp/project/.git', 'git init')}'`,
-          `printf '${split.slice(0, cut)}'`,
-          'sleep 0.3',
-          `printf '${split.slice(cut)}'`,
-          'sleep 5',
-        ].join('\n'),
-      )
-      chmodSync(join(dir, 'log'), 0o755)
-      process.env['PATH'] = `${dir}${delimiter}${originalPath ?? ''}`
-      stop = startMacOSSandboxLogMonitor((violation) => {
-        seen.push({ line: violation.line, command: violation.command })
-      })
-      const deadline = Date.now() + 5_000
-      while (seen.length < 3 && Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 50))
+  it(
+    'reports every violation in a chunk, and one split across two chunks',
+    { timeout: 10_000 },
+    async (t) => {
+      if (process.platform === 'win32') {
+        t.skip('no POSIX shell for the stub')
+        return
       }
-      assert.deepEqual(seen, [
-        { line: 'git(1) deny(1) sysctl-read kern.iossupportversion', command: 'git init' },
-        { line: 'git(1) deny(1) file-write-create /tmp/project/.git', command: 'git init' },
-        { line: 'cat(3) deny(1) file-read-data /home/someone/.ssh/id_ed25519', command: 'cat key' },
-      ])
-    } finally {
-      stop?.()
-      process.env['PATH'] = originalPath
-      rmSync(dir, { recursive: true, force: true })
-    }
-  })
+      const dir = mkdtempSync(join(realpathSync(tmpdir()), 'copse-log-stub-'))
+      const originalPath = process.env['PATH']
+      const seen: Array<{ line: string; command: string | undefined }> = []
+      let stop: (() => void) | undefined
+      try {
+        const split = event(
+          'cat(3) deny(1) file-read-data /home/someone/.ssh/id_ed25519',
+          'cat key',
+        )
+        const cut = split.indexOf('file-read-')
+        writeFileSync(
+          join(dir, 'log'),
+          [
+            '#!/bin/sh',
+            // One write, two events: the second is the one that verifies the block.
+            `printf '${event('git(1) deny(1) sysctl-read kern.iossupportversion', 'git init')}${event('git(1) deny(1) file-write-create /tmp/project/.git', 'git init')}'`,
+            `printf '${split.slice(0, cut)}'`,
+            'sleep 0.3',
+            `printf '${split.slice(cut)}'`,
+            'sleep 5',
+          ].join('\n'),
+        )
+        chmodSync(join(dir, 'log'), 0o755)
+        process.env['PATH'] = `${dir}${delimiter}${originalPath ?? ''}`
+        // Resolves on the third violation; node:test's timeout bounds the wait.
+        const allSeen = new Promise<void>((resolve) => {
+          stop = startMacOSSandboxLogMonitor((violation) => {
+            seen.push({ line: violation.line, command: violation.command })
+            if (seen.length === 3) resolve()
+          })
+        })
+        await allSeen
+        assert.deepEqual(seen, [
+          { line: 'git(1) deny(1) sysctl-read kern.iossupportversion', command: 'git init' },
+          { line: 'git(1) deny(1) file-write-create /tmp/project/.git', command: 'git init' },
+          {
+            line: 'cat(3) deny(1) file-read-data /home/someone/.ssh/id_ed25519',
+            command: 'cat key',
+          },
+        ])
+      } finally {
+        stop?.()
+        process.env['PATH'] = originalPath
+        rmSync(dir, { recursive: true, force: true })
+      }
+    },
+  )
 })
