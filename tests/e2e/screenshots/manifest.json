@@ -41,6 +41,10 @@
       "sha256": "6993f20ec85e47771cd24b7f14fe665665ac7a2c704e95dfe1075a11e5f6af6d",
       "bytes": 176994
     },
+    "acp-auth-expired-mid-turn.png": {
+      "sha256": "12cfa533a8d2167e5b62502a174de583d0147f81744f426f62407224f36a86df",
+      "bytes": 194729
+    },
     "acp-auto-install-approval.png": {
       "sha256": "34d3d109daaf6129847e347c05726bfb92e5e0aa76bf98b32f6cd390d01510ae",
       "bytes": 278015
