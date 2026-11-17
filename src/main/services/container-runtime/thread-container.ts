@@ -90,6 +90,8 @@ import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import { runSerialized } from '@copse/thread-store/write-queue.ts'
 import { snapshotWorkingTree } from '../git-snapshot.mts'
 import { providerEndpointUrl, type ProviderDescription } from '../providers/provider-description.ts'
+import { errorMessage } from '@shared/errors.ts'
+import { sleep } from '@copse/std/sleep.ts'
 
 const execFileAsync = promisify(execFile)
 
@@ -738,10 +740,7 @@ async function adoptOnce(
     } catch {
       // Nothing to abort, or the abort itself failed: the pick error is the one to report.
     }
-    throw new Error(
-      `Could not apply the run's commits: ${error instanceof Error ? error.message : String(error)}`,
-      { cause: error },
-    )
+    throw new Error(`Could not apply the run's commits: ${errorMessage(error)}`, { cause: error })
   }
   const applied: string[] = []
   for (const sha of pending)
@@ -1478,7 +1477,7 @@ async function untilStarted(
       )
     }
     if (Date.now() > deadline) throw new Error('the container did not start in time')
-    await new Promise((resolveTick) => setTimeout(resolveTick, START_POLL_MS))
+    await sleep(START_POLL_MS)
   }
 }
 
@@ -1600,7 +1599,7 @@ export function waitForContainer(
       void dependencies
         .stop(name)
         .then(() => null)
-        .catch((error: unknown) => (error instanceof Error ? error.message : String(error)))
+        .catch((error: unknown) => errorMessage(error))
         .then((stopError) => {
           if (settled) return
           // Give the wait a bounded chance to observe the stop, then settle
@@ -1619,7 +1618,7 @@ export function waitForContainer(
         settle(null)
       },
       (error: unknown) => {
-        settle(`docker wait failed: ${error instanceof Error ? error.message : String(error)}`)
+        settle(`docker wait failed: ${errorMessage(error)}`)
       },
     )
   })
@@ -2152,7 +2151,7 @@ async function runThreadInContainerLeased(
       // The bundle stays in the run directory, so the work is recoverable —
       // but the ref the record advertises does not exist, and saying the
       // commits are back would be a lie.
-      carryOut.error = error instanceof Error ? error.message : String(error)
+      carryOut.error = errorMessage(error)
       log(`[thread-container] carry-out fetch FAILED: ${carryOut.error}`)
     }
   }

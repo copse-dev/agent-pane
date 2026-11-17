@@ -2,7 +2,8 @@ import { z } from 'zod'
 import { safeJsonParse, decodeWithSchema } from '../../shared/safe-json.ts'
 import { randomUUID } from 'node:crypto'
 import { lstat, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { dirname, isAbsolute, join, relative, sep } from 'node:path'
+import { dirname, join, relative, sep } from 'node:path'
+import { isPathWithin } from '@copse/std/path-containment.ts'
 import { setTimeout as delay } from 'node:timers/promises'
 import { copseDataRoot, copseWorkspaceTmpDir } from '@copse/store-kit/copse-paths.ts'
 import type {
@@ -46,15 +47,7 @@ export class StorageCleanup {
   private async safePath(path: string): Promise<void> {
     // The configured profile can be an alias; descendants cannot redirect cleanup.
     const roots = [this.profile, dirname(this.temp)]
-    const root = roots.find((candidate) => {
-      const descendant = relative(candidate, path)
-      return (
-        descendant !== '' &&
-        !isAbsolute(descendant) &&
-        descendant !== '..' &&
-        !descendant.startsWith(`..${sep}`)
-      )
-    })
+    const root = roots.find((candidate) => isPathWithin(candidate, path, { allowSelf: false }))
     if (!root) throw new Error('Storage target is outside its configured root')
     let current = root
     for (const part of relative(root, path).split(sep)) {

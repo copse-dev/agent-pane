@@ -3,6 +3,7 @@ import { load } from 'js-yaml'
 import { createHash } from 'node:crypto'
 import { existsSync, globSync, lstatSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { isPathWithin } from '@copse/std/path-containment.ts'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { fingerprintPaths } from '../../../scripts/lib/dev-sync.mts'
@@ -95,8 +96,7 @@ export function containedPreparationPath(root: string, path: string): string {
   // host write (or a Linux namespace-only write) follow an unchecked target.
   let ancestor = absolute
   while (!lstatSync(ancestor, { throwIfNoEntry: false })) ancestor = dirname(ancestor)
-  const canonical = relative(realpathSync(root), realpathSync(ancestor))
-  if (canonical === '..' || canonical.startsWith(`..${sep}`) || isAbsolute(canonical)) {
+  if (!isPathWithin(realpathSync(root), realpathSync(ancestor))) {
     throw new Error(`Preparation input points outside the worktree: ${path}`)
   }
   return absolute

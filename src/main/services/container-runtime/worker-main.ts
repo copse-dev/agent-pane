@@ -54,6 +54,7 @@ import { finalGuestText, foldGuestTranscript } from './guest-transcript.ts'
 import { GuestProgress } from './guest-progress.ts'
 import { bundleCarryOut } from './guest-carry-out.ts'
 import { countTokens, failedTurn, newTokenTally, tokensUsed } from './guest-turn.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 /**
  * What an entry point decides for its worker. Code-supplied by the entry; see
@@ -195,9 +196,7 @@ function baselineInPlace(spec: Spec): { created: boolean } {
     git(spec.workspace, ['commit', '--quiet', '--allow-empty', '-m', 'baseline'])
     return { created }
   } catch (error) {
-    say(
-      `[worker] in-place baseline failed (${error instanceof Error ? error.message : String(error)}); continuing without one\n`,
-    )
+    say(`[worker] in-place baseline failed (${errorMessage(error)}); continuing without one\n`)
     return { created: false }
   }
 }
@@ -443,7 +442,7 @@ async function workerMain(profile: WorkerProfile): Promise<void> {
     try {
       await probeBroker(link)
     } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error)
+      const reason = errorMessage(error)
       await egressProxy?.close()
       throw new Error(
         `egress broker unreachable over the container's stdio: ${reason}. Nothing in the guest can leave the container until the host answers.`,
@@ -548,7 +547,7 @@ async function workerMain(profile: WorkerProfile): Promise<void> {
     // own confinement: an engine that dropped a flag is caught here.
     await declareContainment()
   } catch (error) {
-    declineReason = error instanceof Error ? error.message : String(error)
+    declineReason = errorMessage(error)
     say(`[worker] container containment NOT declared: ${declineReason}\n`)
   }
 
@@ -698,7 +697,7 @@ async function workerMain(profile: WorkerProfile): Promise<void> {
   } catch (error) {
     if (stop.reason === 'completed') {
       stop.reason = 'error'
-      errorText = error instanceof Error ? error.message : String(error)
+      errorText = errorMessage(error)
     }
   } finally {
     progress.flush()

@@ -5,7 +5,7 @@ import { getResolvedExtraProvider } from './extra-providers-store.ts'
 import { getSetting } from '../storage/settings.ts'
 import { OPENROUTER_BASE_URL } from '@copse/llm/openrouter.ts'
 import { validateCredentialBaseUrl } from '@copse/llm/credential-url.ts'
-import { resolveCursorCloudApiBase } from '../remote/cursor-cloud-models.ts'
+import { cursorAuthHeader, resolveCursorCloudApiBase } from '../remote/cursor-cloud-models.ts'
 
 // Same overridable base the model catalog fetch uses (openrouter-models.ts): the
 // hidden `openRouterApiBase` setting lets e2e point validation at a local
@@ -88,10 +88,6 @@ export async function validateOpenAiApiKey(key: string): Promise<ApiKeyValidatio
       formatOk: true,
     }
   }
-}
-
-function cursorAuthHeader(apiKey: string): string {
-  return `Basic ${Buffer.from(`${apiKey}:`).toString('base64')}`
 }
 
 export async function validateCursorApiKey(key: string): Promise<ApiKeyValidationResult> {
