@@ -750,6 +750,24 @@ export function listSourceFiles(tree: OracleFiles = workingTree): string[] {
 }
 
 /**
+ * Unit tests that read the CI spec list and its inputs from disk: the eligible
+ * specs, their shard weights, the CI excludes and the smoke inventory. The import
+ * graph cannot tie a spec to them, so a PR adding one beside a source edit got a
+ * unit subset without them, and the unweighted-spec limit and shard balance
+ * failed only in the full suite. They join a subset the graph already chose; a
+ * change the graph cannot see at all still runs everything.
+ */
+const SPEC_LIST_TESTS: readonly string[] = [
+  'scripts/ci-workflow-invariants.test.ts',
+  'scripts/small-gate.test.ts',
+]
+const SPEC_LIST_INPUTS: readonly RegExp[] = [
+  /^tests\/e2e\/.+\.e2e\.ts$/,
+  /^scripts\/e2e-shard-weights\.json$/,
+  /^tests\/e2e\/(exclusions|smoke-inventory)\.json$/,
+]
+
+/**
  * Map a set of changed files to the affected e2e specs and unit tests. `null`
  * (see {@link changedFiles}) means the change set is unknown: select everything.
  */
@@ -831,6 +849,12 @@ export function computeSelection(
       }
     }
   }
+
+  const specListInputs = changed.filter((f) => SPEC_LIST_INPUTS.some((re) => re.test(f)))
+  if (unitReasons.size > 0 && specListInputs.length > 0)
+    for (const t of SPEC_LIST_TESTS)
+      if (unitTests.includes(t))
+        addReason(unitReasons, t, `reads the CI spec list (${specListInputs.join(', ')})`)
 
   const selectedE2e = broad ? specs : [...e2eReasons.keys()].sort()
   const selectedUnit = broad ? unitTests : [...unitReasons.keys()].sort()

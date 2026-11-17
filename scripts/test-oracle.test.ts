@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { z } from 'zod'
-import { assignShards } from './test-oracle.mts'
+import { assignShards, computeSelection, computeUnitPlan } from './test-oracle.mts'
 
 const ORACLE = resolve('scripts/test-oracle.mts')
 
@@ -203,6 +203,39 @@ describe('test oracle dependency inputs', () => {
       }
     })
   }
+})
+
+describe('test oracle spec-list readers', () => {
+  // These tests read the CI spec list and shard weights from disk, so the import
+  // graph cannot tie a new spec to them. A PR adding a spec beside a source edit
+  // got a unit subset without them, and the 21st unweighted spec failed only
+  // in the full check.
+  const readers = ['scripts/ci-workflow-invariants.test.ts', 'scripts/small-gate.test.ts']
+  const source = 'src/renderer/views/footer-branch-status.ts'
+
+  it('adds them to an import-graph subset when a spec or its list inputs change', () => {
+    for (const input of [
+      'tests/e2e/new-feature.e2e.ts',
+      'scripts/e2e-shard-weights.json',
+      'tests/e2e/exclusions.json',
+      'tests/e2e/smoke-inventory.json',
+    ]) {
+      const sel = computeSelection([input, source])
+      const plan = computeUnitPlan(sel)
+      assert.equal(plan.mode, 'subset', input)
+      for (const reader of readers) {
+        assert.ok(plan.tests.includes(reader), `${input} should select ${reader}`)
+        assert.match(sel.unitReasons.get(reader)?.join('\n') ?? '', /reads the CI spec list/)
+      }
+    }
+  })
+
+  it('leaves a source-only change alone and a spec-only change on the full suite', () => {
+    const sourceOnly = computeSelection([source]).selectedUnit
+    for (const reader of readers) assert.ok(!sourceOnly.includes(reader), reader)
+    const specOnly = computeSelection(['tests/e2e/new-feature.e2e.ts'])
+    assert.equal(computeUnitPlan(specOnly).mode, 'full')
+  })
 })
 
 describe('assignShards', () => {

@@ -161,6 +161,12 @@ Read the **confidence line** before trusting the subset:
 
 The oracle deliberately refuses to shrink below what it can back up: an empty
 selection runs the **full** suite rather than reporting a green on zero tests.
+A few tests read their input from disk instead of importing it, so the import
+graph cannot see them. `ci-workflow-invariants` and `small-gate` read the CI spec
+list, shard weights, CI excludes and smoke inventory. A changed or new spec, or
+one of those files, adds them to whatever subset the graph chose. That subset
+then catches a spec added without a shard weight, which used to surface only in
+the full check.
 
 ### Choose the local gate by risk
 
