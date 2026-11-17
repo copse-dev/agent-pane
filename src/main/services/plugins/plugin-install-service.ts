@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import * as fsp from 'node:fs/promises'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { dirname, join, relative, resolve, sep } from 'node:path'
+import { isPathWithin } from '@copse/std/path-containment.ts'
 import { z } from 'zod'
 import {
   AGENT_PLUGIN_MANIFEST_FILE,
@@ -271,8 +272,7 @@ async function extractPackage(
         throw new Error('Plugin package exceeds the safe compression ratio.')
       }
       const target = join(destination, ...packagePath.split('/'))
-      const rel = relative(destination, target)
-      if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+      if (!isPathWithin(destination, target)) {
         throw new Error('Plugin package entry escapes the staging directory.')
       }
       await fsp.mkdir(dirname(target), { recursive: true })
@@ -355,8 +355,7 @@ async function adaptLegacyMcp(
   if ((await pathKind(join(root, 'mcp.json'))) !== null) return
   const declared = manifest?.mcpServers?.trim()
   const source = declared ? resolve(root, declared) : join(root, '.mcp.json')
-  const rel = relative(root, source)
-  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+  if (!isPathWithin(root, source)) {
     throw new Error('Legacy MCP path escapes the plugin package.')
   }
   const text = await fsp.readFile(source, 'utf8').catch(() => null)

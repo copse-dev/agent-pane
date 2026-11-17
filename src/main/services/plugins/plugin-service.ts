@@ -89,6 +89,7 @@ import { isRecord } from '@shared/unknown-value.ts'
 export { discoverPluginToolSource, hashPluginToolSource } from './plugin-tool-source.ts'
 export { readPluginSettingValue } from './plugin-settings-read.ts'
 import { pluginSettingsKey, readPluginSettings } from './plugin-settings-read.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 /** One-time bridge from the retired top-level model settings now owned by plugins. */
 const PLUGIN_MODEL_SETTINGS_MIGRATION_KEY = 'pluginMigration.pluginModelSettings'
@@ -577,10 +578,6 @@ export interface PluginService {
 const pluginUnavailableReasons = new Map<string, string>()
 const inertSourceReasons = new Map<string, string>()
 
-function describeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
 /** Why this plugin is not usable, when {@link refreshPluginSources} recorded a cause. */
 export function pluginUnavailableReason(pluginId: string): string | undefined {
   return pluginUnavailableReasons.get(pluginId)
@@ -713,7 +710,7 @@ export function createPluginService(registry: PluginRegistry): PluginService {
         discovered.push(await discoverPluginToolSource(source))
         inertSourceReasons.delete(source)
       } catch (error) {
-        inertSourceReasons.set(source, describeError(error))
+        inertSourceReasons.set(source, errorMessage(error))
         console.warn(`[plugins] selected source ${JSON.stringify(source)} is inert:`, error)
       }
     }
@@ -774,7 +771,7 @@ export function createPluginService(registry: PluginRegistry): PluginService {
           // plugin behavior fails closed, so the plugin is registered and then
           // switched off, which on its own is indistinguishable from a user
           // having turned it off.
-          pluginUnavailableReasons.set(id, describeError(error))
+          pluginUnavailableReasons.set(id, errorMessage(error))
           console.warn(`[plugins] plugin ${JSON.stringify(id)} tools could not start:`, error)
         }
       } else {

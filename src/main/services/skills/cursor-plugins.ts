@@ -1,6 +1,7 @@
 import * as fsp from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
+import { pathExists } from '@copse/std/path-exists.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
 import { isRecord, nonEmptyStringOr } from '@shared/unknown-value.ts'
 
@@ -18,15 +19,6 @@ interface PluginManifest {
 
 export function cursorPluginsRoot(): string {
   return join(homedir(), '.cursor', 'plugins')
-}
-
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await fsp.access(path)
-    return true
-  } catch {
-    return false
-  }
 }
 
 export async function readPluginManifest(pluginRoot: string): Promise<PluginManifest | null> {

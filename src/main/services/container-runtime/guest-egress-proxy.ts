@@ -25,6 +25,7 @@ import type { Socket } from 'node:net'
 import type { Duplex } from 'node:stream'
 import type { EgressLink } from './egress-link.ts'
 import { guestEgressAuthorization, parseEgressTarget } from './egress-rules.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 export interface GuestEgressProxyAddress {
   host: string
@@ -189,7 +190,7 @@ export function startGuestEgressProxy(
         pipeBoth(client, tunnel)
       },
       (error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error)
+        const message = errorMessage(error)
         options.onTunnelError?.(`${target.host}:${String(target.port)}`, message)
         const status = tunnelFailureStatus(message)
         client.end(
@@ -272,7 +273,7 @@ export function startGuestEgressProxy(
         })
       },
       (error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error)
+        const message = errorMessage(error)
         options.onTunnelError?.(`${target.host}:${String(target.port)}`, message)
         response.writeHead(tunnelFailureStatus(message).code, {
           Connection: 'close',

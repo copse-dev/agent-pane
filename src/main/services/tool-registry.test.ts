@@ -944,6 +944,23 @@ describe('ToolRegistry', () => {
     assert.equal(JSON.stringify(toggled.toLLMTools()), JSON.stringify(first.toLLMTools()))
   })
 
+  it('toLLMToolsNamed keeps only the allow-listed tools, in the stable order', () => {
+    const reg = new ToolRegistry()
+    for (const name of ['write_file', 'read_file', 'grep']) {
+      reg.register({
+        name,
+        description: `the ${name} tool`,
+        parameters: z.object({ arg: z.string() }),
+        execute: async () => '',
+      })
+    }
+    assert.deepEqual(
+      reg.toLLMToolsNamed(['read_file', 'grep', 'not_registered']).map((t) => t.name),
+      ['grep', 'read_file'],
+    )
+    assert.deepEqual(reg.toLLMToolsNamed([]), [])
+  })
+
   it('reports bad arguments as a sentence, not the ZodError JSON dump', async () => {
     setPermissionGateForTests(async () => true)
     let executed = false

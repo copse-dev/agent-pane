@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { runSubagent } from '@copse/agent/run-subagent.ts'
 import { conversationTokenBudget } from '@copse/agent/trim-history.ts'
 import { readFileLimitsForSubagent } from '@copse/agent/read-file-limits.ts'
-import type { LLMMessage, LLMTool, StreamChunk, ToolExecuteResult } from '@shared/types'
+import type { LLMMessage, StreamChunk, ToolExecuteResult } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
 import { buildProvider } from './providers/provider-selection.ts'
 import { resolveDynamicModelId } from './providers/dynamic-model.ts'
@@ -63,11 +63,6 @@ export function runWithOrchestrationContext<T>(
   return contextStorage.run(ctx, fn)
 }
 
-function filterWorkerTools(registry: ToolRegistry): LLMTool[] {
-  const names = new Set<string>(ORCHESTRATION_WORKER_TOOL_NAMES)
-  return registry.toLLMTools().filter((t) => names.has(t.name))
-}
-
 async function executeWorkerTool(
   registry: ToolRegistry,
   name: string,
@@ -114,7 +109,7 @@ export function getOrchestrationRunner(): OrchestrationRunner | null {
         provider,
         prompt: step,
         parentGoal: `${ctx.parentGoal}\nWorkspace: ${workspace}`,
-        tools: filterWorkerTools(ctx.registry),
+        tools: ctx.registry.toLLMToolsNamed(ORCHESTRATION_WORKER_TOOL_NAMES),
         parentToolCallId: ctx.parentToolCallId,
         signal,
         maxSteps: ORCHESTRATION_WORKER_MAX_STEPS,

@@ -6,6 +6,7 @@ import { closeIcon } from '../dom/icons.ts'
 import { awaitPendingThreadPersistence } from '../controller/persistence.ts'
 import { createOverlayDialog } from './dialog-shell.ts'
 import { showErrorToast, showToast } from './toast.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 interface OpenHistoryEditorOptions {
   projectId: string
@@ -27,10 +28,6 @@ function replaceThread(
     ),
   })
   store.emit('threads_changed')
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 /** Open the same-thread transcript editor reached through the Fork actions. */
@@ -279,7 +276,7 @@ export function openThreadHistoryEditor(
         saving = false
         undo.textContent = 'Undo last edit'
         updateControls()
-        showErrorToast('Could not undo history edit', errorText(error))
+        showErrorToast('Could not undo history edit', errorMessage(error))
       }
     }
     undo.addEventListener('click', () => {
@@ -311,7 +308,7 @@ export function openThreadHistoryEditor(
           'div',
           { class: 'history-editor-load-error', role: 'alert' },
           'Could not load this thread’s history.',
-          el('span', {}, errorText(error)),
+          el('span', {}, errorMessage(error)),
         ),
       )
       footer.append(el('button', { class: 'ui-btn ui-btn-secondary', type: 'button' }, 'Close'))

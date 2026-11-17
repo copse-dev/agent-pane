@@ -336,7 +336,6 @@ describe('canvas background parity', () => {
     resetUserData()
     seedEmptyProject(seedStableWorkspace(), PROJECT_ID, {
       model: 'claude-sonnet-4-6',
-      mcpUiCanvasEnabled: true,
       theme: 'dark',
       uiTintColor: '#244c25',
       uiTintStrength: 'strong',

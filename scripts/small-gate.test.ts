@@ -1,10 +1,11 @@
 import { z } from 'zod'
-import { it } from 'node:test'
+import { after, it } from 'node:test'
 import { execFileSync } from 'node:child_process'
 import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { computeSmallGate, parseSmokeInventory } from './lib/small-gate.mts'
 import {
   type Selection,
@@ -13,6 +14,7 @@ import {
   read,
   readShardWeights,
 } from './test-oracle.mts'
+import { decodeWithSchema, safeJsonParse } from './lib/safe-json.mts'
 import { outcomeHooks } from './lib/e2e-outcomes.mts'
 import { compareOutcomes, parseGatePlan, parseOutcome } from './lib/gate-evidence.mts'
 
@@ -284,56 +286,86 @@ it('partial workflow reruns cannot reuse older passes as complete current covera
   assert.equal(complete.classificationComplete, true)
 })
 
+/**
+ * The shadow script plans from the Git state of its working directory, and the
+ * oracle counts uncommitted and untracked files as changed, as a local run
+ * should. In a checkout with an edit in progress, the empty diff the next two
+ * cases need is not empty, and they failed with nothing wrong in the script.
+ * They run in a clean clone of HEAD instead. The script still comes from this
+ * checkout, so an edit to it is what they test.
+ */
+let committed: string | undefined
+function committedCheckout(): string {
+  if (committed) return committed
+  const dir = mkdtempSync(join(tmpdir(), 'small-gate-head-'))
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+  execFileSync('git', ['clone', '--quiet', '--shared', '--no-checkout', process.cwd(), dir], {
+    stdio: 'pipe',
+  })
+  execFileSync('git', ['-C', dir, 'checkout', '--quiet', '--detach', head], { stdio: 'pipe' })
+  committed = dir
+  return dir
+}
+after(() => {
+  if (committed) rmSync(committed, { recursive: true, force: true })
+})
+
+function runShadow(env: Record<string, string>): ReturnType<typeof parseGatePlan> {
+  const cwd = committedCheckout()
+  execFileSync(process.execPath, [resolve('scripts/small-gate-shadow.mts')], {
+    cwd,
+    env: {
+      ...process.env,
+      BASE_SHA: 'HEAD',
+      STACK_TIP: 'false',
+      CI_FULL_LABEL: 'false',
+      UPDATE_SCREENSHOTS_LABEL: 'false',
+      GITHUB_RUN_ID: '1',
+      GITHUB_RUN_ATTEMPT: '1',
+      HEAD_SHA: '',
+      GITHUB_OUTPUT: '',
+      GITHUB_STEP_SUMMARY: '',
+      ...env,
+    },
+    stdio: 'pipe',
+  })
+  return parseGatePlan(readFileSync(join(cwd, 'e2e-evidence/plan.json'), 'utf8'))
+}
+
+/** {@link listCiSpecs} for the clean checkout, which the oracle reads from its cwd. */
+function committedCiSpecs(): string[] {
+  const oracle = pathToFileURL(resolve('scripts/test-oracle.mts')).href
+  const stdout = execFileSync(
+    process.execPath,
+    [
+      '--input-type=module',
+      '-e',
+      `const { listCiSpecs } = await import(${JSON.stringify(oracle)})\nprocess.stdout.write(JSON.stringify(listCiSpecs()))`,
+    ],
+    { cwd: committedCheckout(), encoding: 'utf8' },
+  )
+  const specs = safeJsonParse(stdout, decodeWithSchema(z.array(z.string())))
+  assert.ok(specs, 'the clean checkout lists its CI specs')
+  return specs
+}
+
 it('release and version-tag pushes keep full shadow coverage even with an empty diff', () => {
   for (const ref of ['refs/heads/release', 'refs/tags/v0.1.0-beta.15', 'refs/heads/main']) {
-    execFileSync(process.execPath, ['scripts/small-gate-shadow.mts'], {
-      env: {
-        ...process.env,
-        BASE_SHA: 'HEAD',
-        EVENT: 'push',
-        GITHUB_REF: ref,
-        BASE_REF: '',
-        ACTUAL_MODE: 'full',
-        STACK_TIP: 'false',
-        CI_FULL_LABEL: 'false',
-        UPDATE_SCREENSHOTS_LABEL: 'false',
-        GITHUB_RUN_ID: '1',
-        GITHUB_RUN_ATTEMPT: '1',
-        HEAD_SHA: '',
-        GITHUB_OUTPUT: '',
-        GITHUB_STEP_SUMMARY: '',
-      },
-      stdio: 'pipe',
-    })
-    const result = parseGatePlan(read('e2e-evidence/plan.json'))
+    const result = runShadow({ EVENT: 'push', GITHUB_REF: ref, BASE_REF: '', ACTUAL_MODE: 'full' })
     assert.equal(result.proposed.mode, ref === 'refs/heads/main' ? 'skip' : 'full')
-    if (ref !== 'refs/heads/main') assert.deepEqual(result.proposed.specs, listCiSpecs())
+    if (ref !== 'refs/heads/main') assert.deepEqual(result.proposed.specs, committedCiSpecs())
   }
 })
 
 it('the screenshot drift refresh PR keeps full shadow coverage with its empty diff', () => {
   for (const refresh of ['true', 'false']) {
-    execFileSync(process.execPath, ['scripts/small-gate-shadow.mts'], {
-      env: {
-        ...process.env,
-        BASE_SHA: 'HEAD',
-        EVENT: 'pull_request',
-        GITHUB_REF: 'refs/pull/1/merge',
-        BASE_REF: 'main',
-        ACTUAL_MODE: refresh === 'true' ? 'full' : 'skip',
-        STACK_TIP: 'false',
-        CI_FULL_LABEL: 'false',
-        UPDATE_SCREENSHOTS_LABEL: 'false',
-        SCREENSHOT_REFRESH: refresh,
-        GITHUB_RUN_ID: '1',
-        GITHUB_RUN_ATTEMPT: '1',
-        HEAD_SHA: '',
-        GITHUB_OUTPUT: '',
-        GITHUB_STEP_SUMMARY: '',
-      },
-      stdio: 'pipe',
+    const result = runShadow({
+      EVENT: 'pull_request',
+      GITHUB_REF: 'refs/pull/1/merge',
+      BASE_REF: 'main',
+      ACTUAL_MODE: refresh === 'true' ? 'full' : 'skip',
+      SCREENSHOT_REFRESH: refresh,
     })
-    const result = parseGatePlan(read('e2e-evidence/plan.json'))
     assert.equal(result.proposed.mode, refresh === 'true' ? 'full' : 'skip')
   }
 })
