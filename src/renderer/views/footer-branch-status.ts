@@ -43,6 +43,13 @@ function detachedTitle(detached: DetachedAttachment): string {
     : `This checkout is detached from ${detached.branch}. Your files are preserved. Reattach to put it back on the branch.`
 }
 
+type OnBaseBranchAttachment = Extract<ThreadWorktreeAttachment, { state: 'on-base-branch' }>
+
+/** No repair is offered here: the user checks the thread branch out themselves (#1882). */
+function onBaseBranchTitle(onBase: OnBaseBranchAttachment): string {
+  return `This checkout is on ${onBase.baseBranch}, its base branch, instead of ${onBase.branch}. Copse will not run in it, so no edit lands on ${onBase.baseBranch}. Your files are preserved. Check out ${onBase.branch} in this checkout to continue.`
+}
+
 /**
  * The command that finishes an interrupted Git operation. It runs in the
  * user's own shell rather than main's sandboxed Git: that shell has their
@@ -350,6 +357,16 @@ export function mountFooterBranchStatus(
   function renderReattach(): void {
     const current = activeDetached()
     const visible = current !== null && !isPickerMode() && !wrap.hidden
+    if (current?.state === 'on-base-branch') {
+      // Warn on the branch itself; there is no repair button for this state.
+      reattachButton.hidden = true
+      trigger.classList.toggle('is-detached', visible)
+      if (!visible) return
+      const title = onBaseBranchTitle(current)
+      trigger.title = title
+      trigger.setAttribute('aria-label', `${title} Copy branch name.`)
+      return
+    }
     const shown = visible && !agentCanTouchCheckout(current)
     reattachButton.hidden = !shown
     trigger.classList.toggle('is-detached', visible)
@@ -445,6 +462,7 @@ export function mountFooterBranchStatus(
     if (
       !owner ||
       !current ||
+      current.state === 'on-base-branch' ||
       agentCanTouchCheckout(current) ||
       reattaching ||
       activeRecoveryRunId() !== null

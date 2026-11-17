@@ -2029,6 +2029,10 @@
       "sha256": "5ac117355943adb781c94d796ff332f362d724312b031c9ec50f08bbb30962f6",
       "bytes": 18419
     },
+    "footer-branch-on-base-branch.png": {
+      "sha256": "3c2405abb5daaa1c5ab4d5c9021d9b5ff84a3cfa47fc774b69d46c5ffbaa5038",
+      "bytes": 24020
+    },
     "footer-branch-picker-compact-220.png": {
       "sha256": "7620a9902b86a2c328e9cc249ed3b066a183ded727bc79f68b94b8dbcab20c60",
       "bytes": 205946
