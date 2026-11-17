@@ -98,6 +98,7 @@ export function formatSandboxNetworkDenialAudit(denied: readonly DeniedDestinati
 /** Bridged tools that reach GitHub from the host, besides every `gh_*` tool. */
 const GITHUB_BRIDGE_TOOLS: ReadonlySet<string> = new Set([
   'git_fetch',
+  'git_push',
   'get_ci_status',
   'get_ci_failure_logs',
   'wait_for_ci_checks',
@@ -190,6 +191,9 @@ function githubRoute(bridgeToolNames: readonly string[]): string {
     }
     if (githubTools.includes('git_fetch')) {
       sentences.push('Use git_fetch to fetch branches or PR heads from origin.')
+    }
+    if (githubTools.includes('git_push')) {
+      sentences.push('Use git_push to push the current branch to origin.')
     }
     if (shellFallback) sentences.push(`For anything they do not cover, ${shellFallback}`)
     return sentences.join(' ')

@@ -131,6 +131,13 @@ describe('acpSandboxGithubSteer (issue #4145)', () => {
     assert.doesNotMatch(steer, /gh_api_read|git_fetch|run_shell/)
   })
 
+  it('names git_push as a GitHub route when it is the only one listed', () => {
+    const steer = acpSandboxGithubSteer(['read_file', 'git_push'])
+    assert.match(steer, /Offered here: git_push\./)
+    assert.match(steer, /Use git_push to push the current branch to origin\./)
+    assert.doesNotMatch(steer, /no signed-in route to GitHub|offers no GitHub or shell tools/)
+  })
+
   it('falls back to run_shell when the bridge offers no GitHub tools (#4142)', () => {
     const steer = acpSandboxGithubSteer(['read_file', 'run_shell'])
     assert.match(steer, /offers no GitHub tools in this session/)
