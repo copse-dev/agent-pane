@@ -10,6 +10,8 @@
  * private road that the app could break without noticing.
  */
 
+import { sleep } from '@copse/std/sleep.ts'
+
 const COMPOSER_SELECTOR = '.prompt-input'
 const SUBMIT_SELECTOR = '.submit-btn'
 /** `.submit-btn` wears this while a run is in flight (it renders as Stop). */
@@ -44,10 +46,6 @@ const DEFAULT_CHARS_PER_SECOND = 28
 const DEFAULT_START_DELAY_MS = 1_200
 /** Long enough that the loop mostly shows a finished answer, not a restart. */
 const DEFAULT_LOOP_PAUSE_MS = 20_000
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
 
 /** Poll for an element, resolving `null` if it never turns up. */
 async function waitForElement<T extends Element>(

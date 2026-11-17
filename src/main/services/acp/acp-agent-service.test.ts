@@ -28,7 +28,6 @@ import { setGitAvailableForTest } from '../tool-availability.ts'
 import {
   AcpTurnFailure,
   acpTurnSpawnConfig,
-  acpErrorMessage,
   buildAcpPrompt,
   buildAcpPromptContent,
   grantableAcpStateDir,
@@ -226,26 +225,6 @@ describe('ACP turn spawn config', () => {
     const config = acpTurnSpawnConfig({ command: 'agent', cwd: '/workspace' }, [own])
 
     assert.deepEqual(config.chatReadRoots, [own])
-  })
-})
-
-describe('acpErrorMessage', () => {
-  it('includes JSON-RPC error.data.details when present', () => {
-    const err = new Error('Internal error')
-    Object.defineProperty(err, 'data', {
-      value: {
-        details: "Claude Code process exited with code 1. stderr: error: unknown option '--tools'",
-      },
-    })
-
-    assert.equal(
-      acpErrorMessage(err),
-      "Internal error: Claude Code process exited with code 1. stderr: error: unknown option '--tools'",
-    )
-  })
-
-  it('falls back to the base message when there is no structured detail', () => {
-    assert.equal(acpErrorMessage(new Error('ACP connection closed')), 'ACP connection closed')
   })
 })
 

@@ -22,6 +22,7 @@ import {
 import type { SshTransport } from '../ssh-workspace/transport.ts'
 import { scanListeningPorts, type PortScan } from '../ports/host-scan.ts'
 import { dedupePorts, scanCandidates, type ListeningPort } from '../ports/port-scan.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 export interface VncConnectionOwner {
   id: number
@@ -352,7 +353,7 @@ export class VncService {
         localPort = opened.localPort
         forward = { transport: connection.transport, localPort }
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
+        const message = errorMessage(error)
         throw new Error(`Could not open the SSH tunnel: ${message}`, { cause: error })
       }
     } else if (target.kind === 'network') {

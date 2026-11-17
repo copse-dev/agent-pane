@@ -13,6 +13,7 @@ import { AA_BODY_TEXT, fillContrast } from './helpers/fill-contrast.ts'
 import { switchTheme } from './helpers/theme.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 const ROW_SELECTOR = '.conversation-queued .msg-held .message-queued-actions'
@@ -27,14 +28,24 @@ const ROW_SELECTOR = '.conversation-queued .msg-held .message-queued-actions'
 
 describe('held hook message in the queue', function () {
   this.timeout(90_000)
+  let ownedWorkspaceRoot: string | null = null
+
+  function seedHeldQueueWorkspace(): string {
+    ownedWorkspaceRoot = seedStableWorkspace()
+    return ownedWorkspaceRoot
+  }
 
   afterEach(() => {
     resetUserData()
+    if (ownedWorkspaceRoot !== null) {
+      removeE2eTree(ownedWorkspaceRoot)
+      ownedWorkspaceRoot = null
+    }
   })
 
   it('renders a held badge + Release action and captures a screenshot', async function () {
     resetUserData()
-    seedHeldQueueFixture(process.cwd())
+    seedHeldQueueFixture(seedHeldQueueWorkspace())
     await browser.reloadSession()
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
@@ -121,7 +132,7 @@ describe('held hook message in the queue', function () {
 
   it('keeps the HELD badge and Release labels readable in both themes, hovered too', async function () {
     resetUserData()
-    seedHeldQueueFixture(process.cwd())
+    seedHeldQueueFixture(seedHeldQueueWorkspace())
     await browser.reloadSession()
     await $('.conversation-queued .msg-queued.msg-held').waitForExist({ timeout: 30_000 })
 

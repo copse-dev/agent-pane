@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import { getSetting } from '../storage/settings.ts'
 import type { SshConfigAlias, SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
 
@@ -27,7 +27,7 @@ function sshConfigAliasId(alias: string): string {
   // Dots, underscores, long names, and other valid OpenSSH alias characters
   // collapse under slugification. Keep a deterministic suffix so two distinct
   // aliases never silently become the same persisted host.
-  const suffix = createHash('sha256').update(alias.toLowerCase()).digest('hex').slice(0, 8)
+  const suffix = sha256Hex(alias.toLowerCase()).slice(0, 8)
   const base = normalized || 'host'
   return `${base.slice(0, 55)}-${suffix}`
 }

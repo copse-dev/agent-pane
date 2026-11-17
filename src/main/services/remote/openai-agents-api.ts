@@ -1,5 +1,6 @@
 import { openAiApiError, redactOpenAiDiagnostic } from './openai-api-error.ts'
-import { randomUUID, createHash } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
 import type { SessionCreateParamsNonStreaming } from 'openai/resources/beta/agents/sessions/sessions'
@@ -594,9 +595,7 @@ export class OpenAiAgentsApi {
             if (!parsed.success || parsed.data.turn_id !== turn.id)
               throw new Error('OpenAI requested an unsupported action or a tool for another turn.')
             const call = parsed.data
-            const fingerprint = createHash('sha256')
-              .update(JSON.stringify([call.name, call.arguments]))
-              .digest('hex')
+            const fingerprint = sha256Hex(JSON.stringify([call.name, call.arguments]))
             const results = (state.functionResults ??= [])
             let saved = results.find(
               (entry) => entry.turnId === call.turn_id && entry.callId === call.call_id,
@@ -635,9 +634,7 @@ export class OpenAiAgentsApi {
                 ],
               },
               'POST',
-              createHash('sha256')
-                .update(JSON.stringify([state.sessionId, call.turn_id, call.call_id]))
-                .digest('hex'),
+              sha256Hex(JSON.stringify([state.sessionId, call.turn_id, call.call_id])),
             )
           }
         }
