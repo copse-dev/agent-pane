@@ -984,10 +984,17 @@ export function mountFooterBranchStatus(
       // submission's owner, never whichever thread becomes active while waiting.
       const picked = baseBranchByThread.get(threadId)
       if (picked) return picked
+      // The footer's status already names this thread's checkout once loaded
+      // (it is cleared on every thread switch). Read Git only when the send
+      // beat that refresh, as a send right at startup can.
+      const loaded =
+        threadId === store.getState().activeThreadId && status !== null
+          ? status.currentBranch
+          : undefined
       const [listed, defaultName, current] = await Promise.all([
         api.git.listBranches(projectId, threadId),
         api.git.getDefaultBranch(projectId, threadId),
-        api.git.currentBranch(projectId, threadId),
+        loaded === undefined ? api.git.currentBranch(projectId, threadId) : loaded,
       ])
       // A detached project checkout starts the thread where it is (see
       // `projectCheckoutDetached`), never on a branch nobody picked.

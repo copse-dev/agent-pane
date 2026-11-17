@@ -1314,6 +1314,31 @@ describe('footer branch status', () => {
     assert.equal(await control.resolveBaseBranch('project-1', 'thread-1'), undefined)
   })
 
+  it('reads whether the checkout is detached when a send beats the footer refresh', async () => {
+    const branches = [{ name: 'main', lastCommitDate: '2024-01-01' }]
+    for (const [currentBranch, expected] of [
+      [null, undefined],
+      ['feature/left-behind', 'main'],
+    ] as const) {
+      const store = createStore({
+        workspaceRoot: '/repo',
+        activeProjectId: 'project-1',
+        activeThreadId: 'thread-1',
+        threads: [thread()],
+      })
+      const host = document.createElement('div')
+      document.body.append(host)
+      const control = mountFooterBranchStatus(
+        host,
+        store,
+        createApi({ currentBranch, pr: null }, branches, 'main'),
+      )
+      // No settle: the footer's own branch status has not loaded yet.
+      assert.equal(await control.resolveBaseBranch('project-1', 'thread-1'), expected)
+      control.destroy()
+    }
+  })
+
   it('stays hidden for a folder that is not a repository', async () => {
     const store = createStore({
       workspaceRoot: '/folder',
