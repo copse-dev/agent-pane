@@ -1,4 +1,5 @@
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { resolve } from 'node:path'
+import { isPathWithin } from '@copse/std/path-containment.ts'
 
 /**
  * Writers that can change a checkout without going through the diff queue: the
@@ -69,7 +70,7 @@ export function worktreeWriteEpoch(): number {
 export function hasLiveWorktreeWriter(root: string): boolean {
   const target = resolve(root)
   for (const scope of liveWriters.values()) {
-    if (scope === null || contains(scope, target) || contains(target, scope)) return true
+    if (scope === null || isPathWithin(scope, target) || isPathWithin(target, scope)) return true
   }
   return false
 }
@@ -86,12 +87,7 @@ export function hasLiveWorktreeWriter(root: string): boolean {
 export function hasLiveWorktreeWriterWithin(root: string): boolean {
   const target = resolve(root)
   for (const scope of liveWriters.values()) {
-    if (scope !== null && contains(target, scope)) return true
+    if (scope !== null && isPathWithin(target, scope)) return true
   }
   return false
-}
-
-function contains(parent: string, child: string): boolean {
-  const rel = relative(parent, child)
-  return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
 }

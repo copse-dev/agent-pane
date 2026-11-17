@@ -1,5 +1,9 @@
-import { getLmStudioApiKey } from '../storage/settings.ts'
-import { DEFAULT_LM_STUDIO_URL, preferIpv4LoopbackUrl } from '@shared/lm-studio-defaults.ts'
+import { getLmStudioApiKey, getSetting } from '../storage/settings.ts'
+import {
+  DEFAULT_LM_STUDIO_URL,
+  preferIpv4LoopbackUrl,
+  resolveLocalServerUrl,
+} from '@shared/lm-studio-defaults.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
 import { AsyncTtlCache } from '../async-ttl-cache.ts'
 import { isRecord } from '@shared/unknown-value.ts'
@@ -45,6 +49,11 @@ export function looksLikeEmbeddingModelId(id: string): boolean {
   // `nomic-embed-text` matches while `embedded-systems` and `my-embedder-chat`
   // do not.
   return /(?:^|[/\-_.])embed(?:ding)?s?(?:$|[/\-_.])/.test(name)
+}
+
+/** The configured LM Studio (local server) URL, with eval/tunnel env overrides applied. */
+export function localServerUrl(): string {
+  return resolveLocalServerUrl(getSetting<string>('localServerUrl', ''), process.env)
 }
 
 export function lmStudioApiKey(override?: string): string {

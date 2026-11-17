@@ -56,15 +56,6 @@ export const SKIP_DIRS = new Set([
  */
 export const MAX_CONTAINER_ROOT_DEPTH = 6
 
-export async function pathExists(path: string): Promise<boolean> {
-  try {
-    await fsp.access(path)
-    return true
-  } catch {
-    return false
-  }
-}
-
 /**
  * Collect every `<container>/<leafName>` directory under `dir`.
  *
