@@ -1235,6 +1235,28 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
       assert.equal(existsSync(ran), false, 'the clean filter must not run')
     },
   )
+  ownedIt(
+    'listWorktreePathsMissingFromGit runs no clean filter when the attribute read is cut short',
+    async () => {
+      // 200 long filtered paths give check-attr more output than the command
+      // runner keeps; a path whose record was cut off must not be hashed.
+      const ran = join(tempRoot, 'clean-filter-ran')
+      git(tempRoot, ['config', 'filter.marker.clean', `sh -c 'touch "${ran}"; cat'`])
+      await writeFile(join(tempRoot, '.gitattributes'), '*.dat filter=marker\n', 'utf-8')
+      const dir = join('a'.repeat(200), 'b'.repeat(200))
+      await mkdir(join(workspaceRoot, dir), { recursive: true })
+      const paths: string[] = []
+      for (let index = 0; index < 200; index++) {
+        const path = join(dir, `${String(index).padStart(3, '0')}-${'c'.repeat(150)}.dat`)
+        await writeFile(join(workspaceRoot, path), 'filtered\n', 'utf-8')
+        paths.push(path)
+      }
+
+      const missing = await listWorktreePathsMissingFromGit(paths)
+      assert.equal(existsSync(ran), false, 'the clean filter must not run')
+      assert.ok(missing === null || missing.size === 0)
+    },
+  )
 })
 
 describe('upsertStagedDiffEntry', () => {

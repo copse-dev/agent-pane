@@ -897,7 +897,10 @@ export async function findPathsMissingFromGit(
 /**
  * Which of `paths` (relative to `root`) carry a `filter` attribute, so hashing
  * them would run a clean filter. Paths travel NUL-separated, so no name needs
- * quoting. Null when git can't answer.
+ * quoting. Null when git can't answer, including when any path has no record:
+ * the command runner caps output, and a path cut off the end would otherwise
+ * read as unfiltered and be hashed. A record cut mid-value reads as filtered,
+ * which only skips the path.
  */
 async function filteredPaths(root: string, paths: readonly string[]): Promise<Set<string> | null> {
   const attrs = await runGitRead(['check-attr', '-z', '--stdin', 'filter'], root, {
@@ -907,12 +910,15 @@ async function filteredPaths(root: string, paths: readonly string[]): Promise<Se
   // Records are `<path> NUL filter NUL <value> NUL`.
   const fields = attrs.stdout.split('\0')
   const filtered = new Set<string>()
+  const classified = new Set<string>()
   for (let index = 0; index + 2 < fields.length; index += 3) {
     const path = fields[index]
     const value = fields[index + 2]
-    if (path !== undefined && value !== 'unspecified' && value !== 'unset') filtered.add(path)
+    if (path === undefined) continue
+    classified.add(path)
+    if (value !== 'unspecified' && value !== 'unset') filtered.add(path)
   }
-  return filtered
+  return paths.every((path) => classified.has(path)) ? filtered : null
 }
 
 /**
