@@ -59,6 +59,7 @@ function createApi(
       git: {
         ...base['git'],
         branchStatus: async () => status,
+        currentBranch: async () => status.currentBranch,
         listBranches: async () => branches,
         getDefaultBranch: async () => defaultBranch,
         checkoutBranch: async (): Promise<void> => {},
@@ -1257,6 +1258,74 @@ describe('footer branch status', () => {
 
     assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'main')
     assert.equal(await control.resolveBaseBranch('project-1', 'thread-1'), 'main')
+  })
+
+  it('starts a blank thread on a detached project checkout where it is, unless a branch is picked', async () => {
+    // From dogfooding: a project checked out with `git worktree add --detach`
+    // defaulted to `main`, held by another worktree, and the first send failed.
+    // The thread shares a detached checkout, so a default branch would move it.
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const control = mountFooterBranchStatus(
+      host,
+      store,
+      createApi(
+        { currentBranch: null, pr: null },
+        [
+          { name: 'main', lastCommitDate: '2024-01-01' },
+          { name: 'feature/review', lastCommitDate: '2024-01-02' },
+        ],
+        'main',
+      ),
+    )
+    await settle()
+
+    const label = (): string | null | undefined =>
+      host.querySelector('.footer-branch-label')?.textContent
+    assert.equal(label(), 'Detached HEAD')
+    assert.equal(await control.resolveBaseBranch('project-1', 'thread-1'), undefined)
+
+    await openBranchMenu(host)
+    const rows = (): HTMLElement[] => [
+      ...host.querySelectorAll<HTMLElement>('.branch-picker-option'),
+    ]
+    assert.deepEqual(
+      rows().map((row) => row.querySelector('.branch-picker-option-label')?.textContent),
+      ['Detached HEAD', 'main', 'feature/review'],
+    )
+    assert.ok(rows()[0]?.classList.contains('is-selected'))
+
+    // A pick switches the shared checkout to that branch, as on any project.
+    rows()[1]?.click()
+    assert.equal(label(), 'main')
+    assert.equal(await control.resolveBaseBranch('project-1', 'thread-1'), 'main')
+
+    // The detached row takes the pick back.
+    await openBranchMenu(host)
+    assert.ok(rows()[1]?.classList.contains('is-selected'))
+    rows()[0]?.click()
+    assert.equal(label(), 'Detached HEAD')
+    assert.equal(await control.resolveBaseBranch('project-1', 'thread-1'), undefined)
+  })
+
+  it('stays hidden for a folder that is not a repository', async () => {
+    const store = createStore({
+      workspaceRoot: '/folder',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountFooterBranchStatus(host, store, createApi({ currentBranch: null, pr: null }, [], null))
+    await settle()
+    assert.ok(qsRequired(host, '.branch-picker').hidden)
   })
 
   for (const defaultBranch of [null, 'unlisted/default']) {
