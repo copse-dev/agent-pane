@@ -1,7 +1,7 @@
 import { describe, beforeEach, afterEach, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { at } from '@shared/array-utils.ts'
-import { lstat, mkdtemp, readFile, writeFile, rm, mkdir } from 'node:fs/promises'
+import { lstat, mkdtemp, readFile, writeFile, rm, mkdir, symlink } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -1186,6 +1186,35 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
         execFileSync('git', ['cat-file', '-e', scratchBlob], { cwd: tempRoot, stdio: 'ignore' }),
       )
       assert.equal(await listWorktreePathsMissingFromGit(['gone.txt']), null)
+    },
+  )
+  ownedIt(
+    'listWorktreePathsMissingFromGit hashes names git would unquote, and skips links and special files',
+    async () => {
+      await writeFile(join(workspaceRoot, 'a.txt'), 'tracked\n', 'utf-8')
+      git(tempRoot, ['add', 'packages/app/a.txt'])
+      git(tempRoot, ['commit', '-m', 'add workspace file'])
+      // `--stdin-paths` reads a line starting with a quote as a C-quoted name
+      // and drops a trailing CR, so these once hashed tracked a.txt instead.
+      await writeFile(join(workspaceRoot, '"a.txt"'), 'only on disk\n', 'utf-8')
+      await writeFile(join(workspaceRoot, 'a.txt\r'), 'only on disk too\n', 'utf-8')
+      await writeFile(join(workspaceRoot, 'two\nlines.txt'), 'newline name\n', 'utf-8')
+      // Hashing follows a link: one to an endless device blocked until the timeout.
+      await symlink('/dev/zero', join(workspaceRoot, 'zero'))
+      await symlink('a.txt', join(workspaceRoot, 'alias.txt'))
+
+      const started = Date.now()
+      const missing = await listWorktreePathsMissingFromGit([
+        '"a.txt"',
+        'a.txt\r',
+        'two\nlines.txt',
+        'zero',
+        'alias.txt',
+        'a.txt',
+      ])
+      assert.ok(Date.now() - started < 10_000, 'a link to /dev/zero is never read')
+      assert.ok(missing, 'git answered')
+      assert.deepEqual([...missing].sort(), ['"a.txt"', 'a.txt\r', 'two\nlines.txt'])
     },
   )
 })

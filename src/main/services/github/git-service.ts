@@ -840,24 +840,38 @@ export async function getGitStatus(
  *
  * Read-only: `hash-object` without `-w` stores nothing, and it applies the
  * repository's clean filters so the hash matches what `git add` would store.
- * Returns null when git can't answer, including for a path that is no longer a
- * readable file, so callers say nothing rather than guess.
+ * Only regular files are hashed: hashing follows a symlink, so one to a FIFO
+ * or `/dev/zero` would block the audit, and git stores a link as its target
+ * text anyway. Links and special files are never reported. Returns null when
+ * git can't answer, including for a path that is no longer there, so callers
+ * say nothing rather than guess.
  */
 export async function findPathsMissingFromGit(
   root: string | null,
   paths: readonly string[],
 ): Promise<Set<string> | null> {
   if (paths.length === 0) return new Set()
-  if (!root || paths.some((path) => path.includes('\n'))) return null
+  if (!root) return null
+  const kinds = await Promise.all(
+    paths.map((path) =>
+      fsp.lstat(join(root, path)).then(
+        (stat) => (stat.isFile() ? 'file' : 'other'),
+        () => 'gone',
+      ),
+    ),
+  )
+  if (kinds.includes('gone')) return null
+  const files = paths.filter((_path, index) => kinds[index] === 'file')
+  if (files.length === 0) return new Set()
   // `--stdin-paths` reads paths relative to the repository top, not the cwd.
   const prefix = await workTreePrefix(root)
   if (prefix === null) return null
   const hashed = await runGitRead(['hash-object', '--stdin-paths'], root, {
-    stdin: Buffer.from(paths.map((path) => `${prefix}${path}\n`).join('')),
+    stdin: Buffer.from(files.map((path) => `${cQuotePath(`${prefix}${path}`)}\n`).join('')),
   })
   if (hashed.code !== 0) return null
   const hashes = hashed.stdout.split('\n').filter(Boolean)
-  if (hashes.length !== paths.length) return null
+  if (hashes.length !== files.length) return null
   const checked = await runGitRead(['cat-file', '--batch-check=%(objectname)'], root, {
     stdin: Buffer.from(hashes.map((hash) => `${hash}\n`).join('')),
   })
@@ -866,10 +880,19 @@ export async function findPathsMissingFromGit(
   if (lines.length !== hashes.length) return null
   const missing = new Set<string>()
   lines.forEach((line, index) => {
-    const path = paths[index]
+    const path = files[index]
     if (path !== undefined && line.endsWith(' missing')) missing.add(path)
   })
   return missing
+}
+
+/**
+ * Quote a path the way `--stdin-paths` unquotes it. Unquoted, a line starting
+ * with `"` is read as a C-quoted name, a trailing CR is dropped and a newline
+ * splits the path, so each of those would hash some other file.
+ */
+function cQuotePath(path: string): string {
+  return `"${path.replace(/[\\"]/g, (ch) => `\\${ch}`).replace(/\n/g, '\\n')}"`
 }
 
 const THREAD_CHANGE_GIT_TIMEOUT_MS = 10_000
