@@ -22350,6 +22350,9 @@ var init_thread_proposal = __esm({
 });
 
 // src/shared/tools/copse-tool-call.ts
+function isCopseServerName(server) {
+  return typeof server === "string" && COPSE_SERVER_NAME.test(server);
+}
 function normalizeCopseToolName(name) {
   const server = /^mcp__([\w.-]+?)__/i.exec(name)?.[1];
   if (server && !COPSE_SERVER_NAME.test(server)) return name;
@@ -22555,7 +22558,7 @@ function parseReviewerInputCall(call, messageId) {
 }
 function reviewerInputArguments(call) {
   const args = call.args;
-  if (isRecord(args) && args["server"] === "copse" && typeof args["tool"] === "string" && isCopseToolCall(call, args["tool"]) && Object.hasOwn(args, "arguments"))
+  if (isRecord(args) && isCopseServerName(args["server"]) && typeof args["tool"] === "string" && isCopseToolCall(call, args["tool"]) && Object.hasOwn(args, "arguments"))
     return args["arguments"];
   return args;
 }
@@ -74739,6 +74742,7 @@ export {
   threadProposalStatus,
   findThreadProposalDecision,
   threadProposalFileSummary,
+  isCopseServerName,
   isCopseToolCall,
   isAcpDelegateToolCall,
   acpDelegateKind,
