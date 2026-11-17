@@ -193,6 +193,31 @@ describe('acpAgentSandboxOverlay', () => {
     }
   })
 
+  it('grants the agent executable read-only, file by file, and nothing beside it', () => {
+    const bin = join(homedir(), '.local', 'bin', 'cursor-agent')
+    const target = join(
+      homedir(),
+      '.local',
+      'share',
+      'cursor-agent',
+      'versions',
+      '1',
+      'cursor-agent',
+    )
+    const overlay = acpAgentSandboxOverlay(workspace, sandbox, {
+      executables: [bin, target, 'relative/agent'],
+    })
+    const fs = overlay.filesystem
+    assert.ok(fs?.allowRead)
+    assert.ok(fs.allowRead.includes(bin))
+    assert.ok(fs.allowRead.includes(target))
+    assert.ok(!fs.allowRead.includes(join(homedir(), '.local', 'bin')))
+    assert.ok(!fs.allowRead.includes(`${bin}/**`))
+    assert.ok(!fs.allowRead.includes('relative/agent'))
+    for (const path of [bin, target, join(homedir(), '.local', 'bin')])
+      assert.ok(!fs.allowWrite.includes(path), path)
+  })
+
   it('keeps the agent home dirs writable but strips every checkout write for a read-only checkout', () => {
     const writable = acpAgentSandboxOverlay(workspace, sandbox, { allowLocalhost: true })
     const readonly = acpAgentSandboxOverlay(workspace, sandbox, {

@@ -564,8 +564,12 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   the thread-scoped config directory Copse creates for it (read and write), the
   toolchains and git config contained commands get, and, when its preset sets
   `allowMacOsKeychain` (the Claude presets, which keep their macOS login
-  there), `~/Library/Keychains`. It never gets the rest of the home directory:
-  no `~/.ssh`, cloud credentials or other projects.
+  there), `~/Library/Keychains`. It can also read its own executable, as the
+  wrapper shell finds it on `PATH`, and that symlink's target, file by file and
+  read-only: Cursor's installer puts `cursor-agent` in `~/.local/bin`, and
+  without that grant the agent could not even start. The rest of that
+  directory stays unreadable and unwritable. It never gets the rest of the home
+  directory: no `~/.ssh`, cloud credentials or other projects.
 - **A sandboxed Claude agent can read its Keychain login but not renew it.**
   The Keychain grant is read-only, and `security` writes the login keychain
   through a temporary file in that directory, so saving a renewed token fails

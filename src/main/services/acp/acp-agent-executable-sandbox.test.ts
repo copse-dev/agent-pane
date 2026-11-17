@@ -1,0 +1,86 @@
+import assert from 'node:assert/strict'
+import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join, relative } from 'node:path'
+import { after, describe, it } from 'node:test'
+import {
+  initProjectSandbox,
+  isProjectSandboxEnabled,
+  shutdownProjectSandbox,
+} from '../../project-sandbox/index.ts'
+import { setGitAvailableForTest } from '../tool-availability.ts'
+import { spawnAcpAgentProcess } from './acp-client.ts'
+
+// Cursor's own installer puts `cursor-agent` in `~/.local/bin` as a symlink into
+// `~/.local/share/cursor-agent`. The agent sandbox denies home except the agent's
+// own dirs, so the sandboxed shell could not even see the PATH entry: every
+// Cursor probe and turn failed with "cursor-agent: command not found" (exit 127)
+// although onboarding had found it installed.
+describe('a sandboxed ACP agent installed as a symlink in a home bin directory', () => {
+  const cleanups: string[] = []
+  after(async () => {
+    await shutdownProjectSandbox()
+    for (const path of cleanups) await rm(path, { recursive: true, force: true })
+  })
+
+  it('starts by its bare name, and its bin directory stays unreadable and unwritable', async (t) => {
+    if (process.platform === 'win32') {
+      t.skip('the project sandbox does not run on Windows')
+      return
+    }
+    // A stand-in home layout: bin/fake-agent -> share/fake-agent/fake-agent.
+    const root = await mkdtemp(join(homedir(), '.copse-agent-exec-test-'))
+    cleanups.push(root)
+    const bin = join(root, 'bin')
+    const share = join(root, 'share', 'fake-agent')
+    const workspace = join(root, 'workspace')
+    await Promise.all([mkdir(bin), mkdir(share, { recursive: true }), mkdir(workspace)])
+    const target = join(share, 'fake-agent')
+    // It runs its arguments as its own child, as an agent runs tools.
+    await writeFile(target, '#!/bin/sh\necho agent-started\nexec "$@"\n')
+    await chmod(target, 0o755)
+    await symlink(target, join(bin, 'fake-agent'))
+    await writeFile(join(bin, 'other-tool'), 'not for the agent\n')
+
+    setGitAvailableForTest(true)
+    await initProjectSandbox()
+    if (!isProjectSandboxEnabled()) {
+      t.skip('project sandbox unavailable')
+      return
+    }
+
+    const run = async (args: string[]): Promise<{ code: number | null; output: string }> => {
+      const child = await spawnAcpAgentProcess({
+        command: 'fake-agent',
+        args,
+        cwd: workspace,
+        env: { PATH: `${bin}:/usr/bin:/bin` },
+        // Like Cursor's entry: the install tree is the agent's, its bin dir is not.
+        sandbox: { allowedDomains: [], homeDirs: [relative(homedir(), share)] },
+      })
+      child.stdin?.end()
+      let output = ''
+      child.stdout?.on('data', (chunk: Buffer) => (output += chunk.toString()))
+      child.stderr?.on('data', (chunk: Buffer) => (output += chunk.toString()))
+      const code = await new Promise<number | null>((resolve) => child.once('close', resolve))
+      return { code, output }
+    }
+
+    const started = await run(['true'])
+    assert.equal(started.code, 0, started.output)
+    assert.equal(started.output.trim(), 'agent-started')
+
+    // The grant is the one executable, read-only: the rest of its directory
+    // stays unreadable, and nothing can be planted beside it.
+    const neighbour = await run(['cat', join(bin, 'other-tool')])
+    assert.notEqual(neighbour.code, 0)
+    assert.doesNotMatch(neighbour.output, /not for the agent/)
+    const listing = await run(['ls', bin])
+    assert.notEqual(listing.code, 0, listing.output)
+    const planted = join(bin, 'planted')
+    const plant = await run(['touch', planted])
+    assert.notEqual(plant.code, 0)
+    assert.equal(existsSync(planted), false)
+  })
+})

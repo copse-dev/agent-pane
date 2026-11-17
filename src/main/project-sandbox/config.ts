@@ -1106,6 +1106,14 @@ export function acpAgentSandboxOverlay(
      * the store's read-only mounts off them.
      */
     stateDirs?: readonly string[]
+    /**
+     * The agent's own executable as the sandboxed shell finds it on PATH, and
+     * the target when that is a symlink. Granted read-only, file by file: an
+     * installer such as Cursor's puts the command in `~/.local/bin`, under the
+     * home deny, so the agent could not even start. Its directory stays
+     * unreadable, and nothing in it becomes writable.
+     */
+    executables?: readonly string[]
   },
 ): Partial<SandboxRuntimeConfig> {
   const overlay = acpAgentSandboxOverlayWithCheckoutWrites(workspaceRoot, sandbox, opts)
@@ -1116,7 +1124,12 @@ function acpAgentSandboxOverlayWithCheckoutWrites(
   workspaceRoot: string,
   sandbox: AcpAgentSandboxConfig,
   opts:
-    | { allowLocalhost?: boolean; chatReadRoots?: readonly string[]; stateDirs?: readonly string[] }
+    | {
+        allowLocalhost?: boolean
+        chatReadRoots?: readonly string[]
+        stateDirs?: readonly string[]
+        executables?: readonly string[]
+      }
     | undefined,
 ): Partial<SandboxRuntimeConfig> {
   const stateDirs = grantableStateDirs(opts?.stateDirs ?? [])
@@ -1146,7 +1159,9 @@ function acpAgentSandboxOverlayWithCheckoutWrites(
     sandbox.allowMacOsKeychain === true && process.platform === 'darwin'
       ? [join(home, 'Library', 'Keychains'), join(home, 'Library', 'Keychains', '**')]
       : []
-  const homeReadPaths = [...keychainReadPaths, ...configuredHomePaths]
+  // Exact files, never their directories, and only absolute paths.
+  const executableReadPaths = (opts?.executables ?? []).filter((path) => isAbsolute(path))
+  const homeReadPaths = [...keychainReadPaths, ...configuredHomePaths, ...executableReadPaths]
   const scratchPaths = [
     ...(sandbox.scratchPaths ?? []).flatMap(expandScratchPath),
     ...stateDirs,
