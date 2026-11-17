@@ -29,6 +29,11 @@ import {
 } from '@agentclientprotocol/sdk/unstable'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { nodeWritableStream } from './node-byte-streams.ts'
+import {
+  acpChildStdoutStream,
+  acpProcessExitError,
+  appendAcpStderrTail,
+} from './acp-child-stream.ts'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import type { StreamChunk } from '@shared/types'
 import type {
@@ -110,6 +115,7 @@ import { terminateProcessTree, SUBPROCESS_KILL_GRACE_MS } from '../exec/subproce
 import { perfSpan } from '../diagnostics/perf-trace.ts'
 import { spawnSandboxedAcpSessionHost } from './acp-session-host.ts'
 import type { AcpTerminalHost } from './acp-terminals.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 export type { AcpAgentProbe, AcpModeChoice, AcpModeSelector, AcpModelChoice, AcpModelSelector }
 
@@ -529,33 +535,6 @@ export function acpSessionMeta(
   if (!config.sandbox || !willSandboxAcpAgent(config.sandbox)) return undefined
   if (!isClaudeAcpAgent(config)) return undefined
   return claudeSandboxEscapeSessionMeta(opts.bridgeServer)
-}
-
-const ACP_STDERR_TAIL_LIMIT = 8_000
-
-function appendStderrTail(current: string, text: string): string {
-  const next = current + text
-  return next.length <= ACP_STDERR_TAIL_LIMIT ? next : next.slice(-ACP_STDERR_TAIL_LIMIT)
-}
-
-function acpProcessExitError(
-  command: string,
-  code: number | null,
-  signal: NodeJS.Signals | null,
-  stderr: string,
-): Error {
-  const reason = signal ? `signal ${signal}` : `code ${code === null ? 'unknown' : String(code)}`
-  const detail = stderr.trim()
-  return new Error(
-    `The coding agent "${command}" exited with ${reason}${detail ? `. Its error output: ${detail}` : ''}`,
-  )
-}
-
-function acpProcessSpawnError(command: string, err: Error, stderr: string): Error {
-  const detail = stderr.trim()
-  return new Error(
-    `The coding agent "${command}" failed to start: ${err.message}${detail ? `. Its error output: ${detail}` : ''}`,
-  )
 }
 
 /** The SDK can observe the request-pipe closure before the child exit event. */
@@ -1042,75 +1021,6 @@ export type AcpTransportFactory = (
   signal?: AbortSignal,
 ) => Promise<AcpTransport>
 
-function acpChildStdoutStream(
-  child: ChildProcess,
-  command: string,
-  stderrTail: () => string,
-): ReadableStream<Uint8Array> {
-  const stdout = child.stdout
-  if (!stdout) throw new Error('The coding agent started without a way to read its output')
-  let cancelRead = (): void => {
-    void shutdownAcpChild(child)
-  }
-  return new ReadableStream<Uint8Array>({
-    start(controller): void {
-      let settled = false
-      const cleanup = (): void => {
-        stdout.off('data', onData)
-        stdout.off('error', onStdoutError)
-        child.off('error', onChildError)
-        child.off('close', onChildClose)
-      }
-      const settle = (fn: () => void): void => {
-        if (settled) return
-        settled = true
-        cleanup()
-        fn()
-      }
-      const onData = (chunk: Buffer): void => {
-        controller.enqueue(new Uint8Array(chunk))
-      }
-      const onStdoutError = (err: Error): void => {
-        settle(() => {
-          controller.error(err)
-        })
-      }
-      const onChildError = (err: Error): void => {
-        settle(() => {
-          controller.error(acpProcessSpawnError(command, err, stderrTail()))
-        })
-      }
-      const onChildClose = (code: number | null, signal: NodeJS.Signals | null): void => {
-        if (code === 0 && signal === null) {
-          settle(() => {
-            controller.close()
-          })
-        } else {
-          settle(() => {
-            controller.error(acpProcessExitError(command, code, signal, stderrTail()))
-          })
-        }
-      }
-      // Closing the connection cancels this read; that is a dispose, not a
-      // fault, so the agent gets to exit on its own first.
-      cancelRead = (): void => {
-        if (!settled) {
-          settled = true
-          cleanup()
-        }
-        void shutdownAcpChild(child)
-      }
-      stdout.on('data', onData)
-      stdout.on('error', onStdoutError)
-      child.once('error', onChildError)
-      child.once('close', onChildClose)
-    },
-    cancel(): void {
-      cancelRead()
-    },
-  })
-}
-
 function captureAcpChildStderr(
   child: ChildProcess,
   command: string,
@@ -1126,7 +1036,7 @@ function captureAcpChildStderr(
     // descriptor exhaustion, not on every fresh ACP transport.
     limitLabel: localOpenFileLimitLabel,
     onText: (text) => {
-      tail = appendStderrTail(tail, text)
+      tail = appendAcpStderrTail(tail, text)
     },
   })
   return { tail: () => tail, resourceFault: faults.current }
@@ -1153,7 +1063,7 @@ async function spawnTransport(
       // pre-phase-5 path: it widens the main process's ASRT network singleton,
       // so the overlap gate remains necessary as a bounded fallback.
       console.warn(
-        `[acp-session-host] isolated host unavailable, falling back in-process (this widens the global network scope): ${err instanceof Error ? err.message : String(err)}`,
+        `[acp-session-host] isolated host unavailable, falling back in-process (this widens the global network scope): ${errorMessage(err)}`,
       )
       child = await spawnAcpAgentProcess(config)
     }
@@ -1163,7 +1073,11 @@ async function spawnTransport(
   if (!child.stdin) throw new Error('The coding agent started without a way to receive input')
   const stderr = captureAcpChildStderr(child, config.command)
   const writable = nodeWritableStream(child.stdin)
-  const readable = acpChildStdoutStream(child, config.command, stderr.tail)
+  // Closing the connection cancels this read; that is a dispose, not a fault,
+  // so the agent gets to exit on its own first.
+  const readable = acpChildStdoutStream(child, config.command, stderr.tail, () => {
+    void shutdownAcpChild(child)
+  })
   return {
     stream: ndJsonStream(writable, readable),
     dispose: () => shutdownAcpChild(child),
@@ -1596,10 +1510,7 @@ export async function openAcpSession(
           // The agent's message usually names the session; session IDs stay
           // out of logs (docs/plans/acp-session-continuity.md).
           carryOverFailure = 'rejected'
-          const reason = (err instanceof Error ? err.message : String(err)).replaceAll(
-            sessionId,
-            '<session>',
-          )
+          const reason = errorMessage(err).replaceAll(sessionId, '<session>')
           console.warn(
             `[acp] session/${method} was refused; ${attempts.at(-1) === method ? 'starting a new session' : 'trying the next method'}: ${reason}`,
           )
@@ -1885,7 +1796,9 @@ export async function probeAcpAgent(
   if (!child.stdin) throw new Error('The coding agent started without a way to receive input')
   const stderr = captureAcpChildStderr(child, config.command)
   const writable = nodeWritableStream(child.stdin)
-  const readable = acpChildStdoutStream(child, config.command, stderr.tail)
+  const readable = acpChildStdoutStream(child, config.command, stderr.tail, () => {
+    void shutdownAcpChild(child)
+  })
   const stream = ndJsonStream(writable, readable)
   const app = client({ name: 'copse' })
     .onRequest(methods.client.fs.readTextFile, UNSUPPORTED('fs/read_text_file'))

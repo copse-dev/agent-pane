@@ -2,6 +2,7 @@ import { createServer } from 'node:http'
 import { createHash, createPublicKey, randomBytes, verify } from 'node:crypto'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
+import { sleep } from '@copse/std/sleep.ts'
 
 export const CHATGPT_RESOURCE = 'https://api.openai.com/v1'
 const ISSUER = 'https://auth.openai.com'
@@ -394,7 +395,7 @@ export async function revokeChatGptTokens(
     } catch {
       if (signal.aborted) return false
     }
-    if (attempt < 2) await new Promise<void>((resolve) => setTimeout(resolve, 250 * 2 ** attempt))
+    if (attempt < 2) await sleep(250 * 2 ** attempt)
   }
   return false
 }

@@ -34,6 +34,11 @@ export interface RemoteAgentRunResult {
   messages: Array<{ role: 'assistant'; content: string }>
 }
 
+/** Append an API path to a provider base URL, dropping the base's trailing slashes. */
+export function joinUrl(baseUrl: string, path: string): string {
+  return `${baseUrl.replace(/\/+$/, '')}${path}`
+}
+
 export type GithubRepoSlugResolver = (root: string | null) => Promise<string | null>
 
 /**
