@@ -1,8 +1,8 @@
-import { randomUUID } from 'node:crypto'
-import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
+import { writeFileAtomicSync } from '@copse/std/write-file-atomic.ts'
 import {
   ClientCredentials,
   clientCredentialSchema,
@@ -65,12 +65,10 @@ export class MobileDevices {
   }
 
   private save(devices: ClientCredential[]): void {
-    const temporary = `${this.path}.${randomUUID()}.tmp`
-    writeFileSync(temporary, `${JSON.stringify(devices, null, 2)}\n`, {
+    writeFileAtomicSync(this.path, `${JSON.stringify(devices, null, 2)}\n`, {
       mode: 0o600,
-      flag: 'wx',
+      directoryMode: 0o700,
     })
-    renameSync(temporary, this.path)
     chmodSync(this.path, 0o600)
   }
 }
