@@ -841,6 +841,35 @@ describe('writeCarryInBundle from a ref', () => {
   })
 })
 
+// Internal Git never fetches missing objects on demand (that fetch would run
+// with the checkout's own transport and credential configuration), so a
+// blobless clone cannot bundle history it never downloaded. The run must say
+// so and how to fix it, not show Git's promisor error.
+describe('writeCarryInBundle in a partial clone', () => {
+  it('fails with a clear message when bundled history was never downloaded', async () => {
+    const origin = initRepo()
+    const dir = mkdtempSync(join(tmpdir(), 'copse-tc-partial-'))
+    try {
+      // The clone checks out only the latest README, so the first one stays missing.
+      writeFileSync(join(origin, 'README.md'), '# hello again\n')
+      git(origin, ['add', '-A'])
+      git(origin, ['commit', '--quiet', '-m', 'later'])
+      git(origin, ['config', 'uploadpack.allowFilter', 'true'])
+      const clone = join(dir, 'clone')
+      git(dir, ['clone', '--quiet', '--filter=blob:none', `file://${origin}`, clone])
+      const bundle = join(dir, 'carry-in.bundle')
+      await assert.rejects(
+        writeCarryInBundle(clone, 'run-partial', bundle, 'HEAD'),
+        /partial clone.*git backfill/,
+      )
+      assert.equal(git(clone, ['for-each-ref', 'refs/copse/carry-in/']), '', 'temp ref removed')
+    } finally {
+      rmSync(origin, { recursive: true, force: true })
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('adoptCarryOut', () => {
   /** A run's commits on the carry-out ref, on top of a base, as fetchCarryOut leaves them. */
   function runOnRef(repo: string, base: string, ref: string, files: string[]): void {

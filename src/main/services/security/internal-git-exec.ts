@@ -92,3 +92,44 @@ export async function internalGitBuffer(
   })
   return stdout
 }
+
+/**
+ * Shown when a bundle needs history that a partial clone never downloaded.
+ * Internal Git does not fetch it on demand (`GIT_NO_LAZY_FETCH`): that fetch
+ * would run with the checkout's own transport and credential configuration.
+ */
+export const PARTIAL_CLONE_BUNDLE_MESSAGE =
+  "This checkout is a partial clone, so some of its history isn't downloaded, and Copse doesn't download it automatically. Run `git backfill` in the checkout (Git 2.49 or later) or use a full clone, then try again."
+
+/** Whether `cwd` is a partial clone: some remote promises objects it may omit. */
+async function isPartialClone(cwd: string): Promise<boolean> {
+  const extension = await internalGit(cwd, ['config', '--get', 'extensions.partialClone']).catch(
+    () => '',
+  )
+  if (extension) return true
+  const promisors = await internalGit(cwd, [
+    'config',
+    '--get-regexp',
+    String.raw`^remote\..*\.promisor$`,
+  ]).catch(() => '')
+  return promisors.split('\n').some((line) => /\strue$/i.test(line))
+}
+
+/**
+ * `git bundle create <bundlePath> <revs...>` for carry-in and hosted transfer.
+ * A partial clone whose bundled history includes objects it never downloaded
+ * fails with an opaque promisor error; that case gets
+ * {@link PARTIAL_CLONE_BUNDLE_MESSAGE} instead, with Git's error as the cause.
+ */
+export async function internalGitBundleCreate(
+  cwd: string,
+  bundlePath: string,
+  revs: readonly string[],
+): Promise<void> {
+  try {
+    await internalGit(cwd, ['bundle', 'create', bundlePath, ...revs])
+  } catch (error) {
+    if (await isPartialClone(cwd)) throw new Error(PARTIAL_CLONE_BUNDLE_MESSAGE, { cause: error })
+    throw error
+  }
+}

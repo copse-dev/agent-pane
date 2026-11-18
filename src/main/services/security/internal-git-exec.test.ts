@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { internalGit } from './internal-git-exec.ts'
+import { internalGit, internalGitBundleCreate } from './internal-git-exec.ts'
 
 function plainGit(cwd: string, args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
@@ -94,6 +94,13 @@ describe('internalGit', () => {
     assert.equal(
       await internalGit(target, ['rev-parse', 'refs/copse/test']),
       plainGit(repo, ['rev-parse', 'HEAD']),
+    )
+  })
+
+  it("keeps Git's own error when a bundle fails outside a partial clone", async () => {
+    await assert.rejects(
+      internalGitBundleCreate(repo, join(dir, 'x.bundle'), ['refs/heads/missing']),
+      (error: unknown) => error instanceof Error && !/partial clone/.test(error.message),
     )
   })
 })

@@ -7,6 +7,7 @@ import { snapshotWorkingTree } from '../git-snapshot.mts'
 import {
   internalGit as git,
   internalGitBuffer,
+  internalGitBundleCreate,
   internalGitRaw,
 } from '../security/internal-git-exec.ts'
 import type { GitTransfer } from './openai-git-transfer.ts'
@@ -109,7 +110,7 @@ export async function prepareGitTransfer(
   } else {
     await git(root, ['update-ref', ref, base])
     try {
-      await git(root, ['bundle', 'create', bundle, ref])
+      await internalGitBundleCreate(root, bundle, [ref])
     } finally {
       await git(root, ['update-ref', '-d', ref])
     }

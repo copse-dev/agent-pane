@@ -89,7 +89,7 @@ import {
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import { runSerialized } from '@copse/thread-store/write-queue.ts'
 import { snapshotWorkingTree } from '../git-snapshot.mts'
-import { internalGit } from '../security/internal-git-exec.ts'
+import { internalGit, internalGitBundleCreate } from '../security/internal-git-exec.ts'
 import { providerEndpointUrl, type ProviderDescription } from '../providers/provider-description.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { sleep } from '@copse/std/sleep.ts'
@@ -654,10 +654,7 @@ export async function writeCarryInBundle(
   await git(workspace, ['update-ref', ref, snapshot.sha])
   try {
     if (rebaseOnto) await git(workspace, ['update-ref', `${ref}-base`, rebaseOnto])
-    await git(workspace, [
-      'bundle',
-      'create',
-      bundlePath,
+    await internalGitBundleCreate(workspace, bundlePath, [
       ref,
       ...(rebaseOnto ? [`${ref}-base`] : []),
     ])
