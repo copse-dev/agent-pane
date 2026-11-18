@@ -8,20 +8,23 @@ import {
   claudeSandboxEscapeSessionMeta,
 } from './acp-claude-sandbox-escape.ts'
 
+/** This session's bridge, mounted under its own nonce name (#4125). */
+const SERVER = 'copse-k3v9x2mq'
+
 /**
  * Run the hook the way Claude Code does: its command through `sh -c`, with the
  * `PreToolUse` input JSON on stdin.
  */
 function runHook(
   toolInput: Record<string, unknown>,
-  bridgeMounted = true,
+  bridgeServer: string | null = SERVER,
 ): { status: number | null; stderr: string; stdout: string } {
   const stdin = JSON.stringify({
     hook_event_name: 'PreToolUse',
     tool_name: 'Bash',
     tool_input: toolInput,
   })
-  const result = spawnSync('/bin/sh', ['-c', claudeSandboxEscapeHookCommand(bridgeMounted)], {
+  const result = spawnSync('/bin/sh', ['-c', claudeSandboxEscapeHookCommand(bridgeServer)], {
     input: stdin,
     encoding: 'utf8',
   })
@@ -36,9 +39,10 @@ describe("Claude Code's sandbox escape inside Copse's sandbox (#4146)", () => {
     // Exit 2 is Claude Code's "block the call and show stderr to the model".
     assert.equal(run.status, 2)
     assert.equal(run.stdout, '')
-    assert.equal(run.stderr, `${claudeSandboxEscapeRefusal(true)}\n`)
+    assert.equal(run.stderr, `${claudeSandboxEscapeRefusal(SERVER)}\n`)
     assert.match(run.stderr, /Copse's sandbox/)
-    assert.match(run.stderr, /mcp__copse__run_shell/)
+    assert.match(run.stderr, /mcp__copse-k3v9x2mq__run_shell/)
+    assert.match(run.stderr, /Copse's "copse-k3v9x2mq" MCP server/)
     assert.match(run.stderr, /expects_sandbox_block: true/)
   })
 
@@ -58,7 +62,7 @@ describe("Claude Code's sandbox escape inside Copse's sandbox (#4146)", () => {
 
   it('matches whitespace around the colon', { skip: !posix }, () => {
     const stdin = `{"tool_input": {"command": "ls", "${CLAUDE_SANDBOX_ESCAPE_PARAM}" :  true}}`
-    const result = spawnSync('/bin/sh', ['-c', claudeSandboxEscapeHookCommand(true)], {
+    const result = spawnSync('/bin/sh', ['-c', claudeSandboxEscapeHookCommand(SERVER)], {
       input: stdin,
       encoding: 'utf8',
     })
@@ -66,15 +70,15 @@ describe("Claude Code's sandbox escape inside Copse's sandbox (#4146)", () => {
   })
 
   it('says so when the session has no Copse bridge to point at', { skip: !posix }, () => {
-    const run = runHook({ command: 'gh auth status', [CLAUDE_SANDBOX_ESCAPE_PARAM]: true }, false)
+    const run = runHook({ command: 'gh auth status', [CLAUDE_SANDBOX_ESCAPE_PARAM]: true }, null)
     assert.equal(run.status, 2)
     assert.match(run.stderr, /tool bridge .* is not available in this session/)
     assert.match(run.stderr, /Tell the user/)
-    assert.doesNotMatch(run.stderr, /mcp__copse__run_shell\)/)
+    assert.doesNotMatch(run.stderr, /mcp__copse/)
   })
 
   it('hands Claude Code the hook as a Bash PreToolUse flag setting', () => {
-    const meta = claudeSandboxEscapeSessionMeta(true)
+    const meta = claudeSandboxEscapeSessionMeta(SERVER)
     assert.deepEqual(meta, {
       claudeCode: {
         options: {
@@ -84,7 +88,11 @@ describe("Claude Code's sandbox escape inside Copse's sandbox (#4146)", () => {
                 {
                   matcher: 'Bash',
                   hooks: [
-                    { type: 'command', command: claudeSandboxEscapeHookCommand(true), timeout: 10 },
+                    {
+                      type: 'command',
+                      command: claudeSandboxEscapeHookCommand(SERVER),
+                      timeout: 10,
+                    },
                   ],
                 },
               ],
