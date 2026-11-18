@@ -1,4 +1,4 @@
-import { openReviewPr, closeReviewPicker } from './helpers/review-pane.ts'
+import { openReviewPr, openReviewPicker, closeReviewPicker } from './helpers/review-pane.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { isDisplayFace, readHeadingStyle } from './helpers/heading-style.ts'
@@ -86,6 +86,51 @@ async function expectSelectionKeepsTabsInPlace(
     before.map(({ key, left, width }) => ({ key, left, width })),
   )
   expect(new Set(after.map((tab) => tab.weight)).size).toBe(1)
+}
+
+/** The review header's band, rounded to whole pixels: its height against the shared
+ * band height (its min-height), overflow, and the vertical centre of each control. */
+async function reviewHeaderBand(): Promise<{
+  height: number
+  band: number
+  overflows: boolean
+  labelTruncated: boolean
+  pickerCentre: number
+  controlCentres: number[]
+}> {
+  const layout = await browser.execute(() => {
+    const node = document.querySelector<HTMLElement>('.review-header')
+    const picker = node?.querySelector<HTMLElement>('.review-subject-picker')
+    const label = picker?.querySelector<HTMLElement>('.review-subject-label')
+    if (!node || !picker || !label) return null
+    const centre = (child: Element): number => {
+      const box = child.getBoundingClientRect()
+      return Math.round(box.top + box.height / 2)
+    }
+    const controls = [
+      ...node.querySelectorAll<HTMLElement>(':scope > .review-tools:not([hidden]) > *'),
+    ].filter((child) => child.getClientRects().length > 0)
+    return {
+      height: Math.round(node.getBoundingClientRect().height),
+      band: Math.round(parseFloat(getComputedStyle(node).minHeight)),
+      overflows: node.scrollWidth > node.clientWidth,
+      labelTruncated: label.scrollWidth > label.clientWidth,
+      pickerCentre: centre(picker),
+      controlCentres: controls.map(centre),
+    }
+  })
+  if (!layout) throw new Error('Missing review header')
+  return layout
+}
+
+function expectOneBand(band: Awaited<ReturnType<typeof reviewHeaderBand>>): void {
+  expect(band.height).toBe(band.band)
+  expect(band.overflows).toBe(false)
+  expect(band.labelTruncated).toBe(false)
+  expect(band.controlCentres.length).toBeGreaterThan(0)
+  for (const controlCentre of band.controlCentres) {
+    expect(Math.abs(controlCentre - band.pickerCentre)).toBeLessThanOrEqual(1)
+  }
 }
 
 describe('UI consistency: PR pane, model picker and flat tabs', () => {
@@ -212,10 +257,19 @@ describe('UI consistency: PR pane, model picker and flat tabs', () => {
   })
 
   it('keeps the combined review header and subject picker inside a narrow pane', async function () {
+    this.timeout(60_000)
     await browser.execute(() => {
       const pane = document.getElementById('pane-files')
       if (pane) pane.style.width = '340px'
     })
+    // Both subjects keep the header to the shared one-row band at 340px.
+    await expect($('.review-subject-label')).toHaveText('Pull request')
+    expectOneBand(await reviewHeaderBand())
+    await openReviewPicker()
+    await $('.review-local-choice').click()
+    await expect($('.review-subject-label')).toHaveText('Local changes')
+    expectOneBand(await reviewHeaderBand())
+
     await $('.review-subject-picker').click()
     const fits = await browser.execute(() => {
       const header = document.querySelector('.review-header')

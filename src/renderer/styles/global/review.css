@@ -48,14 +48,22 @@
   overflow: visible;
 }
 .review-local-choice {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
   width: 100%;
   flex-shrink: 0;
+  padding: var(--list-row-padding-block) var(--spacing-sm);
   text-align: left;
   font: inherit;
+  font-size: var(--font-size-sm);
   border: 0;
   border-radius: 0;
   background: transparent;
   color: var(--text-primary);
+}
+.review-local-choice:hover {
+  background: var(--bg-hover);
 }
 .review-local-choice[aria-current='true'] {
   background: var(--bg-selected);
@@ -79,7 +87,8 @@
   container: review / inline-size;
 }
 
-@container review (max-width: 480px) {
+/* Below the default pane width (480px): a default-width pane keeps the side-by-side list. */
+@container review (max-width: 420px) {
   .pane-files-body {
     flex-direction: column;
   }

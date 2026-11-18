@@ -22,25 +22,36 @@ export function mountReviewPane(
   const prList = qsRequired(root, '#pr-list-host')
   const prViewer = qsRequired(root, '#pr-viewer-host')
   const destroyLocal = mountGitChangesPane(localList, localViewer, store, api, monaco)
-  const destroyPr = mountPrPane(prList, prViewer, store, api, monaco)
+  const prPane = mountPrPane(prList, prViewer, store, api, monaco)
 
   const label = el('span', { class: 'review-subject-label pane-header-title' })
+  // The visible subject is the button's name (WCAG 2.5.3); the purpose is its description.
+  const pickerHint = el(
+    'span',
+    { id: 'review-subject-picker-hint', hidden: true },
+    'Choose local changes or a pull request to review',
+  )
   const picker = el(
     'button',
     {
       type: 'button',
       class: 'ui-btn ui-btn-ghost ui-btn-compact review-subject-picker',
-      'aria-label': 'Choose change to review',
+      // The native invoker: clicking it again closes the popover instead of the
+      // light dismiss closing it on pointerup and the click reopening it.
+      popovertarget: 'review-subject-choices',
+      'aria-describedby': 'review-subject-picker-hint',
       'aria-expanded': 'false',
       'aria-controls': 'review-subject-choices',
       'aria-haspopup': 'dialog',
     },
     label,
     chevronDownIcon('ui-icon ui-icon-sm'),
+    pickerHint,
   )
+  // Not a `.git-change-row`: that class means a changed file to tests and to styles.
   const localChoice = el(
     'button',
-    { type: 'button', class: 'review-local-choice git-change-row' },
+    { type: 'button', class: 'review-local-choice' },
     'Local changes',
   )
   const choices = el('div', {
@@ -69,24 +80,34 @@ export function mountReviewPane(
   function closeChoices(): void {
     if (choices.matches(':popover-open')) choices.hidePopover()
   }
-  picker.addEventListener('click', () => {
+  choices.addEventListener('beforetoggle', (event) => {
+    if (event.newState !== 'open') return
     const rect = picker.getBoundingClientRect()
     const width = Math.min(360, root.clientWidth - 16, window.innerWidth - 16)
     choices.style.width = `${String(width)}px`
     choices.style.top = `${String(rect.bottom)}px`
     choices.style.left = `${String(Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)))}px`
     choices.style.maxHeight = `${String(Math.max(100, window.innerHeight - rect.bottom - 8))}px`
-    choices.togglePopover()
+    // Local review makes no GitHub calls until the user asks to see the PRs.
+    prPane.loadList()
   })
   choices.addEventListener('toggle', () => {
     const open = choices.matches(':popover-open')
     picker.setAttribute('aria-expanded', String(open))
-    if (open) localChoice.focus()
+    if (!open) return
+    const current =
+      store.getState().rightPanelMode === 'prs'
+        ? prList.querySelector<HTMLElement>('.pr-list-row.is-selected')
+        : null
+    ;(current ?? localChoice).focus()
   })
   choices.addEventListener('keydown', (event) => {
     // The PR filter owns Escape while clearing a query; an empty filter lets
-    // Escape dismiss this native popover and return focus to its trigger.
+    // Escape dismiss this popover and return focus to its trigger. Consume it so
+    // the app's Escape-to-stop shortcut never sees a dismiss.
     if (event.key !== 'Escape' || event.defaultPrevented) return
+    event.preventDefault()
+    event.stopPropagation()
     closeChoices()
     picker.focus()
   })
@@ -143,7 +164,7 @@ export function mountReviewPane(
   return () => {
     unsub()
     unsubSubject()
-    destroyPr()
+    prPane()
     destroyLocal()
     prList.removeEventListener('click', onPrChoice)
     localTools.classList.remove('review-tools')

@@ -87,10 +87,12 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['paired-browser-approval-dark.png', 'paired-browser-approval-light.png'],
   },
   'tests/e2e/pane-loading.e2e.ts': {
-    sourceSha256: '556f58c7d5f64203c2caec57db81908e0e92bbfc4dd5aa224b45949ac5a918d0',
+    sourceSha256: '2189e7a8f25e6e8216028032d10db5e0da277b10ae9421b951b65296ea79ac5d',
     filenames: [
       'pane-loading-changes.png',
       'pane-loading-memories.png',
+      'pane-loading-pull-requests.png',
+      'pane-loading-review-picker.png',
       'pane-loading-roadmap.png',
     ],
   },

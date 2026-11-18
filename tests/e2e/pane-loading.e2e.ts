@@ -8,6 +8,20 @@ interface LoadingPane {
   host: string
   label: string
   screenshot: string
+  /** The pending element inside `host`; panes default to their `.pane-loading` row. */
+  loading?: string
+  /** Command palette rows act on mousedown; titlebar buttons on click. */
+  press?: 'click' | 'mousedown'
+}
+
+/** The PR subject opened before GitHub has answered: the viewer holds the pending status. */
+const PR_SUBJECT_LOADING: LoadingPane = {
+  button: '.command-palette-item[title="Review: Pull requests"]',
+  host: '#pr-viewer-host',
+  loading: '.panel-empty .ui-inline-status[data-status-kind="pending"]',
+  press: 'mousedown',
+  label: 'Loading pull requests…',
+  screenshot: 'pane-loading-pull-requests.png',
 }
 
 const LOADING_PANES: LoadingPane[] = [
@@ -142,7 +156,7 @@ async function stackHeaderClone(selector: string): Promise<void> {
 
 async function openAndFreezeLoadingPane(pane: LoadingPane): Promise<void> {
   const captured = await browser.execute(
-    (buttonSelector: string, hostSelector: string) =>
+    (buttonSelector: string, hostSelector: string, loadingSelector: string, press: string) =>
       new Promise<boolean>((resolve) => {
         const filesPane = document.querySelector<HTMLElement>('#pane-files')
         const host = document.querySelector<HTMLElement>(hostSelector)
@@ -161,7 +175,7 @@ async function openAndFreezeLoadingPane(pane: LoadingPane): Promise<void> {
           resolve(value)
         }
         const capture = (): void => {
-          if (!host.querySelector('.pane-loading')) return
+          if (!host.querySelector(loadingSelector)) return
           const snapshot = filesPane.cloneNode(true)
           if (!(snapshot instanceof HTMLElement)) throw new Error('Expected a cloned files pane')
           filesPane.id = 'pane-files-live'
@@ -175,11 +189,17 @@ async function openAndFreezeLoadingPane(pane: LoadingPane): Promise<void> {
         const timer = setTimeout(() => {
           finish(false)
         }, 5_000)
-        button.click()
+        if (press === 'mousedown') {
+          button.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+        } else {
+          button.click()
+        }
         capture()
       }),
     pane.button,
     pane.host,
+    pane.loading ?? '.pane-loading',
+    pane.press ?? 'click',
   )
   expect(captured).toBe(true)
 }
@@ -330,11 +350,6 @@ describe('async pane loading states', () => {
       )
       assert.ok(header, `expected a displayed .pane-header in ${pane.host}`)
       headers.set(pane.host, header)
-      if (pane.host === '#pr-list-host') {
-        // Nothing is selected while the list loads: the cleared PR meta must not
-        // paint an empty padded, ruled strip above the pending message.
-        assert.deepEqual(await emptyViewerChrome('#pr-viewer-host'), [])
-      }
 
       await saveElementScreenshot('#pane-files', pane.screenshot)
       await restoreLivePane()
@@ -392,5 +407,82 @@ describe('async pane loading states', () => {
 
     await saveElementScreenshot('#e2e-pane-header-stack', 'pane-header-band.png')
     await browser.execute(() => document.getElementById('e2e-pane-header-stack')?.remove())
+  })
+
+  // Runs before the PR subject below: local review must not have asked GitHub
+  // anything, so the picker's list is still in its first, pending paint.
+  it('leaves the review picker list pending while only local changes have been open', async () => {
+    if (!(await $('#pane-files .review-header').isDisplayed())) {
+      await $('.titlebar-btn[aria-label="Open review"]').click()
+    }
+    await expect($('#pane-files .review-subject-label')).toHaveText('Local changes')
+    await $('#pane-files #git-changes-host .pane-loading').waitForExist({
+      reverse: true,
+      timeout: 15_000,
+    })
+    // Show a copy of the closed picker where the trigger opens it: opening the
+    // real one asks GitHub for the list, which is the call this test proves absent.
+    const pending = await browser.execute(() => {
+      const live = document.querySelector<HTMLElement>('#pane-files')
+      const snapshot = live?.cloneNode(true)
+      if (!live || !(snapshot instanceof HTMLElement)) return null
+      live.id = 'pane-files-live'
+      live.hidden = true
+      snapshot.dataset['loadingSnapshot'] = ''
+      live.after(snapshot)
+      const picker = snapshot.querySelector<HTMLElement>('.review-subject-picker')
+      const choices = snapshot.querySelector<HTMLElement>('.review-subject-choices')
+      if (!picker || !choices) return null
+      const rect = picker.getBoundingClientRect()
+      choices.style.top = `${String(rect.bottom)}px`
+      choices.style.left = `${String(Math.max(8, rect.left))}px`
+      choices.style.width = `${String(Math.min(360, snapshot.clientWidth - 16))}px`
+      choices.showPopover()
+      const row = choices.querySelector<HTMLElement>('#pr-list-host .pane-loading')
+      return row
+        ? {
+            text: row.textContent,
+            displayed: row.getClientRects().length > 0,
+            pending: row.querySelector('.ui-inline-status[data-status-kind="pending"]') !== null,
+          }
+        : null
+    })
+    assert.deepEqual(pending, {
+      text: 'Loading pull requests…',
+      displayed: true,
+      pending: true,
+    })
+    await saveElementScreenshot('#pane-files', 'pane-loading-review-picker.png')
+    await restoreLivePane()
+  })
+
+  it('opens the PR subject pending, with no empty meta strip, before GitHub answers', async () => {
+    const dialog = $('#command-palette-dialog')
+    // metaKey covers macOS, ctrlKey the rest; the palette accepts either.
+    await browser.execute(() => {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'k',
+          metaKey: true,
+          ctrlKey: true,
+          shiftKey: true,
+          bubbles: true,
+        }),
+      )
+    })
+    await dialog.waitForDisplayed({ timeout: 10_000 })
+    await $('.command-palette-input').setValue('Pull requests')
+    await $(PR_SUBJECT_LOADING.button).waitForDisplayed({ timeout: 10_000 })
+    await openAndFreezeLoadingPane(PR_SUBJECT_LOADING)
+
+    await expect($('#pane-files .review-subject-label')).toHaveText('Pull request')
+    await expect($(`#pane-files ${PR_SUBJECT_LOADING.host} .panel-empty`)).toHaveText(
+      PR_SUBJECT_LOADING.label,
+    )
+    // Nothing is selected while the list loads: the cleared PR meta must not
+    // paint an empty padded, ruled strip above the pending message.
+    assert.deepEqual(await emptyViewerChrome(PR_SUBJECT_LOADING.host), [])
+    await saveElementScreenshot('#pane-files', PR_SUBJECT_LOADING.screenshot)
+    await restoreLivePane()
   })
 })

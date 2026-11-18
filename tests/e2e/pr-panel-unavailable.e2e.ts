@@ -51,10 +51,11 @@ describe('PR panel gh unavailable (mock)', () => {
       () => document.querySelector('.pr-empty-state')?.textContent.trim() ?? '',
     )
     expect(bannerText.toLowerCase()).toMatch(/not installed|install github cli/)
-    // Listing a chat-linked PR must not leave the viewer on its cold-start
+    // Opening a chat-linked PR must not leave the viewer on its cold-start
     // "Loading pull requests…" spinner: gh has answered, and it is missing.
+    // (The unselected viewer's copy is covered by pr-pane-loading.test.ts.)
     const viewerEmpty = await $('#pr-viewer-host .panel-empty').getElement()
-    await expect(viewerEmpty).toHaveText('GitHub CLI is not available')
+    await expect(viewerEmpty).toHaveText('Install GitHub CLI to load pull request details.')
     await expect($('#pr-viewer-host .panel-empty .ui-inline-status')).not.toBeExisting()
 
     await saveElementScreenshot('#pane-files', 'pr-panel-gh-unavailable.png')

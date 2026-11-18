@@ -98,9 +98,11 @@ function indexAgentLinksByPrKey(
   return map
 }
 
+/** A pull request is the review subject on screen. Local review keeps the list in
+ * the subject picker but loads it only when the picker opens ({@link PrPaneHandle}). */
 function prsModeActive(store: AppStore): boolean {
   const { filesPaneOpen, rightPanelMode } = store.getState()
-  return filesPaneOpen && (rightPanelMode === 'prs' || rightPanelMode === 'changes')
+  return filesPaneOpen && rightPanelMode === 'prs'
 }
 
 function collectLinkedPrs(store: AppStore): PrRef[] {
@@ -168,11 +170,7 @@ const PR_PANE_INACTIVE = ''
  * Constant while the pane is closed, so thread writes then cost nothing.
  */
 export function prPaneThreadsKey(state: AppState): string {
-  if (
-    !state.filesPaneOpen ||
-    (state.rightPanelMode !== 'prs' && state.rightPanelMode !== 'changes')
-  )
-    return PR_PANE_INACTIVE
+  if (!state.filesPaneOpen || state.rightPanelMode !== 'prs') return PR_PANE_INACTIVE
   return `prs\n${state.activeThreadId ?? ''}\n${state.threads.map(threadPrKey).join('\n')}`
 }
 
@@ -195,13 +193,21 @@ export function indexThreadLinks(store: AppStore): Map<string, PrThreadRelations
   return links
 }
 
+/** Unmounts the pane when called. */
+export interface PrPaneHandle {
+  (): void
+  /** Load the PR list without selecting a PR, for the review subject picker while
+   * local changes are open. A no-op while a PR is the subject: that list is live. */
+  loadList: () => void
+}
+
 export function mountPrPane(
   listRoot: HTMLElement,
   viewerRoot: HTMLElement,
   store: AppStore,
   api: ApiClient,
   monaco: GitDiffMonaco,
-): () => void {
+): PrPaneHandle {
   const listHeader = el('div', { class: 'pane-header' })
   listHeader.append(
     el('span', { class: 'pane-header-title' }, 'Pull requests'),
@@ -370,6 +376,8 @@ export function mountPrPane(
   let selectRequestId = 0
   let diffLoadQueue: Promise<void> = Promise.resolve()
   let pendingOpen: PrRef | null = null
+  // A row clicked while local changes were the subject (see the row's click handler).
+  let pickedFromList = false
   // Last lifecycle-action result, shown under the PR actions until another PR is
   // selected. Kept across the re-select an action triggers so its outcome stays
   // visible while the refreshed details load.
@@ -621,7 +629,11 @@ export function mountPrPane(
       ),
     )
     row.addEventListener('click', () => {
-      if (selectedPr && githubPrKey(selectedPr) === githubPrKey(pr)) return
+      // Picked from local review: the list is fresh and this click loads (or keeps)
+      // the PR, so switching the subject to it needs no second refresh.
+      if (!prsModeActive(store)) pickedFromList = true
+      // Re-picking the loaded PR keeps its tab and file; one whose load failed loads again.
+      if (prDetails && githubPrKey(prDetails) === githubPrKey(pr)) return
       void selectPr(pr)
     })
     if (!state) ensureCheck(pr)
@@ -1510,9 +1522,11 @@ export function mountPrPane(
     void api.gh.setListWatch(prsModeActive(store), otherLoaded)
   }
 
-  async function refresh(opts: { reason?: 'manual' | 'poll' | 'event' } = {}): Promise<void> {
+  type RefreshReason = 'manual' | 'poll' | 'event' | 'list'
+
+  async function refresh(opts: { reason?: RefreshReason } = {}): Promise<void> {
     const reason = opts.reason ?? 'event'
-    if (refreshInFlight && reason === 'poll') return
+    if (refreshInFlight && (reason === 'poll' || reason === 'list')) return
     refreshInFlight = true
     try {
       await refreshBody(reason)
@@ -1521,7 +1535,7 @@ export function mountPrPane(
     }
   }
 
-  async function refreshBody(reason: 'manual' | 'poll' | 'event'): Promise<void> {
+  async function refreshBody(reason: RefreshReason): Promise<void> {
     if (reason === 'manual') {
       await api.gh.invalidateReadCache()
       ciGen++
@@ -1582,7 +1596,8 @@ export function mountPrPane(
     prList = mergePrLists(linkedRefs, [workspacePrs, myPrs])
     renderList()
 
-    if (reason === 'poll') return
+    // A poll keeps the selection; a picker listing never makes one.
+    if (reason === 'poll' || reason === 'list') return
 
     const openTarget = pendingOpen
     pendingOpen = null
@@ -1631,14 +1646,19 @@ export function mountPrPane(
   const unbindActivityBrowserLinks = bindBrowserLinkClicks(activityHost, store, api)
   const stopObservingLayout = observeDiffHostLayout(viewerRoot, () => diffEditor)
 
-  let wasReviewActive = prsModeActive(store)
+  let wasPrSubject = prsModeActive(store)
   const unsubs = [
     selectRightPanel(store, () => {
       const active = prsModeActive(store)
+      if (active === wasPrSubject) return
+      wasPrSubject = active
+      const picked = pickedFromList
+      pickedFromList = false
       syncWatch()
-      if (active && !wasReviewActive) void refresh()
-      else if (active) renderList()
-      wasReviewActive = active
+      // Leaving the PR subject only drops the row highlight; the list stays in the picker.
+      if (!active) renderList()
+      else if (picked && !pendingOpen) renderList()
+      else void refresh()
     }),
     selectActiveWorkspace(store, () => {
       threadRelationshipRequest++
@@ -1731,7 +1751,12 @@ export function mountPrPane(
     },
   })
 
-  return () => {
+  function loadList(): void {
+    if (disposed || prsModeActive(store)) return
+    void refresh({ reason: 'list' })
+  }
+
+  const destroy = (): void => {
     disposed = true
     document.removeEventListener('pointerdown', dismissActions)
     titleGen++
@@ -1754,4 +1779,5 @@ export function mountPrPane(
     diffEditor?.dispose()
     diffEditor = null
   }
+  return Object.assign(destroy, { loadList })
 }

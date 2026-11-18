@@ -39,11 +39,14 @@ describe('Unified local and GitHub review surface', () => {
   it('switches subjects in one pane and retains local approvals and the PR section', async () => {
     await expect($('[data-panel-control="changes"]')).toHaveText(expect.stringContaining('Review'))
     await expect($('[data-panel-control="prs"]')).not.toExist()
+    // The visible subject is the picker's accessible name (WCAG 2.5.3).
+    await expect($('.review-subject-picker')).toHaveComputedLabel('Local changes')
     await expect($('.review-local-meta')).toHaveText(
       expect.stringContaining('Only on this machine'),
     )
     await saveElementScreenshot('#pane-files', 'unified-review-local.png')
     await choosePr()
+    await expect($('.review-subject-picker')).toHaveComputedLabel('Pull request')
     await expect($('#right-sidebar')).not.toBeDisplayed()
     await expect($('.review-subject-choices')).not.toBeDisplayed()
     await expect($('[data-panel-control="changes"]')).toHaveElementClass('active')
@@ -58,6 +61,8 @@ describe('Unified local and GitHub review surface', () => {
     await $('.pr-file-row').click()
     await $('#pr-viewer-host .monaco-diff-editor').waitForDisplayed()
     await $('.review-subject-picker').click()
+    // Opening on a PR focuses that PR, not the first choice.
+    await expect($('.review-subject-choices .pr-list-row.is-selected')).toBeFocused()
     await $('.review-local-choice').click()
     await expect($('.diff-accept-btn')).toBeDisplayed()
     await expect($('.git-change-row-proposed')).toHaveElementClass('is-selected')
@@ -73,6 +78,7 @@ describe('Unified local and GitHub review surface', () => {
     })
     await $('.review-subject-picker').click()
     await expect($('.review-subject-choices')).toBeDisplayed()
+    await expect($('.review-local-choice')).toBeFocused()
     await expect($('.review-local-choice')).toHaveAttribute('aria-current', 'true')
     await expect($('.pr-list-row.is-selected')).not.toExist()
     const fits = await browser.execute(() => {
@@ -88,12 +94,45 @@ describe('Unified local and GitHub review surface', () => {
     })
     expect(fits).toBe(true)
     await saveElementScreenshot('#pane-files', 'unified-review-narrow-picker.png')
+    // The app arms Escape-to-stop from a document keydown listener; a dismiss must not reach it.
+    await browser.execute(() => {
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') document.body.dataset['escapeReachedDocument'] = 'true'
+      })
+    })
     await browser.keys('Escape')
     await expect($('.review-subject-choices')).not.toBeDisplayed()
     await expect($('.review-subject-picker')).toBeFocused()
+    expect(
+      await browser.execute(() => document.body.dataset['escapeReachedDocument'] ?? 'false'),
+    ).toBe('false')
     await saveElementScreenshot('#pane-files', 'unified-review-narrow-local.png')
     await choosePr()
     await saveElementScreenshot('#pane-files', 'unified-review-narrow-pr.png')
+  })
+
+  it('closes the picker from its own button', async () => {
+    const picker = $('.review-subject-picker')
+    await picker.click()
+    await expect($('.review-subject-choices')).toBeDisplayed()
+    await expect(picker).toHaveAttribute('aria-expanded', 'true')
+    await picker.click()
+    await expect($('.review-subject-choices')).not.toBeDisplayed()
+    await expect(picker).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('keeps the file list beside the diff at the default pane width', async () => {
+    const layoutAt = async (width: number): Promise<string> =>
+      browser.execute((px) => {
+        const pane = document.getElementById('pane-files')
+        if (pane) pane.style.width = `${String(px)}px`
+        const body = pane?.querySelector('.pane-files-body')
+        return body ? getComputedStyle(body).flexDirection : 'missing'
+      }, width)
+    expect(await layoutAt(480)).toBe('row')
+    await expect($('#resizer-tree')).toBeDisplayed()
+    await saveElementScreenshot('#pane-files', 'unified-review-default-width.png')
+    expect(await layoutAt(420)).toBe('column')
   })
 
   it('keeps local review available when GitHub is signed out', async () => {
