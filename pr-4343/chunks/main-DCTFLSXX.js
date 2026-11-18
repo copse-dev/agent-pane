@@ -54999,7 +54999,7 @@ var init_footer_branch_status = __esm({
     COPIED_BRANCH_TOAST = "Copied branch name";
     COPY_FEEDBACK_MS = 1600;
     DEFERRED_NOTE_TEXT = "Reading your checkout";
-    DEFERRED_NOTE_TITLE = "This thread is reading your checkout and can\u2019t change it. It gets its own worktree the first time it needs to write.";
+    DEFERRED_NOTE_TITLE = "This thread is reading your checkout and can\u2019t change it. It gets its own worktree once it asks to make changes; until then, anything that tries to write here is refused.";
     nextPickerId = 0;
   }
 });
