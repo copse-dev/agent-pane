@@ -101,9 +101,12 @@ describe('boundedGlobMatcher', () => {
     assert.ok(spent < 5_000, `took ${String(spent)}ms`)
   })
 
-  it('does not spend the total budget on many fast batches', () => {
-    const matches = boundedGlobMatcher('**/*.ts', { dot: true }, { totalTimeoutMs: 1_000 })
-    for (let call = 0; call < 2_000; call++) {
+  // Calls are charged the time they take, not their timeout: charging the
+  // 250 ms per-call cap would spend the 5 s total after 20 calls. Each call
+  // costs well under a millisecond (about 0.5 ms on a CI runner).
+  it('charges fast batches only the time they take', () => {
+    const matches = boundedGlobMatcher('**/*.ts', { dot: true })
+    for (let call = 0; call < 200; call++) {
       assert.deepEqual(matches([`dir${String(call)}/file.ts`, 'a.js']), [true, false])
     }
   })
