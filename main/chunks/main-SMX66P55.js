@@ -288,6 +288,7 @@ import {
   isAutomationPendingStart,
   isBestValueChatModel,
   isBlankThread,
+  isCopseServerName,
   isCopseToolCall,
   isDynamicModel,
   isHeldMessage,
@@ -487,7 +488,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-A44HRB34.js";
+} from "./chunk-Z4OY2GFU.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -12607,7 +12608,7 @@ function threadProposalCardSignature(tc, store2, sourceThreadId) {
 }
 function createThreadProposalToolCard(tc, store2, api2, sourceThreadId) {
   const args = tc.args;
-  const proposalArgs = isRecord(args) && args["server"] === "copse" && args["tool"] === THREAD_PROPOSAL_TOOL ? args["arguments"] : args;
+  const proposalArgs = isRecord(args) && isCopseServerName(args["server"]) && args["tool"] === THREAD_PROPOSAL_TOOL ? args["arguments"] : args;
   const proposal = parseThreadProposal(tc.id, proposalArgs);
   if (!proposal) return null;
   return createThreadProposalCard(proposal, cardState(store2, sourceThreadId, tc.id), {
@@ -12635,6 +12636,7 @@ function createThreadProposalToolCard(tc, store2, api2, sourceThreadId) {
 var init_thread_proposal_tool_card = __esm({
   "src/renderer/views/thread-proposal-tool-card.ts"() {
     init_unknown_value2();
+    init_copse_tool_call();
     init_thread_proposal();
     init_thread_helpers();
     init_thread_proposals();
