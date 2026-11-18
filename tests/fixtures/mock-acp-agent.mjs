@@ -31,7 +31,7 @@
  * | `fail-auth-after:TEXT` | stream TEXT as one id-stamped message, then fail the prompt |
  * |                  | with `-32000 Authentication required`, as Claude Agent ACP does |
  * |                  | when the CLI's OAuth refresh fails mid-turn                     |
- * | `refuse-copse-tool:NAME TEXT` | call `mcp__copse__NAME` and fail it as Claude Code does |
+ * | `refuse-copse-tool:NAME TEXT` | call `mcp__<offered copse server>__NAME` and fail it as Claude Code does |
  * |                  | for a tool not in its list, then reply TEXT (rest of the line) |
  * | `list-mcp-tools` | list each offered http server's tools now, then reply `listed`  |
  * | `stop-mid-command` | start an `execute` call, reply while it runs, end on cancel |
@@ -202,7 +202,12 @@ agent({ name: 'mock-acp-agent' })
     // the CLI's error as the call's failed result.
     const refuse = /refuse-copse-tool:([A-Za-z0-9_-]+)[ \t]*([^\n]*)/.exec(text)
     if (refuse) {
-      const toolName = `mcp__copse__${refuse[1]}`
+      // Copse mounts its bridge as `copse-<nonce>` (#4125); name the call under
+      // the server this session was actually offered.
+      const bridge = (offeredServers.get(sessionId) ?? []).find((server) =>
+        server.name.startsWith('copse'),
+      )
+      const toolName = `mcp__${bridge?.name ?? 'copse'}__${refuse[1]}`
       const toolCallId = `refused-${String(Date.now())}`
       const error = `<tool_use_error>Error: No such tool available: ${toolName}</tool_use_error>`
       const meta = { claudeCode: { toolName } }
