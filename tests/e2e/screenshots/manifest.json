@@ -4497,6 +4497,10 @@
       "sha256": "4d23bf4b705596e55aa2e807c2b21f154f84ea2479408600f67e31222c71b99d",
       "bytes": 14576
     },
+    "settings-experimental-model-classifier.png": {
+      "sha256": "bd9551da5872a1d88b1850e2412fcf50ab6028affed282d10fb0c3975d122e92",
+      "bytes": 61532
+    },
     "settings-experimental-plugins.png": {
       "sha256": "d68bee48eee6b644f7d8c8fb28e166165bfd8ad57bbe772d57d707ea1ac6dacf",
       "bytes": 90794
@@ -5588,6 +5592,10 @@
     "subthread-orchestration-recovered-held.png": {
       "sha256": "c4143eeeaa85677dd3b2c4b1ffa7cdbaa4b4e45ac65fd0bda692d3038265c62a",
       "bytes": 36745
+    },
+    "suggest-model-configured-pool.png": {
+      "sha256": "af4f01e7d84b0963c3a567f3547865f31474b39622a97725dc7dd0b83a36f262",
+      "bytes": 159618
     },
     "supervised-tasks-resume.png": {
       "sha256": "40ae13c2582d813fa8f030ba968a281bb54cc8faa06c166495cff54ed96caa0e",

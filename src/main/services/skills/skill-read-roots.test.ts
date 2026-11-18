@@ -88,6 +88,13 @@ describe('resolveSkillReadRoots', () => {
     assert.equal(result.granted.length, 1, 'already covered by the directory grant')
   })
 
+  it('keeps a declared directory whose name starts with two dots inside the skill', async () => {
+    await mkdir(join(skillRoot, '..data'))
+    const result = await resolveSkillReadRoots(skill(['..data']), { homeDir: home })
+    assert.deepEqual(result.rejected, [])
+    assert.equal(result.granted.length, 1, 'already covered by the directory grant')
+  })
+
   it('rejects absolute, traversing, missing and credential entries by name', async () => {
     const result = await resolveSkillReadRoots(
       skill(['/etc/passwd', '../other-skill', 'missing.txt', 'scripts/.env']),

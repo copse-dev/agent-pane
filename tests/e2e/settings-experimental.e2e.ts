@@ -173,8 +173,20 @@ describe('experimental settings section', () => {
       .parentElement()
       .$('.field-hint')
       .getElement()
-    assert.match(await classifierHint.getText(), /how hard a task is/i)
+    const classifierHintText = await classifierHint.getText()
+    assert.match(classifierHintText, /how hard a task is/i)
+    // Judging sends the task text to a configured model, so the hint says so.
+    assert.match(classifierHintText, /sends the task description to your Background questions/i)
+    assert.match(classifierHintText, /or to your chat model when those can't answer/i)
+    assert.match(classifierHintText, /add a little usage/i)
 
     await saveElementScreenshot('#settings-dialog', 'settings-experimental.png')
+
+    // The section opens far above the classifier, so the dialog capture above
+    // never shows its hint. Frame the fieldset itself as evidence for that copy.
+    const classifierFieldset = '#settings-dialog fieldset:has(input[name="modelClassifierEnabled"])'
+    await $(classifierFieldset).scrollIntoView({ block: 'center' })
+    await expect($(classifierFieldset).$('.field-hint')).toBeDisplayed()
+    await saveElementScreenshot(classifierFieldset, 'settings-experimental-model-classifier.png')
   })
 })

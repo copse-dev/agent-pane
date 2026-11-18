@@ -16,6 +16,12 @@ describe('isPathOutsideRoot', () => {
     assert.equal(isPathOutsideRoot(ROOT, `${ROOT}/./src/../src`), false)
   })
 
+  it('keeps a child whose name starts with two dots inside', () => {
+    assert.equal(isPathOutsideRoot(ROOT, `${ROOT}/..cache`), false)
+    assert.equal(isPathOutsideRoot(ROOT, `${ROOT}/..cache/x`), false)
+    assert.equal(isPathOutsideRoot(ROOT, `${ROOT}/..`), true)
+  })
+
   it('treats a sibling checkout as outside', () => {
     assert.equal(isPathOutsideRoot(ROOT, '/Users/dev/debugging/agent-pane'), true)
     assert.equal(isPathOutsideRoot(ROOT, '/Users/dev/.copse/worktrees/thread-b'), true)
