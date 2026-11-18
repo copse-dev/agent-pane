@@ -29,7 +29,7 @@
 // blocked-by-sandbox run is recorded + resolved via `onFailure` in the runner.
 import * as fsp from 'node:fs/promises'
 import { dirname, join, relative } from 'node:path'
-import micromatch from 'micromatch'
+import picomatch from 'picomatch'
 import {
   HOOK_EVENT_NAMES,
   type HookEventName,
@@ -507,8 +507,8 @@ function afterFileEditMatches(
   }
   return candidates.some(
     (c) =>
-      micromatch.isMatch(c, expectStringArray(hook.glob), { dot: true }) ||
-      micromatch.isMatch(c, expectStringArray(hook.glob), { dot: true, basename: true }),
+      picomatch.isMatch(c, expectStringArray(hook.glob), { dot: true }) ||
+      picomatch.isMatch(c, expectStringArray(hook.glob), { dot: true, basename: true }),
   )
 }
 

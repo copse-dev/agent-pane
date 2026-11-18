@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import micromatch from 'micromatch'
+import picomatch from 'picomatch'
 import { defineTool } from '@shared/types'
 import { resolveSearchText } from '@copse/agent/search-routing.ts'
 import { resolveReadablePathWithinRoot } from '../services/workspace.ts'
@@ -118,7 +118,7 @@ async function explainEmptyGlobResult(opts: {
   slow?: boolean
 }): Promise<string> {
   const lines: string[] = [`No matches found within file_glob "${opts.fileGlob}".`]
-  // Ripgrep globs do not support bare pipe alternation; the bounded fallback uses micromatch.
+  // Ripgrep globs do not support bare pipe alternation; the bounded fallback uses picomatch.
   if (!opts.slow && opts.fileGlob.includes('|') && !opts.fileGlob.includes('{')) {
     lines.push(
       'file_glob is a glob, not a regex: `|` does not mean "or". Use braces, e.g. "{*a*,*b*}".',
@@ -183,10 +183,10 @@ export const findFilesTool = defineTool({
     const idx = await getReadyFileIndex(root)
     if (!idx) return 'File index not available. Try opening the workspace again.'
     // Take one extra so we can tell "exactly max_results total" from "more were dropped".
-    const found = micromatch(idx.paths, pattern, { basename: !pattern.includes('/') }).slice(
-      0,
-      max_results + 1,
-    )
+    // Wrap the matcher: passed straight to `filter`, picomatch reads the index
+    // argument as `returnObject` and every truthy result object would pass.
+    const isMatch = picomatch(pattern, { basename: !pattern.includes('/') })
+    const found = idx.paths.filter((path) => isMatch(path)).slice(0, max_results + 1)
     if (found.length === 0) return `No files match: ${pattern}`
     const truncated = found.length > max_results
     const matches = truncated ? found.slice(0, max_results) : found

@@ -1,6 +1,6 @@
 import * as fsp from 'node:fs/promises'
 import { basename, join, relative } from 'node:path'
-import micromatch from 'micromatch'
+import picomatch from 'picomatch'
 import { fileReferenceMatches } from '@shared/fs/file-reference.ts'
 import type { CursorRuleKind, CursorRuleSummary } from '@shared/types/cursor-rules.ts'
 import { splitSkillMarkdown } from './parse-skill-frontmatter.ts'
@@ -226,13 +226,13 @@ export function contextMatchesGlobs(contextPaths: string[], globs: string[]): bo
   const normalized = contextPaths.map(normalizeContextPath).filter(Boolean)
   for (const path of normalized) {
     for (const glob of globs) {
-      if (micromatch.isMatch(path, glob, { dot: true })) return true
+      if (picomatch.isMatch(path, glob, { dot: true })) return true
       // Basename-only globs (`*.ts`) should also match nested files when users
       // write the common shorthand; Cursor's docs say root-only, but community
       // rules almost always mean "any *.ts". Prefer the documented form when the
       // glob already contains a slash or `**`.
       if (!glob.includes('/') && !glob.includes('**')) {
-        if (micromatch.isMatch(path, `**/${glob}`, { dot: true })) return true
+        if (picomatch.isMatch(path, `**/${glob}`, { dot: true })) return true
       }
     }
   }

@@ -14,7 +14,7 @@
 import * as fsp from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
-import micromatch from 'micromatch'
+import picomatch from 'picomatch'
 import {
   CURSOR_AFTER_TOOL_HOOK_EVENTS,
   CURSOR_GENERIC_TOOL_GATE_EVENT,
@@ -671,8 +671,8 @@ function afterFileEditMatches(
   }
   return candidates.some(
     (c) =>
-      micromatch.isMatch(c, expectStringArray(hook.glob), { dot: true }) ||
-      micromatch.isMatch(c, expectStringArray(hook.glob), { dot: true, basename: true }),
+      picomatch.isMatch(c, expectStringArray(hook.glob), { dot: true }) ||
+      picomatch.isMatch(c, expectStringArray(hook.glob), { dot: true, basename: true }),
   )
 }
 

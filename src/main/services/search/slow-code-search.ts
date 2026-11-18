@@ -1,7 +1,7 @@
 import * as fs from 'node:fs/promises'
 import { stat as fsStat, open as fsOpen } from 'node:fs/promises'
 import { join, relative, resolve } from 'node:path'
-import micromatch from 'micromatch'
+import picomatch from 'picomatch'
 import { toRelativePath } from '../workspace.ts'
 
 export const SLOW_SEARCH_MAX_PATTERN_LEN = 256
@@ -113,7 +113,7 @@ export function createGitignoreMatcher(patterns: string[]): GitignoreMatcher {
       const path = relativePath.replace(/\\/g, '/')
       const withSlash = isDirectory && !path.endsWith('/') ? `${path}/` : path
       return normalized.some((pat) =>
-        micromatch.isMatch(withSlash, pat, { dot: true, contains: true }),
+        picomatch.isMatch(withSlash, pat, { dot: true, contains: true }),
       )
     },
   }
@@ -189,7 +189,7 @@ async function walkSearch(ctx: WalkSearchCtx): Promise<void> {
 
     if (ctx.fileGlob) {
       const glob = ctx.fileGlob.includes('/') ? ctx.fileGlob : `**/${ctx.fileGlob}`
-      if (!micromatch.isMatch(rel, glob, { dot: true })) continue
+      if (!picomatch.isMatch(rel, glob, { dot: true })) continue
     }
     if (ctx.gitignore.isIgnored(rel, false)) continue
 
