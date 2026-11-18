@@ -1,4 +1,5 @@
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { resolve, sep } from 'node:path'
+import { isPathWithin } from '@copse/std/path-containment.ts'
 import type { ToolExecuteResult } from '@shared/types'
 import { expectRecord, isRecord } from '@shared/unknown-value.ts'
 
@@ -118,9 +119,7 @@ export function resolveToolResultScope(root: string, args: unknown): string {
   const path = args['path']
   if (typeof path !== 'string' || path === '' || path === '.') return root
   const absolutePath = resolve(root, path)
-  const rel = relative(root, absolutePath)
-  if (rel.startsWith('..') || isAbsolute(rel)) return root
-  return absolutePath
+  return isPathWithin(root, absolutePath) ? absolutePath : root
 }
 
 /** Move a bucket to the most-recently-used end of the eviction order. */
