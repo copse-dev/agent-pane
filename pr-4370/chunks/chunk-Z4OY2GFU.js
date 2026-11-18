@@ -22350,10 +22350,13 @@ var init_thread_proposal = __esm({
 });
 
 // src/shared/tools/copse-tool-call.ts
+function isCopseServerName(server) {
+  return typeof server === "string" && ENVELOPE_SERVER_NAME.test(server);
+}
 function normalizeCopseToolName(name) {
   const server = /^mcp__([\w.-]+?)__/i.exec(name)?.[1];
-  if (server && server.toLowerCase() !== "copse") return name;
-  const match = /^(?:mcp[^a-z0-9]+)?copse[^a-z0-9]+([a-z][a-z0-9_.-]*)/i.exec(name);
+  if (server && !COPSE_SERVER_NAME.test(server)) return name;
+  const match = COPSE_WRAPPED_TOOL.exec(name);
   return match?.[1]?.toLowerCase() ?? name;
 }
 function copseToolCallName(call) {
@@ -22382,9 +22385,17 @@ function acpDelegateKind(call) {
 function acpDelegatePrompt(call) {
   return call.title ?? stringArg(call.args, "prompt") ?? stringArg(call.args, "description") ?? "";
 }
+var COPSE_SERVER, COPSE_SERVER_NAME, COPSE_WRAPPED_TOOL, ENVELOPE_SERVER_NAME;
 var init_copse_tool_call = __esm({
   "src/shared/tools/copse-tool-call.ts"() {
     init_unknown_value3();
+    COPSE_SERVER = "copse(?:-[a-z0-9]{8})?";
+    COPSE_SERVER_NAME = new RegExp(`^${COPSE_SERVER}$`, "i");
+    COPSE_WRAPPED_TOOL = new RegExp(
+      `^(?:mcp[^a-z0-9]+)?${COPSE_SERVER}[^a-z0-9]+([a-z][a-z0-9_.-]*)`,
+      "i"
+    );
+    ENVELOPE_SERVER_NAME = new RegExp(`^${COPSE_SERVER}$`);
   }
 });
 
@@ -22548,7 +22559,7 @@ function parseReviewerInputCall(call, messageId) {
 }
 function reviewerInputArguments(call) {
   const args = call.args;
-  if (isRecord(args) && args["server"] === "copse" && typeof args["tool"] === "string" && isCopseToolCall(call, args["tool"]) && Object.hasOwn(args, "arguments"))
+  if (isRecord(args) && isCopseServerName(args["server"]) && typeof args["tool"] === "string" && isCopseToolCall(call, args["tool"]) && Object.hasOwn(args, "arguments"))
     return args["arguments"];
   return args;
 }
@@ -74845,6 +74856,7 @@ export {
   threadProposalStatus,
   findThreadProposalDecision,
   threadProposalFileSummary,
+  isCopseServerName,
   isCopseToolCall,
   isAcpDelegateToolCall,
   acpDelegateKind,
