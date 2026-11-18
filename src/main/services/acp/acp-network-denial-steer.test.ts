@@ -119,7 +119,7 @@ describe('acpSandboxGithubSteer (issue #4145)', () => {
     assert.match(steer, /Use git_fetch to fetch branches/)
     assert.match(
       steer,
-      /For anything they do not cover, run `gh` through the "copse" MCP server's run_shell tool/,
+      /For anything they do not cover, run `gh` through Copse's MCP server's run_shell tool/,
     )
     assert.doesNotMatch(steer, /read_file/)
     assert.doesNotMatch(steer, /when available/)
@@ -151,7 +151,7 @@ describe('acpSandboxGithubSteer (issue #4145)', () => {
     assert.match(steer, /offers no GitHub tools in this session/)
     assert.match(
       steer,
-      /run `gh` through the "copse" MCP server's run_shell tool, which can ask the user/,
+      /run `gh` through Copse's MCP server's run_shell tool, which can ask the user/,
     )
     assert.doesNotMatch(steer, /gh_api_read|git_fetch|Offered here/)
   })
@@ -168,7 +168,7 @@ describe('acpSandboxGithubSteer (issue #4145)', () => {
   it('says GitHub is out of reach when nothing bridged can reach it', () => {
     // No bridge, or one the agent never listed (#4144): no tools either way.
     const noBridge = acpSandboxGithubSteer([])
-    assert.match(noBridge, /"copse" MCP server is not available in this session/)
+    assert.match(noBridge, /Copse's MCP server is not available in this session/)
     assert.match(noBridge, /this session has no signed-in route to GitHub/)
     assert.match(noBridge, /Tell the user that GitHub could not be reached/)
     assert.doesNotMatch(noBridge, /gh_api_read|git_fetch|run_shell/)

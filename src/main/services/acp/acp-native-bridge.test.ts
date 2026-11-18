@@ -350,6 +350,9 @@ describe('startAcpNativeBridge', () => {
     })
     assert.ok(first)
     assert.ok(second)
+    // #4125: each bridge is mounted under its own name, which no config can predict.
+    assert.match(first.serverName, /^copse-[a-z0-9]{8}$/)
+    assert.notEqual(first.serverName, second.serverName)
     const read = (target: AcpNativeBridge, path?: string): ReturnType<typeof rpc> =>
       rpc(target, {
         jsonrpc: '2.0',

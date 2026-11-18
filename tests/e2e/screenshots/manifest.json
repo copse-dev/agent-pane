@@ -50,8 +50,8 @@
       "bytes": 278015
     },
     "acp-bridge-tools-dropped.png": {
-      "sha256": "3775e2655010563afdfc7703bcc9b3921c171b66c421624f3c5171958bd61856",
-      "bytes": 321013
+      "sha256": "cb75b12f4608f23e7fe1b2d6a2a4a75a2e98cc3d328d2f832e78c312f33eeb58",
+      "bytes": 323650
     },
     "acp-bridge-unavailable.png": {
       "sha256": "f753a7c0a985308a7df8081863fcad44d250b8521527449b80d4bf1c21a24c9f",
@@ -5753,9 +5753,21 @@
       "sha256": "9387b502a20443a4830c7a4e118d3ed6073b3a4839b5091eee691a4fb9558b52",
       "bytes": 254552
     },
+    "thread-deferred-worktree-detached-composer.png": {
+      "sha256": "ff00d728c0802a20aee551e9b3fd6640448df0a3294e278affbdeb7484b29282",
+      "bytes": 19306
+    },
+    "thread-deferred-worktree-reading-composer.png": {
+      "sha256": "2f7c298595d4a27014d16c2345a461ac4755c0dbc7a4663bb8d2e652dc2a78fd",
+      "bytes": 19479
+    },
     "thread-deferred-worktree-reading.png": {
       "sha256": "e25ffb136cbc95ce33e22e669f43a75a3c8efabfd9abb0aee84a48633bda98e0",
       "bytes": 264088
+    },
+    "thread-deferred-worktree-writing-composer.png": {
+      "sha256": "7744677770b2b0ac41c3a49bd1cb9dd9cea257fd09d0bc55ddea78b585630fbf",
+      "bytes": 26212
     },
     "thread-deferred-worktree-writing.png": {
       "sha256": "ecec56875f2c32969f3df68caa1474785c681b2fad2c49078c7fefbeb01e3491",
