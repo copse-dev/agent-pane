@@ -54399,8 +54399,10 @@ function mountFooterBranchStatus(host, store2, api2) {
     return thread ? isWorktreeDeferralPending(thread) : false;
   }
   function getDisplayBranch() {
-    const liveCheckoutBranch = readsCheckout() ? status?.currentBranch : void 0;
-    return activeBaseBranch() ?? liveCheckoutBranch ?? getActiveThreadBranch() ?? getActiveThread2()?.worktree?.branch ?? status?.currentBranch ?? null;
+    const pending = activeBaseBranch();
+    if (pending) return pending;
+    if (readsCheckout() && status) return status.currentBranch;
+    return getActiveThreadBranch() ?? getActiveThread2()?.worktree?.branch ?? status?.currentBranch ?? null;
   }
   function getVisiblePr() {
     const pr = status?.pr;
@@ -54430,8 +54432,9 @@ function mountFooterBranchStatus(host, store2, api2) {
     const pickerMode = isPickerMode();
     const pr = getVisiblePr();
     deferredNote.hidden = !readsCheckout();
+    trigger.hidden = !displayBranch;
     if (!displayBranch) {
-      wrap2.hidden = true;
+      wrap2.hidden = !readsCheckout();
       branchToCopy = null;
       setOpen(false);
       renderReattach();
