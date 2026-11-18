@@ -834,6 +834,10 @@ describe('footer branch status', () => {
 
       assert.equal(note(host).hidden, false)
       assert.equal(note(host).textContent, 'Reading your checkout')
+      // A refused write allocates nothing, so the tooltip promises the worktree
+      // only once the thread asks to make changes.
+      assert.match(note(host).title, /own worktree once it asks to make changes/)
+      assert.doesNotMatch(note(host).title, /first time it needs to write/)
       assert.match(note(host).title, /can’t change it.*own worktree/)
       assert.equal(qsRequired(host, '.footer-branch-label').textContent, 'main')
 

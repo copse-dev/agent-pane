@@ -28,8 +28,11 @@ import { isWorktreeDeferralPending } from '@shared/git/worktree-policy.ts'
 const COPIED_BRANCH_TOAST = 'Copied branch name'
 const COPY_FEEDBACK_MS = 1600
 const DEFERRED_NOTE_TEXT = 'Reading your checkout'
+// A write attempt alone does not allocate: a read-only shell command or an ACP
+// agent's own edit is refused. Only a request for write access or one of
+// Copse's writing tools does (deferred-thread-worktrees.md).
 const DEFERRED_NOTE_TITLE =
-  'This thread is reading your checkout and can’t change it. It gets its own worktree the first time it needs to write.'
+  'This thread is reading your checkout and can’t change it. It gets its own worktree once it asks to make changes; until then, anything that tries to write here is refused.'
 let nextPickerId = 0
 
 type DetachedAttachment = Extract<ThreadWorktreeAttachment, { state: 'detached' }>

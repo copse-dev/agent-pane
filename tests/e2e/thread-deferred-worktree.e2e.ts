@@ -161,7 +161,8 @@ describe('deferred thread worktree', () => {
       }
     })
     assert.equal(note.text, 'Reading your checkout')
-    assert.match(note.title, /own worktree the first time it needs to write/)
+    assert.match(note.title, /own worktree once it asks to make changes/)
+    assert.match(note.title, /anything that tries to write here is refused/)
     assert.equal(note.textClipped, false, 'the note should be readable in a full-width footer')
     assert.equal(note.branchClipped, false, 'the note must not squeeze the branch name')
     await saveAppScreenshot('thread-deferred-worktree-reading.png')

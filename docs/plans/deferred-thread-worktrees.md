@@ -45,8 +45,10 @@ with an automatic checkout choice and a native model, or an ACP agent that
 3. The system prompt tells the agent the checkout is read-only and names `request_write_access`.
 4. The composer footer shows "Reading your checkout" beside the branch chip, which names the
    project checkout's branch (`isWorktreeDeferralPending`). It is muted text with an eye icon and
-   no box; its tooltip says the thread cannot change the checkout and gets its own worktree on
-   first write. The note goes when the `thread_checkout` chunk records the worktree, and the
+   no box; its tooltip says the thread cannot change the checkout, gets its own worktree once it
+   asks to make changes, and has any other write refused until then. A failed shell write or an
+   ACP agent's own edit allocates nothing, so the tooltip does not promise a worktree on first
+   write. The note goes when the `thread_checkout` chunk records the worktree, and the
    branch chip then names the worktree's branch.
 
 During a deferred turn:
