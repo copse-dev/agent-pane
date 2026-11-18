@@ -5753,6 +5753,10 @@
       "sha256": "9387b502a20443a4830c7a4e118d3ed6073b3a4839b5091eee691a4fb9558b52",
       "bytes": 254552
     },
+    "thread-deferred-worktree-detached-composer.png": {
+      "sha256": "ff00d728c0802a20aee551e9b3fd6640448df0a3294e278affbdeb7484b29282",
+      "bytes": 19306
+    },
     "thread-deferred-worktree-reading-composer.png": {
       "sha256": "2f7c298595d4a27014d16c2345a461ac4755c0dbc7a4663bb8d2e652dc2a78fd",
       "bytes": 19479
