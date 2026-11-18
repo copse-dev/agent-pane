@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import picomatch from 'picomatch'
 import { defineTool } from '@shared/types'
 import { resolveSearchText } from '@copse/agent/search-routing.ts'
 import { resolveReadablePathWithinRoot } from '../services/workspace.ts'
@@ -8,6 +7,7 @@ import { isRgAvailableForTarget } from '../services/tool-availability.ts'
 import { getReadyFileIndex } from '../services/search/file-index.ts'
 import { formatCodeSearchResults, searchCodeContent } from '../services/search/indexed-grep.ts'
 import { slowCodeSearch } from '../services/search/slow-code-search.ts'
+import { GLOB_TIMEOUT_HINT, globFilterWithin } from '../services/search/bounded-glob.ts'
 import { isActiveSshWorkspace } from '../services/ssh-workspace/execution-target.ts'
 
 export const searchCodeTool = defineTool({
@@ -183,10 +183,14 @@ export const findFilesTool = defineTool({
     const idx = await getReadyFileIndex(root)
     if (!idx) return 'File index not available. Try opening the workspace again.'
     // Take one extra so we can tell "exactly max_results total" from "more were dropped".
-    // Wrap the matcher: passed straight to `filter`, picomatch reads the index
-    // argument as `returnObject` and every truthy result object would pass.
-    const isMatch = picomatch(pattern, { basename: !pattern.includes('/') })
-    const found = idx.paths.filter((path) => isMatch(path)).slice(0, max_results + 1)
+    // The pattern comes from the model, so match it under a time budget.
+    const found = globFilterWithin(
+      idx.paths,
+      pattern,
+      { basename: !pattern.includes('/') },
+      { limit: max_results + 1 },
+    )
+    if (found === 'timeout') return GLOB_TIMEOUT_HINT
     if (found.length === 0) return `No files match: ${pattern}`
     const truncated = found.length > max_results
     const matches = truncated ? found.slice(0, max_results) : found

@@ -156,8 +156,29 @@ patchedDependencies:
 # worst case is that server exhausting the main process's memory (denial of
 # service); it grants no code execution or data access. Remove this once
 # @lmstudio/sdk moves to zod >=4.6.6 or zod 3 gets a patched release.
+#
+# GHSA-fc5q-39xc-vjpf (picomatch <=4.0.7, single-branch repeated extglobs such
+# as `+(*a)` compile to nested quantifiers that backtrack exponentially) has no
+# patched npm release as of 2026-11-18; upstream PR micromatch/picomatch#194 is
+# still open and leaves `+(*a)` exponential. It IS reachable in production:
+# Copse's own picomatch 4.0.7 matches globs from model tool arguments
+# (find_files, search_code's file_glob in the no-ripgrep fallback) and from
+# repository files (.gitignore in that fallback, .cursor/rules/*.mdc globs,
+# hooks.json afterFileEdit globs). Raw groups such as `(a|*a)+` compile to the
+# same shape without an extglob, so `noextglob` is no defence. Those callers
+# match under the @copse/std/bounded-regex.ts wall-clock budget
+# (src/main/services/search/bounded-glob.ts and
+# packages/hooks-dialects/src/after-file-edit-glob.ts), so a pathological glob
+# costs at most one budget instead of freezing the main process. index:query
+# only accepts [\w.\-/+$@ ] around a fixed `**/*…*`. Every other copy is build
+# or test tooling fed developer-controlled patterns: tinyglobby under
+# typescript-eslint and electron-builder's node-gyp, WebdriverIO, and
+# type-coverage's micromatch -> picomatch 2.3.2. Any new picomatch caller fed a
+# non-developer pattern must go through the bounded helpers. Remove this once a
+# patched picomatch release replaces every copy in the lockfile.
 auditConfig:
   ignoreGhsas:
     - GHSA-ch52-4w7c-c8xp
     - GHSA-vfj7-8cjw-p6xm
     - GHSA-mrhx-c7xc-m3w5
+    - GHSA-fc5q-39xc-vjpf

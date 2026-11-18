@@ -1,6 +1,18 @@
 import * as fsp from 'node:fs/promises'
 import { basename, join, relative } from 'node:path'
-import picomatch from 'picomatch'
+import {
+  createGlobBudget,
+  GLOB_SUBJECT_TIMEOUT_MS,
+  globFilterWithin,
+  type GlobBudget,
+} from '../search/bounded-glob.ts'
+
+/**
+ * Budget for every rule glob matched while choosing one turn's rules. Real
+ * globs take microseconds each; this stops a repository from filling `.mdc`
+ * files with globs that each run just under their own budget.
+ */
+const RULE_GLOBS_TIMEOUT_MS = 250
 import { fileReferenceMatches } from '@shared/fs/file-reference.ts'
 import type { CursorRuleKind, CursorRuleSummary } from '@shared/types/cursor-rules.ts'
 import { splitSkillMarkdown } from './parse-skill-frontmatter.ts'
@@ -220,21 +232,36 @@ export function normalizeContextPath(path: string): string {
   return path.replace(/\\/g, '/').replace(/^\.\//, '').replace(/^\/+/, '')
 }
 
-/** True when any context path matches any of the rule's globs. */
-export function contextMatchesGlobs(contextPaths: string[], globs: string[]): boolean {
+/**
+ * True when any context path matches any of the rule's globs. Rule globs come
+ * from the repository's `.mdc` files, so each is matched under a time budget
+ * (see `bounded-glob.ts`), and all of them together under `budget`; a glob
+ * that blows either attaches nothing.
+ */
+export function contextMatchesGlobs(
+  contextPaths: string[],
+  globs: string[],
+  budget: GlobBudget = createGlobBudget(RULE_GLOBS_TIMEOUT_MS),
+): boolean {
   if (globs.length === 0 || contextPaths.length === 0) return false
   const normalized = contextPaths.map(normalizeContextPath).filter(Boolean)
-  for (const path of normalized) {
-    for (const glob of globs) {
-      if (picomatch.isMatch(path, glob, { dot: true })) return true
-      // Basename-only globs (`*.ts`) should also match nested files when users
-      // write the common shorthand; Cursor's docs say root-only, but community
-      // rules almost always mean "any *.ts". Prefer the documented form when the
-      // glob already contains a slash or `**`.
-      if (!glob.includes('/') && !glob.includes('**')) {
-        if (picomatch.isMatch(path, `**/${glob}`, { dot: true })) return true
-      }
-    }
+  for (const glob of globs) {
+    // Basename-only globs (`*.ts`) should also match nested files when users
+    // write the common shorthand; Cursor's docs say root-only, but community
+    // rules almost always mean "any *.ts". Prefer the documented form when the
+    // glob already contains a slash or `**`.
+    const forms = !glob.includes('/') && !glob.includes('**') ? [glob, `**/${glob}`] : [glob]
+    const hits = globFilterWithin(
+      normalized,
+      forms,
+      { dot: true },
+      {
+        timeoutMs: GLOB_SUBJECT_TIMEOUT_MS,
+        limit: 1,
+        budget,
+      },
+    )
+    if (hits !== 'timeout' && hits.length > 0) return true
   }
   return false
 }
@@ -339,9 +366,11 @@ export function selectInjectableCursorRules(
 ): CursorRuleSource[] {
   const contextPaths = context.contextPaths ?? []
   const userText = context.userText ?? ''
+  // One budget across every auto rule, not one per rule.
+  const globBudget = createGlobBudget(RULE_GLOBS_TIMEOUT_MS)
   return rules.filter((rule) => {
     if (rule.kind === 'always') return true
-    if (rule.kind === 'auto') return contextMatchesGlobs(contextPaths, rule.globs ?? [])
+    if (rule.kind === 'auto') return contextMatchesGlobs(contextPaths, rule.globs ?? [], globBudget)
     if (rule.kind === 'manual') return isRuleMentioned(rule, userText)
     // agent-requested: catalog only
     return false
