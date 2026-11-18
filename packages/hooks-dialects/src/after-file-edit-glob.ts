@@ -9,12 +9,40 @@
 import { relative } from 'node:path'
 import micromatch from 'micromatch'
 import { matchingIndexesWithin } from '@copse/std/bounded-regex.ts'
+import { sha256Hex } from '@copse/std/sha256.ts'
 
 /** Budget for matching one edit's candidate paths. Real globs take microseconds. */
 export const AFTER_FILE_EDIT_GLOB_TIMEOUT_MS = 50
 
-/** Glob lists that have already run past the budget once (keyed by JSON). */
-const pathologicalGlobs = new Set<string>()
+/** How many timed-out glob lists to remember; the oldest is forgotten first. */
+const MAX_REMEMBERED_GLOB_LISTS = 256
+
+/** A set that keeps at most `max` keys, forgetting the oldest added first. */
+export interface RecentKeySet {
+  has(key: string): boolean
+  add(key: string): void
+}
+
+export function createRecentKeySet(max: number): RecentKeySet {
+  const keys = new Set<string>()
+  return {
+    has: (key) => keys.has(key),
+    add(key): void {
+      keys.add(key)
+      if (keys.size <= max) return
+      const oldest = keys.values().next()
+      if (!oldest.done) keys.delete(oldest.value)
+    },
+  }
+}
+
+/**
+ * Glob lists that have already run past the budget, keyed by a hash of their
+ * JSON so a huge list costs no more to remember than a short one. Capped: each
+ * workspace's hooks.json can add lists, and a forgotten one only costs one more
+ * budget the next time it runs.
+ */
+const pathologicalGlobs = createRecentKeySet(MAX_REMEMBERED_GLOB_LISTS)
 
 /**
  * Whether an `afterFileEdit` hook's globs cover the edited path. No globs means
@@ -24,9 +52,9 @@ const pathologicalGlobs = new Set<string>()
  * still matches a nested file.
  *
  * A glob list that runs past {@link AFTER_FILE_EDIT_GLOB_TIMEOUT_MS} counts as
- * a match, now and on every later edit, without re-running: as with a
- * pathological `matcher`, firing the hook lets it decide, while skipping it
- * would silently drop a gate.
+ * a match, now and on later edits, without re-running while it is remembered
+ * (the most recent 256 lists): as with a pathological `matcher`,
+ * firing the hook lets it decide, while skipping it would silently drop a gate.
  */
 export function afterFileEditGlobMatches(
   globs: readonly string[] | undefined,
@@ -34,7 +62,7 @@ export function afterFileEditGlobMatches(
   workspaceRoot: string | null,
 ): boolean {
   if (!globs || globs.length === 0) return true
-  const key = JSON.stringify(globs)
+  const key = sha256Hex(JSON.stringify(globs))
   if (pathologicalGlobs.has(key)) return true
   const candidates = [filePath.replace(/\\/g, '/')]
   if (workspaceRoot) {
@@ -55,7 +83,7 @@ export function afterFileEditGlobMatches(
   if (hits !== 'timeout') return hits.length > 0
   pathologicalGlobs.add(key)
   console.warn(
-    `[hooks] afterFileEdit glob ${key} ran past ${String(AFTER_FILE_EDIT_GLOB_TIMEOUT_MS)}ms — treated as a match from now on`,
+    `[hooks] afterFileEdit glob ${JSON.stringify(globs).slice(0, 200)} ran past ${String(AFTER_FILE_EDIT_GLOB_TIMEOUT_MS)}ms — treated as a match from now on`,
   )
   return true
 }

@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { afterFileEditGlobMatches } from './after-file-edit-glob.ts'
+import { afterFileEditGlobMatches, createRecentKeySet } from './after-file-edit-glob.ts'
 
 describe('afterFileEditGlobMatches', () => {
   const root = '/work/repo'
@@ -30,5 +30,20 @@ describe('afterFileEditGlobMatches', () => {
     const again = Date.now()
     assert.equal(afterFileEditGlobMatches(['+(*a)'], '/work/repo/x.ts', root), true)
     assert.ok(Date.now() - again < 40, 'a pathological glob list is remembered')
+  })
+})
+
+describe('createRecentKeySet', () => {
+  // Every workspace's hooks.json can add timed-out glob lists, so the set the
+  // matcher remembers them in must not grow for the life of the app.
+  it('keeps at most max keys, forgetting the oldest first', () => {
+    const keys = createRecentKeySet(2)
+    keys.add('a')
+    keys.add('b')
+    keys.add('a')
+    keys.add('c')
+    assert.equal(keys.has('a'), false)
+    assert.equal(keys.has('b'), true)
+    assert.equal(keys.has('c'), true)
   })
 })
