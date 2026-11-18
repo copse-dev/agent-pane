@@ -170,7 +170,8 @@ aliases, external `git-*` commands and executable config overrides are refused;
 the shared snapshot builder can supply only `user.name` and `user.email` overrides.
 
 Execution-time overrides disable fsmonitor (GitSpawn), hooks, automatic maintenance,
-submodule recursion, signing and signature display. Diff/log/show request raw output
+submodule recursion, signing, signature display and the alternate-refs command that
+fetch and push would otherwise run for an alternate object store. Diff/log/show request raw output
 without external diff or textconv. Included and worktree configuration cannot undo
 these overrides. Inherited Git config/executable injection is removed. Implicit
 partial-clone fetches are disabled. Explicit fetch/push retain their existing caller

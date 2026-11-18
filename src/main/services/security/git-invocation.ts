@@ -66,6 +66,10 @@ const INTERNAL_GIT_COMMANDS = new Set([
 const INTERNAL_GIT_CONFIG = [
   'core.fsmonitor=false',
   'core.hooksPath=/dev/null',
+  // fetch and push run this program to list an alternate object store's refs
+  // when the checkout has `objects/info/alternates`. Empty means unset: Git
+  // lists those refs itself, which only feeds negotiation.
+  'core.alternateRefsCommand=',
   'core.pager=cat',
   'color.ui=false',
   'maintenance.auto=false',

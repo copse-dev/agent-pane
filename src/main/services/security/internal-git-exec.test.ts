@@ -60,4 +60,40 @@ describe('internalGit', () => {
     )
     assert.equal(existsSync(marker), false, 'core.sshCommand ran')
   })
+
+  // With an alternate object store, fetch asks `core.alternateRefsCommand` for
+  // the alternate's refs, even over the `file` transport alone.
+  it("never runs a checkout's alternateRefsCommand while fetching a bundle", async () => {
+    const alternate = join(dir, 'alternate')
+    mkdirSync(alternate)
+    plainGit(alternate, ['init', '-q', '-b', 'other'])
+    plainGit(alternate, [
+      '-c',
+      'user.name=t',
+      '-c',
+      'user.email=t@x',
+      'commit',
+      '--allow-empty',
+      '-qm',
+      'alternate',
+    ])
+    const target = join(dir, 'target')
+    mkdirSync(target)
+    plainGit(target, ['init', '-q', '-b', 'other'])
+    writeFileSync(
+      join(target, '.git/objects/info/alternates'),
+      `${join(alternate, '.git/objects')}\n`,
+    )
+    const marker = join(dir, 'alternate-refs-ran')
+    const command = join(dir, 'alternate-refs.sh')
+    writeFileSync(command, `#!/bin/sh\necho ran >> '${marker}'\n`, { mode: 0o700 })
+    plainGit(target, ['config', 'core.alternateRefsCommand', command])
+
+    await internalGit(target, ['fetch', '--no-tags', bundle, 'refs/heads/main:refs/copse/test'])
+    assert.equal(existsSync(marker), false, 'core.alternateRefsCommand ran')
+    assert.equal(
+      await internalGit(target, ['rev-parse', 'refs/copse/test']),
+      plainGit(repo, ['rev-parse', 'HEAD']),
+    )
+  })
 })
