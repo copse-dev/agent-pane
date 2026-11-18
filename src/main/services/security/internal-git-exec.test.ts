@@ -1,0 +1,63 @@
+import { describe, it, beforeEach, afterEach } from 'node:test'
+import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { internalGit } from './internal-git-exec.ts'
+
+function plainGit(cwd: string, args: string[]): string {
+  return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
+}
+
+describe('internalGit', () => {
+  let dir = ''
+  let repo = ''
+  let bundle = ''
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'copse-internal-git-'))
+    repo = join(dir, 'repo')
+    bundle = join(dir, 'carry-out.bundle')
+    mkdirSync(repo)
+    plainGit(repo, ['init', '-q', '-b', 'main'])
+    plainGit(repo, [
+      '-c',
+      'user.name=t',
+      '-c',
+      'user.email=t@x',
+      'commit',
+      '--allow-empty',
+      '-qm',
+      'init',
+    ])
+    plainGit(repo, ['bundle', 'create', '-q', bundle, 'HEAD', 'main'])
+  })
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('fetches from a local bundle', async () => {
+    await internalGit(repo, ['fetch', '--no-tags', bundle, 'refs/heads/main:refs/copse/test'])
+    assert.equal(
+      await internalGit(repo, ['rev-parse', 'refs/copse/test']),
+      plainGit(repo, ['rev-parse', 'HEAD']),
+    )
+  })
+
+  // Carry-out imports a bundle by path. A checkout whose config rewrites that
+  // path to an ssh:// URL must not get its `core.sshCommand` run on the host.
+  it("never runs a checkout's ssh command when insteadOf rewrites a bundle path", async () => {
+    const marker = join(dir, 'ssh-ran')
+    const ssh = join(dir, 'ssh.sh')
+    writeFileSync(ssh, `#!/bin/sh\necho ran >> '${marker}'\nexit 1\n`, { mode: 0o700 })
+    plainGit(repo, ['config', 'core.sshCommand', ssh])
+    plainGit(repo, ['config', 'url.ssh://example.invalid/.insteadOf', '/'])
+
+    await assert.rejects(
+      internalGit(repo, ['fetch', '--no-tags', bundle, 'refs/heads/main:refs/copse/test']),
+    )
+    assert.equal(existsSync(marker), false, 'core.sshCommand ran')
+  })
+})

@@ -13,6 +13,11 @@
  * failures. Content filters and merge drivers keep Git's normal semantics (see
  * `docs/threat-model.md`, "Internal Git execution").
  *
+ * Every operation here reads or writes local files (bundles, sibling
+ * checkouts), so `file` is the only transport, `fetch` and `push` included.
+ * Otherwise a checkout's `url.<base>.insteadOf` could rewrite a bundle path into
+ * an `ssh://` remote and Git would run that checkout's `core.sshCommand`.
+ *
  * Rejections are `execFile`'s own, so a caller can still read the exit `code`
  * (e.g. `git grep` exits 1 for "no match").
  */
@@ -44,7 +49,7 @@ function prepare(
       // caller's extra environment is scrubbed together with the base.
       env: internalGitEnv(
         { ...envForRendererChildProcess(), ...options.env },
-        internalGitTransport(args[0]),
+        internalGitTransport(args[0]) === 'none' ? 'none' : 'local',
       ),
       maxBuffer: options.maxBuffer ?? DEFAULT_MAX_BUFFER,
     },

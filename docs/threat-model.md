@@ -181,7 +181,10 @@ Configuration inspection reads real values without invoking the configured helpe
 
 Container-run carry-in, carry-out and adoption, and the hosted (OpenAI) source
 transfer and import, run on the host checkout outside the project sandbox. They use
-the same policy through one runner (`security/internal-git-exec.ts`). Adoption's
+the same policy through one runner (`security/internal-git-exec.ts`), which also
+limits every command, `fetch` included, to the `file` transport: these operations
+read bundles and sibling checkouts, so a checkout's `url.<base>.insteadOf` cannot
+turn a bundle path into an SSH remote that runs its `core.sshCommand`. Adoption's
 `cherry-pick` is admitted only as `--no-edit` with full SHAs (no merge strategy
 program), so the checkout's hooks and signer do not run and adopted commits are
 unsigned. It is app plumbing, not the gated `git_commit` profile. Guest-side Git
