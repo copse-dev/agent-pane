@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { at } from '@shared/array-utils.ts'
 import { existsSync } from 'node:fs'
 import { lstat, mkdtemp, readFile, writeFile, rm, mkdir, symlink, truncate } from 'node:fs/promises'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import {
   GIT_CONTENT_STATE_FILE_MAX_BYTES,
   GIT_CONTENT_STATE_TOTAL_MAX_BYTES,
@@ -1315,6 +1315,33 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
 
     git(tempRoot, ['config', 'core.autocrlf', 'true'])
     assert.equal((await listWorktreeGitContentStates(['raw.txt']))?.size, 0)
+  })
+  ownedIt('gitBlobIdOfRegularFile refuses a file that changes while it is read', async () => {
+    // Chunked reads of a file another writer is changing can mix versions into a
+    // hash of bytes the file never held whole, which the card would then state
+    // as fact. A writer appending throughout keeps the file changing for the
+    // whole read of a 15 MiB file.
+    const file = join(workspaceRoot, 'growing.bin')
+    await writeFile(file, '')
+    await truncate(file, 15 * 1024 * 1024)
+    const writer = spawn(
+      process.execPath,
+      [
+        '-e',
+        `const fs = require('node:fs'); process.send('ready'); for (;;) fs.appendFileSync(${JSON.stringify(file)}, 'x')`,
+      ],
+      { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] },
+    )
+    try {
+      await new Promise<void>((resolve) => {
+        writer.once('message', () => {
+          resolve()
+        })
+      })
+      assert.equal(await gitBlobIdOfRegularFile(file, 'sha1', 32 * 1024 * 1024), null)
+    } finally {
+      writer.kill()
+    }
   })
   ownedIt(
     'listWorktreeGitContentStates bounds how much it hashes, leaving the rest unknown',

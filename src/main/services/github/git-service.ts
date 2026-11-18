@@ -933,7 +933,10 @@ export async function findGitContentStates(
  * to be a regular file on that same descriptor, so a path swapped for a link or
  * device after an earlier check is refused rather than read. Null when it is
  * not a regular file, is larger than `maxBytes` (it grew after the caller
- * budgeted for it), cannot be read, or shrinks while being read.
+ * budgeted for it), cannot be read, or changes while being read: the
+ * descriptor is checked again afterwards, and a different size, modification
+ * time or change time means the bytes read may be no version the file ever
+ * held whole.
  */
 export async function gitBlobIdOfRegularFile(
   path: string,
@@ -952,21 +955,30 @@ export async function gitBlobIdOfRegularFile(
     return null
   }
   try {
-    const stat = await handle.stat()
-    if (!stat.isFile() || stat.size > maxBytes) return null
-    const hash = createHash(algorithm).update(`blob ${String(stat.size)}\0`)
-    const buffer = Buffer.alloc(Math.min(1024 * 1024, Math.max(1, stat.size)))
+    const stat = await handle.stat({ bigint: true })
+    if (!stat.isFile() || stat.size > BigInt(maxBytes)) return null
+    const size = Number(stat.size)
+    const hash = createHash(algorithm).update(`blob ${String(size)}\0`)
+    const buffer = Buffer.alloc(Math.min(1024 * 1024, Math.max(1, size)))
     let position = 0
-    while (position < stat.size) {
+    while (position < size) {
       const { bytesRead } = await handle.read(
         buffer,
         0,
-        Math.min(buffer.length, stat.size - position),
+        Math.min(buffer.length, size - position),
         position,
       )
       if (bytesRead === 0) return null
       hash.update(buffer.subarray(0, bytesRead))
       position += bytesRead
+    }
+    const after = await handle.stat({ bigint: true })
+    if (
+      after.size !== stat.size ||
+      after.mtimeNs !== stat.mtimeNs ||
+      after.ctimeNs !== stat.ctimeNs
+    ) {
+      return null
     }
     return hash.digest('hex')
   } catch {
