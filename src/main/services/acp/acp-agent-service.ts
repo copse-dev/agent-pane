@@ -985,7 +985,7 @@ async function runAcpAgentTurn(
       if (markAcpBridgeAvailable(sessionBridge)) {
         copseToolsNote = acpCopseToolsConnectedPromptNote(
           sessionBridge.serverName,
-          acpCopseToolsSteering(sandboxed, readonlyCheckout),
+          acpCopseToolsSteering(sessionBridge.serverName, sandboxed, readonlyCheckout),
         )
       }
     } else if (
@@ -1052,7 +1052,7 @@ async function runAcpAgentTurn(
         sandboxed,
         readonlyCheckout,
         includeNotes: fresh && options.executionMode !== 'agent',
-        copseTools: bridgeMounted,
+        ...(bridgeMounted && sessionBridge ? { copseServer: sessionBridge.serverName } : {}),
         ...(copseToolsNote && options.executionMode !== 'agent' ? { copseToolsNote } : {}),
         includeImages,
         ...(operatorInstructions ? { operatorInstructions } : {}),
@@ -1838,46 +1838,60 @@ const ACP_SESSION_PROMPT_NOTE =
   'over broad directory dumps.'
 
 /**
- * The part of {@link ACP_TURN_PROMPT_NOTE} that steers the agent to Copse's
+ * The part of {@link acpTurnPromptNote} that steers the agent to Copse's
  * bridged tools. Left out when the agent has not mounted the bridge (#4144).
+ *
+ * `server` is the exact name this session's bridge is mounted under. The note
+ * names it, and disowns look-alikes, because an agent can also have a server of
+ * its own called `copse` or `copse-tools` whose tools share these names but
+ * never pass through Copse's gate (#4125). Later notes say "Copse's MCP server"
+ * and mean this one.
  */
-export const ACP_COPSE_TOOLS_PROMPT_NOTE =
-  "Prefer the tools of Copse's MCP server (its name is copse- and a short suffix) when " +
-  "available: they reuse Copse's native workspace, Git, command, GitHub, and " +
-  'web implementations. Use copse read_file/search_code/find_files for inspection ' +
-  'instead of your own shell. Use copse run_shell/run_background for ' +
-  'commands and copse write/replace/file-operation tools for edits so the same ' +
-  'sandbox, approval, and diff-queue rules as a built-in Copse model apply. ' +
-  'For long builds, test suites, and other bounded commands, use copse ' +
-  'run_background with action="start", wake_on_completion=true, and timeout_ms ' +
-  'rather than your own shell background jobs or monitors. Copse owns these ' +
-  'tasks independently of the coding-agent session; their completion can resume the ' +
-  "thread after idle session reaping. Use the repository's actual command; " +
-  'run_background start example: ' +
-  '{"action":"start","command":"pnpm test","wake_on_completion":true,"timeout_ms":1800000}' +
-  '\nAfter a successful start, retain the task id and end the turn; completion ' +
-  "will wake the thread. Inspect that task's logs and exit status before " +
-  'reporting validation as complete. run_background does not accept ' +
-  'expects_sandbox_block or support outside-sandbox execution. If a command ' +
-  'needs that approval path, use copse run_shell with an explicit timeout_ms ' +
-  '(up to 1800000), setting expects_sandbox_block=true when required. Add ' +
-  'yield_after_ms=1000 to transfer the same approved process to supervision ' +
-  'after a short foreground wait; timeout_ms remains its total deadline. ' +
-  'run_shell yield example: ' +
-  '{"command":"pnpm test","timeout_ms":1800000,"yield_after_ms":1000}' +
-  '\nSend a yielding call as the only tool in its response. A still-running ' +
-  'receipt is not success: end the turn and wait for completion ' +
-  'before dependent work. Inspect the task logs and exit status when woken; do not ' +
-  'poll or rerun it. Yielding requires enabled Background tasks and cannot bypass ' +
-  'its explicit Always ask or Blocked setting; if refused, use an ordinary finite ' +
-  'foreground call or the background tool through its own approval path. Use ' +
-  'tool deadlines instead of assuming a shell timeout executable is installed ' +
-  '(macOS does not provide it by default).'
+export function acpCopseToolsPromptNote(server: string): string {
+  return (
+    `Prefer the tools of Copse's MCP server, "${server}", when available. Only the ` +
+    "server with exactly that name is Copse's: another server whose name starts " +
+    'with copse, such as copse or copse-tools, is not, even if its tools have the ' +
+    "same names. Copse's tools reuse its native workspace, Git, command, GitHub, and " +
+    "web implementations. Use Copse's read_file/search_code/find_files for inspection " +
+    "instead of your own shell. Use Copse's run_shell/run_background for " +
+    "commands and Copse's write/replace/file-operation tools for edits so the same " +
+    'sandbox, approval, and diff-queue rules as a built-in Copse model apply. ' +
+    "For long builds, test suites, and other bounded commands, use Copse's " +
+    'run_background with action="start", wake_on_completion=true, and timeout_ms ' +
+    'rather than your own shell background jobs or monitors. Copse owns these ' +
+    'tasks independently of the coding-agent session; their completion can resume the ' +
+    "thread after idle session reaping. Use the repository's actual command; " +
+    'run_background start example: ' +
+    '{"action":"start","command":"pnpm test","wake_on_completion":true,"timeout_ms":1800000}' +
+    '\nAfter a successful start, retain the task id and end the turn; completion ' +
+    "will wake the thread. Inspect that task's logs and exit status before " +
+    'reporting validation as complete. run_background does not accept ' +
+    'expects_sandbox_block or support outside-sandbox execution. If a command ' +
+    "needs that approval path, use Copse's run_shell with an explicit timeout_ms " +
+    '(up to 1800000), setting expects_sandbox_block=true when required. Add ' +
+    'yield_after_ms=1000 to transfer the same approved process to supervision ' +
+    'after a short foreground wait; timeout_ms remains its total deadline. ' +
+    'run_shell yield example: ' +
+    '{"command":"pnpm test","timeout_ms":1800000,"yield_after_ms":1000}' +
+    '\nSend a yielding call as the only tool in its response. A still-running ' +
+    'receipt is not success: end the turn and wait for completion ' +
+    'before dependent work. Inspect the task logs and exit status when woken; do not ' +
+    'poll or rerun it. Yielding requires enabled Background tasks and cannot bypass ' +
+    'its explicit Always ask or Blocked setting; if refused, use an ordinary finite ' +
+    'foreground call or the background tool through its own approval path. Use ' +
+    'tool deadlines instead of assuming a shell timeout executable is installed ' +
+    '(macOS does not provide it by default).'
+  )
+}
 
-export const ACP_TURN_PROMPT_NOTE =
-  `${ACP_SESSION_PROMPT_NOTE} ${ACP_COPSE_TOOLS_PROMPT_NOTE}\n\n` + AGENT_EXECUTION_GUIDANCE
+function acpTurnPromptNote(server: string): string {
+  return (
+    `${ACP_SESSION_PROMPT_NOTE} ${acpCopseToolsPromptNote(server)}\n\n` + AGENT_EXECUTION_GUIDANCE
+  )
+}
 
-/** {@link ACP_TURN_PROMPT_NOTE} for an agent without Copse's bridged tools. */
+/** {@link acpTurnPromptNote} for an agent without Copse's bridged tools. */
 const ACP_TURN_PROMPT_NOTE_WITHOUT_COPSE_TOOLS =
   `${ACP_SESSION_PROMPT_NOTE}\n\n` + AGENT_EXECUTION_GUIDANCE
 
@@ -1936,10 +1950,14 @@ const ACP_SANDBOX_PROMPT_NOTE_WITHOUT_COPSE_TOOLS =
  * them late (#4144). A sandboxed session also gets back its run_shell and
  * GitHub steering, which the unavailable note told it to ignore.
  */
-function acpCopseToolsSteering(sandboxed: boolean, readonlyCheckout: boolean): string {
+function acpCopseToolsSteering(
+  server: string,
+  sandboxed: boolean,
+  readonlyCheckout: boolean,
+): string {
   const toolsNote = sandboxed
-    ? `${ACP_COPSE_TOOLS_PROMPT_NOTE}\n\n${ACP_SANDBOX_COPSE_SHELL_NOTE}\n\n${ACP_SANDBOX_GITHUB_STEER}`
-    : ACP_COPSE_TOOLS_PROMPT_NOTE
+    ? `${acpCopseToolsPromptNote(server)}\n\n${ACP_SANDBOX_COPSE_SHELL_NOTE}\n\n${ACP_SANDBOX_GITHUB_STEER}`
+    : acpCopseToolsPromptNote(server)
   return toolsNote + (readonlyCheckout ? `\n\n${ACP_READONLY_CHECKOUT_PROMPT_NOTE}` : '')
 }
 
@@ -1960,10 +1978,11 @@ export function buildAcpPrompt(
     readonlyCheckout?: boolean
     includeNotes?: boolean
     /**
-     * Whether the session notes may steer the agent to Copse's bridged tools:
-     * only once it has mounted them (#4144). Defaults to true.
+     * The server name of Copse's bridge, once the agent has mounted it (#4144):
+     * only then do the session notes steer the agent to Copse's bridged tools,
+     * by that exact name (#4125).
      */
-    copseTools?: boolean
+    copseServer?: string
     /** Sent even without the session notes: a change in Copse's tools this session. */
     copseToolsNote?: string
     operatorInstructions?: string
@@ -1971,10 +1990,13 @@ export function buildAcpPrompt(
   },
 ): string {
   const includeNotes = opts?.includeNotes ?? true
-  const copseTools = opts?.copseTools ?? true
+  const copseServer = opts?.copseServer
+  const copseTools = copseServer !== undefined
   const note =
     (includeNotes
-      ? (copseTools ? ACP_TURN_PROMPT_NOTE : ACP_TURN_PROMPT_NOTE_WITHOUT_COPSE_TOOLS) +
+      ? (copseServer !== undefined
+          ? acpTurnPromptNote(copseServer)
+          : ACP_TURN_PROMPT_NOTE_WITHOUT_COPSE_TOOLS) +
         (opts?.sandboxed
           ? `\n\n${copseTools ? ACP_SANDBOX_PROMPT_NOTE : ACP_SANDBOX_PROMPT_NOTE_WITHOUT_COPSE_TOOLS}`
           : '') +
@@ -2019,7 +2041,7 @@ export function buildAcpPromptContent(
     sandboxed?: boolean
     readonlyCheckout?: boolean
     includeNotes?: boolean
-    copseTools?: boolean
+    copseServer?: string
     copseToolsNote?: string
     operatorInstructions?: string
     skills?: string
@@ -2030,7 +2052,7 @@ export function buildAcpPromptContent(
     ...(opts?.sandboxed !== undefined ? { sandboxed: opts.sandboxed } : {}),
     ...(opts?.readonlyCheckout ? { readonlyCheckout: true } : {}),
     ...(opts?.includeNotes !== undefined ? { includeNotes: opts.includeNotes } : {}),
-    ...(opts?.copseTools !== undefined ? { copseTools: opts.copseTools } : {}),
+    ...(opts?.copseServer !== undefined ? { copseServer: opts.copseServer } : {}),
     ...(opts?.copseToolsNote ? { copseToolsNote: opts.copseToolsNote } : {}),
     ...(opts?.operatorInstructions !== undefined
       ? { operatorInstructions: opts.operatorInstructions }

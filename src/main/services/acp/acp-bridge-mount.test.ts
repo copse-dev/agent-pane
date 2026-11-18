@@ -9,7 +9,7 @@ import { z } from 'zod'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import type { StreamChunk } from '@shared/types'
 import type { ContainerRuntimeAttestation } from '@shared/types/unattended-run.ts'
-import { ACP_COPSE_TOOLS_PROMPT_NOTE, runAcpAgentFromSettings } from './acp-agent-service.ts'
+import { acpCopseToolsPromptNote, runAcpAgentFromSettings } from './acp-agent-service.ts'
 import {
   ACP_BRIDGE_MOUNT_WAIT_MS,
   acpBridgeToolMissing,
@@ -63,6 +63,12 @@ const noteFor = (note: string): RegExp =>
   new RegExp(escapeRegex(note).replaceAll(ANY_SERVER, 'copse-[a-z0-9]{8}'))
 const UNAVAILABLE_NOTE = noteFor(acpCopseToolsUnavailablePromptNote(ANY_SERVER))
 const DROPPED_NOTE = noteFor(acpCopseToolsDroppedPromptNote(ANY_SERVER))
+/** The bridge server name the session notes steer the agent to. */
+const offeredServer = (prompt: string): string => {
+  const server = /Copse's MCP server, "(copse-[a-z0-9]{8})"/.exec(prompt)?.[1]
+  assert.ok(server, `the prompt names the session's bridge server: ${prompt}`)
+  return server
+}
 
 let root = ''
 
@@ -249,7 +255,6 @@ describe('ACP native bridge mount (#4144)', () => {
     )
     assert.match(first.shown, UNAVAILABLE)
     assert.ok(UNAVAILABLE_NOTE.test(first.prompt))
-    assert.ok(!first.prompt.includes(ACP_COPSE_TOOLS_PROMPT_NOTE))
     assert.doesNotMatch(first.prompt, /Prefer the tools of Copse's MCP server/)
     assert.match(first.prompt, /Session notes:/, 'the rest of the session notes stay')
 
@@ -258,14 +263,14 @@ describe('ACP native bridge mount (#4144)', () => {
     assert.ok(Date.now() - startedAgain < ACP_BRIDGE_MOUNT_WAIT_MS, 'a later turn does not wait')
     assert.doesNotMatch(second.shown.replace(/prompt:[\s\S]*/, ''), UNAVAILABLE)
     assert.ok(!UNAVAILABLE_NOTE.test(second.prompt))
-    assert.ok(!second.prompt.includes(ACP_COPSE_TOOLS_PROMPT_NOTE))
+    assert.doesNotMatch(second.prompt, /Prefer the tools of Copse's MCP server/)
   })
 
   it('keeps claiming the tools for an agent that lists them', async () => {
     await useFixtureAgent(['--mcp-http', '--list-mcp-tools'])
     const { shown, prompt } = await turn('lists', registryWithOneBridgedTool())
     assert.doesNotMatch(shown, UNAVAILABLE)
-    assert.ok(prompt.includes(ACP_COPSE_TOOLS_PROMPT_NOTE))
+    assert.ok(prompt.includes(acpCopseToolsPromptNote(offeredServer(prompt))))
     assert.ok(!UNAVAILABLE_NOTE.test(prompt))
   })
 
@@ -305,7 +310,7 @@ describe('ACP native bridge mount (#4144)', () => {
     const after = await turn('lists-late', registry)
     assert.match(
       after.prompt,
-      noteFor(acpCopseToolsConnectedPromptNote(ANY_SERVER, ACP_COPSE_TOOLS_PROMPT_NOTE)),
+      noteFor(acpCopseToolsConnectedPromptNote(ANY_SERVER, acpCopseToolsPromptNote(ANY_SERVER))),
     )
     assert.ok(!UNAVAILABLE_NOTE.test(after.prompt))
     assert.doesNotMatch(after.shown, UNAVAILABLE)
@@ -330,7 +335,7 @@ describe('ACP native bridge mount (#4144)', () => {
           after.prompt,
         )?.[0]
       assert.ok(restored, `the prompt says the tools are back: ${after.prompt}`)
-      assert.ok(restored.includes(ACP_COPSE_TOOLS_PROMPT_NOTE))
+      assert.ok(restored.includes(acpCopseToolsPromptNote(offeredServer(restored))))
       assert.match(restored, /use its run_shell tool for commands/)
       assert.ok(restored.includes(ACP_SANDBOX_GITHUB_STEER))
     })

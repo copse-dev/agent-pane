@@ -435,10 +435,11 @@ describe('AcpTurnFailure', () => {
 })
 
 describe('buildAcpPrompt', () => {
+  const SERVER = 'copse-k3v9x2mq'
+
   it('keeps the read-only restriction without naming an unavailable write-access tool', () => {
     const prompt = buildAcpPrompt('Inspect the project', [], {
       readonlyCheckout: true,
-      copseTools: false,
     })
     assert.match(prompt, /Read-only workspace:/)
     assert.match(prompt, /cannot write there/)
@@ -449,7 +450,7 @@ describe('buildAcpPrompt', () => {
   it('keeps the write-access instructions when a read-only session has Copse tools', () => {
     const prompt = buildAcpPrompt('Change the project', [], {
       readonlyCheckout: true,
-      copseTools: true,
+      copseServer: SERVER,
     })
     assert.match(prompt, /request_write_access/)
     assert.match(prompt, /end your turn/)
@@ -457,11 +458,11 @@ describe('buildAcpPrompt', () => {
 
   it('delivers execution guidance once on fresh sessions and preserves the user payload', () => {
     const user = 'Please implement the complete feature, then show it working.'
-    const fresh = buildAcpPrompt(user, [])
+    const fresh = buildAcpPrompt(user, [], { copseServer: SERVER })
     assert.match(fresh, /Execution discipline:/)
     assert.match(fresh, /describe actions in plain language/)
     assert.match(fresh, /never internal tool identifiers/)
-    assert.match(fresh, /copse read_file\/search_code\/find_files for inspection/)
+    assert.match(fresh, /Copse's read_file\/search_code\/find_files for inspection/)
     assert.match(fresh, /Existing approval covers only its stated action, target, and scope/)
     assert.match(fresh, /A denial is not permission to retry/)
     assert.ok(fresh.endsWith(user))
@@ -471,7 +472,7 @@ describe('buildAcpPrompt', () => {
 
   it('gives fresh sessions a valid supervised launch and the external execution fallback', () => {
     const user = 'Run the required checks.'
-    const prompt = buildAcpPrompt(user, [], { sandboxed: true })
+    const prompt = buildAcpPrompt(user, [], { sandboxed: true, copseServer: SERVER })
     const example = /run_background start example: (\{[^\n]+\})/.exec(prompt)?.[1]
     assert.ok(example, 'the background launch example must be present')
     const args = safeJsonParse(example, decodeWithSchema(runBackgroundTool.parameters))
@@ -485,7 +486,7 @@ describe('buildAcpPrompt', () => {
     assert.match(prompt, /retain the task id and end the turn/)
     assert.match(prompt, /logs and exit status before reporting validation as complete/)
     assert.match(prompt, /run_background does not accept expects_sandbox_block/)
-    assert.match(prompt, /use copse run_shell with an explicit timeout_ms/)
+    assert.match(prompt, /use Copse's run_shell with an explicit timeout_ms/)
     const shellExample = /run_shell yield example: (\{[^\n]+\})/.exec(prompt)?.[1]
     assert.ok(shellExample, 'the same-process shell yield example must be present')
     assert.deepEqual(safeJsonParse(shellExample, decodeWithSchema(runShellTool.parameters)), {
@@ -520,7 +521,7 @@ describe('buildAcpPrompt', () => {
   })
 
   it('adds the sandbox note only for sandboxed turns', () => {
-    const sandboxed = buildAcpPrompt('hello', [], { sandboxed: true })
+    const sandboxed = buildAcpPrompt('hello', [], { sandboxed: true, copseServer: SERVER })
     assert.match(sandboxed, /Environment note: this session runs inside a filesystem sandbox/)
     assert.match(sandboxed, /hello$/)
     // The note must steer away from hardcoded /tmp, distinguish the agent's
@@ -540,12 +541,22 @@ describe('buildAcpPrompt', () => {
   })
 
   it('keeps the GitHub steer, but not the run_shell steer, for an agent without Copse tools', () => {
-    const prompt = buildAcpPrompt('hello', [], { sandboxed: true, copseTools: false })
+    const prompt = buildAcpPrompt('hello', [], { sandboxed: true })
     assert.match(prompt, /Environment note: this session runs inside a filesystem sandbox/)
     assert.doesNotMatch(prompt, /use its run_shell tool for commands/)
     assert.doesNotMatch(prompt, /Prefer the tools of Copse's MCP server/)
     assert.match(prompt, /Do\s+not call github\.com or api\.github\.com from this process/)
     assert.match(prompt, /hello$/)
+  })
+
+  it("names the session's bridge server and disowns look-alike servers", () => {
+    const prompt = buildAcpPrompt('hello', [], { copseServer: SERVER })
+    assert.match(prompt, /Prefer the tools of Copse's MCP server, "copse-k3v9x2mq", when available/)
+    // An agent-side server called copse-tools fits "copse and a suffix"; the
+    // note must not leave it in the running (#4125).
+    assert.match(prompt, /Only the server with exactly that name is Copse's/)
+    assert.match(prompt, /such as copse or copse-tools, is not/)
+    assert.doesNotMatch(prompt, /\bcopse (read_file|run_shell|run_background|write)\b/)
   })
 
   it('places the notes ahead of the replayed transcript', () => {

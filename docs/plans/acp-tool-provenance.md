@@ -195,7 +195,8 @@ needs a security review and a change to `shell-permissions.md` in the same PR.
   see those calls. Each bridge is now mounted as `copse-<nonce>`, a fresh random name per bridge,
   and every claim is compared with that exact name. No static config can name a server it cannot
   predict. Model-facing steering names the session's server where it gives a tool's full name, and
-  says "Copse's MCP server" elsewhere. A session reattached in a new process gets a new bridge and
+  in the tool-steering session note, which also says a look-alike such as `copse-tools` is not
+  Copse's; elsewhere it says "Copse's MCP server" and means that one. A session reattached in a new process gets a new bridge and
   name; its history may name the old one, and the agent's tool list carries the new one.
 - **Export fields not yet added:** a prompt or batch episode ID and a command fingerprint. The
   existing detail blob's `toolCallIds` covers coalesced prompts. A non-reversible command
