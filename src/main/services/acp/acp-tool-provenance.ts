@@ -2,7 +2,8 @@
  * Stable `{server, tool}` provenance for an ACP permission request (#1446).
  *
  * Copse mounts its native-tool bridge on the external agent as an MCP server
- * named `BRIDGE_MCP_SERVER_NAME`. A permission request for one of those tools
+ * with a per-bridge nonce name, `copse-<nonce>` (`newBridgeServerName`). A
+ * permission request for one of those tools
  * only duplicates the bridge's own gate, which runs again when the call
  * executes, so the ACP layer may approve it. Before this module that decision
  * was a *prefix* match on the display title — and a display title can embed
@@ -16,7 +17,7 @@
  *   stamps the tool's real name, `mcp__<server>__<tool>` for an MCP tool or its
  *   own name (`Bash`) otherwise. A model can choose *which* tool to call but
  *   not what the adapter names it, and a call that genuinely names
- *   `mcp__copse__…` is routed to Copse's bridge.
+ *   `mcp__copse-<nonce>__…` is routed to Copse's bridge.
  * - ACP's `name` field, when it is a qualified `mcp__<server>__<tool>` name.
  * - A title, only in one of the literal shapes adapters were observed to send
  *   (`BRIDGE_TITLE_SHAPES`): fixed separators, an ASCII tool name, no
@@ -30,6 +31,12 @@
  * request the agent itself classifies as running or changing something
  * (`execute`, `edit`, `delete`, `move`), or that carries a command line, is
  * never delegated on titles alone.
+ *
+ * Every claim is matched against this session's exact server name, never the
+ * `copse` stem: an MCP config the agent reads for itself can define a server
+ * named `copse`, and its tools carry the same adapter-authored names as the
+ * bridge's would under that name (#4125). It cannot name a server whose nonce
+ * it never saw.
  * Absent, unknown, conflicting or insufficient provenance returns a
  * non-`bridged` status, and the caller keeps its ordinary approval path (fail
  * closed).
@@ -38,8 +45,17 @@
  * `acp-client.ts` records observations here and must stay bundleable for the
  * out-of-process probe worker.
  */
-import { BRIDGE_MCP_SERVER_NAME } from './acp-bridge-name.ts'
 import { isRecord } from '@shared/unknown-value.ts'
+import { escapeRegex } from './acp-bridge-name.ts'
+
+/**
+ * This session's live bridge: the exact MCP server name it was mounted under,
+ * and the tools it serves.
+ */
+export interface AcpBridgeOffer {
+  server: string
+  tools: readonly string[]
+}
 
 /** The identity fields of one agent message about a tool call, as the wire carries them. */
 export interface AcpToolCallIdentityFields {
@@ -96,15 +112,22 @@ const MAX_IDENTITY_LENGTH = 512
 
 const TOOL_NAME = '[A-Za-z0-9_-]+'
 const MCP_QUALIFIED = /^mcp__([^_].*?)__(.+)$/
-/** The literal bridge title shapes observed on the wire; nothing else is a title claim. */
-const BRIDGE_TITLE_SHAPES: readonly RegExp[] = [
-  // Cursor: `copse-gh_pr_list: gh_pr_list` (the tool named twice, which must agree).
-  new RegExp(`^${BRIDGE_MCP_SERVER_NAME}-(${TOOL_NAME}): (${TOOL_NAME})$`),
-  // Claude: `mcp__copse__run_shell`.
-  new RegExp(`^mcp__${BRIDGE_MCP_SERVER_NAME}__(${TOOL_NAME})$`),
-  // Codex notifications: `mcp.copse.run_shell`.
-  new RegExp(`^mcp\\.${BRIDGE_MCP_SERVER_NAME}\\.(${TOOL_NAME})$`),
-]
+
+/**
+ * The literal bridge title shapes observed on the wire, for the server name
+ * `server`; nothing else is a title claim.
+ */
+function bridgeTitleShapes(server: string): readonly RegExp[] {
+  const name = escapeRegex(server)
+  return [
+    // Cursor: `copse-k3v9x2mq-gh_pr_list: gh_pr_list` (the tool named twice, which must agree).
+    new RegExp(`^${name}-(${TOOL_NAME}): (${TOOL_NAME})$`),
+    // Claude: `mcp__copse-k3v9x2mq__run_shell`.
+    new RegExp(`^mcp__${name}__(${TOOL_NAME})$`),
+    // Codex notifications: `mcp.copse-k3v9x2mq.run_shell`.
+    new RegExp(`^mcp\\.${name}\\.(${TOOL_NAME})$`),
+  ]
+}
 
 /** Split `mcp__<server>__<tool>` the way Claude Code does: server up to the next `__`. */
 function parseQualifiedMcpName(name: string): { server: string; tool: string } | null {
@@ -115,18 +138,19 @@ function parseQualifiedMcpName(name: string): { server: string; tool: string } |
 
 /**
  * The bridged tool a title *is*, or null: the title must be exactly one of the
- * observed shapes and name an offered tool, spelled exactly as offered.
+ * observed shapes for this bridge's server name and name an offered tool,
+ * spelled exactly as offered.
  */
 export function exactBridgedToolTitle(
   title: string | null | undefined,
-  offeredTools: readonly string[],
+  bridge: AcpBridgeOffer | null,
 ): string | null {
-  if (!title) return null
-  for (const shape of BRIDGE_TITLE_SHAPES) {
+  if (!title || !bridge) return null
+  for (const shape of bridgeTitleShapes(bridge.server)) {
     const match = shape.exec(title)
     if (!match?.[1]) continue
     if (match[2] !== undefined && match[2] !== match[1]) return null
-    return offeredTools.includes(match[1]) ? match[1] : null
+    return bridge.tools.includes(match[1]) ? match[1] : null
   }
   return null
 }
@@ -153,7 +177,7 @@ export function acpToolIdentityOf(fields: AcpToolCallIdentityFields): AcpToolIde
 
 function claimsFrom(
   identity: AcpToolIdentity,
-  offeredTools: readonly string[],
+  bridge: AcpBridgeOffer | null,
   observed: boolean,
 ): IdentityClaim[] {
   const claims: IdentityClaim[] = []
@@ -172,34 +196,31 @@ function claimsFrom(
     const qualified = parseQualifiedMcpName(identity.name)
     if (qualified) claims.push({ ...qualified, source: 'name', observed })
   }
-  const titled = exactBridgedToolTitle(identity.title, offeredTools)
-  if (titled) {
-    claims.push({ server: BRIDGE_MCP_SERVER_NAME, tool: titled, source: 'title', observed })
+  const titled = exactBridgedToolTitle(identity.title, bridge)
+  if (titled && bridge) {
+    claims.push({ server: bridge.server, tool: titled, source: 'title', observed })
   }
   return claims
 }
 
 /**
  * Resolve the provenance of `request` from its own fields plus what the agent
- * said earlier about the same tool call. `offeredTools` must be the tools this
- * session's live bridge serves; pass `[]` when there is no bridge, and nothing
- * resolves as `bridged`. `runsCommand` says the caller found a command line on
+ * said earlier about the same tool call. `bridge` must be this session's live
+ * bridge: the exact server name it was mounted under and the tools it serves.
+ * Pass null when there is none, and nothing resolves as `bridged`. `runsCommand` says the caller found a command line on
  * the request (`acpShellCommandText`), which titles alone never vouch for,
  * whatever the request's kind.
  */
 export function resolveAcpToolProvenance(
   request: AcpToolCallIdentityFields,
   observed: readonly AcpToolIdentity[],
-  offeredTools: readonly string[],
+  bridge: AcpBridgeOffer | null,
   { runsCommand = false }: { runsCommand?: boolean } = {},
 ): AcpToolProvenance {
-  const own = claimsFrom(acpToolIdentityOf(request), offeredTools, false)
+  const own = claimsFrom(acpToolIdentityOf(request), bridge, false)
   // Earlier reports may veto the request's own claim, never stand in for it.
   if (own.length === 0) return { status: 'absent' }
-  const claims = [
-    ...own,
-    ...observed.flatMap((identity) => claimsFrom(identity, offeredTools, true)),
-  ]
+  const claims = [...own, ...observed.flatMap((identity) => claimsFrom(identity, bridge, true))]
   const servers = new Set(claims.map((claim) => claim.server))
   const tools = new Set(claims.flatMap((claim) => (claim.tool !== undefined ? [claim.tool] : [])))
   const reasons: string[] = []
@@ -212,7 +233,7 @@ export function resolveAcpToolProvenance(
   if (reasons.length > 0) return { status: 'conflicting', reasons }
   const [server = null] = claims.map((claim) => claim.server)
   const tool = claims.find((claim) => claim.tool !== undefined)?.tool
-  if (server !== BRIDGE_MCP_SERVER_NAME || tool === undefined || !offeredTools.includes(tool)) {
+  if (!bridge || server !== bridge.server || tool === undefined || !bridge.tools.includes(tool)) {
     return { status: 'not-bridged', server, ...(tool !== undefined ? { tool } : {}) }
   }
   const kind = request.kind ?? undefined
@@ -230,7 +251,7 @@ export function resolveAcpToolProvenance(
   const sources = [
     ...new Set(claims.map((claim) => (claim.observed ? `observed-${claim.source}` : claim.source))),
   ]
-  return { status: 'bridged', server: BRIDGE_MCP_SERVER_NAME, tool, sources }
+  return { status: 'bridged', server: bridge.server, tool, sources }
 }
 
 /** Audit identifier for a resolution; identifiers, not copy. */

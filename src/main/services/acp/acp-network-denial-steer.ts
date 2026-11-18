@@ -78,7 +78,7 @@ export function formatSandboxNetworkDenialAudit(denied: readonly DeniedDestinati
   // those denials with pull-request tooling reads as a non sequitur.
   if (denied.some((denial) => isGithubDenialHost(denial.host))) {
     lines.push(
-      '- GitHub pull requests, Actions and CI: the "copse" MCP server\'s gh_pr_*, gh_run_* and CI tools use Copse\'s gh auth, so prefer them to running `gh` or curl against github.com in here.',
+      "- GitHub pull requests, Actions and CI: the gh_pr_*, gh_run_* and CI tools of Copse's MCP server use Copse's gh auth, so prefer them to running `gh` or curl against github.com in here.",
       '- Any other GitHub read (`gh api`, `gh api graphql`): its gh_api_read tool. Fetching a branch or PR head from origin (`git fetch origin <branch>`): its git_fetch tool. Neither needs approval.',
     )
   }
@@ -143,7 +143,7 @@ const GITHUB_NO_DIRECT_EGRESS =
  * up front. Waiting for the turn to end on a failed `gh` call is too late: Copse
  * only sees the agent's own shell output after the fact and cannot add to it.
  *
- * The route depends on the tools the agent has listed from the "copse" MCP
+ * The route depends on the tools the agent has listed from Copse's MCP
  * server this session (`bridgeToolNames`): an offer is not a mount (#4144).
  * Pointing at tools that are not in the agent's tool list (#4142) leaves it no
  * way forward, so the copy names the listed GitHub tools, falls back to
@@ -168,7 +168,7 @@ export function acpSandboxGithubSteer(
  */
 const GITHUB_UNREACHABLE_IN_CONTAINER =
   'For GitHub work (pull requests, issues, Actions, `gh`): this run is in a disposable ' +
-  'container with no network, so nothing in it can reach GitHub, the "copse" MCP ' +
+  "container with no network, so nothing in it can reach GitHub, Copse's MCP " +
   "server's tools included. Do not try. Finish the local work and say what GitHub " +
   "work is left for the user, who reviews this run's commits."
 
@@ -176,11 +176,11 @@ function githubRoute(bridgeToolNames: readonly string[]): string {
   const githubTools = bridgeToolNames.filter(isGithubBridgeTool)
   const hasRunShell = bridgeToolNames.includes('run_shell')
   const shellFallback = hasRunShell
-    ? 'run `gh` through the "copse" MCP server\'s run_shell tool, which can ask the user to run it outside this sandbox.'
+    ? "run `gh` through Copse's MCP server's run_shell tool, which can ask the user to run it outside this sandbox."
     : null
   if (githubTools.length > 0) {
     const sentences = [
-      'For GitHub work (pull requests, issues, Actions, CI), use the "copse" MCP ' +
+      "For GitHub work (pull requests, issues, Actions, CI), use Copse's MCP " +
         "server's GitHub tools: they run on Copse's host, outside this sandbox, and need no " +
         `github.com entry in this agent's sandbox.allowedDomains. Offered here: ${githubTools.join(', ')}.`,
     ]
@@ -211,14 +211,14 @@ function githubRoute(bridgeToolNames: readonly string[]): string {
   }
   if (shellFallback) {
     return (
-      'For GitHub work (pull requests, issues, Actions, `gh`): the "copse" MCP server ' +
+      "For GitHub work (pull requests, issues, Actions, `gh`): Copse's MCP server " +
       `offers no GitHub tools in this session, so ${shellFallback}`
     )
   }
   const unavailable =
     bridgeToolNames.length === 0
-      ? 'the "copse" MCP server is not available in this session'
-      : 'the "copse" MCP server offers no GitHub or shell tools in this session'
+      ? "Copse's MCP server is not available in this session"
+      : "Copse's MCP server offers no GitHub or shell tools in this session"
   return (
     `For GitHub work (pull requests, issues, Actions, \`gh\`): ${unavailable}, and ` +
     'your own `gh` cannot read its login in this sandbox, so this session has no ' +

@@ -436,8 +436,11 @@ describe('AcpTurnFailure', () => {
 })
 
 describe('buildAcpPrompt', () => {
+  const SERVER = 'copse-k3v9x2mq'
   /** Tools an agent listed from a typical bridge, GitHub and shell included. */
   const LISTED = ['read_file', 'run_shell', 'run_background', 'gh_api_read', 'git_fetch']
+  /** A bridge the agent mounted: its exact server name and the tools it listed. */
+  const MOUNTED = { copseServer: SERVER, bridgeToolNames: LISTED }
 
   it('keeps the read-only restriction without naming an unavailable write-access tool', () => {
     const prompt = buildAcpPrompt('Inspect the project', [], { readonlyCheckout: true })
@@ -450,7 +453,7 @@ describe('buildAcpPrompt', () => {
   it('keeps the write-access instructions when a read-only session has Copse tools', () => {
     const prompt = buildAcpPrompt('Change the project', [], {
       readonlyCheckout: true,
-      bridgeToolNames: LISTED,
+      ...MOUNTED,
     })
     assert.match(prompt, /request_write_access/)
     assert.match(prompt, /end your turn/)
@@ -458,11 +461,11 @@ describe('buildAcpPrompt', () => {
 
   it('delivers execution guidance once on fresh sessions and preserves the user payload', () => {
     const user = 'Please implement the complete feature, then show it working.'
-    const fresh = buildAcpPrompt(user, [], { bridgeToolNames: LISTED })
+    const fresh = buildAcpPrompt(user, [], MOUNTED)
     assert.match(fresh, /Execution discipline:/)
     assert.match(fresh, /describe actions in plain language/)
     assert.match(fresh, /never internal tool identifiers/)
-    assert.match(fresh, /copse read_file\/search_code\/find_files for inspection/)
+    assert.match(fresh, /Copse's read_file\/search_code\/find_files for inspection/)
     assert.match(fresh, /Existing approval covers only its stated action, target, and scope/)
     assert.match(fresh, /A denial is not permission to retry/)
     assert.ok(fresh.endsWith(user))
@@ -472,7 +475,7 @@ describe('buildAcpPrompt', () => {
 
   it('gives fresh sessions a valid supervised launch and the external execution fallback', () => {
     const user = 'Run the required checks.'
-    const prompt = buildAcpPrompt(user, [], { sandboxed: true, bridgeToolNames: LISTED })
+    const prompt = buildAcpPrompt(user, [], { sandboxed: true, ...MOUNTED })
     const example = /run_background start example: (\{[^\n]+\})/.exec(prompt)?.[1]
     assert.ok(example, 'the background launch example must be present')
     const args = safeJsonParse(example, decodeWithSchema(runBackgroundTool.parameters))
@@ -486,7 +489,7 @@ describe('buildAcpPrompt', () => {
     assert.match(prompt, /retain the task id and end the turn/)
     assert.match(prompt, /logs and exit status before reporting validation as complete/)
     assert.match(prompt, /run_background does not accept expects_sandbox_block/)
-    assert.match(prompt, /use copse run_shell with an explicit timeout_ms/)
+    assert.match(prompt, /use Copse's run_shell with an explicit timeout_ms/)
     const shellExample = /run_shell yield example: (\{[^\n]+\})/.exec(prompt)?.[1]
     assert.ok(shellExample, 'the same-process shell yield example must be present')
     assert.deepEqual(safeJsonParse(shellExample, decodeWithSchema(runShellTool.parameters)), {
@@ -533,7 +536,7 @@ describe('buildAcpPrompt', () => {
   })
 
   it('adds the sandbox note only for sandboxed turns', () => {
-    const sandboxed = buildAcpPrompt('hello', [], { sandboxed: true, bridgeToolNames: LISTED })
+    const sandboxed = buildAcpPrompt('hello', [], { sandboxed: true, ...MOUNTED })
     assert.match(sandboxed, /Environment note: this session runs inside a filesystem sandbox/)
     assert.match(sandboxed, /hello$/)
     // The note must steer away from hardcoded /tmp, distinguish the agent's
@@ -547,7 +550,7 @@ describe('buildAcpPrompt', () => {
     assert.match(sandboxed, /approved external work outside this sandbox/i)
     // The GitHub steer is appended to the sandbox note: bridge first, no
     // github.com on the agent allowlist by default.
-    assert.match(sandboxed, /use the "copse" MCP server's GitHub tools/i)
+    assert.match(sandboxed, /use Copse's MCP server's GitHub tools/i)
     assert.match(sandboxed, /sandbox\.allowedDomains/)
     assert.doesNotMatch(buildAcpPrompt('hello', [], { sandboxed: false }), /Environment note:/)
   })
@@ -562,7 +565,7 @@ describe('buildAcpPrompt', () => {
     assert.match(withTools, /hello$/)
 
     const noBridge = buildAcpPrompt('hello', [], { sandboxed: true, bridgeToolNames: [] })
-    assert.match(noBridge, /"copse" MCP server is not available in this session/)
+    assert.match(noBridge, /Copse's MCP server is not available in this session/)
     assert.doesNotMatch(noBridge, /Use gh_api_read/)
 
     // Unsandboxed turns keep their own gh login: no steer at all.
@@ -591,11 +594,21 @@ describe('buildAcpPrompt', () => {
       assert.match(prompt, /Session notes:/)
       assert.match(prompt, /Environment note: this session runs inside a filesystem sandbox/)
       assert.doesNotMatch(prompt, /use its run_shell tool for commands/)
-      assert.doesNotMatch(prompt, /Prefer the "copse" MCP tools/)
+      assert.doesNotMatch(prompt, /Prefer the tools of Copse's MCP server/)
       assert.match(prompt, /Do\s+not call github\.com or api\.github\.com from this process/)
-      assert.match(prompt, /"copse" MCP server is not available in this session/)
+      assert.match(prompt, /Copse's MCP server is not available in this session/)
       assert.match(prompt, /hello$/)
     }
+  })
+
+  it("names the session's bridge server and disowns look-alike servers", () => {
+    const prompt = buildAcpPrompt('hello', [], MOUNTED)
+    assert.match(prompt, /Prefer the tools of Copse's MCP server, "copse-k3v9x2mq", when available/)
+    // An agent-side server called copse-tools fits "copse and a suffix"; the
+    // note must not leave it in the running (#4125).
+    assert.match(prompt, /Only the server with exactly that name is Copse's/)
+    assert.match(prompt, /such as copse or copse-tools, is not/)
+    assert.doesNotMatch(prompt, /\bcopse (read_file|run_shell|run_background|write)\b/)
   })
 
   it('places the notes ahead of the replayed transcript', () => {
@@ -1002,6 +1015,7 @@ describe('remote ACP agents are never treated as sandboxed', () => {
   async function answer(
     posture: ReturnType<typeof resolveAcpRunContainment> & {
       bridgeToolNames?: readonly string[]
+      bridgeServerName?: string
       threadId?: string
       projectId?: string
     },
@@ -1306,17 +1320,17 @@ describe('remote ACP agents are never treated as sandboxed', () => {
     // Remote agents are never offered the bridge, so nothing would re-gate it.
     const req = permissionRequest({
       kind: 'other',
-      title: 'copse-semantic_search: semantic_search',
+      title: 'copse-k3v9x2mq-semantic_search: semantic_search',
     })
-    const tools = ['semantic_search']
-    assert.deepEqual(
-      await answer({ ...remote(), bridgeToolNames: tools }, 'gemini', req, REMOTE_ROOT),
-      { prompted: true, approved: false },
-    )
-    assert.deepEqual(
-      await answer({ ...local(), bridgeToolNames: tools }, 'gemini', req, LOCAL_ROOT),
-      { prompted: false, approved: true },
-    )
+    const bridge = { bridgeToolNames: ['semantic_search'], bridgeServerName: 'copse-k3v9x2mq' }
+    assert.deepEqual(await answer({ ...remote(), ...bridge }, 'gemini', req, REMOTE_ROOT), {
+      prompted: true,
+      approved: false,
+    })
+    assert.deepEqual(await answer({ ...local(), ...bridge }, 'gemini', req, LOCAL_ROOT), {
+      prompted: false,
+      approved: true,
+    })
   })
 
   // #1446: the ACP layer delegates to the bridge's gate only on provenance the
@@ -1324,25 +1338,36 @@ describe('remote ACP agents are never treated as sandboxed', () => {
   describe('bridged tool provenance', () => {
     const GENERIC = 'MCP: tool'
     const SESSION_TOOLS = ['semantic_search', 'run_shell']
+    /** This session's bridge, mounted under its own nonce name (#4125). */
+    const SERVER = 'copse-k3v9x2mq'
     const bridged = (): ReturnType<typeof resolveAcpRunContainment> & {
       bridgeToolNames: readonly string[]
+      bridgeServerName: string
       threadId: string
       projectId: string
-    } => ({ ...local(), bridgeToolNames: SESSION_TOOLS, threadId: 't-local', projectId: 'p-local' })
+    } => ({
+      ...local(),
+      bridgeToolNames: SESSION_TOOLS,
+      bridgeServerName: SERVER,
+      threadId: 't-local',
+      projectId: 'p-local',
+    })
     const claude = (toolName: string): Record<string, unknown> => ({ claudeCode: { toolName } })
 
     it('delegates a generic-titled call with valid provenance and records why', async () => {
       const req = permissionRequest({
         kind: 'other',
         title: GENERIC,
-        _meta: claude('mcp__copse__semantic_search'),
+        _meta: claude('mcp__copse-k3v9x2mq__semantic_search'),
       })
       const recorded: RecordedDecision[] = []
       const result = await runWithDecisionRecorder(
         (decision) => recorded.push(decision),
         () =>
           answer(bridged(), 'claude', req, LOCAL_ROOT, {
-            observedToolCall: [{ title: GENERIC, metaToolName: 'mcp__copse__semantic_search' }],
+            observedToolCall: [
+              { title: GENERIC, metaToolName: 'mcp__copse-k3v9x2mq__semantic_search' },
+            ],
           }),
       )
       assert.deepEqual(result, { prompted: false, approved: true })
@@ -1350,13 +1375,16 @@ describe('remote ACP agents are never treated as sandboxed', () => {
       assert.ok(line)
       assert.equal(line.line.verdict, 'allowed')
       assert.equal(line.line.toolCallId, 't1')
-      assert.equal(line.line.subject, 'Agent: copse/semantic_search')
+      assert.equal(line.line.subject, 'Agent: copse-k3v9x2mq/semantic_search')
     })
 
     // The active project is p1 (beforeEach); the turn belongs to p-local. The
     // record must follow the turn, not whichever project the window shows.
     it("files the decision under the turn's own project", async () => {
-      const req = permissionRequest({ kind: 'other', _meta: claude('mcp__copse__semantic_search') })
+      const req = permissionRequest({
+        kind: 'other',
+        _meta: claude('mcp__copse-k3v9x2mq__semantic_search'),
+      })
       const recorded: RecordedDecision[] = []
       await runWithDecisionRecorder(
         (decision) => recorded.push(decision),
@@ -1370,7 +1398,10 @@ describe('remote ACP agents are never treated as sandboxed', () => {
 
     it("prompts for a bridged tool this session's own bridge does not serve", async () => {
       // `gh_pr_list` is a bridge tool in general, but not one this session offered.
-      const req = permissionRequest({ kind: 'other', _meta: claude('mcp__copse__gh_pr_list') })
+      const req = permissionRequest({
+        kind: 'other',
+        _meta: claude('mcp__copse-k3v9x2mq__gh_pr_list'),
+      })
       assert.deepEqual(await answer(bridged(), 'claude', req, LOCAL_ROOT), {
         prompted: true,
         approved: false,
@@ -1393,7 +1424,7 @@ describe('remote ACP agents are never treated as sandboxed', () => {
       const req = permissionRequest({ kind: 'other', rawInput: { query: 'x' } })
       assert.deepEqual(
         await answer(bridged(), 'codex', req, LOCAL_ROOT, {
-          observedToolCall: [{ title: 'mcp.copse.semantic_search' }],
+          observedToolCall: [{ title: 'mcp.copse-k3v9x2mq.semantic_search' }],
         }),
         { prompted: true, approved: false },
       )
@@ -1403,7 +1434,7 @@ describe('remote ACP agents are never treated as sandboxed', () => {
       const req = permissionRequest({
         kind: 'other',
         title: GENERIC,
-        _meta: claude('mcp__copse__semantic_search'),
+        _meta: claude('mcp__copse-k3v9x2mq__semantic_search'),
       })
       const recorded: RecordedDecision[] = []
       const result = await runWithDecisionRecorder(
@@ -1422,8 +1453,35 @@ describe('remote ACP agents are never treated as sandboxed', () => {
       assert.equal(conflict.projectId, 'p-local')
     })
 
+    // #4125: the agent's own MCP config (a repository's `.mcp.json`, say) can
+    // define a server named `copse`. Its tools carry the names the bridge had
+    // before it took a nonce name, and must not skip the prompt.
+    it('prompts for a tool of a server merely named copse', async () => {
+      for (const meta of [
+        claude('mcp__copse__semantic_search'),
+        { claudeCode: { toolName: 'mcp__copse__run_shell', mcpServer: { name: 'copse' } } },
+      ]) {
+        const req = permissionRequest({ kind: 'other', title: GENERIC, _meta: meta })
+        assert.deepEqual(await answer(bridged(), 'claude', req, LOCAL_ROOT), {
+          prompted: true,
+          approved: false,
+        })
+      }
+      const cursor = permissionRequest({
+        kind: 'other',
+        title: 'copse-semantic_search: semantic_search',
+      })
+      assert.deepEqual(await answer(bridged(), 'cursor', cursor, LOCAL_ROOT), {
+        prompted: true,
+        approved: false,
+      })
+    })
+
     it('prompts when the session has no live bridge to re-gate the call', async () => {
-      const req = permissionRequest({ kind: 'other', _meta: claude('mcp__copse__semantic_search') })
+      const req = permissionRequest({
+        kind: 'other',
+        _meta: claude('mcp__copse-k3v9x2mq__semantic_search'),
+      })
       assert.deepEqual(await answer(local(), 'claude', req, LOCAL_ROOT), {
         prompted: true,
         approved: false,
