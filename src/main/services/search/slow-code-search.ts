@@ -85,8 +85,8 @@ interface GitignoreEntry {
 
 type GitignoreMatcher = {
   /** One result per entry, matched in a single bounded call. */
-  ignoredEach: (entries: readonly GitignoreEntry[]) => boolean[]
-  isIgnored: (relativePath: string, isDirectory: boolean) => boolean
+  ignoredEach: (entries: readonly GitignoreEntry[]) => boolean[] | 'timeout'
+  isIgnored: (relativePath: string, isDirectory: boolean) => boolean | 'timeout'
 }
 
 export async function loadGitignoreMatcher(workspaceRoot: string): Promise<GitignoreMatcher> {
@@ -112,10 +112,9 @@ function parseGitignoreLines(raw: string): string[] {
 
 /**
  * `.gitignore` lines come from the repository, so they are matched under a time
- * budget (see `bounded-glob.ts`): per call, and for the whole walk. Once the
- * patterns blow either, the matcher stops filtering for the rest of the walk:
- * the search reads more files instead of paying the budget again for every
- * directory.
+ * budget (see `bounded-glob.ts`): per call, and for the whole walk. A call that
+ * blows either reports `'timeout'`, and the walk stops there rather than search
+ * files the repository asked to exclude.
  */
 export function createGitignoreMatcher(patterns: string[]): GitignoreMatcher {
   const normalized = patterns.map((p) => {
@@ -126,25 +125,19 @@ export function createGitignoreMatcher(patterns: string[]): GitignoreMatcher {
     return { ignoredEach: (entries) => entries.map(() => false), isIgnored: () => false }
   }
   const matches = boundedGlobMatcher(normalized, { dot: true, contains: true })
-  let overBudget = false
-  const ignoredEach = (entries: readonly GitignoreEntry[]): boolean[] => {
-    const none = entries.map(() => false)
-    if (overBudget) return none
-    const result = matches(
+  const ignoredEach = (entries: readonly GitignoreEntry[]): boolean[] | 'timeout' =>
+    matches(
       entries.map(({ relativePath, isDirectory }) => {
         const path = relativePath.replace(/\\/g, '/')
         return isDirectory && !path.endsWith('/') ? `${path}/` : path
       }),
     )
-    if (result !== 'timeout') return result
-    overBudget = true
-    console.warn('[slow-code-search] .gitignore patterns ran past their budget — not applied')
-    return none
-  }
   return {
     ignoredEach,
-    isIgnored: (relativePath, isDirectory) =>
-      ignoredEach([{ relativePath, isDirectory }])[0] ?? false,
+    isIgnored(relativePath, isDirectory): boolean | 'timeout' {
+      const result = ignoredEach([{ relativePath, isDirectory }])
+      return result === 'timeout' ? 'timeout' : (result[0] ?? false)
+    },
   }
 }
 
@@ -171,7 +164,10 @@ export async function slowCodeSearch(opts: SlowCodeSearchOptions): Promise<strin
     })
   } catch (error) {
     if (error instanceof FileGlobTimeout) return GLOB_TIMEOUT_HINT
-    throw error
+    if (!(error instanceof GitignoreTimeout)) throw error
+    console.warn('[slow-code-search] .gitignore patterns ran past their budget — search stopped')
+    // What was found before the timeout was filtered normally, so keep it.
+    return [...results, GITIGNORE_TIMEOUT_NOTE].join('\n')
   }
 
   return results.length
@@ -179,8 +175,17 @@ export async function slowCodeSearch(opts: SlowCodeSearchOptions): Promise<strin
     : 'No matches found.'
 }
 
+const GITIGNORE_TIMEOUT_NOTE =
+  "[Note: search stopped early — this repository's .gitignore patterns took too long to match, so ignored files could not be excluded]"
+
 /** The model's `file_glob` blew its budget; the search stops with a hint. */
 class FileGlobTimeout extends Error {}
+
+/**
+ * `.gitignore` blew its budget. The walk stops instead of searching on without
+ * the exclusions: ignored files can hold content the repository keeps out.
+ */
+class GitignoreTimeout extends Error {}
 
 function compileFileGlob(fileGlob: string): BoundedGlobMatcher {
   return boundedGlobMatcher(fileGlob.includes('/') ? fileGlob : `**/${fileGlob}`, { dot: true })
@@ -204,7 +209,9 @@ async function walkSearch(ctx: WalkSearchCtx): Promise<void> {
   // Subdirectories were already checked against `.gitignore` by their parent.
   if (ctx.depth === 0) {
     const relDir = pathRelativeToSearchRoot(ctx.searchRoot, ctx.dir)
-    if (relDir && ctx.gitignore.isIgnored(relDir, true)) return
+    const rootIgnored = relDir ? ctx.gitignore.isIgnored(relDir, true) : false
+    if (rootIgnored === 'timeout') throw new GitignoreTimeout()
+    if (rootIgnored) return
   }
 
   const dirents = await fs.readdir(ctx.dir, { withFileTypes: true }).catch(() => [])
@@ -213,26 +220,47 @@ async function walkSearch(ctx: WalkSearchCtx): Promise<void> {
       (e) =>
         !e.name.startsWith('.') && e.name !== 'node_modules' && !DEFAULT_IGNORED_DIRS.has(e.name),
     )
+    // readdir order depends on the filesystem; sort so results are repeatable.
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
     .map((e) => {
       const full = join(ctx.dir, e.name)
       return { e, full, rel: pathRelativeToSearchRoot(ctx.searchRoot, full) }
     })
   // Match the whole directory in one call per matcher: each call starts a
-  // watchdog, and both matchers also have a budget for the whole walk.
-  const ignored = ctx.gitignore.ignoredEach(
+  // watchdog, and both matchers also have a budget for the whole walk. If a
+  // batch times out, that directory is matched one entry at a time, in order,
+  // so the entries before the slow one are still searched and the search
+  // stops only when it reaches that entry.
+  const ignoredBatch = ctx.gitignore.ignoredEach(
     entries.map(({ e, rel }) => ({ relativePath: rel, isDirectory: e.isDirectory() })),
   )
+  const isIgnored = (index: number, rel: string, isDirectory: boolean): boolean => {
+    const ignored =
+      ignoredBatch === 'timeout' ? ctx.gitignore.isIgnored(rel, isDirectory) : ignoredBatch[index]
+    if (ignored === 'timeout') throw new GitignoreTimeout()
+    return ignored ?? false
+  }
   // `file_glob` only ever filters files, so directories are not matched.
+  const { fileGlob } = ctx
   const fileRels = entries.flatMap(({ e, rel }) => (e.isDirectory() ? [] : [rel]))
-  const globHits = ctx.fileGlob?.(fileRels)
-  if (globHits === 'timeout') throw new FileGlobTimeout()
-  const inGlob = globHits && new Set(fileRels.filter((_, i) => globHits[i]))
+  const globBatch = fileGlob?.(fileRels)
+  const globMatched =
+    globBatch && globBatch !== 'timeout'
+      ? new Set(fileRels.filter((_, i) => globBatch[i]))
+      : undefined
+  const inFileGlob = (rel: string): boolean => {
+    if (!fileGlob) return true
+    if (globMatched) return globMatched.has(rel)
+    const one = fileGlob([rel])
+    if (one === 'timeout') throw new FileGlobTimeout()
+    return one[0] ?? false
+  }
 
   for (const [index, { e, full, rel }] of entries.entries()) {
     if (ctx.results.length >= ctx.max) return
 
     if (e.isDirectory()) {
-      if (!ignored[index]) {
+      if (!isIgnored(index, rel, true)) {
         await walkSearch({ ...ctx, dir: full, depth: ctx.depth + 1 })
       }
       continue
@@ -246,8 +274,8 @@ async function walkSearch(ctx: WalkSearchCtx): Promise<void> {
       }
     }
 
-    if (inGlob && !inGlob.has(rel)) continue
-    if (ignored[index]) continue
+    if (!inFileGlob(rel)) continue
+    if (isIgnored(index, rel, false)) continue
 
     await scanFile(full, await toRelativePath(full), ctx.matcher, ctx.results, ctx.max)
   }
