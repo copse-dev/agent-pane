@@ -1667,14 +1667,21 @@ describe('startAcpNativeBridge', () => {
     assert.ok(names.includes('suggest_model'))
     assert.ok(names.includes('browser_show'))
 
+    // Scenario mode has no assessment model, so the advice comes from the
+    // heuristic instead of waiting on whatever local server this host runs.
+    const mockLlm = process.env['COPSE_PANEL_MOCK_LLM']
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
     const advice = await rpc(bridge, {
       jsonrpc: '2.0',
       id: 7,
       method: 'tools/call',
       params: { name: 'suggest_model', arguments: { task: 'Summarize a short file' } },
+    }).finally(() => {
+      if (mockLlm === undefined) delete process.env['COPSE_PANEL_MOCK_LLM']
+      else process.env['COPSE_PANEL_MOCK_LLM'] = mockLlm
     })
     assert.equal(rpcResult(advice)['isError'], undefined)
-    assert.match(contentText(advice) ?? '', /Recommended intellect band:/)
+    assert.match(contentText(advice) ?? '', /Assessed demand: (low|mid|top)\nRecommended model:/)
   })
 
   for (const checkoutMode of ['shared', 'worktree', 'deferred'] as const) {
