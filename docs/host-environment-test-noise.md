@@ -9,7 +9,7 @@ signatures below as a floor to expect every time.
 
 ## Known noise signatures
 
-Main-process suites only; renderer/settings tests are unaffected.
+Main-process and `scripts/` suites only; renderer/settings tests are unaffected.
 
 - **Sandbox blocks `/tmp`** (`EPERM: mkdir '/tmp/...'`) — SSH workspace, workspace-index-watcher,
   and subprocess-kill tests that shell out or watch real paths.
@@ -29,6 +29,23 @@ Main-process suites only; renderer/settings tests are unaffected.
   key/agent isn't set up the way the fixture expects.
 - **GNU-only `stat -c`** — `screenshot-publication.test.ts` fails on macOS
   (`stat: illegal option -- c`).
+
+These macOS host differences fail on every run on an affected Mac, in isolation too. CI runs on
+Linux, so it never sees them:
+
+- **macOS `/bin/bash` 3.2** — `ci-workflow-invariants.test.ts` "compares the synthetic checked-out
+  protocol against the supplied queue base" runs a `ci.yml` step under `set -u`; bash 3.2 treats an
+  empty `"${array[@]}"` as unset (`exclude_head[@]: unbound variable`).
+- **`/var` is a symlink** — `screenshot-review.test.ts` (the "screenshot review packets" suite, six
+  tests) fails with `Unsafe review directory: /var`. The review CLI refuses any symlinked ancestor of
+  its output directory, and macOS `tmpdir()` sits under `/var/folders/…` (`/var` → `private/var`).
+- **LibreSSL as `openssl`** — `mobile-certificate.test.ts` "issues an IP-only P-256 server leaf under
+  a name-constrained root" expects OpenSSL's `permitted subtree violation`; macOS `/usr/bin/openssl`
+  is LibreSSL, whose `openssl verify` rejects the certificate with different wording.
+- **System Python 3.9's bundled pip** — `worktree-preparation-python.test.ts` "installs a real
+  hash-locked wheel through pip without running source builds" fails preparation validation
+  (`Hash-locked Python dependencies: .venv/bin/python failed (2): Usage:`). A venv made by macOS
+  `/usr/bin/python3` (3.9.6) gets pip 21.2.4, which predates `pip install --dry-run` (pip 22.2).
 
 ## Triage procedure
 
