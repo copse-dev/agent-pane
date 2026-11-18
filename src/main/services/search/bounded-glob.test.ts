@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import micromatch from 'micromatch'
-import { boundedGlobMatcher, globFilterWithin } from './bounded-glob.ts'
+import { boundedGlobMatcher, createGlobBudget, globFilterWithin } from './bounded-glob.ts'
 
 // GHSA-fc5q-39xc-vjpf: picomatch <=4.0.7 compiles these to nested unbounded
 // quantifiers, so each backtracks exponentially on a short non-matching subject.
@@ -59,6 +59,17 @@ describe('globFilterWithin', () => {
       assert.ok(Date.now() - started < 5_000, `${glob} took ${String(Date.now() - started)}ms`)
     })
   }
+
+  it('charges calls to a shared budget and refuses them once it is spent', () => {
+    const budget = createGlobBudget(70)
+    for (let call = 0; call < 4; call++) {
+      const result = globFilterWithin([REDOS_SUBJECT], '(a|*a)+', {}, { timeoutMs: 30, budget })
+      assert.equal(result, 'timeout')
+    }
+    assert.ok(budget.remainingMs <= 0, `${String(budget.remainingMs)}ms left`)
+    // A glob that would match instantly is refused without running.
+    assert.equal(globFilterWithin(['a'], '(a|*a)+', {}, { budget }), 'timeout')
+  })
 })
 
 describe('boundedGlobMatcher', () => {

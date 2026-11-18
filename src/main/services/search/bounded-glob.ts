@@ -50,6 +50,38 @@ function compile(
 }
 
 /**
+ * Time left for a group of glob calls that together must not run longer than
+ * one budget, such as every directory of a walk or every rule of a turn. Each
+ * call already has its own timeout; without a shared budget, a glob that stays
+ * just under it could repeat that cost on every call.
+ */
+export interface GlobBudget {
+  remainingMs: number
+}
+
+export function createGlobBudget(totalMs: number): GlobBudget {
+  return { remainingMs: totalMs }
+}
+
+/** One bounded call, charged to `budget` when given. */
+function matchWithin(
+  tester: { test(subject: string): boolean },
+  subjects: readonly string[],
+  opts: { timeoutMs: number; limit?: number; budget?: GlobBudget },
+): number[] | 'timeout' {
+  const { budget } = opts
+  if (budget && budget.remainingMs <= 0) return 'timeout'
+  const timeoutMs = budget ? Math.min(opts.timeoutMs, budget.remainingMs) : opts.timeoutMs
+  const started = performance.now()
+  const hits = matchingIndexesWithin(tester, subjects, {
+    timeoutMs,
+    ...(opts.limit !== undefined ? { limit: opts.limit } : {}),
+  })
+  if (budget) budget.remainingMs -= performance.now() - started
+  return hits
+}
+
+/**
  * Compile `patterns` once (any one matching counts, like `micromatch.isMatch`
  * with an array) and match a batch of subjects per call. Each call gets at most
  * `callTimeoutMs`, and all calls together get at most `totalTimeoutMs`: once
@@ -63,16 +95,11 @@ export function boundedGlobMatcher(
   budget: { callTimeoutMs?: number; totalTimeoutMs?: number } = {},
 ): BoundedGlobMatcher {
   const tester = { test: compile(patterns, options) }
-  const callTimeoutMs = budget.callTimeoutMs ?? GLOB_BATCH_TIMEOUT_MS
-  let remainingMs = budget.totalTimeoutMs ?? GLOB_TOTAL_TIMEOUT_MS
+  const timeoutMs = budget.callTimeoutMs ?? GLOB_BATCH_TIMEOUT_MS
+  const total = createGlobBudget(budget.totalTimeoutMs ?? GLOB_TOTAL_TIMEOUT_MS)
   return (subjects) => {
     if (subjects.length === 0) return []
-    if (remainingMs <= 0) return 'timeout'
-    const started = performance.now()
-    const hits = matchingIndexesWithin(tester, subjects, {
-      timeoutMs: Math.min(callTimeoutMs, remainingMs),
-    })
-    remainingMs -= performance.now() - started
+    const hits = matchWithin(tester, subjects, { timeoutMs, budget: total })
     if (hits === 'timeout') return 'timeout'
     const matched = subjects.map(() => false)
     for (const index of hits) matched[index] = true
@@ -83,18 +110,21 @@ export function boundedGlobMatcher(
 /**
  * `micromatch(subjects, pattern, options)` for a single pattern (or any of
  * several), keeping the subjects' order and stopping after `limit` matches,
- * under one budget for the whole list.
+ * under one budget for the whole list. Pass `budget` to also charge the call
+ * to a budget shared with other calls; once it is spent this reports
+ * `'timeout'` without matching.
  */
 export function globFilterWithin(
   subjects: readonly string[],
   pattern: string | readonly string[],
   options: micromatch.Options,
-  opts: { timeoutMs?: number; limit?: number } = {},
+  opts: { timeoutMs?: number; limit?: number; budget?: GlobBudget } = {},
 ): string[] | 'timeout' {
   const tester = { test: compile(pattern, options) }
-  const hits = matchingIndexesWithin(tester, subjects, {
+  const hits = matchWithin(tester, subjects, {
     timeoutMs: opts.timeoutMs ?? GLOB_LIST_TIMEOUT_MS,
     ...(opts.limit !== undefined ? { limit: opts.limit } : {}),
+    ...(opts.budget !== undefined ? { budget: opts.budget } : {}),
   })
   if (hits === 'timeout') return 'timeout'
   return hits.flatMap((index) => {
