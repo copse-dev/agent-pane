@@ -62,18 +62,38 @@ describe('globFilterWithin', () => {
 })
 
 describe('boundedGlobMatcher', () => {
-  it('matches like micromatch.isMatch with any of several patterns', () => {
+  it('matches each subject like micromatch.isMatch with any of several patterns', () => {
     const matches = boundedGlobMatcher(['**/dist/**', '**/*.log'], { dot: true, contains: true })
-    assert.equal(matches('dist/out.js'), true)
-    assert.equal(matches('tmp/debug.log'), true)
-    assert.equal(matches('src/index.ts'), false)
+    assert.deepEqual(matches(['dist/out.js', 'tmp/debug.log', 'src/index.ts']), [true, true, false])
+    assert.deepEqual(matches([]), [])
   })
 
-  it('reports a timeout for a backtracking glob on each call', () => {
-    const matches = boundedGlobMatcher('(a|*a)+', {}, 50)
+  it('reports a timeout for a backtracking glob and keeps matching later batches', () => {
+    const matches = boundedGlobMatcher('(a|*a)+', {}, { callTimeoutMs: 50 })
     const started = Date.now()
-    assert.equal(matches(REDOS_SUBJECT), 'timeout')
-    assert.equal(matches('a'), true)
+    assert.equal(matches(['a', REDOS_SUBJECT]), 'timeout')
+    assert.deepEqual(matches(['a']), [true])
     assert.ok(Date.now() - started < 5_000)
+  })
+
+  // Each call has its own watchdog, so a glob that stays under the per-call
+  // budget could otherwise spend it again on every directory of a long walk.
+  it('stops matching once the calls together have spent the total budget', () => {
+    const matches = boundedGlobMatcher('(a|*a)+', {}, { callTimeoutMs: 30, totalTimeoutMs: 70 })
+    const started = Date.now()
+    for (let call = 0; call < 3; call++) assert.equal(matches([REDOS_SUBJECT]), 'timeout')
+    const spent = Date.now() - started
+    // A subject that matches instantly is now refused without being run.
+    const refusedAt = Date.now()
+    assert.equal(matches(['a']), 'timeout')
+    assert.ok(Date.now() - refusedAt < 20, `refusal took ${String(Date.now() - refusedAt)}ms`)
+    assert.ok(spent < 5_000, `took ${String(spent)}ms`)
+  })
+
+  it('does not spend the total budget on many fast batches', () => {
+    const matches = boundedGlobMatcher('**/*.ts', { dot: true }, { totalTimeoutMs: 1_000 })
+    for (let call = 0; call < 2_000; call++) {
+      assert.deepEqual(matches([`dir${String(call)}/file.ts`, 'a.js']), [true, false])
+    }
   })
 })

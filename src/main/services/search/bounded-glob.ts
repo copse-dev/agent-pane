@@ -19,12 +19,26 @@ export const GLOB_SUBJECT_TIMEOUT_MS = 50
 /** Budget for filtering a whole file index in one call. */
 export const GLOB_LIST_TIMEOUT_MS = 1_000
 
+/** Budget for one {@link boundedGlobMatcher} call (one directory's entries, say). */
+const GLOB_BATCH_TIMEOUT_MS = 250
+
+/**
+ * Budget for every call one {@link boundedGlobMatcher} makes, taken together.
+ * Each call starts a watchdog (about 75 µs), and a walk makes one call per
+ * directory, so this leaves room for very large trees while stopping a glob
+ * that stays just under the per-call budget on every directory.
+ */
+const GLOB_TOTAL_TIMEOUT_MS = 5_000
+
 /** Shown to the model when its glob blows the budget. */
 export const GLOB_TIMEOUT_HINT =
   'Glob pattern took too long to match and was abandoned. Repeated groups that contain `*`, such as `+(*a)` or `(a|*a)+`, backtrack exponentially; use a simpler glob or braces, e.g. "{*a*,*b*}".'
 
-/** `true`/`false` for a match, or `'timeout'` when the budget ran out first. */
-export type BoundedGlobMatcher = (subject: string) => boolean | 'timeout'
+/**
+ * One result per subject (`true` for a match), or `'timeout'` when the budget
+ * ran out first.
+ */
+export type BoundedGlobMatcher = (subjects: readonly string[]) => boolean[] | 'timeout'
 
 function compile(
   patterns: string | readonly string[],
@@ -37,19 +51,32 @@ function compile(
 
 /**
  * Compile `patterns` once (any one matching counts, like `micromatch.isMatch`
- * with an array) and match one subject per call under `timeoutMs`. Each call
- * starts a watchdog (tens of microseconds), so prefer {@link globFilterWithin}
- * when the subjects are all known up front.
+ * with an array) and match a batch of subjects per call. Each call gets at most
+ * `callTimeoutMs`, and all calls together get at most `totalTimeoutMs`: once
+ * that is spent every later call reports `'timeout'` without matching, so a
+ * glob that runs just under the per-call budget cannot repeat that cost for
+ * every batch of a long walk.
  */
 export function boundedGlobMatcher(
   patterns: string | readonly string[],
   options: micromatch.Options = {},
-  timeoutMs = GLOB_SUBJECT_TIMEOUT_MS,
+  budget: { callTimeoutMs?: number; totalTimeoutMs?: number } = {},
 ): BoundedGlobMatcher {
   const tester = { test: compile(patterns, options) }
-  return (subject) => {
-    const hits = matchingIndexesWithin(tester, [subject], { timeoutMs, limit: 1 })
-    return hits === 'timeout' ? 'timeout' : hits.length > 0
+  const callTimeoutMs = budget.callTimeoutMs ?? GLOB_BATCH_TIMEOUT_MS
+  let remainingMs = budget.totalTimeoutMs ?? GLOB_TOTAL_TIMEOUT_MS
+  return (subjects) => {
+    if (subjects.length === 0) return []
+    if (remainingMs <= 0) return 'timeout'
+    const started = performance.now()
+    const hits = matchingIndexesWithin(tester, subjects, {
+      timeoutMs: Math.min(callTimeoutMs, remainingMs),
+    })
+    remainingMs -= performance.now() - started
+    if (hits === 'timeout') return 'timeout'
+    const matched = subjects.map(() => false)
+    for (const index of hits) matched[index] = true
+    return matched
   }
 }
 
