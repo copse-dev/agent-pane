@@ -29,6 +29,7 @@ import { DESKTOP_VIEWER_OFF_DETAIL, DESKTOP_VIEWER_OFF_TITLE } from '@shared/des
 import { createSurfaceRecorder } from '../recording/surface-recorder.ts'
 import { createVncSshHostForm } from './vnc-ssh-host-form.ts'
 import { selectActiveWorkspace } from '../controller/active-workspace.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 const CHOOSE_MACHINE_TEXT = 'Choose a device, enter an address, or select a saved SSH machine.'
 
@@ -1204,7 +1205,7 @@ function mountVncSession(
     } catch (error) {
       if (generation !== discoveryGeneration) return
       discoveryStatus.dataset['kind'] = 'error'
-      discoveryStatus.textContent = error instanceof Error ? error.message : String(error)
+      discoveryStatus.textContent = errorMessage(error)
       discoverButton.hidden = false
     } finally {
       if (generation === discoveryGeneration) discoverButton.disabled = channel !== null
@@ -1234,7 +1235,7 @@ function mountVncSession(
     } catch (error) {
       if (generation !== nearbyGeneration) return
       nearbyStatus.dataset['kind'] = 'error'
-      nearbyStatus.textContent = error instanceof Error ? error.message : String(error)
+      nearbyStatus.textContent = errorMessage(error)
       nearbyButton.hidden = false
     } finally {
       if (generation === nearbyGeneration) nearbyButton.disabled = channel !== null
@@ -1258,7 +1259,7 @@ function mountVncSession(
     const [canStoreCredentials, devices] = await Promise.all([
       api.vnc.canStoreCredentials().catch(() => false),
       api.simulatorDesktop.list().catch((error: unknown) => {
-        discoveryError = error instanceof Error ? error.message : String(error)
+        discoveryError = errorMessage(error)
         return []
       }),
     ])
@@ -1354,11 +1355,7 @@ function mountVncSession(
         },
         onInputError: (error) => {
           if (simulatorSessionId !== connection.id) return
-          setStatus(
-            `Connected to ${device.name}`,
-            'error',
-            error instanceof Error ? error.message : String(error),
-          )
+          setStatus(`Connected to ${device.name}`, 'error', errorMessage(error))
         },
       })
       simulatorView = view
@@ -1371,7 +1368,7 @@ function mountVncSession(
       clearViewer(
         android ? 'Couldn’t open the Android emulator' : 'Couldn’t open the Simulator',
         'error',
-        error instanceof Error ? error.message : String(error),
+        errorMessage(error),
       )
     } finally {
       connectButton.disabled = false
@@ -1620,7 +1617,7 @@ function mountVncSession(
         nextChannel.open()
       })
     } catch (error) {
-      clearViewer(error instanceof Error ? error.message : String(error), 'error')
+      clearViewer(errorMessage(error), 'error')
     } finally {
       connectButton.disabled = false
     }
@@ -1632,11 +1629,7 @@ function mountVncSession(
     if (simulatorSessionId) {
       const connectionId = simulatorSessionId
       void api.simulatorDesktop.close(connectionId).catch((error: unknown) => {
-        clearViewer(
-          'Couldn’t close the Simulator stream',
-          'error',
-          error instanceof Error ? error.message : String(error),
-        )
+        clearViewer('Couldn’t close the Simulator stream', 'error', errorMessage(error))
       })
       return
     }
@@ -1732,11 +1725,7 @@ function mountVncSession(
     void api.simulatorDesktop
       .input(connectionId, { type: 'button-tap', name })
       .catch((error: unknown) => {
-        setStatus(
-          'Device control failed',
-          'error',
-          error instanceof Error ? error.message : String(error),
-        )
+        setStatus('Device control failed', 'error', errorMessage(error))
       })
   }
   homeButton.addEventListener('click', () => {

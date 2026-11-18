@@ -1,5 +1,6 @@
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { VncStatusEvent } from '@shared/types/vnc.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 interface VncMessageEvent {
   data: ArrayBuffer
@@ -51,7 +52,7 @@ export class VncIpcChannel {
     }
     this.readyState = WebSocket.CLOSING
     void this.api.vnc.close(this.connectionId).catch((error: unknown) => {
-      this.fail(error instanceof Error ? error.message : String(error))
+      this.fail(errorMessage(error))
     })
   }
 

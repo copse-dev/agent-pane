@@ -28,7 +28,6 @@ import { setGitAvailableForTest } from '../tool-availability.ts'
 import {
   AcpTurnFailure,
   acpTurnSpawnConfig,
-  acpErrorMessage,
   buildAcpPrompt,
   buildAcpPromptContent,
   grantableAcpStateDir,
@@ -229,26 +228,6 @@ describe('ACP turn spawn config', () => {
   })
 })
 
-describe('acpErrorMessage', () => {
-  it('includes JSON-RPC error.data.details when present', () => {
-    const err = new Error('Internal error')
-    Object.defineProperty(err, 'data', {
-      value: {
-        details: "Claude Code process exited with code 1. stderr: error: unknown option '--tools'",
-      },
-    })
-
-    assert.equal(
-      acpErrorMessage(err),
-      "Internal error: Claude Code process exited with code 1. stderr: error: unknown option '--tools'",
-    )
-  })
-
-  it('falls back to the base message when there is no structured detail', () => {
-    assert.equal(acpErrorMessage(new Error('ACP connection closed')), 'ACP connection closed')
-  })
-})
-
 describe('isTransientProviderError', () => {
   it('matches transient provider failures surfaced as opaque agent text', () => {
     assert.ok(isTransientProviderError(new Error('Internal error: API Error: Overloaded')))
@@ -446,6 +425,7 @@ describe('AcpTurnFailure', () => {
   it('keeps the underlying message so classifyAgentError still matches it', () => {
     const failure = new AcpTurnFailure(new Error('Internal error: API Error: Overloaded'), {
       assistantText: 'partial answer',
+      finalMessageText: 'partial answer',
       usage: { inputTokens: 10, outputTokens: 5 },
     })
     assert.equal(failure.message, 'Internal error: API Error: Overloaded')
@@ -1679,6 +1659,7 @@ describe('continuing into a granted worktree', () => {
       Promise.reject(
         new AcpTurnFailure(new Error('agent died'), {
           assistantText: '',
+          finalMessageText: '',
           usage: { inputTokens: 0, outputTokens: 0 },
         }),
       )
@@ -1739,7 +1720,11 @@ describe('continuing into a granted worktree', () => {
       if (turnOptions.userPrompt !== 'fix the redirect') {
         throw new AcpTurnFailure(
           new Error('agent died'),
-          { assistantText: 'half', usage: { inputTokens: 5, outputTokens: 1 } },
+          {
+            assistantText: 'half',
+            finalMessageText: 'half',
+            usage: { inputTokens: 5, outputTokens: 1 },
+          },
           { sandboxed: true },
         )
       }

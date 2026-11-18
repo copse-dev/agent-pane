@@ -40,6 +40,7 @@ describe('classifyAgentError', () => {
   it('reads RequestError from an AcpTurnFailure cause chain', () => {
     const wrapped = new AcpTurnFailure(RequestError.authRequired(), {
       assistantText: '',
+      finalMessageText: '',
       usage: { inputTokens: 0, outputTokens: 0 },
     })
     const out = classifyAgentError(wrapped, { acpAgentId: 'cursor' })
@@ -103,7 +104,7 @@ describe('classifyAgentError', () => {
       new RequestError(-32603, 'Internal error', {
         details: `Claude Code process exited with code 1. stderr: ${stderr}`,
       }),
-      { assistantText: '', usage: { inputTokens: 0, outputTokens: 0 } },
+      { assistantText: '', finalMessageText: '', usage: { inputTokens: 0, outputTokens: 0 } },
     )
   const withPlatform = <T>(platform: NodeJS.Platform, fn: () => T): T => {
     const descriptor = Object.getOwnPropertyDescriptor(process, 'platform')
@@ -466,6 +467,7 @@ describe('turnErrorDetail', () => {
     })
     const wrapped = new AcpTurnFailure(rpc, {
       assistantText: '',
+      finalMessageText: '',
       usage: { inputTokens: 0, outputTokens: 0 },
     })
 
@@ -586,6 +588,64 @@ describe('classifyAcpAuthFailure', () => {
       'expired',
     )
   })
+
+  // Found dogfooding #4278: Claude streamed the CLI's synthetic API-error
+  // message, then failed the prompt with a bare -32000. The expiry is only in
+  // that final message, so the card said "not signed in".
+  describe('with the failed turn’s final message', () => {
+    const expiredText = 'Failed to authenticate: OAuth session expired and could not be refreshed'
+    const failure = (): AcpTurnFailure =>
+      new AcpTurnFailure(RequestError.authRequired(), {
+        assistantText: expiredText,
+        finalMessageText: expiredText,
+        usage: { inputTokens: 0, outputTokens: 1 },
+      })
+
+    it('reads an expiry the agent wrote before a bare auth code as expired', () => {
+      const ctx = { acpAgentId: 'claude-acp', acpFinalMessage: expiredText }
+      assert.equal(classifyAcpAuthFailure(failure(), ctx), 'expired')
+      const out = classifyAgentError(failure(), ctx)
+      assert.match(out, /^> \[!WARNING\]\n> \*\*Claude sign-in expired\*\*/)
+      assert.match(out, /no longer valid/)
+      assert.match(out, /1\. Run `claude auth login` in a terminal\./)
+      assert.match(out, /ACP error -32000 \(Authentication required\): Authentication required/)
+      assert.doesNotMatch(out, /not signed in|needs authentication/)
+      // The persisted marker reads the same verdict as the live notice.
+      const interruption = acpTurnInterruptionFor(failure(), {
+        aborted: false,
+        authFailure: classifyAcpAuthFailure(failure(), ctx),
+        acpAgentId: 'claude-acp',
+      })
+      assert.equal(interruption, 'expired')
+      assert.match(acpTurnInterruptionMarker(interruption, 'claude-acp'), /no longer valid/)
+    })
+
+    it('stays "required" without a final message that reads as an expired sign-in', () => {
+      const claudeAcp = { acpAgentId: 'claude-acp' }
+      assert.equal(classifyAcpAuthFailure(failure(), claudeAcp), 'required')
+      // Ordinary prose about expiry is not the agent reporting its own sign-in.
+      for (const prose of [
+        'The session token has expired in the fixture, so I updated the test.',
+        'I fixed the bug where an expired OAuth token was retried forever.',
+      ]) {
+        assert.equal(
+          classifyAcpAuthFailure(failure(), { ...claudeAcp, acpFinalMessage: prose }),
+          'required',
+          prose,
+        )
+      }
+    })
+
+    it('never turns a failure that is not about credentials into one', () => {
+      assert.equal(
+        classifyAcpAuthFailure(new RequestError(-32603, 'Internal error: Overloaded'), {
+          acpAgentId: 'claude-acp',
+          acpFinalMessage: expiredText,
+        }),
+        null,
+      )
+    })
+  })
 })
 
 // The Codex CUA nesting failure (2026-09-23): a sandbox-owning helper spawned
@@ -602,6 +662,7 @@ describe('nested-sandbox ACP failures', () => {
   const nested = (message = 'Internal error: ACP agent turn failed'): AcpTurnFailure =>
     new AcpTurnFailure(new RequestError(-32603, message, { details: nestedDetails }), {
       assistantText: '',
+      finalMessageText: '',
       usage: { inputTokens: 0, outputTokens: 0 },
     })
   const interruption = (err: unknown): string =>

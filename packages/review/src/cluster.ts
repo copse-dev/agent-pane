@@ -9,7 +9,7 @@
 // This is the starting proposal the plan names, tuned by hand on the tests
 // below rather than on the corpus P2 asks for; the thresholds are exported so
 // `bench:review` can move them with evidence.
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import { normalizeClaim, type Finding, type ReviewerRef } from './finding.ts'
 
 /** Lines of slack either side of an anchor when testing overlap. */
@@ -154,10 +154,7 @@ export function sameFinding(a: Finding, b: Finding): boolean {
  * keeps the two apart. Deterministic in input order.
  */
 function occurrenceId(id: string, occurrence: number): string {
-  return createHash('sha256')
-    .update(`${id}\n\u0000${String(occurrence)}`)
-    .digest('hex')
-    .slice(0, 16)
+  return sha256Hex(`${id}\n\u0000${String(occurrence)}`).slice(0, 16)
 }
 
 function refKey(ref: ReviewerRef): string {

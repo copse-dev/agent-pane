@@ -65,7 +65,6 @@ describe('composed explainer scenes', () => {
     resetUserData()
     seedEmptyProject(seedStableWorkspace(), 'e2e-explainer-scenes', {
       model: 'claude-sonnet-4-6',
-      mcpUiCanvasEnabled: true,
       theme: 'dark',
       autoPortraitRightPanel: false,
       rightPanelPosition: 'side',
