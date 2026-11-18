@@ -272,7 +272,6 @@
     "@copse/store-kit": "workspace:*",
     "@copse/streaming-markdown": "^1.8.1",
     "@copse/thread-store": "workspace:*",
-    "@electron/rebuild": "^4.2.1",
     "@eslint/js": "^10.0.1",
     "@grpc/grpc-js": "^1.14.6",
     "@lmstudio/sdk": "^2.0.0",
