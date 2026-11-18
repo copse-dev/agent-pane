@@ -29,7 +29,6 @@
 // blocked-by-sandbox run is recorded + resolved via `onFailure` in the runner.
 import * as fsp from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import micromatch from 'micromatch'
 import {
   HOOK_EVENT_NAMES,
   type HookEventName,
@@ -41,6 +40,7 @@ import type { BlockingHookOutcome, HookDecision } from '@copse/agent/hooks/hook-
 import type { HookScope, HooksListResult, HookSummary } from './hooks-types.ts'
 import type { HookRunDecision } from '@copse/agent/hooks/hook-outcome.ts'
 import { hooksDialectsEnvironment } from './environment.ts'
+import { afterFileEditGlobMatches } from './after-file-edit-glob.ts'
 import {
   resolveCommandHookCwd,
   type DialectAdapter,
@@ -48,10 +48,9 @@ import {
   type DialectInterpretation,
 } from './dialect-adapter.ts'
 import { hookTimeoutMessage, type HookSpawnResult } from './hook-spawn.ts'
-import { expectRecord, expectStringArray, isRecord } from '@copse/std/unknown-value.ts'
+import { expectRecord, isRecord } from '@copse/std/unknown-value.ts'
 import { memberOf } from '@copse/std/member-of.ts'
 import { isNonBlankString } from '@copse/std/nullish.ts'
-import { relativeWithin } from '@copse/std/path-containment.ts'
 
 /**
  * Copse's per-hook timeout default (decision 13; H4). Copse-native hooks are our
@@ -500,17 +499,7 @@ function afterFileEditMatches(
   filePath: string,
   workspaceRoot: string | null,
 ): boolean {
-  if (!hook.glob || hook.glob.length === 0) return true
-  const candidates = [filePath.replace(/\\/g, '/')]
-  if (workspaceRoot) {
-    const rel = relativeWithin(workspaceRoot, filePath)
-    if (rel) candidates.push(rel.replace(/\\/g, '/'))
-  }
-  return candidates.some(
-    (c) =>
-      micromatch.isMatch(c, expectStringArray(hook.glob), { dot: true }) ||
-      micromatch.isMatch(c, expectStringArray(hook.glob), { dot: true, basename: true }),
-  )
+  return afterFileEditGlobMatches(hook.glob, filePath, workspaceRoot)
 }
 
 /** Map a discovered Copse hook to the shared {@link CommandHook} the registry stores. */

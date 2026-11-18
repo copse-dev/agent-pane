@@ -14,7 +14,6 @@
 import * as fsp from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import micromatch from 'micromatch'
 import {
   CURSOR_AFTER_TOOL_HOOK_EVENTS,
   CURSOR_GENERIC_TOOL_GATE_EVENT,
@@ -36,6 +35,7 @@ import type { AgentSessionInfo, HookEventPayloads } from '@copse/agent/hooks/can
 import type { BlockingHookOutcome, HookDecision } from '@copse/agent/hooks/hook-outcome.ts'
 import type { HookRunDecision } from '@copse/agent/hooks/hook-outcome.ts'
 import { hooksDialectsEnvironment } from './environment.ts'
+import { afterFileEditGlobMatches } from './after-file-edit-glob.ts'
 import {
   resolveCommandHookCwd,
   type DialectAdapter,
@@ -44,10 +44,9 @@ import {
 } from './dialect-adapter.ts'
 import { hookTimeoutMessage, type HookSpawnResult } from './hook-spawn.ts'
 import { testHookMatcher } from './matcher-regex.ts'
-import { expectRecord, expectStringArray, isRecord } from '@copse/std/unknown-value.ts'
+import { expectRecord, isRecord } from '@copse/std/unknown-value.ts'
 import { memberOf } from '@copse/std/member-of.ts'
 import { isNonBlankString } from '@copse/std/nullish.ts'
-import { relativeWithin } from '@copse/std/path-containment.ts'
 
 /**
  * Cursor's per-hook timeout default (decision 13; H4). Cursor's own docs give a
@@ -653,28 +652,15 @@ export async function cursorBeforeSubmitPromptHooks(
 }
 
 /**
- * Whether an `afterFileEdit` hook's glob matcher covers the edited path (B2).
- * A hook with no glob fires for every edit (Cursor's default). Otherwise the
- * absolute path is matched, plus — when it is under the workspace — its
- * workspace-relative form (so `**` / `src/**` globs match the natural way), and
- * a basename pass so a bare `*.ts` still matches a nested file.
+ * Whether an `afterFileEdit` hook's glob matcher covers the edited path (B2);
+ * see {@link afterFileEditGlobMatches} for the candidates and the time budget.
  */
 function afterFileEditMatches(
   hook: DiscoveredCursorHook,
   filePath: string,
   workspaceRoot: string | null,
 ): boolean {
-  if (!hook.glob || hook.glob.length === 0) return true
-  const candidates = [filePath.replace(/\\/g, '/')]
-  if (workspaceRoot) {
-    const rel = relativeWithin(workspaceRoot, filePath)
-    if (rel) candidates.push(rel.replace(/\\/g, '/'))
-  }
-  return candidates.some(
-    (c) =>
-      micromatch.isMatch(c, expectStringArray(hook.glob), { dot: true }) ||
-      micromatch.isMatch(c, expectStringArray(hook.glob), { dot: true, basename: true }),
-  )
+  return afterFileEditGlobMatches(hook.glob, filePath, workspaceRoot)
 }
 
 /**
