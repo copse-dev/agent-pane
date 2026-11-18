@@ -48,6 +48,7 @@ import {
   runWithAcpRetry,
   sliceLines,
 } from './acp-agent-service.ts'
+import { acpSandboxGithubSteer } from './acp-network-denial-steer.ts'
 import { resolveAcpPermissionMode } from './acp-agent-registry.ts'
 import { AcpReadonlyCheckoutUnavailableError } from './acp-write-access.ts'
 
@@ -436,11 +437,13 @@ describe('AcpTurnFailure', () => {
 
 describe('buildAcpPrompt', () => {
   const SERVER = 'copse-k3v9x2mq'
+  /** Tools an agent listed from a typical bridge, GitHub and shell included. */
+  const LISTED = ['read_file', 'run_shell', 'run_background', 'gh_api_read', 'git_fetch']
+  /** A bridge the agent mounted: its exact server name and the tools it listed. */
+  const MOUNTED = { copseServer: SERVER, bridgeToolNames: LISTED }
 
   it('keeps the read-only restriction without naming an unavailable write-access tool', () => {
-    const prompt = buildAcpPrompt('Inspect the project', [], {
-      readonlyCheckout: true,
-    })
+    const prompt = buildAcpPrompt('Inspect the project', [], { readonlyCheckout: true })
     assert.match(prompt, /Read-only workspace:/)
     assert.match(prompt, /cannot write there/)
     assert.doesNotMatch(prompt, /request_write_access/)
@@ -450,7 +453,7 @@ describe('buildAcpPrompt', () => {
   it('keeps the write-access instructions when a read-only session has Copse tools', () => {
     const prompt = buildAcpPrompt('Change the project', [], {
       readonlyCheckout: true,
-      copseServer: SERVER,
+      ...MOUNTED,
     })
     assert.match(prompt, /request_write_access/)
     assert.match(prompt, /end your turn/)
@@ -458,7 +461,7 @@ describe('buildAcpPrompt', () => {
 
   it('delivers execution guidance once on fresh sessions and preserves the user payload', () => {
     const user = 'Please implement the complete feature, then show it working.'
-    const fresh = buildAcpPrompt(user, [], { copseServer: SERVER })
+    const fresh = buildAcpPrompt(user, [], MOUNTED)
     assert.match(fresh, /Execution discipline:/)
     assert.match(fresh, /describe actions in plain language/)
     assert.match(fresh, /never internal tool identifiers/)
@@ -472,7 +475,7 @@ describe('buildAcpPrompt', () => {
 
   it('gives fresh sessions a valid supervised launch and the external execution fallback', () => {
     const user = 'Run the required checks.'
-    const prompt = buildAcpPrompt(user, [], { sandboxed: true, copseServer: SERVER })
+    const prompt = buildAcpPrompt(user, [], { sandboxed: true, ...MOUNTED })
     const example = /run_background start example: (\{[^\n]+\})/.exec(prompt)?.[1]
     assert.ok(example, 'the background launch example must be present')
     const args = safeJsonParse(example, decodeWithSchema(runBackgroundTool.parameters))
@@ -520,8 +523,20 @@ describe('buildAcpPrompt', () => {
     assert.match(prompt, /targeted searches/)
   })
 
+  it('steers a contained turn away from GitHub instead of to run_shell', () => {
+    const prompt = buildAcpPrompt('hello', [], {
+      sandboxed: true,
+      contained: true,
+      bridgeToolNames: ['read_file', 'run_shell'],
+    })
+    assert.ok(
+      prompt.includes(acpSandboxGithubSteer(['read_file', 'run_shell'], { contained: true })),
+    )
+    assert.doesNotMatch(prompt, /run `gh` through/)
+  })
+
   it('adds the sandbox note only for sandboxed turns', () => {
-    const sandboxed = buildAcpPrompt('hello', [], { sandboxed: true, copseServer: SERVER })
+    const sandboxed = buildAcpPrompt('hello', [], { sandboxed: true, ...MOUNTED })
     assert.match(sandboxed, /Environment note: this session runs inside a filesystem sandbox/)
     assert.match(sandboxed, /hello$/)
     // The note must steer away from hardcoded /tmp, distinguish the agent's
@@ -535,22 +550,59 @@ describe('buildAcpPrompt', () => {
     assert.match(sandboxed, /approved external work outside this sandbox/i)
     // The GitHub steer is appended to the sandbox note: bridge first, no
     // github.com on the agent allowlist by default.
-    assert.match(sandboxed, /GitHub and CI tools/i)
+    assert.match(sandboxed, /use Copse's MCP server's GitHub tools/i)
     assert.match(sandboxed, /sandbox\.allowedDomains/)
     assert.doesNotMatch(buildAcpPrompt('hello', [], { sandboxed: false }), /Environment note:/)
   })
 
-  it('keeps the GitHub steer, but not the run_shell steer, for an agent without Copse tools', () => {
-    const prompt = buildAcpPrompt('hello', [], { sandboxed: true })
-    assert.match(prompt, /Environment note: this session runs inside a filesystem sandbox/)
-    assert.doesNotMatch(prompt, /use its run_shell tool for commands/)
-    assert.doesNotMatch(prompt, /Prefer the tools of Copse's MCP server/)
-    assert.match(prompt, /Do\s+not call github\.com or api\.github\.com from this process/)
-    assert.match(prompt, /hello$/)
+  it("routes the sandbox note's GitHub steer by the bridged tools the agent listed", () => {
+    const withTools = buildAcpPrompt('hello', [], {
+      sandboxed: true,
+      bridgeToolNames: ['run_shell', 'gh_api_read'],
+    })
+    assert.match(withTools, /Offered here: gh_api_read\./)
+    assert.match(withTools, /failed to read configuration: open <home>\/\.config\/gh\/config\.yml/)
+    assert.match(withTools, /hello$/)
+
+    const noBridge = buildAcpPrompt('hello', [], { sandboxed: true, bridgeToolNames: [] })
+    assert.match(noBridge, /Copse's MCP server is not available in this session/)
+    assert.doesNotMatch(noBridge, /Use gh_api_read/)
+
+    // Unsandboxed turns keep their own gh login: no steer at all.
+    assert.doesNotMatch(
+      buildAcpPrompt('hello', [], { sandboxed: false, bridgeToolNames: [] }),
+      /config\.yml/,
+    )
+  })
+
+  it('passes the listed bridge tools through buildAcpPromptContent', () => {
+    const [block] = buildAcpPromptContent('hello', [], {
+      sandboxed: true,
+      bridgeToolNames: ['run_shell'],
+    })
+    assert.ok(block)
+    assert.equal(block.type, 'text')
+    assert.match(block.text, /offers no GitHub tools in this session/)
+  })
+
+  it('keeps the GitHub steer, but not the Copse-tool steering, for an agent without Copse tools', () => {
+    for (const prompt of [
+      buildAcpPrompt('hello', [], { sandboxed: true, bridgeToolNames: [] }),
+      // None is the default: a prompt never claims tools nobody listed.
+      buildAcpPrompt('hello', [], { sandboxed: true }),
+    ]) {
+      assert.match(prompt, /Session notes:/)
+      assert.match(prompt, /Environment note: this session runs inside a filesystem sandbox/)
+      assert.doesNotMatch(prompt, /use its run_shell tool for commands/)
+      assert.doesNotMatch(prompt, /Prefer the tools of Copse's MCP server/)
+      assert.match(prompt, /Do\s+not call github\.com or api\.github\.com from this process/)
+      assert.match(prompt, /Copse's MCP server is not available in this session/)
+      assert.match(prompt, /hello$/)
+    }
   })
 
   it("names the session's bridge server and disowns look-alike servers", () => {
-    const prompt = buildAcpPrompt('hello', [], { copseServer: SERVER })
+    const prompt = buildAcpPrompt('hello', [], MOUNTED)
     assert.match(prompt, /Prefer the tools of Copse's MCP server, "copse-k3v9x2mq", when available/)
     // An agent-side server called copse-tools fits "copse and a suffix"; the
     // note must not leave it in the running (#4125).

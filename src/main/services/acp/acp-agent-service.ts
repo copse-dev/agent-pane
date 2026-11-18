@@ -117,7 +117,7 @@ import { beginWorktreeWriter } from '../worktree-writers.ts'
 import { networkDenialMarker, networkDenialsSince } from '../../project-sandbox/network-scope.ts'
 import { perfMark, perfSpan } from '../diagnostics/perf-trace.ts'
 import {
-  ACP_SANDBOX_GITHUB_STEER,
+  acpSandboxGithubSteer,
   SANDBOX_NETWORK_AUDIT_BLOCKED_ARG,
   SANDBOX_NETWORK_AUDIT_TOOL,
   denialHostLabels,
@@ -976,6 +976,9 @@ async function runAcpAgentTurn(
     // Listed, and not since refused by the agent's own runtime (#4142).
     const bridgeDropped = sessionBridge !== null && acpBridgeToolLoss(sessionBridge) !== null
     const bridgeMounted = bridgeMount === 'listed' && !bridgeDropped
+    // What this prompt may name: the tools the agent has listed, none until it
+    // has, and none once its runtime dropped them.
+    const listedToolNames = bridgeMounted ? bridgeToolNames() : []
     let copseToolsNote: string | undefined
     if (sessionBridge && bridgeDropped) {
       if (takeAcpBridgeToolsDroppedPromptNote(sessionBridge)) {
@@ -985,7 +988,13 @@ async function runAcpAgentTurn(
       if (markAcpBridgeAvailable(sessionBridge)) {
         copseToolsNote = acpCopseToolsConnectedPromptNote(
           sessionBridge.serverName,
-          acpCopseToolsSteering(sessionBridge.serverName, sandboxed, readonlyCheckout),
+          acpCopseToolsSteering(
+            sessionBridge.serverName,
+            sandboxed,
+            contained,
+            readonlyCheckout,
+            listedToolNames,
+          ),
         )
       }
     } else if (
@@ -1000,7 +1009,7 @@ async function runAcpAgentTurn(
       )
       copseToolsNote = acpCopseToolsUnavailablePromptNote(sessionBridge.serverName)
     }
-    const skillToolNames = bridgeMounted ? bridgeToolNames() : []
+    const skillToolNames = listedToolNames
     const operatorInstructions =
       options.executionMode !== 'agent' && options.turnGuidance
         ? await (turnGuidance ??= options.turnGuidance(skillToolNames).catch((err: unknown) => {
@@ -1050,6 +1059,12 @@ async function runAcpAgentTurn(
         : unseenAcpTranscript(options.priorMessages, entry.transcriptCheckpoint),
       {
         sandboxed,
+        contained,
+        // The tools the agent actually listed (#4144), not the ones offered:
+        // the notes steer to Copse's tools only when there are some, and the
+        // GitHub steer names them, or says plainly that GitHub is out of reach
+        // when there are none, offered-but-never-connected included.
+        bridgeToolNames: listedToolNames,
         readonlyCheckout,
         includeNotes: fresh && options.executionMode !== 'agent',
         ...(bridgeMounted && sessionBridge ? { copseServer: sessionBridge.serverName } : {}),
@@ -1902,8 +1917,10 @@ const ACP_TURN_PROMPT_NOTE_WITHOUT_COPSE_TOOLS =
  * the agent's private shell has no approve-to-run-unsandboxed path. The native
  * bridge does, so steer commands through its run_shell implementation instead
  * of letting the agent walk into EPERMs that its own approval cannot fix. The
- * appended {@link ACP_SANDBOX_GITHUB_STEER} does the same for the network side,
- * where GitHub is the destination agents reach for unprompted.
+ * GitHub steer that {@link buildAcpPrompt} appends (`acpSandboxGithubSteer`)
+ * does the same for the network side, where GitHub is the destination agents
+ * reach for unprompted. It depends on the bridged tools the agent has listed,
+ * so it is not part of this constant.
  *
  * `$TMPDIR` is named rather than a literal path because an agent may export its
  * own: Claude Code points its shell at `/tmp/claude`, which the catalog's
@@ -1931,18 +1948,15 @@ const ACP_SANDBOX_SCRATCH_NOTE =
   'Do not retry blocked paths with your own shell. Put scratch files ' +
   'in $TMPDIR or the workspace — never in a hardcoded /tmp path of your own.'
 
-export const ACP_SANDBOX_PROMPT_NOTE =
-  `${ACP_SANDBOX_CONFINES_NOTE} ${ACP_SANDBOX_COPSE_SHELL_NOTE} ${ACP_SANDBOX_SCRATCH_NOTE}` +
-  '\n\n' +
-  ACP_SANDBOX_GITHUB_STEER
+export const ACP_SANDBOX_PROMPT_NOTE = `${ACP_SANDBOX_CONFINES_NOTE} ${ACP_SANDBOX_COPSE_SHELL_NOTE} ${ACP_SANDBOX_SCRATCH_NOTE}`
 
 /**
  * {@link ACP_SANDBOX_PROMPT_NOTE} for an agent without Copse's bridged tools:
- * no run_shell steer. The GitHub steer stays, since its "do not call github.com
- * from this process" holds with or without the bridge.
+ * no run_shell steer. The GitHub steer still follows it, saying GitHub is out
+ * of reach, and its "do not call github.com from this process" holds with or
+ * without the bridge.
  */
-const ACP_SANDBOX_PROMPT_NOTE_WITHOUT_COPSE_TOOLS =
-  `${ACP_SANDBOX_CONFINES_NOTE} ${ACP_SANDBOX_SCRATCH_NOTE}` + '\n\n' + ACP_SANDBOX_GITHUB_STEER
+const ACP_SANDBOX_PROMPT_NOTE_WITHOUT_COPSE_TOOLS = `${ACP_SANDBOX_CONFINES_NOTE} ${ACP_SANDBOX_SCRATCH_NOTE}`
 
 /**
  * The Copse-tool steering a session's notes carry once its agent has listed
@@ -1953,10 +1967,12 @@ const ACP_SANDBOX_PROMPT_NOTE_WITHOUT_COPSE_TOOLS =
 function acpCopseToolsSteering(
   server: string,
   sandboxed: boolean,
+  contained: boolean,
   readonlyCheckout: boolean,
+  bridgeToolNames: readonly string[],
 ): string {
   const toolsNote = sandboxed
-    ? `${acpCopseToolsPromptNote(server)}\n\n${ACP_SANDBOX_COPSE_SHELL_NOTE}\n\n${ACP_SANDBOX_GITHUB_STEER}`
+    ? `${acpCopseToolsPromptNote(server)}\n\n${ACP_SANDBOX_COPSE_SHELL_NOTE}\n\n${acpSandboxGithubSteer(bridgeToolNames, { contained })}`
     : acpCopseToolsPromptNote(server)
   return toolsNote + (readonlyCheckout ? `\n\n${ACP_READONLY_CHECKOUT_PROMPT_NOTE}` : '')
 }
@@ -1967,20 +1983,31 @@ function acpCopseToolsSteering(
  * FRESH — a reused session carries its own turns, while turns from another
  * provider are caught up from the transcript checkpoint. Re-sending everything every turn would waste the agent's tokens (`includeNotes:
  * false`, empty `priorMessages` on reuse). `sandboxed` turns additionally get
- * {@link ACP_SANDBOX_PROMPT_NOTE} so the agent knows its confines.
+ * {@link ACP_SANDBOX_PROMPT_NOTE} so the agent knows its confines, followed by a
+ * GitHub steer naming the bridged tools in `bridgeToolNames`. Without any, the
+ * notes leave out their Copse-tool steering (#4144).
  */
 export function buildAcpPrompt(
   userPrompt: UserContent,
   priorMessages: LLMMessage[],
   opts?: {
     sandboxed?: boolean
+    /** The turn runs in an unattended container, whose shell has no network. */
+    contained?: boolean
+    /**
+     * The tools the agent has listed from Copse's MCP server this session
+     * (#4144). The notes steer it to Copse's tools only when there are some,
+     * and a sandboxed session's GitHub steer names exactly these. None by
+     * default, so a prompt never claims a tool the agent was not shown to have.
+     */
+    bridgeToolNames?: readonly string[]
     /** The session starts on a read-only view of the user's checkout. */
     readonlyCheckout?: boolean
     includeNotes?: boolean
     /**
-     * The server name of Copse's bridge, once the agent has mounted it (#4144):
-     * only then do the session notes steer the agent to Copse's bridged tools,
-     * by that exact name (#4125).
+     * The server name of Copse's bridge, once the agent has mounted it (#4144).
+     * The session notes steer the agent to Copse's bridged tools only with this
+     * and some {@link bridgeToolNames}, and name the server exactly (#4125).
      */
     copseServer?: string
     /** Sent even without the session notes: a change in Copse's tools this session. */
@@ -1990,7 +2017,10 @@ export function buildAcpPrompt(
   },
 ): string {
   const includeNotes = opts?.includeNotes ?? true
-  const copseServer = opts?.copseServer
+  const bridgeToolNames = opts?.bridgeToolNames ?? []
+  // Copse's tools are named only once the agent listed some, and by the exact
+  // server name this session mounted them under.
+  const copseServer = bridgeToolNames.length > 0 ? opts?.copseServer : undefined
   const copseTools = copseServer !== undefined
   const note =
     (includeNotes
@@ -1998,7 +2028,8 @@ export function buildAcpPrompt(
           ? acpTurnPromptNote(copseServer)
           : ACP_TURN_PROMPT_NOTE_WITHOUT_COPSE_TOOLS) +
         (opts?.sandboxed
-          ? `\n\n${copseTools ? ACP_SANDBOX_PROMPT_NOTE : ACP_SANDBOX_PROMPT_NOTE_WITHOUT_COPSE_TOOLS}`
+          ? `\n\n${copseTools ? ACP_SANDBOX_PROMPT_NOTE : ACP_SANDBOX_PROMPT_NOTE_WITHOUT_COPSE_TOOLS}` +
+            `\n\n${acpSandboxGithubSteer(bridgeToolNames, { contained: opts.contained ?? false })}`
           : '') +
         (opts?.readonlyCheckout
           ? `\n\n${copseTools ? ACP_READONLY_CHECKOUT_PROMPT_NOTE : ACP_READONLY_CHECKOUT_UNAVAILABLE_PROMPT_NOTE}`
@@ -2039,6 +2070,8 @@ export function buildAcpPromptContent(
   priorMessages: LLMMessage[],
   opts?: {
     sandboxed?: boolean
+    contained?: boolean
+    bridgeToolNames?: readonly string[]
     readonlyCheckout?: boolean
     includeNotes?: boolean
     copseServer?: string
@@ -2050,6 +2083,8 @@ export function buildAcpPromptContent(
 ): ContentBlock[] {
   const text = buildAcpPrompt(userPrompt, priorMessages, {
     ...(opts?.sandboxed !== undefined ? { sandboxed: opts.sandboxed } : {}),
+    ...(opts?.contained ? { contained: true } : {}),
+    ...(opts?.bridgeToolNames !== undefined ? { bridgeToolNames: opts.bridgeToolNames } : {}),
     ...(opts?.readonlyCheckout ? { readonlyCheckout: true } : {}),
     ...(opts?.includeNotes !== undefined ? { includeNotes: opts.includeNotes } : {}),
     ...(opts?.copseServer !== undefined ? { copseServer: opts.copseServer } : {}),

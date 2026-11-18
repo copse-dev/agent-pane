@@ -19,7 +19,7 @@ import {
   isAcpBridgeStartupFailure,
 } from './acp-bridge-mount.ts'
 import { escapeRegex } from './acp-bridge-name.ts'
-import { ACP_SANDBOX_GITHUB_STEER } from './acp-network-denial-steer.ts'
+import { acpSandboxGithubSteer } from './acp-network-denial-steer.ts'
 import { acpSessionPoolSize, disposeAllAcpSessions } from './acp-session-pool.ts'
 import { ToolRegistry } from '../tool-registry.ts'
 import { setSetting } from '../storage/settings.ts'
@@ -86,16 +86,26 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true })
 })
 
-function registryWithOneBridgedTool(): ToolRegistry {
+function registryWithBridgedTools(names: readonly string[]): ToolRegistry {
   const registry = new ToolRegistry()
-  registry.register({
-    name: 'read_file',
-    description: 'Read a workspace file',
-    parameters: z.object({}),
-    execute: () => Promise.resolve('contents'),
-  })
+  for (const name of names) {
+    registry.register({
+      name,
+      description: `Fixture ${name}`,
+      parameters: z.object({}),
+      execute: () => Promise.resolve('contents'),
+    })
+  }
   return registry
 }
+
+function registryWithOneBridgedTool(): ToolRegistry {
+  return registryWithBridgedTools(['read_file'])
+}
+
+/** Bridged tools that give a sandboxed agent's GitHub steer something to name. */
+const GITHUB_ROUTE_TOOLS = ['read_file', 'run_shell', 'gh_api_read', 'git_fetch']
+const LISTED_GITHUB_ROUTE = /Offered here: gh_api_read, git_fetch\./
 
 async function useFixtureAgent(flags: string[], sandboxed = false): Promise<void> {
   await setSetting('registeredAcpAgents', [
@@ -320,13 +330,15 @@ describe('ACP native bridge mount (#4144)', () => {
 
   it('gives a sandboxed agent that lists late its run_shell and GitHub steering back', async () => {
     await useFixtureAgent(['--mcp-http'])
-    const registry = registryWithOneBridgedTool()
+    const registry = registryWithBridgedTools(GITHUB_ROUTE_TOOLS)
     await sandboxedRun('sandboxed-late', async () => {
       const first = await turn('sandboxed-late', registry)
       assert.match(first.prompt, /Environment note: this session runs inside a filesystem sandbox/)
       assert.doesNotMatch(first.prompt, /run_shell tool for commands/)
-      // The GitHub steer stays without the tools: no github.com from this process.
-      assert.ok(first.prompt.includes(ACP_SANDBOX_GITHUB_STEER))
+      // This sandbox is an unattended container, whose shell has no network:
+      // the GitHub steer says GitHub is out of reach, listed tools or not (#4145).
+      assert.ok(first.prompt.includes(acpSandboxGithubSteer([], { contained: true })))
+      assert.doesNotMatch(first.prompt, /Offered here/)
 
       await runTurn('sandboxed-late', registry, { userPrompt: 'list-mcp-tools' })
       const after = await turn('sandboxed-late', registry)
@@ -337,7 +349,23 @@ describe('ACP native bridge mount (#4144)', () => {
       assert.ok(restored, `the prompt says the tools are back: ${after.prompt}`)
       assert.ok(restored.includes(acpCopseToolsPromptNote(offeredServer(restored))))
       assert.match(restored, /use its run_shell tool for commands/)
-      assert.ok(restored.includes(ACP_SANDBOX_GITHUB_STEER))
+      assert.ok(restored.includes(acpSandboxGithubSteer(GITHUB_ROUTE_TOOLS, { contained: true })))
+      assert.doesNotMatch(restored, LISTED_GITHUB_ROUTE)
+    })
+  })
+
+  it("keeps a contained agent's GitHub steer off the tools it listed", async () => {
+    // The guest's run_shell has no network and refuses every approval prompt,
+    // so pointing a contained agent at it, or at bridged GitHub tools, for
+    // GitHub work leaves it a route that cannot work. The call site must pass
+    // the run's containment through to the steer.
+    await useFixtureAgent(['--mcp-http', '--list-mcp-tools'])
+    await sandboxedRun('sandboxed-lists', async () => {
+      const { prompt } = await turn('sandboxed-lists', registryWithBridgedTools(GITHUB_ROUTE_TOOLS))
+      assert.ok(prompt.includes(acpSandboxGithubSteer(GITHUB_ROUTE_TOOLS, { contained: true })))
+      assert.doesNotMatch(prompt, LISTED_GITHUB_ROUTE)
+      assert.doesNotMatch(prompt, /run `gh` through/)
+      assert.ok(prompt.includes(acpCopseToolsPromptNote(offeredServer(prompt))))
     })
   })
 
