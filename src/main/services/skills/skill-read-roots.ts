@@ -1,6 +1,7 @@
 import * as fsp from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { isAbsolute, resolve, sep } from 'node:path'
+import { isPathWithin } from '@copse/std/path-containment.ts'
 import { sensitiveTargetReason } from '../security/read-outside-project.ts'
 import { grantThreadReadRoot, type ThreadReadRoot } from '../security/thread-read-roots.ts'
 import type { SkillMetadata, SkillSource } from '@shared/types/skills.ts'
@@ -53,8 +54,7 @@ export function declaredSkillPathProblem(entry: string): string | null {
 }
 
 function isInside(path: string, root: string): boolean {
-  const rel = relative(root, path)
-  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
+  return isPathWithin(root, path)
 }
 
 /** Targets so broad that granting them is granting the machine. */

@@ -19,7 +19,8 @@
  * thing that decides whether an unsandboxed retry may be offered.
  */
 
-import { isAbsolute, normalize, relative, resolve } from 'node:path'
+import { isAbsolute, normalize, resolve } from 'node:path'
+import { isPathWithin } from '@copse/std/path-containment.ts'
 
 /** Shell operators that end one simple command and begin the next. */
 const COMMAND_SEPARATORS = /\|\||&&|[;\n|&]/
@@ -38,8 +39,7 @@ function stripPrivateAlias(path: string): string {
 
 /** Whether `target` resolves outside `root`. Pure path arithmetic; touches no disk. */
 export function isPathOutsideRoot(root: string, target: string): boolean {
-  const rel = relative(stripPrivateAlias(normalize(root)), stripPrivateAlias(normalize(target)))
-  return rel.startsWith('..') || isAbsolute(rel)
+  return !isPathWithin(stripPrivateAlias(normalize(root)), stripPrivateAlias(normalize(target)))
 }
 
 function unquote(value: string): string {
