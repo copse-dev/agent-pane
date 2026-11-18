@@ -253,6 +253,7 @@ import {
   init_settings_dialog,
   init_side_chat,
   init_sidebar_thread,
+  init_sleep,
   init_state,
   init_store,
   init_theme,
@@ -449,6 +450,7 @@ import {
   sidebarHasRun,
   sidebarLastPromptAt,
   sidebarPrRefs,
+  sleep,
   sortThreadsNewestFirst,
   splitAppendedReminders,
   startHumanTurnTree,
@@ -485,7 +487,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-3BFXMTTQ.js";
+} from "./chunk-ISMBWWPQ.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -1249,7 +1251,7 @@ function createAppRunPanel(api2, owner, onLaunched = () => {
   let timer;
   const currentApp = () => discovery.apps.find((app) => app.id === appSelect.value);
   function fail(value) {
-    notice.textContent = value instanceof Error ? value.message : String(value);
+    notice.textContent = errorMessage(value);
     notice.hidden = false;
     notice.dataset["kind"] = "error";
   }
@@ -1431,7 +1433,7 @@ function createAppRunPanel(api2, owner, onLaunched = () => {
     try {
       options = await api2.appRun.setupOptions(owner, platform);
     } catch (value) {
-      setupHost.replaceChildren(el("p", {}, value instanceof Error ? value.message : String(value)));
+      setupHost.replaceChildren(el("p", {}, errorMessage(value)));
       return;
     }
     if (disposed || generation !== setupGeneration) return;
@@ -1614,6 +1616,7 @@ var init_app_run_dialog = __esm({
     init_icons();
     init_dialog_shell();
     init_active_workspace();
+    init_errors2();
     isBusy = (operation) => !["running", "succeeded", "failed", "cancelled", "stopped"].includes(operation.stage);
   }
 });
@@ -1913,7 +1916,7 @@ function mountOpenInEditor(root, store2, api2) {
       },
       (err) => {
         const name = editors.find((e) => e.id === editorId)?.name ?? "editor";
-        showToast(`Couldn't open ${name}: ${err instanceof Error ? err.message : String(err)}`, {
+        showToast(`Couldn't open ${name}: ${errorMessage(err)}`, {
           variant: "error"
         });
       }
@@ -2008,6 +2011,7 @@ var init_open_in_editor = __esm({
     init_toast();
     init_active_thread_owner();
     init_active_workspace();
+    init_errors2();
   }
 });
 
@@ -6123,9 +6127,6 @@ function replaceThread(store2, projectId, thread) {
   });
   store2.emit("threads_changed");
 }
-function errorText(error) {
-  return error instanceof Error ? error.message : String(error);
-}
 function openThreadHistoryEditor(store2, api2, options) {
   document.querySelector("#thread-history-editor")?.close();
   const overlay = createOverlayDialog({
@@ -6352,7 +6353,7 @@ function openThreadHistoryEditor(store2, api2, options) {
         saving = false;
         undo2.textContent = "Undo last edit";
         updateControls();
-        showErrorToast("Could not undo history edit", errorText(error));
+        showErrorToast("Could not undo history edit", errorMessage(error));
       }
     };
     undo2.addEventListener("click", () => {
@@ -6379,7 +6380,7 @@ function openThreadHistoryEditor(store2, api2, options) {
         "div",
         { class: "history-editor-load-error", role: "alert" },
         "Could not load this thread\u2019s history.",
-        el("span", {}, errorText(error))
+        el("span", {}, errorMessage(error))
       )
     );
     footer.append(el("button", { class: "ui-btn ui-btn-secondary", type: "button" }, "Close"));
@@ -6393,6 +6394,7 @@ var init_thread_history_editor = __esm({
     init_persistence();
     init_dialog_shell();
     init_toast();
+    init_errors2();
   }
 });
 
@@ -54261,6 +54263,9 @@ function detachedTitle(detached) {
   }
   return detached.recovery ? `This checkout is detached from ${detached.branch} because a ${detached.recovery} stopped part-way. Continue it in a terminal for this thread; it puts the checkout back on the branch when it finishes.` : `This checkout is detached from ${detached.branch}. Your files are preserved. Reattach to put it back on the branch.`;
 }
+function onBaseBranchTitle(onBase) {
+  return `This checkout is on ${onBase.baseBranch}, its base branch, instead of ${onBase.branch}. Copse will not run in it, so no edit lands on ${onBase.baseBranch}. Your files are preserved. Check out ${onBase.branch} in this checkout to continue.`;
+}
 function recoveryCommand(detached, recovery) {
   if (recovery === "bisect") return "git bisect reset";
   const pick = detached.uncommittedPick;
@@ -54467,6 +54472,15 @@ function mountFooterBranchStatus(host, store2, api2) {
   function renderReattach() {
     const current = activeDetached();
     const visible = current !== null && !isPickerMode() && !wrap2.hidden;
+    if (current?.state === "on-base-branch") {
+      reattachButton.hidden = true;
+      trigger.classList.toggle("is-detached", visible);
+      if (!visible) return;
+      const title2 = onBaseBranchTitle(current);
+      trigger.title = title2;
+      trigger.setAttribute("aria-label", `${title2} Copy branch name.`);
+      return;
+    }
     const shown = visible && !agentCanTouchCheckout(current);
     reattachButton.hidden = !shown;
     trigger.classList.toggle("is-detached", visible);
@@ -54540,7 +54554,7 @@ function mountFooterBranchStatus(host, store2, api2) {
   async function reattach() {
     const owner = getActiveThreadOwner(store2);
     const current = activeDetached();
-    if (!owner || !current || agentCanTouchCheckout(current) || reattaching || activeRecoveryRunId() !== null)
+    if (!owner || !current || current.state === "on-base-branch" || agentCanTouchCheckout(current) || reattaching || activeRecoveryRunId() !== null)
       return;
     if (current.state === "detached" && current.recovery) {
       const runId = globalThis.crypto.randomUUID();
@@ -56123,7 +56137,7 @@ async function createPrFromBubble(store2, api2, threadId, onConfirmed) {
     if (!result.ok)
       showToast(`Could not open the pull request: ${result.message}`, { variant: "error" });
   } catch (err) {
-    settlePrCard(store2, card, "error", err instanceof Error ? err.message : String(err));
+    settlePrCard(store2, card, "error", errorMessage(err));
     showErrorToast("Could not open the pull request", err);
   }
 }
@@ -56394,6 +56408,7 @@ var init_follow_up_suggestions = __esm({
     init_last_exchange();
     init_review_actions();
     init_toast();
+    init_errors2();
   }
 });
 
@@ -83088,6 +83103,7 @@ var init_simulator_desktop = __esm({
 var VncIpcChannel;
 var init_vnc_channel = __esm({
   "src/renderer/views/vnc-channel.ts"() {
+    init_errors2();
     VncIpcChannel = class {
       binaryType = "arraybuffer";
       protocol = "";
@@ -83119,7 +83135,7 @@ var init_vnc_channel = __esm({
         }
         this.readyState = WebSocket.CLOSING;
         void this.api.vnc.close(this.connectionId).catch((error) => {
-          this.fail(error instanceof Error ? error.message : String(error));
+          this.fail(errorMessage(error));
         });
       }
       receive(bytes2) {
@@ -84573,7 +84589,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     } catch (error) {
       if (generation !== discoveryGeneration) return;
       discoveryStatus.dataset["kind"] = "error";
-      discoveryStatus.textContent = error instanceof Error ? error.message : String(error);
+      discoveryStatus.textContent = errorMessage(error);
       discoverButton.hidden = false;
     } finally {
       if (generation === discoveryGeneration) discoverButton.disabled = channel !== null;
@@ -84602,7 +84618,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     } catch (error) {
       if (generation !== nearbyGeneration) return;
       nearbyStatus.dataset["kind"] = "error";
-      nearbyStatus.textContent = error instanceof Error ? error.message : String(error);
+      nearbyStatus.textContent = errorMessage(error);
       nearbyButton.hidden = false;
     } finally {
       if (generation === nearbyGeneration) nearbyButton.disabled = channel !== null;
@@ -84620,7 +84636,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     const [canStoreCredentials, devices] = await Promise.all([
       api2.vnc.canStoreCredentials().catch(() => false),
       api2.simulatorDesktop.list().catch((error) => {
-        discoveryError = error instanceof Error ? error.message : String(error);
+        discoveryError = errorMessage(error);
         return [];
       })
     ]);
@@ -84696,11 +84712,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
         },
         onInputError: (error) => {
           if (simulatorSessionId !== connection.id) return;
-          setStatus(
-            `Connected to ${device.name}`,
-            "error",
-            error instanceof Error ? error.message : String(error)
-          );
+          setStatus(`Connected to ${device.name}`, "error", errorMessage(error));
         }
       });
       simulatorView = view;
@@ -84714,7 +84726,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       clearViewer(
         android2 ? "Couldn\u2019t open the Android emulator" : "Couldn\u2019t open the Simulator",
         "error",
-        error instanceof Error ? error.message : String(error)
+        errorMessage(error)
       );
     } finally {
       connectButton.disabled = false;
@@ -84928,7 +84940,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
         nextChannel.open();
       });
     } catch (error) {
-      clearViewer(error instanceof Error ? error.message : String(error), "error");
+      clearViewer(errorMessage(error), "error");
     } finally {
       connectButton.disabled = false;
     }
@@ -84939,11 +84951,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     if (simulatorSessionId) {
       const connectionId = simulatorSessionId;
       void api2.simulatorDesktop.close(connectionId).catch((error) => {
-        clearViewer(
-          "Couldn\u2019t close the Simulator stream",
-          "error",
-          error instanceof Error ? error.message : String(error)
-        );
+        clearViewer("Couldn\u2019t close the Simulator stream", "error", errorMessage(error));
       });
       return;
     }
@@ -85032,11 +85040,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     const connectionId = simulatorSessionId;
     if (!connectionId || !controlEnabled) return;
     void api2.simulatorDesktop.input(connectionId, { type: "button-tap", name }).catch((error) => {
-      setStatus(
-        "Device control failed",
-        "error",
-        error instanceof Error ? error.message : String(error)
-      );
+      setStatus("Device control failed", "error", errorMessage(error));
     });
   };
   homeButton.addEventListener("click", () => {
@@ -85422,6 +85426,7 @@ var init_vnc_pane = __esm({
     init_surface_recorder();
     init_vnc_ssh_host_form();
     init_active_workspace();
+    init_errors2();
     CHOOSE_MACHINE_TEXT = "Choose a device, enter an address, or select a saved SSH machine.";
     MANUAL_MACHINE = "network:manual";
     NEARBY_MACHINE_PREFIX = "network:nearby:";
@@ -89724,9 +89729,6 @@ var init_provider_invalidation = __esm({
 });
 
 // src/renderer/perf-autopilot.ts
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 async function waitForComposer() {
   const deadline = Date.now() + MOUNT_TIMEOUT_MS;
   for (; ; ) {
@@ -90141,6 +90143,7 @@ async function run3(store2) {
 var PROMPT, MOUNT_TIMEOUT_MS, FIRST_ACTIVITY_TIMEOUT_MS, TURN_TIMEOUT_MS, SWEEP_SURFACES, SWEEP_DWELL_MS;
 var init_perf_autopilot = __esm({
   "src/renderer/perf-autopilot.ts"() {
+    init_sleep();
     init_perf();
     PROMPT = "Explain, in about 300 words, why a process tree can report more resident memory than the machine actually has allocated to it. Plain prose, no lists, no code.";
     MOUNT_TIMEOUT_MS = 3e4;
