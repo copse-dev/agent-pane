@@ -425,6 +425,7 @@ describe('AcpTurnFailure', () => {
   it('keeps the underlying message so classifyAgentError still matches it', () => {
     const failure = new AcpTurnFailure(new Error('Internal error: API Error: Overloaded'), {
       assistantText: 'partial answer',
+      finalMessageText: 'partial answer',
       usage: { inputTokens: 10, outputTokens: 5 },
     })
     assert.equal(failure.message, 'Internal error: API Error: Overloaded')
@@ -1658,6 +1659,7 @@ describe('continuing into a granted worktree', () => {
       Promise.reject(
         new AcpTurnFailure(new Error('agent died'), {
           assistantText: '',
+          finalMessageText: '',
           usage: { inputTokens: 0, outputTokens: 0 },
         }),
       )
@@ -1718,7 +1720,11 @@ describe('continuing into a granted worktree', () => {
       if (turnOptions.userPrompt !== 'fix the redirect') {
         throw new AcpTurnFailure(
           new Error('agent died'),
-          { assistantText: 'half', usage: { inputTokens: 5, outputTokens: 1 } },
+          {
+            assistantText: 'half',
+            finalMessageText: 'half',
+            usage: { inputTokens: 5, outputTokens: 1 },
+          },
           { sandboxed: true },
         )
       }

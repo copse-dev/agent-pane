@@ -57,14 +57,16 @@
 //    model tool list, stops appending the prompt block, and stops rewriting the
 //    user's input into placeholders (`registry-bootstrap.ts`,
 //    `agent-system-prompt.ts` and `pii-redactor.ts` read the plugin registry).
-//  - `mcpUiCanvasPlugin` — the first-party plugin for the experimental MCP-UI
+//  - `mcpUiCanvasPlugin` — the first-party plugin for the stable MCP-UI
 //    artefacts (canvas) feature (issue #611). Contributes no tool: it declares
 //    the `mcp-ui-canvas` **capability** — the canvas gates in `mcp-registry.ts`
-//    read `isCapabilityActive('mcp-ui-canvas')` instead of the retired
-//    `mcpUiArtefactsEnabled` setting, so the plugin toggle atomically turns canvas
-//    rendering (and the bundled canvas server) on/off — plus one conditional
-//    turn-start hook that steers a prototype request onto the bundled
-//    `render_html_artefact` tool when that tool is offered. Default DISABLED.
+//    and `inline-visualization.ts` read `isCapabilityActive('mcp-ui-canvas')`
+//    instead of the retired `mcpUiArtefactsEnabled` setting, so the plugin toggle
+//    atomically turns canvas rendering (and the bundled canvas server) on/off —
+//    plus conditional turn-start hooks that steer a prototype or explainer
+//    request onto the bundled tools when they are offered. Default ENABLED since
+//    it graduated (#4082); `migrateMcpUiCanvasStable()` in `plugin-service.ts`
+//    lifts the old seeded disable once.
 //  - `devtoolsShortcutPlugin` — the first-party plugin for the experimental DevTools
 //    shortcut. Contributes no tool: it declares the `devtools-shortcut`
 //    **capability** — `create-main-window.ts` reads

@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as esbuild from 'esbuild'
-import { parseProbeWorkerOutput } from './acp-probe-host.ts'
+import { AcpProbeAgentError, parseProbeWorkerOutput } from './acp-probe-host.ts'
 import { ACP_PROBE_REQUEST_ENV, parseProbeRequest } from './acp-probe-worker.ts'
 
 /**
@@ -200,8 +200,25 @@ describe('acp probe worker', () => {
     )
 
     for (const { stdout } of attempts) {
-      assert.throws(() => parseProbeWorkerOutput(stdout), /coding agent.*exited.*code 3/i)
+      assert.throws(
+        () => parseProbeWorkerOutput(stdout),
+        (err: unknown) => err instanceof AcpProbeAgentError && /exited.*code 3/i.test(err.message),
+      )
     }
+  })
+
+  it('reports an agent that is not installed as the agent failing, not the helper', async () => {
+    const dir = makeBundleDir('missing-')
+    const workerPath = bundleWorker(dir)
+    const { stdout } = await runWorker(
+      workerPath,
+      { config: { command: 'copse-no-such-agent-cli', args: [], cwd: dir }, timeoutMs: 10_000 },
+      dir,
+    )
+    assert.throws(
+      () => parseProbeWorkerOutput(stdout),
+      (err: unknown) => err instanceof AcpProbeAgentError,
+    )
   })
 
   it('rejects a malformed request instead of probing', async () => {
