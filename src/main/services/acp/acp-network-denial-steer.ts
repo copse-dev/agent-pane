@@ -196,7 +196,9 @@ function githubRoute(bridgeToolNames: readonly string[]): string {
       sentences.push('Use git_fetch to fetch branches or PR heads from origin.')
     }
     if (githubTools.includes('git_push')) {
-      sentences.push('Use git_push to push the current branch to origin.')
+      sentences.push(
+        'Use git_push to push a local branch, named by its branch argument, to the same branch on origin.',
+      )
     }
     if (githubTools.includes('git_fetch') || githubTools.includes('git_push')) {
       sentences.push(
