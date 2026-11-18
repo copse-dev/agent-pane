@@ -835,6 +835,11 @@ export async function getGitStatus(
 /** What git holds of a changed file's current content (#4006). */
 export type GitContentState = 'only-copy' | 'in-git'
 
+/** The largest file {@link findGitContentStates} hashes; a larger one is left unknown. */
+export const GIT_CONTENT_STATE_FILE_MAX_BYTES = 16 * 1024 * 1024
+/** The most bytes one {@link findGitContentStates} call hashes across all its files. */
+export const GIT_CONTENT_STATE_TOTAL_MAX_BYTES = 64 * 1024 * 1024
+
 /**
  * Git's hold on the current content of `paths` (workspace-relative, as
  * {@link getGitStatus} reports them). `only-copy`: git has no object for it, so
@@ -851,6 +856,11 @@ export type GitContentState = 'only-copy' | 'in-git'
  * so it is left unknown, as are links, special files and anything that stops
  * being a regular file before it is read. Returns null when git can't answer,
  * including for a path that is no longer there.
+ *
+ * Hashing reads every byte, and the end-of-turn audit waits for it, so the work
+ * is bounded: a file over {@link GIT_CONTENT_STATE_FILE_MAX_BYTES} is left
+ * unknown, and once {@link GIT_CONTENT_STATE_TOTAL_MAX_BYTES} are spoken for,
+ * so is every later one. Paths are taken in the order given.
  */
 export async function findGitContentStates(
   root: string | null,
@@ -861,22 +871,37 @@ export async function findGitContentStates(
   const kinds = await Promise.all(
     paths.map((path) =>
       fsp.lstat(join(root, path)).then(
-        (stat) => (stat.isFile() ? 'file' : 'other'),
-        () => 'gone',
+        (stat) =>
+          stat.isFile() ? { kind: 'file' as const, size: stat.size } : { kind: 'other' as const },
+        () => ({ kind: 'gone' as const }),
       ),
     ),
   )
-  if (kinds.includes('gone')) return null
-  const regular = paths.filter((_path, index) => kinds[index] === 'file')
+  if (kinds.some((entry) => entry.kind === 'gone')) return null
+  const sizes = new Map<string, number>()
+  paths.forEach((path, index) => {
+    const entry = kinds[index]
+    if (entry?.kind === 'file') sizes.set(path, entry.size)
+  })
+  const regular = paths.filter((path) => sizes.has(path))
   if (regular.length === 0) return new Map()
-  const unconverted = await unconvertedPaths(root, regular)
-  if (unconverted === null) return null
+  const convertible = await unconvertedPaths(root, regular)
+  if (convertible === null) return null
+  let budget = GIT_CONTENT_STATE_TOTAL_MAX_BYTES
+  const unconverted = convertible.filter((path) => {
+    const size = sizes.get(path) ?? Infinity
+    if (size > GIT_CONTENT_STATE_FILE_MAX_BYTES || size > budget) return false
+    budget -= size
+    return true
+  })
   if (unconverted.length === 0) return new Map()
   const format = await runGitRead(['rev-parse', '--show-object-format'], root)
   const algorithm = format.code === 0 ? format.stdout.trim() : ''
   if (algorithm !== 'sha1' && algorithm !== 'sha256') return null
   const ids = await Promise.all(
-    unconverted.map((path) => gitBlobIdOfRegularFile(join(root, path), algorithm)),
+    unconverted.map((path) =>
+      gitBlobIdOfRegularFile(join(root, path), algorithm, sizes.get(path) ?? 0),
+    ),
   )
   const files: string[] = []
   const hashes: string[] = []
@@ -907,11 +932,13 @@ export async function findGitContentStates(
  * opened without following a final symlink or blocking on a FIFO, then checked
  * to be a regular file on that same descriptor, so a path swapped for a link or
  * device after an earlier check is refused rather than read. Null when it is
- * not a regular file, cannot be read, or shrinks while being read.
+ * not a regular file, is larger than `maxBytes` (it grew after the caller
+ * budgeted for it), cannot be read, or shrinks while being read.
  */
 export async function gitBlobIdOfRegularFile(
   path: string,
   algorithm: 'sha1' | 'sha256',
+  maxBytes: number,
 ): Promise<string | null> {
   // Windows defines neither flag; there `fstat` alone refuses a non-file.
   const flags =
@@ -926,7 +953,7 @@ export async function gitBlobIdOfRegularFile(
   }
   try {
     const stat = await handle.stat()
-    if (!stat.isFile()) return null
+    if (!stat.isFile() || stat.size > maxBytes) return null
     const hash = createHash(algorithm).update(`blob ${String(stat.size)}\0`)
     const buffer = Buffer.alloc(Math.min(1024 * 1024, Math.max(1, stat.size)))
     let position = 0

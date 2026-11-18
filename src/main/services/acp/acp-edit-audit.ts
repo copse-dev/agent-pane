@@ -48,8 +48,9 @@ function describe(
  * the user, and the agent if it reads the card, can tell a scratch file from
  * the only copy of the work under review before agreeing to delete it.
  * `states` is null when git could not say, and a file it leaves out (a link,
- * or content git would convert on `add`) is unknown: the list names those
- * files without claiming anything about them.
+ * content git would convert on `add`, or a file too large to hash in the
+ * audit's budget) is unknown: the list names those files without claiming
+ * anything about them.
  */
 export function formatBypassedWriteAudit(
   writes: readonly BypassedWrite[],

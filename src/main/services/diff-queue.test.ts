@@ -2,9 +2,14 @@ import { describe, beforeEach, afterEach, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { at } from '@shared/array-utils.ts'
 import { existsSync } from 'node:fs'
-import { lstat, mkdtemp, readFile, writeFile, rm, mkdir, symlink } from 'node:fs/promises'
+import { lstat, mkdtemp, readFile, writeFile, rm, mkdir, symlink, truncate } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
-import { gitBlobIdOfRegularFile, type GitContentState } from './github/git-service.ts'
+import {
+  GIT_CONTENT_STATE_FILE_MAX_BYTES,
+  GIT_CONTENT_STATE_TOTAL_MAX_BYTES,
+  gitBlobIdOfRegularFile,
+  type GitContentState,
+} from './github/git-service.ts'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
@@ -1312,6 +1317,33 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
     assert.equal((await listWorktreeGitContentStates(['raw.txt']))?.size, 0)
   })
   ownedIt(
+    'listWorktreeGitContentStates bounds how much it hashes, leaving the rest unknown',
+    async () => {
+      // The end-of-turn audit waits for these hashes, so a huge generated file
+      // must not hold it up. Sparse files keep the sizes cheap to make.
+      await writeFile(join(workspaceRoot, 'small.txt'), 'small\n', 'utf-8')
+      const huge = join(workspaceRoot, 'huge.bin')
+      await writeFile(huge, '')
+      await truncate(huge, GIT_CONTENT_STATE_FILE_MAX_BYTES + 1)
+      const big = ['big-1.bin', 'big-2.bin', 'big-3.bin', 'big-4.bin', 'big-5.bin']
+      for (const name of big) {
+        await writeFile(join(workspaceRoot, name), '')
+        await truncate(join(workspaceRoot, name), GIT_CONTENT_STATE_FILE_MAX_BYTES)
+      }
+      const fit = GIT_CONTENT_STATE_TOTAL_MAX_BYTES / GIT_CONTENT_STATE_FILE_MAX_BYTES
+      assert.ok(fit < big.length, 'the five big files overrun the total budget')
+
+      const states = await listWorktreeGitContentStates(['small.txt', 'huge.bin', ...big])
+      assert.ok(states, 'git answered')
+      // Over the per-file cap: unknown. The big files are hashed in order until
+      // the total budget runs out, after the small file took its share.
+      assert.deepEqual(byState(states), {
+        'only-copy': ['small.txt', ...big.slice(0, fit - 1)].sort(),
+        'in-git': [],
+      })
+    },
+  )
+  ownedIt(
     'gitBlobIdOfRegularFile hashes as git does and refuses what is not a regular file',
     async () => {
       const file = join(workspaceRoot, 'blob.txt')
@@ -1320,7 +1352,9 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
         cwd: tempRoot,
         encoding: 'utf-8',
       }).trim()
-      assert.equal(await gitBlobIdOfRegularFile(file, 'sha1'), expected)
+      assert.equal(await gitBlobIdOfRegularFile(file, 'sha1', 8), expected)
+      // A file that grew past what the caller budgeted for is not read.
+      assert.equal(await gitBlobIdOfRegularFile(file, 'sha1', 7), null)
       // What a writer could swap in after the audit's lstat: never followed,
       // and a FIFO with no writer is not waited on.
       const fifo = join(workspaceRoot, 'pipe')
@@ -1328,8 +1362,8 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
       const link = join(workspaceRoot, 'swapped.txt')
       await symlink('/dev/zero', link)
       const started = Date.now()
-      assert.equal(await gitBlobIdOfRegularFile(link, 'sha1'), null)
-      assert.equal(await gitBlobIdOfRegularFile(fifo, 'sha1'), null)
+      assert.equal(await gitBlobIdOfRegularFile(link, 'sha1', 1024), null)
+      assert.equal(await gitBlobIdOfRegularFile(fifo, 'sha1', 1024), null)
       assert.ok(Date.now() - started < 5_000, 'neither is read')
     },
   )
