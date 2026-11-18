@@ -543,10 +543,8 @@ export function baseSandboxConfig(): SandboxRuntimeConfig {
 
 /** Where `path` sits relative to `home`: covering it (home or an ancestor), inside it, or apart. */
 function placeAgainstHome(path: string, home: string): 'covers' | 'inside' | 'apart' {
-  const toHome = relative(path, home)
-  if (toHome === '' || (!toHome.startsWith('..') && !isAbsolute(toHome))) return 'covers'
-  const fromHome = relative(home, path)
-  return !fromHome.startsWith('..') && !isAbsolute(fromHome) ? 'inside' : 'apart'
+  if (isPathWithin(path, home)) return 'covers'
+  return isPathWithin(home, path) ? 'inside' : 'apart'
 }
 
 /**

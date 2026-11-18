@@ -1,7 +1,8 @@
 import { errorMessage } from '@shared/errors.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { dirname, isAbsolute, relative, sep } from 'node:path'
+import { dirname, isAbsolute, sep } from 'node:path'
+import { relativeWithin } from '@copse/std/path-containment.ts'
 import type { BrowserWindow, IpcMain, IpcMainInvokeEvent, WebContents } from 'electron'
 import { assertWriteTargetWithinRoot, resolvePathWithinRoot } from './workspace.ts'
 import { getActiveWorkspaceFs } from './workspace-fs/get-workspace-fs.ts'
@@ -101,8 +102,8 @@ export interface DiffDecision {
 function queuePath(path: string, root: string | null): string {
   let candidate = path.split(sep).join('/')
   if (root !== null && isAbsolute(path)) {
-    const fromRoot = relative(root, path).split(sep).join('/')
-    if (fromRoot !== '' && !fromRoot.startsWith('../')) candidate = fromRoot
+    const fromRoot = relativeWithin(root, path)
+    if (fromRoot) candidate = fromRoot.split(sep).join('/')
   }
   return candidate.replace(/^(?:\.\/)+/, '').replace(/\/{2,}/g, '/')
 }
