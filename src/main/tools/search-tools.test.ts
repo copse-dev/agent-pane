@@ -68,6 +68,16 @@ describe('findFilesTool truncation flag', () => {
     setIndexForTest(['src/main.ts', 'src/nested/other.ts', 'test/main.ts'], testRoot)
     assert.equal(await runFindFiles({ pattern: 'src/*.ts' }), 'src/main.ts')
   })
+
+  // GHSA-fc5q-39xc-vjpf: the pattern is a model tool argument, and `+(*a)`
+  // backtracks exponentially in picomatch. Unbounded, this froze the main process.
+  ownedIt('abandons a backtracking glob with a hint instead of hanging', async () => {
+    setIndexForTest(['src/main.ts', `src/${'a'.repeat(48)}!`], testRoot)
+    const started = Date.now()
+    const out = await runFindFiles({ pattern: '+(*a)' })
+    assert.match(out, /took too long to match/)
+    assert.ok(Date.now() - started < 10_000, `took ${String(Date.now() - started)}ms`)
+  })
 })
 
 describe('searchCodeTool pattern/query aliasing', () => {
