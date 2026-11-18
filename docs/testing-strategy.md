@@ -162,11 +162,20 @@ Read the **confidence line** before trusting the subset:
 The oracle deliberately refuses to shrink below what it can back up: an empty
 selection runs the **full** suite rather than reporting a green on zero tests.
 A few tests read their input from disk instead of importing it, so the import
-graph cannot see them. `ci-workflow-invariants` and `small-gate` read the CI spec
-list, shard weights, CI excludes and smoke inventory. A changed or new spec, or
-one of those files, adds them to whatever subset the graph chose. That subset
-then catches a spec added without a shard weight, which used to surface only in
-the full check.
+graph cannot see them. `DISK_READERS` in `scripts/test-oracle.mts` lists them
+with the files they read:
+
+- `ci-workflow-invariants` and `small-gate` read the CI spec list, shard weights,
+  CI excludes and smoke inventory.
+- `screenshot-producers` and `readme-screenshots` read the screenshots specs save
+  and the screenshot manifest; `readme-screenshots` also reads `README.md`.
+- `check-mock-fixtures` reads the executable mock fixtures: e2e sources, ACP
+  tests and benchmark packs.
+
+A change to one of those files adds its readers to whatever subset the graph
+chose. That subset then catches, for example, a spec added without a shard
+weight, which used to surface only in the full check. A test that starts
+reading files from disk this way belongs in that table.
 
 ### Choose the local gate by risk
 

@@ -750,21 +750,49 @@ export function listSourceFiles(tree: OracleFiles = workingTree): string[] {
 }
 
 /**
- * Unit tests that read the CI spec list and its inputs from disk: the eligible
- * specs, their shard weights, the CI excludes and the smoke inventory. The import
- * graph cannot tie a spec to them, so a PR adding one beside a source edit got a
- * unit subset without them, and the unweighted-spec limit and shard balance
- * failed only in the full suite. They join a subset the graph already chose; a
- * change the graph cannot see at all still runs everything.
+ * Unit tests that read specs, fixtures or the CI spec list from disk instead of
+ * importing them, so the import graph cannot tie a changed input to them. A PR
+ * adding a spec beside a source edit got a unit subset without them, and the
+ * unweighted-spec limit failed only in the full suite. They join a subset the
+ * graph already chose; a change the graph cannot see at all still runs
+ * everything. `tests/demo/` and `tests/e2e/{helpers,fixtures,scenarios}/` are
+ * broad, so they are not listed.
  */
-const SPEC_LIST_TESTS: readonly string[] = [
-  'scripts/ci-workflow-invariants.test.ts',
-  'scripts/small-gate.test.ts',
-]
-const SPEC_LIST_INPUTS: readonly RegExp[] = [
-  /^tests\/e2e\/.+\.e2e\.ts$/,
-  /^scripts\/e2e-shard-weights\.json$/,
-  /^tests\/e2e\/(exclusions|smoke-inventory)\.json$/,
+const E2E_SPEC = /^tests\/e2e\/.+\.e2e\.ts$/
+const SCREENSHOT_MANIFEST_FILE = /^tests\/e2e\/screenshots\/manifest\.json$/
+const DISK_READERS: readonly {
+  what: string
+  tests: readonly string[]
+  inputs: readonly RegExp[]
+}[] = [
+  {
+    what: 'the CI spec list',
+    tests: ['scripts/ci-workflow-invariants.test.ts', 'scripts/small-gate.test.ts'],
+    inputs: [
+      E2E_SPEC,
+      /^scripts\/e2e-shard-weights\.json$/,
+      /^tests\/e2e\/(exclusions|smoke-inventory)\.json$/,
+    ],
+  },
+  {
+    what: 'the screenshots specs save',
+    tests: ['scripts/screenshot-producers.test.ts', 'scripts/readme-screenshots.test.ts'],
+    inputs: [E2E_SPEC, SCREENSHOT_MANIFEST_FILE],
+  },
+  {
+    what: 'the README screenshots',
+    tests: ['scripts/readme-screenshots.test.ts'],
+    inputs: [/^README\.md$/],
+  },
+  {
+    what: 'the executable mock fixtures',
+    tests: ['scripts/check-mock-fixtures.test.ts'],
+    inputs: [
+      /^tests\/e2e\/.+\.(?:[mc]?[jt]s|json)$/,
+      /^src\/main\/services\/acp\/.+\.test\.ts$/,
+      /^benchmarks\/.+\.json$/,
+    ],
+  },
 ]
 
 /**
@@ -850,11 +878,14 @@ export function computeSelection(
     }
   }
 
-  const specListInputs = changed.filter((f) => SPEC_LIST_INPUTS.some((re) => re.test(f)))
-  if (unitReasons.size > 0 && specListInputs.length > 0)
-    for (const t of SPEC_LIST_TESTS)
-      if (unitTests.includes(t))
-        addReason(unitReasons, t, `reads the CI spec list (${specListInputs.join(', ')})`)
+  if (unitReasons.size > 0)
+    for (const reader of DISK_READERS) {
+      const inputs = changed.filter((f) => reader.inputs.some((re) => re.test(f)))
+      if (inputs.length === 0) continue
+      for (const t of reader.tests)
+        if (unitTests.includes(t))
+          addReason(unitReasons, t, `reads ${reader.what} from disk (${inputs.join(', ')})`)
+    }
 
   const selectedE2e = broad ? specs : [...e2eReasons.keys()].sort()
   const selectedUnit = broad ? unitTests : [...unitReasons.keys()].sort()
