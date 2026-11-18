@@ -1,6 +1,6 @@
 import * as fsp from 'node:fs/promises'
 import { basename, join, relative } from 'node:path'
-import micromatch from 'micromatch'
+import { GLOB_SUBJECT_TIMEOUT_MS, globFilterWithin } from '../search/bounded-glob.ts'
 import { fileReferenceMatches } from '@shared/fs/file-reference.ts'
 import type { CursorRuleKind, CursorRuleSummary } from '@shared/types/cursor-rules.ts'
 import { splitSkillMarkdown } from './parse-skill-frontmatter.ts'
@@ -220,21 +220,23 @@ export function normalizeContextPath(path: string): string {
   return path.replace(/\\/g, '/').replace(/^\.\//, '').replace(/^\/+/, '')
 }
 
-/** True when any context path matches any of the rule's globs. */
+/**
+ * True when any context path matches any of the rule's globs. Rule globs come
+ * from the repository's `.mdc` files, so each is matched under a time budget
+ * (see `bounded-glob.ts`); one that blows it attaches nothing.
+ */
 export function contextMatchesGlobs(contextPaths: string[], globs: string[]): boolean {
   if (globs.length === 0 || contextPaths.length === 0) return false
   const normalized = contextPaths.map(normalizeContextPath).filter(Boolean)
-  for (const path of normalized) {
-    for (const glob of globs) {
-      if (micromatch.isMatch(path, glob, { dot: true })) return true
-      // Basename-only globs (`*.ts`) should also match nested files when users
-      // write the common shorthand; Cursor's docs say root-only, but community
-      // rules almost always mean "any *.ts". Prefer the documented form when the
-      // glob already contains a slash or `**`.
-      if (!glob.includes('/') && !glob.includes('**')) {
-        if (micromatch.isMatch(path, `**/${glob}`, { dot: true })) return true
-      }
-    }
+  for (const glob of globs) {
+    // Basename-only globs (`*.ts`) should also match nested files when users
+    // write the common shorthand; Cursor's docs say root-only, but community
+    // rules almost always mean "any *.ts". Prefer the documented form when the
+    // glob already contains a slash or `**`.
+    const forms = !glob.includes('/') && !glob.includes('**') ? [glob, `**/${glob}`] : [glob]
+    const budget = { timeoutMs: GLOB_SUBJECT_TIMEOUT_MS, limit: 1 }
+    const hits = globFilterWithin(normalized, forms, { dot: true }, budget)
+    if (hits !== 'timeout' && hits.length > 0) return true
   }
   return false
 }

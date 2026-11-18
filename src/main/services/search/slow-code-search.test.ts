@@ -37,6 +37,18 @@ describe('createGitignoreMatcher', () => {
     assert.ok(ig.isIgnored('tmp/debug.log', false))
     assert.ok(!ig.isIgnored('src/index.ts', false))
   })
+
+  // GHSA-fc5q-39xc-vjpf: `.gitignore` lines come from the repository, and
+  // `+(*a)b` backtracks exponentially in picomatch (`contains` leaves it
+  // unanchored, so it needs a tail that fails).
+  it('stops applying patterns that blow the time budget instead of hanging', () => {
+    const ig = createGitignoreMatcher(['+(*a)b', '*.log'])
+    const started = Date.now()
+    assert.equal(ig.isIgnored(`${'a'.repeat(48)}!`, false), false)
+    // Disabled for the rest of the walk, so later entries cost nothing.
+    assert.equal(ig.isIgnored('tmp/debug.log', false), false)
+    assert.ok(Date.now() - started < 5_000, `took ${String(Date.now() - started)}ms`)
+  })
 })
 
 describe('slowCodeSearch', () => {
@@ -61,5 +73,20 @@ describe('slowCodeSearch', () => {
     assert.match(hits, /keep\.ts:1/)
     assert.doesNotMatch(hits, /dist/)
     assert.doesNotMatch(hits, /skip\.js/)
+  })
+
+  it('returns a hint when file_glob backtracks past its budget', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'copse-slow-search-'))
+    await fs.writeFile(join(root, `${'a'.repeat(48)}!`), 'FINDME\n')
+    const started = Date.now()
+    const out = await slowCodeSearch({
+      searchRoot: root,
+      pattern: 'FINDME',
+      maxResults: 10,
+      fixedString: true,
+      fileGlob: '+(*a)',
+    })
+    assert.match(out, /took too long to match/)
+    assert.ok(Date.now() - started < 5_000, `took ${String(Date.now() - started)}ms`)
   })
 })

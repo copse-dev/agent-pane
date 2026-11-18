@@ -1,7 +1,7 @@
 import * as fs from 'node:fs/promises'
 import { stat as fsStat, open as fsOpen } from 'node:fs/promises'
 import { join, relative, resolve } from 'node:path'
-import micromatch from 'micromatch'
+import { boundedGlobMatcher, GLOB_TIMEOUT_HINT, type BoundedGlobMatcher } from './bounded-glob.ts'
 import { toRelativePath } from '../workspace.ts'
 
 export const SLOW_SEARCH_MAX_PATTERN_LEN = 256
@@ -103,18 +103,30 @@ function parseGitignoreLines(raw: string): string[] {
   return out
 }
 
+/**
+ * `.gitignore` lines come from the repository, so they are matched under a time
+ * budget (see `bounded-glob.ts`). Once the patterns blow that budget the matcher
+ * stops filtering for the rest of the walk: the search reads more files instead
+ * of paying the budget again for every entry.
+ */
 export function createGitignoreMatcher(patterns: string[]): GitignoreMatcher {
   const normalized = patterns.map((p) => {
     if (p.endsWith('/')) return `${p}**`
     return p.includes('/') ? p : `**/${p}`
   })
+  if (normalized.length === 0) return { isIgnored: () => false }
+  const matches = boundedGlobMatcher(normalized, { dot: true, contains: true })
+  let overBudget = false
   return {
     isIgnored(relativePath: string, isDirectory: boolean): boolean {
+      if (overBudget) return false
       const path = relativePath.replace(/\\/g, '/')
       const withSlash = isDirectory && !path.endsWith('/') ? `${path}/` : path
-      return normalized.some((pat) =>
-        micromatch.isMatch(withSlash, pat, { dot: true, contains: true }),
-      )
+      const result = matches(withSlash)
+      if (result !== 'timeout') return result
+      overBudget = true
+      console.warn('[slow-code-search] .gitignore patterns ran past their budget — not applied')
+      return false
     },
   }
 }
@@ -126,22 +138,35 @@ export async function slowCodeSearch(opts: SlowCodeSearchOptions): Promise<strin
   const gitignore = await loadGitignoreMatcher(opts.searchRoot)
   const results: string[] = []
   const visited = new Set<string>()
+  const fileGlob = opts.fileGlob ? compileFileGlob(opts.fileGlob) : undefined
 
-  await walkSearch({
-    searchRoot: opts.searchRoot,
-    dir: opts.searchRoot,
-    depth: 0,
-    matcher: compiled.matcher,
-    gitignore,
-    results,
-    max: opts.maxResults,
-    visited,
-    ...(opts.fileGlob !== undefined ? { fileGlob: opts.fileGlob } : {}),
-  })
+  try {
+    await walkSearch({
+      searchRoot: opts.searchRoot,
+      dir: opts.searchRoot,
+      depth: 0,
+      matcher: compiled.matcher,
+      gitignore,
+      results,
+      max: opts.maxResults,
+      visited,
+      ...(fileGlob !== undefined ? { fileGlob } : {}),
+    })
+  } catch (error) {
+    if (error instanceof FileGlobTimeout) return GLOB_TIMEOUT_HINT
+    throw error
+  }
 
   return results.length
     ? results.join('\n') + '\n[Note: ripgrep not found — results may be slower and incomplete]'
     : 'No matches found.'
+}
+
+/** The model's `file_glob` blew its budget; the search stops with a hint. */
+class FileGlobTimeout extends Error {}
+
+function compileFileGlob(fileGlob: string): BoundedGlobMatcher {
+  return boundedGlobMatcher(fileGlob.includes('/') ? fileGlob : `**/${fileGlob}`, { dot: true })
 }
 
 interface WalkSearchCtx {
@@ -150,7 +175,7 @@ interface WalkSearchCtx {
   depth: number
   matcher: SlowSearchLineMatcher
   gitignore: GitignoreMatcher
-  fileGlob?: string
+  fileGlob?: BoundedGlobMatcher
   results: string[]
   max: number
   visited: Set<string>
@@ -188,8 +213,9 @@ async function walkSearch(ctx: WalkSearchCtx): Promise<void> {
     }
 
     if (ctx.fileGlob) {
-      const glob = ctx.fileGlob.includes('/') ? ctx.fileGlob : `**/${ctx.fileGlob}`
-      if (!micromatch.isMatch(rel, glob, { dot: true })) continue
+      const inGlob = ctx.fileGlob(rel)
+      if (inGlob === 'timeout') throw new FileGlobTimeout()
+      if (!inGlob) continue
     }
     if (ctx.gitignore.isIgnored(rel, false)) continue
 
