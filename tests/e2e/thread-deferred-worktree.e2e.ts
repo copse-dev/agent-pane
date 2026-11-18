@@ -167,6 +167,33 @@ describe('deferred thread worktree', () => {
     assert.equal(note.branchClipped, false, 'the note must not squeeze the branch name')
     await saveAppScreenshot('thread-deferred-worktree-reading.png')
     await saveElementScreenshot('#input-bar', 'thread-deferred-worktree-reading-composer.png')
+
+    // The user detaches the checkout the thread is reading. The footer must not
+    // keep naming the branch the thread started on: it names none, and still
+    // says the thread is reading the checkout.
+    git(projectRoot, ['checkout', '-q', '--detach'])
+    try {
+      // HEAD moved outside the working tree. Rewriting a file with its own
+      // content fires the workspace watcher, which refreshes the footer,
+      // without changing the checkout's status.
+      const readme = join(projectRoot, 'README.md')
+      writeFileSync(readme, readFileSync(readme))
+      await browser.waitUntil(
+        async () =>
+          browser.execute(
+            () =>
+              document.querySelector<HTMLElement>('.footer-branch-host .footer-branch-status')
+                ?.hidden === true,
+          ),
+        { timeout: 15_000, timeoutMsg: 'the branch label should hide for a detached checkout' },
+      )
+      await expect($('.footer-branch-host .branch-deferred-note')).toBeDisplayed()
+      await saveElementScreenshot('#input-bar', 'thread-deferred-worktree-detached-composer.png')
+    } finally {
+      git(projectRoot, ['checkout', '-q', 'main'])
+    }
+    writeFileSync(join(projectRoot, 'README.md'), readFileSync(join(projectRoot, 'README.md')))
+    await expect($('.footer-branch-status .footer-branch-label')).toHaveText('main')
   })
 
   it('creates the worktree when the agent asks to write, and edits only there', async function () {

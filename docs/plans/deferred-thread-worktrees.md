@@ -187,12 +187,15 @@ bridged tools. That is the price of not guessing from the transcript whether it 
     mid-turn to the agent-named `copse/readme-usage-abc123`. The model's tool result names its
     new worktree. The edit lands only in the worktree, and the user's checkout is unchanged.
   - The footer says "Reading your checkout" beside `main` while deferred, and drops the note
-    once the worktree exists.
+    once the worktree exists. When the user detaches the checkout, the branch label hides rather
+    than naming the branch the thread started on, and the note stays.
   - Screenshots: `thread-deferred-worktree-reading.png`, `thread-deferred-worktree-writing.png`,
     and the composer alone in each state (`thread-deferred-worktree-reading-composer.png`,
+    `thread-deferred-worktree-detached-composer.png`,
     `thread-deferred-worktree-writing-composer.png`).
 - `src/renderer/views/footer-branch-status.test.ts` pins the note's text, its removal on the
-  `thread_checkout` update, and its absence for blank, shared, and eager worktree threads.
+  `thread_checkout` update, the hidden branch label for a detached checkout, and the note's
+  absence for blank, shared, and eager worktree threads.
 
 ## Known gaps before this could become the default
 

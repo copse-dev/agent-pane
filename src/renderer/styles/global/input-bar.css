@@ -871,6 +871,10 @@
   min-width: 0;
   font-family: inherit;
 }
+/* A thread reading a detached checkout shows its note without a branch. */
+.branch-picker-trigger.footer-branch-status[hidden] {
+  display: none;
+}
 .branch-picker-trigger.footer-branch-status:hover {
   color: var(--text-primary);
 }

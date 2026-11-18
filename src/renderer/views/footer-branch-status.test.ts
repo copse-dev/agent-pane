@@ -805,7 +805,7 @@ describe('footer branch status', () => {
 
     function mountWith(
       threads: Thread[],
-      currentBranch = 'main',
+      currentBranch: string | null = 'main',
     ): { host: HTMLElement; store: AppStore } {
       const store = createStore({
         workspaceRoot: '/repo',
@@ -871,6 +871,24 @@ describe('footer branch status', () => {
         qsRequired(host, '.branch-picker-trigger').classList.contains('is-mismatch'),
         false,
       )
+    })
+
+    it('names no branch while the checkout it reads is detached', async () => {
+      // Started on main; the user has since detached their checkout. The
+      // thread's old binding is not what it reads now.
+      const deferred: Thread = {
+        ...thread('main', true),
+        worktreeChoice: 'automatic',
+        deferredWorktree: { baseBranch: 'main', requestedAt: 1 },
+      }
+      const { host } = mountWith([deferred], null)
+      await settle()
+
+      // The note lives in the picker's wrapper, so that stays; only the branch
+      // trigger hides.
+      assert.equal(qsRequired(host, '.branch-picker').hidden, false)
+      assert.equal(note(host).hidden, false)
+      assert.equal(qsRequired(host, '.footer-branch-status').hidden, true)
     })
 
     it('stays quiet for blank, shared and eagerly isolated threads', async () => {

@@ -260,12 +260,16 @@ export function mountFooterBranchStatus(
    * The branch the widget speaks for: the branch this thread will start from,
    * else, while it still reads the checkout, the checkout's live branch, else
    * the thread's binding, else the checkout.
+   *
+   * A thread reading the checkout speaks for it exactly once its status has
+   * loaded: a detached checkout has no branch, and the thread's binding would
+   * name one it is not reading. The branch label then hides and the note stays.
    */
   function getDisplayBranch(): string | null {
-    const liveCheckoutBranch = readsCheckout() ? status?.currentBranch : undefined
+    const pending = activeBaseBranch()
+    if (pending) return pending
+    if (readsCheckout() && status) return status.currentBranch
     return (
-      activeBaseBranch() ??
-      liveCheckoutBranch ??
       getActiveThreadBranch() ??
       getActiveThread()?.worktree?.branch ??
       status?.currentBranch ??
@@ -312,9 +316,12 @@ export function mountFooterBranchStatus(
     const pickerMode = isPickerMode()
     const pr = getVisiblePr()
     deferredNote.hidden = !readsCheckout()
+    trigger.hidden = !displayBranch
 
     if (!displayBranch) {
-      wrap.hidden = true
+      // A thread reading a detached checkout names no branch, but the note
+      // still says it is reading the checkout.
+      wrap.hidden = !readsCheckout()
       branchToCopy = null
       setOpen(false)
       renderReattach()
