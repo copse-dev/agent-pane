@@ -230,8 +230,11 @@ async function bundleTests(testFiles: string[], outputDir: string): Promise<void
 /**
  * Reporters for the run, as `node --test` arguments.
  *
- * Off CI, nothing: node picks `spec` on a TTY, which is what you want when you
- * are reading it live.
+ * Off CI, Node's default `spec` reporter plus a summary that marks failures
+ * matching a known host difference (`scripts/lib/host-differences.mts`), so a
+ * local full run does not have to be triaged against
+ * `docs/host-environment-test-noise.md` by hand for the same known failures
+ * every time. It adds lines only; failures still fail the run.
  *
  * On CI it defaults to `tap`, and 6000+ tests of TAP is ~49k lines. GitHub's
  * job-log API only returns the last ~5000, so a failure early in a green-ish
@@ -260,7 +263,12 @@ function reporterArgs(tapLog: string): string[] {
         ? ['--test-reporter=tap', `--test-reporter-destination=${tapLog}`]
         : []),
     ]
-  return []
+  return [
+    '--test-reporter=spec',
+    '--test-reporter-destination=stdout',
+    `--test-reporter=${resolve('scripts/lib/host-noise-reporter.mts')}`,
+    '--test-reporter-destination=stdout',
+  ]
 }
 
 /** Full TAP for the last completed run, kept for existing CI artifact consumers. */
