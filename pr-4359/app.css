@@ -8396,6 +8396,9 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   min-width: 0;
   font-family: inherit;
 }
+.branch-picker-trigger.footer-branch-status[hidden] {
+  display: none;
+}
 .branch-picker-trigger.footer-branch-status:hover {
   color: var(--text-primary);
 }
@@ -8454,6 +8457,30 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 }
 .branch-reattach-button[hidden] {
   display: none;
+}
+.branch-deferred-note {
+  flex: 1 1 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 12px;
+  max-width: max-content;
+  overflow: hidden;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  cursor: default;
+}
+.branch-deferred-note[hidden] {
+  display: none;
+}
+.branch-deferred-note-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.footer-branch-host .branch-picker:has(> .branch-deferred-note:not([hidden])) {
+  max-width: min(360px, 50vw);
 }
 .footer-branch-label,
 .branch-picker-label {
