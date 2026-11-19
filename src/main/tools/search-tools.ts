@@ -118,7 +118,7 @@ async function explainEmptyGlobResult(opts: {
   slow?: boolean
 }): Promise<string> {
   const lines: string[] = [`No matches found within file_glob "${opts.fileGlob}".`]
-  // Ripgrep globs do not support bare pipe alternation; the bounded fallback uses micromatch.
+  // Ripgrep globs do not support bare pipe alternation; the bounded fallback uses picomatch.
   if (!opts.slow && opts.fileGlob.includes('|') && !opts.fileGlob.includes('{')) {
     lines.push(
       'file_glob is a glob, not a regex: `|` does not mean "or". Use braces, e.g. "{*a*,*b*}".',

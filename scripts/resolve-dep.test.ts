@@ -11,15 +11,14 @@ describe('resolveDepRoot', () => {
   })
 
   /**
-   * `@electron/rebuild` is ESM-only and its "exports" map is a bare string, so
-   * neither `<pkg>/package.json` nor any other subpath resolves — the entry
-   * point is the only reachable specifier. postinstall needs its CLI path, so
-   * the walk-up fallback is the only thing keeping the native rebuild working.
+   * `@copse/streaming-markdown`'s "exports" map omits `./package.json`, so the
+   * subpath lookup throws ERR_PACKAGE_PATH_NOT_EXPORTED and only the walk-up
+   * from its entry point finds the root. Most ESM-only packages ship that way.
    */
   it('resolves a package whose exports map omits ./package.json', () => {
-    const root = resolveDepRoot('@electron/rebuild')
+    const root = resolveDepRoot('@copse/streaming-markdown')
     assert.ok(existsSync(join(root, 'package.json')))
-    assert.ok(existsSync(join(root, 'lib', 'cli.js')))
+    assert.ok(existsSync(join(root, 'dist')))
   })
 
   it('throws for a package that is not installed', () => {

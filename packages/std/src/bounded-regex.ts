@@ -3,7 +3,7 @@ import { isRecord } from './unknown-value.ts'
 
 /**
  * Anything with a synchronous `test(subject)`: a `RegExp`, or a matcher that
- * compiles to one internally (such as a micromatch/picomatch glob matcher).
+ * compiles to one internally (such as a picomatch glob matcher).
  */
 export interface SubjectTester {
   test(subject: string): boolean

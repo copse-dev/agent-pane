@@ -762,7 +762,8 @@ jobs:
   # A SEPARATE job rather than folded into `precheck`: precheck checks out the
   # merge ref (with full history) so the e2e oracle can diff against base, whereas
   # committing needs the branch (head_ref) checkout. The formatter runs last so it tidies
-  # whatever ESLint rewrote; `eslint-config-prettier` means the two never fight.
+  # whatever ESLint rewrote; the ESLint config enables no stylistic rules, so the
+  # two never fight.
   #
   # Pushed as the copse-release-bot App rather than with the default
   # GITHUB_TOKEN: GitHub won't start a run for a GITHUB_TOKEN push (recursion
