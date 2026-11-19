@@ -7,8 +7,9 @@ import {
 } from './openai-host-actions.ts'
 import { githubArchiveBase, githubArchiveUrl } from './openai-archive.ts'
 import { sha256Hex } from '@copse/std/sha256.ts'
+import { writeFileAtomic } from '@copse/std/write-file-atomic.ts'
 import fs from 'node:fs/promises'
-import { mkdir, readFile, realpath, stat, writeFile, rename } from 'node:fs/promises'
+import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { rmSync } from 'node:fs'
 import { safeJsonParse, decodeWithSchema } from '@copse/std/safe-json.ts'
 import { threadDirectoryPath } from '../thread-store.ts'
@@ -230,9 +231,8 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
     )
   }
   const save = async (): Promise<void> => {
-    await mkdir(directory, { recursive: true })
-    await writeFile(
-      `${path}.tmp`,
+    await writeFileAtomic(
+      path,
       JSON.stringify({
         state,
         keyHash,
@@ -248,7 +248,6 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
       }),
       { mode: 0o600 },
     )
-    await rename(`${path}.tmp`, path)
     storageSet(storageKey(options.threadId), projectId)
   }
   await save()

@@ -1,5 +1,5 @@
 import { el, clear, on } from '../dom/helpers.ts'
-import { chevronDownIcon } from '../dom/icons.ts'
+import { chevronDownIcon, eyeIcon } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type {
@@ -23,9 +23,16 @@ import {
   type ActiveThreadOwner,
 } from '../controller/active-thread-owner.ts'
 import { selectActiveWorkspace } from '../controller/active-workspace.ts'
+import { isWorktreeDeferralPending } from '@shared/git/worktree-policy.ts'
 
 const COPIED_BRANCH_TOAST = 'Copied branch name'
 const COPY_FEEDBACK_MS = 1600
+const DEFERRED_NOTE_TEXT = 'Reading your checkout'
+// A write attempt alone does not allocate: a read-only shell command or an ACP
+// agent's own edit is refused. Only a request for write access or one of
+// Copse's writing tools does (deferred-thread-worktrees.md).
+const DEFERRED_NOTE_TITLE =
+  'This thread is reading your checkout and can’t change it. It gets its own worktree once it asks to make changes; until then, anything that tries to write here is refused.'
 let nextPickerId = 0
 
 type DetachedAttachment = Extract<ThreadWorktreeAttachment, { state: 'detached' }>
@@ -149,7 +156,16 @@ export function mountFooterBranchStatus(
     'aria-label': 'Branches',
   })
   menu.append(filterInput, list)
-  wrap.append(trigger, reattachButton, menu)
+  // A deferred worktree thread reads the user's own checkout until it first
+  // writes, so the branch beside this note is the checkout's, not the thread's.
+  // A fact, not a control: muted text with its icon and no box.
+  const deferredNote = el(
+    'span',
+    { class: 'branch-deferred-note', title: DEFERRED_NOTE_TITLE, hidden: '' },
+    eyeIcon('ui-icon ui-icon-sm'),
+    el('span', { class: 'branch-deferred-note-text' }, DEFERRED_NOTE_TEXT),
+  )
+  wrap.append(trigger, deferredNote, reattachButton, menu)
   host.append(wrap)
 
   let status: GitBranchStatus | null = null
@@ -234,13 +250,26 @@ export function mountFooterBranchStatus(
     return thread ? isBlankThread(thread) : false
   }
 
+  /** Whether the active thread still reads the user's checkout (a deferred worktree). */
+  function readsCheckout(): boolean {
+    const thread = getActiveThread()
+    return thread ? isWorktreeDeferralPending(thread) : false
+  }
+
   /**
    * The branch the widget speaks for: the branch this thread will start from,
-   * else the thread's binding, else the checkout.
+   * else, while it still reads the checkout, the checkout's live branch, else
+   * the thread's binding, else the checkout.
+   *
+   * A thread reading the checkout speaks for it exactly once its status has
+   * loaded: a detached checkout has no branch, and the thread's binding would
+   * name one it is not reading. The branch label then hides and the note stays.
    */
   function getDisplayBranch(): string | null {
+    const pending = activeBaseBranch()
+    if (pending) return pending
+    if (readsCheckout() && status) return status.currentBranch
     return (
-      activeBaseBranch() ??
       getActiveThreadBranch() ??
       getActiveThread()?.worktree?.branch ??
       status?.currentBranch ??
@@ -286,17 +315,23 @@ export function mountFooterBranchStatus(
     const displayBranch = getDisplayBranch()
     const pickerMode = isPickerMode()
     const pr = getVisiblePr()
+    deferredNote.hidden = !readsCheckout()
+    trigger.hidden = !displayBranch
 
     if (!displayBranch) {
-      wrap.hidden = true
+      // A thread reading a detached checkout names no branch, but the note
+      // still says it is reading the checkout.
+      wrap.hidden = !readsCheckout()
       branchToCopy = null
       setOpen(false)
       renderReattach()
       return
     }
 
+    // A thread still reading the checkout follows it wherever it is, as the
+    // send path does, so a switched checkout is not a mismatch.
     const mismatch = threadGitBranchMismatch(threadBranch, currentBranch, {
-      isolatedWorktree: Boolean(getActiveThread()?.worktree),
+      isolatedWorktree: Boolean(getActiveThread()?.worktree) || readsCheckout(),
     })
     // `mismatch` is only true when threadBranch is a non-empty string, but that
     // implication can't survive into the branches below — capture the message

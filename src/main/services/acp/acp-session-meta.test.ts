@@ -44,22 +44,25 @@ describe('ACP session _meta (#4146)', () => {
 
   const posix = process.platform !== 'win32'
   const claude = { command: 'claude-agent-acp', sandbox: SANDBOX }
-  const local = { remote: false, bridgeMounted: true }
+  const local = { remote: false, bridgeServer: 'copse-k3v9x2mq' }
 
   it('refuses the escape only for a local Claude agent under the sandbox', { skip: !posix }, () => {
     sandboxActive()
-    assert.deepEqual(acpSessionMeta(claude, local), claudeSandboxEscapeSessionMeta(true))
     assert.deepEqual(
-      acpSessionMeta({ command: '/opt/homebrew/bin/claude-agent-acp', sandbox: SANDBOX }, local),
-      claudeSandboxEscapeSessionMeta(true),
+      acpSessionMeta(claude, local),
+      claudeSandboxEscapeSessionMeta('copse-k3v9x2mq'),
     )
     assert.deepEqual(
-      acpSessionMeta(claude, { remote: false, bridgeMounted: false }),
-      claudeSandboxEscapeSessionMeta(false),
+      acpSessionMeta({ command: '/opt/homebrew/bin/claude-agent-acp', sandbox: SANDBOX }, local),
+      claudeSandboxEscapeSessionMeta('copse-k3v9x2mq'),
+    )
+    assert.deepEqual(
+      acpSessionMeta(claude, { remote: false, bridgeServer: null }),
+      claudeSandboxEscapeSessionMeta(null),
     )
     assert.equal(acpSessionMeta({ command: 'codex-acp', sandbox: SANDBOX }, local), undefined)
     assert.equal(acpSessionMeta({ command: 'claude-agent-acp' }, local), undefined)
-    assert.equal(acpSessionMeta(claude, { remote: true, bridgeMounted: false }), undefined)
+    assert.equal(acpSessionMeta(claude, { remote: true, bridgeServer: null }), undefined)
     assert.equal(acpSessionMeta({ ...claude, executionMode: 'agent' }, local), undefined)
   })
 
@@ -104,7 +107,11 @@ describe('ACP session _meta (#4146)', () => {
     sandboxActive()
     const cwd = await realpath(await mkdtemp(join(tmpdir(), 'copse-acp-meta-')))
     cleanups.push(async () => rm(cwd, { recursive: true, force: true }))
-    const bridge = { url: 'http://127.0.0.1:1/mcp', token: 'test-token' }
+    const bridge = {
+      url: 'http://127.0.0.1:1/mcp',
+      token: 'test-token',
+      serverName: 'copse-k3v9x2mq',
+    }
 
     const withBridge = await sessionNewParams({
       ...claude,
@@ -112,11 +119,15 @@ describe('ACP session _meta (#4146)', () => {
       sshTarget: null,
       nativeBridge: bridge,
     })
-    assert.deepEqual(withBridge._meta, claudeSandboxEscapeSessionMeta(true))
-    assert.ok(withBridge.mcpServers.some((server) => server.name === 'copse'))
+    assert.deepEqual(withBridge._meta, claudeSandboxEscapeSessionMeta('copse-k3v9x2mq'))
+    // Mounted under its own nonce name, never the bare stem a config could claim (#4125).
+    assert.deepEqual(
+      withBridge.mcpServers.map((server) => server.name),
+      ['copse-k3v9x2mq'],
+    )
 
     const noBridge = await sessionNewParams({ ...claude, cwd, sshTarget: null })
-    assert.deepEqual(noBridge._meta, claudeSandboxEscapeSessionMeta(false))
+    assert.deepEqual(noBridge._meta, claudeSandboxEscapeSessionMeta(null))
 
     const codex = await sessionNewParams({
       command: 'codex-acp',

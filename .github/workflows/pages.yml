@@ -134,7 +134,7 @@ jobs:
       # and the repo carries no second copy of every page to keep in step.
       #
       # Deliberately NOT `.github/actions/setup`. That installs the app's whole
-      # dependency tree — ~590 MB, an electron-rebuild, a 2.5-3.5 min cache
+      # dependency tree — ~590 MB, a native node-pty build, a 2.5-3.5 min cache
       # restore on a hosted runner — and this job needs four pure-JS libraries.
       # The cost would land on every caller: demo-preview.yml and
       # demo-preview-cleanup.yml both `uses:` this workflow, and all deploys

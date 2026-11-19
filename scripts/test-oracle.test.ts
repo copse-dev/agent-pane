@@ -5,7 +5,13 @@ import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { z } from 'zod'
-import { assignShards, computeSelection, computeUnitPlan } from './test-oracle.mts'
+import {
+  assignShards,
+  computeSelection,
+  computeUnitPlan,
+  reachableFiles,
+  type OracleFiles,
+} from './test-oracle.mts'
 
 const ORACLE = resolve('scripts/test-oracle.mts')
 
@@ -203,6 +209,128 @@ describe('test oracle dependency inputs', () => {
       }
     })
   }
+})
+
+describe('test oracle import graph', () => {
+  // A type-only import is erased before the code runs, so the module it names
+  // cannot change what a unit test does. Following it tied a change to a shared
+  // types file to hundreds of unit tests. An e2e spec tests the running app, so
+  // its imports, type-only ones included, still stand in for what it observes.
+  const files: Record<string, string> = {
+    'src/entry.test.ts': [
+      "import type { T } from './types.ts'",
+      "export type { U } from './reexported-type.ts'",
+      "export type * from './star-type.ts'",
+      "import type * as Ns from './namespace-type.ts'",
+      "import type Default from './default-type.ts'",
+      'import type {',
+      '  A,',
+      '  B,',
+      "} from './multiline-type.ts'",
+      "export type Alias = { from: 'not-a-module' }",
+      "import { value } from './runtime.ts'",
+      "import { type Mixed, other } from './mixed.ts'",
+      "import type from './named-type.ts'",
+      "import './side-effect.ts'",
+      "const lazy = (): Promise<unknown> => import('./lazy.ts')",
+    ].join('\n'),
+    'src/runtime.ts': "import type { Deep } from './deep-type.ts'\nexport const value = 1",
+  }
+  for (const name of [
+    'types',
+    'reexported-type',
+    'star-type',
+    'namespace-type',
+    'default-type',
+    'multiline-type',
+    'mixed',
+    'named-type',
+    'side-effect',
+    'lazy',
+    'deep-type',
+  ])
+    files[`src/${name}.ts`] = 'export {}'
+  const tree: OracleFiles = {
+    paths: () => Object.keys(files),
+    read: (path) => files[path] ?? '',
+    exists: (path) => Object.hasOwn(files, path),
+  }
+
+  it("follows only the test's own type-only imports, for a unit test", () => {
+    // deep-type.ts is reached only through runtime.ts's `import type`.
+    assert.deepEqual(
+      [...reachableFiles('src/entry.test.ts', new Map(), tree, false)].sort(),
+      Object.keys(files)
+        .filter((path) => path !== 'src/entry.test.ts' && path !== 'src/deep-type.ts')
+        .sort(),
+    )
+  })
+
+  it('reads each kind of type-only statement, and nothing else, as type-only', () => {
+    // The same statements one step down, in a module the test loads: only the
+    // ones that load a module are followed.
+    const nestedFiles: Record<string, string> = {
+      'src/nested.test.ts': "import { entry } from './entry.ts'",
+      'src/entry.ts': files['src/entry.test.ts'] ?? '',
+    }
+    for (const [path, body] of Object.entries(files))
+      if (path !== 'src/entry.test.ts') nestedFiles[path] = body
+    const nestedTree: OracleFiles = {
+      paths: () => Object.keys(nestedFiles),
+      read: (path) => nestedFiles[path] ?? '',
+      exists: (path) => Object.hasOwn(nestedFiles, path),
+    }
+    assert.deepEqual(
+      [...reachableFiles('src/nested.test.ts', new Map(), nestedTree, false)].sort(),
+      [
+        'src/entry.ts',
+        'src/lazy.ts',
+        'src/mixed.ts',
+        'src/named-type.ts',
+        'src/runtime.ts',
+        'src/side-effect.ts',
+      ],
+    )
+  })
+
+  it('still follows type-only imports by default, for e2e specs', () => {
+    assert.deepEqual(
+      [...reachableFiles('src/entry.test.ts', new Map(), tree)].sort(),
+      Object.keys(files)
+        .filter((path) => path !== 'src/entry.test.ts')
+        .sort(),
+    )
+  })
+
+  it("selects no unit test that reaches the change only through another module's type import", () => {
+    const selectionFiles: Record<string, string> = {
+      'tests/e2e/shape.e2e.ts': "import type { Shape } from '../../src/shape.ts'",
+      'src/shape.test.ts':
+        "import type { Shape } from './shape.ts'\nimport { area } from './area.ts'",
+      'src/area.test.ts': "import { area } from './area.ts'",
+      'src/area.ts': "import type { Shape } from './shape.ts'\nexport const area = 1",
+      'src/shape.ts': 'export type Shape = { width: number }',
+    }
+    const selectionTree: OracleFiles = {
+      paths: (dir) => Object.keys(selectionFiles).filter((path) => path.startsWith(`${dir}/`)),
+      read: (path) => selectionFiles[path] ?? '',
+      exists: (path) => Object.hasOwn(selectionFiles, path),
+    }
+    const selection = computeSelection(['src/shape.ts'], selectionTree)
+    assert.deepEqual(selection.selectedE2e, ['tests/e2e/shape.e2e.ts'])
+    // shape.test.ts names the type itself; area.test.ts reaches it only
+    // through area.ts's `import type`, which loads nothing.
+    assert.deepEqual(selection.selectedUnit, ['src/shape.test.ts'])
+    assert.deepEqual(computeSelection(['src/area.ts'], selectionTree).selectedUnit, [
+      'src/area.test.ts',
+      'src/shape.test.ts',
+    ])
+  })
+
+  it('keeps the classifier settings spec mapped through its type-only import', () => {
+    const selection = computeSelection(['src/main/services/classifiers/classifier-service.ts'])
+    assert.ok(selection.selectedE2e.includes('tests/e2e/settings-classifiers.e2e.ts'))
+  })
 })
 
 describe('test oracle disk readers', () => {

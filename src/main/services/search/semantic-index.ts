@@ -1,5 +1,5 @@
 import { execFile, spawn } from 'node:child_process'
-import { access, mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { access, mkdir, open, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { cpus, setPriority } from 'node:os'
 import { detachForGroupKill } from '../../project-sandbox/sandbox-argv.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
@@ -31,6 +31,7 @@ import { isNonNull } from '@shared/nullish.ts'
 import { isNonEmptyString } from '@shared/nullish.ts'
 import { sleep } from '@copse/std/sleep.ts'
 import { withTimeout } from '@copse/std/with-timeout.ts'
+import { writeFileAtomic } from '@copse/std/write-file-atomic.ts'
 
 /**
  * Hard ceiling on semantic-index worker threads. Without a cap the native
@@ -689,9 +690,7 @@ async function pruneRedundantGortexExcludes(): Promise<number> {
   }
   const redundant = new Set(redundantExcludePatterns(parseGortexExcludes(raw)))
   if (redundant.size === 0) return 0
-  const tmpPath = `${configPath}.copse-prune`
-  await writeFile(tmpPath, removeGortexExcludes(raw, redundant), 'utf8')
-  await rename(tmpPath, configPath)
+  await writeFileAtomic(configPath, removeGortexExcludes(raw, redundant))
   return redundant.size
 }
 
@@ -770,9 +769,7 @@ export async function repairCorruptGortexConfig(): Promise<boolean> {
     if (!gortexConfigNeedsRepair(raw)) return false
 
     const repaired = repairGortexConfigYaml(raw)
-    const tmpPath = `${configPath}.copse-repair`
-    await writeFile(tmpPath, repaired, 'utf8')
-    await rename(tmpPath, configPath)
+    await writeFileAtomic(configPath, repaired)
     console.info('[copse-panel] repaired corrupt gortex config.yaml')
 
     // A live daemon may still be serving the torn config from memory. Prefer

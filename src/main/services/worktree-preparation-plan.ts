@@ -2,8 +2,8 @@ import { formatArgvForShell } from '../project-sandbox/sandbox-argv.ts'
 import { load } from 'js-yaml'
 import { createHash } from 'node:crypto'
 import { existsSync, globSync, lstatSync, readFileSync, realpathSync } from 'node:fs'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { isPathWithin } from '@copse/std/path-containment.ts'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { isPathWithin, relativeWithin } from '@copse/std/path-containment.ts'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { fingerprintPaths } from '../../../scripts/lib/dev-sync.mts'
@@ -82,8 +82,7 @@ export function readPreparationText(root: string, path: string): string | null {
 /** Metadata and declared inputs must not make host reads follow links out of the checkout. */
 function relativePreparationPath(root: string, path: string): string {
   const absolute = resolve(root, path)
-  const rel = relative(root, absolute)
-  if (isAbsolute(path) || rel === '..' || rel.startsWith(`..${sep}`)) {
+  if (isAbsolute(path) || relativeWithin(root, absolute) === null) {
     throw new Error(`Preparation path must stay in the worktree: ${path}`)
   }
   return absolute
