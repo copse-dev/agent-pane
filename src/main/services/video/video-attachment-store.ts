@@ -6,7 +6,7 @@ import {
   SUPPORTED_VIDEO_EXTENSIONS,
   type VideoAttachmentRef,
 } from '@shared/video/video-media.ts'
-import { fileExtension, formatByteSize } from '@shared/file-bytes.ts'
+import { fileExtension, formatByteSize, sanitizeStoredFileName } from '@shared/file-bytes.ts'
 import { resolveLocalChatStorePath, resolveWorkspacePath } from '../workspace.ts'
 import { threadMediaDir } from '../thread-store.ts'
 import { getActiveWorkspaceFs } from '../workspace-fs/get-workspace-fs.ts'
@@ -22,18 +22,6 @@ import { localWorkspaceFs } from '../workspace-fs/local-workspace-fs.ts'
  * `video_frames` can open the file without any new path authority. Crucially the
  * video is never turned into model content; only its path is.
  */
-
-/**
- * Keep a stored name free of anything path-like. The name comes from a
- * renderer-supplied `File`, so it is untrusted input on the way to a filesystem
- * path even though the directory itself is ours.
- */
-function sanitizeFileName(name: string): string {
-  const safe = name.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[.-]+/, '')
-  const extension = fileExtension(safe)
-  const stem = safe.slice(0, safe.length - extension.length)
-  return stem.slice(0, 80 - extension.length) + extension || 'video'
-}
 
 export interface NewVideoAttachmentInput {
   name: string
@@ -51,7 +39,7 @@ export function storeVideoAttachment(
   threadId: string,
   input: NewVideoAttachmentInput,
 ): VideoAttachmentRef {
-  const name = sanitizeFileName(input.name)
+  const name = sanitizeStoredFileName(input.name, 'video')
   const extension = fileExtension(name)
   if (!(SUPPORTED_VIDEO_EXTENSIONS as readonly string[]).includes(extension)) {
     throw new Error(

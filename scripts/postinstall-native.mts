@@ -1,23 +1,18 @@
-import {
-  accessSync,
-  chmodSync,
-  constants,
-  existsSync,
-  readdirSync,
-  readFileSync,
-  statSync,
-} from 'node:fs'
+import { accessSync, chmodSync, constants, existsSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { expectRecord, expectString, parseJsonUnknown } from '../src/shared/unknown-value.mts'
 import { resolveDepRoot } from './resolve-dep.mts'
-import { createRequire } from 'node:module'
-import { prepareElectronHeaders } from './lib/electron-headers.mts'
 
 /**
- * node-pty ships spawn-helper without the executable bit (prebuilds); PTY spawn
- * then fails with posix_spawnp. After the rebuild, loadNativeModule prefers
- * `build/Release`, so chmod both trees. Verify X_OK so a skipped/no-op chmod
- * fails the install instead of shipping a broken terminal.
+ * node-pty is a Node-API addon, so one binary loads in Node and in every
+ * Electron release. On macOS its install script selects the prebuild in
+ * `prebuilds/darwin-<arch>`; elsewhere it compiles against Node's headers.
+ * Neither needs an Electron-specific rebuild, so install compiles nothing on
+ * macOS. Release packaging still lets electron-builder rebuild natives.
+ *
+ * node-pty ships spawn-helper without the executable bit, and PTY spawn then
+ * fails with posix_spawnp. chmod every copy (prebuilds and any `build/Release`
+ * left by an earlier rebuild) and verify X_OK, so a no-op chmod fails the
+ * install instead of shipping a broken terminal.
  */
 function ensureNodePtySpawnHelperExecutable(): void {
   let nodePtyRoot: string
@@ -48,40 +43,5 @@ function ensureNodePtySpawnHelperExecutable(): void {
     console.log(`[postinstall] node-pty spawn-helper executable (${String(fixed.length)} path(s))`)
   }
 }
-
-ensureNodePtySpawnHelperExecutable()
-
-if (process.env['SKIP_ELECTRON_REBUILD'] === '1') {
-  console.log('[postinstall] SKIP_ELECTRON_REBUILD=1 — skipping node-pty electron-rebuild')
-  process.exit(0)
-}
-
-const { rebuild } = await import('@electron/rebuild')
-
-// The pinned API lets us bound module discovery to this execution root. The
-// CLI searches ancestor lockfiles and can select another checkout's dependencies.
-const electron = expectRecord(
-  parseJsonUnknown(readFileSync(join(resolveDepRoot('electron'), 'package.json'), 'utf8')),
-  'Electron package',
-)
-const electronVersion = expectString(electron['version'], 'Electron version')
-const headerCache = process.env['COPSE_ELECTRON_HEADERS_CACHE']
-if (headerCache) {
-  process.env['npm_package_config_node_gyp_nodedir'] = prepareElectronHeaders({
-    cache: headerCache,
-    version: electronVersion,
-    nodeGypCli: createRequire(join(resolveDepRoot('@electron/rebuild'), 'package.json')).resolve(
-      'node-gyp/bin/node-gyp.js',
-    ),
-    offline: process.env['COPSE_PORTABLE_OFFLINE'] === '1',
-  })
-}
-await rebuild({
-  buildPath: process.cwd(),
-  projectRootPath: process.cwd(),
-  electronVersion,
-  force: true,
-  onlyModules: ['node-pty'],
-})
 
 ensureNodePtySpawnHelperExecutable()

@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 
 /** Reviewed header adapters for exact immutable vendor bytes, never for user/project skills. */
 const ADAPTERS = new Map([
@@ -28,7 +28,7 @@ export function adaptBundledSkill(
   raw: string,
   skillPath: string,
 ): { raw: string; reason?: string } {
-  const adapter = ADAPTERS.get(createHash('sha256').update(raw).digest('hex'))
+  const adapter = ADAPTERS.get(sha256Hex(raw))
   const normalizedPath = skillPath.replaceAll('\\', '/')
   return adapter && normalizedPath.endsWith(`/${adapter.relativePath}`)
     ? {

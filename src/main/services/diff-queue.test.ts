@@ -1276,6 +1276,23 @@ describe('staged diffs are keyed by file, not by spelling', () => {
     await stageDiff(join(tempRoot, '..', 'elsewhere', 'a.txt'), 'orig\n', 'v2\n', 'plaintext')
     assert.equal(getDiffQueueForTest().length, 2)
   })
+
+  ownedIt("keeps the root's own parent absolute instead of keying it as `..`", async () => {
+    // `relative(root, parent)` is exactly `..`, which a `../` prefix test let
+    // through: the parent became the workspace-relative key `..`.
+    const parent = join(tempRoot, '..')
+    await stageDiff(parent, 'orig\n', 'v1\n', 'plaintext')
+    assert.equal(at(getDiffQueueForTest(), 0).path, parent)
+  })
+
+  ownedIt('adopts an absolute path under a child whose name starts with two dots', async () => {
+    await stageDiff('..cache/a.txt', 'orig\n', 'v1\n', 'plaintext')
+    await stageDiff(join(tempRoot, '..cache', 'a.txt'), 'orig\n', 'v2\n', 'plaintext')
+    assert.deepEqual(
+      getDiffQueueForTest().map((e) => e.path),
+      ['..cache/a.txt'],
+    )
+  })
 })
 
 describe('approveAllStagedDiffs', () => {

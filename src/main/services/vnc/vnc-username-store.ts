@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import type { VncTarget } from '@shared/types/vnc.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { getSecretCipher, type SecretCipher } from '../storage/secret-cipher.ts'
@@ -41,7 +41,7 @@ function targetIdentity(target: VncTarget): string {
 }
 
 function settingKey(prefix: string, target: VncTarget): string {
-  const digest = createHash('sha256').update(targetIdentity(target)).digest('hex')
+  const digest = sha256Hex(targetIdentity(target))
   return `${prefix}${digest}`
 }
 
