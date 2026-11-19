@@ -1,8 +1,8 @@
-import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { randomUUID } from 'node:crypto'
+import { chmodSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
+import { writeFileAtomicSync } from '@copse/std/write-file-atomic.ts'
 import { copseDataRoot } from '../storage/copse-paths.ts'
 
 const preferenceSchema = z.object({
@@ -52,12 +52,10 @@ export class MobilePreference {
   }
 
   private save(): void {
-    const temporary = `${this.path}.${randomUUID()}.tmp`
-    writeFileSync(temporary, `${JSON.stringify(this.value, null, 2)}\n`, {
-      flag: 'wx',
+    writeFileAtomicSync(this.path, `${JSON.stringify(this.value, null, 2)}\n`, {
       mode: 0o600,
+      directoryMode: 0o700,
     })
-    renameSync(temporary, this.path)
     chmodSync(this.path, 0o600)
   }
 }
