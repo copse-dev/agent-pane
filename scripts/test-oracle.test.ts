@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { z } from 'zod'
-import { assignShards } from './test-oracle.mts'
+import { assignShards, computeSelection, computeUnitPlan } from './test-oracle.mts'
 
 const ORACLE = resolve('scripts/test-oracle.mts')
 
@@ -203,6 +203,88 @@ describe('test oracle dependency inputs', () => {
       }
     })
   }
+})
+
+describe('test oracle disk readers', () => {
+  // These tests read specs, fixtures or the CI spec list from disk, so the import
+  // graph cannot tie a changed spec to them. A PR adding a spec beside a source
+  // edit got a unit subset without them, and the 21st unweighted spec failed
+  // only in the full check.
+  const source = 'src/renderer/views/footer-branch-status.ts'
+  const cases: readonly { input: string; readers: readonly string[]; reason: RegExp }[] = [
+    {
+      input: 'tests/e2e/new-feature.e2e.ts',
+      readers: [
+        'scripts/ci-workflow-invariants.test.ts',
+        'scripts/small-gate.test.ts',
+        'scripts/screenshot-producers.test.ts',
+        'scripts/readme-screenshots.test.ts',
+        'scripts/check-mock-fixtures.test.ts',
+      ],
+      reason: /reads .* from disk/,
+    },
+    {
+      input: 'scripts/e2e-shard-weights.json',
+      readers: ['scripts/ci-workflow-invariants.test.ts', 'scripts/small-gate.test.ts'],
+      reason: /reads the CI spec list/,
+    },
+    {
+      input: 'tests/e2e/exclusions.json',
+      readers: ['scripts/ci-workflow-invariants.test.ts', 'scripts/small-gate.test.ts'],
+      reason: /reads the CI spec list/,
+    },
+    {
+      input: 'tests/e2e/smoke-inventory.json',
+      readers: ['scripts/ci-workflow-invariants.test.ts', 'scripts/small-gate.test.ts'],
+      reason: /reads the CI spec list/,
+    },
+    {
+      input: 'tests/e2e/screenshots/manifest.json',
+      readers: ['scripts/screenshot-producers.test.ts', 'scripts/readme-screenshots.test.ts'],
+      reason: /reads the screenshots specs save/,
+    },
+    {
+      input: 'README.md',
+      readers: ['scripts/readme-screenshots.test.ts'],
+      reason: /reads the README screenshots/,
+    },
+    {
+      input: 'src/main/services/acp/acp-new-fixture.test.ts',
+      readers: ['scripts/check-mock-fixtures.test.ts'],
+      reason: /reads the executable mock fixtures/,
+    },
+    {
+      input: 'benchmarks/new-pack.json',
+      readers: ['scripts/check-mock-fixtures.test.ts'],
+      reason: /reads the executable mock fixtures/,
+    },
+  ]
+
+  it('adds them to an import-graph subset when an input they read changes', () => {
+    for (const { input, readers, reason } of cases) {
+      const sel = computeSelection([input, source])
+      const plan = computeUnitPlan(sel)
+      assert.equal(plan.mode, 'subset', input)
+      for (const reader of readers) {
+        assert.ok(plan.tests.includes(reader), `${input} should select ${reader}`)
+        assert.match(sel.unitReasons.get(reader)?.join('\n') ?? '', reason, `${input}: ${reader}`)
+      }
+    }
+  })
+
+  it('adds only the readers of the input that changed', () => {
+    const plan = computeUnitPlan(computeSelection(['README.md', source]))
+    assert.ok(!plan.tests.includes('scripts/small-gate.test.ts'))
+    assert.ok(!plan.tests.includes('scripts/check-mock-fixtures.test.ts'))
+  })
+
+  it('leaves a source-only change alone and a spec-only change on the full suite', () => {
+    const readers = new Set(cases.flatMap((c) => c.readers))
+    const sourceOnly = computeSelection([source]).selectedUnit
+    for (const reader of readers) assert.ok(!sourceOnly.includes(reader), reader)
+    const specOnly = computeSelection(['tests/e2e/new-feature.e2e.ts'])
+    assert.equal(computeUnitPlan(specOnly).mode, 'full')
+  })
 })
 
 describe('assignShards', () => {

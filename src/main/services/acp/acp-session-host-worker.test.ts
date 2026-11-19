@@ -293,7 +293,7 @@ describe('parseSessionHostRequest', () => {
       readonlyCheckout: true,
       stateDir: '/profile/workspace/p/t/acp-agent-config/claude-acp',
       chatReadRoots: ['/profile/workspace/p/t'],
-      nativeBridge: { url: 'http://127.0.0.1:1/mcp', token: 'x' },
+      nativeBridge: { url: 'http://127.0.0.1:1/mcp', token: 'x', serverName: 'copse-k3v9x2mq' },
       model: 'not-a-spawn-field',
     }
     const request = parseSessionHostRequest(JSON.stringify(acpSessionHostRequest(config)))
