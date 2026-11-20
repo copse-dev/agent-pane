@@ -30,8 +30,8 @@ exist because the features were built separately.
 - **Base.** `main` at `94885c85e`.
 - **Risk.** Slices M1a–M1e and M2 are presentation and connection-status changes. M1e moves
   where consent to an experimental feature is given, so it is reviewed as a permissions
-  change. M3 changes how a paired machine is reached and adds an optional field to an
-  encrypted settings record; it takes the full check and an independent review.
+  change. M3 changes how a paired machine is reached and adds a main-only setting; it takes
+  the full check and an independent review.
 - **Validation.** Every visible slice adds a focused WebdriverIO spec with a reviewed
   screenshot. Connection and transport slices add unit tests against `FakeSshTransport` and
   the real pinned-TLS machine service. Required broader gates are named per slice.
@@ -155,8 +155,21 @@ leaves reaching in to the device that cannot use SSH: the phone.
 
 ## Slices
 
-Each slice is one pull request. M1a–M1e are independent of M2 and M3; where two touch the
-same file the later one is stacked on the earlier and says so.
+Each slice is one pull request, except M1c and M1d, which change the same three forms and
+shipped together. They form one stack, each PR based on the one before, because each new
+Electron spec reuses the stub `ssh` fixture the first one added. That fixture
+(`tests/e2e/fixtures/fake-ssh/`) is the app's own `ssh` binary replaced on `PATH`: it runs
+remote commands in a local scratch directory and performs real loopback forwards, so no
+spec needs an `sshd` and the product gains no test-only option.
+
+| Slice     | Pull request                                      |
+| --------- | ------------------------------------------------- |
+| M1a       | https://github.com/copse-dev/agent-pane/pull/4403 |
+| M1b       | https://github.com/copse-dev/agent-pane/pull/4405 |
+| M1c + M1d | https://github.com/copse-dev/agent-pane/pull/4412 |
+| M1e       | https://github.com/copse-dev/agent-pane/pull/4416 |
+| M2        | https://github.com/copse-dev/agent-pane/pull/4418 |
+| M3        | https://github.com/copse-dev/agent-pane/pull/4419 |
 
 ### M1a — The connection status is true
 
@@ -237,11 +250,20 @@ written by this build load unchanged in the previous build.
   a forward on that host's master to the machine's loopback port and connect to the local
   end. The certificate pin, the bearer token and the `Host` the listener checks are those of
   the machine, as today.
-- An invitation whose address is loopback asks which saved SSH host reaches it, preselected
-  when pairing starts from that host's row.
-- The sharing side needs no code: "This computer (loopback)" is already its default. Its
-  description says what that choice is for.
+- The route is stored under its own main-only setting, `machineSshRoutes`, not as a new
+  field in `machineConnections`. That record has a strict schema: an older build that met
+  an unknown field would read it as invalid, start a fresh machine store and overwrite the
+  user's pairings on its next save.
+- Pairing over SSH is its own IPC channel, `machines:pair-over-ssh`. An optional second
+  argument on `machines:pair` would be a breaking protocol change (a newer window could
+  send an argument an older main process rejects); a new channel is additive.
+- Pairing beside an invitation offers "Reach it through": this network, or any saved SSH
+  host. Only an invitation that shares on loopback can be paired through SSH, because a
+  forward reaches only the SSH host's own loopback.
+- The sharing side needs no code: "This computer only" (loopback) is already its default.
+  Its label says what that choice is for.
 - A call that fails because the SSH connection is down reports that, and is never replayed.
+  A status check uses only an SSH connection that is already open, so it never prompts.
 
 _Acceptance:_ against the real machine service bound to loopback and reached through a
 forward, pairing succeeds, **Test classifier** returns the host's typed result, and stopping
