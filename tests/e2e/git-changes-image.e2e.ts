@@ -340,7 +340,7 @@ describe('git changes image preview', function () {
     await $('#git-diff-viewer-host .git-image-diff').waitForDisplayed({ timeout: 30_000 })
     await expect($$('#git-diff-viewer-host .git-image-diff-img')).toBeElementsArrayOfSize(2)
     const labels = await $$('#git-diff-viewer-host .git-image-diff-label').map((e) => e.getText())
-    expect(labels).toEqual(['BEFORE', 'AFTER'])
+    expect(labels).toEqual(['Before', 'After'])
     await expect($('#git-diff-viewer-host .monaco-diff-editor')).not.toBeDisplayed()
     await expect($('#git-diff-viewer-host .diff-accept-btn')).toBeDisplayed()
     await expect($('#git-diff-viewer-host .diff-reject-btn')).toBeDisplayed()

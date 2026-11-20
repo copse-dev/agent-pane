@@ -14,8 +14,8 @@ import type {
   WriteTextFileResponse,
 } from '@agentclientprotocol/sdk/unstable'
 import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
-import { errorMessage } from '@shared/errors.ts'
 import { isRecord } from '@shared/unknown-value.ts'
+import { acpErrorMessage } from './acp-error-detail.ts'
 import {
   collectPriorPromptImages,
   promptPayloadFromUserContent,
@@ -58,6 +58,19 @@ import { createAgentInitiatedTurnLease } from './agent-initiated-turn.ts'
 import { requestUserAnswers } from '../ask-user.ts'
 import { runWithActiveRunIdentity } from '../active-run-identity.ts'
 import { acpSessionHandoverNotice } from './acp-session-reattach.ts'
+import {
+  acpCopseToolsDroppedPromptNote,
+  acpCopseToolsUnavailablePromptNote,
+  acpBridgeToolLoss,
+  acpBridgeToolsDroppedNotice,
+  acpBridgeUnavailableNotice,
+  acpCopseToolsConnectedPromptNote,
+  awaitAcpBridgeMount,
+  markAcpBridgeAvailable,
+  markAcpBridgeToolsDropped,
+  markAcpBridgeUnavailable,
+  takeAcpBridgeToolsDroppedPromptNote,
+} from './acp-bridge-mount.ts'
 import { buildInvokedSkillsBlock } from '../skills/skill-prompt.ts'
 import { skillPreflightEnvironment } from '../skills/skills-registry.ts'
 import { createAcpSkillRun } from './acp-skill-context.ts'
@@ -79,6 +92,7 @@ import {
   bridgedNativeToolsOffered,
   dropAcpBridgeDelegation,
   noteAcpBridgeDelegation,
+  type AcpNativeBridge,
 } from './acp-native-bridge.ts'
 import { describeAcpToolProvenance, resolveAcpToolProvenance } from './acp-tool-provenance.ts'
 import {
@@ -100,7 +114,7 @@ import { beginWorktreeWriter } from '../worktree-writers.ts'
 import { networkDenialMarker, networkDenialsSince } from '../../project-sandbox/network-scope.ts'
 import { perfMark, perfSpan } from '../diagnostics/perf-trace.ts'
 import {
-  ACP_SANDBOX_GITHUB_STEER,
+  acpSandboxGithubSteer,
   SANDBOX_NETWORK_AUDIT_BLOCKED_ARG,
   SANDBOX_NETWORK_AUDIT_TOOL,
   denialHostLabels,
@@ -111,6 +125,7 @@ import { getSetting } from '../storage/settings.ts'
 import { ensureShellCommandPermitted } from '../security/permission-gate.ts'
 import { currentRunIsUnattendedContainer } from '../security/unattended-run.ts'
 import { recordDecision } from '../security/decision-log-store.ts'
+import { chatReadRootsForThread } from '../security/thread-access.ts'
 import { getActiveRunThread } from '../thread-models.ts'
 import { isStructurallyReadOnlyShellCommand } from '../security/permission-policy.ts'
 import { detectLanguage } from '../language.ts'
@@ -118,6 +133,7 @@ import { getActiveWorkspaceFs } from '../workspace-fs/get-workspace-fs.ts'
 import { readWorkspaceFileContent } from '../workspace-fs/file-content.ts'
 import {
   getActiveProjectRoot,
+  getChatStoreRootSync,
   getWorkspaceRoot,
   resolvePathWithinRoot,
   toRelativePathWithinRoot,
@@ -134,8 +150,10 @@ import { acpAgentCanDeferCheckout } from './acp-deferred-checkout.ts'
 import { readAcpTextFile } from './acp-file-access.ts'
 import { runWithWorkspaceRoot } from '../workspace.ts'
 export { sliceLines } from './acp-file-access.ts'
+import { EMPTY_ACP_TURN_PROSE, nextAcpTurnProse, type AcpTurnProse } from './acp-turn-prose.ts'
 import {
   ACP_READONLY_CHECKOUT_PROMPT_NOTE,
+  ACP_READONLY_CHECKOUT_UNAVAILABLE_PROMPT_NOTE,
   AcpReadonlyCheckoutUnavailableError,
   acpWriteAccessContinuationPrompt,
 } from './acp-write-access.ts'
@@ -211,11 +229,15 @@ export interface RunAcpAgentOptions {
    */
   invokedSkills?: string[]
   /**
-   * Trusted, current-turn guidance assembled by Copse's canonical `turnStart`
-   * hooks. The user's prompt remains verbatim; this block is separately framed
-   * as product guidance and is sent on every turn, including pooled sessions.
+   * Assemble the trusted, current-turn guidance of Copse's canonical
+   * `turnStart` hooks (decision 20) from `bridgeToolNames`: the Copse tools
+   * this session's agent actually has, listed and not since dropped, so the
+   * guidance never names one it lacks (#4142, #4144). Called once per turn,
+   * after the session's mount is known and before the prompt is sent. The
+   * user's prompt remains verbatim; the result is separately framed as product
+   * guidance and is sent on every turn, including pooled sessions.
    */
-  operatorInstructions?: string
+  turnGuidance?: (bridgeToolNames: readonly string[]) => Promise<string | undefined>
   /**
    * Aborted when the Copse turn ends (success, error, or Stop). Merged into
    * bridged tool execution so an agent that abandons an MCP call and finishes
@@ -298,40 +320,6 @@ export function acpTurnUsage(
   }
 }
 
-const ACP_ERROR_DETAIL_LIMIT = 2_000
-
-function truncateAcpErrorDetail(value: string): string {
-  return value.length <= ACP_ERROR_DETAIL_LIMIT
-    ? value
-    : `${value.slice(0, ACP_ERROR_DETAIL_LIMIT)}...`
-}
-
-function acpErrorDataDetail(err: unknown): string | null {
-  if (typeof err === 'object' && err !== null && 'data' in err) {
-    const data = Reflect.get(err, 'data')
-    if (typeof data === 'string') return truncateAcpErrorDetail(data)
-    if (typeof data === 'object' && data !== null && 'details' in data) {
-      const details = Reflect.get(data, 'details')
-      if (typeof details === 'string') return truncateAcpErrorDetail(details)
-    }
-    try {
-      const encoded = JSON.stringify(data)
-      return typeof encoded === 'string' ? truncateAcpErrorDetail(encoded) : null
-    } catch {
-      return null
-    }
-  }
-  if (err instanceof Error && err.cause) return acpErrorDataDetail(err.cause)
-  return null
-}
-
-export function acpErrorMessage(err: unknown): string {
-  const message = errorMessage(err)
-  const detail = acpErrorDataDetail(err)
-  if (!detail || message.includes(detail)) return message
-  return `${message}: ${detail}`
-}
-
 /**
  * A failed ACP turn, carrying whatever the turn streamed before it died so the
  * caller can keep the partial assistant text in thread history and attribute
@@ -340,11 +328,19 @@ export function acpErrorMessage(err: unknown): string {
  * `classifyAgentError` and the UI don't collapse actionable subprocess stderr
  * into a bare "Internal error".
  */
+export interface AcpTurnPartial {
+  /** All of the agent's prose the turn streamed ({@link AcpTurnProse.text}). */
+  assistantText: string
+  /**
+   * The agent's last message before the failure ({@link AcpTurnProse.finalMessage}).
+   * The error classifier reads it for a cause the JSON-RPC error leaves out.
+   */
+  finalMessageText: string
+  usage: { inputTokens: number; outputTokens: number }
+}
+
 export class AcpTurnFailure extends Error {
-  readonly partial: {
-    assistantText: string
-    usage: { inputTokens: number; outputTokens: number }
-  }
+  readonly partial: AcpTurnPartial
   /**
    * The turn spawned the agent under Copse's own OS sandbox on this machine
    * (not remote, not unsandboxed), as decided when the turn started. The error
@@ -355,7 +351,7 @@ export class AcpTurnFailure extends Error {
 
   constructor(
     cause: unknown,
-    partial: { assistantText: string; usage: { inputTokens: number; outputTokens: number } },
+    partial: AcpTurnPartial,
     options: { readonly sandboxed?: boolean } = {},
   ) {
     super(acpErrorMessage(cause), { cause })
@@ -541,6 +537,21 @@ export function runAcpAgentFromSettings(options: RunAcpAgentOptions): Promise<Ru
   })
 }
 
+/**
+ * Attach the chat-store roots resolved for this turn to the process config.
+ * Kept as one composition boundary so the sandbox input cannot silently drift
+ * away from the turn-side consent decision.
+ */
+export function acpTurnSpawnConfig(
+  config: Omit<AcpAgentSpawnConfig, 'chatReadRoots'>,
+  chatReadRoots: readonly string[] | undefined,
+): AcpAgentSpawnConfig {
+  return {
+    ...config,
+    ...(chatReadRoots ? { chatReadRoots: [...chatReadRoots] } : {}),
+  }
+}
+
 /** What {@link runAcpTurnWithContinuation} needs from the live thread and the agent. */
 export interface AcpContinuationDependencies {
   runTurn: (
@@ -611,6 +622,8 @@ export async function runAcpTurnWithContinuation(
       err.cause,
       {
         assistantText: `${earlier}${err.partial.assistantText}`,
+        // The continuation failed, so its own last message is the turn's last.
+        finalMessageText: err.partial.finalMessageText,
         usage: {
           inputTokens: result.usage.inputTokens + err.partial.usage.inputTokens,
           outputTokens: result.usage.outputTokens + err.partial.usage.outputTokens,
@@ -738,20 +751,31 @@ async function runAcpAgentTurn(
     }),
   )
   const stateDir = grantableAcpStateDir(resolveAcpConfigDirEnvVar(agent), env, agent.env)
-  const spawnConfig: AcpAgentSpawnConfig = {
-    command: agent.command,
-    ...(options.executionMode === 'agent' ? { executionMode: 'agent' as const } : {}),
-    cwd,
-    sshTarget,
-    ...(agent.args ? { args: agent.args } : {}),
-    ...(env ? { env } : {}),
-    ...(mcpServers.length > 0 ? { mcpServers } : {}),
-    ...(sandbox ? { sandbox } : {}),
-    ...(sandbox && stateDir ? { stateDir } : {}),
-    ...(permissionMode ? { permissionMode } : {}),
-    ...(configOptions ? { configOptions } : {}),
-    ...(readonlyCheckout ? { readonlyCheckout: true } : {}),
-  }
+  // The transcripts a sandboxed agent may read natively, resolved here while
+  // this turn's run and execution context exist. The agent is spawned by a
+  // session-host worker with no run of its own, so the answer travels in the
+  // spawn config (docs/shell-permissions.md, "Access to other conversations").
+  const chatStoreRoot = sandbox ? getChatStoreRootSync() : null
+  const chatReadRoots = chatStoreRoot
+    ? chatReadRootsForThread(options.threadId, chatStoreRoot)
+    : undefined
+  const spawnConfig = acpTurnSpawnConfig(
+    {
+      command: agent.command,
+      ...(options.executionMode === 'agent' ? { executionMode: 'agent' as const } : {}),
+      cwd,
+      sshTarget,
+      ...(agent.args ? { args: agent.args } : {}),
+      ...(env ? { env } : {}),
+      ...(mcpServers.length > 0 ? { mcpServers } : {}),
+      ...(sandbox ? { sandbox } : {}),
+      ...(sandbox && stateDir ? { stateDir } : {}),
+      ...(permissionMode ? { permissionMode } : {}),
+      ...(configOptions ? { configOptions } : {}),
+      ...(readonlyCheckout ? { readonlyCheckout: true } : {}),
+    },
+    chatReadRoots,
+  )
   // Provider keys configured for this agent cross to a remote SSH host only
   // with the user's consent; on denial the agent runs with whatever
   // credentials already live on that host. No-op for local workspaces.
@@ -759,12 +783,14 @@ async function runAcpAgentTurn(
     gateRemoteAcpEnvForward(agent.id, spawnConfig, options.signal),
   )
 
-  // Accumulate streamed assistant text so the turn contributes to thread history
-  // (the external agent owns the model loop, so this is the only transcript we
-  // see) and so the next turn's preamble can replay it. `sawChunk` gates the
-  // retry below: once anything reached the UI, re-running the turn would
-  // duplicate streamed text and re-execute tool calls.
-  let assistantText = ''
+  // Accumulate the agent's streamed prose so the turn contributes to thread
+  // history (the external agent owns the model loop, so this is the only
+  // transcript we see) and so the next turn's preamble can replay it. Prose
+  // stamped with a message id arrives as `acp_content`, not `text`, and counts
+  // the same (see `acp-turn-prose.ts`). `sawChunk` gates the retry below: once
+  // anything reached the UI, re-running the turn would duplicate streamed text
+  // and re-execute tool calls.
+  let prose: AcpTurnProse = EMPTY_ACP_TURN_PROSE
   let sawChunk = false
   // Read afresh: sawChunk is set inside the onChunk callback, which TypeScript's
   // narrowing cannot see, so a direct read after the await looks always-false.
@@ -789,8 +815,8 @@ async function runAcpAgentTurn(
       // A delegation still waiting now was never executed through the bridge.
       dropAcpBridgeDelegation(options.threadId, chunk.toolCallId)
     }
+    prose = nextAcpTurnProse(prose, chunk)
     if (chunk.type === 'text') {
-      assistantText += chunk.text
       if (pendingApprovalCountForThread(options.threadId) > 0) {
         heldText += chunk.text
         return
@@ -806,13 +832,26 @@ async function runAcpAgentTurn(
   // path shape). Anything else that changed on disk bypassed user approval and
   // is surfaced by the post-turn audit (issue #591).
   const queueWrites = new Set<string>()
-  // Set per attempt once the session is acquired: the tools this session's own
-  // bridge serves, or none when its agent did not mount one (remote, no HTTP
-  // MCP, bridge not started).
-  let bridgeToolNames: readonly string[] = []
   let bridgeFileReader: AcpClientHandlers['readTextFile']
   let fileReadsActive = false
   let fileReadLifetime = new AbortController()
+  // Set per attempt once the session is acquired: the bridge Copse offered
+  // this session's agent, or null when it offered none (remote, no HTTP MCP,
+  // bridge not started).
+  let offeredBridge: AcpNativeBridge | null = null
+  // The tools this session's agent actually has from its bridge: the ones it
+  // listed (#4144), and none once its runtime showed it dropped them (#4142).
+  // Read live: an agent may list late, or lose the tools mid-turn.
+  const bridgeToolNames = (): readonly string[] =>
+    offeredBridge && acpBridgeToolLoss(offeredBridge) === null
+      ? (offeredBridge.listedToolNames() ?? [])
+      : []
+  // Once per session: tell the thread its agent never connected to Copse's tools.
+  const noteBridgeUnavailable = (bridge: AcpNativeBridge): boolean => {
+    if (!markAcpBridgeUnavailable(bridge)) return false
+    options.onChunk({ type: 'text', text: acpBridgeUnavailableNotice(agent.title) })
+    return true
+  }
   const handlers: AcpClientHandlers = {
     onChunk,
     requestPermission: (req, rpcSignal, context) =>
@@ -825,7 +864,8 @@ async function runAcpAgentTurn(
           remote,
           ...(options.executionMode === 'agent' ? { executionMode: 'agent' as const } : {}),
           ...(remoteHostId !== undefined ? { remoteHostId } : {}),
-          bridgeToolNames,
+          bridgeToolNames: bridgeToolNames(),
+          ...(offeredBridge ? { bridgeServerName: offeredBridge.serverName } : {}),
           threadId: options.threadId,
           ...(executionContext ? { projectId: executionContext.projectId } : {}),
         },
@@ -857,6 +897,25 @@ async function runAcpAgentTurn(
       )
     },
     writeTextFile: (req) => writeViaDiffQueue(req, options.signal, queueWrites, cwd),
+    // Claude Agent ACP's own word that the bridge failed to start points the
+    // user at its `/mcp`, which Copse does not have: say it in Copse's words.
+    onBridgeStartupFailure: () => {
+      if (!offeredBridge || offeredBridge.toolsListed()) return false
+      noteBridgeUnavailable(offeredBridge)
+      return true
+    },
+    // The agent listed Copse's tools, yet its own runtime says one of them is
+    // not in its tool list: it dropped them after the listing (#4142). Say so
+    // once, in the thread; later prompts stop steering it to them.
+    onBridgeToolMissing: (tool) => {
+      const bridge = offeredBridge
+      if (!bridge?.listedToolNames()?.includes(tool)) return
+      if (!markAcpBridgeToolsDropped(bridge, tool)) return
+      console.warn(
+        `[acp-bridge] thread ${options.threadId}'s agent listed Copse's tools, but its runtime refused ${tool} as "No such tool available"; treating Copse's tools as unavailable to it this session`,
+      )
+      options.onChunk({ type: 'text', text: acpBridgeToolsDroppedNotice(agent.title) })
+    },
   }
   // New turn: reset the restore point so this turn's first file-write approval
   // snapshots the user's current uncommitted work (see respondToPermission).
@@ -867,6 +926,10 @@ async function runAcpAgentTurn(
   // Snapshot explicit instructions only after negotiation supplies the actual
   // bridge tools. Retries reuse the same bytes and authorization identities.
   let invokedSkillsBlock: string | undefined
+  // Like the skills block, assembled once per turn; a retry reuses the bytes.
+  // Only a fulfilled assembly is kept: a retry after a failed one assembles
+  // again rather than replaying the failure.
+  let turnGuidance: Promise<string | undefined> | null = null
 
   // The thread's model has dropped off the agent's list: say so in the thread.
   // Like the handover note, straight to the caller's sink rather than
@@ -920,12 +983,63 @@ async function runAcpAgentTurn(
       // replayed into later turns nor counts as progress that blocks a retry.
       options.onChunk({ type: 'text', text: acpSessionHandoverNotice(handover, agent.title) })
     }
-    bridgeToolNames =
+    const sessionBridge =
       !remote && entry.bridge !== null && entry.open.mcpCapabilities?.http === true
-        ? entry.bridge.toolNames
-        : []
-    const skillToolNames =
-      entry.open.mcpCapabilities?.http === true ? (entry.bridge?.toolNames ?? []) : []
+        ? entry.bridge
+        : null
+    offeredBridge = sessionBridge
+    // An offer is not a mount (#4144): the agent has Copse's tools only once
+    // it lists them. It normally does so while its session opens; give it the
+    // rest of a short window before the prompt claims them.
+    const bridgeMount = sessionBridge
+      ? await perfSpan('ttft:acp-bridge-mount', () =>
+          awaitAcpBridgeMount(sessionBridge, entry.openedAt, options.signal),
+        )
+      : null
+    // Listed, and not since refused by the agent's own runtime (#4142).
+    const bridgeDropped = sessionBridge !== null && acpBridgeToolLoss(sessionBridge) !== null
+    const bridgeMounted = bridgeMount === 'listed' && !bridgeDropped
+    // What this prompt may name: the tools the agent has listed, none until it
+    // has, and none once its runtime dropped them.
+    const listedToolNames = bridgeMounted ? bridgeToolNames() : []
+    let copseToolsNote: string | undefined
+    if (sessionBridge && bridgeDropped) {
+      if (takeAcpBridgeToolsDroppedPromptNote(sessionBridge)) {
+        copseToolsNote = acpCopseToolsDroppedPromptNote(sessionBridge.serverName)
+      }
+    } else if (sessionBridge && bridgeMounted) {
+      if (markAcpBridgeAvailable(sessionBridge)) {
+        copseToolsNote = acpCopseToolsConnectedPromptNote(
+          sessionBridge.serverName,
+          acpCopseToolsSteering(
+            sessionBridge.serverName,
+            sandboxed,
+            contained,
+            readonlyCheckout,
+            listedToolNames,
+          ),
+        )
+      }
+    } else if (
+      // A Stop pressed while the agent was still connecting is not a failed
+      // mount: the prompt below is never sent, and the next turn decides.
+      sessionBridge &&
+      bridgeMount === 'unlisted' &&
+      noteBridgeUnavailable(sessionBridge)
+    ) {
+      console.warn(
+        `[acp-bridge] thread ${options.threadId}'s agent never listed the native tools it was offered; they are unavailable this session`,
+      )
+      copseToolsNote = acpCopseToolsUnavailablePromptNote(sessionBridge.serverName)
+    }
+    const skillToolNames = listedToolNames
+    const operatorInstructions =
+      options.executionMode !== 'agent' && options.turnGuidance
+        ? await (turnGuidance ??= options.turnGuidance(skillToolNames).catch((err: unknown) => {
+            turnGuidance = null
+            throw err
+          }))
+        : undefined
     const skillsBlock = (invokedSkillsBlock ??= await perfSpan('ttft:acp-skills', () =>
       buildInvokedSkillsBlock(options.invokedSkills ?? [], {
         sandboxActive: sandboxed,
@@ -971,12 +1085,18 @@ async function runAcpAgentTurn(
         : unseenAcpTranscript(options.priorMessages, entry.transcriptCheckpoint),
       {
         sandboxed,
+        contained,
+        // The tools the agent actually listed (#4144), not the ones offered:
+        // the notes steer to Copse's tools only when there are some, and the
+        // GitHub steer names them, or says plainly that GitHub is out of reach
+        // when there are none, offered-but-never-connected included.
+        bridgeToolNames: listedToolNames,
         readonlyCheckout,
         includeNotes: fresh && options.executionMode !== 'agent',
+        ...(bridgeMounted && sessionBridge ? { copseServer: sessionBridge.serverName } : {}),
+        ...(copseToolsNote && options.executionMode !== 'agent' ? { copseToolsNote } : {}),
         includeImages,
-        ...(options.executionMode !== 'agent' && options.operatorInstructions
-          ? { operatorInstructions: options.operatorInstructions }
-          : {}),
+        ...(operatorInstructions ? { operatorInstructions } : {}),
         ...(skillContext.prompt ? { skills: skillContext.prompt } : {}),
       },
     )
@@ -1035,7 +1155,7 @@ async function runAcpAgentTurn(
     // The turn died mid-flight. Attribute what it visibly consumed (estimated —
     // the agent never got to report usage) and hand the partial transcript to
     // the caller so history and the usage panel don't pretend it never ran.
-    const turn = hasProgress() ? acpTurnUsage(null, lastPrompt, assistantText) : null
+    const turn = hasProgress() ? acpTurnUsage(null, lastPrompt, prose.text) : null
     if (turn) {
       options.onChunk({
         type: 'usage',
@@ -1054,7 +1174,8 @@ async function runAcpAgentTurn(
     throw new AcpTurnFailure(
       remoteAcpAuthRequiredHint(err, sshTarget, options.agentId) ?? err,
       {
-        assistantText,
+        assistantText: prose.text,
+        finalMessageText: prose.finalMessage,
         usage: turn
           ? { inputTokens: turn.inputTokens, outputTokens: turn.outputTokens }
           : { inputTokens: 0, outputTokens: 0 },
@@ -1076,7 +1197,7 @@ async function runAcpAgentTurn(
   // is optional/experimental (e.g. Cursor's adapter omits it), so when it's absent
   // we fall back to a local ~4 chars/token estimate of what we sent and received —
   // flagged `estimated` so the panel can mark it as approximate.
-  const turn = acpTurnUsage(usage, lastPrompt, assistantText)
+  const turn = acpTurnUsage(usage, lastPrompt, prose.text)
   if (turn.inputTokens || turn.outputTokens) {
     options.onChunk({
       type: 'usage',
@@ -1096,8 +1217,8 @@ async function runAcpAgentTurn(
     // Drop Cursor ACP trailing transport RetriableError lines from history so
     // the next turn does not replay them; the UI demotes the same noise from
     // the stored message body at display time.
-    messages: assistantText
-      ? [{ role: 'assistant', content: stripCursorAcpTransportNoise(assistantText) }]
+    messages: prose.text
+      ? [{ role: 'assistant', content: stripCursorAcpTransportNoise(prose.text) }]
       : [],
     usage: { inputTokens: turn.inputTokens, outputTokens: turn.outputTokens },
     startedReadonly: readonlyCheckout,
@@ -1304,6 +1425,11 @@ interface AcpPermissionAgent {
    * agents without HTTP MCP, and sessions whose bridge did not start.
    */
   bridgeToolNames?: readonly string[]
+  /**
+   * The exact MCP server name this session's bridge was mounted under
+   * (`copse-<nonce>`). Provenance matches it, never the `copse` stem (#4125).
+   */
+  bridgeServerName?: string
   /** Owning thread, for attributing a delegated call to the bridge's record. */
   threadId?: string
   /** Owning project, so audit records land beside the thread whatever project is open. */
@@ -1399,9 +1525,12 @@ async function respondToPermission(
   const provenance = resolveAcpToolProvenance(
     req.toolCall,
     context?.observedToolCall ?? [],
-    agent.remote === true
-      ? []
-      : (agent.bridgeToolNames ?? []).filter((tool) => stillOffered.has(tool)),
+    agent.remote === true || agent.bridgeServerName === undefined
+      ? null
+      : {
+          server: agent.bridgeServerName,
+          tools: (agent.bridgeToolNames ?? []).filter((tool) => stillOffered.has(tool)),
+        },
     { runsCommand },
   )
   const auditOwner = {
@@ -1720,36 +1849,72 @@ function raceDecisionAgainstAbort(
  * - **Broad find/ls dumps burn the agent's own context/budget**: undirected
  *   sweeps stay in the session's context for its whole lifetime.
  */
-export const ACP_TURN_PROMPT_NOTE =
+const ACP_SESSION_PROMPT_NOTE =
   'Session notes: this session persists across turns, and background or async ' +
   'subagents survive the end of a turn — their results surface in the thread ' +
   'live as they complete, even while no turn is running. The session IS ' +
   'reaped after ~10 idle minutes or on app ' +
   'shutdown, so keep background work bounded rather than open-ended. Keep ' +
   'exploration lean: prefer targeted searches and bounded file ranges ' +
-  'over broad directory dumps. Prefer the "copse" MCP tools when ' +
-  "available: they reuse Copse's native workspace, Git, command, GitHub, and " +
-  'web implementations. Use copse read_file/search_code/find_files for inspection ' +
-  'instead of your own shell. Use copse run_shell/run_background for ' +
-  'commands and copse write/replace/file-operation tools for edits so the same ' +
-  'sandbox, approval, and diff-queue rules as a built-in Copse model apply. ' +
-  'For long builds, test suites, and other bounded commands, use copse ' +
-  'run_background with action="start", wake_on_completion=true, and timeout_ms ' +
-  'rather than your own shell background jobs or monitors. Copse owns these ' +
-  'tasks independently of the coding-agent session; their completion can resume the ' +
-  "thread after idle session reaping. Use the repository's actual command; " +
-  'run_background start example: ' +
-  '{"action":"start","command":"pnpm test","wake_on_completion":true,"timeout_ms":1800000}' +
-  '\nAfter a successful start, retain the task id and end the turn; completion ' +
-  "will wake the thread. Inspect that task's logs and exit status before " +
-  'reporting validation as complete. run_background does not accept ' +
-  'expects_sandbox_block or support outside-sandbox execution. If a command ' +
-  'needs that approval path, use copse run_shell with an explicit timeout_ms ' +
-  '(up to 1800000), setting expects_sandbox_block=true when required. Use ' +
-  'tool deadlines instead of assuming a shell timeout executable is installed ' +
-  '(macOS does not provide it by default).' +
-  '\n\n' +
-  AGENT_EXECUTION_GUIDANCE
+  'over broad directory dumps.'
+
+/**
+ * The part of {@link acpTurnPromptNote} that steers the agent to Copse's
+ * bridged tools. Left out when the agent has not mounted the bridge (#4144).
+ *
+ * `server` is the exact name this session's bridge is mounted under. The note
+ * names it, and disowns look-alikes, because an agent can also have a server of
+ * its own called `copse` or `copse-tools` whose tools share these names but
+ * never pass through Copse's gate (#4125). Later notes say "Copse's MCP server"
+ * and mean this one.
+ */
+export function acpCopseToolsPromptNote(server: string): string {
+  return (
+    `Prefer the tools of Copse's MCP server, "${server}", when available. Only the ` +
+    "server with exactly that name is Copse's: another server whose name starts " +
+    'with copse, such as copse or copse-tools, is not, even if its tools have the ' +
+    "same names. Copse's tools reuse its native workspace, Git, command, GitHub, and " +
+    "web implementations. Use Copse's read_file/search_code/find_files for inspection " +
+    "instead of your own shell. Use Copse's run_shell/run_background for " +
+    "commands and Copse's write/replace/file-operation tools for edits so the same " +
+    'sandbox, approval, and diff-queue rules as a built-in Copse model apply. ' +
+    "For long builds, test suites, and other bounded commands, use Copse's " +
+    'run_background with action="start", wake_on_completion=true, and timeout_ms ' +
+    'rather than your own shell background jobs or monitors. Copse owns these ' +
+    'tasks independently of the coding-agent session; their completion can resume the ' +
+    "thread after idle session reaping. Use the repository's actual command; " +
+    'run_background start example: ' +
+    '{"action":"start","command":"pnpm test","wake_on_completion":true,"timeout_ms":1800000}' +
+    '\nAfter a successful start, retain the task id and end the turn; completion ' +
+    "will wake the thread. Inspect that task's logs and exit status before " +
+    'reporting validation as complete. run_background does not accept ' +
+    'expects_sandbox_block or support outside-sandbox execution. If a command ' +
+    "needs that approval path, use Copse's run_shell with an explicit timeout_ms " +
+    '(up to 1800000), setting expects_sandbox_block=true when required. Add ' +
+    'yield_after_ms=1000 to transfer the same approved process to supervision ' +
+    'after a short foreground wait; timeout_ms remains its total deadline. ' +
+    'run_shell yield example: ' +
+    '{"command":"pnpm test","timeout_ms":1800000,"yield_after_ms":1000}' +
+    '\nSend a yielding call as the only tool in its response. A still-running ' +
+    'receipt is not success: end the turn and wait for completion ' +
+    'before dependent work. Inspect the task logs and exit status when woken; do not ' +
+    'poll or rerun it. Yielding requires enabled Background tasks and cannot bypass ' +
+    'its explicit Always ask or Blocked setting; if refused, use an ordinary finite ' +
+    'foreground call or the background tool through its own approval path. Use ' +
+    'tool deadlines instead of assuming a shell timeout executable is installed ' +
+    '(macOS does not provide it by default).'
+  )
+}
+
+function acpTurnPromptNote(server: string): string {
+  return (
+    `${ACP_SESSION_PROMPT_NOTE} ${acpCopseToolsPromptNote(server)}\n\n` + AGENT_EXECUTION_GUIDANCE
+  )
+}
+
+/** {@link acpTurnPromptNote} for an agent without Copse's bridged tools. */
+const ACP_TURN_PROMPT_NOTE_WITHOUT_COPSE_TOOLS =
+  `${ACP_SESSION_PROMPT_NOTE}\n\n` + AGENT_EXECUTION_GUIDANCE
 
 /**
  * Steering prepended to the prompt when the agent process runs under the
@@ -1758,8 +1923,10 @@ export const ACP_TURN_PROMPT_NOTE =
  * the agent's private shell has no approve-to-run-unsandboxed path. The native
  * bridge does, so steer commands through its run_shell implementation instead
  * of letting the agent walk into EPERMs that its own approval cannot fix. The
- * appended {@link ACP_SANDBOX_GITHUB_STEER} does the same for the network side,
- * where GitHub is the destination agents reach for unprompted.
+ * GitHub steer that {@link buildAcpPrompt} appends (`acpSandboxGithubSteer`)
+ * does the same for the network side, where GitHub is the destination agents
+ * reach for unprompted. It depends on the bridged tools the agent has listed,
+ * so it is not part of this constant.
  *
  * `$TMPDIR` is named rather than a literal path because an agent may export its
  * own: Claude Code points its shell at `/tmp/claude`, which the catalog's
@@ -1769,7 +1936,7 @@ export const ACP_TURN_PROMPT_NOTE =
  * sentence for any agent whose `$TMPDIR` lives there, which is how a compliant
  * agent still ended up at a "Run outside sandbox?" dialog.
  */
-export const ACP_SANDBOX_PROMPT_NOTE =
+const ACP_SANDBOX_CONFINES_NOTE =
   'Environment note: this session runs inside a filesystem sandbox. Writes are ' +
   'allowed inside the workspace and under $TMPDIR — your own scratch directory ' +
   'is allow-listed, whatever $TMPDIR expands to. Other absolute paths, including ' +
@@ -1777,13 +1944,44 @@ export const ACP_SANDBOX_PROMPT_NOTE =
   'destinations are blocked. Approval ' +
   'cannot unsandbox your own shell, and neither can a sandbox escape your own ' +
   "tools offer (such as Claude Code's dangerouslyDisableSandbox): this whole " +
-  'process runs inside the sandbox. When the "copse" MCP server is available, ' +
+  'process runs inside the sandbox.'
+const ACP_SANDBOX_COPSE_SHELL_NOTE =
+  "When Copse's MCP server is available, " +
   "use its run_shell tool for commands: it applies Copse's normal command " +
   'policy and can ask the user to run approved external work outside this ' +
-  'sandbox. Do not retry blocked paths with your own shell. Put scratch files ' +
-  'in $TMPDIR or the workspace — never in a hardcoded /tmp path of your own.' +
-  '\n\n' +
-  ACP_SANDBOX_GITHUB_STEER
+  'sandbox.'
+const ACP_SANDBOX_SCRATCH_NOTE =
+  'Do not retry blocked paths with your own shell. Put scratch files ' +
+  'in $TMPDIR or the workspace — never in a hardcoded /tmp path of your own.'
+
+export const ACP_SANDBOX_PROMPT_NOTE = `${ACP_SANDBOX_CONFINES_NOTE} ${ACP_SANDBOX_COPSE_SHELL_NOTE} ${ACP_SANDBOX_SCRATCH_NOTE}`
+
+/**
+ * {@link ACP_SANDBOX_PROMPT_NOTE} for an agent without Copse's bridged tools:
+ * no run_shell steer. The GitHub steer still follows it, saying GitHub is out
+ * of reach, and its "do not call github.com from this process" holds with or
+ * without the bridge.
+ */
+const ACP_SANDBOX_PROMPT_NOTE_WITHOUT_COPSE_TOOLS = `${ACP_SANDBOX_CONFINES_NOTE} ${ACP_SANDBOX_SCRATCH_NOTE}`
+
+/**
+ * The Copse-tool steering a session's notes carry once its agent has listed
+ * the tools: what an agent told they were unavailable gets back when it lists
+ * them late (#4144). A sandboxed session also gets back its run_shell and
+ * GitHub steering, which the unavailable note told it to ignore.
+ */
+function acpCopseToolsSteering(
+  server: string,
+  sandboxed: boolean,
+  contained: boolean,
+  readonlyCheckout: boolean,
+  bridgeToolNames: readonly string[],
+): string {
+  const toolsNote = sandboxed
+    ? `${acpCopseToolsPromptNote(server)}\n\n${ACP_SANDBOX_COPSE_SHELL_NOTE}\n\n${acpSandboxGithubSteer(bridgeToolNames, { contained })}`
+    : acpCopseToolsPromptNote(server)
+  return toolsNote + (readonlyCheckout ? `\n\n${ACP_READONLY_CHECKOUT_PROMPT_NOTE}` : '')
+}
 
 /**
  * Flatten the user prompt to text. With persistent sessions (issue #605) the
@@ -1791,27 +1989,59 @@ export const ACP_SANDBOX_PROMPT_NOTE =
  * FRESH — a reused session carries its own turns, while turns from another
  * provider are caught up from the transcript checkpoint. Re-sending everything every turn would waste the agent's tokens (`includeNotes:
  * false`, empty `priorMessages` on reuse). `sandboxed` turns additionally get
- * {@link ACP_SANDBOX_PROMPT_NOTE} so the agent knows its confines.
+ * {@link ACP_SANDBOX_PROMPT_NOTE} so the agent knows its confines, followed by a
+ * GitHub steer naming the bridged tools in `bridgeToolNames`. Without any, the
+ * notes leave out their Copse-tool steering (#4144).
  */
 export function buildAcpPrompt(
   userPrompt: UserContent,
   priorMessages: LLMMessage[],
   opts?: {
     sandboxed?: boolean
+    /** The turn runs in an unattended container, whose shell has no network. */
+    contained?: boolean
+    /**
+     * The tools the agent has listed from Copse's MCP server this session
+     * (#4144). The notes steer it to Copse's tools only when there are some,
+     * and a sandboxed session's GitHub steer names exactly these. None by
+     * default, so a prompt never claims a tool the agent was not shown to have.
+     */
+    bridgeToolNames?: readonly string[]
     /** The session starts on a read-only view of the user's checkout. */
     readonlyCheckout?: boolean
     includeNotes?: boolean
+    /**
+     * The server name of Copse's bridge, once the agent has mounted it (#4144).
+     * The session notes steer the agent to Copse's bridged tools only with this
+     * and some {@link bridgeToolNames}, and name the server exactly (#4125).
+     */
+    copseServer?: string
+    /** Sent even without the session notes: a change in Copse's tools this session. */
+    copseToolsNote?: string
     operatorInstructions?: string
     skills?: string
   },
 ): string {
   const includeNotes = opts?.includeNotes ?? true
-  const note = includeNotes
-    ? ACP_TURN_PROMPT_NOTE +
-      (opts?.sandboxed ? `\n\n${ACP_SANDBOX_PROMPT_NOTE}` : '') +
-      (opts?.readonlyCheckout ? `\n\n${ACP_READONLY_CHECKOUT_PROMPT_NOTE}` : '') +
-      '\n\n'
-    : ''
+  const bridgeToolNames = opts?.bridgeToolNames ?? []
+  // Copse's tools are named only once the agent listed some, and by the exact
+  // server name this session mounted them under.
+  const copseServer = bridgeToolNames.length > 0 ? opts?.copseServer : undefined
+  const copseTools = copseServer !== undefined
+  const note =
+    (includeNotes
+      ? (copseServer !== undefined
+          ? acpTurnPromptNote(copseServer)
+          : ACP_TURN_PROMPT_NOTE_WITHOUT_COPSE_TOOLS) +
+        (opts?.sandboxed
+          ? `\n\n${copseTools ? ACP_SANDBOX_PROMPT_NOTE : ACP_SANDBOX_PROMPT_NOTE_WITHOUT_COPSE_TOOLS}` +
+            `\n\n${acpSandboxGithubSteer(bridgeToolNames, { contained: opts.contained ?? false })}`
+          : '') +
+        (opts?.readonlyCheckout
+          ? `\n\n${copseTools ? ACP_READONLY_CHECKOUT_PROMPT_NOTE : ACP_READONLY_CHECKOUT_UNAVAILABLE_PROMPT_NOTE}`
+          : '') +
+        '\n\n'
+      : '') + (opts?.copseToolsNote ? `${opts.copseToolsNote}\n\n` : '')
   const operatorBlock = opts?.operatorInstructions
     ? `\n\n---\n\n## Copse guidance\n\n${opts.operatorInstructions}`
     : ''
@@ -1846,8 +2076,12 @@ export function buildAcpPromptContent(
   priorMessages: LLMMessage[],
   opts?: {
     sandboxed?: boolean
+    contained?: boolean
+    bridgeToolNames?: readonly string[]
     readonlyCheckout?: boolean
     includeNotes?: boolean
+    copseServer?: string
+    copseToolsNote?: string
     operatorInstructions?: string
     skills?: string
     includeImages?: boolean
@@ -1855,8 +2089,12 @@ export function buildAcpPromptContent(
 ): ContentBlock[] {
   const text = buildAcpPrompt(userPrompt, priorMessages, {
     ...(opts?.sandboxed !== undefined ? { sandboxed: opts.sandboxed } : {}),
+    ...(opts?.contained ? { contained: true } : {}),
+    ...(opts?.bridgeToolNames !== undefined ? { bridgeToolNames: opts.bridgeToolNames } : {}),
     ...(opts?.readonlyCheckout ? { readonlyCheckout: true } : {}),
     ...(opts?.includeNotes !== undefined ? { includeNotes: opts.includeNotes } : {}),
+    ...(opts?.copseServer !== undefined ? { copseServer: opts.copseServer } : {}),
+    ...(opts?.copseToolsNote ? { copseToolsNote: opts.copseToolsNote } : {}),
     ...(opts?.operatorInstructions !== undefined
       ? { operatorInstructions: opts.operatorInstructions }
       : {}),

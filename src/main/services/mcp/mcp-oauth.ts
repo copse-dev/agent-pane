@@ -47,6 +47,7 @@ import {
   type McpOAuthRecord,
   type McpOAuthStoreDependencies,
 } from './mcp-oauth-store.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 const LOOPBACK_HOST = '127.0.0.1'
 const CALLBACK_PATH = '/callback'
@@ -505,7 +506,7 @@ type SignInPhase = 'discovery' | 'registration' | 'authorization' | 'token'
 
 /** `HTTP 403: Invalid OAuth error response: … Raw body: Forbidden` → `HTTP 403`. */
 function shortAuthError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error)
+  const message = errorMessage(error)
   const status = /^HTTP (\d{3})\b/.exec(message)
   if (status) return `HTTP ${status[1] ?? ''}`
   return message.length > 200 ? `${message.slice(0, 200)}…` : message

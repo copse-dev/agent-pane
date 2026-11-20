@@ -188,7 +188,8 @@ describe('Settings section composition, validation and sticky actions', () => {
       document.querySelector(selector)?.scrollIntoView({ block: 'center' })
     }, selector)
     assert.equal(await $(`${selector} .plugin-name`).getText(), 'Post turn review')
-    assert.equal(await $(`${selector} .plugin-badge-first-party`).getText(), 'COPSE')
+    // The publisher reads in sentence case in the name line (docs/ui-taste.md).
+    assert.equal(await $(`${selector} .plugin-badge-first-party`).getText(), 'Copse')
     if (!(await $(`${selector} .plugin-toggle-input`).isSelected())) {
       await $(`${selector} .plugin-toggle`).click()
       await browser.waitUntil(

@@ -1,12 +1,15 @@
 /**
  * A deterministic OpenAI-compatible chat-completions server for exercising the
  * container worker end to end without a real model. Each request consumes the
- * next scripted turn: either a `run_shell` tool call or a final text answer.
+ * next scripted turn: either a tool call or a final text answer. An optional
+ * tool-free response partitions concurrent helpers from the agent script.
  * Streams the SSE shape the product's OpenAI-compatible provider parses, so the
  * whole loop — provider client, egress broker, tool dispatch, permission gate,
  * deferral queue — runs for real; only the model's judgement is scripted.
  */
 import { createServer, type Server } from 'node:http'
+import { z } from 'zod'
+import { decodeWithSchema, safeJsonParse } from '../../../shared/safe-json.ts'
 
 export type ScriptedTurn =
   | { kind: 'shell'; command: string }
@@ -17,13 +20,19 @@ export interface ScriptedModelServer {
   readonly port: number
   readonly requests: number
   readonly completionRequests: number
+  /** Requests answered from the script, excluding helpers and the exhausted fallback. */
+  readonly scriptedRequests: number
   stop(): Promise<void>
 }
 
 export interface ScriptedModelServerOptions {
   modelId?: string
   contextLength?: number
+  /** Answer tool-free helper calls without consuming the agent script. */
+  textOnlyResponse?: string
 }
+
+const completionSchema = z.object({ tools: z.array(z.unknown()).optional() })
 
 function sse(payload: unknown): string {
   return `data: ${JSON.stringify(payload)}\n\n`
@@ -49,9 +58,9 @@ export function startScriptedModelServer(
   let requests = 0
   let completionRequests = 0
   const server: Server = createServer((req, res) => {
-    let _body = ''
+    let body = ''
     req.on('data', (part: Buffer) => {
-      _body += part.toString()
+      body += part.toString()
     })
     req.on('end', () => {
       requests += 1
@@ -80,8 +89,23 @@ export function startScriptedModelServer(
         return
       }
       completionRequests += 1
-      const turn = turns[index] ?? { kind: 'text' as const, text: 'Done.' }
-      index += 1
+      let turn: ScriptedTurn
+      if (options.textOnlyResponse !== undefined) {
+        const request = safeJsonParse(body, decodeWithSchema(completionSchema))
+        if (!request) {
+          res.writeHead(400).end('Invalid chat completion request')
+          return
+        }
+        if (!request.tools?.length) {
+          turn = { kind: 'text', text: options.textOnlyResponse }
+        } else {
+          turn = turns[index] ?? { kind: 'text', text: 'Done.' }
+          index += 1
+        }
+      } else {
+        turn = turns[index] ?? { kind: 'text', text: 'Done.' }
+        index += 1
+      }
       res.writeHead(200, {
         'content-type': 'text/event-stream',
         'cache-control': 'no-cache',
@@ -133,6 +157,9 @@ export function startScriptedModelServer(
         },
         get completionRequests() {
           return completionRequests
+        },
+        get scriptedRequests() {
+          return Math.min(index, turns.length)
         },
         stop: () =>
           new Promise<void>((resolveStop) => {

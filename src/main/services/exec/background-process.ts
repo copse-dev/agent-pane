@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import type { ChildProcess } from 'node:child_process'
 import {
   isProjectSandboxEnabled,
-  sandboxViolationCountForCommand,
+  sandboxViolationCountForBackgroundProcess,
   spawnBackgroundProcess,
 } from '../../project-sandbox/index.ts'
 import { spawnRunsOnSshTarget } from '../../project-sandbox/spawn.ts'
@@ -451,7 +451,7 @@ export async function startBackgroundProcess(
       if (entry.violationId) {
         entry.violationCount = Math.max(
           entry.violationCount,
-          sandboxViolationCountForCommand(entry.violationId),
+          sandboxViolationCountForBackgroundProcess(entry.proc, entry.violationId),
         )
       }
       // Cancelled/timed-out work has no complete result to attribute. Release
@@ -508,7 +508,7 @@ export function backgroundSandboxRetryReasons(
     return null
   entry.violationCount = Math.max(
     entry.violationCount,
-    sandboxViolationCountForCommand(entry.violationId),
+    sandboxViolationCountForBackgroundProcess(entry.proc, entry.violationId),
   )
   const detection = detectSandboxFailure({
     exitCode: entry.exitCode,
@@ -663,6 +663,11 @@ export async function stopBackgroundProcessesForThread(
 
 export function hasBackgroundProcessesForThread(owner: ThreadExecutionOwner): boolean {
   return [...processes.values()].some((entry) => !entry.exited && sameOwner(entry.owner, owner))
+}
+
+/** Read-only presence, including exited records whose completion callback may still be settling. */
+export function hasBackgroundProcessRecord(owner: ThreadExecutionOwner): boolean {
+  return [...processes.values()].some((entry) => sameOwner(entry.owner, owner))
 }
 
 /** Kill every tracked process — called on app shutdown. */

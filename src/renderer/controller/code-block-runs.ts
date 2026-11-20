@@ -75,12 +75,12 @@ export async function sendCodeBlockRunResult(
   // Like the composer's Send, an unverifiable checkout is not a match: keep
   // the result as a draft attachment rather than run the agent on a checkout
   // that may have moved off the thread's branch.
-  if (branchResult.status === 'rejected') return false
+  if (branchResult.status === 'rejected' || promptResult.status === 'rejected') return false
   // The settings and Git reads above cross async boundaries. Re-check exact
   // ownership before mutating the store or dispatching the continuation.
   if (!targetIsCurrent()) return false
   const currentBranch = branchResult.value
-  const promptState = promptResult.status === 'fulfilled' ? promptResult.value : null
+  const promptState = promptResult.value
   const current = getThreadById(store, threadId)
   if (!current) return false
   if (
@@ -106,14 +106,8 @@ export async function sendCodeBlockRunResult(
   }
   const shellAttachment = { kind: 'shell' as const, label: shell.label, content: shell.content }
   const messageMeta = {
-    ...(promptState
-      ? {
-          ...(promptState.startingCommit !== null
-            ? { startingCommit: promptState.startingCommit }
-            : {}),
-          dirty: promptState.dirty,
-        }
-      : {}),
+    ...(promptState.startingCommit !== null ? { startingCommit: promptState.startingCommit } : {}),
+    dirty: promptState.dirty,
   }
   if (completion) {
     const machineResult = await api.agent.runMachine({

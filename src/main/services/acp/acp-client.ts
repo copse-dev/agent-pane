@@ -29,6 +29,11 @@ import {
 } from '@agentclientprotocol/sdk/unstable'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { nodeWritableStream } from './node-byte-streams.ts'
+import {
+  acpChildStdoutStream,
+  acpProcessExitError,
+  appendAcpStderrTail,
+} from './acp-child-stream.ts'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import type { StreamChunk } from '@shared/types'
 import type {
@@ -45,6 +50,7 @@ import { acpConfigCategory, acpConfigCategoryLabel, isClaudeAcpAgent } from '@sh
 import { isRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import type { McpServerConfig } from '@shared/types/mcp.ts'
 import { sessionUpdateToStreamChunks } from './session-update-adapter.ts'
+import { acpBridgeToolMissing, isAcpBridgeStartupFailure } from './acp-bridge-mount.ts'
 import { acpStaleModelNotice } from './acp-stale-model-notice.ts'
 import type { AgentInitiatedTurnLease } from './agent-initiated-turn.ts'
 import { tapAcpWireStream, type AcpWireSink } from './acp-wire-tap.ts'
@@ -59,7 +65,6 @@ import {
   watchAgentStderr,
   type AcpAgentResourceFault,
 } from './acp-resource-fault.ts'
-import { BRIDGE_MCP_SERVER_NAME } from './acp-bridge-name.ts'
 import { claudeSandboxEscapeSessionMeta } from './acp-claude-sandbox-escape.ts'
 import { AcpToolCallObservations, type AcpToolIdentity } from './acp-tool-provenance.ts'
 import {
@@ -110,6 +115,7 @@ import { terminateProcessTree, SUBPROCESS_KILL_GRACE_MS } from '../exec/subproce
 import { perfSpan } from '../diagnostics/perf-trace.ts'
 import { spawnSandboxedAcpSessionHost } from './acp-session-host.ts'
 import type { AcpTerminalHost } from './acp-terminals.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 export type { AcpAgentProbe, AcpModeChoice, AcpModeSelector, AcpModelChoice, AcpModelSelector }
 
@@ -145,6 +151,18 @@ export interface AcpClientHandlers {
   readTextFile?: (req: ReadTextFileRequest, signal: AbortSignal) => Promise<ReadTextFileResponse>
   /** Back `fs/write_text_file` (e.g. route through the diff queue). */
   writeTextFile?: (req: WriteTextFileRequest) => Promise<WriteTextFileResponse>
+  /**
+   * The agent wrote into its transcript that Copse's own MCP server failed to
+   * start for it ({@link isAcpBridgeStartupFailure}). Return true when the
+   * thread already says so in Copse's words, to drop the agent's line.
+   */
+  onBridgeStartupFailure?: () => boolean
+  /**
+   * The agent's own runtime refused a call of the bridged tool `tool` as not in
+   * its tool list ({@link acpBridgeToolMissing}): it may have dropped Copse's
+   * tools after listing them (#4142). Called after the failed call is shown.
+   */
+  onBridgeToolMissing?: (tool: string) => void
 }
 
 export interface AcpAgentSpawnConfig {
@@ -217,11 +235,20 @@ export interface AcpAgentSpawnConfig {
    */
   stateDir?: string
   /**
+   * Chat-store directories the sandboxed agent may read: its own transcript, a
+   * declared follow-up parent, or the whole store once its thread holds "read
+   * other threads" consent (`chatReadRootsForThread`). Resolved by the turn in
+   * the main process and carried to the session host, which has no run context
+   * of its own. Absent means none. Part of the pool fingerprint, so granting or
+   * revoking consent respawns the agent (reattaching its session) next turn.
+   */
+  chatReadRoots?: string[]
+  /**
    * Copse's native-tool MCP bridge for this turn (issue #602, tier 2). Added to
    * `session/new` `mcpServers` as an http server when the agent advertises
    * `mcpCapabilities.http`; ignored otherwise.
    */
-  nativeBridge?: { url: string; token: string }
+  nativeBridge?: { url: string; token: string; serverName: string }
 }
 
 const UNSUPPORTED = (method: string) => (): Promise<never> =>
@@ -496,44 +523,18 @@ export function willSandboxAcpAgent(sandbox: AcpAgentSandboxConfig | undefined):
  * under Copse's sandbox on this machine: Claude Code flag settings whose hook
  * refuses its `dangerouslyDisableSandbox` escape with an explanation, since
  * Copse's sandbox wraps the whole process and the escape cannot lift it
- * (#4146, `acp-claude-sandbox-escape.ts`). `bridgeMounted` says whether this
- * session offered Copse's native-tool bridge, which the refusal points to.
+ * (#4146, `acp-claude-sandbox-escape.ts`). `bridgeServer` is the server name
+ * this session offered Copse's native-tool bridge under, which the refusal
+ * points to, or null when it offered none.
  */
 export function acpSessionMeta(
   config: Pick<AcpAgentSpawnConfig, 'command' | 'args' | 'sandbox' | 'executionMode'>,
-  opts: { remote: boolean; bridgeMounted: boolean },
+  opts: { remote: boolean; bridgeServer: string | null },
 ): ReturnType<typeof claudeSandboxEscapeSessionMeta> | undefined {
   if (opts.remote || config.executionMode === 'agent') return undefined
   if (!config.sandbox || !willSandboxAcpAgent(config.sandbox)) return undefined
   if (!isClaudeAcpAgent(config)) return undefined
-  return claudeSandboxEscapeSessionMeta(opts.bridgeMounted)
-}
-
-const ACP_STDERR_TAIL_LIMIT = 8_000
-
-function appendStderrTail(current: string, text: string): string {
-  const next = current + text
-  return next.length <= ACP_STDERR_TAIL_LIMIT ? next : next.slice(-ACP_STDERR_TAIL_LIMIT)
-}
-
-function acpProcessExitError(
-  command: string,
-  code: number | null,
-  signal: NodeJS.Signals | null,
-  stderr: string,
-): Error {
-  const reason = signal ? `signal ${signal}` : `code ${code === null ? 'unknown' : String(code)}`
-  const detail = stderr.trim()
-  return new Error(
-    `The coding agent "${command}" exited with ${reason}${detail ? `. Its error output: ${detail}` : ''}`,
-  )
-}
-
-function acpProcessSpawnError(command: string, err: Error, stderr: string): Error {
-  const detail = stderr.trim()
-  return new Error(
-    `The coding agent "${command}" failed to start: ${err.message}${detail ? `. Its error output: ${detail}` : ''}`,
-  )
+  return claudeSandboxEscapeSessionMeta(opts.bridgeServer)
 }
 
 /** The SDK can observe the request-pipe closure before the child exit event. */
@@ -608,6 +609,9 @@ export async function spawnAcpAgentProcess(
       allowLocalhost: options.allowLocalhost ?? Boolean(config.nativeBridge),
       ...(config.readonlyCheckout ? { readonlyCheckout: true } : {}),
       ...(config.stateDir ? { stateDirs: [config.stateDir] } : {}),
+      // Explicit even in-process (the host-fallback path and probes): the
+      // ambient run may be missing or belong to another chain.
+      chatReadRoots: config.chatReadRoots ?? [],
     })
     // ASRT's proxies consult the GLOBAL config per connection — the overlay's
     // network block only wires restriction up. Widen the global allowlist for
@@ -823,6 +827,11 @@ class AcpUpdateQueue {
   } | null = null
   private failure: Error | null = null
 
+  /** Includes an update already handed to the pump's not-yet-resumed waiter. */
+  hasPendingUpdates(): boolean {
+    return this.pending.length > 0 || (this.failure === null && this.waiter === null)
+  }
+
   enqueue(update: SessionUpdate): void {
     if (this.failure !== null) return
     const waiter = this.waiter
@@ -883,6 +892,10 @@ export interface OpenAcpSession {
   promptImage: boolean
   /** The agent's current slash-command registry, refreshed by session updates. */
   availableCommands: AvailableCommand[]
+  /** What the agent has said about a tool call's identity so far (`AcpToolCallObservations`). */
+  toolCallIdentities: (toolCallId: string) => readonly AcpToolIdentity[]
+  /** The server name this session mounted Copse's native-tool bridge under, or null. */
+  bridgeServerName: string | null
   /** Mutable ACP-owned metadata for the live session. */
   sessionInfo: { title?: string; updatedAt?: string }
   /** True when this connection restored a prior ACP session rather than creating one. */
@@ -947,6 +960,7 @@ export interface OpenAcpSession {
    * transport that captures no stderr (the in-process test transports).
    */
   resourceFault: () => AcpAgentResourceFault | null
+  /** Close the connection and stop the agent. A failed stop can be retried. */
   dispose: () => Promise<void>
 }
 
@@ -1007,75 +1021,6 @@ export type AcpTransportFactory = (
   signal?: AbortSignal,
 ) => Promise<AcpTransport>
 
-function acpChildStdoutStream(
-  child: ChildProcess,
-  command: string,
-  stderrTail: () => string,
-): ReadableStream<Uint8Array> {
-  const stdout = child.stdout
-  if (!stdout) throw new Error('The coding agent started without a way to read its output')
-  let cancelRead = (): void => {
-    void shutdownAcpChild(child)
-  }
-  return new ReadableStream<Uint8Array>({
-    start(controller): void {
-      let settled = false
-      const cleanup = (): void => {
-        stdout.off('data', onData)
-        stdout.off('error', onStdoutError)
-        child.off('error', onChildError)
-        child.off('close', onChildClose)
-      }
-      const settle = (fn: () => void): void => {
-        if (settled) return
-        settled = true
-        cleanup()
-        fn()
-      }
-      const onData = (chunk: Buffer): void => {
-        controller.enqueue(new Uint8Array(chunk))
-      }
-      const onStdoutError = (err: Error): void => {
-        settle(() => {
-          controller.error(err)
-        })
-      }
-      const onChildError = (err: Error): void => {
-        settle(() => {
-          controller.error(acpProcessSpawnError(command, err, stderrTail()))
-        })
-      }
-      const onChildClose = (code: number | null, signal: NodeJS.Signals | null): void => {
-        if (code === 0 && signal === null) {
-          settle(() => {
-            controller.close()
-          })
-        } else {
-          settle(() => {
-            controller.error(acpProcessExitError(command, code, signal, stderrTail()))
-          })
-        }
-      }
-      // Closing the connection cancels this read; that is a dispose, not a
-      // fault, so the agent gets to exit on its own first.
-      cancelRead = (): void => {
-        if (!settled) {
-          settled = true
-          cleanup()
-        }
-        void shutdownAcpChild(child)
-      }
-      stdout.on('data', onData)
-      stdout.on('error', onStdoutError)
-      child.once('error', onChildError)
-      child.once('close', onChildClose)
-    },
-    cancel(): void {
-      cancelRead()
-    },
-  })
-}
-
 function captureAcpChildStderr(
   child: ChildProcess,
   command: string,
@@ -1091,7 +1036,7 @@ function captureAcpChildStderr(
     // descriptor exhaustion, not on every fresh ACP transport.
     limitLabel: localOpenFileLimitLabel,
     onText: (text) => {
-      tail = appendStderrTail(tail, text)
+      tail = appendAcpStderrTail(tail, text)
     },
   })
   return { tail: () => tail, resourceFault: faults.current }
@@ -1111,24 +1056,20 @@ async function spawnTransport(
   if (sshTarget) return spawnRemoteAcpTransport(config, sshTarget, signal)
   let child: ChildProcess
   if (config.sandbox && willSandboxAcpAgent(config.sandbox)) {
-    try {
-      child = await spawnSandboxedAcpSessionHost(config)
-    } catch (err) {
-      // Preserve containment if the standalone host cannot start. This is the
-      // pre-phase-5 path: it widens the main process's ASRT network singleton,
-      // so the overlap gate remains necessary as a bounded fallback.
-      console.warn(
-        `[acp-session-host] isolated host unavailable, falling back in-process (this widens the global network scope): ${err instanceof Error ? err.message : String(err)}`,
-      )
-      child = await spawnAcpAgentProcess(config)
-    }
+    // A host failure cannot fall back into main: that would give all existing
+    // contained commands the agent's public-domain allowlist for its lifetime.
+    child = await spawnSandboxedAcpSessionHost(config)
   } else {
     child = await spawnAcpAgentProcess(config)
   }
   if (!child.stdin) throw new Error('The coding agent started without a way to receive input')
   const stderr = captureAcpChildStderr(child, config.command)
   const writable = nodeWritableStream(child.stdin)
-  const readable = acpChildStdoutStream(child, config.command, stderr.tail)
+  // Closing the connection cancels this read; that is a dispose, not a fault,
+  // so the agent gets to exit on its own first.
+  const readable = acpChildStdoutStream(child, config.command, stderr.tail, () => {
+    void shutdownAcpChild(child)
+  })
   return {
     stream: ndJsonStream(writable, readable),
     dispose: () => shutdownAcpChild(child),
@@ -1252,9 +1193,27 @@ function startAcpUpdatePump(open: OpenAcpSession): void {
         ) {
           cancelApprovalsForAcpToolCall(update.toolCallId)
         }
+        if (
+          open.bridgeServerName !== null &&
+          isAcpBridgeStartupFailure(update, open.bridgeServerName) &&
+          open.handlers.current?.onBridgeStartupFailure?.() === true
+        ) {
+          continue
+        }
         for (const chunk of sessionUpdateToStreamChunks(update)) {
           open.handlers.current?.onChunk(chunk)
         }
+        const missingTool =
+          open.bridgeServerName === null
+            ? null
+            : acpBridgeToolMissing(
+                update,
+                update.sessionUpdate === 'tool_call_update'
+                  ? open.toolCallIdentities(update.toolCallId)
+                  : [],
+                open.bridgeServerName,
+              )
+        if (missingTool !== null) open.handlers.current?.onBridgeToolMissing?.(missingTool)
       } catch {
         // A sink failure must not kill the pump: turn-stop routing (and every
         // future turn on this session) depends on the loop staying alive.
@@ -1411,11 +1370,19 @@ export async function openAcpSession(
   let disposal: Promise<void> | null = null
   const dispose = (): Promise<void> => {
     if (disposal) return disposal
-    disposed = true
-    pendingUpdates.clear()
-    terminals?.dispose()
-    connection.close()
-    disposal = Promise.resolve(transport.dispose())
+    if (!disposed) {
+      disposed = true
+      pendingUpdates.clear()
+      terminals?.dispose()
+      connection.close()
+    }
+    // Share a finished or in-flight transport shutdown, but not a failed one:
+    // the agent may still be alive, so the next dispose asks the transport
+    // again instead of replaying the first failure for the session's lifetime.
+    disposal = Promise.resolve(transport.dispose()).catch((error: unknown) => {
+      disposal = null
+      throw error
+    })
     return disposal
   }
 
@@ -1464,14 +1431,14 @@ export async function openAcpSession(
     // loopback, and the bearer token must not leave it (the pool already skips
     // starting a bridge for one; this keeps a caller-supplied bridge local too).
     const remote = spawnConfigSshTarget(config) !== null
-    let bridgeMounted = false
+    let bridgeServer: string | null = null
     if (config.nativeBridge && remote) {
       console.warn('[acp-bridge] native tools are not offered to an agent running on an SSH host')
     } else if (config.nativeBridge && mcpCapabilities?.http === true) {
-      bridgeMounted = true
+      bridgeServer = config.nativeBridge.serverName
       mcpServers.push({
         type: 'http',
-        name: BRIDGE_MCP_SERVER_NAME,
+        name: bridgeServer,
         url: config.nativeBridge.url,
         headers: [{ name: 'Authorization', value: `Bearer ${config.nativeBridge.token}` }],
       })
@@ -1483,7 +1450,7 @@ export async function openAcpSession(
         '[acp-bridge] agent does not advertise MCP-over-http capability; native tools were not offered this session',
       )
     }
-    const sessionMeta = acpSessionMeta(config, { remote, bridgeMounted })
+    const sessionMeta = acpSessionMeta(config, { remote, bridgeServer })
     const canLoad = initResponse.agentCapabilities?.loadSession === true
     let session: ManagedAcpSession | null = null
     let restoredBy: AcpReattachMethod | null = null
@@ -1537,10 +1504,7 @@ export async function openAcpSession(
           // The agent's message usually names the session; session IDs stay
           // out of logs (docs/plans/acp-session-continuity.md).
           carryOverFailure = 'rejected'
-          const reason = (err instanceof Error ? err.message : String(err)).replaceAll(
-            sessionId,
-            '<session>',
-          )
+          const reason = errorMessage(err).replaceAll(sessionId, '<session>')
           console.warn(
             `[acp] session/${method} was refused; ${attempts.at(-1) === method ? 'starting a new session' : 'trying the next method'}: ${reason}`,
           )
@@ -1585,6 +1549,7 @@ export async function openAcpSession(
       ),
     )
 
+    const openedSessionId = session.sessionId
     const open: OpenAcpSession = {
       session,
       connection,
@@ -1595,6 +1560,8 @@ export async function openAcpSession(
       canLoad,
       promptImage,
       availableCommands: [],
+      toolCallIdentities: (toolCallId) => observedToolCalls.get(openedSessionId, toolCallId),
+      bridgeServerName: bridgeServer,
       sessionInfo: {},
       resumed: restoredBy !== null,
       restoredBy,
@@ -1823,7 +1790,9 @@ export async function probeAcpAgent(
   if (!child.stdin) throw new Error('The coding agent started without a way to receive input')
   const stderr = captureAcpChildStderr(child, config.command)
   const writable = nodeWritableStream(child.stdin)
-  const readable = acpChildStdoutStream(child, config.command, stderr.tail)
+  const readable = acpChildStdoutStream(child, config.command, stderr.tail, () => {
+    void shutdownAcpChild(child)
+  })
   const stream = ndJsonStream(writable, readable)
   const app = client({ name: 'copse' })
     .onRequest(methods.client.fs.readTextFile, UNSUPPORTED('fs/read_text_file'))

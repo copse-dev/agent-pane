@@ -194,7 +194,7 @@ import {
 } from '../controller/review-actions.ts'
 import { renderToolArgs } from './tool-args-format.ts'
 import { mcpErrorMessage } from './tool-error-format.ts'
-import { splitAppendedReminders } from './tool-result-reminders.ts'
+import { splitAppendedReminders } from '@shared/tools/tool-result-reminders.ts'
 import { createThreadProposalToolCard, isThreadProposalCall } from './thread-proposal-tool-card.ts'
 import { createReviewerInputToolCard } from './reviewer-input.ts'
 import { isReviewerInputCall } from '@shared/threads/reviewer-input.ts'
@@ -2625,12 +2625,20 @@ const BACKFILL_CHUNK_SIZE = 30
 /** Stands in for a row built without a signature, which matches no wanted row. */
 const UNSIGNED_ROW: TranscriptRowSignature = { patched: '', settled: '' }
 
-export function mountConversation(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
+export function mountConversation(
+  root: HTMLElement,
+  store: AppStore,
+  api: ApiClient,
+  options: { host?: 'desktop' | 'remote' } = {},
+): () => void {
   showAcpTransportNoiseDisclosure = (): boolean => store.getState().developerMode
   const scrollArea = el('div', { class: 'conversation-scroll' })
   const todoHost = el('div', { class: 'conversation-todos-host' })
-  const archiveReview = createThreadArchiveReview(store, api)
-  const appleDevelopmentHost = createAppleDevelopmentPanel(store, api, { allowEnrollment: false })
+  const desktop = options.host !== 'remote'
+  const archiveReview = desktop ? createThreadArchiveReview(store, api) : null
+  const appleDevelopmentHost = desktop
+    ? createAppleDevelopmentPanel(store, api, { allowEnrollment: false })
+    : null
   const list = el('div', { class: 'messages-list', role: 'log', 'aria-live': 'polite' })
   let agentNames: ReadonlyMap<string, string> = new Map()
   let agentNamesRequested = false
@@ -2660,18 +2668,16 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     chevronUpIcon('ui-icon'),
     el('span', { class: 'conversation-first-prompt-label' }, 'First prompt'),
   )
-  const appleSuggestions = mountAppleProjectSuggestions(store, api, () =>
-    appleDevelopmentHost.dispatchEvent(new Event('apple-development-refresh')),
-  )
-  const environmentSetupOffer = mountEnvironmentSetupOffer(store, api)
-  scrollArea.append(
-    appleSuggestions.element,
-    environmentSetupOffer.element,
-    appleDevelopmentHost,
-    todoHost,
-    list,
-    archiveReview.element,
-  )
+  const appleSuggestions = desktop
+    ? mountAppleProjectSuggestions(store, api, () =>
+        appleDevelopmentHost?.dispatchEvent(new Event('apple-development-refresh')),
+      )
+    : null
+  const environmentSetupOffer = desktop ? mountEnvironmentSetupOffer(store, api) : null
+  if (appleSuggestions) scrollArea.append(appleSuggestions.element)
+  if (environmentSetupOffer) scrollArea.append(environmentSetupOffer.element)
+  if (appleDevelopmentHost) scrollArea.append(appleDevelopmentHost)
+  scrollArea.append(todoHost, list, ...(archiveReview ? [archiveReview.element] : []))
 
   // The concise turns the user opened to debug, by their prompts' ids. UI-only:
   // never persisted, and only those turns render in full (as with the setting
@@ -4235,6 +4241,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const fallback = recovery.lastKnownGoodModel
     const card = createTurnRecoveryCard({
       ...(recovery.interruptedByRestart ? { interruptedByRestart: true } : {}),
+      ...(recovery.limitReason !== undefined ? { limitReason: recovery.limitReason } : {}),
       ...(fallback !== undefined ? { lastKnownGoodLabel: displayModelLabel(fallback) } : {}),
       onRetry: () => recoverFailedTurn(store, api, projectId, threadId, messageId, 'current-model'),
       ...(fallback !== undefined
@@ -4367,7 +4374,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
    */
   function finishThreadChrome(thread: Thread | null): void {
     syncTodoPanel()
-    appleDevelopmentHost.dispatchEvent(new Event('apple-development-refresh'))
+    appleDevelopmentHost?.dispatchEvent(new Event('apple-development-refresh'))
     // Inline review cards are rendered per message by appendMessageEl above.
     syncReviewReportCard()
     syncComparisonPanel()
@@ -5067,7 +5074,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     disposed = true
     recentTranscripts.clear()
     setBackgroundTaskLogLoader(null)
-    archiveReview.dispose()
+    archiveReview?.dispose()
     selectionQuote.destroy()
     avatarMotion.dispose()
     // Invalidate any backfillOlderMessages step still queued via
@@ -5083,8 +5090,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     unbindWorkspaceLinks()
     unbindBrowserLinks()
     unbindCodeBlockRuns()
-    appleSuggestions.destroy()
-    environmentSetupOffer.destroy()
+    appleSuggestions?.destroy()
+    environmentSetupOffer?.destroy()
     roadmapOrigin.destroy()
     unsubs.forEach((u) => {
       u()

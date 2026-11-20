@@ -10,6 +10,7 @@ import {
   parseScreenshotStack,
   reconcileScreenshotStack,
   selectScreenshotStackCompletion,
+  selectScreenshotStackRepairs,
   selectScreenshotStackPulls,
   STACK_COVERAGE,
   STACK_DECISION,
@@ -902,8 +903,162 @@ describe('incremental screenshot stack selection', () => {
     })
   })
 })
+describe('watermarked stack repairs', () => {
+  const since = '2026-11-08T20:00:00Z'
+  const repository = { owner: 'copse-dev', repo: 'agent-pane' }
+  function dated(number: number, sha: string, body = TEXT): Record<string, unknown> {
+    return { ...pull(number, sha, body), updated_at: '2026-11-08T19:00:00Z' }
+  }
+  it('recovers a closed member from a superseded event and follows remaining references', async () => {
+    const f = fixture()
+    const open = [dated(2, TIP), dated(3, BASE, '')]
+    assert.deepEqual(
+      await selectScreenshotStackRepairs(f.github, repository, open, 'workflow_run', {}, since, [
+        { number: 1, pull_request: {} },
+      ]),
+      [2],
+    )
+  })
+  it('recovers removed declarations and changes at the previous run boundary', async () => {
+    const f = fixture()
+    const open = [
+      dated(1, LOWER, ''),
+      { ...dated(2, TIP, ''), updated_at: since },
+      dated(3, BASE, ''),
+    ]
+    assert.deepEqual(
+      await selectScreenshotStackRepairs(f.github, repository, open, 'workflow_run', {}, since, [
+        { number: 1, pull_request: {} },
+        { number: 3 },
+      ]),
+      [1, 2],
+    )
+  })
+  it('includes evidence from a coalesced completion older than the surviving event', async () => {
+    const f = fixture()
+    f.statuses.set(TIP, [{ ...status(STACK_DECISION, 3), updated_at: since }])
+    const open = [dated(1, LOWER), dated(2, TIP), dated(3, BASE, '')]
+    assert.deepEqual(
+      await selectScreenshotStackRepairs(
+        f.github,
+        repository,
+        open,
+        'workflow_run',
+        {
+          workflow_run: { pull_requests: [{ number: 3 }], run_started_at: '2026-11-08T21:00:00Z' },
+        },
+        since,
+        [],
+      ),
+      [1, 2, 3],
+    )
+  })
+  it('does no API work for unchanged ordinary PRs and fully repairs without a watermark', async () => {
+    const f = fixture()
+    f.github.rest.repos.listCommitStatusesForRef = async (): Promise<never> =>
+      assert.fail('ordinary heads unread')
+    const open = Array.from({ length: 65 }, (_, i) => dated(i + 1, BASE, ''))
+    assert.deepEqual(
+      await selectScreenshotStackRepairs(f.github, repository, open, 'workflow_run', {}, since, []),
+      [],
+    )
+    for (const event of ['schedule', 'workflow_dispatch', 'workflow_run']) {
+      assert.equal(
+        (
+          await selectScreenshotStackRepairs(
+            f.github,
+            repository,
+            open,
+            event,
+            {},
+            event === 'workflow_run' ? undefined : since,
+            [],
+          )
+        ).length,
+        65,
+      )
+    }
+  })
+  it('does not hide failed status reads behind a successful watermark', async () => {
+    const f = fixture()
+    f.github.rest.repos.listCommitStatusesForRef = async (): Promise<never> => {
+      throw new Error('rate limited')
+    }
+    await assert.rejects(
+      selectScreenshotStackRepairs(
+        f.github,
+        repository,
+        [dated(1, LOWER)],
+        'workflow_run',
+        {},
+        since,
+        [],
+      ),
+      /rate limited/,
+    )
+  })
+})
 describe('stack workflow integration', () => {
-  it('coalesces pending triggers and repairs all live PRs without event history', async () => {
+  it('isolates only skipped source completions from the reconciliation queue and job', () => {
+    const routing = z
+      .object({
+        concurrency: z.object({ group: z.string() }),
+        jobs: z.object({ reconcile: z.object({ if: z.string() }) }),
+      })
+      .parse(load(readFileSync('.github/workflows/screenshot-stack.yml', 'utf8')))
+    const route = (
+      eventName: string,
+      conclusion: string | null | undefined,
+      headRepo = 'copse-dev/agent-pane',
+    ): { group: unknown; reconcile: unknown } => {
+      const context = {
+        github: {
+          repository: 'copse-dev/agent-pane',
+          event_name: eventName,
+          event: {
+            workflow_run: { conclusion },
+            pull_request: { head: { repo: { full_name: headRepo } } },
+          },
+        },
+      }
+      return {
+        group: new Script(routing.concurrency.group.slice(3, -2)).runInNewContext(context),
+        reconcile: new Script(routing.jobs.reconcile.if).runInNewContext(context),
+      }
+    }
+    const skipped = route('workflow_run', 'skipped')
+    assert.notEqual(skipped.group, 'screenshot-stack-policy')
+    assert.equal(skipped.reconcile, false)
+    for (const conclusion of [
+      undefined,
+      null,
+      '',
+      'unknown',
+      'success',
+      'failure',
+      'cancelled',
+      'timed_out',
+      'neutral',
+      'action_required',
+      'stale',
+    ]) {
+      assert.deepEqual(
+        route('workflow_run', conclusion),
+        { group: 'screenshot-stack-policy', reconcile: true },
+        `completion ${String(conclusion)} must retain full reconciliation`,
+      )
+    }
+    for (const event of ['pull_request_target', 'schedule', 'workflow_dispatch']) {
+      assert.deepEqual(route(event, 'skipped'), {
+        group: 'screenshot-stack-policy',
+        reconcile: true,
+      })
+    }
+    const fork = route('pull_request_target', undefined, 'someone/fork')
+    assert.notEqual(fork.group, 'screenshot-stack-policy')
+    assert.equal(fork.reconcile, false)
+  })
+  it('repairs coalesced removals while leaving unrelated ordinary PRs unread', async () => {
     const source = readFileSync('.github/workflows/screenshot-stack.yml', 'utf8')
     const routing = z
       .object({
@@ -922,7 +1077,10 @@ describe('stack workflow integration', () => {
         github: {
           repository: 'copse-dev/agent-pane',
           event_name: eventName,
-          event: { pull_request: { head: { repo: { full_name: headRepo } } } },
+          event: {
+            workflow_run: {},
+            pull_request: { head: { repo: { full_name: headRepo } } },
+          },
         },
       })
     assert.equal(group('pull_request_target', 'copse-dev/agent-pane'), 'screenshot-stack-policy')
@@ -945,7 +1103,16 @@ describe('stack workflow integration', () => {
       ...pull(5, 'e'.repeat(40)),
       head: { sha: 'e'.repeat(40), repo: { full_name: 'someone/fork' } },
     })
-    for (const pr of f.pulls.values()) pr['labels'] = []
+    f.pulls.set(6, pull(6, '6'.repeat(40), 'unrelated ordinary PR'))
+    for (const pr of f.pulls.values()) {
+      pr['labels'] = []
+      pr['updated_at'] = '2026-11-08T19:00:00Z'
+    }
+    const getPull = f.github.rest.pulls.get.bind(f.github.rest.pulls)
+    f.github.rest.pulls.get = async (args): Promise<{ data: unknown }> => {
+      assert.notEqual(args.pull_number, 6, 'unrelated ordinary PR is not reconciled')
+      return getPull(args)
+    }
     f.statuses.set(BASE, [status('Screenshot review', 10, 'Stack deferred to approved tip')])
     const comments = new Map<number, { id: number; body: string; user: { id: number } }>()
     let commentWrites = 0
@@ -969,7 +1136,31 @@ describe('stack workflow integration', () => {
           ...f.github.rest.pulls,
           list: async (): Promise<{ data: unknown[] }> => ({ data: [...f.pulls.values()] }),
         },
+        actions: {
+          listWorkflowRuns: async (args: unknown): Promise<unknown> => {
+            assert.deepEqual(JSON.parse(JSON.stringify(args)), {
+              owner: 'copse-dev',
+              repo: 'agent-pane',
+              workflow_id: 'screenshot-stack.yml',
+              branch: 'main',
+              status: 'success',
+              per_page: 1,
+            })
+            return {
+              data: {
+                workflow_runs: [
+                  {
+                    created_at: '2026-11-08T20:00:00Z',
+                    run_started_at: '2026-11-08T20:05:00Z',
+                    updated_at: '2026-11-08T20:10:00Z',
+                  },
+                ],
+              },
+            }
+          },
+        },
         issues: {
+          listForRepo: async (): Promise<unknown> => ({ data: [] }),
           listComments: async (): Promise<{ data: unknown[] }> => ({ data: [] }),
           createComment: async ({
             issue_number,
@@ -986,8 +1177,17 @@ describe('stack workflow integration', () => {
           },
         },
       },
-      paginate: async (method: unknown, args: { issue_number?: number }): Promise<unknown[]> => {
+      paginate: async (
+        method: unknown,
+        args: { issue_number?: number; since?: string; state?: string; per_page?: number },
+      ): Promise<unknown[]> => {
         if (method === github.rest.pulls.list) return [...f.pulls.values()]
+        if (method === github.rest.issues.listForRepo) {
+          assert.equal(args.since, '2026-11-08T19:59:59.000Z')
+          assert.equal(args.state, 'all', 'closed PRs must be included')
+          assert.equal(args.per_page, 100)
+          return [{ number: 3, pull_request: {} }]
+        }
         assert.equal(method, github.rest.issues.listComments)
         return [comments.get(args.issue_number ?? -1)].filter(Boolean)
       },
@@ -996,10 +1196,18 @@ describe('stack workflow integration', () => {
       await new Script(`(async () => {\n${script.slice(start)}\n})()`).runInNewContext({
         github,
         memoizeScreenshotStackAncestry,
+        selectScreenshotStackRepairs,
         reconcileScreenshotStack,
         parseScreenshotStack,
         core: { info: (): void => {} },
-        context: { repo: { owner: 'copse-dev', repo: 'agent-pane' }, eventName, payload },
+        context: {
+          repo: { owner: 'copse-dev', repo: 'agent-pane' },
+          eventName,
+          payload: {
+            ...z.record(z.string(), z.unknown()).parse(payload),
+            repository: { default_branch: 'main' },
+          },
+        },
       })
     }
     // Only this unrelated trusted trigger survives; no earlier payloads remain.

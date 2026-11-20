@@ -271,8 +271,8 @@ jobs:
                 find "previews-branch/${bundle_target}" -type f -name '*.map' -delete
                 git -C previews-branch add "$bundle_target"
               fi
-              # Never commit source maps: gitleaks scans every ref (fetch-depth: 0),
-              # and high-entropy map contents fail Secret scan on unrelated tips.
+              # Never commit source maps: high-entropy map contents failed Secret
+              # scan on unrelated tips when it walked every ref.
               find "previews-branch/${TARGET}" -type f -name '*.map' -delete
               git -C previews-branch add "$TARGET"
               publish_paths=("$TARGET")

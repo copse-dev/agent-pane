@@ -107,6 +107,10 @@ const productRoots = [
   'src/sidecar/ws-bridge/electron.ts',
   'src/renderer/main.ts',
   'src/renderer/demo/main.ts',
+  // Paired browser entries and Electron replacement bundled by mobile-build.mts.
+  'src/mobile/app.js',
+  'src/renderer/remote/entry.ts',
+  'src/renderer/remote/electron.ts',
   // Standalone bundle injected lazily at runtime (not imported by product code).
   'src/renderer/monaco/monaco-global.ts',
   // Hidden video-decoder window's page bundle (main/services/video opens it).

@@ -19,10 +19,11 @@ import {
 } from '../ssh-workspace/remote-env.ts'
 import { leaseSshAskpassEnv } from '../ssh-workspace/askpass.ts'
 import {
+  peekRemoteProcessMeta,
   registerRemoteProcessMeta,
   takeRemoteProcessMeta,
 } from '../ssh-workspace/remote-process-meta.ts'
-import { terminateProcessTree } from '../exec/subprocess-kill.ts'
+import { terminateLocalProcessTree } from '../exec/subprocess-kill.ts'
 import { killRemoteProcessGroup } from '../exec/remote-process-kill.ts'
 import { approveRemoteAcpInstall } from './acp-remote-install-approval.ts'
 import { reportRemoteAcpSetupProgress } from './acp-remote-setup-progress.ts'
@@ -745,19 +746,39 @@ export async function spawnRemoteAcpTransport(
   const writable = nodeWritableStream(child.stdin)
   const readable = nodeReadableStream(stdout)
   let disposal: Promise<void> | null = null
+  // The local client is signalled once: a retried remote kill must not keep
+  // signalling a pid this machine may since have given to another process.
+  let localClientStopped = false
+  const stopLocalClient = (): void => {
+    if (localClientStopped) return
+    localClientStopped = true
+    terminateLocalProcessTree(child)
+  }
   return {
     stream: ndJsonStream(writable, readable),
+    // A finished or in-flight teardown is shared; a failed one is not. Until a
+    // kill reaches the remote process group the agent may still be writing its
+    // session on the host, so the group stays registered and the next dispose
+    // tries again, reporting its own reason rather than the first one.
     dispose: (): Promise<void> => {
       if (disposal) return disposal
-      const remote = takeRemoteProcessMeta(child)
+      const remote = peekRemoteProcessMeta(child)
       if (!remote) {
-        terminateProcessTree(child)
+        stopLocalClient()
         disposal = Promise.resolve()
         return disposal
       }
-      disposal = killRemoteProcessGroup(remote.hostId, remote.pgid).finally(() => {
-        terminateProcessTree(child)
-      })
+      disposal = killRemoteProcessGroup(remote.hostId, remote.pgid).then(
+        () => {
+          takeRemoteProcessMeta(child)
+          stopLocalClient()
+        },
+        (error: unknown) => {
+          disposal = null
+          stopLocalClient()
+          throw error
+        },
+      )
       return disposal
     },
     resourceFault: faults.current,

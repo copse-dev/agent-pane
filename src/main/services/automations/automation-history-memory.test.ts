@@ -193,9 +193,9 @@ describe('automation checks without project transcript allocation', () => {
     const reuse = createAutomationWorktreeReuse({
       projectRoot: () => '/repo',
       isLive: () => false,
-      disposeSession: (id) => {
+      withIdleSession: async (id, operation) => {
         disposed.push(id)
-        return Promise.resolve()
+        return { status: 'released', value: await operation() }
       },
       canAdopt: () => Promise.resolve(true),
       adopt: () =>

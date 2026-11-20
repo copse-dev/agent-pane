@@ -190,7 +190,7 @@ describe('background commands honour shell approval routing', () => {
     assert.equal(overlays[1]?.filesystem?.allowRead?.includes(target), false)
   })
 
-  it('combines a scoped read with separately approved loopback binding', async () => {
+  it('routes a scoped read with approved loopback binding through the isolated host', async () => {
     const target = join(fixture, 'loopback-notes.txt')
     await writeFile(target, 'notes')
     const child = await inOwnerContext(() =>
@@ -206,17 +206,10 @@ describe('background commands honour shell approval routing', () => {
         resolve()
       })
     })
-    const filesystem = overlays[0]?.filesystem
-    const network = overlays[0]?.network
-    assert.ok(filesystem)
-    assert.ok(network)
-    assert.ok(filesystem.allowRead?.includes(target))
-    assert.equal(network.allowLocalBinding, true)
-    assert.deepEqual(network.allowedDomains, ['localhost', '127.0.0.1', '::1'])
-    assert.deepEqual(
-      filesystem.allowWrite,
-      inOwnerContext(() => workspaceSandboxOverlay(root).filesystem?.allowWrite),
-    )
+    // Main must never wrap this task with a widened process-global network
+    // scope. The worker-policy test checks the scoped read in its request.
+    assert.equal(overlays.length, 0)
+    assert.ok(child.spawnargs.some((arg) => arg.endsWith('port-binding-worker.js')))
   })
 
   it('still asks when the OS sandbox is unavailable', async () => {

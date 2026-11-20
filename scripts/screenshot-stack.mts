@@ -290,6 +290,57 @@ export async function selectScreenshotStackCompletion(
   return connected(open, affected)
 }
 
+/**
+ * Recover coalesced triggers from a successful-run watermark, never from the
+ * surviving event alone. Issue updates retain closed PR numbers and declaration
+ * removals; live PR updated_at also covers head changes. Status changes need a
+ * separate read because publishing evidence does not update the PR timestamp.
+ * No watermark, manual and scheduled runs repair everything. Selection grants
+ * no approval: reconciliation still validates live heads and status creators.
+ */
+export async function selectScreenshotStackRepairs(
+  github: StackGitHub,
+  repository: Repository,
+  open: unknown[],
+  eventName: string,
+  payload: unknown,
+  since: unknown,
+  changedIssues: unknown[],
+): Promise<number[]> {
+  const cutoff = timestamp(since)
+  if (cutoff === undefined || (eventName !== 'pull_request_target' && eventName !== 'workflow_run'))
+    return selectScreenshotStackPulls(open, 'schedule', {})
+
+  const affected = new Set<number>()
+  if (eventName === 'pull_request_target') {
+    for (const number of selectScreenshotStackPulls(open, eventName, payload)) affected.add(number)
+  } else {
+    for (const number of completionPulls(open, payload)) affected.add(number)
+  }
+  for (const issue of changedIssues) {
+    if (!field(issue, 'pull_request')) continue
+    const number = numberOf(field(issue, 'number'))
+    if (number !== undefined) affected.add(number)
+  }
+  for (const pr of open) {
+    const number = numberOf(field(pr, 'number'))
+    if (number === undefined) continue
+    const updated = timestamp(field(pr, 'updated_at'))
+    if (updated === undefined || updated >= cutoff) affected.add(number)
+    // Include malformed declarations so an old authorization cannot survive.
+    const body = field(pr, 'body')
+    if (typeof body !== 'string' || !body.includes(PREFIX)) continue
+    const sha = field(field(pr, 'head'), 'sha')
+    if (
+      typeof sha !== 'string' ||
+      !SHA.test(sha) ||
+      (await evidenceChangedSince(github, repository, sha, cutoff))
+    )
+      affected.add(number)
+  }
+  return connected(open, affected)
+}
+
 async function statuses(
   github: StackGitHub,
   input: Input,

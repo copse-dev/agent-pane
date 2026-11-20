@@ -252,9 +252,9 @@
     },
     {
       "prefix": "src/renderer/views/activity-panel.ts",
-      "smoke": ["tests/e2e/activity-panel.e2e.ts"],
+      "smoke": ["tests/e2e/activity-answer.e2e.ts"],
       "evidence": {
-        "tests/e2e/activity-panel.e2e.ts": "selector id:activity-panel in src/renderer/views/activity-panel.ts"
+        "tests/e2e/activity-answer.e2e.ts": "selector id:activity-panel in src/renderer/views/activity-panel.ts"
       }
     },
     {

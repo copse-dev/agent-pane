@@ -15,7 +15,7 @@ import {
 } from './browser/browser-origin-policy.ts'
 import {
   buildInvokedSkillsBlock,
-  buildSkillsCatalogBlock,
+  buildSkillsCatalogWithMetadata,
   buildSkillsToolsPromptLine,
 } from './skills/skill-prompt.ts'
 import { extractContextPathsFromText, type CursorRuleContext } from './skills/cursor-rules.ts'
@@ -33,6 +33,7 @@ import {
   WORKTREE_PREPARATION_BLOCK,
 } from './agent-prompt.ts'
 import { resolvePromptProfile } from './agent-prompt-profile.ts'
+import type { PromptCatalogFootprint } from '@copse/llm/wire-types.ts'
 import { isOpus5Model } from '@copse/llm/model-catalog.ts'
 import { buildSemanticSearchPromptBlock } from './search/semantic-search.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
@@ -145,6 +146,7 @@ export interface SystemPromptBuildResult {
   prompt: string
   instructionMetadata: InstructionLayerMetadata
   invokedSkillContextBytes: number
+  promptCatalog?: PromptCatalogFootprint
 }
 
 /** Assemble the system prompt and retain nested-instruction runtime metadata. */
@@ -206,6 +208,7 @@ export async function buildSystemPromptWithMetadata(
     preflight: skillPreflightEnvironment(opts.availableToolNames, 'native'),
     ...(threadId ? { threadId } : {}),
   })
+  const catalog = buildSkillsCatalogWithMetadata(opts.availableToolNames, 'native')
   const prompt =
     basePrompt
       .replace('{SKILLS_TOOLS_LINE}', skillsToolsLine)
@@ -227,7 +230,7 @@ export async function buildSystemPromptWithMetadata(
     (readTerminalEnabled ? READ_TERMINAL_BLOCK : '') +
     (okfMemoriesEnabled ? MEMORY_TOOLS_BLOCK : '') +
     (piiRedactionEnabled ? PII_REDACTION_BLOCK : '') +
-    buildSkillsCatalogBlock(opts.availableToolNames, 'native') +
+    catalog.block +
     invokedSkillsBlock +
     agentRulesCatalog +
     buildSemanticSearchPromptBlock() +
@@ -240,6 +243,7 @@ export async function buildSystemPromptWithMetadata(
     prompt,
     instructionMetadata: instructionLayers.metadata,
     invokedSkillContextBytes: Buffer.byteLength(invokedSkillsBlock, 'utf8'),
+    ...(catalog.footprint ? { promptCatalog: catalog.footprint } : {}),
   }
 }
 
