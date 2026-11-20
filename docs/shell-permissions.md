@@ -69,7 +69,8 @@ not cancel an unanswered approval. The prompt remains answerable even when turn 
 arrives before the MCP client's disconnect. A later identical request in the same thread,
 project, human task and execution root can consume that decision once, within the existing
 ten-minute replay window. Changed commands or arguments require their own approval; answering a
-detached prompt never starts the old tool call.
+detached prompt never starts the old tool call. Approving it requests one continuation in the
+same task so the agent can retry the call; rejecting it does not wake the agent.
 
 Stop, failure, idle expiry, session closure, and thread deletion revoke both pending prompts
 (including detached ones) and stored answers for that thread. Send-now interruption is not a

@@ -899,10 +899,11 @@ function buildMcpServer(
       ) {
         const retry = err.retry
         void retry.settled
-          .then(async () => {
-            // A live retry may already have consumed the answer, or Stop/session
-            // closure may have revoked it while this continuation waited.
-            if (!retry.available() || continuationRevoked()) return
+          .then(async (answer) => {
+            // Only an approval resumes the task: rejecting a question whose turn
+            // has ended must not start more autonomous work. A live retry may
+            // also have consumed the answer, or Stop/session closure revoked it.
+            if (!answer.approved || !retry.available() || continuationRevoked()) return
             await completionHandler(
               {
                 operationId: `approval:${bridgeExecutionId}`,

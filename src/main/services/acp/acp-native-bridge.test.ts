@@ -889,6 +889,55 @@ describe('startAcpNativeBridge', () => {
     },
   )
 
+  it(
+    'does not wake the agent when the user rejects a parked approval',
+    { timeout: 5_000 },
+    async () => {
+      const executed: string[] = []
+      const gate = promptingGate()
+      const owner = new AbortController()
+      const threadId = 'approval-rejected-no-resume'
+      let wakes = 0
+      bridge = await startAcpNativeBridge(testRegistry(executed), new AbortController().signal, {
+        threadId,
+      })
+      assert.ok(bridge)
+      const currentBridge = bridge
+      const bind = (): void => {
+        runWithActiveRunIdentity(threadId, () => {
+          setActiveRunTurnTreeId(asTurnTreeId('tree-approval-rejected'))
+          currentBridge.setExecutionContext(worktreeContext(threadId, '/worktrees/rejected'))
+        })
+      }
+      bind()
+      currentBridge.setTurnSignal(owner.signal)
+      setAcpToolCompletionHandler(() => {
+        wakes++
+        return Promise.resolve('completed')
+      })
+      for (const init of initialized()) await rpc(currentBridge, init)
+      const started = gate.started()
+      const pending = rpc(currentBridge, SHELL_CALL)
+      await started
+      owner.abort(new AcpTurnEnded('completed'))
+      currentBridge.setExecutionContext(null)
+      currentBridge.setTurnSignal(null)
+      assert.match(contentText(await pending) ?? '', /Approval is still pending/)
+
+      gate.release({ approved: false, remember: false, resolution: 'user' })
+      // Let the settled answer reach the bridge's resume handler.
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      assert.equal(wakes, 0, 'a rejection must not start a machine turn')
+
+      // The agent's own retry in the same task still gets the refusal, without a new prompt.
+      bind()
+      currentBridge.setTurnSignal(new AbortController().signal)
+      assert.match(contentText(await rpc(currentBridge, SHELL_CALL)) ?? '', /rejected/)
+      assert.equal(gate.handlerCalls(), 1)
+      assert.deepEqual(executed, [])
+    },
+  )
+
   for (const ending of ['completed', 'stopped', 'send-now', 'connected', 'queued-stop'] as const) {
     it(
       `tracks late result recovery across the owning turn boundary: ${ending}`,

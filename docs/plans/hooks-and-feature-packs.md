@@ -160,8 +160,9 @@ revisiting this document, not silently diverging in an implementation PR.
    Bounded background tasks launched through ACP therefore use the same wake
    budget and stale-epoch checks as native launches. Self-resume budget grants
    return that same epoch for binding the bridge; the lease must not drop it.
-   Answering a parked approval requests one host-native continuation to retry the
-   exact call through the ordinary gate. A consumed, expired or revoked answer
+   Approving a parked approval requests one host-native continuation to retry the
+   exact call through the ordinary gate; rejecting it requests none, so a refusal
+   never restarts autonomous work. A consumed, expired or revoked answer
    suppresses that wake at dispatch time. A bridged operation that returns after
    its caller detaches or its turn completes normally saves the textual result
    as a private `bridge-result` decision detail before requesting continuation.
