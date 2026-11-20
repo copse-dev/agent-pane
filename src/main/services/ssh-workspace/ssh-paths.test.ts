@@ -1,8 +1,18 @@
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import {
+  chmodSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
+import { join } from 'node:path'
 import {
   CONTROL_SOCKET_PATH_BUDGET,
+  controlDirProblem,
   controlSocketFileName,
   controlSocketPath,
   setSshControlDirForTests,
@@ -48,5 +58,78 @@ describe('controlSocketPath', () => {
     assert.doesNotMatch(path, /Application Support/)
     assert.ok(Buffer.byteLength(path, 'utf8') <= CONTROL_SOCKET_PATH_BUDGET)
     assert.ok(Buffer.byteLength(`${path}.fUyzwh1gIvt57SO8`, 'utf8') <= UNIX_DOMAIN_SOCKET_PATH_MAX)
+  })
+})
+
+describe('sshControlDir', () => {
+  const posixOnly = {
+    skip: process.platform === 'win32' ? 'Windows has no uid or POSIX mode to check' : false,
+  }
+
+  /** A throwaway parent in `/tmp`, removed after the test. */
+  function scratchParent(t: { after: (fn: () => void) => void }): string {
+    const parent = mkdtempSync('/tmp/copse-cd-')
+    t.after(() => {
+      setSshControlDirForTests(null)
+      rmSync(parent, { recursive: true, force: true })
+    })
+    return parent
+  }
+
+  it('creates a missing control directory with mode 0700', posixOnly, (t) => {
+    const dir = join(scratchParent(t), 'control')
+    setSshControlDirForTests(dir)
+
+    const path = controlSocketPath('dev-box')
+
+    assert.equal(path, join(dir, controlSocketFileName('dev-box')))
+    const stats = lstatSync(dir)
+    assert.ok(stats.isDirectory())
+    assert.equal(stats.mode & 0o777, 0o700)
+  })
+
+  it('refuses an existing control directory that is a symbolic link', posixOnly, (t) => {
+    const parent = scratchParent(t)
+    const target = join(parent, 'target')
+    mkdirSync(target, { mode: 0o700 })
+    const link = join(parent, 'control')
+    symlinkSync(target, link)
+    setSshControlDirForTests(link)
+
+    assert.throws(() => controlSocketPath('dev-box'), /symbolic link/)
+  })
+
+  it('refuses an existing control directory whose mode is not 0700', posixOnly, (t) => {
+    const dir = join(scratchParent(t), 'control')
+    mkdirSync(dir)
+    chmodSync(dir, 0o755)
+    setSshControlDirForTests(dir)
+
+    assert.throws(() => controlSocketPath('dev-box'), /mode is 755, not 700/)
+  })
+
+  it('refuses an existing control path that is not a directory', posixOnly, (t) => {
+    const path = join(scratchParent(t), 'control')
+    writeFileSync(path, '')
+    setSshControlDirForTests(path)
+
+    assert.throws(() => controlSocketPath('dev-box'), /not a directory/)
+  })
+})
+
+describe('controlDirProblem', () => {
+  const privateDir = {
+    isSymbolicLink: (): boolean => false,
+    isDirectory: (): boolean => true,
+    uid: 501,
+    mode: 0o40700,
+  }
+
+  it('accepts a private directory of the current user', () => {
+    assert.equal(controlDirProblem(privateDir, 501), null)
+  })
+
+  it('refuses a directory owned by another user', () => {
+    assert.match(controlDirProblem({ ...privateDir, uid: 0 }, 501) ?? '', /owned by uid 0, not 501/)
   })
 })

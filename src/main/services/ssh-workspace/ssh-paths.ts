@@ -1,5 +1,5 @@
 import { sha256Hex } from '@copse/std/sha256.ts'
-import { mkdirSync } from 'node:fs'
+import { lstatSync, mkdirSync, type Stats } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -25,6 +25,10 @@ export function setSshControlDirForTests(dir: string | null): void {
   controlDirOverride = dir
 }
 
+function currentUid(): number {
+  return typeof process.getuid === 'function' ? process.getuid() : 0
+}
+
 function shortControlRoot(): string {
   if (controlDirOverride) return controlDirOverride
   // Prefer `/tmp` on Unix — `os.tmpdir()` on macOS is under `/var/folders/…/T`
@@ -32,13 +36,47 @@ function shortControlRoot(): string {
   if (process.platform === 'win32') {
     return join(tmpdir(), 'copse-ssh')
   }
-  const uid = typeof process.getuid === 'function' ? process.getuid() : 0
-  return join('/tmp', `copse-ssh-${String(uid)}`)
+  return join('/tmp', `copse-ssh-${String(currentUid())}`)
+}
+
+/**
+ * Why an existing control directory must not hold ControlMaster sockets, or
+ * `null` when it is a private directory of the current user.
+ *
+ * The directory sits in a shared temp root, and `mkdir`'s mode applies only
+ * when `mkdir` creates the directory, so an existing path is checked with
+ * `lstat`: a symbolic link is refused, never followed.
+ */
+export function controlDirProblem(
+  stats: Pick<Stats, 'isSymbolicLink' | 'isDirectory' | 'uid' | 'mode'>,
+  uid: number,
+): string | null {
+  if (stats.isSymbolicLink()) return 'it is a symbolic link'
+  if (!stats.isDirectory()) return 'it is not a directory'
+  if (stats.uid !== uid) {
+    return `it is owned by uid ${String(stats.uid)}, not ${String(uid)}`
+  }
+  const mode = stats.mode & 0o777
+  if (mode !== 0o700) return `its mode is ${mode.toString(8)}, not 700`
+  return null
 }
 
 export function sshControlDir(): string {
   const dir = shortControlRoot()
-  mkdirSync(dir, { recursive: true, mode: 0o700 })
+  if (process.platform === 'win32') {
+    mkdirSync(dir, { recursive: true, mode: 0o700 })
+    return dir
+  }
+  if (lstatSync(dir, { throwIfNoEntry: false }) === undefined) {
+    // Not recursive: anything that appears here first fails with EEXIST.
+    mkdirSync(dir, { mode: 0o700 })
+  }
+  const problem = controlDirProblem(lstatSync(dir), currentUid())
+  if (problem !== null) {
+    throw new Error(
+      `Refusing to use SSH control directory ${dir}: ${problem}. Remove it and try again.`,
+    )
+  }
   return dir
 }
 
