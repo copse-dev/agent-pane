@@ -167,4 +167,46 @@ describe('follow-up suggestions thread scope', () => {
     assert.ok(mount.root.querySelector('.follow-up-bubble[data-id="run-tests"]'))
     mount.destroy()
   })
+
+  it('fetches again when a run that adds no message ends while the last fetch is out', async () => {
+    const store = createStore()
+    store.setState({ activeProjectId: 'project-1' })
+    const thread = createThread(store)
+    addMessage(store, thread, 'user', 'fix the parser')
+    addMessage(store, thread, 'assistant', 'Fixed it.')
+    let fetches = 0
+    const pending: Array<(suggestions: FollowUpSuggestion[]) => void> = []
+    const base = createFakeApi()
+    const api: ApiClient = {
+      ...base,
+      agent: {
+        ...base.agent,
+        suggestFollowUps: () => {
+          fetches += 1
+          return new Promise<FollowUpSuggestion[]>((resolve) => {
+            pending.push(resolve)
+          })
+        },
+      },
+    }
+    const mount = mountFollowUpSuggestions(store, api, () => {})
+    document.body.append(mount.root)
+    store.emit('thread_status_changed', thread, 'idle')
+    await flush()
+    assert.equal(fetches, 1)
+
+    // A run that fails to start (a Copse Reviewer run's catch) goes running →
+    // idle without adding a message, so the exchange is the same one. The run
+    // invalidated the fetch still out; that fetch must not stand in for a new one.
+    setThreadStatus(store, thread, 'running')
+    await flush()
+    setThreadStatus(store, thread, 'idle')
+    await flush()
+    assert.equal(fetches, 2)
+
+    for (const resolve of pending) resolve([SUGGESTION])
+    await flush()
+    assert.ok(mount.root.querySelector('.follow-up-bubble[data-id="run-tests"]'))
+    mount.destroy()
+  })
 })

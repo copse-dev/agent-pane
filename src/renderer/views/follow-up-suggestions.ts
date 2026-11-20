@@ -152,9 +152,17 @@ export function mountFollowUpSuggestions(
   // threads go idle), so A's suggestions were silently dropped and never cached.
   let offered: OfferedClientAction[] = []
   const fetchTokens = new Map<string, number>()
+  // Each thread's outstanding fetch: the exchange and phase it is for, and its
+  // token. `threads_changed` fires several times a second while a turn
+  // streams, and every fetch costs git/gh processes on main plus a small-model
+  // call; without this, each event started another fetch that superseded the
+  // last, so none was ever cached. A fetch whose token is bumped will be
+  // discarded, so it stops standing in for a new one.
+  const inFlightFetches = new Map<string, { key: string; token: number }>()
   const nextFetchToken = (threadId: string): number => {
     const token = (fetchTokens.get(threadId) ?? 0) + 1
     fetchTokens.set(threadId, token)
+    inFlightFetches.delete(threadId)
     return token
   }
   const changesRefreshTokens = new Map<string, number>()
@@ -167,11 +175,6 @@ export function mountFollowUpSuggestions(
   let displayedThreadId: string | null = null
   const suggestionsByThread = new Map<string, CachedSuggestions>()
   const consumedTurnKeys = new Map<string, string>()
-  // The exchange each thread's outstanding fetch is for. `threads_changed`
-  // fires several times a second while a turn streams, and every fetch costs
-  // git/gh processes on main plus a small-model call; without this, each event
-  // started another fetch that superseded the last, so none was ever cached.
-  const inFlightFetchKeys = new Map<string, string>()
 
   /**
    * The cached set that can stand for the thread's last exchange now, if any.
@@ -319,10 +322,10 @@ export function mountFollowUpSuggestions(
     if (!activeProjectId) return
     const settled = turnSettled(threadId)
     const fetchKey = `${exchange.turnKey}\0${settled ? 'settled' : 'live'}`
-    if (inFlightFetchKeys.get(threadId) === fetchKey) return
+    if (inFlightFetches.get(threadId)?.key === fetchKey) return
 
-    inFlightFetchKeys.set(threadId, fetchKey)
     const token = nextFetchToken(threadId)
+    inFlightFetches.set(threadId, { key: fetchKey, token })
     try {
       const suggestions = await api.agent.suggestFollowUps(
         activeProjectId,
@@ -343,7 +346,7 @@ export function mountFollowUpSuggestions(
       suggestionsByThread.delete(threadId)
       if (store.getState().activeThreadId === threadId) clearSuggestions()
     } finally {
-      if (inFlightFetchKeys.get(threadId) === fetchKey) inFlightFetchKeys.delete(threadId)
+      if (inFlightFetches.get(threadId)?.token === token) inFlightFetches.delete(threadId)
     }
   }
 
