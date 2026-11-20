@@ -28,7 +28,6 @@ import {
   type WriteTextFileResponse,
 } from '@agentclientprotocol/sdk/unstable'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { resolve } from 'node:path'
 import { nodeWritableStream } from './node-byte-streams.ts'
 import {
   acpChildStdoutStream,
@@ -105,7 +104,7 @@ import {
   shellForSandboxWrap,
   withSandboxShellPath,
 } from '../../project-sandbox/sandbox-argv.ts'
-import { resolveOnPath } from './acp-detect.ts'
+import { findExecutableOnPath } from './acp-detect.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
 import { isSpawnableWorkingDirectory } from '../../project-sandbox/spawn-cwd.ts'
 import {
@@ -587,16 +586,18 @@ function waitForAcpChildExit(
  * PATH from `cwd`, for the overlay's read-only `executables` grant, which
  * decides what of it and its symlink target may be read. A relative PATH entry
  * resolves from the agent's cwd, as the wrapper resolves it, never from Copse's.
- * Empty when it does not resolve: the spawn then fails as before, naming the
- * command.
+ * Found by reading the filesystem: this runs before the sandbox exists, so
+ * running a lookup program from the agent's PATH (which a workspace-relative
+ * entry can supply) would run it unconfined. Empty when it does not resolve:
+ * the spawn then fails as before, naming the command.
  */
 async function agentExecutables(
   command: string,
   env: NodeJS.ProcessEnv,
   cwd: string,
 ): Promise<string[]> {
-  const found = await resolveOnPath(command, env, cwd)
-  return found ? [resolve(cwd, found)] : []
+  const found = await findExecutableOnPath(command, env['PATH'] ?? '/usr/bin:/bin', cwd)
+  return found ? [found] : []
 }
 
 export async function spawnAcpAgentProcess(

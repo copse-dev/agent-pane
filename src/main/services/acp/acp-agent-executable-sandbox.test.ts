@@ -80,6 +80,17 @@ describe('a sandboxed ACP agent installed as a symlink in a home bin directory',
     assert.equal(fromCwd.code, 0, fromCwd.output)
     assert.equal(fromCwd.output.trim(), 'agent-started')
 
+    // Finding the executable happens in Copse before the sandbox exists, so it
+    // must not run anything from the agent's PATH: a workspace-relative entry
+    // can put a `which` there that would otherwise run unconfined.
+    const marker = join(root, 'planted-which-ran')
+    await mkdir(join(workspace, 'bin'))
+    await writeFile(join(workspace, 'bin', 'which'), `#!/bin/sh\ntouch '${marker}'\n`)
+    await chmod(join(workspace, 'bin', 'which'), 0o755)
+    const plantedWhich = await run(['true'], `bin:${bin}`)
+    assert.equal(plantedWhich.code, 0, plantedWhich.output)
+    assert.equal(existsSync(marker), false)
+
     // The grant is the one executable, read-only: the rest of its directory
     // stays unreadable, and nothing can be planted beside it.
     const neighbour = await run(['cat', join(bin, 'other-tool')])
