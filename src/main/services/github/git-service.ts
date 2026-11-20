@@ -851,7 +851,7 @@ export const GIT_CONTENT_STATE_TOTAL_MAX_BYTES = 64 * 1024 * 1024
  * Nothing here runs a program or follows a link. Copse reads each file itself,
  * opened without following a final symlink and without blocking on a FIFO, and
  * hashes the bytes of a regular file as git's blob id. A path git would convert
- * on `add` (a clean `filter`, `text`, `eol`, `ident` or `working-tree-encoding`
+ * on `add` (a clean `filter`, `text` or its legacy `crlf`, `eol`, `ident` or `working-tree-encoding`
  * attribute, or `core.autocrlf`) would hash differently from what git stores,
  * so it is left unknown, as are links, special files and anything that stops
  * being a regular file before it is read. Returns null when git can't answer,
@@ -929,9 +929,10 @@ export async function findGitContentStates(
 
 /**
  * Git's blob id for the regular file at `path`, read through one descriptor:
- * opened without following a final symlink or blocking on a FIFO, then checked
- * to be a regular file on that same descriptor, so a path swapped for a link or
- * device after an earlier check is refused rather than read. Null when it is
+ * opened without following a final symlink (where the platform can refuse one)
+ * or blocking on a FIFO, then checked to be a regular file on that same
+ * descriptor and to be the file `path` itself names, so a path swapped for a
+ * link or device after an earlier check is refused rather than read. Null when it is
  * not a regular file, is larger than `maxBytes` (it grew after the caller
  * budgeted for it), cannot be read, or changes while being read: the
  * descriptor is checked again afterwards, and a different size, modification
@@ -943,7 +944,8 @@ export async function gitBlobIdOfRegularFile(
   algorithm: 'sha1' | 'sha256',
   maxBytes: number,
 ): Promise<string | null> {
-  // Windows defines neither flag; there `fstat` alone refuses a non-file.
+  // Windows defines neither flag; there `fstat` refuses a non-file and the
+  // identity check below refuses a link.
   const flags =
     process.platform === 'win32'
       ? fsConstants.O_RDONLY
@@ -957,6 +959,11 @@ export async function gitBlobIdOfRegularFile(
   try {
     const stat = await handle.stat({ bigint: true })
     if (!stat.isFile() || stat.size > BigInt(maxBytes)) return null
+    // The path must still name this same regular file. On Windows the open
+    // follows a final symlink, so a link swapped in before it would otherwise
+    // hash its target as this path; elsewhere this repeats `O_NOFOLLOW`.
+    const named = await fsp.lstat(path, { bigint: true })
+    if (!named.isFile() || named.dev !== stat.dev || named.ino !== stat.ino) return null
     const size = Number(stat.size)
     const hash = createHash(algorithm).update(`blob ${String(size)}\0`)
     const buffer = Buffer.alloc(Math.min(1024 * 1024, Math.max(1, size)))
@@ -989,7 +996,16 @@ export async function gitBlobIdOfRegularFile(
 }
 
 /** Attributes that make `git add` store something other than the file's bytes. */
-const CONVERSION_ATTRIBUTES = ['filter', 'text', 'eol', 'ident', 'working-tree-encoding'] as const
+// `crlf` is git's legacy spelling of `text` (`crlf` = `text`, `crlf=input` =
+// `eol=lf`, `-crlf` = `-text`); `check-attr` reports it apart from `text`.
+const CONVERSION_ATTRIBUTES = [
+  'filter',
+  'text',
+  'crlf',
+  'eol',
+  'ident',
+  'working-tree-encoding',
+] as const
 
 /**
  * The subset of `paths` (relative to `root`) git would store byte for byte:

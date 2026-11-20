@@ -1317,6 +1317,32 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
     git(tempRoot, ['config', 'core.autocrlf', 'true'])
     assert.equal((await listWorktreeGitContentStates(['raw.txt']))?.size, 0)
   })
+  ownedIt(
+    'listWorktreeGitContentStates leaves content under the legacy crlf attribute unknown',
+    async () => {
+      // `crlf` is git's old spelling of `text`; check-attr reports it on its own,
+      // and `git add` stores this file with LF endings, not its raw bytes.
+      await writeFile(join(tempRoot, '.gitattributes'), '*.txt crlf\n', 'utf-8')
+      await writeFile(join(workspaceRoot, 'legacy.txt'), 'line\r\n', 'utf-8')
+      await writeFile(join(workspaceRoot, 'plain.dat'), 'line\r\n', 'utf-8')
+      git(tempRoot, ['add', 'packages/app/legacy.txt'])
+      const states = await listWorktreeGitContentStates(['legacy.txt', 'plain.dat'])
+      assert.ok(states, 'git answered')
+      assert.deepEqual(byState(states), { 'only-copy': ['plain.dat'], 'in-git': [] })
+    },
+  )
+  ownedIt(
+    'gitBlobIdOfRegularFile refuses a path that names a link, even to a regular file',
+    async () => {
+      // Windows opens through a final symlink; the identity check refuses it there.
+      const target = join(workspaceRoot, 'target.txt')
+      await writeFile(target, 'target\n', 'utf-8')
+      const link = join(workspaceRoot, 'link.txt')
+      await symlink(target, link)
+      assert.ok(await gitBlobIdOfRegularFile(target, 'sha1', 1024), 'the target itself hashes')
+      assert.equal(await gitBlobIdOfRegularFile(link, 'sha1', 1024), null)
+    },
+  )
   ownedIt('listWorktreeGitContentStates makes no claim in an SSH workspace', async () => {
     // The hashing reads this machine's disk. For an SSH project the root names a
     // remote path, so a local file at the same path must not answer for it.

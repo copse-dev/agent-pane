@@ -162,12 +162,14 @@ describe('internal Git policy', () => {
       '--stdin',
       'filter',
       'text',
+      'crlf',
       'eol',
       'ident',
       'working-tree-encoding',
     ]
     assert.deepEqual(withGitInvocationArgs(read).slice(-read.length), read)
     for (const args of [
+      read.filter((arg) => arg !== 'crlf'),
       ['check-attr', '-z', '--stdin', 'filter'],
       ['check-attr', '-z', '--stdin', '--all'],
       [...read, 'diff'],

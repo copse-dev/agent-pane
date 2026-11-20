@@ -193,13 +193,14 @@ const ADMITTED_ATTRIBUTE_READ = [
   '--stdin',
   'filter',
   'text',
+  'crlf',
   'eol',
   'ident',
   'working-tree-encoding',
 ]
 
 /**
- * Admit exactly `check-attr -z --stdin filter text eol ident
+ * Admit exactly `check-attr -z --stdin filter text crlf eol ident
  * working-tree-encoding`: it reads which paths git would convert on `add`, runs
  * no program and writes nothing.
  */
