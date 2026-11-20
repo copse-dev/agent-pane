@@ -36,7 +36,7 @@ import {
   sleep,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-TBAEM7JG.js";
+} from "./chunks/chunk-UDWMTQIK.js";
 import "./chunks/chunk-X6JZSFJR.js";
 import {
   init_icons,
@@ -46,7 +46,7 @@ import {
   maximizeIcon,
   minimizeIcon,
   stringRecordOrEmpty
-} from "./chunks/chunk-CK4AOU5N.js";
+} from "./chunks/chunk-UAI3U54O.js";
 import "./chunks/chunk-EMIRHVRH.js";
 import {
   __commonJS,
@@ -7507,7 +7507,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-RC7TJXXB.js").then(async (main) => {
+    void import("./chunks/main-QW52D47O.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(
