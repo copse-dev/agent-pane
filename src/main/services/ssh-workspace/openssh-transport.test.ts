@@ -152,6 +152,109 @@ describe('sshExecArgs / ControlPath', () => {
   )
 })
 
+describe('SSH destination validation', () => {
+  /** `host` with its destination fields replaced; `user: null` drops the user. */
+  function withDestination(target: string, user: string | null = 'ubuntu'): SshWorkspaceHost {
+    return { id: host.id, label: host.label, host: target, ...(user === null ? {} : { user }) }
+  }
+
+  const refused: { name: string; host: SshWorkspaceHost; message: RegExp }[] = [
+    { name: 'an option-shaped host', host: withDestination('-oFoo=bar'), message: /start with/ },
+    { name: 'a padded option-shaped host', host: withDestination('  -oFoo=bar'), message: /start/ },
+    {
+      name: 'an option-shaped user',
+      host: withDestination('dev.example', '-p22'),
+      message: /User cannot start/,
+    },
+    {
+      name: 'a host carrying an option-shaped user',
+      host: withDestination('-p22@dev.example', null),
+      message: /Host cannot start/,
+    },
+    {
+      name: 'an option-shaped name after user@',
+      host: withDestination('ubuntu@-oFoo=bar', null),
+      message: /Host cannot start/,
+    },
+    { name: 'a host with a space', host: withDestination('dev.example -p22'), message: /spaces/ },
+    {
+      name: 'a host with a newline',
+      host: withDestination('dev.example\n-p22'),
+      message: /spaces/,
+    },
+    {
+      name: 'a host with a control character',
+      host: withDestination('dev\u0001example'),
+      message: /control/,
+    },
+    {
+      name: 'a user with a control character',
+      host: withDestination('dev.example', 'ubuntu\u007f'),
+      message: /User cannot contain control/,
+    },
+    { name: 'a blank host', host: withDestination('   '), message: /required/ },
+  ]
+  for (const { name, host: bad, message } of refused) {
+    it(`refuses ${name} in every argv builder`, () => {
+      assert.throws(() => sshExecArgs(bad, 'true'), message)
+      assert.throws(() => sshPtyArgs(bad, 'bash -l'), message)
+    })
+  }
+
+  const accepted: { name: string; host: SshWorkspaceHost; target: string }[] = [
+    { name: 'a plain host', host: withDestination('dev.example', null), target: 'dev.example' },
+    {
+      name: 'a host with a user',
+      host: withDestination('dev.example'),
+      target: 'ubuntu@dev.example',
+    },
+    {
+      name: 'a user@host host',
+      host: withDestination('ubuntu@dev.example', null),
+      target: 'ubuntu@dev.example',
+    },
+    {
+      name: 'a padded host',
+      host: withDestination('  dev.example  '),
+      target: 'ubuntu@dev.example',
+    },
+    { name: 'a hyphenated host', host: withDestination('dev-box-2'), target: 'ubuntu@dev-box-2' },
+    { name: 'an IPv6 literal', host: withDestination('[::1]', null), target: '[::1]' },
+    { name: 'an IPv6 literal with a user', host: withDestination('[::1]'), target: 'ubuntu@[::1]' },
+    {
+      name: 'a user with a space',
+      host: withDestination('dev.example', 'first last'),
+      target: 'first last@dev.example',
+    },
+    {
+      name: 'a user@host host whose unused user field is option-shaped',
+      host: withDestination('ubuntu@dev.example', '-p22'),
+      target: 'ubuntu@dev.example',
+    },
+  ]
+  for (const { name, host: ok, target } of accepted) {
+    it(`accepts ${name}`, () => {
+      const args = sshExecArgs(ok, 'true')
+      assert.equal(args.at(-2), target)
+      assert.equal(args.at(-1), 'true')
+      const pty = sshPtyArgs(ok, 'bash -l')
+      assert.equal(pty.at(-2), target)
+    })
+  }
+
+  it(
+    'refuses an option-shaped host at connect without starting ssh',
+    { skip: process.platform === 'win32' },
+    async (t) => {
+      const dir = installFakeSsh(t, 'touch "$(dirname "$0")/ran"\nexit 0')
+      const transport = new OpenSshTransport({ ...host, host: '-oFoo=bar' })
+      await assert.rejects(transport.connect(), /Cannot use SSH host “dev-box”: Host cannot start/)
+      assert.equal(transport.isConnected(), false)
+      assert.equal(existsSync(join(dir, 'ran')), false, 'ssh must not run for a refused host')
+    },
+  )
+})
+
 describe('SSH file transfer limit', () => {
   it('stops a stream before a chunk would take it over the byte budget', async () => {
     const limiter = createSshFileTransferLimit(5)

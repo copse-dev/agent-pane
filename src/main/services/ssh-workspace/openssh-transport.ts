@@ -8,6 +8,7 @@ import { Transform } from 'node:stream'
 import { StringDecoder } from 'node:string_decoder'
 import { pipeline } from 'node:stream/promises'
 import type { SshWorkspaceHost, SshExecResult } from '@shared/types/ssh-workspace.ts'
+import { sshDestinationProblem } from '@shared/ssh-destination.ts'
 import { getSetting } from '../storage/settings.ts'
 import type { SshStrictHostKeys } from './git-ssh-env.ts'
 import { leaseSshAskpassEnv } from './askpass.ts'
@@ -50,9 +51,20 @@ function keepaliveArgs(): string[] {
   ]
 }
 
+/**
+ * The destination argument for every ssh invocation Copse builds. A host or
+ * user that ssh would read as an option, or that is not a usable host name, is
+ * refused here rather than at entry alone, so a value already in storage is
+ * stopped at connect.
+ */
 function resolveTarget(host: SshWorkspaceHost): string {
   const hostname = host.host.trim()
-  if (host.user && !hostname.includes('@')) return `${host.user}@${hostname}`
+  // A host that carries its own `user@` is used as it is, so the separate user
+  // field never reaches the command line and is not checked.
+  const user = hostname.includes('@') ? undefined : host.user
+  const problem = sshDestinationProblem(host.host, user)
+  if (problem) throw new Error(`Cannot use SSH host “${host.id}”: ${problem.message}`)
+  if (user) return `${user}@${hostname}`
   return hostname
 }
 
@@ -97,6 +109,7 @@ function baseSshArgs(host: SshWorkspaceHost, controlPath: string): string[] {
   if (host.port) args.push('-p', String(host.port))
   if (host.identityFile) args.push('-i', host.identityFile)
   if (host.forwardAgent) args.push('-o', 'ForwardAgent=yes')
+  // The destination is validated in resolveTarget.
   args.push(resolveTarget(host))
   return args
 }
