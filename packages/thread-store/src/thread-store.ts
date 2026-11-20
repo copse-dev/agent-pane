@@ -1722,11 +1722,57 @@ const metaCacheVersionsByDir = new Map<string, number>()
 /** Keyed by project store dir (not id) so a changed `COPSE_WORKSPACE_DIR` misses. */
 const metaCacheByDir = new Map<string, Map<boolean, CachedMetas>>()
 
+/**
+ * A serial per settled store write, by project store dir. Unlike
+ * {@link metaCacheVersionsByDir} it is never reset or reused, so a value seen
+ * once names one moment of that store for the life of the process.
+ */
+let storeWriteSerial = 0
+const storeWriteSerialByDir = new Map<string, number>()
+
 /** Drop a project's snapshots; the bump also strips in-flight reads of their right to cache. */
 function invalidateProjectMetaCache(projectId: string): void {
   const dir = projectDir(projectId)
   metaCacheVersionsByDir.set(dir, (metaCacheVersionsByDir.get(dir) ?? 0) + 1)
   metaCacheByDir.delete(dir)
+  storeWriteSerial += 1
+  storeWriteSerialByDir.set(dir, storeWriteSerial)
+}
+
+async function fileSignature(path: string): Promise<string> {
+  try {
+    const stats = await fsPromises.stat(path)
+    return `${String(stats.size)}@${String(stats.mtimeMs)}`
+  } catch {
+    return 'absent'
+  }
+}
+
+/**
+ * An opaque token for a reader that keeps a thread's folded transcript between
+ * reads: while the token is unchanged, {@link loadThreadMessages} would return
+ * the same transcript, so the reader may reuse the one it has.
+ *
+ * Take the token BEFORE the read it will label. A write that lands in between
+ * then leaves newer content under an older token, which costs one extra read;
+ * the other order would label older content as current.
+ *
+ * Two signals, because neither covers every writer alone. The project's write
+ * serial changes when any queued store write settles, which covers a nested
+ * subagent transcript growing without its parent spine changing. The size and
+ * mtime of the thread's own `meta.json` and spine cover the writers that
+ * bypass that queue's invalidation: history-edit recovery rewrites both files.
+ * The same single-writer-process assumption as the meta cache applies.
+ */
+export async function threadReadRevision(projectId: string, threadId: string): Promise<string> {
+  const dir = threadDir(projectId, threadId)
+  // Read the serial first, for the same reason the token precedes the read.
+  const serial = storeWriteSerialByDir.get(projectDir(projectId)) ?? 0
+  const [meta, spine] = await Promise.all([
+    fileSignature(join(dir, META_FILE)),
+    fileSignature(join(dir, EVENTS_FILE)),
+  ])
+  return [dir, String(serial), meta, spine].join('\n')
 }
 
 /**

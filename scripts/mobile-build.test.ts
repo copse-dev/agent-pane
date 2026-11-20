@@ -108,6 +108,7 @@ it('bundles the mobile entry and renders saved Markdown through activity navigat
       value: async (path: string): Promise<unknown> => ({
         ok: true,
         status: 200,
+        headers: new window.Headers(),
         json: async () =>
           path === '/api/activity'
             ? { access, sessionId: 's', projects: [{ id: 'p', name: 'Project' }], rows: [row] }
