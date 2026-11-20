@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 /**
  * Deciding which sampled frames are worth showing the model.
  *
@@ -40,8 +41,8 @@ export interface SignatureGrid {
  */
 export function signatureGridFor(width: number, height: number): SignatureGrid {
   const aspect = width > 0 && height > 0 ? width / height : 16 / 9
-  const columns = Math.min(64, Math.max(8, Math.round(Math.sqrt(SIGNATURE_TARGET_CELLS * aspect))))
-  const rows = Math.min(64, Math.max(8, Math.round(SIGNATURE_TARGET_CELLS / columns)))
+  const columns = clamp(Math.round(Math.sqrt(SIGNATURE_TARGET_CELLS * aspect)), 8, 64)
+  const rows = clamp(Math.round(SIGNATURE_TARGET_CELLS / columns), 8, 64)
   return { columns, rows, cells: columns * rows }
 }
 
@@ -126,7 +127,7 @@ export function frameDistance(a: ArrayLike<number>, b: ArrayLike<number>): numbe
  */
 export function distanceThreshold(gapSeconds: number, sensitivity: FrameSensitivity): number {
   const base = BASE_THRESHOLD[sensitivity]
-  const gap = Math.max(0, Math.min(gapSeconds, SUBSECOND_WINDOW_SECONDS))
+  const gap = clamp(gapSeconds, 0, SUBSECOND_WINDOW_SECONDS)
   const closeness = 1 - gap / SUBSECOND_WINDOW_SECONDS
   return base * (1 + subsecondStrictness(sensitivity) * closeness)
 }

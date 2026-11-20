@@ -1,3 +1,4 @@
+import { lazyBodyDialog } from './dialog-shell.ts'
 import { el, clear } from '../dom/helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 
@@ -6,14 +7,7 @@ export interface NewProjectPick {
   parentDir: string
 }
 
-let dialogEl: HTMLDialogElement | null = null
-
-function ensureDialog(): HTMLDialogElement {
-  if (dialogEl) return dialogEl
-  dialogEl = el('dialog', { id: 'new-project-dialog', class: 'new-project-dialog' })
-  document.body.append(dialogEl)
-  return dialogEl
-}
+const ensureDialog = lazyBodyDialog('new-project-dialog', 'new-project-dialog')
 
 /**
  * "New project" dialog: type a project/folder name, choose the parent directory

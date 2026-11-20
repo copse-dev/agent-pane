@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 import {
   SIGNATURE_CHANNELS,
   frameDistance,
@@ -130,8 +131,8 @@ async function decodeFrames(request: DecodeFramesRequest): Promise<DecodeFramesR
     const duration = await resolveDuration(video)
     if (!(duration > 0)) throw new Error('video reports no playable duration')
 
-    const start = Math.max(0, Math.min(request.startSeconds, duration))
-    const end = Math.max(start, Math.min(request.endSeconds ?? duration, duration))
+    const start = clamp(request.startSeconds, 0, duration)
+    const end = clamp(request.endSeconds ?? duration, start, duration)
     const { width, height } = frameSizeFor(video.videoWidth, video.videoHeight, request.maxWidth)
 
     const frameCanvas = document.createElement('canvas')
