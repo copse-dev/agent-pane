@@ -1787,12 +1787,15 @@ export async function ensureShellCommandPermitted(
   // the full reason list so extra risks (curl, custom registry, …) stay visible.
   // In the sandbox a runner alone is allowed, so a lone destructive reason
   // (`rm -f x && npx wdio`) is the real cause and must not be relabelled.
+  // With auto-run off (or Always ask) every command carries the same single
+  // "auto-run is disabled" reason, which says nothing about the command, so
+  // count the command's own signals instead: a script that also downloads,
+  // redirects the registry or reaches a host is not relabelled as an install.
   const install = detectPackageInstall(command)
-  if (
-    install.isInstall &&
-    effectiveReasons.length === 1 &&
-    dangerousInSandboxReasons(command).length === 0
-  ) {
+  const installIsSoleSignal = autoRun
+    ? effectiveReasons.length === 1
+    : analyzeShellCommand(command, workspaceRoot).reasons.length <= 1
+  if (install.isInstall && installIsSoleSignal && dangerousInSandboxReasons(command).length === 0) {
     const safeInstall = getSetting<boolean>('safeInstallEnabled', true)
     const { approved } = await requestApproval(
       install.isEphemeralRunner

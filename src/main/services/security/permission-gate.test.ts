@@ -268,6 +268,46 @@ describe('package command approval scope', () => {
       rmSync(root, { recursive: true, force: true })
     }
   })
+
+  it('keeps a script with an install and a download on the escalation prompt with auto-run off', async () => {
+    setPermissionGateForTests(null)
+    const root = mkdtempSync(join(tmpdir(), 'package-scope-'))
+    const restore = setWorkspaceRootForTest(root)
+    await setSetting('safetyClassifierEnabled', false)
+    await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+    const requests: { title: string; cause: string | undefined }[] = []
+    setApprovalHandler(async ({ title, cause }) => {
+      requests.push({ title, cause })
+      return { approved: false, remember: false }
+    })
+    try {
+      for (const autoRun of [true, false]) {
+        for (const command of [
+          'wget http://localhost:8080/index.html\nnpx vitest run',
+          'npm install --registry=https://registry.example.test',
+        ]) {
+          await ensureShellCommandPermitted(command, {
+            sandboxEnabled: true,
+            autoRun,
+            executionRoot: root,
+          })
+        }
+        // A plain install, alone or after a `cd`, keeps its dedicated prompt.
+        await ensureShellCommandPermitted('cd web\nnpm install', {
+          sandboxEnabled: true,
+          autoRun,
+          executionRoot: root,
+        })
+      }
+      const escalation = { title: 'Run outside sandbox?', cause: 'shell-sandbox-escalation' }
+      const install = { title: 'Run package install?', cause: 'shell-package-install' }
+      assert.deepEqual(requests, [escalation, escalation, install, escalation, escalation, install])
+    } finally {
+      setApprovalHandler(null)
+      restore()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('prepare_worktree permission', () => {
