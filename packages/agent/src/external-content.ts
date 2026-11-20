@@ -13,14 +13,28 @@ export type ToolProvenance = 'trusted' | 'workspace' | 'external'
 const TAG = 'external_content'
 
 /**
+ * Characters that render as nothing: zero-width spaces and joiners, the word
+ * joiner, the byte-order mark, bidi controls and the like. One of them inside
+ * a tag leaves it reading as the tag, so the match below skips them.
+ */
+const INVISIBLE = String.raw`\p{Default_Ignorable_Code_Point}`
+const GAP = String.raw`[\s${INVISIBLE}]*`
+// The tag name with invisible characters allowed between its (ASCII) letters.
+const TAG_NAME = Array.from(TAG).join(`${INVISIBLE}*`)
+// The `/` is matched before the second gap, so the two gaps never compete for
+// the same characters: the lookahead stays linear in the length of a gap.
+const TAG_START = new RegExp(String.raw`<(?=${GAP}(?:\/${GAP})?${TAG_NAME})`, 'giu')
+
+/**
  * Neutralise any opening or closing `external_content` tag inside the body so
  * wrapped content cannot forge or terminate its own envelope. Only the `<` of
  * an offending tag is entity-escaped — everything else passes through
  * verbatim, keeping the content readable and the transform deterministic.
- * Without this the envelope is theatre.
+ * Whitespace and invisible characters around the `/` or inside the name do
+ * not hide a tag. Without this the envelope is theatre.
  */
 export function escapeExternalContent(text: string): string {
-  return text.replace(/<(?=\s*\/?\s*external_content)/gi, '&lt;')
+  return text.replace(TAG_START, '&lt;')
 }
 
 /**

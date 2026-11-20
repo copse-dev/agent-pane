@@ -32,6 +32,47 @@ describe('escapeExternalContent', () => {
     const out = escapeExternalContent('</external_content>x</external_content>')
     assert.equal(out, '&lt;/external_content>x&lt;/external_content>')
   })
+
+  // Zero-width space, non-joiner, joiner, word joiner and byte-order mark.
+  const invisible = ['\u200B', '\u200C', '\u200D', '\u2060', '\uFEFF']
+
+  for (const char of invisible) {
+    const code = `U+${char.codePointAt(0)?.toString(16).toUpperCase() ?? ''}`
+
+    it(`neutralises a tag with ${code} after the < or the /`, () => {
+      assert.equal(
+        escapeExternalContent(`<${char}/external_content>`),
+        `&lt;${char}/external_content>`,
+      )
+      assert.equal(
+        escapeExternalContent(`</${char}external_content>`),
+        `&lt;/${char}external_content>`,
+      )
+      assert.equal(
+        escapeExternalContent(`<${char}external_content>`),
+        `&lt;${char}external_content>`,
+      )
+    })
+
+    it(`neutralises a tag with ${code} inside its name`, () => {
+      assert.equal(
+        escapeExternalContent(`</external${char}_content>`),
+        `&lt;/external${char}_content>`,
+      )
+    })
+  }
+
+  it('leaves a tag-like name with a visible character inside it alone', () => {
+    const text = '</external-content> <external content>'
+    assert.equal(escapeExternalContent(text), text)
+  })
+
+  it('stays fast on a long run of whitespace after a <', () => {
+    const text = `<${' '.repeat(100_000)}x`
+    const started = performance.now()
+    assert.equal(escapeExternalContent(text), text)
+    assert.ok(performance.now() - started < 2_000, 'escaping must not backtrack quadratically')
+  })
 })
 
 describe('wrapExternalContent', () => {
