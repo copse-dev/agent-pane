@@ -51,6 +51,8 @@ import { captureExplainerFrames } from './windows/explainer-preview.ts'
 import { attachWebContentsLockdown } from './windows/web-contents-lockdown.ts'
 import {
   attachBrowserGuestWindowOpen,
+  authorizeBrowserPartitionPreview,
+  browserPartitionHasPreview,
   getAgentBrowserSession,
   getBrowserSessionForPartition,
   isBrowserWebContents,
@@ -445,6 +447,8 @@ installProcessFaultHandlers({
 setBrowserSessionPlatform({
   createWindow: (options) => new BrowserWindow(options),
   getAgentSession: (scope) => getAgentBrowserSession(scope),
+  authorizePreview: authorizeBrowserPartitionPreview,
+  hasPreview: browserPartitionHasPreview,
   showUrl: (url, partition) => {
     const win = getMainWindow()
     if (!win || win.isDestroyed()) return

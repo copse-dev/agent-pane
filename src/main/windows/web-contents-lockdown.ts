@@ -7,6 +7,7 @@ import {
   externalLinkConfirmationDetail,
   openExternalWithConsent,
 } from '../services/external-link-consent.ts'
+import { isStaticPreviewUrl } from '../services/browser/static-preview-server.ts'
 
 const lockedDown = new WeakSet<WebContents>()
 
@@ -17,6 +18,11 @@ function rendererRootDir(): string {
 /** http(s) links clicked in the renderer should open in the system browser. */
 export function isExternalHttpUrl(url: string): boolean {
   return /^https?:\/\//i.test(url)
+}
+
+/** Never hand a Copse preview to the unrestricted system browser. */
+export function isSystemBrowserUrl(url: string): boolean {
+  return isExternalHttpUrl(url) && !isStaticPreviewUrl(url)
 }
 
 /**
@@ -74,7 +80,7 @@ export function attachWebContentsLockdown(contents: WebContents): void {
   lockedDown.add(contents)
 
   contents.setWindowOpenHandler(({ url }) => {
-    if (isExternalHttpUrl(url)) openExternalFromRenderer(contents, url)
+    if (isSystemBrowserUrl(url)) openExternalFromRenderer(contents, url)
     return { action: 'deny' }
   })
 
@@ -94,7 +100,7 @@ export function attachWebContentsLockdown(contents: WebContents): void {
   const blockIfDisallowed = (event: Electron.Event, url: string): void => {
     if (!isAllowedRendererNavigation(url)) {
       event.preventDefault()
-      if (isExternalHttpUrl(url)) openExternalFromRenderer(contents, url)
+      if (isSystemBrowserUrl(url)) openExternalFromRenderer(contents, url)
     }
   }
 

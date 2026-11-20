@@ -5,12 +5,8 @@ import { detectLanguage } from '../../language.ts'
 import { deriveOverallState, rollupToCiChecks } from '../github-ci-service.ts'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { z } from 'zod'
-import {
-  ghPrViewListSchema,
-  ghPrViewSchema,
-  optionalNumber,
-  optionalString,
-} from '../gh-json-schemas.ts'
+import { ghPrViewListSchema, ghPrViewSchema } from '../gh-json-schemas.ts'
+import { optionalNumber, optionalString } from '@shared/zod-null-optional.ts'
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 import type {
   GhCliStatus,

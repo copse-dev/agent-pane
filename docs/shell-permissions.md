@@ -376,6 +376,30 @@ anything else (`grep x f; ssh host`, `bash -c "ssh host"`, `timeout 5 ssh host`,
 variable in an operand or redirect target (`grep ssh $FILE > $TMPDIR/out`) names no program.
 Destructive and privileged matchers (`sudo`, `rm -rf`, `kill -9`, `chmod 777`, `dd`) never relax.
 
+A word found only inside a compound name in a file path operand is no signal at all:
+`mkdir -p src/ssh-config`, `touch src/curl-helpers.ts` and, in a checkout at
+`~/agent-pane-agent-exec`, `cd ~/agent-pane-agent-exec && pnpm test` score `sandbox`. A path
+operand has a slash and only name characters; a compound name joins parts with `-` or `.`. The
+word still counts as the program a segment runs, directly or behind a wrapper (`exec-foo`,
+`/usr/bin/curl`, `./bin/ssh-x`, `env ./bin/ssh-x`, `timeout 5 ./a/ssh-b`), as a bare name another
+command may run from PATH (`xargs ssh-copy-id`, `xargs curl-wrapper.sh`), as a bare directory
+(`services/exec/a.ts`), and in a word with a space or another non-name character (an option,
+`host:dir`, `$`). Quotes alone change nothing: the parser removes them first, so
+`mkdir "src/ssh-config"` is a path too.
+
+A name fragment is confirmed, never inferred from what is absent. With every such operand
+blanked, the whole line must stop matching, so a mention the parser drops (a here-string, a
+comment, a redirect target such as `pnpm test > .tmp/agent-exec-test/out.log`) keeps the hard
+reason. A line that can run text as code confirms nothing: one with a shell, an interpreter,
+`source`, `.`, `eval` or `parallel`, or with `xargs` in front of anything but a plain read
+(`| xargs wc -l` is fine; `| xargs env`, a bare `| xargs` and `xargs -I{} …` are not), because a
+pipeline or a written file can turn a path into a program and its arguments. An unconfirmed word
+is an ordinary mention, judged by the inert-read rule above with the same fail-closed cases,
+process substitution included. Limits: a program that runs its operand without being a wrapper
+Copse looks through (`strace ./x/ssh-y`), or that runs code from a file without being an
+interpreter (`make`), is not modelled. What it runs is an opaque workspace program, contained like
+any other.
+
 `rm` prompts inside an active sandbox as a recursive delete when it is recursive (`-r`, `-R`,
 `--recursive`). A forced `rm -f` without `-r` deletes exactly what a plain `rm` does, which runs
 contained, so `rm -f e2e-failure-artifacts/demo-failure.png` does too when every `rm` on the line
@@ -858,13 +882,23 @@ a token the shell would expand (braces, `*`/`?`/`[` globs, `$`, backticks, quote
 `~` past the start, extglob parentheses) asks again, because `dir/{..,sub}/x` sits under `dir` as
 text but reads `dir/../x`. Repeating the exact approved token is still covered.
 
-Coverage and the credential checks are decided on the path text and do not resolve symlinks, so a
-symlink inside an approved directory reaches whatever it points to. The approved root itself is
-identity-pinned while it exists: replacing a granted file or directory, or retargeting a granted
-symlink, revokes that grant and asks again. The sandbox does not close the nested-symlink case:
-`readAllowedSandboxOverlay` canonicalizes each target with `realpath` before widening `allowRead`,
-so it widens to the link's destination. Without an OS sandbox the command reads it on the host. An
-expanded “Approve this command” action approves one invocation without a grant.
+A path token containing a `..` segment is ineligible for this narrower read question, even if
+lexically resolving it appears to stay within an approved directory. The kernel follows a symlink
+before applying `..`, while a text-only `path.resolve` would erase the link. Such commands use the
+ordinary shell approval route; the read overlay also rejects a raw target with a parent segment.
+
+The approved root is identity-pinned while it exists: replacing a granted file or directory, or
+retargeting a granted symlink, revokes that grant and asks again. Before reusing a directory grant,
+Copse resolves the requested path (including existing ancestors of a missing leaf) and checks that
+its destination stays within the approved root and does not name a credential target. A symlink
+inside the directory that leads outside it therefore cannot reuse the grant. A new narrow approval
+also checks the resolved destination and shows it in the prompt when it differs from the named path;
+a link to a credential store, home root or filesystem root cannot receive a narrow grant. For a
+standing grant, the per-spawn overlay allows only the pinned canonical destination. If the link
+changes after the gate checks it, the new destination remains outside that overlay. A one-command
+approval has no pinned standing identity, so a linked target fails closed inside the sandbox; the
+agent can retry with its canonical path and seek approval there. A failure under either kind of
+read-only approval cannot trigger an outside-sandbox retry, including in Guarded YOLO mode.
 
 Reads under macOS's per-user temp directory (`getconf DARWIN_USER_TEMP_DIR`, `/var/folders/…/T`)
 skip the question: the seatbelt already lets every command read there, so the gate records a
@@ -896,7 +930,9 @@ command, reads the directory itself. `cd` alone, `cd -`, and relative targets st
 `cd` forward, so `cd ~/.ssh && cat id_rsa` is refused like `cat ~/.ssh/id_rsa`.
 
 This applies on every platform. Off macOS/Linux there is no seatbelt/bubblewrap to leave, but the
-access is still outside the project and requires the same narrowly reasoned permission.
+access is still outside the project and requires the same narrowly reasoned permission. After
+approval, the command reads the path on the host because no OS sandbox exists to confine that read
+or prevent it from following links beyond an approved directory.
 
 The in-memory grant disappears on restart. The decision record does not: an answer appends a
 `decision` spine event at `scope: external-read`, including the paths and whether the grant was
@@ -1420,6 +1456,18 @@ files in the scratch directory every contained command can write. `envForRendere
 and the ACP worker spawns drop it if a child starts mid-wrap. Each flavour gets one temp directory
 it can write (`sandboxTmpDirFor`): the workspace scratch directory when the overlay grants it,
 ASRT's `/tmp/claude` for a read-only overlay, and the cell's own `tmp` for a review cell.
+
+The wrapper shell that starts each sandboxed process (native commands, PTYs, background tasks,
+review cells, worktree preparation and ACP agents) gets a `PATH` with only its absolute entries, in
+order (`withSandboxShellPath` in `sandbox-argv.ts`), plus `/usr/bin` and `/bin` when missing. Empty
+and relative entries (`::`, `.`, `bin`) are dropped, so no lookup the wrapper makes depends on its
+working directory; the confined process inherits the same `PATH`. The worker processes that run
+ASRT themselves (the port-binding, ACP session-host and ACP probe workers) start in the workspace
+and get the same `PATH`. On Linux every ASRT config, and worktree preparation's direct bubblewrap
+wrap, also names `bwrap` and `socat` by absolute path (`sandbox-binaries.ts`): the first executable
+copy in `/usr/bin`, `/bin`, then the absolute entries of Copse's own `PATH`. When none exists the
+sandbox does not start, as when bubblewrap is not installed. macOS ASRT has no option for the path
+of the `env` it starts with, so there that lookup searches the absolute `PATH` entries in order.
 
 On macOS the project seatbelt also allows writes to direct children of the per-user Darwin temp
 directory returned by `getconf DARWIN_USER_TEMP_DIR` (typically `/var/folders/…/T`). Apple

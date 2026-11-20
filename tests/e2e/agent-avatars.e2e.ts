@@ -384,6 +384,11 @@ describe('riso avatars in agent chat', () => {
 
   it('restores the disabled preference after relaunch and keeps a working agent static', async function () {
     this.timeout(60_000)
+    // This case runs alone during burn-in too. Seed the live named agent it
+    // exercises instead of relying on the preceding motion case to do so.
+    seedAgentAvatars(true)
+    await browser.reloadSession()
+    await loadedAvatarSources()
     await openMotionSettings()
     await $('input[name="animateAgentAvatars"]').click()
     await saveMotionSettings()

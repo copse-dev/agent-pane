@@ -1,5 +1,8 @@
 import { describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import { getSetting, setSetting, updateSetting } from '../storage/settings.ts'
 import { SETTINGS_WRITE_QUEUE, runSerialized } from '../storage/write-queue.ts'
@@ -10,6 +13,9 @@ import {
 } from '../thread-execution-context.ts'
 import { currentAgentRoots } from '../execution-root.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
+import { runWithActiveRunIdentity } from '../active-run-identity.ts'
+import { clearReadOutsideProjectGrants, grantReadOutsideProject } from './read-outside-grant.ts'
+import { activateGuardedYoloForRun, armGuardedYolo, disableGuardedYolo } from './guarded-yolo.ts'
 import { setWorkspaceTrusted } from './workspace-trust.ts'
 import { copseToolPermissionId } from './tool-permissions.ts'
 import {
@@ -117,6 +123,135 @@ describe('sandbox routing in a worktree thread', () => {
       setWorkspaceTrusted(projectRoot, false)
       setWorkspaceTrusted('/tmp/copse-routing-other-window', false)
       restore()
+    }
+  })
+})
+
+describe('identity-pinned read routing', () => {
+  it('passes the approved symlink destination to the sandbox and refuses a retargeted link', async () => {
+    const base = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-read-route-')))
+    const root = join(base, 'project')
+    const first = join(base, 'first.txt')
+    const second = join(base, 'second.txt')
+    const link = join(base, 'link.txt')
+    mkdirSync(root)
+    writeFileSync(first, 'first')
+    writeFileSync(second, 'second')
+    symlinkSync(first, link)
+    const context: ThreadExecutionContext = {
+      projectId: 'read-route',
+      threadId: 'read-route',
+      projectRoot: root,
+      root,
+      checkoutMode: 'shared',
+      branch: null,
+    }
+    const restore = setWorkspaceRootForTest(root)
+    mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+    setProjectSandboxEnabled(true)
+    await setSetting(SETTING, [])
+    try {
+      grantReadOutsideProject(context.threadId, [link])
+      const targets = (): string[] | null =>
+        runWithActiveRunIdentity(context.threadId, () =>
+          runWithThreadExecutionContext(context, () =>
+            shellReadGrantTargets(`cat ${link}`, currentAgentRoots(), root),
+          ),
+        )
+      assert.deepEqual(targets(), [first])
+      rmSync(link)
+      symlinkSync(second, link)
+      // A stale standing grant is no longer reusable. The ordinary overlay
+      // sees the literal link and refuses it rather than granting second.txt.
+      assert.deepEqual(targets(), [link])
+    } finally {
+      clearReadOutsideProjectGrants()
+      setProjectSandboxEnabled(false)
+      mock.restoreAll()
+      restore()
+      rmSync(base, { recursive: true, force: true })
+    }
+  })
+
+  it('passes a safe symlink destination to the sandbox in Guarded YOLO', async () => {
+    const base = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-yolo-read-route-')))
+    const root = join(base, 'project')
+    const destination = join(base, 'notes.txt')
+    const link = join(base, 'notes-link.txt')
+    mkdirSync(root)
+    writeFileSync(destination, 'notes')
+    symlinkSync(destination, link)
+    const context: ThreadExecutionContext = {
+      projectId: 'yolo-read-route',
+      threadId: 'yolo-read-route',
+      projectRoot: root,
+      root,
+      checkoutMode: 'shared',
+      branch: null,
+    }
+    const restore = setWorkspaceRootForTest(root)
+    mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+    setProjectSandboxEnabled(true)
+    await setSetting(SETTING, [])
+    try {
+      armGuardedYolo(context.threadId)
+      assert.equal(activateGuardedYoloForRun(context.threadId), true)
+      const targets = runWithActiveRunIdentity(context.threadId, () =>
+        runWithThreadExecutionContext(context, () =>
+          shellReadGrantTargets('cat ' + link, currentAgentRoots(), root),
+        ),
+      )
+      assert.deepEqual(targets, [destination])
+    } finally {
+      disableGuardedYolo(context.threadId)
+      setProjectSandboxEnabled(false)
+      mock.restoreAll()
+      restore()
+      rmSync(base, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps the literal link in Guarded YOLO when it resolves to a credential or the home directory', async () => {
+    const base = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-yolo-read-refuse-')))
+    const root = join(base, 'project')
+    const secret = join(base, '.env')
+    const secretLink = join(base, 'notes.txt')
+    const homeLink = join(base, 'docs')
+    mkdirSync(root)
+    writeFileSync(secret, 'secret')
+    symlinkSync(secret, secretLink)
+    symlinkSync(homedir(), homeLink, 'dir')
+    const context: ThreadExecutionContext = {
+      projectId: 'yolo-read-refuse',
+      threadId: 'yolo-read-refuse',
+      projectRoot: root,
+      root,
+      checkoutMode: 'shared',
+      branch: null,
+    }
+    const restore = setWorkspaceRootForTest(root)
+    mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+    setProjectSandboxEnabled(true)
+    await setSetting(SETTING, [])
+    try {
+      armGuardedYolo(context.threadId)
+      assert.equal(activateGuardedYoloForRun(context.threadId), true)
+      const targets = (command: string): string[] | null =>
+        runWithActiveRunIdentity(context.threadId, () =>
+          runWithThreadExecutionContext(context, () =>
+            shellReadGrantTargets(command, currentAgentRoots(), root),
+          ),
+        )
+      // The overlay must never be widened to the destination here. Passing the
+      // literal link leaves readAllowedSandboxOverlay to refuse it.
+      assert.deepEqual(targets(`cat ${secretLink}`), [secretLink])
+      assert.deepEqual(targets(`ls ${homeLink}`), [homeLink])
+    } finally {
+      disableGuardedYolo(context.threadId)
+      setProjectSandboxEnabled(false)
+      mock.restoreAll()
+      restore()
+      rmSync(base, { recursive: true, force: true })
     }
   })
 })

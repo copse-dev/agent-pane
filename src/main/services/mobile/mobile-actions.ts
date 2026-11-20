@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { stopMobileRun } from '../agent-service.ts'
 import { recordDecision } from '../security/decision-log-store.ts'
-import { mobileProjects, mobileThread } from './mobile-activity.ts'
+import { mobileProjects, mobileThreadExists } from './mobile-activity.ts'
 import { submitMobileChat } from './mobile-chat.ts'
 import { mobileDecisions, mobileDecisionSource, type MobilePrincipal } from './mobile-decisions.ts'
 
@@ -74,7 +74,7 @@ export async function performMobileAction(
   const exists =
     action.threadId === null
       ? mobileProjects().some((project) => project.id === action.projectId)
-      : await mobileThread(action.projectId, action.threadId)
+      : await mobileThreadExists(action.projectId, action.threadId)
   if (!exists) return { status: 404, body: { error: 'Project or thread unavailable.' } }
   if (!stillAuthorized())
     return { status: 403, body: { error: 'Phone control was disabled on the desktop.' } }
