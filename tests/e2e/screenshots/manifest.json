@@ -3761,6 +3761,14 @@
       "sha256": "52619a2aeccd01705392fd908f3e05125089117e7a9b29f92ae70280c009227b",
       "bytes": 315590
     },
+    "read-outside-parent-traversal-reprompt.png": {
+      "sha256": "0e28f13ed9420de1ec18ab8cc542fb1f44ad3202e70d10688b24db646073a19d",
+      "bytes": 7090
+    },
+    "read-outside-symlink-destination.png": {
+      "sha256": "18f656cfdd3c3103fd294faef1e6d69bdc20b41630525c99722ec6a893fe61b0",
+      "bytes": 87343
+    },
     "read-skill-unknown-guidance.png": {
       "sha256": "996d37b12bb6fa05bce7766a0df56ba3f4fca916f52a882b89995c4c59e582f5",
       "bytes": 157352
@@ -4948,6 +4956,10 @@
     "settings-ssh-invalid-port.png": {
       "sha256": "1c49dd379e36c9b741242d81f8e04de1f9d13d4fea01d59bd6ceddf5f0033b3b",
       "bytes": 179936
+    },
+    "settings-ssh-option-host.png": {
+      "sha256": "b5468ce1e59e454a3a52d7630fd4d6b440d65b558ea4c6150534800ff850aca7",
+      "bytes": 189691
     },
     "settings-ssh-remote-agent-copy.png": {
       "sha256": "8d69b004b933c0c31c0c3c6d0761d09be4dcf17c35ac53653d51137c51bdfba0",
@@ -6424,6 +6436,14 @@
     "workspace-image-attachments.png": {
       "sha256": "acfef38c735e24709e50c6a52f67ae70f822f2b75399751b0de21387c8844b4a",
       "bytes": 299200
+    },
+    "workspace-preview-external-explained.png": {
+      "sha256": "0aaf71337a38302d7204e7b7ba78b9605e224207844b1ed11bbb764757b107be",
+      "bytes": 265498
+    },
+    "workspace-preview-protected.png": {
+      "sha256": "2638991ca6381cd29449a45d013e746466beb405916d531d3fab8be7f9b32e25",
+      "bytes": 249381
     },
     "worktree-preparation-approval.png": {
       "sha256": "fc4827b157df7db685bae2de5925ae2077456119d8b81f80995f3a8e0376bba1",
