@@ -27,7 +27,8 @@ import { getProjectRoot } from '../workspace.ts'
 import { getGithubRepoSlug } from '../github/git-service.ts'
 import { createThread, loadProjectThreads } from '../thread-store.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
-import { parseGithubOwnerRepo } from './remote-agent-shared.ts'
+import { joinUrl, parseGithubOwnerRepo } from './remote-agent-shared.ts'
+import { cursorAuthHeader } from './cursor-cloud-models.ts'
 import { seedRemoteAgentSession } from './remote-agent-client.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 
@@ -87,14 +88,6 @@ export interface DiscoverExternalCursorAgentsOptions {
   seedSessionImpl?: typeof seedRemoteAgentSession
   now?: () => number
   newId?: () => string
-}
-
-function cursorAuthHeader(apiKey: string): string {
-  return `Basic ${Buffer.from(`${apiKey}:`).toString('base64')}`
-}
-
-function joinUrl(baseUrl: string, path: string): string {
-  return `${baseUrl.replace(/\/+$/, '')}${path}`
 }
 
 function resolveCursorApiBase(): string {

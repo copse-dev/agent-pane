@@ -221,8 +221,8 @@ that for the migrated hooks.
 - Attachment and reference chips — composer image/file chips, inline paste and `@thread` chips,
   transcript attachment chips, roadmap attachments — take `--radius`. They are data, not calls to
   action, and pill geometry is reserved for primary CTAs. A fact that is neither an attachment
-  nor clickable (a proposed thread's "Its own checkout" and file list) takes no box at all: it is
-  muted text with its icon.
+  nor clickable (a proposed thread's "Its own checkout" and file list, a deferred thread's
+  "Reading your checkout" beside its branch) takes no box at all: it is muted text with its icon.
 - Composer advisory strips (branch guard, dirty checkout, checkout error, image compatibility,
   context fit) are `.composer-banner` with `.composer-banner-icon`, `.composer-banner-text`, and
   `.composer-banner-action` buttons. The strip's `--composer-banner-tone` (warning by default,
@@ -664,6 +664,26 @@ The flexible `.titlebar-drag` region always keeps at least `--spacing-lg` of wid
 controls must not consume that last draggable strip, even when every optional panel mode is visible.
 The regression state lives in
 [`tests/demo/titlebar-compact.demo.ts`](../tests/demo/titlebar-compact.demo.ts).
+
+## Floating tool strips are one row
+
+A strip that floats over content (the annotation tools over a page, an image or a remote desktop)
+covers part of the thing the user came to look at, so it never wraps: a second row costs more of
+that content. Like the titlebar, it measures itself against its host and gives up secondary things
+in a fixed order as the host narrows. The annotation strip drops the long action label
+("Send to agent" becomes "Send"), then folds its four shape buttons behind one, then drops its
+separators and narrows its buttons to the 24px target minimum. A choice that changes rarely, such
+as ink colour, is one button showing the current value with the options in its menu, not a button
+per option on the strip.
+
+Centring gotcha: `left: 50%; transform: translateX(-50%)` on an auto-width absolute box leaves the
+box only the space to its right, so it shrink-wraps to **half** its host and wraps or clips long
+before it runs out of room. Give the box an explicit `width: max-content` (with a `max-width`) and
+it gets the whole host. The annotation strip wrapped into four rows in a 279px side pane for this
+reason.
+
+The states live in [`tests/demo/annotation-toolstrip.demo.ts`](../tests/demo/annotation-toolstrip.demo.ts);
+the options that were weighed are in `prototypes/annotation-toolstrip.html`.
 
 ## Sticky footers inside scroll containers (gotcha)
 

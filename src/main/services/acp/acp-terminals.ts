@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { realpathSync } from 'node:fs'
-import { isAbsolute, relative, resolve } from 'node:path'
+import { isAbsolute, resolve } from 'node:path'
+import { relativeWithin } from '@copse/std/path-containment.ts'
 import type {
   CreateTerminalRequest,
   CreateTerminalResponse,
@@ -114,8 +115,8 @@ export function composeAcpTerminalCommand(
     if (!isAbsolute(req.cwd)) {
       return { refused: `The terminal cwd must be an absolute path: ${req.cwd}` }
     }
-    const rel = relative(canonical(executionRoot), canonical(req.cwd))
-    if (rel.startsWith('..') || isAbsolute(rel)) {
+    const rel = relativeWithin(canonical(executionRoot), canonical(req.cwd))
+    if (rel === null) {
       return {
         refused: `The terminal cwd ${req.cwd} is outside the workspace (${executionRoot}); commands run in the workspace.`,
       }

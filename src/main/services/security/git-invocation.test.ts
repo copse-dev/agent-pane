@@ -74,6 +74,50 @@ describe('internal Git policy', () => {
     }
   })
 
+  it('admits cherry-pick, bundle and grep only in the shapes run adoption and transfer use', () => {
+    const sha = 'a'.repeat(40)
+    for (const args of [
+      ['cherry-pick', '--abort'],
+      ['cherry-pick', '--no-edit', '--allow-empty-message', sha, 'b'.repeat(64)],
+      ['cherry-pick', '--no-edit', sha],
+    ]) {
+      assert.deepEqual(withGitInvocationArgs(args).slice(-args.length), args)
+    }
+    for (const args of [
+      ['cherry-pick', sha],
+      ['cherry-pick', '--no-edit'],
+      // A strategy names an external `git-merge-<strategy>` program.
+      ['cherry-pick', '--no-edit', '-s', 'payload', sha],
+      ['cherry-pick', '--no-edit', '--strategy=payload', sha],
+      ['cherry-pick', '--no-edit', '-S', sha],
+      ['cherry-pick', '--edit', sha],
+      ['cherry-pick', '--no-edit', 'HEAD~1'],
+    ]) {
+      assert.throws(() => withGitInvocationArgs(args), /Unsupported internal Git cherry-pick/)
+    }
+    for (const subcommand of ['create', 'verify', 'list-heads']) {
+      assert.ok(withGitInvocationArgs(['bundle', subcommand, 'x.bundle']).includes(subcommand))
+    }
+    for (const args of [['bundle'], ['bundle', 'unbundle', 'x.bundle']]) {
+      assert.throws(() => withGitInvocationArgs(args), /Unsupported internal Git bundle/)
+    }
+    const grep = withGitInvocationArgs(['grep', '-I', '-E', 'lfs', sha])
+    assert.deepEqual(grep.slice(grep.indexOf('grep')), [
+      'grep',
+      '--no-textconv',
+      '-I',
+      '-E',
+      'lfs',
+      sha,
+    ])
+    for (const pager of ['-O/payload', '--open-files-in-pager=/payload']) {
+      assert.throws(
+        () => withGitInvocationArgs(['grep', pager, 'x', sha]),
+        /Unsupported internal Git grep/,
+      )
+    }
+  })
+
   it('admits clone only as a local, checkout-free, template-free submodule copy', () => {
     const exact = [
       'clone',
