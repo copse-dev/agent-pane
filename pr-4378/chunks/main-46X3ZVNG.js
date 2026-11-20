@@ -488,7 +488,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-Z4OY2GFU.js";
+} from "./chunk-O7TIBY7W.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -12759,7 +12759,7 @@ function localPathFromUri(uri) {
 var DRIVE_PATH_RE;
 var init_workspace_path = __esm({
   "src/shared/fs/workspace-path.ts"() {
-    DRIVE_PATH_RE = /^[a-z]:\//i;
+    DRIVE_PATH_RE = /^[a-z]:(?:\/|$)/i;
   }
 });
 
@@ -53989,7 +53989,7 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 function invocationTokenPattern(name) {
-  return `\\/${escapeRegExp(name)}(?![a-z0-9-])`;
+  return `\\/${escapeRegExp(name)}(?![a-z0-9/-])`;
 }
 function inlineInvocationPattern(name) {
   return new RegExp(`(^|\\s)${invocationTokenPattern(name)}`);

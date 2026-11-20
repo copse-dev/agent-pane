@@ -23451,7 +23451,9 @@ function formatUsd(amount) {
   return `~$${amount.toFixed(2)}`;
 }
 function formatTokenCount(n2) {
-  if (n2 >= 1e6) return `${(n2 / 1e6).toFixed(1)}M`;
+  if (n2 >= 1e6 || Number((n2 / 1e3).toFixed(1)) >= 1e3) {
+    return `${(n2 / 1e6).toFixed(1)}M`;
+  }
   if (n2 >= 1e3) return `${(n2 / 1e3).toFixed(1)}k`;
   return String(n2);
 }
@@ -23782,19 +23784,28 @@ function switchThread(store, id) {
   });
   store.emit("threads_changed");
 }
-function nextThreadId(store) {
+function isListedThread(thread) {
+  return !isThreadArchived(thread) && thread.sideChat === void 0;
+}
+function cycleThreadId(store, step) {
   const { threads, activeThreadId } = store.getState();
-  if (threads.length < 2) return null;
+  const count = threads.length;
+  if (count < 2) return null;
   const idx = threads.findIndex((t2) => t2.id === activeThreadId);
-  const target = idx < 0 || idx >= threads.length - 1 ? threads[0] : threads[idx + 1];
-  return target ? target.id : null;
+  const origin = idx >= 0 ? idx : step === 1 ? -1 : 0;
+  for (let offset = 1; offset <= count; offset += 1) {
+    const candidate = threads[((origin + step * offset) % count + count) % count];
+    if (candidate && candidate.id !== activeThreadId && isListedThread(candidate)) {
+      return candidate.id;
+    }
+  }
+  return null;
+}
+function nextThreadId(store) {
+  return cycleThreadId(store, 1);
 }
 function prevThreadId(store) {
-  const { threads, activeThreadId } = store.getState();
-  if (threads.length < 2) return null;
-  const idx = threads.findIndex((t2) => t2.id === activeThreadId);
-  const target = idx <= 0 ? threads[threads.length - 1] : threads[idx - 1];
-  return target ? target.id : null;
+  return cycleThreadId(store, -1);
 }
 function markThreadUnread(store, threadId, at3 = Date.now()) {
   if (threadId === store.getState().activeThreadId) return;
@@ -23825,9 +23836,12 @@ function deleteThread(store, id) {
   const activeDoomed = activeThreadId !== null && doomed.has(activeThreadId);
   const index = threads.findIndex((t2) => t2.id === id);
   const parentId = threads.find((t2) => t2.id === id)?.sideChat?.parentThreadId;
-  const listed = remaining.filter((t2) => t2.sideChat === void 0);
-  const pool = listed.length > 0 ? listed : remaining;
-  const newActive = !activeDoomed ? activeThreadId : parentId !== void 0 && remaining.some((t2) => t2.id === parentId) ? parentId : pool[Math.min(index, pool.length - 1)]?.id ?? null;
+  const topLevel = remaining.filter((t2) => t2.sideChat === void 0);
+  const listed = topLevel.filter((t2) => !isThreadArchived(t2));
+  const pool = listed.length > 0 ? listed : topLevel.length > 0 ? topLevel : remaining;
+  const earlier = new Set(threads.slice(0, Math.max(index, 0)).map((t2) => t2.id));
+  const position = pool.filter((t2) => earlier.has(t2.id)).length;
+  const newActive = !activeDoomed ? activeThreadId : parentId !== void 0 && remaining.some((t2) => t2.id === parentId) ? parentId : pool[Math.min(position, pool.length - 1)]?.id ?? null;
   store.setState({
     threads: remaining,
     activeThreadId: newActive,
