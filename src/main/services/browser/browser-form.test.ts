@@ -247,6 +247,54 @@ describe('native browser form entry', () => {
     assert.equal(window.document.querySelector('textarea')?.value, 'User draft')
   })
 
+  for (const [failingCall, start] of [
+    [1, 'Form entry stopped after 0 confirmed fields of 2. The page script failed. '],
+    [
+      3,
+      'Form entry stopped after 1 confirmed fields of 2. Entered: e1. e2 may already have changed. The page script failed. ',
+    ],
+  ] as const) {
+    it(`reports a failed page script on call ${String(failingCall)} without its error text`, async () => {
+      // The stop message reaches the model outside the external-content
+      // envelope, so the page script's own error text stays out of it.
+      const pageParts = ['Page', '"quoted"', 'next line', 'separated', 'right to left']
+      const pageText = 'Page "quoted"\nnext line\u2028separated\u202Eright to left'
+      const { contents } = page()
+      let calls = 0
+      const failing = {
+        async executeJavaScript(code: string, gesture?: boolean): Promise<unknown> {
+          calls += 1
+          if (calls === failingCall) throw new Error(pageText)
+          return contents.executeJavaScript(code, gesture)
+        },
+      }
+      await assert.rejects(
+        fillBrowserForm(failing, [
+          { ref: 'e1', text: 'Requested title' },
+          { ref: 'e2', text: 'Requested note' },
+        ]),
+        (error: unknown) => {
+          assert.ok(error instanceof Error)
+          assert.ok(error.message.startsWith(start), error.message)
+          for (const part of [...pageParts, '"', '\n', '\u2028', '\u202E'])
+            assert.equal(error.message.includes(part), false, JSON.stringify(part))
+          return true
+        },
+      )
+    })
+  }
+
+  it('stops when a control reports a value that is not text', async () => {
+    const { window, contents } = page()
+    const title = window.document.querySelector('input')
+    assert.ok(title)
+    Object.defineProperty(title, 'value', { configurable: true, get: () => 42, set: () => {} })
+    await assert.rejects(fillBrowserForm(contents, [{ ref: 'e1', text: 'Requested title' }]), {
+      message:
+        /^Form entry stopped after 0 confirmed fields of 1\. e1 may already have changed\. Ref e1 changed before its value could be confirmed\./,
+    })
+  })
+
   for (const event of ['input', 'change']) {
     for (const mutation of ['replace-retained', 'replace-reset', 'hide', 'duplicate']) {
       it(`stops with an uncertain current ref when its own ${event} handler performs ${mutation}`, async () => {

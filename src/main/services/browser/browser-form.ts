@@ -44,6 +44,23 @@ function quoteValue(value: string): string {
   )
 }
 
+/**
+ * Run one injected script. A failure is reported in Copse's words: the stop
+ * message is not wrapped as external content, so it never carries the page
+ * script's own error text.
+ */
+async function runPageScript(
+  contents: BrowserFormContents,
+  script: string,
+  userGesture: boolean,
+): Promise<unknown> {
+  try {
+    return await contents.executeJavaScript(script, userGesture)
+  } catch {
+    throw new Error('The page script failed.')
+  }
+}
+
 // Resolve only the current visible control. A previous snapshot may have left
 // the same ref on an older, now-hidden dialog. Pin each exact node before any
 // value changes so a rerender or concurrent snapshot cannot retarget the batch.
@@ -113,12 +130,14 @@ export async function fillBrowserForm(
   let inFlightRef: string | undefined
   try {
     const prepared = replySchema.parse(
-      await contents.executeJavaScript(
+      await runPageScript(
+        contents,
         `(() => {
           ${resolveControlScript}
           const fields = ${JSON.stringify(fields)};
           const controls = [];
-          for (const field of fields) {
+          for (let index = 0; index < fields.length; index++) {
+            const field = fields[index];
             const el = resolveControl(field.ref);
             if (!el) return { ok: false, error: 'Ref ' + field.ref + ' is missing, ambiguous or not editable. No fields were entered.' };
             const error = valueError(el, field.text);
@@ -137,7 +156,8 @@ export async function fillBrowserForm(
       signal?.throwIfAborted()
       inFlightRef = field.ref
       const result = replySchema.parse(
-        await contents.executeJavaScript(
+        await runPageScript(
+          contents,
           `(() => {
             ${resolveControlScript}
             const expected = globalThis[${JSON.stringify(key)}]?.[${String(index)}];
@@ -165,9 +185,11 @@ export async function fillBrowserForm(
             if (!retained()) return unconfirmed();
             el.dispatchEvent(new Event('change', { bubbles: true }));
             if (!retained()) return unconfirmed();
-            const value = String(el.value);
-            return value === ${JSON.stringify(field.text)} ? { ok: true } :
-              { ok: true, value: value.slice(0, ${String(MAX_REPORTED_VALUE_CHARS + 1)}) };
+            // Only a string the control holds is reported, as it is; the
+            // main process clips it.
+            const value = el.value;
+            if (typeof value !== 'string') return unconfirmed();
+            return value === ${JSON.stringify(field.text)} ? { ok: true } : { ok: true, value };
           })()`,
           true,
         ),
