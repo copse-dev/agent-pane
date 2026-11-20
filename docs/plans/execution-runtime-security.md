@@ -354,14 +354,17 @@ observable from a test or a recorded thread spine. Unchecked items are open.
       off by default. A contained command gets a read-only grant, matching `gh_api_read`,
       and only while `gh_api_read` itself would run without a prompt in that turn (no
       per-tool Ask or Block). Every process the contained command starts holds that read
-      authority until it exits. A command approved to run outside the sandbox gets every
-      method. An automation principal gets no grant (decision 11): no schedule names a
-      credential reference yet. The broker attaches only a github.com login, never an
-      Enterprise token. Capabilities report `brokeredCredentials: ['github']` for brokered
-      executions.
-- [x] **R2-7 Known limits stated.** The broker cannot contain a process outside the sandbox:
-      it can still reach other origins directly and read `~/.config/gh`. Linux bubblewrap
-      blocks AF_UNIX sockets, so contained Linux commands are not brokered yet. SSH
+      authority until it exits. A command approved to run outside the sandbox is not
+      brokered: it runs with the account's normal GitHub access through gh's own on-disk
+      login, and only loses the raw token variables. That is the explicit full-host escape
+      R2 preserves, and a grant there broke gh's redirects to other GitHub hosts and
+      `gh auth git-credential`. An automation principal gets no grant (decision 11): no
+      schedule names a credential reference yet. The broker attaches only a github.com
+      login, never an Enterprise token. Capabilities report `brokeredCredentials: ['github']`
+      for brokered executions.
+- [x] **R2-7 Known limits stated.** A process outside the sandbox is not brokered: it
+      reaches other origins directly and uses `~/.config/gh`. Linux bubblewrap blocks
+      AF_UNIX sockets, so contained Linux commands are not brokered yet. SSH
       execution and `git` HTTPS transport are not brokered. The plan and
       `shell-permissions.md` both say so.
 

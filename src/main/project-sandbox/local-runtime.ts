@@ -99,14 +99,17 @@ function withoutGitHubTokens(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 }
 
 /**
- * Whether a brokered credential can reach this execution. A process outside
- * the sandbox can always open the grant's socket. Inside it, macOS Seatbelt
- * admits one named socket; Linux bubblewrap's seccomp filter refuses every
- * AF_UNIX socket, so a contained Linux command is not brokered (it has no
- * network either, and still loses the raw token).
+ * Whether this execution gets a brokered grant: only a contained command the
+ * broker can reach. macOS Seatbelt admits one named socket; Linux bubblewrap's
+ * seccomp filter refuses every AF_UNIX socket, so a contained Linux command
+ * gets none (it has no network either). A command approved to run outside the
+ * sandbox is not brokered: it already runs with the account's normal GitHub
+ * access, so its gh uses its own on-disk login. A grant there would break gh's
+ * redirects to other GitHub hosts and `gh auth git-credential`. Either way the
+ * child still loses the raw token variables.
  */
-function brokerReaches(containment: LocalContainment, platform: NodeJS.Platform): boolean {
-  return containment === 'host' || platform === 'darwin'
+function getsBrokeredGrant(containment: LocalContainment, platform: NodeJS.Platform): boolean {
+  return containment === 'contained' && platform === 'darwin'
 }
 
 /**
@@ -207,7 +210,7 @@ export function createLocalExecutionRuntime(
       const containment = containmentFor(request, dependencies)
       const brokered =
         request.local?.brokerGitHubCredentials === true &&
-        brokerReaches(containment, dependencies.platform)
+        getsBrokeredGrant(containment, dependencies.platform)
       return deriveRuntimeCapabilities(
         { kind: 'local', containment },
         brokered ? { brokeredCredentials: ['github'] } : {},
@@ -228,9 +231,26 @@ export function createLocalExecutionRuntime(
         throw new Error(local.requireSandbox)
       }
       const brokering = local?.brokerGitHubCredentials === true
+      const withoutRawTokens = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv =>
+        brokering ? withoutGitHubTokens(env) : env
+
+      if (containment === 'host') {
+        // Not brokered (getsBrokeredGrant): the child loses the raw token
+        // variables, and its gh keeps the account's own on-disk login.
+        const launch = hostLaunch(request.command)
+        const child = dependencies.spawn(launch.file, launch.args, {
+          cwd: request.cwd,
+          env: withoutRawTokens(mergeSpawnEnv(strippedBaseEnv(), request.env)),
+          stdio: request.stdio,
+          signal: request.signal,
+          detached: detachForGroupKill,
+        })
+        return { child, profile, capabilities: deriveRuntimeCapabilities(profile) }
+      }
+
       const credential =
-        brokering && brokerReaches(containment, dependencies.platform)
-          ? await dependencies.brokerGitHub({ profile, readOnly: containment === 'contained' })
+        brokering && getsBrokeredGrant(containment, dependencies.platform)
+          ? await dependencies.brokerGitHub({ profile, readOnly: true })
           : null
       const capabilities = deriveRuntimeCapabilities(
         profile,
@@ -239,30 +259,9 @@ export function createLocalExecutionRuntime(
       // The broker's env goes last so neither the base env nor a caller
       // overlay can put a raw GitHub token back.
       const childEnv = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv =>
-        brokering ? { ...withoutGitHubTokens(env), ...credential?.env } : env
+        credential ? { ...withoutRawTokens(env), ...credential.env } : withoutRawTokens(env)
       const releaseCredential = (): void => {
         void credential?.release()
-      }
-
-      if (containment === 'host') {
-        try {
-          const launch = hostLaunch(request.command)
-          const child = dependencies.spawn(launch.file, launch.args, {
-            cwd: request.cwd,
-            env: childEnv(mergeSpawnEnv(strippedBaseEnv(), request.env)),
-            stdio: request.stdio,
-            signal: request.signal,
-            detached: detachForGroupKill,
-          })
-          if (credential) {
-            child.once('close', releaseCredential)
-            child.once('error', releaseCredential)
-          }
-          return { child, profile, capabilities }
-        } catch (err) {
-          releaseCredential()
-          throw err
-        }
       }
 
       let plan: LocalSandboxPlan

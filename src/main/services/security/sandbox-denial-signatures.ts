@@ -256,7 +256,7 @@ export const SANDBOX_DENIAL_SIGNATURES: readonly SandboxDenialSignature[] = [
     // write such as `gh pr create` connects to the grant's allowed socket, so the
     // OS sandbox logs no violation; the broker answers 403 and gh prints
     //   "gh: Copse credential broker: read-only grant: POST is not a read (HTTP 403)"
-    // Only a run outside the sandbox gets a grant that can write.
+    // A run outside the sandbox is not brokered; its gh uses the account's own login.
     id: 'github-broker-read-only-grant',
     pattern: /Copse credential broker: read-only grant: [A-Z]+ is not a read/,
     classify: () => ({

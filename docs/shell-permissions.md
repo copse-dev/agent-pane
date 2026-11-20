@@ -827,17 +827,16 @@ default) changes how agent shell commands and background tasks on this computer 
 authority ([plan R2](plans/execution-runtime-security.md#r2--brokered-local-egress-and-credentials)).
 While it is on, an in-turn local `run_shell` / `run_background` child never receives `GH_TOKEN`,
 `GITHUB_TOKEN`, `GH_ENTERPRISE_TOKEN` or `GITHUB_ENTERPRISE_TOKEN`, whether they come from Copse's
-own environment or a caller overlay. Where the child can reach it, the child instead gets one
-grant: a private `GH_CONFIG_DIR` under `~/.copse/run/` whose `http_unix_socket` points at a socket
-for that execution alone, plus a random capability as `GH_TOKEN`. No sandbox profile grants writes
-there, so one contained command cannot move or replace another execution's grant. `gh` sends its
+own environment or a caller overlay. A contained child that can reach the broker instead gets
+one grant: a private `GH_CONFIG_DIR` under `~/.copse/run/` whose `http_unix_socket` points at a
+socket for that execution alone, plus a random capability as `GH_TOKEN`. No sandbox profile
+grants writes there, so one contained command cannot move or replace another execution's grant. `gh` sends its
 requests over that socket. The broker in the main process attaches the user's github.com login
 (`GH_TOKEN`, then `GITHUB_TOKEN`, then `gh auth token --hostname github.com`; never an Enterprise
 token) and replays the request to `https://api.github.com`.
 
-- **Who gets a grant.** A command approved to run outside the sandbox gets every method, because
-  it already had the user's own access. A contained command gets a read-only grant, GET or HEAD
-  plus a GraphQL `query` POST, and only while `gh_api_read` itself would run without a prompt:
+- **Who gets a grant.** Only a contained command. It gets a read-only grant, GET or HEAD plus a
+  GraphQL `query` POST, and only while `gh_api_read` itself would run without a prompt:
   `gh` is available, the tool's per-tool permission is neither Ask nor Block, and no draft plan or
   read-only run withholds it. Otherwise the contained command loses the raw tokens and gets no
   grant. The read authority is not limited to the agent's own `gh` call: every process the
@@ -845,6 +844,13 @@ token) and replays the request to `https://api.github.com`.
   command exits. An automation run's commands get no grant at all
   ([decision 11](plans/execution-runtime-security.md#binding-decisions)); they still lose the raw
   tokens.
+- **A command approved outside the sandbox is not brokered.** It runs with the account's normal
+  GitHub access, the same as with the setting off: it gets no grant and keeps the real `gh` config
+  directory, so `gh` uses its own on-disk login (`gh auth login`). That keeps working what a grant
+  would break: `gh` following a redirect to `codeload.github.com` or `*.githubusercontent.com`
+  (run logs, release and archive downloads) and `gh auth git-credential` for `git` over HTTPS. It
+  still loses the four raw token variables, so where one of them is the account's only GitHub
+  login, such a command has none.
 - **Refusals.** Any `Host` other than `api.github.com`, a missing or foreign capability, an expired
   or released grant (one hour, or the process's exit), a method the grant does not name (decided
   before any body is read), GraphQL on a read-only grant other than a query in a POST body, more
@@ -854,7 +860,8 @@ token) and replays the request to `https://api.github.com`.
   headers, so GitHub receives the body and method the broker checked.
 - **A contained write still offers the retry.** A contained `gh` write gets the broker's 403, which
   the OS sandbox never sees. Its output matches a [denial signature](#strict-mode-and-expected-blocks),
-  so the shell tool offers the usual prompt to run the command outside the sandbox.
+  so the shell tool offers the usual prompt to run the command outside the sandbox, where it is not
+  brokered.
 - **Audit.** `execution-grant`, `credential-use` (method, host, status, byte counts) and
   `network-access` (`blocked`) decision lines, bound to the turn's principal. Each grant writes
   the first 20 `credential-use` and 20 `network-access` lines, then only counts them, and one
@@ -864,10 +871,11 @@ token) and replays the request to `https://api.github.com`.
   Seatbelt admits that one socket path. On Linux, bubblewrap's seccomp filter refuses every
   AF_UNIX socket, so a contained command gets no grant. It still loses the raw token, and it had
   no network anyway.
-- **Limits.** A command outside the sandbox can still reach other origins directly and read
-  `~/.config/gh` itself. Brokering removes the token from its environment, not from the host.
-  `git` over HTTPS, `gh auth git-credential`, interactive terminals, SSH workspaces and ACP agents
-  are not brokered.
+- **Limits.** The setting contains nothing outside the sandbox: such a command reaches other
+  origins directly and uses `~/.config/gh` itself. It removes the raw token variables from that
+  command's environment, not the login from the host. Inside the sandbox, `git` over HTTPS and
+  `gh auth git-credential` are not brokered. Interactive terminals, SSH workspaces and ACP agents
+  are not brokered at all.
 
 ## Read access outside the project
 

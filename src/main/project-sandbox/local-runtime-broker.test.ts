@@ -1,8 +1,9 @@
 /**
  * The local adapter's side of R2 (`docs/plans/execution-runtime-security.md`):
- * a brokered execution never receives a raw GitHub token, gets a grant only
- * where the broker can be reached, and a contained grant is read-only and
- * admits exactly its own socket.
+ * a brokered execution never receives a raw GitHub token, only a contained
+ * command the broker can reach gets a grant, that grant is read-only and
+ * admits exactly its own socket, and a command approved outside the sandbox is
+ * not brokered.
  */
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
@@ -53,6 +54,7 @@ function request(sandbox: boolean, brokered: boolean): RuntimeExecRequest {
 
 describe('local runtime GitHub brokering', () => {
   let previous: string | undefined
+  let previousConfigDir: string | undefined
   let issued: { readOnly: boolean }[]
   let released: number
   let wrappedConfigs: Partial<SandboxRuntimeConfig>[]
@@ -90,7 +92,10 @@ describe('local runtime GitHub brokering', () => {
 
   beforeEach(() => {
     previous = process.env['GH_TOKEN']
+    previousConfigDir = process.env['GH_CONFIG_DIR']
     process.env['GH_TOKEN'] = CANARY
+    // The account's own gh login, which a command outside the sandbox keeps.
+    process.env['GH_CONFIG_DIR'] = '/home/me/.config/gh'
     issued = []
     released = 0
     wrappedConfigs = []
@@ -99,6 +104,8 @@ describe('local runtime GitHub brokering', () => {
   afterEach(() => {
     if (previous === undefined) delete process.env['GH_TOKEN']
     else process.env['GH_TOKEN'] = previous
+    if (previousConfigDir === undefined) delete process.env['GH_CONFIG_DIR']
+    else process.env['GH_CONFIG_DIR'] = previousConfigDir
   })
 
   it('leaves today’s environment alone when brokering is off', async () => {
@@ -109,15 +116,17 @@ describe('local runtime GitHub brokering', () => {
     assert.equal(execution.capabilities.brokeredCredentials, undefined)
   })
 
-  it('gives a command outside the sandbox a full grant and no raw token', async () => {
-    const execution = await runtime({}).exec(request(false, true))
+  it('does not broker a command outside the sandbox: no grant, no raw token, gh keeps its login', async () => {
+    // On macOS too, where a contained command would get a grant.
+    const local = runtime({ platform: 'darwin' })
+    assert.equal(local.capabilities(request(false, true)).brokeredCredentials, undefined)
+    const execution = await local.exec(request(false, true))
     const env = await output(execution.child)
     assert.equal(env.includes(CANARY), false)
-    assert.match(env, /GH_CONFIG_DIR=\/grant\/dir/)
-    assert.match(env, /GH_TOKEN=capability/)
-    assert.deepEqual(issued, [{ readOnly: false }])
-    assert.deepEqual(execution.capabilities.brokeredCredentials, ['github'])
-    assert.equal(released, 1)
+    assert.doesNotMatch(env, /GH_TOKEN=/)
+    assert.match(env, /GH_CONFIG_DIR=\/home\/me\/\.config\/gh/)
+    assert.equal(issued.length, 0)
+    assert.equal(execution.capabilities.brokeredCredentials, undefined)
   })
 
   it('strips the token from a contained Linux command without a grant it cannot reach', async () => {
@@ -149,12 +158,14 @@ describe('local runtime GitHub brokering', () => {
   it('releases the grant when the spawn fails', async () => {
     await assert.rejects(
       runtime({
+        platform: 'darwin',
         spawn: () => {
           throw new Error('spawn failed')
         },
-      }).exec(request(false, true)),
+      }).exec(request(true, true)),
       /spawn failed/,
     )
+    assert.deepEqual(issued, [{ readOnly: true }])
     assert.equal(released, 1)
   })
 })

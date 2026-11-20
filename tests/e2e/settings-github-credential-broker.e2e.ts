@@ -40,13 +40,16 @@ describe('Brokered GitHub credentials setting', () => {
     await expect(toggle()).not.toBeSelected()
     const hint = (await $(FIELDSET).$('.field-hint').getText()).replace(/\s+/g, ' ')
     assert.match(hint, /no longer receive GH_TOKEN or GITHUB_TOKEN/)
+    assert.match(hint, /Inside the sandbox, their gh calls can only read and go through Copse/)
     assert.match(hint, /api\.github\.com only/)
-    assert.match(hint, /Commands inside the sandbox can only read/)
     assert.match(
       hint,
       /Not covered: git over HTTPS, SSH workspaces, and Linux commands inside the sandbox/,
     )
-    assert.match(hint, /can still read your gh login from disk/)
+    assert.match(
+      hint,
+      /A command you approve outside the sandbox does not go through Copse: its gh uses your gh login from disk/,
+    )
     await saveElementScreenshot(FIELDSET, 'settings-github-credential-broker-off.png')
 
     await toggle().click()
