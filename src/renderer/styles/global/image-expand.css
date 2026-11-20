@@ -116,9 +116,6 @@
   height: 100%;
   min-height: 0;
 }
-.image-expand-stage .annotation-toolstrip {
-  width: max-content;
-}
 .image-expand-nav-zone {
   position: absolute;
   top: 0;
