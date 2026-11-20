@@ -488,7 +488,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-2K6JSRSU.js";
+} from "./chunk-WAM6ARDL.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -572,7 +572,7 @@ import {
   warningIcon,
   workspaceLinkTargetFromHref,
   zapIcon
-} from "./chunk-CK4AOU5N.js";
+} from "./chunk-UAI3U54O.js";
 import {
   clear,
   el,
