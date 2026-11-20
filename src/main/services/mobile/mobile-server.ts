@@ -1,5 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { type IncomingMessage, type ServerResponse } from 'node:http'
 import { createServer, type Server } from 'node:https'
 import { createSecureContext, type SecureContext } from 'node:tls'
@@ -8,7 +7,16 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { isPrivateOrLinkLocalHost } from '@copse/llm/credential-url.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
-import { mobileAssetRoutes, mobileResponseHeaders } from '../../../shared/mobile-asset-routes.ts'
+import { mobileResponseHeaders } from '../../../shared/mobile-asset-routes.ts'
+import { remoteScopeFromQuery } from '../../../shared/remote-interface.ts'
+import {
+  assetResponse,
+  entityTag,
+  jsonResponse,
+  textResponse,
+  type RequestPreferences,
+  type ResponseSpec,
+} from './http-response.ts'
 import { MobileActionRequests, mobileActionSchema, performMobileAction } from './mobile-actions.ts'
 import {
   mobileActivity,
@@ -18,6 +26,7 @@ import {
 } from './mobile-activity.ts'
 import { mobileCertificate } from './mobile-certificate.ts'
 import { MobileDevices } from './mobile-devices.ts'
+import { loadPageAssets } from './page-assets.ts'
 import { loadRemoteAssets } from './remote-assets.ts'
 import { remoteInterface } from './remote-interface.ts'
 import { remoteHttp } from './remote-http.ts'
@@ -101,9 +110,23 @@ export function mobileRequestAllowed(
   return true
 }
 
+const JSON_HEADERS = mobileResponseHeaders('application/json; charset=utf-8')
+
 function send(res: ServerResponse, status: number, value: unknown): void {
-  res.writeHead(status, mobileResponseHeaders('application/json; charset=utf-8'))
+  res.writeHead(status, JSON_HEADERS)
   res.end(JSON.stringify(value))
+}
+
+function write(res: ServerResponse, spec: ResponseSpec): void {
+  res.writeHead(spec.status, spec.headers)
+  res.end(spec.body ?? undefined)
+}
+
+function preferences(req: IncomingMessage): RequestPreferences {
+  return {
+    acceptEncoding: req.headers['accept-encoding'],
+    ifNoneMatch: req.headers['if-none-match'],
+  }
 }
 
 async function readBody(req: IncomingMessage, maxBytes: number): Promise<string | null> {
@@ -151,17 +174,13 @@ export async function startMobileServer(options: {
     throw new Error('Choose an active private IPv4 interface')
   const identity = mobileCertificate(options.address)
   const assets = options.assetsDir ?? join(__dirname, '..', 'mobile')
-  const files = mobileAssetRoutes()
   // Read once, before binding, so a missing package asset cannot yield a
   // half-working listener. The map is fixed and contains no user path.
-  const staticFiles = new Map(
-    [...files].map(([route, file]) => {
-      const body = readFileSync(join(assets, file.path))
-      const etag = `"${createHash('sha256').update(body).digest('base64url')}"`
-      return [route, { body, etag, headers: { ...file.headers, ETag: etag } }]
-    }),
-  )
+  const staticFiles = loadPageAssets(assets)
   const remoteAssets = await loadRemoteAssets(join(assets, 'remote'))
+  // The live state is the same object until the desktop publishes again, and a
+  // phone polls it far more often than that: serialize each one once.
+  const serializedStates = new WeakMap<object, { text: string; etag: string }>()
   const actions = new MobileActionRequests(randomUUID())
   const failedAuth = new Map<string, { attempts: number; blockedUntil: number }>()
   let stopped = false
@@ -227,17 +246,25 @@ export async function startMobileServer(options: {
         const origin = `https://${req.headers.host ?? authority}`
         const trustedName = req.headers.host !== authority
         const path = new URL(req.url ?? '/', origin)
+        // Polled reads carry a validator and a negotiated coding: an unchanged
+        // answer is a bodiless 304, and a changed one travels compressed.
+        const reply = async (
+          status: number,
+          value: unknown,
+          etag?: string | true,
+        ): Promise<void> => {
+          write(res, await jsonResponse(JSON_HEADERS, status, value, preferences(req), etag))
+        }
         if (req.method === 'GET') {
           const file = staticFiles.get(path.pathname) ?? remoteAssets.get(path.pathname)
           if (file) {
-            const etag = file.headers['ETag']
-            if (etag && req.headers['if-none-match'] === etag) {
-              res.writeHead(304, file.headers)
-              res.end()
-              return
-            }
-            res.writeHead(200, file.headers)
-            res.end(file.body)
+            write(
+              res,
+              await assetResponse(file, {
+                ...preferences(req),
+                version: path.searchParams.get('v'),
+              }),
+            )
             return
           }
         }
@@ -260,6 +287,7 @@ export async function startMobileServer(options: {
           send(res, 200, pairing)
           return
         }
+        // Never compressed: this answer carries a bearer token (BREACH).
         if (req.method === 'GET' && path.pathname === '/api/pair/result') {
           const id = path.searchParams.get('id') ?? ''
           const pairing = pairings.poll(id, req.socket.remoteAddress)
@@ -301,12 +329,37 @@ export async function startMobileServer(options: {
             return
           }
           const body = req.method === 'POST' ? await readBody(req, 262_144) : undefined
-          if (body === null) {
+          const scope = req.method === 'GET' ? remoteScopeFromQuery(path.searchParams) : undefined
+          if (body === null || scope === null) {
             send(res, 400, { error: 'Invalid remote request.' })
             return
           }
-          const result = await remoteHttp(remoteInterface, authorized, body)
-          send(res, result.status, result.body)
+          const result = await remoteHttp(remoteInterface, authorized, body, scope)
+          const state = req.method === 'GET' && result.status === 200 ? result.body : null
+          let spec: ResponseSpec
+          if (typeof state === 'object' && state !== null) {
+            let serialized = serializedStates.get(state)
+            if (!serialized) {
+              const text = JSON.stringify(state)
+              serialized = { text, etag: entityTag(text) }
+              serializedStates.set(state, serialized)
+            }
+            spec = await textResponse(
+              JSON_HEADERS,
+              200,
+              serialized.text,
+              preferences(req),
+              serialized.etag,
+            )
+          } else {
+            spec = await jsonResponse(JSON_HEADERS, result.status, result.body, preferences(req))
+          }
+          // Encoding is asynchronous: control may have been revoked since remoteHttp checked.
+          if (result.status === 200 && !authorized()) {
+            send(res, 403, { error: 'Phone control was disabled.' })
+            return
+          }
+          write(res, spec)
           return
         }
         if (req.method === 'POST' && path.pathname === '/api/action') {
@@ -337,13 +390,15 @@ export async function startMobileServer(options: {
           return
         }
         if (req.method === 'GET' && path.pathname === '/api/activity') {
-          send(res, 200, {
+          const feed = {
             rows: await MOBILE_READ_DISPATCH.activity(),
             projects: mobileProjects(),
-            refreshedAt: Date.now(),
             access: principal.access,
             sessionId: actions.sessionId,
-          })
+          }
+          // `refreshedAt` moves on every poll; the validator covers the rest, so
+          // a quiet desktop answers 304 and the phone keeps the list it has.
+          await reply(200, { ...feed, refreshedAt: Date.now() }, entityTag(JSON.stringify(feed)))
           return
         }
         const imageMatch = /^\/api\/thread\/([^/]+)\/([^/]+)\/image\/([^/]+)\/(\d+)$/.exec(
@@ -365,7 +420,8 @@ export async function startMobileServer(options: {
             imageMessageId,
             Number(imageMatch[4]),
           )
-          send(res, image ? 200 : 404, image ? { image } : { error: 'Image unavailable' })
+          // Base64 gives back about a quarter of its size to the response coding.
+          await reply(image ? 200 : 404, image ? { image } : { error: 'Image unavailable' })
           return
         }
         const match = /^\/api\/thread\/([^/]+)\/([^/]+)$/.exec(path.pathname)
@@ -378,12 +434,14 @@ export async function startMobileServer(options: {
           match
         ) {
           const thread = await MOBILE_READ_DISPATCH.thread(projectId, threadId)
-          send(
-            res,
-            thread ? 200 : 404,
-            thread
-              ? { ...thread, access: principal.access, sessionId: actions.sessionId }
-              : { error: 'Thread unavailable' },
+          if (!thread) {
+            send(res, 404, { error: 'Thread unavailable' })
+            return
+          }
+          await reply(
+            200,
+            { ...thread, access: principal.access, sessionId: actions.sessionId },
+            true,
           )
           return
         }

@@ -146,6 +146,14 @@ project-defined MCP servers are gated behind workspace trust, the
     so pairing there grants control on the desktop approval alone; the local-root
     acknowledgement applies only to pairings over the LAN IP, and the main process,
     not the renderer, decides which applies.
+    Every response is `no-store` except the page's own script and stylesheet, and only
+    when requested under the content hash that the never-stored page pins with Subresource
+    Integrity; a cached copy that is not those bytes is refused by the browser, and these
+    bundles carry no thread data. Polled reads are compressed and answered `304` when
+    unchanged. Compression is not offered as a BREACH oracle: the bearer travels only in a
+    request header that a cross-site page cannot make the phone send, compressed answers
+    never contain a credential, and the pairing answer that does is sent uncompressed.
+    A LAN observer can still see the size of each encrypted answer, compressed or not.
 11. **Names service compromise or error.** The Copse names service (`api.copse.dev`), or
     someone who controls it, issues a certificate for `*.<label>.u.copse.me` with a key it
     holds and points `lan.<label>.u.copse.me` at another private address, then waits on the
