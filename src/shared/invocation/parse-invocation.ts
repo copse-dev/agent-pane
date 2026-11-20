@@ -1,3 +1,4 @@
+import { collapseWhitespace } from '@copse/std/one-line-text.ts'
 /**
  * The `/name` composer surface, shared by skills and subagents.
  *
@@ -54,7 +55,7 @@ function inlineInvocationPattern(name: string): RegExp {
 }
 
 function stripInvocationToken(text: string, name: string): string {
-  return text.replace(inlineInvocationPattern(name), '$1').replace(/\s+/g, ' ').trim()
+  return collapseWhitespace(text.replace(inlineInvocationPattern(name), '$1'))
 }
 
 /** Parse a leading `/name` prefix, without checking that the name is known. */

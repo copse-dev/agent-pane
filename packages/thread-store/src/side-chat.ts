@@ -1,3 +1,4 @@
+import { ellipsize } from '@copse/std/one-line-text.ts'
 import type { Message, SideChatLink, Thread } from './thread-types.ts'
 import { Lexer } from 'marked'
 
@@ -52,7 +53,7 @@ function stripInlineMarkdown(text: string): string {
 /** Plain-text excerpt of `text`'s first line, for a title or a read-only context line. */
 export function excerptText(text: string): string {
   const line = stripInlineMarkdown(text.trim().split('\n', 1)[0] ?? '')
-  return line.length <= MAX_TITLE_LENGTH ? line : `${line.slice(0, MAX_TITLE_LENGTH - 1)}…`
+  return ellipsize(line, MAX_TITLE_LENGTH)
 }
 
 function excerpt(message: Message): string {

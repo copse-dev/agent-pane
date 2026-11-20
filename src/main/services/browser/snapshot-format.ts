@@ -4,6 +4,7 @@
  * facing text is rendered here so it can be unit-tested without Electron.
  */
 
+import { ellipsize } from '@copse/std/one-line-text.ts'
 import { isRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 
 export interface AxNode {
@@ -62,7 +63,7 @@ const MAX_RENDERED_CHARS = 64 * 1_024
 const MAX_NODE_NAME_CHARS = 16 * 1_024
 
 function quote(text: string, maxChars = 120): string {
-  const clipped = text.length > maxChars ? `${text.slice(0, maxChars - 1)}…` : text
+  const clipped = ellipsize(text, maxChars)
   return JSON.stringify(clipped)
 }
 

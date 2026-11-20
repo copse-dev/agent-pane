@@ -7,6 +7,7 @@
 // list, so the model can act on what the user just saw. The model's own
 // `review_changes` call needs none of this: it already reads the report as that
 // tool's result.
+import { truncateLine } from '@copse/std/one-line-text.ts'
 import type { ReviewFindingRecord, Thread, ThreadReviewReport, UserContent } from '@shared/types'
 
 /** Reports summarised for the model in one prompt; older ones are only counted. */
@@ -71,11 +72,6 @@ export function reviewReportsAwaitingModel(
   return [...awaiting, ...anchored]
 }
 
-function clip(text: string, max: number): string {
-  const flat = text.replace(/\s+/g, ' ').trim()
-  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}…`
-}
-
 function reviewedLine(report: ThreadReviewReport): string {
   const parts = ['Copse Reviewer']
   if (report.baseRef !== '') {
@@ -103,7 +99,7 @@ function groundLine(report: ThreadReviewReport): string | null {
 function findingLine(finding: ReviewFindingRecord, index: number): string {
   return (
     `${String(index + 1)}. [${finding.severity} · ${finding.class} · ${finding.verdict.status}] ` +
-    `${findingLocation(finding)} — ${clip(finding.claim, MAX_CONTEXT_CLAIM_CHARS)}`
+    `${findingLocation(finding)} — ${truncateLine(finding.claim, MAX_CONTEXT_CLAIM_CHARS)}`
   )
 }
 

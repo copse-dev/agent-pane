@@ -26,13 +26,46 @@ interface BrowserFormContents {
   executeJavaScript(script: string, userGesture?: boolean): Promise<unknown>
 }
 
-const replySchema = z.object({ ok: z.boolean(), error: z.string().optional() })
+const replySchema = z.object({
+  ok: z.boolean(),
+  error: z.string().optional(),
+  uncertain: z.boolean().optional(),
+  // The page's own value when a handler rewrote the entered text (an input mask).
+  value: z.string().optional(),
+})
+
+const MAX_REPORTED_VALUE_CHARS = 120
+
+function quoteValue(value: string): string {
+  return JSON.stringify(
+    value.length > MAX_REPORTED_VALUE_CHARS
+      ? `${value.slice(0, MAX_REPORTED_VALUE_CHARS - 1)}…`
+      : value,
+  )
+}
+
+/**
+ * Run one injected script. A failure is reported in Copse's words: the stop
+ * message is not wrapped as external content, so it never carries the page
+ * script's own error text.
+ */
+async function runPageScript(
+  contents: BrowserFormContents,
+  script: string,
+  userGesture: boolean,
+): Promise<unknown> {
+  try {
+    return await contents.executeJavaScript(script, userGesture)
+  } catch {
+    throw new Error('The page script failed.')
+  }
+}
 
 // Resolve only the current visible control. A previous snapshot may have left
 // the same ref on an older, now-hidden dialog. Pin each exact node before any
 // value changes so a rerender or concurrent snapshot cannot retarget the batch.
 const resolveControlScript = `
-  const resolveControl = (ref) => {
+  const resolveControl = (ref, requireEditable = true) => {
     const matches = Array.from(document.querySelectorAll('[data-copse-ref]')).filter((el) => {
       if (el.getAttribute('data-copse-ref') !== ref) return false;
       const rect = el.getBoundingClientRect();
@@ -49,8 +82,8 @@ const resolveControlScript = `
     const el = matches[0];
     if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement ||
       el instanceof HTMLSelectElement)) return null;
-    if (el.matches(':disabled') || el.readOnly === true ||
-      el.getAttribute('aria-disabled') === 'true') return null;
+    if (requireEditable && (el.matches(':disabled') || el.readOnly === true ||
+      el.getAttribute('aria-disabled') === 'true')) return null;
     if (el instanceof HTMLInputElement &&
       ['file','checkbox','radio','button','submit','reset','image','hidden'].includes(el.type)) return null;
     return el;
@@ -84,15 +117,27 @@ export async function fillBrowserForm(
   signal?.throwIfAborted()
   const key = `__copseForm_${randomUUID()}`
   const completed: string[] = []
+  const rewritten: Array<{ ref: string; value: string }> = []
+  // The page chose each rewritten value. A returned result is wrapped as
+  // external content, but a thrown stop message is not, so the stop message
+  // names the refs alone; the refreshed snapshot it asks for shows the values.
+  const rewriteNote = (withValues: boolean): string =>
+    rewritten.length > 0
+      ? `The page changed ${rewritten
+          .map(({ ref, value }) => (withValues ? `${ref} to ${quoteValue(value)}` : ref))
+          .join(', ')}. `
+      : ''
   let inFlightRef: string | undefined
   try {
     const prepared = replySchema.parse(
-      await contents.executeJavaScript(
+      await runPageScript(
+        contents,
         `(() => {
           ${resolveControlScript}
           const fields = ${JSON.stringify(fields)};
           const controls = [];
-          for (const field of fields) {
+          for (let index = 0; index < fields.length; index++) {
+            const field = fields[index];
             const el = resolveControl(field.ref);
             if (!el) return { ok: false, error: 'Ref ' + field.ref + ' is missing, ambiguous or not editable. No fields were entered.' };
             const error = valueError(el, field.text);
@@ -111,7 +156,8 @@ export async function fillBrowserForm(
       signal?.throwIfAborted()
       inFlightRef = field.ref
       const result = replySchema.parse(
-        await contents.executeJavaScript(
+        await runPageScript(
+          contents,
           `(() => {
             ${resolveControlScript}
             const expected = globalThis[${JSON.stringify(key)}]?.[${String(index)}];
@@ -126,22 +172,39 @@ export async function fillBrowserForm(
             const setter = Object.getOwnPropertyDescriptor(prototype, 'value');
             if (setter && setter.set) setter.set.call(el, ${JSON.stringify(field.text)});
             else el.value = ${JSON.stringify(field.text)};
+            // A synchronous handler can replace, hide, retype or renumber this
+            // control, so the entry is unconfirmed unless this same visible,
+            // uniquely referenced supported control remains (it may lock
+            // itself). Its value may differ: a mask that reformats the text
+            // keeps the same node, so report the page's value and carry on.
+            const retained = () => resolveControl(${JSON.stringify(field.ref)}, false) === expected;
+            const unconfirmed = () => ({ ok: false, uncertain: true,
+              error: 'Ref ' + ${JSON.stringify(field.ref)} + ' changed before its value could be confirmed.' });
+            if (!retained()) return unconfirmed();
             el.dispatchEvent(new Event('input', { bubbles: true }));
+            if (!retained()) return unconfirmed();
             el.dispatchEvent(new Event('change', { bubbles: true }));
-            return { ok: true };
+            if (!retained()) return unconfirmed();
+            // Only a string the control holds is reported, as it is; the
+            // main process clips it.
+            const value = el.value;
+            if (typeof value !== 'string') return unconfirmed();
+            return value === ${JSON.stringify(field.text)} ? { ok: true } : { ok: true, value };
           })()`,
           true,
         ),
       )
-      inFlightRef = undefined
+      if (!result.uncertain) inFlightRef = undefined
       if (!result.ok) throw new Error(result.error ?? 'The page could not enter this field.')
       completed.push(field.ref)
+      if (result.value !== undefined) rewritten.push({ ref: field.ref, value: result.value })
     }
-    return `Entered ${String(completed.length)} fields: ${completed.map((ref) => `[ref=${ref}]`).join(', ')}. Inspect the form before submitting it.`
+    return `Entered ${String(completed.length)} fields: ${completed.map((ref) => `[ref=${ref}]`).join(', ')}. ${rewriteNote(true)}Inspect the form before submitting it.`
   } catch (error) {
     const message =
       `Form entry stopped after ${String(completed.length)} confirmed fields of ${String(fields.length)}. ` +
       (completed.length > 0 ? `Entered: ${completed.join(', ')}. ` : '') +
+      rewriteNote(false) +
       (inFlightRef ? `${inFlightRef} may already have changed. ` : '') +
       `${errorMessage(error)} Inspect the fields and refresh the snapshot before retrying; do not replay confirmed input.`
     if (signal?.aborted) throw new DOMException(message, 'AbortError')

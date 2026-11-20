@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 import type { ApiClient } from '../../../preload/api.d.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { UsagePeriodSummary, UsageSummary } from '@shared/usage/aggregate-usage.ts'
@@ -210,7 +211,7 @@ export function renderPlanProvider(
 
   if (result.usage.creditGrant) {
     const credit = result.usage.creditGrant
-    const usedPercent = Math.min(100, Math.max(0, (credit.usedCents / credit.totalCents) * 100))
+    const usedPercent = clamp((credit.usedCents / credit.totalCents) * 100, 0, 100)
     const row = document.createElement('div')
     row.className = 'usage-credit-grant'
     row.innerHTML = `

@@ -1,3 +1,4 @@
+import { collapseWhitespace } from '@copse/std/one-line-text.ts'
 import { READ_FILE_LIMITS_CEILING } from './read-file-limits.ts'
 import type { TodoItem } from './wire-types.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
@@ -376,7 +377,7 @@ const WRITING_FLAG = /(?:^|\s)(?:--fix|--write|-u|--update-snapshots?|-w)(?:\s|=
 function pipelineStages(segment: string): string[] | null {
   const merged = segment.replace(STDERR_MERGE, '')
   if (merged.includes('>')) return null
-  return merged.split('|').map((p) => p.replace(/\s+/g, ' ').trim())
+  return merged.split('|').map(collapseWhitespace)
 }
 
 /**
