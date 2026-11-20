@@ -138,12 +138,13 @@ export function maybeNameThread(store: AppStore, api: ApiClient, threadId: strin
   if (!first || userMessages.length < threshold) return
   const titleBefore = thread.title
   const input = namingInput(userMessages)
+  const projectId = owningProjectId(store, threadId)
   inFlight.add(threadId)
 
   void (async (): Promise<void> => {
     let title: string | null
     try {
-      title = await api.agent.suggestTitle(input)
+      title = projectId ? await api.agent.suggestTitle(input, projectId, threadId) : null
     } catch {
       title = null
     } finally {
