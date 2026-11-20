@@ -235,7 +235,7 @@ describe('analyzeShellCommand', () => {
       'touch src/curl-helpers.ts',
       'mkdir -p src/eval-results',
       'git log --oneline -3 -- src/main/services/acp/acp-ssh-transport.ts',
-      // Fed to xargs it is still a file name: run, it is that file, not `exec`.
+      // Fed to `xargs` in front of a plain read, a name only becomes its operand.
       `grep -rl . ${checkout}/dir2 | xargs wc -l`,
     ]) {
       assert.equal(analyzeShellCommand(command, checkout).verdict, 'sandbox', command)
@@ -247,10 +247,19 @@ describe('analyzeShellCommand', () => {
       'timeout 5 ssh-copy-id host',
       'find . -exec rm {} +',
       'nohup /usr/bin/curl https://x.test',
+      './bin/ssh-x host',
+      'env ./bin/ssh-x host',
+      'FOO=1 ./bin/ssh-x host',
+      'timeout 5 ./a/ssh-b host',
+      'nohup ./x/curl-y https://x.test',
+      'xargs -I{} ./a/ssh-x {}',
+      // The script a shell runs.
+      'bash ./a/curl-b',
+      'source ./x/eval-y.sh',
       // A bare name may be a program on PATH, extension or not.
       'xargs -I{} curl-wrapper.sh {}',
       'mkdir agent-exec-test',
-      // Not plainly a path: an option value, `host:dir`, quoting.
+      // Not plainly a path: an option value, `host:dir`, a space.
       'rsync -e ssh a b',
       'git -c core.sshCommand=ssh fetch',
       'cp host:src/ssh-x .',
@@ -262,9 +271,31 @@ describe('analyzeShellCommand', () => {
       'echo src/ssh-x ssh host | sh',
       // No reading to judge by: process substitution fails closed.
       `comm -23 <(ls ${checkout}/a) <(ls ${checkout}/b)`,
+      // A fragment elsewhere does not clear a mention the parser drops: a
+      // here-string, a comment, a redirect target.
+      "touch src/ssh-x && bash <<< 'ssh host'",
+      "mkdir -p src/curl-x; bash <<< 'curl https://x.test'",
+      'mkdir -p src/eval-x; bash <<< \'eval "$CMD"\'',
+      // The same path again where the parser cannot see it, here for a shell
+      // this module does not list.
+      "touch src/ssh-x && fish <<< 'src/ssh-x host'",
+      'mkdir src/ssh-x # ssh host',
+      'pnpm test > .tmp/agent-exec-test/out.log',
+      // Nor one a pipeline can turn into a program.
+      "echo x/ssh-host | cut -d/ -f2 | tr - ' ' | xargs env",
+      "echo x/ssh-host | cut -d/ -f2 | tr - ' ' | xargs",
+      "echo x/ssh-host | cut -d/ -f2 | tr - ' ' | sh",
+      `grep -rl . ${checkout}/dir2 | xargs -I{} wc -l {}`,
+      // A line that runs a script keeps the reason it has without fragments.
+      `cd ${checkout} && bash scripts/check.sh`,
     ]) {
       assert.equal(analyzeShellCommand(command, checkout).verdict, 'external', command)
     }
+    // Written to a file a shell then runs: judged as if the fragment were a word.
+    assert.equal(
+      analyzeShellCommand("echo x/ssh-host | tr - ' ' > f; sh f", checkout).verdict,
+      'ambiguous',
+    )
     // A bare directory named after the program is not a compound name.
     assert.equal(analyzeShellCommand('sed -n 1p services/exec/a.ts', checkout).verdict, 'ambiguous')
     // Destructive and privileged matchers never relax.
