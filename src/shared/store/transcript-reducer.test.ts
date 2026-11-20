@@ -351,3 +351,78 @@ for (const retryId of ['call_0', 'retry_1']) {
     }
   })
 }
+
+test('a continuation prompt inside a run closes the answer above it', () => {
+  // The pre-review todo gate and ACP unfinished-turn recovery start a machine
+  // turn with no `done` since the previous answer.
+  const { main, window } = reduceBoth([
+    { type: 'text', text: 'First answer.' },
+    {
+      type: 'machine_turn_start',
+      content: 'Todos are still open.',
+      origin: { kind: 'machine', operationId: 'post-turn-continuation' },
+    },
+    { type: 'reasoning', text: 'Finish the todo.' },
+    { type: 'text', text: 'Second answer.' },
+    { type: 'done' },
+  ])
+
+  assert.deepEqual(comparable(messagesOf(window)), comparable(messagesOf(main)))
+  assert.deepEqual(
+    messagesOf(main).map((message) => [message.role, message.content]),
+    [
+      ['user', 'What does the plan say?'],
+      ['assistant', 'First answer.'],
+      ['user', 'Todos are still open.'],
+      ['assistant', 'Second answer.'],
+    ],
+  )
+  assert.equal(messagesOf(main).at(1)?.reasoning, undefined)
+  assert.equal(messagesOf(main).at(3)?.reasoning, 'Finish the todo.')
+})
+
+test('a continuation prompt inside a run finalizes the earlier bubble', () => {
+  const store = seeded()
+  const done: string[] = []
+  store.on('message_done', (messageId) => done.push(messageId))
+  const reducer = createTranscriptReducer(store)
+  reducer.apply('t1', { type: 'text', text: 'First answer.' })
+  const first = reducer.streamingMessageId('t1')
+  reducer.apply('t1', {
+    type: 'machine_turn_start',
+    content: 'Todos are still open.',
+    origin: { kind: 'machine', operationId: 'post-turn-continuation' },
+  })
+  assert.deepEqual(done, [first])
+  assert.equal(reducer.streamingMessageId('t1'), null)
+})
+
+test('a step text rewrite keeps the sentence the step resumed', () => {
+  const read = (id: string): StreamChunk[] => [
+    { type: 'tool_call', toolCall: { id, name: 'read_file', args: { path: 'PLAN.md' } } },
+    { type: 'tool_result', toolCallId: id, result: '1. Ship it', isError: false },
+  ]
+  const { main, window } = reduceBoth([
+    { type: 'text', text: 'Let me check the' },
+    ...read('r1'),
+    // The next step resumes the sentence in the same bubble, then the loop
+    // strips the tool markup it recovered from that step's text only.
+    { type: 'text', text: ' other file <tool_call>{"name":"read_file"}</tool_call>' },
+    { type: 'text_replace', text: ' other file' },
+    ...read('r2'),
+    { type: 'text', text: ' and its neighbour <tool_call>{}</tool_call>' },
+    { type: 'text_replace', text: ' and its neighbour' },
+    ...read('r3'),
+    { type: 'text', text: 'All read. <tool_call>{}</tool_call>' },
+    { type: 'text_replace', text: 'All read.' },
+    { type: 'done' },
+  ])
+
+  assert.deepEqual(comparable(messagesOf(window)), comparable(messagesOf(main)))
+  assert.deepEqual(
+    messagesOf(main)
+      .slice(1)
+      .map((message) => message.content),
+    ['Let me check the other file and its neighbour', 'All read.'],
+  )
+})

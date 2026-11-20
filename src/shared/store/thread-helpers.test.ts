@@ -903,6 +903,31 @@ describe('archiveThread', () => {
     assert.equal(isThreadArchived(active), false)
   })
 
+  it('moves focus to the thread after the archived one when archiving in a row', () => {
+    const store = createStore()
+    // createThread prepends, so the sidebar order is [a, b, c, d].
+    const ids = ['d', 'c', 'b', 'a'].map((label) => {
+      const id = createThread(store)
+      addMessage(store, id, 'user', label)
+      return id
+    })
+    const [d, c, b, a] = ids
+    assert.ok(a && b && c && d)
+    assert.deepEqual(
+      store.getState().threads.map((t) => t.id),
+      [a, b, c, d],
+    )
+
+    switchThread(store, a)
+    archiveThread(store, a)
+    assert.equal(store.getState().activeThreadId, b)
+    // `a` stays in the store, archived; it must not shift the landing spot.
+    archiveThread(store, b)
+    assert.equal(store.getState().activeThreadId, c)
+    archiveThread(store, c)
+    assert.equal(store.getState().activeThreadId, d)
+  })
+
   it('is a no-op when the thread is already archived', () => {
     const store = createStore()
     const first = createThread(store)

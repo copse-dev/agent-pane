@@ -453,12 +453,17 @@ export function archiveThread(
     activeThreadId !== null && updated.some((t) => t.id === activeThreadId && isThreadArchived(t))
   const index = threads.findIndex((t) => t.id === id)
   const parentId = target.sideChat?.parentThreadId
+  // The archived thread's place among the visible ones, so focus moves to the
+  // thread that followed it: earlier archived threads and side chats stay in
+  // the store and would otherwise push the landing spot past it.
+  const earlier = new Set(threads.slice(0, Math.max(index, 0)).map((t) => t.id))
+  const position = visible.filter((t) => earlier.has(t.id)).length
   // An archived side chat hands focus back to the thread it branched from.
   const newActive = !activeArchived
     ? activeThreadId
     : parentId !== undefined && visible.some((t) => t.id === parentId)
       ? parentId
-      : (visible[Math.min(index, visible.length - 1)]?.id ?? at(visible, 0).id)
+      : (visible[Math.min(position, visible.length - 1)]?.id ?? at(visible, 0).id)
   store.setState({
     threads: updated,
     activeThreadId: newActive,
