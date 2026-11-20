@@ -1680,7 +1680,6 @@ export interface ApiClient {
   }
   shell: {
     openExternal: (url: string) => Promise<void>
-    openWorkspaceFileInBrowser: (projectId: string, threadId: string, path: string) => Promise<void>
   }
   editors: {
     /** Installed external editors plus the sticky last-used default. */
