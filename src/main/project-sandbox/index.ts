@@ -15,6 +15,7 @@ export {
   afterSandboxedCommand,
   isProjectSandboxEnabled,
   sandboxViolationCountForCommand,
+  sandboxViolationCountForBackgroundProcess,
 } from './spawn.ts'
 export {
   gatewayReadFile,
@@ -68,6 +69,9 @@ export async function initProjectSandbox(): Promise<void> {
       },
       false,
     )
+    if (!SandboxManager.isSandboxingEnabled()) {
+      throw new Error('Workspace protection did not start for project commands')
+    }
     await refreshGitConfigIncludeReadPaths()
     setProjectSandboxEnabled(true)
     setProjectSandboxInitFailure(undefined)
@@ -79,6 +83,7 @@ export async function initProjectSandbox(): Promise<void> {
   } catch (err) {
     setProjectSandboxEnabled(false)
     setProjectSandboxInitFailure(errorMessage(err))
+    await SandboxManager.reset().catch(() => {})
     console.warn('[project-sandbox] ASRT init failed — project commands run unsandboxed:', err)
   }
 }
