@@ -30,11 +30,14 @@ describe('skills', () => {
         ),
       },
     })
-    seedEmptyProject(workspaceRoot, 'skills-demo-project', {
-      model: 'claude-sonnet-4-6',
-      subagentsEnabled: false,
+    const projectSettings = { model: 'claude-sonnet-4-6', subagentsEnabled: false }
+    seedEmptyProject(workspaceRoot, 'skills-demo-project', projectSettings)
+    // writeSettings replaces the whole settings file, so restate the project's
+    // model and subagent settings alongside the plugin path.
+    writeSettings({
+      ...projectSettings,
+      skillPluginPaths: [join(workspaceRoot, 'review-plugin')],
     })
-    writeSettings({ skillPluginPaths: [join(workspaceRoot, 'review-plugin')] })
     await browser.reloadSession()
   })
 
