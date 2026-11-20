@@ -40,7 +40,8 @@ jobs:
       github.event_name != 'pull_request' ||
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
-    # Setup plus at most a 14-minute run (the same per-attempt cap as a CI shard).
+    # Setup plus at most a 14-minute run, ample for the quarantined specs (a CI
+    # shard attempt gets 18 minutes; this job does not need to match it).
     timeout-minutes: 45
     env:
       COPSE_E2E_HEADLESS: '0'
