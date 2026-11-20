@@ -1,14 +1,14 @@
 // `afterFileEdit` hook `glob` evaluation shared by the Cursor and Copse adapters.
 //
 // The glob comes from a hooks.json the repository or user wrote, and it is
-// matched on the main process for every edit. micromatch compiles it through
-// picomatch to a RegExp, and some shapes (`+(*a)`, GHSA-fc5q-39xc-vjpf, or a raw
+// matched on the main process for every edit. picomatch compiles it to a
+// RegExp, and some shapes (`+(*a)`, GHSA-fc5q-39xc-vjpf, or a raw
 // `(a|*a)+`) compile to nested quantifiers that backtrack exponentially. So the
 // match runs under the same wall-clock bound as the hook `matcher` regex
 // (`matcher-regex.ts`).
-import { relative } from 'node:path'
-import micromatch from 'micromatch'
+import picomatch from 'picomatch'
 import { matchingIndexesWithin } from '@copse/std/bounded-regex.ts'
+import { relativeWithin } from '@copse/std/path-containment.ts'
 import { sha256Hex } from '@copse/std/sha256.ts'
 
 /** Budget for matching one edit's candidate paths. Real globs take microseconds. */
@@ -66,11 +66,11 @@ export function afterFileEditGlobMatches(
   if (pathologicalGlobs.has(key)) return true
   const candidates = [filePath.replace(/\\/g, '/')]
   if (workspaceRoot) {
-    const rel = relative(workspaceRoot, filePath).replace(/\\/g, '/')
-    if (rel && !rel.startsWith('..')) candidates.push(rel)
+    const rel = relativeWithin(workspaceRoot, filePath)
+    if (rel) candidates.push(rel.replace(/\\/g, '/'))
   }
-  const exact = globs.map((glob) => micromatch.matcher(glob, { dot: true }))
-  const byBasename = globs.map((glob) => micromatch.matcher(glob, { dot: true, basename: true }))
+  const exact = globs.map((glob) => picomatch(glob, { dot: true }))
+  const byBasename = globs.map((glob) => picomatch(glob, { dot: true, basename: true }))
   const tester = {
     test: (candidate: string): boolean =>
       exact.some((isMatch) => isMatch(candidate)) ||

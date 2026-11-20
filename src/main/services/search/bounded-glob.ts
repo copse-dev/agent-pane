@@ -1,16 +1,17 @@
 // Glob matching for patterns Copse did not write: model tool arguments, a
 // repository's `.gitignore`, `.cursor/rules/*.mdc` globs.
 //
-// micromatch compiles a glob to a JavaScript RegExp through picomatch, and some
-// glob shapes compile to nested unbounded quantifiers that backtrack
-// exponentially on a short non-matching path. GHSA-fc5q-39xc-vjpf (picomatch
-// <=4.0.7, no patched release) covers single-branch repeated extglobs such as
-// `+(*a)`, which becomes `(?:[^/]*?a)+`. Raw groups followed by a quantifier,
-// such as `(*a)+` or `(a|*a)+`, compile to the same shape, and `noextglob` does
-// not prevent that. So rather than guessing which patterns are dangerous, every
-// match runs under the same wall-clock bound the hook matchers use
-// (`@copse/std/bounded-regex.ts`), which V8 interrupts when the budget is spent.
-import micromatch from 'micromatch'
+// picomatch compiles a glob to a JavaScript RegExp, and some glob shapes
+// compile to nested unbounded quantifiers that backtrack exponentially on a
+// short non-matching path. GHSA-fc5q-39xc-vjpf (picomatch <=4.0.7, no patched
+// release) covers single-branch repeated extglobs such as `+(*a)`, which
+// becomes `(?:[^/]*?a)+`. Raw groups followed by a quantifier, such as `(*a)+`
+// or `(a|*a)+`, compile to the same shape, and `noextglob` does not prevent
+// that. So rather than guessing which patterns are dangerous, every match runs
+// under the same wall-clock bound the hook matchers use
+// (`@copse/std/bounded-regex.ts`), which V8 interrupts when the budget is
+// spent.
+import picomatch from 'picomatch'
 import { matchingIndexesWithin } from '@copse/std/bounded-regex.ts'
 
 /** Budget for matching one subject. Real globs match a path in microseconds. */
@@ -42,10 +43,10 @@ export type BoundedGlobMatcher = (subjects: readonly string[]) => boolean[] | 't
 
 function compile(
   patterns: string | readonly string[],
-  options: micromatch.Options,
+  options: picomatch.PicomatchOptions,
 ): (subject: string) => boolean {
   const list = typeof patterns === 'string' ? [patterns] : patterns
-  const matchers = list.map((pattern) => micromatch.matcher(pattern, options))
+  const matchers = list.map((pattern) => picomatch(pattern, options))
   return (subject) => matchers.some((isMatch) => isMatch(subject))
 }
 
@@ -77,12 +78,16 @@ function matchWithin(
     timeoutMs,
     ...(opts.limit !== undefined ? { limit: opts.limit } : {}),
   })
-  if (budget) budget.remainingMs -= performance.now() - started
+  // A call that timed out spent its whole allowance. Charging only the measured
+  // time can leave a sliver of budget, because V8's watchdog runs on libuv's
+  // millisecond timer and may fire slightly before `performance.now()` agrees.
+  const elapsed = performance.now() - started
+  if (budget) budget.remainingMs -= hits === 'timeout' ? Math.max(elapsed, timeoutMs) : elapsed
   return hits
 }
 
 /**
- * Compile `patterns` once (any one matching counts, like `micromatch.isMatch`
+ * Compile `patterns` once (any one matching counts, like `picomatch.isMatch`
  * with an array) and match a batch of subjects per call. Each call gets at most
  * `callTimeoutMs`, and all calls together get at most `totalTimeoutMs`: once
  * that is spent every later call reports `'timeout'` without matching, so a
@@ -91,7 +96,7 @@ function matchWithin(
  */
 export function boundedGlobMatcher(
   patterns: string | readonly string[],
-  options: micromatch.Options = {},
+  options: picomatch.PicomatchOptions = {},
   budget: { callTimeoutMs?: number; totalTimeoutMs?: number } = {},
 ): BoundedGlobMatcher {
   const tester = { test: compile(patterns, options) }
@@ -108,8 +113,7 @@ export function boundedGlobMatcher(
 }
 
 /**
- * `micromatch(subjects, pattern, options)` for a single pattern (or any of
- * several), keeping the subjects' order and stopping after `limit` matches,
+ * `subjects.filter` by a single pattern (or any of several), keeping the subjects' order and stopping after `limit` matches,
  * under one budget for the whole list. Pass `budget` to also charge the call
  * to a budget shared with other calls; once it is spent this reports
  * `'timeout'` without matching.
@@ -117,7 +121,7 @@ export function boundedGlobMatcher(
 export function globFilterWithin(
   subjects: readonly string[],
   pattern: string | readonly string[],
-  options: micromatch.Options,
+  options: picomatch.PicomatchOptions,
   opts: { timeoutMs?: number; limit?: number; budget?: GlobBudget } = {},
 ): string[] | 'timeout' {
   const tester = { test: compile(pattern, options) }

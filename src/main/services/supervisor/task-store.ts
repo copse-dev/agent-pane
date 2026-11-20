@@ -1,17 +1,8 @@
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
-import { randomUUID } from 'node:crypto'
-import {
-  appendFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { isPathWithin } from '@copse/std/path-containment.ts'
+import { writeFileAtomicSync } from '@copse/std/write-file-atomic.ts'
 import {
   parseSupervisedTaskMeta,
   serializeSupervisedTaskAuditEvent,
@@ -108,12 +99,6 @@ function archiveTask(task: SupervisedTaskMeta): SupervisedTaskArchive | null {
   })
 }
 
-function atomicWrite(path: string, data: string): void {
-  const temporary = `${path}.copse-${String(process.pid)}-${randomUUID()}.tmp`
-  writeFileSync(temporary, data, 'utf8')
-  renameSync(temporary, path)
-}
-
 function queueKey(projectId: string, taskId: string): string {
   return `supervised-task:${projectId}:${taskId}`
 }
@@ -195,7 +180,7 @@ export class FileSupervisedTaskStore implements SupervisedTaskStore {
     return runSerialized(queueKey(meta.projectId, meta.taskId), () => {
       const dir = containedTaskDir(meta.projectId, meta.taskId, this.env)
       mkdirSync(dir, { recursive: true })
-      atomicWrite(join(dir, META_FILE), `${JSON.stringify(validatedMeta, null, 2)}\n`)
+      writeFileAtomicSync(join(dir, META_FILE), `${JSON.stringify(validatedMeta, null, 2)}\n`)
       appendFileSync(
         join(dir, AUDIT_FILE),
         `${serializeSupervisedTaskAuditEvent(validatedAudit)}\n`,
@@ -220,7 +205,7 @@ export class FileSupervisedTaskStore implements SupervisedTaskStore {
           mkdirSync(join(projectStoreDir(task.projectId, this.env), ARCHIVE_DIR), {
             recursive: true,
           })
-          atomicWrite(archivePath, `${JSON.stringify(archive, null, 2)}\n`)
+          writeFileAtomicSync(archivePath, `${JSON.stringify(archive, null, 2)}\n`)
           rmSync(containedTaskDir(task.projectId, task.taskId, this.env), {
             recursive: true,
             force: true,

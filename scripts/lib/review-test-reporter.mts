@@ -1,8 +1,7 @@
 // Live CI diagnostics and an EOF-only complete inventory for review consumers.
-import { realpathSync } from 'node:fs'
-import { relative, resolve } from 'node:path'
 import { z } from 'zod'
 import { TEST_FAILURE_REPORT_PREFIX, testFailureReportSchema } from '@copse/review/test-failures.ts'
+import { TestNames, testEntryPath } from './test-event-names.mts'
 
 const errorTextSchema = z.object({
   message: z.string().optional().catch(undefined),
@@ -35,14 +34,6 @@ const eventSchema = z.object({
   }),
 })
 
-function canonicalPath(path: string): string {
-  try {
-    return realpathSync(path)
-  } catch {
-    return resolve(path)
-  }
-}
-
 function bounded(value: string | undefined, limit = 1024): string | undefined {
   return value && value.length > limit ? `${value.slice(0, limit)} [truncated]` : value
 }
@@ -50,12 +41,11 @@ function bounded(value: string | undefined, limit = 1024): string | undefined {
 export default async function* reviewTestReporter(
   source: AsyncIterable<unknown>,
 ): AsyncGenerator<string> {
-  const names = new Map<string, string>()
   const failures: { path: string; name: string }[] = []
   let valid = true
   let failed: number | undefined
-  const outputDir = process.env['COPSE_TEST_OUTPUT_DIR']
-  const root = canonicalPath(outputDir ?? process.cwd())
+  const root = process.env['COPSE_TEST_OUTPUT_DIR'] ?? process.cwd()
+  const names = new TestNames(root)
   for await (const event of source) {
     const parsed = eventSchema.safeParse(event)
     if (!parsed.success) {
@@ -63,19 +53,8 @@ export default async function* reviewTestReporter(
       continue
     }
     const { type, data } = parsed.data
-    if (type === 'test:start' && data.file && data.name && data.testId !== undefined) {
-      const stableName =
-        data.name === data.file
-          ? relative(root, canonicalPath(data.file))
-              .replaceAll('\\', '/')
-              .replace(/\.mjs$/, '.ts')
-          : data.name
-      const parent = names.get(`${data.file}:${String(data.parentId)}`)
-      names.set(
-        `${data.file}:${String(data.testId)}`,
-        parent ? `${parent} > ${stableName}` : stableName,
-      )
-    }
+    if (type === 'test:start' && data.file && data.name && data.testId !== undefined)
+      names.start(data.file, data.testId, data.parentId, data.name)
     if (type === 'test:fail') {
       const error = data.details?.error
       const cause = errorTextSchema.safeParse(error?.cause)
@@ -83,19 +62,11 @@ export default async function* reviewTestReporter(
       // failures. It is not a unique assertion count or a complete inventory.
       // Only entryPath is normalized; the other locations name the raw bundle.
       yield `\nCopse test failure event: ${JSON.stringify({
-        entryPath: bounded(
-          data.file
-            ? relative(root, canonicalPath(data.file))
-                .replaceAll('\\', '/')
-                .replace(/\.mjs$/, '.ts')
-            : undefined,
-        ),
+        entryPath: bounded(data.file ? testEntryPath(root, data.file) : undefined),
         file: bounded(data.file),
         bundleLine: data.line,
         bundleColumn: data.column,
-        name: bounded(
-          names.get(`${data.file ?? ''}:${String(data.testId)}`) ?? data.name ?? '(unnamed)',
-        ),
+        name: bounded(names.get(data.file ?? '', data.testId) ?? data.name ?? '(unnamed)'),
         failureType: bounded(error?.failureType ?? 'unknown'),
         skip: typeof data.skip === 'string' ? bounded(data.skip) : (data.skip ?? false),
         todo: typeof data.todo === 'string' ? bounded(data.todo) : (data.todo ?? false),
@@ -113,15 +84,12 @@ export default async function* reviewTestReporter(
     }
     if (type === 'test:fail' && !data.skip && !data.todo) {
       if (data.details?.error?.failureType === 'subtestsFailed') continue
-      const name = names.get(`${data.file ?? ''}:${String(data.testId)}`)
+      const name = names.get(data.file ?? '', data.testId)
       if (!data.file || !name || data.details?.error?.failureType === 'cancelledByParent') {
         valid = false
         continue
       }
-      // The bundled entries mirror source paths under a per-run scratch dir.
-      const path = relative(root, canonicalPath(data.file))
-        .replaceAll('\\', '/')
-        .replace(/\.mjs$/, '.ts')
+      const path = testEntryPath(root, data.file)
       if (path.startsWith('../') || path.length === 0) {
         valid = false
         continue

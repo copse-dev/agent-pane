@@ -16,7 +16,8 @@
  * arbitrary directory.
  */
 import { lstat, readdir, rm, stat } from 'node:fs/promises'
-import { dirname, join, relative, resolve, sep } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
+import { relativeWithin } from '@copse/std/path-containment.ts'
 import type {
   WorktreeInventoryEntry,
   WorktreePackageCleanupResult,
@@ -193,9 +194,7 @@ interface InventoryRepository {
 }
 
 function relativeInside(parent: string, child: string): string | null {
-  const value = relative(resolve(parent), resolve(child))
-  if (value === '..' || value.startsWith(`..${sep}`)) return null
-  return value
+  return relativeWithin(parent, child)
 }
 
 async function repositoryFromLiveProject(projectRoot: string): Promise<InventoryRepository | null> {
