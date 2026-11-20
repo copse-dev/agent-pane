@@ -7,12 +7,12 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { request as httpRequest } from 'node:http'
 import { connect, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { humanPrincipal } from '@shared/threads/execution-runtime.ts'
+import { humanPrincipal, type RuntimeProfile } from '@shared/threads/execution-runtime.ts'
 import type { RecordDecisionInput } from '../security/decision-log-store.ts'
 import {
   createGitHubCredentialBroker,
@@ -152,13 +152,12 @@ describe('GitHub credential broker', () => {
       requestTimeoutMs,
     })
 
-  async function issue(readOnly: boolean, threadId = 'thread-a'): Promise<IssuedGitHubGrant> {
+  async function issue(threadId = 'thread-a'): Promise<IssuedGitHubGrant> {
     const grant = await broker().issue({
       principal: humanPrincipal('proj'),
       projectId: 'proj',
       threadId,
-      profile: { kind: 'local', containment: readOnly ? 'contained' : 'host' },
-      readOnly,
+      profile: { kind: 'local', containment: 'contained' },
     })
     grants.push(grant)
     return grant
@@ -181,7 +180,7 @@ describe('GitHub credential broker', () => {
   })
 
   it('attaches the real token upstream and hands the child only a capability', async () => {
-    const grant = await issue(false)
+    const grant = await issue()
     assert.notEqual(grant.env['GH_TOKEN'], CANARY)
     assert.equal(JSON.stringify(grant.env).includes(CANARY), false)
     assert.deepEqual(grant.grant.network?.origins, ['https://api.github.com'])
@@ -199,8 +198,8 @@ describe('GitHub credential broker', () => {
   })
 
   it('refuses another host, another grant and an expired or released grant', async () => {
-    const mine = await issue(false, 'thread-a')
-    const theirs = await issue(false, 'thread-b')
+    const mine = await issue('thread-a')
+    const theirs = await issue('thread-b')
 
     assert.equal((await call(mine, { host: 'evil.example' })).status, 403)
     assert.equal((await call(mine, { host: 'github.com' })).status, 403)
@@ -222,8 +221,32 @@ describe('GitHub credential broker', () => {
     assert.equal(upstreamCalls.length, 0)
   })
 
-  it('limits a read-only grant to reads and GraphQL queries', async () => {
-    const grant = await issue(true)
+  it('refuses to issue a grant for a command outside the sandbox', async () => {
+    const outside: RuntimeProfile[] = [
+      { kind: 'local', containment: 'host' },
+      { kind: 'ssh', hostId: 'build-box' },
+    ]
+    for (const profile of outside) {
+      const attempt = broker().issue({
+        principal: humanPrincipal('proj'),
+        projectId: 'proj',
+        threadId: 'thread-a',
+        profile,
+      })
+      // Release a grant that should not exist, so a failure cannot hang the run.
+      await assert.rejects(
+        attempt.then((grant) => {
+          grants.push(grant)
+        }),
+        /only for contained local executions/,
+      )
+    }
+    assert.deepEqual(readdirSync(stateDir), [])
+    assert.deepEqual(records, [])
+  })
+
+  it('limits every grant to reads and GraphQL queries', async () => {
+    const grant = await issue()
     assert.deepEqual(grant.grant.network?.methods, ['GET', 'HEAD'])
     assert.equal((await call(grant, { method: 'GET' })).status, 200)
     assert.equal(
@@ -249,7 +272,7 @@ describe('GitHub credential broker', () => {
   it('never follows a redirect, so the credential stays with GitHub', async () => {
     upstreamStatus = 302
     upstreamHeaders = [['location', 'https://codeload.github.com/o/r/tar.gz/main']]
-    const grant = await issue(false)
+    const grant = await issue()
     const reply = await call(grant, { path: '/repos/o/r/tarball/main' })
     assert.equal(reply.status, 302)
     assert.equal(reply.headers['location'], 'https://codeload.github.com/o/r/tar.gz/main')
@@ -257,7 +280,7 @@ describe('GitHub credential broker', () => {
   })
 
   it('records the grant, each use and each refusal without the token', async () => {
-    const grant = await issue(false)
+    const grant = await issue()
     await call(grant)
     await call(grant, { host: 'evil.example' })
     assert.deepEqual(
@@ -266,16 +289,17 @@ describe('GitHub credential broker', () => {
     )
     for (const record of records) {
       assert.equal(record.principalId, 'human:local')
-      assert.equal(record.runtime, 'local/host')
+      assert.equal(record.runtime, 'local/contained')
       assert.equal(record.source, GITHUB_CREDENTIAL_REF)
     }
+    assert.equal(records[0]?.scope, 'github-api-read')
     assert.deepEqual(records[1]?.reasons, ['status 200', 'bytes out 0', 'bytes in 19'])
     assert.equal(JSON.stringify(records).includes(CANARY), false)
     assert.equal(JSON.stringify(records).includes(grant.env['GH_TOKEN'] ?? '?'), false)
   })
 
   it('refuses a method the grant does not name before reading any body', async () => {
-    const grant = await issue(true)
+    const grant = await issue()
     const pending = stalledRequest(grant, 'POST', '/repos/o/r/issues')
     // The promised body never comes, so the refusal must not wait for it.
     const answer = await pending.waitFor(/is not a read/, 2_000)
@@ -286,7 +310,7 @@ describe('GitHub credential broker', () => {
 
   it('answers 429 past the in-flight cap and 408 to a body that never arrives', async () => {
     requestTimeoutMs = 300
-    const grant = await issue(true)
+    const grant = await issue()
     const stalled = Array.from({ length: GITHUB_GRANT_MAX_CONCURRENT_REQUESTS }, () =>
       stalledRequest(grant, 'POST', '/graphql'),
     )
@@ -305,8 +329,8 @@ describe('GitHub credential broker', () => {
     )
   })
 
-  it('reads GraphQL on a read-only grant only as a checked POST body', async () => {
-    const grant = await issue(true)
+  it('reads GraphQL only as a checked POST body', async () => {
+    const grant = await issue()
     const query = JSON.stringify({ query: 'query { viewer { login } }' })
     assert.equal(
       (await call(grant, { method: 'GET', path: '/graphql?query=%7Bviewer%7Blogin%7D%7D' })).status,
@@ -320,7 +344,7 @@ describe('GitHub credential broker', () => {
   })
 
   it('forwards neither a method override nor a body encoding', async () => {
-    const grant = await issue(true)
+    const grant = await issue()
     const reply = await call(grant, {
       headers: {
         'x-http-method-override': 'DELETE',
@@ -338,7 +362,7 @@ describe('GitHub credential broker', () => {
   })
 
   it('writes a bounded number of audit lines per grant and counts the rest', async () => {
-    const grant = await issue(false)
+    const grant = await issue()
     const extra = 3
     for (let index = 0; index < GITHUB_GRANT_AUDIT_LINES_PER_KIND + extra; index += 1) {
       await call(grant)
@@ -364,7 +388,7 @@ describe('GitHub credential broker', () => {
       t.skip('gh is not installed')
       return
     }
-    const grant = await issue(false)
+    const grant = await issue()
     const home = mkdtempSync(join(tmpdir(), 'copse-gh-home-'))
     try {
       const env = { PATH: process.env['PATH'] ?? '', HOME: home, ...grant.env }

@@ -38,6 +38,9 @@ import {
   grantThreadReadRoot,
 } from '../services/security/thread-read-roots.ts'
 import { runWithActiveRunIdentity } from '../services/active-run-identity.ts'
+import { runWithDecisionRecorder } from '../services/security/decision-log-store.ts'
+import { setSetting } from '../services/storage/settings.ts'
+import { runWithThreadExecutionContext } from '../services/thread-execution-context.ts'
 import {
   registerInternalWorkspaceRoot,
   unregisterInternalWorkspaceRoot,
@@ -268,6 +271,63 @@ describe('port-binding background host', () => {
         cancelEscalation()
       }
     })
+  })
+
+  it('keeps raw GitHub tokens out of a loopback task while brokering is on', async () => {
+    if (process.platform === 'win32') return
+    const canary = 'ghp_CANARYcanaryCANARYcanary0123456789'
+    mkdirSync(join(TEST_OUTPUT_DIR, 'port-binding-fixtures'), { recursive: true })
+    fixture = mkdtempSync(join(TEST_OUTPUT_DIR, 'port-binding-fixtures', 'tokens-'))
+    previousCopseDir = process.env['COPSE_DIR']
+    process.env['COPSE_DIR'] = fixture
+    const stub = join(fixture, 'sandbox-runtime-stub.mjs')
+    writeFileSync(stub, SANDBOX_RUNTIME_STUB)
+    bundleWorker(stub)
+    mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+    setProjectSandboxEnabled(true)
+    await setSetting('githubCredentialBrokerEnabled', true)
+    const previousToken = process.env['GH_TOKEN']
+    // Copse's own environment, which the worker inherits.
+    process.env['GH_TOKEN'] = canary
+    const script =
+      "process.stdin.resume(); const keys = ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN'].filter((key) => process.env[key] !== undefined); process.stdout.write('tokens:[' + keys.join(',') + '] kept:' + String(process.env.TEST_SETTING === 'kept') + '\\n'); setInterval(() => {}, 1000)"
+    let task: Awaited<ReturnType<typeof spawnBackgroundProcess>> | undefined
+    try {
+      task = await runWithDecisionRecorder(
+        () => {},
+        () =>
+          runWithThreadExecutionContext(
+            {
+              projectId: 'tokens-project',
+              threadId: 'tokens-thread',
+              projectRoot: fixture,
+              root: fixture,
+              checkoutMode: 'shared',
+              branch: null,
+            },
+            () =>
+              spawnBackgroundProcess(formatArgvForShell(process.execPath, ['-e', script]), {
+                cwd: fixture,
+                allowPortBinding: true,
+                // A caller overlay cannot hand the task a token either.
+                env: { TEST_SETTING: 'kept', GITHUB_TOKEN: canary, GH_ENTERPRISE_TOKEN: canary },
+              }),
+          ),
+      )
+      const output = await outputContaining(task, '] kept:true\n')
+      assert.match(output, /tokens:\[\] kept:true/)
+      assert.equal(output.includes(canary), false)
+    } finally {
+      if (previousToken === undefined) delete process.env['GH_TOKEN']
+      else process.env['GH_TOKEN'] = previousToken
+      await setSetting('githubCredentialBrokerEnabled', false)
+      if (task) {
+        const closed = once(task, 'close')
+        const cancelEscalation = terminateProcessTree(task)
+        await closed
+        cancelEscalation()
+      }
+    }
   })
 
   it('does not wrap or spawn a command when ASRT initialization leaves protection disabled', () => {

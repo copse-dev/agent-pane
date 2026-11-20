@@ -28,6 +28,7 @@ import {
 
 const CONTAINED: RuntimeProfile = { kind: 'local', containment: 'contained' }
 const HOST: RuntimeProfile = { kind: 'local', containment: 'host' }
+const SSH: RuntimeProfile = { kind: 'ssh', hostId: 'build-box' }
 
 const interactive: ThreadExecutionContext = {
   projectId: 'proj',
@@ -74,13 +75,7 @@ describe('local GitHub broker', () => {
     profile: RuntimeProfile,
     readsRunUnprompted?: () => boolean,
   ): Promise<BrokeredCredential | null> {
-    const credential = await broker(
-      context,
-      readsRunUnprompted,
-    )({
-      profile,
-      readOnly: profile.kind === 'local' && profile.containment === 'contained',
-    })
+    const credential = await broker(context, readsRunUnprompted)({ profile })
     if (credential) issued.push(credential)
     return credential
   }
@@ -107,7 +102,7 @@ describe('local GitHub broker', () => {
     const runDir = realpathSync(copseDir) + '/run'
     assert.equal(localGitHubBrokerDefaults().broker.stateDir(), runDir)
     assert.equal(statSync(runDir).mode & 0o777, 0o700)
-    const credential = await issue(interactive, HOST)
+    const credential = await issue(interactive, CONTAINED)
     assert.ok(credential)
     assert.equal(dirname(credential.configDir), runDir)
     assert.equal(dirname(credential.socketPath), credential.configDir)
@@ -116,9 +111,14 @@ describe('local GitHub broker', () => {
   it('gives a contained command no grant unless gh_api_read runs unprompted', async () => {
     assert.equal(await issue(interactive, CONTAINED, () => false), null)
     assert.ok(await issue(interactive, CONTAINED, () => true))
-    // An approved command outside the sandbox already holds the user's access.
-    assert.ok(await issue(interactive, HOST, () => false))
     assert.equal(localGitHubBrokerDefaults().readsRunUnprompted, ghApiReadRunsUnprompted)
+  })
+
+  it('gives a command outside the sandbox no grant', async () => {
+    // It is not brokered: its gh keeps the account's own login.
+    assert.equal(await issue(interactive, HOST, () => true), null)
+    assert.equal(await issue(interactive, SSH, () => true), null)
+    assert.deepEqual(records, [])
   })
 
   it('treats a per-tool Ask or Block on gh_api_read as no read grant', async () => {
@@ -139,12 +139,11 @@ describe('local GitHub broker', () => {
 
   it('issues no grant to an automation principal', async () => {
     setAutomationRunCorroborator(() => true)
-    assert.equal(await issue(scheduled, HOST), null)
     assert.equal(await issue(scheduled, CONTAINED), null)
     assert.deepEqual(records, [])
     // The same thread without a corroborated schedule acts for the human.
     setAutomationRunCorroborator(() => false)
-    assert.ok(await issue(scheduled, HOST))
+    assert.ok(await issue(scheduled, CONTAINED))
   })
 })
 

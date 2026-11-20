@@ -334,10 +334,11 @@ observable from a test or a recorded thread spine. Unchecked items are open.
       Each grant has its own unix socket and capability. The grant names the principal,
       project, thread, origin (`api.github.com`), methods, opaque credential reference and
       expiry.
-- [x] **R2-2 Policy.** The broker refuses another `Host`, a method the grant does not
-      name, a GraphQL mutation in a read-only grant, an expired or revoked grant, and
-      another execution's capability. It never follows a redirect, so the credential is
-      never sent to a redirect target. Each case has a test.
+- [x] **R2-2 Policy.** Every grant is read-only. The broker refuses another `Host`, any
+      method but GET or HEAD, GraphQL other than a query in a POST body, an expired or
+      revoked grant, and another execution's capability. It refuses to issue a grant for
+      any profile but a contained local one. It never follows a redirect, so the
+      credential is never sent to a redirect target. Each case has a test.
 - [x] **R2-3 Canary absent.** A brokered child's environment contains no `GH_TOKEN`,
       `GITHUB_TOKEN`, `GH_ENTERPRISE_TOKEN` or `GITHUB_ENTERPRISE_TOKEN`, and no gh config
       directory that holds the real login. A test with a canary token proves this.
@@ -358,10 +359,12 @@ observable from a test or a recorded thread spine. Unchecked items are open.
       brokered: it runs with the account's normal GitHub access through gh's own on-disk
       login, and only loses the raw token variables. That is the explicit full-host escape
       R2 preserves, and a grant there broke gh's redirects to other GitHub hosts and
-      `gh auth git-credential`. An automation principal gets no grant (decision 11): no
-      schedule names a credential reference yet. The broker attaches only a github.com
-      login, never an Enterprise token. Capabilities report `brokeredCredentials: ['github']`
-      for brokered executions.
+      `gh auth git-credential`. A contained background task that binds a port runs in its
+      own host process and gets no grant; it loses the raw token variables too. An
+      automation principal gets no grant (decision 11): no schedule names a credential
+      reference yet. The broker attaches only a github.com login, never an Enterprise
+      token. Capabilities report `brokeredCredentials: ['github']` for brokered executions,
+      as an upper bound: an execution that ends up with no grant reports it too.
 - [x] **R2-7 Known limits stated.** A process outside the sandbox is not brokered: it
       reaches other origins directly and uses `~/.config/gh`. Linux bubblewrap blocks
       AF_UNIX sockets, so contained Linux commands are not brokered yet. SSH

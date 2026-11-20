@@ -835,15 +835,17 @@ requests over that socket. The broker in the main process attaches the user's gi
 (`GH_TOKEN`, then `GITHUB_TOKEN`, then `gh auth token --hostname github.com`; never an Enterprise
 token) and replays the request to `https://api.github.com`.
 
-- **Who gets a grant.** Only a contained command. It gets a read-only grant, GET or HEAD plus a
-  GraphQL `query` POST, and only while `gh_api_read` itself would run without a prompt:
+- **Who gets a grant.** Only a contained command, and every grant is read-only: GET or HEAD plus
+  a GraphQL `query` POST. The broker itself refuses to issue one for any other profile. A
+  contained command gets it only while `gh_api_read` itself would run without a prompt:
   `gh` is available, the tool's per-tool permission is neither Ask nor Block, and no draft plan or
   read-only run withholds it. Otherwise the contained command loses the raw tokens and gets no
   grant. The read authority is not limited to the agent's own `gh` call: every process the
   contained command starts (a test runner, a package script, a hook) can use the grant until the
   command exits. An automation run's commands get no grant at all
   ([decision 11](plans/execution-runtime-security.md#binding-decisions)); they still lose the raw
-  tokens.
+  tokens. Neither does a contained background task that binds a port: it runs in its own host
+  process, which drops the raw token variables from its own environment and the task's.
 - **A command approved outside the sandbox is not brokered.** It runs with the account's normal
   GitHub access, the same as with the setting off: it gets no grant and keeps the real `gh` config
   directory, so `gh` uses its own on-disk login (`gh auth login`). That keeps working what a grant
@@ -852,8 +854,8 @@ token) and replays the request to `https://api.github.com`.
   still loses the four raw token variables, so where one of them is the account's only GitHub
   login, such a command has none.
 - **Refusals.** Any `Host` other than `api.github.com`, a missing or foreign capability, an expired
-  or released grant (one hour, or the process's exit), a method the grant does not name (decided
-  before any body is read), GraphQL on a read-only grant other than a query in a POST body, more
+  or released grant (one hour, or the process's exit), any method but GET or HEAD (decided
+  before any body is read), GraphQL other than a query in a POST body, more
   than 16 requests in flight on one grant (429), a request whose headers and body take longer than
   30 seconds (408), and an oversized body. The broker never follows a redirect, so the credential
   is never sent to a redirect target. It drops `content-encoding` and method-override request

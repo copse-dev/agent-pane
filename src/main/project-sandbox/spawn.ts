@@ -309,7 +309,8 @@ export async function spawnBackgroundProcess(
         return {
           config: overlay,
           ...lease,
-          hostedLaunch: (): ChildProcess => spawnPortBindingHost(shellCommandLine, opts, overlay),
+          hostedLaunch: (childEnv): ChildProcess =>
+            spawnPortBindingHost(shellCommandLine, opts, overlay, childEnv),
         }
       },
     },
@@ -321,16 +322,19 @@ function spawnPortBindingHost(
   shellCommandLine: string,
   opts: SpawnBackgroundOptions,
   overlay: Partial<SandboxRuntimeConfig>,
+  childEnv: (env: NodeJS.ProcessEnv) => NodeJS.ProcessEnv,
 ): ChildProcess {
+  // The worker hands the task its own env plus the request's, so both go
+  // through the adapter's filter (no raw GitHub token while brokering).
   const child = spawn(process.execPath, [portBindingWorkerPath()], {
     cwd: opts.cwd,
     env: {
-      ...withoutSandboxWrapTmpPin(strippedBaseEnv()),
+      ...childEnv(withoutSandboxWrapTmpPin(strippedBaseEnv())),
       ELECTRON_RUN_AS_NODE: '1',
       [PORT_BINDING_REQUEST_ENV]: JSON.stringify({
         command: shellCommandLine,
         cwd: opts.cwd,
-        ...(opts.env ? { env: opts.env } : {}),
+        ...(opts.env ? { env: childEnv(opts.env) } : {}),
         overlay,
         ...(opts.violationId ? { violationId: opts.violationId } : {}),
       }),

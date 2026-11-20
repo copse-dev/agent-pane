@@ -133,9 +133,11 @@ Optional argv / Guarded-YOLO extras live next to tool results:
 - **Brokered credentials** — with the experimental GitHub broker on
   ([shell permissions](shell-permissions.md#brokered-github-credentials-experimental)),
   each grant writes a `kind: "execution-grant"` line (`verdict: "allowed"`, `scope`
-  `github-api-read`, reasons naming the methods and expiry). Only a contained command gets a
-  grant: a command approved to run outside the sandbox is not brokered, runs with the
-  account's normal GitHub access and writes none of these lines. Each request
+  `github-api-read`, reasons naming the methods and expiry). Every grant is read-only, and only
+  a contained command gets one: a command approved to run outside the sandbox is not brokered,
+  runs with the account's on-disk `gh` login and writes none of these lines. It loses the raw
+  token variables, so where `GH_TOKEN` or `GITHUB_TOKEN` is the account's only login it has no
+  GitHub access. Each request
   the broker relays writes a `kind: "credential-use"` line: `subject` is method and host,
   and the reasons carry the status and byte counts. Each refusal writes a
   `kind: "network-access"` line with `verdict: "blocked"` and the reason. A grant writes the

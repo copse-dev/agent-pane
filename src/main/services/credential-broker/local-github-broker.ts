@@ -1,8 +1,9 @@
 /**
  * The main-process GitHub broker for local executions (execution-runtime-security
- * R2). Binds each grant to the current turn's project, thread and principal,
- * attaches the user's GitHub login host-side and records every grant, use and
- * refusal on that thread's spine.
+ * R2). Issues a read-only grant to a contained command only, binds it to the
+ * current turn's project, thread and principal, attaches the user's GitHub
+ * login host-side and records every grant, use and refusal on that thread's
+ * spine.
  */
 import { mkdirSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -117,7 +118,10 @@ export function createLocalGitHubBroker(
   dependencies: LocalGitHubBrokerDependencies = localGitHubBrokerDefaults(),
 ): LocalGitHubBroker {
   const broker = createGitHubCredentialBroker(dependencies.broker)
-  return async ({ profile, readOnly }) => {
+  return async ({ profile }) => {
+    // A command outside the sandbox is not brokered: it keeps the account's
+    // own gh login. Refused here too, not only in the spawn layer.
+    if (profile.kind !== 'local' || profile.containment !== 'contained') return null
     const context = dependencies.context()
     if (!context) return null
     const principal = resolveExecutionPrincipal(context)
@@ -125,14 +129,13 @@ export function createLocalGitHubBroker(
     // No schedule names a credential reference yet, so an automation run gets
     // no grant; its commands still lose the raw tokens.
     if (principal.kind !== 'human') return null
-    if (readOnly && !dependencies.readsRunUnprompted()) return null
+    if (!dependencies.readsRunUnprompted()) return null
     try {
       return await broker.issue({
         principal,
         projectId: context.projectId,
         threadId: context.threadId,
         profile,
-        readOnly,
       })
     } catch (error) {
       // The child still loses its raw tokens; it just gets no grant.

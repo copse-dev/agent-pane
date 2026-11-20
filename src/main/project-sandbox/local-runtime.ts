@@ -34,10 +34,12 @@ import {
 import { isSpawnableWorkingDirectory } from './spawn-cwd.ts'
 import { sandboxTmpDirFor, withSandboxTmpEnv, withSandboxWrapTmpDir } from './tmp-env.ts'
 
-/** Issues a per-execution GitHub grant for the current turn, or null when it cannot. */
+/**
+ * Issues a read-only GitHub grant to one contained execution in the current
+ * turn, or null when it cannot. It refuses any other profile.
+ */
 export type LocalGitHubBroker = (request: {
   readonly profile: RuntimeProfile
-  readonly readOnly: boolean
 }) => Promise<BrokeredCredential | null>
 
 /** What the local adapter needs from an issued grant. */
@@ -207,6 +209,9 @@ export function createLocalExecutionRuntime(
   return {
     kind: 'local',
     capabilities: (request): ExecutionRuntimeCapabilities => {
+      // `brokeredCredentials` is an upper bound for a contained macOS command:
+      // exec may still issue no grant (no turn context, an automation
+      // principal, gh_api_read asking or blocked, a hosted launch, a failed issue).
       const containment = containmentFor(request, dependencies)
       const brokered =
         request.local?.brokerGitHubCredentials === true &&
@@ -248,9 +253,23 @@ export function createLocalExecutionRuntime(
         return { child, profile, capabilities: deriveRuntimeCapabilities(profile) }
       }
 
+      if (!local) throw new Error('local containment request missing')
+      const plan = local.plan()
+      if (plan.hostedLaunch) {
+        // The dedicated host process owns its own wrap and gets no grant. It
+        // applies the same env filter as every other child, to its own env and
+        // to the command's, so no raw GitHub token reaches the task.
+        if (request.abortCheckpoints) request.signal?.throwIfAborted()
+        return {
+          child: plan.hostedLaunch(withoutRawTokens),
+          profile,
+          capabilities: deriveRuntimeCapabilities(profile),
+        }
+      }
+
       const credential =
         brokering && getsBrokeredGrant(containment, dependencies.platform)
-          ? await dependencies.brokerGitHub({ profile, readOnly: true })
+          ? await dependencies.brokerGitHub({ profile })
           : null
       const capabilities = deriveRuntimeCapabilities(
         profile,
@@ -264,25 +283,12 @@ export function createLocalExecutionRuntime(
         void credential?.release()
       }
 
-      let plan: LocalSandboxPlan
       let config: LocalSandboxPlan['config']
       try {
-        if (!local) throw new Error('local containment request missing')
-        plan = local.plan()
         config = credential ? withBrokerSocket(plan.config, credential) : plan.config
       } catch (err) {
         releaseCredential()
         throw err
-      }
-      if (plan.hostedLaunch) {
-        // The dedicated host process owns its own wrap; it is not brokered.
-        releaseCredential()
-        if (request.abortCheckpoints) request.signal?.throwIfAborted()
-        return {
-          child: plan.hostedLaunch(),
-          profile,
-          capabilities: deriveRuntimeCapabilities(profile),
-        }
       }
       let hasSandboxLease = false
       const releaseLease = (): void => {

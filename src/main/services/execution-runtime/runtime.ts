@@ -27,9 +27,11 @@ export interface LocalSandboxPlan {
    * Run this contained command in a dedicated host process instead of wrapping
    * it here (an approved loopback-binding background task, whose ASRT network
    * scope must never be shared with other contained commands in this process).
-   * The host owns the wrap, its lease and its network scope.
+   * The host owns the wrap, its lease and its network scope. `childEnv` is the
+   * filter the adapter applies to every child's env (it drops raw GitHub tokens
+   * while brokering); the host applies it to its own env and the command's.
    */
-  readonly hostedLaunch?: () => ChildProcess
+  readonly hostedLaunch?: (childEnv: (env: NodeJS.ProcessEnv) => NodeJS.ProcessEnv) => ChildProcess
   /** Working directory ASRT resolves the wrap's relative paths against. */
   readonly wrapCwd?: string
   /** Host-owned attempt id ASRT attributes this command's sandbox violations to. */

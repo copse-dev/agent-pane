@@ -6,11 +6,14 @@
  * own grant: a private directory holding a unix socket and a gh config that
  * points `http_unix_socket` at it, plus a random capability the child presents
  * as `GH_TOKEN`. gh then speaks plain HTTP over that socket; the broker checks
- * the capability, the target host, the method and (for a read-only grant) that
- * a GraphQL body is a query, then replays the request to `https://api.github.com`
+ * the capability, the target host, that the method is a read and that a
+ * GraphQL body is a query, then replays the request to `https://api.github.com`
  * with the real token attached in this process. The capability is worthless
  * anywhere else: a leaked copy cannot authenticate to GitHub, and another
  * execution's capability does not open this socket's grant.
+ *
+ * Every grant is read-only, and only a contained local execution gets one. A
+ * command outside the sandbox is not brokered at all (shell-permissions.md).
  *
  * The broker never follows a redirect, so the credential is never sent to a
  * redirect target; the client receives the 3xx and follows it without it.
@@ -47,7 +50,6 @@ export const GITHUB_TOKEN_ENV_KEYS = [
 ] as const
 
 const READ_ONLY_METHODS = ['GET', 'HEAD'] as const
-const ALL_METHODS = ['GET', 'HEAD', 'POST', 'PATCH', 'PUT', 'DELETE'] as const
 
 /** A grant outlives its process only if the process outlives this. */
 export const GITHUB_GRANT_TTL_MS = 60 * 60_000
@@ -132,13 +134,13 @@ export interface GitHubBrokerDependencies {
   requestTimeoutMs: number
 }
 
+/** A read-only grant for one contained local execution, matching `gh_api_read`. */
 export interface GitHubGrantRequest {
   readonly principal: ExecutionPrincipal
   readonly projectId: string
   readonly threadId: string
+  /** Must be a contained local profile; the broker refuses any other. */
   readonly profile: RuntimeProfile
-  /** Contained executions get a read-only grant, matching `gh_api_read`. */
-  readonly readOnly: boolean
 }
 
 export interface IssuedGitHubGrant {
@@ -213,18 +215,22 @@ export function createGitHubCredentialBroker(dependencies: GitHubBrokerDependenc
 } {
   return {
     issue: async (request): Promise<IssuedGitHubGrant> => {
+      // A command outside the sandbox is not brokered; refuse here as well as
+      // in the spawn layer, so no caller can hand one a grant.
+      if (request.profile.kind !== 'local' || request.profile.containment !== 'contained') {
+        throw new Error('GitHub grants are only for contained local executions')
+      }
       const dir = await mkdtemp(join(dependencies.stateDir(), 'gh-'))
       const socketPath = join(dir, 'broker.sock')
       const capabilityText = randomBytes(32).toString('base64url')
       const capability = Buffer.from(capabilityText, 'utf8')
-      const methods = request.readOnly ? READ_ONLY_METHODS : ALL_METHODS
       const grant: ExecutionGrant = {
         principalId: request.principal.id,
         projectId: request.projectId,
         threadId: request.threadId,
         turnId: '',
-        operation: request.readOnly ? 'github-api-read' : 'github-api',
-        network: { origins: [GITHUB_API_ORIGIN], methods: [...methods] },
+        operation: 'github-api-read',
+        network: { origins: [GITHUB_API_ORIGIN], methods: [...READ_ONLY_METHODS] },
         credentialRef: GITHUB_CREDENTIAL_REF,
         expiresAt: dependencies.now() + GITHUB_GRANT_TTL_MS,
         remembered: false,
@@ -313,23 +319,16 @@ export function createGitHubCredentialBroker(dependencies: GitHubBrokerDependenc
           block(res, 403, subject, `destination not in grant: ${host || '(none)'}`)
           return
         }
-        // Decide the method before buffering anything. A read-only grant sends
-        // GraphQL only as a POST body it checks below: no GET, no query string.
-        const graphqlBody = request.readOnly && method === 'POST' && path === '/graphql'
-        const allowed: readonly string[] = methods
-        if (request.readOnly && path.split('?')[0] === '/graphql' && !graphqlBody) {
+        // Decide the method before buffering anything. GraphQL goes only as a
+        // POST body checked below: no GET, no query string.
+        const graphqlBody = method === 'POST' && path === '/graphql'
+        const allowed: readonly string[] = READ_ONLY_METHODS
+        if (path.split('?')[0] === '/graphql' && !graphqlBody) {
           block(res, 403, subject, 'read-only grant: GraphQL is read only as a POST query')
           return
         }
         if (!allowed.includes(method) && !graphqlBody) {
-          block(
-            res,
-            403,
-            subject,
-            request.readOnly
-              ? `read-only grant: ${method} is not a read`
-              : `method not in grant: ${method}`,
-          )
+          block(res, 403, subject, `read-only grant: ${method} is not a read`)
           return
         }
         if (inFlight >= GITHUB_GRANT_MAX_CONCURRENT_REQUESTS) {
@@ -447,7 +446,7 @@ export function createGitHubCredentialBroker(dependencies: GitHubBrokerDependenc
         subject: `${grant.operation} ${GITHUB_API_HOST}`,
         scope: grant.operation,
         reasons: [
-          `methods ${methods.join(',')}${request.readOnly ? ' + GraphQL query' : ''}`,
+          `methods ${READ_ONLY_METHODS.join(',')} + GraphQL query`,
           `expires ${new Date(grant.expiresAt).toISOString()}`,
         ],
       })

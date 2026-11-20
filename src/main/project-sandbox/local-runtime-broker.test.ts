@@ -1,15 +1,16 @@
 /**
  * The local adapter's side of R2 (`docs/plans/execution-runtime-security.md`):
  * a brokered execution never receives a raw GitHub token, only a contained
- * command the broker can reach gets a grant, that grant is read-only and
- * admits exactly its own socket, and a command approved outside the sandbox is
- * not brokered.
+ * command the broker can reach gets a grant (read-only, enforced by the
+ * broker), that grant admits exactly its own socket, a hosted loopback task
+ * gets none, and a command approved outside the sandbox is not brokered.
  */
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
+import type { RuntimeProfile } from '@shared/threads/execution-runtime.ts'
 import type { RuntimeExecRequest } from '../services/execution-runtime/runtime.ts'
 import {
   createLocalExecutionRuntime,
@@ -18,6 +19,9 @@ import {
 } from './local-runtime.ts'
 
 const CANARY = 'ghp_CANARYcanaryCANARYcanary0123456789'
+const CONTAINED: RuntimeProfile = { kind: 'local', containment: 'contained' }
+/** Prints every GitHub-ish variable the child can see. */
+const PRINT_GITHUB_ENV = 'env | grep -E "^(GH_|GITHUB_)" || true'
 const CONTAINED_CONFIG: Partial<SandboxRuntimeConfig> = {
   network: { allowedDomains: [], deniedDomains: [] },
   filesystem: { denyRead: ['/home'], allowRead: ['/repo'], allowWrite: ['/repo'], denyWrite: [] },
@@ -38,8 +42,7 @@ function output(child: ChildProcess): Promise<string> {
 
 function request(sandbox: boolean, brokered: boolean): RuntimeExecRequest {
   return {
-    // Print every GitHub-ish variable the child can see.
-    command: { kind: 'shell', commandLine: 'env | grep -E "^(GH_|GITHUB_)" || true' },
+    command: { kind: 'shell', commandLine: PRINT_GITHUB_ENV },
     cwd: tmpdir(),
     stdio: 'pipe',
     // A caller overlay cannot put a token back either.
@@ -55,12 +58,12 @@ function request(sandbox: boolean, brokered: boolean): RuntimeExecRequest {
 describe('local runtime GitHub brokering', () => {
   let previous: string | undefined
   let previousConfigDir: string | undefined
-  let issued: { readOnly: boolean }[]
+  let issued: RuntimeProfile[]
   let released: number
   let wrappedConfigs: Partial<SandboxRuntimeConfig>[]
 
-  const broker: LocalGitHubBroker = ({ readOnly }) => {
-    issued.push({ readOnly })
+  const broker: LocalGitHubBroker = ({ profile }) => {
+    issued.push(profile)
     return Promise.resolve({
       env: { GH_CONFIG_DIR: '/grant/dir', GH_TOKEN: 'capability' },
       socketPath: '/grant/dir/broker.sock',
@@ -142,7 +145,7 @@ describe('local runtime GitHub brokering', () => {
     const execution = await runtime({ platform: 'darwin' }).exec(request(true, true))
     const env = await output(execution.child)
     assert.equal(env.includes(CANARY), false)
-    assert.deepEqual(issued, [{ readOnly: true }])
+    assert.deepEqual(issued, [CONTAINED])
     assert.deepEqual(wrappedConfigs[0]?.network?.allowUnixSockets, ['/grant/dir/broker.sock'])
     // The grant's gh config sits under the home read deny; only this command may read it.
     assert.deepEqual(wrappedConfigs[0].filesystem?.allowRead, [
@@ -155,6 +158,33 @@ describe('local runtime GitHub brokering', () => {
     assert.equal(released, 1)
   })
 
+  it('gives a hosted loopback task no grant and keeps the raw tokens out of its env', async () => {
+    const hosted: RuntimeExecRequest = {
+      ...request(true, true),
+      local: {
+        sandbox: true,
+        brokerGitHubCredentials: true,
+        plan: () => ({
+          config: CONTAINED_CONFIG,
+          // The port-binding host hands the task its own env and the caller's.
+          hostedLaunch: (childEnv): ChildProcess =>
+            spawn('/bin/sh', ['-c', PRINT_GITHUB_ENV], {
+              env: childEnv({ ...process.env, GITHUB_TOKEN: CANARY, GH_ENTERPRISE_TOKEN: CANARY }),
+              stdio: 'pipe',
+            }),
+        }),
+      },
+    }
+    // macOS, where a contained command that is not hosted would get a grant.
+    const execution = await runtime({ platform: 'darwin' }).exec(hosted)
+    const env = await output(execution.child)
+    assert.equal(env.includes(CANARY), false)
+    assert.deepEqual(issued, [])
+    assert.equal(released, 0)
+    assert.deepEqual(wrappedConfigs, [])
+    assert.equal(execution.capabilities.brokeredCredentials, undefined)
+  })
+
   it('releases the grant when the spawn fails', async () => {
     await assert.rejects(
       runtime({
@@ -165,7 +195,7 @@ describe('local runtime GitHub brokering', () => {
       }).exec(request(true, true)),
       /spawn failed/,
     )
-    assert.deepEqual(issued, [{ readOnly: true }])
+    assert.deepEqual(issued, [CONTAINED])
     assert.equal(released, 1)
   })
 })
