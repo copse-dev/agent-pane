@@ -28,6 +28,7 @@ const meaningfulLabels = [
   'bench-doctrine',
   'eval-tool-preference',
   'bench-agent-eval',
+  'e2e-burn-in-large',
 ]
 
 type EventContext = {
@@ -137,7 +138,13 @@ describe('cosmetic CI event routing', () => {
       return (typeof dependencies === 'string' ? [dependencies] : (dependencies ?? [])).some(rooted)
     }
     for (const [name, job] of Object.entries(workflow.jobs)) {
-      if (name === 'precheck' || name === 'autoformat' || name === 'ci-passed') continue
+      if (
+        name === 'verification-reuse' ||
+        name === 'precheck' ||
+        name === 'autoformat' ||
+        name === 'ci-passed'
+      )
+        continue
       assert.ok(rooted(name), `${name} must inherit the precheck admission boundary`)
       if (name === 'full-release-validation') {
         assert.ok(job.if)
@@ -159,6 +166,19 @@ describe('cosmetic CI event routing', () => {
         assert.ok(job.if?.includes("needs.precheck.result == 'success'"))
         continue
       }
+      if (name === 'e2e-burn-in-result') {
+        // The stable burn-in context: evaluates on every event, and its own
+        // step fails a cancelled run or a failed precheck.
+        assert.equal(job.if, '${{ always() }}')
+        continue
+      }
+      if (name === 'e2e-burn-in') {
+        // Runs its over-cap refusal without a build, so it admits itself on
+        // precheck success and needs a successful build for any real run.
+        assert.ok(job.if?.includes("needs.precheck.result == 'success'"))
+        assert.ok(job.if?.includes("needs.build.result == 'success'"))
+        continue
+      }
       if (/always\(|cancelled\(/.test(job.if ?? '')) {
         assert.equal(
           name,
@@ -171,7 +191,7 @@ describe('cosmetic CI event routing', () => {
     }
   })
 
-  it('has no metadata shortcut in the required aggregate or precheck', () => {
+  it('keeps fresh precheck and units on metadata events; reuse has its own verification boundary', () => {
     const aggregate = binding('ci-passed')
     assert.equal(binding('precheck').if, undefined)
     assert.ok(aggregate.steps?.some((step) => step.env?.['PRECHECK_RESULT']))
