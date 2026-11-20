@@ -258,6 +258,8 @@ describe('native PR and commit provenance', function () {
     await $('.pr-thread-toggle').click()
     await $('.pr-thread-link[data-thread-id="related"]').click()
     await expect($('.chat-row.selected')).toHaveAttribute('data-thread-id', 'related')
+    // The PR list, with its sections, lives in the review subject picker.
+    await openReviewPicker()
     await expect($('.git-changes-section-title*=Related PRs')).toHaveText(
       expect.stringMatching(/related PRs · this thread \(2\)/i),
     )

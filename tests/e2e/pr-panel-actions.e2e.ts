@@ -153,6 +153,8 @@ describe('PR panel lifecycle actions (mock gh)', () => {
     assert.ok(automerge, 'expected the Auto-merge badge')
     assert.equal(automerge.color, await tokenColour('--text-secondary'))
     assert.equal(automerge.border, await tokenColour('--border', 'border-top-color'))
+    // The PR list rows live in the review subject picker.
+    await openReviewPicker()
     await expect(
       await $('.pr-list-status[aria-label="PR #42 open; CI passing"]').getElement(),
     ).toBeDisplayed()
@@ -179,8 +181,8 @@ describe('PR panel lifecycle actions (mock gh)', () => {
     ).toBeDisplayed()
     await expect(await $('.pr-list-ci').getElement()).not.toBeExisting()
 
-    // Switch to the failing workspace PR (#88) and re-run its failed CI.
-    await openReviewPicker()
+    // Switch to the failing workspace PR (#88), from the still-open picker, and
+    // re-run its failed CI.
     await $('.pr-list-title*=Tidy up workspace status polling').click()
     await waitForViewer('Tidy up workspace status polling')
     await clickPrAction('Rerun CI')
