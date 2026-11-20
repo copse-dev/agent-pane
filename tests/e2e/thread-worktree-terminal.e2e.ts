@@ -18,13 +18,34 @@ function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
 }
 
-async function xtermText(): Promise<string> {
-  return browser.execute(() => document.querySelector('.xterm-rows')?.textContent ?? '')
-}
-
 async function activeXtermText(): Promise<string> {
   return browser.execute(
     () => document.querySelector('.terminals-tab-panel.is-active .xterm-rows')?.textContent ?? '',
+  )
+}
+
+async function activeXtermRows(): Promise<string[]> {
+  return browser.execute(() =>
+    Array.from(
+      document.querySelectorAll('.terminals-tab-panel.is-active .xterm-rows > div'),
+      (row) => row.textContent.trimEnd(),
+    ).filter((row) => row.length > 0),
+  )
+}
+
+// Input sent while `clear` is running can receive cooked PTY echo and then
+// readline echo, so the next command must wait for the fresh prompt. The caller
+// leaves earlier output on screen, so a bare prompt cannot match before `clear`
+// has run.
+async function clearToFreshPrompt(): Promise<void> {
+  assert.notDeepEqual(await activeXtermRows(), ['$'], 'expected output on screen before clear')
+  await browser.keys(['clear', '\uE007'])
+  await browser.waitUntil(
+    async () => {
+      const rows = await activeXtermRows()
+      return rows.length === 1 && rows[0] === '$'
+    },
+    { timeout: 30_000, timeoutMsg: 'expected a fresh prompt after clear completed' },
   )
 }
 
@@ -142,26 +163,39 @@ describe('isolated thread terminal cwd', () => {
     await helper.click()
     await browser.keys(['pwd', '\uE007'])
 
-    await browser.waitUntil(async () => (await xtermText()).includes(worktreeRoot), {
+    await browser.waitUntil(async () => (await activeXtermText()).includes(worktreeRoot), {
       timeout: 30_000,
       timeoutMsg: 'expected the terminal cwd to be the active thread worktree',
     })
 
     // Clear host-shell startup noise before the visual reference, then show the
     // isolated branch as a stable, human-readable confirmation of the checkout.
-    await browser.keys(['clear', '\uE007'])
+    await clearToFreshPrompt()
     await browser.keys(['git', ' ', 'branch', ' ', '--show-current', '\uE007'])
-    await browser.waitUntil(async () => (await xtermText()).includes(WORKTREE_BRANCH), {
-      timeout: 30_000,
-      timeoutMsg: 'expected the terminal to report the isolated worktree branch',
-    })
+    const expectedRows = ['$ git branch --show-current', WORKTREE_BRANCH, '$']
+    await browser.waitUntil(
+      async () => {
+        const rows = await activeXtermRows()
+        return (
+          rows.length === expectedRows.length && rows.every((row, i) => row === expectedRows[i])
+        )
+      },
+      {
+        timeout: 30_000,
+        timeoutMsg: 'expected one clean branch command, its result, and a prompt',
+      },
+    )
+    assert.deepEqual(await activeXtermRows(), expectedRows)
     await expect(terminalBtn).toHaveElementClass('active')
     // Leave the canvas cursor unfocused at its steady outline for capture.
     await $('.titlebar-btn[aria-label="Open terminal"]').execute((button) => {
       button.focus()
     })
     await expect($('.titlebar-btn[aria-label="Open terminal"]')).toBeFocused()
-    await saveAppScreenshot('thread-worktree-terminal-cwd.png')
+    await saveAppScreenshot('thread-worktree-terminal-cwd.png', undefined, async () => {
+      assert.deepEqual(await activeXtermRows(), expectedRows)
+    })
+    assert.deepEqual(await activeXtermRows(), expectedRows)
   })
 
   it('lists and previews files from the active thread worktree', async function () {
@@ -288,7 +322,13 @@ describe('isolated thread terminal cwd', () => {
       timeoutMsg: 'expected the recovery shell prompt before typing',
     })
     await helper.click()
-    await browser.keys(['clear', '\uE007'])
+    // The pwd output keeps the screen from being a bare prompt before clear.
+    await browser.keys(['pwd', '\uE007'])
+    await browser.waitUntil(async () => (await activeXtermText()).includes(worktreeRoot), {
+      timeout: 30_000,
+      timeoutMsg: 'expected the recovery shell cwd to be the thread worktree',
+    })
+    await clearToFreshPrompt()
     await browser.keys(['git', ' ', 'status', ' ', '--short', ' ', '--branch', '\uE007'])
     await browser.waitUntil(async () => (await activeXtermText()).includes('HEAD (no branch)'), {
       timeout: 30_000,

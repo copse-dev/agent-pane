@@ -2,6 +2,7 @@ import { globSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import type { SshConfigAlias } from '@shared/types/ssh-workspace.ts'
+import { sshDestinationProblem } from '@shared/ssh-destination.ts'
 
 function unquoteConfigValue(value: string): string {
   const trimmed = value.trim()
@@ -27,9 +28,18 @@ interface ConfigBlock {
   identityFile?: string
 }
 
-/** A concrete host name: not a wildcard, and not a `!pattern` negation (which excludes, never names). */
+/**
+ * A concrete host name: not a wildcard, not a `!pattern` negation (which
+ * excludes, never names), and usable as an ssh destination (not starting with
+ * `-`, which ssh would read as an option).
+ */
 function isValidAlias(alias: string): boolean {
-  return !alias.startsWith('!') && !alias.includes('*') && !alias.includes('?')
+  return (
+    !alias.startsWith('!') &&
+    !alias.includes('*') &&
+    !alias.includes('?') &&
+    sshDestinationProblem(alias, undefined) === null
+  )
 }
 
 function expandHome(path: string): string {
