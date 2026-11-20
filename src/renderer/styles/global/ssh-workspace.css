@@ -237,3 +237,40 @@
 .ssh-import-config {
   margin: var(--spacing-sm) 0;
 }
+
+/* Asked where SSH workspaces are first used: the Open remote folder dialog and
+   the Desktop pane's add-machine form (`ssh-workspace-consent.ts`). */
+.ssh-consent {
+  display: grid;
+  /* A single column that may shrink below its content's widest line, so the
+     narrow Desktop pane rail wraps the text instead of overflowing the form. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
+}
+.ssh-consent p {
+  margin: 0;
+}
+.ssh-consent-title {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.ssh-consent-body {
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.ssh-consent-status:empty {
+  display: none;
+}
+.ssh-consent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-sm);
+}
+.ssh-consent-actions > button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
