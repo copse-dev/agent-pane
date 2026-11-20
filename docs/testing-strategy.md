@@ -417,14 +417,14 @@ review).
 
 **Becoming required.** A new, changed or restored spec joins the required e2e gate when it:
 
-1. passes burn-in: repeated first-attempt passes before it gates PRs (workstream G of #2719, in
-   progress);
+1. passes burn-in: repeated first-attempt passes before it gates PRs (in progress in
+   [#4273](https://github.com/copse-dev/agent-pane/pull/4273));
 2. has no fixed sleeps standing in for a wait (`browser.pause`, `setTimeout` sleeps): wait for the
    condition instead. The [flake-risk ratchet](#flake-risk-ratchet) allows a new file zero;
 3. uses isolated data: its own `COPSE_DIR` and seeded project, not the real checkout, and no fixed
    ports shared with other workers. The flake-risk ratchet counts both;
-4. makes no external network requests: mock providers and services at the boundary (outbound
-   guard: workstream F, in progress).
+4. makes no external network requests: mock providers and services at the boundary (the outbound
+   network guard is in progress in [#4272](https://github.com/copse-dev/agent-pane/pull/4272)).
 
 Until burn-in and the network guard land, reviewers check items 1 and 4 by hand.
 
