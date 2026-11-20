@@ -14429,9 +14429,6 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   height: 100%;
   min-height: 0;
 }
-.image-expand-stage .annotation-toolstrip {
-  width: max-content;
-}
 .image-expand-nav-zone {
   position: absolute;
   top: 0;
@@ -19589,9 +19586,8 @@ h3 {
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  justify-content: center;
   gap: 2px;
+  width: max-content;
   max-width: calc(100% - 2 * var(--spacing-sm));
   padding: var(--spacing-xs);
   border: 1px solid var(--border);
@@ -19622,6 +19618,10 @@ h3 {
   opacity: 0.4;
   cursor: default;
 }
+.annotation-tool[aria-expanded=true] {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
 .annotation-tool[aria-pressed=true] {
   background: var(--bg-selected);
   color: var(--accent);
@@ -19641,11 +19641,61 @@ h3 {
 .annotation-swatch[aria-pressed=true] {
   border-color: var(--text-primary);
 }
+.annotation-ink-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--annotation-swatch);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.25);
+}
+.annotation-shape-fold {
+  width: auto;
+  gap: 1px;
+  padding-inline: var(--spacing-sm) var(--spacing-xs);
+}
+.annotation-fold-caret {
+  width: 9px;
+  height: 9px;
+}
+.annotation-toolstrip[data-shapes=folded] .annotation-shape,
+.annotation-toolstrip:not([data-shapes=folded]) .annotation-shape-fold,
+.annotation-toolstrip[data-spacing=tight] .annotation-sep {
+  display: none;
+}
+.annotation-toolstrip[data-spacing=tight] .annotation-tool {
+  width: 24px;
+}
+.annotation-toolstrip[data-spacing=tight] .annotation-shape-fold {
+  width: auto;
+  padding-inline: var(--spacing-xs) 2px;
+}
 .annotation-sep {
+  flex: none;
   width: 1px;
   height: 18px;
   margin: 0 var(--spacing-xs);
   background: var(--border);
+}
+.annotation-scale-probe {
+  position: absolute;
+  width: var(--spacing-sm);
+  height: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.annotation-popover {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: calc(28px + 2 * var(--spacing-xs) + 2px);
+  margin-top: var(--spacing-xs);
+  padding: var(--spacing-xs);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+  -webkit-app-region: no-drag;
 }
 .annotation-send {
   min-height: 28px;
