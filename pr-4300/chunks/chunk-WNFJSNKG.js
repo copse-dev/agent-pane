@@ -64,7 +64,7 @@ import {
   unwrapIpcErrorText,
   upsertHost,
   warningIcon
-} from "./chunk-TYQO7O5R.js";
+} from "./chunk-CK4AOU5N.js";
 import {
   clear,
   el,
@@ -22350,10 +22350,13 @@ var init_thread_proposal = __esm({
 });
 
 // src/shared/tools/copse-tool-call.ts
+function isCopseServerName(server) {
+  return typeof server === "string" && ENVELOPE_SERVER_NAME.test(server);
+}
 function normalizeCopseToolName(name) {
   const server = /^mcp__([\w.-]+?)__/i.exec(name)?.[1];
-  if (server && server.toLowerCase() !== "copse") return name;
-  const match = /^(?:mcp[^a-z0-9]+)?copse[^a-z0-9]+([a-z][a-z0-9_.-]*)/i.exec(name);
+  if (server && !COPSE_SERVER_NAME.test(server)) return name;
+  const match = COPSE_WRAPPED_TOOL.exec(name);
   return match?.[1]?.toLowerCase() ?? name;
 }
 function copseToolCallName(call) {
@@ -22382,9 +22385,17 @@ function acpDelegateKind(call) {
 function acpDelegatePrompt(call) {
   return call.title ?? stringArg(call.args, "prompt") ?? stringArg(call.args, "description") ?? "";
 }
+var COPSE_SERVER, COPSE_SERVER_NAME, COPSE_WRAPPED_TOOL, ENVELOPE_SERVER_NAME;
 var init_copse_tool_call = __esm({
   "src/shared/tools/copse-tool-call.ts"() {
     init_unknown_value3();
+    COPSE_SERVER = "copse(?:-[a-z0-9]{8})?";
+    COPSE_SERVER_NAME = new RegExp(`^${COPSE_SERVER}$`, "i");
+    COPSE_WRAPPED_TOOL = new RegExp(
+      `^(?:mcp[^a-z0-9]+)?${COPSE_SERVER}[^a-z0-9]+([a-z][a-z0-9_.-]*)`,
+      "i"
+    );
+    ENVELOPE_SERVER_NAME = new RegExp(`^${COPSE_SERVER}$`);
   }
 });
 
@@ -22548,7 +22559,7 @@ function parseReviewerInputCall(call, messageId) {
 }
 function reviewerInputArguments(call) {
   const args = call.args;
-  if (isRecord(args) && args["server"] === "copse" && typeof args["tool"] === "string" && isCopseToolCall(call, args["tool"]) && Object.hasOwn(args, "arguments"))
+  if (isRecord(args) && isCopseServerName(args["server"]) && typeof args["tool"] === "string" && isCopseToolCall(call, args["tool"]) && Object.hasOwn(args, "arguments"))
     return args["arguments"];
   return args;
 }
@@ -29271,7 +29282,7 @@ async function addProject(store, api) {
   return true;
 }
 async function addRemoteProject(store, api) {
-  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-PRYAKWO4.js");
+  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-AN5HFQ3E.js");
   const picked = await openRemoteFolderDialog(api);
   if (!picked) return false;
   await addProjectFromRemotePath(store, api, picked.hostId, picked.path);
@@ -30110,8 +30121,8 @@ var init_presets = __esm({
       },
       {
         id: "perplexity-decider",
-        label: "Perplexity / Decider v1.1 (OpenRouter)",
-        model: "perplexity/pplx-decider-v1.1-27b",
+        label: "Perplexity / Decider v1.3 (OpenRouter)",
+        model: "perplexity/pplx-decider-v1.3",
         timeoutMs: 6e4,
         connection: {
           type: "http",
@@ -30119,6 +30130,32 @@ var init_presets = __esm({
           baseUrl: "https://openrouter.ai/api/alpha",
           auth: "bearer",
           apiKeyEnv: "OPENROUTER_API_KEY"
+        }
+      },
+      {
+        id: "perplexity-decider-direct",
+        label: "Perplexity / Decider v1.3",
+        model: "pplx-decider-v1.3",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "decisions",
+          baseUrl: "https://api.perplexity.ai/v1",
+          auth: "bearer",
+          apiKeyEnv: "PERPLEXITY_API_KEY"
+        }
+      },
+      {
+        id: "perplexity-decider-flash",
+        label: "Perplexity / Decider Flash v1.3",
+        model: "pplx-decider-flash-v1.3",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "decisions",
+          baseUrl: "https://api.perplexity.ai/v1",
+          auth: "bearer",
+          apiKeyEnv: "PERPLEXITY_API_KEY"
         }
       },
       {
@@ -30132,6 +30169,18 @@ var init_presets = __esm({
           baseUrl: "https://openrouter.ai/api/alpha",
           auth: "bearer",
           apiKeyEnv: "OPENROUTER_API_KEY"
+        }
+      },
+      {
+        id: "perplexity-decider-local",
+        label: "Perplexity / Decider for Mac (local)",
+        model: "pplx-decider-flash-v1.2",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "decisions",
+          baseUrl: "http://127.0.0.1:8080/v1",
+          auth: "none"
         }
       },
       {
@@ -30714,6 +30763,25 @@ function createClassifiersSection(api) {
       el("label", {}, "Model ID", model),
       el("span", { class: "field-hint" }, "Profile ID for evals: ", el("code", {}, profile.id))
     );
+    if (profile.id === "perplexity-decider-local" || profile.id.startsWith("perplexity-decider-local-")) {
+      form.prepend(
+        el(
+          "p",
+          { class: "field-hint classifier-local-guide" },
+          "Start Decider for Mac and wait until it shows Ready. It runs Flash v1.2 locally on an Apple silicon Mac with at least 16 GB of memory. No API key is needed. ",
+          el(
+            "a",
+            {
+              href: "https://docs.perplexity.ai/docs/decisions/decider-for-mac",
+              target: "_blank",
+              rel: "noopener noreferrer"
+            },
+            "Set up Decider for Mac"
+          ),
+          ". Save this connection, then select it for Background questions or Safety screening."
+        )
+      );
+    }
     const read = (name) => controls.get(name)?.value.trim() ?? "";
     const advanced = el(
       "details",
@@ -71331,9 +71399,11 @@ var init_experimental_markup = __esm({
                 Let the agent get a best-fit model recommendation for a task
               </label>
               <p class="field-hint">
-                Lets the agent judge how hard a task is and name a model that suits it, so simple
-                work goes to a cheap, fast model and the hard problems get a top one. Advice only:
-                it never switches the model you are using.
+                Lets the agent judge how hard a task is and name one of your configured models that
+                suits it, so simple work goes to a cheap, fast model and the hard problems get a top
+                one. To judge, it sends the task description to your Background questions or Small
+                tasks model, or to your chat model when those can't answer, which can add a little
+                usage. Advice only: it never switches the model you are using.
               </p>
             </fieldset>
 
@@ -74843,6 +74913,7 @@ export {
   threadProposalStatus,
   findThreadProposalDecision,
   threadProposalFileSummary,
+  isCopseServerName,
   isCopseToolCall,
   isAcpDelegateToolCall,
   acpDelegateKind,
