@@ -133,3 +133,90 @@ test('repeated metadata finalization reuses the same complete prose revision', a
     'Final metadata update',
   )
 })
+
+test('a failed spine replacement preserves rich blocks, images and attachment snapshots on reload', async () => {
+  // Each of these files is hash-checked on load, and a mismatch skips the
+  // whole thread. An ACP upsert re-finalises them together with the prose.
+  const rich: Message = {
+    ...original,
+    contentBlocks: [
+      { type: 'resource_link', uri: 'https://example.test/old', name: 'old', title: 'Old' },
+    ],
+    reasoningBlocks: [{ type: 'text', text: 'Old reasoning block' }],
+    images: ['data:image/png;base64,T0xE'],
+    attachments: [{ kind: 'paste', label: 'notes', content: 'Old snapshot' }],
+  }
+  await saveProjectThread('p', {
+    id: 't',
+    title: 'Atomic rich message',
+    status: 'idle',
+    messages: [rich],
+    usage: { inputTokens: 0, outputTokens: 0 },
+    createdAt: 1,
+    updatedAt: 1,
+  })
+  const events = join(root, 'p', 't', 'events.jsonl')
+  const before = readFileSync(events, 'utf8')
+  const realRename = fsPromises.rename
+  const rename = mock.method(
+    fsPromises,
+    'rename',
+    async (...args: Parameters<typeof realRename>): ReturnType<typeof realRename> => {
+      if (String(args[1]) === events) throw new Error('simulated rich spine failure')
+      return realRename(...args)
+    },
+  )
+  const replacement: Message = {
+    ...rich,
+    content: 'New prose',
+    contentBlocks: [
+      { type: 'resource_link', uri: 'https://example.test/new', name: 'new', title: 'New' },
+    ],
+    reasoningBlocks: [{ type: 'text', text: 'New reasoning block' }],
+    images: ['data:image/png;base64,TkVX'],
+    attachments: [{ kind: 'paste', label: 'notes', content: 'New snapshot' }],
+  }
+  try {
+    await assert.rejects(appendMessage('p', 't', replacement), /simulated rich spine failure/)
+  } finally {
+    rename.mock.restore()
+  }
+  assert.equal(readFileSync(events, 'utf8'), before)
+  closeThreadStoreIndexes()
+  const reloaded = (await getProjectThread('p', 't'))?.messages[0]
+  assert.equal(reloaded?.content, rich.content)
+  assert.deepEqual(reloaded.contentBlocks, rich.contentBlocks)
+  assert.deepEqual(reloaded.reasoningBlocks, rich.reasoningBlocks)
+  assert.deepEqual(reloaded.images, rich.images)
+  assert.deepEqual(reloaded.attachments, rich.attachments)
+
+  // Retry succeeds and loads the new files.
+  await appendMessage('p', 't', replacement)
+  closeThreadStoreIndexes()
+  const retried = (await getProjectThread('p', 't'))?.messages[0]
+  assert.equal(retried?.content, replacement.content)
+  assert.deepEqual(retried.contentBlocks, replacement.contentBlocks)
+  assert.deepEqual(retried.reasoningBlocks, replacement.reasoningBlocks)
+  assert.deepEqual(retried.images, replacement.images)
+  assert.deepEqual(retried.attachments, replacement.attachments)
+})
+
+test('a message whose id looks like a revision name cannot overwrite one', async () => {
+  const message = await seed('assistant')
+  await appendMessage('p', 't', { ...message, content: 'Replaced prose' })
+  const events = join(root, 'p', 't', 'events.jsonl')
+  const line = parseSpineEntries(readFileSync(events, 'utf8')).find(
+    (entry) => entry.line?.type === 'message',
+  )?.line
+  assert.ok(line?.type === 'message')
+  const revisionName = /^messages\/(.+)\.md$/.exec(line.content.ref)?.[1]
+  assert.ok(revisionName)
+  // The plain id spelled like the revision file, with or without its prefix.
+  for (const id of [revisionName, revisionName.replace(/^~/, '')]) {
+    await appendMessage('p', 't', { ...original, id, content: `Message ${id}`, createdAt: 2 })
+  }
+  closeThreadStoreIndexes()
+  const reloaded = await getProjectThread('p', 't')
+  assert.equal(reloaded?.messages[0]?.content, 'Replaced prose')
+  assert.equal(reloaded.messages.length, 3)
+})

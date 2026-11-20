@@ -36,7 +36,7 @@ import {
   type RefResolver,
 } from './fold.ts'
 import { parseOkfMessage } from './okf-message.ts'
-import { withImmutableMessageProse } from './immutable-message-prose.ts'
+import { withImmutableMessageFiles } from './immutable-message-files.ts'
 import { parseThreadMetaValue, parseThreadValue } from './thread-boundary.ts'
 import {
   parseSpine,
@@ -2171,7 +2171,7 @@ async function appendMessageUnqueued(
   const knownIds = await knownMessageIdsFor(dir)
   await fsPromises.mkdir(dir, { recursive: true })
   const exploded = explodeMessage(message, sha256Hex)
-  const { line, files } = knownIds.has(message.id) ? withImmutableMessageProse(exploded) : exploded
+  const { line, files } = knownIds.has(message.id) ? withImmutableMessageFiles(exploded) : exploded
   const targets = files.map((file) => ({
     path: contentFilePathForWrite(dir, file.ref),
     contents: file.contents,

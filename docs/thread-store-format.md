@@ -85,6 +85,10 @@ Source files remain authoritative; deleting this cache is safe.
     history-edit-undo.json           # previous transcript/history for one-step Undo (optional, private)
     messages/<messageId>.md          # OKF: verbatim message content (frontmatter + body)
     messages/<messageId>.reasoning.md  # OKF: thinking text (optional)
+    messages/~rev-<sha256>.md        # an already-saved message's replacement prose; its reasoning,
+                                     #   rich blocks, images and attachment snapshots likewise get
+                                     #   `~rev-<sha256>` names, so a failed spine write leaves the
+                                     #   previous files intact
     blobs/<messageId>.tool-<n>.result.txt        # verbatim result of the message's n-th tool call
     blobs/<messageId>.tool-<n>.args.json         # oversized tool args (when spilled from spine)
     blobs/<messageId>.tool-<n>.acp-content.json  # ACP tool-call display content (optional)
