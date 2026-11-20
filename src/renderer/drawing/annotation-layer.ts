@@ -13,6 +13,11 @@
  * exports bake the same offset in so the flattened image lines up with the
  * captured viewport.
  *
+ * The tool strip is one row. Its hosts run from a full-window image viewer to
+ * a narrow side pane, so it measures itself against the host and gives things
+ * up in a fixed order (see `STRIP_LAYOUTS`) rather than wrapping over the page
+ * being annotated. Ink colour lives behind one button for the same reason.
+ *
  * Nothing is mounted until the first `activate()`, so hosts that never
  * annotate pay nothing. Once marks exist the layer stays visible after
  * "Done" but stops taking pointer events, so the page underneath is usable
@@ -23,6 +28,7 @@
 import { el } from '../dom/helpers.ts'
 import {
   arrowUpRightIcon,
+  chevronDownIcon,
   circleIcon,
   closeIcon,
   eraserIcon,
@@ -58,6 +64,57 @@ export interface AnnotationExport {
 }
 
 const TOOLS: readonly AnnotationTool[] = ['pen', 'line', 'arrow', 'rect', 'ellipse', 'eraser']
+/** The tools that fold behind one button when the strip runs out of room. */
+const SHAPE_TOOLS: readonly AnnotationTool[] = ['line', 'arrow', 'rect', 'ellipse']
+
+function isShape(tool: AnnotationTool): boolean {
+  return SHAPE_TOOLS.includes(tool)
+}
+
+const TOOL_LABELS: Record<AnnotationTool, string> = {
+  pen: 'Pen',
+  line: 'Line',
+  arrow: 'Arrow',
+  rect: 'Rectangle',
+  ellipse: 'Ellipse',
+  eraser: 'Eraser',
+}
+
+function toolIcon(tool: AnnotationTool): SVGSVGElement {
+  const icon = {
+    pen: penLineIcon,
+    line: slashIcon,
+    arrow: arrowUpRightIcon,
+    rect: squareIcon,
+    ellipse: circleIcon,
+    eraser: eraserIcon,
+  }[tool]
+  return icon('ui-icon ui-icon-sm')
+}
+
+interface StripLayout {
+  /** Whether the primary action shows its full label or the compact one. */
+  send: 'long' | 'short'
+  /** Whether each shape has its own button or all four share one. */
+  shapes: 'each' | 'folded'
+  /** Tight drops the separators and narrows the buttons to the 24px target minimum. */
+  spacing: 'regular' | 'tight'
+}
+
+/**
+ * What the strip gives up as its host narrows, widest first. The first layout
+ * that fits on one row wins; the last is used when nothing does.
+ */
+const STRIP_LAYOUTS: readonly StripLayout[] = [
+  { send: 'long', shapes: 'each', spacing: 'regular' },
+  { send: 'short', shapes: 'each', spacing: 'regular' },
+  { send: 'short', shapes: 'folded', spacing: 'regular' },
+  { send: 'short', shapes: 'folded', spacing: 'tight' },
+]
+
+const DEFAULT_ACTION_LABEL = 'Send to agent'
+/** The default label once the strip is tight. A caller's own label is never shortened. */
+const COMPACT_ACTION_LABEL = 'Send'
 
 function measureBox(node: Element): AnnotationMark['box'] {
   const getBBox: unknown = Reflect.get(node, 'getBBox')
@@ -188,14 +245,22 @@ export function mountAnnotationLayer(
   options: AnnotationLayerOptions,
 ): AnnotationLayer {
   let root: HTMLElement | null = null
+  let strip: HTMLElement | null = null
   let resizeObserver: ResizeObserver | null = null
   let svg: SVGSVGElement | null = null
   let drauu: Drauu | null = null
   let active = false
   let tool: AnnotationTool = 'pen'
+  /** The shape the fold button stands for: the last one used. */
+  let shape: AnnotationTool = 'arrow'
   let colour = ANNOTATION_COLOURS[0]?.value ?? '#e5484d'
   const toolButtons = new Map<AnnotationTool, HTMLButtonElement>()
-  const swatches = new Map<string, HTMLButtonElement>()
+  let foldBtn: HTMLButtonElement | null = null
+  let inkBtn: HTMLButtonElement | null = null
+  /** The open ink or shape menu and the button it hangs from; one at a time. */
+  let popover: { node: HTMLElement; anchor: HTMLButtonElement } | null = null
+  const sendLabel = options.actionLabel ?? DEFAULT_ACTION_LABEL
+  const compactSendLabel = options.actionLabel ?? COMPACT_ACTION_LABEL
   let sendBtn: HTMLButtonElement | null = null
   let undoBtn: HTMLButtonElement | null = null
   let clearBtn: HTMLButtonElement | null = null
@@ -234,8 +299,143 @@ export function mountAnnotationLayer(
     else if (mode === 'eraseLine') drauu.model.onSelected(drauu.el)
     for (const [name, button] of toolButtons)
       button.setAttribute('aria-pressed', String(name === tool))
-    for (const [value, button] of swatches)
-      button.setAttribute('aria-pressed', String(value === colour))
+    if (foldBtn) {
+      const holdsShape = isShape(tool)
+      foldBtn.setAttribute('aria-pressed', String(holdsShape))
+      foldBtn.setAttribute('aria-label', TOOL_LABELS[shape])
+      // Pressing it again once it is selected opens the other shapes.
+      foldBtn.setAttribute('data-tooltip', holdsShape ? 'More shapes' : TOOL_LABELS[shape])
+      foldBtn.firstElementChild?.replaceWith(toolIcon(shape))
+    }
+    if (inkBtn) {
+      const name = ANNOTATION_COLOURS.find((entry) => entry.value === colour)?.name
+      inkBtn.setAttribute('aria-label', name ? `Ink colour: ${name}` : 'Ink colour')
+      inkBtn.style.setProperty('--annotation-swatch', colour)
+    }
+  }
+
+  const closePopover = (): void => {
+    if (!popover) return
+    const { node, anchor } = popover
+    popover = null
+    window.removeEventListener('pointerdown', onOutsidePress, true)
+    const heldFocus = node.contains(document.activeElement)
+    node.remove()
+    anchor.setAttribute('aria-expanded', 'false')
+    // A removed node drops focus to <body>; hand it back so the keyboard stays in the strip.
+    if (heldFocus) anchor.focus({ preventScroll: true })
+  }
+
+  /** A press anywhere else dismisses the menu. Its own button is left to toggle it. */
+  const onOutsidePress = (event: PointerEvent): void => {
+    if (!popover) return
+    const { target } = event
+    if (
+      target instanceof Node &&
+      (popover.node.contains(target) || popover.anchor.contains(target))
+    )
+      return
+    closePopover()
+  }
+
+  const selectTool = (next: AnnotationTool): void => {
+    tool = next
+    if (isShape(next)) shape = next
+    closePopover()
+    applyBrush()
+  }
+
+  const openPopover = (anchor: HTMLButtonElement, kind: 'ink' | 'shapes'): void => {
+    if (!root || !strip) return
+    closePopover()
+    const node = el('div', {
+      class: 'annotation-popover',
+      role: 'group',
+      'aria-label': kind === 'ink' ? 'Ink colour' : 'Shapes',
+    })
+    if (kind === 'ink') {
+      for (const { name, value } of ANNOTATION_COLOURS) {
+        const swatch = el('button', {
+          type: 'button',
+          class: 'annotation-swatch',
+          'aria-label': name,
+          'data-tooltip': name,
+          'aria-pressed': String(value === colour),
+        })
+        swatch.style.setProperty('--annotation-swatch', value)
+        swatch.addEventListener('click', () => {
+          colour = value
+          closePopover()
+          applyBrush()
+        })
+        node.append(swatch)
+      }
+    } else {
+      for (const name of SHAPE_TOOLS) {
+        const button = el(
+          'button',
+          {
+            type: 'button',
+            class: 'annotation-tool',
+            'data-tool': name,
+            'aria-label': TOOL_LABELS[name],
+            'data-tooltip': TOOL_LABELS[name],
+            'aria-pressed': String(name === tool),
+          },
+          toolIcon(name),
+        )
+        button.addEventListener('click', () => {
+          selectTool(name)
+        })
+        node.append(button)
+      }
+    }
+    // As on the strip: a press here must not start a stroke underneath.
+    node.addEventListener('pointerdown', (event) => {
+      event.stopPropagation()
+    })
+    root.append(node)
+    // Under the strip, centred on its button, and inside the host by the strip's own margin.
+    const bounds = root.getBoundingClientRect()
+    const edge = strip.getBoundingClientRect()
+    const from = anchor.getBoundingClientRect()
+    const inset = edge.top - bounds.top
+    const width = node.offsetWidth
+    const centred = from.left + from.width / 2 - bounds.left - width / 2
+    node.style.left = `${fmt(Math.max(inset, Math.min(centred, bounds.width - width - inset)))}px`
+    node.style.top = `${fmt(edge.bottom - bounds.top)}px`
+    anchor.setAttribute('aria-expanded', 'true')
+    popover = { node, anchor }
+    window.addEventListener('pointerdown', onOutsidePress, true)
+    node.querySelector<HTMLButtonElement>('[aria-pressed="true"]')?.focus({ preventScroll: true })
+  }
+
+  const togglePopover = (anchor: HTMLButtonElement, kind: 'ink' | 'shapes'): void => {
+    if (popover?.anchor === anchor) closePopover()
+    else openPopover(anchor, kind)
+  }
+
+  /**
+   * Pick the widest layout that fits the host on one row. Measured, not keyed
+   * to a breakpoint: the action label, the interface scale and the font all
+   * move the strip's width. Callers close any open menu first: it was placed
+   * under a button this may move or fold away.
+   */
+  const fitStrip = (): void => {
+    if (!strip || !sendBtn || !active) return
+    for (const layout of STRIP_LAYOUTS) {
+      strip.dataset['send'] = layout.send
+      strip.dataset['shapes'] = layout.shapes
+      strip.dataset['spacing'] = layout.spacing
+      sendBtn.textContent = layout.send === 'long' ? sendLabel : compactSendLabel
+      if (strip.scrollWidth <= strip.clientWidth) break
+    }
+  }
+
+  /** The button that stands for the current tool in the layout on screen. */
+  const currentToolButton = (): HTMLButtonElement | undefined => {
+    if (foldBtn && isShape(tool) && strip?.dataset['shapes'] === 'folded') return foldBtn
+    return toolButtons.get(tool)
   }
 
   const isEmpty = (): boolean => !svg || svg.childElementCount === 0
@@ -248,26 +448,21 @@ export function mountAnnotationLayer(
     if (root) root.hidden = !active && empty
   }
 
-  const toolButton = (
-    name: AnnotationTool,
-    label: string,
-    icon: SVGSVGElement,
-  ): HTMLButtonElement => {
+  const toolButton = (name: AnnotationTool): HTMLButtonElement => {
     const button = el(
       'button',
       {
         type: 'button',
-        class: 'annotation-tool',
+        class: isShape(name) ? 'annotation-tool annotation-shape' : 'annotation-tool',
         'data-tool': name,
-        'aria-label': label,
-        'data-tooltip': label,
+        'aria-label': TOOL_LABELS[name],
+        'data-tooltip': TOOL_LABELS[name],
         'aria-pressed': 'false',
       },
-      icon,
+      toolIcon(name),
     )
     button.addEventListener('click', () => {
-      tool = name
-      applyBrush()
+      selectTool(name)
     })
     toolButtons.set(name, button)
     return button
@@ -284,22 +479,41 @@ export function mountAnnotationLayer(
     const separator = (): HTMLElement =>
       el('span', { class: 'annotation-sep', 'aria-hidden': 'true' })
 
-    const swatchButtons = ANNOTATION_COLOURS.map(({ name, value }) => {
-      const button = el('button', {
+    // Stands in for the four shape buttons when the strip is tight (see
+    // STRIP_LAYOUTS): one press takes the last shape used, a second opens the rest.
+    const fold = el(
+      'button',
+      {
         type: 'button',
-        class: 'annotation-swatch',
-        'aria-label': name,
-        'data-tooltip': name,
+        class: 'annotation-tool annotation-shape-fold',
+        'aria-expanded': 'false',
         'aria-pressed': 'false',
-      })
-      button.style.setProperty('--annotation-swatch', value)
-      button.addEventListener('click', () => {
-        colour = value
-        applyBrush()
-      })
-      swatches.set(value, button)
-      return button
+      },
+      toolIcon(shape),
+      chevronDownIcon('ui-icon ui-picker-chevron annotation-fold-caret'),
+    )
+    fold.addEventListener('click', () => {
+      if (isShape(tool)) togglePopover(fold, 'shapes')
+      else selectTool(shape)
     })
+    foldBtn = fold
+
+    // One dot in the current ink, not a swatch per colour: changing ink is rare
+    // next to choosing a tool, and four swatches were a fifth of the strip.
+    const ink = el(
+      'button',
+      {
+        type: 'button',
+        class: 'annotation-tool annotation-ink',
+        'data-tooltip': 'Ink colour',
+        'aria-expanded': 'false',
+      },
+      el('span', { class: 'annotation-ink-dot' }),
+    )
+    ink.addEventListener('click', () => {
+      togglePopover(ink, 'ink')
+    })
+    inkBtn = ink
 
     undoBtn = el(
       'button',
@@ -319,8 +533,14 @@ export function mountAnnotationLayer(
     })
     sendBtn = el(
       'button',
-      { type: 'button', class: 'ui-btn ui-btn-primary annotation-send', disabled: true },
-      options.actionLabel ?? 'Send to agent',
+      {
+        type: 'button',
+        class: 'ui-btn ui-btn-primary annotation-send',
+        // The name stays whole when the visible label is the compact one.
+        'aria-label': sendLabel,
+        disabled: true,
+      },
+      sendLabel,
     )
     sendBtn.addEventListener('click', () => {
       if (sending) return
@@ -360,17 +580,14 @@ export function mountAnnotationLayer(
       layer.deactivate()
     })
 
-    const strip = el(
+    const toolstrip = el(
       'div',
       { class: 'annotation-toolstrip', role: 'toolbar', 'aria-label': 'Annotation tools' },
-      toolButton('pen', 'Pen', penLineIcon('ui-icon ui-icon-sm')),
-      toolButton('line', 'Line', slashIcon('ui-icon ui-icon-sm')),
-      toolButton('arrow', 'Arrow', arrowUpRightIcon('ui-icon ui-icon-sm')),
-      toolButton('rect', 'Rectangle', squareIcon('ui-icon ui-icon-sm')),
-      toolButton('ellipse', 'Ellipse', circleIcon('ui-icon ui-icon-sm')),
-      toolButton('eraser', 'Eraser', eraserIcon('ui-icon ui-icon-sm')),
-      separator(),
-      ...swatchButtons,
+      toolButton('pen'),
+      ...SHAPE_TOOLS.map(toolButton),
+      fold,
+      toolButton('eraser'),
+      ink,
       separator(),
       undoBtn,
       clearBtn,
@@ -379,19 +596,39 @@ export function mountAnnotationLayer(
       doneBtn,
     )
     // Clicks on the strip must not start a stroke underneath it.
-    strip.addEventListener('pointerdown', (event) => {
+    toolstrip.addEventListener('pointerdown', (event) => {
       event.stopPropagation()
     })
+    strip = toolstrip
 
-    root = el('div', { class: 'annotation-layer', 'data-active': 'false' }, svg, strip)
+    // Sized in the interface scale and changed by nothing else. Changing the
+    // scale (Settings, Cmd +/-) grows the strip without resizing the host, so
+    // the observer below watches this box to hear about it. Watching the strip
+    // itself would have every refit report back as another resize.
+    const scaleProbe = el('span', { class: 'annotation-scale-probe', 'aria-hidden': 'true' })
+
+    root = el(
+      'div',
+      { class: 'annotation-layer', 'data-active': 'false' },
+      svg,
+      toolstrip,
+      scaleProbe,
+    )
     root.hidden = true
     host.append(root)
     // The viewBox carries the host's size as well as the guest's scroll, and a
     // pane resize need not move the scroll at all, so size changes re-apply it
     // directly rather than waiting for a scroll report that may never come.
+    // The same size decides how much of the strip fits.
     if (typeof ResizeObserver === 'function') {
-      resizeObserver = new ResizeObserver(applyViewBox)
+      resizeObserver = new ResizeObserver(() => {
+        applyViewBox()
+        // A menu is placed once, under where its button was; the strip is about to move.
+        closePopover()
+        fitStrip()
+      })
       resizeObserver.observe(host)
+      resizeObserver.observe(scaleProbe)
     }
 
     drauu = createDrauu({
@@ -413,7 +650,9 @@ export function mountAnnotationLayer(
     if (!active) return
     if (event.key === 'Escape') {
       event.preventDefault()
-      layer.deactivate()
+      // An open menu takes the first Escape; the mode takes the next.
+      if (popover) closePopover()
+      else layer.deactivate()
       return
     }
     const meta = event.metaKey || event.ctrlKey
@@ -435,13 +674,16 @@ export function mountAnnotationLayer(
       root?.setAttribute('data-active', 'true')
       window.addEventListener('keydown', onKeyDown)
       syncButtons()
+      // The strip is only measurable once it is on screen.
+      fitStrip()
       // A layer over a webview needs to hold focus so Esc/Cmd+Z reach us, not the guest.
-      toolButtons.get(tool)?.focus({ preventScroll: true })
+      currentToolButton()?.focus({ preventScroll: true })
     },
     deactivate(): void {
       if (!active) return
       active = false
       drauu?.cancel()
+      closePopover()
       root?.setAttribute('data-active', 'false')
       window.removeEventListener('keydown', onKeyDown)
       syncButtons()
@@ -459,8 +701,7 @@ export function mountAnnotationLayer(
     },
     setTool(next: AnnotationTool): void {
       ensureMounted()
-      tool = next
-      applyBrush()
+      selectTool(next)
     },
     setScrollOffset(x: number, y: number): void {
       // Negative offsets are real (right-to-left pages scroll to negative X);
@@ -524,6 +765,7 @@ export function mountAnnotationLayer(
       drauu = null
       root?.remove()
       root = null
+      strip = null
       svg = null
     },
   }

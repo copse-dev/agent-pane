@@ -388,10 +388,17 @@ sandbox state, and whatever containment a caller reports. It asks the same execu
 resolution the spawn uses (`spawnRunsOnSshTarget` in `project-sandbox/spawn.ts`), and a remote
 project that cannot route over SSH counts as unsandboxed rather than local.
 
-On macOS, ASRT's network allowlist is process-wide. While a sandboxed ACP agent or background task
-temporarily widens it, a newly started network-capable command could inherit that access. Copse
-therefore pauses auto-run and names the holder in an approval prompt before overlapping the two.
-Structurally read-only commands do not prompt because they cannot open a network connection.
+On macOS, ASRT's network allowlist is process-wide. Approved loopback-binding background tasks
+and sandboxed ACP sessions and probes run in dedicated ASRT host processes, so their permissions
+cannot widen main's allowlist for already-running contained commands. If a host cannot start or
+initialize ASRT, that sandboxed operation fails rather than acquiring a scope in main or spawning
+an uncontained agent. A resolved `SandboxManager.initialize()` is insufficient: main and each
+isolated host check `isSandboxingEnabled()` before claiming protection. If it remains false, main
+records an init failure so commands prompt, and isolated hosts stop before spawning. The overlap
+gate remains for any scope held directly by main (none of the ACP or loopback task paths above):
+while one is active, Copse pauses auto-run and names the holder in an approval prompt before
+starting a new network-capable command. Structurally read-only
+commands do not prompt because they cannot open a network connection.
 
 ### Linked worktree recovery
 
@@ -1381,7 +1388,9 @@ text never grants a root. Grants are anchored to the trusted canonical store par
 scratch components; validation refuses scratch symlinks and grant roots never follow a controlled
 leaf. The private ACP session-host request
 carries the main-owned thread identity so hosted agents resolve the same assignment; agent
-environment text supplies no scratch authority. zsh uses
+environment text supplies no scratch authority. For isolated loopback tasks, main selects the
+temp directory before crossing the process boundary; the host checks that choice against the
+carried filesystem overlay and uses the same read-only fallback. zsh uses
 `TMPPREFIX` for large heredocs independently of `TMPDIR`; leaving its default `/tmp/zsh` breaks
 patch commands even when every destination file is inside the workspace. This redirect does not
 widen the sandbox's writable roots or change the approval policy. When `COPSE_DIR` is reached

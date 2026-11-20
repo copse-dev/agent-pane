@@ -365,6 +365,41 @@ describe('ACP session host worker', () => {
       child.kill('SIGTERM')
     }
   })
+
+  it('does not start an agent when initialization reports protection disabled', async () => {
+    const dir = makeBundleDir('disabled-')
+    const enabledStub = 'isSandboxingEnabled() { return config !== null }'
+    assert.ok(SANDBOX_RUNTIME_STUB.includes(enabledStub))
+    const stub = join(dir, 'sandbox-runtime-disabled.mjs')
+    writeFileSync(
+      stub,
+      SANDBOX_RUNTIME_STUB.replace(enabledStub, 'isSandboxingEnabled() { return false }'),
+    )
+    const child = spawnWorker(
+      bundleWorker(dir, stub),
+      dir,
+      "require('node:fs').writeFileSync('spawned', 'yes')",
+    )
+    const messages: AcpSessionHostMessage[] = []
+    child.on('message', (message: AcpSessionHostMessage) => messages.push(message))
+    const timeout = setTimeout(() => child.kill('SIGKILL'), 5_000)
+    try {
+      const exit = await once(child, 'exit')
+      const code: unknown = exit[0]
+      assert.equal(code, 1)
+      assert.ok(
+        messages.some(
+          (message) =>
+            message.type === 'error' &&
+            message.error.includes('Workspace protection did not start'),
+        ),
+      )
+      assert.equal(existsSync(join(dir, 'spawned')), false)
+    } finally {
+      clearTimeout(timeout)
+      child.kill('SIGKILL')
+    }
+  })
 })
 
 describe('parseSessionHostRequest', () => {
