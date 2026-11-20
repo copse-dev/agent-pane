@@ -17,39 +17,7 @@ describe('workspace preview security', () => {
   let workspaceRoot = ''
   let egress: Awaited<ReturnType<typeof startBrowserPageFixture>> | null = null
 
-  before(async () => {
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-preview-security-'))
-    mkdirSync(join(workspaceRoot, 'assets'))
-    writeFileSync(
-      join(workspaceRoot, 'index.html'),
-      '<!doctype html><html><head><title>Workspace preview</title></head>' +
-        '<body><h1>Workspace preview</h1><p>Local page</p>' +
-        '<script src="/assets/app.js"></script></body></html>',
-    )
-    writeFileSync(
-      join(workspaceRoot, 'assets', 'app.js'),
-      'document.documentElement.dataset.previewAsset = "loaded"',
-    )
-    writeFileSync(join(workspaceRoot, '.env'), 'COPSE_PREVIEW_SECRET=never-serve-this')
-    egress = await startBrowserPageFixture(43131)
-    resetUserData()
-    seedE2eViewport(E2E_THREE_PANE_VIEWPORT)
-    seedEmptyProject(workspaceRoot, 'e2e-workspace-preview-security')
-    writeSettings({
-      openLinksInBuiltInBrowser: false,
-      layout: { projectsPaneWidth: 260, filesPaneWidth: 680, fileTreeWidth: 200 },
-    })
-    await browser.reloadSession()
-    await $('.prompt-input').waitForExist({ timeout: 30_000 })
-  })
-
-  after(async () => {
-    resetUserData()
-    if (workspaceRoot) removeE2eTree(workspaceRoot)
-    await egress?.close()
-  })
-
-  it('keeps a workspace HTML page inside Copse and refuses its secret-file request', async () => {
+  const openWorkspacePreview = async (): Promise<void> => {
     const panelButton = await $('.titlebar-btn[aria-label="Toggle right panel"]').getElement()
     if (!(await $('#pane-files').isDisplayed())) await panelButton.click()
     await $('#pane-files').waitForDisplayed({ timeout: 5_000 })
@@ -82,7 +50,44 @@ describe('workspace preview security', () => {
         }),
       { timeout: 25_000, timeoutMsg: 'expected the workspace preview to finish loading' },
     )
+  }
 
+  before(async () => {
+    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-preview-security-'))
+    mkdirSync(join(workspaceRoot, 'assets'))
+    writeFileSync(
+      join(workspaceRoot, 'index.html'),
+      '<!doctype html><html><head><title>Workspace preview</title></head>' +
+        '<body><h1>Workspace preview</h1><p>Local page</p>' +
+        '<script src="/assets/app.js"></script></body></html>',
+    )
+    writeFileSync(
+      join(workspaceRoot, 'assets', 'app.js'),
+      'document.documentElement.dataset.previewAsset = "loaded"',
+    )
+    writeFileSync(join(workspaceRoot, '.env'), 'COPSE_PREVIEW_SECRET=never-serve-this')
+    egress = await startBrowserPageFixture(43131)
+    resetUserData()
+    seedE2eViewport(E2E_THREE_PANE_VIEWPORT)
+    seedEmptyProject(workspaceRoot, 'e2e-workspace-preview-security')
+    writeSettings({
+      openLinksInBuiltInBrowser: false,
+      layout: { projectsPaneWidth: 260, filesPaneWidth: 680, fileTreeWidth: 200 },
+    })
+    await browser.reloadSession()
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+  })
+
+  after(async () => {
+    resetUserData()
+    if (workspaceRoot) removeE2eTree(workspaceRoot)
+    await egress?.close()
+  })
+
+  beforeEach(openWorkspacePreview)
+
+  it('keeps a workspace HTML page inside Copse and refuses its secret-file request', async () => {
+    const address = await $('.browser-tab-panel.is-active .browser-url-input').getElement()
     const guestResult: unknown = await browser.execute(async () => {
       const webview = document.querySelector<WebviewTag>('.browser-tab-panel.is-active webview')
       if (!webview) throw new Error('Workspace preview webview missing')
