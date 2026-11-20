@@ -245,11 +245,12 @@ export function mountFooterBranchStatus(
    * checkout cannot cut a worktree, so the thread will share it, and defaulting
    * to a branch would move it off the commit the user chose — or fail outright
    * when another worktree holds that branch. It starts where it is unless the
-   * user picks a branch. A folder that is not a repository has no branch
-   * either, so it also needs the repository's branches to have been listed.
+   * user picks a branch. Only main's positive `detached` reading counts: a
+   * status with no branch also comes back for a folder that is not a
+   * repository, and for a new thread read before it is saved.
    */
   function projectCheckoutDetached(): boolean {
-    return isPickerMode() && status !== null && status.currentBranch === null && branches.length > 0
+    return isPickerMode() && status?.detached === true
   }
 
   /** The base branch for the active thread, while it is still blank. */
@@ -1040,21 +1041,19 @@ export function mountFooterBranchStatus(
       // submission's owner, never whichever thread becomes active while waiting.
       const picked = baseBranchByThread.get(threadId)
       if (picked) return picked
-      // The footer's status already names this thread's checkout once loaded
-      // (it is cleared on every thread switch). Read Git only when the send
-      // beat that refresh, as a send right at startup can.
-      const loaded =
-        threadId === store.getState().activeThreadId && status !== null
-          ? status.currentBranch
-          : undefined
-      const [listed, defaultName, current] = await Promise.all([
+      // The footer's status already describes this thread's checkout once
+      // loaded (it is cleared on every thread switch). Read it only when the
+      // send beat that refresh, as a send right at startup can.
+      const loaded = threadId === store.getState().activeThreadId && status !== null ? status : null
+      const [listed, defaultName, head] = await Promise.all([
         api.git.listBranches(projectId, threadId),
         api.git.getDefaultBranch(projectId, threadId),
-        loaded === undefined ? api.git.currentBranch(projectId, threadId) : loaded,
+        loaded ?? api.git.branchStatus(projectId, threadId),
       ])
       // A detached project checkout starts the thread where it is (see
-      // `projectCheckoutDetached`), never on a branch nobody picked.
-      if (current === null) return undefined
+      // `projectCheckoutDetached`), never on a branch nobody picked. Only
+      // main's positive reading counts, never a branch name that is missing.
+      if (head.detached === true) return undefined
       return defaultName && listed.some((branch) => branch.name === defaultName)
         ? defaultName
         : undefined

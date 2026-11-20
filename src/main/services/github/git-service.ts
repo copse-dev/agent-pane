@@ -1296,15 +1296,34 @@ export async function pushBranchToOrigin(
   return { ok: true, message: detail || `Pushed ${branch} to origin.` }
 }
 
+/** What HEAD names in a checkout. */
+export interface CheckoutHead {
+  /** The checked-out branch, or null when there is none to name. */
+  branch: string | null
+  /**
+   * Git answered and HEAD is on no branch (`rev-parse --abbrev-ref HEAD`
+   * printed `HEAD`). Only that positive reading counts: no root, a folder that
+   * is not a repository, an unborn branch and a failed read are all false, and
+   * so is the e2e branch override, which always names a branch.
+   */
+  detached: boolean
+}
+
+/** Read HEAD once: the checked-out branch and whether Git reports it detached. */
+export async function readCheckoutHead(root: string | null): Promise<CheckoutHead> {
+  if (!root) return { branch: null, detached: false }
+  const override = e2eBranchOverride()
+  if (override) return { branch: override, detached: false }
+  const { stdout, code } = await runGitRead(['rev-parse', '--abbrev-ref', 'HEAD'], root)
+  if (code !== 0) return { branch: null, detached: false }
+  const branch = stdout.trim()
+  if (branch === 'HEAD') return { branch: null, detached: true }
+  return { branch: branch || null, detached: false }
+}
+
 /** Current checked-out branch, or null when detached / outside a repo. */
 export async function getCurrentBranchName(root: string | null): Promise<string | null> {
-  if (!root) return null
-  const override = e2eBranchOverride()
-  if (override) return override
-  const { stdout, code } = await runGitRead(['rev-parse', '--abbrev-ref', 'HEAD'], root)
-  if (code !== 0) return null
-  const branch = stdout.trim()
-  return branch && branch !== 'HEAD' ? branch : null
+  return (await readCheckoutHead(root)).branch
 }
 
 /**

@@ -4,7 +4,7 @@ import { runGh, parseGhJson } from './gh-service.ts'
 import { isGitAvailableForTarget, isGhAvailable } from '../tool-availability.ts'
 import {
   isInsideGitWorkTree,
-  getCurrentBranchName,
+  readCheckoutHead,
   getGitChangeStats,
   getDefaultBranch,
   getCommittedChanges,
@@ -317,19 +317,24 @@ export async function getGitBranchStatus(
   root: string | null,
   dependencies: { runGh: typeof runGh } = { runGh },
 ): Promise<GitBranchStatus> {
-  const empty: GitBranchStatus = { currentBranch: null, pr: null }
+  // No checkout found yet (a thread not saved yet), or not a repository: not
+  // detached, which the renderer would otherwise read as a reason to start
+  // where HEAD is instead of on the default branch.
+  const empty: GitBranchStatus = { currentBranch: null, pr: null, detached: false }
   if (!root) return empty
 
-  // Routes through getCurrentBranchName so the e2e branch override (screenshot
+  // Routes through readCheckoutHead so the e2e branch override (screenshot
   // determinism) is honored here too, not just bypassed by a raw rev-parse.
-  const currentBranch = await getCurrentBranchName(root)
+  const head = await readCheckoutHead(root)
+  if (head.detached) return { currentBranch: null, pr: null, detached: true }
+  const currentBranch = head.branch
   if (!currentBranch) return empty
 
   // gh may be absent (minimal installs, the e2e runner image) — checkToolAvailability
   // already reports it. Skip the PR lookup rather than spawning gh, which would
   // reject with "spawn gh ENOENT" and surface an error toast on every workspace
   // that has a branch (failing nearly every workspace e2e spec via afterTest).
-  if (!isGhAvailable()) return { currentBranch, pr: null }
+  if (!isGhAvailable()) return { currentBranch, pr: null, detached: false }
 
   const pr = await getOpenPrForBranch(
     projectId,
@@ -338,5 +343,5 @@ export async function getGitBranchStatus(
     dependencies.runGh,
   )
 
-  return { currentBranch, pr }
+  return { currentBranch, pr, detached: false }
 }

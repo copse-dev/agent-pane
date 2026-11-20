@@ -1435,7 +1435,7 @@ describe('footer branch status', () => {
       host,
       store,
       createApi(
-        { currentBranch: null, pr: null },
+        { currentBranch: null, pr: null, detached: true },
         [
           { name: 'main', lastCommitDate: '2024-01-01' },
           { name: 'feature/review', lastCommitDate: '2024-01-02' },
@@ -1473,12 +1473,16 @@ describe('footer branch status', () => {
     assert.equal(await control.resolveBaseBranch('project-1', 'thread-1'), undefined)
   })
 
-  it('reads whether the checkout is detached when a send beats the footer refresh', async () => {
-    const branches = [{ name: 'main', lastCommitDate: '2024-01-01' }]
-    for (const [currentBranch, expected] of [
-      [null, undefined],
-      ['feature/left-behind', 'main'],
-    ] as const) {
+  it('does not take a status that names no branch for a detached checkout', async () => {
+    // A new thread's first status read can run before the thread is saved:
+    // main finds no checkout and names no branch, the same as for a folder
+    // that is not a repository. The branch list loads after the save. Only
+    // main's `detached` reading means detached, and an older host omits it.
+    const statuses: GitBranchStatus[] = [
+      { currentBranch: null, pr: null, detached: false },
+      { currentBranch: null, pr: null },
+    ]
+    for (const status of statuses) {
       const store = createStore({
         workspaceRoot: '/repo',
         activeProjectId: 'project-1',
@@ -1490,8 +1494,50 @@ describe('footer branch status', () => {
       const control = mountFooterBranchStatus(
         host,
         store,
-        createApi({ currentBranch, pr: null }, branches, 'main'),
+        createApi(
+          status,
+          [
+            { name: 'main', lastCommitDate: '2024-01-01' },
+            { name: 'feature/review', lastCommitDate: '2024-01-02' },
+          ],
+          'main',
+        ),
       )
+      await settle()
+
+      assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'main')
+      assert.equal(await control.resolveBaseBranch('project-1', 'thread-1'), 'main')
+      await openBranchMenu(host)
+      assert.deepEqual(
+        [...host.querySelectorAll('.branch-picker-option-label')].map((row) => row.textContent),
+        ['main', 'feature/review'],
+      )
+      control.destroy()
+      host.remove()
+    }
+  })
+
+  it('reads whether the checkout is detached when a send beats the footer refresh', async () => {
+    const branches = [{ name: 'main', lastCommitDate: '2024-01-01' }]
+    const cases: Array<{ status: GitBranchStatus; expected: string | undefined }> = [
+      { status: { currentBranch: null, pr: null, detached: true }, expected: undefined },
+      // No checkout found yet, or no readable HEAD: not detached.
+      { status: { currentBranch: null, pr: null, detached: false }, expected: 'main' },
+      {
+        status: { currentBranch: 'feature/left-behind', pr: null, detached: false },
+        expected: 'main',
+      },
+    ]
+    for (const { status, expected } of cases) {
+      const store = createStore({
+        workspaceRoot: '/repo',
+        activeProjectId: 'project-1',
+        activeThreadId: 'thread-1',
+        threads: [thread()],
+      })
+      const host = document.createElement('div')
+      document.body.append(host)
+      const control = mountFooterBranchStatus(host, store, createApi(status, branches, 'main'))
       // No settle: the footer's own branch status has not loaded yet.
       assert.equal(await control.resolveBaseBranch('project-1', 'thread-1'), expected)
       control.destroy()
@@ -1507,7 +1553,11 @@ describe('footer branch status', () => {
     })
     const host = document.createElement('div')
     document.body.append(host)
-    mountFooterBranchStatus(host, store, createApi({ currentBranch: null, pr: null }, [], null))
+    mountFooterBranchStatus(
+      host,
+      store,
+      createApi({ currentBranch: null, pr: null, detached: false }, [], null),
+    )
     await settle()
     assert.ok(qsRequired(host, '.branch-picker').hidden)
   })

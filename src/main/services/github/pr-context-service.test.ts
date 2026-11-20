@@ -1,13 +1,14 @@
 import { describe, it, after, before, beforeEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SandboxManager, type SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import {
   branchHasOpenPr,
   branchMergedThrough,
+  getGitBranchStatus,
   getPrWorkspaceContext,
 } from './pr-context-service.ts'
 import {
@@ -97,6 +98,74 @@ describe('getPrWorkspaceContext under the project sandbox', { skip: !gitOk }, ()
       assert.ok(filesystem)
       assert.deepEqual(filesystem.allowWrite, [])
       assert.deepEqual(filesystem.denyWrite, [])
+    }
+  })
+})
+
+// The footer starts a blank thread on a detached checkout where it is, so
+// "detached" must be Git's answer, never a branch name that is missing: no
+// checkout found yet (a thread read before it is saved) names no branch either.
+describe('getGitBranchStatus detachment', { skip: !gitOk }, () => {
+  let root = ''
+
+  before(async () => {
+    root = await realpath(await mkdtemp(join(tmpdir(), 'copse-branch-status-')))
+    setGitAvailableForTest(true)
+    setGhAvailableForTest(false)
+  })
+
+  after(async () => {
+    setGitAvailableForTest(null)
+    setGhAvailableForTest(null)
+    if (root) await rm(root, { recursive: true, force: true })
+  })
+
+  it('reports detached only when Git found the checkout on no branch', async () => {
+    const plain = join(root, 'plain')
+    const repo = join(root, 'repo')
+    await mkdir(plain)
+    await mkdir(repo)
+    const git = (...args: string[]): void => {
+      const result = spawnSync('git', args, { cwd: repo, encoding: 'utf8' })
+      assert.equal(result.status, 0, result.stderr)
+    }
+    git('init', '-q', '-b', 'main')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    git('config', 'commit.gpgsign', 'false')
+    git('commit', '-q', '--allow-empty', '-m', 'init')
+    const status = (checkout: string | null): ReturnType<typeof getGitBranchStatus> =>
+      getGitBranchStatus('project-1', undefined, checkout)
+    const none = { currentBranch: null, pr: null, detached: false }
+
+    assert.deepEqual(await status(null), none, 'no checkout found')
+    assert.deepEqual(await status(plain), none, 'not a repository')
+    assert.deepEqual(await status(repo), { currentBranch: 'main', pr: null, detached: false })
+
+    git('switch', '-q', '--detach')
+    assert.deepEqual(await status(repo), { currentBranch: null, pr: null, detached: true })
+
+    // An unborn branch has no HEAD commit to read, so it is not detached.
+    git('switch', '-q', '--orphan', 'unborn')
+    assert.deepEqual(await status(repo), none, 'unborn branch')
+  })
+
+  it('never reports the e2e branch override as detached', async () => {
+    const previousE2e = process.env['COPSE_E2E']
+    const previousBranch = process.env['COPSE_PANEL_MOCK_BRANCH']
+    try {
+      process.env['COPSE_E2E'] = '1'
+      process.env['COPSE_PANEL_MOCK_BRANCH'] = 'work'
+      assert.deepEqual(await getGitBranchStatus('project-1', undefined, root), {
+        currentBranch: 'work',
+        pr: null,
+        detached: false,
+      })
+    } finally {
+      if (previousE2e === undefined) delete process.env['COPSE_E2E']
+      else process.env['COPSE_E2E'] = previousE2e
+      if (previousBranch === undefined) delete process.env['COPSE_PANEL_MOCK_BRANCH']
+      else process.env['COPSE_PANEL_MOCK_BRANCH'] = previousBranch
     }
   })
 })
