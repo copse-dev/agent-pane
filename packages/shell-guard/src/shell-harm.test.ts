@@ -1331,12 +1331,12 @@ describe('Guarded YOLO shell harm gate — shapes the public test set found', ()
       "zsh -ic 'rm -rf ~'",
       "bash -e -c 'rm -rf /'",
       "bash -c -- 'rm -rf /'",
-      "find . -exec sh -c 'rm -rf /' \;",
+      "find . -exec sh -c 'rm -rf /' \\;",
     ]) {
       assert.equal(action(command), 'deny', command)
     }
     assert.equal(action("bash -lc 'ls -la'"), 'allow')
-    assert.equal(action(`find . -exec sh -c 'echo "$1"' _ {} \;`), 'allow')
+    assert.equal(action(`find . -exec sh -c 'echo "$1"' _ {} \\;`), 'allow')
   })
 
   it('reads the script an interpreter runs when an inline flag follows it', () => {
