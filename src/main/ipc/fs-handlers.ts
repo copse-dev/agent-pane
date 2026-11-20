@@ -24,6 +24,7 @@ import {
   gatewayReaddir,
   gatewayWriteFile,
 } from '../project-sandbox/sandbox-fs-client.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 async function requireReadRoot(projectId: string, threadId: string): Promise<string> {
   const root = await inspectThreadReadRoot(projectId, threadId)
@@ -50,7 +51,7 @@ export function registerFsHandlers(win: BrowserWindow): void {
       const abs = await resolvePathWithinRoot(relPath, root)
       return { ok: true, data: await gatewayReadImage(abs, root, relPath) }
     } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+      return { ok: false, error: errorMessage(error) }
     }
   })
 

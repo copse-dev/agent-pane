@@ -38,9 +38,7 @@ describe('settings tool permissions', () => {
     process.env['ANTHROPIC_API_KEY'] = ''
     process.env['OPENAI_API_KEY'] = ''
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-settings-tool-permissions', {
-      mcpUiCanvasEnabled: true,
-    })
+    seedEmptyProject(process.cwd(), 'e2e-settings-tool-permissions')
     await browser.reloadSession()
   })
 

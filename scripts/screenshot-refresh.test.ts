@@ -7,10 +7,17 @@ import { describe, it } from 'node:test'
 import { runInNewContext } from 'node:vm'
 import { load } from 'js-yaml'
 import { z } from 'zod'
-import { SCREENSHOT_MANIFEST, serializeScreenshotManifest } from './lib/screenshot-manifest.mts'
+import {
+  parseScreenshotManifest,
+  SCREENSHOT_MANIFEST,
+  SCREENSHOT_PUBLIC_URL,
+  serializeScreenshotManifest,
+} from './lib/screenshot-manifest.mts'
+import { updateScreenshotReadme } from './lib/screenshot-review-manifest.mts'
 import {
   decideRefresh,
   isRefreshCommit,
+  liveDecisions,
   SCREENSHOT_REFRESH_BRANCH,
   SCREENSHOT_REFRESH_SUBJECT,
   type MainChanges,
@@ -21,7 +28,14 @@ const MAIN = 'a'.repeat(40)
 const RENDERED = 'b'.repeat(40)
 
 function pull(overrides: Partial<RefreshPull> = {}): RefreshPull {
-  return { number: 7, open: true, renderedMain: RENDERED, ownHead: true, ...overrides }
+  return {
+    number: 7,
+    open: true,
+    renderedMain: RENDERED,
+    ownHead: true,
+    liveDecisions: null,
+    ...overrides,
+  }
 }
 
 /** A `changes` callback that records whether the decision needed it. */
@@ -52,8 +66,55 @@ describe('screenshot refresh decision', () => {
       assert.equal(decision.refresh, false)
       assert.match(decision.reason, /#7 carries a commit besides the refresh commit/)
       assert.match(decision.reason, /merge or close it/)
+      assert.deepEqual(decision.held, [])
       assert.deepEqual(probe.calls, [])
     }
+  })
+
+  it('holds for reviewed screenshots main lacks, naming them once main has moved on', () => {
+    for (const force of [false, true]) {
+      const probe = changes({ manifest: true, e2e: 'full' })
+      const live = ['a.png', 'b.png']
+      const decision = decideRefresh({
+        main: MAIN,
+        pull: pull({ ownHead: false, liveDecisions: live }),
+        force,
+        changes: probe.changes,
+      })
+      assert.equal(decision.refresh, false)
+      assert.equal(
+        decision.reason,
+        '#7 carries 2 reviewed screenshots main has not changed since (a.png, b.png); merge or close it before the branch can move',
+      )
+      assert.deepEqual(decision.held, live)
+      assert.deepEqual(probe.calls, [])
+    }
+    // The night after a review, before main moves, holding loses nothing.
+    const fresh = decideRefresh({
+      main: MAIN,
+      pull: pull({ ownHead: false, liveDecisions: ['a.png'], renderedMain: MAIN }),
+      force: false,
+      changes: changes({ manifest: false, e2e: 'skip' }).changes,
+    })
+    assert.equal(fresh.refresh, false)
+    assert.match(fresh.reason, /carries 1 reviewed screenshot main/)
+    assert.deepEqual(fresh.held, [])
+  })
+
+  it('moves an open PR once main has changed every screenshot it committed', () => {
+    const probe = changes({ manifest: true, e2e: 'full' })
+    const decision = decideRefresh({
+      main: MAIN,
+      pull: pull({ ownHead: false, liveDecisions: [] }),
+      force: false,
+      changes: probe.changes,
+    })
+    assert.equal(decision.refresh, true)
+    assert.equal(
+      decision.reason,
+      'main has changed every screenshot #7 committed since it rendered, so moving the branch discards no decision main lacks',
+    )
+    assert.deepEqual(decision.held, [])
   })
 
   it('refreshes on a forced dispatch without consulting the oracle', () => {
@@ -64,7 +125,7 @@ describe('screenshot refresh decision', () => {
       force: true,
       changes: probe.changes,
     })
-    assert.deepEqual(decision, { refresh: true, reason: 'forced by workflow_dispatch' })
+    assert.deepEqual(decision, { refresh: true, reason: 'forced by workflow_dispatch', held: [] })
     assert.deepEqual(probe.calls, [])
   })
 
@@ -98,6 +159,7 @@ describe('screenshot refresh decision', () => {
       assert.deepEqual(decision, {
         refresh: false,
         reason: 'main has not moved since #7 rendered it',
+        held: [],
       })
       assert.deepEqual(probe.calls, [])
     }
@@ -168,11 +230,11 @@ function gitIn(cwd: string, ...args: string[]): string {
   }).trim()
 }
 
-function manifest(hash: string): string {
-  return serializeScreenshotManifest({
-    version: 1,
-    screenshots: { 'shot.png': { sha256: hash.repeat(64), bytes: 1 } },
-  })
+function manifest(hash: string, extra: Record<string, string> = {}): string {
+  const screenshots = { 'shot.png': { sha256: hash.repeat(64), bytes: 1 } }
+  for (const [name, other] of Object.entries(extra))
+    Object.assign(screenshots, { [name]: { sha256: other.repeat(64), bytes: 1 } })
+  return serializeScreenshotManifest({ version: 1, screenshots })
 }
 
 /** A repository whose `main` holds a manifest and a doc, with one refresh commit on it. */
@@ -259,7 +321,10 @@ describe('screenshot refresh plan CLI', () => {
 
       const first = plan(dir, { PULL_NUMBER: '' })
       assert.equal(first.status, 0, first.stderr)
-      assert.match(first.outputs, /^refresh=true\nreason=no refresh PR has been opened yet\n$/)
+      assert.match(
+        first.outputs,
+        /^refresh=true\nreason=no refresh PR has been opened yet\nheld=\n$/,
+      )
       assert.match(first.summary, /Refresh: no refresh PR has been opened yet\./)
 
       const unchanged = plan(dir, open)
@@ -270,7 +335,7 @@ describe('screenshot refresh plan CLI', () => {
       gitIn(dir, 'commit', '--quiet', '-am', 'docs')
       const docs = plan(dir, open)
       assert.equal(docs.status, 0, docs.stderr)
-      assert.match(docs.outputs, /^refresh=false\n.*\(oracle: skip\)\n$/s)
+      assert.match(docs.outputs, /^refresh=false\n.*\(oracle: skip\)\nheld=\n$/s)
 
       writeFileSync(join(dir, SCREENSHOT_MANIFEST), manifest('d'))
       gitIn(dir, 'commit', '--quiet', '-am', 'accept screenshots on main')
@@ -279,27 +344,159 @@ describe('screenshot refresh plan CLI', () => {
       assert.match(
         accepted.outputs,
         new RegExp(
-          `^refresh=true\\nreason=main changed committed screenshot hashes since #7 rendered ${base.slice(0, 12)}\\n$`,
+          `^refresh=true\\nreason=main changed committed screenshot hashes since #7 rendered ${base.slice(0, 12)}\\nheld=\\n$`,
         ),
       )
 
       const forced = plan(dir, { ...open, FORCE: 'true' })
-      assert.match(forced.outputs, /^refresh=true\nreason=forced by workflow_dispatch\n$/)
+      assert.match(forced.outputs, /^refresh=true\nreason=forced by workflow_dispatch\nheld=\n$/)
 
-      gitIn(dir, 'checkout', '--quiet', '-b', 'reviewed', refresh)
-      writeFileSync(join(dir, SCREENSHOT_MANIFEST), manifest('e'))
-      gitIn(dir, 'commit', '--quiet', '-am', 'chore(e2e): commit ticked screenshots')
-      const reviewed = gitIn(dir, 'rev-parse', 'HEAD')
-      gitIn(dir, 'checkout', '--quiet', 'main')
+      // A review on the refresh PR, committed on top of the rendered base.
+      const commitOnRefresh = (branch: string, file: string, text: string): string => {
+        gitIn(dir, 'checkout', '--quiet', '-b', branch, refresh)
+        writeFileSync(join(dir, file), text)
+        gitIn(dir, 'commit', '--quiet', '-am', 'chore(e2e): commit ticked screenshots')
+        const sha = gitIn(dir, 'rev-parse', 'HEAD')
+        gitIn(dir, 'checkout', '--quiet', 'main')
+        return sha
+      }
+      // It re-baselined shot.png, which main has since changed again: superseded.
+      const superseded = commitOnRefresh('superseded', SCREENSHOT_MANIFEST, manifest('e'))
+      const released = plan(dir, { ...open, PULL_HEAD: superseded, BRANCH_SHA: superseded })
+      assert.equal(released.status, 0, released.stderr)
+      assert.match(
+        released.outputs,
+        /^refresh=true\nreason=main has changed every screenshot #7 committed since it rendered, so moving the branch discards no decision main lacks\nheld=\n$/,
+      )
+
+      // It also adds new.png, which main still lacks: held, and named.
+      const reviewed = commitOnRefresh(
+        'reviewed',
+        SCREENSHOT_MANIFEST,
+        manifest('e', { 'new.png': 'f' }),
+      )
       const held = plan(dir, { ...open, PULL_HEAD: reviewed, BRANCH_SHA: reviewed, FORCE: 'true' })
       assert.equal(held.status, 0, held.stderr)
-      assert.match(held.outputs, /^refresh=false\nreason=#7 carries a commit besides/)
+      assert.match(
+        held.outputs,
+        /^refresh=false\nreason=#7 carries 1 reviewed screenshot main has not changed since \(new\.png\); merge or close it before the branch can move\nheld=new\.png\n$/,
+      )
       // The PR head can lag a push: the tip the push would replace is what counts.
       const lagging = plan(dir, { ...open, BRANCH_SHA: reviewed, FORCE: 'true' })
       assert.equal(lagging.status, 0, lagging.stderr)
-      assert.match(lagging.outputs, /^refresh=false\nreason=#7 carries a commit besides/)
+      assert.match(
+        lagging.outputs,
+        /^refresh=false\nreason=#7 carries 1 reviewed screenshot.*\nheld=new\.png\n$/,
+      )
+
+      const handPush = commitOnRefresh('hand-push', 'README.md', 'edited on the branch\n')
+      const pushed = plan(dir, { ...open, PULL_HEAD: handPush, BRANCH_SHA: handPush })
+      assert.equal(pushed.status, 0, pushed.stderr)
+      assert.match(
+        pushed.outputs,
+        /^refresh=false\nreason=#7 carries a commit besides.*\(a hand push\).*\nheld=\n$/,
+      )
+
       const merged = plan(dir, { ...open, PULL_OPEN: 'false', PULL_HEAD: reviewed })
       assert.match(merged.outputs, /^refresh=true\n/)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('counts a removed screenshot as a decision, and holds a manifest it cannot read', () => {
+    const { dir, base, refresh } = repository()
+    try {
+      writeFileSync(join(dir, SCREENSHOT_MANIFEST), manifest('a', { 'gone.png': 'b' }))
+      gitIn(dir, 'commit', '--quiet', '-am', 'add gone.png on main')
+      const main = gitIn(dir, 'rev-parse', 'HEAD')
+      gitIn(dir, 'checkout', '--quiet', '-b', 'removed', main)
+      gitIn(dir, 'commit', '--quiet', '--allow-empty', '-m', SCREENSHOT_REFRESH_SUBJECT)
+      writeFileSync(join(dir, SCREENSHOT_MANIFEST), manifest('a'))
+      gitIn(dir, 'commit', '--quiet', '-am', 'chore(e2e): commit ticked screenshots')
+      assert.deepEqual(liveDecisions(gitIn(dir, 'rev-parse', 'HEAD'), main, dir), ['gone.png'])
+
+      gitIn(dir, 'checkout', '--quiet', '-b', 'broken', refresh)
+      writeFileSync(join(dir, SCREENSHOT_MANIFEST), '{"version": 2}\n')
+      gitIn(dir, 'commit', '--quiet', '-am', 'chore(e2e): commit ticked screenshots')
+      assert.equal(liveDecisions(gitIn(dir, 'rev-parse', 'HEAD'), main, dir), null)
+      assert.deepEqual(
+        liveDecisions(refresh, main, dir),
+        [],
+        'the empty refresh commit holds nothing',
+      )
+      assert.equal(liveDecisions('0'.repeat(40), base, dir), null)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('counts the accepted README hero update as part of a reviewed commit, not a hand push', () => {
+    const { dir } = repository()
+    const hero = 'landing-cupcake-changes.png'
+    const readmeFor = (from: string, to: string): string =>
+      updateScreenshotReadme(
+        readFileSync(join(dir, 'README.md'), 'utf8'),
+        parseScreenshotManifest(from),
+        parseScreenshotManifest(to),
+      )
+    try {
+      const seed = manifest('a', { [hero]: 'c' })
+      const url = `${SCREENSHOT_PUBLIC_URL}/screenshots/sha256/${'c'.repeat(64)}.png`
+      writeFileSync(join(dir, 'README.md'), `![hero](${url})\n`)
+      writeFileSync(join(dir, SCREENSHOT_MANIFEST), seed)
+      gitIn(dir, 'commit', '--quiet', '-am', 'hero on main')
+      const rendered = gitIn(dir, 'rev-parse', 'HEAD')
+
+      gitIn(dir, 'checkout', '--quiet', '-b', 'reviewed', rendered)
+      gitIn(dir, 'commit', '--quiet', '--allow-empty', '-m', SCREENSHOT_REFRESH_SUBJECT)
+      const accepted = manifest('a', { [hero]: 'd' })
+      writeFileSync(join(dir, 'README.md'), readmeFor(seed, accepted))
+      writeFileSync(join(dir, SCREENSHOT_MANIFEST), accepted)
+      gitIn(dir, 'commit', '--quiet', '-am', 'chore(e2e): commit ticked screenshots')
+      const reviewed = gitIn(dir, 'rev-parse', 'HEAD')
+      assert.match(readFileSync(join(dir, 'README.md'), 'utf8'), /d{64}/)
+      assert.deepEqual(liveDecisions(reviewed, rendered, dir), [hero])
+
+      gitIn(dir, 'checkout', '--quiet', 'main')
+      writeFileSync(join(dir, SCREENSHOT_MANIFEST), manifest('a', { [hero]: 'e' }))
+      gitIn(dir, 'commit', '--quiet', '-am', 'main supersedes the hero')
+      const main = gitIn(dir, 'rev-parse', 'HEAD')
+      assert.deepEqual(liveDecisions(reviewed, main, dir), [], 'main superseded the decision')
+
+      // Any other README edit beside the manifest is still a hand push, down to
+      // a trailing blank line.
+      for (const [branch, extra] of [
+        ['edited', 'more prose\n'],
+        ['blank-line', '\n'],
+      ] as const) {
+        gitIn(dir, 'checkout', '--quiet', '-b', branch, reviewed)
+        writeFileSync(join(dir, 'README.md'), `${readmeFor(seed, accepted)}${extra}`)
+        gitIn(dir, 'commit', '--quiet', '-am', 'chore(e2e): commit ticked screenshots')
+        assert.equal(liveDecisions(gitIn(dir, 'rev-parse', 'HEAD'), main, dir), null, branch)
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('holds an empty or reverted hand commit on top of the refresh commit', () => {
+    const { dir, refresh } = repository()
+    try {
+      const main = gitIn(dir, 'rev-parse', 'HEAD')
+      gitIn(dir, 'checkout', '--quiet', '-b', 'empty-hand', refresh)
+      gitIn(dir, 'commit', '--quiet', '--allow-empty', '-m', 'retrigger CI')
+      // It changes no file, but it is a push the nightly must not discard.
+      assert.equal(liveDecisions(gitIn(dir, 'rev-parse', 'HEAD'), main, dir), null)
+
+      // Nor is a hand edit that a later commit reverts: the tree diff is empty,
+      // but both commits are someone's work.
+      gitIn(dir, 'checkout', '--quiet', '-b', 'reverted-hand', refresh)
+      writeFileSync(join(dir, 'README.md'), 'readme\nhand edit\n')
+      gitIn(dir, 'commit', '--quiet', '-am', 'hand edit')
+      writeFileSync(join(dir, 'README.md'), 'readme\n')
+      gitIn(dir, 'commit', '--quiet', '-am', 'revert hand edit')
+      assert.equal(liveDecisions(gitIn(dir, 'rev-parse', 'HEAD'), main, dir), null)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -337,10 +534,10 @@ const workflow = z
   .object({
     permissions: z.record(z.string(), z.string()),
     concurrency: z.object({ group: z.string(), 'cancel-in-progress': z.boolean() }),
-    jobs: z.object({ plan: jobSchema, refresh: jobSchema }),
+    jobs: z.object({ plan: jobSchema, refresh: jobSchema, held: jobSchema }),
   })
   .parse(load(workflowText))
-const { plan: planJob, refresh: refreshJob } = workflow.jobs
+const { plan: planJob, refresh: refreshJob, held: heldJob } = workflow.jobs
 
 function step(job: z.infer<typeof jobSchema>, name: string): z.infer<typeof stepSchema> {
   const found = job.steps.find((candidate) => candidate.name === name)
@@ -381,6 +578,28 @@ describe('screenshot-refresh.yml workflow invariants', () => {
     assert.deepEqual(workflow.permissions, { contents: 'read' })
     assert.deepEqual(planJob.permissions, { contents: 'read', 'pull-requests': 'read' })
     assert.deepEqual(refreshJob.permissions, { contents: 'read' })
+    // The hold notice comments with GITHUB_TOKEN, whose events start no workflow.
+    assert.deepEqual(heldJob.permissions, { 'pull-requests': 'write' })
+    assert.equal(heldJob.needs, 'plan')
+    // Every open refresh PR, so the notice is deleted once nothing holds it.
+    assert.equal(heldJob.if, "needs.plan.outputs.pull-open == 'true'")
+    const notice = heldJob.steps[0]?.with?.['script']
+    assert.ok(typeof notice === 'string')
+    assert.match(notice, /if \(held\.length === 0\) \{[\s\S]*?deleteComment[\s\S]*?return;\s*\}/)
+    assert.equal(heldJob.steps.length, 1)
+    assert.equal(heldJob.steps[0]?.uses, 'actions/github-script@v9')
+    assert.doesNotMatch(
+      JSON.stringify(heldJob),
+      /secrets\.|create-github-app-token|github-token|checkout/,
+    )
+    assert.deepEqual(planJob.outputs, {
+      refresh: '${{ steps.decide.outputs.refresh }}',
+      'main-sha': '${{ steps.main.outputs.sha }}',
+      'branch-sha': '${{ steps.find.outputs.branch-sha }}',
+      'pull-number': '${{ steps.find.outputs.pull-number }}',
+      'pull-open': '${{ steps.find.outputs.pull-open }}',
+      held: '${{ steps.decide.outputs.held }}',
+    })
     const planText = JSON.stringify(planJob)
     assert.doesNotMatch(planText, /secrets\.|create-github-app-token|github-token/)
     assert.ok(planJob.steps.some((candidate) => candidate.uses === './.github/actions/setup'))
@@ -569,6 +788,96 @@ describe('screenshot refresh PR creation', () => {
       /https:\/\/github\.com\/copse-dev\/agent-pane\/blob\/main\/docs\/agent-development\.md#triage-a-recurring-candidate-before-re-baselining/,
     )
     assert.deepEqual(notices, ['Opened draft refresh PR #11 on main aaaaaaaaaaaa.'])
+  })
+})
+
+describe('screenshot refresh hold notice', () => {
+  const MARKER = '<!-- copse-screenshot-refresh-held -->'
+  interface Call {
+    method: string
+    request: unknown
+  }
+  async function notify(
+    existing: { id: number; user: { login: string }; body: string }[],
+    env: Record<string, string> = {},
+  ): Promise<{ calls: Call[]; notices: string[] }> {
+    const calls: Call[] = []
+    const notices: string[] = []
+    const record =
+      (method: string) =>
+      async (request: unknown): Promise<{ data: unknown }> => {
+        calls.push({ method, request: JSON.parse(JSON.stringify(request)) })
+        return { data: existing }
+      }
+    await runScript(heldJob.steps[0]?.with?.['script'], {
+      context,
+      process: { env: { PULL_NUMBER: '9', HELD: 'a.png,b.png', MAIN_SHA: MAIN, ...env } },
+      core: { notice: (message: string) => notices.push(message) },
+      github: {
+        paginate: async (
+          list: (request: unknown) => Promise<{ data: unknown }>,
+          request: unknown,
+        ) => (await list(request)).data,
+        rest: {
+          issues: {
+            listComments: record('list'),
+            createComment: record('create'),
+            updateComment: record('update'),
+          },
+        },
+      },
+    })
+    return { calls, notices }
+  }
+  const body = (calls: Call[]): string =>
+    z.object({ body: z.string() }).parse(calls.find((call) => call.method !== 'list')?.request).body
+
+  it('comments once, naming the held screenshots and what holding costs', async () => {
+    const { calls, notices } = await notify([
+      { id: 1, user: { login: 'someone' }, body: `${MARKER}\nquoted by a person` },
+    ])
+    assert.deepEqual(
+      calls.map((call) => call.method),
+      ['list', 'create'],
+    )
+    assert.deepEqual(calls[0]?.request, {
+      owner: 'copse-dev',
+      repo: 'agent-pane',
+      issue_number: 9,
+      per_page: 100,
+    })
+    const text = body(calls)
+    assert.ok(text.startsWith(`${MARKER}\n### This PR is holding the nightly screenshot refresh`))
+    assert.match(text, /It commits 2 reviewed screenshots that `main` has not changed since:/)
+    assert.match(text, /^- `a\.png`\n- `b\.png`$/m)
+    assert.match(text, /latest `main` \(aaaaaaaaaaaa\)/)
+    assert.match(text, /reaches feature PRs as unrelated candidates/)
+    assert.deepEqual(notices, ['Told #9 which reviewed screenshots hold the refresh.'])
+  })
+
+  it('edits its own notice in place, and leaves an unchanged one alone', async () => {
+    const first = await notify([])
+    const current = body(first.calls)
+    const same = await notify([{ id: 4, user: { login: 'github-actions[bot]' }, body: current }])
+    assert.deepEqual(
+      same.calls.map((call) => call.method),
+      ['list'],
+    )
+    const moved = await notify([{ id: 4, user: { login: 'github-actions[bot]' }, body: current }], {
+      HELD: 'a.png',
+    })
+    assert.deepEqual(
+      moved.calls.map((call) => call.method),
+      ['list', 'update'],
+    )
+    assert.equal(z.object({ comment_id: z.number() }).parse(moved.calls[1]?.request).comment_id, 4)
+    assert.match(body(moved.calls), /It commits one reviewed screenshot that/)
+  })
+
+  it('refuses a PR number or screenshot name it did not expect', async () => {
+    await assert.rejects(notify([], { PULL_NUMBER: '' }), /Refusing/)
+    await assert.rejects(notify([], { HELD: 'a.png,../b.png' }), /Refusing/)
+    await assert.rejects(notify([], { HELD: 'a.png,' }), /Refusing/)
   })
 })
 

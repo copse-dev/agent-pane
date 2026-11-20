@@ -1,13 +1,13 @@
 import { realpath } from 'node:fs/promises'
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { resolve } from 'node:path'
+import { isPathWithin } from '@copse/std/path-containment.ts'
 import { spawnInProjectSandbox } from '../../project-sandbox/spawn.ts'
 import { terminateProcessTree } from '../exec/subprocess-kill.ts'
 
 export async function containedPath(root: string, path: string): Promise<string> {
   const canonicalRoot = await realpath(root)
   const canonical = await realpath(resolve(root, path))
-  const rel = relative(canonicalRoot, canonical)
-  if (isAbsolute(rel) || rel === '..' || rel.startsWith(`..${sep}`)) {
+  if (!isPathWithin(canonicalRoot, canonical)) {
     throw new Error('The selected app path is outside this checkout.')
   }
   return canonical
