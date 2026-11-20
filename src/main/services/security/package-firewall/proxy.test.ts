@@ -287,40 +287,45 @@ describe('package firewall proxy', () => {
     assert.deepEqual(unreachable, [])
   })
 
-  it('ends the client response when the registry drops a download part way through', async () => {
-    const { socket } = await connectVia(proxy.port, 'registry.npmjs.org:443', AUTH)
-    const secure = tlsConnect({ socket, servername: 'registry.npmjs.org', ca: firewallCa.certPem })
-    const outcome = await new Promise<string>((resolve) => {
-      const request = httpsRequest({
-        host: 'registry.npmjs.org',
-        path: '/cut/-/cut-1.0.0.tgz',
-        createConnection: () => secure,
+  it(
+    'ends the client response when the registry drops a download part way through',
+    { timeout: 5000 },
+    async () => {
+      const { socket } = await connectVia(proxy.port, 'registry.npmjs.org:443', AUTH)
+      const secure = tlsConnect({
+        socket,
+        servername: 'registry.npmjs.org',
+        ca: firewallCa.certPem,
       })
-      // A client left waiting for the other 93 bytes hangs until its own timeout.
-      const waiting = setTimeout(() => {
-        resolve('still waiting')
-      }, 1500)
-      const settle = (result: string): void => {
-        clearTimeout(waiting)
-        resolve(result)
-      }
-      request.once('response', (response) => {
-        response.resume()
-        response.once('end', () => {
-          settle('complete')
+      const outcome = await new Promise<string>((resolve) => {
+        const request = httpsRequest({
+          host: 'registry.npmjs.org',
+          path: '/cut/-/cut-1.0.0.tgz',
+          createConnection: () => secure,
         })
-        response.once('error', () => {
+        // A client left waiting for the other 93 bytes never settles; the test's
+        // own timeout then fails it.
+        const settle = (result: string): void => {
+          resolve(result)
+        }
+        request.once('response', (response) => {
+          response.resume()
+          response.once('end', () => {
+            settle('complete')
+          })
+          response.once('error', () => {
+            settle('aborted')
+          })
+        })
+        request.once('error', () => {
           settle('aborted')
         })
+        request.end()
       })
-      request.once('error', () => {
-        settle('aborted')
-      })
-      request.end()
-    })
-    secure.destroy()
-    assert.equal(outcome, 'aborted')
-  })
+      secure.destroy()
+      assert.equal(outcome, 'aborted')
+    },
+  )
 
   it('checks absolute-form plain-HTTP downloads too', async () => {
     const reply = await new Promise<Reply>((resolve, reject) => {

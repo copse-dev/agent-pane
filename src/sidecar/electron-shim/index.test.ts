@@ -1,6 +1,5 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { setTimeout as delay } from 'node:timers/promises'
 import { BrowserWindow, shell } from './index.ts'
 
 describe('electron shim BrowserWindow', () => {
@@ -28,7 +27,7 @@ describe('electron shim shell', () => {
       await shell.openExternal('https://example.invalid/')
       // The spawn failure arrives as an asynchronous `error` event; unhandled,
       // it is an uncaught exception and fails this test.
-      await delay(200)
+      for (let turn = 0; turn < 10; turn++) await new Promise((resolve) => setImmediate(resolve))
     } finally {
       if (path === undefined) delete process.env['PATH']
       else process.env['PATH'] = path

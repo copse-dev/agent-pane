@@ -354,7 +354,9 @@ describe('sandbox-fs-server', () => {
       const result = await requestViaServer({ op: 'statDir', path: dir }, dir).catch(
         (err: unknown) => err,
       )
-      await new Promise((resolve) => setTimeout(resolve, 50))
+      // The stream's `error` follows the write callback within a few turns of
+      // the event loop; give it those turns rather than a wall-clock pause.
+      for (let turn = 0; turn < 10; turn++) await new Promise((resolve) => setImmediate(resolve))
       assert.ok(result instanceof SandboxFsServerUnavailable, String(result))
       assert.deepEqual(uncaught, [])
       assert.equal(isSandboxFsServerLive(), false, 'a worker that cannot be written to is retired')
