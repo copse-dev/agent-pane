@@ -61,7 +61,7 @@ async function transcriptPose(): Promise<{
   })
 }
 
-async function captureAtTranscriptEnd(filename: string): Promise<void> {
+async function captureAtTranscriptEnd(capture: () => Promise<void>): Promise<void> {
   // The reserve assertions above exercise layout without scroll corrections.
   // Capture a defined reading position after they pass: changing the reserve
   // can otherwise leave two stable transcript positions in identical builds.
@@ -89,7 +89,7 @@ async function captureAtTranscriptEnd(filename: string): Promise<void> {
   )
   const before = await transcriptPose()
   assert.equal(JSON.stringify(before), previous, 'Transcript moved after settling')
-  await savePreparedAppScreenshot(filename)
+  await capture()
   assert.deepEqual(await transcriptPose(), before, 'Transcript moved during composer capture')
   await expectSynchronized()
 }
@@ -127,7 +127,9 @@ describe('composer border-box reservation', () => {
         assert.equal(bordered.actual, original.actual + 2)
         assert.equal(bordered.contentWidth, original.contentWidth)
         observations.push({ phase: 'bordered', ...bordered })
-        await captureAtTranscriptEnd('composer-observer-bordered.png')
+        await captureAtTranscriptEnd(() =>
+          savePreparedAppScreenshot('composer-observer-bordered.png'),
+        )
         await expectSynchronized()
 
         await browser.execute(() => {
@@ -139,7 +141,9 @@ describe('composer border-box reservation', () => {
         assert.equal(borderless.actual, original.actual)
         assert.equal(borderless.contentWidth, original.contentWidth)
         observations.push({ phase: 'borderless', ...borderless })
-        await captureAtTranscriptEnd('composer-observer-borderless.png')
+        await captureAtTranscriptEnd(() =>
+          savePreparedAppScreenshot('composer-observer-borderless.png'),
+        )
 
         await browser.execute(() => {
           const strip = document.createElement('div')
@@ -152,7 +156,9 @@ describe('composer border-box reservation', () => {
         const grown = await geometry()
         assert.equal(grown.actual, borderless.actual + 24)
         observations.push({ phase: 'content-grown', ...grown })
-        await captureAtTranscriptEnd('composer-observer-content-grown.png')
+        await captureAtTranscriptEnd(() =>
+          savePreparedAppScreenshot('composer-observer-content-grown.png'),
+        )
       } finally {
         await browser.execute(() => {
           document.getElementById('input-bar')?.style.removeProperty('border')
