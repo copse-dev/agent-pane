@@ -18,10 +18,6 @@ function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
 }
 
-async function xtermText(): Promise<string> {
-  return browser.execute(() => document.querySelector('.xterm-rows')?.textContent ?? '')
-}
-
 async function activeXtermText(): Promise<string> {
   return browser.execute(
     () => document.querySelector('.terminals-tab-panel.is-active .xterm-rows')?.textContent ?? '',
@@ -34,6 +30,22 @@ async function activeXtermRows(): Promise<string[]> {
       document.querySelectorAll('.terminals-tab-panel.is-active .xterm-rows > div'),
       (row) => row.textContent.trimEnd(),
     ).filter((row) => row.length > 0),
+  )
+}
+
+// Input sent while `clear` is running can receive cooked PTY echo and then
+// readline echo, so the next command must wait for the fresh prompt. The caller
+// leaves earlier output on screen, so a bare prompt cannot match before `clear`
+// has run.
+async function clearToFreshPrompt(): Promise<void> {
+  assert.notDeepEqual(await activeXtermRows(), ['$'], 'expected output on screen before clear')
+  await browser.keys(['clear', '\uE007'])
+  await browser.waitUntil(
+    async () => {
+      const rows = await activeXtermRows()
+      return rows.length === 1 && rows[0] === '$'
+    },
+    { timeout: 30_000, timeoutMsg: 'expected a fresh prompt after clear completed' },
   )
 }
 
@@ -151,24 +163,14 @@ describe('isolated thread terminal cwd', () => {
     await helper.click()
     await browser.keys(['pwd', '\uE007'])
 
-    await browser.waitUntil(async () => (await xtermText()).includes(worktreeRoot), {
+    await browser.waitUntil(async () => (await activeXtermText()).includes(worktreeRoot), {
       timeout: 30_000,
       timeoutMsg: 'expected the terminal cwd to be the active thread worktree',
     })
-    assert.ok((await activeXtermText()).includes(worktreeRoot))
 
     // Clear host-shell startup noise before the visual reference, then show the
     // isolated branch as a stable, human-readable confirmation of the checkout.
-    await browser.keys(['clear', '\uE007'])
-    // Input sent while clear is running can receive cooked PTY echo and then
-    // readline echo. The prior pwd output prevents a stale prompt matching here.
-    await browser.waitUntil(
-      async () => {
-        const rows = await activeXtermRows()
-        return rows.length === 1 && rows[0] === '$'
-      },
-      { timeout: 30_000, timeoutMsg: 'expected a fresh prompt after clear completed' },
-    )
+    await clearToFreshPrompt()
     await browser.keys(['git', ' ', 'branch', ' ', '--show-current', '\uE007'])
     const expectedRows = ['$ git branch --show-current', WORKTREE_BRANCH, '$']
     await browser.waitUntil(
@@ -320,7 +322,13 @@ describe('isolated thread terminal cwd', () => {
       timeoutMsg: 'expected the recovery shell prompt before typing',
     })
     await helper.click()
-    await browser.keys(['clear', '\uE007'])
+    // The pwd output keeps the screen from being a bare prompt before clear.
+    await browser.keys(['pwd', '\uE007'])
+    await browser.waitUntil(async () => (await activeXtermText()).includes(worktreeRoot), {
+      timeout: 30_000,
+      timeoutMsg: 'expected the recovery shell cwd to be the thread worktree',
+    })
+    await clearToFreshPrompt()
     await browser.keys(['git', ' ', 'status', ' ', '--short', ' ', '--branch', '\uE007'])
     await browser.waitUntil(async () => (await activeXtermText()).includes('HEAD (no branch)'), {
       timeout: 30_000,
