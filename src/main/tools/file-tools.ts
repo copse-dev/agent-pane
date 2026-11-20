@@ -90,11 +90,17 @@ export const readFileTool = defineTool({
       result.lineTruncated || result.charTruncated,
     )
     const pending = getStagedDiffEntry(path)
+    // A stored conversation is external text, as it is from list_threads and
+    // read_thread, which hand out these paths for longer reads.
+    const fromChatStore = await isInsideChatStore(absPath)
     // Inside an explore subagent, hand the exact lines to the parent (#1433,
     // Fix 0). Skipped when a staged diff is pending (str_replace edits that
     // proposed content, not these on-disk bytes), when nothing was read, and
-    // when the char cap left a single line that may be only a prefix.
+    // when the char cap left a single line that may be only a prefix. Also
+    // skipped for the chat store: the excerpts reach the parent unwrapped, and
+    // that read-only store is never a str_replace target.
     if (
+      !fromChatStore &&
       !pending &&
       result.endLine >= result.startLine &&
       !(result.charTruncated && result.endLine === result.startLine)
@@ -111,9 +117,7 @@ export const readFileTool = defineTool({
       : ''
     const output =
       result.text + formatReadFilePageFooter(pageMeta, result.charTruncated) + pendingNote
-    // A stored conversation is external text, as it is from list_threads and
-    // read_thread, which hand out these paths for longer reads.
-    if (await isInsideChatStore(absPath)) {
+    if (fromChatStore) {
       markTurnExternalIngestion()
       return wrapExternalContent('read_file', output)
     }

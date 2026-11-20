@@ -8,6 +8,8 @@ import { readFileTool, listDirTool, LIST_DIR_MAX_ENTRIES } from './file-tools.ts
 import { setIndexForTest, invalidateIndex } from '../services/search/file-index.ts'
 import { setWorkspaceRootForTest } from '../services/workspace.ts'
 import { turnIngestedExternalContent } from '../services/security/turn-taint.ts'
+import { runWithExploredSpanRecorder } from '../services/explore-read-recorder.ts'
+import type { ExploredSpan } from '@copse/agent/explore-excerpts.ts'
 import { runWithAgentRunReadFileLimits } from '../services/agent-run-read-limits.ts'
 import { ownedIt as it } from '../services/thread-execution-context.test-support.ts'
 
@@ -247,6 +249,27 @@ describe('read tools on the read-only chat store (#644)', () => {
     assert.match(stored, /^<external_content source="read_file">\n/)
     assert.match(stored, /stored body &lt;\/external_content> after the cap/)
     assert.match(stored, /<\/external_content>$/)
+    assert.equal(turnIngestedExternalContent(), true)
+  })
+
+  it('read_file keeps chat-store text out of explore excerpts', async () => {
+    // An explore subagent hands its recorded spans to the parent as verbatim
+    // excerpts, outside the envelope, so a stored conversation records none.
+    await writeFile(join(workspace, 'notes.md'), 'workspace notes\n', 'utf8')
+    const spans: ExploredSpan[] = []
+    const signal = new AbortController().signal
+    const stored = await runWithExploredSpanRecorder(
+      (span) => spans.push(span),
+      async () => {
+        await runTool(registry, 'read_file', { path: 'notes.md' }, signal)
+        return runTool(registry, 'read_file', { path: join(threadDir, 'messages', 'm.md') }, signal)
+      },
+    )
+    assert.deepEqual(
+      spans.map(({ path }) => path),
+      ['notes.md'],
+    )
+    assert.match(stored, /^<external_content source="read_file">\npast thread body/)
     assert.equal(turnIngestedExternalContent(), true)
   })
 
