@@ -2,7 +2,12 @@ import { createHash } from 'node:crypto'
 import { $, $$, browser, expect } from '@wdio/globals'
 import type { Thread } from '@shared/types'
 import { threadActionRevision } from '@shared/threads/action-assessment.ts'
-import { resetUserData, seedThreadActionLedger, writeSeedConfig } from './helpers/seed-config.ts'
+import {
+  resetUserData,
+  seedThreadActionLedger,
+  writeSeedConfig,
+  writeSettings,
+} from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-thread-action-assessment'
@@ -25,6 +30,10 @@ function thread(id: string, title: string): Thread {
       },
     ],
     lastPromptAt: NOW - 1000,
+    // Seed a settled thread as the app persists one. Without this field the app
+    // backfills it from `updatedAt` on launch, which changes the scan revision
+    // and makes every seeded ledger record stale before the first assessment.
+    lastSettledAt: NOW - 1000,
     usage: { inputTokens: 0, outputTokens: 0 },
   }
 }
@@ -63,9 +72,11 @@ describe('thread action sorting and gradual onboarding', () => {
       activeProjectId: PROJECT_ID,
       expandedProjectId: PROJECT_ID,
       activeThreadId: complete.id,
-      settings: { sidebarThreadSort: 'action', onboardingCompleted: true },
       ['threads:' + PROJECT_ID]: [complete, unknown, pending],
     })
+    // Settings live in settings.json. With the sort seeded, the assessor's
+    // startup tick runs instead of waiting for the next interval after a click.
+    writeSettings({ sidebarThreadSort: 'action' })
     seedThreadActionLedger({ records, windowStartedAt: NOW, calls: 2, inputChars: 1000 })
     await browser.reloadSession()
   })
