@@ -136,6 +136,119 @@ Validated against uv 0.12.2. Command semantics: [uv CLI reference](https://docs.
 
 Hash-locked pip accepts one root `requirements.lock` or `requirements.txt`; recursive includes, constraints, indexes, URLs, editable installs, environment markers, unhashed entries, and non-exact versions fail closed into the reviewed declaration path. Preparation creates `.venv`, then invokes its interpreter with `pip install --require-hashes --only-binary=:all:`. The managed pip cache is the only shared writable location, and offline mode retains kernel network isolation. Readiness fingerprints the interpreter and pip identities, dry-runs the locked install, and runs `pip check`; it does not claim tests pass. Wheel-only installation is the automatic adapter's build-script policy. Projects that require an sdist or a richer pip configuration use `.copse/worktree-preparation.json`, where the exact executable code is shown for approval.
 
+### Requirements projects with an older bundled pip
+
+The automatic pip adapter requires `pip install --dry-run`. A Python 3.9 environment can bundle
+pip 21.2.4, which lacks that command. This remains an automatic-adapter limitation; a failed
+readiness check must not be waived or treated as successful preparation.
+
+When uv is already installed, the existing declaration mechanism can use its supported
+[pip interface](https://docs.astral.sh/uv/reference/cli/#uv-pip-sync) with the project's exact
+installed interpreter. This does not require changing the project's Python version or installing
+pip into its environment. For example, a project with reviewed wheels in `vendor/` can declare:
+
+```json
+{
+  "version": 1,
+  "inputs": ["requirements.lock", "pyproject.toml", ".python-version", "uv.toml", "vendor"],
+  "prepare": [
+    { "command": "python3.9", "args": ["-m", "venv", "--without-pip", ".venv"] },
+    {
+      "command": "uv",
+      "args": [
+        "pip",
+        "sync",
+        "--python",
+        ".venv/bin/python",
+        "--no-python-downloads",
+        "--require-hashes",
+        "--only-binary=:all:",
+        "--no-index",
+        "--find-links",
+        "vendor",
+        "requirements.lock"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "name": "uv",
+      "command": { "command": "uv", "args": ["--version"] },
+      "fingerprintOutput": true
+    },
+    {
+      "name": "Python environment",
+      "path": ".venv/bin/python",
+      "command": {
+        "command": ".venv/bin/python",
+        "args": [
+          "-I",
+          "-c",
+          "import sys; print(sys.version); print(sys.implementation.cache_tag); print(sys.base_prefix)"
+        ]
+      },
+      "fingerprintOutput": true
+    },
+    {
+      "name": "Hash-locked requirements",
+      "command": {
+        "command": "uv",
+        "args": [
+          "pip",
+          "sync",
+          "--python",
+          ".venv/bin/python",
+          "--no-python-downloads",
+          "--require-hashes",
+          "--only-binary=:all:",
+          "--no-index",
+          "--find-links",
+          "vendor",
+          "requirements.lock",
+          "--check",
+          "--offline",
+          "--no-cache"
+        ]
+      }
+    },
+    {
+      "name": "Consistent dependencies",
+      "command": {
+        "command": "uv",
+        "args": [
+          "pip",
+          "check",
+          "--python",
+          ".venv/bin/python",
+          "--no-python-downloads",
+          "--offline",
+          "--no-cache"
+        ]
+      }
+    }
+  ]
+}
+```
+
+Choose the actual installed interpreter that satisfies the project's constraints; `python3.9` is an
+example, not a runtime Copse downloads. uv must also already be installed, at version 0.12.18 or
+later: the readiness check relies on `uv pip sync --check`, which that release added
+([astral-sh/uv#21844](https://github.com/astral-sh/uv/pull/21844)). An older uv rejects the option,
+so validation fails after every install and the worktree never reads ready; upgrade uv rather than
+dropping or weakening the check. The declaration and its inputs receive the ordinary exact-plan
+approval, project/cache confinement and kernel offline policy. Preflight checks stay read-only and
+use disposable scratch. `uv pip sync --check` exits unsuccessfully when the environment differs;
+`--dry-run` alone does not establish readiness. The lock and Python constraints remain unchanged.
+Sync removes packages absent from the lock, including pip or setuptools if they were previously
+installed but are not required.
+
+The example uses only local reviewed wheels and can prepare offline. For an approved registry
+workflow, remove its local-wheelhouse options and review the resulting network scope. uv
+[does not inherit pip-specific configuration or `PIP_INDEX_URL`](https://docs.astral.sh/uv/pip/compatibility/#configuration-files-and-environment-variables).
+Review uv's own index configuration and include its project files in the declaration's inputs;
+do not silently change an existing pip project's package source. This is an explicit supported
+setup choice, not an automatic pip-to-uv migration or an installer-security clearance.
+
 ## Go adapter evidence and remaining work (#2654)
 
 Go readiness fingerprints root/workspace `go.mod`, `go.sum`, `go.work`, `go.work.sum`, and `.go` sources, including nested modules. Local `go.work use` and `replace` targets are resolved relative to their declaring file and must remain in the selected checkout; symlinks are checked through the same contained-path boundary. Adding or changing a source import therefore invalidates the approved plan before another command runs.

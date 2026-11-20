@@ -4816,7 +4816,7 @@ export function mountConversation(
     store.on('message_token', (mid) => {
       const thread = getActiveThread(store)
       const msg = thread?.messages.find((m) => m.id === mid)
-      const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${mid}"]`)
+      const msgEl = transcriptRowElement(list, mid)
       const textEl = msgEl?.querySelector<HTMLElement>('.message-text')
       if (textEl && msg?.role === 'assistant') {
         setAssistantMarkdown(textEl, msg.content, true, api)
