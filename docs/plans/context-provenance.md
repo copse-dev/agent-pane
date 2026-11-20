@@ -138,7 +138,10 @@ provenance?: 'trusted' | 'workspace' | 'external'
   `web_search`, all MCP tools (`mcp-registry.ts` sets it
   at registration), `gh_pr_view`/`gh_pr_list` bodies and comments,
   `get_ci_failure_logs`, browser snapshots/`browser_navigate`,
-  `read_terminal` (in addition to its existing screen).
+  `read_terminal` (in addition to its existing screen), `list_threads` and
+  `read_thread`. `read_file` of a stored conversation (a chat-store path) is
+  external too; that tool also reads workspace files, so it wraps those
+  results itself.
 
 Application happens at the **single choke point** in
 `run-agent-loop.ts` where `normalizeToolExecuteResult` lands — not per tool —

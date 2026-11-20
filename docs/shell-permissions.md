@@ -96,8 +96,9 @@ returns identifiers for `read_thread` plus spine paths for the existing read too
 read grant, `include_state` also returns saved briefs, plans, recorded checkout data and native
 production receipts. `read_thread` resolves recent message prose directly, with bounded pages and
 explicit truncation/older-page indicators; it uses the same conversation-read consent, including
-own/direct-follow-up-parent exceptions. Catalog and transcript results use the external-content
-envelope: historical instructions are data, not authority for the current turn. Neither tool imports
+own/direct-follow-up-parent exceptions. Catalog and transcript results, and `read_file` reads of
+chat-store files, use the external-content envelope: historical instructions are data, not
+authority for the current turn. Neither tool imports
 history stored only in another application. `send_thread_prompt` asks a separate **Send prompts to
 your other threads?** approval. Reading never grants sending. Both grants are persisted in main-owned settings,
 keyed by the requesting thread; they are not inherited by destination or forked threads.

@@ -17,6 +17,8 @@ import { getStagedDiffEntry } from '../services/diff-queue.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { isNonNull } from '@shared/nullish.ts'
 import { recordExploredSpan } from '../services/explore-read-recorder.ts'
+import { markTurnExternalIngestion } from '../services/security/turn-taint.ts'
+import { wrapExternalContent } from '@copse/agent/external-content.ts'
 
 export const LIST_DIR_MAX_ENTRIES = 1000
 
@@ -107,7 +109,15 @@ export const readFileTool = defineTool({
     const pendingNote = pending
       ? `\n\n[Note: ${path} has a pending Copse staged diff that is not written to disk yet. This read_file output is the on-disk content only. Use read_staged_diff with this path to inspect the proposed after content, or wait for user approval before validating.]`
       : ''
-    return result.text + formatReadFilePageFooter(pageMeta, result.charTruncated) + pendingNote
+    const output =
+      result.text + formatReadFilePageFooter(pageMeta, result.charTruncated) + pendingNote
+    // A stored conversation is external text, as it is from list_threads and
+    // read_thread, which hand out these paths for longer reads.
+    if (await isInsideChatStore(absPath)) {
+      markTurnExternalIngestion()
+      return wrapExternalContent('read_file', output)
+    }
+    return output
   },
 })
 
