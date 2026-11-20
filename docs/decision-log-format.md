@@ -125,7 +125,9 @@ Optional argv / Guarded-YOLO extras live next to tool results:
   records arguments. The first use of a runtime profile in a thread during a session also
   writes a `kind: "runtime-state"` line with its `capabilities`. `observed` records an
   effect, not an authorization. Processes outside a turn, such as Copse's own background
-  probes, are not recorded. Interactive terminals are not recorded yet either.
+  probes, are not recorded. Interactive terminals are not recorded yet either. Headless and
+  container runs record the same lines into the run's own decision list. The Context panel's
+  Recent decisions list leaves `observed` lines out; the export keeps them.
 - **Brokered credentials** — with the experimental GitHub broker on
   ([shell permissions](shell-permissions.md#brokered-github-credentials-experimental)),
   each grant writes a `kind: "execution-grant"` line (`verdict: "allowed"`, `scope`
@@ -135,7 +137,8 @@ Optional argv / Guarded-YOLO extras live next to tool results:
   `kind: "network-access"` line with `verdict: "blocked"` and the reason. All three are
   `actor: "system"`, carry the principal and `runtime`, and set `source` to the opaque
   credential reference `github:user-login`. None records the token, the execution's
-  capability, request paths or bodies.
+  capability, request paths or bodies. The Context panel's Recent decisions
+  list leaves these three kinds out as well; the export keeps them.
 - **Hook verdicts** — any non-`allow` Cursor hook decision
   ([`cursor-hooks.ts`](../src/shared/types/cursor-hooks.ts)) is recorded
   as an `actor: "hook"` event (`blocked` / `ask`).

@@ -1,4 +1,5 @@
 import { formatByteSize } from '@shared/file-bytes.ts'
+import { memberOf } from '@shared/member-of.ts'
 import { el, clear } from '../dom/helpers.ts'
 import {
   gitBranchIcon,
@@ -434,6 +435,10 @@ function contextModeActive(store: AppStore): boolean {
 }
 
 /** Mount the fixed header and scrolling content in one pane. */
+const BROKER_EFFECT_KINDS = ['execution-grant', 'credential-use', 'network-access'] as const
+
+const isBrokerEffectKind = memberOf(BROKER_EFFECT_KINDS)
+
 export function mountThreadContextPane(
   listRoot: HTMLElement,
   viewerRoot: HTMLElement,
@@ -686,7 +691,13 @@ export function mountThreadContextPane(
       result.append(emptyNote(accessStatus))
       return result
     }
-    const recent = accessGrants.decisions.slice(-4).reverse()
+    // Process and runtime-state lines (`observed`) and the GitHub broker's
+    // per-execution grant, use and refusal lines record effects, not
+    // decisions; they belong in the export, not in this list or its count.
+    const decisions = accessGrants.decisions.filter(
+      (decision) => decision.verdict !== 'observed' && !isBrokerEffectKind(decision.kind),
+    )
+    const recent = decisions.slice(-4).reverse()
     if (!recent.length) {
       result.append(emptyNote('No recorded decisions for this thread.'))
       return result
@@ -704,7 +715,7 @@ export function mountThreadContextPane(
       el(
         'p',
         { class: 'thread-context-note' },
-        `Showing the latest ${String(recent.length)} of ${String(accessGrants.decisions.length)} recorded decisions. Current access is shown above.`,
+        `Showing the latest ${String(recent.length)} of ${String(decisions.length)} recorded decisions. Current access is shown above.`,
       ),
     )
     return result

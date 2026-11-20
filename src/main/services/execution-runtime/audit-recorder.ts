@@ -1,8 +1,9 @@
 /**
  * Turns execution observations into thread-spine decision lines
- * (`docs/decision-log-format.md`, execution audit). Registered at startup with
- * {@link setExecutionAuditSink}; headless hosts route the same lines through
- * their scoped decision recorder.
+ * (`docs/decision-log-format.md`, execution audit). The desktop registers it
+ * with {@link setExecutionAuditSink} at startup; `runHeadlessAgent` registers
+ * it for headless and container runs, whose lines then reach the run's own
+ * decision list through `runWithDecisionRecorder`.
  */
 import { basename } from 'node:path'
 import {
