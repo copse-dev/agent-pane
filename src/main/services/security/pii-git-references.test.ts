@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { localPromptCommitIds } from './pii-git-references.ts'
+import { localPromptCommitSpans } from './pii-git-references.ts'
 import {
   redactUserContent,
   setRampartLoaderForTest,
@@ -47,17 +47,26 @@ it('keeps only full SHAs that resolve to local commits', async () => {
 
   const unknown = 'a'.repeat(40)
   assert.deepEqual(
-    await localPromptCommitIds(
-      `Inspect ${target}; ignore ${unknown}, ${target.slice(0, 12)}, and ${target}@example.invalid.`,
-      repo,
-    ),
+    (
+      await localPromptCommitSpans(
+        `Inspect ${target}; ignore ${unknown}, ${target.slice(0, 12)}, and ${target}@example.invalid.`,
+        repo,
+      )
+    ).map((span) => span.value),
     [target],
   )
-  assert.deepEqual(await localPromptCommitIds(`Contact ${target}@example.invalid.`, repo), [])
+  assert.deepEqual(await localPromptCommitSpans(`Contact ${target}@example.invalid.`, repo), [])
+  assert.deepEqual(
+    await localPromptCommitSpans(`Read C:\\revs\\${target}\\note.txt and é${target}é.`, repo),
+    [],
+  )
 
   const prompt = `Inspect commit ${target}.`
-  const preserved = await localPromptCommitIds(prompt, repo)
-  assert.deepEqual(preserved, [target])
+  const preserved = await localPromptCommitSpans(prompt, repo)
+  assert.deepEqual(
+    preserved.map((span) => span.value),
+    [target],
+  )
 
   const token = '[DRIVERS_LICENSE_TEST_1]'
   const guard: PiiGuard = {
@@ -76,9 +85,39 @@ it('keeps only full SHAs that resolve to local commits', async () => {
   setDefaultPluginRegistry(createFirstPartyPluginRegistry())
   assert.equal(getDefaultPluginRegistry().isEnabled('copse.pii-redaction'), true)
   const redacted = await redactUserContent('git-revision-thread', prompt, {
-    preserveExact: preserved,
+    preserveSpans: preserved,
   })
   assert.equal(redacted.content, prompt)
+
+  const mixedPrompt =
+    `Inspect ${target}; contact ${target}@example.invalid; ` +
+    `open https://example.invalid/${target}; read ./revs/${target}; ` +
+    `read C:\\revs\\${target}\\note.txt; compare build-${target}-suffix ` +
+    `and é${target}é.`
+  const mixedPreserved = await localPromptCommitSpans(mixedPrompt, repo)
+  const mixedRedacted = await redactUserContent('git-revision-thread', mixedPrompt, {
+    preserveSpans: mixedPreserved,
+  })
+  assert.equal(
+    mixedRedacted.content,
+    `Inspect ${target}; contact ${token}@example.invalid; ` +
+      `open https://example.invalid/${token}; read ./revs/${token}; ` +
+      `read C:\\revs\\${token}\\note.txt; compare build-${token}-suffix ` +
+      `and é${token}é.`,
+  )
+
+  const blockContent = [
+    { type: 'text' as const, text: `Inspect ${target}.` },
+    { type: 'text' as const, text: `Contact ${target}@example.invalid.` },
+  ]
+  const blockPreserved = await localPromptCommitSpans(blockContent, repo)
+  const blockRedacted = await redactUserContent('git-revision-thread', blockContent, {
+    preserveSpans: blockPreserved,
+  })
+  assert.deepEqual(blockRedacted.content, [
+    { type: 'text', text: `Inspect ${target}.` },
+    { type: 'text', text: `Contact ${token}@example.invalid.` },
+  ])
   setGitAvailableForTest(true)
   const shown = await runWithWorkspaceRoot(repo, () =>
     gitShowTool.execute({ ref: target }, new AbortController().signal),
@@ -105,7 +144,7 @@ it('rejects replacement objects and 40-hex refs that are not the named commit ob
   const alias = 'b'.repeat(40)
   git('update-ref', `refs/heads/${alias}`, commit)
 
-  assert.deepEqual(await localPromptCommitIds(`Inspect ${blob} and ${alias}.`, repo), [])
+  assert.deepEqual(await localPromptCommitSpans(`Inspect ${blob} and ${alias}.`, repo), [])
 })
 
 it('does not follow inherited repository or object-store redirects', async () => {
@@ -152,7 +191,7 @@ it('does not follow inherited repository or object-store redirects', async () =>
   process.env['GIT_CONFIG_KEY_0'] = 'core.worktree'
   process.env['GIT_CONFIG_VALUE_0'] = other
 
-  assert.deepEqual(await localPromptCommitIds(`Inspect ${otherCommit}.`, repo), [])
+  assert.deepEqual(await localPromptCommitSpans(`Inspect ${otherCommit}.`, repo), [])
 })
 
 it('does not lazily fetch a missing commit from a promisor remote', async () => {
@@ -176,7 +215,7 @@ it('does not lazily fetch a missing commit from a promisor remote', async () => 
   git(repo, 'config', 'remote.origin.partialclonefilter', 'blob:none')
   git(repo, 'config', 'extensions.partialClone', 'origin')
 
-  assert.deepEqual(await localPromptCommitIds(`Inspect ${remoteCommit}.`, repo), [])
+  assert.deepEqual(await localPromptCommitSpans(`Inspect ${remoteCommit}.`, repo), [])
   assert.throws(() =>
     execFileSync('git', ['cat-file', '-e', remoteCommit], {
       cwd: repo,
@@ -187,5 +226,5 @@ it('does not lazily fetch a missing commit from a promisor remote', async () => 
 })
 
 it('does not probe without an active repository root', async () => {
-  assert.deepEqual(await localPromptCommitIds(`Inspect ${'b'.repeat(40)}.`, null), [])
+  assert.deepEqual(await localPromptCommitSpans(`Inspect ${'b'.repeat(40)}.`, null), [])
 })

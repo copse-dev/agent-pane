@@ -84,7 +84,7 @@ describe('pii-redactor', () => {
 
   it('preserves only exact caller-verified coding identifiers', async () => {
     const out = await redactUserContent('t1', 'Ask Jane at john@example.com', {
-      preserveExact: ['Jane'],
+      preserveSpans: [{ blockIndex: 0, start: 4, end: 8, value: 'Jane' }],
     })
     assert.deepEqual(out, { content: 'Ask Jane at [PII_1]' })
     assert.equal(revealPlaceholder('t1', '[PII_1]'), 'john@example.com')

@@ -91,7 +91,7 @@ import {
 } from './thread-store.ts'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
 import { isPiiRedactionEnabled, redactUserContent } from './security/pii-redactor.ts'
-import { localPromptCommitIds } from './security/pii-git-references.ts'
+import { localPromptCommitSpans } from './security/pii-git-references.ts'
 import { createHookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
 import { appendOperatorInstruction } from '@copse/agent/hooks/inject-context.ts'
 import { operatorInstructionPlacement } from '@copse/llm/model-catalog.ts'
@@ -1130,11 +1130,11 @@ async function runAgentWithInlineCanvas(
   // unchanged and the user is told so through the same turn notice as a model
   // fallback.
   const promptWithReviewContext = withReviewContext(userPrompt, options?.reviewContext)
-  const localCommitIds = isPiiRedactionEnabled()
-    ? await localPromptCommitIds(promptWithReviewContext, runContext?.root ?? null)
+  const localCommitSpans = isPiiRedactionEnabled()
+    ? await localPromptCommitSpans(promptWithReviewContext, runContext?.root ?? null)
     : []
   const redaction = await redactUserContent(threadId, promptWithReviewContext, {
-    preserveExact: localCommitIds,
+    preserveSpans: localCommitSpans,
   })
   admission.signal.throwIfAborted()
   onPreflightComplete()

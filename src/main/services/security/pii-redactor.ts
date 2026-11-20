@@ -415,27 +415,45 @@ export interface RedactionResult {
   readonly notice?: string
 }
 
+export interface PreservedTextSpan {
+  /** Index in the original UserContent array, or zero for string content. */
+  readonly blockIndex: number
+  readonly start: number
+  readonly end: number
+  readonly value: string
+}
+
 export interface RedactionOptions {
-  /** Exact, locally verified coding identifiers that must remain usable by tools. */
-  readonly preserveExact?: readonly string[]
+  /** Exact, locally verified text occurrences that must remain usable by tools. */
+  readonly preserveSpans?: readonly PreservedTextSpan[]
 }
 
 async function protectExcept(
   guard: PiiGuard,
   text: string,
-  preserved: readonly string[],
+  blockIndex: number,
+  preserved: readonly PreservedTextSpan[],
 ): Promise<string> {
-  const values = [...new Set(preserved)].filter((value) => value.length > 0)
-  if (values.length === 0) return (await guard.protect(text)).text
-  const escaped = values.map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-  const pattern = new RegExp(escaped.join('|'), 'g')
+  const spans = preserved
+    .filter((span) => span.blockIndex === blockIndex)
+    .toSorted((left, right) => left.start - right.start)
+  if (spans.length === 0) return (await guard.protect(text)).text
   let cursor = 0
   let output = ''
-  for (const match of text.matchAll(pattern)) {
-    const index = match.index
-    if (index > cursor) output += (await guard.protect(text.slice(cursor, index))).text
-    output += match[0]
-    cursor = index + match[0].length
+  for (const span of spans) {
+    if (
+      span.start < cursor ||
+      span.end <= span.start ||
+      span.end > text.length ||
+      text.slice(span.start, span.end) !== span.value
+    ) {
+      continue
+    }
+    if (span.start > cursor) {
+      output += (await guard.protect(text.slice(cursor, span.start))).text
+    }
+    output += span.value
+    cursor = span.end
   }
   if (cursor < text.length) output += (await guard.protect(text.slice(cursor))).text
   return output
@@ -460,14 +478,14 @@ export async function redactUserContent(
 
   try {
     if (typeof content === 'string') {
-      return { content: await protectExcept(guard, content, options.preserveExact ?? []) }
+      return { content: await protectExcept(guard, content, 0, options.preserveSpans ?? []) }
     }
     const blocks: UserContent = []
-    for (const block of content) {
+    for (const [blockIndex, block] of content.entries()) {
       if (block.type === 'text') {
         blocks.push({
           type: 'text',
-          text: await protectExcept(guard, block.text, options.preserveExact ?? []),
+          text: await protectExcept(guard, block.text, blockIndex, options.preserveSpans ?? []),
         })
       } else {
         blocks.push(block)
