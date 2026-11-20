@@ -7230,7 +7230,8 @@ function mountProjectsPane(root, store2, api2) {
   }
   const actionsDisposed = () => actionDisposed;
   async function refreshActions() {
-    if (actionLoading || actionsDisposed()) return;
+    if (actionLoading || actionsDisposed() || store2.getState().sidebarThreadSort !== "action")
+      return;
     actionLoading = true;
     try {
       const next = await api2.threads.actionState();
@@ -9204,6 +9205,12 @@ function mountProjectsPane(root, store2, api2) {
       (s) => s.sidebarProjectFilterId,
       () => {
         render2();
+      }
+    ),
+    store2.select(
+      (s) => s.sidebarThreadSort,
+      (sort) => {
+        if (sort === "action") void refreshActions();
       }
     ),
     // Streaming and hydration must not restart the disk scan. Resident human
