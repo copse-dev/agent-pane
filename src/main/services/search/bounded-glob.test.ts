@@ -70,6 +70,21 @@ describe('globFilterWithin', () => {
     // A glob that would match instantly is refused without running.
     assert.equal(globFilterWithin(['a'], '(a|*a)+', {}, { budget }), 'timeout')
   })
+  // A timed-out call is charged its whole allowance, not just the time measured
+  // around it: V8's watchdog can fire a hair before `performance.now()` reaches
+  // the allowance, which used to leave a sliver of budget and let the next call
+  // run. No sleep: each call ends when the watchdog interrupts the backtracking.
+  it('leaves no budget after a call that timed out on the last of it', () => {
+    for (let trial = 0; trial < 25; trial++) {
+      const budget = createGlobBudget(10)
+      const result = globFilterWithin([REDOS_SUBJECT], '(a|*a)+', {}, { timeoutMs: 1_000, budget })
+      assert.equal(result, 'timeout')
+      assert.ok(
+        budget.remainingMs <= 0,
+        `trial ${String(trial)}: ${String(budget.remainingMs)}ms left`,
+      )
+    }
+  })
 })
 
 describe('boundedGlobMatcher', () => {

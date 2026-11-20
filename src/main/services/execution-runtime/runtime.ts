@@ -24,14 +24,12 @@ export type RuntimeCommand =
 export interface LocalSandboxPlan {
   readonly config: Partial<SandboxRuntimeConfig>
   /**
-   * Widen ASRT's process-global network scope for this process's lifetime
-   * (background tasks that bind a loopback port). Released when it exits.
+   * Run this contained command in a dedicated host process instead of wrapping
+   * it here (an approved loopback-binding background task, whose ASRT network
+   * scope must never be shared with other contained commands in this process).
+   * The host owns the wrap, its lease and its network scope.
    */
-  readonly networkScope?: {
-    readonly domains: readonly string[]
-    readonly allowLocalBinding: boolean
-    readonly label: string
-  }
+  readonly hostedLaunch?: () => ChildProcess
   /** Working directory ASRT resolves the wrap's relative paths against. */
   readonly wrapCwd?: string
   /** Host-owned attempt id ASRT attributes this command's sandbox violations to. */
