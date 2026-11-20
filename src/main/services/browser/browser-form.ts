@@ -26,13 +26,17 @@ interface BrowserFormContents {
   executeJavaScript(script: string, userGesture?: boolean): Promise<unknown>
 }
 
-const replySchema = z.object({ ok: z.boolean(), error: z.string().optional() })
+const replySchema = z.object({
+  ok: z.boolean(),
+  error: z.string().optional(),
+  uncertain: z.boolean().optional(),
+})
 
 // Resolve only the current visible control. A previous snapshot may have left
 // the same ref on an older, now-hidden dialog. Pin each exact node before any
 // value changes so a rerender or concurrent snapshot cannot retarget the batch.
 const resolveControlScript = `
-  const resolveControl = (ref) => {
+  const resolveControl = (ref, requireEditable = true) => {
     const matches = Array.from(document.querySelectorAll('[data-copse-ref]')).filter((el) => {
       if (el.getAttribute('data-copse-ref') !== ref) return false;
       const rect = el.getBoundingClientRect();
@@ -49,8 +53,8 @@ const resolveControlScript = `
     const el = matches[0];
     if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement ||
       el instanceof HTMLSelectElement)) return null;
-    if (el.matches(':disabled') || el.readOnly === true ||
-      el.getAttribute('aria-disabled') === 'true') return null;
+    if (requireEditable && (el.matches(':disabled') || el.readOnly === true ||
+      el.getAttribute('aria-disabled') === 'true')) return null;
     if (el instanceof HTMLInputElement &&
       ['file','checkbox','radio','button','submit','reset','image','hidden'].includes(el.type)) return null;
     return el;
@@ -126,14 +130,24 @@ export async function fillBrowserForm(
             const setter = Object.getOwnPropertyDescriptor(prototype, 'value');
             if (setter && setter.set) setter.set.call(el, ${JSON.stringify(field.text)});
             else el.value = ${JSON.stringify(field.text)};
+            // A synchronous handler can reset, replace, hide or renumber this
+            // control. Self-locking is allowed only if this same visible,
+            // uniquely referenced supported control retains the literal value.
+            const retained = () => resolveControl(${JSON.stringify(field.ref)}, false) === expected &&
+              el.value === ${JSON.stringify(field.text)};
+            const unconfirmed = () => ({ ok: false, uncertain: true,
+              error: 'Ref ' + ${JSON.stringify(field.ref)} + ' changed before its value could be confirmed.' });
+            if (!retained()) return unconfirmed();
             el.dispatchEvent(new Event('input', { bubbles: true }));
+            if (!retained()) return unconfirmed();
             el.dispatchEvent(new Event('change', { bubbles: true }));
+            if (!retained()) return unconfirmed();
             return { ok: true };
           })()`,
           true,
         ),
       )
-      inFlightRef = undefined
+      if (!result.uncertain) inFlightRef = undefined
       if (!result.ok) throw new Error(result.error ?? 'The page could not enter this field.')
       completed.push(field.ref)
     }

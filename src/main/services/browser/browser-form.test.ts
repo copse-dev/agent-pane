@@ -213,7 +213,12 @@ describe('native browser form entry', () => {
     })
     await assert.rejects(
       fillBrowserForm(contents, [{ ref: 'e1', text: 'Detached edit' }]),
-      /changed/,
+      (error: unknown) => {
+        assert.ok(error instanceof Error)
+        assert.match(error.message, /changed/)
+        assert.doesNotMatch(error.message, /may already have changed/)
+        return true
+      },
     )
     assert.equal(window.document.querySelector('input')?.value, 'Old title')
   })
@@ -240,6 +245,109 @@ describe('native browser form entry', () => {
     )
     assert.equal(window.document.querySelector('input')?.value, 'Delivered once')
     assert.equal(window.document.querySelector('textarea')?.value, 'User draft')
+  })
+
+  for (const event of ['input', 'change']) {
+    for (const mutation of ['reset', 'replace-retained', 'replace-reset', 'hide', 'duplicate']) {
+      it(`stops with an uncertain current ref when its own ${event} handler performs ${mutation}`, async () => {
+        const { window, contents } = page()
+        const title = window.document.querySelector('input')
+        const notes = window.document.querySelector('textarea')
+        const priority = window.document.querySelector('select')
+        assert.ok(title && notes && priority)
+        const firstEvents: string[] = []
+        let noteChanges = 0
+        let laterEvents = 0
+        for (const type of ['input', 'change']) {
+          title.addEventListener(type, () => firstEvents.push(type))
+          priority.addEventListener(type, () => laterEvents++)
+        }
+        notes.addEventListener('change', () => noteChanges++)
+        notes.addEventListener(event, () => {
+          if (mutation === 'reset') notes.value = 'Handler reset'
+          else if (mutation === 'hide') notes.hidden = true
+          else {
+            const replacement = window.document.createElement('textarea')
+            for (const attribute of notes.attributes)
+              replacement.setAttribute(attribute.name, attribute.value ?? '')
+            replacement.value = mutation === 'replace-reset' ? 'Replacement draft' : notes.value
+            if (mutation === 'duplicate') notes.after(replacement)
+            else notes.replaceWith(replacement)
+          }
+        })
+        await assert.rejects(
+          fillBrowserForm(contents, [
+            { ref: 'e1', text: 'Confirmed title' },
+            { ref: 'e2', text: 'Requested note' },
+            { ref: 'e3', text: 'high' },
+          ]),
+          /stopped after 1 confirmed fields of 3.*Entered: e1.*e2 may already have changed.*Inspect.*do not replay confirmed input/,
+        )
+        assert.equal(title.value, 'Confirmed title')
+        assert.deepEqual(firstEvents, ['input', 'change'])
+        assert.equal(priority.value, 'low')
+        assert.equal(laterEvents, 0)
+        // In particular, never send change to a node replaced during input.
+        assert.equal(noteChanges, event === 'input' ? 0 : 1)
+        assert.deepEqual(
+          Object.getOwnPropertyNames(window).filter((key) => key.startsWith('__copseForm_')),
+          [],
+        )
+      })
+    }
+
+    for (const lock of ['disabled', 'readonly']) {
+      it(`confirms a retained value when its ${event} handler makes the same node ${lock}`, async () => {
+        const { window, contents } = page()
+        const notes = window.document.querySelector('textarea')
+        assert.ok(notes)
+        notes.addEventListener(event, () => {
+          notes.setAttribute(lock, '')
+        })
+        const result = await fillBrowserForm(contents, [
+          { ref: 'e1', text: 'Confirmed title' },
+          { ref: 'e2', text: 'Accepted note' },
+          { ref: 'e3', text: 'high' },
+        ])
+        assert.match(result, /Entered 3 fields/)
+        assert.equal(window.document.querySelector('textarea'), notes)
+        assert.equal(notes.value, 'Accepted note')
+        assert.equal(notes.hasAttribute(lock), true)
+        assert.equal(window.document.querySelector('select')?.value, 'high')
+      })
+    }
+  }
+
+  it('does not confirm a text input changed into a checkbox even if it retains the literal value', async () => {
+    const { window, contents } = page(
+      '<input data-copse-ref="e1" value="Old title"><input data-copse-ref="e2" value="User note"><select data-copse-ref="e3"><option value="low">Low</option><option value="high">High</option></select>',
+    )
+    const notes = window.document.querySelectorAll('input')[1]
+    const priority = window.document.querySelector('select')
+    assert.ok(notes && priority)
+    let changes = 0
+    let laterEvents = 0
+    notes.addEventListener('change', () => changes++)
+    notes.addEventListener('input', () => {
+      const value = notes.value
+      notes.type = 'checkbox'
+      notes.value = value
+    })
+    for (const type of ['input', 'change']) priority.addEventListener(type, () => laterEvents++)
+    await assert.rejects(
+      fillBrowserForm(contents, [
+        { ref: 'e1', text: 'Confirmed title' },
+        { ref: 'e2', text: 'Retained note' },
+        { ref: 'e3', text: 'high' },
+      ]),
+      /stopped after 1 confirmed fields of 3.*Entered: e1.*e2 may already have changed/,
+    )
+    assert.equal(window.document.querySelector('input')?.value, 'Confirmed title')
+    assert.equal(notes.type, 'checkbox')
+    assert.equal(notes.value, 'Retained note')
+    assert.equal(changes, 0)
+    assert.equal(priority.value, 'low')
+    assert.equal(laterEvents, 0)
   })
 
   it('rejects values the native control would sanitize before changing any field', async () => {
