@@ -22280,6 +22280,7 @@ function collapseWhitespace(text) {
 }
 function ellipsize(text, max, options = {}) {
   if (text.length <= max) return text;
+  if (max < 1) return "";
   const head = text.slice(0, max - 1);
   return `${options.trimEnd === true ? head.trimEnd() : head}\u2026`;
 }
