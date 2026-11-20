@@ -1792,8 +1792,9 @@ const DESTRUCTIVE_VCS: Array<{ re: RegExp; reason: string }> = [
   // also match a bare `-c`: two readings of every `-c -c` pair made
   // `git -c -c -c …` backtrack exponentially (34 pairs took half a second,
   // 50 would not finish).
+  // A `+` refspec (`git push origin +main`) forces that one ref, as `--force` does.
   {
-    re: /\bgit\s+(?:-c\s+\S+\s+|(?!-c\s)--?\S+\s+)*push\b[^\n|;&]*(?:--force\b(?!-with-lease)|(?:^|\s)-f(?:\s|$))/i,
+    re: /\bgit\s+(?:-c\s+\S+\s+|(?!-c\s)--?\S+\s+)*push\b[^\n|;&]*(?:--force\b(?!-with-lease)|(?:^|\s)-f(?:\s|$)|\s\+[^\s+])/i,
     reason: 'git push --force overwrites remote history',
   },
   {

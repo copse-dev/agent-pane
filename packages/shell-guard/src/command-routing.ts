@@ -1,3 +1,5 @@
+import { homedir } from 'node:os'
+import { isAbsolute, resolve, sep } from 'node:path'
 import { parse as parseShell } from 'shell-quote'
 import { isValidTrustedCommand } from './trusted-commands.ts'
 import {
@@ -31,7 +33,9 @@ import { analyzeShellCommand, dangerousInSandboxReasons } from './shell-scope.ts
  *  - EVERY top-level segment (split on `&&`/`||`/`;`/`|`/`&`) is either
  *      (a) an explicitly trusted command whose basename is in the allow-list, OR
  *      (b) a trivially-safe prep command (`mkdir`, `cd`, `echo`, …) that itself
- *          shows NO network/outside-workspace signals under {@link analyzeShellCommand};
+ *          shows NO network/outside-workspace signals under {@link analyzeShellCommand},
+ *          and whose `cd`/`mkdir` directory stays inside the workspace from every
+ *          directory an earlier `cd` may have left the line in;
  *  - at least one segment is actually trusted (otherwise there is nothing that
  *    needs to escape the sandbox — it runs contained via the normal path);
  *  - no segment's head is an interpreter/shell that can execute arbitrary code
@@ -57,9 +61,10 @@ export type CommandRouting =
  * Commands trivially safe to run unsandboxed: they make directories, print, or
  * change directory and cannot exfiltrate or damage anything on their own. Any
  * argument that tries to escape the workspace (`mkdir ~/x`, `cp /etc/…`) is
- * caught by {@link analyzeShellCommand} returning a non-`sandbox` verdict, which
- * disqualifies the whole command — so this set only needs to list heads whose
- * *base* behaviour is harmless. Deliberately excludes `rm`, `cp`, `mv` and any
+ * caught by {@link analyzeShellCommand} returning a non-`sandbox` verdict, and a
+ * `cd`/`mkdir` directory with no separator (`~`, `/`, `..`) by routing's own
+ * resolution; either disqualifies the whole command — so this set only needs to
+ * list heads whose *base* behaviour is harmless. Deliberately excludes `rm`, `cp`, `mv` and any
  * command whose safety depends on flags.
  */
 export const SAFE_PREP_COMMANDS: ReadonlySet<string> = new Set([
@@ -297,6 +302,110 @@ function routingArgv(segment: string): string[] | null {
   return tokens.slice(index)
 }
 
+/** Prep commands whose operands name directories, which routing resolves itself. */
+const DIRECTORY_PREP_COMMANDS: ReadonlySet<string> = new Set(['cd', 'mkdir'])
+
+/** Any root gives the same answer for a relative path; this one stands in when none is known. */
+const STAND_IN_ROOT = resolve('/workspace')
+
+/** More possible working directories than this and routing stops tracking them. */
+const MAX_TRACKED_DIRECTORIES = 32
+
+/** The one directory a `cd` names, or null for `cd` alone (home), `cd -` (`$OLDPWD`) and two operands. */
+function cdOperands(args: readonly string[]): string[] | null {
+  let index = 0
+  while (index < args.length) {
+    const arg = args[index] ?? ''
+    if (arg === '--') {
+      index++
+      break
+    }
+    if (arg === '-' || !arg.startsWith('-')) break
+    index++
+  }
+  const operands = args.slice(index)
+  if (operands.length !== 1 || operands[0] === '-') return null
+  return operands
+}
+
+/** The directories a `mkdir` creates; `-m`/`--mode` take the next word as their value. */
+function mkdirOperands(args: readonly string[]): string[] {
+  const operands: string[] = []
+  let options = true
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index] ?? ''
+    if (options && arg === '--') {
+      options = false
+      continue
+    }
+    if (options && arg.startsWith('-') && arg !== '-') {
+      if (/^-[^-]*m$/.test(arg) || arg === '--mode') index++
+      continue
+    }
+    operands.push(arg)
+  }
+  return operands
+}
+
+/**
+ * Where a directory word lands from `cwd`, or null when this gate cannot say:
+ * `~user`, `~+` and `~-` name directories it does not know, and with no
+ * workspace root an absolute or home path has nothing to be compared against.
+ */
+function resolveDirectory(word: string, cwd: string, root: string | null): string | null {
+  if (word === '') return null
+  if (word.startsWith('~')) {
+    if (word !== '~' && !word.startsWith('~/')) return null
+    return root === null ? null : resolve(homedir(), `.${word.slice(1)}`)
+  }
+  if (isAbsolute(word)) return root === null ? null : resolve(word)
+  return resolve(cwd, word)
+}
+
+/**
+ * The working directories the line may be in after a `cd` or `mkdir` prep step,
+ * or null when the step names, or may run from, a directory outside the
+ * workspace.
+ *
+ * The scope analyzer keys its outside-path rules on a separator, so a bare `~`,
+ * `/` or `..` scored `sandbox`, and `cd ~ && xcodebuild build` ran the trusted
+ * command in the home directory, unsandboxed, with no prompt. The analyzer's
+ * verdict is a containment answer and the OS sandbox refuses those reads, so
+ * routing — which runs the whole line outside it — resolves the words itself.
+ *
+ * Each candidate directory is a place the step may run from. In a line joined
+ * only by `&&` a step runs only after every earlier `cd` succeeded, so the
+ * directory is known; any other operator can skip a `cd` or run it in a
+ * subshell, so both outcomes stay candidates (`cd ios; cd ..` may climb out of
+ * the workspace when `ios` is missing). A word an expansion decides (`$OLDPWD`,
+ * `{..,x}`) is not resolved.
+ */
+function directoriesAfterPrep(
+  head: string,
+  argv: readonly string[],
+  segment: string,
+  cwds: ReadonlySet<string>,
+  root: string | null,
+  sequential: boolean,
+): ReadonlySet<string> | null {
+  if (/[$`{}]/.test(segment)) return null
+  const operands = head === 'cd' ? cdOperands(argv.slice(1)) : mkdirOperands(argv.slice(1))
+  if (operands === null) return null
+  const base = root ?? STAND_IN_ROOT
+  const prefix = base.endsWith(sep) ? base : base + sep
+  const reached = new Set<string>()
+  for (const cwd of cwds) {
+    for (const operand of operands) {
+      const target = resolveDirectory(operand, cwd, root)
+      if (target === null || (target !== base && !target.startsWith(prefix))) return null
+      reached.add(target)
+    }
+  }
+  if (head !== 'cd') return cwds
+  const next = sequential ? reached : new Set([...cwds, ...reached])
+  return next.size > MAX_TRACKED_DIRECTORIES ? null : next
+}
+
 /**
  * Resolve whether {@link command} may run unsandboxed with no prompt.
  *
@@ -318,8 +427,12 @@ export function resolveCommandRouting(
     return { outcome: 'defer', reasons: ['destructive pattern present'] }
   }
 
+  const composition = scanShellComposition(trimmed)
+  const sequential = composition?.operators.every((operator) => operator === '&&') ?? true
+  const root = workspaceRoot === null ? null : resolve(workspaceRoot)
+  let cwds: ReadonlySet<string> = new Set([root ?? STAND_IN_ROOT])
   let anyTrusted = false
-  for (const segment of splitSegments(trimmed)) {
+  for (const segment of composition?.segments ?? []) {
     // The whole line runs unsandboxed once routed, so this applies to prep
     // segments as well as the trusted one.
     const assignment = leadingAssignment(segment)
@@ -354,6 +467,13 @@ export function resolveCommandRouting(
     }
     if (dangerousInSandboxReasons(segment).length > 0) {
       return { outcome: 'defer', reasons: [`prep command is destructive: ${segment}`] }
+    }
+    if (DIRECTORY_PREP_COMMANDS.has(head)) {
+      const next = directoriesAfterPrep(head, prepArgv, segment, cwds, root, sequential)
+      if (!next) {
+        return { outcome: 'defer', reasons: [`prep step leaves the workspace: ${segment}`] }
+      }
+      cwds = next
     }
   }
 

@@ -577,6 +577,9 @@ describe('Guarded YOLO shell harm gate', () => {
   it('prompts for destructive version-control operations', () => {
     for (const command of [
       'git push --force origin main',
+      'git push origin +main',
+      'git push origin "+HEAD:refs/heads/main"',
+      'git push origin feature +main',
       'git push origin :main',
       'git branch -D main',
       'git reflog expire --expire=now --all',
@@ -594,6 +597,7 @@ describe('Guarded YOLO shell harm gate', () => {
       'git commit -m wip',
       'git push origin feature',
       'git push --force-with-lease origin feature',
+      'git push origin feature:refs/heads/a+b',
       'git checkout -b feature',
       'git stash push -m wip',
       'git gc',
