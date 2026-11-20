@@ -23,7 +23,7 @@ function apiWithConfigHosts(aliases: SshWorkspaceHost[]): ApiClient {
   } satisfies ApiClient
 }
 
-it('blocks save while SSH workspaces are disabled, without changing settings', async () => {
+it('asks to turn SSH workspaces on before saving, and saves once they are on', async () => {
   const api = createFakeApi()
   await api.settings.set('sshWorkspaceEnabled', false)
   const saved: string[] = []
@@ -45,19 +45,25 @@ it('blocks save while SSH workspaces are disabled, without changing settings', a
   fill('SSH hostname', 'build.local')
   form.root.dispatchEvent(new Event('submit', { cancelable: true }))
   await settle()
-  assert.match(
-    form.root.querySelector('[role="status"]')?.textContent ?? '',
-    /Enable SSH workspaces/,
-  )
+  // Nothing is saved or turned on yet: the form asks, in place.
+  const turnOn = form.root.querySelector<HTMLButtonElement>('.ssh-consent-turn-on')
+  assert.ok(turnOn, 'the form asks to turn SSH workspaces on')
   assert.equal(form.root.hidden, false)
   assert.deepEqual(saved, [])
   assert.equal(await api.settings.get('sshWorkspaceHosts'), undefined)
   assert.equal(await api.settings.get('sshWorkspaceEnabled'), false)
-  await api.settings.set('sshWorkspaceEnabled', true)
+  // A second submit does not stack a second question.
   form.root.dispatchEvent(new Event('submit', { cancelable: true }))
   await settle()
-  assert.deepEqual(saved, ['build-mac'], 'the id comes from the label')
+  assert.equal(form.root.querySelectorAll('.ssh-consent').length, 1)
+
+  turnOn.click()
+  await settle()
+  await settle()
+  assert.equal(await api.settings.get('sshWorkspaceEnabled'), true)
+  assert.deepEqual(saved, ['build-mac'], 'the save carries on; the id comes from the label')
   assert.equal(form.root.hidden, true)
+  assert.equal(form.root.querySelector('.ssh-consent'), null)
 })
 
 it('offers ~/.ssh/config hosts that are not saved yet, and saves the chosen one alone', async () => {

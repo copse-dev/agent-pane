@@ -10,6 +10,7 @@ import {
   upsertHost,
 } from './setup/ssh-host-helpers.ts'
 import { createSshHostFields } from './setup/ssh-host-fields.ts'
+import { createSshWorkspaceConsent } from './ssh-workspace-consent.ts'
 
 export function createVncSshHostForm(
   api: ApiClient,
@@ -45,6 +46,8 @@ export function createVncSshHostForm(
   function close(): void {
     root.hidden = true
     status.textContent = ''
+    consent?.remove()
+    consent = null
     onClose()
   }
   async function loadConfigHosts(): Promise<void> {
@@ -77,18 +80,28 @@ export function createVncSshHostForm(
     configSelect.disabled = value
     cancel.disabled = value
   }
-  async function requireSshEnabled(): Promise<boolean> {
+  let consent: HTMLElement | null = null
+  /**
+   * SSH machines need SSH workspaces on. When they are off, ask here, where the
+   * machine is being added, and carry on with `retry` once they are turned on.
+   */
+  async function requireSshEnabled(retry: () => void): Promise<boolean> {
     if ((await api.settings.get('sshWorkspaceEnabled')) === true) return true
-    setInlineStatus(
-      status,
-      'error',
-      'Enable SSH workspaces in Settings before adding or importing an SSH machine.',
-    )
+    if (!consent) {
+      const ask = createSshWorkspaceConsent(api, {
+        onEnabled: () => {
+          ask.root.remove()
+          consent = null
+          retry()
+        },
+      })
+      consent = ask.root
+      status.after(consent)
+    }
     return false
   }
   cancel.addEventListener('click', close)
-  root.addEventListener('submit', (event) => {
-    event.preventDefault()
+  const submit = (): void => {
     void (async (): Promise<void> => {
       busy(true)
       try {
@@ -98,7 +111,7 @@ export function createVncSshHostForm(
           setInlineStatus(status, 'error', parsed.error)
           return
         }
-        if (!(await requireSshEnabled())) return
+        if (!(await requireSshEnabled(submit))) return
         await api.settings.set('sshWorkspaceHosts', upsertHost(existing, parsed.host))
         close()
         await onSaved(parsed.host.id)
@@ -108,14 +121,18 @@ export function createVncSshHostForm(
         busy(false)
       }
     })()
+  }
+  root.addEventListener('submit', (event) => {
+    event.preventDefault()
+    submit()
   })
-  configSelect.addEventListener('change', () => {
+  const saveConfigHost = (): void => {
     const chosen = configHosts.find((host) => host.host === configSelect.value)
     if (!chosen) return
     void (async (): Promise<void> => {
       busy(true)
       try {
-        if (!(await requireSshEnabled())) return
+        if (!(await requireSshEnabled(saveConfigHost))) return
         const existing = parseSshWorkspaceHosts(await api.settings.get('sshWorkspaceHosts'))
         const saved = saveSshConfigHost(existing, chosen)
         await api.settings.set('sshWorkspaceHosts', saved.hosts)
@@ -127,6 +144,7 @@ export function createVncSshHostForm(
         busy(false)
       }
     })()
-  })
+  }
+  configSelect.addEventListener('change', saveConfigHost)
   return { root, open, close }
 }
