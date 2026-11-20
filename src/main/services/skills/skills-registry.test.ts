@@ -749,6 +749,16 @@ description: Project override checkup
       }
     })
 
+    it('includes plugin identity in manually invocable summaries', async () => {
+      const root = await seedBundledPlugin()
+      try {
+        assert.equal(listSkills().find((skill) => skill.name === 'how')?.plugin, 'pstack')
+        assert.equal(listSkills().find((skill) => skill.name === 'demo-skill')?.plugin, undefined)
+      } finally {
+        await rm(root, { recursive: true, force: true })
+      }
+    })
+
     it('suggests the skill part of an unknown qualified name', async () => {
       const bundledRoot = await seedBundledPlugin()
       try {
