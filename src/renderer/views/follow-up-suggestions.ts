@@ -419,15 +419,12 @@ export function mountFollowUpSuggestions(
     store.on('thread_status_changed', (tid, status) => {
       if (status === 'running') {
         suggestionsByThread.delete(tid)
-        // A fetch still out is for the exchange as it stood before this run.
-        // Whether or not its answer is kept, it must not stand in for the
-        // fetch the run's end makes (on a background thread too).
-        inFlightFetches.delete(tid)
+        // A fetch still out is for the exchange as it stood before this run,
+        // on a background thread too: drop its answer whenever it lands, and
+        // stop it standing in for the fetch the run's end makes.
+        nextFetchToken(tid)
         nextChangesRefreshToken(tid)
-        if (tid === store.getState().activeThreadId) {
-          nextFetchToken(tid)
-          clearSuggestions()
-        }
+        if (tid === store.getState().activeThreadId) clearSuggestions()
         return
       }
       if (status === 'idle') void maybeFetchSuggestions(tid)

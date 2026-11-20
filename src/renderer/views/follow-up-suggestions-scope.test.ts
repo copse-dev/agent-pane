@@ -254,4 +254,50 @@ describe('follow-up suggestions thread scope', () => {
     assert.equal(mount.root.querySelector('.follow-up-bubble[data-id="before-the-run"]'), null)
     mount.destroy()
   })
+
+  it('drops a background fetch that answers during a run, so the run end fetches afresh', async () => {
+    const store = createStore()
+    store.setState({ activeProjectId: 'project-1' })
+    const background = createThread(store)
+    addMessage(store, background, 'user', 'fix the parser')
+    addMessage(store, background, 'assistant', 'Fixed it.')
+    createThread(store)
+    const pending: Array<(suggestions: FollowUpSuggestion[]) => void> = []
+    const base = createFakeApi()
+    const api: ApiClient = {
+      ...base,
+      agent: {
+        ...base.agent,
+        suggestFollowUps: () =>
+          new Promise<FollowUpSuggestion[]>((resolve) => {
+            pending.push(resolve)
+          }),
+      },
+    }
+    const mount = mountFollowUpSuggestions(store, api, () => {})
+    document.body.append(mount.root)
+    store.emit('thread_status_changed', background, 'idle')
+    await flush()
+    assert.equal(pending.length, 1)
+
+    // The pre-run answer lands while the run is still going. It describes the
+    // exchange as it stood before the run, so it must not become the set the
+    // run's end shows.
+    setThreadStatus(store, background, 'running')
+    await flush()
+    pending[0]?.([{ id: 'before-the-run', label: 'Before the run' }])
+    await flush()
+    setThreadStatus(store, background, 'idle')
+    await flush()
+    assert.equal(pending.length, 2)
+
+    pending[1]?.([SUGGESTION])
+    await flush()
+    store.setState({ activeThreadId: background })
+    store.emit('threads_changed')
+    await flush()
+    assert.ok(mount.root.querySelector('.follow-up-bubble[data-id="run-tests"]'))
+    assert.equal(mount.root.querySelector('.follow-up-bubble[data-id="before-the-run"]'), null)
+    mount.destroy()
+  })
 })
