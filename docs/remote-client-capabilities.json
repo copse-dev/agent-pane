@@ -322,7 +322,6 @@
       "settings:update",
       "settings:validate-key",
       "shell:open-external",
-      "shell:open-workspace-file-in-browser",
       "simulator-desktop:close",
       "simulator-desktop:input",
       "simulator-desktop:list",
