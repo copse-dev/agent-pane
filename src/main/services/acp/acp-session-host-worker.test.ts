@@ -1,7 +1,14 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from 'node:fs'
 import { join, sep } from 'node:path'
 import { describe, it } from 'node:test'
 import * as esbuild from 'esbuild'
@@ -208,7 +215,12 @@ describe('ACP session host worker', () => {
       for (const [index, thread] of threads.entries()) {
         const own = scratch[index] ?? ''
         const other = scratch[1 - index] ?? ''
-        const script = `const fs = require('node:fs'); const path = require('node:path'); fs.writeFileSync(path.join(process.env.TMPDIR, 'own.txt'), 'ok'); let denied = false; try { fs.writeFileSync(${JSON.stringify(join(other, 'forbidden.txt'))}, 'escape') } catch (error) { denied = ['EPERM','EACCES','EROFS'].includes(error.code) }; console.log('scratch:' + process.env.TMPDIR + ' denied:' + denied); process.stdin.resume(); process.stdin.on('end', () => process.exit(0))`
+        const forbidden = join(other, 'forbidden.txt')
+        // Prove the host path exists and is writable. A sandbox can hide it
+        // instead of returning a permission errno; no forbidden file may appear.
+        writeFileSync(join(other, 'host-control.txt'), 'ready')
+        assert.equal(existsSync(forbidden), false)
+        const script = `const fs = require('node:fs'); const path = require('node:path'); fs.writeFileSync(path.join(process.env.TMPDIR, 'own.txt'), 'ok'); let denied = false; let code = 'none'; try { fs.writeFileSync(${JSON.stringify(forbidden)}, 'escape') } catch (error) { code = String(error.code); denied = ['EPERM','EACCES','EROFS','ENOENT'].includes(code) }; console.log('scratch:' + process.env.TMPDIR + ' denied:' + denied + ' code:' + code); process.stdin.resume(); process.stdin.on('end', () => process.exit(0))`
         const request = runWithActiveRunIdentity(thread, () =>
           acpSessionHostRequest({
             command: process.execPath,
@@ -225,7 +237,11 @@ describe('ACP session host worker', () => {
         children.push(child)
         const output = waitForStdout(child, 'denied:')
         await waitForReady(child)
-        assert.ok((await output).includes(`scratch:${own} denied:true`))
+        const stdout = await output
+        t.diagnostic(`Cross-thread write errno: ${stdout.match(/ code:([A-Z]+)/)?.[1] ?? 'none'}`)
+        assert.ok(stdout.includes(`scratch:${own} denied:true`), stdout)
+        assert.equal(readFileSync(join(own, 'own.txt'), 'utf8'), 'ok')
+        assert.equal(existsSync(forbidden), false)
         const native = await runWithActiveRunIdentity(thread, () =>
           spawnInProjectSandbox('/bin/sh', ['-c', 'printf "%s" "$TMPDIR"'], {
             cwd: checkout,
