@@ -110,6 +110,26 @@ describe('authoritative scratch and local symbolic links', () => {
       rmSync(fixture, { recursive: true, force: true })
     }
   })
+  it('retains the raw outside-path scan for late ln option positions', () => {
+    const fixture = realpathSync(mkdtempSync(join(tmpdir(), 'copse-ln-options-')))
+    const root = join(fixture, 'project')
+    const outside = join(fixture, 'outside')
+    mkdirSync(root)
+    mkdirSync(outside)
+    writeFileSync(join(root, 'fixture.txt'), 'fixture')
+    try {
+      for (const command of [
+        `ln -s fixture.txt --target-directory=${outside}`,
+        `ln -s ../../fixture.txt -t${outside}`,
+        `ln -s fixture.txt -t ${outside}`,
+      ]) {
+        assert.equal(analyzeShellCommand(command, root).verdict, 'external', command)
+      }
+      assert.equal(analyzeShellCommand('ln -snf -- fixture.txt -evidence', root).verdict, 'sandbox')
+    } finally {
+      rmSync(fixture, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('analyzeShellCommand (app environment)', () => {

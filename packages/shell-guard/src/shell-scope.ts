@@ -881,13 +881,21 @@ function maskContainedSymlink(command: string, workspaceRoot: string | null): st
   if (head !== 'ln' && head !== '/bin/ln' && head !== '/usr/bin/ln') return command
   let symbolic = false
   let noDereference = false
+  let optionsTerminated = false
   while (args[0]?.startsWith('-')) {
     const flag = args.shift()
-    if (flag === '--') break
+    if (flag === '--') {
+      optionsTerminated = true
+      break
+    }
     if (flag === undefined || !/^-[sfn]+$/.test(flag)) return command
     symbolic ||= flag.includes('s')
     noDereference ||= flag.includes('n')
   }
+  // GNU ln also reads options after operands. Only an explicit -- makes a
+  // later dash-leading word a literal target/link path. Unsupported positions
+  // must retain the original scan rather than receive filesystem proof.
+  if (!optionsTerminated && args.some((arg) => arg.startsWith('-'))) return command
   const [target, linkPath] = args
   if (!symbolic || args.length !== 2 || !target || !linkPath) return command
   return environment.isContainedSymlink({ target, linkPath, workspaceRoot, noDereference })

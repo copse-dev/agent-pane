@@ -5,8 +5,6 @@ import { basename, join } from 'node:path'
 import { homedir } from 'node:os'
 import type { IDisposable, IPty } from 'node-pty'
 import { spawnPtyInProjectSandbox } from '../../project-sandbox/index.ts'
-import { spawnRunsOnSshTarget } from '../../project-sandbox/spawn.ts'
-import { ensureWorkspaceTmpDir } from '../../project-sandbox/workspace-tmp.ts'
 import { envForRendererChildProcess } from './child-process-env.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
 import { projectStoreDir } from '../storage/copse-paths.ts'
@@ -311,21 +309,14 @@ async function spawnShell(
   const shell = defaultShell()
   const cwd = meta?.executionTarget === 'local' ? homedir() : sessionCwd(executionRoot)
   const env = { ...envForRendererChildProcess(), ...terminalHistoryEnv(shell, meta?.projectId) }
-  const tmpDir =
-    meta?.threadId && (meta.executionTarget === 'local' || !spawnRunsOnSshTarget(cwd))
-      ? ensureWorkspaceTmpDir(meta.threadId)
-      : null
   const ptyProcess = await spawnPtyInProjectSandbox(shell, {
     cols,
     rows,
     cwd,
     ...(meta?.executionTarget === 'local' ? { executionTarget: { kind: 'local' } } : {}),
-    // This user shell is unsandboxed: preserve the user's CLAUDE_CODE_TMPDIR
-    // instead of moving an unconfined agent's bookkeeping into writable scratch.
-    env:
-      tmpDir === null
-        ? env
-        : { ...env, TMPDIR: tmpDir, TMP: tmpDir, TEMP: tmpDir, TMPPREFIX: join(tmpDir, 'zsh') },
+    // Preserve human temp variables: agent-writable scratch must not become
+    // bookkeeping or executable input for this explicitly unsandboxed shell.
+    env,
     // User-initiated Shells tabs run outside the project seatbelt; agent shell
     // confinement stays on run_shell / run_background (#662, #812).
     unsandboxed: true,

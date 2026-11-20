@@ -24,6 +24,7 @@ import { shellRunsOutsideSandbox } from '../services/security/command-routing-co
 import { getSetting, setSetting } from '../services/storage/settings.ts'
 import { AUTO_APPROVAL_LEVEL_SETTING, type AutoApprovalLevel } from '@shared/auto-approval.ts'
 import { runShellTool } from '../tools/shell-tool.ts'
+import { spawnPtyInProjectSandbox } from './spawn.ts'
 
 it('runs and reruns local verification in thread scratch through the real shell gate and sandbox', async (t) => {
   if (process.platform === 'win32') {
@@ -118,6 +119,54 @@ it('runs and reruns local verification in thread scratch through the real shell 
         )
         assert.equal(readFileSync(join(scratch, 'env.txt'), 'utf8'), version)
       }
+      const humanTmp = join(fixture, 'human-temp')
+      const tempKeys = ['TMPDIR', 'TMP', 'TEMP', 'TMPPREFIX', 'CLAUDE_CODE_TMPDIR'] as const
+      const parentTemps = tempKeys.map((key) => [key, process.env[key]] as const)
+      const pty = await spawnPtyInProjectSandbox('/bin/bash', {
+        cols: 120,
+        rows: 24,
+        cwd: root,
+        env: Object.fromEntries(tempKeys.map((key) => [key, humanTmp])),
+      })
+      let ptyOutput = ''
+      const lifecycle = { exited: false }
+      const dataListener = pty.onData((data) => {
+        ptyOutput += data
+      })
+      try {
+        const exitCode = await new Promise<number>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            pty.kill()
+            reject(new Error(`Sandboxed PTY did not exit: ${ptyOutput}`))
+          }, 10_000)
+          const exitListener = pty.onExit((event) => {
+            lifecycle.exited = true
+            clearTimeout(timer)
+            exitListener.dispose()
+            resolve(event.exitCode)
+          })
+          const print = tempKeys
+            .map((key) => `printf '__AGENT_${key}__:%s\\n' "\${${key}-unset}"`)
+            .join('; ')
+          pty.write(`${print}; printf pty-evidence > "$TMPDIR/pty-evidence.txt"; exit\n`)
+        })
+        assert.equal(exitCode, 0, ptyOutput)
+        for (const key of tempKeys) {
+          const expected = key === 'TMPPREFIX' ? join(scratch, 'zsh') : scratch
+          assert.ok(ptyOutput.includes(`__AGENT_${key}__:${expected}`), ptyOutput)
+        }
+        assert.equal(readFileSync(join(scratch, 'pty-evidence.txt'), 'utf8'), 'pty-evidence')
+        assert.deepEqual(
+          tempKeys.map((key) => [key, process.env[key]]),
+          parentTemps,
+        )
+        t.diagnostic(
+          'Sandboxed agent PTY used its assigned thread scratch; parent temp env unchanged',
+        )
+      } finally {
+        dataListener.dispose()
+        if (!lifecycle.exited) pty.kill()
+      }
       writeFileSync(join(root, 'src', 'fixture.txt'), 'linked evidence')
       await run('ln -sfn ../../src/fixture.txt nested/links/evidence')
       await run('ln -sfn ../../src/fixture.txt nested/links/evidence')
@@ -126,6 +175,9 @@ it('runs and reruns local verification in thread scratch through the real shell 
         readFileSync(join(root, 'nested', 'links', 'evidence'), 'utf8'),
         'linked evidence',
       )
+      await run('ln -snf -- src/fixture.txt -literal-evidence')
+      assert.equal(readlinkSync(join(root, '-literal-evidence')), 'src/fixture.txt')
+      assert.equal(readFileSync(join(root, '-literal-evidence'), 'utf8'), 'linked evidence')
       assert.equal(existsSync(forbidden), false)
       assert.equal(existsSync(join(other, 'evidence.txt')), false)
       assert.equal(prompts, 0, 'contained verification and links must not ask to escape')

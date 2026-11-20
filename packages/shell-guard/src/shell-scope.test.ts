@@ -443,6 +443,49 @@ describe('analyzeShellCommand', () => {
     }
   })
 
+  for (const option of ['--target-directory=/outside', '-t/outside', '-n', '-snf']) {
+    it(`does not waive a late ln option (${option}) as a literal operand`, () => {
+      let checks = 0
+      configureShellScopeEnvironment({
+        isContainedSymlink: () => {
+          checks++
+          return true
+        },
+      })
+      try {
+        const command = `ln -s ../../src/fixture.txt ${option}`
+        const result = analyzeShellCommand(command, root)
+        assert.equal(checks, 0, `unsupported option position reached host proof: ${command}`)
+        assert.equal(result.verdict, 'external', command)
+      } finally {
+        configureShellScopeEnvironment()
+      }
+    })
+  }
+
+  it('permits literal dash operands only after the supported explicit ln option terminator', () => {
+    let checks = 0
+    configureShellScopeEnvironment({
+      isContainedSymlink: () => {
+        checks++
+        return true
+      },
+    })
+    try {
+      for (const command of [
+        'ln -s -- ./fixture.txt -evidence',
+        'ln -s -- -target ./evidence',
+        'ln -snf ../../src/fixture.txt nested/links/evidence',
+      ]) {
+        const before = checks
+        assert.equal(analyzeShellCommand(command, root).verdict, 'sandbox', command)
+        assert.equal(checks, before + 1, 'explicit -- permits literal dash operands')
+      }
+    } finally {
+      configureShellScopeEnvironment()
+    }
+  })
+
   it('flags a sibling dir sharing the workspace name prefix as outside', () => {
     const ext = analyzeShellCommand('cat /srv/project-secrets/x', '/srv/project')
     assert.equal(ext.verdict, 'external')

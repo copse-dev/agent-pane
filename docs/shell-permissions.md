@@ -670,8 +670,10 @@ and `-n` flags) stays contained when both its actual link destination and target
 inside the workspace. Relative targets are anchored at the link's parent, including when
 the destination is an existing directory. Existing parent and target symlinks are resolved
 before judging containment; `-n` replaces a final directory symlink instead of following it.
-Compounds, redirects, expansions and other flags retain conservative path classification.
-Trailing `/` or `/.` on the destination also keeps that conservative treatment.
+An explicit `--` before both operands permits literal dash-leading filenames. Unsupported
+option positions receive no containment waiver. Compounds, redirects, expansions and other flags
+retain conservative path classification. Trailing `/` or `/.` on the destination also keeps that
+treatment.
 
 `safetyExternalDenyThreshold` defaults to `1` (off). At a lower threshold, a command is hard-denied
 only when both conditions hold:
@@ -1367,9 +1369,11 @@ use the same Save dialog after checking the owning project and chat.
 
 Sandboxed native commands and ACP processes redirect `TMPDIR`, `TMP`, `TEMP`, zsh's
 `TMPPREFIX` and `CLAUDE_CODE_TMPDIR` into the active thread's scratch under
-`workspace/tmp/threads/<thread-id-hash>`. A local Shells-tab PTY with a known thread uses that same
-directory; host operations without a thread use the separate `workspace/tmp/host` leaf. User
-Shells tabs retain their own `CLAUDE_CODE_TMPDIR`. The sandbox write grant,
+`workspace/tmp/threads/<thread-id-hash>`. Sandboxed PTYs use that assignment through the active
+thread execution context; host operations without a thread use the separate `workspace/tmp/host`
+leaf. Explicitly unsandboxed user Shells tabs preserve their original temp environment, including
+`TMPDIR`, `TMP`, `TEMP`, `TMPPREFIX` and `CLAUDE_CODE_TMPDIR`; they do not share the agent-writable
+scratch directory. The sandbox write grant,
 child environment and classifier resolve the same directory. Absolute scratch paths, including
 macOS `/var` and `/private/var` spellings, are recognized; sibling prefixes, another thread's
 directory and escaping symlinks retain outside-path classification. Setting `TMPDIR` in command
