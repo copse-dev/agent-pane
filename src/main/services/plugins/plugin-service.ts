@@ -39,6 +39,7 @@ import {
 } from '@copse/agent/plugins/first-party-plugins.ts'
 import { ARTIFACT_CHECKPOINT_PLUGIN_ID } from '@copse/agent/plugins/artifact-checkpoint-plugin.ts'
 import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-plugin.ts'
+import { PROJECT_CONTEXT_PLUGIN_ID } from '@copse/agent/plugins/project-context-plugin.ts'
 import { ENGINEERING_PLUGIN_ID } from '@copse/agent/plugins/engineering-plugin.ts'
 import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
 import {
@@ -60,6 +61,7 @@ import {
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-tasks-plugin.ts'
 import { DARK_FACTORY_PLUGIN_ID } from '@copse/agent/plugins/dark-factory-plugin.ts'
+import { COMPUTER_USE_PLUGIN_ID } from '@copse/agent/plugins/computer-use-plugin.ts'
 import { MCP_UI_CANVAS_PLUGIN_ID } from '@copse/agent/plugins/mcp-ui-canvas-plugin.ts'
 import { storageGet, storageListKeys, storageSet, storageUpdate } from '../storage/storage.ts'
 import { getSetting } from '../storage/settings.ts'
@@ -87,6 +89,7 @@ import { isRecord } from '@shared/unknown-value.ts'
 export { discoverPluginToolSource, hashPluginToolSource } from './plugin-tool-source.ts'
 export { readPluginSettingValue } from './plugin-settings-read.ts'
 import { pluginSettingsKey, readPluginSettings } from './plugin-settings-read.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 /** One-time bridge from the retired top-level model settings now owned by plugins. */
 const PLUGIN_MODEL_SETTINGS_MIGRATION_KEY = 'pluginMigration.pluginModelSettings'
@@ -147,10 +150,14 @@ const AUTOMATIONS_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.automationsEnablem
 /** One-time default-off seed for the delayed artifact-checkpoint experiment. */
 const ARTIFACT_CHECKPOINT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.artifactCheckpointEnablement'
 const REVIEWER_INPUT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.reviewerInputEnablement'
+const PROJECT_CONTEXT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.projectContextEnablement'
 const ENGINEERING_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.engineeringEnablement'
 
 /** One-time default-off seed for the dark-factory PR sensor on upgraded profiles. */
 const DARK_FACTORY_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.darkFactoryEnablement'
+
+/** One-time default-off seed for computer use on upgraded profiles. */
+const COMPUTER_USE_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.computerUseEnablement'
 
 /** One-time default-off seed for Apple Development on upgraded profiles. */
 const APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.appleDevelopmentEnablement'
@@ -350,6 +357,15 @@ function migrateReviewerInputEnablement(): void {
   storageSet(REVIEWER_INPUT_ENABLEMENT_MIGRATION_KEY, true)
 }
 
+/** Upgraded profiles must opt into retrieval just like fresh installations. */
+function migrateProjectContextEnablement(): void {
+  if (storageGet(PROJECT_CONTEXT_ENABLEMENT_MIGRATION_KEY) === true) return
+  const disabled = readDisabledIds()
+  disabled.add(PROJECT_CONTEXT_PLUGIN_ID)
+  storageSet(PLUGIN_DISABLED_KEY, [...disabled].sort())
+  storageSet(PROJECT_CONTEXT_ENABLEMENT_MIGRATION_KEY, true)
+}
+
 /**
  * `copse.dark-factory` arrived after most profiles already owned their disable
  * list, so the fresh-profile seed never reached them and the fleet PR sensor
@@ -362,6 +378,20 @@ function migrateDarkFactoryEnablement(): void {
   disabled.add(DARK_FACTORY_PLUGIN_ID)
   storageSet(PLUGIN_DISABLED_KEY, [...disabled].sort())
   storageSet(DARK_FACTORY_ENABLEMENT_MIGRATION_KEY, true)
+}
+
+/**
+ * `copse.computer-use` drives other Mac apps, so it must never start enabled.
+ * Manifest stability only reaches fresh profiles; an existing profile owns a
+ * disable list that predates the plugin. Seed it off exactly once, and leave a
+ * later opt-in to the user.
+ */
+function migrateComputerUseEnablement(): void {
+  if (storageGet(COMPUTER_USE_ENABLEMENT_MIGRATION_KEY) === true) return
+  const disabled = readDisabledIds()
+  disabled.add(COMPUTER_USE_PLUGIN_ID)
+  storageSet(PLUGIN_DISABLED_KEY, [...disabled].sort())
+  storageSet(COMPUTER_USE_ENABLEMENT_MIGRATION_KEY, true)
 }
 
 /**
@@ -548,10 +578,6 @@ export interface PluginService {
 const pluginUnavailableReasons = new Map<string, string>()
 const inertSourceReasons = new Map<string, string>()
 
-function describeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
 /** Why this plugin is not usable, when {@link refreshPluginSources} recorded a cause. */
 export function pluginUnavailableReason(pluginId: string): string | undefined {
   return pluginUnavailableReasons.get(pluginId)
@@ -684,7 +710,7 @@ export function createPluginService(registry: PluginRegistry): PluginService {
         discovered.push(await discoverPluginToolSource(source))
         inertSourceReasons.delete(source)
       } catch (error) {
-        inertSourceReasons.set(source, describeError(error))
+        inertSourceReasons.set(source, errorMessage(error))
         console.warn(`[plugins] selected source ${JSON.stringify(source)} is inert:`, error)
       }
     }
@@ -745,7 +771,7 @@ export function createPluginService(registry: PluginRegistry): PluginService {
           // plugin behavior fails closed, so the plugin is registered and then
           // switched off, which on its own is indistinguishable from a user
           // having turned it off.
-          pluginUnavailableReasons.set(id, describeError(error))
+          pluginUnavailableReasons.set(id, errorMessage(error))
           console.warn(`[plugins] plugin ${JSON.stringify(id)} tools could not start:`, error)
         }
       } else {
@@ -927,8 +953,10 @@ export function getPluginService(): PluginService {
   migrateAutomationsEnablement()
   migrateArtifactCheckpointEnablement()
   migrateReviewerInputEnablement()
+  migrateProjectContextEnablement()
   migrateEngineeringEnablement()
   migrateDarkFactoryEnablement()
+  migrateComputerUseEnablement()
   migrateReviewPluginFromModelComparison()
   const registry = createFirstPartyPluginRegistry()
   migrateAppleDevelopmentEnablement()

@@ -170,7 +170,8 @@ aliases, external `git-*` commands and executable config overrides are refused;
 the shared snapshot builder can supply only `user.name` and `user.email` overrides.
 
 Execution-time overrides disable fsmonitor (GitSpawn), hooks, automatic maintenance,
-submodule recursion, signing and signature display. Diff/log/show request raw output
+submodule recursion, signing, signature display and the alternate-refs command that
+fetch and push would otherwise run for an alternate object store. Diff/log/show request raw output
 without external diff or textconv. Included and worktree configuration cannot undo
 these overrides. Inherited Git config/executable injection is removed. Implicit
 partial-clone fetches are disabled. Explicit fetch/push retain their existing caller
@@ -178,6 +179,21 @@ authorization and only built-in HTTP(S), SSH and file transports are enabled. Th
 `clone` is the worktree manager's local submodule copy: no checkout, no templates, no
 option that names a program, and the `file` transport alone.
 Configuration inspection reads real values without invoking the configured helpers.
+
+Container-run carry-in, carry-out and adoption, and the hosted (OpenAI) source
+transfer and import, run on the host checkout outside the project sandbox. They use
+the same policy through one runner (`security/internal-git-exec.ts`), which also
+limits every command, `fetch` included, to the `file` transport: these operations
+read bundles and sibling checkouts, so a checkout's `url.<base>.insteadOf` cannot
+turn a bundle path into an SSH remote that runs its `core.sshCommand`. Missing
+objects are never fetched on demand, so a partial clone whose history is not fully
+downloaded cannot start a run: carry-in reports that and asks for `git backfill` or a
+full clone. Adoption's
+`cherry-pick` is admitted only as `--no-edit` with full SHAs (no merge strategy
+program), so the checkout's hooks and signer do not run and adopted commits are
+unsigned. It is app plumbing, not the gated `git_commit` profile. Guest-side Git
+(`worker-main.ts`, the hosted workers) runs on repositories the guest created, beside
+an agent that can already run any program there, so it keeps its own wrappers.
 
 Worktree bookkeeping uses the available project sandbox, with grants for Git
 administration, the selected destination and temporary indexes. Metadata and checkout
@@ -260,28 +276,36 @@ workspace or non-network origin).
 On macOS, a separate broker for the system `/usr/bin/ssh-keygen` is on by default. A
 trusted sandboxed socket probe must receive EPERM/EACCES before Copse offers
 additional access. Git stderr and model hints are not evidence. The grant is bound
-to the project path, signing config, public key, executable hash and socket inode,
+to the project path, signing config, public key, helper executable hashes and socket inode,
 and is cached until app restart; a changed identity re-runs the probe and re-grants
 without asking. Setting the git_commit tool to Always ask forces approval for every
 use and bypasses the cached grant. Disabling the setting prevents further ssh-agent
 signing.
 
-Only the separately sandboxed system signer gets the agent socket. Its fixed argv
-forces agent use, selects the approved public key and signs in the `git` namespace.
-It receives a clean environment and a bounded commit payload through stdin. Git and
+Only the separately sandboxed system helpers get the agent socket. A fixed
+`/usr/bin/ssh-add -L` invocation checks for the configured public identity before
+staging or running hooks. Its bounded output never reaches the agent; invalid or
+truncated output and agent communication errors fail closed. The system signer's fixed
+argv forces agent use, selects the approved public key and signs in the `git` namespace.
+Both helpers are pinned by content hash and receive clean environments. The signer
+receives a bounded commit payload through stdin. Git and
 its hooks get a private, single-use broker endpoint, not the agent socket. The
 broker accepts commit objects, never paths, executables, permission requests or raw
 ssh-agent messages. The configured private key is explicitly unreadable even if it
 is stored outside the home directory. Execution-time overrides pin the approved
 signer and key against later config edits. Failure never downgrades the signature.
 
-With the socket setting off, a configured SSH key file can instead receive explicit
-one-commit consent. The prompt names the resolved file, project, system signer and
+With the socket setting off, or the configured identity unavailable from ssh-agent
+(including a missing socket or public-key file), a configured SSH key file can instead
+receive explicit one-commit consent. A missing identity is distinct from an agent
+communication failure, which never initiates private-key consent. The prompt names
+the resolved file, project, system signer and
 commit before any private bytes are read. Consent is never remembered. Copse checks
 file identity and bounded size across approval, then gives only the isolated signer
 read access to the exact canonical file with a clean environment and no agent socket.
 The identity is rechecked before and after signer invocations; changed files fail
-closed. Git and hooks remain denied access to the key. Copse writes no private-key
+closed. A derived public key must match the configured public identity when available.
+Git and hooks remain denied access to the key. Copse writes no private-key
 copy, and key bytes never appear in approval text, command arguments, logs or tool
 output. Passphrase-protected keys require ssh-agent. The existing
 one-use commit endpoint and execution-time signer pinning apply to both paths. This
@@ -295,9 +319,9 @@ and platforms without socket-level confinement get no scoped escalation. They ke
 ordinary project access; deliberate host execution remains a separate shell approval.
 
 This is not a general allowlist of every Git configuration key or helper. Content
-filters such as Git LFS retain Git's normal conversion semantics and rely on the
-available sandbox; automatic Git without OS containment still has that residual
-risk. Silently bypassing filters would corrupt committed/restored content. Background
+filters such as Git LFS, and merge drivers for internal `switch` and `cherry-pick`,
+retain Git's normal semantics and rely on the available sandbox; automatic Git
+without OS containment still has that residual risk. Silently bypassing filters would corrupt committed/restored content. Background
 operations do not acquire helper grants from repository-supplied configuration.
 
 Regression tests cover hostile fsmonitor, included config, diff/textconv, hooks and

@@ -14,7 +14,7 @@ export type LocalClassifierPhase =
   | 'external'
 
 export interface LocalClassifierStatus {
-  /** Catalog key: `kev`, `winnow`. */
+  /** Catalog key: `kev`, `winnow`, `strands-decider`. */
   id: string
   label: string
   /** The `CLASSIFIER_PRESETS` id that connects to this server. */

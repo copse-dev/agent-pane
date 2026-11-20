@@ -3,6 +3,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { SshConnectionState } from '@shared/types/ssh-workspace.ts'
 import { el } from '../dom/helpers.ts'
 import { openSettingsDialog } from './settings-dialog.ts'
+import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 
 const BANNER_ID = 'ssh-status-banner'
 
@@ -108,7 +109,7 @@ export function mountSshStatusBanner(store: AppStore, api: ApiClient): SshStatus
   }
 
   const unsubs = [
-    store.on('workspace_changed', () => {
+    selectActiveWorkspace(store, () => {
       void api.sshWorkspace.getStates().then(sync)
     }),
     store.on('projects_changed', () => {

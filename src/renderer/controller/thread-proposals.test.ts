@@ -178,7 +178,7 @@ test('the offering thread records the answer and the thread it created', async (
   assert.equal(source.threadProposals[0].checkoutMode, 'worktree')
 })
 
-test('the new thread becomes the active one', async () => {
+test('starting a proposal stays on the thread the user was already looking at', async () => {
   const store = storeWithSource()
   const { threadId } = await startProposedThread(
     store,
@@ -187,7 +187,12 @@ test('the new thread becomes the active one', async () => {
     proposal,
     consent(true),
   )
-  assert.equal(store.getState().activeThreadId, threadId)
+  // The whole point of accepting a card inline is that the click does not
+  // navigate anywhere: the new thread runs in the background, reachable only
+  // through the card's own "Open thread" link.
+  assert.equal(store.getState().activeThreadId, 'source')
+  assert.notEqual(threadId, 'source')
+  assert.ok(getThreadById(store, threadId))
 })
 
 // The card offers work "in its own checkout", but `decideThreadWorktreePolicy`

@@ -1,5 +1,10 @@
-import { createHash, randomUUID } from 'node:crypto'
-import { automationRunBlock } from '@shared/automation-run-state.ts'
+import { randomUUID } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
+import {
+  automationRunBlocksAdmission,
+  reconcileInterruptedAutomationRuns,
+  type AutomationRunLiveness,
+} from './automation-run-recovery.ts'
 import { z } from 'zod'
 import type {
   AutomationFailureCode,
@@ -35,7 +40,7 @@ import { getPluginService } from '../plugins/plugin-service.ts'
 import { storageGet, storageUpdate } from '../storage/storage.ts'
 import { runSerialized } from '../storage/write-queue.ts'
 import { getProjectRoot } from '../workspace.ts'
-import { createThread, getProjectThread, loadProjectThreads } from '../thread-store.ts'
+import { createThread, getProjectThread, loadProjectThreadMetas } from '../thread-store.ts'
 import {
   releaseCompletedAutomationWorktree,
   type AutomationWorktreeRelease,
@@ -49,6 +54,7 @@ import {
 } from '../supervisor/event-inbox.ts'
 import { FileEventInboxStore, type EventInboxStore } from '../supervisor/event-inbox-store.ts'
 import { runGh } from '../github/gh-service.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 const STORAGE_KEY = `plugin.${AUTOMATIONS_PLUGIN_ID}.ci-definitions`
 const CONNECTION_ID = 'github-cli'
@@ -167,7 +173,7 @@ export interface BranchCiSnapshot {
 }
 
 function digest(value: unknown): string {
-  return createHash('sha256').update(JSON.stringify(value)).digest('hex')
+  return sha256Hex(JSON.stringify(value))
 }
 function readableDefinitions(raw: unknown): {
   readable: BranchCiAutomation[]
@@ -350,7 +356,8 @@ export interface BranchCiAutomationDependencies {
   labelEvents?(definition: BranchCiAutomation): Promise<LabelEventObservation[]>
   /** Whether the issue is still open and still carries the definition's label. */
   issueHasLabel?(definition: BranchCiAutomation, issue: number): Promise<boolean>
-  loadProjectThreads(projectId: string): Promise<Thread[]>
+  /** Admission and polling use metadata without reading conversation bodies. */
+  loadProjectThreadMetas?: (projectId: string) => Promise<Omit<Thread, 'messages'>[]>
   getProjectThread(projectId: string, threadId: string): Promise<Thread | null>
   createProjectThread(projectId: string, thread: Thread): Promise<void>
   releasePreviousRun(projectId: string, threadId: string): Promise<AutomationWorktreeRelease>
@@ -384,7 +391,11 @@ export interface BranchCiAutomationService {
     threadId: string,
   ): Promise<{ allowed: boolean; reason?: string; retryable?: boolean }>
   poll(): Promise<void>
-  start(sender: (event: AutomationTriggerEvent) => void): void
+  start(
+    sender: (event: AutomationTriggerEvent) => void,
+    isRunActive?: AutomationRunLiveness,
+    ownsAgentWork?: AutomationRunLiveness,
+  ): void
   sync(): Promise<void>
   stop(): void
 }
@@ -433,6 +444,9 @@ function isoToMillis(value: string, fallback: number): number {
 export function createBranchCiAutomationService(
   deps: BranchCiAutomationDependencies,
 ): BranchCiAutomationService {
+  const loadThreadMetas = deps.loadProjectThreadMetas ?? loadProjectThreadMetas
+  let isRunActive: AutomationRunLiveness | undefined
+  let ownsAgentWork: AutomationRunLiveness | undefined
   const listeners = new Set<(event: AutomationTriggerEvent) => void>()
   const supervisor = deps.supervisor()
   const inboxStore = deps.inboxStore ?? new FileEventInboxStore()
@@ -547,8 +561,13 @@ export function createBranchCiAutomationService(
           return { allowed: false, reason: 'Automation is unavailable' }
         const stale = await staleReason(definition, record)
         if (stale) return { allowed: false, reason: stale }
-        const threads = (await deps.loadProjectThreads(definition.projectId)).filter(
-          (thread) => thread.automation?.scheduleId === definition.id,
+        const threads = await reconcileInterruptedAutomationRuns(
+          definition.projectId,
+          (await loadThreadMetas(definition.projectId)).filter(
+            (thread) => thread.automation?.scheduleId === definition.id,
+          ),
+          (projectId, threadId) => isRunActive?.(projectId, threadId) ?? null,
+          () => deps.now(),
         )
         if (
           threads.filter((thread) => thread.createdAt >= deps.now() - 86_400_000).length >=
@@ -559,7 +578,11 @@ export function createBranchCiAutomationService(
             reason: 'Daily automation run limit reached',
             retryable: true,
           }
-        if (threads.some((thread) => automationRunBlock(thread) !== null))
+        if (
+          threads.some((thread) =>
+            automationRunBlocksAdmission(definition.projectId, thread, ownsAgentWork),
+          )
+        )
           return { allowed: false, reason: 'A run is already pending or active', retryable: true }
         let retained = 0
         let handOverClaimed = false
@@ -850,10 +873,20 @@ export function createBranchCiAutomationService(
     const pendingReady = new Set<number>()
     for (const candidate of result.candidates) {
       if (definition.trigger.kind === 'github-ci-failed') {
-        const prior = (await deps.loadProjectThreads(definition.projectId)).filter(
-          (thread) => thread.automation?.scheduleId === definition.id,
+        const prior = await reconcileInterruptedAutomationRuns(
+          definition.projectId,
+          (await loadThreadMetas(definition.projectId)).filter(
+            (thread) => thread.automation?.scheduleId === definition.id,
+          ),
+          (projectId, threadId) => isRunActive?.(projectId, threadId) ?? null,
+          () => deps.now(),
         )
-        if (prior.some((thread) => automationRunBlock(thread) !== null)) continue
+        if (
+          prior.some((thread) =>
+            automationRunBlocksAdmission(definition.projectId, thread, ownsAgentWork),
+          )
+        )
+          continue
       }
       await inbox.admit(definition.id, definition.revision, {
         sourceId: ROUTES[definition.trigger.kind].sourceId,
@@ -904,7 +937,7 @@ export function createBranchCiAutomationService(
           if (definition.lastProblem && definition.lastProblem.threadId === undefined)
             await setProblem(definition, null)
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error)
+          const message = errorMessage(error)
           console.error(`[automations] Event polling failed for “${definition.name}”:`, error)
           await setProblem(definition, {
             at: deps.now(),
@@ -1262,7 +1295,9 @@ export function createBranchCiAutomationService(
     async poll(): Promise<void> {
       await poll()
     },
-    start(sender: (event: AutomationTriggerEvent) => void): void {
+    start(sender, runtimeIsActive, runtimeOwnsAgentWork): void {
+      isRunActive = runtimeIsActive
+      ownsAgentWork = runtimeOwnsAgentWork
       listeners.add(sender)
       void (async (): Promise<void> => {
         for (const projectId of new Set(definitions().map((item) => item.projectId)))
@@ -1293,6 +1328,8 @@ export function createBranchCiAutomationService(
       if (timer) clearInterval(timer)
       timer = null
       listeners.clear()
+      isRunActive = undefined
+      ownsAgentWork = undefined
       inbox.dispose()
     },
   }
@@ -1339,7 +1376,6 @@ export function getBranchCiAutomationService(): BranchCiAutomationService {
           ? readIssueHasLabel(root, definition.trigger.repository, issue, definition.trigger.label)
           : Promise.resolve(false),
       ),
-    loadProjectThreads,
     getProjectThread,
     createProjectThread: createThread,
     releasePreviousRun: releaseCompletedAutomationWorktree,

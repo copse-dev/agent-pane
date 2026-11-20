@@ -35,6 +35,56 @@ function rollupChildren(
 }
 
 describe('tool-display', () => {
+  for (const name of ['run_background', 'mcp__copse__run_background', 'mcp.copse.run_background']) {
+    it(`does not claim a rejected ${name} started`, () => {
+      const call: ToolCall = {
+        ...tc('declined', name),
+        args: { action: 'start', command: 'node server.cjs' },
+        result: 'User rejected the run_background tool call.',
+        commandPhase: {
+          state: 'not_started',
+          since: 1,
+          launched: false,
+          reason: 'User rejected the run_background tool call.',
+        },
+      }
+      assert.equal(getToolCallLabel(call), 'Did not start background task')
+      assert.equal(
+        buildToolCallDisplayItems([call], { forceRollup: true })[0]?.label,
+        'Did not start background task',
+      )
+    })
+  }
+
+  it('keeps background launch labels based on typed execution state', () => {
+    const call = tc('background', 'run_background')
+    assert.equal(getToolCallLabel({ ...call, status: 'running' }), 'Starting background task')
+    assert.equal(
+      getToolCallLabel({
+        ...call,
+        commandPhase: { state: 'running', since: 1, launched: true, backgroundTaskId: 'task-1' },
+      }),
+      'Started background task',
+    )
+    assert.equal(
+      getToolCallLabel({
+        ...call,
+        result: 'User rejected the run_background tool call.',
+      }),
+      'Started background task',
+      'legacy result prose does not establish an execution phase',
+    )
+    assert.equal(
+      getToolCallLabel({
+        ...call,
+        name: 'mcp__other__run_background',
+        title: 'Other server task',
+        commandPhase: { state: 'not_started', since: 1, launched: false },
+      }),
+      'Other server task',
+    )
+  })
+
   for (const prefix of ['', 'mcp__copse__', 'mcp.copse.', 'copse.', 'copse-']) {
     it(`preserves edit links, grouping and shell summaries for ${prefix || 'bare'} calls`, () => {
       const edit = { ...tc('edit', `${prefix}write_file`), args: { path: 'src/app.ts' } }
@@ -90,15 +140,15 @@ describe('tool-display', () => {
     assert.equal(getToolCallLabel({ ...call, status: 'error' }), 'Skill style-guide')
   })
   it('identifies which MCP server failed to start', () => {
-    assert.equal(getToolDisplayName('mcp__docs__startup'), 'docs startup')
-    assert.equal(getToolDisplayName('mcp__issue_tracker__startup'), 'issue_tracker startup')
+    assert.equal(getToolDisplayName('mcp__docs__startup'), 'Docs startup')
+    assert.equal(getToolDisplayName('mcp__issue_tracker__startup'), 'Issue tracker startup')
     assert.equal(getToolDisplayName('mcp__docs__read_page'), 'Read page')
     assert.equal(
       getToolCallLabel({
         ...tc('startup', 'mcp__copse__startup', 'error'),
         title: 'mcp.copse.startup',
       }),
-      'copse startup',
+      'Copse startup',
     )
   })
 
@@ -187,6 +237,76 @@ describe('tool-display', () => {
     assert.equal(children.length, 1)
     assert.equal(children[0]?.type, 'group')
     assert.equal(children[0].label, 'Edited files')
+  })
+
+  it('labels a deferred edit by what it would have changed, never as edited', () => {
+    const deferred = (call: ToolCall, args: Record<string, unknown>): ToolCall => ({
+      ...call,
+      args,
+      result: 'Edit deferred because…',
+      deferred: true,
+    })
+    const patch = (...files: string[]): string =>
+      [
+        '*** Begin Patch',
+        ...files.map((f) => `*** Update File: ${f}\n-a\n+b`),
+        '*** End Patch',
+      ].join('\n')
+    assert.equal(
+      getToolCallLabel(deferred(tc('1', 'write_file'), { path: 'packages/api/first.ts' })),
+      'Deferred packages/api/first.ts',
+    )
+    assert.equal(
+      getToolCallLabel(deferred(tc('2', 'str_replace'), { path: 'README.md' })),
+      'Deferred README.md',
+    )
+    assert.equal(
+      getToolCallLabel(deferred(tc('3', 'apply_patch'), { input: patch('a.ts') })),
+      'Deferred a.ts',
+    )
+    assert.equal(
+      getToolCallLabel(deferred(tc('4', 'apply_patch'), { input: patch('a.ts', 'b.ts') })),
+      'Deferred 2 files',
+    )
+    assert.equal(getToolCallLabel(deferred(tc('5', 'write_file'), {})), 'Deferred edit')
+  })
+
+  it('keeps deferred edits out of the Edited files group and its count', () => {
+    const write = (id: string, path: string, isDeferred = false): ToolCall => ({
+      ...tc(id, 'write_file'),
+      args: { path },
+      ...(isDeferred ? { deferred: true } : {}),
+    })
+    const read = { ...tc('read', 'read_file'), args: { path: 'packages/api/first.ts' } }
+
+    // The same-response deferral: a read activates the scope, both writes wait.
+    const allDeferred = buildToolCallDisplayItems([
+      read,
+      write('1', 'packages/api/first.ts', true),
+      write('2', 'packages/api/second.ts', true),
+    ])
+    assert.equal(allDeferred[0]?.label, 'Used 3 tools')
+    assert.deepEqual(
+      rollupChildren(allDeferred).map((item) => [item.type, item.label]),
+      [
+        ['individual', 'Read file'],
+        ['individual', 'Deferred packages/api/first.ts'],
+        ['individual', 'Deferred packages/api/second.ts'],
+      ],
+    )
+
+    // Edits that ran still group, counting only themselves.
+    const mixed = rollupChildren(
+      buildToolCallDisplayItems([write('a', 'a.ts'), write('b', 'b.ts'), write('c', 'c.ts', true)]),
+    )
+    assert.equal(mixed[0]?.type, 'group')
+    assert.equal(mixed[0].label, 'Edited files')
+    assert.deepEqual(
+      mixed[0].toolCalls.map((call) => call.id),
+      ['a', 'b'],
+    )
+    assert.equal(mixed[1]?.type, 'individual')
+    assert.equal(mixed[1].label, 'Deferred c.ts')
   })
 
   it('strips a leading `cd <path> &&` workspace prefix from commands', () => {
@@ -414,7 +534,7 @@ describe('tool-display', () => {
     ])
     assert.equal(items.length, 1)
     assert.equal(items[0]?.type, 'group')
-    assert.equal(items[0].label, 'mdn')
+    assert.equal(items[0].label, 'MDN')
     assert.equal(items[0].toolCalls.length, 3)
     assert.equal(aggregateToolStatus(items[0].toolCalls), 'error')
   })
@@ -602,7 +722,7 @@ describe('tool-display', () => {
     assert.equal(getToolDisplayName('mcp.copse.run_shell'), 'Ran command')
     assert.equal(getToolDisplayName('mcp.copse.run_shell', 'running'), 'Running command')
     assert.equal(getToolDisplayName('mcp.copse.custom_tool'), 'Custom tool')
-    assert.equal(getToolDisplayName('mcp.docs.startup'), 'docs startup')
+    assert.equal(getToolDisplayName('mcp.docs.startup'), 'Docs startup')
   })
 
   it('formats raw ACP titles like native Copse tools in every status', () => {
@@ -680,13 +800,14 @@ describe('tool-display', () => {
 
   it('groups MCP tools by server without exposing an internal MCP marker', () => {
     assert.equal(getToolGroupKey('mcp__github__create_issue'), 'mcp:github')
-    assert.equal(getToolGroupLabel('mcp:github'), 'github')
+    assert.equal(getToolGroupLabel('mcp:github'), 'GitHub')
     const items = buildToolCallDisplayItems([
       tc('1', 'mcp__github__create_issue'),
       tc('2', 'mcp__github__list_issues'),
     ])
     assert.equal(items[0]?.type, 'rollup')
-    assert.equal(items[0].label, 'github')
+    assert.equal(items[0].label, 'GitHub')
+    assert.equal(getToolGroupLabel('mcp:issue_tracker'), 'Issue tracker')
   })
 
   it('groups Copse MCP wrappers like their built-in tools', () => {

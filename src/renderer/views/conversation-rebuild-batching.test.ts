@@ -43,6 +43,13 @@ function mountThread(turns: number): Mounted {
   return { store, host, threadId, unmount }
 }
 
+/** Rebuild the transcript the way a thread switch away and back does. */
+function switchAwayAndBack({ store, threadId }: Mounted): void {
+  createThread(store)
+  store.setState({ activeThreadId: threadId })
+  store.emit('threads_changed')
+}
+
 /**
  * Count `querySelector` calls issued by the blocking part of `run` — the work
  * that happens before the switch can paint. History older than the initial
@@ -135,21 +142,18 @@ describe('conversation transcript rebuild', () => {
   })
 
   it('does not scale rebuild DOM queries with thread length', () => {
+    // A thread switch is what rebuilds the list: a change within the same
+    // thread reconciles the rows already there instead (transcript-rows.ts).
+    // Switch away and back, as the reader does.
     const small = mountThread(30)
-    // The active thread's own object reference must actually change for a
-    // rebuild to run at all (see the unrelated-threads_changed no-rerender
-    // test) — mirror how this is really triggered rather than re-emitting on
-    // an already-rendered, untouched thread.
-    addMessage(small.store, small.threadId, 'user', 'one more prompt')
     const smallCalls = countBlockingQuerySelectorCalls(() => {
-      small.store.emit('threads_changed')
+      switchAwayAndBack(small)
     })
     small.unmount()
 
     const large = mountThread(120)
-    addMessage(large.store, large.threadId, 'user', 'one more prompt')
     const largeCalls = countBlockingQuerySelectorCalls(() => {
-      large.store.emit('threads_changed')
+      switchAwayAndBack(large)
     })
     large.unmount()
 

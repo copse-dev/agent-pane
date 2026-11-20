@@ -142,6 +142,26 @@ Two ways to make invocation actually delegate, in preference order:
 
 Start with (1); (2) is the fallback, not a v2 feature.
 
+**Dogfood follow-up (2026-11-08): explicit invocation returns the worker's report directly.**
+Pre-invocation guaranteed that the worker ran, but the parent still re-read its files
+in real local-model runs despite instructions not to repeat the work. A tool-free
+parent then emitted pretend file-read requests instead of an answer. An explicit
+`/name` turn now relays the worker's report with attribution and makes no parent model
+call. Failure, cancellation, and a missing definition are reported without silently
+taking over the task. The report is persisted in conversation history for follow-ups.
+General tool-driven delegation still permits parent integration and verification.
+Turn and subagent hooks retain their lifecycle; the explicit turn spends no parent
+continuation. Every worker's usage is scoped to the entire admitted turn and recorded
+under its resolved model, including explicit invocation and continuation work.
+
+**Review follow-up (2026-11-13): preserve failure and trust semantics.** Explicit
+worker failures record a durable failed outcome, including failures before provider
+startup; cancellation remains distinct. Generic recovery does not offer a parent
+continuation for this one-shot route: retry by invoking `/name` again. Reports are
+displayed with attribution and persisted inside an escaped external-content boundary,
+including when history is rebuilt for a fork. Turn-start and submit-hook context is
+passed to the selected worker without leaking into concurrent worker turns.
+
 **Eval result (2026-08-21): (1) did not hold; (2) is implemented and verified.** Three runs of
 `tests/e2e/scenarios/custom-subagent-invocation.json` on a GUI machine against
 `lmstudio:qwen/qwen3.5-9b`, driving the real Electron app with a definition seeded at
@@ -305,8 +325,12 @@ subagent entry points (`task`, `explore`, `investigate_ci`, `delegate_step`, `ad
 `compare_models` — no nesting, depth stays 1), `ask_user` (a subagent reports back instead
 of interrogating the user, as the orchestration worker already does), and `git_commit`
 (integration stays with the parent, same rationale as `delegate_step`). Custom agents
-also cannot call `update_thread_plan` or `report_plan_completion`: workers report
-findings, while the parent owns the shared thread plan.
+also cannot call `update_thread_plan`, `report_plan_completion` or `update_todos`: workers
+report findings, while the parent owns the shared thread plan and its todo list (so a
+`TodoWrite` entry translates, then drops here). Thread orchestration and work that outlives
+the agent's step budget stay with the parent too: `subthreads` and `send_thread_prompt`
+would escape depth 1, and `run_background` or `track_long_task` can schedule later turns
+on the parent thread. An explicit `tools` list cannot name any of these back in.
 
 Whatever survives, every inner call still goes through `ToolRegistry.execute` — permission
 gate, read-only enforcement, staged-edit approval, sandbox — exactly as `explore` and
@@ -397,8 +421,8 @@ real boundary rather than through a test-only escape hatch.
 
 **P2 — Explicit invocation (the feature). Landed.** Generalise the slash picker and
 `resolveSkillInvocation` to invocables; `invokedAgent` through the run payload; the invoked
-agent run deterministically before the parent's first LLM call, behind a synthesized `task`
-card (decision 2's fallback — the model-callable `task` tool is unbuilt and belongs to P4);
+agent run deterministically, returning its attributed report without a parent LLM call,
+behind a synthesized `task` card (decision 2's fallback — the model-callable `task` tool is unbuilt and belongs to P4);
 `custom-agent-runner.ts`
 (ALS-scoped context, like `explore-subagent-runner.ts`, so fanned-out calls do not cross
 wires); tool translation + filtering; model resolution; session kind + card. Hook parity
@@ -413,8 +437,8 @@ threads decode unchanged), and a dynamic `task` card label.
 
 There is **no model-callable `task` tool**. Because of the eval result under decision 2,
 what shipped is the deterministic fallback: `agent-service.ts` runs the invoked agent
-before the parent's first LLM call and synthesizes a `task` tool call and result, so the
-card renders like any other subagent. `task` exists only as a card name, a read-only
+and synthesizes a `task` tool call and result, so the card renders like any other
+subagent. Its report is returned directly without parent inference. `task` exists only as a card name, a read-only
 allow-list entry (`readonly-tools.ts`), and a forbidden-tool entry
 (`CUSTOM_AGENT_FORBIDDEN_TOOLS`). The registry, `parentTools` withholding, and
 ALS-validation design in decision 2 option (1) is therefore unbuilt and moves to P4,
@@ -473,7 +497,7 @@ Ranked by user impact:
 
 | ID   | Claude Code                                                                                                                     | Copse native agent today                                                                                                                                                                                                                                                           | Owner                                                |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| G-01 | The model picks an agent from its `description` and can launch several at once.                                                 | Explicit `/name` only, one agent per message, run before the parent's first LLM call. The model has no `task` tool.                                                                                                                                                                | P4                                                   |
+| G-01 | The model picks an agent from its `description` and can launch several at once.                                                 | Explicit `/name` only, one agent per message, report returned without parent inference. The model has no `task` tool.                                                                                                                                                              | P4                                                   |
 | G-02 | Agents can run in the background. The parent keeps working and is notified when one completes.                                  | Always runs inline and blocks the turn. `background` / `is_background` are ignored with a note.                                                                                                                                                                                    | P7                                                   |
 | G-03 | A finished agent can be continued with its context intact (send it another message by id).                                      | Every run is one-shot and returns only a summary. Nothing addresses a finished run again.                                                                                                                                                                                          | P7                                                   |
 | G-04 | `isolation: worktree` gives the agent a throwaway checkout.                                                                     | Supported through `run_isolated_workers` with owned checkouts; other entry points reject before inference. The parent checkout is never a fallback.                                                                                                                                | P6                                                   |

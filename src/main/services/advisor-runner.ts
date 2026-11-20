@@ -13,6 +13,7 @@ import {
 import { runAcpAdvisorPrompt, type AcpAdvisorResult } from './acp/acp-advisor.ts'
 import { buildAdvisorRepoState, buildAdvisorWorkingDiff } from './advisor-context.ts'
 import { emitAdvisorUsage } from './advisor-usage.ts'
+import { getAgentExecutionRoot } from './execution-root.ts'
 import { getAdvisorContext, type AdvisorRunnerContext } from './advisor-runner-context.ts'
 import {
   DEFAULT_ADVISOR_MAX_TOKENS,
@@ -137,8 +138,10 @@ export interface AdvisorRunnerDeps {
 
 export const DEFAULT_ADVISOR_RUNNER_DEPS: AdvisorRunnerDeps = {
   resolveModel: (selection) => resolveDynamicModelId(selection),
-  buildRepoState: buildAdvisorRepoState,
-  buildWorkingDiff: () => buildAdvisorWorkingDiff(),
+  // The advisor is consulted from inside the executor's turn, so the turn's own
+  // checkout is the repo it reports on (#3958).
+  buildRepoState: () => buildAdvisorRepoState(getAgentExecutionRoot()),
+  buildWorkingDiff: () => buildAdvisorWorkingDiff(getAgentExecutionRoot()),
   buildProvider: (model, opts) => buildProvider(model, undefined, opts),
   runAcpPrompt: runAcpAdvisorPrompt,
 }

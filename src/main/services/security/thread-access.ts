@@ -4,8 +4,12 @@ import { getActiveRunThread } from '../active-run-identity.ts'
 import { currentThreadExecutionContext } from '../thread-execution-context-store.ts'
 import { getSetting, updateSetting } from '../storage/settings.ts'
 
-type ThreadAccess = 'read' | 'send'
-const keys = { read: 'threadReadAccess', send: 'threadSendAccess' } as const
+type ThreadAccess = 'read' | 'send' | 'orchestrate'
+const keys = {
+  read: 'threadReadAccess',
+  send: 'threadSendAccess',
+  orchestrate: 'threadSubthreadAccess',
+} as const
 const revisions = new Map<string, number>()
 
 export function hasThreadAccess(threadId: string | null, access: ThreadAccess): boolean {
@@ -36,7 +40,12 @@ export async function ensureThreadAccess(
     {
       ...threadAccessApproval(access),
       type: 'mcp',
-      cause: access === 'read' ? 'thread-read-access' : 'thread-send-access',
+      cause:
+        access === 'read'
+          ? 'thread-read-access'
+          : access === 'send'
+            ? 'thread-send-access'
+            : 'thread-orchestration-access',
       scope: `thread-${access}`,
       subject: `thread-${access}-access`,
     },
@@ -53,10 +62,29 @@ export async function ensureThreadAccess(
   )
 }
 
-/** Chat-store roots the active run may read. A follow-up also reads its declared parent. */
+/**
+ * Chat-store roots the active run may read. A follow-up also reads its declared parent.
+ *
+ * With no active run this is an app-owned operation (the user's terminal, the
+ * fs server shared by every thread behind `ensureChatStoreRead`, git signing),
+ * which keeps the whole store. An agent process must therefore never reach this
+ * fallback: anything spawned outside the turn's async chain, such as an ACP
+ * agent in its session host, resolves {@link chatReadRootsForThread} in the
+ * main process and carries the answer instead.
+ */
 export function threadChatReadRoots(chatRoot: string): string[] {
   const threadId = getActiveRunThread()
-  if (!threadId || hasThreadAccess(threadId, 'read')) return [chatRoot]
+  return threadId ? chatReadRootsForThread(threadId, chatRoot) : [chatRoot]
+}
+
+/**
+ * Chat-store roots `threadId`'s agent may read: the whole store once the thread
+ * holds read consent, otherwise its own transcript and a declared follow-up
+ * parent. Those come from the turn's trusted execution context, so a caller
+ * outside that turn (or naming another thread) without consent gets nothing.
+ */
+export function chatReadRootsForThread(threadId: string, chatRoot: string): string[] {
+  if (hasThreadAccess(threadId, 'read')) return [chatRoot]
   const context = currentThreadExecutionContext()
   if (context?.threadId !== threadId) return []
   const own = join(chatRoot, context.projectId, context.threadId)

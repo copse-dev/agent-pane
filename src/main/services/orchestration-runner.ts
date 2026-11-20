@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { runSubagent } from '@copse/agent/run-subagent.ts'
 import { conversationTokenBudget } from '@copse/agent/trim-history.ts'
 import { readFileLimitsForSubagent } from '@copse/agent/read-file-limits.ts'
-import type { LLMMessage, LLMTool, StreamChunk, ToolExecuteResult } from '@shared/types'
+import type { LLMMessage, StreamChunk, ToolExecuteResult } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
 import { buildProvider } from './providers/provider-selection.ts'
 import { resolveDynamicModelId } from './providers/dynamic-model.ts'
@@ -10,7 +10,7 @@ import { resolveContextWindow } from './providers/resolve-context-window.ts'
 import { getSettingTrimmed } from './storage/settings.ts'
 import { addSubagentUsage } from './subagent-usage.ts'
 import { runWithAgentRunReadFileLimits } from './agent-run-read-limits.ts'
-import { agentWorkspaceLabel } from './execution-root.ts'
+import { agentWorkspaceLabel, getAgentExecutionRoot } from './execution-root.ts'
 import { getGitStatusText } from './github/git-service.ts'
 import {
   DEFAULT_ORCHESTRATION_WORKER_MODEL,
@@ -63,11 +63,6 @@ export function runWithOrchestrationContext<T>(
   return contextStorage.run(ctx, fn)
 }
 
-function filterWorkerTools(registry: ToolRegistry): LLMTool[] {
-  const names = new Set<string>(ORCHESTRATION_WORKER_TOOL_NAMES)
-  return registry.toLLMTools().filter((t) => names.has(t.name))
-}
-
 async function executeWorkerTool(
   registry: ToolRegistry,
   name: string,
@@ -114,7 +109,7 @@ export function getOrchestrationRunner(): OrchestrationRunner | null {
         provider,
         prompt: step,
         parentGoal: `${ctx.parentGoal}\nWorkspace: ${workspace}`,
-        tools: filterWorkerTools(ctx.registry),
+        tools: ctx.registry.toLLMToolsNamed(ORCHESTRATION_WORKER_TOOL_NAMES),
         parentToolCallId: ctx.parentToolCallId,
         signal,
         maxSteps: ORCHESTRATION_WORKER_MAX_STEPS,
@@ -128,13 +123,12 @@ export function getOrchestrationRunner(): OrchestrationRunner | null {
         kind: 'delegate',
       })
 
-      // Worker tokens are billed at the worker model's rate; like the advisor
-      // they fold into the run's aux-model usage line for now.
-      addSubagentUsage(session.usage ?? { inputTokens: 0, outputTokens: 0 })
+      // Credit the resolved worker model, including partial or failed sessions.
+      addSubagentUsage(workerModel, session.usage ?? { inputTokens: 0, outputTokens: 0 })
 
       // The observation the orchestrator reviews between steps: the worker's
       // report plus what the working tree actually looks like now.
-      const workingTree = await getGitStatusText().catch(() => '')
+      const workingTree = await getGitStatusText(getAgentExecutionRoot()).catch(() => '')
       return buildStepObservation({ report: summary, workingTree })
     })
   }

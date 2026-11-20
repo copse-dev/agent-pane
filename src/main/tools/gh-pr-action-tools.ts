@@ -33,13 +33,14 @@ const prActionParams = z.object({
     .describe('Repository name. Omit to use the current workspace repository.'),
 })
 
-/** Fill missing owner/repo halves from the workspace origin slug. */
+/** Fill missing owner/repo halves from the origin slug of the turn's checkout (`root`). */
 async function resolveOwnerRepo(
+  root: string | null,
   owner: string | undefined,
   repo: string | undefined,
 ): Promise<{ owner: string; repo: string } | null> {
   if (!owner || !repo) {
-    const slug = await getGithubRepoSlug()
+    const slug = await getGithubRepoSlug(root)
     const [slugOwner, slugRepo] = slug?.split('/') ?? []
     owner = owner ?? slugOwner
     repo = repo ?? slugRepo
@@ -49,12 +50,15 @@ async function resolveOwnerRepo(
 }
 
 /** Resolve owner/repo from args, falling back to the workspace origin slug. */
-async function resolveRef(args: {
-  number: number
-  owner?: string | undefined
-  repo?: string | undefined
-}): Promise<PrRef | null> {
-  const target = await resolveOwnerRepo(args.owner, args.repo)
+async function resolveRef(
+  root: string | null,
+  args: {
+    number: number
+    owner?: string | undefined
+    repo?: string | undefined
+  },
+): Promise<PrRef | null> {
+  const target = await resolveOwnerRepo(root, args.owner, args.repo)
   return target ? { ...target, number: args.number } : null
 }
 
@@ -65,13 +69,15 @@ function formatResult(result: Pick<PrActionResult, 'ok' | 'message' | 'noop'>): 
 
 async function runAction(
   args: { number: number; owner?: string | undefined; repo?: string | undefined },
-  action: (ref: PrRef) => Promise<PrActionResult>,
+  action: (root: string | null, ref: PrRef) => Promise<PrActionResult>,
 ): Promise<string> {
-  const ref = await resolveRef(args)
+  // The turn's own checkout, never the window's workspace (#3958).
+  const root = getAgentExecutionRoot()
+  const ref = await resolveRef(root, args)
   if (!ref) {
     return 'Failed: could not resolve the repository. Pass owner and repo, or open a GitHub workspace.'
   }
-  return formatResult(await action(ref))
+  return formatResult(await action(root, ref))
 }
 
 export const ghPushTool = defineTool({
@@ -209,7 +215,7 @@ export const ghMergePrTool = defineTool({
     'Request a pull request merge with the GitHub CLI, using repository merge policy and a required head-SHA guard. Refuses drafts, outstanding change requests, and PRs without an approving review of the current head commit. Does not bypass branch protection. Review checks, feedback, holds in the description, and visual evidence first; re-read PR state afterward to distinguish merged from queued.',
   parameters: prActionParams.extend({ expected_head_sha: commitSha }),
   execute: async (args) => {
-    const ref = await resolveRef(args)
+    const ref = await resolveRef(getAgentExecutionRoot(), args)
     return ref
       ? maintenance.merge(ref, args.expected_head_sha)
       : 'Failed: could not resolve repository.'
@@ -222,7 +228,7 @@ export const ghCommentPrTool = defineTool({
     'Post a markdown comment on a pull request using the GitHub CLI. Requires approval or an exact automation grant.',
   parameters: prActionParams.extend({ body: z.string().min(1).max(65536) }),
   execute: async (args) => {
-    const ref = await resolveRef(args)
+    const ref = await resolveRef(getAgentExecutionRoot(), args)
     return ref ? maintenance.comment(ref, args.body) : 'Failed: could not resolve repository.'
   },
 })
@@ -233,7 +239,7 @@ export const ghResolveReviewThreadTool = defineTool({
     'Resolve a verified stale review thread using the GitHub CLI. Verifies the thread belongs to the specified repository and PR. Inspect the finding and confirm the fix before calling.',
   parameters: prActionParams.extend({ thread_id: z.string().min(1).max(512) }),
   execute: async (args) => {
-    const ref = await resolveRef(args)
+    const ref = await resolveRef(getAgentExecutionRoot(), args)
     return ref
       ? maintenance.resolveReviewThread(ref, args.thread_id)
       : 'Failed: could not resolve repository.'

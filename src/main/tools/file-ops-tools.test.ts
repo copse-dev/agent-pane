@@ -64,7 +64,7 @@ describe('file-ops tools (#122)', () => {
     assert.equal(queue.length, 1)
     const [entry] = queue
     assert.ok(entry)
-    const result = await applyDiffEntry(entry)
+    const result = await applyDiffEntry(entry, tempRoot, tempRoot)
     assert.deepEqual(result, { status: 'written' })
     assert.equal(await exists(join(tempRoot, 'gone.txt')), false)
   })
@@ -91,7 +91,7 @@ describe('file-ops tools (#122)', () => {
 
     const [entry] = getDiffQueueForTest()
     assert.ok(entry)
-    const result = await applyDiffEntry(entry)
+    const result = await applyDiffEntry(entry, tempRoot, tempRoot)
     assert.deepEqual(result, { status: 'written' })
     assert.equal(await exists(join(tempRoot, 'old.txt')), false)
     assert.equal(await readFile(join(tempRoot, 'sub/new.txt'), 'utf8'), 'data\n')

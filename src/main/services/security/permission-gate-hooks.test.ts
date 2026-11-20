@@ -18,6 +18,7 @@ import { setApprovalHandler } from '../approval.ts'
 import { setSetting } from '../storage/settings.ts'
 import { storageDelete, storageSet } from '../storage/storage.ts'
 import { readDecisionLog } from './decision-log-store.ts'
+import { threadExecutionContextStorage } from '../thread-execution-context-store.ts'
 import {
   userHooksConfigPath,
   resetCursorHookSessionErrorsForTest,
@@ -63,9 +64,19 @@ describe('permission gate — Cursor hook ask/deny surfacing (B4)', () => {
     await rm(tempHome, { recursive: true, force: true })
   })
 
-  /** Bind ALS so spine decisions attribute to this thread. */
+  /** Bind ALS as a turn does, so spine decisions attribute to this thread and project. */
   function underThread<T>(fn: () => T): T {
-    return runWithActiveRunIdentity(threadId, fn)
+    return threadExecutionContextStorage.run(
+      {
+        projectId,
+        threadId,
+        projectRoot: tempHome,
+        root: tempHome,
+        checkoutMode: 'shared',
+        branch: null,
+      },
+      () => runWithActiveRunIdentity(threadId, fn),
+    )
   }
 
   /** Declare a user `beforeReadFile` hook that prints `responseJson`. */

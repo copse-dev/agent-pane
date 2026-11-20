@@ -19,6 +19,7 @@ import { runAcpSessionPrompt, type AcpClientHandlers } from './acp-client.ts'
 import { acquireAcpSession, disposeAllAcpSessions } from './acp-session-pool.ts'
 import { requestApproval } from '../approval.ts'
 import { ToolRegistry } from '../tool-registry.ts'
+import { formatGithubWritePrompt } from '../security/permission-policy.ts'
 
 /** The assistant text the client received, reassembled from its stream chunks. */
 function streamedText(chunks: readonly StreamChunk[]): string {
@@ -88,6 +89,22 @@ const gatedProbeTool = defineTool({
       type: 'shell',
     })
     return approved ? `inspected ${subject}` : `declined ${subject}`
+  },
+})
+
+const publicationProbeTool = defineTool({
+  name: 'publication_probe',
+  description: 'Test-only publication boundary: asks for approval without publishing anything.',
+  parameters: z.object({ body: z.string() }),
+  async execute({ body }) {
+    const prompt = formatGithubWritePrompt('gh_pr_create', {
+      owner: 'acme',
+      repo: 'widgets',
+      title: 'Fix the parser',
+      body,
+    })
+    const { approved } = await requestApproval({ ...prompt, type: 'mcp' })
+    return approved ? 'publication approved' : 'publication declined'
   },
 })
 
@@ -264,5 +281,81 @@ describe('ACP agent mode: a real Copse turn, driven by Copse as the ACP client',
       'a refused ACP permission must reach the tool as a denial, not a silent allow',
     )
     assertMockScenarioComplete('acp-probe')
+  })
+
+  it('preserves the complete publication description and warning across ACP approval', async () => {
+    workspace = await mkdtemp(join(tmpdir(), 'copse-acp-publication-'))
+    const root = workspace
+    const body = '## Summary\n\n- Fix the empty-input crash\n- Keep **all** publication details'
+    const registry = new ToolRegistry()
+    registry.register(publicationProbeTool)
+    const runner = createAcpTurnRunner({
+      registry,
+      history: [],
+      getActiveProjectId: () => 'acp-publication-project',
+      getProjectRoot: () => root,
+      runOptions: { provider: new MockLLMProvider('acp-publication'), contextWindow: 100_000 },
+    })
+    const { entry } = await acquireAcpSession({
+      threadId: 'acp-publication-thread',
+      config: { command: 'copse --acp (in-process)', cwd: root },
+      createTransport: inProcessAgentTransport(runner),
+    })
+    const chunks: StreamChunk[] = []
+    const permissionInputs: unknown[] = []
+    const handlers: AcpClientHandlers = {
+      onChunk: (chunk) => {
+        chunks.push(chunk)
+      },
+      requestPermission: (req) => {
+        permissionInputs.push(req.toolCall.rawInput)
+        return Promise.resolve({ outcome: { outcome: 'cancelled' } })
+      },
+    }
+    entry.open.handlers.current = handlers
+    setMockScenario(
+      'acp-publication',
+      {
+        title: 'Publish the parser fix',
+        turns: [
+          {
+            user: 'Publish the parser fix.',
+            responses: [
+              { toolCalls: [{ name: 'publication_probe', args: { body } }] },
+              {
+                text: 'Publication was declined.',
+                expectToolResults: [
+                  { name: 'publication_probe', includes: 'publication declined' },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      'acp-publication',
+    )
+    await runAcpSessionPrompt(entry.open, 'Publish the parser fix.', undefined)
+
+    const prompt = formatGithubWritePrompt('gh_pr_create', {
+      owner: 'acme',
+      repo: 'widgets',
+      title: 'Fix the parser',
+      body,
+    })
+    assert.deepEqual(permissionInputs, [
+      {
+        type: 'mcp',
+        body: prompt.body,
+        bodyMarkdown: body,
+        bodyAdvice: prompt.bodyAdvice,
+        bodyFooter: prompt.bodyFooter,
+        approveLabel: prompt.approveLabel,
+      },
+    ])
+    assert.equal(
+      resultOf(chunks, soleToolCallId(chunks, 'publication_probe')),
+      'publication declined',
+    )
+    assertMockScenarioComplete('acp-publication')
   })
 })

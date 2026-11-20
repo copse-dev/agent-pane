@@ -68,7 +68,7 @@ describe('resolveBestValueForActiveBlankThread', () => {
     createThread(store)
     const unsubscribe = attachBestValueDefaultResolver(store, mockApi('claude-opus-4-8'))
 
-    store.emit('workspace_changed')
+    store.setState({ activeProjectId: 'p1', workspaceRoot: '/p1' })
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     assert.equal(getActiveThread(store)?.model, 'claude-opus-4-8')

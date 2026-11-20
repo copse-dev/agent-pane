@@ -70,6 +70,11 @@ export function getPublishedUpdateChannels(version: string): UpdateChannel[] {
   return getReleaseChannel(version) === 'stable' ? ['latest', 'beta'] : ['beta']
 }
 
+/**
+ * The GitHub release type a version ends as. Publication always starts as a
+ * prerelease, which only the beta feed serves; a stable version becomes a
+ * normal/latest release when `scripts/release-promotion.mts` promotes it.
+ */
 export function getGitHubReleaseType(version: string): GitHubReleaseType {
   return getReleaseChannel(version) === 'stable' ? 'release' : 'prerelease'
 }

@@ -107,12 +107,15 @@ export function formatAdvisorWorkingDiff(combinedDiff: string, maxChars = MAX_DI
  * and forwarding it guarantees fresh, untrimmed diff regardless of what the
  * transcript still holds. Best-effort; '' when there is no git context.
  */
-export async function buildAdvisorWorkingDiff(maxChars = MAX_DIFF_CHARS): Promise<string> {
+export async function buildAdvisorWorkingDiff(
+  root: string | null,
+  maxChars = MAX_DIFF_CHARS,
+): Promise<string> {
   try {
-    if (!(await isInsideGitWorkTree())) return ''
+    if (!(await isInsideGitWorkTree(root))) return ''
     const [unstaged, staged] = await Promise.all([
-      getGitDiffText(),
-      getGitDiffText(undefined, true),
+      getGitDiffText(undefined, false, root),
+      getGitDiffText(undefined, true, root),
     ])
     const combined = [staged.trim(), unstaged.trim()]
       .filter((part) => part && part !== '(no output)')
@@ -127,15 +130,15 @@ export async function buildAdvisorWorkingDiff(maxChars = MAX_DIFF_CHARS): Promis
  * Gather the verified repo state (git I/O) and format it. Best-effort: any
  * failure degrades to an empty block rather than failing the advisor call.
  */
-export async function buildAdvisorRepoState(): Promise<string> {
+export async function buildAdvisorRepoState(root: string | null): Promise<string> {
   try {
-    if (!(await isInsideGitWorkTree())) return ''
-    const base = await getDefaultBranch()
+    if (!(await isInsideGitWorkTree(root))) return ''
+    const base = await getDefaultBranch(root)
     const [branch, ahead, statusShort, changeStats] = await Promise.all([
-      getCurrentBranchName(),
-      base ? getAheadBehind(base) : Promise.resolve(null),
-      getGitStatusText(),
-      getGitChangeStats(),
+      getCurrentBranchName(root),
+      base ? getAheadBehind(base, root) : Promise.resolve(null),
+      getGitStatusText(root),
+      getGitChangeStats(root),
     ])
     return formatAdvisorRepoState({
       branch,

@@ -1,6 +1,7 @@
 import { clientActions } from '../clients/client-actions.ts'
-import { mkdirSync, writeFileSync, renameSync, rmSync } from 'node:fs'
+import { rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { writeFileAtomicSync } from '@copse/std/write-file-atomic.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { isPluginClientApiEnabled } from '@copse/agent/plugins/plugin-client-api-plugin.ts'
 import { copseDataRoot } from '../storage/copse-paths.ts'
@@ -49,9 +50,9 @@ export function syncPluginClientApi(): Promise<void> {
           const result = await requestApproval(
             {
               title: 'Connect interactive client',
-              body: `Client: ${label}\nPairing code: ${code}\nScope: shell-command approvals, worktree preparation, agent questions, pending request titles, recent chat titles and text, opening those chats and using their offered follow-up actions across all projects`,
+              body: `Client: ${label}\nPairing code: ${code}\nScope: shell-command and web-origin approvals, worktree preparation, agent questions, pending request titles, recent chat titles and text, opening those chats and using their offered follow-up actions across all projects`,
               bodyAdvice:
-                'Verify this code in the client you opened. Connecting allows this client to view and answer shell-command and worktree-preparation approval requests and agent questions, view all pending request titles, read recent chat titles and recent user/assistant message text, open those chats and use their offered follow-up actions across all projects. Follow-ups can send the offered message, start a review or open a dialog. Chat text, questions and approval details may contain sensitive information. Reasoning, tool output and attachments are not shared. Access ends when this plugin is disabled or Copse quits.',
+                'Verify this code in the client you opened. Connecting allows this client to view and answer shell-command, web-origin and worktree-preparation approval requests and agent questions, view all pending request titles, read recent chat titles and recent user/assistant message text, open those chats and use their offered follow-up actions across all projects. Web-origin approval permits one request and does not save the origin. Follow-ups can send the offered message, start a review or open a dialog. Chat text, questions and approval details may contain sensitive information. Reasoning, tool output and attachments are not shared. Access ends when this plugin is disabled or Copse quits.',
               type: 'mcp',
               subject: 'Pair interactive client',
               approveLabel: 'Connect client',
@@ -63,11 +64,9 @@ export function syncPluginClientApi(): Promise<void> {
           return result.approved
         },
       })
-      mkdirSync(copseDataRoot(), { recursive: true })
-      writeFileSync(`${discovery}.tmp`, JSON.stringify({ version: 1, origin: active.origin }), {
+      writeFileAtomicSync(discovery, JSON.stringify({ version: 1, origin: active.origin }), {
         mode: 0o600,
       })
-      renameSync(`${discovery}.tmp`, discovery)
     })
     .catch((error: unknown) => {
       console.error('[plugin-client-api] Could not synchronize service:', error)

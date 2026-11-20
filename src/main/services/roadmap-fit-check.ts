@@ -84,16 +84,17 @@ export interface RoadmapFitResult {
   detail: string
 }
 
-export async function checkRoadmapFit(id: string): Promise<RoadmapFitResult> {
+/** `root` is the asking window's project checkout, whose origin names the repo (#3958). */
+export async function checkRoadmapFit(root: string | null, id: string): Promise<RoadmapFitResult> {
   const note = getKnowledgeNote(id)
   if (!note || note.type !== ROADMAP_TYPE) throw new Error(`No roadmap item with id "${id}".`)
   const ref = note.fields['issue']
   if (!ref) throw new Error('This item has no pinned issue — set one, then check fit.')
-  const coords = resolveIssueRef(ref, await getGithubRepoSlug())
+  const coords = resolveIssueRef(ref, await getGithubRepoSlug(root))
   if (!coords) {
     throw new Error(`Could not resolve "${ref}" — is this workspace a GitHub repo?`)
   }
-  const issue = await resolveGitHubBackend().getIssue(coords)
+  const issue = await resolveGitHubBackend().getIssue(root, coords)
   if (!issue) throw new Error(`Issue ${ref} was not found on GitHub.`)
 
   const evidence = fitEvidence(issue, note.body)

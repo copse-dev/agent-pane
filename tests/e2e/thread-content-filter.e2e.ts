@@ -1,6 +1,9 @@
 import { $, $$, browser, expect } from '@wdio/globals'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import type { Message, Thread } from '../../src/shared/types/index.ts'
-import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
+import { resetUserData, writeSeedConfig, e2eWorkspaceDir } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-thread-content-filter'
@@ -60,6 +63,11 @@ describe('sidebar user-request search', () => {
         ...Array.from({ length: 10 }, (_, i) =>
           thread(`filler-${String(i)}`, `Other work ${String(i)}`, now - 5000 - i * 1000, [
             message('Unrelated work'),
+            // Large tool histories must not be hydrated merely to search prompts.
+            message('assistant history '.repeat(50_000), {
+              id: 'large-assistant',
+              role: 'assistant',
+            }),
           ]),
         ),
         thread('old-request', 'Older follow-up request', now - 30000, [
@@ -77,6 +85,25 @@ describe('sidebar user-request search', () => {
 
   after(() => {
     resetUserData()
+  })
+
+  it('builds the persistent prompt index before the first search', async () => {
+    const path = join(e2eWorkspaceDir(), PROJECT_ID, '.thread-prompt-index.sqlite')
+    await browser.waitUntil(
+      () => {
+        if (!existsSync(path)) return false
+        const db = new DatabaseSync(path, { readOnly: true })
+        try {
+          return db.prepare('SELECT COUNT(*) AS count FROM threads').get()?.['count'] === 16
+        } catch {
+          return false
+        } finally {
+          db.close()
+        }
+      },
+      { timeout: 15000, timeoutMsg: 'Expected background prompt indexing before typing a query' },
+    )
+    await expect($('.projects-search-input')).toHaveValue('')
   })
 
   it('finds persisted user requests beyond the first page in date order and opens a match', async () => {

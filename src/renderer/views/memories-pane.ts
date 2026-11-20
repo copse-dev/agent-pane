@@ -9,6 +9,7 @@ import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { plusIcon, refreshIcon } from '../dom/icons.ts'
 import { paneLoadingRow } from '../dom/pane-loading.ts'
 import { selectRightPanelMode } from '../controller/panels.ts'
+import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 
 // A memory is one `Memory`-typed knowledge note. Derive the shape from the IPC
 // surface so this view never imports main-process types directly.
@@ -356,7 +357,7 @@ export function mountMemoriesPane(
     selectRightPanelMode(store, 'memories', (active) => {
       if (active) void refresh({ preserveDirty: true })
     }),
-    store.on('workspace_changed', () => {
+    selectActiveWorkspace(store, () => {
       // Memories are per-project; drop the previous workspace's selection.
       selectedId = null
       creating = false

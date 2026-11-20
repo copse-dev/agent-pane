@@ -229,9 +229,18 @@ export function initMentionPicker(opts: MentionPickerOptions): () => void {
   }
 
   function updateSelection(): void {
-    picker
-      .querySelectorAll('.mention-item')
-      .forEach((el, i) => el.classList.toggle('selected', i === selectedIdx))
+    const items = picker.querySelectorAll<HTMLElement>('.mention-item')
+    items.forEach((el, i) => el.classList.toggle('selected', i === selectedIdx))
+    const selected = items[selectedIdx]
+    if (!selected) return
+    // Scroll this upward-opening popover, without moving the surrounding chat.
+    const top = selected.offsetTop
+    const bottom = top + selected.offsetHeight
+    if (top < picker.scrollTop) {
+      picker.scrollTop = top
+    } else if (bottom > picker.scrollTop + picker.clientHeight) {
+      picker.scrollTop = bottom - picker.clientHeight
+    }
   }
 
   input.el.addEventListener('input', () => {

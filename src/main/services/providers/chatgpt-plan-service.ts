@@ -5,6 +5,7 @@ import { getExplicitSettingsProfile } from '../storage/settings-context.ts'
 import {
   authorizeChatGpt,
   CHATGPT_RESOURCE,
+  ChatGptTokenError,
   refreshChatGptTokens,
   revokeChatGptTokens,
   type ChatGptOAuthDependencies,
@@ -179,11 +180,30 @@ export class ChatGptPlanService {
           'ChatGPT plan permission was not granted. Continue with ChatGPT to enable it.',
         )
       if (forceRefresh || account.credentials.expiresAt <= Date.now() + 60_000) {
-        const replacement = await refreshChatGptTokens(
-          clientId,
-          account.credentials.refreshToken,
-          this.dependencies.fetch,
-        )
+        let replacement
+        try {
+          replacement = await refreshChatGptTokens(
+            clientId,
+            account.credentials.refreshToken,
+            this.dependencies.fetch,
+          )
+        } catch (error) {
+          // 400/401 means the refresh token itself is dead (revoked, or the OAuth
+          // client registration invalidated, e.g. by a plan change) — no retry of the
+          // same token will ever succeed. Clear it so status/UI stop claiming "Ready"
+          // and the next "Continue with ChatGPT" starts a real reauthorization instead
+          // of silently refreshing a doomed token again.
+          if (
+            error instanceof ChatGptTokenError &&
+            (error.status === 400 || error.status === 401)
+          ) {
+            account.credentials = null
+            this.catalogs.delete(clientId)
+            this.store.write(state)
+            throw new Error('ChatGPT sign-in expired. Reconnect this account.', { cause: error })
+          }
+          throw error
+        }
         account.credentials = {
           ...account.credentials,
           accessToken: replacement.access_token,
@@ -240,6 +260,18 @@ export class ChatGptPlanService {
 
 let service: ChatGptPlanService | undefined
 
+let focusCopseWindow: (() => void) | undefined
+
+/**
+ * How Copse brings its window forward once the sign-in callback lands. The
+ * main process sets it when it registers the ChatGPT plan handlers. This
+ * module also loads in the standalone thread-container worker, which must stay
+ * electron-free, so it never imports the window code itself.
+ */
+export function setChatGptPlanWindowFocus(focus: () => void): void {
+  focusCopseWindow = focus
+}
+
 /** Lazy construction respects the host's persistent-store and secure-storage boot order. */
 export function getChatGptPlanService(): ChatGptPlanService {
   service ??= new ChatGptPlanService(createChatGptPlanStore(), {
@@ -247,6 +279,13 @@ export function getChatGptPlanService(): ChatGptPlanService {
     openBrowser: async (url): Promise<void> => {
       const { shell } = await import('electron')
       await shell.openExternal(url)
+    },
+    focusApp: (): void => {
+      try {
+        focusCopseWindow?.()
+      } catch (err) {
+        console.warn('[chatgpt-plan] could not focus Copse after sign-in callback:', err)
+      }
     },
   })
   return service

@@ -12,14 +12,21 @@ import {
 import { getActiveRunThread } from './thread-models.ts'
 import { withRunDeadlinePaused } from './hooks/run-deadline.ts'
 import { humanDecisions, humanDecisionSource, humanDecisionActor } from './human-decisions.ts'
-import { getActiveProjectId } from './workspace.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
 import { recordDecision } from './security/decision-log-store.ts'
 import type { UserAlertSender } from './user-alerts.ts'
+import { isDeferralModeActive } from './security/deferral-mode.ts'
 
 export interface AskUserRequest {
   questions: AskUserQuestion[]
   presentation?: AskUserActionsPresentation
+  /**
+   * The project of the thread asking, for a question raised outside its turn
+   * (an ACP agent's own continuation asking to go on). A running turn's project
+   * is used otherwise. With neither, the question stays on the desktop and is
+   * not offered to interactive clients.
+   */
+  projectId?: string
 }
 
 export interface AskUserResult {
@@ -37,6 +44,8 @@ export interface AskUserResult {
    * so a caller must not report them as answered.
    */
   timedOut?: true
+  /** No person is waiting on this run; the caller must preserve any reviewable question. */
+  deferred?: true
 }
 
 /**
@@ -96,8 +105,12 @@ export function requestUserAnswers(
   req: AskUserRequest,
   signal?: AbortSignal,
 ): Promise<AskUserResult> {
-  const activeHandler = scopedHandler.getStore() ?? handler
   if (signal?.aborted) return Promise.resolve(cancelledAnswers(req))
+  const threadId = getActiveRunThread() ?? undefined
+  if (isDeferralModeActive(threadId)) {
+    return Promise.resolve({ ...blankAnswers(req), deferred: true })
+  }
+  const activeHandler = scopedHandler.getStore() ?? handler
   if (!activeHandler) return Promise.resolve(blankAnswers(req))
   // A question on screen is a host-side wait on a human, exactly like an
   // approval modal, so it pauses the run's sliding idle deadline the same way
@@ -107,7 +120,6 @@ export function requestUserAnswers(
   // — the ask-user half of #2332. The wait stays bounded regardless:
   // ASK_USER_TIMEOUT_MS caps it at 30 minutes, so pausing the clock here cannot
   // leave a turn that neither progresses nor ever ends.
-  const threadId = getActiveRunThread() ?? undefined
   return withRunDeadlinePaused(threadId, () =>
     requestUserAnswersUnpaused(req, activeHandler, signal),
   )
@@ -262,7 +274,8 @@ export function createWindowAskUserHandler(deps: WindowAskUserDeps): AskUserHand
         withdraw(timedOutAnswers(req))
       }, ASK_USER_TIMEOUT_MS)
       if (typeof timer.unref === 'function') timer.unref()
-      const projectId = getThreadExecutionContext()?.projectId ?? getActiveProjectId()
+      // The asker's own project, never whichever one the window has open.
+      const projectId = req.projectId ?? getThreadExecutionContext()?.projectId
       const removeDecision =
         projectId && threadId
           ? humanDecisions.register(

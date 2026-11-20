@@ -59,7 +59,7 @@ function variablesOf(body: unknown): Record<string, unknown> {
 describe('githubApiBackend', () => {
   it('sends the request to the /user endpoint for status', async () => {
     router = (): RouteResult => ({ body: { login: 'octo' } })
-    const status = await githubApiBackend.getStatus()
+    const status = await githubApiBackend.getStatus(null)
     assert.equal(status.username, 'octo')
     assert.equal(calls.length, 1)
     assert.match(calls[0]?.url ?? '', /\/user$/)
@@ -70,7 +70,7 @@ describe('githubApiBackend', () => {
       status: 201,
       body: { number: 12, html_url: 'https://github.com/octo/demo/pull/12' },
     })
-    const result = await githubApiBackend.createPr({
+    const result = await githubApiBackend.createPr(null, {
       owner: 'octo',
       repo: 'demo',
       head: 'copse/fix',
@@ -99,7 +99,7 @@ describe('githubApiBackend', () => {
       status: 422,
       body: { message: 'No commits between main and x' },
     })
-    const result = await githubApiBackend.createPr({
+    const result = await githubApiBackend.createPr(null, {
       owner: 'octo',
       repo: 'demo',
       head: 'x',
@@ -124,7 +124,7 @@ describe('githubApiBackend', () => {
       }
       return { body: [{ number: 7, html_url: 'https://github.com/octo/demo/pull/7' }] }
     }
-    const result = await githubApiBackend.createPr({
+    const result = await githubApiBackend.createPr(null, {
       owner: 'octo',
       repo: 'demo',
       head: 'copse/fix',
@@ -143,7 +143,7 @@ describe('githubApiBackend', () => {
 
   it('approvePr POSTs an APPROVE review', async () => {
     router = (): RouteResult => ({ status: 200, body: {} })
-    const result = await githubApiBackend.approvePr(REF)
+    const result = await githubApiBackend.approvePr(null, REF)
     assert.equal(result.ok, true)
     assert.equal(result.backend, 'api')
     const call = calls.at(-1)
@@ -156,7 +156,7 @@ describe('githubApiBackend', () => {
   it('markPrReady is a no-op when the PR is not a draft', async () => {
     router = (_m: string, url: string): RouteResult =>
       url.includes('/pulls/7') ? { body: { draft: false, node_id: 'n1' } } : { body: {} }
-    const result = await githubApiBackend.markPrReady(REF)
+    const result = await githubApiBackend.markPrReady(null, REF)
     assert.equal(result.ok, true)
     assert.equal(result.noop, true)
     assert.ok(!calls.some((call) => call.url.endsWith('/graphql')))
@@ -167,7 +167,7 @@ describe('githubApiBackend', () => {
       if (url.endsWith('/graphql')) return { body: { data: { markPullRequestReadyForReview: {} } } }
       return { body: { draft: true, node_id: 'node-123' } }
     }
-    const result = await githubApiBackend.markPrReady(REF)
+    const result = await githubApiBackend.markPrReady(null, REF)
     assert.equal(result.ok, true)
     assert.equal(result.noop, undefined)
     const gql = calls.find((call) => call.url.endsWith('/graphql'))
@@ -185,7 +185,7 @@ describe('githubApiBackend', () => {
       }
       return { body: { node_id: 'node-9' } }
     }
-    const result = await githubApiBackend.enableAutoMerge(REF)
+    const result = await githubApiBackend.enableAutoMerge(null, REF)
     assert.equal(result.ok, true)
     assert.equal(result.strategy, 'squash')
     const gql = calls.find((call) => call.url.endsWith('/graphql'))
@@ -200,7 +200,7 @@ describe('githubApiBackend', () => {
       if (/\/repos\/octo\/demo$/.test(url)) return { body: { allow_squash_merge: true } }
       return { body: { node_id: 'node-9' } }
     }
-    const result = await githubApiBackend.enableAutoMerge(REF)
+    const result = await githubApiBackend.enableAutoMerge(null, REF)
     assert.equal(result.ok, true)
     assert.equal(result.noop, true)
   })
@@ -223,7 +223,7 @@ describe('githubApiBackend', () => {
       }
       return { status: 201, body: {} }
     }
-    const result = await githubApiBackend.rerunFailedRuns(REF)
+    const result = await githubApiBackend.rerunFailedRuns(null, REF)
     assert.equal(result.ok, true)
     assert.equal(result.rerunCount, 3)
     const rerunCalls = calls.filter((call) => call.url.includes('/rerun-failed-jobs'))
@@ -236,7 +236,7 @@ describe('githubApiBackend', () => {
       status: 403,
       body: { message: 'Resource not accessible by integration' },
     })
-    const result = await githubApiBackend.approvePr(REF)
+    const result = await githubApiBackend.approvePr(null, REF)
     assert.equal(result.ok, false)
     assert.match(result.message, /not accessible/)
   })
@@ -262,7 +262,7 @@ describe('githubApiBackend', () => {
         },
       }
     }
-    const details = await githubApiBackend.getPrDetails(REF)
+    const details = await githubApiBackend.getPrDetails(null, REF)
     assert.ok(details)
     assert.equal(details.title, 'Do a thing')
     assert.equal(details.state, 'OPEN')
@@ -291,7 +291,7 @@ describe('githubApiBackend', () => {
         },
       }
     }
-    const details = await githubApiBackend.getPrDetails(REF)
+    const details = await githubApiBackend.getPrDetails(null, REF)
     assert.ok(details)
     assert.equal(details.state, 'MERGED')
     assert.equal(details.mergedAt, '2026-10-01T12:00:00Z')
@@ -328,7 +328,7 @@ describe('githubApiBackend', () => {
       return { body: {} }
     }
 
-    const diff = await githubApiBackend.getPrFileDiff(REF, 'screenshots/result.png')
+    const diff = await githubApiBackend.getPrFileDiff(null, REF, 'screenshots/result.png')
     assert.ok(diff)
     assert.equal(diff.before, '')
     assert.equal(diff.after, '')
@@ -374,19 +374,19 @@ describe('githubApiBackend', () => {
         },
       }
     }
-    const details = await githubApiBackend.getPrDetails(REF)
+    const details = await githubApiBackend.getPrDetails(null, REF)
     assert.equal(details?.activity?.headSha, 'abc1234')
     assert.deepEqual(details.activity.checks, [])
     assert.equal(details.activity.error, undefined)
     unavailable = true
-    const partial = await githubApiBackend.getPrDetails(REF)
+    const partial = await githubApiBackend.getPrDetails(null, REF)
     assert.equal(partial?.title, 'Activity test')
     assert.match(partial.activity?.error ?? '', /Could not load/)
   })
 
   it('getPrChecksState returns no_checks instead of throwing on a network error', async () => {
     globalThis.fetch = (): Promise<Response> => Promise.reject(new Error('network down'))
-    const state = await githubApiBackend.getPrChecksState(REF)
+    const state = await githubApiBackend.getPrChecksState(null, REF)
     assert.equal(state, 'no_checks')
   })
 
@@ -419,7 +419,7 @@ describe('githubApiBackend', () => {
       }
       return { body: {} }
     }
-    const state = await githubApiBackend.getPrChecksState(REF)
+    const state = await githubApiBackend.getPrChecksState(null, REF)
     assert.equal(state, 'success')
     assert.equal(calls.length, 1)
     assert.ok(calls[0]?.url.endsWith('/graphql'))
@@ -451,7 +451,7 @@ describe('githubApiBackend', () => {
       }
       return { body: {} }
     }
-    const prs = await githubApiBackend.listMyOpenPrs(10)
+    const prs = await githubApiBackend.listMyOpenPrs(null, 10)
     assert.ok(prs)
     assert.equal(prs.length, 1)
     const first = prs[0]

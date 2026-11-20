@@ -51,6 +51,9 @@ describe('agent-prompt', () => {
   it('includes the shared working-style doctrine in both modes', () => {
     for (const prompt of [BASE_SYSTEM_PROMPT, BASE_SYSTEM_PROMPT_DIRECT_READS]) {
       assert.match(prompt, /Working style:/)
+      assert.match(prompt, /describe actions in plain language/)
+      assert.match(prompt, /never internal tool identifiers/)
+      assert.match(prompt, /progress updates, approval explanations, errors, and final replies/)
       assert.match(prompt, /Lead with the outcome/)
       assert.match(prompt, /Report outcomes faithfully/)
       assert.match(prompt, /verified the behavior itself, not just that it compiles/)

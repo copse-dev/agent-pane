@@ -114,6 +114,20 @@ describe('resolveAcpSandbox (issue #590)', () => {
     )
   })
 
+  it('reads the macOS keychain only for the Claude presets, which keep their login there', () => {
+    for (const id of ['claude-acp', 'claude-code-acp']) {
+      assert.equal(resolveAcpSandbox({ ...base, id })?.allowMacOsKeychain, true, id)
+      assert.equal(
+        resolveAcpSandbox({ ...base, id, sandbox: { allowedDomains: [] } })?.allowMacOsKeychain,
+        undefined,
+      )
+    }
+    for (const entry of KNOWN_ACP_AGENTS) {
+      if (entry.id === 'claude-acp' || entry.id === 'claude-code-acp') continue
+      assert.equal(entry.sandbox?.allowMacOsKeychain, undefined, entry.id)
+    }
+  })
+
   it('falls back to the KNOWN_ACP_AGENTS catalog preset for the id', () => {
     const resolved = resolveAcpSandbox({ ...base, id: 'claude-agent-acp' })
     assert.ok(resolved)

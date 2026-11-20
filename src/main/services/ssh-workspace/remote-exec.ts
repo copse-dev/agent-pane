@@ -12,6 +12,18 @@ export function buildRemoteEnvPrefix(env: Record<string, string> | undefined): s
   return `env ${pairs.join(' ')} `
 }
 
+/**
+ * `KEY=VAL … ` shell assignments for a line that starts with the `exec`
+ * builtin. `env KEY=VAL exec …` would make `env` look for a program named
+ * `exec` and fail with exit 127.
+ */
+function buildRemoteAssignPrefix(env: Record<string, string> | undefined): string {
+  const pairs = Object.entries(env ?? {})
+    .filter(([key]) => ENV_KEY_PATTERN.test(key))
+    .map(([key, value]) => `${key}=${posixQuote(value)}`)
+  return pairs.length > 0 ? `${pairs.join(' ')} ` : ''
+}
+
 /** Wrap argv in `cd <cwd> && exec …` when a working directory is requested. */
 export function buildRemoteArgvCommand(
   argv: string[],
@@ -30,7 +42,11 @@ export function buildRemoteShellCommand(
   cwd: string | undefined,
   env: Record<string, string> | undefined,
 ): string {
-  const envPrefix = buildRemoteEnvPrefix(env)
+  // A line that `exec`s its program takes the env as shell assignments: `env`
+  // cannot run the `exec` builtin.
+  const envPrefix = /^exec\s/.test(shellLine)
+    ? buildRemoteAssignPrefix(env)
+    : buildRemoteEnvPrefix(env)
   const inner = `${envPrefix}${shellLine}`
   if (!cwd) return inner
   return `cd ${posixQuote(cwd)} && ${inner}`
@@ -49,11 +65,7 @@ export function buildRemotePtyCommand(
   cwd: string | undefined,
   env: Record<string, string> | undefined,
 ): string {
-  const pairs = Object.entries(env ?? {})
-    .filter(([key]) => ENV_KEY_PATTERN.test(key))
-    .map(([key, value]) => `${key}=${posixQuote(value)}`)
-  const assignPrefix = pairs.length > 0 ? `${pairs.join(' ')} ` : ''
-  const launch = `${assignPrefix}exec ${posixQuote(shell)} -l`
+  const launch = `${buildRemoteAssignPrefix(env)}exec ${posixQuote(shell)} -l`
   if (!cwd) return launch
   return `cd ${posixQuote(cwd)} && ${launch}`
 }

@@ -137,4 +137,54 @@ describe('mountSshStatusBanner', () => {
     assert.equal(el.querySelectorAll('.ssh-status-icon').length, 0)
     banner.destroy()
   })
+  it('shows the disconnect banner when setState alone switches to an SSH project', async () => {
+    const store = createStore()
+    store.setState({
+      projects: [
+        { id: 'local', path: '/local', name: 'local' },
+        { id: 'remote', path: '/remote', name: 'remote', sshHost: 'dev' },
+      ],
+      activeProjectId: 'local',
+    })
+
+    const state: SshConnectionState = {
+      hostId: 'dev',
+      status: 'disconnected',
+      label: 'Dev',
+      target: 'ubuntu@dev.example',
+    }
+
+    const api = ((): ApiClient => {
+      const base = createFakeApi()
+      return {
+        ...base,
+        settings: {
+          ...base['settings'],
+          get: async (key: string): Promise<unknown> =>
+            key === 'sshWorkspaceEnabled' ? true : null,
+        },
+        sshWorkspace: {
+          ...base['sshWorkspace'],
+          getStates: async (): Promise<SshConnectionState[]> => [state],
+          onConnectionChanged: (): (() => void) => () => undefined,
+          reconnect: async (): Promise<SshConnectionState[]> => [state],
+        },
+      } satisfies ApiClient
+    })()
+
+    const banner = mountSshStatusBanner(store, api)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(document.getElementById('ssh-status-banner'), null)
+
+    store.setState({ activeProjectId: 'remote', workspaceRoot: '/remote' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const el = document.getElementById('ssh-status-banner')
+    assert.ok(el)
+    assert.equal(
+      el.textContent.includes('SSH connection to ubuntu@dev.example is disconnected.'),
+      true,
+    )
+    banner.destroy()
+  })
 })

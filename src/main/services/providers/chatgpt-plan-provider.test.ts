@@ -53,6 +53,7 @@ function provider(): LLMProvider {
         throw new Error('Unexpected authentication request')
       },
       openBrowser: async (): Promise<void> => {},
+      focusApp: (): void => {},
     },
   )
   return createChatGptPlanProvider(

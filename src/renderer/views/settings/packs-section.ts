@@ -5,6 +5,7 @@ import type { ApiClient } from '../../../preload/api.d.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { SettingsSnapshot } from '@shared/settings-contract.ts'
 import { humanizeIdentifier } from '@shared/humanize-identifier.ts'
+import { getToolDisplayName } from '@shared/tools/tool-display.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { qsRequired } from '../../dom/helpers.ts'
@@ -32,6 +33,19 @@ export function pluginDisplayName(
   if (plugin.id === 'copse.mcp-ui-canvas') return 'Canvas and explainers'
   const stripped = raw.startsWith('copse.') ? raw.slice('copse.'.length) : raw
   return stripped ? humanizeIdentifier(stripped).replaceAll('-', ' ') : raw
+}
+
+/**
+ * Who published a plugin, read as part of its name line: "1.2.3 · Copse". The
+ * same answer repeats on every row, so it is a quiet suffix rather than a
+ * caption over the name or one more chip competing with it.
+ */
+function appendPublisher(nameLine: HTMLElement, publisher: HTMLElement): void {
+  const separator = document.createElement('span')
+  separator.className = 'plugin-name-separator'
+  separator.setAttribute('aria-hidden', 'true')
+  separator.textContent = '·'
+  nameLine.append(separator, publisher)
 }
 
 function countLabel(count: number, noun: string): string {
@@ -366,9 +380,6 @@ export function createPacksSection(
     })
     toggleLabel.append(toggle, track)
 
-    // Who published the plugin is the first thing to know about it and the same
-    // answer for every row, so it reads as an eyebrow over the name rather than
-    // as one more chip competing with it.
     const title = document.createElement('div')
     title.className = 'plugin-row-title'
     const trustBadge = document.createElement('span')
@@ -377,7 +388,6 @@ export function createPacksSection(
         ? 'plugin-badge plugin-badge-first-party'
         : 'plugin-badge plugin-badge-user'
     trustBadge.textContent = plugin.trust === 'first-party' ? 'Copse' : 'User'
-    title.append(trustBadge)
 
     const nameLine = document.createElement('div')
     nameLine.className = 'plugin-row-name-line'
@@ -391,14 +401,16 @@ export function createPacksSection(
       versionEl.textContent = plugin.version
       nameLine.append(versionEl)
     }
-    const stabilityBadge = document.createElement('span')
-    stabilityBadge.className = `ui-badge plugin-badge-${plugin.stability}`
-    stabilityBadge.textContent = plugin.stability
-    stabilityBadge.title =
-      plugin.stability === 'experimental'
-        ? 'Experimental: behavior and compatibility may change.'
-        : 'Stable: supported as part of the current plugin contract.'
-    nameLine.append(stabilityBadge)
+    appendPublisher(nameLine, trustBadge)
+    // Stable is the default, so only the exception is labelled: Experimental is
+    // the one thing to read before switching a plugin on.
+    if (plugin.stability === 'experimental') {
+      const stabilityBadge = document.createElement('span')
+      stabilityBadge.className = 'ui-badge plugin-badge-experimental'
+      stabilityBadge.textContent = plugin.stability
+      stabilityBadge.title = 'Experimental: behavior and compatibility may change.'
+      nameLine.append(stabilityBadge)
+    }
     title.append(nameLine)
 
     // A bare switch never says which way is on. The flanking words do, and CSS
@@ -518,7 +530,7 @@ export function createPacksSection(
       chips.push({
         label: 'Tools',
         count: contributions.toolNames.length,
-        title: contributions.toolNames.join(', '),
+        title: contributions.toolNames.map((name) => getToolDisplayName(name)).join(', '),
       })
     }
     if (contributions.modelRoutes.length > 0) {
@@ -1070,7 +1082,6 @@ export function createPacksSection(
     originBadge.className = 'plugin-badge plugin-badge-cursor'
     originBadge.textContent = 'Cursor'
     originBadge.title = 'Installed through Cursor. Cursor manages this plugin.'
-    title.append(originBadge)
 
     const nameLine = document.createElement('div')
     nameLine.className = 'plugin-row-name-line'
@@ -1084,6 +1095,7 @@ export function createPacksSection(
       versionEl.textContent = plugin.version
       nameLine.append(versionEl)
     }
+    appendPublisher(nameLine, originBadge)
     title.append(nameLine)
 
     const toggleControl = document.createElement('div')
@@ -1185,7 +1197,6 @@ export function createPacksSection(
     originBadge.className = 'plugin-badge plugin-badge-cursor'
     originBadge.textContent = 'Cursor · Bundled'
     originBadge.title = 'Written for Cursor; ships inside Copse from a pinned, reviewed snapshot.'
-    title.append(originBadge)
 
     const nameLine = document.createElement('div')
     nameLine.className = 'plugin-row-name-line'
@@ -1199,6 +1210,7 @@ export function createPacksSection(
       versionEl.textContent = plugin.version
       nameLine.append(versionEl)
     }
+    appendPublisher(nameLine, originBadge)
     title.append(nameLine)
 
     const toggleControl = document.createElement('div')

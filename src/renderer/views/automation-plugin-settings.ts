@@ -27,6 +27,7 @@ import { ipcErrorMessage } from '../ipc-error-message.ts'
 import { describeRetainedWorktrees } from './automation-retained-worktrees.ts'
 import { describeAutomationFailure } from '@shared/automation-failure.ts'
 import { refreshAutomationSchedules } from '../controller/automations.ts'
+import { humanizeIdentifier } from '@shared/humanize-identifier.ts'
 
 function cleanIpcError(error: unknown): string {
   return ipcErrorMessage(error, 'Automation request failed.')
@@ -350,12 +351,50 @@ export function createAutomationPluginSettings(
     'aria-live': 'polite',
   })
   const permissionsList = el('div', { class: 'automation-permission-list' })
+  const preparationDirectory = el('input', {
+    type: 'text',
+    class: 'automation-input automation-preparation-directory',
+    value: '.',
+    maxlength: '4096',
+  })
+  const preparationNetwork = el(
+    'select',
+    { class: 'automation-input automation-preparation-network' },
+    el('option', { value: 'allowed' }, 'Allowed during setup'),
+    el('option', { value: 'offline' }, 'Blocked (offline setup)'),
+  )
+  const reviewPreparationButton = el(
+    'button',
+    {
+      type: 'button',
+      class: 'ui-btn ui-btn-secondary automation-preparation-review-btn',
+    },
+    'Review worktree setup',
+  )
+  const preparationProposalHint = el(
+    'p',
+    { class: 'automation-hint automation-preparation-proposal-hint', hidden: true },
+    'These fields are for another setup review. Saved setup permissions below keep their listed folder and network scope.',
+  )
   permissionsFieldset.append(
     el('legend', {}, 'Allowed without asking'),
     el(
       'p',
       { class: 'automation-hint automation-permissions-hint' },
-      'Optional and schedule-specific. Shell commands, file approvals, new websites, sensitive data, and model spend still ask.',
+      'Only selected actions and reviewed setup plans run without asking. Other shell commands, file approvals, websites, sensitive data and model spend keep their normal permissions.',
+    ),
+    el(
+      'div',
+      { class: 'automation-preparation-setup' },
+      preparationProposalHint,
+      el(
+        'label',
+        { class: 'automation-label' },
+        'Setup folder (relative to this project)',
+        preparationDirectory,
+      ),
+      el('label', { class: 'automation-label' }, 'Network during setup', preparationNetwork),
+      reviewPreparationButton,
     ),
     el('div', { class: 'automation-permission-toolbar' }, permissionFilterInput, permissionCount),
     permissionsList,
@@ -424,6 +463,7 @@ export function createAutomationPluginSettings(
   let permissionValuesByKey = new Map<string, AutomationPermission>()
   let selectedPermissionKeys = new Set<string>()
   let editingId: string | null = null
+  let preparationReviewEpoch = 0
   let customCron: string | null = null
   // Consumed by the first successful load; later refreshes (a save, a delete)
   // must not re-open the editor behind the user.
@@ -443,6 +483,7 @@ export function createAutomationPluginSettings(
   }
 
   function closeForm(): void {
+    preparationReviewEpoch++
     editingId = null
     ciEditor.showList()
     form.hidden = true
@@ -536,14 +577,21 @@ export function createAutomationPluginSettings(
   function unavailablePermissionOption(
     permission: AutomationPermission,
   ): AutomationPermissionOption {
+    if (permission.kind === 'worktree-preparation') {
+      return {
+        permission,
+        label: `Prepare worktree (${permission.directory})`,
+        detail: `Reviewed plan ${permission.planFingerprint.slice(0, 12)} · ${permission.offline ? 'Offline' : 'Network allowed'}. Changed preparation inputs require approval again.`,
+      }
+    }
     const parts = permission.toolName.split('__')
     const mcpLabel =
       parts[0] === 'mcp' && parts.length >= 3
-        ? `${parts[1] ?? 'MCP'} / ${parts.slice(2).join('__')}`
-        : permission.toolName
+        ? `${humanizeIdentifier(parts[1] ?? 'MCP')} / ${humanizeIdentifier(parts.slice(2).join('__'))}`
+        : humanizeIdentifier(permission.toolName)
     return {
       permission,
-      label: permission.kind === 'mcp-tool' ? mcpLabel : permission.toolName,
+      label: mcpLabel,
       detail: 'Not currently available. Kept so the approval works if this tool returns.',
     }
   }
@@ -571,7 +619,7 @@ export function createAutomationPluginSettings(
       'label',
       {
         class: `automation-permission-row${unavailable ? ' automation-permission-unavailable' : ''}`,
-        title: option.permission.toolName,
+        'data-tool-name': option.permission.toolName,
       },
       el(
         'span',
@@ -587,13 +635,12 @@ export function createAutomationPluginSettings(
             },
             unavailable
               ? 'Unavailable'
-              : option.permission.kind === 'copse-action'
+              : option.permission.kind !== 'mcp-tool'
                 ? 'Copse action'
                 : 'MCP tool',
           ),
         ),
         el('span', { class: 'automation-permission-detail' }, option.detail),
-        el('code', { class: 'automation-permission-id' }, option.permission.toolName),
       ),
       switchControl,
     )
@@ -609,7 +656,10 @@ export function createAutomationPluginSettings(
       .map(unavailablePermissionOption)
     const allOptions = [
       ...availablePermissions.map((option) => ({ option, unavailable: false })),
-      ...unavailable.map((option) => ({ option, unavailable: true })),
+      ...unavailable.map((option) => ({
+        option,
+        unavailable: option.permission.kind !== 'worktree-preparation',
+      })),
     ]
     const query = permissionFilterInput.value.trim().toLowerCase()
     const terms = query ? query.split(/\s+/) : []
@@ -618,7 +668,7 @@ export function createAutomationPluginSettings(
         option.label,
         option.detail,
         option.permission.toolName,
-        option.permission.kind === 'copse-action' ? 'Copse action' : 'MCP tool',
+        option.permission.kind !== 'mcp-tool' ? 'Copse action' : 'MCP tool',
       ]
         .join(' ')
         .toLowerCase()
@@ -669,10 +719,83 @@ export function createAutomationPluginSettings(
 
   permissionFilterInput.addEventListener('input', renderPermissionChoices)
 
+  reviewPreparationButton.addEventListener('click', () => {
+    if (!projectId || form.hidden) return
+    const reviewProjectId = projectId
+    const epoch = preparationReviewEpoch
+    const ownerDialog = root.closest<HTMLDialogElement>('dialog')
+    const isCurrent = (): boolean =>
+      root.isConnected &&
+      !form.hidden &&
+      preparationReviewEpoch === epoch &&
+      !root.closest('[hidden]') &&
+      (!ownerDialog || ownerDialog.open)
+    const cancelReview = (): void => {
+      if (preparationReviewEpoch !== epoch) return
+      preparationReviewEpoch++
+      reviewPreparationButton.disabled = false
+    }
+    ownerDialog?.addEventListener('close', cancelReview, { once: true })
+    reviewPreparationButton.disabled = true
+    hideStatus()
+    void (async (): Promise<void> => {
+      try {
+        const review = await api.automations.reviewPreparation(reviewProjectId, {
+          directory: preparationDirectory.value.trim() || '.',
+          offline: preparationNetwork.value === 'offline',
+        })
+        if (!isCurrent()) return
+        if (review.projectId !== reviewProjectId)
+          throw new Error('The setup review belongs to another project. Review it again.')
+        const confirmed = await showConfirmDialog({
+          message: `Allow this setup for “${nameInput.value.trim() || 'this automation'}”?`,
+          detail: el(
+            'div',
+            { class: 'automation-preparation-review' },
+            el('p', {}, `Project: ${review.projectName} · Folder: ${review.permission.directory}`),
+            el('p', {}, review.bodyAdvice),
+            el('code', { class: 'automation-preparation-review-commands' }, review.body),
+            el('p', {}, review.bodyFooter),
+            el(
+              'p',
+              {},
+              'This selects the exact setup for future runs. Save the automation to keep it. Changed setup files need another review.',
+            ),
+          ),
+          confirmLabel: 'Use this setup',
+        })
+        if (!confirmed || !isCurrent()) return
+        // Re-reviewing a changed plan replaces the earlier selection for this
+        // exact folder/network scope, so stale drafts cannot block every save.
+        for (const [oldKey, permission] of permissionValuesByKey) {
+          if (
+            permission.kind === 'worktree-preparation' &&
+            permission.directory === review.permission.directory &&
+            permission.offline === review.permission.offline
+          ) {
+            permissionValuesByKey.delete(oldKey)
+            selectedPermissionKeys.delete(oldKey)
+          }
+        }
+        const key = automationPermissionKey(review.permission)
+        permissionValuesByKey.set(key, review.permission)
+        selectedPermissionKeys.add(key)
+        renderPermissionChoices()
+        showStatus('Reviewed setup selected. Save the automation to keep it.')
+      } catch (error) {
+        if (isCurrent()) showStatus(cleanIpcError(error), true)
+      } finally {
+        ownerDialog?.removeEventListener('close', cancelReview)
+        if (preparationReviewEpoch === epoch) reviewPreparationButton.disabled = false
+      }
+    })()
+  })
+
   async function openForm(
     schedule?: AutomationSchedule,
     draft?: AutomationCreationDraft,
   ): Promise<void> {
+    preparationReviewEpoch++
     hideStatus()
     editingId = schedule?.id ?? null
     formTitle.textContent = schedule ? 'Edit automation' : 'New automation'
@@ -692,6 +815,16 @@ export function createAutomationPluginSettings(
     }
     worktreeLimitSelect.value = savedLimit
     permissionFilterInput.value = ''
+    preparationDirectory.value = '.'
+    preparationNetwork.value = 'allowed'
+    const hasSavedPreparation =
+      schedule?.permissions?.some((permission) => permission.kind === 'worktree-preparation') ??
+      false
+    preparationProposalHint.hidden = !hasSavedPreparation
+    reviewPreparationButton.textContent = hasSavedPreparation
+      ? 'Review another setup'
+      : 'Review worktree setup'
+    reviewPreparationButton.disabled = false
     setPermissionChoices(schedule?.permissions ?? [])
     // An existing schedule keeps whatever it stored (including a model pinned
     // before schedules moved to dynamic selection — the picker surfaces it as a
@@ -1071,6 +1204,7 @@ export function createAutomationPluginSettings(
         },
         (error: unknown) => {
           showStatus(cleanIpcError(error), true)
+          status.scrollIntoView({ block: 'nearest' })
         },
       )
       .finally(() => {

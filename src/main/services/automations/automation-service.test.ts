@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
@@ -19,6 +19,9 @@ import type {
 import type { AutomationWorktreeRelease } from '../worktree-parking.ts'
 import type { AgentDispatchRequest } from '../agent-dispatcher.ts'
 import { storageGet, storageSet } from '../storage/storage.ts'
+import { getSetting, setSetting } from '../storage/settings.ts'
+import { copseToolPermissionId } from '../security/tool-permissions.ts'
+import { readWorktreePreparationPlan } from '../worktree-preparation-plan.ts'
 import { createThread, getThreadMeta, updateMetaOrThrow } from '../thread-store.ts'
 import {
   createAutomationService,
@@ -147,6 +150,139 @@ describe('AutomationService', () => {
     storageSet(STORAGE_KEY, [])
   })
 
+  it('can save an exact current preparation selection before the first automation run', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'automation-upfront-preparation-'))
+    const previousProjects = storageGet('projects')
+    writeFileSync(join(root, 'package.json'), '{"packageManager":"npm@11.12.0"}')
+    writeFileSync(join(root, 'package-lock.json'), '{}')
+    storageSet('projects', [{ id: 'project-a', name: 'Project A', path: root }])
+    const plan = readWorktreePreparationPlan(root)
+    const permission: AutomationPermission = {
+      kind: 'worktree-preparation',
+      toolName: 'prepare_worktree',
+      directory: '.',
+      planFingerprint: plan.contentFingerprint,
+      offline: true,
+    }
+    const service = createAutomationService({
+      now: () => 10,
+      isPluginEnabled: () => true,
+      createProjectThread: () => Promise.resolve(),
+      loadProjectThreadMetas: () => Promise.resolve([]),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
+    })
+    try {
+      const schedule = await service.upsert('project-a', {
+        name: 'Prepared caretaker',
+        cron: '0 9 * * 1-5',
+        prompt: 'Review this project.',
+        model: 'gpt-5.4',
+        enabled: false,
+        permissions: [permission],
+      })
+      assert.deepEqual(schedule.permissions, [permission])
+      assert.equal(schedule.lastCreatedThreadId, undefined)
+    } finally {
+      storageSet('projects', previousProjects)
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  for (const change of ['inputs', 'ask', 'block'] as const) {
+    it(`rechecks a newly selected preparation at save after ${change} changes`, async () => {
+      const root = mkdtempSync(join(tmpdir(), 'automation-preparation-save-'))
+      const previousProjects = storageGet('projects')
+      const previousOverrides = getSetting('toolPermissionOverrides', {})
+      writeFileSync(join(root, 'package.json'), '{"packageManager":"npm@11.12.0"}')
+      writeFileSync(join(root, 'package-lock.json'), '{}')
+      storageSet('projects', [{ id: 'project-a', name: 'Project A', path: root }])
+      const service = createAutomationService({
+        now: () => 10,
+        isPluginEnabled: () => true,
+        createProjectThread: () => Promise.resolve(),
+        loadProjectThreadMetas: () => Promise.resolve([]),
+        releasePreviousRun: () => Promise.resolve({ released: true }),
+      })
+      try {
+        await setSetting('toolPermissionOverrides', {})
+        const reviewed = service.reviewPreparation('project-a', { offline: true })
+        if (change === 'inputs') writeFileSync(join(root, 'package-lock.json'), '{"changed":true}')
+        else
+          await setSetting('toolPermissionOverrides', {
+            [copseToolPermissionId('prepare_worktree')]: change,
+          })
+        await assert.rejects(
+          service.upsert('project-a', {
+            name: 'Prepared caretaker',
+            cron: '0 9 * * 1-5',
+            prompt: 'Review this project.',
+            model: 'gpt-5.4',
+            enabled: false,
+            permissions: [reviewed.permission],
+          }),
+          change === 'inputs' ? /setup has changed/ : change === 'ask' ? /Always ask/ : /blocked/,
+        )
+        assert.deepEqual(service.list('project-a'), [])
+      } finally {
+        storageSet('projects', previousProjects)
+        await setSetting('toolPermissionOverrides', previousOverrides)
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+  }
+
+  it('can edit and revoke a retained stale preparation without reviewing an unchanged selection', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'automation-preparation-revoke-'))
+    const previousProjects = storageGet('projects')
+    const previousOverrides = getSetting('toolPermissionOverrides', {})
+    writeFileSync(join(root, 'package.json'), '{"packageManager":"npm@11.12.0"}')
+    writeFileSync(join(root, 'package-lock.json'), '{}')
+    storageSet('projects', [{ id: 'project-a', name: 'Project A', path: root }])
+    const service = createAutomationService({
+      now: () => 10,
+      isPluginEnabled: () => true,
+      createProjectThread: () => Promise.resolve(),
+      loadProjectThreadMetas: () => Promise.resolve([]),
+      releasePreviousRun: () => Promise.resolve({ released: true }),
+    })
+    const input: AutomationScheduleInput = {
+      name: 'Prepared caretaker',
+      cron: '0 9 * * 1-5',
+      prompt: 'Review this project.',
+      model: 'gpt-5.4',
+      enabled: false,
+    }
+    try {
+      await setSetting('toolPermissionOverrides', {})
+      const reviewed = service.reviewPreparation('project-a', {})
+      const schedule = await service.upsert('project-a', {
+        ...input,
+        permissions: [reviewed.permission],
+      })
+      writeFileSync(join(root, 'package-lock.json'), '{"changed":true}')
+      await setSetting('toolPermissionOverrides', {
+        [copseToolPermissionId('prepare_worktree')]: 'block',
+      })
+      const edited = await service.upsert('project-a', {
+        ...input,
+        id: schedule.id,
+        name: 'Renamed',
+      })
+      assert.deepEqual(edited.permissions, [reviewed.permission])
+      const revoked = await service.upsert('project-a', {
+        ...input,
+        id: schedule.id,
+        permissions: [],
+      })
+      assert.equal(revoked.permissions, undefined)
+      assert.equal(service.list('project-a')[0]?.permissions, undefined)
+    } finally {
+      storageSet('projects', previousProjects)
+      await setSetting('toolPermissionOverrides', previousOverrides)
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('keeps schedules project-scoped and preserves the chosen model', async () => {
     let now = new Date(2026, 6, 27, 9, 0, 5).getTime()
     const created: Array<{ projectId: string; thread: Thread }> = []
@@ -157,9 +293,8 @@ describe('AutomationService', () => {
         created.push({ projectId, thread })
         return Promise.resolve()
       },
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
-      getActiveProjectId: () => 'project-a',
     })
 
     const schedule = await service.upsert('project-a', {
@@ -196,9 +331,8 @@ describe('AutomationService', () => {
         created.push(thread)
         return Promise.resolve()
       },
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
-      getActiveProjectId: () => 'project-a',
     })
     const approve: AutomationPermission = { kind: 'copse-action', toolName: 'gh_pr_approve' }
     const autoMerge: AutomationPermission = {
@@ -313,9 +447,8 @@ describe('AutomationService', () => {
       now: () => 1,
       isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
-      getActiveProjectId: () => 'project-a',
     })
     await assert.rejects(
       () =>
@@ -370,9 +503,8 @@ describe('AutomationService', () => {
         created += 1
         return Promise.resolve()
       },
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
-      getActiveProjectId: () => 'project-a',
     })
     const schedule = await service.upsert('project-a', {
       name: 'Review',
@@ -397,9 +529,8 @@ describe('AutomationService', () => {
       now: () => 1,
       isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
-      getActiveProjectId: () => 'project-a',
     })
     const schedule = await service.upsert('project-a', {
       name: 'Review',
@@ -435,9 +566,8 @@ describe('AutomationService', () => {
       now: () => 1,
       isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
-      loadProjectThreads: () => pendingThreads,
+      loadProjectThreadMetas: () => pendingThreads,
       releasePreviousRun: () => Promise.resolve({ released: true }),
-      getActiveProjectId: () => 'project-a',
     })
     const schedule = await service.upsert('project-a', {
       name: 'Review',
@@ -465,9 +595,8 @@ describe('AutomationService', () => {
       now: () => now,
       isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
-      loadProjectThreads: () => pendingThreads,
+      loadProjectThreadMetas: () => pendingThreads,
       releasePreviousRun: () => Promise.resolve({ released: true }),
-      getActiveProjectId: () => 'project-a',
     })
     const schedule = await service.upsert('project-a', {
       name: 'Old review',
@@ -514,9 +643,8 @@ describe('AutomationService', () => {
         attempts += 1
         return attempts === 1 ? Promise.reject(new Error('disk unavailable')) : Promise.resolve()
       },
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
-      getActiveProjectId: () => 'project-a',
     })
     await service.upsert('project-a', {
       name: 'First',
@@ -549,9 +677,8 @@ describe('AutomationService', () => {
         threads.set(thread.id, thread)
         return Promise.resolve()
       },
-      loadProjectThreads: () => Promise.resolve([...threads.values()]),
+      loadProjectThreadMetas: () => Promise.resolve([...threads.values()]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
-      getActiveProjectId: () => 'project-a',
     })
     const schedule = await service.upsert('project-a', {
       name: 'Project health',
@@ -620,20 +747,20 @@ describe('AutomationService', () => {
           threads.set(thread.id, thread)
           return Promise.resolve()
         },
-        loadProjectThreads: () => Promise.resolve([...threads.values()]),
+        loadProjectThreadMetas: () => Promise.resolve([...threads.values()]),
         releasePreviousRun:
           options.release ??
           ((): Promise<AutomationWorktreeRelease> =>
             Promise.resolve({ released: false, reason: 'unmerged-commits' })),
         canReusePreviousRun: (_projectId, threadId): Promise<boolean> => options.canReuse(threadId),
         supervisor: () => new FakeTaskSupervisor(),
-        getActiveProjectId: () => 'project-a',
       })
       service.start(
         (event) => {
           events.push(event)
         },
         async () => {},
+        () => 'project-a',
       )
       const schedule = await service.upsert('project-a', {
         name: 'Project health',
@@ -747,17 +874,17 @@ describe('AutomationService', () => {
         threads.set(thread.id, thread)
         return Promise.resolve()
       },
-      loadProjectThreads: () => Promise.resolve([...threads.values()]),
+      loadProjectThreadMetas: () => Promise.resolve([...threads.values()]),
       releasePreviousRun: () =>
         Promise.resolve({ released: false, reason: 'uncommitted-changes', paths: ['notes.md'] }),
       supervisor: () => supervisor,
-      getActiveProjectId: () => 'project-a',
     })
     service.start(
       (event) => {
         events.push(event)
       },
       async () => {},
+      () => 'project-a',
     )
     const schedule = await service.upsert('project-a', {
       name: 'Project health',
@@ -830,10 +957,9 @@ describe('AutomationService', () => {
         threads.set(thread.id, thread)
         return Promise.resolve()
       },
-      loadProjectThreads: () => Promise.resolve([...threads.values()]),
+      loadProjectThreadMetas: () => Promise.resolve([...threads.values()]),
       releasePreviousRun: () =>
         Promise.resolve({ released: false, reason: 'uncommitted-changes', paths: ['notes.md'] }),
-      getActiveProjectId: () => 'project-a',
     })
     const schedule = await service.upsert('project-a', {
       name: 'Project health',
@@ -888,10 +1014,9 @@ describe('AutomationService', () => {
           threads.set(thread.id, thread)
           return Promise.resolve()
         },
-        loadProjectThreads: () => Promise.resolve([...threads.values()]),
+        loadProjectThreadMetas: () => Promise.resolve([...threads.values()]),
         releasePreviousRun: () =>
           Promise.resolve({ released: false, reason: 'uncommitted-changes', paths: ['notes.md'] }),
-        getActiveProjectId: () => 'project-a',
       })
       const schedule = await service.upsert('project-a', {
         name: 'Frequent review',
@@ -947,15 +1072,15 @@ describe('AutomationService', () => {
         threads.set(thread.id, thread)
         return Promise.resolve()
       },
-      loadProjectThreads: () => Promise.resolve([...threads.values()]),
+      loadProjectThreadMetas: () => Promise.resolve([...threads.values()]),
       releasePreviousRun: () => Promise.resolve({ released: false, reason: 'unmerged-commits' }),
-      getActiveProjectId: () => 'project-a',
     })
     service.start(
       (event) => {
         events.push(event)
       },
       async () => {},
+      () => 'project-a',
     )
     const schedule = await service.upsert('project-a', {
       name: 'Project health',
@@ -1005,7 +1130,7 @@ describe('AutomationService', () => {
         threads.set(thread.id, thread)
         return Promise.resolve()
       },
-      loadProjectThreads: () => Promise.resolve([...threads.values()]),
+      loadProjectThreadMetas: () => Promise.resolve([...threads.values()]),
       releasePreviousRun: (_projectId, threadId) => {
         if (threadId === 'dirty') {
           return Promise.resolve({
@@ -1017,7 +1142,6 @@ describe('AutomationService', () => {
         released.push(threadId)
         return Promise.resolve({ released: true })
       },
-      getActiveProjectId: () => 'project-a',
     })
     const schedule = await service.upsert('project-a', {
       name: 'Project health',
@@ -1076,14 +1200,13 @@ describe('AutomationService', () => {
         threads.set(thread.id, thread)
         return Promise.resolve()
       },
-      loadProjectThreads: () => Promise.resolve([...threads.values()]),
+      loadProjectThreadMetas: () => Promise.resolve([...threads.values()]),
       releasePreviousRun: () =>
         Promise.resolve(
           cleanReleased
             ? { released: true }
             : { released: false, reason: 'unmerged-commits' as const },
         ),
-      getActiveProjectId: () => 'project-a',
     })
     const schedule = await service.upsert('project-a', {
       name: 'Project health',
@@ -1146,15 +1269,15 @@ describe('AutomationService', () => {
       now: () => 0,
       isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
       supervisor: () => supervisor,
-      getActiveProjectId: () => 'project-a',
     })
 
     service.start(
       () => {},
       async () => {},
+      () => 'project-a',
     )
     await service.sync()
 
@@ -1186,14 +1309,14 @@ describe('AutomationService', () => {
       now: () => 1,
       isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
       supervisor: () => supervisor,
-      getActiveProjectId: () => 'project-a',
     })
     service.start(
       () => {},
       async () => {},
+      () => 'project-a',
     )
     await service.sync()
     const syncCalls = supervisor.syncCalls
@@ -1239,15 +1362,15 @@ describe('AutomationService', () => {
       now: () => 0,
       isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
       supervisor: () => supervisor,
-      getActiveProjectId: () => 'project-a',
     })
 
     service.start(
       () => {},
       async () => {},
+      () => 'project-a',
     )
     await service.sync()
 
@@ -1276,15 +1399,15 @@ describe('AutomationService', () => {
       now: () => 0,
       isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
       supervisor: () => supervisor,
-      getActiveProjectId: () => 'project-a',
     })
 
     service.start(
       () => {},
       async () => {},
+      () => 'project-a',
     )
     await service.sync()
     // A second sync must adopt what the first one enqueued.
@@ -1315,9 +1438,8 @@ describe('AutomationService', () => {
       now: () => 100,
       isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
-      getActiveProjectId: () => 'project-a',
     })
     assert.equal(
       await service.reportStartFailure('project-a', 'thread-old', {
@@ -1375,11 +1497,10 @@ describe('AutomationService', () => {
         now: () => 0,
         isPluginEnabled: () => true,
         createProjectThread: () => Promise.resolve(),
-        loadProjectThreads: () => Promise.resolve([]),
+        loadProjectThreadMetas: () => Promise.resolve([]),
         releasePreviousRun: () => Promise.resolve({ released: true }),
         supervisor: () => supervisor,
         recoveryDelayMs: 0,
-        getActiveProjectId: () => 'project-a',
       })
     }
     const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 10))
@@ -1397,6 +1518,7 @@ describe('AutomationService', () => {
       service.start(
         () => {},
         async () => {},
+        () => 'project-a',
       )
       await service.sync()
       service.stop()
@@ -1414,6 +1536,7 @@ describe('AutomationService', () => {
       service.start(
         () => {},
         async () => {},
+        () => 'project-a',
       )
       await service.sync()
       assert.equal(supervisor.enqueued.length, 0)
@@ -1434,6 +1557,7 @@ describe('AutomationService', () => {
       service.start(
         () => {},
         async () => {},
+        () => 'project-a',
       )
       await service.sync()
 
@@ -1456,6 +1580,7 @@ describe('AutomationService', () => {
       service.start(
         () => {},
         async () => {},
+        () => 'project-a',
       )
       await service.sync()
       assert.equal(service.health().state, 'ok')
@@ -1485,6 +1610,7 @@ describe('AutomationService', () => {
       service.start(
         () => {},
         async () => {},
+        () => 'project-a',
       )
       await service.sync()
 
@@ -1505,6 +1631,7 @@ describe('AutomationService', () => {
       service.start(
         () => {},
         async () => {},
+        () => 'project-a',
       )
       await service.sync()
       service.stop()
@@ -1523,6 +1650,7 @@ describe('AutomationService', () => {
       service.start(
         () => {},
         async () => {},
+        () => 'project-a',
       )
       await service.sync()
       service.stop()
@@ -1565,9 +1693,8 @@ describe('AutomationService', () => {
         if (begun.length === 3) openBarrier()
         await barrier
       },
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
-      getActiveProjectId: () => 'project-a',
     })
 
     const outcome = await Promise.race([
@@ -1610,9 +1737,8 @@ describe('AutomationService', () => {
         attempts += 1
         return attempts === 1 ? new Promise<void>(() => {}) : Promise.resolve()
       },
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
-      getActiveProjectId: () => 'project-a',
     })
 
     const pending = service.tick()
@@ -1659,14 +1785,14 @@ describe('AutomationService', () => {
         })
         await createThread(projectId, thread)
       },
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
-      getActiveProjectId: () => 'project-a',
       supervisor: () => new FakeTaskSupervisor(),
     })
     service.start(
       (event) => events.push(event),
       async () => {},
+      () => 'project-a',
     )
     const schedule = await service.upsert('project-a', {
       name: 'retry',
@@ -1729,14 +1855,14 @@ describe('AutomationService', () => {
         threads.delete(threadId)
         return Promise.resolve()
       },
-      loadProjectThreads: () => Promise.resolve([...threads.values()]),
+      loadProjectThreadMetas: () => Promise.resolve([...threads.values()]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
-      getActiveProjectId: () => 'project-a',
       supervisor: () => new FakeTaskSupervisor(),
     })
     service.start(
       (event) => events.push(event),
       async () => {},
+      () => 'project-a',
     )
     await service.upsert('project-a', {
       name: 'late',
@@ -1788,9 +1914,8 @@ describe('AutomationService', () => {
           threads.set(thread.id, thread)
           return Promise.resolve()
         },
-        loadProjectThreads: () => Promise.resolve([...threads.values()]),
+        loadProjectThreadMetas: () => Promise.resolve([...threads.values()]),
         releasePreviousRun: () => Promise.resolve({ released: true }),
-        getActiveProjectId: () => 'project-a',
       })
       return {
         threads,
@@ -1915,9 +2040,8 @@ describe('AutomationService', () => {
       now: () => 1,
       isPluginEnabled: () => true,
       createProjectThread: () => Promise.resolve(),
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve({ released: true }),
-      getActiveProjectId: () => 'project-a',
     })
 
     const mine = await service.upsert('project-a', {
@@ -1962,10 +2086,9 @@ describe('AutomationService', () => {
           created.push(thread)
           return Promise.resolve()
         },
-        loadProjectThreads: () => Promise.resolve(created),
+        loadProjectThreadMetas: () => Promise.resolve(created),
         releasePreviousRun: () => Promise.resolve({ released: true }),
         supervisor: () => supervisor,
-        getActiveProjectId: () => 'project-a',
       })
       return { created, service, supervisor }
     }
@@ -1994,6 +2117,7 @@ describe('AutomationService', () => {
       service.start(
         () => {},
         async () => {},
+        () => 'project-a',
       )
       const task = {
         ...schedulerTask({ taskId: 't', projectId: 'project-a', threadId: 'nine' }),
@@ -2069,9 +2193,8 @@ describe('AutomationService', () => {
         now: () => Date.now(),
         isPluginEnabled: () => true,
         createProjectThread: createThread,
-        loadProjectThreads: () => Promise.resolve([]),
+        loadProjectThreadMetas: () => Promise.resolve([]),
         releasePreviousRun: () => Promise.resolve({ released: true }),
-        getActiveProjectId: () => activeProjectId,
         prepareCheckout: async (input) => {
           assert.equal(input.choice, 'worktree')
           assert.equal(input.projectId, 'project-a')
@@ -2084,7 +2207,11 @@ describe('AutomationService', () => {
         },
         supervisor: () => new FakeTaskSupervisor(),
       })
-      service.start((event) => events.push(event), dispatch)
+      service.start(
+        (event) => events.push(event),
+        dispatch,
+        () => activeProjectId,
+      )
       return { service, dispatchCalls, events }
     }
 
@@ -2188,30 +2315,44 @@ describe('AutomationService', () => {
       service.stop()
     })
 
-    it('preserves an unsent failed-start draft and never dispatches when checkout fails', async (context) => {
-      context.mock.method(console, 'error', () => {})
-      const { service, dispatchCalls } = harness('project-b', new Error('checkout unavailable'))
-      const schedule = await service.upsert('project-a', {
-        name: 'Project health',
-        cron: '* * * * *',
-        prompt: 'Check project health.',
-        model: 'gpt-5.4',
-        enabled: true,
+    for (const failure of [
+      { message: 'checkout unavailable', code: 'worktree-failed' },
+      { message: 'Git authentication failed', code: 'worktree-failed' },
+      {
+        message:
+          'Authentication helper cannot start because its configured command is missing or not executable.',
+        code: 'no-model',
+      },
+      { message: 'The selected coding agent is not enabled.', code: 'no-model' },
+    ]) {
+      it(`preserves the headless draft and classifies ${failure.message}`, async (context) => {
+        context.mock.method(console, 'error', () => {})
+        const { service, dispatchCalls } = harness('project-b', new Error(failure.message))
+        context.after(() => {
+          service.stop()
+        })
+        const schedule = await service.upsert('project-a', {
+          name: 'Project health',
+          cron: '* * * * *',
+          prompt: 'Check project health.',
+          model: 'gpt-5.4',
+          enabled: true,
+        })
+        const event = await service.runNow('project-a', schedule.id)
+        const deadline = Date.now() + 5_000
+        while (service.list('project-a')[0]?.lastProblem === undefined) {
+          if (Date.now() > deadline) throw new Error('Checkout failure was not recorded')
+          await settle()
+        }
+        assert.equal(dispatchCalls.length, 0)
+        const thread = await getThreadMeta('project-a', event.threadId)
+        assert.equal(thread?.draftPrompt, 'Check project health.')
+        assert.equal(service.list('project-a')[0]?.lastProblem?.code, failure.code)
+        assert.notEqual(thread.automation?.startFailedAt, undefined)
+        assert.equal(service.list('project-a')[0]?.lastProblem?.message, failure.message)
+        service.stop()
       })
-      const event = await service.runNow('project-a', schedule.id)
-      const deadline = Date.now() + 5_000
-      while (
-        (await getThreadMeta('project-a', event.threadId))?.automation?.startFailedAt === undefined
-      ) {
-        if (Date.now() > deadline) throw new Error('Checkout failure was not recorded')
-        await settle()
-      }
-      assert.equal(dispatchCalls.length, 0)
-      const thread = await getThreadMeta('project-a', event.threadId)
-      assert.equal(thread?.draftPrompt, 'Check project health.')
-      assert.equal(service.list('project-a')[0]?.lastProblem?.code, 'worktree-failed')
-      service.stop()
-    })
+    }
 
     it('leaves the turn to the renderer when the schedule project is already focused', async () => {
       const { service, dispatchCalls } = harness('project-a')
@@ -2227,6 +2368,31 @@ describe('AutomationService', () => {
       await settle()
 
       assert.equal(dispatchCalls.length, 0)
+    })
+
+    it('drives the turn headlessly once the notified window shows no project', async () => {
+      // A closed receiving window has no renderer to start the draft; the
+      // persisted active project must not stand in for it (#3958).
+      storageSet('activeProjectId', 'project-a')
+      try {
+        const { service, dispatchCalls } = harness(null)
+        const schedule = await service.upsert('project-a', {
+          name: 'Project health',
+          cron: '* * * * *',
+          prompt: 'Check project health.',
+          model: 'gpt-5.4',
+          enabled: true,
+        })
+
+        const event = await service.runNow('project-a', schedule.id)
+        await waitForHeadlessTurn(dispatchCalls, 'project-a', event.threadId)
+
+        assert.equal(dispatchCalls.length, 1)
+        assert.equal(dispatchCalls[0]?.projectId, 'project-a')
+        service.stop()
+      } finally {
+        storageSet('activeProjectId', null)
+      }
     })
   })
 })

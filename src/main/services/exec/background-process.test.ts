@@ -19,10 +19,13 @@ import {
   listBackgroundProcessPids,
   getBackgroundProcessLogs,
   isBackgroundExitObserved,
+  peekBackgroundProcessLogs,
   nextBackgroundOperationId,
   stopBackgroundProcess,
   stopBackgroundProcessesForThread,
   stopAllBackgroundProcesses,
+  hasBackgroundProcessRecord,
+  hasBackgroundProcessesForThread,
 } from './background-process.ts'
 import { hasLiveWorktreeWriter } from '../worktree-writers.ts'
 import {
@@ -272,6 +275,39 @@ describe('background process manager', () => {
     )
   })
 
+  it('keeps an owner-scoped completion record without observing the exit', async () => {
+    const entered = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    const settled = Promise.withResolvers<undefined>()
+    const info = await startBackgroundProcess({
+      command: `node -e "setTimeout(() => console.log('completion-held'), 50)"`,
+      cwd: process.cwd(),
+      waitMs: 10,
+      timeoutMs: 5000,
+      owner: OWNER,
+      onCompletion: async () => {
+        entered.resolve(undefined)
+        await release.promise
+        settled.resolve(undefined)
+      },
+    })
+    try {
+      await entered.promise
+      assert.equal(hasBackgroundProcessesForThread(OWNER), false)
+      assert.equal(hasBackgroundProcessRecord(OWNER), true)
+      assert.equal(hasBackgroundProcessRecord(OTHER_OWNER), false)
+      assert.equal(isBackgroundExitObserved(info.id, OWNER), false)
+      release.resolve(undefined)
+      await settled.promise
+      assert.equal(hasBackgroundProcessRecord(OWNER), true, 'settled records remain ambiguous')
+      assert.equal(isBackgroundExitObserved(info.id, OWNER), false)
+    } finally {
+      release.resolve(undefined)
+      stopBackgroundProcess(info.id, OWNER)
+    }
+    assert.equal(hasBackgroundProcessRecord(OWNER), false)
+  })
+
   it('marks an exit observed only once the owner reads the exited task', async () => {
     const info = await startBackgroundProcess({
       command: `node -e "setTimeout(() => console.log('observed'), 100)"`,
@@ -344,6 +380,53 @@ describe('background process manager', () => {
     assert.equal(exited, true, 'explicitly cancelled child must exit')
 
     assert.equal(notified, false)
+  })
+
+  it('tells the starter once when a running task is stopped, and never after it exited', async () => {
+    const cancelled: string[] = []
+    const running = await startBackgroundProcess({
+      command: 'sleep 30',
+      cwd: process.cwd(),
+      waitMs: 10,
+      owner: OWNER,
+      onCancelled: (info) => cancelled.push(info.id),
+    })
+    assert.equal(stopBackgroundProcess(running.id, OWNER), true)
+    assert.equal(stopBackgroundProcess(running.id, OWNER), false)
+    assert.deepEqual(cancelled, [running.id])
+
+    const finished = await startBackgroundProcess({
+      command: 'true',
+      cwd: process.cwd(),
+      waitMs: 500,
+      owner: OWNER,
+      onCancelled: (info) => cancelled.push(info.id),
+    })
+    await waitForBackgroundExit(finished.id)
+    stopBackgroundProcess(finished.id, OWNER)
+    assert.deepEqual(cancelled, [running.id], 'stopping an exited task is not a cancellation')
+  })
+
+  it('lets the user read logs without counting as the agent observing the exit', async () => {
+    const info = await startBackgroundProcess({
+      command: `node -e "console.log('peeked')"`,
+      cwd: process.cwd(),
+      waitMs: 500,
+      owner: OWNER,
+    })
+    // Poll through the peek itself: the list helper would mark the exit observed.
+    const deadline = Date.now() + 10_000
+    let peeked = peekBackgroundProcessLogs(info.id, OWNER)
+    while (peeked?.running === true && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      peeked = peekBackgroundProcessLogs(info.id, OWNER)
+    }
+    assert.deepEqual(peeked, { logs: 'peeked\n', running: false })
+    assert.equal(isBackgroundExitObserved(info.id, OWNER), false)
+    assert.equal(
+      peekBackgroundProcessLogs(info.id, { projectId: 'other', threadId: 'other' }),
+      null,
+    )
   })
 
   it('does not surface a URL for a plain task that did not opt into port binding', async () => {

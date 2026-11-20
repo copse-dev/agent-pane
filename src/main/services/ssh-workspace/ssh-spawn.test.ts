@@ -12,7 +12,12 @@ import {
 import { FakeSshTransport } from './fake-ssh-transport.ts'
 import { REMOTE_PGID_PREFIX } from './remote-env.ts'
 import { takeRemoteProcessMeta } from './remote-process-meta.ts'
-import { buildRemotePtyLaunch, spawnRemoteShellCommand } from './ssh-spawn.ts'
+import {
+  buildRemotePtyLaunch,
+  spawnRemoteShellCommand,
+  wrapRemoteShellWithPgid,
+  wrapRemoteStdioWithPgid,
+} from './ssh-spawn.ts'
 import type { SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
 
 const TEST_HOST: SshWorkspaceHost = {
@@ -21,6 +26,18 @@ const TEST_HOST: SshWorkspaceHost = {
   host: 'dev.example.com',
   user: 'alice',
 }
+
+describe('remote process-group wrappers', () => {
+  it('queries the remote shell pid, not a literal dollar-sign pid', () => {
+    for (const wrapped of [
+      wrapRemoteShellWithPgid('/srv/app', 'true'),
+      wrapRemoteStdioWithPgid('/srv/app', 'true'),
+    ]) {
+      assert.match(wrapped, /ps -o pgid= -p \$\$/)
+      assert.doesNotMatch(wrapped, /ps -o pgid= -p \$ /)
+    }
+  })
+})
 
 async function withTestHost(run: () => Promise<void>): Promise<void> {
   const previous = getSetting<SshWorkspaceHost[]>('sshWorkspaceHosts', [])

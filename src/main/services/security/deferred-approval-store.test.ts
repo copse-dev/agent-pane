@@ -143,4 +143,52 @@ describe('deferred approval store', () => {
   it('reads an absent queue as empty rather than throwing', async () => {
     assert.deepEqual(await readPendingDeferrals({ projectId: freshProject() }), [])
   })
+
+  it('keeps two projects queued concurrently, and the no-project bucket, apart', async () => {
+    const first = freshProject()
+    const second = freshProject()
+    const [a, b, none] = await Promise.all([
+      deferApproval(input(), { projectId: first }),
+      deferApproval(input(), { projectId: second }),
+      deferApproval(input(), { projectId: null }),
+    ])
+    // The same request in different projects is a different queue entry.
+    assert.equal(new Set([a.id, b.id, none.id]).size, 3)
+
+    const [pendingA, pendingB, pendingNone] = await Promise.all([
+      readPendingDeferrals({ projectId: first }),
+      readPendingDeferrals({ projectId: second }),
+      readPendingDeferrals({ projectId: null }),
+    ])
+    assert.deepEqual(
+      pendingA.map((entry) => entry.id),
+      [a.id],
+    )
+    assert.deepEqual(
+      pendingB.map((entry) => entry.id),
+      [b.id],
+    )
+    assert.deepEqual(
+      pendingNone.map((entry) => entry.id),
+      [none.id],
+    )
+
+    // An id resolves only in its own project.
+    assert.equal(await resolveDeferral(a.id, 'approved', { projectId: second }), null)
+    const [resolvedA, resolvedB] = await Promise.all([
+      resolveDeferral(a.id, 'approved', { projectId: first }),
+      resolveDeferral(b.id, 'rejected', { projectId: second }),
+    ])
+    assert.equal(resolvedA?.status, 'approved')
+    assert.equal(resolvedB?.status, 'rejected')
+    assert.deepEqual(
+      (await readDeferredApprovals(first)).map((entry) => entry.status),
+      ['approved'],
+    )
+    assert.deepEqual(
+      (await readDeferredApprovals(second)).map((entry) => entry.status),
+      ['rejected'],
+    )
+    assert.equal((await readPendingDeferrals({ projectId: null })).length, 1)
+  })
 })

@@ -13,6 +13,7 @@ import { ipcErrorMessage } from '../ipc-error-message.ts'
 import { uiActions } from '../ui/actions.ts'
 import { createOverlayDialog } from './dialog-shell.ts'
 import { showErrorToast, showToast } from './toast.ts'
+import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 
 /**
  * Environment setup (`docs/plans/environment-setup.md`): a quiet line at the top
@@ -330,7 +331,7 @@ export function mountEnvironmentSetupOffer(
     dismiss(true)
   })
 
-  const unsubscribeWorkspace = store.on('workspace_changed', () => {
+  const unsubscribeWorkspace = selectActiveWorkspace(store, () => {
     void evaluate()
   })
   const unsubscribeStatus = store.on('thread_status_changed', schedule)

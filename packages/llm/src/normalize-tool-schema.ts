@@ -52,6 +52,21 @@ function objectUnionProperties(branches: Record<string, unknown>[]): Record<stri
   return properties
 }
 
+function objectUnionBranches(schema: unknown): Record<string, unknown>[] | null {
+  if (!isRecord(schema)) return null
+  if (schema['type'] === 'object') return [schema]
+  if (schema['type'] !== undefined) return null
+  const branches = schema['anyOf'] ?? schema['oneOf']
+  if (!Array.isArray(branches) || branches.length === 0) return null
+  const objects: Record<string, unknown>[] = []
+  for (const branch of branches) {
+    const nested = objectUnionBranches(branch)
+    if (!nested) return null
+    objects.push(...nested)
+  }
+  return objects
+}
+
 /**
  * OpenAPI 3 represents exclusive numeric bounds as a boolean beside
  * `minimum`/`maximum`; current JSON Schema represents the exclusive keyword as
@@ -91,16 +106,9 @@ function normalizeSchemaValue(value: unknown, root: boolean): unknown {
   // A union of object branches is still an object. OpenAI-compatible engines
   // such as LM Studio require an explicit root type before accepting a tool.
   // Keep every branch and its required fields rather than flattening validation.
-  const branches = normalized['anyOf'] ?? normalized['oneOf']
-  if (
-    root &&
-    normalized['type'] === undefined &&
-    Array.isArray(branches) &&
-    branches.length > 0 &&
-    branches.every((branch) => isRecord(branch) && branch['type'] === 'object')
-  ) {
+  const objects = root && normalized['type'] === undefined ? objectUnionBranches(normalized) : null
+  if (objects) {
     normalized['type'] = 'object'
-    const objects = branches.filter(isRecord)
     if (normalized['properties'] === undefined)
       normalized['properties'] = objectUnionProperties(objects)
     if (normalized['required'] === undefined) {

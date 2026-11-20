@@ -183,7 +183,7 @@ describe('branch CI automations', () => {
             })
           },
         ),
-      loadProjectThreads: () => Promise.resolve(threads),
+      loadProjectThreadMetas: () => Promise.resolve(threads),
       getProjectThread: () => Promise.resolve(null),
       createProjectThread: (_projectId, thread) => {
         threads.push(thread)
@@ -245,7 +245,7 @@ describe('branch CI automations', () => {
         reads++
         return Promise.resolve(snapshot)
       },
-      loadProjectThreads: () => Promise.resolve([...threads.values()]),
+      loadProjectThreadMetas: () => Promise.resolve([...threads.values()]),
       getProjectThread: (_projectId, threadId) => Promise.resolve(threads.get(threadId) ?? null),
       createProjectThread: (_projectId, thread) => {
         threads.set(thread.id, thread)
@@ -320,7 +320,7 @@ describe('branch CI automations', () => {
       isPluginEnabled: () => true,
       repositoryForProject: () => Promise.resolve('github.com/owner/repo'),
       snapshot: () => Promise.resolve(snapshot),
-      loadProjectThreads: () => Promise.resolve(threads),
+      loadProjectThreadMetas: () => Promise.resolve(threads),
       getProjectThread: () => Promise.resolve(null),
       createProjectThread: (_projectId, thread) => {
         threads.push(thread)
@@ -361,7 +361,7 @@ describe('branch CI automations', () => {
         isPluginEnabled: () => true,
         repositoryForProject: () => Promise.resolve('github.com/owner/repo'),
         snapshot: () => Promise.resolve(snapshot),
-        loadProjectThreads: () => Promise.resolve([...threads.values()]),
+        loadProjectThreadMetas: () => Promise.resolve([...threads.values()]),
         getProjectThread: (_projectId, threadId) => Promise.resolve(threads.get(threadId) ?? null),
         createProjectThread: (_projectId, thread) => {
           threads.set(thread.id, thread)
@@ -435,7 +435,7 @@ describe('branch CI automations', () => {
       isPluginEnabled: () => true,
       repositoryForProject: () => Promise.resolve('github.com/owner/repo'),
       snapshot: () => Promise.resolve({ headSha: SHA_A, runs: [run(1, SHA_A)] }),
-      loadProjectThreads: () => Promise.resolve([]),
+      loadProjectThreadMetas: () => Promise.resolve([]),
       getProjectThread: () => Promise.resolve(null),
       createProjectThread: () => Promise.resolve(),
       releasePreviousRun: () => Promise.resolve({ released: true }),

@@ -62,9 +62,11 @@ import {
   projectDisplayName,
   removeProject,
   recoverOrphanProject,
+  refreshProjectThreadWorktrees,
   relocateProject,
   SIDEBAR_THREADS_PAGE_SIZE,
   switchProject,
+  switchProjectAndWait,
   openNewProjectThread,
   setSidebarProjectFilter,
   switchProjectThread,
@@ -88,6 +90,7 @@ import {
   residentRequestMatches,
 } from '../controller/thread-filter.ts'
 import { sortThreadsNewestFirst } from '@copse/thread-store/thread-sort.ts'
+import { formatAge, formatAgeLong } from '../controller/activity-model.ts'
 import {
   groupRowsByStatus,
   orderSidebarRows,
@@ -137,6 +140,7 @@ import {
   type DropIntent,
   type SidebarDragPayload,
 } from './projects-drag.ts'
+import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 
 /** Re-fetch PR lifecycle when a cache entry is older than this. */
 const PR_STATUS_CACHE_TTL_MS = 60_000
@@ -323,6 +327,15 @@ async function cleanUpScheduleRuns(
     const result = await api.automations.cleanupRuns(target.project.id, target.scheduleId)
     const freed = result.released.length
     const freedText = `${String(freed)} worktree${freed === 1 ? '' : 's'}`
+    try {
+      await refreshProjectThreadWorktrees(store, api, target.project.id)
+    } catch (error) {
+      showErrorToast(
+        'Cleanup finished, but the run list could not refresh',
+        `${freedText} freed. Reopen the project to refresh its runs.\n\n${ipcErrorMessage(error, 'The run list could not be loaded')}`,
+      )
+      if (result.retained.length === 0) return
+    }
     if (result.retained.length === 0) {
       showToast(
         freed === 0
@@ -852,10 +865,17 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   // revalidation runs, and lifecycle changes re-render without blocking first paint.
   const prLifecycleCache = new Map<
     string,
-    { state: PrLifecycleState; checks?: GhPrChecksState; conflicts?: boolean; fetchedAt: number }
+    {
+      state: PrLifecycleState
+      checks?: GhPrChecksState
+      conflicts?: boolean
+      fetchedAt: number
+      failed?: true
+    }
   >()
   const prFetchInFlight = new Set<string>()
   let prStatusGeneration = 0
+  let prWorkspaceGeneration = 0
 
   function beginThreadRename(threadId: string, currentTitle: string): void {
     renaming = { threadId, draft: currentTitle || 'New Thread' }
@@ -1001,6 +1021,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     })
     if (stale.length === 0) return
     const generation = prStatusGeneration
+    const workspaceGeneration = prWorkspaceGeneration
     for (const ref of stale) {
       const key = githubPrKey(ref)
       let lifecycleChanged = false
@@ -1032,10 +1053,26 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         .catch(() => {
           if (generation !== prStatusGeneration) return
           const cached = prLifecycleCache.get(key)
+          // Preload cancels a workspace-dependent IPC queued for a selection
+          // that was superseded. Retry on the current selection instead of
+          // treating that cancellation as a fresh unknown status for a minute.
+          // Keep any resolved icon while retrying, including when only checks
+          // were cancelled after details had already refreshed the entry.
+          if (workspaceGeneration !== prWorkspaceGeneration) {
+            if (cached) {
+              prLifecycleCache.set(key, {
+                ...cached,
+                fetchedAt: Date.now() - PR_STATUS_CACHE_TTL_MS - 1,
+              })
+            }
+            lifecycleChanged = true
+            return
+          }
           prLifecycleCache.set(key, {
+            ...cached,
             state: cached?.state ?? 'unknown',
-            ...(cached?.conflicts !== undefined ? { conflicts: cached.conflicts } : {}),
             fetchedAt: Date.now(),
+            failed: true,
           })
         })
         .finally(() => {
@@ -1654,7 +1691,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     function renderThreadRow(
       project: Project,
       thread: SidebarThread,
-      options: { displayTitle?: string; allowRename?: boolean } = {},
+      options: { displayTitle?: string; allowRename?: boolean; statusDetails?: boolean } = {},
     ): HTMLElement {
       const activeId = project.id === activeProjectId ? activeThreadId : null
       const displayTitle = (options.displayTitle ?? thread.title) || 'New Thread'
@@ -1703,13 +1740,37 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           })
         }
       }
+      let content = title
+      if (options.statusDetails) {
+        const details = el('span', { class: 'chat-thread-details' })
+        if (thread.createdAt !== undefined && Number.isFinite(thread.createdAt)) {
+          const elapsed = Math.max(0, Date.now() - thread.createdAt)
+          const age = formatAgeLong(elapsed)
+          details.append(
+            el(
+              'time',
+              {
+                class: 'chat-thread-age',
+                datetime: new Date(thread.createdAt).toISOString(),
+                title: `Started ${new Date(thread.createdAt).toLocaleString()}`,
+                'aria-label': age === 'just now' ? 'Started just now' : `Started ${age} ago`,
+              },
+              formatAge(elapsed),
+            ),
+          )
+        }
+        details.append(
+          el('span', { class: 'chat-thread-owner' }, `· ${projectDisplayName(project)}`),
+        )
+        content = el('span', { class: 'chat-thread-content' }, title, details)
+      }
       const chatRow = el(
         'div',
         {
           class: `chat-row${thread.automation ? ' is-automation' : ''}${thread.id === activeThreadId && project.id === activeProjectId ? ' selected' : ''}`,
           'data-thread-id': thread.id,
         },
-        title,
+        content,
       )
       chatRow.addEventListener('click', () => {
         if (renaming?.threadId === thread.id) return
@@ -1836,10 +1897,10 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
       if (thread.status === 'running') {
         chatRow.classList.add('is-running')
-        chatRow.insertBefore(runningStatus('Agent is working'), title)
+        chatRow.insertBefore(runningStatus('Agent is working'), content)
       } else if (isAutomationPendingStart(thread)) {
         chatRow.classList.add('is-running')
-        chatRow.insertBefore(runningStatus('Starting…'), title)
+        chatRow.insertBefore(runningStatus('Starting…'), content)
       } else if (
         (thread.unreadAt !== undefined ||
           getSideChatUnreadParents(store, project.id).has(thread.id)) &&
@@ -1855,7 +1916,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                 ? 'Unread agent completion'
                 : 'Unread reply in a side chat',
           }),
-          title,
+          content,
         )
       }
 
@@ -2409,15 +2470,16 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                     openAppRunDialog(store, api, project.id)
                     return
                   }
-                  const unsubscribe = store.on('workspace_changed', () => {
-                    if (store.getState().activeProjectId === project.id) {
-                      unsubscribe()
-                      openAppRunDialog(store, api, project.id)
-                    } else if (!isProjectSwitchInFlight(store, project.id)) {
-                      unsubscribe()
-                    }
-                  })
-                  switchProject(store, api, project.id)
+                  // Open once this switch is over, if it landed here. A
+                  // cancelled or superseded switch settles elsewhere, and a
+                  // failed one rejects; neither opens the dialog.
+                  void switchProjectAndWait(store, api, project.id)
+                    .then(() => {
+                      if (store.getState().activeProjectId === project.id) {
+                        openAppRunDialog(store, api, project.id)
+                      }
+                    })
+                    .catch(() => undefined)
                 },
               })
             }
@@ -2680,12 +2742,14 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           for (const thread of paged.visibleThreads) {
             const project = owners.get(byThread.get(thread)?.projectId ?? '')
             if (!project) continue
-            const row = renderThreadRow(project, thread)
-            row
-              .querySelector('.chat-title')
-              ?.after(
-                el('span', { class: 'chat-thread-owner' }, `· ${projectDisplayName(project)}`),
-              )
+            const row = renderThreadRow(project, thread, { statusDetails: mode === 'status' })
+            if (mode !== 'status') {
+              row
+                .querySelector('.chat-title')
+                ?.after(
+                  el('span', { class: 'chat-thread-owner' }, `· ${projectDisplayName(project)}`),
+                )
+            }
             chats.append(row)
           }
           if (paged.hasMore) {
@@ -2830,6 +2894,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       }
       showThreadArchiveToast(store, api, event.projectId, event.threadId, event.title)
     }),
+    // A trigger means main wrote this project's threads: it created a run and,
+    // when the project is not focused, drives that turn itself. A resident
+    // snapshot read before then lacks the run, so the next switch must reload.
+    api.automations.onTriggered((event) => {
+      invalidateProjectThreadLoads(api, event.projectId)
+    }),
     store.on('thread_archive_requested', (projectId, threadId) => {
       void archiveProjectThread(projectId, threadId)
     }),
@@ -2854,16 +2924,27 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     store.on('thread_status_changed', () => {
       render()
     }),
-    store.on('workspace_changed', () => {
+    selectActiveWorkspace(store, () => {
+      prWorkspaceGeneration += 1
+      // Preload can reject a superseded read before this renderer commits the
+      // new workspace. Keep failures memoized within a workspace, then retry
+      // them at its successor even when the rejection preceded this event.
+      for (const [key, cached] of prLifecycleCache) {
+        if (cached.failed) {
+          prLifecycleCache.set(key, {
+            ...cached,
+            fetchedAt: Date.now() - PR_STATUS_CACHE_TTL_MS - 1,
+          })
+        }
+      }
       // Only a switch to another workspace invalidates the filter; adding or
       // removing some other project leaves the open one's search intact.
       if (store.getState().activeProjectId !== filteredProjectId) closeThreadFilter()
       else if (threadFilter) contentFilter.search(threadFilter)
-      // Drop cached PR lifecycles when the workspace changes so we don't paint
-      // another project's GitHub state onto the new sidebar.
-      prStatusGeneration += 1
-      prLifecycleCache.clear()
-      prFetchInFlight.clear()
+      // PR state is keyed by owner/repo/number, not the active workspace.
+      // Keep fresh results and in-flight reads across switches: clearing them
+      // drops resolved icons and repeats every visible PR's details/checks.
+      // The normal TTL still revalidates them; teardown ignores late results.
       render()
     }),
     store.on('attention_changed', render),

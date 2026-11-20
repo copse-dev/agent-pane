@@ -64,33 +64,51 @@ export async function acceptThreadPrompt(
       Date.now() >= command.expiresAt
     )
       return { ok: false, error: 'The destination conversation is unavailable.' }
-    if (!current.worktreeChoice && current.messages.length === 0) {
+    if (
+      (!current.worktreeChoice && current.messages.length === 0) ||
+      (command.requireWorktree && (!current.worktree || current.worktree.retiredAt !== undefined))
+    ) {
       const prepared = await api.agent.prepareCheckout(
         command.projectId,
         threadId,
         command.text,
-        'automatic',
+        command.requireWorktree ? 'worktree' : 'automatic',
         current.model,
       )
       if (Date.now() >= command.expiresAt)
         return { ok: false, error: 'This prompt expired while preparing the checkout.' }
+      if (command.requireWorktree && prepared.checkoutMode !== 'worktree')
+        return { ok: false, error: 'Subthreads require an isolated checkout.' }
       applyPreparedThreadCheckout(store, threadId, prepared)
       current = getThreadById(store, threadId)
       if (!current || current.archivedAt !== undefined)
         return { ok: false, error: 'The destination conversation is unavailable.' }
     }
+    if (!(await api.threadPrompts.canSubmit(command.id)))
+      return {
+        ok: false,
+        error: 'The prompt was cancelled, expired, or its permission was revoked.',
+      }
+    current = getThreadById(store, threadId)
+    if (!current || current.archivedAt !== undefined || Date.now() >= command.expiresAt)
+      return { ok: false, error: 'The destination conversation is unavailable.' }
+    // Delegated subthread prompts keep the continuation budget; only peer
+    // prompts carry the sender turn's per-destination allowance scope.
+    const peerTurnTreeId = command.authorizingAccess ? undefined : command.sourceTurnTreeId
     const origin: MachineMessageOrigin = {
       kind: 'machine',
-      operationId: `thread:${command.sourceThreadId}`,
-      crossThreadScope: JSON.stringify([command.sourceThreadId, command.sourceTurnTreeId]),
+      operationId: `${command.authorizingAccess ? 'subthread' : 'thread'}:${command.sourceThreadId}`,
+      ...(peerTurnTreeId === undefined
+        ? {}
+        : { crossThreadScope: JSON.stringify([command.sourceThreadId, peerTurnTreeId]) }),
     }
     // A never-used destination inherits the existing sender root instead of
     // minting a fresh epoch on every machine run. Subsequent incoming prompts
     // cannot replenish its own outgoing allowance or self-continuation budget.
-    if (current.currentEpoch === undefined)
+    if (current.currentEpoch === undefined && peerTurnTreeId !== undefined)
       patchThreadAnywhere(store, threadId, (thread) => ({
         ...thread,
-        currentEpoch: command.sourceTurnTreeId,
+        currentEpoch: peerTurnTreeId,
       }))
     // An earlier failed run does not prevent an authorized new prompt.
     if (current.status === 'error')

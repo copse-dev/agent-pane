@@ -11,6 +11,11 @@ The implementation lives in [`@copse/thread-store`](../packages/thread-store/REA
 The app's `src/main/services/thread-store.ts` is a compatibility re-export that
 installs the profile and tracing environment first.
 
+The native `search_project_context` / `read_project_context` tools provide bounded,
+project-scoped reads over message/tool evidence and enabled OKF memories. They preserve
+conversation-read consent and do not index private provider/session files. See the
+[retrieval prototype](spikes/project-context-retrieval.md) for limits and remaining work.
+
 ## Location
 
 ```
@@ -41,6 +46,16 @@ restore, stop the app and remove the index and its sidecars to force a rebuild.
 The spike does not add an external-file watcher or migrate `catalog.jsonl` and the
 legacy agent-link index. See [the SQLite spike report](spikes/thread-sqlite-index.md).
 
+Sidebar request search has a separate disposable `.thread-prompt-index.sqlite`
+projection (and SQLite sidecars). A dedicated worker warms it after opening a project
+and reconciles it after native writes. It stores only NFC-normalized, case-folded human
+prompt text, with spine file signatures and per-prompt content hashes for incremental
+reuse. Search returns thread IDs rather than loading transcripts or tool/blob content.
+Queries reconcile source signatures before matching; edits, truncation, archive/restore,
+and deletion replace/remove affected rows. A missing/incompatible/corrupt database
+rebuilds from thread files. It uses the same store containment and symlink rules.
+Source files remain authoritative; deleting this cache is safe.
+
 ## Layout
 
 ```
@@ -49,6 +64,7 @@ legacy agent-link index. See [the SQLite spike report](spikes/thread-sqlite-inde
                                      #   createdAt, updatedAt, digest, path}
   agent-pr-index-v2.jsonl            # rebuildable legacy agent/PR links; all matching threads
   .thread-index.sqlite              # disposable metadata / PR / commit projection
+  .thread-prompt-index.sqlite       # disposable human-prompt search projection (worker-owned)
   stream-stats.jsonl                 # append-only stream-cut eval records
   reasoning-checkpoints.jsonl        # append-only reasoning checkpoint records
   tasks/<taskId>/                    # supervised background tasks (#1081); not a thread
@@ -149,6 +165,10 @@ legacy agent-link index. See [the SQLite spike report](spikes/thread-sqlite-inde
   [`proposed-threads.md`](proposed-threads.md)), optional `archivedAt`, and the
   legacy thread-level `reviewReport` used by reports written before per-turn
   anchoring. New Copse Reviewer reports live on their owning message spine line.
+  Project navigation flushes the outgoing composer's text into its owning thread
+  before taking the metadata/cache snapshot, and again at the live handoff if the
+  destination took time to load. This preserves edits made inside the normal
+  draft debounce window without submitting the draft or rewriting its transcript.
   When `archivedAt` is set the thread is soft-hidden
   from the sidebar and dropped from `catalog.jsonl`, but the directory remains.
   Archiving also removes the thread's dedicated worktree after checking for
@@ -156,6 +176,21 @@ legacy agent-link index. See [the SQLite spike report](spikes/thread-sqlite-inde
   discard confirmation; cancellation keeps the chat and checkout. The branch
   is retained, and `worktree.retiredAt` records that the checkout can be rebuilt.
   Shared project checkouts are never removed by archiving.
+  The whole `worktree` value is main-owned: renderer `threads:create` and
+  `threads:update-meta` payloads cannot allocate, replace or clear it. This keeps
+  delayed completion snapshots and autosaves from reviving a checkout after
+  cleanup. Native allocation, rename, restore, adoption and explicit clearing
+  still write through the trusted store API. No on-disk field is added.
+  Passive native Git and filesystem reads, file-watch registration, owner-scoped
+  file-link resolution, automatic app-capability detection, app history polling
+  and automatic follow-up suggestions do not invoke that restoring execution
+  lifecycle. They report unavailable/false/empty for a released checkout without
+  falling back to the shared project. The file tree gives recovery guidance
+  rather than representing an unavailable checkout as an empty live folder.
+  Nested repository projects read their own canonical checkout subdirectory;
+  an absent or escaped subdirectory never falls back to the repository root.
+  Explicit execution/restore operations can still recreate it and clear the
+  marker through main's lifecycle API.
   Optional `prRefs` are cached references, not ownership. `prProductions` records
   successful non-noop native PR creation (`pr`, `eventId`, `source: "pr-create"`,
   `createdAt`); `commitProductions` records native commit creation (`repository`,
@@ -264,6 +299,7 @@ append is the commit point). See [`spine-schema.ts`](../packages/thread-store/sr
       "status": "done" | "error",
       "result": { "ref": "blobs/<messageId>.tool-<n>.result.txt", "sha256": "…" } | null,
       "editStats": { "additions": 1, "deletions": 2 }, // optional
+      "deferred": true, // optional: the host held the call back without running it
       "commandPhase": { "state": "exited", "since": 1712345678901, "launched": true,
                         "exitCode": 0 }, // optional: run_shell/run_background lifecycle
       "subagent": { "ref": "subagents/<id>/", "kind": "explore", "status": "done",
@@ -295,6 +331,13 @@ terminal `exited` (with `exitCode`), `timed_out`, `cancelled` or
 spawned, so a command that never started stays distinct from one that ran and
 failed; `backgroundTaskId` names the `run_background` task once there is one.
 It is display metadata: the fold decodes it and drops a malformed value.
+
+A `run_background` task usually ends after its tool call returned, often in a
+later turn. Its first terminal stage (`exited`, `timed_out`, or `cancelled` when
+it was stopped) is then written onto the same call by main, which rewrites the
+owning message line in place before any completion wake starts. A completion
+wake's `origin.operationId` is that task id, so a reader finds the command a
+wake reports on by matching it against `backgroundTaskId`.
 
 `model` on a spine line is the primary-chat picker id for that assistant
 message. The transcript surfaces it only when more than one distinct primary

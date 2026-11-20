@@ -331,10 +331,8 @@
 }
 .model-picker-group-label {
   padding: var(--spacing-xs) var(--spacing-md);
-  font-size: var(--font-size-2xs);
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 /* Options show the model's display label — the same text the trigger shows in
    the interface font — so they read in that font too, not the id monospace. */
@@ -403,6 +401,15 @@
   color: var(--text-primary);
   font-weight: 600;
   background: var(--bg-selected);
+}
+/* A superseded current model is marked `disabled` only to stop a wasted click
+   (reselecting it is a no-op) — it is the model actually running, not an
+   unavailable option, so it must not fade like a genuinely blocked row. Keep
+   the selected fill at full strength; the :disabled rule below still dims
+   every other disabled row, including a selected one that cannot run
+   (blocked in Settings, plugin disabled, account missing). */
+.model-picker-option.is-selected.is-superseded:disabled {
+  opacity: 1;
 }
 .model-picker-option.is-active {
   outline: 1px solid var(--border-strong);

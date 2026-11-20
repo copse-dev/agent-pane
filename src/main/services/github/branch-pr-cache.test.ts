@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { BranchPrCache, branchPrCache, type BranchPrResult } from './branch-pr-cache.ts'
+import {
+  BranchPrCache,
+  branchMergedPrCache,
+  branchPrCache,
+  type BranchPrResult,
+} from './branch-pr-cache.ts'
 import { invalidateGitHubReadCache } from './backend/github-read-cache.ts'
 
 const pr = { number: 12, title: 'Feature', url: 'https://github.com/o/r/pull/12' }
@@ -76,10 +81,18 @@ describe('branch PR cache', () => {
   })
 
   it('manual GitHub refresh invalidates shared branch observations', async () => {
+    const head = { sha: 'abc123', label: 'merged PR #12' }
     branchPrCache.invalidate()
+    branchMergedPrCache.invalidate()
     await branchPrCache.get('branch', async () => ({ ok: true, pr: null }))
+    await branchMergedPrCache.get('branch', async () => ({ ok: true, pr: null }))
     invalidateGitHubReadCache()
     assert.deepEqual(await branchPrCache.get('branch', async () => ({ ok: true, pr })), pr)
+    assert.deepEqual(
+      await branchMergedPrCache.get('branch', async () => ({ ok: true, pr: head })),
+      head,
+    )
     branchPrCache.invalidate()
+    branchMergedPrCache.invalidate()
   })
 })

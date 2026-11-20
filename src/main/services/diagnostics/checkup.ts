@@ -12,7 +12,7 @@ import {
   isProviderAvailable,
   getSetting,
 } from '../storage/settings.ts'
-import { getWorkspaceRoot } from '../workspace.ts'
+import type { AgentRoots } from '../execution-root.ts'
 import { isWorkspaceTrusted } from '../security/workspace-trust.ts'
 import { isGitAvailable } from '../tool-availability.ts'
 import { getCurrentBranchName, isInsideGitWorkTree } from '../github/git-service.ts'
@@ -151,11 +151,16 @@ function agentOpenFilesSnapshot(): CheckupSnapshot['agentOpenFiles'] {
   return { command: stuck.command, code: stuck.fault.code, limit: stuck.fault.limitLabel }
 }
 
-export async function runCheckup(): Promise<CheckupReport> {
-  const root = getWorkspaceRoot()
+/**
+ * `roots` are the asking turn's: trust is reported for the project and Git for
+ * the checkout the turn runs in, never for whichever window opened last (#3958).
+ */
+export async function runCheckup(roots: AgentRoots): Promise<CheckupReport> {
+  const root = roots.projectRoot
+  const checkout = roots.executionRoot
 
-  const gitAvailable = isGitAvailable() && (await isInsideGitWorkTree().catch(() => false))
-  const branch = gitAvailable ? await getCurrentBranchName().catch(() => null) : null
+  const gitAvailable = isGitAvailable() && (await isInsideGitWorkTree(checkout).catch(() => false))
+  const branch = gitAvailable ? await getCurrentBranchName(checkout).catch(() => null) : null
 
   const context = await evaluateChatDefaultContext().catch(() => ({
     hasDecentChatDefault: true,
@@ -210,6 +215,6 @@ export async function runCheckup(): Promise<CheckupReport> {
 }
 
 /** Run the checkup and render it as the plain-text block a tool returns. */
-export async function runCheckupText(): Promise<string> {
-  return formatCheckupReport(await runCheckup())
+export async function runCheckupText(roots: AgentRoots): Promise<string> {
+  return formatCheckupReport(await runCheckup(roots))
 }

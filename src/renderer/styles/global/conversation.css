@@ -209,12 +209,10 @@
 }
 
 .turn-recovery-title {
-  /* Plate title recipe shared with `.review-panel-header`: severity-tinted caps. */
+  /* Plate title recipe shared with `.review-panel-header`: severity-tinted, sentence case. */
   color: var(--sev);
   font-size: var(--font-size-sm);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
 .turn-recovery-detail,
@@ -271,33 +269,36 @@
     transparent 100%
   );
 }
-.scroll-to-bottom {
-  position: absolute;
-  left: 50%;
-  bottom: var(--spacing-md);
-  transform: translateX(-50%);
-  width: 36px;
-  height: 36px;
+.conversation-navigation {
+  /* Reserve the same space with or without a return action: no transcript
+     overlays and no viewport jump when navigation becomes available. */
+  flex: 0 0 40px;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+  min-width: 0;
+  padding: 0 var(--spacing-xl);
+}
+.scroll-to-bottom {
+  max-width: 100%;
+  min-height: 36px;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  gap: var(--spacing-sm);
+  border-radius: var(--radius);
   border: none;
-  /* A filled control carrying --text-on-accent, so it takes the fill tier
-     (docs/ui-taste.md -> "--accent tints, --accent-fill fills"). Solid and
-     fully opaque: white on an 80% --accent measured 2.91:1 in dark, and even
-     the right pair loses AA once the page shows through a translucent fill. */
-  background: var(--accent-fill);
-  color: var(--text-on-accent);
-  line-height: 1;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
   cursor: pointer;
-  box-shadow: var(--shadow-md);
-  z-index: 4;
-  transition: background 0.15s;
 }
 .scroll-to-bottom:hover {
   opacity: 1;
-  background: var(--accent-fill-hover);
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 .scroll-to-bottom:focus-visible {
   outline: 2px solid var(--accent);
@@ -595,10 +596,10 @@
 ) {
   display: none;
 }
-/* Reasoning ("thinking") disclosure, shown above the answer. Keep the hatch
-   that marks commentary, but fade it toward the center over a solid etched
-   surface so longer text remains easy to read. The surface is scoped to [open]: a <details>
-   cannot be laid out as a grid without Chromium's ::details-content box
+/* Reasoning ("thinking") disclosure, shown above the answer. Open, it sits on one
+   plain raised plate: no sheen, glow, hatch, outline or highlight
+   (docs/ui-taste.md, "Containment is a plate"). The surface is scoped to [open]: a
+   <details> cannot be laid out as a grid without Chromium's ::details-content box
    reflowing the body, and a closed disclosure is one summary line with no plate. */
 .message-reasoning {
   --sev: var(--accent);
@@ -607,29 +608,13 @@
   border-radius: var(--radius);
 }
 .message-reasoning[open] {
-  --reasoning-glass-fill: color-mix(in srgb, var(--bg-elevated) 96%, var(--accent) 4%);
   padding: var(--spacing-md) var(--spacing-lg);
-  border: 1px solid color-mix(in srgb, var(--text-secondary) 18%, transparent);
-  background:
-    linear-gradient(
-      145deg,
-      color-mix(in srgb, var(--text-primary) 5%, transparent),
-      transparent 62%
-    ),
-    radial-gradient(ellipse 75% 95% at center, var(--reasoning-glass-fill) 18%, transparent 100%),
-    repeating-linear-gradient(
-      135deg,
-      color-mix(in srgb, var(--sev) 6%, transparent) 0 1px,
-      transparent 1px 12px
-    ),
-    var(--reasoning-glass-fill);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 8%, transparent);
+  background: var(--bg-elevated);
 }
-@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+/* Increased contrast gets an edge, so the plate does not rest on a fill alone. */
+@media (prefers-contrast: more) {
   .message-reasoning[open] {
-    border-color: var(--border-strong);
-    background: var(--bg-elevated);
-    box-shadow: none;
+    border: 1px solid var(--border-strong);
   }
 }
 .message-reasoning:not([open]) {
@@ -889,7 +874,8 @@
   color: var(--text-secondary);
   background: transparent;
   border: 1px dashed var(--border-subtle);
-  border-radius: 999px;
+  /* A disclosure, not a call to action: the kit corner, not a pill (docs/ui-taste.md). */
+  border-radius: var(--radius);
   padding: 1px 7px;
   margin: 0;
   cursor: pointer;
@@ -938,6 +924,20 @@
   top: calc(-1 * var(--spacing-lg));
   z-index: 3;
   box-shadow: var(--shadow-sm);
+}
+/* While the latest prompt is stuck, conversation.ts publishes the band it
+   covers as --sticky-prompt-band. For the length of one scroll call,
+   scrollIntoTranscriptView applies it as scroll padding and as
+   --sticky-prompt-scroll-band, so a scrolled-to reply row lands below the
+   prompt. The prompt itself and every row before it cancel that band:
+   scrolling to one of them leaves the prompt at or below it, so nothing covers
+   the top and the target lands flush, as without the band. */
+.messages-list
+  > .msg-user:not(.msg-machine-origin):not(.msg-hook-origin):not(
+    :has(~ .msg-user:not(.msg-machine-origin):not(.msg-hook-origin))
+  ),
+.messages-list > :has(~ .msg-user:not(.msg-machine-origin):not(.msg-hook-origin)) {
+  scroll-margin-top: calc(-1 * var(--sticky-prompt-scroll-band, 0px));
 }
 /* A narrow split pane cannot afford to pin a tall request over the response it
    owns. Let the prompt rejoin the transcript once the chat column reaches the
@@ -1157,16 +1157,11 @@
   min-width: 0;
   gap: 1px;
 }
-.visual-evidence-eyebrow,
 .visual-evidence-summary-meta,
 .visual-evidence-kind,
 .visual-evidence-asset-meta {
   font-size: var(--font-size-sm);
   color: var(--text-muted);
-}
-.visual-evidence-eyebrow {
-  font-weight: 600;
-  letter-spacing: 0.02em;
 }
 .visual-evidence-caption {
   overflow: hidden;
@@ -1178,7 +1173,7 @@
 .visual-evidence-kind {
   padding: 2px var(--spacing-sm);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: var(--bg-muted);
   white-space: nowrap;
 }
@@ -1469,7 +1464,6 @@ span.acp-resource-title {
 .acp-diff-eof {
   padding-left: 2ch;
   color: var(--text-muted);
-  font-style: italic;
 }
 
 /* Transcript attachment chips (conversation.ts renderUserTranscript): a paste
@@ -1647,7 +1641,7 @@ span.acp-resource-title {
   color: var(--text-secondary);
   background: var(--bg-subtle);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius);
   font: inherit;
   font-size: var(--font-size-2xs);
   cursor: pointer;
@@ -1661,4 +1655,53 @@ span.acp-resource-title {
   height: 6px;
   border-radius: 50%;
   background: var(--accent);
+}
+
+/* Docked in the reserved navigation row, never over the transcript, so it
+   cannot cover a prompt line or the TODO counter at any width. It sits before
+   Back to latest in a right-aligned row: revealing its label grows leftwards
+   and leaves the other control and the transcript where they are. */
+.conversation-first-prompt {
+  flex: 0 1 auto;
+  min-width: 36px;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.conversation-first-prompt-label {
+  display: none;
+}
+.conversation-first-prompt:hover,
+.conversation-first-prompt:focus-visible {
+  opacity: 1;
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.conversation-first-prompt:hover .conversation-first-prompt-label,
+.conversation-first-prompt:focus-visible .conversation-first-prompt-label {
+  display: inline;
+}
+.conversation-first-prompt:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (hover: none) {
+  /* A wider touch target that still fills, not overflows, the 40px row. */
+  .conversation-first-prompt {
+    min-width: 44px;
+    min-height: 40px;
+  }
+  .conversation-first-prompt-label {
+    display: inline;
+  }
 }

@@ -14,6 +14,8 @@ shipped features, experiments, and plans. [Plan status](plans/README.md) retains
 delivery history and deferred decisions.
 
 [Current release evidence](product-release-evidence.md) records readiness and missing acceptance.
+[Production-boundary contracts](boundary-contracts.md) run the real provider, GitHub, update-feed
+and ACP-package boundaries on a schedule and for each release candidate.
 The [Shipping quality roadmap](plans/sdlc-improvement-roadmap.md) ranks the follow-through by
 complexity and links the active GitHub trackers.
 

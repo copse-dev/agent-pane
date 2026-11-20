@@ -337,7 +337,6 @@ describe('browser pane session restore', () => {
         assert.deepEqual(tabLabels(list), ['localhost', 'Sales Dashboard'])
 
         store.setState({ activeProjectId: 'project-1' })
-        store.emit('workspace_changed')
         await settled()
 
         assert.deepEqual(reopenCalls, [['project-1', 'thread-a', 'Sales Dashboard']])

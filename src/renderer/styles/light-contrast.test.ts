@@ -175,7 +175,6 @@ describe('light theme: primary fills use --accent-fill (issue #2488)', () => {
       '.titlebar-btn-badge',
       '.queued-action.queued-send-now',
       '.queued-action.queued-release',
-      '.scroll-to-bottom',
     ]
     const declarations = stylesheets().flatMap(({ file, css }) => rules(file, css))
     for (const target of targets) {
@@ -318,13 +317,12 @@ describe('no white label on an accent or warning fill (issue #3065)', () => {
     assert.deepEqual(offenders, [], 'use --accent-fill with --text-on-accent')
   })
 
-  it('keeps the label tier on hover for the filled queued chips and scroll-to-bottom', () => {
+  it('keeps the label tier on hover for the filled queued chips', () => {
     // `.queued-send-now:hover` once flipped the label to white while the fill
     // stayed pink: 1.86:1 in both themes, only while the pointer was on it.
     for (const target of [
       '.queued-action.queued-send-now:hover',
       '.queued-action.queued-release:hover',
-      '.scroll-to-bottom:hover',
     ]) {
       const matching = declarations.filter((rule) => rule.selector.includes(target))
       assert.ok(matching.length > 0, `missing a rule for ${target}`)
@@ -342,18 +340,22 @@ describe('no white label on an accent or warning fill (issue #3065)', () => {
   it('undoes the global button hover fade on those controls', () => {
     // forms.css fades every hovered <button> to 0.8, which took the filled
     // chip's label to 3.98:1 in dark while the pointer was on it.
-    for (const selector of ['.queued-action:hover', '.scroll-to-bottom:hover']) {
+    for (const selector of ['.queued-action:hover']) {
       const rule = declarations.find((candidate) => candidate.selector === selector)
       assert.ok(rule, `missing the ${selector} rule`)
       assert.match(rule.body, /(?:^|;)\s*opacity:\s*1\s*(?:;|$)/, selector)
     }
   })
 
-  it('floats scroll-to-bottom on the shared elevation scale', () => {
+  it('keeps conversation navigation quiet and outside the transcript', () => {
     const rule = declarations.find((candidate) => candidate.selector === '.scroll-to-bottom')
     assert.ok(rule, 'missing the .scroll-to-bottom rule')
-    assert.match(rule.body, /box-shadow:\s*var\(--shadow-(?:sm|md|lg)\)/)
-    assert.doesNotMatch(rule.body, /(?:^|;)\s*opacity:/, 'a dimmed fill drops the label below AA')
+    assert.match(rule.body, /background:\s*transparent/)
+    assert.match(rule.body, /color:\s*var\(--text-secondary\)/)
+    assert.doesNotMatch(rule.body, /position:\s*absolute|--accent-fill|box-shadow:/)
+    const row = declarations.find((candidate) => candidate.selector === '.conversation-navigation')
+    assert.ok(row, 'missing the reserved navigation row')
+    assert.match(row.body, /justify-content:\s*flex-end/)
   })
 
   it('gives the held badge a token label that clears AA on --warning in every theme', () => {

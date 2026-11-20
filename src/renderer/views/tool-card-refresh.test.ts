@@ -242,6 +242,24 @@ describe('tool-card refresh helpers', () => {
     assert.equal(cardStatus([call('a', 'run_shell', 'done')]), 'done')
   })
 
+  it('marks a command that never started, but not a rollup where other calls ran', () => {
+    const declined: ToolCall = {
+      ...call('a', 'run_shell', 'done'),
+      commandPhase: { state: 'not_started', since: 1, launched: false, reason: 'Declined.' },
+    }
+    assert.equal(cardStatus([declined]), 'interrupted')
+    assert.equal(cardStatus([declined, call('b', 'read_file', 'done')]), 'done')
+  })
+
+  it('never marks a deferred edit done, but keeps a rollup where other calls ran done', () => {
+    const deferred: ToolCall = { ...call('a', 'write_file', 'done'), deferred: true }
+    const alsoDeferred: ToolCall = { ...call('b', 'str_replace', 'done'), deferred: true }
+    assert.equal(cardStatus([deferred]), 'interrupted')
+    assert.equal(cardStatus([deferred, alsoDeferred]), 'interrupted')
+    assert.equal(cardStatus([call('c', 'read_file', 'done'), deferred, alsoDeferred]), 'done')
+    assert.equal(cardStatus([call('d', 'write_file', 'done')]), 'done')
+  })
+
   it('keys a card by its stable identity', () => {
     const individual: ToolCallDisplayItem = {
       type: 'individual',

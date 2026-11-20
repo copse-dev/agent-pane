@@ -1,10 +1,19 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedHeldQueueFixture, writeSeedConfig } from './helpers/seed-config.ts'
+import {
+  resetUserData,
+  seedHeldQueueFixture,
+  seedStableWorkspace,
+  writeSeedConfig,
+  writeSettings,
+} from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { AA_BODY_TEXT, fillContrast } from './helpers/fill-contrast.ts'
 import { switchTheme } from './helpers/theme.ts'
+import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 const ROW_SELECTOR = '.conversation-queued .msg-held .message-queued-actions'
@@ -101,14 +110,24 @@ describe('held cross-thread prompt', function () {
 
 describe('held hook message in the queue', function () {
   this.timeout(90_000)
+  let ownedWorkspaceRoot: string | null = null
+
+  function seedHeldQueueWorkspace(): string {
+    ownedWorkspaceRoot = seedStableWorkspace()
+    return ownedWorkspaceRoot
+  }
 
   afterEach(() => {
     resetUserData()
+    if (ownedWorkspaceRoot !== null) {
+      removeE2eTree(ownedWorkspaceRoot)
+      ownedWorkspaceRoot = null
+    }
   })
 
   it('renders a held badge + Release action and captures a screenshot', async function () {
     resetUserData()
-    seedHeldQueueFixture(process.cwd())
+    seedHeldQueueFixture(seedHeldQueueWorkspace())
     await browser.reloadSession()
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
@@ -195,7 +214,7 @@ describe('held hook message in the queue', function () {
 
   it('keeps the HELD badge and Release labels readable in both themes, hovered too', async function () {
     resetUserData()
-    seedHeldQueueFixture(process.cwd())
+    seedHeldQueueFixture(seedHeldQueueWorkspace())
     await browser.reloadSession()
     await $('.conversation-queued .msg-queued.msg-held').waitForExist({ timeout: 30_000 })
 
@@ -223,6 +242,115 @@ describe('held hook message in the queue', function () {
       const hovered = await fillContrast('.conversation-queued .msg-held .queued-release')
       if (!hovered) throw new Error('Release chip not found')
       expect(hovered.ratio).toBeGreaterThanOrEqual(AA_BODY_TEXT)
+    }
+  })
+
+  it('holds an already queued hook when human Send now starts another task', async () => {
+    resetUserData()
+    const projectId = 'e2e-queue-task-boundary'
+    const threadId = 'e2e-queue-task-thread'
+    const firstPrompt = 'Review the auth module.'
+    const humanPrompt = 'Explain how to test the settings page.'
+    const hookPrompt = 'Finish the earlier auth module cleanup.'
+    const origin = { kind: 'hook', hookId: 'todo-closeout', event: 'stop' }
+    writeSettings({ model: 'claude-sonnet-4-6', subagentsEnabled: false })
+    writeSeedConfig({
+      projects: [
+        { id: 'queue-fixture-lobby', path: process.cwd(), name: 'Copse' },
+        { id: projectId, path: seedStableWorkspace(), name: 'workspace' },
+      ],
+      // Recovery intentionally clears saved queue pauses. Keep this project
+      // unopened until its scoped model hold is installed instead.
+      activeProjectId: 'queue-fixture-lobby',
+      'threads:queue-fixture-lobby': [],
+      [`threads:${projectId}`]: [
+        {
+          id: threadId,
+          title: 'A new task with earlier work queued',
+          status: 'idle',
+          currentEpoch: 'earlier-task',
+          messages: [
+            {
+              id: 'earlier-request',
+              role: 'user',
+              content: 'Refactor the auth module.',
+              toolCalls: [],
+              createdAt: 1,
+            },
+            {
+              id: 'active-hook',
+              role: 'user',
+              content: firstPrompt,
+              origin,
+              toolCalls: [],
+              createdAt: 2,
+            },
+            {
+              id: 'earlier-hook',
+              role: 'user',
+              content: hookPrompt,
+              origin,
+              toolCalls: [],
+              createdAt: 3,
+            },
+          ],
+          pendingMessages: [
+            {
+              messageId: 'active-hook',
+              payload: { content: firstPrompt },
+              createdAt: 2,
+              origin,
+              epoch: 'earlier-task',
+            },
+            {
+              messageId: 'earlier-hook',
+              payload: { content: hookPrompt },
+              createdAt: 3,
+              origin,
+              epoch: 'earlier-task',
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: 1,
+          updatedAt: 3,
+        },
+      ],
+    })
+    await browser.reloadSession()
+    const hookSelector = '.conversation-queued [data-message-id="earlier-hook"]'
+    const reply = 'Test the settings page with a saved value and a changed value.'
+    const scenario = await installMockScenario(
+      {
+        title: 'Settings page tests',
+        turns: [
+          {
+            user: firstPrompt,
+            allowAbort: true,
+            responses: [{ waitFor: 'auth-review', text: 'The auth review is complete.' }],
+          },
+          { user: humanPrompt, responses: [{ text: reply }] },
+        ],
+      },
+      threadId,
+    )
+    try {
+      await $(`.project-entry[data-project-id="${projectId}"] .project-row`).click()
+      await scenario.waitForHold('auth-review')
+      await expect($(hookSelector).$('.message-queued-badge')).toHaveText('QUEUED')
+      await setComposerValue(humanPrompt)
+      await submitComposer()
+      const humanSelector = '.conversation-queued .msg-queued:not(.msg-hook-origin)'
+      await expect($(humanSelector).$('.message-text')).toHaveText(humanPrompt)
+      await $(humanSelector).$('.queued-send-now').click()
+      await expectAssistantReply(reply)
+      await expect($(hookSelector).$('.message-queued-badge')).toHaveText('HELD')
+      await expect($(hookSelector).$('.message-text')).toHaveText(hookPrompt)
+      await expect($(hookSelector).$('.queued-release')).toBeDisplayed()
+      await expect($(hookSelector).$('.queued-send-now')).not.toBeExisting()
+      await scenario.assertComplete()
+      await saveElementScreenshot(hookSelector, 'queued-hook-held-after-human-task.png')
+    } finally {
+      await scenario.release('auth-review')
     }
   })
 })

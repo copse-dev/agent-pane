@@ -443,7 +443,8 @@ describe('git changes pane fetches proposed diff content on cache miss', () => {
     await waitForModifiedValue(capture, 'b-after\n')
 
     store.setState({ activeThreadId: 'thread-a', activeDiff: null })
-    store.emit('staged_diffs_changed')
+    // diff-state republishes thread-a's queue as a fresh array.
+    store.setState({ stagedDiffs: [{ path: 'same.ts', language: 'typescript' }] })
     await waitForModifiedValue(capture, 'a-after\n')
     const models = capture.editor?.models
     assert.ok(models, 'expected thread-a models to be restored')

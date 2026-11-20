@@ -10,14 +10,13 @@ import {
 import type {
   LLMProvider,
   LLMMessage,
-  LLMTool,
   ModelUsage,
   StreamChunk,
   ToolExecuteResult,
 } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
 import { runWithAgentRunReadFileLimits } from './agent-run-read-limits.ts'
-import { getWorkspaceRoot } from './workspace.ts'
+import { agentWorkspaceLabel, getAgentExecutionRoot } from './execution-root.ts'
 import { getGitDiffText } from './github/git-service.ts'
 import { subagentHookCallbacks } from './hooks/subagent.ts'
 
@@ -37,11 +36,6 @@ export interface PostTurnReviewResult {
   summary: string
   issuesFound: boolean
   usage: ModelUsage
-}
-
-function filterReviewTools(registry: ToolRegistry): LLMTool[] {
-  const names = new Set<string>(REVIEW_TOOL_NAMES)
-  return registry.toLLMTools().filter((t) => names.has(t.name))
 }
 
 function executeReviewTool(
@@ -76,8 +70,10 @@ export async function runPostTurnReview(
     onUsage,
   } = opts
 
-  const workspace = getWorkspaceRoot() ?? '(none)'
-  const diff = await getGitDiffText()
+  // Name and diff the turn's own checkout: in worktree mode the window's
+  // workspace is a tree the reviewer's tools never touch (#1724, #3958).
+  const workspace = agentWorkspaceLabel()
+  const diff = await getGitDiffText(undefined, false, getAgentExecutionRoot())
   const prompt = buildReviewPrompt(parentGoal, diff)
 
   const subagentMessages: LLMMessage[] = [
@@ -109,7 +105,7 @@ export async function runPostTurnReview(
       provider,
       prompt,
       parentGoal: `${parentGoal}\nWorkspace: ${workspace}`,
-      tools: filterReviewTools(registry),
+      tools: registry.toLLMToolsNamed(REVIEW_TOOL_NAMES),
       parentToolCallId: 'post-turn-review',
       signal,
       maxContextTokens: contextWindow,

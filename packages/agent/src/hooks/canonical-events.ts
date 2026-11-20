@@ -162,6 +162,14 @@ export interface StepBoundaryPayload {
    * instead. Omitted (treated as true) wherever the caller does not track it.
    */
   readFileOffered?: boolean
+  /**
+   * `preStream`, at the boundary right after a step whose todo update closed
+   * the plan with every newly completed item carrying an acceptance check the
+   * host executed (#1433, Fix 4; see `planClosedByVerifiedChecks`). Read by
+   * `plan-verified-finalize`. True at most once per closing step; omitted or
+   * false otherwise.
+   */
+  planClosedByVerifiedChecks?: boolean
 }
 
 /**

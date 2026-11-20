@@ -110,7 +110,6 @@ describe('imported Cursor agent refresh', () => {
         }),
       ],
     })
-    store.emit('threads_changed')
     await new Promise<void>((resolve) => setTimeout(resolve, 0))
     assert.equal(calls, 0)
     detach()
@@ -132,7 +131,6 @@ describe('imported Cursor agent refresh', () => {
     )
 
     store.setState({ activeThreadId: 'other' })
-    store.emit('threads_changed')
     resolveResult?.(result)
     await new Promise<void>((resolve) => setTimeout(resolve, 0))
 
@@ -158,7 +156,6 @@ describe('imported Cursor agent refresh', () => {
     )
 
     store.setState({ activeProjectId: 'project-2', activeThreadId: null, threads: [] })
-    store.emit('workspace_changed')
     resolveResult?.(result)
     await new Promise<void>((resolve) => setTimeout(resolve, 0))
 
@@ -198,11 +195,48 @@ describe('imported Cursor agent refresh', () => {
         }),
       ],
     })
-    store.emit('threads_changed')
     resolveResult?.(result)
     await new Promise<void>((resolve) => setTimeout(resolve, 0))
 
     assert.equal(store.getState().threads[0]?.messages.length, 0)
+    detach()
+  })
+
+  it('requests a newly selected imported thread from setState alone, but not on renames', async () => {
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'local',
+      threads: [thread('local'), imported('external', { status: 'running' })],
+    })
+    const calls: string[] = []
+    const detach = attachImportedCursorAgentRefresh(
+      store,
+      apiWithRefresh(async (_projectId, threadId) => {
+        calls.push(threadId)
+        return null
+      }),
+    )
+    store.setState({ activeThreadId: 'external' })
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    assert.deepEqual(calls, [], 'a running imported thread is not requested')
+
+    // Its turn ends: the selected thread now qualifies, with no event emitted.
+    store.setState({
+      threads: store
+        .getState()
+        .threads.map((t) => (t.id === 'external' ? { ...t, status: 'idle' } : t)),
+    })
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    assert.deepEqual(calls, ['external'])
+
+    // A rename of this thread, or any change to another, does not re-request.
+    store.setState({
+      threads: store
+        .getState()
+        .threads.map((t) => ({ ...t, title: `${t.title} (renamed)`, updatedAt: 2 })),
+    })
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    assert.deepEqual(calls, ['external'])
     detach()
   })
 

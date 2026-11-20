@@ -352,7 +352,7 @@ export function unregisterDevtoolsShortcut(): void {
  * Register or unregister the DevTools shortcut to match the current enablement
  * of the `copse.devtools-shortcut` first-party plugin's `devtools-shortcut`
  * capability. Called at boot (via `registerAllHandlers`) and again whenever the
- * plugin is toggled from Settings > Plugins (see `ipc/register-handlers.ts`
+ * plugin is toggled from Settings > Plugins (see `ipc/plugin-handlers.ts`
  * `plugins:set-enabled`), so the shortcut appears or disappears live — the atomic
  * plugin disable unregisters it in the same flag flip that drops the plugin's
  * capability from the Settings plugin list. Replaces the retired

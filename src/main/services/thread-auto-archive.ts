@@ -35,7 +35,8 @@ export interface AutoArchiveDependencies {
   list: typeof loadProjectThreadMetas
   get: typeof getThreadMeta
   update: typeof updateMetaIfUnchanged
-  pr(ref: GithubPrRef): Promise<GhPrDetails | null>
+  /** Read the PR through the project's own checkout (`root`), not the window's. */
+  pr(root: string, ref: GithubPrRef): Promise<GhPrDetails | null>
   inspect: typeof inspectAutoArchiveCheckout
   unchanged: typeof checkoutStillClean
   busy(projectId: string, threadId: string): boolean
@@ -145,7 +146,7 @@ export class ThreadAutoArchive {
               uncertain = true
               break
             }
-            pending = this.deps.pr(ref).catch(() => null)
+            pending = this.deps.pr(root, ref).catch(() => null)
             cache.set(key, pending)
           }
           const pr = await pending

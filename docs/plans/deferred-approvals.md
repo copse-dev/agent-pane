@@ -129,7 +129,9 @@ What landed:
   `~/.copse/workspace/<projectId>/deferred-approvals.jsonl`. Append-only because the queue
   is evidence as much as state: "asked at 03:00, approved at 09:00" is what a reviewer
   wants, and rewriting the pending line in place would erase it. Resolving twice returns
-  null rather than minting a second verdict.
+  null rather than minting a second verdict. `<projectId>` is the deferring turn's own
+  project, never the window's active project; a run thread with no turn (no production path
+  has one) defers into the explicit no-project bucket.
 - **One interception point.** `requestApproval` is the single seam every gate already
   funnels through, so the mode is applied there — shell, MCP, web, browser, PII, ACP and
   the rest are covered without any of them growing a second code path, and without a gate
@@ -196,6 +198,14 @@ user turns remain interactive. The queue record and agent-facing request id let
 the agent report the dependency and continue work within existing permissions.
 Human review and replay still depend on D2; approval alone is not evidence that
 the action ran.
+
+`ask_user` follows that unattended mode too: it returns immediately without an
+answer, preserving the executed questions in its completed tool result, including
+questions or choices changed by a supported `toolGate` hook. The saved-result
+payload is schema-validated; recorded hook notes remain separate. Context and the
+inline question card use the existing saved-question answer flow. A later answer
+is an ordinary human follow-up, not a permission grant or a replay of an action.
+Interactive questions retain their existing wait and cancellation behavior.
 
 Exit gate: a scheduled automation that hits an escalation completes its other work and
 presents a review queue, instead of pausing the thread.

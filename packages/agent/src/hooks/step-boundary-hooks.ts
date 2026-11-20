@@ -24,6 +24,7 @@ import {
   EXPLORE_WITHOUT_READ_NUDGE,
   EXPLORE_WITHOUT_READ_NUDGE_THRESHOLD,
   LOOP_NUDGE_USER_MESSAGE,
+  PLAN_VERIFIED_FINALIZE_NUDGE,
   STUCK_FINALIZE_NUDGE,
 } from '../agent-loop-guards.ts'
 import { shouldForceTextAnswer, shouldInjectLoopNudge } from '../agent-loop-escalation.ts'
@@ -44,6 +45,7 @@ export const LOOP_NUDGE_HOOK_ID = 'loop-nudge'
 export const TRUNCATION_CONTINUE_HOOK_ID = 'truncation-continue'
 export const REASONING_RUNAWAY_HOOK_ID = 'reasoning-runaway'
 export const MALFORMED_TOOL_CALL_HOOK_ID = 'malformed-tool-call'
+export const PLAN_VERIFIED_FINALIZE_HOOK_ID = 'plan-verified-finalize'
 
 /**
  * Force a text-only answer when the conversation is under enough context
@@ -159,6 +161,28 @@ export const malformedToolCallHook: BlockingHook<'stepBoundary'> = {
 }
 
 /**
+ * End the run once its plan is verifiably done (#1433, Fix 4). After the
+ * motivating run opened its PR it kept going for 800 seconds — two more full
+ * test runs, a stash cycle, a no-op force-push — and then announced the work
+ * was "already" done, having lost track that it was the author. A plan whose
+ * closing items carried acceptance checks the host executed and passed is the
+ * run's own definition of done having been met, so the harness runs one
+ * tool-free answer turn instead of another verification lap. Plans closed
+ * without checks never trigger this. Selection only: the loop applies the text
+ * as a text-only turn, consumes the signal, and spends no continuation budget.
+ */
+export const planVerifiedFinalizeHook: BlockingHook<'stepBoundary'> = {
+  id: PLAN_VERIFIED_FINALIZE_HOOK_ID,
+  event: 'stepBoundary',
+  run(payload) {
+    if (payload.phase !== 'preStream' || payload.planClosedByVerifiedChecks !== true) {
+      return undefined
+    }
+    return { injectContext: PLAN_VERIFIED_FINALIZE_NUDGE }
+  },
+}
+
+/**
  * Step-boundary hooks in the order the previous inline blocks ran. Order among
  * the pre-stream pair mirrors the inline order (stuck-finalize evaluated before
  * loop-nudge); the harness reads each by id, so cross-nudge order is not itself
@@ -170,4 +194,5 @@ export const STEP_BOUNDARY_HOOKS: readonly BlockingHook<'stepBoundary'>[] = [
   truncationContinueHook,
   reasoningRunawayHook,
   malformedToolCallHook,
+  planVerifiedFinalizeHook,
 ]

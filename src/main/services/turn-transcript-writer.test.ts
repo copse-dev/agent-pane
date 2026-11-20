@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
 import { afterEach, beforeEach, describe, it } from 'node:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
+import type { CommandPhase } from '@copse/agent/wire-types.ts'
 import type { StreamChunk, TranscriptStamp, TranscriptSnapshot } from '@shared/types'
 import { createStore } from '@shared/store/store.ts'
 import { getThreadById } from '@shared/store/thread-helpers.ts'
@@ -16,7 +17,13 @@ import {
 } from '@shared/store/transcript-stream.test-support.ts'
 import { AgentDispatcher, type AgentDispatcherDependencies } from './agent-dispatcher.ts'
 import type { ThreadExecutionContext } from './thread-execution-context.ts'
-import { appendMessage, createThread, getProjectThread, updateMeta } from './thread-store.ts'
+import {
+  appendMessage,
+  createThread,
+  getProjectThread,
+  threadDirectoryPath,
+  updateMeta,
+} from './thread-store.ts'
 import { ToolRegistry } from './tool-registry.ts'
 import { TurnTranscriptWriter } from './turn-transcript-writer.ts'
 
@@ -154,6 +161,30 @@ describe('TurnTranscriptWriter', () => {
     assert.equal((await stored()).status, 'idle')
   })
 
+  it('does not restore an old interruption in an ordinary human turn snapshot', async () => {
+    // The renderer clears its marker after its user-message save has already
+    // captured the old metadata. Main must not echo that stale disk marker.
+    await updateMeta(PROJECT, THREAD, {
+      status: 'idle',
+      interruptedTurnAt: 20,
+      draftPrompt: 'Keep the separate draft.',
+    })
+    const snapshots: TranscriptSnapshot[] = []
+    const turn = harness(
+      () => [{ type: 'text', text: 'The fresh human request is complete.' }, { type: 'done' }],
+      () => {},
+      (snapshot) => snapshots.push(snapshot),
+    )
+    await dispatch(turn)
+    const first = snapshots[0]
+    assert.ok(first)
+    assert.equal(first.source, 'runtime')
+    assert.equal(first.thread.status, 'running')
+    assert.equal(first.thread.interruptedTurnAt, undefined)
+    assert.equal((await stored()).interruptedTurnAt, undefined)
+    assert.equal((await stored()).draftPrompt, 'Keep the separate draft.')
+  })
+
   it('writes the whole turn with no window to deliver it to', async () => {
     // The window closed before the turn started streaming: nothing is received.
     const turn = harness(recordedTurn)
@@ -180,6 +211,52 @@ describe('TurnTranscriptWriter', () => {
     )
     assert.equal(thread.todos?.[0]?.content, 'Ship it')
   })
+
+  for (const retryId of ['call_0', 'retry_1']) {
+    it(`persists a performed retry ${retryId} without a stale deferred marker`, async () => {
+      const write = (id: string): StreamChunk => ({
+        type: 'tool_call',
+        toolCall: { id, name: 'write_file', args: { path: 'packages/api/first.ts' } },
+      })
+      let chunks: StreamChunk[] = [
+        write('call_0'),
+        {
+          type: 'tool_result',
+          toolCallId: 'call_0',
+          result: 'Edit deferred.',
+          isError: false,
+          deferred: true,
+        },
+        { type: 'done' },
+      ]
+      const turn = harness(() => chunks)
+      await dispatch(turn)
+      const spine = join(threadDirectoryPath(PROJECT, THREAD), 'events.jsonl')
+      assert.match(readFileSync(spine, 'utf8'), /"deferred"\s*:\s*true/)
+      assert.equal((await stored()).messages.at(-1)?.toolCalls[0]?.deferred, true)
+
+      // The first result is already durable. The next turn replaces that
+      // message's full spine line when a provider reuses the id.
+      chunks = [
+        write(retryId),
+        { type: 'tool_result', toolCallId: retryId, result: 'File written.', isError: false },
+        { type: 'done' },
+      ]
+      await dispatch(turn)
+      const calls = (await stored()).messages.flatMap((message) => message.toolCalls)
+      const applied = calls.find((call) => call.result === 'File written.')
+      assert.ok(applied)
+      assert.equal(applied.status, 'done')
+      assert.equal(Object.hasOwn(applied, 'deferred'), false)
+      const raw = readFileSync(spine, 'utf8')
+      assert.doesNotMatch(raw, /"deferred"\s*:\s*false/)
+      if (retryId === 'call_0') assert.doesNotMatch(raw, /"deferred"\s*:/)
+      else {
+        assert.equal(calls[0]?.deferred, true)
+        assert.match(raw, /"deferred"\s*:\s*true/)
+      }
+    })
+  }
 
   it('stamps every chunk so an open window draws the same messages it wrote', async () => {
     const window = createStore({
@@ -218,6 +295,21 @@ describe('TurnTranscriptWriter', () => {
       ['u1', 'msg-1'],
     )
     assert.equal(thread.messages.at(1)?.toolCalls.at(0)?.status, 'done')
+  })
+
+  it('preserves accepted output and interrupted status when quit cancels a still-seeding turn', async () => {
+    const turn = harness(() => [])
+    const transcript = turn.writer.begin(PROJECT, THREAD)
+    transcript.emit({ type: 'text', text: 'Saved checkpoint.' })
+    const drained = turn.writer.interruptForShutdown()
+    transcript.emit({ type: 'text', text: 'Late output must not complete the turn.' })
+    transcript.emit({ type: 'done', stopReason: 'cancelled' })
+    transcript.end()
+    await drained
+    const thread = await stored()
+    assert.equal(thread.status, 'running', 'restart must detect an interrupted turn')
+    assert.equal(thread.messages.at(-1)?.content, 'Saved checkpoint.')
+    assert.throws(() => turn.writer.begin(PROJECT, 'late-thread'), /closing/)
   })
 
   it('labels a user Stop the way the window does, on disk and on the wire', async () => {
@@ -261,6 +353,141 @@ describe('TurnTranscriptWriter', () => {
     assert.equal(thread.messages.at(1)?.commandSummary, 'Read the plan')
     assert.equal(thread.messages.at(1)?.toolCalls.at(0)?.result, '1. Ship it')
     assert.equal(thread.messages.length, 3)
+  })
+
+  it('records a background task ending on its card after the turn, without the window writing it', async () => {
+    const deliveries: Delivery[] = []
+    const turn = harness(recordedTurn, (delivery) => deliveries.push(delivery))
+    await dispatch(turn)
+    deliveries.length = 0
+
+    const phase = {
+      state: 'exited' as const,
+      since: 50,
+      launched: true,
+      exitCode: 1,
+      backgroundTaskId: 'bg-1',
+    }
+    await turn.writer.updateCommandPhase(PROJECT, THREAD, 'call-read', phase)
+
+    const thread = await stored()
+    const call = thread.messages.at(1)?.toolCalls.find((candidate) => candidate.id === 'call-read')
+    assert.deepEqual(call?.commandPhase, phase)
+    assert.equal(call.result, '1. Ship it', 'the rest of the call is untouched')
+    assert.equal(thread.messages.length, 3)
+    assert.deepEqual(deliveries, [
+      {
+        threadId: THREAD,
+        chunk: { type: 'tool_call_update', toolCallId: 'call-read', commandPhase: phase },
+        stamp: { messageIds: [] },
+      },
+    ])
+  })
+
+  it('keeps both endings when two tasks on one message finish together', async () => {
+    const turn = harness(() => [
+      { type: 'tool_call', toolCall: { id: 'call-a', name: 'run_background', args: {} } },
+      { type: 'tool_call', toolCall: { id: 'call-b', name: 'run_background', args: {} } },
+      { type: 'tool_result', toolCallId: 'call-a', result: 'Started a.', isError: false },
+      { type: 'tool_result', toolCallId: 'call-b', result: 'Started b.', isError: false },
+      { type: 'done' },
+    ])
+    await dispatch(turn)
+
+    const ending = (taskId: string, exitCode: number): CommandPhase => ({
+      state: 'exited',
+      since: 50,
+      launched: true,
+      exitCode,
+      backgroundTaskId: taskId,
+    })
+    await Promise.all([
+      turn.writer.updateCommandPhase(PROJECT, THREAD, 'call-a', ending('bg-a', 1)),
+      turn.writer.updateCommandPhase(PROJECT, THREAD, 'call-b', ending('bg-b', 2)),
+    ])
+
+    const calls = (await stored()).messages.flatMap((message) => message.toolCalls)
+    assert.deepEqual(
+      calls.map((call) => [call.id, call.commandPhase?.exitCode]),
+      [
+        ['call-a', 1],
+        ['call-b', 2],
+      ],
+    )
+  })
+
+  it('ignores an ending for a tool call the thread does not hold', async () => {
+    const deliveries: Delivery[] = []
+    const turn = harness(recordedTurn, (delivery) => deliveries.push(delivery))
+    await dispatch(turn)
+    deliveries.length = 0
+    const before = await stored()
+
+    await turn.writer.updateCommandPhase(PROJECT, THREAD, 'call-missing', {
+      state: 'cancelled',
+      since: 50,
+      launched: true,
+    })
+
+    assert.deepEqual(await stored(), before)
+    assert.deepEqual(deliveries, [])
+  })
+
+  it('distinguishes cold disk attachment from an empty live runtime seed', async () => {
+    const snapshots: TranscriptSnapshot[] = []
+    const turn = harness(
+      () => [],
+      () => {},
+      (snapshot) => snapshots.push(snapshot),
+    )
+    await turn.writer.attach(PROJECT, [THREAD])
+    assert.equal(snapshots.at(-1)?.source, 'disk')
+    const transcript = turn.writer.begin(PROJECT, THREAD)
+    await turn.writer.attach(PROJECT, [THREAD])
+    assert.equal(snapshots.at(-1)?.source, 'runtime')
+    assert.deepEqual(snapshots.at(-1)?.checkpoint, { stream: null, pendingTurn: null })
+    transcript.end()
+    await turn.writer.settled(THREAD)
+  })
+
+  it('persists interruption removal after a hidden main-owned continuation', async () => {
+    await updateMeta(PROJECT, THREAD, {
+      status: 'idle',
+      interruptedTurnAt: 20,
+      draftPrompt: 'Keep this human follow-up unsent.',
+    })
+    const turn = harness(() => [
+      { type: 'text', text: 'The accepted change is verified.' },
+      { type: 'done' },
+    ])
+    assert.equal(
+      await turn.dispatcher.dispatchMachine({
+        projectId: PROJECT,
+        threadId: THREAD,
+        operationId: 'accept-change',
+        turnTreeId: THREAD,
+        display: 'hidden',
+        payload: { userContent: 'The user accepted a.txt.', invokedSkills: [], priorTodos: [] },
+      }),
+      'completed',
+    )
+    await turn.writer.settled(THREAD)
+    const thread = await stored()
+    assert.equal(thread.status, 'idle')
+    assert.equal(thread.interruptedTurnAt, undefined)
+    assert.equal(thread.draftPrompt, 'Keep this human follow-up unsent.')
+    assert.equal(thread.messages.filter((message) => message.role === 'user').length, 1)
+    assert.equal(thread.messages.at(-1)?.content, 'The accepted change is verified.')
+
+    const snapshots: TranscriptSnapshot[] = []
+    const cold = harness(
+      () => [],
+      () => {},
+      (snapshot) => snapshots.push(snapshot),
+    )
+    await cold.writer.attach(PROJECT, [THREAD])
+    assert.equal(snapshots.at(-1)?.source, 'disk')
+    assert.equal(snapshots.at(-1)?.thread.interruptedTurnAt, undefined)
   })
 
   it('restores an in-flight bubble and continues with the same identity and full prefix', async () => {

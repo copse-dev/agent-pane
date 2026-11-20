@@ -38,7 +38,13 @@ await bundleThreadContainerWorker(workerBundle)
 const args = process.argv.slice(2)
 const result = spawnSync(
   'node',
-  [cliBundle, ...args, ...(args.includes('--build') ? ['--worker-bundle', workerBundle] : [])],
+  [
+    cliBundle,
+    ...args,
+    ...(args.includes('--build') || args.includes('--build-only')
+      ? ['--worker-bundle', workerBundle]
+      : []),
+  ],
   { stdio: 'inherit', cwd: process.cwd(), env: process.env },
 )
 process.exit(result.status ?? 1)

@@ -16,11 +16,11 @@ import {
   resolveSshExecutionTargetForCwd,
 } from '../services/ssh-workspace/execution-target.ts'
 import {
-  stopRemoteFilePolling,
-  unwatchRemotePath,
-  watchRemotePath,
-} from '../services/ssh-workspace/remote-file-poller.ts'
-import { resolveThreadExecutionContext } from '../services/thread-execution-context.ts'
+  stopAllRemoteWatchers,
+  unwatchRemoteFile,
+  watchRemoteFile,
+} from '../services/ssh-workspace/remote-watch.ts'
+import { inspectThreadReadRoot } from '../services/thread-execution-context.ts'
 import { z } from 'zod'
 import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
 import { WatchSubscriptions } from './fs-watch-subscriptions.ts'
@@ -35,7 +35,7 @@ function watcherKey(projectId: string, threadId: string, relPath: string): strin
 }
 
 function stopWatch(key: string): void {
-  unwatchRemotePath(key)
+  unwatchRemoteFile(key)
   watchers.get(key)?.close()
   watchers.delete(key)
 }
@@ -55,7 +55,8 @@ export function initFsWatcher(win: BrowserWindow): void {
   ipcMain.handle('fs:watch', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId, rel] = parseIpcArgs(watcherArgs, rawArgs)
-    const root = (await resolveThreadExecutionContext(projectId, threadId)).root
+    const root = await inspectThreadReadRoot(projectId, threadId)
+    if (!root) return
     const abs = await resolvePathWithinRoot(rel, root)
     const key = watcherKey(projectId, threadId, rel)
     // The window may have closed during the awaits above; its `destroyed`
@@ -69,7 +70,7 @@ export function initFsWatcher(win: BrowserWindow): void {
     if (isActiveSshWorkspace()) {
       const target = resolveSshExecutionTargetForCwd(root)
       if (target?.kind !== 'ssh') return
-      watchRemotePath(
+      watchRemoteFile(
         key,
         { hostId: target.hostId, remoteRoot: root, absPath: abs },
         (_k, size) => {
@@ -175,5 +176,5 @@ export function closeAllWatchers(): void {
   })
   watchers.clear()
   subscriptions.clear()
-  stopRemoteFilePolling()
+  stopAllRemoteWatchers()
 }

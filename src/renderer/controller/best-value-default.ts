@@ -4,6 +4,7 @@
 
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { AppStore } from '@shared/store/store.ts'
+import { selectActiveWorkspace } from './active-workspace.ts'
 import {
   getActiveThread,
   isBlankThread,
@@ -67,7 +68,7 @@ export function attachBestValueDefaultResolver(store: AppStore, api: BestValueAp
     void resolveBestValueForActiveBlankThread(store, api)
   }
   const unsubscribeNewThread = store.on('new_thread_opened', resolve)
-  const unsubscribeWorkspace = store.on('workspace_changed', resolve)
+  const unsubscribeWorkspace = selectActiveWorkspace(store, resolve)
   return () => {
     unsubscribeNewThread()
     unsubscribeWorkspace()

@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedBrowserToolsFixture } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { frameInTranscript } from './helpers/sticky-prompt.ts'
+import { waitForTranscriptScrollSettled } from './helpers/scroll-to-bottom.ts'
 
 describe('browser tool display', () => {
   before(async () => {
@@ -29,6 +31,19 @@ describe('browser tool display', () => {
     await expect(screenshot).toHaveAttribute('alt', 'browser-tab-1.png')
     assert.match((await screenshot.getAttribute('src')) ?? '', /^data:image\/png;base64,/)
 
+    // Two CI runs of one head captured this differently: wait for the
+    // preview to decode and the transcript's scroll to settle first.
+    await browser.waitUntil(
+      async () =>
+        browser.execute(() => {
+          const image = document.querySelector<HTMLImageElement>(
+            '[data-message-id="msg-assistant-browser"] > .tool-result-images .tool-result-preview-image',
+          )
+          return Boolean(image?.complete && image.naturalWidth > 0)
+        }),
+      { timeout: 15_000, timeoutMsg: 'expected the browser screenshot preview to decode' },
+    )
+    await waitForTranscriptScrollSettled()
     await saveAppScreenshot('browser-tools-collapsed.png')
 
     await rollup.$('summary.tool-card-header').click()
@@ -36,6 +51,14 @@ describe('browser tool display', () => {
     const group = await rollup.$('.tool-card-group').getElement()
     await expect(group.$('.tool-name')).toHaveText('Used browser')
     await expect(screenshot).toBeDisplayed()
+    // Expanding the rollup grows the answer past the scrollport. Frame what
+    // this capture shows, the opened rollup down to the screenshot beneath
+    // it, instead of capturing wherever the scroll landed.
+    const framed = await frameInTranscript([
+      '[data-message-id="msg-assistant-browser"] .tool-card-rollup',
+      '[data-message-id="msg-assistant-browser"] > .tool-result-images',
+    ])
+    assert.ok(framed.fits, JSON.stringify(framed))
     await saveAppScreenshot('browser-tools-expanded.png')
 
     await group.$(':scope > summary').click()

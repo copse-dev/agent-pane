@@ -130,6 +130,17 @@ export async function readInstalledNpmPackageVersion(
   binaryPath: string,
   packageName: string,
 ): Promise<string | null> {
+  return (await findInstalledNpmPackage(binaryPath, packageName))?.version ?? null
+}
+
+/**
+ * {@link readInstalledNpmPackageVersion}, also returning the package's own
+ * directory, so a caller can look inside the install the binary belongs to.
+ */
+export async function findInstalledNpmPackage(
+  binaryPath: string,
+  packageName: string,
+): Promise<{ dir: string; version: string } | null> {
   let start: string
   try {
     start = realpathSync(binaryPath)
@@ -140,7 +151,7 @@ export async function readInstalledNpmPackageVersion(
   for (let i = 0; i < 12; i += 1) {
     const candidate = join(dir, 'package.json')
     const version = await readPackageJsonVersion(candidate, packageName)
-    if (version) return version
+    if (version) return { dir, version }
     const parent = dirname(dir)
     if (parent === dir) break
     dir = parent

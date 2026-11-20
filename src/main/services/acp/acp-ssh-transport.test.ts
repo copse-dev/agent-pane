@@ -17,6 +17,13 @@ import { setSetting } from '../storage/settings.ts'
 import { storageSet } from '../storage/storage.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import {
+  getSshConnectionManager,
+  resetSshConnectionManagerForTests,
+  setSshTransportFactory,
+} from '../ssh-workspace/connection-manager.ts'
+import { FakeSshTransport } from '../ssh-workspace/fake-ssh-transport.ts'
+import { REMOTE_PGID_PREFIX, resolveRemoteLoginShell } from '../ssh-workspace/remote-env.ts'
+import {
   acpSshTarget,
   buildRemoteAcpCommand,
   buildRemoteAcpLoginCommand,
@@ -33,10 +40,100 @@ import {
   remoteVersionManagerSearchScript,
   formatRemoteAcpInstallApproval,
   remoteAcpInstallSpec,
+  clearRemoteAgentPathCacheForTests,
+  resolveCachedRemoteAgentPath,
+  spawnRemoteAcpTransport,
 } from './acp-ssh-transport.ts'
 import { containerAcpAgent } from '@shared/container-acp-agents.ts'
 
 const REMOTE_ROOT = '/remote/project'
+
+describe('remote ACP PATH cache', () => {
+  afterEach(() => {
+    clearRemoteAgentPathCacheForTests()
+  })
+
+  it('reuses a successful probe across replacement ACP transports', async () => {
+    let probes = 0
+    const resolve = (): Promise<string> => {
+      probes += 1
+      return Promise.resolve('/remote/node/bin:/usr/bin')
+    }
+
+    assert.equal(
+      await resolveCachedRemoteAgentPath('dev', '/bin/bash', 'claude-agent-acp', resolve, 1_000),
+      '/remote/node/bin:/usr/bin',
+    )
+    assert.equal(
+      await resolveCachedRemoteAgentPath('dev', '/bin/bash', 'claude-agent-acp', resolve, 2_000),
+      '/remote/node/bin:/usr/bin',
+    )
+    assert.equal(probes, 1)
+  })
+
+  it('does not cache failed probes', async () => {
+    let probes = 0
+    const resolve = (): Promise<string> => {
+      probes += 1
+      if (probes === 1) return Promise.reject(new Error('connection dropped'))
+      return Promise.resolve('/usr/bin')
+    }
+
+    await assert.rejects(
+      resolveCachedRemoteAgentPath('dev', '/bin/bash', 'claude-agent-acp', resolve, 1_000),
+      /connection dropped/,
+    )
+    assert.equal(
+      await resolveCachedRemoteAgentPath('dev', '/bin/bash', 'claude-agent-acp', resolve, 2_000),
+      '/usr/bin',
+    )
+    assert.equal(probes, 2)
+  })
+
+  it('does not cache a missing agent result', async () => {
+    let probes = 0
+    const resolve = (): Promise<string | null> => {
+      probes += 1
+      return Promise.resolve(probes === 1 ? null : '/usr/bin')
+    }
+
+    assert.equal(
+      await resolveCachedRemoteAgentPath('dev', '/bin/bash', 'claude-agent-acp', resolve, 1_000),
+      null,
+    )
+    assert.equal(
+      await resolveCachedRemoteAgentPath('dev', '/bin/bash', 'claude-agent-acp', resolve, 2_000),
+      '/usr/bin',
+    )
+    assert.equal(probes, 2)
+  })
+
+  it('isolates host, shell, and command entries and expires old results', async () => {
+    let probes = 0
+    const resolve = (): Promise<string> => Promise.resolve(`/path/${String(++probes)}`)
+
+    assert.equal(
+      await resolveCachedRemoteAgentPath('a', '/bin/zsh', 'agent', resolve, 0),
+      '/path/1',
+    )
+    assert.equal(
+      await resolveCachedRemoteAgentPath('b', '/bin/zsh', 'agent', resolve, 1),
+      '/path/2',
+    )
+    assert.equal(
+      await resolveCachedRemoteAgentPath('a', '/bin/bash', 'agent', resolve, 1),
+      '/path/3',
+    )
+    assert.equal(
+      await resolveCachedRemoteAgentPath('a', '/bin/zsh', 'other', resolve, 1),
+      '/path/4',
+    )
+    assert.equal(
+      await resolveCachedRemoteAgentPath('a', '/bin/zsh', 'agent', resolve, 31 * 60_000),
+      '/path/5',
+    )
+  })
+})
 
 async function setUpSshWorkspace(): Promise<void> {
   await setSetting('sshWorkspaceEnabled', true)
@@ -47,6 +144,84 @@ async function setUpSshWorkspace(): Promise<void> {
   storageSet('projects', [{ id: 'p1', path: REMOTE_ROOT, sshHost: 'dev' }])
   setWorkspaceRootForTest(REMOTE_ROOT)
 }
+
+describe('remote ACP transport shutdown', () => {
+  let binDir: string
+  let previousPath: string | undefined
+
+  beforeEach(async () => {
+    resetSshConnectionManagerForTests()
+    clearRemoteAgentPathCacheForTests()
+    // A stand-in `ssh` that answers like the remote PGID wrapper, sends one
+    // JSON-RPC line and then stays connected the way an agent does.
+    binDir = mkdtempSync(join(tmpdir(), 'copse-fake-acp-ssh-'))
+    const fakeSsh = join(binDir, 'ssh')
+    writeFileSync(
+      fakeSsh,
+      `#!/bin/sh\nprintf '${REMOTE_PGID_PREFIX}4242\\n{"jsonrpc":"2.0","method":"ready"}\\n'\nexec cat >/dev/null\n`,
+    )
+    chmodSync(fakeSsh, 0o755)
+    previousPath = process.env['PATH']
+    process.env['PATH'] = `${binDir}:${previousPath ?? ''}`
+    await setSetting('sshWorkspaceHosts', [
+      { id: 'dev', label: 'Dev', host: 'dev.example.com', user: 'alice' },
+    ])
+  })
+
+  afterEach(async () => {
+    if (previousPath === undefined) delete process.env['PATH']
+    else process.env['PATH'] = previousPath
+    rmSync(binDir, { recursive: true, force: true })
+    resetSshConnectionManagerForTests()
+    clearRemoteAgentPathCacheForTests()
+    await setSetting('sshWorkspaceHosts', [])
+  })
+
+  it('keeps the remote process group until a kill reaches it, then consumes it', async () => {
+    const ssh = new FakeSshTransport([
+      { when: /^uname -s$/, stdout: 'Linux\n' },
+      { when: /^uname -m$/, stdout: 'x86_64\n' },
+      { when: /printf %s "\$SHELL"/, stdout: '/bin/bash' },
+      { when: /command -v git$/, stdout: '/usr/bin/git\n' },
+      { when: /command -v rg$/, stdout: '/usr/bin/rg\n' },
+      { when: /^kill -TERM -- -4242 /, stdout: '' },
+    ])
+    setSshTransportFactory(() => ssh)
+    const manager = getSshConnectionManager()
+    const connection = await manager.connect('dev')
+    const shell = resolveRemoteLoginShell(connection.capabilities?.shell)
+    await resolveCachedRemoteAgentPath('dev', shell, 'fake-agent', () =>
+      Promise.resolve('/usr/bin'),
+    )
+    const transport = await spawnRemoteAcpTransport(
+      { command: 'fake-agent', cwd: REMOTE_ROOT },
+      { hostId: 'dev', remoteRoot: REMOTE_ROOT },
+    )
+    // The first message arrives only after the PGID marker line was consumed.
+    const reader = transport.stream.readable.getReader()
+    assert.equal((await reader.read()).done, false)
+    reader.releaseLock()
+    const kills = (): number =>
+      ssh.calls.filter((call) => call.kind === 'shell' && call.command.startsWith('kill ')).length
+
+    // The network drops before the idle reaper runs.
+    await manager.disconnect('dev')
+    const dispose = async (): Promise<void> => {
+      await transport.dispose()
+    }
+    await assert.rejects(dispose, /SSH host dev is disconnected/)
+    await assert.rejects(dispose, /SSH host dev is disconnected/)
+    assert.equal(kills(), 0)
+
+    // Reconnected, a retry still knows which remote group to stop.
+    await manager.connect('dev')
+    await dispose()
+    assert.equal(kills(), 1)
+    await dispose()
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.equal(kills(), 1, 'a confirmed kill is shared and leaves no group to kill again')
+  })
+})
 
 describe('acpSshTarget gating', () => {
   beforeEach(async () => {
@@ -419,16 +594,22 @@ describe('approved env forwarding (stdin preamble)', () => {
 })
 
 describe('remote agent probe', () => {
+  // `--norc` keeps the host's startup files out of the PATH these tests assert
+  // on. Node hands a child a socketpair for stdin, and bash takes a socket on
+  // stdin to mean sshd started it, so a plain `bash -c` reads the system and
+  // user bashrc. That is what the real probe wants over SSH, but here it lets a
+  // developer's or runner's bashrc prepend directories to `$PATH`.
   it('reports FOUND with the shell PATH when the agent is on PATH', () => {
     const dir = mkdtempSync(join(tmpdir(), 'acp-probe-'))
     try {
       const bin = join(dir, 'claude-code-acp')
       writeFileSync(bin, '#!/bin/sh\nexit 0\n')
       chmodSync(bin, 0o755)
-      const stdout = execFileSync('bash', ['-c', remoteAgentProbeScript('claude-code-acp')], {
-        env: { PATH: `${dir}:/usr/bin:/bin` },
-        encoding: 'utf8',
-      })
+      const stdout = execFileSync(
+        'bash',
+        ['--norc', '-c', remoteAgentProbeScript('claude-code-acp')],
+        { env: { PATH: `${dir}:/usr/bin:/bin` }, encoding: 'utf8' },
+      )
       const parsed = parseRemoteAgentProbe(stdout)
       assert.ok(parsed?.found, 'agent on PATH must parse as found')
       assert.ok(parsed.path?.includes(dir), 'the probe must capture the PATH that resolved it')
@@ -440,7 +621,7 @@ describe('remote agent probe', () => {
   it('reports MISSING when the agent is absent, even with rc noise on stdout', () => {
     const noisy = `Welcome to devbox!\n${execFileSync(
       'bash',
-      ['-c', remoteAgentProbeScript('definitely-not-installed-agent')],
+      ['--norc', '-c', remoteAgentProbeScript('definitely-not-installed-agent')],
       { env: { PATH: '/usr/bin:/bin' }, encoding: 'utf8' },
     )}trailing motd line`
     const parsed = parseRemoteAgentProbe(noisy)

@@ -14,7 +14,6 @@ import {
 import { redactSecrets } from '@shared/threads/decision-log.ts'
 import { projectStoreDir } from '../storage/copse-paths.ts'
 import { runSerialized } from '../storage/write-queue.ts'
-import { getActiveProjectId } from '../workspace.ts'
 
 /**
  * Durable queue of deferred approvals, beside the decision log under the same
@@ -32,6 +31,10 @@ import { getActiveProjectId } from '../workspace.ts'
  * told it was queued, and the user will never see it. So the writer surfaces its
  * failure to the caller, which refuses to defer and lets the normal prompt path
  * run instead.
+ *
+ * Every function takes the owning project from its caller. `null` means the
+ * request has no project, and it is kept apart in its own bucket: the store
+ * never guesses from the window's active project.
  */
 
 const QUEUE_FILE = 'deferred-approvals.jsonl'
@@ -45,8 +48,8 @@ function queueKey(projectId: string): string {
   return `deferred-approvals:${projectId}`
 }
 
-function resolveProjectId(explicit?: string): string {
-  return explicit ?? getActiveProjectId() ?? NO_PROJECT_BUCKET
+function bucketOf(projectId: string | null): string {
+  return projectId ?? NO_PROJECT_BUCKET
 }
 
 function safeRead(path: string): string {
@@ -71,9 +74,9 @@ function appendEntry(projectId: string, entry: DeferredApproval): void {
  */
 export function deferApproval(
   input: DeferredApprovalInput,
-  opts: { projectId?: string } = {},
+  opts: { projectId: string | null },
 ): Promise<DeferredApproval> {
-  const projectId = resolveProjectId(opts.projectId)
+  const projectId = bucketOf(opts.projectId)
   return runSerialized(queueKey(projectId), () => {
     const existing = pendingDeferrals(parseDeferredApprovals(safeRead(queuePath(projectId))))
     const key = deferredRequestKey(input)
@@ -100,18 +103,19 @@ export function deferApproval(
 }
 
 /** Every entry, newest state per id. */
-export function readDeferredApprovals(projectId?: string): Promise<DeferredApproval[]> {
-  const resolved = resolveProjectId(projectId)
+export function readDeferredApprovals(projectId: string | null): Promise<DeferredApproval[]> {
+  const resolved = bucketOf(projectId)
   return runSerialized(queueKey(resolved), () =>
     foldDeferredApprovals(parseDeferredApprovals(safeRead(queuePath(resolved)))),
   )
 }
 
 /** Outstanding entries only, oldest first. Optionally narrowed to one thread. */
-export function readPendingDeferrals(
-  opts: { projectId?: string; threadId?: string } = {},
-): Promise<DeferredApproval[]> {
-  const resolved = resolveProjectId(opts.projectId)
+export function readPendingDeferrals(opts: {
+  projectId: string | null
+  threadId?: string
+}): Promise<DeferredApproval[]> {
+  const resolved = bucketOf(opts.projectId)
   return runSerialized(queueKey(resolved), () => {
     const pending = pendingDeferrals(parseDeferredApprovals(safeRead(queuePath(resolved))))
     return opts.threadId ? pending.filter((entry) => entry.threadId === opts.threadId) : pending
@@ -127,9 +131,9 @@ export function readPendingDeferrals(
 export function resolveDeferral(
   id: string,
   status: Exclude<DeferralStatus, 'pending'>,
-  opts: { projectId?: string; note?: string } = {},
+  opts: { projectId: string | null; note?: string },
 ): Promise<DeferredApproval | null> {
-  const projectId = resolveProjectId(opts.projectId)
+  const projectId = bucketOf(opts.projectId)
   return runSerialized(queueKey(projectId), () => {
     const current = foldDeferredApprovals(parseDeferredApprovals(safeRead(queuePath(projectId))))
     const entry = current.find((candidate) => candidate.id === id)

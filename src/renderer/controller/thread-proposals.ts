@@ -51,7 +51,10 @@ export type StartProposedThreadResult =
  * second way to start a thread. What it adds is the isolation the card
  * promised: the checkout is requested as `'worktree'`, so the proposed work
  * gets its own branch and directory instead of landing on top of whatever the
- * user has open.
+ * user has open. It also stays off-screen: the new thread is created with
+ * `activate: false`, so accepting the offer never navigates the user away
+ * from wherever they clicked it — the card's own "Open thread" link is how
+ * they go look at it.
  *
  * Order matters. `createThread` first, then await its in-flight autosave so the
  * thread exists on disk before the checkout IPC needs it; `prepareCheckout` next,
@@ -87,7 +90,10 @@ export async function startProposedThread(
   if (!projectId) throw new Error('Open a project before starting a proposed thread')
 
   store.emit('composer_draft_flush')
-  const threadId = createThread(store)
+  // Not activated: starting a proposal must not navigate the user away from
+  // wherever they are — the new thread runs in the background and the card
+  // itself becomes the "Open thread" link once it exists.
+  const threadId = createThread(store, undefined, { activate: false })
   setThreadTitle(store, threadId, proposal.title)
   patchThreadAnywhere(store, threadId, (t) => ({
     ...t,

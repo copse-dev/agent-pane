@@ -3,6 +3,7 @@ import {
   runWithSkillActivationTurn,
   type SkillActivationTurn,
 } from '../skills/skill-activation.ts'
+import { runWithIsolatedDesktopLifetime } from '../isolated-desktop/desktop-lifetime.ts'
 import { patchTouchedPaths } from '@shared/patch/apply-patch.ts'
 import { captureInlineCanvasScope } from '../inline-canvas-context.ts'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
@@ -40,9 +41,8 @@ import {
 } from '../thread-execution-context.ts'
 import { REQUEST_WRITE_ACCESS_TOOL } from '@shared/tools/readonly-tools.ts'
 import { ACP_WRITE_ACCESS_HANDOFF_NOTE } from './acp-write-access.ts'
-import { unwrapInlineCode } from './session-update-adapter.ts'
-
-import { BRIDGE_MCP_SERVER_NAME, matchesBridgedToolName } from './acp-bridge-name.ts'
+import { BRIDGE_MCP_SERVER_NAME, newBridgeServerName } from './acp-bridge-name.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 import { isAppleDevelopmentToolOffered } from '../apple-development/apple-development-tool-scope.ts'
 import { configuredClassifierProfiles } from '../classifiers/classifier-service.ts'
 import { ASK_CLASSIFIER_TOOL_NAME, describeClassifyTool } from '../../tools/classifier-tool.ts'
@@ -127,6 +127,8 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   // window server from the seatbelt; this tool asks once, then launches
   // unsandboxed from the host process (gui-app-launch-tool.ts).
   'launch_gui_app',
+  // A desktop grant is thread-owned; its lifetime is bound to the ACP turn below.
+  'isolated_copse',
   // GitHub / CI — run with Copse's gh auth and network access.
   'gh_pr_list',
   'gh_pr_view',
@@ -169,6 +171,7 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   'propose_thread',
   'list_threads',
   'send_thread_prompt',
+  'subthreads',
   // Visibility into pending diff-queue approvals.
   'staged_diffs',
   'read_staged_diff',
@@ -189,6 +192,15 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   'browser_tabs',
   // Only promotes an already-open page or this thread's rendered artefact.
   'browser_show',
+  // Computer use (`copse.computer-use`). Registered only while the plugin is
+  // enabled; every call re-enters the per-app permission gate.
+  'desktop_apps',
+  'desktop_snapshot',
+  'desktop_screenshot',
+  'desktop_click',
+  'desktop_type',
+  'desktop_key',
+  'desktop_menu',
 ]
 
 /**
@@ -246,37 +258,14 @@ function releaseMediatedMcpTools(names: readonly string[]): void {
 }
 
 /**
- * Best-effort check that an ACP permission request describes one of Copse's own
- * bridged native tools, so the client can auto-approve it instead of showing a
- * prompt that only duplicates the bridge's own gate.
- *
- * The signal is the tool-call *title* the external agent sends. ACP does not
- * specify the title's contents, so this recognises only the shape we have
- * observed — the bridge's server name (`BRIDGE_MCP_SERVER_NAME`) prefixing the
- * tool name at the start of the title. Any other shape falls through to a
- * normal prompt, so broadening this stays additive as
- * more agents are observed.
- *
- * This is advisory, not proof: the title is authored by the external agent, so
- * it cannot be made unforgeable (the agent even knows the server name — Copse
- * hands it the bridge in `session/new`). It doesn't need to be. Every bridged
- * call re-enters Copse's native permission gate when the bridge executes it
- * (`ToolRegistry.executeNormalized`), so an honestly-labelled call is still
- * enforced there — read-only tools auto-run, `fetch_url` still origin-gates —
- * and a dishonest agent forging the title is already outside this gate's remit:
- * its own read/edit/execute tools are the larger surface, gated by these same
- * prompts. All this removes is the duplicate approval for the honest case.
- *
- * Codex is a shape this cannot help with: it sends no `title` on permission
- * requests at all (only `kind`, `rawInput`, `status`, `toolCallId`), so its
- * bridged calls still double-prompt. Fixing that needs a non-title signal and a
- * trace of a Codex MCP permission request, which we do not have yet. Codex's
- * dot-joined *tool-call* names do match `matchesBridgedToolName`, which is what
- * the agent-eval harness scores.
+ * The tool names a live bridge in this process serves right now: the curated
+ * and plugin tools for the current thread's project, plus the connected MCP
+ * tools live bridges advertised. `resolveAcpToolProvenance` checks a claimed
+ * bridged identity against this set; a call that merely *names* one of these
+ * still has to say so through adapter-authored fields, never a display title
+ * prefix (#1446).
  */
-export function isBridgedNativeToolTitle(title: string | null | undefined): boolean {
-  if (!title) return false
-  const text = unwrapInlineCode(title)
+export function bridgedNativeToolsOffered(): string[] {
   return [
     ...activeBridgeToolNames(
       getThreadExecutionContext()?.projectId,
@@ -284,7 +273,106 @@ export function isBridgedNativeToolTitle(title: string | null | undefined): bool
       isThreadCheckoutDeferred(),
     ),
     ...activeMediatedMcpTools.keys(),
-  ].some((tool) => matchesBridgedToolName(text, tool))
+  ]
+}
+
+const DELEGATION_TTL_MS = 10 * 60_000
+
+interface AcpDelegation {
+  toolCallId: string
+  /** Canonical JSON of the ACP request's `rawInput`; null when it carried none. */
+  argsKey: string | null
+  at: number
+}
+
+// Per-thread, per-tool ACP tool calls the ACP layer approved on bridged
+// provenance and the bridge has not yet seen executed. Attribution only: the
+// bridge's own gate authorizes the call whether or not it finds one here.
+const pendingDelegations = new Map<string, AcpDelegation[]>()
+
+const delegationKey = (threadId: string, tool: string): string => `${threadId}\u0000${tool}`
+
+/** JSON with object keys sorted at every level, so equal arguments compare equal. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
+  if (isRecord(value)) {
+    const keys = Object.keys(value).sort()
+    return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`
+  }
+  // JSON.stringify(undefined) is undefined at runtime, whatever its type says.
+  return value === undefined ? 'null' : JSON.stringify(value)
+}
+
+function liveDelegations(key: string): AcpDelegation[] {
+  const now = Date.now()
+  return (pendingDelegations.get(key) ?? []).filter((entry) => now - entry.at < DELEGATION_TTL_MS)
+}
+
+function storeDelegations(key: string, entries: AcpDelegation[]): void {
+  if (entries.length === 0) pendingDelegations.delete(key)
+  else pendingDelegations.set(key, entries)
+}
+
+/**
+ * Remember that the ACP layer approved `toolCallId` because it proved to be a
+ * call of `tool` on this thread's bridge, so the bridge's execution record can
+ * name the ACP tool call it carries out. `rawInput` is the ACP request's
+ * arguments, when it had any: the bridge then links only an execution with
+ * the same arguments.
+ */
+export function noteAcpBridgeDelegation(
+  threadId: string,
+  tool: string,
+  toolCallId: string,
+  rawInput?: unknown,
+): void {
+  const key = delegationKey(threadId, tool)
+  storeDelegations(key, [
+    ...liveDelegations(key),
+    { toolCallId, argsKey: isRecord(rawInput) ? canonicalJson(rawInput) : null, at: Date.now() },
+  ])
+}
+
+/**
+ * The ACP tool call a bridge execution of `tool` with `args` carries out, when
+ * exactly one unexpired delegation could be it: same tool, and the same
+ * arguments when the ACP request had any. When two or more could be, they
+ * cannot be told apart from the MCP request, so all of them are dropped and
+ * none is named. A delegation that carried no arguments (Cursor sends none)
+ * can still be linked to a later execution of the same tool after the call it
+ * approved was abandoned; `dropAcpBridgeDelegation` removes it once the agent
+ * reports that call finished, which bounds that window.
+ */
+export function takeAcpBridgeDelegation(
+  threadId: string,
+  tool: string,
+  args: unknown,
+): string | null {
+  const key = delegationKey(threadId, tool)
+  const live = liveDelegations(key)
+  const argsKey = canonicalJson(args ?? {})
+  const candidates = live.filter((entry) => entry.argsKey === null || entry.argsKey === argsKey)
+  storeDelegations(
+    key,
+    live.filter((entry) => !candidates.includes(entry)),
+  )
+  return candidates.length === 1 && candidates[0] ? candidates[0].toolCallId : null
+}
+
+/**
+ * Forget a delegation whose ACP tool call the agent reported finished, failed
+ * or cancelled: anything still waiting for it was never executed through the
+ * bridge, and must not be linked to a later execution.
+ */
+export function dropAcpBridgeDelegation(threadId: string, toolCallId: string): void {
+  const prefix = `${threadId}\u0000`
+  for (const key of [...pendingDelegations.keys()]) {
+    if (!key.startsWith(prefix)) continue
+    storeDelegations(
+      key,
+      liveDelegations(key).filter((entry) => entry.toolCallId !== toolCallId),
+    )
+  }
 }
 
 export interface AcpNativeBridge {
@@ -296,8 +384,32 @@ export interface AcpNativeBridge {
    * to answer "was the tool even offered?" after the fact.
    */
   toolNames: readonly string[]
+  /**
+   * Whether this session's agent has listed the bridge's tools (`tools/list`)
+   * yet. Offering the bridge in `session/new` does not mean the agent mounted
+   * it: until it lists the tools, none of them are in its tool list (#4144).
+   */
+  toolsListed: () => boolean
+  /**
+   * The tools the agent's latest `tools/list` returned, or null before it has
+   * listed them. This, not {@link toolNames}, is what the agent was given: the
+   * registry can change between the offer and the listing. Listing still does
+   * not prove the agent kept them (#4142, `acp-bridge-mount.ts`).
+   */
+  listedToolNames: () => readonly string[] | null
+  /**
+   * Resolve true as soon as the agent lists the bridge's tools, or false once
+   * `timeoutMs` passes or `signal` aborts without it.
+   */
+  whenToolsListed: (timeoutMs: number, signal?: AbortSignal) => Promise<boolean>
   /** Per-turn bearer token the agent must send as `Authorization: Bearer …`. */
   token: string
+  /**
+   * The MCP server name this bridge is mounted under, `copse-<nonce>`. Unique
+   * to this bridge so that no MCP config the agent reads for itself can
+   * define a server whose tools pass for this bridge's (#4125).
+   */
+  serverName: string
   /** Set only while this bridge's owning thread is running an ACP turn. */
   setAdvisorContext: (context: AdvisorRunnerContext | null) => void
   /** Independent run-owned allowance; cleared between prompts. Never capture a parent ALS store. */
@@ -345,7 +457,9 @@ function bridgedTools(
   const offered = new Set(activeBridgeToolNames(projectId, registry, offerWriteAccess))
   // toMcpTools, not toLLMTools: the agent forwards these schemas to the
   // Anthropic API, which validates them as JSON Schema draft 2020-12 and
-  // 400s the whole request on the openapi-3.0 flavor.
+  // 400s the whole request on the openapi-3.0 flavor. The export already
+  // leaves out, with a warning, any tool whose schema no agent could list:
+  // Claude Code would drop every tool of this server over one of them (#4142).
   return registry
     .toMcpTools()
     .filter((tool) => offered.has(tool.name))
@@ -392,6 +506,8 @@ interface BridgeExecuteContext {
   /** The bridge was started for a deferred-worktree thread: offer `request_write_access`. */
   offerWriteAccess: boolean
   recordWorkspaceWrite: (path: string) => void
+  /** The agent listed the bridge's tools; `names` are the ones this listing returned. */
+  recordToolsListed: (names: readonly string[]) => void
 }
 
 /** Wait for a pending binding, giving up with the call itself if the agent abandons it. */
@@ -531,9 +647,11 @@ function buildMcpServer(
     { name: BRIDGE_MCP_SERVER_NAME, version: '1.0.0' },
     { capabilities: { tools: {}, logging: {} } },
   )
-  server.setRequestHandler(ListToolsRequestSchema, () => ({
-    tools: bridgedTools(registry, ctx.projectId, ctx.offerWriteAccess),
-  }))
+  server.setRequestHandler(ListToolsRequestSchema, () => {
+    const tools = bridgedTools(registry, ctx.projectId, ctx.offerWriteAccess)
+    ctx.recordToolsListed(tools.map((tool) => tool.name))
+    return { tools }
+  })
   // Stateless mode gives every POST its own server, so the SDK's built-in
   // cancellation (which aborts a request on the SAME server) never sees the
   // call a `notifications/cancelled` names. Route it through the bridge-wide
@@ -613,9 +731,10 @@ function buildMcpServer(
     extra.signal.addEventListener('abort', onExtraAbort, { once: true })
     let stopKeepalive = (): void => {}
     try {
+      const capturedTurnSignal = ctx.getTurnSignal()
       const executeSignal = mergeBridgeExecuteSignal(
         ctx.sessionSignal,
-        ctx.getTurnSignal(),
+        capturedTurnSignal,
         ctx.getCallSignal(),
       )
       // The client's idle timeout can be shorter than run_shell's foreground
@@ -651,6 +770,7 @@ function buildMcpServer(
       executeSignal.addEventListener('abort', stopKeepalive, { once: true })
       if (executeSignal.aborted) stopKeepalive()
       const execute = (): ReturnType<ToolRegistry['executeNormalized']> => {
+        const acpToolCallId = takeAcpBridgeDelegation(ctx.threadId, name, request.params.arguments)
         recordDecision({
           kind: 'bridge-request',
           actor: 'system',
@@ -658,12 +778,23 @@ function buildMcpServer(
           subject: name,
           source: 'acp-native-bridge',
           bridgeExecutionId,
+          // The ACP tool call whose ACP-layer approval was delegated to this
+          // gate, when it can be named unambiguously (#1446 attribution).
+          ...(acpToolCallId !== null ? { toolCallId: acpToolCallId } : {}),
           projectId: executionContext.projectId,
           threadId: ctx.threadId,
           // Arguments belong in the private thread blob, like transcript tool
           // arguments, never the redacted decision summary shown in the UI.
           detail: { mcpRequestId: requestKey, arguments: request.params.arguments ?? {} },
         })
+        if (name === 'isolated_copse') {
+          if (!capturedTurnSignal)
+            throw new Error('Isolated desktop control requires an active agent turn')
+          return runWithIsolatedDesktopLifetime(
+            mergeBridgeExecuteSignal(ctx.sessionSignal, capturedTurnSignal),
+            () => registry.executeNormalized(name, request.params.arguments, executeSignal),
+          )
+        }
         return registry.executeNormalized(name, request.params.arguments, executeSignal)
       }
       // Rebind the thread identity so approval prompts / idle-deadline pauses
@@ -813,6 +944,16 @@ export async function startAcpNativeBridge(
   let turnTreeId: ReturnType<typeof getActiveRunTurnTreeId> = null
   let workspaceWriteObserver: ((path: string) => void) | null = null
   const inflightCalls = new Map<string, (detail: string) => void>()
+  // Only a request carrying this bridge's bearer token reaches the MCP server,
+  // so a listing here is this session's agent mounting the bridge.
+  // The latest listing wins: the agent's MCP client lists again on reconnect.
+  let listedToolNames: readonly string[] | null = null
+  const toolsListedWaiters = new Set<() => void>()
+  const recordToolsListed = (names: readonly string[]): void => {
+    listedToolNames = names
+    for (const wake of toolsListedWaiters) wake()
+    toolsListedWaiters.clear()
+  }
 
   const handle = (req: IncomingMessage, res: ServerResponse): void => {
     void (async (): Promise<void> => {
@@ -856,6 +997,7 @@ export async function startAcpNativeBridge(
         networkScopeAlreadyApplies,
         offerWriteAccess,
         recordWorkspaceWrite: (path) => workspaceWriteObserver?.(path),
+        recordToolsListed,
       })
       res.on('close', () => {
         onHttpClose()
@@ -893,7 +1035,31 @@ export async function startAcpNativeBridge(
   return {
     url: `http://127.0.0.1:${String(address.port)}/mcp`,
     token,
+    serverName: newBridgeServerName(),
     toolNames: offeredToolNames,
+    toolsListed: () => listedToolNames !== null,
+    listedToolNames: () => listedToolNames,
+    whenToolsListed: (timeoutMs, waitSignal): Promise<boolean> => {
+      if (listedToolNames !== null) return Promise.resolve(true)
+      if (closed || waitSignal?.aborted || timeoutMs <= 0) return Promise.resolve(false)
+      return new Promise<boolean>((resolve) => {
+        const finish = (listed: boolean): void => {
+          clearTimeout(timer)
+          toolsListedWaiters.delete(onListed)
+          waitSignal?.removeEventListener('abort', onAbort)
+          resolve(listed)
+        }
+        const onListed = (): void => {
+          finish(true)
+        }
+        const onAbort = (): void => {
+          finish(false)
+        }
+        const timer = setTimeout(onAbort, timeoutMs)
+        toolsListedWaiters.add(onListed)
+        waitSignal?.addEventListener('abort', onAbort, { once: true })
+      })
+    },
     setAdvisorContext: (context): void => {
       advisorContext.current = context
     },

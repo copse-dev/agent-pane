@@ -15,6 +15,7 @@ import {
   setMessageToolSummary,
   setThreadStatus,
 } from '@shared/store/thread-helpers.ts'
+import type { CommandPhase } from '@copse/agent/wire-types.ts'
 import type {
   Message,
   StreamChunk,
@@ -93,6 +94,7 @@ interface Session {
 }
 
 export class TurnTranscriptWriter {
+  private shuttingDown = false
   private readonly deps: TurnTranscriptWriterDependencies
   private readonly sessions = new Map<string, Session>()
   private revision = 0
@@ -109,9 +111,20 @@ export class TurnTranscriptWriter {
     this.deps = deps
   }
 
+  /**
+   * Per thread, the tail of the command stages written after their turn. Each
+   * one reads the stored message and rewrites it, so they run one at a time:
+   * two tasks ending together on one message must not each write over the
+   * other's ending.
+   */
+  private readonly lateWrites = new Map<string, Promise<void>>()
+
   /** Resolves once everything main has written for the thread has landed. */
   settled(threadId: string): Promise<void> {
-    return this.drains.get(threadId) ?? Promise.resolve()
+    const drain = this.drains.get(threadId)
+    const late = this.lateWrites.get(threadId)
+    if (!late) return drain ?? Promise.resolve()
+    return Promise.all([drain, late]).then(() => undefined)
   }
 
   /**
@@ -120,6 +133,12 @@ export class TurnTranscriptWriter {
    */
   noteUserAbort(threadId: string, reason: 'send_now' | 'stop'): void {
     this.userAborts.set(threadId, reason)
+  }
+
+  /** Keep quit-interrupted turns recoverable while their accepted writes drain. */
+  interruptForShutdown(): Promise<void> {
+    this.shuttingDown = true
+    return Promise.all([...this.drains.values(), ...this.lateWrites.values()]).then(() => undefined)
   }
 
   /** Snapshot and subsequent chunks use the same ordered IPC sender. */
@@ -150,6 +169,7 @@ export class TurnTranscriptWriter {
         if (thread)
           this.deps.snapshot?.({
             projectId,
+            source: 'disk',
             thread,
             checkpoint: { stream: null, pendingTurn: null },
           })
@@ -164,6 +184,7 @@ export class TurnTranscriptWriter {
       this.deps.snapshot?.(
         structuredClone({
           projectId: session.projectId,
+          source: 'runtime',
           thread,
           checkpoint: session.reducer.checkpoint(session.threadId),
         }),
@@ -171,6 +192,7 @@ export class TurnTranscriptWriter {
   }
 
   begin(projectId: string, threadId: string): TurnTranscript {
+    if (this.shuttingDown) throw new Error('Copse is closing; the turn was not started.')
     this.revision += 1
     const store = createStore()
     const session: Session = {
@@ -217,14 +239,25 @@ export class TurnTranscriptWriter {
       .then(() => this.deps.loadThread(projectId, threadId))
       .then((thread) => {
         if (thread) {
-          store.setState({ threads: [{ ...thread, status: 'running' }], activeThreadId: threadId })
+          // This is an admitted turn, including ordinary human retries. Clear
+          // recovery metadata before its authoritative runtime snapshot so an
+          // older disk seed cannot restore the interruption in the renderer.
+          const { interruptedTurnAt: _interruptedTurnAt, ...uninterruptedThread } = thread
+          const runningThread: Thread = { ...uninterruptedThread, status: 'running' }
+          store.setState({
+            threads: [runningThread],
+            activeThreadId: threadId,
+          })
           session.initialMeta = structuredClone(transcriptMeta(thread))
           // Attachment tells the renderer this status is runtime-owned. Write
           // it on the store queue before output so a held turn is recoverable.
           this.track(
             session,
             this.deps
-              .updateMeta(projectId, threadId, { status: 'running' })
+              .updateMeta(projectId, threadId, {
+                status: 'running',
+                ...transcriptMetaPatch(session.initialMeta, transcriptMeta(runningThread)),
+              })
               .catch((error: unknown) => {
                 this.deps.onError?.(error)
               }),
@@ -246,6 +279,7 @@ export class TurnTranscriptWriter {
 
     return {
       emit: (chunk): void => {
+        if (this.shuttingDown) return
         if (session.pending) session.pending.push(chunk)
         else this.process(session, chunk)
       },
@@ -284,6 +318,59 @@ export class TurnTranscriptWriter {
     const message = thread?.messages.find((candidate) => candidate.id === messageId)
     if (!message) return
     await this.deps.appendMessage(projectId, threadId, { ...message, ...annotation })
+  }
+
+  /**
+   * Record a command's new stage on a tool call main already wrote, from
+   * outside the call: a `run_background` task exits on its own schedule,
+   * usually after its turn ended (#3956). A live session holding the call takes
+   * it as an ordinary update; otherwise the stored message is read back,
+   * patched and rewritten, and the window is told without writing it.
+   */
+  updateCommandPhase(
+    projectId: string,
+    threadId: string,
+    toolCallId: string,
+    commandPhase: CommandPhase,
+  ): Promise<void> {
+    const chunk: StreamChunk = { type: 'tool_call_update', toolCallId, commandPhase }
+    const session = this.sessions.get(threadId)
+    if (
+      session &&
+      session.projectId === projectId &&
+      !session.passthrough &&
+      !session.done &&
+      (session.pending !== null ||
+        getThreadById(session.store, threadId)?.messages.some((message) =>
+          message.toolCalls.some((call) => call.id === toolCallId),
+        ))
+    ) {
+      if (session.pending) session.pending.push(chunk)
+      else this.process(session, chunk)
+      return Promise.resolve()
+    }
+    const write = (this.lateWrites.get(threadId) ?? Promise.resolve()).then(async () => {
+      // Not `settled`: that waits on this write's own tail.
+      await this.drains.get(threadId)
+      const thread = await this.deps.loadThread(projectId, threadId)
+      const message = thread?.messages.find((candidate) =>
+        candidate.toolCalls.some((call) => call.id === toolCallId),
+      )
+      if (!message) return
+      await this.deps.appendMessage(projectId, threadId, {
+        ...message,
+        toolCalls: message.toolCalls.map((call) =>
+          call.id === toolCallId ? { ...call, commandPhase } : call,
+        ),
+      })
+      this.deps.forward(threadId, chunk, { messageIds: [] })
+    })
+    const tail = write.catch(() => undefined)
+    this.lateWrites.set(threadId, tail)
+    void tail.then(() => {
+      if (this.lateWrites.get(threadId) === tail) this.lateWrites.delete(threadId)
+    })
+    return write
   }
 
   private process(session: Session, chunk: StreamChunk): void {
@@ -436,7 +523,7 @@ export class TurnTranscriptWriter {
     // A turn that failed before `done` still keeps what it produced.
     if (!session.done && !session.passthrough) {
       this.flushTouched(session)
-      setThreadStatus(session.store, session.threadId, 'idle')
+      if (!this.shuttingDown) setThreadStatus(session.store, session.threadId, 'idle')
       this.persistMeta(session)
     }
     session.unsubscribe()

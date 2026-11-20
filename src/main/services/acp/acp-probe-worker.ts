@@ -16,7 +16,8 @@
  * process this worker spawns, not this worker.
  *
  * Protocol: the spawn config arrives as JSON in COPSE_ACP_PROBE_REQUEST, and a
- * single JSON line goes to stdout — `{ok: true, probe}` or `{ok: false, error}`.
+ * single JSON line goes to stdout — `{ok: true, probe}` or `{ok: false, error}`, with
+ * `agentFailed: true` when the worker ran and the probed agent itself failed.
  * Diagnostics go to stderr so stdout stays parseable.
  *
  * Must stay free of electron and node-pty imports so it bundles as a standalone
@@ -116,6 +117,7 @@ function readSandboxConfig(value: unknown): AcpAgentSandboxConfig | undefined {
     ...(homeDirs ? { homeDirs } : {}),
     ...(scratchPaths ? { scratchPaths } : {}),
     ...(value['allowMacOsTrustd'] === true ? { allowMacOsTrustd: true } : {}),
+    ...(value['allowMacOsKeychain'] === true ? { allowMacOsKeychain: true } : {}),
   }
 }
 
@@ -150,7 +152,11 @@ async function main(): Promise<void> {
     const probe = await probeAcpAgent(request.config, request.timeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS)
     process.stdout.write(`${JSON.stringify({ ok: true, probe })}\n`)
   } catch (err) {
-    process.stdout.write(`${JSON.stringify({ ok: false, error: errorMessage(err) })}\n`)
+    // The worker itself is fine: the agent failed. The host must not retry it
+    // in-process, which would widen the app's own network scope.
+    process.stdout.write(
+      `${JSON.stringify({ ok: false, agentFailed: true, error: errorMessage(err) })}\n`,
+    )
   }
 }
 

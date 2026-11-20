@@ -7,12 +7,11 @@ import {
   activateNestedInstructionSources,
   createNestedInstructionTurn,
 } from './project-instructions.ts'
-import { setWorkspaceRootForTest } from './workspace.ts'
+import { runWithWorkspaceRoot } from './workspace.ts'
 import { runWithWorkspaceTrust } from './security/workspace-trust.ts'
 
 it('measures turn-start discovery against a 10,000-directory fixture', async () => {
   const root = await mkdtemp(join(tmpdir(), 'copse-nested-latency-'))
-  const restore = setWorkspaceRootForTest(root)
   try {
     for (let group = 0; group < 100; group++) {
       await Promise.all(
@@ -33,13 +32,16 @@ it('measures turn-start discovery against a 10,000-directory fixture', async () 
     for (let round = 0; round < 5; round++) {
       const turn = createNestedInstructionTurn()
       const activate = (): ReturnType<typeof activateNestedInstructionSources> =>
-        runWithWorkspaceTrust(root, true, () =>
-          activateNestedInstructionSources(
-            ['group-000/leaf-000/example.ts'],
-            new Set(),
-            new Set(),
-            0,
-            turn,
+        // Scoped to the run's root, as a headless run names it.
+        runWithWorkspaceRoot(root, () =>
+          runWithWorkspaceTrust(root, true, () =>
+            activateNestedInstructionSources(
+              ['group-000/leaf-000/example.ts'],
+              new Set(),
+              new Set(),
+              0,
+              turn,
+            ),
           ),
         )
       const start = performance.now()
@@ -55,7 +57,6 @@ it('measures turn-start discovery against a 10,000-directory fixture', async () 
       JSON.stringify({ platform: process.platform, node: process.version, rounds }),
     )
   } finally {
-    restore()
     await rm(root, { recursive: true, force: true })
   }
 })

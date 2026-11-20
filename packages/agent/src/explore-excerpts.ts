@@ -125,10 +125,17 @@ function fenceFor(text: string): string {
   return '`'.repeat(Math.max(3, longest + 1))
 }
 
-function rangeLabel(span: ExploredSpan): string {
+/** `line n` or `lines a–b`, for an excerpt header or a list of ranges. */
+export function formatLineRange(span: Pick<ExploredSpan, 'startLine' | 'endLine'>): string {
   return span.startLine === span.endLine
     ? `line ${String(span.startLine)}`
     : `lines ${String(span.startLine)}–${String(span.endLine)}`
+}
+
+/** One excerpt as the parent sees it: a path/range header and a fence holding exactly the span text. */
+export function formatExcerptBlock(span: ExploredSpan): string {
+  const fence = fenceFor(span.text)
+  return [`\`${span.path}\` ${formatLineRange(span)}:`, fence, span.text, fence].join('\n')
 }
 
 export const EXPLORE_EXCERPTS_HEADING = 'Verbatim excerpts'
@@ -145,17 +152,110 @@ export function renderExploreResult(summary: string, selection: ExploreExcerptSe
     parts.push(
       `${EXPLORE_EXCERPTS_HEADING} — copied exactly from the files the explorer read, byte for byte. The summary above is prose with approximate line numbers; copy str_replace old_string from these blocks instead.`,
     )
-    for (const span of selection.kept) {
-      const fence = fenceFor(span.text)
-      parts.push('', `\`${span.path}\` ${rangeLabel(span)}:`, fence, span.text, fence)
-    }
+    for (const span of selection.kept) parts.push('', formatExcerptBlock(span))
   }
   if (selection.dropped.length > 0) {
-    const names = selection.dropped.map((s) => `\`${s.path}\` ${rangeLabel(s)}`).join(', ')
+    const names = selection.dropped.map((s) => `\`${s.path}\` ${formatLineRange(s)}`).join(', ')
     parts.push(
       '',
-      `Not quoted (over the excerpt budget for one explore result): ${names}. Explore again with paths set to the file and a narrower question to get those lines verbatim.`,
+      `Not quoted (over the excerpt budget for one explore result): ${names}. Call read_explored with the path and lines to quote them verbatim.`,
     )
   }
   return parts.join('\n')
+}
+
+/** Outcome of looking lines up in the spans exploration read (#1433, Fix 0b). */
+export type ExploredLookup =
+  | { kind: 'not-explored' }
+  | { kind: 'outside'; available: ExploredSpan[] }
+  | {
+      kind: 'quoted'
+      pieces: ExploredSpan[]
+      /** Requested lines exploration never read, as `[start, end]` ranges. */
+      unread: [number, number][]
+      /** First line left out by `maxChars`, when the quote was cut short. */
+      nextLine: number | null
+      /**
+       * A line longer than `maxChars` on its own, quoted only up to the limit:
+       * still exact bytes, but a prefix, so no continuation can complete it.
+       */
+      cutLine: number | null
+    }
+
+function sliceSpan(span: ExploredSpan, start: number, end: number): ExploredSpan {
+  const lines = spanLines(span).slice(start - span.startLine, end - span.startLine + 1)
+  return { path: span.path, startLine: start, endLine: end, text: lines.join('\n') }
+}
+
+/**
+ * Looks lines up in the spans explore subagents read this run — never on disk.
+ * A path exploration never opened is `not-explored`; a range it never read is
+ * `outside`, with the ranges that are available. Otherwise the requested lines
+ * that were read come back verbatim, whole lines only, up to `maxChars`. A
+ * first line that alone exceeds `maxChars` is cut to that many characters and
+ * reported as `cutLine`, so the budget always holds. Without a range, every
+ * explored span of the file is quoted.
+ */
+export function quoteExploredLines(
+  spans: readonly ExploredSpan[],
+  path: string,
+  range: { startLine?: number | undefined; endLine?: number | undefined },
+  maxChars: number,
+): ExploredLookup {
+  const own = mergeExploredSpans(spans.filter((s) => s.path === path))
+  if (own.length === 0) return { kind: 'not-explored' }
+  const start = range.startLine ?? 1
+  const end = range.endLine ?? Number.MAX_SAFE_INTEGER
+  const hits = own
+    .filter((s) => s.endLine >= start && s.startLine <= end)
+    .map((s) => sliceSpan(s, Math.max(start, s.startLine), Math.min(end, s.endLine)))
+  if (hits.length === 0) return { kind: 'outside', available: own }
+
+  const unread: [number, number][] = []
+  if (range.startLine !== undefined || range.endLine !== undefined) {
+    let cursor = start
+    for (const hit of hits) {
+      if (hit.startLine > cursor) unread.push([cursor, hit.startLine - 1])
+      cursor = hit.endLine + 1
+    }
+    if (range.endLine !== undefined && cursor <= end) unread.push([cursor, end])
+  }
+
+  const pieces: ExploredSpan[] = []
+  let used = 0
+  let nextLine: number | null = null
+  let cutLine: number | null = null
+  for (const hit of hits) {
+    const kept: string[] = []
+    for (const line of spanLines(hit)) {
+      const cost = line.length + 1
+      if (used + cost > maxChars) {
+        const lineNo = hit.startLine + kept.length
+        if (pieces.length > 0 || kept.length > 0) {
+          nextLine = lineNo
+          break
+        }
+        if (line.length > maxChars) {
+          // Never split a surrogate pair: the prefix must stay exact text.
+          const high = /[\uD800-\uDBFF]/.test(line.charAt(maxChars - 1))
+          kept.push(line.slice(0, high ? maxChars - 1 : maxChars))
+          cutLine = lineNo
+          if (lineNo < hit.endLine || hits.length > 1) nextLine = lineNo + 1
+          break
+        }
+      }
+      kept.push(line)
+      used += cost
+    }
+    if (kept.length > 0) {
+      pieces.push({
+        path,
+        startLine: hit.startLine,
+        endLine: hit.startLine + kept.length - 1,
+        text: kept.join('\n'),
+      })
+    }
+    if (nextLine !== null || cutLine !== null) break
+  }
+  return { kind: 'quoted', pieces, unread, nextLine, cutLine }
 }

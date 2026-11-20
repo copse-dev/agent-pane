@@ -32,7 +32,16 @@ import {
  * and `uv` are small Node scripts on a PATH that holds nothing else, and the
  * "server" they start is a real HTTP listener on Winnow's port. Nothing is
  * downloaded, and nothing in the product knows it is under test.
+ *
+ * The one machine fact a scenario fixes is free disk space: the preflight wants
+ * about 15.6 GB for Winnow, and a CI runner's temp volume often has less, which
+ * failed every scenario before its fakes ran. Each machine reports plenty unless
+ * a scenario sets less; `freeDiskBytes` itself is checked on the real volume at
+ * the end of this file.
  */
+
+/** More than any catalog entry's preflight asks for. */
+const AMPLE_FREE_BYTES = 1e12
 
 const WINNOW_PORT = 8091
 const PIN = FAKE_WINNOW_PIN
@@ -65,19 +74,19 @@ function machine(programs: readonly ('git' | 'python3')[] = ['git', 'python3']):
   process.env['PATH'] = binDir
   process.env['COPSE_CLASSIFIER_CACHE'] = cache
   process.env['FAKE_LOG'] = logFile
-  const state = {
+  const state: Omit<Machine, 'manager'> = {
     root,
     cache,
     log: (): string => readFileSync(logFile, 'utf8'),
-    profiles: [] as ClassifierProfile[],
-    freeBytes: null as number | null,
+    profiles: [],
+    freeBytes: AMPLE_FREE_BYTES,
   }
   const manager = new LocalClassifierManager({
     prepare: prepareClassifierCache,
     isInstalled: isClassifierInstalled,
     portListening,
     programAvailable,
-    freeBytes: async (path): Promise<number | null> => state.freeBytes ?? freeDiskBytes(path),
+    freeBytes: async (): Promise<number | null> => state.freeBytes,
     uninstall: removeClassifierInstall,
     spawnServer: spawnLocalServer,
     listProfiles: (): ClassifierProfile[] => state.profiles,
@@ -306,5 +315,23 @@ describe('Download and run, with fake git/python3 on PATH', () => {
     // Whether the cancel landed before or after setup finished, there is no failure to show.
     const settled = await until(m, (s) => s.phase !== 'installing' && s.phase !== 'starting')
     assert.equal(settled.error, undefined)
+  })
+})
+
+describe('freeDiskBytes', () => {
+  it('reads the free space on the volume that holds a path', async () => {
+    const free = await freeDiskBytes(tmpdir())
+    assert.ok(free !== null && free > 0, `expected free bytes, got ${String(free)}`)
+  })
+
+  it('asks the nearest existing ancestor for a cache that does not exist yet', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'copse-free-bytes-'))
+    try {
+      const free = await freeDiskBytes(join(root, 'not', 'created', 'yet'))
+      assert.ok(free !== null && free > 0, `expected free bytes, got ${String(free)}`)
+      assert.equal(existsSync(join(root, 'not')), false, 'probing creates nothing')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })

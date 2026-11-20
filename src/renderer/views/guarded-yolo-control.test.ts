@@ -32,6 +32,7 @@ function createApi(): {
       browserOrigins: [],
       portBindingAllowed: false,
     }),
+    revokeProjectPortBinding: async () => {},
     enableGuardedYolo: async (threadId) => {
       enabled.push(threadId)
       const state: GuardedYoloState = {

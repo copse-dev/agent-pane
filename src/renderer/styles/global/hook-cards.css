@@ -227,8 +227,6 @@
   gap: var(--spacing-xs);
   color: var(--text-secondary);
   font-family: var(--font-mono);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
 .hook-card-raw-copy {
@@ -283,4 +281,7 @@
 .msg-origin-edited {
   color: var(--text-muted);
   font-style: italic;
+}
+.msg-origin-command-link {
+  margin-left: auto;
 }

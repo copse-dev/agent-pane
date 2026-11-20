@@ -2,9 +2,9 @@ import { clear, el } from '../dom/helpers.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { setInlineMarkdown } from '../markdown/inline-markdown.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import type { AppStore } from '@shared/store/store.ts'
+import { sameItems, type AppStore } from '@shared/store/store.ts'
 import { setAttentionThreads } from '../controller/attention.ts'
-import { attentionThreadId } from '../controller/projects.ts'
+import { attentionThreadId, threadRelationsKey } from '../controller/projects.ts'
 import { sideChatPromptOrigin } from '../controller/side-chat.ts'
 import { isAnyDialogOpen } from './dialog-shell.ts'
 import { ASK_USER_ANSWER_MAX_LENGTH, type AskUserQuestion } from '@copse/agent/ask-user-format.ts'
@@ -427,12 +427,17 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequ
 
   // Follow the focus when the user switches threads: withdraw a question whose
   // thread they just left, then surface a backgrounded one for the thread they
-  // landed on. Also fires on project switches.
-  store.on('threads_changed', () => {
-    withdrawIfUnshowable()
-    showNext()
-    syncAttention()
-  })
+  // landed on (a project switch changes it too), or when the thread a question
+  // surfaces over changes (side-chat parent).
+  store.select(
+    (s) => [s.activeThreadId, threadRelationsKey(s.threads)] as const,
+    () => {
+      withdrawIfUnshowable()
+      showNext()
+      syncAttention()
+    },
+    sameItems,
+  )
 
   return {
     pending: () =>

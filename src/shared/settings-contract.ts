@@ -134,6 +134,7 @@ export interface SettingsValues {
       | {
           allowedDomains: Array<string>
           allowMacOsTrustd?: boolean | undefined
+          allowMacOsKeychain?: boolean | undefined
           homeDirs?: Array<string> | undefined
           scratchPaths?: Array<string> | undefined
         }
@@ -173,6 +174,7 @@ export interface SettingsValues {
   sshStrictHostKeys: 'accept-new' | 'strict'
   sshWorkspaceEnabled: boolean
   acpOverSshEnabled: boolean
+  sshWatcherMode: 'auto' | 'poll' | 'off'
   sshWorkspaceHosts: Array<{
     id: string
     label: string
@@ -201,6 +203,15 @@ export interface SettingsValues {
   toolPermissionOverrides: Record<string, 'allow' | 'ask' | 'block'>
   threadReadAccess: string[]
   threadSendAccess: string[]
+  threadSubthreadAccess: string[]
+  threadSubthreadOwners: Array<{
+    projectId: string
+    parentThreadId: string
+    threadId: string
+    key: string
+    /** Reserved before creating the child; cleared before any prompt can dispatch. */
+    pendingCreation?: true | undefined
+  }>
   cursorHooksEnabled: boolean
   defaultReadonlyMode: boolean
   safeInstallEnabled: boolean
@@ -208,6 +219,7 @@ export interface SettingsValues {
   webAllowedOrigins: Array<string>
   webAllowUserApproval: boolean
   browserAllowUserApproval: boolean
+  desktopControlAllowedApps: Array<string>
   approvedProviderHosts: Array<string>
   providerAllowUserApproval: boolean
   extraProviders: Array<{
@@ -265,6 +277,8 @@ type DedicatedSettingKey =
   | 'toolPermissionOverrides'
   | 'threadReadAccess'
   | 'threadSendAccess'
+  | 'threadSubthreadAccess'
+  | 'threadSubthreadOwners'
   | 'cursorHooksEnabled'
   | 'defaultReadonlyMode'
   | 'safeInstallEnabled'
@@ -272,6 +286,7 @@ type DedicatedSettingKey =
   | 'webAllowedOrigins'
   | 'webAllowUserApproval'
   | 'browserAllowUserApproval'
+  | 'desktopControlAllowedApps'
   | 'approvedProviderHosts'
   | 'providerAllowUserApproval'
   | 'extraProviders'

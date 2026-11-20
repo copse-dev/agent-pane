@@ -2,6 +2,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { ToolCall } from '@shared/types'
 import { isRecord } from '@shared/unknown-value.ts'
+import { isCopseServerName } from '@shared/tools/copse-tool-call.ts'
 import {
   parseThreadProposal,
   threadProposalStatus,
@@ -107,10 +108,11 @@ export function createThreadProposalToolCard(
   sourceThreadId: string,
 ): HTMLDetailsElement | null {
   // Codex ACP records MCP input as { server, tool, arguments }, including in
-  // saved transcripts. Unwrap only this tool's Copse envelope for display.
+  // saved transcripts, under `copse` or the bridge's `copse-<nonce>` name.
+  // Unwrap only this tool's Copse envelope for display.
   const args = tc.args
   const proposalArgs =
-    isRecord(args) && args['server'] === 'copse' && args['tool'] === THREAD_PROPOSAL_TOOL
+    isRecord(args) && isCopseServerName(args['server']) && args['tool'] === THREAD_PROPOSAL_TOOL
       ? args['arguments']
       : args
   const proposal = parseThreadProposal(tc.id, proposalArgs)
@@ -120,20 +122,13 @@ export function createThreadProposalToolCard(
 
   return createThreadProposalCard(proposal, cardState(store, sourceThreadId, tc.id), {
     onStart: async (accepted: ThreadProposal) => {
-      try {
-        const result = await startProposedThread(store, api, sourceThreadId, accepted, {
-          confirmSharedCheckout,
-        })
-        if (!result.started) noteDeclined()
-      } catch (cause) {
-        // Creating the target navigates away from the source card. Its inline
-        // error is no longer visible, so also explain the failure here.
-        showToast(cause instanceof Error ? cause.message : 'Could not start the proposed thread.', {
-          variant: 'error',
-          durationMs: 15_000,
-        })
-        throw cause
-      }
+      // Starting a proposal never navigates away from this card (the new
+      // thread runs in the background), so a thrown failure stays visible as
+      // the card's own inline error — no separate toast needed.
+      const result = await startProposedThread(store, api, sourceThreadId, accepted, {
+        confirmSharedCheckout,
+      })
+      if (!result.started) noteDeclined()
     },
     onDismiss: (dismissed: ThreadProposal) => {
       setThreadProposalDecision(store, sourceThreadId, {

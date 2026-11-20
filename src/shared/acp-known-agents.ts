@@ -61,6 +61,7 @@ export interface KnownAcpAgent {
     homeDirs?: string[]
     scratchPaths?: string[]
     allowMacOsTrustd?: boolean
+    allowMacOsKeychain?: boolean
   }
   /**
    * ACP **session mode** (`SessionModeId`) to default the agent into when it
@@ -172,6 +173,8 @@ export const RETIRED_ACP_AGENTS: readonly RetiredAcpAgent[] = [
         '*.claude.com',
       ],
       homeDirs: ['.claude', '.claude.json', '.claude.json.backup', '.config/claude'],
+      // Claude keeps its macOS login in the login keychain.
+      allowMacOsKeychain: true,
       // Claude Code hardcodes shell/task bookkeeping in system /tmp, ignoring
       // $TMPDIR: a /tmp/claude-<uid>/ tree (every Bash call fails at mkdir
       // without it) and per-command /tmp/claude-<hex>-cwd tracking files.
@@ -180,12 +183,13 @@ export const RETIRED_ACP_AGENTS: readonly RetiredAcpAgent[] = [
       // never grant a subtree), while the single-segment glob covers the
       // sibling -cwd files.
       //
-      // `/tmp/claude` is not bookkeeping — it is the `TMPDIR` Claude Code
-      // exports to its own shell, overriding the workspace-owned one Copse
-      // passes at spawn. Everything downstream inherits it, so an agent
-      // following the "put scratch in $TMPDIR" steer lands there, as does
-      // every `mkdtemp`/`tsx`/`electron-download` call in a test it runs. The
-      // `-*` glob does not reach it: that hyphen is load-bearing.
+      // `/tmp/claude` is not bookkeeping — it is ASRT's fallback `TMPDIR`
+      // (not Claude Code's), baked into the wrapped command from the wrapping
+      // process's `CLAUDE_CODE_TMPDIR`. Copse pins that to the workspace
+      // scratch dir for the length of each wrap (`withSandboxWrapTmpDir`,
+      // #4149), so a sandboxed agent normally never sees it. The entry stays as
+      // a safety net. The `-*` glob does not reach it: that hyphen is
+      // load-bearing.
       scratchPaths: ['/tmp/claude-${uid}', '/tmp/claude-*', '/tmp/claude'],
     },
     sandboxedPermissionMode: 'acceptEdits',
@@ -283,6 +287,8 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
         '*.claude.com',
       ],
       homeDirs: ['.claude', '.claude.json', '.claude.json.backup', '.config/claude'],
+      // Claude keeps its macOS login in the login keychain.
+      allowMacOsKeychain: true,
       // Claude Code hardcodes shell/task bookkeeping in system /tmp, ignoring
       // $TMPDIR: a /tmp/claude-<uid>/ tree (every Bash call fails at mkdir
       // without it) and per-command /tmp/claude-<hex>-cwd tracking files.
@@ -291,12 +297,13 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
       // never grant a subtree), while the single-segment glob covers the
       // sibling -cwd files.
       //
-      // `/tmp/claude` is not bookkeeping — it is the `TMPDIR` Claude Code
-      // exports to its own shell, overriding the workspace-owned one Copse
-      // passes at spawn. Everything downstream inherits it, so an agent
-      // following the "put scratch in $TMPDIR" steer lands there, as does
-      // every `mkdtemp`/`tsx`/`electron-download` call in a test it runs. The
-      // `-*` glob does not reach it: that hyphen is load-bearing.
+      // `/tmp/claude` is not bookkeeping — it is ASRT's fallback `TMPDIR`
+      // (not Claude Code's), baked into the wrapped command from the wrapping
+      // process's `CLAUDE_CODE_TMPDIR`. Copse pins that to the workspace
+      // scratch dir for the length of each wrap (`withSandboxWrapTmpDir`,
+      // #4149), so a sandboxed agent normally never sees it. The entry stays as
+      // a safety net. The `-*` glob does not reach it: that hyphen is
+      // load-bearing.
       scratchPaths: ['/tmp/claude-${uid}', '/tmp/claude-*', '/tmp/claude'],
     },
     sandboxedPermissionMode: 'acceptEdits',

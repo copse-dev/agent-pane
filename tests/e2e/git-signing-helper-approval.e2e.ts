@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:net'
 import { join } from 'node:path'
-import { $, browser, expect } from '@wdio/globals'
+import { $, $$, browser, expect } from '@wdio/globals'
 import {
   resetUserData,
   seedEmptyProject,
@@ -14,6 +14,7 @@ import {
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
+import { submitComposer } from './helpers/composer.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // A public identity for the socket approval; the private-key case generates a disposable key.
@@ -61,7 +62,11 @@ describe('scoped Git signing approval', function () {
     git('config', 'core.hooksPath', hooks)
     writeFileSync(join(root, 'change.txt'), 'pending change\n')
     const socket = join(directory, 'agent.sock')
-    server = createServer((peer) => peer.destroy())
+    server = createServer((peer) => {
+      // SSH_AGENT_IDENTITIES_ANSWER with zero identities, at the agent boundary.
+      peer.once('data', () => peer.end(Buffer.from([0, 0, 0, 5, 12, 0, 0, 0, 0])))
+      peer.on('error', () => {})
+    })
     await new Promise<void>((resolve) => {
       server?.listen(socket, resolve)
     })
@@ -97,7 +102,7 @@ describe('scoped Git signing approval', function () {
     if (directory) removeE2eTree(directory)
   })
 
-  it('offers private-key consent once ssh-agent signing is turned off', async () => {
+  it('offers one-commit private-key consent when the default-on agent has no key', async () => {
     const key = join(directory, 'commit-key')
     execFileSync('/usr/bin/ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-f', key])
     git('config', 'user.signingKey', key)
@@ -105,7 +110,6 @@ describe('scoped Git signing approval', function () {
     await $('.settings-nav-btn[data-section="permissions"]').click()
     const toggle = $('input[name="gitCommitSshAgentSocketAccess"]')
     expect(await toggle.isSelected()).toBe(true)
-    await toggle.click()
     await $('#settings-dialog button[type="submit"]').click()
     await $('#settings-dialog').waitForDisplayed({ timeout: 30_000, reverse: true })
     await prepareMockToolTurn(
@@ -113,7 +117,7 @@ describe('scoped Git signing approval', function () {
       { name: 'git_commit', args: { message: 'Approve scoped signing', stage_all: true } },
       'The commit operation finished.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
     const dialog = $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
     const text = await dialog.getText()
@@ -136,7 +140,7 @@ describe('scoped Git signing approval', function () {
       { name: 'git_commit', args: { message: 'Approve scoped signing', stage_all: true } },
       'The commit operation finished.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
     await dialog.waitForDisplayed({ timeout: 30_000 })
     expect(await dialog.getText()).toContain('Allow reading this Git signing key?')
     await dialog.$('.approval-approve').click()
@@ -148,13 +152,12 @@ describe('scoped Git signing approval', function () {
     writeFileSync(join(root, 'change.txt'), 'another pending change\n')
   })
 
-  it('signs without an approval dialog once the default grant is on', async () => {
+  it('shows the missing agent key after the default signing grant', async () => {
     git('config', 'user.signingKey', `key::${PUBLIC_KEY}`)
     await $('[aria-label="Settings"]').click()
     await $('.settings-nav-btn[data-section="permissions"]').click()
     const toggle = $('input[name="gitCommitSshAgentSocketAccess"]')
-    expect(await toggle.isSelected()).toBe(false)
-    await toggle.click()
+    expect(await toggle.isSelected()).toBe(true)
     await $('#settings-dialog button[type="submit"]').click()
     await $('#settings-dialog').waitForDisplayed({ timeout: 30_000, reverse: true })
     await prepareMockToolTurn(
@@ -162,13 +165,25 @@ describe('scoped Git signing approval', function () {
       { name: 'git_commit', args: { message: 'Approve scoped signing', stage_all: true } },
       'The commit failed.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
     await waitForAgentIdle()
-    // The default-on grant never shows a dialog: Copse stages and runs hooks as
-    // usual, and only the unreachable fixture socket fails the final signature.
-    assert.equal(await $('#approval-dialog').isExisting(), false)
-    assert.notEqual(git('diff', '--cached'), '')
-    assert.equal(existsSync(join(root, 'hook-ran')), true)
+    // The identity check fails before staging or hooks when an inline public
+    // key is absent from the agent and no private-key path is configured.
+    assert.equal(await $('#approval-dialog').isDisplayed(), false)
+    assert.equal(git('diff', '--cached'), '')
+    assert.equal(existsSync(join(root, 'hook-ran')), false)
     assert.equal(git('rev-list', '--count', 'HEAD').trim(), '2')
+    const cards = await $$('.tool-card[data-status="error"]')
+    const card = cards.at(-1)
+    assert.ok(card)
+    if ((await card.getAttribute('open')) === null) await card.$('summary').click()
+    const result = card.$('.tool-result')
+    await expect(result).toBeDisplayed()
+    await expect(result).toHaveText(expect.stringContaining('not loaded in ssh-agent'))
+    await expect(result).toHaveText(expect.stringContaining('Load the matching signing key'))
+    await expect(result).toHaveText(expect.stringContaining('No unsigned retry was attempted.'))
+    const id = await card.getAttribute('data-tool-id')
+    assert.ok(id)
+    await saveElementScreenshot(`[data-tool-id="${id}"]`, 'git-signing-missing-agent-key.png')
   })
 })

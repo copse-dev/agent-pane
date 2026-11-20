@@ -6,7 +6,7 @@ import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
 import { at } from '@shared/array-utils.ts'
-import type { AppStore } from '@shared/store/store.ts'
+import { sameItems, type AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type {
   GitChange,
@@ -41,6 +41,8 @@ import { isImageDiff, renderImageDiff } from './git-image-diff.ts'
 import { materialFolderIconUrl } from '../icons/material-file-icons.ts'
 import { imageMimeType, isRasterImagePath } from '@shared/fs/image-path.ts'
 import { selectRightPanelMode } from '../controller/panels.ts'
+import { selectActiveWorkspace } from '../controller/active-workspace.ts'
+import { afterPendingThreadPersistence } from '../controller/persistence.ts'
 
 function bytesToBase64(bytes: Uint8Array): string {
   const chunks: string[] = []
@@ -390,6 +392,11 @@ export function mountGitChangesPane(
   // has a queue to judge against, whether or not the path survived in it.
   let seededProposedPath: string | null = null
   const snapshotsByOwner = new Map<string, GitChangesSnapshot>()
+  // The last key built, with what it was built from: most updates leave the
+  // checkout unchanged and reuse it instead of serialising again.
+  let lastOwnerParts: readonly unknown[] = []
+  let lastOwnerKey = ''
+
   let displayedOwnerKey = activeOwnerKey()
   let ownerNeedsRefresh = false
 
@@ -414,7 +421,7 @@ export function mountGitChangesPane(
       ? threads.find((candidate) => candidate.id === threadId)
       : undefined
     const worktree = thread?.worktree
-    return JSON.stringify([
+    const parts = [
       projectId,
       threadId,
       currentProject ? workspaceRoot : null,
@@ -424,7 +431,11 @@ export function mountGitChangesPane(
       worktree?.baseCommit,
       worktree?.createdAt,
       worktree?.retiredAt,
-    ])
+    ]
+    if (sameItems(parts, lastOwnerParts)) return lastOwnerKey
+    lastOwnerParts = parts
+    lastOwnerKey = JSON.stringify(parts)
+    return lastOwnerKey
   }
 
   /** Keep known rows per checkout, never carry another thread's rows or viewer. */
@@ -1186,7 +1197,7 @@ export function mountGitChangesPane(
     if (!owner) {
       // No thread yet — the usual cause is the launch window before threads
       // hydrate, so this is "not known yet", not "no repo". Stay in the loading
-      // state; the `threads_changed` that selects a thread refreshes again.
+      // state; the owner selection that picks up a thread refreshes again.
       gitAvailable = false
       loaded = false
       hasSettledGitRead = false
@@ -1300,7 +1311,12 @@ export function mountGitChangesPane(
     a: readonly [ActiveDiff | null, StagedDiffEntry[]],
     b: readonly [ActiveDiff | null, StagedDiffEntry[]],
   ): boolean {
-    return a[0] === b[0] && (a[1] === b[1] || (a[1].length === 0 && b[1].length === 0))
+    return a[0] === b[0] && sameQueue(a[1], b[1])
+  }
+
+  /** The same queue; a fresh empty queue is no change. */
+  function sameQueue(a: StagedDiffEntry[], b: StagedDiffEntry[]): boolean {
+    return a === b || (a.length === 0 && b.length === 0)
   }
 
   async function syncFromStore(): Promise<void> {
@@ -1345,32 +1361,55 @@ export function mountGitChangesPane(
       pendingNavigate = path
       if (changesModeActive(store)) void refresh()
     }),
-    store.on('workspace_changed', () => {
+    selectActiveWorkspace(store, () => {
       adoptActiveOwner()
       if (changesModeActive(store)) void refresh()
     }),
-    store.on('threads_changed', () => {
-      syncOwnerLabel()
-      // Titles, hydration, and updates to other threads do not change this
-      // checkout. Preserve its DOM/selection and avoid redundant Git IPC.
+    // The pop-out header names the active thread and its branch.
+    store.select(
+      (s) => {
+        const thread = s.threads.find((candidate) => candidate.id === s.activeThreadId)
+        return [
+          s.activeProjectId,
+          thread?.id,
+          thread?.title,
+          thread?.worktree?.branch,
+          thread?.gitBranch,
+        ] as const
+      },
+      syncOwnerLabel,
+      sameItems,
+    ),
+    // The checkout this pane shows (owner, root, branch, worktree). Titles,
+    // hydration, and updates to other threads do not change it, so they keep
+    // its DOM/selection and skip Git IPC.
+    store.select(activeOwnerKey, () => {
       if (!adoptActiveOwner() && !ownerNeedsRefresh) return
       // Inactive worktrees are not continuously watched. Revalidate on return
       // while showing their last known rows, rather than flashing Loading.
-      if (changesModeActive(store)) void refresh()
+      // Git reads the thread's checkout from main, which rejects a new thread
+      // until autosave has created it.
+      afterPendingThreadPersistence(() => {
+        if (changesModeActive(store)) void refresh()
+      })
     }),
-    store.on('staged_diffs_changed', () => {
-      const queue = store.getState().stagedDiffs
-      if (queue.length === 0) conflictBanner.hidden = true
-      if (changesModeActive(store)) void syncFromStore()
-      else renderList()
-      // Approving or rejecting a diff writes (or restores) the file, so the git
-      // sections below are now stale. The main window usually catches this via
-      // the `fs:changed` watcher on the open file; nothing did in a second
-      // window, which is half of "the changes don't align between the 2
-      // windows" (#1704). Debounced, so a multi-file approve-all coalesces.
-      scheduleRefresh()
-    }),
-    // Only the diff state: an ordinary thread switch is threads_changed's job.
+    // The queue alone. While Changes is open the diff-state selection below
+    // repaints it; otherwise keep the list (and its count) current here.
+    store.select(
+      (s) => s.stagedDiffs,
+      (queue) => {
+        if (queue.length === 0) conflictBanner.hidden = true
+        if (!changesModeActive(store)) renderList()
+        // Approving or rejecting a diff writes (or restores) the file, so the
+        // git sections below are now stale. The main window usually catches
+        // this via the `fs:changed` watcher on the open file; nothing did in a
+        // second window, which is half of "the changes don't align between the
+        // 2 windows" (#1704). Debounced, so a multi-file approve-all coalesces.
+        scheduleRefresh()
+      },
+      sameQueue,
+    ),
+    // Only the diff state: an ordinary thread switch is the owner selection's job.
     store.select(
       (s) => [s.activeDiff, s.stagedDiffs] as const,
       () => {
@@ -1380,7 +1419,10 @@ export function mountGitChangesPane(
     ),
     store.on('settings_changed', syncReviewGate),
     store.on('thread_status_changed', syncReviewButton),
-    store.on('threads_changed', syncReviewButton),
+    store.select((s) => {
+      const thread = s.threads.find((t) => t.id === s.activeThreadId)
+      return thread === undefined || thread.status === 'running'
+    }, syncReviewButton),
     api.fs.onChanged(() => {
       scheduleRefresh()
     }),

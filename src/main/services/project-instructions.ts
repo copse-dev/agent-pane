@@ -1,6 +1,7 @@
 import * as fsp from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { isPathWithin } from '@copse/std/path-containment.ts'
 import type { InstructionScope } from '@shared/types/instructions.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import {
@@ -26,7 +27,12 @@ import {
   loadCursorRuleSources,
   type CursorRuleContext,
 } from './skills/cursor-rules.ts'
-import { getAgentExecutionRoot, getAgentProjectRoot } from './execution-root.ts'
+import {
+  currentAgentRoots,
+  getAgentExecutionRoot,
+  getAgentProjectRoot,
+  type AgentRoots,
+} from './execution-root.ts'
 import { isWorkspaceTrusted } from './security/workspace-trust.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
 import { readPluginSettingValue } from './plugins/plugin-service.ts'
@@ -200,11 +206,6 @@ async function readTrimmed(path: string): Promise<string | null> {
   }
 }
 
-function isWithinRoot(path: string, root: string): boolean {
-  const rel = relative(root, path)
-  return rel === '' || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${sep}`))
-}
-
 async function canonicalPath(path: string): Promise<string> {
   try {
     return await fsp.realpath(path)
@@ -224,7 +225,7 @@ async function readProjectTrimmed(
       fsp.realpath(root),
       fsp.realpath(path),
     ])
-    if (!isWithinRoot(canonicalFile, canonicalRoot)) return null
+    if (!isPathWithin(canonicalRoot, canonicalFile)) return null
     if (maxBytes === undefined) return await readTrimmed(canonicalFile)
 
     const handle = await fsp.open(canonicalFile, 'r')
@@ -408,14 +409,14 @@ async function normalizeContextPathWithinRoot(
   const trimmed = rawPath.trim()
   if (!trimmed || trimmed.includes('\0')) return null
   const absolute = isAbsolute(trimmed) ? resolve(trimmed) : resolve(root, trimmed)
-  if (!isWithinRoot(absolute, resolve(root))) return null
+  if (!isPathWithin(resolve(root), absolute)) return null
 
   const canonicalRoot = await canonicalPath(root)
   let existingAncestor = absolute
   for (;;) {
     try {
       const canonicalAncestor = await fsp.realpath(existingAncestor)
-      if (!isWithinRoot(canonicalAncestor, canonicalRoot)) return null
+      if (!isPathWithin(canonicalRoot, canonicalAncestor)) return null
       break
     } catch {
       const parent = dirname(existingAncestor)
@@ -618,6 +619,11 @@ export interface ProjectInstructionOptions {
   refreshNestedDiscovery?: boolean
   /** The running turn's discovery memo; the turn-start walk seeds it. */
   nestedInstructionTurn?: NestedInstructionTurn
+  /**
+   * Roots for a caller outside any turn (Settings → Sources reads the asking
+   * window's project). A turn omits it and reads its own roots (#3958).
+   */
+  roots?: AgentRoots
 }
 
 async function readInstructionFiles(
@@ -663,8 +669,7 @@ export async function loadProjectInstructionSources(
 ): Promise<ProjectInstructionSource[]> {
   const home = homedir()
   const resolved: ProjectInstructionSource[] = []
-  const root = getAgentExecutionRoot()
-  const projectRoot = getAgentProjectRoot()
+  const { executionRoot: root, projectRoot } = opts.roots ?? currentAgentRoots()
   const sourceState = instructionSourceState()
   const initialSelection = resolveInstructionSourceSelection({
     ...sourceState,
@@ -826,8 +831,7 @@ export async function loadInstructionLayersWithMetadata(
   const activeNested = activeProject.filter((source) => source.scopePath !== undefined)
   const activeNestedPaths = activeNested.map((source) => source.path)
 
-  const root = getAgentExecutionRoot()
-  const projectRoot = getAgentProjectRoot()
+  const { executionRoot: root, projectRoot } = opts.roots ?? currentAgentRoots()
   if (trackActivation && root && projectRoot) {
     recordNestedActivation(
       await canonicalPath(projectRoot),
@@ -983,9 +987,10 @@ export async function activateNestedInstructionSources(
 }
 
 /** Agent-requested Cursor rules catalog for the system prompt (empty when none). */
-export async function loadAgentRequestedRulesCatalog(): Promise<string> {
-  const root = getAgentExecutionRoot()
-  const projectRoot = getAgentProjectRoot()
+export async function loadAgentRequestedRulesCatalog(
+  roots: AgentRoots = currentAgentRoots(),
+): Promise<string> {
+  const { executionRoot: root, projectRoot } = roots
   if (!root || !projectRoot || !isWorkspaceTrusted(projectRoot)) return ''
   const sourceState = instructionSourceState()
   const selection = resolveInstructionSourceSelection({

@@ -3,11 +3,21 @@ import { clickActiveConfirmDialogConfirm, mountConfirmDialog } from './confirm-d
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import type { AutomationSchedule, BranchCiAutomation, Thread } from '@shared/types'
+import type {
+  AutomationSchedule,
+  AutomationTriggerEvent,
+  BranchCiAutomation,
+  Thread,
+} from '@shared/types'
 import type { PluginSummary } from '@shared/types/plugins.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import { createFakeApi, createPendingApi } from '../fake-api.test-support.ts'
-import { resetProjectSwitchStateForTest, setThreadCacheForTest } from '../controller/projects.ts'
+import {
+  preloadSidebarThreads,
+  resetProjectSwitchStateForTest,
+  setThreadCacheForTest,
+} from '../controller/projects.ts'
+import { __resetPersistenceForTest } from '../controller/persistence.ts'
 import {
   resetAutomationScheduleCacheForTest,
   setAutomationScheduleCacheForTest,
@@ -932,6 +942,79 @@ describe('workspace-level automations section (#2511)', () => {
   })
 })
 
+describe('a scheduled run main starts in a background project', () => {
+  it('lists the run when that project opens after its threads were preloaded', async () => {
+    __resetPersistenceForTest()
+    const chat = thread('chat', 'Regular conversation')
+    const notes = thread('notes', 'Release planning')
+    const store = createStore({
+      projects: [
+        { id: 'a', path: '/a', name: 'Alpha' },
+        { id: 'b', path: '/b', name: 'Beta' },
+      ],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+      threads: [chat],
+      activeThreadId: 'chat',
+    })
+    const disk = new Map<string, Thread[]>([
+      ['a', [chat]],
+      ['b', [notes]],
+    ])
+    const triggerHandlers = new Set<(event: AutomationTriggerEvent) => void>()
+    const api = createFakeApi()
+    api.threads.loadProject = (projectId: string): Promise<Thread[]> =>
+      Promise.resolve(disk.get(projectId) ?? [])
+    api.automations.onTriggered = (handler): (() => void) => {
+      triggerHandlers.add(handler)
+      return () => {
+        triggerHandlers.delete(handler)
+      }
+    }
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountProjectsPane(host, store, api)
+    // Beta's list is resident from the launch preload, before its schedule fires.
+    await preloadSidebarThreads(store, api)
+
+    // Beta is not focused, so main creates the run and drives its turn itself;
+    // the renderer hears about it only through the trigger event.
+    const run: Thread = {
+      ...thread('run', 'CI review', 'schedule-ci', 30),
+      status: 'running',
+      createdAt: 30,
+      updatedAt: 30,
+    }
+    disk.set('b', [run, notes])
+    for (const handler of triggerHandlers) {
+      handler({
+        projectId: 'b',
+        scheduleId: 'schedule-ci',
+        threadId: 'run',
+        triggeredAt: 30,
+        disposition: 'started',
+      })
+    }
+
+    const betaRow = host.querySelector<HTMLElement>(
+      '.project-entry[data-project-id="b"] .project-row',
+    )
+    assert.ok(betaRow)
+    betaRow.click()
+    for (let tick = 0; tick < 20 && store.getState().activeProjectId !== 'b'; tick++) {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+    assert.equal(store.getState().activeProjectId, 'b')
+    assert.deepEqual(
+      store.getState().threads.map((t) => t.id),
+      ['run', 'notes'],
+    )
+    // Let the rest of the switch settle before the next test resets its state.
+    for (let tick = 0; tick < 5; tick++) await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+})
+
 describe('project row automation menu', () => {
   for (const label of ['Automations', 'New automation…']) {
     it(`opens ${label} for the selected row without changing the active project`, async () => {
@@ -1124,7 +1207,11 @@ describe('held automation worktrees in the sidebar', () => {
   function mountHeld(
     threads: Thread[],
     cleanupRuns?: ReturnType<typeof createFakeApi>['automations']['cleanupRuns'],
-  ): { host: HTMLElement; store: ReturnType<typeof createStore> } {
+  ): {
+    host: HTMLElement
+    store: ReturnType<typeof createStore>
+    api: ReturnType<typeof createFakeApi>
+  } {
     const store = createStore({
       projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
       activeProjectId: 'a',
@@ -1140,7 +1227,7 @@ describe('held automation worktrees in the sidebar', () => {
     mountConfirmDialog()
     mountProjectsPane(host, store, api)
     host.querySelector<HTMLButtonElement>('.automation-threads-toggle')?.click()
-    return { host, store }
+    return { host, store, api }
   }
 
   function openHeadingMenu(host: HTMLElement): string[] {
@@ -1203,6 +1290,90 @@ describe('held automation worktrees in the sidebar', () => {
 
     assert.deepEqual(calls, [['a', 'schedule-main']])
     assert.match(document.querySelector('.toast')?.textContent ?? '', /Freed 2 worktrees/)
+  })
+
+  it('refreshes the released checkout metadata while preserving local drafts and transcript', async () => {
+    const finished = held('finished', 30)
+    assert.ok(finished.worktree)
+    finished.lastPromptAt = 30
+    finished.messages = [
+      {
+        id: 'request',
+        role: 'user',
+        content: 'Original request',
+        createdAt: 30,
+        toolCalls: [],
+      },
+      {
+        id: 'answer',
+        role: 'assistant',
+        content: 'Existing answer',
+        createdAt: 30,
+        toolCalls: [],
+      },
+    ]
+    const retired = {
+      ...finished,
+      draftPrompt: '',
+      messages: [],
+      messagesLoaded: false,
+      worktree: { ...finished.worktree, retiredAt: 40 },
+    }
+    const chat = thread('chat', 'Regular conversation')
+    chat.draftPrompt = 'Keep this unsent follow-up'
+    const previouslyRetired = held('previous', 20)
+    assert.ok(previouslyRetired.worktree)
+    previouslyRetired.worktree = { ...previouslyRetired.worktree, retiredAt: 25 }
+    const { host, store, api } = mountHeld([chat, finished, previouslyRetired], async () => ({
+      released: [finished.id],
+      retained: [],
+    }))
+    const reads: string[] = []
+    api.threads.loadProject = async (projectId): Promise<Thread[]> => {
+      reads.push(projectId)
+      return [{ ...chat, draftPrompt: '' }, retired, previouslyRetired]
+    }
+    assert.equal(host.querySelector('.automation-schedule-held')?.textContent, '1 held')
+    openHeadingMenu(host)
+    clickMenuItem('Clean up finished runs…')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(host.querySelector('.automation-schedule-held')?.textContent ?? '', '')
+    assert.deepEqual(reads, ['a'])
+    const current = store.getState().threads.find((item) => item.id === finished.id)
+    assert.equal(current?.worktree?.retiredAt, 40)
+    assert.deepEqual(current.messages, finished.messages)
+    assert.equal(
+      store.getState().threads.find((item) => item.id === chat.id),
+      chat,
+    )
+    assert.equal(
+      store.getState().threads.find((item) => item.id === chat.id)?.draftPrompt,
+      chat.draftPrompt,
+    )
+    assert.equal(store.getState().activeThreadId, chat.id)
+    assert.match(document.querySelector('.toast')?.textContent ?? '', /Freed 1 worktree/)
+  })
+
+  it('reports a refresh failure without replaying or undoing the completed cleanup', async () => {
+    let cleanups = 0
+    const { host, api } = mountHeld(
+      [thread('chat', 'Regular conversation'), held('a', 30), held('b', 20)],
+      async () => {
+        cleanups += 1
+        return { released: ['a', 'b'], retained: [] }
+      },
+    )
+    api.threads.loadProject = async (): Promise<Thread[]> => {
+      throw new Error('Run list unavailable')
+    }
+    openHeadingMenu(host)
+    clickMenuItem('Clean up finished runs…')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const text = document.querySelector('.toast')?.textContent ?? ''
+    assert.match(text, /Cleanup finished, but the run list could not refresh/)
+    assert.match(text, /2 worktrees freed/)
+    assert.match(text, /Reopen the project/)
+    assert.equal(cleanups, 1)
   })
 
   it('names each run it had to leave, tells identical titles apart, and opens the first', async () => {

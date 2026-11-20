@@ -132,7 +132,7 @@ describe('probe readiness', () => {
     const probe = checkToolAvailability(deps)
 
     let settled = false
-    const pending = ghCliBackend.getStatus().then((status) => {
+    const pending = ghCliBackend.getStatus(null).then((status) => {
       settled = true
       return status
     })
@@ -153,7 +153,7 @@ describe('probe readiness', () => {
     const [git, rg, ghStatus] = await Promise.all([
       isGitAvailableForTarget({ kind: 'local' }),
       isRgAvailableForTarget({ kind: 'local' }),
-      ghCliBackend.getStatus(),
+      ghCliBackend.getStatus(null),
     ])
 
     assert.equal(git, true)

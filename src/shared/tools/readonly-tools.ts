@@ -12,6 +12,8 @@ import type { McpToolAnnotations } from '@shared/types/mcp.ts'
 export const READONLY_AGENT_TOOLS = new Set<string>([
   'read_file',
   'list_threads',
+  'search_project_context',
+  'read_project_context',
   'list_dir',
   'search_code',
   'search_codebase',
@@ -28,6 +30,8 @@ export const READONLY_AGENT_TOOLS = new Set<string>([
   'preflight_worktree',
   'deferred_approval_status',
   'explore',
+  // Quotes lines explore subagents already read this run; reads nothing new.
+  'read_explored',
   // Delegating to a user-authored subagent is itself non-mutating, and the
   // subagent cannot escape the run's read-only scope: that scope is ALS-based
   // and covers everything the run awaits, so each of the subagent's own tool

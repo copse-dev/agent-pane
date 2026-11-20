@@ -9,6 +9,20 @@ export function fileExtension(name: string): string {
   return dot < 0 ? '' : name.slice(dot).toLowerCase()
 }
 
+/**
+ * Keep a stored attachment name free of anything path-like. The name comes
+ * from a renderer-supplied `File`, so it is untrusted input on the way to a
+ * filesystem path even though the directory itself is ours. Caps the name at
+ * 80 characters without cutting into the (lower-cased) extension, and returns
+ * `fallback` when nothing safe is left.
+ */
+export function sanitizeStoredFileName(name: string, fallback: string): string {
+  const safe = name.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[.-]+/, '')
+  const extension = fileExtension(safe)
+  const stem = safe.slice(0, safe.length - extension.length)
+  return stem.slice(0, 80 - extension.length) + extension || fallback
+}
+
 /** `1.4 MB` — used on composer chips, in model-facing notes, and in tool errors. */
 export function formatByteSize(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return 'unknown size'

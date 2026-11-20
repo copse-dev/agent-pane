@@ -1,4 +1,9 @@
 import { createProvider } from '@copse/llm/create-provider.ts'
+import {
+  isIsolatedDesktopGuest,
+  desktopGuestProvider,
+  DESKTOP_PARENT_MODEL,
+} from '../isolated-desktop/guest-provider.ts'
 import { parseChatGptPlanModel } from '@copse/llm/chatgpt-plan.ts'
 import { createChatGptPlanProvider } from './chatgpt-plan-provider.ts'
 import { getChatGptPlanService, type ChatGptPlanService } from './chatgpt-plan-service.ts'
@@ -17,11 +22,7 @@ import {
 import { getApprovedProviderHosts } from './approved-provider-hosts.ts'
 import { getResolvedExtraProviders } from './extra-providers-store.ts'
 import type { LLMProvider } from '@shared/types'
-import {
-  DEFAULT_LM_STUDIO_URL,
-  LM_STUDIO_MODEL_IDS,
-  resolveLocalServerUrl,
-} from '@shared/lm-studio-defaults.ts'
+import { DEFAULT_LM_STUDIO_URL, LM_STUDIO_MODEL_IDS } from '@shared/lm-studio-defaults.ts'
 import {
   getLmStudioApiKey,
   getSetting,
@@ -34,6 +35,7 @@ import { routedModelSetting } from './role-models.ts'
 import {
   fetchLmStudioModelsCached,
   invalidateLmStudioModelsCache as invalidateLmStudioModelsCacheImpl,
+  localServerUrl,
 } from './lm-studio-models.ts'
 import { isLocalModel } from '@copse/llm/estimate-cost.ts'
 import {
@@ -64,10 +66,6 @@ function redactedRemoteProvider(
   additionalSecrets: readonly string[] = [],
 ): LLMProvider {
   return withSecretRedaction(provider, [...knownLiteralSecrets(), ...additionalSecrets])
-}
-
-function localServerUrl(): string {
-  return resolveLocalServerUrl(getSetting<string>('localServerUrl', ''), process.env)
 }
 
 // Stored key with env-var fallback for any provider slug (fixed cloud providers,
@@ -309,6 +307,11 @@ export async function buildProvider(
   promptCacheKey?: string,
   opts: BuildProviderOptions = {},
 ): Promise<LLMProvider> {
+  if (isIsolatedDesktopGuest()) {
+    if (model !== DESKTOP_PARENT_MODEL)
+      throw new Error('This isolated desktop can use only the approved parent model')
+    return desktopGuestProvider()
+  }
   if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') return createProvider(model, {}, promptCacheKey)
   const chatGpt = parseChatGptPlanModel(model)
   if (chatGpt) {

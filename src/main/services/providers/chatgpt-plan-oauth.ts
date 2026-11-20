@@ -2,6 +2,7 @@ import { createServer } from 'node:http'
 import { createHash, createPublicKey, randomBytes, verify } from 'node:crypto'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
+import { sleep } from '@copse/std/sleep.ts'
 
 export const CHATGPT_RESOURCE = 'https://api.openai.com/v1'
 const ISSUER = 'https://auth.openai.com'
@@ -74,6 +75,18 @@ export type OAuthTokens = z.infer<typeof oauthTokenSchema>
 export interface ChatGptOAuthDependencies {
   fetch: typeof fetch
   openBrowser: (url: string) => Promise<void>
+  /** Bring Copse back to the foreground once the external browser hands the callback back. */
+  focusApp: () => void
+}
+
+/** Carries the HTTP status so callers can tell a dead refresh token (400/401) from a transient failure. */
+export class ChatGptTokenError extends Error {
+  readonly status: number
+  constructor(status: number) {
+    super(`ChatGPT authentication failed (HTTP ${String(status)}). Try signing in again.`)
+    this.name = 'ChatGptTokenError'
+    this.status = status
+  }
 }
 
 async function jsonRequest<T>(
@@ -88,10 +101,7 @@ async function jsonRequest<T>(
     signal: init.signal ?? AbortSignal.timeout(20_000),
   })
   // Token endpoints can echo credentials. Never propagate their body into IPC/logs.
-  if (!response.ok)
-    throw new Error(
-      `ChatGPT authentication failed (HTTP ${String(response.status)}). Try signing in again.`,
-    )
+  if (!response.ok) throw new ChatGptTokenError(response.status)
   const result = safeJsonParse(await response.text(), decodeWithSchema(schema))
   if (!result) throw new Error('ChatGPT returned an invalid authentication response.')
   return result
@@ -243,6 +253,7 @@ export async function authorizeChatGpt(
     try {
       const result = validateChatGptCallback(url, state, options.clientId)
       consumed = true
+      dependencies.focusApp()
       response
         .writeHead(200, {
           'Content-Type': 'text/html; charset=utf-8',
@@ -384,7 +395,7 @@ export async function revokeChatGptTokens(
     } catch {
       if (signal.aborted) return false
     }
-    if (attempt < 2) await new Promise<void>((resolve) => setTimeout(resolve, 250 * 2 ** attempt))
+    if (attempt < 2) await sleep(250 * 2 ** attempt)
   }
   return false
 }

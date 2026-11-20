@@ -102,12 +102,25 @@ export const ghRunListTool = defineTool({
   name: 'gh_run_list',
   provenance: 'external',
   description:
-    'List recent CI workflow runs for a branch via GitHub CLI (read-only). Prefer over run_shell + gh. Use to find the run id of a failing check before fetching its logs.',
+    'List CI workflow runs via GitHub CLI (read-only). For tip-of-branch questions, use commit to pin the exact SHA and workflow/event to distinguish branch CI from PR follow-up workflows. No matching runs means unknown, not green. Use gh_run_view to read failure evidence before explaining a cause. Prefer over run_shell + gh.',
   parameters: z.object({
     branch: z
       .string()
       .optional()
-      .describe('Branch to filter runs by. Omit to use the checked-out branch.'),
+      .describe('Branch filter. Defaults to the checked-out branch unless commit is specified.'),
+    commit: z
+      .string()
+      .trim()
+      .regex(/^[a-f0-9]{7,64}$/i)
+      .optional()
+      .describe('Commit SHA to filter workflow runs; use the full SHA for exact tip checks.'),
+    workflow: z.string().trim().min(1).optional().describe('Workflow name, ID or YAML filename.'),
+    event: z
+      .string()
+      .trim()
+      .min(1)
+      .optional()
+      .describe('Trigger event, such as push or pull_request.'),
     limit: z
       .number()
       .int()
@@ -122,8 +135,11 @@ export const ghRunListTool = defineTool({
       .default(false)
       .describe('Only return runs that failed (failure, error, or timed out).'),
   }),
-  execute: async ({ branch, limit, failed_only }) =>
-    getGhRunListText({ branch, limit, failedOnly: failed_only }, ghToolContext()),
+  execute: async ({ branch, commit, workflow, event, limit, failed_only }) =>
+    getGhRunListText(
+      { branch, commit, workflow, event, limit, failedOnly: failed_only },
+      ghToolContext(),
+    ),
 })
 
 export const ghRunViewTool = defineTool({

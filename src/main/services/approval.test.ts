@@ -36,7 +36,8 @@ import {
   clearRunDeadline,
   resetRunDeadlinesForTest,
 } from './hooks/run-deadline.ts'
-import { runWithActiveRunIdentity } from './thread-models.ts'
+import { runWithActiveRunIdentity, setActiveRunTurnTreeId } from './thread-models.ts'
+import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import { runWithThreadExecutionContext } from './thread-execution-context.ts'
 import { storageSet } from './storage/storage.ts'
 import { drainWriteQueue } from './storage/write-queue.ts'
@@ -45,11 +46,29 @@ const PROJECT = 'proj-approval'
 const THREAD = 't-approval'
 const req: ApprovalRequest = { title: 'Run shell', body: 'rm -rf build', type: 'shell' }
 
+/** The project the window shows: never where a turn's approval is filed. */
+const WINDOW_PROJECT = 'proj-window'
+
+/** A real turn of THREAD in PROJECT, as the dispatcher binds one. */
+function inTurn<T>(fn: () => T): T {
+  return runWithThreadExecutionContext(
+    {
+      projectId: PROJECT,
+      threadId: THREAD,
+      projectRoot: tmpdir(),
+      root: tmpdir(),
+      checkoutMode: 'shared',
+      branch: null,
+    },
+    () => runWithActiveRunIdentity(THREAD, fn),
+  )
+}
+
 async function requestUnderThread(
   request: ApprovalRequest,
   signal?: AbortSignal,
 ): Promise<ApprovalResponse> {
-  return runWithActiveRunIdentity(THREAD, () => requestApproval(request, signal))
+  return inTurn(() => requestApproval(request, signal))
 }
 
 describe('requestApproval pluggable transport', () => {
@@ -60,7 +79,7 @@ describe('requestApproval pluggable transport', () => {
     previousRoot = process.env['COPSE_WORKSPACE_DIR']
     auditRoot = mkdtempSync(join(tmpdir(), 'copse-approval-audit-'))
     process.env['COPSE_WORKSPACE_DIR'] = auditRoot
-    storageSet('activeProjectId', PROJECT)
+    storageSet('activeProjectId', WINDOW_PROJECT)
   })
 
   afterEach(() => {
@@ -273,6 +292,49 @@ describe('requestApproval pluggable transport', () => {
     assert.deepEqual(event.reasons, ['reads outside the project: ~/.copse'])
     assert.equal(event.scope, 'external-read')
     assert.equal(event.remembered, true)
+  })
+
+  it("files concurrent turns' approvals under their own projects, never the window's", async () => {
+    const answers: (() => void)[] = []
+    setApprovalHandler(
+      () =>
+        new Promise<ApprovalResponse>((resolve) => {
+          answers.push(() => {
+            resolve({ approved: true, remember: false })
+          })
+        }),
+    )
+    const turn = (projectId: string, threadId: string): Promise<ApprovalResponse> =>
+      runWithThreadExecutionContext(
+        {
+          projectId,
+          threadId,
+          projectRoot: auditRoot,
+          root: auditRoot,
+          checkoutMode: 'shared',
+          branch: null,
+        },
+        () =>
+          runWithActiveRunIdentity(threadId, () =>
+            requestApproval({ ...req, body: `rm -rf ${threadId}` }),
+          ),
+      )
+    const both = Promise.all([turn('proj-a', 'thread-a'), turn('proj-b', 'thread-b')])
+    await Promise.resolve()
+    assert.equal(answers.length, 2)
+    for (const answer of answers) answer()
+    await both
+    await drainWriteQueue()
+
+    assert.deepEqual(
+      (await readDecisionLog('proj-a')).map((event) => event.threadId),
+      ['thread-a'],
+    )
+    assert.deepEqual(
+      (await readDecisionLog('proj-b')).map((event) => event.threadId),
+      ['thread-b'],
+    )
+    assert.deepEqual(await readDecisionLog(WINDOW_PROJECT), [])
   })
 
   it('persists bridged identity and captures context before the handler settles', async () => {
@@ -595,6 +657,24 @@ describe('requestApproval pluggable transport', () => {
     )
   })
 
+  it('keeps automation grant identities and remember defaults distinct', () => {
+    const request = {
+      title: 'Prepare',
+      body: 'Setup',
+      type: 'shell',
+      allowRemember: true,
+      rememberLabel: 'Remember for this automation',
+    } satisfies Parameters<typeof approvalDedupeKey>[0]
+    assert.notEqual(
+      approvalDedupeKey({ ...request, rememberSubject: 'schedule/plan-a' }),
+      approvalDedupeKey({ ...request, rememberSubject: 'schedule/plan-b' }),
+    )
+    assert.notEqual(
+      approvalDedupeKey(request),
+      approvalDedupeKey({ ...request, rememberDefault: true }),
+    )
+  })
+
   it('never deduplicates standalone consent with ordinary approval', () => {
     const request = { title: 'Connect client', body: 'Code', type: 'mcp' } satisfies Parameters<
       typeof approvalDedupeKey
@@ -714,7 +794,7 @@ describe('abandoned calls (parked prompts and verdict replay)', () => {
     previousRoot = process.env['COPSE_WORKSPACE_DIR']
     auditRoot = mkdtempSync(join(tmpdir(), 'copse-approval-abandon-'))
     process.env['COPSE_WORKSPACE_DIR'] = auditRoot
-    storageSet('activeProjectId', PROJECT)
+    storageSet('activeProjectId', WINDOW_PROJECT)
     handlerCalls = 0
     handlerSignal = undefined
     release = undefined
@@ -932,6 +1012,125 @@ describe('abandoned calls (parked prompts and verdict replay)', () => {
     assert.equal(handlerSignal?.aborted, true)
   })
 
+  it('revokes detached parked prompts and ignores their late answer', async () => {
+    parkingHandler()
+    const { signal, abandon } = abandonedSignal()
+    const first = requestUnderThread(req, signal)
+    await Promise.resolve()
+    abandon()
+    await assert.rejects(first, ApprovalPendingError)
+    releaseParkedApprovalsForThread(THREAD)
+    assert.equal(discardApprovalsForThread(THREAD), 1)
+    assert.equal(handlerSignal?.aborted, true)
+    release?.({ approved: true, remember: false, grantScope: 'turn-tree' })
+    await Promise.resolve()
+    setApprovalHandler(async () => ({ approved: false, remember: false }))
+    assert.equal((await requestUnderThread(req)).approved, false)
+  })
+
+  it('revokes already answered abandoned approvals', async () => {
+    parkingHandler()
+    const { signal, abandon } = abandonedSignal()
+    const first = requestUnderThread(req, signal)
+    abandon()
+    await assert.rejects(first, ApprovalPendingError)
+    release?.({ approved: true, remember: false, grantScope: 'turn-tree' })
+    await Promise.resolve()
+    discardApprovalsForThread(THREAD)
+    setApprovalHandler(async () => ({ approved: false, remember: false }))
+    assert.equal((await requestUnderThread(req)).approved, false)
+  })
+
+  for (const { label, request } of [
+    { label: 'lease-capable shell', request: { ...req, allowTurnTreeLease: true } },
+    { label: 'one-time shell', request: req },
+    { label: 'one-time MCP', request: { ...req, type: 'mcp' } },
+  ] satisfies Array<{ label: string; request: ApprovalRequest }>) {
+    const requestAt = (
+      projectId: string,
+      root: string,
+      epoch: string,
+      signal?: AbortSignal,
+    ): Promise<ApprovalResponse> =>
+      runWithThreadExecutionContext(
+        {
+          projectId,
+          threadId: THREAD,
+          projectRoot: root,
+          root,
+          checkoutMode: 'shared',
+          branch: null,
+        },
+        () =>
+          runWithActiveRunIdentity(THREAD, () => {
+            setActiveRunTurnTreeId(asTurnTreeId(epoch))
+            return requestApproval(request, signal)
+          }),
+      )
+
+    for (const changed of [
+      { label: 'epoch', projectId: PROJECT, root: tmpdir(), epoch: 'new-task' },
+      { label: 'project', projectId: 'other-project', root: tmpdir(), epoch: 'original' },
+      { label: 'root', projectId: PROJECT, root: join(tmpdir(), 'other-root'), epoch: 'original' },
+    ]) {
+      it(`${label}: a saved answer cannot cross ${changed.label}`, async () => {
+        parkingHandler()
+        const { signal, abandon } = abandonedSignal()
+        const first = requestAt(PROJECT, tmpdir(), 'original', signal)
+        abandon()
+        await assert.rejects(first, ApprovalPendingError)
+        release?.({ approved: true, remember: false })
+        await Promise.resolve()
+        let newPrompts = 0
+        setApprovalHandler(async () => {
+          newPrompts++
+          return { approved: false, remember: false }
+        })
+        assert.equal(
+          (await requestAt(changed.projectId, changed.root, changed.epoch)).approved,
+          false,
+        )
+        assert.equal(newPrompts, 1)
+        assert.equal(
+          (await requestAt(PROJECT, tmpdir(), 'original')).approved,
+          true,
+          'the original task can still claim its saved answer',
+        )
+        assert.equal((await requestAt(PROJECT, tmpdir(), 'original')).approved, false)
+        assert.equal(newPrompts, 2, 'the saved answer is consumed only once')
+      })
+
+      it(`${label}: a parked prompt cannot cross ${changed.label}`, async () => {
+        parkingHandler()
+        const { signal, abandon } = abandonedSignal()
+        const first = requestAt(PROJECT, tmpdir(), 'original', signal)
+        abandon()
+        await assert.rejects(first, ApprovalPendingError)
+        const originalAnswer = release
+        let newPrompts = 0
+        setApprovalHandler(async () => {
+          newPrompts++
+          return { approved: false, remember: false }
+        })
+        const foreign = requestAt(changed.projectId, changed.root, changed.epoch)
+        try {
+          // Check before awaiting: a broken boundary joins the still-open
+          // original prompt and would otherwise hang instead of failing.
+          assert.equal(newPrompts, 1)
+          assert.equal((await foreign).approved, false)
+          const retry = requestAt(PROJECT, tmpdir(), 'original')
+          assert.equal(newPrompts, 1, 'the same-task retry joins the parked prompt')
+          assert.equal(parkedApprovalCount(), 0, 'the retry replaces the stand-in')
+          originalAnswer?.({ approved: true, remember: false })
+          assert.equal((await retry).approved, true)
+        } finally {
+          originalAnswer?.({ approved: true, remember: false })
+          await foreign
+        }
+      })
+    }
+  }
+
   it('releaseParkedApprovalsForThread detaches the stand-in without closing the prompt', async () => {
     parkingHandler()
     const { signal, abandon } = abandonedSignal()
@@ -991,14 +1190,24 @@ describe('paired approval capabilities', () => {
     assert.equal(supportsInteractiveClientApproval(preparation), false)
     const bounded: ApprovalRequest = { ...preparation, interactiveClientApproval: 'once' }
     assert.equal(supportsInteractiveClientApproval(bounded), true)
-    assert.equal(supportsInteractiveClientApproval({ ...bounded, allowRemember: true }), false)
+    assert.equal(supportsInteractiveClientApproval({ ...bounded, allowRemember: true }), true)
     const unspecifiedRemember: ApprovalRequest = { ...bounded }
     delete unspecifiedRemember.allowRemember
-    assert.equal(supportsInteractiveClientApproval(unspecifiedRemember), false)
+    assert.equal(supportsInteractiveClientApproval(unspecifiedRemember), true)
     assert.equal(
       supportsInteractiveClientApproval({ ...bounded, turnTreeLeaseDefault: true }),
       false,
     )
     assert.equal(supportsInteractiveClientApproval({ ...preparation, type: 'mcp' }), false)
+    assert.equal(
+      supportsInteractiveClientApproval({
+        title: 'Allow model provider host?',
+        body: 'https://example.com',
+        type: 'web',
+        cause: 'provider-host',
+        allowRemember: false,
+      }),
+      false,
+    )
   })
 })

@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import type { LLMMessage, Message, Thread } from '@shared/types'
 import type {
   ThreadHistoryEditRequest,
@@ -32,7 +32,7 @@ export interface ThreadHistoryEditRuntime {
 }
 
 export function threadHistoryRevision(messages: readonly Message[]): string {
-  return createHash('sha256').update(JSON.stringify(messages), 'utf8').digest('hex')
+  return sha256Hex(JSON.stringify(messages))
 }
 
 function messageBlockedReason(message: Message): string | undefined {

@@ -48,4 +48,47 @@ describe('vnc pane mode', () => {
       unmount()
     }
   })
+
+  it('refreshes SSH machines for the new project when setState alone switches projects', async () => {
+    let hostLists = 0
+    const base = createFakeApi()
+    const api: ApiClient = {
+      ...base,
+      sshWorkspace: {
+        ...base['sshWorkspace'],
+        listHosts: async () => {
+          hostLists++
+          return [
+            { id: 'h1', label: 'Build box', host: 'build.example.com' },
+            { id: 'h2', label: 'GPU box', host: 'gpu.example.com' },
+          ]
+        },
+      },
+    }
+    const store = createStore({
+      projects: [
+        { id: 'p1', path: '/work/one', name: 'One', sshHost: 'h1' },
+        { id: 'p2', path: '/work/two', name: 'Two', sshHost: 'h2' },
+      ],
+      activeProjectId: 'p1',
+      workspaceRoot: '/work/one',
+    })
+    const controls = document.createElement('div')
+    const viewer = document.createElement('div')
+    document.body.append(controls, viewer)
+    const unmount = mountVncPane(controls, viewer, store, api)
+    try {
+      await settle()
+      const atMount = hostLists
+      const machine = controls.querySelector<HTMLSelectElement>('.vnc-machine-select')
+      assert.ok(machine)
+
+      store.setState({ activeProjectId: 'p2', workspaceRoot: '/work/two' })
+      await settle()
+      assert.equal(hostLists, atMount + 1, 'the switch re-reads the saved SSH machines')
+      assert.equal(machine.value, 'ssh:h2', 'and preselects the new project’s machine')
+    } finally {
+      unmount()
+    }
+  })
 })

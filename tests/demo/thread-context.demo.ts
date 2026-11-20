@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { saveElementScreenshot, waitForSettledLayout } from '../e2e/helpers/screenshot.ts'
 
@@ -67,7 +68,13 @@ describe('The thread Context panel', () => {
     )
     await expect(
       $$('[data-context-section="permissions"] [data-action^="revoke-"]'),
-    ).toBeElementsArrayOfSize(2)
+    ).toBeElementsArrayOfSize(4)
+    await expect($('[data-action="revoke-port-binding"]')).toBeDisplayed()
+    await expect($('[data-access="orchestrate"]')).toHaveText(
+      expect.stringContaining('Orchestrate own subthreads'),
+    )
+    await $('[data-action="revoke-orchestrate-access"]').scrollIntoView({ block: 'center' })
+    await saveElementScreenshot('#pane-files', 'thread-subthread-permissions.png')
     await expect($('[data-action="disable-guarded-yolo"]')).toBeDisplayed()
     await expect($('[data-context-section="permissions"]')).toHaveText(
       expect.stringContaining('Outside-project reads'),
@@ -174,6 +181,53 @@ describe('The thread Context panel', () => {
     await saveElementScreenshot('#pane-files', 'side-chats-context-permissions-decisions.png')
   })
 
+  it('separates its sections with space and labels permission groups in sentence case', async () => {
+    const look = await browser.execute(() => {
+      const sections = [...document.querySelectorAll<HTMLElement>('.thread-context-section')]
+      const permissions = document.querySelector('[data-context-section="permissions"]')
+      return {
+        sections: sections.length,
+        ruled: sections.filter((section) => getComputedStyle(section).borderBottomWidth !== '0px')
+          .length,
+        // innerText is the rendered text, after any text-transform.
+        groups: [
+          ...(permissions?.querySelectorAll<HTMLElement>('.thread-context-permission-label') ?? []),
+        ].map((label) => label.innerText),
+      }
+    })
+    expect(look.sections).toBeGreaterThan(2)
+    expect(look.ruled).toBe(0)
+    expect(look.groups).toEqual(expect.arrayContaining(['This thread', 'Project']))
+    await $('[data-context-section="permissions"]').scrollIntoView({ block: 'start' })
+    await saveElementScreenshot('#pane-files', 'thread-context-sections-unruled.png')
+  })
+
+  it('reads permission states as text and keeps a frame only on the buttons', async () => {
+    const permissions = $('[data-context-section="permissions"]')
+    await permissions.scrollIntoView({ block: 'start' })
+    await expect(permissions.$('[data-access="read"] .thread-context-chip')).toHaveText('Granted')
+    const states = await browser.execute(() => {
+      const section = document.querySelector('[data-context-section="permissions"]')
+      const chips = [...(section?.querySelectorAll<HTMLElement>('.thread-context-chip') ?? [])]
+      const revoke = section?.querySelector<HTMLElement>('[data-action^="revoke-"]')
+      return {
+        chips: chips.map((chip) => {
+          const style = getComputedStyle(chip)
+          return [style.borderTopWidth, style.paddingLeft, style.backgroundColor].join(' ')
+        }),
+        revokeBorder: revoke ? getComputedStyle(revoke).borderTopWidth : null,
+      }
+    })
+    assert.ok(states.chips.length >= 2, 'the permissions section lists its states')
+    for (const chip of states.chips) assert.equal(chip, '0px 0px rgba(0, 0, 0, 0)')
+    assert.equal(states.revokeBorder, '1px', 'Revoke is a button and keeps its frame')
+    await waitForSettledLayout('#pane-files')
+    await saveElementScreenshot(
+      '[data-context-section="permissions"]',
+      'thread-context-permission-states.png',
+    )
+  })
+
   it('expands and closes the single context panel', async () => {
     const storageSectionId = (await $('[data-context-section="storage"]')).elementId
     await $('[aria-label="Expand context over chat"]').click()
@@ -215,6 +269,14 @@ describe('The thread Context panel', () => {
     await expect($('.chat-row.selected .chat-title')).toHaveText(MAIN)
     await expect($('.side-chat-row.is-selected')).toHaveAttribute('data-side-chat-id', 'sc-side-2')
     await expect($('#right-sidebar')).toBeDisplayed()
+  })
+  it('revokes orchestration while preserving other conversation permissions', async () => {
+    await openContext()
+    await $('[data-action="revoke-orchestrate-access"]').scrollIntoView()
+    await $('[data-action="revoke-orchestrate-access"]').click()
+    await expect($('[data-access="orchestrate"]')).not.toExist()
+    await expect($('[data-access="read"]')).toExist()
+    await expect($('[data-access="send"]')).toExist()
   })
   it('disables a session-only grant from Context', async () => {
     await openContext()

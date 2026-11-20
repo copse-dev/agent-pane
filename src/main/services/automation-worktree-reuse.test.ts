@@ -54,8 +54,8 @@ function harness(
   const metaUpdates: Array<{ threadId: string; patch: unknown }> = []
   const disposed: string[] = []
   const reuse = createAutomationWorktreeReuse({
-    loadThreads: () => Promise.resolve(threads),
-    getThread: (_projectId, threadId) =>
+    loadThreadMetas: () => Promise.resolve(threads),
+    getThreadMeta: (_projectId, threadId) =>
       Promise.resolve(threads.find((thread) => thread.id === threadId) ?? null),
     updateMeta: (_projectId, threadId, patch) => {
       metaUpdates.push({ threadId, patch })
@@ -63,9 +63,9 @@ function harness(
     },
     projectRoot: () => '/repo',
     isLive: () => false,
-    disposeSession: (threadId) => {
+    withIdleSession: async (threadId, operation) => {
       disposed.push(threadId)
-      return Promise.resolve()
+      return { status: 'released', value: await operation() }
     },
     canAdopt: () => Promise.resolve(true),
     adopt: (input) => {

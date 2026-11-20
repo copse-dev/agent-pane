@@ -101,6 +101,7 @@ export const acpAgentConfigSchema = z.object({
       z.object({
         allowedDomains: z.array(z.string().min(1).max(256)).max(64),
         allowMacOsTrustd: z.boolean().optional(),
+        allowMacOsKeychain: z.boolean().optional(),
         homeDirs: z
           .array(
             z
@@ -450,6 +451,11 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // ACP. Only meaningful when `sshWorkspaceEnabled` is also on. See
   // docs/plans/acp-over-ssh.md.
   acpOverSshEnabled: z.boolean(),
+  // How external-edit detection runs on an SSH workspace. `auto` uploads and
+  // runs the bundled streaming watcher (native/remote-watcher) with polling as
+  // the fallback; `poll` skips the upload and only polls subscribed files;
+  // `off` disables external-edit detection entirely.
+  sshWatcherMode: z.enum(['auto', 'poll', 'off']),
   // SSH workspace hosts (Phase 1 connection manager). See ssh-remote-repo.md.
   sshWorkspaceHosts: z
     .array(

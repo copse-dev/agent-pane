@@ -90,6 +90,8 @@ describe('interactive client live approvals', function () {
     assert.ok((await dialog.getText()).includes('agent questions'))
     assert.ok((await dialog.getText()).includes('pending request titles'))
     assert.ok((await dialog.getText()).includes('worktree preparation'))
+    assert.ok((await dialog.getText()).includes('web-origin'))
+    assert.ok((await dialog.getText()).includes('does not save the origin'))
     assert.ok((await dialog.getText()).includes('Follow-ups can send the offered message'))
     await expect(dialog.$('.approval-remember')).not.toBeDisplayed()
     // Normalize only the random display code for deterministic visual evidence.

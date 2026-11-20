@@ -27,6 +27,8 @@ import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { recordUsageEvent } from './storage/usage-ledger.ts'
 import { hostRoutedNamespace } from '@copse/llm/model-selection.ts'
 import { askClassifierBatch, trueProbability } from './classifiers/background-classification.ts'
+import { getProjectThread } from './thread-store.ts'
+import { inspectThreadReadRoot } from './thread-execution-context.ts'
 
 const MAX_SUGGESTIONS = 3
 
@@ -347,6 +349,19 @@ export async function suggestFollowUps(
     ...buildPluginFollowUps(workspaceCtx),
   ]
   return fillFollowUpSuggestions(prioritized, () => pickModelFollowUps(context))
+}
+
+/** The automatic, thread-owned follow-up request made by native IPC. */
+export async function suggestThreadFollowUps(
+  projectId: string,
+  threadId: string,
+  context: FollowUpContext,
+): Promise<FollowUpSuggestion[]> {
+  const root = await inspectThreadReadRoot(projectId, threadId)
+  if (!root) return []
+  const thread = await getProjectThread(projectId, threadId)
+  const executor = followUpExecutorForModels(thread?.model, thread?.resolvedModel)
+  return suggestFollowUps(context, root, executor)
 }
 
 /** Only ask the model when its suggestions can occupy a visible slot. */

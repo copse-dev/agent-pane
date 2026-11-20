@@ -4,7 +4,6 @@ import { readFileLimitsForSubagent } from '@copse/agent/read-file-limits.ts'
 import type {
   LLMProvider,
   LLMMessage,
-  LLMTool,
   ModelUsage,
   StreamChunk,
   ToolExecuteResult,
@@ -16,6 +15,7 @@ import { buildExploreSearchRoutingAddon } from '@copse/agent/search-routing.ts'
 import { isSemanticSearchAvailable } from './search/semantic-index.ts'
 import { subagentHookCallbacks } from './hooks/subagent.ts'
 import { runWithExploredSpanRecorder } from './explore-read-recorder.ts'
+import { retainExploredSpans } from './agent-run-explore-mode.ts'
 import {
   renderExploreResult,
   selectExploreExcerpts,
@@ -48,11 +48,6 @@ export interface ExploreSubagentResult {
    */
   text: string
   usage: ModelUsage
-}
-
-function filterExploreTools(registry: ToolRegistry): LLMTool[] {
-  const names = new Set<string>(SUBAGENT_ALLOWED_TOOL_NAMES)
-  return registry.toLLMTools().filter((t) => names.has(t.name))
 }
 
 async function executeExploreTool(
@@ -106,7 +101,7 @@ export async function runExploreSubagent(
           provider,
           prompt,
           parentGoal: `${parentGoal}\nWorkspace: ${workspace}`,
-          tools: filterExploreTools(registry),
+          tools: registry.toLLMToolsNamed(SUBAGENT_ALLOWED_TOOL_NAMES),
           parentToolCallId,
           signal,
           maxContextTokens: contextWindow,
@@ -126,6 +121,8 @@ export async function runExploreSubagent(
     // One read's worth of characters: the budget the subagent's own reads were
     // held to, so excerpts never cost the parent more than a read_file would.
     const selection = selectExploreExcerpts(spans, summary, subagentReadLimits.maxChars)
+    // Everything read, not just what fit: read_explored serves the rest (Fix 0b).
+    retainExploredSpans(spans)
     return { summary, text: renderExploreResult(summary, selection), usage }
   })
 }

@@ -34,7 +34,6 @@ import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { spawnRunsOnSshTarget } from '../../project-sandbox/spawn.ts'
 import { getSetting, updateSetting } from '../storage/settings.ts'
 import { storageAppendFile, storageReadFile, storageWriteFile } from '../storage/user-data-files.ts'
-import { getActiveProjectId, getWorkspaceRoot } from '../workspace.ts'
 import { readPromptEvidence } from './environment-evidence.ts'
 import {
   buildEnvironmentSuggestions,
@@ -87,7 +86,17 @@ interface AppliedValue {
   previousLevel?: AutoApprovalLevel
 }
 
-let pending: PendingReview | null = null
+/**
+ * The project a review is for, as the asking window resolved it: its id and
+ * checkout root, or nulls when the window has none open.
+ */
+export interface EnvironmentSetupProject {
+  readonly projectId: string | null
+  readonly root: string | null
+}
+
+/** The latest issued review per project; a newer review expires the older one. */
+const pending = new Map<string, PendingReview>()
 const undoable = new Map<string, AppliedValue[]>()
 
 async function readState(): Promise<SetupState> {
@@ -157,9 +166,10 @@ function suggestionContext(workspaceRoot: string | null): SuggestionContext {
  * workspace with auto-run on. Trusted commands and auto-approval both require
  * it, and an untrusted repo should not prompt a review of its own history.
  */
-function eligibleProject(): { projectId: string; workspaceRoot: string } | null {
-  const projectId = getActiveProjectId()
-  const workspaceRoot = getWorkspaceRoot()
+function eligibleProject(
+  project: EnvironmentSetupProject,
+): { projectId: string; workspaceRoot: string } | null {
+  const { projectId, root: workspaceRoot } = project
   if (!projectId || !workspaceRoot) return null
   if (!isWorkspaceTrusted(workspaceRoot)) return null
   if (!getSetting<boolean>('autoRunSandboxCommands', true)) return null
@@ -167,31 +177,36 @@ function eligibleProject(): { projectId: string; workspaceRoot: string } | null 
 }
 
 async function suggestionsSince(
+  project: EnvironmentSetupProject,
   days: number,
 ): Promise<{ projectId: string; drafts: DraftSuggestion[] } | null> {
-  const project = eligibleProject()
-  if (!project) return null
-  const evidence = await readPromptEvidence(project.projectId, Date.now() - days * DAY_MS)
+  const eligible = eligibleProject(project)
+  if (!eligible) return null
+  const evidence = await readPromptEvidence(eligible.projectId, Date.now() - days * DAY_MS)
   return {
-    projectId: project.projectId,
-    drafts: buildEnvironmentSuggestions(evidence, suggestionContext(project.workspaceRoot)),
+    projectId: eligible.projectId,
+    drafts: buildEnvironmentSuggestions(evidence, suggestionContext(eligible.workspaceRoot)),
   }
 }
 
-export async function environmentSetupStatus(): Promise<EnvironmentSetupStatus> {
+export async function environmentSetupStatus(
+  project: EnvironmentSetupProject,
+): Promise<EnvironmentSetupStatus> {
   const state = await readState()
   if (state.dismissed || (state.snoozedUntil ?? 0) > Date.now()) {
     return { offer: false, promptCount: 0 }
   }
-  const result = await suggestionsSince(OFFER_WINDOW_DAYS)
+  const result = await suggestionsSince(project, OFFER_WINDOW_DAYS)
   const promptCount = (result?.drafts ?? [])
     .filter((draft) => !draft.declined)
     .reduce((sum, draft) => sum + draft.approvals, 0)
   return { offer: promptCount >= OFFER_MIN_PROMPTS, promptCount }
 }
 
-export async function reviewEnvironmentSetup(): Promise<EnvironmentSetupReview> {
-  const result = await suggestionsSince(REVIEW_WINDOW_DAYS)
+export async function reviewEnvironmentSetup(
+  project: EnvironmentSetupProject,
+): Promise<EnvironmentSetupReview> {
+  const result = await suggestionsSince(project, REVIEW_WINDOW_DAYS)
   const reviewId = randomUUID()
   const issued = new Map<string, DraftSuggestion>()
   const suggestions: EnvironmentSuggestion[] = []
@@ -200,7 +215,11 @@ export async function reviewEnvironmentSetup(): Promise<EnvironmentSetupReview> 
     issued.set(id, draft)
     suggestions.push({ id, ...draft })
   }
-  pending = result ? { reviewId, projectId: result.projectId, suggestions: issued } : null
+  if (result) {
+    pending.set(result.projectId, { reviewId, projectId: result.projectId, suggestions: issued })
+  } else if (project.projectId !== null) {
+    pending.delete(project.projectId)
+  }
   const state = await readState()
   await writeState({ ...state, snoozedUntil: Date.now() + SNOOZE_MS })
   return { reviewId, suggestions, windowDays: REVIEW_WINDOW_DAYS }
@@ -307,14 +326,15 @@ async function revert(applied: AppliedValue): Promise<void> {
 }
 
 export async function applyEnvironmentSetup(
+  projectId: string | null,
   reviewId: string,
   suggestionIds: readonly string[],
 ): Promise<EnvironmentSetupApplyResult> {
-  const review = pending
-  if (!review || review.reviewId !== reviewId || review.projectId !== getActiveProjectId()) {
+  const review = projectId === null ? undefined : pending.get(projectId)
+  if (!review || review.reviewId !== reviewId) {
     throw new Error('This review has expired. Open it again to see current suggestions.')
   }
-  pending = null
+  pending.delete(review.projectId)
   const applied: AppliedValue[] = []
   for (const id of new Set(suggestionIds)) {
     const draft = review.suggestions.get(id)

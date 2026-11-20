@@ -3,7 +3,11 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
-import { listForegroundShellProcesses, runShellOnce } from './foreground-shell-process.ts'
+import {
+  listForegroundShellProcesses,
+  runShellOnce,
+  stopAllForegroundShellProcesses,
+} from './foreground-shell-process.ts'
 import { setShellOutputSink } from './shell-output-context.ts'
 import {
   getBackgroundProcessLogs,
@@ -17,6 +21,8 @@ import {
   stopSupervisedBackgroundProcess,
 } from './supervised-background-process.ts'
 import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
+import type { CommandPhase } from '@copse/agent/wire-types.ts'
+import { runWithCommandPhaseReporter, setLateCommandPhaseRecorder } from './command-phase.ts'
 import { TaskSupervisor } from '../supervisor/task-supervisor.ts'
 import { FileSupervisedTaskStore } from '../supervisor/task-store.ts'
 
@@ -97,6 +103,43 @@ describe('foreground shell interruption', () => {
     await waitUntil(() => supervisor.get(OWNER.projectId, task.taskId)?.state === 'completed')
     assert.match(getBackgroundProcessLogs(result.backgroundId, OWNER) ?? '', /finished/)
     assert.equal(listBackgroundProcesses(OWNER)[0]?.exitCode, 0)
+  })
+
+  it('records a detached command ending on its own card after the call returned (#3956)', async () => {
+    const inCall: CommandPhase[] = []
+    const late: { toolCallId: string; phase: CommandPhase }[] = []
+    setLateCommandPhaseRecorder((_owner, toolCallId, phase) => {
+      late.push({ toolCallId, phase })
+      return Promise.resolve()
+    })
+    try {
+      let run: ReturnType<typeof start> | undefined
+      const result = await runWithCommandPhaseReporter(
+        (phase) => inCall.push(phase),
+        { state: 'queued', since: 0, launched: false },
+        async () => {
+          run = start(`echo ready $$; sleep 0.5; exit 4`)
+          await run.ready
+          run.controller.abort('send_now')
+          return run.result
+        },
+        () => 'unused',
+        'tc-detached',
+      )
+      assert.ok(result.backgroundId)
+      assert.equal(inCall.at(-1)?.state, 'running')
+      assert.equal(inCall.at(-1)?.backgroundTaskId, result.backgroundId)
+      await waitUntil(() => late.length > 0)
+      const [ending] = late
+      assert.ok(ending)
+      assert.equal(ending.toolCallId, 'tc-detached')
+      assert.equal(ending.phase.state, 'exited')
+      assert.equal(ending.phase.exitCode, 4)
+      assert.equal(ending.phase.backgroundTaskId, result.backgroundId)
+      assert.equal(ending.phase.launched, true)
+    } finally {
+      setLateCommandPhaseRecorder(null)
+    }
   })
 
   it('keeps error evidence when transferred work emits more than the background output cap', async () => {
@@ -238,5 +281,37 @@ describe('foreground shell completion', () => {
   it('reports a signal-killed command as a failure', async () => {
     const result = await run('kill -9 $$', 5_000)
     assert.equal(result.exitCode, 137)
+  })
+  it('drains foreground work at shutdown and refuses to start another command', async () => {
+    const running = runWithThreadExecutionContext(
+      { ...OWNER, root, projectRoot: root, checkoutMode: 'shared', branch: 'main' },
+      () =>
+        runShellOnce(
+          'node -e "setInterval(()=>{},1000)"',
+          root,
+          30_000,
+          new AbortController().signal,
+          true,
+          process.env,
+        ),
+    )
+    await waitUntil(() => listForegroundShellProcesses().length > 0)
+    const stillStarting = run('node -e "setInterval(()=>{},1000)"', 30_000)
+    const cancelledStart = assert.rejects(stillStarting, /abort/i)
+    await stopAllForegroundShellProcesses()
+    assert.notEqual((await running).exitCode, 0)
+    await cancelledStart
+    assert.equal(listForegroundShellProcesses().length, 0)
+    await assert.rejects(
+      runShellOnce(
+        'echo should-not-start',
+        root,
+        1_000,
+        new AbortController().signal,
+        true,
+        process.env,
+      ),
+      /Copse is closing/,
+    )
   })
 })

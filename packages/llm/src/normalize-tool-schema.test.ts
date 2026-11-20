@@ -48,6 +48,59 @@ it('does not constrain a field accepted freely by another union branch', () => {
   assert.deepEqual(normalized['anyOf'], schema.anyOf)
 })
 
+it('exposes fields from nested object unions while preserving the original alternatives', () => {
+  const schema = {
+    anyOf: [
+      {
+        type: 'object',
+        properties: { action: { const: 'start' } },
+        required: ['action'],
+        additionalProperties: false,
+      },
+      {
+        oneOf: [
+          {
+            type: 'object',
+            properties: { action: { const: 'click' }, x: { type: 'integer' } },
+            required: ['action', 'x'],
+            additionalProperties: false,
+          },
+          {
+            anyOf: [
+              {
+                type: 'object',
+                properties: { action: { const: 'stop' } },
+                required: ['action'],
+                additionalProperties: false,
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  }
+  const normalized = normalizeOpenAIToolSchema(schema)
+  assert.equal(normalized['type'], 'object')
+  assert.deepEqual(normalized['properties'], {
+    action: { anyOf: [{ const: 'start' }, { const: 'click' }, { const: 'stop' }] },
+    x: { type: 'integer' },
+  })
+  assert.deepEqual(normalized['required'], ['action'])
+  assert.deepEqual(normalized['anyOf'], schema.anyOf)
+  assert.deepEqual(Object.keys(schema), ['anyOf'])
+  assert.deepEqual(normalizeOpenAIToolSchema(schema, { objectUnionEnvelope: false }), schema)
+})
+
+it('does not infer an object envelope when a nested alternative accepts a scalar', () => {
+  const schema = {
+    anyOf: [
+      { type: 'object', properties: {} },
+      { oneOf: [{ type: 'object', properties: {} }, { type: 'string' }] },
+    ],
+  }
+  assert.deepEqual(normalizeOpenAIToolSchema(schema), schema)
+})
+
 it('leaves scalar and nested unions unchanged while normalizing legacy bounds', () => {
   const scalar = { anyOf: [{ type: 'string' }, { type: 'number' }] }
   assert.deepEqual(normalizeOpenAIToolSchema(scalar), scalar)

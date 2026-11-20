@@ -157,7 +157,13 @@ describe('model-proposed thread card', () => {
     assert.equal(proposal.dataset['proposalStatus'], 'pending')
     // Open by default: a standing offer the user has not answered.
     assert.equal(proposal.open, true)
-    assert.equal(proposal.querySelector('.thread-proposal-eyebrow')?.textContent, 'Proposed thread')
+    // The title leads from the header, so a collapsed card still names its offer;
+    // no eyebrow label above it.
+    assert.equal(
+      proposal.querySelector('summary > h4.thread-proposal-title')?.textContent,
+      PROPOSAL_ARGS.title,
+    )
+    assert.equal(proposal.querySelectorAll('.thread-proposal-title').length, 1)
     // Not a permission prompt: nothing modal, nothing approve/reject.
     assert.equal(document.querySelector('.approval-dialog'), null)
     assert.equal(root.querySelector('.thread-proposal .approval-heading'), null)
@@ -174,35 +180,44 @@ describe('model-proposed thread card', () => {
     unmount()
   })
 
-  it('renders saved Codex MCP envelopes and starts with the nested prompt', async () => {
-    const { root, store, unmount } = mount([
-      { id: 'r1', name: 'read_file', args: { path: 'a.ts' }, status: 'done', result: 'ok' },
-      { id: 'r2', name: 'read_file', args: { path: 'b.ts' }, status: 'done', result: 'ok' },
-      proposalCall({
-        name: 'mcp.copse.propose_thread',
-        kind: 'execute',
-        args: { server: 'copse', tool: 'propose_thread', arguments: PROPOSAL_ARGS },
-      }),
-    ])
-    const proposal = card(root)
-    assert.equal(proposal.querySelector('.thread-proposal-title')?.textContent, PROPOSAL_ARGS.title)
-    assert.equal(proposal.closest('.tool-card-rollup'), null)
-    assert.ok(root.querySelector('.tool-card-rollup'))
-    const start = proposal.querySelector<HTMLButtonElement>('.thread-proposal-start')
-    assert.ok(start)
-    start.click()
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    assert.equal(runs.length, 1)
-    const started = store.getState().threads.find((thread) => thread.id === runs[0]?.threadId)
-    assert.equal(
-      started?.messages.find((message) => message.role === 'user')?.content,
-      PROPOSAL_ARGS.prompt,
-    )
-    unmount()
-  })
+  // Saved threads carry the bare `copse` server; since #4125 new ones carry the
+  // bridge's nonce name.
+  for (const server of ['copse', 'copse-k3v9x2mq']) {
+    it(`renders saved Codex MCP envelopes from ${server} and starts with the nested prompt`, async () => {
+      const { root, store, unmount } = mount([
+        { id: 'r1', name: 'read_file', args: { path: 'a.ts' }, status: 'done', result: 'ok' },
+        { id: 'r2', name: 'read_file', args: { path: 'b.ts' }, status: 'done', result: 'ok' },
+        proposalCall({
+          name: `mcp.${server}.propose_thread`,
+          kind: 'execute',
+          args: { server, tool: 'propose_thread', arguments: PROPOSAL_ARGS },
+        }),
+      ])
+      const proposal = card(root)
+      assert.equal(
+        proposal.querySelector('.thread-proposal-title')?.textContent,
+        PROPOSAL_ARGS.title,
+      )
+      assert.equal(proposal.closest('.tool-card-rollup'), null)
+      assert.ok(root.querySelector('.tool-card-rollup'))
+      const start = proposal.querySelector<HTMLButtonElement>('.thread-proposal-start')
+      assert.ok(start)
+      start.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.equal(runs.length, 1)
+      const started = store.getState().threads.find((thread) => thread.id === runs[0]?.threadId)
+      assert.equal(
+        started?.messages.find((message) => message.role === 'user')?.content,
+        PROPOSAL_ARGS.prompt,
+      )
+      unmount()
+    })
+  }
 
   for (const args of [
     { server: 'other', tool: 'propose_thread', arguments: PROPOSAL_ARGS },
+    { server: 'copse-other', tool: 'propose_thread', arguments: PROPOSAL_ARGS },
+    { server: 'COPSE', tool: 'propose_thread', arguments: PROPOSAL_ARGS },
     { server: 'copse', tool: 'other', arguments: PROPOSAL_ARGS },
     { server: 'copse', tool: 'propose_thread', arguments: { title: 'Still streaming' } },
     { server: 'copse', tool: 'propose_thread', arguments: null },
@@ -297,6 +312,36 @@ describe('model-proposed thread card', () => {
       store.getState().threads.find((t) => t.id === threadId)?.threadProposals,
       undefined,
       'undoing leaves no answer behind',
+    )
+    unmount()
+  })
+
+  it('shows a failed start inline without the IPC wrapper and keeps the offer', async () => {
+    const base = fakeApi()
+    const { root, unmount } = mount([proposalCall()], {
+      ...base,
+      agent: {
+        ...base.agent,
+        prepareCheckout: () =>
+          Promise.reject(
+            new Error(
+              "Error invoking remote method 'agent:prepare-checkout': Error: Isolated worktree is unavailable: not git",
+            ),
+          ),
+      },
+    })
+    card(root).querySelector<HTMLButtonElement>('.thread-proposal-start')?.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const error = card(root).querySelector<HTMLElement>('.thread-proposal-error')
+    assert.ok(error)
+    assert.equal(error.hidden, false)
+    assert.equal(
+      error.textContent,
+      'Could not start the thread: Isolated worktree is unavailable: not git',
+    )
+    assert.equal(
+      card(root).querySelector<HTMLButtonElement>('.thread-proposal-start')?.disabled,
+      false,
     )
     unmount()
   })

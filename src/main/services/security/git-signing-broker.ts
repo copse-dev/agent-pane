@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { createHash, randomBytes } from 'node:crypto'
 import { mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { createServer, type Socket } from 'node:net'
-import { isAbsolute, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import {
   electronRuntimeAllowReadPaths,
@@ -28,10 +28,23 @@ import type { GitSigningBridge } from './git-invocation.ts'
 import { posixQuote } from './safe-install.ts'
 import { resolveToolPermission } from './tool-permissions.ts'
 import { leaseGitPrivateSigningKey, type PrivateSigningKey } from './git-private-signing-key.ts'
+import {
+  gitSigningFailureMessage,
+  sshAgentHasSigningKey,
+  sshCommitSignature,
+} from './git-signing-result.ts'
 
 const SIGNER = '/usr/bin/ssh-keygen'
+const KEY_LISTER = '/usr/bin/ssh-add'
 const MAX_COMMIT_BYTES = 1024 * 1024
 const grants = new Map<string, string>()
+
+async function signingHelpersHash(): Promise<string> {
+  return createHash('sha256')
+    .update(await readFile(SIGNER))
+    .update(await readFile(KEY_LISTER))
+    .digest('hex')
+}
 
 // Trusted probe, executed with a clean environment and no repository code.
 // Only a failed connect(2) with EPERM/EACCES produces 73. Neither Git stderr,
@@ -109,7 +122,7 @@ export interface GitSigningLease {
 }
 
 /**
- * The only elevated helper currently supported is the system SSH signer. Other
+ * Only the system SSH signer and its identity-listing helper get socket access. Other
  * configured programs still run in Git's ordinary sandbox, without new access.
  * Remembered approvals are in memory and bound to project, configuration,
  * public key, system executable contents and socket identity. No basename grant.
@@ -147,15 +160,15 @@ export async function leaseGitSigningBroker(
   const pathKey = keySetting?.startsWith('key::')
     ? keySetting
     : await config(root, 'user.signingKey', true)
+  const privatePath = pathKey && !pathKey.startsWith('key::') ? resolve(root, pathKey) : null
   const inline = !useAgent
     ? null
     : pathKey?.startsWith('key::')
       ? pathKey
-      : pathKey
-        ? await resolveInlineSshPublicSigningKey(pathKey)
+      : privatePath
+        ? await resolveInlineSshPublicSigningKey(privatePath)
         : null
   let publicKey = inline ? parseSshPublicKey(inline.slice(5)) : null
-  const privatePath = !useAgent && pathKey && !pathKey.startsWith('key::') ? pathKey : null
   const [configuredSocket] = await resolveSshAgentSocketAllowList({
     enabled: useAgent,
     authSock: process.env['SSH_AUTH_SOCK'],
@@ -165,11 +178,9 @@ export async function leaseGitSigningBroker(
     grants.delete(project)
     return null
   }
-  const socketPath = configuredSocket ? await realpath(configuredSocket) : ''
+  const socketPath = publicKey && configuredSocket ? await realpath(configuredSocket) : ''
   const socketInfo = socketPath ? await stat(socketPath) : null
-  const executableHash = createHash('sha256')
-    .update(await readFile(SIGNER))
-    .digest('hex')
+  const executableHash = await signingHelpersHash()
   const identity = JSON.stringify([
     project,
     program,
@@ -210,14 +221,16 @@ export async function leaseGitSigningBroker(
     }
   }
   try {
-    if (privatePath) {
+    if (privatePath && (!publicKey || !socketPath)) {
       privateKey = await leaseGitPrivateSigningKey(
-        resolve(root, privatePath),
+        privatePath,
         project,
         command,
         helperEnv(directory),
         signal,
       )
+      if (publicKey && privateKey.publicKey !== publicKey)
+        throw new Error('The approved private key does not match the configured SSH public key.')
       publicKey = privateKey.publicKey
     }
     if (!publicKey) throw new Error('Cannot resolve the configured SSH signing identity.')
@@ -252,7 +265,7 @@ export async function leaseGitSigningBroker(
           {
             type: 'shell',
             title: 'Allow this Git signing helper?',
-            body: `${SIGNER} -Y sign -n git -U\nKey: ${fingerprint}\nSocket: ${socketPath}\nProject: ${project}`,
+            body: `${SIGNER} -Y sign -n git -U\nIdentity check: ${KEY_LISTER} -L\nKey: ${fingerprint}\nSocket: ${socketPath}\nProject: ${project}`,
             bodyAdvice:
               'A sandboxed connection probe was denied. Allow the system SSH signer to use this key for Git commits through this socket? Git hooks keep their existing sandbox access.',
             allowRemember: false,
@@ -297,13 +310,44 @@ export async function leaseGitSigningBroker(
       resolveToolPermission('git_commit')?.policy === 'block' ||
       currentSocket?.dev !== socketInfo?.dev ||
       currentSocket?.ino !== socketInfo?.ino ||
-      executableHash !==
-        createHash('sha256')
-          .update(await readFile(SIGNER))
-          .digest('hex')
+      executableHash !== (await signingHelpersHash())
     ) {
       grants.delete(project)
       throw new Error('Git signing authorization changed; request authorization again.')
+    }
+    const signOverlay = gitCommitSigningSandboxOverlay(directory, socketPath ? [socketPath] : [])
+    signOverlay.filesystem = isolatedFilesystem
+    if (!privateKey) {
+      // Check before Git stages files or runs hooks, so private-key consent can
+      // use the existing one-commit path without interrupting an active commit.
+      const identities = await runCommand(KEY_LISTER, ['-L'], {
+        cwd: directory,
+        env: { ...helperEnv(directory), SSH_AUTH_SOCK: socketPath },
+        requireSandbox: true,
+        sandboxConfig: signOverlay,
+        signal: runSignal,
+        timeout_ms: 5000,
+        stdoutMaxBytes: 64 * 1024,
+      })
+      if (!sshAgentHasSigningKey(identities, publicKey)) {
+        if (!privatePath)
+          throw new Error(
+            gitSigningFailureMessage(
+              new Error(
+                'The configured SSH signing key is not loaded in ssh-agent. Load the matching signing key into the SSH agent used by Copse, then retry the signed commit.',
+              ),
+            ),
+          )
+        privateKey = await leaseGitPrivateSigningKey(
+          privatePath,
+          project,
+          command,
+          helperEnv(directory),
+          runSignal,
+        )
+        if (privateKey.publicKey !== publicKey)
+          throw new Error('The approved private key does not match the configured SSH public key.')
+      }
     }
     const keyPath = join(directory, 'key.pub')
     await writeFile(keyPath, publicKey + '\n', { mode: 0o400 })
@@ -315,8 +359,6 @@ export async function leaseGitSigningBroker(
       `#!/bin/sh\nexec /usr/bin/env -u NODE_OPTIONS -u NODE_PATH ELECTRON_RUN_AS_NODE=1 ${posixQuote(process.execPath)} -e ${posixQuote(bridgeClient(brokerPath, nonce))} -- "$@"\n`,
       { mode: 0o500 },
     )
-    const signOverlay = gitCommitSigningSandboxOverlay(directory, socketPath ? [socketPath] : [])
-    signOverlay.filesystem = isolatedFilesystem
     let used = false
     const inContext = AsyncLocalStorage.snapshot()
     server.on('connection', (peer) => {
@@ -378,19 +420,10 @@ export async function leaseGitSigningBroker(
                 stdoutMaxBytes: 16384,
               },
             )
-            if (
-              result.code !== 0 ||
-              result.stdoutTruncated ||
-              !result.stdout.startsWith('-----BEGIN SSH SIGNATURE-----')
-            )
-              throw new Error('SSH commit signing failed. No unsigned retry was attempted.')
-            peer.end(Buffer.concat([Buffer.from([0]), Buffer.from(result.stdout)]))
-          } catch {
+            peer.end(Buffer.concat([Buffer.from([0]), Buffer.from(sshCommitSignature(result))]))
+          } catch (error) {
             peer.end(
-              Buffer.concat([
-                Buffer.from([1]),
-                Buffer.from('SSH commit signing failed. No unsigned retry was attempted.\n'),
-              ]),
+              Buffer.concat([Buffer.from([1]), Buffer.from(gitSigningFailureMessage(error))]),
             )
           }
         })
@@ -403,12 +436,9 @@ export async function leaseGitSigningBroker(
     const gitOverlay = gitCommitSigningSandboxOverlay(root, [brokerPath])
     if (!gitOverlay.filesystem) throw new Error('Missing Git sandbox policy')
     gitOverlay.filesystem.denyRead.push(...(privateKey?.privatePaths ?? []))
-    if (pathKey && isAbsolute(pathKey)) {
-      const privatePath = pathKey.endsWith('.pub') ? pathKey.slice(0, -4) : pathKey
-      gitOverlay.filesystem.denyRead.push(
-        privatePath,
-        await realpath(privatePath).catch(() => privatePath),
-      )
+    if (privatePath) {
+      const keyFile = privatePath.endsWith('.pub') ? privatePath.slice(0, -4) : privatePath
+      gitOverlay.filesystem.denyRead.push(keyFile, await realpath(keyFile).catch(() => keyFile))
     }
     gitOverlay.filesystem.allowRead = [
       ...(gitOverlay.filesystem.allowRead ?? []),

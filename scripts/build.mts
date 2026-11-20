@@ -261,10 +261,10 @@ if (!isDemo) {
 const browserOpts = {
   bundle: true,
   platform: 'browser' as const,
-  // Demo previews are committed to the machine-managed `demo-previews` branch and
-  // fetched by every Secret scan (`gitleaks` with `fetch-depth: 0`). Source maps
-  // there trip high-entropy secret heuristics and fail unrelated PR tips — so the
-  // demo build must not emit them.
+  // Demo previews are committed to the machine-managed `demo-previews` branch.
+  // Source maps there tripped Secret scan's high-entropy heuristics and failed
+  // unrelated PR tips when the scan walked every ref — so the demo build must not
+  // emit them.
   sourcemap: !isDemo && !isRelease,
   loader: { '.ts': 'ts', '.css': 'css', '.ttf': 'file' } as const,
   alias: sharedAlias,
@@ -396,6 +396,9 @@ cpSync('assets', 'dist/assets', { recursive: true })
 cpSync('src/main/services/simulator-desktop/native', 'dist/resources/apple-simulator', {
   recursive: true,
 })
+cpSync('src/main/services/desktop-control/native', 'dist/resources/desktop-control', {
+  recursive: true,
+})
 buildProcessMemoryHelper()
 
 // The full renderer ↔ main API protocol schema (docs/api-protocol.md). The
@@ -422,6 +425,19 @@ try {
 cpSync(BUNDLED_CURSOR_SKILLS_VENDOR_DIR, 'dist/resources/bundled-cursor-skills', {
   recursive: true,
 })
+
+try {
+  accessSync(resolve('vendor/remote-watcher'))
+  // Static per-target binaries uploaded to SSH workspace hosts (see
+  // native/remote-watcher). Dereference for the same worktree-symlink reason
+  // as gortex above.
+  cpSync('vendor/remote-watcher', 'dist/resources/remote-watcher', {
+    recursive: true,
+    dereference: true,
+  })
+} catch {
+  // Optional — without it SSH workspaces fall back to remote file polling.
+}
 
 // Last of the shipped inputs: the licence report reads every bundle's metafile
 // and fails the build if any shipped component lacks its licence text.

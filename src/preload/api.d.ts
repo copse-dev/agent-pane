@@ -1,5 +1,10 @@
 import type { SettingsSnapshot, SettingsUpdate } from '@shared/settings-contract.ts'
 import type {
+  RemoteArtifactImageRequest,
+  RemoteArtifactImageResult,
+} from '@shared/remote-artifact-image.ts'
+import type { RemoteArtifactDownloadRequest } from '@shared/remote-artifact-download.ts'
+import type {
   AppRunOwner,
   AppRunSelection,
   AppRunAction,
@@ -46,6 +51,8 @@ import type {
 import type {
   AutomationFailureCode,
   AutomationPermissionOption,
+  AutomationPreparationInput,
+  AutomationPreparationReview,
   AutomationSchedule,
   AutomationScheduleInput,
   AutomationCleanupResult,
@@ -195,7 +202,9 @@ export interface ApiClient {
     reply: (id: string, accepted: boolean) => Promise<void>
   }
   threadPrompts: {
-    revokeAccess: (threadId: string, access: 'read' | 'send') => Promise<void>
+    canDispatch: (projectId: string, parentId: string, childId: string) => Promise<boolean>
+    canSubmit: (id: string) => Promise<boolean>
+    revokeAccess: (threadId: string, access: 'read' | 'send' | 'orchestrate') => Promise<void>
     onPrompt: (
       handler: (command: import('@shared/thread-prompt.ts').ThreadPromptCommand) => void,
     ) => () => void
@@ -203,6 +212,10 @@ export interface ApiClient {
       id: string,
       result: import('@shared/thread-prompt.ts').ThreadPromptResult,
     ) => Promise<void>
+  }
+  remote: {
+    /** Publish the desktop-owned live view to authenticated remote clients. */
+    publish: (view: import('@shared/remote-interface.ts').RemoteView) => Promise<void>
   }
   chatGptPlan: import('@shared/types/chatgpt-plan.ts').ChatGptPlanClient
   mobile: {
@@ -278,6 +291,15 @@ export interface ApiClient {
      */
     captureScreenshot: (webContentsId: number) => Promise<BrowserImageShare>
     /**
+     * Stream the tab's painted frames (JPEG) to `onRecordingFrame` until
+     * stopped. Absent on hosts without a main-process guest (demo/site).
+     */
+    startRecording?: (webContentsId: number) => Promise<void>
+    stopRecording?: (webContentsId: number) => Promise<void>
+    onRecordingFrame?: (handler: (webContentsId: number, jpeg: Uint8Array) => void) => () => void
+    /** The screencast stopped on its own — the tab closed or a debugger took over. */
+    onRecordingEnded?: (handler: (webContentsId: number, reason: string) => void) => () => void
+    /**
      * The guest's scroll offsets in CSS pixels, or null when the guest could
      * not answer. The page-anchored annotation overlay re-reads this while the
      * user scrolls so marks track the content.
@@ -306,6 +328,8 @@ export interface ApiClient {
       threadId: string,
       projectRoot: string,
     ) => Promise<import('@shared/types/context-permissions.ts').ContextPermissionSnapshot>
+    /** Revoke saved local-port consent for this thread's project. Running tasks must be stopped separately. */
+    revokeProjectPortBinding: (projectId: string, threadId: string) => Promise<void>
     enableGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
     disableGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
     onGuardedYoloChanged: (handler: (state: GuardedYoloState) => void) => () => void
@@ -347,7 +371,17 @@ export interface ApiClient {
     ) => () => void
   }
   agent: {
-    run: (projectId: string, threadId: string, prompt: string) => Promise<void>
+    /**
+     * Start a turn. With `delegation`, main starts it only while the parent
+     * still owns the child and holds orchestration, rechecked as it dispatches;
+     * otherwise it rejects with `SubthreadPromptHeldError` and runs nothing.
+     */
+    run: (
+      projectId: string,
+      threadId: string,
+      prompt: string,
+      delegation?: import('@shared/thread-prompt.ts').SubthreadRunDelegation,
+    ) => Promise<void>
     runMachine: (request: MachineAgentRunRequest) => Promise<MachineDispatchResult>
     describeImages: (
       projectId: string,
@@ -427,11 +461,14 @@ export interface ApiClient {
         threadId?: string
         title: string
         body: string
+        bodyMarkdown?: string
         bodyAdvice?: string
         bodyFooter?: string
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        rememberDefault?: boolean
+        rememberSubject?: string
         approveLabel?: string
         collapseDetails?: boolean
         approveOnceLabel?: string
@@ -700,6 +737,12 @@ export interface ApiClient {
       threadId: string,
     ) => Promise<{ bytes: number; truncated: boolean }>
     loadProject: (projectId: string) => Promise<import('@shared/types').Thread[]>
+    /** Search saved human requests without hydrating conversation history. */
+    searchRequests: (
+      projectId: string,
+      query: string,
+    ) => Promise<import('@copse/thread-store/prompt-search.ts').PromptSearchResult>
+    cancelRequestSearch: () => Promise<void>
     /** Fill legacy PR links for a bounded set of visible sidebar threads. */
     backfillPrRefs: (projectId: string, threadIds: string[]) => Promise<void>
     loadMessages: (
@@ -950,9 +993,12 @@ export interface ApiClient {
     }>
   }
   remoteAgent: {
-    /** Returns a remote URL, or an empty string when a native Save dialog handled the download. */
-    downloadArtifact: (agentId: string, path: string) => Promise<string>
-    artifactImageDataUrl: (agentId: string, path: string) => Promise<string>
+    /** Authorize an artifact for this chat and open its download outside the renderer. */
+    downloadArtifact: (request: RemoteArtifactDownloadRequest) => Promise<void>
+    /** Hydrate one artifact image for the thread on screen; see sandboxed-artifact-image-downloads.md. */
+    artifactImageDataUrl: (
+      request: RemoteArtifactImageRequest,
+    ) => Promise<RemoteArtifactImageResult>
     /** Live Cursor Cloud Agent models from `GET /v1/models` (empty without a key). */
     models: () => Promise<Array<{ id: string; label: string }>>
     /**
@@ -1144,11 +1190,17 @@ export interface ApiClient {
     ) => Promise<import('@shared/usage/plan-worth-it.ts').PlanWorthItPayload>
   }
   decisions: {
+    /**
+     * The project's decision log. Pass the project: main does not guess one, so
+     * an omitted id lists nothing. Optional only so the protocol stays
+     * compatible with peers that send none.
+     */
     list: (projectId?: string) => Promise<import('@shared/threads/decision-log.ts').DecisionEvent[]>
     listThread: (
       projectId: string,
       threadId: string,
     ) => Promise<import('@shared/threads/decision-log.ts').DecisionEvent[]>
+    /** Export the project's decision log. An omitted id is refused, as `list` explains. */
     export: (projectId?: string) => Promise<{ path: string; count: number }>
   }
   index: {
@@ -1290,6 +1342,15 @@ export interface ApiClient {
      * the reverse of `setThread`, used by the thread's back-link chip (#2501). */
     findByThread: (threadId: string) => Promise<{ id: string; title: string } | null>
   }
+  /** `run_background` tasks the agent started in this session. */
+  backgroundTasks: {
+    /** A task's retained output, or null once it is gone (stopped, or the app restarted). */
+    logs(
+      projectId: string,
+      threadId: string,
+      taskId: string,
+    ): Promise<{ logs: string; running: boolean } | null>
+  }
   supervisor: {
     list(projectId: string): Promise<{ tasks: SupervisedTaskSummary[] }>
     cancel(projectId: string, taskId: string): Promise<{ task: SupervisedTaskSummary | null }>
@@ -1382,6 +1443,10 @@ export interface ApiClient {
   automations: {
     list: (projectId: string) => Promise<AutomationSchedule[]>
     permissionOptions: (projectId: string) => Promise<AutomationPermissionOption[]>
+    reviewPreparation: (
+      projectId: string,
+      input: AutomationPreparationInput,
+    ) => Promise<AutomationPreparationReview>
     upsert: (projectId: string, input: AutomationScheduleInput) => Promise<AutomationSchedule>
     remove: (projectId: string, scheduleId: string) => Promise<void>
     runNow: (projectId: string, scheduleId: string) => Promise<AutomationTriggerEvent>

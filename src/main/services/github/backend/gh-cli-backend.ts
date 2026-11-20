@@ -1,5 +1,4 @@
 import { isFailingConclusion, runGh } from '../gh-service.ts'
-import { getWorkspaceRoot } from '../../workspace.ts'
 import { getGithubRepoSlug } from '../git-service.ts'
 import { isGhAvailable, whenToolAvailabilityProbed } from '../../tool-availability.ts'
 import { detectLanguage } from '../../language.ts'
@@ -193,15 +192,17 @@ function toGhPrSummary(ref: PrRef, entry: GhPrViewJson & { url: string }): GhPrS
 }
 
 /**
- * `GitHubBackend` methods carry no root yet, so `gh` runs in the window's
- * workspace as it always has. Most calls name `-R owner/repo` and do not depend
- * on the checkout; threading a root through the backend is a later #3958 slice.
+ * Run `gh` in the checkout the caller named. Most calls name `-R owner/repo`
+ * and do not depend on it, but `gh` still needs a directory to run in and the
+ * caller's is the only one that is theirs; it is never the window's workspace
+ * (#3958).
  */
 function gh(
+  root: string | null,
   args: string[],
   opts: Omit<Parameters<typeof runGh>[1], 'cwd'> = {},
 ): ReturnType<typeof runGh> {
-  return runGh(args, { ...opts, cwd: getWorkspaceRoot() })
+  return runGh(args, { ...opts, cwd: root })
 }
 
 function prRefToArgs(ref: PrRef): string[] {
@@ -241,7 +242,11 @@ function toGhPrDetails(
   return details
 }
 
-async function listPrFiles(ref: PrRef, prView?: GhPrViewJson): Promise<GhPrChangedFile[]> {
+async function listPrFiles(
+  root: string | null,
+  ref: PrRef,
+  prView?: GhPrViewJson,
+): Promise<GhPrChangedFile[]> {
   const fromView = (prView?.files ?? [])
     .map((file) => {
       if (!file.path) return null
@@ -255,7 +260,7 @@ async function listPrFiles(ref: PrRef, prView?: GhPrViewJson): Promise<GhPrChang
     .filter(isNonNull)
   if (fromView.length > 0) return fromView
 
-  const { stdout, code } = await gh([
+  const { stdout, code } = await gh(root, [
     'api',
     `repos/${ref.owner}/${ref.repo}/pulls/${String(ref.number)}/files`,
     '--paginate',
@@ -277,6 +282,7 @@ async function listPrFiles(ref: PrRef, prView?: GhPrViewJson): Promise<GhPrChang
 }
 
 async function fetchRepoFileAtRef(
+  root: string | null,
   ref: PrRef,
   path: string,
   gitRef: string,
@@ -285,7 +291,7 @@ async function fetchRepoFileAtRef(
     .split('/')
     .map((segment) => encodeURIComponent(segment))
     .join('/')
-  const { stdout, code } = await gh([
+  const { stdout, code } = await gh(root, [
     'api',
     `repos/${ref.owner}/${ref.repo}/contents/${encodedPath}?ref=${encodeURIComponent(gitRef)}`,
   ])
@@ -296,8 +302,8 @@ async function fetchRepoFileAtRef(
 }
 
 /** Read the repo's allowed merge methods so auto-merge picks a permitted one. */
-async function repoMergeConfig(ref: PrRef): Promise<RepoMergeConfig> {
-  const { stdout, code } = await gh([
+async function repoMergeConfig(root: string | null, ref: PrRef): Promise<RepoMergeConfig> {
+  const { stdout, code } = await gh(root, [
     'api',
     `repos/${ref.owner}/${ref.repo}`,
     '--jq',
@@ -315,7 +321,7 @@ async function repoMergeConfig(ref: PrRef): Promise<RepoMergeConfig> {
 export const ghCliBackend: GitHubBackend = {
   kind: 'cli',
 
-  async getStatus(): Promise<GhCliStatus> {
+  async getStatus(root: string | null): Promise<GhCliStatus> {
     // Startup registers IPC handlers while the tool probe is still in flight.
     // Wait here so a first-paint PR/settings request cannot turn the temporary
     // `null` availability state into a durable "gh is not installed" result.
@@ -328,7 +334,7 @@ export const ghCliBackend: GitHubBackend = {
         message: 'GitHub CLI (gh) is not installed or not on PATH.',
       }
     }
-    const auth = await gh(['auth', 'status'])
+    const auth = await gh(root, ['auth', 'status'])
     if (auth.code !== 0) {
       return {
         installed: true,
@@ -337,7 +343,7 @@ export const ghCliBackend: GitHubBackend = {
         message: auth.stderr.trim() || 'Run `gh auth login` to connect your GitHub account.',
       }
     }
-    const user = await gh(['api', '--cache', '60s', 'user', '--jq', '.login'])
+    const user = await gh(root, ['api', '--cache', '60s', 'user', '--jq', '.login'])
     if (user.code !== 0 || !user.stdout.trim()) {
       return {
         installed: true,
@@ -349,11 +355,11 @@ export const ghCliBackend: GitHubBackend = {
     return { installed: true, authenticated: true, username: user.stdout.trim(), message: null }
   },
 
-  async listMyOpenPrs(limit: number): Promise<GhPrSummary[] | null> {
+  async listMyOpenPrs(root: string | null, limit: number): Promise<GhPrSummary[] | null> {
     if (!isGhAvailable()) return null
-    const status = await this.getStatus()
+    const status = await this.getStatus(root)
     if (!status.authenticated) return null
-    const { stdout, stderr, code } = await gh([
+    const { stdout, stderr, code } = await gh(root, [
       'search',
       'prs',
       '--author=@me',
@@ -377,12 +383,12 @@ export const ghCliBackend: GitHubBackend = {
       .filter(isNonNull)
   },
 
-  async listWorkspaceOpenPrs(limit: number): Promise<GhPrSummary[]> {
-    const slug = await getGithubRepoSlug()
+  async listWorkspaceOpenPrs(root: string | null, limit: number): Promise<GhPrSummary[]> {
+    const slug = await getGithubRepoSlug(root)
     if (!slug) return []
     const [owner, repo] = slug.split('/')
     if (!owner || !repo || !isGhAvailable()) return []
-    const { stdout, stderr, code } = await gh([
+    const { stdout, stderr, code } = await gh(root, [
       'pr',
       'list',
       '--repo',
@@ -405,8 +411,8 @@ export const ghCliBackend: GitHubBackend = {
       .filter(isNonNull)
   },
 
-  async listWorkspaceOpenIssues(page: number, pageSize: number) {
-    const slug = await getGithubRepoSlug()
+  async listWorkspaceOpenIssues(root: string | null, page: number, pageSize: number) {
+    const slug = await getGithubRepoSlug(root)
     if (!slug) return { issues: [], hasMore: false }
     const [owner, repo] = slug.split('/')
     if (!owner || !repo || !isGhAvailable()) return { issues: [], hasMore: false }
@@ -414,7 +420,7 @@ export const ghCliBackend: GitHubBackend = {
     // the latter has no cursor, turning its output limit into a product-wide
     // ceiling. Slim each page inside gh so runCommand's 100 KiB stdout cap is
     // a per-request safety boundary only.
-    const { stdout, stderr, code } = await gh([
+    const { stdout, stderr, code } = await gh(root, [
       'api',
       '--cache',
       '20s',
@@ -460,9 +466,9 @@ export const ghCliBackend: GitHubBackend = {
     }
   },
 
-  async getIssue(ref: PrRef): Promise<GhIssueSummary | null> {
+  async getIssue(root: string | null, ref: PrRef): Promise<GhIssueSummary | null> {
     if (!isGhAvailable()) return null
-    const { stdout, stderr, code } = await gh([
+    const { stdout, stderr, code } = await gh(root, [
       'issue',
       'view',
       String(ref.number),
@@ -493,14 +499,18 @@ export const ghCliBackend: GitHubBackend = {
     return summary
   },
 
-  async searchWorkspaceIssues(query: string, limit: number): Promise<GhIssueSummary[]> {
-    const slug = await getGithubRepoSlug()
+  async searchWorkspaceIssues(
+    root: string | null,
+    query: string,
+    limit: number,
+  ): Promise<GhIssueSummary[]> {
+    const slug = await getGithubRepoSlug(root)
     if (!slug || !isGhAvailable()) return []
     const [owner, repo] = slug.split('/')
     if (!owner || !repo) return []
     const trimmed = query.trim()
     if (!trimmed) return []
-    const { stdout, stderr, code } = await gh([
+    const { stdout, stderr, code } = await gh(root, [
       'search',
       'issues',
       trimmed,
@@ -536,9 +546,9 @@ export const ghCliBackend: GitHubBackend = {
       .filter(isNonNull)
   },
 
-  async getPrDetails(ref: PrRef): Promise<GhPrDetails | null> {
+  async getPrDetails(root: string | null, ref: PrRef): Promise<GhPrDetails | null> {
     if (!isGhAvailable()) return null
-    const { stdout, stderr, code } = await gh([
+    const { stdout, stderr, code } = await gh(root, [
       'pr',
       'view',
       ...prRefToArgs(ref),
@@ -548,10 +558,10 @@ export const ghCliBackend: GitHubBackend = {
     if (code !== 0) throw new Error(formatGhError(stderr, code))
     const pr = safeJsonParse(stdout.trim(), decodeWithSchema(ghPrViewSchema))
     if (!pr || typeof pr.number !== 'number' || !pr.url) return null
-    const files = await listPrFiles(ref, pr)
+    const files = await listPrFiles(root, ref, pr)
     const details = toGhPrDetails(ref, { ...pr, number: pr.number, url: pr.url }, files)
     try {
-      const activity = await gh([
+      const activity = await gh(root, [
         'api',
         'graphql',
         '-f',
@@ -579,9 +589,9 @@ export const ghCliBackend: GitHubBackend = {
     return details
   },
 
-  async getPrFileDiff(ref: PrRef, path: string): Promise<GhPrFileDiff | null> {
+  async getPrFileDiff(root: string | null, ref: PrRef, path: string): Promise<GhPrFileDiff | null> {
     if (!isGhAvailable()) return null
-    const { stdout, stderr, code } = await gh([
+    const { stdout, stderr, code } = await gh(root, [
       'pr',
       'view',
       ...prRefToArgs(ref),
@@ -596,10 +606,10 @@ export const ghCliBackend: GitHubBackend = {
     let beforeContent = emptyGitHubFileContent()
     let afterContent = emptyGitHubFileContent()
     if (status !== 'added') {
-      beforeContent = await fetchRepoFileAtRef(ref, path, pr.baseRefOid)
+      beforeContent = await fetchRepoFileAtRef(root, ref, path, pr.baseRefOid)
     }
     if (status !== 'removed') {
-      afterContent = await fetchRepoFileAtRef(ref, path, pr.headRefOid)
+      afterContent = await fetchRepoFileAtRef(root, ref, path, pr.headRefOid)
     }
     return {
       path,
@@ -612,9 +622,9 @@ export const ghCliBackend: GitHubBackend = {
     }
   },
 
-  async getPrChecksState(ref: PrRef): Promise<GhPrChecksState> {
+  async getPrChecksState(root: string | null, ref: PrRef): Promise<GhPrChecksState> {
     if (!isGhAvailable()) return 'no_checks'
-    const { stdout, code } = await gh([
+    const { stdout, code } = await gh(root, [
       'pr',
       'view',
       ...prRefToArgs(ref),
@@ -626,10 +636,10 @@ export const ghCliBackend: GitHubBackend = {
     return deriveOverallState(rollupToCiChecks(pr?.statusCheckRollup))
   },
 
-  async rerunFailedRuns(ref: PrRef): Promise<PrActionResult> {
+  async rerunFailedRuns(root: string | null, ref: PrRef): Promise<PrActionResult> {
     // Only the head branch is needed here — a slim `gh pr view --json headRefName`
     // avoids the full details fetch (20 fields + a possible paginated files call).
-    const view = await gh([
+    const view = await gh(root, [
       'pr',
       'view',
       ...prRefToArgs(ref),
@@ -646,7 +656,7 @@ export const ghCliBackend: GitHubBackend = {
         message: `Could not resolve the head branch for #${String(ref.number)}.`,
       }
     }
-    const { stdout, stderr, code } = await gh([
+    const { stdout, stderr, code } = await gh(root, [
       'run',
       'list',
       '--repo',
@@ -673,7 +683,7 @@ export const ghCliBackend: GitHubBackend = {
     let reran = 0
     for (const run of failed) {
       if (typeof run.databaseId !== 'number') continue
-      const rerun = await gh([
+      const rerun = await gh(root, [
         'run',
         'rerun',
         String(run.databaseId),
@@ -694,7 +704,7 @@ export const ghCliBackend: GitHubBackend = {
     }
   },
 
-  async createPr(input: PrCreateInput): Promise<PrCreateResult> {
+  async createPr(root: string | null, input: PrCreateInput): Promise<PrCreateResult> {
     const args = [
       'pr',
       'create',
@@ -710,7 +720,7 @@ export const ghCliBackend: GitHubBackend = {
       input.body,
     ]
     if (input.draft) args.push('--draft')
-    const { stdout, stderr, code } = await gh(args)
+    const { stdout, stderr, code } = await gh(root, args)
     if (code !== 0) {
       // "a pull request for branch X already exists: <url>" — the desired end
       // state holds, and gh hands back the URL of the PR that satisfies it.
@@ -745,14 +755,14 @@ export const ghCliBackend: GitHubBackend = {
     }
   },
 
-  async approvePr(ref: PrRef): Promise<PrActionResult> {
-    const { stderr, code } = await gh(['pr', 'review', ...prRefToArgs(ref), '--approve'])
+  async approvePr(root: string | null, ref: PrRef): Promise<PrActionResult> {
+    const { stderr, code } = await gh(root, ['pr', 'review', ...prRefToArgs(ref), '--approve'])
     if (code !== 0) return { ok: false, backend: 'cli', message: formatGhError(stderr, code) }
     return { ok: true, backend: 'cli', message: `Approved PR #${String(ref.number)}.` }
   },
 
-  async markPrReady(ref: PrRef): Promise<PrActionResult> {
-    const view = await gh([
+  async markPrReady(root: string | null, ref: PrRef): Promise<PrActionResult> {
+    const view = await gh(root, [
       'pr',
       'view',
       ...prRefToArgs(ref),
@@ -771,7 +781,7 @@ export const ghCliBackend: GitHubBackend = {
         message: `PR #${String(ref.number)} is already ready for review.`,
       }
     }
-    const { stderr, code } = await gh(['pr', 'ready', ...prRefToArgs(ref)])
+    const { stderr, code } = await gh(root, ['pr', 'ready', ...prRefToArgs(ref)])
     if (code !== 0) return { ok: false, backend: 'cli', message: formatGhError(stderr, code) }
     return {
       ok: true,
@@ -780,8 +790,8 @@ export const ghCliBackend: GitHubBackend = {
     }
   },
 
-  async enableAutoMerge(ref: PrRef): Promise<PrActionResult> {
-    const strategy = chooseAutoMergeStrategy(await repoMergeConfig(ref))
+  async enableAutoMerge(root: string | null, ref: PrRef): Promise<PrActionResult> {
+    const strategy = chooseAutoMergeStrategy(await repoMergeConfig(root, ref))
     if (!strategy) {
       return {
         ok: false,
@@ -789,7 +799,7 @@ export const ghCliBackend: GitHubBackend = {
         message: 'No merge method is enabled on this repository.',
       }
     }
-    const { stderr, code } = await gh([
+    const { stderr, code } = await gh(root, [
       'pr',
       'merge',
       ...prRefToArgs(ref),

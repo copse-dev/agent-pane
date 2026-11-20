@@ -7,6 +7,7 @@ import type { AutomationPermissionOption, AutomationSchedule } from '@shared/typ
 import type { PluginContributionsSummary, PluginSummary } from '@shared/types/plugins.ts'
 import type { AppleProjectState } from '@shared/types/apple-development.ts'
 import type { McpServerStatus } from '@shared/types/mcp.ts'
+import type { ChatGptPlanStatus } from '@shared/types/chatgpt-plan.ts'
 import type { ToolPermissionCatalog, ToolPermissionPolicy } from '@shared/types/tool-permissions.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
@@ -423,6 +424,10 @@ function unsupported(): Promise<never> {
 
 export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = {}): ApiClient {
   const settings = new Map(Object.entries(scenario.settings))
+  let chatGptPlan: ChatGptPlanStatus = scenario.chatGptPlan ?? {
+    accounts: [],
+    activeClientId: null,
+  }
   const guardedYoloPhases = new Map<string, GuardedYoloPhase>(
     scenario.guardedYoloPhase && scenario.threads[0]
       ? [[scenario.threads[0].id, scenario.guardedYoloPhase]]
@@ -575,6 +580,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
   )
 
   const api: ApiClient = {
+    remote: { publish: async () => {} },
     clientActions: {
       claim: () => Promise.resolve(false),
       publish: async () => {},
@@ -582,9 +588,25 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onInvoke: () => () => {},
     },
     threadPrompts: {
+      // Demo scenarios never dispatch native delegated work.
+      canDispatch: () => resolved(false),
+      canSubmit: () => resolved(true),
       onPrompt: () => () => {},
       reply: async () => {},
-      revokeAccess: async () => {},
+      revokeAccess: (threadId, access) => {
+        const key =
+          access === 'read'
+            ? 'threadReadAccess'
+            : access === 'send'
+              ? 'threadSendAccess'
+              : 'threadSubthreadAccess'
+        const grants = settings.get(key)
+        settings.set(
+          key,
+          Array.isArray(grants) ? grants.filter((id: unknown) => id !== threadId) : [],
+        )
+        return resolvedVoid()
+      },
     },
     mobile: {
       getState: () =>
@@ -687,6 +709,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
             portBindingAllowed: false,
           },
         ),
+      revokeProjectPortBinding: () => resolved(undefined),
       enableGuardedYolo: (threadId) => updateGuardedYolo(threadId, 'armed'),
       disableGuardedYolo: (threadId) => updateGuardedYolo(threadId, 'off'),
       onGuardedYoloChanged: (listener) => {
@@ -1081,6 +1104,26 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       // exceptions are scenarios built around the hydration window itself,
       // which hold the read open (or fail it) so the mid-switch state stays
       // on screen.
+      searchRequests: (_projectId, query) =>
+        resolved({
+          matches: threads
+            .filter(
+              (thread) =>
+                thread.archivedAt == null &&
+                thread.messages.some(
+                  (message) =>
+                    message.role === 'user' &&
+                    (message.origin === undefined || message.editedByUser === true) &&
+                    message.content
+                      .normalize('NFC')
+                      .toLowerCase()
+                      .includes(query.normalize('NFC').toLowerCase()),
+                ),
+            )
+            .map((thread) => thread.id),
+          incomplete: false,
+        }),
+      cancelRequestSearch: () => resolvedVoid(),
       loadMessages: (_projectId: string, threadId: string) =>
         scenario.holdThreadHydration === true
           ? new Promise<never>(() => undefined)
@@ -1330,9 +1373,14 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       dismiss: resolvedVoid,
     },
     chatGptPlan: {
-      status: () => resolved(scenario.chatGptPlan ?? { accounts: [], activeClientId: null }),
+      status: () => resolved(chatGptPlan),
       signIn: unsupported,
-      refreshAccount: () => (scenario.chatGptPlan ? resolved(scenario.chatGptPlan) : unsupported()),
+      refreshAccount: () => {
+        const failure = scenario.chatGptPlanRefreshFailure
+        if (!failure) return scenario.chatGptPlan ? resolved(scenario.chatGptPlan) : unsupported()
+        chatGptPlan = failure.status
+        return Promise.reject(new Error(failure.error))
+      },
       cancelSignIn: resolvedVoid,
       selectAccount: unsupported,
       signOut: unsupported,
@@ -1537,6 +1585,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       setThread: () => resolved(null),
       findByThread: () => resolved(null),
     },
+    backgroundTasks: {
+      logs: () => resolved(null),
+    },
     supervisor: {
       list: () => resolved({ tasks: [] }),
       cancel: () => resolved({ task: null }),
@@ -1610,6 +1661,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       list: () => resolved(structuredClone(automationSchedules)),
       permissionOptions: () =>
         resolved(showAutomationPermissions ? structuredClone(DEMO_AUTOMATION_PERMISSIONS) : []),
+      reviewPreparation: unsupported,
       upsert: unsupported,
       remove: unsupported,
       runNow: unsupported,

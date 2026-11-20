@@ -2,7 +2,8 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore, sameItems } from '@shared/store/store.ts'
-import { switchThread } from '@shared/store/thread-helpers.ts'
+import { createThread, switchThread } from '@shared/store/thread-helpers.ts'
+import { __resetPersistenceForTest, attachAutosave } from '../controller/persistence.ts'
 import type { Thread } from '@shared/types'
 import type { ActiveDiff } from '@shared/types/state.ts'
 import type { GitStatusResult } from '@shared/types/git.ts'
@@ -160,7 +161,6 @@ describe('Changes pane owner transitions', () => {
         },
       ],
     })
-    store.emit('threads_changed')
     await settle()
 
     assert.deepEqual(
@@ -172,5 +172,108 @@ describe('Changes pane owner transitions', () => {
       viewerRoot.querySelectorAll<HTMLImageElement>('.git-image-diff-img')[1]?.src ?? '',
       /bmV3LWFmdGVy/,
     )
+  })
+
+  it('adopts the new owner and refreshes when setState alone switches projects', async () => {
+    const statusCalls: string[] = []
+    const base = makeApi({ value: imageDiff('unused') }, [])
+    const api: ApiClient = {
+      ...base,
+      git: {
+        ...base.git,
+        status: async (projectId, threadId): Promise<GitStatusResult> => {
+          statusCalls.push(`${projectId}/${threadId}`)
+          return { staged: [], unstaged: [{ path: `${projectId}.ts`, status: 'modified' }] }
+        },
+      },
+    }
+    const store = createStore({
+      activeProjectId: 'project-1',
+      workspaceRoot: '/work/one',
+      activeThreadId: 'a',
+      threads: [thread('a')],
+      filesPaneOpen: true,
+      rightPanelMode: 'changes',
+    })
+    const listRoot = document.createElement('div')
+    const viewerRoot = document.createElement('div')
+    document.body.append(listRoot, viewerRoot)
+    const paths = (): string[] =>
+      Array.from(listRoot.querySelectorAll('.git-change-path'), (node) => node.textContent)
+
+    mountGitChangesPane(listRoot, viewerRoot, store, api, null)
+    await settle()
+    assert.deepEqual(paths(), ['project-1.ts'])
+
+    store.setState({
+      activeProjectId: 'project-2',
+      workspaceRoot: '/work/two',
+      activeThreadId: 'b',
+      threads: [thread('b')],
+    })
+    await settle()
+
+    assert.equal(statusCalls.at(-1), 'project-2/b', 'the refresh reads the new owner’s checkout')
+    assert.deepEqual(paths(), ['project-2.ts'])
+  })
+})
+
+describe('Changes pane and thread persistence', () => {
+  it('reads a new thread’s checkout only after autosave has created it', async () => {
+    __resetPersistenceForTest()
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'a',
+      threads: [thread('a')],
+      filesPaneOpen: true,
+      rightPanelMode: 'changes',
+    })
+    const created = new Set<string>(['a'])
+    // Autosave creates threads one at a time; each create waits for release.
+    const pendingCreates: Array<() => void> = []
+    const statusCalls: string[] = []
+    const base = makeApi({ value: imageDiff('unused') }, [])
+    const api: ApiClient = {
+      ...base,
+      threads: {
+        ...base.threads,
+        create: (_projectId, created_) =>
+          new Promise<void>((resolve) => {
+            pendingCreates.push((): void => {
+              created.add(created_.id)
+              resolve()
+            })
+          }),
+      },
+      git: {
+        ...base.git,
+        // Main rejects a thread whose meta is not on disk yet.
+        status: async (_projectId, threadId): Promise<GitStatusResult> => {
+          statusCalls.push(threadId)
+          if (!created.has(threadId)) throw new Error('Thread is not persisted yet')
+          return { staged: [], unstaged: [{ path: 'new.ts', status: 'modified' }] }
+        },
+      },
+    }
+    const autosave = attachAutosave(store, api)
+    const listRoot = document.createElement('div')
+    const viewerRoot = document.createElement('div')
+    document.body.append(listRoot, viewerRoot)
+    mountGitChangesPane(listRoot, viewerRoot, store, api, null)
+    try {
+      await settle()
+      const id = createThread(store)
+      await settle()
+      assert.equal(statusCalls.includes(id), false, 'no read while the create is in flight')
+
+      while (pendingCreates.length > 0) {
+        for (const release of pendingCreates.splice(0)) release()
+        await settle()
+      }
+      assert.equal(statusCalls.at(-1), id)
+      assert.match(listRoot.textContent, /new\.ts/, 'the new thread’s changes list')
+    } finally {
+      autosave.detach()
+    }
   })
 })

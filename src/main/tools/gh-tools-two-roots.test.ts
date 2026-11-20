@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, it } from 'node:test'
 import { getGhPrViewText, getGhRunListText } from '../services/github/gh-service.ts'
+import { getCiStatus } from '../services/github/github-ci-service.ts'
 import {
   runWithThreadExecutionContext,
   type ThreadExecutionContext,
@@ -22,9 +23,14 @@ const gitOk = spawnSync('git', ['--version']).status === 0
  */
 const FAKE_GH = `#!/bin/sh
 case "$1" in auth) exit 0 ;; esac
+case "$*" in *"--workflow missing.yml"*) printf '[]\\n'; exit 0 ;; esac
 sleep 0.05
 n=$(cat .pr-number)
 if [ "$1 $2" = "pr view" ]; then
+  if [ -f .no-pr ]; then
+    printf 'no pull requests found for branch "main"\\n' >&2
+    exit 1
+  fi
   printf '{"number":%s,"title":"PR %s","url":"https://github.com/o/r/pull/%s","state":"OPEN"}\\n' "$n" "$n" "$n"
 else
   printf 'pr=%s args=%s\\n' "$n" "$*"
@@ -115,6 +121,49 @@ describe(
       assert.doesNotMatch(alpha, /no project\/repository context/)
       assert.match(beta, /pull\/22/)
       assert.match(beta, /no project\/repository context/)
+    })
+
+    it('pins runs to a commit without inferring the unrelated checked-out branch', async () => {
+      const selectors = { commit: 'a'.repeat(40), workflow: 'ci.yml', event: 'push' }
+      const output = await runWithThreadExecutionContext(turn('alpha', repos.alpha), async () =>
+        ghRunListTool.execute(
+          ghRunListTool.parameters.parse(selectors),
+          new AbortController().signal,
+        ),
+      )
+      assert.ok(typeof output === 'string')
+      assert.match(output, /^pr=11 args=run list /)
+      assert.match(
+        output,
+        new RegExp(`--commit ${selectors.commit} --workflow ci.yml --event push$`),
+      )
+      assert.doesNotMatch(output, /--branch/)
+      const explicit = await getGhRunListText(
+        { ...selectors, branch: 'beta', limit: 5 },
+        { root: repos.alpha, projectId: null },
+      )
+      assert.match(explicit, /--branch beta --commit/)
+      const missing = await getGhRunListText(
+        { workflow: 'missing.yml', limit: 5 },
+        { root: repos.alpha, projectId: null },
+      )
+      assert.match(missing, /no matching workflow runs; CI status is unknown/)
+    })
+
+    it('directs a branch without an open PR to workflow reads, preserving the CLI error', async () => {
+      const marker = join(repos.alpha, '.no-pr')
+      await writeFile(marker, '')
+      try {
+        await assert.rejects(getCiStatus(undefined, repos.alpha), (error: unknown) => {
+          assert.ok(error instanceof Error)
+          assert.match(error.message, /no pull requests found/)
+          assert.match(error.message, /gh_run_list/)
+          assert.match(error.message, /unknown/)
+          return true
+        })
+      } finally {
+        await rm(marker)
+      }
     })
 
     it('the gh_* tools use each running turn’s checkout, not the window workspace', async () => {

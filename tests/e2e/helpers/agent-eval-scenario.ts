@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { z } from 'zod'
+import { pathToFileURL } from 'node:url'
 import { removeE2eTree } from './remove-tree.ts'
 
 const promptAttachmentSchema = z.object({
@@ -29,6 +30,8 @@ const evalScenarioSchema = z.object({
       initializeGit: z.boolean().optional(),
       /** Copy the current checkout's origin into an isolated temp repo for GitHub-tool evals. */
       copyGitRemoteFromCurrent: z.boolean().optional(),
+      /** Copy bounded local history into the disposable project's main branch. */
+      copyGitRefFromCurrent: z.string().min(1).optional(),
       seedFiles: z.array(promptAttachmentSchema).optional(),
     })
     .optional(),
@@ -195,6 +198,17 @@ export function resolvePromptAttachment(attachment: PromptAttachment): {
 }
 
 export function seedEvalWorkspace(root: string, scenario: EvalScenario): void {
+  const sourceRef = scenario.workspace?.copyGitRefFromCurrent
+  if (
+    sourceRef !== undefined &&
+    (scenario.workspace?.type !== 'tempProject' ||
+      scenario.workspace.initializeGit !== true ||
+      scenario.workspace.copyGitRemoteFromCurrent !== true)
+  ) {
+    throw new Error(
+      'copyGitRefFromCurrent requires an initialized disposable project and copied origin',
+    )
+  }
   for (const seedFile of scenario.workspace?.seedFiles ?? []) {
     const file = resolvePromptAttachment(seedFile)
     const target = resolve(root, file.path)
@@ -225,5 +239,30 @@ export function seedEvalWorkspace(root: string, scenario: EvalScenario): void {
     }).trim()
     if (!origin) throw new Error('Current checkout has no origin remote for the eval workspace')
     execFileSync('git', ['remote', 'add', 'origin', origin], { cwd: root, stdio: 'ignore' })
+  }
+  if (sourceRef !== undefined) {
+    // A local file transport copies a bounded pack; it creates neither shared
+    // writable object hardlinks nor an alternates dependency outside the project.
+    execFileSync(
+      'git',
+      [
+        'fetch',
+        '--depth=50',
+        '--no-tags',
+        '--',
+        pathToFileURL(process.cwd()).href,
+        `${sourceRef}:refs/remotes/origin/main`,
+      ],
+      { cwd: root, stdio: 'pipe' },
+    )
+    execFileSync('git', ['checkout', '-B', 'main', 'refs/remotes/origin/main'], {
+      cwd: root,
+      stdio: 'pipe',
+    })
+    execFileSync('git', ['branch', '--set-upstream-to=origin/main', 'main'], {
+      cwd: root,
+      stdio: 'pipe',
+    })
+    execFileSync('git', ['remote', 'set-head', 'origin', 'main'], { cwd: root, stdio: 'pipe' })
   }
 }

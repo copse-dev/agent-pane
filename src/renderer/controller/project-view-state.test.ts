@@ -21,6 +21,7 @@ function stateWith(partial: Partial<AppState>): AppState {
     threads: [],
     backgroundThreads: [],
     activeThreadId: null,
+    pendingSubmissionThreadIds: [],
     panelTab: 'file',
     openFile: null,
     activeDiff: null,

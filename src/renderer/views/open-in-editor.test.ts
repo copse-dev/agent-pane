@@ -211,7 +211,6 @@ describe('open-in-editor titlebar control', () => {
     assert.equal(qsRequired(host, '.open-in-editor').hidden, true)
 
     store.setState({ workspaceRoot: '/repo' })
-    store.emit('workspace_changed')
     assert.equal(qs(host, '.open-in-editor')?.hidden, false)
   })
 })

@@ -6,6 +6,14 @@ import {
   formatGhPrList,
   formatGhPrView,
   ghEnv,
+  pickCurrentBranchPr,
+  collectRestPrList,
+  type GhPrListEntry,
+  isGhGraphQlRateLimited,
+  restCurrentBranchPrSelector,
+  restMergedSearchPath,
+  restPrMergeable,
+  restPrState,
 } from './gh-service.ts'
 
 describe('formatGhPrList', () => {
@@ -143,6 +151,189 @@ describe('formatGhPrView', () => {
     assert.match(text, /Diff: \+10 -2/)
     assert.match(text, /CI: SUCCESS/)
     assert.match(text, /Fixes the crash\./)
+  })
+})
+
+describe('isGhGraphQlRateLimited', () => {
+  it('matches the real gh error for an exhausted GraphQL quota', () => {
+    assert.equal(
+      isGhGraphQlRateLimited('GraphQL: API rate limit already exceeded for user ID 338988.'),
+      true,
+    )
+  })
+
+  it('does not match an unrelated gh failure', () => {
+    assert.equal(isGhGraphQlRateLimited('could not resolve to a PullRequest'), false)
+  })
+})
+
+describe('collectRestPrList', () => {
+  const open = (from: number, count: number): GhPrListEntry[] =>
+    Array.from({ length: count }, (_, i) => ({
+      number: from + i,
+      title: `PR ${String(from + i)}`,
+      url: `https://github.com/o/r/pull/${String(from + i)}`,
+      state: 'OPEN',
+    }))
+
+  it('reads one page of the requested size', async () => {
+    const list = await collectRestPrList(2, async (page, perPage) => {
+      assert.equal(page, 1)
+      assert.equal(perPage, 2)
+      return open(1, 2)
+    })
+    assert.equal(list?.length, 2)
+  })
+
+  it('pages past 100 for a larger limit', async () => {
+    const read: number[] = []
+    const list = await collectRestPrList(150, async (page, perPage) => {
+      read.push(page)
+      assert.equal(perPage, 100)
+      return open((page - 1) * 100 + 1, 100)
+    })
+    assert.equal(list?.length, 150)
+    assert.deepEqual(read, [1, 2])
+  })
+
+  it('stops at a short page', async () => {
+    const read: number[] = []
+    const list = await collectRestPrList(150, async (page) => {
+      read.push(page)
+      return open(1, 40)
+    })
+    assert.equal(list?.length, 40)
+    assert.deepEqual(read, [1])
+  })
+
+  it('fails the whole list when any page fails', async () => {
+    const list = await collectRestPrList(150, async (page) => (page === 1 ? open(1, 100) : null))
+    assert.equal(list, null)
+  })
+})
+
+describe('restMergedSearchPath', () => {
+  const query = (path: string): URLSearchParams => {
+    assert.ok(path.startsWith('search/issues?'))
+    return new URLSearchParams(path.slice('search/issues?'.length))
+  }
+
+  it('asks search for merged PRs only, newest first, one page at a time', () => {
+    const params = query(restMergedSearchPath({ owner: 'o', repo: 'r' }, undefined, 3, 100))
+    assert.equal(params.get('q'), 'repo:o/r is:pr is:merged')
+    assert.equal(params.get('sort'), 'created')
+    assert.equal(params.get('order'), 'desc')
+    assert.equal(params.get('per_page'), '100')
+    assert.equal(params.get('page'), '3')
+  })
+
+  it('filters by the bare head branch name', () => {
+    const repo = { owner: 'o', repo: 'r' }
+    assert.equal(
+      query(restMergedSearchPath(repo, 'fix/parser', 1, 30)).get('q'),
+      'repo:o/r is:pr is:merged head:fix/parser',
+    )
+    assert.equal(
+      query(restMergedSearchPath(repo, 'fork:fix/parser', 1, 30)).get('q'),
+      'repo:o/r is:pr is:merged head:fix/parser',
+    )
+  })
+})
+
+describe('restCurrentBranchPrSelector', () => {
+  it('looks a branch pushed to a fork up under the fork owner and remote branch', () => {
+    assert.deepEqual(
+      restCurrentBranchPrSelector({
+        branch: 'local-fix',
+        baseOwner: 'upstream',
+        trackingOwner: 'contributor',
+        mergeRef: 'refs/heads/fix/parser',
+      }),
+      { head: 'contributor:fix/parser' },
+    )
+  })
+
+  it('takes the PR number from a gh pr checkout merge ref', () => {
+    assert.deepEqual(
+      restCurrentBranchPrSelector({
+        branch: 'fix/parser',
+        baseOwner: 'upstream',
+        trackingOwner: 'upstream',
+        mergeRef: 'refs/pull/4107/head',
+      }),
+      { number: 4107 },
+    )
+  })
+
+  it('assumes the base repository when the branch tracks no remote', () => {
+    assert.deepEqual(
+      restCurrentBranchPrSelector({
+        branch: 'fix/parser',
+        baseOwner: 'upstream',
+        trackingOwner: null,
+        mergeRef: null,
+      }),
+      { head: 'upstream:fix/parser' },
+    )
+  })
+
+  it('keeps the local branch name when the merge ref is not a branch', () => {
+    assert.deepEqual(
+      restCurrentBranchPrSelector({
+        branch: 'fix/parser',
+        baseOwner: 'upstream',
+        trackingOwner: 'contributor',
+        mergeRef: null,
+      }),
+      { head: 'contributor:fix/parser' },
+    )
+  })
+})
+
+describe('pickCurrentBranchPr', () => {
+  it('prefers the open PR over a newer closed one on the same branch', () => {
+    assert.equal(
+      pickCurrentBranchPr([
+        { number: 12, state: 'closed' },
+        { number: 7, state: 'open' },
+      ]),
+      7,
+    )
+  })
+
+  it('falls back to the newest PR when none is open, and to null for none', () => {
+    assert.equal(
+      pickCurrentBranchPr([
+        { number: 12, state: 'closed' },
+        { number: 7, state: 'closed' },
+      ]),
+      12,
+    )
+    assert.equal(pickCurrentBranchPr([]), null)
+  })
+})
+
+describe('restPrState', () => {
+  it('reports MERGED when merged_at is set, regardless of state', () => {
+    assert.equal(restPrState('closed', '2026-01-01T00:00:00Z'), 'MERGED')
+  })
+
+  it('uppercases a plain REST state', () => {
+    assert.equal(restPrState('open', undefined), 'OPEN')
+    assert.equal(restPrState('closed', undefined), 'CLOSED')
+  })
+
+  it('falls back to UNKNOWN when state is missing', () => {
+    assert.equal(restPrState(undefined, undefined), 'UNKNOWN')
+  })
+})
+
+describe('restPrMergeable', () => {
+  it('maps the REST tri-state boolean to the GraphQL-shaped enum text', () => {
+    assert.equal(restPrMergeable(true), 'MERGEABLE')
+    assert.equal(restPrMergeable(false), 'CONFLICTING')
+    assert.equal(restPrMergeable(null), 'UNKNOWN')
+    assert.equal(restPrMergeable(undefined), 'UNKNOWN')
   })
 })
 

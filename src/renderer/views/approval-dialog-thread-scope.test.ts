@@ -155,7 +155,6 @@ describe('approval dialog thread scoping', () => {
 
     // User switches to the waiting thread.
     store.setState({ activeThreadId: 'other' })
-    store.emit('threads_changed')
 
     assert.equal(spy.showCalls, 1)
     assert.equal(dialog.open, true)
@@ -190,7 +189,6 @@ describe('approval dialog thread scoping', () => {
     // Switching thread — or project, which swaps activeThreadId the same way —
     // must not leave this prompt hanging over a thread that never asked it.
     store.setState({ activeThreadId: 'other' })
-    store.emit('threads_changed')
 
     assert.equal(dialog.open, false)
     assert.deepEqual(responses, [])
@@ -200,11 +198,9 @@ describe('approval dialog thread scoping', () => {
   it('brings a withdrawn prompt back when its thread is focused again', () => {
     emit({ id: 'a', threadId: 'focused' })
     store.setState({ activeThreadId: 'other' })
-    store.emit('threads_changed')
     assert.equal(dialog.open, false)
 
     store.setState({ activeThreadId: 'focused' })
-    store.emit('threads_changed')
 
     assert.equal(dialog.open, true)
     assert.equal(spy.showCalls, 2)
@@ -221,7 +217,6 @@ describe('approval dialog thread scoping', () => {
     assert.equal(dialog.open, true)
 
     store.setState({ activeThreadId: 'other' })
-    store.emit('threads_changed')
 
     assert.equal(dialog.open, true)
     dialog.querySelector<HTMLButtonElement>('.approval-approve')?.click()
@@ -244,7 +239,6 @@ describe('approval dialog thread scoping', () => {
     assert.equal(dialog.querySelector('.approval-details-toggle'), null)
 
     store.setState({ activeThreadId: 'other' })
-    store.emit('threads_changed')
 
     assert.equal(dialog.open, true)
     assert.equal(dialog.querySelector<HTMLElement>('.approval-body')?.hidden, true)
@@ -346,7 +340,6 @@ describe('approval dialog thread scoping', () => {
       assert.equal(isThreadAwaitingAttention('side'), false)
 
       store.setState({ activeThreadId: 'focused' })
-      store.emit('threads_changed')
       assert.equal(dialog.open, true)
       assert.equal(isThreadAwaitingAttention('focused'), false)
       dialog.querySelector<HTMLButtonElement>('.approval-approve')?.click()
@@ -357,6 +350,98 @@ describe('approval dialog thread scoping', () => {
       withSideChat()
       emit({ id: 'a', threadId: 'focused' })
       assert.equal(qsRequired(dialog, '.approval-origin').hidden, true)
+    })
+  })
+
+  describe('threads started from a proposal', () => {
+    // Accepting a `propose_thread` card starts the new thread in the background
+    // (#4112): the user stays on the thread that offered it. That thread's
+    // approvals must reach the user there, or an ACP agent's bridged tool call
+    // waits unseen behind a sidebar bell until its MCP client gives up (300 s).
+    function withProposedThread(): void {
+      const thread = (
+        id: string,
+        proposedBy?: { threadId: string; proposalId: string },
+      ): Thread => ({
+        id,
+        title: id === 'proposed' ? 'Diagnose SSH signing' : id,
+        status: 'running',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: 1,
+        updatedAt: 1,
+        ...(proposedBy ? { proposedBy } : {}),
+      })
+      store.setState({
+        threads: [
+          thread('proposed', { threadId: 'focused', proposalId: 'call-1' }),
+          thread('focused'),
+          thread('other'),
+        ],
+      })
+    }
+
+    it('surfaces over the thread that proposed it and names the asking thread', () => {
+      withProposedThread()
+
+      emit({ id: 'a', threadId: 'proposed' })
+
+      assert.equal(dialog.open, true)
+      const origin = qsRequired(dialog, '.approval-origin')
+      assert.equal(origin.hidden, false)
+      assert.equal(origin.textContent, 'From the thread “Diagnose SSH signing”')
+      assert.equal(isThreadAwaitingAttention('proposed'), false)
+      dialog.querySelector<HTMLButtonElement>('.approval-approve')?.click()
+      assert.deepEqual(responses, [{ id: 'a', approved: true }])
+    })
+
+    it('flags its own row, not the proposer’s, while neither thread is focused', () => {
+      withProposedThread()
+      store.setState({ activeThreadId: 'other' })
+
+      emit({ id: 'a', threadId: 'proposed' })
+
+      assert.equal(dialog.open, false)
+      assert.equal(isThreadAwaitingAttention('proposed'), true)
+      assert.equal(isThreadAwaitingAttention('focused'), false)
+
+      store.setState({ activeThreadId: 'focused' })
+      assert.equal(dialog.open, true)
+      assert.equal(isThreadAwaitingAttention('proposed'), false)
+    })
+
+    it('shows without an origin line once the user opens the proposed thread itself', () => {
+      withProposedThread()
+      store.setState({ activeThreadId: 'proposed' })
+
+      emit({ id: 'a', threadId: 'proposed' })
+
+      assert.equal(dialog.open, true)
+      assert.equal(qsRequired(dialog, '.approval-origin').hidden, true)
+    })
+
+    it('withdraws to its own row when the user leaves the proposer for another thread', () => {
+      withProposedThread()
+      emit({ id: 'a', threadId: 'proposed' })
+      assert.equal(dialog.open, true)
+
+      store.setState({ activeThreadId: 'other' })
+
+      assert.equal(dialog.open, false)
+      assert.deepEqual(responses, [])
+      assert.equal(isThreadAwaitingAttention('proposed'), true)
+    })
+
+    it('does not surface the proposer’s own request over the thread it started', () => {
+      // The link runs one way: the proposed thread answers to the proposer the
+      // user is reading, never the reverse.
+      withProposedThread()
+      store.setState({ activeThreadId: 'proposed' })
+
+      emit({ id: 'a', threadId: 'focused' })
+
+      assert.equal(dialog.open, false)
+      assert.equal(isThreadAwaitingAttention('focused'), true)
     })
   })
 })

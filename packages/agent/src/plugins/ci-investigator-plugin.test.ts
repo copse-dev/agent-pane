@@ -4,8 +4,8 @@
 //
 // 1. **The plugin is registered** in `FIRST_PARTY_PLUGINS` with id
 //    `copse.ci-investigator` and trust `first-party`, and its manifest +
-//    contributions declare all three native tools (`gh_run_list`,
-//    `gh_run_view`, `investigate_ci`).
+//    contributions declare only the investigator entry point. Workflow listing
+//    and log reads belong to core GitHub tooling.
 // 2. **No double-registration.** Historically the tools were gated by the
 //    top-level `ciInvestigatorEnabled` boolean, which is deleted in the same
 //    change (`registry-bootstrap.ts` no longer imports it; the
@@ -14,7 +14,7 @@
 //    each tool name appears exactly once in `activeToolNames()` (i.e. only the
 //    plugin contributes it), and that no async/blocking hooks are contributed
 //    under this plugin id.
-// 3. **Atomicity of disable.** One flag flip drops all three tools from
+// 3. **Atomicity of disable.** One flag flip drops the investigator from
 //    `activeToolNames()`; the host tool-registry sync (`syncCiInvestigatorTools`
 //    in `registry-bootstrap.ts`) reads the same plugin registry and unregisters
 //    the concrete tool objects on toggle (ANDing `gh` availability into the
@@ -40,7 +40,8 @@ describe('copse.ci-investigator plugin', () => {
     )
   })
 
-  it('declares the three CI tools, namespaced storage, and no hook contributions', () => {
+  it('declares only the investigator, namespaced storage, and no hook contributions', () => {
+    assert.deepEqual(TOOL_NAMES, ['investigate_ci'])
     assert.deepEqual(ciInvestigatorPlugin.manifest.tools?.native, TOOL_NAMES)
     assert.deepEqual(ciInvestigatorPlugin.manifest.storage, {
       namespace: CI_INVESTIGATOR_PLUGIN_ID,

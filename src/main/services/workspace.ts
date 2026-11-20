@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync, realpathSync } from 'node:fs'
 import { readFile, readdir, stat } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { isPathWithin, relativeWithin } from '@copse/std/path-containment.ts'
 import { copseWorkspaceDir } from './storage/copse-paths.ts'
 import { ensureChatStoreRead } from './security/thread-access.ts'
 import { storageGet, storageSet } from './storage/storage.ts'
@@ -288,8 +289,7 @@ export async function registerInternalWorkspaceRoot(
 ): Promise<InternalWorkspaceRootRegistration> {
   const canonicalCheckoutRoot = await canonicalWorkspaceRoot(checkoutRoot, localWorkspaceFs)
   const canonicalExecutionRoot = await canonicalWorkspaceRoot(executionRoot, localWorkspaceFs)
-  const executionRelative = relative(canonicalCheckoutRoot, canonicalExecutionRoot)
-  if (executionRelative === '..' || executionRelative.startsWith(`..${sep}`)) {
+  if (relativeWithin(canonicalCheckoutRoot, canonicalExecutionRoot) === null) {
     throw new Error('Internal execution root is outside its linked Git worktree')
   }
   const dotGitPath = join(canonicalCheckoutRoot, '.git')
@@ -379,6 +379,15 @@ export function clearAllowedWorkspaceRootsForTest(): void {
   allowedWorkspaceRootsReady = Promise.resolve()
 }
 
+/**
+ * The root a headless run scoped with {@link runWithWorkspaceRoot}, or null
+ * outside one. Never the process-global workspace, so a caller can tell "this
+ * run names a root" apart from "some window has a project open" (#3958).
+ */
+export function getExplicitWorkspaceRoot(): string | null {
+  return explicitWorkspace.getStore()?.root ?? null
+}
+
 export function getWorkspaceRoot(): string | null {
   return explicitWorkspace.getStore()?.root ?? processWorkspaceRoot()
 }
@@ -431,6 +440,19 @@ export function getProjectById(
       typeof candidate['path'] === 'string',
   )
   return project ?? null
+}
+
+/** A local filesystem root for this project only; remote paths are not local roots. */
+export function getLocalProjectRoot(projectId: string): string | null {
+  const projects = storageGet(PROJECTS_KEY)
+  if (!Array.isArray(projects)) return null
+  for (const project of projects) {
+    if (!isRecord(project) || project['id'] !== projectId) continue
+    if (typeof project['sshHost'] === 'string') return null
+    const path = project['path']
+    return typeof path === 'string' && path.length > 0 ? path : null
+  }
+  return null
 }
 
 /** Paths of persisted projects backed by a local checkout (no `sshHost`). */
@@ -512,8 +534,7 @@ export function setWorkspaceRootForTest(root: string | null): () => void {
 }
 
 function isPathInsideRoot(resolved: string, absRoot: string): boolean {
-  const rel = relative(absRoot, resolved)
-  return rel === '' || (!rel.startsWith('..') && !rel.split(sep).includes('..'))
+  return isPathWithin(absRoot, resolved)
 }
 
 async function resolveThroughExistingPrefix(
@@ -788,8 +809,8 @@ export async function assertWriteTargetWithinRoot(
   backend: PathBackend = getActivePathBackend(),
 ): Promise<void> {
   const absRoot = await backend.realpath(resolve(root))
-  const rel = relative(absRoot, absPath)
-  if (rel === '' || rel.startsWith('..') || rel.split(sep).includes('..')) {
+  const rel = relativeWithin(absRoot, absPath)
+  if (rel === null || rel === '') {
     throw new Error(`Path outside workspace: ${absPath}.`)
   }
   let current = absRoot

@@ -10,7 +10,7 @@ import {
   signalColours,
 } from './helpers/badge-style.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 
 // Settings → Plugins list — P3 of docs/plans/hooks-and-feature-packs.md.
@@ -67,7 +67,7 @@ describe('settings plugins (about:addons)', function () {
         runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
       }),
     )
-    seedEmptyProject(process.cwd(), 'e2e-settings-plugins', {
+    seedEmptyProject(seedStableWorkspace(), 'e2e-settings-plugins', {
       pluginSources: [localPluginRoot],
       model: 'plugin-model:personal.reference-tools:reference-judge',
     })
@@ -155,6 +155,12 @@ describe('settings plugins (about:addons)', function () {
     assert.equal(await ciInvestigatorRow.$('.plugin-name').getText(), 'CI investigator')
     await expect(ciInvestigatorRow.$('.plugin-badge-first-party')).toBeDisplayed()
     assert.equal(await ciInvestigatorRow.getAttribute('data-enabled'), 'false')
+    await expect(ciInvestigatorRow.$('.plugin-chip')).toHaveText('Tools × 1')
+    await ciInvestigatorRow.scrollIntoView()
+    await saveElementScreenshot(
+      '.plugin-row[data-plugin-id="copse.ci-investigator"]',
+      'settings-ci-investigator-plugin.png',
+    )
 
     // PII redaction plugin: listed, default-OFF (ships disabled).
     const pluginRow = plugins.$('.plugin-row[data-plugin-id="copse.pii-redaction"]')
@@ -178,9 +184,8 @@ describe('settings plugins (about:addons)', function () {
     // fresh-profile opt-in. Loopback binding still prompts separately at use time.
     const backgroundTasksRow = plugins.$('.plugin-row[data-plugin-id="copse.background-tasks"]')
     await expect(backgroundTasksRow).toBeDisplayed()
-    await expect(backgroundTasksRow.$('.plugin-badge-stable')).toHaveText('Stable', {
-      ignoreCase: true,
-    })
+    // Stable is the default, so it carries no badge (docs/ui-taste.md).
+    await expect(backgroundTasksRow.$('.plugin-badge-stable')).not.toExist()
     assert.equal(await backgroundTasksRow.getAttribute('data-enabled'), 'true')
     // The description is rendered as markdown; the `<port>` placeholder sits in
     // inline code so the sanitizer cannot eat it and the rest of the copy.
@@ -202,9 +207,7 @@ describe('settings plugins (about:addons)', function () {
     const siteBuildingRow = plugins.$('.plugin-row[data-plugin-id="copse.site-building"]')
     await expect(siteBuildingRow).toBeDisplayed()
     assert.equal(await siteBuildingRow.$('.plugin-name').getText(), 'Site building')
-    await expect(siteBuildingRow.$('.plugin-badge-stable')).toHaveText('Stable', {
-      ignoreCase: true,
-    })
+    await expect(siteBuildingRow.$('.plugin-badge-stable')).not.toExist()
     assert.equal(await siteBuildingRow.getAttribute('data-enabled'), 'true')
     assert.match(await siteBuildingRow.getText(), /design, implementation, accessibility/i)
     await siteBuildingRow.scrollIntoView()
@@ -218,7 +221,7 @@ describe('settings plugins (about:addons)', function () {
     // existing seeded profiles migrate to the historical combined behavior.
     const agentsMdRow = plugins.$('.plugin-row[data-plugin-id="copse.agents-md"]')
     await expect(agentsMdRow).toBeDisplayed()
-    await expect(agentsMdRow.$('.plugin-badge-stable')).toHaveText('Stable', { ignoreCase: true })
+    await expect(agentsMdRow.$('.plugin-badge-stable')).not.toExist()
     assert.equal(await agentsMdRow.getAttribute('data-enabled'), 'true')
     assert.match(await agentsMdRow.getText(), /Instruction sources × 1/)
     // A Markdown instruction-file slug reads as the file it names, and the
@@ -326,31 +329,25 @@ describe('settings plugins (about:addons)', function () {
     await expect(pluginToolRow).toBeDisplayed()
     await expect(pluginToolRow.$('.plugin-badge-user')).toBeDisplayed()
 
-    // Badges are labels (docs/ui-taste.md): Stable is the quiet default, the
-    // publisher eyebrow stays in text colours, and only Experimental takes the
-    // accent. Both stability badges share the one badge recipe.
+    // Badges are labels (docs/ui-taste.md): Stable is the default and goes
+    // unlabelled, the publisher in the name line stays in text colours, and only
+    // Experimental takes the accent, in the one badge recipe.
     const signals = await signalColours()
-    const [stable] = await readBadgeStyles(
-      '.plugin-row[data-plugin-id="copse.agents-md"] .plugin-badge-stable',
-    )
     const [experimental] = await readBadgeStyles(
       '.plugin-row[data-plugin-id="copse.artifact-checkpoint"] .plugin-badge-experimental',
     )
-    const [userEyebrow] = await readBadgeStyles(
+    const [userPublisher] = await readBadgeStyles(
       '.plugin-row[data-plugin-id="personal.reference-tools"] .plugin-badge-user',
     )
-    assert.ok(stable, 'stable badge rendered')
     assert.ok(experimental, 'experimental badge rendered')
-    assert.ok(userEyebrow, 'user publisher eyebrow rendered')
-    assertNeutralBadge(stable, signals)
-    assertBadgeRecipe(stable)
+    assert.ok(userPublisher, 'user publisher rendered')
     assertBadgeRecipe(experimental)
     assert.equal(
       experimental.color,
       signals.find((signal) => signal.token === '--accent')?.value,
       'experimental is the documented accent exception',
     )
-    assertNeutralBadge(userEyebrow, signals)
+    assertNeutralBadge(userPublisher, signals)
     assert.equal(await pluginToolRow.getAttribute('data-enabled'), 'false')
     assert.equal(await pluginToolRow.$('input.plugin-toggle-input').isEnabled(), true)
     const localText = await pluginToolRow.getText()
@@ -396,9 +393,9 @@ describe('settings plugins (about:addons)', function () {
     await expect(reviewCyclesInput).toBeDisplayed()
     assert.equal(await reviewCyclesInput.getValue(), '2')
 
-    // Trust tier badge is shown. Stability reads as a sentence-case pill.
-    await expect(todosRow.$('.plugin-badge-first-party')).toBeDisplayed()
-    await expect(todosRow.$('.plugin-badge-stable')).toHaveText('Stable', { ignoreCase: true })
+    // The publisher is shown in the name line; Stable, the default, is not badged.
+    await expect(todosRow.$('.plugin-row-name-line .plugin-badge-first-party')).toBeDisplayed()
+    await expect(todosRow.$('.plugin-badge-stable')).not.toExist()
 
     // The toggle is a checkbox and starts enabled.
     const toggle = todosRow.$('input.plugin-toggle-input')

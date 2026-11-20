@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import type { Stats } from 'node:fs'
 import { lstat, mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -9,6 +9,7 @@ import { parseSshPublicKey } from '../../project-sandbox/git-commit-signing.ts'
 import { requestApproval } from '../approval.ts'
 import { runCommand } from '../exec/command-runner.ts'
 import { resolveToolPermission } from './tool-permissions.ts'
+import { sshCommitSignature } from './git-signing-result.ts'
 
 const SIGNER = '/usr/bin/ssh-keygen'
 const MAX_PRIVATE_KEY_BYTES = 64 * 1024
@@ -57,17 +58,12 @@ export async function leaseGitPrivateSigningKey(
   const before = await lstat(sourcePath)
   if (!before.isFile() || before.size <= 0 || before.size > MAX_PRIVATE_KEY_BYTES)
     throw new Error('The configured SSH signing key is not a bounded regular file.')
-  const executableHash = createHash('sha256')
-    .update(await readFile(SIGNER))
-    .digest('hex')
+  const executableHash = sha256Hex(await readFile(SIGNER))
   const assertIdentity = async (): Promise<void> => {
     if (
       (await realpath(source)) !== sourcePath ||
       !sameFile(before, await lstat(sourcePath)) ||
-      executableHash !==
-        createHash('sha256')
-          .update(await readFile(SIGNER))
-          .digest('hex')
+      executableHash !== sha256Hex(await readFile(SIGNER))
     )
       throw new Error(
         'Git signing key changed during approval or signing; request authorization again.',
@@ -139,13 +135,7 @@ export async function leaseGitPrivateSigningKey(
           stdoutMaxBytes: 16384,
         })
         await assertIdentity()
-        if (
-          result.code !== 0 ||
-          result.stdoutTruncated ||
-          !result.stdout.startsWith('-----BEGIN SSH SIGNATURE-----')
-        )
-          throw new Error('SSH commit signing failed. No unsigned retry was attempted.')
-        return result.stdout
+        return sshCommitSignature(result)
       },
     }
   } catch (error) {

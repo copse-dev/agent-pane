@@ -31,7 +31,13 @@ function tenseFromStatus(status: ToolCall['status']): ToolLabelTense {
 
 const TOOL_DISPLAY_NAMES: Record<string, DualLabel | string> = {
   explore: { running: 'Exploring files', done: 'Explored files' },
+  read_explored: { running: 'Quoting explored lines', done: 'Quoted explored lines' },
   read_file: { running: 'Reading file', done: 'Read file' },
+  search_project_context: {
+    running: 'Searching project history',
+    done: 'Searched project history',
+  },
+  read_project_context: { running: 'Reading project history', done: 'Read project history' },
   list_dir: { running: 'Listing directory', done: 'Listed directory' },
   search_code: { running: 'Searching code', done: 'Searched code' },
   search_codebase: { running: 'Searching codebase', done: 'Searched codebase' },
@@ -105,7 +111,14 @@ interface ToolGroupDef {
 
 const TOOL_GROUPS: Record<string, ToolGroupDef> = {
   reading: {
-    tools: ['explore', 'read_file', 'list_dir', 'video_frames', 'preflight_worktree'],
+    tools: [
+      'explore',
+      'read_explored',
+      'read_file',
+      'list_dir',
+      'video_frames',
+      'preflight_worktree',
+    ],
     label: { running: 'Reading files', done: 'Read files' },
   },
   searching: {
@@ -229,7 +242,7 @@ export function getToolDisplayName(name: string, tense: ToolLabelTense = 'done')
   const mcp = parseMcp(name)
   // Codex reports connection failures as synthetic MCP startup calls. Their
   // server is the useful identity; stripping it makes every failure "Startup".
-  if (mcp?.tool === 'startup') return `${mcp.server} startup`
+  if (mcp?.tool === 'startup') return `${humanizeIdentifier(mcp.server)} startup`
   if (mcp) return humanizeIdentifier(mcp.tool)
   // Strip known MCP/ACP server prefixes (dot or underscore notation) so the
   // user sees just the tool name, not the internal server alias.
@@ -308,12 +321,21 @@ export function shellCommandsFromToolCalls(toolCalls: ToolCall[]): string[] {
   return commands
 }
 
+/** `Deferred <path>`: a held-back edit names what it would have changed, never `Edited`. */
+function deferredCallLabel(tc: ToolCall): string {
+  const patchFiles = copseToolCallName(tc) === 'apply_patch' ? getApplyPatchFiles(tc) : []
+  if (patchFiles.length > 1) return `Deferred ${String(patchFiles.length)} files`
+  const path = getToolEditPath(tc)
+  return path ? `Deferred ${path}` : 'Deferred edit'
+}
+
 /**
  * Human label for a tool card — file edits show `Edited <path>` (or progressive
  * while running) and shell commands surface the actual (cd-stripped) command
  * instead of a generic name, so the user can see what ran without expanding.
  */
 export function getToolCallLabel(tc: ToolCall): string {
+  if (tc.deferred === true) return deferredCallLabel(tc)
   const tense = tenseFromStatus(tc.status)
   // ACP can repeat the raw MCP identifier as its title. That is an identity,
   // not a human description, and must follow the same formatting as `name`.
@@ -324,6 +346,9 @@ export function getToolCallLabel(tc: ToolCall): string {
       : undefined
   const name = copseToolCallName({ ...tc, name: mcpTitle ?? tc.name })
   const title = tc.title && !mcpTitle && !/^MCP\s*:\s*tool$/i.test(tc.title) ? tc.title : undefined
+  if (name === 'run_background' && tc.commandPhase?.state === 'not_started') {
+    return 'Did not start background task'
+  }
   if (name === 'read_skill') {
     const skillName = stringArg(tc.args, 'name')
     if (skillName) {
@@ -415,7 +440,7 @@ export function getToolGroupKey(name: string, kind?: string): string | null {
 
 export function getToolGroupLabel(key: string, tense: ToolLabelTense = 'done'): string {
   if (key.startsWith(MCP_GROUP_PREFIX)) {
-    return key.slice(MCP_GROUP_PREFIX.length)
+    return humanizeIdentifier(key.slice(MCP_GROUP_PREFIX.length))
   }
   const group = TOOL_GROUPS[key]
   if (!group) return key
@@ -438,12 +463,17 @@ function bucketKey(groupKey: string, isError: boolean): string {
   return isError ? `${groupKey}${ERROR_BUCKET_SUFFIX}` : groupKey
 }
 
+/** A deferred call did none of its group's work, so it never joins or counts toward one. */
+function displayGroupKey(tc: ToolCall): string | null {
+  return tc.deferred === true ? null : getToolGroupKey(tc.programmaticName ?? tc.name, tc.kind)
+}
+
 function buildGroupedDisplayItems(toolCalls: ToolCall[]): ToolCallDisplayItem[] {
   if (toolCalls.length === 0) return []
 
   const groupMembers = new Map<string, ToolCall[]>()
   for (const tc of toolCalls) {
-    const groupKey = getToolGroupKey(tc.programmaticName ?? tc.name, tc.kind)
+    const groupKey = displayGroupKey(tc)
     if (!groupKey) continue
     const key = bucketKey(groupKey, tc.status === 'error')
     const members = groupMembers.get(key) ?? []
@@ -455,7 +485,7 @@ function buildGroupedDisplayItems(toolCalls: ToolCall[]): ToolCallDisplayItem[] 
   const emittedGroups = new Set<string>()
 
   for (const tc of toolCalls) {
-    const groupKey = getToolGroupKey(tc.programmaticName ?? tc.name, tc.kind)
+    const groupKey = displayGroupKey(tc)
     if (!groupKey) {
       result.push({ type: 'individual', toolCall: tc, label: getToolCallLabel(tc) })
       continue
