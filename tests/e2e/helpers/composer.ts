@@ -64,7 +64,17 @@ export async function acceptProtectedPrompt(
   )
   if (!protectedHandle) throw new Error('Protected prompt window handle is missing')
   await browser.switchToWindow(protectedHandle)
-  await $('#protected-prompt-send').click()
+  await browser.execute(() => {
+    const send = document.querySelector<HTMLButtonElement>('#protected-prompt-send')
+    if (!send) throw new Error('Protected prompt send button is missing')
+    // Electron destroys this modal as soon as Main accepts the submission.
+    // Schedule the real form action so ChromeDriver can leave the child first;
+    // destroying its active window can terminate the entire driver session.
+    window.setTimeout(() => {
+      send.click()
+    }, 250)
+  })
+  await browser.switchToWindow(mainHandle)
   await browser.waitUntil(
     async () => !(await browser.getWindowHandles()).includes(protectedHandle),
     {
@@ -72,7 +82,6 @@ export async function acceptProtectedPrompt(
       timeoutMsg: 'Protected prompt window did not close after sending',
     },
   )
-  await browser.switchToWindow(mainHandle)
 }
 
 /** Submit a fixture prompt, accepting the real dirty-checkout warning if needed. */
