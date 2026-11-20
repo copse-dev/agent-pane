@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 import type {
   SimulatorDesktopFrame,
   SimulatorDesktopInput,
@@ -86,8 +87,8 @@ export function createSimulatorDesktopView(
   const point = (event: PointerEvent): { x: number; y: number } => {
     const bounds = canvas.getBoundingClientRect()
     return {
-      x: Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width)),
-      y: Math.min(1, Math.max(0, (event.clientY - bounds.top) / bounds.height)),
+      x: clamp((event.clientX - bounds.left) / bounds.width, 0, 1),
+      y: clamp((event.clientY - bounds.top) / bounds.height, 0, 1),
     }
   }
 

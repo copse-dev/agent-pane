@@ -1,3 +1,4 @@
+import { collapseWhitespace, ellipsize } from '@copse/std/one-line-text.ts'
 import {
   DEFAULT_CONTINUATION_BUDGET,
   type ContinuationGrantReason,
@@ -21,10 +22,9 @@ const GRANT_REASONS = [
 ] as const satisfies readonly ContinuationGrantReason[]
 
 function boundedTodoContent(content: string): string {
-  const normalized = content.replace(/\s+/g, ' ').trim() || '(untitled item)'
-  return normalized.length <= MAX_TODO_CHARS
-    ? normalized
-    : `${normalized.slice(0, MAX_TODO_CHARS - 1).trimEnd()}…`
+  return ellipsize(collapseWhitespace(content) || '(untitled item)', MAX_TODO_CHARS, {
+    trimEnd: true,
+  })
 }
 
 function todoStatus(status: TodoItem['status']): 'In progress' | 'Pending' {

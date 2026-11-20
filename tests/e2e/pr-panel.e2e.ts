@@ -287,6 +287,14 @@ describe('PR panel (mock gh)', () => {
     const backendSelect = await $('.gh-backend-field select[name="githubBackend"]').getElement()
     await expect(backendSelect).toBeDisplayed()
     await expect(await backendSelect.$$('option').getElements()).toBeElementsArrayOfSize(3)
+    // The API fallback names the token gh reads for each kind of host.
+    await expect(
+      await $('fieldset:has(.gh-backend-field) p.settings-fieldset-desc:last-of-type').getElement(),
+    ).toHaveText(
+      expect.stringMatching(
+        /GH_TOKEN or GITHUB_TOKEN for github\.com, or GH_ENTERPRISE_TOKEN when GH_HOST names a GitHub Enterprise server\./,
+      ),
+    )
     await saveElementScreenshot('#settings-dialog', 'pr-panel-settings-gh-cli.png')
     await $('.settings-close-btn').click()
   })
