@@ -272,6 +272,10 @@ describe('browser_show', () => {
       getAgentSession: () => {
         throw new Error('not used')
       },
+      authorizePreview: () => {
+        throw new Error('not used')
+      },
+      hasPreview: () => false,
       showUrl: () => {
         throw new Error('not used')
       },
@@ -298,6 +302,10 @@ describe('browser_show', () => {
       getAgentSession: () => {
         throw new Error('not used')
       },
+      authorizePreview: () => {
+        throw new Error('not used')
+      },
+      hasPreview: () => false,
       showUrl: () => {
         throw new Error('not used')
       },

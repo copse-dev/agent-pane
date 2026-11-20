@@ -1,13 +1,20 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import {
+  getStaticPreviewServer,
+  shutdownStaticPreviewServers,
+} from '../services/browser/static-preview-server.ts'
 import {
   browserGuestWindowOpen,
   hardenWebviewPreferences,
   isAllowedRendererNavigation,
   isAllowedDiagramNavigation,
   isExternalHttpUrl,
+  isSystemBrowserUrl,
 } from './web-contents-lockdown.ts'
 
 describe('isAllowedRendererNavigation', () => {
@@ -68,6 +75,22 @@ describe('isExternalHttpUrl', () => {
     assert.equal(isExternalHttpUrl('http://localhost:3000/'), true)
     assert.equal(isExternalHttpUrl('javascript:alert(1)'), false)
     assert.equal(isExternalHttpUrl('file:///etc/passwd'), false)
+  })
+})
+
+describe('isSystemBrowserUrl', () => {
+  it('keeps active workspace previews out of the system browser', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'copse-preview-window-open-'))
+    try {
+      await writeFile(join(root, 'index.html'), '<h1>Preview</h1>')
+      const preview = await getStaticPreviewServer(root)
+      assert.equal(isSystemBrowserUrl(preview.url), false)
+      assert.equal(isSystemBrowserUrl(preview.url.replace('localhost', '127.0.0.1')), false)
+      assert.equal(isSystemBrowserUrl('https://example.com/'), true)
+    } finally {
+      await shutdownStaticPreviewServers()
+      await rm(root, { recursive: true })
+    }
   })
 })
 

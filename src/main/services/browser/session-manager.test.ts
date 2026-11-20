@@ -1,12 +1,17 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { runInNewContext } from 'node:vm'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   BrowserSessionManager,
   capturePreviewDataUrl,
   captureBrowserScreenshotDataUrl,
   resizeBrowserViewport,
+  setBrowserSessionPlatform,
 } from './session-manager.ts'
+import { getStaticPreviewServer, shutdownStaticPreviewServers } from './static-preview-server.ts'
 
 interface ViewportFixture {
   window: Parameters<typeof resizeBrowserViewport>[0]
@@ -381,6 +386,54 @@ describe('captureBrowserScreenshotDataUrl', () => {
       assert.equal(wc.debugger.isAttached(), false)
     })
   }
+})
+
+describe('scoped preview promotion', () => {
+  it('rejects preview creation without a task scope', async () => {
+    await assert.rejects(
+      new BrowserSessionManager().preview('http://localhost:43123/'),
+      /scoped browser task/,
+    )
+  })
+
+  it('does not turn a denied preview URL into a capability for another task', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'copse-preview-promotion-'))
+    await writeFile(join(root, 'index.html'), '<h1>Private workspace</h1>')
+    try {
+      const preview = await getStaticPreviewServer(root)
+      let shownUrl = ''
+      setBrowserSessionPlatform({
+        createWindow() {
+          throw new Error('This test does not create a browser window')
+        },
+        getAgentSession() {
+          throw new Error('This test does not create an agent session')
+        },
+        authorizePreview() {
+          throw new Error('This test does not authorize a preview')
+        },
+        hasPreview() {
+          return false
+        },
+        showUrl(url) {
+          shownUrl = url
+        },
+        showArtefact() {},
+      })
+
+      await assert.rejects(
+        new BrowserSessionManager('another-task').showUrl(preview.url),
+        /not open in this browser task/,
+      )
+
+      assert.equal(shownUrl, '')
+      assert.equal((await fetch(preview.url)).status, 403)
+    } finally {
+      setBrowserSessionPlatform(null)
+      await shutdownStaticPreviewServers()
+      await rm(root, { recursive: true })
+    }
+  })
 })
 
 describe('capturePreviewDataUrl', () => {
