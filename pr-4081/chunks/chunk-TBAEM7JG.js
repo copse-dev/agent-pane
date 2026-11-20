@@ -52566,8 +52566,8 @@ function createAcpAgentsSection(api, opts = {}) {
           probe.modes ? `${String(probe.modes.choices.length)} permission modes (agent default: ${probe.modes.currentValue})` : ""
         ].filter(Boolean);
         setInlineStatus(modelStatus, "ok", `Detected ${bits.join(", ")}.`);
-      }).catch((err) => {
-        setInlineStatus(modelStatus, "error", errorMessage(err));
+      }).catch(() => {
+        setInlineStatus(modelStatus, "error", "Could not check this coding agent. Try again.");
       }).finally(() => {
         detectModels.disabled = !canDetectModels;
       });
@@ -52830,7 +52830,6 @@ var init_acp_agents_section = __esm({
     init_model_picker();
     init_slug();
     init_acp_registry_browser();
-    init_errors4();
     AGENT_DATA_POLICY_URLS = {
       "claude-acp": "https://github.com/anthropics/claude-code#data-collection-usage-and-retention",
       "claude-code-acp": "https://github.com/anthropics/claude-code#data-collection-usage-and-retention",
@@ -73800,6 +73799,20 @@ var init_drauu2 = __esm({
 });
 
 // src/renderer/drawing/annotation-layer.ts
+function isShape(tool) {
+  return SHAPE_TOOLS.includes(tool);
+}
+function toolIcon(tool) {
+  const icon = {
+    pen: penLineIcon,
+    line: slashIcon,
+    arrow: arrowUpRightIcon,
+    rect: squareIcon,
+    ellipse: circleIcon,
+    eraser: eraserIcon
+  }[tool];
+  return icon("ui-icon ui-icon-sm");
+}
 function measureBox(node2) {
   const getBBox = Reflect.get(node2, "getBBox");
   if (typeof getBBox !== "function") return null;
@@ -73860,14 +73873,20 @@ function composeAnnotationPng(svg, width, height, base) {
 }
 function mountAnnotationLayer(host, options) {
   let root = null;
+  let strip = null;
   let resizeObserver = null;
   let svg = null;
   let drauu = null;
   let active2 = false;
   let tool = "pen";
+  let shape = "arrow";
   let colour = ANNOTATION_COLOURS[0]?.value ?? "#e5484d";
   const toolButtons = /* @__PURE__ */ new Map();
-  const swatches = /* @__PURE__ */ new Map();
+  let foldBtn = null;
+  let inkBtn = null;
+  let popover = null;
+  const sendLabel = options.actionLabel ?? DEFAULT_ACTION_LABEL;
+  const compactSendLabel = options.actionLabel ?? COMPACT_ACTION_LABEL;
   let sendBtn = null;
   let undoBtn = null;
   let clearBtn = null;
@@ -73900,8 +73919,121 @@ function mountAnnotationLayer(host, options) {
     else if (mode === "eraseLine") drauu.model.onSelected(drauu.el);
     for (const [name, button] of toolButtons)
       button.setAttribute("aria-pressed", String(name === tool));
-    for (const [value, button] of swatches)
-      button.setAttribute("aria-pressed", String(value === colour));
+    if (foldBtn) {
+      const holdsShape = isShape(tool);
+      foldBtn.setAttribute("aria-pressed", String(holdsShape));
+      foldBtn.setAttribute("aria-label", TOOL_LABELS[shape]);
+      foldBtn.setAttribute("data-tooltip", holdsShape ? "More shapes" : TOOL_LABELS[shape]);
+      foldBtn.firstElementChild?.replaceWith(toolIcon(shape));
+    }
+    if (inkBtn) {
+      const name = ANNOTATION_COLOURS.find((entry) => entry.value === colour)?.name;
+      inkBtn.setAttribute("aria-label", name ? `Ink colour: ${name}` : "Ink colour");
+      inkBtn.style.setProperty("--annotation-swatch", colour);
+    }
+  };
+  const closePopover = () => {
+    if (!popover) return;
+    const { node: node2, anchor: anchor2 } = popover;
+    popover = null;
+    window.removeEventListener("pointerdown", onOutsidePress, true);
+    const heldFocus = node2.contains(document.activeElement);
+    node2.remove();
+    anchor2.setAttribute("aria-expanded", "false");
+    if (heldFocus) anchor2.focus({ preventScroll: true });
+  };
+  const onOutsidePress = (event) => {
+    if (!popover) return;
+    const { target } = event;
+    if (target instanceof Node && (popover.node.contains(target) || popover.anchor.contains(target)))
+      return;
+    closePopover();
+  };
+  const selectTool = (next) => {
+    tool = next;
+    if (isShape(next)) shape = next;
+    closePopover();
+    applyBrush();
+  };
+  const openPopover = (anchor2, kind) => {
+    if (!root || !strip) return;
+    closePopover();
+    const node2 = el("div", {
+      class: "annotation-popover",
+      role: "group",
+      "aria-label": kind === "ink" ? "Ink colour" : "Shapes"
+    });
+    if (kind === "ink") {
+      for (const { name, value } of ANNOTATION_COLOURS) {
+        const swatch = el("button", {
+          type: "button",
+          class: "annotation-swatch",
+          "aria-label": name,
+          "data-tooltip": name,
+          "aria-pressed": String(value === colour)
+        });
+        swatch.style.setProperty("--annotation-swatch", value);
+        swatch.addEventListener("click", () => {
+          colour = value;
+          closePopover();
+          applyBrush();
+        });
+        node2.append(swatch);
+      }
+    } else {
+      for (const name of SHAPE_TOOLS) {
+        const button = el(
+          "button",
+          {
+            type: "button",
+            class: "annotation-tool",
+            "data-tool": name,
+            "aria-label": TOOL_LABELS[name],
+            "data-tooltip": TOOL_LABELS[name],
+            "aria-pressed": String(name === tool)
+          },
+          toolIcon(name)
+        );
+        button.addEventListener("click", () => {
+          selectTool(name);
+        });
+        node2.append(button);
+      }
+    }
+    node2.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+    });
+    root.append(node2);
+    const bounds = root.getBoundingClientRect();
+    const edge = strip.getBoundingClientRect();
+    const from = anchor2.getBoundingClientRect();
+    const inset = edge.top - bounds.top;
+    const width = node2.offsetWidth;
+    const centred = from.left + from.width / 2 - bounds.left - width / 2;
+    node2.style.left = `${fmt(Math.max(inset, Math.min(centred, bounds.width - width - inset)))}px`;
+    node2.style.top = `${fmt(edge.bottom - bounds.top)}px`;
+    anchor2.setAttribute("aria-expanded", "true");
+    popover = { node: node2, anchor: anchor2 };
+    window.addEventListener("pointerdown", onOutsidePress, true);
+    node2.querySelector('[aria-pressed="true"]')?.focus({ preventScroll: true });
+  };
+  const togglePopover = (anchor2, kind) => {
+    if (popover?.anchor === anchor2) closePopover();
+    else openPopover(anchor2, kind);
+  };
+  const fitStrip = () => {
+    if (!strip || !sendBtn || !active2) return;
+    for (const layout of STRIP_LAYOUTS) {
+      strip.dataset["send"] = layout.send;
+      strip.dataset["shapes"] = layout.shapes;
+      strip.dataset["spacing"] = layout.spacing;
+      sendBtn.textContent = layout.send === "long" ? sendLabel : compactSendLabel;
+      if (strip.scrollWidth <= strip.clientWidth) break;
+    }
+  };
+  const currentToolButton = () => {
+    if (foldBtn && isShape(tool) && strip?.dataset["shapes"] === "folded") return foldBtn;
+    return toolButtons.get(tool);
   };
   const isEmpty = () => !svg || svg.childElementCount === 0;
   const syncButtons = () => {
@@ -73911,22 +74043,21 @@ function mountAnnotationLayer(host, options) {
     if (undoBtn) undoBtn.disabled = !drauu?.canUndo();
     if (root) root.hidden = !active2 && empty;
   };
-  const toolButton = (name, label, icon) => {
+  const toolButton = (name) => {
     const button = el(
       "button",
       {
         type: "button",
-        class: "annotation-tool",
+        class: isShape(name) ? "annotation-tool annotation-shape" : "annotation-tool",
         "data-tool": name,
-        "aria-label": label,
-        "data-tooltip": label,
+        "aria-label": TOOL_LABELS[name],
+        "data-tooltip": TOOL_LABELS[name],
         "aria-pressed": "false"
       },
-      icon
+      toolIcon(name)
     );
     button.addEventListener("click", () => {
-      tool = name;
-      applyBrush();
+      selectTool(name);
     });
     toolButtons.set(name, button);
     return button;
@@ -73939,22 +74070,36 @@ function mountAnnotationLayer(host, options) {
     svg.setAttribute("aria-label", `Annotations over ${options.label}`);
     applyViewBox();
     const separator = () => el("span", { class: "annotation-sep", "aria-hidden": "true" });
-    const swatchButtons = ANNOTATION_COLOURS.map(({ name, value }) => {
-      const button = el("button", {
+    const fold = el(
+      "button",
+      {
         type: "button",
-        class: "annotation-swatch",
-        "aria-label": name,
-        "data-tooltip": name,
+        class: "annotation-tool annotation-shape-fold",
+        "aria-expanded": "false",
         "aria-pressed": "false"
-      });
-      button.style.setProperty("--annotation-swatch", value);
-      button.addEventListener("click", () => {
-        colour = value;
-        applyBrush();
-      });
-      swatches.set(value, button);
-      return button;
+      },
+      toolIcon(shape),
+      chevronDownIcon("ui-icon ui-picker-chevron annotation-fold-caret")
+    );
+    fold.addEventListener("click", () => {
+      if (isShape(tool)) togglePopover(fold, "shapes");
+      else selectTool(shape);
     });
+    foldBtn = fold;
+    const ink = el(
+      "button",
+      {
+        type: "button",
+        class: "annotation-tool annotation-ink",
+        "data-tooltip": "Ink colour",
+        "aria-expanded": "false"
+      },
+      el("span", { class: "annotation-ink-dot" })
+    );
+    ink.addEventListener("click", () => {
+      togglePopover(ink, "ink");
+    });
+    inkBtn = ink;
     undoBtn = el(
       "button",
       { type: "button", class: "annotation-tool", "aria-label": "Undo", "data-tooltip": "Undo" },
@@ -73973,8 +74118,14 @@ function mountAnnotationLayer(host, options) {
     });
     sendBtn = el(
       "button",
-      { type: "button", class: "ui-btn ui-btn-primary annotation-send", disabled: true },
-      options.actionLabel ?? "Send to agent"
+      {
+        type: "button",
+        class: "ui-btn ui-btn-primary annotation-send",
+        // The name stays whole when the visible label is the compact one.
+        "aria-label": sendLabel,
+        disabled: true
+      },
+      sendLabel
     );
     sendBtn.addEventListener("click", () => {
       if (sending) return;
@@ -74005,17 +74156,14 @@ function mountAnnotationLayer(host, options) {
     doneBtn.addEventListener("click", () => {
       layer.deactivate();
     });
-    const strip = el(
+    const toolstrip = el(
       "div",
       { class: "annotation-toolstrip", role: "toolbar", "aria-label": "Annotation tools" },
-      toolButton("pen", "Pen", penLineIcon("ui-icon ui-icon-sm")),
-      toolButton("line", "Line", slashIcon("ui-icon ui-icon-sm")),
-      toolButton("arrow", "Arrow", arrowUpRightIcon("ui-icon ui-icon-sm")),
-      toolButton("rect", "Rectangle", squareIcon("ui-icon ui-icon-sm")),
-      toolButton("ellipse", "Ellipse", circleIcon("ui-icon ui-icon-sm")),
-      toolButton("eraser", "Eraser", eraserIcon("ui-icon ui-icon-sm")),
-      separator(),
-      ...swatchButtons,
+      toolButton("pen"),
+      ...SHAPE_TOOLS.map(toolButton),
+      fold,
+      toolButton("eraser"),
+      ink,
       separator(),
       undoBtn,
       clearBtn,
@@ -74023,15 +74171,28 @@ function mountAnnotationLayer(host, options) {
       sendBtn,
       doneBtn
     );
-    strip.addEventListener("pointerdown", (event) => {
+    toolstrip.addEventListener("pointerdown", (event) => {
       event.stopPropagation();
     });
-    root = el("div", { class: "annotation-layer", "data-active": "false" }, svg, strip);
+    strip = toolstrip;
+    const scaleProbe = el("span", { class: "annotation-scale-probe", "aria-hidden": "true" });
+    root = el(
+      "div",
+      { class: "annotation-layer", "data-active": "false" },
+      svg,
+      toolstrip,
+      scaleProbe
+    );
     root.hidden = true;
     host.append(root);
     if (typeof ResizeObserver === "function") {
-      resizeObserver = new ResizeObserver(applyViewBox);
+      resizeObserver = new ResizeObserver(() => {
+        applyViewBox();
+        closePopover();
+        fitStrip();
+      });
       resizeObserver.observe(host);
+      resizeObserver.observe(scaleProbe);
     }
     drauu = createDrauu({
       el: svg,
@@ -74050,7 +74211,8 @@ function mountAnnotationLayer(host, options) {
     if (!active2) return;
     if (event.key === "Escape") {
       event.preventDefault();
-      layer.deactivate();
+      if (popover) closePopover();
+      else layer.deactivate();
       return;
     }
     const meta3 = event.metaKey || event.ctrlKey;
@@ -74071,12 +74233,14 @@ function mountAnnotationLayer(host, options) {
       root?.setAttribute("data-active", "true");
       window.addEventListener("keydown", onKeyDown);
       syncButtons();
-      toolButtons.get(tool)?.focus({ preventScroll: true });
+      fitStrip();
+      currentToolButton()?.focus({ preventScroll: true });
     },
     deactivate() {
       if (!active2) return;
       active2 = false;
       drauu?.cancel();
+      closePopover();
       root?.setAttribute("data-active", "false");
       window.removeEventListener("keydown", onKeyDown);
       syncButtons();
@@ -74094,8 +74258,7 @@ function mountAnnotationLayer(host, options) {
     },
     setTool(next) {
       ensureMounted();
-      tool = next;
-      applyBrush();
+      selectTool(next);
     },
     setScrollOffset(x3, y3) {
       if (Number.isFinite(x3)) scrollX = x3;
@@ -74151,12 +74314,13 @@ function mountAnnotationLayer(host, options) {
       drauu = null;
       root?.remove();
       root = null;
+      strip = null;
       svg = null;
     }
   };
   return layer;
 }
-var TOOLS, ANNOTATION_COLOURS, SHAPE_SIZE, PEN_SIZE;
+var TOOLS, SHAPE_TOOLS, TOOL_LABELS, STRIP_LAYOUTS, DEFAULT_ACTION_LABEL, COMPACT_ACTION_LABEL, ANNOTATION_COLOURS, SHAPE_SIZE, PEN_SIZE;
 var init_annotation_layer = __esm({
   "src/renderer/drawing/annotation-layer.ts"() {
     init_helpers();
@@ -74164,6 +74328,23 @@ var init_annotation_layer = __esm({
     init_drauu2();
     init_utils();
     TOOLS = ["pen", "line", "arrow", "rect", "ellipse", "eraser"];
+    SHAPE_TOOLS = ["line", "arrow", "rect", "ellipse"];
+    TOOL_LABELS = {
+      pen: "Pen",
+      line: "Line",
+      arrow: "Arrow",
+      rect: "Rectangle",
+      ellipse: "Ellipse",
+      eraser: "Eraser"
+    };
+    STRIP_LAYOUTS = [
+      { send: "long", shapes: "each", spacing: "regular" },
+      { send: "short", shapes: "each", spacing: "regular" },
+      { send: "short", shapes: "folded", spacing: "regular" },
+      { send: "short", shapes: "folded", spacing: "tight" }
+    ];
+    DEFAULT_ACTION_LABEL = "Send to agent";
+    COMPACT_ACTION_LABEL = "Send";
     ANNOTATION_COLOURS = [
       { name: "Red", value: "#e5484d" },
       { name: "Blue", value: "#3b82f6" },
