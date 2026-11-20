@@ -1014,7 +1014,10 @@ async function applyDelete(entry: QueueEntry, root: string): Promise<ApplyResult
   let current: string
   try {
     current = await readWorkspaceFileContent(fs, absPath, entry.path)
-  } catch {
+  } catch (err) {
+    // A read that failed for any other reason says nothing about the file: it
+    // is still there, so reporting the deletion as done would be false.
+    if (!isNotFoundError(err)) return { status: 'error', error: errorMessage(err) }
     // Deletion is idempotent: if the file is already gone the desired end state
     // is met, so report success instead of failing the (whole) approval. This is
     // common when a deletion is staged from `git status` for a file that no

@@ -813,8 +813,38 @@ export async function assertWriteTargetWithinRoot(
   if (rel === null || rel === '') {
     throw new Error(`Path outside workspace: ${absPath}.`)
   }
+  await assertSymlinksStayWithinRoot(absPath, absRoot, rel, backend, {
+    remaining: MAX_SYMLINK_HOPS,
+  })
+}
+
+/** The kernel's own limit on links followed while resolving one path (ELOOP). */
+const MAX_SYMLINK_HOPS = 40
+
+/**
+ * Walk `absPath` from `absRoot` without following links, and follow each link
+ * found by hand. `label` names the path the caller asked to write.
+ *
+ * A link's target is walked the same way before it is trusted: it can itself be
+ * a link, and when the last link of such a chain dangles, the existing-prefix
+ * realpath sees only a missing file inside the workspace. The walk then
+ * continues from the target's real location, because the kernel resolves a
+ * relative link below a symlinked directory against that directory's real
+ * parent, not against the path the link was reached by.
+ */
+async function assertSymlinksStayWithinRoot(
+  absPath: string,
+  absRoot: string,
+  label: string,
+  backend: PathBackend,
+  hops: { remaining: number },
+): Promise<void> {
+  const escapes = (): Error =>
+    new Error(`Refusing to write through a symlink that escapes the workspace: ${label}`)
+  const rel = relativeWithin(absRoot, absPath)
+  if (rel === null) throw escapes()
   let current = absRoot
-  for (const segment of rel.split(sep)) {
+  for (const segment of rel === '' ? [] : rel.split(sep)) {
     current = resolve(current, segment)
     let info
     try {
@@ -824,12 +854,17 @@ export async function assertWriteTargetWithinRoot(
       // deeper can't exist under it — nothing left to follow.
       break
     }
-    if (info.isSymbolicLink()) {
-      const target = resolve(dirname(current), await backend.readlink(current))
-      if (!isPathInsideRoot(await resolveThroughExistingPrefix(target, backend), absRoot)) {
-        throw new Error(`Refusing to write through a symlink that escapes the workspace: ${rel}`)
-      }
+    if (!info.isSymbolicLink()) continue
+    if (hops.remaining-- <= 0) {
+      throw new Error(`Refusing to write through too many symbolic links: ${label}`)
     }
+    const target = await resolveThroughExistingPrefix(
+      resolve(dirname(current), await backend.readlink(current)),
+      backend,
+    )
+    if (!isPathInsideRoot(target, absRoot)) throw escapes()
+    await assertSymlinksStayWithinRoot(target, absRoot, label, backend, hops)
+    current = target
   }
 }
 

@@ -112,10 +112,10 @@ export class TurnTranscriptWriter {
   }
 
   /**
-   * Per thread, the tail of the command stages written after their turn. Each
-   * one reads the stored message and rewrites it, so they run one at a time:
-   * two tasks ending together on one message must not each write over the
-   * other's ending.
+   * Per thread, the tail of the command stages and labels written after their
+   * turn. Each one reads the stored message and rewrites it, so they run one at
+   * a time: two tasks ending together on one message must not each write over
+   * the other's ending.
    */
   private readonly lateWrites = new Map<string, Promise<void>>()
 
@@ -313,11 +313,30 @@ export class TurnTranscriptWriter {
       applyAnnotation(session.store, messageId, annotation)
       return
     }
-    await this.settled(threadId)
-    const thread = await this.deps.loadThread(projectId, threadId)
-    const message = thread?.messages.find((candidate) => candidate.id === messageId)
-    if (!message) return
-    await this.deps.appendMessage(projectId, threadId, { ...message, ...annotation })
+    // Read back and rewritten, so it takes its turn with the other late writes:
+    // two labels for one message, or a label and a task ending, would otherwise
+    // each rewrite the message without the other's change.
+    await this.writeLate(threadId, async () => {
+      const thread = await this.deps.loadThread(projectId, threadId)
+      const message = thread?.messages.find((candidate) => candidate.id === messageId)
+      if (!message) return
+      await this.deps.appendMessage(projectId, threadId, { ...message, ...annotation })
+    })
+  }
+
+  /** Run a read-and-rewrite of a stored message after the thread's earlier ones. */
+  private writeLate(threadId: string, rewrite: () => Promise<void>): Promise<void> {
+    const write = (this.lateWrites.get(threadId) ?? Promise.resolve()).then(async () => {
+      // Not `settled`: that waits on this write's own tail.
+      await this.drains.get(threadId)
+      await rewrite()
+    })
+    const tail = write.catch(() => undefined)
+    this.lateWrites.set(threadId, tail)
+    void tail.then(() => {
+      if (this.lateWrites.get(threadId) === tail) this.lateWrites.delete(threadId)
+    })
+    return write
   }
 
   /**
@@ -349,9 +368,7 @@ export class TurnTranscriptWriter {
       else this.process(session, chunk)
       return Promise.resolve()
     }
-    const write = (this.lateWrites.get(threadId) ?? Promise.resolve()).then(async () => {
-      // Not `settled`: that waits on this write's own tail.
-      await this.drains.get(threadId)
+    return this.writeLate(threadId, async () => {
       const thread = await this.deps.loadThread(projectId, threadId)
       const message = thread?.messages.find((candidate) =>
         candidate.toolCalls.some((call) => call.id === toolCallId),
@@ -365,12 +382,6 @@ export class TurnTranscriptWriter {
       })
       this.deps.forward(threadId, chunk, { messageIds: [] })
     })
-    const tail = write.catch(() => undefined)
-    this.lateWrites.set(threadId, tail)
-    void tail.then(() => {
-      if (this.lateWrites.get(threadId) === tail) this.lateWrites.delete(threadId)
-    })
-    return write
   }
 
   private process(session: Session, chunk: StreamChunk): void {
