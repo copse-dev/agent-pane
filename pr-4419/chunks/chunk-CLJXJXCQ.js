@@ -31145,15 +31145,51 @@ var init_classifiers_section = __esm({
   }
 });
 
+// packages/shell-guard/src/trusted-ssh-hosts.ts
+function normalizeSshHost(host) {
+  return host.trim().toLowerCase().replace(/\.$/, "");
+}
+function collect(entries) {
+  const out = [];
+  for (const entry of entries) {
+    if (typeof entry !== "string") continue;
+    const host = normalizeSshHost(entry);
+    if (!host || out.includes(host) || !VALID_HOST.test(host)) continue;
+    out.push(host);
+  }
+  return out;
+}
+function parseTrustedSshHosts(text) {
+  return collect(
+    text.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#"))
+  );
+}
+function sanitizeTrustedSshHosts(value) {
+  return Array.isArray(value) ? collect(value) : [];
+}
+var VALID_HOST;
+var init_trusted_ssh_hosts = __esm({
+  "packages/shell-guard/src/trusted-ssh-hosts.ts"() {
+    VALID_HOST = /^[a-z0-9._:-]+$/;
+  }
+});
+
+// src/shared/trusted-ssh-hosts.ts
+var init_trusted_ssh_hosts2 = __esm({
+  "src/shared/trusted-ssh-hosts.ts"() {
+    init_trusted_ssh_hosts();
+  }
+});
+
 // src/renderer/views/setup/machine-capabilities.ts
 function describeSshMachine(host, context) {
   const state = context.states.find((entry) => entry.hostId === host.id);
   const capabilities = ["Files and shell"];
   if (context.agentsOnRemote) capabilities.push("Agents");
   if (context.desktop) capabilities.push("Desktop");
-  const target = host.host.toLowerCase();
-  if (context.trustedHosts.some((trusted) => trusted.toLowerCase() === target)) {
-    capabilities.push("Trusted for auto-approval");
+  const target = normalizeSshHost(host.host.slice(host.host.lastIndexOf("@") + 1));
+  if (context.trustedHosts.some((trusted) => normalizeSshHost(trusted) === target)) {
+    capabilities.push("Trusted for ssh in Guarded YOLO");
   }
   switch (state?.status) {
     case "connected":
@@ -31199,6 +31235,7 @@ function machineSummaryElement(summary) {
 }
 var init_machine_capabilities = __esm({
   "src/renderer/views/setup/machine-capabilities.ts"() {
+    init_trusted_ssh_hosts2();
     init_helpers();
   }
 });
@@ -31906,42 +31943,6 @@ var init_web_search_section = __esm({
     init_web_search();
     init_helpers();
     init_api_keys_section();
-  }
-});
-
-// packages/shell-guard/src/trusted-ssh-hosts.ts
-function normalizeSshHost(host) {
-  return host.trim().toLowerCase().replace(/\.$/, "");
-}
-function collect(entries) {
-  const out = [];
-  for (const entry of entries) {
-    if (typeof entry !== "string") continue;
-    const host = normalizeSshHost(entry);
-    if (!host || out.includes(host) || !VALID_HOST.test(host)) continue;
-    out.push(host);
-  }
-  return out;
-}
-function parseTrustedSshHosts(text) {
-  return collect(
-    text.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#"))
-  );
-}
-function sanitizeTrustedSshHosts(value) {
-  return Array.isArray(value) ? collect(value) : [];
-}
-var VALID_HOST;
-var init_trusted_ssh_hosts = __esm({
-  "packages/shell-guard/src/trusted-ssh-hosts.ts"() {
-    VALID_HOST = /^[a-z0-9._:-]+$/;
-  }
-});
-
-// src/shared/trusted-ssh-hosts.ts
-var init_trusted_ssh_hosts2 = __esm({
-  "src/shared/trusted-ssh-hosts.ts"() {
-    init_trusted_ssh_hosts();
   }
 });
 
