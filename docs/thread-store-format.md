@@ -415,6 +415,19 @@ place without reordering history, and writes immutable tool payloads before
 the spine commit. In-progress tools are not re-finalized because v1 deliberately
 persists only terminal `done` / `error` tool states.
 
+The headless automation assembler keeps unfinished tool calls in its existing
+in-memory store. Its saved message projection includes only terminal calls, so
+neither progress updates nor an early primary `done` invent a completed call.
+Prose, settled siblings and later completed bubbles still reach disk when an
+earlier call remains unresolved, including a call held at a parked approval.
+The normal serial writes reserve each message's existing ID and position; a
+tool-only pending message can be an empty ordering placeholder. Provider-history
+recovery already skips assistant messages with neither text nor tool calls.
+Late terminal results replace the same saved message and call IDs in place
+without replaying work or rewriting earlier unrelated messages. This does not
+persist live tool state or add pending-card attachment for a project opened
+mid-run.
+
 ## Machine-continuation line schema (`type: "machine_continuation"`)
 
 Machine-triggered agent turns append a compact `started` record before dispatch and a
