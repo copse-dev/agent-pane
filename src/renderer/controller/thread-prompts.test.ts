@@ -49,6 +49,7 @@ function fixture(
     id: 'command',
     sourceThreadId: 'source',
     sourceTurnTreeId: 'source-user-turn-1',
+    crossThreadScope: JSON.stringify(['source', 'source-user-turn-1']),
     projectId: background ? 'other-project' : 'visible-project',
     thread,
     text: 'Check the build',
@@ -164,6 +165,7 @@ test('each destination gets five prompts per sender user turn, including after r
         ...command,
         thread: destination,
         sourceTurnTreeId: 'source-user-turn-2',
+        crossThreadScope: JSON.stringify(['source', 'source-user-turn-2']),
       }),
       { ok: true, queued: false },
     )
@@ -183,10 +185,40 @@ test('each destination gets five prompts per sender user turn, including after r
     await acceptThreadPrompt(reloaded, api, {
       ...command,
       sourceThreadId: 'another-source',
+      crossThreadScope: JSON.stringify(['another-source', command.sourceTurnTreeId]),
     }),
     { ok: true, queued: false },
   )
   assert.equal(runs.length, 13)
+})
+
+test('a prompt from a run without a user turn is charged to the sender thread and seeds no epoch', async () => {
+  const { store, api, runs, command } = fixture()
+  api.agent.run = async (_projectId, threadId): Promise<void> => {
+    runs.push(threadId)
+  }
+  // What main sends for a headless automation run or a self-started ACP turn.
+  const { sourceTurnTreeId: _none, ...headless } = command
+  const scope = JSON.stringify(['source', null])
+  for (let i = 0; i < 6; i++) {
+    const result = await acceptThreadPrompt(store, api, { ...headless, crossThreadScope: scope })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.deepEqual(result, { ok: true, queued: i === 5 })
+    store.setState({ threads: store.getState().threads.map((t) => ({ ...t, status: 'idle' })) })
+  }
+  assert.equal(runs.length, DEFAULT_CROSS_THREAD_PROMPT_BUDGET)
+  const destination = getThreadById(store, 'destination')
+  assert.equal(destination?.crossThreadPromptCounts?.[scope], DEFAULT_CROSS_THREAD_PROMPT_BUDGET)
+  assert.equal(destination.pendingMessages?.[0]?.autoDispatch, false)
+  // The fallback grants nothing else: the destination gets no epoch from it,
+  // and a destination human turn does not replenish it.
+  assert.equal(destination.currentEpoch, undefined)
+  startHumanTurnTree(store, 'destination')
+  assert.deepEqual(await acceptThreadPrompt(store, api, { ...headless, crossThreadScope: scope }), {
+    ok: true,
+    queued: true,
+  })
+  assert.equal(runs.length, DEFAULT_CROSS_THREAD_PROMPT_BUDGET)
 })
 
 test('expired and self-targeted prompts never append a message', async () => {

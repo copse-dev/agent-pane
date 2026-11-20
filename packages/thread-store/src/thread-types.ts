@@ -76,7 +76,10 @@ export interface MachineMessageOrigin {
   kind: 'machine'
   /** Durable operation that requested the continuation; thread:<sourceId> identifies cross-thread prompts. */
   operationId: string
-  /** Sender thread/user-turn pair for the per-destination cross-thread allowance. */
+  /**
+   * Main's per-destination cross-thread allowance scope: JSON
+   * `[senderThreadId, senderTurnTreeId]`, `null` for a sender run without a user turn.
+   */
   crossThreadScope?: string
 }
 

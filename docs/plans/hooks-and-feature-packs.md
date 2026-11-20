@@ -94,7 +94,14 @@ revisiting this document, not silently diverging in an implementation PR.
    (`send_thread_prompt`; delegated subthread prompts stay on the counter above) have an
    independent cap of five per destination, per sending thread's user turn. Each new human or
    scheduled automation root in the sender gives it five fresh prompts for every
-   destination. Incoming prompts neither spend nor reset the self-continuation
+   destination. A sender run without a human root (a headless scheduled automation's
+   turn, a turn the ACP agent started itself) is charged to a fallback scope keyed on
+   the sender thread from main's active-run identity, never on tool arguments
+   (amended 20 November 2026). Every scheduled automation run starts in a new thread,
+   so each gets its own five; machine runs of one thread share that scope, cannot mint
+   another, and only a human release at the destination resets it. The fallback grants
+   nothing else: it binds no turn tree, gives the destination no epoch and owns no
+   lease, wake or task tracking. Incoming prompts neither spend nor reset the self-continuation
    counter. Human release permits a held prompt to run. This keeps authorized coordination
    usable after local continuations are exhausted without unbounding thread-to-thread loops. Change acceptance wakes the
    proposing thread after successful GUI application, at most once per approval batch
@@ -1200,8 +1207,11 @@ Git hook process's sandbox. See `docs/shell-permissions.md#native-commits-and-si
 `send_thread_prompt` is a machine submission surface, authorized by a separate durable
 send grant on the source thread. It enters the destination's pending-message queue with
 `kind: 'machine'` provenance and the reserved `thread:<sourceThreadId>` operation namespace.
-These items carry a host-bound sender turn-tree ID and consume a separate allowance of
+These items carry a host-bound sender scope and consume a separate allowance of
 five prompts per destination, per sender user turn (decision 5, amended 1 November 2026).
+Main computes the scope in `peerPromptSender` from its own run identity: the sender's
+turn-tree ID, or `null` with the sender thread as the fallback for a run without one
+(decision 5, amended 20 November 2026).
 Metadata `crossThreadPromptCounts` keys each count by the JSON-encoded sender ID and
 sender turn-tree ID; it survives reloads and destination human submissions. Each sender
 and new sender root has its own allowance for every destination. Charging happens at drain
@@ -1211,7 +1221,8 @@ prompts from that sender turn with an allowance-specific note; new sender turns 
 past those held prompts. Human release resets only the selected scope. Neither reloads
 nor interleaved old/new sender prompts replenish an existing scope. Hooks and human
 prompts may still drain. A destination without any epoch inherits the sender's existing
-root so machine runs cannot mint fresh outgoing allowances. Incoming prompts never reset
+root so machine runs cannot mint fresh outgoing allowances; a fallback-scoped prompt has
+no root to give, so the destination stays without one. Incoming prompts never reset
 self-continuation spend or replace an existing destination epoch, never interrupt an
 active run, and respect held/paused queues. The renderer remains the queue writer; the
 turn a drained item starts is written by main like any dispatched turn (`client-server-split.md`

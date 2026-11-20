@@ -7,6 +7,7 @@ import { loadProjectCatalog, getProjectThread, getThreadMeta } from '../services
 import { recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { storageGet } from '../services/storage/storage.ts'
 import { sendThreadPrompt } from '../services/thread-prompts.ts'
+import type { ThreadPromptCommand } from '@shared/thread-prompt.ts'
 
 type SavedThreadState = Pick<
   Thread,
@@ -169,6 +170,31 @@ export const listThreadsTool = defineTool({
   },
 })
 
+/**
+ * Who sends a peer prompt and which allowance it is charged to, from main's own
+ * run identity, never from the tool's arguments. A run with a human root uses
+ * that user turn tree. A run without one, such as a headless scheduled
+ * automation's turn or a turn the ACP agent started itself, falls back to the
+ * sender thread (`null` in place of the turn tree). Every scheduled automation
+ * run starts in a new thread, so each one gets its own five prompts per
+ * destination; machine runs of one thread share theirs and cannot mint more.
+ * The fallback grants nothing else: it carries no turn tree, so the destination
+ * inherits no epoch from it and no lease, wake or tracking is bound to it.
+ */
+export function peerPromptSender(): Pick<
+  ThreadPromptCommand,
+  'sourceThreadId' | 'sourceTurnTreeId' | 'crossThreadScope'
+> | null {
+  const sourceThreadId = getActiveRunThread()
+  if (!sourceThreadId) return null
+  const sourceTurnTreeId = getActiveRunTurnTreeId()
+  return {
+    sourceThreadId,
+    ...(sourceTurnTreeId === null ? {} : { sourceTurnTreeId }),
+    crossThreadScope: JSON.stringify([sourceThreadId, sourceTurnTreeId]),
+  }
+}
+
 export const sendThreadPromptTool = defineTool({
   name: 'send_thread_prompt',
   description:
@@ -179,9 +205,8 @@ export const sendThreadPromptTool = defineTool({
     prompt: z.string().trim().min(1).max(100_000),
   }),
   async execute({ project_id, thread_id, prompt }, signal) {
-    const sourceThreadId = getActiveRunThread()
-    const sourceTurnTreeId = getActiveRunTurnTreeId()
-    if (!sourceThreadId || sourceThreadId === thread_id)
+    const sender = peerPromptSender()
+    if (!sender || sender.sourceThreadId === thread_id)
       return 'Choose a different destination thread.'
     const initial = await getThreadMeta(project_id, thread_id)
     if (!initial || initial.archivedAt !== undefined)
@@ -192,11 +217,10 @@ export const sendThreadPromptTool = defineTool({
     const thread = await getProjectThread(project_id, thread_id)
     if (!thread || thread.archivedAt !== undefined) return 'The destination thread is unavailable.'
     if (signal.aborted) return 'Sending was cancelled.'
-    if (!hasThreadAccess(sourceThreadId, 'send')) return 'Permission to send prompts was revoked.'
-    if (!sourceTurnTreeId) return 'No active user turn is available for sending prompts.'
+    if (!hasThreadAccess(sender.sourceThreadId, 'send'))
+      return 'Permission to send prompts was revoked.'
     const result = await sendThreadPrompt({
-      sourceThreadId,
-      sourceTurnTreeId,
+      ...sender,
       projectId: project_id,
       thread,
       text: prompt,

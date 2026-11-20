@@ -77,7 +77,8 @@ Source files remain authoritative; deleting this cache is safe.
   <threadId>/
     meta.json                        # mutable thread metadata (everything except messages)
                                      # crossThreadPromptCounts: counts per sender/user-turn scope,
-                                     # JSON-encoded [senderThreadId, senderTurnTreeId] keys; absent means zero
+                                     # JSON-encoded [senderThreadId, senderTurnTreeId] keys
+                                     # (turn tree null for a sender run without one); absent means zero
                                      # crossThreadPromptsUsed: legacy unscoped incoming count
     events.jsonl                     # append-only spine: message + hook/audit + plan lines
     agent-history.json               # provider-format LLM resume snapshot (issue #993)

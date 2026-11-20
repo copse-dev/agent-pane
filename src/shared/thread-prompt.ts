@@ -5,12 +5,19 @@ export interface ThreadPromptCommand {
   id: string
   sourceThreadId: string
   /**
-   * The sender's user turn tree. A peer prompt (`send_thread_prompt`) always
-   * carries it and is charged to that sender turn's per-destination allowance.
-   * A delegated subthread prompt (`authorizingAccess`) has none and stays on
-   * the destination's continuation budget.
+   * The sender's user turn tree, when the sending run has one. A never-used
+   * destination inherits it as its epoch. A delegated subthread prompt
+   * (`authorizingAccess`) has none and stays on the destination's continuation
+   * budget.
    */
   sourceTurnTreeId?: string
+  /**
+   * Main's per-destination allowance scope for a peer prompt
+   * (`send_thread_prompt`): JSON `[sourceThreadId, sourceTurnTreeId]`, with
+   * `null` for a run that has no user turn (see `peerPromptSender`). Absent on
+   * delegated subthread prompts.
+   */
+  crossThreadScope?: string
   projectId: string
   thread: Thread
   text: string

@@ -93,14 +93,13 @@ export async function acceptThreadPrompt(
     if (!current || current.archivedAt !== undefined || Date.now() >= command.expiresAt)
       return { ok: false, error: 'The destination conversation is unavailable.' }
     // Delegated subthread prompts keep the continuation budget; only peer
-    // prompts carry the sender turn's per-destination allowance scope.
+    // prompts carry main's per-destination allowance scope.
     const peerTurnTreeId = command.authorizingAccess ? undefined : command.sourceTurnTreeId
+    const peerScope = command.authorizingAccess ? undefined : command.crossThreadScope
     const origin: MachineMessageOrigin = {
       kind: 'machine',
       operationId: `${command.authorizingAccess ? 'subthread' : 'thread'}:${command.sourceThreadId}`,
-      ...(peerTurnTreeId === undefined
-        ? {}
-        : { crossThreadScope: JSON.stringify([command.sourceThreadId, peerTurnTreeId]) }),
+      ...(peerScope === undefined ? {} : { crossThreadScope: peerScope }),
     }
     // A never-used destination inherits the existing sender root instead of
     // minting a fresh epoch on every machine run. Subsequent incoming prompts
