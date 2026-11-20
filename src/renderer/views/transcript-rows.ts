@@ -74,7 +74,7 @@ export interface WantedTranscriptRow extends TranscriptRow {
   readonly patchedBy: readonly string[]
 }
 
-function sameSignature(a: TranscriptRowSignature, b: TranscriptRowSignature): boolean {
+export function sameSignature(a: TranscriptRowSignature, b: TranscriptRowSignature): boolean {
   return a.patched === b.patched && a.settled === b.settled
 }
 

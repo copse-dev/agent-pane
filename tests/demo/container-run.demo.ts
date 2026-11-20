@@ -133,7 +133,7 @@ describe('unattended container run (browser-hosted)', () => {
       /Credential\s*Provider authentication held on the desktop; no keys or tokens in the container/,
     )
     expect(summary).toMatch(/Effects refused\s*0/)
-    // Section headings render uppercase through CSS; compare the source text.
+    // Compare the heading text case-insensitively; casing is a style decision.
     await expect(dialog.$('.container-run-deferrals h4')).toHaveText(
       'Waiting for your review (1)',
       {

@@ -1,5 +1,6 @@
 import type { StreamChunk } from '@shared/types'
 import type { DemoTrace } from '@shared/demo-traces.ts'
+import { sleep as defaultSleep } from '@copse/std/sleep.ts'
 
 /**
  * Replays a {@link DemoTrace} onto the renderer's normal chunk sink.
@@ -27,10 +28,6 @@ export interface TracePlayerOptions {
 const DEFAULT_CHARS_PER_SECOND = 240
 const DEFAULT_SLICE_CHARS = 12
 const DEFAULT_STEP_PAUSE_MS = 260
-
-function defaultSleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
 
 /**
  * Split text into token-sized slices that end on word boundaries where one is

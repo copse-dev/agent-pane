@@ -14,6 +14,9 @@ export const asrtHostSandbox: HostSandbox = {
     }
     // The ask-callback never grants: the allowlist is decided before startup.
     await SandboxManager.initialize(config, () => Promise.resolve(false), false)
+    if (!SandboxManager.isSandboxingEnabled()) {
+      throw new Error('artifact downloader sandbox did not enable')
+    }
   },
   wrap: (command) => {
     // Linux reaches the proxy through ASRT's Unix-socket bridge, created in

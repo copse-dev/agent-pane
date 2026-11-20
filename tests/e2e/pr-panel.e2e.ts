@@ -236,7 +236,7 @@ describe('PR panel (mock gh)', () => {
       await $$('#pr-viewer-host .git-image-diff-img').getElements(),
     ).toBeElementsArrayOfSize(2)
     const labels = await $$('#pr-viewer-host .git-image-diff-label').map((label) => label.getText())
-    expect(labels).toEqual(['BEFORE', 'AFTER'])
+    expect(labels).toEqual(['Before', 'After'])
     await expect(await $('#pr-viewer-host .monaco-diff-editor').getElement()).not.toBeDisplayed()
     await saveElementScreenshot('#pane-files', 'pr-panel-viewer-image-diff.png')
 

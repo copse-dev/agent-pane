@@ -30,6 +30,13 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           pattern: e2e-evidence-*
           path: incoming
+      # The one place every shard's outcomes meet: aggregate the specs whose
+      # shard attempts disagreed, plus same-commit fail→pass across re-runs
+      # (docs/testing-strategy.md#flake-visibility). Advisory and data-only.
+      - name: Summarise flaky e2e specs across shards
+        if: always()
+        continue-on-error: true
+        run: node scripts/flake-report.mts aggregate incoming --title 'E2E flakes in this CI run' --annotate
       - name: Validate and publish immutable evidence
         env:
           SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}

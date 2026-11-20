@@ -49,6 +49,7 @@ interface ShellReplayLeaseStoreOptions {
  */
 export class ShellReplayLeaseStore {
   private readonly leases = new Map<string, ShellReplayLease>()
+  private readonly issuedApprovals = new WeakMap<object, ShellReplayLease[]>()
   private readonly now: () => number
   private readonly createId: () => string
 
@@ -57,12 +58,24 @@ export class ShellReplayLeaseStore {
     this.createId = options.createId ?? randomUUID
   }
 
+  /**
+   * One human approval can issue each exact capability only once. A script
+   * scope widens an external lease to that script with other arguments; it
+   * does not let the same approval issue a second lease for the command.
+   */
   issue(
     identity: ShellReplayLeaseIdentity,
     command: string,
+    approval: object,
     scriptScope: string | null = null,
-  ): ShellReplayLease {
+  ): ShellReplayLease | null {
     this.prune()
+    const receipts = this.issuedApprovals.get(approval) ?? []
+    if (
+      receipts.some((lease) => sameIdentity(lease.identity, identity) && lease.command === command)
+    ) {
+      return null
+    }
     const lease: ShellReplayLease = {
       id: this.createId(),
       identity: { ...identity },
@@ -79,6 +92,11 @@ export class ShellReplayLeaseStore {
           : SHELL_REPLAY_LEASE_EXTERNAL_MAX_REPLAYS,
     }
     this.leases.set(lease.id, lease)
+    // Keep the receipt while a coalesced or parked caller still holds this
+    // decision. Expiry, exhaustion and revocation must not let a late sibling
+    // issue the same grant again. A new human decision has a fresh object.
+    receipts.push(lease)
+    this.issuedApprovals.set(approval, receipts)
     return { ...lease, identity: { ...lease.identity } }
   }
 
@@ -123,6 +141,12 @@ export class ShellReplayLeaseStore {
 
   revoke(id: string): boolean {
     return this.leases.delete(id)
+  }
+
+  revokeThread(threadId: string): void {
+    for (const [id, lease] of this.leases) {
+      if (lease.identity.threadId === threadId) this.leases.delete(id)
+    }
   }
 
   clear(): void {

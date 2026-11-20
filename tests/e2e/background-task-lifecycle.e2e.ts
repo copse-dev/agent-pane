@@ -11,10 +11,10 @@ import {
 } from './helpers/seed-config.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { waitForAgentIdle } from './helpers.ts'
+import { E2E_SCREENSHOT_DIR, parkPointer, saveAppScreenshot } from './helpers/screenshot.ts'
 
 const COMPLETION_SIGNAL = join(E2E_WORKSPACE_ROOT, '.e2e-background-task-complete')
 const COMMAND = `node -e "const fs=require('node:fs');const timer=setInterval(()=>{if(fs.existsSync(process.argv[1])){clearInterval(timer);console.log('background-complete')}},50)" ${JSON.stringify(COMPLETION_SIGNAL)}`
-const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
 async function startBackgroundTask(args: Record<string, unknown>): Promise<void> {
   const user = 'Run the workspace check in the background and let me know when it finishes.'
@@ -101,7 +101,7 @@ describe('session-scoped background task lifecycle', function () {
   this.timeout(90_000)
 
   before(async () => {
-    mkdirSync(SCREENSHOT_DIR, { recursive: true })
+    mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     rmSync(COMPLETION_SIGNAL, { force: true })
     resetUserData()
     seedEmptyProject(seedStableWorkspace(), 'e2e-background-task-lifecycle', {
@@ -147,8 +147,13 @@ describe('session-scoped background task lifecycle', function () {
     await expect(latestAssistant.$('.message-text')).toHaveText(
       expect.stringContaining('completed successfully after the renderer reloaded'),
     )
-    await browser.pause(500)
+    // The wake's turn ends before the frame is taken: a capture straight after
+    // the reply appears races the stop button and the turn's closing re-render.
+    await waitForAgentIdle(30_000)
     assert.equal((await $$('.msg-assistant').getElements()).length, assistantCount + 1)
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'background-task-completion-wake.png'))
+    await parkPointer()
+    await saveAppScreenshot('background-task-completion-wake.png')
+    // Still exactly one continuation once the capture's settle has passed.
+    assert.equal((await $$('.msg-assistant').getElements()).length, assistantCount + 1)
   })
 })

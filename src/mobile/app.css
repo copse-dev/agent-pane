@@ -6,6 +6,7 @@
    shared Copse layer (token bridge, highlighting palette, copy controls, Mermaid). */
 @import '@copse/streaming-markdown/styles/default.css';
 @import '../renderer/styles/global/markdown.css';
+@import './remote-chat.css';
 
 * {
   box-sizing: border-box;
@@ -76,12 +77,6 @@ select:focus-visible {
   width: 26px;
   height: 26px;
   background: url('../../assets/brand-mark.svg') center / contain no-repeat;
-}
-.eyebrow {
-  font-size: var(--font-size-2xs);
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  color: var(--text-secondary);
 }
 h1 {
   font-size: 34px;
@@ -161,7 +156,6 @@ h1 {
   color: var(--text-secondary);
   font-size: var(--font-size-xs);
   font-weight: 600;
-  letter-spacing: 0.1em;
 }
 .group-count {
   font-variant-numeric: tabular-nums;
@@ -269,8 +263,13 @@ h1 {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-#thread-project {
+/* The thread's project, as a quiet line under its title rather than a tracked
+   label over it. */
+.thread-project-meta {
   display: block;
+  margin: -4px 0 8px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
 }
 #thread {
   padding-top: 30px;
@@ -285,11 +284,9 @@ h1 {
   border-top: 1px solid var(--border-subtle);
 }
 .message-role {
-  font-size: var(--font-size-2xs);
+  font-size: var(--font-size-xs);
   font-weight: 600;
-  letter-spacing: 0.1em;
   color: var(--text-secondary);
-  text-transform: uppercase;
 }
 .message-summary {
   font-size: var(--font-size-sm);
@@ -556,6 +553,14 @@ form .ui-btn {
 }
 .message-compose textarea:focus-visible {
   outline: 0;
+}
+.next-prompt {
+  max-width: 100%;
+  min-height: 44px;
+  margin: 12px 0;
+  white-space: normal;
+  text-align: left;
+  color: var(--text-primary);
 }
 .composer-actions {
   display: flex;

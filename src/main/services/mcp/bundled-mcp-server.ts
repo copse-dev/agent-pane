@@ -14,13 +14,14 @@ import {
  * registry exactly like an external server, so its tool results flow through the
  * same flatten / UI-resource extraction path.
  *
- * This hosts the experimental canvas: `preview_explainer` returns scene images;
+ * This hosts the canvas: `preview_explainer` returns scene images;
  * `render_html_artefact` and `render_explainer` return a `text/html` MCP-UI resource for the host to render as a sandboxed
  * artefact. Gated by the `copse.mcp-ui-canvas` first-party plugin's `mcp-ui-canvas`
  * capability (the connect site in `mcp-registry.ts` reads
  * `isCapabilityActive('mcp-ui-canvas')`).
  */
 import { errorMessage } from '@shared/errors.ts'
+import { findPreviewBlockedLoads, type PreviewBlockedLoad } from '@shared/preview-csp.ts'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
@@ -68,6 +69,45 @@ async function resolveArtefactHtml(input: {
     return { html: input.html, title: input.title ?? 'artefact' }
   }
   throw new Error('Provide either `path` (a workspace HTML file, preferred) or inline `html`.')
+}
+
+/** Loads named in the notice; the rest are counted. */
+const MAX_LISTED_BLOCKED_LOADS = 8
+
+/** Longest URL the notice repeats; longer ones are cut with an ellipsis. */
+const MAX_NOTICE_URL_CHARS = 200
+
+/**
+ * The page's own URL text, made safe to repeat in one notice line: control
+ * characters and whitespace runs (an attribute value may span lines) collapse
+ * to one space, so a crafted `src` cannot add lines that look like more
+ * entries, and a huge one cannot fill the tool result.
+ */
+function noticeUrl(url: string): string {
+  const oneLine = url.replace(/[\s\u0000-\u001f\u007f-\u009f\u2028\u2029]+/gu, ' ').trim()
+  return oneLine.length > MAX_NOTICE_URL_CHARS
+    ? `${oneLine.slice(0, MAX_NOTICE_URL_CHARS)}…`
+    : oneLine
+}
+
+/**
+ * Tell the agent which of its page's scripts and stylesheets the canvas CSP
+ * refuses. Without this a CDN library (Chart.js, Tailwind, a web font) just
+ * never loads, the page renders blank or unstyled, and the tool still reports
+ * success. Null when the page loads nothing external.
+ */
+function blockedLoadsNotice(loads: readonly PreviewBlockedLoad[]): string | null {
+  if (loads.length === 0) return null
+  const listed = loads
+    .slice(0, MAX_LISTED_BLOCKED_LOADS)
+    .map((load) => `- ${load.kind}: ${noticeUrl(load.url)}`)
+  const unlisted = loads.length - listed.length
+  if (unlisted > 0) listed.push(`- and ${String(unlisted)} more`)
+  return [
+    'The canvas blocked these because it only runs scripts and styles written inline in the page:',
+    ...listed,
+    'Inline that code in <script> and <style> elements, or build the page without it, then render again.',
+  ].join('\n')
 }
 
 /** Stable name for the bundled canvas server (shown in Settings → MCP servers). */
@@ -132,6 +172,7 @@ function buildCanvasServer(options: BundledMcpOptions): { name: string; server: 
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, '-')
           .replace(/^-|-$/g, '') || 'artefact'
+      const blocked = blockedLoadsNotice(findPreviewBlockedLoads(resolved.html))
       return {
         content: [
           {
@@ -154,6 +195,7 @@ function buildCanvasServer(options: BundledMcpOptions): { name: string; server: 
               `browser). To capture it, open the page via its dev-server URL with browser_navigate ` +
               `first; otherwise just tell the user it is displayed.`,
           },
+          ...(blocked ? [{ type: 'text' as const, text: blocked }] : []),
         ],
       }
     },

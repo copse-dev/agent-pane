@@ -6,9 +6,10 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
   Record<string, { readonly sourceSha256: string; readonly filenames: readonly string[] }>
 > = {
   'tests/e2e/acp-auth-error.e2e.ts': {
-    sourceSha256: '174197917b04c2a82db192806b330013f9b03cdba91b5314f17ca469ee53c920',
+    sourceSha256: '715fe08b8032d0999de9bd40a5833aef110613f5d0b926b8e21e922177ade0fb',
     filenames: [
       'acp-auth-error.png',
+      'acp-auth-expired-mid-turn.png',
       'claude-org-check-auth-error.png',
       'codex-workspace-routing-auth-error.png',
       'cursor-acp-auth-error.png',
@@ -36,7 +37,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['file-viewer-copse-strong-dark.png', 'file-viewer-copse-strong-light.png'],
   },
   'tests/e2e/footer-branch-picker.e2e.ts': {
-    sourceSha256: '9df2346aa7c03ecdaa74539f312b62d0b08253b306e5073760d0db26368882c5',
+    sourceSha256: '09ba9923d244eeda7ba2f434c1bc6dd5ff53e7ff801d53ad10fb862daf011993',
     filenames: ['footer-branch-picker-compact-220.png', 'footer-branch-picker-compact-320.png'],
   },
   'tests/e2e/git-changes-thread-retention.e2e.ts': {
@@ -81,6 +82,10 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
       'new-thread-default-branch-worktree-sent.png',
     ],
   },
+  'tests/e2e/paired-browser-chat.e2e.ts': {
+    sourceSha256: 'b9e38f816bbea857c192bcd603bf2cf55bd5ce331d73102450535fd2973f0558',
+    filenames: ['paired-browser-approval-dark.png', 'paired-browser-approval-light.png'],
+  },
   'tests/e2e/pane-loading.e2e.ts': {
     sourceSha256: 'a4a2f58f9e9e8414b419dea33171f14aa0ae084874dcfb12beeeefd0a3f123f9',
     filenames: [
@@ -105,7 +110,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['pr-native-provenance-offline-restart.png', 'pr-native-provenance.png'],
   },
   'tests/e2e/queued-held.e2e.ts': {
-    sourceSha256: 'e77a734069b31da7f4c330045801eaafa4d62931c632409b70a8452ad1cdbb42',
+    sourceSha256: '60093096f47a51beafa83a86b8a22415270c0c47a9e706b583050550c7347b88',
     filenames: ['queued-held-contrast-dark.png', 'queued-held-contrast-light.png'],
   },
   'tests/e2e/queued-message-delete.e2e.ts': {
@@ -113,7 +118,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['queued-actions-row-hover-dark.png', 'queued-actions-row-hover-light.png'],
   },
   'tests/e2e/scroll-to-bottom.e2e.ts': {
-    sourceSha256: 'cead826610d9a2e8ba4bff60f518f2b96eb2c8696b53055892c0ffff90d71d14',
+    sourceSha256: '697dfa80f72d9c8e6b4bae7f30190ae4595f0d16f374f475a6ca358a856e2f0a',
     filenames: ['scroll-to-bottom-dark.png', 'scroll-to-bottom-light.png'],
   },
   'tests/e2e/settings-acp-agents-list.e2e.ts': {
@@ -129,7 +134,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['settings-automation-form-page-2.png', 'settings-automation-form.png'],
   },
   'tests/e2e/settings-classifiers-install.e2e.ts': {
-    sourceSha256: 'd81e028650114e8794741a1fed1c6032747ff6ed7dd73d6bbeb0a37a79e4307d',
+    sourceSha256: 'b6c290b2aba9a12d367d1a06e67630e35e90dcd32d2eb2bee367b9ac395c9cf2',
     filenames: [
       'settings-classifiers-install-bad-revision.png',
       'settings-classifiers-install-no-space.png',
@@ -182,7 +187,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['terminal-copse-strong-dark.png', 'terminal-copse-strong-light.png'],
   },
   'tests/e2e/thread-explainer-drawing.e2e.ts': {
-    sourceSha256: '2f9e156344b418ebf679d4a7e443346875b886cc68cc530b10be1d7202877675',
+    sourceSha256: 'd59d6be0466396a4050109f4c07d15d878218f9ac78221778038e7e5480292f4',
     filenames: [
       'explainer-drawing-1-player.png',
       'explainer-drawing-1.png',
@@ -195,7 +200,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/thread-explainer-scenes.e2e.ts': {
-    sourceSha256: '77f582553f6468a160782bd34eee9595c967ec8dc4c3b0babfbcf2f270c12e1f',
+    sourceSha256: '6cde6a5862f9f5b9baa556966fef5113ffd55b16d07eb4ab89a6cd4a75053b2d',
     filenames: [
       'explainer-scenes-1-player.png',
       'explainer-scenes-1.png',
@@ -204,7 +209,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/thread-explainer.e2e.ts': {
-    sourceSha256: '9537872e2bcf98bd1acf03478cc1130af77c19b4fb45b1a7420340081ac1e025',
+    sourceSha256: 'be1245a3f59821e2e7e4d0607bbb020870cd2a789aca065aa8a4e8ccc8fa9996',
     filenames: ['thread-explainer-player.png'],
   },
 }

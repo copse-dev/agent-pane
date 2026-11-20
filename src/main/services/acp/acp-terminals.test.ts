@@ -61,6 +61,12 @@ describe('composeAcpTerminalCommand', () => {
           command: `cd -- 'pkg a' || exit 1\npwd`,
         },
       )
+      // A child whose name merely starts with two dots is still inside.
+      await mkdir(join(root, '..build'))
+      assert.deepEqual(
+        composeAcpTerminalCommand({ command: 'pwd', cwd: join(root, '..build') }, root),
+        { command: `cd -- '..build' || exit 1\npwd` },
+      )
       for (const cwd of [tmpdir(), join(root, '..'), 'relative/dir']) {
         assert.ok('refused' in composeAcpTerminalCommand({ command: 'pwd', cwd }, root), cwd)
       }

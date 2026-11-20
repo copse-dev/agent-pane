@@ -11,6 +11,8 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
+import { z } from 'zod'
+import { decodeWithSchema, safeJsonParse } from '../../src/shared/safe-json.ts'
 import {
   startScriptedModelServer,
   type ScriptedModelServer,
@@ -19,16 +21,29 @@ import { loadProjectThreads } from '../../src/main/services/thread-store.ts'
 import { getCopseUserDataDir, waitForAgentIdle } from './helpers.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
 import { setComposerValue } from './helpers/composer.ts'
+import { expectAssistantReply } from './helpers/mock-scenario.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-local-model-worktree-isolation'
 const MODEL_ID = 'scripted-local'
+const THREAD_ID = 'local-isolation-fixture'
+const TITLE = 'Isolated fixture write'
+const FINAL_RESPONSE = 'Created local-provider-output.txt in the task checkout.'
 const OUTPUT_FILE = 'local-provider-output.txt'
 const OUTPUT = 'written through the isolated thread\n'
 const previousLmStudioApiKey = process.env['LM_STUDIO_API_KEY']
+
+function readConfig(): Record<string, unknown> {
+  const config = safeJsonParse(
+    readFileSync(join(getCopseUserDataDir(), 'config.json'), 'utf8'),
+    decodeWithSchema(z.record(z.string(), z.unknown())),
+  )
+  assert.ok(config)
+  return config
+}
 
 function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
@@ -65,9 +80,9 @@ describe('local provider default worktree isolation', () => {
     model = await startScriptedModelServer(
       [
         { kind: 'tool', name: 'write_file', args: { path: OUTPUT_FILE, content: OUTPUT } },
-        { kind: 'text', text: `Created ${OUTPUT_FILE} in the task checkout.` },
+        { kind: 'text', text: FINAL_RESPONSE },
       ],
-      { modelId: MODEL_ID },
+      { modelId: MODEL_ID, textOnlyResponse: TITLE },
     )
     seedEmptyProject(projectRoot, PROJECT_ID, {
       worktreeMode: 'default',
@@ -77,6 +92,25 @@ describe('local provider default worktree isolation', () => {
       subagentsEnabled: false,
       nextStepSuggestionEnabled: false,
     })
+    // Seed the empty thread id, not a worktree: the real default allocator still
+    // creates it on send, while the eventual titled branch has a stable suffix.
+    writeSeedConfig(
+      {
+        ...readConfig(),
+        activeThreadId: THREAD_ID,
+        [`threads:${PROJECT_ID}`]: [
+          {
+            id: THREAD_ID,
+            title: 'New Thread',
+            status: 'idle',
+            messages: [],
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
+      },
+      { preserveProductWorktreeDefault: true },
+    )
     writeE2eEnv({
       COPSE_PANEL_MOCK_LLM: '0',
       LM_STUDIO_API_KEY: 'e2e-local-provider-key',
@@ -102,11 +136,7 @@ describe('local provider default worktree isolation', () => {
     this.timeout(120_000)
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
-    const config = JSON.parse(
-      readFileSync(join(getCopseUserDataDir(), 'config.json'), 'utf8'),
-    ) as unknown
-    assert.ok(config && typeof config === 'object')
-    const projects = 'projects' in config ? config.projects : null
+    const projects = readConfig()['projects']
     assert.ok(Array.isArray(projects))
     const project = projects[0] as unknown
     assert.ok(project && typeof project === 'object')
@@ -152,7 +182,9 @@ describe('local provider default worktree isolation', () => {
         : '',
     )
     await waitForAgentIdle(60_000)
-    await browser.pause(500)
+    await expectAssistantReply(FINAL_RESPONSE)
+    await expect($('.chat-row.selected .chat-title')).toHaveText(TITLE)
+    await expect($('.branch-picker-label')).toHaveText('copse/isolated-fixture-write-ixture')
 
     const toolNames = await $$('.tool-card .tool-name').map((element) => element.getText())
     const assistantTexts = await $$('.msg-assistant').map((element) => element.getText())
@@ -190,10 +222,9 @@ describe('local provider default worktree isolation', () => {
       git(projectRoot, ['status', '--porcelain=v1', '--untracked-files=no']),
       initialTrackedStatus,
     )
-    assert.ok(
-      (model?.completionRequests ?? 0) >= 2,
-      'expected the local HTTP provider to serve both agent steps',
-    )
+    assert.ok(model)
+    assert.equal(model.scriptedRequests, 2, 'both scripted agent steps must be served')
+    assert.ok(model.completionRequests > 2, 'the title helper must use the HTTP fixture')
     await assertNoErrorToasts('local-provider isolated tool write')
     // The composer's Changes bubble lands a status round trip after the turn
     // settles; without this wait some runs capture the composer before it.

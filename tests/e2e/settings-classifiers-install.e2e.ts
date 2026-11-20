@@ -3,7 +3,11 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
-import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  pinTextForCapture,
+  saveElementScreenshot,
+} from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { FAKE_WINNOW_PIN, writeFakeClassifierTools } from '../helpers/fake-classifier-tools.ts'
@@ -184,10 +188,24 @@ describe('Download and run a local classifier', function () {
     const result = await host.$('.classifier-status').getText()
     assert.match(result, /color: red/)
     assert.match(result, /winnow-fake/)
-    await saveElementScreenshot(
-      '#settings-classifiers-host',
-      'settings-classifiers-install-test.png',
+    // The line quotes the call's round trip as the client measured it
+    // ("· 37 ms ·"), so two runs rendered 369bb348 and 3a65e778. No fixture
+    // reaches a wall-clock latency: keep the real text asserted above and pin
+    // only the number for the capture.
+    assert.match(result, / · \d+ ms · /)
+    const restoreLatency = await pinTextForCapture(
+      '#settings-classifiers-host .classifier-status',
+      / · \d+ ms · /,
+      ' · 12 ms · ',
     )
+    try {
+      await saveElementScreenshot(
+        '#settings-classifiers-host',
+        'settings-classifiers-install-test.png',
+      )
+    } finally {
+      await restoreLatency()
+    }
 
     // The reported tokens reached the usage ledger as classifier usage.
     await $('#settings-dialog button[data-section="usage"]').click()

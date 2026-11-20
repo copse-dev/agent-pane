@@ -7,7 +7,7 @@ import {
   BROWSER_TOOLS,
   READ_ONLY_BROWSER_TOOLS,
 } from '../services/browser/browser-origin-policy.ts'
-import { browserScreenshotTool, browserShowTool } from './browser-tools.ts'
+import { browserScreenshotTool, browserShowTool, browserTypeTool } from './browser-tools.ts'
 import {
   getBrowserSession,
   setBrowserSessionPlatform,
@@ -17,6 +17,10 @@ import {
   type ThreadExecutionContext,
 } from '../services/thread-execution-context.ts'
 import { resolveCaptureHandle } from '../services/visual-evidence/capture-handle-store.ts'
+import { ToolRegistry, setPermissionGateForTests } from '../services/tool-registry.ts'
+import { copseToolPermissionId } from '../services/security/tool-permissions.ts'
+import { setApprovalHandler } from '../services/approval.ts'
+import { runWithAgentRunReadonly } from '../services/agent-run-readonly.ts'
 
 const THREAD_CONTEXT: ThreadExecutionContext = {
   projectId: 'project-a',
@@ -26,6 +30,105 @@ const THREAD_CONTEXT: ThreadExecutionContext = {
   checkoutMode: 'shared',
   branch: 'main',
 }
+
+describe('browser_type form entry', () => {
+  it('accepts several fields from one page snapshot in one native call', () => {
+    const fields = [
+      { ref: 'e2', text: 'Harbor release' },
+      { ref: 'e3', text: 'Keep the user draft' },
+      { ref: 'e4', text: 'high' },
+    ]
+    const parsed = browserTypeTool.parameters.safeParse({ fields, viewId: 'tab-1' })
+    assert.equal(parsed.success, true, 'one form should not require a tool invocation per field')
+    assert.deepEqual(parsed.data, { fields, viewId: 'tab-1' })
+  })
+
+  it('keeps the existing single-field input supported', () => {
+    assert.equal(
+      browserTypeTool.parameters.safeParse({ ref: 'e2', text: 'Harbor release' }).success,
+      true,
+    )
+  })
+
+  it('rejects mixing a single field and a form before editing the page', () => {
+    assert.equal(
+      browserTypeTool.parameters.safeParse({
+        ref: 'e2',
+        text: 'First value',
+        fields: [{ ref: 'e3', text: 'Second value' }],
+      }).success,
+      false,
+    )
+  })
+})
+
+describe('browser_type grouped-entry permission boundary', () => {
+  const args = { fields: [{ ref: 'e1', text: 'Manual draft' }] }
+  const signal = new AbortController().signal
+  function registry(): ToolRegistry {
+    const result = new ToolRegistry()
+    result.register(browserTypeTool)
+    setPermissionGateForTests(null)
+    return result
+  }
+
+  afterEach(async () => {
+    setApprovalHandler(null)
+    setPermissionGateForTests(null)
+    await setSetting('toolPermissionOverrides', {})
+  })
+
+  it('publishes the fields on the existing object-shaped MCP tool schema', () => {
+    const tools = registry().toMcpTools()
+    assert.equal(tools.length, 1)
+    const tool = tools.at(0)
+    assert.ok(tool)
+    assert.equal(tool.name, 'browser_type')
+    assert.equal(tool.inputSchema['type'], 'object')
+    assert.ok(JSON.stringify(tool.inputSchema).includes('"fields"'))
+  })
+
+  it('honors Block without touching the native page or prompting', async (t) => {
+    const entry = t.mock.method(getBrowserSession(), 'typeFields', async () => 'Entered 1 fields')
+    await setSetting('toolPermissionOverrides', {
+      [copseToolPermissionId('browser_type')]: 'block',
+    })
+    let prompts = 0
+    setApprovalHandler(async () => {
+      prompts++
+      return { approved: true, remember: false }
+    })
+    const result = await registry().execute('browser_type', args, signal)
+    assert.match(typeof result === 'string' ? result : result.result, /blocked/i)
+    assert.equal(entry.mock.callCount(), 0)
+    assert.equal(prompts, 0)
+  })
+
+  it('asks for each grouped call and a rejection leaves the page untouched', async (t) => {
+    const entry = t.mock.method(getBrowserSession(), 'typeFields', async () => 'Entered 1 fields')
+    await setSetting('toolPermissionOverrides', { [copseToolPermissionId('browser_type')]: 'ask' })
+    let prompts = 0
+    setApprovalHandler(async () => {
+      prompts++
+      return { approved: prompts === 1, remember: false }
+    })
+    const tools = registry()
+    await tools.execute('browser_type', args, signal)
+    await tools.execute('browser_type', args, signal)
+    assert.equal(prompts, 2)
+    assert.equal(entry.mock.callCount(), 1)
+  })
+
+  it('keeps grouped page edits out of a read-only run', async (t) => {
+    const entry = t.mock.method(getBrowserSession(), 'typeFields', async () => 'Entered 1 fields')
+    const tools = registry()
+    const result = await runWithAgentRunReadonly(true, () =>
+      tools.execute('browser_type', args, signal),
+    )
+    assert.match(typeof result === 'string' ? result : result.result, /read.only/i)
+    assert.equal(entry.mock.callCount(), 0)
+  })
+})
 
 describe('browser tools registration', () => {
   afterEach(async () => {

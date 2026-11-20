@@ -375,6 +375,41 @@ test('round-trips a command phase and drops a malformed one', () => {
   }
 })
 
+test('round-trips a deferred tool call and drops a malformed marker', () => {
+  // A reload must not turn a held-back edit back into a completed "Edited" card.
+  const messages: Message[] = [
+    {
+      id: 'a1',
+      role: 'assistant',
+      content: '',
+      toolCalls: [
+        {
+          id: 'tc1',
+          name: 'write_file',
+          args: { path: 'packages/api/first.ts', content: 'x' },
+          status: 'done',
+          result: 'Edit deferred because…',
+          deferred: true,
+        },
+      ],
+      createdAt: 5,
+    },
+  ]
+  deepStrictEqual(roundTrip(messages).messages, messages)
+
+  const { spine, files } = explodeThread(messages, hash)
+  const call = spine[0]?.toolCalls[0]
+  ok(call)
+  strictEqual(call.deferred, true)
+  for (const malformed of [false, 'true', 1, {}]) {
+    const tampered = parseSpine(
+      JSON.stringify({ ...spine[0], toolCalls: [{ ...call, deferred: malformed }] }),
+    )
+    const folded = foldThread(meta(), tampered, resolverFor(files), { hash })
+    strictEqual(folded.messages[0]?.toolCalls[0]?.deferred, undefined)
+  }
+})
+
 test('round-trips tool-result images through referenced blobs', () => {
   const dataUrl = 'data:image/png;base64,aW1hZ2UtYnl0ZXM='
   const messages: Message[] = [

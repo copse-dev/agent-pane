@@ -17,7 +17,11 @@ import { tmpdir } from 'node:os'
 import { syncBuiltinESMExports } from 'node:module'
 import { join } from 'node:path'
 import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
-import { ShellReplayLeaseStore, type ShellReplayLeaseIdentity } from './capability-lease.ts'
+import {
+  ShellReplayLeaseStore,
+  type ShellReplayLease,
+  type ShellReplayLeaseIdentity,
+} from './capability-lease.ts'
 import { scriptReplayScope } from './script-replay-scope.ts'
 
 /** Binary identity fixtures are never executed. */
@@ -54,8 +58,16 @@ async function issueScript(
   store: ShellReplayLeaseStore,
   owner: ShellReplayLeaseIdentity,
   command: string,
-): Promise<ReturnType<ShellReplayLeaseStore['issue']>> {
-  return store.issue(owner, command, await scriptReplayScope(command, owner.executionRoot))
+): Promise<ShellReplayLease> {
+  // Each call stands for a fresh human approval.
+  const lease = store.issue(
+    owner,
+    command,
+    {},
+    await scriptReplayScope(command, owner.executionRoot),
+  )
+  assert.ok(lease)
+  return lease
 }
 
 describe('script argument replay leases', { skip: process.platform === 'win32' }, () => {
@@ -181,7 +193,7 @@ describe('script argument replay leases', { skip: process.platform === 'win32' }
         (await store.consume(owner, 'node scripts/audit.mjs expired', () => true)).matched,
         false,
       )
-      store.issue({ ...owner, containment: 'project-sandbox' }, 'node scripts/audit.mjs first')
+      store.issue({ ...owner, containment: 'project-sandbox' }, 'node scripts/audit.mjs first', {})
       assert.equal(
         (
           await store.consume(
@@ -303,7 +315,7 @@ describe('script argument replay leases', { skip: process.platform === 'win32' }
       const owner = identity(root)
       const command = './node scripts/audit.mjs first'
       const initial = await scriptReplayScope(command, root)
-      store.issue(owner, command, initial)
+      store.issue(owner, command, {}, initial)
       // Only dispatch configuration changes: the shim's path and bytes stay fixed.
       writeFileSync(join(root, 'selected-interpreter'), join(root, 'second'))
       assert.equal(

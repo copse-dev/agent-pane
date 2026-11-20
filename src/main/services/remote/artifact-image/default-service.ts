@@ -12,10 +12,13 @@ let service: ArtifactImageService | null = null
 /** The app's artifact-image service, wired to the real thread store, provider and host. */
 export function artifactImageService(): ArtifactImageService {
   service ??= new ArtifactImageService({
-    async readThreadLink(projectId, threadId): Promise<RemoteAgentLink | null> {
+    async readThreadProvenance(
+      projectId,
+      threadId,
+    ): Promise<{ link: RemoteAgentLink | null; cursorAgentIds: string[] }> {
       const meta = await getThreadMeta(projectId, threadId)
       if (!meta) throw new Error('unknown thread')
-      return meta.remoteAgentLink ?? null
+      return { link: meta.remoteAgentLink ?? null, cursorAgentIds: meta.cursorAgentIds ?? [] }
     },
     credentials: cursorArtifactCredentials,
     resolveDownloadUrl: resolveRemoteArtifactDownloadUrl,

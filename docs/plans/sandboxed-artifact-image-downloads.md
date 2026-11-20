@@ -142,8 +142,9 @@ a minimal environment, a private scratch directory, and a parent IPC channel.
 It sends a single schema-decoded job after startup. No shell command, executable,
 filesystem roots, headers, or sandbox configuration can come from the renderer.
 
-The host initializes its own ASRT manager and supplies a per-job external proxy
-through ASRT's supported proxy configuration. It then starts the fixed bundled
+The host initializes its own ASRT manager, verifies sandboxing is enabled, and supplies a per-job
+external proxy through ASRT's supported proxy configuration. A resolved initialization alone is
+not permission to start a downloader. It then starts the fixed bundled
 downloader inside ASRT. The downloader has:
 
 - Runtime/bundle/system-library reads required to start, but no workspace, profile,
@@ -264,8 +265,10 @@ or raw network error messages that may embed URLs. Decode failures to bounded er
 codes before they cross into renderer logs.
 
 On Windows or unavailable macOS/Linux ASRT, automatic hydration remains unavailable.
-Explicit artifact links continue as their separate user-initiated feature; do not
-label that browser/download path as sandboxed hydration.
+Explicit artifact links continue as their separate user-initiated Save feature;
+do not label that main-process byte fetch as sandboxed hydration. It uses the same
+exact Cursor origin policy and bounded redirect/byte handling, and never places a
+signed URL in renderer state or a browser history.
 
 ## Implementation sequence and acceptance evidence
 
@@ -363,8 +366,8 @@ redirect pattern with an authenticated fixture. A different real origin fails cl
 - Renderer subscriptions that cancel a shared job when the last viewer leaves. Jobs are instead
   bounded by the queue, deduplication and deadlines.
 - A trusted provenance migration for old threads without `remoteAgentLink`. Their images fail
-  closed as `unlinked-agent`. The thread store keeps one current link per thread, so an image
-  from an earlier, replaced agent link is also refused.
+  closed as `unlinked-agent`. Main-recorded launch history now retains up to 128 recent Cursor
+  agent IDs per chat, so an image with an explicit older ID can still hydrate after a relaunch.
 - Download-origin configuration for custom providers. Only Cursor links hydrate; other providers
   answer `unsupported-provider`.
 
@@ -389,11 +392,16 @@ SSRF, signed-URL leak or self-approving origin. Its findings fixed in #4030:
   refetch. Cache invalidation was removed: every read re-authorizes against the durable link,
   and the key carries the credential generation and API origin.
 
+**Explicit-download follow-up:** `remote-agent:download-artifact` checks the asking window's active
+project, then the requesting chat's durable current link and bounded Cursor launch history (or
+OpenAI cache owner) before provider access. Main reads approved Cursor downloads into a chosen
+file with a size and deadline bound; the signed URL never crosses to the renderer or system
+browser. Automatic image hydration also checks the window's active project and accepts an explicit
+older Cursor ID only when that chat's main-recorded history contains it. The explicit Save path
+remains separate from sandboxed automatic image hydration.
+
 **Residual risks, not fixed here:**
 
-- The older explicit-download IPC (`remote-agent:download-artifact`) still returns a signed URL
-  to the renderer for any agent ID, with no thread authorization. It is a separate, user-initiated
-  path and needs its own change.
 - A path-only image (`artifacts/…` with no agent in the URL) resolves against the thread's
   _current_ link, so after a relaunch it may name a newer run's artifact of the same path.
 - Inside an approved tunnel, a compromised downloader could send any `Host` header to the same

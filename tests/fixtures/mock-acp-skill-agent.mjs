@@ -8,6 +8,12 @@ import { URL } from 'node:url'
 import { existsSync, writeFileSync } from 'node:fs'
 
 const sessions = new Map()
+const transportFor = (server) =>
+  new StreamableHTTPClientTransport(new URL(server.url), {
+    requestInit: {
+      headers: Object.fromEntries(server.headers.map((header) => [header.name, header.value])),
+    },
+  })
 const retryIndex = process.argv.indexOf('--retry-once')
 const retryMarker = retryIndex >= 0 ? process.argv[retryIndex + 1] : undefined
 agent({ name: 'skill-boundary-probe' })
@@ -16,12 +22,22 @@ agent({ name: 'skill-boundary-probe' })
     agentCapabilities: { mcpCapabilities: { http: true } },
   }))
   .onRequest('authenticate', () => ({}))
-  .onRequest('session/new', (ctx) => {
+  .onRequest('session/new', async (ctx) => {
     const sessionId = `skill-session-${String(sessions.size)}`
-    sessions.set(
-      sessionId,
-      ctx.params.mcpServers.find((server) => server.type === 'http'),
-    )
+    const server = ctx.params.mcpServers.find((server) => server.type === 'http')
+    sessions.set(sessionId, server)
+    // Mount the bridge while the session opens, as real agents (Claude Code,
+    // Codex, Gemini) connect their MCP servers: Copse claims its tools, the
+    // skill catalog included, only once the agent has listed them (#4144).
+    if (server) {
+      const client = new Client({ name: 'skill-mount', version: '1' })
+      try {
+        await client.connect(transportFor(server))
+        await client.listTools()
+      } finally {
+        await client.close()
+      }
+    }
     return { sessionId }
   })
   .onRequest('session/prompt', async (ctx) => {
@@ -60,15 +76,7 @@ agent({ name: 'skill-boundary-probe' })
     if (!server) throw new Error('Copse HTTP MCP bridge was not offered')
     const client = new Client({ name: 'skill-reader', version: '1' })
     try {
-      await client.connect(
-        new StreamableHTTPClientTransport(new URL(server.url), {
-          requestInit: {
-            headers: Object.fromEntries(
-              server.headers.map((header) => [header.name, header.value]),
-            ),
-          },
-        }),
-      )
+      await client.connect(transportFor(server))
       const tools = await client.listTools()
       if (!tools.tools.some((tool) => tool.name === 'read_skill'))
         throw new Error('read_skill was not received')

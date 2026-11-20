@@ -50,7 +50,15 @@ export function writeFailingPrGhFixture(binDir: string): void {
   chmodSync(gh, 0o755)
 }
 
-export async function completeMockTurn(includeDebugCiFollowUp = false): Promise<ScenarioHandle> {
+/**
+ * `dirtySharedCheckout`: the project is a shared checkout with uncommitted
+ * changes, so the first prompt in a blank thread stops at the dirty-checkout
+ * advisory (#2503) and is only sent once the user chooses "Send anyway".
+ */
+export async function completeMockTurn(
+  includeDebugCiFollowUp = false,
+  { dirtySharedCheckout = false }: { dirtySharedCheckout?: boolean } = {},
+): Promise<ScenarioHandle> {
   await $('.prompt-input').waitForExist({ timeout: 30_000 })
   const prompt = 'Review my uncommitted changes and suggest any improvements.'
   const scenario = await installMockScenario({
@@ -80,6 +88,12 @@ export async function completeMockTurn(includeDebugCiFollowUp = false): Promise<
   })
   await setComposerValue(prompt)
   await $('.submit-btn').click()
+  if (dirtySharedCheckout) {
+    const warning = $('.composer-dirty-warning')
+    await warning.waitForDisplayed({ timeout: 10_000 })
+    await warning.$('.composer-dirty-send-btn').click()
+    await $('.messages-list .msg-user').waitForExist({ timeout: 10_000 })
+  }
 
   await waitForAgentIdle(20_000)
   await expect($('.msg-assistant .message-text')).toHaveText(

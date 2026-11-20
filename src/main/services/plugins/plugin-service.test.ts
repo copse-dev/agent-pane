@@ -41,6 +41,7 @@ import { DARK_FACTORY_PLUGIN_ID } from '@copse/agent/plugins/dark-factory-plugin
 import { COMPUTER_USE_PLUGIN_ID } from '@copse/agent/plugins/computer-use-plugin.ts'
 import { ARTIFACT_CHECKPOINT_PLUGIN_ID } from '@copse/agent/plugins/artifact-checkpoint-plugin.ts'
 import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-plugin.ts'
+import { PROJECT_CONTEXT_PLUGIN_ID } from '@copse/agent/plugins/project-context-plugin.ts'
 import { ENGINEERING_PLUGIN_ID } from '@copse/agent/plugins/engineering-plugin.ts'
 import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
 import {
@@ -62,6 +63,7 @@ const PLUGIN_DISABLED_KEY = 'pluginDisabled'
 const AUTOMATIONS_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.automationsEnablement'
 const ARTIFACT_CHECKPOINT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.artifactCheckpointEnablement'
 const REVIEWER_INPUT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.reviewerInputEnablement'
+const PROJECT_CONTEXT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.projectContextEnablement'
 const BACKGROUND_TASKS_STABLE_MIGRATION_KEY = 'pluginMigration.backgroundTasksStable'
 const MCP_UI_CANVAS_STABLE_MIGRATION_KEY = 'pluginMigration.mcpUiCanvasStable'
 const APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.appleDevelopmentEnablement'
@@ -143,6 +145,7 @@ function clearStorage(): void {
   storageSet(AUTOMATIONS_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(ARTIFACT_CHECKPOINT_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(REVIEWER_INPUT_ENABLEMENT_MIGRATION_KEY, true)
+  storageSet(PROJECT_CONTEXT_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(REVIEW_PLUGIN_MIGRATION_KEY, true)
   storageSet(BACKGROUND_TASKS_STABLE_MIGRATION_KEY, true)
   storageSet(MCP_UI_CANVAS_STABLE_MIGRATION_KEY, true)
@@ -403,6 +406,7 @@ describe('PluginService', () => {
       DARK_FACTORY_PLUGIN_ID,
       ARTIFACT_CHECKPOINT_PLUGIN_ID,
       REVIEWER_INPUT_PLUGIN_ID,
+      PROJECT_CONTEXT_PLUGIN_ID,
       APPLE_DEVELOPMENT_PLUGIN_ID,
       COMPUTER_USE_PLUGIN_ID,
       ENGINEERING_PLUGIN_ID,
@@ -426,6 +430,7 @@ describe('PluginService', () => {
         DARK_FACTORY_PLUGIN_ID,
         ARTIFACT_CHECKPOINT_PLUGIN_ID,
         REVIEWER_INPUT_PLUGIN_ID,
+        PROJECT_CONTEXT_PLUGIN_ID,
         APPLE_DEVELOPMENT_PLUGIN_ID,
         COMPUTER_USE_PLUGIN_ID,
         ENGINEERING_PLUGIN_ID,
@@ -517,6 +522,26 @@ describe('PluginService', () => {
     __resetPluginServiceForTests()
     const later = getPluginService()
     assert.equal(later.registry.isEnabled(REVIEWER_INPUT_PLUGIN_ID), true)
+  })
+
+  it('keeps project context off on fresh and upgraded profiles and preserves later choices', async () => {
+    storageDelete(PLUGIN_DISABLED_KEY)
+    storageDelete(PROJECT_CONTEXT_ENABLEMENT_MIGRATION_KEY)
+    assert.equal(getPluginService().registry.isEnabled(PROJECT_CONTEXT_PLUGIN_ID), false)
+
+    __resetPluginServiceForTests()
+    storageSet(PLUGIN_DISABLED_KEY, ['copse.todos'])
+    storageDelete(PROJECT_CONTEXT_ENABLEMENT_MIGRATION_KEY)
+    const service = getPluginService()
+    assert.equal(service.registry.isEnabled(PROJECT_CONTEXT_PLUGIN_ID), false)
+    assert.equal(service.registry.isEnabled('copse.todos'), false)
+    assert.equal(storageGet(PROJECT_CONTEXT_ENABLEMENT_MIGRATION_KEY), true)
+    await service.setEnabled(PROJECT_CONTEXT_PLUGIN_ID, true)
+    __resetPluginServiceForTests()
+    assert.equal(getPluginService().registry.isEnabled(PROJECT_CONTEXT_PLUGIN_ID), true)
+    await getPluginService().setEnabled(PROJECT_CONTEXT_PLUGIN_ID, false)
+    __resetPluginServiceForTests()
+    assert.equal(getPluginService().registry.isEnabled(PROJECT_CONTEXT_PLUGIN_ID), false)
   })
 
   it('seeds interactive client access off on upgrade and preserves a later opt-in', async () => {

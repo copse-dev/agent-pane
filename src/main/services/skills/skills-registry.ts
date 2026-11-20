@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import * as fsp from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, dirname, join, relative, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import {
   discoverCursorPluginRoots,
   readCursorPluginName,
@@ -14,7 +14,9 @@ import {
   listBundledCursorPluginRoots,
 } from './bundled-cursor-skills.ts'
 import { getBuiltinSkillsRoot } from './builtin-skills.ts'
-import { pathExists, walkForContainerRoots, walkForFiles } from '../discovery/container-scan.ts'
+import { pathExists } from '@copse/std/path-exists.ts'
+import { isPathWithin } from '@copse/std/path-containment.ts'
+import { walkForContainerRoots, walkForFiles } from '../discovery/container-scan.ts'
 import { getSetting } from '../storage/settings.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
 import {
@@ -173,10 +175,9 @@ async function findMissingReferences(
   const missing: string[] = []
   for (const reference of references) {
     const target = resolve(skillRoot, reference)
-    const rel = relative(skillRoot, target)
     // A reference that resolves outside the bundle isn't this check's concern
     // (the sandboxing in `readSkill` handles path escapes at read time).
-    if (rel.startsWith('..')) continue
+    if (!isPathWithin(skillRoot, target)) continue
     if (!(await pathExists(target))) missing.push(reference)
   }
   return missing
@@ -842,8 +843,7 @@ export async function readSkill(name: string, relativePath = 'SKILL.md'): Promis
 
   const normalized = relativePath.replace(/^\/+/, '')
   const target = resolve(skill.skillRoot, normalized)
-  const rel = relative(skill.skillRoot, target)
-  if (rel.startsWith('..') || rel.split(/[/\\]/).includes('..')) {
+  if (!isPathWithin(skill.skillRoot, target)) {
     throw new Error(`Path outside skill root: ${relativePath}`)
   }
 
@@ -870,8 +870,7 @@ export async function readSkill(name: string, relativePath = 'SKILL.md'): Promis
     fsp.realpath(skill.skillRoot),
     fsp.realpath(target),
   ])
-  const realRel = relative(realRoot, realTarget)
-  if (realRel.startsWith('..') || realRel.split(/[/\\]/).includes('..')) {
+  if (!isPathWithin(realRoot, realTarget)) {
     throw new Error(`Path outside skill root: ${relativePath}`)
   }
 

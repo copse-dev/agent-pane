@@ -23,6 +23,7 @@ import {
   type SupervisedTaskStore,
   type TaskLoadDiagnostic,
 } from './task-store.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 export interface SupervisedTaskHandlerContext {
   signal: AbortSignal
@@ -917,7 +918,7 @@ export class TaskSupervisor {
     } catch (error) {
       const current = this.tasks.get(key)
       if (!current || current.state !== 'running' || interrupted()) return
-      const reason = error instanceof Error ? error.message : String(error)
+      const reason = errorMessage(error)
       const policy = current.retryPolicy
       const attempts = Math.min(
         current.maxAttempts,
