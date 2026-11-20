@@ -45,10 +45,7 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 
 // A promise rather than a polled flag: the flag is only ever written from a
 // stream callback, which control-flow analysis cannot see.
-let markBooted = (): void => undefined
-const booted = new Promise<void>((r) => {
-  markBooted = r
-})
+const { promise: booted, resolve: markBooted }: PromiseWithResolvers<void> = Promise.withResolvers()
 const onOutput = (buf: Buffer): void => {
   if (buf.toString().includes('[startup] boot-complete')) markBooted()
 }
