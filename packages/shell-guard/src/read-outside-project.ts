@@ -100,7 +100,7 @@ const WRITING_FLAGS: ReadonlyMap<string, RegExp> = new Map([
 ])
 
 /** Basenames whose contents are credentials by convention. */
-const SENSITIVE_BASENAMES: ReadonlySet<string> = new Set([
+export const SENSITIVE_BASENAMES: ReadonlySet<string> = new Set([
   '.netrc',
   '_netrc',
   '.npmrc',
@@ -127,7 +127,7 @@ const SENSITIVE_BASENAME_PATTERNS: readonly RegExp[] = [
 ]
 
 /** Directory names that hold credentials for a whole toolchain. */
-const SENSITIVE_DIR_SEGMENTS: ReadonlySet<string> = new Set([
+export const SENSITIVE_DIR_SEGMENTS: ReadonlySet<string> = new Set([
   '.ssh',
   '.aws',
   '.gnupg',
@@ -141,7 +141,7 @@ const SENSITIVE_DIR_SEGMENTS: ReadonlySet<string> = new Set([
 ])
 
 /** Whole-path fragments where only the pairing is sensitive (`.config/gh` holds a token). */
-const SENSITIVE_PATH_FRAGMENTS: readonly string[] = ['/.config/gh/', '/.config/gcloud/']
+export const SENSITIVE_PATH_FRAGMENTS: readonly string[] = ['/.config/gh/', '/.config/gcloud/']
 
 export interface ReadOutsideProjectAnalysis {
   /** True when the command is a read this module can fully account for. */
