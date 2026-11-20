@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig, writeSettings } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { composerText, setComposerValue } from './helpers/composer.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
@@ -112,5 +112,31 @@ describe('new thread on a detached project checkout', () => {
     assert.equal(git(project, ['branch', '--show-current']), '', 'checkout must stay detached')
     assert.equal(git(holder, ['branch', '--show-current']), 'main')
     await saveAppScreenshot('new-thread-detached-head-sent.png')
+  })
+
+  // A stopped rebase is detached too. Starting there would put the agent's
+  // commits into the branch being rewritten, so the send is refused instead.
+  it('keeps the prompt when the checkout is stopped mid-rebase', async function () {
+    this.timeout(120_000)
+    // A failing `exec` stops the rebase on the checked-out commit.
+    assert.throws(() => git(project, ['rebase', '-x', 'false', 'HEAD~1']))
+    const rebaseState = resolve(project, git(project, ['rev-parse', '--git-path', 'rebase-merge']))
+    assert.ok(existsSync(rebaseState), 'the rebase must be stopped')
+    await expect($('.branch-picker-label')).toHaveText('Detached HEAD', { wait: 15_000 })
+
+    const prompt = 'Help me finish this rebase.'
+    await setComposerValue(prompt)
+    await $('.submit-btn').click()
+    const error = $('.composer-checkout-error')
+    await error.waitForDisplayed({ timeout: 15_000 })
+    await expect(error).toHaveText(expect.stringContaining('in the middle of a rebase'))
+    assert.equal(await composerText(), prompt)
+    await expect($('.msg-user')).not.toExist()
+
+    assert.equal(git(project, ['rev-parse', 'HEAD']), reviewCommit)
+    assert.equal(git(project, ['branch', '--show-current']), '', 'checkout must stay detached')
+    assert.ok(existsSync(rebaseState), 'the rebase must be left as it was')
+    assert.equal(git(holder, ['branch', '--show-current']), 'main')
+    await saveAppScreenshot('new-thread-detached-head-rebasing.png')
   })
 })

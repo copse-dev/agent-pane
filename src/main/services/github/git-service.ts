@@ -1307,6 +1307,33 @@ export async function getCurrentBranchName(root: string | null): Promise<string 
   return branch && branch !== 'HEAD' ? branch : null
 }
 
+/**
+ * Whether a `git rebase` is stopped in this checkout: at a conflict, an
+ * `edit`/`break` stop or a failed `exec`. `--git-path` resolves a linked
+ * worktree's own state directory, relative to `root`. An unanswered read
+ * counts as no rebase.
+ */
+export async function isRebaseInProgress(root: string): Promise<boolean> {
+  const { stdout, code } = await runGitRead(
+    ['rev-parse', '--git-path', 'rebase-merge', '--git-path', 'rebase-apply'],
+    root,
+  )
+  if (code !== 0) return false
+  const states = stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+  const present = await Promise.all(
+    states.map((state) =>
+      fsp.lstat(resolve(root, state)).then(
+        () => true,
+        () => false,
+      ),
+    ),
+  )
+  return present.includes(true)
+}
+
 /** Full SHA of the current `HEAD` commit, or null when unavailable / no commits yet. */
 export async function getCurrentCommitHash(root: string | null): Promise<string | null> {
   if (!root) return null
