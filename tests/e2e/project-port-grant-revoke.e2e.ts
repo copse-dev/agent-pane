@@ -1,20 +1,22 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { $, browser, expect } from '@wdio/globals'
+import { $, $$, browser, expect } from '@wdio/globals'
 import {
   resetUserData,
   seedEmptyProject,
   writeSeedConfig,
   readSeededSettings,
+  e2eWorkspaceDir,
 } from './helpers/seed-config.ts'
+import { loadProjectThreads } from '../../src/main/services/thread-store.ts'
 import { readFixtureJsonObject } from './helpers/fixture-json.ts'
 import { getCopseUserDataDir, agentIsIdle } from './helpers.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { parkPointer, saveAppScreenshot } from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const roots: string[] = []
@@ -121,6 +123,33 @@ async function switchProject(id: string): Promise<void> {
   })
 }
 
+async function waitForServerExits(count: number): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      const thread = (await loadProjectThreads(A)).find((thread) => thread.id === 'port-thread-a')
+      const calls = thread?.messages.flatMap((message) => message.toolCalls) ?? []
+      return calls.length === count && calls.every((call) => call.commandPhase?.state === 'exited')
+    },
+    {
+      timeout: 15_000,
+      timeoutMsg: 'the real local preview did not finish before the next request',
+    },
+  )
+  const thread = (await loadProjectThreads(A)).find((thread) => thread.id === 'port-thread-a')
+  assert.ok(thread)
+  for (const call of thread.messages.flatMap((message) => message.toolCalls)) {
+    assert.equal(call.commandPhase?.state, 'exited')
+    assert.equal(call.commandPhase.launched, true)
+    assert.equal(call.commandPhase.exitCode, 0)
+  }
+}
+
+async function expectDecisionSubjects(subjects: string[]): Promise<void> {
+  await expect(
+    $$('.thread-context [data-context-section="decisions"] .thread-context-title'),
+  ).toHaveText(subjects)
+}
+
 describe('remember and revoke project local-port consent', function () {
   this.timeout(180_000)
   before(async () => {
@@ -153,13 +182,42 @@ describe('remember and revoke project local-port consent', function () {
       await startServer('Start a local preview and remember consent for project A.', 'remember'),
       1,
     )
+    // An overlapping live task intentionally asks about its widened network
+    // scope. This test checks saved local-port consent after each real task ends.
+    await waitForServerExits(1)
     assert.equal(await startServer('Start another preview in the same project.'), 0)
+    await waitForServerExits(2)
     await switchProject(B)
     assert.equal(await startServer('Start a preview in project B.', 'reject'), 1)
     assert.deepEqual(readSeededSettings()['portBindingAllowedRoots'], [roots[0]])
     await switchProject(A)
+    const decisions = await browser.execute(
+      async ({ project, thread }) => window.api.decisions.listThread(project, thread),
+      { project: A, thread: 'port-thread-a' },
+    )
+    assert.equal(
+      decisions.some((decision) => decision.cause === 'shell-network-scope-overlap'),
+      false,
+    )
+    assert.ok(decisions.some((decision) => decision.remembered && decision.verdict === 'approved'))
+    const subjects = decisions
+      .slice(-4)
+      .reverse()
+      .map((decision) => decision.subject)
     await $('[aria-label="Open thread context"]').click()
     await $('.thread-context').waitForDisplayed({ timeout: 10_000 })
+    await expectDecisionSubjects(subjects)
+    const artifactRoot = join(process.cwd(), 'tests/e2e/artifacts/project-port-grant-revoke')
+    mkdirSync(artifactRoot, { recursive: true })
+    writeFileSync(join(artifactRoot, 'decisions.json'), JSON.stringify(decisions, null, 2) + '\n')
+    writeFileSync(
+      join(artifactRoot, 'history.json'),
+      JSON.stringify(await loadProjectThreads(A), null, 2) + '\n',
+    )
+    writeFileSync(
+      join(artifactRoot, 'events.jsonl'),
+      readFileSync(join(e2eWorkspaceDir(), A, 'port-thread-a', 'events.jsonl')),
+    )
     await saveAppScreenshot('project-port-grant-before-revoke.png')
     const revoke = $('[data-action="revoke-port-binding"]')
     await expect(revoke).toBeDisplayed()
@@ -172,11 +230,44 @@ describe('remember and revoke project local-port consent', function () {
       async () => !(await $('[data-action="revoke-port-binding"]').isExisting()),
       { timeout: 10_000 },
     )
+    await expectDecisionSubjects(subjects)
     await saveAppScreenshot('project-port-grant-revoked.png')
     assert.deepEqual(readSeededSettings()['portBindingAllowedRoots'], [])
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     assert.equal(await startServer('Start a preview after reopening project A.', 'reject'), 1)
+    const finalThread = (await loadProjectThreads(A)).find(
+      (thread) => thread.id === 'port-thread-a',
+    )
+    assert.ok(finalThread)
+    const finalCalls = finalThread.messages.flatMap((message) => message.toolCalls)
+    assert.equal(finalCalls.length, 3)
+    const rejected = finalCalls.at(-1)
+    assert.ok(rejected)
+    assert.equal(rejected.name, 'run_background')
+    assert.equal(rejected.commandPhase?.state, 'not_started')
+    assert.equal(rejected.commandPhase.launched, false)
+    assert.equal(rejected.result, 'User rejected the run_background tool call.')
+    await expect($(`[data-tool-id="${rejected.id}"]`)).toHaveAttribute('data-status', 'interrupted')
+    const rejectedCaption = await browser.execute((id) => {
+      const card = document.querySelector<HTMLElement>(`[data-tool-id="${CSS.escape(id)}"]`)
+      const visibleCard = card?.closest<HTMLElement>('.tool-card-rollup') ?? card
+      return visibleCard?.querySelector(':scope > summary .tool-name')?.textContent
+    }, rejected.id)
+    assert.equal(rejectedCaption, 'Did not start background task')
+    writeFileSync(
+      join(artifactRoot, 'final-history.json'),
+      JSON.stringify(finalThread, null, 2) + '\n',
+    )
+    writeFileSync(
+      join(artifactRoot, 'rejected.json'),
+      JSON.stringify({ rejected, rejectedCaption }, null, 2) + '\n',
+    )
+    writeFileSync(
+      join(artifactRoot, 'final-events.jsonl'),
+      readFileSync(join(e2eWorkspaceDir(), A, 'port-thread-a', 'events.jsonl')),
+    )
+    await parkPointer()
     await saveAppScreenshot('project-port-grant-asks-again.png')
   })
 })

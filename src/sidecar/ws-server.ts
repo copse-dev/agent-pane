@@ -22,6 +22,7 @@ import { sidecarInternals } from './electron-shim/index.ts'
 import { API_PROTOCOL_VERSION } from '@shared/api-protocol.mts'
 import { MAX_VIDEO_BYTES } from '@shared/video/video-media.ts'
 import { WS_AUTH_PROTOCOL_PREFIX } from '@shared/tauri/ws-protocol.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 export interface WsEndpoint {
   port: number
@@ -175,7 +176,7 @@ function start(): Promise<WsEndpoint> {
               t: 'result',
               id,
               ok: false,
-              error: error instanceof Error ? error.message : String(error),
+              error: errorMessage(error),
             })
           },
         )

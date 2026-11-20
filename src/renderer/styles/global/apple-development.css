@@ -136,7 +136,7 @@
 .apple-development-target-meta span {
   padding: 0 var(--spacing-xs);
   border: 1px solid var(--border-subtle);
-  border-radius: 999px;
+  border-radius: var(--radius);
   color: var(--text-muted);
   white-space: nowrap;
 }
@@ -235,8 +235,18 @@
   }
 }
 
-.plugin-settings .apple-development-host {
+/* In Settings the panel is a row on the page (docs/ui-taste.md, "Settings rows
+   sit on the page"), flush with the plugin's text. Above a conversation it keeps
+   the card and its inset. The panel is appended straight to the plugin's fold. */
+.plugin-settings-fold .apple-development-host {
   margin: 0;
+}
+
+.plugin-settings-fold .apple-development-panel {
+  padding: var(--spacing-sm) 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
 }
 
 @media (max-width: 760px) {

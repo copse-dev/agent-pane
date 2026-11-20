@@ -54,9 +54,26 @@ describe('turn-tree shell replay approval', () => {
 
     const leaseOption = dialog.$('.approval-turn-tree')
     await expect(leaseOption).toBeDisplayed()
-    await expect(leaseOption).toHaveText('Allow retries for this task (up to 10, for 15 minutes)')
+    await expect(leaseOption).toHaveText(
+      'Retry this exact command for this task (up to 10, for 15 minutes). Stop revokes retries.',
+    )
     await expect(leaseOption.$('.approval-turn-tree-input')).toBeChecked()
 
+    // The dialog can open before the command phase arrives over IPC. Capture
+    // the settled approval state instead of racing a stale Running label.
+    await browser.waitUntil(
+      () =>
+        browser.execute(() =>
+          Array.from(document.querySelectorAll<HTMLElement>('.tool-command-phase')).some(
+            (label) =>
+              label.getClientRects().length > 0 &&
+              label.dataset['phase'] === 'awaiting_approval' &&
+              label.textContent === 'Waiting for approval',
+          ),
+        ),
+      { timeout: 30_000, timeoutMsg: 'Expected the visible command to be waiting for approval' },
+    )
+    await expect($('.agent-activity')).toHaveText(expect.stringContaining('Waiting for approval…'))
     await saveAppScreenshot('capability-lease-approval.png')
     await dialog.$('.approval-reject').click()
     await dialog.waitForDisplayed({ reverse: true, timeout: 10_000 })

@@ -1,5 +1,6 @@
-import { appendFile, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, readdir, readFile, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { writeFileAtomic } from '@copse/std/write-file-atomic.ts'
 import { copseUserDataDir } from './copse-paths.ts'
 
 // Plain files beside config.json, for data that does not belong in it.
@@ -47,11 +48,7 @@ export async function storageAppendFile(relPath: string, text: string): Promise<
 
 /** Replace the file's contents atomically: a reader sees the old text or the new, never half. */
 export async function storageWriteFile(relPath: string, text: string): Promise<void> {
-  const path = userDataFilePath(relPath)
-  await mkdir(dirname(path), { recursive: true })
-  const temp = `${path}.${String(process.pid)}.tmp`
-  await writeFile(temp, text)
-  await rename(temp, path)
+  await writeFileAtomic(userDataFilePath(relPath), text)
 }
 
 export async function storageRemoveFile(relPath: string): Promise<void> {

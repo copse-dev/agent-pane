@@ -43,7 +43,6 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           ref: refs/tags/${{ inputs.tag }}
-          fetch-depth: 0
       - uses: actions/setup-node@v7
         with: { node-version-file: '.nvmrc' }
       - name: Mint a token scoped to the public release repository
@@ -79,7 +78,9 @@ jobs:
           fi
           release_type="$(node scripts/release-channel.mts --release-type "$version")"
           release_sha="$(git rev-parse 'HEAD^{commit}')"
-          git fetch --no-tags origin +refs/heads/release:refs/remotes/origin/release
+          # The checkout is shallow (just the tag); unshallow `release` for the
+          # ancestry walk rather than fetching every branch and tag.
+          git fetch --no-tags --unshallow origin +refs/heads/release:refs/remotes/origin/release
           if ! git merge-base --is-ancestor "$release_sha" origin/release; then
             echo "Release tag commit is not reachable from protected branch origin/release"
             exit 1

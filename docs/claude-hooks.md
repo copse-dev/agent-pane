@@ -33,7 +33,13 @@ Example settings fragment:
 }
 ```
 
-`command` is spawned with the directory of the settings file as its working directory.
+Project hook commands run from the active thread's execution root: its checkout,
+or the project root for a shared thread. Relative paths resolve against that root;
+for example, `node scripts/check.mjs` loads the checkout's `scripts/check.mjs`.
+User hook commands keep the directory of their declaring settings file as their
+working directory. Sources **Test** uses the asking window's local project root
+for project hooks and keeps user hooks configuration-relative; see
+[testing hooks](./copse-hooks.md#on-disk-layout).
 
 ## What Copse supports
 

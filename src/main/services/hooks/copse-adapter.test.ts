@@ -280,6 +280,19 @@ describe('copse-adapter (F1)', () => {
       assert.ok(warnings.some((w) => /"async: true" is not allowed/.test(w.message)))
     })
 
+    it('matches an afterFileEdit glob against a workspace-relative two-dot directory', async () => {
+      // `..gen` is inside the workspace, so its workspace-relative spelling is a
+      // candidate; a `startsWith('..')` test dropped it and the glob never fired.
+      await writeUserHooks({
+        hooks: { afterFileEdit: [{ command: './fmt.sh', glob: '..gen/**' }] },
+      })
+      const opts = { workspaceRoot: '/repo', projectTrusted: false }
+      const inside = await copseAfterFileEditHooks({ filePath: '/repo/..gen/a.ts' }, opts)
+      assert.equal(inside.blocking.length, 1)
+      const outside = await copseAfterFileEditHooks({ filePath: '/..gen/a.ts' }, opts)
+      assert.equal(outside.blocking.length, 0)
+    })
+
     it('parses loop_limit and warns-then-clamps a null (unlimited) value', async () => {
       await writeUserHooks({
         hooks: {

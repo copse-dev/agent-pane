@@ -382,6 +382,27 @@ const SED_INERT_SHORT_FLAGS = 'nEsuzr'
  */
 const SED_SCRIPT_ACTIVE_LETTERS = /[wWrRe]/
 
+// A deliberately small sed grammar: slash-delimited addresses/substitutions,
+// numeric addresses, blocks and filter commands. No script files, external
+// reads/writes, execution flags, comments, branches or text-appending commands.
+// Raw character classes are excluded because their delimiter rules differ.
+const SED_FILTER_TOKEN =
+  /\s+|[;{}]|s\/(?:\\[^\n]|[^\\/\n[\]])*\/(?:\\[^\n]|[^\\/\n[\]])*\/[0-9gIpM]*|(?:\d+|\$|\/(?:\\[^\n]|[^\\/\n[\]])*\/)(?:,(?:\d+|\$|\/(?:\\[^\n]|[^\\/\n[\]])*\/))?!?|[pPdDqQnNgGhHxzl=]/y
+
+function isKnownSedFilter(script: string): boolean {
+  let offset = 0
+  let blocks = 0
+  while (offset < script.length) {
+    SED_FILTER_TOKEN.lastIndex = offset
+    const token = SED_FILTER_TOKEN.exec(script)?.[0]
+    if (!token) return false
+    if (token === '{') blocks++
+    if (token === '}' && --blocks < 0) return false
+    offset += token.length
+  }
+  return blocks === 0
+}
+
 /**
  * `sed` is the one line-oriented reader agents reach for that the basename
  * allow-list cannot admit wholesale: `-i` rewrites its input, `-f` runs a script
@@ -391,13 +412,11 @@ const SED_SCRIPT_ACTIVE_LETTERS = /[wWrRe]/
  * - no in-place edit (`-i`, `-I`, `--in-place`), no script file (`-f`,
  *   `--file`), and no option this table does not know — `-l`/`--line-length`
  *   take a value and are refused rather than parsed;
- * - every script (positional or via `-e`/`--expression`) is free of the letters
- *   that name an active command. A sed script is a small language this module
- *   does not parse, so the test is letter-level: `s/hello/world/` is refused
- *   for the `w` and `r` in its replacement text and keeps prompting as it does
- *   today, while the line-selection shapes steering prompts hand agents
- *   (`sed -n '1,320p' FILE`, `sed -n '5p;10p'`, `sed -n '/^## /p'`) are
- *   admitted.
+ * - the combined script (positional or via `-e`/`--expression`) is either free of
+ *   active-command letters or belongs to the narrow filter grammar above.
+ *   Letters in a recognized address or substitution are text, so printing a
+ *   signature with `s/^gpgsig /Commit signature: /` names no external file.
+ *   Unknown grammar keeps the conservative letter-level policy.
  *
  * Refusal only ever means the command prompts, which was the status quo; the
  * read-outside-project grant still keeps its own head list and stays unchanged.
@@ -453,7 +472,11 @@ export function isReadOnlySedCommand(argv: readonly string[]): boolean {
     if (script === undefined) return false
     scripts.push(script)
   }
-  return scripts.every((script) => !SED_SCRIPT_ACTIVE_LETTERS.test(script))
+  // Expressions form one program. A trailing escape can continue an unfinished
+  // substitution into the next expression, where text that looked inert on its
+  // own becomes a write flag. Require the complete program to pass one proof.
+  const script = scripts.join('\n')
+  return !SED_SCRIPT_ACTIVE_LETTERS.test(script) || isKnownSedFilter(script)
 }
 
 /**
@@ -499,6 +522,9 @@ function isEscapeHatchFlag(command: string, arg: string): boolean {
 
 function isReadOnlyGitCommand(argv: readonly string[]): boolean {
   const subcommand = argv[1]
+  if (subcommand === 'remote') {
+    return argv.length === 2 || (argv.length === 3 && /^(?:-v|--verbose)$/.test(argv[2] ?? ''))
+  }
   if (!subcommand || !READ_ONLY_GIT_SUBCOMMANDS.has(subcommand)) return false
   return !hasGitReadEscapeHatch(subcommand, argv.slice(2))
 }

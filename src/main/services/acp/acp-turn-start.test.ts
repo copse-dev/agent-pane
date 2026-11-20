@@ -29,6 +29,7 @@ describe('ACP turnStart assembly (decision 20)', () => {
       firstTurn: true,
       model: 'acp:codex',
       registry: new ToolRegistry(),
+      bridgeToolNames: [],
       signal: new AbortController().signal,
     })
     assert.equal(guidance, SITE_BUILDING_STEERING_PROMPT)
@@ -46,6 +47,7 @@ describe('ACP turnStart assembly (decision 20)', () => {
       firstTurn: true,
       model: 'acp:codex',
       registry: new ToolRegistry(),
+      bridgeToolNames: [],
       signal: new AbortController().signal,
     })
     assert.equal(guidance, undefined)
@@ -61,6 +63,7 @@ describe('ACP turnStart assembly (decision 20)', () => {
       firstTurn: true,
       model: 'acp:codex',
       registry: new ToolRegistry(),
+      bridgeToolNames: [],
       signal: new AbortController().signal,
     }
     assert.match((await assembleAcpTurnStart(options)) ?? '', /Copse engineering workflows/)
@@ -82,12 +85,13 @@ describe('ACP turnStart assembly (decision 20)', () => {
       firstTurn: false,
       model: 'acp:codex',
       registry: new ToolRegistry(),
+      bridgeToolNames: [],
       signal: new AbortController().signal,
     }
     assert.equal(await assembleAcpTurnStart(options), undefined)
   })
 
-  it('reports only live Copse bridge tools to hooks', async () => {
+  it('reports to hooks only the Copse bridge tools the agent has', async () => {
     const registry = new ToolRegistry()
     registry.register({
       name: 'read_file',
@@ -108,20 +112,24 @@ describe('ACP turnStart assembly (decision 20)', () => {
       execute: () => 'ok',
     })
 
-    const records: { hookId: string; payload: unknown }[] = []
-    await assembleAcpTurnStart({
-      userText: cupcakeBrief,
-      priorTodos: [],
-      firstTurn: true,
-      model: 'acp:codex',
-      registry,
-      signal: new AbortController().signal,
-      recordHookRun: (record) => records.push({ hookId: record.hookId, payload: record.payload }),
-    })
+    const toolNamesSeen = async (bridgeToolNames: readonly string[]): Promise<unknown> => {
+      const records: { hookId: string; payload: unknown }[] = []
+      await assembleAcpTurnStart({
+        userText: cupcakeBrief,
+        priorTodos: [],
+        firstTurn: true,
+        model: 'acp:codex',
+        registry,
+        bridgeToolNames,
+        signal: new AbortController().signal,
+        recordHookRun: (record) => records.push({ hookId: record.hookId, payload: record.payload }),
+      })
+      const siteRecord = records.find((record) => record.hookId === 'site-building-steering')
+      assert.ok(siteRecord)
+      return siteRecord.payload
+    }
 
-    const siteRecord = records.find((record) => record.hookId === 'site-building-steering')
-    assert.ok(siteRecord)
-    assert.deepEqual(siteRecord.payload, {
+    assert.deepEqual(await toolNamesSeen(['read_file', 'mcp__docs__search']), {
       userText: cupcakeBrief,
       priorTodos: [],
       firstTurn: true,
@@ -129,5 +137,16 @@ describe('ACP turnStart assembly (decision 20)', () => {
       model: 'acp:codex',
       toolNames: ['read_file', 'mcp__docs__search'],
     })
+    // Offered is not had: a tool the agent never listed, or a session whose
+    // agent listed none or dropped them (#4142, #4144), is not named to hooks.
+    assert.deepEqual(Reflect.get(Object(await toolNamesSeen(['read_file'])), 'toolNames'), [
+      'read_file',
+    ])
+    assert.deepEqual(Reflect.get(Object(await toolNamesSeen([])), 'toolNames'), [])
+    // A listed name the registry no longer serves is not named either.
+    assert.deepEqual(
+      Reflect.get(Object(await toolNamesSeen(['read_file', 'unregistered_since'])), 'toolNames'),
+      ['read_file'],
+    )
   })
 })

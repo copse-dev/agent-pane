@@ -42,6 +42,15 @@ export interface ToolDefinition<TArgs = unknown> {
    */
   rawParameters?: Record<string, unknown>
   /**
+   * The input schema came from outside Copse — an MCP server, a user plugin or
+   * a custom tool file — so it is untrusted input rather than code to fix. The
+   * registry then does not refuse the tool when its schema is one agents can't
+   * list; its model-facing exports leave the tool out with a warning instead.
+   * First-party tools leave this unset: the registry refuses theirs outside a
+   * packaged build (#4142).
+   */
+  untrustedSchema?: boolean
+  /**
    * Who authored the bytes this tool returns (docs/plans/context-provenance.md).
    * `external` results are wrapped in the `<external_content>` envelope by the
    * registry. Defaults to `workspace` — repo contents the user opened, which

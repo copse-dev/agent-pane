@@ -29,7 +29,8 @@ import {
   validateThreadWorktree,
 } from '../services/worktree-manager.ts'
 import { fetchThroughScratchRepository, originBranchRef } from '../services/default-branch-fetch.ts'
-import { gitBackupSandboxOverlay, workspaceTmpDir } from './config.ts'
+import { copseWorkspaceDir } from '../services/storage/copse-paths.ts'
+import { acpAgentSandboxOverlay, gitBackupSandboxOverlay, workspaceTmpDir } from './config.ts'
 
 interface CommandResult {
   stdout: string
@@ -93,6 +94,65 @@ describe('linked-worktree sandbox integration', () => {
     }
   })
 
+  it('mounts only the agent thread chat roots under Linux bubblewrap', async (t) => {
+    if (process.platform !== 'linux') {
+      t.skip('bubblewrap chat-store mounts are Linux-specific')
+      return
+    }
+
+    const profile = await mkdtemp(join(homedir(), 'copse-acp-chat-read-'))
+    cleanups.push(profile)
+    const previous = process.env['COPSE_DIR']
+    process.env['COPSE_DIR'] = profile
+    try {
+      const store = copseWorkspaceDir()
+      const own = join(store, 'project', 'own')
+      const sibling = join(store, 'project', 'sibling')
+      const otherProject = join(store, 'other-project', 'thread')
+      const workspace = join(profile, 'checkout')
+      await Promise.all([
+        mkdir(own, { recursive: true }),
+        mkdir(sibling, { recursive: true }),
+        mkdir(otherProject, { recursive: true }),
+        mkdir(workspace),
+      ])
+      const ownFile = join(own, 'meta.json')
+      const siblingFile = join(sibling, 'meta.json')
+      const otherFile = join(otherProject, 'meta.json')
+      await Promise.all([
+        writeFile(ownFile, 'own\n'),
+        writeFile(siblingFile, 'sibling\n'),
+        writeFile(otherFile, 'other\n'),
+      ])
+
+      await initProjectSandbox()
+      if (!isProjectSandboxEnabled()) {
+        if (process.env['CI']) assert.fail('Linux CI must run with bubblewrap enabled')
+        t.skip('bubblewrap sandbox unavailable')
+        return
+      }
+
+      const sandbox = { allowedDomains: [] }
+      const confined = acpAgentSandboxOverlay(workspace, sandbox, { chatReadRoots: [own] })
+      const approved = await runSandboxed('/bin/cat', [ownFile], workspace, confined)
+      assert.equal(approved.code, 0, approved.stderr)
+      assert.equal(approved.stdout, 'own\n')
+      for (const target of [siblingFile, otherFile]) {
+        const attempt = await runSandboxed('/bin/cat', [target], workspace, confined)
+        assert.notEqual(attempt.code, 0, `unexpected read of ${target}`)
+        assert.equal(attempt.stdout, '')
+      }
+
+      const consented = acpAgentSandboxOverlay(workspace, sandbox, { chatReadRoots: [store] })
+      const siblingRead = await runSandboxed('/bin/cat', [siblingFile], workspace, consented)
+      assert.equal(siblingRead.code, 0, siblingRead.stderr)
+      assert.equal(siblingRead.stdout, 'sibling\n')
+    } finally {
+      if (previous === undefined) delete process.env['COPSE_DIR']
+      else process.env['COPSE_DIR'] = previous
+    }
+  })
+
   it('supports Git from a nested project root without exposing hooks, config, or siblings', async (t) => {
     if (process.platform === 'win32') {
       t.skip('project sandbox integration is not enabled on Windows')
@@ -136,7 +196,13 @@ describe('linked-worktree sandbox integration', () => {
     assert.match((await runSandboxed('git', ['diff', '--', '.'], nested)).stdout, /changed/)
     const add = await runSandboxed('git', ['add', 'tracked.txt', 'new.txt'], nested)
     assert.equal(add.code, 0, add.stderr)
-    const commit = await runSandboxed('git', ['commit', '-q', '-m', 'sandbox commit'], nested)
+    // Not a signing test: keep a host's global commit.gpgsign from reaching a
+    // signer the sandbox cannot.
+    const commit = await runSandboxed(
+      'git',
+      ['-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'sandbox commit'],
+      nested,
+    )
     assert.equal(commit.code, 0, commit.stderr)
 
     const configWrite = await runSandboxed('git', ['config', 'copse.sandbox-test', 'true'], nested)

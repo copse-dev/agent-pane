@@ -87,9 +87,10 @@
   gap: 12px;
   padding: 10px 12px;
   margin-bottom: 8px;
-  border: 1px solid var(--warning, #d29922);
-  border-radius: 6px;
-  background: rgba(210, 153, 34, 0.08);
+  /* The shared flat callout plate (docs/ui-taste.md, "Containment is a plate"). */
+  --sev: var(--warning);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
   font-size: var(--font-size-sm);
 }
 .mcp-trust-banner button {
@@ -113,9 +114,7 @@
   display: flex;
   align-items: flex-start;
   gap: var(--spacing-sm);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: var(--spacing-sm);
+  padding: var(--spacing-sm) 0;
 }
 .mcp-curated-row .mcp-server-toggle {
   /* Preserve the small first-line optical nudge while resetting the stacked

@@ -486,6 +486,84 @@ describe('conversation keyed row reconcile (component)', () => {
     assert.equal(document.querySelectorAll('.messages-list > [data-message-id]').length, 3)
   })
 
+  it('reconciles a reused edit ID when only its deferred marker is removed', async () => {
+    const { store, threadId, prompt, answer, host } = await seed()
+    const result = 'The tool result stays the same.'
+    addToolCall(store, answer, {
+      id: 'call_0',
+      name: 'write_file',
+      args: { path: 'src/first.ts', content: 'export const first = 1' },
+      status: 'done',
+      result,
+      deferred: true,
+    })
+    addToolCall(store, answer, {
+      id: 'call_1',
+      name: 'write_file',
+      args: { path: 'src/second.ts', content: 'export const second = 2' },
+      status: 'done',
+      result,
+    })
+    store.emit('threads_changed')
+    await delay(0)
+    const promptNode = row(prompt)
+    assert.ok(promptNode)
+    const deferred = qsRequired(host, '[data-tool-id="call_0"]')
+    assert.equal(
+      qsRequired(deferred, ':scope > summary .tool-name').textContent,
+      'Deferred src/first.ts',
+    )
+    assert.equal(deferred.getAttribute('data-status'), 'interrupted')
+    assert.equal(host.querySelector('.tool-card-group'), null, 'the deferred edit is not grouped')
+    let directToolUpdates = 0
+    unmounts.push(
+      store.on('tool_call_updated', () => {
+        directToolUpdates++
+      }),
+    )
+
+    // A snapshot replaces the call without a tool_call_updated tick. The keyed
+    // row reconcile must notice the omitted marker even though ID, status,
+    // arguments and result text are unchanged.
+    patchThreadAnywhere(store, threadId, (thread) => ({
+      ...thread,
+      messages: thread.messages.map((message) =>
+        message.id === answer
+          ? {
+              ...message,
+              toolCalls: message.toolCalls.map((call) => {
+                if (call.id !== 'call_0') return call
+                const performed = { ...call }
+                delete performed.deferred
+                return performed
+              }),
+            }
+          : message,
+      ),
+    }))
+    store.emit('threads_changed')
+    await delay(0)
+
+    assert.equal(directToolUpdates, 0, 'the streaming updater did not bypass row reconciliation')
+    assert.ok(row(prompt) === promptNode, 'the unrelated prompt keeps its row')
+    const group = qsRequired<HTMLDetailsElement>(host, '.tool-card-group')
+    assert.equal(qsRequired(group, ':scope > summary .tool-name').textContent, 'Edited files')
+    qsRequired(group, ':scope > summary').click()
+    assert.equal(group.querySelectorAll('[data-tool-id]').length, 2)
+    const performed = qsRequired(group, '[data-tool-id="call_0"]')
+    assert.equal(
+      qsRequired(performed, ':scope > summary .tool-name').textContent,
+      'Edited src/first.ts',
+    )
+    assert.equal(performed.getAttribute('data-status'), 'done')
+    assert.equal(
+      [...host.querySelectorAll('.tool-name')].some((name) =>
+        name.textContent.startsWith('Deferred'),
+      ),
+      false,
+    )
+  })
+
   it('rebuilds the turn-recovery card with the failed last row only', async () => {
     const { store, threadId, prompt, answer } = await seed()
     const promptNode = row(prompt)

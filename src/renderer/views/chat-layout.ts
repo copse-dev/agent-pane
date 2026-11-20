@@ -65,7 +65,8 @@ export function bindChatComposerLayout(
   requestAnimationFrame(sync)
 
   const observer = new ResizeObserver(sync)
-  observer.observe(input)
+  // Reserve the same border box that sync measures, including border-only changes.
+  observer.observe(input, { box: 'border-box' })
 
   window.addEventListener('resize', sync, { passive: true })
 

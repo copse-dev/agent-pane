@@ -19,6 +19,16 @@ describe('bounded-regex', () => {
     assert.equal(regexTestWithin(/a/, 'a', 1_000), true)
   })
 
+  it('bounds a tester that is not a RegExp (a glob matcher built outside the vm)', () => {
+    // An exponential matcher compiled in this realm, not the vm context's.
+    const nested = new RegExp('^(?:(?:[^/]*?a)+)$')
+    const tester = { test: (subject: string): boolean => nested.test(subject) }
+    const started = Date.now()
+    assert.equal(regexTestWithin(tester, `${'a'.repeat(64)}!`, 50), 'timeout')
+    assert.ok(Date.now() - started < 5_000)
+    assert.deepEqual(matchingIndexesWithin(tester, ['ba', 'b', 'aa'], { timeoutMs: 1_000 }), [0, 2])
+  })
+
   it('propagates a non-timeout error', () => {
     const throwing = /x/
     throwing.test = (): boolean => {

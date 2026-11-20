@@ -6,9 +6,10 @@ import {
   finishOpenAiHostActions,
 } from './openai-host-actions.ts'
 import { githubArchiveBase, githubArchiveUrl } from './openai-archive.ts'
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
+import { writeFileAtomic } from '@copse/std/write-file-atomic.ts'
 import fs from 'node:fs/promises'
-import { mkdir, readFile, realpath, stat, writeFile, rename } from 'node:fs/promises'
+import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { rmSync } from 'node:fs'
 import { safeJsonParse, decodeWithSchema } from '@copse/std/safe-json.ts'
 import { threadDirectoryPath } from '../thread-store.ts'
@@ -58,17 +59,20 @@ const savedSchema = z.object({
   hostActionsReported: z.boolean().default(false),
 })
 const active = new Set<string>()
-const hash = (value: string): string => createHash('sha256').update(value).digest('hex')
 const storageKey = (threadId: string): string => `openai-agent-owner:${threadId}`
 const stateFile = (projectId: string, threadId: string): string =>
   join(threadDirectoryPath(projectId, threadId), 'openai-agent-session.json')
 
 /** Read only a cached artifact belonging to a known thread; never accept a local path. */
-export async function readOpenAiArtifact(threadId: string, artifact: string): Promise<Buffer> {
+export async function readOpenAiArtifact(
+  projectId: string,
+  threadId: string,
+  artifact: string,
+): Promise<Buffer> {
   if (!/^[a-f0-9]{64}\/[a-f0-9]{64}\.[a-zA-Z0-9]{1,10}$/.test(artifact))
     throw new Error('Invalid OpenAI artifact reference.')
   const owner = storageGet(storageKey(threadId))
-  if (typeof owner !== 'string') throw new Error('OpenAI artifact thread is unavailable.')
+  if (owner !== projectId) throw new Error('OpenAI artifact thread is unavailable.')
   const directory = threadDirectoryPath(owner, threadId)
   const root = await realpath(directory)
   const target = await realpath(join(directory, 'blobs', 'openai-artifacts', artifact))
@@ -119,7 +123,7 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
   const directory = threadDirectoryPath(projectId, options.threadId)
   const path = stateFile(projectId, options.threadId)
   const client = new OpenAiAgentsApi(apiKey, options.fetchImpl)
-  const keyHash = hash(apiKey)
+  const keyHash = sha256Hex(apiKey)
   const checkpoint = await readFile(path, 'utf8').catch((error: unknown) => {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null
     throw error
@@ -212,7 +216,7 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
   const promptHash =
     recovering && retryRequested
       ? prior.data.promptHash
-      : hash(payload.images?.length ? JSON.stringify(payload) : payload.text)
+      : sha256Hex(payload.images?.length ? JSON.stringify(payload) : payload.text)
   let terminalResult: OpenAiAgentResult | undefined = recovering ? prior.data.result : undefined
   let usageReported = recovering ? prior.data.usageReported : false
   let exportUsageReported = recovering ? prior.data.exportUsageReported : false
@@ -227,9 +231,8 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
     )
   }
   const save = async (): Promise<void> => {
-    await mkdir(directory, { recursive: true })
-    await writeFile(
-      `${path}.tmp`,
+    await writeFileAtomic(
+      path,
       JSON.stringify({
         state,
         keyHash,
@@ -245,7 +248,6 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
       }),
       { mode: 0o600 },
     )
-    await rename(`${path}.tmp`, path)
     storageSet(storageKey(options.threadId), projectId)
   }
   await save()
@@ -418,7 +420,7 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
   }
   let artifactText = ''
   // Remote paths never select local destinations. Limit automatic transfer per turn.
-  const artifactDirectory = join(directory, 'blobs', 'openai-artifacts', hash(state.sessionId))
+  const artifactDirectory = join(directory, 'blobs', 'openai-artifacts', sha256Hex(state.sessionId))
   let bytes = 0
   for (const artifact of result.artifacts
     .filter(
@@ -441,9 +443,9 @@ async function run(options: RemoteAgentRunOptions): Promise<RemoteAgentRunResult
       const content = await client.download(state, artifact, options.signal)
       await mkdir(artifactDirectory, { recursive: true })
       const extension = extname(artifact.path).match(/^\.[a-zA-Z0-9]{1,10}$/)?.[0] ?? '.bin'
-      const target = join(artifactDirectory, `${hash(artifact.id)}${extension}`)
+      const target = join(artifactDirectory, `${sha256Hex(artifact.id)}${extension}`)
       await writeFile(target, content, { mode: 0o600 })
-      const artifactPath = `${hash(state.sessionId)}/${hash(artifact.id)}${extension}`
+      const artifactPath = `${sha256Hex(state.sessionId)}/${sha256Hex(artifact.id)}${extension}`
       const url = `https://api.openai.com/v1/agents/${encodeURIComponent(`openai:${options.threadId}`)}/artifacts/download?path=${encodeURIComponent(artifactPath)}`
       artifactText += `\n[Download artifact (${String(artifact.size_bytes)} bytes)](${url})\n`
     } catch {

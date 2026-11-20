@@ -340,6 +340,7 @@ async function record(
   liveHead = env['COMPARE_COMMIT'] ?? HEAD,
   missingLabel = false,
   body = '',
+  live: { state?: string; repository?: string } = {},
 ): Promise<Recorded> {
   const result: Recorded = { statuses: [], removed: [], created: [], updated: [] }
   const listComments = (): void => {}
@@ -361,9 +362,12 @@ async function record(
         pulls: {
           get: async () => ({
             data: {
-              state: 'open',
+              state: live.state ?? 'open',
               body,
-              head: { sha: liveHead, repo: { full_name: 'copse-dev/agent-pane' } },
+              head: {
+                sha: liveHead,
+                repo: { full_name: live.repository ?? 'copse-dev/agent-pane' },
+              },
             },
           }),
         },
@@ -421,7 +425,7 @@ describe('recording a screenshot review decision', () => {
     assert.equal(body.match(/copse-screenshot-review-state/g)?.length, 2)
   })
 
-  it('records an accepted fast-forward on the reviewed head', async () => {
+  it('records an accepted fast-forward on the reviewed and exact follow-up heads', async () => {
     const result = await record({
       LABEL: 'accept-screenshots',
       OUTCOME: 'accept',
@@ -432,7 +436,10 @@ describe('recording a screenshot review decision', () => {
     })
     assert.deepEqual(
       result.statuses.map(({ sha, description }) => [sha, description]),
-      [[HEAD, 'Accepted by @reviewer; committed as def456def456']],
+      [
+        [HEAD, 'Accepted by @reviewer; committed as def456def456'],
+        [COMPARE, 'Accepted by @reviewer; screenshot-only follow-up of abc123abc123'],
+      ],
     )
     assert.deepEqual(result.removed, ['accept-screenshots', 'screenshots-need-review'])
     assert.match(
@@ -473,6 +480,29 @@ describe('recording a screenshot review decision', () => {
       const result = await record(env, undefined, 'f'.repeat(40))
       assert.deepEqual(result.removed, [env.LABEL ?? 'decline-screenshots'])
       assert.equal(result.statuses.length, 1)
+    }
+  })
+
+  it('does not carry acceptance to a closed or external PR at the same follow-up head', async () => {
+    for (const live of [{ state: 'closed' }, { repository: 'fork/agent-pane' }]) {
+      const result = await record(
+        {
+          LABEL: 'accept-screenshots',
+          OUTCOME: 'accept',
+          PUSHED: 'true',
+          COMPARE_COMMIT: COMPARE,
+        },
+        undefined,
+        COMPARE,
+        false,
+        '',
+        live,
+      )
+      assert.deepEqual(
+        result.statuses.map((status) => status.sha),
+        [HEAD],
+      )
+      assert.deepEqual(result.removed, ['accept-screenshots'])
     }
   })
 

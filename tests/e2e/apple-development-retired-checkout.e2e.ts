@@ -1,16 +1,16 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { copseDataRoot } from '../../src/main/services/storage/copse-paths.ts'
-import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { e2eWorkspaceDir, resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
+import { parkPointer, saveAppScreenshot } from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 import { E2E_GIT_BRANCH, writeE2eEnv } from './helpers/e2e-env.ts'
 
-describe('Viewing a handed-over automation run', function () {
+describe('Viewing and resuming a handed-over automation run', function () {
   this.timeout(60_000)
   const projectId = 'e2e-retired-apple-project'
   const threadId = 'old-run'
@@ -113,7 +113,7 @@ describe('Viewing a handed-over automation run', function () {
     removeE2eTree(join(copseDataRoot(), 'worktrees', projectId))
   })
 
-  it('opens and restores the old run without an error or disturbing the newer run', async () => {
+  it('keeps history reads retired, then prepares a resumed turn without disturbing the newer run', async () => {
     await expect($('.prompt-input')).toBeDisplayed()
     const state = await browser.execute(
       (project, thread) => window.api.appleDevelopment.state(project, thread),
@@ -123,12 +123,49 @@ describe('Viewing a handed-over automation run', function () {
     assert.equal(state.enrolled, false)
     const beforeOpen = git(root, ['worktree', 'list', '--porcelain'])
     assert.ok(!beforeOpen.includes(oldCheckout), beforeOpen)
+    const threadRoot = join(e2eWorkspaceDir(), projectId, threadId)
+    const beforeMeta = readFileSync(join(threadRoot, 'meta.json'), 'utf8')
+    const beforeSpine = readFileSync(join(threadRoot, 'events.jsonl'), 'utf8')
+    const retiredBefore = await browser.execute(
+      async (project, thread) =>
+        (await window.api.threads.loadProject(project)).find((run) => run.id === thread)?.worktree,
+      projectId,
+      threadId,
+    )
+    assert.ok(retiredBefore?.retiredAt)
     await $('.chat-row[data-thread-id="old-run"]').click()
     await expect($('.messages-list')).toHaveText(
       expect.stringContaining('The investigation is complete.'),
     )
-    // Git views resolve the thread checkout. This must restore the old tip on
-    // a separate branch, including when opening the conversation already did so.
+    // History and passive Git inspection must leave cleanup durable. The
+    // existing submit preparation below deliberately resumes this checkout.
+    const passiveBranch = await browser.execute(
+      (project, thread) => window.api.git.currentBranch(project, thread),
+      projectId,
+      threadId,
+    )
+    assert.equal(passiveBranch, null)
+    assert.equal(existsSync(oldCheckout), false)
+    const retiredAfterBrowse = await browser.execute(
+      async (project, thread) =>
+        (await window.api.threads.loadProject(project)).find((run) => run.id === thread)?.worktree,
+      projectId,
+      threadId,
+    )
+    assert.equal(retiredAfterBrowse?.retiredAt, retiredBefore.retiredAt)
+    const afterBrowseMeta = readFileSync(join(threadRoot, 'meta.json'), 'utf8')
+    assert.equal(readFileSync(join(threadRoot, 'events.jsonl'), 'utf8'), beforeSpine)
+    assert.equal(git(checkout, ['branch', '--show-current']), branch)
+    assert.equal(git(checkout, ['rev-parse', 'HEAD']), head)
+    assert.equal(readFileSync(join(checkout, 'pending.txt'), 'utf-8'), 'Newer run work\n')
+    await expect($('.apple-development-error')).not.toExist()
+
+    const resumePromptState = await browser.execute(
+      (project, thread) => window.api.git.promptState(project, thread),
+      projectId,
+      threadId,
+    )
+    assert.deepEqual(resumePromptState, { startingCommit: head, dirty: false })
     const restoredBranch = await browser.execute(
       (project, thread) => window.api.git.currentBranch(project, thread),
       projectId,
@@ -142,6 +179,64 @@ describe('Viewing a handed-over automation run', function () {
     assert.equal(git(checkout, ['branch', '--show-current']), branch)
     assert.equal(git(checkout, ['rev-parse', 'HEAD']), head)
     assert.equal(readFileSync(join(checkout, 'pending.txt'), 'utf-8'), 'Newer run work\n')
+    assert.equal(readFileSync(join(threadRoot, 'events.jsonl'), 'utf8'), beforeSpine)
+    const artifacts = join(process.cwd(), '.tmp', 'apple-explicit-restore-native-artifacts')
+    mkdirSync(artifacts, { recursive: true })
+    const proof = {
+      oldCheckout,
+      checkout,
+      branch,
+      head,
+      passiveBranch,
+      resumePromptState,
+      restoredBranch,
+      restoredGitBranch: git(oldCheckout, ['branch', '--show-current']),
+      restoredHead: git(oldCheckout, ['rev-parse', 'HEAD']),
+      retiredBefore,
+      retiredAfterBrowse,
+      beforeMeta,
+      afterBrowseMeta,
+      restoredMeta: readFileSync(join(threadRoot, 'meta.json'), 'utf8'),
+      beforeSpine,
+      restoredSpine: readFileSync(join(threadRoot, 'events.jsonl'), 'utf8'),
+      newerBranch: git(checkout, ['branch', '--show-current']),
+      newerHead: git(checkout, ['rev-parse', 'HEAD']),
+      newerPending: readFileSync(join(checkout, 'pending.txt'), 'utf8'),
+    }
+    writeFileSync(
+      join(artifacts, 'receipt.json'),
+      JSON.stringify({ ...proof, phase: 'prepared' }, null, 2),
+    )
+    // Render the durable checkout state in a normal fresh session. The empty
+    // newer thread is only a Git collision holder, not a navigation fixture.
+    await browser.reloadSession()
+    await $('.prompt-input').waitForDisplayed({ timeout: 30_000 })
+    await $('.chat-row[data-thread-id="old-run"]').click()
+    await expect($('.messages-list')).toHaveText(
+      expect.stringContaining('The investigation is complete.'),
+    )
+    await expect($('.footer-branch-label')).toHaveText(expect.stringContaining(restoredBranch))
+    await expect($('.apple-development-error')).not.toExist()
+    assert.equal(git(oldCheckout, ['branch', '--show-current']), restoredBranch)
+    assert.equal(git(oldCheckout, ['rev-parse', 'HEAD']), head)
+    assert.equal(git(checkout, ['branch', '--show-current']), branch)
+    assert.equal(git(checkout, ['rev-parse', 'HEAD']), head)
+    assert.equal(readFileSync(join(checkout, 'pending.txt'), 'utf8'), 'Newer run work\n')
+    assert.equal(readFileSync(join(threadRoot, 'events.jsonl'), 'utf8'), beforeSpine)
+    writeFileSync(
+      join(artifacts, 'receipt.json'),
+      JSON.stringify(
+        {
+          ...proof,
+          phase: 'displayed',
+          reloadedMeta: readFileSync(join(threadRoot, 'meta.json'), 'utf8'),
+          reloadedSpine: readFileSync(join(threadRoot, 'events.jsonl'), 'utf8'),
+        },
+        null,
+        2,
+      ),
+    )
+    await parkPointer()
     await saveAppScreenshot('apple-development-handed-over-run.png')
   })
 })
