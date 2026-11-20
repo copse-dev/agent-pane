@@ -27,6 +27,12 @@ function applyPendingSeedConfig(profileRoot, workspaceRoot = path.join(profileRo
   for (const project of projects) {
     if (!project.isDirectory()) continue
     const dir = path.join(workspaceRoot, project.name)
+    // A fixture asked for this whole project store to go once the app that had
+    // its thread index open has exited (see removeProjectStoreOnRelaunch).
+    if (fs.existsSync(path.join(dir, '.e2e-remove-project'))) {
+      fs.rmSync(dir, { recursive: true, force: true })
+      continue
+    }
     const marker = path.join(dir, '.e2e-reset-thread-index')
     if (!fs.existsSync(marker)) continue
     for (const file of [

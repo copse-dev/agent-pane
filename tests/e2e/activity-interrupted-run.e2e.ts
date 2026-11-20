@@ -11,7 +11,7 @@ import { acceptanceWakeTurn, readTranscriptNotices } from './helpers/acceptance-
 import { waitForActiveThreadTitle, waitForAgentIdle } from './helpers.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 import {
-  e2eWorkspaceDir,
+  removeProjectStoreOnRelaunch,
   resetUserData,
   seedEmptyProject,
   seedE2eViewport,
@@ -105,7 +105,7 @@ describe('Interrupted automation in Activity', function () {
 
   after(() => {
     resetUserData()
-    removeE2eTree(join(e2eWorkspaceDir(), PROJECT))
+    removeProjectStoreOnRelaunch(PROJECT)
   })
 
   it('keeps the interruption discoverable after reload and opens saved work without retrying', async () => {
@@ -162,7 +162,7 @@ describe('Activity after an admitted machine continuation', function () {
 
   after(() => {
     resetUserData()
-    removeE2eTree(join(e2eWorkspaceDir(), project))
+    removeProjectStoreOnRelaunch(project)
     if (workspace) removeE2eTree(workspace)
   })
 

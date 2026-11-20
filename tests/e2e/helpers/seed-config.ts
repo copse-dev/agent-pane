@@ -7,6 +7,7 @@ import {
   copyFileSync,
   readFileSync,
   appendFileSync,
+  readdirSync,
 } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { execFileSync, spawnSync } from 'node:child_process'
@@ -79,6 +80,55 @@ export function e2eWorkspaceDir(): string {
 /** Remove a rebuildable per-project thread catalog after an app relaunch. */
 export function invalidateThreadCatalog(projectId: string): void {
   rmSync(join(e2eWorkspaceDir(), projectId, 'catalog.jsonl'), { force: true })
+}
+
+/** Consumed by `tests/e2e/electron-shell/apply-seed-config.cjs` after shutdown. */
+const REMOVE_PROJECT_MARKER = '.e2e-remove-project'
+const RESET_THREAD_INDEX_MARKER = '.e2e-reset-thread-index'
+/** The thread index the running app holds open; never unlinked while it runs. */
+const THREAD_INDEX_FILES = new Set([
+  '.thread-index.sqlite',
+  '.thread-index.sqlite-wal',
+  '.thread-index.sqlite-shm',
+  '.thread-index.sqlite-journal',
+])
+
+/**
+ * Remove a fixture project's thread store (`workspace/<projectId>/`) without
+ * unlinking the SQLite thread index the running app may still hold open.
+ *
+ * This only leaves a one-shot marker. If a later {@link writeSeedConfig} seeds
+ * the project again, it clears the old thread files at once and the index is
+ * reset after shutdown, as for any reseed. Otherwise the e2e launcher removes
+ * the whole directory after the outgoing app has exited, before the next one
+ * opens its stores. Use it instead of deleting the directory directly, which
+ * `resetUserData()` deliberately does not do.
+ */
+export function removeProjectStoreOnRelaunch(projectId: string): void {
+  const dir = join(e2eWorkspaceDir(), projectId)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, REMOVE_PROJECT_MARKER), '')
+}
+
+/** {@link removeProjectStoreOnRelaunch} for every project store currently on disk. */
+export function removeAllProjectStoresOnRelaunch(): void {
+  let entries
+  try {
+    entries = readdirSync(e2eWorkspaceDir(), { withFileTypes: true })
+  } catch {
+    return
+  }
+  for (const entry of entries) if (entry.isDirectory()) removeProjectStoreOnRelaunch(entry.name)
+}
+
+/** A reseed of a project marked for removal starts from no old threads. */
+function clearMarkedProjectForReseed(projectId: string): void {
+  const dir = join(e2eWorkspaceDir(), projectId)
+  if (!existsSync(join(dir, REMOVE_PROJECT_MARKER))) return
+  for (const entry of readdirSync(dir)) {
+    if (THREAD_INDEX_FILES.has(entry) || entry === RESET_THREAD_INDEX_MARKER) continue
+    removeE2eTree(join(dir, entry))
+  }
 }
 
 /** Agent Plugins discovery root; mirrors `userPluginsRoot()` (COPSE_PLUGINS_DIR). */
@@ -236,6 +286,7 @@ export function writeSeedConfig(
     const projectId = match?.[1]
     if (projectId !== undefined && Array.isArray(value)) {
       seededProjectIds.add(projectId)
+      clearMarkedProjectForReseed(projectId)
       for (const thread of value) {
         seedThreadDir(projectId, thread)
       }
@@ -260,7 +311,7 @@ export function writeSeedConfig(
     // The e2e launcher consumes this marker after shutdown, before opening stores.
     const projectDir = join(e2eWorkspaceDir(), projectId)
     mkdirSync(projectDir, { recursive: true })
-    writeFileSync(join(projectDir, '.e2e-reset-thread-index'), '')
+    writeFileSync(join(projectDir, RESET_THREAD_INDEX_MARKER), '')
   }
 }
 
@@ -6095,7 +6146,7 @@ export function seedForkResendFixture(workspaceRoot: string): {
   const threadId = 'e2e-fork-resend-thread'
   const title = 'Fork and resend'
   const now = Date.now()
-  removeE2eTree(join(e2eWorkspaceDir(), projectId))
+  removeProjectStoreOnRelaunch(projectId)
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],

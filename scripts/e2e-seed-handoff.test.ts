@@ -145,3 +145,40 @@ it('resets only reseeded projections after shutdown and preserves them on ordina
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+it('removes a project store marked for removal only after shutdown, and leaves others', () => {
+  const root = mkdtempSync(join(tmpdir(), 'copse-e2e-remove-project-'))
+  const workspace = join(root, 'workspace')
+  const removed = join(workspace, 'removed')
+  const kept = join(workspace, 'kept')
+  const launcher = resolve('tests/e2e/electron-shell/apply-seed-config.cjs')
+  const launch = (): Buffer =>
+    execFileSync(process.execPath, [
+      '-e',
+      'require(process.argv[1]).applyPendingSeedConfig(process.argv[2], process.argv[3])',
+      launcher,
+      root,
+      workspace,
+    ])
+  try {
+    for (const dir of [removed, kept]) {
+      mkdirSync(join(dir, 'thread'), { recursive: true })
+      writeFileSync(join(dir, 'thread', 'meta.json'), '{}')
+      writeFileSync(join(dir, THREAD_INDEX_FILE), 'index')
+    }
+    // Written while the old app still held the index open; nothing is removed yet.
+    writeFileSync(join(removed, '.e2e-remove-project'), '')
+    assert.equal(existsSync(join(removed, THREAD_INDEX_FILE)), true)
+    launch()
+    assert.equal(existsSync(removed), false)
+    assert.equal(readFileSync(join(kept, THREAD_INDEX_FILE), 'utf8'), 'index')
+    assert.equal(readFileSync(join(kept, 'thread', 'meta.json'), 'utf8'), '{}')
+    // One-shot: a store the next app creates at that path survives later relaunches.
+    mkdirSync(removed)
+    writeFileSync(join(removed, THREAD_INDEX_FILE), 'new')
+    launch()
+    assert.equal(readFileSync(join(removed, THREAD_INDEX_FILE), 'utf8'), 'new')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
