@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { getThreadById } from '@shared/store/thread-helpers.ts'
 import type { Thread } from '@shared/types'
@@ -10,7 +11,7 @@ export const CONTEXT_TRIM_ACTIVITY = 'Shortened earlier messages'
 
 export function promptProgressLabel(fraction: number): string {
   if (!Number.isFinite(fraction)) return 'Processing prompt…'
-  const percent = Math.round(Math.min(1, Math.max(0, fraction)) * 100)
+  const percent = Math.round(clamp(fraction, 0, 1) * 100)
   return `Processing prompt… ${percent.toString()}%`
 }
 

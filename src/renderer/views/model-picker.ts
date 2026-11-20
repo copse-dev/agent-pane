@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 import { showContextMenu, type ContextMenuEntry } from '../dom/context-menu.ts'
 import { el, clear, on } from '../dom/helpers.ts'
 import {
@@ -625,7 +626,7 @@ export function mountModelPicker(
             .map((opt) => opt.value)
     if (values.length === 0) return
     const index = values.findIndex((value) => value === activeValue)
-    const nextIndex = Math.max(0, Math.min(values.length - 1, index + direction))
+    const nextIndex = clamp(index + direction, 0, values.length - 1)
     activeValue = values[nextIndex] ?? null
     renderMenu(cachedOptions)
     if (view !== 'all') focusActiveOption()

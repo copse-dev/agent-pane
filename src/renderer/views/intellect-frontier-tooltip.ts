@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 import type { FrontierPoint, FrontierCostAxis } from '@copse/llm/pareto-frontier.ts'
 import { TRACKED_MODELS, cloudModelDisplayLabel } from '@copse/llm/model-catalog.ts'
 import {
@@ -307,13 +308,13 @@ export function positionFrontierTooltip(
   if (left + tipWidth > rect.width) {
     left = cursorX - tipWidth - TOOLTIP_OFFSET_PX
   }
-  left = Math.max(0, Math.min(left, Math.max(0, rect.width - tipWidth)))
+  left = clamp(left, 0, Math.max(0, rect.width - tipWidth))
 
   let top = cursorY + TOOLTIP_OFFSET_PX
   if (top + tipHeight > rect.height) {
     top = cursorY - tipHeight - TOOLTIP_OFFSET_PX
   }
-  top = Math.max(0, Math.min(top, Math.max(0, rect.height - tipHeight)))
+  top = clamp(top, 0, Math.max(0, rect.height - tipHeight))
 
   tip.style.left = `${String(left)}px`
   tip.style.top = `${String(top)}px`
