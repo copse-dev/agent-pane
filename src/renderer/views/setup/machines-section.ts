@@ -113,7 +113,9 @@ export function createMachinesSection(
       { class: 'settings-fieldset-desc' },
       'Use System One models on another computer on the same network. Open Copse there, share a local model, and paste its invitation here. SSH is not required.',
     ),
-    list,
+    // A shared list stays where Settings put it, in "Your machines"; only a
+    // section listing machines on its own holds its list here.
+    ...(options.list ? [] : [list]),
     pairControls,
     status,
   )
