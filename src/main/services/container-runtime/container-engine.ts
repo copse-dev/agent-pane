@@ -14,6 +14,7 @@
  * the preference variable, the image-build argv, and — for the product — the
  * probe that picks the engine for a run, once, before anything is built.
  */
+import { collapseWhitespace } from '@copse/std/one-line-text.ts'
 import { execFile, spawn } from 'node:child_process'
 import { join } from 'node:path'
 import { collectProcess } from '@copse/review/process-collect.ts'
@@ -256,7 +257,7 @@ async function probeAppleContainer(probe: ContainerEngineProbe): Promise<Command
 }
 
 function compactDetail(detail: string): string {
-  const oneLine = detail.replaceAll(/\s+/g, ' ').trim()
+  const oneLine = collapseWhitespace(detail)
   if (oneLine.length <= 240) return oneLine
   return `${oneLine.slice(0, 237)}…`
 }

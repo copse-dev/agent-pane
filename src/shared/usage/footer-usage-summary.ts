@@ -1,3 +1,4 @@
+import { ellipsize } from '@copse/std/one-line-text.ts'
 import { formatThreadUsageCost } from '@copse/llm/estimate-cost.ts'
 import type {
   ContextBreakdown,
@@ -81,11 +82,7 @@ function subagentRunLabel(session: SubagentSession): string {
       : SUBAGENT_KIND_LABEL[session.kind]
   const firstLine = session.prompt.trim().split('\n')[0] ?? ''
   if (!firstLine) return kind
-  const prompt =
-    firstLine.length > RUN_PROMPT_MAX_CHARS
-      ? `${firstLine.slice(0, RUN_PROMPT_MAX_CHARS - 1).trimEnd()}…`
-      : firstLine
-  return `${kind} · ${prompt}`
+  return `${kind} · ${ellipsize(firstLine, RUN_PROMPT_MAX_CHARS, { trimEnd: true })}`
 }
 
 function collectSubagentRuns(toolCalls: ToolCall[], runs: SubagentRunSummary[]): void {

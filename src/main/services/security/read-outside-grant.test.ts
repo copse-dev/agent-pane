@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import {
@@ -8,6 +8,8 @@ import {
   grantReadOutsideProject,
   hasReadOutsideProjectGrant,
   listReadOutsideProjectGrants,
+  safeCanonicalReadTarget,
+  standingCanonicalReadTargets,
 } from './read-outside-grant.ts'
 
 describe('read-outside grant coverage', () => {
@@ -101,6 +103,90 @@ describe('read-outside grant coverage', () => {
 
     assert.equal(covered(join(granted, 'secret.txt')), false)
     assert.deepEqual(listReadOutsideProjectGrants(thread), [])
+  })
+
+  it('does not reuse a directory grant for a descendant symlink outside that directory', () => {
+    const outside = join(base, 'outside.txt')
+    writeFileSync(outside, 'not approved')
+    const link = join(granted, 'sub', 'link.txt')
+    symlinkSync(outside, link)
+
+    assert.equal(covered(link), false)
+    assert.equal(covered(join(granted, 'sub', 'x')), true)
+  })
+
+  it('does not reuse a directory grant for a disguised credential inside it', () => {
+    const secret = join(granted, 'sub', '.env')
+    writeFileSync(secret, 'not approved')
+    const link = join(granted, 'sub', 'ordinary.txt')
+    symlinkSync(secret, link)
+
+    assert.equal(covered(link), false)
+  })
+
+  it('uses a pinned destination for an explicitly approved file symlink', () => {
+    const first = join(base, 'first.txt')
+    const second = join(base, 'second.txt')
+    const link = join(base, 'current.txt')
+    writeFileSync(first, 'first')
+    writeFileSync(second, 'second')
+    symlinkSync(first, link)
+    grantReadOutsideProject(thread, [link])
+    assert.deepEqual(standingCanonicalReadTargets(thread, [link]), [realpathSync.native(first)])
+    rmSync(link)
+    symlinkSync(second, link)
+    assert.equal(standingCanonicalReadTargets(thread, [link]), null)
+  })
+
+  it('rejects links to a credential or whole-home authority', () => {
+    const secret = join(base, '.env')
+    const secretLink = join(base, 'ordinary.txt')
+    writeFileSync(secret, 'secret')
+    symlinkSync(secret, secretLink)
+    assert.equal(safeCanonicalReadTarget(secretLink), null)
+    const homeLink = join(base, 'other')
+    symlinkSync(homedir(), homeLink, 'dir')
+    assert.equal(safeCanonicalReadTarget(homeLink), null)
+    assert.equal(safeCanonicalReadTarget(join(homeLink, 'not-yet-created.txt')) !== null, true)
+  })
+
+  it('rejects a symlinked profile’s LAN credentials by canonical destination', () => {
+    const profile = join(base, 'profile')
+    const lan = join(profile, 'lan')
+    const alias = join(base, 'profile-alias')
+    mkdirSync(lan, { recursive: true })
+    const credential = join(lan, 'marker.txt')
+    writeFileSync(credential, 'private')
+    symlinkSync(profile, alias, 'dir')
+    const prior = process.env['COPSE_DIR']
+    process.env['COPSE_DIR'] = alias
+    try {
+      assert.equal(safeCanonicalReadTarget(credential), null)
+    } finally {
+      if (prior === undefined) Reflect.deleteProperty(process.env, 'COPSE_DIR')
+      else process.env['COPSE_DIR'] = prior
+    }
+  })
+
+  it('checks the destination of a linked parent when the leaf is missing', () => {
+    const outside = join(base, 'outside')
+    mkdirSync(outside)
+    const link = join(granted, 'sub', 'link')
+    symlinkSync(outside, link)
+
+    assert.equal(covered(join(link, 'not-yet-created.txt')), false)
+  })
+
+  it('does not treat a dangling descendant symlink as a missing literal path', () => {
+    const link = join(granted, 'sub', 'dangling')
+    symlinkSync(join(base, 'not-yet-created'), link)
+
+    assert.equal(covered(link), false)
+    assert.equal(covered(join(link, 'secret.txt')), false)
+  })
+
+  it('does not cover a raw parent traversal hidden by lexical resolution', () => {
+    assert.equal(covered(`${granted}/link/../note.txt`), false)
   })
 
   it('revokes a file grant when the approved path is replaced by a symlink', () => {

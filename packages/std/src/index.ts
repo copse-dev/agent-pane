@@ -5,10 +5,12 @@
 // loads in a browser.
 export * from './array-utils.ts'
 export * from './assert-never.ts'
+export * from './clamp.ts'
 export * from './errors.ts'
 export * from './keyed-serial-queue.ts'
 export * from './member-of.ts'
 export * from './nullish.ts'
+export * from './one-line-text.ts'
 export * from './path-containment.ts'
 export * from './safe-json.ts'
 export * from './sleep.ts'
