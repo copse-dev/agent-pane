@@ -146,6 +146,17 @@ project-defined MCP servers are gated behind workspace trust, the
     so pairing there grants control on the desktop approval alone; the local-root
     acknowledgement applies only to pairings over the LAN IP, and the main process,
     not the renderer, decides which applies.
+    Every response is `no-store` except the page's own script and stylesheet, and only
+    when requested under the content hash that the never-stored page pins with Subresource
+    Integrity; a cached copy that is not those bytes is refused by the browser, and these
+    bundles carry no thread data. Polled reads are compressed and answered `304` when
+    unchanged. The bearer is never compressed: it travels only in a request header that a
+    cross-site page cannot make the phone send, and the pairing answer, the one body that
+    carries it, is sent uncompressed. A compressed thread or live-state answer can still
+    hold a secret a tool printed beside attacker-influenced text, such as a fetched page.
+    Using compression as a BREACH oracle against it would need a fresh guess placed into
+    the polled answer for each request, and every guess costs the attacker an agent turn.
+    A LAN observer can still see the size of each encrypted answer, compressed or not.
 11. **Names service compromise or error.** The Copse names service (`api.copse.dev`), or
     someone who controls it, issues a certificate for `*.<label>.u.copse.me` with a key it
     holds and points `lan.<label>.u.copse.me` at another private address, then waits on the
@@ -191,7 +202,10 @@ downloaded cannot start a run: carry-in reports that and asks for `git backfill`
 full clone. Adoption's
 `cherry-pick` is admitted only as `--no-edit` with full SHAs (no merge strategy
 program), so the checkout's hooks and signer do not run and adopted commits are
-unsigned. It is app plumbing, not the gated `git_commit` profile. Guest-side Git
+unsigned. It is app plumbing, not the gated `git_commit` profile. The hosted
+transfer's LFS scan admits `grep` only as `-I`, `-l` and `-E`, a pattern, a full SHA
+and `--` pathspecs, so no abbreviated or bundled spelling of `-O` names a pager
+program and textconv stays off. Guest-side Git
 (`worker-main.ts`, the hosted workers) runs on repositories the guest created, beside
 an agent that can already run any program there, so it keeps its own wrappers.
 
