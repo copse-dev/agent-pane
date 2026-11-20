@@ -22,6 +22,7 @@ import {
   init_product_announcement_dialog,
   init_product_announcements,
   init_settings_dialog,
+  init_sleep,
   init_storage_cleanup,
   init_thread_links2 as init_thread_links,
   init_thread_pr_relations2 as init_thread_pr_relations,
@@ -32,9 +33,10 @@ import {
   isReasoningLevel,
   mountProductAnnouncements,
   openSettingsDialog,
+  sleep,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-RJHKWMGX.js";
+} from "./chunks/chunk-6QDOAPBD.js";
 import "./chunks/chunk-X6JZSFJR.js";
 import {
   init_icons,
@@ -44,7 +46,7 @@ import {
   maximizeIcon,
   minimizeIcon,
   stringRecordOrEmpty
-} from "./chunks/chunk-TYQO7O5R.js";
+} from "./chunks/chunk-CK4AOU5N.js";
 import "./chunks/chunk-EMIRHVRH.js";
 import {
   __commonJS,
@@ -164,9 +166,6 @@ var init_parse_agent_run_payload = __esm({
 });
 
 // src/renderer/demo/trace-player.ts
-function defaultSleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 function sliceForStreaming(text, sliceChars) {
   if (text === "") return [];
   const slices = [];
@@ -189,7 +188,7 @@ async function playTrace(trace, emit, options = {}) {
     stepPauseMs = DEFAULT_STEP_PAUSE_MS,
     instant = false,
     signal,
-    sleep: sleep2 = defaultSleep
+    sleep: sleep2 = sleep
   } = options;
   const pause = async (ms) => {
     if (instant || ms <= 0) return;
@@ -215,6 +214,7 @@ async function playTrace(trace, emit, options = {}) {
 var DEFAULT_CHARS_PER_SECOND, DEFAULT_SLICE_CHARS, DEFAULT_STEP_PAUSE_MS;
 var init_trace_player = __esm({
   "src/renderer/demo/trace-player.ts"() {
+    init_sleep();
     DEFAULT_CHARS_PER_SECOND = 240;
     DEFAULT_SLICE_CHARS = 12;
     DEFAULT_STEP_PAUSE_MS = 260;
@@ -7319,9 +7319,6 @@ var init_scenarios = __esm({
 });
 
 // src/renderer/demo/autoplay.ts
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 async function waitForElement(root, selector, timeoutMs, signal) {
   const deadline = Date.now() + timeoutMs;
   for (; ; ) {
@@ -7458,6 +7455,7 @@ async function startAutoplay(doc, options) {
 var COMPOSER_SELECTOR, SUBMIT_SELECTOR, RUNNING_CLASS, MOUNT_TIMEOUT_MS, RUN_TIMEOUT_MS, PREVIEW_TIMEOUT_MS, POLL_MS, DEFAULT_CHARS_PER_SECOND2, DEFAULT_START_DELAY_MS, DEFAULT_LOOP_PAUSE_MS;
 var init_autoplay = __esm({
   "src/renderer/demo/autoplay.ts"() {
+    init_sleep();
     COMPOSER_SELECTOR = ".prompt-input";
     SUBMIT_SELECTOR = ".submit-btn";
     RUNNING_CLASS = "with-stop";
@@ -7501,7 +7499,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-J4KSVFJ3.js").then(async (main) => {
+    void import("./chunks/main-7J6HTDXB.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(
