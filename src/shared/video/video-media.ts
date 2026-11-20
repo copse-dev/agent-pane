@@ -65,8 +65,9 @@ export function formatTimestamp(
   const h = (totalMinutes - m) / 60
   const pad = (n: number, width = 2): string => String(n).padStart(width, '0')
   // Never shorten below what the timestamp itself needs, whatever it was told
-  // the duration was.
-  const scale = Math.max(clamped, durationSeconds)
+  // the duration was. Compare the rounded value: 59.9996s prints as a full
+  // minute, which the seconds-only form would render as `0.000s`.
+  const scale = Math.max(totalMs / 1000, durationSeconds)
   if (scale < 60) return `${String(s)}.${pad(ms, 3)}s`
   if (scale < 3600) return `${pad(m)}:${pad(s)}.${pad(ms, 3)}`
   return `${pad(h)}:${pad(m)}:${pad(s)}.${pad(ms, 3)}`

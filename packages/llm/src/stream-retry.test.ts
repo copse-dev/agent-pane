@@ -227,6 +227,48 @@ describe('isRetryableStreamError', () => {
     assert.equal(isRetryableStreamError(err), true)
   })
 
+  it('retries an OpenAI stream whose connection dropped mid-body', async () => {
+    // The OpenAI SDK rethrows undici's body error as-is, on both of its
+    // streaming endpoints, so the failure the Anthropic case above retries
+    // arrives here as a bare TypeError.
+    const client = new OpenAI({
+      apiKey: 'test',
+      maxRetries: 0,
+      fetch: async (): Promise<Response> =>
+        new Response(terminatedBody(), { headers: { 'content-type': 'text/event-stream' } }),
+    })
+    const drain = async (stream: AsyncIterable<unknown>): Promise<void> => {
+      for await (const _ of stream) {
+        // Drain until the stream fails.
+      }
+    }
+    const errors = await Promise.all([
+      client.chat.completions
+        .create({ model: 'm', stream: true, messages: [{ role: 'user', content: 'hi' }] })
+        .then(drain)
+        .then(
+          () => assert.fail('expected the chat completions stream to fail'),
+          (err: unknown) => err,
+        ),
+      client.responses
+        .create({ model: 'm', stream: true, input: 'hi' })
+        .then(drain)
+        .then(
+          () => assert.fail('expected the responses stream to fail'),
+          (err: unknown) => err,
+        ),
+    ])
+    for (const err of errors) {
+      assert.ok(err instanceof TypeError)
+      assert.equal(err.message, 'terminated')
+      assert.equal(isRetryableStreamError(err), true)
+    }
+  })
+
+  it('does not retry an unrelated TypeError', () => {
+    assert.equal(isRetryableStreamError(new TypeError('x is not a function')), false)
+  })
+
   it('does not retry other Anthropic stream protocol errors', () => {
     const err = new Anthropic.AnthropicError('request ended without sending any chunks')
     assert.equal(isRetryableStreamError(err), false)

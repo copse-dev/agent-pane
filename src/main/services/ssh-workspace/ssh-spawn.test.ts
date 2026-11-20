@@ -165,4 +165,54 @@ describe('spawnRemoteShellCommand', () => {
       assert.equal(takeRemoteProcessMeta(proc)?.pgid, 4242)
     })
   })
+
+  it('ends the consumer-facing stdout when the remote process output ends', async () => {
+    await withTestHost(async () => {
+      setSshTransportFactory(probes)
+      await getSshConnectionManager().connect('dev-box')
+      const proc = await spawnRemoteShellCommand('echo hello', {
+        hostId: 'dev-box',
+        remoteRoot: '/srv/app',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+      const stdout = proc.stdout
+      assert.ok(stdout)
+      let output = ''
+      stdout.on('data', (chunk: Buffer) => {
+        output += chunk.toString()
+      })
+      await new Promise((resolve) => proc.on('close', resolve))
+      // The real pipe has ended by 'close'; the pass-through ends a few ticks later.
+      for (let turn = 0; turn < 50 && !stdout.readableEnded; turn += 1) {
+        await new Promise((resolve) => setImmediate(resolve))
+      }
+      assert.equal(stdout.readableEnded, true, 'stdout never reached end-of-stream')
+      assert.equal(output, 'hello\n')
+    })
+  })
+
+  it('passes through bytes that share a read with the PGID line without decoding them', async () => {
+    // U+4E2D is e4 b8 ad. Its first two bytes arrive with the PGID line and the
+    // last one later, so decoding the first read on its own would corrupt it.
+    writeFileSync(
+      join(binDir, 'ssh'),
+      `#!/bin/sh\nprintf '${REMOTE_PGID_PREFIX}4242\\n\\344\\270'\nsleep 0.3\nprintf '\\255\\n'\n`,
+    )
+    await withTestHost(async () => {
+      setSshTransportFactory(probes)
+      await getSshConnectionManager().connect('dev-box')
+      const proc = await spawnRemoteShellCommand('cat notes.txt', {
+        hostId: 'dev-box',
+        remoteRoot: '/srv/app',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+      const chunks: Buffer[] = []
+      proc.stdout?.on('data', (chunk: Buffer) => {
+        chunks.push(chunk)
+      })
+      await new Promise((resolve) => proc.on('close', resolve))
+      assert.equal(Buffer.concat(chunks).toString('utf8'), '\u4e2d\n')
+      assert.equal(takeRemoteProcessMeta(proc)?.pgid, 4242)
+    })
+  })
 })

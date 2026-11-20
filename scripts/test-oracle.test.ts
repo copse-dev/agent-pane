@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { z } from 'zod'
@@ -327,6 +327,98 @@ describe('test oracle import graph', () => {
     ])
   })
 
+  it('resolves a specifier to the file it names when a sibling shares its stem', () => {
+    // src/shared/unknown-value.ts re-exports unknown-value.mts. Trying `.ts`
+    // first resolved every `.mts` import to the shim, itself included, so the
+    // real module was in no test's graph and a change to it selected nothing.
+    const siblingFiles: Record<string, string> = {
+      'src/value.test.ts': "import { value } from './value.ts'",
+      'src/direct.test.ts': "import { value } from './value.mts'",
+      'src/value.ts': "export * from './value.mts'",
+      'src/value.mts': 'export const value = 1',
+    }
+    const siblingTree: OracleFiles = {
+      paths: (dir) => Object.keys(siblingFiles).filter((path) => path.startsWith(`${dir}/`)),
+      read: (path) => siblingFiles[path] ?? '',
+      exists: (path) => Object.hasOwn(siblingFiles, path),
+    }
+    assert.deepEqual(computeSelection(['src/value.mts'], siblingTree).selectedUnit, [
+      'src/direct.test.ts',
+      'src/value.test.ts',
+    ])
+    assert.deepEqual(computeSelection(['src/value.ts'], siblingTree).selectedUnit, [
+      'src/value.test.ts',
+    ])
+    assert.ok(
+      computeSelection(['src/shared/unknown-value.mts']).selectedUnit.includes(
+        'src/shared/roadmap/export.test.ts',
+      ),
+    )
+  })
+
+  it('still resolves a specifier whose extension differs from the file on disk', () => {
+    const jsFiles: Record<string, string> = {
+      'src/a.test.ts': "import './a.js'\nimport './dir'",
+      'src/a.ts': '',
+      'src/dir/index.mts': '',
+    }
+    const jsTree: OracleFiles = {
+      paths: () => Object.keys(jsFiles),
+      read: (path) => jsFiles[path] ?? '',
+      exists: (path) => Object.hasOwn(jsFiles, path),
+    }
+    assert.deepEqual([...reachableFiles('src/a.test.ts', new Map(), jsTree)].sort(), [
+      'src/a.ts',
+      'src/dir/index.mts',
+    ])
+  })
+
+  it('follows an import of every workspace package into its source', () => {
+    // A package missing from the alias table is a dead end: a change to
+    // packages/review/src reached none of the src/ and scripts/ tests that
+    // import it, so a stacked PR ran a unit subset without them.
+    const packages = readdirSync('packages').flatMap((dir) => {
+      const manifest = join('packages', dir, 'package.json')
+      if (!existsSync(manifest) || !existsSync(join('packages', dir, 'src/index.ts'))) return []
+      const { name } = z
+        .object({ name: z.string() })
+        .parse(JSON.parse(readFileSync(manifest, 'utf8')))
+      return [{ name, entry: `packages/${dir}/src/index.ts` }]
+    })
+    assert.ok(packages.length >= 10, 'expected the workspace packages')
+    const probe = 'src/probe.test.ts'
+    const body = packages.map(({ name }) => `import '${name}/index.ts'`).join('\n')
+    const probeTree: OracleFiles = {
+      paths: () => [probe],
+      read: (path) => (path === probe ? body : ''),
+      exists: (path) => path === probe || existsSync(path),
+    }
+    const reached = reachableFiles(probe, new Map(), probeTree)
+    for (const { name, entry } of packages) assert.ok(reached.has(entry), name)
+
+    const selected = computeSelection(['packages/review/src/scripted-provider.ts']).selectedUnit
+    assert.ok(selected.includes('src/main/services/review/review-service.test.ts'))
+    assert.ok(
+      computeSelection(['packages/remote-protocol/src/signing.ts']).selectedUnit.includes(
+        'src/main/services/remote-names/names-client.test.ts',
+      ),
+    )
+    assert.ok(
+      computeSelection(['packages/review/ci/action-policy.mts']).selectedUnit.includes(
+        'scripts/reviewer-actions.test.ts',
+      ),
+    )
+  })
+
+  it('ties the module run-tests swaps in to the tests that import the real one', () => {
+    // Every unit bundle loads user-data-files.test-shim.ts in place of
+    // user-data-files.ts, but no test imports the shim by name.
+    const selected = computeSelection([
+      'src/main/services/storage/user-data-files.test-shim.ts',
+    ]).selectedUnit
+    assert.ok(selected.includes('src/main/services/storage/usage-ledger.test.ts'))
+  })
+
   it('keeps the classifier settings spec mapped through its type-only import', () => {
     const selection = computeSelection(['src/main/services/classifiers/classifier-service.ts'])
     assert.ok(selection.selectedE2e.includes('tests/e2e/settings-classifiers.e2e.ts'))
@@ -404,6 +496,99 @@ describe('test oracle disk readers', () => {
     const plan = computeUnitPlan(computeSelection(['README.md', source]))
     assert.ok(!plan.tests.includes('scripts/small-gate.test.ts'))
     assert.ok(!plan.tests.includes('scripts/check-mock-fixtures.test.ts'))
+  })
+
+  // Documentation is in no import graph, so a docs-only diff planned `skip` even
+  // for a page a unit test parses: an edit to CHANGELOG.md that broke the
+  // release-notes tests stayed green until the whole suite next ran.
+  const pages: readonly { page: string; readers: readonly string[] }[] = [
+    {
+      page: 'CHANGELOG.md',
+      readers: ['scripts/release-bump.test.ts', 'scripts/release-notes.test.ts'],
+    },
+    { page: 'README.md', readers: ['scripts/readme-screenshots.test.ts'] },
+    {
+      page: 'docs/boundary-contracts.md',
+      readers: ['scripts/boundary-contracts.test.ts', 'scripts/ci-workflow-invariants.test.ts'],
+    },
+    {
+      page: 'docs/host-environment-test-noise.md',
+      readers: ['scripts/host-differences.test.ts'],
+    },
+    {
+      page: 'docs/main-process-sync-reads.md',
+      readers: ['scripts/main-sync-read-invariants.test.ts'],
+    },
+    {
+      page: 'docs/remote-client-capabilities.json',
+      readers: ['scripts/lib/remote-capabilities.test.ts'],
+    },
+    {
+      page: 'packages/review/ACTIONS.md',
+      readers: ['scripts/reviewer-summary-publication.test.ts'],
+    },
+  ]
+
+  it('runs the tests that read a documentation page when only that page changes', () => {
+    for (const { page, readers } of pages) {
+      const plan = computeUnitPlan(computeSelection([page]))
+      assert.equal(plan.mode, 'subset', page)
+      assert.deepEqual(plan.tests, readers, page)
+    }
+    const both = computeUnitPlan(computeSelection(['CHANGELOG.md', 'README.md']))
+    assert.deepEqual(both.tests, [
+      'scripts/readme-screenshots.test.ts',
+      'scripts/release-bump.test.ts',
+      'scripts/release-notes.test.ts',
+    ])
+  })
+
+  it('still skips documentation no test reads, and never thins beside an unmapped change', () => {
+    assert.equal(computeUnitPlan(computeSelection(['docs/testing-strategy.md'])).mode, 'skip')
+    assert.equal(
+      computeUnitPlan(computeSelection(['docs/testing-strategy.md', 'CONTRIBUTING.md'])).mode,
+      'skip',
+    )
+    // The spec is invisible to the import graph, so the readers are not the
+    // whole answer for this diff.
+    const mixed = computeSelection(['CHANGELOG.md', 'tests/e2e/new-feature.e2e.ts'])
+    assert.equal(computeUnitPlan(mixed).mode, 'full')
+    const withSource = computeUnitPlan(computeSelection(['CHANGELOG.md', source]))
+    assert.equal(withSource.mode, 'subset')
+    assert.ok(withSource.tests.includes('scripts/release-notes.test.ts'))
+    assert.ok(withSource.tests.includes('src/renderer/views/footer-branch-status.test.ts'))
+  })
+
+  it('does not treat the Markdown the app ships as documentation', () => {
+    // build.mts copies assets/ and the bundled skills into the app, and the
+    // skill tests load both trees from disk.
+    for (const file of [
+      'assets/skills/reconcile-worktrees/SKILL.md',
+      'vendor/bundled-cursor-skills/README.md',
+    ])
+      assert.equal(computeUnitPlan(computeSelection([file])).mode, 'full', file)
+  })
+
+  it('never skips a documentation file a unit test reads by name', () => {
+    // Guards the list above: a test that starts reading a page must be added to
+    // DISK_READERS, or a change to that page alone runs nothing.
+    const read = /\breadFile(?:Sync)?\(\s*(?:resolve\(\s*)?['"]([^'"]+)['"]/g
+    const docs = /^docs\/|\.md$/
+    const selection = computeSelection([])
+    let checked = 0
+    for (const test of selection.unitTests) {
+      for (const match of readFileSync(test, 'utf8').matchAll(read)) {
+        const file = match[1] ?? ''
+        if (!docs.test(file) || !existsSync(file)) continue
+        checked += 1
+        const plan = computeUnitPlan(computeSelection([file]))
+        assert.ok(
+          plan.mode === 'full' || (plan.mode === 'subset' && plan.tests.includes(test)),
+          `${test} reads ${file}, but a change to it plans ${plan.mode}`,
+        )
+      }
+    }
+    assert.ok(checked >= pages.length, 'expected to find the documentation reads')
   })
 
   it('leaves a source-only change alone and a spec-only change on the full suite', () => {

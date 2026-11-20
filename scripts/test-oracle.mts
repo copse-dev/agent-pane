@@ -452,11 +452,26 @@ const DOCS_ONLY_PATTERNS: RegExp[] = [/^docs\//, /\.md$/, /^LICENSE$/, /^\.githu
  */
 const TEST_READ_DOCS: ReadonlySet<string> = new Set(['THIRD_PARTY_NOTICES.md'])
 
-/** True when every changed file is documentation the unit suite cannot observe. */
+/**
+ * Markdown the build copies into the app (`assets/` whole, the bundled skills
+ * under `vendor/`). The skill tests load those trees from disk, so a skill's
+ * SKILL.md is shipped content, not documentation.
+ */
+const SHIPPED_CONTENT = /^(?:assets|vendor)\//
+
+/**
+ * True when every changed file is documentation. No unit test reaches it through
+ * the import graph; the few that read a page from disk are in `DISK_READERS`.
+ */
 export function isDocsOnlyChange(changed: string[]): boolean {
   return (
     changed.length > 0 &&
-    changed.every((f) => !TEST_READ_DOCS.has(f) && DOCS_ONLY_PATTERNS.some((re) => re.test(f)))
+    changed.every(
+      (f) =>
+        !TEST_READ_DOCS.has(f) &&
+        !SHIPPED_CONTENT.test(f) &&
+        DOCS_ONLY_PATTERNS.some((re) => re.test(f)),
+    )
   )
 }
 
@@ -472,7 +487,8 @@ export function isDocsOnlyChange(changed: string[]): boolean {
  *            importing a changed file is the same evidence as a fixture, JSON
  *            snapshot, or config the graph cannot see, so it must not thin.
  *   subset — run only `tests` (the tests that reach the diff).
- *   skip   — docs-only, the one change shape no unit test can observe.
+ *   skip   — docs-only, the one change shape no unit test can observe. A page
+ *            a test reads from disk runs that test instead.
  *
  * This mirrors {@link unitCommandArgs}, which the local `--run unit` path has
  * always used; CI now reads the same policy instead of always running all of it.
@@ -480,7 +496,12 @@ export function isDocsOnlyChange(changed: string[]): boolean {
 export function computeUnitPlan(sel: Selection): UnitPlan {
   const all = sel.unitTests
   const selected = sel.selectedUnit
-  if (isDocsOnlyChange(sel.changed)) return { mode: 'skip', tests: [], count: 0 }
+  // Documentation selects only the tests that read it from disk (DISK_READERS),
+  // and they are the whole of what it can change: none at all is the skip.
+  if (isDocsOnlyChange(sel.changed))
+    return selected.length === 0
+      ? { mode: 'skip', tests: [], count: 0 }
+      : { mode: 'subset', tests: selected, count: selected.length }
   if (sel.broad || selected.length === 0 || selected.length > Math.ceil(all.length / 2))
     return { mode: 'full', tests: [], count: all.length }
   if (selected.join(' ').length > UNIT_SPECS_MAX_CHARS)
@@ -613,6 +634,10 @@ const PACKAGE_ALIASES: [prefix: string, dir: string][] = [
   ['@copse/plan-usage/', 'packages/plan-usage/src/'],
   ['@copse/plugin-sdk/', 'packages/plugin-sdk/src/'],
   ['@copse/procwatch/', 'packages/procwatch/src/'],
+  ['@copse/remote-protocol/', 'packages/remote-protocol/src/'],
+  // The review package also exports its CI scripts, which live beside `src/`.
+  ['@copse/review/ci/', 'packages/review/ci/'],
+  ['@copse/review/', 'packages/review/src/'],
   ['@copse/shell-guard/', 'packages/shell-guard/src/'],
   ['@copse/std/', 'packages/std/src/'],
   ['@copse/store-kit/', 'packages/store-kit/src/'],
@@ -641,6 +666,10 @@ function resolveImport(fromRel: string, spec: string, tree: OracleFiles): string
   // exact path — resolve it as-is so data-file edits map to the tests that
   // exercise them instead of silently falling out of the graph.
   if (baseRel.endsWith('.json')) return tree.exists(baseRel) ? baseRel : null
+  // A specifier that names an existing file is that file. Trying `.ts` first
+  // resolved `./unknown-value.mts` to the `unknown-value.ts` shim beside it, so
+  // the real module was in no test's graph.
+  if (CODE_EXTS.some((ext) => baseRel.endsWith(ext)) && tree.exists(baseRel)) return baseRel
   baseRel = baseRel.replace(/\.(ts|mts|tsx|js|mjs)$/, '')
   for (const ext of CODE_EXTS) if (tree.exists(baseRel + ext)) return baseRel + ext
   for (const ext of CODE_EXTS)
@@ -747,6 +776,18 @@ export function reachableFiles(
   return seen
 }
 
+/**
+ * `scripts/run-tests.mts` bundles every import of the first module as the
+ * second, so a unit test that reaches one runs the other. Only unit bundles are
+ * built that way; the app an e2e spec drives loads the real module.
+ */
+const UNIT_TEST_SHIMS: ReadonlyMap<string, string> = new Map([
+  [
+    'src/main/services/storage/user-data-files.ts',
+    'src/main/services/storage/user-data-files.test-shim.ts',
+  ],
+])
+
 // ── Selection ────────────────────────────────────────────────────────────────
 export type Selection = {
   changed: string[]
@@ -803,7 +844,8 @@ export function listSourceFiles(tree: OracleFiles = workingTree): string[] {
  * adding a spec beside a source edit got a unit subset without them, and the
  * unweighted-spec limit failed only in the full suite. They join a subset the
  * graph already chose; a change the graph cannot see at all still runs
- * everything. `tests/demo/` and `tests/e2e/{helpers,fixtures,scenarios}/` are
+ * everything. Documentation is the exception: nothing imports it, so a
+ * docs-only change runs exactly the tests listed here for it. `tests/demo/` and `tests/e2e/{helpers,fixtures,scenarios}/` are
  * broad, so they are not listed.
  */
 const E2E_SPEC = /^tests\/e2e\/.+\.e2e\.ts$/
@@ -831,6 +873,36 @@ const DISK_READERS: readonly {
     what: 'the README screenshots',
     tests: ['scripts/readme-screenshots.test.ts'],
     inputs: [/^README\.md$/],
+  },
+  {
+    what: 'the changelog',
+    tests: ['scripts/release-notes.test.ts', 'scripts/release-bump.test.ts'],
+    inputs: [/^CHANGELOG\.md$/],
+  },
+  {
+    what: 'the boundary contracts page',
+    tests: ['scripts/boundary-contracts.test.ts', 'scripts/ci-workflow-invariants.test.ts'],
+    inputs: [/^docs\/boundary-contracts\.md$/],
+  },
+  {
+    what: 'the host differences page',
+    tests: ['scripts/host-differences.test.ts'],
+    inputs: [/^docs\/host-environment-test-noise\.md$/],
+  },
+  {
+    what: 'the synchronous read audit',
+    tests: ['scripts/main-sync-read-invariants.test.ts'],
+    inputs: [/^docs\/main-process-sync-reads\.md$/],
+  },
+  {
+    what: 'the remote client capabilities',
+    tests: ['scripts/lib/remote-capabilities.test.ts'],
+    inputs: [/^docs\/remote-client-capabilities\.json$/],
+  },
+  {
+    what: 'the reviewer actions guide',
+    tests: ['scripts/reviewer-summary-publication.test.ts'],
+    inputs: [/^packages\/review\/ACTIONS\.md$/],
   },
   {
     what: 'the executable mock fixtures',
@@ -865,7 +937,24 @@ export function computeSelection(
   // Unit tests run what they import, so type-only imports are not edges for them.
   const unitImportCache = new Map<string, Set<string>>()
   const unitImports = new Map<string, Set<string>>()
-  for (const t of unitTests) unitImports.set(t, reachableFiles(t, unitImportCache, tree, false))
+  for (const t of unitTests) {
+    const reach = reachableFiles(t, unitImportCache, tree, false)
+    const swapped = [...UNIT_TEST_SHIMS].filter(
+      ([real, shim]) => reach.has(real) && tree.exists(shim),
+    )
+    unitImports.set(
+      t,
+      swapped.length === 0
+        ? reach
+        : new Set([
+            ...reach,
+            ...swapped.flatMap(([, shim]) => [
+              shim,
+              ...reachableFiles(shim, unitImportCache, tree, false),
+            ]),
+          ]),
+    )
+  }
 
   const broadHits = changed.filter((f) => BROAD_PATTERNS.some((re) => re.test(f)))
   const broad = baseUnknown || broadHits.length > 0
@@ -928,7 +1017,8 @@ export function computeSelection(
     }
   }
 
-  if (unitReasons.size > 0)
+  // Documentation is in no import graph, so its readers are its whole selection.
+  if (unitReasons.size > 0 || isDocsOnlyChange(changed))
     for (const reader of DISK_READERS) {
       const inputs = changed.filter((f) => reader.inputs.some((re) => re.test(f)))
       if (inputs.length === 0) continue

@@ -18,6 +18,7 @@ import {
   REMOTE_PGID_PREFIX,
 } from '../ssh-workspace/remote-env.ts'
 import { leaseSshAskpassEnv } from '../ssh-workspace/askpass.ts'
+import { createRemotePgidLineParser } from '../ssh-workspace/ssh-spawn.ts'
 import {
   peekRemoteProcessMeta,
   registerRemoteProcessMeta,
@@ -521,23 +522,13 @@ export function remoteHostLabel(hostId: string): string {
  * `ssh-spawn.ts`'s `attachPgidParser`.
  */
 function attachRemotePgid(proc: ChildProcess, hostId: string, out: PassThrough): void {
-  let captured = false
-  let buffer = ''
+  // Byte-wise: JSON-RPC bytes that share a read with the marker line can end
+  // inside a multibyte character, which must reach the framing intact.
+  const parse = createRemotePgidLineParser((pgid) => {
+    registerRemoteProcessMeta(proc, { hostId, pgid })
+  })
   proc.stdout?.on('data', (chunk: Buffer) => {
-    if (captured) {
-      out.write(chunk)
-      return
-    }
-    buffer += chunk.toString()
-    const newline = buffer.indexOf('\n')
-    if (newline === -1) return
-    const firstLine = buffer.slice(0, newline)
-    const rest = buffer.slice(newline + 1)
-    captured = true
-    if (firstLine.startsWith(REMOTE_PGID_PREFIX)) {
-      const pgid = Number.parseInt(firstLine.slice(REMOTE_PGID_PREFIX.length), 10)
-      if (Number.isFinite(pgid)) registerRemoteProcessMeta(proc, { hostId, pgid })
-    }
+    const rest = parse(chunk)
     if (rest) out.write(rest)
   })
   proc.stdout?.on('end', () => out.end())

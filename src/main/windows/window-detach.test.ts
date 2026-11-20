@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import {
   detachWindow,
   isWindowDetached,
+  isWindowRendererUnloaded,
   reattachWindow,
   shouldDetachOnClose,
 } from './window-detach.ts'
@@ -114,4 +115,18 @@ test('mobile close retains the sole renderer and reopening does not reload or du
   })
   assert.equal(isWindowDetached(win), false)
   assert.deepEqual(calls, ['hide', 'throttling false', 'throttling true', 'show', 'focus'])
+})
+
+test('only a detach that unloads the page reports its renderer as unloaded', () => {
+  const unloaded = fakeWindow()
+  assert.equal(isWindowRendererUnloaded(unloaded.win), false)
+  detachWindow(unloaded.win)
+  assert.equal(isWindowRendererUnloaded(unloaded.win), true)
+  reattachWindow(unloaded.win, async () => {}, { show: false })
+  assert.equal(isWindowRendererUnloaded(unloaded.win), false)
+
+  const kept = fakeWindow()
+  detachWindow(kept.win, { keepRenderer: true })
+  assert.equal(isWindowDetached(kept.win), true)
+  assert.equal(isWindowRendererUnloaded(kept.win), false)
 })

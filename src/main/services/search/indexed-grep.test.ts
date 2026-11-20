@@ -88,6 +88,23 @@ describe('indexed-grep parsing', () => {
     }
   })
 
+  it('keeps a matched line that starts with digits and a colon when there is no column', async () => {
+    const restore = setWorkspaceRootForTest('/tmp/repo')
+    try {
+      const stdout = '/tmp/repo/run.log:7:12:34:56 started\n/tmp/repo/codes.txt:3:404: Not Found\n'
+      assert.deepEqual(await parseGrepStdout(stdout, 10, undefined, { columns: false }), [
+        'run.log:7: 12:34:56 started',
+        'codes.txt:3: 404: Not Found',
+      ])
+      // Backends that do print a column still have it stripped.
+      assert.deepEqual(await parseGrepStdout('/tmp/repo/src/main.ts:12:5: hello\n', 10), [
+        'src/main.ts:12: hello',
+      ])
+    } finally {
+      restore()
+    }
+  })
+
   it('formats empty and truncated results', () => {
     setIndexedGrepBackendForTest('rg')
     assert.equal(formatCodeSearchResults([], 5, 'rg'), 'No matches found.')

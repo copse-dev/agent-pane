@@ -126,6 +126,13 @@ interface StreamState {
   // planAgentTextChunk so a tool call that interrupts mid-sentence keeps the
   // resumed text in the same bubble.
   currentText: string
+  /**
+   * The part of `currentText` written before the model step now streaming: set
+   * when a step resumes an interrupted sentence in the previous step's bubble.
+   * `text_replace` rewrites one step's text, so it must keep this prefix.
+   * Optional because a checkpoint taken before the field existed lacks it.
+   */
+  stepTextPrefix?: string
   writing: boolean
   acpMessageId: string | null
   acpThoughtMessageId: string | null
@@ -192,6 +199,7 @@ export function createTranscriptReducer(
       st.msgId = addAssistantMessage(threadId)
       st.toolSinceText = false
       st.currentText = ''
+      st.stepTextPrefix = ''
     }
     return st.msgId
   }
@@ -205,6 +213,10 @@ export function createTranscriptReducer(
     if (plan.startNewMessage) {
       if (plan.finalizeMsgId) store.emit('message_done', plan.finalizeMsgId)
       st.msgId = addAssistantMessage(threadId)
+      st.stepTextPrefix = ''
+    } else if (st.toolSinceText) {
+      // A new step resumes the sentence a tool call interrupted.
+      st.stepTextPrefix = st.currentText
     }
     st.toolSinceText = nextState.toolSinceText
     st.currentText = nextState.currentText ?? ''
@@ -245,6 +257,16 @@ export function createTranscriptReducer(
         hooks.turnStarted?.(threadId)
         setThreadStatus(store, threadId, 'running')
         if (chunk.hidden) break
+        // A continuation can start inside a run, with no `done` since the last
+        // answer. Close that answer's bubble: the new turn's output belongs
+        // below this prompt, not appended to the bubble above it.
+        if (st.msgId) {
+          store.emit('message_done', st.msgId)
+          st.msgId = null
+          st.toolSinceText = false
+          st.currentText = ''
+          st.stepTextPrefix = ''
+        }
         const id = hooks.createMessageId?.(threadId)
         addMessage(
           store,
@@ -292,6 +314,7 @@ export function createTranscriptReducer(
           st.msgId = null
           st.toolSinceText = false
           st.currentText = ''
+          st.stepTextPrefix = ''
         }
         if (chunk.messageId !== undefined) {
           if (chunk.channel === 'message') st.acpMessageId = chunk.messageId
@@ -327,6 +350,7 @@ export function createTranscriptReducer(
             st.msgId = null
             st.toolSinceText = false
             st.currentText = ''
+            st.stepTextPrefix = ''
           }
           if (chunk.channel === 'message') st.acpMessageId = chunk.messageId
           else st.acpThoughtMessageId = chunk.messageId
@@ -339,6 +363,7 @@ export function createTranscriptReducer(
             .filter((block) => block.type === 'text')
             .map((block) => block.text)
             .join('')
+          st.stepTextPrefix = ''
         }
         st.writing = false
         hooks.visibleOutput?.(threadId)
@@ -347,8 +372,12 @@ export function createTranscriptReducer(
       }
       case 'text_replace': {
         st.msgId ??= addAssistantMessage(threadId)
-        setMessageContent(store, st.msgId, chunk.text)
-        st.currentText = chunk.text
+        // The loop replaces the text of the step it just streamed. When that
+        // step resumed an earlier step's sentence in this bubble, the earlier
+        // text is not part of the replacement and must survive it.
+        const text = (st.stepTextPrefix ?? '') + chunk.text
+        setMessageContent(store, st.msgId, text)
+        st.currentText = text
         break
       }
       case 'canvas_artefact': {

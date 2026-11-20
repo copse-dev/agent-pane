@@ -949,6 +949,179 @@ describe('OpenAIProvider stream parsing', () => {
     )
   })
 
+  it('keeps parallel tool calls apart when the server reuses one delta index', async () => {
+    // Gemini's OpenAI-compatible endpoint streams every parallel call as
+    // `index: 0`. Keyed on the index alone, the calls merged into one whose
+    // arguments were two JSON objects back to back, which cannot be parsed.
+    const provider = new OpenAIProvider('gemini-test', {
+      baseURL: 'http://localhost:1234/v1',
+      apiKey: 'local-key',
+    })
+    withFakeStream(provider, [
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                { index: 0, id: 'call_a', function: { name: 'read_file', arguments: '{"path":' } },
+              ],
+            },
+            finish_reason: null,
+          },
+        ],
+      },
+      {
+        choices: [
+          {
+            delta: { tool_calls: [{ index: 0, function: { arguments: '"a.ts"}' } }] },
+            finish_reason: null,
+          },
+        ],
+      },
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                { index: 0, id: 'call_b', function: { name: 'list_dir', arguments: '{"path":' } },
+              ],
+            },
+            finish_reason: null,
+          },
+        ],
+      },
+      {
+        // A later fragment on the reused index belongs to the call it last opened.
+        choices: [
+          {
+            delta: { tool_calls: [{ index: 0, function: { arguments: '"src"}' } }] },
+            finish_reason: null,
+          },
+        ],
+      },
+      { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+    ])
+
+    const toolCalls = (await collect(provider)).filter(
+      (c): c is Extract<ProviderStreamChunk, { type: 'tool_call' }> => c.type === 'tool_call',
+    )
+    assert.deepEqual(
+      toolCalls.map((c) => [c.toolCall.id, c.toolCall.name, c.toolCall.args, c.toolCall.argsError]),
+      [
+        ['call_a', 'read_file', { path: 'a.ts' }, undefined],
+        ['call_b', 'list_dir', { path: 'src' }, undefined],
+      ],
+    )
+  })
+
+  it('keeps unidentified parallel tool calls apart when they share an index or have none', async () => {
+    for (const index of [0, undefined]) {
+      const provider = new OpenAIProvider('local-model', {
+        baseURL: 'http://localhost:1234/v1',
+        apiKey: 'local-key',
+      })
+      const slot = index === undefined ? {} : { index }
+      withFakeStream(provider, [
+        {
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  { ...slot, function: { name: 'read_file', arguments: '{"path":"a.ts"}' } },
+                  { ...slot, function: { name: 'read_file', arguments: '{"path":"b.ts"}' } },
+                ],
+              },
+              finish_reason: 'tool_calls',
+            },
+          ],
+        },
+      ])
+
+      const toolCalls = (await collect(provider)).filter(
+        (c): c is Extract<ProviderStreamChunk, { type: 'tool_call' }> => c.type === 'tool_call',
+      )
+      assert.deepEqual(
+        toolCalls.map((c) => [c.toolCall.args, c.toolCall.argsError]),
+        [
+          [{ path: 'a.ts' }, undefined],
+          [{ path: 'b.ts' }, undefined],
+        ],
+      )
+      assert.equal(new Set(toolCalls.map((c) => c.toolCall.id)).size, 2)
+    }
+  })
+
+  it('keeps one call whole when a server repeats its name on every fragment', async () => {
+    const provider = new OpenAIProvider('local-model', {
+      baseURL: 'http://localhost:1234/v1',
+      apiKey: 'local-key',
+    })
+    withFakeStream(provider, [
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [{ index: 0, function: { name: 'read_file', arguments: '{"path":' } }],
+            },
+            finish_reason: null,
+          },
+        ],
+      },
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: 'call_late',
+                  function: { name: 'read_file', arguments: '"a.ts"}' },
+                },
+              ],
+            },
+            finish_reason: 'tool_calls',
+          },
+        ],
+      },
+    ])
+
+    const toolCalls = (await collect(provider)).filter(
+      (c): c is Extract<ProviderStreamChunk, { type: 'tool_call' }> => c.type === 'tool_call',
+    )
+    assert.deepEqual(
+      toolCalls.map((c) => [c.toolCall.id, c.toolCall.args]),
+      [['call_late', { path: 'a.ts' }]],
+    )
+  })
+
+  it('reads usage from a frame that carries no choices through the real SDK', async () => {
+    // The SDK types `choices` as always present. A compatible server that sends
+    // its usage (or a leading bookkeeping frame) without the key used to throw a
+    // TypeError out of the stream and fail a turn whose answer had fully arrived.
+    await withCompletionServer(
+      (res) => {
+        res.writeHead(200, { 'content-type': 'text/event-stream' })
+        res.end(
+          [
+            { id: 'chatcmpl_test', object: 'chat.completion.chunk' },
+            { choices: [{ index: 0, delta: { content: 'ok' }, finish_reason: 'stop' }] },
+            { choices: null, usage: { prompt_tokens: 5, completion_tokens: 2 } },
+            { usage: { prompt_tokens: 7, completion_tokens: 3 } },
+          ]
+            .map((frame) => `data: ${JSON.stringify(frame)}\n\n`)
+            .join('') + 'data: [DONE]\n\n',
+        )
+      },
+      async (provider) => {
+        assert.deepEqual(await collect(provider), [
+          { type: 'text', text: 'ok' },
+          { type: 'usage', model: 'openrouter/test-model', inputTokens: 7, outputTokens: 3 },
+          { type: 'done', stopReason: 'stop' },
+        ])
+      },
+    )
+  })
+
   it('keeps a provider-supplied tool-call id instead of synthesizing one', async () => {
     const provider = new OpenAIProvider('gpt-test')
     withFakeStream(provider, [

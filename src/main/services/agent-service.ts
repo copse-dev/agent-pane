@@ -56,6 +56,7 @@ import {
   acpTurnInterruptionFor,
   acpTurnInterruptionMarker,
   agentErrorNotice,
+  agentErrorNoticeText,
   classifyAcpAuthFailure,
   classifyAgentError,
   classifyProviderAccessFailure,
@@ -186,7 +187,7 @@ import {
   buildAgentReportHistory,
   customAgentInvocationTask,
 } from './agents/custom-agent-strategy.ts'
-import { setCurrentShellTaskId } from './exec/shell-output-context.ts'
+import { runWithShellTaskId } from './exec/shell-output-context.ts'
 import {
   isPhasedCommandCall,
   queuedCommandPhase,
@@ -1320,7 +1321,7 @@ async function runAgentWithInlineCanvas(
     const acpHookCardSink = (card: HookCard): void => {
       sendChunk({ type: 'hook_run', card })
     }
-    setHookRunLiveSink(acpHookCardSink)
+    setHookRunLiveSink(acpHookCardSink, threadId)
     // Both deadlines discount host-side waits on the ACP branch (#2332). The
     // sliding idle clock already did; the wall-clock cap did not, so an hour of
     // a turn spent sitting on approval modals — this branch raises one per
@@ -1614,7 +1615,7 @@ async function runAgentWithInlineCanvas(
       // partial transcript says the agent wrote some; `lastTurnEvent` covers
       // anything else that left the bubble ending in text.
       const followsText = Boolean(partial?.assistantText) || lastTurnEvent === 'text'
-      sendChunk({ type: 'text', text: followsText ? `\n\n${msg}` : msg })
+      sendChunk({ type: 'text', text: agentErrorNoticeText(msg, followsText) })
       // A credentials failure is the one ACP error the user can't act on from
       // the chat alone — the fix lives in a separate program's login flow. Offer
       // to open it, after the diagnosis has been streamed so the ask arrives
@@ -1788,7 +1789,10 @@ async function runAgentWithInlineCanvas(
         const access = classifyProviderAccessFailure(err)
         if (access)
           return { kind: 'blocked', reason: access, message: msg, error: turnErrorDetail(err) }
-        sendChunk({ type: 'text', text: msg })
+        // A remote stream can fail after streaming part of the reply (the
+        // Claude Agent stream closing before the turn finished): keep the
+        // notice a callout of its own rather than the tail of that sentence.
+        sendChunk({ type: 'text', text: agentErrorNoticeText(msg, lastTurnEvent === 'text') })
         recordTurnFailure(err)
         sendChunk({ type: 'done' })
         return { kind: 'done', result: emptyTurn }
@@ -1882,7 +1886,7 @@ async function runAgentWithInlineCanvas(
   const hookCardSink = (card: HookCard): void => {
     sendChunk({ type: 'hook_run', card })
   }
-  setHookRunLiveSink(hookCardSink)
+  setHookRunLiveSink(hookCardSink, threadId)
   // Host-side blocking waits use the deadline's dedicated host-wait pause, so
   // approvals and ask_user do not spend the hard cap while ordinary model
   // streaming and tool execution remain bounded by it.
@@ -2675,12 +2679,9 @@ async function runAgentWithInlineCanvas(
                 if (name !== 'run_shell') return registry.executeNormalized(name, args, signal)
                 // Tag the command's streamed output with this tool-call id so the
                 // terminal pane can route it into the matching "Agent tasks" card.
-                setCurrentShellTaskId(toolCallId)
-                try {
-                  return await registry.executeNormalized(name, args, signal)
-                } finally {
-                  setCurrentShellTaskId(null)
-                }
+                return runWithShellTaskId(toolCallId, () =>
+                  registry.executeNormalized(name, args, signal),
+                )
               },
               (outcome) =>
                 'value' in outcome
@@ -3139,6 +3140,25 @@ async function runAgentWithInlineCanvas(
           const separatedSummary = `\n\n${summary}`
           sendChunk({ type: 'text', text: separatedSummary })
           trimmed.push({ role: 'assistant', content: separatedSummary })
+        }
+        // The loop absorbs a Stop that lands between provider events or while a
+        // tool is being cancelled: it breaks out and reports a bare `done`, which
+        // would otherwise be recorded as a completed provider turn. A provider
+        // that throws on the same Stop reaches the catch below and is recorded as
+        // cancelled, so the two exits must agree. A deadline abort already
+        // carries `timeout`; a hook halt keeps its own `stopReason` (H3).
+        if (
+          controller.signal.aborted &&
+          loopStopReason === undefined &&
+          hookHaltStopReason === undefined &&
+          !isAgentRunTimeoutAbort(controller.signal)
+        ) {
+          pendingTurnOutcome = {
+            ...terminalContext,
+            status: 'cancelled',
+            stopReason: 'cancelled',
+            source: 'user',
+          }
         }
         // C3 run→drain fold-back (E3): report the machine turns this run spent
         // in-process (closeout / pre-review / remediation) so the renderer folds them

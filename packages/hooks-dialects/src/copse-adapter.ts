@@ -41,6 +41,7 @@ import type { HookScope, HooksListResult, HookSummary } from './hooks-types.ts'
 import type { HookRunDecision } from '@copse/agent/hooks/hook-outcome.ts'
 import { hooksDialectsEnvironment } from './environment.ts'
 import { afterFileEditGlobMatches } from './after-file-edit-glob.ts'
+import { testHookMatcher } from './matcher-regex.ts'
 import {
   resolveCommandHookCwd,
   type DialectAdapter,
@@ -485,12 +486,16 @@ function auditProjectHook(hook: DiscoveredCopseHook): void {
  */
 function copseMatcherMatches(hook: DiscoveredCopseHook, subject: string): boolean {
   if (!hook.matcher) return true
-  try {
-    return new RegExp(hook.matcher).test(subject)
-  } catch {
+  // Bounded like the Cursor and Claude matchers: the subject can be an MCP tool
+  // name of the server's choosing, and an unbounded `(a+)+$` against a long one
+  // froze the main process on every gated call. A matcher that runs past the
+  // bound fires the hook rather than silently dropping a gate.
+  const result = testHookMatcher(hook.matcher, subject)
+  if (result === 'invalid') {
     console.warn(`[copse-hooks] invalid "${hook.event}" matcher /${hook.matcher}/ — hook skipped`)
     return false
   }
+  return result === 'timeout' ? true : result
 }
 
 /** Whether an `afterFileEdit` hook's glob(s) cover the edited path (mirrors Cursor). */

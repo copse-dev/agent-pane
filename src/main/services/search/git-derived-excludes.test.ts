@@ -155,4 +155,24 @@ describe('git-derived-excludes', () => {
       rmSync(root, { recursive: true, force: true })
     }
   })
+
+  // Without `-z`, git C-quotes a path holding non-ASCII bytes or a quote
+  // (`"g\303\251n\303\251r\303\251/"`), so it no longer ends in `/` and the
+  // directory was dropped from the excludes.
+  it('keeps ignored directories whose names git would quote', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'copse-git-excludes-'))
+    try {
+      const git = (...args: string[]): Buffer =>
+        execFileSync('git', args, { cwd: root, stdio: 'ignore' })
+      git('init', '-q')
+      writeFileSync(join(root, '.gitignore'), '/généré/\n/say "hi"/\n')
+      for (const dir of ['généré', 'say "hi"']) {
+        mkdirSync(join(root, dir), { recursive: true })
+        writeFileSync(join(root, dir, 'f.txt'), 'x')
+      }
+      assert.deepEqual(await computeGitIgnoreExcludes(root), ['généré/', 'say "hi"/'])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
 })

@@ -469,6 +469,31 @@ describe('CLA evaluation', () => {
     assert.equal(stateOf(result), 'failure')
   })
 
+  it('lists an address that could not be matched as inert text in its comment', async () => {
+    // The address is whatever the committer typed. Unquoted in the bot's
+    // comment, a team mention pinged the team and a Markdown link rendered.
+    const commits = [
+      commit(
+        null,
+        '@copse-dev/maintainers',
+        'x\n\nCo-authored-by: A <[sign here](https://evil.example)\n\n# Approved `x`>',
+      ),
+    ]
+    const { result, written } = await evaluate(
+      { pr: pull(4024, outsider, commits, { fork: true }), commits },
+      { signatures: { signatures: [{ id: outsider.id, emails: [] }] } },
+    )
+    assert.equal(stateOf(result), 'failure')
+    const body = written.created[0]?.body ?? ''
+    const sha = commits[0]?.sha.slice(0, 9) ?? ''
+    assert.ok(body.includes(`- \`@copse-dev/maintainers\` (${sha})`), body)
+    assert.ok(
+      body.includes(`- co-author \`[sign here](https://evil.example) # approved 'x'\` (${sha})`),
+      body,
+    )
+    assert.ok(!/^# /m.test(body), 'a trailer must not add a heading')
+  })
+
   it('passes once the outside author signs, by comment or in the signatures file', async () => {
     const commits = [commit(outsider, 'eve@example.com')]
     const signedByComment = await evaluate({

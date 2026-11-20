@@ -290,3 +290,24 @@ describe('truncateAttachmentContent', () => {
     }
   })
 })
+
+describe('attachment caps and surrogate pairs', () => {
+  // U+1F600 is two UTF-16 code units; a cap landing between them used to leave
+  // a lone surrogate in the prompt, which providers reject as invalid JSON.
+  const EMOJI = '\u{1F600}'
+
+  it('keeps a single-line attachment well-formed where the head and tail are cut', () => {
+    // No newline to trim back to, so both cuts land exactly on the budget:
+    // the head budget is 70 of 100, the tail the last 30.
+    const content = `${'a'.repeat(69)}${EMOJI}${'b'.repeat(120)}${EMOJI}${'c'.repeat(29)}`
+    const truncated = truncateAttachmentContent(content, 100)
+    assert.equal(truncated.isWellFormed(), true)
+    assert.equal(truncated.startsWith(`${'a'.repeat(69)}\n\n…`), true)
+    assert.equal(truncated.endsWith(`…\n\n${'c'.repeat(29)}`), true)
+  })
+
+  it('keeps a pasted-block label well-formed when its preview is clipped', () => {
+    const label = textBlockLabel(`${'x'.repeat(44)}${EMOJI} and the rest of a long first line`)
+    assert.equal(label, `${'x'.repeat(44)}…`)
+  })
+})

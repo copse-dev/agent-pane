@@ -19,6 +19,7 @@ import {
   projectThreadLoadRevision,
   flushProjectThreads,
   holdNavigation,
+  holdThreadDeletions,
   saveNavigation,
   saveProjects,
   serializedSet,
@@ -1220,6 +1221,25 @@ export async function restoreProject(
   id: string,
   preferredThreadId: string | null = null,
 ): Promise<void> {
+  // The store already names `id` but lists none of its threads until the
+  // restore publishes them (or moves off the project), and the read below seeds
+  // autosave's baseline first. Keep a flush in that window from taking the empty
+  // list for deletions.
+  const publishThreads = holdThreadDeletions(id)
+  try {
+    await restoreHeldProject(store, api, id, preferredThreadId, publishThreads)
+  } finally {
+    publishThreads()
+  }
+}
+
+async function restoreHeldProject(
+  store: AppStore,
+  api: ApiClient,
+  id: string,
+  preferredThreadId: string | null,
+  publishThreads: () => void,
+): Promise<void> {
   const proj = store.getState().projects.find((p) => p.id === id)
   if (!proj) return
   if (proj.sshHost) {
@@ -1269,6 +1289,7 @@ export async function restoreProject(
   const persisted = saveProjects(api, projects, id, activeThreadId).catch((error: unknown) => {
     console.warn(`[projects] could not persist the restored project ${id}:`, error)
   })
+  publishThreads()
   store.setState({
     activeProjectId: id,
     expandedProjectId: id,

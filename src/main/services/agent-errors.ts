@@ -755,3 +755,12 @@ export function agentErrorNotice(message: string): string {
     .join('\n')
   return `> [!CAUTION]\n${quoted}`
 }
+
+/**
+ * The text chunk that streams a failure notice into the bubble. A GitHub alert
+ * renders only at the start of a block, so a notice that follows the agent's
+ * words gets a paragraph break of its own instead of running on from them.
+ */
+export function agentErrorNoticeText(notice: string, followsText: boolean): string {
+  return followsText ? `\n\n${notice}` : notice
+}

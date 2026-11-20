@@ -219,6 +219,11 @@ function fetchBuffered(
         return
       }
       const body = encoding === 'gzip' ? response.pipe(createGunzip()) : response
+      // A connection that drops mid-body ends neither the response nor the
+      // gunzip stream it feeds, and a closed socket no longer times out.
+      response.once('close', () => {
+        if (!response.complete) reject(new Error(`${host} closed the connection mid-response`))
+      })
       const chunks: Buffer[] = []
       let size = 0
       body.on('data', (chunk: Buffer) => {
@@ -348,6 +353,12 @@ export async function startPackageFirewallProxy(
     upstreamRequest.once('response', (upstream) => {
       response.writeHead(upstream.statusCode ?? 502, endToEndHeaders(upstream.headers))
       upstream.pipe(response)
+      // `pipe` ends the client response only when the upstream body ends. A
+      // registry connection that drops part way through would leave the client
+      // waiting for the rest of its promised length, so cut it off instead.
+      upstream.once('close', () => {
+        if (!upstream.complete) response.destroy()
+      })
     })
     upstreamRequest.on('error', (error) => {
       if (!abandoned) unreachable(host, error, response)

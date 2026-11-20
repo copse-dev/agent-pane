@@ -193,6 +193,20 @@ describe('shared interpreter and script tables', () => {
     assert.equal(inlineCodeBody(['pwsh', '-Command', 'x']), 'x')
     assert.equal(inlineCodeBody(['bash', 'script.sh']), null)
   })
+
+  it('finds a shell command string behind a clustered -c and later options', () => {
+    assert.equal(inlineCodeBody(['bash', '-lc', 'git status']), 'git status')
+    assert.equal(inlineCodeBody(['sh', '-ec', 'make']), 'make')
+    assert.equal(inlineCodeBody(['bash', '-o', 'pipefail', '-c', 'make']), 'make')
+    assert.equal(inlineCodeBody(['bash', '-c', '--', 'make']), 'make')
+    // A shell's -e is errexit, so the word after it is not code.
+    assert.equal(inlineCodeBody(['bash', '-e', '-c', 'make']), 'make')
+    assert.equal(inlineCodeBody(['bash', '-e', 'script.sh']), null)
+    // Everything after a script operand belongs to the script.
+    assert.equal(inlineCodeBody(['bash', 'script.sh', '-c', 'make']), null)
+    assert.equal(inlineCodeBody(['bash', '--norc', 'script.sh']), null)
+    assert.equal(inlineCodeBody(['bash', '-c']), null)
+  })
 })
 
 describe('shellRedirects', () => {
@@ -255,6 +269,41 @@ describe('shellRedirects', () => {
       assert.notEqual(argv[0], '2>/dev/null')
     }
     assert.deepEqual(shellRedirects(command), [{ target: '/dev/null', truncates: true }])
+  })
+
+  it('sees a write on a line after one that ends in a comment', () => {
+    // Lexed whole, the comment ran to the end of the input and took every later
+    // line's redirect with it.
+    assert.deepEqual(shellRedirects('ls # list the tree\necho x > ~/.bashrc'), [
+      { target: '~/.bashrc', truncates: true },
+    ])
+    assert.deepEqual(shellInputRedirects('ls # list the tree\nwc -l < ~/notes.txt'), [
+      '~/notes.txt',
+    ])
+  })
+
+  it('names the target that follows a line continuation', () => {
+    assert.deepEqual(shellRedirects('echo x > \\\n /etc/hosts'), [
+      { target: '/etc/hosts', truncates: true },
+    ])
+  })
+
+  it('counts a read-write open as a write', () => {
+    // `1<> file` puts stdout on the file without truncating it.
+    assert.deepEqual(shellRedirects('tool 1<> ~/.ssh/authorized_keys'), [
+      { target: '~/.ssh/authorized_keys', truncates: false },
+    ])
+  })
+
+  it('separates a redirect glued to the word before it in the raw fallback', () => {
+    for (const command of ['cat<~/.ssh/id_rsa', 'cat</etc/shadow', 'ls>out.txt', 'cat<<EOF']) {
+      for (const argv of shellSegments(command)) {
+        assert.ok(['cat', 'ls'].includes(argv[0] ?? ''), `${command}: ${argv.join(' ')}`)
+        assert.equal(argv.length, 1, `${command}: ${argv.join(' ')}`)
+      }
+    }
+    // A quoted operator character is an operand, and so is the word after it.
+    assert.ok(segments('grep ">" notes.txt').includes('grep > notes.txt'))
   })
 })
 
@@ -357,8 +406,20 @@ describe('read-only classification and its escape hatches', () => {
       'sort -uo out.txt data.txt',
       'tree -o out.txt',
       'file -C -m magic',
+      // GNU long options may be abbreviated to any unambiguous prefix.
+      'sort --out=out.txt data.txt',
+      'sort --compress-prog=./tool.sh data.txt',
+      'sort --comp ./tool.sh data.txt',
+      'file --comp -m magic',
+      // `uniq INPUT OUTPUT` overwrites its second operand.
+      'uniq data.txt out.txt',
+      'uniq -c -f 1 data.txt out.txt',
+      'uniq -- data.txt out.txt',
     ]) {
       assert.equal(isStructurallyReadOnlyShellCommand(command), false, command)
+    }
+    for (const command of ['uniq -c data.txt', 'uniq -f 1 data.txt', 'sort data.txt | uniq -c']) {
+      assert.equal(isStructurallyReadOnlyShellCommand(command), true, command)
     }
   })
 

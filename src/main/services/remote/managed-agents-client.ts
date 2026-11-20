@@ -440,6 +440,14 @@ async function streamSession(input: {
     for (const chunk of managedAgentEventToChunks(event, state)) input.onChunk(chunk)
     if (state.done) break
   }
+  // The body closing is not the turn ending: only `session.status_idle` is. A
+  // connection dropped mid-turn must not pass off a half-received reply as the
+  // finished one while the session is still working.
+  if (!state.done) {
+    throw new Error(
+      'Claude Agent stream ended before the turn finished. The remote session may still be running.',
+    )
+  }
   return { assistantText: state.assistantText, terminalStatus: state.terminalStatus }
 }
 

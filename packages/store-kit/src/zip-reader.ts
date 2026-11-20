@@ -1,5 +1,6 @@
 import { promisify } from 'node:util'
-import { crc32, inflateRaw } from 'node:zlib'
+import { crc32, inflateRaw, type InputType, type ZlibOptions } from 'node:zlib'
+import { isRecord } from '@copse/std/unknown-value.ts'
 
 /**
  * The reading half of {@link ./zip-archive.ts}: parse a zip's central directory
@@ -18,7 +19,8 @@ import { crc32, inflateRaw } from 'node:zlib'
  * the check that extractor must apply.
  */
 
-const inflateRawAsync = promisify(inflateRaw)
+const inflateRawAsync: (body: InputType, options: ZlibOptions) => Promise<Buffer> =
+  promisify(inflateRaw)
 
 const LOCAL_HEADER_SIG = 0x0403_4b50
 const CENTRAL_HEADER_SIG = 0x0201_4b50
@@ -171,12 +173,20 @@ export async function readZipEntry(archive: Uint8Array, entry: ZipEntryInfo): Pr
   }
   const body = buffer.subarray(bodyStart, bodyStart + entry.compressedSize)
 
+  const sizeMismatch = (): ZipFormatError =>
+    new ZipFormatError(
+      `Zip entry ${entry.path} does not match its declared size — the archive is corrupt.`,
+    )
   let data: Buffer
   if (entry.method === METHOD_STORE) data = Buffer.from(body)
   else if (entry.method === METHOD_DEFLATE) {
     try {
-      data = await inflateRawAsync(body)
-    } catch {
+      // The declared size is what callers budget against before reading, so it
+      // also bounds the inflate: a body that expands past it is refused while
+      // it is still that small, not after it has been buffered whole.
+      data = await inflateRawAsync(body, { maxOutputLength: Math.max(1, entry.uncompressedSize) })
+    } catch (error) {
+      if (isRecord(error) && error['code'] === 'ERR_BUFFER_TOO_LARGE') throw sizeMismatch()
       // zlib's own messages ("invalid distance too far back") describe the
       // bitstream, not the file; say which entry failed and why it matters.
       throw new ZipFormatError(
@@ -188,6 +198,7 @@ export async function readZipEntry(archive: Uint8Array, entry: ZipEntryInfo): Pr
       `Zip entry ${entry.path} uses compression method ${String(entry.method)}; only store and deflate are supported.`,
     )
   }
+  if (data.length !== entry.uncompressedSize) throw sizeMismatch()
   if (crc32(data) !== entry.crc) {
     throw new ZipFormatError(
       `Zip entry ${entry.path} failed its checksum — the archive is corrupt.`,

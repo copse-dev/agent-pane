@@ -330,3 +330,52 @@ describe('runManagedAgentFromSettings usage', () => {
     }
   })
 })
+
+describe('runManagedAgentFromSettings when the event stream drops', () => {
+  const prevAnthropicKey = process.env['ANTHROPIC_API_KEY']
+
+  afterEach(() => {
+    if (prevAnthropicKey === undefined) delete process.env['ANTHROPIC_API_KEY']
+    else process.env['ANTHROPIC_API_KEY'] = prevAnthropicKey
+    clearManagedAgentSession('thread-managed-dropped')
+  })
+
+  it('fails the turn instead of reporting a half-received reply as finished', async () => {
+    const restoreWorkspace = setWorkspaceRootForTest(null)
+    clearManagedAgentSession('thread-managed-dropped')
+    process.env['ANTHROPIC_API_KEY'] = 'test-key'
+    const chunks: StreamChunk[] = []
+    const api = mockManagedAgentsApi([])
+    // The connection closes after the first message: no `session.status_idle`.
+    const fetchImpl: typeof fetch = (input, init) => {
+      const href = typeof input === 'string' || input instanceof URL ? String(input) : input.url
+      return new URL(href).pathname.endsWith('/events/stream')
+        ? Promise.resolve(
+            sseResponse([
+              { type: 'agent.message', content: [{ type: 'text', text: 'Half a re' }] },
+            ]),
+          )
+        : api(input, init)
+    }
+
+    try {
+      await assert.rejects(
+        runManagedAgentFromSettings({
+          threadId: 'thread-managed-dropped',
+          provider: 'anthropic',
+          userPrompt: 'do a long task',
+          signal: new AbortController().signal,
+          onChunk: (chunk) => chunks.push(chunk),
+          fetchImpl,
+        }),
+        /stream ended before the turn finished/,
+      )
+      assert.equal(
+        chunks.some((chunk) => chunk.type === 'done'),
+        false,
+      )
+    } finally {
+      restoreWorkspace()
+    }
+  })
+})

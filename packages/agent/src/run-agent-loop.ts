@@ -459,6 +459,11 @@ type StepUsage = {
  * itself (`streamUsage`) over the shared mutable `provider.lastUsage`. Reading
  * per-stream usage avoids cross-stream races and mis-attribution when a
  * subagent reuses the parent provider (#112).
+ *
+ * Callers pass no `getLastUsage` for a stream they stopped reading early (an
+ * abort, an output-cap cut): the provider records `lastUsage` when a stream
+ * finishes, so after an interrupted one it still holds the previous stream's
+ * numbers and the fallback would report that step a second time.
  */
 function emitStepUsage(
   streamUsage: StepUsage | null,
@@ -578,11 +583,15 @@ async function streamTextOnlyTurn(
   let stopReason: string | undefined
   let streamUsage: StepUsage | null = null
   let streamOutputChars = 0
+  let streamInterrupted = false
 
   budget.deadline.pause()
   try {
     for await (const chunk of provider.stream(turnMessages, tools, signal)) {
-      if (signal?.aborted) break
+      if (signal?.aborted) {
+        streamInterrupted = true
+        break
+      }
       if (chunk.type === 'reasoning') {
         streamOutputChars += chunk.text.length
         onChunk(chunk)
@@ -626,6 +635,7 @@ async function streamTextOnlyTurn(
       // loop does, so a local model can't stream indefinitely here either (#489).
       if (isStreamOutputRunaway(streamOutputChars, maxStreamOutputTokens)) {
         stopReason = 'max_tokens'
+        streamInterrupted = true
         break
       }
     }
@@ -633,6 +643,7 @@ async function streamTextOnlyTurn(
     budget.deadline.resume()
   }
   recordRunActivity(budget)
+  const lastUsageFallback = streamInterrupted ? undefined : getLastUsage
 
   assistantText = applyTextToolCallRecovery(
     assistantText,
@@ -646,7 +657,7 @@ async function streamTextOnlyTurn(
       role: 'assistant',
       content: pendingToolCalls.map((tc) => ({ id: tc.id, name: tc.name, args: tc.args })),
     })
-    emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
+    emitStepUsage(streamUsage, lastUsageFallback, onChunk, usageModel)
     return { answerText: '', pendingToolCalls, retryAfterTruncation: false }
   }
 
@@ -655,20 +666,20 @@ async function streamTextOnlyTurn(
     const text = trimmed || REFUSAL_USER_MESSAGE
     if (!trimmed) onChunk({ type: 'text', text })
     messages.push({ role: 'assistant', content: text })
-    emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
+    emitStepUsage(streamUsage, lastUsageFallback, onChunk, usageModel)
     return { answerText: text, pendingToolCalls: [], retryAfterTruncation: false }
   }
   const truncationNudge = await resolveTruncationNudge?.(stopReason)
   if (truncationNudge !== undefined) {
     if (trimmed) messages.push({ role: 'assistant', content: assistantText })
     messages.push({ role: 'user', content: truncationNudge })
-    emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
+    emitStepUsage(streamUsage, lastUsageFallback, onChunk, usageModel)
     return { answerText: '', pendingToolCalls: [], retryAfterTruncation: true }
   }
   if (trimmed) {
     messages.push({ role: 'assistant', content: assistantText })
   }
-  emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
+  emitStepUsage(streamUsage, lastUsageFallback, onChunk, usageModel)
   return { answerText: trimmed, pendingToolCalls: [], retryAfterTruncation: false }
 }
 
@@ -724,11 +735,15 @@ async function runToolEnabledNudgeTurn(
   let assistantText = ''
   const pendingToolCalls: ToolCallChunk[] = []
   let streamUsage: StepUsage | null = null
+  let streamInterrupted = false
 
   budget.deadline.pause()
   try {
     for await (const chunk of provider.stream(messages, tools, signal)) {
-      if (signal?.aborted) break
+      if (signal?.aborted) {
+        streamInterrupted = true
+        break
+      }
       if (chunk.type === 'reasoning') onChunk(chunk)
       if (chunk.type === 'text') {
         assistantText += chunk.text
@@ -766,7 +781,7 @@ async function runToolEnabledNudgeTurn(
     budget.deadline.resume()
   }
   recordRunActivity(budget)
-  emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
+  emitStepUsage(streamUsage, streamInterrupted ? undefined : getLastUsage, onChunk, usageModel)
 
   assistantText = applyTextToolCallRecovery(
     assistantText,
@@ -1606,6 +1621,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     let trailingReasoningCut = false
     let trailingReasoningCutTokens: number | undefined
     let streamCappedAsRunaway = false
+    let streamAborted = false
     let softBudgetCut = false
     const softBudget = reasoningCheckpointPolicy?.softReasoningBudget
     const softBudgetArmed =
@@ -1665,7 +1681,10 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
           : undefined
       initialToolChoice = undefined
       for await (const chunk of provider.stream(messages, tools, signal, streamOptions)) {
-        if (signal?.aborted) break
+        if (signal?.aborted) {
+          streamAborted = true
+          break
+        }
         if (chunk.type === 'reasoning') {
           streamOutputChars += chunk.text.length
           streamReasoningChars += chunk.text.length
@@ -1862,7 +1881,10 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     }
     recordRunActivity(budget)
 
-    emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
+    // Every in-stream cut sets one of these before it stops reading.
+    const streamInterrupted =
+      streamAborted || streamCappedAsRunaway || trailingReasoningCut || softBudgetCut
+    emitStepUsage(streamUsage, streamInterrupted ? undefined : getLastUsage, onChunk, usageModel)
 
     if (maxContextTokens) {
       emitContextPressure(
@@ -2064,15 +2086,6 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         role: 'assistant',
         content: pendingToolCalls.map((tc) => ({ id: tc.id, name: tc.name, args: tc.args })),
       })
-      if (truncationNudge !== undefined) {
-        messages.push({ role: 'user', content: truncationNudge })
-        recordAppliedNudge(appliedNudgeSink, {
-          step: budget.llmCalls,
-          hookId: TRUNCATION_CONTINUE_HOOK_ID,
-          mechanism: 'tool-enabled-message',
-          text: truncationNudge,
-        })
-      }
     } else if (isRefusalStopReason(stopReason)) {
       const text = assistantText.trim() ? historyAssistantText : REFUSAL_USER_MESSAGE
       if (!assistantText.trim()) onChunk({ type: 'text', text })
@@ -2208,6 +2221,20 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     toolOnlySteps++
 
     if (signal?.aborted) break
+
+    // A truncated stream that still delivered tool calls: the nudge goes after
+    // their results. Pushed before them it would separate each tool_use from its
+    // tool_result, which providers reject and the pairing repair then papers
+    // over with synthetic cancelled results, orphaning the real ones.
+    if (truncationNudge !== undefined) {
+      messages.push({ role: 'user', content: truncationNudge })
+      recordAppliedNudge(appliedNudgeSink, {
+        step: budget.llmCalls,
+        hookId: TRUNCATION_CONTINUE_HOOK_ID,
+        mechanism: 'tool-enabled-message',
+        text: truncationNudge,
+      })
+    }
   }
 
   if (!signal?.aborted && !finishedWithAnswer && runLimitStopReason === null) {

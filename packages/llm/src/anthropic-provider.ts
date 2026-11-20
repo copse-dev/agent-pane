@@ -374,15 +374,20 @@ function toAnthropicMessages(messages: LLMMessage[]): Anthropic.MessageParam[] {
 function toAnthropicContent(
   content: Array<{ type: string; text?: string; dataUrl?: string }>,
 ): Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> {
-  return content.map((c) => {
-    if (c.type === 'text') return { type: 'text', text: c.text ?? '' }
+  return content.flatMap((c): Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> => {
+    // The API rejects a text block with no non-whitespace text, and with it the
+    // whole request: an image sent with no caption arrives as its images plus
+    // an empty text part, and a visual tool result may carry no text at all.
+    if (c.type === 'text') return c.text?.trim() ? [{ type: 'text', text: c.text }] : []
     if (c.type === 'image' && c.dataUrl) {
       const [header, data] = c.dataUrl.split(',')
       const parsedMediaType = header?.match(/:(.*?);/)?.[1]
       const mediaType = isImageMediaType(parsedMediaType) ? parsedMediaType : 'image/png'
-      return { type: 'image', source: { type: 'base64', media_type: mediaType, data: data ?? '' } }
+      return [
+        { type: 'image', source: { type: 'base64', media_type: mediaType, data: data ?? '' } },
+      ]
     }
-    return { type: 'text', text: '' }
+    return []
   })
 }
 

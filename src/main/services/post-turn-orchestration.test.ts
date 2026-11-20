@@ -4,13 +4,14 @@ import {
   applyReviewTodoUpdates,
   reviewSpendApprovalBody,
   runPostTurnReviewCycle,
+  runPreReviewTodoGate,
   type PostTurnReviewOutcome,
   type RunPostTurnReviewCycleOptions,
 } from './post-turn-orchestration.ts'
 import { MAX_POST_TURN_REVIEW_CYCLES } from '@shared/todos/todo-logic.ts'
 import { DEFAULT_POST_TURN_REVIEW_CYCLES } from '@copse/agent/plugins/post-turn-review-plugin.ts'
 import type { ParsedReviewVerdict } from '@copse/agent/review-subagent.ts'
-import type { StreamChunk } from '@shared/types'
+import type { LLMMessage, LLMProvider, StreamChunk } from '@shared/types'
 import type { TodoItem } from '@shared/types/todo.ts'
 import type { ContinuationGrant } from '@copse/agent/hooks/continuation-budget.ts'
 import { at } from '@shared/array-utils.ts'
@@ -160,6 +161,50 @@ describe('runPostTurnReviewCycle (E3)', () => {
     ac.abort()
     await runPostTurnReviewCycle(baseOptions(h, { reviewApproved: false, signal: ac.signal }))
     assert.equal(at(reviewChunks(h.chunks), 0).summary, 'Review cancelled.')
+  })
+
+  // A loop that absorbed Stop returns normally, so the cycle can be reached with
+  // the run already cancelled. A review started then makes no model call and
+  // would publish the subagent's placeholder as a clean verdict.
+  it('starts no review, and reports no verdict, for a run that was already cancelled', async () => {
+    const h = newHarness()
+    const ac = new AbortController()
+    ac.abort()
+    const verdicts: PostTurnReviewOutcome[] = []
+    await runPostTurnReviewCycle(
+      baseOptions(h, { signal: ac.signal, onReviewVerdict: (review) => verdicts.push(review) }),
+    )
+    assert.equal(h.reviews, 0)
+    assert.deepEqual(verdicts, [])
+    assert.deepEqual(reviewChunks(h.chunks), [
+      { type: 'post_turn_review', status: 'skipped', summary: 'Review cancelled.' },
+    ])
+  })
+
+  it('does not re-review after a remediation turn that was cancelled', async () => {
+    const h = newHarness()
+    const ac = new AbortController()
+    await runPostTurnReviewCycle(
+      baseOptions(h, {
+        signal: ac.signal,
+        runReviewOnce: () => {
+          h.reviews += 1
+          return Promise.resolve(outcome(verdict({ issuesFound: true, requestFollowUp: true })))
+        },
+        runRemediationTurn: (nudge) => {
+          h.remediations.push(nudge)
+          ac.abort()
+          return Promise.resolve({ madeEdits: true })
+        },
+      }),
+    )
+    assert.equal(h.reviews, 1)
+    assert.equal(h.remediations.length, 1)
+    // The verdict that asked for the follow-up stays the card's last word.
+    assert.deepEqual(
+      reviewChunks(h.chunks).map((chunk) => chunk.status),
+      ['running', 'done'],
+    )
   })
 
   it('runs one review and no remediation when the verdict requests no follow-up', async () => {
@@ -365,5 +410,52 @@ describe('runPostTurnReviewCycle (E3)', () => {
     const reviews = reviewChunks(h.chunks)
     assert.equal(reviews.at(-1)?.status, 'error')
     assert.equal(h.remediations.length, 0)
+  })
+})
+
+describe('runPreReviewTodoGate', () => {
+  // Stop stops agent work: a loop that absorbed the abort returns normally, and
+  // the gate must not then open a machine turn in the user's name.
+  it('starts no continuation turn for a run that was already cancelled', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const messages: LLMMessage[] = [{ role: 'user', content: 'do the work' }]
+    const chunks: StreamChunk[] = []
+    const granted: string[] = []
+    let providerCalls = 0
+    const provider: LLMProvider = {
+      stream: async function* () {
+        providerCalls++
+        yield { type: 'done' as const }
+      },
+    }
+
+    await runPreReviewTodoGate({
+      provider,
+      messages,
+      tools: [],
+      contextWindow: 100_000,
+      toolSchemaReserve: 1_000,
+      signal: controller.signal,
+      usageModel: 'claude-sonnet-4-6',
+      onChunk: (chunk) => chunks.push(chunk),
+      getOpenTodos: () => [{ id: 'a', content: 'Step 1', status: 'pending' }],
+      setTodos: () => undefined,
+      userNudge: '',
+      maxSteps: 6,
+      executeTool: () => Promise.resolve('unused'),
+      continuationBudget: {
+        tryGrant: (reason) => {
+          granted.push(reason)
+          return true
+        },
+        remaining: () => 1,
+      },
+    })
+
+    assert.deepEqual(granted, [], 'no continuation grant is spent')
+    assert.deepEqual(chunks, [], 'no machine bubble is announced')
+    assert.deepEqual(messages, [{ role: 'user', content: 'do the work' }])
+    assert.equal(providerCalls, 0)
   })
 })

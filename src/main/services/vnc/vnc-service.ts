@@ -379,7 +379,9 @@ export class VncService {
       })
     } catch (error) {
       socket.destroy()
-      if (forward) await forward.transport.closeForward(forward.localPort)
+      // Best effort, as everywhere else: a tunnel that will not close must not
+      // replace the reason the VNC connection failed.
+      if (forward) await forward.transport.closeForward(forward.localPort).catch(() => {})
       throw connectionFailure(target, error instanceof Error ? error : new Error(String(error)))
     }
 

@@ -20,6 +20,8 @@ import { fingerprintToolset, type ToolsetFingerprint } from '@shared/threads/too
 import { safeJsonParse, safeJsonStringify } from '@shared/safe-json.ts'
 import { appendHookRun } from './thread-store.ts'
 import { storageGet } from './storage/storage.ts'
+import { currentThreadExecutionContext } from './thread-execution-context-store.ts'
+import { getActiveRunThread } from './active-run-identity.ts'
 
 /**
  * Always-on spine recording of hook executions (decision 6 of
@@ -152,60 +154,115 @@ interface HookRunRecordingContext {
   toolset: ToolsetFingerprint | null
 }
 
-let current: HookRunRecordingContext | null = null
+/**
+ * Recording contexts of the runs in flight, keyed by thread. Several agent turns
+ * run at once on different threads, so one process-wide slot would let a second
+ * turn replace the first's context: the first thread's later hook runs would land
+ * on the second thread's spine under its turn id, and be dropped once it ended.
+ */
+const contexts = new Map<string, HookRunRecordingContext>()
 
 /**
- * Live hook-card sink (decision 10). Set per-run by the agent service so a
- * `hook_run` spine append also emits a `hook_run` stream chunk, letting the
- * renderer show the hook-card family *as it runs* — the same card it would fold
- * from the spine on reload. Optional and best-effort: recording never depends on
- * a sink being present (observability, not behavior), and a throwing sink is
- * swallowed so a UI hiccup can't break a hook run.
+ * The recording context the calling code belongs to. Fire sites and sinks do
+ * not pass a thread id, so it is resolved from the async scopes every run binds
+ * (the dispatcher, the ACP bridge and the OpenAI host tools bind both):
+ *
+ * 1. the thread of the bound execution context, when that thread is recording;
+ * 2. otherwise the thread of the active run identity, when recording. An
+ *    isolated worker runs inside its parent's turn under its own execution
+ *    context but keeps the parent's run identity, so its hook runs stay on the
+ *    run that started it;
+ * 3. with neither scope bound (unit tests, a caller outside any turn), the one
+ *    open window, which is what the single process-wide slot gave. With several
+ *    windows open such a caller cannot be attributed, so it gets null.
+ *
+ * A caller scoped to a thread that is not recording gets null rather than some
+ * other thread's context: an idle thread's hook run must not land on the spine
+ * of whichever thread happens to be running.
  */
-let liveSink: ((card: HookCard) => void) | null = null
+function ambientContext(): HookRunRecordingContext | null {
+  const scopedThread = currentThreadExecutionContext()?.threadId ?? null
+  const scoped = scopedThread === null ? undefined : contexts.get(scopedThread)
+  if (scoped) return scoped
+  const runThread = getActiveRunThread()
+  const run = runThread === null ? undefined : contexts.get(runThread)
+  if (run) return run
+  if (scopedThread !== null || runThread !== null || contexts.size !== 1) return null
+  const [only] = contexts.values()
+  return only ?? null
+}
 
-/** Register the live hook-card sink for a run (cleared in the run's finally). */
-export function setHookRunLiveSink(sink: (card: HookCard) => void): void {
-  liveSink = sink
+/**
+ * Live hook-card sinks (decision 10), keyed by thread. Set per-run by the agent
+ * service so a `hook_run` spine append also emits a `hook_run` stream chunk,
+ * letting the renderer show the hook-card family *as it runs* — the same card it
+ * would fold from the spine on reload. Per thread so one thread's cards never
+ * stream into another thread's chat. Optional and best-effort: recording never
+ * depends on a sink being present (observability, not behavior), and a throwing
+ * sink is swallowed so a UI hiccup can't break a hook run.
+ */
+const liveSinks = new Map<string, (card: HookCard) => void>()
+
+/** Register the live hook-card sink for a run on `threadId` (cleared in the run's finally). */
+export function setHookRunLiveSink(sink: (card: HookCard) => void, threadId: string): void {
+  liveSinks.set(threadId, sink)
 }
 
 /** Clear the live hook-card sink (idempotent; only clears the given sink). */
 export function clearHookRunLiveSink(sink: (card: HookCard) => void): void {
-  if (liveSink === sink) liveSink = null
+  for (const [threadId, registered] of liveSinks) {
+    if (registered === sink) liveSinks.delete(threadId)
+  }
 }
 
-function emitLiveHookCard(line: SpineHookRunLine): void {
-  if (!liveSink) return
+function emitLiveHookCard(threadId: string, line: SpineHookRunLine): void {
+  const sink = liveSinks.get(threadId)
+  if (!sink) return
   try {
-    liveSink(hookCardFromSpineLine(line))
+    sink(hookCardFromSpineLine(line))
   } catch (err) {
     console.warn('[hook-run-recorder] live hook-card sink threw:', err)
   }
 }
 
 /**
- * Start attributing hook executions to an agent run. Resolves the project from
- * the active-project pointer (the same source the usage ledger uses); when no
- * project is active there is no thread directory to write to, so recording
- * stays off for the run.
+ * The project a thread's records belong to: the thread's own execution context
+ * when the caller runs inside it (the same precedence the usage ledger uses),
+ * else the active-project pointer. The pointer alone is wrong whenever the
+ * window shows a different project than the one the turn runs in — the line
+ * would be written to an orphan `workspace/<activeProject>/<threadId>/`.
  */
-export function beginHookRunRecording(threadId: string): void {
-  const projectId = storageGet('activeProjectId')
-  if (typeof projectId !== 'string' || projectId.length === 0) {
-    current = null
-    return
-  }
-  current = { projectId, threadId, turnId: randomUUID(), step: 0, toolset: null }
+function projectIdForThread(threadId: string): string | null {
+  // No active project means no desktop project store to write into (a headless
+  // run keeps its records to itself), so recording stays off as it always has.
+  const activeProjectId = storageGet('activeProjectId')
+  if (typeof activeProjectId !== 'string' || activeProjectId.length === 0) return null
+  const executionContext = currentThreadExecutionContext()
+  const projectId =
+    executionContext?.threadId === threadId ? executionContext.projectId : activeProjectId
+  return projectId.length > 0 ? projectId : null
 }
 
-/** Stop attributing (only if the context still belongs to this thread). */
+/**
+ * Start attributing hook executions to an agent run on `threadId`. When the
+ * project cannot be resolved there is no thread directory to write to, so
+ * recording stays off for the run.
+ */
+export function beginHookRunRecording(threadId: string): void {
+  const projectId = projectIdForThread(threadId)
+  contexts.delete(threadId)
+  if (projectId === null) return
+  contexts.set(threadId, { projectId, threadId, turnId: randomUUID(), step: 0, toolset: null })
+}
+
+/** Stop attributing for this thread; other threads' windows are untouched. */
 export function endHookRunRecording(threadId: string): void {
-  if (current?.threadId === threadId) current = null
+  contexts.delete(threadId)
 }
 
 /** Current run attribution for observability sinks (stream stats, etc.). */
 export function getHookRunRecordingContext(): HookRunRecordingSnapshot | null {
-  return current ? { ...current } : null
+  return snapshotHookRunContext()
 }
 
 /** An opaque, by-value copy of the recording context for detached attribution. */
@@ -214,14 +271,15 @@ export type HookRunRecordingSnapshot = HookRunRecordingContext
 /**
  * Capture the current recording context by value. Detached async hooks
  * (`stop`, `subagentStop`, …) resolve *after* {@link endHookRunRecording} has
- * cleared the live `current` (decision 3 — the loop never waits for them), so
+ * closed the thread's window (decision 3 — the loop never waits for them), so
  * their fire sites snapshot the context synchronously at dispatch and record
  * against the snapshot, keeping decision 6's "always-on" guarantee for async
  * hooks (otherwise the `hook_run` line is dropped or misattributed to a newer
- * run). Returns null when no run is active.
+ * run). Returns null when no run is active for the calling thread.
  */
 export function snapshotHookRunContext(): HookRunRecordingSnapshot | null {
-  return current ? { ...current } : null
+  const context = ambientContext()
+  return context ? { ...context } : null
 }
 
 /**
@@ -231,12 +289,13 @@ export function snapshotHookRunContext(): HookRunRecordingSnapshot | null {
  * recording window (the marshaller then emits an empty generation id).
  */
 export function getCurrentHookRunTurnId(): string | null {
-  return current?.turnId ?? null
+  return ambientContext()?.turnId ?? null
 }
 
 /** Update the emitting-step attribution (wired to the loop's LLM-call counter). */
 export function setHookRunStep(step: number): void {
-  if (current) current.step = step
+  const context = ambientContext()
+  if (context) context.step = step
 }
 
 /**
@@ -245,7 +304,8 @@ export function setHookRunStep(step: number): void {
  * line that references it, so a run in which no hook fires stores nothing.
  */
 export function setHookRunToolset(tools: readonly LLMTool[]): void {
-  if (current) current.toolset = fingerprintToolset(tools, sha256Hex)
+  const context = ambientContext()
+  if (context) context.toolset = fingerprintToolset(tools, sha256Hex)
 }
 
 function blobRef(ref: string, contents: string): ContentRef {
@@ -281,7 +341,7 @@ function toolsetBlobs(ctx: HookRunRecordingContext): FileToWrite[] {
 function persist(ctx: HookRunRecordingContext, line: SpineHookRunLine, blobs: FileToWrite[]): void {
   // Emit the live card first so the renderer shows the run promptly; the spine
   // append is the durable record history folds from (both derive one card).
-  emitLiveHookCard(line)
+  emitLiveHookCard(ctx.threadId, line)
   appendHookRun(ctx.projectId, ctx.threadId, line, blobs).catch((err: unknown) => {
     console.warn(`[hook-run-recorder] failed to append hook_run for "${line.hookId}":`, err)
   })
@@ -369,7 +429,7 @@ function functionCaptureBlobs(
  */
 export function recordFunctionHookRun(
   record: HookRunRecord,
-  snapshot: HookRunRecordingSnapshot | null = current,
+  snapshot: HookRunRecordingSnapshot | null = ambientContext(),
 ): void {
   const ctx = snapshot
   if (!ctx) return
@@ -406,7 +466,7 @@ export function recordDroppedAsyncDispatch(input: {
   hookId: string
   executor: 'function' | 'command'
 }): void {
-  const ctx = current
+  const ctx = ambientContext()
   if (!ctx) return
   const line: SpineHookRunLine = {
     v: SPINE_SCHEMA_VERSION,
@@ -455,7 +515,7 @@ export function recordHaltRun(
    * attribute it to the wrong turn. Defaults to the live context for blocking
    * halts, which are current by construction.
    */
-  snapshot: HookRunRecordingSnapshot | null = current,
+  snapshot: HookRunRecordingSnapshot | null = ambientContext(),
 ): void {
   const ctx = snapshot
   if (!ctx) return
@@ -505,7 +565,7 @@ export function recordAppliedNudgeRun(
     finalizeReason?: FinalizeNudgeReason
     budget?: FinalizeNudgeBudget
   },
-  snapshot: HookRunRecordingSnapshot | null = current,
+  snapshot: HookRunRecordingSnapshot | null = ambientContext(),
 ): void {
   const ctx = snapshot
   if (!ctx) return
@@ -555,7 +615,7 @@ export type { CommandHookRunInput }
  */
 export function recordCommandHookRun(
   input: CommandHookRunInput,
-  snapshot: HookRunRecordingSnapshot | null = current,
+  snapshot: HookRunRecordingSnapshot | null = ambientContext(),
 ): void {
   const ctx = snapshot
   if (!ctx) return

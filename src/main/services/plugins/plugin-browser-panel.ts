@@ -8,6 +8,7 @@ import { isVisibleBrowserSessionForThread } from '@shared/browser-session.ts'
 import {
   DOM_SNAPSHOT_SCRIPT,
   parsePageSnapshot,
+  refSelectorSource,
   renderSnapshot,
 } from '../browser/snapshot-format.ts'
 import { expectBoolean } from '@shared/unknown-value.ts'
@@ -207,7 +208,7 @@ export class PluginBrowserPanelService implements PluginBrowserService {
     const ok = expectBoolean(
       await contents.executeJavaScript(
         `(() => {
-          const el = document.querySelector('[data-copse-ref=${JSON.stringify(ref)}]');
+          const el = document.querySelector(${refSelectorSource(ref)});
           if (!el) return false;
           el.scrollIntoView({ block: 'center' });
           el.click();
@@ -224,7 +225,7 @@ export class PluginBrowserPanelService implements PluginBrowserService {
     const ok = expectBoolean(
       await contents.executeJavaScript(
         `(() => {
-          const el = document.querySelector('[data-copse-ref=${JSON.stringify(ref)}]');
+          const el = document.querySelector(${refSelectorSource(ref)});
           if (!el) return false;
           el.focus();
           const setter = Object.getOwnPropertyDescriptor(el.__proto__, 'value');
@@ -251,7 +252,7 @@ export class PluginBrowserPanelService implements PluginBrowserService {
     const ok = expectBoolean(
       await contents.executeJavaScript(
         `(() => {
-          const input = document.querySelector('[data-copse-ref=${JSON.stringify(ref)}]');
+          const input = document.querySelector(${refSelectorSource(ref)});
           if (!(input instanceof HTMLInputElement) || input.type !== 'file') return false;
           const transfer = new DataTransfer();
           for (const file of ${JSON.stringify(files)}) {

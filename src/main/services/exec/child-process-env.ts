@@ -13,7 +13,8 @@ import { PROVIDER_ENV_VARS } from '../providers/env-key-detection.ts'
 
 /**
  * Provider keys that are not in {@link PROVIDER_ENV_VARS} but are still Copse-held
- * LLM credentials (legacy aliases, extra-provider leftovers, Cursor session cookies).
+ * credentials (legacy aliases, extra-provider leftovers, the web-search provider
+ * keys, Cursor session cookies).
  * `GITHUB_TOKEN` is intentionally absent — tools such as `gh` need it.
  */
 const EXTRA_SECRET_ENV_KEYS = [
@@ -23,14 +24,20 @@ const EXTRA_SECRET_ENV_KEYS = [
   'COHERE_API_KEY',
   'XAI_API_KEY',
   'PARALLEL_API_KEY',
+  'TAVILY_API_KEY',
   'CURSOR_SESSION_TOKEN',
   'WORKOS_CURSOR_SESSION_TOKEN',
 ] as const
 
-const SECRET_ENV_KEYS = new Set<string>([
-  ...Object.values(PROVIDER_ENV_VARS).flat(),
-  ...EXTRA_SECRET_ENV_KEYS,
-])
+/**
+ * Upper-cased: Windows env names are case-insensitive, so `Lm_Api_Token` is the
+ * variable the app reads as `LM_API_TOKEN`. The pattern below already ignores case.
+ */
+const SECRET_ENV_KEYS = new Set<string>(
+  [...Object.values(PROVIDER_ENV_VARS).flat(), ...EXTRA_SECRET_ENV_KEYS].map((name) =>
+    name.toUpperCase(),
+  ),
+)
 
 /**
  * Provider-credential patterns — defence in depth for LLM keys not in the explicit
@@ -42,7 +49,7 @@ const SECRET_NAME_PATTERN =
   /^(?:ANTHROPIC|OPENAI|AZURE_OPENAI|GEMINI|GOOGLE|MISTRAL|GROQ|TOGETHER|FIREWORKS|COHERE|DEEPSEEK|OPENROUTER|PERPLEXITY|PARALLEL|XAI|HUGGINGFACE|HF|LM_?STUDIO|CURSOR|WORKOS_CURSOR)_.*(?:API_KEY|AUTH_TOKEN|API_TOKEN|SECRET|SESSION_TOKEN)$/i
 
 function isSecretEnvKey(key: string): boolean {
-  return SECRET_ENV_KEYS.has(key) || SECRET_NAME_PATTERN.test(key)
+  return SECRET_ENV_KEYS.has(key.toUpperCase()) || SECRET_NAME_PATTERN.test(key)
 }
 
 /**

@@ -78,10 +78,22 @@ export const searchCodebaseTool = defineTool({
       return 'Provide a search query via `query` (its alias `pattern` also works).'
     }
 
-    const resolvedMode = mode === 'auto' ? classifySearchQuery(searchText) : mode
-    const filterPath = path
-      ? await toRelativePathWithinRoot(await resolvePathWithinRoot(path, root), root)
-      : undefined
+    let resolvedMode = mode === 'auto' ? classifySearchQuery(searchText) : mode
+    // The semantic index is workspace-only, so its scope filter is resolved only
+    // when a semantic search will actually run. Resolving it up front rejected
+    // every chat-store path before the regex search below — which does accept
+    // the chat store (#644) — could see it.
+    let filterPath: string | undefined
+    if (path && resolvedMode === 'semantic') {
+      try {
+        filterPath = await toRelativePathWithinRoot(await resolvePathWithinRoot(path, root), root)
+      } catch (err) {
+        if (mode === 'semantic') throw err
+        // Auto mode: a path the semantic index cannot scope to still gets the
+        // regex search, which validates the path itself.
+        resolvedMode = 'regex'
+      }
+    }
 
     let semanticFallback: 'building' | 'unavailable' | null = null
     if (resolvedMode === 'semantic') {

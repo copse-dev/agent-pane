@@ -75,6 +75,24 @@ describe('static browser preview server', () => {
     assert.equal(await stylesheet.text(), 'body { color: plum; }')
   })
 
+  it('shares one listener between concurrent requests for the same root', async () => {
+    const root = await temporaryRoot('copse-static-preview-concurrent-')
+    await writeFile(join(root, 'index.html'), '<h1>Prototype</h1>')
+
+    const [first, second, third] = await Promise.all([
+      getStaticPreviewServer(root),
+      staticPreviewEntryUrl(root),
+      getStaticPreviewServer(root),
+    ])
+
+    assert.equal(second, first.url)
+    assert.equal(third.url, first.url)
+    // A replaced listener keeps serving but is no longer a known preview
+    // origin, so its pages would lose the same-origin network restriction.
+    assert.equal(isStaticPreviewUrl(first.url), true)
+    assert.equal((await fetch(first.url)).status, 200)
+  })
+
   it('keeps prototype isolation when its listener is opened through an IP alias', async () => {
     const root = await temporaryRoot('copse-static-preview-alias-')
     await writeFile(join(root, 'index.html'), '<h1>Prototype</h1>')

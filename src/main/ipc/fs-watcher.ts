@@ -51,58 +51,73 @@ function trackSender(sender: WebContents): void {
   })
 }
 
+/** Start the shared watcher for a key that has just gained a subscriber. */
+function startWatch(
+  key: string,
+  projectId: string,
+  threadId: string,
+  rel: string,
+  abs: string,
+  root: string,
+): void {
+  // Node's fs.watch can only observe the local machine, so a remote workspace
+  // must never reach the local watcher below — an unresolvable host means no
+  // updates rather than a watch on a same-named local path.
+  if (isActiveSshWorkspace()) {
+    const target = resolveSshExecutionTargetForCwd(root)
+    if (target?.kind !== 'ssh') return
+    watchRemoteFile(key, { hostId: target.hostId, remoteRoot: root, absPath: abs }, (_k, size) => {
+      void notifyRemoteFileChanged(projectId, threadId, rel, abs, root, size)
+    })
+    return
+  }
+  if (watchers.has(key)) return
+  let debounce: ReturnType<typeof setTimeout> | undefined
+  let watcher: fs.FSWatcher
+  try {
+    watcher = fs.watch(abs, { persistent: false }, () => {
+      clearTimeout(debounce)
+      debounce = setTimeout(() => {
+        void notifyFileChanged(projectId, threadId, rel, abs, root)
+      }, 200)
+    })
+  } catch (err) {
+    console.warn('[copse-panel] file watcher unavailable for', rel, err)
+    return
+  }
+  // Deleted or unreadable files emit `error`. Without a listener that is an
+  // uncaught exception in the main process — the same crash class as a
+  // retired worktree's recursive watch.
+  watcher.on('error', (err: unknown) => {
+    console.warn('[copse-panel] file watcher failed for', rel, err)
+    clearTimeout(debounce)
+    watchers.get(key)?.close()
+    watchers.delete(key)
+  })
+  watchers.set(key, watcher)
+}
+
 export function initFsWatcher(win: BrowserWindow): void {
   ipcMain.handle('fs:watch', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId, rel] = parseIpcArgs(watcherArgs, rawArgs)
-    const root = await inspectThreadReadRoot(projectId, threadId)
-    if (!root) return
-    const abs = await resolvePathWithinRoot(rel, root)
     const key = watcherKey(projectId, threadId, rel)
-    // The window may have closed during the awaits above; its `destroyed`
-    // event has then already fired and would never release this subscription.
-    if (event.sender.isDestroyed()) return
-    trackSender(event.sender)
-    subscriptions.add(key, event.sender.id)
-    // Node's fs.watch can only observe the local machine, so a remote workspace
-    // must never reach the local watcher below — an unresolvable host means no
-    // updates rather than a watch on a same-named local path.
-    if (isActiveSshWorkspace()) {
-      const target = resolveSshExecutionTargetForCwd(root)
-      if (target?.kind !== 'ssh') return
-      watchRemoteFile(
-        key,
-        { hostId: target.hostId, remoteRoot: root, absPath: abs },
-        (_k, size) => {
-          void notifyRemoteFileChanged(projectId, threadId, rel, abs, root, size)
-        },
-      )
-      return
-    }
-    if (watchers.has(key)) return
-    let debounce: ReturnType<typeof setTimeout> | undefined
-    let watcher: fs.FSWatcher
+    // Noted before the awaits so an `fs:unwatch` that overtakes them cancels
+    // this watch; the renderer sends it without waiting for this to resolve.
+    const pending = subscriptions.begin(key, event.sender.id)
     try {
-      watcher = fs.watch(abs, { persistent: false }, () => {
-        clearTimeout(debounce)
-        debounce = setTimeout(() => {
-          void notifyFileChanged(projectId, threadId, rel, abs, root)
-        }, 200)
-      })
-    } catch (err) {
-      console.warn('[copse-panel] file watcher unavailable for', rel, err)
-      return
+      const root = await inspectThreadReadRoot(projectId, threadId)
+      if (!root) return
+      const abs = await resolvePathWithinRoot(rel, root)
+      // The window may have closed during the awaits above; its `destroyed`
+      // event has then already fired and would never release this subscription.
+      if (event.sender.isDestroyed()) return
+      trackSender(event.sender)
+      if (!subscriptions.commit(pending)) return
+      startWatch(key, projectId, threadId, rel, abs, root)
+    } finally {
+      subscriptions.discard(pending)
     }
-    // Deleted or unreadable files emit `error`. Without a listener that is an
-    // uncaught exception in the main process — the same crash class as a
-    // retired worktree's recursive watch.
-    watcher.on('error', (err: unknown) => {
-      console.warn('[copse-panel] file watcher failed for', rel, err)
-      clearTimeout(debounce)
-      watchers.get(key)?.close()
-      watchers.delete(key)
-    })
-    watchers.set(key, watcher)
   })
 
   ipcMain.handle('fs:unwatch', (event, ...rawArgs) => {

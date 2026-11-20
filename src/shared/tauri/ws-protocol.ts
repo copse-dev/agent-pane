@@ -103,7 +103,16 @@ export function fromBase64(text: string): Uint8Array {
 }
 
 export function encodeFrame(frame: ClientFrame | ServerFrame): string {
-  return JSON.stringify(frame, (_key, value: unknown) => {
+  return JSON.stringify(frame, function (this: unknown, key: string, serialized: unknown) {
+    // `JSON.stringify` calls `toJSON` before the replacer, so a Node `Buffer`
+    // (a `Uint8Array`) arrives here already expanded to `{ type, data }`. Read
+    // the holder's own value to tag it as bytes like any other binary leaf.
+    const raw: unknown = Array.isArray(this)
+      ? this[Number(key)]
+      : isRecord(this)
+        ? this[key]
+        : serialized
+    const value = raw instanceof Uint8Array ? raw : serialized
     if (value === undefined) return { [UNDEF_MARKER]: true }
     if (value instanceof Uint8Array) return { [BIN_MARKER]: toBase64(value) }
     if (value instanceof ArrayBuffer) return { [BIN_MARKER]: toBase64(new Uint8Array(value)) }

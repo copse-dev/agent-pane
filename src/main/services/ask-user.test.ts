@@ -2,6 +2,8 @@ import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   createWindowAskUserHandler,
+  attachAskUserToWindow,
+  type AskUserWindow,
   requestUserAnswers,
   setAskUserHandler,
   type AskUserRequest,
@@ -12,6 +14,7 @@ import {
   resetRunDeadlinesForTest,
   type PausableRunDeadline,
 } from './hooks/run-deadline.ts'
+import type { UserAlertSender } from './user-alerts.ts'
 import { runWithActiveRunIdentity } from './thread-models.ts'
 import { runWithThreadExecutionContext } from './thread-execution-context.ts'
 import { humanDecisions } from './human-decisions.ts'
@@ -389,6 +392,92 @@ describe('window ask_user handler', () => {
 // idle and hard deadlines must not advance while one is on screen — otherwise a
 // user who thinks for longer than the 15-minute idle budget has the turn
 // aborted underneath a dialog that is still asking them for an answer.
+/** A window that, like Electron's, throws when touched after it is destroyed. */
+function fakeAskUserWindow(): { window: AskUserWindow; sent: string[]; close: () => void } {
+  let destroyed = false
+  const sent: string[] = []
+  const closedListeners: (() => void)[] = []
+  return {
+    window: {
+      isDestroyed: () => destroyed,
+      send: (channel): void => {
+        if (destroyed) throw new TypeError('Object has been destroyed')
+        sent.push(channel)
+      },
+      onClosed: (listener): void => {
+        closedListeners.push(listener)
+      },
+    },
+    sent,
+    close: (): void => {
+      destroyed = true
+      for (const listener of closedListeners) listener()
+    },
+  }
+}
+
+const noAlert: UserAlertSender = () => (): void => {}
+
+describe('ask_user window lifetime', () => {
+  afterEach(() => {
+    setAskUserHandler(null)
+  })
+
+  it('releases every pending question when the window closes', async () => {
+    const fake = fakeAskUserWindow()
+    attachAskUserToWindow(fake.window, noAlert)
+    const first = requestUserAnswers(req)
+    const second = requestUserAnswers(req)
+    assert.deepEqual(fake.sent, ['agent:ask-user-request', 'agent:ask-user-request'])
+
+    // The destroyed window must not be sent the withdrawal: that threw out of
+    // the close listener and left both questions pending forever.
+    assert.doesNotThrow(fake.close)
+
+    assert.deepEqual(await first, { answers: [] })
+    assert.deepEqual(await second, { answers: [] })
+    assert.deepEqual(fake.sent, ['agent:ask-user-request', 'agent:ask-user-request'])
+  })
+
+  it('answers blank instead of waiting on a window that is already gone', async () => {
+    const fake = fakeAskUserWindow()
+    const questions = attachAskUserToWindow(fake.window, noAlert)
+    fake.close()
+
+    assert.deepEqual(await requestUserAnswers(req), { answers: [] })
+    assert.deepEqual(await requestUserAnswers(req, new AbortController().signal), { answers: [] })
+    assert.doesNotThrow(questions.replay)
+    assert.deepEqual(fake.sent, [])
+  })
+
+  it('answers and replays open questions while the window is alive', async () => {
+    const fake = fakeAskUserWindow()
+    const requests: object[] = []
+    const questions = attachAskUserToWindow(
+      {
+        ...fake.window,
+        send: (channel, payload): void => {
+          fake.window.send(channel, payload)
+          if (channel === 'agent:ask-user-request') requests.push(payload)
+        },
+      },
+      noAlert,
+    )
+    const pending = requestUserAnswers(req)
+    questions.replay()
+    assert.equal(requests.length, 2)
+    assert.deepEqual(requests[1], requests[0])
+
+    const [request] = requests
+    assert.ok(request && 'id' in request && typeof request.id === 'string')
+    questions.respond(request.id, ['Postgres', 'Yes'])
+
+    assert.deepEqual(await pending, { answers: ['Postgres', 'Yes'] })
+    questions.replay()
+    assert.equal(requests.length, 2)
+  })
+})
+
 describe('requestUserAnswers host-wait deadline pause', () => {
   afterEach(() => {
     setAskUserHandler(null)

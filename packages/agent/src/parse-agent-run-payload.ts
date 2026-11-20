@@ -1,6 +1,7 @@
-import type { UserContent } from '@copse/llm/wire-types.ts'
+import { IMAGE_DETAILS, type UserContent } from '@copse/llm/wire-types.ts'
 import { isReasoningLevel, type ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import type { TodoItem } from './wire-types.ts'
+import { clipStart } from './clip-text.ts'
 import { z } from 'zod'
 import { isRecord } from '@copse/std/unknown-value.ts'
 
@@ -9,10 +10,32 @@ const userContentSchema = z.union([
   z.array(
     z.discriminatedUnion('type', [
       z.object({ type: z.literal('text'), text: z.string() }),
-      z.object({ type: z.literal('image'), dataUrl: z.string() }),
+      z.object({
+        type: z.literal('image'),
+        dataUrl: z.string(),
+        // The fidelity the user picked for this image. Listed here because an
+        // object schema drops every key it does not name, which silently reset
+        // the choice to the provider default; an unknown value degrades to that
+        // default rather than rejecting the whole message.
+        detail: z.enum(IMAGE_DETAILS).optional().catch(undefined),
+      }),
     ]),
   ),
 ])
+
+/** The parsed content in its wire shape: optional fields absent, never `undefined`. */
+function toUserContent(content: z.infer<typeof userContentSchema>): UserContent {
+  if (typeof content === 'string') return content
+  return content.map((part) =>
+    part.type === 'text'
+      ? part
+      : {
+          type: 'image',
+          dataUrl: part.dataUrl,
+          ...(part.detail !== undefined ? { detail: part.detail } : {}),
+        },
+  )
+}
 
 const todoSchema = z.object({
   id: z.string(),
@@ -44,7 +67,7 @@ function parseReviewContext(value: unknown): string | undefined {
   if (typeof value !== 'string' || value.trim() === '') return undefined
   return value.length <= REVIEW_CONTEXT_CHAR_CAP
     ? value
-    : `${value.slice(0, REVIEW_CONTEXT_CHAR_CAP)}\n[review summary truncated]`
+    : `${clipStart(value, REVIEW_CONTEXT_CHAR_CAP)}\n[review summary truncated]`
 }
 
 export function parseAgentRunPayload(rawPrompt: string): {
@@ -79,12 +102,13 @@ export function parseAgentRunPayload(rawPrompt: string): {
             id: todo.id,
             content: todo.content,
             status: todo.status,
+            ...(todo.priority !== undefined ? { priority: todo.priority } : {}),
             ...(todo.check !== undefined ? { check: todo.check } : {}),
             ...(todo.assignedModel !== undefined ? { assignedModel: todo.assignedModel } : {}),
           }))
         : []
       return {
-        userContent: content.data,
+        userContent: toUserContent(content.data),
         ...(parsed['automationRun'] === true ? { automationRun: true as const } : {}),
         ...(parsed['executionMode'] === 'agent' ? { executionMode: 'agent' as const } : {}),
         invokedSkills: invokedSkills.success ? invokedSkills.data : [],
@@ -111,7 +135,7 @@ export function parseAgentRunPayload(rawPrompt: string): {
     }
     const content = userContentSchema.safeParse(parsed)
     return {
-      userContent: content.success ? content.data : rawPrompt,
+      userContent: content.success ? toUserContent(content.data) : rawPrompt,
       invokedSkills: [],
       priorTodos: [],
     }

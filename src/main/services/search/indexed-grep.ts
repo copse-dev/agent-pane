@@ -202,7 +202,7 @@ async function searchWithGrepRecursive(opts: CodeContentSearchOptions): Promise<
   const { stdout, stderr, code } = await executeCommand('grep', args, searchCommandOptions(opts))
   if (code !== 0 && code !== 1)
     throw new Error(stderr.trim() || `grep exited with code ${String(code)}`)
-  return await parseGrepStdout(stdout, opts.maxResults, opts.displayRoot)
+  return await parseGrepStdout(stdout, opts.maxResults, opts.displayRoot, { columns: false })
 }
 
 export async function parseRipgrepJson(
@@ -255,16 +255,22 @@ export async function parseRipgrepJson(
   return out
 }
 
+/**
+ * `columns: false` is for output that never carries a `:<column>` field, such
+ * as `grep -rn`. Reading one there drops the start of any matched line that
+ * itself begins with digits and a colon (`12:34:56 started`, `404: Not Found`).
+ */
 export async function parseGrepStdout(
   stdout: string,
   maxResults: number,
   displayRoot?: string,
+  format: { columns: boolean } = { columns: true },
 ): Promise<string[]> {
   const lines: string[] = []
   for (const raw of stdout.split('\n')) {
     const line = raw.trimEnd()
     if (!line) continue
-    const normalized = await normalizeGrepLine(line, displayRoot)
+    const normalized = await normalizeGrepLine(line, displayRoot, format.columns)
     if (normalized) lines.push(normalized)
     if (lines.length >= maxResults) break
   }
@@ -275,8 +281,15 @@ async function relativeDisplayPath(path: string, root?: string): Promise<string>
   return root ? toRelativePathWithinRoot(path, root) : toRelativePath(path)
 }
 
-async function normalizeGrepLine(line: string, displayRoot?: string): Promise<string | null> {
-  const match = line.match(/^(.+?):(\d+)(?::\d+)?:\s?(.*)$/)
+const GREP_LINE = /^(.+?):(\d+):\s?(.*)$/
+const GREP_LINE_WITH_OPTIONAL_COLUMN = /^(.+?):(\d+)(?::\d+)?:\s?(.*)$/
+
+async function normalizeGrepLine(
+  line: string,
+  displayRoot: string | undefined,
+  columns: boolean,
+): Promise<string | null> {
+  const match = line.match(columns ? GREP_LINE_WITH_OPTIONAL_COLUMN : GREP_LINE)
   if (!match) return null
   const [, file, lineNo, content] = match
   if (!file || !lineNo) return null

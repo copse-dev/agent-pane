@@ -78,6 +78,57 @@ describe('desktop remote publisher', () => {
     dispose()
   })
 
+  it('does not republish a project that has not changed since it was last sent', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] })
+    const { store, views, events, api, base } = setup()
+    createThread(store)
+    const state = await base.mobile.getState()
+    const dispose = attachRemotePublisher(store, api)
+    events.state?.({ ...state, enabled: true, running: true })
+    await Promise.resolve()
+    context.mock.timers.tick(150)
+    assert.deepEqual(
+      views.map((view) => view.projectId),
+      ['p'],
+    )
+    // The desktop moves to another project; nothing of `p` is carried along.
+    store.setState({ activeProjectId: 'other', threads: [] })
+    store.emit('threads_changed')
+    context.mock.timers.tick(150)
+    store.emit('message_token', 'm', 'token')
+    context.mock.timers.tick(150)
+    assert.deepEqual(
+      views.map((view) => view.projectId),
+      ['p', 'other', 'other'],
+    )
+    dispose()
+  })
+
+  it('sends a view again after its publish was rejected', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] })
+    const { store, events, api, base } = setup()
+    const attempts: string[] = []
+    let reject = true
+    api.remote.publish = async (view): Promise<void> => {
+      attempts.push(view.projectId)
+      if (reject) throw new Error('window busy')
+    }
+    createThread(store)
+    const state = await base.mobile.getState()
+    const dispose = attachRemotePublisher(store, api)
+    events.state?.({ ...state, enabled: true, running: true })
+    await Promise.resolve()
+    context.mock.timers.tick(150)
+    await Promise.resolve()
+    await Promise.resolve()
+    reject = false
+    store.setState({ activeProjectId: 'other', threads: [] })
+    store.emit('threads_changed')
+    context.mock.timers.tick(150)
+    assert.deepEqual(attempts, ['p', 'p', 'other'])
+    dispose()
+  })
+
   it('does no snapshot work while Mobile Companion is disabled', async (context) => {
     context.mock.timers.enable({ apis: ['setTimeout'] })
     const { store, views, api } = setup()

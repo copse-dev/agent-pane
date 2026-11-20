@@ -323,6 +323,24 @@ describe('fetchClaudePlanUsage', () => {
     assert.equal(extra.severity, 'critical')
   })
 
+  it('keeps the rate windows when spend carries an out-of-range exponent', async () => {
+    const result = await fetchClaudePlanUsage('sk-ant-oat01-x', {
+      fetch: jsonFetch({
+        five_hour: { utilization: 12, resets_at: '2026-07-15T14:30:00Z' },
+        spend: {
+          used: { amount_minor: 5525, currency: 'GBP', exponent: 101 },
+          limit: { amount_minor: 5000, currency: 'GBP', exponent: 101 },
+          enabled: true,
+        },
+      }),
+    })
+    // `toFixed(101)` used to throw and turn the whole provider into an error.
+    assert.equal(result.status, 'ok')
+    assert.ok(result.usage.windows.some((w) => w.id === 'five_hour'))
+    const extra = result.usage.windows.find((w) => w.id === 'extra_usage')
+    assert.equal(extra?.label, 'Extra usage £0.005525 / £0.005000')
+  })
+
   it('parses enterprise extra_usage credits and cinder_cove percent credit', async () => {
     const result = await fetchClaudePlanUsage('sk-ant-oat01-x', {
       fetch: jsonFetch({

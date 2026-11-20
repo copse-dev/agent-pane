@@ -118,6 +118,12 @@ describe('package firewall proxy', () => {
         setTimeout(() => response.end('late'), 300).unref()
         return
       }
+      if (request.url === '/cut/-/cut-1.0.0.tgz') {
+        // Promises 100 bytes, then the connection drops part way through.
+        response.writeHead(200, { 'content-length': 100 })
+        response.write('partial', () => request.socket.destroy())
+        return
+      }
       response.writeHead(200, { 'content-type': 'application/octet-stream' })
       response.end(`registry:${request.url ?? ''}`)
     })
@@ -281,6 +287,46 @@ describe('package firewall proxy', () => {
     assert.deepEqual(unreachable, [])
   })
 
+  it(
+    'ends the client response when the registry drops a download part way through',
+    { timeout: 5000 },
+    async () => {
+      const { socket } = await connectVia(proxy.port, 'registry.npmjs.org:443', AUTH)
+      const secure = tlsConnect({
+        socket,
+        servername: 'registry.npmjs.org',
+        ca: firewallCa.certPem,
+      })
+      const outcome = await new Promise<string>((resolve) => {
+        const request = httpsRequest({
+          host: 'registry.npmjs.org',
+          path: '/cut/-/cut-1.0.0.tgz',
+          createConnection: () => secure,
+        })
+        // A client left waiting for the other 93 bytes never settles; the test's
+        // own timeout then fails it.
+        const settle = (result: string): void => {
+          resolve(result)
+        }
+        request.once('response', (response) => {
+          response.resume()
+          response.once('end', () => {
+            settle('complete')
+          })
+          response.once('error', () => {
+            settle('aborted')
+          })
+        })
+        request.once('error', () => {
+          settle('aborted')
+        })
+        request.end()
+      })
+      secure.destroy()
+      assert.equal(outcome, 'aborted')
+    },
+  )
+
   it('checks absolute-form plain-HTTP downloads too', async () => {
     const reply = await new Promise<Reply>((resolve, reject) => {
       const request = httpRequest({
@@ -362,6 +408,13 @@ describe('package firewall proxy — release-age limit', () => {
       const host = request.headers.host ?? ''
       const path = request.url ?? ''
       seen.push({ host, path, headers: request.headers })
+      if (path === '/cut') {
+        // A gzip packument whose connection drops part way through the body.
+        const whole = gzipSync(JSON.stringify({ versions: {}, modified: OLD }))
+        response.writeHead(200, { 'content-encoding': 'gzip', 'content-length': whole.length })
+        response.write(whole.subarray(0, 8), () => request.socket.destroy())
+        return
+      }
       const document = documents[`${host} ${path}`]
       if (!document) {
         response.writeHead(404, { 'content-type': 'text/plain' })
@@ -482,6 +535,18 @@ describe('package firewall proxy — release-age limit', () => {
     assert.deepEqual(recent, [
       { target: { ecosystem: 'crates.io', name: 'demo' }, hidden: ['1.1.0'] },
     ])
+  })
+
+  it('answers 502 when the registry drops a metadata response part way through', async () => {
+    const reply = await Promise.race([
+      get('registry.npmjs.org', '/cut'),
+      new Promise<null>((resolve) => {
+        setTimeout(() => {
+          resolve(null)
+        }, 1500)
+      }),
+    ])
+    assert.equal(reply?.status, 502)
   })
 
   it('passes a registry error through', async () => {

@@ -78,10 +78,15 @@ function parseOriginPattern(input: string): OriginPattern {
     throw new Error(`Wildcard origins must start with "*." only: ${input}`)
   }
 
+  // `URL` drops a port that is its scheme's default, so `https://host:443` —
+  // the form a remembered approval is saved in (`webOriginKey`) — would read as
+  // "no port" and match every port on the host. Recover it from the text.
+  const writtenPort = /:(\d+)\/?$/.exec(withoutWildcardPort)?.[1]
+  const defaultPort = writtenPort === undefined ? null : String(Number(writtenPort))
   return {
     protocol: hasScheme ? parsed.protocol : null,
     hostname,
-    port: wildcardPort ? '*' : parsed.port || null,
+    port: wildcardPort ? '*' : parsed.port || defaultPort,
   }
 }
 

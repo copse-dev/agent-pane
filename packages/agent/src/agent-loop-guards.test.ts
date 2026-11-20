@@ -314,9 +314,18 @@ describe('verificationCommandKey (#1433 Fix 4)', () => {
       'npm run check | tee check.log',
       'npm run check && git push',
       'npm run format',
+      'pnpm run lint:fix',
+      'npm run check:fix',
+      'yarn test:update',
+      'pnpm lint:js:fix -- src',
     ]) {
       assert.equal(verificationCommandKey(command), null, command)
     }
+  })
+
+  it('still keys a script variant whose suffix does not write', () => {
+    assert.equal(verificationCommandKey('pnpm run test:e2e'), 'pnpm run test:e2e')
+    assert.equal(verificationCommandKey('npm run check:local'), 'npm run check:local')
   })
 })
 
@@ -351,6 +360,15 @@ describe('RepeatVerificationTracker (#1433 Fix 4)', () => {
     const tracker = new RepeatVerificationTracker()
     tracker.observe('run_shell', check)
     tracker.reset()
+    assert.equal(tracker.isRepeat('run_shell', check), false)
+  })
+
+  it('re-arms after a fixer script named like a verification script', () => {
+    // `lint:fix` rewrites files, so the suite that failed before it has to be
+    // allowed to run again rather than answered with "nothing changed".
+    const tracker = new RepeatVerificationTracker()
+    tracker.observe('run_shell', check)
+    tracker.observe('run_shell', { command: 'npm run lint:fix' })
     assert.equal(tracker.isRepeat('run_shell', check), false)
   })
 

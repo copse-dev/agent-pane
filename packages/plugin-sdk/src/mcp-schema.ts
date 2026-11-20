@@ -40,7 +40,9 @@ function sanitizeNode(value: unknown, depth: number): unknown {
     if (propCount >= MAX_PROPERTIES) break
     propCount++
     if (key === 'enum' && Array.isArray(v)) {
-      out['enum'] = v.slice(0, MAX_ENUM_ENTRIES)
+      // Entries are values, but still server-supplied: left as they came, one
+      // deeply nested entry carried any depth or size past the bounds above.
+      out['enum'] = v.slice(0, MAX_ENUM_ENTRIES).map((entry) => sanitizeNode(entry, depth + 1))
     } else {
       out[key] = sanitizeNode(v, depth + 1)
     }
@@ -63,7 +65,7 @@ export function sanitizeMcpInputSchema(inputSchema: unknown): Record<string, unk
   const out = isRecord(sanitized) ? sanitized : { ...EMPTY_OBJECT_SCHEMA }
 
   if (out['type'] !== 'object') out['type'] = 'object'
-  if (!out['properties'] || typeof out['properties'] !== 'object') out['properties'] = {}
+  if (!isRecord(out['properties'])) out['properties'] = {}
 
   return out
 }

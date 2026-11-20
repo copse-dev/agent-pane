@@ -178,6 +178,66 @@ describe('assertWorkspaceWriteTarget (symlink write escape)', () => {
     )
   })
 
+  it('rejects a symlink chain whose last hop dangles outside the workspace', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'copse-ws-'))
+    const outside = mkdtempSync(join(tmpdir(), 'copse-out-'))
+    // `first` points at `second`, which is inside the workspace, so checking
+    // only the first hop passes. `second` dangles outside, and a dangling
+    // target is invisible to the existing-prefix realpath.
+    symlinkSync(join(outside, 'authorized_keys'), join(ws, 'second'))
+    symlinkSync('second', join(ws, 'first'))
+    await registerAllowedWorkspaceRoot(ws)
+    cleanupRoot = setWorkspaceRootForTest(ws)
+    const resolved = await resolveWorkspacePath('first')
+    await assert.rejects(() => assertWorkspaceWriteTarget(resolved), /symlink that escapes/)
+    await assert.rejects(
+      () => assertWorkspaceWriteTarget(join(realpathSync.native(ws), 'first')),
+      /symlink that escapes/,
+    )
+  })
+
+  it('resolves a relative link below a symlinked directory from its real location', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'copse-ws-'))
+    mkdirSync(join(ws, 'a', 'b'), { recursive: true })
+    mkdirSync(join(ws, 'real'))
+    // `a/b/dir` is `real`. `real/out` is `../../escaped`: two levels above
+    // `real` is outside the workspace, but two levels above `a/b/dir` is not.
+    symlinkSync(join(ws, 'real'), join(ws, 'a', 'b', 'dir'), 'dir')
+    symlinkSync(join('..', '..', 'copse-escaped-target'), join(ws, 'real', 'out'))
+    await registerAllowedWorkspaceRoot(ws)
+    cleanupRoot = setWorkspaceRootForTest(ws)
+    await assert.rejects(
+      () => assertWorkspaceWriteTarget(join(realpathSync.native(ws), 'a', 'b', 'dir', 'out')),
+      /symlink that escapes/,
+    )
+  })
+
+  it('rejects a symlink loop instead of walking it forever', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'copse-ws-'))
+    symlinkSync('pong', join(ws, 'ping'))
+    symlinkSync('ping', join(ws, 'pong'))
+    await registerAllowedWorkspaceRoot(ws)
+    cleanupRoot = setWorkspaceRootForTest(ws)
+    await assert.rejects(
+      () => assertWorkspaceWriteTarget(join(realpathSync.native(ws), 'ping')),
+      /too many symbolic links/,
+    )
+  })
+
+  it('allows a chain of symlinks that stays inside the workspace', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'copse-ws-'))
+    mkdirSync(join(ws, 'real'))
+    // The last hop is a file that does not exist yet, as when creating it.
+    symlinkSync(join('real', 'new.ts'), join(ws, 'second'))
+    symlinkSync('second', join(ws, 'first'))
+    symlinkSync(join(ws, 'real'), join(ws, 'dir'), 'dir')
+    await registerAllowedWorkspaceRoot(ws)
+    cleanupRoot = setWorkspaceRootForTest(ws)
+    const real = realpathSync.native(ws)
+    await assert.doesNotReject(() => assertWorkspaceWriteTarget(join(real, 'first')))
+    await assert.doesNotReject(() => assertWorkspaceWriteTarget(join(real, 'dir', 'other.ts')))
+  })
+
   it('allows a symlink whose target stays inside the workspace', async () => {
     const ws = mkdtempSync(join(tmpdir(), 'copse-ws-'))
     mkdirSync(join(ws, 'real'))

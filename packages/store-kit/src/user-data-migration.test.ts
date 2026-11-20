@@ -1,8 +1,18 @@
 import assert from 'node:assert/strict'
 import { afterEach, describe, it } from 'node:test'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { resolveUserDataDir } from './user-data-migration.ts'
 
 const created: string[] = []
@@ -20,6 +30,19 @@ function seedLegacyProfile(dir: string, marker = 'legacy'): string {
   writeFileSync(join(dir, 'settings.json'), JSON.stringify({ marker }))
   writeFileSync(join(dir, 'tools', 'custom.json'), marker)
   return dir
+}
+
+/** A directory on a different filesystem from `dir`, so a rename between them is EXDEV. */
+function otherDeviceRoot(dir: string): string | null {
+  const candidate = '/dev/shm'
+  try {
+    if (statSync(candidate).dev === statSync(dir).dev) return null
+    const other = mkdtempSync(join(candidate, 'copse-user-data-'))
+    created.push(other)
+    return other
+  } catch {
+    return null
+  }
 }
 
 afterEach(() => {
@@ -119,6 +142,45 @@ describe('resolveUserDataDir', () => {
     assert.equal(result.outcome, 'failed')
     assert.equal(result.dir, legacy)
     assert.equal(readFileSync(target, 'utf8'), 'someone put a file here')
+  })
+
+  it('never leaves a partial profile at the target when a cross-volume copy fails', (t) => {
+    const root = tempRoot()
+    const other = otherDeviceRoot(root)
+    if (process.platform === 'win32' || other === null) {
+      t.skip('needs a second filesystem and a POSIX shell')
+      return
+    }
+    const legacy = seedLegacyProfile(join(other, 'appData', 'copse-panel'))
+    writeFileSync(join(legacy, 'large.bin'), Buffer.alloc(512 * 1024))
+    const target = join(root, 'copse', 'user-data')
+    const env = { COPSE_DIR: join(root, 'copse') }
+
+    // The copy runs in a child whose file-size limit is below `large.bin`, so
+    // cpSync fails part-way, after some of the profile has already been copied.
+    const script = [
+      `import { resolveUserDataDir } from ${JSON.stringify(pathToFileURL(join(import.meta.dirname, 'user-data-migration.ts')).href)}`,
+      `const result = resolveUserDataDir(${JSON.stringify(legacy)}, ${JSON.stringify(env)})`,
+      'process.stdout.write(result.outcome)',
+    ].join('\n')
+    const child = spawnSync(
+      'sh',
+      ['-c', 'ulimit -f 64 && exec "$0" --input-type=module -e "$1"', process.execPath, script],
+      { encoding: 'utf8' },
+    )
+    assert.equal(child.stdout, 'failed', child.stderr)
+    assert.equal(existsSync(target), false, 'a failed copy must not occupy the target')
+    assert.equal(existsSync(`${target}.migrating`), false)
+
+    // The next launch must migrate the whole profile, not adopt a fragment.
+    const retry = resolveUserDataDir(legacy, env)
+    assert.equal(retry.outcome, 'copied')
+    assert.equal(retry.dir, target)
+    assert.deepEqual(JSON.parse(readFileSync(join(target, 'config.json'), 'utf8')), {
+      projects: ['legacy'],
+    })
+    assert.equal(statSync(join(target, 'large.bin')).size, 512 * 1024)
+    assert.equal(existsSync(`${legacy}.migrated`), true, 'legacy profile is parked, not deleted')
   })
 
   it('reports no legacy profile for a fresh install', () => {

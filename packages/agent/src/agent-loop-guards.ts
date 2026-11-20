@@ -372,6 +372,15 @@ const VERIFICATION_INVOCATION =
 /** Flags that make a verification command write (fix, format, update snapshots). */
 const WRITING_FLAG = /(?:^|\s)(?:--fix|--write|-u|--update-snapshots?|-w)(?:\s|=|$)/
 
+/**
+ * A package script whose name says it writes (`lint:fix`, `check:fix`,
+ * `test:update`). It reads as a verification script by its first segment, but
+ * running it changes the tree, so it must re-arm the suites rather than count
+ * as one of them.
+ */
+const WRITING_SCRIPT =
+  /^(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?[\w-]+(?::[\w-]+)*:(?:fix|write|format|update)(?=[\s:]|$)/
+
 /** A segment's pipeline stages, or null when it redirects output to a file. */
 function pipelineStages(segment: string): string[] | null {
   const merged = segment.replace(STDERR_MERGE, '')
@@ -398,7 +407,13 @@ export function verificationCommandKey(command: string): string | null {
       parts.push(producer)
       continue
     }
-    if (!VERIFICATION_INVOCATION.test(producer) || WRITING_FLAG.test(producer)) return null
+    if (
+      !VERIFICATION_INVOCATION.test(producer) ||
+      WRITING_FLAG.test(producer) ||
+      WRITING_SCRIPT.test(producer)
+    ) {
+      return null
+    }
     verifies = true
     parts.push(producer)
   }

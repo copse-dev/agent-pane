@@ -32,6 +32,7 @@ import {
   readHookRun,
   readThreadDirectory,
   saveProjectThread,
+  threadBlobsDir,
 } from './thread-store.ts'
 
 const sha256 = (s: string): string => createHash('sha256').update(s, 'utf8').digest('hex')
@@ -211,6 +212,28 @@ describe('thread-store paths', () => {
         !file.startsWith(join('proj', 't1') + sep) && file !== join('proj', 'catalog.jsonl'),
     )
   }
+
+  it('keeps sidecar blob directories that no spine line references through a whole-thread save', async () => {
+    const t = thread('t1', [{ id: 'u1', role: 'user', content: 'hi', toolCalls: [], createdAt: 1 }])
+    await saveProjectThread('proj', t)
+    const blobs = threadBlobsDir('proj', 't1')
+    const sidecars = [
+      join('media', 'clip.mp4'),
+      join('archives', 'release-abc', 'README.md'),
+      join('openai-git', 'source.bundle'),
+      join('openai-artifacts', 'a'.repeat(64), `${'b'.repeat(64)}.png`),
+    ]
+    for (const file of sidecars) {
+      mkdirSync(join(blobs, file, '..'), { recursive: true })
+      writeFileSync(join(blobs, file), 'kept')
+    }
+    writeFileSync(join(blobs, 'stale.tool-0.result.txt'), 'pruned')
+
+    await saveProjectThread('proj', { ...t, title: 'saved again' })
+
+    for (const file of sidecars) assert.equal(existsSync(join(blobs, file)), true, file)
+    assert.equal(existsSync(join(blobs, 'stale.tool-0.result.txt')), false)
+  })
 
   it('saves and reloads hostile ids without writing outside the thread', async () => {
     const t = thread(

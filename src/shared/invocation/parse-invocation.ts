@@ -42,10 +42,11 @@ function escapeRegExp(value: string): string {
 /**
  * Match a `/name` token. Uses a negative lookahead for name characters as the
  * trailing boundary so `/demo` does not match inside `/demo-skill` (a plain
- * `\b` would, since `-` is a word boundary).
+ * `\b` would, since `-` is a word boundary). A following `/` continues a path
+ * (`/demo/status`), so it is not a boundary either.
  */
 function invocationTokenPattern(name: string): string {
-  return `\\/${escapeRegExp(name)}(?![a-z0-9-])`
+  return `\\/${escapeRegExp(name)}(?![a-z0-9/-])`
 }
 
 /** An inline `/name` must start the text or follow whitespace, so `src/review` is a path. */

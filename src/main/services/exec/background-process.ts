@@ -1,6 +1,8 @@
 import { createThreadResource } from '../thread-resource-fence.ts'
 import { randomUUID } from 'node:crypto'
 import type { ChildProcess } from 'node:child_process'
+import type { Readable } from 'node:stream'
+import { StringDecoder } from 'node:string_decoder'
 import {
   isProjectSandboxEnabled,
   sandboxViolationCountForBackgroundProcess,
@@ -120,7 +122,7 @@ export function nextBackgroundOperationId(): string {
 // A full loopback URL as dev servers usually print it, e.g.
 // "Local:   http://localhost:5173/", "http://127.0.0.1:3000".
 const LOOPBACK_URL_RE =
-  /https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\]|\[?::1?\]?)(?::(\d{2,5}))?/i
+  /(https?):\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\]|\[?::1?\]?)(?::(\d{2,5}))?/i
 // A bare "port 8000" / "listening on port 3000" phrase (python http.server, etc.).
 const PORT_PHRASE_RE = /\bport\b\D{0,6}(\d{2,5})/i
 
@@ -134,8 +136,9 @@ export function detectServerUrl(output: string): string | null {
   const text = stripTerminalControlSequences(output)
 
   const urlMatch = LOOPBACK_URL_RE.exec(text)
-  if (urlMatch?.[2]) {
-    return `http://localhost:${urlMatch[2]}`
+  if (urlMatch?.[3]) {
+    // Keep the announced scheme: plain http to a TLS dev server cannot load.
+    return `${(urlMatch[1] ?? 'http').toLowerCase()}://localhost:${urlMatch[3]}`
   }
 
   const portMatch = PORT_PHRASE_RE.exec(text)
@@ -186,8 +189,25 @@ function ownedProcess(
   return entry && sameOwner(entry.owner, owner) ? entry : null
 }
 
-function onOutput(entry: BackgroundProcess, chunk: Buffer): void {
-  entry.output.append(chunk.toString())
+/**
+ * Deliver a child stream as text. Each stream keeps its own decoder so a
+ * multibyte character split across two pipe reads is not turned into U+FFFD.
+ */
+function onDecodedOutput(stream: Readable | null, onText: (text: string) => void): void {
+  if (!stream) return
+  const decoder = new StringDecoder('utf8')
+  stream.on('data', (chunk: Buffer) => {
+    const text = decoder.write(chunk)
+    if (text) onText(text)
+  })
+  stream.once('end', () => {
+    const rest = decoder.end()
+    if (rest) onText(rest)
+  })
+}
+
+function onOutput(entry: BackgroundProcess, text: string): void {
+  entry.output.append(text)
   // Only a port-binding task is a server we should surface a URL for; a plain
   // task's "port" mentions would be noise.
   if (entry.portBinding && entry.url === null) {
@@ -276,11 +296,11 @@ export function adoptBackgroundProcess(opts: AdoptBackgroundProcessOptions): Bac
     },
     Math.max(1, opts.timeoutMs),
   )
-  opts.proc.stdout?.on('data', (chunk: Buffer) => {
-    onOutput(entry, chunk)
+  onDecodedOutput(opts.proc.stdout, (text) => {
+    onOutput(entry, text)
   })
-  opts.proc.stderr?.on('data', (chunk: Buffer) => {
-    onOutput(entry, chunk)
+  onDecodedOutput(opts.proc.stderr, (text) => {
+    onOutput(entry, text)
   })
   const finish = (code: number | null): void => {
     if (entry.exited) return
@@ -439,12 +459,12 @@ export async function startBackgroundProcess(
     }
     const timer = setTimeout(done, waitMs)
 
-    proc.stdout?.on('data', (d: Buffer) => {
-      onOutput(entry, d)
+    onDecodedOutput(proc.stdout, (text) => {
+      onOutput(entry, text)
       if (entry.url !== null) done()
     })
-    proc.stderr?.on('data', (d: Buffer) => {
-      onOutput(entry, d)
+    onDecodedOutput(proc.stderr, (text) => {
+      onOutput(entry, text)
       if (entry.url !== null) done()
     })
     const finish = (code: number | null): void => {

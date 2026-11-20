@@ -152,7 +152,12 @@ export class ResponsesProvider implements LLMProvider {
     )
     this.reasoningSummaries = opts.reasoningSummaries ?? false
     this.encryptedReasoning = opts.encryptedReasoning ?? false
-    this.reasoningByToolCall = reasoningReplayFor(model, opts.promptCacheKey)
+    // The shared (model, thread) scope is only for a provider that holds the
+    // encrypted-reasoning contract. A compatible endpoint serving the same model
+    // id in the same thread must not be handed ciphertext it never produced.
+    this.reasoningByToolCall = this.encryptedReasoning
+      ? reasoningReplayFor(model, opts.promptCacheKey)
+      : new Map<string, ReasoningItem[]>()
     this.strictTools = !this.chatGptPlan && (opts.strictTools ?? false)
     this.client = new OpenAI({
       ...(this.chatGptPlan

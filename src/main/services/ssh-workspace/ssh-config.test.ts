@@ -64,6 +64,24 @@ Host dev
     assert.equal(aliases[0]?.identityFile, '/home/alice/.ssh/my key')
   })
 
+  it('treats # as a comment only at the start of a word', () => {
+    const aliases = parseSshConfig(`
+# leading comment
+Host dev # trailing comment
+  HostName dev.example#1
+  IdentityFile "/home/alice/.ssh/my #key"
+  User alice #not-bob
+`)
+    assert.deepEqual(aliases, [
+      {
+        alias: 'dev',
+        hostname: 'dev.example#1',
+        user: 'alice',
+        identityFile: '/home/alice/.ssh/my #key',
+      },
+    ])
+  })
+
   it('accepts Key=value forms used by some generated configs', () => {
     const aliases = parseSshConfig(`
 Host tunnel
@@ -88,6 +106,30 @@ describe('resolveSshIncludePath', () => {
 })
 
 describe('readSshConfigAliases', () => {
+  it('resolves a nested relative Include against the root config directory', () => {
+    const root = mkdtempSync(join(tmpdir(), 'copse-ssh-config-'))
+    try {
+      const sshDir = join(root, '.ssh')
+      mkdirSync(join(sshDir, 'team', 'hosts'), { recursive: true })
+      mkdirSync(join(sshDir, 'hosts'), { recursive: true })
+      writeFileSync(join(sshDir, 'config'), 'Include team/config\n')
+      // OpenSSH reads this as ~/.ssh/hosts/*, not ~/.ssh/team/hosts/*.
+      writeFileSync(join(sshDir, 'team', 'config'), 'Include hosts/*\n')
+      writeFileSync(join(sshDir, 'hosts', 'real'), 'Host real\n  HostName real.example\n')
+      writeFileSync(
+        join(sshDir, 'team', 'hosts', 'ignored'),
+        'Host ignored\n  HostName ignored.example\n',
+      )
+      const aliases = readSshConfigAliases(join(sshDir, 'config'))
+      assert.deepEqual(
+        aliases.map((a) => a.alias),
+        ['real'],
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('follows Include globs so hosts in nested files are imported', () => {
     const root = mkdtempSync(join(tmpdir(), 'copse-ssh-config-'))
     try {

@@ -9,8 +9,12 @@ const OPEN_TOOL_CALL_RE = /<\s*tool_call\s*>/i
 const OPEN_TOOL_CALLS_RE = /<\s*tool_calls\s*>/i
 const TOOL_CALL_OPENER = '<tool_call>'
 const TOOL_CALLS_OPENER = '<tool_calls>'
+/**
+ * Matched against one block's inner body, which ends where its `</tool_call>`
+ * began — so a final function the model never closed ends at the end of input.
+ */
 const FUNCTION_RE =
-  /<\s*function\s*=\s*([^>\s]+)\s*>([\s\S]*?)(?:<\s*\/\s*function\s*>|(?=<\s*function\s*=)|(?=<\s*\/\s*tool_call\s*>))/gi
+  /<\s*function\s*=\s*([^>\s]+)\s*>([\s\S]*?)(?:<\s*\/\s*function\s*>|(?=<\s*function\s*=)|(?=<\s*\/\s*tool_call\s*>)|$)/gi
 const PARAMETER_RE = /<\s*parameter\s*=\s*([^>\s]+)\s*>([\s\S]*?)<\s*\/\s*parameter\s*>/gi
 
 /**

@@ -23,6 +23,20 @@ describe('isAllowedRendererNavigation', () => {
     const outside = pathToFileURL('/etc/passwd').href
     assert.equal(isAllowedRendererNavigation(outside), false)
   })
+
+  it('allows nested renderer files and the root, but not a sibling sharing its prefix', () => {
+    const root = join(__dirname, '../renderer')
+    assert.equal(isAllowedRendererNavigation(pathToFileURL(root).href), true)
+    assert.equal(
+      isAllowedRendererNavigation(pathToFileURL(join(root, 'video', 'decoder.html')).href),
+      true,
+    )
+    assert.equal(
+      isAllowedRendererNavigation(pathToFileURL(join(`${root}-other`, 'index.html')).href),
+      false,
+    )
+    assert.equal(isAllowedRendererNavigation(`${pathToFileURL(root).href}/../main/index.js`), false)
+  })
 })
 
 describe('hardenWebviewPreferences', () => {

@@ -34,6 +34,11 @@ describe('formatTimestamp', () => {
     assert.equal(formatTimestamp(59.9999), '00:01:00.000')
   })
 
+  it('keeps the minute a rounded-up timestamp carries into, whatever the duration', () => {
+    assert.equal(formatTimestamp(59.9996, 59.9998), '01:00.000')
+    assert.equal(formatTimestamp(3599.9996, 3599.9998), '01:00:00.000')
+  })
+
   it('drops the components a short recording can never reach', () => {
     // The manifest repeats this on every frame line, so hours and minutes a
     // 10-second clip cannot reach are pure tokens.

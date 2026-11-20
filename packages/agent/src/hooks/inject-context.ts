@@ -1,6 +1,7 @@
 import type { LLMMessage } from '@copse/llm/wire-types.ts'
 import type { OperatorInstructionPlacement } from '@copse/llm/model-catalog.ts'
 import { isNonBlankString } from '@copse/std/nullish.ts'
+import { clipStart } from '../clip-text.ts'
 
 // Current-turn context injection (H2 of the hooks platform).
 //
@@ -55,7 +56,8 @@ export interface CappedInjectContext {
 export function capInjectContext(raw: string, cap = INJECT_CONTEXT_CHAR_CAP): CappedInjectContext {
   const fullLength = raw.length
   if (fullLength <= cap) return { text: raw, truncated: false, fullLength, overflow: '' }
-  return { text: raw.slice(0, cap), truncated: true, fullLength, overflow: raw.slice(cap) }
+  const text = clipStart(raw, cap)
+  return { text, truncated: true, fullLength, overflow: raw.slice(text.length) }
 }
 
 /** Wrap text in the system-reminder block that enters the current turn. */

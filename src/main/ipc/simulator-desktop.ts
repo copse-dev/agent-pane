@@ -6,6 +6,7 @@ import { getSetting } from '../services/storage/settings.ts'
 import { DESKTOP_VIEWER_SETTING_LOCATION } from '@shared/desktop-viewer.ts'
 import { AndroidDesktopService } from '../services/android-desktop/android-desktop-service.ts'
 import { assertMainFrameSender, parseIpcArgs } from './ipc-guards.ts'
+import { releaseWhenSenderDestroyed } from './sender-teardown.ts'
 
 const connectionIdSchema = z.uuid()
 const deviceUdidSchema = z.union([z.uuid(), z.string().regex(/^android:[1-9]\d{0,9}$/)])
@@ -47,6 +48,7 @@ function requireDesktopEnabled(): void {
 export function initSimulatorDesktop(win: BrowserWindow): () => Promise<void> {
   const service = getSimulatorDesktopService()
   const android = new AndroidDesktopService()
+  const ownerTeardownHooked = new WeakSet<WebContents>()
   const serviceFor = (id: string): AndroidDesktopService | typeof service =>
     android.hasConnection(id) ? android : service
 
@@ -64,12 +66,13 @@ export function initSimulatorDesktop(win: BrowserWindow): () => Promise<void> {
     assertMainFrameSender(event, win)
     requireDesktopEnabled()
     const udid = parseIpcArgs(deviceUdidSchema, [rawUdid])
+    // Read before the await: a window that closes meanwhile is destroyed.
+    const ownerId = event.sender.id
     const connection = await (udid.startsWith('android:') ? android : service).open(
       udid,
       ownerFor(event.sender),
     )
-    const ownerId = event.sender.id
-    event.sender.once('destroyed', () => {
+    releaseWhenSenderDestroyed(event.sender, ownerTeardownHooked, () => {
       void service.closeOwner(ownerId)
       void android.closeOwner(ownerId)
     })

@@ -25,14 +25,20 @@ import type { PackageFirewallLauncher } from './package-firewall-launcher.ts'
 import { normalizeShellCommandForAnalysis } from './shell-scope.ts'
 
 // Split on top-level shell operators so each segment can be classified on its own.
-// Quotes/substitution are not honoured (see file note).
-const SEGMENT_RE = /(?:&&|\|\||;|\|)/
+// A newline and a lone `&` end a command just as `;` does: `cd web\nnpm install`
+// and `pnpm dev & npm install` are installs too. Quotes/substitution are not
+// honoured (see file note).
+const SEGMENT_RE = /(?:&&|\|\||[;|&\n])/
 
 // Leading `VAR=val` assignments and any run of `sudo` / `eval` command words,
 // stripped before we read the command word. `eval npm install` (and, after quote
 // normalization, `eval "npm install"`) would otherwise hide the manager token
 // behind the eval builtin. (#581)
-const PREFIX_RE = /^(?:(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|[^\s]*)|sudo|eval)\s+)*/
+// The same goes for what a shell allows in front of a command word: a subshell
+// or group opener, `!`, a compound-command keyword (`if …; then npm install`),
+// and the wrappers that run their operand unchanged.
+const PREFIX_RE =
+  /^\s*(?:[({!]\s*|(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|[^\s]*)|sudo|eval|then|do|else|time|command|exec|env|nohup)\s+)*/
 
 const NPM_INSTALL_VERBS = new Set(['install', 'i', 'add', 'ci', 'update', 'up'])
 const PNPM_INSTALL_VERBS = new Set(['install', 'i', 'add', 'update', 'up'])
@@ -90,7 +96,8 @@ function classify(tokens: string[]): SegmentSpec | null {
 }
 
 function classifySegment(rawSegment: string): SegmentSpec | null {
-  const body = rawSegment.replace(PREFIX_RE, '')
+  // A closing `)` glued to the last word of a subshell (`(cd web && npm ci)`) is not part of it.
+  const body = rawSegment.replace(PREFIX_RE, '').replace(/[\s)]+$/, '')
   const tokens = body.trim().split(/\s+/).filter(Boolean)
   if (tokens.length === 0) return null
   return classify(tokens)

@@ -424,6 +424,20 @@ describe('buildSystemPrompt Git repository root', () => {
     assert.ok(prompt.includes(`Working directory: ${tempRoot}`))
   })
 
+  // `$` is legal in a directory name, and `String.prototype.replace` reads
+  // `$$`, `$&`, `` $` `` and `$'` in a replacement string as patterns.
+  it('states a working directory containing replacement patterns verbatim', async () => {
+    for (const name of ['price$$list', 'a$&b', "it$'s", 'tick$`s']) {
+      const root = join(tempRoot, name)
+      const prompt = await buildSystemPrompt({
+        subagentsEnabled: false,
+        invokedSkills: [],
+        roots: { projectRoot: root, executionRoot: root },
+      })
+      assert.ok(prompt.includes(`Working directory: ${root}\n`), name)
+    }
+  })
+
   it('omits the repository line when the execution root is not a Git checkout', async () => {
     const prompt = await runWithThreadExecutionContext(context({}), () => build())
     assert.ok(!prompt.includes('Git repository root:'))

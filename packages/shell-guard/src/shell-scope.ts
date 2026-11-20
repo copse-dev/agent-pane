@@ -12,6 +12,7 @@ import {
   inlineLeadingLiteralAssignments,
   isInertReadArgv,
   isStructurallyReadOnlyShellCommand,
+  parseShellCommandLines,
   parsedShellSegments,
   shellSegmentsQuoteAware,
   unwrapWrappers,
@@ -240,17 +241,19 @@ const EXTERNAL_PATTERNS: Array<{
   // Allow interspersed global options (`git -c protocol.ext.allow=always clone …`,
   // which is a classic clone-time RCE vector) and cover archive, which also reaches
   // the network. `-c` takes a `key=val` argument that isn't flag-shaped, so it gets
-  // its own alternative. `fetch` and read-only `submodule` are deliberately absent
-  // here — see the dedicated matchers below.
+  // its own alternative, and the generic one must not also match a bare `-c`: two
+  // readings of every `-c -c` pair made `git -c -c -c …` backtrack exponentially.
+  // `fetch` and read-only `submodule` are deliberately absent here — see the
+  // dedicated matchers below.
   {
-    re: /\bgit\s+(?:-c\s+\S+\s+|--?\S+\s+)*(push|pull|clone|archive)\b/i,
+    re: /\bgit\s+(?:-c\s+\S+\s+|(?!-c\s)--?\S+\s+)*(push|pull|clone|archive)\b/i,
     reason: 'git network operation',
     commandWord: true,
   },
   // Listing configured remote URLs opens no network connection. Every other
   // remote shape, including show/update and configuration writes, stays external.
   {
-    re: /\bgit\s+(?:-c\s+\S+\s+|--?\S+\s+)*remote\b(?!\s*(?:(?:-v|--verbose)\s*)?(?:$|[;|&\n]))/i,
+    re: /\bgit\s+(?:-c\s+\S+\s+|(?!-c\s)--?\S+\s+)*remote\b(?!\s*(?:(?:-v|--verbose)\s*)?(?:$|[;|&\n]))/i,
     reason: 'git network operation',
     commandWord: true,
   },
@@ -262,7 +265,7 @@ const EXTERNAL_PATTERNS: Array<{
   // match fails safe: any subcommand that isn't an explicit read verb stays external.
   // (#500)
   {
-    re: /\bgit\s+(?:-c\s+\S+\s+|--?\S+\s+)*submodule\s+(?!status\b|summary\b)\S/i,
+    re: /\bgit\s+(?:-c\s+\S+\s+|(?!-c\s)--?\S+\s+)*submodule\s+(?!status\b|summary\b)\S/i,
     reason: 'git submodule network/checkout operation',
     commandWord: true,
   },
@@ -272,7 +275,7 @@ const EXTERNAL_PATTERNS: Array<{
   // an OS sandbox (a blocked network escalates to an unsandboxed retry) and prompt
   // without one, rather than a hard upfront prompt on every fetch. (#500)
   {
-    re: /\bgit\s+(?:-c\s+\S+\s+|--?\S+\s+)*fetch\b/i,
+    re: /\bgit\s+(?:-c\s+\S+\s+|(?!-c\s)--?\S+\s+)*fetch\b/i,
     reason: 'git network read (fetch)',
     ambiguous: true,
   },
@@ -958,9 +961,12 @@ function unescapeShellText(text: string): string {
  */
 function maskInertOperandPaths(command: string): string {
   if (/`|\$\(|[<>]\(/.test(command)) return command
+  // One line at a time: lexed whole, a newline is argument whitespace, so every
+  // word of the commands after `echo done` read as more text for `echo` to print
+  // and `echo done⏎cat /etc/passwd` scored `sandbox`.
   let tokens: ReturnType<typeof parseShell>
   try {
-    tokens = parseShell(command)
+    tokens = parseShellCommandLines(command)
   } catch {
     return command
   }
@@ -1225,7 +1231,11 @@ function pipesIntoInterpreter(command: string): boolean {
 }
 
 const DANGEROUS_IN_SANDBOX_PATTERNS: Array<{ re: RegExp; reason: ScopeReason }> = [
-  { re: /\brm\s+(?:-\S+\s+)*(?:-[^-\s]*r|--recursive\b)/i, reason: REASON_RECURSIVE_DELETE },
+  {
+    // GNU `rm` takes any prefix of a long option: `rm --rec build` is `rm -r build`.
+    re: /\brm\s+(?:-\S+\s+)*(?:-[^-\s]*r|--r(?:e(?:c(?:u(?:r(?:s(?:i(?:ve?)?)?)?)?)?)?)?(?=\s|$))/i,
+    reason: REASON_RECURSIVE_DELETE,
+  },
   { re: /\bgit\s+clean\s+-\S*[dfx]/i, reason: 'git clean removes untracked files' },
   { re: /\bgit\s+reset\s+--hard\b/i, reason: 'git reset --hard discards changes' },
   { re: /\bgit\s+checkout\s+--\s+\./i, reason: 'git checkout discards local changes' },
@@ -1238,7 +1248,7 @@ const DANGEROUS_IN_SANDBOX_PATTERNS: Array<{ re: RegExp; reason: ScopeReason }> 
   { re: /\byes\b\s*\|/i, reason: 'unbounded `yes` output' },
 ]
 
-const FORCED_RM = /\brm\s+(?:-\S+\s+)*(?:-[^-\s]*f|--force\b)/i
+const FORCED_RM = /\brm\s+(?:-\S+\s+)*(?:-[^-\s]*f|--f(?:o(?:r(?:ce?)?)?)?(?=\s|$))/i
 
 /** A literal path inside the working directory: no root, home, parent, variable or glob. */
 function isLiteralLocalPath(path: string): boolean {

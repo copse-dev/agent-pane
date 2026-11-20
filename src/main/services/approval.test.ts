@@ -876,6 +876,35 @@ describe('abandoned calls (parked prompts and verdict replay)', () => {
     assert.equal(handlerCalls, 1)
   })
 
+  for (const resolution of ['window-closed', 'timeout', 'unavailable'] as const) {
+    it(`does not save a parked prompt's ${resolution} as the user's answer`, async () => {
+      parkingHandler()
+      const replays = async (): Promise<number> =>
+        (await readDecisionLog(PROJECT)).filter((event) => event.source === 'abandoned-call-replay')
+          .length
+      const replaysBefore = await replays()
+      const { signal, abandon } = abandonedSignal()
+      const first = requestUnderThread(req, signal)
+      await Promise.resolve()
+      abandon()
+      await assert.rejects(first, ApprovalPendingError)
+      // The prompt closed with nobody answering it.
+      release?.({ approved: false, remember: false, resolution })
+      await Promise.resolve()
+      assert.equal(parkedApprovalCount(), 0)
+
+      // The retry is still an open question: it must be asked, not handed a
+      // denial the user never gave (and logged as theirs).
+      const retry = requestUnderThread(req)
+      await Promise.resolve()
+      assert.equal(handlerCalls, 2, 'the retry must prompt')
+      release?.({ approved: true, remember: false, resolution: 'user' })
+      assert.equal((await retry).approved, true)
+
+      assert.equal(await replays(), replaysBefore)
+    })
+  }
+
   it('serves a stored verdict once', async () => {
     parkingHandler()
     const { signal, abandon } = abandonedSignal()
