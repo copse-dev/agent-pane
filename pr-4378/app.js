@@ -6,6 +6,7 @@ import {
   AUTOMATIONS_PLUGIN_ID,
   CHARS_PER_TOKEN,
   DEFAULT_ADVISOR_MODEL_ID,
+  IMAGE_DETAILS,
   PRODUCT_ANNOUNCEMENTS,
   ThreadPrRelationshipIndex,
   backlinksFor,
@@ -28,6 +29,7 @@ import {
   init_thread_pr_relations2 as init_thread_pr_relations,
   init_token_estimate,
   init_tool_interruption,
+  init_wire_types,
   init_working_brief,
   init_zod,
   isReasoningLevel,
@@ -36,7 +38,7 @@ import {
   sleep,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-O7TIBY7W.js";
+} from "./chunks/chunk-IGBJ6IN3.js";
 import "./chunks/chunk-X6JZSFJR.js";
 import {
   init_icons,
@@ -82,6 +84,16 @@ var init_demo = __esm({
 });
 
 // packages/agent/src/parse-agent-run-payload.ts
+function toUserContent(content) {
+  if (typeof content === "string") return content;
+  return content.map(
+    (part) => part.type === "text" ? part : {
+      type: "image",
+      dataUrl: part.dataUrl,
+      ...part.detail !== void 0 ? { detail: part.detail } : {}
+    }
+  );
+}
 function parseReviewContext(value) {
   if (typeof value !== "string" || value.trim() === "") return void 0;
   return value.length <= REVIEW_CONTEXT_CHAR_CAP ? value : `${value.slice(0, REVIEW_CONTEXT_CHAR_CAP)}
@@ -102,11 +114,12 @@ function parseAgentRunPayload(rawPrompt) {
         id: todo.id,
         content: todo.content,
         status: todo.status,
+        ...todo.priority !== void 0 ? { priority: todo.priority } : {},
         ...todo.check !== void 0 ? { check: todo.check } : {},
         ...todo.assignedModel !== void 0 ? { assignedModel: todo.assignedModel } : {}
       })) : [];
       return {
-        userContent: content2.data,
+        userContent: toUserContent(content2.data),
         ...parsed["automationRun"] === true ? { automationRun: true } : {},
         ...parsed["executionMode"] === "agent" ? { executionMode: "agent" } : {},
         invokedSkills: invokedSkills.success ? invokedSkills.data : [],
@@ -122,7 +135,7 @@ function parseAgentRunPayload(rawPrompt) {
     }
     const content = userContentSchema.safeParse(parsed);
     return {
-      userContent: content.success ? content.data : rawPrompt,
+      userContent: content.success ? toUserContent(content.data) : rawPrompt,
       invokedSkills: [],
       priorTodos: []
     };
@@ -133,6 +146,7 @@ function parseAgentRunPayload(rawPrompt) {
 var userContentSchema, todoSchema, REVIEW_CONTEXT_CHAR_CAP;
 var init_parse_agent_run_payload = __esm({
   "packages/agent/src/parse-agent-run-payload.ts"() {
+    init_wire_types();
     init_model_parameters();
     init_zod();
     init_unknown_value();
@@ -141,7 +155,15 @@ var init_parse_agent_run_payload = __esm({
       external_exports.array(
         external_exports.discriminatedUnion("type", [
           external_exports.object({ type: external_exports.literal("text"), text: external_exports.string() }),
-          external_exports.object({ type: external_exports.literal("image"), dataUrl: external_exports.string() })
+          external_exports.object({
+            type: external_exports.literal("image"),
+            dataUrl: external_exports.string(),
+            // The fidelity the user picked for this image. Listed here because an
+            // object schema drops every key it does not name, which silently reset
+            // the choice to the provider default; an unknown value degrades to that
+            // default rather than rejecting the whole message.
+            detail: external_exports.enum(IMAGE_DETAILS).optional().catch(void 0)
+          })
         ])
       )
     ]);
@@ -7499,7 +7521,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-46X3ZVNG.js").then(async (main) => {
+    void import("./chunks/main-WM3WMUJP.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(

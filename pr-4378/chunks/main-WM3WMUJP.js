@@ -19,6 +19,7 @@ import {
   DEFAULT_TINT_STRENGTH,
   DEVELOPER_MODE_SETTING,
   FALLBACK_APP_CHAT_MODEL,
+  IMAGE_DETAILS,
   KNOWN_ACP_AGENTS,
   LAYOUT_LIMITS,
   LMSTUDIO_MODEL_PREFIX,
@@ -277,6 +278,7 @@ import {
   init_ui,
   init_ui_scale,
   init_ui_scale2,
+  init_wire_types,
   init_working_brief,
   init_zod,
   invalidateProjectThreadLoads,
@@ -488,7 +490,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-O7TIBY7W.js";
+} from "./chunk-IGBJ6IN3.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -52875,14 +52877,6 @@ var init_thread_plan_dialog = __esm({
     init_persistence();
     TEMPLATE = "# Goal\nDescribe the intended outcome.\n\n# Constraints\nList constraints, or write None.\n\n# Scope\nDescribe what will change and what is excluded.\n\n# Definition of done\n- Describe an observable acceptance criterion.";
     DEFAULT_TITLE = "Implementation plan";
-  }
-});
-
-// packages/llm/src/wire-types.ts
-var IMAGE_DETAILS;
-var init_wire_types = __esm({
-  "packages/llm/src/wire-types.ts"() {
-    IMAGE_DETAILS = ["auto", "low", "high"];
   }
 });
 

@@ -74688,6 +74688,14 @@ var init_files = __esm({
   }
 });
 
+// packages/llm/src/wire-types.ts
+var IMAGE_DETAILS;
+var init_wire_types2 = __esm({
+  "packages/llm/src/wire-types.ts"() {
+    IMAGE_DETAILS = ["auto", "low", "high"];
+  }
+});
+
 // src/shared/tools/tool-interruption.ts
 function isHostInterruptedToolCall(toolCall) {
   return toolCall.status === "error" && toolCall.result === ACP_CANCELLED_TOOL_CALL_RESULT;
@@ -75153,6 +75161,8 @@ export {
   backlinksFor,
   init_thread_links,
   init_thread_links2,
+  IMAGE_DETAILS,
+  init_wire_types2 as init_wire_types,
   workingBriefFromUserContent,
   nextWorkingBrief,
   init_working_brief,
