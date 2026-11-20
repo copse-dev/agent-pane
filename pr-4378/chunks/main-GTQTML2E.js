@@ -490,7 +490,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-IGBJ6IN3.js";
+} from "./chunk-FMGP6ZEQ.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -889,23 +889,32 @@ function attachRemotePublisher(store2, api2) {
   let disposed = false;
   let receivedState = false;
   const views = /* @__PURE__ */ new Map();
+  const unpublished = /* @__PURE__ */ new Set();
   function capture() {
     const { activeProjectId, threads, backgroundThreads } = store2.getState();
-    if (activeProjectId) views.set(activeProjectId, { projectId: activeProjectId, threads });
+    if (activeProjectId) {
+      views.set(activeProjectId, { projectId: activeProjectId, threads });
+      unpublished.add(activeProjectId);
+    }
     for (const { projectId, thread } of backgroundThreads) {
       const existing = views.get(projectId)?.threads ?? [];
       views.set(projectId, {
         projectId,
         threads: [...existing.filter((item) => item.id !== thread.id), thread]
       });
+      unpublished.add(projectId);
     }
   }
   function publish() {
     timer = null;
     if (!running || disposed) return;
-    for (const value of views.values()) {
-      const view = remoteViewSchema.safeParse(value);
-      if (view.success) void api2.remote.publish(view.data).catch(() => {
+    const projectIds = [...unpublished];
+    unpublished.clear();
+    for (const projectId of projectIds) {
+      const view = remoteViewSchema.safeParse(views.get(projectId));
+      if (!view.success) continue;
+      void api2.remote.publish(view.data).catch(() => {
+        unpublished.add(projectId);
       });
     }
   }
@@ -88628,6 +88637,7 @@ function createTranscriptReducer(store2, hooks = {}) {
       st.msgId = addAssistantMessage(threadId);
       st.toolSinceText = false;
       st.currentText = "";
+      st.stepTextPrefix = "";
     }
     return st.msgId;
   };
@@ -88640,6 +88650,9 @@ function createTranscriptReducer(store2, hooks = {}) {
     if (plan.startNewMessage) {
       if (plan.finalizeMsgId) store2.emit("message_done", plan.finalizeMsgId);
       st.msgId = addAssistantMessage(threadId);
+      st.stepTextPrefix = "";
+    } else if (st.toolSinceText) {
+      st.stepTextPrefix = st.currentText;
     }
     st.toolSinceText = nextState.toolSinceText;
     st.currentText = nextState.currentText ?? "";
@@ -88664,6 +88677,13 @@ function createTranscriptReducer(store2, hooks = {}) {
         hooks.turnStarted?.(threadId);
         setThreadStatus(store2, threadId, "running");
         if (chunk.hidden) break;
+        if (st.msgId) {
+          store2.emit("message_done", st.msgId);
+          st.msgId = null;
+          st.toolSinceText = false;
+          st.currentText = "";
+          st.stepTextPrefix = "";
+        }
         const id = hooks.createMessageId?.(threadId);
         addMessage(
           store2,
@@ -88705,6 +88725,7 @@ function createTranscriptReducer(store2, hooks = {}) {
           st.msgId = null;
           st.toolSinceText = false;
           st.currentText = "";
+          st.stepTextPrefix = "";
         }
         if (chunk.messageId !== void 0) {
           if (chunk.channel === "message") st.acpMessageId = chunk.messageId;
@@ -88739,6 +88760,7 @@ function createTranscriptReducer(store2, hooks = {}) {
             st.msgId = null;
             st.toolSinceText = false;
             st.currentText = "";
+            st.stepTextPrefix = "";
           }
           if (chunk.channel === "message") st.acpMessageId = chunk.messageId;
           else st.acpThoughtMessageId = chunk.messageId;
@@ -88748,6 +88770,7 @@ function createTranscriptReducer(store2, hooks = {}) {
         replaceAcpContentBlocks(store2, ownerId, chunk.channel, chunk.content);
         if (ownerId === st.msgId && chunk.channel === "message") {
           st.currentText = chunk.content.filter((block) => block.type === "text").map((block) => block.text).join("");
+          st.stepTextPrefix = "";
         }
         st.writing = false;
         hooks.visibleOutput?.(threadId);
@@ -88756,8 +88779,9 @@ function createTranscriptReducer(store2, hooks = {}) {
       }
       case "text_replace": {
         st.msgId ??= addAssistantMessage(threadId);
-        setMessageContent(store2, st.msgId, chunk.text);
-        st.currentText = chunk.text;
+        const text = (st.stepTextPrefix ?? "") + chunk.text;
+        setMessageContent(store2, st.msgId, text);
+        st.currentText = text;
         break;
       }
       case "canvas_artefact": {

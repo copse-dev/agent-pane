@@ -23876,7 +23876,9 @@ function archiveThread(store, id, persisted) {
   const activeArchived = activeThreadId !== null && updated.some((t2) => t2.id === activeThreadId && isThreadArchived(t2));
   const index = threads.findIndex((t2) => t2.id === id);
   const parentId = target.sideChat?.parentThreadId;
-  const newActive = !activeArchived ? activeThreadId : parentId !== void 0 && visible.some((t2) => t2.id === parentId) ? parentId : visible[Math.min(index, visible.length - 1)]?.id ?? at(visible, 0).id;
+  const earlier = new Set(threads.slice(0, Math.max(index, 0)).map((t2) => t2.id));
+  const position = visible.filter((t2) => earlier.has(t2.id)).length;
+  const newActive = !activeArchived ? activeThreadId : parentId !== void 0 && visible.some((t2) => t2.id === parentId) ? parentId : visible[Math.min(position, visible.length - 1)]?.id ?? at(visible, 0).id;
   store.setState({
     threads: updated,
     activeThreadId: newActive,
@@ -24610,8 +24612,12 @@ function serializedNavigation(api, navigation) {
   if (navigationHeldFor !== null && navigation.activeProjectId !== navigationHeldFor || lastNavigation !== null && lastNavigation.activeProjectId === navigation.activeProjectId && lastNavigation.activeThreadId === navigation.activeThreadId) {
     return (writeChains.get("mainWindow:navigation") ?? Promise.resolve()).then(() => void 0);
   }
+  const previous = lastNavigation;
   lastNavigation = navigation;
-  return sendNavigation(api, navigation);
+  return sendNavigation(api, navigation).catch((error62) => {
+    if (lastNavigation === navigation) lastNavigation = previous;
+    throw error62;
+  });
 }
 function sendNavigation(api, navigation) {
   const key = "mainWindow:navigation";
@@ -24783,7 +24789,7 @@ function queueThreadWrite(api, projectId, threadId, target) {
     }
   });
 }
-function reconcileThreads(api, projectId, threads) {
+function reconcileThreads(api, projectId, threads, deletions = true) {
   const previous = new Map(persistedMeta.get(projectId));
   for (const [id, queue] of pendingThreadWrites.get(projectId) ?? []) {
     const target = queue.at(-1);
@@ -24805,7 +24811,7 @@ function reconcileThreads(api, projectId, threads) {
     ...unconfirmedCreates.get(projectId)?.keys() ?? [],
     ...uncertainThreadWrites.get(projectId)?.keys() ?? []
   ]);
-  for (const id of potentiallyCreated) {
+  for (const id of deletions ? potentiallyCreated : []) {
     const pending = pendingThreadWrites.get(projectId)?.get(id)?.at(-1);
     if (!next.has(id) && pending?.kind !== "delete") {
       writes.push(queueThreadWrite(api, projectId, id, { kind: "delete" }));
@@ -24819,6 +24825,17 @@ function reconcileThreads(api, projectId, threads) {
 }
 function flushProjectThreads(api, projectId, threads) {
   return reconcileThreads(api, projectId, threads);
+}
+function holdThreadDeletions(projectId) {
+  heldThreadDeletions.set(projectId, (heldThreadDeletions.get(projectId) ?? 0) + 1);
+  let held = true;
+  return () => {
+    if (!held) return;
+    held = false;
+    const holds = (heldThreadDeletions.get(projectId) ?? 1) - 1;
+    if (holds > 0) heldThreadDeletions.set(projectId, holds);
+    else heldThreadDeletions.delete(projectId);
+  };
 }
 async function loadProjects(api) {
   const projects = recordArrayOrEmpty(await api.storage.get(KEY_PROJECTS)).flatMap((value) => {
@@ -25044,7 +25061,7 @@ function attachAutosave(store, api) {
   let timer = null;
   let projectsDirty = false;
   let inflightFlush = Promise.resolve();
-  const reconcile = (projectId) => reconcileThreads(api, projectId, store.getState().threads);
+  const reconcile = (projectId) => reconcileThreads(api, projectId, store.getState().threads, !heldThreadDeletions.has(projectId));
   const persistMessage = (projectId, threadId, messageId) => {
     const thread = store.getState().threads.find((t2) => t2.id === threadId);
     const message = thread?.messages.find((m2) => m2.id === messageId);
@@ -25076,7 +25093,12 @@ function attachAutosave(store, api) {
     const writes = [];
     if (projectsDirty) {
       projectsDirty = false;
-      writes.push(persistProjects(api, projects));
+      writes.push(
+        persistProjects(api, projects).catch((error62) => {
+          projectsDirty = true;
+          throw error62;
+        })
+      );
     }
     writes.push(serializedNavigation(api, { activeProjectId, activeThreadId }));
     if (activeProjectId) writes.push(reconcile(activeProjectId));
@@ -25244,7 +25266,7 @@ function attachAutosave(store, api) {
   activeAutosave = autosave;
   return autosave;
 }
-var KEY_PROJECTS, KEY_PROJECT_GROUPS, writeChains, persistedProjectsJson, ownsNavigation, navigationRestored, lastNavigation, navigationHeldFor, threadWriteKey, persistedMeta, pendingThreadWrites, unconfirmedCreates, uncertainThreadWrites, activeMetadataLoads, metadataLoadGeneration, appliedProjectLoads, appliedThreadLoads, threadLoadRevisions, AUTOSAVE_DEBOUNCE_MS, activeAutosave;
+var KEY_PROJECTS, KEY_PROJECT_GROUPS, writeChains, persistedProjectsJson, ownsNavigation, navigationRestored, lastNavigation, navigationHeldFor, threadWriteKey, persistedMeta, pendingThreadWrites, unconfirmedCreates, uncertainThreadWrites, activeMetadataLoads, metadataLoadGeneration, appliedProjectLoads, appliedThreadLoads, heldThreadDeletions, threadLoadRevisions, AUTOSAVE_DEBOUNCE_MS, activeAutosave;
 var init_persistence = __esm({
   "src/renderer/controller/persistence.ts"() {
     init_thread_helpers();
@@ -25269,6 +25291,7 @@ var init_persistence = __esm({
     metadataLoadGeneration = 0;
     appliedProjectLoads = /* @__PURE__ */ new Map();
     appliedThreadLoads = /* @__PURE__ */ new Map();
+    heldThreadDeletions = /* @__PURE__ */ new Map();
     threadLoadRevisions = /* @__PURE__ */ new WeakMap();
     AUTOSAVE_DEBOUNCE_MS = 250;
     activeAutosave = null;
@@ -29215,6 +29238,14 @@ async function quarantineAndRestoreNext(store, api, id) {
   store.emit("threads_changed");
 }
 async function restoreProject(store, api, id, preferredThreadId = null) {
+  const publishThreads = holdThreadDeletions(id);
+  try {
+    await restoreHeldProject(store, api, id, preferredThreadId, publishThreads);
+  } finally {
+    publishThreads();
+  }
+}
+async function restoreHeldProject(store, api, id, preferredThreadId, publishThreads) {
   const proj = store.getState().projects.find((p2) => p2.id === id);
   if (!proj) return;
   if (proj.sshHost) {
@@ -29244,6 +29275,7 @@ async function restoreProject(store, api, id, preferredThreadId = null) {
   const persisted = saveProjects(api, projects, id, activeThreadId).catch((error62) => {
     console.warn(`[projects] could not persist the restored project ${id}:`, error62);
   });
+  publishThreads();
   store.setState({
     activeProjectId: id,
     expandedProjectId: id,
