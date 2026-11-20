@@ -438,13 +438,12 @@ export class MachineManager {
     })
   }
   private async saveRoute(machineId: string, viaSshHost: string | undefined): Promise<void> {
-    const routes = { ...this.store.routes() }
-    if (viaSshHost) routes[machineId] = viaSshHost
-    else delete routes[machineId]
+    const routes = new Map(Object.entries(this.store.routes()))
+    if (viaSshHost) routes.set(machineId, viaSshHost)
+    else routes.delete(machineId)
     // Only machines that are still paired keep a route.
-    for (const id of Object.keys(routes))
-      if (!this.data.machines.some((peer) => peer.id === id)) delete routes[id]
-    await this.store.saveRoutes(routes)
+    const paired = new Set(this.data.machines.map((peer) => peer.id))
+    await this.store.saveRoutes(Object.fromEntries([...routes].filter(([id]) => paired.has(id))))
   }
   remove(id: string): Promise<MachinesState> {
     return this.change(async () => {

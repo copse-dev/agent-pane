@@ -558,7 +558,11 @@ function forwardingReach(connected: {
   const reach = {
     opens,
     live: 0,
-    async open(hostId: string, remotePort: number, options: { interactive: boolean }) {
+    async open(
+      hostId: string,
+      remotePort: number,
+      options: { interactive: boolean },
+    ): Promise<{ target: { host: '127.0.0.1'; port: number }; close: () => Promise<void> }> {
       opens.push({ hostId, interactive: options.interactive })
       if (!connected.value && !options.interactive) throw new Error('not connected')
       connected.value = true
@@ -687,8 +691,9 @@ test('a status check never opens an SSH connection, and says what would', async 
     connected.value = false
     await client.refresh()
     const checked = client.snapshot().machines[0]
-    assert.equal(checked?.status, 'reconnecting')
-    assert.equal(checked?.detail, 'Connect to Dev Server over SSH to reach this machine.')
+    assert.ok(checked)
+    assert.equal(checked.status, 'reconnecting')
+    assert.equal(checked.detail, 'Connect to Dev Server over SSH to reach this machine.')
     assert.deepEqual(reach.opens.at(-1), { hostId: 'dev', interactive: false })
 
     // A call is user work, so it may connect again, and the machine comes back.
