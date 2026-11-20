@@ -1,12 +1,9 @@
+import { clamp } from '@copse/std/clamp.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { DEFAULT_LAYOUT, LAYOUT_LIMITS, type LayoutState } from '@shared/types/layout.ts'
 import { PORTRAIT_RIGHT_PANEL_CLASS } from './portrait-right-panel-layout.ts'
 import { isRecord } from '@shared/unknown-value.ts'
-
-function clamp(n: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, n))
-}
 
 function clampNumber(val: unknown, fallback: number, min: number, max: number): number {
   if (typeof val !== 'number' || !Number.isFinite(val)) return fallback

@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 /** Settings key: when false, hide `read_terminal` and `@shell` mentions. */
 export const READ_TERMINAL_ENABLED_SETTING = 'readTerminalEnabled'
 
@@ -15,7 +16,7 @@ export const READ_TERMINAL_MAX_LINES = 2000
  * Empty / whitespace-only buffers yield an empty string.
  */
 export function takeLastLines(text: string, maxLines: number): string {
-  const capped = Math.max(1, Math.min(Math.floor(maxLines), READ_TERMINAL_MAX_LINES))
+  const capped = clamp(Math.floor(maxLines), 1, READ_TERMINAL_MAX_LINES)
   const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trimEnd()
   if (!normalized.trim()) return ''
   const lines = normalized.split('\n')

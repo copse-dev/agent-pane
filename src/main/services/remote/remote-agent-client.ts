@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 import { clearOpenAiAgentSession, runOpenAiAgentFromSettings } from './openai-agents-client.ts'
 /**
  * Cursor Cloud Agent HTTP/SSE adapter.
@@ -32,6 +33,7 @@ import {
 import { isImportedCursorAgentThread } from '@shared/remote-agent-link.ts'
 import { firstNonEmptyString, isRecord } from '@shared/unknown-value.ts'
 import { z } from 'zod'
+import { optionalNumber, optionalString } from '@shared/zod-null-optional.ts'
 import { sleepMs } from '@copse/llm/stream-retry.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { getApiKey, getSetting } from '../storage/settings.ts'
@@ -137,14 +139,6 @@ interface RemoteAgentSession {
   url?: string
 }
 
-const optionalString = z.preprocess(
-  (value) => (value === null ? undefined : value),
-  z.string().optional(),
-)
-const optionalNumber = z.preprocess(
-  (value) => (value === null ? undefined : value),
-  z.number().optional(),
-)
 const runSchema = z.object({ id: optionalString, agentId: optionalString })
 const cursorCreateAgentResponseSchema = z
   .object({
@@ -1069,10 +1063,7 @@ async function streamRemoteRun(input: {
     if (attempt >= MAX_STREAM_RECONNECT_ATTEMPTS) {
       // SDK falls back to polling Get A Run after the reconnect budget.
       while (Date.now() < deadline) {
-        await sleep(
-          Math.min(STREAM_POLL_INTERVAL_MS, Math.max(0, deadline - Date.now())),
-          input.signal,
-        )
+        await sleep(clamp(deadline - Date.now(), 0, STREAM_POLL_INTERVAL_MS), input.signal)
         let run: CursorRunResponse
         try {
           run = await fetchCursorRun({
@@ -1098,7 +1089,7 @@ async function streamRemoteRun(input: {
       throw new Error('Timed out waiting for the remote agent run to finish.')
     }
 
-    const delay = Math.min(streamReconnectDelayMs(attempt), Math.max(0, deadline - Date.now()))
+    const delay = clamp(deadline - Date.now(), 0, streamReconnectDelayMs(attempt))
     attempt += 1
     await sleep(delay, input.signal)
   }
