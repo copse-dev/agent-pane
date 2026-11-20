@@ -129,6 +129,10 @@
       "sha256": "72344c3d448bc0090fe53f97e18ed4c068ec157ec12e634a10fd6e37548baff2",
       "bytes": 55076
     },
+    "acp-probe-failure-copy.png": {
+      "sha256": "764ae869c07b1bd2fbd57ef8a0605ebb8fae0cd6431dbafc89653a8b663fd243",
+      "bytes": 19017
+    },
     "acp-prompt-interruption-collapsed.png": {
       "sha256": "f20562aabfc33239d99c70045d2b6bfde16e4bd6b0f1a9101654e1bdf4c53c8c",
       "bytes": 182686
@@ -500,6 +504,22 @@
     "android-desktop-live.png": {
       "sha256": "4758449bde4bff92ecb3226f0abc241d2958fba31f4aa7561ba1187c535a8a34",
       "bytes": 361903
+    },
+    "annotation-toolstrip-ink-menu.png": {
+      "sha256": "a9dc6ac4bbe588ec7bee194647c6c50b1f1d0460028b1db53c1de8e9303f8e1c",
+      "bytes": 40827
+    },
+    "annotation-toolstrip-light.png": {
+      "sha256": "9f965843ee267292605a05d88d4ad3183c3aaa7292ea4ae75efe949a886194c3",
+      "bytes": 35990
+    },
+    "annotation-toolstrip-scale-125.png": {
+      "sha256": "e8e332f74508a4276d5da46ed36776186bb5fa1cdfa975207ef17da86142bd8d",
+      "bytes": 39417
+    },
+    "annotation-toolstrip-shape-fold.png": {
+      "sha256": "23ed70dd2db5e1b435c62ea143fd5b25edc5875a83324ea14e8b57d264e8c3da",
+      "bytes": 38014
     },
     "app-run-android-picker.png": {
       "sha256": "cf17eb8c2e612b16e874afd321382c31afa6ecaab7b3ae4f192f724775b5073f",
@@ -1042,8 +1062,8 @@
       "bytes": 961743
     },
     "browser-canvas-annotation.png": {
-      "sha256": "b0db6022fc3776dcaddb2aeb3f3652b0e3b5ce35a468700b63ef5dcc777507a8",
-      "bytes": 1159691
+      "sha256": "2eb71b6b7bfba38d19ba0c1fa76aae822481395114d0a5ebffd698fc521a6008",
+      "bytes": 1157327
     },
     "browser-chrome-tabs-toolbar-seam.png": {
       "sha256": "945360b1e94cf56b9d85629fb944cbcacb4dc488dbade439b711f493ffc82963",
@@ -2370,8 +2390,8 @@
       "bytes": 127919
     },
     "image-expand-composer-annotation-update.png": {
-      "sha256": "b815de857628e600f86f6562c6e4363225af390f07e0ce50153bde4a44f2ecc1",
-      "bytes": 229554
+      "sha256": "4e2eac50c886bad3277d59932b06844ad1a0ba81efd8eafe97c54c626cde79ff",
+      "bytes": 222769
     },
     "image-expand-composer-new-thread.png": {
       "sha256": "13185436502a6817efa76f0d8f4d9808eb80a2dd43f1ba615667c1bb0ee6c9a5",
@@ -2386,8 +2406,8 @@
       "bytes": 150514
     },
     "image-expand-gallery-annotation.png": {
-      "sha256": "2b9a0d00f450966a842cc59db9ac78527d4b9bf1cdb64d9293c4f4789678d9e1",
-      "bytes": 164716
+      "sha256": "15f764c80468a82c6d17cab87299af8ba4d5256f3c13749d3c258bbb8c34b75d",
+      "bytes": 159176
     },
     "image-expand-roadmap.png": {
       "sha256": "e7d23e60cc6d3128e63a68958536bd19a9b888ff7bdbbc0fd1f8c4a22c0e8deb",
@@ -2414,8 +2434,8 @@
       "bytes": 360063
     },
     "inline-canvas-annotation.png": {
-      "sha256": "40e200044504b7d12a561b4dc3461dea52935c37e2a3491215899099087046d2",
-      "bytes": 89461
+      "sha256": "d7cad0c96bf19e1a89cbe784abc599f2ce498877f9a7cbaa7046512cf9c35d49",
+      "bytes": 85930
     },
     "innerhtml-tool-args-collapsed.png": {
       "sha256": "721d9604b3ee7cf62486a6d66f6581ae28415079c00b422e21d6904a37eb2edb",
@@ -6378,8 +6398,8 @@
       "bytes": 80423
     },
     "vnc-viewer-annotate.png": {
-      "sha256": "7a2e47d0603115bdb7adddd0729b571316e9e506fe441875386e5175092805bc",
-      "bytes": 315970
+      "sha256": "603a34d55c6bf692c8ddb66b6ac9bae4c73f44486546dd103bf8ef7a99cfdf2d",
+      "bytes": 309111
     },
     "vnc-viewer-auth-failed.png": {
       "sha256": "20cfe23940d5d9a6038011e37c40d74bfa3ec8929c31dcce175ee08b7e295ba6",

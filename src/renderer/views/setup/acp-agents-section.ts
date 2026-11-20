@@ -16,7 +16,6 @@ import { mountModelSelectPicker } from '../model-picker.ts'
 import type { AcpRegistryEntry } from '@shared/acp-registry.ts'
 import { slugify } from '@shared/slug.ts'
 import { createAcpRegistryBrowser } from './acp-registry-browser.ts'
-import { errorMessage } from '@shared/errors.ts'
 
 // Settings panel for the coding agents installed on the user's own device that
 // Copse drives as a client (the `acp:<id>` models). It scans the device
@@ -555,8 +554,8 @@ export function createAcpAgentsSection(
           ].filter(Boolean)
           setInlineStatus(modelStatus, 'ok', `Detected ${bits.join(', ')}.`)
         })
-        .catch((err: unknown) => {
-          setInlineStatus(modelStatus, 'error', errorMessage(err))
+        .catch(() => {
+          setInlineStatus(modelStatus, 'error', 'Could not check this coding agent. Try again.')
         })
         .finally(() => {
           detectModels.disabled = !canDetectModels
