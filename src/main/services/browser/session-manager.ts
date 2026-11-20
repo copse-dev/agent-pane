@@ -86,6 +86,67 @@ const previewCaptures = new WeakMap<PreviewContents, Promise<string | null>>()
  * zoom back so the agent's own screenshots and snapshots keep the desktop
  * viewport. Returns null instead of throwing, like `capturePreview`.
  */
+/** The parts of an agent tab's `WebContents` that a screenshot needs. */
+export interface TabFrameContents<Image extends { isEmpty(): boolean }> {
+  capturePage(): Promise<Image>
+  /** Offscreen tabs only paint when damaged; this asks for a fresh frame. */
+  invalidate(): void
+  once(event: 'paint', listener: () => void): unknown
+  removeListener(event: 'paint', listener: () => void): unknown
+  isDestroyed(): boolean
+}
+
+/** Copies of a frame that are attempted before the screenshot fails. */
+const TAB_FRAME_ATTEMPTS = 3
+/** How long to wait for a fresh frame between attempts. */
+const TAB_FRAME_WAIT_MS = 1000
+
+/** Resolve on the tab's next painted frame, or after `timeoutMs` without one. */
+function nextPaintedFrame(
+  contents: TabFrameContents<{ isEmpty(): boolean }>,
+  timeoutMs: number,
+): Promise<void> {
+  return new Promise((resolve) => {
+    const done = (): void => {
+      clearTimeout(timer)
+      contents.removeListener('paint', done)
+      resolve()
+    }
+    const timer = setTimeout(done, timeoutMs)
+    contents.once('paint', done)
+    contents.invalidate()
+  })
+}
+
+/**
+ * Copy an agent tab's current frame. While a navigation or reload swaps the
+ * page's compositor surface, Chromium can fail the copy: `capturePage()`
+ * rejects with `UnknownVizError`, or yields an empty image (#4425). That is a
+ * transient state of the tab, not a broken page, so ask for a fresh frame and
+ * copy again a bounded number of times before reporting the failure.
+ */
+export async function captureTabFrame<Image extends { isEmpty(): boolean }>(
+  contents: TabFrameContents<Image>,
+  tabId: string,
+): Promise<Image> {
+  let failure = new Error(`browser screenshot of ${tabId} was empty`)
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const image = await contents.capturePage()
+      if (!image.isEmpty()) return image
+      failure = new Error(`browser screenshot of ${tabId} was empty`)
+    } catch (error) {
+      failure = error instanceof Error ? error : new Error(errorMessage(error))
+    }
+    if (attempt >= TAB_FRAME_ATTEMPTS || contents.isDestroyed()) throw failure
+    console.warn(
+      `[copse-panel] browser screenshot of ${tabId} failed on copy ${String(attempt)}; retrying after a fresh frame:`,
+      failure.message,
+    )
+    await nextPaintedFrame(contents, TAB_FRAME_WAIT_MS)
+  }
+}
+
 export function capturePreviewDataUrl(
   wc: PreviewContents,
   decodeImage: (dataUrl: string) => PreviewImage,
@@ -345,8 +406,7 @@ export class BrowserSessionManager {
 
   async screenshot(viewId?: string): Promise<BrowserScreenshot> {
     const tab = this.resolveTab(viewId)
-    const image = await tab.window.webContents.capturePage()
-    if (image.isEmpty()) throw new Error(`browser screenshot of ${tab.id} was empty`)
+    const image = await captureTabFrame(tab.window.webContents, tab.id)
     const { width, height } = image.getSize()
     return {
       png: image.toPNG(),
