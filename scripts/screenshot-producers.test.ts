@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import { extractSpecScreenshots } from './test-oracle.mts'
+import { producerPatterns } from './lib/screenshot-producers.mts'
 
 /**
  * Reference-screenshot hygiene for `tests/e2e/screenshots/`.
@@ -15,14 +16,10 @@ import { extractSpecScreenshots } from './test-oracle.mts'
  * so the committed file is whichever ran last — `settings-tool-permissions.png`
  * was written by both a browser demo and an Electron spec.
  *
- * The producer check is deliberately lenient: any quoted `.png` literal under
- * `tests/` or `scripts/` counts, so a spec that builds the path through a helper
- * or a `join()` still owns its shot. A template literal counts by its static
- * parts (`pane-popout-${mode}.png` owns every `pane-popout-<x>.png`). A
- * template with no static prefix (`${NAME}.png`) would own everything, so it
- * instead owns `<literal>.png` for each plain string literal in the same file —
- * the env-selected `markdown-ordered-list-{before,after}` captures resolve that
- * way.
+ * The producer check is deliberately lenient: any file under `tests/` or
+ * `scripts/` produces the names `producerPatterns` (lib/screenshot-producers.mts)
+ * reads from its quoted `.png` literals, so a spec that builds the path through
+ * a helper or a `join()` still owns its shot.
  */
 
 const SCREENSHOT_DIR = 'tests/e2e/screenshots'
@@ -30,50 +27,8 @@ const PRODUCER_ROOTS = ['tests', 'scripts']
 const CODE_FILE = /\.(?:m?[jt]s|tsx|cjs)$/
 const SPEC_FILE = /\.(?:e2e|demo)\.ts$/
 const SELF = 'scripts/screenshot-producers.test.ts'
-
-/** Quoted string literals on one line, in source order. */
-function stringLiterals(src: string): string[] {
-  const out: string[] = []
-  for (const m of src.matchAll(/(['"`])((?:(?!\1)[^\n\\])*)\1/g)) {
-    if (m[2] !== undefined) out.push(m[2])
-  }
-  return out
-}
-
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-/** Filename patterns a source file can produce (see the module comment). */
-function producerPatterns(src: string): RegExp[] {
-  const literals = stringLiterals(src)
-  const patterns: RegExp[] = []
-  // This helper writes the named first view and at most seven continuation
-  // views. Only its actual filename argument owns these bounded suffixes;
-  // importing the helper must not grant ownership to unrelated PNG literals.
-  for (const m of src.matchAll(
-    /\bsaveSettingsSection\(\s*(?:'[^']*'|"[^"]*"|`[^`]*`|[A-Z][A-Z0-9_]*)\s*,\s*['"`]([\w-]+)\.png['"`]/g,
-  )) {
-    if (m[1] !== undefined) patterns.push(new RegExp(`^${escapeRegExp(m[1])}-page-[2-8]\\.png$`))
-  }
-  let ownsFileLiterals = false
-  for (const literal of literals) {
-    if (!literal.endsWith('.png')) continue
-    const name = literal.slice(literal.lastIndexOf('/') + 1)
-    const parts = name.split(/\$\{[^}]*\}/)
-    if (parts[0] === '') {
-      ownsFileLiterals = true
-      continue
-    }
-    patterns.push(new RegExp(`^${parts.map(escapeRegExp).join('[\\w.-]+')}$`))
-  }
-  if (ownsFileLiterals) {
-    for (const literal of literals) {
-      if (/^[\w-]+$/.test(literal)) patterns.push(new RegExp(`^${escapeRegExp(literal)}\\.png$`))
-    }
-  }
-  return patterns
-}
+// The rule's own source names PNG patterns without producing any.
+const RULE = 'scripts/lib/screenshot-producers.mts'
 
 /** Committed shots no pattern produces. */
 function unproducedScreenshots(shots: string[], patterns: RegExp[]): string[] {
@@ -181,7 +136,11 @@ describe('sharedScreenshotNames', () => {
 
 describe('committed reference screenshots', () => {
   const sources = PRODUCER_ROOTS.flatMap(repoFiles).filter(
-    (path) => CODE_FILE.test(path) && path !== SELF && !path.startsWith(`${SCREENSHOT_DIR}/`),
+    (path) =>
+      CODE_FILE.test(path) &&
+      path !== SELF &&
+      path !== RULE &&
+      !path.startsWith(`${SCREENSHOT_DIR}/`),
   )
 
   it('each have a producer under tests/ or scripts/', () => {

@@ -49,7 +49,8 @@
 import { isDirectExecution } from './lib/direct-execution.mts'
 import { execFileSync } from 'node:child_process'
 import { manifestChangedPaths } from './lib/screenshot-git.mts'
-import { SCREENSHOT_MANIFEST } from './lib/screenshot-manifest.mts'
+import { parseScreenshotManifest, SCREENSHOT_MANIFEST } from './lib/screenshot-manifest.mts'
+import { producerPatterns } from './lib/screenshot-producers.mts'
 import { nativeScreenshotOutputs } from './lib/native-screenshot-outputs.mts'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
@@ -844,6 +845,25 @@ const DISK_READERS: readonly {
 ]
 
 /**
+ * Whether a changed file can select a spec by its selector vocabulary. Only
+ * shipped source: test files carry selector strings of their own that would
+ * otherwise pull in unrelated specs by coincidence.
+ */
+function isSelectorHost(f: string): boolean {
+  return (
+    /\.(ts|tsx|css|html)$/.test(f) &&
+    f.startsWith('src/') &&
+    !f.endsWith('.test.ts') &&
+    !f.endsWith('.e2e.ts')
+  )
+}
+
+/** A spec's selector tokens that `body` contains, minus the generic ones. */
+function selectorHits(body: string, tokens: Token[]): Token[] {
+  return tokens.filter((tok) => fileContainsToken(body, tok) && !SELECTOR_STOPLIST.has(tok.value))
+}
+
+/**
  * Map a set of changed files to the affected e2e specs and unit tests. `null`
  * (see {@link changedFiles}) means the change set is unknown: select everything.
  */
@@ -903,19 +923,10 @@ export function computeSelection(
       if (unitImports.get(t)?.has(f) ?? false) addReason(unitReasons, t, `imports ${f}`)
 
     // Selector vocabulary: which specs' selectors appear in this changed file?
-    // Only shipped source — test files carry selector strings of their own that
-    // would otherwise pull in unrelated specs by coincidence.
-    const isSelectorHost =
-      /\.(ts|tsx|css|html)$/.test(f) &&
-      f.startsWith('src/') &&
-      !f.endsWith('.test.ts') &&
-      !f.endsWith('.e2e.ts')
-    if (isSelectorHost) {
+    if (isSelectorHost(f)) {
       const body = tree.read(f)
       for (const s of specs) {
-        const hits = (specTokens.get(s) ?? []).filter(
-          (tok) => fileContainsToken(body, tok) && !SELECTOR_STOPLIST.has(tok.value),
-        )
+        const hits = selectorHits(body, specTokens.get(s) ?? [])
         if (hits.length) {
           addReason(
             e2eReasons,
@@ -992,6 +1003,85 @@ export function affectedScreenshots(sel: Selection, map = specScreenshots()): st
   return [...out].sort()
 }
 
+// ── Browser demo screenshots ─────────────────────────────────────────────────
+const DEMO_DIR = 'tests/demo'
+
+/** Browser demo specs (the wdio.demo.conf.ts glob). They save reference shots too. */
+export function listDemoSpecs(tree: OracleFiles = workingTree): string[] {
+  return tree
+    .paths(DEMO_DIR)
+    .filter((f) => f.endsWith('.demo.ts'))
+    .sort()
+}
+
+/**
+ * Demo specs whose shots a change owns, by the rules computeSelection applies to
+ * e2e specs: the spec itself changed, its imports reach a changed file, or one
+ * of its selectors appears in changed shipped source. A broad change owns them
+ * all. They stay out of `computeSelection` itself: `tests/demo/` is broad for
+ * test selection, and CI renders every demo whenever the e2e tier runs, so
+ * this only decides which demo shots the change owns.
+ */
+export function selectDemoSpecs(
+  changed: string[],
+  broad: boolean,
+  tree: OracleFiles = workingTree,
+): string[] {
+  const demos = listDemoSpecs(tree)
+  if (broad) return demos
+  const importCache = new Map<string, Set<string>>()
+  const hosts = changed.filter(isSelectorHost).map((f) => tree.read(f))
+  return demos.filter((spec) => {
+    if (changed.includes(spec)) return true
+    const imports = reachableFiles(spec, importCache, tree)
+    if (changed.some((f) => imports.has(f))) return true
+    const tokens = extractSpecTokens(tree.read(spec))
+    return hosts.some((body) => selectorHits(body, tokens).length > 0)
+  })
+}
+
+/** Committed reference-screenshot names; none when the manifest is unreadable. */
+function committedScreenshots(tree: OracleFiles): string[] {
+  try {
+    return Object.keys(parseScreenshotManifest(tree.read(SCREENSHOT_MANIFEST)).screenshots)
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Reference shots the given demo specs save, sorted & unique. Demos capture
+ * through local helpers and per-theme template names that
+ * `extractSpecScreenshots` cannot read (mobile-companion passes each theme's
+ * name to its own screenshot() helper), so a demo also owns the committed names
+ * the producer rule (lib/screenshot-producers.mts) matches in its source. That
+ * rule is loose, so a match never takes a name that another spec saves by its
+ * exact filename: an e2e spec in `exactShots` (spec → names), or another demo.
+ */
+export function demoScreenshots(
+  demos: string[],
+  exactShots: ReadonlyMap<string, readonly string[]>,
+  tree: OracleFiles = workingTree,
+): string[] {
+  if (demos.length === 0) return []
+  const exact = new Map<string, readonly string[]>(exactShots)
+  for (const spec of listDemoSpecs(tree)) exact.set(spec, extractSpecScreenshots(tree.read(spec)))
+  const writers = new Map<string, Set<string>>()
+  for (const [spec, names] of exact)
+    for (const name of names) writers.set(name, (writers.get(name) ?? new Set()).add(spec))
+  const committed = committedScreenshots(tree)
+  const out = new Set<string>()
+  for (const spec of demos) {
+    for (const name of exact.get(spec) ?? extractSpecScreenshots(tree.read(spec))) out.add(name)
+    const patterns = producerPatterns(tree.read(spec))
+    for (const name of committed) {
+      const savedElsewhere = [...(writers.get(name) ?? [])].some((writer) => writer !== spec)
+      if (!savedElsewhere && patterns.some((re) => re.test(name))) out.add(name)
+    }
+  }
+  return [...out].sort()
+}
+
 export type ScreenshotGate = {
   affected: string[] // reference PNGs the change's specs (re)generate
   updated: string[] // screenshot PNGs refreshed in this diff
@@ -1011,8 +1101,10 @@ export type ScreenshotGate = {
  * labeled PR always passes. This static gate never reruns the e2e tier itself.
  *
  * Only files that can influence rendered output drive the gate: shipped source
- * (`src/**` and the workspace packages it bundles, `packages/**`) and the e2e
- * harness/fixtures/specs (`tests/e2e/**`). Root-level infra — a lockfile bump,
+ * (`src/**` and the workspace packages it bundles, `packages/**`), the e2e
+ * harness/fixtures/specs (`tests/e2e/**`) and the browser demo specs and their
+ * helpers (`tests/demo/**`), which own only the demo shots they reach (see
+ * {@link selectDemoSpecs}). Root-level infra — a lockfile bump,
  * tsconfig, build scripts, wdio config — is broad for *test selection* but
  * cannot change a pixel, so it must not demand a full screenshot regen. (A
  * genuinely visual broad change like the shared base stylesheets or index.html
@@ -1023,7 +1115,10 @@ export type ScreenshotGate = {
  * selects specs for, such as the weekly intellect sync in
  * `packages/llm/src/model-intellect.generated.ts`, must own those specs' shots:
  * otherwise its re-render is held on its own PR, merges unreviewed, and shows up
- * as drift on every later PR that does own them.
+ * as drift on every later PR that does own them. Demo specs save reference
+ * shots into the same directory, so they own theirs by the same rules: on
+ * #3949 a `src/mobile/app.css` change owned 193 e2e shots and none of the
+ * mobile companion demo's.
  */
 export function computeScreenshotGate(changed: string[], labeled: boolean): ScreenshotGate {
   const renderAffecting = changed.filter(
@@ -1032,7 +1127,19 @@ export function computeScreenshotGate(changed: string[], labeled: boolean): Scre
       !f.endsWith('.test.ts'),
   )
   const sel = computeSelection(renderAffecting)
-  const affected = affectedScreenshots(sel)
+  const shots = specScreenshots()
+  // Demo specs and their helpers live under tests/demo/, which owns only the
+  // demos it reaches (see selectDemoSpecs), never every e2e shot.
+  const demoChanged = [
+    ...renderAffecting,
+    ...changed.filter((f) => f.startsWith(`${DEMO_DIR}/`) && !f.endsWith('.test.ts')),
+  ]
+  const affected = [
+    ...new Set([
+      ...affectedScreenshots(sel, shots),
+      ...demoScreenshots(selectDemoSpecs(demoChanged, sel.broad), shots),
+    ]),
+  ].sort()
   const updated = new Set(
     changed
       .filter((f) => f.startsWith(`${E2E_SCREENSHOT_DIR}/`) && f.endsWith('.png'))
