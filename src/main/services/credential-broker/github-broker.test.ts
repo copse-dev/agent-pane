@@ -9,6 +9,7 @@ import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { request as httpRequest } from 'node:http'
+import { connect, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { humanPrincipal } from '@shared/threads/execution-runtime.ts'
@@ -16,6 +17,8 @@ import type { RecordDecisionInput } from '../security/decision-log-store.ts'
 import {
   createGitHubCredentialBroker,
   GITHUB_CREDENTIAL_REF,
+  GITHUB_GRANT_AUDIT_LINES_PER_KIND,
+  GITHUB_GRANT_MAX_CONCURRENT_REQUESTS,
   GITHUB_GRANT_TTL_MS,
   type IssuedGitHubGrant,
   type UpstreamRequest,
@@ -37,6 +40,7 @@ function call(
     host?: string
     authorization?: string
     body?: string
+    headers?: Record<string, string>
   } = {},
 ): Promise<Reply> {
   return new Promise((resolve, reject) => {
@@ -48,6 +52,7 @@ function call(
         headers: {
           host: options.host ?? 'api.github.com',
           authorization: options.authorization ?? `token ${grant.env['GH_TOKEN'] ?? ''}`,
+          ...options.headers,
         },
       },
       (res) => {
@@ -65,6 +70,59 @@ function call(
   })
 }
 
+interface StalledRequest {
+  readonly socket: Socket
+  /** Resolves with everything received once it matches `pattern`; rejects after `ms`. */
+  readonly waitFor: (pattern: RegExp, ms: number) => Promise<string>
+  readonly closed: Promise<void>
+}
+
+/**
+ * Open a raw connection and send a request whose headers promise a body that
+ * never comes. `expect: 100-continue` makes Node answer "100 Continue" just
+ * before it hands the request to the broker, so a test can tell when the
+ * broker holds it.
+ */
+function stalledRequest(grant: IssuedGitHubGrant, method: string, path: string): StalledRequest {
+  const socket = connect(grant.socketPath)
+  let text = ''
+  const listeners = new Set<() => void>()
+  socket.on('data', (chunk: Buffer) => {
+    text += chunk.toString()
+    for (const listener of listeners) listener()
+  })
+  socket.on('error', () => {})
+  const closed = new Promise<void>((resolve) => {
+    socket.on('close', () => {
+      resolve()
+    })
+  })
+  socket.write(
+    `${method} ${path} HTTP/1.1\r\nhost: api.github.com\r\n` +
+      `authorization: token ${grant.env['GH_TOKEN'] ?? ''}\r\n` +
+      'expect: 100-continue\r\ncontent-type: application/json\r\n' +
+      'content-length: 1048000\r\n\r\n',
+  )
+  const waitFor = (pattern: RegExp, ms: number): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const check = (): void => {
+        if (!pattern.test(text)) return
+        listeners.delete(check)
+        clearTimeout(timer)
+        resolve(text)
+      }
+      const timer = setTimeout(() => {
+        listeners.delete(check)
+        reject(
+          new Error(`no ${String(pattern)} within ${String(ms)} ms; got ${JSON.stringify(text)}`),
+        )
+      }, ms)
+      listeners.add(check)
+      check()
+    })
+  return { socket, waitFor, closed }
+}
+
 describe('GitHub credential broker', () => {
   let stateDir: string
   let now: number
@@ -73,6 +131,7 @@ describe('GitHub credential broker', () => {
   let upstreamStatus: number
   let upstreamHeaders: [string, string][]
   let grants: IssuedGitHubGrant[]
+  let requestTimeoutMs: number
 
   const broker = (): ReturnType<typeof createGitHubCredentialBroker> =>
     createGitHubCredentialBroker({
@@ -90,6 +149,7 @@ describe('GitHub credential broker', () => {
       },
       now: () => now,
       stateDir: () => stateDir,
+      requestTimeoutMs,
     })
 
   async function issue(readOnly: boolean, threadId = 'thread-a'): Promise<IssuedGitHubGrant> {
@@ -112,6 +172,7 @@ describe('GitHub credential broker', () => {
     upstreamStatus = 200
     upstreamHeaders = [['content-type', 'application/json']]
     grants = []
+    requestTimeoutMs = 30_000
   })
 
   afterEach(async () => {
@@ -211,6 +272,90 @@ describe('GitHub credential broker', () => {
     assert.deepEqual(records[1]?.reasons, ['status 200', 'bytes out 0', 'bytes in 19'])
     assert.equal(JSON.stringify(records).includes(CANARY), false)
     assert.equal(JSON.stringify(records).includes(grant.env['GH_TOKEN'] ?? '?'), false)
+  })
+
+  it('refuses a method the grant does not name before reading any body', async () => {
+    const grant = await issue(true)
+    const pending = stalledRequest(grant, 'POST', '/repos/o/r/issues')
+    // The promised body never comes, so the refusal must not wait for it.
+    const answer = await pending.waitFor(/is not a read/, 2_000)
+    assert.match(answer, /HTTP\/1\.1 403/)
+    pending.socket.destroy()
+    assert.equal(upstreamCalls.length, 0)
+  })
+
+  it('answers 429 past the in-flight cap and 408 to a body that never arrives', async () => {
+    requestTimeoutMs = 300
+    const grant = await issue(true)
+    const stalled = Array.from({ length: GITHUB_GRANT_MAX_CONCURRENT_REQUESTS }, () =>
+      stalledRequest(grant, 'POST', '/graphql'),
+    )
+    await Promise.all(stalled.map((pending) => pending.waitFor(/100 Continue/, 2_000)))
+    const refused = await call(grant)
+    assert.equal(refused.status, 429)
+    for (const pending of stalled) {
+      assert.match(await pending.waitFor(/HTTP\/1\.1 408/, 5_000), /408/)
+      await pending.closed
+    }
+    // Timed-out requests no longer count against the cap.
+    assert.equal((await call(grant)).status, 200)
+    assert.deepEqual(
+      upstreamCalls.map((c) => `${c.method} ${c.url}`),
+      ['GET https://api.github.com/user'],
+    )
+  })
+
+  it('reads GraphQL on a read-only grant only as a checked POST body', async () => {
+    const grant = await issue(true)
+    const query = JSON.stringify({ query: 'query { viewer { login } }' })
+    assert.equal(
+      (await call(grant, { method: 'GET', path: '/graphql?query=%7Bviewer%7Blogin%7D%7D' })).status,
+      403,
+    )
+    assert.equal(
+      (await call(grant, { method: 'POST', path: '/graphql?query=x', body: query })).status,
+      403,
+    )
+    assert.equal(upstreamCalls.length, 0)
+  })
+
+  it('forwards neither a method override nor a body encoding', async () => {
+    const grant = await issue(true)
+    const reply = await call(grant, {
+      headers: {
+        'x-http-method-override': 'DELETE',
+        'content-encoding': 'gzip',
+        accept: 'application/vnd.github+json',
+      },
+    })
+    assert.equal(reply.status, 200)
+    const [sent] = upstreamCalls
+    assert.ok(sent)
+    assert.equal(sent.method, 'GET')
+    assert.equal(sent.headers['x-http-method-override'], undefined)
+    assert.equal(sent.headers['content-encoding'], undefined)
+    assert.equal(sent.headers['accept'], 'application/vnd.github+json')
+  })
+
+  it('writes a bounded number of audit lines per grant and counts the rest', async () => {
+    const grant = await issue(false)
+    const extra = 3
+    for (let index = 0; index < GITHUB_GRANT_AUDIT_LINES_PER_KIND + extra; index += 1) {
+      await call(grant)
+      await call(grant, { host: 'evil.example' })
+    }
+    const count = (kind: string): number => records.filter((r) => r.kind === kind).length
+    assert.equal(count('credential-use'), GITHUB_GRANT_AUDIT_LINES_PER_KIND)
+    assert.equal(count('network-access'), GITHUB_GRANT_AUDIT_LINES_PER_KIND)
+    await grant.release()
+    assert.deepEqual(
+      records.slice(-2).map((r) => `${r.kind}:${r.verdict}:${r.subject}`),
+      [
+        `network-access:blocked:${String(extra)} more refused requests`,
+        `credential-use:allowed:${String(extra)} more relayed requests`,
+      ],
+    )
+    assert.equal(records.at(-1)?.principalId, 'human:local')
   })
 
   it('serves a real gh client whose environment never sees the token', async (t) => {

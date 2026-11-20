@@ -340,11 +340,18 @@ observable from a test or a recorded thread spine. Unchecked items are open.
 - [x] **R2-5 Audit.** Each grant appends an `execution-grant` line. Each brokered request
       appends a `credential-use` line with destination, method, status and byte counts,
       plus the opaque credential reference, never the token. Each refusal appends a
-      `network-access` line with verdict `blocked`.
+      `network-access` line with verdict `blocked`. A grant writes at most 20 lines of each
+      of those two kinds, then one summary line per kind with the count when it ends, so a
+      contained loop cannot grow the spine without bound.
 - [x] **R2-6 Opt-in rollout.** Local brokering sits behind an experimental setting that is
-      off by default. A contained command gets a read-only grant, matching `gh_api_read`.
-      A command approved to run outside the sandbox gets every method. Capabilities report
-      `brokeredCredentials: ['github']` for brokered executions.
+      off by default. A contained command gets a read-only grant, matching `gh_api_read`,
+      and only while `gh_api_read` itself would run without a prompt in that turn (no
+      per-tool Ask or Block). Every process the contained command starts holds that read
+      authority until it exits. A command approved to run outside the sandbox gets every
+      method. An automation principal gets no grant (decision 11): no schedule names a
+      credential reference yet. The broker attaches only a github.com login, never an
+      Enterprise token. Capabilities report `brokeredCredentials: ['github']` for brokered
+      executions.
 - [x] **R2-7 Known limits stated.** The broker cannot contain a process outside the sandbox:
       it can still reach other origins directly and read `~/.config/gh`. Linux bubblewrap
       blocks AF_UNIX sockets, so contained Linux commands are not brokered yet. SSH

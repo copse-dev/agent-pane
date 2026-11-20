@@ -19,6 +19,7 @@ import {
 const CANARY = 'ghp_CANARYcanaryCANARYcanary0123456789'
 const CONTAINED_CONFIG: Partial<SandboxRuntimeConfig> = {
   network: { allowedDomains: [], deniedDomains: [] },
+  filesystem: { denyRead: ['/home'], allowRead: ['/repo'], allowWrite: ['/repo'], denyWrite: [] },
 }
 
 function output(child: ChildProcess): Promise<string> {
@@ -61,6 +62,7 @@ describe('local runtime GitHub brokering', () => {
     return Promise.resolve({
       env: { GH_CONFIG_DIR: '/grant/dir', GH_TOKEN: 'capability' },
       socketPath: '/grant/dir/broker.sock',
+      configDir: '/grant/dir',
       release: () => {
         released += 1
         return Promise.resolve()
@@ -133,6 +135,13 @@ describe('local runtime GitHub brokering', () => {
     assert.equal(env.includes(CANARY), false)
     assert.deepEqual(issued, [{ readOnly: true }])
     assert.deepEqual(wrappedConfigs[0]?.network?.allowUnixSockets, ['/grant/dir/broker.sock'])
+    // The grant's gh config sits under the home read deny; only this command may read it.
+    assert.deepEqual(wrappedConfigs[0].filesystem?.allowRead, [
+      '/repo',
+      '/grant/dir',
+      '/grant/dir/**',
+    ])
+    assert.deepEqual(wrappedConfigs[0].filesystem.allowWrite, ['/repo'])
     assert.deepEqual(execution.capabilities.brokeredCredentials, ['github'])
     assert.equal(released, 1)
   })

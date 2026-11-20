@@ -45,6 +45,8 @@ export type LocalGitHubBroker = (request: {
 export interface BrokeredCredential {
   readonly env: Readonly<Record<string, string>>
   readonly socketPath: string
+  /** The grant's private directory, holding the socket and the gh config the child reads. */
+  readonly configDir: string
   readonly release: () => Promise<void>
 }
 
@@ -108,19 +110,33 @@ function brokerReaches(containment: LocalContainment, platform: NodeJS.Platform)
   return containment === 'host' || platform === 'darwin'
 }
 
-/** Admit exactly the grant's socket to a contained process, keeping every other rule. */
+/**
+ * Admit exactly the grant's socket to a contained process, and let it read the
+ * grant's gh config, keeping every other rule. The grant directory sits under
+ * the profile's home read deny, so without the read rule gh cannot open it.
+ */
 function withBrokerSocket(
   config: LocalSandboxPlan['config'],
-  socketPath: string,
+  credential: BrokeredCredential,
 ): LocalSandboxPlan['config'] {
   const network = config.network
   if (!network) throw new Error('a contained plan must define a network config')
+  const filesystem = config.filesystem
+  const grantRead = [credential.configDir, `${credential.configDir}/**`]
   return {
     ...config,
     network: {
       ...network,
-      allowUnixSockets: [...new Set([...(network.allowUnixSockets ?? []), socketPath])],
+      allowUnixSockets: [...new Set([...(network.allowUnixSockets ?? []), credential.socketPath])],
     },
+    ...(filesystem
+      ? {
+          filesystem: {
+            ...filesystem,
+            allowRead: [...new Set([...(filesystem.allowRead ?? []), ...grantRead])],
+          },
+        }
+      : {}),
   }
 }
 
@@ -255,7 +271,7 @@ export function createLocalExecutionRuntime(
       try {
         if (!local) throw new Error('local containment request missing')
         plan = local.plan()
-        config = credential ? withBrokerSocket(plan.config, credential.socketPath) : plan.config
+        config = credential ? withBrokerSocket(plan.config, credential) : plan.config
       } catch (err) {
         releaseCredential()
         throw err

@@ -251,6 +251,22 @@ export const SANDBOX_DENIAL_SIGNATURES: readonly SandboxDenialSignature[] = [
     }),
   },
   {
+    // With the experimental GitHub credential broker on, a contained `gh` reaches
+    // GitHub through a read-only grant (credential-broker/github-broker.ts). A
+    // write such as `gh pr create` connects to the grant's allowed socket, so the
+    // OS sandbox logs no violation; the broker answers 403 and gh prints
+    //   "gh: Copse credential broker: read-only grant: POST is not a read (HTTP 403)"
+    // Only a run outside the sandbox gets a grant that can write.
+    id: 'github-broker-read-only-grant',
+    pattern: /Copse credential broker: read-only grant: [A-Z]+ is not a read/,
+    classify: () => ({
+      operation: 'GitHub write through gh',
+      advice:
+        'gh inside the sandbox can only read from GitHub; this command writes, which needs a run ' +
+        'outside the sandbox.',
+    }),
+  },
+  {
     // The package firewall wraps every detected install. Inside the contained
     // sandbox it either cannot open its loopback proxy (macOS: it then runs the
     // command with registry downloads disabled, package-firewall/run.ts) or can

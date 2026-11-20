@@ -136,7 +136,10 @@ Optional argv / Guarded-YOLO extras live next to tool results:
   `github-api` or `github-api-read`, reasons naming the methods and expiry). Each request
   the broker relays writes a `kind: "credential-use"` line: `subject` is method and host,
   and the reasons carry the status and byte counts. Each refusal writes a
-  `kind: "network-access"` line with `verdict: "blocked"` and the reason. All three are
+  `kind: "network-access"` line with `verdict: "blocked"` and the reason. A grant writes the
+  first 20 `credential-use` and 20 `network-access` lines; when it ends, one more line of each
+  kind it stopped writing gives the count in its `subject` (`"35 more relayed requests"`,
+  `"12 more refused requests"`). All three are
   `actor: "system"`, carry the principal and `runtime`, and set `source` to the opaque
   credential reference `github:user-login`. None records the token, the execution's
   capability, request paths or bodies. The Context panel's Recent decisions

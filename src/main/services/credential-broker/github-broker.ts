@@ -55,6 +55,23 @@ export const GITHUB_GRANT_TTL_MS = 60 * 60_000
 /** Largest request body the broker buffers (GraphQL documents, REST JSON). */
 const MAX_REQUEST_BYTES = 1024 * 1024
 
+/**
+ * Requests one grant serves at once. Each may buffer a body of up to
+ * {@link MAX_REQUEST_BYTES} in the main process, so a contained command cannot
+ * hold more than this many megabytes; a request beyond the cap gets a 429.
+ */
+export const GITHUB_GRANT_MAX_CONCURRENT_REQUESTS = 16
+
+/** How long a client has to send a request's headers and body before a 408. */
+export const GITHUB_BROKER_REQUEST_TIMEOUT_MS = 30_000
+
+/**
+ * Audit lines of each kind (`credential-use`, `network-access`) one grant
+ * writes to the thread's spine. Past this the broker only counts, and
+ * releasing the grant writes one summary line per kind with the count.
+ */
+export const GITHUB_GRANT_AUDIT_LINES_PER_KIND = 20
+
 /** Request headers never forwarded upstream. */
 const DROPPED_REQUEST_HEADERS = new Set([
   'authorization',
@@ -68,6 +85,12 @@ const DROPPED_REQUEST_HEADERS = new Set([
   'upgrade',
   'te',
   'trailer',
+  // The body goes upstream exactly as the broker checked it, and a
+  // method-override header cannot turn a read into a write.
+  'content-encoding',
+  'x-http-method-override',
+  'x-http-method',
+  'x-method-override',
 ])
 
 /** Response headers that describe the upstream framing, not the body we relay. */
@@ -99,8 +122,14 @@ export interface GitHubBrokerDependencies {
   upstream: (request: UpstreamRequest) => Promise<UpstreamResponse>
   record: (input: RecordDecisionInput) => void
   now: () => number
-  /** Private parent directory for per-grant sockets and gh config. */
+  /**
+   * Private parent directory for per-grant sockets and gh config. No sandbox
+   * profile may grant writes to it or its children: a contained command that
+   * could rename a grant directory could swap in another execution's config.
+   */
   stateDir: () => string
+  /** Deadline for a request's headers and body ({@link GITHUB_BROKER_REQUEST_TIMEOUT_MS}). */
+  requestTimeoutMs: number
 }
 
 export interface GitHubGrantRequest {
@@ -118,6 +147,8 @@ export interface IssuedGitHubGrant {
   readonly env: Readonly<Record<string, string>>
   /** The unix socket the child must be allowed to connect to. */
   readonly socketPath: string
+  /** The grant's private directory (socket and gh config), which the child must be able to read. */
+  readonly configDir: string
   /** Close the socket, revoke the capability and remove the grant's files. Idempotent. */
   readonly release: () => Promise<void>
 }
@@ -159,9 +190,8 @@ async function readBody(request: IncomingMessage): Promise<Buffer | null> {
   return Buffer.concat(chunks)
 }
 
-/** Whether a read-only grant may send this POST: only a GraphQL query document. */
-function isReadOnlyGraphqlQuery(path: string, body: Buffer): boolean {
-  if (path.split('?')[0] !== '/graphql') return false
+/** Whether a read-only grant may send this `POST /graphql` body: only a query document. */
+function isReadOnlyGraphqlQuery(body: Buffer): boolean {
   let parsed: unknown
   try {
     parsed = JSON.parse(body.toString('utf8'))
@@ -209,6 +239,45 @@ export function createGitHubCredentialBroker(dependencies: GitHubBrokerDependenc
         source: GITHUB_CREDENTIAL_REF,
       } satisfies Partial<RecordDecisionInput>
       let revoked = false
+      let inFlight = 0
+
+      // A contained loop can make requests for the grant's whole hour, so the
+      // spine gets the first few lines of each kind and then one count.
+      const audited = { 'credential-use': 0, 'network-access': 0 }
+      const unrecorded = { 'credential-use': 0, 'network-access': 0 }
+      const recordEffect = (input: RecordDecisionInput & { kind: keyof typeof audited }): void => {
+        if (audited[input.kind] >= GITHUB_GRANT_AUDIT_LINES_PER_KIND) {
+          unrecorded[input.kind] += 1
+          return
+        }
+        audited[input.kind] += 1
+        dependencies.record(input)
+      }
+      const recordUnrecordedCounts = (): void => {
+        const refused = unrecorded['network-access']
+        if (refused > 0) {
+          dependencies.record({
+            ...audit,
+            kind: 'network-access',
+            actor: 'system',
+            verdict: 'blocked',
+            subject: `${String(refused)} more refused requests`,
+            reasons: [`only the first ${String(GITHUB_GRANT_AUDIT_LINES_PER_KIND)} are listed`],
+          })
+        }
+        const relayed = unrecorded['credential-use']
+        if (relayed > 0) {
+          dependencies.record({
+            ...audit,
+            kind: 'credential-use',
+            actor: 'system',
+            verdict: 'allowed',
+            subject: `${String(relayed)} more relayed requests`,
+            scope: grant.operation,
+            reasons: [`only the first ${String(GITHUB_GRANT_AUDIT_LINES_PER_KIND)} are listed`],
+          })
+        }
+      }
 
       const block = (
         response: ServerResponse,
@@ -216,7 +285,7 @@ export function createGitHubCredentialBroker(dependencies: GitHubBrokerDependenc
         subject: string,
         why: string,
       ): void => {
-        dependencies.record({
+        recordEffect({
           ...audit,
           kind: 'network-access',
           actor: 'system',
@@ -244,15 +313,15 @@ export function createGitHubCredentialBroker(dependencies: GitHubBrokerDependenc
           block(res, 403, subject, `destination not in grant: ${host || '(none)'}`)
           return
         }
-        const body = await readBody(req)
-        if (body === null) {
-          block(res, 413, subject, 'request body too large')
+        // Decide the method before buffering anything. A read-only grant sends
+        // GraphQL only as a POST body it checks below: no GET, no query string.
+        const graphqlBody = request.readOnly && method === 'POST' && path === '/graphql'
+        const allowed: readonly string[] = methods
+        if (request.readOnly && path.split('?')[0] === '/graphql' && !graphqlBody) {
+          block(res, 403, subject, 'read-only grant: GraphQL is read only as a POST query')
           return
         }
-        const allowed: readonly string[] = methods
-        const readOnlyQuery =
-          request.readOnly && method === 'POST' && isReadOnlyGraphqlQuery(path, body)
-        if (!allowed.includes(method) && !readOnlyQuery) {
+        if (!allowed.includes(method) && !graphqlBody) {
           block(
             res,
             403,
@@ -261,6 +330,35 @@ export function createGitHubCredentialBroker(dependencies: GitHubBrokerDependenc
               ? `read-only grant: ${method} is not a read`
               : `method not in grant: ${method}`,
           )
+          return
+        }
+        if (inFlight >= GITHUB_GRANT_MAX_CONCURRENT_REQUESTS) {
+          block(res, 429, subject, 'too many requests at once for this grant')
+          return
+        }
+        inFlight += 1
+        try {
+          await relay(req, res, method, path, subject, graphqlBody)
+        } finally {
+          inFlight -= 1
+        }
+      }
+
+      const relay = async (
+        req: IncomingMessage,
+        res: ServerResponse,
+        method: string,
+        path: string,
+        subject: string,
+        graphqlBody: boolean,
+      ): Promise<void> => {
+        const body = await readBody(req)
+        if (body === null) {
+          block(res, 413, subject, 'request body too large')
+          return
+        }
+        if (graphqlBody && !isReadOnlyGraphqlQuery(body)) {
+          block(res, 403, subject, 'read-only grant: POST is not a read')
           return
         }
         const token = await dependencies.resolveToken()
@@ -292,7 +390,7 @@ export function createGitHubCredentialBroker(dependencies: GitHubBrokerDependenc
         res.setHeader('content-length', String(upstream.body.length))
         res.writeHead(upstream.status)
         res.end(method === 'HEAD' ? undefined : upstream.body)
-        dependencies.record({
+        recordEffect({
           ...audit,
           kind: 'credential-use',
           actor: 'system',
@@ -307,22 +405,39 @@ export function createGitHubCredentialBroker(dependencies: GitHubBrokerDependenc
         })
       }
 
-      const server: Server = createServer((req, res) => {
-        handle(req, res).catch(() => {
-          if (!res.headersSent) refuse(res, 500, 'internal error')
-          else res.destroy()
+      // Node answers 408 and closes the connection when the headers and body
+      // have not both arrived by the deadline, so a stalled client cannot pin
+      // a buffered body in this process.
+      const server: Server = createServer(
+        {
+          headersTimeout: dependencies.requestTimeoutMs,
+          requestTimeout: dependencies.requestTimeoutMs,
+          connectionsCheckingInterval: Math.min(1_000, dependencies.requestTimeoutMs),
+        },
+        (req, res) => {
+          handle(req, res).catch(() => {
+            if (!res.headersSent) refuse(res, 500, 'internal error')
+            else res.destroy()
+          })
+        },
+      )
+      try {
+        await new Promise<void>((resolve, reject) => {
+          server.once('error', reject)
+          server.listen(socketPath, () => {
+            server.off('error', reject)
+            resolve()
+          })
         })
-      })
-      await new Promise<void>((resolve, reject) => {
-        server.once('error', reject)
-        server.listen(socketPath, () => {
-          server.off('error', reject)
-          resolve()
+        await writeFile(join(dir, 'config.yml'), `http_unix_socket: ${socketPath}\n`, {
+          mode: 0o600,
         })
-      })
-      await writeFile(join(dir, 'config.yml'), `http_unix_socket: ${socketPath}\n`, {
-        mode: 0o600,
-      })
+      } catch (error) {
+        // A socket path past the platform's limit fails here; leave nothing behind.
+        server.close()
+        await rm(dir, { recursive: true, force: true })
+        throw error
+      }
 
       dependencies.record({
         ...audit,
@@ -341,10 +456,12 @@ export function createGitHubCredentialBroker(dependencies: GitHubBrokerDependenc
       return {
         grant,
         socketPath,
+        configDir: dir,
         env: { GH_CONFIG_DIR: dir, GH_TOKEN: capabilityText },
         release: (): Promise<void> => {
           released ??= (async (): Promise<void> => {
             revoked = true
+            recordUnrecordedCounts()
             await new Promise<void>((resolve) => {
               server.close(() => {
                 resolve()

@@ -32,6 +32,22 @@ describe('classifySandboxDenial (issue #1436)', () => {
     assert.match(match.advice, /~\/\.config\/gh/)
   })
 
+  it('classifies a GitHub write the credential broker refused for a contained gh', () => {
+    const output = 'gh: Copse credential broker: read-only grant: POST is not a read (HTTP 403)'
+    const match = classifySandboxDenial(output, 'gh pr create --title "fix" --body "..."')
+    assert.ok(match)
+    assert.equal(match.operation, 'GitHub write through gh')
+    assert.match(match.advice, /outside the sandbox/)
+    // Any other broker answer (a foreign capability, an expired grant) is not this denial.
+    assert.equal(
+      classifySandboxDenial(
+        'gh: Copse credential broker: grant expired or revoked (HTTP 401)',
+        'gh api user',
+      ),
+      null,
+    )
+  })
+
   it('classifies an install whose download proxy cannot listen as a needed download', () => {
     const output =
       '[safe-install] cannot listen on loopback here (EPERM); package downloads are disabled for this command\n' +
