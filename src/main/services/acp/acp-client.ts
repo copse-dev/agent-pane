@@ -80,6 +80,7 @@ import {
   ensureWorkspaceTmpDir,
   refreshGitConfigIncludeReadPaths,
 } from '../../project-sandbox/config.ts'
+import { withTimeout } from '@copse/std/with-timeout.ts'
 
 /**
  * Copse intentionally advertises no notice or compaction session capability.
@@ -1163,23 +1164,16 @@ export function cancelAgentInitiatedTurn(
   void open.connection.agent.notify('session/cancel', { sessionId: open.session.sessionId })
   open.agentInitiated.end()
   if (!open.agentInitiatedCancel) {
-    let acknowledge = (): void => {}
-    const acknowledged = new Promise<'acknowledged'>((resolve) => {
-      acknowledge = (): void => {
-        resolve('acknowledged')
-      }
-    })
-    let graceTimer: ReturnType<typeof setTimeout> | undefined
-    const graceExpired = new Promise<'grace-expired'>((resolve) => {
-      graceTimer = setTimeout(() => {
-        resolve('grace-expired')
-      }, cancelGraceMs)
-    })
-    const settled = Promise.race([acknowledged, graceExpired]).then(async (outcome) => {
-      clearTimeout(graceTimer)
-      if (outcome === 'grace-expired') await open.dispose()
-      delete open.agentInitiatedCancel
-    })
+    const acknowledged = Promise.withResolvers<'acknowledged'>()
+    const acknowledge = (): void => {
+      acknowledged.resolve('acknowledged')
+    }
+    const settled = withTimeout(acknowledged.promise, cancelGraceMs, () => 'grace-expired').then(
+      async (outcome) => {
+        if (outcome === 'grace-expired') await open.dispose()
+        delete open.agentInitiatedCancel
+      },
+    )
     open.agentInitiatedCancel = { settled, acknowledge }
   }
   return true
@@ -1689,10 +1683,8 @@ export async function runAcpSessionPrompt(
   // Resolves only once the user has aborted AND the agent has failed to settle
   // its prompt within the grace window — our cue to stop waiting on a stuck
   // agent rather than hang the turn forever.
-  let onGraceExpired: (value: 'grace-expired') => void = () => {}
-  const graceExpired = new Promise<'grace-expired'>((resolve) => {
-    onGraceExpired = resolve
-  })
+  const { promise: graceExpired, resolve: onGraceExpired } =
+    Promise.withResolvers<'grace-expired'>()
   let graceTimer: ReturnType<typeof setTimeout> | undefined
   let promptSent = false
   const cancel = (): void => {
@@ -1711,10 +1703,8 @@ export async function runAcpSessionPrompt(
   // stop. Install BEFORE wiring the abort path so an already-aborted signal
   // re-suppresses.
   open.suppressChunks = false
-  let settleStop!: NonNullable<OpenAcpSession['turnStop']>
-  const stopped = new Promise<AcpTurnStop>((resolve, reject) => {
-    settleStop = { resolve, reject }
-  })
+  const { promise: stopped, resolve, reject } = Promise.withResolvers<AcpTurnStop>()
+  const settleStop: NonNullable<OpenAcpSession['turnStop']> = { resolve, reject }
   // The grace-expired path abandons `stopped`; swallow its late rejection (the
   // disposed connection rejects the in-flight prompt) so it never surfaces as
   // an unhandled rejection.
