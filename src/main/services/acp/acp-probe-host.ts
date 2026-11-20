@@ -8,7 +8,7 @@ import { parseAcpConfigOptions } from '@shared/acp.ts'
 import { detachForGroupKill } from '../../project-sandbox/sandbox-argv.ts'
 import { withoutSandboxWrapTmpPin } from '../../project-sandbox/tmp-env.ts'
 import { terminateProcessTree } from '../exec/subprocess-kill.ts'
-import { probeAcpAgent, type AcpAgentSpawnConfig } from './acp-client.ts'
+import { probeAcpAgent, willSandboxAcpAgent, type AcpAgentSpawnConfig } from './acp-client.ts'
 import { ACP_PROBE_REQUEST_ENV } from './acp-probe-worker.ts'
 
 /**
@@ -20,13 +20,9 @@ import { ACP_PROBE_REQUEST_ENV } from './acp-probe-worker.ts'
  * way to attribute a connection back to a child, so the only way to give the probe
  * a different network policy is to give it a different process.
  *
- * Falls back to the in-process probe when the helper cannot run. That path still
- * widens the global scope — the behaviour before this change — which is worse than
- * isolation but much better than model detection silently breaking, and the phase
- * 1–3 work (scope release on `exit`, labelled holders, capability-based gating)
- * bounds the damage. When the helper ran and the agent itself failed (it is not
- * installed, exited, or never answered), there is no fallback: probing in-process
- * would start the same agent again, under the app's own scope.
+ * A sandboxed probe fails closed if its helper cannot run. An unsandboxed probe
+ * may fall back in process, since it never acquires an ASRT network scope.
+ * A reported agent failure is never retried in-process, even without ASRT.
  */
 
 /** Bound on the helper's whole life, above the probe's own budget so the inner timeout wins. */
@@ -41,6 +37,7 @@ export class AcpProbeAgentError extends Error {
   override readonly name = 'AcpProbeAgentError'
 }
 const WORKER_STDOUT_MAX_BYTES = 256 * 1024
+const WORKER_STDERR_MAX_BYTES = 64 * 1024
 
 export function acpProbeWorkerPath(): string {
   return join(__dirname, 'acp-probe-worker.js')
@@ -123,7 +120,8 @@ export function parseProbeWorkerOutput(stdout: string): AcpAgentProbe | null {
 function runProbeWorker(
   config: AcpAgentSpawnConfig,
   timeoutMs: number,
-): Promise<AcpAgentProbe | null> {
+  sandboxRequired: boolean,
+): Promise<AcpAgentProbe> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [acpProbeWorkerPath()], {
       cwd: config.cwd,
@@ -133,13 +131,15 @@ function runProbeWorker(
         ...withoutSandboxWrapTmpPin(process.env),
         // Electron must run as Node for a plain script entry.
         ELECTRON_RUN_AS_NODE: '1',
-        [ACP_PROBE_REQUEST_ENV]: JSON.stringify({ config, timeoutMs }),
+        [ACP_PROBE_REQUEST_ENV]: JSON.stringify({ config, sandboxRequired, timeoutMs }),
       },
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: detachForGroupKill,
     })
     let stdout = ''
     let stderr = ''
+    let stderrBytes = 0
+    let reportedStderr = false
     let settled = false
     const cancelEscalation = { current: null as (() => void) | null }
     // Settling and stopping the escalation are separate: a timed-out worker is
@@ -164,9 +164,16 @@ function runProbeWorker(
       if (stdout.length < WORKER_STDOUT_MAX_BYTES) stdout += stdoutDecoder.write(chunk)
     })
     child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString()
-      const text = chunk.toString().trimEnd()
-      if (text) console.warn(`[acp-probe-worker] ${text}`)
+      const remaining = WORKER_STDERR_MAX_BYTES - stderrBytes
+      if (remaining > 0) {
+        const kept = chunk.subarray(0, remaining)
+        stderr += kept.toString()
+        stderrBytes += kept.length
+      }
+      if (!reportedStderr) {
+        reportedStderr = true
+        console.warn('[acp-probe-worker] worker wrote to stderr')
+      }
     })
     child.once('error', (err) => {
       finish(() => {
@@ -182,6 +189,9 @@ function runProbeWorker(
             resolve(probe)
             return
           }
+          // This bounded excerpt stays in the rejected Error for diagnosis.
+          // Current callers either mask it in Settings or swallow it during
+          // auto-setup; never log arbitrary worker stderr directly here.
           reject(
             new Error(
               `Checking the coding agent stopped with code ${String(code)} and no result${
@@ -200,23 +210,22 @@ function runProbeWorker(
 /**
  * Probe an ACP agent without widening this process's network allowlist.
  *
- * The helper is tried first; any failure to *run* it degrades to the in-process
- * probe rather than failing the caller, since a probe that cannot run leaves the
- * user with no model list at all. A failure of the agent itself
- * ({@link AcpProbeAgentError}) is the caller's answer, not a reason to retry.
+ * The helper is tried first. Only probes that do not use ASRT may fall back
+ * in-process; a sandboxed probe's public-domain scope must stay off main.
+ * A reported agent failure is never retried in-process, even without ASRT.
  */
 export async function probeAcpAgentIsolated(
   config: AcpAgentSpawnConfig,
   timeoutMs = 15_000,
 ): Promise<AcpAgentProbe> {
+  const sandboxed = willSandboxAcpAgent(config.sandbox)
   try {
-    const probe = await runProbeWorker(config, timeoutMs)
-    if (probe) return probe
+    return await runProbeWorker(config, timeoutMs, sandboxed)
   } catch (err) {
-    if (err instanceof AcpProbeAgentError) throw err
+    if (sandboxed || err instanceof AcpProbeAgentError) throw err
     console.warn(
-      `[acp-probe] isolated probe unavailable, falling back in-process (this widens the global network scope): ${errorMessage(err)}`,
+      `[acp-probe] isolated probe unavailable, falling back in-process: ${errorMessage(err)}`,
     )
+    return probeAcpAgent(config, timeoutMs)
   }
-  return probeAcpAgent(config, timeoutMs)
 }
