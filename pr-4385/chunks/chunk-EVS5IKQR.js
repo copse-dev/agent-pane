@@ -73962,7 +73962,6 @@ function mountAnnotationLayer(host, options) {
   };
   const fitStrip = () => {
     if (!strip || !sendBtn || !active2) return;
-    const before = `${strip.dataset["send"] ?? ""}/${strip.dataset["shapes"] ?? ""}`;
     for (const layout of STRIP_LAYOUTS) {
       strip.dataset["send"] = layout.send;
       strip.dataset["shapes"] = layout.shapes;
@@ -73970,7 +73969,6 @@ function mountAnnotationLayer(host, options) {
       sendBtn.textContent = layout.send === "long" ? sendLabel : compactSendLabel;
       if (strip.scrollWidth <= strip.clientWidth) break;
     }
-    if (before !== `${strip.dataset["send"] ?? ""}/${strip.dataset["shapes"] ?? ""}`) closePopover();
   };
   const currentToolButton = () => {
     if (foldBtn && isShape(tool) && strip?.dataset["shapes"] === "folded") return foldBtn;
@@ -74016,7 +74014,6 @@ function mountAnnotationLayer(host, options) {
       {
         type: "button",
         class: "annotation-tool annotation-shape-fold",
-        "aria-haspopup": "true",
         "aria-expanded": "false",
         "aria-pressed": "false"
       },
@@ -74034,7 +74031,6 @@ function mountAnnotationLayer(host, options) {
         type: "button",
         class: "annotation-tool annotation-ink",
         "data-tooltip": "Ink colour",
-        "aria-haspopup": "true",
         "aria-expanded": "false"
       },
       el("span", { class: "annotation-ink-dot" })
@@ -74118,15 +74114,24 @@ function mountAnnotationLayer(host, options) {
       event.stopPropagation();
     });
     strip = toolstrip;
-    root = el("div", { class: "annotation-layer", "data-active": "false" }, svg, toolstrip);
+    const scaleProbe = el("span", { class: "annotation-scale-probe", "aria-hidden": "true" });
+    root = el(
+      "div",
+      { class: "annotation-layer", "data-active": "false" },
+      svg,
+      toolstrip,
+      scaleProbe
+    );
     root.hidden = true;
     host.append(root);
     if (typeof ResizeObserver === "function") {
       resizeObserver = new ResizeObserver(() => {
         applyViewBox();
+        closePopover();
         fitStrip();
       });
       resizeObserver.observe(host);
+      resizeObserver.observe(scaleProbe);
     }
     drauu = createDrauu({
       el: svg,

@@ -19777,6 +19777,13 @@ h3 {
   margin: 0 var(--spacing-xs);
   background: var(--border);
 }
+.annotation-scale-probe {
+  position: absolute;
+  width: var(--spacing-sm);
+  height: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
 .annotation-popover {
   position: absolute;
   display: flex;
