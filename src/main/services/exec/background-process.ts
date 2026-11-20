@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import type { ChildProcess } from 'node:child_process'
 import {
   isProjectSandboxEnabled,
-  sandboxViolationCountForCommand,
+  sandboxViolationCountForBackgroundProcess,
   spawnBackgroundProcess,
 } from '../../project-sandbox/index.ts'
 import { spawnRunsOnSshTarget } from '../../project-sandbox/spawn.ts'
@@ -98,11 +98,6 @@ export interface BackgroundProcessInfo {
 }
 
 const processes = new Map<string, BackgroundProcess>()
-
-/** Background attempts already carry their own ASRT attribution id. */
-function sandboxViolationCountForRun(violationId: string): number {
-  return sandboxViolationCountForCommand(violationId)
-}
 
 /**
  * Operation ids are quoted back to the model and surfaced in tool-call detail
@@ -456,7 +451,7 @@ export async function startBackgroundProcess(
       if (entry.violationId) {
         entry.violationCount = Math.max(
           entry.violationCount,
-          sandboxViolationCountForRun(entry.violationId),
+          sandboxViolationCountForBackgroundProcess(entry.proc, entry.violationId),
         )
       }
       // Cancelled/timed-out work has no complete result to attribute. Release
@@ -513,7 +508,7 @@ export function backgroundSandboxRetryReasons(
     return null
   entry.violationCount = Math.max(
     entry.violationCount,
-    sandboxViolationCountForRun(entry.violationId),
+    sandboxViolationCountForBackgroundProcess(entry.proc, entry.violationId),
   )
   const detection = detectSandboxFailure({
     exitCode: entry.exitCode,
