@@ -11,8 +11,9 @@ import { getExplicitSettingsProfile } from '../storage/settings-context.ts'
 /**
  * Paired machines reached over SSH use a forward on the saved host's existing
  * multiplexed master to the machine's loopback listener: no new listener, and
- * nothing the machine checks changes. A status check (`interactive: false`)
- * uses only a connection that is already open, so a timer never prompts.
+ * nothing the machine checks changes. A status check or a screening or
+ * background classifier call (`interactive: false`) uses only a connection that
+ * is already open, so nothing a person didn't start prompts.
  */
 export const machineSshReach: MachineSshReach = {
   async open(hostId, remotePort, { interactive }) {

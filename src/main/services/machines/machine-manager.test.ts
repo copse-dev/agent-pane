@@ -664,7 +664,7 @@ test('pairs and calls a machine through its SSH host, with the same pin, token a
   }
 })
 
-test('a status check never opens an SSH connection, and says what would', async () => {
+test('a status check or a background call never opens an SSH connection, and says what would', async () => {
   const host = new MachineManager(
     storage(),
     () => [LOCAL_PROFILE],
@@ -696,8 +696,24 @@ test('a status check never opens an SSH connection, and says what would', async 
     assert.equal(checked.detail, 'Connect to Dev Server over SSH to reach this machine.')
     assert.deepEqual(reach.opens.at(-1), { hostId: 'dev', interactive: false })
 
-    // A call is user work, so it may connect again, and the machine comes back.
-    await client.call(peer.id, 'local', CLASSIFIER_TEST_REQUEST, new AbortController().signal, 5000)
+    // Screening and background calls are nobody's click: they must not reopen it either.
+    await assert.rejects(
+      client.call(peer.id, 'local', CLASSIFIER_TEST_REQUEST, new AbortController().signal, 5000),
+      /Connect to Dev Server over SSH to reach this machine\./,
+    )
+    assert.deepEqual(reach.opens.at(-1), { hostId: 'dev', interactive: false })
+    assert.equal(connected.value, false)
+
+    // Test classifier is a person's click, so it may connect again, and the machine comes back.
+    await client.call(
+      peer.id,
+      'local',
+      CLASSIFIER_TEST_REQUEST,
+      new AbortController().signal,
+      5000,
+      { interactive: true },
+    )
+    assert.deepEqual(reach.opens.at(-1), { hostId: 'dev', interactive: true })
     await client.refresh()
     assert.equal(client.snapshot().machines[0]?.status, 'connected')
   } finally {
