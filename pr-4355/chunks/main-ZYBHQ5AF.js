@@ -490,7 +490,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-UNK4IU3F.js";
+} from "./chunk-AP3HCCPP.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -13897,7 +13897,16 @@ function isRowCardOf(node, key) {
   return ROW_CARD_ATTRIBUTES.some((attribute) => node.getAttribute(attribute) === key);
 }
 function transcriptRowElement(list, key) {
-  return list.querySelector(`:scope > [data-message-id="${CSS.escape(key)}"]`);
+  let head = list.firstElementChild;
+  let tail = list.lastElementChild;
+  while (head && tail) {
+    if (head instanceof HTMLElement && head.dataset["messageId"] === key) return head;
+    if (tail instanceof HTMLElement && tail.dataset["messageId"] === key) return tail;
+    if (head === tail || head.nextElementSibling === tail) return null;
+    head = head.nextElementSibling;
+    tail = tail.previousElementSibling;
+  }
+  return null;
 }
 function removeTranscriptRow(list, key) {
   const element = transcriptRowElement(list, key);
@@ -22711,7 +22720,7 @@ function mountConversation(root, store2, api2, options = {}) {
     store2.on("message_token", (mid) => {
       const thread = getActiveThread(store2);
       const msg = thread?.messages.find((m2) => m2.id === mid);
-      const msgEl = list.querySelector(`[data-message-id="${mid}"]`);
+      const msgEl = transcriptRowElement(list, mid);
       const textEl = msgEl?.querySelector(".message-text");
       if (textEl && msg?.role === "assistant") {
         setAssistantMarkdown(textEl, msg.content, true, api2);
@@ -56209,9 +56218,11 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
   });
   let offered = [];
   const fetchTokens = /* @__PURE__ */ new Map();
+  const inFlightFetches = /* @__PURE__ */ new Map();
   const nextFetchToken = (threadId) => {
     const token = (fetchTokens.get(threadId) ?? 0) + 1;
     fetchTokens.set(threadId, token);
+    inFlightFetches.delete(threadId);
     return token;
   };
   const changesRefreshTokens = /* @__PURE__ */ new Map();
@@ -56224,6 +56235,14 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
   let displayedThreadId = null;
   const suggestionsByThread = /* @__PURE__ */ new Map();
   const consumedTurnKeys = /* @__PURE__ */ new Map();
+  function servingCache(threadId, turnKey) {
+    const cached = suggestionsByThread.get(threadId);
+    if (cached?.turnKey !== turnKey) return null;
+    return cached.settled || !turnSettled(threadId) ? cached : null;
+  }
+  function turnSettled(threadId) {
+    return store2.getState().threads.find((thread) => thread.id === threadId)?.status !== "running";
+  }
   function consumeSuggestions(threadId) {
     const exchange = lastExchange(store2, threadId);
     if (exchange) consumedTurnKeys.set(threadId, exchange.turnKey);
@@ -56319,8 +56338,8 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
     const consumedTurnKey = consumedTurnKeys.get(threadId);
     if (consumedTurnKey === exchange.turnKey) return;
     if (consumedTurnKey) consumedTurnKeys.delete(threadId);
-    const cached = suggestionsByThread.get(threadId);
-    if (cached?.turnKey === exchange.turnKey) {
+    const cached = servingCache(threadId, exchange.turnKey);
+    if (cached) {
       if (store2.getState().activeThreadId === threadId) {
         renderSuggestions(threadId, cached.suggestions);
       }
@@ -56328,7 +56347,11 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
     }
     const { activeProjectId } = store2.getState();
     if (!activeProjectId) return;
+    const settled = turnSettled(threadId);
+    const fetchKey = `${exchange.turnKey}\0${settled ? "settled" : "live"}`;
+    if (inFlightFetches.get(threadId)?.key === fetchKey) return;
     const token = nextFetchToken(threadId);
+    inFlightFetches.set(threadId, { key: fetchKey, token });
     try {
       const suggestions = await api2.agent.suggestFollowUps(
         activeProjectId,
@@ -56336,7 +56359,7 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
         JSON.stringify(exchange.context)
       );
       if (token !== fetchTokens.get(threadId)) return;
-      suggestionsByThread.set(threadId, { turnKey: exchange.turnKey, suggestions });
+      suggestionsByThread.set(threadId, { turnKey: exchange.turnKey, suggestions, settled });
       if (store2.getState().activeThreadId === threadId) {
         renderSuggestions(threadId, suggestions);
         void refreshChangesStat();
@@ -56345,6 +56368,8 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
       if (token !== fetchTokens.get(threadId)) return;
       suggestionsByThread.delete(threadId);
       if (store2.getState().activeThreadId === threadId) clearSuggestions();
+    } finally {
+      if (inFlightFetches.get(threadId)?.token === token) inFlightFetches.delete(threadId);
     }
   }
   async function refreshChangesStat() {
@@ -56364,7 +56389,7 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
     if (suggestionsByThread.get(activeId) !== cached) return;
     const next = reconcileChangesSuggestion(cached.suggestions, stats);
     if (next === cached.suggestions) return;
-    suggestionsByThread.set(activeId, { turnKey: cached.turnKey, suggestions: next });
+    suggestionsByThread.set(activeId, { ...cached, suggestions: next });
     if (store2.getState().activeThreadId === activeId) renderSuggestions(activeId, next);
   }
   function scheduleChangesRefresh() {
@@ -56389,8 +56414,8 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
       return;
     }
     if (consumedTurnKey) consumedTurnKeys.delete(activeId);
-    const cached = suggestionsByThread.get(activeId);
-    if (cached?.turnKey === exchange.turnKey) {
+    const cached = servingCache(activeId, exchange.turnKey);
+    if (cached) {
       renderSuggestions(activeId, cached.suggestions);
       return;
     }
@@ -56400,11 +56425,9 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
     store2.on("thread_status_changed", (tid, status) => {
       if (status === "running") {
         suggestionsByThread.delete(tid);
+        nextFetchToken(tid);
         nextChangesRefreshToken(tid);
-        if (tid === store2.getState().activeThreadId) {
-          nextFetchToken(tid);
-          clearSuggestions();
-        }
+        if (tid === store2.getState().activeThreadId) clearSuggestions();
         return;
       }
       if (status === "idle") void maybeFetchSuggestions(tid);
