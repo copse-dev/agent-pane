@@ -4,6 +4,7 @@ import { isRecord } from '@shared/unknown-value.ts'
 import type { AcpWireSink } from './acp-wire-tap.ts'
 import { getThreadExecutionContext } from '../thread-execution-context.ts'
 import { findThreadOwners, threadDirectoryPath } from '../thread-store.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 /**
  * Opt-in **ACP wire trace** — an unredacted, append-only record of everything an
@@ -225,7 +226,7 @@ function traceLine(record: {
       dir: record.dir,
       type: record.type,
       ...(record.method !== undefined ? { method: record.method } : {}),
-      unserializable: err instanceof Error ? err.message : String(err),
+      unserializable: errorMessage(err),
     })}\n`
   }
 }

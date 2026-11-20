@@ -101,6 +101,8 @@ describe('custom child skill execution', () => {
           assert.notEqual(turn, parent)
           turns.add(turn)
           const systemPrompt = messages.find((message) => message.role === 'system')?.content ?? ''
+          assert.match(systemPrompt, new RegExp(`OPERATOR_${id}`))
+          assert.doesNotMatch(systemPrompt, new RegExp(`OPERATOR_${id === 'one' ? 'two' : 'one'}`))
           assert.doesNotMatch(systemPrompt, /<agent_skill name="native-only"/)
           await assert.rejects(
             turn.read('native-only', undefined, new AbortController().signal),
@@ -133,6 +135,7 @@ describe('custom child skill execution', () => {
         {
           parentToolCallId: id,
           parentGoal: 'Complete tiny workflow',
+          operatorContext: `OPERATOR_${id}`,
           provider,
           parentModel: 'test-model',
           registry,

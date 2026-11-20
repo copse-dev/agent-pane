@@ -8,6 +8,7 @@ import type { TaskSupervisor } from '../supervisor/task-supervisor.ts'
 import {
   startBackgroundProcess,
   adoptBackgroundProcess,
+  peekBackgroundProcessLogs,
   stopBackgroundProcess,
   stopBackgroundProcessesForThread,
   type BackgroundProcessCompletion,
@@ -22,7 +23,20 @@ let supervisor: TaskSupervisor | null = null
 let disposeCanceller: (() => void) | null = null
 let installationReferences = 0
 const scopedSupervisor = new AsyncLocalStorage<TaskSupervisor>()
-const taskIdsByProcess = new Map<string, string>()
+const taskIdsByProcess = new Map<
+  string,
+  { taskId: string; owner: ThreadExecutionOwner; completionWakeArmed: boolean }
+>()
+
+/** Work that can still resume its agent, including a completion currently being delivered. */
+export function hasBackgroundCompletionWake(owner: ThreadExecutionOwner): boolean {
+  return [...taskIdsByProcess.values()].some(
+    (entry) =>
+      entry.completionWakeArmed &&
+      entry.owner.projectId === owner.projectId &&
+      entry.owner.threadId === owner.threadId,
+  )
+}
 
 function activeSupervisor(): TaskSupervisor | null {
   return scopedSupervisor.getStore() ?? supervisor
@@ -77,7 +91,13 @@ export interface StartSupervisedBackgroundProcessOptions extends Omit<
   'owner' | 'onCompletion'
 > {
   owner: ThreadExecutionOwner
+  /** The caller has captured an agent completion wake, rather than only a status reporter. */
+  completionWakeArmed?: boolean
   onCompletion?: (completion: BackgroundProcessCompletion) => void | Promise<void>
+}
+
+export interface AdoptSupervisedBackgroundProcessOptions extends AdoptBackgroundProcessOptions {
+  completionWakeArmed?: boolean
 }
 
 export async function startSupervisedBackgroundProcess(
@@ -89,7 +109,7 @@ export async function startSupervisedBackgroundProcess(
 }
 
 export async function adoptSupervisedBackgroundProcess(
-  opts: AdoptBackgroundProcessOptions,
+  opts: AdoptSupervisedBackgroundProcessOptions,
   shouldCancelAdoption?: () => boolean,
 ): Promise<BackgroundProcessInfo> {
   return superviseBackgroundProcess(
@@ -100,7 +120,10 @@ export async function adoptSupervisedBackgroundProcess(
 }
 
 async function superviseBackgroundProcess(
-  opts: Pick<StartSupervisedBackgroundProcessOptions, 'owner' | 'timeoutMs' | 'onCompletion'>,
+  opts: Pick<
+    StartSupervisedBackgroundProcessOptions,
+    'owner' | 'timeoutMs' | 'onCompletion' | 'completionWakeArmed'
+  >,
   start: (
     onCompletion: NonNullable<StartBackgroundProcessOptions['onCompletion']>,
   ) => Promise<BackgroundProcessInfo>,
@@ -116,22 +139,25 @@ async function superviseBackgroundProcess(
   const settle = async (): Promise<void> => {
     if (settled || !completion || !supervisedTaskId || !acceptingCompletion) return
     settled = true
-    taskIdsByProcess.delete(processKey(opts.owner, completion.info.id))
-    const succeeded = completion.info.exitCode === 0 && !completion.info.timedOut
-    const task = succeeded
-      ? await installedSupervisor.completeExternal(opts.owner.projectId, supervisedTaskId, {
-          kind: 'handler',
-          ref: completion.info.id,
-        })
-      : await installedSupervisor.failExternal(
-          opts.owner.projectId,
-          supervisedTaskId,
-          completion.info.timedOut
-            ? 'background process timed out'
-            : `background process exited with code ${String(completion.info.exitCode)}`,
-        )
-    if (task?.state !== (succeeded ? 'completed' : 'failed')) return
-    await opts.onCompletion?.(completion)
+    try {
+      const succeeded = completion.info.exitCode === 0 && !completion.info.timedOut
+      const task = succeeded
+        ? await installedSupervisor.completeExternal(opts.owner.projectId, supervisedTaskId, {
+            kind: 'handler',
+            ref: completion.info.id,
+          })
+        : await installedSupervisor.failExternal(
+            opts.owner.projectId,
+            supervisedTaskId,
+            completion.info.timedOut
+              ? 'background process timed out'
+              : `background process exited with code ${String(completion.info.exitCode)}`,
+          )
+      if (task?.state !== (succeeded ? 'completed' : 'failed')) return
+      await opts.onCompletion?.(completion)
+    } finally {
+      taskIdsByProcess.delete(processKey(opts.owner, completion.info.id))
+    }
   }
 
   const info = await start(async (completed): Promise<void> => {
@@ -166,12 +192,21 @@ async function superviseBackgroundProcess(
       info.id,
     )
     supervisedTaskId = task.taskId
-    taskIdsByProcess.set(processKey(opts.owner, info.id), task.taskId)
+    taskIdsByProcess.set(processKey(opts.owner, info.id), {
+      taskId: task.taskId,
+      owner: opts.owner,
+      completionWakeArmed: opts.completionWakeArmed === true,
+    })
     // Stop may have killed the process while this record was being written.
     // Fence cancellation before releasing a buffered completion to the task.
-    if (shouldCancelAdoption?.()) {
+    if (
+      shouldCancelAdoption?.() ||
+      installedSupervisor.get(opts.owner.projectId, task.taskId)?.state !== 'running' ||
+      peekBackgroundProcessLogs(info.id, opts.owner) === null
+    ) {
       await installedSupervisor.cancel(opts.owner.projectId, task.taskId)
       stopBackgroundProcess(info.id, opts.owner)
+      taskIdsByProcess.delete(processKey(opts.owner, info.id))
       return info
     }
     acceptingCompletion = true
@@ -181,6 +216,7 @@ async function superviseBackgroundProcess(
     return info
   } catch (error) {
     stopBackgroundProcess(info.id, opts.owner)
+    taskIdsByProcess.delete(processKey(opts.owner, info.id))
     throw error
   }
 }
@@ -189,10 +225,12 @@ export async function stopSupervisedBackgroundProcess(
   processId: string,
   owner: ThreadExecutionOwner,
 ): Promise<boolean> {
-  const taskId = taskIdsByProcess.get(processKey(owner, processId))
+  const key = processKey(owner, processId)
+  const taskId = taskIdsByProcess.get(key)?.taskId
   const installedSupervisor = activeSupervisor()
   if (taskId && installedSupervisor) {
-    await installedSupervisor.cancel(owner.projectId, taskId)
+    const task = await installedSupervisor.cancel(owner.projectId, taskId)
+    if (task?.state === 'cancelled') taskIdsByProcess.delete(key)
     // Scoped/headless supervisors do not install the desktop singleton's
     // external canceller. Keep process termination as a fail-safe so their
     // metadata cannot say "cancelled" while the child continues running.
@@ -250,6 +288,7 @@ async function stopThreadBackgroundProcesses(owner: ThreadExecutionOwner): Promi
   )
   if (installedSupervisor) {
     await Promise.all(tasks.map((task) => installedSupervisor.cancel(task.projectId, task.taskId)))
+    for (const id of processIds) taskIdsByProcess.delete(processKey(owner, id))
   }
   const remaining = await stopBackgroundProcessesForThread(owner)
   return [...new Set([...processIds, ...remaining])]

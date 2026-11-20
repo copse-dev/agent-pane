@@ -280,6 +280,13 @@ for focused verification and refuses a report for another commit. Source reads r
 the trusted host; project commands and reproducers receive a scrubbed environment inside
 network-disabled, capability-free containers with a read-only root.
 
+Full-review description summaries are handed off as bounded inert data to a separate
+model-free publisher. It verifies the immutable same-run artifact ID and ZIP/payload
+digests against trusted producer outputs, rechecks the authorized PR head/base and consent,
+and merges into the current author description using its own workflow token. The App
+continues to post reviews and feedback labels. This prevents a bot summary PATCH from
+dispatching another CI candidate without broadening the model read-context credential.
+
 The run posts one advisory review
 (`--post-review github --repo owner/name --pr n`), having read the pull request's
 description, discussion, reviews and images first (`--read-pr github`); the default lenses

@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import { readFile } from 'node:fs/promises'
 import { createInterface } from 'node:readline'
 import type { SshExecResult } from '@shared/types/ssh-workspace.ts'
@@ -138,10 +138,6 @@ const nativeUnavailable = new Set<string>()
 const approvedHosts = new Set<string>()
 /** Invalidates setup work that was still awaiting I/O when all watchers stopped. */
 let lifecycleGeneration = 0
-
-function sha256Hex(bytes: Buffer): string {
-  return createHash('sha256').update(bytes).digest('hex')
-}
 
 /** First 64-hex-char token in `sha256sum`/`shasum` output, or null. */
 export function parseRemoteHash(stdout: string): string | null {

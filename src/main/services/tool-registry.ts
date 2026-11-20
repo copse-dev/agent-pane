@@ -221,6 +221,16 @@ export class ToolRegistry {
     }))
   }
 
+  /**
+   * {@link toLLMTools} narrowed to an allow-list, for subagents and workers that
+   * get a fixed tool set. Keeps the stable name order; names not registered (or
+   * not model-facing) are simply absent.
+   */
+  toLLMToolsNamed(names: Iterable<string>): LLMTool[] {
+    const allowed = new Set<string>(names)
+    return this.toLLMTools().filter((tool) => allowed.has(tool.name))
+  }
+
   /** Lightweight inventory for Settings; never converts parameter schemas. */
   catalogTools(): ToolCatalogDescriptor[] {
     return Array.from(this.tools.values(), ({ name, description }) => ({ name, description }))

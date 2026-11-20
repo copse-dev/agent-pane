@@ -11,6 +11,11 @@ The implementation lives in [`@copse/thread-store`](../packages/thread-store/REA
 The app's `src/main/services/thread-store.ts` is a compatibility re-export that
 installs the profile and tracing environment first.
 
+The native `search_project_context` / `read_project_context` tools provide bounded,
+project-scoped reads over message/tool evidence and enabled OKF memories. They preserve
+conversation-read consent and do not index private provider/session files. See the
+[retrieval prototype](spikes/project-context-retrieval.md) for limits and remaining work.
+
 ## Location
 
 ```

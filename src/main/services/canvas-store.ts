@@ -16,7 +16,7 @@
  * prefers that file over the snapshot, so an artefact restored after a restart
  * reflects edits made to the source in between.
  */
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
@@ -83,7 +83,7 @@ function artefactFileBase(title: string): string {
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '')
       .slice(0, 60) || 'artefact'
-  const hash = createHash('sha256').update(title, 'utf8').digest('hex').slice(0, 8)
+  const hash = sha256Hex(title).slice(0, 8)
   return `${slug}-${hash}`
 }
 

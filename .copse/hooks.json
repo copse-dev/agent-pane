@@ -3,7 +3,7 @@
   "hooks": {
     "afterFileEdit": [
       {
-        "command": "node ../scripts/hook-file-check.mts --dialect copse --fix",
+        "command": "node scripts/hook-file-check.mts --dialect copse --fix",
         "glob": [
           "src/**/*.{ts,mts,tsx,css,html}",
           "packages/*/src/**/*.ts",
@@ -14,7 +14,7 @@
         "timeout": 60
       },
       {
-        "command": "node ../scripts/hook-file-check.mts --dialect copse",
+        "command": "node scripts/hook-file-check.mts --dialect copse",
         "glob": [
           "src/**/*.{ts,mts,tsx}",
           "packages/*/src/**/*.ts",

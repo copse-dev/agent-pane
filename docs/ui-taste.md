@@ -221,8 +221,8 @@ that for the migrated hooks.
 - Attachment and reference chips — composer image/file chips, inline paste and `@thread` chips,
   transcript attachment chips, roadmap attachments — take `--radius`. They are data, not calls to
   action, and pill geometry is reserved for primary CTAs. A fact that is neither an attachment
-  nor clickable (a proposed thread's "Its own checkout" and file list) takes no box at all: it is
-  muted text with its icon.
+  nor clickable (a proposed thread's "Its own checkout" and file list, a deferred thread's
+  "Reading your checkout" beside its branch) takes no box at all: it is muted text with its icon.
 - Composer advisory strips (branch guard, dirty checkout, checkout error, image compatibility,
   context fit) are `.composer-banner` with `.composer-banner-icon`, `.composer-banner-text`, and
   `.composer-banner-action` buttons. The strip's `--composer-banner-tone` (warning by default,

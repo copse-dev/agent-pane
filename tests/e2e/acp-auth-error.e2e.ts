@@ -1,6 +1,13 @@
 import { $, browser, expect } from '@wdio/globals'
 import { join } from 'node:path'
-import { resetUserData, seedAcpAuthErrorFixture } from './helpers/seed-config.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
+import { waitForAgentIdle } from './helpers.ts'
+import {
+  resetUserData,
+  seedAcpAuthErrorFixture,
+  seedEmptyProject,
+  seedStableWorkspace,
+} from './helpers/seed-config.ts'
 import { prepareE2eScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 
@@ -271,5 +278,118 @@ describe('ACP authentication error presentation', () => {
       '[data-message-id="msg-assistant-claude-org-auth"]',
       'claude-org-check-auth-error.png',
     )
+  })
+})
+
+// Found dogfooding #4278: Claude's OAuth sign-in expired mid-turn. Claude Agent
+// ACP streamed the CLI's synthetic "Failed to authenticate: OAuth session
+// expired…" message under its own message id, then failed the prompt with a
+// bare -32000. The notice was glued onto that text, so its alert rendered as a
+// raw `[!WARNING]` line, and it said "not signed in" instead of "expired". The
+// mock agent (`fail-auth-after:`) drives that exact sequence for real.
+describe('ACP sign-in that expires mid-turn', function () {
+  this.timeout(120_000)
+  const originalPath = process.env['PATH']
+  const originalPreservePath = process.env['COPSE_PRESERVE_PATH']
+  const streamed = 'Failed to authenticate: OAuth session expired and could not be refreshed'
+
+  before(async () => {
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['OPENAI_API_KEY'] = ''
+    resetUserData()
+    writeE2eEnv({
+      COPSE_PRESERVE_PATH: '1',
+      PATH:
+        process.platform === 'win32'
+          ? join(process.env['SystemRoot'] ?? 'C:\\Windows', 'System32')
+          : '/usr/bin:/bin',
+    })
+    seedEmptyProject(seedStableWorkspace(), 'e2e-acp-auth-expired-mid-turn', {
+      model: 'acp:claude-acp#fixture-model',
+      registeredAcpAgents: [
+        // Keep an ambient Codex CLI's adapter-install approval out of this journey.
+        { id: 'codex-acp', title: 'Codex', command: 'codex-acp', enabled: false },
+        {
+          id: 'claude-acp',
+          title: 'Claude',
+          command: process.execPath,
+          args: [join(process.cwd(), 'tests/fixtures/mock-acp-agent.mjs')],
+          // The catalog seatbelt cannot read a fixture outside the workspace;
+          // this journey is about the failure copy, so opt out as a user can.
+          sandbox: false,
+          enabled: true,
+          model: 'fixture-model',
+          availableModels: [{ value: 'fixture-model', label: 'Fixture model' }],
+          modelsProbedAt: Date.now(),
+        },
+      ],
+    })
+    await browser.reloadSession()
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+  })
+
+  after(() => {
+    writeE2eEnv({ COPSE_PRESERVE_PATH: originalPreservePath, PATH: originalPath })
+    resetUserData()
+  })
+
+  it('shows the expired sign-in as its own alert after the agent’s words', async () => {
+    await setComposerValue(`fail-auth-after:${streamed}`)
+    await submitComposer()
+
+    // The sign-in offer, when a terminal can run it, names the same verdict.
+    const offer = $('#ask-user-dialog')
+    const offered = await offer.waitForDisplayed({ timeout: 20_000 }).then(
+      () => true,
+      () => false,
+    )
+    if (offered) {
+      await expect(offer.$('.ask-user-question')).toHaveText(
+        expect.stringContaining('saved sign-in has expired'),
+      )
+      await offer.$('.ask-user-option=Not now').click()
+    }
+    await waitForAgentIdle(30_000)
+
+    const messageId = await browser.waitUntil(
+      () =>
+        browser.execute(() => {
+          const last = [...document.querySelectorAll('.messages-list .msg-assistant')].at(-1)
+          if (!last || document.querySelector('.messages-list .is-streaming')) return false
+          if (!last.querySelector('.markdown-alert-warning')) return false
+          return last.getAttribute('data-message-id') ?? false
+        }),
+      { timeout: 30_000, interval: 100, timeoutMsg: 'the sign-in alert did not render' },
+    )
+    const selector = `[data-message-id="${messageId}"]`
+    const message = await $(`${selector} .message-text`).getElement()
+    const warning = await message.$('.markdown-alert-warning').getElement()
+    await expect(warning.$('strong')).toHaveText('Claude sign-in expired')
+    await expect(message.$('ol code')).toHaveText('claude auth login')
+    await expect(message.$('pre code')).toHaveText(
+      expect.stringContaining('ACP error -32000 (Authentication required)'),
+    )
+    // The agent's words stay a paragraph of their own, ahead of the alert, and
+    // no alert marker leaks into the prose.
+    const layout = await browser.execute((sel) => {
+      const root = document.querySelector(`${sel} .message-text`)
+      const first = root?.firstElementChild
+      const alert = root?.querySelector('.markdown-alert-warning')
+      return {
+        text: root?.textContent ?? '',
+        first: first?.tagName === 'P' ? first.textContent : null,
+        firstAboveAlert:
+          first && alert
+            ? first.getBoundingClientRect().bottom <= alert.getBoundingClientRect().top
+            : false,
+      }
+    }, selector)
+    expect(layout.first).toBe(streamed)
+    expect(layout.firstAboveAlert).toBe(true)
+    expect(layout.text).not.toContain('[!WARNING]')
+    expect(layout.text).not.toContain('needs authentication')
+
+    await saveAuthMessage(selector, 'acp-auth-expired-mid-turn.png')
   })
 })

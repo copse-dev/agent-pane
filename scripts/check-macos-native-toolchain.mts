@@ -126,16 +126,17 @@ function toolchainError(
 }
 
 /**
- * Link a tiny C++ program with the selected macOS SDK before node-gyp emits a
- * long native-module build log. This catches partial Xcode/CLT updates where
- * clang can compile sources but its linker cannot parse the newly installed
- * SDK's text-based stubs.
+ * Link a tiny C++ program with the selected macOS SDK at install, before the
+ * build compiles its native helpers with `xcrun clang` (see
+ * build-process-memory.mts). This catches partial Xcode/CLT updates where clang
+ * can compile sources but its linker cannot parse the newly installed SDK's
+ * text-based stubs, and reports recovery steps instead of a raw linker error.
  */
 export function checkMacosNativeToolchain(options: NativeToolchainCheckOptions = {}): void {
   if ((options.platform ?? process.platform) !== 'darwin') return
 
   const env = options.env ?? process.env
-  if (env['SKIP_ELECTRON_REBUILD'] === '1') return
+  if (env['SKIP_NATIVE_TOOLCHAIN_CHECK'] === '1') return
 
   const runCommand = options.runCommand ?? defaultRunCommand
   const developerOverride = env['DEVELOPER_DIR']?.trim() ?? ''
