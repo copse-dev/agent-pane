@@ -91,6 +91,20 @@ interface PreviewWebview extends HTMLElement {
   executeJavaScript(code: string): Promise<unknown>
 }
 
+async function ensureProjectPreview(): Promise<void> {
+  if (await $('.browser-tab-panel.is-active .browser-url-input').isExisting()) return
+  const scenario = await prepareMockToolTurn(
+    'Open the application preview in the browser.',
+    { name: 'browser_preview', args: {} },
+    'The browser preview result is available above.',
+  )
+  await submitComposer()
+  await $('.browser-tab-panel.is-active .browser-url-input').waitForExist({ timeout: 30_000 })
+  await expectAssistantReply('The browser preview result is available above.')
+  await waitForAgentIdle(15_000)
+  await scenario.assertComplete()
+}
+
 async function waitForPreviewViewport(): Promise<void> {
   await browser.waitUntil(
     () =>
@@ -231,6 +245,7 @@ describe('browser preview tool', () => {
   })
 
   it('shows actionable missing-entry guidance without opening or navigating a tab', async () => {
+    await ensureProjectPreview()
     const panelsBefore = await $$('.browser-tab-panel').getElements()
     const addressBefore = await $('.browser-tab-panel.is-active .browser-url-input').getValue()
     // Return to the composer through the visible Browser control before sending another turn.
