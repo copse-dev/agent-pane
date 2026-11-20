@@ -123,3 +123,43 @@ it('shows partial onboarding, ranks real attention first, and never starts agent
     resetAttention()
   }
 })
+
+it('asks for assessments only once the Needs action sort is chosen', async () => {
+  const store = createStore({
+    projects: [{ id: 'p', path: '/work', name: 'work' }],
+    activeProjectId: 'p',
+    expandedProjectId: 'p',
+    sidebarThreadSort: 'activity',
+  })
+  const base = createFakeApi()
+  let reads = 0
+  const host = document.createElement('div')
+  document.body.append(host)
+  const cleanup = mountProjectsPane(host, store, {
+    ...base,
+    threads: {
+      ...base.threads,
+      actionState: async () => {
+        reads++
+        return {
+          total: 0,
+          assessed: 0,
+          pending: 0,
+          assessing: false,
+          budgetLimited: false,
+          entries: [],
+        }
+      },
+    },
+  })
+  try {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    assert.equal(reads, 0)
+    store.setState({ sidebarThreadSort: 'action' })
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    assert.equal(reads, 1)
+  } finally {
+    cleanup()
+    host.remove()
+  }
+})

@@ -28,6 +28,7 @@ interface Harness {
   threads: Thread[]
   prompts: string[]
   calls: () => number
+  enable: (value: boolean) => void
   now: (value: number) => void
   reply: (value: ThreadActionVerdict | null) => void
   assessor: () => ThreadActionAssessor
@@ -35,6 +36,7 @@ interface Harness {
 
 function harness(threads = [thread('a')]): Harness {
   let persisted: unknown
+  let enabled = true
   let calls = 0
   let now = 100
   let reply: ThreadActionVerdict | null = {
@@ -44,6 +46,7 @@ function harness(threads = [thread('a')]): Harness {
   }
   const prompts: string[] = []
   const deps: ThreadActionDeps = {
+    enabled: () => enabled,
     now: () => now,
     projects: () => ['p'],
     list: async () => threads,
@@ -73,6 +76,9 @@ function harness(threads = [thread('a')]): Harness {
     threads,
     prompts,
     calls: (): number => calls,
+    enable: (value: boolean): void => {
+      enabled = value
+    },
     now: (value: number): void => {
       now = value
     },
@@ -95,6 +101,30 @@ describe('thread action assessment', () => {
     assert.equal(assessor.snapshot().entries[1]?.threadId, 'old')
     assert.ok(h.prompts[0]?.includes('File changes, unread replies'))
     assert.ok(h.prompts[0]?.includes('Explain the code'))
+  })
+
+  it('sends no thread history to a model unless the Needs action sort is chosen', async () => {
+    const h = harness()
+    let routes = 0
+    const route = h.deps.route
+    h.deps.route = async (): ReturnType<ThreadActionDeps['route']> => {
+      routes++
+      return route()
+    }
+    let saves = 0
+    const save = h.deps.save
+    h.deps.save = (ledger): void => {
+      saves++
+      save(ledger)
+    }
+    h.enable(false)
+    const assessor = h.assessor()
+    await assessor.tick()
+    await assessor.tick()
+    assert.deepEqual([routes, h.calls(), saves], [0, 0, 0])
+    h.enable(true)
+    await assessor.tick()
+    assert.equal(h.calls(), 1)
   })
 
   it('retains verdicts across restart and metadata changes without another judge call', async () => {

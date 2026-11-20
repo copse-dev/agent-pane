@@ -13,6 +13,7 @@ import { safeJsonParse, decodeWithSchema } from '@shared/safe-json.ts'
 import { recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { getProjectThread, loadProjectThreadMetas, getThreadMeta } from './thread-store.ts'
 import { storageGet, storageSet } from './storage/storage.ts'
+import { getSetting } from './storage/settings.ts'
 import { resolveSmallTasksRoute, type SmallTasksRoute } from './providers/small-tasks-provider.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { recordUsageEvent } from './storage/usage-ledger.ts'
@@ -38,6 +39,8 @@ type Ledger = z.infer<typeof ledgerSchema>
 type Meta = Omit<Thread, 'messages'>
 
 export interface ThreadActionDeps {
+  /** Whether the user chose the Needs action sort, the only view that shows assessments. */
+  enabled: () => boolean
   now: () => number
   projects: () => string[]
   list: (projectId: string) => Promise<Thread[]>
@@ -114,6 +117,7 @@ function promptFor(evidence: string): string {
 }
 
 const defaults: Omit<ThreadActionDeps, 'busy'> = {
+  enabled: () => getSetting<string>('sidebarThreadSort', 'activity') === 'action',
   now: Date.now,
   projects: () =>
     recordArrayOrEmpty(storageGet('projects')).flatMap((project) =>
@@ -179,7 +183,8 @@ export class ThreadActionAssessor {
   }
 
   async tick(): Promise<void> {
-    if (this.running) return
+    // Nobody sees a verdict under another sort, so no thread history goes to a model.
+    if (this.running || !this.deps.enabled()) return
     this.running = true
     try {
       const ledger = this.load()

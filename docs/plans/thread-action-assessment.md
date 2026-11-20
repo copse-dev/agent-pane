@@ -10,6 +10,7 @@ Acceptance criteria:
 - New turns/results invalidate the relevant assessment. In-flight results cannot overwrite newer evidence. Uncertainty is terminal for that snapshot; failures do not create retry loops.
 - One assessment runs at a time with bounded input, timeout, and a persistent hourly call/input budget. Onboarding resumes after restart.
 - The feature never starts agent work. The signal includes its evidence revision and reason.
+- Assessment runs, and the sidebar asks for its state, only while the Needs action sort is chosen, the one view that shows it. No thread history reaches the small-tasks model otherwise.
 
 Implementation: use the existing small-tasks route and usage ledger, persist a separate schema-validated assessment ledger under the Copse profile, and expose a read-only snapshot to the thread browser. Existing approvals/questions remain authoritative runtime signals.
 

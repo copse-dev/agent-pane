@@ -561,7 +561,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   }
   const actionsDisposed = (): boolean => actionDisposed
   async function refreshActions(): Promise<void> {
-    if (actionLoading || actionsDisposed()) return
+    // Main assesses only under the Needs action sort, the one view that shows it.
+    if (actionLoading || actionsDisposed() || store.getState().sidebarThreadSort !== 'action')
+      return
     actionLoading = true
     try {
       const next = await api.threads.actionState()
@@ -3005,6 +3007,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       (s) => s.sidebarProjectFilterId,
       () => {
         render()
+      },
+    ),
+    store.select(
+      (s) => s.sidebarThreadSort,
+      (sort) => {
+        if (sort === 'action') void refreshActions()
       },
     ),
     // Streaming and hydration must not restart the disk scan. Resident human
