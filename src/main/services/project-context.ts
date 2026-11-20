@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
@@ -91,11 +91,8 @@ export interface ProjectContextSearch {
   cursor?: string | undefined
 }
 
-function hash(text: string): string {
-  return createHash('sha256').update(text).digest('hex')
-}
 function recordId(projectId: string, kind: ProjectContextKind, ...parts: string[]): string {
-  return `ctx1:${kind}:${hash(JSON.stringify([projectId, kind, ...parts]))}`
+  return `ctx1:${kind}:${sha256Hex(JSON.stringify([projectId, kind, ...parts]))}`
 }
 function normalize(text: string): string {
   return text.normalize('NFC').toLowerCase()
@@ -212,14 +209,14 @@ export class ProjectContextReader {
           const text = await this.files.read(threadRoot, `${relative}/${ref.ref}`)
           if (text === null) continue
           const body = tool === null ? parseOkfMessage(text)?.body : text
-          if (body === undefined || hash(body) !== ref.sha256) {
+          if (body === undefined || sha256Hex(body) !== ref.sha256) {
             this.files.omissions.add('source-integrity')
             continue
           }
           if (body.trim() === '') continue
           threadRecords.push({
             id: recordId(projectId, 'evidence', threadId, line.id, tool?.id ?? ''),
-            revision: hash(metaText + '\n' + raw + '\n' + body),
+            revision: sha256Hex(metaText + '\n' + raw + '\n' + body),
             kind: 'evidence',
             title: `${meta.title.slice(0, 120)}${tool ? ` · ${tool.name}` : ''}`,
             author: tool
@@ -316,11 +313,11 @@ export class ProjectContextReader {
       if (note.status && ['forgotten', 'superseded', 'deleted'].includes(note.status)) continue
       records.push({
         id: recordId(projectId, 'memory', note.id),
-        revision: hash(raw),
+        revision: sha256Hex(raw),
         kind: 'memory',
         title: note.title.slice(0, 120),
         author: 'unknown',
-        source: { store: 'knowledge', path: `${memoryDir}/${name}`, sha256: hash(raw) },
+        source: { store: 'knowledge', path: `${memoryDir}/${name}`, sha256: sha256Hex(raw) },
         freshness: 'unknown',
         provenance: note.fields['externalContext'] === 'true' ? 'external-context' : 'unknown',
         body: note.body,
@@ -365,7 +362,7 @@ export class ProjectContextReader {
           terms.filter((t) => normalize(r.title).includes(t)).length
         return own || titles(b) - titles(a) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
       })
-    const snapshot = hash(
+    const snapshot = sha256Hex(
       JSON.stringify([
         this.scope.projectId,
         this.scope.threadId,
@@ -422,7 +419,7 @@ export class ProjectContextReader {
       })
     if (revision !== undefined && record.revision !== revision)
       return JSON.stringify({ error: 'Source changed; search again before reading this revision.' })
-    const snapshot = hash(JSON.stringify([this.scope.projectId, id, record.revision]))
+    const snapshot = sha256Hex(JSON.stringify([this.scope.projectId, id, record.revision]))
     const offset = cursorOffset(cursor, snapshot)
     if (offset === null || offset > record.body.length)
       return JSON.stringify({ error: 'Source changed or cursor is invalid; read again.' })

@@ -22,6 +22,7 @@ import { notifyThreadResourceFinished } from '../worktree-parking-events.ts'
 import { perfSpan } from '../diagnostics/perf-trace.ts'
 import { acpSessionActivity } from './acp-session-activity.ts'
 import { registerAcpSessionProcess } from './acp-process-registry.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 /**
  * Per-thread pool of persistent ACP sessions (issue #605).
@@ -191,9 +192,7 @@ function ensureReaper(): void {
   if (reaper) return
   reaper = setInterval(() => {
     void reapIdleAcpSessions().catch((err: unknown) => {
-      console.warn(
-        `[acp-pool] idle session cleanup failed: ${err instanceof Error ? err.message : String(err)}`,
-      )
+      console.warn(`[acp-pool] idle session cleanup failed: ${errorMessage(err)}`)
     })
   }, REAP_INTERVAL_MS)
   reaper.unref()
@@ -420,7 +419,7 @@ async function acquireAcpSessionUnlocked(
         }).catch((err: unknown) => {
           console.error(
             `[acp-bridge] failed to start for thread ${opts.threadId}; native tools will be unavailable this session:`,
-            err instanceof Error ? err.message : String(err),
+            errorMessage(err),
           )
           return null
         }),
@@ -449,7 +448,9 @@ async function acquireAcpSessionUnlocked(
   }
   const config: AcpAgentSpawnConfig = {
     ...opts.config,
-    ...(bridge ? { nativeBridge: { url: bridge.url, token: bridge.token } } : {}),
+    ...(bridge
+      ? { nativeBridge: { url: bridge.url, token: bridge.token, serverName: bridge.serverName } }
+      : {}),
   }
 
   // Opt-in ACP wire diagnostic (`COPSE_DEBUG_ACP_UPDATES=1`). Created here

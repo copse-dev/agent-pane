@@ -109,6 +109,12 @@ export type ThreadWorktreeAttachment =
        */
       agentBusy?: boolean
     }
+  /**
+   * The checkout's HEAD is its recorded base branch, not its own (#1882).
+   * Copse refuses to run in it, since edits would land on the base branch.
+   * Nothing repairs it automatically; the user checks the thread branch out.
+   */
+  | { state: 'on-base-branch'; branch: string; baseBranch: string }
 
 export interface UncommittedRebasePick {
   /** Full SHA of the commit being picked; its message and author are reused. */

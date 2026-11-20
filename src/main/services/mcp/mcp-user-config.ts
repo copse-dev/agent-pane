@@ -1,6 +1,6 @@
-import { randomUUID } from 'node:crypto'
 import * as fs from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
+import { writeFileAtomic } from '@copse/std/write-file-atomic.ts'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import type {
@@ -185,15 +185,8 @@ export async function listUserMcpServers(
 
 async function writeRawFile(path: string, file: RawFile): Promise<void> {
   // Env vars and headers can hold API keys: keep the file private to the user.
-  await fs.mkdir(dirname(path), { recursive: true })
-  const temporary = `${path}.${randomUUID()}.tmp`
-  await fs.writeFile(temporary, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600, flag: 'wx' })
-  try {
-    await fs.rename(temporary, path)
-  } catch (err) {
-    await fs.rm(temporary, { force: true })
-    throw err
-  }
+  await writeFileAtomic(path, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 })
+  // `mode` is masked by the umask; force the private bits regardless.
   await fs.chmod(path, 0o600)
 }
 

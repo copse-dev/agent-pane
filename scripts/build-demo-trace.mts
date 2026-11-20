@@ -107,7 +107,13 @@ type ThreadLine = z.infer<typeof threadLineSchema>
 type MessageLine = z.infer<typeof messageLineSchema>
 type ToolCallLine = z.infer<typeof toolCallSchema>
 
-const COPSE_BRIDGE_TOOL_PREFIX = 'mcp.copse.'
+/**
+ * Codex's name for a bridged call: `mcp.<server>.<tool>`, where the server is
+ * the bare `copse` of exports recorded before #4125 or a `copse-<nonce>` name
+ * since. Mirrors `BRIDGE_SERVER_NAME_PATTERN` in `acp-bridge-name.ts`, in the
+ * exact case Copse mounts it.
+ */
+const COPSE_BRIDGE_TOOL_PREFIX = /^mcp\.copse(?:-[a-z0-9]{8})?\./
 
 function recordValue(value: unknown): Record<string, unknown> | undefined {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -116,17 +122,18 @@ function recordValue(value: unknown): Record<string, unknown> | undefined {
 }
 
 /**
- * ACP exports preserve the adapter's MCP envelope (`mcp.copse.write_file` with
+ * ACP exports preserve the adapter's MCP envelope (`mcp.copse-<nonce>.write_file` with
  * `{server, tool, arguments}`). Demo replay drives Copse's native tool path, so
  * collapse that envelope back to the same canonical call a built-in agent
  * emits. The underlying arguments remain verbatim and still require review.
  */
 function replayToolCall(call: ToolCallLine): ToolCallLine {
-  if (!call.name.startsWith(COPSE_BRIDGE_TOOL_PREFIX)) return call
+  const prefix = COPSE_BRIDGE_TOOL_PREFIX.exec(call.name)?.[0]
+  if (!prefix) return call
   const outer = recordValue(call.args)
   return {
     ...call,
-    name: call.name.slice(COPSE_BRIDGE_TOOL_PREFIX.length),
+    name: call.name.slice(prefix.length),
     args: recordValue(outer?.['arguments']) ?? call.args,
   }
 }
@@ -135,7 +142,7 @@ function bridgedWritePaths(messages: readonly MessageLine[]): Set<string> {
   const paths = new Set<string>()
   for (const message of messages) {
     for (const call of message.toolCalls ?? []) {
-      if (!call.name.startsWith(COPSE_BRIDGE_TOOL_PREFIX)) continue
+      if (!COPSE_BRIDGE_TOOL_PREFIX.test(call.name)) continue
       const normalized = replayToolCall(call)
       if (!['write_file', 'str_replace', 'delete_file'].includes(normalized.name)) continue
       const path = recordValue(normalized.args)?.['path']

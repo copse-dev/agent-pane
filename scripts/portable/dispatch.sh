@@ -47,7 +47,6 @@ case "${1:-doctor}" in
     echo "pnpm store: $(pnpm store path)"
     echo "Copse profile: $COPSE_DIR"
     echo 'Host dependencies: macOS, Xcode/Command Line Tools (Git, make, Python, SDK), Keychain.'
-    echo "Electron headers: $COPSE_ELECTRON_HEADERS_CACHE"
     # macOS limits Unix socket paths to 104 bytes, and Electron's single-instance socket
     # and other tools' sockets live below TMPDIR. A deep checkout path can exhaust it.
     if [ "${#TMPDIR}" -gt 60 ]; then

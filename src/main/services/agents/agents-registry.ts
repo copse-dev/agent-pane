@@ -9,7 +9,8 @@ import type {
   ShadowedAgent,
   SkippedAgentFile,
 } from '@shared/types/agents.ts'
-import { pathExists, walkForContainerRoots, walkForFiles } from '../discovery/container-scan.ts'
+import { pathExists } from '@copse/std/path-exists.ts'
+import { walkForContainerRoots, walkForFiles } from '../discovery/container-scan.ts'
 import { parseAgentFile } from './parse-agent-frontmatter.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
 import { isWorkspaceTrusted } from '../security/workspace-trust.ts'
