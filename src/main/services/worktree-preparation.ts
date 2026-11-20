@@ -208,16 +208,22 @@ export function resolveInstalledRustToolchainBin(
     try {
       const cargo = realpathSync(candidate)
       if (!statSync(cargo).isFile()) continue
-      if (basenameWithoutExtension(cargo) !== 'rustup') {
-        const trustedRoot = ['/usr', '/usr/local', '/opt/homebrew'].find((prefix) =>
-          isPathWithin(prefix, cargo, { allowSelf: false }),
-        )
-        if (!trustedRoot) continue
-        const bin = dirname(cargo)
-        if (containedToolchainFile(dirname(bin), join(bin, 'rustc'))) return bin
-        continue
-      }
-      return resolveRustupToolchain(undefined)
+      const bin = dirname(cargo)
+      // rustup installs `rustup` beside its proxies however they are packaged:
+      // rustup-init links them to the rustup binary, and Homebrew writes shell
+      // scripts named `cargo` and `rustc` that exec it. A toolchain's own bin
+      // never holds rustup, so either way resolve the toolchain it would select.
+      const rustup = join(bin, process.platform === 'win32' ? 'rustup.exe' : 'rustup')
+      if (
+        basenameWithoutExtension(cargo) === 'rustup' ||
+        statSync(rustup, { throwIfNoEntry: false })?.isFile()
+      )
+        return resolveRustupToolchain(undefined)
+      const trustedRoot = ['/usr', '/usr/local', '/opt/homebrew'].find((prefix) =>
+        isPathWithin(prefix, cargo, { allowSelf: false }),
+      )
+      if (!trustedRoot) continue
+      if (containedToolchainFile(dirname(bin), join(bin, 'rustc'))) return bin
     } catch {
       /* Try another PATH entry. */
     }
