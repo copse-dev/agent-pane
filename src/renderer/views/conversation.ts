@@ -1,3 +1,4 @@
+import { collapseWhitespace } from '@copse/std/one-line-text.ts'
 import { el, clear } from '../dom/helpers.ts'
 import {
   adoptPatchedSignatures,
@@ -954,9 +955,9 @@ function createSubagentMessageEl(content: string, streaming: boolean, api: ApiCl
  * so trailing-newline drift between the two copies still counts as a match.
  */
 function timelineShowsText(session: SubagentSession, text: string): boolean {
-  const target = text.replace(/\s+/g, ' ').trim()
+  const target = collapseWhitespace(text)
   if (!target) return false
-  return session.messages.some((m) => m.content.replace(/\s+/g, ' ').trim() === target)
+  return session.messages.some((m) => collapseWhitespace(m.content) === target)
 }
 
 /**
