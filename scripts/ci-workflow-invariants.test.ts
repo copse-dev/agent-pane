@@ -2280,6 +2280,20 @@ describe('Copse Reviewer workflow invariants', () => {
     }
   })
 
+  // The script runs in the runner's workspace, under a home the cell user
+  // cannot traverse. The nightly's clone, started there, failed for weeks with
+  // "Invalid path '/home/runner/work': Permission denied".
+  it('starts every review-cell command outside the runner home', () => {
+    const helper = /^as_cell\(\) \{\n([\s\S]*?)^\}$/m.exec(groundCellScript)?.[1]
+    assert.ok(helper, 'expected the as_cell helper')
+    const leave = helper.indexOf('cd / &&')
+    const run = helper.indexOf('sudo -u "$cell_user" -- env -i')
+    assert.ok(leave >= 0 && run > leave, 'as_cell must change to / before it runs the command')
+    // The helper is the only way a cell command starts; the one other use of
+    // the cell user is the check that it cannot read the workspace.
+    assert.equal(groundCellScript.match(/sudo -u "\$cell_user" (?!test -r)/g)?.length, 1)
+  })
+
   it('builds the focused-validation image with only a test toolchain', () => {
     assert.match(reviewCellDockerfile, /^ARG NODE_VERSION=/m)
     assert.match(reviewCellDockerfile, /^FROM node:\$\{NODE_VERSION\}-trixie-slim$/m)
