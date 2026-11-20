@@ -103,9 +103,11 @@ function parseSeverity(raw: unknown): string | null {
 }
 
 function formatMoneyMinor(amountMinor: number, currency: string, exponent: number): string {
-  const scale = 10 ** Math.max(0, Math.min(6, exponent))
-  const major = amountMinor / scale
-  const formatted = Number.isInteger(major) ? String(major) : major.toFixed(exponent)
+  // One clamp for both: `toFixed` throws past 100 digits, and an exponent the
+  // scale ignored would print digits the amount does not have.
+  const digits = Math.max(0, Math.min(6, Math.trunc(exponent)))
+  const major = amountMinor / 10 ** digits
+  const formatted = Number.isInteger(major) ? String(major) : major.toFixed(digits)
   if (currency === 'USD') return `$${formatted}`
   if (currency === 'GBP') return `£${formatted}`
   if (currency === 'EUR') return `€${formatted}`
@@ -245,8 +247,11 @@ function parseExtraUsageWindow(body: Record<string, unknown>): PlanWindow | null
   if (typeof usedMinor !== 'number' || !Number.isFinite(usedMinor) || usedMinor < 0) return null
   if (typeof limitMinor !== 'number' || !Number.isFinite(limitMinor) || limitMinor <= 0) return null
   if (typeof currency !== 'string' || !currency.trim()) return null
-  const exp = typeof exponent === 'number' && Number.isFinite(exponent) ? Math.max(0, exponent) : 2
-  const scale = 10 ** Math.min(6, exp)
+  const exp =
+    typeof exponent === 'number' && Number.isFinite(exponent)
+      ? Math.min(6, Math.max(0, Math.trunc(exponent)))
+      : 2
+  const scale = 10 ** exp
   const usedMajor = usedMinor / scale
   const limitMajor = limitMinor / scale
   const percent = spend['percent']
