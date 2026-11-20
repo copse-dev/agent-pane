@@ -129,6 +129,11 @@ describe('native screenshot output ownership', () => {
 
   it('covers real selectors, additional arguments, table writers and direct player PNG writes', () => {
     const examples: Record<string, string[]> = {
+      'tests/e2e/composer-border-observer.e2e.ts': [
+        'composer-observer-bordered.png',
+        'composer-observer-borderless.png',
+        'composer-observer-content-grown.png',
+      ],
       'tests/e2e/settings-sources-agents.e2e.ts': ['settings-sources-agents.png'],
       'tests/e2e/image-expand.e2e.ts': ['image-expand-composer-updated-chip.png'],
       'tests/e2e/malformed-tool-call-inspector.e2e.ts': ['malformed-tool-call-inspector.png'],

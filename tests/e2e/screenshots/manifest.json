@@ -1490,8 +1490,8 @@
       "bytes": 325624
     },
     "composer-observer-content-grown.png": {
-      "sha256": "7df5acc820b2fb347c7389514eb63ae1a0db05ca4e137b2c9a9ec46c2f26c5b9",
-      "bytes": 331961
+      "sha256": "4d337bc1c62eb559b2c81c723b781243c77e0c4376cb039425ff92966e5b51a0",
+      "bytes": 330602
     },
     "composer-pills-light.png": {
       "sha256": "af2f58084f15f76fb5a2b730c79e188aa46a9a73e81650cff62bfb9dfcbc00e0",
@@ -3557,6 +3557,10 @@
       "sha256": "9b9510686f91583cbb6550a4409ae97a65b344f1cc88146cd24ab503088d0c20",
       "bytes": 358993
     },
+    "project-preview-permission-choice.png": {
+      "sha256": "6de2bd35022671bad110cd43bc7dd6dac2031e0d971137e608386eecdc49c8e4",
+      "bytes": 33744
+    },
     "project-quarantine-recovery-dismissed.png": {
       "sha256": "0a069fa29efdf4ec781ea7eed9b6839cc23bb8878a5f2057a97c518327d5a7d5",
       "bytes": 84841
@@ -3758,8 +3762,8 @@
       "bytes": 305156
     },
     "read-outside-approval-expanded.png": {
-      "sha256": "52619a2aeccd01705392fd908f3e05125089117e7a9b29f92ae70280c009227b",
-      "bytes": 315590
+      "sha256": "2378b7a4084fdf785678686f736c8bbb90023cfe44f7c49d3f9a5ce7e7980176",
+      "bytes": 320857
     },
     "read-outside-parent-traversal-reprompt.png": {
       "sha256": "0e28f13ed9420de1ec18ab8cc542fb1f44ad3202e70d10688b24db646073a19d",
