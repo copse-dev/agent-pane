@@ -6428,6 +6428,10 @@
     "worktree-preparation-tools.png": {
       "sha256": "b74f6180f926480ed731466344e8dee9415493c5a5de0fcf4da37e479d4f13f8",
       "bytes": 436743
+    },
+    "worktree-preparation-uv-requirements.png": {
+      "sha256": "c283341ab9fe44fd6770231ccbfda9da107a214c9813b484426fbeb770edf6d3",
+      "bytes": 85277
     }
   }
 }
