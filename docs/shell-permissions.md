@@ -715,7 +715,11 @@ init` in a folder that is not yet a repository, because the sandbox protects `.g
 start the runtime's seccomp observer yet, so there only the denial signatures below can verify a
 block. A verified block is real evidence, but of an access the policy refused, such as a read of a
 protected credential, so its retry outside still asks in Guarded YOLO. Guarded YOLO answers the retry
-itself only when the sandbox wrapper failed to start the command.
+itself only when the sandbox wrapper failed to start the command. Deterministic shell auto-approval
+judges the command's shape, not what the sandbox refused, so it may answer a verified block only
+when every blocking denial was a network denial: a read-tier `git fetch origin` blocked from the
+network is the reach its shape is rated for. Any file denial, or a denial in another shape, always
+asks, because a read-tier `grep` can reach a protected credential through a workspace symlink.
 
 Some sandboxed failures come from a broker or helper that does not increment the OS sandbox's
 violation counter. After a non-zero attempt, `run_shell` may recognise the bounded denial signatures

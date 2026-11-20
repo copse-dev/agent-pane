@@ -507,9 +507,45 @@ export function sandboxViolationCountForBackgroundProcess(
  */
 const INCIDENTAL_SEATBELT_DENIAL = /\bdeny\(\d+\) (?!file-|network-)\S/
 
+/** A seatbelt denial of a network operation. */
+const NETWORK_SEATBELT_DENIAL = /\bdeny\(\d+\) network-\S/
+
+function blockingViolations<T extends { line: string }>(violations: readonly T[]): T[] {
+  return violations.filter((violation) => !INCIDENTAL_SEATBELT_DENIAL.test(violation.line))
+}
+
 /** Violations that can be what made a sandboxed command fail. */
 export function countBlockingViolations(violations: readonly { line: string }[]): number {
-  return violations.filter((violation) => !INCIDENTAL_SEATBELT_DENIAL.test(violation.line)).length
+  return blockingViolations(violations).length
+}
+
+/**
+ * Whether every violation that can have blocked a command was a seatbelt
+ * network denial. False when there were none, or when any was a file denial or
+ * a line in another shape: a file denial can be the sandbox refusing a read of
+ * a protected credential, which no command-shape auto-approval may answer.
+ */
+export function blockingViolationsAreNetworkOnly(violations: readonly { line: string }[]): boolean {
+  const blocking = blockingViolations(violations)
+  return (
+    blocking.length > 0 &&
+    blocking.every((violation) => NETWORK_SEATBELT_DENIAL.test(violation.line))
+  )
+}
+
+/**
+ * {@link blockingViolationsAreNetworkOnly} for the violations the runner
+ * recorded against `attribution` (see {@link sandboxViolationCountForCommand}).
+ * False when the sandbox is inactive or no violation log is available.
+ */
+export function sandboxViolationsAreNetworkOnlyForCommand(attribution: string): boolean {
+  if (!isProjectSandboxEnabled()) return false
+  try {
+    const store = SandboxManager.getSandboxViolationStore()
+    return blockingViolationsAreNetworkOnly(store.getViolationsForCommand(attribution))
+  } catch {
+    return false
+  }
 }
 
 /**

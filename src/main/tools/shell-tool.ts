@@ -15,6 +15,7 @@ import { REQUEST_WRITE_ACCESS_TOOL } from '@shared/tools/readonly-tools.ts'
 import {
   isProjectSandboxEnabled,
   sandboxViolationCountForCommand,
+  sandboxViolationsAreNetworkOnlyForCommand,
 } from '../project-sandbox/index.ts'
 import {
   shellReadGrantTargets,
@@ -250,11 +251,20 @@ async function maybeRetryUnsandboxed(
     likely: runnerDetection.likely,
     spawnFailed: result.spawnFailed ?? false,
   })
+  // Command-shape auto-approval judges what the command looks like, not what
+  // the sandbox refused it. A network denial of a read-tier shape (`git fetch
+  // origin`) is the reach that shape is rated for; a file denial can be a read
+  // of a protected credential through a workspace symlink, so it always asks.
+  const networkOnlyViolation =
+    evidence === 'violation' &&
+    (result.sandboxViolationsNetworkOnly ??
+      sandboxViolationsAreNetworkOnlyForCommand(executedCommand))
   const approved =
     sandboxRetryMaySkipApproval(evidence, options.guardedYolo, options.unattendedContainer) ||
     (await promptUnsandboxedShell(rawCommand, detection.reasons, signal, {
       readGrantApplied: options.readGrantApplied,
-      requireInteractiveApproval: evidence === 'signature',
+      requireInteractiveApproval:
+        evidence === 'signature' || (evidence === 'violation' && !networkOnlyViolation),
     }))
   if (signatureMatch) {
     // The output signature is forgeable. It becomes useful cache evidence only

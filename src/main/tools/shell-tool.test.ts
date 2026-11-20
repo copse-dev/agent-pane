@@ -165,6 +165,7 @@ describe('run_shell unsandboxed retry of a piped command (pipefail)', () => {
    */
   async function runFailingSandboxedPipeline(
     command: string,
+    violationLine = 'deny(1) network-outbound',
   ): Promise<{ prompts: ApprovalRequest[]; outcome: string }> {
     const root = await realpath(await mkdtemp(join(tmpdir(), 'copse-shell-retry-')))
     cleanups.push(async () => rm(root, { recursive: true, force: true }))
@@ -217,8 +218,7 @@ describe('run_shell unsandboxed retry of a piped command (pipefail)', () => {
     mock.method(
       SandboxManager.getSandboxViolationStore(),
       'getViolationsForCommand',
-      (c: string) =>
-        attempts.has(c) ? [{ line: 'deny(1) network-outbound', timestamp: new Date() }] : [],
+      (c: string) => (attempts.has(c) ? [{ line: violationLine, timestamp: new Date() }] : []),
     )
     setProjectSandboxEnabled(true)
     cleanups.push(() => {
@@ -266,6 +266,21 @@ describe('run_shell unsandboxed retry of a piped command (pipefail)', () => {
     assert.notEqual(outcome, 'User declined to run outside the sandbox.')
     // The retry replaced the sandboxed attempt's result.
     assert.ok(!outcome.includes(SANDBOXED_OUTPUT), outcome)
+  })
+
+  it('asks before retrying outside after a file denial, even for a read-tier shape', async () => {
+    // The same `git fetch origin` auto-approves after a network denial above. A
+    // file denial can be the sandbox refusing a protected credential read
+    // through a workspace symlink: the command's shape says nothing about that.
+    const { prompts, outcome } = await runFailingSandboxedPipeline(
+      'git fetch origin 2>&1 | tail -5',
+      'git(2) deny(1) file-read-data /Users/someone/.ssh/id_ed25519',
+    )
+    assert.equal(outcome, 'User declined to run outside the sandbox.')
+    assert.deepEqual(
+      prompts.map((p) => p.cause),
+      ['shell-sandbox-retry'],
+    )
   })
 
   it('shows the agent-authored command, without pipefail, when the retry prompts', async () => {
