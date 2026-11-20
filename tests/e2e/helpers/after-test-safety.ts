@@ -60,6 +60,15 @@ export function shouldSkipAfterTestSessionTraffic(error: unknown): boolean {
 }
 
 /**
+ * Linux ChromeDriver waits twice for a renderer that CloseWindow already
+ * detached. Let reloadSession's bounded deleteSession own shutdown there;
+ * retain the existing pre-close behavior on other platforms.
+ */
+export function shouldPreCloseBeforeReload(platform: NodeJS.Platform): boolean {
+  return platform !== 'linux'
+}
+
+/**
  * Race `promise` against `ms`. Rejects with a TimeoutError-shaped Error when
  * the timer wins so callers can treat it like any other failure.
  */
