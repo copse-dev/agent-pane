@@ -1,4 +1,5 @@
 import type * as Monaco from 'monaco-editor'
+import { withTimeout } from '@copse/std/with-timeout.ts'
 
 const HIDE_UNCHANGED_REGIONS = {
   enabled: true,
@@ -86,19 +87,11 @@ export async function waitForViewModelDiff(
   viewModel: DiffViewModel,
   timeoutMs: number,
 ): Promise<void> {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined
-  try {
-    await Promise.race([
-      viewModel.waitForDiff().catch(() => undefined),
-      new Promise<void>((resolve) => {
-        timeoutId = setTimeout(() => {
-          resolve()
-        }, timeoutMs)
-      }),
-    ])
-  } finally {
-    if (timeoutId !== undefined) clearTimeout(timeoutId)
-  }
+  await withTimeout(
+    viewModel.waitForDiff().catch(() => undefined),
+    timeoutMs,
+    () => undefined,
+  )
 }
 
 /** Re-apply collapse after setModel; Monaco can drop hidden regions until options refresh (#4903). */
