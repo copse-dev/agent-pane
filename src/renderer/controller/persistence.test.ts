@@ -41,6 +41,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { optionalRecord } from '@shared/unknown-value.ts'
 import { startProposedThread } from './thread-proposals.ts'
+import { resetProjectSwitchStateForTest, restoreProject } from './projects.ts'
 import {
   createThread,
   isBlankThread,
@@ -1969,4 +1970,153 @@ test('afterPendingThreadPersistence waits for a create the same write starts', a
   assert.deepEqual(ran, [['t1']], 'runs once the create has landed')
   unsubscribe()
   autosave.detach()
+})
+
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve = (): void => undefined
+  const promise = new Promise<void>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
+}
+
+// Launch restore reads the project's threads (seeding the on-disk baseline)
+// while the workspace is still opening, and only then puts them in the store. A
+// flush in that window — the debounce, or the `pagehide` of a window closed or
+// reloaded mid-boot — used to diff the baseline against the still-empty list
+// and delete every thread of the project from disk.
+test('a flush while launch restore is still opening the workspace deletes no threads', async () => {
+  __resetPersistenceForTest()
+  resetProjectSwitchStateForTest()
+  const { api, calls } = fakeApi()
+  const workspaceOpen = deferred()
+  const threadsRead = deferred()
+  api.workspace.set = async (path): Promise<string> => {
+    await workspaceOpen.promise
+    return path
+  }
+  api.threads.loadProject = async (): Promise<Thread[]> => {
+    threadsRead.resolve()
+    return [
+      thread('t1', { messages: [userMsg('m1')] }),
+      thread('t2', { messages: [userMsg('m2')] }),
+    ]
+  }
+  const store = createStore({
+    projects: [{ id: 'p1', path: '/p1', name: 'P1' }],
+    activeProjectId: 'p1',
+    threads: [],
+  })
+  const autosave = attachAutosave(store, api)
+  try {
+    const restoring = restoreProject(store, api, 'p1')
+    await threadsRead.promise
+    // Let the read land in the baseline; the workspace is still opening.
+    await tick()
+    await autosave.flush()
+    workspaceOpen.resolve()
+    await restoring
+    await autosave.flush()
+
+    assert.deepEqual(calls.deletes, [])
+    assert.deepEqual(
+      store.getState().threads.map((item) => item.id),
+      ['t1', 't2'],
+    )
+  } finally {
+    autosave.detach()
+  }
+})
+
+test('a flush while a restore quarantines its unopenable project deletes no threads', async () => {
+  __resetPersistenceForTest()
+  resetProjectSwitchStateForTest()
+  const quarantineWritten = deferred()
+  const quarantining = deferred()
+  const { api, calls } = fakeApi({
+    set: async (): Promise<void> => {
+      quarantining.resolve()
+      await quarantineWritten.promise
+    },
+  })
+  api.workspace.set = async (): Promise<string> => {
+    throw new Error('folder moved')
+  }
+  api.threads.loadProject = async (): Promise<Thread[]> => [
+    thread('t1', { messages: [userMsg('m1')] }),
+  ]
+  const store = createStore({
+    projects: [{ id: 'p1', path: '/p1', name: 'P1' }],
+    activeProjectId: 'p1',
+    threads: [],
+  })
+  const autosave = attachAutosave(store, api)
+  try {
+    const restoring = restoreProject(store, api, 'p1')
+    await quarantining.promise
+    // Still the project that could not open, with its threads read but unlisted.
+    assert.equal(store.getState().activeProjectId, 'p1')
+    void autosave.flush()
+    await tick()
+    quarantineWritten.resolve()
+    await restoring
+    await autosave.flush()
+
+    assert.deepEqual(calls.deletes, [])
+    assert.equal(store.getState().projects[0]?.missing, true)
+  } finally {
+    autosave.detach()
+  }
+})
+
+test('autosave retries a projects write that failed, without another projects change', async () => {
+  __resetPersistenceForTest()
+  let failNext = true
+  const attempts: unknown[] = []
+  const { api } = fakeApi({
+    set: async (_key, value): Promise<void> => {
+      attempts.push(value)
+      if (failNext) {
+        failNext = false
+        throw new Error('disk full')
+      }
+    },
+  })
+  const projects = [{ id: 'p1', path: '/p1', name: 'P1' }]
+  const store = createStore({ activeProjectId: 'p1', threads: [], projects })
+  const autosave = attachAutosave(store, api)
+  try {
+    store.emit('projects_changed')
+    await assert.rejects(autosave.flush(), /disk full/)
+    // Nothing marks the list changed again: the flush itself must still owe the write.
+    await autosave.flush()
+    assert.deepEqual(attempts, [projects, projects])
+  } finally {
+    autosave.detach()
+  }
+})
+
+test('a failed navigation write is retried instead of skipped as unchanged', async () => {
+  __resetPersistenceForTest()
+  const { api, calls } = fakeApi()
+  const record = api.windowState.setNavigation
+  let failNext = true
+  api.windowState.setNavigation = async (navigation): Promise<void> => {
+    if (failNext) {
+      failNext = false
+      throw new Error('window not registered yet')
+    }
+    await record(navigation)
+  }
+  markNavigationRestored({ activeProjectId: 'p1', activeThreadId: 't1' })
+
+  await assert.rejects(saveNavigation(api, 'p2', 't2'), /not registered/)
+  await saveNavigation(api, 'p2', 't2')
+  assert.deepEqual(calls.navigations, [{ activeProjectId: 'p2', activeThreadId: 't2' }])
+
+  // The value main kept through the failure is still the baseline for it.
+  failNext = true
+  await assert.rejects(saveNavigation(api, 'p3', null), /not registered/)
+  await saveNavigation(api, 'p2', 't2')
+  assert.equal(calls.navigations.length, 1)
 })

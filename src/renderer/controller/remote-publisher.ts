@@ -11,25 +11,40 @@ export function attachRemotePublisher(store: AppStore, api: ApiClient): () => vo
   let disposed = false
   let receivedState = false
   const views = new Map<string, { projectId: string; threads: Thread[] }>()
+  // Main keeps the last view it was sent for each project, so only a project
+  // captured since the last publish is sent. Sending every view each time
+  // re-validated and re-sent the whole transcript of every project visited this
+  // session on each streamed token of any one of them.
+  const unpublished = new Set<string>()
 
   function capture(): void {
     const { activeProjectId, threads, backgroundThreads } = store.getState()
-    if (activeProjectId) views.set(activeProjectId, { projectId: activeProjectId, threads })
+    if (activeProjectId) {
+      views.set(activeProjectId, { projectId: activeProjectId, threads })
+      unpublished.add(activeProjectId)
+    }
     for (const { projectId, thread } of backgroundThreads) {
       const existing = views.get(projectId)?.threads ?? []
       views.set(projectId, {
         projectId,
         threads: [...existing.filter((item) => item.id !== thread.id), thread],
       })
+      unpublished.add(projectId)
     }
   }
 
   function publish(): void {
     timer = null
     if (!running || disposed) return
-    for (const value of views.values()) {
-      const view = remoteViewSchema.safeParse(value)
-      if (view.success) void api.remote.publish(view.data).catch(() => {})
+    const projectIds = [...unpublished]
+    unpublished.clear()
+    for (const projectId of projectIds) {
+      const view = remoteViewSchema.safeParse(views.get(projectId))
+      if (!view.success) continue
+      void api.remote.publish(view.data).catch(() => {
+        // Not delivered: send it again with the next publish.
+        unpublished.add(projectId)
+      })
     }
   }
 

@@ -215,8 +215,15 @@ function serializedNavigation(api: ApiClient, navigation: MainWindowNavigation):
     // project-scoped stores must also await that pending write.
     return (writeChains.get('mainWindow:navigation') ?? Promise.resolve()).then(() => undefined)
   }
+  const previous = lastNavigation
   lastNavigation = navigation
-  return sendNavigation(api, navigation)
+  return sendNavigation(api, navigation).catch((error: unknown) => {
+    // Main did not take it, so it is not what is persisted: put the baseline
+    // back, or the next save of this same value is skipped as unchanged and
+    // the window reopens somewhere else.
+    if (lastNavigation === navigation) lastNavigation = previous
+    throw error
+  })
 }
 
 /**
@@ -536,7 +543,12 @@ function queueThreadWrite(
  * when it runs: a failed create must not turn the next save into an update of a
  * thread that does not exist. Rejected targets stay dirty for an unchanged flush.
  */
-function reconcileThreads(api: ApiClient, projectId: string, threads: Thread[]): Promise<void> {
+function reconcileThreads(
+  api: ApiClient,
+  projectId: string,
+  threads: Thread[],
+  deletions = true,
+): Promise<void> {
   const previous = new Map(persistedMeta.get(projectId))
   for (const [id, queue] of pendingThreadWrites.get(projectId) ?? []) {
     const target = queue.at(-1)
@@ -558,7 +570,7 @@ function reconcileThreads(api: ApiClient, projectId: string, threads: Thread[]):
     ...(unconfirmedCreates.get(projectId)?.keys() ?? []),
     ...(uncertainThreadWrites.get(projectId)?.keys() ?? []),
   ])
-  for (const id of potentiallyCreated) {
+  for (const id of deletions ? potentiallyCreated : []) {
     const pending = pendingThreadWrites.get(projectId)?.get(id)?.at(-1)
     if (!next.has(id) && pending?.kind !== 'delete') {
       writes.push(queueThreadWrite(api, projectId, id, { kind: 'delete' }))
@@ -587,8 +599,41 @@ export function flushProjectThreads(
   return reconcileThreads(api, projectId, threads)
 }
 
+/**
+ * Projects whose thread list is being read from disk but is not in the store
+ * yet, with how many restores hold each.
+ *
+ * Launch restore names the project in the store first (so the sidebar and the
+ * SSH banner have something to show), then reads its threads — which seeds
+ * {@link persistedMeta} — and only publishes them once the workspace has opened.
+ * In between, the store pairs that project with an empty list. An autosave
+ * flush there (the debounce, or the `pagehide` of a window closed mid-boot)
+ * diffed the freshly seeded baseline against the empty list and deleted every
+ * thread of the project from disk. While held, autosave still creates and
+ * updates what the store has, but reads nothing into a thread's absence.
+ */
+const heldThreadDeletions = new Map<string, number>()
+
+/**
+ * Called by a restore before it reads `projectId`'s threads. The returned
+ * release is idempotent; call it once the store holds the list that was read,
+ * or the restore has given the project up.
+ */
+export function holdThreadDeletions(projectId: string): () => void {
+  heldThreadDeletions.set(projectId, (heldThreadDeletions.get(projectId) ?? 0) + 1)
+  let held = true
+  return () => {
+    if (!held) return
+    held = false
+    const holds = (heldThreadDeletions.get(projectId) ?? 1) - 1
+    if (holds > 0) heldThreadDeletions.set(projectId, holds)
+    else heldThreadDeletions.delete(projectId)
+  }
+}
+
 /** Test-only: clear the per-project metadata baseline and write chains. */
 export function __resetPersistenceForTest(): void {
+  heldThreadDeletions.clear()
   persistedMeta.clear()
   pendingThreadWrites.clear()
   unconfirmedCreates.clear()
@@ -960,7 +1005,7 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
   let inflightFlush: Promise<void> = Promise.resolve()
 
   const reconcile = (projectId: string): Promise<void> =>
-    reconcileThreads(api, projectId, store.getState().threads)
+    reconcileThreads(api, projectId, store.getState().threads, !heldThreadDeletions.has(projectId))
 
   // Persist one message immediately. Reconcile first (same per-thread queue) so a
   // not-yet-created thread is created before its message is appended.
@@ -1014,7 +1059,15 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
     const writes: Array<Promise<void>> = []
     if (projectsDirty) {
       projectsDirty = false
-      writes.push(persistProjects(api, projects))
+      writes.push(
+        persistProjects(api, projects).catch((error: unknown) => {
+          // Still owed: nothing emits `projects_changed` again for a list that
+          // did not change, so without this the next flush would skip it and a
+          // rename, reorder or removal would be gone after a relaunch.
+          projectsDirty = true
+          throw error
+        }),
+      )
     }
     writes.push(serializedNavigation(api, { activeProjectId, activeThreadId }))
     if (activeProjectId) writes.push(reconcile(activeProjectId))
