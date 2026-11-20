@@ -371,25 +371,12 @@ export function openRemoteFolderDialog(
       }
     }
 
-    /**
-     * Open the chosen host where its user works rather than at `/`. Connecting
-     * first is what reports the host's home directory. A start folder that no
-     * longer lists (a removed project's parent) falls back to `/`.
-     */
-    async function browseStart(): Promise<void> {
-      const hostId = currentHostId
-      if (!hostId || loading || addingHost) return
-      let home: string | undefined
-      try {
-        const states = await api.sshWorkspace.connect(hostId)
-        home = states.find((state) => state.hostId === hostId)?.capabilities?.home
-      } catch {
-        // `browse` connects again and reports the failure in the dialog.
-      }
-      if (hostId !== currentHostId) return
-      const start = initialRemoteBrowsePath(projects, hostId, home)
-      if ((await browse(start)) || start === '/' || hostId !== currentHostId) return
-      await browse('/')
+    /** Counts listings, so one that a later host choice replaced draws nothing. */
+    let listing = 0
+
+    /** Open the chosen host where its user works rather than at `/`. */
+    function browseStart(): Promise<void> {
+      return browse(null)
     }
 
     function renderBreadcrumbs(path: string): void {
@@ -398,22 +385,43 @@ export function openRemoteFolderDialog(
       })
     }
 
-    /** List `path` on the current host. Resolves false when it could not be listed. */
-    async function browse(path: string): Promise<boolean> {
-      if (!currentHostId || loading || addingHost) return false
+    /**
+     * List `path` on the current host. `null` lists the host's start folder
+     * instead: beside its last project, else in the home directory that its
+     * connect reports, else `/`. A start folder that no longer lists (a removed
+     * project's parent) falls back to `/` on the same connection. A host choice
+     * (`null`) replaces a listing still under way; anything else waits for it.
+     */
+    async function browse(path: string | null): Promise<void> {
+      const hostId = currentHostId
+      if (!hostId || addingHost || (loading && path !== null)) return
+      const run = ++listing
       loading = true
       openBtn.disabled = true
       upBtn.disabled = true
       status.textContent = 'Connecting…'
       clear(list)
+      let target = path ?? '/'
       try {
-        await api.sshWorkspace.connect(currentHostId)
-        currentPath = path
+        const states = await api.sshWorkspace.connect(hostId)
+        if (run !== listing) return
+        if (path === null) {
+          const home = states.find((state) => state.hostId === hostId)?.capabilities?.home
+          target = initialRemoteBrowsePath(projects, hostId, home)
+        }
+        currentPath = target
         renderBreadcrumbs(currentPath)
-        const entries: SshRemoteDirEntry[] = await api.sshWorkspace.listDirectory(
-          currentHostId,
-          currentPath,
-        )
+        let entries: SshRemoteDirEntry[]
+        try {
+          entries = await api.sshWorkspace.listDirectory(hostId, target)
+        } catch (err) {
+          if (path !== null || target === '/' || run !== listing) throw err
+          target = '/'
+          currentPath = target
+          renderBreadcrumbs(currentPath)
+          entries = await api.sshWorkspace.listDirectory(hostId, target)
+        }
+        if (run !== listing) return
         status.textContent =
           entries.length === 0 ? 'No subfolders here — open this folder or go up.' : ''
         for (const entry of entries) {
@@ -433,20 +441,21 @@ export function openRemoteFolderDialog(
         }
         upBtn.disabled = currentPath === '/'
         openBtn.disabled = false
-        return true
       } catch (err) {
+        if (run !== listing) return
         // Keep the attempted path visible so Up / breadcrumbs still work after errors.
         // Surface the error in the dialog status only — a global toast would fire on
         // every failed connect while browsing and trip e2e toast guards.
-        currentPath = path
+        currentPath = target
         renderBreadcrumbs(currentPath)
         setInlineStatus(status, 'error', ipcErrorMessage(err, 'Could not reach the host.'))
-        return false
       } finally {
-        loading = false
-        if (hosts.length > 0 && currentHostId) {
-          upBtn.disabled = currentPath === '/'
-          openBtn.disabled = false
+        if (run === listing) {
+          loading = false
+          if (hosts.length > 0 && currentHostId) {
+            upBtn.disabled = currentPath === '/'
+            openBtn.disabled = false
+          }
         }
       }
     }
