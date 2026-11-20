@@ -76,6 +76,12 @@ async function disconnectTransportBestEffort(transport: SshTransport): Promise<v
   }
 }
 
+/** Whether the host is still saved exactly as it was when its transport was built. */
+function savedHostUnchanged(hostId: string, host: SshWorkspaceHost): boolean {
+  const saved = findConfiguredSshHost(hostId)
+  return saved !== undefined && isDeepStrictEqual(saved, host)
+}
+
 export class SshConnectionManager {
   private readonly connections = new Map<string, ManagedConnection>()
   private readonly connectPromises = new Map<string, Promise<SshConnection>>()
@@ -180,8 +186,7 @@ export class SshConnectionManager {
     // A quiet reconnect rebuilds the master from the host as it was saved when
     // the user connected. Once they have edited it (say, unticked Forward
     // agent), leave the reconnect to them: Reconnect builds from the saved entry.
-    const saved = findConfiguredSshHost(hostId)
-    if (!saved || !isDeepStrictEqual(saved, entry.host)) return
+    if (!savedHostUnchanged(hostId, entry.host)) return
     const delays = SSH_QUIET_RECONNECT_DELAYS_MS
     if (entry.quietAttempts >= delays.length || this.now() < entry.nextQuietAttemptAt) return
     entry.quietAttempts += 1
@@ -191,7 +196,14 @@ export class SshConnectionManager {
     } catch {
       return
     }
-    if (isCurrent()) this.markConnected(entry)
+    if (!isCurrent()) return
+    // An edit can also land while that connect runs. The new master then
+    // carries the old options, so close it rather than report it connected.
+    if (!savedHostUnchanged(hostId, entry.host)) {
+      await disconnectTransportBestEffort(entry.transport)
+      return
+    }
+    this.markConnected(entry)
   }
 
   private markConnected(entry: ManagedConnection): void {

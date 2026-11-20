@@ -299,6 +299,52 @@ describe('SshConnectionManager', () => {
       })
     })
 
+    it('closes a quiet reconnect that finishes after the host was edited', async () => {
+      await withTestHost(async () => {
+        let started = (): void => {}
+        const reconnecting = new Promise<void>((resolve) => {
+          started = resolve
+        })
+        let release = (): void => {}
+        /** Holds the quiet reconnect open so the edit lands while it runs. */
+        class HeldReconnect extends FakeSshTransport {
+          override async connect(options: SshConnectOptions = {}): Promise<void> {
+            if (options.quiet) {
+              await new Promise<void>((resolve) => {
+                release = resolve
+                started()
+              })
+            }
+            await super.connect(options)
+          }
+        }
+        const transport = new HeldReconnect(PROBE_SCRIPTS)
+        setSshTransportFactory(() => transport)
+        const manager = new SshConnectionManager({
+          now: (): number => 1_000,
+          livenessIntervalMs: 0,
+        })
+        await manager.connect('dev-box')
+
+        transport.dropConnection()
+        const checking = manager.checkLiveness()
+        await reconnecting
+        await setSetting('sshWorkspaceHosts', [{ ...TEST_HOST, forwardAgent: true }])
+        release()
+        await checking
+
+        assert.deepEqual(
+          manager.listStates().map((state) => state.status),
+          ['disconnected'],
+        )
+        assert.equal(
+          transport.isConnected(),
+          false,
+          'the master built from the old entry is closed',
+        )
+      })
+    })
+
     it('lets an explicit connect replace a lost connection', async () => {
       await withTestHost(async () => {
         const { manager, transports, connects, statuses } = harness((options) => {
