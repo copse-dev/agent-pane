@@ -68,7 +68,27 @@ export async function describeTranscript(): Promise<string> {
     }))
     const text = document.querySelector<HTMLElement>('.messages-list')?.innerText ?? ''
     const failures = text.split('\n').filter((line) => /mock scenario/i.test(line))
-    return { replies: replies.length, last, cards, failures }
+    // A collapsed card builds its body only when opened, so an error's message
+    // is not in the DOM until then. Open each errored card the way a user
+    // does, by clicking its header, and read what it shows.
+    const errors = Array.from(
+      document.querySelectorAll<HTMLDetailsElement>(
+        '.messages-list details[data-tool-id][data-status="error"]',
+      ),
+    ).map((card) => {
+      const summary = card.querySelector<HTMLElement>(':scope > summary')
+      if (!card.open) summary?.click()
+      const body = Array.from(card.children)
+        .filter((child) => child !== summary)
+        .map((child) => (child instanceof HTMLElement ? child.innerText : child.textContent))
+        .join('\n')
+        .trim()
+      return {
+        name: summary?.querySelector('.tool-name')?.textContent.trim() ?? '(unnamed)',
+        body: body.slice(0, 2000),
+      }
+    })
+    return { replies: replies.length, last, cards, failures, errors }
   })
   const unfinished = state.cards.filter((card) => card.status !== 'done')
   return [
@@ -76,6 +96,7 @@ export async function describeTranscript(): Promise<string> {
     `tool cards: ${String(state.cards.length)} (${state.cards.map((c) => `${c.name}=${c.status}`).join(', ')})`,
     `unfinished tool cards: ${unfinished.length > 0 ? unfinished.map((c) => `${c.name}=${c.status}`).join(', ') : 'none'}`,
     `mock scenario messages: ${state.failures.length > 0 ? state.failures.join(' | ') : 'none'}`,
+    ...state.errors.map((card) => `errored tool card ${card.name}: ${JSON.stringify(card.body)}`),
   ].join('\n')
 }
 
