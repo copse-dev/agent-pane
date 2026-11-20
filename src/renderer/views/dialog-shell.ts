@@ -39,6 +39,24 @@ export function createOverlayDialog(opts: { id: string; className?: string }): O
 }
 
 /**
+ * A getter for one reused `<dialog id class>`, created and appended to `<body>`
+ * on the first call. For dialogs that clear and rebuild their contents on every
+ * open (Create PR, New project, Remote folder). It never re-attaches an element
+ * something else removed from the document.
+ */
+export function lazyBodyDialog(id: string, className: string): () => HTMLDialogElement {
+  let dialog: HTMLDialogElement | null = null
+  return (): HTMLDialogElement => {
+    if (dialog) return dialog
+    dialog = document.createElement('dialog')
+    dialog.id = id
+    dialog.className = className
+    document.body.append(dialog)
+    return dialog
+  }
+}
+
+/**
  * Whether any `<dialog>` in the document is currently open.
  *
  * Asked by global keyboard shortcuts, which must defer to whatever the user is

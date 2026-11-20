@@ -7,6 +7,7 @@
 // the approval broker, and the spawn path report into whichever reporter is in
 // scope. Outside a scope (subagents, ACP-bridged shells, tests) every report is
 // a no-op, so callers never need to know whether anyone is listening.
+import { ellipsize } from '@copse/std/one-line-text.ts'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { CommandPhase, CommandPhaseState } from '@copse/agent/wire-types.ts'
 import type { ToolCallChunk } from '@shared/types/stream.ts'
@@ -65,7 +66,7 @@ const REASON_MAX_CHARS = 200
 
 function shortReason(text: string): string {
   const line = text.trim().split('\n')[0]?.trim() ?? ''
-  return line.length > REASON_MAX_CHARS ? `${line.slice(0, REASON_MAX_CHARS - 1)}…` : line
+  return ellipsize(line, REASON_MAX_CHARS)
 }
 
 /** Whether this call is a command the loop runs itself, and so gets phases. */
