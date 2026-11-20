@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
+  e2eWorkspaceDir,
   resetUserData,
   seedHeldQueueFixture,
   seedStableWorkspace,
@@ -30,7 +31,14 @@ const ROW_SELECTOR = '.conversation-queued .msg-held .message-queued-actions'
 // This persisted fixture checks the resulting note and held card after reload.
 describe('held cross-thread prompt', function () {
   this.timeout(90_000)
-  afterEach(() => {
+  const projectId = 'cross-thread-project'
+  // resetUserData() clears config, not the thread store, so this thread would
+  // outlive the test and later captures would list it under Recoverable
+  // threads. Close the app first: removing the store while it runs would unlink
+  // a thread index the app still holds.
+  afterEach(async () => {
+    await browser.deleteSession({ shutdownDriver: false })
+    removeE2eTree(join(e2eWorkspaceDir(), projectId))
     resetUserData()
   })
 
@@ -43,9 +51,9 @@ describe('held cross-thread prompt', function () {
     const note =
       "Cross-thread prompt allowance reached — 5 prompts from this sender's user turn have run here. This prompt is held; release it to continue, or send a new instruction in the sender thread for a fresh allowance."
     writeSeedConfig({
-      projects: [{ id: 'cross-thread-project', path: process.cwd(), name: 'workspace' }],
-      activeProjectId: 'cross-thread-project',
-      ['threads:cross-thread-project']: [
+      projects: [{ id: projectId, path: process.cwd(), name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
         {
           id: 'cross-thread-destination',
           title: 'Cross-thread check-in',
