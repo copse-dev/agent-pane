@@ -171,6 +171,86 @@ describe('interface scale (--ui-scale)', () => {
     expect(visualViewport?.offsetLeft).toBe(0)
     expect(visualViewport?.offsetTop).toBe(0)
     await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'ui-scale-native-window-default.png'))
+    const nativeGeometry = await browser.execute(() => {
+      const bounded = (value: number): number | null =>
+        Number.isFinite(value) && Math.abs(value) <= 10_000_000 ? Number(value.toFixed(4)) : null
+      const rect = (node: Element | null): (number | null)[] | null => {
+        if (!node) return null
+        const box = node.getBoundingClientRect()
+        return [box.x, box.y, box.width, box.height].map(bounded)
+      }
+      const pane = document.getElementById('pane-chat')
+      const input = document.getElementById('input-bar')
+      const conversation = document.getElementById('conversation')
+      const list = document.querySelector<HTMLElement>('.messages-list')
+      const prompt = document.querySelector('[data-message-id="msg-user-hierarchy"]')
+      const result = document.querySelector('[data-message-id="msg-assistant-result"]')
+      const tool = document.querySelector('[data-tool-id="tc-format-check"]')
+      const toolHost = tool?.closest('.tool-card-rollup') ?? tool
+      const bullets = result?.querySelectorAll('.message-text li')
+      const viewport = window.visualViewport
+      return {
+        file: 'ui-scale-native-window-default.png',
+        phase: 'after-native-window-capture-before-comparison-helper',
+        atMs: bounded(performance.now()),
+        viewport: [innerWidth, innerHeight, devicePixelRatio, scrollX, scrollY].map(bounded),
+        visualViewport: viewport
+          ? [
+              viewport.width,
+              viewport.height,
+              viewport.offsetLeft,
+              viewport.offsetTop,
+              viewport.scale,
+            ].map(bounded)
+          : null,
+        fonts: document.fonts.status,
+        composerH: input ? bounded(input.getBoundingClientRect().height) : null,
+        composerReserve: pane
+          ? bounded(
+              Number.parseFloat(getComputedStyle(pane).getPropertyValue('--chat-composer-height')),
+            )
+          : null,
+        conversationPaddingBottom: conversation
+          ? bounded(Number.parseFloat(getComputedStyle(conversation).paddingBottom))
+          : null,
+        paneRect: rect(pane),
+        inputRect: rect(input),
+        listRect: rect(list),
+        listScroll: list
+          ? [list.scrollTop, list.clientHeight, list.scrollHeight].map(bounded)
+          : null,
+        promptRect: rect(prompt),
+        resultRect: rect(result),
+        resultParagraphRect: rect(result?.querySelector('.message-text p') ?? null),
+        bulletCount: bounded(bullets?.length ?? 0),
+        bulletRects: [...(bullets ?? [])].slice(0, 4).map(rect),
+        toolRect: rect(tool),
+        toolHostRect: rect(toolHost ?? null),
+        toolSummaryRect: rect(toolHost?.querySelector(':scope > summary') ?? null),
+      }
+    })
+    const [{ readFile, writeFile }, { createHash }] = await Promise.all([
+      import('node:fs/promises'),
+      import('node:crypto'),
+    ])
+    const nativePngBytes = await readFile(
+      join(E2E_SCREENSHOT_DIR, 'ui-scale-native-window-default.png'),
+    )
+    const pngSHA256 = createHash('sha256').update(nativePngBytes).digest('hex')
+    const { E2E_ATTEMPT_DIRECTORY_ENV, managedAttemptDirectory } =
+      await import('../../scripts/lib/e2e-attempt-diagnostics.mts')
+    const attemptDirectory = managedAttemptDirectory(process.env[E2E_ATTEMPT_DIRECTORY_ENV])
+    if (attemptDirectory) {
+      await writeFile(
+        join(attemptDirectory, `ui-scale-native-window-default-${pngSHA256}.png`),
+        nativePngBytes,
+      )
+      await writeFile(
+        join(attemptDirectory, `ui-scale-native-window-default-${pngSHA256}.json`),
+        JSON.stringify({ ...nativeGeometry, pngSHA256 }) + '\n',
+      )
+    }
+    console.info(`[ui-scale-native-geometry] ${JSON.stringify({ ...nativeGeometry, pngSHA256 })}`)
     await saveScaleComparisonScreenshot('ui-scale-default.png')
 
     await $('[aria-label="Settings"]').click()
@@ -236,7 +316,28 @@ describe('interface scale (--ui-scale)', () => {
   })
 
   it('steps with the Zoom In keyboard shortcut', async () => {
-    // Start from the scaled state left by the previous tests (1.25 → 1.35).
+    // Establish the starting scale through Appearance even when this case runs alone.
+    await $('[aria-label="Settings"]').click()
+    await $('.settings-nav-btn[data-section="appearance"]').click()
+    const scaleInput = await $('input[name="uiScale"]').getElement()
+    await scaleInput.waitForDisplayed({ timeout: 30_000 })
+    await browser.waitUntil(async () => (await scaleInput.getValue()) !== '', {
+      timeout: 30_000,
+      timeoutMsg: 'expected uiScale to load into Appearance settings',
+    })
+    await browser.execute(() => {
+      const input = document.querySelector<HTMLInputElement>('input[name="uiScale"]')
+      if (!input) throw new Error('missing Appearance scale input')
+      input.value = '1.25'
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+      document.querySelector<HTMLButtonElement>('.settings-buttons button[type="submit"]')?.click()
+    })
+    await $('#settings-dialog').waitForDisplayed({ reverse: true, timeout: 30_000 })
+    await browser.waitUntil(async () => (await uiScaleSnapshot())?.uiScaleInline === '1.25', {
+      timeout: 10_000,
+      timeoutMsg: 'expected --ui-scale=1.25 before the Zoom In shortcut',
+    })
     // Dispatch the chord in-page so we exercise the renderer keydown path
     // (WebdriverIO chord synthesis is flaky for Ctrl+= across platforms).
     await browser.execute(() => {
