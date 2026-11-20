@@ -5970,7 +5970,8 @@ function createDemoApi(scenario2, options = {}) {
         credential: request.useAgentLogin ? "login" : "key",
         settings: {
           budgets: { ...request.budgets },
-          installDependencies: request.installDependencies === true
+          installDependencies: request.installDependencies === true,
+          githubReads: request.githubReads === true
         },
         log: ["[thread-container] starting copse-run-demo from copse-worker:local"],
         warnings: [],
@@ -7499,7 +7500,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-4PLVDNNS.js").then(async (main) => {
+    void import("./chunks/main-DWSMBMRB.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(

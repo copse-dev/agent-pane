@@ -14720,6 +14720,11 @@ var init_container_run_schema = __esm({
       }),
       useAgentLogin: external_exports.boolean().optional(),
       installDependencies: external_exports.boolean().optional(),
+      /**
+       * The user turned GitHub reads on for this run (A24); absent means off. A run
+       * that installs, or whose model is an agent in the guest, still gets none.
+       */
+      githubReads: external_exports.boolean().optional(),
       continueFrom: external_exports.string().regex(/^[a-z0-9-]{1,128}$/i).optional(),
       continueContext: external_exports.object({
         prompt: external_exports.string().max(2e5),
@@ -14729,7 +14734,8 @@ var init_container_run_schema = __esm({
     });
     containerRunSettingsSchema = containerRunRequestSchema.pick({
       budgets: true,
-      installDependencies: true
+      installDependencies: true,
+      githubReads: true
     });
     threadContainerResultSchema = external_exports.object({
       threadId: external_exports.string(),
@@ -56736,6 +56742,19 @@ var init_container_acp_agents = __esm({
   }
 });
 
+// src/shared/container-github-reads.ts
+function containerGitHubReadsArmingLine(choice) {
+  if (!choice.requested) return "GitHub: off, not turned on for this run";
+  if (choice.installs) return "GitHub: off, because the run installs dependencies";
+  if (!choice.hostInference)
+    return "GitHub: off, because the run reaches its model through its own network origins";
+  return "GitHub: read-only through your desktop GitHub sign-in, turned on for this run; writes refused";
+}
+var init_container_github_reads = __esm({
+  "src/shared/container-github-reads.ts"() {
+  }
+});
+
 // src/renderer/views/container-run-control.ts
 function isLive2(progress) {
   return progress !== null && progress.phase !== "finished" && progress.phase !== "failed";
@@ -56925,6 +56944,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       chosenModel = modelSelect.value;
       renderEgressHint();
       renderLoginOptIn();
+      renderGitHubArming();
     });
     const verdicts = /* @__PURE__ */ new Map();
     let lastRoster = [];
@@ -56960,6 +56980,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       chosenModel = fallback;
       modelSelect.value = fallback;
       renderEgressHint();
+      renderGitHubArming();
       await modelPicker?.refresh(fallback);
     }).catch(async (error) => {
       console.error("[container-run] could not list models:", error);
@@ -57049,6 +57070,42 @@ function mountContainerRunControl(api2, context, onStateChanged) {
         "Runs the checkout's lockfile install (pnpm or npm) once, before the agent starts, so tests and builds can run. The container can then also reach registry.npmjs.org and GitHub, anonymously \u2014 it holds no GitHub credential. The agent\u2019s own commands stay off the network."
       )
     );
+    const githubOptIn = el("input", {
+      type: "checkbox",
+      class: "container-run-github",
+      name: "containerRunGitHubReads"
+    });
+    githubOptIn.checked = false;
+    const githubArming = el("p", {
+      class: "field-hint container-run-github-arming",
+      "aria-live": "polite"
+    });
+    function renderGitHubArming() {
+      githubArming.textContent = containerGitHubReadsArmingLine({
+        requested: githubOptIn.checked,
+        installs: installOptIn.checked,
+        hostInference: parseAcpModel(chosenModel) === null
+      });
+    }
+    githubOptIn.addEventListener("change", renderGitHubArming);
+    installOptIn.addEventListener("change", renderGitHubArming);
+    renderGitHubArming();
+    const githubField = el(
+      "div",
+      { class: "container-run-github-field" },
+      el(
+        "label",
+        { class: "container-run-github-label" },
+        githubOptIn,
+        el("span", {}, "Let this run read GitHub with my sign-in")
+      ),
+      el(
+        "p",
+        { class: "field-hint container-run-github-hint" },
+        "The container's gh and git fetch can then read everything your github.com sign-in can read, in every repository and organisation you can reach, not only this project, including secret-scanning alerts, Actions variables and secret gists. The token stays on the desktop and writes are refused. A run that installs dependencies, or runs a coding agent, gets none."
+      ),
+      githubArming
+    );
     const start = el(
       "button",
       { type: "button", class: "ui-btn ui-btn-primary container-run-start" },
@@ -57095,6 +57152,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
         budgets: { wallClockMs, tokenCeiling },
         ...loginOffer() !== null && loginOptIn.checked ? { useAgentLogin: true } : {},
         installDependencies: installOptIn.checked,
+        githubReads: githubOptIn.checked,
         ...continuation ? {
           continueFrom: continuation.runtimeId,
           continueContext: {
@@ -57136,6 +57194,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       egressHint,
       loginField,
       installField,
+      githubField,
       uiActions(cancel, start, { className: "container-run-actions" })
     );
   }
@@ -57570,6 +57629,7 @@ var init_container_run_control = __esm({
     init_acp();
     init_acp_known_agents();
     init_container_acp_agents();
+    init_container_github_reads();
     init_helpers();
     init_icons();
     init_ui();

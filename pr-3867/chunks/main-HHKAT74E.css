@@ -13326,7 +13326,8 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   width: 100%;
 }
 .container-run-agent-login-label,
-.container-run-install-label {
+.container-run-install-label,
+.container-run-github-label {
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -13335,13 +13336,18 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   color: var(--text-primary);
 }
 .container-run-agent-login-label input,
-.container-run-install-label input {
+.container-run-install-label input,
+.container-run-github-label input {
   width: auto;
   margin: 0;
 }
 .container-run-agent-login-field,
-.container-run-install-field {
+.container-run-install-field,
+.container-run-github-field {
   margin-top: var(--spacing-md);
+}
+.container-run-github-arming {
+  font-family: var(--font-mono);
 }
 .tool-card-subagent .subagent-actions {
   display: flex;
