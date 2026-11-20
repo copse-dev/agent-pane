@@ -842,6 +842,34 @@ describe('native human steering boundary and durability', () => {
     assert.deepEqual(await loadUserSteeringReceipts('p', 't'), [])
   })
 
+  it('retains the saved note when Stop interrupts before the isolated seed arrives', async () => {
+    await queue('unseeded-review')
+    const opened = Promise.withResolvers<undefined>()
+    const delivery = session.enqueue('unseeded-review', async (note) => {
+      const interrupted = Promise.withResolvers<{
+        state: 'interrupted'
+        draft: string
+      }>()
+      note.signal.addEventListener(
+        'abort',
+        () => {
+          interrupted.resolve({ state: 'interrupted', draft: '' })
+        },
+        { once: true },
+      )
+      opened.resolve(undefined)
+      return interrupted.promise
+    })
+    await opened.promise
+    await session.close()
+    assert.deepEqual(await delivery, {
+      state: 'held',
+      draft: 'Note unseeded-review',
+    })
+    assert.deepEqual(await loadAgentHistory('p', 't'), [])
+    assert.deepEqual(await loadUserSteeringReceipts('p', 't'), [])
+  })
+
   for (const mutation of ['retire', 'body', 'queue'] as const) {
     it(`rejects a frozen note after ${mutation} wins before acceptance`, async () => {
       await queue('changed')
