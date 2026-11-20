@@ -11,6 +11,7 @@ import { join } from 'node:path'
 import { after, before, beforeEach, describe, it } from 'node:test'
 import {
   githubApiHost,
+  githubNoTokenMessage,
   githubTokenFromEnv,
   hasGitHubApiToken,
   resetGitHubApiTokenCacheForTest,
@@ -76,6 +77,41 @@ describe('githubApiHost and hasGitHubApiToken', () => {
     assert.equal(githubApiHost({ GH_HOST: ` ${ENTERPRISE_HOST} ` }), ENTERPRISE_HOST)
   })
 
+  it('normalises how GH_HOST is spelled before anything chooses a token', () => {
+    const cases: Array<[string, string]> = [
+      ['GitHub.com', 'github.com'],
+      ['github.com.', 'github.com'],
+      ['github.com:443', 'github.com'],
+      ['github.com.:443', 'github.com'],
+      ['api.github.com', 'github.com'],
+      ['GHE.Example.com.', ENTERPRISE_HOST],
+      [`${ENTERPRISE_HOST}:443`, ENTERPRISE_HOST],
+      [`${ENTERPRISE_HOST}:8443`, `${ENTERPRISE_HOST}:8443`],
+      ['acme.ghe.com', 'acme.ghe.com'],
+      ['10.0.0.5', '10.0.0.5'],
+    ]
+    for (const [raw, host] of cases) assert.equal(githubApiHost({ GH_HOST: raw }), host, raw)
+  })
+
+  it('refuses a GH_HOST that is not a bare host and port', () => {
+    for (const raw of [
+      `https://${ENTERPRISE_HOST}`,
+      `${ENTERPRISE_HOST}/api/v3`,
+      `user@${ENTERPRISE_HOST}`,
+      'ghe..example.com',
+      '-ghe.example.com',
+      `${ENTERPRISE_HOST}:0`,
+      `${ENTERPRISE_HOST}:70000`,
+      '[::1]',
+      // github.com, a ghe.com tenancy or github.localhost on another port is not GitHub.
+      'github.com:8443',
+      'api.github.com:80',
+      'acme.ghe.com:8443',
+    ]) {
+      assert.equal(githubApiHost({ GH_HOST: raw }), null, raw)
+    }
+  })
+
   it('counts only a token for the host the backend talks to', () => {
     assert.equal(hasGitHubApiToken({ GITHUB_TOKEN: 'github-token' }), true)
     assert.equal(hasGitHubApiToken({ GH_ENTERPRISE_TOKEN: 'gh-enterprise-token' }), false)
@@ -84,6 +120,40 @@ describe('githubApiHost and hasGitHubApiToken', () => {
       true,
     )
     assert.equal(hasGitHubApiToken({ GH_HOST: ENTERPRISE_HOST, GH_TOKEN: 'gh-token' }), false)
+    assert.equal(hasGitHubApiToken({ GH_HOST: 'GitHub.com:443', GH_TOKEN: 'gh-token' }), true)
+    assert.equal(
+      hasGitHubApiToken({ GH_HOST: 'github.com.', GH_ENTERPRISE_TOKEN: 'gh-enterprise-token' }),
+      false,
+    )
+    assert.equal(
+      hasGitHubApiToken({
+        GH_HOST: `https://${ENTERPRISE_HOST}`,
+        GH_ENTERPRISE_TOKEN: 'gh-enterprise-token',
+      }),
+      false,
+    )
+  })
+})
+
+describe('githubNoTokenMessage', () => {
+  it('names the github.com variables and gh auth login for github.com', () => {
+    assert.equal(
+      githubNoTokenMessage('github.com'),
+      'No GitHub token available. Set GH_TOKEN or GITHUB_TOKEN, or run `gh auth login`.',
+    )
+  })
+
+  it('names GH_ENTERPRISE_TOKEN and the host login for an Enterprise host', () => {
+    const message = githubNoTokenMessage(ENTERPRISE_HOST)
+    assert.equal(
+      message,
+      `No GitHub token available for ${ENTERPRISE_HOST}. Set GH_ENTERPRISE_TOKEN, or run \`gh auth login --hostname ${ENTERPRISE_HOST}\`.`,
+    )
+    assert.doesNotMatch(message, /GITHUB_TOKEN|GH_TOKEN /)
+  })
+
+  it('says GH_HOST needs fixing when it was refused', () => {
+    assert.match(githubNoTokenMessage(null), /^GH_HOST is not a host name\./)
   })
 })
 
@@ -160,6 +230,15 @@ describe('resolveGitHubApiToken', { skip: process.platform === 'win32' }, () => 
     process.env['GH_HOST'] = ENTERPRISE_HOST
     assert.equal(await resolveGitHubApiToken(), 'gh-enterprise-token')
     assert.deepEqual(await authTokenCalls(), [])
+  })
+
+  it('asks gh for the normalised host, and for nothing when GH_HOST is refused', async () => {
+    process.env['GH_HOST'] = 'GitHub.com.:443'
+    process.env['GH_ENTERPRISE_TOKEN'] = 'gh-enterprise-token'
+    assert.equal(await resolveGitHubApiToken(), 'gh-login-for:github.com')
+    process.env['GH_HOST'] = `https://${ENTERPRISE_HOST}`
+    assert.equal(await resolveGitHubApiToken(), null)
+    assert.deepEqual(await authTokenCalls(), ['auth token --hostname github.com'])
   })
 
   it("caches each host's gh login on its own", async () => {

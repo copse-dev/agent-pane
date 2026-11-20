@@ -13,17 +13,6 @@ const DOT_COM_TOKEN_ENV_KEYS = ['GH_TOKEN', 'GITHUB_TOKEN'] as const
 const ENTERPRISE_TOKEN_ENV_KEYS = ['GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN'] as const
 
 /**
- * The host the API backend talks to: `GH_HOST` when set, else github.com. The
- * backend builds its URLs and chooses its token from this one value, so a
- * token is only sent to the host it was chosen for.
- */
-export function githubApiHost(base: NodeJS.ProcessEnv = process.env): string {
-  const host = base['GH_HOST']?.trim()
-  if (!host) return GITHUB_DOT_COM
-  return host
-}
-
-/**
  * Whether gh authenticates `host` with the github.com variables rather than
  * the Enterprise ones. That covers github.com and its subdomains, a ghe.com
  * subdomain, and gh's development host github.localhost; every other host is a
@@ -39,6 +28,37 @@ function usesDotComTokens(host: string): boolean {
     name.endsWith('.github.localhost') ||
     name.endsWith('.ghe.com')
   )
+}
+
+/** One DNS label: letters, digits and inner hyphens. */
+const HOST_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/
+
+/**
+ * The host the API backend talks to: `GH_HOST` when set, else github.com. The
+ * backend builds its URLs and chooses its token from this one value, so a
+ * token is only sent to the host it was chosen for.
+ *
+ * `GH_HOST` is normalised first, so its spelling cannot make the token choice
+ * and the destination disagree: lowercase, one trailing dot and a `:443` port
+ * dropped, and github.com's subdomains (`api.github.com`) read as github.com,
+ * as gh does. Null, so nothing is sent, when `GH_HOST` is not a bare
+ * `host[:port]` (a URL with a scheme or path, say), or names github.com, a
+ * ghe.com tenancy or github.localhost on a port other than 443.
+ */
+export function githubApiHost(base: NodeJS.ProcessEnv = process.env): string | null {
+  const raw = base['GH_HOST']?.trim().toLowerCase()
+  if (!raw) return GITHUB_DOT_COM
+  const match = /^(.+?)\.?(?::(\d{1,5}))?$/.exec(raw)
+  const name = match?.[1]
+  if (!name?.split('.').every((label) => HOST_LABEL.test(label))) return null
+  const portText = match?.[2]
+  const port = portText === undefined ? 443 : Number(portText)
+  if (port < 1 || port > 65_535) return null
+  if (usesDotComTokens(name)) {
+    if (port !== 443) return null
+    return name.endsWith(`.${GITHUB_DOT_COM}`) ? GITHUB_DOT_COM : name
+  }
+  return port === 443 ? name : `${name}:${String(port)}`
 }
 
 /**
@@ -65,7 +85,24 @@ export function githubTokenFromEnv(
  * {@link resolveGitHubApiToken}.
  */
 export function hasGitHubApiToken(base: NodeJS.ProcessEnv = process.env): boolean {
-  return githubTokenFromEnv(githubApiHost(base), base) !== null
+  const host = githubApiHost(base)
+  return host !== null && githubTokenFromEnv(host, base) !== null
+}
+
+/**
+ * What to tell a user whose API backend has no token for `host`: the variable
+ * gh reads for that kind of host, or the `gh auth login` that stores one. A
+ * github.com variable does nothing for an Enterprise host, so it is not named
+ * there. Null `host` is a `GH_HOST` that {@link githubApiHost} refused.
+ */
+export function githubNoTokenMessage(host: string | null): string {
+  if (host === null) {
+    return 'GH_HOST is not a host name. Set it to one such as github.example.com, without https:// or a path.'
+  }
+  if (usesDotComTokens(host)) {
+    return 'No GitHub token available. Set GH_TOKEN or GITHUB_TOKEN, or run `gh auth login`.'
+  }
+  return `No GitHub token available for ${host}. Set GH_ENTERPRISE_TOKEN, or run \`gh auth login --hostname ${host}\`.`
 }
 
 /** Successful `gh auth token` answers, by host. */
@@ -77,7 +114,8 @@ export function resetGitHubApiTokenCacheForTest(): void {
 
 /**
  * Resolve a token for a live API call to `host` (by default the backend's own,
- * {@link githubApiHost}): the env token gh would use for that host, else
+ * {@link githubApiHost}, and none when that refuses `GH_HOST`): the env token
+ * gh would use for that host, else
  * `gh auth token --hostname <host>` (so a user with only `gh auth login` can
  * still use the API backend). Naming the host keeps `GH_HOST` from choosing
  * another host's login. Only a *successful* `gh auth token` is cached — a
@@ -89,7 +127,10 @@ export function resetGitHubApiTokenCacheForTest(): void {
  * directory rather than any project checkout, and never reads the window's
  * workspace (#3958).
  */
-export async function resolveGitHubApiToken(host = githubApiHost()): Promise<string | null> {
+export async function resolveGitHubApiToken(
+  host: string | null = githubApiHost(),
+): Promise<string | null> {
+  if (host === null) return null
   const envToken = githubTokenFromEnv(host)
   if (envToken) return envToken
   const cached = cachedGhAuthTokens.get(host)

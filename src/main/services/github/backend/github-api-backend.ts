@@ -32,7 +32,7 @@ import type {
   PrCreateResult,
 } from '@shared/types/git.ts'
 import type { GitHubBackend, PrCreateInput, PrRef } from './backend.ts'
-import { githubApiHost, resolveGitHubApiToken } from './github-token.ts'
+import { githubApiHost, githubNoTokenMessage, resolveGitHubApiToken } from './github-token.ts'
 import { PR_ACTIVITY_QUERY, parsePrActivity, unavailablePrActivity } from './pr-activity.ts'
 import {
   chooseAutoMergeStrategy,
@@ -60,14 +60,24 @@ function apiRoots(host: string): { rest: string; graphql: string } {
   return { rest: `https://${host}/api/v3`, graphql: `https://${host}/api/graphql` }
 }
 
+/**
+ * The REST URL for `path` on `host`. Only a path under the API root is
+ * accepted, never an absolute URL, so the token chosen for `host` cannot be
+ * sent to another host.
+ */
+export function githubApiRestUrl(host: string, path: string): string {
+  if (!path.startsWith('/')) {
+    throw new Error('GitHub API requests take a path under the API root, not a URL.')
+  }
+  return `${apiRoots(host).rest}${path}`
+}
+
 interface RestResponse {
   ok: boolean
   status: number
   json: unknown
   errorMessage: string | null
 }
-
-const NO_TOKEN_MESSAGE = 'No GitHub token available. Set GITHUB_TOKEN or run `gh auth login`.'
 
 /**
  * Auth headers carrying the token for `host`, the host the request goes to, or
@@ -89,10 +99,12 @@ async function rest(
   init: { method?: string; body?: unknown; immutable?: boolean } = {},
 ): Promise<RestResponse> {
   const host = githubApiHost()
-  const headers = await authHeaders(host)
-  if (!headers) return { ok: false, status: 401, json: null, errorMessage: NO_TOKEN_MESSAGE }
+  const url = host === null ? null : githubApiRestUrl(host, path)
+  const headers = host === null ? null : await authHeaders(host)
+  if (url === null || headers === null) {
+    return { ok: false, status: 401, json: null, errorMessage: githubNoTokenMessage(host) }
+  }
   if (init.body !== undefined) headers['Content-Type'] = 'application/json'
-  const url = path.startsWith('http') ? path : `${apiRoots(host).rest}${path}`
   const method = init.method ?? 'GET'
   if (method === 'GET' && init.body === undefined) {
     const result = await githubCachedGet(
@@ -125,12 +137,16 @@ async function rest(
 interface GraphqlResult {
   data: unknown
   errorMessage: string | null
+  /** No token for the backend's host, or no usable `GH_HOST`: nothing was sent. */
+  noToken?: true
 }
 
 async function graphql(query: string, variables: Record<string, unknown>): Promise<GraphqlResult> {
   const host = githubApiHost()
-  const headers = await authHeaders(host)
-  if (!headers) return { data: null, errorMessage: NO_TOKEN_MESSAGE }
+  const headers = host === null ? null : await authHeaders(host)
+  if (host === null || headers === null) {
+    return { data: null, errorMessage: githubNoTokenMessage(host), noToken: true }
+  }
   headers['Content-Type'] = 'application/json'
   const body = JSON.stringify({ query, variables })
   const url = apiRoots(host).graphql
@@ -352,12 +368,18 @@ export const githubApiBackend: GitHubBackend = {
   kind: 'api',
 
   async getStatus(): Promise<GhCliStatus> {
-    const token = await resolveGitHubApiToken()
+    const host = githubApiHost()
+    const token = await resolveGitHubApiToken(host)
     if (!token) {
       // installed:true — the API backend is "present"; it just needs a token.
       // Reporting installed:false would send the renderer down the misleading
       // "install GitHub CLI" path for a user who explicitly chose this backend.
-      return { installed: true, authenticated: false, username: null, message: NO_TOKEN_MESSAGE }
+      return {
+        installed: true,
+        authenticated: false,
+        username: null,
+        message: githubNoTokenMessage(host),
+      }
     }
     const me = await rest('/user')
     if (!me.ok) {
@@ -372,7 +394,7 @@ export const githubApiBackend: GitHubBackend = {
     // GraphQL `viewer.pullRequests` spends the GraphQL point budget, not the
     // Search API's 30 req/min cap, and includes CI rollup in the same query.
     const result = await graphql(MY_OPEN_PRS_QUERY, { limit })
-    if (result.errorMessage === NO_TOKEN_MESSAGE) return null
+    if (result.noToken) return null
     if (result.errorMessage?.includes('HTTP 401')) return null
     if (result.errorMessage) throw new Error(result.errorMessage)
     return graphqlPullNodesToSummaries(viewerPullNodes(result.data), null)
