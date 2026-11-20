@@ -248,7 +248,7 @@ describe('native browser form entry', () => {
   })
 
   for (const event of ['input', 'change']) {
-    for (const mutation of ['reset', 'replace-retained', 'replace-reset', 'hide', 'duplicate']) {
+    for (const mutation of ['replace-retained', 'replace-reset', 'hide', 'duplicate']) {
       it(`stops with an uncertain current ref when its own ${event} handler performs ${mutation}`, async () => {
         const { window, contents } = page()
         const title = window.document.querySelector('input')
@@ -264,8 +264,7 @@ describe('native browser form entry', () => {
         }
         notes.addEventListener('change', () => noteChanges++)
         notes.addEventListener(event, () => {
-          if (mutation === 'reset') notes.value = 'Handler reset'
-          else if (mutation === 'hide') notes.hidden = true
+          if (mutation === 'hide') notes.hidden = true
           else {
             const replacement = window.document.createElement('textarea')
             for (const attribute of notes.attributes)
@@ -296,6 +295,37 @@ describe('native browser form entry', () => {
       })
     }
 
+    it(`reports a value its own ${event} handler rewrites and enters the later fields`, async () => {
+      const { window, contents } = page(
+        '<input aria-label="Phone" data-copse-ref="e1"><input aria-label="Name" data-copse-ref="e2">',
+      )
+      const [phone, name] = window.document.querySelectorAll('input')
+      assert.ok(phone && name)
+      const phoneEvents: string[] = []
+      for (const type of ['input', 'change'])
+        phone.addEventListener(type, () => phoneEvents.push(type))
+      // A phone mask that formats the digits as they are entered.
+      phone.addEventListener(event, () => {
+        const digits = phone.value.replace(/\D/g, '')
+        if (digits.length === 10)
+          phone.value = `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
+      })
+      const result = await fillBrowserForm(contents, [
+        { ref: 'e1', text: '5551234567' },
+        { ref: 'e2', text: 'Ada' },
+      ])
+      assert.equal(
+        result,
+        'Entered 2 fields: [ref=e1], [ref=e2]. The page changed e1 to "(555) 123-4567". Inspect the form before submitting it.',
+      )
+      assert.deepEqual([phone.value, name.value], ['(555) 123-4567', 'Ada'])
+      assert.deepEqual(phoneEvents, ['input', 'change'])
+      assert.deepEqual(
+        Object.getOwnPropertyNames(window).filter((key) => key.startsWith('__copseForm_')),
+        [],
+      )
+    })
+
     for (const lock of ['disabled', 'readonly']) {
       it(`confirms a retained value when its ${event} handler makes the same node ${lock}`, async () => {
         const { window, contents } = page()
@@ -317,6 +347,37 @@ describe('native browser form entry', () => {
       })
     }
   }
+
+  it('keeps a clipped page rewrite in the stop message when a later field changes', async () => {
+    const { window, contents } = page()
+    const title = window.document.querySelector('input')
+    const notes = window.document.querySelector('textarea')
+    assert.ok(title && notes)
+    title.addEventListener('input', () => {
+      title.value = 'x'.repeat(200)
+    })
+    notes.addEventListener('input', () => {
+      notes.hidden = true
+    })
+    await assert.rejects(
+      fillBrowserForm(contents, [
+        { ref: 'e1', text: 'Requested title' },
+        { ref: 'e2', text: 'Requested note' },
+        { ref: 'e3', text: 'high' },
+      ]),
+      (error: unknown) => {
+        assert.ok(error instanceof Error)
+        assert.ok(
+          error.message.startsWith(
+            `Form entry stopped after 1 confirmed fields of 3. Entered: e1. The page changed e1 to "${'x'.repeat(119)}…". e2 may already have changed. `,
+          ),
+          error.message,
+        )
+        return true
+      },
+    )
+    assert.equal(window.document.querySelector('select')?.value, 'low')
+  })
 
   it('does not confirm a text input changed into a checkbox even if it retains the literal value', async () => {
     const { window, contents } = page(

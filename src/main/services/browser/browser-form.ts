@@ -30,7 +30,19 @@ const replySchema = z.object({
   ok: z.boolean(),
   error: z.string().optional(),
   uncertain: z.boolean().optional(),
+  // The page's own value when a handler rewrote the entered text (an input mask).
+  value: z.string().optional(),
 })
+
+const MAX_REPORTED_VALUE_CHARS = 120
+
+function quoteValue(value: string): string {
+  return JSON.stringify(
+    value.length > MAX_REPORTED_VALUE_CHARS
+      ? `${value.slice(0, MAX_REPORTED_VALUE_CHARS - 1)}…`
+      : value,
+  )
+}
 
 // Resolve only the current visible control. A previous snapshot may have left
 // the same ref on an older, now-hidden dialog. Pin each exact node before any
@@ -88,6 +100,9 @@ export async function fillBrowserForm(
   signal?.throwIfAborted()
   const key = `__copseForm_${randomUUID()}`
   const completed: string[] = []
+  const rewritten: string[] = []
+  const rewriteNote = (): string =>
+    rewritten.length > 0 ? `The page changed ${rewritten.join(', ')}. ` : ''
   let inFlightRef: string | undefined
   try {
     const prepared = replySchema.parse(
@@ -130,11 +145,12 @@ export async function fillBrowserForm(
             const setter = Object.getOwnPropertyDescriptor(prototype, 'value');
             if (setter && setter.set) setter.set.call(el, ${JSON.stringify(field.text)});
             else el.value = ${JSON.stringify(field.text)};
-            // A synchronous handler can reset, replace, hide or renumber this
-            // control. Self-locking is allowed only if this same visible,
-            // uniquely referenced supported control retains the literal value.
-            const retained = () => resolveControl(${JSON.stringify(field.ref)}, false) === expected &&
-              el.value === ${JSON.stringify(field.text)};
+            // A synchronous handler can replace, hide, retype or renumber this
+            // control, so the entry is unconfirmed unless this same visible,
+            // uniquely referenced supported control remains (it may lock
+            // itself). Its value may differ: a mask that reformats the text
+            // keeps the same node, so report the page's value and carry on.
+            const retained = () => resolveControl(${JSON.stringify(field.ref)}, false) === expected;
             const unconfirmed = () => ({ ok: false, uncertain: true,
               error: 'Ref ' + ${JSON.stringify(field.ref)} + ' changed before its value could be confirmed.' });
             if (!retained()) return unconfirmed();
@@ -142,7 +158,9 @@ export async function fillBrowserForm(
             if (!retained()) return unconfirmed();
             el.dispatchEvent(new Event('change', { bubbles: true }));
             if (!retained()) return unconfirmed();
-            return { ok: true };
+            const value = String(el.value);
+            return value === ${JSON.stringify(field.text)} ? { ok: true } :
+              { ok: true, value: value.slice(0, ${String(MAX_REPORTED_VALUE_CHARS + 1)}) };
           })()`,
           true,
         ),
@@ -150,12 +168,14 @@ export async function fillBrowserForm(
       if (!result.uncertain) inFlightRef = undefined
       if (!result.ok) throw new Error(result.error ?? 'The page could not enter this field.')
       completed.push(field.ref)
+      if (result.value !== undefined) rewritten.push(`${field.ref} to ${quoteValue(result.value)}`)
     }
-    return `Entered ${String(completed.length)} fields: ${completed.map((ref) => `[ref=${ref}]`).join(', ')}. Inspect the form before submitting it.`
+    return `Entered ${String(completed.length)} fields: ${completed.map((ref) => `[ref=${ref}]`).join(', ')}. ${rewriteNote()}Inspect the form before submitting it.`
   } catch (error) {
     const message =
       `Form entry stopped after ${String(completed.length)} confirmed fields of ${String(fields.length)}. ` +
       (completed.length > 0 ? `Entered: ${completed.join(', ')}. ` : '') +
+      rewriteNote() +
       (inFlightRef ? `${inFlightRef} may already have changed. ` : '') +
       `${errorMessage(error)} Inspect the fields and refresh the snapshot before retrying; do not replay confirmed input.`
     if (signal?.aborted) throw new DOMException(message, 'AbortError')
