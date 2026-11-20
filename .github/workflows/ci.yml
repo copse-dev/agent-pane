@@ -54,6 +54,9 @@ permissions:
 # they cannot cancel or replace a pending source run. Retargets and unknown edit
 # keys keep the normal source group. The edit predicate compares all change keys
 # and defaults to normal routing on unknown keys or serialisation drift.
+# The nightly has its own group too. In the branch's group a push to main
+# cancels the nightly while it runs, and replaces it while it waits behind an
+# earlier push run, so a merge during its window leaves no full-suite result.
 # scripts/ci-cosmetic-events.test.ts pins concurrency and autoformat routing.
 concurrency:
   # Metadata must never replace a pending real run, even with cancellation off.
@@ -64,7 +67,7 @@ concurrency:
     (toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"title":{1}{2}', '{', toJSON(github.event.changes.title), '}'))) ||
     toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"body":{1}{2}', '{', toJSON(github.event.changes.body), '}'))) ||
     toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"title":{1},"body":{2}{3}', '{', toJSON(github.event.changes.title), toJSON(github.event.changes.body), '}'))) ||
-    toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"body":{1},"title":{2}{3}', '{', toJSON(github.event.changes.body), toJSON(github.event.changes.title), '}'))))))) && format('ci-metadata-{0}', github.run_id) || format('ci-{0}', github.event.pull_request.number || github.ref) }}
+    toJSON(github.event.changes) == toJSON(fromJSON(format('{0}"body":{1},"title":{2}{3}', '{', toJSON(github.event.changes.body), toJSON(github.event.changes.title), '}'))))))) && format('ci-metadata-{0}', github.run_id) || github.event_name == 'schedule' && format('ci-nightly-{0}', github.ref) || format('ci-{0}', github.event.pull_request.number || github.ref) }}
   cancel-in-progress: >-
     ${{ github.event_name != 'schedule' && !(github.event_name == 'pull_request' &&
     ((github.event.action == 'labeled' && github.event.label.name == 'review-has-feedback') ||

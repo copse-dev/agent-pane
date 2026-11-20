@@ -45,6 +45,21 @@ type EventContext = {
   }
 }
 
+// A push or a scheduled run carries no pull request, so
+// `github.event.pull_request.number` reads as null and the group uses the ref.
+type BranchContext = Omit<EventContext, 'event'> & { event: Record<string, never> }
+
+function branchEvent(event_name: 'push' | 'schedule', ref: string): BranchContext {
+  return {
+    event_name,
+    run_id: 123,
+    ref,
+    repository: 'copse-dev/agent-pane',
+    base_ref: '',
+    event: {},
+  }
+}
+
 // `changes` is passed through as GitHub sends it: absent keys stay absent,
 // because the edit predicate compares the serialised object, key for key.
 function context(action: string, changes?: Record<string, unknown>, label = ''): EventContext {
@@ -67,7 +82,7 @@ function context(action: string, changes?: Record<string, unknown>, label = ''):
 // operators, null comparisons, format, toJSON and fromJSON. Actions reads a
 // property of a missing object as null; optional chaining reads it as
 // undefined, which `==`/`!=` treat alike and toJSON maps to `null`.
-function evaluate(expression: string, github: EventContext): unknown {
+function evaluate(expression: string, github: EventContext | BranchContext): unknown {
   const source = (
     expression.trim().startsWith('${{') ? expression.trim().slice(3, -2) : expression
   ).replace(/\bgithub(?:\.[\w-]+)+/g, (path) => path.replaceAll('.', '?.'))
@@ -91,7 +106,7 @@ function binding(name: string): z.infer<typeof jobSchema> {
   assert.ok(job, name)
   return job
 }
-function admitted(github: EventContext): {
+function admitted(github: EventContext | BranchContext): {
   precheck: unknown
   autoformat: unknown
   aggregate: unknown
@@ -236,7 +251,7 @@ describe('cosmetic CI event routing', () => {
       context('future-action'),
       ...meaningfulLabels.map((name) => context('labeled', {}, name)),
       ...['opened', 'synchronize', 'reopened', 'ready_for_review'].map((action) => context(action)),
-      ...['push', 'schedule', 'merge_group'].map((event_name) => ({
+      ...['push', 'merge_group'].map((event_name) => ({
         ...context('edited'),
         event_name,
       })),
@@ -247,8 +262,28 @@ describe('cosmetic CI event routing', () => {
       assert.equal(route.aggregate, true)
       assert.equal(route.name, 'CI Passed')
       assert.equal(route.group, 'ci-42')
-      assert.equal(route.cancels, github.event_name !== 'schedule')
+      assert.equal(route.cancels, true)
     }
+  })
+
+  // A push cancels whatever its group holds: the run in progress, and any run
+  // waiting behind it. The nightly is main's full-suite run, so a merge during
+  // its window must not reach it.
+  it('keeps the nightly out of the group that a push to its branch cancels', () => {
+    for (const ref of ['refs/heads/main', 'refs/heads/release']) {
+      const push = admitted(branchEvent('push', ref))
+      const nightly = admitted(branchEvent('schedule', ref))
+      assert.equal(push.group, `ci-${ref}`)
+      assert.equal(push.cancels, true)
+      assert.equal(nightly.group, `ci-nightly-${ref}`)
+      assert.notEqual(nightly.group, push.group)
+      // A second nightly waits for the first instead of cancelling it.
+      assert.equal(nightly.cancels, false)
+      assert.equal(nightly.precheck, true)
+      assert.equal(nightly.autoformat, false)
+      assert.equal(nightly.aggregate, true)
+    }
+    assert.equal(admitted(branchEvent('schedule', 'refs/heads/main')).name, 'CI Passed')
   })
 
   it('preserves the distinct fork and trunk contexts, including metadata', () => {
