@@ -320,29 +320,47 @@ describe('capturePreviewDataUrl', () => {
 /**
  * A tab whose frame copies follow `outcomes` in order: an image width (0 is
  * empty) or an error. Asking for a fresh frame paints at once unless the tab
- * never paints, in which case only the bounded wait ends it.
+ * never paints, in which case only the bounded wait ends it. A tab created
+ * `loading` stays loading until `finishLoading()` (or, with `finishesLoad`
+ * false, never), and copies count how many were taken while still loading.
  */
 function frameTab(
   outcomes: Array<number | Error>,
-  options: { paints?: boolean; destroyed?: boolean } = {},
-): TabFrameContents<FakeImage> & { copies: number; invalidations: number } {
+  options: { paints?: boolean; destroyed?: boolean; loading?: boolean } = {},
+): TabFrameContents<FakeImage> & {
+  copies: number
+  copiesWhileLoading: number
+  invalidations: number
+  finishLoading(): void
+} {
   let paint: (() => void) | null = null
+  let stopLoading: (() => void) | null = null
+  let loading = options.loading === true
   const tab = {
     copies: 0,
+    copiesWhileLoading: 0,
     invalidations: 0,
     capturePage(): Promise<FakeImage> {
+      if (loading) tab.copiesWhileLoading++
       const outcome = outcomes[tab.copies++] ?? new Error('no frame scripted')
       return outcome instanceof Error ? Promise.reject(outcome) : Promise.resolve(image(outcome))
+    },
+    isLoading: (): boolean => loading,
+    finishLoading(): void {
+      loading = false
+      stopLoading?.()
     },
     invalidate(): void {
       tab.invalidations++
       if (options.paints !== false) paint?.()
     },
-    once(_event: 'paint', listener: () => void): void {
-      paint = listener
+    once(event: 'paint' | 'did-stop-loading', listener: () => void): void {
+      if (event === 'paint') paint = listener
+      else stopLoading = listener
     },
-    removeListener(_event: 'paint', listener: () => void): void {
-      if (paint === listener) paint = null
+    removeListener(event: 'paint' | 'did-stop-loading', listener: () => void): void {
+      if (event === 'paint' && paint === listener) paint = null
+      if (event === 'did-stop-loading' && stopLoading === listener) stopLoading = null
     },
     isDestroyed: (): boolean => options.destroyed === true,
   }
@@ -395,12 +413,34 @@ describe('captureTabFrame', () => {
     assert.equal(tab.copies, 1)
   })
 
+  it('waits for a reloading tab to finish loading before copying (#4425)', async () => {
+    const tab = frameTab([320], { loading: true })
+    const capture = captureTabFrame(tab, 'tab-1')
+    await Promise.resolve()
+    assert.equal(tab.copies, 0)
+    tab.finishLoading()
+    assert.equal((await capture).getSize().width, 320)
+    assert.equal(tab.copiesWhileLoading, 0)
+    assert.equal(warnings.length, 0)
+  })
+
+  it('bounds the wait for a tab that never finishes loading', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] })
+    const tab = frameTab([320], { loading: true })
+    const capture = captureTabFrame(tab, 'tab-1')
+    await Promise.resolve()
+    assert.equal(tab.copies, 0)
+    t.mock.timers.tick(5000)
+    assert.equal((await capture).getSize().width, 320)
+    assert.equal(tab.copiesWhileLoading, 1)
+  })
+
   it('bounds the wait for a tab that never paints again', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] })
     const tab = frameTab([new Error('UnknownVizError'), 320], { paints: false })
     const capture = captureTabFrame(tab, 'tab-1')
-    await Promise.resolve()
-    await Promise.resolve()
+    // The fresh-frame request comes after its bounded wait is armed.
+    for (let turn = 0; turn < 20 && tab.invalidations === 0; turn++) await Promise.resolve()
     assert.equal(tab.copies, 1)
     t.mock.timers.tick(1000)
     assert.equal((await capture).getSize().width, 320)

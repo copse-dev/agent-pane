@@ -81,55 +81,64 @@ async function waitForPreviewOperation(operation: Promise<unknown>): Promise<unk
  */
 const previewCaptures = new WeakMap<PreviewContents, Promise<string | null>>()
 
-/**
- * Capture `wc` as a preview laid out at the preview zoom, then put the tab's
- * zoom back so the agent's own screenshots and snapshots keep the desktop
- * viewport. Returns null instead of throwing, like `capturePreview`.
- */
 /** The parts of an agent tab's `WebContents` that a screenshot needs. */
 export interface TabFrameContents<Image extends { isEmpty(): boolean }> {
   capturePage(): Promise<Image>
+  isLoading(): boolean
   /** Offscreen tabs only paint when damaged; this asks for a fresh frame. */
   invalidate(): void
-  once(event: 'paint', listener: () => void): unknown
-  removeListener(event: 'paint', listener: () => void): unknown
+  once(event: 'paint' | 'did-stop-loading', listener: () => void): unknown
+  removeListener(event: 'paint' | 'did-stop-loading', listener: () => void): unknown
   isDestroyed(): boolean
 }
 
 /** Copies of a frame that are attempted before the screenshot fails. */
 const TAB_FRAME_ATTEMPTS = 3
+/** How long a capture waits for a navigating tab to finish loading. */
+const TAB_LOAD_WAIT_MS = 5000
 /** How long to wait for a fresh frame between attempts. */
 const TAB_FRAME_WAIT_MS = 1000
 
-/** Resolve on the tab's next painted frame, or after `timeoutMs` without one. */
-function nextPaintedFrame(
+/** Resolve once `event` fires, or after `timeoutMs` without it. */
+function onceWithin(
   contents: TabFrameContents<{ isEmpty(): boolean }>,
+  event: 'paint' | 'did-stop-loading',
   timeoutMs: number,
+  trigger?: () => void,
 ): Promise<void> {
   return new Promise((resolve) => {
     const done = (): void => {
       clearTimeout(timer)
-      contents.removeListener('paint', done)
+      contents.removeListener(event, done)
       resolve()
     }
     const timer = setTimeout(done, timeoutMs)
-    contents.once('paint', done)
-    contents.invalidate()
+    contents.once(event, done)
+    trigger?.()
   })
 }
 
+/** Wait, bounded, for a tab that is still loading a navigation to finish. */
+async function settledLoad(contents: TabFrameContents<{ isEmpty(): boolean }>): Promise<void> {
+  if (contents.isLoading()) await onceWithin(contents, 'did-stop-loading', TAB_LOAD_WAIT_MS)
+}
+
 /**
- * Copy an agent tab's current frame. While a navigation or reload swaps the
- * page's compositor surface, Chromium can fail the copy: `capturePage()`
- * rejects with `UnknownVizError`, or yields an empty image (#4425). That is a
- * transient state of the tab, not a broken page, so ask for a fresh frame and
- * copy again a bounded number of times before reporting the failure.
+ * Copy an agent tab's current frame. While a navigation or reload is still
+ * loading, its compositor surface is being swapped and Chromium can fail the
+ * copy: `capturePage()` rejects with `UnknownVizError`, or yields an empty
+ * image (#4425). Every such failure seen locally happened while the tab was
+ * still loading, and a copy succeeded 27–50 ms later. So wait for a loading tab
+ * to finish first, and if a copy still fails, wait for the load and a freshly
+ * painted frame before copying again. Every wait is bounded and the last
+ * failure is still reported, so a page that never settles fails as before.
  */
 export async function captureTabFrame<Image extends { isEmpty(): boolean }>(
   contents: TabFrameContents<Image>,
   tabId: string,
 ): Promise<Image> {
   let failure: Error
+  await settledLoad(contents)
   for (let attempt = 1; ; attempt++) {
     try {
       const image = await contents.capturePage()
@@ -143,10 +152,18 @@ export async function captureTabFrame<Image extends { isEmpty(): boolean }>(
       `[copse-panel] browser screenshot of ${tabId} failed on copy ${String(attempt)}; retrying after a fresh frame:`,
       failure.message,
     )
-    await nextPaintedFrame(contents, TAB_FRAME_WAIT_MS)
+    await settledLoad(contents)
+    await onceWithin(contents, 'paint', TAB_FRAME_WAIT_MS, () => {
+      contents.invalidate()
+    })
   }
 }
 
+/**
+ * Capture `wc` as a preview laid out at the preview zoom, then put the tab's
+ * zoom back so the agent's own screenshots and snapshots keep the desktop
+ * viewport. Returns null instead of throwing, like `capturePreview`.
+ */
 export function capturePreviewDataUrl(
   wc: PreviewContents,
   decodeImage: (dataUrl: string) => PreviewImage,
