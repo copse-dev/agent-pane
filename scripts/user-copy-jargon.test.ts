@@ -263,6 +263,12 @@ const ALLOWED: readonly Allowance[] = [
     count: 2,
     reason: REASON.identifier,
   },
+  {
+    file: 'src/main/services/browser/static-preview-server.ts',
+    term: 'capability',
+    count: 1,
+    reason: REASON.identifier,
+  },
   { file: 'src/shared/acp-known-agents.ts', term: 'stdio', count: 1, reason: REASON.identifier },
   {
     file: 'packages/llm/src/classifiers/validated.ts',
