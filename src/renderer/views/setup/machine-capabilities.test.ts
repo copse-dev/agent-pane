@@ -110,7 +110,7 @@ describe('machineSummaryElement', () => {
     })
     assert.equal(node.querySelector('.machine-summary-ok')?.textContent, 'Connected')
     assert.deepEqual(
-      [...node.querySelectorAll('.machine-capability')].map((item) => item.textContent),
+      [...node.querySelectorAll('.machine-use')].map((item) => item.textContent),
       ['Files and shell', 'Desktop'],
     )
   })

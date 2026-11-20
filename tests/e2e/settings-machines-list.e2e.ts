@@ -23,7 +23,7 @@ function overviewRows(): Promise<RowSummary[]> {
     [...document.querySelectorAll('.machines-overview .ssh-host-row')].map((row) => ({
       label: row.querySelector('strong')?.textContent.trim() ?? '',
       status: row.querySelector('.machine-summary-status')?.textContent.trim() ?? '',
-      capabilities: [...row.querySelectorAll('.machine-capability')].map((item) =>
+      capabilities: [...row.querySelectorAll('.machine-use')].map((item) =>
         item.textContent.trim(),
       ),
       actions: [...row.querySelectorAll('.ssh-host-row-actions button')].map((button) =>

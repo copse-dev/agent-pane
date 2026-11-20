@@ -3379,7 +3379,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .machine-summary-warn::before {
   background: var(--warning);
 }
-.machine-capabilities {
+.machine-uses {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
@@ -3387,7 +3387,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   padding: 0;
   list-style: none;
 }
-.machine-capability {
+.machine-use {
   padding: 1px 8px;
   border: 1px solid var(--border);
   border-radius: 999px;
