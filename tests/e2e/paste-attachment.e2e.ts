@@ -238,12 +238,10 @@ describe('Pasting text into the composer', () => {
   })
 
   it('resends a raw canonical fenced prompt without creating an empty code tail', async () => {
-    resetUserData()
-    seedE2eViewport()
-    seedEmptyProject(workspaceRoot, PROJECT_ID)
-    await browser.reloadSession()
-    await waitForWorkspace()
-    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    // Settings resets retain persisted chats; start a fresh one through the UI.
+    await $('.project-new-thread-btn').waitForClickable({ timeout: 30_000 })
+    await $('.project-new-thread-btn').click()
+    await $('.messages-list .msg-user').waitForExist({ timeout: 10_000, reverse: true })
     const scenario = await installMockScenario({
       title: 'Review notification configuration',
       turns: [
@@ -260,6 +258,7 @@ describe('Pasting text into the composer', () => {
     await scenario.waitForTurns(1)
     await waitForAgentIdle()
     await waitForActiveThreadTitle()
+    await expect(await $$('.messages-list .msg-user').getElements()).toBeElementsArrayOfSize(1)
     const original = await $('.messages-list .msg-user').getElement()
     const originalId = await original.getAttribute('data-message-id')
     await original.moveTo()
