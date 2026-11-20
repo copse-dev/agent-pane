@@ -184,7 +184,12 @@ describe('TurnTranscriptWriter', () => {
     const transcript = writer.begin(PROJECT, THREAD)
     await writer.attach(PROJECT, [THREAD])
     transcript.emit({ type: 'text', text: 'Reading the files.' })
-    transcript.emit({ type: 'steering_applied', messageId: 'note', text: 'Keep the API.' })
+    transcript.emit({
+      type: 'steering_applied',
+      messageId: 'note',
+      text: 'Keep the API.',
+      promptRepresentation: 'canonical-provider',
+    })
     transcript.emit({ type: 'text', text: 'The API is unchanged.' })
     transcript.emit({ type: 'done' })
     transcript.end()
@@ -192,6 +197,10 @@ describe('TurnTranscriptWriter', () => {
     assert.equal(
       (await stored()).messages.find((message) => message.id === 'note')?.content,
       'Keep the API.',
+    )
+    assert.equal(
+      (await stored()).messages.find((message) => message.id === 'note')?.promptRepresentation,
+      'canonical-provider',
     )
     assert.deepEqual(
       (await stored()).messages.map((message) => [message.id, message.role]),
