@@ -360,6 +360,7 @@
       "thread-prompts:can-submit",
       "thread-prompts:reply",
       "thread-prompts:revoke-access",
+      "threads:action-state",
       "threads:annotate-message",
       "threads:append-message",
       "threads:archive",
