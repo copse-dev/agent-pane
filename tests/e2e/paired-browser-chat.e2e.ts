@@ -21,6 +21,7 @@ import { installMockScenario } from './helpers/mock-scenario.ts'
 import { shouldUseChromiumHeadless } from './helpers/display-mode.mts'
 import { withFrozenAnimations } from './helpers/frozen-animations.ts'
 import { E2E_SCREENSHOT_DIR } from './helpers/screenshot.ts'
+import { waitForAgentIdle } from './helpers.ts'
 
 const projectId = 'e2e-paired-browser'
 const deviceLabel = 'Paired browser acceptance'
@@ -581,6 +582,7 @@ describe('real paired browser chat with the desktop window closed', function () 
     await mobile().$('#connection[data-connected="true"]').waitForExist()
     assert.equal(await mobile().$('.prompt-input').getText(), 'Keep this unsent draft.')
     await mobile().$('.stop-btn').click()
+    await waitForAgentIdle(15_000)
     await scenario.assertComplete()
     await openSettings()
     const row = $('strong=' + deviceLabel)

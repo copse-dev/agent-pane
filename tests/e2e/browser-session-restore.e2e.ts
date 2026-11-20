@@ -41,6 +41,27 @@ async function activeArtefactHeading(): Promise<string | null> {
   return guestResult
 }
 
+async function renderRestorableDashboard(): Promise<void> {
+  const html =
+    '<!doctype html><title>Sales Dashboard</title>' +
+    '<style>body{margin:24px;background:#fff;color:#222;font:16px system-ui}</style>' +
+    '<h1 id="version">restored</h1><p>Sales Dashboard is ready.</p>'
+  const scenario = await prepareMockToolTurn(
+    'Render the sales dashboard.',
+    { name: CANVAS_TOOL, args: { title: 'Sales Dashboard', html } },
+    'The sales dashboard is ready in the Browser pane.',
+  )
+  await submitComposer()
+  await expectAssistantReply('The sales dashboard is ready in the Browser pane.')
+  await waitForAgentIdle(25_000)
+  await scenario.assertComplete()
+  await $('.browser-tab-panel.is-active webview').waitForExist({ timeout: 20_000 })
+  await browser.waitUntil(async () => (await activeArtefactHeading()) === 'restored', {
+    timeout: 20_000,
+    timeoutMsg: 'expected the artefact to render in the canvas',
+  })
+}
+
 describe('browser session restore', function () {
   this.timeout(120_000)
 
@@ -64,31 +85,14 @@ describe('browser session restore', function () {
   })
 
   it('renders a prototype into the Browser pane', async () => {
-    const html =
-      '<!doctype html><title>Sales Dashboard</title>' +
-      '<style>body{margin:24px;background:#fff;color:#222;font:16px system-ui}</style>' +
-      '<h1 id="version">restored</h1><p>Sales Dashboard is ready.</p>'
-    const scenario = await prepareMockToolTurn(
-      'Render the sales dashboard.',
-      { name: CANVAS_TOOL, args: { title: 'Sales Dashboard', html } },
-      'The sales dashboard is ready in the Browser pane.',
-    )
-    await submitComposer()
-    await expectAssistantReply('The sales dashboard is ready in the Browser pane.')
-    await waitForAgentIdle(25_000)
-    await scenario.assertComplete()
-
-    await $('.browser-tab-panel.is-active webview').waitForExist({ timeout: 20_000 })
-    await browser.waitUntil(async () => (await activeArtefactHeading()) === 'restored', {
-      timeout: 20_000,
-      timeoutMsg: 'expected the artefact to render in the canvas',
-    })
+    await renderRestorableDashboard()
     expect(await tabLabels()).toContain('Sales Dashboard')
     await waitForAgentIdle()
     await saveAppScreenshot('browser-session-restore-before-quit.png')
   })
 
   it('brings the canvas tab back when Copse is reopened', async () => {
+    if (!(await tabLabels()).includes('Sales Dashboard')) await renderRestorableDashboard()
     // The pane records its tabs on a debounce, so give that write its turn
     // before the relaunch — the shutdown freezes window state, by design, so a
     // record that has not landed by then never will.
