@@ -276,7 +276,8 @@ hooks cannot express the escape and are always sandboxed-by-default.
 there — treat "sandboxed" as a _default, not a guarantee_. A **sandbox-blocked** hook is
 never a silent fail-open: `applySandboxBlock` escalates to a `failed` interpretation keyed
 off runner-side violation signals (never the hook's own stdout, so a hook can't forge a fake
-`allow` before seatbelt kills it — issue #104), records the block on the spine
+`allow` before seatbelt kills it — issue #104; counted under a fresh per-run violation id, so an
+earlier run of the same command cannot lend this one its violations), records the block on the spine
 (`sandboxBlocked: true`), surfaces it in the Sources panel, and resolves it through the hook's
 `onFailure` (`closed` → deny; `open` → no-opinion but still recorded).
 

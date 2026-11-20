@@ -4,7 +4,8 @@ import { constants } from 'node:os'
 import {
   afterSandboxedCommand,
   isProjectSandboxEnabled,
-  sandboxViolationCountForCommand,
+  newSandboxViolationId,
+  sandboxViolationCountForRun,
   spawnShellInProjectSandbox,
 } from '../../project-sandbox/index.ts'
 import {
@@ -128,6 +129,8 @@ export async function runShellOnce(
       }
       signal.addEventListener('abort', cancelSpawn, { once: true })
       reportPhase('starting')
+      // Attribute violations to this run alone, not to every run of the same text.
+      const violationId = newSandboxViolationId()
       let proc
       try {
         proc = await spawnShellInProjectSandbox(command, {
@@ -138,6 +141,7 @@ export async function runShellOnce(
           // hanging until the timeout.
           stdio: ['ignore', 'pipe', 'pipe'],
           unsandboxed,
+          violationId,
           readGrantTargets,
           ...(readonlyCheckout ? { readonlyCheckout } : {}),
           signal: spawnController.signal,
@@ -318,7 +322,7 @@ export async function runShellOnce(
       if (yieldOptions) yieldTimer = setTimeout(detach, yieldOptions.yieldAfterMs)
 
       const sandboxViolationCount = (): number =>
-        unsandboxed ? 0 : sandboxViolationCountForCommand(command)
+        unsandboxed ? 0 : sandboxViolationCountForRun(violationId)
 
       const finish = (): void => {
         if (!unsandboxed) afterSandboxedCommand()

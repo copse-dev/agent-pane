@@ -14,7 +14,8 @@ export {
   spawnBackgroundProcess,
   afterSandboxedCommand,
   isProjectSandboxEnabled,
-  sandboxViolationCountForCommand,
+  newSandboxViolationId,
+  sandboxViolationCountForRun,
 } from './spawn.ts'
 export {
   gatewayReadFile,
