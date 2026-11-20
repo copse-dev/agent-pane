@@ -14,12 +14,14 @@ import {
   showToast,
   slugifyHostId,
   upsertHost
-} from "./chunk-CK4AOU5N.js";
+} from "./chunk-KYBBGUKM.js";
 import {
   clear,
   el,
-  init_helpers
-} from "./chunk-EMIRHVRH.js";
+  init_dialog_shell,
+  init_helpers,
+  lazyBodyDialog
+} from "./chunk-OB2CWITE.js";
 import {
   __esm
 } from "./chunk-WW3EXSJD.js";
@@ -83,12 +85,6 @@ var init_remote_folder_path = __esm({
 });
 
 // src/renderer/views/remote-folder-dialog.ts
-function ensureDialog() {
-  if (dialogEl) return dialogEl;
-  dialogEl = el("dialog", { id: "remote-folder-dialog", class: "remote-folder-dialog" });
-  document.body.append(dialogEl);
-  return dialogEl;
-}
 function openRemoteFolderDialog(api) {
   const dialog = ensureDialog();
   clear(dialog);
@@ -451,9 +447,10 @@ function openRemoteFolderDialog(api) {
     dialog.showModal();
   });
 }
-var dialogEl;
+var ensureDialog;
 var init_remote_folder_dialog = __esm({
   "src/renderer/views/remote-folder-dialog.ts"() {
+    init_dialog_shell();
     init_helpers();
     init_toast();
     init_ssh_host_helpers();
@@ -461,7 +458,7 @@ var init_remote_folder_dialog = __esm({
     init_icons();
     init_inline_status();
     init_ipc_error_message();
-    dialogEl = null;
+    ensureDialog = lazyBodyDialog("remote-folder-dialog", "remote-folder-dialog");
   }
 });
 init_remote_folder_dialog();
