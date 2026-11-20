@@ -1,5 +1,13 @@
 import { execFileSync } from 'node:child_process'
-import { accessSync, lstatSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import {
+  accessSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readlinkSync,
+  realpathSync,
+  statSync,
+} from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
@@ -1089,11 +1097,12 @@ export function acpAgentSandboxOverlay(
      */
     stateDirs?: readonly string[]
     /**
-     * The agent's own executable as the sandboxed shell finds it on PATH, and
-     * the target when that is a symlink. Granted read-only, file by file: an
-     * installer such as Cursor's puts the command in `~/.local/bin`, under the
-     * home deny, so the agent could not even start. Its directory stays
-     * unreadable, and nothing in it becomes writable.
+     * The agent's own executable, as an absolute path where the sandboxed
+     * shell finds it on PATH. Granted read-only, file by file, with the file
+     * one symlink hop away (see {@link executableReadPaths}): an installer
+     * such as Cursor's puts the command in `~/.local/bin`, under the home deny,
+     * so the agent could not even start. Its directory stays unreadable, and
+     * nothing in it becomes writable.
      */
     executables?: readonly string[]
   },
@@ -1141,13 +1150,22 @@ function acpAgentSandboxOverlayWithCheckoutWrites(
     sandbox.allowMacOsKeychain === true && process.platform === 'darwin'
       ? [join(home, 'Library', 'Keychains'), join(home, 'Library', 'Keychains', '**')]
       : []
-  // Exact files, never their directories, and only absolute paths.
-  const executableReadPaths = (opts?.executables ?? []).filter((path) => isAbsolute(path))
-  const homeReadPaths = [...keychainReadPaths, ...configuredHomePaths, ...executableReadPaths]
   const scratchPaths = [
     ...(sandbox.scratchPaths ?? []).flatMap(expandScratchPath),
     ...stateDirs,
   ].flatMap((abs) => [abs, `${abs}/**`])
+  // Where the agent or the repository can write, and so can already read.
+  const writableRoots = [
+    workspaceRoot,
+    ...fs.allowWrite,
+    ...configuredHomePaths,
+    ...scratchPaths,
+  ].map(patternRoot)
+  // Exact files, never their directories, and only absolute paths.
+  const executables = (opts?.executables ?? [])
+    .filter((path) => isAbsolute(path))
+    .flatMap((path) => executableReadPaths(path, writableRoots))
+  const homeReadPaths = [...keychainReadPaths, ...configuredHomePaths, ...executables]
   const localDomains = opts?.allowLocalhost ? ['localhost', '127.0.0.1', '::1'] : []
   return {
     ...base,
@@ -1165,6 +1183,53 @@ function acpAgentSandboxOverlayWithCheckoutWrites(
       allowWrite: [...new Set([...fs.allowWrite, ...configuredHomePaths, ...scratchPaths])],
     },
   }
+}
+
+/** The directory a sandbox path pattern covers: everything before its first glob segment. */
+function patternRoot(pattern: string): string {
+  const glob = pattern.search(/[*?[\]{}]/)
+  if (glob === -1) return pattern
+  const prefix = pattern.slice(0, glob)
+  return prefix.endsWith(sep) ? prefix.slice(0, -1) || sep : dirname(prefix)
+}
+
+/**
+ * The read grants for an agent executable at `found`: that file, and when it is
+ * a symlink, the file one hop away. Only regular files are granted. ASRT
+ * renders an `allowRead` entry as `(subpath …)` on macOS and a read bind on
+ * Linux, so a directory here would open its whole tree.
+ *
+ * A link under `writableRoots` (the workspace, the agent's home dirs, its
+ * scratch paths) is never followed: the repository or the agent could point
+ * it anywhere. The executable is readable there already, so nothing is granted
+ * at all. One hop, not `realpath`, for the same reason: a further link may sit
+ * where the agent can write. A target that is already readable, because it is
+ * under `writableRoots` (Cursor's install tree is one of its home dirs), is
+ * not granted again.
+ */
+function executableReadPaths(found: string, writableRoots: readonly string[]): string[] {
+  const writable = (path: string): boolean => writableRoots.some((root) => isPathWithin(root, path))
+  const linkDir = canonicalizeReadTarget(dirname(found))
+  if (writable(found) || writable(join(linkDir, basename(found)))) return []
+  const kind = (path: string): 'file' | 'link' | 'other' => {
+    try {
+      const stats = lstatSync(path)
+      return stats.isFile() ? 'file' : stats.isSymbolicLink() ? 'link' : 'other'
+    } catch {
+      return 'other'
+    }
+  }
+  const foundKind = kind(found)
+  if (foundKind === 'file') return [found]
+  if (foundKind !== 'link') return []
+  let target: string
+  try {
+    target = resolve(linkDir, readlinkSync(found))
+  } catch {
+    return []
+  }
+  if (kind(target) !== 'file') return []
+  return writable(target) || writable(canonicalizeReadTarget(target)) ? [found] : [found, target]
 }
 
 /**

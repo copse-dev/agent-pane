@@ -28,7 +28,6 @@ import {
   type WriteTextFileResponse,
 } from '@agentclientprotocol/sdk/unstable'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { realpath } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { nodeWritableStream } from './node-byte-streams.ts'
 import {
@@ -585,21 +584,19 @@ function waitForAcpChildExit(
 
 /**
  * The agent's executable as the sandboxed wrapper shell will find it on `env`'s
- * PATH from `cwd`, plus the file a symlink there points to, for the overlay's
- * read-only `executables` grant. A relative PATH entry resolves from the agent's
- * cwd, as the wrapper resolves it, never from Copse's. Empty when it does not
- * resolve: the spawn then fails as before, naming the command.
+ * PATH from `cwd`, for the overlay's read-only `executables` grant, which
+ * decides what of it and its symlink target may be read. A relative PATH entry
+ * resolves from the agent's cwd, as the wrapper resolves it, never from Copse's.
+ * Empty when it does not resolve: the spawn then fails as before, naming the
+ * command.
  */
-async function agentExecutableReadPaths(
+async function agentExecutables(
   command: string,
   env: NodeJS.ProcessEnv,
   cwd: string,
 ): Promise<string[]> {
   const found = await resolveOnPath(command, env, cwd)
-  if (!found) return []
-  const absolute = resolve(cwd, found)
-  const target = await realpath(absolute).catch(() => absolute)
-  return target === absolute ? [absolute] : [absolute, target]
+  return found ? [resolve(cwd, found)] : []
 }
 
 export async function spawnAcpAgentProcess(
@@ -627,10 +624,8 @@ export async function spawnAcpAgentProcess(
   if (config.sandbox && willSandboxAcpAgent(config.sandbox)) {
     // The agent runs git with the user's config; pick up its current includes.
     await refreshGitConfigIncludeReadPaths()
-    const executables = await agentExecutableReadPaths(
-      config.command,
-      withSandboxShellPath(env),
-      config.cwd,
+    const executables = await perfSpan('ttft:acp-agent-executable', () =>
+      agentExecutables(config.command, withSandboxShellPath(env), config.cwd),
     )
     const overlay = acpAgentSandboxOverlay(config.cwd, config.sandbox, {
       executables,

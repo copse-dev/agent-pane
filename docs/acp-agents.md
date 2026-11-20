@@ -566,11 +566,16 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   toolchains and git config contained commands get, and, when its preset sets
   `allowMacOsKeychain` (the Claude presets, which keep their macOS login
   there), `~/Library/Keychains`. It can also read its own executable, as the
-  wrapper shell finds it on `PATH`, and that symlink's target, file by file and
-  read-only: Cursor's installer puts `cursor-agent` in `~/.local/bin`, and
-  without that grant the agent could not even start. The rest of that
-  directory stays unreadable and unwritable. It never gets the rest of the home
-  directory: no `~/.ssh`, cloud credentials or other projects.
+  wrapper shell finds it on `PATH`, and, when that is a symlink, the file it
+  points to, one hop only, file by file and read-only: Cursor's installer puts
+  `cursor-agent` in `~/.local/bin`, and without that grant the agent could not
+  even start. Only regular files are granted, never a directory. A target the
+  agent can already read, such as Cursor's install tree in its home dirs, is
+  not granted again. Nothing is granted for a command found in the workspace,
+  its home dirs or its scratch paths: it is readable there already, and a
+  symlink the repository or the agent can write never chooses a grant. The
+  rest of the bin directory stays unreadable and unwritable. It never gets the
+  rest of the home directory: no `~/.ssh`, cloud credentials or other projects.
 - **A sandboxed Claude agent can read its Keychain login but not renew it.**
   The Keychain grant is read-only, and `security` writes the login keychain
   through a temporary file in that directory, so saving a renewed token fails
