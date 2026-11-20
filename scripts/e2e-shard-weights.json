@@ -1,5 +1,5 @@
 {
-  "source": "suggest-model-configured-pool provisional at the median (7.9s) until its first CI run is measured, 2026-11-15; canvas-blocked-scripts provisional at the median (7.9s) until its first CI run is measured, 2026-11-15; thread-compact-state provisional at the median (7.9s) until its first CI run is measured, 2026-11-08; automation-active-acp-worktree provisional at the median (7.9s) until its first CI run is measured, 2026-11-08; median PASSED seconds over 160 CI e2e shard logs, 2026-11-07; acp-bridge-unavailable provisional at its local macOS run (11s) until its first CI run is measured, 2026-11-05; acp-bridge-tools-dropped provisional at its local Linux Xvfb run (9s) until its first CI run is measured, 2026-11-06; pane-recording measured at 14.3s from CI run 41210627124 shard 4 (job 124568187113), 2026-10-31; subthread-orchestration-recovery provisional at the median (8s) until its first Linux CI run is measured, 2026-11-05; subthread-orchestration provisional at the median (8s) until its first CI run is measured, 2026-10-31",
+  "source": "session-backup-recovery measured at 61.6s from CI run 43769510675 shard 7 (job 132985939893), 2026-11-15; suggest-model-configured-pool provisional at the median (7.9s) until its first CI run is measured, 2026-11-15; canvas-blocked-scripts provisional at the median (7.9s) until its first CI run is measured, 2026-11-15; thread-compact-state provisional at the median (7.9s) until its first CI run is measured, 2026-11-08; automation-active-acp-worktree provisional at the median (7.9s) until its first CI run is measured, 2026-11-08; median PASSED seconds over 160 CI e2e shard logs, 2026-11-07; acp-bridge-unavailable provisional at its local macOS run (11s) until its first CI run is measured, 2026-11-05; acp-bridge-tools-dropped provisional at its local Linux Xvfb run (9s) until its first CI run is measured, 2026-11-06; pane-recording measured at 14.3s from CI run 41210627124 shard 4 (job 124568187113), 2026-10-31; subthread-orchestration-recovery provisional at the median (8s) until its first Linux CI run is measured, 2026-11-05; subthread-orchestration provisional at the median (8s) until its first CI run is measured, 2026-10-31",
   "seconds": {
     "tests/e2e/accent-color.e2e.ts": 15.3,
     "tests/e2e/accessibility.e2e.ts": 24.6,
@@ -296,6 +296,7 @@
     "tests/e2e/selected-plugin-browser.e2e.ts": 16.3,
     "tests/e2e/selection-highlight.e2e.ts": 7.5,
     "tests/e2e/send-now-preserves-shell.e2e.ts": 131.1,
+    "tests/e2e/session-backup-recovery.e2e.ts": 61.6,
     "tests/e2e/settings-about.e2e.ts": 8.8,
     "tests/e2e/settings-acp-agents-list.e2e.ts": 10,
     "tests/e2e/settings-acp-permission-mode.e2e.ts": 8.2,
