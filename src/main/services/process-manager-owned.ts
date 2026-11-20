@@ -181,6 +181,7 @@ export function sandboxFsServerRoots(
 const SELF_WORKER_LABELS = new Map([
   ['acp-session-host-worker', 'Agent session host'],
   ['acp-probe-worker', 'Agent probe'],
+  ['port-binding-worker', 'Port binding task host'],
   ['sandbox-fs-worker', 'Sandbox file server'],
   ['plugin-tool-worker', 'Plugin tool host'],
 ])
