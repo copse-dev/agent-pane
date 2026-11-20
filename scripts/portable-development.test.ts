@@ -189,14 +189,14 @@ test('offline settings reach package managers without changing normal execution'
   const f = fixture()
   try {
     const command =
-      'printf "%s\\n" "${npm_config_offline:-unset}" "${COREPACK_ENABLE_NETWORK:-unset}" "$COPSE_ELECTRON_HEADERS_CACHE"'
+      'printf "%s\\n" "${npm_config_offline:-unset}" "${COREPACK_ENABLE_NETWORK:-unset}" "$npm_config_devdir"'
     const normal = f.run(f.root, ['exec', '/bin/bash', '-c', command])
     assert.equal(normal.status, 0, normal.stderr)
     const offline = f.run(f.root, ['exec', '/bin/bash', '-c', command], {
       COPSE_PORTABLE_OFFLINE: '1',
     })
     assert.equal(offline.status, 0, offline.stderr)
-    assert.equal(offline.stdout, `true\n0\n${f.root}/cache/electron-headers\n`)
+    assert.equal(offline.stdout, `true\n0\n${f.root}/cache/node-gyp\n`)
   } finally {
     rmSync(f.parent, { recursive: true, force: true })
   }

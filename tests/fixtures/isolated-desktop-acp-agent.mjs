@@ -52,7 +52,7 @@ agent({ name: 'isolated-desktop-acceptance' })
   }))
   .onRequest('session/new', async (ctx) => {
     bridge = ctx.params.mcpServers.find(
-      (server) => server.name === 'copse' && server.type === 'http',
+      (server) => /^copse-[a-z0-9]{8}$/.test(server.name) && server.type === 'http',
     )
     assert.ok(bridge, 'The registered ACP agent must receive the native bridge')
     await rpc('tools/list', {}, false)

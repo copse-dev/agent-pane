@@ -513,9 +513,12 @@ describe('MockLLMProvider scenarios', () => {
       'progress',
     )
     const controller = new AbortController()
-    const stream = new MockLLMProvider('progress')
-      .stream([{ role: 'user', content: 'Inspect context' }], [], controller.signal)
-      [Symbol.asyncIterator]()
+    const events = new MockLLMProvider('progress').stream(
+      [{ role: 'user', content: 'Inspect context' }],
+      [],
+      controller.signal,
+    )
+    const stream = events[Symbol.asyncIterator]()
     assert.deepEqual((await stream.next()).value, { type: 'prompt_progress', fraction: 0.47 })
     const pending = stream.next()
     controller.abort()

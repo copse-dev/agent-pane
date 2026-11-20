@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import { sceneObject, explainerScene, validateScenes } from './explainer-scenes.ts'
 
 /** Narration stays inert; optional drawing code runs only in a disposable browser worker. */
@@ -198,7 +199,6 @@ export function createExplainerPreviews(): {
     string,
     { hash: string; at: number; html: string; story: PreparedExplainer | undefined }
   >()
-  const hash = (html: string): string => createHash('sha256').update(html).digest('hex')
   return {
     record(html: string, story?: PreparedExplainer): string {
       for (const [key, value] of entries) if (Date.now() - value.at > 600_000) entries.delete(key)
@@ -207,7 +207,7 @@ export function createExplainerPreviews(): {
         if (oldest !== undefined) entries.delete(oldest)
       }
       const id = randomUUID()
-      entries.set(id, { hash: hash(html), at: Date.now(), html, story })
+      entries.set(id, { hash: sha256Hex(html), at: Date.now(), html, story })
       return id
     },
     get(id): { html: string; story: PreparedExplainer } {
@@ -220,7 +220,7 @@ export function createExplainerPreviews(): {
     },
     assertReviewed(id: string | undefined, html: string): void {
       const entry = id ? entries.get(id) : undefined
-      if (!entry || Date.now() - entry.at > 600_000 || entry.hash !== hash(html))
+      if (!entry || Date.now() - entry.at > 600_000 || entry.hash !== sha256Hex(html))
         throw new Error(
           'Preview these exact scenes with preview_explainer first, inspect the returned frames, then pass its previewId. Changed stories need a new preview.',
         )

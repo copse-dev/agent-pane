@@ -1299,6 +1299,50 @@ test('a disk attachment cannot resurrect a run already marked interrupted by rec
   unsub()
 })
 
+for (const source of ['disk', 'runtime'] as const) {
+  for (const status of ['idle', 'error'] as const) {
+    test(`a completed ${status} ${source} attachment clears an earlier interruption`, () => {
+      const recovered = { ...thread('t1'), status: 'idle' as const, interruptedTurnAt: 20 }
+      const { store, snapshot, unsub } = setup([recovered])
+      snapshot({
+        source,
+        projectId: 'project-1',
+        thread: { ...thread('t1'), status },
+        checkpoint: { stream: null, pendingTurn: null },
+      })
+      assert.equal(requireThread(store, 't1').status, status)
+      assert.equal(requireThread(store, 't1').interruptedTurnAt, undefined)
+      unsub()
+    })
+  }
+}
+
+test('a stale running attachment cannot restore an interruption beside a locally held queue', () => {
+  const initial: Thread = {
+    ...thread('t1'),
+    status: 'idle',
+    pendingMessages: [
+      {
+        messageId: 'held',
+        createdAt: 1,
+        autoDispatch: false,
+        payload: { content: 'Wait for review' },
+      },
+    ],
+  }
+  const { store, snapshot, unsub } = setup([initial])
+  snapshot({
+    source: 'disk',
+    projectId: 'project-1',
+    thread: { ...thread('t1'), interruptedTurnAt: 20 },
+    checkpoint: { stream: null, pendingTurn: null },
+  })
+  assert.equal(requireThread(store, 't1').status, 'idle')
+  assert.equal(requireThread(store, 't1').interruptedTurnAt, undefined)
+  assert.deepEqual(requireThread(store, 't1').pendingMessages, initial.pendingMessages)
+  unsub()
+})
+
 for (const status of ['idle', 'error'] as const) {
   test(`a disk attachment adopts a newer ${status} completion beside an existing held queue`, () => {
     const initial: Thread = {

@@ -2,18 +2,30 @@ import { createContext, Script } from 'node:vm'
 import { isRecord } from './unknown-value.ts'
 
 /**
+ * Anything with a synchronous `test(subject)`: a `RegExp`, or a matcher that
+ * compiles to one internally (such as a picomatch glob matcher).
+ */
+export interface SubjectTester {
+  test(subject: string): boolean
+}
+
+/**
  * Match an untrusted regular expression against subjects under a wall-clock
  * budget. JavaScript's backtracking engine has no step limit, so a pattern such
  * as `(a+)+$` against a short non-matching line runs for minutes on the calling
  * thread. Running the loop through `node:vm` with a `timeout` lets V8 interrupt
- * the match when the budget is spent.
+ * the match when the budget is spent. The interrupt stops whatever JavaScript is
+ * running in the isolate, so a tester defined outside the vm context (a glob
+ * matcher, say) is bounded too.
  *
  * Returns the indexes of matching subjects (stopping after `limit` matches), or
  * `'timeout'` when the budget ran out first. Pass a regex without the `g` or `y`
- * flag: `test` on those is stateful across subjects.
+ * flag: `test` on those is stateful across subjects. Each call starts a
+ * watchdog (tens of microseconds), so batch subjects rather than calling once
+ * per subject in a hot loop.
  */
 export function matchingIndexesWithin(
-  regex: RegExp,
+  regex: SubjectTester,
   subjects: readonly string[],
   opts: { timeoutMs: number; limit?: number },
 ): number[] | 'timeout' {
@@ -39,7 +51,7 @@ export function matchingIndexesWithin(
 
 /** Whether `regex` matches `subject`, or `'timeout'` when the budget ran out first. */
 export function regexTestWithin(
-  regex: RegExp,
+  regex: SubjectTester,
   subject: string,
   timeoutMs: number,
 ): boolean | 'timeout' {

@@ -102,6 +102,11 @@ export async function setupHostedArchive(
     })
     await unlink(archive)
     if (rejected.length) throw new Error('Unsafe archive entry or extraction budget exceeded')
+    // Not the host's internal policy (`security/internal-git-exec.ts`), on
+    // purpose: this runs in the hosted sandbox on a repository it just
+    // `git init`ed from an archive with `.git` entries refused, beside an agent
+    // that can already run any program there. It also needs `apply`,
+    // `hash-object` and `checkout`, which the internal allowlist does not admit.
     const git = (args: string[], input?: string): string =>
       execFileSync(
         'git',

@@ -50,7 +50,7 @@ const ACP_READONLY_CHECKOUT_RESTRICTION =
 export const ACP_READONLY_CHECKOUT_PROMPT_NOTE =
   ACP_READONLY_CHECKOUT_RESTRICTION +
   'When you are ready to change anything, first call the ' +
-  '"request_write_access" tool on the "copse" MCP server (pass a short branch_name describing ' +
+  '"request_write_access" tool on Copse\'s MCP server (pass a short branch_name describing ' +
   'the change). It gives this thread its own worktree and branch; then end your turn as its ' +
   'result says, and you will be restarted there with write access and the same conversation. ' +
   'Do not retry a blocked write.'

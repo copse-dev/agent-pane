@@ -1,5 +1,6 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { Thread } from '@shared/types'
+import { explicitAgentForMessage } from '@shared/threads/explicit-agent.ts'
 import type { AgentRunPayload } from '@shared/types/skills.ts'
 import { addMessage } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -38,6 +39,12 @@ export function turnRecoveryForMessage(
   const failedIndex = thread.messages.length - 1
   const failed = thread.messages[failedIndex]
   if (!failed || failed.id !== failedMessageId) return null
+  // An explicit invocation has one host-synthesized task card. The generic
+  // continuation targets the parent and cannot resume that one-shot worker.
+  // Keep retry explicit through /name rather than silently changing executors.
+  if (explicitAgentForMessage(thread.messages, failedIndex) !== undefined) {
+    return null
+  }
   if (
     thread.interruptedTurnAt !== undefined &&
     failed.createdAt <= thread.interruptedTurnAt &&

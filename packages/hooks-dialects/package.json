@@ -14,7 +14,7 @@
     "@copse/agent": "workspace:*",
     "@copse/std": "workspace:*",
     "@copse/store-kit": "workspace:*",
-    "micromatch": "^4.0.8",
+    "picomatch": "^4.0.7",
     "zod": "^4.6.7"
   }
 }

@@ -9,6 +9,8 @@ import {
 } from '@agentclientprotocol/sdk/unstable'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { nodeWritableStream } from './node-byte-streams.ts'
+import { acpChildStdoutStream, appendAcpStderrTail } from './acp-child-stream.ts'
+import { acpErrorMessage } from './acp-error-detail.ts'
 
 export interface AcpLongRunProbeConfig {
   agentId: string
@@ -67,8 +69,6 @@ export interface AcpLongRunReport {
 const DEFAULT_DURATION_MS = 6 * 60_000
 const DEFAULT_PROGRESS_INTERVAL_MS = 30_000
 const DEFAULT_TIMEOUT_GRACE_MS = 90_000
-const STDERR_TAIL_LIMIT = 8_000
-const ERROR_DETAIL_LIMIT = 2_000
 
 export function defaultLongRunPrompt(durationMs: number, progressIntervalMs: number): string {
   const durationSeconds = Math.ceil(durationMs / 1000)
@@ -91,61 +91,6 @@ export function defaultBlockingReadPrompt(durationMs: number): string {
   ].join(' ')
 }
 
-function appendStderrTail(current: string, chunk: Buffer): string {
-  const next = current + chunk.toString()
-  return next.length <= STDERR_TAIL_LIMIT ? next : next.slice(-STDERR_TAIL_LIMIT)
-}
-
-function processExitError(
-  command: string,
-  code: number | null,
-  signal: NodeJS.Signals | null,
-  stderr: string,
-): Error {
-  const reason = signal ? `signal ${signal}` : `code ${code === null ? 'unknown' : String(code)}`
-  const detail = stderr.trim()
-  return new Error(
-    `ACP agent "${command}" exited with ${reason}${detail ? `. stderr: ${detail}` : ''}`,
-  )
-}
-
-function processSpawnError(command: string, err: Error, stderr: string): Error {
-  const detail = stderr.trim()
-  return new Error(
-    `ACP agent "${command}" failed to start: ${err.message}${detail ? `. stderr: ${detail}` : ''}`,
-  )
-}
-
-function truncateErrorDetail(value: string): string {
-  return value.length <= ERROR_DETAIL_LIMIT ? value : `${value.slice(0, ERROR_DETAIL_LIMIT)}...`
-}
-
-function errorDataDetail(err: unknown): string | null {
-  if (typeof err === 'object' && err !== null && 'data' in err) {
-    const data = Reflect.get(err, 'data')
-    if (typeof data === 'string') return truncateErrorDetail(data)
-    if (typeof data === 'object' && data !== null && 'details' in data) {
-      const details = Reflect.get(data, 'details')
-      if (typeof details === 'string') return truncateErrorDetail(details)
-    }
-    try {
-      const encoded = JSON.stringify(data)
-      return typeof encoded === 'string' ? truncateErrorDetail(encoded) : null
-    } catch {
-      return null
-    }
-  }
-  if (err instanceof Error && err.cause) return errorDataDetail(err.cause)
-  return null
-}
-
-function errorMessage(err: unknown): string {
-  const message = err instanceof Error ? err.message : String(err)
-  const detail = errorDataDetail(err)
-  if (!detail || message.includes(detail)) return message
-  return `${message}: ${detail}`
-}
-
 function rawInputKeysOf(rawInput: unknown): string[] {
   if (rawInput === null || rawInput === undefined) return []
   if (typeof rawInput !== 'object' || Array.isArray(rawInput)) return []
@@ -165,84 +110,11 @@ function recordPermission(req: RequestPermissionRequest): AcpLongRunPermissionRe
 function captureChildStderr(child: ChildProcess, command: string): () => string {
   let tail = ''
   child.stderr?.on('data', (chunk: Buffer) => {
-    tail = appendStderrTail(tail, chunk)
+    tail = appendAcpStderrTail(tail, chunk.toString())
     const text = chunk.toString().trimEnd()
     if (text) console.warn(`[acp-long:${command}] ${text}`)
   })
   return () => tail
-}
-
-function childStdoutStream(
-  child: ChildProcess,
-  command: string,
-  stderrTail: () => string,
-): { readable: ReadableStream<Uint8Array>; dispose: () => void } {
-  const stdout = child.stdout
-  if (!stdout) throw new Error('ACP agent spawned without stdout pipe')
-  let cancelRead = (): void => {
-    child.kill()
-  }
-  const readable = new ReadableStream<Uint8Array>({
-    start(controller): void {
-      let settled = false
-      const cleanup = (): void => {
-        stdout.off('data', onData)
-        stdout.off('error', onStdoutError)
-        child.off('error', onChildError)
-        child.off('close', onChildClose)
-      }
-      const settle = (fn: () => void): void => {
-        if (settled) return
-        settled = true
-        cleanup()
-        fn()
-      }
-      const onData = (chunk: Buffer): void => {
-        controller.enqueue(new Uint8Array(chunk))
-      }
-      const onStdoutError = (err: Error): void => {
-        settle(() => {
-          controller.error(err)
-        })
-      }
-      const onChildError = (err: Error): void => {
-        settle(() => {
-          controller.error(processSpawnError(command, err, stderrTail()))
-        })
-      }
-      const onChildClose = (code: number | null, signal: NodeJS.Signals | null): void => {
-        if (code === 0 && signal === null) {
-          settle(() => {
-            controller.close()
-          })
-        } else {
-          settle(() => {
-            controller.error(processExitError(command, code, signal, stderrTail()))
-          })
-        }
-      }
-      cancelRead = (): void => {
-        if (!settled) {
-          settled = true
-          cleanup()
-        }
-        child.kill()
-      }
-      stdout.on('data', onData)
-      stdout.on('error', onStdoutError)
-      child.once('error', onChildError)
-      child.once('close', onChildClose)
-    },
-    cancel(): void {
-      cancelRead()
-    },
-  })
-  return {
-    readable,
-    dispose: (): void => {
-      cancelRead()
-    },
-  }
 }
 
 function spawnLongRunTransport(
@@ -255,13 +127,11 @@ function spawnLongRunTransport(
   })
   const stderrTail = captureChildStderr(child, config.command)
   const writable = nodeWritableStream(child.stdin)
-  const { readable, dispose } = childStdoutStream(child, config.command, stderrTail)
-  return Promise.resolve({
-    stream: ndJsonStream(writable, readable),
-    dispose: (): void => {
-      dispose()
-    },
-  })
+  const stop = (): void => {
+    child.kill()
+  }
+  const readable = acpChildStdoutStream(child, config.command, stderrTail, stop)
+  return Promise.resolve({ stream: ndJsonStream(writable, readable), dispose: stop })
 }
 
 const PROMPT_SUCCESS_IGNORED = new Promise<never>(() => {
@@ -416,7 +286,7 @@ export async function probeAgentLongRun(
   } catch (err) {
     return finish({
       ok: false,
-      error: state.timedOut ? `timed out after ${String(timeoutMs)}ms` : errorMessage(err),
+      error: state.timedOut ? `timed out after ${String(timeoutMs)}ms` : acpErrorMessage(err),
     })
   } finally {
     clearTimeout(timer)

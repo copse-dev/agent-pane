@@ -91,7 +91,8 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
 - **How a tool call gets its name differs per agent**, and no agent fills in
   every field. Wire traces of three (captured with the `COPSE_DEBUG_ACP_UPDATES`
   flag from #1659):
-  Claude sends the qualified name (`mcp__copse__run_shell`) everywhere; Cursor
+  Claude sends the qualified name (`mcp__copse-<nonce>__run_shell`: each
+  bridge is mounted under its own `copse-<nonce>` name, #4125) everywhere; Cursor
   titles the call `MCP: tool` with empty arguments and reveals the real name
   **only** on the permission request; Codex sends no title on permission
   requests but does send the arguments. Copse treats the permission request as a
@@ -580,6 +581,25 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   network failure worth one retry. It offers `claude auth login`, since signing
   in from a terminal saves a fresh token, and the note it leaves for the next
   turn does not claim a re-run must fail.
+- **`gh` does not run in a sandboxed agent's own shell.** `~/.config/gh` holds
+  the user's GitHub token, so it stays unreadable, and `gh` fails on its config
+  before it reaches the network (`failed to read configuration: open
+  <home>/.config/gh/config.yml: operation not permitted`, where `gh` prints the
+  absolute home directory in place of `<home>`). Copse cannot add to the agent's
+  own shell output, so the sandbox note on a fresh session quotes that error,
+  placeholder included, and gives the route that session actually has
+  (issue #4145). The route follows the bridge tools the agent has listed, not the
+  ones Copse offered (#4144), and tools its runtime has since dropped (#4142)
+  don't count. If it listed GitHub tools, the note names them, with
+  `run_shell` for the rest. If it listed only `run_shell`, the note points there,
+  since `run_shell` can ask to run `gh` outside the sandbox. If it listed no Copse
+  tools, because no bridge was offered or the agent never connected to the one
+  that was, the note says the session has no signed-in route to GitHub and tells
+  the agent to tell the user instead of retrying. An unattended container run
+  gets that same answer whatever it listed: the guest offers no GitHub tools,
+  and its `run_shell` has no network and refuses every approval prompt. Serving `gh` reads to the agent
+  process through the host (#3873's per-thread `GH_CONFIG_DIR` and socket) waits
+  on that draft.
 - **SSH workspaces are opt-in.** Off by default, ACP agents stay hidden from the
   chat model picker and are rejected at session open on an SSH remote. Turn on
   **Settings → Experimental → ACP agents → Run ACP agents over SSH** to spawn the
