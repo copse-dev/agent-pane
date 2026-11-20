@@ -32,6 +32,10 @@ import {
   type ThreadExecutionOwner,
 } from './thread-execution-context.ts'
 import { getAgentExecutionRoot, getAgentProjectRoot } from './execution-root.ts'
+import {
+  getActiveExecutionTarget,
+  threadProjectExecutionTarget,
+} from './ssh-workspace/execution-target.ts'
 import { hasLiveWorktreeWriter, worktreeWriteEpoch } from './worktree-writers.ts'
 import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
 import { getActiveRunTurnTreeId } from './thread-models.ts'
@@ -778,12 +782,24 @@ export async function listWorktreeChangesSince(
 /**
  * What git holds of these workspace-relative paths' current content, in the
  * active thread's checkout; see {@link findGitContentStates}. Null when git
- * can't say.
+ * can't say, and always in an SSH workspace: the hashing reads files from this
+ * machine's disk, where a remote root's paths are absent or, worse, name an
+ * unrelated local file that would answer for the remote one.
  */
 export async function listWorktreeGitContentStates(
   paths: readonly string[],
 ): Promise<Map<string, GitContentState> | null> {
+  if (!runsOnLocalDisk()) return null
   return findGitContentStates(executionRootFor(stateFor()), paths)
+}
+
+/** Whether this turn's checkout is on this machine; false when that can't be resolved. */
+function runsOnLocalDisk(): boolean {
+  try {
+    return (threadProjectExecutionTarget() ?? getActiveExecutionTarget()).kind === 'local'
+  } catch {
+    return false
+  }
 }
 
 /**

@@ -46,6 +46,7 @@ import {
 } from './thread-execution-context.ts'
 import { ownedIt, worktreeIt, TEST_THREAD_OWNER } from './thread-execution-context.test-support.ts'
 import { setSetting } from './storage/settings.ts'
+import { storageGet, storageSet } from './storage/storage.ts'
 import { localWorkspaceFs } from './workspace-fs/local-workspace-fs.ts'
 import { writeFileTool } from '../tools/write-file-tool.ts'
 import { runShellTool } from '../tools/shell-tool.ts'
@@ -1315,6 +1316,28 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
 
     git(tempRoot, ['config', 'core.autocrlf', 'true'])
     assert.equal((await listWorktreeGitContentStates(['raw.txt']))?.size, 0)
+  })
+  ownedIt('listWorktreeGitContentStates makes no claim in an SSH workspace', async () => {
+    // The hashing reads this machine's disk. For an SSH project the root names a
+    // remote path, so a local file at the same path must not answer for it.
+    await writeFile(join(workspaceRoot, 'scratch.txt'), 'scratch\n', 'utf-8')
+    assert.ok(await listWorktreeGitContentStates(['scratch.txt']), 'git answers locally')
+    const projects = storageGet('projects')
+    await setSetting('sshWorkspaceEnabled', true)
+    await setSetting('sshWorkspaceHosts', [{ id: 'dev', label: 'Dev', host: 'dev.example.com' }])
+    storageSet('projects', [
+      { id: TEST_THREAD_OWNER.projectId, path: workspaceRoot, sshHost: 'dev' },
+    ])
+    try {
+      assert.equal(await listWorktreeGitContentStates(['scratch.txt']), null)
+      // Unroutable (SSH turned off): fail closed to no claim as well.
+      await setSetting('sshWorkspaceEnabled', false)
+      assert.equal(await listWorktreeGitContentStates(['scratch.txt']), null)
+    } finally {
+      storageSet('projects', projects)
+      await setSetting('sshWorkspaceEnabled', false)
+      await setSetting('sshWorkspaceHosts', [])
+    }
   })
   ownedIt('gitBlobIdOfRegularFile refuses a file that changes while it is read', async () => {
     // Chunked reads of a file another writer is changing can mix versions into a
