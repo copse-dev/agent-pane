@@ -4953,6 +4953,10 @@
       "sha256": "1c49dd379e36c9b741242d81f8e04de1f9d13d4fea01d59bd6ceddf5f0033b3b",
       "bytes": 179936
     },
+    "settings-ssh-option-host.png": {
+      "sha256": "b5468ce1e59e454a3a52d7630fd4d6b440d65b558ea4c6150534800ff850aca7",
+      "bytes": 189691
+    },
     "settings-ssh-remote-agent-copy.png": {
       "sha256": "8d69b004b933c0c31c0c3c6d0761d09be4dcf17c35ac53653d51137c51bdfba0",
       "bytes": 20359
