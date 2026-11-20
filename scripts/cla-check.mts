@@ -203,6 +203,16 @@ function httpStatus(error: unknown): unknown {
   return typeof error === 'object' && error !== null && 'status' in error ? error.status : undefined
 }
 
+/**
+ * A commit's author or trailer address as inert Markdown. The address is
+ * whatever the committer typed, and the comment it is listed in is posted by
+ * this repository's bot: unquoted, `@org/team` pinged that team and a
+ * `[text](url)` address became a link.
+ */
+function quoted(address: string): string {
+  return `\`${address.replace(/\s+/g, ' ').replaceAll('`', "'")}\``
+}
+
 function isBot(user: ClaUser): boolean {
   return user.type === 'Bot' || user.login.endsWith('[bot]')
 }
@@ -470,7 +480,7 @@ export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
       } else if (c.author) {
         await checkPerson(c.author, sha)
       } else if (!answersForUnlinked && !signatures.emails.has(authorEmail)) {
-        unresolved.push(`${authorEmail || 'no email'} (${sha})`)
+        unresolved.push(`${authorEmail ? quoted(authorEmail) : 'no email'} (${sha})`)
       }
       for (const m of c.commit.message.matchAll(CO_AUTHOR_TRAILER)) {
         const email = (m[1] ?? '').toLowerCase()
@@ -483,7 +493,7 @@ export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
         } else if (answersForUnlinked) {
           continue
         }
-        unresolved.push(`co-author ${email} (${sha})`)
+        unresolved.push(`co-author ${quoted(email)} (${sha})`)
       }
     }
     if (commits.length >= MAX_LISTED_COMMITS) {
