@@ -394,6 +394,37 @@ describe('resolveNodeToolchainAllowRead', () => {
     }
   })
 
+  it('treats a home-level directory whose name starts with two dots as inside home', () => {
+    const { home, cleanup } = fakeHome()
+    try {
+      // `~/..local` is one level below home, so like `~/.local` it is shallow:
+      // only npm's tree is granted, never the whole directory.
+      const binDir = join(home, '..local', 'bin')
+      installNode(binDir)
+      const npmTree = join(home, '..local', 'lib', 'node_modules')
+      mkdirSync(npmTree, { recursive: true })
+      const allow = resolveNodeToolchainAllowRead({ PATH: binDir }, home)
+      assert.ok(allow.includes(npmTree))
+      assert.ok(!allow.includes(join(home, '..local')))
+      assert.ok(!allow.includes(`${join(home, '..local')}/**`))
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('never re-allows the parent of a home whose name starts with two dots', () => {
+    const { home: base, cleanup } = fakeHome()
+    try {
+      const home = join(base, '..me')
+      mkdirSync(home)
+      const node = installNode(base)
+      const allow = resolveNodeToolchainAllowRead({ PATH: base }, home)
+      assert.deepEqual(allow, [node])
+    } finally {
+      cleanup()
+    }
+  })
+
   it('never re-allows home or its ancestors when node sits directly in them', () => {
     const { home, cleanup } = fakeHome()
     try {

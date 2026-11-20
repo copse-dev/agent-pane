@@ -39,6 +39,7 @@ import {
   parseEgressTarget,
   type EgressRule,
 } from './egress-rules.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 export type { EgressLogEntry } from '@shared/types/container-run.ts'
 export type { EgressRule } from './egress-rules.ts'
@@ -418,7 +419,7 @@ export class EgressBroker {
       (error: unknown) => {
         // The origin never answered, after the retries a transient fault
         // gets: the guest is still waiting, so tell it, then record it.
-        const message = error instanceof Error ? error.message : String(error)
+        const message = errorMessage(error)
         if (this.link === link && !link.isClosed) {
           link.refuse(id, `DENY origin unreachable: ${message}`)
         }

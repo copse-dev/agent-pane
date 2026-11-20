@@ -12,6 +12,7 @@ import {
   extractArchiveForThread,
   type ExtractedArchive,
 } from '../services/archive/archive-extract.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 /**
  * Turn an attached zip into a directory of ordinary files.
@@ -102,7 +103,7 @@ export const readArchiveTool = defineTool({
         signal,
       })
     } catch (err) {
-      return `Could not extract ${path}: ${err instanceof Error ? err.message : String(err)}`
+      return `Could not extract ${path}: ${errorMessage(err)}`
     }
 
     if (extracted.files.length === 0) {

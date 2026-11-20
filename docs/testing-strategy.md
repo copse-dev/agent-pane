@@ -141,7 +141,12 @@ runner's final exit status additionally reflects this checkout invariant.
 
 The [test oracle](../scripts/test-oracle.mts) maps your diff to the tests that
 can reach it — unit tests through the import graph (exact), e2e specs through
-their selector vocabulary (heuristic):
+their selector vocabulary (heuristic). For unit tests the graph skips type-only
+imports (`import type`, `export type … from`) everywhere but the test file
+itself: they are erased, so a module a test reaches only through another
+module's type import is never loaded and cannot change its result. An e2e spec
+tests the running app, so its imports, type-only ones included, still stand in
+for the app code it observes.
 
 ```bash
 npm run oracle                  # what would you run, and how confident is it?
@@ -161,6 +166,21 @@ Read the **confidence line** before trusting the subset:
 
 The oracle deliberately refuses to shrink below what it can back up: an empty
 selection runs the **full** suite rather than reporting a green on zero tests.
+A few tests read their input from disk instead of importing it, so the import
+graph cannot see them. `DISK_READERS` in `scripts/test-oracle.mts` lists them
+with the files they read:
+
+- `ci-workflow-invariants` and `small-gate` read the CI spec list, shard weights,
+  CI excludes and smoke inventory.
+- `screenshot-producers` and `readme-screenshots` read the screenshots specs save
+  and the screenshot manifest; `readme-screenshots` also reads `README.md`.
+- `check-mock-fixtures` reads the executable mock fixtures: e2e sources, ACP
+  tests and benchmark packs.
+
+A change to one of those files adds its readers to whatever subset the graph
+chose. That subset then catches, for example, a spec added without a shard
+weight, which used to surface only in the full check. A test that starts
+reading files from disk this way belongs in that table.
 
 ### Choose the local gate by risk
 
