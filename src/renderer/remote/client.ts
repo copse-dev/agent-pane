@@ -75,10 +75,6 @@ export class RemoteActions {
 
 export type RemoteThread = RemoteView['threads'][number]
 
-function isObject(value: unknown): value is object {
-  return typeof value === 'object' && value !== null
-}
-
 /** Browser replicas never dispatch the agent or persist the desktop transcript. */
 export class RemoteChatClient {
   private hints = new Map<string, Promise<string | null>>()
@@ -102,7 +98,12 @@ export class RemoteChatClient {
     const raw = await this.transport(path)
     // The transport hands back the very same answer when the Mac reported it
     // unchanged: skip validating a state this client already validated.
-    if (this.latest?.path === path && this.latest.raw === raw && isObject(raw))
+    if (
+      this.latest?.path === path &&
+      this.latest.raw === raw &&
+      typeof raw === 'object' &&
+      raw !== null
+    )
       return this.latest.state
     const state = remoteStateSchema.parse(raw)
     if (this.session !== state.sessionId) {
