@@ -3988,6 +3988,30 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       ...gitPushApproval('copse/friendly-action-names-213c32', sha),
     }),
   ),
+  {
+    ...approvalRiskScenario('approval-project-preview', {
+      id: 'preview-port',
+      title: 'Allow this project to bind a local port?',
+      body: 'npm run dev',
+      bodyAdvice:
+        'The agent wants to start a long-running background task that binds a ' +
+        'loopback port and stays alive across turns:\n\nProject: /home/mira/harbor-board',
+      bodyFooter:
+        'One-time approval covers this start. Remembered permission lets future tasks and chats in this project, ' +
+        'including its worktrees, bind on localhost until revoked. Other shell permissions still apply. ' +
+        'Revoke it in Context → Permissions → Project → Local port binding. Stop running tasks separately.',
+      type: 'shell',
+      allowRemember: true,
+      rememberLabel: 'Always allow local port binding in this project: /home/mira/harbor-board',
+      approveLabel: 'Allow for this project',
+      approveOnceLabel: 'Allow once',
+    }),
+    project: project(
+      'demo-approval-project-preview-project',
+      'Harbor Board',
+      '/home/mira/harbor-board',
+    ),
+  },
   approvalRiskScenario('approval-automation-preparation', {
     id: 'automation-preparation',
     title: 'Prepare this worktree?',

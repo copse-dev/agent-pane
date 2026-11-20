@@ -2004,7 +2004,9 @@ async function checkBackgroundProcessPermission(
         formatPortBindingPromptParts(root, backgroundCommandFromArgs(args)),
       ),
       allowRemember: true,
-      rememberLabel: 'Always allow local port binding in this project',
+      rememberLabel: `Always allow local port binding in this project: ${root}`,
+      approveLabel: 'Allow for this project',
+      approveOnceLabel: 'Allow once',
     },
     signal,
   )
