@@ -1,0 +1,112 @@
+name: Release dispatch
+
+# Starts `Release (macOS)` when CI finishes for a cut release commit. The
+# release's preflight used to be dispatched as soon as the tag was cut and then
+# hold a hosted runner, polling every 30 seconds for up to 90 minutes, until
+# this same CI run finished. CI's completion is an event, so the build now
+# starts from it instead and its preflight checks the evidence once.
+#
+# A promotion's CI run is on `release`; a hand-pushed tag's CI run is on the
+# tag. Most promotions carry an already-released version, so for them this is a
+# no-op. scripts/release-dispatch.mts explains how this and release-cut.yml
+# cover each other's ordering.
+#
+# A failed CI run still starts the build: its preflight then fails on the
+# failed evidence and opens the release-failure issue, so a red release commit
+# is reported exactly as it was when preflight waited for it.
+#
+# For an ordinary promotion this is the only thing that starts the build, and
+# it runs once per CI completion. An API error fails it rather than guessing,
+# so `report-failure` opens an issue: re-running the failed run recovers.
+#
+# `workflow_run` always runs this file and its scripts from the default branch,
+# never from the run that triggered it. The scripts only read the API and
+# dispatch; `Release (macOS)` itself runs at the tag.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [release, 'v*']
+
+permissions: {}
+
+concurrency:
+  # The promotion's run and a re-run can both complete for one commit. Each
+  # evaluation reads current state, so one pending run can replace another.
+  group: release-dispatch-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    if: >-
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write # read CI and release runs; dispatch Release (macOS)
+      contents: read # read package.json and the tag at the release commit
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - name: Load the trusted release dispatch scripts
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/release-dispatch.mts
+            scripts/lib/safe-json.mts
+          sparse-checkout-cone-mode: false
+      # Finished means the newest CI run and attempt at the commit, the one
+      # preflight reads. A newer run or re-run still in progress completes later
+      # and starts this workflow again.
+      - id: release
+        name: Start Release (macOS) for a tag cut at this commit
+        uses: actions/github-script@v9
+        env:
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+        with:
+          script: |
+            const { releaseTagAt, startReleaseWhenCiFinished } = await import(
+              `${process.env.GITHUB_WORKSPACE}/scripts/release-dispatch.mts`);
+            const ctx = { github, owner: context.repo.owner, repo: context.repo.repo, log: core.info };
+            const sha = process.env.RELEASE_SHA;
+            const tag = await releaseTagAt(ctx, sha);
+            if (tag === null) return;
+            core.setOutput('tag', tag);
+            await startReleaseWhenCiFinished(ctx, sha, tag);
+
+  # A failed dispatch is otherwise silent: nothing retries it, the cut tag never
+  # builds, and the weekly bump waits on a version that is never published. Keep
+  # one open issue per tag (or per commit, when the tag lookup itself failed).
+  report-failure:
+    needs: dispatch
+    if: failure()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the release-dispatch issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.dispatch.outputs.tag }}
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          subject="${TAG:-${RELEASE_SHA:0:12}}"
+          title="Release dispatch failed for $subject"
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --label area:release \
+            --search "\"$title\" in:title" --json number,title \
+            | jq -r --arg title "$title" 'map(select(.title == $title))[0].number // empty')"
+          body="$(printf '%s\n\n%s\n\n%s\n' \
+            "[Release dispatch run]($RUN_URL) failed before it could check or start \`Release (macOS)\` for \`$subject\`. If this commit carries a newly cut version, nothing else starts its build." \
+            "Re-run the failed run once the cause (usually a GitHub API error) has cleared. It reads the current state, so it starts the build at most once and does nothing when the commit releases nothing. See docs/releasing-macos.md#failed-releases." \
+            "Close this issue once a re-run succeeds.")"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --label area:release --body "$body"
+          fi
