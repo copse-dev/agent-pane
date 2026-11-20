@@ -93,7 +93,7 @@ describe('Settings → Machines lists each machine once', () => {
       {
         label: 'Build box',
         status: 'Not connected',
-        capabilities: ['Files and shell', 'Agents', 'Desktop', 'Trusted for auto-approval'],
+        capabilities: ['Files and shell', 'Agents', 'Desktop', 'Trusted for ssh in Guarded YOLO'],
         actions: ['Edit', 'Remove'],
       },
     ])
