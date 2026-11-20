@@ -5,8 +5,10 @@ import { join } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
 import { ToolRegistry, setPermissionGateForTests } from '../tool-registry.ts'
 import {
+  DefaultPluginToolRuntimeController,
   ToolingPluginToolRuntimeController,
   type PluginToolRuntimeController,
+  type PluginToolWorker,
 } from './plugin-tool-controller.ts'
 import { discoverPluginToolSource, type PluginToolSourceCandidate } from './plugin-tool-source.ts'
 import type { PluginToolRegistrations } from './plugin-tool-protocol.ts'
@@ -49,11 +51,15 @@ async function modelCandidate(): Promise<PluginToolSourceCandidate> {
 
 function fakeRuntime(registrations: PluginToolRegistrations): PluginToolRuntimeController & {
   disables: string[]
+  crash: () => void
 } {
   let running = false
   const disables: string[] = []
   return {
     disables,
+    crash: (): void => {
+      running = false
+    },
     enable: (): Promise<void> => {
       running = true
       return Promise.resolve()
@@ -162,5 +168,98 @@ describe('ToolingPluginToolRuntimeController', () => {
         history: [],
       },
     )
+  })
+
+  it('starts a plugin again after its worker died, without tripping over its own tools', async () => {
+    const plugin = await candidate()
+    const runtime = fakeRuntime({
+      tools: [{ name: 'personal_judge', description: 'Judge', inputSchema: {} }],
+      models: [],
+    })
+    const registry = new ToolRegistry()
+    const controller = new ToolingPluginToolRuntimeController(registry, runtime)
+    await controller.enable(plugin)
+    // The worker exits on its own: nothing unregistered the tools it served.
+    runtime.crash()
+
+    await controller.enable(plugin)
+
+    assert.equal(runtime.isRunning(plugin.manifest.name), true)
+    assert.equal(registry.has('personal_judge'), true)
+    assert.deepEqual(runtime.disables, [])
+  })
+
+  it("still counts a dead worker's tools as something to disable", async () => {
+    const plugin = await candidate()
+    const runtime = fakeRuntime({
+      tools: [{ name: 'personal_judge', description: 'Judge', inputSchema: {} }],
+      models: [],
+    })
+    const registry = new ToolRegistry()
+    const controller = new ToolingPluginToolRuntimeController(registry, runtime)
+    await controller.enable(plugin)
+    runtime.crash()
+
+    // Turning the plugin off disables only what `isRunning` reports.
+    assert.equal(controller.isRunning(plugin.manifest.name), true)
+    await controller.disable(plugin.manifest.name)
+
+    assert.equal(registry.has('personal_judge'), false)
+    assert.equal(controller.isRunning(plugin.manifest.name), false)
+  })
+})
+
+describe('DefaultPluginToolRuntimeController', () => {
+  function worker(): PluginToolWorker & { die: () => void; stopped: boolean } {
+    let running = true
+    const self = {
+      stopped: false,
+      get running(): boolean {
+        return running
+      },
+      die: (): void => {
+        running = false
+      },
+      registrations: { tools: [], models: [] },
+      stop: (): Promise<void> => {
+        running = false
+        self.stopped = true
+        return Promise.resolve()
+      },
+      invokeTool: (): Promise<unknown> =>
+        running
+          ? Promise.resolve('ok')
+          : Promise.reject(new Error('Plugin tools are not running.')),
+      invokeHook: (): Promise<unknown> => Promise.resolve(null),
+      invokeModel: (): Promise<unknown> => Promise.resolve(null),
+    }
+    return self
+  }
+
+  it('reports a dead worker as not running and replaces it on the next enable', async () => {
+    const plugin = await candidate()
+    const id = plugin.manifest.name
+    const started: ReturnType<typeof worker>[] = []
+    const controller = new DefaultPluginToolRuntimeController(() => {
+      const next = worker()
+      started.push(next)
+      return Promise.resolve(next)
+    })
+
+    await controller.enable(plugin)
+    assert.equal(controller.isRunning(id), true)
+    await controller.enable(plugin)
+    assert.equal(started.length, 1)
+
+    // The worker process exits (a crash, an OOM kill): the plugin is not
+    // running, and enabling it must start a fresh worker rather than keep
+    // routing every call to the dead one.
+    started[0]?.die()
+    assert.equal(controller.isRunning(id), false)
+    await controller.enable(plugin)
+
+    assert.equal(started.length, 2)
+    assert.equal(controller.isRunning(id), true)
+    assert.equal(await controller.invokeTool(id, 'personal_judge', {}), 'ok')
   })
 })
