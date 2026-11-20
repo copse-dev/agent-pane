@@ -19,7 +19,10 @@ describe('workspace preview security', () => {
 
   const openWorkspacePreview = async (): Promise<void> => {
     const panelButton = await $('.titlebar-btn[aria-label="Toggle right panel"]').getElement()
-    if (!(await $('#pane-files').isDisplayed())) await panelButton.click()
+    const panelClasses = (await panelButton.getAttribute('class')).split(/\s+/)
+    if (!(await $('#pane-files').isDisplayed()) || !panelClasses.includes('active')) {
+      await panelButton.click()
+    }
     await $('#pane-files').waitForDisplayed({ timeout: 5_000 })
 
     const row = await $('.tree-row[title="index.html"]').getElement()
@@ -75,6 +78,13 @@ describe('workspace preview security', () => {
       layout: { projectsPaneWidth: 260, filesPaneWidth: 680, fileTreeWidth: 200 },
     })
     await browser.reloadSession()
+    await browser.waitUntil(
+      async () => {
+        const name = await $('.workspace-name').getElement()
+        return (await name.isExisting()) && (await name.getText()) !== 'No folder'
+      },
+      { timeout: 30_000, timeoutMsg: 'expected workspace to be restored' },
+    )
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
   })
 
