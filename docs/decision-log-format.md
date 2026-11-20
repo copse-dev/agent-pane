@@ -114,18 +114,20 @@ Optional argv / Guarded-YOLO extras live next to tool results:
   above, which record a verdict the gate acted on; counting only this kind
   reports one screening once. `usage:get-thread-classifier-use` summarizes them
   per thread for the footer hover. No command or snapshot text is recorded.
-- **Execution audit** — every process an `ExecutionRuntime` adapter starts inside an
+- **Execution audit** — every agent command (a `run_shell` or `run_background` command, or a hook
+  command) that an `ExecutionRuntime` adapter starts inside an
   agent turn ([`execution-runtime/`](../src/main/services/execution-runtime/), plan
   [R1](plans/execution-runtime-security.md#r1--runtime-contract-and-always-on-audit))
   writes a `kind: "process-run"` line when it starts and a `kind: "process-exit"` line
   when it ends. Both lines are `actor: "system"`, `verdict: "observed"`, and they share a
   `processRunId`. Each names the `runtime` profile and the principal; `scope` is
   `sandbox` for a contained local process and `external` otherwise. The subject is
-  `shell command (arguments omitted)` or `<program> (arguments omitted)`, so neither line
-  records arguments. The first use of a runtime profile in a thread during a session also
+  `shell command (arguments omitted)`, so neither line records arguments. The first use of a runtime profile in a thread during a session also
   writes a `kind: "runtime-state"` line with its `capabilities`. `observed` records an
-  effect, not an authorization. Processes outside a turn, such as Copse's own background
-  probes, are not recorded. Interactive terminals are not recorded yet either. Headless and
+  effect, not an authorization. Copse's own fixed-argv subprocesses (Git reads, the
+  sandbox file worker, probes) are not recorded, even when they run inside a turn's async
+  context: they are not the agent's actions, and a probe outliving its turn must not append
+  to an idle thread's spine. Processes outside a turn are not recorded. Interactive terminals are not recorded yet either. Headless and
   container runs record the same lines into the run's own decision list. The Context panel's
   Recent decisions list leaves `observed` lines out; the export keeps them.
 - **Brokered credentials** — with the experimental GitHub broker on
