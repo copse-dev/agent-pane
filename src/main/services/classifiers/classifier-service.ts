@@ -365,8 +365,13 @@ export interface ClassifierSession {
  * Resolve credentials once for an explicit run. No global cache: a new session
  * observes changed keys/settings, and one eval never mixes credential snapshots.
  * The internal configuration stays private; callers receive a separate copy.
+ * Only an `interactive` run, one a person started, may open a paired machine's
+ * SSH connection and raise its prompt; screening and background runs may not.
  */
-export function createClassifierSession(id: string): ClassifierSession {
+export function createClassifierSession(
+  id: string,
+  { interactive = false }: { interactive?: boolean } = {},
+): ClassifierSession {
   const profile = getClassifierProfile(id)
   const remote =
     profile.connection.type === 'machine' ||
@@ -387,7 +392,7 @@ export function createClassifierSession(id: string): ClassifierSession {
       if (profile.connection.type === 'machine') {
         const results: ClassifierResult[] = []
         for (const request of validated)
-          results.push(await callMachineClassifier(profile, request, options))
+          results.push(await callMachineClassifier(profile, request, { ...options, interactive }))
         return results
       }
       return runValidatedClassifierBatch(profile, validated, {
@@ -408,7 +413,9 @@ export async function invokeClassifierBatch(
 }
 
 export async function testClassifierProfile(id: string): Promise<ClassifierResult> {
-  const result = (await invokeClassifierBatch(id, [CLASSIFIER_TEST_REQUEST]))[0]
+  // A person pressed Test, so a paired machine may connect its SSH route to answer.
+  const session = createClassifierSession(id, { interactive: true })
+  const result = (await session.invokeBatch([CLASSIFIER_TEST_REQUEST]))[0]
   if (!result) throw new Error('Classifier returned no result')
   return result
 }

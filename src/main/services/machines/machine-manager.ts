@@ -27,7 +27,29 @@ import {
   decodeMachineInvitation,
   machineRequest,
   MachineConnectionError,
+  type MachineConnectTarget,
 } from './machine-transport.ts'
+
+/**
+ * Reaching a paired machine through a saved SSH host: a forward on that host's
+ * multiplexed master to the machine's loopback listener.
+ *
+ * `interactive` is true only for work a person started (pairing, Test
+ * classifier). Status checks and the classifier calls that screening and
+ * background questions make pass false, so they never open a connection or
+ * raise an SSH prompt (docs/plans/multi-machine-access.md decision 5).
+ */
+export interface MachineSshReach {
+  open(
+    hostId: string,
+    remotePort: number,
+    options: { interactive: boolean },
+  ): Promise<{ target: MachineConnectTarget; close: () => Promise<void> }>
+  /** The saved host's label, or null when it is no longer saved. */
+  label(hostId: string): string | null
+}
+
+const LOOPBACK = '127.0.0.1'
 
 const describeSchema = z.strictObject({
   id: z.uuid(),
@@ -86,6 +108,7 @@ export class MachineManager {
     signal: AbortSignal,
   ) => Promise<ClassifierResult>
   private readonly name: string
+  private readonly reach: MachineSshReach | null
   constructor(
     store: MachineStore,
     profiles: () => ClassifierProfile[],
@@ -95,11 +118,13 @@ export class MachineManager {
       signal: AbortSignal,
     ) => Promise<ClassifierResult>,
     name = hostname().slice(0, 128),
+    reach: MachineSshReach | null = null,
   ) {
     this.store = store
     this.profiles = profiles
     this.evaluate = evaluate
     this.name = name
+    this.reach = reach
     this.data = store.load() ?? {
       version: 1,
       id: randomUUID(),
@@ -138,6 +163,38 @@ export class MachineManager {
       this.outgoing.delete(controller)
     }
   }
+  /**
+   * Run `send` against the machine, through its SSH host's forward when it has
+   * one. The forward lives only as long as the request.
+   */
+  private async viaRoute<T>(
+    viaSshHost: string | undefined,
+    remotePort: number,
+    interactive: boolean,
+    send: (connectTo: MachineConnectTarget | undefined) => Promise<T>,
+  ): Promise<T> {
+    if (!viaSshHost) return send(undefined)
+    if (!this.reach) throw new MachineConnectionError('SSH is not available in this Copse.')
+    let opened: Awaited<ReturnType<MachineSshReach['open']>>
+    try {
+      opened = await this.reach.open(viaSshHost, remotePort, { interactive })
+    } catch (error) {
+      const label = this.reach.label(viaSshHost) ?? viaSshHost
+      throw new MachineConnectionError(
+        interactive
+          ? `Could not reach this machine over SSH through ${label}: ${error instanceof Error ? error.message : String(error)}`
+          : `Connect to ${label} over SSH to reach this machine.`,
+      )
+    }
+    try {
+      return await send(opened.target)
+    } finally {
+      await opened.close().catch(() => undefined)
+    }
+  }
+  private route(machineId: string): string | undefined {
+    return this.store.routes()[machineId]
+  }
   private change<T>(action: () => Promise<T>): Promise<T> {
     const pending = this.writeQueue.then(action)
     this.writeQueue = pending.catch(() => undefined)
@@ -172,7 +229,9 @@ export class MachineManager {
     }
   }
   snapshot(): MachinesState {
-    const addresses = [{ address: '127.0.0.1', label: 'This computer (loopback)' }]
+    const addresses = [
+      { address: LOOPBACK, label: 'This computer only (reach it over SSH, or from this computer)' },
+    ]
     for (const [name, entries] of Object.entries(networkInterfaces())) {
       for (const entry of entries ?? []) {
         if (
@@ -185,15 +244,23 @@ export class MachineManager {
     }
     return {
       featureEnabled: this.store.enabled(),
-      machines: this.data.machines.map((peer) => ({
-        id: peer.id,
-        name: peer.name,
-        address: peer.endpoint.address,
-        models: peer.models,
-        ...(this.store.enabled()
-          ? (this.states.get(peer.id) ?? { status: 'reconnecting', detail: 'Checking connection…' })
-          : { status: 'unavailable', detail: 'Remote System One models are off.' }),
-      })),
+      machines: this.data.machines.map((peer) => {
+        const via = this.route(peer.id)
+        const viaLabel = via ? (this.reach?.label(via) ?? via) : null
+        return {
+          id: peer.id,
+          name: peer.name,
+          address: viaLabel ? `over SSH through ${viaLabel}` : peer.endpoint.address,
+          ...(via && viaLabel ? { viaSsh: { hostId: via, label: viaLabel } } : {}),
+          models: peer.models,
+          ...(this.store.enabled()
+            ? (this.states.get(peer.id) ?? {
+                status: 'reconnecting',
+                detail: 'Checking connection…',
+              })
+            : { status: 'unavailable', detail: 'Remote System One models are off.' }),
+        }
+      }),
       addresses,
       sharing: {
         ...this.data.sharing,
@@ -323,19 +390,31 @@ export class MachineManager {
       ).toString('base64url')
     )
   }
-  pair(code: string): Promise<MachinesState> {
+  pair(code: string, viaSshHost?: string): Promise<MachinesState> {
     return this.change(async () => {
       this.assertEnabled()
       if (!this.store.available())
         throw new Error('Unlock secure storage before pairing a machine.')
       const invitation = decodeMachineInvitation(code.trim())
-      const result = describeSchema.extend({ token: tokenSchema }).parse(
-        await this.request(this.data.id, invitation, '/pair', {
-          secret: invitation.secret,
-          id: this.data.id,
-          name: this.name,
-        }),
-      )
+      // A forward reaches only the SSH host's own loopback, so only a machine
+      // sharing there can be paired through it.
+      if (viaSshHost && invitation.address !== LOOPBACK)
+        throw new Error(
+          'This invitation shares on a network address. Pair it on that network, or share on "This computer only" and pair over SSH.',
+        )
+      const result = describeSchema
+        .extend({ token: tokenSchema })
+        .parse(
+          await this.viaRoute(viaSshHost, invitation.port, true, (connectTo) =>
+            this.request(
+              this.data.id,
+              invitation,
+              '/pair',
+              { secret: invitation.secret, id: this.data.id, name: this.name },
+              connectTo ? { connectTo } : {},
+            ),
+          ),
+        )
       if (result.id === this.data.id)
         throw new Error('This invitation belongs to this same Copse profile.')
       const peer = {
@@ -353,9 +432,18 @@ export class MachineManager {
         ...this.data,
         machines: [...this.data.machines.filter((entry) => entry.id !== peer.id), peer],
       })
+      await this.saveRoute(peer.id, viaSshHost)
       this.states.set(peer.id, { status: 'connected', detail: 'Connected' })
       return this.snapshot()
     })
+  }
+  private async saveRoute(machineId: string, viaSshHost: string | undefined): Promise<void> {
+    const routes = new Map(Object.entries(this.store.routes()))
+    if (viaSshHost) routes.set(machineId, viaSshHost)
+    else routes.delete(machineId)
+    // Only machines that are still paired keep a route.
+    const paired = new Set(this.data.machines.map((peer) => peer.id))
+    await this.store.saveRoutes(Object.fromEntries([...routes].filter(([id]) => paired.has(id))))
   }
   remove(id: string): Promise<MachinesState> {
     return this.change(async () => {
@@ -363,6 +451,7 @@ export class MachineManager {
         ...this.data,
         machines: this.data.machines.filter((peer) => peer.id !== id),
       })
+      await this.saveRoute(id, undefined)
       this.states.delete(id)
       for (const [controller, machineId] of this.outgoing) if (machineId === id) controller.abort()
       return this.snapshot()
@@ -387,28 +476,41 @@ export class MachineManager {
       )
     return model
   }
+  /**
+   * Evaluate one of the machine's shared models. Only an `interactive` call (a
+   * person pressed Test classifier) may open the route's SSH connection; any
+   * other call uses one that is already open.
+   */
   async call(
     machineId: string,
     profileId: string,
     request: ClassifierRequest,
     signal: AbortSignal,
     timeoutMs: number,
+    { interactive = false }: { interactive?: boolean } = {},
   ): Promise<unknown> {
     this.assertEnabled()
     const peer = this.data.machines.find((entry) => entry.id === machineId)
     if (!peer)
       throw new Error('This machine was removed. Choose another connection in Settings → Machines.')
     try {
-      const result = await this.request(
-        peer.id,
-        peer.endpoint,
-        '/models',
-        { method: 'evaluate', profileId, request },
-        {
-          token: this.store.open(peer.token),
-          signal,
-          timeoutMs,
-        },
+      const result = await this.viaRoute(
+        this.route(peer.id),
+        peer.endpoint.port,
+        interactive,
+        (connectTo) =>
+          this.request(
+            peer.id,
+            peer.endpoint,
+            '/models',
+            { method: 'evaluate', profileId, request },
+            {
+              token: this.store.open(peer.token),
+              signal,
+              timeoutMs,
+              ...(connectTo ? { connectTo } : {}),
+            },
+          ),
       )
       this.states.set(peer.id, { status: 'connected', detail: 'Connected' })
       return result
@@ -440,12 +542,14 @@ export class MachineManager {
       this.data.machines.map(async (peer) => {
         try {
           const description = describeSchema.parse(
-            await this.request(
-              peer.id,
-              peer.endpoint,
-              '/models',
-              { method: 'describe' },
-              { token: this.store.open(peer.token) },
+            await this.viaRoute(this.route(peer.id), peer.endpoint.port, false, (connectTo) =>
+              this.request(
+                peer.id,
+                peer.endpoint,
+                '/models',
+                { method: 'describe' },
+                { token: this.store.open(peer.token), ...(connectTo ? { connectTo } : {}) },
+              ),
             ),
           )
           if (description.id !== peer.id)

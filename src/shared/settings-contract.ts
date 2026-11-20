@@ -19,6 +19,8 @@ export interface SettingsValues {
     }>
     clients: Array<{ id: string; name: string; token: string }>
   }
+  /** Paired machine id → saved SSH host id it is reached through. */
+  machineSshRoutes: Record<string, string>
   acknowledgedProductAnnouncements: Array<string>
   model: string
   chatGptPlanWelcomeSeen: boolean
@@ -258,6 +260,7 @@ export type SettingsSnapshot = { [K in keyof SettingsValues]?: SettingsValues[K]
 /** Dedicated credential, security and host-owned values are never ordinary updates. */
 type DedicatedSettingKey =
   | 'machineConnections'
+  | 'machineSshRoutes'
   | 'trustedSshHosts'
   | 'trustedPackageRegistries'
   | 'productionTargets'

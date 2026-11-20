@@ -42,6 +42,7 @@ describe('createMachinesSection in the shared Machines list', () => {
     const fake = createFakeApi()
     const api = {
       classifiers: fake.classifiers,
+      sshWorkspace: fake.sshWorkspace,
       machines: { ...fake.machines, state: async (): Promise<MachinesState> => pairedState() },
     }
     const overview = document.createElement('div')

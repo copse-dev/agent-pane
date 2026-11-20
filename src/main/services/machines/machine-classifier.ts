@@ -52,10 +52,14 @@ const resultSchema = z.object({
     })
     .optional(),
 })
+/**
+ * `interactive` marks a call a person started (Test classifier). Only that may
+ * open a machine's SSH route and raise an SSH prompt.
+ */
 export async function callMachineClassifier(
   profile: ClassifierProfile,
   request: ClassifierRequest,
-  options: Pick<ClassifierCallOptions, 'signal' | 'timeoutMs'>,
+  options: Pick<ClassifierCallOptions, 'signal' | 'timeoutMs'> & { interactive?: boolean },
 ): Promise<ClassifierResult> {
   const connection = profile.connection
   if (connection.type !== 'machine') throw new Error('Expected a machine connection.')
@@ -68,6 +72,7 @@ export async function callMachineClassifier(
       request,
       deadline.signal,
       options.timeoutMs ?? profile.timeoutMs,
+      { interactive: options.interactive === true },
     )
     return parseMachineClassifierResult(profile, request, raw)
   } catch (error) {

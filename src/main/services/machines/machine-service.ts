@@ -1,10 +1,34 @@
-import { REMOTE_SYSTEM_ONE_MODELS_SETTING } from '@shared/machines.ts'
+import { REMOTE_SYSTEM_ONE_MODELS_SETTING, type MachineSshRoutes } from '@shared/machines.ts'
 import type { MachineStoreData } from './machine-store.ts'
-import { MachineManager } from './machine-manager.ts'
+import { MachineManager, type MachineSshReach } from './machine-manager.ts'
+import { getSshConnectionManager } from '../ssh-workspace/connection-manager.ts'
+import { findConfiguredSshHost } from '../ssh-workspace/hosts.ts'
 import { getSetting, setSetting } from '../storage/settings.ts'
 import { getSecretCipher, isSecretEncryptionAvailable } from '../storage/secret-cipher.ts'
 import { listClassifierProfiles, invokeClassifierBatch } from '../classifiers/classifier-service.ts'
 import { getExplicitSettingsProfile } from '../storage/settings-context.ts'
+
+/**
+ * Paired machines reached over SSH use a forward on the saved host's existing
+ * multiplexed master to the machine's loopback listener: no new listener, and
+ * nothing the machine checks changes. A status check or a screening or
+ * background classifier call (`interactive: false`) uses only a connection that
+ * is already open, so nothing a person didn't start prompts.
+ */
+export const machineSshReach: MachineSshReach = {
+  async open(hostId, remotePort, { interactive }) {
+    const connections = getSshConnectionManager()
+    const connection =
+      connections.getConnection(hostId) ?? (interactive ? await connections.connect(hostId) : null)
+    if (!connection) throw new Error('not connected')
+    const { localPort } = await connection.transport.openForward(remotePort)
+    return {
+      target: { host: '127.0.0.1', port: localPort },
+      close: () => connection.transport.closeForward(localPort),
+    }
+  },
+  label: (hostId) => findConfiguredSshHost(hostId)?.label ?? null,
+}
 
 let manager: MachineManager | undefined
 let timer: ReturnType<typeof setInterval> | undefined
@@ -19,6 +43,8 @@ export function machineManager(): MachineManager {
       load: (): MachineStoreData | null =>
         getSetting<MachineStoreData | null>('machineConnections', null),
       save: (value): Promise<void> => setSetting('machineConnections', value),
+      routes: (): MachineSshRoutes => getSetting<MachineSshRoutes>('machineSshRoutes', {}),
+      saveRoutes: (value): Promise<void> => setSetting('machineSshRoutes', value),
       available: isSecretEncryptionAvailable,
       seal: (value): string => {
         const cipher = getSecretCipher()
@@ -39,6 +65,8 @@ export function machineManager(): MachineManager {
       if (!result) throw new Error('Shared model returned no result.')
       return result
     },
+    undefined,
+    machineSshReach,
   )
   return manager
 }

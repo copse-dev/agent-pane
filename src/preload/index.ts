@@ -1276,6 +1276,8 @@ const api: ApiClient = {
   machines: {
     state: () => ipcRenderer.invoke('machines:state'),
     pair: (code: string) => ipcRenderer.invoke('machines:pair', code),
+    pairOverSsh: (code: string, hostId: string) =>
+      ipcRenderer.invoke('machines:pair-over-ssh', code, hostId),
     remove: (id: string) => ipcRenderer.invoke('machines:remove', id),
     share: (config: import('@shared/machines.ts').MachineSharing) =>
       ipcRenderer.invoke('machines:share', config),

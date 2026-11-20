@@ -1342,6 +1342,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           secureStorage: false,
         }),
       pair: unsupported,
+      pairOverSsh: unsupported,
       remove: unsupported,
       share: unsupported,
       invitation: unsupported,

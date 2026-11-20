@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { machineStoreSchema } from '../machines/machine-store.ts'
+import { machineSshRoutesSchema } from '@shared/machines.ts'
 import { classifierProfileSchema } from '@copse/llm/classifiers/schemas.ts'
 import { validateCredentialBaseUrl } from '@copse/llm/credential-url.ts'
 import {
@@ -97,6 +98,7 @@ export const modelCardProbeCacheSchema = z.record(
 
 export const MAIN_ONLY_SETTING_SCHEMAS = {
   machineConnections: machineStoreSchema,
+  machineSshRoutes: machineSshRoutesSchema,
   classifierProviders: z.strictObject({
     version: z.literal(1),
     profiles: z
