@@ -11,6 +11,7 @@ import {
   invalidatePlanUsageCache,
   loadPlanUsageSnapshot,
   markUnconfirmedPlanProviders,
+  noteClaudeSignIn,
   PLAN_USAGE_CACHE_TTL_MS,
   setPlanUsageSnapshotFetcherForTest,
 } from './plan-usage-bridge.ts'
@@ -429,7 +430,7 @@ describe('loadPlanUsageSnapshot', () => {
     }
   })
 
-  it('returns the auth-error mock fixture when COPSE_PLAN_USAGE_MOCK=auth-errors', async () => {
+  it('returns the auth-error fixture, whose Claude row recovers after a guided sign-in', async () => {
     const prev = process.env['COPSE_PLAN_USAGE_MOCK']
     process.env['COPSE_PLAN_USAGE_MOCK'] = 'auth-errors'
     invalidatePlanUsageCache()
@@ -445,6 +446,20 @@ describe('loadPlanUsageSnapshot', () => {
       if (!huggingface || huggingface.status !== 'error') {
         assert.fail('Expected Hugging Face error')
       }
+
+      // A guided sign-in replaces the rejected token; only Claude recovers.
+      noteClaudeSignIn()
+      const signedIn = await loadPlanUsageSnapshot()
+      assert.notEqual(signedIn, snap, 'the sign-in drops the cached rejection')
+      assert.deepEqual(
+        signedIn.providers.map((provider) => [provider.provider, provider.status]),
+        [
+          ['claude', 'ok'],
+          ['codex', 'ok'],
+          ['huggingface', 'error'],
+          ['cursor', 'unavailable'],
+        ],
+      )
     } finally {
       if (prev === undefined) delete process.env['COPSE_PLAN_USAGE_MOCK']
       else process.env['COPSE_PLAN_USAGE_MOCK'] = prev

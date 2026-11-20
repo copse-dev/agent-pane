@@ -1,6 +1,7 @@
 import '../../../../tests/setup-dom.ts'
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import { setImmediate as nextTurn } from 'node:timers/promises'
 import { createStore } from '@shared/store/store.ts'
 import { createFakeApi } from '../../fake-api.test-support.ts'
 import type { PlanUsageSnapshot, ProviderPlanResult } from '@copse/plan-usage'
@@ -84,7 +85,7 @@ describe('renderPlanProvider sign-in button', () => {
     assert.equal(hint.querySelector('code')?.textContent, 'claude auth login')
     assert.doesNotMatch(hint.textContent, /`/)
     assert.doesNotMatch(btn.title, /`/)
-    assert.equal(btn.title, 'Open a terminal and run claude auth login')
+    assert.equal(btn.title, 'Open Claude sign-in in your browser')
     btn.click()
     assert.equal(clicked, 1)
   })
@@ -251,27 +252,6 @@ describe('renderPlanProvider credit windows', () => {
 })
 
 describe('createPlanSignInHandler', () => {
-  it('closes settings and requests `claude auth login` in a terminal', () => {
-    const store = createStore({
-      filesPaneOpen: false,
-      rightPanelMode: 'explorer',
-      activeProjectId: 'ssh-project',
-      workspaceRoot: '/remote/project',
-    })
-    const commands: { command: string; executionTarget?: 'local' }[] = []
-    store.on('request_terminal_command', (cmd, options) => {
-      commands.push({ command: cmd, ...options })
-    })
-    let closed = 0
-    const handler = createPlanSignInHandler(store, 'claude', () => {
-      closed += 1
-    })
-    assert.ok(handler)
-    handler()
-    assert.deepEqual(commands, [{ command: 'claude auth login', executionTarget: 'local' }])
-    assert.equal(closed, 1)
-  })
-
   it('closes settings and requests `codex login` in a terminal', () => {
     const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
     const commands: string[] = []
@@ -279,7 +259,7 @@ describe('createPlanSignInHandler', () => {
       commands.push(command)
     })
     let closed = 0
-    const handler = createPlanSignInHandler(store, 'codex', () => {
+    const handler = createPlanSignInHandler(store, () => {
       closed += 1
     })
     assert.ok(handler)
@@ -289,7 +269,7 @@ describe('createPlanSignInHandler', () => {
   })
 
   it('returns null without a store to route through', () => {
-    assert.equal(createPlanSignInHandler(undefined, 'claude'), null)
+    assert.equal(createPlanSignInHandler(undefined), null)
   })
 })
 
@@ -340,6 +320,148 @@ describe('usage refresh after sign-in', () => {
     await section.refresh()
     assert.equal(forced.includes(true), false, 'ordinary reads remain cached after recovery')
     section.detach()
+  })
+})
+
+describe('guided Claude sign-in recovery', () => {
+  const CLAUDE_ROW = '.usage-plan-provider[data-provider="claude"]'
+  const claudeSignedIn: ProviderPlanResult = {
+    status: 'ok',
+    provider: 'claude',
+    usage: { provider: 'claude', plan: 'Pro', windows: [], checkedAt: '2026-01-01T00:00:00.000Z' },
+  }
+  const statusKind = (status: HTMLElement): string | null =>
+    status.querySelector('.ui-inline-status')?.getAttribute('data-status-kind') ?? null
+
+  for (const error of [
+    'Claude Code is not installed or is not on Copse’s PATH.',
+    'Claude sign-in did not complete. Try again, or run claude auth login in a terminal.',
+    'Claude is using an API key or token, not a Claude subscription sign-in.',
+  ]) {
+    it(`shows ${error} under the Claude button and recovers on retry`, async () => {
+      const base = createFakeApi()
+      let finishFirstAttempt: (result: { ok: boolean; error?: string }) => void = () => {
+        throw new Error('Sign-in attempt was not initialized')
+      }
+      const firstAttempt = new Promise<{ ok: boolean; error?: string }>((resolve) => {
+        finishFirstAttempt = resolve
+      })
+      let attempts = 0
+      let signedIn = false
+      const api = {
+        ...base,
+        usage: {
+          ...base.usage,
+          getPlanUsage: async (): Promise<PlanUsageSnapshot> => ({
+            checkedAt: new Date().toISOString(),
+            providers: [
+              signedIn ? claudeSignedIn : claudeUnavailable('Claude credentials were rejected.'),
+            ],
+          }),
+          signInToClaude: async (): Promise<{ ok: boolean; error?: string }> => {
+            attempts++
+            if (attempts === 1) return firstAttempt
+            signedIn = true
+            return { ok: true }
+          },
+        },
+      }
+      const section = createUsageSection(api, createStore())
+      document.body.append(section.root)
+      const signInButton = (): HTMLButtonElement | null =>
+        section.root.querySelector<HTMLButtonElement>(`${CLAUDE_ROW} .usage-plan-signin-btn`)
+      try {
+        await section.refresh()
+        const button = signInButton()
+        const status = section.root.querySelector<HTMLElement>('.usage-plan-signin-status')
+        assert.ok(button && status)
+        // The line lives in the Claude row, directly under its button — not
+        // after the whole provider list, where it rendered off-screen.
+        assert.ok(button.nextElementSibling === status, 'status sits directly under the button')
+        assert.equal(status.hidden, true)
+        button.click()
+        button.click()
+        assert.equal(attempts, 1)
+        assert.equal(button.disabled, true)
+        assert.equal(status.hidden, false)
+        assert.equal(status.getAttribute('role'), 'status')
+        assert.equal(statusKind(status), 'pending')
+        assert.match(status.textContent, /Complete Claude sign-in in the browser/)
+
+        // A plan re-render while the CLI runs rebuilds the row: the same live
+        // line moves into it and the new button stays disabled.
+        await section.refresh()
+        const rebuilt = signInButton()
+        assert.ok(rebuilt && rebuilt !== button)
+        assert.equal(rebuilt.disabled, true)
+        assert.ok(rebuilt.nextElementSibling === status, 'the rebuilt row holds the same line')
+        assert.match(status.textContent, /Complete Claude sign-in in the browser/)
+
+        finishFirstAttempt({ ok: false, error })
+        await nextTurn()
+        assert.equal(status.textContent, error)
+        assert.equal(statusKind(status), 'error')
+        assert.equal(rebuilt.disabled, false)
+        assert.ok(rebuilt.nextElementSibling === status, 'the error stays under the button')
+        rebuilt.click()
+        await nextTurn()
+        assert.equal(attempts, 2)
+        assert.equal(status.textContent, 'Claude sign-in complete.')
+        assert.equal(statusKind(status), 'ok')
+        // The forced re-read replaced the rejected row; the outcome stays in it.
+        const claude = section.root.querySelector<HTMLElement>(CLAUDE_ROW)
+        assert.equal(claude?.dataset['status'], 'ok')
+        assert.ok(status.parentElement === claude, 'the outcome stays in the Claude row')
+        assert.ok(signInButton() === null, 'no sign-in button beside a signed-in plan')
+        assert.doesNotMatch(
+          section.root.querySelector('#usage-plan-section')?.textContent ?? '',
+          /rejected/,
+        )
+      } finally {
+        section.detach()
+        section.root.remove()
+      }
+    })
+  }
+
+  it('keeps the outcome on the page when the re-read after sign-in fails', async () => {
+    const base = createFakeApi()
+    let signedIn = false
+    const api = {
+      ...base,
+      usage: {
+        ...base.usage,
+        getPlanUsage: async (): Promise<PlanUsageSnapshot> => {
+          if (signedIn) throw new Error('Plan usage is unreachable.')
+          return {
+            checkedAt: new Date().toISOString(),
+            providers: [claudeUnavailable('Claude credentials were rejected.')],
+          }
+        },
+        signInToClaude: async (): Promise<{ ok: boolean; error?: string }> => {
+          signedIn = true
+          return { ok: true }
+        },
+      },
+    }
+    const section = createUsageSection(api, createStore())
+    document.body.append(section.root)
+    try {
+      await section.refresh()
+      section.root.querySelector<HTMLButtonElement>('.usage-plan-signin-btn')?.click()
+      await nextTurn()
+      const plan = section.root.querySelector<HTMLElement>('#usage-plan-section')
+      const status = section.root.querySelector<HTMLElement>('.usage-plan-signin-status')
+      assert.ok(plan && status)
+      assert.ok(section.root.querySelector(CLAUDE_ROW) === null, 'no Claude row was rendered')
+      assert.match(plan.textContent, /Plan usage is unreachable\./)
+      assert.ok(status.parentElement === plan, 'the outcome falls back to the plan section')
+      assert.equal(status.hidden, false)
+      assert.equal(status.textContent, 'Claude sign-in complete.')
+    } finally {
+      section.detach()
+      section.root.remove()
+    }
   })
 })
 

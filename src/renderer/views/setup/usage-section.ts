@@ -9,6 +9,7 @@ import {
 import type { PlanWorthItPayload } from '@shared/usage/plan-worth-it.ts'
 import type { PlanUsageSnapshot, ProviderPlanResult } from '@copse/plan-usage'
 import { qsRequired } from '../../dom/helpers.ts'
+import { setInlineStatus } from '../../dom/inline-status.ts'
 import { setInlineMarkdown } from '../../markdown/inline-markdown.ts'
 import { escapeHtml } from '@copse/streaming-markdown'
 import {
@@ -59,24 +60,19 @@ export function claudeReasonNeedsLogin(reason: string): boolean {
 }
 
 /**
- * Close settings so the shell is visible, then run the provider's interactive
+ * Close settings so the shell is visible, then run Codex's interactive
  * login command in a fresh Shells terminal.
  * Returns `null` without a store to route the request through. Exported so the
  * emit + close wiring is unit-testable without standing up the whole section.
  */
 export function createPlanSignInHandler(
   store: AppStore | undefined,
-  provider: 'claude' | 'codex',
   onRequestClose?: () => void,
 ): (() => void) | null {
   if (!store) return null
   return (): void => {
     onRequestClose?.()
-    store.emit(
-      'request_terminal_command',
-      provider === 'claude' ? 'claude auth login' : 'codex login',
-      { executionTarget: 'local' },
-    )
+    store.emit('request_terminal_command', 'codex login', { executionTarget: 'local' })
   }
 }
 
@@ -151,16 +147,33 @@ export function formatPlanWindowStats(window: {
   return parts.join(' · ')
 }
 
+/**
+ * The guided Claude sign-in as the plan rows see it. The section owns the one
+ * `role=status` line and its text; every render places that same element in
+ * the Claude row, under its Sign in button, so the outcome appears where the
+ * click happened and survives the rows being rebuilt.
+ */
+interface ClaudeSignInView {
+  status: HTMLElement
+  /** `claude auth login` is still running: the row's button stays disabled. */
+  pending: boolean
+}
+
 /** Exported for unit tests. */
 export function renderPlanProvider(
   host: HTMLElement,
   result: ProviderPlanResult,
   onSignIn?: Partial<Record<'claude' | 'codex', (() => void) | undefined>>,
+  claudeSignIn?: ClaudeSignInView,
 ): void {
   const card = document.createElement('div')
   card.className = 'usage-plan-provider'
   card.dataset['provider'] = result.provider
   card.dataset['status'] = result.status
+  const appendCard = (): void => {
+    if (result.provider === 'claude' && claudeSignIn) card.append(claudeSignIn.status)
+    host.append(card)
+  }
 
   const title = document.createElement('h4')
   title.className = 'usage-plan-provider-title'
@@ -179,13 +192,17 @@ export function renderPlanProvider(
       signIn.type = 'button'
       signIn.className = 'ui-btn ui-btn-primary usage-plan-signin-btn'
       signIn.textContent = signInProvider === 'claude' ? 'Sign in to Claude' : 'Sign in to Codex'
-      signIn.title = `Open a terminal and run ${signInProvider === 'claude' ? 'claude auth login' : 'codex login'}`
+      signIn.title =
+        signInProvider === 'claude'
+          ? 'Open Claude sign-in in your browser'
+          : 'Open a terminal and run codex login'
+      signIn.disabled = signInProvider === 'claude' && claudeSignIn?.pending === true
       signIn.addEventListener('click', () => {
         onProviderSignIn()
       })
       card.append(signIn)
     }
-    host.append(card)
+    appendCard()
     return
   }
 
@@ -199,7 +216,7 @@ export function renderPlanProvider(
       setInlineMarkdown(hint, `Couldn’t load ${label} plan usage: ${result.message}`)
     }
     card.append(hint)
-    host.append(card)
+    appendCard()
     return
   }
 
@@ -250,7 +267,7 @@ export function renderPlanProvider(
     card.append(row)
   }
 
-  host.append(card)
+  appendCard()
 }
 
 function renderPlanSection(
@@ -258,6 +275,7 @@ function renderPlanSection(
   snapshot: PlanUsageSnapshot | null,
   error: string | null,
   onSignIn?: Partial<Record<'claude' | 'codex', (() => void) | undefined>>,
+  claudeSignIn?: ClaudeSignInView,
 ): void {
   host.replaceChildren()
 
@@ -277,31 +295,27 @@ function renderPlanSection(
     err.className = 'usage-plan-status usage-plan-status-error field-hint'
     err.textContent = error
     host.append(err)
-    return
-  }
-
-  if (!snapshot) {
+  } else if (!snapshot) {
     const loading = document.createElement('p')
     loading.className = 'field-hint'
     loading.textContent = 'Loading plan usage…'
     host.append(loading)
-    return
-  }
-
-  if (snapshot.error) {
+  } else if (snapshot.error) {
     const err = document.createElement('p')
     err.className = 'usage-plan-status usage-plan-status-error field-hint'
     err.textContent = `Couldn’t load subscription plan usage: ${snapshot.error}`
     host.append(err)
-    return
+  } else {
+    const list = document.createElement('div')
+    list.className = 'usage-plan-providers'
+    for (const provider of snapshot.providers) {
+      renderPlanProvider(list, provider, onSignIn, claudeSignIn)
+    }
+    host.append(list)
   }
-
-  const list = document.createElement('div')
-  list.className = 'usage-plan-providers'
-  for (const provider of snapshot.providers) {
-    renderPlanProvider(list, provider, onSignIn)
-  }
-  host.append(list)
+  // No Claude row to hold the sign-in outcome (the re-read failed): keep it
+  // under the section's own message rather than dropping it from the page.
+  if (claudeSignIn && !host.contains(claudeSignIn.status)) host.append(claudeSignIn.status)
 }
 
 const VERDICT_LABELS: Record<PlanWorthItPayload['worthIt']['verdict'], string> = {
@@ -680,7 +694,13 @@ export function createUsageSection(
 } {
   let pendingSignInProvider: 'claude' | 'codex' | null = null
   const onSignIn = (provider: 'claude' | 'codex'): (() => void) | undefined => {
-    const handler = createPlanSignInHandler(store, provider, onRequestClose)
+    if (provider === 'claude') {
+      return (): void => {
+        pendingSignInProvider = 'claude'
+        handleClaudeSignIn()
+      }
+    }
+    const handler = createPlanSignInHandler(store, onRequestClose)
     if (!handler) return undefined
     return (): void => {
       pendingSignInProvider = provider
@@ -754,6 +774,54 @@ export function createUsageSection(
   root.append(frontierPanel.root)
 
   const planEl = qsRequired(root, '#usage-plan-section')
+  // Rendered inside the Claude row (see ClaudeSignInView), never after the
+  // whole provider list: that put the outcome below the fold, under Save.
+  const signInStatus = document.createElement('p')
+  signInStatus.className = 'usage-plan-signin-status field-hint'
+  signInStatus.setAttribute('role', 'status')
+  signInStatus.hidden = true
+  let signInPending = false
+  const claudeSignInButton = (): HTMLButtonElement | null =>
+    planEl.querySelector<HTMLButtonElement>(
+      '.usage-plan-provider[data-provider="claude"] .usage-plan-signin-btn',
+    )
+  function showSignInStatus(kind: 'pending' | 'error' | 'ok', text: string): void {
+    signInStatus.hidden = false
+    setInlineStatus(signInStatus, kind, text)
+  }
+  function handleClaudeSignIn(): void {
+    if (signInPending) return
+    signInPending = true
+    const button = claudeSignInButton()
+    if (button) button.disabled = true
+    showSignInStatus(
+      'pending',
+      'Complete Claude sign-in in the browser. Copse will check the result…',
+    )
+    void api.usage
+      .signInToClaude()
+      .then(async (result) => {
+        if (!result.ok) {
+          showSignInStatus('error', result.error ?? 'Claude sign-in did not complete.')
+          return
+        }
+        showSignInStatus('pending', 'Signed in to Claude. Refreshing plan usage…')
+        // Keep the current rows, and this line in them, until the forced
+        // re-read replaces them with the signed-in plan.
+        await refreshPlan()
+        await refreshWorthIt()
+        showSignInStatus('ok', 'Claude sign-in complete.')
+      })
+      .catch(() => {
+        showSignInStatus('error', 'Claude sign-in could not start. Try again.')
+      })
+      .finally(() => {
+        signInPending = false
+        // A re-read may have rebuilt the row; release whichever button it has now.
+        const current = claudeSignInButton()
+        if (current) current.disabled = false
+      })
+  }
   const worthEl = qsRequired(root, '#usage-worth-section')
   const bodyEl = qsRequired(root, '#usage-period-body')
   const labelEl = qsRequired(root, '#usage-period-label')
@@ -839,15 +907,21 @@ export function createUsageSection(
   })
 
   let currentSignal: AbortSignal | undefined
+  function renderPlan(snapshot: PlanUsageSnapshot | null, error: string | null): void {
+    renderPlanSection(planEl, snapshot, error, handleSignIn, {
+      status: signInStatus,
+      pending: signInPending,
+    })
+  }
   async function refreshPlan(signal: AbortSignal | undefined = currentSignal): Promise<void> {
     if (!cachedPlanSnapshot) {
-      renderPlanSection(planEl, null, null, handleSignIn)
+      renderPlan(null, null)
     }
     try {
       const snapshot = await api.usage.getPlanUsage(pendingSignInProvider !== null)
       if (signal?.aborted) return
       cachedPlanSnapshot = snapshot
-      renderPlanSection(planEl, snapshot, null, handleSignIn)
+      renderPlan(snapshot, null)
       if (
         pendingSignInProvider &&
         snapshot.providers.some(
@@ -860,7 +934,7 @@ export function createUsageSection(
       if (signal?.aborted) return
       // Plan usage is best-effort — never block the ledger on IPC failure.
       const message = err instanceof Error ? err.message : 'Failed to load subscription plan usage.'
-      renderPlanSection(planEl, null, message, handleSignIn)
+      renderPlan(null, message)
     }
   }
 

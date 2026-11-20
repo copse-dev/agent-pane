@@ -260,16 +260,18 @@ export class ChatGptPlanService {
 
 let service: ChatGptPlanService | undefined
 
-let focusCopseWindow: (() => void) | undefined
+let desktopActions: Pick<ChatGptOAuthDependencies, 'openBrowser' | 'focusApp'> | undefined
 
 /**
- * How Copse brings its window forward once the sign-in callback lands. The
- * main process sets it when it registers the ChatGPT plan handlers. This
+ * How the desktop opens sign-in and brings its window forward afterward. The
+ * main process sets these actions when it registers the ChatGPT plan handlers. This
  * module also loads in the standalone thread-container worker, which must stay
  * electron-free, so it never imports the window code itself.
  */
-export function setChatGptPlanWindowFocus(focus: () => void): void {
-  focusCopseWindow = focus
+export function setChatGptPlanDesktopActions(
+  actions: Pick<ChatGptOAuthDependencies, 'openBrowser' | 'focusApp'>,
+): void {
+  desktopActions = actions
 }
 
 /** Lazy construction respects the host's persistent-store and secure-storage boot order. */
@@ -277,12 +279,14 @@ export function getChatGptPlanService(): ChatGptPlanService {
   service ??= new ChatGptPlanService(createChatGptPlanStore(), {
     fetch: (...args): Promise<Response> => fetch(...args),
     openBrowser: async (url): Promise<void> => {
-      const { shell } = await import('electron')
-      await shell.openExternal(url)
+      if (!desktopActions) {
+        throw new Error('Opening ChatGPT sign-in requires the Copse desktop client.')
+      }
+      await desktopActions.openBrowser(url)
     },
     focusApp: (): void => {
       try {
-        focusCopseWindow?.()
+        desktopActions?.focusApp()
       } catch (err) {
         console.warn('[chatgpt-plan] could not focus Copse after sign-in callback:', err)
       }

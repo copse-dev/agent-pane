@@ -127,11 +127,15 @@ await esbuild.build({
 // runtime resolves them relative to its own bundle (`__dirname`). These must
 // stay electron-free, so they keep `electron` external (a stray import fails
 // at require time, same contract as build.mts).
-for (const { entry, outfile } of STANDALONE_MAIN_BUNDLES) {
+for (const { entry, outfile, external, alias, logOverride } of STANDALONE_MAIN_BUNDLES) {
+  const workerAlias = Object.fromEntries(
+    Object.entries(alias ?? {}).map(([from, to]) => [from, resolve(to)]),
+  )
   await esbuild.build({
     ...nodeOpts,
-    external: [...nodeOpts.external, 'electron'],
-    alias: sharedAlias,
+    external: external ?? [...nodeOpts.external, 'electron'],
+    alias: { ...sharedAlias, ...workerAlias },
+    ...(logOverride ? { logOverride } : {}),
     entryPoints: [entry],
     outfile: `dist/sidecar/${basename(outfile)}`,
   })
@@ -200,7 +204,9 @@ const emitted = [
 ]
 for (const file of emitted) {
   const source = readFileSync(file, 'utf8')
-  const hit = source.match(/require\((["'])electron(-updater)?\1\)|from\s*(["'])electron\3/)
+  const hit = source.match(
+    /require\((["'])electron(-updater)?\1\)|from\s*(["'])electron\3|import\(\s*(["'])electron\4\s*\)/,
+  )
   if (hit) {
     console.error(`${file} still loads electron at runtime (${hit[0]}) — alias or stub it.`)
     process.exit(1)

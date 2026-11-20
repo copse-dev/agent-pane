@@ -1,9 +1,9 @@
-import { app, type BrowserWindow } from 'electron'
+import { app, shell, type BrowserWindow } from 'electron'
 import { z } from 'zod'
 import { defineHandler } from './define-handler.ts'
 import {
   getChatGptPlanService,
-  setChatGptPlanWindowFocus,
+  setChatGptPlanDesktopActions,
 } from '../services/providers/chatgpt-plan-service.ts'
 import { getMainWindow } from '../windows/create-main-window.ts'
 
@@ -21,7 +21,10 @@ function focusMainWindow(): void {
 }
 
 export function registerChatGptPlanHandlers(win: BrowserWindow): void {
-  setChatGptPlanWindowFocus(focusMainWindow)
+  setChatGptPlanDesktopActions({
+    openBrowser: (url) => shell.openExternal(url),
+    focusApp: focusMainWindow,
+  })
   defineHandler(win, 'chat-gpt-plan:status', z.tuple([]), () => getChatGptPlanService().status())
   defineHandler(win, 'chat-gpt-plan:sign-in', z.tuple([zAccountId.optional()]), (accountId) =>
     getChatGptPlanService().signIn(accountId),
