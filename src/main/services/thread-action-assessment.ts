@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import type { Thread } from '@shared/types/thread.ts'
 import {
+  THREAD_ACTION_LEDGER_FILE,
   emptyThreadActionState,
   threadActionRevision,
   threadActionAssessmentSchema,
@@ -12,13 +13,14 @@ import {
 import { safeJsonParse, decodeWithSchema } from '@shared/safe-json.ts'
 import { recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { getProjectThread, loadProjectThreadMetas, getThreadMeta } from './thread-store.ts'
-import { storageGet, storageSet } from './storage/storage.ts'
+import { storageGet } from './storage/storage.ts'
+import { storageReadFile, storageWriteFile } from './storage/user-data-files.ts'
+import { runSerialized } from './storage/write-queue.ts'
 import { getSetting } from './storage/settings.ts'
 import { resolveSmallTasksRoute, type SmallTasksRoute } from './providers/small-tasks-provider.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { recordUsageEvent } from './storage/usage-ledger.ts'
 
-const LEDGER_KEY = 'threadActionAssessmentsV1'
 const HOUR_MS = 60 * 60_000
 const MAX_CALLS = 30
 const MAX_INPUT_CHARS = 120_000
@@ -46,8 +48,9 @@ export interface ThreadActionDeps {
   list: (projectId: string) => Promise<Thread[]>
   get: typeof getThreadMeta
   read: typeof getProjectThread
-  load: () => unknown
-  save: (ledger: Ledger) => void
+  /** The saved ledger's JSON text, or `null` when none has been saved. */
+  load: () => Promise<string | null>
+  save: (text: string) => Promise<void>
   route: () => Promise<SmallTasksRoute | null>
   judge: (route: SmallTasksRoute, prompt: string) => Promise<ThreadActionVerdict | null>
   busy: (projectId: string, threadId: string) => boolean
@@ -116,6 +119,18 @@ function promptFor(evidence: string): string {
     .slice(0, MAX_PROMPT_CHARS)
 }
 
+/**
+ * The ledger keeps one record per thread, archived ones included, so it lives in its
+ * own file beside config.json: every config.json write rewrites that whole file.
+ */
+export const threadActionLedgerFile: Pick<ThreadActionDeps, 'load' | 'save'> = {
+  load: () => storageReadFile(THREAD_ACTION_LEDGER_FILE),
+  save: (text) =>
+    runSerialized(THREAD_ACTION_LEDGER_FILE, () =>
+      storageWriteFile(THREAD_ACTION_LEDGER_FILE, text),
+    ),
+}
+
 const defaults: Omit<ThreadActionDeps, 'busy'> = {
   enabled: () => getSetting<string>('sidebarThreadSort', 'activity') === 'action',
   now: Date.now,
@@ -126,10 +141,7 @@ const defaults: Omit<ThreadActionDeps, 'busy'> = {
   list: loadProjectThreadMetas,
   get: getThreadMeta,
   read: getProjectThread,
-  load: () => storageGet(LEDGER_KEY),
-  save: (ledger) => {
-    storageSet(LEDGER_KEY, ledger)
-  },
+  ...threadActionLedgerFile,
   route: resolveSmallTasksRoute,
   judge: async (route, prompt) => {
     const { text } = await completeTextWithUsage(route.provider, prompt, 20_000, (usage) => {
@@ -160,14 +172,22 @@ export class ThreadActionAssessor {
     this.deps = deps
   }
 
-  private load(): Ledger {
+  private async load(): Promise<Ledger> {
     if (!this.ledger) {
-      const parsed = ledgerSchema.safeParse(this.deps.load())
-      this.ledger = parsed.success
-        ? parsed.data
-        : { records: [], windowStartedAt: this.deps.now(), calls: 0, inputChars: 0 }
+      const text = await this.deps.load()
+      const saved = text === null ? null : safeJsonParse(text, decodeWithSchema(ledgerSchema))
+      this.ledger = saved ?? {
+        records: [],
+        windowStartedAt: this.deps.now(),
+        calls: 0,
+        inputChars: 0,
+      }
     }
     return this.ledger
+  }
+
+  private async save(ledger: Ledger): Promise<void> {
+    await this.deps.save(`${JSON.stringify(ledger)}\n`)
   }
 
   snapshot(): ThreadActionState {
@@ -187,7 +207,7 @@ export class ThreadActionAssessor {
     if (this.running || !this.deps.enabled()) return
     this.running = true
     try {
-      const ledger = this.load()
+      const ledger = await this.load()
       const candidates: Array<{ projectId: string; thread: Meta; candidate: string }> = []
       const entries: ThreadActionState['entries'] = []
       const all = new Set<string>()
@@ -247,7 +267,7 @@ export class ThreadActionAssessor {
       if (previous?.assessment.revision === revision) {
         previous.candidate = candidate
         previous.assessment.assessedAt = this.deps.now()
-        this.deps.save(ledger)
+        await this.save(ledger)
         this.state.entries.push(previous)
         this.state.assessed++
         this.state.pending--
@@ -271,7 +291,7 @@ export class ThreadActionAssessor {
           (item) => item.projectId !== projectId || item.threadId !== meta.id,
         )
         ledger.records.push(blank)
-        this.deps.save(ledger)
+        await this.save(ledger)
         this.state.entries.push(blank)
         this.state.assessed++
         this.state.pending--
@@ -311,7 +331,7 @@ export class ThreadActionAssessor {
       ledger.records.push(record)
       ledger.calls++
       ledger.inputChars += prompt.length
-      this.deps.save(ledger)
+      await this.save(ledger)
       let verdict: ThreadActionVerdict | null = null
       try {
         verdict = await this.deps.judge(route, prompt)
@@ -333,7 +353,7 @@ export class ThreadActionAssessor {
         (verdict.status !== 'needs-action' || verdict.evidence.length > 0)
       ) {
         record.assessment = { ...verdict, revision, assessedAt: this.deps.now(), source: 'judge' }
-        this.deps.save(ledger)
+        await this.save(ledger)
       }
       this.state.entries.push(record)
       this.state.assessed++

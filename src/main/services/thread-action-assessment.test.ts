@@ -2,12 +2,18 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Thread } from '@shared/types/thread.ts'
 import type { ProviderStreamChunk } from '@shared/types/stream.ts'
-import type { ThreadActionVerdict } from '@shared/threads/action-assessment.ts'
+import {
+  THREAD_ACTION_LEDGER_FILE,
+  type ThreadActionVerdict,
+} from '@shared/threads/action-assessment.ts'
 import {
   ThreadActionAssessor,
   threadActionEvidence,
+  threadActionLedgerFile,
   type ThreadActionDeps,
 } from './thread-action-assessment.ts'
+import { storageBackingWrites } from './storage/storage.ts'
+import { storageReadFile, storageRemoveFile } from './storage/user-data-files.ts'
 
 function thread(id: string, at = 1): Thread {
   return {
@@ -35,7 +41,7 @@ interface Harness {
 }
 
 function harness(threads = [thread('a')]): Harness {
-  let persisted: unknown
+  let persisted: string | null = null
   let enabled = true
   let calls = 0
   let now = 100
@@ -52,9 +58,9 @@ function harness(threads = [thread('a')]): Harness {
     list: async () => threads,
     get: async (_projectId, id) => threads.find((item) => item.id === id) ?? null,
     read: async (_projectId, id) => threads.find((item) => item.id === id) ?? null,
-    load: () => persisted,
-    save: (ledger) => {
-      persisted = structuredClone(ledger)
+    load: async () => persisted,
+    save: async (text) => {
+      persisted = text
     },
     route: async () => ({
       model: 'test',
@@ -113,9 +119,9 @@ describe('thread action assessment', () => {
     }
     let saves = 0
     const save = h.deps.save
-    h.deps.save = (ledger): void => {
+    h.deps.save = async (text): Promise<void> => {
       saves++
-      save(ledger)
+      await save(text)
     }
     h.enable(false)
     const assessor = h.assessor()
@@ -140,6 +146,29 @@ describe('thread action assessment', () => {
     await restarted.tick()
     assert.equal(h.calls(), 1)
     assert.equal(restarted.snapshot().entries[0]?.assessment.status, 'complete')
+  })
+
+  it('writes the ledger to its own user-data file and never to config.json', async () => {
+    await storageRemoveFile(THREAD_ACTION_LEDGER_FILE)
+    const h = harness()
+    Object.assign(h.deps, threadActionLedgerFile)
+    const configWrites = storageBackingWrites()
+    await h.assessor().tick()
+    assert.equal(storageBackingWrites(), configWrites)
+    const saved = await storageReadFile(THREAD_ACTION_LEDGER_FILE)
+    assert.match(saved ?? '', /"threadId":"a".*"status":"complete".*"source":"judge"/)
+  })
+
+  it('reads the ledger file back after a restart instead of judging again', async () => {
+    await storageRemoveFile(THREAD_ACTION_LEDGER_FILE)
+    const h = harness()
+    Object.assign(h.deps, threadActionLedgerFile)
+    await h.assessor().tick()
+    const restarted = h.assessor()
+    await restarted.tick()
+    assert.equal(h.calls(), 1)
+    assert.equal(restarted.snapshot().entries[0]?.assessment.status, 'complete')
+    assert.equal(restarted.snapshot().pending, 0)
   })
 
   it('reassesses a changed transcript even when run timestamps were restored', async () => {

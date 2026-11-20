@@ -1,6 +1,9 @@
 import { z } from 'zod'
 import type { Thread } from '@shared/types/thread.ts'
 
+/** The assessment ledger's file in the profile's user-data directory, beside config.json. */
+export const THREAD_ACTION_LEDGER_FILE = 'thread-action-assessments-v1.json'
+
 export const threadActionVerdictSchema = z.object({
   status: z.enum(['needs-action', 'waiting', 'complete', 'uncertain']),
   reason: z.string().trim().min(1).max(240),

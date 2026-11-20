@@ -12,6 +12,6 @@ Acceptance criteria:
 - The feature never starts agent work. The signal includes its evidence revision and reason.
 - Assessment runs, and the sidebar asks for its state, only while the Needs action sort is chosen, the one view that shows it. No thread history reaches the small-tasks model otherwise.
 
-Implementation: use the existing small-tasks route and usage ledger, persist a separate schema-validated assessment ledger under the Copse profile, and expose a read-only snapshot to the thread browser. Existing approvals/questions remain authoritative runtime signals.
+Implementation: use the existing small-tasks route and usage ledger, persist a separate schema-validated assessment ledger under the Copse profile (`user-data/thread-action-assessments-v1.json`, beside `config.json` rather than in it), and expose a read-only snapshot to the thread browser. Existing approvals/questions remain authoritative runtime signals.
 
 Validation: focused assessment/sorting/component tests, a WebdriverIO screenshot of the sort and onboarding state, oracle, and the full `pnpm run check` (persistence and IPC changes).

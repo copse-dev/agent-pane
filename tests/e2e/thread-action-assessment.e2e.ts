@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { $, $$, browser, expect } from '@wdio/globals'
 import type { Thread } from '@shared/types'
 import { threadActionRevision } from '@shared/threads/action-assessment.ts'
-import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
+import { resetUserData, seedThreadActionLedger, writeSeedConfig } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-thread-action-assessment'
@@ -65,8 +65,8 @@ describe('thread action sorting and gradual onboarding', () => {
       activeThreadId: complete.id,
       settings: { sidebarThreadSort: 'action', onboardingCompleted: true },
       ['threads:' + PROJECT_ID]: [complete, unknown, pending],
-      threadActionAssessmentsV1: { records, windowStartedAt: NOW, calls: 2, inputChars: 1000 },
     })
+    seedThreadActionLedger({ records, windowStartedAt: NOW, calls: 2, inputChars: 1000 })
     await browser.reloadSession()
   })
   after(() => {
