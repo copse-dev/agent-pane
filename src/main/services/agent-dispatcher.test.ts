@@ -17,6 +17,10 @@ import { getRunPlan } from './thread-plan-context.ts'
 import type { StoredThreadPlan } from '@copse/thread-store/plan-schema.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
 import { isDeferralModeActive } from './security/deferral-mode.ts'
+import {
+  createAutomationBudget,
+  assertAutomationBudgetModel,
+} from './automations/automation-budget.ts'
 
 const host: AgentHost<StreamChunk> = { emit: () => undefined }
 const registry = new ToolRegistry()
@@ -68,6 +72,34 @@ function dependencies(
 }
 
 describe('AgentDispatcher', () => {
+  it('loads main-owned allowances on every turn without trusting the renderer marker', async () => {
+    const threadId = 'allowance-dispatch'
+    await createAutomationBudget(context.projectId, threadId, 10)
+    let turns = 0
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        prepareExecutionContext: async () => ({ ...context, threadId }),
+        run: async (_id, content, messages) => {
+          assert.throws(() => {
+            assertAutomationBudgetModel('acp:claude')
+          }, /not supported/)
+          turns++
+          return {
+            usage: { inputTokens: 0, outputTokens: 0 },
+            messages: [...messages, { role: 'user', content }],
+          }
+        },
+      }),
+    )
+    await dispatcher.dispatch(request({ threadId }))
+    await dispatcher.dispatch(request({ threadId }))
+    assert.equal(turns, 2)
+    assert.doesNotThrow(() => {
+      assertAutomationBudgetModel('acp:claude')
+    }, 'scope must end with the turn')
+  })
   it('delivers internal notifications to the model with a hidden turn start and a budget charge', async () => {
     const chunks: StreamChunk[] = []
     const saved: LLMMessage[][] = []
