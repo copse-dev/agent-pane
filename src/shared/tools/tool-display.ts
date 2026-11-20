@@ -1,3 +1,4 @@
+import { truncateLine } from '@copse/std/one-line-text.ts'
 import { summarizePatch, type PatchFileSummary } from '../patch/apply-patch.ts'
 import type { ToolCall } from '@shared/types'
 import { isRecord } from '@shared/unknown-value.ts'
@@ -299,9 +300,7 @@ const SHELL_LABEL_MAX = 96
 
 /** A compact, single-line command for a tool header: cd-prefix stripped, collapsed, capped. */
 export function shellCommandLabel(command: string): string {
-  const cleaned = stripShellCdPrefix(command).replace(/\s+/g, ' ').trim()
-  if (cleaned.length <= SHELL_LABEL_MAX) return cleaned
-  return `${cleaned.slice(0, SHELL_LABEL_MAX - 1)}…`
+  return truncateLine(stripShellCdPrefix(command), SHELL_LABEL_MAX)
 }
 
 function shellCommandArg(args: unknown): string | null {

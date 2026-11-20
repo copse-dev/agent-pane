@@ -6,13 +6,8 @@ import {
 import { parseGhJson, runGh } from './gh-service.ts'
 import { firstNonEmptyString } from '@shared/unknown-value.ts'
 import { decodeWithSchema } from '@shared/safe-json.ts'
-import {
-  ghPrViewSchema,
-  optionalNumber,
-  optionalString,
-  type GhPrView,
-  type GhStatusCheckRollup,
-} from './gh-json-schemas.ts'
+import { ghPrViewSchema, type GhPrView, type GhStatusCheckRollup } from './gh-json-schemas.ts'
+import { optionalNumber, optionalString } from '@shared/zod-null-optional.ts'
 import { z } from 'zod'
 
 export type CiOverallState = 'pending' | 'success' | 'failure' | 'no_checks'
