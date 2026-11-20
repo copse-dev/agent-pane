@@ -133,6 +133,16 @@ function runningStatusIcon(className = DEFAULT) {
 function checkIcon(className = DEFAULT) {
   return outlineIcon("check", ["M20 6 9 17l-5-5"], className);
 }
+function eyeIcon(className = DEFAULT) {
+  return outlineIcon(
+    "eye",
+    [
+      "M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0",
+      "M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
+    ],
+    className
+  );
+}
 function shieldIcon(className = DEFAULT) {
   return outlineIcon(
     "shield",
@@ -8948,6 +8958,7 @@ export {
   moreVerticalIcon,
   runningStatusIcon,
   checkIcon,
+  eyeIcon,
   shieldIcon,
   bellIcon,
   messageQuestionIcon,
