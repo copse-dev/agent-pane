@@ -47,6 +47,37 @@ describe('withTimeout', () => {
     assert.deepEqual(order, ['onTimeout'])
   })
 
+  // `onTimeout` often aborts the work it is racing. Work that settles on that
+  // abort, at once or a microtask later, must not beat the timeout's outcome.
+  for (const delay of ['at once', 'a microtask later']) {
+    for (const settle of ['rejects', 'resolves']) {
+      for (const outcome of ['throws', 'returns a fallback']) {
+        it(`keeps the timeout outcome when onTimeout ${outcome} and the aborted work ${settle} ${delay}`, async () => {
+          const attempt = new AbortController()
+          const work = new Promise<string>((resolve, reject) => {
+            attempt.signal.addEventListener('abort', () => {
+              const finish = (): void => {
+                if (settle === 'rejects') reject(new Error('inner'))
+                else resolve('work finished')
+              }
+              if (delay === 'at once') finish()
+              else queueMicrotask(finish)
+            })
+          })
+          const timeout = new Error('timeout')
+          const pending = withTimeout(work, 50, () => {
+            attempt.abort()
+            if (outcome === 'throws') throw timeout
+            return 'fallback'
+          })
+          mock.timers.tick(50)
+          if (outcome === 'throws') await assert.rejects(pending, (error) => error === timeout)
+          else assert.equal(await pending, 'fallback')
+        })
+      }
+    }
+  }
+
   it('passes a rejection from the promise through and clears the timer', async () => {
     let calls = 0
     const failure = new Error('boom')

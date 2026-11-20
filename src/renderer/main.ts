@@ -381,8 +381,12 @@ async function boot(): Promise<void> {
   }
   applyExternalLinkMarks()
   store.on('settings_changed', applyExternalLinkMarks)
-  const { promise: mobileReady, resolve: mobileRestored }: PromiseWithResolvers<void> =
-    Promise.withResolvers()
+  // Hand-rolled deferred: the public demo runs boot() in ordinary browsers,
+  // some older than `Promise.withResolvers` (see main.test.ts).
+  let mobileRestored: () => void = () => {}
+  const mobileReady = new Promise<void>((resolve) => {
+    mobileRestored = resolve
+  })
   // The preload exposes this bridge only in test-enabled E2E sessions.
   // Keep harness state out of the product ApiClient/protocol.
   attachAutomationAppearance(Object.hasOwn(window, '__copseE2e'))
