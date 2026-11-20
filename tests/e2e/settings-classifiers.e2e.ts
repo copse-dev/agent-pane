@@ -194,6 +194,7 @@ describe('classifier connections settings', () => {
     await openClassifiers()
     const host = $('#settings-classifiers-host')
     const initialRequests = requests
+    const initialChips = (await host.$$('[data-classifier-id]').getElements()).length
     for (const { id, label, model, url, env } of [
       {
         id: 'perplexity-decider-direct',
@@ -231,6 +232,26 @@ describe('classifier connections settings', () => {
       await host.$('.classifier-add').click()
     }
     assert.equal(requests, initialRequests, 'choosing a preset must not call inference')
+    // The presets stay as unsaved drafts in the open section. Discard them so later captures
+    // show only the connections their own tests set up.
+    for (let remaining = 3; remaining > 0; remaining -= 1) {
+      const chips = await host.$$('[data-classifier-id]').getElements()
+      const newest = chips[chips.length - 1]
+      assert.ok(newest, 'missing a preset draft to discard')
+      await newest.click()
+      await expect(host.$('.classifier-remove')).toHaveText('Discard draft')
+      await clickAction('remove')
+      await browser.waitUntil(
+        async () =>
+          (await host.$$('[data-classifier-id]').getElements()).length === chips.length - 1,
+        { timeout: 10_000, timeoutMsg: 'preset draft was not discarded' },
+      )
+    }
+    assert.equal(
+      (await host.$$('[data-classifier-id]').getElements()).length,
+      initialChips,
+      'preset drafts left behind for later tests',
+    )
     await $('#settings-close').click()
     await $('#settings-dialog').waitForDisplayed({ reverse: true })
   })
