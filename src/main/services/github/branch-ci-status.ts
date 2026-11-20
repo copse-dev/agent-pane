@@ -3,7 +3,7 @@ import { decodeWithSchema } from '@shared/safe-json.ts'
 import { getCurrentBranchName } from './git-service.ts'
 import { parseGhJson, runGh } from './gh-service.ts'
 import { getCiStatus, rollupToCiChecks, type CiStatus } from './github-ci-service.ts'
-import { optionalNumber, optionalString } from './gh-json-schemas.ts'
+import { optionalNumber, optionalString } from '@shared/zod-null-optional.ts'
 
 const RUN_LIMIT = 100
 const branchRunSchema = z.object({

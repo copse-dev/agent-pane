@@ -31,6 +31,19 @@ jobs:
           ARTIFICIAL_ANALYSIS_API_KEY: ${{ secrets.ARTIFICIAL_ANALYSIS_API_KEY }}
         run: npm run sync:intellect -- --from-api
 
+      # The unit suite includes project-sandbox tests that fail on CI unless the
+      # real bubblewrap boundary is available (as in ci.yml's check job).
+      - name: Install sandbox dependencies for validation
+        if: runner.environment == 'github-hosted' && runner.os == 'Linux'
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bubblewrap socat
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          bwrap --unshare-all --dev-bind / / --die-with-parent true
+
       # Covers the sync unit tests, generated-table contracts, typecheck, lint,
       # formatting, and the rest of the repository's pre-commit gate.
       - name: Validate

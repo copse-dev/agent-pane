@@ -1,3 +1,4 @@
+import { collapseWhitespace, ellipsize } from '@copse/std/one-line-text.ts'
 import {
   AUTO_APPROVAL_LEVEL_LABELS,
   AUTO_APPROVAL_LEVELS,
@@ -111,10 +112,7 @@ function autoApprovalRisk(level: AutoApprovalLevel): string {
 }
 
 function exampleText(text: string): string {
-  const redacted = redactSecrets(text.replace(/\s+/g, ' ').trim())
-  return redacted.length > MAX_EXAMPLE_LENGTH
-    ? `${redacted.slice(0, MAX_EXAMPLE_LENGTH - 1)}…`
-    : redacted
+  return ellipsize(redactSecrets(collapseWhitespace(text)), MAX_EXAMPLE_LENGTH)
 }
 
 /** Approvals and refusals a candidate would have removed. */

@@ -86,6 +86,11 @@ describe('onboarding gating', () => {
         () => document.querySelector<HTMLDialogElement>('#onboarding-dialog')?.open ?? false,
       ),
     ).toBe(false)
+    // The renderer mounts the welcome screen before it reads the flag that
+    // gates onboarding and exposes no "gating finished" signal, so a closed
+    // dialog alone can be sampled too early. The relaunched app must also
+    // report the gate's input itself.
+    expect(await browser.execute(() => window.api.settings.get('onboardingCompleted'))).toBe(true)
   })
 
   it('never shows again on a completed profile', async function () {
@@ -101,5 +106,10 @@ describe('onboarding gating', () => {
         () => document.querySelector<HTMLDialogElement>('#onboarding-dialog')?.open ?? false,
       ),
     ).toBe(false)
+    // The renderer mounts the welcome screen before it reads the flag that
+    // gates onboarding and exposes no "gating finished" signal, so a closed
+    // dialog alone can be sampled too early. The relaunched app must also
+    // report the gate's input itself.
+    expect(await browser.execute(() => window.api.settings.get('onboardingCompleted'))).toBe(true)
   })
 })

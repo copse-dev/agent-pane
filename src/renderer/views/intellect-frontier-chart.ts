@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 import type { FrontierPoint, FrontierCostAxis } from '@copse/llm/pareto-frontier.ts'
 import type { CompositeIntellect } from '@copse/llm/composite-intellect.ts'
 import { explainIntellectScore } from '@copse/llm/model-intellect.ts'
@@ -224,7 +225,7 @@ export function renderFrontierSvg(
         const fanStep = fanPhase <= 3 ? fanPhase : 6 - fanPhase
         const offset = nearLeft
           ? fanStep * POINT_SPLAY_STEP_PX
-          : Math.max(-POINT_SPLAY_MAX_PX, Math.min(POINT_SPLAY_MAX_PX, centered))
+          : clamp(centered, -POINT_SPLAY_MAX_PX, POINT_SPLAY_MAX_PX)
         displayX.set(
           point.id,
           Math.max(plotLeft, Math.min(plotLeft + plotW, x(point.costPerMTok) + offset)),
@@ -605,7 +606,7 @@ export function renderFrontierSvg(
         Math.hypot(pointX(other) - displayedCx, y(other.intellect) - y(p.intellect)),
       )
     }, Infinity)
-    const hitRadius = Math.max(5, Math.min(11, nearestDistance / 2 - 0.5))
+    const hitRadius = clamp(nearestDistance / 2 - 0.5, 5, 11)
     const hit = svgEl('circle', {
       cx,
       cy,

@@ -116,7 +116,11 @@ import {
   formatReadOutsideProjectPromptParts,
   READ_OUTSIDE_PROJECT_TITLE,
 } from './read-outside-project.ts'
-import { grantReadOutsideProject, hasReadOutsideProjectGrant } from './read-outside-grant.ts'
+import {
+  grantReadOutsideProject,
+  hasReadOutsideProjectGrant,
+  safeCanonicalReadTarget,
+} from './read-outside-grant.ts'
 import { getMcpToolMeta, isMcpToolRemembered, rememberMcpTool } from '../mcp/mcp-registry.ts'
 import { CUSTOM_TOOL_PREFIX, customToolLabel } from '../mcp/custom-tools-config.ts'
 import {
@@ -422,6 +426,11 @@ async function resolveReadOutsideProject(
   if (spawnRunsOnSshTarget(workspaceRoot)) return null
   const analysis = analyzeReadOutsideProject(command, workspaceRoot)
   if (!analysis.eligible) return null
+  // The shell follows links before opening the path. Reject a narrow grant
+  // whose destination is a credential store or broad filesystem root, even
+  // when its harmless-looking token conceals that destination.
+  const canonicalTargets = analysis.resolvedTargets.map(safeCanonicalReadTarget)
+  if (canonicalTargets.some((target) => target === null)) return null
 
   // The one fact the durable log can carry about this command: the paths, never
   // the command line (see SHELL_DECISION_SUBJECT). Shared by the prompt's answer
@@ -462,7 +471,9 @@ async function resolveReadOutsideProject(
     {
       title: READ_OUTSIDE_PROJECT_TITLE,
       type: 'shell',
-      ...shellPromptToApprovalFields(formatReadOutsideProjectPromptParts(command, analysis)),
+      ...shellPromptToApprovalFields(
+        formatReadOutsideProjectPromptParts(command, analysis, canonicalTargets),
+      ),
       subject: SHELL_DECISION_SUBJECT,
       scope: 'external-read',
       cause: 'shell-read-outside-project',

@@ -27,6 +27,7 @@
 // `ModelParameters` into request fields. Callers store the vocabulary; the
 // mappers own the wire.
 
+import { clamp } from '@copse/std/clamp.ts'
 import { anthropicMaxOutputTokens } from './model-catalog.ts'
 import { firstPartyProviderOf, hasModelIdPrefix } from './model-families.ts'
 import { parseModelSelection, type ModelNamespace } from './model-selection.ts'
@@ -408,10 +409,6 @@ export function modelParameterSupport(model: string): ModelParameterSupport {
     temperatureMax: 2,
     upstreamDecides: true,
   }
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
 }
 
 function roundToStep(value: number): number {

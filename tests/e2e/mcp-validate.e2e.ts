@@ -257,7 +257,16 @@ describe('MCP validation', () => {
       const card = $('.tool-card[data-tool-id][data-status="error"]')
       await card.waitForExist({ timeout: 10_000 })
       if (!(await card.getProperty('open'))) await card.$('.tool-card-header').click()
-      await expect(card.$('.tool-result')).toHaveText(expect.stringContaining(example.expected))
+      const result = card.$('.tool-result')
+      await expect(result).toHaveText(expect.stringContaining(example.expected))
+      // An external tool's thrown error reaches the model, and so this card,
+      // inside the provenance envelope (docs/plans/context-provenance.md).
+      await expect(result).toHaveText(
+        expect.stringContaining(
+          '<external_content source="mcp__native_fixture__session_set_defaults">',
+        ),
+      )
+      await expect(result).toHaveText(expect.stringContaining('</external_content>'))
       await saveAppScreenshot(example.screenshot)
       await scenario.assertComplete()
     })

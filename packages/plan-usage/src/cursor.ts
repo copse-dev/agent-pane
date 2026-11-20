@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 import {
   clampPercent,
   errorMessage,
@@ -79,12 +80,8 @@ export function parseCursorCreditGrant(raw: unknown): PlanCreditGrant | null {
   if (total === null || total <= 0 || (remaining === null && used === null)) return null
 
   const totalCents = Math.round(total)
-  const remainingCents = Math.round(
-    Math.min(totalCents, Math.max(0, remaining ?? totalCents - (used ?? 0))),
-  )
-  const usedCents = Math.round(
-    Math.min(totalCents, Math.max(0, used ?? totalCents - remainingCents)),
-  )
+  const remainingCents = Math.round(clamp(remaining ?? totalCents - (used ?? 0), 0, totalCents))
+  const usedCents = Math.round(clamp(used ?? totalCents - remainingCents, 0, totalCents))
   return { remainingCents, totalCents, usedCents }
 }
 
