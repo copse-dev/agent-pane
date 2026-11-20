@@ -1,10 +1,10 @@
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { el, qsRequired } from '../dom/helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import type { AppStore } from '@shared/store/store.ts'
+import { sameItems, type AppStore } from '@shared/store/store.ts'
 import { isSettingsDialogOpen, onSettingsDialogClose } from './settings-dialog.ts'
 import { setAttentionThreads } from '../controller/attention.ts'
-import { attentionThreadId, proposingThreadId } from '../controller/projects.ts'
+import { attentionThreadId, proposingThreadId, threadRelationsKey } from '../controller/projects.ts'
 import { sideChatPromptOrigin } from '../controller/side-chat.ts'
 import { getThreadById } from '@shared/store/thread-helpers.ts'
 import { uiActions } from '../ui/actions.ts'
@@ -312,6 +312,8 @@ export function mountApprovalDialog(
     type: string
     allowRemember: boolean | undefined
     rememberLabel: string | undefined
+    rememberDefault: boolean | undefined
+    rememberSubject: string | undefined
     approveLabel: string | undefined
     collapseDetails: boolean | undefined
     approveOnceLabel: string | undefined
@@ -449,7 +451,12 @@ export function mountApprovalDialog(
     if (batch.length === 0) return null
     if (!batch.every((req) => req.allowRemember)) return null
     const label = batch[0]?.rememberLabel
-    if (!label || !batch.every((req) => req.rememberLabel === label)) return null
+    const subject = batch[0]?.rememberSubject
+    if (
+      !label ||
+      !batch.every((req) => req.rememberLabel === label && req.rememberSubject === subject)
+    )
+      return null
     return label
   }
 
@@ -674,7 +681,8 @@ export function mountApprovalDialog(
     // Fresh prompt the user is reading for the first time: Approve is live. The
     // settle guard only applies to appends onto an already-open prompt.
     clearSettle()
-    rememberInput.checked = false
+    rememberInput.checked =
+      rememberGrant() !== null && batch.every((req) => req.rememberDefault === true)
     // Each prompt starts collapsed; expanding is a per-prompt decision.
     detailsExpanded = false
     renderBatch()
@@ -832,6 +840,8 @@ export function mountApprovalDialog(
       type,
       allowRemember,
       rememberLabel,
+      rememberDefault,
+      rememberSubject,
       approveLabel,
       collapseDetails,
       approveOnceLabel,
@@ -855,6 +865,8 @@ export function mountApprovalDialog(
         type,
         allowRemember,
         rememberLabel,
+        rememberDefault,
+        rememberSubject,
         approveLabel,
         collapseDetails,
         approveOnceLabel,
@@ -915,13 +927,17 @@ export function mountApprovalDialog(
   // When the user switches threads, the prompt on screen has to follow the
   // focus: requests for the thread just left are withdrawn, and a
   // previously-backgrounded request for the now-focused thread surfaces.
-  // `threads_changed` also fires on project switches, so this covers
-  // cross-project focus changes too.
-  store.on('threads_changed', () => {
-    withdrawUnshowable()
-    if (active) appendToOpen()
-    else show()
-  })
+  // A project switch changes the active thread too. A request's showability
+  // also depends on which thread it surfaces over (side-chat parent, proposer).
+  store.select(
+    (s) => [s.activeThreadId, threadRelationsKey(s.threads)] as const,
+    () => {
+      withdrawUnshowable()
+      if (active) appendToOpen()
+      else show()
+    },
+    sameItems,
+  )
 
   // Restoring a minimized window makes deferred requests showable again; surface
   // them immediately so the user never has to switch threads to un-stick a prompt

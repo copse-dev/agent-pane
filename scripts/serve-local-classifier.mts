@@ -2,7 +2,7 @@
  * Set up and start a self-hosted systemone classifier from a persistent cache,
  * at a pinned revision, so `pnpm run eval:classifier` has a server to call.
  *
- *   pnpm run classifier:serve -- <kev|winnow> [--setup-only] [server flags…]
+ *   pnpm run classifier:serve -- <kev|winnow|strands-decider> [--setup-only] [server flags…]
  *
  * Everything the server needs lives under one cache root: the checkout, its
  * virtual environment or native build, the uv package cache and the model
@@ -10,7 +10,7 @@
  * Point it at a large external volume when the internal disk is short.
  *
  * The first run clones, installs and downloads the weights (Kev about 8 GB, Winnow
- * about 12.5 GB text-only); later runs reuse the cache and download nothing. The
+ * about 12.5 GB text-only, Strands Decider about 5 GB); later runs reuse the cache and download nothing. The
  * servers bind 127.0.0.1 on the port their `benchmarks/classifiers/*.json`
  * profile names. Flags after the name go to the server, such as `--context 16384` for
  * Winnow on a machine without room for its 64K default. The app's Settings → Classifiers

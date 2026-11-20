@@ -585,6 +585,7 @@ export function mountModelPicker(
           : []),
       )
       if (selected) item.classList.add('is-selected')
+      if (opt.superseded) item.classList.add('is-superseded')
       if (opt.value === activeValue) item.classList.add('is-active')
       item.addEventListener('click', () => {
         selectOption(opt.value)

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import {
   beginWorktreeWriter,
   hasLiveWorktreeWriter,
+  hasLiveWorktreeWriterWithin,
   noteWorktreeWrite,
   withWorktreeWriter,
   worktreeWriteEpoch,
@@ -53,6 +54,30 @@ describe('worktree writer registry', () => {
       assert.equal(hasLiveWorktreeWriter(join(tmpdir(), 'any-other-root')), true)
     } finally {
       release()
+    }
+  })
+
+  void it('counts only writers in or below a checkout as using it', () => {
+    // A checkout under the home directory's worktrees, as ~/.copse/worktrees/… is.
+    const home = join(tmpdir(), 'copse-writers-home')
+    const checkout = join(home, '.copse', 'worktrees', 'project', 'thread')
+    const cases: Array<[scope: string | null, live: boolean]> = [
+      [checkout, true],
+      [join(checkout, 'packages', 'app'), true],
+      [home, false],
+      [join(home, '.copse'), false],
+      [null, false],
+      [`${checkout}-sibling`, false],
+    ]
+    for (const [scope, live] of cases) {
+      const release = beginWorktreeWriter(scope)
+      try {
+        assert.equal(hasLiveWorktreeWriterWithin(checkout), live, String(scope))
+        // The diff queue's broader answer is unchanged for the same writers.
+        assert.equal(hasLiveWorktreeWriter(checkout), scope !== `${checkout}-sibling`)
+      } finally {
+        release()
+      }
     }
   })
 

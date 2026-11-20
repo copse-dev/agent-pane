@@ -61,6 +61,8 @@ export function createContextWheel(): {
     running: boolean,
     options?: ContextWheelOptions,
   ) => void
+  /** Mark the wheel busy (`aria-busy`) while a context estimate is pending. */
+  setEstimating: (estimating: boolean) => void
 } {
   const root = document.createElement('div')
   root.className = 'context-wheel'
@@ -361,5 +363,10 @@ export function createContextWheel(): {
     restoreEngagedPopover()
   }
 
-  return { root, update }
+  function setEstimating(estimating: boolean): void {
+    if (estimating) root.setAttribute('aria-busy', 'true')
+    else root.removeAttribute('aria-busy')
+  }
+
+  return { root, update, setEstimating }
 }

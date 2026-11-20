@@ -51,10 +51,12 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages ./packages
 COPY patches ./patches
 # All resolutions and security patches come from the repository lockfile.
-# No repository or dependency install lifecycle runs implicitly.
+# No repository or dependency install lifecycle runs implicitly. node-pty has no
+# Linux prebuild, so its own install script compiles the Node-API addon, which
+# Electron loads unchanged.
 RUN pnpm install --frozen-lockfile --ignore-scripts \\
     && node node_modules/electron/install.js \\
-    && pnpm exec electron-rebuild -f -w node-pty
+    && pnpm rebuild node-pty
 COPY dist ./dist
 RUN chmod -R a+rX /opt/copse
 COPY desktop-guest.cjs /opt/copse-desktop/guest.cjs

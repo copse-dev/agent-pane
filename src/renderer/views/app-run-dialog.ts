@@ -14,6 +14,7 @@ import { el } from '../dom/helpers.ts'
 import { closeIcon, playIcon, refreshIcon } from '../dom/icons.ts'
 import { createOverlayDialog } from './dialog-shell.ts'
 import { selectActiveWorkspace } from '../controller/active-workspace.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 const isBusy = (operation: AppRunOperation): boolean =>
   !['running', 'succeeded', 'failed', 'cancelled', 'stopped'].includes(operation.stage)
@@ -138,7 +139,7 @@ export function createAppRunPanel(
   const currentApp = (): AppRunDiscovery['apps'][number] | undefined =>
     discovery.apps.find((app) => app.id === appSelect.value)
   function fail(value: unknown): void {
-    notice.textContent = value instanceof Error ? value.message : String(value)
+    notice.textContent = errorMessage(value)
     notice.hidden = false
     notice.dataset['kind'] = 'error'
   }
@@ -341,7 +342,7 @@ export function createAppRunPanel(
     try {
       options = await api.appRun.setupOptions(owner, platform)
     } catch (value) {
-      setupHost.replaceChildren(el('p', {}, value instanceof Error ? value.message : String(value)))
+      setupHost.replaceChildren(el('p', {}, errorMessage(value)))
       return
     }
     if (disposed || generation !== setupGeneration) return
@@ -514,9 +515,12 @@ export function openAppRunDialog(
     panel.element,
   )
   const unsubscribe = selectActiveWorkspace(store, close)
-  const unsubscribeThread = store.on('threads_changed', () => {
-    if (store.getState().activeThreadId !== (owner.threadId ?? null)) close()
-  })
+  const unsubscribeThread = store.select(
+    (s) => s.activeThreadId,
+    (threadId) => {
+      if (threadId !== (owner.threadId ?? null)) close()
+    },
+  )
   dialog.addEventListener(
     'close',
     () => {

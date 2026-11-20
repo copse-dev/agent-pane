@@ -1,6 +1,7 @@
 import { clientActions } from '../clients/client-actions.ts'
-import { mkdirSync, writeFileSync, renameSync, rmSync } from 'node:fs'
+import { rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { writeFileAtomicSync } from '@copse/std/write-file-atomic.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { isPluginClientApiEnabled } from '@copse/agent/plugins/plugin-client-api-plugin.ts'
 import { copseDataRoot } from '../storage/copse-paths.ts'
@@ -63,11 +64,9 @@ export function syncPluginClientApi(): Promise<void> {
           return result.approved
         },
       })
-      mkdirSync(copseDataRoot(), { recursive: true })
-      writeFileSync(`${discovery}.tmp`, JSON.stringify({ version: 1, origin: active.origin }), {
+      writeFileAtomicSync(discovery, JSON.stringify({ version: 1, origin: active.origin }), {
         mode: 0o600,
       })
-      renameSync(`${discovery}.tmp`, discovery)
     })
     .catch((error: unknown) => {
       console.error('[plugin-client-api] Could not synchronize service:', error)

@@ -5,10 +5,19 @@ import { assertMainFrameSender, parseIpcArgs, zNonEmptyString, zProjectId } from
 import { getAutomationService } from '../services/automations/automation-service.ts'
 import { getBranchCiAutomationService } from '../services/automations/branch-ci-automation-service.ts'
 
-const zAutomationPermission = z.object({
-  kind: z.enum(['copse-action', 'mcp-tool']),
-  toolName: z.string().trim().min(1).max(512),
-})
+const zAutomationPermission = z.union([
+  z.object({
+    kind: z.enum(['copse-action', 'mcp-tool']),
+    toolName: z.string().trim().min(1).max(512),
+  }),
+  z.object({
+    kind: z.literal('worktree-preparation'),
+    toolName: z.literal('prepare_worktree'),
+    directory: z.string().min(1).max(4096),
+    planFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+    offline: z.boolean(),
+  }),
+])
 
 const zAutomationScheduleInput = z.object({
   id: z.string().min(1).max(256).optional(),
@@ -73,6 +82,24 @@ export function registerAutomationHandlers(win: BrowserWindow): void {
     parseIpcArgs(zProjectId, [rawProjectId])
     return getAutomationService().permissionOptions()
   })
+  ipcMain.handle(
+    'automations:review-preparation',
+    (event, rawProjectId: unknown, rawInput: unknown) => {
+      assertMainFrameSender(event, win)
+      const projectId = parseIpcArgs(zProjectId, [rawProjectId])
+      const input = parseIpcArgs(
+        z.object({
+          directory: z.string().trim().min(1).max(4096).optional(),
+          offline: z.boolean().optional(),
+        }),
+        [rawInput],
+      )
+      return getAutomationService().reviewPreparation(projectId, {
+        ...(input.directory !== undefined ? { directory: input.directory } : {}),
+        ...(input.offline !== undefined ? { offline: input.offline } : {}),
+      })
+    },
+  )
   ipcMain.handle('automations:upsert', async (event, rawProjectId: unknown, rawInput: unknown) => {
     assertMainFrameSender(event, win)
     const projectId = parseIpcArgs(zProjectId, [rawProjectId])

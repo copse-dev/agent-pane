@@ -129,12 +129,55 @@ describe('screenshot-metrics', () => {
       writeFileSync(join(root, '.shard-1'), `${JSON.stringify(shard())}\n`)
       writeFileSync(join(root, '.shard-2'), '')
       writeFileSync(join(root, '.shard-3'), JSON.stringify({ shard: 'three' }))
-      writeFileSync(join(root, '.shard-9'), JSON.stringify(shard({ shard: 9 })))
+      for (const name of [
+        '.shard-',
+        '.shard-0',
+        '.shard--9',
+        '.shard-01',
+        '.shard-09',
+        '.shard-+9',
+        '.shard-9.0',
+        '.shard-9x',
+        '.shard-9.json',
+      ]) {
+        writeFileSync(join(root, name), JSON.stringify(shard({ shard: 9 })))
+      }
       const records = readShardRecords(root)
       assert.deepEqual(
         records.map((record) => record.shard),
         [1],
       )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('includes ninth and multi-digit shards in ordered records and complete metrics', () => {
+    const root = mkdtempSync(join(tmpdir(), 'screenshot-metrics-'))
+    try {
+      const records = [
+        shard({ shard: 10, total: 10, changed: 7, finishedAt: '2026-10-15T01:21:00.000Z' }),
+        shard({ shard: 1, total: 10, changed: 40 }),
+        shard({
+          shard: 9,
+          total: 10,
+          changed: 53,
+          jobStartedAt: '2026-10-15T01:09:00.000Z',
+        }),
+      ]
+      for (const record of records) {
+        writeFileSync(join(root, `.shard-${String(record.shard)}`), JSON.stringify(record))
+      }
+      const actual = readShardRecords(root)
+      assert.deepEqual(
+        actual.map((record) => record.shard),
+        [1, 9, 10],
+      )
+      const metrics = buildScreenshotMetrics(input({ shards: actual }))
+      assert.equal(metrics.plan.shardTotal, 10)
+      assert.equal(metrics.e2e.changedCollected, 100)
+      assert.equal(metrics.e2e.wallMinutes, 12)
+      assert.equal(metrics.e2e.suiteMinutes, 9)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

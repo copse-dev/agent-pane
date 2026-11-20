@@ -36,6 +36,7 @@ import { getChatGptPlanService } from './chatgpt-plan-service.ts'
 import type { LLMProvider } from '@copse/llm/wire-types.ts'
 import { HOST_INFERENCE_TARGET } from '../container-runtime/host-inference-wire.ts'
 import { resolveContextWindow } from './resolve-context-window.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 /** Built-in providers authenticate and infer on the host. External ACP agents remain in the guest. */
 export type ContainerProviderPlan =
@@ -140,7 +141,7 @@ export async function explainContainerModel(model: string): Promise<ContainerMod
         ? { reason: null, loginOffered: error.loginOffered }
         : { reason: error.reason }
     }
-    return { reason: error instanceof Error ? error.message : String(error) }
+    return { reason: errorMessage(error) }
   }
 }
 
@@ -197,7 +198,7 @@ export async function resolveContainerProvider(
   try {
     description = await describeProvider(model)
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
+    const reason = errorMessage(error)
     throw new Error(`Container runs cannot resolve a provider for model "${model}": ${reason}`, {
       cause: error,
     })

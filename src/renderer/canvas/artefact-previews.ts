@@ -26,6 +26,13 @@ const previews = new Map<string, string>()
 const previewRevisions = new Map<string, number>()
 
 /**
+ * Thread + artefact title -> count of changes to that one thumbnail. A
+ * transcript row signs the versions of the thumbnails it draws, so a new
+ * thumbnail rebuilds only the rows that show it.
+ */
+const previewVersions = new Map<string, number>()
+
+/**
  * A small LRU of complete documents that have just crossed the live artefact
  * channel or were requested for an inline card. The canvas store remains the
  * source of truth; this cache closes the short race where the renderer receives
@@ -68,7 +75,13 @@ export function setArtefactPreview(
   const key = previewKey(threadId, title)
   if (!preview || previews.get(key) === preview) return
   previews.set(key, preview)
+  previewVersions.set(key, (previewVersions.get(key) ?? 0) + 1)
   previewRevisions.set(threadId, (previewRevisions.get(threadId) ?? 0) + 1)
+}
+
+/** Changes whenever the thumbnail for `title` in `threadId` is added or replaced. */
+export function artefactPreviewVersion(threadId: string, title: string): number {
+  return previewVersions.get(previewKey(threadId, title)) ?? 0
 }
 
 export function getArtefactPreview(threadId: string, title: string): string | undefined {
@@ -173,6 +186,7 @@ export function requestArtefactShow(threadId: string, title: string): void {
 export function resetArtefactPreviewsForTest(): void {
   previews.clear()
   previewRevisions.clear()
+  previewVersions.clear()
   artefacts.clear()
   artefactReads.clear()
   showHandler = null

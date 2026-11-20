@@ -4,6 +4,8 @@ import { afterEach, describe, it } from 'node:test'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { createAppRunPanel, openAppRunDialog } from './app-run-dialog.ts'
 import { createStore } from '@shared/store/store.ts'
+import { setThreadTitle } from '@shared/store/thread-helpers.ts'
+import { makeThread } from '../thread-fixture.test-support.ts'
 import type { AppRunDiscovery, AppRunOperation, AppRunSelection } from '@shared/types/app-run.ts'
 const owner = { projectId: 'project', threadId: 'thread' }
 const data: AppRunDiscovery = {
@@ -131,5 +133,30 @@ describe('Run app picker', () => {
       0,
       'the workspace switch closes the dialog',
     )
+  })
+})
+
+describe('Run app dialog thread scope', () => {
+  it('stays open across thread metadata updates and closes on a bare selection change', () => {
+    const store = createStore({
+      activeProjectId: 'project',
+      activeThreadId: 'thread',
+      threads: [makeThread({ id: 'thread' }), makeThread({ id: 'other' })],
+    })
+    const api = createFakeApi()
+    api.appRun.discover = async (): Promise<AppRunDiscovery> => data
+    openAppRunDialog(store, api)
+    const dialog = (): HTMLDialogElement | null =>
+      document.querySelector<HTMLDialogElement>('#app-run-dialog')
+    assert.equal(dialog()?.open, true)
+
+    setThreadTitle(store, 'thread', 'Renamed')
+    setThreadTitle(store, 'other', 'Renamed too')
+    store.emit('threads_changed')
+    assert.equal(dialog()?.open, true, 'thread metadata does not close the dialog')
+
+    // No event: the selection alone closes a dialog scoped to the old thread.
+    store.setState({ activeThreadId: 'other' })
+    assert.notEqual(dialog()?.open, true)
   })
 })

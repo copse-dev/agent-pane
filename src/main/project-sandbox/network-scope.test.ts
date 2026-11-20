@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test'
+import { describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { containedSandboxNetworkConfig } from './config.ts'
 import {
@@ -29,6 +29,22 @@ describe('mergedScopeNetwork', () => {
 })
 
 describe('acquireSandboxNetworkScope', () => {
+  it('keeps isolated-worker bookkeeping out of task output', () => {
+    const logs: string[] = []
+    mock.method(console, 'error', (...parts: unknown[]) => {
+      logs.push(parts.map(String).join(' '))
+    })
+    try {
+      const release = acquireSandboxNetworkScope(
+        { domains: ['localhost'], allowLocalBinding: true, label: 'hosted task' },
+        { logChanges: false },
+      )
+      release()
+      assert.deepEqual(logs, [])
+    } finally {
+      mock.restoreAll()
+    }
+  })
   it('release is idempotent and safe without an initialized sandbox manager', () => {
     // ASRT is never initialized in unit tests, so apply is a no-op — this
     // covers the bookkeeping contract: acquire/release/release never throws.

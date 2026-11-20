@@ -12,6 +12,7 @@ import {
 } from './ipc-guards.ts'
 import { threadPathArgs } from './thread-path-args.ts'
 import {
+  inspectThreadReadRoot,
   resolveThreadExecutionContext,
   runWithThreadExecutionContext,
 } from '../services/thread-execution-context.ts'
@@ -23,12 +24,19 @@ import {
   gatewayReaddir,
   gatewayWriteFile,
 } from '../project-sandbox/sandbox-fs-client.ts'
+import { errorMessage } from '@shared/errors.ts'
+
+async function requireReadRoot(projectId: string, threadId: string): Promise<string> {
+  const root = await inspectThreadReadRoot(projectId, threadId)
+  if (!root) throw new Error('Checkout unavailable. Resume this chat to restore it.')
+  return root
+}
 
 export function registerFsHandlers(win: BrowserWindow): void {
   ipcMain.handle('fs:read-file', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId, relPath] = parseIpcArgs(threadPathArgs, rawArgs)
-    const { root } = await resolveThreadExecutionContext(projectId, threadId)
+    const root = await requireReadRoot(projectId, threadId)
     const abs = await resolvePathWithinRoot(relPath, root)
     return gatewayReadFile(abs, root)
   })
@@ -39,11 +47,11 @@ export function registerFsHandlers(win: BrowserWindow): void {
     // Missing or oversized previews are routine (a thread can outlive its worktree
     // files), so report them as data; a rejected handler makes Electron log a stack.
     try {
-      const { root } = await resolveThreadExecutionContext(projectId, threadId)
+      const root = await requireReadRoot(projectId, threadId)
       const abs = await resolvePathWithinRoot(relPath, root)
       return { ok: true, data: await gatewayReadImage(abs, root, relPath) }
     } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+      return { ok: false, error: errorMessage(error) }
     }
   })
 
@@ -65,7 +73,7 @@ export function registerFsHandlers(win: BrowserWindow): void {
   ipcMain.handle('fs:readdir', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId, relPath] = parseIpcArgs(threadPathArgs, rawArgs)
-    const { root } = await resolveThreadExecutionContext(projectId, threadId)
+    const root = await requireReadRoot(projectId, threadId)
     const abs = await resolvePathWithinRoot(relPath, root)
     return gatewayReaddir(abs, root)
   })
@@ -76,7 +84,7 @@ export function registerFsHandlers(win: BrowserWindow): void {
       z.tuple([zProjectId, zThreadId, zPathString.optional()]),
       [projectIdArg, threadIdArg, pathArg],
     )
-    const { root } = await resolveThreadExecutionContext(projectId, threadId)
+    const root = await requireReadRoot(projectId, threadId)
     const abs = await resolvePathWithinRoot(nonEmptyStringOr(relPath, '.'), root)
     const dirents = await gatewayListDir(abs, root)
     return dirents

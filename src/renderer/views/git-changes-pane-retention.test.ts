@@ -110,7 +110,6 @@ describe('Changes pane retains known thread state', () => {
         .getState()
         .threads.map((item) => (item.id === 'b' ? { ...item, title: 'Renamed elsewhere' } : item)),
     })
-    store.emit('threads_changed')
     await settle()
 
     assert.equal(calls, 1)
@@ -135,12 +134,10 @@ describe('Changes pane retains known thread state', () => {
     await settle()
 
     store.setState({ activeThreadId: 'b' })
-    store.emit('threads_changed')
     await settle()
     assert.deepEqual(paths(listRoot), ['b-first.ts', 'b-second.ts'])
 
     store.setState({ activeThreadId: 'a' })
-    store.emit('threads_changed')
     await settle()
     assert.deepEqual(paths(listRoot), ['a-first.ts', 'a-second.ts'])
     assert.equal(listRoot.querySelector('.pane-loading'), null)
@@ -161,12 +158,10 @@ describe('Changes pane retains known thread state', () => {
     })
     await settle()
     store.setState({ activeThreadId: 'b' })
-    store.emit('threads_changed')
     assert.deepEqual(paths(listRoot), [], 'a different owner must not show the previous files')
     await settle()
 
     store.setState({ activeThreadId: 'a', filesPaneOpen: false })
-    store.emit('threads_changed')
     resolveB?.(changed('late-b'))
     await settle()
     assert.deepEqual(paths(listRoot), ['a-first.ts', 'a-second.ts'])
@@ -196,7 +191,6 @@ describe('Changes pane retains known thread state', () => {
           : item,
       ),
     })
-    store.emit('threads_changed')
     await settle()
     assert.equal(calls, 2)
     assert.deepEqual(paths(listRoot), [])
@@ -207,16 +201,13 @@ describe('Changes pane retains known thread state', () => {
     const { store, listRoot } = mount(async () => changed('shared'))
     await settle()
     store.setState({ activeThreadId: 'b' })
-    store.emit('threads_changed')
     await settle()
     store.setState({ activeThreadId: 'a' })
-    store.emit('threads_changed')
     await settle()
     store.setState({ filesPaneOpen: false })
     store.emit('git_change_navigate', 'shared-second.ts')
 
     store.setState({ activeThreadId: 'b', filesPaneOpen: true })
-    store.emit('threads_changed')
     await settle()
     assert.match(listRoot.querySelector('.is-selected')?.textContent ?? '', /shared-first.ts/)
   })

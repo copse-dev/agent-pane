@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, it, mock } from 'node:test'
+import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import { CLASSIFIER_PRESETS, classifierCredentialId } from '@copse/llm/classifiers/presets.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { setApprovalHandler } from '../approval.ts'
@@ -25,6 +26,10 @@ import { recordClassifierCall } from './classifier-call-log.ts'
 import { guardedYoloTierReason, shadowTierScreening } from './tier-screening.ts'
 import { getThreadClassifierUse } from './classifier-use-report.ts'
 import { CLASSIFIER_CALL_KIND } from '@shared/usage/classifier-use.ts'
+import { setProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
+import { TRUSTED_COMMANDS_SETTING } from './command-routing-config.ts'
+import { copseToolPermissionId } from './tool-permissions.ts'
+import { setWorkspaceTrusted } from './workspace-trust.ts'
 import { armGuardedYolo, disableGuardedYolo } from './guarded-yolo.ts'
 import { ensureToolPermitted } from './permission-gate.ts'
 import { SHELL_TIER_QUESTION } from './safety-classifier-profile.ts'
@@ -462,6 +467,35 @@ describe('tier screening through the safety-screening classifier', () => {
     )
     assert.equal(allowed, true)
     assert.equal(prompts, 0)
+  })
+
+  // run_background routes a trusted binary outside on its own setting. Always ask
+  // on run_shell alone must not make the gate judge that escape as contained and
+  // skip the second opinion the runner's actual boundary calls for.
+  it('screens a trusted background escape when only run_shell is Always ask', async () => {
+    await chooseKev()
+    const seen = answering(distribution(0.9))
+    mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+    setProjectSandboxEnabled(true)
+    setWorkspaceTrusted(home, true)
+    await setSetting(TRUSTED_COMMANDS_SETTING, ['printf'])
+    await setSetting('toolPermissionOverrides', { [copseToolPermissionId('run_shell')]: 'ask' })
+    try {
+      const allowed = await underGuardedYolo(() =>
+        ensureToolPermitted({
+          toolName: 'run_background',
+          args: { action: 'start', command: 'printf trusted' },
+        }),
+      )
+      assert.equal(allowed, true, 'the user approved the prompt')
+      assert.equal(seen.calls, 1)
+      assert.equal(prompts, 1)
+    } finally {
+      await setSetting('toolPermissionOverrides', {})
+      await setSetting(TRUSTED_COMMANDS_SETTING, [])
+      setWorkspaceTrusted(home, false)
+      setProjectSandboxEnabled(false)
+    }
   })
 
   it('asks nothing when no screening connection is chosen', async () => {

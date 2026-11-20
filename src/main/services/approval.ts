@@ -15,7 +15,7 @@ import {
   IpcValidationError,
   parseIpcArgs,
 } from '../ipc/ipc-guards.ts'
-import { getActiveRunThread } from './thread-models.ts'
+import { getActiveRunThread, getActiveRunTurnTreeId } from './thread-models.ts'
 import { getApprovalToolCallId, getBridgeExecutionId } from './approval-tool-call-context.ts'
 import { withRunDeadlinePaused } from './hooks/run-deadline.ts'
 import { recordDecision } from './security/decision-log-store.ts'
@@ -117,6 +117,10 @@ export interface ApprovalRequest {
   /** Host producer certifies that an approve-once response authorizes only this concrete request. */
   interactiveClientApproval?: 'once'
   rememberLabel?: string
+  /** Initial checkbox state; never changes a user's choice on a live batch. */
+  rememberDefault?: boolean
+  /** Host-owned grant identity, so matching labels cannot batch unrelated permissions. */
+  rememberSubject?: string
   /** Action label for one request. Batches retain a neutral count label. */
   approveLabel?: string
   /**
@@ -236,6 +240,8 @@ export function approvalDedupeKey(req: ApprovalRequest): string {
     type: req.type,
     allowRemember: req.allowRemember ?? false,
     rememberLabel: req.rememberLabel ?? '',
+    rememberDefault: req.rememberDefault ?? false,
+    rememberSubject: req.rememberSubject ?? '',
     approveLabel: req.approveLabel ?? '',
     collapseDetails: req.collapseDetails ?? false,
     approveOnceLabel: req.approveOnceLabel ?? '',
@@ -290,6 +296,8 @@ interface InflightApproval {
 }
 
 interface InflightWaiter {
+  /** Revocation ownership survives detaching turn-end audit attribution. */
+  readonly ownerThreadId: string | null
   bridgeExecutionId?: string
   resolve: (response: ApprovalResponse) => void
   signal: AbortSignal | undefined
@@ -333,6 +341,7 @@ const inflight = new Map<string, InflightApproval>()
 interface StoredVerdict {
   response: ApprovalResponse
   settledAt: number
+  ownerThreadId: string | null
 }
 
 const abandonedVerdicts = new Map<string, StoredVerdict>()
@@ -352,12 +361,16 @@ function abandonedVerdictKey(threadId: string, promptKey: string): string {
   return `${threadId}\u0000${getAgentExecutionRoot() ?? ''}\u0000${promptKey}`
 }
 
-function storeAbandonedVerdict(ledgerKey: string, response: ApprovalResponse): void {
+function storeAbandonedVerdict(
+  ledgerKey: string,
+  response: ApprovalResponse,
+  ownerThreadId: string | null,
+): void {
   const now = approvalClock()
   for (const [key, entry] of abandonedVerdicts) {
     if (now - entry.settledAt > ABANDONED_VERDICT_TTL_MS) abandonedVerdicts.delete(key)
   }
-  abandonedVerdicts.set(ledgerKey, { response, settledAt: now })
+  abandonedVerdicts.set(ledgerKey, { response, settledAt: now, ownerThreadId })
 }
 
 function takeAbandonedVerdict(ledgerKey: string): ApprovalResponse | null {
@@ -493,6 +506,10 @@ function settleInflight(
   req: ApprovalRequest,
 ): void {
   if (inflight.get(key) !== entry) return
+  // One host-owned response identity per decision, shared by every coalesced
+  // waiter and any parked replay. A handler may reuse its response object;
+  // that must not make a genuinely new approval reuse an old grant receipt.
+  const decision = { ...response }
   inflight.delete(key)
   if (entry.timer) clearTimeout(entry.timer)
   // One shared prompt → one audit event (not one per coalesced waiter).
@@ -511,7 +528,7 @@ function settleInflight(
   recordApprovalDecision(req, response, undefined, toolCallIds, bridgeExecutionIds)
   for (const waiter of entry.waiters) {
     waiter.signal?.removeEventListener('abort', waiter.onAbort)
-    waiter.resolve(response)
+    waiter.resolve(decision)
   }
   entry.waiters.clear()
 }
@@ -552,15 +569,17 @@ export function cancelApprovalsForThread(threadId: string): number {
 }
 
 /**
- * Tear down every prompt still owned by a thread, including parked ACP
- * stand-ins. Ordinary turn cleanup deliberately preserves those stand-ins for
- * a retry; thread deletion has no future turn to receive one.
+ * Revoke pending and saved approvals for Stop or thread deletion. Ordinary
+ * completion preserves abandoned-call answers for retries in the same task.
  */
 export function discardApprovalsForThread(threadId: string): number {
+  for (const [key, verdict] of abandonedVerdicts) {
+    if (verdict.ownerThreadId === threadId) abandonedVerdicts.delete(key)
+  }
   let discarded = 0
   for (const entry of [...inflight.values()]) {
     for (const waiter of [...entry.waiters]) {
-      if (waiter.threadId !== threadId) continue
+      if (waiter.ownerThreadId !== threadId) continue
       waiter.onAbort()
       discarded++
     }
@@ -806,13 +825,17 @@ function requestApprovalUnpaused(
   // call passes through — shell escalation, MCP, origin — attributes to it.
   const toolCallId = req.toolCallId ?? getApprovalToolCallId()
 
-  // Equal questions from different chats authorize different callers. Keep
-  // independent waiters in one chat without sharing consent across chats.
+  // Equal questions from different tasks authorize different callers. Scope
+  // every answer, including one-time answers, to the current execution identity
+  // so a parked prompt or saved verdict cannot follow send-now into a new task.
   // Standalone consent belongs to one caller even if two clients happen to
   // present identical copy (for example, the same six-digit pairing code).
   const key = JSON.stringify([
     dedupePrefix,
     threadId,
+    getThreadExecutionContext()?.projectId ?? null,
+    getAgentExecutionRoot(),
+    getActiveRunTurnTreeId(),
     req.standalone ? randomUUID() : approvalDedupeKey(req),
   ])
   // Only a thread-attributed request can be parked and replayed: the ledger is
@@ -865,6 +888,7 @@ function requestApprovalUnpaused(
     }
 
     const waiter: InflightWaiter = {
+      ownerThreadId: threadId,
       resolve,
       signal,
       threadId,
@@ -950,13 +974,14 @@ function parkedWaiter(
   bridgeExecutionId?: string,
 ): InflightWaiter {
   const waiter: InflightWaiter = {
+    ownerThreadId: threadId,
     threadId,
     signal: undefined,
     ledgerKey,
     ...(bridgeExecutionId ? { bridgeExecutionId } : {}),
     ...(toolCallId !== undefined ? { toolCallId } : {}),
     resolve: (response) => {
-      storeAbandonedVerdict(ledgerKey, response)
+      storeAbandonedVerdict(ledgerKey, response, threadId)
     },
     onAbort: () => {
       if (!entry.waiters.has(waiter)) return

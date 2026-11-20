@@ -428,6 +428,8 @@ export interface Thread {
    * renderer; the per-project `agent-pr-index.jsonl` is derived from it.
    */
   remoteAgentLink?: RemoteAgentLink
+  /** Recent Cursor agent IDs launched for this thread, recorded only by main. */
+  cursorAgentIds?: string[]
   /** Prompts submitted while the agent is running; drained FIFO when idle. */
   pendingMessages?: QueuedUserMessage[]
   /**

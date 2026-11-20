@@ -47,7 +47,22 @@ describe('classifier HTTP adapters', () => {
     {
       id: 'perplexity-decider',
       endpoint: 'https://openrouter.ai/api/alpha/decisions',
-      model: 'perplexity/pplx-decider-v1.1-27b',
+      model: 'perplexity/pplx-decider-v1.3',
+    },
+    {
+      id: 'perplexity-decider-direct',
+      endpoint: 'https://api.perplexity.ai/v1/decisions',
+      model: 'pplx-decider-v1.3',
+    },
+    {
+      id: 'perplexity-decider-flash',
+      endpoint: 'https://api.perplexity.ai/v1/decisions',
+      model: 'pplx-decider-flash-v1.3',
+    },
+    {
+      id: 'perplexity-decider-local',
+      endpoint: 'http://127.0.0.1:8080/v1/decisions',
+      model: 'pplx-decider-flash-v1.2',
     },
     {
       id: 'mercury-decide',
@@ -61,7 +76,10 @@ describe('classifier HTTP adapters', () => {
         fetchImpl: async (url, init) => {
           assert.equal(url, endpoint)
           assert.ok(init)
-          assert.equal(new Headers(init.headers).get('Authorization'), 'Bearer preset-fixture-key')
+          assert.equal(
+            new Headers(init.headers).get('Authorization'),
+            id === 'perplexity-decider-local' ? null : 'Bearer preset-fixture-key',
+          )
           assert.equal(init.redirect, 'manual')
           assert.equal(typeof init.body, 'string')
           if (typeof init.body !== 'string') assert.fail('expected JSON body')
@@ -83,90 +101,196 @@ describe('classifier HTTP adapters', () => {
     })
   }
 
-  it('uses Liquid’s native decision endpoint and preserves all three answer types', async () => {
-    const request: ClassifierRequest = {
-      state: 'The bicycle is red and needs an urgent repair.',
-      questions: {
+  for (const { id, model, endpoint, adapter } of [
+    {
+      id: 'liquid',
+      model: 'd1:free',
+      endpoint: 'https://api.liquid.ai/decisions/v1/systemone',
+      adapter: 'systemone@1',
+    },
+    {
+      id: 'perplexity-decider-direct',
+      model: 'pplx-decider-v1.3',
+      endpoint: 'https://api.perplexity.ai/v1/decisions',
+      adapter: 'decisions@1',
+    },
+    {
+      id: 'perplexity-decider-flash',
+      model: 'pplx-decider-flash-v1.3',
+      endpoint: 'https://api.perplexity.ai/v1/decisions',
+      adapter: 'decisions@1',
+    },
+  ]) {
+    it(`uses the ${id} native decision endpoint and preserves all three answer types`, async () => {
+      const request: ClassifierRequest = {
+        state: 'The bicycle is red and needs an urgent repair.',
+        questions: {
+          color: {
+            type: 'choice',
+            instructions: 'What color is the bicycle?',
+            options: { red: null, blue: null },
+          },
+          repair: { type: 'boolean', instructions: 'Does the bicycle need repair?' },
+          urgency: { type: 'score', instructions: 'How urgent?', levels: ['Routine', 'Urgent'] },
+        },
+      }
+      let attempts = 0
+      const result = await classifyHttp(profile(id), request, {
+        apiKey: 'native-test-key',
+        fetchImpl: async (url, init) => {
+          attempts++
+          assert.equal(url, endpoint)
+          assert.equal(init?.method, 'POST')
+          assert.equal(init.redirect, 'manual')
+          assert.equal(new Headers(init.headers).get('Authorization'), 'Bearer native-test-key')
+          if (typeof init.body !== 'string') assert.fail('expected JSON body')
+          assert.deepEqual(safeJsonParse(init.body), {
+            model,
+            state: request.state,
+            questions: {
+              color: {
+                type: 'choice',
+                instructions: 'What color is the bicycle?',
+                criteria: { red: null, blue: null },
+              },
+              repair: { type: 'noul', instructions: 'Does the bicycle need repair?' },
+              urgency: {
+                type: 'score',
+                instructions: 'How urgent?',
+                criteria: ['Routine', 'Urgent'],
+              },
+            },
+          })
+          return Response.json({
+            model,
+            answers: {
+              color: {
+                type: 'choice',
+                choice: 'red',
+                probabilities: { red: 0.95, blue: 0.05 },
+                confidence: 0.9,
+              },
+              repair: { type: 'noul', noul: 0.99 },
+              urgency: {
+                type: 'score',
+                score: 0.85,
+                probabilities: { '0': 0.15, '1': 0.85 },
+                legend: { '0': 'Routine', '1': 'Urgent' },
+                confidence: 0.7,
+              },
+            },
+            usage: { input_tokens: 84, output_tokens: 0 },
+          })
+        },
+      })
+      assert.equal(attempts, 1)
+      assert.equal(result.adapter, adapter)
+      assert.equal(result.requestedModel, model)
+      assert.equal(result.model, model)
+      assert.deepEqual(result.usage, { inputTokens: 84, outputTokens: 0 })
+      assert.deepEqual(result.answers, {
         color: {
           type: 'choice',
-          instructions: 'What color is the bicycle?',
-          options: { red: null, blue: null },
+          choice: 'red',
+          probabilities: { red: 0.95, blue: 0.05 },
+          confidence: 0.9,
         },
-        repair: { type: 'boolean', instructions: 'Does the bicycle need repair?' },
-        urgency: { type: 'score', instructions: 'How urgent?', levels: ['Routine', 'Urgent'] },
+        repair: { type: 'boolean', probability: 0.99 },
+        urgency: {
+          type: 'score',
+          score: 0.85,
+          probabilities: { '0': 0.15, '1': 0.85 },
+          levels: ['Routine', 'Urgent'],
+          confidence: 0.7,
+        },
+      })
+      assert.equal(result.metadata?.['derivedFields'], undefined)
+    })
+  }
+
+  it('reads a Strands Decider server’s answers without deriving anything', async () => {
+    // Shaped as strands-decider v0.3.0 writes it (`prompting.to_answer`, `server.py`):
+    // values rounded to four places, the checkpoint's name without its owner, and
+    // `latency_ms` beside the answers.
+    const request: ClassifierRequest = {
+      state: 'The parcel arrived at reception.',
+      questions: {
+        status: {
+          type: 'choice',
+          instructions: 'Delivery status?',
+          options: { delivered: 'Signed for', lost: null, pending: null },
+        },
+        arrived: { type: 'boolean', instructions: 'Has it arrived?' },
+        certainty: { type: 'score', instructions: 'How certain?', levels: ['low', 'mid', 'high'] },
       },
     }
-    let attempts = 0
-    const result = await classifyHttp(profile('liquid'), request, {
-      apiKey: 'liquid-test-key',
+    const result = await classifyHttp(profile('strands-decider'), request, {
+      apiKey: 'unused-key',
       fetchImpl: async (url, init) => {
-        attempts++
-        assert.equal(url, 'https://api.liquid.ai/decisions/v1/systemone')
-        assert.equal(init?.method, 'POST')
-        assert.equal(init.redirect, 'manual')
-        assert.equal(new Headers(init.headers).get('Authorization'), 'Bearer liquid-test-key')
-        if (typeof init.body !== 'string') assert.fail('expected JSON body')
+        assert.equal(url, 'http://127.0.0.1:8011/v1/systemone')
+        assert.equal(new Headers(init?.headers).get('Authorization'), null)
+        if (typeof init?.body !== 'string') assert.fail('expected JSON body')
         assert.deepEqual(safeJsonParse(init.body), {
-          model: 'd1:free',
+          model: 'StrandsAgents/strands-decider-2B-qwen3.5-v1-2610',
           state: request.state,
           questions: {
-            color: {
+            status: {
               type: 'choice',
-              instructions: 'What color is the bicycle?',
-              criteria: { red: null, blue: null },
+              instructions: 'Delivery status?',
+              criteria: { delivered: 'Signed for', lost: null, pending: null },
             },
-            repair: { type: 'noul', instructions: 'Does the bicycle need repair?' },
-            urgency: {
+            arrived: { type: 'noul', instructions: 'Has it arrived?' },
+            certainty: {
               type: 'score',
-              instructions: 'How urgent?',
-              criteria: ['Routine', 'Urgent'],
+              instructions: 'How certain?',
+              criteria: ['low', 'mid', 'high'],
             },
           },
         })
         return Response.json({
-          model: 'd1:free',
+          model: 'strands-decider-2B-qwen3.5-v1-2610',
           answers: {
-            color: {
+            status: {
               type: 'choice',
-              choice: 'red',
-              probabilities: { red: 0.95, blue: 0.05 },
-              confidence: 0.9,
+              choice: 'delivered',
+              probabilities: { delivered: 0.8213, lost: 0.0412, pending: 0.1374 },
+              confidence: 0.732,
             },
-            repair: { type: 'noul', noul: 0.99 },
-            urgency: {
+            arrived: { type: 'noul', noul: 0.9312 },
+            certainty: {
               type: 'score',
-              score: 0.85,
-              probabilities: { '0': 0.15, '1': 0.85 },
-              legend: { '0': 'Routine', '1': 'Urgent' },
-              confidence: 0.7,
+              score: 1.6692,
+              legend: { '0': 'low', '1': 'mid', '2': 'high' },
+              probabilities: { '0': 0.0521, '1': 0.2266, '2': 0.7213 },
+              confidence: 0.6112,
             },
           },
-          usage: { input_tokens: 84, output_tokens: 0 },
+          usage: { input_tokens: 212, output_tokens: 0 },
+          latency_ms: 183.41,
         })
       },
     })
-    assert.equal(attempts, 1)
-    assert.equal(result.adapter, 'systemone@1')
-    assert.equal(result.requestedModel, 'd1:free')
-    assert.equal(result.model, 'd1:free')
-    assert.deepEqual(result.usage, { inputTokens: 84, outputTokens: 0 })
+    assert.equal(result.requestedModel, 'StrandsAgents/strands-decider-2B-qwen3.5-v1-2610')
+    assert.equal(result.model, 'strands-decider-2B-qwen3.5-v1-2610')
     assert.deepEqual(result.answers, {
-      color: {
+      status: {
         type: 'choice',
-        choice: 'red',
-        probabilities: { red: 0.95, blue: 0.05 },
-        confidence: 0.9,
+        choice: 'delivered',
+        probabilities: { delivered: 0.8213, lost: 0.0412, pending: 0.1374 },
+        confidence: 0.732,
       },
-      repair: { type: 'boolean', probability: 0.99 },
-      urgency: {
+      arrived: { type: 'boolean', probability: 0.9312 },
+      certainty: {
         type: 'score',
-        score: 0.85,
-        probabilities: { '0': 0.15, '1': 0.85 },
-        levels: ['Routine', 'Urgent'],
-        confidence: 0.7,
+        score: 1.6692,
+        levels: ['low', 'mid', 'high'],
+        probabilities: { '0': 0.0521, '1': 0.2266, '2': 0.7213 },
+        confidence: 0.6112,
       },
     })
-    assert.equal(result.metadata?.['derivedFields'], undefined)
+    assert.deepEqual(result.usage, { inputTokens: 212, outputTokens: 0 })
+    assert.equal(result.metadata?.['providerLatencyMs'], 183.41)
+    assert.equal(result.metadata['derivedFields'], undefined)
   })
 
   it('derives fields that self-hosted systemone servers omit, and says so', async () => {

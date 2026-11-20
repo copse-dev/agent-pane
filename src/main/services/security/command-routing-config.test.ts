@@ -11,6 +11,7 @@ import {
 import { currentAgentRoots } from '../execution-root.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { setWorkspaceTrusted } from './workspace-trust.ts'
+import { copseToolPermissionId } from './tool-permissions.ts'
 import {
   addTrustedShellCommand,
   offerableTrustedCommand,
@@ -132,6 +133,29 @@ describe('trusted-command routing with two roots at once (#3958)', () => {
     executionRoot: '/tmp/copse-routing-untrusted',
   }
   const ambient = '/tmp/copse-routing-ambient'
+
+  for (const toolName of ['run_shell', 'run_background'] as const) {
+    it(`lets ${toolName}'s Always ask setting suppress only its trusted route`, async () => {
+      mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+      setProjectSandboxEnabled(true)
+      await setSetting(SETTING, ['printf'])
+      await setSetting('autoRunSandboxCommands', true)
+      await setSetting('toolPermissionOverrides', {
+        [copseToolPermissionId(toolName)]: 'ask',
+      })
+      setWorkspaceTrusted(trusted.projectRoot, true)
+      try {
+        assert.equal(shellRunsOutsideSandbox('printf local', trusted, toolName), false)
+        const otherTool = toolName === 'run_shell' ? 'run_background' : 'run_shell'
+        assert.equal(shellRunsOutsideSandbox('printf local', trusted, otherTool), true)
+      } finally {
+        await setSetting('toolPermissionOverrides', {})
+        setWorkspaceTrusted(trusted.projectRoot, false)
+        setProjectSandboxEnabled(false)
+        mock.restoreAll()
+      }
+    })
+  }
 
   it('routes, offers and grants per caller root', async () => {
     mock.method(SandboxManager, 'isSandboxingEnabled', () => true)

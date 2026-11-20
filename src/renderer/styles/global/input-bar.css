@@ -124,13 +124,16 @@
   color: var(--text-primary);
   font-size: var(--font-size-sm);
 }
+/* The shared flat callout plate (docs/ui-taste.md, "Containment is a plate"): --sev
+   mixed at --callout-plate-fill, no rule underneath. Still the full-width square
+   strip that an explicit danger mode takes. */
 .guarded-yolo-banner {
+  --sev: var(--danger);
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  border-bottom: 1px solid color-mix(in srgb, var(--danger) 55%, var(--border));
   padding: var(--spacing-sm) var(--spacing-md);
-  background: color-mix(in srgb, var(--danger) 14%, var(--bg-base));
+  background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
   color: var(--text-primary);
   font-size: var(--font-size-sm);
 }
@@ -154,9 +157,11 @@
   flex: 1;
   line-height: var(--line-height-base);
 }
+/* Its fill is the strip's own base, so the border is the only edge; --border-strong keeps
+   it findable on the danger wash (docs/ui-taste.md, "An outlined chip needs an edge"). */
 .guarded-yolo-disable {
   flex: 0 0 auto;
-  border: 1px solid color-mix(in srgb, var(--danger) 60%, var(--border));
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   padding: var(--spacing-xs) var(--spacing-md);
   background: var(--bg-elevated);
@@ -866,6 +871,10 @@
   min-width: 0;
   font-family: inherit;
 }
+/* A thread reading a detached checkout shows its note without a branch. */
+.branch-picker-trigger.footer-branch-status[hidden] {
+  display: none;
+}
 .branch-picker-trigger.footer-branch-status:hover {
   color: var(--text-primary);
 }
@@ -928,6 +937,36 @@
 }
 .branch-reattach-button[hidden] {
   display: none;
+}
+/* A deferred worktree thread is reading the user's own checkout until it first
+   writes. The note says so beside the branch as muted text with its icon and
+   no box: a fact, not a control. It takes only the room the branch leaves
+   (zero basis, capped at its own width), so the branch name stays whole and
+   the words give way first, down to the icon. */
+.branch-deferred-note {
+  flex: 1 1 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 12px;
+  max-width: max-content;
+  overflow: hidden;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  cursor: default;
+}
+.branch-deferred-note[hidden] {
+  display: none;
+}
+.branch-deferred-note-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The note's width comes on top of the branch's own cap, as the repair button's does. */
+.footer-branch-host .branch-picker:has(> .branch-deferred-note:not([hidden])) {
+  max-width: min(360px, 50vw);
 }
 .footer-branch-label,
 .branch-picker-label {
@@ -1012,17 +1051,20 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Sentence case at the badge size (docs/ui-taste.md, "Badges are labels"). */
 .branch-picker-default-badge {
+  display: inline-block;
   flex-shrink: 0;
-  font-size: var(--font-size-3xs);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  font-size: var(--badge-font-size);
   color: var(--text-muted);
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: 3px;
   padding: 0 4px;
   margin-left: 6px;
+}
+.branch-picker-default-badge::first-letter {
+  text-transform: uppercase;
 }
 .branch-picker-empty {
   padding: 8px 12px;
@@ -1330,7 +1372,7 @@
   font-size: var(--font-size-2xs);
   padding: 0 6px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius);
   color: var(--text-secondary);
 }
 .footer-usage-popover-pill.is-ok {

@@ -29,7 +29,7 @@ const DESCRIPTIONS: Record<AutomationFailureCode, AutomationFailureDescription> 
   'no-model': {
     title: 'Model unavailable',
     remedy:
-      'The automation’s model is not configured or no longer exists. Pick another model in the automation.',
+      'Check the model or coding agent in Settings → General → Models & agents, or pick another model in the automation.',
     action: 'open-automations',
     actionLabel: 'Edit automation',
   },
@@ -71,6 +71,16 @@ export function describeAutomationFailure(
   code: AutomationFailureCode,
 ): AutomationFailureDescription {
   return DESCRIPTIONS[code]
+}
+
+/** IPC preserves the error message; only known agent setup causes override checkout failure. */
+export function classifyAutomationCheckoutFailure(message: string): AutomationFailureCode {
+  if (
+    message.includes('The selected coding agent is not enabled.') ||
+    message.includes('cannot start because its configured command is missing or not executable.')
+  )
+    return 'no-model'
+  return 'worktree-failed'
 }
 
 /**

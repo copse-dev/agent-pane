@@ -5,6 +5,7 @@ import { createStore } from '@shared/store/store.ts'
 import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GhCliStatus, GhPrChecksState, GhPrDetails, GhPrSummary } from '@shared/types/git.ts'
+import { setThreadTitle } from '@shared/store/thread-helpers.ts'
 import { mountPrPane } from './pr-pane.ts'
 import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
@@ -131,6 +132,13 @@ function rowTitles(listRoot: HTMLElement): string[] {
   return [...listRoot.querySelectorAll('.pr-list-title')].map((el) => el.textContent)
 }
 
+/** PR numbers in the active thread's "Related PRs" section. */
+function relatedNumbers(listRoot: HTMLElement): string[] {
+  return [
+    ...listRoot.querySelectorAll('.pr-list-row[data-pr-section="linked"] .pr-list-number'),
+  ].map((number) => number.textContent)
+}
+
 function sectionTitles(listRoot: HTMLElement): string[] {
   return [...listRoot.querySelectorAll('.git-changes-section-title')].map((el) => el.textContent)
 }
@@ -148,6 +156,219 @@ before(() => {
 
 afterEach(() => {
   document.body.replaceChildren()
+})
+
+describe('pr pane thread scope', () => {
+  it('lists a newly linked PR from setState alone, and ignores renames of unlinked threads', async () => {
+    let agentLinkReads = 0
+    const { listRoot, store, dispose } = mount([OTHER_PR], {
+      linkedUrls: 'nothing linked yet',
+      extraThreads: [makeThread('thread-2', 'no links here either')],
+      gh: {
+        agentPrLinks: async () => {
+          agentLinkReads += 1
+          return []
+        },
+      },
+    })
+    try {
+      await settle()
+      const reads = agentLinkReads
+      const before = listRoot.querySelector('.pr-list-row')
+
+      // A thread with no PR link is not this pane's business (it still emits).
+      setThreadTitle(store, 'thread-2', 'Renamed')
+      await settle()
+      assert.equal(agentLinkReads, reads, 'no agent-link refetch for an unlinked rename')
+      assert.equal(listRoot.querySelector('.pr-list-row'), before, 'the list is not rebuilt')
+
+      // The active thread's transcript gains a PR link: no event emitted.
+      store.setState({
+        threads: store
+          .getState()
+          .threads.map((t) =>
+            t.id === 'thread-1'
+              ? makeThread('thread-1', 'See https://github.com/acme/widgets/pull/42')
+              : t,
+          ),
+      })
+      await settle()
+      assert.ok(rowTitles(listRoot).includes('Fix login flow'))
+    } finally {
+      dispose()
+    }
+  })
+})
+
+/** A long transcript whose message bodies count how often they are read. */
+function countedTranscript(count: number): { messages: Thread['messages']; reads: () => number } {
+  let reads = 0
+  const messages = Array.from({ length: count }, (_, index) => {
+    const text =
+      index === 0 ? 'See https://github.com/acme/widgets/pull/42' : `message ${String(index)}`
+    return {
+      id: `m${String(index)}`,
+      role: 'user' as const,
+      get content(): string {
+        reads += 1
+        return text
+      },
+      toolCalls: [],
+      createdAt: 0,
+    }
+  })
+  return { messages, reads: () => reads }
+}
+
+function writeDraft(store: AppStore, draft: string): void {
+  store.setState({
+    threads: store
+      .getState()
+      .threads.map((t) => (t.id === 'thread-1' ? { ...t, draftPrompt: draft } : t)),
+  })
+}
+
+describe('pr pane thread key cost', () => {
+  it('does not scan transcripts for thread writes while the pane is closed', async () => {
+    const transcript = countedTranscript(2_000)
+    const { store, dispose } = mount()
+    try {
+      store.setState({
+        filesPaneOpen: false,
+        threads: store
+          .getState()
+          .threads.map((t) => (t.id === 'thread-1' ? { ...t, messages: transcript.messages } : t)),
+      })
+      await settle()
+      const before = transcript.reads()
+      for (let i = 0; i < 20; i++) writeDraft(store, `draft ${String(i)}`)
+      for (let i = 0; i < 20; i++) store.setState({ pendingSubmissionThreadIds: [] })
+      await settle()
+      assert.equal(transcript.reads() - before, 0)
+    } finally {
+      dispose()
+    }
+  })
+
+  it('scans a transcript once per messages array while the pane is open', async () => {
+    const transcript = countedTranscript(2_000)
+    let agentLinkReads = 0
+    const { listRoot, store, dispose } = mount([OTHER_PR], {
+      gh: {
+        agentPrLinks: async () => {
+          agentLinkReads += 1
+          return []
+        },
+      },
+    })
+    try {
+      await settle()
+      store.setState({
+        threads: store
+          .getState()
+          .threads.map((t) => (t.id === 'thread-1' ? { ...t, messages: transcript.messages } : t)),
+      })
+      await settle()
+      assert.ok(rowTitles(listRoot).includes('Fix login flow'))
+      const reads = transcript.reads()
+      const links = agentLinkReads
+      // Draft autosaves replace the thread object but keep its messages.
+      for (let i = 0; i < 20; i++) writeDraft(store, `draft ${String(i)}`)
+      await settle()
+      assert.equal(transcript.reads(), reads, 'draft writes do not rescan the transcript')
+      assert.equal(agentLinkReads, links, 'draft writes do not refetch agent links')
+    } finally {
+      dispose()
+    }
+  })
+
+  it('shows a link added by a new message or an edit while the pane is open', async () => {
+    const { listRoot, store, dispose } = mount([OTHER_PR], { linkedUrls: 'nothing linked yet' })
+    const setMessages = (update: (messages: Thread['messages']) => Thread['messages']): void => {
+      store.setState({
+        threads: store
+          .getState()
+          .threads.map((t) => (t.id === 'thread-1' ? { ...t, messages: update(t.messages) } : t)),
+      })
+    }
+    try {
+      await settle()
+      assert.deepEqual(relatedNumbers(listRoot), [])
+
+      // A new message: a new messages array with a PR link.
+      setMessages((messages) => [
+        ...messages,
+        {
+          id: 'm2',
+          role: 'assistant',
+          content: 'Opened https://github.com/acme/widgets/pull/42',
+          toolCalls: [],
+          createdAt: 1,
+        },
+      ])
+      await settle()
+      assert.deepEqual(relatedNumbers(listRoot), ['#42'])
+
+      // An edit that changes the link to another PR.
+      setMessages((messages) =>
+        messages.map((m) =>
+          m.id === 'm2'
+            ? { ...m, content: 'Opened https://github.com/acme/other-repo/pull/99' }
+            : m,
+        ),
+      )
+      await settle()
+      assert.deepEqual(relatedNumbers(listRoot), ['#99'])
+    } finally {
+      dispose()
+    }
+  })
+
+  it('shows a link added while the pane was closed once it reopens', async () => {
+    const { listRoot, store, dispose } = mount([OTHER_PR], { linkedUrls: 'nothing linked yet' })
+    try {
+      await settle()
+      assert.deepEqual(relatedNumbers(listRoot), [])
+      store.setState({ filesPaneOpen: false })
+      store.setState({
+        threads: store
+          .getState()
+          .threads.map((t) =>
+            t.id === 'thread-1'
+              ? makeThread('thread-1', 'See https://github.com/acme/widgets/pull/42')
+              : t,
+          ),
+      })
+      await settle()
+      store.setState({ filesPaneOpen: true })
+      await settle()
+      assert.deepEqual(relatedNumbers(listRoot), ['#42'])
+    } finally {
+      dispose()
+    }
+  })
+
+  it('refreshes once when the pane opens', async () => {
+    let agentLinkReads = 0
+    const { store, dispose } = mount([OTHER_PR], {
+      gh: {
+        agentPrLinks: async () => {
+          agentLinkReads += 1
+          return []
+        },
+      },
+    })
+    try {
+      store.setState({ filesPaneOpen: false })
+      await settle()
+      const reads = agentLinkReads
+      store.setState({ filesPaneOpen: true })
+      await settle()
+      assert.equal(agentLinkReads - reads, 1)
+    } finally {
+      dispose()
+    }
+  })
 })
 
 describe('pr pane filter (issue #2482)', () => {
@@ -591,7 +812,22 @@ describe('pr pane filter (issue #2482)', () => {
             productions: [],
           },
         ]
-        store.emit('threads_changed')
+        // A run settling is what records a new link in main; no event is needed.
+        store.setState({
+          threads: [
+            ...store.getState().threads,
+            {
+              id: 'producer',
+              title: 'Newly recorded producer',
+              status: 'idle',
+              messages: [],
+              usage: { inputTokens: 0, outputTokens: 0 },
+              createdAt: 1,
+              updatedAt: 2,
+              lastSettledAt: 2,
+            },
+          ],
+        })
         await settle()
         assert.equal(
           viewerRoot.querySelector('[data-thread-id="producer"] .pr-thread-title')?.textContent,

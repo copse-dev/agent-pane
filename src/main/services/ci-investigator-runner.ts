@@ -62,7 +62,7 @@ export function getCiInvestigatorRunner(
       usageModel: ctx.usageModel,
       ...(ctx.localFallback !== undefined ? { localFallback: ctx.localFallback } : {}),
     })
-    addSubagentUsage(result.usage)
+    addSubagentUsage(ctx.usageModel, result.usage)
     return result
   }
 }

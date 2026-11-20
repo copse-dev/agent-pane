@@ -5,6 +5,7 @@ import {
   acpDelegatePrompt,
   copseToolCallName,
   isAcpDelegateToolCall,
+  isCopseServerName,
   isCopseToolCall,
   normalizeCopseToolName,
 } from './copse-tool-call.ts'
@@ -17,10 +18,20 @@ test('normalizes Copse wrappers while preserving other servers and human titles'
     'copse.run_shell',
     'copse-run_shell: Run tests',
     'MCP__COPSE__RUN_SHELL',
+    // Since #4125 the bridge is mounted as `copse-<nonce>`.
+    'mcp__copse-k3v9x2mq__run_shell',
+    'mcp.copse-k3v9x2mq.run_shell',
+    'copse-k3v9x2mq-run_shell: run_shell',
   ]) {
     assert.equal(normalizeCopseToolName(name), 'run_shell')
   }
-  for (const name of ['mcp__other__run_shell', 'mcp__copse.git__status', 'Run copse.run_shell']) {
+  for (const name of [
+    'mcp__other__run_shell',
+    'mcp__copse.git__status',
+    'Run copse.run_shell',
+    'mcp__copse-tools__run_shell',
+    'mcp__copse-k3v9x2mq9__run_shell',
+  ]) {
     assert.equal(normalizeCopseToolName(name), name)
   }
   assert.equal(normalizeCopseToolName('mcp.copse.custom.tool'), 'custom.tool')
@@ -103,4 +114,21 @@ test('acpDelegateKind reads subagent_type verbatim, and acpDelegatePrompt prefer
     'Local file-tree utilities',
   )
   assert.equal(acpDelegatePrompt({ args: {} }), '')
+})
+
+test('names the bridge server in a dispatch envelope, bare or nonce-named', () => {
+  for (const server of ['copse', 'copse-k3v9x2mq']) assert.ok(isCopseServerName(server))
+  // The envelope names the mounted server verbatim, and Copse mounts it in lower case.
+  for (const server of [
+    'COPSE',
+    'Copse-K3V9X2MQ',
+    'other',
+    'copse-other',
+    'copse-k3v9x2mq-x',
+    'copse.git',
+    '',
+    null,
+    1,
+  ])
+    assert.equal(isCopseServerName(server), false, String(server))
 })

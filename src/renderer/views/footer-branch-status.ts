@@ -1,5 +1,5 @@
 import { el, clear, on } from '../dom/helpers.ts'
-import { chevronDownIcon } from '../dom/icons.ts'
+import { chevronDownIcon, eyeIcon } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type {
@@ -16,11 +16,23 @@ import {
 import { showErrorToast, showToast } from './toast.ts'
 import { getThreadById, isBlankThread } from '@shared/store/thread-helpers.ts'
 import { openBrowserUrl } from '../controller/panels.ts'
-import { getActiveThreadOwner, type ActiveThreadOwner } from '../controller/active-thread-owner.ts'
+import {
+  activeThreadOf,
+  getActiveThreadOwner,
+  sameThreadBesidesDraft,
+  type ActiveThreadOwner,
+} from '../controller/active-thread-owner.ts'
 import { selectActiveWorkspace } from '../controller/active-workspace.ts'
+import { isWorktreeDeferralPending } from '@shared/git/worktree-policy.ts'
 
 const COPIED_BRANCH_TOAST = 'Copied branch name'
 const COPY_FEEDBACK_MS = 1600
+const DEFERRED_NOTE_TEXT = 'Reading your checkout'
+// A write attempt alone does not allocate: a read-only shell command or an ACP
+// agent's own edit is refused. Only a request for write access or one of
+// Copse's writing tools does (deferred-thread-worktrees.md).
+const DEFERRED_NOTE_TITLE =
+  'This thread is reading your checkout and can’t change it. It gets its own worktree once it asks to make changes; until then, anything that tries to write here is refused.'
 let nextPickerId = 0
 
 type DetachedAttachment = Extract<ThreadWorktreeAttachment, { state: 'detached' }>
@@ -36,6 +48,13 @@ function detachedTitle(detached: DetachedAttachment): string {
   return detached.recovery
     ? `This checkout is detached from ${detached.branch} because a ${detached.recovery} stopped part-way. Continue it in a terminal for this thread; it puts the checkout back on the branch when it finishes.`
     : `This checkout is detached from ${detached.branch}. Your files are preserved. Reattach to put it back on the branch.`
+}
+
+type OnBaseBranchAttachment = Extract<ThreadWorktreeAttachment, { state: 'on-base-branch' }>
+
+/** No repair is offered here: the user checks the thread branch out themselves (#1882). */
+function onBaseBranchTitle(onBase: OnBaseBranchAttachment): string {
+  return `This checkout is on ${onBase.baseBranch}, its base branch, instead of ${onBase.branch}. Copse will not run in it, so no edit lands on ${onBase.baseBranch}. Your files are preserved. Check out ${onBase.branch} in this checkout to continue.`
 }
 
 /**
@@ -137,7 +156,16 @@ export function mountFooterBranchStatus(
     'aria-label': 'Branches',
   })
   menu.append(filterInput, list)
-  wrap.append(trigger, reattachButton, menu)
+  // A deferred worktree thread reads the user's own checkout until it first
+  // writes, so the branch beside this note is the checkout's, not the thread's.
+  // A fact, not a control: muted text with its icon and no box.
+  const deferredNote = el(
+    'span',
+    { class: 'branch-deferred-note', title: DEFERRED_NOTE_TITLE, hidden: '' },
+    eyeIcon('ui-icon ui-icon-sm'),
+    el('span', { class: 'branch-deferred-note-text' }, DEFERRED_NOTE_TEXT),
+  )
+  wrap.append(trigger, deferredNote, reattachButton, menu)
   host.append(wrap)
 
   let status: GitBranchStatus | null = null
@@ -222,13 +250,26 @@ export function mountFooterBranchStatus(
     return thread ? isBlankThread(thread) : false
   }
 
+  /** Whether the active thread still reads the user's checkout (a deferred worktree). */
+  function readsCheckout(): boolean {
+    const thread = getActiveThread()
+    return thread ? isWorktreeDeferralPending(thread) : false
+  }
+
   /**
    * The branch the widget speaks for: the branch this thread will start from,
-   * else the thread's binding, else the checkout.
+   * else, while it still reads the checkout, the checkout's live branch, else
+   * the thread's binding, else the checkout.
+   *
+   * A thread reading the checkout speaks for it exactly once its status has
+   * loaded: a detached checkout has no branch, and the thread's binding would
+   * name one it is not reading. The branch label then hides and the note stays.
    */
   function getDisplayBranch(): string | null {
+    const pending = activeBaseBranch()
+    if (pending) return pending
+    if (readsCheckout() && status) return status.currentBranch
     return (
-      activeBaseBranch() ??
       getActiveThreadBranch() ??
       getActiveThread()?.worktree?.branch ??
       status?.currentBranch ??
@@ -274,17 +315,23 @@ export function mountFooterBranchStatus(
     const displayBranch = getDisplayBranch()
     const pickerMode = isPickerMode()
     const pr = getVisiblePr()
+    deferredNote.hidden = !readsCheckout()
+    trigger.hidden = !displayBranch
 
     if (!displayBranch) {
-      wrap.hidden = true
+      // A thread reading a detached checkout names no branch, but the note
+      // still says it is reading the checkout.
+      wrap.hidden = !readsCheckout()
       branchToCopy = null
       setOpen(false)
       renderReattach()
       return
     }
 
+    // A thread still reading the checkout follows it wherever it is, as the
+    // send path does, so a switched checkout is not a mismatch.
     const mismatch = threadGitBranchMismatch(threadBranch, currentBranch, {
-      isolatedWorktree: Boolean(getActiveThread()?.worktree),
+      isolatedWorktree: Boolean(getActiveThread()?.worktree) || readsCheckout(),
     })
     // `mismatch` is only true when threadBranch is a non-empty string, but that
     // implication can't survive into the branches below — capture the message
@@ -345,6 +392,16 @@ export function mountFooterBranchStatus(
   function renderReattach(): void {
     const current = activeDetached()
     const visible = current !== null && !isPickerMode() && !wrap.hidden
+    if (current?.state === 'on-base-branch') {
+      // Warn on the branch itself; there is no repair button for this state.
+      reattachButton.hidden = true
+      trigger.classList.toggle('is-detached', visible)
+      if (!visible) return
+      const title = onBaseBranchTitle(current)
+      trigger.title = title
+      trigger.setAttribute('aria-label', `${title} Copy branch name.`)
+      return
+    }
     const shown = visible && !agentCanTouchCheckout(current)
     reattachButton.hidden = !shown
     trigger.classList.toggle('is-detached', visible)
@@ -440,6 +497,7 @@ export function mountFooterBranchStatus(
     if (
       !owner ||
       !current ||
+      current.state === 'on-base-branch' ||
       agentCanTouchCheckout(current) ||
       reattaching ||
       activeRecoveryRunId() !== null
@@ -756,8 +814,8 @@ export function mountFooterBranchStatus(
     scheduleRefresh()
   }
 
-  // Set while the task that switched threads runs: the writer's own
-  // `threads_changed` follows it, and the refresh the switch started covers it.
+  // Set while the task that switched threads runs: the active-thread selection
+  // fires for the same write, and the refresh the switch started covers it.
   let switchedThisTask = false
 
   function copyBranchName(): void {
@@ -867,12 +925,18 @@ export function mountFooterBranchStatus(
         })
       },
     ),
-    store.on('threads_changed', () => {
-      // Same-thread metadata updates are the noisy path during first-message
-      // checkout and can share the existing working-tree debounce.
-      if (switchedThisTask) renderStoreState()
-      else scheduleStoreRefresh()
-    }),
+    // The active thread's own updates (branch, worktree, PR links, blank or
+    // not). Other threads' renames and turns no longer repaint the footer.
+    store.select(
+      activeThreadOf,
+      () => {
+        // Same-thread metadata updates are the noisy path during first-message
+        // checkout and can share the existing working-tree debounce.
+        if (switchedThisTask) renderStoreState()
+        else scheduleStoreRefresh()
+      },
+      sameThreadBesidesDraft,
+    ),
     store.on('thread_status_changed', scheduleStoreRefresh),
     store.on('message_added', () => {
       scheduleStoreRefresh()
