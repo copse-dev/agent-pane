@@ -19,6 +19,7 @@ import {
   browserApprovalDetails,
   desktopAppApproval,
   gitPushApproval,
+  projectPortBindingApproval,
   providerApprovalDetails,
   webApprovalDetails,
   threadAccessApproval,
@@ -3988,6 +3989,18 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       ...gitPushApproval('copse/friendly-action-names-213c32', sha),
     }),
   ),
+  {
+    ...approvalRiskScenario('approval-project-preview', {
+      id: 'preview-port',
+      type: 'shell',
+      ...projectPortBindingApproval('/home/mira/harbor-board', 'npm run dev'),
+    }),
+    project: project(
+      'demo-approval-project-preview-project',
+      'Harbor Board',
+      '/home/mira/harbor-board',
+    ),
+  },
   approvalRiskScenario('approval-automation-preparation', {
     id: 'automation-preparation',
     title: 'Prepare this worktree?',

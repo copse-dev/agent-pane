@@ -1,7 +1,11 @@
 import { projectAllowsPortBinding, rememberProjectPortBinding } from './project-port-grants.ts'
 import { planToolBlockReason } from '../thread-plan-context.ts'
 import { z } from 'zod'
-import { browserApprovalDetails, webApprovalDetails } from '@shared/approval-copy.ts'
+import {
+  browserApprovalDetails,
+  projectPortBindingApproval,
+  webApprovalDetails,
+} from '@shared/approval-copy.ts'
 import { assertPreparationPlan } from '../worktree-preparation.ts'
 import {
   containedPreparationPath,
@@ -71,7 +75,6 @@ import {
   fetchUrlFromArgs,
   shellCommandFromArgs,
   formatShellPromptParts,
-  formatPortBindingPromptParts,
   backgroundAllowsPortBinding,
   backgroundCommandFromArgs,
   formatExternalSandboxPromptParts,
@@ -1997,14 +2000,9 @@ async function checkBackgroundProcessPermission(
 
   const { approved, remember } = await requestApproval(
     {
-      title: 'Allow this project to bind a local port?',
       type: 'shell',
       cause: 'shell-port-binding',
-      ...shellPromptToApprovalFields(
-        formatPortBindingPromptParts(root, backgroundCommandFromArgs(args)),
-      ),
-      allowRemember: true,
-      rememberLabel: 'Always allow local port binding in this project',
+      ...projectPortBindingApproval(root, backgroundCommandFromArgs(args)),
     },
     signal,
   )
