@@ -191,7 +191,10 @@ downloaded cannot start a run: carry-in reports that and asks for `git backfill`
 full clone. Adoption's
 `cherry-pick` is admitted only as `--no-edit` with full SHAs (no merge strategy
 program), so the checkout's hooks and signer do not run and adopted commits are
-unsigned. It is app plumbing, not the gated `git_commit` profile. Guest-side Git
+unsigned. It is app plumbing, not the gated `git_commit` profile. The hosted
+transfer's LFS scan admits `grep` only as `-I`, `-l` and `-E`, a pattern, a full SHA
+and `--` pathspecs, so no abbreviated or bundled spelling of `-O` names a pager
+program and textconv stays off. Guest-side Git
 (`worker-main.ts`, the hosted workers) runs on repositories the guest created, beside
 an agent that can already run any program there, so it keeps its own wrappers.
 
