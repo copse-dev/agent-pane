@@ -1,6 +1,6 @@
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import {
+import fs, {
   chmodSync,
   lstatSync,
   mkdirSync,
@@ -88,6 +88,19 @@ describe('sshControlDir', () => {
     assert.equal(stats.mode & 0o777, 0o700)
   })
 
+  it('accepts a private directory another process created at the same moment', posixOnly, (t) => {
+    const dir = join(scratchParent(t), 'control')
+    setSshControlDirForTests(dir)
+    const realMkdir = fs.mkdirSync
+    t.mock.method(fs, 'mkdirSync', (...args: Parameters<typeof fs.mkdirSync>) => {
+      // A second Copse process of the same user wins the race to create it.
+      realMkdir(args[0], { mode: 0o700 })
+      return realMkdir(...args)
+    })
+
+    assert.equal(controlSocketPath('dev-box'), join(dir, controlSocketFileName('dev-box')))
+  })
+
   it('refuses an existing control directory that is a symbolic link', posixOnly, (t) => {
     const parent = scratchParent(t)
     const target = join(parent, 'target')
@@ -96,7 +109,7 @@ describe('sshControlDir', () => {
     symlinkSync(target, link)
     setSshControlDirForTests(link)
 
-    assert.throws(() => controlSocketPath('dev-box'), /symbolic link/)
+    assert.throws(() => controlSocketPath('dev-box'), /symbolic link\. Remove it and try again\./)
   })
 
   it('refuses an existing control directory whose mode is not 0700', posixOnly, (t) => {
@@ -129,7 +142,15 @@ describe('controlDirProblem', () => {
     assert.equal(controlDirProblem(privateDir, 501), null)
   })
 
-  it('refuses a directory owned by another user', () => {
-    assert.match(controlDirProblem({ ...privateDir, uid: 0 }, 501) ?? '', /owned by uid 0, not 501/)
+  it('refuses a directory owned by another user without telling this user to remove it', () => {
+    const problem = controlDirProblem({ ...privateDir, uid: 0 }, 501) ?? ''
+    assert.match(problem, /belongs to another account \(uid 0, not 501\)/)
+    assert.match(problem, /administrator/)
+    assert.doesNotMatch(problem, /Remove it and try again/)
+  })
+
+  it('names another account as the owner of a symbolic link it made', () => {
+    const link = { ...privateDir, isSymbolicLink: (): boolean => true, uid: 0 }
+    assert.match(controlDirProblem(link, 501) ?? '', /belongs to another account/)
   })
 })
