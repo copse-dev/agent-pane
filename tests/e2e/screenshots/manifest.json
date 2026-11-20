@@ -1466,8 +1466,8 @@
       "bytes": 508067
     },
     "composer-context-warning-over.png": {
-      "sha256": "3570f7fc8ed5f3d727c40dfa0220c0b2bd2dea08b83f0361d3e3a5a457a5aa1d",
-      "bytes": 40759
+      "sha256": "c9bfd29ba17a99fb2a5ba2933412f3639fc64e5ab2d36abe6405869d0d56aef0",
+      "bytes": 40340
     },
     "composer-dirty-checkout-warning.png": {
       "sha256": "31ae1e083463b4912a0ea49151a3fce59a0a878865fecf5d596f2ebfd486ba15",
@@ -4606,8 +4606,8 @@
       "bytes": 275848
     },
     "settings-gui-app-permission.png": {
-      "sha256": "72cce3e3895e001e57ea6db54c9f2badb3ccc40863b2da7c6f766d7c0a44df93",
-      "bytes": 377694
+      "sha256": "44bef9ef327e92e250c92b62291588ed6d129e20c4ccf7cb35e3c5a6fa98abaf",
+      "bytes": 377256
     },
     "settings-load-failed.png": {
       "sha256": "d3af35e0b4b8ea669355ebe11392ea569102eae744e08c90361ee3e890cf6013",
