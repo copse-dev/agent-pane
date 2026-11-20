@@ -268,6 +268,11 @@ export async function resolveCachedRemoteAgentPath(
   return value
 }
 
+function cachedRemoteAgentPath(hostId: string, loginShell: string, command: string): string | null {
+  const cached = remoteAgentPathCache.get(remoteAgentPathCacheKey(hostId, loginShell, command))
+  return cached && cached.expiresAt > Date.now() ? cached.value : null
+}
+
 /** Test seam; production entries naturally expire and are process-local. */
 export function clearRemoteAgentPathCacheForTests(): void {
   remoteAgentPathCache.clear()
@@ -354,11 +359,10 @@ export function formatRemoteAcpInstallApproval(input: {
  * One deliberate divergence from the local plan: it does NOT gate on
  * `requiresClient`. Locally that gate keeps auto-setup quiet at settings-open
  * time, when nobody asked for this agent. Here the user has explicitly started
- * a turn on it, and a missing client is recoverable rather than fatal — the
- * adapter still spawns and serves ACP, and the first sign-in failure hands off
- * to the re-auth terminal, which reports the missing client itself (see
- * {@link buildRemoteAcpLoginScript}). Applying the gate would trade that guided
- * path for a dead-end "not found" error.
+ * a turn on it, and the adapter's bundled Claude CLI can authenticate without
+ * a standalone native install. The first sign-in failure hands off to the
+ * re-auth terminal (see {@link buildRemoteAcpLoginScript}). Applying the gate
+ * would trade that guided path for a dead-end "not found" error.
  *
  * Returns whether the install succeeded; the caller re-runs detection.
  */
@@ -610,8 +614,9 @@ export function buildRemoteAcpCommand(
 
 /**
  * The line typed into a re-auth terminal for an agent on an SSH host: the
- * agent's login command, preceded by a hint when the client CLI is missing so
- * the shell's own "command not found" that follows arrives already explained.
+ * agent's login command. Use the PATH already found for the remote ACP agent
+ * when available: it may live under a non-default Node version invisible to
+ * the interactive terminal. Otherwise provide a hint for a missing command.
  *
  * No ssh and no shell wrapper, deliberately. On an SSH workspace the Shells
  * pane's tab IS a pty on the host (`spawnPtyInProjectSandbox` routes it through
@@ -623,9 +628,13 @@ export function buildRemoteAcpCommand(
  * shells and fish (`command -v`, `||`, `;`, redirection), because the tab runs
  * whatever login shell the remote account uses.
  */
-export function buildRemoteAcpLoginScript(loginCommand: string): string {
+export function buildRemoteAcpLoginScript(
+  loginCommand: string,
+  remotePath?: string | null,
+): string {
+  if (remotePath) return `env PATH=${posixQuote(remotePath)} ${loginCommand}`
   const client = loginCommand.trim().split(/\s+/)[0] ?? ''
-  const hint = `${client} is not installed on this host. Install the agent's CLI here first, then rerun this command.`
+  const hint = `${client} is not on this host's terminal PATH. Check the agent installation and retry.`
   return `command -v ${client} >/dev/null || echo ${posixQuote(hint)}; ${loginCommand}`
 }
 
@@ -645,7 +654,14 @@ export function buildRemoteAcpLoginCommand(
 ): string | null {
   const host = findConfiguredSshHost(target.hostId)
   if (!host) return null
-  return buildRemoteAcpLoginScript(loginCommand)
+  const client = loginCommand.trim().split(/\s+/)[0] ?? ''
+  const loginShell = resolveRemoteLoginShell(
+    getSshConnectionManager().getConnection(target.hostId)?.capabilities?.shell,
+  )
+  return buildRemoteAcpLoginScript(
+    loginCommand,
+    cachedRemoteAgentPath(target.hostId, loginShell, client),
+  )
 }
 
 /**
