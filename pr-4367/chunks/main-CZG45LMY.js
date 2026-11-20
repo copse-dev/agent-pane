@@ -290,6 +290,7 @@ import {
   isAutomationPendingStart,
   isBestValueChatModel,
   isBlankThread,
+  isCopseServerName,
   isCopseToolCall,
   isDynamicModel,
   isHeldMessage,
@@ -489,7 +490,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-X5PPTEOI.js";
+} from "./chunk-VLQOXODV.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -510,6 +511,7 @@ import {
   escapeHtml,
   expectString,
   externalLinkIcon,
+  eyeIcon,
   fileTextIcon,
   firstNonEmptyString,
   gitBranchIcon,
@@ -572,7 +574,7 @@ import {
   warningIcon,
   workspaceLinkTargetFromHref,
   zapIcon
-} from "./chunk-EJ6QX2QH.js";
+} from "./chunk-CQGA6OVW.js";
 import {
   clear,
   createOverlayDialog,
@@ -6467,6 +6469,9 @@ function isInitialThreadWorktreeBranchName(branch, threadId) {
     if (branch === initialThreadWorktreeBranchName(threadId, collision)) return true;
   }
   return false;
+}
+function isWorktreeDeferralPending(thread) {
+  return thread.deferredWorktree !== void 0 && thread.worktree === void 0;
 }
 var init_worktree_policy = __esm({
   "src/shared/git/worktree-policy.ts"() {
@@ -12610,7 +12615,7 @@ function threadProposalCardSignature(tc, store2, sourceThreadId) {
 }
 function createThreadProposalToolCard(tc, store2, api2, sourceThreadId) {
   const args = tc.args;
-  const proposalArgs = isRecord(args) && args["server"] === "copse" && args["tool"] === THREAD_PROPOSAL_TOOL ? args["arguments"] : args;
+  const proposalArgs = isRecord(args) && isCopseServerName(args["server"]) && args["tool"] === THREAD_PROPOSAL_TOOL ? args["arguments"] : args;
   const proposal = parseThreadProposal(tc.id, proposalArgs);
   if (!proposal) return null;
   return createThreadProposalCard(proposal, cardState(store2, sourceThreadId, tc.id), {
@@ -12638,6 +12643,7 @@ function createThreadProposalToolCard(tc, store2, api2, sourceThreadId) {
 var init_thread_proposal_tool_card = __esm({
   "src/renderer/views/thread-proposal-tool-card.ts"() {
     init_unknown_value2();
+    init_copse_tool_call();
     init_thread_proposal();
     init_thread_helpers();
     init_thread_proposals();
@@ -54343,7 +54349,13 @@ function mountFooterBranchStatus(host, store2, api2) {
     "aria-label": "Branches"
   });
   menu.append(filterInput, list);
-  wrap2.append(trigger, reattachButton, menu);
+  const deferredNote = el(
+    "span",
+    { class: "branch-deferred-note", title: DEFERRED_NOTE_TITLE, hidden: "" },
+    eyeIcon("ui-icon ui-icon-sm"),
+    el("span", { class: "branch-deferred-note-text" }, DEFERRED_NOTE_TEXT)
+  );
+  wrap2.append(trigger, deferredNote, reattachButton, menu);
   host.append(wrap2);
   let status = null;
   let detached = null;
@@ -54398,8 +54410,15 @@ function mountFooterBranchStatus(host, store2, api2) {
     const thread = getActiveThread2();
     return thread ? isBlankThread(thread) : false;
   }
+  function readsCheckout() {
+    const thread = getActiveThread2();
+    return thread ? isWorktreeDeferralPending(thread) : false;
+  }
   function getDisplayBranch() {
-    return activeBaseBranch() ?? getActiveThreadBranch() ?? getActiveThread2()?.worktree?.branch ?? status?.currentBranch ?? null;
+    const pending = activeBaseBranch();
+    if (pending) return pending;
+    if (readsCheckout() && status) return status.currentBranch;
+    return getActiveThreadBranch() ?? getActiveThread2()?.worktree?.branch ?? status?.currentBranch ?? null;
   }
   function getVisiblePr() {
     const pr = status?.pr;
@@ -54428,15 +54447,17 @@ function mountFooterBranchStatus(host, store2, api2) {
     const displayBranch = getDisplayBranch();
     const pickerMode = isPickerMode();
     const pr = getVisiblePr();
+    deferredNote.hidden = !readsCheckout();
+    trigger.hidden = !displayBranch;
     if (!displayBranch) {
-      wrap2.hidden = true;
+      wrap2.hidden = !readsCheckout();
       branchToCopy = null;
       setOpen(false);
       renderReattach();
       return;
     }
     const mismatch = threadGitBranchMismatch(threadBranch, currentBranch, {
-      isolatedWorktree: Boolean(getActiveThread2()?.worktree)
+      isolatedWorktree: Boolean(getActiveThread2()?.worktree) || readsCheckout()
     });
     const mismatchMessage = mismatch && threadBranch ? threadGitBranchMismatchMessage(threadBranch) : "";
     wrap2.hidden = false;
@@ -54982,7 +55003,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     }
   };
 }
-var COPIED_BRANCH_TOAST, COPY_FEEDBACK_MS, nextPickerId;
+var COPIED_BRANCH_TOAST, COPY_FEEDBACK_MS, DEFERRED_NOTE_TEXT, DEFERRED_NOTE_TITLE, nextPickerId;
 var init_footer_branch_status = __esm({
   "src/renderer/views/footer-branch-status.ts"() {
     init_clamp();
@@ -54994,8 +55015,11 @@ var init_footer_branch_status = __esm({
     init_panels();
     init_active_thread_owner();
     init_active_workspace();
+    init_worktree_policy();
     COPIED_BRANCH_TOAST = "Copied branch name";
     COPY_FEEDBACK_MS = 1600;
+    DEFERRED_NOTE_TEXT = "Reading your checkout";
+    DEFERRED_NOTE_TITLE = "This thread is reading your checkout and can\u2019t change it. It gets its own worktree once it asks to make changes; until then, anything that tries to write here is refused.";
     nextPickerId = 0;
   }
 });
