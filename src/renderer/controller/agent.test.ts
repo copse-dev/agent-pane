@@ -55,7 +55,11 @@ function thread(id: string, messages: Message[] = [], branch?: string): Thread {
 function setup(
   initial: Thread[] = [thread('t1')],
   activeThreadId = 't1',
-  options?: { currentBranch?: string | null },
+  options?: {
+    currentBranch?: string | null
+    suggestCommandSummary?: ApiClient['agent']['suggestCommandSummary']
+    suggestToolTurnSummary?: ApiClient['agent']['suggestToolTurnSummary']
+  },
 ): {
   store: AppStore
   snapshot: (snapshot: TranscriptSnapshot) => void
@@ -130,6 +134,12 @@ function setup(
           titleCalls.push(text)
           return 'Generated Title'
         },
+        ...(options?.suggestCommandSummary
+          ? { suggestCommandSummary: options.suggestCommandSummary }
+          : {}),
+        ...(options?.suggestToolTurnSummary
+          ? { suggestToolTurnSummary: options.suggestToolTurnSummary }
+          : {}),
       },
       diff: {
         ...base['diff'],
@@ -469,6 +479,49 @@ test('tool_call then tool_result transitions the tool card running -> done', () 
   assert.equal(tc.status, 'done')
   assert.equal(tc.result, 'file body')
   assert.deepEqual(tc.images, images)
+})
+
+test('a slower summary of fewer tools cannot replace the summary of the grown turn', async () => {
+  // Each request is answered by hand so the earlier one can settle last.
+  const commandReplies: Array<(summary: string) => void> = []
+  const toolReplies: Array<(summary: string) => void> = []
+  const { send, messages } = setup(undefined, undefined, {
+    suggestCommandSummary: () =>
+      new Promise<string | null>((resolve) => {
+        commandReplies.push(resolve)
+      }),
+    suggestToolTurnSummary: () =>
+      new Promise<string | null>((resolve) => {
+        toolReplies.push(resolve)
+      }),
+  })
+  const shell = (id: string): void => {
+    send({
+      type: 'tool_call',
+      toolCall: { id, name: 'run_shell', args: { command: `echo ${id}` } },
+    })
+  }
+  const done = (id: string): void => {
+    send({ type: 'tool_result', toolCallId: id, result: 'ok', isError: false })
+  }
+  shell('tc1')
+  shell('tc2')
+  done('tc1')
+  shell('tc3')
+  done('tc2')
+  assert.equal(messages().length, 1)
+  assert.equal(commandReplies.length, 2)
+  assert.equal(toolReplies.length, 2)
+
+  at(commandReplies, 1)('Ran three commands')
+  at(toolReplies, 1)('Did three things')
+  await new Promise((r) => setTimeout(r, 0))
+  at(commandReplies, 0)('Ran two commands')
+  at(toolReplies, 0)('Did two things')
+  await new Promise((r) => setTimeout(r, 0))
+
+  assert.equal(at(messages(), 0).commandSummary, 'Ran three commands')
+  assert.equal(at(messages(), 0).toolSummary, 'Did three things')
 })
 
 test('visual evidence attaches once to the assistant turn that owns its tool call', () => {

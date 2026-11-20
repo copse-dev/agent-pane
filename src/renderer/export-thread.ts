@@ -10,8 +10,14 @@ export {
 
 /** Shared stem for a thread's downloads, so `.jsonl` and `.zip` sit together. */
 export function threadExportBaseName(thread: Thread, now: Date = new Date()): string {
-  const slug = thread.title.replace(/[^\w.-]+/g, '-').slice(0, 40) || 'thread'
-  return `${slug}-${now.toISOString().slice(0, 10)}`
+  // Letters and digits of any script survive: an ASCII-only class reduced a
+  // title written in another script to a bare "-". Cut by code point so the
+  // limit cannot split a surrogate pair.
+  const slug = Array.from(thread.title.replace(/[^\p{L}\p{M}\p{N}_.-]+/gu, '-'))
+    .slice(0, 40)
+    .join('')
+  const stem = /[\p{L}\p{N}]/u.test(slug) ? slug : 'thread'
+  return `${stem}-${now.toISOString().slice(0, 10)}`
 }
 
 function download(blob: Blob, fileName: string): void {

@@ -358,6 +358,20 @@ describe('export thread download naming', () => {
     assert.equal(threadExportBaseName(named, stamp), 'thread-2026-04-05')
   })
 
+  it('keeps the letters of a title written outside ASCII', () => {
+    const named = thread()
+    named.title = '修复 登录 bug'
+    assert.equal(threadExportBaseName(named, stamp), '修复-登录-bug-2026-04-05')
+    named.title = 'Исправить вход'
+    assert.equal(threadExportBaseName(named, stamp), 'Исправить-вход-2026-04-05')
+  })
+
+  it('falls back to "thread" when the title has no letters or digits', () => {
+    const named = thread()
+    named.title = '???'
+    assert.equal(threadExportBaseName(named, stamp), 'thread-2026-04-05')
+  })
+
   it('truncates a long title so the filename stays manageable', () => {
     const named = thread()
     named.title = 'x'.repeat(120)
