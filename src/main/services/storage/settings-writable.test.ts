@@ -112,37 +112,18 @@ describe('settings-writable', () => {
     assert.throws(() => parseRendererWritableSetting('postTurnReviewMinChangedLines', -1))
   })
 
-  it('rejects SSH workspace hosts and users that ssh would read as options', () => {
+  it('keeps a stored SSH host list readable when one destination is unusable', () => {
+    // Reads validate the whole list, so the schema must not refuse a single
+    // entry: that would hide every other host. resolveTarget refuses such a
+    // destination before ssh runs, and the host form refuses it at entry.
     const base = { id: 'dev', label: 'Dev', host: 'dev.example' }
-    const valid = [
-      base,
-      { ...base, user: 'ubuntu' },
-      { ...base, host: 'ubuntu@dev.example' },
-      { ...base, host: '[::1]', user: 'ubuntu' },
-      { ...base, host: 'dev-box-2' },
-      // Stored lists are read through this schema too, so it stays narrow: a
-      // user name may contain a space, and the transport trims the host.
-      { ...base, user: 'first last' },
-      { ...base, host: 'dev.example\n' },
+    const unusable = [
+      { ...base, id: 'opt-host', host: '-oFoo=bar' },
+      { ...base, id: 'opt-user', user: '-p22' },
+      { ...base, id: 'ctrl', host: 'dev\u0001example' },
     ]
-    for (const entry of valid) {
-      assert.deepEqual(parseRendererWritableSetting('sshWorkspaceHosts', [entry]), [entry])
-    }
-    const invalid = [
-      { ...base, host: '-oFoo=bar' },
-      { ...base, host: '  -oFoo=bar' },
-      { ...base, host: 'dev\u0001example' },
-      { ...base, host: 'dev.example\n-p22' },
-      { ...base, user: '-p22' },
-      { ...base, user: 'ubuntu\u007f' },
-    ]
-    for (const entry of invalid) {
-      assert.throws(
-        () => parseRendererWritableSetting('sshWorkspaceHosts', [base, entry]),
-        /SSH (host|user) cannot start/,
-        JSON.stringify(entry),
-      )
-    }
+    const list = [base, ...unusable]
+    assert.deepEqual(parseRendererWritableSetting('sshWorkspaceHosts', list), list)
   })
 
   it('parses security settings bundle', () => {
