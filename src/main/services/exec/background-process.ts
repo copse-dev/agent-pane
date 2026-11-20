@@ -403,7 +403,9 @@ export async function startBackgroundProcess(
       unsandboxed,
       violationId,
       violationCount: 0,
-      retryAllowed: opts.suppressSandboxRetry !== true,
+      // A read-only approval must never become an outside-sandbox retry after
+      // a contained task fails, even when the runner records a violation.
+      retryAllowed: opts.suppressSandboxRetry !== true && readGrantTargets === null,
       retryUsed: false,
       url: null,
       urlRemote: false,
