@@ -99,7 +99,6 @@ type FsChangedHandler = (
 interface ContextPanelCapture {
   fsChanged?: FsChangedHandler
   previewRequests?: Array<{ projectId: string; threadId: string; path: string }>
-  externalRequests?: Array<{ projectId: string; threadId: string; path: string }>
   openedBrowserUrls?: string[]
 }
 
@@ -132,12 +131,6 @@ function makeApi(
         workspaceFileUrl: async (projectId, threadId, path): Promise<string> => {
           capture?.previewRequests?.push({ projectId, threadId, path })
           return `http://localhost:4173/${path}`
-        },
-      },
-      shell: {
-        ...base['shell'],
-        openWorkspaceFileInBrowser: async (projectId, threadId, path): Promise<void> => {
-          capture?.externalRequests?.push({ projectId, threadId, path })
         },
       },
     } satisfies ApiClient
@@ -276,8 +269,8 @@ describe('file viewer Changes view', () => {
     assert.deepEqual(capture.openedBrowserUrls, ['http://localhost:4173/docs/guide.html'])
   })
 
-  it('uses the default browser when built-in link opening is disabled', async () => {
-    const capture: ContextPanelCapture = { externalRequests: [], openedBrowserUrls: [] }
+  it('keeps workspace previews in Copse when external link opening is selected', async () => {
+    const capture: ContextPanelCapture = { previewRequests: [], openedBrowserUrls: [] }
     const root = mount(
       {},
       openFileState('docs/guide.html', '<h1>Guide</h1>\n', 'html'),
@@ -290,10 +283,10 @@ describe('file viewer Changes view', () => {
     query(document.body, '.context-menu-item').click()
     await flushAsync()
 
-    assert.deepEqual(capture.externalRequests, [
+    assert.deepEqual(capture.previewRequests, [
       { projectId: 'project-1', threadId: 'thread-1', path: 'docs/guide.html' },
     ])
-    assert.deepEqual(capture.openedBrowserUrls, [])
+    assert.deepEqual(capture.openedBrowserUrls, ['http://localhost:4173/docs/guide.html'])
   })
 
   it('does not offer a local browser action for an SSH workspace file', () => {

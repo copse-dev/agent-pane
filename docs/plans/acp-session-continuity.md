@@ -100,6 +100,11 @@ same from Copse's point of view.
    client also wrote to.
 5. **One writer.** The old process is disposed before the new one reattaches.
    Two processes never hold one agent session.
+   The replacement mounts a fresh native bridge with its own nonce. Every
+   Copse-managed prompt identifies the current exact bridge after listing and
+   before any observed tool loss, superseding identities retained in provider
+   history. Reattachment carries conversation memory, not authority from a
+   retired server. Exact provenance and per-call permissions remain unchanged.
 6. **When it cannot carry over, say what was lost.** The new session receives
    the existing Copse-transcript preamble, which contains user and assistant
    text only. The turn opens with a note, sent through the caller's sink so it
