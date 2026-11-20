@@ -54561,8 +54561,11 @@ function mountFooterBranchStatus(host, store2, api2) {
   function getActiveThread2() {
     return getThreadById(store2, store2.getState().activeThreadId);
   }
+  function canPickBaseBranch(thread) {
+    return isBlankThread(thread) && thread.gitBranch === void 0 && thread.worktree === void 0;
+  }
   function startBranch(thread) {
-    if (!isBlankThread(thread)) return void 0;
+    if (!canPickBaseBranch(thread)) return void 0;
     const picked = baseBranchByThread.get(thread.id);
     if (picked) return picked;
     if (thread.id !== store2.getState().activeThreadId) return void 0;
@@ -54577,7 +54580,7 @@ function mountFooterBranchStatus(host, store2, api2) {
   }
   function isPickerMode() {
     const thread = getActiveThread2();
-    return thread ? isBlankThread(thread) : false;
+    return thread ? canPickBaseBranch(thread) : false;
   }
   function readsCheckout() {
     const thread = getActiveThread2();
@@ -54940,7 +54943,7 @@ function mountFooterBranchStatus(host, store2, api2) {
   function pruneBaseBranches() {
     if (baseBranchByThread.size === 0) return;
     const blank = new Set(
-      store2.getState().threads.filter((thread) => isBlankThread(thread)).map((thread) => thread.id)
+      store2.getState().threads.filter((thread) => canPickBaseBranch(thread)).map((thread) => thread.id)
     );
     for (const threadId of baseBranchByThread.keys()) {
       if (!blank.has(threadId)) baseBranchByThread.delete(threadId);
@@ -55151,7 +55154,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     refresh: refreshNow,
     resolveBaseBranch: async (projectId, threadId) => {
       const thread = getThreadById(store2, threadId);
-      if (!thread || !isBlankThread(thread)) return void 0;
+      if (!thread || !canPickBaseBranch(thread)) return void 0;
       const picked = baseBranchByThread.get(threadId);
       if (picked) return picked;
       const [listed, defaultName] = await Promise.all([
