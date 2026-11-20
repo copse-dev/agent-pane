@@ -216,6 +216,7 @@ function stalledStream(bytes: Buffer = Buffer.alloc(0)): {
 
 describe('GitHub read capability, guest bridge to fake GitHub', () => {
   let fake: { server: Server; port: number; seen: Seen[] }
+  let capability: GitHubCapability
   let broker: EgressBroker
   let bridge: GuestGitHubBridge
   let socketDir: string
@@ -267,7 +268,7 @@ describe('GitHub read capability, guest bridge to fake GitHub', () => {
 
   before(async () => {
     fake = await startFakeGitHub()
-    const capability = new GitHubCapability({
+    capability = new GitHubCapability({
       token: (): Promise<string | null> => Promise.resolve(token),
       placeholder: PLACEHOLDER,
       upstream: (options): ClientRequest => {
@@ -354,6 +355,11 @@ describe('GitHub read capability, guest bridge to fake GitHub', () => {
     assert.equal(authorizationFor('basic', REAL_TOKEN), basic)
     assert.equal(authorizationFor('token', REAL_TOKEN), `token ${REAL_TOKEN}`)
     assert.equal(authorizationFor('none', REAL_TOKEN), null)
+    // The post-run leak check looks for the token and for git's form of it.
+    assert.deepEqual(capability.tokensUsed(), [
+      REAL_TOKEN,
+      Buffer.from(`x-access-token:${REAL_TOKEN}`).toString('base64'),
+    ])
   })
 
   it('refuses a push at the info/refs probe before anything is forwarded', async () => {
@@ -468,6 +474,15 @@ describe('GitHub read capability, guest bridge to fake GitHub', () => {
     assert.equal(inHeader.status, 403)
     const inPath = await gh('GET', `/search/code?q=${PLACEHOLDER}`)
     assert.equal(inPath.status, 403)
+    // Percent-encoded, it is still the placeholder.
+    const encoded = Buffer.from(PLACEHOLDER).toString('hex').replace(/../g, '%$&')
+    const inEncodedPath = await gh('GET', `/search/code?q=${encoded}`)
+    assert.equal(inEncodedPath.status, 403)
+    // So is a header named after it, in any case.
+    const inHeaderName = await gh('GET', '/user', 'api.github.com', undefined, {
+      [`X-${PLACEHOLDER.toUpperCase()}`]: '1',
+    })
+    assert.equal(inHeaderName.status, 403)
     const inBody = await gh(
       'POST',
       '/graphql',

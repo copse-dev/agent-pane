@@ -1111,7 +1111,7 @@ already in the list, one group up, and it keeps the deferral guarantee.
 | Run as a turn: host        | unit        | A loopback server gets a guest-facing name the runner is told to resolve; a stop before `docker run` is honoured; a held tunnel does not hold close                                                                                     | `container-provider.test.ts`, `container-run-service.test.ts`, `guest-egress-proxy.test.ts`, `input-bar.test.ts` (A14)                 |
 | Host-local alias           | unit        | The guest builds a plain-http client for the alias and refuses plain http to any other host; the desktop's rule still refuses the alias; a desktop URL naming it is refused                                                             | `guest-provider.test.ts`, `credential-url.test.ts`, `container-provider.test.ts` (A16)                                                 |
 | Host-local alias route     | unit        | A run, or a broker, that would dial the alias anywhere but the host's loopback is refused before anything starts (the CLI's `--resolve` included)                                                                                       | `egress-broker.test.ts`, `thread-container.test.ts` (A16)                                                                              |
-| GitHub reads: policy       | unit        | Exact token-bearing hosts and every look-alike refused; pass-through at any depth with no token; receive-pack refused in every spelling; writes refused; Basic on git, `token` on the API                                               | `container-runtime/github-capability-policy.test.ts` (A24)                                                                             |
+| GitHub reads: policy       | unit        | Exact token-bearing hosts and every look-alike refused; five exact pass-through hosts with no token; only git fetches on github.com; GraphQL over GET refused in every spelling; receive-pack refused; writes refused                   | `container-runtime/github-capability-policy.test.ts` (A24)                                                                             |
 | GitHub reads: GraphQL      | unit        | One query (plus fragments) passes; a mutation beside it, a subscription, a batch, a persisted id, or a keyword hidden in a string or comment does not fool it                                                                           | `github/graphql-read-only.test.ts` (A24)                                                                                               |
 | GitHub reads: end to end   | unit        | gh-shaped (socket) and git-shaped (proxy) requests through bridge, link and broker to a fake GitHub: token swapped for the placeholder, redirects returned unfollowed, reflected token redacted across a chunk boundary and inside gzip | `container-runtime/github-capability.test.ts`, `secret-scrubber.test.ts` (A24)                                                         |
 | GitHub reads: guest config | unit        | `config.yml` names the socket, `hosts.yml` holds only the placeholder, git's `insteadOf` and proxy name only the alias, no `GH_TOKEN`; a used token in a run surface fails the canary                                                   | `github-capability-wire.test.ts`, `thread-container.test.ts` (A24)                                                                     |
@@ -1197,19 +1197,28 @@ TLS. Experimental, and off unless the user turns it on for one run in the run di
 (container runs are themselves behind Settings › Experimental). The CLI, and so the A23
 follow-up workflow, never asks for it.
 
-- **A per-run choice, off by default** (owner decision on the November 20 security review).
-  The run dialog offers "Let this run read GitHub with my sign-in", unticked on every new run
-  and on every follow-up: like the sign-in opt-in, the choice is never carried over. Its hint
-  says what the token can read: every repository and organisation the github.com sign-in
-  reaches, not only the run's project, including secret-scanning alerts, Actions variables
-  and secret gists. Under the box the dialog quotes the arming record's "GitHub: …" line as it
-  stands, and the service records the same line when it arms the run: "off, not turned on for
-  this run", "off, because the run installs dependencies", "off, because the run reaches its
-  model through its own network origins", or "read-only through your desktop GitHub sign-in,
-  turned on for this run; writes refused". The choice is kept in the run's settings on its
-  card. The service grants the capability only when the choice is on and both narrowings
-  below hold (`containerGitHubReadsGranted`, `src/shared/container-github-reads.ts`, which
-  the dialog's preview shares). There is no always-on setting.
+- **A per-run choice, off by default** (owner decision on the November 20 security review). The
+  run dialog offers "Let this run read GitHub with my sign-in", unticked on every new run and on
+  every follow-up: like the sign-in opt-in, the choice is never carried over. Its hint says what
+  the token can read: every repository and organisation the github.com sign-in reaches, not only
+  the run's project, including secret-scanning alerts, Actions variables and secret gists. It
+  also says that reads can still carry data out (below), and to turn this on only when the user
+  trusts the task and everything the run will read. Under the box the dialog quotes the arming
+  record's "GitHub: …" line as it stands, and the service records the same line when it arms the
+  run: "off, not turned on for this run", "off, because the run installs dependencies", "off,
+  because the run reaches its model through its own network origins", or "read-only through your
+  desktop GitHub sign-in, turned on for this run; writes refused". The choice is kept in the
+  run's settings on its card. The service grants the capability only when the choice is on and
+  both narrowings below hold (`containerGitHubReadsGranted`,
+  `src/shared/container-github-reads.ts`, which the dialog's preview shares). There is no
+  always-on setting.
+- **Reads are not side-effect free** (second security review, November 20). Which
+  repositories and files a run reads shows in their owners' download and traffic counts. A
+  run steered by text it read (an issue, a file) can pick the repositories it reads from and
+  so signal a short secret to an owner it chooses, with no write and no tunnel. The bandwidth
+  is low, but a token is short. This is why the dialog says so, and why github.com itself
+  forwards only git's fetch paths (below). The repository lock-down in the follow-ups is
+  what closes it.
 
 - **How the guest's clients reach it.** `gh` is given its own config directory
   (`GH_CONFIG_DIR`): `config.yml` sets `http_unix_socket` to a socket in the guest's tmpfs,
@@ -1230,20 +1239,29 @@ follow-up workflow, never asks for it.
   suffix is a different name and is refused. The git alias means `github.com` for git's fetch
   paths only. Exactly `codeload.github.com`, `results-receiver.actions.githubusercontent.com`
   (`gh run view --log` is redirected there), `objects.githubusercontent.com`,
-  `release-assets.githubusercontent.com` and `raw.githubusercontent.com` are forwarded without
-  a credential (security review fix, November 20). Not `*.githubusercontent.com`:
+  `release-assets.githubusercontent.com` and `raw.githubusercontent.com` are forwarded without a
+  credential (security review fix, November 20). Not `*.githubusercontent.com`:
   `camo.githubusercontent.com` fetches any URL it is given, so a suffix would be a route out to
-  hosts the guest chooses. Everything else is refused. Reads only: GET and HEAD, never anything
-  naming `git-receive-pack` (the `info/refs` probe included); `POST …/git-upload-pack` on
-  github.com; `POST /graphql` on the API only when the body is one JSON object whose `query`
-  is a single `query` operation (fragments allowed), checked by a lexer-level validator
-  (`github/graphql-read-only.ts`) that skips strings, block strings and comments, and refuses
-  mutations, subscriptions, a second operation, batches and persisted ids. Every other method
-  is a write and gets a 403 whose JSON `message` gh prints verbatim ("Copse refused this
-  request: …"). A `GET /graphql` (a document in the query string) and any method-override
-  header (`X-HTTP-Method-Override` and kin) are refused too. A GraphQL body goes upstream
-  re-serialised from what was checked (`query`, `variables`, `operationName`, each once) as
-  `application/json`, never with the guest's own bytes, `Content-Type` or `Content-Encoding`.
+  hosts the guest chooses. Everything else is refused. On `github.com` itself only git's two
+  fetch paths are forwarded, `GET …/info/refs?service=git-upload-pack` and `POST
+  …/git-upload-pack` (second security review, November 20): `gh` reads through the API, and a
+  release or log download arrives as an API redirect to a pass-through host, so a web page or a
+  download there would only widen what a run's choice of reads can signal. Reads only: GET and
+  HEAD, never anything naming `git-receive-pack` (the `info/refs` probe included); `POST
+  …/git-upload-pack` on github.com; `POST /graphql` on the API only when the body is one JSON
+  object whose `query` is a single `query` operation (fragments allowed), checked by a
+  lexer-level validator (`github/graphql-read-only.ts`) that skips strings, block strings and
+  comments, and refuses mutations, subscriptions, a second operation, batches and persisted ids.
+  Every other method is a write and gets a 403 whose JSON `message` gh prints verbatim ("Copse
+  refused this request: …"). GraphQL over GET (a document in the query string) is refused in any
+  spelling of the endpoint: a GET or HEAD whose first path segment, or the one after `api`,
+  starts with `graphql` once repeated slashes are collapsed, `%2F` is decoded and `;params` or
+  an extension are dropped (`//graphql`, `/graphql.json`, `/graphql;x`, `/%2Fgraphql`). No REST
+  resource has such a top-level segment, so `/repos/graphql/graphql-js` still reads. Any
+  method-override header (`X-HTTP-Method-Override` and kin) is refused too. A GraphQL body goes
+  upstream re-serialised from what was checked (`query`, `variables`, `operationName`, each
+  once) as `application/json`, never with the guest's own bytes, `Content-Type` or
+  `Content-Encoding`.
 - **Credentials.** The guest's `Authorization` is always removed. The user's token comes from
   the desktop's own github.com sign-in (`resolveGitHubComToken`: `GH_TOKEN` or `GITHUB_TOKEN`,
   else `gh auth token --hostname github.com` on the host with no `GH_HOST`; with none,
@@ -1251,7 +1269,7 @@ follow-up workflow, never asks for it.
   `GITHUB_ENTERPRISE_TOKEN`, the `GH_HOST` account) is never used: it belongs to another
   server. It is added only on a
   token-bearing host: `token …` for the API, Basic `x-access-token:…` for git smart HTTP on
-  github.com (`token` gets a 401 there). Other github.com paths get no token. The host never
+  github.com (`token` gets a 401 there). Other github.com paths are refused. The host never
   follows a redirect; the guest's client does, and a redirect to another host is a new request
   the policy decides afresh, so a token never goes anywhere the guest did not name.
 - **Request framing** (review fix, October 27). The host frames every upstream request itself
@@ -1270,11 +1288,12 @@ follow-up workflow, never asks for it.
   upstream is asked for `identity` encoding, and a compressed answer is decoded anyway, so the
   body can be scanned: the token (and its Basic form) is redacted from headers and from the
   body by a matcher that holds back only a secret's length across chunk boundaries, and a hit
-  is recorded in the run's egress log. A token the run used is also checked against the run's
-  surfaces after it ends, alongside the secret canary.
+  is recorded in the run's egress log. A token the run used, and its git Basic encoding, are
+  also checked against the run's surfaces after it ends, alongside the secret canary.
 - **The placeholder** is `ghp_copse_t<thread>_r<run>_<random>`, generated per run. It
   satisfies gh's login check and is never forwarded; found anywhere but `Authorization` (a
-  path, another header, a GraphQL body) it is a canary hit and the request is refused.
+  path, raw or percent-encoded, another header's name or value, a GraphQL body) it is a
+  canary hit and the request is refused.
 - **What the end-to-end TLS principle becomes.** Unchanged for every other client: curl,
   Octokit or anything else speaking HTTPS still gets a CONNECT tunnel with TLS end to end and
   no credential. The GitHub capability never sees TLS from the guest; the guest→host leg is

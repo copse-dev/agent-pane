@@ -88,9 +88,11 @@ describe('unattended container run dialog', function () {
     // Off until the user turns it on, and the line the run would record says so.
     await expect(github).not.toBeChecked()
     await expect(arming).toHaveText('GitHub: off, not turned on for this run')
-    expect(await dialog.$('.container-run-github-hint').getText()).toContain(
-      'secret-scanning alerts, Actions variables and secret gists',
-    )
+    const hint = await dialog.$('.container-run-github-hint').getText()
+    expect(hint).toContain('secret-scanning alerts, Actions variables and secret gists')
+    // Read-only is not the same as nothing leaving: the hint says so.
+    expect(hint).toContain('reads can still carry data out')
+    expect(hint).toContain('Turn this on only when you trust the task')
     // A fresh run installs by default, and an install keeps GitHub reads off.
     await expect(install).toBeChecked()
     await github.click()

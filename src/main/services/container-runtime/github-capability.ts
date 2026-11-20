@@ -177,6 +177,15 @@ export function authorizationFor(auth: GitHubAuth, token: string | null): string
   return `token ${token}`
 }
 
+/** Percent-decoded, or the text as it is when its encoding is malformed. */
+function percentDecoded(text: string): string {
+  try {
+    return decodeURIComponent(text)
+  } catch {
+    return text
+  }
+}
+
 /** Read the head line; resolves with it and the body's first bytes, or why it failed. */
 function readHead(
   stream: Duplex,
@@ -299,7 +308,10 @@ export class GitHubCapability {
     this.upstream = options.upstream ?? httpsRequest
   }
 
-  /** The real tokens handed upstream during the run (for the post-run leak check). */
+  /**
+   * The real tokens handed upstream during the run, each with its git Basic
+   * encoding (for the post-run leak check).
+   */
   tokensUsed(): string[] {
     return [...this.used]
   }
@@ -370,13 +382,18 @@ export class GitHubCapability {
       return
     }
     // The placeholder belongs in Authorization, which is dropped. Anywhere
-    // else — the path, another header — it is being carried somewhere it was
-    // never meant to go, and the request stops here.
+    // else — the path, percent-encoded or not, another header's name or
+    // value — it is being carried somewhere it was never meant to go, and the
+    // request stops here.
     const placeholder = this.options.placeholder
     const carriesPlaceholder =
       head.target.includes(placeholder) ||
+      percentDecoded(head.target).includes(placeholder) ||
       head.headers.some(
-        ([name, value]) => name.toLowerCase() !== 'authorization' && value.includes(placeholder),
+        ([name, value]) =>
+          // Header names are case-insensitive, and a relay may lowercase them.
+          name.toLowerCase().includes(placeholder.toLowerCase()) ||
+          (name.toLowerCase() !== 'authorization' && value.includes(placeholder)),
       )
     if (carriesPlaceholder) {
       this.respondRefusal(
@@ -463,6 +480,8 @@ export class GitHubCapability {
     if (authorization !== null && token !== null) {
       headers['authorization'] = authorization
       this.used.add(token)
+      // Git's Basic form of it too, which is what a leaked git header holds.
+      this.used.add(Buffer.from(`x-access-token:${token}`).toString('base64'))
     }
 
     const origin = `github ${decision.host}`

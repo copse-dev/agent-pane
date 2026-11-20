@@ -26,9 +26,11 @@
  * Credentials: the guest's own `Authorization` is always removed. The real
  * token is added only on a token-bearing host, as `token …` for the API and as
  * Basic `x-access-token:…` for git smart HTTP on github.com (GitHub answers
- * `token` there with 401). github.com requests that are not git's fetch paths
- * get no token: `gh` reads through the API, and the web host has nothing else
- * a read needs a token for.
+ * `token` there with 401). On github.com only git's two fetch paths are
+ * forwarded at all: `gh` reads through the API, and a release or log download
+ * arrives as an API redirect to a pass-through host. Any other web page or
+ * download would only widen what a run's choice of reads can signal to the
+ * owners of what it reads (download and traffic counts).
  */
 import { isIP } from 'node:net'
 import { GITHUB_GIT_ALIAS_HOST } from './github-capability-wire.ts'
@@ -119,6 +121,22 @@ function gitFetchPath(method: string, path: string, query: string): GitPath {
   return null
 }
 
+/**
+ * Whether a decoded API path could reach GraphQL in any spelling: a first
+ * segment (or the one after `api`) starting with `graphql`, once repeated
+ * slashes are collapsed and `;params` and an extension are dropped. No REST
+ * resource on the API has such a top-level segment, so
+ * `/repos/graphql/graphql-js` and the like still pass.
+ */
+function namesGraphqlEndpoint(plainPath: string): boolean {
+  const segments = plainPath
+    .split('/')
+    .filter((segment) => segment.length > 0)
+    .map((segment) => segment.toLowerCase().split(';')[0]?.split('.')[0] ?? '')
+  const [first = '', second = ''] = segments
+  return first.startsWith('graphql') || (first === 'api' && second.startsWith('graphql'))
+}
+
 /** Decide one request. */
 export function decideGitHubRequest(facts: GitHubRequestFacts): GitHubDecision {
   const method = facts.method.toUpperCase()
@@ -207,13 +225,9 @@ export function decideGitHubRequest(facts: GitHubRequestFacts): GitHubDecision {
     }
     if (isAlias) return refuse('only git fetches go through the git alias')
     if (isRead) {
-      return {
-        action: 'forward',
-        host: GITHUB_WEB_HOST,
-        path: pathAndQuery,
-        auth: 'none',
-        body: 'none',
-      }
+      return refuse(
+        'only git fetches go to github.com from a container run; gh reads through the API',
+      )
     }
     return refuse(`${method} to github.com is a write; container runs can only read GitHub`)
   }
@@ -221,7 +235,7 @@ export function decideGitHubRequest(facts: GitHubRequestFacts): GitHubDecision {
   if (parsed.host === GITHUB_API_HOST) {
     // GraphQL goes by POST, where the body is checked; a GET carrying a
     // document in its query string is never what gh sends.
-    if (isRead && /^\/(?:api\/)?graphql\/?$/i.test(plainPath)) {
+    if (isRead && namesGraphqlEndpoint(plainPath)) {
       return refuse('GraphQL must be sent as a POST, where Copse can check it is a query')
     }
     if (isRead) {

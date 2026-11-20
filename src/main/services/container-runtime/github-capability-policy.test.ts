@@ -186,12 +186,23 @@ describe('decideGitHubRequest: git', () => {
     }
   })
 
-  it('does not give the token to github.com paths that are not git fetches', () => {
-    const page = decide('GET', '/o/r/pulls', 'github.com')
-    assert.equal(page.action === 'forward' && page.auth, 'none')
+  it('forwards nothing on github.com but git fetches', () => {
+    // A web page or a download there is not something gh needs, and which
+    // ones a run reads shows in their owners' download and traffic counts.
+    for (const target of [
+      '/o/r/pulls',
+      '/o/r/releases/download/v1/asset.zip',
+      '/o/r/archive/refs/heads/main.zip',
+      '/o/r/raw/main/README.md',
+      '/',
+    ]) {
+      for (const method of ['GET', 'HEAD']) {
+        assert.match(refused(decide(method, target, 'github.com')), /only git fetches/, target)
+      }
+    }
     // The dumb protocol, or anything but upload-pack, is not a git fetch.
-    const dumb = decide('GET', '/o/r.git/info/refs', 'github.com')
-    assert.equal(dumb.action === 'forward' && dumb.auth, 'none')
+    assert.match(refused(decide('GET', '/o/r.git/info/refs', 'github.com')), /only git fetches/)
+    refused(decide('GET', '/o/r.git/info/refs?service=git-upload-pack&x=1', 'github.com'))
     refused(decide('POST', '/o/r/pulls', 'github.com'))
     refused(decide('POST', '/o/r.git/info/lfs/objects/batch', 'github.com'))
     // An encoded slash cannot reshape a path into a git one.
@@ -228,6 +239,32 @@ describe('decideGitHubRequest: methods', () => {
     assert.match(refused(decide('GET', '/graphql?query=mutation{x}')), /POST/)
     assert.match(refused(decide('HEAD', '/graphql/')), /POST/)
     refused(decide('G ET', '/user'))
+  })
+
+  it('refuses GraphQL over GET in every spelling of the endpoint', () => {
+    for (const target of [
+      '//graphql?query=mutation{x}',
+      '/graphql.json?query=mutation{x}',
+      '/graphql;x?query=mutation{x}',
+      '/%2Fgraphql?query=mutation{x}',
+      '/%2fGraphQL?query=mutation{x}',
+      '/GRAPHQL/?query=mutation{x}',
+      '/api/graphql?query=mutation{x}',
+      '/api//graphql.json?query=mutation{x}',
+      '/graphql-anything',
+    ]) {
+      assert.match(refused(decide('GET', target)), /POST/, target)
+      assert.match(refused(decide('HEAD', target)), /POST/, target)
+    }
+    // A REST read that only mentions graphql further down is still a read.
+    for (const target of [
+      '/repos/graphql/graphql-js',
+      '/repos/o/r/contents/graphql/schema.graphql',
+      '/search/code?q=graphql',
+    ]) {
+      const read = decide('GET', target)
+      assert.equal(read.action === 'forward' && read.auth, 'token', target)
+    }
   })
 })
 
