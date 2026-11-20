@@ -167,7 +167,7 @@ class Desktop {
   }
 }
 
-describe('mobile companion polling', () => {
+describe('mobile companion polling', { timeout: 30_000 }, () => {
   let output = ''
   let script = ''
   let html = ''
@@ -247,6 +247,27 @@ describe('mobile companion polling', () => {
         await settle()
       },
     }
+  }
+
+  /**
+   * Resolve once `predicate` holds for the transcript. A reply still arriving
+   * is painted frame by frame, as on the desktop: wait for the paint itself.
+   */
+  const transcriptUntil = (
+    window: JSDOM['window'],
+    predicate: (text: string) => boolean,
+  ): Promise<void> => {
+    const messages = window.document.getElementById('messages')
+    assert.ok(messages)
+    if (predicate(messages.textContent)) return Promise.resolve()
+    return new Promise((resolve) => {
+      const observer = new window.MutationObserver(() => {
+        if (!predicate(messages.textContent)) return
+        observer.disconnect()
+        resolve()
+      })
+      observer.observe(messages, { childList: true, subtree: true, characterData: true })
+    })
   }
 
   const rowButtons = (window: JSDOM['window']): Map<string, Element> =>
@@ -371,12 +392,7 @@ describe('mobile companion polling', () => {
     desktop.liveReply = 'The build is **ready**. Uploading now.'
     await page.tick()
     assert.deepEqual(desktop.drain(), ['/api/remote/state?project=p&thread=a (conditional)'])
-    // A reply still arriving is paced in frame by frame, as on the desktop.
-    for (let frame = 0; frame < 200; frame++) {
-      if (document.querySelector('#messages')?.textContent.includes('Uploading now.')) break
-      await new Promise((resolve) => setTimeout(resolve, 10))
-    }
-    assert.ok(document.querySelector('#messages')?.textContent.includes('Uploading now.'))
+    await transcriptUntil(page.window, (text) => text.includes('Uploading now.'))
     assert.deepEqual([...document.querySelectorAll('#messages .message')], cards)
     await page.tick()
     assert.deepEqual(desktop.drain(), ['/api/remote/state?project=p&thread=a (conditional)'])
@@ -412,8 +428,7 @@ describe('mobile companion polling', () => {
     desktop.drain()
     assert.equal(page.pollDelay(), 1000)
     const transcript = (): string => document.getElementById('messages')?.textContent ?? ''
-    for (let frame = 0; frame < 200 && !transcript().includes('not saved yet.'); frame++)
-      await new Promise((resolve) => setTimeout(resolve, 10))
+    await transcriptUntil(page.window, (text) => text.includes('not saved yet.'))
     assert.ok(transcript().includes('Live text the Mac has not saved yet.'), transcript())
 
     // The next live read fails on a turn when the saved view is not due. It is
@@ -424,8 +439,7 @@ describe('mobile companion polling', () => {
       '/api/remote/state?project=p&thread=a (conditional)',
       '/api/thread/p/a (conditional)',
     ])
-    for (let frame = 0; frame < 200 && !transcript().includes('ready.'); frame++)
-      await new Promise((resolve) => setTimeout(resolve, 10))
+    await transcriptUntil(page.window, (text) => text.includes('ready.'))
     assert.ok(transcript().includes('The build is ready.'), `saved reply shown: ${transcript()}`)
     assert.equal(transcript().includes('not saved yet'), false, transcript())
     assert.match(document.getElementById('thread-status')?.textContent ?? '', /Retrying/)
@@ -437,8 +451,7 @@ describe('mobile companion polling', () => {
 
     desktop.liveUnavailable = false
     await page.tick()
-    for (let frame = 0; frame < 200 && !transcript().includes('not saved yet.'); frame++)
-      await new Promise((resolve) => setTimeout(resolve, 10))
+    await transcriptUntil(page.window, (text) => text.includes('not saved yet.'))
     assert.ok(transcript().includes('Live text the Mac has not saved yet.'), transcript())
     assert.equal(document.getElementById('remote-connection')?.textContent, '● Connected')
   })
