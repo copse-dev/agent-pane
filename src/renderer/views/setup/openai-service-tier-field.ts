@@ -1,3 +1,4 @@
+import { ellipsize } from '@copse/std/one-line-text.ts'
 import type { ApiClient } from '../../../preload/api.d.ts'
 import type { SettingsSnapshot, SettingsUpdate } from '@shared/settings-contract.ts'
 import { SERVICE_TIER_CHOICES, isServiceTier } from '@copse/llm/service-tier.ts'
@@ -28,7 +29,7 @@ function choiceForStored(value: string): string {
 
 function retainedLabel(value: string): string {
   if (value === 'scale') return 'Scale (current advanced value)'
-  const visible = value.length > 80 ? `${value.slice(0, 79)}…` : value
+  const visible = ellipsize(value, 80)
   return `Current advanced value: ${visible || '(empty)'}`
 }
 

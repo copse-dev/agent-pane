@@ -27,7 +27,7 @@ export async function inspectStorageMaintenance(): Promise<StorageMaintenanceSta
 }
 export async function expireStorageData(
   cleanImages: (cutoff: number) => Promise<unknown> = (cutoff) =>
-    containerStorage().clean('worker-images', cutoff),
+    containerStorage().expireWorkerImages(cutoff),
 ): Promise<void> {
   const policy = readStorageRetention()
   if (!policy.enabled) return
