@@ -366,8 +366,10 @@ observable from a test or a recorded thread spine. Unchecked items are open.
       own host process and gets no grant; it loses the raw token variables too. An
       automation principal gets no grant (decision 11): no schedule names a credential
       reference yet. The broker attaches only a github.com login, never an Enterprise
-      token. Capabilities report `brokeredCredentials: ['github']` for brokered executions,
-      as an upper bound: an execution that ends up with no grant reports it too.
+      token. The pre-run `capabilities()` answer reports `brokeredCredentials: ['github']` as
+      an upper bound: an execution that ends up with no grant reports it there too. The
+      `execution.capabilities` that `exec` returns, which the audit records, names it only
+      when a grant was issued.
 - [x] **R2-7 Known limits stated.** A process outside the sandbox is not brokered: it
       reaches other origins directly and uses `~/.config/gh`. Linux bubblewrap blocks
       AF_UNIX sockets, so contained Linux commands are not brokered yet. SSH
