@@ -1,7 +1,7 @@
 import { describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import { getSetting, setSetting, updateSetting } from '../storage/settings.ts'
@@ -202,6 +202,50 @@ describe('identity-pinned read routing', () => {
         ),
       )
       assert.deepEqual(targets, [destination])
+    } finally {
+      disableGuardedYolo(context.threadId)
+      setProjectSandboxEnabled(false)
+      mock.restoreAll()
+      restore()
+      rmSync(base, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps the literal link in Guarded YOLO when it resolves to a credential or the home directory', async () => {
+    const base = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-yolo-read-refuse-')))
+    const root = join(base, 'project')
+    const secret = join(base, '.env')
+    const secretLink = join(base, 'notes.txt')
+    const homeLink = join(base, 'docs')
+    mkdirSync(root)
+    writeFileSync(secret, 'secret')
+    symlinkSync(secret, secretLink)
+    symlinkSync(homedir(), homeLink, 'dir')
+    const context: ThreadExecutionContext = {
+      projectId: 'yolo-read-refuse',
+      threadId: 'yolo-read-refuse',
+      projectRoot: root,
+      root,
+      checkoutMode: 'shared',
+      branch: null,
+    }
+    const restore = setWorkspaceRootForTest(root)
+    mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+    setProjectSandboxEnabled(true)
+    await setSetting(SETTING, [])
+    try {
+      armGuardedYolo(context.threadId)
+      assert.equal(activateGuardedYoloForRun(context.threadId), true)
+      const targets = (command: string): string[] | null =>
+        runWithActiveRunIdentity(context.threadId, () =>
+          runWithThreadExecutionContext(context, () =>
+            shellReadGrantTargets(command, currentAgentRoots(), root),
+          ),
+        )
+      // The overlay must never be widened to the destination here. Passing the
+      // literal link leaves readAllowedSandboxOverlay to refuse it.
+      assert.deepEqual(targets(`cat ${secretLink}`), [secretLink])
+      assert.deepEqual(targets(`ls ${homeLink}`), [homeLink])
     } finally {
       disableGuardedYolo(context.threadId)
       setProjectSandboxEnabled(false)
