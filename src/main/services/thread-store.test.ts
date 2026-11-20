@@ -50,6 +50,9 @@ import {
   saveAgentTurnEpoch,
   clearAgentHistory,
   agentHistoryExists,
+  loadSessionBackupBinding,
+  saveSessionBackupBinding,
+  clearSessionBackupBinding,
   loadAcpSessionBinding,
   saveAcpSessionBinding,
   clearAcpSessionBinding,
@@ -2161,6 +2164,62 @@ describe('thread-store agent-run ↔ PR link (issue #690, Q6)', () => {
     await saveAgentHistory('proj-1', 't1', [{ role: 'user', content: 'y' }])
     await deleteProjectThread('proj-1', 't1')
     assert.equal(existsSync(join(root, 'proj-1', 't1')), false)
+  })
+
+  it('keeps a private restore point owned by the exact project and thread', async () => {
+    await createThread('proj-1', thread('t1'))
+    const binding = {
+      v: 1 as const,
+      root: '/workspace/project',
+      backup: { ref: 'refs/copse/backups/123', createdAt: 123, paths: ['draft.txt'] },
+    }
+    await saveSessionBackupBinding('proj-1', 't1', binding)
+    assert.deepEqual(loadSessionBackupBinding('proj-1', 't1'), binding)
+    assert.equal(loadSessionBackupBinding('other-project', 't1'), null)
+    assert.equal(loadSessionBackupBinding('proj-1', 'other-thread'), null)
+    await clearSessionBackupBinding('other-project', 't1')
+    assert.deepEqual(loadSessionBackupBinding('proj-1', 't1'), binding)
+    await clearSessionBackupBinding('proj-1', 't1')
+    assert.equal(loadSessionBackupBinding('proj-1', 't1'), null)
+    await clearSessionBackupBinding('proj-1', 't1')
+    await saveSessionBackupBinding('proj-1', 't1', binding)
+    const dir = join(root, 'proj-1', 't1')
+    assert.doesNotMatch(readFileSync(join(dir, 'meta.json'), 'utf8'), /refs\/copse\/backups/)
+    assert.doesNotMatch(readFileSync(join(dir, 'events.jsonl'), 'utf8'), /refs\/copse\/backups/)
+    const path = join(dir, 'session-backup.json')
+    for (const raw of [
+      '{not json',
+      JSON.stringify({ ...binding, v: 99 }),
+      JSON.stringify({ ...binding, backup: { ...binding.backup, paths: ['../outside'] } }),
+      JSON.stringify({ ...binding, backup: { ...binding.backup, ref: 'HEAD' } }),
+    ]) {
+      writeFileSync(path, raw)
+      assert.equal(loadSessionBackupBinding('proj-1', 't1'), null)
+    }
+  })
+
+  it('does not expire a newer restore point queued before an old expiry', async () => {
+    await createThread('proj-1', thread('t1'))
+    const older = {
+      v: 1 as const,
+      root: '/workspace/project',
+      backup: { ref: 'refs/copse/backups/123', createdAt: 123, paths: ['draft.txt'] },
+    }
+    const newer = {
+      ...older,
+      backup: { ...older.backup, ref: 'refs/copse/backups/456', createdAt: 456 },
+    }
+    await saveSessionBackupBinding('proj-1', 't1', older)
+    const gate = Promise.withResolvers<undefined>()
+    const hold = runSerialized('thread-store:proj-1', () => gate.promise)
+    const saving = saveSessionBackupBinding('proj-1', 't1', newer)
+    const expiring = clearSessionBackupBinding('proj-1', 't1', older)
+    assert.deepEqual(loadSessionBackupBinding('proj-1', 't1'), older)
+    gate.resolve(undefined)
+    await Promise.all([hold, saving, expiring])
+    assert.deepEqual(loadSessionBackupBinding('proj-1', 't1'), newer)
+    await clearSessionBackupBinding('proj-1', 't1', newer)
+    assert.equal(loadSessionBackupBinding('proj-1', 't1'), null)
   })
 
   it('round-trips a private ACP session binding beside the thread', async () => {
