@@ -4292,12 +4292,8 @@ export function seedGitImageChangesFixture(): string {
 }
 
 /** Long thread so the messages list overflows and scroll-to-bottom can be exercised. */
-/** Project ids of {@link seedScrollToBottomFixture} and {@link seedScrollStreamingFixture}. */
-export const SCROLL_BOTTOM_PROJECT_ID = 'e2e-scroll-bottom-project'
-export const SCROLL_STREAM_PROJECT_ID = 'e2e-scroll-stream-project'
-
 export function seedScrollToBottomFixture(workspaceRoot: string): void {
-  const projectId = SCROLL_BOTTOM_PROJECT_ID
+  const projectId = 'e2e-scroll-bottom-project'
   const threadId = 'e2e-scroll-bottom-thread'
   const exchanges = [
     [
@@ -4386,7 +4382,7 @@ export function seedScrollToBottomFixture(workspaceRoot: string): void {
 
 /** One completed exchange plus a long history so scrolling up during streaming is meaningful. */
 export function seedScrollStreamingFixture(workspaceRoot: string): void {
-  const projectId = SCROLL_STREAM_PROJECT_ID
+  const projectId = 'e2e-scroll-stream-project'
   const threadId = 'e2e-scroll-stream-thread'
   const exchanges = [
     [

@@ -1,10 +1,6 @@
-import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
-  e2eWorkspaceDir,
   resetUserData,
-  SCROLL_BOTTOM_PROJECT_ID,
-  SCROLL_STREAM_PROJECT_ID,
   seedScrollStreamingFixture,
   seedScrollToBottomFixture,
   seedStableWorkspace,
@@ -127,10 +123,6 @@ describe('scroll to bottom', () => {
 
   afterEach(() => {
     resetUserData()
-    // resetUserData keeps per-project thread stores; a later test would list
-    // this one's thread as recoverable.
-    for (const projectId of [SCROLL_BOTTOM_PROJECT_ID, SCROLL_STREAM_PROJECT_ID])
-      removeE2eTree(join(e2eWorkspaceDir(), projectId))
     if (ownedWorkspaceRoot !== null) {
       removeE2eTree(ownedWorkspaceRoot)
       ownedWorkspaceRoot = null
