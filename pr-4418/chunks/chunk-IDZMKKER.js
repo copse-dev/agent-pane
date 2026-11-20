@@ -30120,8 +30120,8 @@ var init_presets = __esm({
       },
       {
         id: "perplexity-decider",
-        label: "Perplexity / Decider v1.1 (OpenRouter)",
-        model: "perplexity/pplx-decider-v1.1-27b",
+        label: "Perplexity / Decider v1.3 (OpenRouter)",
+        model: "perplexity/pplx-decider-v1.3",
         timeoutMs: 6e4,
         connection: {
           type: "http",
@@ -30129,6 +30129,32 @@ var init_presets = __esm({
           baseUrl: "https://openrouter.ai/api/alpha",
           auth: "bearer",
           apiKeyEnv: "OPENROUTER_API_KEY"
+        }
+      },
+      {
+        id: "perplexity-decider-direct",
+        label: "Perplexity / Decider v1.3",
+        model: "pplx-decider-v1.3",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "decisions",
+          baseUrl: "https://api.perplexity.ai/v1",
+          auth: "bearer",
+          apiKeyEnv: "PERPLEXITY_API_KEY"
+        }
+      },
+      {
+        id: "perplexity-decider-flash",
+        label: "Perplexity / Decider Flash v1.3",
+        model: "pplx-decider-flash-v1.3",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "decisions",
+          baseUrl: "https://api.perplexity.ai/v1",
+          auth: "bearer",
+          apiKeyEnv: "PERPLEXITY_API_KEY"
         }
       },
       {
@@ -30142,6 +30168,18 @@ var init_presets = __esm({
           baseUrl: "https://openrouter.ai/api/alpha",
           auth: "bearer",
           apiKeyEnv: "OPENROUTER_API_KEY"
+        }
+      },
+      {
+        id: "perplexity-decider-local",
+        label: "Perplexity / Decider for Mac (local)",
+        model: "pplx-decider-flash-v1.2",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "decisions",
+          baseUrl: "http://127.0.0.1:8080/v1",
+          auth: "none"
         }
       },
       {
@@ -30724,6 +30762,25 @@ function createClassifiersSection(api) {
       el("label", {}, "Model ID", model),
       el("span", { class: "field-hint" }, "Profile ID for evals: ", el("code", {}, profile.id))
     );
+    if (profile.id === "perplexity-decider-local" || profile.id.startsWith("perplexity-decider-local-")) {
+      form.prepend(
+        el(
+          "p",
+          { class: "field-hint classifier-local-guide" },
+          "Start Decider for Mac and wait until it shows Ready. It runs Flash v1.2 locally on an Apple silicon Mac with at least 16 GB of memory. No API key is needed. ",
+          el(
+            "a",
+            {
+              href: "https://docs.perplexity.ai/docs/decisions/decider-for-mac",
+              target: "_blank",
+              rel: "noopener noreferrer"
+            },
+            "Set up Decider for Mac"
+          ),
+          ". Save this connection, then select it for Background questions or Safety screening."
+        )
+      );
+    }
     const read = (name) => controls.get(name)?.value.trim() ?? "";
     const advanced = el(
       "details",
@@ -31134,8 +31191,8 @@ function machineSummaryElement(summary) {
     el("span", { class: `machine-summary-status machine-summary-${summary.tone}` }, summary.status),
     el(
       "ul",
-      { class: "machine-capabilities", "aria-label": "Can be used for" },
-      ...summary.capabilities.map((label) => el("li", { class: "machine-capability" }, label))
+      { class: "machine-uses", "aria-label": "Can be used for" },
+      ...summary.capabilities.map((label) => el("li", { class: "machine-use" }, label))
     )
   );
 }

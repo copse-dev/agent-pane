@@ -12001,7 +12001,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .machine-summary-warn::before {
   background: var(--warning);
 }
-.machine-capabilities {
+.machine-uses {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
@@ -12009,7 +12009,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   padding: 0;
   list-style: none;
 }
-.machine-capability {
+.machine-use {
   padding: 1px 8px;
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -17940,7 +17940,7 @@ dialog.activity-panel-overlay {
 }
 .ssh-consent-body {
   color: var(--text-secondary);
-  line-height: 1.5;
+  line-height: var(--line-height-base);
 }
 .ssh-consent-status:empty {
   display: none;
