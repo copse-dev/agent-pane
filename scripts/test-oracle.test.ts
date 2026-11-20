@@ -520,6 +520,32 @@ describe('test oracle demo screenshot ownership', () => {
     assert.deepEqual(selectDemoSpecs([], true, tree), [other, phone])
   })
 
+  it('follows the fixture pages a demo bundles with esbuild rather than imports', () => {
+    const bundled: Record<string, string> = {
+      'tests/demo/bundled.demo.ts':
+        "await build({ entryPoints: ['tests/demo/helpers/bundled-fixture.ts'] })",
+      'tests/demo/helpers/bundled-fixture.ts':
+        "import { tip } from '../../../src/shared/bundled-source.ts'",
+      'tests/demo/paged.demo.ts': "page = await buildDemoFixturePage('paged-fixture')",
+      'tests/demo/helpers/paged-fixture.ts':
+        "import { row } from '../../../src/shared/paged-source.ts'",
+      'src/shared/bundled-source.ts': 'export const tip = 1',
+      'src/shared/paged-source.ts': 'export const row = 1',
+    }
+    const bundledTree: OracleFiles = {
+      paths: (dir) => Object.keys(bundled).filter((path) => path.startsWith(`${dir}/`)),
+      read: (path) => bundled[path] ?? '',
+      exists: (path) => Object.hasOwn(bundled, path),
+    }
+    const select = (file: string): string[] => selectDemoSpecs([file], false, bundledTree)
+    assert.deepEqual(select('tests/demo/helpers/bundled-fixture.ts'), [
+      'tests/demo/bundled.demo.ts',
+    ])
+    assert.deepEqual(select('src/shared/bundled-source.ts'), ['tests/demo/bundled.demo.ts'])
+    assert.deepEqual(select('tests/demo/helpers/paged-fixture.ts'), ['tests/demo/paged.demo.ts'])
+    assert.deepEqual(select('src/shared/paged-source.ts'), ['tests/demo/paged.demo.ts'])
+  })
+
   it('ignores unrelated source, test files and generic selectors', () => {
     for (const file of [
       'src/unrelated.ts',
