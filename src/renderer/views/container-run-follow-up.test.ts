@@ -30,6 +30,7 @@ describe('container follow-up consent', () => {
       settings: {
         budgets: { wallClockMs: 180_000, tokenCeiling: 20_000 },
         installDependencies: false,
+        githubReads: true,
       },
       egressAllowlist: [],
       log: [],
@@ -108,10 +109,18 @@ describe('container follow-up consent', () => {
       )
       const login = document.querySelector<HTMLInputElement>('.container-run-agent-login')
       const install = document.querySelector<HTMLInputElement>('.container-run-install')
+      const github = document.querySelector<HTMLInputElement>('.container-run-github')
       const start = document.querySelector<HTMLButtonElement>('.container-run-start')
-      assert.ok(login && install && start)
+      assert.ok(login && install && github && start)
       assert.equal(login.checked, false)
       assert.equal(install.checked, false)
+      // GitHub reads are asked for afresh, like the sign-in: the earlier run's
+      // choice is not carried over.
+      assert.equal(github.checked, false)
+      assert.equal(
+        document.querySelector('.container-run-github-arming')?.textContent,
+        'GitHub: off, not turned on for this run',
+      )
       assert.equal(start.disabled, true)
       assert.equal(document.querySelector<HTMLInputElement>('.container-run-minutes')?.value, '3')
       assert.equal(
@@ -147,6 +156,7 @@ describe('container follow-up consent', () => {
         budgets: { wallClockMs: 180_000, tokenCeiling: 20_000 },
         useAgentLogin: true,
         installDependencies: false,
+        githubReads: false,
         continueFrom: 'run-previous',
         continueContext: { prompt: 'Previous task', report: '', ref: null },
       })

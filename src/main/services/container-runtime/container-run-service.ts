@@ -15,6 +15,10 @@ import { DEPENDENCY_INSTALL_ORIGINS } from './guest-install.ts'
 import { HOST_GITHUB_TARGET } from './github-capability-wire.ts'
 import { resolveGitHubComToken } from '../github/backend/github-token.ts'
 import {
+  containerGitHubReadsArmingLine,
+  containerGitHubReadsGranted,
+} from '@shared/container-github-reads.ts'
+import {
   adoptCarryOut,
   assertThreadContainerEngine,
   buildWorkerImage,
@@ -373,7 +377,8 @@ export class ContainerRunService {
         : null
     const model = request.model
     const installs = request.installDependencies === true
-    let githubReads: boolean
+    // The user's per-run choice (A24), off unless the request turns it on.
+    const githubRequested = request.githubReads === true
     let plan: Awaited<ReturnType<typeof resolveContainerProvider>>
     let credential: ContainerRunProgress['credential'] = 'none'
     let egressAllowlist: string[] = []
@@ -392,6 +397,7 @@ export class ContainerRunService {
       settings: {
         budgets: { ...request.budgets },
         installDependencies: request.installDependencies === true,
+        githubReads: githubRequested,
       },
       log: [],
       warnings: [],
@@ -426,12 +432,17 @@ export class ContainerRunService {
               : 'none'
       // Only provider resolution and the explicit install choice admit origins.
       // The GitHub read capability is not an origin: it is the host's own
-      // handler, named in the list so the run's record shows it (A24). Only a
+      // handler, named in the list so the run's record shows it (A24). It is
+      // off unless the user turned it on for this run, and even then only a
       // host-inference run gets it, because only that run has no tunnel out.
       // An installing run's scripts reach github.com through the install's own
       // tunnel, and an ACP agent's or keyed provider's origins carry its shell
       // children's traffic too: beside either, read results could leave.
-      githubReads = !installs && plan.mode === 'host-inference'
+      const githubReads = containerGitHubReadsGranted({
+        requested: githubRequested,
+        installs,
+        hostInference: plan.mode === 'host-inference',
+      })
       egressAllowlist = [
         ...new Set([
           ...plan.egress,
@@ -495,11 +506,11 @@ export class ContainerRunService {
             : credential === 'host'
               ? 'credential: provider authentication held on the desktop'
               : 'credential: none',
-        installs
-          ? 'GitHub: off, because the run installs dependencies'
-          : githubReads
-            ? 'GitHub: read-only through your desktop GitHub sign-in; writes refused'
-            : 'GitHub: off, because the run reaches its model through its own network origins',
+        containerGitHubReadsArmingLine({
+          requested: githubRequested,
+          installs,
+          hostInference: plan.mode === 'host-inference',
+        }),
         `wall-clock ${String(Math.round(request.budgets.wallClockMs / 60_000))} min`,
         `tokens ${String(request.budgets.tokenCeiling)}`,
       ],
@@ -643,8 +654,9 @@ export class ContainerRunService {
         ...(request.installDependencies === true ? { installDependencies: true } : {}),
         egressAllowlist: progress.egressAllowlist,
         // The desktop's own GitHub sign-in, looked up on the host per request;
-        // it never enters the guest (A24). Only a host-inference run that
-        // installs nothing has it: start names it in the allowlist then.
+        // it never enters the guest (A24). Only a run the user turned it on
+        // for, on host inference with no install, has it: start names it in
+        // the allowlist then.
         ...(progress.egressAllowlist.includes(HOST_GITHUB_TARGET)
           ? { github: { token: resolveGitHubComToken } }
           : {}),

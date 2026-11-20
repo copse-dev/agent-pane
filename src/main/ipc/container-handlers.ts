@@ -47,6 +47,7 @@ export function registerContainerHandlers(
         ...(parsed.installDependencies !== undefined
           ? { installDependencies: parsed.installDependencies }
           : {}),
+        ...(parsed.githubReads !== undefined ? { githubReads: parsed.githubReads } : {}),
         ...(parsed.continueFrom !== undefined ? { continueFrom: parsed.continueFrom } : {}),
         ...(parsed.continueContext !== undefined
           ? { continueContext: parsed.continueContext }

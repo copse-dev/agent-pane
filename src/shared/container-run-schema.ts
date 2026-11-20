@@ -16,6 +16,11 @@ export const containerRunRequestSchema = z.object({
   }),
   useAgentLogin: z.boolean().optional(),
   installDependencies: z.boolean().optional(),
+  /**
+   * The user turned GitHub reads on for this run (A24); absent means off. A run
+   * that installs, or whose model is an agent in the guest, still gets none.
+   */
+  githubReads: z.boolean().optional(),
   continueFrom: z
     .string()
     .regex(/^[a-z0-9-]{1,128}$/i)
@@ -32,10 +37,15 @@ export const containerRunRequestSchema = z.object({
     .optional(),
 })
 
-/** Saved with the run card so a follow-up can preserve the user's choices. */
+/**
+ * Saved with the run card: what the user chose for the run. A follow-up
+ * preserves the budgets and the install choice; GitHub reads, like a sign-in,
+ * are asked for afresh.
+ */
 export const containerRunSettingsSchema = containerRunRequestSchema.pick({
   budgets: true,
   installDependencies: true,
+  githubReads: true,
 })
 
 export const threadContainerResultSchema = z.object({

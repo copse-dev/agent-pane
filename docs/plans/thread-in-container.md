@@ -125,8 +125,9 @@ git fetch carry-out → refs/copse/runs/<id>               + declareContainerRun
   surfaces and the guest's reported environment key names.
 - **GitHub reads go through the host (A24).** The guest's `gh` and `git` reach a host-side
   GitHub capability over the same stdio link; the host holds the token, admits reads only, and
-  re-originates HTTPS. No TLS is intercepted. A run that installs dependencies gets none. See
-  A24 below.
+  re-originates HTTPS. No TLS is intercepted. They are off unless the user turns them on for
+  the run in the run dialog, and a run that installs dependencies or runs an ACP agent gets
+  none even then. See A24 below.
 - **The thread's checkout, not the project's.** A thread with an isolated worktree has its
   own branch and its own uncommitted edits, so the service resolves the checkout through
   `resolveThreadExecutionContext` (the cold resolver the supervisor also uses) and refuses a
@@ -1082,7 +1083,7 @@ already in the list, one group up, and it keeps the deferral guarantee.
 | Provider plan              | unit        | Model id → endpoint, key and the one egress origin; cloud models without a key are refused before Docker                                                                                                                                | `providers/container-provider.test.ts`                                                                                                 |
 | Run service                | unit        | Provider resolved, key passed in memory and never in the host environment (A17), phases published, refusals; sweep once and only when wanted                                                                                            | `container-runtime/container-run-service.test.ts`                                                                                      |
 | UI (browser tier)          | demo        | Footer action, arming form with the draft prefilled, banner and review record for a finished run                                                                                                                                        | `tests/demo/container-run.demo.ts`                                                                                                     |
-| UI (Electron)              | e2e         | Real IPC: the dialog opens from the footer and a model without a key is refused with a readable error                                                                                                                                   | `tests/e2e/container-run-dialog.e2e.ts`                                                                                                |
+| UI (Electron)              | e2e         | Real IPC: the dialog opens from the footer and a model without a key is refused with a readable error; GitHub reads start off and the dialog quotes the arming line for each choice                                                     | `tests/e2e/container-run-dialog.e2e.ts`                                                                                                |
 | ACP: agent table           | unit        | Only catalogue agents with a documented key are baked; per-agent reasons; a retired id maps to its current entry                                                                                                                        | `shared/container-acp-agents.test.ts` (A-0)                                                                                            |
 | ACP: config crossing       | unit        | Host side drops the user's env and desktop command path; guest side gives the agent exactly the run's key                                                                                                                               | `container-runtime/guest-acp-agent.test.ts` (A-0)                                                                                      |
 | ACP: image bake            | unit        | The fingerprint moves with the agent list and versions; the Dockerfile installs from the argument before `USER`                                                                                                                         | `container-runtime/thread-container.test.ts` (A-0)                                                                                     |
@@ -1115,6 +1116,7 @@ already in the list, one group up, and it keeps the deferral guarantee.
 | GitHub reads: end to end   | unit        | gh-shaped (socket) and git-shaped (proxy) requests through bridge, link and broker to a fake GitHub: token swapped for the placeholder, redirects returned unfollowed, reflected token redacted across a chunk boundary and inside gzip | `container-runtime/github-capability.test.ts`, `secret-scrubber.test.ts` (A24)                                                         |
 | GitHub reads: guest config | unit        | `config.yml` names the socket, `hosts.yml` holds only the placeholder, git's `insteadOf` and proxy name only the alias, no `GH_TOKEN`; a used token in a run surface fails the canary                                                   | `github-capability-wire.test.ts`, `thread-container.test.ts` (A24)                                                                     |
 | GitHub reads: install      | unit        | An installing run gets no capability: absent from its allowlist and its runner request, and the runner refuses a request with both                                                                                                      | `container-run-service.test.ts`, `thread-container.test.ts` (A24)                                                                      |
+| GitHub reads: opt-in       | unit        | Off unless the run asks; asked for on host inference with no install, the capability; asked for beside an install or an ACP agent, none; the arming record says which; a follow-up asks afresh                                          | `container-run-service.test.ts`, `container-run-github-reads.test.ts`, `container-run-follow-up.test.ts` (A24)                         |
 
 ## Non-goals
 
@@ -1191,9 +1193,23 @@ Issue #3859. An agent in the guest often needs to read GitHub: the PR it is fixi
 checks, a failing run's log, an issue, a private dependency's refs. Until now the guest had
 no route there at all (A11 admits github.com anonymously for the install step only). This
 adds a read capability without putting a credential in the guest and without intercepting
-TLS. Experimental: it is on for product container runs, which are themselves behind
-Settings › Experimental, and absent from the CLI (and so from the A23 follow-up workflow),
-which never asks for it.
+TLS. Experimental, and off unless the user turns it on for one run in the run dialog
+(container runs are themselves behind Settings › Experimental). The CLI, and so the A23
+follow-up workflow, never asks for it.
+
+- **A per-run choice, off by default** (owner decision on the November 20 security review).
+  The run dialog offers "Let this run read GitHub with my sign-in", unticked on every new run
+  and on every follow-up: like the sign-in opt-in, the choice is never carried over. Its hint
+  says what the token can read: every repository and organisation the github.com sign-in
+  reaches, not only the run's project, including secret-scanning alerts, Actions variables
+  and secret gists. Under the box the dialog quotes the arming record's "GitHub: …" line as it
+  stands, and the service records the same line when it arms the run: "off, not turned on for
+  this run", "off, because the run installs dependencies", "off, because the run reaches its
+  model through its own network origins", or "read-only through your desktop GitHub sign-in,
+  turned on for this run; writes refused". The choice is kept in the run's settings on its
+  card. The service grants the capability only when the choice is on and both narrowings
+  below hold (`containerGitHubReadsGranted`, `src/shared/container-github-reads.ts`, which
+  the dialog's preview shares). There is no always-on setting.
 
 - **How the guest's clients reach it.** `gh` is given its own config directory
   (`GH_CONFIG_DIR`): `config.yml` sets `http_unix_socket` to a socket in the guest's tmpfs,

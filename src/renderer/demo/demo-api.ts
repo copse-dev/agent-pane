@@ -734,6 +734,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           settings: {
             budgets: { ...request.budgets },
             installDependencies: request.installDependencies === true,
+            githubReads: request.githubReads === true,
           },
           log: ['[thread-container] starting copse-run-demo from copse-worker:local'],
           warnings: [],

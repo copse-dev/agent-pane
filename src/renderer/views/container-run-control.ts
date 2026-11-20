@@ -20,6 +20,7 @@ import type { ContainerRunRequest } from '@shared/types/container-run.ts'
 import { parseAcpModel } from '@shared/acp.ts'
 import { findAcpCatalogEntry } from '@shared/acp-known-agents.ts'
 import { containerAcpAgentTitles } from '@shared/container-acp-agents.ts'
+import { containerGitHubReadsArmingLine } from '@shared/container-github-reads.ts'
 import { clear, el } from '../dom/helpers.ts'
 import { closeIcon } from '../dom/icons.ts'
 import { uiActions, uiField } from '../ui/index.ts'
@@ -440,6 +441,7 @@ export function mountContainerRunControl(
       chosenModel = modelSelect.value
       renderEgressHint()
       renderLoginOptIn()
+      renderGitHubArming()
     })
     // The resolver's verdict per agent row, kept so choosing a row that runs
     // only on the user's sign-in can reveal the opt-in for it.
@@ -490,6 +492,7 @@ export function mountContainerRunControl(
         chosenModel = fallback
         modelSelect.value = fallback
         renderEgressHint()
+        renderGitHubArming()
         await modelPicker?.refresh(fallback)
       })
       .catch(async (error: unknown) => {
@@ -607,6 +610,50 @@ export function mountContainerRunControl(
       ),
     )
 
+    // GitHub reads (decision A24): off unless the user ticks it for this run,
+    // never carried over to a follow-up. The hint names what the sign-in can
+    // read, and the line under it is the arming record's own "GitHub: …" line,
+    // so what the run will record is visible before it starts.
+    const githubOptIn = el('input', {
+      type: 'checkbox',
+      class: 'container-run-github',
+      name: 'containerRunGitHubReads',
+    })
+    githubOptIn.checked = false
+    const githubArming = el('p', {
+      class: 'field-hint container-run-github-arming',
+      'aria-live': 'polite',
+    })
+    function renderGitHubArming(): void {
+      githubArming.textContent = containerGitHubReadsArmingLine({
+        requested: githubOptIn.checked,
+        installs: installOptIn.checked,
+        hostInference: parseAcpModel(chosenModel) === null,
+      })
+    }
+    githubOptIn.addEventListener('change', renderGitHubArming)
+    installOptIn.addEventListener('change', renderGitHubArming)
+    renderGitHubArming()
+    const githubField = el(
+      'div',
+      { class: 'container-run-github-field' },
+      el(
+        'label',
+        { class: 'container-run-github-label' },
+        githubOptIn,
+        el('span', {}, 'Let this run read GitHub with my sign-in'),
+      ),
+      el(
+        'p',
+        { class: 'field-hint container-run-github-hint' },
+        "The container's gh and git fetch can then read everything your github.com sign-in can read, in " +
+          'every repository and organisation you can reach, not only this project, including ' +
+          'secret-scanning alerts, Actions variables and secret gists. The token stays on the desktop and ' +
+          'writes are refused. A run that installs dependencies, or runs a coding agent, gets none.',
+      ),
+      githubArming,
+    )
+
     const start = el(
       'button',
       { type: 'button', class: 'ui-btn ui-btn-primary container-run-start' },
@@ -657,6 +704,7 @@ export function mountContainerRunControl(
         budgets: { wallClockMs, tokenCeiling },
         ...(loginOffer() !== null && loginOptIn.checked ? { useAgentLogin: true } : {}),
         installDependencies: installOptIn.checked,
+        githubReads: githubOptIn.checked,
         ...(continuation
           ? {
               continueFrom: continuation.runtimeId,
@@ -707,6 +755,7 @@ export function mountContainerRunControl(
       egressHint,
       loginField,
       installField,
+      githubField,
       uiActions(cancel, start, { className: 'container-run-actions' }),
     )
   }
