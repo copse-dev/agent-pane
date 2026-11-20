@@ -204,8 +204,22 @@ describe('burn-in test discovery', () => {
       })
       ;(a ? describe.skip : xdescribe.skip)('Never', () => { it('x', () => {}) })
       ;(slow ? it : it.only)('direct', () => {})
+      xdescribe('Pending', () => { it('y', () => {}) })
+      xit('pending test', () => {})
     `)
     assert.deepEqual(tests.titles, ['Desktop consents', 'direct'])
+  })
+
+  it('keeps a suite whose other branch is an unrecognized wrapper, not a skip', () => {
+    for (const callee of [
+      '(flag ? customSuite : describe.skip)',
+      '(flag ? describe.skip : customSuite)',
+    ])
+      assert.deepEqual(
+        discoverSpecTests(`${callee}('Outer', () => { it('x', () => {}) })`).titles,
+        ['Outer x'],
+        callee,
+      )
   })
 
   it('anchors and escapes the grep so one title cannot match another', () => {

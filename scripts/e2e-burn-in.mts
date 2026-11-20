@@ -201,7 +201,13 @@ function calleeKind(callee: ts.Expression): CalleeKind {
   if (ts.isConditionalExpression(callee)) {
     const a = calleeKind(callee.whenTrue)
     const b = calleeKind(callee.whenFalse)
-    if (!a || !b || a.kind !== b.kind) return a ?? b
+    // An unrecognized branch (a custom wrapper) may register the block, so
+    // only a choice between recognized skips counts as skipped.
+    if (!a || !b) {
+      const known = a ?? b
+      return known && { kind: known.kind, skipped: false }
+    }
+    if (a.kind !== b.kind) return a
     return { kind: a.kind, skipped: a.skipped && b.skipped }
   }
   let modifier: string | null = null
@@ -211,9 +217,12 @@ function calleeKind(callee: ts.Expression): CalleeKind {
   }
   if (!ts.isIdentifier(callee) || (modifier !== null && modifier !== 'only' && modifier !== 'skip'))
     return null
-  const skipped = modifier === 'skip'
-  if (SUITE_CALLEE.test(callee.text)) return { kind: 'suite', skipped }
-  if (TEST_CALLEE.test(callee.text)) return { kind: 'test', skipped }
+  // Mocha's `xdescribe`/`xit` aliases are pending blocks, like `.skip`.
+  const pendingAlias = /^x(?:describe|context|it|specify)$/.test(callee.text)
+  const name = pendingAlias ? callee.text.slice(1) : callee.text
+  const skipped = modifier === 'skip' || pendingAlias
+  if (SUITE_CALLEE.test(name)) return { kind: 'suite', skipped }
+  if (TEST_CALLEE.test(name)) return { kind: 'test', skipped }
   return null
 }
 
