@@ -76,6 +76,16 @@ describe('onboarding gating', () => {
         ),
       { timeout: 10_000, timeoutMsg: 'New Project dialog did not close' },
     )
+
+    // The dismissal must survive a real shutdown and relaunch, not just reach
+    // settings.json in this session.
+    await browser.reloadSession()
+    await $('.welcome-new-btn').waitForDisplayed({ timeout: 30_000 })
+    expect(
+      await browser.execute(
+        () => document.querySelector<HTMLDialogElement>('#onboarding-dialog')?.open ?? false,
+      ),
+    ).toBe(false)
   })
 
   it('never shows again on a completed profile', async function () {
