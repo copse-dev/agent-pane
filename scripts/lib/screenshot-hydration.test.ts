@@ -269,6 +269,70 @@ describe('R2 baseline cutover', () => {
     }
   })
 
+  it('walks history across the R2 cutover with one Git listing per commit', () => {
+    const { cwd, git, save } = fixture()
+    const trace = join(cwd, '.cache', 'git.trace')
+    const previousTrace = process.env['GIT_TRACE']
+    try {
+      const version = (label: string): Buffer => Buffer.concat([png, Buffer.from(label)])
+      const a1 = version('a1')
+      const a2 = version('a2')
+      const a3 = version('a3')
+      const a4 = version('a4')
+      const b1 = version('b1')
+      const b2 = version('b2')
+      const track = (files: Record<string, Buffer>, message: string): string => {
+        for (const [name, bytes] of Object.entries(files)) {
+          writeFileSync(join(cwd, SCREENSHOT_DIRECTORY, name), bytes)
+          git('add', '-f', `${SCREENSHOT_DIRECTORY}/${name}`)
+        }
+        git('commit', '-qm', message)
+        return git('rev-parse', 'HEAD')
+      }
+      const head = (): string => git('rev-parse', 'HEAD')
+      const first = track({ 'a.png': a1, 'b.png': b1 }, 'Legacy PNG references')
+      track({ 'a.png': a2 }, 'Refresh a legacy PNG')
+      // The cutover commit tracks both, and the PNG Git still holds wins.
+      save({ version: 1, screenshots: { 'a.png': entry(a3), 'b.png': entry(b1) } })
+      const cutover = head()
+      git('rm', '-q', '--cached', `${SCREENSHOT_DIRECTORY}/a.png`, `${SCREENSHOT_DIRECTORY}/b.png`)
+      git('commit', '-qm', 'Stop tracking PNGs')
+      const untracked = head()
+      save({ version: 1, screenshots: { 'a.png': entry(a4), 'b.png': entry(b1) } })
+      const moved = head()
+      save({ version: 1, screenshots: { 'a.png': entry(a4), 'b.png': entry(b2) } })
+      const commits = Number(git('rev-list', '--count', 'HEAD'))
+
+      mkdirSync(join(cwd, '.cache'), { recursive: true })
+      process.env['GIT_TRACE'] = trace
+      const history = (name: string, lookback: number): string[] =>
+        screenshotHistory(`${SCREENSHOT_DIRECTORY}/${name}`, ['HEAD'], lookback, cwd).map(
+          (item) => `${item.sha}:${item.entry?.sha256 ?? 'git'}`,
+        )
+      // Hydration and the flap check each walk the same shots in one run.
+      for (const lookback of [4, 5]) {
+        assert.deepEqual(history('a.png', lookback), [
+          `${untracked}:${entry(a3).sha256}`,
+          `${cutover}:git`,
+          `${first}:git`,
+        ])
+        assert.deepEqual(history('b.png', lookback), [`${moved}:${entry(b1).sha256}`])
+      }
+      delete process.env['GIT_TRACE']
+      const calls = readFileSync(trace, 'utf8')
+        .split('\n')
+        .filter((line) => line.includes('trace: built-in: git '))
+      const count = (command: string): number =>
+        calls.filter((line) => line.includes(`built-in: git ${command} `)).length
+      assert.equal(count('ls-tree'), commits, 'one ls-tree per commit, not per shot and commit')
+      assert.equal(count('log'), 2, 'one history walk per shot')
+    } finally {
+      if (previousTrace === undefined) delete process.env['GIT_TRACE']
+      else process.env['GIT_TRACE'] = previousTrace
+      rmSync(cwd, { recursive: true, force: true })
+    }
+  })
+
   it('reads pre-migration PNG history from Git', () => {
     const { cwd, git } = fixture()
     try {
