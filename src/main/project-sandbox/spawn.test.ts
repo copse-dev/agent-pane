@@ -4,9 +4,11 @@ import { execFileSync } from 'node:child_process'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import {
   formatArgvForShell,
   resolveSandboxShellExecutable,
+  setProjectSandboxEnabled,
   shellForSandboxWrap,
   spawnInProjectSandbox,
   spawnShellInProjectSandbox,
@@ -74,6 +76,58 @@ describe('withSandboxShellPath', () => {
     const env = withSandboxShellPath({ PATH: '/custom/bin', HOME: '/tmp' })
     assert.match(env['PATH'] ?? '', /^\/usr\/bin:\/bin:\/custom\/bin$/)
     assert.equal(env['HOME'], '/tmp')
+  })
+
+  it('drops every empty or relative entry wherever it sits', () => {
+    for (const entry of ['', '.', 'bin', './x']) {
+      for (const path of [
+        `${entry}:/usr/bin:/bin`,
+        `/usr/bin:${entry}:/bin`,
+        `/usr/bin:/bin:${entry}`,
+      ]) {
+        assert.equal(withSandboxShellPath({ PATH: path })['PATH'], '/usr/bin:/bin', path)
+      }
+    }
+  })
+
+  it('keeps the absolute entries in their original order', () => {
+    const env = withSandboxShellPath({
+      PATH: ':/opt/b/bin:bin:/bin:.::/opt/a/bin:./x:/usr/bin:/opt/b/bin:',
+    })
+    assert.equal(env['PATH'], '/opt/b/bin:/bin:/opt/a/bin:/usr/bin:/opt/b/bin')
+  })
+})
+
+describe('the sandbox wrapper shell environment', { skip: process.platform === 'win32' }, () => {
+  it('starts the native shell wrapper with only absolute PATH entries', async (t) => {
+    t.mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+    // Stands in for ASRT: the wrapper prints the PATH it was spawned with.
+    t.mock.method(SandboxManager, 'wrapWithSandboxArgv', () =>
+      Promise.resolve({ argv: ['bash', '-c', 'printf %s "$PATH"'], env: { ...process.env } }),
+    )
+    const cwd = await mkdtemp(join(tmpdir(), 'copse-wrapper-path-'))
+    setProjectSandboxEnabled(true)
+    try {
+      const child = await spawnShellInProjectSandbox('true', {
+        cwd,
+        env: { PATH: 'bin::/opt/tools/bin:.:/usr/bin:./x:/bin:' },
+        stdio: 'pipe',
+      })
+      let output = ''
+      child.stdout?.setEncoding('utf8')
+      child.stdout?.on('data', (chunk: string) => {
+        output += chunk
+      })
+      const code = await new Promise<number | null>((resolveCode, reject) => {
+        child.once('error', reject)
+        child.once('close', resolveCode)
+      })
+      assert.equal(code, 0)
+      assert.equal(output, '/opt/tools/bin:/usr/bin:/bin')
+    } finally {
+      setProjectSandboxEnabled(false)
+      await rm(cwd, { recursive: true, force: true })
+    }
   })
 })
 

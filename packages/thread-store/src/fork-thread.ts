@@ -1,3 +1,4 @@
+import { ellipsize } from '@copse/std/one-line-text.ts'
 import type { Message, Thread } from './thread-types.ts'
 import { collectThreadPrRefs } from './thread-pr-status.ts'
 import { collectThreadLinks } from './thread-links.ts'
@@ -52,7 +53,7 @@ export function forkThreadTitle(title: string): string {
 }
 
 function truncateTitle(title: string): string {
-  return title.length <= MAX_TITLE_LENGTH ? title : `${title.slice(0, MAX_TITLE_LENGTH - 1)}…`
+  return ellipsize(title, MAX_TITLE_LENGTH)
 }
 
 export interface ForkThreadOptions {
