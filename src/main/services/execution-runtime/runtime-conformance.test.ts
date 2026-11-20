@@ -236,6 +236,45 @@ describe('local runtime containment decisions', () => {
     assert.equal(released, 1)
   })
 
+  it('hands a hosted contained launch to its host without wrapping it here', async () => {
+    let wrapped = false
+    const observations: ExecutionObservation[] = []
+    const runtime = withExecutionAudit(
+      createLocalExecutionRuntime({
+        ...fakeSandboxWrap,
+        wrapWithSandboxArgv: (command) => {
+          wrapped = true
+          return Promise.resolve({ argv: ['/bin/sh', '-c', command], env: {} })
+        },
+      }),
+      () =>
+        (o): void => {
+          observations.push(o)
+        },
+    )
+    const execution = await threadExecutionContextStorage.run(context, () =>
+      runtime.exec(
+        request(tmpdir(), {
+          local: {
+            sandbox: true,
+            plan: () => ({
+              config: {},
+              hostedLaunch: (): ChildProcess =>
+                spawn('/bin/sh', ['-c', 'exit 4'], { stdio: 'pipe' }),
+            }),
+          },
+        }),
+      ),
+    )
+    assert.equal((await collect(execution.child)).code, 4)
+    assert.equal(wrapped, false)
+    assert.deepEqual(execution.profile, { kind: 'local', containment: 'contained' })
+    assert.deepEqual(
+      observations.map((o) => o.type),
+      ['start', 'exit'],
+    )
+  })
+
   it('does not spawn a cancelled command when asked to check', async () => {
     const controller = new AbortController()
     controller.abort()

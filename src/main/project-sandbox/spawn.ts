@@ -1,5 +1,11 @@
-import type { ChildProcess, SpawnOptions, SpawnOptionsWithoutStdio } from 'node:child_process'
+import {
+  spawn,
+  type ChildProcess,
+  type SpawnOptions,
+  type SpawnOptionsWithoutStdio,
+} from 'node:child_process'
 import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import * as pty from 'node-pty'
 import type { IPty } from 'node-pty'
@@ -11,8 +17,10 @@ import {
   withoutCheckoutWrites,
   workspaceSandboxOverlay,
 } from './config.ts'
+import { recordNetworkDenial } from './network-scope.ts'
 import { isSpawnableWorkingDirectory } from './spawn-cwd.ts'
-import { withSandboxTmpEnv, withSandboxWrapTmpDir } from './tmp-env.ts'
+import { withSandboxTmpEnv, withSandboxWrapTmpDir, withoutSandboxWrapTmpPin } from './tmp-env.ts'
+import { parsePortBindingMessage, PORT_BINDING_REQUEST_ENV } from './port-binding-protocol.ts'
 import {
   createLocalExecutionRuntime,
   strippedBaseEnv,
@@ -242,6 +250,19 @@ export async function spawnShellInProjectSandbox(
   return execution.child
 }
 
+export interface SpawnBackgroundOptions {
+  cwd: string
+  env?: NodeJS.ProcessEnv
+  allowPortBinding?: boolean
+  /** Explicit host-owned routing decision; never accepted from model/tool arguments. */
+  unsandboxed?: boolean
+  /** Named read targets derived from the command approved by the tool gate. */
+  readGrantTargets?: readonly string[]
+  /** Unique host-owned attempt id for runner-side violation attribution. */
+  violationId?: string
+  executionTarget?: ExecutionTarget
+}
+
 /**
  * Spawn a long-lived background process (issue #691) — a dev server, watcher,
  * build, etc. Unlike {@link runCommand} this is fire-and-forget: the caller owns
@@ -249,27 +270,15 @@ export async function spawnShellInProjectSandbox(
  *
  * When the project sandbox is active the child runs under the workspace-scoped
  * seatbelt. With `allowPortBinding`, it instead runs under
- * {@link portBindingSandboxOverlay} (same filesystem rules, relaxed to allow
- * loopback binding) and a global network scope is acquired for the process's
- * lifetime — ASRT's proxies consult the GLOBAL config per connection, so the
- * overlay's network block alone is not enough. The scope is released when the
- * child closes or errors. Without the flag no scope is acquired, so a plain
- * background task stays fully contained (workspace-only, no binding, no network).
+ * {@link portBindingSandboxOverlay} in a dedicated host process. ASRT's proxies
+ * consult their owning process's GLOBAL config per connection, including for
+ * already-running children; the host isolates that widening from every other
+ * main-process command. Without the flag, the task stays fully contained in
+ * the main process (workspace-only, no binding, no network).
  */
 export async function spawnBackgroundProcess(
   shellCommandLine: string,
-  opts: {
-    cwd: string
-    env?: NodeJS.ProcessEnv
-    allowPortBinding?: boolean
-    /** Explicit host-owned routing decision; never accepted from model/tool arguments. */
-    unsandboxed?: boolean
-    /** Named read targets derived from the command approved by the tool gate. */
-    readGrantTargets?: readonly string[]
-    /** Unique host-owned attempt id for runner-side violation attribution. */
-    violationId?: string
-    executionTarget?: ExecutionTarget
-  },
+  opts: SpawnBackgroundOptions,
 ): Promise<ChildProcess> {
   const target = resolveSpawnTarget(opts.executionTarget, opts.cwd)
   const execution = await runtimeFor(target, 'agent-command').exec({
@@ -286,31 +295,79 @@ export async function spawnBackgroundProcess(
           readGrantTargets.length > 0
             ? readAllowedSandboxOverlay(opts.cwd, readGrantTargets)
             : workspaceSandboxOverlay(opts.cwd)
-        const bindingNetwork = opts.allowPortBinding
-          ? portBindingSandboxOverlay(opts.cwd).network
-          : undefined
-        const config = bindingNetwork ? { ...base, network: bindingNetwork } : base
         const lease = {
           wrapCwd: opts.cwd,
           ownsSandboxLease: true,
           ...(opts.violationId ? { violationId: opts.violationId } : {}),
         }
-        if (!bindingNetwork) return { config, ...lease }
-        // Only a port-binding task needs the global network scope widened; a
-        // contained task keeps the deny-all base.
+        if (!opts.allowPortBinding) return { config: base, ...lease }
+        // Never fall back to the main process here: an already-running contained
+        // command would inherit this task's temporary loopback access.
+        const network = portBindingSandboxOverlay(opts.cwd).network
+        if (!network) throw new Error('Loopback task has no network policy')
+        const overlay = { ...base, network }
         return {
-          config,
+          config: overlay,
           ...lease,
-          networkScope: {
-            domains: bindingNetwork.allowedDomains,
-            allowLocalBinding: bindingNetwork.allowLocalBinding ?? false,
-            label: `background task: ${shellCommandLine}`,
-          },
+          hostedLaunch: (): ChildProcess => spawnPortBindingHost(shellCommandLine, opts, overlay),
         }
       },
     },
   })
   return execution.child
+}
+
+function spawnPortBindingHost(
+  shellCommandLine: string,
+  opts: SpawnBackgroundOptions,
+  overlay: Partial<SandboxRuntimeConfig>,
+): ChildProcess {
+  const child = spawn(process.execPath, [portBindingWorkerPath()], {
+    cwd: opts.cwd,
+    env: {
+      ...withoutSandboxWrapTmpPin(strippedBaseEnv()),
+      ELECTRON_RUN_AS_NODE: '1',
+      [PORT_BINDING_REQUEST_ENV]: JSON.stringify({
+        command: shellCommandLine,
+        cwd: opts.cwd,
+        ...(opts.env ? { env: opts.env } : {}),
+        overlay,
+        ...(opts.violationId ? { violationId: opts.violationId } : {}),
+      }),
+    },
+    // Keep the hosted task's stdin open. A closed fd makes `--watch` and
+    // `--serve` tools stop immediately even though the task is long-lived.
+    stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
+    detached: detachForGroupKill,
+  })
+  child.on('message', (value: unknown) => {
+    const message = parsePortBindingMessage(value)
+    if (!message) return
+    if (message.type === 'network-denial') {
+      recordNetworkDenial(message.host, message.port)
+    } else {
+      portBindingViolationCounts.set(child, message.count)
+    }
+  })
+  return child
+}
+
+/** Bundled ASRT owner for approved loopback-binding background tasks. */
+export function portBindingWorkerPath(): string {
+  return join(__dirname, 'port-binding-worker.js')
+}
+
+const portBindingViolationCounts = new WeakMap<ChildProcess, number>()
+
+/** Include a hosted port-binding task's ASRT evidence in retry decisions. */
+export function sandboxViolationCountForBackgroundProcess(
+  proc: ChildProcess,
+  command: string,
+): number {
+  return Math.max(
+    sandboxViolationCountForCommand(command),
+    portBindingViolationCounts.get(proc) ?? 0,
+  )
 }
 
 /**
