@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 /** Upper bounds regardless of context (safety ceiling). */
 export const READ_FILE_LIMITS_CEILING = {
   maxLines: 150,
@@ -22,14 +23,12 @@ function readFileLimitsFromBudgetFraction(
   fraction: number,
 ): ReadFileLimits {
   const budget = Math.max(1, Math.floor(conversationBudgetTokens))
-  const maxChars = Math.min(
+  const maxChars = clamp(
+    Math.floor(budget * CHARS_PER_TOKEN_ESTIMATE * fraction),
+    3000,
     READ_FILE_LIMITS_CEILING.maxChars,
-    Math.max(3000, Math.floor(budget * CHARS_PER_TOKEN_ESTIMATE * fraction)),
   )
-  const maxLines = Math.min(
-    READ_FILE_LIMITS_CEILING.maxLines,
-    Math.max(40, Math.floor(maxChars / 80)),
-  )
+  const maxLines = clamp(Math.floor(maxChars / 80), 40, READ_FILE_LIMITS_CEILING.maxLines)
   return { maxLines, maxChars }
 }
 

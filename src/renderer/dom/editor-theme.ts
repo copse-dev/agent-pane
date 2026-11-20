@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 import type * as Monaco from 'monaco-editor'
 import type { ITheme } from '@xterm/xterm'
 import type { Theme } from '@shared/types/state.ts'
@@ -74,7 +75,7 @@ const HEX_PATTERN = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i
 const FUNCTION_PATTERN = /^(rgba?|color)\(\s*(.*?)\s*\)$/i
 
 function hexByte(value: number): string {
-  return Math.round(Math.min(255, Math.max(0, value)))
+  return Math.round(clamp(value, 0, 255))
     .toString(16)
     .padStart(2, '0')
 }
