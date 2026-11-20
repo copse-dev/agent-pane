@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { connect } from 'node:net'
 import { Duplex, PassThrough } from 'node:stream'
+import { finished } from 'node:stream/promises'
 import { gzipSync } from 'node:zlib'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
@@ -142,7 +143,7 @@ async function until(check: () => boolean): Promise<void> {
   const deadline = Date.now() + 2000
   while (!check()) {
     if (Date.now() > deadline) assert.fail('timed out waiting for the condition')
-    await new Promise((resolveTick) => setTimeout(resolveTick, 5))
+    await new Promise((resolveTick) => setImmediate(resolveTick))
   }
 }
 
@@ -535,11 +536,15 @@ describe('GitHub read capability, guest bridge to fake GitHub', () => {
     'abandons a streamed body longer than its Content-Length before sending it',
     { timeout: 10_000 },
     async () => {
+      const opened: ClientRequest[] = []
       const capability = new GitHubCapability({
         token: (): Promise<string | null> => Promise.resolve(REAL_TOKEN),
         placeholder: PLACEHOLDER,
-        upstream: (options): ClientRequest =>
-          httpRequest({ ...options, host: '127.0.0.1', port: fake.port }),
+        upstream: (options): ClientRequest => {
+          const outbound = httpRequest({ ...options, host: '127.0.0.1', port: fake.port })
+          opened.push(outbound)
+          return outbound
+        },
       })
       const answer = await serveDirect(
         capability,
@@ -554,8 +559,9 @@ describe('GitHub read capability, guest bridge to fake GitHub', () => {
         Buffer.from(`0000${'x'.repeat(60)}`),
       )
       assert.equal(answer.status, null)
-      // Give a stray request time to arrive if one had been sent.
-      await new Promise((resolveTick) => setTimeout(resolveTick, 50))
+      // Wait for every upstream request to settle: a body that had been sent
+      // would have reached the fake before its request finished.
+      await Promise.all(opened.map((outbound) => finished(outbound).catch(() => undefined)))
       assert.equal(
         fake.seen.some((seen) => seen.body.includes('x')),
         false,
