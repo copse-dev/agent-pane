@@ -226,6 +226,46 @@ describe('R2 baseline cutover', () => {
     }
   })
 
+  it('credits a branch with hand commits, not CI renders or review acceptance commits', () => {
+    const { cwd, git, save } = fixture()
+    try {
+      const next = Buffer.concat([png, Buffer.from('next')])
+      const manifest: ScreenshotManifest = {
+        version: 1,
+        screenshots: { 'manual.png': entry(png), 'accepted.png': entry(png), 'ci.png': entry(png) },
+      }
+      save(manifest)
+      const base = git('rev-parse', 'HEAD')
+      const commitAs = (name: string, author: string | null): void => {
+        manifest.screenshots[name] = entry(next)
+        writeFileSync(join(cwd, SCREENSHOT_MANIFEST), serializeScreenshotManifest(manifest))
+        git('add', '.')
+        git('commit', '-qm', `Change ${name}`, ...(author === null ? [] : ['--author', author]))
+      }
+      commitAs('manual.png', null)
+      // The commit screenshot-review-selection.yml writes when a reviewer ticks
+      // shots in the review comment.
+      commitAs(
+        'accepted.png',
+        'copse-release-bot[bot] <304038887+copse-release-bot[bot]@users.noreply.github.com>',
+      )
+      commitAs(
+        'ci.png',
+        'github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>',
+      )
+      assert.deepEqual(
+        [...screenshotChangesInRange(`${base}..HEAD`, cwd, true)],
+        [`${SCREENSHOT_DIRECTORY}/manual.png`],
+      )
+      assert.deepEqual(
+        [...screenshotChangesInRange(`${base}..HEAD`, cwd)].sort(),
+        ['accepted.png', 'ci.png', 'manual.png'].map((name) => `${SCREENSHOT_DIRECTORY}/${name}`),
+      )
+    } finally {
+      rmSync(cwd, { recursive: true, force: true })
+    }
+  })
+
   it('tracks per-image ownership and distinct history through shared manifest commits', async (context) => {
     const { cwd, git, save } = fixture()
     try {

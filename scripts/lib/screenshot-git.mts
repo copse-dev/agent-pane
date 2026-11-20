@@ -144,18 +144,37 @@ export function manifestChangedPaths(
   return changedManifestNames(a, b).map((name) => `${SCREENSHOT_DIRECTORY}/${name}`)
 }
 
+/**
+ * Authors of the screenshot commits CI writes to a PR branch: Actions' own
+ * commits, and the "accept N reviewed screenshot(s)" commit that
+ * screenshot-review-selection.yml writes as the copse-release-bot App when a
+ * reviewer ticks shots in the review comment. A shot one of them committed was
+ * not hand-committed on the branch. Counting the acceptance commit as
+ * deliberate work held every later re-render of an accepted shot as contested,
+ * so the reviewer never saw it again (#4178, #4171).
+ */
+export const CI_SCREENSHOT_AUTHORS: ReadonlySet<string> = new Set([
+  'github-actions[bot]',
+  'copse-release-bot[bot]',
+])
+
+/**
+ * Screenshots the commits in `range` change. With `excludeCi`, commits by
+ * {@link CI_SCREENSHOT_AUTHORS} are skipped, leaving what someone committed by
+ * hand.
+ */
 export function screenshotChangesInRange(
   range: string,
   cwd = process.cwd(),
-  excludeBot = false,
+  excludeCi = false,
 ): Set<string> {
   const changed = new Set<string>()
   for (const line of screenshotGit(
     ['log', '--format=%H%x09%P%x09%an', range, '--', SCREENSHOT_DIRECTORY],
     cwd,
   ).split('\n')) {
-    const [sha, parentList = '', author] = line.split('\t')
-    if (!sha || (excludeBot && author === 'github-actions[bot]')) continue
+    const [sha, parentList = '', author = ''] = line.split('\t')
+    if (!sha || (excludeCi && CI_SCREENSHOT_AUTHORS.has(author))) continue
     // A merge changes only what differs from every parent. Diffing a merge of
     // main against its first parent alone would credit the branch with each
     // reference main changed, and the filter would then hold those back.
