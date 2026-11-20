@@ -288,6 +288,11 @@ describe('analyzeShellCommand', () => {
       `grep -rl . ${checkout}/dir2 | xargs -I{} wc -l {}`,
       // A line that runs a script keeps the reason it has without fragments.
       `cd ${checkout} && bash scripts/check.sh`,
+      // Even when another segment names the same word only as text.
+      'bash a/ssh-x.sh; grep ssh f',
+      'source a/ssh-x.sh; echo ssh',
+      'python3 a/ssh-run.py; grep ssh f',
+      'bash a/curl-fetch.sh; rg curl docs',
     ]) {
       assert.equal(analyzeShellCommand(command, checkout).verdict, 'external', command)
     }

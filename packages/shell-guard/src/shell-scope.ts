@@ -832,7 +832,9 @@ function wordMentionTest(command: string): ((re: RegExp) => WordMention) | null 
   )
   return (re) => {
     const matches = (variants: readonly string[]): boolean => variants.some((t) => re.test(t))
-    let holding = texts.filter(({ blanked }) => matches(blanked))
+    // A line that can run text as code is judged without fragments, whichever
+    // other segments still mention the word (`bash a/ssh-x.sh; grep ssh f`).
+    let holding = confirmable ? texts.filter(({ blanked }) => matches(blanked)) : []
     if (holding.length === 0) {
       holding = texts.filter(({ variants }) => matches(variants))
       if (holding.length > 0 && confirmable && !matches(wholeBlanked)) {
