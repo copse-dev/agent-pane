@@ -1,9 +1,18 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { writeE2eEnv } from './e2e-env.ts'
 
 const FAKE_SSH_DIR = join(process.cwd(), 'tests/e2e/fixtures/fake-ssh')
+
+export interface FakeSshHostOptions {
+  /**
+   * Absolute directory the host reports as the remote account's home. It is
+   * created empty and removed by `remove()`. Pick a fixed path when it shows in
+   * a screenshot. Defaults to the local `$HOME`.
+   */
+  remoteHome?: string
+}
 
 export interface FakeSshHost {
   /** A scratch directory to use as the remote project root. */
@@ -24,11 +33,17 @@ export interface FakeSshHost {
  * run in a local shell. This replaces the binary the app already shells out
  * to; it adds no option to the product. Call before `browser.reloadSession()`.
  */
-export function installFakeSshHost(): FakeSshHost {
+export function installFakeSshHost(options: FakeSshHostOptions = {}): FakeSshHost {
   const originalPath = process.env['PATH'] ?? ''
   const stateDir = mkdtempSync(join(tmpdir(), 'copse-e2e-ssh-state-'))
   const remoteRoot = mkdtempSync(join(tmpdir(), 'copse-e2e-ssh-remote-'))
   writeFileSync(join(remoteRoot, 'README.md'), '# Remote project\n')
+  const { remoteHome } = options
+  if (remoteHome !== undefined) {
+    rmSync(remoteHome, { recursive: true, force: true })
+    mkdirSync(remoteHome, { recursive: true })
+    writeFileSync(join(stateDir, 'home'), remoteHome)
+  }
   writeE2eEnv({
     PATH: [FAKE_SSH_DIR, originalPath].join(delimiter),
     COPSE_E2E_FAKE_SSH_STATE: stateDir,
@@ -46,6 +61,7 @@ export function installFakeSshHost(): FakeSshHost {
       writeE2eEnv({ PATH: originalPath, COPSE_E2E_FAKE_SSH_STATE: undefined })
       rmSync(stateDir, { recursive: true, force: true })
       rmSync(remoteRoot, { recursive: true, force: true })
+      if (remoteHome !== undefined) rmSync(remoteHome, { recursive: true, force: true })
     },
   }
 }

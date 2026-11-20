@@ -11,7 +11,11 @@ import {
   upsertHost,
   type SshHostDraft,
 } from './setup/ssh-host-helpers.ts'
-import { fillRemotePathBreadcrumbs, parentRemotePath } from './remote-folder-path.ts'
+import {
+  fillRemotePathBreadcrumbs,
+  initialRemoteBrowsePath,
+  parentRemotePath,
+} from './remote-folder-path.ts'
 import { arrowLeftIcon } from '../dom/icons.ts'
 import { setInlineStatus } from '../dom/inline-status.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
@@ -19,6 +23,11 @@ import { ipcErrorMessage } from '../ipc-error-message.ts'
 export interface RemoteFolderPick {
   hostId: string
   path: string
+}
+
+export interface RemoteFolderDialogOptions {
+  /** Projects already open, so a host's browser can start beside the last one. */
+  projects?: ReadonlyArray<{ path: string; sshHost?: string }>
 }
 
 let dialogEl: HTMLDialogElement | null = null
@@ -33,8 +42,13 @@ function ensureDialog(): HTMLDialogElement {
 /**
  * Minimal remote directory browser: pick or add an SSH host, browse folders
  * over `ssh-workspace:list-directory`, then register + return the chosen path.
+ * Each host opens beside its last project, or in its home directory.
  */
-export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick | null> {
+export function openRemoteFolderDialog(
+  api: ApiClient,
+  options: RemoteFolderDialogOptions = {},
+): Promise<RemoteFolderPick | null> {
+  const projects = options.projects ?? []
   const dialog = ensureDialog()
   clear(dialog)
 
@@ -291,7 +305,7 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
       fillHostSelect(host.id)
       setAddingHost(false)
       status.textContent = `Saved host “${host.label}”.`
-      await browse('/')
+      await browseStart()
     }
 
     saveHostBtn.addEventListener('click', () => {
@@ -336,7 +350,7 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
             imported.importedHostIds.length === 0
               ? 'All SSH config aliases are already imported.'
               : `Imported ${String(imported.importedHostIds.length)} alias(es) from SSH config.`
-          if (currentHostId) await browse('/')
+          if (currentHostId) await browseStart()
         } catch (err) {
           const message = ipcErrorMessage(err, 'Could not import from ~/.ssh/config.')
           setInlineStatus(status, 'error', message)
@@ -357,10 +371,18 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
           return
         }
         setAddingHost(false)
-        await browse('/')
+        await browseStart()
       } catch (err) {
         setInlineStatus(status, 'error', ipcErrorMessage(err, 'Could not load SSH hosts.'))
       }
+    }
+
+    /** Counts listings, so one that a later host choice replaced draws nothing. */
+    let listing = 0
+
+    /** Open the chosen host where its user works rather than at `/`. */
+    function browseStart(): Promise<void> {
+      return browse(null)
     }
 
     function renderBreadcrumbs(path: string): void {
@@ -369,21 +391,43 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
       })
     }
 
-    async function browse(path: string): Promise<void> {
-      if (!currentHostId || loading || addingHost) return
+    /**
+     * List `path` on the current host. `null` lists the host's start folder
+     * instead: beside its last project, else in the home directory that its
+     * connect reports, else `/`. A start folder that no longer lists (a removed
+     * project's parent) falls back to `/` on the same connection. A host choice
+     * (`null`) replaces a listing still under way; anything else waits for it.
+     */
+    async function browse(path: string | null): Promise<void> {
+      const hostId = currentHostId
+      if (!hostId || addingHost || (loading && path !== null)) return
+      const run = ++listing
       loading = true
       openBtn.disabled = true
       upBtn.disabled = true
       status.textContent = 'Connecting…'
       clear(list)
+      let target = path ?? '/'
       try {
-        await api.sshWorkspace.connect(currentHostId)
-        currentPath = path
+        const states = await api.sshWorkspace.connect(hostId)
+        if (run !== listing) return
+        if (path === null) {
+          const home = states.find((state) => state.hostId === hostId)?.capabilities?.home
+          target = initialRemoteBrowsePath(projects, hostId, home)
+        }
+        currentPath = target
         renderBreadcrumbs(currentPath)
-        const entries: SshRemoteDirEntry[] = await api.sshWorkspace.listDirectory(
-          currentHostId,
-          currentPath,
-        )
+        let entries: SshRemoteDirEntry[]
+        try {
+          entries = await api.sshWorkspace.listDirectory(hostId, target)
+        } catch (err) {
+          if (path !== null || target === '/' || run !== listing) throw err
+          target = '/'
+          currentPath = target
+          renderBreadcrumbs(currentPath)
+          entries = await api.sshWorkspace.listDirectory(hostId, target)
+        }
+        if (run !== listing) return
         status.textContent =
           entries.length === 0 ? 'No subfolders here — open this folder or go up.' : ''
         for (const entry of entries) {
@@ -404,24 +448,27 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
         upBtn.disabled = currentPath === '/'
         openBtn.disabled = false
       } catch (err) {
+        if (run !== listing) return
         // Keep the attempted path visible so Up / breadcrumbs still work after errors.
         // Surface the error in the dialog status only — a global toast would fire on
         // every failed connect while browsing and trip e2e toast guards.
-        currentPath = path
+        currentPath = target
         renderBreadcrumbs(currentPath)
         setInlineStatus(status, 'error', ipcErrorMessage(err, 'Could not reach the host.'))
       } finally {
-        loading = false
-        if (hosts.length > 0 && currentHostId) {
-          upBtn.disabled = currentPath === '/'
-          openBtn.disabled = false
+        if (run === listing) {
+          loading = false
+          if (hosts.length > 0 && currentHostId) {
+            upBtn.disabled = currentPath === '/'
+            openBtn.disabled = false
+          }
         }
       }
     }
 
     hostSelect.addEventListener('change', () => {
       currentHostId = hostSelect.value
-      void browse('/')
+      void browseStart()
     })
 
     upBtn.addEventListener('click', () => {
