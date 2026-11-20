@@ -17890,7 +17890,7 @@ dialog.activity-panel-overlay {
 }
 .ssh-consent-body {
   color: var(--text-secondary);
-  line-height: 1.5;
+  line-height: var(--line-height-base);
 }
 .ssh-consent-status:empty {
   display: none;
