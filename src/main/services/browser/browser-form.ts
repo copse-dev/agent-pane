@@ -100,9 +100,16 @@ export async function fillBrowserForm(
   signal?.throwIfAborted()
   const key = `__copseForm_${randomUUID()}`
   const completed: string[] = []
-  const rewritten: string[] = []
-  const rewriteNote = (): string =>
-    rewritten.length > 0 ? `The page changed ${rewritten.join(', ')}. ` : ''
+  const rewritten: Array<{ ref: string; value: string }> = []
+  // The page chose each rewritten value. A returned result is wrapped as
+  // external content, but a thrown stop message is not, so the stop message
+  // names the refs alone; the refreshed snapshot it asks for shows the values.
+  const rewriteNote = (withValues: boolean): string =>
+    rewritten.length > 0
+      ? `The page changed ${rewritten
+          .map(({ ref, value }) => (withValues ? `${ref} to ${quoteValue(value)}` : ref))
+          .join(', ')}. `
+      : ''
   let inFlightRef: string | undefined
   try {
     const prepared = replySchema.parse(
@@ -168,14 +175,14 @@ export async function fillBrowserForm(
       if (!result.uncertain) inFlightRef = undefined
       if (!result.ok) throw new Error(result.error ?? 'The page could not enter this field.')
       completed.push(field.ref)
-      if (result.value !== undefined) rewritten.push(`${field.ref} to ${quoteValue(result.value)}`)
+      if (result.value !== undefined) rewritten.push({ ref: field.ref, value: result.value })
     }
-    return `Entered ${String(completed.length)} fields: ${completed.map((ref) => `[ref=${ref}]`).join(', ')}. ${rewriteNote()}Inspect the form before submitting it.`
+    return `Entered ${String(completed.length)} fields: ${completed.map((ref) => `[ref=${ref}]`).join(', ')}. ${rewriteNote(true)}Inspect the form before submitting it.`
   } catch (error) {
     const message =
       `Form entry stopped after ${String(completed.length)} confirmed fields of ${String(fields.length)}. ` +
       (completed.length > 0 ? `Entered: ${completed.join(', ')}. ` : '') +
-      rewriteNote() +
+      rewriteNote(false) +
       (inFlightRef ? `${inFlightRef} may already have changed. ` : '') +
       `${errorMessage(error)} Inspect the fields and refresh the snapshot before retrying; do not replay confirmed input.`
     if (signal?.aborted) throw new DOMException(message, 'AbortError')

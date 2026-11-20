@@ -348,35 +348,55 @@ describe('native browser form entry', () => {
     }
   }
 
-  it('keeps a clipped page rewrite in the stop message when a later field changes', async () => {
+  it('clips a long page rewrite in the result', async () => {
     const { window, contents } = page()
     const title = window.document.querySelector('input')
-    const notes = window.document.querySelector('textarea')
-    assert.ok(title && notes)
+    assert.ok(title)
     title.addEventListener('input', () => {
       title.value = 'x'.repeat(200)
     })
+    assert.equal(
+      await fillBrowserForm(contents, [{ ref: 'e1', text: 'Requested title' }]),
+      `Entered 1 fields: [ref=e1]. The page changed e1 to "${'x'.repeat(119)}…". Inspect the form before submitting it.`,
+    )
+  })
+
+  it('names a page rewrite in the stop message without the page value', async () => {
+    // A thrown stop message reaches the model outside the external-content
+    // envelope, so no page-chosen text may ride in it.
+    const pageParts = ['Page', '"quoted"', 'next line', 'separated', 'right to left']
+    const pageValue = 'Page "quoted"\nnext line\u2028separated\u202Eright to left'
+    const { window, contents } = page(
+      '<textarea aria-label="Notes" data-copse-ref="e1"></textarea><input aria-label="Title" data-copse-ref="e2">',
+    )
+    const notes = window.document.querySelector('textarea')
+    const title = window.document.querySelector('input')
+    assert.ok(notes && title)
     notes.addEventListener('input', () => {
-      notes.hidden = true
+      notes.value = pageValue
+    })
+    title.addEventListener('input', () => {
+      title.hidden = true
     })
     await assert.rejects(
       fillBrowserForm(contents, [
-        { ref: 'e1', text: 'Requested title' },
-        { ref: 'e2', text: 'Requested note' },
-        { ref: 'e3', text: 'high' },
+        { ref: 'e1', text: 'Requested note' },
+        { ref: 'e2', text: 'Requested title' },
       ]),
       (error: unknown) => {
         assert.ok(error instanceof Error)
         assert.ok(
           error.message.startsWith(
-            `Form entry stopped after 1 confirmed fields of 3. Entered: e1. The page changed e1 to "${'x'.repeat(119)}…". e2 may already have changed. `,
+            'Form entry stopped after 1 confirmed fields of 2. Entered: e1. The page changed e1. e2 may already have changed. ',
           ),
           error.message,
         )
+        for (const pageText of [...pageParts, '"', '\n', '\u2028', '\u202E'])
+          assert.equal(error.message.includes(pageText), false, JSON.stringify(pageText))
         return true
       },
     )
-    assert.equal(window.document.querySelector('select')?.value, 'low')
+    assert.equal(notes.value, pageValue)
   })
 
   it('does not confirm a text input changed into a checkbox even if it retains the literal value', async () => {
