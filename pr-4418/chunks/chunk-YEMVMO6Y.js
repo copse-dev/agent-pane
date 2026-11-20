@@ -31298,7 +31298,7 @@ function createMachinesSection(api, options = {}) {
       { class: "settings-fieldset-desc" },
       "Use System One models on another computer on the same network. Open Copse there, share a local model, and paste its invitation here. SSH is not required."
     ),
-    list,
+    ...options.list ? [] : [list],
     pairControls,
     status
   );
