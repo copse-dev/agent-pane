@@ -242,6 +242,10 @@ export class AgentDispatcher {
   private readonly epochs = new Map<string, { turnTreeId: string; continuationUsed: number }>()
   private readonly epochWrites = new Map<string, Promise<void>>()
   private readonly machineOperations = new Map<string, Promise<MachineDispatchResult>>()
+  /** Keys of `machineOperations` whose run has not settled yet. */
+  private readonly runningMachineOperations = new Set<string>()
+  /** History reads in flight; `forgetHistory` drops them so none can refill the cache. */
+  private readonly historyLoads = new Map<string, Set<symbol>>()
   private readonly host: AgentHost<StreamChunk>
   private readonly registry: ToolRegistry
   private readonly dependencies: AgentDispatcherDependencies
@@ -309,11 +313,21 @@ export class AgentDispatcher {
 
     const running = this.executeMachine(request)
     this.machineOperations.set(operationKey, running)
+    this.runningMachineOperations.add(operationKey)
+    const settled = (): void => {
+      this.runningMachineOperations.delete(operationKey)
+    }
+    void running.then(settled, settled)
     // Keep dedupe records bounded. Deleting the oldest completed operation does
     // not widen authority: a replay still has to pass epoch and budget checks.
+    // One still running is kept: its record is what turns a replay into a
+    // duplicate instead of a second run, and what `waitForIdle` waits on.
     if (this.machineOperations.size > 1_000) {
-      const oldest = this.machineOperations.keys().next().value
-      if (oldest !== undefined && oldest !== operationKey) this.machineOperations.delete(oldest)
+      for (const candidate of this.machineOperations.keys()) {
+        if (this.runningMachineOperations.has(candidate)) continue
+        this.machineOperations.delete(candidate)
+        if (this.machineOperations.size <= 1_000) break
+      }
     }
     return running
   }
@@ -439,9 +453,14 @@ export class AgentDispatcher {
 
   async history(projectId: string, threadId: string): Promise<LLMMessage[]> {
     const key = dispatchKey(projectId, threadId)
-    let messages = this.histories.get(key)
-    if (!messages) {
-      messages = await this.dependencies.loadHistory(projectId, threadId)
+    const cached = this.histories.get(key)
+    if (cached) return cached
+    const load = Symbol('history-load')
+    const loads = this.historyLoads.get(key) ?? new Set<symbol>()
+    loads.add(load)
+    this.historyLoads.set(key, loads)
+    try {
+      let messages = await this.dependencies.loadHistory(projectId, threadId)
       // An empty sidecar means either a genuinely fresh thread or a run that
       // died before it could commit one. Only the transcript can tell the two
       // apart, and only in the second case does it have anything to give back —
@@ -449,14 +468,26 @@ export class AgentDispatcher {
       if (messages.length === 0) {
         messages = await this.dependencies.recoverHistory(projectId, threadId)
       }
-      this.histories.set(key, messages)
+      // Cache only what is still current. `forgetHistory` during the read means
+      // the store was rewritten under it (a review, a history edit, a clear),
+      // and a turn that checkpointed meanwhile already cached something newer.
+      // An empty entry is never the newer one (see `execute`).
+      const forgotten = !loads.has(load)
+      const committed = (this.histories.get(key)?.length ?? 0) > 0
+      if (!forgotten && !committed) this.histories.set(key, messages)
+      return messages
+    } finally {
+      loads.delete(load)
+      if (loads.size === 0 && this.historyLoads.get(key) === loads) this.historyLoads.delete(key)
     }
-    return messages
   }
 
   forgetHistory(projectId: string, threadId: string): void {
     const key = dispatchKey(projectId, threadId)
     this.histories.delete(key)
+    // Emptied, not just unmapped: each read in flight holds this set.
+    this.historyLoads.get(key)?.clear()
+    this.historyLoads.delete(key)
     this.epochs.delete(key)
   }
 

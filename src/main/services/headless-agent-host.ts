@@ -285,7 +285,7 @@ export async function runHeadlessAgent(
                             dispatchRegistry,
                             options,
                           ): Promise<Awaited<ReturnType<typeof runAgent>>> => {
-                            const result = await runAgent(
+                            const turn = runAgent(
                               dispatchThreadId,
                               userContent,
                               priorMessages,
@@ -321,6 +321,12 @@ export async function runHeadlessAgent(
                                   : {}),
                               },
                             )
+                            // `runAgent` registers its Stop handle before its first
+                            // await. A stop that landed earlier — during bootstrap,
+                            // or between turns — fired `onAbort` when there was no
+                            // turn to interrupt, so deliver it to this one.
+                            if (run.signal?.aborted) abortAgent(dispatchThreadId)
+                            const result = await turn
                             inputTokens += result.usage.inputTokens
                             outputTokens += result.usage.outputTokens
                             if (result.turnOutcome) turnOutcome = result.turnOutcome

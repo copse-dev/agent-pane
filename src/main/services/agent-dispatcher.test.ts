@@ -1844,4 +1844,80 @@ describe('AgentDispatcher', () => {
 
     assert.equal(ran, true)
   })
+
+  // A context estimate reads history while nothing holds the thread. A review
+  // or history edit that rewrites the sidecar and forgets the cache during that
+  // read must not have its work undone when the older read settles.
+  it('does not cache a history load that was forgotten while it was in flight', async () => {
+    const stale = Promise.withResolvers<LLMMessage[]>()
+    const loads: Promise<LLMMessage[]>[] = [
+      stale.promise,
+      Promise.resolve([{ role: 'user', content: 'rewritten history' }]),
+    ]
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        loadHistory: () => loads.shift() ?? Promise.resolve([]),
+      }),
+    )
+
+    const estimate = dispatcher.history('project-1', 'thread-1')
+    dispatcher.forgetHistory('project-1', 'thread-1')
+    stale.resolve([{ role: 'user', content: 'history before the rewrite' }])
+    await estimate
+
+    assert.deepEqual(await dispatcher.history('project-1', 'thread-1'), [
+      { role: 'user', content: 'rewritten history' },
+    ])
+  })
+
+  it('keeps the dedupe record of an operation that is still running past the retention cap', async () => {
+    const release = Promise.withResolvers<undefined>()
+    let longRuns = 0
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        loadEpoch: async (_project, threadId) =>
+          threadId === 'thread-1' ? { turnTreeId: 'tree-1', continuationUsed: 0 } : null,
+        run: async (_threadId, userContent, priorMessages) => {
+          longRuns++
+          await release.promise
+          return {
+            usage: { inputTokens: 0, outputTokens: 0 },
+            messages: [...priorMessages, { role: 'user', content: userContent }],
+          }
+        },
+      }),
+    )
+    const longRunning = dispatcher.dispatchMachine({
+      ...request(),
+      operationId: 'long-running',
+      turnTreeId: 'tree-1',
+    })
+    // Stale wakes for other threads settle at once and fill the retention cap.
+    const fillers: Promise<MachineDispatchResult>[] = []
+    for (let index = 0; index < 1_000; index++) {
+      fillers.push(
+        dispatcher.dispatchMachine({
+          ...request({ threadId: `filler-${String(index)}` }),
+          operationId: 'wake',
+          turnTreeId: 'stale-tree',
+        }),
+      )
+    }
+    assert.deepEqual([...new Set(await Promise.all(fillers))], ['stale'])
+
+    assert.equal(dispatcher.hasMachineOperationRecord('project-1', 'thread-1'), true)
+    const replay = dispatcher.dispatchMachine({
+      ...request(),
+      operationId: 'long-running',
+      turnTreeId: 'tree-1',
+    })
+    release.resolve(undefined)
+    assert.equal(await longRunning, 'completed')
+    assert.equal(await replay, 'duplicate')
+    assert.equal(longRuns, 1)
+  })
 })

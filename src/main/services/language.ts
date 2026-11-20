@@ -45,5 +45,7 @@ export function detectLanguage(filePath: string): string {
   if (name === 'dockerfile') return 'dockerfile'
   if (name === 'makefile') return 'makefile'
   const ext = name.split('.').pop() ?? ''
-  return LANG_MAP[ext] ?? 'plaintext'
+  // Own keys only: the extension is file-controlled, and a plain index answers
+  // `constructor` or `__proto__` with an `Object.prototype` member.
+  return (Object.hasOwn(LANG_MAP, ext) ? LANG_MAP[ext] : undefined) ?? 'plaintext'
 }

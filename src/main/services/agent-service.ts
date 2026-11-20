@@ -3140,6 +3140,25 @@ async function runAgentWithInlineCanvas(
           sendChunk({ type: 'text', text: separatedSummary })
           trimmed.push({ role: 'assistant', content: separatedSummary })
         }
+        // The loop absorbs a Stop that lands between provider events or while a
+        // tool is being cancelled: it breaks out and reports a bare `done`, which
+        // would otherwise be recorded as a completed provider turn. A provider
+        // that throws on the same Stop reaches the catch below and is recorded as
+        // cancelled, so the two exits must agree. A deadline abort already
+        // carries `timeout`; a hook halt keeps its own `stopReason` (H3).
+        if (
+          controller.signal.aborted &&
+          loopStopReason === undefined &&
+          hookHaltStopReason === undefined &&
+          !isAgentRunTimeoutAbort(controller.signal)
+        ) {
+          pendingTurnOutcome = {
+            ...terminalContext,
+            status: 'cancelled',
+            stopReason: 'cancelled',
+            source: 'user',
+          }
+        }
         // C3 run→drain fold-back (E3): report the machine turns this run spent
         // in-process (closeout / pre-review / remediation) so the renderer folds them
         // back onto the turn tree's counter and its *next* queue drain respects the
