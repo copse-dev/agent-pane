@@ -1,5 +1,10 @@
 import { z } from 'zod'
-import { machineEndpointSchema, machineSharingSchema, sharedModelSchema } from '@shared/machines.ts'
+import {
+  machineEndpointSchema,
+  machineSharingSchema,
+  sharedModelSchema,
+  type MachineSshRoutes,
+} from '@shared/machines.ts'
 
 const encrypted = z.string().min(1).max(32_768)
 export const machineStoreSchema = z.strictObject({
@@ -33,6 +38,9 @@ export interface MachineStore {
   enabled(): boolean
   load(): MachineStoreData | null
   save(value: MachineStoreData): Promise<void>
+  /** Paired machines reached through a saved SSH host, by machine id. */
+  routes(): MachineSshRoutes
+  saveRoutes(value: MachineSshRoutes): Promise<void>
   seal(value: string): string
   open(value: string): string
   available(): boolean

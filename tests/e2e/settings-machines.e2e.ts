@@ -45,6 +45,8 @@ describe('Machines settings', function () {
     save: async (next: MachineStoreData) => {
       saved = machineStoreSchema.parse(structuredClone(next))
     },
+    routes: () => ({}),
+    saveRoutes: async () => {},
     available: () => true,
     seal: (value: string) => cipher.encryptString(value).toString('base64'),
     open: (value: string) => cipher.decryptString(Buffer.from(value, 'base64')),

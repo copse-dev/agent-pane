@@ -64,6 +64,7 @@ export function describeSshMachine(
 export function describePairedMachine(machine: PairedMachine): MachineSummary {
   const count = machine.models.length
   const capabilities = [count === 1 ? '1 shared model' : `${String(count)} shared models`]
+  if (machine.viaSsh) capabilities.push(`Over SSH through ${machine.viaSsh.label}`)
   switch (machine.status) {
     case 'connected':
       return { status: 'Connected', tone: 'ok', capabilities }
