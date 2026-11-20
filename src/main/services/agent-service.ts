@@ -186,7 +186,7 @@ import {
   buildAgentReportHistory,
   customAgentInvocationTask,
 } from './agents/custom-agent-strategy.ts'
-import { setCurrentShellTaskId } from './exec/shell-output-context.ts'
+import { runWithShellTaskId } from './exec/shell-output-context.ts'
 import {
   isPhasedCommandCall,
   queuedCommandPhase,
@@ -1320,7 +1320,7 @@ async function runAgentWithInlineCanvas(
     const acpHookCardSink = (card: HookCard): void => {
       sendChunk({ type: 'hook_run', card })
     }
-    setHookRunLiveSink(acpHookCardSink)
+    setHookRunLiveSink(acpHookCardSink, threadId)
     // Both deadlines discount host-side waits on the ACP branch (#2332). The
     // sliding idle clock already did; the wall-clock cap did not, so an hour of
     // a turn spent sitting on approval modals — this branch raises one per
@@ -1882,7 +1882,7 @@ async function runAgentWithInlineCanvas(
   const hookCardSink = (card: HookCard): void => {
     sendChunk({ type: 'hook_run', card })
   }
-  setHookRunLiveSink(hookCardSink)
+  setHookRunLiveSink(hookCardSink, threadId)
   // Host-side blocking waits use the deadline's dedicated host-wait pause, so
   // approvals and ask_user do not spend the hard cap while ordinary model
   // streaming and tool execution remain bounded by it.
@@ -2675,12 +2675,9 @@ async function runAgentWithInlineCanvas(
                 if (name !== 'run_shell') return registry.executeNormalized(name, args, signal)
                 // Tag the command's streamed output with this tool-call id so the
                 // terminal pane can route it into the matching "Agent tasks" card.
-                setCurrentShellTaskId(toolCallId)
-                try {
-                  return await registry.executeNormalized(name, args, signal)
-                } finally {
-                  setCurrentShellTaskId(null)
-                }
+                return runWithShellTaskId(toolCallId, () =>
+                  registry.executeNormalized(name, args, signal),
+                )
               },
               (outcome) =>
                 'value' in outcome

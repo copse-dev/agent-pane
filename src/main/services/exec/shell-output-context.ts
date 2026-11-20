@@ -5,14 +5,17 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 // of *which* run_shell call produced it. The terminal pane's "Agent tasks" view
 // needs that attribution so each command's output lands in its own card.
 //
-// run_shell calls execute sequentially within a single agent loop, so a single
-// module-level "current task" id is enough: agent-service sets it around each
-// run_shell execution and clears it afterwards, and the shell tool stamps the id
-// onto every chunk it emits while it is set.
-let currentShellTaskId: string | null = null
+// Several agent turns run at once on different threads, each with its own
+// run_shell call in flight, so the id is bound to the call's async scope rather
+// than held in one module-level slot: a shared slot stamped one thread's output
+// with the other's tool-call id, and the first call to finish cleared the id
+// for the one still running. The child's stream callbacks are registered inside
+// the scope and so keep it.
+const shellTaskIdStorage = new AsyncLocalStorage<string>()
 
-export function setCurrentShellTaskId(id: string | null): void {
-  currentShellTaskId = id
+/** Run one run_shell execution with its output attributed to `id`. */
+export function runWithShellTaskId<T>(id: string, fn: () => T): T {
+  return shellTaskIdStorage.run(id, fn)
 }
 
 /**
@@ -63,7 +66,7 @@ export function currentShellRunObserver(): ShellRunObserver | undefined {
 
 /** Mirror a chunk to the UI only. The process runner feeds its observer raw bytes itself. */
 export function mirrorShellOutput(chunk: string): void {
-  shellOutputSink?.(chunk, currentShellTaskId)
+  shellOutputSink?.(chunk, shellTaskIdStorage.getStore() ?? null)
 }
 
 /** Mirror a chunk of shell output to the UI and the current call's observer. */

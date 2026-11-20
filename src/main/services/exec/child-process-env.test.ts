@@ -58,6 +58,30 @@ describe('envForRendererChildProcess', () => {
     assert.equal(env['AWS_ACCESS_KEY_ID'], 'aws')
   })
 
+  it('strips both web-search provider keys', () => {
+    const env = envForRendererChildProcess({
+      PATH: '/usr/bin',
+      TAVILY_API_KEY: 'tvly-secret',
+      PARALLEL_API_KEY: 'parallel-secret',
+    })
+    assert.deepEqual(env, { PATH: '/usr/bin' })
+  })
+
+  // Windows env names are case-insensitive: `Lm_Api_Token` is the same variable
+  // the app reads as `LM_API_TOKEN`. The provider pattern already ignores case;
+  // the explicit list (names no pattern covers) must as well.
+  it('matches the explicit secret names without regard to case', () => {
+    const env = envForRendererChildProcess({
+      Path: 'C:\\Windows',
+      Lm_Api_Token: 'lm-token',
+      openai_api_base: 'https://proxy.example/v1',
+      Hf_Token: 'hf-secret',
+      tavily_api_key: 'tvly-secret',
+      Github_Token: 'gh',
+    })
+    assert.deepEqual(env, { Path: 'C:\\Windows', Github_Token: 'gh' })
+  })
+
   // Regression for #579: the strip must be applied to the *base* env, never as an
   // overlay. A stripped env spread on top of a full one does NOT remove a secret key —
   // the base value survives. This is exactly how the sandboxed/PTY spawn paths in
