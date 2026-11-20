@@ -84,79 +84,87 @@ const previewCaptures = new WeakMap<PreviewContents, Promise<string | null>>()
 /** The parts of an agent tab's `WebContents` that a screenshot needs. */
 export interface TabFrameContents<Image extends { isEmpty(): boolean }> {
   capturePage(): Promise<Image>
-  isLoading(): boolean
   /** Offscreen tabs only paint when damaged; this asks for a fresh frame. */
   invalidate(): void
-  once(event: 'paint' | 'did-stop-loading', listener: () => void): unknown
-  removeListener(event: 'paint' | 'did-stop-loading', listener: () => void): unknown
+  /** An offscreen tab's `paint` event carries the whole frame as an image. */
+  once(event: 'paint', listener: (event: unknown, dirty: unknown, image: Image) => void): unknown
+  removeListener(
+    event: 'paint',
+    listener: (event: unknown, dirty: unknown, image: Image) => void,
+  ): unknown
   isDestroyed(): boolean
 }
 
-/** Copies of a frame that are attempted before the screenshot fails. */
-const TAB_FRAME_ATTEMPTS = 3
-/** How long a capture waits for a navigating tab to finish loading. */
-const TAB_LOAD_WAIT_MS = 5000
-/** How long to wait for a fresh frame between attempts. */
-const TAB_FRAME_WAIT_MS = 1000
+/** How long a screenshot keeps recovering after its first copy fails. */
+const TAB_FRAME_RECOVERY_MS = 2000
+/** How long one recovery round waits for the tab's next painted frame. */
+const TAB_FRAME_PAINT_WAIT_MS = 500
 
-/** Resolve once `event` fires, or after `timeoutMs` without it. */
-function onceWithin(
-  contents: TabFrameContents<{ isEmpty(): boolean }>,
-  event: 'paint' | 'did-stop-loading',
+/** Copy the tab's frame once, returning the failure instead of throwing it. */
+async function copyTabFrame<Image extends { isEmpty(): boolean }>(
+  contents: TabFrameContents<Image>,
+  tabId: string,
+): Promise<Image | Error> {
+  try {
+    const image = await contents.capturePage()
+    return image.isEmpty() ? new Error(`browser screenshot of ${tabId} was empty`) : image
+  } catch (error) {
+    return error instanceof Error ? error : new Error(errorMessage(error))
+  }
+}
+
+/** Ask for a fresh frame and resolve with the image it paints, or null on timeout. */
+function nextPaintedImage<Image extends { isEmpty(): boolean }>(
+  contents: TabFrameContents<Image>,
   timeoutMs: number,
-  trigger?: () => void,
-): Promise<void> {
+): Promise<Image | null> {
   return new Promise((resolve) => {
-    const done = (): void => {
+    const painted = (_event: unknown, _dirty: unknown, image: Image): void => {
       clearTimeout(timer)
-      contents.removeListener(event, done)
-      resolve()
+      resolve(image)
     }
-    const timer = setTimeout(done, timeoutMs)
-    contents.once(event, done)
-    trigger?.()
+    const timer = setTimeout(() => {
+      contents.removeListener('paint', painted)
+      resolve(null)
+    }, timeoutMs)
+    contents.once('paint', painted)
+    contents.invalidate()
   })
 }
 
-/** Wait, bounded, for a tab that is still loading a navigation to finish. */
-async function settledLoad(contents: TabFrameContents<{ isEmpty(): boolean }>): Promise<void> {
-  if (contents.isLoading()) await onceWithin(contents, 'did-stop-loading', TAB_LOAD_WAIT_MS)
-}
-
 /**
- * Copy an agent tab's current frame. While a navigation or reload is still
- * loading, its compositor surface is being swapped and Chromium can fail the
- * copy: `capturePage()` rejects with `UnknownVizError`, or yields an empty
- * image (#4425). Every such failure seen locally happened while the tab was
- * still loading, and a copy succeeded 27–50 ms later. So wait for a loading tab
- * to finish first, and if a copy still fails, wait for the load and a freshly
- * painted frame before copying again. Every wait is bounded and the last
- * failure is still reported, so a page that never settles fails as before.
+ * Copy an agent tab's current frame. Right after a navigation or reload,
+ * Chromium can fail the copy while the page's compositor surface is swapped:
+ * `capturePage()` rejects with `UnknownVizError` or yields an empty image
+ * (#4425). Waiting does not help reliably (a copy right after the load
+ * finishes fails most often), but an offscreen tab still paints, and its
+ * `paint` event carries the whole frame. So after a failed copy, for a bounded
+ * time, ask for a fresh frame and take the painted image, or copy again if the
+ * paint was empty. The last failure is still reported if nothing succeeds.
  */
 export async function captureTabFrame<Image extends { isEmpty(): boolean }>(
   contents: TabFrameContents<Image>,
   tabId: string,
 ): Promise<Image> {
-  let failure: Error
-  await settledLoad(contents)
-  for (let attempt = 1; ; attempt++) {
-    try {
-      const image = await contents.capturePage()
-      if (!image.isEmpty()) return image
-      failure = new Error(`browser screenshot of ${tabId} was empty`)
-    } catch (error) {
-      failure = error instanceof Error ? error : new Error(errorMessage(error))
-    }
-    if (attempt >= TAB_FRAME_ATTEMPTS || contents.isDestroyed()) throw failure
-    console.warn(
-      `[copse-panel] browser screenshot of ${tabId} failed on copy ${String(attempt)}; retrying after a fresh frame:`,
-      failure.message,
+  const first = await copyTabFrame(contents, tabId)
+  if (!(first instanceof Error)) return first
+  let failure = first
+  console.warn(
+    `[copse-panel] browser screenshot of ${tabId} could not copy the frame; recovering from a fresh paint:`,
+    failure.message,
+  )
+  const deadline = Date.now() + TAB_FRAME_RECOVERY_MS
+  while (Date.now() < deadline && !contents.isDestroyed()) {
+    const painted = await nextPaintedImage(
+      contents,
+      Math.min(TAB_FRAME_PAINT_WAIT_MS, deadline - Date.now()),
     )
-    await settledLoad(contents)
-    await onceWithin(contents, 'paint', TAB_FRAME_WAIT_MS, () => {
-      contents.invalidate()
-    })
+    if (painted && !painted.isEmpty()) return painted
+    const copied = await copyTabFrame(contents, tabId)
+    if (!(copied instanceof Error)) return copied
+    failure = copied
   }
+  throw failure
 }
 
 /**
