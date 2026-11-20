@@ -83,8 +83,8 @@ export function machineSummaryElement(summary: MachineSummary): HTMLElement {
     el('span', { class: `machine-summary-status machine-summary-${summary.tone}` }, summary.status),
     el(
       'ul',
-      { class: 'machine-capabilities', 'aria-label': 'Can be used for' },
-      ...summary.capabilities.map((label) => el('li', { class: 'machine-capability' }, label)),
+      { class: 'machine-uses', 'aria-label': 'Can be used for' },
+      ...summary.capabilities.map((label) => el('li', { class: 'machine-use' }, label)),
     ),
   )
 }

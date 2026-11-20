@@ -265,7 +265,7 @@ describe('createSshWorkspaceSection in the shared Machines list', () => {
     assert.ok(row)
     assert.equal(row.querySelector('.machine-summary-status')?.textContent, 'Not connected')
     assert.deepEqual(
-      [...row.querySelectorAll('.machine-capability')].map((item) => item.textContent),
+      [...row.querySelectorAll('.machine-use')].map((item) => item.textContent),
       ['Files and shell'],
     )
     // Every action the row had before is still on it.
