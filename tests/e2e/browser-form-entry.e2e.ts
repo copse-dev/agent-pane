@@ -113,9 +113,23 @@ describe('native browser form entry', () => {
       ],
     )
     await submitComposer()
-    await expectAssistantReply('The release draft was saved once and verified after reload.')
-    await waitForAgentIdle(15_000)
-    await scenario.assertComplete()
+    try {
+      await expectAssistantReply('The release draft was saved once and verified after reload.')
+      await waitForAgentIdle(15_000)
+      await scenario.assertComplete()
+    } catch (error) {
+      // Diagnostic for #4425: name the scripted step the turn stopped at. Printed
+      // because the job log is the only output readable from every runner.
+      const status = await scenario
+        .status()
+        .then((value) => JSON.stringify(value))
+        .catch(
+          (cause: unknown) =>
+            `unavailable: ${cause instanceof Error ? cause.message : String(cause)}`,
+        )
+      console.log(`[browser-form-entry] grouped=${String(grouped)} mock scenario status: ${status}`)
+      throw error
+    }
     // Tool results are checked at the model boundary above; the native tool
     // cards independently establish the actual number of registered calls.
     const typed = await browser.execute(
