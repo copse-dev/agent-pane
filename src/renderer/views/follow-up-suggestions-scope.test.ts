@@ -209,4 +209,49 @@ describe('follow-up suggestions thread scope', () => {
     assert.ok(mount.root.querySelector('.follow-up-bubble[data-id="run-tests"]'))
     mount.destroy()
   })
+
+  it('fetches again for a background thread whose run adds no message', async () => {
+    const store = createStore()
+    store.setState({ activeProjectId: 'project-1' })
+    const background = createThread(store)
+    addMessage(store, background, 'user', 'fix the parser')
+    addMessage(store, background, 'assistant', 'Fixed it.')
+    const active = createThread(store)
+    assert.equal(store.getState().activeThreadId, active)
+    const pending: Array<(suggestions: FollowUpSuggestion[]) => void> = []
+    const base = createFakeApi()
+    const api: ApiClient = {
+      ...base,
+      agent: {
+        ...base.agent,
+        suggestFollowUps: () =>
+          new Promise<FollowUpSuggestion[]>((resolve) => {
+            pending.push(resolve)
+          }),
+      },
+    }
+    const mount = mountFollowUpSuggestions(store, api, () => {})
+    document.body.append(mount.root)
+    store.emit('thread_status_changed', background, 'idle')
+    await flush()
+    assert.equal(pending.length, 1)
+
+    // The same no-message run, on a thread that is not on screen: the set
+    // fetched before the run must not stand for the one after it.
+    setThreadStatus(store, background, 'running')
+    await flush()
+    setThreadStatus(store, background, 'idle')
+    await flush()
+    assert.equal(pending.length, 2)
+
+    pending[0]?.([{ id: 'before-the-run', label: 'Before the run' }])
+    pending[1]?.([SUGGESTION])
+    await flush()
+    store.setState({ activeThreadId: background })
+    store.emit('threads_changed')
+    await flush()
+    assert.ok(mount.root.querySelector('.follow-up-bubble[data-id="run-tests"]'))
+    assert.equal(mount.root.querySelector('.follow-up-bubble[data-id="before-the-run"]'), null)
+    mount.destroy()
+  })
 })
