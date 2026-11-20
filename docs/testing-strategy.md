@@ -751,6 +751,13 @@ cut from.
 | Push to `release` (a promotion landed)    | **full**                                       |
 | Nightly `schedule`, release tags          | **full**, on GitHub-hosted runners             |
 
+In every tier above, the unit suite runs on Linux. The advisory
+[`macos-unit.yml`](../.github/workflows/macos-unit.yml) workflow also runs it on a hosted `macos-26`
+runner, so the `darwin`-gated unit tests run somewhere: nightly, on manual dispatch, and on PRs that
+touch the paths its filter lists. It is not part of `CI Passed`.
+[`host-environment-test-noise.md`](host-environment-test-noise.md) says how it treats the known
+macOS host differences.
+
 The semantic and agent benchmark tier is paid once per _promotion_ rather than
 once per PR. Full e2e is also repeated at promotion, but it first runs on any PR
 whose change cannot be bounded safely to a subset.
