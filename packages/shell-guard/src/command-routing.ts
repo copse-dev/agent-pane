@@ -123,7 +123,11 @@ const TRANSPARENT_PREFIXES = TRUST_TRANSPARENT_WRAPPERS
  * gate", never an unsafe auto-run.
  */
 function hasGroupingOrSubstitution(command: string): boolean {
-  return /[`(]/.test(command)
+  // `$'…'` is refused with them: bash and zsh end it at the first unescaped
+  // quote, a POSIX `sh` at the first quote of any kind, so the segment split
+  // below cannot know where it closes. Read the POSIX way,
+  // `trusted $'\'' ; curl … #'` is one trusted segment; bash runs the `curl`.
+  return /[`(]|\$'/.test(command)
 }
 
 /**

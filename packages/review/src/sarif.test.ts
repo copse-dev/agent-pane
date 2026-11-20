@@ -78,6 +78,13 @@ describe('toSarif', () => {
     assert.ok(run)
     assert.equal(run.tool.driver.rules.length, FINDING_CLASSES.length)
     assert.equal(run.originalUriBaseIds?.SRCROOT.uri, 'file:///repo/')
+    const spaced = sarifShape.parse(
+      toSarif([], { toolVersion: '0.1.0', repositoryRoot: '/Users/me/My Project #2/' }),
+    )
+    assert.equal(
+      spaced.runs[0]?.originalUriBaseIds?.SRCROOT.uri,
+      'file:///Users/me/My%20Project%20%232/',
+    )
     const [first, second] = run.results
     assert.ok(first && second)
     assert.equal(first.ruleId, 'contract')

@@ -1297,4 +1297,29 @@ describe('Guarded YOLO shell harm gate — shapes the public test set found', ()
   it('asks before rewriting history with git filter-repo', () => {
     assert.equal(action('git filter-repo --path secrets.txt --invert-paths'), 'prompt')
   })
+
+  it('refuses a credential read through a redirect with no space around it', () => {
+    // The raw fallback kept `cat<~/.ssh/id_rsa` as one word, a command named
+    // `id_rsa`, whose "not a plain read" blocker suppressed the refusal.
+    for (const command of ['cat<~/.ssh/id_rsa', 'cat</etc/shadow', 'cat <~/.ssh/id_rsa']) {
+      assert.equal(action(command), 'deny', command)
+    }
+  })
+
+  it('asks when an input redirect names a credential store', () => {
+    for (const command of [
+      'base64 < ~/.ssh/id_rsa',
+      'while read line; do echo "$line"; done < ~/.ssh/id_rsa',
+      'python3 - < ~/.aws/credentials',
+    ]) {
+      assert.equal(action(command), 'prompt', command)
+    }
+    assert.equal(action('wc -l < src/a.ts'), 'allow')
+    assert.equal(action('ssh-add - < ~/.ssh/id_ed25519'), 'allow')
+  })
+
+  it('sees a redirect on a line after one that ends in a comment', () => {
+    assert.equal(action('echo start # note\necho "" > /etc/passwd'), 'deny')
+    assert.equal(action('ls # note\necho x >> ~/.bashrc'), 'prompt')
+  })
 })

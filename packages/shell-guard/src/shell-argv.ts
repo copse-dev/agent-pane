@@ -261,7 +261,7 @@ function isReadOnlyArgv(argv: readonly string[]): boolean {
   if (name === 'git') return isReadOnlyGitCommand(argv)
   if (name === 'sed') return isReadOnlySedCommand(argv)
   if (!READ_ONLY_SHELL_BASENAMES.has(name)) return false
-  return !argv.slice(1).some((arg) => isEscapeHatchFlag(name, arg))
+  return !readOnlyCommandWritesOrExecutes(name, argv.slice(1))
 }
 
 /**
@@ -509,7 +509,15 @@ function isEscapeHatchFlag(command: string, arg: string): boolean {
   if (!hatches) return false
   if (arg.startsWith('--')) {
     const equals = arg.indexOf('=')
-    return hatches.long.has(equals === -1 ? arg : arg.slice(0, equals))
+    const name = equals === -1 ? arg : arg.slice(0, equals)
+    if (name.length <= 2) return false
+    // GNU `getopt_long` accepts any unambiguous prefix, so `sort --compress-prog=x`
+    // and `sort --out=f` are the launcher and the writer. No real option of these
+    // tools is itself a prefix of one of their hatches, so every prefix counts.
+    for (const flag of hatches.long) {
+      if (flag.startsWith(name)) return true
+    }
+    return false
   }
   // A short flag may arrive bundled (`sort -uo out.txt`), so look at every
   // character rather than comparing the token whole. A bare `-` is stdin.
@@ -518,6 +526,46 @@ function isEscapeHatchFlag(command: string, arg: string): boolean {
     if (hatches.short.includes(arg.charAt(index))) return true
   }
   return false
+}
+
+/** `uniq` options whose value is a separate word, so it is not an operand. */
+const UNIQ_VALUE_FLAGS: ReadonlySet<string> = new Set([
+  '-f',
+  '-s',
+  '-w',
+  '--skip-fields',
+  '--skip-chars',
+  '--check-chars',
+])
+
+/** `uniq INPUT OUTPUT`: a second operand names a file `uniq` overwrites. */
+function uniqNamesOutputFile(args: readonly string[]): boolean {
+  let operands = 0
+  let optionsEnded = false
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index] ?? ''
+    if (!optionsEnded && arg === '--') {
+      optionsEnded = true
+      continue
+    }
+    if (!optionsEnded && arg.startsWith('-') && arg !== '-') {
+      if (UNIQ_VALUE_FLAGS.has(arg)) index += 1
+      continue
+    }
+    operands += 1
+  }
+  return operands > 1
+}
+
+/**
+ * Whether the arguments turn one of {@link READ_ONLY_SHELL_BASENAMES} into a
+ * writer or a launcher: an escape-hatch flag above, or `uniq`'s output operand.
+ * Exported so the outside-project read proof refuses exactly what the read tier
+ * refuses instead of keeping a second, narrower flag list.
+ */
+export function readOnlyCommandWritesOrExecutes(name: string, args: readonly string[]): boolean {
+  if (name === 'uniq' && uniqNamesOutputFile(args)) return true
+  return args.some((arg) => isEscapeHatchFlag(name, arg))
 }
 
 function isReadOnlyGitCommand(argv: readonly string[]): boolean {
@@ -666,30 +714,40 @@ export function inlineCodeBody(argv: readonly string[]): string | null {
  * three escapes and yields `C:workproject`, which erases exactly the paths a
  * Windows harm check needs to see.
  */
-function rawTokens(segment: string): string[] {
-  return (segment.match(/"[^"]*"|'[^']*'|\S+/g) ?? []).map((token) => {
-    const first = token[0]
-    const last = token[token.length - 1]
-    return (first === '"' && last === '"') || (first === "'" && last === "'")
-      ? token.slice(1, -1)
-      : token
-  })
-}
+const RAW_TOKEN = /"[^"]*"|'[^']*'|\S+/g
 
-const RAW_REDIRECT_PREFIX = /^(?:\d*(?:<<<|<<|<&|<>|<|>>|>&|>\||>)|&>>?)(.*)$/
+const RAW_REDIRECT_OPERATOR = String.raw`<<<|<<|<&|<>|<|>>|>&|>\||>|&>>?`
+const RAW_REDIRECT_PREFIX = new RegExp(String.raw`^(?:\d*(?:${RAW_REDIRECT_OPERATOR}))(.*)$`)
+/**
+ * A redirect glued to the word before it (`cat<file`, `cmd>out`). The word may
+ * hold no quote or escape, so an operator character inside quoted text stays data.
+ */
+const RAW_GLUED_REDIRECT = new RegExp(String.raw`^([^\s<>&'"\\]+)(?:${RAW_REDIRECT_OPERATOR})(.*)$`)
 
 /**
- * Remove redirect syntax from the Windows-preserving fallback argv. The raw
- * separator split may isolate an attached redirect after an escaped terminator
- * (`find … \\; 2>/dev/null`), but the destination is still data, not a command.
- * Actual write targets remain visible to {@link shellRedirects}.
+ * Quote-aware fallback argv for one already-separated shell segment. This keeps
+ * Windows separators and unknown variable spellings while dropping redirects:
+ * the raw separator split may isolate an attached redirect after an escaped
+ * terminator (`find … \\; 2>/dev/null`), but the destination is still data, not
+ * a command. Actual write targets remain visible to {@link shellRedirects}.
+ *
+ * A redirect needs no space on either side. Left whole, `cat<~/.ssh/id_rsa` was a
+ * one-word command named `id_rsa`, and that phantom head's "not a plain read"
+ * blocker laundered the credential read past the hard deny.
  */
-function withoutRawRedirects(argv: string[]): string[] {
+export function rawShellArgv(segment: string): string[] {
   const command: string[] = []
   let awaitingTarget = false
-  for (const token of argv) {
+  for (const token of segment.match(RAW_TOKEN) ?? []) {
+    const first = token.charAt(0)
+    const quoted = token.length >= 2 && (first === '"' || first === "'") && token.endsWith(first)
     if (awaitingTarget) {
       awaitingTarget = false
+      continue
+    }
+    // A wholly quoted word is an operand even when it spells an operator (`">"`).
+    if (quoted) {
+      command.push(token.slice(1, -1))
       continue
     }
     const redirect = RAW_REDIRECT_PREFIX.exec(token)
@@ -697,17 +755,15 @@ function withoutRawRedirects(argv: string[]): string[] {
       awaitingTarget = redirect[1] === ''
       continue
     }
+    const glued = RAW_GLUED_REDIRECT.exec(token)
+    if (glued) {
+      command.push(glued[1] ?? '')
+      awaitingTarget = glued[2] === ''
+      continue
+    }
     command.push(token)
   }
   return command
-}
-
-/**
- * Quote-aware fallback argv for one already-separated shell segment. This keeps
- * Windows separators and unknown variable spellings while dropping redirects.
- */
-export function rawShellArgv(segment: string): string[] {
-  return withoutRawRedirects(rawTokens(segment))
 }
 
 /**
@@ -717,7 +773,7 @@ export function rawShellArgv(segment: string): string[] {
  * - `shell-quote`, which gets POSIX quoting, operators, and assignments right
  *   but eats Windows separators and (without the glob handling below) drops
  *   globbed operands entirely;
- * - {@link rawTokens} over a separator split, which is quote-aware but not
+ * - {@link rawShellArgv} over a separator split, which is quote-aware but not
  *   operator-aware, and preserves both.
  *
  * Neither is complete, so callers see both. A consumer may therefore inspect the
@@ -738,6 +794,8 @@ const WRITE_REDIRECTS: ReadonlyMap<string, boolean> = new Map([
   ['>&', true],
   ['>>', false],
   ['&>>', false],
+  // `<>` opens its target read-write (creating it): `cmd 1<> file` writes there.
+  ['<>', false],
 ])
 
 /** A `>&` target that names a descriptor (or closes one) rather than a file. */
@@ -846,6 +904,51 @@ function splitShellCommandLines(command: string): string[] {
   }
   lines.push(command.slice(start))
   return lines
+}
+
+/**
+ * `shell-quote` tokens for a whole command, lexed one line at a time with a `;`
+ * between lines. Lexing the text whole lets a `#` comment swallow every later
+ * line (`ls # note\necho x > ~/.bashrc` showed no redirect at all) and reads a
+ * following line's command as more arguments of the previous one.
+ */
+export function parseShellCommandLines(command: string): ReturnType<typeof parseShellCommand> {
+  const tokens: ReturnType<typeof parseShellCommand> = []
+  for (const line of splitShellCommandLines(command)) {
+    if (tokens.length > 0) tokens.push({ op: ';' })
+    tokens.push(...parseShellCommand(withoutLineContinuations(line)))
+  }
+  return tokens
+}
+
+/**
+ * Remove backslash-newline pairs the way the shell does (everywhere but inside
+ * single quotes). `shell-quote` reads one as an empty word, so the target of
+ * `cmd > \⏎ /etc/passwd` came back as `''` and the real file went unseen.
+ */
+function withoutLineContinuations(line: string): string {
+  if (!line.includes('\\\n')) return line
+  let out = ''
+  let inSingle = false
+  let inDouble = false
+  for (let index = 0; index < line.length; index++) {
+    const char = line.charAt(index)
+    if (inSingle) {
+      if (char === "'") inSingle = false
+      out += char
+      continue
+    }
+    if (char === '\\') {
+      const next = line.charAt(index + 1)
+      if (next !== '\n') out += char + next
+      index++
+      continue
+    }
+    if (char === '"') inDouble = !inDouble
+    else if (char === "'" && !inDouble) inSingle = true
+    out += char
+  }
+  return out
 }
 
 export function shellSegments(command: string, includeRawFallback = true): string[][] {
@@ -1040,7 +1143,7 @@ export function hasShellInputRedirect(command: string): boolean {
 export function shellRedirects(command: string): ShellRedirect[] {
   let tokens: ReturnType<typeof parseShellCommand>
   try {
-    tokens = parseShellCommand(command)
+    tokens = parseShellCommandLines(command)
   } catch {
     return []
   }
@@ -1075,7 +1178,7 @@ export function shellRedirects(command: string): ShellRedirect[] {
 export function shellInputRedirects(command: string): string[] {
   let tokens: ReturnType<typeof parseShellCommand>
   try {
-    tokens = parseShellCommand(command)
+    tokens = parseShellCommandLines(command)
   } catch {
     return []
   }

@@ -16,6 +16,7 @@ import {
   inlineCodeBody,
   printfAssignsShellVariable,
   rawShellArgv,
+  shellInputRedirects,
   shellRedirects,
   shellSegments,
   unwrapWrappers,
@@ -2040,7 +2041,14 @@ function inspectCommandLine(
   const sourceSegments = scanShellComposition(expanded)?.segments ?? [expanded]
   for (const sourceSegment of sourceSegments) {
     const rawArgv = rawShellArgv(sourceSegment)
-    inspectDynamicCommandHead(rawArgv, unwrapWrappers(rawArgv), out)
+    const argv = unwrapWrappers(rawArgv)
+    inspectDynamicCommandHead(rawArgv, argv, out)
+    // `base64 < ~/.ssh/id_rsa` names the store exactly as `base64 ~/.ssh/id_rsa`
+    // does, but a redirect target is the shell's operand and is in no argv.
+    const inputs = shellInputRedirects(sourceSegment)
+    if (inputs.length > 0) {
+      inspectCredentialStoreOperands([argv[0] ?? '', ...inputs], context, out)
+    }
   }
   const parsedHeads = new Set(
     shellSegments(expanded, false)
