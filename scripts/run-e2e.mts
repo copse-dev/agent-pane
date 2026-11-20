@@ -2,6 +2,13 @@ import { hydrateScreenshots } from './lib/screenshot-hydration.mts'
 import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 import { shouldUseLinuxVirtualDisplay } from '../tests/e2e/helpers/display-mode.mts'
+import {
+  E2E_ATTEMPT_DIRECTORY_ENV,
+  managedAttemptDirectory,
+  startAttemptArtifacts,
+  recordLaunchResult,
+  sealAttemptArtifacts,
+} from './lib/e2e-attempt-diagnostics.mts'
 
 const [, , configFile, ...args] = process.argv
 if (!configFile) throw new Error('Usage: run-e2e.mts <wdio-config> [...wdio args]')
@@ -32,12 +39,24 @@ const commandArgs = needsVirtualDisplay
 
 await hydrateScreenshots()
 
+const inheritedDiagnostics = managedAttemptDirectory(process.env[E2E_ATTEMPT_DIRECTORY_ENV])
+const diagnostics = inheritedDiagnostics ?? startAttemptArtifacts(process.env['COPSE_E2E_ATTEMPT'])
+
 const result = spawnSync(command, commandArgs, {
   cwd: process.cwd(),
-  env: process.env,
+  env: {
+    ...process.env,
+    ...(diagnostics ? { [E2E_ATTEMPT_DIRECTORY_ENV]: diagnostics } : {}),
+  },
   shell: process.platform === 'win32',
   stdio: 'inherit',
 })
+
+if (diagnostics) {
+  recordLaunchResult(diagnostics, needsVirtualDisplay ? 'xvfb-run' : 'wdio', result)
+  // CI seals after its outer timeout/pipeline returns, including partial runner death.
+  if (!inheritedDiagnostics) await sealAttemptArtifacts(diagnostics)
+}
 
 if (result.error) throw result.error
 if (result.signal) {
