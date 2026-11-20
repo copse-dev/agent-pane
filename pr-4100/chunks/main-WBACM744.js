@@ -88255,10 +88255,11 @@ async function acceptThreadPrompt(store2, api2, command2) {
     if (!current || current.archivedAt !== void 0 || Date.now() >= command2.expiresAt)
       return { ok: false, error: "The destination conversation is unavailable." };
     const peerTurnTreeId = command2.authorizingAccess ? void 0 : command2.sourceTurnTreeId;
+    const peerScope = command2.authorizingAccess ? void 0 : command2.crossThreadScope;
     const origin = {
       kind: "machine",
       operationId: `${command2.authorizingAccess ? "subthread" : "thread"}:${command2.sourceThreadId}`,
-      ...peerTurnTreeId === void 0 ? {} : { crossThreadScope: JSON.stringify([command2.sourceThreadId, peerTurnTreeId]) }
+      ...peerScope === void 0 ? {} : { crossThreadScope: peerScope }
     };
     if (current.currentEpoch === void 0 && peerTurnTreeId !== void 0)
       patchThreadAnywhere(store2, threadId, (thread) => ({
