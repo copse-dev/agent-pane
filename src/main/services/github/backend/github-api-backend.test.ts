@@ -13,7 +13,8 @@ interface RouteResult {
 
 type Router = (method: string, url: string, body: unknown) => RouteResult
 
-const calls: Array<{ method: string; url: string; body: unknown }> = []
+const calls: Array<{ method: string; url: string; body: unknown; authorization: string | null }> =
+  []
 let router: Router = (): RouteResult => ({ body: {} })
 const originalFetch = globalThis.fetch
 
@@ -28,7 +29,8 @@ function installFetch(): void {
     const url = urlOf(input)
     const method = init?.method ?? 'GET'
     const body: unknown = typeof init?.body === 'string' ? (JSON.parse(init.body) as unknown) : null
-    calls.push({ method, url, body })
+    const authorization = new Headers(init?.headers).get('authorization')
+    calls.push({ method, url, body, authorization })
     const { status = 200, body: responseBody } = router(method, url, body)
     return Promise.resolve(new Response(JSON.stringify(responseBody), { status }))
   }
@@ -63,6 +65,45 @@ describe('githubApiBackend', () => {
     assert.equal(status.username, 'octo')
     assert.equal(calls.length, 1)
     assert.match(calls[0]?.url ?? '', /\/user$/)
+  })
+
+  describe('with an Enterprise GH_HOST', () => {
+    const saved: Record<string, string | undefined> = {}
+    const KEYS = ['GH_HOST', 'GH_TOKEN', 'GH_ENTERPRISE_TOKEN'] as const
+
+    beforeEach(() => {
+      for (const key of KEYS) saved[key] = process.env[key]
+      process.env['GH_HOST'] = 'ghe.example.com'
+      process.env['GH_TOKEN'] = 'dotcom-token'
+      process.env['GH_ENTERPRISE_TOKEN'] = 'enterprise-token'
+    })
+
+    afterEach(() => {
+      for (const key of KEYS) {
+        const value = saved[key]
+        if (value === undefined) Reflect.deleteProperty(process.env, key)
+        else process.env[key] = value
+      }
+    })
+
+    it('sends REST and GraphQL requests there with its token, never the github.com one', async () => {
+      router = (_method, url): RouteResult =>
+        url.endsWith('/graphql')
+          ? { body: { data: { viewer: { pullRequests: { nodes: [] } } } } }
+          : { body: { login: 'octo' } }
+      await githubApiBackend.getStatus(null)
+      await githubApiBackend.listMyOpenPrs(null, 10)
+      assert.deepEqual(
+        calls.map(({ url, authorization }) => ({ url, authorization })),
+        [
+          { url: 'https://ghe.example.com/api/v3/user', authorization: 'Bearer enterprise-token' },
+          {
+            url: 'https://ghe.example.com/api/graphql',
+            authorization: 'Bearer enterprise-token',
+          },
+        ],
+      )
+    })
   })
 
   it('createPr POSTs the branches and returns the new PR coordinates', async () => {

@@ -32,7 +32,7 @@ import type {
   PrCreateResult,
 } from '@shared/types/git.ts'
 import type { GitHubBackend, PrCreateInput, PrRef } from './backend.ts'
-import { resolveGitHubApiToken } from './github-token.ts'
+import { githubApiHost, resolveGitHubApiToken } from './github-token.ts'
 import { PR_ACTIVITY_QUERY, parsePrActivity, unavailablePrActivity } from './pr-activity.ts'
 import {
   chooseAutoMergeStrategy,
@@ -52,9 +52,9 @@ import {
 } from '../pr-file-content.ts'
 import { isDefined, isNonNull } from '@shared/nullish.ts'
 
-/** REST + GraphQL base URLs, honoring GH_HOST for GitHub Enterprise. */
-function apiRoots(host = process.env['GH_HOST']?.trim()): { rest: string; graphql: string } {
-  if (!host || host === 'github.com') {
+/** REST + GraphQL base URLs for `host`: github.com, or a GitHub Enterprise `GH_HOST`. */
+function apiRoots(host: string): { rest: string; graphql: string } {
+  if (host === 'github.com') {
     return { rest: 'https://api.github.com', graphql: 'https://api.github.com/graphql' }
   }
   return { rest: `https://${host}/api/v3`, graphql: `https://${host}/api/graphql` }
@@ -69,9 +69,12 @@ interface RestResponse {
 
 const NO_TOKEN_MESSAGE = 'No GitHub token available. Set GITHUB_TOKEN or run `gh auth login`.'
 
-/** Auth headers, or null when no token is available (callers degrade, never throw). */
-async function authHeaders(): Promise<Record<string, string> | null> {
-  const token = await resolveGitHubApiToken()
+/**
+ * Auth headers carrying the token for `host`, the host the request goes to, or
+ * null when there is none (callers degrade, never throw).
+ */
+async function authHeaders(host: string): Promise<Record<string, string> | null> {
+  const token = await resolveGitHubApiToken(host)
   if (!token) return null
   return {
     Authorization: `Bearer ${token}`,
@@ -85,10 +88,11 @@ async function rest(
   path: string,
   init: { method?: string; body?: unknown; immutable?: boolean } = {},
 ): Promise<RestResponse> {
-  const headers = await authHeaders()
+  const host = githubApiHost()
+  const headers = await authHeaders(host)
   if (!headers) return { ok: false, status: 401, json: null, errorMessage: NO_TOKEN_MESSAGE }
   if (init.body !== undefined) headers['Content-Type'] = 'application/json'
-  const url = path.startsWith('http') ? path : `${apiRoots().rest}${path}`
+  const url = path.startsWith('http') ? path : `${apiRoots(host).rest}${path}`
   const method = init.method ?? 'GET'
   if (method === 'GET' && init.body === undefined) {
     const result = await githubCachedGet(
@@ -124,11 +128,12 @@ interface GraphqlResult {
 }
 
 async function graphql(query: string, variables: Record<string, unknown>): Promise<GraphqlResult> {
-  const headers = await authHeaders()
+  const host = githubApiHost()
+  const headers = await authHeaders(host)
   if (!headers) return { data: null, errorMessage: NO_TOKEN_MESSAGE }
   headers['Content-Type'] = 'application/json'
   const body = JSON.stringify({ query, variables })
-  const url = apiRoots().graphql
+  const url = apiRoots(host).graphql
   return coalesceKeyed(githubGraphqlInflight, `POST:${url}:${body}`, async () => {
     const response = await fetch(url, { method: 'POST', headers, body })
     noteGitHubRateLimitHeaders(response.headers)
