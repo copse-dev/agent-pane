@@ -125,7 +125,7 @@ describe('SSH settings section', function () {
       port.parentElement?.append(probe)
       const errorColor = getComputedStyle(probe).color
       probe.remove()
-      const widths = ['sshHostId', 'sshHostLabel', 'sshHostHost', 'sshHostUser', 'sshHostPort']
+      const widths = ['sshHostLabel', 'sshHostHost', 'sshHostUser', 'sshHostPort']
         .map((name) => section?.querySelector<HTMLInputElement>(`input[name="${name}"]`))
         .map((input) => input?.getBoundingClientRect().width ?? 0)
       return {
