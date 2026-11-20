@@ -8,6 +8,7 @@ import { closeIcon } from '../dom/icons.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
 import { createClassifiersSection } from './setup/classifiers-section.ts'
 import { createMachinesSection } from './setup/machines-section.ts'
+import { createMachinesOverview } from './setup/machines-overview.ts'
 import { createWebSearchSection } from './settings/web-search-section.ts'
 import { createSshWorkspaceSection } from './setup/ssh-workspace-section.ts'
 import { createToolPermissionsPanel } from './tool-permissions-panel.ts'
@@ -118,12 +119,22 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   const webSearchSection = createWebSearchSection(api)
   qsRequired(overlay, '#settings-web-search-host').append(webSearchSection.root)
 
-  const machinesSection = createMachinesSection(api)
+  // One list of machines at the top of Settings → Machines; the SSH and
+  // paired-machine sections below render their rows into it.
+  const machinesOverview = createMachinesOverview({
+    onAddSshMachine: () => {
+      sshWorkspaceSection.addHost()
+    },
+  })
+  qsRequired(overlay, '#settings-machines-overview').append(machinesOverview.root)
+
+  const machinesSection = createMachinesSection(api, { list: machinesOverview.pairedRows })
   qsRequired(overlay, '#settings-machines-host').append(machinesSection.root)
   let machineRefreshTimer: ReturnType<typeof setInterval> | undefined
 
   const sshWorkspaceSection = createSshWorkspaceSection(api, {
     deferOrdinaryWrites: true,
+    hostList: machinesOverview.sshRows,
     // Dedicated host edits wake project-menu listeners immediately.
     onChanged: (): void => {
       store.emit('settings_changed')
