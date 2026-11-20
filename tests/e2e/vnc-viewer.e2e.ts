@@ -967,7 +967,8 @@ describe('VNC viewer', function () {
     })
     await saveElementScreenshot('#pane-files', 'vnc-viewer-add-ssh-machine.png')
     await $(`${retryControls} [aria-label="SSH host label"]`).setValue('Build Mac')
-    assert.equal(await $(`${retryControls} [aria-label="SSH host id"]`).getValue(), 'build-mac')
+    // Nobody invents an id: it comes from the label (asserted on save below).
+    assert.equal(await $(`${retryControls} [aria-label="SSH host id"]`).isExisting(), false)
     await $(`${retryControls} [aria-label="SSH hostname"]`).setValue('localhost')
     await $(`${retryControls} [aria-label="SSH user"]`).setValue('builder')
     await $(`${retryControls} [aria-label="SSH identity file"]`).setValue('~/.ssh/id_ed25519')
