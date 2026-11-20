@@ -8,6 +8,7 @@ import { ASK_USER_ANSWER_MAX_LENGTH } from '@copse/agent/ask-user-format.ts'
 import { isTrustedAppFrame } from '../windows/app-frames.ts'
 import { RENDERER_STORAGE_KEYS } from '@shared/storage-keys.ts'
 import type { MachineAgentRunRequest } from '@shared/types/machine-dispatch.ts'
+import type { SubthreadRunDelegation } from '@shared/thread-prompt.ts'
 import type { VncDiscoveryHost, VncTarget } from '@shared/types/vnc.ts'
 
 export class IpcValidationError extends Error {
@@ -15,6 +16,14 @@ export class IpcValidationError extends Error {
     super(message)
     this.name = 'IpcValidationError'
   }
+}
+
+/** A request scoped to one project may act only on the project open in its window. */
+export function projectIsActiveForSender(
+  activeProjectId: string | null,
+  requestedProjectId: string,
+): boolean {
+  return activeProjectId !== null && activeProjectId === requestedProjectId
 }
 
 export function assertMainFrameSender(
@@ -266,6 +275,11 @@ export const machineAgentRunSchema: z.ZodType<MachineAgentRunRequest> =
       ...(request.display.dirty !== undefined ? { dirty: request.display.dirty } : {}),
     },
   }))
+
+/** `agent:run`'s optional marker that the run is a parent's delegated subthread prompt. */
+export const subthreadRunDelegationSchema: z.ZodType<SubthreadRunDelegation> = z.strictObject({
+  parentThreadId: zThreadId,
+})
 
 export const mainWindowNavigationSchema = z.object({
   activeProjectId: zProjectId.nullable(),

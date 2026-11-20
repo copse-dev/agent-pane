@@ -60,10 +60,39 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
   because a registered tool may depend on native turn state or have effects the
   bridge cannot represent. An inventory test fails when a new tool has no ACP
   exposure decision, so additions cannot be silently forgotten.
+- **Offered, listed, kept.** Offering the bridge in `session/new` does not give
+  the agent its tools. The agent has them only once it lists them (`tools/list`,
+  #4144), and even a listing is not proof. Claude Code accepts the listing,
+  then drops every tool of an MCP server if one input schema has no
+  `type: "object"` at the top level or has a top-level `anyOf`/`oneOf`/`allOf`
+  (#4142). Copse guards each step:
+  - **Schemas.** Every tool's model-facing schema goes through
+    `modelFacingInputSchema` (`tool-input-schema.ts`), for both the bridge
+    (`toMcpTools`) and Copse's own providers (`toLLMTools`).
+    `ToolRegistry.register` refuses a first-party tool whose schema fails that
+    check, except in a packaged build, so a `z.union` tool fails its first test.
+    A union of object shapes advertises a flat envelope from `objectEnvelopeOf`
+    as its `rawParameters`, and its zod schema still validates each shape.
+    MCP, user-plugin and custom tools carry `untrustedSchema`: they are never
+    refused, but the exports leave a bad one out with a warning.
+  - **Mounting.** If the agent never lists the tools within a short window
+    after its session opens, the thread says once that Copse's tools aren't
+    available to it, and the prompt stops steering it to them.
+  - **Dropping.** If the agent's own runtime later refuses a listed tool as
+    `No such tool available`, the thread says so once. Copse acts only on a
+    failed call that the adapter itself named as that Copse tool, and only
+    when Claude Code's stated reason says the server lacks the tool. A
+    transient reason, such as "still connecting", doesn't count. The next
+    prompt tells the agent to ignore earlier steering to Copse's tools, and the
+    reason is logged.
+  - **Guidance.** The turn's Copse guidance (canonical `turnStart`) is built
+    after the mount is known. It names only the bridge tools the agent actually
+    has: listed, and not dropped since.
 - **How a tool call gets its name differs per agent**, and no agent fills in
   every field. Wire traces of three (captured with the `COPSE_DEBUG_ACP_UPDATES`
   flag from #1659):
-  Claude sends the qualified name (`mcp__copse__run_shell`) everywhere; Cursor
+  Claude sends the qualified name (`mcp__copse-<nonce>__run_shell`: each
+  bridge is mounted under its own `copse-<nonce>` name, #4125) everywhere; Cursor
   titles the call `MCP: tool` with empty arguments and reveals the real name
   **only** on the permission request; Codex sends no title on permission
   requests but does send the arguments. Copse treats the permission request as a
@@ -552,6 +581,25 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   network failure worth one retry. It offers `claude auth login`, since signing
   in from a terminal saves a fresh token, and the note it leaves for the next
   turn does not claim a re-run must fail.
+- **`gh` does not run in a sandboxed agent's own shell.** `~/.config/gh` holds
+  the user's GitHub token, so it stays unreadable, and `gh` fails on its config
+  before it reaches the network (`failed to read configuration: open
+  <home>/.config/gh/config.yml: operation not permitted`, where `gh` prints the
+  absolute home directory in place of `<home>`). Copse cannot add to the agent's
+  own shell output, so the sandbox note on a fresh session quotes that error,
+  placeholder included, and gives the route that session actually has
+  (issue #4145). The route follows the bridge tools the agent has listed, not the
+  ones Copse offered (#4144), and tools its runtime has since dropped (#4142)
+  don't count. If it listed GitHub tools, the note names them, with
+  `run_shell` for the rest. If it listed only `run_shell`, the note points there,
+  since `run_shell` can ask to run `gh` outside the sandbox. If it listed no Copse
+  tools, because no bridge was offered or the agent never connected to the one
+  that was, the note says the session has no signed-in route to GitHub and tells
+  the agent to tell the user instead of retrying. An unattended container run
+  gets that same answer whatever it listed: the guest offers no GitHub tools,
+  and its `run_shell` has no network and refuses every approval prompt. Serving `gh` reads to the agent
+  process through the host (#3873's per-thread `GH_CONFIG_DIR` and socket) waits
+  on that draft.
 - **SSH workspaces are opt-in.** Off by default, ACP agents stay hidden from the
   chat model picker and are rejected at session open on an SSH remote. Turn on
   **Settings → Experimental → ACP agents → Run ACP agents over SSH** to spawn the

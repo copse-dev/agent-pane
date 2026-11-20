@@ -16,7 +16,7 @@ import {
   IpcValidationError,
   parseIpcArgs,
 } from '../ipc/ipc-guards.ts'
-import { getActiveRunThread } from './thread-models.ts'
+import { getActiveRunThread, getActiveRunTurnTreeId } from './thread-models.ts'
 import {
   getApprovalOperationKey,
   getApprovalBridgeOwnerId,
@@ -131,6 +131,10 @@ export interface ApprovalRequest {
   /** Host producer certifies that an approve-once response authorizes only this concrete request. */
   interactiveClientApproval?: 'once'
   rememberLabel?: string
+  /** Initial checkbox state; never changes a user's choice on a live batch. */
+  rememberDefault?: boolean
+  /** Host-owned grant identity, so matching labels cannot batch unrelated permissions. */
+  rememberSubject?: string
   /** Action label for one request. Batches retain a neutral count label. */
   approveLabel?: string
   /**
@@ -250,6 +254,8 @@ export function approvalDedupeKey(req: ApprovalRequest): string {
     type: req.type,
     allowRemember: req.allowRemember ?? false,
     rememberLabel: req.rememberLabel ?? '',
+    rememberDefault: req.rememberDefault ?? false,
+    rememberSubject: req.rememberSubject ?? '',
     approveLabel: req.approveLabel ?? '',
     collapseDetails: req.collapseDetails ?? false,
     approveOnceLabel: req.approveOnceLabel ?? '',
@@ -305,13 +311,13 @@ interface InflightApproval {
 
 interface InflightWaiter {
   bridgeOwnerId: string | undefined
+  /** Revocation ownership survives detaching turn-end audit attribution. */
+  readonly ownerThreadId: string | null
   bridgeExecutionId?: string
   resolve: (response: ApprovalResponse) => void
   signal: AbortSignal | undefined
   onAbort: () => void
   cancel: (source: string) => void
-  /** Stable owner, retained after the run identity is detached. */
-  ownerThreadId: string | null
   /** Thread that opened this waiter; used to dismiss orphans when the turn ends. */
   threadId: string | null
   /**
@@ -352,6 +358,7 @@ interface StoredVerdict {
   bridgeOwnerId: string | undefined
   response: ApprovalResponse
   settledAt: number
+  ownerThreadId: string | null
 }
 
 const abandonedVerdicts = new Map<string, StoredVerdict>()
@@ -374,13 +381,14 @@ function abandonedVerdictKey(threadId: string, promptKey: string): string {
 function storeAbandonedVerdict(
   ledgerKey: string,
   response: ApprovalResponse,
+  ownerThreadId: string | null,
   bridgeOwnerId: string | undefined,
 ): void {
   const now = approvalClock()
   for (const [key, entry] of abandonedVerdicts) {
     if (now - entry.settledAt > ABANDONED_VERDICT_TTL_MS) abandonedVerdicts.delete(key)
   }
-  abandonedVerdicts.set(ledgerKey, { response, settledAt: now, bridgeOwnerId })
+  abandonedVerdicts.set(ledgerKey, { response, settledAt: now, ownerThreadId, bridgeOwnerId })
 }
 
 function takeAbandonedVerdict(ledgerKey: string): ApprovalResponse | null {
@@ -516,6 +524,10 @@ function settleInflight(
   req: ApprovalRequest,
 ): void {
   if (inflight.get(key) !== entry) return
+  // One host-owned response identity per decision, shared by every coalesced
+  // waiter and any parked replay. A handler may reuse its response object;
+  // that must not make a genuinely new approval reuse an old grant receipt.
+  const decision = { ...response }
   inflight.delete(key)
   if (entry.timer) clearTimeout(entry.timer)
   // One shared prompt → one audit event (not one per coalesced waiter).
@@ -534,7 +546,7 @@ function settleInflight(
   recordApprovalDecision(req, response, undefined, toolCallIds, bridgeExecutionIds)
   for (const waiter of entry.waiters) {
     waiter.signal?.removeEventListener('abort', waiter.onAbort)
-    waiter.resolve(response)
+    waiter.resolve(decision)
   }
   entry.waiters.clear()
 }
@@ -575,9 +587,8 @@ export function cancelApprovalsForThread(threadId: string): number {
 }
 
 /**
- * Tear down every prompt still owned by a thread, including parked ACP
- * stand-ins. Ordinary turn cleanup deliberately preserves those stand-ins for
- * a retry; thread deletion has no future turn to receive one.
+ * Revoke pending and saved approvals for Stop or thread deletion. Ordinary
+ * completion preserves abandoned-call answers for retries in the same task.
  */
 export function discardApprovalsForThread(threadId: string, source = 'thread-deleted'): number {
   let discarded = 0
@@ -590,8 +601,8 @@ export function discardApprovalsForThread(threadId: string, source = 'thread-del
   }
   // Stop also revokes an answer already given to a detached caller. Otherwise
   // an identical request on a later turn could consume pre-Stop authority.
-  for (const key of abandonedVerdicts.keys()) {
-    if (key.startsWith(`${threadId}\u0000`)) abandonedVerdicts.delete(key)
+  for (const [key, verdict] of abandonedVerdicts) {
+    if (verdict.ownerThreadId === threadId) abandonedVerdicts.delete(key)
   }
   return discarded
 }
@@ -846,13 +857,17 @@ function requestApprovalUnpaused(
   // call passes through — shell escalation, MCP, origin — attributes to it.
   const toolCallId = req.toolCallId ?? getApprovalToolCallId()
 
-  // Equal questions from different chats authorize different callers. Keep
-  // independent waiters in one chat without sharing consent across chats.
+  // Equal questions from different tasks authorize different callers. Scope
+  // every answer, including one-time answers, to the current execution identity
+  // so a parked prompt or saved verdict cannot follow send-now into a new task.
   // Standalone consent belongs to one caller even if two clients happen to
   // present identical copy (for example, the same six-digit pairing code).
   const key = JSON.stringify([
     dedupePrefix,
     threadId,
+    getThreadExecutionContext()?.projectId ?? null,
+    getAgentExecutionRoot(),
+    getActiveRunTurnTreeId(),
     getApprovalOperationKey() ?? null,
     getApprovalBridgeOwnerId() ?? null,
     req.standalone ? randomUUID() : approvalDedupeKey(req),
@@ -1057,7 +1072,7 @@ function parkedWaiter(
     resolve: (response) => {
       // A closed window or failed transport supplied no human decision.
       if (response.resolution === undefined || response.resolution === 'user') {
-        storeAbandonedVerdict(ledgerKey, response, bridgeOwnerId)
+        storeAbandonedVerdict(ledgerKey, response, threadId, bridgeOwnerId)
       }
       onSettled?.(response)
     },

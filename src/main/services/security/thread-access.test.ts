@@ -5,6 +5,7 @@ import { threadExecutionContextStorage } from '../thread-execution-context-store
 import { runWithApprovalHandler } from '../approval.ts'
 import { setSetting } from '../storage/settings.ts'
 import {
+  chatReadRootsForThread,
   ensureChatStoreRead,
   ensureThreadAccess,
   hasThreadAccess,
@@ -17,6 +18,7 @@ describe('conversation access', () => {
   afterEach(async () => {
     await setSetting('threadReadAccess', [])
     await setSetting('threadSendAccess', [])
+    await setSetting('threadSubthreadAccess', [])
   })
 
   it('asks exactly twice, reuses each grant and isolates other threads', async () => {
@@ -43,7 +45,7 @@ describe('conversation access', () => {
     assert.deepEqual(requests, ['Read your other threads?', 'Send prompts to your other threads?'])
   })
 
-  for (const access of ['read', 'send'] as const) {
+  for (const access of ['read', 'send', 'orchestrate'] as const) {
     for (const cancelled of [0, 1] as const) {
       it(`${access}: cancelling waiter ${String(cancelled)} preserves its live sibling`, async () => {
         const shown = Promise.withResolvers<boolean>()
@@ -210,6 +212,33 @@ describe('conversation access', () => {
           assert.deepEqual(threadChatReadRoots('/store'), ['/store'])
         }),
     )
+  })
+
+  it("resolves a named thread's roots outside its run only from its own execution context", async () => {
+    // A spawner outside the turn's context has nothing vouching for the thread.
+    assert.deepEqual(chatReadRootsForThread('source', '/store'), [])
+    threadExecutionContextStorage.run(
+      {
+        projectId: 'project',
+        threadId: 'source',
+        projectRoot: '/repo',
+        root: '/repo',
+        checkoutMode: 'shared',
+        branch: null,
+        followUpParentThreadId: 'parent',
+      },
+      () => {
+        // No active run identity is needed: the thread is named explicitly.
+        assert.deepEqual(chatReadRootsForThread('source', '/store'), [
+          '/store/project/source',
+          '/store/project/parent',
+        ])
+        assert.deepEqual(chatReadRootsForThread('other', '/store'), [])
+      },
+    )
+    await setSetting('threadReadAccess', ['source'])
+    assert.deepEqual(chatReadRootsForThread('source', '/store'), ['/store'])
+    assert.deepEqual(chatReadRootsForThread('other', '/store'), [])
   })
 
   it('lets a follow-up read only its declared parent without consent', () => {

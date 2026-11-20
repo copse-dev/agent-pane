@@ -161,4 +161,47 @@ describe('terminateProcessTree', () => {
 
     assert.equal(closed, true, 'the member that outlived its leader is SIGKILLed')
   })
+  it('keeps escalation armed when the leader closes before an IO-independent child', async (t) => {
+    if (process.platform === 'win32') {
+      t.skip('POSIX process groups')
+      return
+    }
+    const proc = spawn(
+      '/bin/sh',
+      ['-c', "(trap '' TERM; exec sleep 30) </dev/null >/dev/null 2>&1 & echo $!; wait"],
+      { stdio: ['ignore', 'pipe', 'ignore'], detached: true },
+    )
+    const data: unknown = (await once(proc.stdout, 'data'))[0]
+    assert.ok(Buffer.isBuffer(data))
+    const child = Number(data.toString().trim())
+    assert.ok(child > 1)
+    proc.stdout.resume()
+    const cancel = terminateProcessTree(proc, 100)
+    await once(proc, 'close')
+    cancel()
+    let running = true
+    const deadline = Date.now() + 3_000
+    try {
+      while (Date.now() < deadline) {
+        const probe = spawnSync('ps', ['-o', 'stat=', '-p', String(child)])
+        if (probe.error) {
+          t.skip(`cannot inspect child: ${probe.error.message}`)
+          return
+        }
+        const status = probe.stdout.toString().trim()
+        if (!status || status.startsWith('Z')) {
+          running = false
+          break
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20))
+      }
+      assert.equal(running, false, 'closed stdio must not spare a live descendant from SIGKILL')
+    } finally {
+      try {
+        process.kill(child, 'SIGKILL')
+      } catch {
+        /* already gone */
+      }
+    }
+  })
 })

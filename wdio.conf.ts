@@ -2,6 +2,11 @@ import { nonEmptyStringOr } from '@copse/std/unknown-value.ts'
 import { updateChromeOptions } from './tests/e2e/helpers/chrome-options.ts'
 import { hydrateScreenshots } from './scripts/lib/screenshot-hydration.mts'
 import { browser } from '@wdio/globals'
+import {
+  driverLogDirectory,
+  recordSessionLifecycle,
+  recordWorkerEnd,
+} from './scripts/lib/e2e-attempt-diagnostics.mts'
 import { resolveElectronExecutable } from './tests/e2e/helpers/electron-executable.ts'
 import { createRequire } from 'node:module'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
@@ -9,12 +14,13 @@ import { dirname, join } from 'node:path'
 import {
   forceKillWedgedE2eSession,
   installDeleteSessionSafety,
-  isIgnorableAfterTestError,
+  shouldPreCloseBeforeReload,
   shouldSkipAfterTestSessionTraffic,
   withTimeout,
 } from './tests/e2e/helpers/after-test-safety.ts'
 import { installSettingsActionBarClickSafety } from './tests/e2e/helpers/settings-action-bar-click.ts'
 import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.ts'
+import { createErrorToastGuard } from './tests/e2e/helpers/error-toast-guard.ts'
 import { resolveElectronBrowserVersion } from './tests/e2e/helpers/electron-browser-version.ts'
 import { assignDebugPort } from './tests/e2e/helpers/debug-port.ts'
 import {
@@ -44,6 +50,14 @@ async function parkSessionPointer(): Promise<void> {
 
 /** Cap how long afterTest may talk to a possibly-dead Electron session. */
 const AFTER_TEST_SESSION_BUDGET_MS = 5_000
+function recordAndKillWedgedSession(): void {
+  recordSessionLifecycle('before-forced-cleanup', () => browser.capabilities)
+  forceKillWedgedE2eSession()
+}
+const errorToastGuard = createErrorToastGuard(assertNoErrorToasts, {
+  budgetMs: AFTER_TEST_SESSION_BUDGET_MS,
+  killWedgedSession: recordAndKillWedgedSession,
+})
 
 const electronBinary = resolveElectronExecutable()
 const electronShell = join(process.cwd(), 'tests/e2e/electron-shell')
@@ -75,7 +89,10 @@ export const config: WebdriverIO.Config = {
   // symptom; the driver's own log is the only place the cause is written down.
   // Landing them under e2e-failure-artifacts/ puts them in the directory CI
   // already uploads and prints on a failing shard.
-  outputDir: join(process.cwd(), 'e2e-failure-artifacts', 'wdio-logs'),
+  outputDir: driverLogDirectory(),
+  onWorkerEnd(cid, code, _specs, _retries, signal) {
+    recordWorkerEnd(cid, code, signal)
+  },
   specs: ['./tests/e2e/**/*.e2e.ts'],
   exclude: ['./tests/e2e/agent-eval-drive.e2e.ts'],
   maxInstances: 1,
@@ -152,13 +169,17 @@ export const config: WebdriverIO.Config = {
   mochaOpts: {
     ui: 'bdd',
     timeout: 30_000,
+    rootHooks: {
+      afterEach: errorToastGuard.afterEach,
+    },
   },
   async before() {
     // A wedged deleteSession must not flip a green suite red (main tip cdeb3abf
     // attempt 3 / git-changes-image; tip 2686950f / shard 4 still FAILED until
     // overwriteCommand patched the real browser behind @wdio/globals' Proxy).
     // Cap + swallow transport deaths.
-    installDeleteSessionSafety(browser)
+    installDeleteSessionSafety(browser, { kill: recordAndKillWedgedSession })
+    recordSessionLifecycle('session-ready', () => browser.capabilities)
     // Settings' sticky Save/Cancel bar hit-tests the whole of its own box, so a
     // control scrolled under it is visible but unclickable and WebDriver will
     // not scroll to rescue it (it only scrolls what is out of view). Nudge such
@@ -171,17 +192,23 @@ export const config: WebdriverIO.Config = {
     await parkSessionPointer()
   },
   async onReload() {
+    recordSessionLifecycle('session-ready', () => browser.capabilities)
     await parkSessionPointer()
   },
-  afterTest: async (test, _context, result) => {
+  afterTest: async (test, context: { test?: object }, result) => {
     // Mocha timeout / dead chromedriver session: skip post-test WebDriver traffic
     // entirely and force-kill orphans so deleteSession cannot burn another full
     // connectionRetryTimeout (main tip a73ba769 / e2e shard 8, dff94ce5 / shard 7,
     // cdeb3abf / shard 2).
     if (shouldSkipAfterTestSessionTraffic(result.error)) {
-      forceKillWedgedE2eSession()
+      recordAndKillWedgedSession()
       return
     }
+    await errorToastGuard.recordAfterTest(
+      context.test,
+      typeof test.title === 'string' ? test.title : 'e2e test',
+      result.passed,
+    )
 
     // On failure, dump a screenshot + page source to e2e-failure-artifacts/ so
     // CI can upload them for debugging the constrained-runner render/OOM flakes.
@@ -211,23 +238,6 @@ export const config: WebdriverIO.Config = {
       } catch {
         // session/runner likely already dead — nothing to capture
       }
-    }
-
-    try {
-      await withTimeout(
-        assertNoErrorToasts(typeof test.title === 'string' ? test.title : 'e2e test'),
-        AFTER_TEST_SESSION_BUDGET_MS,
-        'afterTest toast assertion',
-      )
-    } catch (error) {
-      // Dead-session / budget timeouts must not fail a passing test — that was
-      // the residual gap in #987 (markdown-nbsp-metadata afterTest on a green
-      // spec). Real toast failures return quickly with "Unexpected error toast".
-      if (isIgnorableAfterTestError(error)) {
-        forceKillWedgedE2eSession()
-        return
-      }
-      if (result.passed) throw error
     }
   },
   async beforeSession(_config, capabilities, specs) {
@@ -346,13 +356,19 @@ export const config: WebdriverIO.Config = {
     // for its replacement to lose the app's single-instance lock. Closing the
     // current app window first lets Electron terminate cleanly before
     // reloadSession deletes the WebDriver session and launches its successor.
+    //
+    // Linux ChromeDriver 152 reports Target.closeTarget success, detaches the
+    // renderer, then waits 20s for that now-gone renderer and retries the same
+    // CloseWindow request. Run 44643832092 paid this ~40s penalty nine times in
+    // shard 6 alone. Skip that redundant pre-close on Linux; reloadSession's
+    // deleteSession already has a 5s cap that kills a genuinely wedged Electron.
     try {
       // Mark the shutdown as a quit first: a bare window close reads as the
       // user discarding that window, and multi-window persistence would drop
       // its record — breaking any spec that relaunches expecting the full
       // window set to restore (multiple-main-windows.e2e.ts).
       await browser.execute(() => window.__copseE2e?.markQuit())
-      await browser.closeWindow()
+      if (shouldPreCloseBeforeReload(process.platform)) await browser.closeWindow()
     } catch {
       // A session that is already gone needs no extra shutdown work.
     }

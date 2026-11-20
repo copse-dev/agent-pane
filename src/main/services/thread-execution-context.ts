@@ -13,7 +13,9 @@ import {
 } from './thread-execution-context-store.ts'
 import {
   inspectManagedThreadWorktreePath,
+  existingWorktreeProjectRoot,
   inspectThreadWorktreeAttachment,
+  repositoryLocation,
   reattachThreadWorktree,
   restoreRetiredThreadWorktree,
   restoreMissingThreadWorktree,
@@ -178,33 +180,48 @@ async function activeThreadWorktreeInput(
   return { projectId, threadId, projectRoot, worktree }
 }
 
-/**
- * The checkout a thread would run in, for read-only inspection (sidebar status).
- * Unlike {@link resolveThreadExecutionContext} this never restores a retired
- * worktree, validates/adopts a branch, or rewrites thread metadata: a shared
- * thread yields the project root, an active isolated worktree its managed path
- * (only when the recorded path really is the managed one), and a retired or PR'd
- * worktree (which resolution would recreate) yields null.
- */
-export async function inspectThreadCheckoutRoot(
+type ThreadCheckoutInspectionDependencies = Pick<
+  ThreadExecutionContextDependencies,
+  'getProjectRoot' | 'getThreadMeta'
+> & {
+  /** Read-only managed-path check; defaults to the worktree manager's. */
+  inspectWorktreePath?: (
+    projectId: string,
+    threadId: string,
+    recordedPath: string,
+  ) => Promise<string | null>
+}
+
+type ThreadContextMeta = NonNullable<
+  Awaited<ReturnType<ThreadExecutionContextDependencies['getThreadMeta']>>
+>
+
+interface CheckoutInspection {
+  projectRoot: string
+  worktree: ThreadWorktree | undefined
+  meta: ThreadContextMeta
+}
+
+async function readCheckoutInspection(
   projectId: string,
   threadId: string,
-  dependencies: Pick<ThreadExecutionContextDependencies, 'getProjectRoot' | 'getThreadMeta'> & {
-    /** Read-only managed-path check; defaults to the worktree manager's. */
-    inspectWorktreePath?: (
-      projectId: string,
-      threadId: string,
-      recordedPath: string,
-    ) => Promise<string | null>
-  } = defaultDependencies,
-): Promise<string | null> {
+  dependencies: ThreadCheckoutInspectionDependencies,
+): Promise<CheckoutInspection | null> {
   const projectRoot = dependencies.getProjectRoot(projectId)
   if (!projectRoot) return null
   const threadMeta = await dependencies.getThreadMeta(projectId, threadId)
   if (threadMeta?.id !== threadId) return null
-  const worktree = threadMeta.worktree
+  return { projectRoot, worktree: threadMeta.worktree, meta: threadMeta }
+}
+
+async function inspectExistingCheckoutRoot(
+  projectId: string,
+  threadId: string,
+  { projectRoot, worktree }: CheckoutInspection,
+  dependencies: ThreadCheckoutInspectionDependencies,
+): Promise<string | null> {
   if (!worktree) return projectRoot
-  if (worktree.retiredAt !== undefined || worktree.pullRequestUrl) return null
+  if (worktree.retiredAt !== undefined) return null
   // The persisted path is untrusted: it must be the managed thread path, not
   // whatever the metadata says, before Git is pointed at it.
   return (dependencies.inspectWorktreePath ?? inspectManagedThreadWorktreePath)(
@@ -212,6 +229,58 @@ export async function inspectThreadCheckoutRoot(
     threadId,
     worktree.path,
   )
+}
+
+/** Read-only sidebar policy: retired and PR-associated checkouts are excluded. */
+export async function inspectThreadCheckoutRoot(
+  projectId: string,
+  threadId: string,
+  dependencies: ThreadCheckoutInspectionDependencies = defaultDependencies,
+): Promise<string | null> {
+  const checkout = await readCheckoutInspection(projectId, threadId, dependencies)
+  if (!checkout || checkout.worktree?.pullRequestUrl) return null
+  return inspectExistingCheckoutRoot(projectId, threadId, checkout, dependencies)
+}
+
+/** Bind passive reads to their actual owner without creating or repairing its checkout. */
+export async function inspectThreadReadContext(
+  projectId: string,
+  threadId: string,
+  dependencies: ThreadCheckoutInspectionDependencies = defaultDependencies,
+): Promise<ThreadExecutionContext | null> {
+  const checkout = await readCheckoutInspection(projectId, threadId, dependencies)
+  if (!checkout) return null
+  let root = await inspectExistingCheckoutRoot(projectId, threadId, checkout, dependencies)
+  if (!root) return null
+  if (checkout.worktree) {
+    try {
+      // A missing .git marker must not let Git walk up to an enclosing repository.
+      // Shared projects may be subdirectories; an isolated checkout must own its root.
+      const location = await repositoryLocation(root)
+      if (location.repositoryRoot !== root) return null
+      const managedRoot = root
+      const projectLocation = await repositoryLocation(checkout.projectRoot)
+      root = await existingWorktreeProjectRoot(managedRoot, projectLocation.projectRelativePath)
+    } catch {
+      return null
+    }
+  }
+  return contextFromCheckout(
+    projectId,
+    threadId,
+    checkout.projectRoot,
+    checkout.meta,
+    checkout.worktree ? { root, branch: checkout.worktree.branch } : undefined,
+  )
+}
+
+/** Inspect an existing checkout for passive reads, including live PR checkouts. */
+export async function inspectThreadReadRoot(
+  projectId: string,
+  threadId: string,
+  dependencies: ThreadCheckoutInspectionDependencies = defaultDependencies,
+): Promise<string | null> {
+  return (await inspectThreadReadContext(projectId, threadId, dependencies))?.root ?? null
 }
 
 /**
@@ -346,28 +415,30 @@ async function resolveThreadExecutionContextUncached(
       }
       await dependencies.syncWorktreeBranch?.(projectId, threadId, adopted)
     }
-    return Object.freeze({
-      projectId,
-      threadId,
-      projectRoot,
-      root: worktree.root,
-      checkoutMode: 'worktree',
-      branch: worktree.branch,
-      ...(threadMeta.automation ? { automation: { ...threadMeta.automation } } : {}),
-      ...followUpContext(threadMeta),
-    })
+    return contextFromCheckout(projectId, threadId, projectRoot, threadMeta, worktree)
   }
 
+  return contextFromCheckout(projectId, threadId, projectRoot, threadMeta)
+}
+
+/** The same owner/target metadata applies to inspection and intentional execution. */
+function contextFromCheckout(
+  projectId: string,
+  threadId: string,
+  projectRoot: string,
+  meta: ThreadContextMeta,
+  checkout?: { readonly root: string; readonly branch: string | null },
+): ThreadExecutionContext {
   return Object.freeze({
     projectId,
     threadId,
     projectRoot,
-    root: projectRoot,
-    checkoutMode: 'shared',
-    branch: threadMeta.gitBranch ?? null,
-    ...(threadMeta.automation ? { automation: { ...threadMeta.automation } } : {}),
-    ...followUpContext(threadMeta),
-    ...(threadMeta.deferredWorktree ? { deferredWorktree: threadMeta.deferredWorktree } : {}),
+    root: checkout?.root ?? projectRoot,
+    checkoutMode: checkout ? 'worktree' : 'shared',
+    branch: checkout ? checkout.branch : (meta.gitBranch ?? null),
+    ...(meta.automation ? { automation: { ...meta.automation } } : {}),
+    ...followUpContext(meta),
+    ...(!checkout && meta.deferredWorktree ? { deferredWorktree: meta.deferredWorktree } : {}),
   })
 }
 

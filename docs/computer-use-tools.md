@@ -96,6 +96,23 @@ transfer:
 **Accessibility-first:** `browser_snapshot` is the primary page model (cheap,
 structured). Screenshots supplement visual/layout verification.
 
+### Grouped form entry
+
+The shipped `browser_type` accepts either the existing `{ ref, text, viewId? }`
+or `{ fields: [{ ref, text }, ...], viewId? }` for up to 20 distinct fields from
+one current snapshot. Inputs, textareas and selects are supported; select text
+is an exact option value. Grouping three fields uses one tool invocation instead
+of three. It does not imply three fewer model requests: models can already send
+independent calls together.
+
+The group stays on one tab and retains `browser_type` permissions, including
+Blocked, Always ask and read-only restrictions. It checks every target before
+changing any field, then stops if a target changes. Its result identifies
+confirmed input and any field whose acknowledgement was lost. Inspect the page
+and refresh the snapshot before retrying; do not replay confirmed input. Input
+and change events can cause website effects, so entry is not an atomic operation
+and cannot roll those effects back. Submission remains an explicit click.
+
 ## Implementation paths considered
 
 ### Path A — MCP server only (Playwright MCP, custom stdio server)

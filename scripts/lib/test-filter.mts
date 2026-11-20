@@ -8,7 +8,7 @@
  *
  * Matching is deliberately forgiving, because the whole point is that a filter
  * should be guessable without looking up the exact path:
- *   • a glob (`src/main/**`, `*-store.test.ts`) is matched with micromatch
+ *   • a glob (`src/main/**`, `*-store.test.ts`) is matched with picomatch
  *   • anything else matches as a case-insensitive substring of the repo-relative
  *     path, or as the file's base name with or without the `.test.ts` suffix
  * Multiple filters union (they select the files matching *any* of them).
@@ -17,7 +17,7 @@
  * that selects nothing is an error the caller must surface — never an empty
  * pass. {@link describeNoMatch} builds the message for that case.
  */
-import micromatch from 'micromatch'
+import picomatch from 'picomatch'
 
 const GLOB_CHARS = /[*?[\]{}!]/
 
@@ -37,7 +37,7 @@ export function matchesFilter(testFile: string, filter: string): boolean {
   const path = normalize(testFile)
   const raw = normalize(filter)
   if (!raw) return false
-  if (GLOB_CHARS.test(raw)) return micromatch.isMatch(path, raw, { nocase: true, dot: true })
+  if (GLOB_CHARS.test(raw)) return picomatch.isMatch(path, raw, { nocase: true, dot: true })
   const needle = raw.toLowerCase()
   if (path.toLowerCase().includes(needle)) return true
   // Bare names: `thread-store` and `thread-store.test.ts` both select the file.

@@ -97,15 +97,18 @@ async function spawnRemoteWrapped(
   opts: RemoteSpawnOptions,
   wrap: (remoteRoot: string, shellCommand: string) => string,
 ): Promise<ChildProcess> {
+  opts.signal?.throwIfAborted()
   await ensureHostConnected(opts.hostId)
+  opts.signal?.throwIfAborted()
   const host = findConfiguredSshHost(opts.hostId)
   if (!host) throw new Error(`Unknown SSH host: ${opts.hostId}`)
 
   const remoteEnv = mergeRemoteEnv(opts.env)
   const body = buildRemoteShellCommand(shellCommandLine, undefined, remoteEnv)
   const wrapped = wrap(opts.remoteRoot, body)
-  const askpass = leaseSshAskpassEnv(process.env, opts.hostId)
+  // Build argv before leasing askpass: a refused destination throws here.
   const args = sshExecArgs(host, wrapped)
+  const askpass = leaseSshAskpassEnv(process.env, opts.hostId)
   const stdout = new PassThrough()
   const proc = spawn('ssh', args, {
     env: askpass.env,
@@ -141,10 +144,11 @@ export async function buildRemotePtyLaunch(
   // Shell assignments + builtin exec (not `env … exec`, which looks up `exec` as a binary).
   const remoteEnv = remotePtyEnv(env)
   const remoteCmd = buildRemotePtyCommand(shell, remoteRoot, remoteEnv)
+  const args = sshPtyArgs(host, remoteCmd)
   const askpass = leaseSshAskpassEnv(process.env, hostId)
   return {
     file: 'ssh',
-    args: sshPtyArgs(host, remoteCmd),
+    args,
     env: askpass.env,
     release: askpass.release,
   }

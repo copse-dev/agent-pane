@@ -60,7 +60,7 @@ const UNCONDITIONALLY_ASK_TOOLS = new Map<string, string>([
   ],
   [
     'prepare_worktree',
-    'Worktree preparation must show its exact install and setup plan for every invocation.',
+    'Worktree preparation requires approval of its exact plan or a matching automation preparation grant.',
   ],
   ['gh_pr_approve', 'This action changes pull request state and must be approved each time.'],
   ['gh_push', 'Pushing a branch changes remote state and must be approved each time.'],

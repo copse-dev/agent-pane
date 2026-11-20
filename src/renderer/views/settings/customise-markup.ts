@@ -5,8 +5,7 @@ export const customiseMarkup = `
           <section class="settings-section" data-section="customise">
             <h3>Customise</h3>
             <p class="settings-section-desc">
-              Everything Copse loads for this project, and every plugin extending it. The loaded
-              lists are read-only: edit the files themselves to change what is loaded.
+              What Copse loads for this project. Edit the files to change it.
             </p>
             <div class="settings-action-row">
               <button type="button" class="ui-btn ui-btn-secondary" id="sources-reload-btn">
@@ -18,16 +17,7 @@ export const customiseMarkup = `
             <fieldset>
               <legend>Instruction files</legend>
               <p class="settings-fieldset-desc">
-                Files available to the system prompt, in precedence order. Global steering
-                (<code>~/AGENTS.md</code>, <code>~/.claude/CLAUDE.md</code>) loads first, then
-                project <code>AGENT.md</code>/<code>AGENTS.md</code> (cross-tool),
-                <code>CLAUDE.md</code> (Claude Code), directory-scoped nested
-                <code>AGENTS.md</code>, and always-applied Cursor rules
-                (<code>.cursor/rules/*.mdc</code> with <code>alwaysApply: true</code>, plus
-                <code>.cursorrules</code>). Auto-attached and manually <code>@</code>-mentioned
-                rules also join this list for the turn that activates them. Nested
-                <code>AGENT.md</code> and <code>CLAUDE.md</code> remain root-only compatibility
-                formats.
+                Added to the system prompt, in the order they load.
               </p>
               <div id="sources-instructions-list" class="sources-group">
                 <span class="sources-empty">Loading…</span>
@@ -50,10 +40,9 @@ export const customiseMarkup = `
             <fieldset>
               <legend>Agents</legend>
               <p class="settings-fieldset-desc">
-                Subagent definitions found in <code>agents/</code> folders under
-                <code>.copse</code>, <code>.cursor</code>, and <code>.claude</code>, in this
-                project and in your home directory. Hover a row to see its path. Project agents
-                are only read once you trust the project.
+                Subagents from <code>agents/</code> folders in <code>.copse</code>,
+                <code>.cursor</code> and <code>.claude</code>. Project agents load once you trust
+                the project.
               </p>
               <div id="sources-agents-list" class="sources-group">
                 <span class="sources-empty">Loading…</span>

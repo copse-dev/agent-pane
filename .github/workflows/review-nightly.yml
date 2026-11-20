@@ -127,9 +127,10 @@ jobs:
           # Use the reviewed CLI from the default branch. The selected head is
           # fetched below and executed only inside the secret-free Stage 0 cell.
           ref: ${{ github.event.repository.default_branch }}
-          # Keep ancestry for merge-base; hydrate only trees we actually review.
+          # Hydrate only trees we actually review. No history: the cell makes
+          # its own clone for the merge-base, and this checkout only reads the
+          # head's lockfile and patches.
           filter: blob:none
-          fetch-depth: 0
           persist-credentials: false
 
       - uses: actions/setup-node@v7
@@ -230,9 +231,10 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.event.repository.default_branch }}
-          # Keep ancestry for merge-base; hydrate only trees we actually review.
+          # Hydrate only trees we actually review. The merge-base's ancestry
+          # comes from the unshallowed head/base fetch below, not every branch
+          # and tag.
           filter: blob:none
-          fetch-depth: 0
           persist-credentials: false
 
       - uses: actions/setup-node@v7
@@ -287,7 +289,7 @@ jobs:
             --file packages/review/Dockerfile.cell \
             packages/review
 
-          git fetch --no-tags --quiet origin \
+          git fetch --no-tags --quiet --unshallow origin \
             "+refs/pull/${PR_NUMBER}/head:refs/remotes/pr/${PR_NUMBER}" \
             "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
           test "$(git rev-parse "refs/remotes/pr/${PR_NUMBER}")" = "$HEAD_SHA"

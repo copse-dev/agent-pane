@@ -1,4 +1,5 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -27,10 +28,6 @@ function safeRead(path: string): string | null {
   } catch {
     return null
   }
-}
-
-function sha256(text: string): string {
-  return createHash('sha256').update(text, 'utf8').digest('hex')
 }
 
 /**
@@ -186,7 +183,7 @@ export function recordDecision(input: RecordDecisionInput): void {
       detailContents = JSON.stringify(detail)
       line = {
         ...line,
-        detail: { ref: decisionDetailBlobRef(id), sha256: sha256(detailContents) },
+        detail: { ref: decisionDetailBlobRef(id), sha256: sha256Hex(detailContents) },
       }
     }
 

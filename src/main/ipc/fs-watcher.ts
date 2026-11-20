@@ -20,7 +20,7 @@ import {
   unwatchRemoteFile,
   watchRemoteFile,
 } from '../services/ssh-workspace/remote-watch.ts'
-import { resolveThreadExecutionContext } from '../services/thread-execution-context.ts'
+import { inspectThreadReadRoot } from '../services/thread-execution-context.ts'
 import { z } from 'zod'
 import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
 import { WatchSubscriptions } from './fs-watch-subscriptions.ts'
@@ -55,7 +55,8 @@ export function initFsWatcher(win: BrowserWindow): void {
   ipcMain.handle('fs:watch', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId, rel] = parseIpcArgs(watcherArgs, rawArgs)
-    const root = (await resolveThreadExecutionContext(projectId, threadId)).root
+    const root = await inspectThreadReadRoot(projectId, threadId)
+    if (!root) return
     const abs = await resolvePathWithinRoot(rel, root)
     const key = watcherKey(projectId, threadId, rel)
     // The window may have closed during the awaits above; its `destroyed`

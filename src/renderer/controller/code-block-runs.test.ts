@@ -187,6 +187,51 @@ test('a result is not sent when the checkout branch cannot be read', async () =>
   assert.equal(getThreadById(store, 'thread-1')?.messages.length, 1)
 })
 
+test('a passive unavailable branch cannot dispatch after intentional checkout restoration fails', async () => {
+  const thread = runThread('idle')
+  thread.gitBranch = 'feature'
+  thread.worktree = {
+    path: '/worktrees/thread-1',
+    branch: 'feature',
+    baseBranch: 'main',
+    baseCommit: 'a'.repeat(40),
+    createdAt: 1,
+    seededFromDirtyProject: false,
+    retiredAt: 2,
+  }
+  const store = storeWith(thread)
+  const { api, runs } = sendApi()
+  api.git.currentBranch = async (): Promise<null> => null
+  api.git.promptState = async (): Promise<never> => {
+    throw new Error('Could not restore checkout')
+  }
+  assert.equal(await sendCodeBlockRunResult(store, api, result()), false)
+  assert.deepEqual(runs, [])
+  assert.equal(getThreadById(store, 'thread-1')?.messages.length, 1)
+})
+
+test('a retired isolated checkout can send after intentional restoration despite an earlier unavailable read', async () => {
+  const thread = runThread('idle')
+  thread.gitBranch = 'feature'
+  thread.worktree = {
+    path: '/worktrees/thread-1',
+    branch: 'feature',
+    baseBranch: 'main',
+    baseCommit: 'a'.repeat(40),
+    createdAt: 1,
+    seededFromDirtyProject: false,
+    retiredAt: 2,
+  }
+  const store = storeWith(thread)
+  const { api, runs } = sendApi()
+  api.git.currentBranch = async (): Promise<null> => null
+  assert.equal(await sendCodeBlockRunResult(store, api, result()), true)
+  assert.deepEqual(runs, ['thread-1'])
+  const sent = getThreadById(store, 'thread-1')?.messages.at(-1)
+  assert.equal(sent?.startingCommit, 'a'.repeat(40))
+  assert.equal(sent.dirty, true)
+})
+
 test('a successful recovery run sends a machine-originated continuation', async () => {
   const store = storeWith({ ...runThread('idle'), currentEpoch: 'tree-current' })
   const { api, runs, machineRuns } = sendApi()

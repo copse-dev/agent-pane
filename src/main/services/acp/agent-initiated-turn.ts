@@ -1,3 +1,4 @@
+import { errorMessage } from '@shared/errors.ts'
 import { AcpTurnEnded, type AcpTurnEndReason } from './turn-end.ts'
 
 // Generic over the bound context: importing the real type (even type-only) would put
@@ -125,7 +126,7 @@ export function createAgentInitiatedTurnLease<TContext>(
     const pending = settle(turn).catch((err: unknown) => {
       console.error(
         `[acp-agent-turn] could not bind thread ${deps.threadId} for the agent's own turn:`,
-        err instanceof Error ? err.message : String(err),
+        errorMessage(err),
       )
       return null
     })

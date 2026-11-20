@@ -85,11 +85,16 @@ describe('transcript workspace image links', () => {
           }),
         { timeout: 15_000 },
       )
+      // A prior PNG must not satisfy this copy's asynchronous clipboard write.
+      await browser.execute(async () => navigator.clipboard.writeText('image copy sentinel'))
       await image.click({ button: 'right' })
       const copy = dialog.$('.context-menu-item')
       await expect(copy).toHaveText('Copy image')
       await saveAppScreenshot('transcript-image-copy-menu.png')
+      await $('.toast=Copied image').waitForExist({ reverse: true, timeout: 5_000 })
       await copy.click()
+      // The product confirms only after navigator.clipboard.write resolves.
+      await $('.toast=Copied image').waitForExist({ timeout: 5_000 })
 
       const clipboardImage = await browser.execute(async () => {
         const first = (await navigator.clipboard.read())[0]

@@ -1320,10 +1320,13 @@ describe('worktree manager', () => {
       const picked = await commitFile(path, 'thread.txt')
       await commitFile(repo, 'main.txt')
       // A signing key that cannot load fails the pick's commit the way a
-      // sandboxed agent without the user's ssh-agent does.
+      // sandboxed agent without the user's ssh-agent does. Pinning the signer
+      // keeps a host's global gpg.ssh.program, which may ignore the key, out.
       stoppedRebase(path, [
         '-c',
         'gpg.format=ssh',
+        '-c',
+        'gpg.ssh.program=ssh-keygen',
         '-c',
         'user.signingkey=/nonexistent/copse-test-key',
         'rebase',
@@ -1545,16 +1548,20 @@ describe('worktree manager', () => {
         return true
       },
     )
+    // The footer's inspection reports the state instead of throwing, so the
+    // thread can say so before the user sends a message.
+    const input = { projectId: 'project-1', threadId: 'thread-1', projectRoot: repo, worktree }
+    assert.deepEqual(await inspectThreadWorktreeAttachment(input), {
+      state: 'on-base-branch',
+      branch: worktree.branch,
+      baseBranch: 'main',
+    })
 
     // Returning to the thread branch is the whole recovery.
     git(worktree.path, ['checkout', '-q', worktree.branch])
-    const validated = await validateThreadWorktree({
-      projectId: 'project-1',
-      threadId: 'thread-1',
-      projectRoot: repo,
-      worktree,
-    })
+    const validated = await validateThreadWorktree(input)
     assert.equal(validated.branch, worktree.branch)
+    assert.deepEqual(await inspectThreadWorktreeAttachment(input), { state: 'attached' })
   })
 
   it('rejects a detached HEAD and other foreign persisted worktree authority', async () => {

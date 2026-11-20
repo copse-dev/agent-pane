@@ -48,19 +48,22 @@ describe('markdown workspace links', () => {
       },
       remoteAgent: {
         ...base.remoteAgent,
-        downloadArtifact: async (id, path) => {
-          calls.push(id, path)
-          return ''
+        downloadArtifact: async (request) => {
+          calls.push(request.projectId, request.threadId, request.agentId, request.path)
         },
       },
     }
-    const unbind = bindWorkspaceLinkClicks(root, createStore(), api)
+    const unbind = bindWorkspaceLinkClicks(
+      root,
+      createStore({ activeProjectId: 'project', activeThreadId: 'thread' }),
+      api,
+    )
     root
       .querySelector('a')
       ?.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }))
     await new Promise((resolve) => setTimeout(resolve, 0))
     unbind()
-    assert.deepEqual(calls, ['openai:thread', artifact])
+    assert.deepEqual(calls, ['project', 'thread', 'openai:thread', artifact])
   })
   it('does not show a stale lookup error after leaving its task', async () => {
     const root = document.createElement('div')

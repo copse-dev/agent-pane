@@ -4,7 +4,7 @@ const REASON_LABEL: Record<AutomationRetainedReason, string> = {
   'uncommitted-changes': 'has uncommitted changes',
   'unmerged-commits': 'has commits that are not merged',
   'unpushed-pull-request': 'has a pull request branch that is not pushed',
-  'in-use': 'still has a terminal or background process open',
+  'in-use': 'still has an agent, terminal or background process using the checkout',
 }
 
 /** One short clause for a blocking run, e.g. “Main check” has uncommitted changes (a.ts, b.ts). */

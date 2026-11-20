@@ -10,6 +10,7 @@
     "wdio.conf.ts",
     "wdio.ci.conf.ts",
     "wdio.eval.conf.ts",
+    "wdio.quarantine.conf.ts",
     "tests/e2e/helpers/*.d.ts",
     "src/preload/api.d.ts",
     "src/shared/build-constants.d.ts",

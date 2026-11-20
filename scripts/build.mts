@@ -261,10 +261,10 @@ if (!isDemo) {
 const browserOpts = {
   bundle: true,
   platform: 'browser' as const,
-  // Demo previews are committed to the machine-managed `demo-previews` branch and
-  // fetched by every Secret scan (`gitleaks` with `fetch-depth: 0`). Source maps
-  // there trip high-entropy secret heuristics and fail unrelated PR tips — so the
-  // demo build must not emit them.
+  // Demo previews are committed to the machine-managed `demo-previews` branch.
+  // Source maps there tripped Secret scan's high-entropy heuristics and failed
+  // unrelated PR tips when the scan walked every ref — so the demo build must not
+  // emit them.
   sourcemap: !isDemo && !isRelease,
   loader: { '.ts': 'ts', '.css': 'css', '.ttf': 'file' } as const,
   alias: sharedAlias,

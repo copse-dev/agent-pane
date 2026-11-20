@@ -69,8 +69,8 @@ export const CLASSIFIER_PRESETS: readonly ClassifierProfile[] = [
   },
   {
     id: 'perplexity-decider',
-    label: 'Perplexity / Decider v1.1 (OpenRouter)',
-    model: 'perplexity/pplx-decider-v1.1-27b',
+    label: 'Perplexity / Decider v1.3 (OpenRouter)',
+    model: 'perplexity/pplx-decider-v1.3',
     timeoutMs: 60_000,
     connection: {
       type: 'http',
@@ -78,6 +78,32 @@ export const CLASSIFIER_PRESETS: readonly ClassifierProfile[] = [
       baseUrl: 'https://openrouter.ai/api/alpha',
       auth: 'bearer',
       apiKeyEnv: 'OPENROUTER_API_KEY',
+    },
+  },
+  {
+    id: 'perplexity-decider-direct',
+    label: 'Perplexity / Decider v1.3',
+    model: 'pplx-decider-v1.3',
+    timeoutMs: 60_000,
+    connection: {
+      type: 'http',
+      protocol: 'decisions',
+      baseUrl: 'https://api.perplexity.ai/v1',
+      auth: 'bearer',
+      apiKeyEnv: 'PERPLEXITY_API_KEY',
+    },
+  },
+  {
+    id: 'perplexity-decider-flash',
+    label: 'Perplexity / Decider Flash v1.3',
+    model: 'pplx-decider-flash-v1.3',
+    timeoutMs: 60_000,
+    connection: {
+      type: 'http',
+      protocol: 'decisions',
+      baseUrl: 'https://api.perplexity.ai/v1',
+      auth: 'bearer',
+      apiKeyEnv: 'PERPLEXITY_API_KEY',
     },
   },
   {
@@ -91,6 +117,18 @@ export const CLASSIFIER_PRESETS: readonly ClassifierProfile[] = [
       baseUrl: 'https://openrouter.ai/api/alpha',
       auth: 'bearer',
       apiKeyEnv: 'OPENROUTER_API_KEY',
+    },
+  },
+  {
+    id: 'perplexity-decider-local',
+    label: 'Perplexity / Decider for Mac (local)',
+    model: 'pplx-decider-flash-v1.2',
+    timeoutMs: 60_000,
+    connection: {
+      type: 'http',
+      protocol: 'decisions',
+      baseUrl: 'http://127.0.0.1:8080/v1',
+      auth: 'none',
     },
   },
   {
@@ -114,6 +152,20 @@ export const CLASSIFIER_PRESETS: readonly ClassifierProfile[] = [
       type: 'http',
       protocol: 'systemone',
       baseUrl: 'http://127.0.0.1:8091/v1',
+      auth: 'none',
+    },
+  },
+  {
+    id: 'strands-decider',
+    label: 'Strands Decider 2B (local)',
+    // The server ignores this and reports the checkpoint it serves, without the `StrandsAgents/` owner.
+    model: 'StrandsAgents/strands-decider-2B-qwen3.5-v1-2610',
+    timeoutMs: 60_000,
+    connection: {
+      type: 'http',
+      protocol: 'systemone',
+      // Not the server's default 8000, which a stray dev server would be mistaken for.
+      baseUrl: 'http://127.0.0.1:8011/v1',
       auth: 'none',
     },
   },

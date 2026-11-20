@@ -1,4 +1,5 @@
 import { outcomeHooks } from './scripts/lib/e2e-outcomes.mts'
+import { recordWorkerEnd } from './scripts/lib/e2e-attempt-diagnostics.mts'
 import type { Options } from '@wdio/types'
 import { config as baseConfig } from './wdio.conf.ts'
 
@@ -9,7 +10,6 @@ import { config as baseConfig } from './wdio.conf.ts'
  */
 const ciExclude = [
   './tests/e2e/agent-eval-drive.e2e.ts',
-  './tests/e2e/follow-up-suggestions.e2e.ts',
   // The auto-portrait layout needs a window >=1080 logical px tall (minWidth 800
   // x 1.35), taller than the 1600x1024 logical Xvfb desktop in run-e2e.mts.
   './tests/e2e/portrait-right-panel.e2e.ts',
@@ -25,7 +25,8 @@ export const config: Options.Testrunner = {
   onWorkerStart(cid, _caps, specs) {
     outcomes.start(cid, specs)
   },
-  onWorkerEnd(cid, exitCode, specs) {
+  onWorkerEnd(cid, exitCode, specs, _retries, signal) {
+    recordWorkerEnd(cid, exitCode, signal)
     outcomes.end(cid, exitCode, specs)
   },
   exclude: [...(baseConfig.exclude ?? []), ...ciExclude],

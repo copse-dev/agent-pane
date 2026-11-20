@@ -2,7 +2,8 @@ import { formatArgvForShell } from '../project-sandbox/sandbox-argv.ts'
 import { load } from 'js-yaml'
 import { createHash } from 'node:crypto'
 import { existsSync, globSync, lstatSync, readFileSync, realpathSync } from 'node:fs'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { isPathWithin, relativeWithin } from '@copse/std/path-containment.ts'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { fingerprintPaths } from '../../../scripts/lib/dev-sync.mts'
@@ -55,6 +56,8 @@ export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun'
 export interface WorktreePreparationPlan {
   root: string
   fingerprint: string
+  /** Same declared inputs across owned worktrees; execution fingerprint remains path-bound. */
+  contentFingerprint: string
   ecosystem: 'uv' | 'pip' | 'go' | 'cargo' | null
   manager: {
     name: PackageManager
@@ -79,8 +82,7 @@ export function readPreparationText(root: string, path: string): string | null {
 /** Metadata and declared inputs must not make host reads follow links out of the checkout. */
 function relativePreparationPath(root: string, path: string): string {
   const absolute = resolve(root, path)
-  const rel = relative(root, absolute)
-  if (isAbsolute(path) || rel === '..' || rel.startsWith(`..${sep}`)) {
+  if (isAbsolute(path) || relativeWithin(root, absolute) === null) {
     throw new Error(`Preparation path must stay in the worktree: ${path}`)
   }
   return absolute
@@ -93,8 +95,7 @@ export function containedPreparationPath(root: string, path: string): string {
   // host write (or a Linux namespace-only write) follow an unchecked target.
   let ancestor = absolute
   while (!lstatSync(ancestor, { throwIfNoEntry: false })) ancestor = dirname(ancestor)
-  const canonical = relative(realpathSync(root), realpathSync(ancestor))
-  if (canonical === '..' || canonical.startsWith(`..${sep}`) || isAbsolute(canonical)) {
+  if (!isPathWithin(realpathSync(root), realpathSync(ancestor))) {
     throw new Error(`Preparation input points outside the worktree: ${path}`)
   }
   return absolute
@@ -519,19 +520,22 @@ export function readWorktreePreparationPlan(root: string): WorktreePreparationPl
   for (const input of inputs) containedPreparationPath(root, input)
   for (const check of config?.checks ?? [])
     if (check.path) relativePreparationPath(root, check.path)
+  const inputFingerprint = fingerprintPaths(
+    root,
+    inputs.flatMap((path) =>
+      existsSync(join(root, path))
+        ? [path, relative(root, realpathSync(join(root, path)))]
+        : [path],
+    ),
+  )
   const fingerprint = createHash('sha256')
     .update('worktree-plan-v2\0')
     .update(root)
-    .update(
-      fingerprintPaths(
-        root,
-        inputs.flatMap((path) =>
-          existsSync(join(root, path))
-            ? [path, relative(root, realpathSync(join(root, path)))]
-            : [path],
-        ),
-      ),
-    )
+    .update(inputFingerprint)
+    .digest('hex')
+  const contentFingerprint = createHash('sha256')
+    .update('worktree-preparation-grant-v1\0')
+    .update(inputFingerprint)
     .digest('hex')
   const nodeRequirements = [
     readPreparationText(root, '.nvmrc'),
@@ -683,6 +687,7 @@ export function readWorktreePreparationPlan(root: string): WorktreePreparationPl
   return {
     root,
     fingerprint,
+    contentFingerprint,
     ecosystem,
     manager,
     nodeRequirements,
