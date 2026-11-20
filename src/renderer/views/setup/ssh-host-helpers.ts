@@ -67,7 +67,7 @@ export interface ImportSshHostsResult {
   firstAliasHostId: string | undefined
 }
 
-function nextAvailableHostId(baseId: string, usedIds: ReadonlySet<string>): string {
+export function nextAvailableHostId(baseId: string, usedIds: ReadonlySet<string>): string {
   if (!usedIds.has(baseId)) return baseId
   for (let suffixNumber = 2; ; suffixNumber += 1) {
     const suffix = `-${String(suffixNumber)}`
@@ -104,6 +104,30 @@ export function importSshConfigHosts(
   }
 
   return { hosts, importedHostIds, firstAliasHostId }
+}
+
+/**
+ * `~/.ssh/config` hosts that are not saved yet, to offer beside the saved ones.
+ * An alias counts as saved when a saved host already targets it.
+ */
+export function unsavedSshConfigHosts(
+  saved: readonly SshWorkspaceHost[],
+  aliases: readonly SshWorkspaceHost[],
+): SshWorkspaceHost[] {
+  const targets = new Set(saved.map((host) => host.host.toLowerCase()))
+  return aliases.filter((alias) => !targets.has(alias.host.toLowerCase()))
+}
+
+/**
+ * Save one `~/.ssh/config` alias, alone and in the alias-only form OpenSSH needs
+ * to apply its whole stanza, and return the saved hosts and the alias's id.
+ */
+export function saveSshConfigHost(
+  saved: readonly SshWorkspaceHost[],
+  alias: SshWorkspaceHost,
+): { hosts: SshWorkspaceHost[]; hostId: string } {
+  const imported = importSshConfigHosts(saved, [alias])
+  return { hosts: imported.hosts, hostId: imported.firstAliasHostId ?? alias.id }
 }
 
 export function removeHost(list: SshWorkspaceHost[], id: string): SshWorkspaceHost[] {
