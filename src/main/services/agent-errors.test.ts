@@ -9,6 +9,7 @@ import {
   acpTurnInterruptionFor,
   acpTurnInterruptionMarker,
   agentErrorNotice,
+  agentErrorNoticeText,
   classifyAcpAuthFailure,
   classifyAgentError,
   classifyProviderAccessFailure,
@@ -455,6 +456,19 @@ describe('agentErrorNotice', () => {
       acpAgentId: 'claude-agent-acp',
     })
     assert.equal(agentErrorNotice(guidance), guidance)
+  })
+})
+
+describe('agentErrorNoticeText', () => {
+  it('starts a notice that follows streamed words on a block of its own', () => {
+    const notice = agentErrorNotice('Claude Agent stream ended before the turn finished.')
+    const reply = `I am updating the changelog${agentErrorNoticeText(notice, true)}`
+    assert.equal(
+      reply,
+      'I am updating the changelog\n\n> [!CAUTION]\n> Claude Agent stream ended before the turn finished.',
+    )
+    assert.match(renderMarkdownUnsafe(reply), /markdown-alert-caution/)
+    assert.equal(agentErrorNoticeText(notice, false), notice)
   })
 })
 

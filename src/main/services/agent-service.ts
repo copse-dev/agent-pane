@@ -56,6 +56,7 @@ import {
   acpTurnInterruptionFor,
   acpTurnInterruptionMarker,
   agentErrorNotice,
+  agentErrorNoticeText,
   classifyAcpAuthFailure,
   classifyAgentError,
   classifyProviderAccessFailure,
@@ -1614,7 +1615,7 @@ async function runAgentWithInlineCanvas(
       // partial transcript says the agent wrote some; `lastTurnEvent` covers
       // anything else that left the bubble ending in text.
       const followsText = Boolean(partial?.assistantText) || lastTurnEvent === 'text'
-      sendChunk({ type: 'text', text: followsText ? `\n\n${msg}` : msg })
+      sendChunk({ type: 'text', text: agentErrorNoticeText(msg, followsText) })
       // A credentials failure is the one ACP error the user can't act on from
       // the chat alone — the fix lives in a separate program's login flow. Offer
       // to open it, after the diagnosis has been streamed so the ask arrives
@@ -1788,7 +1789,10 @@ async function runAgentWithInlineCanvas(
         const access = classifyProviderAccessFailure(err)
         if (access)
           return { kind: 'blocked', reason: access, message: msg, error: turnErrorDetail(err) }
-        sendChunk({ type: 'text', text: msg })
+        // A remote stream can fail after streaming part of the reply (the
+        // Claude Agent stream closing before the turn finished): keep the
+        // notice a callout of its own rather than the tail of that sentence.
+        sendChunk({ type: 'text', text: agentErrorNoticeText(msg, lastTurnEvent === 'text') })
         recordTurnFailure(err)
         sendChunk({ type: 'done' })
         return { kind: 'done', result: emptyTurn }
