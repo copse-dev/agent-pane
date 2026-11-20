@@ -985,7 +985,7 @@ async function runAcpAgentTurn(
         copseToolsNote = acpCopseToolsDroppedPromptNote(sessionBridge.serverName)
       }
     } else if (sessionBridge && bridgeMounted) {
-      if (markAcpBridgeAvailable(sessionBridge)) {
+      if (markAcpBridgeAvailable(sessionBridge, fresh)) {
         copseToolsNote = acpCopseToolsConnectedPromptNote(
           sessionBridge.serverName,
           acpCopseToolsSteering(

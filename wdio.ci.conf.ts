@@ -1,4 +1,5 @@
 import { outcomeHooks } from './scripts/lib/e2e-outcomes.mts'
+import { recordWorkerEnd } from './scripts/lib/e2e-attempt-diagnostics.mts'
 import type { Options } from '@wdio/types'
 import { config as baseConfig } from './wdio.conf.ts'
 
@@ -24,7 +25,8 @@ export const config: Options.Testrunner = {
   onWorkerStart(cid, _caps, specs) {
     outcomes.start(cid, specs)
   },
-  onWorkerEnd(cid, exitCode, specs) {
+  onWorkerEnd(cid, exitCode, specs, _retries, signal) {
+    recordWorkerEnd(cid, exitCode, signal)
     outcomes.end(cid, exitCode, specs)
   },
   exclude: [...(baseConfig.exclude ?? []), ...ciExclude],

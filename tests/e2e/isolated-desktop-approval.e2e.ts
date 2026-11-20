@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { lstatSync, mkdirSync, mkdtempSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { buildSync } from 'esbuild'
 import { z } from 'zod'
 import { safeJsonParse, decodeWithSchema } from '@copse/std/safe-json.ts'
@@ -44,14 +44,36 @@ function isolatedDesktopVms(): string[] {
     .filter((id) => id.startsWith('copse-desktop-probe-'))
 }
 
-async function importTrustedDesktopPin(): Promise<void> {
-  // Import only the builder's validated image identity, never a host profile or key.
-  const digest = await readAppleDesktopPin({ COPSE_DIR: join(homedir(), '.copse') })
-  const directory = join(copseDataRoot(), 'isolated-desktop')
-  mkdirSync(directory, { recursive: true, mode: 0o700 })
-  writeFileSync(join(directory, 'image-pin.json'), JSON.stringify({ version: 1, digest }), {
-    mode: 0o600,
-  })
+const imagePreparations = new Map<string, Promise<void>>()
+
+async function prepareTrustedDesktopPin(): Promise<void> {
+  const profile = copseDataRoot()
+  if (
+    process.env['COPSE_DIR'] !== profile ||
+    !basename(profile).startsWith('.wdio-profile-') ||
+    realpathSync(profile) !== profile
+  ) {
+    throw new Error('Desktop acceptance requires a generated isolated e2e profile')
+  }
+  const info = lstatSync(profile)
+  if (!info.isDirectory() || info.uid !== process.getuid?.() || (info.mode & 0o022) !== 0) {
+    throw new Error('Desktop acceptance profile must be owned and protected from other writers')
+  }
+  let preparation = imagePreparations.get(profile)
+  if (!preparation) {
+    preparation = Promise.resolve().then(() => {
+      // The supported builder creates this profile's receipt before any grant.
+      // Keep a failed preparation so another case cannot silently retry it.
+      execFileSync(process.execPath, ['scripts/build-apple-desktop.mts'], {
+        env: { ...process.env, COPSE_DIR: profile },
+        timeout: 180_000,
+        maxBuffer: 8 * 1024 * 1024,
+      })
+    })
+    imagePreparations.set(profile, preparation)
+  }
+  await preparation
+  await readAppleDesktopPin({ COPSE_DIR: profile })
 }
 
 ;(supported ? describe : describe.skip)('isolated Copse desktop consent', function () {
@@ -133,8 +155,8 @@ async function importTrustedDesktopPin(): Promise<void> {
   })
 
   it('approves a real VM, captures its screen and revokes it through the registered tool', async function () {
-    this.timeout(120_000)
-    await importTrustedDesktopPin()
+    this.timeout(300_000) // Supported image preparation precedes the guest grant.
+    await prepareTrustedDesktopPin()
     const scenario = await prepareMockTurn('Test the approved isolated desktop.', [
       {
         toolCalls: [
@@ -182,7 +204,7 @@ async function importTrustedDesktopPin(): Promise<void> {
   })
 
   it('starts and stops a real VM through the authenticated ACP bridge and consent UI', async function () {
-    this.timeout(120_000)
+    this.timeout(300_000) // Also works when this real-VM case is selected alone.
     // Inject a scripted agent at the supported executable boundary. The MCP
     // bridge, registry, consent service and Apple VM transport remain real.
     const workspace = seedStableWorkspace()
@@ -220,7 +242,7 @@ async function importTrustedDesktopPin(): Promise<void> {
         },
       ],
     })
-    await importTrustedDesktopPin()
+    await prepareTrustedDesktopPin()
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await setComposerValue('Verify isolated desktop control through ACP.')
@@ -266,7 +288,7 @@ async function importTrustedDesktopPin(): Promise<void> {
         },
       ],
     })
-    await importTrustedDesktopPin()
+    await prepareTrustedDesktopPin()
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     expect(isolatedDesktopVms()).toEqual([])

@@ -77,23 +77,31 @@ function applyScopes(): void {
  * BEFORE spawning the process the scope is for, so its first connection never
  * races the config swap; release when the process closes.
  */
-export function acquireSandboxNetworkScope(scope: SandboxNetworkScope): () => void {
+export function acquireSandboxNetworkScope(
+  scope: SandboxNetworkScope,
+  options: { logChanges?: boolean } = {},
+): () => void {
   activeScopes.add(scope)
   applyScopes()
-  console.error(
-    `[network-scope] widened for "${scope.label}" (${String(activeScopes.size)} active: ${activeSandboxNetworkScopeLabels().join(', ')})`,
-  )
+  // An isolated worker's stderr is the background task's visible output.
+  // Keep its bookkeeping off that stream (and URL detection), while retaining
+  // the main process's diagnostics for scopes it owns itself.
+  if (options.logChanges !== false)
+    console.error(
+      `[network-scope] widened for "${scope.label}" (${String(activeScopes.size)} active: ${activeSandboxNetworkScopeLabels().join(', ')})`,
+    )
   let released = false
   return () => {
     if (released) return
     released = true
     activeScopes.delete(scope)
     applyScopes()
-    console.error(
-      `[network-scope] released "${scope.label}" (${String(activeScopes.size)} still active${
-        activeScopes.size > 0 ? `: ${activeSandboxNetworkScopeLabels().join(', ')}` : ''
-      })`,
-    )
+    if (options.logChanges !== false)
+      console.error(
+        `[network-scope] released "${scope.label}" (${String(activeScopes.size)} still active${
+          activeScopes.size > 0 ? `: ${activeSandboxNetworkScopeLabels().join(', ')}` : ''
+        })`,
+      )
   }
 }
 

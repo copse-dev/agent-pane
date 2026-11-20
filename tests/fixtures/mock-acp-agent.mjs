@@ -54,6 +54,9 @@
  * | `--report-mcp-failure` | on the first prompt, report each offered server as failed the |
  * |                        | way Claude Agent ACP does for a client without notices        |
  *
+ * `--resume-session` accepts session/resume in a replacement process for testing
+ * authenticated bridge guidance after conversation resume.
+ *
  * `--mcp-http` alone is an agent that is offered the bridge and never mounts it,
  * until a `list-mcp-tools` prompt mounts it late.
  *
@@ -138,6 +141,7 @@ agent({ name: 'mock-acp-agent' })
     protocolVersion: PROTOCOL_VERSION,
     agentCapabilities: {
       loadSession: false,
+      ...(flags.has('--resume-session') ? { sessionCapabilities: { resume: {} } } : {}),
       ...(flags.has('--mcp-http') ? { mcpCapabilities: { http: true } } : {}),
     },
   }))
@@ -149,6 +153,13 @@ agent({ name: 'mock-acp-agent' })
     offeredServers.set(sessionId, servers)
     if (flags.has('--list-mcp-tools')) await listTools(servers)
     return { sessionId }
+  })
+  .onRequest('session/resume', async (ctx) => {
+    if (!flags.has('--resume-session')) throw new Error('Session resuming is disabled')
+    const servers = (ctx.params.mcpServers ?? []).filter((server) => server.type === 'http')
+    offeredServers.set(ctx.params.sessionId, servers)
+    if (flags.has('--list-mcp-tools')) await listTools(servers)
+    return {}
   })
   .onRequest('session/prompt', async (ctx) => {
     const { sessionId, prompt } = ctx.params
