@@ -130,8 +130,8 @@
       "bytes": 55076
     },
     "acp-probe-failure-copy.png": {
-      "sha256": "764ae869c07b1bd2fbd57ef8a0605ebb8fae0cd6431dbafc89653a8b663fd243",
-      "bytes": 19017
+      "sha256": "23b710913808fd438041bbf6982f1e0afbcd31c430715e5d377a60ce61edd832",
+      "bytes": 19367
     },
     "acp-prompt-interruption-collapsed.png": {
       "sha256": "f20562aabfc33239d99c70045d2b6bfde16e4bd6b0f1a9101654e1bdf4c53c8c",
@@ -3722,8 +3722,8 @@
       "bytes": 27188
     },
     "queued-held.png": {
-      "sha256": "3ecab75386f398e5aed8e88cf508525a7ccce09e58795d5290bcf9a533f07666",
-      "bytes": 287947
+      "sha256": "0cc2e5f13c2983eb1b3ec3f73908b1204d55258b5ad62762f0f3b46b993ee7d3",
+      "bytes": 288232
     },
     "queued-hook-held-after-human-task.png": {
       "sha256": "c80da3785606b65bce334164ee6d3dc85b32c4b454c46328d96c212d4f27e48f",
