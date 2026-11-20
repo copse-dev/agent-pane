@@ -13618,9 +13618,6 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   gap: var(--spacing-sm);
   font-size: var(--font-size-sm);
 }
-.mcp-declared-row {
-  border-style: dashed;
-}
 .mcp-trust-banner {
   display: flex;
   align-items: center;
