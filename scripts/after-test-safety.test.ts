@@ -8,6 +8,7 @@ import {
   isIgnorableDeleteSessionError,
   isMochaTimeoutError,
   installDeleteSessionSafety,
+  shouldPreCloseBeforeReload,
   shouldSkipAfterTestSessionTraffic,
   wedgedSessionPatternsForTest,
   withTimeout,
@@ -69,6 +70,14 @@ describe('shouldSkipAfterTestSessionTraffic', () => {
       shouldSkipAfterTestSessionTraffic(new Error('Unexpected error toast(s): boom')),
       false,
     )
+  })
+})
+
+describe('reloadSession shutdown policy', () => {
+  it('skips only the redundant Linux pre-close that stalls after detaching Electron', () => {
+    assert.equal(shouldPreCloseBeforeReload('linux'), false)
+    assert.equal(shouldPreCloseBeforeReload('darwin'), true)
+    assert.equal(shouldPreCloseBeforeReload('win32'), true)
   })
 })
 
