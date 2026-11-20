@@ -112,6 +112,20 @@ describe('settings-writable', () => {
     assert.throws(() => parseRendererWritableSetting('postTurnReviewMinChangedLines', -1))
   })
 
+  it('keeps a stored SSH host list readable when one destination is unusable', () => {
+    // Reads validate the whole list, so the schema must not refuse a single
+    // entry: that would hide every other host. resolveTarget refuses such a
+    // destination before ssh runs, and the host form refuses it at entry.
+    const base = { id: 'dev', label: 'Dev', host: 'dev.example' }
+    const unusable = [
+      { ...base, id: 'opt-host', host: '-oFoo=bar' },
+      { ...base, id: 'opt-user', user: '-p22' },
+      { ...base, id: 'ctrl', host: 'dev\u0001example' },
+    ]
+    const list = [base, ...unusable]
+    assert.deepEqual(parseRendererWritableSetting('sshWorkspaceHosts', list), list)
+  })
+
   it('parses security settings bundle', () => {
     const parsed = securitySettingsSchema.parse({
       localServerUrl: 'http://127.0.0.1:1234/v1',
