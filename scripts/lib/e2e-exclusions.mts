@@ -341,7 +341,7 @@ export function validateExclusionRegistry(
 
 export type ExclusionCheckMode = 'warn' | 'enforce'
 
-/** PR prechecks warn on quarantine policy; the nightly run and release gate enforce it. */
+/** PR prechecks warn on quarantine policy; the nightly expiry workflow enforces it. */
 export function exclusionCheckFails(report: ExclusionReport, mode: ExclusionCheckMode): boolean {
   return report.errors.length > 0 || (mode === 'enforce' && report.quarantine.length > 0)
 }

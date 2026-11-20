@@ -8,9 +8,9 @@ import {
 } from './lib/e2e-exclusions.mts'
 import { decodeWithSchema, safeJsonParse } from './lib/safe-json.mts'
 
-// `--enforce` is for the nightly schedule and release gating: an expired or
+// `--enforce` is for the nightly e2e-quarantine-expiry workflow: an expired or
 // unowned quarantine fails there, but only warns in PR prechecks and check:local
-// so it cannot block unrelated work.
+// so it cannot block unrelated work. No release step runs it.
 // pnpm forwards its own `--` separator.
 const args = process.argv.slice(2).filter((arg) => arg !== '--')
 for (const arg of args) if (arg !== '--enforce') throw new Error(`Unknown argument: ${arg}`)
