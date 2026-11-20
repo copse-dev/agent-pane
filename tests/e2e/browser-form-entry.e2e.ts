@@ -5,7 +5,11 @@ import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { prepareMockTurn, expectAssistantReply } from './helpers/mock-scenario.ts'
 import { submitComposer } from './helpers/composer.ts'
-import { e2eWorkspaceDir, resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import {
+  removeAllProjectStoresOnRelaunch,
+  resetUserData,
+  seedEmptyProject,
+} from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 import { waitForAgentIdle } from './helpers.ts'
@@ -49,7 +53,7 @@ describe('native browser form entry', () => {
       caseNumber === 0 ? PAGE.replace(' data-copse-ref="e1"', '') : PAGE,
     )
     resetUserData()
-    removeE2eTree(e2eWorkspaceDir())
+    removeAllProjectStoresOnRelaunch()
     seedEmptyProject(root, `browser-form-entry-${String(++caseNumber)}`, {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
