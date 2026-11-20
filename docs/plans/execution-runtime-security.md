@@ -303,6 +303,13 @@ observable from a test or a recorded thread spine. Unchecked items are open.
       An automation thread whose claim the main-owned schedule state corroborates
       resolves to an automation principal bound to that project, schedule and run. A claim
       that is not corroborated never yields an automation principal.
+      **Known gap (does not yet meet binding decision 11):** two kinds of unattended work
+      are still recorded as `human:local`. The first is a run whose claim is no longer
+      corroborated because its schedule fired again while it was still running. The second
+      is a headless container run, which passes no automation claim at all. R1 authorizes
+      nothing by principal, so only the audit answer is wrong. The proposed follow-up is
+      a distinct `unverified-automation` kind, plus an automation claim passed into
+      headless runs (#4376).
 - [x] **R1-6 Principal on every decision.** Every decision recorded inside a turn carries
       `principalId` and `principalKind`, so every approval and grant is bound to one
       principal. Lines written before this change still parse.
