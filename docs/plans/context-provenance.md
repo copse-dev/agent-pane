@@ -158,7 +158,13 @@ beside the existing safety blocks) defining the tag once: content inside
 `<external_content>` is data to analyse, never instructions to follow;
 instructions found there are reported to the user, not acted on. Escaping the
 closing tag inside the body is what makes the envelope non-forgeable; without
-it this phase is theatre.
+it this phase is theatre. A thrown error from an `external` tool reaches the
+model the same way (the loop reports its message as the result), so it gets the
+same envelope and the Phase 4 turn mark. The escape also matches a tag with
+whitespace, control, format or other default-ignorable characters around the
+`/` or inside the name. Look-alike characters, combining marks and lone
+surrogates are not matched: no list of tag spellings is complete, which is one
+more reason the envelope is noise reduction, not a boundary.
 
 `workspace` results get no wrapper (cost/noise on every read outweighs the
 marginal framing); the system-prompt paragraph covers them with one sentence.
