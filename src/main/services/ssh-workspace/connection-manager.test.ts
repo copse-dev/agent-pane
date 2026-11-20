@@ -284,6 +284,21 @@ describe('SshConnectionManager', () => {
       })
     })
 
+    it('leaves the reconnect to the user once the host has been edited', async () => {
+      await withTestHost(async () => {
+        await setSetting('sshWorkspaceHosts', [{ ...TEST_HOST, forwardAgent: true }])
+        const { manager, transports, connects, statuses } = harness()
+        await manager.connect('dev-box')
+        // The user unticks Forward agent. The transport still holds the old entry.
+        await setSetting('sshWorkspaceHosts', [{ ...TEST_HOST, forwardAgent: false }])
+        transports[0]?.dropConnection()
+        await manager.checkLiveness()
+
+        assert.deepEqual(statuses(), ['disconnected'])
+        assert.deepEqual(connects, [{}], 'nothing rebuilt from the entry the user changed')
+      })
+    })
+
     it('lets an explicit connect replace a lost connection', async () => {
       await withTestHost(async () => {
         const { manager, transports, connects, statuses } = harness((options) => {

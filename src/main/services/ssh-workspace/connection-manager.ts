@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util'
 import type {
   SshCapabilityReport,
   SshConnectionState,
@@ -176,6 +177,11 @@ export class SshConnectionManager {
       entry.nextQuietAttemptAt = this.now()
       this.emit()
     }
+    // A quiet reconnect rebuilds the master from the host as it was saved when
+    // the user connected. Once they have edited it (say, unticked Forward
+    // agent), leave the reconnect to them: Reconnect builds from the saved entry.
+    const saved = findConfiguredSshHost(hostId)
+    if (!saved || !isDeepStrictEqual(saved, entry.host)) return
     const delays = SSH_QUIET_RECONNECT_DELAYS_MS
     if (entry.quietAttempts >= delays.length || this.now() < entry.nextQuietAttemptAt) return
     entry.quietAttempts += 1

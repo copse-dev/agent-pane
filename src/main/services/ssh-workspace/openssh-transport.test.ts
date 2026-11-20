@@ -1,6 +1,7 @@
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
+import { once } from 'node:events'
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -123,10 +124,11 @@ describe('sshExecArgs / ControlPath', () => {
           fakeSsh,
           [
             '#!/bin/sh',
-            'if [ "$1" = "-O" ]; then exit 1; fi',
+            'if [ "$1" = "-O" ]; then [ -e "${0%/*}/master-up" ] && exit 0; exit 1; fi',
             // Long enough that an event-loop turn must happen before connect
             // settles. A synchronous child here would settle connect first.
             '/bin/sleep 0.1',
+            ': > "${0%/*}/master-up"',
             'exit 0',
           ].join('\n'),
         )
@@ -200,6 +202,33 @@ function installFakeSsh(t: { after: (fn: () => void) => void }, script: string):
   return dir
 }
 
+/**
+ * The stub's control master: `-O check` succeeds while `master-up` exists.
+ * A script that starts a master creates it; a test removes it to drop the link.
+ */
+const STUB_MASTER_CHECK = [
+  'case " $* " in',
+  '  *" -O check "*) [ -e "$(dirname "$0")/master-up" ] && exit 0 || exit 255 ;;',
+  'esac',
+].join('\n')
+
+/** Leave a socket file whose listener died without removing it, as a SIGKILLed master does. */
+async function leaveDeadSocket(path: string): Promise<void> {
+  const listener = spawn(
+    process.execPath,
+    [
+      '-e',
+      `require('node:net').createServer().listen(${JSON.stringify(path)}, () => console.log('ready'))`,
+    ],
+    { stdio: ['ignore', 'pipe', 'inherit'] },
+  )
+  await once(listener.stdout, 'data')
+  const exited = once(listener, 'exit')
+  listener.kill('SIGKILL')
+  await exited
+  assert.ok(existsSync(path), 'the dead listener left its socket file')
+}
+
 async function waitForCondition(condition: () => boolean, message: string): Promise<void> {
   const deadline = Date.now() + 5_000
   while (!condition() && Date.now() < deadline) await delay(20)
@@ -234,7 +263,10 @@ describe(
     it('keeps the event loop running while the control master authenticates', async (t) => {
       // The askpass bridge answers password prompts from this same event loop;
       // a blocking spawn while ssh waits on askpass would deadlock the main process.
-      installFakeSsh(t, 'case " $* " in *" -O check "*) exit 255 ;; esac\nsleep 0.3\nexit 0')
+      installFakeSsh(
+        t,
+        [STUB_MASTER_CHECK, 'sleep 0.3', 'touch "$(dirname "$0")/master-up"', 'exit 0'].join('\n'),
+      )
       const transport = new OpenSshTransport(host)
       let ranDuringConnect = false
       const timer = setTimeout(() => {
@@ -247,23 +279,18 @@ describe(
     })
 
     it('answers a liveness check from the control socket alone', async (t) => {
-      // The master is "up" while the marker file exists. Every invocation is
-      // logged so the test can prove the check never opens a connection.
+      // Every invocation is logged so the test can prove a check never opens a
+      // connection.
       const dir = installFakeSsh(
         t,
         [
           'echo "$*" >> "$(dirname "$0")/calls"',
-          'case " $* " in',
-          '  *" -O check "*) [ -e "$(dirname "$0")/master-up" ] && exit 0 || exit 255 ;;',
-          'esac',
+          STUB_MASTER_CHECK,
           'touch "$(dirname "$0")/master-up"',
           'exit 0',
         ].join('\n'),
       )
       const transport = new OpenSshTransport(host)
-      assert.equal(await transport.checkAlive(), false, 'never connected, so nothing to ask')
-      assert.equal(existsSync(join(dir, 'calls')), false)
-
       await transport.connect()
       assert.equal(await transport.checkAlive(), true)
 
@@ -271,23 +298,67 @@ describe(
       assert.equal(await transport.checkAlive(), false)
       assert.equal(transport.isConnected(), false, 'a dead master is no longer reported connected')
 
+      // What `ControlMaster=auto` does when a command runs after the drop. The
+      // next check asks again rather than trusting the failed one.
+      writeFileSync(join(dir, 'master-up'), '')
+      assert.equal(await transport.checkAlive(), true)
+      assert.equal(transport.isConnected(), true)
+
       const calls = readFileSync(join(dir, 'calls'), 'utf8').trim().split('\n')
-      const checks = calls.filter((line) => line.startsWith('-O check '))
-      // One from connect, then one per live check; none after the transport knew it was down.
-      assert.equal(checks.length, 3)
-      assert.equal(calls.filter((line) => line.includes('-fNM')).length, 1)
+      // Only connect started a master; every other call asked the socket.
+      assert.deepEqual(
+        calls.filter((line) => !line.startsWith('-O check ')).map((line) => line.split(' ')[0]),
+        ['-fNM'],
+      )
+    })
+
+    it('clears a control socket its dead master left behind', async (t) => {
+      // Like OpenSSH, the stub gives up multiplexing when the socket path is
+      // taken: it stays connected as a plain connection and still exits 0.
+      const dir = installFakeSsh(
+        t,
+        [
+          'prev=; for arg; do [ "$prev" = -S ] && sock=$arg; prev=$arg; done',
+          STUB_MASTER_CHECK,
+          'if [ -S "$sock" ]; then echo "$*" >> "$(dirname "$0")/plain"; exit 0; fi',
+          'touch "$(dirname "$0")/master-up"',
+          'exit 0',
+        ].join('\n'),
+      )
+      await leaveDeadSocket(controlSocketPath(host.id))
+
+      const transport = new OpenSshTransport(host)
+      await transport.connect({ quiet: true })
+      assert.equal(transport.isConnected(), true)
+      assert.equal(existsSync(join(dir, 'plain')), false, 'no plain connection left running')
+    })
+
+    it('does not count a master that never answered on its socket', async (t) => {
+      installFakeSsh(
+        t,
+        [
+          'case " $* " in *" -O check "*) exit 255 ;; esac',
+          'echo "ControlSocket in use, disabling multiplexing" >&2',
+          'exit 0',
+        ].join('\n'),
+      )
+      const transport = new OpenSshTransport(host)
+      await assert.rejects(() => transport.connect({ quiet: true }), /disabling multiplexing/)
+      assert.equal(transport.isConnected(), false)
     })
 
     it('makes a quiet connect unable to prompt or hang', async (t) => {
       const dir = installFakeSsh(
         t,
         [
-          'case " $* " in *" -O check "*) exit 255 ;; esac',
+          STUB_MASTER_CHECK,
           'echo "$*" >> "$(dirname "$0")/master-args"',
+          'touch "$(dirname "$0")/master-up"',
           'exit 0',
         ].join('\n'),
       )
       await new OpenSshTransport(host).connect({ quiet: true })
+      rmSync(join(dir, 'master-up'))
       await new OpenSshTransport(host).connect()
 
       const [quiet, interactive] = readFileSync(join(dir, 'master-args'), 'utf8').trim().split('\n')

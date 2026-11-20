@@ -22,6 +22,9 @@ async function waitUntilConnected(): Promise<void> {
     timeout: 15_000,
     timeoutMsg: 'the restored SSH project never connected',
   })
+  // The banner shows while the project connects. Wait for it to leave, so a
+  // later lookup cannot catch the outgoing banner.
+  await $('#ssh-status-banner').waitForExist({ reverse: true, timeout: 10_000 })
 }
 
 describe('SSH connection status follows the link', () => {
@@ -45,8 +48,8 @@ describe('SSH connection status follows the link', () => {
     await waitUntilConnected()
     // Open files on the host are watched, so there is nothing to warn about:
     // the old unconditional "remote file watching is not yet supported" line is
-    // gone. The banner shows while the project connects, so wait for it to leave.
-    await $('#ssh-status-banner').waitForExist({ reverse: true, timeout: 10_000 })
+    // gone.
+    assert.equal(await $('#ssh-status-banner').isExisting(), false)
   })
 
   it('says the connection was lost when the link drops, and reconnects on request', async () => {

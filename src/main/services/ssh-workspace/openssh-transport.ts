@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
 import { mkdir, rename, rm } from 'node:fs/promises'
+import { connect as connectSocket } from 'node:net'
 import { basename, dirname, join } from 'node:path'
 import { Transform } from 'node:stream'
 import { StringDecoder } from 'node:string_decoder'
@@ -337,6 +338,24 @@ async function runLocalSshToFile(
   }
 }
 
+/**
+ * Whether a socket file is left over from a process that died: nothing
+ * listens on it, so connecting is refused. OpenSSH uses the same test before
+ * it unlinks a stale control socket.
+ */
+function isDeadSocket(path: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = connectSocket(path)
+    socket.once('connect', () => {
+      socket.destroy()
+      resolve(false)
+    })
+    socket.once('error', (error) => {
+      resolve('code' in error && error.code === 'ECONNREFUSED')
+    })
+  })
+}
+
 export class OpenSshTransport implements SshTransport {
   private connected = false
   private readonly host: SshWorkspaceHost
@@ -356,17 +375,23 @@ export class OpenSshTransport implements SshTransport {
     // Without a control master there is nothing to ask that would not open a
     // new connection, and a new connection can prompt. Report what we know.
     if (!supportsControlMaster()) return this.connected
-    if (!this.connected) return false
     // `-O check` only talks to the local control socket: it tells us whether
     // the master process is still there, without touching the network or
     // authenticating. A master whose peer vanished exits on its own once the
-    // keepalives above give up, so a dead link shows up here within ~90s.
+    // keepalives above give up, so a dead link shows up here within ~90s. It
+    // asks even after a failed check: a command can rebuild the master on its
+    // own (`ControlMaster=auto`), and only asking notices that.
+    this.connected = await this.masterAnswers(LIVENESS_CHECK_TIMEOUT_MS)
+    return this.connected
+  }
+
+  /** Whether a control master answers on this host's socket. */
+  private async masterAnswers(timeoutMs: number): Promise<boolean> {
     const check = await runLocalSsh(
       this.host.id,
       ['-O', 'check', '-S', this.controlPath, resolveTarget(this.host)],
-      { timeoutMs: LIVENESS_CHECK_TIMEOUT_MS },
+      { timeoutMs },
     )
-    if (check.code !== 0) this.connected = false
     return check.code === 0
   }
 
@@ -377,15 +402,17 @@ export class OpenSshTransport implements SshTransport {
       // are answered by the askpass socket in this Electron main process; a
       // spawnSync here blocks that socket and deadlocks password/passphrase
       // connections before the first remote command can run.
-      const check = await runLocalSsh(
-        this.host.id,
-        ['-O', 'check', '-S', this.controlPath, target],
-        { timeoutMs: 15_000 },
-      )
-      if (check.code === 0) {
+      if (await this.masterAnswers(15_000)) {
         this.connected = true
         return
       }
+      // A master that died without cleaning up (SIGKILL, a crash) leaves its
+      // socket file behind, and `-O check` leaves it there. A new master that
+      // finds the path taken gives up multiplexing: it backgrounds as a plain
+      // connection and still exits 0, so every retry would leave one more
+      // `ssh` running. Clear the dead socket first, as OpenSSH's own
+      // `ControlMaster=auto` client does.
+      if (await isDeadSocket(this.controlPath)) await rm(this.controlPath, { force: true })
 
       // `-S` alone sets ControlPath; see baseSshArgs for why `-o ControlPath=` is unsafe.
       const masterArgs = [
@@ -413,6 +440,13 @@ export class OpenSshTransport implements SshTransport {
       if (master.code !== 0) {
         throw new Error(
           master.stderr.trim() || master.stdout.trim() || 'SSH control connection failed',
+        )
+      }
+      // `-fNM` also exits 0 when it could not take the socket (above), so only
+      // a master that answers on it is a connection the rest of Copse can use.
+      if (!(await this.masterAnswers(15_000))) {
+        throw new Error(
+          master.stderr.trim() || 'SSH connected, but its control socket did not answer',
         )
       }
       this.connected = true
