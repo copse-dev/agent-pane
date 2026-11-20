@@ -106,9 +106,11 @@ export const experimentalMarkup = `
                 Let the agent get a best-fit model recommendation for a task
               </label>
               <p class="field-hint">
-                Lets the agent judge how hard a task is and name a model that suits it, so simple
-                work goes to a cheap, fast model and the hard problems get a top one. Advice only:
-                it never switches the model you are using.
+                Lets the agent judge how hard a task is and name one of your configured models that
+                suits it, so simple work goes to a cheap, fast model and the hard problems get a top
+                one. To judge, it sends the task description to your Background questions or Small
+                tasks model, or to your chat model when those can't answer, which can add a little
+                usage. Advice only: it never switches the model you are using.
               </p>
             </fieldset>
 

@@ -1,6 +1,6 @@
 import { isRecord } from '@shared/unknown-value.ts'
 import type { ReviewerInputAnswer, Thread, ToolCall } from '@shared/types'
-import { isCopseToolCall } from '@shared/tools/copse-tool-call.ts'
+import { isCopseServerName, isCopseToolCall } from '@shared/tools/copse-tool-call.ts'
 import { splitAppendedReminders } from '@shared/tools/tool-result-reminders.ts'
 import {
   askUserParamsSchema,
@@ -81,7 +81,7 @@ function reviewerInputArguments(call: ToolCall): unknown {
   const args = call.args
   if (
     isRecord(args) &&
-    args['server'] === 'copse' &&
+    isCopseServerName(args['server']) &&
     typeof args['tool'] === 'string' &&
     isCopseToolCall(call, args['tool']) &&
     Object.hasOwn(args, 'arguments')

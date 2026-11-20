@@ -111,7 +111,16 @@ An owner admitted just after the repair can still be publishing its own status.
 Admission therefore rechecks liveness after the metadata read and on later
 attempts involving an already-interrupted idle run. A live or uncertain owner
 produces a busy admission view; it never rolls persisted metadata back over that
-owner's write. Ordinary idle history and unsent drafts keep their existing rules.
+owner's write. Ordinary idle history and unsent drafts keep their existing recovery rules. Admission
+also checks for a proven live agent owner after a prompt has returned: manual, cron
+and event triggers coalesce while a dispatcher, local/ACP/container turn, or armed
+background completion wake still owns work, independently of the live-worktree cap.
+The supervised process registry retains an armed wake until its completion callback
+settles. Ordinary dev servers and watchers do not own an agent wake: they still protect
+their checkout and count against its retention cap, but permit Run now and Unlimited
+repeats as before. The broader interrupted-run recovery probe remains conservative. This is an admission check only; it does not rewrite settled metadata or hide the
+cleanup report that the checkout is still in use. Unknown ordinary idle history does
+not become a permanent blocker merely because completion records remain in memory.
 
 Prototype boundaries:
 

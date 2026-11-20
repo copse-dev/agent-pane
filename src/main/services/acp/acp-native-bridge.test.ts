@@ -30,7 +30,10 @@ import { runWithThreadResourceStateLookup } from '../thread-resource-fence.ts'
 import { runBackgroundTool } from '../../tools/background-process-tool.ts'
 import { TaskSupervisor } from '../supervisor/task-supervisor.ts'
 import { FileSupervisedTaskStore } from '../supervisor/task-store.ts'
-import { installBackgroundProcessSupervisor } from '../exec/supervised-background-process.ts'
+import {
+  hasBackgroundCompletionWake,
+  installBackgroundProcessSupervisor,
+} from '../exec/supervised-background-process.ts'
 import { stopAllBackgroundProcesses } from '../exec/background-process.ts'
 import {
   setBackgroundCompletionWakeHandler,
@@ -347,6 +350,9 @@ describe('startAcpNativeBridge', () => {
     })
     assert.ok(first)
     assert.ok(second)
+    // #4125: each bridge is mounted under its own name, which no config can predict.
+    assert.match(first.serverName, /^copse-[a-z0-9]{8}$/)
+    assert.notEqual(first.serverName, second.serverName)
     const read = (target: AcpNativeBridge, path?: string): ReturnType<typeof rpc> =>
       rpc(target, {
         jsonrpc: '2.0',
@@ -1205,12 +1211,20 @@ describe('startAcpNativeBridge', () => {
         },
       })
       assert.match(contentText(result) ?? '', /Completion wake is armed/)
+      assert.equal(
+        hasBackgroundCompletionWake({ projectId: 'project-1', threadId: 'background-thread' }),
+        true,
+      )
       // Release the real child only after the foreground turn has ended.
       currentBridge.setExecutionContext(null)
       writeFileSync(join(root, 'release'), '')
       const deadline = Date.now() + 5_000
       while (wakes.length === 0 && Date.now() < deadline) await delay(20)
       assert.equal(wakes.length, 1)
+      assert.equal(
+        hasBackgroundCompletionWake({ projectId: 'project-1', threadId: 'background-thread' }),
+        false,
+      )
       const wake = at(wakes, 0)
       assert.equal(wake.turnTreeId, 'background-human-epoch')
       assert.deepEqual(wake.owner, { projectId: 'project-1', threadId: 'background-thread' })
@@ -1656,14 +1670,21 @@ describe('startAcpNativeBridge', () => {
     assert.ok(names.includes('suggest_model'))
     assert.ok(names.includes('browser_show'))
 
+    // Scenario mode has no assessment model, so the advice comes from the
+    // heuristic instead of waiting on whatever local server this host runs.
+    const mockLlm = process.env['COPSE_PANEL_MOCK_LLM']
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
     const advice = await rpc(bridge, {
       jsonrpc: '2.0',
       id: 7,
       method: 'tools/call',
       params: { name: 'suggest_model', arguments: { task: 'Summarize a short file' } },
+    }).finally(() => {
+      if (mockLlm === undefined) delete process.env['COPSE_PANEL_MOCK_LLM']
+      else process.env['COPSE_PANEL_MOCK_LLM'] = mockLlm
     })
     assert.equal(rpcResult(advice)['isError'], undefined)
-    assert.match(contentText(advice) ?? '', /Recommended intellect band:/)
+    assert.match(contentText(advice) ?? '', /Assessed demand: (low|mid|top)\nRecommended model:/)
   })
 
   for (const checkoutMode of ['shared', 'worktree', 'deferred'] as const) {

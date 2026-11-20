@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync, realpathSync } from 'node:fs'
 import { readFile, readdir, stat } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { isPathWithin, relativeWithin } from '@copse/std/path-containment.ts'
 import { copseWorkspaceDir } from './storage/copse-paths.ts'
 import { ensureChatStoreRead } from './security/thread-access.ts'
 import { storageGet, storageSet } from './storage/storage.ts'
@@ -288,8 +289,7 @@ export async function registerInternalWorkspaceRoot(
 ): Promise<InternalWorkspaceRootRegistration> {
   const canonicalCheckoutRoot = await canonicalWorkspaceRoot(checkoutRoot, localWorkspaceFs)
   const canonicalExecutionRoot = await canonicalWorkspaceRoot(executionRoot, localWorkspaceFs)
-  const executionRelative = relative(canonicalCheckoutRoot, canonicalExecutionRoot)
-  if (executionRelative === '..' || executionRelative.startsWith(`..${sep}`)) {
+  if (relativeWithin(canonicalCheckoutRoot, canonicalExecutionRoot) === null) {
     throw new Error('Internal execution root is outside its linked Git worktree')
   }
   const dotGitPath = join(canonicalCheckoutRoot, '.git')
@@ -534,8 +534,7 @@ export function setWorkspaceRootForTest(root: string | null): () => void {
 }
 
 function isPathInsideRoot(resolved: string, absRoot: string): boolean {
-  const rel = relative(absRoot, resolved)
-  return rel === '' || (!rel.startsWith('..') && !rel.split(sep).includes('..'))
+  return isPathWithin(absRoot, resolved)
 }
 
 async function resolveThroughExistingPrefix(
@@ -810,8 +809,8 @@ export async function assertWriteTargetWithinRoot(
   backend: PathBackend = getActivePathBackend(),
 ): Promise<void> {
   const absRoot = await backend.realpath(resolve(root))
-  const rel = relative(absRoot, absPath)
-  if (rel === '' || rel.startsWith('..') || rel.split(sep).includes('..')) {
+  const rel = relativeWithin(absRoot, absPath)
+  if (rel === null || rel === '') {
     throw new Error(`Path outside workspace: ${absPath}.`)
   }
   let current = absRoot
