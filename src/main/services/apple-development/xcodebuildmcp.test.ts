@@ -1,10 +1,15 @@
-import { describe, it } from 'node:test'
+import { afterEach, beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
+import { storageDelete, storageSet } from '../storage/storage.ts'
+import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
+import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
 import {
   createXcodeBuildMcpConfig,
+  getXcodeBuildMcpConfig,
   xcodeBuildMcpToolTimeoutMs,
   isXcodeBuildMcpToolName,
   prepareXcodeBuildMcpArguments,
@@ -76,5 +81,83 @@ describe('XcodeBuildMCP integration', () => {
     assert.deepEqual(prepareXcodeBuildMcpArguments('launch_app_sim', { extraArgs: ['-quiet'] }), {
       extraArgs: ['-quiet'],
     })
+  })
+})
+
+describe('XcodeBuildMCP requested project authority', () => {
+  const a = '/copse-fixture/project-a'
+  const b = '/copse-fixture/project-b'
+  let platform: PropertyDescriptor
+
+  beforeEach(() => {
+    const descriptor = Object.getOwnPropertyDescriptor(process, 'platform')
+    assert.ok(descriptor)
+    platform = descriptor
+    // Exercise the existing OS gate on every CI host; no process/toolchain starts.
+    Object.defineProperty(process, 'platform', { ...descriptor, value: 'darwin' })
+    const plugins = createFirstPartyPluginRegistry()
+    plugins.enable(APPLE_DEVELOPMENT_PLUGIN_ID)
+    setDefaultPluginRegistry(plugins)
+    storageSet('projects', [
+      { id: 'a', path: a },
+      { id: 'b', path: b },
+    ])
+    storageSet('activeProjectId', 'b')
+    storageSet('plugin.copse.apple-development.state', {
+      version: 1,
+      projects: { a: { enrolled: true, threads: {} }, b: { enrolled: true, threads: {} } },
+    })
+  })
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', platform)
+    setDefaultPluginRegistry(null)
+    for (const key of ['projects', 'activeProjectId', 'plugin.copse.apple-development.state'])
+      storageDelete(key)
+  })
+
+  it('uses the admitted A project while B is selected', () => {
+    assert.equal(getXcodeBuildMcpConfig(a, 'a')?.cwd, a)
+    assert.equal(getXcodeBuildMcpConfig(b, 'b')?.cwd, b)
+  })
+
+  it('does not borrow B enrollment for unenrolled A', () => {
+    storageSet('plugin.copse.apple-development.state', {
+      version: 1,
+      projects: { a: { enrolled: false, threads: {} }, b: { enrolled: true, threads: {} } },
+    })
+    assert.equal(getXcodeBuildMcpConfig(a, 'a'), null)
+  })
+
+  it('rejects a requested project whose persisted root does not match the connection set', () => {
+    assert.equal(getXcodeBuildMcpConfig(a, 'b'), null)
+    assert.equal(getXcodeBuildMcpConfig(a, 'missing'), null)
+  })
+
+  it('loads the matching UI project while active-selection persistence catches up', () => {
+    assert.equal(getXcodeBuildMcpConfig(a)?.cwd, a)
+    assert.equal(getXcodeBuildMcpConfig('/copse-fixture/unknown'), null)
+  })
+
+  it('does not select another enrolled identity for an ambiguous unowned workspace', () => {
+    storageSet('projects', [
+      { id: 'a', path: a },
+      { id: 'another-a', path: a },
+      { id: 'b', path: b },
+    ])
+    assert.equal(getXcodeBuildMcpConfig(a), null)
+  })
+
+  it('retains plugin, remote-project and host-platform restrictions', () => {
+    storageSet('projects', [{ id: 'a', path: a, sshHost: 'remote' }])
+    assert.equal(getXcodeBuildMcpConfig(a, 'a'), null)
+    storageSet('projects', [{ id: 'a', path: a }])
+    const plugins = createFirstPartyPluginRegistry()
+    plugins.disable(APPLE_DEVELOPMENT_PLUGIN_ID)
+    setDefaultPluginRegistry(plugins)
+    assert.equal(getXcodeBuildMcpConfig(a, 'a'), null)
+    plugins.enable(APPLE_DEVELOPMENT_PLUGIN_ID)
+    Object.defineProperty(process, 'platform', { ...platform, value: 'linux' })
+    assert.equal(getXcodeBuildMcpConfig(a, 'a'), null)
   })
 })

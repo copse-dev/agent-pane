@@ -1,4 +1,5 @@
 import { humanizeIdentifier } from '@shared/humanize-identifier.ts'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import type { McpServerOrigin, McpServerStatus } from '@shared/types/mcp.ts'
 import {
   type ToolPermissionCatalog,
@@ -91,6 +92,25 @@ interface RegisteredPermissionTarget {
 // server or tool itself contains "__". Retain every candidate; a collision is
 // deliberately unresolved so an override can never authorize the wrong tool.
 const mcpTargetsByExecutionName = new Map<string, Map<string, RegisteredPermissionTarget>>()
+const scopedMcpTargets = new AsyncLocalStorage<typeof mcpTargetsByExecutionName | null>()
+
+function mcpTargets(): typeof mcpTargetsByExecutionName {
+  return scopedMcpTargets.getStore() ?? mcpTargetsByExecutionName
+}
+
+/** Bind identity, not policy: saved allow/ask/block settings are still read live. */
+export function createMcpPermissionScope(inherit = true): <T>(operation: () => T) => T {
+  const targets = new Map(
+    inherit
+      ? [...mcpTargets()].map(([name, candidates]) => [name, new Map(candidates)] as const)
+      : [],
+  )
+  return (operation) => scopedMcpTargets.run(targets, operation)
+}
+
+export function runWithLiveMcpPermissionTargets<T>(operation: () => T): T {
+  return scopedMcpTargets.run(null, operation)
+}
 
 function encodeIdentityPart(value: string): string {
   return encodeURIComponent(value)
@@ -117,18 +137,18 @@ export function registerMcpToolPermissionTarget(target: McpPermissionTarget): st
   const executionName = mcpToolName(target.serverName, target.toolName)
   const id = mcpToolPermissionId(target)
   const candidates =
-    mcpTargetsByExecutionName.get(executionName) ?? new Map<string, RegisteredPermissionTarget>()
+    mcpTargets().get(executionName) ?? new Map<string, RegisteredPermissionTarget>()
   candidates.set(id, { id, target })
-  mcpTargetsByExecutionName.set(executionName, candidates)
+  mcpTargets().set(executionName, candidates)
   return id
 }
 
 export function clearMcpToolPermissionTargets(): void {
-  mcpTargetsByExecutionName.clear()
+  mcpTargets().clear()
 }
 
 function registeredTarget(executionName: string): RegisteredPermissionTarget | null {
-  const candidates = mcpTargetsByExecutionName.get(executionName)
+  const candidates = mcpTargets().get(executionName)
   if (!candidates || candidates.size !== 1) return null
   return candidates.values().next().value ?? null
 }

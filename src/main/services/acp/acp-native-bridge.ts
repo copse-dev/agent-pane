@@ -6,6 +6,7 @@ import {
 import { runWithIsolatedDesktopLifetime } from '../isolated-desktop/desktop-lifetime.ts'
 import { patchTouchedPaths } from '@shared/patch/apply-patch.ts'
 import { captureInlineCanvasScope } from '../inline-canvas-context.ts'
+import { acquireMcpToolScope, captureMcpToolScope, type McpToolScope } from '../mcp/mcp-registry.ts'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { Server as McpBridgeServer } from '@modelcontextprotocol/sdk/server/index.js'
@@ -465,6 +466,8 @@ function bridgedTools(
 }
 
 interface BridgeExecuteContext {
+  /** Setup may list between turns; retain the originating advertised catalog. */
+  unboundTools: ReturnType<typeof bridgedTools>
   /** Session-lifetime abort (dispose). */
   sessionSignal: AbortSignal
   /** Live reader for the in-flight turn abort; null between turns. */
@@ -493,6 +496,7 @@ interface BridgeExecuteContext {
   getExecutionContext: () => ThreadExecutionContext | null
   /** See {@link AcpNativeBridge.setPendingExecutionContext}. */
   getPendingExecutionContext: () => Promise<ThreadExecutionContext | null> | null
+  getMcpToolScope: () => Promise<McpToolScope | null>
   getInlineCanvasScope: () => ReturnType<typeof captureInlineCanvasScope>
   getTurnTreeId: () => ReturnType<typeof getActiveRunTurnTreeId>
   getSkillActivationTurn: () => SkillActivationTurn | null
@@ -604,6 +608,7 @@ function runInTurnBinding<T>(
     threadId: string
     executionContext: ThreadExecutionContext
     inlineCanvasScope: ReturnType<typeof captureInlineCanvasScope>
+    mcpToolScope?: McpToolScope | null
     turnTreeId: ReturnType<typeof getActiveRunTurnTreeId>
     skillTurn: SkillActivationTurn | null
     bridgeExecutionId: string
@@ -611,10 +616,12 @@ function runInTurnBinding<T>(
   },
   execute: () => Promise<T>,
 ): Promise<T> {
+  const withMcpTools = (): Promise<T> =>
+    binding.mcpToolScope ? binding.mcpToolScope.run(execute) : execute()
   const withPermissionContext = (): Promise<T> =>
     binding.networkScopeAlreadyApplies
-      ? runWithAcpBridgePermissionContext({ networkScopeAlreadyApplies: true }, execute)
-      : execute()
+      ? runWithAcpBridgePermissionContext({ networkScopeAlreadyApplies: true }, withMcpTools)
+      : withMcpTools()
   return binding.inlineCanvasScope(() =>
     runWithActiveRunIdentity(binding.threadId, () => {
       // HTTP requests do not inherit the owning turn's ALS epoch. A wake
@@ -641,10 +648,31 @@ function buildMcpServer(
     { name: BRIDGE_MCP_SERVER_NAME, version: '1.0.0' },
     { capabilities: { tools: {}, logging: {} } },
   )
-  server.setRequestHandler(ListToolsRequestSchema, () => {
-    const tools = bridgedTools(registry, ctx.projectId, ctx.offerWriteAccess)
+  const unboundTools = (): ReturnType<typeof bridgedTools> => [
+    ...registry.runWithLiveTools(() =>
+      bridgedTools(registry, ctx.projectId, ctx.offerWriteAccess).filter(
+        (tool) => !tool.name.startsWith('mcp__'),
+      ),
+    ),
+    ...ctx.unboundTools.filter((tool) => tool.name.startsWith('mcp__')),
+  ]
+  const recordToolList = (
+    tools: ReturnType<typeof bridgedTools>,
+  ): { tools: ReturnType<typeof bridgedTools> } => {
     ctx.recordToolsListed(tools.map((tool) => tool.name))
     return { tools }
+  }
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    if (!ctx.getExecutionContext()) return recordToolList(unboundTools())
+    const scope = await ctx.getMcpToolScope().then((current) => current?.retain() ?? null)
+    if (!scope) return recordToolList(unboundTools())
+    try {
+      return scope.run(() =>
+        recordToolList(bridgedTools(registry, ctx.projectId, ctx.offerWriteAccess)),
+      )
+    } finally {
+      await scope.release()
+    }
   })
   // Stateless mode gives every POST its own server, so the SDK's built-in
   // cancellation (which aborts a request on the SAME server) never sees the
@@ -660,9 +688,12 @@ function buildMcpServer(
   })
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const name = request.params.name
+    // Ordinary tools remain live and keep the existing offered-before-turn
+    // refusal. MCP names must be checked on the originating scoped surface.
     if (
-      !activeBridgeToolNames(ctx.projectId, registry, ctx.offerWriteAccess).includes(name) ||
-      !registry.has(name)
+      !name.startsWith('mcp__') &&
+      (!activeBridgeToolNames(ctx.projectId, registry, ctx.offerWriteAccess).includes(name) ||
+        !registry.has(name))
     ) {
       return {
         content: [{ type: 'text', text: `Tool "${name}" is not offered by this bridge.` }],
@@ -712,6 +743,10 @@ function buildMcpServer(
         isError: true,
       }
     }
+    const scopePending = ctx.getMcpToolScope()
+    const capturedTurnSignal = ctx.getTurnSignal()
+    const inlineCanvasScope = ctx.getInlineCanvasScope()
+    const turnTreeId = ctx.getTurnTreeId()
     const requestKey = String(extra.requestId)
     // MCP request numbers can repeat across sessions/retries and are not ACP
     // transcript IDs. Own the identity of this execution at the host boundary.
@@ -724,8 +759,11 @@ function buildMcpServer(
     }
     extra.signal.addEventListener('abort', onExtraAbort, { once: true })
     let stopKeepalive = (): void => {}
+    let mcpToolScope: McpToolScope | null = null
     try {
-      const capturedTurnSignal = ctx.getTurnSignal()
+      // Retain at admission; ending the prompt must not close this request's
+      // originating client while its protocol response is still outstanding.
+      mcpToolScope = await scopePending.then((scope) => scope?.retain() ?? null)
       const executeSignal = mergeBridgeExecuteSignal(
         ctx.sessionSignal,
         capturedTurnSignal,
@@ -764,6 +802,15 @@ function buildMcpServer(
       executeSignal.addEventListener('abort', stopKeepalive, { once: true })
       if (executeSignal.aborted) stopKeepalive()
       const execute = (): ReturnType<ToolRegistry['executeNormalized']> => {
+        if (
+          !activeBridgeToolNames(ctx.projectId, registry, ctx.offerWriteAccess).includes(name) ||
+          !registry.has(name)
+        ) {
+          throw new Error(`Tool "${name}" is not offered by this bridge.`)
+        }
+        if (name.startsWith('mcp__') && !mcpToolScope) {
+          throw new Error('This MCP call has no originating turn connection bound.')
+        }
         const acpToolCallId = takeAcpBridgeDelegation(ctx.threadId, name, request.params.arguments)
         recordDecision({
           kind: 'bridge-request',
@@ -804,8 +851,9 @@ function buildMcpServer(
           {
             threadId: ctx.threadId,
             executionContext,
-            inlineCanvasScope: ctx.getInlineCanvasScope(),
-            turnTreeId: ctx.getTurnTreeId(),
+            inlineCanvasScope,
+            mcpToolScope,
+            turnTreeId,
             skillTurn,
             bridgeExecutionId,
             networkScopeAlreadyApplies: ctx.networkScopeAlreadyApplies,
@@ -832,6 +880,7 @@ function buildMcpServer(
       return { content: [{ type: 'text', text: errorMessage(err) }], isError: true }
     } finally {
       stopKeepalive()
+      await mcpToolScope?.release()
       extra.signal.removeEventListener('abort', onExtraAbort)
       if (ctx.inflightCalls.get(requestKey) === ctx.abandonCall) {
         ctx.inflightCalls.delete(requestKey)
@@ -922,7 +971,8 @@ export async function startAcpNativeBridge(
 ): Promise<AcpNativeBridge | null> {
   if (!getSetting<boolean>('acpNativeBridgeEnabled', true)) return null
   const offerWriteAccess = opts.offerWriteAccess === true
-  if (bridgedTools(registry, opts.projectId, offerWriteAccess).length === 0) return null
+  const initialTools = bridgedTools(registry, opts.projectId, offerWriteAccess)
+  if (initialTools.length === 0) return null
 
   const token = randomBytes(32).toString('hex')
   const networkScopeAlreadyApplies = opts.networkScopeAlreadyApplies === true
@@ -934,6 +984,7 @@ export async function startAcpNativeBridge(
   let turnSignal: AbortSignal | null = null
   let executionContext: ThreadExecutionContext | null = null
   let pendingExecutionContext: Promise<ThreadExecutionContext | null> | null = null
+  let mcpToolScope: Promise<McpToolScope | null> = Promise.resolve(null)
   let inlineCanvasScope = captureInlineCanvasScope()
   let turnTreeId: ReturnType<typeof getActiveRunTurnTreeId> = null
   let workspaceWriteObserver: ((path: string) => void) | null = null
@@ -976,6 +1027,7 @@ export async function startAcpNativeBridge(
       }
       req.on('close', onHttpClose)
       const server = buildMcpServer(registry, advisorContext, {
+        unboundTools: initialTools,
         sessionSignal: signal,
         getTurnSignal: () => turnSignal,
         getCallSignal: () => callAbort.signal,
@@ -985,6 +1037,7 @@ export async function startAcpNativeBridge(
         ...(opts.projectId ? { projectId: opts.projectId } : {}),
         getExecutionContext: () => executionContext,
         getPendingExecutionContext: () => pendingExecutionContext,
+        getMcpToolScope: () => mcpToolScope,
         getInlineCanvasScope: () => inlineCanvasScope,
         getTurnTreeId: () => turnTreeId,
         getSkillActivationTurn: () => skillTurn,
@@ -1021,9 +1074,7 @@ export async function startAcpNativeBridge(
     })
     throw new Error('Copse could not open a local port for the coding agent’s tools')
   }
-  const offeredToolNames = bridgedTools(registry, opts.projectId, offerWriteAccess).map(
-    (tool) => tool.name,
-  )
+  const offeredToolNames = initialTools.map((tool) => tool.name)
   retainMediatedMcpTools(offeredToolNames)
   let closed = false
   return {
@@ -1060,7 +1111,29 @@ export async function startAcpNativeBridge(
       skillTurn = turn
     },
     setExecutionContext: (context): void => {
-      if (context === null) skillTurn = null
+      const previousScope = mcpToolScope
+      if (context === null) {
+        skillTurn = null
+        mcpToolScope = Promise.resolve(null)
+      } else {
+        // Prompt turns capture the native host's admitted view. A self-started
+        // turn has no such async chain and loads its own project's view instead.
+        const captured = captureMcpToolScope(context.projectRoot)
+        const bindingSignal = AbortSignal.any([signal, ...(turnSignal ? [turnSignal] : [])])
+        mcpToolScope = captured
+          ? Promise.resolve(captured)
+          : Promise.resolve().then(() =>
+              acquireMcpToolScope(registry, context.projectRoot, bindingSignal),
+            )
+        // The request path reports acquisition errors. Avoid an unhandled
+        // rejection if a turn ends without making a bridged call.
+        void mcpToolScope.catch(() => {})
+      }
+      void previousScope
+        .then((scope) => scope?.release())
+        .catch((error: unknown) => {
+          console.error('[acp-bridge] MCP turn release failed:', errorMessage(error))
+        })
       executionContext = context
       inlineCanvasScope = captureInlineCanvasScope()
       turnTreeId =
@@ -1131,6 +1204,13 @@ export async function startAcpNativeBridge(
     close: (): Promise<void> => {
       if (closed) return Promise.resolve()
       closed = true
+      const previousScope = mcpToolScope
+      mcpToolScope = Promise.resolve(null)
+      void previousScope
+        .then((scope) => scope?.release())
+        .catch((error: unknown) => {
+          console.error('[acp-bridge] MCP session release failed:', errorMessage(error))
+        })
       releaseMediatedMcpTools(offeredToolNames)
       return new Promise<void>((resolve) => {
         httpServer.close(() => {

@@ -1,4 +1,5 @@
 import { planToolBlockReason } from './thread-plan-context.ts'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { z } from 'zod'
 import {
   modelFacingInputSchema,
@@ -151,6 +152,37 @@ export class ToolRegistry {
   private tools = new Map<string, RegisteredTool>()
   /** Schema problems already logged, so a per-turn export warns once per tool. */
   private readonly reportedSchemaProblems = new Set<string>()
+  private readonly scopedTools = new AsyncLocalStorage<{
+    prefix: string
+    tools: Map<string, RegisteredTool>
+  } | null>()
+
+  /** Settings and connection discovery update the live surface, outside a turn snapshot. */
+  runWithLiveTools<T>(operation: () => T): T {
+    return this.scopedTools.run(null, operation)
+  }
+
+  /** Keep an admitted external tool surface while ordinary tools remain live. */
+  createToolScope(prefix: string, inherit = true): <T>(operation: () => T) => T {
+    const tools = new Map(
+      inherit ? [...this.currentTools()].filter(([name]) => name.startsWith(prefix)) : [],
+    )
+    return (operation) => this.scopedTools.run({ prefix, tools }, operation)
+  }
+
+  private toolStore(name: string): Map<string, RegisteredTool> {
+    const scope = this.scopedTools.getStore()
+    return scope && name.startsWith(scope.prefix) ? scope.tools : this.tools
+  }
+
+  private currentTools(): Map<string, RegisteredTool> {
+    const scope = this.scopedTools.getStore()
+    if (!scope) return this.tools
+    return new Map([
+      ...[...this.tools].filter(([name]) => !name.startsWith(scope.prefix)),
+      ...scope.tools,
+    ])
+  }
 
   /**
    * Add a tool, replacing one of the same name. A first-party tool whose input
@@ -161,7 +193,7 @@ export class ToolRegistry {
    */
   register<TArgs>(tool: ToolDefinition<TArgs>): void {
     if (tool.untrustedSchema !== true && !isElectronAppPackaged()) assertAgentInputSchemas(tool)
-    this.tools.set(tool.name, {
+    this.toolStore(tool.name).set(tool.name, {
       name: tool.name,
       description: tool.description,
       parameters: tool.parameters,
@@ -174,7 +206,7 @@ export class ToolRegistry {
   }
 
   unregister(name: string): void {
-    this.tools.delete(name)
+    this.toolStore(name).delete(name)
   }
 
   /**
@@ -211,7 +243,7 @@ export class ToolRegistry {
    * serialize differently from one turn to the next.
    */
   toLLMTools(): LLMTool[] {
-    const ordered = Array.from(this.tools.values()).sort((a, b) =>
+    const ordered = Array.from(this.currentTools().values()).sort((a, b) =>
       a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
     )
     return this.modelFacing(ordered, 'openapi-3.0').map(({ name, description, schema }) => ({
@@ -223,7 +255,10 @@ export class ToolRegistry {
 
   /** Lightweight inventory for Settings; never converts parameter schemas. */
   catalogTools(): ToolCatalogDescriptor[] {
-    return Array.from(this.tools.values(), ({ name, description }) => ({ name, description }))
+    return Array.from(this.currentTools().values(), ({ name, description }) => ({
+      name,
+      description,
+    }))
   }
 
   /**
@@ -234,21 +269,21 @@ export class ToolRegistry {
    * model call.
    */
   toMcpTools(): { name: string; description: string; inputSchema: Record<string, unknown> }[] {
-    return this.modelFacing(Array.from(this.tools.values()), 'draft-2020-12').map(
+    return this.modelFacing(Array.from(this.currentTools().values()), 'draft-2020-12').map(
       ({ name, description, schema }) => ({ name, description, inputSchema: schema }),
     )
   }
 
   /** Validate a queued call with the same schema used for execution. */
   validateArgs(name: string, args: unknown): void {
-    const tool = this.tools.get(name)
+    const tool = this.toolStore(name).get(name)
     if (!tool) throw new Error(`Unknown tool: ${name}`)
     tool.parse(args)
   }
 
   /** Coerce recovered text-tool-call args, leaving invalid known calls for execute to explain. */
   tryCoerceArgs(name: string, rawArgs: unknown): Record<string, unknown> | null {
-    const tool = this.tools.get(name)
+    const tool = this.toolStore(name).get(name)
     if (!tool) return null
     if (!isRecord(rawArgs)) return null
     const asWritten = tool.parameters.safeParse(rawArgs)
@@ -272,7 +307,7 @@ export class ToolRegistry {
   async execute(name: string, rawArgs: unknown, signal: AbortSignal): Promise<ToolExecuteResult> {
     const blocked = planToolBlockReason(name)
     if (blocked) return blocked
-    const tool = this.tools.get(name)
+    const tool = this.toolStore(name).get(name)
     if (!tool) throw new Error(`Unknown tool: ${name}`)
     // A ZodError carries the issues array as its `message`, and the agent loop
     // puts that straight into the tool result — so a model that gets one field
@@ -437,10 +472,10 @@ export class ToolRegistry {
   }
 
   has(name: string): boolean {
-    return this.tools.has(name)
+    return this.toolStore(name).has(name)
   }
 
   names(): string[] {
-    return Array.from(this.tools.keys())
+    return Array.from(this.currentTools().keys())
   }
 }

@@ -2,6 +2,10 @@ import { after, before, beforeEach, describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { z } from 'zod'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { InitializeRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
+import { setTimeout as delay } from 'node:timers/promises'
 import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
 import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { MCP_UI_CANVAS_PLUGIN_ID } from '@copse/agent/plugins/mcp-ui-canvas-plugin.ts'
@@ -10,10 +14,11 @@ import type { PluginRegistry } from '@copse/agent/plugins/plugin-registry.ts'
 import { storageDelete, storageSet } from '../storage/storage.ts'
 import { pluginSettingsKey } from '../plugins/plugin-settings-read.ts'
 import { ANIMATED_EXPLAINERS_SETTING_ID } from '@copse/agent/canvas-settings.ts'
-import { ToolRegistry } from '../tool-registry.ts'
+import { ToolRegistry, setPermissionGateForTests } from '../tool-registry.ts'
 import { CANVAS_SERVER_NAME } from './bundled-mcp-server.ts'
 import { mcpToolName } from './mcp-config.ts'
 import {
+  acquireMcpToolScope,
   loadMcpServers,
   reloadMcpServers,
   reloadMcpServersForPluginToggle,
@@ -103,6 +108,119 @@ describe('reloadMcpServersForPluginToggle', () => {
     assert.equal(canvas?.state, 'connected')
     assert.ok(canvas.tools.includes('render_html_artefact'))
   })
+
+  it('revokes bundled tools captured by a turn when their plugin is disabled', async () => {
+    plugins.enable(MCP_UI_CANVAS_PLUGIN_ID)
+    await loadMcpServers(tools)
+    const scope = await acquireMcpToolScope(tools)
+    try {
+      setPermissionGateForTests(async () => true)
+      assert.equal(
+        scope.run(() => tools.has(RENDER_TOOL)),
+        true,
+      )
+      plugins.disable(MCP_UI_CANVAS_PLUGIN_ID)
+      await reloadMcpServersForPluginToggle(tools, MCP_UI_CANVAS_PLUGIN_ID)
+      await assert.rejects(
+        scope.run(() =>
+          tools.execute(RENDER_TOOL, { html: '<p>revoked</p>' }, new AbortController().signal),
+        ),
+        /disconnected or reconfigured/,
+      )
+    } finally {
+      setPermissionGateForTests(null)
+      await scope.release()
+    }
+  })
+
+  for (const phase of ['initialize', 'tools/list']) {
+    it(`cancels bundled ${phase} during admission without holding the next turn`, async () => {
+      plugins.enable(MCP_UI_CANVAS_PLUGIN_ID)
+      await loadMcpServers(tools)
+      let enteredList = (): void => {}
+      let releaseList = (): void => {}
+      const entered = new Promise<void>((resolve) => {
+        enteredList = resolve
+      })
+      const held = new Promise<void>((resolve) => {
+        releaseList = resolve
+      })
+      let cancelled = false
+      let holdNext = true
+      const connect = Object.getOwnPropertyDescriptors(McpServer.prototype).connect.value
+      assert.ok(connect)
+      const intercepted = mock.method(
+        McpServer.prototype,
+        'connect',
+        async function (this: McpServer, transport: Transport) {
+          if (holdNext) {
+            holdNext = false
+            const holdRequest = async (signal: AbortSignal): Promise<void> => {
+              enteredList()
+              await new Promise<void>((resolve, reject) => {
+                const onAbort = (): void => {
+                  cancelled = true
+                  reject(new Error('Bundled discovery cancelled'))
+                }
+                signal.addEventListener('abort', onAbort, { once: true })
+                if (signal.aborted) onAbort()
+                void held.then(() => {
+                  signal.removeEventListener('abort', onAbort)
+                  resolve()
+                })
+              })
+            }
+            if (phase === 'initialize') {
+              this.server.setRequestHandler(InitializeRequestSchema, async (request, extra) => {
+                await holdRequest(extra.signal)
+                return {
+                  protocolVersion: request.params.protocolVersion,
+                  capabilities: { tools: {} },
+                  serverInfo: { name: 'held-bundled-server', version: '1' },
+                }
+              })
+            } else {
+              this.server.setRequestHandler(ListToolsRequestSchema, async (_request, extra) => {
+                await holdRequest(extra.signal)
+                return { tools: [] }
+              })
+            }
+          }
+          await connect.call(this, transport)
+        },
+      )
+      const abort = new AbortController()
+      const admission = acquireMcpToolScope(tools, '/bundled-offscreen-project', abort.signal)
+      const stopped = assert.rejects(admission, /stopped during bundled discovery/)
+      let next: ReturnType<typeof acquireMcpToolScope> | undefined
+      try {
+        assert.equal(
+          await Promise.race([entered.then(() => true), delay(5000).then(() => false)]),
+          true,
+          `The real bundled protocol must reach its held ${phase} request`,
+        )
+        abort.abort(new Error('stopped during bundled discovery'))
+        await stopped
+        next = acquireMcpToolScope(tools)
+        assert.equal(
+          await Promise.race([next.then(() => true), delay(5000).then(() => false)]),
+          true,
+          `The following turn must not wait for the bundled server to answer ${phase}`,
+        )
+        assert.equal(cancelled, true)
+        assert.equal(
+          (await next).run(() => tools.has(RENDER_TOOL)),
+          true,
+        )
+      } finally {
+        releaseList()
+        abort.abort(new Error('stopped during bundled discovery'))
+        await stopped
+        await (await next)?.release()
+        intercepted.mock.restore()
+      }
+    })
+  }
 
   it("keeps other MCP servers' tools registered across a canvas toggle", async () => {
     plugins.enable(MCP_UI_CANVAS_PLUGIN_ID)
