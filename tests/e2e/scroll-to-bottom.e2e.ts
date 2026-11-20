@@ -30,8 +30,32 @@ const STREAMING_RESPONSE = [
   'Finally, run the relevant checks, review the diff for unintended changes, and record any follow-up work that needs a separate decision.',
 ].join('\n\n')
 
+/** The streamed reply's middle paragraph: the last one is still to come when it lands. */
+const STREAMING_MIDDLE = 'Next, update the affected module'
+
 /** The streamed reply's final paragraph: it lands only once tokens have kept arriving. */
 const STREAMING_TAIL = 'Finally, run the relevant checks'
+
+/**
+ * Scrolled up during a streamed reply: the scroll-to-bottom control shows, the
+ * docked controls cover no transcript text, and the first question is still
+ * in view (the reply did not pull the view down).
+ */
+async function expectScrolledUpControls(): Promise<void> {
+  expect(await isScrollToBottomVisible()).toBe(true)
+  // Streamed text keeps landing below; the docked controls cover none of it.
+  expect(await navigationTextOverlaps()).toEqual([])
+  const firstQuestionVisible = await browser.execute(() => {
+    const firstUser = document.querySelector('.messages-list .msg-user')
+    if (!(firstUser instanceof HTMLElement)) return false
+    const list = document.querySelector('.messages-list')
+    if (!(list instanceof HTMLElement)) return false
+    const listRect = list.getBoundingClientRect()
+    const msgRect = firstUser.getBoundingClientRect()
+    return msgRect.top >= listRect.top - 4 && msgRect.top <= listRect.bottom
+  })
+  expect(firstQuestionVisible).toBe(true)
+}
 
 async function waitForLastAssistantText(text: string): Promise<void> {
   await browser.waitUntil(
@@ -418,8 +442,12 @@ describe('scroll to bottom', () => {
 
     await scrollMessagesListToTop()
 
-    // Stay scrolled up while tokens keep arriving: wait for the reply's last
-    // paragraph to land below, then for the transcript to come to rest.
+    // Stay scrolled up while tokens keep arriving. Check the controls as soon
+    // as the middle paragraph has landed below, while the last one is still
+    // streaming, and again once the reply has come to rest.
+    await waitForLastAssistantText(STREAMING_MIDDLE)
+    await expectScrolledUpControls()
+
     await waitForLastAssistantText(STREAMING_TAIL)
     // The paced reveal keeps painting after the text lands and its settled
     // render can change the transcript height; capture after it, not during.
@@ -432,20 +460,7 @@ describe('scroll to bottom', () => {
       },
     )
     await waitForTranscriptScrollSettled(true)
-
-    expect(await isScrollToBottomVisible()).toBe(true)
-    // Streamed text keeps landing below; the docked controls cover none of it.
-    expect(await navigationTextOverlaps()).toEqual([])
-    const firstQuestionVisible = await browser.execute(() => {
-      const firstUser = document.querySelector('.messages-list .msg-user')
-      if (!(firstUser instanceof HTMLElement)) return false
-      const list = document.querySelector('.messages-list')
-      if (!(list instanceof HTMLElement)) return false
-      const listRect = list.getBoundingClientRect()
-      const msgRect = firstUser.getBoundingClientRect()
-      return msgRect.top >= listRect.top - 4 && msgRect.top <= listRect.bottom
-    })
-    expect(firstQuestionVisible).toBe(true)
+    await expectScrolledUpControls()
 
     await saveAppScreenshot('scroll-to-bottom-streaming-scrolled-up.png')
     await waitForAgentIdle()
