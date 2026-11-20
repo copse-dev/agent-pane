@@ -1195,7 +1195,8 @@ no route there at all (A11 admits github.com anonymously for the install step on
 adds a read capability without putting a credential in the guest and without intercepting
 TLS. Experimental, and off unless the user turns it on for one run in the run dialog
 (container runs are themselves behind Settings › Experimental). The CLI, and so the A23
-follow-up workflow, never asks for it.
+follow-up workflow, never asks for it. It does not leave experimental before the repository
+lock-down in the follow-ups exists.
 
 - **A per-run choice, off by default** (owner decision on the November 20 security review). The
   run dialog offers "Let this run read GitHub with my sign-in", unticked on every new run and on
@@ -1218,7 +1219,7 @@ follow-up workflow, never asks for it.
   so signal a short secret to an owner it chooses, with no write and no tunnel. The bandwidth
   is low, but a token is short. This is why the dialog says so, and why github.com itself
   forwards only git's fetch paths (below). The repository lock-down in the follow-ups is
-  what closes it.
+  what closes it, which is why it is a precondition for leaving experimental.
 
 - **How the guest's clients reach it.** `gh` is given its own config directory
   (`GH_CONFIG_DIR`): `config.yml` sets `http_unix_socket` to a socket in the guest's tmpfs,
@@ -1329,6 +1330,12 @@ follow-up workflow, never asks for it.
 
 Follow-ups, decided with the user and not in this change:
 
+- **Repository lock-down: a precondition for leaving experimental** (owner decision, November
+  20). Reads limited to the repositories named for the run, for API, git and download reads
+  alike. The per-run choice gets the user's consent, but it does not shrink what the token can
+  read or what a run's choice of reads can signal. So the capability stays experimental,
+  per-run, opt-in and off by default until the lock-down exists; this change does not wait
+  for it on those terms.
 - **Writes prompt (PR 2).** A GitHub write is held while the user is asked. An unattended run
   holds it for a configurable time, default 5 minutes, which can be disabled to defer at once,
   using the deferred-request shape from #3831; an attended run caps the hold at 24 hours. The
@@ -1336,6 +1343,6 @@ Follow-ups, decided with the user and not in this change:
 - **Placeholder rotation.** Bound to the thread and run, rotated every 30 minutes with a
   15-minute failover in which the previous value stays valid; rotated immediately, with no
   failover, on a canary hit; delivered by rewriting `hosts.yml`.
-- **Scope.** Reads are not limited to the run's repository; an optional repository lockdown
-  can come later. SSH remotes and GitHub Enterprise Server are out of scope. Git LFS batch
-  requests are POSTs and are refused for now.
+- **Scope.** Until the lock-down above, reads are not limited to the run's repository. SSH
+  remotes and GitHub Enterprise Server are out of scope. Git LFS batch requests are POSTs and
+  are refused for now.
