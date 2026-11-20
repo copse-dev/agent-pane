@@ -1077,6 +1077,10 @@
       "sha256": "7c497d79c0790430d24a6b2ab9dfe9d5e9e350e046ddcfd4f454006fe501322d",
       "bytes": 271912
     },
+    "browser-form-entry-unconfirmed.png": {
+      "sha256": "fdb6c153ed55ace786065f30e84b013f860b40fce31aece7c2c39aed41faab5e",
+      "bytes": 1161193
+    },
     "browser-form-fields-entered.png": {
       "sha256": "9089e83916d2c0c5546be9f0ee948960da29439af2d1265a7756765fcfb5efb3",
       "bytes": 223705
@@ -6472,6 +6476,10 @@
     "worktree-preparation-tools.png": {
       "sha256": "b74f6180f926480ed731466344e8dee9415493c5a5de0fcf4da37e479d4f13f8",
       "bytes": 436743
+    },
+    "worktree-preparation-uv-requirements.png": {
+      "sha256": "c283341ab9fe44fd6770231ccbfda9da107a214c9813b484426fbeb770edf6d3",
+      "bytes": 85277
     }
   }
 }
