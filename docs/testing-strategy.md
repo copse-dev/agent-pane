@@ -141,7 +141,12 @@ runner's final exit status additionally reflects this checkout invariant.
 
 The [test oracle](../scripts/test-oracle.mts) maps your diff to the tests that
 can reach it — unit tests through the import graph (exact), e2e specs through
-their selector vocabulary (heuristic):
+their selector vocabulary (heuristic). For unit tests the graph skips type-only
+imports (`import type`, `export type … from`) everywhere but the test file
+itself: they are erased, so a module a test reaches only through another
+module's type import is never loaded and cannot change its result. An e2e spec
+tests the running app, so its imports, type-only ones included, still stand in
+for the app code it observes.
 
 ```bash
 npm run oracle                  # what would you run, and how confident is it?
