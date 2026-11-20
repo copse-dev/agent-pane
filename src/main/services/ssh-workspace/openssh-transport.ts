@@ -47,8 +47,15 @@ function keepaliveArgs(): string[] {
 
 function resolveTarget(host: SshWorkspaceHost): string {
   const hostname = host.host.trim()
-  if (host.user && !hostname.includes('@')) return `${host.user}@${hostname}`
-  return hostname
+  const target = host.user && !hostname.includes('@') ? `${host.user}@${hostname}` : hostname
+  // The target is a bare ssh argument. One that starts with `-` is read as an
+  // option, and the next positional (the remote command) becomes the host:
+  // `-oProxyCommand=…` would then run a local command. No real host or user
+  // name starts with a dash, so refuse it rather than hand it to ssh.
+  if (target === '' || target.startsWith('-')) {
+    throw new Error(`Invalid SSH host for ${host.label}: a host or user name cannot start with "-"`)
+  }
+  return target
 }
 
 function supportsControlMaster(): boolean {

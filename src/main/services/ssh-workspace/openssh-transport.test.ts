@@ -109,6 +109,32 @@ describe('sshExecArgs / ControlPath', () => {
     assert.equal(args[args.length - 2], 'remote-dev-testing-016')
   })
 
+  it('refuses a host or user that ssh would read as an option', async () => {
+    // `ssh … -oProxyCommand=… -- <remote command>` treats the remote command as
+    // the host and runs the ProxyCommand locally.
+    const optionHost: SshWorkspaceHost = {
+      id: 'evil',
+      label: 'Evil',
+      host: '-oProxyCommand=false',
+    }
+    const optionUser: SshWorkspaceHost = {
+      id: 'evil-user',
+      label: 'Evil user',
+      host: 'dev.example',
+      user: '-oProxyCommand=false',
+    }
+    for (const bad of [optionHost, optionUser, { ...optionHost, host: '  -F/tmp/config' }]) {
+      assert.throws(() => sshExecArgs(bad, 'true'), /cannot start with "-"/)
+      assert.throws(() => sshPtyArgs(bad, 'bash -l'), /cannot start with "-"/)
+      const transport = new OpenSshTransport(bad)
+      await assert.rejects(() => transport.connect(), /cannot start with "-"/)
+      await assert.rejects(() => transport.execArgv(['true']), /cannot start with "-"/)
+    }
+    // A dash inside the name is ordinary.
+    const dashed: SshWorkspaceHost = { id: 'ok', label: 'ok', host: 'build-01', user: 'ci-bot' }
+    assert.equal(sshExecArgs(dashed, 'true').at(-2), 'ci-bot@build-01')
+  })
+
   it(
     'keeps the main event loop responsive while a control master starts',
     {

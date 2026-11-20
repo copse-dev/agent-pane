@@ -88,6 +88,12 @@ function attachPgidParser(proc: ChildProcess, hostId: string, stdout: PassThroug
     const rest = parse(chunk)
     if (rest) stdout.write(rest)
   })
+  // The consumer reads the pass-through in place of the real pipe, so it must
+  // see end-of-stream too: otherwise 'end' handlers (decoder flushes, readline
+  // close, `for await`) wait forever after the remote process has exited.
+  proc.stdout?.on('end', () => {
+    stdout.end()
+  })
 }
 
 export async function spawnRemoteShellCommand(
