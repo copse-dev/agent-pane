@@ -374,6 +374,75 @@ describe('AnthropicProvider mid-conversation system messages (#1286)', () => {
   })
 })
 
+describe('AnthropicProvider empty text blocks', () => {
+  const doneEvents = [
+    { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 1 } },
+  ]
+
+  async function messagesFor(messages: LLMMessage[]): Promise<unknown> {
+    const provider = new AnthropicProvider('claude-test', { apiKey: 'test' })
+    const capture = withFakeStream(provider, doneEvents)
+    for await (const _ of provider.stream(messages, [])) {
+      // Drain the stream so the provider sends and captures the request.
+    }
+    assert.ok(capture.params)
+    return capture.params['messages']
+  }
+
+  const image = {
+    type: 'image',
+    source: { type: 'base64', media_type: 'image/png', data: 'AAAA' },
+  }
+
+  it('sends an image with no caption without the empty text part', async () => {
+    // The composer submits an uncaptioned screenshot as its images plus an
+    // empty text part. Anthropic rejects an empty text block, which failed that
+    // turn and every later one that replayed it from history.
+    const messages = await messagesFor([
+      {
+        role: 'user',
+        content: [
+          { type: 'image', dataUrl: 'data:image/png;base64,AAAA' },
+          { type: 'text', text: '' },
+        ],
+      },
+    ])
+
+    assert.deepEqual(messages, [
+      { role: 'user', content: [{ ...image, cache_control: { type: 'ephemeral' } }] },
+    ])
+  })
+
+  it('sends a visual tool result with no text as its images alone', async () => {
+    const messages = await messagesFor([
+      { role: 'user', content: 'capture the page' },
+      { role: 'assistant', content: [{ id: 'call_1', name: 'screenshot', args: {} }] },
+      {
+        role: 'tool',
+        toolResults: [
+          {
+            toolCallId: 'call_1',
+            result: ' \n',
+            images: [{ dataUrl: 'data:image/png;base64,AAAA' }],
+          },
+        ],
+      },
+    ])
+
+    assert.deepEqual(recordAt(messages, 2), {
+      role: 'user',
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: 'call_1',
+          content: [image],
+          cache_control: { type: 'ephemeral' },
+        },
+      ],
+    })
+  })
+})
+
 describe('AnthropicProvider tuned parameters', () => {
   it('pairs a chosen effort with adaptive thinking', async () => {
     const provider = new AnthropicProvider('claude-opus-5', {

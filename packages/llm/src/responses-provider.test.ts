@@ -896,6 +896,52 @@ describe('ResponsesProvider reasoning', () => {
     ])
   })
 
+  it("never replays another endpoint's encrypted reasoning from the shared thread scope", async () => {
+    // The replay store is scoped to (model, thread) so it survives provider
+    // rebuilds. A thread switched from first-party OpenAI to a compatible
+    // endpoint serving the same model id shares that scope, and used to send
+    // OpenAI's ciphertext to an endpoint with no encrypted-reasoning contract.
+    const thread = `thread-${globalThis.crypto.randomUUID()}`
+    const firstParty = new ResponsesProvider('gpt-5.6-sol', {
+      apiKey: 'sk-test',
+      encryptedReasoning: true,
+      promptCacheKey: thread,
+    })
+    withFakeStream(firstParty, () => undefined, [
+      {
+        type: 'response.output_item.done',
+        item: { type: 'reasoning', id: 'rs_1', encrypted_content: 'OPENAI-BLOB' },
+      },
+      {
+        type: 'response.output_item.done',
+        item: { type: 'function_call', call_id: 'call_1', name: 'read_file', arguments: '{}' },
+      },
+    ])
+    await collect(firstParty)
+
+    const compatible = new ResponsesProvider('gpt-5.6-sol', {
+      baseURL: 'https://proxy.example/v1',
+      apiKey: 'test-key',
+      promptCacheKey: thread,
+    })
+    let request: CapturedRequest | undefined
+    withFakeStream(
+      compatible,
+      (captured) => {
+        request = captured
+      },
+      [{ type: 'response.output_text.delta', delta: 'done' }],
+    )
+    await collect(compatible, [
+      { role: 'assistant', content: [{ id: 'call_1', name: 'read_file', args: {} }] },
+    ])
+
+    assert.ok(request)
+    assert.deepEqual(request.input, [
+      { type: 'function_call', call_id: 'call_1', name: 'read_file', arguments: '{}' },
+    ])
+  })
+
   it('does not retain reasoning when encryptedReasoning is off', async () => {
     // Perplexity and other Responses endpoints have no encrypted-reasoning
     // contract; replaying an OpenAI-shaped item at them would be a 400.

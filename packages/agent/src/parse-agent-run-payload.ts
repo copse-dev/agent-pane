@@ -1,6 +1,7 @@
 import { IMAGE_DETAILS, type UserContent } from '@copse/llm/wire-types.ts'
 import { isReasoningLevel, type ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import type { TodoItem } from './wire-types.ts'
+import { clipStart } from './clip-text.ts'
 import { z } from 'zod'
 import { isRecord } from '@copse/std/unknown-value.ts'
 
@@ -66,7 +67,7 @@ function parseReviewContext(value: unknown): string | undefined {
   if (typeof value !== 'string' || value.trim() === '') return undefined
   return value.length <= REVIEW_CONTEXT_CHAR_CAP
     ? value
-    : `${value.slice(0, REVIEW_CONTEXT_CHAR_CAP)}\n[review summary truncated]`
+    : `${clipStart(value, REVIEW_CONTEXT_CHAR_CAP)}\n[review summary truncated]`
 }
 
 export function parseAgentRunPayload(rawPrompt: string): {

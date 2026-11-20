@@ -5,6 +5,7 @@
 // Electron main process.
 
 import type { TodoItem, TodoUpdateInput } from './wire-types.ts'
+import { clipStart } from './clip-text.ts'
 import { z } from 'zod'
 
 /** Tools the parent agent uses to mutate files. A turn that runs any of these
@@ -220,7 +221,7 @@ export function buildReviewPrompt(
   const trimmedDiff = diff.trim()
   const diffBlock =
     trimmedDiff.length > MAX_DIFF_CHARS
-      ? `${trimmedDiff.slice(0, MAX_DIFF_CHARS)}\n…(diff truncated; use git_diff on specific files for the rest)`
+      ? `${clipStart(trimmedDiff, MAX_DIFF_CHARS)}\n…(diff truncated; use git_diff on specific files for the rest)`
       : trimmedDiff || '(git reported no textual diff; use git_status / staged_diffs to inspect.)'
 
   return [
