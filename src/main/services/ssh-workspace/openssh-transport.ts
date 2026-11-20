@@ -12,7 +12,7 @@ import type { SshStrictHostKeys } from './git-ssh-env.ts'
 import { leaseSshAskpassEnv } from './askpass.ts'
 import { controlSocketPath } from './ssh-paths.ts'
 import { buildRemoteArgvCommand, buildRemoteShellCommand } from './remote-exec.ts'
-import type { SshExecOptions, SshTransport } from './transport.ts'
+import type { SshConnectOptions, SshExecOptions, SshTransport } from './transport.ts'
 import {
   appendFlatCapped,
   COMMAND_OUTPUT_MAX_BYTES,
@@ -32,6 +32,10 @@ const CONTROL_PERSIST_SECONDS = 14_400
 // reconnects cleanly.
 const SERVER_ALIVE_INTERVAL_SECONDS = 30
 const SERVER_ALIVE_COUNT_MAX = 3
+/** `ssh -O check` only asks the local control socket, so it answers at once or not at all. */
+const LIVENESS_CHECK_TIMEOUT_MS = 10_000
+/** How long a reconnect nobody asked for may wait on an unreachable host. */
+const QUIET_CONNECT_TIMEOUT_S = '10'
 /** A media transfer is bounded by the caller's size check, but may outlast a normal command. */
 const FILE_TRANSFER_TIMEOUT_MS = 5 * 60_000
 
@@ -348,7 +352,25 @@ export class OpenSshTransport implements SshTransport {
     return this.connected
   }
 
-  async connect(): Promise<void> {
+  async checkAlive(): Promise<boolean> {
+    // Without a control master there is nothing to ask that would not open a
+    // new connection, and a new connection can prompt. Report what we know.
+    if (!supportsControlMaster()) return this.connected
+    if (!this.connected) return false
+    // `-O check` only talks to the local control socket: it tells us whether
+    // the master process is still there, without touching the network or
+    // authenticating. A master whose peer vanished exits on its own once the
+    // keepalives above give up, so a dead link shows up here within ~90s.
+    const check = await runLocalSsh(
+      this.host.id,
+      ['-O', 'check', '-S', this.controlPath, resolveTarget(this.host)],
+      { timeoutMs: LIVENESS_CHECK_TIMEOUT_MS },
+    )
+    if (check.code !== 0) this.connected = false
+    return check.code === 0
+  }
+
+  async connect(options: SshConnectOptions = {}): Promise<void> {
     const target = resolveTarget(this.host)
     if (supportsControlMaster()) {
       // These control commands must stay asynchronous. Authentication prompts
@@ -379,6 +401,12 @@ export class OpenSshTransport implements SshTransport {
       if (this.host.port) masterArgs.push('-p', String(this.host.port))
       if (this.host.identityFile) masterArgs.push('-i', this.host.identityFile)
       if (this.host.forwardAgent) masterArgs.push('-o', 'ForwardAgent=yes')
+      // BatchMode makes OpenSSH fail instead of asking for a password, a key
+      // passphrase or a host-key decision, and the bounded connect keeps an
+      // unreachable host from holding the attempt open.
+      if (options.quiet) {
+        masterArgs.push('-o', 'BatchMode=yes', '-o', `ConnectTimeout=${QUIET_CONNECT_TIMEOUT_S}`)
+      }
       masterArgs.push(target)
 
       const master = await runLocalSsh(this.host.id, masterArgs, { timeoutMs: 30_000 })
@@ -389,6 +417,9 @@ export class OpenSshTransport implements SshTransport {
       }
       this.connected = true
     } else {
+      // Every command authenticates afresh here, so there is no way to probe
+      // without risking a prompt.
+      if (options.quiet) throw new Error('A quiet SSH reconnect needs ControlMaster support')
       // Windows OpenSSH lacks ControlMaster — verify reachability with a no-op exec.
       const probe = await this.execArgv(['true'], { timeoutMs: 15_000 })
       if (probe.code !== 0) {

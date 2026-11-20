@@ -246,6 +246,57 @@ describe(
       assert.equal(ranDuringConnect, true)
     })
 
+    it('answers a liveness check from the control socket alone', async (t) => {
+      // The master is "up" while the marker file exists. Every invocation is
+      // logged so the test can prove the check never opens a connection.
+      const dir = installFakeSsh(
+        t,
+        [
+          'echo "$*" >> "$(dirname "$0")/calls"',
+          'case " $* " in',
+          '  *" -O check "*) [ -e "$(dirname "$0")/master-up" ] && exit 0 || exit 255 ;;',
+          'esac',
+          'touch "$(dirname "$0")/master-up"',
+          'exit 0',
+        ].join('\n'),
+      )
+      const transport = new OpenSshTransport(host)
+      assert.equal(await transport.checkAlive(), false, 'never connected, so nothing to ask')
+      assert.equal(existsSync(join(dir, 'calls')), false)
+
+      await transport.connect()
+      assert.equal(await transport.checkAlive(), true)
+
+      rmSync(join(dir, 'master-up'))
+      assert.equal(await transport.checkAlive(), false)
+      assert.equal(transport.isConnected(), false, 'a dead master is no longer reported connected')
+
+      const calls = readFileSync(join(dir, 'calls'), 'utf8').trim().split('\n')
+      const checks = calls.filter((line) => line.startsWith('-O check '))
+      // One from connect, then one per live check; none after the transport knew it was down.
+      assert.equal(checks.length, 3)
+      assert.equal(calls.filter((line) => line.includes('-fNM')).length, 1)
+    })
+
+    it('makes a quiet connect unable to prompt or hang', async (t) => {
+      const dir = installFakeSsh(
+        t,
+        [
+          'case " $* " in *" -O check "*) exit 255 ;; esac',
+          'echo "$*" >> "$(dirname "$0")/master-args"',
+          'exit 0',
+        ].join('\n'),
+      )
+      await new OpenSshTransport(host).connect({ quiet: true })
+      await new OpenSshTransport(host).connect()
+
+      const [quiet, interactive] = readFileSync(join(dir, 'master-args'), 'utf8').trim().split('\n')
+      assert.ok(quiet && interactive)
+      assert.match(quiet, /-o BatchMode=yes/)
+      assert.match(quiet, /-o ConnectTimeout=10/)
+      assert.doesNotMatch(interactive, /BatchMode|ConnectTimeout/)
+    })
+
     it('reports the control master failure from stderr', async (t) => {
       installFakeSsh(t, 'echo "Permission denied (publickey)." >&2\nexit 255')
       const transport = new OpenSshTransport(host)

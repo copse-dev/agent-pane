@@ -27,6 +27,32 @@ interface ManagedConnection {
   status: SshConnectionStatus
   capabilities?: SshCapabilityReport
   lastError?: string
+  /** Quiet reconnects tried since the link was found gone. */
+  quietAttempts: number
+  /** Earliest time the next quiet reconnect may start. */
+  nextQuietAttemptAt: number
+}
+
+/** How often a host shown as connected is asked whether it still is. */
+export const SSH_LIVENESS_INTERVAL_MS = 30_000
+
+/**
+ * Waits between quiet reconnects after a link is found gone. The first is
+ * immediate; the rest cover a laptop waking before its network does. After
+ * the last one Copse stops trying and leaves the banner's Reconnect button,
+ * so a host that is really gone is not dialled for ever.
+ */
+export const SSH_QUIET_RECONNECT_DELAYS_MS: readonly number[] = [
+  0, 30_000, 60_000, 120_000, 300_000, 300_000,
+]
+
+/** OpenSSH's own exit status when the connection, not the remote command, failed. */
+const SSH_TRANSPORT_FAILURE_EXIT = 255
+
+export interface SshConnectionManagerOptions {
+  now?: () => number
+  /** Interval for the liveness timer; `0` leaves checking to explicit `checkLiveness()` calls. */
+  livenessIntervalMs?: number
 }
 
 let transportFactory: SshTransportFactory = (host): SshTransport => new OpenSshTransport(host)
@@ -53,6 +79,15 @@ export class SshConnectionManager {
   private readonly connections = new Map<string, ManagedConnection>()
   private readonly connectPromises = new Map<string, Promise<SshConnection>>()
   private readonly listeners = new Set<ConnectionListener>()
+  private readonly verifying = new Map<string, Promise<void>>()
+  private readonly now: () => number
+  private readonly livenessIntervalMs: number
+  private livenessTimer: ReturnType<typeof setInterval> | null = null
+
+  constructor(options: SshConnectionManagerOptions = {}) {
+    this.now = options.now ?? Date.now
+    this.livenessIntervalMs = options.livenessIntervalMs ?? SSH_LIVENESS_INTERVAL_MS
+  }
 
   onChange(listener: ConnectionListener): () => void {
     this.listeners.add(listener)
@@ -77,6 +112,7 @@ export class SshConnectionManager {
   }
 
   private emit(): void {
+    this.syncLivenessTimer()
     const states = this.listStates()
     for (const listener of this.listeners) listener(states)
   }
@@ -84,7 +120,104 @@ export class SshConnectionManager {
   getConnection(hostId: string): SshConnection | null {
     const entry = this.connections.get(hostId)
     if (!entry || entry.status !== 'connected') return null
-    return wrapConnection(entry)
+    return this.wrap(entry)
+  }
+
+  private wrap(entry: ManagedConnection): SshConnection {
+    return wrapConnection(entry, () => {
+      this.noteTransportFailure(entry.host.id)
+    })
+  }
+
+  /** A command on this host failed at the connection: check it now, not at the next tick. */
+  noteTransportFailure(hostId: string): void {
+    void this.verify(hostId)
+  }
+
+  /**
+   * Ask every host whether its connection is still there, and try to restore
+   * the ones that are not. Runs on a timer, so nothing here may prompt.
+   */
+  async checkLiveness(): Promise<void> {
+    await Promise.all([...this.connections.keys()].map((hostId) => this.verify(hostId)))
+  }
+
+  private verify(hostId: string): Promise<void> {
+    const inFlight = this.verifying.get(hostId)
+    if (inFlight) return inFlight
+    const run = this.verifyInternal(hostId).finally(() => {
+      this.verifying.delete(hostId)
+    })
+    this.verifying.set(hostId, run)
+    return run
+  }
+
+  private async verifyInternal(hostId: string): Promise<void> {
+    const entry = this.connections.get(hostId)
+    // A connect the user started owns the entry until it settles, and a failed
+    // connect (`error`) waits for the user: it may need a prompt we must not raise.
+    if (!entry || this.connectPromises.has(hostId)) return
+    if (entry.status !== 'connected' && entry.status !== 'disconnected') return
+    // `connect` and `disconnect` wait for this check before touching the entry,
+    // so it can only have been replaced by the time an await below returns.
+    const isCurrent = (): boolean => this.connections.get(hostId) === entry
+
+    const alive = await entry.transport.checkAlive().catch(() => false)
+    if (!isCurrent()) return
+    if (alive) {
+      // A command can rebuild the master on its own (`ControlMaster=auto`).
+      if (entry.status !== 'connected') this.markConnected(entry)
+      return
+    }
+
+    if (entry.status === 'connected') {
+      entry.status = 'disconnected'
+      entry.quietAttempts = 0
+      entry.nextQuietAttemptAt = this.now()
+      this.emit()
+    }
+    const delays = SSH_QUIET_RECONNECT_DELAYS_MS
+    if (entry.quietAttempts >= delays.length || this.now() < entry.nextQuietAttemptAt) return
+    entry.quietAttempts += 1
+    entry.nextQuietAttemptAt = this.now() + (delays[entry.quietAttempts] ?? 0)
+    try {
+      await entry.transport.connect({ quiet: true })
+    } catch {
+      return
+    }
+    if (isCurrent()) this.markConnected(entry)
+  }
+
+  private markConnected(entry: ManagedConnection): void {
+    entry.status = 'connected'
+    entry.quietAttempts = 0
+    entry.nextQuietAttemptAt = 0
+    delete entry.lastError
+    this.emit()
+  }
+
+  private syncLivenessTimer(): void {
+    const wanted =
+      this.livenessIntervalMs > 0 &&
+      [...this.connections.values()].some(
+        (entry) => entry.status === 'connected' || entry.status === 'disconnected',
+      )
+    if (wanted && !this.livenessTimer) {
+      this.livenessTimer = setInterval(() => {
+        void this.checkLiveness()
+      }, this.livenessIntervalMs)
+      // Never hold the process open for a liveness check.
+      this.livenessTimer.unref()
+    } else if (!wanted && this.livenessTimer) {
+      clearInterval(this.livenessTimer)
+      this.livenessTimer = null
+    }
+  }
+
+  /** Stop the liveness timer. Connections themselves are left as they are. */
+  dispose(): void {
+    if (this.livenessTimer) clearInterval(this.livenessTimer)
+    this.livenessTimer = null
   }
 
   async connect(hostId: string): Promise<SshConnection> {
@@ -92,15 +225,27 @@ export class SshConnectionManager {
     if (inFlight) return inFlight
 
     const existing = this.connections.get(hostId)
-    if (existing?.status === 'connected') return wrapConnection(existing)
+    if (existing?.status === 'connected') return this.wrap(existing)
 
-    const promise = this.connectInternal(hostId, existing)
+    const promise = this.connectAfterVerify(hostId)
     this.connectPromises.set(hostId, promise)
     try {
       return await promise
     } finally {
       this.connectPromises.delete(hostId)
     }
+  }
+
+  /**
+   * A quiet reconnect may be starting a master on this host's control socket.
+   * Let it settle first, so two masters never race for one socket, and use
+   * the connection it restored if it did.
+   */
+  private async connectAfterVerify(hostId: string): Promise<SshConnection> {
+    await this.verifying.get(hostId)
+    const existing = this.connections.get(hostId)
+    if (existing?.status === 'connected') return this.wrap(existing)
+    return this.connectInternal(hostId, existing)
   }
 
   private async connectInternal(
@@ -119,6 +264,8 @@ export class SshConnectionManager {
       host,
       transport,
       status: 'connecting',
+      quietAttempts: 0,
+      nextQuietAttemptAt: 0,
     }
     this.connections.set(hostId, managed)
     this.emit()
@@ -129,7 +276,7 @@ export class SshConnectionManager {
       delete managed.lastError
       managed.capabilities = await probeSshCapabilities(transport)
       this.emit()
-      return wrapConnection(managed)
+      return this.wrap(managed)
     } catch (err) {
       const message = errorMessage(err)
       managed.status = 'error'
@@ -141,6 +288,7 @@ export class SshConnectionManager {
   }
 
   async disconnect(hostId: string): Promise<void> {
+    await this.verifying.get(hostId)
     const entry = this.connections.get(hostId)
     if (!entry) return
     try {
@@ -157,12 +305,19 @@ export class SshConnectionManager {
   }
 }
 
-function wrapConnection(entry: ManagedConnection): SshConnection {
+function wrapConnection(entry: ManagedConnection, onTransportFailure: () => void): SshConnection {
+  // OpenSSH exits 255 when the connection itself failed. That is the earliest
+  // sign of a dropped link, so check now rather than at the next timer tick.
+  const observe = async (run: Promise<SshExecResult>): Promise<SshExecResult> => {
+    const result = await run
+    if (result.code === SSH_TRANSPORT_FAILURE_EXIT) onTransportFailure()
+    return result
+  }
   const conn: SshConnection = {
     host: entry.host,
     transport: entry.transport,
-    execArgv: (argv, options) => entry.transport.execArgv(argv, options),
-    execShell: (command, options) => entry.transport.execShell(command, options),
+    execArgv: (argv, options) => observe(entry.transport.execArgv(argv, options)),
+    execShell: (command, options) => observe(entry.transport.execShell(command, options)),
   }
   if (entry.capabilities) conn.capabilities = entry.capabilities
   return conn
@@ -176,6 +331,7 @@ export function getSshConnectionManager(): SshConnectionManager {
 }
 
 export function resetSshConnectionManagerForTests(): void {
+  manager?.dispose()
   manager = null
   resetSshTransportFactory()
 }
