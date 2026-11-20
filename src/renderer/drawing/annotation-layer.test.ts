@@ -81,6 +81,53 @@ function measurableStrip(el: HTMLElement, hostWidth: number): HTMLElement {
   return strip
 }
 
+/**
+ * Stand in for ResizeObserver, which happy-dom never fires. `fire()` delivers
+ * a resize to every live observer; `targets` are the elements being watched.
+ */
+function fakeResizeObserver(): {
+  targets: Element[]
+  fire: () => void
+  allDisconnected: () => boolean
+  restore: () => void
+} {
+  const had = Object.hasOwn(globalThis, 'ResizeObserver')
+  const previous = globalThis.ResizeObserver
+  const observers: { callback: () => void; disconnected: boolean }[] = []
+  const targets: Element[] = []
+  class FakeResizeObserver {
+    readonly entry: { callback: () => void; disconnected: boolean }
+    constructor(callback: ResizeObserverCallback) {
+      this.entry = {
+        callback: (): void => {
+          callback([], this)
+        },
+        disconnected: false,
+      }
+      observers.push(this.entry)
+    }
+    observe(target: Element): void {
+      targets.push(target)
+    }
+    unobserve(): void {}
+    disconnect(): void {
+      this.entry.disconnected = true
+    }
+  }
+  globalThis.ResizeObserver = FakeResizeObserver
+  return {
+    targets,
+    fire: (): void => {
+      for (const observer of observers) if (!observer.disconnected) observer.callback()
+    },
+    allDisconnected: (): boolean => observers.length > 0 && observers.every((o) => o.disconnected),
+    restore: (): void => {
+      if (had) globalThis.ResizeObserver = previous
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+    },
+  }
+}
+
 describe('annotation layer', () => {
   it('mounts nothing until activated, then shows the tool strip over the host', () => {
     const el = host()
@@ -526,27 +573,7 @@ describe('annotation layer', () => {
   })
 
   it('re-applies the viewBox when the host resizes, even with no scroll change', () => {
-    const had = Object.hasOwn(globalThis, 'ResizeObserver')
-    const previous = globalThis.ResizeObserver
-    const observers: { callback: () => void; disconnected: boolean }[] = []
-    class FakeResizeObserver {
-      readonly entry: { callback: () => void; disconnected: boolean }
-      constructor(callback: ResizeObserverCallback) {
-        this.entry = {
-          callback: (): void => {
-            callback([], this)
-          },
-          disconnected: false,
-        }
-        observers.push(this.entry)
-      }
-      observe(): void {}
-      unobserve(): void {}
-      disconnect(): void {
-        this.entry.disconnected = true
-      }
-    }
-    globalThis.ResizeObserver = FakeResizeObserver
+    const resizes = fakeResizeObserver()
     const el = host()
     const layer = mountAnnotationLayer(el, { label: 'page', onSend: () => true })
     try {
@@ -555,15 +582,69 @@ describe('annotation layer', () => {
       const svg = surfaceOf(el)
       assert.equal(svg.getAttribute('viewBox'), '0 240 400 300')
       el.getBoundingClientRect = (): DOMRect => new DOMRect(0, 0, 640, 480)
-      for (const observer of observers) observer.callback()
+      resizes.fire()
       assert.equal(svg.getAttribute('viewBox'), '0 240 640 480')
       layer.dispose()
-      assert.ok(observers.length > 0 && observers.every((o) => o.disconnected))
+      assert.ok(resizes.allDisconnected())
     } finally {
       layer.dispose()
       el.remove()
-      if (had) globalThis.ResizeObserver = previous
-      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      resizes.restore()
+    }
+  })
+
+  it('refits and drops an open menu on a resize of the host or of the interface scale', () => {
+    const resizes = fakeResizeObserver()
+    const el = host()
+    const layer = mountAnnotationLayer(el, { label: 'page', onSend: () => true })
+    try {
+      layer.activate()
+      // The host, and a probe sized in the interface scale: a scale change
+      // grows the strip without resizing the host, and arrives through the probe.
+      const probe = el.querySelector('.annotation-layer > .annotation-scale-probe')
+      assert.ok(probe)
+      assert.deepEqual(resizes.targets, [el, probe])
+
+      const strip = measurableStrip(el, 560)
+      resizes.fire()
+      assert.equal(strip.dataset['shapes'], 'each')
+      const ink = button(el, '.annotation-ink')
+      ink.click()
+      assert.ok(el.querySelector('.annotation-popover'))
+
+      // Same layout before and after: the strip still re-centres, so the menu,
+      // placed once under where its button was, must not be left behind.
+      resizes.fire()
+      assert.equal(strip.dataset['shapes'], 'each')
+      assert.equal(el.querySelector('.annotation-popover'), null)
+      assert.equal(ink.getAttribute('aria-expanded'), 'false')
+
+      measurableStrip(el, 360)
+      resizes.fire()
+      assert.equal(strip.dataset['shapes'], 'folded', 'a resize refits')
+    } finally {
+      layer.dispose()
+      el.remove()
+      resizes.restore()
+    }
+  })
+
+  it('names its menu buttons as expanding groups, not menus', () => {
+    const el = host()
+    const layer = mountAnnotationLayer(el, { label: 'page', onSend: () => true })
+    try {
+      layer.activate()
+      for (const selector of ['.annotation-ink', '.annotation-shape-fold']) {
+        const opener = button(el, selector)
+        // aria-haspopup would announce a menu; the popup is a group of toggle buttons.
+        assert.equal(opener.hasAttribute('aria-haspopup'), false, selector)
+        assert.equal(opener.getAttribute('aria-expanded'), 'false', selector)
+      }
+      button(el, '.annotation-ink').click()
+      assert.equal(el.querySelector('.annotation-popover')?.getAttribute('role'), 'group')
+    } finally {
+      layer.dispose()
+      el.remove()
     }
   })
 })

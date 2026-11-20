@@ -753,7 +753,8 @@ describe('VNC viewer', function () {
 
     await annotateButton.click()
     assert.equal(await annotateButton.getAttribute('aria-pressed'), 'true')
-    await selectAnnotationShape('.vnc-screen', 'rect')
+    // The screen shares the window with the chat and the device rail: the shapes fold.
+    await selectAnnotationShape('.vnc-screen', 'rect', 'folded')
     await browser.execute(() => {
       const surface = document.querySelector('.vnc-screen .annotation-layer-svg')
       if (!surface) throw new Error('Missing desktop annotation surface')

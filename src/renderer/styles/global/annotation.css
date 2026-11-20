@@ -136,6 +136,15 @@
   margin: 0 var(--spacing-xs);
   background: var(--border);
 }
+/* Laid out but never seen: one interface-scale unit wide, so annotation-layer.ts
+   can observe a scale change, which resizes the strip but not its host. */
+.annotation-scale-probe {
+  position: absolute;
+  width: var(--spacing-sm);
+  height: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
 /* The ink and shape menus: a second, shorter strip hung under the first. */
 .annotation-popover {
   position: absolute;

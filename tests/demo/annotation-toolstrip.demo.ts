@@ -20,6 +20,8 @@ interface StripReading {
   /** How far the strip stops short of its host on each side, in CSS pixels. */
   marginLeft: number
   marginRight: number
+  /** Controls spilling past the strip's own box, in CSS pixels: 0 when the layout fits. */
+  overflow: number
   visibleTools: string[]
 }
 
@@ -47,6 +49,7 @@ async function readStrip(pane: number): Promise<StripReading> {
       rows: rows.size,
       marginLeft: Math.round(stripRect.left - hostRect.left),
       marginRight: Math.round(hostRect.right - stripRect.right),
+      overflow: strip.scrollWidth - strip.clientWidth,
       visibleTools: shown.flatMap((child) => {
         if (child.classList.contains('annotation-shape-fold')) return ['fold']
         if (child.classList.contains('annotation-ink')) return ['ink']
@@ -112,6 +115,7 @@ describe('annotation tool strip', () => {
         strip.marginLeft >= 8,
         `pane ${String(index)} strip overflows its host: margin ${String(strip.marginLeft)}`,
       )
+      assert.equal(strip.overflow, 0, `pane ${String(index)} controls spill out of the strip`)
     }
     // No swatch sits on any strip; the colours live in the ink menu.
     await expect($('.annotation-toolstrip .annotation-swatch')).not.toExist()
@@ -178,6 +182,37 @@ describe('annotation tool strip', () => {
     await expect(menu).not.toExist()
     await expect(fold).toHaveAttribute('aria-label', 'Ellipse')
     await expect(fold).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('refits when the interface scale grows the strip without resizing its pane', async () => {
+    assert.equal((await readStrip(1)).layout, 'short each regular')
+    const ink = $(`${pane(0)} .annotation-ink`)
+    await ink.click()
+    await $(`${pane(0)} .annotation-popover`).waitForDisplayed()
+
+    // Settings → Appearance and ⌘+ set this property; no pane changes size.
+    await browser.execute(() => {
+      document.documentElement.style.setProperty('--ui-scale', '1.25')
+    })
+    await browser.waitUntil(async () => (await readStrip(1)).layout === 'short folded regular', {
+      timeoutMsg: 'expected the 404px strip to fold its shapes at 1.25x',
+    })
+    // The menu was placed for the old strip; it goes rather than hang where its button was.
+    await expect($(`${pane(0)} .annotation-popover`)).not.toExist()
+    await expect(ink).toHaveAttribute('aria-expanded', 'false')
+    for (const index of [0, 1, 2, 3, 4]) {
+      const strip = await readStrip(index)
+      assert.equal(strip.rows, 1, `pane ${String(index)} wrapped at 1.25x`)
+      assert.equal(strip.overflow, 0, `pane ${String(index)} controls spill at 1.25x`)
+    }
+    await saveElementScreenshot('#fixture', 'annotation-toolstrip-scale-125.png')
+
+    await browser.execute(() => {
+      document.documentElement.style.setProperty('--ui-scale', '1')
+    })
+    await browser.waitUntil(async () => (await readStrip(1)).layout === 'short each regular', {
+      timeoutMsg: 'expected the 404px strip to unfold again at 1x',
+    })
   })
 
   it('reads the same in the light theme', async () => {

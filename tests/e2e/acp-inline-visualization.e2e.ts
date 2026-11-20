@@ -231,7 +231,8 @@ describe('ACP inline visualization reference', () => {
     await expect(annotate).toHaveText('Annotate')
     await annotate.click()
     await expect(annotate).toHaveAttribute('aria-pressed', 'true')
-    await selectAnnotationShape('.message-canvas-previews', 'rect')
+    // The inline stage is wide: every shape has its own button.
+    await selectAnnotationShape('.message-canvas-previews', 'rect', 'each')
     await drawAnnotation('.message-canvas-previews .annotation-layer-svg')
     await browser.waitUntil(
       async () =>
@@ -335,7 +336,8 @@ describe('ACP inline visualization reference', () => {
         )) === 'true',
       { timeout: 5_000, timeoutMsg: 'expected Browser annotation mode to activate' },
     )
-    await selectAnnotationShape('.browser-tab-panel.is-active', 'arrow')
+    // Beside the chat and the tab rail the page is about 279px wide: the shapes fold.
+    await selectAnnotationShape('.browser-tab-panel.is-active', 'arrow', 'folded')
     await drawAnnotation('.browser-tab-panel.is-active .annotation-layer-svg')
     await browser.waitUntil(
       async () =>

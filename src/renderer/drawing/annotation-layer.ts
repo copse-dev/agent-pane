@@ -418,11 +418,11 @@ export function mountAnnotationLayer(
   /**
    * Pick the widest layout that fits the host on one row. Measured, not keyed
    * to a breakpoint: the action label, the interface scale and the font all
-   * move the strip's width.
+   * move the strip's width. Callers close any open menu first: it was placed
+   * under a button this may move or fold away.
    */
   const fitStrip = (): void => {
     if (!strip || !sendBtn || !active) return
-    const before = `${strip.dataset['send'] ?? ''}/${strip.dataset['shapes'] ?? ''}`
     for (const layout of STRIP_LAYOUTS) {
       strip.dataset['send'] = layout.send
       strip.dataset['shapes'] = layout.shapes
@@ -430,8 +430,6 @@ export function mountAnnotationLayer(
       sendBtn.textContent = layout.send === 'long' ? sendLabel : compactSendLabel
       if (strip.scrollWidth <= strip.clientWidth) break
     }
-    // A menu hanging from a button that just folded away has nothing to point at.
-    if (before !== `${strip.dataset['send'] ?? ''}/${strip.dataset['shapes'] ?? ''}`) closePopover()
   }
 
   /** The button that stands for the current tool in the layout on screen. */
@@ -488,7 +486,6 @@ export function mountAnnotationLayer(
       {
         type: 'button',
         class: 'annotation-tool annotation-shape-fold',
-        'aria-haspopup': 'true',
         'aria-expanded': 'false',
         'aria-pressed': 'false',
       },
@@ -509,7 +506,6 @@ export function mountAnnotationLayer(
         type: 'button',
         class: 'annotation-tool annotation-ink',
         'data-tooltip': 'Ink colour',
-        'aria-haspopup': 'true',
         'aria-expanded': 'false',
       },
       el('span', { class: 'annotation-ink-dot' }),
@@ -605,7 +601,19 @@ export function mountAnnotationLayer(
     })
     strip = toolstrip
 
-    root = el('div', { class: 'annotation-layer', 'data-active': 'false' }, svg, toolstrip)
+    // Sized in the interface scale and changed by nothing else. Changing the
+    // scale (Settings, Cmd +/-) grows the strip without resizing the host, so
+    // the observer below watches this box to hear about it. Watching the strip
+    // itself would have every refit report back as another resize.
+    const scaleProbe = el('span', { class: 'annotation-scale-probe', 'aria-hidden': 'true' })
+
+    root = el(
+      'div',
+      { class: 'annotation-layer', 'data-active': 'false' },
+      svg,
+      toolstrip,
+      scaleProbe,
+    )
     root.hidden = true
     host.append(root)
     // The viewBox carries the host's size as well as the guest's scroll, and a
@@ -615,9 +623,12 @@ export function mountAnnotationLayer(
     if (typeof ResizeObserver === 'function') {
       resizeObserver = new ResizeObserver(() => {
         applyViewBox()
+        // A menu is placed once, under where its button was; the strip is about to move.
+        closePopover()
         fitStrip()
       })
       resizeObserver.observe(host)
+      resizeObserver.observe(scaleProbe)
     }
 
     drauu = createDrauu({
