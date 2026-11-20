@@ -456,6 +456,12 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // `off` disables external-edit detection entirely.
   sshWatcherMode: z.enum(['auto', 'poll', 'off']),
   // SSH workspace hosts (Phase 1 connection manager). See ssh-remote-repo.md.
+  // An SSH workspace host's destination fields are not refined here. Reads
+  // validate the whole host list against this schema, so one entry that failed a
+  // stricter rule would make every configured host read as empty, and the next
+  // save would drop them. The destination is checked where it matters instead:
+  // resolveTarget refuses it before ssh runs, and the host form and ssh config
+  // import refuse it at entry (see @shared/ssh-destination.ts).
   sshWorkspaceHosts: z
     .array(
       z.object({
