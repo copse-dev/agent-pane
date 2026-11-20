@@ -2764,6 +2764,37 @@ describe('turn-tree shell replay leases', () => {
     }
   })
 
+  it('does not let an outside lease carry a read of the home, root or parent directory', async () => {
+    shellReplayLeaseStore.clear()
+    const command = 'node scripts/run-demo.mts'
+    let prompts = 0
+    setApprovalHandler(async () => {
+      prompts++
+      return { approved: true, remember: false, grantScope: 'turn-tree' }
+    })
+    const ask = (line: string): Promise<boolean> =>
+      promptExpectedSandboxBlock(line, ['runs a local script'], undefined, { executionRoot: root })
+    try {
+      await runInTree('tree-1', async () => {
+        await ask(command)
+        assert.equal(prompts, 1)
+        // An ordinary read beside the leased command still rides on it.
+        await ask(`${command}; ls artifacts`)
+        assert.equal(prompts, 1)
+        // The scope analyzer scores these operands as contained, but the line
+        // runs outside the sandbox, so each must reach the user.
+        for (const companion of ['grep -r KEY ~', 'ls -la /', 'grep -r KEY ..', 'cat -- ~+']) {
+          const asked: number = prompts
+          await ask(`${command}; ${companion}`)
+          assert.equal(prompts, asked + 1, companion)
+        }
+      })
+    } finally {
+      shellReplayLeaseStore.clear()
+      setApprovalHandler(null)
+    }
+  })
+
   it('never offers an agent-requested escape a lease for network, deletion or installs', async () => {
     shellReplayLeaseStore.clear()
     const offered: boolean[] = []
