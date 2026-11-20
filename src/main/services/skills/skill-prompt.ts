@@ -18,7 +18,7 @@ import {
   skillPreflightNotice,
   type SkillPreflightEnvironment,
 } from './skill-preflight.ts'
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import type { PromptCatalogFootprint } from '@copse/llm/wire-types.ts'
 
 /** Setting: warn (in prompt + UI) when an invoked skill references external links. Default on. */
@@ -137,7 +137,7 @@ export function buildSkillsCatalogWithMetadata(
   return {
     block,
     footprint: {
-      catalogHash: createHash('sha256').update(block).digest('hex'),
+      catalogHash: sha256Hex(block),
       advertisedSkills: skills.length,
       userSkills: skills.filter((skill) => skill.source === 'user').length,
       utf8Bytes: Buffer.byteLength(block, 'utf8'),

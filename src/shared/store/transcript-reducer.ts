@@ -234,6 +234,14 @@ export function createTranscriptReducer(
     const st = get(threadId)
     switch (chunk.type) {
       case 'machine_turn_start': {
+        // Main admitted a new turn, just as dispatchAgentRun does for a human
+        // submit. Its eventual completion must not inherit an old interruption,
+        // including when this notification adds no visible user prompt.
+        patchThreadAnywhere(store, threadId, (thread) => {
+          if (thread.interruptedTurnAt === undefined) return thread
+          const { interruptedTurnAt: _interruptedTurnAt, ...rest } = thread
+          return rest
+        })
         hooks.turnStarted?.(threadId)
         setThreadStatus(store, threadId, 'running')
         if (chunk.hidden) break

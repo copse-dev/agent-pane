@@ -158,6 +158,12 @@ describe('tool-result-cache', () => {
     it('falls back to the root for a path that escapes it', () => {
       assert.equal(resolveToolResultScope(ROOT, { path: '../elsewhere' }), ROOT)
       assert.equal(resolveToolResultScope(ROOT, { path: '/etc' }), ROOT)
+      assert.equal(resolveToolResultScope(ROOT, { path: '..' }), ROOT)
+    })
+
+    it('keeps a child whose name starts with two dots as its own scope', () => {
+      assert.equal(resolveToolResultScope(ROOT, { path: '..cache' }), join(ROOT, '..cache'))
+      assert.equal(resolveToolResultScope(ROOT, { path: '..cache/x' }), join(ROOT, '..cache', 'x'))
     })
   })
 

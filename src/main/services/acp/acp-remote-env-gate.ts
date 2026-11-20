@@ -1,3 +1,4 @@
+import { errorMessage } from '@shared/errors.ts'
 import { requestApproval } from '../approval.ts'
 import { remoteHostLabel, spawnConfigSshTarget, type AcpSshTarget } from './acp-ssh-transport.ts'
 import type { AcpAgentSpawnConfig } from './acp-client.ts'
@@ -105,8 +106,7 @@ export function remoteAcpAuthRequiredHint(
   target: AcpSshTarget | null,
   agentId: string,
 ): Error | null {
-  const errorMessage = err instanceof Error ? err.message : String(err)
-  if (!/authentication required|authentication_failed/i.test(errorMessage)) return null
+  if (!/authentication required|authentication_failed/i.test(errorMessage(err))) return null
   if (!target) return null
   return new Error(
     `The "${agentId}" agent on ${target.hostId} has no model-provider credentials. ` +

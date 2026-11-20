@@ -133,10 +133,9 @@ fail instead of falling back to an online download. Reinstallation replaces
 installed dependency trees: stop portable processes first, and keep the caches.
 A failed repair may need an online setup to restore missing inputs.
 
-Electron headers are installed into `cache/electron-headers/<version>` by the
-locked node-gyp installer, which validates downloads against Electron's SHA-256
-manifest. Native rebuild receives that directory explicitly rather than using
-`~/.electron-gyp`. Other native modules use `cache/node-gyp`. The real user home
+Installs download no Electron headers: node-pty is a Node-API addon and loads
+its macOS prebuild in Electron unchanged. Any native module that does build
+from source uses `cache/node-gyp` rather than `~/.node-gyp`. The real user home
 remains unchanged.
 
 A passing verification applies to the tested commit, pins, cached assets and

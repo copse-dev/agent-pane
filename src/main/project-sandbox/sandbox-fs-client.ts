@@ -22,6 +22,7 @@ import {
   shutdownSandboxFsServer,
 } from './sandbox-fs-server.ts'
 import { isRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 /** JSON-wrapped readFile payloads can be ~2× raw bytes when heavily escaped. */
 export const SANDBOX_FS_WORKER_STDOUT_MAX_BYTES = MAX_FS_WRITE_BYTES * 2 + 4096
@@ -134,7 +135,7 @@ async function invokeWorker(
     if (!(err instanceof SandboxFsServerUnavailable)) {
       const op = typeof request['op'] === 'string' ? request['op'] : 'fs'
       const path = typeof request['path'] === 'string' ? request['path'] : '(no path)'
-      reportGatewayDenial(op, path, root, err instanceof Error ? err.message : String(err))
+      reportGatewayDenial(op, path, root, errorMessage(err))
       throw err
     }
   }

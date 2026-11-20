@@ -35,6 +35,8 @@ export interface ActivityThread {
    * thread that has been prompted (see {@link persistedEndedAt}).
    */
   settledAt?: number
+  /** A saved interruption is unfinished work, even when its runtime is idle. */
+  interruptedTurnAt?: number
   projectId: string
   projectName: string
   /** The automation schedule that started the thread, when one did. */
@@ -85,8 +87,8 @@ export interface ActivityRow {
    */
   fold?: { kind: 'finished' | 'failed'; runs: ActivityRow[] }
   /**
-   * Set on an unattended (automation) run that is stuck or failed: what went wrong and
-   * what to do about it. Absent on ordinary threads, which the user is watching.
+   * Set on an unattended run that is stuck or failed, or an interrupted run:
+   * what happened and what the user can do next.
    */
   issue?: { code: AutomationFailureCode; title: string; remedy: string; message: string | null }
 }
@@ -184,8 +186,7 @@ function questionWant(questions: readonly string[]): string {
  * status outlives restarts, so an old one is not a fresh failure, and only one
  * inside the window (or seen this session) is shown as failed.
  */
-function persistedEndedAt(thread: ActivityThread, now: number): number | undefined {
-  const at = thread.settledAt
+function persistedEndedAt(at: number | undefined, now: number): number | undefined {
   if (at === undefined) return undefined
   const age = now - at
   return age <= RECENT_WINDOW_MS && age >= -FUTURE_SKEW_MS ? at : undefined
@@ -287,8 +288,16 @@ export function deriveActivity(input: ActivityInput): ActivityGroup[] {
         thread.failure.at > (input.now ?? 0) - 86_400_000
           ? thread.failure.at
           : undefined
-      const endedAt =
-        run?.endedAt ?? thread.unreadAt ?? recentStartFailure ?? persistedEndedAt(thread, now)
+      const interrupted =
+        thread.status === 'idle' &&
+        thread.interruptedTurnAt !== undefined &&
+        thread.failure?.startFailed !== true
+      const endedAt = interrupted
+        ? persistedEndedAt(thread.interruptedTurnAt, now)
+        : (run?.endedAt ??
+          thread.unreadAt ??
+          recentStartFailure ??
+          persistedEndedAt(thread.settledAt, now))
       if (endedAt === undefined) continue
       if (thread.status === 'error') {
         const row = threadRow(thread, 'failed', 'Ended with an error', endedAt)
@@ -303,6 +312,15 @@ export function deriveActivity(input: ActivityInput): ActivityGroup[] {
         const row = threadRow(thread, 'failed', 'Could not start', endedAt)
         row.issue = issueFor(thread.failure.code, thread.failure.message)
         row.want = row.issue.title
+        recent.push(row)
+      } else if (interrupted) {
+        const row = threadRow(thread, 'failed', 'Run interrupted', endedAt)
+        row.issue = {
+          code: 'unknown',
+          title: 'Run interrupted',
+          remedy: 'Open the conversation to review saved work and continue when ready.',
+          message: null,
+        }
         recent.push(row)
       } else {
         recent.push(threadRow(thread, 'finished', 'Finished', endedAt))
@@ -432,6 +450,9 @@ export function collectActivityThreads(store: AppStore): ActivityThread[] {
         title: thread.title,
         status: thread.status,
         ...(thread.unreadAt !== undefined ? { unreadAt: thread.unreadAt } : {}),
+        ...(thread.interruptedTurnAt !== undefined
+          ? { interruptedTurnAt: thread.interruptedTurnAt }
+          : {}),
         ...settledAtOf(thread),
         projectId: project.id,
         projectName,
@@ -457,6 +478,9 @@ export function collectActivityThreads(store: AppStore): ActivityThread[] {
       title: carried.thread.title,
       status: carried.thread.status,
       ...(carried.thread.unreadAt !== undefined ? { unreadAt: carried.thread.unreadAt } : {}),
+      ...(carried.thread.interruptedTurnAt !== undefined
+        ? { interruptedTurnAt: carried.thread.interruptedTurnAt }
+        : {}),
       ...settledAtOf(carried.thread),
       projectId: project.id,
       projectName: projectDisplayName(project),

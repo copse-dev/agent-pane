@@ -1193,7 +1193,9 @@ export function mountInputBar(
       size: formatByteSize(a.sizeBytes),
     }))
   let mismatchBranch: string | null = null
+  let branchWarningVersion = 0
   let checkoutInProgress = false
+  let checkoutWarningVersion: number | null = null
   let dirtyWarningThreadId: string | null = null
   let lastBreakdown: ContextBreakdown | null = null
   // Model the last estimate was computed for. The context-fit warning quotes a
@@ -1532,24 +1534,29 @@ export function mountInputBar(
   }
   document.addEventListener('keydown', disarmStopOnOtherKey, true)
 
-  function showBranchMismatch(branch: string): void {
-    mismatchBranch = branch
-    branchWarning.hidden = false
-    branchWarningText.textContent = threadGitBranchMismatchMessage(branch)
-    branchWarningText.title = threadGitBranchMismatchMessage(branch)
+  function updateBranchMismatchActions(): void {
     checkoutBranchBtn.disabled = checkoutInProgress
     checkoutBranchBtn.textContent = checkoutInProgress ? 'Checking out...' : 'Check out'
     continueBranchBtn.disabled = checkoutInProgress
   }
 
+  function showBranchMismatch(branch: string): void {
+    branchWarningVersion++
+    mismatchBranch = branch
+    branchWarning.hidden = false
+    branchWarningText.textContent = threadGitBranchMismatchMessage(branch)
+    branchWarningText.title = threadGitBranchMismatchMessage(branch)
+    updateBranchMismatchActions()
+  }
+
   function hideBranchMismatch(): void {
+    branchWarningVersion++
     mismatchBranch = null
     checkoutInProgress = false
+    checkoutWarningVersion = null
     branchWarning.hidden = true
     branchWarningText.title = ''
-    checkoutBranchBtn.disabled = false
-    checkoutBranchBtn.textContent = 'Check out'
-    continueBranchBtn.disabled = false
+    updateBranchMismatchActions()
   }
 
   function showDirtyWarning(threadId: string): void {
@@ -1920,16 +1927,34 @@ export function mountInputBar(
     const branch = mismatchBranch
     checkoutInProgress = true
     showBranchMismatch(branch)
+    const warningVersion = branchWarningVersion
+    checkoutWarningVersion = warningVersion
+    const finishCheckout = (): boolean => {
+      if (
+        checkoutWarningVersion !== warningVersion ||
+        store.getState().activeProjectId !== activeProjectId ||
+        getActiveThreadId() !== activeThreadId ||
+        activeComposerThreadId !== activeThreadId
+      )
+        return false
+      checkoutWarningVersion = null
+      checkoutInProgress = false
+      // A replacement warning still needs its completed operation's busy state cleared.
+      updateBranchMismatchActions()
+      return branchWarningVersion === warningVersion
+    }
 
     void api.git
       .checkoutBranch(activeProjectId, activeThreadId, branch)
       .then(() => {
-        hideBranchMismatch()
-        showToast(`Checked out ${branch}`)
+        if (finishCheckout()) {
+          hideBranchMismatch()
+          showToast(`Checked out ${branch}`)
+        }
         store.emit('git_branch_changed')
       })
       .catch((error: unknown) => {
-        checkoutInProgress = false
+        if (!finishCheckout()) return
         showBranchMismatch(branch)
         showErrorToast(`Failed to check out ${branch}`, error)
       })
@@ -1944,9 +1969,19 @@ export function mountInputBar(
     if (!id) return
     const projectId = store.getState().activeProjectId
     if (!projectId) return
+    // The request belongs to this warning and draft, even if navigation returns here.
+    const warningVersion = branchWarningVersion
+    const draftKey = draftFingerprint(composer.expandedValue(), snapshotDraftAttachments())
+    const isCurrent = (): boolean =>
+      branchWarningVersion === warningVersion &&
+      store.getState().activeProjectId === projectId &&
+      getActiveThreadId() === id &&
+      activeComposerThreadId === id &&
+      draftFingerprint(composer.expandedValue(), snapshotDraftAttachments()) === draftKey
     void api.git
       .branchStatus(projectId, id)
       .then(({ currentBranch }) => {
+        if (!isCurrent()) return
         if (syncThreadGitBranchIfChanged(store, id, currentBranch)) {
           store.emit('git_branch_changed')
         }
@@ -1954,6 +1989,7 @@ export function mountInputBar(
         void submit()
       })
       .catch((error: unknown) => {
+        if (!isCurrent()) return
         showErrorToast('Failed to read the current branch', error)
       })
   })
@@ -3170,6 +3206,8 @@ export function mountInputBar(
       }, 0)
     },
     unmount(): void {
+      branchWarningVersion++
+      checkoutWarningVersion = null
       window.removeEventListener('beforeunload', stopContextEstimates)
       stopContextEstimates()
       draftAutosave.cancel()

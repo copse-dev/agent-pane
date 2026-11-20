@@ -8,7 +8,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
     npm_config_update_notifier=false \
     COPSE_EVAL_ARTIFACT_DIR=/artifacts \
     ELECTRON_SKIP_BINARY_DOWNLOAD=1 \
-    SKIP_ELECTRON_REBUILD=1 \
     SKIP_GORTEX_FETCH=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \

@@ -21,6 +21,7 @@ import { FETCH_TIMEOUTS } from './fetch-timeouts.ts'
 import { hasApiKey, resolveApiKey } from './storage/settings.ts'
 import { AsyncTtlCache } from './async-ttl-cache.ts'
 import { firstNonEmptyString, nonEmptyStringOr } from '@shared/unknown-value.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 /** Env override for e2e / demos — skips network and credential discovery. */
 const MOCK_ENV = 'COPSE_PLAN_USAGE_MOCK'
@@ -557,7 +558,7 @@ async function fetchPlanUsageSnapshotUncached(): Promise<PlanUsageSnapshot> {
     })
     return markUnconfirmedPlanProviders(snapshot, confirmed)
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorMessage(err)
     const checkedAt = new Date().toISOString()
     return {
       checkedAt,

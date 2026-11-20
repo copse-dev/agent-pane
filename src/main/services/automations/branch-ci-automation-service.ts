@@ -1,6 +1,7 @@
-import { createHash, randomUUID } from 'node:crypto'
-import { automationRunBlock } from '@shared/automation-run-state.ts'
+import { randomUUID } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import {
+  automationRunBlocksAdmission,
   reconcileInterruptedAutomationRuns,
   type AutomationRunLiveness,
 } from './automation-run-recovery.ts'
@@ -53,6 +54,7 @@ import {
 } from '../supervisor/event-inbox.ts'
 import { FileEventInboxStore, type EventInboxStore } from '../supervisor/event-inbox-store.ts'
 import { runGh } from '../github/gh-service.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 const STORAGE_KEY = `plugin.${AUTOMATIONS_PLUGIN_ID}.ci-definitions`
 const CONNECTION_ID = 'github-cli'
@@ -171,7 +173,7 @@ export interface BranchCiSnapshot {
 }
 
 function digest(value: unknown): string {
-  return createHash('sha256').update(JSON.stringify(value)).digest('hex')
+  return sha256Hex(JSON.stringify(value))
 }
 function readableDefinitions(raw: unknown): {
   readable: BranchCiAutomation[]
@@ -389,7 +391,11 @@ export interface BranchCiAutomationService {
     threadId: string,
   ): Promise<{ allowed: boolean; reason?: string; retryable?: boolean }>
   poll(): Promise<void>
-  start(sender: (event: AutomationTriggerEvent) => void, isRunActive?: AutomationRunLiveness): void
+  start(
+    sender: (event: AutomationTriggerEvent) => void,
+    isRunActive?: AutomationRunLiveness,
+    ownsAgentWork?: AutomationRunLiveness,
+  ): void
   sync(): Promise<void>
   stop(): void
 }
@@ -440,6 +446,7 @@ export function createBranchCiAutomationService(
 ): BranchCiAutomationService {
   const loadThreadMetas = deps.loadProjectThreadMetas ?? loadProjectThreadMetas
   let isRunActive: AutomationRunLiveness | undefined
+  let ownsAgentWork: AutomationRunLiveness | undefined
   const listeners = new Set<(event: AutomationTriggerEvent) => void>()
   const supervisor = deps.supervisor()
   const inboxStore = deps.inboxStore ?? new FileEventInboxStore()
@@ -571,7 +578,11 @@ export function createBranchCiAutomationService(
             reason: 'Daily automation run limit reached',
             retryable: true,
           }
-        if (threads.some((thread) => automationRunBlock(thread) !== null))
+        if (
+          threads.some((thread) =>
+            automationRunBlocksAdmission(definition.projectId, thread, ownsAgentWork),
+          )
+        )
           return { allowed: false, reason: 'A run is already pending or active', retryable: true }
         let retained = 0
         let handOverClaimed = false
@@ -870,7 +881,12 @@ export function createBranchCiAutomationService(
           (projectId, threadId) => isRunActive?.(projectId, threadId) ?? null,
           () => deps.now(),
         )
-        if (prior.some((thread) => automationRunBlock(thread) !== null)) continue
+        if (
+          prior.some((thread) =>
+            automationRunBlocksAdmission(definition.projectId, thread, ownsAgentWork),
+          )
+        )
+          continue
       }
       await inbox.admit(definition.id, definition.revision, {
         sourceId: ROUTES[definition.trigger.kind].sourceId,
@@ -921,7 +937,7 @@ export function createBranchCiAutomationService(
           if (definition.lastProblem && definition.lastProblem.threadId === undefined)
             await setProblem(definition, null)
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error)
+          const message = errorMessage(error)
           console.error(`[automations] Event polling failed for “${definition.name}”:`, error)
           await setProblem(definition, {
             at: deps.now(),
@@ -1279,8 +1295,9 @@ export function createBranchCiAutomationService(
     async poll(): Promise<void> {
       await poll()
     },
-    start(sender, runtimeIsActive): void {
+    start(sender, runtimeIsActive, runtimeOwnsAgentWork): void {
       isRunActive = runtimeIsActive
+      ownsAgentWork = runtimeOwnsAgentWork
       listeners.add(sender)
       void (async (): Promise<void> => {
         for (const projectId of new Set(definitions().map((item) => item.projectId)))
@@ -1312,6 +1329,7 @@ export function createBranchCiAutomationService(
       timer = null
       listeners.clear()
       isRunActive = undefined
+      ownsAgentWork = undefined
       inbox.dispose()
     },
   }

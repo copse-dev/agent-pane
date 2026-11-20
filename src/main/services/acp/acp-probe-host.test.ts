@@ -4,7 +4,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { isPidAlive } from '../exec/subprocess-kill.ts'
-import { acpProbeWorkerPath, probeAcpAgentIsolated } from './acp-probe-host.ts'
+import { existsSync } from 'node:fs'
+import { AcpProbeAgentError, acpProbeWorkerPath, probeAcpAgentIsolated } from './acp-probe-host.ts'
 import { ACP_PROBE_REQUEST_ENV } from './acp-probe-worker.ts'
 
 async function waitFor(condition: () => boolean, timeoutMs: number): Promise<boolean> {
@@ -56,5 +57,46 @@ setInterval(() => {}, 1000)
     const dead = await waitFor(() => !isPidAlive(pid), 5_000)
     if (!dead) process.kill(pid, 'SIGKILL')
     assert.equal(dead, true, 'the SIGKILL fallback reaches a worker that outlived SIGTERM')
+  })
+
+  it('does not re-run a failing agent in-process, which would widen the network scope', async () => {
+    // The helper ran and reports that the agent itself failed (here: not
+    // installed). Probing in-process would start the same agent again under the
+    // app's own sandbox, widening its process-global network scope for nothing.
+    writeFileSync(
+      acpProbeWorkerPath(),
+      `process.stdout.write(JSON.stringify({ ok: false, agentFailed: true, error: 'The coding agent "cursor-agent" exited with code 127. Its error output: /bin/bash: cursor-agent: command not found' }) + '\\n')
+`,
+    )
+    const marker = join(dir, 'probed-in-process')
+    await assert.rejects(
+      probeAcpAgentIsolated(
+        {
+          command: process.execPath,
+          args: ['-e', `require('node:fs').writeFileSync(${JSON.stringify(marker)}, '')`],
+          cwd: dir,
+        },
+        5_000,
+      ),
+      (err: unknown) =>
+        err instanceof AcpProbeAgentError && /cursor-agent: command not found/.test(err.message),
+    )
+    assert.equal(existsSync(marker), false, 'the agent was not probed again in-process')
+  })
+
+  it('still falls back in-process when the helper itself fails', async () => {
+    writeFileSync(acpProbeWorkerPath(), `process.stdout.write('not a probe result\\n')\n`)
+    const marker = join(dir, 'fallback-ran')
+    await assert.rejects(
+      probeAcpAgentIsolated(
+        {
+          command: process.execPath,
+          args: ['-e', `require('node:fs').writeFileSync(${JSON.stringify(marker)}, '')`],
+          cwd: dir,
+        },
+        5_000,
+      ),
+    )
+    assert.equal(existsSync(marker), true, 'the in-process probe ran the agent')
   })
 })
