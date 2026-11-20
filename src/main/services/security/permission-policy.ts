@@ -1,6 +1,9 @@
 import type { McpToolAnnotations } from '@shared/types/mcp.ts'
-import type { RuntimeProfile } from '@shared/threads/execution-runtime.ts'
-import { runtimeLeadLine, sandboxEscapeChangeSection } from './runtime-prompt.ts'
+import {
+  runtimeLeadLine,
+  sandboxEscapeChangeSection,
+  type PromptRuntime,
+} from './runtime-prompt.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { gitPushApproval, UNSANDBOXED_ACCESS_WARNING } from '@shared/approval-copy.ts'
 import { githubShellActionAdvice } from './github-approval-copy.ts'
@@ -492,7 +495,7 @@ export function formatShellPromptParts(
   reasons: string[],
   sandboxed = true,
   /** Where the command will run; an SSH target is named in the prompt. */
-  runtime: RuntimeProfile = { kind: 'local', containment: sandboxed ? 'contained' : 'host' },
+  runtime: PromptRuntime = { kind: 'local', containment: sandboxed ? 'contained' : 'host' },
 ): ShellPromptParts {
   const action = githubShellActionAdvice(command)
   return {

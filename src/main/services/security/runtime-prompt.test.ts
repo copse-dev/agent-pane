@@ -7,6 +7,7 @@ import {
   runtimeChangeLines,
   runtimeLeadLine,
   sandboxEscapeChangeSection,
+  sshPromptRuntime,
 } from './runtime-prompt.ts'
 
 describe('runtime prompt copy', () => {
@@ -31,9 +32,52 @@ describe('runtime prompt copy', () => {
   })
 
   it('names the SSH host and says no sandbox applies there', () => {
-    const line = runtimeLeadLine({ kind: 'ssh', hostId: 'build-box' }, UNSANDBOXED_ACCESS_WARNING)
+    const line = runtimeLeadLine(
+      { kind: 'ssh', name: 'build-box', forwardsAgent: false },
+      UNSANDBOXED_ACCESS_WARNING,
+    )
     assert.match(line, /^This runs on build-box over SSH, as that account\./)
     assert.match(line, /Copse adds no sandbox there/)
+    assert.doesNotMatch(line, /agent/)
+  })
+
+  it("names the SSH host's network as part of what the command can reach", () => {
+    const line = runtimeLeadLine(
+      { kind: 'ssh', name: 'build-box', forwardsAgent: false },
+      UNSANDBOXED_ACCESS_WARNING,
+    )
+    assert.match(line, /reach any network that host can\./)
+  })
+
+  it('says when Copse forwards the SSH agent, so local keys are in reach too', () => {
+    const line = runtimeLeadLine(
+      { kind: 'ssh', name: 'build-box', forwardsAgent: true },
+      UNSANDBOXED_ACCESS_WARNING,
+    )
+    assert.match(
+      line,
+      /It can also use the SSH keys in your local agent, which Copse forwards to this host\.$/,
+    )
+  })
+
+  it('names an SSH host by its label and address, and carries its agent forwarding', () => {
+    assert.deepEqual(
+      sshPromptRuntime('build-box', {
+        label: 'Build box',
+        address: 'deploy@10.0.0.5',
+        forwardAgent: true,
+      }),
+      { kind: 'ssh', name: 'Build box (deploy@10.0.0.5)', forwardsAgent: true },
+    )
+    assert.deepEqual(
+      sshPromptRuntime('box', { label: 'deploy@box', address: 'deploy@box', forwardAgent: false }),
+      { kind: 'ssh', name: 'deploy@box', forwardsAgent: false },
+    )
+    assert.deepEqual(sshPromptRuntime('build-box', undefined), {
+      kind: 'ssh',
+      name: 'build-box',
+      forwardsAgent: false,
+    })
   })
 
   it('keeps the local lead lines unchanged', () => {
@@ -49,7 +93,11 @@ describe('runtime prompt copy', () => {
 
   it('opens an SSH prompt with the host instead of the local sandbox state', () => {
     const advice =
-      formatShellPromptParts('ls', [], false, { kind: 'ssh', hostId: 'build-box' }).bodyAdvice ?? ''
+      formatShellPromptParts('ls', [], false, {
+        kind: 'ssh',
+        name: 'build-box',
+        forwardsAgent: false,
+      }).bodyAdvice ?? ''
     assert.match(advice, /^This runs on build-box over SSH/)
     assert.doesNotMatch(advice, /project sandbox is unavailable/)
   })

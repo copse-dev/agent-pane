@@ -954,7 +954,11 @@ account can open), network (only hosts the sandbox already allows → any host) 
 (the project sandbox → none). The list is derived from the same runtime capability snapshot the
 execution audit records (`runtime-prompt.ts`), so the prompt cannot promise a property the
 runtime does not report. An ordinary shell prompt for an SSH workspace opens by naming the host
-and saying Copse adds no sandbox there.
+(its label and `user@address`) and saying Copse adds no sandbox there: the command can read and
+change anything the remote account can and reach any network that host can. When the host's
+settings forward the SSH agent, the prompt adds that the command can also use the keys in the
+user's local agent. Forwarding turned on only in the user's own `~/.ssh/config` is not detected,
+so the prompt does not mention it.
 Commands with no available sandbox say so even when the immediate reason is that auto-run is off.
 Contained prompts still warn that project files can change. The execution policy is unchanged.
 

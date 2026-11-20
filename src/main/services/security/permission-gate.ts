@@ -40,7 +40,8 @@ import { automationPermissionKey, type AutomationPermission } from '@shared/type
 import { darwinUserTempDir } from '../../project-sandbox/config.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { spawnRunsOnSshTarget, spawnSshHostId } from '../../project-sandbox/spawn.ts'
-import type { RuntimeProfile } from '@shared/threads/execution-runtime.ts'
+import { displayTarget, findConfiguredSshHost } from '../ssh-workspace/hosts.ts'
+import { sshPromptRuntime, type PromptRuntime } from './runtime-prompt.ts'
 import { isProjectSandboxPlatform, projectSandboxInitFailure } from '../../project-sandbox/state.ts'
 import {
   activeSandboxNetworkScopeLabels,
@@ -488,9 +489,19 @@ async function resolveReadOutsideProject(
 }
 
 /** Where an ordinary shell prompt's command will run, for the prompt's opening line. */
-function shellPromptRuntime(sandboxed: boolean): RuntimeProfile {
+function shellPromptRuntime(sandboxed: boolean): PromptRuntime {
   const hostId = sandboxed ? null : spawnSshHostId(getAgentExecutionRoot())
-  if (hostId) return { kind: 'ssh', hostId }
+  if (hostId) {
+    const host = findConfiguredSshHost(hostId)
+    return sshPromptRuntime(
+      hostId,
+      host && {
+        label: host.label,
+        address: displayTarget(host),
+        forwardAgent: host.forwardAgent === true,
+      },
+    )
+  }
   return { kind: 'local', containment: sandboxed ? 'contained' : 'host' }
 }
 

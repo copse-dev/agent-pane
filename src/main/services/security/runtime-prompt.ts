@@ -9,6 +9,7 @@
 import {
   deriveRuntimeCapabilities,
   type ExecutionRuntimeCapabilities,
+  type LocalContainment,
   type RuntimeProfile,
 } from '@shared/threads/execution-runtime.ts'
 
@@ -82,19 +83,56 @@ export function sandboxEscapeChangeSection(): string {
     .join('\n')}`
 }
 
+/** Where a prompted command runs, as its approval prompt describes it. */
+export type PromptRuntime =
+  | { readonly kind: 'local'; readonly containment: LocalContainment }
+  | {
+      readonly kind: 'ssh'
+      /** The host as the user knows it: its label and `user@address`. */
+      readonly name: string
+      /** Whether Copse forwards the user's SSH agent to this host (its `forwardAgent`). */
+      readonly forwardsAgent: boolean
+    }
+
+/** The configured SSH host a prompt describes; absent when no host record matches. */
+export interface SshPromptHost {
+  readonly label: string
+  /** `user@hostname` as the host settings show it. */
+  readonly address: string
+  readonly forwardAgent: boolean
+}
+
+/**
+ * Describe an SSH workspace host for a prompt: by its label and address, so a
+ * person recognises the machine, falling back to the host id.
+ */
+export function sshPromptRuntime(hostId: string, host: SshPromptHost | undefined): PromptRuntime {
+  if (!host) return { kind: 'ssh', name: hostId, forwardsAgent: false }
+  const label = host.label.trim()
+  return {
+    kind: 'ssh',
+    name: label && label !== host.address ? `${label} (${host.address})` : host.address,
+    forwardsAgent: host.forwardAgent,
+  }
+}
+
 /**
  * The opening line of an ordinary shell prompt: where the command runs. An SSH
  * command names its host, because Copse applies no sandbox there whatever this
- * computer's sandbox state.
+ * computer's sandbox state. It also names the host's network and, when Copse
+ * forwards the user's SSH agent there, the keys in that agent: both are reach
+ * the approval hands over beyond the remote account's own files.
  */
-export function runtimeLeadLine(profile: RuntimeProfile, unsandboxedWarning: string): string {
-  if (profile.kind === 'ssh') {
-    return (
-      `This runs on ${profile.hostId} over SSH, as that account. Copse adds no sandbox there: ` +
-      'it can read and change anything that account can.'
-    )
+export function runtimeLeadLine(runtime: PromptRuntime, unsandboxedWarning: string): string {
+  if (runtime.kind === 'ssh') {
+    const lead =
+      `This runs on ${runtime.name} over SSH, as that account. Copse adds no sandbox there: ` +
+      'it can read and change anything that account can, and reach any network that host can.'
+    return runtime.forwardsAgent
+      ? `${lead} It can also use the SSH keys in your local agent, which Copse forwards to this host.`
+      : lead
   }
-  return profile.containment === 'contained'
+  return runtime.containment === 'contained'
     ? 'This runs inside the project sandbox. It can still change or delete project files.'
     : `The project sandbox is unavailable for this command. ${unsandboxedWarning}`
 }
