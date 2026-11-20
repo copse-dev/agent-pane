@@ -172,6 +172,7 @@ describe('run_shell unsandboxed retry of a piped command (pipefail)', () => {
   async function runFailingSandboxedPipeline(
     command: string,
     violationLine = 'deny(1) network-outbound',
+    level: 'read' | 'local-write' = 'read',
   ): Promise<{ prompts: ApprovalRequest[]; outcome: string }> {
     const root = await realpath(await mkdtemp(join(tmpdir(), 'copse-shell-retry-')))
     cleanups.push(async () => rm(root, { recursive: true, force: true }))
@@ -187,7 +188,7 @@ describe('run_shell unsandboxed retry of a piped command (pipefail)', () => {
     cleanups.push(() => {
       setWorkspaceTrusted(root, false)
     })
-    await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'read')
+    await setSetting(AUTO_APPROVAL_LEVEL_SETTING, level)
     await setSetting('autoRunSandboxCommands', true)
     await setSetting('safetyClassifierEnabled', false)
     cleanups.push(async () => {
@@ -281,6 +282,22 @@ describe('run_shell unsandboxed retry of a piped command (pipefail)', () => {
     const { prompts, outcome } = await runFailingSandboxedPipeline(
       'git fetch origin 2>&1 | tail -5',
       'git(2) deny(1) file-read-data /Users/someone/.ssh/id_ed25519',
+    )
+    assert.equal(outcome, 'User declined to run outside the sandbox.')
+    assert.deepEqual(
+      prompts.map((p) => p.cause),
+      ['shell-sandbox-retry'],
+    )
+  })
+
+  it('asks before retrying a local-write shape outside after a network denial', async () => {
+    // The local-write tier is on, so `git commit` would auto-approve at the
+    // gate. Outside the sandbox its repository hooks run uncontained, and the
+    // network denial says nothing about them, so only the read tier answers.
+    const { prompts, outcome } = await runFailingSandboxedPipeline(
+      'git commit -m wip 2>&1 | tail -5',
+      'deny(1) network-outbound',
+      'local-write',
     )
     assert.equal(outcome, 'User declined to run outside the sandbox.')
     assert.deepEqual(

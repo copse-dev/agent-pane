@@ -3,6 +3,7 @@ import {
   type ShellRunResult,
   type ShellYieldOptions,
 } from '../services/exec/foreground-shell-process.ts'
+import type { AutoApprovalTier } from '@shared/auto-approval.ts'
 import { homedir } from 'node:os'
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
@@ -251,10 +252,13 @@ async function maybeRetryUnsandboxed(
     likely: runnerDetection.likely,
     spawnFailed: result.spawnFailed ?? false,
   })
+  const READ_TIER: AutoApprovalTier = 'read'
   // Command-shape auto-approval judges what the command looks like, not what
   // the sandbox refused it. A network denial of a read-tier shape (`git fetch
-  // origin`) is the reach that shape is rated for; a file denial can be a read
-  // of a protected credential through a workspace symlink, so it always asks.
+  // origin`) is the reach that shape is rated for, so only the read tier may
+  // answer it: a local-write shape (`git commit`) runs repository hooks the
+  // sandbox was containing. A file denial can be a read of a protected
+  // credential through a workspace symlink, so it always asks.
   const networkOnlyViolation =
     evidence === 'violation' &&
     (result.sandboxViolationsNetworkOnly ??
@@ -265,6 +269,7 @@ async function maybeRetryUnsandboxed(
       readGrantApplied: options.readGrantApplied,
       requireInteractiveApproval:
         evidence === 'signature' || (evidence === 'violation' && !networkOnlyViolation),
+      ...(evidence === 'violation' ? { autoApproveUpToTier: READ_TIER } : {}),
     }))
   if (signatureMatch) {
     // The output signature is forgeable. It becomes useful cache evidence only
