@@ -156,6 +156,22 @@ describe('SSH settings section', function () {
     await expect(sshSection.$('.ssh-host-save')).toHaveElementClass('ui-btn-primary')
     await expect(sshSection.$('.ssh-host-clear')).toHaveElementClass('ui-btn-secondary')
     await saveElementScreenshot('#settings-dialog', 'settings-ssh-invalid-port.png')
+
+    // A host that ssh would read as an option is refused on the host field
+    // before anything is saved.
+    await portInput.setValue('2222')
+    await hostInput.setValue('-oFoo=bar')
+    await browser.execute(() => {
+      document.querySelector<HTMLButtonElement>('.ssh-host-save')?.click()
+    })
+    await expect(sshSection.$('.ssh-host-status')).toHaveText(
+      'Host cannot start with “-”; ssh would read it as an option.',
+    )
+    await expect(sshSection.$$('.ssh-host-row')).toBeElementsArrayOfSize(1)
+    await expect(hostInput).toHaveAttribute('aria-invalid', 'true')
+    await expect(portInput).not.toHaveAttribute('aria-invalid')
+    await assertErrorColor('.ssh-host-status .ui-inline-status')
+    await saveElementScreenshot('#settings-dialog', 'settings-ssh-option-host.png')
     await browser.execute(() => {
       document.querySelector<HTMLButtonElement>('.ssh-host-clear')?.click()
     })

@@ -14,6 +14,7 @@ import { RELEASE_CHANNELS } from '@shared/release-channel.mts'
 import { GIT_ATTRIBUTION_SETTING } from '@shared/git/commit-attribution.ts'
 import { GIT_THREAD_LINK_SETTING } from '@shared/git/thread-link.ts'
 import { WEB_SEARCH_PROVIDERS } from '@shared/web-search.ts'
+import { hasAsciiControlCharacter, readsAsSshOption } from '@shared/ssh-destination.ts'
 
 // Empty string means "use the provider default"; any non-empty value must be a
 // safe base URL since it carries the Cursor API key as an Authorization header.
@@ -187,6 +188,27 @@ export const productionTargetsSchema = z.array(z.string().min(1).max(253)).max(2
 
 /** Highest auto-approval tier honoured for shell commands (see @shared/auto-approval.ts). */
 export const autoApprovalLevelSchema = z.enum(AUTO_APPROVAL_LEVELS)
+
+// An SSH workspace host's destination fields. Only a leading "-" and control
+// characters are refused here: reads validate against this schema too, and one
+// failing entry makes the whole host list read as empty. The transport applies
+// the full destination check when it connects (see @shared/ssh-destination.ts).
+// The host is checked trimmed, as the transport uses it.
+const sshWorkspaceHostNameSchema = z
+  .string()
+  .min(1)
+  .max(256)
+  .refine((value) => {
+    const host = value.trim()
+    return !readsAsSshOption(host) && !hasAsciiControlCharacter(host)
+  }, 'SSH host cannot start with “-” or contain control characters')
+const sshWorkspaceUserSchema = z
+  .string()
+  .max(256)
+  .refine(
+    (value) => !readsAsSshOption(value) && !hasAsciiControlCharacter(value),
+    'SSH user cannot start with “-” or contain control characters',
+  )
 
 export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   autoArchiveAfterDays: z.union([z.literal(0), z.number().int().min(3).max(3650)]),
@@ -462,9 +484,9 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
       z.object({
         id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/),
         label: z.string().min(1).max(256),
-        host: z.string().min(1).max(256),
+        host: sshWorkspaceHostNameSchema,
         port: z.number().int().min(1).max(65535).optional(),
-        user: z.string().max(256).optional(),
+        user: sshWorkspaceUserSchema.optional(),
         identityFile: z.string().max(4096).optional(),
         forwardAgent: z.boolean().optional(),
       }),

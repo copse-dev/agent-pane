@@ -112,6 +112,39 @@ describe('settings-writable', () => {
     assert.throws(() => parseRendererWritableSetting('postTurnReviewMinChangedLines', -1))
   })
 
+  it('rejects SSH workspace hosts and users that ssh would read as options', () => {
+    const base = { id: 'dev', label: 'Dev', host: 'dev.example' }
+    const valid = [
+      base,
+      { ...base, user: 'ubuntu' },
+      { ...base, host: 'ubuntu@dev.example' },
+      { ...base, host: '[::1]', user: 'ubuntu' },
+      { ...base, host: 'dev-box-2' },
+      // Stored lists are read through this schema too, so it stays narrow: a
+      // user name may contain a space, and the transport trims the host.
+      { ...base, user: 'first last' },
+      { ...base, host: 'dev.example\n' },
+    ]
+    for (const entry of valid) {
+      assert.deepEqual(parseRendererWritableSetting('sshWorkspaceHosts', [entry]), [entry])
+    }
+    const invalid = [
+      { ...base, host: '-oFoo=bar' },
+      { ...base, host: '  -oFoo=bar' },
+      { ...base, host: 'dev\u0001example' },
+      { ...base, host: 'dev.example\n-p22' },
+      { ...base, user: '-p22' },
+      { ...base, user: 'ubuntu\u007f' },
+    ]
+    for (const entry of invalid) {
+      assert.throws(
+        () => parseRendererWritableSetting('sshWorkspaceHosts', [base, entry]),
+        /SSH (host|user) cannot start/,
+        JSON.stringify(entry),
+      )
+    }
+  })
+
   it('parses security settings bundle', () => {
     const parsed = securitySettingsSchema.parse({
       localServerUrl: 'http://127.0.0.1:1234/v1',
