@@ -129,6 +129,10 @@
       "sha256": "72344c3d448bc0090fe53f97e18ed4c068ec157ec12e634a10fd6e37548baff2",
       "bytes": 55076
     },
+    "acp-probe-failure-copy.png": {
+      "sha256": "764ae869c07b1bd2fbd57ef8a0605ebb8fae0cd6431dbafc89653a8b663fd243",
+      "bytes": 19017
+    },
     "acp-prompt-interruption-collapsed.png": {
       "sha256": "f20562aabfc33239d99c70045d2b6bfde16e4bd6b0f1a9101654e1bdf4c53c8c",
       "bytes": 182686
@@ -4297,6 +4301,14 @@
       "sha256": "852693280f257aad43804f2e54cce3b1b2e52111c8139ee665982b2ce0419fba",
       "bytes": 315182
     },
+    "settings-classifiers-decider-local-selected.png": {
+      "sha256": "86d5b8403e6179f8c2830c619f01fe7ba5500ead8749ba6666effeb51c49d8cc",
+      "bytes": 317056
+    },
+    "settings-classifiers-decider-local.png": {
+      "sha256": "442523e782f9f92ad02ba87bf7b551bdda9c7247499ae062de831db85d9b5f16",
+      "bytes": 215233
+    },
     "settings-classifiers-destination.png": {
       "sha256": "820bf5959ee95a564f7dda819c171e06a75cd6721c1428f8f7d2238a90d0e0e8",
       "bytes": 208646
@@ -4372,6 +4384,18 @@
     "settings-classifiers-options.png": {
       "sha256": "74154fb313aa55bd7784db8def142a22b4f5b150d6f60a8310df6fdb397f68b2",
       "bytes": 63833
+    },
+    "settings-classifiers-perplexity-decider-direct.png": {
+      "sha256": "367552295199de8f16c5baa2f7b49e54bb03f23f0ec0e341d0b0f0e4ef43d917",
+      "bytes": 182562
+    },
+    "settings-classifiers-perplexity-decider-flash.png": {
+      "sha256": "d9d82d57c64cd2208671bd06e1cff02c7af0a46153f86f483bf7c706b9a7ad05",
+      "bytes": 190286
+    },
+    "settings-classifiers-perplexity-decider.png": {
+      "sha256": "4e7b44c9c378dae2164883fd0ecd9626cd3e7a46cb2bec1a83779e0cdfa100c1",
+      "bytes": 195115
     },
     "settings-classifiers-screening.png": {
       "sha256": "c33da0942f467f00adbc243b56a167aba62b9d25d0592f2d853e3d1f9c133350",
