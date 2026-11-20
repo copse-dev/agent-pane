@@ -46,6 +46,39 @@ describe('parseAgentRunPayload', () => {
     assert.equal(r.priorTodos[0]?.content, 'Step one')
   })
 
+  it('keeps a prior todo priority, check and model assignment', () => {
+    const todo = {
+      id: 't1',
+      content: 'Step one',
+      status: 'in_progress' as const,
+      priority: 'high' as const,
+      check: { kind: 'fileExists' as const, path: 'a.ts' },
+      assignedModel: 'local' as const,
+    }
+    const r = parseAgentRunPayload(JSON.stringify({ content: 'continue', priorTodos: [todo] }))
+    assert.deepEqual(r.priorTodos, [todo])
+  })
+
+  it('keeps the per-image detail the user chose on an attached image', () => {
+    const content = [
+      { type: 'image', dataUrl: 'data:image/png;base64,AAAA', detail: 'high' },
+      { type: 'image', dataUrl: 'data:image/png;base64,BBBB' },
+      { type: 'text', text: 'read the stack trace' },
+    ]
+    assert.deepEqual(parseAgentRunPayload(JSON.stringify({ content })).userContent, content)
+    // The bare-content form takes the same path.
+    assert.deepEqual(parseAgentRunPayload(JSON.stringify(content)).userContent, content)
+  })
+
+  it('drops an unrecognised image detail instead of rejecting the message', () => {
+    const r = parseAgentRunPayload(
+      JSON.stringify({
+        content: [{ type: 'image', dataUrl: 'data:image/png;base64,AAAA', detail: 'ultra' }],
+      }),
+    )
+    assert.deepEqual(r.userContent, [{ type: 'image', dataUrl: 'data:image/png;base64,AAAA' }])
+  })
+
   it('parses workingBrief from payload', () => {
     const payload = {
       content: 'follow up',

@@ -541,6 +541,46 @@ describe('restoreAbsentOptionals', () => {
     )
   })
 
+  it('reaches into an array that sits in a nullable union', () => {
+    // `anyOf: [array, null]` is how a nullable list is spelled (zod `.nullable()`,
+    // Pydantic `Optional[list[...]]`). Strict conversion makes the item's optional
+    // field required-nullable there too, so the restore has to follow the array
+    // branch or the registry sees a `null` its own schema never allowed.
+    const item = {
+      type: 'object',
+      properties: { id: { type: 'string' }, content: { type: 'string' } },
+      required: ['content'],
+    }
+    const schema = {
+      type: 'object',
+      properties: { items: { anyOf: [{ type: 'array', items: item }, { type: 'null' }] } },
+      required: ['items'],
+    }
+    assert.ok(toStrictSchema(schema).ok)
+    assert.deepEqual(restoreAbsentOptionals({ items: [{ id: null, content: 'x' }] }, schema), {
+      items: [{ content: 'x' }],
+    })
+    assert.deepEqual(restoreAbsentOptionals({ items: null }, schema), { items: null })
+  })
+
+  it('leaves array items alone when two array branches make the item schema ambiguous', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        items: {
+          anyOf: [
+            { type: 'array', items: { type: 'object', properties: { a: { type: 'string' } } } },
+            { type: 'array', items: { type: 'object', properties: { a: { type: 'number' } } } },
+          ],
+        },
+      },
+      required: ['items'],
+    }
+    assert.deepEqual(restoreAbsentOptionals({ items: [{ a: null }] }, schema), {
+      items: [{ a: null }],
+    })
+  })
+
   it('passes non-object arguments and unknown keys through', () => {
     assert.equal(restoreAbsentOptionals('oops', original), 'oops')
     assert.deepEqual(restoreAbsentOptionals({ path: 'a', extra: null }, original), {

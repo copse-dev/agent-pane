@@ -66,6 +66,38 @@ describe('parse-text-tool-calls', () => {
     assert.equal(toolCalls[1]?.name, 'list_dir')
   })
 
+  it('recovers a function whose `</function>` closer the model left out', () => {
+    // The block body handed to the function parser stops before `</tool_call>`,
+    // so an unclosed final function has to be allowed to end with the block.
+    const single = `Reading it now.
+
+<tool_call>
+<function=read_file>
+<parameter=path>a.ts</parameter>
+</tool_call>`
+    const one = recoverTextToolCalls(single)
+    assert.equal(one.keptRawBlocks, false)
+    assert.deepEqual(
+      one.toolCalls.map((tc) => [tc.name, tc.args]),
+      [['read_file', { path: 'a.ts' }]],
+    )
+    assert.equal(one.cleanedText, 'Reading it now.')
+
+    const several = `<tool_call>
+<function=read_file>
+<parameter=path>a.ts</parameter>
+<function=list_dir>
+<parameter=path>src</parameter>
+</tool_call>`
+    assert.deepEqual(
+      recoverTextToolCalls(several).toolCalls.map((tc) => [tc.name, tc.args]),
+      [
+        ['read_file', { path: 'a.ts' }],
+        ['list_dir', { path: 'src' }],
+      ],
+    )
+  })
+
   it('parses phantom export XML with multiline path parameters', () => {
     const text = `<tool_call>
 <function=read_file>

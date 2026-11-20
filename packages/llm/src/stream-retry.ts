@@ -95,6 +95,16 @@ function isAnthropicBodyTerminatedError(err: unknown): boolean {
   )
 }
 
+/**
+ * The same dropped connection as {@link isAnthropicBodyTerminatedError}, in the
+ * form the OpenAI SDK surfaces it: its stream iterator rethrows undici's
+ * `TypeError('terminated')` unwrapped (only request-time failures become an
+ * APIConnectionError), so neither an SDK class nor a status identifies it.
+ */
+function isFetchBodyTerminatedError(err: unknown): boolean {
+  return err instanceof TypeError && err.message === 'terminated'
+}
+
 function errorHeaders(err: unknown): Headers | undefined {
   // Both SDKs type APIError.headers via an unconstrained generic (`any` here);
   // the `instanceof Headers` guard narrows it to the runtime Fetch `Headers`.
@@ -245,6 +255,7 @@ export function isRetryableStreamError(err: unknown): boolean {
   if (err instanceof OpenAI.RateLimitError) return true
   if (err instanceof OpenAI.APIConnectionError) return true
   if (err instanceof OpenAI.InternalServerError) return true
+  if (isFetchBodyTerminatedError(err)) return true
 
   // The native LM Studio transport reports connection loss as a plain Error —
   // no status code or SDK class to dispatch on (see isLmStudioTransportError).

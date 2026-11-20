@@ -1721,6 +1721,50 @@ src/renderer/views/projects-pane.ts
     assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('answer')))
   })
 
+  it('keeps tool results adjacent to their tool calls when a truncated stream carried a tool call', async () => {
+    // A stream cut at the output ceiling can still deliver a complete tool call
+    // (Anthropic `max_tokens`, OpenAI `length`). The truncation nudge must follow
+    // the tool results: a user message between tool_use and tool_result is
+    // rejected by every provider, and the pairing repair would then answer the
+    // call with a synthetic "cancelled" result and orphan the real one.
+    let calls = 0
+    const requests: LLMMessage[][] = []
+    const provider: LLMProvider = {
+      async *stream(messages) {
+        calls++
+        requests.push(structuredClone(messages))
+        if (calls === 1) {
+          yield { type: 'tool_call', toolCall: { id: 'call-1', name: 'test', args: {} } }
+          yield { type: 'done', stopReason: 'max_tokens' }
+        } else {
+          yield { type: 'text', text: 'answer' }
+          yield { type: 'done', stopReason: 'end_turn' }
+        }
+      },
+    }
+    const messages: LLMMessage[] = [{ role: 'user', content: 'go' }]
+    await runAgentLoop({
+      provider,
+      messages,
+      tools: [],
+      onChunk: () => {},
+      executeTool: async (_name, _args, _signal, _toolCallId) => 'real result',
+    })
+
+    assert.equal(calls, 2)
+    const second = at(requests, 1)
+    assert.deepEqual(
+      second.map((m) => m.role),
+      ['user', 'assistant', 'tool', 'user'],
+    )
+    assertToolPairingValid(second)
+    const toolMessage = second[2]
+    assert.ok(toolMessage?.role === 'tool')
+    assert.deepEqual(toolMessage.toolResults, [{ toolCallId: 'call-1', result: 'real result' }])
+    assert.deepEqual(second[3], { role: 'user', content: TRUNCATION_CONTINUE_NUDGE })
+    assertToolPairingValid(messages)
+  })
+
   it('adds cancelled tool results when aborted mid-batch', async () => {
     const controller = new AbortController()
     const messages = [{ role: 'user', content: 'go' }] as const
@@ -2626,6 +2670,85 @@ src/renderer/views/projects-pane.ts
     assert.ok(usage)
     assert.equal(usage.inputTokens, 120)
     assert.equal(usage.outputTokens, 80)
+  })
+
+  it('does not re-report the previous stream usage when a stream is interrupted', async () => {
+    // Providers record `lastUsage` when a stream finishes. A stream that is
+    // aborted (or cut by an output cap) never gets that far, so the field still
+    // holds the previous stream's numbers; falling back to it would bill that
+    // step twice.
+    const controller = new AbortController()
+    let call = 0
+    const provider = {
+      lastUsage: null as { inputTokens: number; outputTokens: number } | null,
+      async *stream(): AsyncIterable<ProviderStreamChunk> {
+        if (call++ === 0) {
+          yield { type: 'tool_call', toolCall: { id: '1', name: 'test', args: {} } }
+          provider.lastUsage = { inputTokens: 50_000, outputTokens: 40 }
+          yield { type: 'usage', model: 'm', inputTokens: 50_000, outputTokens: 40 }
+          yield { type: 'done' }
+        } else {
+          yield { type: 'text', text: 'partial' }
+          controller.abort()
+          yield { type: 'text', text: ' answer' }
+        }
+      },
+    }
+    const chunks: AgentStreamChunk[] = []
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [],
+      usageModel: 'm',
+      signal: controller.signal,
+      getLastUsage: () => provider.lastUsage,
+      onChunk: (c) => chunks.push(c),
+      executeTool: async () => 'ok',
+    })
+    assert.equal(call, 2)
+    const usage = chunks.filter((c) => c.type === 'usage')
+    assert.equal(usage.length, 1)
+    assert.equal(usage[0]?.inputTokens, 50_000)
+  })
+
+  it('does not re-report the previous stream usage when the output cap cuts a stream', async () => {
+    let call = 0
+    const provider = {
+      lastUsage: null as { inputTokens: number; outputTokens: number } | null,
+      async *stream(): AsyncIterable<ProviderStreamChunk> {
+        call++
+        if (call === 1) {
+          yield { type: 'tool_call', toolCall: { id: '1', name: 'test', args: {} } }
+          provider.lastUsage = { inputTokens: 50_000, outputTokens: 40 }
+          yield { type: 'usage', model: 'm', inputTokens: 50_000, outputTokens: 40 }
+          yield { type: 'done' }
+        } else if (call === 2) {
+          // Runs past the cap; the loop stops reading before any usage arrives.
+          for (let i = 0; i < 100; i++) yield { type: 'reasoning', text: 'x'.repeat(100) }
+        } else {
+          yield { type: 'text', text: 'final' }
+          provider.lastUsage = { inputTokens: 60_000, outputTokens: 5 }
+          yield { type: 'usage', model: 'm', inputTokens: 60_000, outputTokens: 5 }
+          yield { type: 'done' }
+        }
+      },
+    }
+    const chunks: AgentStreamChunk[] = []
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [],
+      usageModel: 'm',
+      maxStreamOutputTokens: 100,
+      getLastUsage: () => provider.lastUsage,
+      onChunk: (c) => chunks.push(c),
+      executeTool: async () => 'ok',
+    })
+    assert.equal(call, 3)
+    assert.deepEqual(
+      chunks.filter((c) => c.type === 'usage').map((c) => c.inputTokens),
+      [50_000, 60_000],
+    )
   })
 
   it('restores measured input tokens after a tool runs a nested loop (#112)', async () => {
