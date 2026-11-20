@@ -1,33 +1,55 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
 import type {} from './helpers/browser-globals.d.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
 import { copseUserDataDir } from '../../src/main/services/storage/copse-paths.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
+import { waitForAgentIdle } from './helpers.ts'
 
-const PROJECT_ID = 'e2e-model-allowance'
+let fixtureProjectId = ''
 
 async function openSchedule(): Promise<WebdriverIO.Element> {
   await $('.prompt-input').waitForExist({ timeout: 30_000 })
-  await $(`.project-entry[data-project-id="${PROJECT_ID}"] .project-menu-btn`).click()
+  await $(`.project-entry[data-project-id="${fixtureProjectId}"] .project-menu-btn`).click()
   await $('.context-menu-item=Automations').click()
   const dialog = $('#automation-dialog')
   await dialog.$('.automation-row-btn=Edit').click()
   return dialog
 }
 
+async function runSchedule(dialog: WebdriverIO.Element): Promise<void> {
+  await dialog.$('.automation-run-btn').click()
+  await expect(dialog.$('.automation-status')).toHaveText(expect.stringContaining('Started'))
+  await dialog.$('[aria-label="Close automations"]').click()
+}
+
+async function startRefusedRun(): Promise<void> {
+  const dialog = await openSchedule()
+  await dialog.$('.automation-model-allowance-input').setValue('0.01')
+  await dialog.$('.automation-save-btn').click()
+  await expect(dialog.$('.automation-form')).not.toBeDisplayed()
+  await dialog.$('.automation-plugin-toggle').click()
+  await expect(dialog.$('.automation-plugin-toggle')).toHaveText('Disable plugin')
+  await runSchedule(dialog)
+  await expect($('.messages-list .markdown-alert-caution')).toHaveText(
+    expect.stringContaining('Automation model allowance exhausted'),
+  )
+  await waitForAgentIdle()
+}
+
 describe('automation model allowance editor', function () {
   this.timeout(60_000)
-  before(async () => {
+  beforeEach(async () => {
     resetUserData()
     const worktreesRoot = process.env['COPSE_WORKTREES_DIR']
     if (!worktreesRoot) throw new Error('The isolated test worktree root is missing')
-    const projectRoot = join(dirname(worktreesRoot), 'allowance-fixture')
-    mkdirSync(projectRoot, { recursive: true })
+    const projectRoot = mkdtempSync(join(dirname(worktreesRoot), 'allowance-fixture-'))
+    // Reseeding settings keeps durable threads/runs, so each case owns distinct keys.
+    fixtureProjectId = `e2e-model-${basename(projectRoot)}`
     const git = (...args: string[]): void => {
       execFileSync('git', args, { cwd: projectRoot, stdio: 'pipe' })
     }
@@ -37,14 +59,14 @@ describe('automation model allowance editor', function () {
     writeFileSync(join(projectRoot, 'README.md'), 'Model allowance fixture\n')
     git('add', 'README.md')
     git('commit', '-qm', 'seed')
-    seedEmptyProject(projectRoot, PROJECT_ID, {
+    seedEmptyProject(projectRoot, fixtureProjectId, {
       model: 'claude-haiku-4-5',
       subagentsEnabled: false,
     })
     writeSeedConfig({
-      projects: [{ id: PROJECT_ID, path: projectRoot, name: 'Allowance fixture' }],
-      activeProjectId: PROJECT_ID,
-      [`threads:${PROJECT_ID}`]: [],
+      projects: [{ id: fixtureProjectId, path: projectRoot, name: 'Allowance fixture' }],
+      activeProjectId: fixtureProjectId,
+      [`threads:${fixtureProjectId}`]: [],
       pluginDisabled: ['copse.automations'],
       pluginMigration: { automationsEnablement: true },
       plugin: {
@@ -52,8 +74,8 @@ describe('automation model allowance editor', function () {
           automations: {
             storage: [
               {
-                id: 'limited-review',
-                projectId: PROJECT_ID,
+                id: `limited-review-${fixtureProjectId}`,
+                projectId: fixtureProjectId,
                 name: 'Limited project review',
                 cron: '0 9 * * 1-5',
                 prompt: 'Review the project.',
@@ -102,7 +124,7 @@ describe('automation model allowance editor', function () {
   })
 
   it('Run now stops before consuming a mock provider response and shows why', async () => {
-    const dialog = $('#automation-dialog')
+    const dialog = await openSchedule()
     await dialog.$('.automation-model-allowance-input').setValue('0.01')
     await dialog.$('.automation-save-btn').click()
     await expect(dialog.$('.automation-form')).not.toBeDisplayed()
@@ -120,9 +142,7 @@ describe('automation model allowance editor', function () {
         ],
       })
     })
-    await dialog.$('.automation-run-btn').click()
-    await expect(dialog.$('.automation-status')).toHaveText(expect.stringContaining('Started'))
-    await dialog.$('[aria-label="Close automations"]').click()
+    await runSchedule(dialog)
     // Run now selects its newly created thread in the active project.
     const error = $('.messages-list .markdown-alert-caution')
     await expect(error).toHaveText(expect.stringContaining('Automation model allowance exhausted'))
@@ -145,13 +165,19 @@ describe('automation model allowance editor', function () {
   })
 
   it('every out-of-turn helper and review reads the durable allowance through real IPC', async () => {
+    await startRefusedRun()
     const threadId = await browser.execute(async (projectId: string) => {
       const threads = await window.api.threads.loadProject(projectId)
       const thread = threads.find((candidate) => candidate.title === 'Limited project review')
       if (!thread) throw new Error('The automation run is missing')
       return thread.id
-    }, PROJECT_ID)
-    const path = join(copseUserDataDir(), 'automation-budgets', PROJECT_ID, `${threadId}.json`)
+    }, fixtureProjectId)
+    const path = join(
+      copseUserDataDir(),
+      'automation-budgets',
+      fixtureProjectId,
+      `${threadId}.json`,
+    )
     const original = readFileSync(path, 'utf8')
     // Corrupt the isolated fixture on disk. Even mock-mode helpers that normally
     // return a canned title or no suggestion must read and reject this record.
@@ -190,7 +216,7 @@ describe('automation model allowance editor', function () {
             }),
           )
         },
-        PROJECT_ID,
+        fixtureProjectId,
         threadId,
       )
       assert.equal(results.length, 10)
@@ -201,9 +227,11 @@ describe('automation model allowance editor', function () {
   })
 
   it('refuses a detached child before approval or queued work is created', async () => {
+    // Preserve a completed run before measuring: Run now may replace a blank chat.
+    await startRefusedRun()
     const before = await browser.execute(
       async (projectId: string) => (await window.api.threads.loadProject(projectId)).length,
-      PROJECT_ID,
+      fixtureProjectId,
     )
     const dialog = await openSchedule()
     await dialog.$('.automation-name-input').setValue('Limited delegation')
@@ -241,14 +269,12 @@ describe('automation model allowance editor', function () {
       },
       null,
     )
-    await dialog.$('.automation-run-btn').click()
-    await expect(dialog.$('.automation-status')).toHaveText(expect.stringContaining('Started'))
-    await dialog.$('[aria-label="Close automations"]').click()
+    await runSchedule(dialog)
     await scenario.waitForComplete()
     await scenario.assertComplete()
     const threads = await browser.execute(
       async (projectId: string) => window.api.threads.loadProject(projectId),
-      PROJECT_ID,
+      fixtureProjectId,
     )
     assert.equal(threads.length, before + 1, 'only the budgeted parent run may be created')
     assert.equal(
