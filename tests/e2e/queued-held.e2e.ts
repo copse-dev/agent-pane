@@ -254,14 +254,14 @@ describe('held hook message in the queue', function () {
     try {
       await $(`.project-entry[data-project-id="${projectId}"] .project-row`).click()
       await scenario.waitForHold('auth-review')
-      await expect($(hookSelector).$('.message-queued-badge')).toHaveText('QUEUED')
+      await expect($(hookSelector).$('.message-queued-badge')).toHaveText('Queued')
       await setComposerValue(humanPrompt)
       await submitComposer()
       const humanSelector = '.conversation-queued .msg-queued:not(.msg-hook-origin)'
       await expect($(humanSelector).$('.message-text')).toHaveText(humanPrompt)
       await $(humanSelector).$('.queued-send-now').click()
       await expectAssistantReply(reply)
-      await expect($(hookSelector).$('.message-queued-badge')).toHaveText('HELD')
+      await expect($(hookSelector).$('.message-queued-badge')).toHaveText('Held')
       await expect($(hookSelector).$('.message-text')).toHaveText(hookPrompt)
       await expect($(hookSelector).$('.queued-release')).toBeDisplayed()
       await expect($(hookSelector).$('.queued-send-now')).not.toBeExisting()
