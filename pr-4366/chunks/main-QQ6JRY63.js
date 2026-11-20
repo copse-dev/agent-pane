@@ -488,7 +488,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-Z4OY2GFU.js";
+} from "./chunk-Q3CMJDLN.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -70993,18 +70993,24 @@ var init_selection_to_chat = __esm({
 
 // packages/std/src/with-timeout.ts
 function withTimeout(promise, ms, onTimeout) {
-  let timer;
-  const expired = new Promise((resolve) => {
-    timer = setTimeout(() => {
-      resolve(
-        new Promise((run4) => {
-          run4(onTimeout());
-        })
-      );
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      try {
+        resolve(onTimeout());
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error(String(error), { cause: error }));
+      }
     }, ms);
-  });
-  return Promise.race([promise, expired]).finally(() => {
-    clearTimeout(timer);
+    const settled = Promise.resolve(promise);
+    settled.then(resolve, reject);
+    settled.then(
+      () => {
+        clearTimeout(timer);
+      },
+      () => {
+        clearTimeout(timer);
+      }
+    );
   });
 }
 var init_with_timeout = __esm({
@@ -91172,7 +91178,11 @@ async function boot() {
   };
   applyExternalLinkMarks();
   store.on("settings_changed", applyExternalLinkMarks);
-  const { promise: mobileReady, resolve: mobileRestored } = Promise.withResolvers();
+  let mobileRestored = () => {
+  };
+  const mobileReady = new Promise((resolve) => {
+    mobileRestored = resolve;
+  });
   attachAutomationAppearance(Object.hasOwn(window, "__copseE2e"));
   if (!popoutMode) {
     startAgentController(store, api);
