@@ -8,6 +8,7 @@ import { attachCodeBlockCopyButtons } from './code-block-copy.ts'
 import { renderMermaidIn } from './mermaid.ts'
 import { attachTableCopyButtons } from './table-copy.ts'
 import { fillUserPromptFold, splitUserPromptForFold } from '../views/user-prompt-fold.ts'
+import { userPromptFoldMarkdownPieces } from './user-prompt-fold-markdown.ts'
 
 /**
  * Chat message rendering shared by every transcript: the main conversation, side
@@ -182,7 +183,18 @@ export function renderUserPromptMarkdown(
     paintUserMarkdown(el, content, renderOptions)
     return
   }
-  fillUserPromptFold(el, parts, (region, text) => {
-    paintUserMarkdown(region, text, renderOptions)
+  const pieces = userPromptFoldMarkdownPieces(content, parts)
+  fillUserPromptFold(el, parts, (region, text, name) => {
+    if (!pieces) {
+      paintUserMarkdown(region, text, renderOptions)
+      return
+    }
+    // Keep references, lists and footnotes in one document within each region.
+    // Only clipped code gets balanced wrappers; prose keeps composer breaks.
+    const markdown = pieces[name]
+      .map((piece) => (piece.kind === 'code' ? piece.source : userPromptMarkdown(piece.source)))
+      .join('')
+    region.innerHTML = renderMarkdown(markdown, { ...renderOptions, htmlPolicy: 'escape-all' })
+    attachCodeBlockCopyButtons(region)
   })
 }

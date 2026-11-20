@@ -1,5 +1,5 @@
 {
-  "source": "suggest-model-configured-pool provisional at the median (7.9s) until its first CI run is measured, 2026-11-15; canvas-blocked-scripts provisional at the median (7.9s) until its first CI run is measured, 2026-11-15; thread-compact-state provisional at the median (7.9s) until its first CI run is measured, 2026-11-08; automation-active-acp-worktree provisional at the median (7.9s) until its first CI run is measured, 2026-11-08; median PASSED seconds over 160 CI e2e shard logs, 2026-11-07; acp-bridge-unavailable provisional at its local macOS run (11s) until its first CI run is measured, 2026-11-05; acp-bridge-tools-dropped provisional at its local Linux Xvfb run (9s) until its first CI run is measured, 2026-11-06; pane-recording measured at 14.3s from CI run 41210627124 shard 4 (job 124568187113), 2026-10-31; subthread-orchestration-recovery provisional at the median (8s) until its first Linux CI run is measured, 2026-11-05; subthread-orchestration provisional at the median (8s) until its first CI run is measured, 2026-10-31",
+  "source": "suggest-model-configured-pool provisional at the median (7.9s) until its first CI run is measured, 2026-11-15; canvas-blocked-scripts provisional at the median (7.9s) until its first CI run is measured, 2026-11-15; thread-compact-state provisional at the median (7.9s) until its first CI run is measured, 2026-11-08; automation-active-acp-worktree provisional at the median (7.9s) until its first CI run is measured, 2026-11-08; median PASSED seconds over 160 CI e2e shard logs, 2026-11-07; acp-bridge-unavailable provisional at its local macOS run (11s) until its first CI run is measured, 2026-11-05; acp-bridge-tools-dropped provisional at its local Linux Xvfb run (9s) until its first CI run is measured, 2026-11-06; pane-recording measured at 14.3s from CI run 41210627124 shard 4 (job 124568187113), 2026-10-31; subthread-orchestration-recovery provisional at the median (8s) until its first Linux CI run is measured, 2026-11-05; subthread-orchestration provisional at the median (8s) until its first CI run is measured, 2026-10-31; local-git-inspection-permissions measured at 6.4s from successful CI run 44453726724 shard 9 (job 135328384430), 2026-11-19",
   "seconds": {
     "tests/e2e/accent-color.e2e.ts": 15.3,
     "tests/e2e/accessibility.e2e.ts": 24.6,
@@ -159,6 +159,7 @@
     "tests/e2e/light-syntax-contrast.e2e.ts": 8.9,
     "tests/e2e/list-row-rhythm.e2e.ts": 12.1,
     "tests/e2e/lm-studio-prompt-progress.e2e.ts": 5.5,
+    "tests/e2e/local-git-inspection-permissions.e2e.ts": 6.4,
     "tests/e2e/local-model-worktree-isolation.e2e.ts": 10.8,
     "tests/e2e/long-prompt-scroll.e2e.ts": 9.8,
     "tests/e2e/machine-turn-attribution.e2e.ts": 6.9,

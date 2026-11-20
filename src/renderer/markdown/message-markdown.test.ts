@@ -1,6 +1,7 @@
 import '../../../tests/setup-dom.ts'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { renderMarkdown } from '@copse/streaming-markdown'
 import {
   paintAssistantMarkdown,
   paintUserMarkdown,
@@ -62,4 +63,167 @@ test('a long prompt folds; a short one does not', () => {
     Array.from({ length: 30 }, (_, i) => `line ${String(i)}`).join('\n'),
   )
   assert.ok(long.classList.contains('msg-user-fold'))
+})
+
+for (const fence of ['```', '````', '~~~', '~~~~']) {
+  test(`folded ${fence} code keeps its whole-source context and exact payload`, () => {
+    const payload = [
+      '  first\tvalue',
+      ...Array.from({ length: 12 }, (_, i) => `line ${String(i)}  `),
+      '`` not a closing fence',
+      '~~~ not a closing fence',
+      '<img src=x onerror=alert(1)>',
+    ].join('\n')
+    const source = `Please review:\n${fence}text\n${payload}\n${fence}`
+    const el = document.createElement('div')
+    renderUserPromptMarkdown(el, source)
+    assert.ok(el.classList.contains('msg-user-fold'))
+    assert.equal(el.querySelector('.msg-user-fold-tail pre') === null, true)
+    assert.equal(el.querySelector('.msg-user-fold-tail')?.textContent, '')
+    assert.equal(el.querySelector('img') === null, true)
+    const full = document.createElement('div')
+    full.innerHTML = renderMarkdown(source, { htmlPolicy: 'escape-all' })
+    assert.equal(
+      [...el.querySelectorAll('pre code')].map((code) => code.textContent).join(''),
+      full.querySelector('pre code')?.textContent,
+    )
+    const toggle = el.querySelector<HTMLButtonElement>('button.msg-user-fold-toggle')
+    assert.ok(toggle)
+    toggle.click()
+    assert.equal(toggle.getAttribute('aria-expanded'), 'true')
+    assert.equal(el.querySelectorAll('pre code').length, 1)
+    toggle.click()
+    assert.equal(toggle.getAttribute('aria-expanded'), 'false')
+  })
+}
+
+test('a fence split after its first code line retains that newline exactly once', () => {
+  const payload = Array.from({ length: 15 }, (_, i) => `  item ${String(i)}\t `).join('\n')
+  const el = document.createElement('div')
+  renderUserPromptMarkdown(el, `\`\`\`text\n${payload}\n\`\`\`\nWhat should change?`)
+  assert.equal(el.querySelector('.msg-user-fold-tail')?.textContent, 'What should change?')
+  assert.equal(
+    [...el.querySelectorAll('pre code')].map((code) => code.textContent).join(''),
+    `${payload}\n`,
+  )
+  assert.equal(el.querySelectorAll('pre code').length, 2)
+})
+
+test('genuine empty code and shorter literal delimiters survive folding', () => {
+  const el = document.createElement('div')
+  const payload = ['```', ...Array.from({ length: 12 }, (_, i) => `item ${String(i)}`)].join('\n')
+  renderUserPromptMarkdown(el, `\`\`\`\n\`\`\`\n\`\`\`\`text\n${payload}\n\`\`\`\``)
+  const codes = [...el.querySelectorAll('pre code')]
+  assert.equal(codes.length, 2)
+  assert.equal(codes[0]?.textContent, '')
+  assert.equal(codes[1]?.textContent, `${payload}\n`)
+  assert.equal(el.querySelector('.msg-user-fold-tail pre') === null, true)
+})
+
+test('an unclosed fence keeps a shorter authored closing-looking line as code', () => {
+  const payload = [...Array.from({ length: 13 }, (_, i) => `item ${String(i)}`), '```'].join('\n')
+  const el = document.createElement('div')
+  renderUserPromptMarkdown(el, `\`\`\`\`text\n${payload}`)
+  assert.equal(
+    [...el.querySelectorAll('pre code')].map((code) => code.textContent).join(''),
+    `${payload}\n`,
+  )
+  assert.equal(el.querySelector('.msg-user-fold-tail code')?.textContent, '```\n')
+})
+
+test('an authored empty block crossing a cut remains present exactly once', () => {
+  const el = document.createElement('div')
+  renderUserPromptMarkdown(
+    el,
+    [
+      'Opening note',
+      '```',
+      '```',
+      ...Array.from({ length: 12 }, () => 'More detail'),
+      'Final ask',
+    ].join('\n'),
+  )
+  assert.equal(el.querySelectorAll('pre code').length, 1)
+  assert.equal(el.querySelector('pre code')?.textContent, '')
+  assert.equal(el.querySelector('.msg-user-fold-tail')?.textContent, 'Final ask')
+})
+
+test('indented and longer closing fences preserve code indentation at both cuts', () => {
+  const body = Array.from({ length: 12 }, (_, i) => `   \tvalue ${String(i)}  `).join('\r\n')
+  const source = `   ~~~~text\r\n${body}\r\n  ~~~~~~\t\r\nFinal ask\r\n`
+  const full = document.createElement('div')
+  full.innerHTML = renderMarkdown(source, { htmlPolicy: 'escape-all' })
+  const el = document.createElement('div')
+  renderUserPromptMarkdown(el, source)
+  assert.equal(
+    [...el.querySelectorAll('pre code')].map((code) => code.textContent).join(''),
+    full.querySelector('pre code')?.textContent,
+  )
+  assert.equal(el.querySelector('.msg-user-fold-tail')?.textContent.trim(), 'Final ask')
+})
+
+for (const spanning of [false, true]) {
+  test(`reference definitions around a contained fence keep their region context (spanning=${String(spanning)})`, () => {
+    const opening = spanning ? '```text\nfirst\nsecond\n```\n' : 'Opening note\nSecond note\n'
+    const source = `${opening}See [docs][guide].\n\n\`\`\`text\n${Array.from({ length: 12 }, () => 'example').join('\n')}\n\`\`\`\n\n[guide]: https://example.com/docs\nFinal ask`
+    const el = document.createElement('div')
+    renderUserPromptMarkdown(el, source)
+    assert.equal(el.querySelector('a')?.getAttribute('href'), 'https://example.com/docs')
+    assert.equal(el.querySelector('a')?.textContent, 'docs')
+  })
+}
+
+test('a contained list fence keeps its original closer and following prose', () => {
+  const source = [
+    '```text',
+    'first',
+    ...Array.from({ length: 8 }, () => 'second'),
+    '```',
+    '',
+    '- item',
+    '  ```text',
+    '  literal',
+    '  ```',
+    '  after item',
+    '',
+    'Outside paragraph',
+    'Final ask',
+  ].join('\n')
+  const el = document.createElement('div')
+  renderUserPromptMarkdown(el, source)
+  assert.equal(el.querySelector('.msg-user-fold-middle ul pre code')?.textContent, 'literal\n')
+  assert.match(el.querySelector('ul')?.textContent ?? '', /after item/)
+  assert.equal(
+    [...el.querySelectorAll('.msg-user-fold-middle > p')].some((p) =>
+      p.textContent.includes('Outside paragraph'),
+    ),
+    true,
+  )
+  assert.equal(el.querySelector('.msg-user-fold-tail')?.textContent, 'Final ask')
+})
+
+test('unsupported container openers do not turn their closer into a new root fence', () => {
+  const source = [
+    '- ```text',
+    '  first',
+    '  second',
+    '  ```',
+    ...Array.from({ length: 12 }, () => 'Plain detail'),
+    'Final ask',
+  ].join('\n')
+  const el = document.createElement('div')
+  renderUserPromptMarkdown(el, source)
+  assert.equal(el.querySelector('.msg-user-fold-tail pre') === null, true)
+  assert.equal(el.querySelector('.msg-user-fold-tail')?.textContent, 'Final ask')
+})
+
+test('container-looking literal code does not disable standalone fence context', () => {
+  const payload = ['- ```text', '> ~~~', ...Array.from({ length: 12 }, () => 'literal')].join('\n')
+  const el = document.createElement('div')
+  renderUserPromptMarkdown(el, `Opening note\n\`\`\`\`text\n${payload}\n\`\`\`\``)
+  assert.equal(el.querySelector('.msg-user-fold-tail pre') === null, true)
+  assert.equal(
+    [...el.querySelectorAll('pre code')].map((code) => code.textContent).join(''),
+    `${payload}\n`,
+  )
 })
