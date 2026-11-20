@@ -30,6 +30,8 @@ export interface LocalSandboxPlan {
    * The host owns the wrap, its lease and its network scope. `childEnv` is the
    * filter the adapter applies to every child's env (it drops raw GitHub tokens
    * while brokering); the host applies it to its own env and the command's.
+   * The adapter ignores this plan's lease fields and never releases a lease
+   * for it.
    */
   readonly hostedLaunch?: (childEnv: (env: NodeJS.ProcessEnv) => NodeJS.ProcessEnv) => ChildProcess
   /** Working directory ASRT resolves the wrap's relative paths against. */
