@@ -287,6 +287,7 @@ describe('Pasting text into the composer', () => {
     expect(await $(`${resent} .msg-user-fold-tail pre`).isExisting()).toBe(false)
     await expect($(`${resent} .msg-user-fold-tail`)).toHaveText('')
     await saveElementScreenshot(resent, 'paste-attachment-raw-resend-folded.png', {
+      captureFromViewport: true,
       beforeCapture: () => settleFoldedPromptCapture(resent),
     })
     await assertFoldedPromptCaptureSettled(resent)
@@ -302,6 +303,7 @@ describe('Pasting text into the composer', () => {
       ),
     ).toEqual([`${FOLDED_CODE_PAYLOAD}\n`])
     await saveElementScreenshot(resent, 'paste-attachment-raw-resend-expanded.png', {
+      captureFromViewport: true,
       beforeCapture: () => settleFoldedPromptCapture(resent),
     })
     await assertFoldedPromptCaptureSettled(resent)

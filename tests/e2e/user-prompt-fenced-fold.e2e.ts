@@ -63,6 +63,7 @@ describe('fenced user prompt mid-fold accordion', () => {
     }, row)
     expect(collapsed).toEqual({ emptyTailBlocks: 0, tailText: '', radius: '6px' })
     await saveElementScreenshot(row, 'user-prompt-fenced-fold-collapsed.png', {
+      captureFromViewport: true,
       beforeCapture: () => settleFoldedPromptCapture(row),
     })
     await assertFoldedPromptCaptureSettled(row)
@@ -78,6 +79,7 @@ describe('fenced user prompt mid-fold accordion', () => {
     )
     expect(codes).toEqual([`${FOLDED_CODE_PAYLOAD}\n`])
     await saveElementScreenshot(row, 'user-prompt-fenced-fold-expanded.png', {
+      captureFromViewport: true,
       beforeCapture: () => settleFoldedPromptCapture(row),
     })
     await assertFoldedPromptCaptureSettled(row)
