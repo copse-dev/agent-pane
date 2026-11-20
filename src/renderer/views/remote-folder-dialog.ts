@@ -12,7 +12,11 @@ import {
   upsertHost,
   type SshHostDraft,
 } from './setup/ssh-host-helpers.ts'
-import { fillRemotePathBreadcrumbs, parentRemotePath } from './remote-folder-path.ts'
+import {
+  fillRemotePathBreadcrumbs,
+  initialRemoteBrowsePath,
+  parentRemotePath,
+} from './remote-folder-path.ts'
 import { arrowLeftIcon } from '../dom/icons.ts'
 import { setInlineStatus } from '../dom/inline-status.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
@@ -22,13 +26,23 @@ export interface RemoteFolderPick {
   path: string
 }
 
+export interface RemoteFolderDialogOptions {
+  /** Projects already open, so a host's browser can start beside the last one. */
+  projects?: ReadonlyArray<{ path: string; sshHost?: string }>
+}
+
 const ensureDialog = lazyBodyDialog('remote-folder-dialog', 'remote-folder-dialog')
 
 /**
  * Minimal remote directory browser: pick or add an SSH host, browse folders
  * over `ssh-workspace:list-directory`, then register + return the chosen path.
+ * Each host opens beside its last project, or in its home directory.
  */
-export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick | null> {
+export function openRemoteFolderDialog(
+  api: ApiClient,
+  options: RemoteFolderDialogOptions = {},
+): Promise<RemoteFolderPick | null> {
+  const projects = options.projects ?? []
   const dialog = ensureDialog()
   clear(dialog)
 
@@ -285,7 +299,7 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
       fillHostSelect(host.id)
       setAddingHost(false)
       status.textContent = `Saved host “${host.label}”.`
-      await browse('/')
+      await browseStart()
     }
 
     saveHostBtn.addEventListener('click', () => {
@@ -330,7 +344,7 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
             imported.importedHostIds.length === 0
               ? 'All SSH config aliases are already imported.'
               : `Imported ${String(imported.importedHostIds.length)} alias(es) from SSH config.`
-          if (currentHostId) await browse('/')
+          if (currentHostId) await browseStart()
         } catch (err) {
           const message = ipcErrorMessage(err, 'Could not import from ~/.ssh/config.')
           setInlineStatus(status, 'error', message)
@@ -351,10 +365,31 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
           return
         }
         setAddingHost(false)
-        await browse('/')
+        await browseStart()
       } catch (err) {
         setInlineStatus(status, 'error', ipcErrorMessage(err, 'Could not load SSH hosts.'))
       }
+    }
+
+    /**
+     * Open the chosen host where its user works rather than at `/`. Connecting
+     * first is what reports the host's home directory. A start folder that no
+     * longer lists (a removed project's parent) falls back to `/`.
+     */
+    async function browseStart(): Promise<void> {
+      const hostId = currentHostId
+      if (!hostId || loading || addingHost) return
+      let home: string | undefined
+      try {
+        const states = await api.sshWorkspace.connect(hostId)
+        home = states.find((state) => state.hostId === hostId)?.capabilities?.home
+      } catch {
+        // `browse` connects again and reports the failure in the dialog.
+      }
+      if (hostId !== currentHostId) return
+      const start = initialRemoteBrowsePath(projects, hostId, home)
+      if ((await browse(start)) || start === '/' || hostId !== currentHostId) return
+      await browse('/')
     }
 
     function renderBreadcrumbs(path: string): void {
@@ -363,8 +398,9 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
       })
     }
 
-    async function browse(path: string): Promise<void> {
-      if (!currentHostId || loading || addingHost) return
+    /** List `path` on the current host. Resolves false when it could not be listed. */
+    async function browse(path: string): Promise<boolean> {
+      if (!currentHostId || loading || addingHost) return false
       loading = true
       openBtn.disabled = true
       upBtn.disabled = true
@@ -397,6 +433,7 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
         }
         upBtn.disabled = currentPath === '/'
         openBtn.disabled = false
+        return true
       } catch (err) {
         // Keep the attempted path visible so Up / breadcrumbs still work after errors.
         // Surface the error in the dialog status only — a global toast would fire on
@@ -404,6 +441,7 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
         currentPath = path
         renderBreadcrumbs(currentPath)
         setInlineStatus(status, 'error', ipcErrorMessage(err, 'Could not reach the host.'))
+        return false
       } finally {
         loading = false
         if (hosts.length > 0 && currentHostId) {
@@ -415,7 +453,7 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
 
     hostSelect.addEventListener('change', () => {
       currentHostId = hostSelect.value
-      void browse('/')
+      void browseStart()
     })
 
     upBtn.addEventListener('click', () => {

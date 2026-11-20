@@ -1344,7 +1344,7 @@ export async function addProject(store: AppStore, api: ApiClient): Promise<boole
 
 export async function addRemoteProject(store: AppStore, api: ApiClient): Promise<boolean> {
   const { openRemoteFolderDialog } = await import('../views/remote-folder-dialog.ts')
-  const picked = await openRemoteFolderDialog(api)
+  const picked = await openRemoteFolderDialog(api, { projects: store.getState().projects })
   if (!picked) return false
   await addProjectFromRemotePath(store, api, picked.hostId, picked.path)
   return true
