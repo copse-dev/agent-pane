@@ -136,7 +136,11 @@ describe('browser preview tool', () => {
     if (projectRoot) rmSync(projectRoot, { recursive: true })
   })
 
-  it('serves the project and opens the visible Browser panel without approval', async () => {
+  /**
+   * Run the turn that serves the project into the visible Browser panel and
+   * wait for its page and reply. Returns the active tab's address field.
+   */
+  async function openProjectPreview(): Promise<WebdriverIO.Element> {
     const scenario = await prepareMockToolTurn(
       'Open the application preview in the browser.',
       { name: 'browser_preview', args: {} },
@@ -183,6 +187,11 @@ describe('browser preview tool', () => {
     await expectAssistantReply('The browser preview result is available above.')
     await waitForAgentIdle(15_000)
     await scenario.assertComplete()
+    return input
+  }
+
+  it('serves the project and opens the visible Browser panel without approval', async () => {
+    const input = await openProjectPreview()
     // The server correctly chooses a fresh random port; mask only the displayed
     // value after validating it so the visual reference is deterministic.
     const previewAddress = await input.getValue()
@@ -231,6 +240,11 @@ describe('browser preview tool', () => {
   })
 
   it('shows actionable missing-entry guidance without opening or navigating a tab', async () => {
+    // This checks that an open preview tab is left alone. Run alone (as burn-in
+    // does), nothing has opened one yet, so open it the way the first test does.
+    if ((await $$('.browser-tab-panel.is-active').getElements()).length === 0) {
+      await openProjectPreview()
+    }
     const panelsBefore = await $$('.browser-tab-panel').getElements()
     const addressBefore = await $('.browser-tab-panel.is-active .browser-url-input').getValue()
     // Return to the composer through the visible Browser control before sending another turn.
