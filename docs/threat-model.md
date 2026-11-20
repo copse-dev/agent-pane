@@ -146,6 +146,17 @@ project-defined MCP servers are gated behind workspace trust, the
     so pairing there grants control on the desktop approval alone; the local-root
     acknowledgement applies only to pairings over the LAN IP, and the main process,
     not the renderer, decides which applies.
+    Every response is `no-store` except the page's own script and stylesheet, and only
+    when requested under the content hash that the never-stored page pins with Subresource
+    Integrity; a cached copy that is not those bytes is refused by the browser, and these
+    bundles carry no thread data. Polled reads are compressed and answered `304` when
+    unchanged. The bearer is never compressed: it travels only in a request header that a
+    cross-site page cannot make the phone send, and the pairing answer, the one body that
+    carries it, is sent uncompressed. A compressed thread or live-state answer can still
+    hold a secret a tool printed beside attacker-influenced text, such as a fetched page.
+    Using compression as a BREACH oracle against it would need a fresh guess placed into
+    the polled answer for each request, and every guess costs the attacker an agent turn.
+    A LAN observer can still see the size of each encrypted answer, compressed or not.
 11. **Names service compromise or error.** The Copse names service (`api.copse.dev`), or
     someone who controls it, issues a certificate for `*.<label>.u.copse.me` with a key it
     holds and points `lan.<label>.u.copse.me` at another private address, then waits on the
@@ -191,7 +202,10 @@ downloaded cannot start a run: carry-in reports that and asks for `git backfill`
 full clone. Adoption's
 `cherry-pick` is admitted only as `--no-edit` with full SHAs (no merge strategy
 program), so the checkout's hooks and signer do not run and adopted commits are
-unsigned. It is app plumbing, not the gated `git_commit` profile. Guest-side Git
+unsigned. It is app plumbing, not the gated `git_commit` profile. The hosted
+transfer's LFS scan admits `grep` only as `-I`, `-l` and `-E`, a pattern, a full SHA
+and `--` pathspecs, so no abbreviated or bundled spelling of `-O` names a pager
+program and textconv stays off. Guest-side Git
 (`worker-main.ts`, the hosted workers) runs on repositories the guest created, beside
 an agent that can already run any program there, so it keeps its own wrappers.
 
@@ -411,11 +425,13 @@ The target runtime, egress, credential, lifecycle, and checkpoint architecture i
 - **OS sandbox (macOS and Linux).** Sandbox-contained commands auto-run inside
   the ASRT profile (seatbelt on macOS, bubblewrap on Linux); external commands
   prompt and run outside only when approved.
-- **Global network-scope guard.** When a sandboxed ACP agent or a loopback
-  background task temporarily widens ASRT's process-global network allowlist,
-  all shell commands, background starts, and newly opened integrated terminals
-  require explicit approval until the final scope releases. This prevents
-  unrelated auto-run work inheriting temporary network egress.
+- **Isolated network scopes.** Sandboxed ACP sessions and probes, and approved
+  loopback-binding background tasks, each use a dedicated ASRT host process.
+  Their temporary allowlists cannot reach already-running contained commands
+  in main. A host that cannot initialize protection fails before spawning its
+  agent or command. The overlap gate still pauses auto-run for any scope held
+  directly by main, so a future main-process holder cannot silently lend its
+  network permission to another command.
 - **Integrated terminal is user-directed.** Shells tabs the user opens run outside
   the project seatbelt (full host access by design). Agent shell confinement stays
   on `run_shell` / `run_background`. Where no OS sandbox is available, or when an
@@ -462,9 +478,12 @@ enforced, ordered by how much they widen the blast radius:
   network and out-of-workspace access, but an approved external command or retry runs
   fully outside that profile. The intended fix is scoped egress/operation grants,
   retaining unrelated filesystem and process controls.
-- **Network mediation is not per execution.** ASRT's allow-list is process-global.
-  Copse forces overlapping commands to prompt while a scope is widened, preventing
-  silent inheritance, but cannot attribute the allow-list itself to one child.
+- **Network mediation is per ASRT host, not per connection owner.** ASRT's
+  allowlist remains process-global inside each host. Current ACP sessions,
+  probes and loopback background tasks get separate hosts; the main-process
+  overlap gate covers any direct scope there. A future path that launches two
+  unrelated workloads in one host would again need isolation or a stricter
+  per-connection broker.
 - **Tool credentials can reach child processes.** Model-provider keys are scrubbed,
   while credentials such as GitHub, package-registry, and cloud tokens may remain for
   tools that need them. The target is brokered use without exposing the raw value to

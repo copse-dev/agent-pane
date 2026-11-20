@@ -9,6 +9,7 @@
  * settles, and the agent's text at the boundaries where it stops to act.
  * Pure, so the shape of a line can be tested without a guest.
  */
+import { ellipsize } from '@copse/std/one-line-text.ts'
 import type { StreamChunk } from '@shared/types'
 import { isRecord } from '@shared/unknown-value.ts'
 
@@ -32,7 +33,7 @@ export function summarizeToolArgs(args: unknown): string {
 }
 
 function cut(text: string): string {
-  return text.length <= ARGS_LIMIT ? text : `${text.slice(0, ARGS_LIMIT - 1)}…`
+  return ellipsize(text, ARGS_LIMIT)
 }
 
 /**

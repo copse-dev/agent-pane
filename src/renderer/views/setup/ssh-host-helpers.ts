@@ -1,5 +1,6 @@
 import type { SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
 import { recordArrayOrEmpty } from '@shared/unknown-value.ts'
+import { sshDestinationProblem } from '@shared/ssh-destination.ts'
 
 export const SSH_HOST_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/
 
@@ -127,6 +128,8 @@ export function parseSshHostDraft(draft: SshHostDraft): ParseSshHostDraftResult 
     if (!draft.host.trim()) fields.push('host')
     return { ok: false, error: 'Label and host are required.', fields }
   }
+  const destination = sshDestinationProblem(draft.host, draft.user.trim())
+  if (destination) return { ok: false, error: destination.message, fields: [destination.field] }
   const host: SshWorkspaceHost = {
     id,
     label: draft.label.trim(),
