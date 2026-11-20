@@ -192,7 +192,17 @@ with zipfile.ZipFile(sys.argv[1], 'w') as wheel:
     )
     assert.equal(lock.status, 0, lock.stderr)
     const originalLock = readFileSync(join(root, 'uv.lock'), 'utf8')
-    const env = { ...process.env, COPSE_DIR: join(parent, 'profile') }
+    // The fixture never leaves the machine, so the host's TLS trust overrides
+    // are not under test. uv loads them at startup and fails when one names a
+    // bundle the sandbox cannot read.
+    const env = {
+      ...Object.fromEntries(
+        Object.entries(process.env).filter(
+          ([key]) => !['SSL_CERT_FILE', 'SSL_CERT_DIR', 'UV_NATIVE_TLS'].includes(key),
+        ),
+      ),
+      COPSE_DIR: join(parent, 'profile'),
+    }
     await SandboxManager.initialize(baseSandboxConfig(), undefined, false)
     setProjectSandboxEnabled(true)
     try {

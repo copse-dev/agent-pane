@@ -10,6 +10,7 @@ import {
   savePreparedElementScreenshot,
 } from './helpers/screenshot.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
+import { selectAnnotationShape } from './helpers/annotation-tool.ts'
 import { rememberCanvasArtefact } from '../../src/main/services/canvas-store.ts'
 
 const PROJECT_ID = 'e2e-inline-visualization-project'
@@ -230,7 +231,8 @@ describe('ACP inline visualization reference', () => {
     await expect(annotate).toHaveText('Annotate')
     await annotate.click()
     await expect(annotate).toHaveAttribute('aria-pressed', 'true')
-    await $('.message-canvas-previews [data-tool="rect"]').click()
+    // The inline stage is wide: every shape has its own button.
+    await selectAnnotationShape('.message-canvas-previews', 'rect', 'each')
     await drawAnnotation('.message-canvas-previews .annotation-layer-svg')
     await browser.waitUntil(
       async () =>
@@ -334,7 +336,8 @@ describe('ACP inline visualization reference', () => {
         )) === 'true',
       { timeout: 5_000, timeoutMsg: 'expected Browser annotation mode to activate' },
     )
-    await $('.browser-tab-panel.is-active [data-tool="arrow"]').click()
+    // Beside the chat and the tab rail the page is about 279px wide: the shapes fold.
+    await selectAnnotationShape('.browser-tab-panel.is-active', 'arrow', 'folded')
     await drawAnnotation('.browser-tab-panel.is-active .annotation-layer-svg')
     await browser.waitUntil(
       async () =>
