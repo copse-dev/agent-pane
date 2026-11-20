@@ -36,7 +36,7 @@ import {
   sleep,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-NPDRFFCS.js";
+} from "./chunks/chunk-KHNM3OOB.js";
 import "./chunks/chunk-X6JZSFJR.js";
 import {
   init_icons,
@@ -6958,7 +6958,7 @@ function createDemoApi(scenario2, options = {}) {
       markPrReady: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" }),
       enableAutoMerge: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" })
     },
-    shell: { openExternal: resolvedVoid, openWorkspaceFileInBrowser: resolvedVoid },
+    shell: { openExternal: resolvedVoid },
     editors: {
       list: () => resolved({ editors: [], lastUsedId: null }),
       open: resolvedVoid
@@ -7499,7 +7499,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-LLZRBVRZ.js").then(async (main) => {
+    void import("./chunks/main-OZS3HHSA.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(

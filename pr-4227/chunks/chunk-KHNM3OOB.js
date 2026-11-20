@@ -74850,12 +74850,8 @@ async function openWorkspaceFile(store, api, path, reveal) {
 }
 async function openWorkspaceFileInBrowser(store, api, path) {
   const { projectId, threadId } = requireActiveThreadOwner(store);
-  if (store.getState().openLinksInBuiltInBrowser) {
-    const url2 = await api.browser.workspaceFileUrl(projectId, threadId, path);
-    openBrowserUrl(store, url2);
-    return;
-  }
-  await api.shell.openWorkspaceFileInBrowser(projectId, threadId, path);
+  const url2 = await api.browser.workspaceFileUrl(projectId, threadId, path);
+  openBrowserUrl(store, url2);
 }
 function canOpenWorkspaceFileInBrowser(store) {
   const { activeProjectId, projects } = store.getState();
