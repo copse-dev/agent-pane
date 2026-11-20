@@ -559,6 +559,11 @@ jobs:
           # than waiting for the nightly net (e.g. infra/runner changes whose
           # blast radius the selector-vocabulary map cannot see).
           CI_FULL_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'ci-full') }}
+          # A new explicit request can recover missing screenshot evidence on a
+          # reference-only head; a label left on an acceptance commit cannot.
+          FRESH_FULL_E2E_REQUEST: >-
+            ${{ github.event_name == 'pull_request' && github.event.action == 'labeled' &&
+            (github.event.label.name == 'update-screenshots' || github.event.label.name == 'ci-full') }}
           # The drift refresh PR's diff is empty, so the oracle would skip it.
           SCREENSHOT_REFRESH: ${{ steps.screenshot-refresh.outputs.refresh }}
         run: |
@@ -581,6 +586,11 @@ jobs:
           # the coverage attestation must belong to this exact combined head.
           if [ "${STACK_TIP:-false}" = "true" ]; then
             echo "Declared screenshot stack tip -> full combined e2e suite"
+            { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${FRESH_FULL_E2E_REQUEST:-false}" = "true" ]; then
+            echo "New explicit full-run label request -> full e2e suite"
             { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
