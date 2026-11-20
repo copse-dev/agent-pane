@@ -1309,10 +1309,13 @@ describe('worktree manager', () => {
       const picked = await commitFile(path, 'thread.txt')
       await commitFile(repo, 'main.txt')
       // A signing key that cannot load fails the pick's commit the way a
-      // sandboxed agent without the user's ssh-agent does.
+      // sandboxed agent without the user's ssh-agent does. Pinning the signer
+      // keeps a host's global gpg.ssh.program, which may ignore the key, out.
       stoppedRebase(path, [
         '-c',
         'gpg.format=ssh',
+        '-c',
+        'gpg.ssh.program=ssh-keygen',
         '-c',
         'user.signingkey=/nonexistent/copse-test-key',
         'rebase',
