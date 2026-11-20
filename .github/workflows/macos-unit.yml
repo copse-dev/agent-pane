@@ -1,0 +1,119 @@
+name: macOS unit tests
+
+# Copse ships on macOS only and macOS seatbelt (ASRT) is its containment boundary, but every test
+# job in the main `CI` workflow runs on Linux. So the unit tests gated on
+# `process.platform === 'darwin'` (real seatbelt profiles and read grants, isolated SSH commit
+# signing, `sips`, `chflags`, the Apple builder lock) ran on no CI run at all, and the rest of the
+# suite never met macOS userland. This runs the whole unit suite on the hosted image the release
+# is built and smoke-tested on.
+#
+# ADVISORY, not a required check, on purpose: it has not yet been observed green on a hosted
+# runner, and it is deliberately not part of the `CI Passed` aggregate (which is pinned by
+# scripts/ci-workflow-invariants.test.ts). Promote it into that aggregate only after it has
+# stayed green across a representative run of PRs and nightlies.
+on:
+  pull_request:
+    paths:
+      - 'src/main/project-sandbox/**'
+      - 'src/main/services/security/**'
+      - 'src/main/services/github/**'
+      - 'src/main/services/review/**'
+      - 'src/main/services/apple-development/**'
+      - 'src/main/services/container-runtime/**'
+      - 'src/main/services/desktop-control/**'
+      - 'src/main/services/acp/acp-ssh-transport*.ts'
+      - 'src/main/services/thread-git-roots*.ts'
+      - 'src/main/services/thread-history-edit*.ts'
+      - 'src/main/services/worktree-preparation*.ts'
+      - 'src/main/tools/**'
+      - 'scripts/build-invariants*.ts'
+      - 'scripts/host-differences*.ts'
+      - 'scripts/run-tests.mts'
+      - 'scripts/lib/host-*.mts'
+      - '.github/actions/setup/**'
+      - '.github/workflows/macos-unit.yml'
+  schedule:
+    - cron: '53 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push supersedes a PR run. A nightly and a manual dispatch on the same branch are
+# separate runs that should both finish, so they never cancel each other.
+concurrency:
+  group: macos-unit-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  unit:
+    name: Unit suite on macOS
+    # Fork PRs get no secrets and no trust; the nightly and dispatch runs cover them after merge.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # The OS the app supports (`build.mac.minimumSystemVersion`), as in release-mac.yml.
+    runs-on: macos-26
+    # The Linux unit job is capped at 45 minutes with coverage on top. The cap is a leak-stopper,
+    # not a latency target.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      # The setup action installs ripgrep on hosted Linux and self-hosted macOS only, and the
+      # search and file tool tests run the real binary.
+      - name: Install ripgrep
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+          HOMEBREW_NO_ANALYTICS: '1'
+        run: command -v rg >/dev/null 2>&1 || brew install ripgrep
+      # The tools behind the known host differences, to read a failure against.
+      - name: Show the host
+        run: |
+          sw_vers
+          bash --version | head -n 1
+          openssl version
+          python3 --version
+          git --version
+          rg --version | head -n 1
+      # Some tests fail on any Mac for a reason that is the host's, not the diff's:
+      # docs/host-environment-test-noise.md lists them and scripts/lib/host-differences.mts
+      # recognises them. A local run's closing summary splits its failures into those and the
+      # ones that need triage, and that summary is this job's verdict. Known host differences are
+      # reported as a warning; anything else, or a failed run with no summary, fails the job.
+      - name: Run the unit suite
+        shell: bash
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/macos-unit.log"
+          status=0
+          # Only a run without CI set prints that summary (see reporterArgs in run-tests.mts).
+          env -u CI npm test 2>&1 | tee "$log" || status=$?
+          if [ "$status" -eq 0 ]; then
+            echo 'Every unit test passed on macOS.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # From the summary's first line to the end of the log.
+          report="$RUNNER_TEMP/macos-unit-summary.txt"
+          awk '/^\[run-tests\] [0-9]+ tests? failed\./ { found = 1 } found' "$log" > "$report"
+          summary="$(head -n 1 "$report")"
+          {
+            echo '```'
+            head -n 300 "$report"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$summary" == *'; 0 need triage.' ]] &&
+            ! grep -q '^\[run-tests\] tests changed tracked files' "$log"; then
+            echo "::warning title=Known macOS host differences still fail::$summary"
+            exit 0
+          fi
+          echo "::error title=macOS unit failures need triage::${summary:-The run failed without a failure summary.}"
+          exit "$status"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        continue-on-error: true
+        with:
+          name: macos-unit-log
+          path: ${{ runner.temp }}/macos-unit.log
+          if-no-files-found: ignore
+          retention-days: 7

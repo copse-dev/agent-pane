@@ -1,5 +1,6 @@
 import { existsSync, lstatSync, readdirSync } from 'node:fs'
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { relative, resolve, sep } from 'node:path'
+import { isPathWithin } from '@copse/std/path-containment.ts'
 import { copseWorkspaceDir } from '@copse/store-kit/copse-paths.ts'
 
 /**
@@ -60,9 +61,7 @@ export function resolveStrictlyInside(root: string, child: string): string | nul
   if (child.includes('\0')) return null
   const resolvedRoot = resolve(root)
   const candidate = resolve(resolvedRoot, child)
-  const rel = relative(resolvedRoot, candidate)
-  if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null
-  return candidate
+  return isPathWithin(resolvedRoot, candidate, { allowSelf: false }) ? candidate : null
 }
 
 /**

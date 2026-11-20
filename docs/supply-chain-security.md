@@ -168,8 +168,8 @@ Two defaults harden every invoked skill, trusted or not (both toggleable in
 - Pin `fetch-gortex` downloads to a SHA-256 checksum (verify after download),
   not just a version tag. The committed gortex hashes are recorded from the
   release's Sigstore-signed `checksums.txt`.
-- Replace `npx electron-rebuild` in postinstall with a pinned devDependency
-  invocation; audit all lifecycle scripts.
+- Postinstall runs no Electron rebuild: node-pty loads its Node-API prebuild on
+  macOS. Audit all lifecycle scripts.
 - CI runs `npm audit --audit-level=high` against the lockfile-exact dependency
   tree. CodeQL analyzes JavaScript/TypeScript and the checksum-pinned, open-source
   gitleaks CLI scans repository history. Same-repository pull requests scan in

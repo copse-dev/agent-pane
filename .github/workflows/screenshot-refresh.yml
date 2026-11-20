@@ -17,9 +17,13 @@ name: Screenshot drift refresh
 #
 # Each night `scripts/screenshot-refresh.mts` decides whether to move the
 # branch to a new empty commit on the latest `main`: never while an open
-# refresh PR carries anything but that empty commit, and not when nothing
-# since the last rendered `main` reaches a render. One PR at most: when one is
-# open the branch is moved under it, otherwise a new draft is opened.
+# refresh PR holds a hand push or a reviewed screenshot `main` has not changed
+# since, and not when nothing since the last rendered `main` reaches a render.
+# One PR at most: when one is open the branch is moved under it, otherwise a
+# new draft is opened. While reviewed screenshots hold the branch after `main`
+# moved on, the `held` job keeps one comment on the PR naming them, because a
+# held refresh lets `main`'s new drift reach feature PRs, and deletes it once
+# nothing holds the branch.
 #
 # The push and the PR use the release App token. A GITHUB_TOKEN push or PR
 # starts no workflow (and this organization blocks that token from creating
@@ -59,6 +63,9 @@ jobs:
       refresh: ${{ steps.decide.outputs.refresh }}
       main-sha: ${{ steps.main.outputs.sha }}
       branch-sha: ${{ steps.find.outputs.branch-sha }}
+      pull-number: ${{ steps.find.outputs.pull-number }}
+      pull-open: ${{ steps.find.outputs.pull-open }}
+      held: ${{ steps.decide.outputs.held }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -223,8 +230,73 @@ jobs:
                 '',
                 "**Each night** the workflow moves this branch to a new empty commit on the latest `main`,",
                 'which starts a new review. It skips a night when nothing on `main` reaches a render, and it',
-                'never moves the branch while this PR carries any other commit: merge or close it first.',
-                'If CI failed, re-run it, or dispatch the workflow with `force`.',
+                'never moves the branch while this PR carries any other commit that `main` still lacks:',
+                'merge or close it first. Once `main` has changed every screenshot committed here, the',
+                'branch moves again. If CI failed, re-run it, or dispatch the workflow with `force`.',
               ].join('\n'),
             });
             core.notice(`Opened draft refresh PR #${pull.number} on main ${main12}.`);
+
+  # Commenting needs only GITHUB_TOKEN, whose events start no workflow, so the
+  # notice cannot restart CI or count as a screenshot decision. It runs on every
+  # open refresh PR so a notice outlives its hold by one night at most.
+  held:
+    needs: plan
+    if: needs.plan.outputs.pull-open == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Say on the refresh PR which reviewed screenshots hold it, if any
+        uses: actions/github-script@v9
+        env:
+          PULL_NUMBER: ${{ needs.plan.outputs.pull-number }}
+          HELD: ${{ needs.plan.outputs.held }}
+          MAIN_SHA: ${{ needs.plan.outputs.main-sha }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const issue_number = Number(process.env.PULL_NUMBER);
+            const held = process.env.HELD === '' ? [] : process.env.HELD.split(',');
+            const name = /^[A-Za-z0-9][A-Za-z0-9._-]*\.png$/;
+            if (!Number.isSafeInteger(issue_number) || issue_number <= 0 || !held.every((shot) => name.test(shot)))
+              throw new Error('Refusing an unexpected refresh PR number or screenshot name.');
+            const marker = '<!-- copse-screenshot-refresh-held -->';
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100,
+            });
+            const existing = comments.find(
+              (comment) => comment.user?.login === 'github-actions[bot]' && comment.body?.startsWith(marker),
+            );
+            if (held.length === 0) {
+              // `main` has changed every held screenshot, or the hold was merged
+              // away: the notice no longer says anything true.
+              if (existing) {
+                await github.rest.issues.deleteComment({ owner, repo, comment_id: existing.id });
+                core.notice(`Removed the hold notice from #${issue_number}.`);
+              }
+              return;
+            }
+            const count = held.length === 1 ? 'one reviewed screenshot' : `${held.length} reviewed screenshots`;
+            const body = [
+              marker,
+              '### This PR is holding the nightly screenshot refresh',
+              '',
+              `It commits ${count} that \`main\` has not changed since:`,
+              '',
+              ...held.map((shot) => `- \`${shot}\``),
+              '',
+              `Until it is merged or closed, the refresh cannot move it onto the latest \`main\` (${process.env.MAIN_SHA.slice(0, 12)}),`,
+              "so `main`'s newer drift is not rendered here and reaches feature PRs as unrelated candidates.",
+              'Merge it, keeping `main`\'s hash for any screenshot it has changed since, or close it: the next',
+              'render offers any shot that still differs again. The branch also moves on its own once `main`',
+              'has changed every screenshot committed here.',
+            ].join('\n');
+            if (!existing) {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+              core.notice(`Told #${issue_number} which reviewed screenshots hold the refresh.`);
+            } else if (existing.body !== body) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+              core.notice(`Updated the hold notice on #${issue_number}.`);
+            }
