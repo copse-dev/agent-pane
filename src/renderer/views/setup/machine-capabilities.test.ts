@@ -27,8 +27,20 @@ describe('describeSshMachine', () => {
         desktop: true,
         trustedHosts: ['STUDIO.internal'],
       }).capabilities,
-      ['Files and shell', 'Agents', 'Desktop', 'Trusted for auto-approval'],
+      ['Files and shell', 'Agents', 'Desktop', 'Trusted for ssh in Guarded YOLO'],
     )
+  })
+
+  it('marks a host trusted the way the shell gate matches it', () => {
+    const trusted = (host: string): boolean =>
+      describeSshMachine(
+        { ...HOST, host },
+        { ...NONE, trustedHosts: ['studio.internal'] },
+      ).capabilities.includes('Trusted for ssh in Guarded YOLO')
+    assert.equal(trusted('dev@studio.internal'), true, 'a user@ prefix is dropped')
+    assert.equal(trusted(' Studio.Internal. '), true, 'case, spaces and a final dot are ignored')
+    assert.equal(trusted('studio.internal.example'), false)
+    assert.equal(trusted('studio@other.internal'), false, 'a user name is not a host')
   })
 
   it('reports the live connection, and a lost one as lost', () => {

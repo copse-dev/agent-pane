@@ -1,5 +1,6 @@
 import type { SshConnectionState, SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
 import type { PairedMachine } from '@shared/machines.ts'
+import { normalizeSshHost } from '@shared/trusted-ssh-hosts.ts'
 import { el } from '../../dom/helpers.ts'
 
 /**
@@ -7,7 +8,7 @@ import { el } from '../../dom/helpers.ts'
  *
  * Settings shows each machine once (docs/plans/multi-machine-access.md
  * decision 2). The rows are joined from the stores that already exist (saved
- * SSH hosts, paired Copse machines, the hosts trusted for auto-approval) and
+ * SSH hosts, paired Copse machines, the SSH hosts trusted in Guarded YOLO) and
  * these helpers only describe them; nothing here is stored.
  */
 export interface MachineSummary {
@@ -38,9 +39,11 @@ export function describeSshMachine(
   const capabilities = ['Files and shell']
   if (context.agentsOnRemote) capabilities.push('Agents')
   if (context.desktop) capabilities.push('Desktop')
-  const target = host.host.toLowerCase()
-  if (context.trustedHosts.some((trusted) => trusted.toLowerCase() === target)) {
-    capabilities.push('Trusted for auto-approval')
+  // The list only lets Guarded YOLO run ssh, scp and rsync to the host without
+  // asking. The shell gate drops any `user@` and normalizes before it compares.
+  const target = normalizeSshHost(host.host.slice(host.host.lastIndexOf('@') + 1))
+  if (context.trustedHosts.some((trusted) => normalizeSshHost(trusted) === target)) {
+    capabilities.push('Trusted for ssh in Guarded YOLO')
   }
   switch (state?.status) {
     case 'connected':
