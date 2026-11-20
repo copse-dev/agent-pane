@@ -380,6 +380,9 @@ export async function runPostTurnReviewCycle(opts: RunPostTurnReviewCycleOptions
   }
 
   const maxCycles = resolveMaxReviewCycles(opts.maxCycles)
+  // Read through a call: the signal changes across the awaits below, which a
+  // property read narrowed by the check at the top of the loop would hide.
+  const runCancelled = (): boolean => opts.signal.aborted
   for (let cycle = 0; cycle < maxCycles; cycle++) {
     // Stop stops agent work (decision 3). The agent loop absorbs an abort and
     // returns normally, so this can be reached with the run already cancelled.
@@ -387,7 +390,7 @@ export async function runPostTurnReviewCycle(opts: RunPostTurnReviewCycleOptions
     // summary would be published — and fired at `postTurnReview` hooks — as a
     // clean verdict. A re-review after a cancelled remediation turn is dropped
     // without a chunk, leaving the verdict that asked for it on the card.
-    if (opts.signal.aborted) {
+    if (runCancelled()) {
       if (cycle === 0) {
         opts.emitChunk({
           type: 'post_turn_review',
@@ -437,7 +440,7 @@ export async function runPostTurnReviewCycle(opts: RunPostTurnReviewCycleOptions
       }
 
       const lastCycle = cycle >= maxCycles - 1
-      if (opts.signal.aborted) {
+      if (runCancelled()) {
         stopFollowUp('Follow-up turn not started: the run was cancelled.')
         break
       }
@@ -471,7 +474,7 @@ export async function runPostTurnReviewCycle(opts: RunPostTurnReviewCycleOptions
         break
       }
     } catch (err) {
-      const detail = opts.signal.aborted ? 'Review cancelled.' : classifyAgentError(err)
+      const detail = runCancelled() ? 'Review cancelled.' : classifyAgentError(err)
       opts.emitChunk({ type: 'post_turn_review', status: 'error', summary: detail })
       break
     }
