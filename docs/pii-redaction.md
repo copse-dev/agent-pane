@@ -36,7 +36,14 @@ Rampart is default-deny and keeps only city, state and ZIP code. Copse also
 keeps **URLs** (`https://…`, `www.…`) and **IP addresses** (IPv4, IPv6 and MAC
 addresses, which Rampart files under the same label). Without this, every link,
 `127.0.0.1`, and four-part version number such as `1.2.3.4` would be rewritten,
-which breaks ordinary coding requests. Rampart resolves overlapping detections
+which breaks ordinary coding requests. Copse also keeps an exact 40-character
+hexadecimal value when it resolves locally to a commit object in the active
+repository. Shape alone is not trusted: unknown hex strings, abbreviated SHAs,
+and values outside the current repository still follow normal redaction. This
+keeps native Git inspection usable without sending a locally verified revision
+through the approval-gated PII reveal path.
+
+Rampart resolves overlapping detections
 before applying the keep-list, so Copse follows its guard with a second local
 heuristic pass: recognized email addresses, SSNs, and valid credit-card numbers
 left inside a kept URL are replaced while its scheme and host stay readable.

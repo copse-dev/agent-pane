@@ -82,6 +82,17 @@ describe('pii-redactor', () => {
     assert.deepEqual(out, { content: 'email [PII_1] to [PII_2]' })
   })
 
+  it('preserves only exact caller-verified coding identifiers', async () => {
+    const out = await redactUserContent('t1', 'Ask Jane at john@example.com', {
+      preserveExact: ['Jane'],
+    })
+    assert.deepEqual(out, { content: 'Ask Jane at [PII_1]' })
+    assert.equal(revealPlaceholder('t1', '[PII_1]'), 'john@example.com')
+
+    const ordinary = await redactUserContent('t2', 'Ask Jane')
+    assert.deepEqual(ordinary, { content: 'Ask [PII_1]' })
+  })
+
   it('reveals a known placeholder and returns null for an unknown one', async () => {
     await redactUserContent('t1', 'email john@example.com')
     assert.equal(revealPlaceholder('t1', '[PII_1]'), 'john@example.com')

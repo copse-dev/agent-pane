@@ -90,7 +90,8 @@ import {
   updateMeta,
 } from './thread-store.ts'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
-import { redactUserContent } from './security/pii-redactor.ts'
+import { isPiiRedactionEnabled, redactUserContent } from './security/pii-redactor.ts'
+import { localPromptCommitIds } from './security/pii-git-references.ts'
 import { createHookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
 import { appendOperatorInstruction } from '@copse/agent/hooks/inject-context.ts'
 import { operatorInstructionPlacement } from '@copse/llm/model-catalog.ts'
@@ -1128,10 +1129,13 @@ async function runAgentWithInlineCanvas(
   // the feature is off. When it is on but Rampart cannot run, the prompt goes out
   // unchanged and the user is told so through the same turn notice as a model
   // fallback.
-  const redaction = await redactUserContent(
-    threadId,
-    withReviewContext(userPrompt, options?.reviewContext),
-  )
+  const promptWithReviewContext = withReviewContext(userPrompt, options?.reviewContext)
+  const localCommitIds = isPiiRedactionEnabled()
+    ? await localPromptCommitIds(promptWithReviewContext, runContext?.root ?? null)
+    : []
+  const redaction = await redactUserContent(threadId, promptWithReviewContext, {
+    preserveExact: localCommitIds,
+  })
   admission.signal.throwIfAborted()
   onPreflightComplete()
   const outboundPrompt = redaction.content
