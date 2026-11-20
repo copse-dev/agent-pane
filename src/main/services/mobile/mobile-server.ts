@@ -176,7 +176,7 @@ export async function startMobileServer(options: {
   const assets = options.assetsDir ?? join(__dirname, '..', 'mobile')
   // Read once, before binding, so a missing package asset cannot yield a
   // half-working listener. The map is fixed and contains no user path.
-  const staticFiles = loadPageAssets(assets)
+  const staticFiles = await loadPageAssets(assets)
   const remoteAssets = await loadRemoteAssets(join(assets, 'remote'))
   // The live state is the same object until the desktop publishes again, and a
   // phone polls it far more often than that: serialize each one once.
