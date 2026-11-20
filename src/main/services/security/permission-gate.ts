@@ -39,7 +39,8 @@ import { isRecord, nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { automationPermissionKey, type AutomationPermission } from '@shared/types'
 import { darwinUserTempDir } from '../../project-sandbox/config.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
-import { spawnRunsOnSshTarget } from '../../project-sandbox/spawn.ts'
+import { spawnRunsOnSshTarget, spawnSshHostId } from '../../project-sandbox/spawn.ts'
+import type { RuntimeProfile } from '@shared/threads/execution-runtime.ts'
 import { isProjectSandboxPlatform, projectSandboxInitFailure } from '../../project-sandbox/state.ts'
 import {
   activeSandboxNetworkScopeLabels,
@@ -486,6 +487,13 @@ async function resolveReadOutsideProject(
   return approved
 }
 
+/** Where an ordinary shell prompt's command will run, for the prompt's opening line. */
+function shellPromptRuntime(sandboxed: boolean): RuntimeProfile {
+  const hostId = sandboxed ? null : spawnSshHostId(getAgentExecutionRoot())
+  if (hostId) return { kind: 'ssh', hostId }
+  return { kind: 'local', containment: sandboxed ? 'contained' : 'host' }
+}
+
 /**
  * @param containedCause why an *in-sandbox* prompt is interrupting. The
  *   escalation branch always records `shell-sandbox-escalation`, because that is
@@ -522,7 +530,9 @@ async function promptShell(
       title: sandboxed ? 'Run shell command?' : 'Run without sandbox?',
       approveLabel: 'Run command',
       type: 'shell',
-      ...shellPromptToApprovalFields(formatShellPromptParts(command, reasons, sandboxed)),
+      ...shellPromptToApprovalFields(
+        formatShellPromptParts(command, reasons, sandboxed, shellPromptRuntime(sandboxed)),
+      ),
       subject: SHELL_DECISION_SUBJECT,
       scope: sandboxed ? 'sandbox' : 'external',
       cause: containedCause,

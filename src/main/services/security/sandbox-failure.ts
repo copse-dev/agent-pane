@@ -1,6 +1,6 @@
 import { PRIOR_DENIAL_MARKER } from './denied-operations.ts'
+import { sandboxEscapeChangeSection } from './runtime-prompt.ts'
 import type { ShellPromptParts } from './permission-policy.ts'
-import { UNSANDBOXED_ACCESS_WARNING } from '@shared/approval-copy.ts'
 import { githubShellActionAdvice } from './github-approval-copy.ts'
 
 // The detection itself lives in `@copse/hooks-dialects` (the hook runner is one of
@@ -48,7 +48,7 @@ export function formatUnsandboxedPromptParts(command: string, reasons: string[])
       priorDenial,
       failureLine,
       githubShellActionAdvice(command),
-      UNSANDBOXED_ACCESS_WARNING,
+      sandboxEscapeChangeSection(),
     ]
       .filter(Boolean)
       .join('\n\n'),

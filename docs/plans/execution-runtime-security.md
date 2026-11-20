@@ -314,9 +314,11 @@ observable from a test or a recorded thread spine. Unchecked items are open.
 - [x] **R1-8 Export answers the exit gate.** A test seeds a thread, runs local and SSH
       processes, exports the decision log and finds the principal and runtime for every
       recorded process.
-- [ ] **R1-9 Approval prompt shows the runtime.** The approval prompt names the runtime
-      and the properties the grant changes. **Not in the first R1 PR:** this is a visible
-      change and needs its own WebdriverIO spec and screenshot.
+- [x] **R1-9 Approval prompt shows the runtime.** Sandbox-escape prompts (up-front, expected
+      block, retry after a block) list what approving changes, derived from the capability
+      difference between `local/contained` and `local/host`. An ordinary shell prompt for an SSH
+      workspace names the host. Visual evidence: `outside-sandbox-approval-copy.e2e.ts` →
+      `outside-sandbox-runtime-change-approval.png`.
 
 **R2 — brokered GitHub credentials for local execution**
 
