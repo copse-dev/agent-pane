@@ -8,6 +8,7 @@ import {
   writeFileSync,
   mkdirSync,
   symlinkSync,
+  type PathLike,
 } from 'node:fs'
 // The same `promises` binding the thread store imports, so the spies below
 // patch the exact object it calls.
@@ -15,7 +16,7 @@ import fs, { promises as fsPromises } from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { LLMMessage, Message, Thread } from '@shared/types'
+import type { LLMMessage, Message, Thread, ToolCall } from '@shared/types'
 import { toResponsesInput } from '@copse/llm/responses-provider.ts'
 import {
   measureThreadStorage,
@@ -72,15 +73,17 @@ import { runSerialized } from './storage/write-queue.ts'
 import { parseGithubPrUrl, type GithubPrRef } from '@shared/git/github-pr-url.ts'
 import {
   SPINE_SCHEMA_VERSION,
+  parseSpine,
   parseSpineEntries,
   type SpineHookRunLine,
   type SpineMachineContinuationLine,
   type SpineModelSelectedLine,
 } from '@shared/threads/spine-schema.ts'
 import { isNonNull } from '@shared/nullish.ts'
-import { TOOL_RESULT_UNAVAILABLE } from '@shared/threads/fold.ts'
+import { refsOfLine, TOOL_RESULT_UNAVAILABLE } from '@shared/threads/fold.ts'
 import { createHash } from 'node:crypto'
 import { isBlankThread } from '@shared/store/thread-helpers.ts'
+import { recoverAgentHistory } from './history-recovery.ts'
 
 /** Build PR refs from URL strings, matching what the link store feeds attach. */
 function prRefs(...urls: string[]): GithubPrRef[] {
@@ -118,6 +121,15 @@ function assistantMsg(id: string, content: string, result: string): Message {
     toolCalls: [{ id: `${id}-tc`, name: 'read_file', args: { path: 'x' }, status: 'done', result }],
     createdAt: 20,
   }
+}
+
+function savedToolResultRef(dir: string, messageId: string): string {
+  const message = parseSpine(readFileSync(join(dir, 'events.jsonl'), 'utf8')).find(
+    (line) => line.id === messageId,
+  )
+  const ref = message?.toolCalls[0]?.result?.ref
+  assert.ok(ref)
+  return ref
 }
 
 describe('thread-store', () => {
@@ -552,7 +564,7 @@ describe('thread-store', () => {
     assert.ok(existsSync(join(dir, 'events.jsonl')))
     assert.ok(existsSync(join(dir, 'meta.json')))
     assert.match(readFileSync(join(dir, 'messages', 'a1.md'), 'utf8'), /prose/)
-    assert.equal(readFileSync(join(dir, 'blobs', 'a1.tool-0.result.txt'), 'utf8'), 'RESULT')
+    assert.equal(readFileSync(join(dir, savedToolResultRef(dir, 'a1')), 'utf8'), 'RESULT')
     // meta.json holds no message bodies.
     assert.doesNotMatch(readFileSync(join(dir, 'meta.json'), 'utf8'), /prose/)
   })
@@ -667,7 +679,8 @@ describe('thread-store', () => {
       thread('broken', { messages: [assistantMsg('a1', 'x', 'R')] }),
     ])
     // Corrupt "broken" by deleting a referenced blob (crash-mid-write shape).
-    rmSync(join(root, 'proj-1', 'broken', 'blobs', 'a1.tool-0.result.txt'))
+    const dir = join(root, 'proj-1', 'broken')
+    rmSync(join(dir, savedToolResultRef(dir, 'a1')))
     const loaded = await loadProjectThreads('proj-1')
     assert.deepEqual(
       loaded.map((t) => t.id),
@@ -736,13 +749,13 @@ describe('thread-store', () => {
     // one `blobs/<toolCallId>.result.txt`, which holds the later result.
     const dir = join(root, 'proj-1', 't1')
     const events = join(dir, 'events.jsonl')
-    writeFileSync(
-      events,
-      readFileSync(events, 'utf8').replace(
-        /blobs\/a[12]\.tool-0\.result\.txt/g,
-        'blobs/lmstudio-0.result.txt',
-      ),
-    )
+    let raw = readFileSync(events, 'utf8')
+    for (const id of ['a1', 'a2'])
+      raw = raw.replaceAll(
+        JSON.stringify(savedToolResultRef(dir, id)),
+        '"blobs/lmstudio-0.result.txt"',
+      )
+    writeFileSync(events, raw)
     rmSync(join(dir, 'blobs'), { recursive: true })
     mkdirSync(join(dir, 'blobs'))
     writeFileSync(join(dir, 'blobs', 'lmstudio-0.result.txt'), 'second')
@@ -768,7 +781,10 @@ describe('thread-store', () => {
     const events = join(root, 'proj-1', 't1', 'events.jsonl')
     writeFileSync(
       events,
-      readFileSync(events, 'utf8').replace('blobs/a1.tool-0.result.txt', 'blobs/../../outside.txt'),
+      readFileSync(events, 'utf8').replace(
+        savedToolResultRef(join(root, 'proj-1', 't1'), 'a1'),
+        'blobs/../../outside.txt',
+      ),
     )
     const warn = mock.method(console, 'warn', () => undefined)
     try {
@@ -1350,10 +1366,111 @@ describe('thread-store', () => {
       const [loaded] = await loadProjectThreads('proj-1')
       assert.deepEqual(loaded?.messages, [updated])
       assert.equal(
-        readFileSync(join(root, 'proj-1', 't1', 'blobs', 'a1.tool-0.result.txt'), 'utf8'),
+        readFileSync(
+          join(root, 'proj-1', 't1', savedToolResultRef(join(root, 'proj-1', 't1'), 'a1')),
+          'utf8',
+        ),
         'Type check passed.\n',
       )
     })
+
+    for (const change of ['earlier-sibling', 'same-call-patch'] as const) {
+      it(`retains committed tool payloads when ${change} fails its final spine commit`, async () => {
+        await createThread('proj-1', thread('t1'))
+        const originalTool: ToolCall = {
+          id: 'second',
+          name: 'verification',
+          args: { input: 'original'.repeat(600) },
+          status: 'done',
+          result: 'Original completed result.',
+          content: [{ type: 'content', content: { type: 'text', text: 'Original details.' } }],
+          images: [{ dataUrl: 'data:image/png;base64,T0xE' }],
+        }
+        const changedTool: ToolCall = {
+          ...originalTool,
+          id: change === 'earlier-sibling' ? 'first' : 'second',
+          args: { input: 'changed'.repeat(600) },
+          result: 'Changed result.',
+          content: [{ type: 'content', content: { type: 'text', text: 'Changed details.' } }],
+          images: [{ dataUrl: 'data:image/png;base64,TkVX' }],
+        }
+        const original: Message = {
+          id: 'a1',
+          role: 'assistant',
+          content: 'Verification.',
+          toolCalls: [originalTool],
+          createdAt: 20,
+        }
+        const changed: Message = {
+          ...original,
+          toolCalls: change === 'earlier-sibling' ? [changedTool, originalTool] : [changedTool],
+        }
+        const following = userMsg('u2', 'Keep the existing result.')
+        const opening = userMsg('u0', 'Verify the project.')
+        await appendMessage('proj-1', 't1', opening)
+        await appendMessage('proj-1', 't1', original)
+        await appendMessage('proj-1', 't1', following)
+        const dir = join(root, 'proj-1', 't1')
+        const events = join(dir, 'events.jsonl')
+        const before = readFileSync(events)
+        const line = parseSpine(before.toString()).find((message) => message.id === original.id)
+        assert.ok(line)
+        const protectedFiles = refsOfLine(line).files.map((ref) => ({
+          ref,
+          bytes: readFileSync(join(dir, ref)),
+        }))
+        const rename = fsPromises.rename
+        const failingCommit = mock.method(
+          fsPromises,
+          'rename',
+          async (from: PathLike, to: PathLike) => {
+            if (String(to) === events) throw new Error('Controlled spine commit failure')
+            return rename(from, to)
+          },
+        )
+        try {
+          await assert.rejects(
+            appendMessage('proj-1', 't1', changed),
+            /Controlled spine commit failure/,
+          )
+        } finally {
+          failingCommit.mock.restore()
+        }
+        assert.deepEqual(readFileSync(events), before)
+        for (const file of protectedFiles)
+          assert.deepEqual(readFileSync(join(dir, file.ref)), file.bytes, file.ref)
+        const [afterFailure] = await loadProjectThreads('proj-1')
+        assert.deepEqual(afterFailure?.messages, [opening, original, following])
+        const priorHistory = recoverAgentHistory(afterFailure.messages)
+        assert.deepEqual(priorHistory[0], { role: 'user', content: opening.content })
+        const priorCalls = priorHistory.find(
+          (message) => message.role === 'assistant' && Array.isArray(message.content),
+        )
+        assert.ok(priorCalls?.role === 'assistant')
+        assert.deepEqual(priorCalls.content, [
+          { id: originalTool.id, name: originalTool.name, args: originalTool.args },
+        ])
+        const priorResults = priorHistory.find((message) => message.role === 'tool')
+        assert.deepEqual(priorResults?.toolResults, [
+          { toolCallId: originalTool.id, result: originalTool.result },
+        ])
+
+        await appendMessage('proj-1', 't1', changed)
+        const [afterRetry] = await loadProjectThreads('proj-1')
+        assert.deepEqual(afterRetry?.messages, [opening, changed, following])
+        const currentHistory = recoverAgentHistory(afterRetry.messages)
+        const currentCalls = currentHistory.find(
+          (message) => message.role === 'assistant' && Array.isArray(message.content),
+        )
+        assert.ok(currentCalls?.role === 'assistant')
+        assert.deepEqual(
+          currentCalls.content,
+          changed.toolCalls.map(({ id, name, args }) => ({ id, name, args })),
+        )
+        for (const file of protectedFiles)
+          assert.deepEqual(readFileSync(join(dir, file.ref)), file.bytes, file.ref)
+      })
+    }
 
     it('the spine line keeps the message occurrence time across a re-finalize, not the write time (#1411)', async () => {
       // Reported symptom: many consecutive assistant messages, each with its

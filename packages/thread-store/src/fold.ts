@@ -191,7 +191,7 @@ function explodeVisualEvidence(
   }
 }
 
-/** Inline tool args below this UTF-8 size; larger args spill to `blobs/<messageId>.tool-<n>.args.json`. */
+/** Inline tool args below this UTF-8 size; larger args spill to an immutable blob. */
 export const TOOL_ARGS_INLINE_MAX_BYTES = 2048
 
 function utf8ByteLength(text: string): number {
@@ -200,7 +200,7 @@ function utf8ByteLength(text: string): number {
 
 /**
  * Where a tool call sits in its spine. Its blobs are named from the owning
- * message id (generated locally) and the call's position in that message —
+ * message id (generated locally), the call's position and the payload hash —
  * never from the tool-call id, which comes from a remote provider or ACP agent:
  * it can repeat across messages (`call_0`, `functions.read:0`) and can carry
  * `/`, `..`, or `:`, so naming files after it overwrote earlier blobs and could
@@ -217,8 +217,19 @@ function toolBlobBase(slot: ToolCallSlot): string {
   return `blobs/${idPathSegment(slot.messageId)}.tool-${String(slot.index)}`
 }
 
-function toolArgsBlobPath(slot: ToolCallSlot): string {
-  return `${toolBlobBase(slot)}.args.json`
+function toolBlobPath(slot: ToolCallSlot, digest: string, suffix: string): string {
+  return `${toolBlobBase(slot)}/${idPathSegment(digest)}.${suffix}`
+}
+
+/** A late patch or newly included sibling cannot overwrite a committed payload. */
+function toolContentRef(
+  slot: ToolCallSlot,
+  contents: string,
+  suffix: string,
+  hash: HashFn,
+): ContentRef {
+  const digest = hash(contents)
+  return { ref: toolBlobPath(slot, digest, suffix), sha256: digest }
 }
 
 /** The name used before blobs were message-scoped, still accepted so older threads load. */
@@ -230,7 +241,8 @@ function legacyToolArgsBlobPath(toolCallId: string): string {
 export function isToolArgsBlobRef(slot: ToolCallSlot, value: unknown): value is ContentRef {
   return (
     isContentRef(value) &&
-    (value.ref === toolArgsBlobPath(slot) ||
+    (value.ref === toolBlobPath(slot, value.sha256, 'args.json') ||
+      value.ref === `${toolBlobBase(slot)}.args.json` ||
       value.ref === `blobs/${idPathSegment(slot.toolCallId)}.args.json` ||
       value.ref === legacyToolArgsBlobPath(slot.toolCallId))
   )
@@ -333,22 +345,19 @@ function explodeToolCall(
   hash: HashFn,
 ): { spine: SpineToolCall; files: FileToWrite[] } {
   const files: FileToWrite[] = []
-  const base = toolBlobBase(slot)
-
   let result: ContentRef | null = null
   if (tc.result !== null) {
-    const ref = `${base}.result.txt`
-    files.push({ ref, contents: tc.result })
-    result = contentRef(ref, tc.result, hash)
+    result = toolContentRef(slot, tc.result, 'result.txt', hash)
+    files.push({ ref: result.ref, contents: tc.result })
   }
 
   let images: SpineToolResultImage[] | undefined
   if (tc.images !== undefined && tc.images.length > 0) {
     images = tc.images.map((image, i) => {
-      const ref = `${base}-img-${String(i)}.dataurl`
-      files.push({ ref, contents: image.dataUrl })
+      const dataUrl = toolContentRef(slot, image.dataUrl, `img-${String(i)}.dataurl`, hash)
+      files.push({ ref: dataUrl.ref, contents: image.dataUrl })
       return {
-        dataUrl: { ref, sha256: hash(image.dataUrl) },
+        dataUrl,
         ...(image.name !== undefined ? { name: image.name } : {}),
         ...(image.kind !== undefined ? { kind: image.kind } : {}),
       }
@@ -358,17 +367,16 @@ function explodeToolCall(
   let content: ContentRef | undefined
   if (tc.content !== undefined) {
     const serialized = JSON.stringify(tc.content)
-    const ref = `${base}.acp-content.json`
-    files.push({ ref, contents: serialized })
-    content = contentRef(ref, serialized, hash)
+    content = toolContentRef(slot, serialized, 'acp-content.json', hash)
+    files.push({ ref: content.ref, contents: serialized })
   }
 
   const argsJson = serializeToolArgsJson(tc.args)
   let args: unknown = tc.args
   if (utf8ByteLength(argsJson) > TOOL_ARGS_INLINE_MAX_BYTES) {
-    const ref = toolArgsBlobPath(slot)
-    files.push({ ref, contents: argsJson })
-    args = contentRef(ref, argsJson, hash)
+    const ref = toolContentRef(slot, argsJson, 'args.json', hash)
+    files.push({ ref: ref.ref, contents: argsJson })
+    args = ref
   }
 
   const spine: SpineToolCall = {

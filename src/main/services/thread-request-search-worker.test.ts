@@ -1,6 +1,14 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, readdirSync } from 'node:fs'
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  readFileSync,
+  writeFileSync,
+  readdirSync,
+  symlinkSync,
+} from 'node:fs'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Worker } from 'node:worker_threads'
@@ -65,13 +73,31 @@ describe('request search worker runtime', () => {
         })
       }
       const workspace = join(root, 'workspace')
+      const outside = join(root, 'outside-tool-bodies')
+      mkdirSync(outside)
+      const sentinel = join(outside, 'untouched.txt')
+      writeFileSync(sentinel, 'Not a thread tool body.')
+      symlinkSync(outside, join(workspace, 'p', 't-0', 'blobs', 'outside-link'), 'dir')
       // Poison every assistant/tool body: the search must not read any of them.
       for (let i = 0; i < 24; i++) {
         const threadDir = join(workspace, 'p', 't-' + String(i))
         writeFileSync(join(threadDir, 'messages/a.md'), 'unreadable assistant format')
-        for (const blob of readdirSync(join(threadDir, 'blobs')))
-          writeFileSync(join(threadDir, 'blobs', blob), 'broken tool data')
+        const blobs: string[] = []
+        const directories = [join(threadDir, 'blobs')]
+        for (const directory of directories) {
+          for (const entry of readdirSync(directory, { withFileTypes: true })) {
+            const path = join(directory, entry.name)
+            if (entry.isDirectory()) directories.push(path)
+            else if (entry.isFile()) blobs.push(path)
+          }
+        }
+        assert.ok(blobs.length > 0, 'the real saved tool bodies must be poisoned')
+        for (const path of blobs) {
+          writeFileSync(path, 'broken tool data')
+          assert.equal(readFileSync(path, 'utf8'), 'broken tool data')
+        }
       }
+      assert.equal(readFileSync(sentinel, 'utf8'), 'Not a thread tool body.')
       const run = async (command: RequestSearchCommand): Promise<RequestSearchReply> => {
         assert.ok(worker)
         const reply = new Promise<unknown>((resolveReply, reject) => {
