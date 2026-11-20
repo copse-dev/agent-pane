@@ -88,17 +88,42 @@ test('automatic expiry preserves local, recent, recently used and unowned images
       image('copse-worker:foreign', undefined, false),
       image('other-app:old'),
     ])
-    assert.equal((await storage.clean('worker-images', Date.parse('2025-01-01'))).removed, 1)
+    await storage.expireWorkerImages(Date.parse('2025-01-01'))
+    assert.deepEqual(calls[0], ['system', 'status'])
     assert.deepEqual(
       calls.filter((args) => args[1] === 'delete'),
       [['image', 'delete', 'docker.io/library/copse-worker:old']],
     )
     const recentUse = service(root, [image('copse-worker:old')], [builder], Date.now())
-    assert.equal(
-      (await recentUse.storage.clean('worker-images', Date.parse('2025-01-01'))).removed,
-      0,
-    )
+    await recentUse.storage.expireWorkerImages(Date.parse('2025-01-01'))
     assert.ok(!recentUse.calls.some((args) => args[1] === 'delete'))
+  }))
+
+test('automatic expiry skips an unavailable service while explicit cleanup reports the failure', async () =>
+  fixture(async (root) => {
+    const calls: string[][] = []
+    const unavailable = new Error('XPC connection error: Connection invalid')
+    const storage = new ContainerStorage({
+      supported: true,
+      root,
+      lastUsed: async (): Promise<number> => 0,
+      exclusive: async <T>(run: () => Promise<T>): Promise<T> => run(),
+      run: async (args): Promise<string> => {
+        calls.push(args)
+        throw unavailable
+      },
+    })
+    await storage.expireWorkerImages(Date.now())
+    assert.deepEqual(calls, [['system', 'status']])
+    await assert.rejects(storage.clean('worker-images', Date.now()), unavailable)
+  }))
+
+test('automatic expiry still reports inventory failures after the service answers', async () =>
+  fixture(async (root) => {
+    const { storage, calls } = service(root, [{}])
+    await assert.rejects(storage.expireWorkerImages(Date.now()), /unsupported/)
+    assert.deepEqual(calls[0], ['system', 'status'])
+    assert.ok(!calls.some((args) => args[1] === 'delete'))
   }))
 
 test('running and stopped containers both block every destructive command', async () =>
@@ -172,6 +197,7 @@ test('a Mac without the container CLI shows nothing and expiry has nothing to cl
       run: async (args): Promise<string> =>
         (await exec('copse-test-missing-container-cli', args)).stdout,
     })
+    await storage.expireWorkerImages(Date.now())
     assert.deepEqual(await storage.inspect(), emptyContainerStorage())
     for (const action of ['worker-images', 'apple-images', 'apple-builder'] as const)
       assert.deepEqual(await storage.clean(action, Date.now()), {
