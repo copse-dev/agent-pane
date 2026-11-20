@@ -34,10 +34,22 @@ function renderedNotice(): string {
 async function send(reply: string): Promise<void> {
   await setComposerValue(`say:${reply}`)
   await submitComposer()
-  await browser.waitUntil(async () => (await $('.messages-list').getText()).includes(reply), {
-    timeout: 30_000,
-    timeoutMsg: `the fixture agent did not answer "${reply}"`,
-  })
+  // The user's say: prompt contains reply too. Agent idle can precede the
+  // smoother's final paint, so wait for the assistant's settled paragraph.
+  await browser.waitUntil(
+    () =>
+      browser.execute((expected) => {
+        const paragraphs = document.querySelectorAll(
+          '.messages-list .msg-assistant .message-text:not(.is-streaming) p',
+        )
+        if (paragraphs.length === 0) return false
+        return paragraphs.item(paragraphs.length - 1).textContent === expected
+      }, reply),
+    {
+      timeout: 30_000,
+      timeoutMsg: `the fixture agent did not finish rendering "${reply}"`,
+    },
+  )
   await waitForAgentIdle(15_000)
 }
 
