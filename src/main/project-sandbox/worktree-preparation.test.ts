@@ -96,7 +96,7 @@ describe('real worktree preparation containment', { skip: process.platform === '
     setProjectSandboxEnabled(true)
   })
 
-  it('starts npm and Corepack through fnm symlinks while unrelated files remain denied', async () => {
+  it('starts npm, its npx child and Corepack through fnm symlinks while unrelated files remain denied', async () => {
     const installation = join(parent, 'fnm/node-versions/v24.20.0/installation')
     const multishell = join(parent, 'fnm_multishells/session')
     const bin = join(installation, 'bin')
@@ -106,11 +106,12 @@ describe('real worktree preparation containment', { skip: process.platform === '
     symlinkSync(installation, multishell, 'dir')
     const unrelated = join(installation, 'unrelated.txt')
     write(unrelated, 'must stay private')
-    for (const [name, cli, version] of [
-      ['npm', 'bin/npm-cli.js', '11.19.0'],
-      ['corepack', 'dist/corepack.js', '0.34.0'],
+    for (const [command, name, cli, version] of [
+      ['npm', 'npm', 'bin/npm-cli.js', '11.19.0'],
+      ['npx', 'npm', 'bin/npx-cli.js', '11.19.0'],
+      ['corepack', 'corepack', 'dist/corepack.js', '0.34.0'],
     ]) {
-      assert.ok(name && cli && version)
+      assert.ok(command && name && cli && version)
       const implementation = join(installation, 'lib/node_modules', name)
       write(join(implementation, 'version.cjs'), `module.exports=${JSON.stringify(version)}`)
       write(
@@ -127,16 +128,21 @@ catch (error) { if (!['EPERM','EACCES','ENOENT','EROFS'].includes(error.code)) t
 if (wrote) {
   assert.equal(process.platform,'linux','write outside the preparation grants succeeded');
   assert.equal(fs.readFileSync(${JSON.stringify(unrelated)},'utf8'),'escaped');
+  // Leave the disposable layer clean so an npm-spawned npx checks the same denial.
+  fs.unlinkSync(${JSON.stringify(unrelated)});
 }
-console.log(require('../version.cjs'));
+if (process.argv.includes('--call-npx')) {
+  process.stdout.write(require('node:child_process').execFileSync('npx', ['--version'], {encoding:'utf8'}));
+} else console.log(require('../version.cjs'));
 `,
         true,
       )
-      symlinkSync(join('../lib/node_modules', name, cli), join(bin, name))
+      symlinkSync(join('../lib/node_modules', name, cli), join(bin, command))
     }
     const fixtureEnv = { ...env, PATH: `${join(multishell, 'bin')}:/usr/bin:/bin` }
     for (const [command, expected] of [
       ['npm', '11.19.0'],
+      ['npx', '11.19.0'],
       ['corepack', '0.34.0'],
     ]) {
       assert.ok(command && expected)
@@ -150,6 +156,15 @@ console.log(require('../version.cjs'));
         expected,
       )
     }
+    assert.equal(
+      await runWorktreePreparationProcess('npm', ['--call-npx'], {
+        root,
+        env: fixtureEnv,
+        mode: 'preflight',
+        offline: true,
+      }),
+      '11.19.0',
+    )
     assert.equal(readFileSync(unrelated, 'utf8'), 'must stay private')
   })
 

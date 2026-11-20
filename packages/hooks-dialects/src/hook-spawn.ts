@@ -103,6 +103,8 @@ export interface HookSpawnResult {
 export interface HookSpawnOptions {
   /** Working directory; relative commands resolve against it. */
   cwd: string
+  /** Run locally even if the host's active project is remote (Sources Test). */
+  localOnly?: boolean
   /** Kill the process after this many ms (treated by adapters as a failure). */
   timeoutMs?: number
   /** Abort signal for the current run; kills the process when it fires. */
@@ -139,7 +141,7 @@ export interface HookSandboxRuntime {
   /** Spawn a shell command line inside the project sandbox (stdio piped). */
   spawnShell(
     command: string,
-    opts: { cwd: string; env: NodeJS.ProcessEnv; signal?: AbortSignal },
+    opts: { cwd: string; env: NodeJS.ProcessEnv; signal?: AbortSignal; localOnly?: boolean },
   ): Promise<ChildProcess>
   /** Runner-recorded sandbox policy violations for this command (never stdout-derived). */
   violationCount(command: string): number
@@ -240,6 +242,7 @@ export async function spawnHookProcess(
         sandboxRuntime().spawnShell(command, {
           cwd: opts.cwd,
           env: overlay,
+          ...(opts.localOnly ? { localOnly: true } : {}),
           ...(opts.signal ? { signal: opts.signal } : {}),
         }),
         timeoutMs,

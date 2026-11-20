@@ -185,12 +185,19 @@ describe('release full-suite contract', () => {
         (name) => [name, { result: 'success' }],
       ),
     )
+    // The gate must accept exactly the shard count a full plan dispatches. Read it
+    // from the shard step so changing the fan-out cannot leave the gate behind.
+    const fullShards =
+      /\{ echo "total=(\d+)"; echo "list=\[[\d,]+\]"; \} >> "\$GITHUB_OUTPUT"\n\n/.exec(
+        workflow,
+      )?.[1]
+    assert.ok(fullShards, 'the full-plan shard total')
     const env = {
       ...process.env,
       CANCELLED: 'false',
       MODE: 'full',
       UNIT_MODE: 'full',
-      SHARDS: '8',
+      SHARDS: fullShards,
       RESULTS: JSON.stringify(results),
     }
     const execute = (overrides: Record<string, string>): number | null =>
@@ -200,7 +207,7 @@ describe('release full-suite contract', () => {
       { MODE: 'subset' },
       { MODE: 'skip' },
       { UNIT_MODE: 'subset' },
-      { SHARDS: '7' },
+      { SHARDS: String(Number(fullShards) - 1) },
     ])
       assert.notEqual(execute(overrides), 0)
     for (const name of Object.keys(results)) {

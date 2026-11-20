@@ -33,6 +33,7 @@ import { validateRemoteAgentBaseUrl } from '../security/web-origin-policy.ts'
 import { getCurrentBranchName } from '../github/git-service.ts'
 import { storageGet, storageSet } from '../storage/storage.ts'
 import {
+  joinUrl,
   parseGithubOwnerRepo,
   resolveRemoteAgentProjectId,
   resolveRemoteAgentRepository,
@@ -166,10 +167,6 @@ function authHeaders(apiKey: string): Record<string, string> {
     'anthropic-beta': MANAGED_AGENTS_BETA,
     'content-type': 'application/json',
   }
-}
-
-function joinUrl(baseUrl: string, path: string): string {
-  return `${baseUrl.replace(/\/+$/, '')}${path}`
 }
 
 /**

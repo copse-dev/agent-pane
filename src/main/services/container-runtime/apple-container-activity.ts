@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import { homedir } from 'node:os'
 import { mkdir, writeFile, lstat } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
@@ -64,9 +64,7 @@ function imageUsagePath(name: string): string {
     'cache',
     'apple-container-activity',
     'image-use',
-    createHash('sha256')
-      .update(name.replace(/^docker\.io\/library\//, ''))
-      .digest('hex'),
+    sha256Hex(name.replace(/^docker\.io\/library\//, '')),
   )
 }
 export async function markAppleImageUsed(name: string): Promise<void> {

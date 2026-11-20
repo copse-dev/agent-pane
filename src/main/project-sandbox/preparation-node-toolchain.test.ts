@@ -38,6 +38,7 @@ it(
       chmodSync(join(bin, 'node'), 0o755)
       for (const [command, implementation] of [
         ['npm', 'npm/bin/npm-cli.js'],
+        ['npx', 'npm/bin/npx-cli.js'],
         ['corepack', 'corepack/dist/corepack.js'],
         ['pnpm', 'corepack/dist/pnpm.js'],
       ]) {
@@ -55,7 +56,7 @@ it(
         `${bin}:/usr/bin:/missing`,
       )
       const allow = preparationNodeToolchainReadPaths({ PATH: path })
-      for (const command of ['node', 'npm', 'corepack', 'pnpm']) {
+      for (const command of ['node', 'npm', 'npx', 'corepack', 'pnpm']) {
         assert.ok(allow.includes(realpathSync(join(bin, command))))
       }
       assert.ok(!allow.some((entry) => entry.startsWith(multishell)))
@@ -73,6 +74,36 @@ it(
         assert.ok(!allow.includes(path), path)
         assert.ok(!allow.includes(`${path}/**`), path)
       }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  },
+)
+
+it(
+  'keeps npx available from an npm installation even when no npm launcher is on PATH',
+  { skip: process.platform === 'win32' },
+  () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'preparation-npx-')))
+    try {
+      const bin = join(root, 'installation', 'bin')
+      const implementation = join(root, 'installation', 'lib/node_modules/npm')
+      const cli = join(implementation, 'bin/npx-cli.js')
+      const links = join(root, 'links')
+      mkdirSync(bin, { recursive: true })
+      mkdirSync(dirname(cli), { recursive: true })
+      mkdirSync(links)
+      writeFileSync(cli, '#!/usr/bin/env node\n')
+      chmodSync(cli, 0o755)
+      symlinkSync('../lib/node_modules/npm/bin/npx-cli.js', join(bin, 'npx'))
+      const linked = linkPreparationNodeToolchain({ PATH: bin }, links)
+      assert.equal(linked['PATH'], `${links}:${bin}`)
+      assert.equal(readlinkSync(join(links, 'npx')), cli)
+      const allow = preparationNodeToolchainReadPaths({ PATH: bin })
+      assert.ok(allow.includes(cli))
+      assert.ok(allow.includes(`${implementation}/**`))
+      assert.ok(!allow.includes(`${bin}/**`))
+      assert.ok(!allow.includes(`${join(root, 'installation')}/**`))
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -153,6 +184,7 @@ it(
       writeFileSync(target, 'synthetic credential\n')
       chmodSync(target, 0o755)
       symlinkSync(target, join(bin, 'node'))
+      symlinkSync(target, join(bin, 'npx'))
       const env = { PATH: bin }
       assert.deepEqual(preparationNodeToolchainReadPaths(env, home), [])
       assert.equal(linkPreparationNodeToolchain(env, links), env)

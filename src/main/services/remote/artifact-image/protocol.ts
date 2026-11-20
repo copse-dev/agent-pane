@@ -5,7 +5,7 @@
  * its own: the host does not trust the downloader, and main does not trust the
  * host's relay.
  */
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import {
@@ -181,7 +181,7 @@ export class ImageFrameAssembler {
         const bytes = Buffer.concat(this.chunks)
         this.chunks.length = 0
         if (bytes.length !== frame.bytes) throw this.fail('protocol')
-        if (createHash('sha256').update(bytes).digest('hex') !== frame.sha256) {
+        if (sha256Hex(bytes) !== frame.sha256) {
           throw this.fail('protocol')
         }
         const inspection = inspectArtifactImage(bytes, frame.mime)
@@ -226,7 +226,7 @@ export function imageFrames(
     requestId,
     mime,
     bytes: bytes.length,
-    sha256: createHash('sha256').update(bytes).digest('hex'),
+    sha256: sha256Hex(bytes),
   })
   return frames
 }

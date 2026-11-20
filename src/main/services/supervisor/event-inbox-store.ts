@@ -1,13 +1,6 @@
-import { createHash, randomUUID } from 'node:crypto'
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs'
+import { sha256Hex } from '@copse/std/sha256.ts'
+import { writeFileAtomicSync } from '@copse/std/write-file-atomic.ts'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import {
@@ -18,7 +11,7 @@ import { projectStoreDir } from '../storage/copse-paths.ts'
 import { runSerialized } from '../storage/write-queue.ts'
 
 export function eventDigest(text: string): string {
-  return createHash('sha256').update(text).digest('hex')
+  return sha256Hex(text)
 }
 
 export function eventInboxKey(record: Pick<EventInboxRecord, 'binding' | 'delivery'>): string {
@@ -138,18 +131,7 @@ export class FileEventInboxStore implements EventInboxStore {
           throw new Error('Invalid event inbox state transition')
       }
       const path = this.path(projectId, key)
-      mkdirSync(this.root(projectId), { recursive: true })
-      const temporary = `${path}.${randomUUID()}.tmp`
-      try {
-        writeFileSync(temporary, `${JSON.stringify(next)}\n`, {
-          encoding: 'utf8',
-          mode: 0o600,
-          flush: true,
-        })
-        renameSync(temporary, path)
-      } finally {
-        rmSync(temporary, { force: true })
-      }
+      writeFileAtomicSync(path, `${JSON.stringify(next)}\n`, { mode: 0o600, flush: true })
       return next
     })
   }

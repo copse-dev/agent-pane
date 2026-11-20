@@ -1,4 +1,5 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import type { LLMProvider, ModelUsage, PromptCatalogFootprint } from './wire-types.ts'
 import { hasLastUsage } from './provider-usage.ts'
 
@@ -38,9 +39,7 @@ const previousPrefixes = new Map<string, PrefixHashes>()
 const MAX_SCOPES = 128
 
 function hash(value: unknown): string {
-  return createHash('sha256')
-    .update(JSON.stringify(value ?? null))
-    .digest('hex')
+  return sha256Hex(JSON.stringify(value ?? null))
 }
 
 /** Opt-in request diagnostics; never logs prompt text, tool schemas, endpoints or keys. */

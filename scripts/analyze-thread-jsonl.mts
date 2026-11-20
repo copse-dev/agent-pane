@@ -193,7 +193,7 @@ function subagentUsages(records: JsonlRecord[]): Array<{
   for (const r of records) {
     if (r.role !== 'assistant') continue
     for (const tc of r.toolCalls ?? []) {
-      if (tc.name !== 'explore' || !tc.subagent) continue
+      if (!tc.subagent) continue
       out.push({
         prompt: (tc.subagent.prompt ?? '').slice(0, 80),
         messages: tc.subagent.messages?.length ?? 0,
@@ -238,9 +238,9 @@ function subagentReads(records: JsonlRecord[]): { path: string; exploreId: strin
   for (const r of records) {
     if (r.role !== 'assistant') continue
     for (const tc of r.toolCalls ?? []) {
-      if (tc.name !== 'explore') continue
+      if (!tc.subagent) continue
       const eid = tc.id?.slice(0, 8) ?? '?'
-      for (const m of tc.subagent?.messages ?? []) {
+      for (const m of tc.subagent.messages ?? []) {
         for (const st of m.toolCalls ?? []) {
           if (st.name === 'read_file' && typeof st.args?.['path'] === 'string') {
             out.push({ path: st.args['path'], exploreId: eid })

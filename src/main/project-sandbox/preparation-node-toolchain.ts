@@ -3,7 +3,7 @@ import { homedir } from 'node:os'
 import { delimiter, dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { createToolchainReadGuard } from './toolchain-read-guard.ts'
 
-const NODE_TOOLCHAIN_COMMANDS = ['node', 'npm', 'corepack', 'pnpm', 'yarn']
+const NODE_TOOLCHAIN_COMMANDS = ['node', 'npm', 'npx', 'corepack', 'pnpm', 'yarn']
 
 /**
  * A version manager whose PATH entry is a shim directory. The shim execs the
@@ -166,6 +166,7 @@ export function preparationNodeToolchainReadPaths(
   const readTarget = createToolchainReadGuard(env, home)
   const implementations = [
     ['npm', 'bin', 'npm-cli.js'],
+    ['npm', 'bin', 'npx-cli.js'],
     ['corepack', 'dist', 'corepack.js'],
     ['corepack', 'dist', 'pnpm.js'],
     ['corepack', 'dist', 'yarn.js'],

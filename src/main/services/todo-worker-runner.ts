@@ -3,7 +3,7 @@ import {
   PRODUCT_REASONING_CHECKPOINT_POLICY,
   PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
 } from '@copse/agent/reasoning-checkpoint-policy.ts'
-import type { LLMMessage, LLMProvider, LLMTool, StreamChunk } from '@shared/types'
+import type { LLMMessage, LLMProvider, StreamChunk } from '@shared/types'
 import type { TodoItem } from '@shared/types/todo.ts'
 import type { ToolRegistry } from './tool-registry.ts'
 import { hasLastUsage } from '@copse/llm/provider-usage.ts'
@@ -102,11 +102,6 @@ export interface TodoWorkerResult {
   usage: { inputTokens: number; outputTokens: number }
 }
 
-function filterWorkerTools(registry: ToolRegistry): LLMTool[] {
-  const allowed = new Set<string>(TODO_WORKER_TOOLS)
-  return registry.toLLMTools().filter((t) => allowed.has(t.name))
-}
-
 export async function runTodoWorker(opts: RunTodoWorkerOptions): Promise<TodoWorkerResult> {
   const { provider, registry, contextWindow, toolSchemaReserve, signal, onChunk } = opts
 
@@ -119,7 +114,7 @@ export async function runTodoWorker(opts: RunTodoWorkerOptions): Promise<TodoWor
   await runAgentLoop({
     provider,
     messages,
-    tools: filterWorkerTools(registry),
+    tools: registry.toLLMToolsNamed(TODO_WORKER_TOOLS),
     maxSteps: 12,
     reasoningCheckpointPolicy: PRODUCT_REASONING_CHECKPOINT_POLICY,
     reasoningRunawayTextToleranceChars: PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,

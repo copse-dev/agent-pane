@@ -1,7 +1,7 @@
 import { LONG_HORIZON_TASKS_PLUGIN_ID } from '@copse/agent/plugins/long-horizon-tasks-plugin.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import type { TurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import type { MachineDispatchResult } from '@shared/types/machine-dispatch.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
 import type { MachineAgentDispatchRequest } from '../agent-dispatcher.ts'
@@ -108,11 +108,9 @@ function dispatchResultRef(result: MachineDispatchResult): { kind: 'handler'; re
 }
 
 function executionIdentity(context: ThreadExecutionContext): string {
-  return createHash('sha256')
-    .update(
-      JSON.stringify([context.projectRoot, context.root, context.checkoutMode, context.branch]),
-    )
-    .digest('hex')
+  return sha256Hex(
+    JSON.stringify([context.projectRoot, context.root, context.checkoutMode, context.branch]),
+  )
 }
 
 export function installLongTaskWakeConsumer(

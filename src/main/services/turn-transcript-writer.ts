@@ -239,14 +239,25 @@ export class TurnTranscriptWriter {
       .then(() => this.deps.loadThread(projectId, threadId))
       .then((thread) => {
         if (thread) {
-          store.setState({ threads: [{ ...thread, status: 'running' }], activeThreadId: threadId })
+          // This is an admitted turn, including ordinary human retries. Clear
+          // recovery metadata before its authoritative runtime snapshot so an
+          // older disk seed cannot restore the interruption in the renderer.
+          const { interruptedTurnAt: _interruptedTurnAt, ...uninterruptedThread } = thread
+          const runningThread: Thread = { ...uninterruptedThread, status: 'running' }
+          store.setState({
+            threads: [runningThread],
+            activeThreadId: threadId,
+          })
           session.initialMeta = structuredClone(transcriptMeta(thread))
           // Attachment tells the renderer this status is runtime-owned. Write
           // it on the store queue before output so a held turn is recoverable.
           this.track(
             session,
             this.deps
-              .updateMeta(projectId, threadId, { status: 'running' })
+              .updateMeta(projectId, threadId, {
+                status: 'running',
+                ...transcriptMetaPatch(session.initialMeta, transcriptMeta(runningThread)),
+              })
               .catch((error: unknown) => {
                 this.deps.onError?.(error)
               }),
