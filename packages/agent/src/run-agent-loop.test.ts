@@ -3472,4 +3472,35 @@ describe('runAgentLoop empty turns (#4294 dogfood)', () => {
     assert.equal(nudges.length, 1, 'only the nudge the second call answered is in history')
     assert.equal(applied.length, 1)
   })
+
+  it('earns no budget extension while the last turn was empty', async () => {
+    // Two distinct reads would earn a grant on their own; empty turns add
+    // nothing to that health window, so only the empty turn itself can say the
+    // run is stuck.
+    const read = (id: string, path: string): ProviderStreamChunk[] => [
+      { type: 'tool_call', toolCall: { id, name: 'read_file', args: { path } } },
+      { type: 'done', stopReason: 'tool_calls' },
+    ]
+    const { provider, requests } = recording([
+      read('a', 'a.ts'),
+      read('b', 'b.ts'),
+      [{ type: 'done', stopReason: 'stop' }],
+    ])
+    const messages: LLMMessage[] = [{ role: 'user', content: 'go' }]
+    const chunks: AgentStreamChunk[] = []
+    await runAgentLoop({
+      provider,
+      messages,
+      tools: [READ_TOOL],
+      maxSteps: 100,
+      maxLlmCalls: 4,
+      adaptiveExtensions: true,
+      onChunk: (c) => chunks.push(c),
+      executeTool: async () => 'ok',
+    })
+    assert.equal(requests.length, 4)
+    assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('model-request limit')))
+    const nudges = messages.filter((m) => m.role === 'user' && m.content === EMPTY_TURN_NUDGE)
+    assert.equal(nudges.length, 1, 'the refused run keeps no unanswered nudge')
+  })
 })

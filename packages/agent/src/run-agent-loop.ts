@@ -1444,7 +1444,14 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       const extended = tryExtendRunBudget(
         budget,
         recentToolProgress,
-        { reasoningRunawayStreak, nudged: loopNudgeSent || forceTextAttempted },
+        {
+          reasoningRunawayStreak,
+          // A pending empty-turn nudge means the last stream had no answer and
+          // no tool call. Empty turns add nothing to the tool-progress window,
+          // so without this a run stuck on them keeps earning grants on the
+          // strength of the calls it made before it got stuck.
+          nudged: loopNudgeSent || forceTextAttempted || pendingEmptyTurnNudge !== undefined,
+        },
         maxStepsRef,
       )
       if (!extended) {
