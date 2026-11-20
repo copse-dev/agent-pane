@@ -7,7 +7,10 @@ export function formatUsd(amount: number): string {
 }
 
 export function formatTokenCount(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  // Pick the unit from the rounded text so 999,950 reads `1.0M`, not `1000.0k`.
+  if (n >= 1_000_000 || Number((n / 1_000).toFixed(1)) >= 1_000) {
+    return `${(n / 1_000_000).toFixed(1)}M`
+  }
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
   return String(n)
 }

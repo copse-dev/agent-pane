@@ -108,6 +108,26 @@ describe('RoadmapExporter — with attachments', () => {
     ],
   })
 
+  it('bundles an attachment whose name has consecutive dots', () => {
+    const dotted = item({
+      attachments: [
+        {
+          id: 'att-1',
+          name: 'notes..final.txt',
+          mimeType: 'text/plain',
+          data: new TextEncoder().encode('hello world'),
+        },
+      ],
+    })
+    const exporter = new RoadmapExporter(project, [dotted], {
+      exportedAt: '2026-07-27T12:00:00.000Z',
+    })
+    assert.deepEqual(exporter.export('md').files, [
+      'roadmap.md',
+      'attachments/item-1/att-1-notes..final.txt',
+    ])
+  })
+
   for (const format of ['md', 'html', 'jsonl'] as const) {
     it(`bundles ${format} + attachments into a deterministic zip`, () => {
       const exporter = new RoadmapExporter(project, [attachmentItem], {

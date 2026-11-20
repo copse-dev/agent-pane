@@ -1,4 +1,5 @@
-const DRIVE_PATH_RE = /^[a-z]:\//i
+// A drive root (`C:\`) is a bare `C:` once its trailing separator is stripped.
+const DRIVE_PATH_RE = /^[a-z]:(?:\/|$)/i
 
 /** `/`-separated, with repeated separators collapsed and `.` segments dropped. */
 export function normalizeWorkspacePath(path: string): string {

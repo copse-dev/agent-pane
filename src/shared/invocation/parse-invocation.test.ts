@@ -68,6 +68,16 @@ describe('resolveInvocation', () => {
     assert.equal(resolveInvocation('see src/main/index.ts', INVOCABLES), null)
   })
 
+  it('does not read a path whose first segment is a known name as an invocation', () => {
+    assert.equal(resolveInvocation('fix the /demo/status route', INVOCABLES), null)
+    assert.equal(resolveInvocation('/reviewer/notes.md is stale', INVOCABLES), null)
+    assert.deepEqual(resolveInvocation('/reviewer/x.ts needs /reviewer', INVOCABLES), {
+      name: 'reviewer',
+      kind: 'agent',
+      remainder: '/reviewer/x.ts needs',
+    })
+  })
+
   it('strips the invocation token, not the same name inside an earlier path', () => {
     const cases: Array<[string, string]> = [
       ['look at src/reviewer and /reviewer it', 'look at src/reviewer and it'],

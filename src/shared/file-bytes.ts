@@ -18,7 +18,10 @@ export function fileExtension(name: string): string {
  */
 export function sanitizeStoredFileName(name: string, fallback: string): string {
   const safe = name.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[.-]+/, '')
-  const extension = fileExtension(safe)
+  const tail = fileExtension(safe)
+  // An "extension" that would fill the whole cap is not one: without this the
+  // stem's slice end goes negative and the name is returned at full length.
+  const extension = tail.length < 80 ? tail : ''
   const stem = safe.slice(0, safe.length - extension.length)
   return stem.slice(0, 80 - extension.length) + extension || fallback
 }

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { createStore } from './store.ts'
 import {
   addMessage,
+  archiveThread,
   createThread,
   nextThreadId,
   prevThreadId,
@@ -61,5 +62,35 @@ describe('nextThreadId / prevThreadId', () => {
     assert.equal(prevThreadId(store), b)
     switchThread(store, b)
     assert.equal(prevThreadId(store), a)
+  })
+
+  it('skips archived threads, which stay in the store but are not listed', () => {
+    const store = storeWithThreads()
+    const [a, b, c] = store.getState().threads.map((t) => t.id)
+    assert.ok(a)
+    assert.ok(b)
+    assert.ok(c)
+    archiveThread(store, b)
+    switchThread(store, a)
+
+    assert.equal(nextThreadId(store), c)
+    assert.equal(prevThreadId(store), c)
+    switchThread(store, c)
+    assert.equal(nextThreadId(store), a)
+    assert.equal(prevThreadId(store), a)
+  })
+
+  it('returns null when every other thread is archived', () => {
+    const store = storeWithThreads()
+    const [a, b, c] = store.getState().threads.map((t) => t.id)
+    assert.ok(a)
+    assert.ok(b)
+    assert.ok(c)
+    archiveThread(store, b)
+    archiveThread(store, c)
+    switchThread(store, a)
+
+    assert.equal(nextThreadId(store), null)
+    assert.equal(prevThreadId(store), null)
   })
 })

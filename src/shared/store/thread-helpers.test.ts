@@ -1160,6 +1160,22 @@ describe('per-chunk streaming updates mutate in place, independent of loaded his
 })
 
 describe('deleteThread', () => {
+  it('moves focus to a listed thread, not an archived one still in the store', () => {
+    const store = createStore()
+    const oldest = createThread(store)
+    addMessage(store, oldest, 'user', 'oldest')
+    const middle = createThread(store)
+    addMessage(store, middle, 'user', 'middle')
+    const newest = createThread(store)
+    addMessage(store, newest, 'user', 'newest')
+    archiveThread(store, middle)
+    switchThread(store, newest)
+
+    deleteThread(store, newest)
+
+    assert.equal(store.getState().activeThreadId, oldest)
+  })
+
   // Add a message right after creating each thread so it is non-blank before the
   // next create — addMessage prunes *other* blank threads on a thread's first
   // message, so creating both first and messaging afterwards would drop one.
