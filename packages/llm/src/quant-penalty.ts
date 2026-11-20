@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 // Heuristic estimator for how much low-bit quantization degrades a model's
 // full-precision benchmark score. Public leaderboards mostly report fp16/bf16
 // numbers, but users run 4-bit GGUF/AWQ locally — so this lets us seed an
@@ -47,7 +48,7 @@ function baseDrop(bitsPerWeight: number): number {
 // model can't produce an absurd factor.
 function sizeFactor(paramsB: number): number {
   if (!(paramsB > 0)) return 3
-  return Math.min(3, Math.max(0.5, Math.pow(REF_PARAMS_B / paramsB, SIZE_EXP)))
+  return clamp(Math.pow(REF_PARAMS_B / paramsB, SIZE_EXP), 0.5, 3)
 }
 
 /**
@@ -56,7 +57,7 @@ function sizeFactor(paramsB: number): number {
  */
 export function estimateQuantPenalty(ctx: QuantContext): number {
   const raw = baseDrop(ctx.bitsPerWeight) * sizeFactor(ctx.paramsB) * (ctx.taskSensitivity ?? 1)
-  return Math.min(MAX_DROP, Math.max(0, raw))
+  return clamp(raw, 0, MAX_DROP)
 }
 
 export interface EstimatedScore {

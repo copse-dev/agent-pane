@@ -11,7 +11,8 @@ export async function githubArchiveUrl(
     repository,
     commit,
     signal,
-    await resolveGitHubApiToken(),
+    // The archive request always goes to api.github.com, whatever GH_HOST says.
+    await resolveGitHubApiToken('github.com'),
     fetchImpl,
   )
 }

@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 import { normalizeOpenAIToolSchema } from './normalize-tool-schema.ts'
 import {
   Chat,
@@ -326,7 +327,7 @@ export class LMStudioProvider implements LLMProvider {
 
 function clampProgress(progress: number): number {
   if (!Number.isFinite(progress)) return 0
-  return Math.min(1, Math.max(0, progress))
+  return clamp(progress, 0, 1)
 }
 
 function chunkFromPredictionFragment(

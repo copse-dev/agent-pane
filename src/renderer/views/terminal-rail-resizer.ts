@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 import { el } from '../dom/helpers.ts'
 
 const SECTION_SELECTOR = ':scope > .terminal-rail-section'
@@ -79,10 +80,7 @@ function resizePair(
   delta: number,
 ): void {
   const total = beforeStart + afterStart
-  const beforeSize = Math.min(
-    total - minimumHeight(after),
-    Math.max(minimumHeight(before), beforeStart + delta),
-  )
+  const beforeSize = clamp(beforeStart + delta, minimumHeight(before), total - minimumHeight(after))
   before.style.flexGrow = String(beforeSize)
   after.style.flexGrow = String(total - beforeSize)
 }

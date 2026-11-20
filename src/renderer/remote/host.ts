@@ -130,7 +130,7 @@ export async function startRemoteChat(): Promise<void> {
     refreshing = true
     try {
       const [state, rawMetadata] = await Promise.all([
-        client.snapshot(),
+        client.snapshot({ projectId: projectId ?? '', threadId: threadId ?? '' }),
         request(
           '/api/thread/' +
             encodeURIComponent(projectId ?? '') +

@@ -81,4 +81,81 @@ describe('automatic Python preparation approval', () => {
     await saveElementScreenshot('#approval-dialog', 'worktree-preparation-pip.png')
     await dialog.$('.approval-reject').click()
   })
+
+  it('shows an explicit installed-uv requirements plan with its exact project interpreter', async () => {
+    mkdirSync(join(root, '.copse'), { recursive: true })
+    writeFileSync(
+      join(root, '.copse/worktree-preparation.json'),
+      JSON.stringify({
+        version: 1,
+        inputs: ['requirements.lock', '.python-version', 'vendor'],
+        prepare: [
+          { command: 'python3.9', args: ['-m', 'venv', '--without-pip', '.venv'] },
+          {
+            command: 'uv',
+            args: [
+              'pip',
+              'sync',
+              '--python',
+              '.venv/bin/python',
+              '--no-python-downloads',
+              '--require-hashes',
+              '--only-binary=:all:',
+              '--no-index',
+              '--find-links',
+              'vendor',
+              'requirements.lock',
+            ],
+          },
+        ],
+        checks: [
+          {
+            name: 'Locked uv requirements',
+            command: {
+              command: 'uv',
+              args: [
+                'pip',
+                'sync',
+                '--check',
+                '--offline',
+                '--no-cache',
+                '--python',
+                '.venv/bin/python',
+                '--no-python-downloads',
+                '--require-hashes',
+                '--only-binary=:all:',
+                '--no-index',
+                '--find-links',
+                'vendor',
+                'requirements.lock',
+              ],
+            },
+          },
+        ],
+      }),
+    )
+    const planFingerprint = readWorktreePreparationPlan(root).fingerprint
+    await prepareMockToolTurn(
+      'Review this explicit Python 3.9 requirements setup.',
+      { name: 'prepare_worktree', args: { planFingerprint, offline: true } },
+      'The worktree preparation request was declined.',
+    )
+    await $('.submit-btn').click()
+    const dialog = $('#approval-dialog')
+    await dialog.waitForDisplayed({ timeout: 30_000 })
+    const body = await dialog.$('.approval-body').getText()
+    expect(body).toContain('python3.9')
+    expect(body).toContain('--without-pip')
+    expect(body).toContain('uv')
+    expect(body).toContain('--python')
+    expect(body).toContain('.venv/bin/python')
+    expect(body).toContain('--no-python-downloads')
+    expect(body).toContain('--require-hashes')
+    expect(body).toContain('--only-binary=:all:')
+    expect(body).toContain('--no-index')
+    expect(await dialog.$('.approval-advice').getText()).toContain('executes repository code')
+    expect(await dialog.$('.approval-footer').getText()).toContain('blocked for every subprocess')
+    await saveElementScreenshot('#approval-dialog', 'worktree-preparation-uv-requirements.png')
+    await dialog.$('.approval-reject').click()
+  })
 })

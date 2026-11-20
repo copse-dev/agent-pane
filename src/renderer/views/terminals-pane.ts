@@ -1,3 +1,4 @@
+import { ellipsize } from '@copse/std/one-line-text.ts'
 import type { Terminal, ITheme } from '@xterm/xterm'
 import type { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
@@ -874,7 +875,7 @@ export function mountTerminalsPane(
     const command = request.command.trim()
     if (!command) return
     const oneLine = command.split(/\s+/).join(' ')
-    const summary = oneLine.length > 48 ? `${oneLine.slice(0, 47)}…` : oneLine
+    const summary = ellipsize(oneLine, 48)
     const initialInput = `${command.replace(/\r\n?|\n/g, '\r')}\rexit\r`
     const label = `Run · ${summary}`
     let tabId: string
