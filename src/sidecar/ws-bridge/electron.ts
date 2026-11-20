@@ -42,6 +42,12 @@ const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Err
 const listeners = new Map<string, Set<Listener>>()
 let nextInvokeId = 1
 let started = false
+/**
+ * Why the transport is gone for good, once it is: the socket closed, or could
+ * not be opened. Nothing reconnects it, so a later invoke must fail the way the
+ * in-flight ones did instead of waiting in a queue nothing will ever flush.
+ */
+let lost: Error | null = null
 
 /** Reject everything in flight; the socket is not going to answer. */
 function failPending(error: Error): void {
@@ -52,6 +58,7 @@ function failPending(error: Error): void {
 }
 
 function push(frame: ClientFrame): void {
+  if (lost) return
   if (ready && socket && socket.readyState === WebSocket.OPEN) {
     socket.send(encodeFrame(frame))
   } else {
@@ -131,10 +138,13 @@ function openSocket(): void {
       handleFrame(decodeServerFrame(event.data))
     })
     ws.addEventListener('close', () => {
-      failPending(new Error('sidecar connection closed'))
+      lost = new Error('sidecar connection closed')
+      failPending(lost)
     })
   } catch (err) {
     console.error('[ws-bridge] failed to open WebSocket to the sidecar', err)
+    lost = new Error('could not connect to the sidecar')
+    failPending(lost)
   }
 }
 
@@ -162,6 +172,7 @@ interface IpcRendererLike {
 export const ipcRenderer: IpcRendererLike = {
   invoke(channel: string, ...args: unknown[]): Promise<unknown> {
     if (wsPort === null) return Promise.reject(new Error('no sidecar endpoint in boot URL'))
+    if (lost) return Promise.reject(lost)
     const id = nextInvokeId++
     return new Promise((resolve, reject) => {
       pending.set(id, { resolve, reject })

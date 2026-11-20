@@ -186,8 +186,13 @@ class WebContentsShim extends EventEmitter {
     return this.destroyed
   }
   markDestroyed(): void {
+    if (this.destroyed) return
     this.destroyed = true
     allWebContents.delete(this)
+    // Electron emits `destroyed` when a window's contents go away, and every
+    // per-window cleanup in `src/main` (terminal PTYs, VNC sessions, file
+    // watchers, GitHub list watches) hangs off it.
+    this.emit('destroyed')
   }
   getOwnerWindow(): BrowserWindow | null {
     return this.owner
@@ -548,7 +553,13 @@ export const dialog = {
 function openWithSystemHandler(target: string): void {
   const opener = platform() === 'darwin' ? 'open' : platform() === 'win32' ? 'cmd' : 'xdg-open'
   const args = platform() === 'win32' ? ['/c', 'start', '', target] : [target]
-  spawn(opener, args, { detached: true, stdio: 'ignore' }).unref()
+  const child = spawn(opener, args, { detached: true, stdio: 'ignore' })
+  // A missing opener (no `xdg-open` on a minimal Linux install) surfaces as an
+  // `error` event; unhandled, that is an uncaught exception, which quits the app.
+  child.on('error', (error) => {
+    console.error(`[electron-shim] could not open ${target}: ${error.message}`)
+  })
+  child.unref()
 }
 
 export const shell = {

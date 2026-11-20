@@ -24,6 +24,7 @@ import {
   vncDiscoveryHostSchema,
   vncTargetSchema,
 } from './ipc-guards.ts'
+import { releaseWhenSenderDestroyed } from './sender-teardown.ts'
 
 const vncConnectionIdSchema = z.uuid()
 const vncUsernameSchema = z.string().trim().min(1).max(256)
@@ -77,6 +78,7 @@ export function containVncEventErrors<E, A extends unknown[]>(
 
 export function initVnc(win: BrowserWindow): () => Promise<void> {
   const service = getVncService()
+  const ownerTeardownHooked = new WeakSet<WebContents>()
 
   ipcMain.handle('vnc:open', async (event, rawTarget: unknown) => {
     assertMainFrameSender(event, win)
@@ -87,9 +89,10 @@ export function initVnc(win: BrowserWindow): () => Promise<void> {
     if (target.kind === 'ssh' && !getSetting<boolean>('sshWorkspaceEnabled', false)) {
       throw new Error('Enable SSH workspaces in Settings before opening a remote desktop')
     }
-    const connection = await service.open(target, ownerFor(event.sender))
+    // Read before the await: a window that closes meanwhile is destroyed.
     const ownerId = event.sender.id
-    event.sender.once('destroyed', () => {
+    const connection = await service.open(target, ownerFor(event.sender))
+    releaseWhenSenderDestroyed(event.sender, ownerTeardownHooked, () => {
       void service.closeOwner(ownerId)
     })
     return connection
