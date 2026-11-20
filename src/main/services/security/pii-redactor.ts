@@ -178,6 +178,10 @@ function isEnabled(): boolean {
   return getDefaultPluginRegistry().isEnabled(PII_REDACTION_PLUGIN_ID)
 }
 
+export function isPiiRedactionEnabled(): boolean {
+  return isEnabled()
+}
+
 function loadModule(): Promise<RampartModule | null> {
   modulePromise ??= loader()
   return modulePromise
@@ -411,6 +415,50 @@ export interface RedactionResult {
   readonly notice?: string
 }
 
+export interface PreservedTextSpan {
+  /** Index in the original UserContent array, or zero for string content. */
+  readonly blockIndex: number
+  readonly start: number
+  readonly end: number
+  readonly value: string
+}
+
+export interface RedactionOptions {
+  /** Exact, locally verified text occurrences that must remain usable by tools. */
+  readonly preserveSpans?: readonly PreservedTextSpan[]
+}
+
+async function protectExcept(
+  guard: PiiGuard,
+  text: string,
+  blockIndex: number,
+  preserved: readonly PreservedTextSpan[],
+): Promise<string> {
+  const spans = preserved
+    .filter((span) => span.blockIndex === blockIndex)
+    .toSorted((left, right) => left.start - right.start)
+  if (spans.length === 0) return (await guard.protect(text)).text
+  let cursor = 0
+  let output = ''
+  for (const span of spans) {
+    if (
+      span.start < cursor ||
+      span.end <= span.start ||
+      span.end > text.length ||
+      text.slice(span.start, span.end) !== span.value
+    ) {
+      continue
+    }
+    if (span.start > cursor) {
+      output += (await guard.protect(text.slice(cursor, span.start))).text
+    }
+    output += span.value
+    cursor = span.end
+  }
+  if (cursor < text.length) output += (await guard.protect(text.slice(cursor))).text
+  return output
+}
+
 /**
  * Redact PII in a user message before it is sent to any provider. Text blocks are
  * scrubbed sequentially so the same value yields the same placeholder; image
@@ -421,6 +469,7 @@ export interface RedactionResult {
 export async function redactUserContent(
   threadId: string,
   content: UserContent,
+  options: RedactionOptions = {},
 ): Promise<RedactionResult> {
   if (!isEnabled()) return { content }
 
@@ -429,12 +478,15 @@ export async function redactUserContent(
 
   try {
     if (typeof content === 'string') {
-      return { content: (await guard.protect(content)).text }
+      return { content: await protectExcept(guard, content, 0, options.preserveSpans ?? []) }
     }
     const blocks: UserContent = []
-    for (const block of content) {
+    for (const [blockIndex, block] of content.entries()) {
       if (block.type === 'text') {
-        blocks.push({ type: 'text', text: (await guard.protect(block.text)).text })
+        blocks.push({
+          type: 'text',
+          text: await protectExcept(guard, block.text, blockIndex, options.preserveSpans ?? []),
+        })
       } else {
         blocks.push(block)
       }
