@@ -19,7 +19,7 @@ describe('workspace preview security', () => {
 
   const openWorkspacePreview = async (): Promise<void> => {
     const panelButton = await $('.titlebar-btn[aria-label="Toggle right panel"]').getElement()
-    const panelClasses = (await panelButton.getAttribute('class')).split(/\s+/)
+    const panelClasses = (await panelButton.getAttribute('class'))?.split(/\s+/) ?? []
     if (!(await $('#pane-files').isDisplayed()) || !panelClasses.includes('active')) {
       await panelButton.click()
     }
