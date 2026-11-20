@@ -12,6 +12,7 @@ import { connect as netConnect, type Socket } from 'node:net'
 import type { Duplex } from 'node:stream'
 import { connect as tlsConnect, type ConnectionOptions, type TLSSocket } from 'node:tls'
 import { EGRESS_PROXY_USER } from './egress-proxy.ts'
+import { sleep } from '@copse/std/sleep.ts'
 import {
   inspectArtifactImage,
   parseArtifactImageMime,
@@ -307,7 +308,7 @@ async function connectProxy(
       if (code !== 'ECONNREFUSED' || Date.now() >= until || signal.aborted) {
         throw new ArtifactImageError('network')
       }
-      await new Promise((resolve) => setTimeout(resolve, PROXY_CONNECT_RETRY_MS))
+      await sleep(PROXY_CONNECT_RETRY_MS)
     }
   }
 }

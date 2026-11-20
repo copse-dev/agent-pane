@@ -89,8 +89,6 @@ dialog.activity-panel-overlay {
   color: var(--text-secondary);
   font-size: var(--font-size-xs);
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 .activity-group-count {
   color: var(--text-muted);
@@ -324,8 +322,6 @@ dialog.activity-panel-overlay {
   color: var(--text-muted);
   font-size: var(--font-size-xs);
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 .activity-detail-text,
 .activity-detail-note {
@@ -521,7 +517,6 @@ dialog.activity-panel-overlay {
   padding: 11px 18px 7px;
   line-height: 1.4;
   font-weight: 700;
-  letter-spacing: 0.06em;
 }
 .activity-group-toggle {
   display: flex;
@@ -595,7 +590,6 @@ dialog.activity-panel-overlay {
 }
 .activity-home .activity-detail-label {
   margin-bottom: 11px;
-  letter-spacing: 0.07em;
 }
 .activity-home .activity-detail-text {
   font-size: var(--font-size-md);
@@ -726,12 +720,14 @@ dialog.activity-panel-overlay {
   }
 }
 
+/* Notices sit on the shared flat callout plate (docs/ui-taste.md, "Containment is
+   a plate"): each one only picks --sev. */
 .activity-automation-notice {
+  --sev: var(--danger);
   margin: 0;
   padding: var(--spacing-sm) var(--spacing-md);
-  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--danger) 10%, var(--bg-base));
+  background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
   color: var(--text-primary);
   font-size: var(--font-size-xs);
 }
@@ -750,9 +746,9 @@ dialog.activity-panel-overlay {
   gap: var(--spacing-xs);
   margin-bottom: var(--spacing-md);
   padding: var(--spacing-sm) var(--spacing-md);
-  border: 1px solid color-mix(in srgb, var(--warning) 40%, var(--border));
+  --sev: var(--warning);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--warning) 8%, var(--bg-base));
+  background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
 }
 .activity-issue-detail p {
   margin: 0;

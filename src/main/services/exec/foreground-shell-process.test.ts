@@ -3,7 +3,11 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
-import { listForegroundShellProcesses, runShellOnce } from './foreground-shell-process.ts'
+import {
+  listForegroundShellProcesses,
+  runShellOnce,
+  stopAllForegroundShellProcesses,
+} from './foreground-shell-process.ts'
 import { setShellOutputSink } from './shell-output-context.ts'
 import {
   getBackgroundProcessLogs,
@@ -277,5 +281,37 @@ describe('foreground shell completion', () => {
   it('reports a signal-killed command as a failure', async () => {
     const result = await run('kill -9 $$', 5_000)
     assert.equal(result.exitCode, 137)
+  })
+  it('drains foreground work at shutdown and refuses to start another command', async () => {
+    const running = runWithThreadExecutionContext(
+      { ...OWNER, root, projectRoot: root, checkoutMode: 'shared', branch: 'main' },
+      () =>
+        runShellOnce(
+          'node -e "setInterval(()=>{},1000)"',
+          root,
+          30_000,
+          new AbortController().signal,
+          true,
+          process.env,
+        ),
+    )
+    await waitUntil(() => listForegroundShellProcesses().length > 0)
+    const stillStarting = run('node -e "setInterval(()=>{},1000)"', 30_000)
+    const cancelledStart = assert.rejects(stillStarting, /abort/i)
+    await stopAllForegroundShellProcesses()
+    assert.notEqual((await running).exitCode, 0)
+    await cancelledStart
+    assert.equal(listForegroundShellProcesses().length, 0)
+    await assert.rejects(
+      runShellOnce(
+        'echo should-not-start',
+        root,
+        1_000,
+        new AbortController().signal,
+        true,
+        process.env,
+      ),
+      /Copse is closing/,
+    )
   })
 })

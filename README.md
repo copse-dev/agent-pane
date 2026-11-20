@@ -134,8 +134,7 @@ Windows, and an isolated Xvfb on Linux because Electron still requires a display
 
 Copse's postinstall prepares native Electron dependencies and downloads the bundled semantic-search engine. Project [`.npmrc`](.npmrc) sets `ignore-scripts=false`. An inherited `npm_config_ignore_scripts=true` still wins over `.npmrc` — `make deps` forces scripts on for that reason.
 
-If `electron-rebuild` fails because a Homebrew Python cannot import
-`distutils`, use the Python supplied with Xcode's command-line tools:
+On macOS, node-pty loads its prebuilt Node-API binary, so install compiles nothing. Where a native module does build from source (node-pty on Linux) and `node-gyp` fails because a Homebrew Python cannot import `distutils`, use the system Python:
 
 ```bash
 PYTHON=/usr/bin/python3 pnpm install
@@ -145,21 +144,21 @@ To install without scripts and finish natives manually:
 
 ```bash
 pnpm install --config.ignore-scripts=true
-SKIP_ELECTRON_REBUILD=1 node scripts/postinstall-native.mts
+node scripts/postinstall-native.mts
 ```
 
 Or run the native setup alone after a normal install:
 
 ```bash
-SKIP_ELECTRON_REBUILD=1 node scripts/postinstall-native.mts
+node scripts/postinstall-native.mts
 ```
 
 Use `SKIP_GORTEX_FETCH=1` if you intentionally do not want the bundled semantic-search binary.
 
-`make run` provisions pnpm and every bundled dependency, but it does not install Node or a C++ toolchain. On macOS it first verifies that the selected Apple compiler can link against the selected SDK, so an incomplete or mismatched Xcode update reports the active developer directory and SDK plus recovery commands before `node-gyp` starts. `SKIP_ELECTRON_REBUILD=1` skips this check along with the rebuild:
+`make run` provisions pnpm and every bundled dependency, but it does not install Node or a C++ toolchain. On macOS it first verifies that the selected Apple compiler can link against the selected SDK, so an incomplete or mismatched Xcode update reports the active developer directory and SDK plus recovery commands before the build compiles Copse's native helper. `SKIP_NATIVE_TOOLCHAIN_CHECK=1` skips this check:
 
 - If the macOS native-toolchain check fails after an Xcode or macOS update, update Xcode, run `sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer` and `sudo xcodebuild -runFirstLaunch`, then retry. If you use only the standalone Command Line Tools, update them through System Settings → General → Software Update or run `xcode-select --install` when they are missing.
-- A later `node-gyp` or `clang` error during install is a native build failure that passed this basic toolchain check; keep its full output when reporting the problem.
+- A later `clang` error during the build is a native build failure that passed this basic toolchain check; keep its full output when reporting the problem.
 - `node is not installed`, or a version below 24, means Node itself needs installing or selecting. `nvm use` and `fnm use` both pick up the `.nvmrc` pin, and `make run` sources nvm automatically when it is present.
 - An `EACCES` from `corepack enable` means your `node` lives somewhere unwritable (typically a `/usr/local` package install). Run `corepack enable` once with `sudo`, or switch to an nvm-managed Node.
 

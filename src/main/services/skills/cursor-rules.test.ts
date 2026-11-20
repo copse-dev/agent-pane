@@ -132,6 +132,38 @@ describe('cursor-rules', () => {
     assert.equal(contextMatchesGlobs(['README.md'], ['*.ts']), false)
   })
 
+  // GHSA-fc5q-39xc-vjpf: `.mdc` globs come from the repository, and `+(*a)`
+  // backtracks exponentially in picomatch.
+  it('skips a backtracking rule glob instead of hanging', () => {
+    const started = Date.now()
+    const path = `src/${'a'.repeat(48)}!`
+    assert.equal(contextMatchesGlobs([path], ['+(*a)', '(a|*a)+']), false)
+    assert.equal(contextMatchesGlobs([path], ['+(*a)', 'src/**']), true)
+    assert.ok(Date.now() - started < 5_000, `took ${String(Date.now() - started)}ms`)
+  })
+
+  // Each glob has its own 50 ms budget, so without a shared one a repository
+  // could stall every turn by 50 ms per backtracking rule.
+  it('shares one glob budget across every auto rule of a turn', () => {
+    const autoRule = (index: number, glob: string): CursorRuleSource => ({
+      path: join(root, `.cursor/rules/${String(index)}.mdc`),
+      name: `.cursor/rules/${String(index)}.mdc`,
+      content: 'body',
+      kind: 'auto',
+      globs: [glob],
+    })
+    const rules = Array.from({ length: 40 }, (_, index) => autoRule(index, '+(*a)'))
+    rules.push(autoRule(40, 'src/**'))
+    const started = Date.now()
+    const picked = selectInjectableCursorRules(rules, {
+      contextPaths: [`src/${'a'.repeat(48)}!`],
+    })
+    const elapsed = Date.now() - started
+    // The budget is spent before the last rule, so it attaches nothing either.
+    assert.deepEqual(picked, [])
+    assert.ok(elapsed < 1_500, `took ${String(elapsed)}ms`)
+  })
+
   it('extracts context paths from user text and attachment fences', () => {
     const paths = extractContextPathsFromText(
       'Please fix src/main/index.ts\n\n```\n// packages/app/src/button.ts\nexport {}\n```',

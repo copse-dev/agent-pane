@@ -1,10 +1,16 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { SidebarThread } from './sidebar-thread.ts'
+import { compactSidebarThread } from './sidebar-thread.ts'
 import { foldAutomationRuns } from './automation-fold.ts'
 
 function run(id: string, status: SidebarThread['status'] = 'idle'): SidebarThread {
-  return { id, title: id, status }
+  return {
+    id,
+    title: id,
+    status,
+    automation: { scheduleId: 'checks', scheduleName: 'Checks', triggeredAt: 1 },
+  }
 }
 
 const describeEntries = (entries: ReturnType<typeof foldAutomationRuns>): string[] =>
@@ -55,5 +61,27 @@ describe('foldAutomationRuns', () => {
     const starting: SidebarThread = { ...run('starting'), automationPendingStart: true }
     const entries = foldAutomationRuns([run('done'), starting], () => false)
     assert.deepEqual(describeEntries(entries), ['starting'])
+  })
+
+  it('keeps a real pending automation visible after sidebar compaction', () => {
+    const starting = compactSidebarThread({ ...run('starting'), draftPrompt: 'Check the project.' })
+    assert.equal(starting.automation?.scheduleId, 'checks')
+    assert.equal(starting.automationPendingStart, true)
+    assert.deepEqual(describeEntries(foldAutomationRuns([starting], () => false)), ['starting'])
+  })
+
+  it('does not treat an ordinary editable draft as an automation waiting to start', () => {
+    const draft = compactSidebarThread({
+      id: 'ordinary',
+      title: 'Discuss this PR',
+      status: 'idle',
+      draftPrompt: 'Review this change.',
+    })
+    assert.equal(draft.automation, undefined)
+    assert.equal(draft.automationPendingStart, undefined)
+    assert.deepEqual(
+      foldAutomationRuns([draft], () => false),
+      [],
+    )
   })
 })

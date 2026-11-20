@@ -10,7 +10,6 @@ import {
   parseEnvText,
   removeAgent,
   selectorChoicesAfterProbe,
-  slugify,
   upsertAgent,
   validateDraft,
 } from './acp-agents-section.ts'
@@ -45,13 +44,6 @@ describe('args parse/format', () => {
     assert.deepEqual(parseArgsText(' --acp \n\n--foo\n'), ['--acp', '--foo'])
     assert.equal(formatArgsText(['--a', '--b']), '--a\n--b')
     assert.equal(formatArgsText(undefined), '')
-  })
-})
-
-describe('slugify', () => {
-  it('lowercases and dash-joins, trimming stray dashes', () => {
-    assert.equal(slugify('Gemini CLI'), 'gemini-cli')
-    assert.equal(slugify('  Claude  Code!  '), 'claude-code')
   })
 })
 

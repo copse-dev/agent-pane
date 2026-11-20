@@ -681,10 +681,12 @@ export function saveProjectGroups(api: ApiClient, groups: ProjectGroup[]): Promi
   return serializedSet(api, KEY_PROJECT_GROUPS, groups)
 }
 
-const threadLoadRevisions = new WeakMap<ApiClient, Map<string, number>>()
+// A controller may hold a narrowed ApiClient view; the same object still owns
+// its read revision, without adding another lifecycle registry.
+const threadLoadRevisions = new WeakMap<object, Map<string, number>>()
 
 /** Revision shared by in-flight reads and resident project snapshots. */
-export function projectThreadLoadRevision(api: ApiClient, projectId: string): number {
+export function projectThreadLoadRevision(api: object, projectId: string): number {
   return threadLoadRevisions.get(api)?.get(projectId) ?? 0
 }
 

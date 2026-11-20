@@ -9,7 +9,8 @@ import type {
   Tool,
 } from 'openai/resources/responses/responses'
 import { withAppAttribution } from './app-attribution.ts'
-import { PromptCacheDiagnostics } from './prompt-cache-diagnostics.ts'
+import { PromptCacheDiagnostics, type PromptAttemptOutcome } from './prompt-cache-diagnostics.ts'
+import { z } from 'zod'
 import { normalizeOpenAIToolSchema } from './normalize-tool-schema.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
 import { isServiceTier, serviceTierBody, type ServiceTier } from './service-tier.ts'
@@ -223,15 +224,13 @@ export class ResponsesProvider implements LLMProvider {
           self.chatGptPlan,
         )
         let inputReplaysCompaction = self.compactionIdentity !== undefined
-        const reportCache = self.cacheDiagnostics.begin(
-          input.find((item) => 'role' in item && item.role !== 'user') ?? null,
-          requestTools,
-          input,
-        )
         let ceiling = self.chatGptPlan ? undefined : self.maxOutputTokens
         let droppedCeiling = false
         for (;;) {
           let response
+          let reportCache: ReturnType<PromptCacheDiagnostics['begin']> | undefined
+          let usage: ModelUsage | null = null
+          let outcome: PromptAttemptOutcome = 'interrupted'
           const identity = self.compactionIdentity
           if (inputReplaysCompaction && identity === undefined) {
             // The endpoint refused compaction: resend without the replayed item, with
@@ -246,118 +245,147 @@ export class ResponsesProvider implements LLMProvider {
           }
           const compactAt = identity && !self.chatGptPlan ? options?.compactAtTokens : undefined
           try {
-            const request: ResponseCreateParamsStreaming = {
-              model: self.model,
-              input,
-              stream: true,
-              tools: requestTools,
-              ...(compactAt === undefined
-                ? {}
-                : {
-                    context_management: [
-                      { type: 'compaction', compact_threshold: Math.floor(compactAt) },
-                    ],
-                  }),
-              ...(self.reasoningSummaries ? { reasoning: { summary: 'auto' as const } } : {}),
-              // Without this, `store: false` leaves nothing to replay: OpenAI
-              // holds no server-side copy, so the encrypted blob has to come back
-              // on the response itself or the reasoning is gone.
-              ...(self.encryptedReasoning
-                ? { include: ['reasoning.encrypted_content' as const] }
-                : {}),
-              ...(self.promptCacheKey ? { prompt_cache_key: self.promptCacheKey } : {}),
-              ...(!self.chatGptPlan ? serviceTierBody(self.serviceTier) : {}),
-              ...(ceiling === undefined ? {} : { max_output_tokens: ceiling }),
-              // Last, so an explicit extraBody entry still wins — that field is
-              // the user's own escape hatch for provider-specific overrides.
-              ...(!self.chatGptPlan
-                ? self.tuned
-                : self.tuned.reasoning
-                  ? { reasoning: self.tuned.reasoning }
+            try {
+              const request: ResponseCreateParamsStreaming = {
+                model: self.model,
+                input,
+                stream: true,
+                tools: requestTools,
+                ...(compactAt === undefined
+                  ? {}
+                  : {
+                      context_management: [
+                        { type: 'compaction', compact_threshold: Math.floor(compactAt) },
+                      ],
+                    }),
+                ...(self.reasoningSummaries ? { reasoning: { summary: 'auto' as const } } : {}),
+                // Without this, `store: false` leaves nothing to replay: OpenAI
+                // holds no server-side copy, so the encrypted blob has to come back
+                // on the response itself or the reasoning is gone.
+                ...(self.encryptedReasoning
+                  ? { include: ['reasoning.encrypted_content' as const] }
                   : {}),
-              // `tuned.reasoning` (`{ effort }`) replaces the whole object above,
-              // so merge it back with the summary request or OpenAI streams no
-              // reasoning summaries once the user tunes a level.
-              ...(self.reasoningSummaries && self.tuned.reasoning
-                ? { reasoning: { summary: 'auto' as const, ...self.tuned.reasoning } }
-                : {}),
-              ...(!self.chatGptPlan ? (self.extraBody ?? {}) : { store: false }),
+                ...(self.promptCacheKey ? { prompt_cache_key: self.promptCacheKey } : {}),
+                ...(!self.chatGptPlan ? serviceTierBody(self.serviceTier) : {}),
+                ...(ceiling === undefined ? {} : { max_output_tokens: ceiling }),
+                // Last, so an explicit extraBody entry still wins — that field is
+                // the user's own escape hatch for provider-specific overrides.
+                ...(!self.chatGptPlan
+                  ? self.tuned
+                  : self.tuned.reasoning
+                    ? { reasoning: self.tuned.reasoning }
+                    : {}),
+                // `tuned.reasoning` (`{ effort }`) replaces the whole object above,
+                // so merge it back with the summary request or OpenAI streams no
+                // reasoning summaries once the user tunes a level.
+                ...(self.reasoningSummaries && self.tuned.reasoning
+                  ? { reasoning: { summary: 'auto' as const, ...self.tuned.reasoning } }
+                  : {}),
+                ...(!self.chatGptPlan ? (self.extraBody ?? {}) : { store: false }),
+              }
+              const requestInput =
+                typeof request.input === 'string' ? [request.input] : (request.input ?? [])
+              reportCache = self.cacheDiagnostics.begin(
+                request.instructions ??
+                  requestInput.find(
+                    (item) => typeof item !== 'string' && 'role' in item && item.role !== 'user',
+                  ) ??
+                  null,
+                request.tools,
+                requestInput,
+                options?.promptCatalog,
+              )
+              response = await self.client.responses.create(request, { signal })
+            } catch (err) {
+              outcome = 'failed'
+              if (identity && isCompactionRejectedError(err)) {
+                self.compactionRefused = true
+                continue
+              }
+              if (self.strictTools && isStrictSchemaRejectedError(err)) {
+                self.strictTools = false
+                ;({ requestTools, restoreArgs } = buildTools())
+                continue
+              }
+              if (!droppedCeiling && ceiling !== undefined && isOutputCeilingRejectedError(err)) {
+                droppedCeiling = true
+                ceiling = undefined
+                continue
+              }
+              throw err
             }
-            response = await self.client.responses.create(request, { signal })
-          } catch (err) {
-            if (identity && isCompactionRejectedError(err)) {
-              self.compactionRefused = true
-              continue
-            }
-            if (self.strictTools && isStrictSchemaRejectedError(err)) {
-              self.strictTools = false
-              ;({ requestTools, restoreArgs } = buildTools())
-              continue
-            }
-            if (!droppedCeiling && ceiling !== undefined && isOutputCeilingRejectedError(err)) {
-              droppedCeiling = true
-              ceiling = undefined
-              continue
-            }
-            throw err
-          }
 
-          // Reasoning items seen in *this* response, in order. Flushed onto each
-          // tool call the model emits after them.
-          const turnReasoning: ReasoningItem[] = []
-          let yielded = false
-          let ceilingRejected = false
-          let compactionRefused = false
-          const emittedCompactions = new Set<string>()
-          let usage: ModelUsage | null = null
-          let completed = false
-          for await (const event of response) {
-            if (!yielded && identity && compactionRejectedInStream(event)) {
-              self.compactionRefused = true
-              compactionRefused = true
-              break
-            }
-            if (event.type === 'response.completed') completed = true
-            if (self.chatGptPlan && event.type === 'response.incomplete')
-              throw new Error('ChatGPT plan response was incomplete.')
-            // Some endpoints reject the ceiling in the stream instead of the
-            // request. Retrying is only safe before anything reached the caller.
-            if (!yielded && !droppedCeiling && ceiling !== undefined) {
-              if (ceilingRejectedInStream(event)) {
-                ceilingRejected = true
+            // Reasoning items seen in *this* response, in order. Flushed onto each
+            // tool call the model emits after them.
+            const turnReasoning: ReasoningItem[] = []
+            let yielded = false
+            let ceilingRejected = false
+            let compactionRefused = false
+            const emittedCompactions = new Set<string>()
+            let completed = false
+            for await (const event of response) {
+              if (!yielded && identity && compactionRejectedInStream(event)) {
+                self.compactionRefused = true
+                compactionRefused = true
                 break
               }
-            }
-            for (const chunk of streamEventChunks(
-              event,
-              self.model,
-              self,
-              turnReasoning,
-              emittedCompactions,
-              restoreArgs,
-            )) {
-              yielded = true
-              if (chunk.type === 'usage') {
-                usage = {
-                  inputTokens: chunk.inputTokens,
-                  outputTokens: chunk.outputTokens,
-                  ...(chunk.cacheReadTokens !== undefined
-                    ? { cacheReadTokens: chunk.cacheReadTokens }
-                    : {}),
+              if (event.type === 'response.completed') completed = true
+              if (self.chatGptPlan && event.type === 'response.incomplete')
+                throw new Error('ChatGPT plan response was incomplete.')
+              // Some endpoints reject the ceiling in the stream instead of the
+              // request. Retrying is only safe before anything reached the caller.
+              if (!yielded && !droppedCeiling && ceiling !== undefined) {
+                if (ceilingRejectedInStream(event)) {
+                  ceilingRejected = true
+                  break
                 }
               }
-              yield chunk
+              for (const chunk of streamEventChunks(
+                event,
+                self.model,
+                self,
+                turnReasoning,
+                emittedCompactions,
+                restoreArgs,
+              )) {
+                yielded = true
+                // The agent loop stops consuming at `done`; mark completion
+                // before yielding it so normal termination is not interruption.
+                if (chunk.type === 'done') outcome = 'completed'
+                if (chunk.type === 'usage') {
+                  usage = {
+                    inputTokens: chunk.inputTokens,
+                    outputTokens: chunk.outputTokens,
+                    ...(chunk.cacheReadTokens !== undefined
+                      ? { cacheReadTokens: chunk.cacheReadTokens }
+                      : {}),
+                    ...(chunk.cacheCreationTokens !== undefined
+                      ? { cacheCreationTokens: chunk.cacheCreationTokens }
+                      : {}),
+                  }
+                }
+                yield chunk
+              }
             }
+            if (compactionRefused) {
+              outcome = 'retry'
+              continue
+            }
+            if (!ceilingRejected) {
+              if (self.chatGptPlan && !completed)
+                throw new Error('ChatGPT plan stream ended before response.completed.')
+              outcome = 'completed'
+              return
+            }
+            outcome = 'retry'
+            droppedCeiling = true
+            ceiling = undefined
+          } catch (error) {
+            outcome = 'failed'
+            throw error
+          } finally {
+            reportCache?.(usage, signal?.aborted ? 'cancelled' : outcome)
           }
-          if (compactionRefused) continue
-          if (!ceilingRejected) {
-            if (self.chatGptPlan && !completed)
-              throw new Error('ChatGPT plan stream ended before response.completed.')
-            reportCache(usage)
-            return
-          }
-          droppedCeiling = true
-          ceiling = undefined
         }
       },
       { ...(signal ? { signal } : {}), ...(self.chatGptPlan ? { maxAttempts: 1 } : {}) },
@@ -510,6 +538,11 @@ function* compactionChunks(
   }
 }
 
+const cacheDetailsSchema = z.object({
+  cached_tokens: z.number().nonnegative().optional().catch(undefined),
+  cache_write_tokens: z.number().nonnegative().optional().catch(undefined),
+})
+
 function* usageChunks(
   response: Response,
   model: string,
@@ -517,6 +550,9 @@ function* usageChunks(
 ): Generator<ProviderStreamChunk> {
   const usage = response.usage
   if (!usage) return
+  const details = cacheDetailsSchema.safeParse(usage.input_tokens_details)
+  const cacheReadTokens = details.success ? details.data.cached_tokens : undefined
+  const cacheCreationTokens = details.success ? details.data.cache_write_tokens : undefined
   provider.lastUsage = {
     inputTokens: usage.input_tokens,
     outputTokens: usage.output_tokens,
@@ -526,9 +562,8 @@ function* usageChunks(
     model,
     inputTokens: usage.input_tokens,
     outputTokens: usage.output_tokens,
-    ...(usage.input_tokens_details.cached_tokens
-      ? { cacheReadTokens: usage.input_tokens_details.cached_tokens }
-      : {}),
+    ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
+    ...(cacheCreationTokens !== undefined ? { cacheCreationTokens } : {}),
     ...(provider.requestedServiceTier !== undefined
       ? { requestedServiceTier: provider.requestedServiceTier }
       : {}),

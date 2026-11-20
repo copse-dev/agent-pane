@@ -4,8 +4,6 @@ import type { TodoItem } from '@shared/types/todo.ts'
 import type { LLMTool } from '@shared/types'
 import type { ToolRegistry } from '../tool-registry.ts'
 import { setHookRunToolset } from '../hook-run-recorder.ts'
-import { activeBridgeToolNames } from './acp-native-bridge.ts'
-import { getThreadExecutionContext, isThreadCheckoutDeferred } from '../thread-execution-context.ts'
 
 export interface AssembleAcpTurnStartOptions {
   userText: string
@@ -15,6 +13,12 @@ export interface AssembleAcpTurnStartOptions {
   firstTurn: boolean
   model: string
   registry: ToolRegistry
+  /**
+   * The Copse bridge tools this session's agent actually has: the ones it
+   * listed, and none once it showed it dropped them (#4142), or none when it
+   * was offered no bridge or never listed it (#4144).
+   */
+  bridgeToolNames: readonly string[]
   signal: AbortSignal
   resolveGithubRepoSlug?: () => Promise<string | null>
   resolvePluginSetting?: (pluginId: string, key: string) => unknown
@@ -24,25 +28,21 @@ export interface AssembleAcpTurnStartOptions {
 /**
  * Fire the canonical turn-start assembly for an external ACP executor.
  *
- * Only Copse's actually mounted MCP bridge tools are visible here: an external
- * agent's private tools are outside the host's contract and cannot safely be
- * named by first-party hooks. MCP-schema conversion happens before both this
- * fingerprint and the real bridge list, so a schema the bridge omits is not
- * falsely advertised to a hook or the durable run record.
+ * Only the Copse bridge tools the agent actually has are visible here, so the
+ * guidance never names a tool the agent was offered but did not get. An
+ * external agent's private tools are outside the host's contract and cannot
+ * safely be named by first-party hooks. Each name must also still be served:
+ * the registry's MCP export is what the bridge answers calls from, so a tool
+ * unregistered since the listing is not advertised to a hook or the durable run
+ * record.
  */
 export async function assembleAcpTurnStart(
   options: AssembleAcpTurnStartOptions,
 ): Promise<string | undefined> {
-  const offeredNames = new Set(
-    activeBridgeToolNames(
-      getThreadExecutionContext()?.projectId,
-      options.registry,
-      isThreadCheckoutDeferred(),
-    ),
-  )
+  const agentHas = new Set(options.bridgeToolNames)
   const bridgedTools = options.registry
     .toMcpTools()
-    .filter((tool) => offeredNames.has(tool.name))
+    .filter((tool) => agentHas.has(tool.name))
     .map((tool): LLMTool => ({
       name: tool.name,
       description: tool.description,

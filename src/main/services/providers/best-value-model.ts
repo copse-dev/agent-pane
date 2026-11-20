@@ -20,19 +20,15 @@ import { isNoTrainingModelPath, isZeroRetentionModelPath } from '@copse/llm/data
 import { LMSTUDIO_MODEL_PREFIX } from '@copse/llm/reserved-prefixes.ts'
 import { applyPlanCoverage } from '@shared/plan-inclusion.ts'
 import { planAcpFrontierCandidates } from '@shared/plan-frontier-candidates.ts'
-import { FALLBACK_APP_CHAT_MODEL, resolveLocalServerUrl } from '@shared/lm-studio-defaults.ts'
+import { FALLBACK_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import type { PlanUsageSnapshot } from '@copse/plan-usage'
 import { listEnabledAcpAgents } from '../acp/acp-agent-registry.ts'
 import { getResolvedExtraProviders } from './extra-providers-store.ts'
-import { fetchLmStudioModelsCached } from './lm-studio-models.ts'
+import { fetchLmStudioModelsCached, localServerUrl } from './lm-studio-models.ts'
 import { fetchOpenRouterModelsCached } from './openrouter-models.ts'
 import { loadPlanUsageSnapshot } from '../plan-usage-bridge.ts'
 import { getSetting, isProviderAvailable } from '../storage/settings.ts'
 import { isModelMakerAllowed } from './model-maker-policy.ts'
-
-function localServerUrl(): string {
-  return resolveLocalServerUrl(getSetting<string>('localServerUrl', ''), process.env)
-}
 
 async function loadedLocalModelIds(): Promise<string[]> {
   const result = await fetchLmStudioModelsCached(localServerUrl())

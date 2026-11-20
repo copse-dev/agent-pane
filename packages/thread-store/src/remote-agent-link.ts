@@ -2,6 +2,10 @@ import type { RemoteAgentProvider } from './remote-agent-provider.ts'
 import type { Thread } from './thread-types.ts'
 import { githubPrKey, parseGithubPrUrl } from './github-pr-url.ts'
 
+/** Bound durable per-chat provenance without letting repeated launches grow meta.json forever. */
+export const MAX_CURSOR_AGENT_IDS = 128
+export const MAX_CURSOR_AGENT_ID_LENGTH = 128
+
 /**
  * Durable association between a cloud-agent run, a referenced GitHub PR, and the
  * chat thread that launched it (issue #690, Q6). Persisted on the launching

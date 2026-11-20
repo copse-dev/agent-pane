@@ -140,6 +140,18 @@ export function checkIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('check', ['M20 6 9 17l-5-5'], className)
 }
 
+/** Eye — a thread is reading something it cannot change (a deferred worktree). */
+export function eyeIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'eye',
+    [
+      'M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0',
+      'M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z',
+    ],
+    className,
+  )
+}
+
 /** Shield — an action is gated on the person's approval before it can continue. */
 export function shieldIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon(
@@ -189,6 +201,15 @@ export function dotIcon(className = DEFAULT): SVGSVGElement {
 /** Open (hollow) circle — a "pending / in progress" status marker (CSS may spin it). */
 export function circleIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('circle', ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z'], className)
+}
+
+/** Ring around a dot — Record. */
+export function recordIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'circle-dot',
+    ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z', 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z'],
+    className,
+  )
 }
 
 /**

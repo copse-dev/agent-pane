@@ -9,6 +9,7 @@ import { findConfiguredSshHost, displayTarget } from './hosts.ts'
 import { OpenSshTransport } from './openssh-transport.ts'
 import { probeSshCapabilities } from './capability-probe.ts'
 import type { SshExecOptions, SshTransport, SshTransportFactory } from './transport.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 export interface SshConnection {
   host: SshWorkspaceHost
@@ -130,7 +131,7 @@ export class SshConnectionManager {
       this.emit()
       return wrapConnection(managed)
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
+      const message = errorMessage(err)
       managed.status = 'error'
       managed.lastError = message
       await disconnectTransportBestEffort(transport)

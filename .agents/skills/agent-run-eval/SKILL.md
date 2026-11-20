@@ -66,18 +66,21 @@ scenario, commit, and mock/real mode alongside the result. Preserve the requeste
 do not enable Guarded YOLO or broader ACP access just to make an evaluation pass.
 
 The spec prints `COPSE_EVAL_ARTIFACT=/path/to/tests/e2e/artifacts/<id>-<ts>.jsonl`.
-WDIO eval user-data/profile directories are removed after the session; set
-`COPSE_EVAL_KEEP_WDIO=1` to keep `.wdio-eval-*` directories for crash debugging.
+On POSIX, WDIO stops verified profile-owned Gortex services before removing eval directories.
+`COPSE_EVAL_KEEP_WDIO=1` preserves `.wdio-eval-*` evidence directories but still stops those services.
+If service ownership or shutdown cannot be verified, the profile, project and Chrome directories
+stay intact. WDIO logs the `afterSession` hook error and may still report the eval tests as passed;
+inspect that log and independently verify cleanup before claiming a clean run.
 
 On macOS in an agent shell, unset `ELECTRON_RUN_AS_NODE` when launching Electron manually; the WDIO wrapper handles this.
 
 ## Analyze artifact (deterministic)
 
 ```bash
-pnpm run analyze:thread -- tests/e2e/artifacts/<file>.jsonl
+pnpm run analyze:thread tests/e2e/artifacts/<file>.jsonl
 
 # With expectations (exit 1 on violation)
-pnpm run analyze:thread -- tests/e2e/artifacts/<file>.jsonl tests/e2e/scenarios/my-issue.json
+pnpm run analyze:thread tests/e2e/artifacts/<file>.jsonl tests/e2e/scenarios/my-issue.json
 ```
 
 Optional `expect` block in scenario JSON:
@@ -107,7 +110,7 @@ After the analyzer JSON, write a short report:
 4. **Answer quality** — Factual vs repo, actionable, hallucinations.
 5. **Verdict** — Pass / fail / partial; one concrete next change (prompt, heuristic, or product).
 
-Use the user’s exported JSONL from Downloads the same way: `pnpm run analyze:thread -- ~/Downloads/foo.jsonl` then judge in prose.
+Use the user’s exported JSONL from Downloads the same way: `pnpm run analyze:thread ~/Downloads/foo.jsonl` then judge in prose.
 
 ## Scenario authoring tips
 

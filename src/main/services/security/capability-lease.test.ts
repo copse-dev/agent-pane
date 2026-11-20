@@ -20,9 +20,70 @@ const identity: ShellReplayLeaseIdentity = {
 }
 
 describe('ShellReplayLeaseStore', () => {
+  for (const containment of ['project-sandbox', 'external'] as const) {
+    it(`shares an active ${containment} lease without replenishing its budget or deadline`, () => {
+      let now = 1_000
+      const store = new ShellReplayLeaseStore({ now: (): number => now })
+      const owner = { ...identity, containment }
+      const approval = {}
+      const first = store.issue(owner, 'npm test', approval)
+      assert.ok(first)
+      assert.equal(store.consume(owner, 'npm test', () => false).matched, true)
+      now += 1_000
+
+      assert.equal(store.issue(owner, 'npm test', approval), null)
+      for (let index = 1; index < first.remainingReplays; index++) {
+        assert.equal(store.consume(owner, 'npm test', () => false).matched, true)
+      }
+      assert.equal(store.consume(owner, 'npm test', () => false).matched, false)
+
+      assert.equal(store.issue(owner, 'npm test', approval), null, 'late sibling cannot renew')
+      assert.equal(store.consume(owner, 'npm test', () => false).matched, false)
+      const renewed = store.issue(owner, 'npm test', {})
+      assert.ok(renewed)
+      assert.notEqual(renewed.id, first.id)
+      assert.equal(renewed.remainingReplays, first.remainingReplays)
+      assert.ok(renewed.expiresAt > first.expiresAt)
+    })
+  }
+
+  it('can issue a fresh lease after the previous deadline', () => {
+    let now = 1_000
+    const store = new ShellReplayLeaseStore({ now: (): number => now })
+    const approval = {}
+    const first = store.issue(identity, 'npm test', approval)
+    assert.ok(first)
+    now += 1_000
+    assert.equal(store.issue(identity, 'npm test', approval), null)
+    now = first.expiresAt
+    assert.equal(store.issue(identity, 'npm test', approval), null)
+    assert.equal(store.consume(identity, 'npm test', () => false).matched, false)
+    const renewed = store.issue(identity, 'npm test', {})
+    assert.ok(renewed)
+    assert.notEqual(renewed.id, first.id)
+    assert.equal(renewed.expiresAt, now + SHELL_REPLAY_LEASE_TTL_MS)
+    assert.equal(renewed.remainingReplays, first.remainingReplays)
+  })
+
+  for (const revoke of ['lease', 'thread', 'all'] as const) {
+    it(`does not resurrect an approval after revoking ${revoke}`, () => {
+      const store = new ShellReplayLeaseStore()
+      const approval = {}
+      const lease = store.issue(identity, 'npm test', approval)
+      assert.ok(lease)
+      if (revoke === 'lease') store.revoke(lease.id)
+      else if (revoke === 'thread') store.revokeThread(identity.threadId)
+      else store.clear()
+      assert.equal(store.issue(identity, 'npm test', approval), null)
+      assert.equal(store.consume(identity, 'npm test', () => false).matched, false)
+      assert.ok(store.issue(identity, 'npm test', {}))
+      assert.equal(store.consume(identity, 'npm test', () => false).matched, true)
+    })
+  }
+
   it('permits only the bounded number of exact replays', () => {
     const store = new ShellReplayLeaseStore({ createId: (): string => 'lease-1' })
-    store.issue(identity, 'npm test -- permission-gate')
+    store.issue(identity, 'npm test -- permission-gate', {})
 
     for (let index = 0; index < SHELL_REPLAY_LEASE_SANDBOX_MAX_REPLAYS; index++) {
       assert.deepEqual(
@@ -46,7 +107,8 @@ describe('ShellReplayLeaseStore', () => {
     let now = 1_000
     const store = new ShellReplayLeaseStore({ now: (): number => now })
     const external: ShellReplayLeaseIdentity = { ...identity, containment: 'external' }
-    const lease = store.issue(external, 'npm test')
+    const lease = store.issue(external, 'npm test', {})
+    assert.ok(lease)
 
     assert.equal(lease.remainingReplays, SHELL_REPLAY_LEASE_EXTERNAL_MAX_REPLAYS)
     assert.equal(lease.expiresAt, 1_000 + SHELL_REPLAY_LEASE_EXTERNAL_TTL_MS)
@@ -72,7 +134,7 @@ describe('ShellReplayLeaseStore', () => {
 
     for (const changed of changedIdentities) {
       const store = new ShellReplayLeaseStore()
-      store.issue(identity, 'npm test')
+      store.issue(identity, 'npm test', {})
       assert.deepEqual(
         store.consume(changed, 'npm test', () => true),
         { matched: false },
@@ -86,7 +148,7 @@ describe('ShellReplayLeaseStore', () => {
       now: (): number => now,
       createId: (): string => 'lease-1',
     })
-    store.issue(identity, 'npm test')
+    store.issue(identity, 'npm test', {})
     now += SHELL_REPLAY_LEASE_TTL_MS
     assert.deepEqual(
       store.consume(identity, 'npm test', () => true),
@@ -94,7 +156,8 @@ describe('ShellReplayLeaseStore', () => {
     )
 
     now = 1_000
-    const lease = store.issue(identity, 'npm test')
+    const lease = store.issue(identity, 'npm test', {})
+    assert.ok(lease)
     assert.equal(store.revoke(lease.id), true)
     assert.deepEqual(
       store.consume(identity, 'npm test', () => true),
@@ -102,9 +165,19 @@ describe('ShellReplayLeaseStore', () => {
     )
   })
 
+  it('forgets grants on restart and refuses denied or absent authority', () => {
+    const store = new ShellReplayLeaseStore()
+    assert.equal(store.consume(identity, 'npm test', () => true).matched, false)
+    store.issue(identity, 'npm test', {})
+    const restarted = new ShellReplayLeaseStore()
+    assert.equal(restarted.consume(identity, 'npm test', () => true).matched, false)
+    store.clear()
+    assert.equal(store.consume(identity, 'npm test', () => true).matched, false)
+  })
+
   it('allows independently authorized output filters after the exact leased command', () => {
     const store = new ShellReplayLeaseStore({ createId: (): string => 'lease-1' })
-    store.issue(identity, 'npm test -- permission-gate')
+    store.issue(identity, 'npm test -- permission-gate', {})
     const seen: string[] = []
 
     assert.deepEqual(
@@ -123,7 +196,7 @@ describe('ShellReplayLeaseStore', () => {
 
   it('composes an exact lease with independently authorized commands', () => {
     const store = new ShellReplayLeaseStore({ createId: (): string => 'lease-1' })
-    store.issue(identity, 'npm test -- permission-gate')
+    store.issue(identity, 'npm test -- permission-gate', {})
     const allowed = new Set(['cd /workspace/project', 'ls artifacts', 'rg failed'])
 
     assert.deepEqual(
@@ -167,7 +240,7 @@ describe('ShellReplayLeaseStore', () => {
 
     for (const command of rejected) {
       const store = new ShellReplayLeaseStore()
-      store.issue(identity, 'npm test -- permission-gate')
+      store.issue(identity, 'npm test -- permission-gate', {})
       assert.deepEqual(
         store.consume(identity, command, (segment) => segment.startsWith('rg')),
         { matched: false },

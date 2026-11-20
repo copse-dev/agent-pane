@@ -29,24 +29,26 @@
 export const CLAUDE_SANDBOX_ESCAPE_PARAM = 'dangerouslyDisableSandbox'
 
 /**
- * The refusal the agent reads in place of the command's output. `bridgeMounted`
- * says whether this session mounted Copse's native-tool bridge, the only Copse
- * route to a command outside the sandbox. A session that has the bridge may
- * still lose it (#4144), so that copy says what to do then too.
+ * The refusal the agent reads in place of the command's output. `bridgeServer`
+ * is the MCP server name this session mounted Copse's native-tool bridge under
+ * (the only Copse route to a command outside the sandbox), or null when it
+ * mounted none. A session that has the bridge may still lose it (#4144), so
+ * that copy says what to do then too.
  */
-export function claudeSandboxEscapeRefusal(bridgeMounted: boolean): string {
+export function claudeSandboxEscapeRefusal(bridgeServer: string | null): string {
   const lead =
     `Copse refused this command: ${CLAUDE_SANDBOX_ESCAPE_PARAM} has no effect here. ` +
     "This whole Claude Code process runs inside Copse's sandbox, not just its commands, " +
     'so the command would run in that same sandbox and fail the same way. Approval ' +
     'cannot unsandbox this shell.'
-  const route = bridgeMounted
-    ? 'To run a command outside the sandbox, call the run_shell tool of the "copse" MCP ' +
-      'server (mcp__copse__run_shell) with expects_sandbox_block: true; Copse can then ask ' +
-      'the user to approve running it outside the sandbox. If no mcp__copse__ tools are in ' +
-      "your tool list, Copse's tool bridge is not available in this session: tell the user " +
-      'what needs to run outside the sandbox instead of retrying.'
-    : 'Copse\'s tool bridge (the "copse" MCP server and its run_shell tool) is not available ' +
+  const route = bridgeServer
+    ? `To run a command outside the sandbox, call the run_shell tool of Copse's "${bridgeServer}" ` +
+      `MCP server (mcp__${bridgeServer}__run_shell) with expects_sandbox_block: true; Copse can ` +
+      'then ask the user to approve running it outside the sandbox. If no ' +
+      `mcp__${bridgeServer}__ tools are in your tool list, Copse's tool bridge is not ` +
+      'available in this session: tell the user what needs to run outside the sandbox ' +
+      'instead of retrying.'
+    : "Copse's tool bridge (its MCP server and that server's run_shell tool) is not available " +
       'in this session, so no tool here can run a command outside the sandbox. Tell the user ' +
       'what needs to run outside it instead of retrying.'
   return `${lead} ${route} A command that works inside the sandbox can be retried without ${CLAUDE_SANDBOX_ESCAPE_PARAM}.`
@@ -71,11 +73,11 @@ const ESCAPE_REQUESTED_ERE = `(^|[^\\\\])"${CLAUDE_SANDBOX_ESCAPE_PARAM}"[[:spac
  * stderr to the model") only when the escape was asked for. Plain `sh`, `cat`,
  * `printf` and `grep`: the hook runs inside the agent's sandbox, on macOS or Linux.
  */
-export function claudeSandboxEscapeHookCommand(bridgeMounted: boolean): string {
+export function claudeSandboxEscapeHookCommand(bridgeServer: string | null): string {
   return (
     'input=$(cat); ' +
     `if printf '%s' "$input" | grep -Eq ${singleQuote(ESCAPE_REQUESTED_ERE)}; then ` +
-    `printf '%s\\n' ${singleQuote(claudeSandboxEscapeRefusal(bridgeMounted))} >&2; exit 2; fi`
+    `printf '%s\\n' ${singleQuote(claudeSandboxEscapeRefusal(bridgeServer))} >&2; exit 2; fi`
   )
 }
 
@@ -87,7 +89,7 @@ const HOOK_TIMEOUT_SECONDS = 10
  * flag settings carrying the refusal hook. The adapter re-reads `_meta` on
  * every one of them, and a resumed session must keep the hook.
  */
-export function claudeSandboxEscapeSessionMeta(bridgeMounted: boolean): {
+export function claudeSandboxEscapeSessionMeta(bridgeServer: string | null): {
   claudeCode: { options: { settings: Record<string, unknown> } }
 } {
   return {
@@ -101,7 +103,7 @@ export function claudeSandboxEscapeSessionMeta(bridgeMounted: boolean): {
                 hooks: [
                   {
                     type: 'command',
-                    command: claudeSandboxEscapeHookCommand(bridgeMounted),
+                    command: claudeSandboxEscapeHookCommand(bridgeServer),
                     timeout: HOOK_TIMEOUT_SECONDS,
                   },
                 ],
