@@ -392,6 +392,10 @@
     "label": "Send prompts to your other threads?"
   },
   {
+    "id": "approval-thread-orchestrate",
+    "label": "Allow subthread orchestration?"
+  },
+  {
     "id": "approval-git-push",
     "label": "Push branch to origin?"
   },
