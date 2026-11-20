@@ -631,9 +631,15 @@ export function mountPrPane(
     row.addEventListener('click', () => {
       // Picked from local review: the list is fresh and this click loads (or keeps)
       // the PR, so switching the subject to it needs no second refresh.
-      if (!prsModeActive(store)) pickedFromList = true
+      const fromLocalReview = !prsModeActive(store)
+      if (fromLocalReview) pickedFromList = true
       // Re-picking the loaded PR keeps its tab and file; one whose load failed loads again.
-      if (prDetails && githubPrKey(prDetails) === githubPrKey(pr)) return
+      if (prDetails && githubPrKey(prDetails) === githubPrKey(pr)) {
+        // Back from local review the PR may have moved on (a push, a merge), and
+        // the subject switch above skips its refresh, so reload the details in place.
+        if (fromLocalReview) void refreshDetailsAfterAction(pr)
+        return
+      }
       void selectPr(pr)
     })
     if (!state) ensureCheck(pr)
@@ -871,10 +877,11 @@ export function mountPrPane(
   }
 
   /**
-   * Reload a PR's details after a lifecycle action without the heavier
-   * selectPr(): keep the existing details (and therefore the action buttons and
-   * the outcome status line) if the reload fails, and bail if the user has since
-   * selected a different PR so we never render one PR's data into another's view.
+   * Reload a PR's details after a lifecycle action, or a re-pick from local
+   * review, without the heavier selectPr(): keep the tab, the file, and the
+   * existing details (and therefore the action buttons and the outcome status
+   * line) if the reload fails, and bail if the user has since selected a
+   * different PR so we never render one PR's data into another's view.
    */
   async function refreshDetailsAfterAction(ref: PrRef): Promise<void> {
     if (!isStillSelected(ref)) return

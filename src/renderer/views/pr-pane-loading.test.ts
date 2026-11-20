@@ -224,6 +224,73 @@ describe('pr pane loading state', () => {
     assert.deepEqual(calls, [])
   })
 
+  it('reloads the PR it was showing when picked again from local review', async () => {
+    let state: GhPrDetails['state'] = 'OPEN'
+    const pr: GhPrDetails = {
+      owner: 'acme',
+      repo: 'widgets',
+      number: 42,
+      title: 'Keep search results in order',
+      url: 'https://github.com/acme/widgets/pull/42',
+      state: 'OPEN',
+      body: '',
+      files: [],
+    }
+    const calls: string[] = []
+    const base = createFakeApi()
+    const api: ApiClient = {
+      ...base,
+      gh: {
+        ...base['gh'],
+        status: async () => ({
+          installed: true,
+          authenticated: true,
+          username: 'alex',
+          message: null,
+        }),
+        agentPrLinks: async () => [],
+        onListsTick: noopUnsub,
+        setListWatch: async () => {},
+        listWorkspaceOpenPrs: async () => [{ ...pr, state }],
+        prChecks: async () => 'success',
+        prDetails: async () => {
+          calls.push('details')
+          return { ...pr, state }
+        },
+        prThreadRelationships: async () => {
+          calls.push('select')
+          return []
+        },
+      },
+    }
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'prs',
+    })
+    const listRoot = document.createElement('div')
+    const viewerRoot = document.createElement('div')
+    document.body.append(listRoot, viewerRoot)
+    const pane = mountPrPane(listRoot, viewerRoot, store, api, MONACO_STUB)
+    await flush()
+    const lifecycle = (): string => viewerRoot.querySelector('.pr-lifecycle')?.textContent ?? ''
+    assert.equal(lifecycle(), 'Open')
+
+    // Review local changes, push them, and the PR moves on meanwhile.
+    store.setState({ rightPanelMode: 'changes' })
+    state = 'MERGED'
+    pane.loadList()
+    await flush()
+    calls.length = 0
+
+    listRoot.querySelector<HTMLButtonElement>('.pr-list-row')?.click()
+    store.setState({ rightPanelMode: 'prs' })
+    await flush()
+    assert.deepEqual(calls, ['details'], 'the re-picked PR reloads in place, once')
+    assert.equal(lifecycle(), 'Merged')
+  })
+
   it('shows a loading row instead of the "install gh" copy while status is in flight', async () => {
     const { listRoot } = mount(createPendingApi({ 'gh.onListsTick': noopUnsub }))
     await settle()
