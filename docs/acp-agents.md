@@ -89,7 +89,13 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
     reason is logged.
   - **Guidance.** The turn's Copse guidance (canonical `turnStart`) is built
     after the mount is known. It names only the bridge tools the agent actually
-    has: listed, and not dropped since.
+    has: listed, and not dropped since. Each Copse-managed prompt also names the
+    current exact bridge server, including when an existing provider session is
+    resumed or loaded in a new process. That current host identification supersedes
+    earlier bridge identities in the conversation. The replacement gets its own
+    nonce; another `copse`-prefixed server or matching tool names cannot inherit
+    native authority or approvals. Agent-managed turns retain native prompting
+    without Copse's prompt assembly.
 - **How a tool call gets its name differs per agent**, and no agent fills in
   every field. Wire traces of three (captured with the `COPSE_DEBUG_ACP_UPDATES`
   flag from #1659):

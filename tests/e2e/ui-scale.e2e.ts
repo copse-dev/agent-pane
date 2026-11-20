@@ -316,7 +316,28 @@ describe('interface scale (--ui-scale)', () => {
   })
 
   it('steps with the Zoom In keyboard shortcut', async () => {
-    // Start from the scaled state left by the previous tests (1.25 → 1.35).
+    // Establish the starting scale through Appearance even when this case runs alone.
+    await $('[aria-label="Settings"]').click()
+    await $('.settings-nav-btn[data-section="appearance"]').click()
+    const scaleInput = await $('input[name="uiScale"]').getElement()
+    await scaleInput.waitForDisplayed({ timeout: 30_000 })
+    await browser.waitUntil(async () => (await scaleInput.getValue()) !== '', {
+      timeout: 30_000,
+      timeoutMsg: 'expected uiScale to load into Appearance settings',
+    })
+    await browser.execute(() => {
+      const input = document.querySelector<HTMLInputElement>('input[name="uiScale"]')
+      if (!input) throw new Error('missing Appearance scale input')
+      input.value = '1.25'
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+      document.querySelector<HTMLButtonElement>('.settings-buttons button[type="submit"]')?.click()
+    })
+    await $('#settings-dialog').waitForDisplayed({ reverse: true, timeout: 30_000 })
+    await browser.waitUntil(async () => (await uiScaleSnapshot())?.uiScaleInline === '1.25', {
+      timeout: 10_000,
+      timeoutMsg: 'expected --ui-scale=1.25 before the Zoom In shortcut',
+    })
     // Dispatch the chord in-page so we exercise the renderer keydown path
     // (WebdriverIO chord synthesis is flaky for Ctrl+= across platforms).
     await browser.execute(() => {
