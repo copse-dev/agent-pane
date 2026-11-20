@@ -429,6 +429,16 @@ describe('scroll to bottom', () => {
     // Stay scrolled up while tokens keep arriving: wait for the reply's last
     // paragraph to land below, then for the transcript to come to rest.
     await waitForLastAssistantText(STREAMING_TAIL)
+    // The paced reveal keeps painting after the text lands and its settled
+    // render can change the transcript height; capture after it, not during.
+    await browser.waitUntil(
+      async () => browser.execute(() => !document.querySelector('.messages-list .is-streaming')),
+      {
+        timeout: 30_000,
+        interval: 50,
+        timeoutMsg: 'expected the streamed reply to finish revealing',
+      },
+    )
     await waitForTranscriptScrollSettled(true)
 
     expect(await isScrollToBottomVisible()).toBe(true)
