@@ -80,7 +80,10 @@ describe('onboarding gating', () => {
 
   it('never shows again on a completed profile', async function () {
     this.timeout(90_000)
-    // Same profile, fresh app process — the completed flag written by skip gates it.
+    // A profile whose settings hold only the flag the skip test above shows a
+    // dismissal persists. Seeded here so this test does not depend on that
+    // test having run first; a fresh app process must boot past onboarding.
+    seedOnboardingFixture({ onboardingCompleted: true })
     await browser.reloadSession()
     await $('.welcome-new-btn').waitForDisplayed({ timeout: 30_000 })
     expect(
