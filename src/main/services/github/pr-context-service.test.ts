@@ -136,11 +136,11 @@ describe('getGitBranchStatus detachment', { skip: !gitOk }, () => {
     git('commit', '-q', '--allow-empty', '-m', 'init')
     const status = (checkout: string | null): ReturnType<typeof getGitBranchStatus> =>
       getGitBranchStatus('project-1', undefined, checkout)
-    const none = { currentBranch: null, pr: null, detached: false }
+    const none = { currentBranch: null, pr: null }
 
     assert.deepEqual(await status(null), none, 'no checkout found')
     assert.deepEqual(await status(plain), none, 'not a repository')
-    assert.deepEqual(await status(repo), { currentBranch: 'main', pr: null, detached: false })
+    assert.deepEqual(await status(repo), { currentBranch: 'main', pr: null })
 
     git('switch', '-q', '--detach')
     assert.deepEqual(await status(repo), { currentBranch: null, pr: null, detached: true })
@@ -159,7 +159,6 @@ describe('getGitBranchStatus detachment', { skip: !gitOk }, () => {
       assert.deepEqual(await getGitBranchStatus('project-1', undefined, root), {
         currentBranch: 'work',
         pr: null,
-        detached: false,
       })
     } finally {
       if (previousE2e === undefined) delete process.env['COPSE_E2E']

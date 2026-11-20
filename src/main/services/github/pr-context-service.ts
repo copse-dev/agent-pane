@@ -319,8 +319,9 @@ export async function getGitBranchStatus(
 ): Promise<GitBranchStatus> {
   // No checkout found yet (a thread not saved yet), or not a repository: not
   // detached, which the renderer would otherwise read as a reason to start
-  // where HEAD is instead of on the default branch.
-  const empty: GitBranchStatus = { currentBranch: null, pr: null, detached: false }
+  // where HEAD is instead of on the default branch. `detached` is set only when
+  // Git reports it, so every other status keeps the shape older hosts send.
+  const empty: GitBranchStatus = { currentBranch: null, pr: null }
   if (!root) return empty
 
   // Routes through readCheckoutHead so the e2e branch override (screenshot
@@ -334,7 +335,7 @@ export async function getGitBranchStatus(
   // already reports it. Skip the PR lookup rather than spawning gh, which would
   // reject with "spawn gh ENOENT" and surface an error toast on every workspace
   // that has a branch (failing nearly every workspace e2e spec via afterTest).
-  if (!isGhAvailable()) return { currentBranch, pr: null, detached: false }
+  if (!isGhAvailable()) return { currentBranch, pr: null }
 
   const pr = await getOpenPrForBranch(
     projectId,
@@ -343,5 +344,5 @@ export async function getGitBranchStatus(
     dependencies.runGh,
   )
 
-  return { currentBranch, pr, detached: false }
+  return { currentBranch, pr }
 }
