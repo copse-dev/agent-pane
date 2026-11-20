@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { after, before, describe, it } from 'node:test'
+import childProcess, { type ChildProcess, type SpawnOptions } from 'node:child_process'
 import {
   chmodSync,
   existsSync,
@@ -12,8 +13,9 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { createServer } from 'node:http'
+import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join, posix } from 'node:path'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import { baseSandboxConfig } from './config.ts'
 import { setProjectSandboxEnabled } from './enabled.ts'
@@ -69,6 +71,43 @@ it('fails closed before running preparation or preflight when the sandbox is una
     /active OS sandbox/,
   )
 })
+
+it(
+  'launches bubblewrap by absolute path on Linux',
+  { skip: process.platform !== 'linux' },
+  async (t) => {
+    // Record the wrapper command instead of running it.
+    const realSpawn = childProcess.spawn
+    let wrapped: string | undefined
+    t.mock.method(
+      childProcess,
+      'spawn',
+      (file: string, args: readonly string[], options: SpawnOptions): ChildProcess => {
+        if (file !== '/bin/bash' || args[0] !== '-c') return realSpawn(file, args, options)
+        wrapped = args[1]
+        return realSpawn('/bin/bash', ['-c', 'true'], options)
+      },
+    )
+    syncBuiltinESMExports()
+    t.mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+    mkdirSync(root, { recursive: true })
+    setProjectSandboxEnabled(true)
+    try {
+      await runWorktreePreparationProcess(process.execPath, ['-e', ''], {
+        root,
+        env,
+        mode: 'preflight',
+        offline: true,
+      })
+    } finally {
+      setProjectSandboxEnabled(false)
+      t.mock.restoreAll()
+      syncBuiltinESMExports()
+    }
+    const launcher = wrapped?.split(' ')[0] ?? ''
+    assert.ok(posix.isAbsolute(launcher) && basename(launcher) === 'bwrap', launcher)
+  },
+)
 
 it(
   'rejects cache symlinks without creating anything in their target',
