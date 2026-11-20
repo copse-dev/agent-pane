@@ -13,7 +13,28 @@
 #              removes it to drop and restore the link
 #   home       if present, the remote account's home directory (its contents
 #              are the path); otherwise the local $HOME is reported
+#   forward-L  the pid of a running loopback forward from local port L
 state="${COPSE_E2E_FAKE_SSH_STATE:?fake ssh needs COPSE_E2E_FAKE_SSH_STATE}"
+here="$(dirname "$0")"
+
+# The `-L 127.0.0.1:L:127.0.0.1:R` argument of a forward control command.
+forward_spec() {
+  prev=''
+  for arg; do
+    if [ "$prev" = "-L" ]; then
+      printf '%s' "$arg"
+      return
+    fi
+    prev=$arg
+  done
+}
+
+stop_forward() {
+  if [ -e "$state/forward-$1" ]; then
+    kill "$(cat "$state/forward-$1")" 2>/dev/null
+    rm -f "$state/forward-$1"
+  fi
+}
 
 # Control commands talk to the local master only; they never reach the host.
 case " $* " in
@@ -22,10 +43,31 @@ case " $* " in
     exit 255
     ;;
   *" -O exit "*)
+    for pidfile in "$state"/forward-*; do
+      [ -e "$pidfile" ] && stop_forward "${pidfile##*/forward-}"
+    done
     rm -f "$state/master"
     exit 0
     ;;
-  *" -O forward "* | *" -O cancel "*)
+  *" -O forward "*)
+    [ -e "$state/master" ] && [ ! -e "$state/host-down" ] || exit 255
+    spec="$(forward_spec "$@")"
+    local_port="$(printf '%s' "$spec" | cut -d: -f2)"
+    remote_port="$(printf '%s' "$spec" | cut -d: -f4)"
+    node "$here/forward.cjs" "$local_port" "$remote_port" "$state/forward-$local_port" \
+      >/dev/null 2>&1 &
+    # Like OpenSSH, answer only once the local end is listening.
+    tries=0
+    while [ ! -s "$state/forward-$local_port" ] && [ "$tries" -lt 50 ]; do
+      sleep 0.1
+      tries=$((tries + 1))
+    done
+    [ -s "$state/forward-$local_port" ] && exit 0
+    exit 255
+    ;;
+  *" -O cancel "*)
+    spec="$(forward_spec "$@")"
+    stop_forward "$(printf '%s' "$spec" | cut -d: -f2)"
     exit 0
     ;;
 esac

@@ -214,6 +214,7 @@
       "local-classifiers:uninstall",
       "machines:invitation",
       "machines:pair",
+      "machines:pair-over-ssh",
       "machines:remove",
       "machines:revoke",
       "machines:share",

@@ -13,7 +13,7 @@ export interface MachinesSectionOptions {
 }
 
 export function createMachinesSection(
-  api: Pick<ApiClient, 'machines' | 'classifiers'>,
+  api: Pick<ApiClient, 'machines' | 'classifiers' | 'sshWorkspace'>,
   options: MachinesSectionOptions = {},
 ): {
   root: HTMLDivElement
@@ -32,6 +32,14 @@ export function createMachinesSection(
     'button',
     { type: 'button', class: 'ui-btn ui-btn-primary machine-pair' },
     'Connect machine',
+  )
+  // A machine sharing on its own loopback is reached through an SSH host the
+  // user already has; one sharing on a network address is reached directly.
+  const via = el('select', { name: 'machinePairVia', 'aria-label': 'Reach it through' })
+  const viaHint = el(
+    'p',
+    { class: 'field-hint machine-pair-via-hint' },
+    'Choose the SSH machine when the other computer shares on "This computer only": its models are then reached over your SSH connection, from any network, with no address to type.',
   )
   const enabled = el('input', { type: 'checkbox', name: 'machineSharingEnabled' })
   const address = el('select', { name: 'machineSharingAddress' })
@@ -101,6 +109,8 @@ export function createMachinesSection(
     'div',
     { class: 'machine-pair-controls', hidden: true },
     el('label', {}, 'Pairing invitation', invitationInput),
+    el('label', {}, 'Reach it through', via),
+    viaHint,
     el('div', { class: 'provider-actions' }, pair),
     secure,
   )
@@ -314,7 +324,10 @@ export function createMachinesSection(
   }
   pair.addEventListener('click', () => {
     void action(async () => {
-      show(await api.machines.pair(invitationInput.value.trim()))
+      const code = invitationInput.value.trim()
+      show(
+        via.value ? await api.machines.pairOverSsh(code, via.value) : await api.machines.pair(code),
+      )
       invitationInput.value = ''
       setInlineStatus(status, 'ok', 'Machine connected. Choose a shared model below its name.')
     })
@@ -357,11 +370,21 @@ export function createMachinesSection(
       )
     }, sharingFeedback)
   })
+  /** Saved SSH hosts as routes, keeping the choice the user already made. */
+  async function fillVia(): Promise<void> {
+    const hosts = await api.sshWorkspace.listHosts().catch(() => [])
+    const chosen = via.value
+    clear(via)
+    via.append(el('option', { value: '' }, 'This network (no SSH)'))
+    for (const host of hosts)
+      via.append(el('option', { value: host.id }, `SSH: ${host.label} (${host.host})`))
+    via.value = hosts.some((host) => host.id === chosen) ? chosen : ''
+  }
   async function refresh(signal?: AbortSignal): Promise<void> {
     if (refreshing || busy) return
     refreshing = true
     try {
-      const state = await api.machines.state()
+      const [state] = await Promise.all([api.machines.state(), fillVia()])
       if (!signal?.aborted) show(state)
     } catch (error) {
       if (signal?.aborted) return
