@@ -31307,7 +31307,7 @@ function createMachinesSection(api, options = {}) {
       { class: "settings-fieldset-desc" },
       "Use System One models on another computer on the same network. Open Copse there, share a local model, and paste its invitation here. SSH is not required."
     ),
-    list,
+    ...options.list ? [] : [list],
     pairControls,
     status
   );
@@ -31975,9 +31975,10 @@ function createSshWorkspaceSection(api, opts = {}) {
   function clearDraft() {
     hostFields.reset();
   }
+  let renderGeneration = 0;
   async function renderHosts(signal) {
     if (signal?.aborted) return;
-    clear(hostList);
+    const generation = ++renderGeneration;
     const [rawHosts, credentialHostIds, states, agentsOnRemote, desktop, trusted] = await Promise.all([
       api.settings.get("sshWorkspaceHosts"),
       api.sshWorkspace.listCredentialHostIds(),
@@ -31986,7 +31987,8 @@ function createSshWorkspaceSection(api, opts = {}) {
       api.settings.get("vncEnabled"),
       api.settings.get("trustedSshHosts")
     ]);
-    if (signal?.aborted) return;
+    if (signal?.aborted || generation !== renderGeneration) return;
+    clear(hostList);
     const list = parseSshWorkspaceHosts(rawHosts);
     const credentialHosts = new Set(credentialHostIds);
     const context = {
@@ -32142,6 +32144,9 @@ function createSshWorkspaceSection(api, opts = {}) {
     form,
     status
   );
+  api.sshWorkspace.onConnectionChanged(() => {
+    void renderHosts();
+  });
   return {
     root,
     refresh,
