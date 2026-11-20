@@ -11,6 +11,11 @@ The implementation lives in [`@copse/thread-store`](../packages/thread-store/REA
 The app's `src/main/services/thread-store.ts` is a compatibility re-export that
 installs the profile and tracing environment first.
 
+The native `search_project_context` / `read_project_context` tools provide bounded,
+project-scoped reads over message/tool evidence and enabled OKF memories. They preserve
+conversation-read consent and do not index private provider/session files. See the
+[retrieval prototype](spikes/project-context-retrieval.md) for limits and remaining work.
+
 ## Location
 
 ```
@@ -291,6 +296,7 @@ append is the commit point). See [`spine-schema.ts`](../packages/thread-store/sr
       "status": "done" | "error",
       "result": { "ref": "blobs/<messageId>.tool-<n>.result.txt", "sha256": "…" } | null,
       "editStats": { "additions": 1, "deletions": 2 }, // optional
+      "deferred": true, // optional: the host held the call back without running it
       "commandPhase": { "state": "exited", "since": 1712345678901, "launched": true,
                         "exitCode": 0 }, // optional: run_shell/run_background lifecycle
       "subagent": { "ref": "subagents/<id>/", "kind": "explore", "status": "done",

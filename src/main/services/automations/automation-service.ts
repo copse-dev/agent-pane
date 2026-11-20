@@ -18,7 +18,10 @@ import type {
 } from '@shared/types'
 import { AUTOMATION_RETAINED_REASONS, automationPermissionKey } from '@shared/types'
 import { automationRunBlock } from '@shared/automation-run-state.ts'
-import { classifyAutomationFailureMessage } from '@shared/automation-failure.ts'
+import {
+  classifyAutomationCheckoutFailure,
+  classifyAutomationFailureMessage,
+} from '@shared/automation-failure.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import type { AgentDispatchRequest } from '../agent-dispatcher.ts'
 import { getPluginService } from '../plugins/plugin-service.ts'
@@ -36,6 +39,7 @@ import {
 } from '../thread-checkout-transaction.ts'
 import { createHeadlessAutomationRun } from './headless-message-assembler.ts'
 import {
+  automationRunBlocksAdmission,
   reconcileInterruptedAutomationRuns,
   type AutomationRunLiveness,
 } from './automation-run-recovery.ts'
@@ -55,6 +59,7 @@ import {
   type SupervisedTaskHandler,
 } from '../supervisor/task-supervisor.ts'
 import type { SupervisedTaskMeta } from '@shared/supervisor/task-schema.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 const STORAGE_KEY = `plugin.${AUTOMATIONS_PLUGIN_ID}.storage`
 const SCHEDULER_HANDLER = 'automation_scheduler_tick'
@@ -338,6 +343,7 @@ export interface AutomationService {
     dispatch: DispatchHeadlessTurn,
     shownProjectId: () => string | null,
     isRunActive?: AutomationRunLiveness,
+    ownsAgentWork?: AutomationRunLiveness,
   ): void
   sync(): Promise<void>
   stop(): void
@@ -409,6 +415,7 @@ export function createAutomationService(
   let notifiedWindowProjectId: (() => string | null) | null = null
   let dispatchHeadlessTurn: DispatchHeadlessTurn | null = null
   let isRunActive: AutomationRunLiveness | undefined
+  let ownsAgentWork: AutomationRunLiveness | undefined
   let disposeSupervisorHandler: (() => void) | null = null
   let disposeSupervisorSubscription: (() => void) | null = null
   let recoveryTimer: ReturnType<typeof setTimeout> | null = null
@@ -481,7 +488,7 @@ export function createAutomationService(
   }
 
   async function logTriggerFailure(schedule: AutomationSchedule, error: unknown): Promise<void> {
-    const message = error instanceof Error ? error.message : String(error)
+    const message = errorMessage(error)
     console.error(`[automations] Failed to create task for “${schedule.name}”: ${message}`)
     await recordProblem(schedule, {
       at: dependencies.now(),
@@ -646,10 +653,7 @@ export function createAutomationService(
       recoveryTimer = null
       void ensureSupervisorTask().catch((error: unknown) => {
         console.error('[automations] Scheduler recovery failed:', error)
-        setHealth(
-          'stopped',
-          `Scheduled triggers are not firing: ${error instanceof Error ? error.message : String(error)}`,
-        )
+        setHealth('stopped', `Scheduled triggers are not firing: ${errorMessage(error)}`)
       })
     }, dependencies.recoveryDelayMs ?? SCHEDULER_RECOVERY_DELAY_MS)
     recoveryTimer.unref()
@@ -707,12 +711,12 @@ export function createAutomationService(
           current.automation.triggeredAt !== automation.triggeredAt
         )
           return
-        const message = error instanceof Error ? error.message : String(error)
+        const message = errorMessage(error)
         await updateMetaOrThrow(projectId, threadId, {
           automation: { ...automation, startFailedAt: dependencies.now() },
         })
         await service.reportStartFailure(projectId, threadId, {
-          code: 'worktree-failed',
+          code: classifyAutomationCheckoutFailure(message),
           message,
         })
         console.error(`[automations] Headless checkout failed for thread ${threadId}:`, error)
@@ -877,7 +881,9 @@ export function createAutomationService(
       const previous = schedule.lastCreatedThreadId
         ? (scheduleThreads.find((thread) => thread.id === schedule.lastCreatedThreadId) ?? null)
         : null
-      const busy = scheduleThreads.find((thread) => automationRunBlock(thread) !== null)
+      const busy = scheduleThreads.find((thread) =>
+        automationRunBlocksAdmission(schedule.projectId, thread, ownsAgentWork),
+      )
 
       if (busy) {
         if (automationRunBlock(busy) === 'pending-start') {
@@ -1223,11 +1229,12 @@ export function createAutomationService(
         inFlight.delete(schedule.id)
       }
     },
-    start(sender, dispatch, shownProjectId, runtimeIsActive) {
+    start(sender, dispatch, shownProjectId, runtimeIsActive, runtimeOwnsAgentWork) {
       notify = sender
       notifiedWindowProjectId = shownProjectId
       dispatchHeadlessTurn = dispatch
       isRunActive = runtimeIsActive
+      ownsAgentWork = runtimeOwnsAgentWork
       disposeSupervisorHandler ??= (dependencies.supervisor ?? getTaskSupervisor)().registerHandler(
         SCHEDULER_HANDLER,
         async (task) => {
@@ -1267,6 +1274,7 @@ export function createAutomationService(
       notify = null
       notifiedWindowProjectId = null
       isRunActive = undefined
+      ownsAgentWork = undefined
     },
     async tick(scheduledFor) {
       if (!dependencies.isPluginEnabled()) return

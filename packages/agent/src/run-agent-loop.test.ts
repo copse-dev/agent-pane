@@ -162,6 +162,39 @@ describe('runAgentLoop', () => {
     assert.deepEqual(toolMessage.toolResults, [{ toolCallId: '1', result: `found\n\n${block}` }])
   })
 
+  it('streams a deferred marker to the transcript but only the reason to the model', async () => {
+    const chunks: AgentStreamChunk[] = []
+    const messages: LLMMessage[] = [{ role: 'user', content: 'go' }]
+    await runAgentLoop({
+      provider: mockProvider([
+        [
+          { type: 'tool_call', toolCall: { id: '1', name: 'write_file', args: {} } },
+          { type: 'tool_call', toolCall: { id: '2', name: 'read_file', args: {} } },
+          { type: 'done' },
+        ],
+        [{ type: 'text', text: 'done' }, { type: 'done' }],
+      ]),
+      messages,
+      tools: [],
+      onChunk: (c) => chunks.push(c),
+      executeTool: async (name) =>
+        name === 'write_file' ? { result: 'Edit deferred.', deferred: true } : 'contents',
+    })
+    assert.deepEqual(
+      chunks.flatMap((c) => (c.type === 'tool_result' ? [[c.toolCallId, c.deferred]] : [])),
+      [
+        ['1', true],
+        ['2', undefined],
+      ],
+    )
+    const toolMessage = messages.find((m) => m.role === 'tool')
+    assert.ok(toolMessage?.role === 'tool')
+    assert.deepEqual(toolMessage.toolResults, [
+      { toolCallId: '1', result: 'Edit deferred.' },
+      { toolCallId: '2', result: 'contents' },
+    ])
+  })
+
   it('streams explicit visual evidence before settling its tool call', async () => {
     const chunks: AgentStreamChunk[] = []
     await runAgentLoop({

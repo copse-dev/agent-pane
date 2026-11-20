@@ -116,8 +116,8 @@ export function listSubagentRuns(messages: Message[]): SubagentRunSummary[] {
  * Total tokens spent by subagents in a thread, at every nesting depth.
  *
  * A session records its usage as soon as it finishes, but the main process
- * only folds it into the thread total once the parent loop completes
- * (`subagent-usage.ts`), and not at all when that loop fails. So this is how
+ * folds it into the thread total before the admitted turn completes
+ * (`subagent-usage.ts`), including failure and cancellation. So this is how
  * much work was delegated, not how much of the thread total it accounts for;
  * `ThreadUsage.subagentInputTokens` records that.
  */

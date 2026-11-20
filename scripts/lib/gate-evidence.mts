@@ -49,6 +49,18 @@ export const classificationSchema = z.array(
     evidence: z.url(),
   }),
 )
+export type SpecOutcome = z.infer<typeof outcomeSchema>
+/**
+ * The retry-absorbed failure: within one workflow run attempt, a spec failed
+ * and the shard's second attempt passed it. compareOutcomes and the flake
+ * report share this rule so the shadow gate and the flake data never disagree.
+ */
+export function passedOnRetry(rows: readonly SpecOutcome[]): boolean {
+  return (
+    rows.some((row) => row.outcome === 'failed') &&
+    rows.some((row) => row.attempt === 2 && row.outcome === 'passed')
+  )
+}
 export function parseGatePlan(text: string): z.infer<typeof planSchema> {
   const value = safeJsonParse(text, decodeWithSchema(planSchema))
   if (!value) throw new Error('Invalid gate plan')
@@ -89,7 +101,7 @@ export function compareOutcomes(
     const rows = observations.filter((row) => Number(row.runAttempt) === latest)
     if (!rows.length || rows.some((row) => row.outcome === 'running')) incomplete.push(path)
     if (!rows.some((row) => row.outcome === 'failed')) continue
-    if (rows.some((row) => row.attempt === 2 && row.outcome === 'passed')) {
+    if (passedOnRetry(rows)) {
       retriedPass.push(path)
       continue
     }

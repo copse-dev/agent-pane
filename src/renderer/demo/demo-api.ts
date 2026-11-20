@@ -580,6 +580,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
   )
 
   const api: ApiClient = {
+    remote: { publish: async () => {} },
     clientActions: {
       claim: () => Promise.resolve(false),
       publish: async () => {},
@@ -587,9 +588,25 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onInvoke: () => () => {},
     },
     threadPrompts: {
+      // Demo scenarios never dispatch native delegated work.
+      canDispatch: () => resolved(false),
+      canSubmit: () => resolved(true),
       onPrompt: () => () => {},
       reply: async () => {},
-      revokeAccess: async () => {},
+      revokeAccess: (threadId, access) => {
+        const key =
+          access === 'read'
+            ? 'threadReadAccess'
+            : access === 'send'
+              ? 'threadSendAccess'
+              : 'threadSubthreadAccess'
+        const grants = settings.get(key)
+        settings.set(
+          key,
+          Array.isArray(grants) ? grants.filter((id: unknown) => id !== threadId) : [],
+        )
+        return resolvedVoid()
+      },
     },
     mobile: {
       getState: () =>

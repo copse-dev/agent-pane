@@ -5,6 +5,7 @@ import type { TurnOutcome } from '@shared/types'
 import { createStore } from '@shared/store/store.ts'
 import {
   addMessage,
+  addToolCall,
   createThread,
   getThreadById,
   setMessageTurnOutcome,
@@ -86,6 +87,102 @@ function addFinishedAssistant(
 }
 
 describe('explicit failed-turn recovery', () => {
+  for (const interrupted of [false, true]) {
+    it(`does not retry an explicit worker through the parent after ${interrupted ? 'restart' : 'failure'}`, () => {
+      const { store, api, runs } = setup()
+      const threadId = createThread(store)
+      addMessage(store, threadId, 'user', 'Read it')
+      const workerId = addMessage(store, threadId, 'assistant', '')
+      const failedId = interrupted
+        ? addMessage(store, threadId, 'assistant', 'Worker started')
+        : addFinishedAssistant(
+            store,
+            threadId,
+            'Worker failed',
+            outcome('failed', 'local', 'model-a'),
+          )
+      addToolCall(store, workerId, {
+        id: 'explicit-worker',
+        name: 'task',
+        args: { subagent_type: 'reader', prompt: 'Read it' },
+        status: 'error',
+        result: 'Worker failed',
+      })
+      if (interrupted) {
+        store.setState({
+          threads: store
+            .getState()
+            .threads.map((thread) =>
+              thread.id === threadId ? { ...thread, interruptedTurnAt: Date.now() } : thread,
+            ),
+        })
+      }
+      assert.equal(turnRecoveryForMessage(getThreadById(store, threadId), failedId), null)
+      assert.equal(
+        recoverFailedTurn(store, api, 'project-1', threadId, failedId, 'current-model'),
+        false,
+      )
+      assert.equal(runs.length, 0)
+    })
+  }
+
+  it('still offers recovery for a parent that delegated through a worker batch', () => {
+    const { store } = setup()
+    const threadId = createThread(store)
+    const failedId = addFinishedAssistant(
+      store,
+      threadId,
+      'Parent failed',
+      outcome('failed', 'local', 'model-a'),
+    )
+    addToolCall(store, failedId, {
+      id: 'batch',
+      name: 'run_readonly_workers',
+      args: { workers: [] },
+      status: 'done',
+      result: 'Worker report',
+    })
+    addToolCall(store, failedId, {
+      id: 'child',
+      name: 'task',
+      args: { subagent_type: 'reader' },
+      status: 'done',
+      result: 'Worker report',
+    })
+    assert.deepEqual(turnRecoveryForMessage(getThreadById(store, threadId), failedId), {})
+  })
+
+  it('retains recovery after an external agent dispatched its own task', () => {
+    const { store, api, runs } = setup()
+    const threadId = createThread(store)
+    addMessage(store, threadId, 'user', 'Read it')
+    const workerId = addMessage(store, threadId, 'assistant', '')
+    addToolCall(store, workerId, {
+      id: 'external-worker',
+      name: 'task',
+      kind: 'think',
+      title: 'Read the file',
+      programmaticName: 'task',
+      args: { subagent_type: 'Explore', prompt: 'Read it' },
+      status: 'done',
+      result: 'Worker report',
+    })
+    const failedId = addFinishedAssistant(
+      store,
+      threadId,
+      'Parent failed after delegation',
+      outcome('failed', 'acp', 'acp:fixture'),
+    )
+    assert.deepEqual(turnRecoveryForMessage(getThreadById(store, threadId), failedId), {})
+    assert.equal(
+      recoverFailedTurn(store, api, 'project-1', threadId, failedId, 'current-model'),
+      true,
+    )
+    assert.equal(runs.length, 1)
+    assert.ok(runs[0])
+    assert.equal(parseAgentRunPayload(runs[0].payload).invokedAgent, undefined)
+  })
+
   for (const reason of ['max_steps', 'timeout'] as const) {
     it(`continues a ${reason} checkpoint with a new human allowance and the current model`, () => {
       const { store, api, runs, selections } = setup()

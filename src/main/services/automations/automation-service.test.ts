@@ -2315,30 +2315,44 @@ describe('AutomationService', () => {
       service.stop()
     })
 
-    it('preserves an unsent failed-start draft and never dispatches when checkout fails', async (context) => {
-      context.mock.method(console, 'error', () => {})
-      const { service, dispatchCalls } = harness('project-b', new Error('checkout unavailable'))
-      const schedule = await service.upsert('project-a', {
-        name: 'Project health',
-        cron: '* * * * *',
-        prompt: 'Check project health.',
-        model: 'gpt-5.4',
-        enabled: true,
+    for (const failure of [
+      { message: 'checkout unavailable', code: 'worktree-failed' },
+      { message: 'Git authentication failed', code: 'worktree-failed' },
+      {
+        message:
+          'Authentication helper cannot start because its configured command is missing or not executable.',
+        code: 'no-model',
+      },
+      { message: 'The selected coding agent is not enabled.', code: 'no-model' },
+    ]) {
+      it(`preserves the headless draft and classifies ${failure.message}`, async (context) => {
+        context.mock.method(console, 'error', () => {})
+        const { service, dispatchCalls } = harness('project-b', new Error(failure.message))
+        context.after(() => {
+          service.stop()
+        })
+        const schedule = await service.upsert('project-a', {
+          name: 'Project health',
+          cron: '* * * * *',
+          prompt: 'Check project health.',
+          model: 'gpt-5.4',
+          enabled: true,
+        })
+        const event = await service.runNow('project-a', schedule.id)
+        const deadline = Date.now() + 5_000
+        while (service.list('project-a')[0]?.lastProblem === undefined) {
+          if (Date.now() > deadline) throw new Error('Checkout failure was not recorded')
+          await settle()
+        }
+        assert.equal(dispatchCalls.length, 0)
+        const thread = await getThreadMeta('project-a', event.threadId)
+        assert.equal(thread?.draftPrompt, 'Check project health.')
+        assert.equal(service.list('project-a')[0]?.lastProblem?.code, failure.code)
+        assert.notEqual(thread.automation?.startFailedAt, undefined)
+        assert.equal(service.list('project-a')[0]?.lastProblem?.message, failure.message)
+        service.stop()
       })
-      const event = await service.runNow('project-a', schedule.id)
-      const deadline = Date.now() + 5_000
-      while (
-        (await getThreadMeta('project-a', event.threadId))?.automation?.startFailedAt === undefined
-      ) {
-        if (Date.now() > deadline) throw new Error('Checkout failure was not recorded')
-        await settle()
-      }
-      assert.equal(dispatchCalls.length, 0)
-      const thread = await getThreadMeta('project-a', event.threadId)
-      assert.equal(thread?.draftPrompt, 'Check project health.')
-      assert.equal(service.list('project-a')[0]?.lastProblem?.code, 'worktree-failed')
-      service.stop()
-    })
+    }
 
     it('leaves the turn to the renderer when the schedule project is already focused', async () => {
       const { service, dispatchCalls } = harness('project-a')

@@ -263,6 +263,7 @@ export async function spawnShellInProjectSandbox(
     executionTarget?: ExecutionTarget
   } & Pick<SpawnOptions, 'stdio'>,
 ): Promise<ChildProcess> {
+  opts.signal?.throwIfAborted()
   const target = resolveSpawnTarget(opts.executionTarget, opts.cwd)
   if (opts.readonlyCheckout && (isSshExecutionTarget(target) || opts.unsandboxed)) {
     throw new Error('A read-only checkout cannot run commands outside the project sandbox')
@@ -277,6 +278,8 @@ export async function spawnShellInProjectSandbox(
     })
   }
   await requireLocalWorkingDirectory(opts.cwd)
+
+  opts.signal?.throwIfAborted()
 
   if (opts.readonlyCheckout && !isProjectSandboxEnabled()) {
     throw new Error('A read-only checkout needs the project sandbox, which is unavailable')
@@ -313,6 +316,7 @@ export async function spawnShellInProjectSandbox(
 
   const file = argv[0]
   if (!file) throw new Error('sandbox wrap produced empty argv')
+  opts.signal?.throwIfAborted()
   return spawn(resolveSandboxShellExecutable(file), argv.slice(1), {
     cwd: opts.cwd,
     env: withSandboxShellPath(

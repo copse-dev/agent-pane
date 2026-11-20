@@ -1,7 +1,10 @@
 import type { AppStore } from '@shared/store/store.ts'
 import { selectActiveWorkspace } from './active-workspace.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
-import { classifyAutomationFailureMessage } from '@shared/automation-failure.ts'
+import {
+  classifyAutomationCheckoutFailure,
+  classifyAutomationFailureMessage,
+} from '@shared/automation-failure.ts'
 import type { AutomationFailureCode } from '@shared/types'
 import type {
   AutomationSchedule,
@@ -247,7 +250,7 @@ export function attachAutomationController(
         // start, and every later trigger of the schedule is skipped behind it.
         const message = startFailureDetail(error)
         const code: AutomationFailureCode = checkoutStarted
-          ? 'worktree-failed'
+          ? classifyAutomationCheckoutFailure(message)
           : classifyAutomationFailureMessage(message)
         markAutomationStartFailed(store, threadId, { code, message })
         // Main keeps the schedule's last problem so the manager shows it with the project

@@ -1,13 +1,15 @@
 import { initClientActions } from './services/clients/client-action-ipc.ts'
 import './disable-brotli-decoding.ts' // MUST be first — see the module
+import { stopAllForegroundShellProcesses } from './services/exec/foreground-shell-process.ts'
 import { initMobileChat } from './services/mobile/mobile-chat.ts'
+import { initRemoteInterface } from './services/mobile/remote-interface.ts'
 import { appRuntimeReady } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
 import {
   syncPluginClientApi,
   setPluginClientThreadOpener,
   stopPluginClientApi,
 } from './services/plugins/plugin-client-service.ts'
-import { initThreadPrompts } from './services/thread-prompts.ts'
+import { dispatchSubthreadPrompt, initThreadPrompts } from './services/thread-prompts.ts'
 import { startStorageMaintenance } from './services/storage-maintenance.ts'
 import { startDefaultBranchRefresh } from './services/default-branch-refresh.ts'
 import { startMachineService, stopMachineService } from './services/machines/machine-service.ts'
@@ -77,6 +79,7 @@ import { createKeyringCipher, createMigratingCipher } from './services/storage/k
 import { createOsKeyringStore } from './services/storage/os-keyring.ts'
 import { buildAppMenu } from './windows/app-menu.ts'
 import {
+  getMobileCompanionState,
   resumeMobileCompanion,
   stopMobileCompanion,
 } from './services/mobile/mobile-companion-service.ts'
@@ -140,6 +143,7 @@ import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import {
   abortAgent,
+  stopAllAgentRuns,
   listRunningThreadIds,
   retryPostTurnReview,
   runReviewForThread,
@@ -206,6 +210,7 @@ import {
   lmStudioTestSchema,
   machineAgentRunSchema,
   parseIpcArgs,
+  subthreadRunDelegationSchema,
   zGitBranchName,
   zProjectId,
   zThreadId,
@@ -233,6 +238,7 @@ import { recoverIsolatedDesktops } from './services/isolated-desktop/desktop-rec
 import { stopAllIsolatedDesktops } from './services/isolated-desktop/desktop-service.ts'
 import {
   cancelAllSupervisedBackgroundProcesses,
+  hasBackgroundCompletionWake,
   installBackgroundProcessSupervisor,
 } from './services/exec/supervised-background-process.ts'
 import {
@@ -633,12 +639,14 @@ app
     initUpdatePrompt(win)
     initCloseConfirm(win)
     guardWindowClose(win, () => {
+      const mobile = getMobileCompanionState().enabled
       const detach = shouldDetachOnClose({
         platform: process.platform,
         quitting: isMainWindowQuitting(),
         runningTurns: listRunningThreadIds().length,
+        mobileCompanionEnabled: mobile,
       })
-      if (detach) detachWindow(win)
+      if (detach) detachWindow(win, { keepRenderer: mobile })
       return detach
     })
     // Probe for rg/git/gh and the search backends only now: these are ~9 process
@@ -714,6 +722,7 @@ app
         console.error('[threads] could not write a turn transcript:', error)
       },
     })
+    interruptTurnTranscripts = (): Promise<void> => transcriptWriter.interruptForShutdown()
 
     // A background task's exit lands on the card that started it (#3956).
     setLateCommandPhaseRecorder((owner, toolCallId, phase) =>
@@ -741,6 +750,7 @@ app
     })
     void syncPluginClientApi()
     initMobileChat(win, ipcMain)
+    initRemoteInterface(win, ipcMain)
     initThreadPrompts(win, ipcMain)
     initClientActions(win, ipcMain)
     // Lets main-process code hand the user a running command in the Shells pane
@@ -834,12 +844,15 @@ app
         },
       },
     )
+    const ownsAutomationAgentWork = (projectId: string, threadId: string): boolean =>
+      agentDispatcher.isActive(projectId, threadId) ||
+      listRunningThreadIds().includes(threadId) ||
+      hasActiveAcpTurn(threadId) ||
+      getContainerRunService().isActive(threadId) ||
+      hasBackgroundCompletionWake({ projectId, threadId })
     const isAutomationRunActive = (projectId: string, threadId: string): boolean | null => {
       if (
-        agentDispatcher.isActive(projectId, threadId) ||
-        listRunningThreadIds().includes(threadId) ||
-        hasActiveAcpTurn(threadId) ||
-        getContainerRunService().isActive(threadId) ||
+        ownsAutomationAgentWork(projectId, threadId) ||
         hasBackgroundProcessesForThread({ projectId, threadId })
       )
         return true
@@ -861,13 +874,18 @@ app
       // start a draft, so every schedule runs headlessly (#3958).
       () => (win.isDestroyed() ? null : getMainWindowNavigation(win.webContents).activeProjectId),
       isAutomationRunActive,
+      ownsAutomationAgentWork,
     )
     getAutomationService().onHealthChange((health) => {
       if (!win.isDestroyed()) win.webContents.send('automations:scheduler-health', health)
     })
-    getBranchCiAutomationService().start((event) => {
-      if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
-    }, isAutomationRunActive)
+    getBranchCiAutomationService().start(
+      (event) => {
+        if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
+      },
+      isAutomationRunActive,
+      ownsAutomationAgentWork,
+    )
     // A container run is a turn on its thread but never passes through the
     // dispatcher; write it into the thread's model history when it settles
     // (A14), so the next message to the thread knows what the run did.
@@ -1035,16 +1053,26 @@ app
 
     ipcMain.handle(
       'agent:run',
-      async (event, projectIdArg: unknown, threadIdArg: unknown, rawPrompt: string) => {
+      async (
+        event,
+        projectIdArg: unknown,
+        threadIdArg: unknown,
+        rawPrompt: string,
+        delegationArg?: unknown,
+      ) => {
         assertMainFrameSender(event, win)
         assertPrimaryMainWindow(event.sender)
         const projectId = parseIpcArgs(zProjectId, [projectIdArg])
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-        await agentDispatcher.dispatch({
-          projectId,
-          threadId,
-          payload: parseAgentRunPayload(rawPrompt),
-        })
+        const delegation = parseIpcArgs(subthreadRunDelegationSchema.optional(), [delegationArg])
+        const request = { projectId, threadId, payload: parseAgentRunPayload(rawPrompt) }
+        // A delegated prompt's authority is decided here, not by the renderer's
+        // pre-check: a revoke can land between that check and this invoke.
+        await (delegation
+          ? dispatchSubthreadPrompt(projectId, delegation.parentThreadId, threadId, () =>
+              agentDispatcher.dispatch(request),
+            )
+          : agentDispatcher.dispatch(request))
         await parkCompletedPullRequestWorktree(projectId, threadId).catch((error: unknown) => {
           console.warn('[worktree] Could not park PR-backed checkout:', error)
         })
@@ -1447,8 +1475,13 @@ let disposeBackgroundProcessSupervisor: (() => void) | undefined
 let disposeContainerRunSupervisor: (() => void) | undefined
 let disposeDarkFactorySensor: (() => void) | undefined
 let disposeTaskSupervisorEvents: (() => void) | undefined
+let interruptTurnTranscripts: (() => Promise<void>) | undefined
 
 async function cleanupBeforeQuit(): Promise<void> {
+  const transcriptDrain = interruptTurnTranscripts?.()
+  setAgentInitiatedTurnAuthority(null)
+  stopAllAgentRuns()
+  await stopAllForegroundShellProcesses()
   // Revoke input and inference synchronously, then await VM deletion within the quit deadline.
   await stopAllIsolatedDesktops().catch((error: unknown) => {
     console.error('[isolated-desktop] Shutdown VM cleanup failed:', error)
@@ -1492,6 +1525,7 @@ async function cleanupBeforeQuit(): Promise<void> {
   shutdownBrowserSession()
   await stopMachineService()
   await shutdownStaticPreviewServers()
+  await transcriptDrain
   await drainWriteQueue()
   // Reap the detached gortex daemon too — left running it accumulates multi-GB
   // graphs across sessions and OOM-kills the app on a later launch.

@@ -1,7 +1,6 @@
 import { execFile } from 'node:child_process'
-import { mkdir, rename, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
 import { promisify } from 'node:util'
+import { writeFileAtomic } from '@copse/std/write-file-atomic.ts'
 import type { ProcessManagerSnapshot } from '@shared/types/process-manager.ts'
 
 const execFileAsync = promisify(execFile)
@@ -89,16 +88,13 @@ async function persist(): Promise<void> {
   if (writing) return
   writing = true
   try {
-    await mkdir(dirname(outputPath), { recursive: true })
     while (dirty) {
       dirty = false
-      const temporary = `${outputPath}.tmp`
-      await writeFile(
-        temporary,
+      await writeFileAtomic(
+        outputPath,
         JSON.stringify({ version: 1, samples: history.samples, shutdowns: history.shutdowns }),
         { mode: 0o600 },
       )
-      await rename(temporary, outputPath)
     }
   } catch {
     // Diagnostics must never prevent sampling or subprocess shutdown.

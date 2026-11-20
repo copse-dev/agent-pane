@@ -2,6 +2,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { ToolCall } from '@shared/types'
 import { isRecord } from '@shared/unknown-value.ts'
+import { isCopseServerName } from '@shared/tools/copse-tool-call.ts'
 import {
   parseThreadProposal,
   threadProposalStatus,
@@ -107,10 +108,11 @@ export function createThreadProposalToolCard(
   sourceThreadId: string,
 ): HTMLDetailsElement | null {
   // Codex ACP records MCP input as { server, tool, arguments }, including in
-  // saved transcripts. Unwrap only this tool's Copse envelope for display.
+  // saved transcripts, under `copse` or the bridge's `copse-<nonce>` name.
+  // Unwrap only this tool's Copse envelope for display.
   const args = tc.args
   const proposalArgs =
-    isRecord(args) && args['server'] === 'copse' && args['tool'] === THREAD_PROPOSAL_TOOL
+    isRecord(args) && isCopseServerName(args['server']) && args['tool'] === THREAD_PROPOSAL_TOOL
       ? args['arguments']
       : args
   const proposal = parseThreadProposal(tc.id, proposalArgs)

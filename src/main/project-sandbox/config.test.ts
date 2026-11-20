@@ -11,7 +11,7 @@ import {
 } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { homedir, tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import { wrapCommandWithSandboxMacOS } from '@anthropic-ai/sandbox-runtime/dist/sandbox/macos-sandbox-utils.js'
 import { removeTrailingGlobSuffix } from '@anthropic-ai/sandbox-runtime/dist/sandbox/sandbox-utils.js'
 import {
@@ -389,6 +389,37 @@ describe('resolveNodeToolchainAllowRead', () => {
       assert.ok(allow.includes(`${npmTree}/**`))
       assert.ok(!allow.includes(join(home, '.local')))
       assert.ok(!allow.includes(`${join(home, '.local')}/**`))
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('treats a home-level directory whose name starts with two dots as inside home', () => {
+    const { home, cleanup } = fakeHome()
+    try {
+      // `~/..local` is one level below home, so like `~/.local` it is shallow:
+      // only npm's tree is granted, never the whole directory.
+      const binDir = join(home, '..local', 'bin')
+      installNode(binDir)
+      const npmTree = join(home, '..local', 'lib', 'node_modules')
+      mkdirSync(npmTree, { recursive: true })
+      const allow = resolveNodeToolchainAllowRead({ PATH: binDir }, home)
+      assert.ok(allow.includes(npmTree))
+      assert.ok(!allow.includes(join(home, '..local')))
+      assert.ok(!allow.includes(`${join(home, '..local')}/**`))
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('never re-allows the parent of a home whose name starts with two dots', () => {
+    const { home: base, cleanup } = fakeHome()
+    try {
+      const home = join(base, '..me')
+      mkdirSync(home)
+      const node = installNode(base)
+      const allow = resolveNodeToolchainAllowRead({ PATH: base }, home)
+      assert.deepEqual(allow, [node])
     } finally {
       cleanup()
     }
@@ -1636,6 +1667,16 @@ describe('gitBackupSandboxOverlay', () => {
   })
 })
 
+/** Whether an ASRT `allowRead` list grants `path`, literally or through a `/**` entry. */
+function grantsRead(overlay: ReturnType<typeof workspaceSandboxOverlay>, path: string): boolean {
+  return (overlay.filesystem?.allowRead ?? []).some((entry) => {
+    if (entry === path) return true
+    if (!entry.endsWith('/**')) return false
+    const dir = entry.slice(0, -'/**'.length)
+    return path === dir || path.startsWith(`${dir}${sep}`)
+  })
+}
+
 describe('chat-store sandbox reads', () => {
   it("grants an agent's own state dir in the chat store read and write, clear of read-only mounts", () => {
     const profile = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-acp-state-')))
@@ -1681,6 +1722,61 @@ describe('chat-store sandbox reads', () => {
       const aliased = acpAgentSandboxOverlay(root, sandbox, { stateDirs: [viaAlias] }).filesystem
       assert.ok(aliased?.allowWrite.includes(stateDir))
       assert.equal(aliased?.allowWrite.includes(viaAlias), false)
+    } finally {
+      if (previous === undefined) delete process.env['COPSE_DIR']
+      else process.env['COPSE_DIR'] = previous
+      rmSync(profile, { recursive: true, force: true })
+    }
+  })
+
+  it("mounts only an ACP agent's resolved chat roots, never the no-run whole store", () => {
+    const profile = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-acp-chat-overlay-')))
+    const previous = process.env['COPSE_DIR']
+    process.env['COPSE_DIR'] = profile
+    try {
+      const store = copseWorkspaceDir()
+      const own = join(store, 'project', 'own')
+      const sibling = join(store, 'project', 'sibling')
+      const otherProject = join(store, 'other-project', 'thread')
+      const transcripts = [own, sibling, otherProject].map((thread) => {
+        mkdirSync(thread, { recursive: true })
+        writeFileSync(join(thread, 'meta.json'), '{}')
+        return join(thread, 'meta.json')
+      })
+      const [ownMeta = '', siblingMeta = '', otherProjectMeta = ''] = transcripts
+      const outside = join(profile, 'outside')
+      mkdirSync(outside)
+      writeFileSync(join(outside, 'secret'), 'x')
+      const workspace = join(profile, 'checkout')
+      mkdirSync(workspace)
+      const sandbox = { allowedDomains: ['api.example'] }
+
+      // The session-host worker builds the agent's overlay with no active run,
+      // where the ambient answer is the whole store (an app-owned operation).
+      assert.ok(grantsRead(workspaceSandboxOverlay(workspace), siblingMeta))
+
+      // Nothing resolved (a probe, the advisor, a malformed host request): no transcripts.
+      const unresolved = acpAgentSandboxOverlay(workspace, sandbox)
+      for (const transcript of transcripts) {
+        assert.equal(grantsRead(unresolved, transcript), false, transcript)
+      }
+
+      // Without consent: its own thread only, not a sibling or another project's.
+      const confined = acpAgentSandboxOverlay(workspace, sandbox, { chatReadRoots: [own] })
+      assert.ok(grantsRead(confined, ownMeta))
+      assert.equal(grantsRead(confined, siblingMeta), false)
+      assert.equal(grantsRead(confined, otherProjectMeta), false)
+
+      // After "Read your other threads?" is approved: the whole store, read-only.
+      const consented = acpAgentSandboxOverlay(workspace, sandbox, { chatReadRoots: [store] })
+      for (const transcript of transcripts) assert.ok(grantsRead(consented, transcript), transcript)
+      assert.equal(consented.filesystem?.allowWrite.includes(own), false)
+
+      // The roots narrow the chat-store mount; they can never name another path.
+      const widened = acpAgentSandboxOverlay(workspace, sandbox, {
+        chatReadRoots: [outside, `${store}${sep}..${sep}outside`, 'workspace'],
+      })
+      assert.equal(grantsRead(widened, join(outside, 'secret')), false)
     } finally {
       if (previous === undefined) delete process.env['COPSE_DIR']
       else process.env['COPSE_DIR'] = previous

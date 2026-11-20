@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import { execFileSync } from 'node:child_process'
 import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
@@ -65,8 +66,9 @@ type Activity =
   | 'unscoped-writer'
   | 'own-ancestor-terminal'
   | 'completed-native-background'
+  | 'native-dev-server'
   | 'late-root-writer'
-type Operation = 'handover' | 'cleanup' | 'scheduled-trigger' | 'pr-parking'
+type Operation = 'handover' | 'cleanup' | 'scheduled-trigger' | 'manual-trigger' | 'pr-parking'
 
 function git(cwd: string, args: string[]): string {
   return execFileSync('git', ['-c', 'commit.gpgsign=false', ...args], {
@@ -129,10 +131,16 @@ describe('automatic checkout changes preserve pooled ACP work', () => {
     await rm(scratch, { recursive: true, force: true })
   })
 
-  async function scenario(activity: Activity, operation: Operation): Promise<void> {
-    const projectId = 'project'
-    const previousId = 'previous'
-    const nextId = 'next'
+  async function scenario(
+    activity: Activity,
+    operation: Operation,
+    maxLiveWorktrees: number | 'unlimited' = 1,
+  ): Promise<void> {
+    // Parking rechecks can outlive a fixture. A delayed callback must not
+    // resolve a later fixture's freshly acquired session through a reused ID.
+    const projectId = randomUUID()
+    const previousId = randomUUID()
+    const nextId = randomUUID()
     const repo = join(scratch, 'repo')
     await mkdir(repo)
     git(repo, ['init', '-q', '-b', 'main'])
@@ -170,7 +178,7 @@ describe('automatic checkout changes preserve pooled ACP work', () => {
       prompt: 'Read the project.',
       model: 'controlled-acp',
       enabled: operation === 'scheduled-trigger',
-      maxLiveWorktrees: 1,
+      maxLiveWorktrees,
     })
     const events: AutomationTriggerEvent[] = []
     service.start(
@@ -179,6 +187,8 @@ describe('automatic checkout changes preserve pooled ACP work', () => {
         throw new Error('An active-project draft must not dispatch headlessly')
       },
       () => projectId,
+      (projectId, threadId) =>
+        hasActiveAcpTurn(threadId) || hasBackgroundProcessesForThread({ projectId, threadId }),
       (_project, thread) => hasActiveAcpTurn(thread),
     )
     await service.sync()
@@ -354,6 +364,14 @@ describe('automatic checkout changes preserve pooled ACP work', () => {
       })
       releases.push(beginWorktreeWriter(scratch))
     }
+    if (activity === 'native-dev-server') {
+      await startBackgroundProcess({
+        command: 'sleep 30',
+        cwd: worktree.path,
+        waitMs: 10,
+        owner: { projectId, threadId: previousId },
+      })
+    }
     if (activity === 'completed-native-background') {
       const completed = Promise.withResolvers<undefined>()
       const owner = { projectId, threadId: previousId }
@@ -412,12 +430,26 @@ describe('automatic checkout changes preserve pooled ACP work', () => {
           !shouldProtect,
         )
       } else {
-        await service.tick(NOW)
+        if (operation === 'manual-trigger') {
+          const event = await service.runNow(projectId, schedule.id)
+          if (activity === 'native-dev-server') assert.equal(event.disposition, 'started')
+          else assert.equal(event.coalescedReason, 'busy')
+        } else await service.tick(NOW)
         const created = (await loadProjectThreadMetas(projectId)).filter(
           (thread) => thread.id !== previousId,
         )
-        assert.equal(created.length, shouldProtect ? 0 : 1)
-        if (shouldProtect && activity !== 'prompt') {
+        const daemonMayAdmit =
+          activity === 'native-dev-server' &&
+          (operation === 'manual-trigger' || maxLiveWorktrees === 'unlimited')
+        assert.equal(created.length, shouldProtect && !daemonMayAdmit ? 0 : 1)
+        if (shouldProtect && hasActiveAcpTurn(previousId)) {
+          const coalesced = await service.runNow(projectId, schedule.id)
+          assert.equal(coalesced.coalescedReason, 'busy')
+          assert.equal(
+            events.some((event) => event.coalescedReason === 'worktree-limit'),
+            false,
+          )
+        } else if (shouldProtect && !daemonMayAdmit) {
           assert.ok(events.some((event) => event.coalescedReason === 'worktree-limit'))
         }
       }
@@ -442,6 +474,22 @@ describe('automatic checkout changes preserve pooled ACP work', () => {
     await prompt
   }
 
+  it('manual admission preserves an unbounded dev server without keeping its run busy', async () => {
+    await scenario('native-dev-server', 'manual-trigger')
+  })
+  it('Unlimited scheduled admission preserves an unbounded dev server', async () => {
+    await scenario('native-dev-server', 'scheduled-trigger', 'unlimited')
+  })
+
+  for (const activity of ['self-resume', 'pending-tool'] satisfies Activity[]) {
+    it(`manual trigger cannot overlap ${activity} after its prompt returns`, async () => {
+      await scenario(activity, 'manual-trigger')
+    })
+    it(`Unlimited scheduled trigger cannot overlap ${activity} after its prompt returns`, async () => {
+      await scenario(activity, 'scheduled-trigger', 'unlimited')
+    })
+  }
+
   async function createdPullRequestThread(
     projectId: string,
     state: CreatedPullRequestState,
@@ -452,7 +500,8 @@ describe('automatic checkout changes preserve pooled ACP work', () => {
     disposed: () => number
     isClosed: () => boolean
   }> {
-    const threadId = 'created-pr'
+    // This helper shares the same delayed parking listener as scenario().
+    const threadId = randomUUID()
     const repo = join(scratch, `${projectId}-repo`)
     const remote = join(scratch, `${projectId}-remote.git`)
     await mkdir(repo)
@@ -587,6 +636,7 @@ describe('automatic checkout changes preserve pooled ACP work', () => {
       'unscoped-writer',
       'own-ancestor-terminal',
       'completed-native-background',
+      'native-dev-server',
       'late-root-writer',
     ] satisfies Activity[]) {
       it(`${operation} respects ${activity} ownership after prompt completion`, async () => {

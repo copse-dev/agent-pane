@@ -97,7 +97,9 @@ async function spawnRemoteWrapped(
   opts: RemoteSpawnOptions,
   wrap: (remoteRoot: string, shellCommand: string) => string,
 ): Promise<ChildProcess> {
+  opts.signal?.throwIfAborted()
   await ensureHostConnected(opts.hostId)
+  opts.signal?.throwIfAborted()
   const host = findConfiguredSshHost(opts.hostId)
   if (!host) throw new Error(`Unknown SSH host: ${opts.hostId}`)
 

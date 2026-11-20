@@ -24,14 +24,20 @@ describe('withoutMainOwnedThreadFields', () => {
     const forged = {
       title: 'Renamed',
       remoteAgentLink: { provider: 'cursor', agentId: 'bc-attacker', createdAt: 1 },
+      cursorAgentIds: ['bc-attacker'],
     }
     assert.deepEqual(withoutMainOwnedThreadFields(forged), { title: 'Renamed' })
   })
 
   it('drops an explicit undefined, so a stale renderer copy cannot erase the stored link', () => {
-    const patch: Record<string, unknown> = { draft: 'x', remoteAgentLink: undefined }
+    const patch: Record<string, unknown> = {
+      draft: 'x',
+      remoteAgentLink: undefined,
+      cursorAgentIds: undefined,
+    }
     const guarded = withoutMainOwnedThreadFields(patch)
     assert.equal(Object.hasOwn(guarded, 'remoteAgentLink'), false)
+    assert.equal(Object.hasOwn(guarded, 'cursorAgentIds'), false)
     assert.deepEqual(guarded, { draft: 'x' })
   })
 

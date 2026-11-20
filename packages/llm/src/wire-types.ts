@@ -141,9 +141,9 @@ export interface ThreadUsage {
   /**
    * The part of `inputTokens`/`outputTokens` folded in from subagent runs (the
    * `subagentUsage` chunk). Subagent sessions record their own usage as soon as
-   * they finish, but the fold only lands once the parent loop completes, and
-   * not at all when the loop fails, so the thread-only figure subtracts this
-   * rather than the session totals. Absent on usage recorded before it existed.
+   * they finish; the fold lands before the admitted turn's terminal event,
+   * including failure and cancellation. The thread-only figure subtracts this
+   * rather than live session totals. Absent on usage recorded before it existed.
    */
   subagentInputTokens?: number
   subagentOutputTokens?: number
@@ -207,6 +207,8 @@ export type ProviderStreamChunk =
        * model; display metadata for the transcript (see `ToolCall`).
        */
       appendedReminderLengths?: number[]
+      /** The host held the call back without running it (see `ToolCall.deferred`). */
+      deferred?: true
       /** Images returned by the tool, rendered beside its transcript card. */
       images?: ToolResultImage[]
     }

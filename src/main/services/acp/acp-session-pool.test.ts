@@ -33,6 +33,7 @@ import {
   acpSessionPoolSize,
   disposeAcpSession,
   disposeAllAcpSessions,
+  cancelAllAgentInitiatedAcpTurns,
   hasActiveAcpTurn,
   reapIdleAcpSessions,
   withIdleAcpSession,
@@ -125,6 +126,43 @@ const CONFIG = { command: 'unused-in-tests', cwd: '/tmp/pool-test' }
 describe('acp-session-pool', () => {
   afterEach(async () => {
     await disposeAllAcpSessions()
+  })
+
+  it('revokes every self-started bridge turn synchronously before disposing sessions', async () => {
+    const signals: AbortSignal[] = []
+    const entries = []
+    for (const threadId of ['quit-a', 'quit-b']) {
+      const { entry } = await acquireAcpSession({
+        threadId,
+        config: CONFIG,
+        createTransport: makeTransportFactory({ spawns: 0, promptSessions: [] }),
+      })
+      entry.open.agentInitiated = createAgentInitiatedTurnLease({
+        projectId: 'quit-project',
+        threadId,
+        bridge: {
+          setExecutionContext: (_context: string | null) => {},
+          setTurnSignal: (signal) => {
+            if (signal) signals.push(signal)
+          },
+          setPendingExecutionContext: () => {},
+        },
+        resolveContext: async () => 'context',
+        confirmContinue: async () => false,
+        beginWriter: () => (): void => {},
+        getAuthority: () => null,
+      })
+      entry.open.agentInitiated.begin()
+      entries.push(entry)
+    }
+    assert.equal(signals.length, 2)
+    cancelAllAgentInitiatedAcpTurns()
+    assert.ok(signals.every((signal) => signal.aborted))
+    for (const entry of entries) {
+      assert.equal(entry.open.agentInitiated?.isActive(), false)
+      assert.equal(entry.open.suppressChunks, true)
+      entry.open.agentInitiatedCancel?.acknowledge()
+    }
   })
 
   for (const update of [

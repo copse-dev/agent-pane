@@ -4,10 +4,11 @@ import { waitForAgentIdle } from './helpers.ts'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { savePreparedElementScreenshot } from './helpers/screenshot.ts'
 
-function seedInterruptedProviderTurn(workspaceRoot: string): void {
+function seedInterruptedProviderTurn(workspaceRoot: string, externalTask = false): void {
   const projectId = 'e2e-provider-recovery-project'
   const threadId = 'e2e-provider-recovery-thread'
   const now = Date.now()
+  const model = externalTask ? 'acp:claude-agent-acp#sonnet' : 'openrouter:x-ai/grok-4.5'
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
     activeProjectId: projectId,
@@ -17,7 +18,7 @@ function seedInterruptedProviderTurn(workspaceRoot: string): void {
         id: threadId,
         title: 'Interrupted provider turn',
         status: 'idle',
-        model: 'openrouter:x-ai/grok-4.5',
+        model,
         messages: [
           {
             id: 'msg-user-earlier',
@@ -47,35 +48,52 @@ function seedInterruptedProviderTurn(workspaceRoot: string): void {
           {
             id: 'msg-user-interrupted',
             role: 'user',
-            content: 'Upload report.pdf, then remove the generated file.',
+            content: externalTask
+              ? 'Review the release checks.'
+              : 'Upload report.pdf, then remove the generated file.',
             toolCalls: [],
             createdAt: now + 2,
           },
           {
             id: 'msg-assistant-interrupted',
             role: 'assistant',
-            content: 'The report is uploaded. Cleaning up next.',
-            model: 'openrouter:x-ai/grok-4.5',
+            content: externalTask
+              ? 'The delegated check finished. Summarizing next.'
+              : 'The report is uploaded. Cleaning up next.',
+            model,
             turnOutcome: {
               status: 'failed',
               stopReason: 'error',
               source: 'provider',
-              executor: 'local',
-              provider: 'openrouter',
-              model: 'openrouter:x-ai/grok-4.5',
+              executor: externalTask ? 'acp' : 'local',
+              provider: externalTask ? 'claude-agent-acp' : 'openrouter',
+              model,
               lastEvent: 'tool',
               error: { code: 502, message: 'upstream disconnected' },
               endedAt: now + 3,
             },
-            toolCalls: [
-              {
-                id: 'tc-upload-report',
-                name: 'run_shell',
-                args: { command: 'upload report.pdf' },
-                status: 'done',
-                result: 'uploaded report.pdf',
-              },
-            ],
+            toolCalls: externalTask
+              ? [
+                  {
+                    id: 'tc-external-task',
+                    name: 'task',
+                    title: 'Review release checks',
+                    programmaticName: 'task',
+                    kind: 'think',
+                    args: { subagent_type: 'Explore', prompt: 'Review release checks' },
+                    status: 'done',
+                    result: 'Release checks passed.',
+                  },
+                ]
+              : [
+                  {
+                    id: 'tc-upload-report',
+                    name: 'run_shell',
+                    args: { command: 'upload report.pdf' },
+                    status: 'done',
+                    result: 'uploaded report.pdf',
+                  },
+                ],
             createdAt: now + 3,
           },
         ],
@@ -158,5 +176,21 @@ describe('explicit provider turn recovery', () => {
     })
     await expect(tool).toHaveAttribute('data-status', 'done')
     await waitForAgentIdle(30_000)
+  })
+
+  it('keeps the retry action after an external agent dispatches its own task', async () => {
+    resetUserData()
+    seedInterruptedProviderTurn(process.cwd(), true)
+    await browser.reloadSession()
+    const card = $('[data-turn-recovery-card]')
+    await card.waitForDisplayed({ timeout: 30_000 })
+    await expect(card).toHaveText('Retry this turn', { containing: true })
+    await expect(await card.$$('.turn-recovery-button').getElements()).toBeElementsArrayOfSize(2)
+    await expect($('[data-tool-id="tc-external-task"]')).toHaveAttribute('data-status', 'done')
+    await expect($('[data-message-id="msg-assistant-interrupted"]')).toHaveText(
+      'The delegated check finished. Summarizing next.',
+      { containing: true },
+    )
+    await savePreparedElementScreenshot('.messages-list', 'external-agent-task-recovery.png')
   })
 })

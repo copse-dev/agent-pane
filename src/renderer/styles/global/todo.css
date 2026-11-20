@@ -107,13 +107,18 @@
   color: var(--text-muted);
   font-size: var(--font-size-sm);
 }
+/* Badges are labels (docs/ui-taste.md): sentence case at the badge size. The text
+   is lowercase data, so ::first-letter capitalises it, which needs a block box. */
 .plugin-panel-badge {
+  display: inline-block;
   flex-shrink: 0;
-  font-size: var(--font-size-2xs);
+  font-size: var(--badge-font-size);
   padding: 1px 5px;
   border-radius: 4px;
   background: var(--bg-hover);
   color: var(--text-muted);
+}
+.plugin-panel-badge::first-letter {
   text-transform: uppercase;
 }
 .plugin-panel-badge[data-badge-kind='assigned-model'] {
@@ -333,18 +338,24 @@
   gap: var(--spacing-xs) var(--spacing-sm);
   padding: var(--spacing-xs) var(--spacing-sm);
 }
+/* Sentence case at the badge size, like every badge (docs/ui-taste.md, "Badges
+   are labels"): the data is lowercase, so ::first-letter capitalises it. */
 .review-finding-severity {
-  font-size: var(--font-size-2xs);
+  display: inline-block;
+  font-size: var(--badge-font-size);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
   color: var(--finding-sev);
 }
 .review-finding-class {
-  font-size: var(--font-size-2xs);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  display: inline-block;
+  font-size: var(--badge-font-size);
   color: var(--text-muted);
+}
+.review-finding-severity::first-letter {
+  text-transform: uppercase;
+}
+.review-finding-class::first-letter {
+  text-transform: uppercase;
 }
 .review-finding-location {
   font-size: var(--font-size-xs);

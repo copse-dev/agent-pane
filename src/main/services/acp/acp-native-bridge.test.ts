@@ -30,7 +30,10 @@ import { runWithThreadResourceStateLookup } from '../thread-resource-fence.ts'
 import { runBackgroundTool } from '../../tools/background-process-tool.ts'
 import { TaskSupervisor } from '../supervisor/task-supervisor.ts'
 import { FileSupervisedTaskStore } from '../supervisor/task-store.ts'
-import { installBackgroundProcessSupervisor } from '../exec/supervised-background-process.ts'
+import {
+  hasBackgroundCompletionWake,
+  installBackgroundProcessSupervisor,
+} from '../exec/supervised-background-process.ts'
 import { stopAllBackgroundProcesses } from '../exec/background-process.ts'
 import {
   setBackgroundCompletionWakeHandler,
@@ -347,6 +350,9 @@ describe('startAcpNativeBridge', () => {
     })
     assert.ok(first)
     assert.ok(second)
+    // #4125: each bridge is mounted under its own name, which no config can predict.
+    assert.match(first.serverName, /^copse-[a-z0-9]{8}$/)
+    assert.notEqual(first.serverName, second.serverName)
     const read = (target: AcpNativeBridge, path?: string): ReturnType<typeof rpc> =>
       rpc(target, {
         jsonrpc: '2.0',
@@ -1205,12 +1211,20 @@ describe('startAcpNativeBridge', () => {
         },
       })
       assert.match(contentText(result) ?? '', /Completion wake is armed/)
+      assert.equal(
+        hasBackgroundCompletionWake({ projectId: 'project-1', threadId: 'background-thread' }),
+        true,
+      )
       // Release the real child only after the foreground turn has ended.
       currentBridge.setExecutionContext(null)
       writeFileSync(join(root, 'release'), '')
       const deadline = Date.now() + 5_000
       while (wakes.length === 0 && Date.now() < deadline) await delay(20)
       assert.equal(wakes.length, 1)
+      assert.equal(
+        hasBackgroundCompletionWake({ projectId: 'project-1', threadId: 'background-thread' }),
+        false,
+      )
       const wake = at(wakes, 0)
       assert.equal(wake.turnTreeId, 'background-human-epoch')
       assert.deepEqual(wake.owner, { projectId: 'project-1', threadId: 'background-thread' })
@@ -1656,14 +1670,21 @@ describe('startAcpNativeBridge', () => {
     assert.ok(names.includes('suggest_model'))
     assert.ok(names.includes('browser_show'))
 
+    // Scenario mode has no assessment model, so the advice comes from the
+    // heuristic instead of waiting on whatever local server this host runs.
+    const mockLlm = process.env['COPSE_PANEL_MOCK_LLM']
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
     const advice = await rpc(bridge, {
       jsonrpc: '2.0',
       id: 7,
       method: 'tools/call',
       params: { name: 'suggest_model', arguments: { task: 'Summarize a short file' } },
+    }).finally(() => {
+      if (mockLlm === undefined) delete process.env['COPSE_PANEL_MOCK_LLM']
+      else process.env['COPSE_PANEL_MOCK_LLM'] = mockLlm
     })
     assert.equal(rpcResult(advice)['isError'], undefined)
-    assert.match(contentText(advice) ?? '', /Recommended intellect band:/)
+    assert.match(contentText(advice) ?? '', /Assessed demand: (low|mid|top)\nRecommended model:/)
   })
 
   for (const checkoutMode of ['shared', 'worktree', 'deferred'] as const) {
@@ -1719,6 +1740,45 @@ describe('startAcpNativeBridge', () => {
     assert.ok(bridge)
     const unauthorized = await rpc(bridge, LIST_TOOLS, 'wrong-token')
     assert.equal(unauthorized.status, 401)
+  })
+
+  // #4144: an offered bridge is mounted only once the agent lists its tools.
+  it('records when its own agent lists the tools, and only then', async () => {
+    setPermissionGateForTests(() => Promise.resolve(true))
+    bridge = await startAcpNativeBridge(testRegistry([]), new AbortController().signal, {
+      threadId: 'bridge-test',
+    })
+    assert.ok(bridge)
+    assert.equal(bridge.toolsListed(), false)
+    assert.equal(bridge.listedToolNames(), null)
+    assert.equal(await bridge.whenToolsListed(20), false, 'an unlisted bridge times out')
+    const waiting = bridge.whenToolsListed(10_000)
+    assert.equal((await rpc(bridge, LIST_TOOLS, 'wrong-token')).status, 401)
+    assert.equal(bridge.toolsListed(), false, 'a request without the token is not the agent')
+    for (const init of initialized()) await rpc(bridge, init)
+    assert.equal(bridge.toolsListed(), false, 'initialize alone is not a mount')
+    const listed = await rpc(bridge, LIST_TOOLS)
+    assert.equal(bridge.toolsListed(), true)
+    // Exactly what the listing returned: what the agent was given, not the offer.
+    assert.deepEqual(
+      bridge.listedToolNames(),
+      recordArrayOrEmpty(rpcResult(listed)['tools']).map((tool) => tool['name']),
+    )
+    assert.deepEqual([...(bridge.listedToolNames() ?? [])].sort(), ['run_shell', 'staged_diffs'])
+    assert.equal(await waiting, true, 'a pending wait wakes on the listing')
+    assert.equal(await bridge.whenToolsListed(0), true)
+  })
+
+  it('stops waiting for a listing when the wait is aborted', async () => {
+    setPermissionGateForTests(() => Promise.resolve(true))
+    bridge = await startAcpNativeBridge(testRegistry([]), new AbortController().signal, {
+      threadId: 'bridge-test',
+    })
+    assert.ok(bridge)
+    const stop = new AbortController()
+    const waiting = bridge.whenToolsListed(10_000, stop.signal)
+    stop.abort()
+    assert.equal(await waiting, false)
   })
 
   it('does not start when no bridgeable tool is registered', async () => {
