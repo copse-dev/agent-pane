@@ -4647,6 +4647,10 @@ function mountApprovalDialog(api2, store2, options = {}) {
     const showOnce = onceLabel !== "" && (!collapseDetails || detailsExpanded);
     approveOnceButton.hidden = !showOnce;
     if (showOnce) approveOnceButton.textContent = onceLabel;
+    approveOnceButton.classList.toggle("ui-btn-primary", showOnce);
+    approveOnceButton.classList.toggle("ui-btn-secondary", !showOnce);
+    approveButton.classList.toggle("ui-btn-primary", !showOnce);
+    approveButton.classList.toggle("ui-btn-secondary", showOnce);
     const grant = onceLabel !== "" ? null : rememberGrant();
     rememberLabel.hidden = grant === null;
     if (grant === null) rememberInput.checked = false;

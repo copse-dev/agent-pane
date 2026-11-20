@@ -1807,6 +1807,20 @@ var init_demo_bridged_tools = __esm({
 });
 
 // src/shared/approval-copy.ts
+function projectPortBindingApproval(workspaceRoot, command) {
+  return {
+    title: "Allow this project to bind a local port?",
+    body: command || "(no command given)",
+    bodyAdvice: `The agent wants to start a long-running background task that binds a loopback port and stays alive across turns:
+
+Project: ${workspaceRoot}`,
+    bodyFooter: "One-time approval covers this start. Remembered permission lets future tasks and chats in this project, including its worktrees, bind on localhost until revoked. Other shell permissions still apply. Revoke it in Context \u2192 Permissions \u2192 Project \u2192 Local port binding. Stop running tasks separately.",
+    allowRemember: true,
+    rememberLabel: `Always allow local port binding in this project: ${workspaceRoot}`,
+    approveLabel: "Allow for this project",
+    approveOnceLabel: "Allow once"
+  };
+}
 function threadAccessApproval(access) {
   if (access === "orchestrate")
     return {
@@ -5584,15 +5598,8 @@ var init_demo_scenarios = __esm({
       {
         ...approvalRiskScenario("approval-project-preview", {
           id: "preview-port",
-          title: "Allow this project to bind a local port?",
-          body: "npm run dev",
-          bodyAdvice: "The agent wants to start a long-running background task that binds a loopback port and stays alive across turns:\n\nProject: /home/mira/harbor-board",
-          bodyFooter: "One-time approval covers this start. Remembered permission lets future tasks and chats in this project, including its worktrees, bind on localhost until revoked. Other shell permissions still apply. Revoke it in Context \u2192 Permissions \u2192 Project \u2192 Local port binding. Stop running tasks separately.",
           type: "shell",
-          allowRemember: true,
-          rememberLabel: "Always allow local port binding in this project: /home/mira/harbor-board",
-          approveLabel: "Allow for this project",
-          approveOnceLabel: "Allow once"
+          ...projectPortBindingApproval("/home/mira/harbor-board", "npm run dev")
         }),
         project: project(
           "demo-approval-project-preview-project",
@@ -7518,7 +7525,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-OW2TLF7S.js").then(async (main) => {
+    void import("./chunks/main-MXBKB6TC.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(
