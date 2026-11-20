@@ -26,6 +26,12 @@ describe('ellipsize', () => {
     assert.equal(ellipsize('ab  cdef', 5), 'ab  …')
     assert.equal(ellipsize('ab  cdef', 5, { trimEnd: true }), 'ab…')
   })
+
+  it('returns an empty string when max leaves no room, rather than slicing from the end', () => {
+    assert.equal(ellipsize('abcdefghij', 0), '')
+    assert.equal(ellipsize('abcdefghij', -1), '')
+    assert.equal(ellipsize('abcdefghij', 0.5), '')
+  })
 })
 
 describe('truncateLine', () => {

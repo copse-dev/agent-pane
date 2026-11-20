@@ -17,11 +17,13 @@ export interface EllipsizeOptions {
 /**
  * `text` unchanged when it fits in `max` characters; otherwise its first
  * `max - 1` characters and `…`, so the result is exactly `max` long (shorter
- * with `trimEnd`). Callers that cut at `max` and then append `…` produce one
+ * with `trimEnd`). A `max` below 1 leaves no room for the ellipsis, so the
+ * result is empty. Callers that cut at `max` and then append `…` produce one
  * character more and are a different contract.
  */
 export function ellipsize(text: string, max: number, options: EllipsizeOptions = {}): string {
   if (text.length <= max) return text
+  if (max < 1) return ''
   const head = text.slice(0, max - 1)
   return `${options.trimEnd === true ? head.trimEnd() : head}…`
 }
