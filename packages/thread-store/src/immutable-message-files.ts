@@ -2,11 +2,13 @@ import { sha256Hex } from '@copse/std/sha256.ts'
 import { idPathSegment, type ExplodedMessage } from './fold.ts'
 
 /**
- * Stage a replacement message without overwriting any file the live spine
- * still references. Every file the fold verifies strictly (a mismatch skips
- * the whole thread) moves to a content-addressed name: prose, reasoning, rich
- * ACP blocks, image data and attachment snapshots. Tool-call blobs keep their
- * names, because a mismatch there degrades only that tool card.
+ * Stage a replacement message without overwriting a top-level file the live
+ * spine still references. Every top-level file the fold verifies strictly (a
+ * mismatch skips the whole thread) moves to a content-addressed name: prose,
+ * reasoning, rich ACP blocks, image data and attachment snapshots. Tool-call
+ * blobs keep their names, because a mismatch there degrades only that tool
+ * card. A nested subagent transcript under `subagents/<id>/` is not covered and
+ * is still rewritten in place (#4438).
  *
  * Each name hashes the complete file, so unchanged content reuses one
  * immutable file when metadata is finalized again. A prose file's OKF header

@@ -50,6 +50,8 @@ import {
   type SpineModelSelectedLine,
   type SpineContextCompactionLine,
   type SpineDecisionLine,
+  type SpineEntry,
+  type SpineMessageLine,
   type SpinePermissionDecisionLine,
   type ThreadMeta,
   SPINE_SCHEMA_VERSION,
@@ -662,6 +664,14 @@ export interface ThreadLoadOptions {
   includeArchived?: boolean
 }
 
+/**
+ * How many times {@link readThread} folds a thread whose spine changed while it
+ * was being read. A message replacement removes the prose its old line
+ * referenced once the new line commits, and a whole-thread save prunes, so a
+ * read outside the store queue can find a file of the spine it took gone.
+ */
+const SPINE_READ_ATTEMPTS = 3
+
 async function readThread(
   projectId: string,
   threadId: string,
@@ -670,57 +680,63 @@ async function readThread(
 ): Promise<Thread | null> {
   recoverPendingHistoryEdit(projectId, threadId)
   const dir = threadDir(projectId, threadId)
-  const [metaRaw, eventsRaw] = await Promise.all([
-    readOrNull(join(dir, META_FILE), strict),
-    readOrNull(join(dir, EVENTS_FILE), strict),
-  ])
-  const meta = parseMeta(metaRaw)
-  if (meta === null) return null
-  // Bail before the prefetch: skipping an archived thread is only worth doing if
-  // its message bodies are never read, and that is where the bytes are.
-  if (options.includeArchived === false && meta.archivedAt != null) return null
+  for (let attempt = 1; ; attempt++) {
+    const [metaRaw, eventsRaw] = await Promise.all([
+      readOrNull(join(dir, META_FILE), strict),
+      readOrNull(join(dir, EVENTS_FILE), strict),
+    ])
+    const meta = parseMeta(metaRaw)
+    if (meta === null) return null
+    // Bail before the prefetch: skipping an archived thread is only worth doing if
+    // its message bodies are never read, and that is where the bytes are.
+    if (options.includeArchived === false && meta.archivedAt != null) return null
 
-  const raw = eventsRaw ?? ''
-  const entries = parseSpineEntries(raw)
-  const spine = parseSpine(raw)
-  // DEBUG BRANCH: `prefetchThreadFiles` is where the bytes are — one read per
-  // referenced message/blob file. Counted rather than spanned: at hundreds of
-  // threads a span each would swamp the trace, while the totals (calls, ms,
-  // bytes) are what actually identify the cost.
-  const prefetchStart = process.hrtime.bigint()
-  const contents = await prefetchThreadFiles(dir, raw)
-  let prefetchedBytes = 0
-  for (const body of contents.values()) prefetchedBytes += body.length
-  threadStoreEnvironment().perf.count(
-    'store:thread-prefetch',
-    Number(process.hrtime.bigint() - prefetchStart) / 1e6,
-    prefetchedBytes + raw.length,
-  )
-  const resolve: RefResolver = (ref) => {
-    const body = contents.get(ref)
-    if (body === undefined) throw new Error(`Missing thread file: ${ref}`)
-    return body
-  }
-  try {
-    const thread = foldThread(meta, spine, resolve, {
-      hash: sha256Hex,
-      onIntegrityFailure: (ref) => {
-        console.warn(
-          `[thread-store] Thread ${threadId}: ${ref} failed its hash check; showing that tool call as unavailable`,
-        )
-      },
-    })
-    // Surface the always-on `hook_run` records (decision 6) as display-only hook
-    // cards on the messages they fired within (decisions 10 & 17). Derived from
-    // the spine — never from live hook registration — so history stays honest.
-    return {
-      ...thread,
-      messages: attachHookCards(thread.messages, entries),
-      ...(entries.some((entry) => entry.line?.type === 'plan') ? { hasSavedPlan: true } : {}),
+    const raw = eventsRaw ?? ''
+    const entries = parseSpineEntries(raw)
+    const spine = parseSpine(raw)
+    // DEBUG BRANCH: `prefetchThreadFiles` is where the bytes are — one read per
+    // referenced message/blob file. Counted rather than spanned: at hundreds of
+    // threads a span each would swamp the trace, while the totals (calls, ms,
+    // bytes) are what actually identify the cost.
+    const prefetchStart = process.hrtime.bigint()
+    const contents = await prefetchThreadFiles(dir, raw)
+    let prefetchedBytes = 0
+    for (const body of contents.values()) prefetchedBytes += body.length
+    threadStoreEnvironment().perf.count(
+      'store:thread-prefetch',
+      Number(process.hrtime.bigint() - prefetchStart) / 1e6,
+      prefetchedBytes + raw.length,
+    )
+    const resolve: RefResolver = (ref) => {
+      const body = contents.get(ref)
+      if (body === undefined) throw new Error(`Missing thread file: ${ref}`)
+      return body
     }
-  } catch (err) {
-    console.warn(`[thread-store] Skipping unreadable thread ${threadId}:`, err)
-    return null
+    try {
+      const thread = foldThread(meta, spine, resolve, {
+        hash: sha256Hex,
+        onIntegrityFailure: (ref) => {
+          console.warn(
+            `[thread-store] Thread ${threadId}: ${ref} failed its hash check; showing that tool call as unavailable`,
+          )
+        },
+      })
+      // Surface the always-on `hook_run` records (decision 6) as display-only hook
+      // cards on the messages they fired within (decisions 10 & 17). Derived from
+      // the spine — never from live hook registration — so history stays honest.
+      return {
+        ...thread,
+        messages: attachHookCards(thread.messages, entries),
+        ...(entries.some((entry) => entry.line?.type === 'plan') ? { hasSavedPlan: true } : {}),
+      }
+    } catch (err) {
+      // A spine that changed since it was read can name files that are gone.
+      // Fold the committed one rather than skip a thread that is intact.
+      const latest = await readOrNull(join(dir, EVENTS_FILE))
+      if (attempt < SPINE_READ_ATTEMPTS && latest !== eventsRaw) continue
+      console.warn(`[thread-store] Skipping unreadable thread ${threadId}:`, err)
+      return null
+    }
   }
 }
 
@@ -2220,15 +2236,66 @@ async function appendMessageUnqueued(
     const existingIndex = entries.findIndex(
       (entry) => entry.line?.type === 'message' && entry.line.id === message.id,
     )
+    const previous = existingIndex >= 0 ? entries[existingIndex]?.line : undefined
     if (existingIndex >= 0) entries[existingIndex] = { raw, line }
     else entries.push({ raw, line })
     await atomicWriteFileAsync(join(dir, EVENTS_FILE), serializeSpineEntries(entries))
+    if (previous?.type === 'message') await removeSupersededProse(dir, previous, entries)
   }
   // The sidebar's PR chip is derived from links in message text, which a
   // metadata-only load never reads. Derive it only after the spine commit, so
   // a rejected imported result cannot leave stale cloud PR refs in metadata.
   await mergePrRefsIntoMeta(projectId, threadId, message)
   return true
+}
+
+/**
+ * After a replacement line has committed, remove the prose and reasoning files
+ * the replaced line referenced and the committed spine no longer does,
+ * `messages/<id>.md` included. Without this every re-finalisation of a growing
+ * message left one more full copy behind until a whole-thread save pruned it.
+ *
+ * Only files directly in `messages/` are removed. Their OKF header carries the
+ * message id, so no other message shares them; the check against every
+ * committed line still keeps one a duplicate line refers to. Blob revisions
+ * (rich blocks, images, attachment snapshots) can be shared between messages
+ * and wait for the whole-thread prune.
+ *
+ * A failed removal only leaves an orphan for that prune, so it is logged and
+ * never fails the write. A reader holding the replaced line cannot be broken:
+ * transcript loads on this project's store queue run wholly before or after
+ * this operation; {@link readThread}, the one transcript fold that also runs
+ * outside it (the PR-ref backfill), folds again when its spine changed under
+ * it; and the prompt-search worker and the project-context search already
+ * discard a thread whose spine changed during their read and read it again on
+ * their next pass.
+ */
+async function removeSupersededProse(
+  dir: string,
+  replaced: SpineMessageLine,
+  committed: SpineEntry[],
+): Promise<void> {
+  const live = new Set<string>()
+  for (const entry of committed) {
+    if (entry.line?.type !== 'message') continue
+    for (const ref of refsOfLine(entry.line).files) live.add(ref)
+  }
+  for (const ref of [replaced.content.ref, replaced.reasoning?.ref]) {
+    if (ref === undefined || live.has(ref)) continue
+    const path = contentFilePath(dir, ref)
+    const parts = path === null ? [] : relative(resolvePath(dir), path).split(sep)
+    if (path === null || parts.length !== 2 || parts[0] !== 'messages') continue
+    try {
+      assertStorePath(path)
+      await fsPromises.unlink(path)
+    } catch (error) {
+      if (isRecord(error) && error['code'] === 'ENOENT') continue
+      console.warn(
+        `[thread-store] Could not remove superseded ${ref}; the next whole-thread save prunes it:`,
+        error,
+      )
+    }
+  }
 }
 
 export function appendMessage(
