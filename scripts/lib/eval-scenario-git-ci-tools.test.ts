@@ -10,8 +10,15 @@
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { loadEvalScenario } from '../../tests/e2e/helpers/agent-eval-scenario.ts'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { execFileSync } from 'node:child_process'
+import {
+  createEvalProject,
+  loadEvalScenario,
+  seedEvalWorkspace,
+} from '../../tests/e2e/helpers/agent-eval-scenario.ts'
 import { expectRecord } from '../../src/shared/unknown-value.mts'
 import {
   toolExpectationViolations,
@@ -55,6 +62,62 @@ const GOOD_RUN: ObservedToolCall[] = [
 ]
 
 describe('git-ci-first-class-tools scenario', () => {
+  it('isolates activation while retaining the origin and genuine recent history', () => {
+    const previous = process.cwd()
+    const source = mkdtempSync(join(tmpdir(), 'copse-eval-history-'))
+    const git = (cwd: string, ...args: string[]): string =>
+      execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+    try {
+      git(source, 'init', '-b', 'main')
+      git(source, 'remote', 'add', 'origin', 'https://github.com/example/project.git')
+      for (const message of ['first', 'second']) {
+        git(
+          source,
+          '-c',
+          'user.name=Eval',
+          '-c',
+          'user.email=eval@example.test',
+          '-c',
+          'commit.gpgsign=false',
+          'commit',
+          '--allow-empty',
+          '-qm',
+          message,
+        )
+      }
+      const head = git(source, 'rev-parse', 'HEAD')
+      git(source, 'update-ref', 'refs/remotes/origin/main', head)
+      process.chdir(source)
+      const project = createEvalProject(scenario)
+      assert.notEqual(project.root, source, 'activation must not switch the developer checkout')
+      try {
+        seedEvalWorkspace(project.root, scenario)
+        assert.equal(
+          git(project.root, 'remote', 'get-url', 'origin'),
+          git(source, 'remote', 'get-url', 'origin'),
+        )
+        assert.equal(git(project.root, 'rev-parse', 'HEAD'), head)
+        assert.equal(git(project.root, 'rev-list', '--count', 'HEAD'), '2')
+        assert.equal(git(source, 'rev-parse', 'HEAD'), head)
+        assert.equal(existsSync(join(project.root, '.git', 'objects', 'info', 'alternates')), false)
+      } finally {
+        project.cleanup()
+      }
+    } finally {
+      process.chdir(previous)
+      rmSync(source, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses history copying into a non-disposable workspace', () => {
+    assert.throws(() => {
+      seedEvalWorkspace(process.cwd(), {
+        ...scenario,
+        workspace: { ...scenario.workspace, type: 'current' },
+      })
+    }, /initialized disposable project/)
+  })
+
   it('fails the exported thread from #1845', () => {
     const violations = toolExpectationViolations(EXPORTED_FAILURE, expectations)
     // The trace never completed the merge-history half through a first-class

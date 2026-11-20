@@ -31,29 +31,27 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
         with:
-          fetch-depth: 0
           persist-credentials: false
+      # The scan walks only the checked-out commit's history (below), so fetch
+      # just that rather than `fetch-depth: 0`'s every branch and tag. The
+      # repository is public, so the fetch needs no token.
+      - name: Fetch the checked-out commit's history
+        run: git fetch --no-tags --quiet --unshallow origin "$(git rev-parse HEAD)"
       # gitleaks-action v2 requires a separate license for organization-owned
       # repositories. Run the open-source CLI directly and verify the pinned
-      # release asset before executing it instead.
+      # release asset before executing it instead. The shared installer (also
+      # used by CI's precheck) falls back to the release asset API when the
+      # direct download fails, and checks the same checksum on either route.
       - name: Install pinned gitleaks CLI
         shell: bash
-        run: |
-          set -euo pipefail
-          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          path="${RUNNER_TEMP}/${archive}"
-          curl --fail --location --retry 3 \
-            --output "${path}" \
-            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
-          echo "${GITLEAKS_LINUX_X64_SHA256}  ${path}" | sha256sum --check --strict
-          tar -xzf "${path}" -C "${RUNNER_TEMP}" gitleaks
-          "${RUNNER_TEMP}/gitleaks" version
-      # Default `gitleaks git` implies `--all --full-history`, which also walks
-      # every ref fetched by `fetch-depth: 0` — including machine-managed branches
-      # like `demo-previews` whose minified bundles trip entropy heuristics and
-      # fail unrelated PR tips (seen on #1192 via commit 22623c71). Keep the same
-      # history/diff filters, but limit the walk to the checked-out tip (PR merge
-      # commit or `main`) so preview artifacts cannot poison other scans.
+        run: bash scripts/install-gitleaks.sh
+      # Default `gitleaks git` implies `--all --full-history`, which walks every
+      # ref in the clone — when this used `fetch-depth: 0`, that included
+      # machine-managed branches like `demo-previews` whose minified bundles trip
+      # entropy heuristics and fail unrelated PR tips (seen on #1192 via commit
+      # 22623c71). Keep the same history/diff filters, but limit the walk to the
+      # checked-out tip (PR merge commit or `main`) so preview artifacts cannot
+      # poison other scans even if more refs are ever fetched.
       - name: Scan repository history
         run: |
           "${RUNNER_TEMP}/gitleaks" git --redact --verbose --no-banner \

@@ -301,4 +301,45 @@ describe('memories pane', () => {
       unmount()
     }
   })
+
+  it('drops the selection and lists the new project’s memories when setState alone switches projects', async () => {
+    const store = createStore({
+      activeProjectId: 'p1',
+      workspaceRoot: '/work/one',
+      filesPaneOpen: true,
+      rightPanelMode: 'memories',
+    })
+    const byProject: Record<string, KnowledgeNote[]> = {
+      p1: [makeNote('a', 'Build command', 'Run npm build')],
+      // The same id in the next project: only the switch, not a missing note, clears it.
+      p2: [makeNote('a', 'Deploy steps', 'Run make deploy'), makeNote('b', 'Owner', 'Ops team')],
+    }
+    const base = makeApi([]).api
+    const api: ApiClient = {
+      ...base,
+      memories: {
+        ...base.memories,
+        list: async () => byProject[store.getState().activeProjectId ?? ''] ?? [],
+      },
+    }
+    const { list, viewer } = mountHosts()
+    const titles = (): (string | null)[] =>
+      Array.from(list.querySelectorAll('.memories-row-title'), (e) => e.textContent)
+    const unmount = mountMemoriesPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.memories-row')?.click()
+      assert.equal(list.querySelectorAll('.memories-row.is-selected').length, 1)
+      assert.equal(viewer.querySelector<HTMLFormElement>('.memories-form')?.hidden, false)
+
+      store.setState({ activeProjectId: 'p2', workspaceRoot: '/work/two' })
+      await flush()
+
+      assert.deepEqual(titles(), ['Deploy steps', 'Owner'])
+      assert.equal(list.querySelectorAll('.memories-row.is-selected').length, 0)
+      assert.equal(viewer.querySelector<HTMLFormElement>('.memories-form')?.hidden, true)
+    } finally {
+      unmount()
+    }
+  })
 })

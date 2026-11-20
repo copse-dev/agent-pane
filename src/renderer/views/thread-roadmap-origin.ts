@@ -39,15 +39,11 @@ export function mountThreadRoadmapOrigin(
 
   let itemId: string | null = null
   let generation = 0
-  // The thread the last lookup was for. `threads_changed` fires many times per
-  // turn (streaming, titles, status), and each lookup reads every roadmap note
-  // on the main side, so thread events only re-query when the active thread
-  // actually changed; `roadmap:changed` always re-queries.
+  // The thread the last lookup was for. Each lookup reads every roadmap note on
+  // the main side, so thread state only re-queries when the active thread
+  // changes (renames, status and other threads' updates do not);
+  // `roadmap:changed` always re-queries.
   let syncedThreadId: string | null | undefined
-
-  function syncIfThreadChanged(): void {
-    if (store.getState().activeThreadId !== syncedThreadId) sync()
-  }
 
   function sync(): void {
     const gen = ++generation
@@ -94,8 +90,8 @@ export function mountThreadRoadmapOrigin(
   })
 
   sync()
-  const unsubscribeThreads = store.on('threads_changed', syncIfThreadChanged)
-  // "Start thread" creates the thread (threads_changed) before the item's
+  const unsubscribeThreads = store.select((s) => s.activeThreadId, sync)
+  // "Start thread" selects the new thread before the item's
   // `thread` field is stamped — the pane's setThread call returns and
   // broadcasts on this same channel once it durably lands (see
   // roadmap:set-thread), the same shape as a background complexity stamp.

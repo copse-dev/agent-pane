@@ -9,6 +9,11 @@ import type { CodeBlockRunRequest } from '@shared/store/events.ts'
 import { mountFooterBranchStatus } from './footer-branch-status.ts'
 import { qsRequired } from '../dom/helpers.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import {
+  applyPreparedThreadCheckout,
+  setThreadDraftPrompt,
+  setThreadTitle,
+} from '@shared/store/thread-helpers.ts'
 
 function thread(branch?: string, withMessages = false): Thread {
   const value: Thread = {
@@ -272,6 +277,45 @@ describe('footer branch status', () => {
       assert.match(button.title, /no longer available/)
     })
 
+    it('warns, without a repair button, when the checkout is on its base branch (#1882)', async () => {
+      const reattachCalls: string[] = []
+      const host = mountDetached({
+        branchStatus: async () => {
+          throw new Error(
+            "Error invoking remote method 'git:branch-status': ThreadWorktreeOnBaseBranchError: on main",
+          )
+        },
+        worktreeAttachment: async () => ({
+          state: 'on-base-branch',
+          branch: 'copse/thread-branch',
+          baseBranch: 'main',
+        }),
+        reattachWorktree: async (projectId, threadId) => {
+          reattachCalls.push(`${projectId}/${threadId}`)
+          return { branch: 'copse/thread-branch', keptDetachedCommits: false, backupBranch: null }
+        },
+      })
+      await settle()
+
+      const trigger = qsRequired<HTMLButtonElement>(host, '.footer-branch-status')
+      assert.ok(trigger.classList.contains('is-detached'))
+      assert.equal(
+        trigger.title,
+        'This checkout is on main, its base branch, instead of copse/thread-branch. Copse will not run in it, so no edit lands on main. Your files are preserved. Check out copse/thread-branch in this checkout to continue.',
+      )
+      assert.equal(trigger.getAttribute('aria-label'), `${trigger.title} Copy branch name.`)
+      assert.equal(
+        trigger.querySelector('.footer-branch-label')?.textContent,
+        'copse/thread-branch',
+      )
+      const button = qsRequired<HTMLButtonElement>(host, '.branch-reattach-button')
+      assert.equal(button.hidden, true)
+      button.click()
+      await settle()
+      assert.deepEqual(reattachCalls, [])
+      assert.equal(document.querySelector('.toast-error'), null)
+    })
+
     it('offers a reattach that puts the checkout back on its branch', async () => {
       let attached = false
       const reattachCalls: string[] = []
@@ -366,13 +410,11 @@ describe('footer branch status', () => {
         activeThreadId: otherThread.id,
         threads: [...store.getState().threads, otherThread],
       })
-      store.emit('threads_changed')
       await settle()
       assert.equal(reattach.disabled, false)
       assert.equal(reattach.textContent, 'Continue rebase')
 
       store.setState({ activeThreadId: 'thread-1' })
-      store.emit('threads_changed')
       await settle()
       assert.equal(reattach.disabled, true)
       assert.equal(reattach.textContent, 'Running…')
@@ -600,7 +642,6 @@ describe('footer branch status', () => {
     await settle()
     assert.equal(branchReads, 1)
 
-    store.emit('threads_changed')
     store.emit('message_added', 'thread-1', 'message-1')
     store.emit('git_branch_changed')
     await settle()
@@ -611,14 +652,28 @@ describe('footer branch status', () => {
     assert.equal(branchReads, 2, 'the event burst resolves to one deferred refresh')
 
     store.setState({ activeThreadId: 'thread-2' })
-    store.emit('threads_changed')
     await settle()
     assert.equal(branchReads, 3, 'a visible thread switch does not wait for the debounce')
     assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'feature/two')
 
     await new Promise<void>((resolve) => setTimeout(resolve, 550))
     await settle()
-    assert.equal(branchReads, 3, "the switch's own threads_changed adds no deferred read")
+    assert.equal(branchReads, 3, 'the switch adds no deferred read')
+
+    // Another thread's rename (which still emits threads_changed) is not this
+    // footer's business: no repaint, no deferred Git read.
+    const label = host.querySelector('.footer-branch-label')
+    setThreadTitle(store, 'thread-1', 'Renamed elsewhere')
+    await new Promise<void>((resolve) => setTimeout(resolve, 550))
+    await settle()
+    assert.equal(branchReads, 3, "another thread's rename starts no Git read")
+    assert.equal(host.querySelector('.footer-branch-label'), label)
+
+    // Draft autosave replaces the active thread object; typing is not a branch change.
+    setThreadDraftPrompt(store, 'thread-2', 'still typing')
+    await new Promise<void>((resolve) => setTimeout(resolve, 550))
+    await settle()
+    assert.equal(branchReads, 3, 'a draft autosave starts no Git read')
   })
 
   it('repaints a thread switch from the store alone, with no event emitted (#3928)', async () => {
@@ -662,6 +717,38 @@ describe('footer branch status', () => {
     control.destroy()
   })
 
+  it('re-reads git status straight away when setState alone switches the workspace', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread(undefined, true)],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const reads: string[] = []
+    const base = createApi({ currentBranch: 'main', pr: null })
+    const control = mountFooterBranchStatus(host, store, {
+      ...base,
+      git: {
+        ...base['git'],
+        branchStatus: async (projectId) => {
+          reads.push(projectId)
+          return { currentBranch: projectId === 'project-1' ? 'main' : 'feature/other', pr: null }
+        },
+      },
+    })
+    await settle()
+    assert.deepEqual(reads, ['project-1'])
+
+    // The thread id stays put so only the workspace selection can fire.
+    store.setState({ activeProjectId: 'project-2', workspaceRoot: '/other-repo' })
+    await settle()
+    assert.deepEqual(reads, ['project-1', 'project-2'], 'no 500ms debounce before the read')
+    assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'feature/other')
+    control.destroy()
+  })
+
   it('does not show the previous thread branch while a real thread switch is still resolving', async () => {
     // thread-2 has no gitBranch/worktree binding of its own, so its display
     // falls through to `status.currentBranch` - the field that is shared
@@ -695,7 +782,6 @@ describe('footer branch status', () => {
     assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'main')
 
     store.setState({ activeThreadId: 'thread-2' })
-    store.emit('threads_changed')
     await settle()
 
     // thread-2's own branch status is still in flight - the widget must hide
@@ -705,6 +791,122 @@ describe('footer branch status', () => {
     resolveSecond({ currentBranch: 'feature/second', pr: null })
     await settle()
     assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'feature/second')
+  })
+
+  describe('a deferred worktree thread', () => {
+    const WORKTREE = {
+      path: '/worktrees/project-1/thread-1',
+      branch: 'copse/readme-usage-thread',
+      baseBranch: 'main',
+      baseCommit: 'abc1234',
+      createdAt: 2,
+      seededFromDirtyProject: false,
+    }
+
+    function mountWith(
+      threads: Thread[],
+      currentBranch: string | null = 'main',
+    ): { host: HTMLElement; store: AppStore } {
+      const store = createStore({
+        workspaceRoot: '/repo',
+        activeProjectId: 'project-1',
+        activeThreadId: 'thread-1',
+        threads,
+      })
+      const host = document.createElement('div')
+      document.body.append(host)
+      mountFooterBranchStatus(host, store, createApi({ currentBranch, pr: null }))
+      return { host, store }
+    }
+
+    function note(host: HTMLElement): HTMLElement {
+      return qsRequired(host, '.branch-deferred-note')
+    }
+
+    it('says it is reading your checkout until the worktree exists', async () => {
+      const deferred: Thread = {
+        ...thread('main', true),
+        worktreeChoice: 'automatic',
+        deferredWorktree: { baseBranch: 'main', requestedAt: 1 },
+      }
+      const { host, store } = mountWith([deferred])
+      await settle()
+
+      assert.equal(note(host).hidden, false)
+      assert.equal(note(host).textContent, 'Reading your checkout')
+      // A refused write allocates nothing, so the tooltip promises the worktree
+      // only once the thread asks to make changes.
+      assert.match(note(host).title, /own worktree once it asks to make changes/)
+      assert.doesNotMatch(note(host).title, /first time it needs to write/)
+      assert.match(note(host).title, /can’t change it.*own worktree/)
+      assert.equal(qsRequired(host, '.footer-branch-label').textContent, 'main')
+
+      // The mid-turn allocation arrives as a `thread_checkout` chunk.
+      applyPreparedThreadCheckout(store, 'thread-1', {
+        checkoutMode: 'worktree',
+        choice: 'automatic',
+        branch: WORKTREE.branch,
+        worktree: WORKTREE,
+      })
+      await settle()
+
+      assert.equal(note(host).hidden, true)
+      assert.equal(qsRequired(host, '.footer-branch-label').textContent, WORKTREE.branch)
+    })
+
+    it("shows the checkout's live branch beside the note, without a mismatch", async () => {
+      // First sent on main; the user has since switched their checkout. The
+      // thread reads that checkout, so the branch beside the note is its.
+      const deferred: Thread = {
+        ...thread('main', true),
+        worktreeChoice: 'automatic',
+        deferredWorktree: { baseBranch: 'main', requestedAt: 1 },
+      }
+      const { host } = mountWith([deferred], 'feature/user-work')
+      await settle()
+
+      assert.equal(note(host).hidden, false)
+      assert.equal(qsRequired(host, '.footer-branch-label').textContent, 'feature/user-work')
+      assert.equal(
+        qsRequired(host, '.branch-picker-trigger').classList.contains('is-mismatch'),
+        false,
+      )
+    })
+
+    it('names no branch while the checkout it reads is detached', async () => {
+      // Started on main; the user has since detached their checkout. The
+      // thread's old binding is not what it reads now.
+      const deferred: Thread = {
+        ...thread('main', true),
+        worktreeChoice: 'automatic',
+        deferredWorktree: { baseBranch: 'main', requestedAt: 1 },
+      }
+      const { host } = mountWith([deferred], null)
+      await settle()
+
+      // The note lives in the picker's wrapper, so that stays; only the branch
+      // trigger hides.
+      assert.equal(qsRequired(host, '.branch-picker').hidden, false)
+      assert.equal(note(host).hidden, false)
+      assert.equal(qsRequired(host, '.footer-branch-status').hidden, true)
+    })
+
+    it('stays quiet for blank, shared and eagerly isolated threads', async () => {
+      for (const candidate of [
+        thread(),
+        { ...thread('main', true), worktreeChoice: 'shared' as const },
+        {
+          ...thread(WORKTREE.branch, true),
+          worktreeChoice: 'worktree' as const,
+          worktree: WORKTREE,
+        },
+      ]) {
+        const { host } = mountWith([candidate])
+        await settle()
+        assert.equal(note(host).hidden, true, `note shown for ${JSON.stringify(candidate)}`)
+        document.body.replaceChildren()
+      }
+    })
   })
 
   it('copies the thread branch on click for existing chats', async () => {
@@ -965,7 +1167,6 @@ describe('footer branch status', () => {
     assert.equal(await control.resolveBaseBranch('project-1', 'thread-1'), 'feature/new')
 
     store.setState({ threads: [thread(undefined, true)] })
-    store.emit('threads_changed')
     await settle()
 
     // The selection was consumed by the first send; the thread now speaks for a

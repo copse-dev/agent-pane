@@ -27,6 +27,7 @@ import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot, pinTextForCapture } from './helpers/screenshot.ts'
+import { waitForTranscriptScrollSettled } from './helpers/scroll-to-bottom.ts'
 
 const PROJECT_ID = 'native-isolated-workers'
 const MODEL = 'scripted-isolated-workers'
@@ -244,7 +245,20 @@ describe('native isolated writable workers', function () {
       for (const [path, name] of capturePaths)
         await pin(path, `/workspace/worktrees/${PROJECT_ID}/${name}`)
       await pin(process.execPath, '/usr/bin/node')
-      await saveAppScreenshot(filename)
+      await saveAppScreenshot(filename, undefined, async () => {
+        if (filename !== 'native-isolated-workers-running.png') return
+        // Opening the terminal changes transcript height. Frame this turn only
+        // after the capture helper has resized the shell, rather than inheriting
+        // whichever scroll anchor the streaming turn reached on this runner.
+        await browser.execute(() => {
+          const prompts = document.querySelectorAll('.msg-user')
+          const prompt = prompts[prompts.length - 1]
+          if (!(prompt instanceof HTMLElement)) throw new Error('Worker prompt missing')
+          prompt.scrollIntoView({ block: 'start', behavior: 'instant' })
+        })
+        await waitForTranscriptScrollSettled()
+        await expect($('.tool-card-subagent')).toBeDisplayed()
+      })
     } finally {
       for (const restore of restores.reverse()) await restore()
     }

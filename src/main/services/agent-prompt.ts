@@ -66,7 +66,7 @@ const SHARED_TOOL_TAIL = `- git_status: Show working tree status
 - gh_run_list: List recent CI workflow runs for a branch (read-only GitHub CLI)
 - gh_run_view: Fetch failing CI workflow run logs by run id (read-only GitHub CLI)
 - gh_api_read: Read any GitHub REST (GET) or GraphQL query data via the user's gh login (no approval; prefer over run_shell + gh api)
-- get_ci_status: Read GitHub pull request CI check status (requires gh CLI and an open PR)
+- get_ci_status: Read PR check status or exact-tip push workflow status for a branch; reports its scope and pending/unknown evidence
 - wait_for_ci_checks: Register a durable CI watch after a push, end the turn, and resume once when checks finish
 - get_ci_failure_logs: Fetch failed GitHub Actions log output for a PR
 - run_shell: Run a shell command for tests, builds, installs, and other tasks not covered by a dedicated tool (may prompt for approval; do not use for reading files or searching code)

@@ -1,4 +1,4 @@
-import type { AppStore } from '@shared/store/store.ts'
+import { sameItems, type AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { Thread } from '@shared/types'
 import { begin as perfBegin } from '../perf.ts'
@@ -252,7 +252,11 @@ export function attachThreadHydration(store: AppStore, api: ApiClient): () => vo
   // is set true, so the re-entrant call returns at the guard rather than
   // fetching again.
   const offThreads = store.on('threads_changed', hydrateActive)
-  const offWorkspace = store.on('workspace_changed', hydrateActive)
+  const offWorkspace = store.select(
+    (s) => [s.activeProjectId, s.activeThreadId] as const,
+    hydrateActive,
+    sameItems,
+  )
   hydrateActive()
 
   // Results for visible legacy sidebar rows, and live pushes from

@@ -6,6 +6,8 @@ import { invalidateProjectThreadLoads } from '../controller/persistence.ts'
 import { el } from '../dom/helpers.ts'
 import { showErrorToast } from './toast.ts'
 import { showThreadArchiveToast } from './thread-archive-toast.ts'
+import { activeThreadOf } from '../controller/active-thread-owner.ts'
+import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 
 /** A return-to-thread decision, shown only after main cannot establish completion. */
 export function createThreadArchiveReview(
@@ -110,9 +112,11 @@ export function createThreadArchiveReview(
     void refresh()
   }
   const unsubs = [
-    store.on('threads_changed', sync),
+    // Readiness is keyed on the active project (selected below) and the active
+    // thread itself (its `updatedAt` and draft).
+    store.select(activeThreadOf, sync),
     store.on('thread_status_changed', sync),
-    store.on('workspace_changed', sync),
+    selectActiveWorkspace(store, sync),
     store.on('settings_changed', () => {
       void refresh(true)
     }),

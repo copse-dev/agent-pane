@@ -2,6 +2,7 @@ import { createReadStream, watch, type FSWatcher } from 'node:fs'
 import { realpath, stat } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
 import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { isPathWithin } from '@copse/std/path-containment.ts'
 import { embeddedIpv4, normalizeHostname } from '@copse/llm/credential-url.ts'
 
 const LOOPBACK_HOST = '127.0.0.1'
@@ -97,11 +98,6 @@ export function isStaticPreviewUrl(url: string): boolean {
   return [...servers.values()].some((entry) => new URL(entry.url).origin === origin)
 }
 
-function isInsideRoot(root: string, candidate: string): boolean {
-  const path = relative(root, candidate)
-  return path === '' || (!path.startsWith(`..${sep}`) && path !== '..' && !isAbsolute(path))
-}
-
 async function resolveRequestFile(root: string, requestUrl: string): Promise<string | null> {
   let pathname: string
   try {
@@ -112,13 +108,13 @@ async function resolveRequestFile(root: string, requestUrl: string): Promise<str
   if (pathname.includes('\0')) return null
 
   const candidate = resolve(root, `.${pathname}`)
-  if (!isInsideRoot(root, candidate)) return null
+  if (!isPathWithin(root, candidate)) return null
 
   try {
     const candidateStat = await stat(candidate)
     const file = candidateStat.isDirectory() ? join(candidate, 'index.html') : candidate
     const canonical = await realpath(file)
-    if (!isInsideRoot(root, canonical)) return null
+    if (!isPathWithin(root, canonical)) return null
     return (await stat(canonical)).isFile() ? canonical : null
   } catch {
     return null
@@ -286,7 +282,7 @@ export async function getStaticPreviewServer(root: string): Promise<StaticPrevie
 /** Loopback http(s) URL for a file already resolved inside `root`. Never `file://`. */
 export async function workspacePreviewFileUrl(root: string, absolutePath: string): Promise<string> {
   const [canonicalRoot, canonicalPath] = await Promise.all([realpath(root), realpath(absolutePath)])
-  if (!isInsideRoot(canonicalRoot, canonicalPath)) {
+  if (!isPathWithin(canonicalRoot, canonicalPath)) {
     throw new Error('Preview path must stay inside the workspace preview root.')
   }
   const preview = await getStaticPreviewServer(canonicalRoot)

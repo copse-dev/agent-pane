@@ -30,6 +30,7 @@ import { getActiveWorkspaceFs } from '../services/workspace-fs/get-workspace-fs.
 import { localWorkspaceFs } from '../services/workspace-fs/local-workspace-fs.ts'
 import { WorkspaceFileTooLargeError } from '../services/workspace-fs/workspace-fs.ts'
 import { decodeVideoFrames } from '../services/video/video-decoder.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 /**
  * Read a video as a handful of stills instead of as a video.
@@ -255,7 +256,7 @@ export const videoFramesTool = defineTool({
         quality: DEFAULT_FRAME_QUALITY,
       })
     } catch (err) {
-      return `Could not decode ${path}: ${err instanceof Error ? err.message : String(err)}`
+      return `Could not decode ${path}: ${errorMessage(err)}`
     }
     if (cancelled()) return 'Cancelled after decoding the video.'
 

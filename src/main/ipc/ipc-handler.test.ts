@@ -32,6 +32,23 @@ import {
   toolPermissionsResetArgs,
   toolPermissionsSetArgs,
 } from './security-handler-args.ts'
+import {
+  memoriesCreateArgs,
+  memoriesDeleteArgs,
+  memoriesUpdateArgs,
+} from './memory-handler-args.ts'
+import {
+  backgroundTaskLogsArgs,
+  supervisorCancelArgs,
+  supervisorListArgs,
+  supervisorTaskArgs,
+} from './supervisor-handler-args.ts'
+import {
+  mainWindowSetBrowserSessionArgs,
+  mainWindowSetNavigationArgs,
+} from './main-window-handler-args.ts'
+import { browserPaneSessionSchema } from '../windows/main-window-state.ts'
+import { mainWindowNavigationSchema } from './ipc-guards.ts'
 
 /** A sender check that accepts only the event `'app'`, standing in for `assertMainFrameSender`. */
 function appOnly(event: string): void {
@@ -380,6 +397,150 @@ describe('environment-setup, tool-permissions and classifier channels match thei
       UUID,
       [UUID],
     ])
+  })
+})
+
+describe('memories, supervisor and main-window channels match their hand-written parse', () => {
+  const perArgument: PositionalArgsOptions = { errors: 'per-argument' }
+  // Each hand-written handler below is the parse the channel did before it
+  // adopted defineHandler, with the schemas it spelled inline.
+  const zMemoryId = zNonEmptyString.max(128)
+  const zMemoryTitle = z.string().max(512)
+  const zMemoryBody = z.string().max(1_000_000)
+  const zMemoryTags = z.array(z.string().max(128)).max(64)
+  const zSupervisorId = zNonEmptyString.max(256)
+  const values: unknown[] = [
+    undefined,
+    null,
+    '',
+    42,
+    PROJECT,
+    'x'.repeat(129),
+    'x'.repeat(257),
+    'x'.repeat(513),
+    [],
+    ['tag'],
+    ['t'.repeat(129)],
+    Array.from({ length: 65 }, () => 'tag'),
+    { activeProjectId: PROJECT, activeThreadId: THREAD },
+    { activeProjectId: null, activeThreadId: null },
+    { activeProjectId: 42, activeThreadId: null },
+    { tabs: [], activeTabIndex: 0, paneOpen: true },
+    { tabs: [{ url: 'data:text/html,x' }], activeTabIndex: 0, paneOpen: true },
+    { tabs: [], activeTabIndex: -1, paneOpen: true },
+  ]
+  // Every argument list of `length` drawn from `values`, a short and a long
+  // list, and the whole list wrapped in one array.
+  function argumentLists(length: number): unknown[][] {
+    let lists: unknown[][] = [[]]
+    for (let i = 0; i < length; i++)
+      lists = lists.flatMap((list) => values.map((v) => [...list, v]))
+    // Keep the cross product bounded; a stride still mixes every position's values.
+    const sampled = lists.filter(
+      (_, index) => index % Math.max(1, Math.floor(lists.length / 4000)) === 0,
+    )
+    const valid = Array.from({ length }, () => PROJECT)
+    return [...ARGUMENT_LISTS, ...sampled, [...valid, 'extra'], [valid], valid.slice(1)]
+  }
+
+  const cases: {
+    channel: string
+    adopted: z.ZodTuple<readonly z.ZodType[], null>
+    options?: PositionalArgsOptions
+    handWritten: (...raw: unknown[]) => unknown
+  }[] = [
+    {
+      channel: 'memories:create',
+      adopted: memoriesCreateArgs,
+      options: perArgument,
+      handWritten: (rawTitle, rawBody, rawTags) => [
+        parseIpcArgs(zMemoryTitle, [rawTitle]),
+        parseIpcArgs(zMemoryBody, [rawBody]),
+        parseIpcArgs(zMemoryTags.optional(), [rawTags]),
+      ],
+    },
+    {
+      channel: 'memories:update',
+      adopted: memoriesUpdateArgs,
+      options: perArgument,
+      handWritten: (rawId, rawTitle, rawBody, rawTags) => [
+        parseIpcArgs(zMemoryId, [rawId]),
+        parseIpcArgs(zMemoryTitle, [rawTitle]),
+        parseIpcArgs(zMemoryBody, [rawBody]),
+        parseIpcArgs(zMemoryTags.optional(), [rawTags]),
+      ],
+    },
+    {
+      channel: 'memories:delete',
+      adopted: memoriesDeleteArgs,
+      handWritten: (rawId) => [parseIpcArgs(zMemoryId, [rawId])],
+    },
+    {
+      channel: 'supervisor:list',
+      adopted: supervisorListArgs,
+      handWritten: (rawProjectId) => [parseIpcArgs(zSupervisorId, [rawProjectId])],
+    },
+    {
+      channel: 'supervisor:cancel',
+      adopted: supervisorCancelArgs,
+      options: perArgument,
+      handWritten: (rawProjectId, rawTaskId) => [
+        parseIpcArgs(zSupervisorId, [rawProjectId]),
+        parseIpcArgs(zSupervisorId, [rawTaskId]),
+      ],
+    },
+    {
+      channel: 'supervisor:get, supervisor:resume',
+      adopted: supervisorTaskArgs,
+      options: perArgument,
+      handWritten: (rawProjectId, rawThreadId, rawTaskId) => [
+        parseIpcArgs(zSupervisorId, [rawProjectId]),
+        parseIpcArgs(zSupervisorId, [rawThreadId]),
+        parseIpcArgs(zSupervisorId, [rawTaskId]),
+      ],
+    },
+    {
+      channel: 'background-tasks:logs',
+      adopted: backgroundTaskLogsArgs,
+      handWritten: (rawProjectId, rawThreadId, rawTaskId) =>
+        parseIpcArgs(z.tuple([zProjectId, zThreadId, zNonEmptyString.max(256)]), [
+          rawProjectId,
+          rawThreadId,
+          rawTaskId,
+        ]),
+    },
+    {
+      channel: 'main-window:set-navigation',
+      adopted: mainWindowSetNavigationArgs,
+      handWritten: (rawNavigation) => [parseIpcArgs(mainWindowNavigationSchema, [rawNavigation])],
+    },
+    {
+      channel: 'main-window:set-browser-session',
+      adopted: mainWindowSetBrowserSessionArgs,
+      handWritten: (rawSession) => [parseIpcArgs(browserPaneSessionSchema, [rawSession])],
+    },
+  ]
+  for (const { channel, adopted, options, handWritten } of cases) {
+    it(channel, () => {
+      const arity = adopted.def.items.length
+      let accepted = 0
+      for (const rawArgs of argumentLists(arity)) {
+        const expected = outcome(() => handWritten(...rawArgs.slice(0, arity)))
+        if (!isError(expected)) accepted++
+        assert.deepEqual(
+          outcome(() => parsePositionalIpcArgs(adopted, rawArgs, options)),
+          expected,
+          JSON.stringify(rawArgs).slice(0, 200),
+        )
+      }
+      assert.ok(accepted > 0, 'no argument list was accepted, so the check proves nothing')
+    })
+  }
+
+  it('the no-argument channels (memories:list, main-window:get-*) ignore every argument list', () => {
+    for (const rawArgs of argumentLists(1)) {
+      assert.deepEqual(parsePositionalIpcArgs(z.tuple([]), rawArgs), [])
+    }
   })
 })
 

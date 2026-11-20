@@ -1,12 +1,15 @@
-import { describe, it } from 'node:test'
+import { describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { homedir, tmpdir } from 'node:os'
 import { existsSync } from 'node:fs'
 import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
+import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import { wrapCommandWithSandboxMacOS } from '@anthropic-ai/sandbox-runtime/dist/sandbox/macos-sandbox-utils.js'
+import quote from 'shell-quote'
 import type { CellSpec } from '@copse/review/isolation.ts'
+import { setProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
 import { createOsSandboxBackend, reviewCellSandboxOverlay } from './os-sandbox-backend.ts'
 
 const HOMEBREW_OPENSSL_CONFIGS = [
@@ -86,6 +89,54 @@ describe('createOsSandboxBackend', () => {
     // Nothing in the unit tier initialises the sandbox, so the honest answer
     // here is "no backend" — never a backend that claims a wall it lacks.
     assert.equal(createOsSandboxBackend(), null)
+  })
+
+  it('points TMPDIR and every other temp variable at the cell tmp dir (#4149)', async () => {
+    const scratch = await realpath(await mkdtemp(join(tmpdir(), 'review-cell-tmp-')))
+    const checkout = join(scratch, 'checkout')
+    await mkdir(checkout)
+    mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+    // ASRT 0.0.74 reads the wrapping process's env after an await and bakes
+    // `TMPDIR=<that>` into the command, where it beats the spawn env.
+    mock.method(SandboxManager, 'wrapWithSandboxArgv', async (command: string) => {
+      await new Promise((resolve) => setImmediate(resolve))
+      const baked =
+        [process.env['CLAUDE_CODE_TMPDIR'], process.env['CLAUDE_TMPDIR']].find(
+          (value) => value !== undefined && value !== '',
+        ) ?? '/tmp/claude'
+      return {
+        argv: ['/bin/sh', '-c', `export TMPDIR=${quote.quote([baked])}\n${command}`],
+        env: process.env,
+      }
+    })
+    setProjectSandboxEnabled(true)
+    try {
+      const backend = createOsSandboxBackend()
+      assert.ok(backend)
+      const cell = await backend.createCell({
+        ...spec,
+        scratchDir: scratch,
+        checkouts: { base: checkout, head: checkout },
+        readOnlyPaths: [],
+      })
+      try {
+        const result = await cell.run({
+          target: 'head',
+          argv: ['/bin/sh', '-c', 'printf "%s\\n" "$TMPDIR" "$TMP" "$TEMP" "$CLAUDE_CODE_TMPDIR"'],
+          timeoutMs: 10_000,
+          maxOutputBytes: 10_000,
+        })
+        assert.equal(result.exitCode, 0, result.output)
+        const cellTmp = join(scratch, 'tmp')
+        assert.deepEqual(result.output.trim().split('\n'), [cellTmp, cellTmp, cellTmp, cellTmp])
+      } finally {
+        await cell.destroy()
+      }
+    } finally {
+      setProjectSandboxEnabled(false)
+      mock.restoreAll()
+      await rm(scratch, { recursive: true, force: true })
+    }
   })
 })
 

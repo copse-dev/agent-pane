@@ -15,6 +15,7 @@ import {
   type DecodedFrame,
   type VideoDecoderBridge,
 } from '@shared/video/decode-contract.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 declare global {
   interface Window {
@@ -191,7 +192,7 @@ async function decodeFrames(request: DecodeFramesRequest): Promise<DecodeFramesR
     return {
       requestId: request.requestId,
       ok: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessage(err),
     }
   } finally {
     video.removeAttribute('src')

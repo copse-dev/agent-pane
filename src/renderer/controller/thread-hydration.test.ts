@@ -124,14 +124,47 @@ test('concurrent requests for the same thread share one fetch', async () => {
   detach()
 })
 
+test('a project switch from setState alone hydrates the new active thread', async () => {
+  const store = createStore()
+  const { api, calls, release } = apiWithControlledLoad()
+  store.setState({
+    activeProjectId: 'p',
+    activeThreadId: 't1',
+    threads: [unloaded('t1', { messagesLoaded: true })],
+  })
+  const detach = attachThreadHydration(store, api)
+  assert.deepEqual(calls, [], 'the loaded thread needs no fetch')
+
+  store.setState({
+    activeProjectId: 'q',
+    workspaceRoot: '/repo/q',
+    activeThreadId: 'u1',
+    threads: [unloaded('u1')],
+  })
+  assert.deepEqual(calls, ['u1'])
+
+  release('u1', [message('m-q')])
+  await new Promise((r) => setTimeout(r, 0))
+  const thread = store.getState().threads[0]
+  assert.ok(thread)
+  assert.deepEqual(
+    thread.messages.map((m) => m.id),
+    ['m-q'],
+  )
+  assert.equal(thread.messagesLoaded, true)
+  detach()
+})
+
 test('a transcript arriving after the user switched project is discarded', async () => {
   const store = createStore()
   const { api, release } = apiWithControlledLoad()
   store.setState({ activeProjectId: 'p', activeThreadId: 't1', threads: [unloaded('t1')] })
   const detach = attachThreadHydration(store, api)
 
-  // The user moves to another project while the read is in flight.
-  store.setState({ activeProjectId: 'other', threads: [unloaded('t1')] })
+  // The user moves to another project while the read is in flight. It lists a
+  // thread with the same id but has none active yet, as quarantine-and-restore
+  // leaves it, so the switch starts no read of its own.
+  store.setState({ activeProjectId: 'other', activeThreadId: null, threads: [unloaded('t1')] })
   release('t1', [message('m1')])
   await new Promise((r) => setTimeout(r, 0))
 

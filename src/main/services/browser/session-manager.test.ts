@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { PREVIEW_ZOOM_FACTOR, capturePreviewDataUrl } from './session-manager.ts'
+import { runInNewContext } from 'node:vm'
+import { capturePreviewDataUrl } from './session-manager.ts'
 
 interface FakeImage {
   isEmpty(): boolean
@@ -8,137 +9,310 @@ interface FakeImage {
   resize(options: { width: number; quality: 'best' }): FakeImage
   toDataURL(): string
 }
-
-function image(width: number, empty = false): FakeImage {
+function image(width: number): FakeImage {
   return {
-    isEmpty: () => empty,
+    isEmpty: () => width === 0,
     getSize: () => ({ width }),
     resize: ({ width: next }) => image(next),
     toDataURL: () => `data:image/png;base64,${String(width)}`,
   }
 }
-
+const decodeImage = (url: string): FakeImage => image(Number(url.split(',').at(-1)))
 interface FakeTab {
   events: string[]
   zoom(): number
   getZoomFactor(): number
   setZoomFactor(factor: number): void
-  scripts: string[]
   executeJavaScript(code: string): Promise<unknown>
   capturePage(): Promise<FakeImage>
+  debugger: {
+    isAttached(): boolean
+    attach(version: string): void
+    detach(): void
+    sendCommand(method: string, params: Record<string, unknown>): Promise<unknown>
+  }
 }
-
-/** A tab whose capture records the zoom it was taken at. */
-function contents(capture: () => Promise<FakeImage>, initialZoom = 1): FakeTab {
+function contents(
+  capture: () => Promise<unknown> = () => Promise.resolve({ data: '1280' }),
+  initialZoom = 1,
+  existingDebugger = false,
+): FakeTab {
   const events: string[] = []
-  const scripts: string[] = []
   let zoom = initialZoom
+  let attached = existingDebugger
   return {
     events,
-    scripts,
     zoom: () => zoom,
     getZoomFactor: () => zoom,
     setZoomFactor: (factor): void => {
       zoom = factor
       events.push(`zoom ${String(factor)}`)
     },
-    executeJavaScript: (code): Promise<unknown> => {
-      scripts.push(code)
+    executeJavaScript: (): Promise<unknown> => {
       events.push('layout')
-      return Promise.resolve(640)
+      return Promise.resolve()
     },
-    capturePage: (): Promise<FakeImage> => {
-      events.push(`capture at ${String(zoom)}`)
-      return capture()
+    // Both calls to the old API could return this same stale frame.
+    capturePage: (): Promise<FakeImage> => Promise.resolve(image(320)),
+    debugger: {
+      isAttached: () => attached,
+      attach: (version): void => {
+        assert.equal(version, '1.3')
+        attached = true
+        events.push('attach')
+      },
+      detach: (): void => {
+        attached = false
+        events.push('detach')
+      },
+      sendCommand: (method, params): Promise<unknown> => {
+        assert.equal(method, 'Page.captureScreenshot')
+        assert.deepEqual(params, { format: 'png', fromSurface: true, captureBeyondViewport: false })
+        events.push(`capture at ${String(zoom)}`)
+        return capture()
+      },
     },
   }
 }
 
 describe('capturePreviewDataUrl', () => {
-  it('lays the page out at the preview zoom for the capture, then restores the tab', async () => {
-    // A 1280px desktop layout shrunk into a ~380px transcript card left body
-    // text under a third of its size (#3240). The preview reflows narrower
-    // instead, and the agent's own tab goes back to its desktop viewport.
-    const tab = contents(() => Promise.resolve(image(1280)), 1)
+  it('requests a fresh screenshot rather than copying a cached frame twice', async () => {
+    const tab = contents()
+    assert.equal(await capturePreviewDataUrl(tab, decodeImage), 'data:image/png;base64,1280')
+    assert.deepEqual(tab.events, ['attach', 'zoom 2', 'layout', 'capture at 2', 'zoom 1', 'detach'])
+    assert.equal(tab.debugger.isAttached(), false)
+  })
 
-    const preview = await capturePreviewDataUrl(tab)
+  for (const viewportWidth of [1280, 1000]) {
+    it(`waits for renderer zoom acknowledgement for a ${String(viewportWidth)}px window`, async () => {
+      let viewport = viewportWidth
+      let polls = 0
+      const tab = contents(() => {
+        assert.equal(viewport, viewportWidth / 2, 'captured the stale desktop layout')
+        return Promise.resolve({ data: '1280' })
+      })
+      tab.executeJavaScript = async (code): Promise<unknown> => {
+        const result: unknown = runInNewContext(code, {
+          window: {
+            get innerWidth(): number {
+              return viewport
+            },
+          },
+          performance: { now: () => 0 },
+          setTimeout: (callback: () => void) => {
+            polls += 1
+            queueMicrotask(() => {
+              viewport = viewportWidth / 2
+              callback()
+            })
+          },
+        })
+        return await result
+      }
+      assert.equal(
+        await capturePreviewDataUrl(tab, decodeImage, 1280, viewportWidth),
+        'data:image/png;base64,1280',
+      )
+      assert.equal(polls, 1)
+      assert.equal(tab.zoom(), 1)
+    })
+  }
 
-    assert.equal(preview, 'data:image/png;base64,1280')
-    assert.deepEqual(tab.events, [
-      `zoom ${String(PREVIEW_ZOOM_FACTOR)}`,
-      'layout',
-      `capture at ${String(PREVIEW_ZOOM_FACTOR)}`,
-      `capture at ${String(PREVIEW_ZOOM_FACTOR)}`,
-      'zoom 1',
-    ])
+  it('bounds renderer readiness and restores zoom when it never arrives', async () => {
+    let elapsed = 0
+    const tab = contents(undefined, 1.25)
+    tab.executeJavaScript = async (code): Promise<unknown> => {
+      const result: unknown = runInNewContext(code, {
+        window: { innerWidth: 1280 },
+        performance: {
+          now: () => {
+            elapsed += 2500
+            return elapsed
+          },
+        },
+        setTimeout: (callback: () => void) => {
+          queueMicrotask(callback)
+        },
+      })
+      return await result
+    }
+    assert.equal(await capturePreviewDataUrl(tab, decodeImage), null)
+    assert.deepEqual(tab.events, ['attach', 'zoom 2', 'zoom 1.25', 'detach'])
+  })
+
+  it('keeps preview zoom until the fresh frame is delivered', async () => {
+    let deliver: ((value: unknown) => void) | undefined
+    let captureStarted: (() => void) | undefined
+    const started = new Promise<void>((resolve) => {
+      captureStarted = resolve
+    })
+    const frame = new Promise<unknown>((resolve) => {
+      deliver = resolve
+    })
+    const tab = contents(() => {
+      captureStarted?.()
+      return frame
+    })
+    const capture = capturePreviewDataUrl(tab, decodeImage)
+    await started
+    assert.equal(tab.zoom(), 2)
+    deliver?.({ data: '1280' })
+    assert.equal(await capture, 'data:image/png;base64,1280')
     assert.equal(tab.zoom(), 1)
   })
 
-  it('keeps the second capture, not the frame painted before the zoom', async () => {
-    // A hidden tab paints only while capturePage holds it visible, so the first
-    // capture after the zoom can still hold the 1280px desktop layout.
-    const frames = [image(1000), image(1280)]
-    const tab = contents(() => Promise.resolve(frames.shift() ?? image(0, true)))
-
-    assert.equal(await capturePreviewDataUrl(tab), 'data:image/png;base64,1280')
-    assert.equal(frames.length, 0)
+  it('times out a stalled screenshot, restoring zoom and releasing its debugger', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] })
+    let captureStarted: (() => void) | undefined
+    const started = new Promise<void>((resolve) => {
+      captureStarted = resolve
+    })
+    const tab = contents(() => {
+      captureStarted?.()
+      return new Promise<unknown>(() => {})
+    })
+    const capture = capturePreviewDataUrl(tab, decodeImage)
+    await started
+    t.mock.timers.tick(5000)
+    assert.equal(await capture, null)
+    assert.equal(tab.zoom(), 1)
+    assert.equal(tab.debugger.isAttached(), false)
   })
 
-  it('never waits for an animation frame before capturing', async () => {
-    // Hidden agent tabs schedule no frames until capturePage makes them paint,
-    // so a requestAnimationFrame wait never resolved and hung every canvas
-    // tool call that awaits its preview.
-    const tab = contents(() => Promise.resolve(image(1280)))
-    await capturePreviewDataUrl(tab)
-    assert.equal(tab.scripts.length, 1)
-    for (const script of tab.scripts) assert.doesNotMatch(script, /requestAnimationFrame/)
-  })
-
-  it('takes overlapping captures of one tab in turn and leaves it at its own zoom', async () => {
-    // Two quick re-renders of the same artefact can capture its tab at once.
-    // Each capture snapshots the zoom it restores, so interleaving them left the
-    // tab stuck at the preview zoom and captured one render at the desktop zoom.
-    const tab = contents(() => Promise.resolve(image(1280)), 1)
-
-    await Promise.all([capturePreviewDataUrl(tab), capturePreviewDataUrl(tab)])
-
-    const captureZoom = `capture at ${String(PREVIEW_ZOOM_FACTOR)}`
-    assert.deepEqual(
-      tab.events.filter((event) => event.startsWith('capture')),
-      [captureZoom, captureZoom, captureZoom, captureZoom],
+  it('bounds a stalled readiness IPC and ignores its late acknowledgement', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] })
+    let readinessStarted: (() => void) | undefined
+    const started = new Promise<void>((resolve) => {
+      readinessStarted = resolve
+    })
+    let acknowledge: ((value: unknown) => void) | undefined
+    const tab = contents(undefined, 1.25)
+    tab.executeJavaScript = (): Promise<unknown> => {
+      tab.events.push('stalled layout')
+      readinessStarted?.()
+      return new Promise<unknown>((resolve) => {
+        acknowledge = resolve
+      })
+    }
+    let outcome: string | null | undefined
+    const capture = capturePreviewDataUrl(tab, decodeImage)
+    void capture.then((value) => {
+      outcome = value
+    })
+    await started
+    t.mock.timers.tick(5000)
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.equal(outcome, null, 'the main process must bound the readiness IPC')
+    assert.equal(await capture, null)
+    assert.deepEqual(tab.events, ['attach', 'zoom 2', 'stalled layout', 'zoom 1.25', 'detach'])
+    acknowledge?.(undefined)
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.equal(
+      tab.events.some((event) => event.startsWith('capture at')),
+      false,
     )
-    assert.equal(tab.zoom(), 1)
+    tab.executeJavaScript = (): Promise<unknown> => Promise.resolve()
+    assert.equal(await capturePreviewDataUrl(tab, decodeImage), 'data:image/png;base64,1280')
+    assert.equal(tab.zoom(), 1.25)
+    assert.equal(tab.events.filter((event) => event.startsWith('capture at')).length, 1)
   })
 
-  it('restores a non-default zoom rather than resetting it', async () => {
-    const tab = contents(() => Promise.resolve(image(1280)), 1.25)
-    await capturePreviewDataUrl(tab)
+  it('retains separate five-second budgets for readiness and the screenshot', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] })
+    let readinessStarted: (() => void) | undefined
+    const ready = new Promise<void>((resolve) => {
+      readinessStarted = resolve
+    })
+    let captureStarted: (() => void) | undefined
+    const started = new Promise<void>((resolve) => {
+      captureStarted = resolve
+    })
+    const tab = contents(() => {
+      captureStarted?.()
+      return new Promise<unknown>(() => {})
+    })
+    tab.executeJavaScript = (): Promise<unknown> => {
+      readinessStarted?.()
+      return new Promise<unknown>((resolve) => {
+        setTimeout(() => {
+          resolve(undefined)
+        }, 4000)
+      })
+    }
+    let settled = false
+    const capture = capturePreviewDataUrl(tab, decodeImage)
+    void capture.then(() => {
+      settled = true
+    })
+    await ready
+    t.mock.timers.tick(4000)
+    await started
+    t.mock.timers.tick(1000)
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.equal(settled, false, 'readiness must not consume the screenshot budget')
+    t.mock.timers.tick(4000)
+    assert.equal(await capture, null)
+    assert.equal(tab.zoom(), 1)
+    assert.equal(tab.debugger.isAttached(), false)
+  })
+
+  it('does not detach a debugger that was already attached', async () => {
+    const tab = contents(undefined, 1, true)
+    assert.equal(await capturePreviewDataUrl(tab, decodeImage), 'data:image/png;base64,1280')
+    assert.equal(tab.debugger.isAttached(), true)
+    assert.deepEqual(tab.events, ['zoom 2', 'layout', 'capture at 2', 'zoom 1'])
+  })
+
+  it('serializes concurrent captures of one tab', async () => {
+    const tab = contents()
+    await Promise.all([
+      capturePreviewDataUrl(tab, decodeImage),
+      capturePreviewDataUrl(tab, decodeImage),
+    ])
+    assert.deepEqual(tab.events, [
+      'attach',
+      'zoom 2',
+      'layout',
+      'capture at 2',
+      'zoom 1',
+      'detach',
+      'attach',
+      'zoom 2',
+      'layout',
+      'capture at 2',
+      'zoom 1',
+      'detach',
+    ])
+  })
+
+  it('restores a non-default zoom and downsizes a high-density bitmap', async () => {
+    const tab = contents(() => Promise.resolve({ data: '2560' }), 1.25)
+    assert.equal(await capturePreviewDataUrl(tab, decodeImage, 1280), 'data:image/png;base64,1280')
     assert.equal(tab.zoom(), 1.25)
   })
 
-  it('downsizes a high-density bitmap to the preview width', async () => {
-    // A 2× display captures the 1280px tab as 2560 device pixels.
-    const tab = contents(() => Promise.resolve(image(2560)))
-    assert.equal(await capturePreviewDataUrl(tab, 1280), 'data:image/png;base64,1280')
+  it('rejects malformed screenshot responses, empty images and failed commands', async () => {
+    for (const result of [{}, { data: 3 }, { data: '0' }]) {
+      const tab = contents(() => Promise.resolve(result))
+      assert.equal(await capturePreviewDataUrl(tab, decodeImage), null)
+      assert.equal(tab.zoom(), 1)
+      assert.equal(tab.debugger.isAttached(), false)
+    }
+    const tab = contents(() => Promise.reject(new Error('window closed')))
+    assert.equal(await capturePreviewDataUrl(tab, decodeImage), null)
+    assert.equal(tab.zoom(), 1)
+    assert.equal(tab.debugger.isAttached(), false)
   })
 
-  it('returns null and restores the zoom when the capture fails or is empty', async () => {
-    const failing = contents(() => Promise.reject(new Error('capture failed')))
-    assert.equal(await capturePreviewDataUrl(failing), null)
-    assert.equal(failing.zoom(), 1)
-
-    const empty = contents(() => Promise.resolve(image(0, true)))
-    assert.equal(await capturePreviewDataUrl(empty), null)
-    assert.equal(empty.zoom(), 1)
-  })
-
-  it('returns null when the tab is destroyed before its zoom can be restored', async () => {
+  it('handles a window destroyed before cleanup', async () => {
     const tab = contents(() => Promise.reject(new Error('Object has been destroyed')))
     let calls = 0
     tab.setZoomFactor = (): void => {
-      calls += 1
-      if (calls > 1) throw new Error('Object has been destroyed')
+      if (++calls > 1) throw new Error('Object has been destroyed')
     }
-    assert.equal(await capturePreviewDataUrl(tab), null)
+    tab.debugger.detach = (): void => {
+      throw new Error('Object has been destroyed')
+    }
+    assert.equal(await capturePreviewDataUrl(tab, decodeImage), null)
   })
 })

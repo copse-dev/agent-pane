@@ -3,6 +3,7 @@ import type { Thread } from '@shared/types/thread.ts'
 /** Fields changed by transcript reduction, shared by persistence and attachment. */
 export const TRANSCRIPT_META_KEYS = [
   'status',
+  'interruptedTurnAt',
   'usage',
   'updatedAt',
   'todos',

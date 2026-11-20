@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process'
 import { lstatSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
+import { isPathWithin } from '@copse/std/path-containment.ts'
 import { wrapCommandWithSandboxMacOS } from '@anthropic-ai/sandbox-runtime/dist/sandbox/macos-sandbox-utils.js'
 import {
   cleanupBwrapMountPoints,
@@ -133,10 +134,7 @@ function preparationExecutableReadPaths(
         const containedRuntimePath = (path: string): string | null => {
           if (!lstatSync(path, { throwIfNoEntry: false })) return null
           const canonical = realpathSync(path)
-          const rel = relative(toolchain, canonical)
-          return rel.length === 0 || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)
-            ? null
-            : canonical
+          return isPathWithin(toolchain, canonical, { allowSelf: false }) ? canonical : null
         }
         const version = containedRuntimePath(join(toolchain, 'VERSION'))
         if (version && containedRuntimePath(compiler)) {
@@ -156,10 +154,7 @@ function preparationExecutableReadPaths(
         const containedRuntimePath = (path: string): string | null => {
           if (!lstatSync(path, { throwIfNoEntry: false })) return null
           const canonical = realpathSync(path)
-          const rel = relative(toolchain, canonical)
-          return rel.length === 0 || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)
-            ? null
-            : canonical
+          return isPathWithin(toolchain, canonical, { allowSelf: false }) ? canonical : null
         }
         const cargo = containedRuntimePath(join(toolchain, 'bin', 'cargo'))
         const rustc = containedRuntimePath(join(toolchain, 'bin', 'rustc'))
@@ -237,8 +232,7 @@ export async function runWorktreePreparationProcess(
     // exact bind, rejecting redirected `.tmp` paths before granting access.
     mkdirSync(candidate, { recursive: true })
     scratch = realpathSync(candidate)
-    const rel = relative(root, scratch)
-    if (rel.length === 0 || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    if (!isPathWithin(root, scratch, { allowSelf: false })) {
       throw new Error(`Preparation scratch escaped the worktree: ${scratch}`)
     }
   }

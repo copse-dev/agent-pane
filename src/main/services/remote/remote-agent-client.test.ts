@@ -31,6 +31,7 @@ import {
 } from './remote-agent-client.ts'
 import { storageSet } from '../storage/storage.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
+import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
 import { createThread, loadProjectThreads, recordThreadAgentLink } from '../thread-store.ts'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -73,22 +74,36 @@ function importedThread(id: string): Thread {
 }
 
 describe('resolveRemoteAgentRepository', () => {
-  it('uses the active project origin', async () => {
+  it("uses the running turn's checkout, not the window's project or workspace", async () => {
     const workspaceRoot = '/workspace-root'
     const projectRoot = '/project-root'
     const restoreWorkspace = setWorkspaceRootForTest(workspaceRoot)
     let resolvedRoot: string | null = null
 
-    storageSet('projects', [{ id: 'project-1', path: projectRoot, name: 'project' }])
-    storageSet('activeProjectId', 'project-1')
+    storageSet('projects', [
+      { id: 'project-1', path: projectRoot, name: 'project' },
+      { id: 'project-window', path: '/window-root', name: 'window' },
+    ])
+    storageSet('activeProjectId', 'project-window')
 
     try {
-      const repository = await resolveRemoteAgentRepository({
-        getGithubRepoSlug: async (root) => {
-          resolvedRoot = root
-          return 'acme/project'
+      const repository = await runWithThreadExecutionContext(
+        {
+          projectId: 'project-1',
+          threadId: 'thread-1',
+          projectRoot,
+          root: projectRoot,
+          checkoutMode: 'shared',
+          branch: null,
         },
-      })
+        () =>
+          resolveRemoteAgentRepository({
+            getGithubRepoSlug: async (root) => {
+              resolvedRoot = root
+              return 'acme/project'
+            },
+          }),
+      )
       assert.equal(resolvedRoot, projectRoot)
       assert.equal(repository, 'https://github.com/acme/project')
     } finally {

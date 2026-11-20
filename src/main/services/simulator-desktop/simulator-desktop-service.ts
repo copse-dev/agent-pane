@@ -1,8 +1,9 @@
 import { SIMULATOR_REMOVED_DETAIL } from '@shared/types/simulator-desktop.ts'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { pathExists } from '@copse/std/path-exists.ts'
 import { getElectronUserDataPath } from '../electron-app-runtime.ts'
 import { isRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 import type {
@@ -159,15 +160,6 @@ function runToString(
   })
 }
 
-async function exists(path: string): Promise<boolean> {
-  try {
-    await stat(path)
-    return true
-  } catch {
-    return false
-  }
-}
-
 function helperSourceDirectory(): string {
   return join(__dirname, '..', 'resources', 'apple-simulator')
 }
@@ -190,7 +182,7 @@ async function compileHelpers(): Promise<NativeHelpers> {
   const input = join(directory, 'sim-input')
   await mkdir(sourceCache, { recursive: true })
   await mkdir(moduleCache, { recursive: true })
-  if ((await exists(capture)) && (await exists(input))) return { capture, input }
+  if ((await pathExists(capture)) && (await pathExists(input))) return { capture, input }
 
   const capturePath = join(sourceCache, 'sim-capture.swift')
   const inputPath = join(sourceCache, 'sim-input.m')

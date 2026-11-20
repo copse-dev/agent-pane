@@ -2,10 +2,16 @@ import '../../../tests/setup-dom.ts'
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import { createThread, openNewThread, switchThread } from '@shared/store/thread-helpers.ts'
+import {
+  createThread,
+  openNewThread,
+  setThreadTitle,
+  switchThread,
+} from '@shared/store/thread-helpers.ts'
 import type { StoredThreadPlan } from '@copse/thread-store/plan-schema.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import { at } from '@shared/array-utils.ts'
 import { mountThreadPlanControl } from './thread-plan-dialog.ts'
 
 const BODY =
@@ -202,6 +208,28 @@ describe('thread plan review', () => {
     assert.equal(control('#plan-body', 'div').getAttribute('contenteditable'), 'false')
     assert.equal(button('Approve and implement').hidden, true)
     createThread(mounted.store)
+    assert.equal(mounted.dialog.open, false)
+    mounted.destroy()
+  })
+
+  it('stays open across thread metadata updates and closes on a bare selection change', async () => {
+    const mounted = setup()
+    const planThread = mounted.store.getState().activeThreadId
+    assert.ok(planThread)
+    mounted.button.click()
+    await settle()
+    assert.equal(mounted.dialog.open, true)
+    const { threads } = mounted.store.getState()
+    mounted.store.setState({
+      threads: [...threads, { ...at(threads, 0), id: 'other-thread', title: 'Other' }],
+    })
+    setThreadTitle(mounted.store, planThread, 'Renamed')
+    setThreadTitle(mounted.store, 'other-thread', 'Renamed too')
+    await settle()
+    assert.equal(mounted.dialog.open, true, 'thread metadata does not close the plan')
+
+    // No event: the selection alone moves the dialog's owner.
+    mounted.store.setState({ activeThreadId: 'other-thread' })
     assert.equal(mounted.dialog.open, false)
     mounted.destroy()
   })

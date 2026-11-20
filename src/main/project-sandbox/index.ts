@@ -1,15 +1,11 @@
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
-import {
-  baseSandboxConfig,
-  ensureWorkspaceTmpDir,
-  refreshGitConfigIncludeReadPaths,
-} from './config.ts'
-import { pinSandboxWrapTmpDir } from './tmp-env.ts'
+import { baseSandboxConfig, refreshGitConfigIncludeReadPaths } from './config.ts'
 import { recordNetworkDenial } from './network-scope.ts'
 import { setProjectSandboxEnabled } from './spawn.ts'
 import { shutdownSandboxFsServer } from './sandbox-fs-server.ts'
 import { reapOrphanedSandboxBridges } from './orphaned-bridges.ts'
 import { isProjectSandboxPlatform, setProjectSandboxInitFailure } from './state.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 export {
   spawnInProjectSandbox,
@@ -19,6 +15,7 @@ export {
   afterSandboxedCommand,
   isProjectSandboxEnabled,
   sandboxViolationCountForCommand,
+  sandboxViolationCountForBackgroundProcess,
 } from './spawn.ts'
 export {
   gatewayReadFile,
@@ -58,9 +55,6 @@ export async function initProjectSandbox(): Promise<void> {
     console.log(`[project-sandbox] reaped ${String(reaped.length)} orphaned ASRT network bridge(s)`)
   }
 
-  // ASRT bakes TMPDIR into every wrapped command from this process's env (#4149).
-  pinSandboxWrapTmpDir(ensureWorkspaceTmpDir())
-
   try {
     // The ask-callback fires for each connection that misses the allowlist.
     // We never grant from it (return false keeps the deny) — it exists to
@@ -75,6 +69,9 @@ export async function initProjectSandbox(): Promise<void> {
       },
       false,
     )
+    if (!SandboxManager.isSandboxingEnabled()) {
+      throw new Error('Workspace protection did not start for project commands')
+    }
     await refreshGitConfigIncludeReadPaths()
     setProjectSandboxEnabled(true)
     setProjectSandboxInitFailure(undefined)
@@ -85,7 +82,8 @@ export async function initProjectSandbox(): Promise<void> {
     )
   } catch (err) {
     setProjectSandboxEnabled(false)
-    setProjectSandboxInitFailure(err instanceof Error ? err.message : String(err))
+    setProjectSandboxInitFailure(errorMessage(err))
+    await SandboxManager.reset().catch(() => {})
     console.warn('[project-sandbox] ASRT init failed — project commands run unsandboxed:', err)
   }
 }

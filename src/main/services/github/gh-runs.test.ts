@@ -43,8 +43,28 @@ describe('formatGhRunList', () => {
     assert.match(out, /#1 CI: IN_PROGRESS/)
   })
 
+  it('shows active status when GitHub returns an empty conclusion', () => {
+    for (const status of ['queued', 'in_progress']) {
+      const out = formatGhRunList([{ databaseId: 1, workflowName: 'CI', conclusion: '', status }])
+      assert.match(out, new RegExp(`#1 CI: ${status.toUpperCase()}`))
+    }
+    assert.match(
+      formatGhRunList([{ databaseId: 1, workflowName: 'CI', conclusion: '', status: '' }]),
+      /#1 CI: UNKNOWN/,
+    )
+  })
+
   it('reports an empty list', () => {
     assert.equal(formatGhRunList([]), '(no workflow runs)')
+  })
+
+  it('includes trigger context and the full commit SHA for each run', () => {
+    const sha = 'abcdef1' + '2'.repeat(33)
+    const text = formatGhRunList([
+      { databaseId: 1, workflowName: 'CI', headSha: sha, event: 'workflow_run', status: 'queued' },
+    ])
+    assert.match(text, /Event: workflow_run/)
+    assert.ok(text.includes(`SHA: ${sha}`))
   })
 })
 

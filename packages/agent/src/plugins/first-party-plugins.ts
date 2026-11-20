@@ -39,9 +39,9 @@
 //    appending the prompt block (`agent-system-prompt.ts`), and hides the
 //    renderer Memories pane (which reads the plugin's enablement via `plugins:list`).
 //  - `ciInvestigatorPlugin` — the first-party plugin for the experimental CI
-//    investigator subagent. Declares the `investigate_ci` tool plus its
-//    deep-log `gh_run_list` / `gh_run_view` helpers; the plugin toggle atomically
-//    drops all three from the model tool list (`registry-bootstrap.ts` reads the
+//    investigator subagent. Declares only `investigate_ci`; basic workflow reads
+//    remain core tools. The plugin toggle removes the investigator from the
+//    model tool list (`registry-bootstrap.ts` reads the
 //    plugin registry, ANDing `gh` availability into the register direction) and
 //    re-points the "Investigate CI failure" follow-up.
 //  - `forcedPlanningPlugin` — the first-party plugin for the experimental
@@ -57,14 +57,16 @@
 //    model tool list, stops appending the prompt block, and stops rewriting the
 //    user's input into placeholders (`registry-bootstrap.ts`,
 //    `agent-system-prompt.ts` and `pii-redactor.ts` read the plugin registry).
-//  - `mcpUiCanvasPlugin` — the first-party plugin for the experimental MCP-UI
+//  - `mcpUiCanvasPlugin` — the first-party plugin for the stable MCP-UI
 //    artefacts (canvas) feature (issue #611). Contributes no tool: it declares
 //    the `mcp-ui-canvas` **capability** — the canvas gates in `mcp-registry.ts`
-//    read `isCapabilityActive('mcp-ui-canvas')` instead of the retired
-//    `mcpUiArtefactsEnabled` setting, so the plugin toggle atomically turns canvas
-//    rendering (and the bundled canvas server) on/off — plus one conditional
-//    turn-start hook that steers a prototype request onto the bundled
-//    `render_html_artefact` tool when that tool is offered. Default DISABLED.
+//    and `inline-visualization.ts` read `isCapabilityActive('mcp-ui-canvas')`
+//    instead of the retired `mcpUiArtefactsEnabled` setting, so the plugin toggle
+//    atomically turns canvas rendering (and the bundled canvas server) on/off —
+//    plus conditional turn-start hooks that steer a prototype or explainer
+//    request onto the bundled tools when they are offered. Default ENABLED since
+//    it graduated (#4082); `migrateMcpUiCanvasStable()` in `plugin-service.ts`
+//    lifts the old seeded disable once.
 //  - `devtoolsShortcutPlugin` — the first-party plugin for the experimental DevTools
 //    shortcut. Contributes no tool: it declares the `devtools-shortcut`
 //    **capability** — `create-main-window.ts` reads
@@ -108,6 +110,7 @@ import { darkFactoryPlugin } from './dark-factory-plugin.ts'
 import { siteBuildingPlugin } from './site-building-plugin.ts'
 import { artifactCheckpointPlugin } from './artifact-checkpoint-plugin.ts'
 import { reviewerInputPlugin } from './reviewer-input-plugin.ts'
+import { projectContextPlugin } from './project-context-plugin.ts'
 import { appleDevelopmentPlugin } from './apple-development-plugin.ts'
 import { computerUsePlugin } from './computer-use-plugin.ts'
 import { claudeMdPlugin } from './claude-md-plugin.ts'
@@ -150,6 +153,7 @@ export const FIRST_PARTY_PLUGINS: readonly RegisteredPlugin[] = [
   darkFactoryPlugin,
   artifactCheckpointPlugin,
   reviewerInputPlugin,
+  projectContextPlugin,
   siteBuildingPlugin,
   pluginClientApiPlugin,
   engineeringPlugin,

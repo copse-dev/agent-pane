@@ -6,7 +6,7 @@ import {
   SUPPORTED_ARCHIVE_EXTENSIONS,
   type ArchiveAttachmentRef,
 } from '@shared/archive/archive-media.ts'
-import { fileExtension, formatByteSize } from '@shared/file-bytes.ts'
+import { fileExtension, formatByteSize, sanitizeStoredFileName } from '@shared/file-bytes.ts'
 import { resolveWorkspacePath } from '../workspace.ts'
 import { threadMediaDir } from '../thread-store.ts'
 import { getActiveWorkspaceFs } from '../workspace-fs/get-workspace-fs.ts'
@@ -19,14 +19,6 @@ import { getActiveWorkspaceFs } from '../workspace-fs/get-workspace-fs.ts'
  *
  * The archive is stored, never inlined. `read_archive` unpacks it from here.
  */
-
-/** Keep a stored name free of anything path-like; it comes from a renderer `File`. */
-function sanitizeFileName(name: string): string {
-  const safe = name.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[.-]+/, '')
-  const extension = fileExtension(safe)
-  const stem = safe.slice(0, safe.length - extension.length)
-  return stem.slice(0, 80 - extension.length) + extension || 'archive.zip'
-}
 
 function assertSupported(name: string): void {
   if (!(SUPPORTED_ARCHIVE_EXTENSIONS as readonly string[]).includes(fileExtension(name))) {
@@ -47,7 +39,7 @@ export function storeArchiveAttachment(
   threadId: string,
   input: NewArchiveAttachmentInput,
 ): ArchiveAttachmentRef {
-  const name = sanitizeFileName(input.name)
+  const name = sanitizeStoredFileName(input.name, 'archive.zip')
   assertSupported(name)
   if (input.bytes.byteLength === 0) throw new Error(`${input.name} is empty.`)
   if (input.bytes.byteLength > MAX_ARCHIVE_BYTES) {

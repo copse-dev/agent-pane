@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { gitCommitTool } from './git-tools.ts'
+import { gitCommitTool, gitLogTool } from './git-tools.ts'
 import { createThread, getThreadMeta } from '../services/thread-store.ts'
 import { setApprovalHandler } from '../services/approval.ts'
 import { clearDiffQueueForTest } from '../services/diff-queue.ts'
@@ -22,6 +22,16 @@ import {
   isProjectSandboxEnabled,
   shutdownProjectSandbox,
 } from '../project-sandbox/index.ts'
+
+describe('git_log parameters', () => {
+  it('keeps the revision separate from the file filter', () => {
+    assert.deepEqual(gitLogTool.parameters.parse({ ref: 'origin/main', path: 'src/app.ts' }), {
+      ref: 'origin/main',
+      path: 'src/app.ts',
+      max_count: 10,
+    })
+  })
+})
 
 describe('git_commit configured helpers', () => {
   const cleanups: Array<() => void | Promise<void>> = []

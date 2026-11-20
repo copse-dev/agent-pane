@@ -1,6 +1,10 @@
 import type { AppStore } from '@shared/store/store.ts'
+import { selectActiveWorkspace } from './active-workspace.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
-import { classifyAutomationFailureMessage } from '@shared/automation-failure.ts'
+import {
+  classifyAutomationCheckoutFailure,
+  classifyAutomationFailureMessage,
+} from '@shared/automation-failure.ts'
 import type { AutomationFailureCode } from '@shared/types'
 import type {
   AutomationSchedule,
@@ -19,6 +23,7 @@ import {
 import type { ApiClient } from '../../preload/api.d.ts'
 import { dispatchAgentRun, startAutomationTurnTree } from './message-queue.ts'
 import { ensureThreadMessages } from './thread-hydration.ts'
+import { projectThreadLoadRevision } from './persistence.ts'
 
 export interface AutomationControllerApi {
   agent: Pick<ApiClient['agent'], 'prepareCheckout' | 'run'>
@@ -245,7 +250,7 @@ export function attachAutomationController(
         // start, and every later trigger of the schedule is skipped behind it.
         const message = startFailureDetail(error)
         const code: AutomationFailureCode = checkoutStarted
-          ? 'worktree-failed'
+          ? classifyAutomationCheckoutFailure(message)
           : classifyAutomationFailureMessage(message)
         markAutomationStartFailed(store, threadId, { code, message })
         // Main keeps the schedule's last problem so the manager shows it with the project
@@ -281,52 +286,59 @@ export function attachAutomationController(
     // reaches disk before these reads finish. Capture before either await;
     // message membership alone cannot distinguish that newer execution.
     const observedEpoch = getThreadById(store, event.threadId)?.currentEpoch
-    const loaded = await api.threads.loadProject(event.projectId)
-    if (store.getState().activeProjectId !== event.projectId) return
-    const created = loaded.find((thread) => thread.id === event.threadId)
-    if (!created) return
-    if (event.headlessSettled) {
-      if (created.status === 'running' || created.currentEpoch !== observedEpoch) return
-      if (getThreadById(store, event.threadId)?.currentEpoch !== observedEpoch) return
-      const messages = await api.threads.loadMessages(event.projectId, event.threadId)
+    for (;;) {
+      const revision = projectThreadLoadRevision(api, event.projectId)
+      const loaded = await api.threads.loadProject(event.projectId)
       if (store.getState().activeProjectId !== event.projectId) return
-      // Only this exact automation occurrence owns the persisted replacement.
-      // A delayed notification must not replace a different task's state.
-      if (created.automation?.triggeredAt !== event.triggeredAt) return
-      const current = getThreadById(store, event.threadId)
-      if (current?.currentEpoch !== observedEpoch) return
-      if (current && current.automation?.triggeredAt !== event.triggeredAt) return
-      const persistedIds = new Set(messages.map((message) => message.id))
-      if (
-        current?.messages.some(
-          (message) => message.role === 'user' && !persistedIds.has(message.id),
-        )
-      ) {
-        // A newer interactive turn began while this read was pending.
+      const created = loaded.find((thread) => thread.id === event.threadId)
+      if (!created) return
+      if (event.headlessSettled) {
+        if (created.status === 'running' || created.currentEpoch !== observedEpoch) return
+        if (getThreadById(store, event.threadId)?.currentEpoch !== observedEpoch) return
+        const messages = await api.threads.loadMessages(event.projectId, event.threadId)
+        if (store.getState().activeProjectId !== event.projectId) return
+        // Only this exact automation occurrence owns the persisted replacement.
+        // A delayed notification must not replace a different task's state.
+        if (created.automation?.triggeredAt !== event.triggeredAt) return
+        const current = getThreadById(store, event.threadId)
+        if (current?.currentEpoch !== observedEpoch) return
+        if (current && current.automation?.triggeredAt !== event.triggeredAt) return
+        const persistedIds = new Set(messages.map((message) => message.id))
+        if (
+          current?.messages.some(
+            (message) => message.role === 'user' && !persistedIds.has(message.id),
+          )
+        ) {
+          // A newer interactive turn began while this read was pending.
+          return
+        }
+        // Cleanup/archive may change main-owned checkout state without starting
+        // another turn. Retry only these reads, keeping the original epoch fence.
+        if (projectThreadLoadRevision(api, event.projectId) !== revision) continue
+        store.setState({
+          threads: sortThreadsNewestFirst([
+            {
+              ...created,
+              draftPrompt: current?.draftPrompt ?? created.draftPrompt ?? '',
+              messages,
+              messagesLoaded: true,
+            },
+            ...store.getState().threads.filter((thread) => thread.id !== created.id),
+          ]),
+        })
+        store.emit('thread_status_changed', created.id, created.status)
+        store.emit('threads_changed')
         return
       }
-      store.setState({
-        threads: sortThreadsNewestFirst([
-          {
-            ...created,
-            draftPrompt: current?.draftPrompt ?? created.draftPrompt ?? '',
-            messages,
-            messagesLoaded: true,
-          },
-          ...store.getState().threads.filter((thread) => thread.id !== created.id),
-        ]),
-      })
-      store.emit('thread_status_changed', created.id, created.status)
-      store.emit('threads_changed')
+      if (!store.getState().threads.some((thread) => thread.id === created.id)) {
+        store.setState({
+          threads: sortThreadsNewestFirst([created, ...store.getState().threads]),
+        })
+        store.emit('threads_changed')
+      }
+      await startThread(created.id)
       return
     }
-    if (!store.getState().threads.some((thread) => thread.id === created.id)) {
-      store.setState({
-        threads: sortThreadsNewestFirst([created, ...store.getState().threads]),
-      })
-      store.emit('threads_changed')
-    }
-    await startThread(created.id)
   }
 
   function refreshSchedulesForActiveProject(): void {
@@ -340,7 +352,7 @@ export function attachAutomationController(
   const unsubscribeTrigger = api.automations.onTriggered((event) => {
     void receiveTrigger(event)
   })
-  const unsubscribeWorkspace = store.on('workspace_changed', () => {
+  const unsubscribeWorkspace = selectActiveWorkspace(store, () => {
     startPendingForActiveProject()
     refreshSchedulesForActiveProject()
   })

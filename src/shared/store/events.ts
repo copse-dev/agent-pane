@@ -62,7 +62,6 @@ export interface StoreEvents {
   // provider-reported model context windows so the new chat reflects current limits.
   new_thread_opened: []
   explorer_reveal: [path: string]
-  workspace_changed: []
   projects_changed: []
   // Request the Changes panel to reveal a specific workspace-relative file diff.
   git_change_navigate: [path: string]

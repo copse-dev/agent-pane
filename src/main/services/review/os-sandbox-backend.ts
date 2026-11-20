@@ -8,7 +8,7 @@
 // the installed toolchains and system runtime files. Other host reads are
 // denied, including files outside the home directory; they get no
 // network at all. Their environment is the one the orchestrator built, plus a
-// `HOME` and `TMPDIR` inside the cell: ASRT's wrapper returns the host's
+// `HOME` and every temp variable inside the cell: ASRT's wrapper returns the host's
 // `process.env` verbatim on POSIX, so this backend spawns the wrapped argv
 // itself rather than going through `spawnInProjectSandbox`, which layers the
 // app's own environment underneath the caller's.
@@ -35,6 +35,7 @@ import {
   workspaceMandatoryWriteDenyPaths,
 } from '../../project-sandbox/config.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
+import { withSandboxTmpEnv, withSandboxWrapTmpDir } from '../../project-sandbox/tmp-env.ts'
 // From `sandbox-argv.ts` rather than `spawn.ts`: the spawn module pulls in
 // `node-pty` and the SSH transport, neither of which a review cell needs.
 import {
@@ -142,14 +143,7 @@ class OsSandboxCell implements ExecutionCell {
     this.homeDir = homeDir
     this.tmpDir = tmpDir
     this.overlay = reviewCellSandboxOverlay(spec)
-    this.env = withSandboxShellPath({
-      ...spec.env,
-      HOME: homeDir,
-      TMPDIR: tmpDir,
-      TMP: tmpDir,
-      TEMP: tmpDir,
-      TMPPREFIX: join(tmpDir, 'zsh'),
-    })
+    this.env = withSandboxShellPath(withSandboxTmpEnv({ ...spec.env, HOME: homeDir }, tmpDir))
   }
 
   private checkOpen(): void {
@@ -160,10 +154,14 @@ class OsSandboxCell implements ExecutionCell {
     command.signal?.throwIfAborted()
     this.checkOpen()
     const [executable, ...args] = command.argv
-    const { argv } = await SandboxManager.wrapWithSandboxArgv(
-      formatArgvForShell(executable, args),
-      shellForSandboxWrap(),
-      this.overlay,
+    // ASRT bakes its own TMPDIR into the command. Name the cell's tmp dir, the
+    // only temp dir the cell can both write and read back (#4149).
+    const { argv } = await withSandboxWrapTmpDir(this.tmpDir, () =>
+      SandboxManager.wrapWithSandboxArgv(
+        formatArgvForShell(executable, args),
+        shellForSandboxWrap(),
+        this.overlay,
+      ),
     )
     command.signal?.throwIfAborted()
     this.checkOpen()

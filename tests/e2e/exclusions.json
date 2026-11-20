@@ -2,14 +2,25 @@
   "version": 1,
   "entries": [
     {
+      "spec": "tests/e2e/acp-command-preflight.e2e.ts",
+      "category": "platform",
+      "reason": "The read-only executable preflight is POSIX-only; Windows retains normal agent startup. This recovery fixture uses a POSIX executable launcher.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
+      "ownerRole": "Agent runtime maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-11-08",
+      "reviewBy": "2026-11-15",
+      "coverage": "The macOS Electron spec verifies early failure, preserved draft and attachment, Settings command repair and successful Retry with the original contents. Unit tests cover filesystem lookup and checkout ordering. The spec remains enabled on Linux; Windows executable resolution remains outside this preflight.",
+      "markers": ["this.skip", "this.skip"]
+    },
+    {
       "spec": "tests/e2e/isolated-desktop-approval.e2e.ts",
       "category": "platform",
       "reason": "Isolated Copse desktop startup is available only on local Apple silicon macOS; unsupported platforms refuse before the consent dialog.",
       "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
       "ownerRole": "Sandbox and isolated desktop maintainer (person assignment pending in #2719)",
-      "recordedOn": "2026-11-01",
+      "recordedOn": "2026-11-05",
       "reviewBy": "2026-11-08",
-      "coverage": "Lifecycle, ownership, protocol and preflight unit tests pass. The macOS approval spec passed on 2026-11-01 at 17:21 UTC with the body-fit assertion; screenshot review confirmed all disclosures and decision buttons are visible without scrolling. This mock-driven consent/rejection test does not start a VM. Integrated VM inference and self-approval containment evidence remain required.",
+      "coverage": "PR #4127 merged November 3 with passing check/build and all nine Linux e2e shards; those shards skip this macOS-only spec. On November 5 all three on-device cases passed: consent/rejection, native approval -> real VM -> screenshot -> Stop, and a registered scripted ACP process -> real bearer-authenticated bridge (including unauthenticated rejection) -> registered isolated_copse -> consent -> real VM -> 1280x800 PNG -> Stop/deletion -> refused screenshot. Consent, guest and completion captures were inspected. Fresh host/controller used the existing trusted November 2 Linux image. Separate producer evidence covers real-model GUI inference, child-approved synthetic host-file/service denial, cancellation and orphan recovery; no paid inference was used for the November 5 acceptance.",
       "markers": ["describe.skip"]
     },
     {
@@ -57,17 +68,6 @@
       "markers": ["describe.skip"]
     },
     {
-      "spec": "tests/e2e/follow-up-suggestions.e2e.ts",
-      "category": "quarantine",
-      "reason": "Excluded by CI config; streaming/timing and environment rationale must be confirmed for this spec.",
-      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
-      "ownerRole": "Renderer and CI maintainer (person assignment pending in #2719)",
-      "recordedOn": "2026-09-20",
-      "reviewBy": "2026-09-27",
-      "coverage": "No equivalent full runtime evidence is established by this inventory.",
-      "markers": ["wdio.ci.conf.ts: exclude"]
-    },
-    {
       "spec": "tests/e2e/git-commit-approval.e2e.ts",
       "category": "platform",
       "reason": "The SSH signing advice case requires the macOS project sandbox; the commit approval case still runs on other platforms.",
@@ -105,10 +105,10 @@
       "category": "quarantine",
       "reason": "The auto-portrait layout cannot occur on the CI display. The main window has minWidth 800, so portrait needs a window at least 1.35 x 800 = 1080 logical pixels tall, but scripts/run-e2e.mts runs Xvfb at 3200x2048 with a pinned 2x DPR, a 1600x1024 logical desktop. The seeded 760x1180 window stays below the aspect threshold: CI run 41092504471 (#4022) failed both cases at setPortraitWindow's 'expected Electron window to resize to a tall portrait viewport' wait on both shard attempts, while the other 53 specs in that shard passed. Restoring it needs a taller framebuffer, which changes every reference screenshot's capture identity.",
       "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
-      "ownerRole": "Renderer and CI maintainer (person assignment pending in #2719)",
+      "ownerRole": "Jonathan Kingston (@jonathanKingston), renderer and CI maintainer",
       "recordedOn": "2026-09-20",
-      "reviewBy": "2026-09-27",
-      "coverage": "portrait-right-panel-layout.test.ts covers the aspect and height heuristic, and portrait-panel-controls.e2e.ts covers the bottom-pinned portrait chrome in CI. The auto-detected stacked layout itself has no CI runtime evidence; it needs a local run on a display at least 1080 logical pixels tall.",
+      "reviewBy": "2026-12-15",
+      "coverage": "portrait-right-panel-layout.test.ts covers the aspect and height heuristic, and portrait-panel-controls.e2e.ts covers the bottom-pinned portrait chrome in CI. The auto-detected stacked layout itself has no CI runtime evidence; it needs a local run on a display at least 1080 logical pixels tall. Restore plan: increase the CI framebuffer height and restore this spec with the next full screenshot refresh (#3985); the capture-identity change requires reviewing all regenerated references. Owner accepted by Jonathan Kingston on 2026-11-06. This inventory entry does not waive the missing coverage.",
       "markers": ["wdio.ci.conf.ts: exclude"]
     },
     {

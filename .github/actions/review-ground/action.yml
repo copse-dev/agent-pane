@@ -11,6 +11,9 @@ outputs:
   ready:
     description: Whether the pinned PR was prepared for grounding
     value: ${{ steps.prepare.outputs.ready }}
+  artifact-id:
+    description: Immutable ID of the grounding report uploaded by this job
+    value: ${{ steps.upload.outputs.artifact-id }}
 runs:
   using: composite
   steps:
@@ -50,6 +53,7 @@ runs:
           --trusted-prepare "$COPSE_REVIEW_PREPARE" \
           --no-model --json "$RUNNER_TEMP/copse-review-ground/report.json"
     - uses: actions/upload-artifact@v7
+      id: upload
       if: ${{ steps.prepare.outputs.ready == 'true' }}
       with:
         name: copse-review-ground-${{ github.run_id }}-${{ github.run_attempt }}

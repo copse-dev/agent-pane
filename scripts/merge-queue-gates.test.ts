@@ -280,7 +280,11 @@ describe('merge queue decision bridge', () => {
     const body = `<!-- copse-screenshot-stack: #1@${prHead} tip=#2 -->`
     const declaration = parseScreenshotStack(body)
     assert.ok(declaration)
-    for (const approved of [true, false]) {
+    for (const [approved, sourceProvenance] of [
+      [true, true],
+      [false, true],
+      [true, false],
+    ]) {
       const f = fixture()
       f.github.rest.pulls.get = async ({ pull_number }): Promise<{ data: unknown }> => ({
         data: {
@@ -334,6 +338,9 @@ describe('merge queue decision bridge', () => {
                   state: 'success',
                   creator: { id: 41898282 },
                   description: `Stack coverage ${declaration.digest}`,
+                  target_url: sourceProvenance
+                    ? 'https://github.com/copse-dev/agent-pane/actions/runs/99'
+                    : '',
                 },
                 {
                   context: STACK_DECISION,
@@ -344,7 +351,7 @@ describe('merge queue decision bridge', () => {
                 },
               ],
       })
-      if (approved) {
+      if (approved && sourceProvenance) {
         await evaluateMergeQueueGates(f.github, input, mergeTree)
         assert.deepEqual(
           f.writes.slice(-2).map((write) => write.state),

@@ -2,13 +2,12 @@ import type { RemoteAgentProvider } from '@shared/remote-agent.ts'
 import { getAgentExecutionRoot } from '../execution-root.ts'
 import type { RemoteAgentLink, RemoteAgentPrIndexEntry } from '@shared/remote-agent-link.ts'
 import { extractGithubPrUrls } from '@shared/git/github-pr-url.ts'
-import { getActiveProjectId } from '../workspace.ts'
 import { getCurrentBranchName } from '../github/git-service.ts'
 import {
   attachThreadPrUrl,
   listAgentPrLinks,
   lookupThreadByPrUrl,
-  recordThreadAgentLink,
+  recordThreadAgentLaunchLink,
 } from '../thread-store.ts'
 import { parseGithubOwnerRepo, resolveRemoteAgentRepository } from './remote-agent-shared.ts'
 import { firstNonEmptyString } from '@shared/unknown-value.ts'
@@ -66,7 +65,7 @@ export async function recordRemoteAgentLaunch(input: {
       ...(repo ? { repo } : {}),
       createdAt: input.createdAt,
     }
-    await recordThreadAgentLink(input.projectId, input.threadId, link)
+    await recordThreadAgentLaunchLink(input.projectId, input.threadId, link)
   } catch (err) {
     console.warn('[remote-agent-link] launch record failed:', err)
   }
@@ -92,10 +91,11 @@ export async function attachRemoteAgentPrFromText(
   }
 }
 
-/** One legacy association, or null when absent/ambiguous; never ownership proof. */
-export async function findThreadForPrUrl(prUrl: string): Promise<RemoteAgentPrIndexEntry | null> {
-  const projectId = getActiveProjectId()
-  if (!projectId) return null
+/** One legacy association in `projectId`, or null when absent/ambiguous; never ownership proof. */
+export async function findThreadForPrUrl(
+  projectId: string,
+  prUrl: string,
+): Promise<RemoteAgentPrIndexEntry | null> {
   try {
     return await lookupThreadByPrUrl(projectId, prUrl)
   } catch (err) {
@@ -104,10 +104,10 @@ export async function findThreadForPrUrl(prUrl: string): Promise<RemoteAgentPrIn
   }
 }
 
-/** Every agent/PR association in the active project, for PR pane annotations. */
-export async function listActiveProjectAgentPrLinks(): Promise<RemoteAgentPrIndexEntry[]> {
-  const projectId = getActiveProjectId()
-  if (!projectId) return []
+/** Every agent/PR association in `projectId`, for that window's PR pane annotations. */
+export async function listProjectAgentPrLinks(
+  projectId: string,
+): Promise<RemoteAgentPrIndexEntry[]> {
   try {
     return await listAgentPrLinks(projectId)
   } catch (err) {

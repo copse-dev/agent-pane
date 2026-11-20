@@ -105,6 +105,43 @@ afterEach(() => {
 })
 
 describe('interrupted turn recovery card', () => {
+  for (const reason of ['max_steps', 'timeout'] as const) {
+    it(`shows the ${reason} explanation and continues saved work only on click`, () => {
+      const { store, threadId, failedId, api, runs, selections } = setup()
+      setMessageTurnOutcome(store, threadId, failedId, {
+        ...outcome('failed', 'openrouter:x-ai/grok-4.5'),
+        source: 'host',
+        stopReason: reason,
+      })
+      const host = document.createElement('div')
+      document.body.append(host)
+      const unmount = mountConversation(host, store, api)
+      const card = document.querySelector<HTMLElement>('[data-turn-recovery-card]')
+      assert.ok(card)
+      assert.equal(card.getAttribute('aria-label'), 'Run limit recovery')
+      assert.equal(
+        card.querySelector('.turn-recovery-title')?.textContent,
+        reason === 'max_steps' ? 'Run limit reached' : 'Time limit reached',
+      )
+      assert.match(card.textContent, /completed work is saved/)
+      assert.doesNotMatch(card.textContent, /An earlier turn completed with/)
+      const buttons = card.querySelectorAll<HTMLButtonElement>('.turn-recovery-button')
+      assert.equal(buttons.length, 1)
+      assert.equal(buttons[0]?.textContent, 'Continue task')
+      assert.equal(runs.length, 0)
+      buttons[0].click()
+      assert.equal(runs.length, 1)
+      assert.equal(parseAgentRunPayload(runs[0] ?? '').userContent, INTERRUPTED_TURN_CONTINUATION)
+      assert.equal(selections.length, 0)
+      assert.equal(
+        getThreadById(store, threadId)?.messages.find((m) => m.id === failedId)?.toolCalls[0]
+          ?.result,
+        'uploaded',
+      )
+      unmount()
+    })
+  }
+
   it('renders after the exact failed message with partial output and completed tools intact', () => {
     const { store, failedId, api, runs } = setup()
     const host = document.createElement('div')

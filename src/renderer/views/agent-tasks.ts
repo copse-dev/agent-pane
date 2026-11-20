@@ -98,8 +98,8 @@ export function mountAgentTasks(
   const tasks = new Map<string, AgentTask>()
   const order: string[] = []
   let selectedId: string | null = null
-  // Which thread's tasks are currently shown. Tracked so we only re-scope when
-  // the active thread actually changes (threads_changed fires for many reasons).
+  // Which thread's tasks are currently shown. Tracked so the workspace switch
+  // (which may land on the same thread id) only re-scopes on a real change.
   let lastThreadId: string | null = store.getState().activeThreadId
 
   function currentThreadId(): string | null {
@@ -313,9 +313,9 @@ export function mountAgentTasks(
     syncSectionVisibility()
   }
 
-  // Only re-scope when the active thread actually changed. `threads_changed`
-  // fires for many unrelated reasons; `workspace_changed` also swaps the active
-  // thread when the project switches — both funnel here.
+  // Only re-scope when the active thread actually changed. A project switch
+  // swaps the active thread in the same write, which the selection below
+  // hears.
   function onThreadMaybeChanged(): void {
     const threadId = currentThreadId()
     if (threadId === lastThreadId) return
@@ -350,15 +350,13 @@ export function mountAgentTasks(
 
   // A shell tab took over the viewer — yield the task panel back to it.
   const unsubShell = store.on('shell_tab_activated', clearSelection)
-  const unsubThreads = store.on('threads_changed', onThreadMaybeChanged)
-  const unsubWorkspace = store.on('workspace_changed', onThreadMaybeChanged)
+  const unsubThread = store.select((s) => s.activeThreadId, onThreadMaybeChanged)
 
   return () => {
     unsubChunk()
     unsubOutput()
     unsubShell()
-    unsubThreads()
-    unsubWorkspace()
+    unsubThread()
     showTaskView(false)
     section.remove()
   }

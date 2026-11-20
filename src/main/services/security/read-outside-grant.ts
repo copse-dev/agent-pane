@@ -1,5 +1,6 @@
 import { lstatSync, realpathSync, statSync } from 'node:fs'
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { resolve, sep } from 'node:path'
+import { isPathWithin } from '@copse/std/path-containment.ts'
 import { isGuardedYoloActive } from './guarded-yolo.ts'
 
 /**
@@ -92,8 +93,7 @@ function coversPath(granted: string, directory: boolean, target: string): boolea
   if (!directory) return false
   // A descendant is covered only when the shell cannot turn it into another path.
   if (!isLiteralPath(target)) return false
-  const child = relative(granted, target)
-  return child !== '..' && !child.startsWith(`..${sep}`) && !isAbsolute(child)
+  return isPathWithin(granted, target)
 }
 
 export function grantReadOutsideProject(threadId: string, targets: readonly string[]): void {

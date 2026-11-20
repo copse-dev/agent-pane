@@ -392,16 +392,21 @@ describe('portrait panel controls row', () => {
     expect(stacked.seamHitTargetId).toBe('resizer-files')
 
     await prepareE2eScreenshot({ width: PORTRAIT_WIDTH, height: PORTRAIT_HEIGHT })
-    // The pane mounts empty, then shows "Loading changes…" until its first git
-    // status lands. Wait for the loaded list itself: an absent loading label
-    // alone also matches the instant before the pane has rendered anything.
+    // The pane mounts empty, then shows a loading row ("Loading changes…", then
+    // "Checking committed changes…") until git status and committed changes both
+    // land; the detail pane's matching status clears in the same render. Every
+    // such row is a `.pane-loading`, so match the class, not a label. Count only
+    // rendered rows: the hidden PR list in #pane-files holds its own until PRs
+    // mode opens. Also wait for the list itself: no loading row alone also
+    // matches the instant before the pane has rendered anything.
     await browser.waitUntil(
       () =>
         browser.execute(() => {
           const list =
             document.querySelector('#git-changes-host .git-changes-list')?.textContent ?? ''
-          const pane = document.getElementById('pane-files')?.textContent ?? ''
-          return list.trim() !== '' && !pane.includes('Loading changes')
+          const loadingRows = document.querySelectorAll('#pane-files .pane-loading')
+          const loading = [...loadingRows].some((row) => row.getClientRects().length > 0)
+          return list.trim() !== '' && !loading
         }),
       { timeout: 15_000, timeoutMsg: 'the Changes pane never finished loading' },
     )

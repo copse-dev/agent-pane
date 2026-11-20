@@ -11,6 +11,7 @@ import {
   invalidateProjectThreadLoads,
   acceptRuntimeThreadMeta,
   awaitPendingThreadPersistence,
+  afterPendingThreadPersistence,
   __resetPersistenceForTest,
   saveProjects,
   saveNavigation,
@@ -259,7 +260,7 @@ test('a window that does not own navigation persists projects but never navigati
   // A pane pop-out boots this renderer and restores the same project, but the
   // main process rejects `setNavigation` from any window that is not a
   // registered full main window. Sending it anyway rejected mid-`restoreProject`
-  // and took the `workspace_changed` emit with it, so the detached pane came up
+  // and skipped publishing the selection with it, so the detached pane came up
   // empty. Projects still save — only the navigation half is withheld.
   __resetPersistenceForTest()
   setNavigationOwnership(false)
@@ -1933,4 +1934,39 @@ test('a middle read cannot replace a newer retention projection in an older acti
   assert.equal((await middle)[0]?.hasSavedPlan, true)
   first([original])
   assert.equal((await oldest)[0]?.hasSavedPlan, true)
+})
+
+test('afterPendingThreadPersistence waits for a create the same write starts', async () => {
+  __resetPersistenceForTest()
+  let releaseCreate: (() => void) | undefined
+  const created: string[] = []
+  const { api } = fakeApi({
+    create: (_projectId, created_) =>
+      new Promise<void>((resolve) => {
+        releaseCreate = (): void => {
+          created.push(created_.id)
+          resolve()
+        }
+      }),
+  })
+  const store = createStore({ activeProjectId: 'p1', threads: [], projects: [] })
+  const autosave = attachAutosave(store, api)
+  const ran: string[][] = []
+  // As a store selection would: inside the write, before its threads_changed.
+  const unsubscribe = store.select(
+    (s) => s.activeThreadId,
+    () => {
+      afterPendingThreadPersistence(() => ran.push([...created]))
+    },
+  )
+  store.setState({ threads: [thread('t1')], activeThreadId: 't1' })
+  store.emit('threads_changed')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.deepEqual(ran, [], 'waits while the create is in flight')
+
+  releaseCreate?.()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.deepEqual(ran, [['t1']], 'runs once the create has landed')
+  unsubscribe()
+  autosave.detach()
 })

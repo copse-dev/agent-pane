@@ -40,6 +40,7 @@ describe('classifyAgentError', () => {
   it('reads RequestError from an AcpTurnFailure cause chain', () => {
     const wrapped = new AcpTurnFailure(RequestError.authRequired(), {
       assistantText: '',
+      finalMessageText: '',
       usage: { inputTokens: 0, outputTokens: 0 },
     })
     const out = classifyAgentError(wrapped, { acpAgentId: 'cursor' })
@@ -87,6 +88,109 @@ describe('classifyAgentError', () => {
     assert.doesNotMatch(out, /^An error occurred:/)
     // `setup-token` mints an inference-only token; it is never the fix.
     assert.doesNotMatch(out, /setup-token/)
+  })
+
+  // #4147: Claude Code's start-up organization check (managed
+  // `forceLoginOrgUUID`) could not validate the saved token, and the CLI exited
+  // with code 1. The wording is the 2.1.312 binary's, as the adapter relays it.
+  const orgCheckStderr = [
+    'Unable to verify organization for the current authentication token.',
+    'This machine requires organization 00000000-0000-4000-8000-000000000000 but the token could not be validated.',
+    'This may be a network error, or the token may have been revoked.',
+    'Try again, or run: claude auth login',
+  ].join('\n')
+  const orgCheckFailure = (stderr = orgCheckStderr): AcpTurnFailure =>
+    new AcpTurnFailure(
+      new RequestError(-32603, 'Internal error', {
+        details: `Claude Code process exited with code 1. stderr: ${stderr}`,
+      }),
+      { assistantText: '', finalMessageText: '', usage: { inputTokens: 0, outputTokens: 0 } },
+    )
+  const withPlatform = <T>(platform: NodeJS.Platform, fn: () => T): T => {
+    const descriptor = Object.getOwnPropertyDescriptor(process, 'platform')
+    assert.ok(descriptor)
+    try {
+      Object.defineProperty(process, 'platform', { value: platform })
+      return fn()
+    } finally {
+      Object.defineProperty(process, 'platform', descriptor)
+    }
+  }
+
+  // The CLI prints this one message whether Anthropic refused the token or the
+  // single, unretried validate request never completed, and its own stderr
+  // says it may be a network error. So it is not evidence of an expiry.
+  it('reads a failed Claude organization check as an unverified sign-in, not an expiry', () => {
+    const err = orgCheckFailure()
+    const ctx = { acpAgentId: 'claude-acp' }
+    const kind = classifyAcpAuthFailure(err, ctx)
+    assert.equal(kind, 'unverified')
+    const out = classifyAgentError(err, ctx)
+    assert.match(out, /Claude couldn’t verify its sign-in/)
+    assert.doesNotMatch(out, /sign-in expired|no longer valid/)
+    // Says why "sign in again" is usually the fix, and what to do if it wasn't.
+    assert.match(out, /organization’s policy/)
+    assert.match(out, /its sign-in has usually expired/)
+    assert.match(out, /If your network was down instead, re-send your message/)
+    assert.match(out, /1\. Run `claude auth login` in a terminal\./)
+    assert.match(out, /Technical details[\s\S]*Unable to verify organization/)
+    assert.doesNotMatch(out, /^An error occurred:/)
+    // The marker for the next turn reads the classifier's own verdict, and must
+    // not promise a re-run is hopeless when it may only have been the network.
+    const interruption = acpTurnInterruptionFor(err, {
+      aborted: false,
+      authFailure: kind,
+      acpAgentId: 'claude-acp',
+    })
+    assert.equal(interruption, 'unverified')
+    const marker = acpTurnInterruptionMarker(interruption, 'claude-acp')
+    assert.doesNotMatch(marker, /fail the same way/)
+    assert.match(marker, /network failure/)
+    assert.match(marker, /re-running it may work/)
+  })
+
+  it('still reads an organization check with an explicit expiry as an expiry', () => {
+    const err = orgCheckFailure(`API Error: 401 OAuth access token has expired.\n${orgCheckStderr}`)
+    assert.equal(classifyAcpAuthFailure(err, { acpAgentId: 'claude-acp' }), 'expired')
+    assert.match(classifyAgentError(err, { acpAgentId: 'claude-acp' }), /Claude sign-in expired/)
+  })
+
+  // Only Copse's macOS seatbelt keeps the Keychain read-only, so only a turn
+  // that ran under it may be told that is why its token went stale.
+  it('blames the read-only Keychain only for an agent sandboxed on macOS', () => {
+    const keychain = /can’t save the new one to the macOS Keychain|Copse’s sandbox/
+    const read = (platform: NodeJS.Platform, sandboxed: boolean): string =>
+      withPlatform(platform, () =>
+        classifyAgentError(orgCheckFailure(), {
+          acpAgentId: 'claude-acp',
+          acpSandboxed: sandboxed,
+        }),
+      )
+    const macSandboxed = read('darwin', true)
+    assert.match(macSandboxed, keychain)
+    assert.match(macSandboxed, /its access token has usually expired/)
+    assert.match(macSandboxed, /If your network was down instead/)
+    for (const [platform, sandboxed] of [
+      ['darwin', false],
+      ['linux', true],
+      ['linux', false],
+    ] as const) {
+      const out = read(platform, sandboxed)
+      assert.doesNotMatch(out, keychain, `${platform}, sandboxed: ${String(sandboxed)}`)
+      assert.match(out, /its sign-in has usually expired/)
+    }
+  })
+
+  it('keeps the organization-check note off other expired sign-ins', () => {
+    const err = new RequestError(
+      -32603,
+      'Internal error: Failed to authenticate. API Error: 401 OAuth access token has expired.',
+    )
+    const out = withPlatform('darwin', () =>
+      classifyAgentError(err, { acpAgentId: 'claude-acp', acpSandboxed: true }),
+    )
+    assert.match(out, /Claude sign-in expired/)
+    assert.doesNotMatch(out, /organization’s policy|Keychain/)
   })
 
   it("turns Cursor's rejected session into actionable sign-in guidance", () => {
@@ -363,6 +467,7 @@ describe('turnErrorDetail', () => {
     })
     const wrapped = new AcpTurnFailure(rpc, {
       assistantText: '',
+      finalMessageText: '',
       usage: { inputTokens: 0, outputTokens: 0 },
     })
 
@@ -483,6 +588,64 @@ describe('classifyAcpAuthFailure', () => {
       'expired',
     )
   })
+
+  // Found dogfooding #4278: Claude streamed the CLI's synthetic API-error
+  // message, then failed the prompt with a bare -32000. The expiry is only in
+  // that final message, so the card said "not signed in".
+  describe('with the failed turn’s final message', () => {
+    const expiredText = 'Failed to authenticate: OAuth session expired and could not be refreshed'
+    const failure = (): AcpTurnFailure =>
+      new AcpTurnFailure(RequestError.authRequired(), {
+        assistantText: expiredText,
+        finalMessageText: expiredText,
+        usage: { inputTokens: 0, outputTokens: 1 },
+      })
+
+    it('reads an expiry the agent wrote before a bare auth code as expired', () => {
+      const ctx = { acpAgentId: 'claude-acp', acpFinalMessage: expiredText }
+      assert.equal(classifyAcpAuthFailure(failure(), ctx), 'expired')
+      const out = classifyAgentError(failure(), ctx)
+      assert.match(out, /^> \[!WARNING\]\n> \*\*Claude sign-in expired\*\*/)
+      assert.match(out, /no longer valid/)
+      assert.match(out, /1\. Run `claude auth login` in a terminal\./)
+      assert.match(out, /ACP error -32000 \(Authentication required\): Authentication required/)
+      assert.doesNotMatch(out, /not signed in|needs authentication/)
+      // The persisted marker reads the same verdict as the live notice.
+      const interruption = acpTurnInterruptionFor(failure(), {
+        aborted: false,
+        authFailure: classifyAcpAuthFailure(failure(), ctx),
+        acpAgentId: 'claude-acp',
+      })
+      assert.equal(interruption, 'expired')
+      assert.match(acpTurnInterruptionMarker(interruption, 'claude-acp'), /no longer valid/)
+    })
+
+    it('stays "required" without a final message that reads as an expired sign-in', () => {
+      const claudeAcp = { acpAgentId: 'claude-acp' }
+      assert.equal(classifyAcpAuthFailure(failure(), claudeAcp), 'required')
+      // Ordinary prose about expiry is not the agent reporting its own sign-in.
+      for (const prose of [
+        'The session token has expired in the fixture, so I updated the test.',
+        'I fixed the bug where an expired OAuth token was retried forever.',
+      ]) {
+        assert.equal(
+          classifyAcpAuthFailure(failure(), { ...claudeAcp, acpFinalMessage: prose }),
+          'required',
+          prose,
+        )
+      }
+    })
+
+    it('never turns a failure that is not about credentials into one', () => {
+      assert.equal(
+        classifyAcpAuthFailure(new RequestError(-32603, 'Internal error: Overloaded'), {
+          acpAgentId: 'claude-acp',
+          acpFinalMessage: expiredText,
+        }),
+        null,
+      )
+    })
+  })
 })
 
 // The Codex CUA nesting failure (2026-09-23): a sandbox-owning helper spawned
@@ -499,6 +662,7 @@ describe('nested-sandbox ACP failures', () => {
   const nested = (message = 'Internal error: ACP agent turn failed'): AcpTurnFailure =>
     new AcpTurnFailure(new RequestError(-32603, message, { details: nestedDetails }), {
       assistantText: '',
+      finalMessageText: '',
       usage: { inputTokens: 0, outputTokens: 0 },
     })
   const interruption = (err: unknown): string =>
@@ -602,7 +766,7 @@ describe('acpTurnInterruptionMarker', () => {
   // outcome here: the retry loop is already spent by the time a marker is
   // written, and a lapsed credential is the opposite of temporary.
   it('never calls an outcome transient', () => {
-    for (const outcome of ['expired', 'required', 'aborted', 'error'] as const) {
+    for (const outcome of ['expired', 'required', 'unverified', 'aborted', 'error'] as const) {
       assert.doesNotMatch(acpTurnInterruptionMarker(outcome, claude), /transient/i)
     }
   })

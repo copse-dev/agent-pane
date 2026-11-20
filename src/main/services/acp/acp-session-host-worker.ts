@@ -14,8 +14,7 @@ import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import { errorMessage } from '@shared/errors.ts'
 import type { AcpAgentSandboxConfig } from '@shared/types/acp.ts'
 import { isRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
-import { baseSandboxConfig, ensureWorkspaceTmpDir } from '../../project-sandbox/config.ts'
-import { pinSandboxWrapTmpDir } from '../../project-sandbox/tmp-env.ts'
+import { baseSandboxConfig } from '../../project-sandbox/config.ts'
 import { setProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
 import {
   shutdownAcpChild,
@@ -83,6 +82,8 @@ export function parseSessionHostRequest(raw: string): SessionHostRequest | null 
   const args = readStringList(input['args'])
   const env = readStringMap(input['env'])
   const stateDir = input['stateDir']
+  // A malformed list is dropped, which the overlay reads as no chat-store access.
+  const chatReadRoots = readStringList(input['chatReadRoots'])
   return {
     config: {
       command,
@@ -92,14 +93,13 @@ export function parseSessionHostRequest(raw: string): SessionHostRequest | null 
       ...(env ? { env } : {}),
       ...(input['readonlyCheckout'] === true ? { readonlyCheckout: true } : {}),
       ...(typeof stateDir === 'string' && stateDir !== '' ? { stateDir } : {}),
+      ...(chatReadRoots ? { chatReadRoots } : {}),
     },
     allowLocalhost: parsed['allowLocalhost'] === true,
   }
 }
 
 async function initHostSandbox(): Promise<void> {
-  // ASRT bakes TMPDIR into the agent's wrapped command from this process's env (#4149).
-  pinSandboxWrapTmpDir(ensureWorkspaceTmpDir())
   await SandboxManager.initialize(
     baseSandboxConfig(),
     ({ host, port }) => {
@@ -108,6 +108,9 @@ async function initHostSandbox(): Promise<void> {
     },
     false,
   )
+  if (!SandboxManager.isSandboxingEnabled()) {
+    throw new Error('Workspace protection did not start for the agent session')
+  }
   setProjectSandboxEnabled(true)
 }
 

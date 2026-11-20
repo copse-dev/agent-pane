@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as esbuild from 'esbuild'
-import { parseProbeWorkerOutput } from './acp-probe-host.ts'
+import { AcpProbeAgentError, parseProbeWorkerOutput } from './acp-probe-host.ts'
 import { ACP_PROBE_REQUEST_ENV, parseProbeRequest } from './acp-probe-worker.ts'
 
 /**
@@ -100,12 +100,14 @@ function runWorker(
   workerPath: string,
   request: unknown,
   cwd: string,
+  env: NodeJS.ProcessEnv = {},
 ): Promise<{ stdout: string; stderr: string; code: number | null }> {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [workerPath], {
       cwd,
       env: {
         ...process.env,
+        ...env,
         ELECTRON_RUN_AS_NODE: '1',
         [ACP_PROBE_REQUEST_ENV]: JSON.stringify(request),
       },
@@ -142,7 +144,11 @@ describe('acp probe worker', () => {
 
     const { stdout } = await runWorker(
       workerPath,
-      { config: { command: process.execPath, args: [agentPath], cwd: dir }, timeoutMs: 10_000 },
+      {
+        config: { command: process.execPath, args: [agentPath], cwd: dir },
+        sandboxRequired: false,
+        timeoutMs: 10_000,
+      },
       dir,
     )
 
@@ -159,6 +165,31 @@ describe('acp probe worker', () => {
     assert.deepEqual(probe.modes?.choices, [{ value: 'default', label: 'Default' }])
   })
 
+  it("leaves an unsandboxed agent the user's own CLAUDE_CODE_TMPDIR (#4149)", async () => {
+    const dir = makeBundleDir('tmp-')
+    const workerPath = bundleWorker(dir)
+    const agentPath = join(dir, 'fake-agent.mjs')
+    // The agent names its first model after the temp dir it inherited.
+    writeFileSync(
+      agentPath,
+      FAKE_AGENT.replace("name: 'Fast'", 'name: String(process.env.CLAUDE_CODE_TMPDIR)'),
+    )
+
+    const { stdout } = await runWorker(
+      workerPath,
+      {
+        config: { command: process.execPath, args: [agentPath], cwd: dir },
+        sandboxRequired: false,
+        timeoutMs: 10_000,
+      },
+      dir,
+      { CLAUDE_CODE_TMPDIR: '/user/own/tmp' },
+    )
+
+    const probe = parseProbeWorkerOutput(stdout)
+    assert.equal(probe?.models?.choices[0]?.label, '/user/own/tmp')
+  })
+
   it('reports a failing agent as a structured error rather than hanging', async () => {
     const dir = makeBundleDir('fail-')
     const workerPath = bundleWorker(dir)
@@ -169,6 +200,7 @@ describe('acp probe worker', () => {
           workerPath,
           {
             config: { command: process.execPath, args: ['-e', 'process.exit(3)'], cwd: dir },
+            sandboxRequired: false,
             timeoutMs: 10_000,
           },
           dir,
@@ -177,8 +209,29 @@ describe('acp probe worker', () => {
     )
 
     for (const { stdout } of attempts) {
-      assert.throws(() => parseProbeWorkerOutput(stdout), /coding agent.*exited.*code 3/i)
+      assert.throws(
+        () => parseProbeWorkerOutput(stdout),
+        (err: unknown) => err instanceof AcpProbeAgentError && /exited.*code 3/i.test(err.message),
+      )
     }
+  })
+
+  it('reports an agent that is not installed as the agent failing, not the helper', async () => {
+    const dir = makeBundleDir('missing-')
+    const workerPath = bundleWorker(dir)
+    const { stdout } = await runWorker(
+      workerPath,
+      {
+        config: { command: 'copse-no-such-agent-cli', args: [], cwd: dir },
+        sandboxRequired: false,
+        timeoutMs: 10_000,
+      },
+      dir,
+    )
+    assert.throws(
+      () => parseProbeWorkerOutput(stdout),
+      (err: unknown) => err instanceof AcpProbeAgentError,
+    )
   })
 
   it('rejects a malformed request instead of probing', async () => {
@@ -187,10 +240,68 @@ describe('acp probe worker', () => {
     const { stdout } = await runWorker(workerPath, { config: { cwd: dir } }, dir)
     assert.throws(() => parseProbeWorkerOutput(stdout), /invalid probe request/)
   })
+
+  it('never spawns a requested sandboxed agent after ASRT initialization fails', async () => {
+    const dir = makeBundleDir('sandbox-init-fail-')
+    const workerPath = bundleWorker(dir)
+    const marker = join(dir, 'agent-started')
+    const preloader = join(dir, 'fail-asrt.cjs')
+    writeFileSync(
+      preloader,
+      "require('@anthropic-ai/sandbox-runtime').SandboxManager.initialize = async () => { throw new Error('forced ASRT init failure') }\n",
+    )
+
+    const { stdout, code } = await runWorker(
+      workerPath,
+      {
+        config: {
+          command: process.execPath,
+          args: ['-e', `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'started')`],
+          cwd: dir,
+          sandbox: { allowedDomains: ['api.example'] },
+        },
+        sandboxRequired: true,
+        timeoutMs: 10_000,
+      },
+      dir,
+      { NODE_OPTIONS: `--require=${preloader}` },
+    )
+
+    assert.equal(code, 1)
+    assert.throws(() => parseProbeWorkerOutput(stdout), /forced ASRT init failure/)
+    assert.throws(() => readFileSync(marker), /ENOENT/)
+
+    const disabledPreloader = join(dir, 'disable-asrt.cjs')
+    writeFileSync(
+      disabledPreloader,
+      "const manager = require('@anthropic-ai/sandbox-runtime').SandboxManager; manager.initialize = async () => {}; manager.isSandboxingEnabled = () => false\n",
+    )
+    const disabled = await runWorker(
+      workerPath,
+      {
+        config: {
+          command: process.execPath,
+          args: ['-e', `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'started')`],
+          cwd: dir,
+          sandbox: { allowedDomains: ['api.example'] },
+        },
+        sandboxRequired: true,
+        timeoutMs: 10_000,
+      },
+      dir,
+      { NODE_OPTIONS: `--require=${disabledPreloader}` },
+    )
+    assert.equal(disabled.code, 1)
+    assert.throws(
+      () => parseProbeWorkerOutput(disabled.stdout),
+      /Cannot check this agent safely because workspace protection did not start/,
+    )
+    assert.throws(() => readFileSync(marker), /ENOENT/)
+  })
 })
 
 describe('parseProbeRequest', () => {
-  it('preserves an explicit trustd grant and rejects truthy non-boolean values', () => {
+  it('preserves an explicit trustd grant and rejects non-boolean values', () => {
     for (const value of [true, false, 'true', 1, null]) {
       const request = parseProbeRequest(
         JSON.stringify({
@@ -199,13 +310,18 @@ describe('parseProbeRequest', () => {
             cwd: '/workspace',
             sandbox: { allowedDomains: ['chatgpt.com'], allowMacOsTrustd: value },
           },
+          sandboxRequired: true,
         }),
       )
-      assert.equal(request?.config.sandbox?.allowMacOsTrustd, value === true ? true : undefined)
+      if (typeof value === 'boolean') {
+        assert.equal(request?.config.sandbox?.allowMacOsTrustd, value)
+      } else {
+        assert.equal(request, null)
+      }
     }
   })
 
-  it('preserves an explicit keychain grant and rejects truthy non-boolean values', () => {
+  it('preserves an explicit keychain grant and rejects non-boolean values', () => {
     for (const value of [true, false, 'true', 1, null]) {
       const request = parseProbeRequest(
         JSON.stringify({
@@ -214,26 +330,56 @@ describe('parseProbeRequest', () => {
             cwd: '/workspace',
             sandbox: { allowedDomains: ['api.anthropic.com'], allowMacOsKeychain: value },
           },
+          sandboxRequired: true,
         }),
       )
-      assert.equal(request?.config.sandbox?.allowMacOsKeychain, value === true ? true : undefined)
+      if (typeof value === 'boolean') {
+        assert.equal(request?.config.sandbox?.allowMacOsKeychain, value)
+      } else {
+        assert.equal(request, null)
+      }
     }
   })
 
   it('requires a command and cwd', () => {
-    assert.equal(parseProbeRequest('{"config":{"command":"x"}}'), null)
-    assert.equal(parseProbeRequest('{"config":{"cwd":"/tmp"}}'), null)
+    assert.equal(parseProbeRequest('{"config":{"command":"x"},"sandboxRequired":false}'), null)
+    assert.equal(parseProbeRequest('{"config":{"cwd":"/tmp"},"sandboxRequired":false}'), null)
     assert.equal(parseProbeRequest('not json'), null)
     assert.deepEqual(
-      parseProbeRequest('{"config":{"command":"x","cwd":"/tmp"}}')?.config.command,
+      parseProbeRequest('{"config":{"command":"x","cwd":"/tmp"},"sandboxRequired":false}')?.config
+        .command,
       'x',
     )
   })
 
-  it('keeps a positive timeout and drops a nonsensical one', () => {
-    const base = '{"config":{"command":"x","cwd":"/tmp"}'
+  it('keeps a positive timeout and rejects a nonsensical one', () => {
+    const base = '{"config":{"command":"x","cwd":"/tmp"},"sandboxRequired":false'
     assert.equal(parseProbeRequest(`${base},"timeoutMs":500}`)?.timeoutMs, 500)
-    assert.equal(parseProbeRequest(`${base},"timeoutMs":-1}`)?.timeoutMs, undefined)
+    assert.equal(parseProbeRequest(`${base},"timeoutMs":-1}`), null)
+  })
+
+  it('rejects missing or malformed containment when main requested it', () => {
+    const config = { command: 'codex-acp', cwd: '/workspace' }
+    assert.equal(parseProbeRequest(JSON.stringify({ config })), null)
+    assert.equal(parseProbeRequest(JSON.stringify({ config, sandboxRequired: true })), null)
+    assert.equal(
+      parseProbeRequest(
+        JSON.stringify({
+          config: { ...config, sandbox: { allowedDomains: 'api.example' } },
+          sandboxRequired: true,
+        }),
+      ),
+      null,
+    )
+    assert.deepEqual(
+      parseProbeRequest(
+        JSON.stringify({
+          config: { ...config, sandbox: { allowedDomains: ['api.example'] } },
+          sandboxRequired: true,
+        }),
+      )?.config.sandbox?.allowedDomains,
+      ['api.example'],
+    )
   })
 })
 

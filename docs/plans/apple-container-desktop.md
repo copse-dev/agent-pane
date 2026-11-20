@@ -1,8 +1,15 @@
 # Isolated Copse desktop through Apple container
 
-**Status: experimental native and ACP implementation; acceptance remains incomplete.** The host-child prototype is
-parked in draft PR #4118 (commit `8db459469`). This work starts from `origin/main` and does
-not carry forward its host Copse-control exception or warning-window UI.
+**Status: experimental native and ACP implementation on `main`.**
+[PR #4127](https://github.com/copse-dev/agent-pane/pull/4127) merged on November 3, 2026
+at `2332b795b08b9169b52db55cf7556913a6d1d800`. The separate host-child prototype remains
+parked in [#4118](https://github.com/copse-dev/agent-pane/pull/4118); its host-control exception
+and warning-window UI are not part of this implementation.
+
+The final PR head, `3173996f48b197b5137f3f6b84ba6f66e0d119df`, passed
+[check, build, all nine Electron shards, and CI Passed](https://github.com/copse-dev/agent-pane/actions/runs/41554659236).
+Full release validation was skipped. The macOS-only isolated-desktop spec is excluded from Linux CI;
+passing those shards does not establish the Apple VM journey. On-device evidence is recorded below.
 
 ## Safety contract
 
@@ -14,10 +21,9 @@ Docker, shared-kernel or host fallback for this path.
 The intended desktop is Linux Copse in Apple container's per-container VM, not a macOS VM.
 Host Copse and unrelated host applications remain unavailable to guest GUI input. No home,
 credentials, SSH agent, engine socket, display socket or execution broker is mounted or
-forwarded. Direct host and external networking is disabled. Future model inference needs a
-bounded, explicitly reviewed channel using the existing host-inference design; arbitrary
-host commands must never be part of that channel. Inputs and exported artifacts need their
-own explicit transfer policy.
+forwarded. Direct host and external networking is disabled. Model inference uses the bounded
+host-inference channel; arbitrary host commands must never be part of that channel. Inputs
+and exported artifacts need their own explicit transfer policy.
 
 ## First slice: containment preflight
 
@@ -48,8 +54,9 @@ Observable acceptance:
 
 This is a configuration and observation preflight, not proof against hypervisor escapes or
 malicious images. Use a trusted Copse worker image. Existing container-runtime security
-residuals in `thread-in-container.md` still apply. Image identity pinning, orphan reconciliation
-and resource-exhaustion probes remain necessary before treating this as a product boundary.
+residuals in `thread-in-container.md` still apply. The product adds image identity pinning and
+orphan reconciliation below. Resource-exhaustion probes remain additional work; this preflight
+alone does not establish the product boundary.
 
 ## Experimental desktop smoke (validated prototype)
 
@@ -70,7 +77,7 @@ The controller owns its Xvfb display and fresh `/tmp/copse` profile. It waits fo
 DOM readiness before declaring the desktop ready and again before capture. Fixed screenshot/input
 commands travel over stdio; no port, host X socket or clipboard is forwarded. Electron's
 `--no-sandbox` is confined to this already isolated VM; this is never a host launch path.
-The image has no model credentials or inference channel. The GUI may display normally while
+This original smoke image had no model credentials or inference channel. The GUI may display normally while
 model calls remain unavailable. Bounded request validation, build staging and link refusal
 have focused unit coverage. The branch app build passed. After the background sandbox
 blocked Apple container access, the user built `copse-desktop:local` successfully in host
@@ -105,191 +112,30 @@ runtime evidence from before the product integration below.
 - Unit tests cover ownership, cancellation during startup, protocol failures and revocation;
   focused real-runtime evidence must exercise the integrated tool before completion.
 
-## Product implementation and pending validation
+## Landed implementation
 
-The implementation adds the `isolated_copse` tool, a thread-owned session service,
-fixed Apple VM transport, and a private guest Unix-socket relay to the existing
-host-inference protocol. Start requests fresh consent naming the pinned model and
-100,000-token/15-minute limits. Input is serialized and bounded. Parent cancellation,
-Stop, blocking the tool, thread cleanup and shutdown revoke authority before deletion;
-failed deletion is retryable. Guest provider selection refuses every other model.
+The `isolated_copse` tool uses a thread-owned session service, fixed Apple VM transport,
+and a private guest Unix-socket relay to host inference. Start requires fresh,
+non-rememberable consent naming the pinned model and 100,000-token / 15-minute limits.
+Guest provider selection refuses every other model. No credentials are copied into the guest.
 
-Seven new lifecycle tests pass, covering ownership, startup cancellation, malformed
-messages, late replies, corrupt PNGs and failed-deletion retries. The 33 existing desktop
-and inference tests also pass. Node TypeScript passed after these changes. The focused
-approval WebdriverIO spec passed on the user's macOS host, as detailed below.
+Input is serialized, bounded and timed out. Stop, parent cancellation, expiry, blocking the
+tool, thread cleanup and application shutdown revoke authority before deletion. Failed deletion
+remains visible and retryable. Shutdown awaits deletion within the existing quit deadline.
+ACP bridge calls bind desktop lifetime to the captured owning turn/session, independently
+of an individual HTTP response. Bridged starts require an explicit supported host model.
 
-The registry import/registration and standalone guest bundle are now on disk. The integrated
-branch build, all TypeScript checks and type-coverage gates passed. A focused desktop run
-passed all 23 new Apple build, preflight and lifecycle tests; three Android transport tests
-were cancelled because the sandbox denied their loopback fixture (`listen EPERM 127.0.0.1`).
-The oracle reports broad coverage. All static gates passed across the full-check run
-`dcf91800-1aa6-44ff-80cc-8d820f81f014` and focused exclusion/accessibility follow-up after
-recording the macOS-only spec in the exclusion inventory. Shutdown now awaits VM deletion
-within the existing quit deadline instead of allowing normal app exit to race it.
+The image builder writes an owner-controlled digest receipt after successful build and image
+inspection. Before starting a created VM, the transport verifies its stopped configuration,
+Linux arm64 platform and actual image descriptor against that receipt. A mutable tag is not
+sufficient. Startup writes a host-only lease and labels the VM with a random ownership nonce.
+Startup and the next Start reconcile expired or dead-parent leases, refuse mismatched labels,
+and retain failed deletion for retry. The guest controller has its own 15-minute deadline.
 
-Full unit task `fa0759a4-ae9b-4bde-9e34-e48abeebd875` reached its 30-minute deadline.
-Its saved report lists 16,269 passed, 70 failed, 11 cancelled and 31 skipped tests; the
-worktree-manager suite consumed approximately 26 minutes. Logs include explicit sandbox
-filesystem/process denials, but these are not established as baseline-only failures.
-The full gate is not green. Evidence is `.tmp/apple-desktop-unit.log` and generated tests
-under `.tmp/test-run-qcqPnO`. The new lifecycle suite passed within this full run.
+## Build and run
 
-The report also caught three change-related integration omissions: workspace-package import
-boundaries, the smoke-inventory entry for the new service directory, and an ACP exposure
-decision for the new tool. Focused revalidation passed the inventory assertion and ACP
-exposure decision. All eight workspace-package invariant tests passed after correcting all
-five prototype imports. Two small-gate empty-diff assertions still fail (`full` versus `skip`);
-the test fixture sets `BASE_SHA=HEAD` and assumes an empty diff, but
-`changedFiles` intentionally includes staged, unstaged and untracked files. This dirty
-checkout therefore selects full coverage. That explains the local assertion mismatch;
-a clean-checkout baseline has still not been run. The tool was initially native-only. The ACP bridge now binds desktop lifetime to the
-captured owning turn/session, independently of the individual HTTP response. Bridged starts
-require an explicit host model choice and still use the fresh non-rememberable approval.
-A real HTTP bridge test checks response closure, turn cancellation and session cancellation;
-its result is pending validation below.
-
-On 2026-11-01 at 17:12 UTC, the user ran
-`pnpm run test:e2e -- --spec tests/e2e/isolated-desktop-approval.e2e.ts` on the macOS host:
-one spec passed, with the test taking 2.4 seconds. This exercises the real registered tool
-and consent UI with a scripted mock turn, verifies the VM/model/budget disclosures and
-non-rememberable grant, then rejects consent and completes the mock turn. It does not start
-a VM. Screenshot `tests/e2e/screenshots/isolated-desktop-approval.png` was inspected: the
-controls were visible, but the budget and stop instructions extended below the scrollable
-body viewport. The copy was shortened with the model and budget first, and the spec now asserts the
-entire body fits without scrolling. The final six-line copy passed the user's macOS run
-at 17:21 UTC: one spec passed in 3.1 seconds, exit 0, WebDriver session
-`ed99c391361d8495dae7a3712b874ccb`. Visual inspection of the resulting screenshot confirms
-all six disclosure lines and both decision buttons are readable without clipping or
-scrolling; no remember control is shown. This is a visual pass for the mock-driven
-consent/rejection journey. Final build task `72fa3a3c-c8a5-4d5c-8c93-13e027448630` passed;
-e2e typecheck passed in `00a87850-4464-4a98-a101-a3ddbaa77625`. Agent-side Electron launch
-remains blocked by sandbox process/socket denials.
-
-Product transport VM smoke passed on 2026-11-01 through
-`node scripts/run-smoke-isolated-desktop.mts`, using the real `DesktopSession` and
-`AppleDesktopTransport`. VM `copse-desktop-probe-7f052846-9216-4dfa-8865-bdcf197f8dc5`
-reported title Copse, rejected another thread's access, acknowledged Tab, returned a
-validated screenshot, revoked authority on parent cancellation and completed deletion.
-Evidence `.tmp/isolated-desktop-transport.png` was visually inspected: the complete setup
-screen includes the Approved parent session model provider. The harness refuses all model
-requests, so this does not establish inference. It bypasses the consent service; the
-consent/rejection journey has separate e2e evidence above.
-
-Preparing that smoke exposed a guest-settings path defect, now corrected using
-`copseUserDataDir`: settings belong under `/tmp/copse/user-data/`, not the profile root.
-Build, all typechecks and all 31 focused desktop/package tests passed in task
-`dc3d8e34-9120-4174-b99d-79a2687cd7f8`. The guest image was subsequently rebuilt
-successfully with the current embedded app (image manifest
-`sha256:439964b46b94546926aadba20853e85f89c13413d233a0e9a5003793ea0319d9`).
-
-Static task `6502e33f-129b-4907-9805-2ea5739d39c9` passed syntax, all typechecks
-and type coverage, then found two lint errors in the new smoke script. Both were fixed.
-Resuming from lint in task `f2487a30-d703-41c7-bbda-f4c4c4f354ec` passed all lint shards,
-formatting, demo-site consistency, dead-code reachability, oracle invariants, exclusion
-inventory and accessibility-baseline checks. The full unit gate remains unresolved as
-described above; static success does not waive it.
-
-Real VM relay smoke `copse-desktop-probe-3001f137-3434-45cb-816e-d69a7c0c10ca`
-passed through the product transport with a fixed mock host provider. A separate, fixed
-guest fixture used the product guest provider to receive text, usage and completion over
-the private socket and stdio relay. The host observed exactly one request and a positive
-bounded token allowance. A freshly generated host canary existed during inference and
-was absent at the same absolute path inside the guest. Parent cancellation revoked input
-and VM deletion completed before evidence was saved. No real provider credentials or
-model spend were used. A subsequent fixture revision explicitly requires uid 1001.
-Its first run printed the success report for VM
-`copse-desktop-probe-2b6e4b81-787a-440e-a532-43f226699453`, but the outer command
-returned 143; that run is not counted as a clean command pass. A fresh run with
-the same uid-1001 fixture, VM
-`copse-desktop-probe-f9321807-d338-4ad7-ad5b-bbf267fae0ef`, completed with exit 0
-and all relay, canary, ownership, revocation and teardown assertions passing. Task
-`29bb0334-2017-46e0-beae-103fada02579` passed all typechecks, all 31 focused
-desktop/package tests and formatting after the fixture changes.
-
-This fixture is transferred through developer-only `container exec`;
-it does not add a product command surface.
-
-The `--gui` fixture now drives the guest renderer over guest-only loopback CDP.
-It dismisses first-run setup, creates a fresh project through New Project, submits
-a composer prompt and requires the mock response inside an assistant message. The host
-asserts that the submitted prompt reached its pinned provider. Optional first-run agent
-package installation is rejected; the fixture waits for no approval overlay and no
-visible Stop button before capturing the result. VM
-`copse-desktop-probe-4bacb60c-5b0f-411c-87cb-fb139b17dc0d` passed with exit 0.
-Visual inspection of `.tmp/isolated-desktop-transport.png` shows the project, submitted
-prompt and assistant response without an overlay. Ownership, canary absence, parent
-cancellation and VM deletion also passed. This establishes a child GUI turn through the
-mock host inference channel, without provider credentials or paid inference.
-
-Approved tool-to-VM execution, self-approved child command
-containment and orphan recovery remain outstanding. The canary observation above tests
-a fixed guest fixture, not child-agent self-approval. No completed product feature or
-merge readiness is claimed.
-
-## Hardening and acceptance work in progress
-
-The image builder now writes an owner-controlled digest receipt after successful build and
-image inspection. Before starting a created VM, the product verifies its actual image
-descriptor and Linux arm64 platform against that receipt. The local engine does not resolve
-the tag's digest reference as an image name, so comparing the created, stopped container is
-necessary to close the mutable-tag race. This engine shape was observed in a never-started
-temporary container, deleted in a finally block.
-
-VM creation also writes a host-only lease before the engine call and labels the VM with its
-random ownership nonce. Startup and the next Start reconcile dead-parent or expired leases,
-refusing mismatched labels and retaining failed deletions for retry. The guest controller
-has its own 15-minute deadline. Four pin tests, two recovery tests and eight session tests
-passed together (14 total). Separate supervised cleanup/lifecycle validation passed 13 tests.
-The review fixed admission leaks after automatic deletion and ensured a VM deletion failure
-does not prevent unrelated thread or app cleanup.
-
-The approval e2e spec now includes approval acceptance, real VM start, a 1280×800 screenshot,
-and explicit Stop in one scripted parent turn. It imports only the trusted developer build
-digest into its throwaway profile. That new journey has not yet run.
-
-The host build/pin log subsequently confirmed success despite its MCP timeout: index
-`sha256:fc9e3dfa8d7f0200c4c43caa5483b70748c3c7a34c2f0837f23a8a5263520b1e`.
-The containment fixture initially read the wrong LLM tool-result shape; typecheck identified
-that fixture error, now corrected to `toolResults`. Runtime
-`copse-desktop-probe-fb2b0e37-b9d8-4ee4-b69c-2d29a5d6f19c` then passed with exit 0:
-a child-approved shell command received ENOENT for the synthetic host canary, wrote/read its
-own guest scratch file, and received ECONNREFUSED for the host canary service. The service
-had first passed a host-side connection with a private nonce. The child command's result
-returned through the model channel; cancellation revoked control and deletion succeeded.
-No host credentials or paid inference were involved.
-
-Crash-recovery runtime `copse-desktop-probe-60f2ff4b-0981-4fc9-a0dd-f329c6b202e3`
-passed with exit 0. The harness killed only its own fixture parent with SIGKILL, then product
-recovery deleted the nonce-labeled VM and lease. Engine inspection and lease-file reads
-confirmed both were absent.
-
-The branch has been advanced from `8dac4b323` to current `origin/main`
-`ec82b3024068c106f830e284e37580fdf306d9b9`. Copse blocked rebase because a failed rebase
-would detach this managed checkout. With no branch commits to replay, a fast-forward merge
-produced the same base history, preserving work through autostash. The one restoration
-conflict in the standalone bundle list was resolved by retaining both upstream's search
-worker and the isolated desktop guest. On that base, all 106 focused tests passed, including
-the authenticated ACP HTTP lifetime test, image pin, recovery, lifecycle and package invariants.
-The host build and complete `check:local` passed. The final-base Linux image was then built
-and pinned at `sha256:49d956e6ae849be6ee9899c76de4d5cdd64ce29e9b8f9b6f1176e71591b1d70c`.
-The containment journey passed again in VM `dbe25745-a7e1-4804-a065-f84fd2e259d4`, and
-SIGKILL orphan recovery passed in VM `8946b9a0-db7a-46e2-89e9-b6299672aad7`.
-Both approval WDIO tests passed (6.1 seconds) in host runtime after the earlier sandbox DNS
-failure: rejection/copy/layout and approval → real VM → screenshot → Stop. DOM assertions
-confirmed the returned image was 1280×800. Visual inspection of `isolated-desktop-approved.png`
-confirmed the guest setup screen was displayed inside the parent tool result.
-
-## User-journey fixes and validation (2026-11-02)
-
-User testing exposed three setup failures: pin-read errors hid the receipt path and
-underlying cause; desktop commands assumed `/usr/local/bin/container` instead of
-supporting Homebrew's Apple-silicon location; and the desktop builder assumed a local
-probe base image without a supported build-only command. Diagnostics now identify the
-profile and cause, desktop commands use a restricted PATH containing both installation
-locations, and the thread-container CLI supports `--build-only --no-acp-agents`.
-
-Build the prerequisite and verify it before building the desktop:
+The Apple container service must already be running. Build and verify the prerequisite,
+then build the desktop using the profile that will launch it:
 
 ```bash
 COPSE_CONTAINER_ENGINE=apple node scripts/run-thread-container.mts --build-only --no-acp-agents --image copse-desktop-probe:local
@@ -297,70 +143,111 @@ pnpm run probe:apple-desktop --image copse-desktop-probe:local
 COPSE_DIR="$HOME/.copse" node scripts/build-apple-desktop.mts
 ```
 
-The user completed all three commands: the containment probe reported every required
-observation and teardown passing, and the desktop build wrote its digest receipt.
-An interactive tool-driven VM then completed setup, project creation and a real parent
-model response, but onboarding's Finish reset the seeded session model to Balanced.
-Selecting session manually worked. The guest now marks onboarding complete when seeding
-its already-configured approved provider, preserving the session default. No provider
-guard was relaxed.
+The desktop commands support both `/opt/homebrew/bin/container` and
+`/usr/local/bin/container` through a restricted PATH. Pin errors report the exact receipt
+path/profile and cause. A freshly seeded guest skips provider onboarding because the approved
+session provider is already configured; Finish must not replace it with Balanced.
 
-The corrected journey passed in desktop session `3e808e45-81fc-440d-a44e-d1f8abe0e20c`:
-the fresh guest did not show provider onboarding; after dismissing a product announcement,
-New Project created `default-model-test`; the composer already selected session; the
-first submitted greeting received `Hello!` without opening the model picker. Optional
-ACP package installation was rejected. Stop confirmed VM deletion. Screenshots were
-inspected during the journey. The current controller was transferred from the fresh host
-build; the existing trusted Linux app image was reused.
+## Accepted on-device evidence
 
-All 34 focused desktop/build CLI tests, `pnpm run check:local`, and the host build passed.
-Logs are `.tmp/apple-desktop-fix-check-local.log` and `.tmp/apple-desktop-fix-build.log`.
-Independent review reported no findings but could not run its own checks because its
-separate checkout could not prepare offline dependencies. This follow-up did not rerun
-the full unit suite or establish the remaining combined ACP acceptance below.
+These are distinct observations, not claims of general isolation or model reliability.
 
-## Remaining acceptance before merge
+| Journey                           | Recorded evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Containment preflight             | November 1: Apple container 1.6.1, macOS 27.0.1 arm64; all ten required observations and positive controls passed, then teardown completed. Run `copse-desktop-probe-4aec20cc-9b60-4cce-b382-334170ac20b2`.                                                                                                                                                                                                                                                                                                               |
+| Native consent and VM             | Both focused WDIO cases passed: rejection/copy/layout, and approval → real VM → 1280×800 screenshot → Stop. `isolated-desktop-approval.png` and `isolated-desktop-approved.png` were inspected.                                                                                                                                                                                                                                                                                                                           |
+| Child-approved host escape denial | Final-base VM `dbe25745-a7e1-4804-a065-f84fd2e259d4`: child-approved shell received ENOENT for a synthetic host file and ECONNREFUSED for a host service; guest scratch and host nonce-service positive controls passed. Cancellation revoked control and deletion succeeded. No paid inference.                                                                                                                                                                                                                          |
+| Orphan recovery                   | Final-base VM `8946b9a0-db7a-46e2-89e9-b6299672aad7`: fixture parent received SIGKILL; product recovery removed the nonce-labeled VM and its lease, verified absent afterward.                                                                                                                                                                                                                                                                                                                                            |
+| Real GUI inference                | November 2, session `3e808e45-81fc-440d-a44e-d1f8abe0e20c`: fresh guest skipped provider onboarding; New Project created `default-model-test`; composer defaulted to session; first greeting received `Hello!` without opening the model picker. Optional ACP package installation was rejected. Stop deleted the VM. Screenshots were inspected. Current controller was transferred into the existing trusted Linux image. [Producer record](https://github.com/copse-dev/agent-pane/pull/4127#issuecomment-6577707251). |
 
-1. Exercise authenticated ACP bridge, the real tool, approval and VM startup in one journey.
-   Current coverage proves bridge lifetime and real native runtime separately.
-2. Require full static and unit CI on a clean runner. Local baseline triage found no new
-   failures after the copy fix, but the full local run exhausted its deadline.
+The producer's local full unit run exhausted its 30-minute deadline after 16,425 passes,
+75 failures and 11 cancellations. A clean-base comparison reproduced the remaining failures
+and dirty-checkout assumptions after fixing the new copy assertion. That local run was not
+complete; the final PR's passing clean-runner CI above supplies the static/unit merge evidence.
+The final-base focused desktop/ACP/pin/recovery suites passed 106 tests; subsequent setup fixes
+passed 34 focused tests, `check:local` and the host build.
 
-## Current validation limits
+## Combined ACP acceptance follow-up (November 5, 2026)
 
-The nine focused preflight tests pass, including pre-start rejection, cleanup after a lost
-create reply, cancellation, and teardown failure. CLI help and dry-run pass. The full check
-passed static gates after fixing a test assertion overload; its unit run is still incomplete
-and has a host cache-write denial in the worktree-manager suite. It is not a green gate.
+Base: `b524afbe8f6109050bb79637b28bfeb771bd7b8a`.
+The focused macOS spec is `tests/e2e/isolated-desktop-approval.e2e.ts`; its independent
+scripted ACP executable is `tests/fixtures/isolated-desktop-acp-agent.mjs`.
 
-On 2026-11-01, the real probe passed on Apple container 1.6.1, macOS 27.0.1 arm64. The
-user built `copse-desktop-probe:local` through the existing worker builder with no ACP
-agents installed. Run `copse-desktop-probe-4aec20cc-9b60-4cce-b382-334170ac20b2` reported
-all ten required observations and positive controls passing, and teardown completed before
-success was emitted. Local evidence is `.tmp/apple-desktop-probe.json`. This validates this
-configuration and these observations, not resistance to VM escapes or a complete desktop.
+Required observable acceptance in one Electron session:
 
-Final-base validation: 106 focused tests passed, all TypeScript projects and `check:local`
-passed, and the host build passed. The mandatory `pnpm run check` was attempted; after
-fixing lint errors its unit stage was run separately with full logging. That run reached
-16,425 passes, 75 failures and 11 cancellations before its 30-minute deadline. The new
-user-copy failure was fixed and its focused rerun passed.
+1. Start a registered ACP process through Copse and receive its real native HTTP bridge.
+2. Reject an unauthenticated request, initialize with the supplied bearer credential,
+   and discover `isolated_copse` through `tools/list`.
+3. Invoke the registered tool and accept the real non-rememberable consent UI naming the model.
+4. Start the trusted Apple VM and return a real 1280×800 PNG through a later HTTP request,
+   after the Start response has closed.
+5. Stop/delete the VM, then refuse another screenshot because session authority is gone.
+6. Save and inspect the consent UI, actual guest PNG and completed ACP reply.
 
-A clean local clone of base `ec82b3024068c106f830e284e37580fdf306d9b9`, with its own locked
-offline dependency install, reran 24 failing files: 490 passes, 72 failures and 9 cancellations.
-The changed checkout rerun plus ACP/pin tests had 532 passes, 74 failures and 9 cancellations.
-The failing test names matched except for two empty-diff small-gate assertions: both pass
-on clean main and fail there after adding one unrelated untracked source file, demonstrating
-their dirty-checkout assumption. The baseline Electron fixture initially lacked its binary;
-rerunning with the installed host Electron binary reproduced the same `sandbox_apply`
-denial. Other shared failures include filesystem/socket denials, watcher exhaustion, a
-macOS Bash array error and `/tmp` safety checks. Logs and the comparison are under
-`.tmp/isolated-desktop-{baseline,triage}-tests.log` and
-`.tmp/isolated-desktop-baseline-controls.log`. A separate clean-main run of the exact
-worktree-manager test also timed out after 180 seconds with the same denied cache-directory
-write (`.tmp/isolated-desktop-baseline-worktree.log`). Local triage found no remaining new
-failures, but the full run did not complete; required clean-runner CI remains a merge gate.
+Run with the existing trusted desktop image and freshly built host/controller:
 
-Runtime evidence covers child-approved synthetic host-file and host-service denial, image
-identity checks and SIGKILL orphan recovery as described above. It does not establish
-resistance to VM escapes. This draft must not be advertised as a completed isolated GUI feature.
+```bash
+pnpm run build
+pnpm run test:e2e -- --spec tests/e2e/isolated-desktop-approval.e2e.ts
+```
+
+**Passed on device:** all three cases passed in 17.8 seconds (WDIO session
+`a926ce53b25fab82f801f1f6b524a2b4`), including the complete authenticated ACP journey above.
+The Start response closed before Screenshot; the later request still reached the live VM.
+Stop returned successful deletion and a subsequent screenshot was refused. The focused
+bridge/desktop/preflight/pin suite passed 73/73 tests, zero skips, outside the shell sandbox
+so its real loopback HTTP servers could bind. The host build and e2e TypeScript check passed.
+
+Captures under `tests/e2e/screenshots/` were inspected:
+
+- `isolated-desktop-acp-approval.png`: the pinned model, budget, isolation/stop disclosures
+  and both decision buttons are readable without clipping; no remember control is shown.
+- `isolated-desktop-acp-guest.png`: the real 1280×800 Linux Copse window is rendered with
+  its first-run product announcement. The PNG crossed the authenticated MCP response.
+- `isolated-desktop-acp-complete.png`: the ACP completion reply is visible and the parent
+  composer is idle after deletion and revocation.
+
+The reused trusted Linux image was `sha256:b6af5af8bfed9d8af6ac6bd15d1359299334f1e76bd9c74c6fead137bffaa97a`
+(built November 2). The controller came from the current host build. These macOS captures
+are local evidence, not replacement Linux screenshot baselines. Logs are
+`.tmp/isolated-gui-e2e.log` and `.tmp/isolated-gui-focused-host.log`.
+
+The scripted ACP agent tests integration without paid inference. It does not substitute for
+the separate real-model GUI observation above. The combined ACP acceptance gap from #4127
+is closed for this tested image/controller combination.
+
+## Follow-up validation
+
+- `pnpm run build`: passed. All `check:local` stages passed, including all TypeScript
+  projects, type coverage, lint, formatting, dead-code, oracle, exclusions and accessibility.
+- `pnpm run oracle -- --explain --base HEAD`: HIGH, all four changed files mapped;
+  the one selected Electron spec passed. `HEAD` is the fetched main base recorded above;
+  the shared local `origin/main` ref was older.
+- `pnpm run check` completed its static stages; its sandboxed unit attempt was stopped
+  after launching the complete unit suite separately with host loopback access. The original
+  sandboxed focused bridge run hit `listen EPERM`; the host focused rerun passed 73/73.
+- Host `pnpm test`: 17,007 tests; 16,993 passed, 13 failed, one skipped, zero cancellations.
+  This is not a zero-failure full gate. No new failure was identified after comparison:
+  - Clean base reproduced the Stage 0 read-only pnpm-store assertion, macOS Bash empty-array
+    protocol assertion, and all six `/var` screenshot-review safety failures (182/190 passed).
+  - Both small-gate assertions pass on clean base and fail with the same `subset` versus
+    `skip` mismatch after one inert untracked `src/main` file (11/13 passed). They assume
+    an empty checkout while calculating coverage from the live diff.
+  - Base reproduced the temporary-directory permission assertion (179/180 passed) and
+    Git sandbox/signing failure (6/7 passed).
+  - Apple build-output cleanup passed on clean base and on isolated current-tree retry
+    (21/21); its suite-load failure did not recur.
+
+The test and documentation changes do not modify product code. Logs are retained under
+`.tmp/isolated-gui-{check,units-host,base-tests,base-dirty,base-permissions,base-git,apple-output-retry}.log`.
+The original PR's clean-runner CI is linked above; this follow-up has not yet run PR CI.
+
+## Remaining limits
+
+- This is an experimental Linux GUI in a per-container Apple VM on a local Apple silicon Mac.
+  There is no host GUI, macOS guest or Docker fallback.
+- The macOS-only runtime journey needs on-device execution; Linux CI cannot cover it.
+- Reusing a trusted Linux app image with a fresh controller establishes that combination,
+  not an image rebuilt from the follow-up's current source.
+- Configuration checks and synthetic escape denials do not establish resistance to VM escapes.
+  Resource-exhaustion behavior and longer real coding sessions need further measurement.

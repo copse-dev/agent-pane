@@ -29,16 +29,31 @@ export interface AcpReauthOffer {
  */
 const ACCEPT = /^\s*(?:y|yes|ok|okay|sure|sign in\b.*|log ?in\b.*|run\b.*)\s*$/i
 
+/**
+ * Why the turn failed, in the offer's words. An `unverified` sign-in may only
+ * have hit a network failure, so its offer says so instead of claiming expiry.
+ */
+function offerCause(agentName: string, kind: AcpAuthFailureKind): string {
+  switch (kind) {
+    case 'expired':
+      return `${agentName}’s saved sign-in has expired, so this turn could not run.`
+    case 'unverified':
+      return (
+        `${agentName} couldn’t verify its saved sign-in, so this turn could not run. ` +
+        'Unless your network was down, the sign-in has most likely expired.'
+      )
+    case 'required':
+      return `${agentName} is not signed in, so this turn could not run.`
+  }
+}
+
 function offerQuestion(
   agentName: string,
   kind: AcpAuthFailureKind,
   command: string,
   hostId?: string,
 ): string {
-  const cause =
-    kind === 'expired'
-      ? `${agentName}’s saved sign-in has expired, so this turn could not run.`
-      : `${agentName} is not signed in, so this turn could not run.`
+  const cause = offerCause(agentName, kind)
   const open = hostId
     ? `${agentName} runs on the SSH host ${hostId}, ` +
       `so open a terminal connected to ${hostId} running \`${command}\` to sign in?`

@@ -37,6 +37,9 @@ function fakeWindow(): {
       calls.push('restore')
     },
     webContents: {
+      setBackgroundThrottling: (enabled) => {
+        calls.push(`throttling ${String(enabled)}`)
+      },
       loadURL: async (url: string) => {
         calls.push(`load ${url}`)
       },
@@ -73,4 +76,42 @@ test('a hidden-window launch reloads without showing', () => {
   reattachWindow(win, async () => undefined, { show: false })
   assert.deepEqual(calls, ['hide', 'load about:blank'])
   assert.equal(isWindowDetached(win), false)
+})
+
+test('Mobile Companion retains an idle or working window on every platform, but never traps Quit', () => {
+  for (const platform of ['darwin', 'linux', 'win32'] as const) {
+    for (const runningTurns of [0, 1]) {
+      assert.equal(
+        shouldDetachOnClose({
+          platform,
+          runningTurns,
+          quitting: false,
+          mobileCompanionEnabled: true,
+        }),
+        true,
+      )
+      assert.equal(
+        shouldDetachOnClose({
+          platform,
+          runningTurns,
+          quitting: true,
+          mobileCompanionEnabled: true,
+        }),
+        false,
+      )
+    }
+  }
+})
+
+test('mobile close retains the sole renderer and reopening does not reload or duplicate it', () => {
+  const { win, calls } = fakeWindow()
+  detachWindow(win, { keepRenderer: true })
+  detachWindow(win, { keepRenderer: true })
+  assert.equal(isWindowDetached(win), true)
+  assert.deepEqual(calls, ['hide', 'throttling false'])
+  reattachWindow(win, async () => {
+    throw new Error('Must not reload the mobile owner')
+  })
+  assert.equal(isWindowDetached(win), false)
+  assert.deepEqual(calls, ['hide', 'throttling false', 'throttling true', 'show', 'focus'])
 })

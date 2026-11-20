@@ -19,9 +19,10 @@
   gap: 0;
   align-content: start;
 }
+/* Every section opens with its own heading, so space separates them rather than
+   a rule under each one. */
 .thread-context-section {
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--border);
+  padding: 12px 16px;
 }
 .thread-context-thread-title {
   padding: 16px 16px 4px;
@@ -60,10 +61,8 @@
 .thread-context-group h6 {
   margin: 0 0 4px;
   color: var(--text-muted);
-  font-size: var(--font-size-2xs);
+  font-size: var(--font-size-xs);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 .thread-context-rows,
 .thread-context-group {
@@ -125,17 +124,17 @@ button.thread-context-row:disabled {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A row's state or kind — Granted, Active, Trusted, "1 session", PR — is a fact
+   about the row, not a control, so it reads as muted text. Only Revoke, Disable
+   and Manage app permissions beside it keep a frame, because they are buttons. */
 .thread-context-chip {
   flex: none;
   max-width: 45%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding: 0 6px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
   color: var(--text-muted);
-  font-size: var(--font-size-2xs);
+  font-size: var(--font-size-xs);
 }
 .thread-context-empty {
   margin: 0;
@@ -145,10 +144,8 @@ button.thread-context-row:disabled {
 .thread-context-permission-label {
   margin: 8px 0 3px;
   color: var(--text-muted);
-  font-size: var(--font-size-2xs);
+  font-size: var(--font-size-xs);
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 .thread-context-section-actions {
   display: flex;

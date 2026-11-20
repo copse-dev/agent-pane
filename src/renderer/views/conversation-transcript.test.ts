@@ -392,12 +392,15 @@ describe('assistant inline visualization references', () => {
     assert.ok(oldSurface)
     assert.equal(oldSurface.childElementCount, 0)
 
-    // Only a change to what the transcript draws from rebuilds it (see the
-    // threads_changed no-rerender tests): reload the messages as fresh objects,
-    // the way a transcript re-read from disk lands, then resync.
+    // Only a change to what a row draws from rebuilds it (see the keyed row
+    // reconcile in transcript-rows.ts): an identical reload keeps the row and
+    // its surface, so edit the message, which replaces its row, then resync.
     patchThreadAnywhere(store, threadId, (thread) => ({
       ...thread,
-      messages: thread.messages.map((message) => ({ ...message })),
+      messages: thread.messages.map((message) => ({
+        ...message,
+        content: 'Here is the revised chart.',
+      })),
     }))
     store.emit('threads_changed')
     assert.equal(oldSurface.isConnected, false)

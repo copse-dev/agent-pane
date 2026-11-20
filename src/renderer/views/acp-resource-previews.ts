@@ -177,7 +177,12 @@ export function hydrateAcpResourceImages(root: HTMLElement, api: ApiClient, stor
     card.dataset['imagePreviewRequested'] = 'true'
     const read = readResourceImage(api, owner, workspaceRoot, messageIdOf(card), path)
     whenImageRead(read, (src) => {
-      if (!card.isConnected || !isCurrentOwner(store, owner, workspaceRoot)) return
+      if (!card.isConnected || !isCurrentOwner(store, owner, workspaceRoot)) {
+        // A row kept for a return to its thread is reattached as it is, so let
+        // the next pass ask again; the cached read then applies at once.
+        delete card.dataset['imagePreviewRequested']
+        return
+      }
       showCardImage(card, src, read)
     })
   }

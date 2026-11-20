@@ -155,7 +155,6 @@ describe('approval dialog thread scoping', () => {
 
     // User switches to the waiting thread.
     store.setState({ activeThreadId: 'other' })
-    store.emit('threads_changed')
 
     assert.equal(spy.showCalls, 1)
     assert.equal(dialog.open, true)
@@ -190,7 +189,6 @@ describe('approval dialog thread scoping', () => {
     // Switching thread — or project, which swaps activeThreadId the same way —
     // must not leave this prompt hanging over a thread that never asked it.
     store.setState({ activeThreadId: 'other' })
-    store.emit('threads_changed')
 
     assert.equal(dialog.open, false)
     assert.deepEqual(responses, [])
@@ -200,11 +198,9 @@ describe('approval dialog thread scoping', () => {
   it('brings a withdrawn prompt back when its thread is focused again', () => {
     emit({ id: 'a', threadId: 'focused' })
     store.setState({ activeThreadId: 'other' })
-    store.emit('threads_changed')
     assert.equal(dialog.open, false)
 
     store.setState({ activeThreadId: 'focused' })
-    store.emit('threads_changed')
 
     assert.equal(dialog.open, true)
     assert.equal(spy.showCalls, 2)
@@ -221,7 +217,6 @@ describe('approval dialog thread scoping', () => {
     assert.equal(dialog.open, true)
 
     store.setState({ activeThreadId: 'other' })
-    store.emit('threads_changed')
 
     assert.equal(dialog.open, true)
     dialog.querySelector<HTMLButtonElement>('.approval-approve')?.click()
@@ -244,7 +239,6 @@ describe('approval dialog thread scoping', () => {
     assert.equal(dialog.querySelector('.approval-details-toggle'), null)
 
     store.setState({ activeThreadId: 'other' })
-    store.emit('threads_changed')
 
     assert.equal(dialog.open, true)
     assert.equal(dialog.querySelector<HTMLElement>('.approval-body')?.hidden, true)
@@ -346,7 +340,6 @@ describe('approval dialog thread scoping', () => {
       assert.equal(isThreadAwaitingAttention('side'), false)
 
       store.setState({ activeThreadId: 'focused' })
-      store.emit('threads_changed')
       assert.equal(dialog.open, true)
       assert.equal(isThreadAwaitingAttention('focused'), false)
       dialog.querySelector<HTMLButtonElement>('.approval-approve')?.click()
@@ -413,7 +406,6 @@ describe('approval dialog thread scoping', () => {
       assert.equal(isThreadAwaitingAttention('focused'), false)
 
       store.setState({ activeThreadId: 'focused' })
-      store.emit('threads_changed')
       assert.equal(dialog.open, true)
       assert.equal(isThreadAwaitingAttention('proposed'), false)
     })
@@ -434,7 +426,6 @@ describe('approval dialog thread scoping', () => {
       assert.equal(dialog.open, true)
 
       store.setState({ activeThreadId: 'other' })
-      store.emit('threads_changed')
 
       assert.equal(dialog.open, false)
       assert.deepEqual(responses, [])

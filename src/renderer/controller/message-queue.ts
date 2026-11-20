@@ -22,6 +22,7 @@ import { canContinue, DEFAULT_CONTINUATION_BUDGET } from '@copse/agent/hooks/con
 import { ensureThreadMessages } from './thread-hydration.ts'
 import { mark as perfMark } from '../perf.ts'
 import { isAgentTurnBusyError } from '@shared/agent-turn-busy.ts'
+import { isSubthreadPromptHeldError } from '@shared/thread-prompt.ts'
 import { markSendNowAbort } from './send-now-aborts.ts'
 import { afterThreadWrites } from './persistence.ts'
 
@@ -196,7 +197,10 @@ export function refreshAgentRunPayload(
   }
 }
 
-type AgentRunApi = { agent: Pick<ApiClient['agent'], 'run'> }
+type AgentRunApi = {
+  agent: Pick<ApiClient['agent'], 'run'>
+  threadPrompts?: Pick<ApiClient['threadPrompts'], 'canDispatch'>
+}
 
 // A queued dispatch stays pending until main either rejects it as busy or the
 // accepted turn finishes. `done` can cross the IPC boundary before the invoke
@@ -217,7 +221,7 @@ function finishPendingDispatch(store: AppStore, threadId: string): void {
   else byThread?.set(threadId, count - 1)
 }
 
-function hasPendingDispatch(store: AppStore, threadId: string): boolean {
+export function hasPendingDispatch(store: AppStore, threadId: string): boolean {
   return (pendingDispatches.get(store)?.get(threadId) ?? 0) > 0
 }
 
@@ -252,9 +256,28 @@ export function dispatchAgentRun(
   perfMark('ttft:renderer-dispatch')
   if (queued) beginPendingDispatch(store, threadId)
   const runPayload = JSON.stringify(refreshAgentRunPayload(store, threadId, payload, queued?.model))
-  const run = afterThreadWrites(projectId, threadId, () =>
-    api.agent.run(projectId, threadId, runPayload),
-  )
+  const run = afterThreadWrites(projectId, threadId, async () => {
+    const parentThreadId = queued ? subthreadParentOf(queued) : undefined
+    if (!queued || parentThreadId === undefined) {
+      await api.agent.run(projectId, threadId, runPayload)
+      return
+    }
+    // The pre-check holds an already-revoked prompt without a round trip to the
+    // dispatcher. Main still decides: a revoke can land between the two invokes,
+    // so `agent.run` rechecks the parent's authority as it dispatches.
+    const authorized = await api.threadPrompts
+      ?.canDispatch(projectId, parentThreadId, threadId)
+      .catch(() => false)
+    if (authorized) {
+      try {
+        await api.agent.run(projectId, threadId, runPayload, { parentThreadId })
+        return
+      } catch (err) {
+        if (!isSubthreadPromptHeldError(err)) throw err
+      }
+    }
+    holdRevokedSubthreadPrompt(store, threadId, queued)
+  })
   if (!queued) {
     void run
     return
@@ -272,6 +295,38 @@ export function dispatchAgentRun(
         drainMessageQueue(store, api, threadId)
       }
     })
+}
+
+const SUBTHREAD_OPERATION_PREFIX = 'subthread:'
+
+/** The parent whose delegated prompt this is, when it came from the `subthreads` tool. */
+function subthreadParentOf(item: QueuedUserMessage): string | undefined {
+  const operationId = item.origin?.kind === 'machine' ? item.origin.operationId : ''
+  return operationId.startsWith(SUBTHREAD_OPERATION_PREFIX)
+    ? operationId.slice(SUBTHREAD_OPERATION_PREFIX.length)
+    : undefined
+}
+
+/**
+ * Put a delegated prompt whose parent lost orchestration back at the queue
+ * front, held: it never auto-drains, and the budget unit its drain charged is
+ * returned because no turn ran.
+ */
+function holdRevokedSubthreadPrompt(
+  store: AppStore,
+  threadId: string,
+  item: QueuedUserMessage,
+): void {
+  patchThreadAnywhere(store, threadId, (thread) => ({
+    ...thread,
+    status: 'idle',
+    continuationUsed: Math.max(0, (thread.continuationUsed ?? 0) - 1),
+    pendingMessages: [{ ...item, autoDispatch: false }, ...(thread.pendingMessages ?? [])],
+    updatedAt: Date.now(),
+  }))
+  syncAgentActivity(store, threadId, false)
+  store.emit('message_queued', threadId, item.messageId)
+  store.emit('threads_changed')
 }
 
 function requeueBusyMessage(
@@ -366,9 +421,18 @@ export function drainMessageQueue(store: AppStore, api: AgentRunApi, threadId: s
   let used = thread.continuationUsed ?? 0
   let next: QueuedUserMessage | undefined
   const heldByBudget: string[] = []
+  const heldByEpoch: string[] = []
   for (const item of pending) {
     if (isHeldMessage(item)) continue
     if (isMachineContinuation(item)) {
+      // The item may have been current when it arrived, then waited behind a
+      // human prompt. Recheck at dispatch so old work cannot enter the new task.
+      // Hook writers always supply an epoch. Peer/subthread prompts do not;
+      // keep their separate authorization checks in dispatchAgentRun unchanged.
+      if (item.epoch !== undefined && isStaleEpoch(thread, item.epoch)) {
+        heldByEpoch.push(item.messageId)
+        continue
+      }
       if (!canContinue(used)) {
         heldByBudget.push(item.messageId)
         continue
@@ -381,16 +445,20 @@ export function drainMessageQueue(store: AppStore, api: AgentRunApi, threadId: s
     break
   }
 
-  if (!next && heldByBudget.length === 0) return
+  if (!next && heldByBudget.length === 0 && heldByEpoch.length === 0) return
+
+  // Queuing a human prompt must not invalidate the task still running. Its
+  // own task starts only when the queue selects it for dispatch.
+  if (next && !isMachineContinuation(next)) startHumanTurnTree(store, threadId)
 
   const rest = pending.filter((item) => item !== next)
-  const budgetHeld = new Set(heldByBudget)
+  const held = new Set([...heldByBudget, ...heldByEpoch])
   patchThreadAnywhere(store, threadId, (t) => {
     const { pendingMessages: _removed, ...restThread } = t
     const messages = movePendingUserMessagesToEnd(t.messages, pending)
-    // Flip over-budget machine items to held so the pinned panel offers Release.
+    // Stale and over-budget work requires an explicit human Release.
     const nextPending = rest.map((item) =>
-      budgetHeld.has(item.messageId) ? { ...item, autoDispatch: false as const } : item,
+      held.has(item.messageId) ? { ...item, autoDispatch: false as const } : item,
     )
     const base =
       nextPending.length > 0
@@ -585,6 +653,22 @@ export function sendQueuedMessageNow(
   threadId: string,
   messageId: string,
 ): void {
+  const item = getThreadById(store, threadId)?.pendingMessages?.find(
+    (pending) => pending.messageId === messageId,
+  )
+  if (!item) return
+  // A human selecting a machine-authored message authorizes a new task, just
+  // like Release. Automatic hook send-now uses the existing task below.
+  if (isMachineContinuation(item)) releaseHeldMessage(store, api, threadId, messageId)
+  else prioritizeQueuedMessage(store, api, threadId, messageId)
+}
+
+function prioritizeQueuedMessage(
+  store: AppStore,
+  api: ApiClient,
+  threadId: string,
+  messageId: string,
+): void {
   const thread = store.getState().threads.find((t) => t.id === threadId)
   const pending = thread?.pendingMessages ?? []
   const target = pending.find((p) => p.messageId === messageId)
@@ -666,7 +750,7 @@ export function enqueueHookMessage(
   enqueueUserMessage(store, threadId, item)
 
   if (stale) return // held: no send-now, no abort, no auto-drain — waits for a human.
-  if (input.sendNow) sendQueuedMessageNow(store, api, threadId, messageId)
+  if (input.sendNow) prioritizeQueuedMessage(store, api, threadId, messageId)
   else drainMessageQueue(store, api, threadId)
 }
 
@@ -700,12 +784,12 @@ export function releaseHeldMessage(
         if (p.messageId !== messageId) return p
         // Clear the hold so the item can dispatch (and auto-drain if left queued).
         const { autoDispatch: _released, ...rest } = p
-        return rest
+        return { ...rest, epoch }
       }),
       updatedAt: Date.now(),
     }
   })
   store.setState({ threads })
   store.emit('threads_changed')
-  sendQueuedMessageNow(store, api, threadId, messageId)
+  prioritizeQueuedMessage(store, api, threadId, messageId)
 }

@@ -61,7 +61,6 @@ jobs:
         with:
           # Dispatch accepts a tag *name*, never an arbitrary branch/ref.
           ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
-          fetch-depth: 0
       # The validation below runs `.mts` scripts, which need the type stripping
       # that .nvmrc's Node has and the runner image's default Node may not.
       - uses: actions/setup-node@v7
@@ -101,8 +100,10 @@ jobs:
           # forward, so reachability from it is the property worth demanding.
           # Use an explicit refspec: `git fetch origin release` alone does not
           # reliably write refs/remotes/origin/release when checkout configured
-          # the remote for a tag.
-          git fetch --no-tags origin +refs/heads/release:refs/remotes/origin/release
+          # the remote for a tag. The checkout is shallow (just the tag), so
+          # `--unshallow` brings `release`'s complete history for the ancestry
+          # walk — not `fetch-depth: 0`'s every branch and tag.
+          git fetch --no-tags --unshallow origin +refs/heads/release:refs/remotes/origin/release
           if ! git merge-base --is-ancestor "$release_sha" origin/release; then
             echo "Release tag commit is not reachable from protected branch origin/release"
             exit 1

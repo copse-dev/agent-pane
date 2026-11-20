@@ -21,6 +21,7 @@ import {
   getPendingAfterContent,
   getStagedDiffEntry,
   listWorktreeChangesSince,
+  parseDiffQueueOwner,
   runWithStagedDiffResolver,
   setStagedDiffResolver,
   stageDiff,
@@ -1275,6 +1276,23 @@ describe('staged diffs are keyed by file, not by spelling', () => {
     await stageDiff(join(tempRoot, '..', 'elsewhere', 'a.txt'), 'orig\n', 'v2\n', 'plaintext')
     assert.equal(getDiffQueueForTest().length, 2)
   })
+
+  ownedIt("keeps the root's own parent absolute instead of keying it as `..`", async () => {
+    // `relative(root, parent)` is exactly `..`, which a `../` prefix test let
+    // through: the parent became the workspace-relative key `..`.
+    const parent = join(tempRoot, '..')
+    await stageDiff(parent, 'orig\n', 'v1\n', 'plaintext')
+    assert.equal(at(getDiffQueueForTest(), 0).path, parent)
+  })
+
+  ownedIt('adopts an absolute path under a child whose name starts with two dots', async () => {
+    await stageDiff('..cache/a.txt', 'orig\n', 'v1\n', 'plaintext')
+    await stageDiff(join(tempRoot, '..cache', 'a.txt'), 'orig\n', 'v2\n', 'plaintext')
+    assert.deepEqual(
+      getDiffQueueForTest().map((e) => e.path),
+      ['..cache/a.txt'],
+    )
+  })
 })
 
 describe('approveAllStagedDiffs', () => {
@@ -1523,5 +1541,28 @@ describe('index refresh after an applied edit', () => {
     // that has to know about the file the agent just wrote. Refreshing the
     // project tree instead re-listed a checkout the edit never touched.
     assert.ok(getIndex(worktreeRoot)?.paths.includes('created-in-worktree.ts'))
+  })
+})
+
+describe('parseDiffQueueOwner', () => {
+  it("accepts each window's own project and refuses the other window's", () => {
+    // Two windows show two projects at once; each may manage only its own
+    // diffs, whatever the process-global active project is (#3958).
+    assert.deepEqual(parseDiffQueueOwner('project-a', 'project-a', 'thread-a'), {
+      projectId: 'project-a',
+      threadId: 'thread-a',
+    })
+    assert.deepEqual(parseDiffQueueOwner('project-b', 'project-b', 'thread-b'), {
+      projectId: 'project-b',
+      threadId: 'thread-b',
+    })
+    assert.throws(
+      () => parseDiffQueueOwner('project-a', 'project-b', 'thread-b'),
+      /inactive project "project-b"/,
+    )
+    assert.throws(
+      () => parseDiffQueueOwner(null, 'project-a', 'thread-a'),
+      /inactive project "project-a"/,
+    )
   })
 })

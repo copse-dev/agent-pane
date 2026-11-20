@@ -154,7 +154,6 @@ describe('automation scheduler on the real supervisor', () => {
       releasePreviousRun: () => Promise.resolve({ released: true }),
       supervisor: () => supervisor,
       recoveryDelayMs: 0,
-      getActiveProjectId: () => 'project-a',
     })
     stoppers.push(() => {
       service.stop()
@@ -174,6 +173,7 @@ describe('automation scheduler on the real supervisor', () => {
     service.start(
       () => {},
       async () => {},
+      () => 'project-a',
     )
     await service.sync()
     const [original] = liveSchedulerTasks(supervisor)
@@ -214,6 +214,7 @@ describe('automation scheduler on the real supervisor', () => {
       first.service.start(
         () => {},
         async () => {},
+        () => 'project-a',
       )
       await first.service.sync()
       await minute()
@@ -228,6 +229,7 @@ describe('automation scheduler on the real supervisor', () => {
       second.service.start(
         () => {},
         async () => {},
+        () => 'project-a',
       )
       await second.service.sync()
 
@@ -280,6 +282,7 @@ describe('automation scheduler on the real supervisor', () => {
       service.start(
         () => {},
         async () => {},
+        () => 'project-a',
       )
       await service.sync()
       assert.equal(supervisor.get(task.projectId, task.taskId)?.state, 'cancelled')

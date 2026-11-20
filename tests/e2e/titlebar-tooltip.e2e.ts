@@ -1,7 +1,10 @@
-import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { E2E_SCREENSHOT_DIR, prepareE2eScreenshot, withCaptureFrame } from './helpers/screenshot.ts'
+import {
+  prepareE2eScreenshot,
+  savePreparedAppScreenshot,
+  withCaptureFrame,
+} from './helpers/screenshot.ts'
 
 /**
  * The titlebar panel toggles are icon-only in narrow chrome, so the hover
@@ -45,7 +48,7 @@ describe('titlebar tooltips', () => {
     await withCaptureFrame(async () => {
       await expect(tip).toBeDisplayed()
       await expect(tip).toHaveText('Open terminal')
-      await $('#app').saveScreenshot(join(E2E_SCREENSHOT_DIR, 'titlebar-tooltip.png'))
+      await savePreparedAppScreenshot('titlebar-tooltip.png')
     })
 
     // The titlebar's own drag region is always present, whatever the layout.

@@ -1066,6 +1066,39 @@ See \`references/patterns.md\` for detail, and references/exists.md for backgrou
     }
   })
 
+  it('reads a bundle file under a directory whose name starts with two dots', async () => {
+    await refreshSkillsRegistry()
+    const demo = getSkill('demo-skill')
+    assert.ok(demo)
+    await mkdir(join(demo.skillRoot, '..notes'))
+    await writeFile(join(demo.skillRoot, '..notes', 'a.md'), 'inside', 'utf8')
+    assert.equal((await readSkill('demo-skill', '..notes/a.md')).body, 'inside')
+    await assert.rejects(() => readSkill('demo-skill', '../SKILL.md'), /outside skill root/)
+  })
+
+  it('flags a missing reference that lands under a two-dot directory name', async () => {
+    const skillRoot = join(tempRoot, '.cursor', 'skills', 'dotted-refs')
+    await mkdir(skillRoot, { recursive: true })
+    await writeFile(
+      join(skillRoot, 'SKILL.md'),
+      `---
+name: dotted-refs
+description: References a missing file inside the bundle
+---
+
+See references/../..notes/gone.md for detail.`,
+      'utf-8',
+    )
+    const originalWarn = console.warn
+    console.warn = (): void => {}
+    try {
+      await refreshSkillsRegistry()
+    } finally {
+      console.warn = originalWarn
+    }
+    assert.deepEqual(getSkill('dotted-refs')?.missingReferences, ['references/../..notes/gone.md'])
+  })
+
   it('rejects skill files over the size cap', async () => {
     await refreshSkillsRegistry()
     const skillRoot = join(tempRoot, '.cursor', 'skills', 'demo-skill')

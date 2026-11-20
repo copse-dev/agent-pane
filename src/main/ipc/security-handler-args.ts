@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { classifierProfileSchema } from '@copse/llm/classifiers/schemas.ts'
 import { TOOL_PERMISSION_POLICIES } from '@shared/types/tool-permissions.ts'
-import { keyProviderSchema } from './ipc-guards.ts'
+import { keyProviderSchema, zNonEmptyString } from './ipc-guards.ts'
 
 // Argument schemas for the environment-setup, tool-permissions and classifier
 // channels. They live apart from the handlers, which import Electron, so the
@@ -29,3 +29,6 @@ export const classifierSaveArgs = z.tuple([classifierProfileSchema])
 export const classifierIdArgs = z.tuple([zClassifierId])
 /** `classifiers:set-screening` and `classifiers:set-background (id | null)`. */
 export const classifierIdOrNullArgs = z.tuple([zClassifierId.nullable()])
+
+/** A thread id as the `security:*guarded-yolo` and `container:get-run`/`stop-run` channels accept it. */
+export const zGuardedYoloThreadId = zNonEmptyString.max(256)
