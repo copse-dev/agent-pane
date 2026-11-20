@@ -234,6 +234,9 @@ describe('acpAgentSandboxOverlay', () => {
       assert.deepEqual(grants(join(bin, 'dir-link')), [])
       assert.deepEqual(grants(join(bin, 'two-hop')), [])
       assert.deepEqual(grants(join(bin, 'dangling')), [])
+      // A path the canonicalizer refuses (through a dangling link) loses its
+      // grant; the rest of the overlay is still built.
+      assert.deepEqual(grants(join(bin, 'dangling', 'agent')), [])
       // A link the repository or the agent can write never picks a grant.
       assert.deepEqual(grants(join(repo, 'bin', 'agent')), [])
       assert.deepEqual(grants(join(share, 'linked')), [])

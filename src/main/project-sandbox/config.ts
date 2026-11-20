@@ -1165,7 +1165,16 @@ function acpAgentSandboxOverlayWithCheckoutWrites(
   // Exact files, never their directories, and only absolute paths.
   const executables = (opts?.executables ?? [])
     .filter((path) => isAbsolute(path))
-    .flatMap((path) => executableReadPaths(path, writableRoots))
+    .flatMap((path) => {
+      try {
+        return executableReadPaths(path, writableRoots)
+      } catch {
+        // A path the read-target canonicalizer refuses (unresolvable, or a
+        // dangling link) loses its grant rather than aborting the sandbox:
+        // the spawn then fails naming the command, as with no grant.
+        return []
+      }
+    })
   const homeReadPaths = [...keychainReadPaths, ...configuredHomePaths, ...executables]
   const localDomains = opts?.allowLocalhost ? ['localhost', '127.0.0.1', '::1'] : []
   return {
