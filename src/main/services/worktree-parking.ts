@@ -50,7 +50,9 @@ function parkingDeferred(meta: Pick<Thread, 'status' | 'draftPrompt' | 'automati
 
 /** Remember a successful `gh pr create` result until its agent turn completes. */
 export function recordCreatedPullRequest(command: string, output: string): void {
-  if (!/(?:^|[;&|]\s*)gh\s+pr\s+create(?:\s|$)/i.test(command)) return
+  // A newline separates commands as `;` does, so `git push` on one line and
+  // `gh pr create` on the next is still a created pull request.
+  if (!/(?:^|[;&|\n])\s*gh\s+pr\s+create(?:\s|$)/i.test(command)) return
   const context = getThreadExecutionContext()
   if (!context || context.checkoutMode !== 'worktree') return
   const ref = extractGithubPrUrls(output)[0]
