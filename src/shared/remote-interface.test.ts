@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import {
   remoteReadSchema,
   remoteReadAllowed,
+  remoteScopeFromQuery,
+  remoteStatePath,
   remoteViewSchema,
   REMOTE_READ_CHANNELS,
 } from './remote-interface.ts'
@@ -76,5 +78,29 @@ describe('remote interface boundary', () => {
     assert.equal(Object.hasOwn(view.threads[0] ?? {}, 'gitBranch'), false)
     assert.equal(Object.hasOwn(view.threads[0] ?? {}, 'worktree'), false)
     assert.equal(Object.hasOwn(view.threads[0] ?? {}, 'executionMode'), false)
+  })
+})
+
+describe('remote state scope', () => {
+  const scopeOf = (path: string): ReturnType<typeof remoteScopeFromQuery> =>
+    remoteScopeFromQuery(new URL(path, 'https://copse.invalid').searchParams)
+
+  it('round-trips a scope through the request path', () => {
+    assert.equal(remoteStatePath(), '/api/remote/state')
+    assert.equal(scopeOf(remoteStatePath()), undefined)
+    for (const scope of [{ projectId: 'proj-1' }, { projectId: 'proj-1', threadId: 'thread_2' }])
+      assert.deepEqual(scopeOf(remoteStatePath(scope)), scope)
+  })
+
+  it('refuses a malformed scope instead of widening it to everything', () => {
+    for (const query of [
+      '?thread=t',
+      '?project=',
+      '?project=../other',
+      '?project=p&thread=',
+      '?project=p&thread=a/b',
+      `?project=${'p'.repeat(129)}`,
+    ])
+      assert.equal(scopeOf(`/api/remote/state${query}`), null, query)
   })
 })
