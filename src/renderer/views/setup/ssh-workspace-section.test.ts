@@ -307,7 +307,8 @@ describe('createSshWorkspaceSection in the shared Machines list', () => {
 
     // Pairing a machine over SSH, for one, connects the host while Settings is open.
     setStates([{ hostId: 'dev', status: 'connected', label: 'Dev Server', target: 'dev.example' }])
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    // The fake API answers at once, so one macrotask yield lets the re-render finish.
+    await new Promise((resolve) => setTimeout(resolve, 0))
     assert.equal(status(), 'Connected')
   })
 
