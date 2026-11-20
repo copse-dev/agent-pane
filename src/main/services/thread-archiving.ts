@@ -37,7 +37,7 @@ export interface ThreadArchivingDependencies {
   removeWorktree: typeof archiveThreadWorktree
 }
 
-const defaultDependencies: ThreadArchivingDependencies = {
+export const defaultThreadArchivingDependencies: ThreadArchivingDependencies = {
   getMeta: getThreadMeta,
   updateMeta: updateMetaOrThrow,
   projectRoot: getProjectRoot,
@@ -75,7 +75,7 @@ export async function archiveStoredThread(
   confirmation: string | null,
   stopProcesses: boolean,
   runtime: ThreadArchivingRuntime,
-  dependencies: ThreadArchivingDependencies = defaultDependencies,
+  dependencies: ThreadArchivingDependencies = defaultThreadArchivingDependencies,
 ): Promise<ThreadArchiveResult> {
   const live = async (): Promise<ThreadLiveResources> => {
     // A terminal tab nobody ever typed into has nothing to lose; close it out

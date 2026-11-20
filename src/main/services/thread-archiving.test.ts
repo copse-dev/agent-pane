@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, it } from 'node:test'
 import type { Thread } from '@shared/types/thread.ts'
 import {
   archiveStoredThread,
+  defaultThreadArchivingDependencies,
   type ThreadArchivingDependencies,
   type ThreadArchivingRuntime,
 } from './thread-archiving.ts'
@@ -40,7 +41,6 @@ import {
   hasIsolatedDesktop,
   stopAllIsolatedDesktops,
 } from './isolated-desktop/desktop-service.ts'
-import { stopSupervisedBackgroundProcessesForThread } from './exec/supervised-background-process.ts'
 
 function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
@@ -447,9 +447,11 @@ describe('archiveStoredThread', () => {
     beforeEach(async () => {
       removed = 0
       deletion = undefined
-      dependencies.hasIsolatedDesktop = (projectId, threadId): boolean =>
-        hasIsolatedDesktop({ projectId, threadId })
-      dependencies.stopBackgroundProcesses = stopSupervisedBackgroundProcessesForThread
+      // The shipped checks and stop, so CI fails if archive stops seeing the guest.
+      const shipped = defaultThreadArchivingDependencies
+      dependencies.hasBackgroundProcesses = shipped.hasBackgroundProcesses
+      dependencies.hasIsolatedDesktop = shipped.hasIsolatedDesktop
+      dependencies.stopBackgroundProcesses = shipped.stopBackgroundProcesses
       await admitIsolatedDesktop(owner, guest, new AbortController().signal)
     })
 
