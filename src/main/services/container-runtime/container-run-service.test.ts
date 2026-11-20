@@ -396,9 +396,13 @@ describe('ContainerRunService', () => {
       budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
     })
     assert.ok(first.egressAllowlist.includes('*.anthropic.com:443'))
+    // The agent's shell children share its vendor tunnel, so GitHub reads
+    // beside it could leave the machine: an ACP run never gets them.
+    assert.ok(!first.egressAllowlist.includes(HOST_GITHUB_TARGET))
     await waitFor(service, THREAD, (p) => p.phase === 'finished')
     const request = seen[0]
     assert.ok(request)
+    assert.equal(request.github, undefined)
     assert.equal(request.model, 'acp:claude-acp#claude-opus-5')
     assert.equal(request.provider, undefined)
     assert.ok(request.acp)

@@ -22,6 +22,8 @@ import { parseEgressRule } from './egress-rules.ts'
 import {
   authorizationFor,
   GitHubCapability,
+  GITHUB_MAX_OPEN_REQUESTS,
+  GITHUB_REQUEST_READ_TIMEOUT_MS,
   GITHUB_UPSTREAM_IDLE_TIMEOUT_MS,
   requestFraming,
 } from './github-capability.ts'
@@ -177,6 +179,38 @@ async function serveDirect(
   if (newline === -1) return { status: null, text: '' }
   const parsed = safeJsonParse(all.slice(0, newline), decodeWithSchema(githubResponseHeadSchema))
   return { status: parsed?.status ?? null, text: all.slice(newline + 1) }
+}
+
+/**
+ * A link stream whose guest sends `bytes` and then stalls, never ending, and
+ * the status of whatever the handler has answered so far.
+ */
+function stalledStream(bytes: Buffer = Buffer.alloc(0)): {
+  stream: Duplex
+  status: () => number | null
+  message: () => string
+} {
+  const written: Buffer[] = []
+  const stream = new Duplex({
+    read(): void {},
+    write(chunk: Buffer, _encoding, callback): void {
+      written.push(chunk)
+      callback()
+    },
+  })
+  if (bytes.length > 0) stream.push(bytes)
+  const status = (): number | null => {
+    const all = Buffer.concat(written).toString('utf8')
+    const newline = all.indexOf('\n')
+    if (newline === -1) return null
+    const parsed = safeJsonParse(all.slice(0, newline), decodeWithSchema(githubResponseHeadSchema))
+    return parsed?.status ?? null
+  }
+  const message = (): string => {
+    const all = Buffer.concat(written).toString('utf8')
+    return messageOf(all.slice(all.indexOf('\n') + 1))
+  }
+  return { stream, status, message }
 }
 
 describe('GitHub read capability, guest bridge to fake GitHub', () => {
@@ -348,6 +382,21 @@ describe('GitHub read capability, guest bridge to fake GitHub', () => {
       assert.match(messageOf(refused.body), /^Copse refused this request: /)
     }
     assert.equal(fake.seen.length, 0)
+  })
+
+  it('forwards only the checked GraphQL request, as JSON the host frames itself', async () => {
+    // A repeated key is read last-wins by the check; only what it read goes
+    // out, under the host's own Content-Type and with no guest encoding.
+    const sent = '{"query":"query { a }","query":"query { viewer { login } }","extensions":{"x":1}}'
+    const ok = await gh('POST', '/graphql', 'api.github.com', sent, {
+      'Content-Type': 'text/plain',
+      'Content-Encoding': 'gzip',
+    })
+    assert.equal(ok.status, 200)
+    const seen = seenAt(0)
+    assert.equal(seen.body, JSON.stringify({ query: 'query { viewer { login } }' }))
+    assert.equal(seen.headers['content-type'], 'application/json')
+    assert.equal(seen.headers['content-encoding'], undefined)
   })
 
   it('refuses REST writes and non-GitHub hosts before forwarding', async () => {
@@ -589,6 +638,71 @@ describe('GitHub read capability, guest bridge to fake GitHub', () => {
     assert.match(reply, /^HTTP\/1\.1 405 /)
     assert.equal(fake.seen.length, 0)
   })
+})
+
+describe('GitHub read capability limits', () => {
+  const handler = (): GitHubCapability =>
+    new GitHubCapability({
+      token: (): Promise<string | null> => Promise.resolve(REAL_TOKEN),
+      placeholder: PLACEHOLDER,
+      upstream: (): ClientRequest => assert.fail('nothing may go upstream'),
+    })
+
+  it(
+    'refuses requests beyond the open limit, and times out a head that never comes',
+    { timeout: 10_000 },
+    async (t) => {
+      t.mock.timers.enable({ apis: ['setTimeout'] })
+      const capability = handler()
+      const stalled = Array.from({ length: GITHUB_MAX_OPEN_REQUESTS }, () => stalledStream())
+      const served = stalled.map(({ stream }) => capability.serve(stream))
+      const extra = stalledStream()
+      await capability.serve(extra.stream)
+      assert.equal(extra.status(), 429)
+      assert.ok(stalled.every(({ status }) => status() === null))
+      t.mock.timers.tick(GITHUB_REQUEST_READ_TIMEOUT_MS)
+      await Promise.all(served)
+      assert.ok(stalled.every(({ status }) => status() === 408))
+      assert.match(stalled[0]?.message() ?? '', /request head did not arrive in time/)
+      // Every slot is free again.
+      const next = stalledStream()
+      const nextServed = capability.serve(next.stream)
+      t.mock.timers.tick(GITHUB_REQUEST_READ_TIMEOUT_MS)
+      await nextServed
+      assert.equal(next.status(), 408)
+    },
+  )
+
+  it(
+    'answers a GraphQL body that stalls with 408, and one that is too large with 413',
+    { timeout: 10_000 },
+    async (t) => {
+      t.mock.timers.enable({ apis: ['setTimeout'] })
+      const capability = handler()
+      const head = (length: number): GitHubRequestHead => ({
+        method: 'POST',
+        target: '/graphql',
+        headers: [
+          ['Host', 'api.github.com'],
+          ['Content-Length', String(length)],
+        ],
+      })
+      const slow = stalledStream(
+        Buffer.concat([Buffer.from(encodeHead(head(100))), Buffer.from('{"query":')]),
+      )
+      const served = capability.serve(slow.stream)
+      // Let the head be read, so only the body is left waiting.
+      await new Promise<void>((resolveTick) => setImmediate(resolveTick))
+      t.mock.timers.tick(GITHUB_REQUEST_READ_TIMEOUT_MS)
+      await served
+      assert.equal(slow.status(), 408)
+      assert.match(slow.message(), /GraphQL request body did not arrive in time/)
+      const size = 2 * 1024 * 1024
+      const big = await serveDirect(capability, head(size), Buffer.alloc(size, 'x'))
+      assert.equal(big.status, 413)
+      assert.match(messageOf(big.text), /too large/)
+    },
+  )
 })
 
 describe('requestFraming', () => {

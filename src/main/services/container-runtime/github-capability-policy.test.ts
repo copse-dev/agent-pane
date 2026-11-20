@@ -66,13 +66,13 @@ describe('decideGitHubRequest: hosts', () => {
     assert.match(refused(decide('GET', '/user', null)), /Host/)
   })
 
-  it('forwards pass-through hosts at any depth without a credential, reads only', () => {
+  it('forwards the exact pass-through hosts without a credential, reads only', () => {
     for (const host of [
       'codeload.github.com',
       'raw.githubusercontent.com',
       'objects.githubusercontent.com',
+      'release-assets.githubusercontent.com',
       'results-receiver.actions.githubusercontent.com',
-      'a.b.c.githubusercontent.com',
     ]) {
       assert.deepEqual(decide('GET', '/x?sig=abc', host), {
         action: 'forward',
@@ -85,6 +85,10 @@ describe('decideGitHubRequest: hosts', () => {
       refused(decide('PUT', '/x', host))
     }
     for (const host of [
+      // An image proxy that fetches whatever URL it is given: a route out.
+      'camo.githubusercontent.com',
+      'a.b.c.githubusercontent.com',
+      'x.raw.githubusercontent.com',
       'githubusercontent.com',
       'evilgithubusercontent.com',
       'raw.githubusercontent.com.evil.example',

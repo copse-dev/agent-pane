@@ -22,8 +22,16 @@
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 
-/** The fields this check reads; any others (`variables`, `operationName`) pass through unread. */
-const graphqlRequestSchema = z.object({ query: z.string() })
+/**
+ * The fields a forwarded request keeps: `query` is checked, and `variables`
+ * and `operationName` can only parameterise or name that one query. Any other
+ * key (`extensions`, a persisted-query id) is dropped.
+ */
+const graphqlRequestSchema = z.object({
+  query: z.string(),
+  variables: z.unknown().optional(),
+  operationName: z.unknown().optional(),
+})
 
 export type GraphqlOperationKind = 'query' | 'mutation' | 'subscription'
 
@@ -244,16 +252,37 @@ export function graphqlQueryRefusal(source: string): string | null {
 }
 
 /**
+ * A GraphQL HTTP request body checked as a single read-only query, and the
+ * body to forward in its place: re-serialised from what was checked, so the
+ * server parses that query and nothing else. A duplicated key, form encoding
+ * or compression the check never saw cannot change what it reads. The input
+ * is the raw bytes the client sent.
+ */
+export function readOnlyGraphqlRequestBody(
+  body: string,
+): { ok: true; body: string } | { ok: false; reason: string } {
+  const parsed = safeJsonParse(body)
+  if (parsed === null) return { ok: false, reason: 'the GraphQL request body is not a JSON object' }
+  if (Array.isArray(parsed))
+    return { ok: false, reason: 'batched GraphQL requests are not allowed' }
+  const request = decodeWithSchema(graphqlRequestSchema)(parsed)
+  if (request === null || request.query.trim().length === 0) {
+    return {
+      ok: false,
+      reason: 'the GraphQL request has no query document (persisted queries are not allowed)',
+    }
+  }
+  const refusal = graphqlQueryRefusal(request.query)
+  if (refusal !== null) return { ok: false, reason: refusal }
+  const { query, variables, operationName } = request
+  return { ok: true, body: JSON.stringify({ query, variables, operationName }) }
+}
+
+/**
  * Why a GraphQL HTTP request body is not a single read-only query, or null
  * when it is one. The body is the raw bytes the client sent.
  */
 export function graphqlRequestBodyRefusal(body: string): string | null {
-  const parsed = safeJsonParse(body)
-  if (parsed === null) return 'the GraphQL request body is not a JSON object'
-  if (Array.isArray(parsed)) return 'batched GraphQL requests are not allowed'
-  const request = decodeWithSchema(graphqlRequestSchema)(parsed)
-  if (request === null || request.query.trim().length === 0) {
-    return 'the GraphQL request has no query document (persisted queries are not allowed)'
-  }
-  return graphqlQueryRefusal(request.query)
+  const checked = readOnlyGraphqlRequestBody(body)
+  return checked.ok ? null : checked.reason
 }

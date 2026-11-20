@@ -13,7 +13,7 @@ import { recordDecision } from '../security/decision-log-store.ts'
 import { resolveContainerProvider } from '../providers/container-provider.ts'
 import { DEPENDENCY_INSTALL_ORIGINS } from './guest-install.ts'
 import { HOST_GITHUB_TARGET } from './github-capability-wire.ts'
-import { resolveGitHubApiToken } from '../github/backend/github-token.ts'
+import { resolveGitHubComToken } from '../github/backend/github-token.ts'
 import {
   adoptCarryOut,
   assertThreadContainerEngine,
@@ -373,6 +373,7 @@ export class ContainerRunService {
         : null
     const model = request.model
     const installs = request.installDependencies === true
+    let githubReads: boolean
     let plan: Awaited<ReturnType<typeof resolveContainerProvider>>
     let credential: ContainerRunProgress['credential'] = 'none'
     let egressAllowlist: string[] = []
@@ -425,14 +426,17 @@ export class ContainerRunService {
               : 'none'
       // Only provider resolution and the explicit install choice admit origins.
       // The GitHub read capability is not an origin: it is the host's own
-      // handler, named in the list so the run's record shows it (A24). An
-      // installing run gets none: its install scripts are code the user did
-      // not write, reaching github.com through the install's own tunnel.
+      // handler, named in the list so the run's record shows it (A24). Only a
+      // host-inference run gets it, because only that run has no tunnel out.
+      // An installing run's scripts reach github.com through the install's own
+      // tunnel, and an ACP agent's or keyed provider's origins carry its shell
+      // children's traffic too: beside either, read results could leave.
+      githubReads = !installs && plan.mode === 'host-inference'
       egressAllowlist = [
         ...new Set([
           ...plan.egress,
           ...(installs ? DEPENDENCY_INSTALL_ORIGINS : []),
-          ...(installs ? [] : [HOST_GITHUB_TARGET]),
+          ...(githubReads ? [HOST_GITHUB_TARGET] : []),
         ]),
       ]
       Object.assign(progress, { credential, egressAllowlist })
@@ -493,7 +497,9 @@ export class ContainerRunService {
               : 'credential: none',
         installs
           ? 'GitHub: off, because the run installs dependencies'
-          : 'GitHub: read-only through your desktop GitHub sign-in; writes refused',
+          : githubReads
+            ? 'GitHub: read-only through your desktop GitHub sign-in; writes refused'
+            : 'GitHub: off, because the run reaches its model through its own network origins',
         `wall-clock ${String(Math.round(request.budgets.wallClockMs / 60_000))} min`,
         `tokens ${String(request.budgets.tokenCeiling)}`,
       ],
@@ -637,10 +643,11 @@ export class ContainerRunService {
         ...(request.installDependencies === true ? { installDependencies: true } : {}),
         egressAllowlist: progress.egressAllowlist,
         // The desktop's own GitHub sign-in, looked up on the host per request;
-        // it never enters the guest (A24). An installing run has none (see start).
-        ...(request.installDependencies === true
-          ? {}
-          : { github: { token: resolveGitHubApiToken } }),
+        // it never enters the guest (A24). Only a host-inference run that
+        // installs nothing has it: start names it in the allowlist then.
+        ...(progress.egressAllowlist.includes(HOST_GITHUB_TARGET)
+          ? { github: { token: resolveGitHubComToken } }
+          : {}),
         image: WORKER_IMAGE,
         engine,
       }

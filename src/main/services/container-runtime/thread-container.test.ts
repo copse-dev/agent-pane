@@ -1554,6 +1554,16 @@ describe('runThreadInContainer and the GitHub capability (A24)', () => {
       /GitHub reads are not offered to a run that installs dependencies/,
     )
   })
+
+  it('refuses the capability beside any origin the guest could tunnel through', async () => {
+    for (const origin of ['*.anthropic.com:443', 'api.openai.com:443']) {
+      await assert.rejects(
+        run([HOST_INFERENCE_TARGET, HOST_GITHUB_TARGET, origin], true),
+        /GitHub reads are offered only beside host inference/,
+        origin,
+      )
+    }
+  })
 })
 
 describe('runThreadInContainer and the host-local alias (A16)', () => {

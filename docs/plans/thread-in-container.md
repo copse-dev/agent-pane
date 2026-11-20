@@ -1212,9 +1212,12 @@ which never asks for it.
   `api.github.com` and `github.com` after lowercasing; a trailing dot, a non-default port,
   userinfo, an IP literal, an absolute-form URL that disagrees with `Host`, or any prefix or
   suffix is a different name and is refused. The git alias means `github.com` for git's fetch
-  paths only. `codeload.github.com` and `*.githubusercontent.com` at any depth (`gh run view
-  --log` is redirected to `results-receiver.actions.githubusercontent.com`) are forwarded
-  without a credential. Everything else is refused. Reads only: GET and HEAD, never anything
+  paths only. Exactly `codeload.github.com`, `results-receiver.actions.githubusercontent.com`
+  (`gh run view --log` is redirected there), `objects.githubusercontent.com`,
+  `release-assets.githubusercontent.com` and `raw.githubusercontent.com` are forwarded without
+  a credential (security review fix, November 20). Not `*.githubusercontent.com`:
+  `camo.githubusercontent.com` fetches any URL it is given, so a suffix would be a route out to
+  hosts the guest chooses. Everything else is refused. Reads only: GET and HEAD, never anything
   naming `git-receive-pack` (the `info/refs` probe included); `POST …/git-upload-pack` on
   github.com; `POST /graphql` on the API only when the body is one JSON object whose `query`
   is a single `query` operation (fragments allowed), checked by a lexer-level validator
@@ -1222,10 +1225,15 @@ which never asks for it.
   mutations, subscriptions, a second operation, batches and persisted ids. Every other method
   is a write and gets a 403 whose JSON `message` gh prints verbatim ("Copse refused this
   request: …"). A `GET /graphql` (a document in the query string) and any method-override
-  header (`X-HTTP-Method-Override` and kin) are refused too.
+  header (`X-HTTP-Method-Override` and kin) are refused too. A GraphQL body goes upstream
+  re-serialised from what was checked (`query`, `variables`, `operationName`, each once) as
+  `application/json`, never with the guest's own bytes, `Content-Type` or `Content-Encoding`.
 - **Credentials.** The guest's `Authorization` is always removed. The user's token comes from
-  the desktop's own GitHub sign-in (`resolveGitHubApiToken`: an env token, else `gh auth
-  token` on the host; with none, requests go unauthenticated). It is added only on a
+  the desktop's own github.com sign-in (`resolveGitHubComToken`: `GH_TOKEN` or `GITHUB_TOKEN`,
+  else `gh auth token --hostname github.com` on the host with no `GH_HOST`; with none,
+  requests go unauthenticated). A GitHub Enterprise credential (`GH_ENTERPRISE_TOKEN`,
+  `GITHUB_ENTERPRISE_TOKEN`, the `GH_HOST` account) is never used: it belongs to another
+  server. It is added only on a
   token-bearing host: `token …` for the API, Basic `x-access-token:…` for git smart HTTP on
   github.com (`token` gets a 401 there). Other github.com paths get no token. The host never
   follows a redirect; the guest's client does, and a redirect to another host is a new request
@@ -1239,7 +1247,9 @@ which never asks for it.
   chunked when no length was declared. Ambiguous framing (both headers, a repeated or
   malformed value, a coding other than `chunked`) is refused. Each request gets its own
   HTTPS connection, closed after the answer, so no two requests share a token-bearing
-  connection. An upstream connection idle for 120 s is abandoned with a 502.
+  connection. An upstream connection idle for 120 s is abandoned with a 502. A run may have
+  32 requests open at once (more get a 429), and a request head or GraphQL body that has not
+  arrived within 30 s gets a 408, so a guest cannot pin the desktop's memory.
 - **Responses.** Re-originated HTTPS from the host process, streamed back unbuffered. The
   upstream is asked for `identity` encoding, and a compressed answer is decoded anyway, so the
   body can be scanned: the token (and its Basic form) is redacted from headers and from the
@@ -1272,6 +1282,13 @@ which never asks for it.
   request that carries both, and the worker declines a spec that names both. Lifting this
   needs the install's origins revoked on the host and its processes gone before the bridge
   starts.
+- **Never beside another origin** (security review fix, November 20). An ACP agent's vendor
+  origins carry its shell children's traffic too (A7), and a keyed provider's endpoint accepts
+  uploads under whatever key the guest sends; the broker cannot see inside either tunnel. Text
+  the capability reads, such as an issue, could then steer a read out through it. So only a
+  host-inference run gets the capability (the arming record says "GitHub: off, because the run
+  reaches its model through its own network origins" otherwise), and the runner refuses a
+  request whose allowlist names GitHub reads beside any origin other than host inference.
 - **Image.** The worker image now carries Debian's `gh` package. A run without the capability
   leaves it with no socket and no network.
 

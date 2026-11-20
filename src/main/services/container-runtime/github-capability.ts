@@ -20,7 +20,7 @@ import type { Duplex, Readable } from 'node:stream'
 import { createBrotliDecompress, createGunzip, createInflate } from 'node:zlib'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import type { EgressLogEntry } from '@shared/types/container-run.ts'
-import { graphqlRequestBodyRefusal } from '../github/graphql-read-only.ts'
+import { readOnlyGraphqlRequestBody } from '../github/graphql-read-only.ts'
 import { decideGitHubRequest, type GitHubAuth } from './github-capability-policy.ts'
 import {
   encodeHead,
@@ -45,6 +45,30 @@ export interface GitHubCapabilityOptions {
 
 /** Largest GraphQL body checked; a read query is a few kilobytes. */
 const GRAPHQL_BODY_LIMIT = 1024 * 1024
+
+/**
+ * Requests one run may have open at once; more are refused with a 429. Each
+ * holds a buffered GraphQL body, an upstream connection and, with no cached
+ * sign-in, a token lookup, so a guest that opened thousands could exhaust the
+ * desktop's memory.
+ */
+export const GITHUB_MAX_OPEN_REQUESTS = 32
+
+/**
+ * How long a request's head, and a GraphQL body, may take to arrive from the
+ * guest before it is refused with a 408. Both are a few kilobytes on the
+ * local link; a request that stalls part way must not hold its buffer.
+ */
+export const GITHUB_REQUEST_READ_TIMEOUT_MS = 30_000
+
+/** Why reading a request from the guest stopped, and the status that says so. */
+interface ReadRefusal {
+  status: number
+  reason: string
+}
+
+/** Request headers a GraphQL body is not forwarded with: the host sets its own type. */
+const DROP_GRAPHQL_REQUEST_HEADERS = new Set(['content-type', 'content-encoding'])
 
 /**
  * How long the upstream connection may sit idle (nothing sent or received)
@@ -153,8 +177,10 @@ export function authorizationFor(auth: GitHubAuth, token: string | null): string
   return `token ${token}`
 }
 
-/** Read the head line; resolves with it and the body's first bytes, or a reason it failed. */
-function readHead(stream: Duplex): Promise<{ head: GitHubRequestHead; rest: Buffer } | string> {
+/** Read the head line; resolves with it and the body's first bytes, or why it failed. */
+function readHead(
+  stream: Duplex,
+): Promise<{ ok: true; head: GitHubRequestHead; rest: Buffer } | ({ ok: false } & ReadRefusal)> {
   return new Promise((resolveHead) => {
     const reader = new HeadReader()
     const onData = (chunk: Buffer): void => {
@@ -162,53 +188,86 @@ function readHead(stream: Duplex): Promise<{ head: GitHubRequestHead; rest: Buff
       try {
         found = reader.feed(chunk)
       } catch {
-        finish('the request head is too large')
+        finish({ ok: false, status: 400, reason: 'the request head is too large' })
         return
       }
       if (found === null) return
       const head = safeJsonParse(found.line, decodeWithSchema(githubRequestHeadSchema))
-      finish(head === null ? 'the request head is malformed' : { head, rest: found.rest })
+      finish(
+        head === null
+          ? { ok: false, status: 400, reason: 'the request head is malformed' }
+          : { ok: true, head, rest: found.rest },
+      )
     }
     const onEnd = (): void => {
-      finish('the request ended before its head')
+      finish({ ok: false, status: 400, reason: 'the request ended before its head' })
     }
-    const finish = (value: { head: GitHubRequestHead; rest: Buffer } | string): void => {
+    const timer = setTimeout(() => {
+      finish({ ok: false, status: 408, reason: 'the request head did not arrive in time' })
+    }, GITHUB_REQUEST_READ_TIMEOUT_MS)
+    const finish = (
+      value: { ok: true; head: GitHubRequestHead; rest: Buffer } | ({ ok: false } & ReadRefusal),
+    ): void => {
+      clearTimeout(timer)
       stream.off('data', onData)
       stream.off('end', onEnd)
       stream.off('error', onEnd)
+      stream.off('close', onEnd)
       stream.pause()
       resolveHead(value)
     }
     stream.on('data', onData)
     stream.on('end', onEnd)
     stream.on('error', onEnd)
+    stream.on('close', onEnd)
   })
 }
 
-/** The rest of the request body, up to `limit` bytes; null when it is longer. */
-function readBody(stream: Duplex, first: Buffer, limit: number): Promise<Buffer | null> {
+/**
+ * The rest of the request body, up to `limit` bytes, or why it was not read.
+ * Reading stops, without destroying the stream, at the limit or the deadline,
+ * so the refusal can still be written back.
+ */
+function readBody(stream: Duplex, first: Buffer, limit: number): Promise<Buffer | ReadRefusal> {
   return new Promise((resolveBody) => {
     const parts: Buffer[] = [first]
     let bytes = first.length
     if (bytes > limit) {
-      resolveBody(null)
+      resolveBody({ status: 413, reason: 'the GraphQL request body is too large' })
       return
     }
-    stream.on('data', (chunk: Buffer) => {
+    const onData = (chunk: Buffer): void => {
       bytes += chunk.length
       if (bytes > limit) {
-        resolveBody(null)
-        stream.destroy()
+        finish({ status: 413, reason: 'the GraphQL request body is too large' })
         return
       }
       parts.push(chunk)
-    })
-    stream.on('end', () => {
-      resolveBody(Buffer.concat(parts))
-    })
-    stream.on('error', () => {
-      resolveBody(null)
-    })
+    }
+    const onEnd = (): void => {
+      finish(Buffer.concat(parts))
+    }
+    const onError = (): void => {
+      finish({ status: 400, reason: 'the request body could not be read' })
+    }
+    const timer = setTimeout(() => {
+      finish({ status: 408, reason: 'the GraphQL request body did not arrive in time' })
+    }, GITHUB_REQUEST_READ_TIMEOUT_MS)
+    const finish = (value: Buffer | ReadRefusal): void => {
+      clearTimeout(timer)
+      stream.off('data', onData)
+      stream.off('end', onEnd)
+      stream.off('error', onError)
+      stream.off('close', onError)
+      stream.pause()
+      // Drop what was buffered: a refused body is never needed.
+      if (!Buffer.isBuffer(value)) parts.length = 0
+      resolveBody(value)
+    }
+    stream.on('data', onData)
+    stream.on('end', onEnd)
+    stream.on('error', onError)
+    stream.on('close', onError)
     stream.resume()
   })
 }
@@ -232,6 +291,8 @@ export class GitHubCapability {
   private readonly upstream: GitHubUpstream
   /** Every token this run used, so the post-run canary check can look for it. */
   private readonly used = new Set<string>()
+  /** Requests being served now; see {@link GITHUB_MAX_OPEN_REQUESTS}. */
+  private open = 0
 
   constructor(options: GitHubCapabilityOptions) {
     this.options = options
@@ -266,9 +327,27 @@ export class GitHubCapability {
 
   /** Serve one request on one link stream. */
   async serve(stream: Duplex): Promise<void> {
+    if (this.open >= GITHUB_MAX_OPEN_REQUESTS) {
+      this.respondRefusal(
+        stream,
+        429,
+        `more than ${String(GITHUB_MAX_OPEN_REQUESTS)} GitHub requests are open at once`,
+        'github',
+      )
+      return
+    }
+    this.open += 1
+    try {
+      await this.serveOpen(stream)
+    } finally {
+      this.open -= 1
+    }
+  }
+
+  private async serveOpen(stream: Duplex): Promise<void> {
     const read = await readHead(stream)
-    if (typeof read === 'string') {
-      this.respondRefusal(stream, 400, read, 'github')
+    if (!read.ok) {
+      this.respondRefusal(stream, read.status, read.reason, 'github')
       return
     }
     const { head, rest } = read
@@ -324,12 +403,12 @@ export class GitHubCapability {
 
     let body: Buffer | null = null
     if (decision.body === 'graphql') {
-      body = await readBody(stream, rest, GRAPHQL_BODY_LIMIT)
-      if (body === null) {
-        this.respondRefusal(stream, 413, 'the GraphQL request body is too large', label)
+      const received = await readBody(stream, rest, GRAPHQL_BODY_LIMIT)
+      if (!Buffer.isBuffer(received)) {
+        this.respondRefusal(stream, received.status, received.reason, label)
         return
       }
-      if (body.includes(placeholder)) {
+      if (received.includes(placeholder)) {
         this.respondRefusal(
           stream,
           403,
@@ -338,11 +417,13 @@ export class GitHubCapability {
         )
         return
       }
-      const refusal = graphqlRequestBodyRefusal(body.toString('utf8'))
-      if (refusal !== null) {
-        this.respondRefusal(stream, 403, refusal, label)
+      // Forward exactly what was checked, never the guest's own bytes.
+      const checked = readOnlyGraphqlRequestBody(received.toString('utf8'))
+      if (!checked.ok) {
+        this.respondRefusal(stream, 403, checked.reason, label)
         return
       }
+      body = Buffer.from(checked.body)
     }
 
     const hopByHop = connectionNamed(head.headers)
@@ -350,6 +431,7 @@ export class GitHubCapability {
     for (const [name, value] of head.headers) {
       const lower = name.toLowerCase()
       if (DROP_REQUEST_HEADERS.has(lower) || hopByHop.has(lower)) continue
+      if (body !== null && DROP_GRAPHQL_REQUEST_HEADERS.has(lower)) continue
       const existing = headers[lower]
       headers[lower] =
         existing === undefined
@@ -365,8 +447,10 @@ export class GitHubCapability {
     // validated length for a streamed body (enforced below), or chunked.
     // A bodyless decision sends neither header.
     let streamLength: number | null = null
-    if (body !== null) headers['content-length'] = String(body.length)
-    else if (decision.body === 'stream') {
+    if (body !== null) {
+      headers['content-type'] = 'application/json'
+      headers['content-length'] = String(body.length)
+    } else if (decision.body === 'stream') {
       if (framing.kind === 'length') {
         streamLength = framing.length
         headers['content-length'] = String(framing.length)

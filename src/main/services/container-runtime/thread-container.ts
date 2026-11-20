@@ -1944,6 +1944,17 @@ async function runThreadInContainerLeased(
   // could read every private repository the token sees and push it anywhere.
   if (request.github && request.installDependencies === true)
     throw new Error('GitHub reads are not offered to a run that installs dependencies')
+  // Any other origin is a tunnel the broker cannot see into: an ACP agent's
+  // vendor domains carry its shell children's traffic, and a keyed provider's
+  // endpoint takes uploads under a key the guest chooses. Beside one, read
+  // results could leave the machine, so only host inference may share a run.
+  if (
+    request.github &&
+    request.egressAllowlist.some(
+      (rule) => rule !== HOST_GITHUB_TARGET && rule !== HOST_INFERENCE_TARGET,
+    )
+  )
+    throw new Error('GitHub reads are offered only beside host inference, with no other origin')
   if (request.hostInference && request.apiKey)
     throw new Error('Host inference must not transfer a credential to the guest')
   const apiKey = request.apiKey !== undefined && request.apiKey.length > 0 ? request.apiKey : null

@@ -9,9 +9,13 @@
  *   fetch paths only). Exact match after lowercasing; a trailing dot, a port
  *   other than the default, userinfo, an IP literal, or any prefix or suffix
  *   is a different name and is refused.
- * - Pass-through, forwarded without any credential: `codeload.github.com` and
- *   `*.githubusercontent.com` at any depth (`gh run view --log` is redirected
- *   to `results-receiver.actions.githubusercontent.com`, archives to codeload).
+ * - Pass-through, forwarded without any credential, exactly: `codeload.github.com`
+ *   (archives), `results-receiver.actions.githubusercontent.com` (`gh run view
+ *   --log` is redirected there), `objects.githubusercontent.com` and
+ *   `release-assets.githubusercontent.com` (release downloads) and
+ *   `raw.githubusercontent.com`. Not every `*.githubusercontent.com` host:
+ *   `camo.githubusercontent.com` fetches any URL it is given, so the suffix
+ *   would be a route out to hosts the guest chooses.
  * - Everything else is refused.
  *
  * Reads only, in this version: GET and HEAD (never anything naming
@@ -32,9 +36,14 @@ import { GITHUB_GIT_ALIAS_HOST } from './github-capability-wire.ts'
 export const GITHUB_API_HOST = 'api.github.com'
 export const GITHUB_WEB_HOST = 'github.com'
 
-/** Hosts that never get a token, forwarded for reads only. */
-const PASS_THROUGH_EXACT = new Set(['codeload.github.com'])
-const PASS_THROUGH_SUFFIX = '.githubusercontent.com'
+/** Hosts that never get a token, forwarded for reads only. Exact names, never a suffix. */
+const PASS_THROUGH_HOSTS = new Set([
+  'codeload.github.com',
+  'results-receiver.actions.githubusercontent.com',
+  'objects.githubusercontent.com',
+  'release-assets.githubusercontent.com',
+  'raw.githubusercontent.com',
+])
 
 export type GitHubAuth = 'token' | 'basic' | 'none'
 
@@ -83,10 +92,7 @@ export function parseAuthority(value: string): { host: string; port: number | nu
 }
 
 function isPassThroughHost(host: string): boolean {
-  return (
-    PASS_THROUGH_EXACT.has(host) ||
-    (host.endsWith(PASS_THROUGH_SUFFIX) && host.length > PASS_THROUGH_SUFFIX.length)
-  )
+  return PASS_THROUGH_HOSTS.has(host)
 }
 
 /** Percent-decoded, or null when the encoding is malformed. */
