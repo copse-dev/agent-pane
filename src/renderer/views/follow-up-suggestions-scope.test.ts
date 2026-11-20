@@ -149,7 +149,22 @@ describe('follow-up suggestions thread scope', () => {
     assert.ok(mount.root.querySelector('.follow-up-bubble[data-id="run-tests"]'))
     store.emit('threads_changed')
     await flush()
-    assert.equal(fetches, 1, 'the settled result is cached for the exchange')
+    assert.equal(fetches, 1, 'the mid-turn set serves the rest of the turn')
+
+    // That set saw only the start of the answer. The turn's end asks once more,
+    // from the finished answer, and that set is kept for the exchange.
+    setThreadStatus(store, thread, 'idle')
+    await flush()
+    assert.equal(fetches, 2)
+    store.emit('threads_changed')
+    await flush()
+    assert.equal(fetches, 2, 'the end-of-turn fetch in flight serves later events')
+    settle([SUGGESTION])
+    await flush()
+    store.emit('threads_changed')
+    await flush()
+    assert.equal(fetches, 2)
+    assert.ok(mount.root.querySelector('.follow-up-bubble[data-id="run-tests"]'))
     mount.destroy()
   })
 })
