@@ -488,7 +488,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-ODHPILC4.js";
+} from "./chunk-QPTQMLKG.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -572,7 +572,7 @@ import {
   warningIcon,
   workspaceLinkTargetFromHref,
   zapIcon
-} from "./chunk-CK4AOU5N.js";
+} from "./chunk-UAI3U54O.js";
 import {
   clear,
   el,
@@ -15454,7 +15454,13 @@ function bindBrowserLinkClicks(root, store2, api2) {
   root.classList.add("browser-links-scope");
   const openPlainLink = (href) => {
     if (!store2.getState().openLinksInBuiltInBrowser && api2?.shell) {
-      void api2.shell.openExternal(href);
+      void api2.shell.openExternal(href).catch((error) => {
+        if (String(error).includes("Workspace previews open inside Copse")) {
+          openBrowserUrl(store2, href);
+          return;
+        }
+        showErrorToast("Could not open link", error);
+      });
       return;
     }
     openBrowserUrl(store2, href);
@@ -82748,7 +82754,15 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     openExternalItem.addEventListener("click", () => {
       setMenuOpen(false);
       const url = currentHttpUrl(tab);
-      if (url && api2?.shell) void api2.shell.openExternal(url).catch(() => void 0);
+      if (url && api2?.shell) {
+        void api2.shell.openExternal(url).catch((error) => {
+          if (String(error).includes("Workspace previews open inside Copse")) {
+            showToast("Workspace previews can only open inside Copse.");
+            return;
+          }
+          showErrorToast("Could not open in default browser", error);
+        });
+      }
     });
     inspectorItem.addEventListener("click", () => {
       setMenuOpen(false);
