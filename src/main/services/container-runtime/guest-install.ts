@@ -252,12 +252,23 @@ export interface DependencyInstallSummary {
  * asking to provision a cloud host. The agent is told what it has and what
  * it cannot do, once, in plain terms, before the task.
  */
-export function guestEnvironmentNote(install: DependencyInstallSummary | null): string {
+export function guestEnvironmentNote(
+  install: DependencyInstallSummary | null,
+  capabilities: { githubRead: boolean } = { githubRead: false },
+): string {
   const lines = [
-    'Environment: a disposable Linux container. Shell commands have no network access at all — ' +
-      'no package registry, no GitHub, no cloud: do not run installs, fetches, pushes or ' +
-      'provisioning; they fail and an install attempt damages node_modules. Commits you make ' +
-      'are carried back for review; nothing else leaves the container.',
+    capabilities.githubRead
+      ? 'Environment: a disposable Linux container. Shell commands have no network access ' +
+        'except read-only GitHub: `gh` (issues, pull requests, checks, run logs, `gh api` ' +
+        'reads) and `git fetch`/`git ls-remote` from github.com work through the desktop, ' +
+        'which holds the credential. Every GitHub write — push, comment, review, merge, ' +
+        'edit — is refused. There is no package registry and no cloud: do not run installs, ' +
+        'pushes or provisioning; they fail and an install attempt damages node_modules. ' +
+        'Commits you make are carried back for review; nothing else leaves the container.'
+      : 'Environment: a disposable Linux container. Shell commands have no network access at all — ' +
+        'no package registry, no GitHub, no cloud: do not run installs, fetches, pushes or ' +
+        'provisioning; they fail and an install attempt damages node_modules. Commits you make ' +
+        'are carried back for review; nothing else leaves the container.',
   ]
   if (install === null) {
     lines.push('Dependencies were not installed for this run.')

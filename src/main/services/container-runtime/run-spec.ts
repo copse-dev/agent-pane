@@ -45,6 +45,13 @@ export const threadContainerRunSpecSchema = z.object({
     .regex(/^[a-f0-9]{40}$/)
     .optional(),
   originUrl: z.string().nullable().default(null),
+  /**
+   * The GitHub read capability (decision A24): the guest configures `gh` and
+   * `git` to reach the host over the link. The placeholder is what `gh` is
+   * told its token is; the host never forwards it, and the real token never
+   * enters the guest.
+   */
+  github: z.object({ placeholder: z.string().regex(/^ghp_copse_[A-Za-z0-9_]+$/) }).optional(),
   maxSteps: z.number().int().positive().nullable(),
 })
 

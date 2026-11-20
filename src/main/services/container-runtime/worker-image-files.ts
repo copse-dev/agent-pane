@@ -74,10 +74,14 @@ ENV DEBIAN_FRONTEND=noninteractive \\
 # nothing inside it nests a second one, and the container keeps Docker's
 # default seccomp and AppArmor profiles instead of the unconfined ones a
 # nested bubblewrap needed.
+# gh is Debian's own package. It holds no credential: a run with GitHub reads
+# points it at the desktop's GitHub reads with a placeholder token (decision A24),
+# and a run without them leaves it with nothing to reach.
 RUN apt-get update \\
     && apt-get install -y --no-install-recommends \\
       ca-certificates \\
       git \\
+      gh \\
       ripgrep \\
       python3 \\
       make \\

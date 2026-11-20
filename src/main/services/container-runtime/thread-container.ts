@@ -62,6 +62,8 @@ import { decodeWorkerPhase, type WorkerPhase } from './worker-events.ts'
 import { EgressBroker, hostLocalAliasRefusal } from './egress-broker.ts'
 import { HostInference } from './host-inference.ts'
 import { HOST_INFERENCE_TARGET } from './host-inference-wire.ts'
+import { GitHubCapability } from './github-capability.ts'
+import { githubPlaceholderToken, HOST_GITHUB_TARGET } from './github-capability-wire.ts'
 import type { LLMProvider } from '@copse/llm/wire-types.ts'
 import {
   EGRESS_TOKEN_STDIN_FLAG,
@@ -133,6 +135,13 @@ export interface ThreadContainerRequest {
    * for an ACP run, which brings its own agent.
    */
   provider?: ProviderDescription
+  /**
+   * Read GitHub from the guest through the host (decision A24): `gh` and
+   * `git` in the guest reach a host-side capability over the stdio link, and
+   * `token` is the desktop's own GitHub sign-in, which never enters the guest.
+   * Requires {@link HOST_GITHUB_TARGET} in the egress allowlist.
+   */
+  github?: { token: () => Promise<string | null> }
   /** Host-pinned provider factory; OAuth tokens never enter the worker. */
   hostInference?: (maxOutputTokens: number, runId: string) => Promise<LLMProvider>
   /** What the guest trims history against; the desktop's own answer for the model. */
@@ -1826,6 +1835,7 @@ export const SECRET_CANARY_ENV = 'COPSE_SECRET_CANARY'
 export function secretCanaryCheck(
   runDir: string,
   canary: string,
+  hostSecrets: readonly string[] = [],
 ): { present: boolean; detail: string } {
   const surfaces = [
     'run.json',
@@ -1839,6 +1849,11 @@ export function secretCanaryCheck(
     const text = readFileSync(path, 'utf8')
     if (text.includes(canary)) {
       return { present: true, detail: `canary found in ${surface}` }
+    }
+    // A real credential the host held for the run (the GitHub token, A24):
+    // named by kind, never by value.
+    if (hostSecrets.some((secret) => secret.length > 0 && text.includes(secret))) {
+      return { present: true, detail: `a host-held GitHub token found in ${surface}` }
     }
     // result.json carries the guest's environment key names (worker-entry).
     if (surface === join('out', 'result.json') && text.includes(SECRET_CANARY_ENV)) {
@@ -1920,6 +1935,26 @@ async function runThreadInContainerLeased(
   // http, so the run must not exist unless the broker dials it on loopback.
   const aliasRefusal = hostLocalAliasRefusal(egress, request.egressResolve ?? {})
   if (aliasRefusal !== null) throw new Error(aliasRefusal)
+  if (request.github && !request.egressAllowlist.includes(HOST_GITHUB_TARGET))
+    throw new Error('GitHub reads are not in the egress allowlist')
+  if (!request.github && request.egressAllowlist.includes(HOST_GITHUB_TARGET))
+    throw new Error('The egress allowlist names GitHub reads, but the run has none')
+  // Install scripts are code the user did not write, and the install reaches
+  // github.com through its own tunnel: with the capability beside it, one
+  // could read every private repository the token sees and push it anywhere.
+  if (request.github && request.installDependencies === true)
+    throw new Error('GitHub reads are not offered to a run that installs dependencies')
+  // Any other origin is a tunnel the broker cannot see into: an ACP agent's
+  // vendor domains carry its shell children's traffic, and a keyed provider's
+  // endpoint takes uploads under a key the guest chooses. Beside one, read
+  // results could leave the machine, so only host inference may share a run.
+  if (
+    request.github &&
+    request.egressAllowlist.some(
+      (rule) => rule !== HOST_GITHUB_TARGET && rule !== HOST_INFERENCE_TARGET,
+    )
+  )
+    throw new Error('GitHub reads are offered only beside host inference, with no other origin')
   if (request.hostInference && request.apiKey)
     throw new Error('Host inference must not transfer a credential to the guest')
   const apiKey = request.apiKey !== undefined && request.apiKey.length > 0 ? request.apiKey : null
@@ -1979,6 +2014,13 @@ async function runThreadInContainerLeased(
 
   // The guest's thread is its own; the record names the desktop thread.
   const guestThreadId = `${runtimeId}-thread`
+  const githubPlaceholder = request.github
+    ? githubPlaceholderToken(
+        request.threadId ?? guestThreadId,
+        runtimeId,
+        randomBytes(12).toString('hex'),
+      )
+    : null
   const spec: ThreadContainerRunSpec = {
     runtimeId,
     threadId: guestThreadId,
@@ -1997,6 +2039,7 @@ async function runThreadInContainerLeased(
     carryInBase: carryIn.sha,
     ...(request.rebaseOnto ? { rebaseOnto: request.rebaseOnto } : {}),
     originUrl: sanitizedOriginUrl(await duringPreparation(() => originUrlOf(workspace))),
+    ...(githubPlaceholder !== null ? { github: { placeholder: githubPlaceholder } } : {}),
     maxSteps: request.maxSteps ?? null,
   }
   const installs = request.installDependencies === true
@@ -2041,6 +2084,19 @@ async function runThreadInContainerLeased(
         ...(options.signal ? { signal: options.signal } : {}),
       })
     : null
+  // Its log lands in the broker's record. The broker exists a line later,
+  // and nothing reaches the capability until the guest is attached to it.
+  const githubLogTo: { broker: EgressBroker | null } = { broker: null }
+  const github =
+    request.github && githubPlaceholder !== null
+      ? new GitHubCapability({
+          token: request.github.token,
+          placeholder: githubPlaceholder,
+          onLog: (entry): void => {
+            githubLogTo.broker?.record(entry)
+          },
+        })
+      : null
   const broker = await duringPreparation(
     () =>
       new EgressBroker({
@@ -2048,11 +2104,13 @@ async function runThreadInContainerLeased(
         ...(request.egressResolve ? { resolve: request.egressResolve } : {}),
         ...(apiKey !== null ? { runKey: apiKey } : {}),
         ...(inference ? { inference: (stream): Promise<void> => inference.serve(stream) } : {}),
+        ...(github ? { github: (stream): Promise<void> => github.serve(stream) } : {}),
       }),
   ).catch((error: unknown) => {
     inference?.stop()
     throw error
   })
+  githubLogTo.broker = broker
   const startedAt = Date.now()
   let containerExit: number | null
   let teardown: ThreadContainerRecord['teardown']
@@ -2178,7 +2236,8 @@ async function runThreadInContainerLeased(
           : 'none',
     teardown,
     cleanupError,
-    secretCanary: secretCanaryCheck(runDir, canary),
+    // The GitHub token the run used, if any, must be as absent as the canary.
+    secretCanary: secretCanaryCheck(runDir, canary, github?.tokensUsed() ?? []),
   }
   writeFileSync(join(runDir, 'record.json'), `${JSON.stringify(record, null, 2)}\n`)
   return record

@@ -145,6 +145,14 @@ describe('dependencyInstallEnv', () => {
 })
 
 describe('guestEnvironmentNote', () => {
+  it('names read-only GitHub as the one way out when the run has it (A24)', () => {
+    const note = guestEnvironmentNote(null, { githubRead: true })
+    assert.match(note, /no network access except read-only GitHub/)
+    assert.match(note, /GitHub write .* is refused/)
+    assert.match(note, /do not run installs/)
+    assert.match(guestEnvironmentNote(null), /no GitHub/)
+  })
+
   it('always says the shell is offline, then what the install left', () => {
     for (const note of [
       guestEnvironmentNote(null),

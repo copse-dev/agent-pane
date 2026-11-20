@@ -1,5 +1,6 @@
 import { homedir } from 'node:os'
-import { runGh } from '../gh-service.ts'
+import { runCommand } from '../../exec/command-runner.ts'
+import { ghEnv, runGh } from '../gh-service.ts'
 
 /**
  * Bearer-token env vars the GitHub REST/GraphQL backend can authenticate with,
@@ -32,9 +33,11 @@ export function hasGitHubApiToken(base: NodeJS.ProcessEnv = process.env): boolea
 }
 
 let cachedGhAuthToken: string | null = null
+let cachedGitHubComToken: string | null = null
 
 export function resetGitHubApiTokenCacheForTest(): void {
   cachedGhAuthToken = null
+  cachedGitHubComToken = null
 }
 
 /**
@@ -64,4 +67,38 @@ export async function resolveGitHubApiToken(): Promise<string | null> {
     // Leave the cache empty so the next call retries.
   }
   return cachedGhAuthToken
+}
+
+/** Env tokens gh uses for github.com itself; the enterprise ones authenticate `GH_HOST`. */
+const GITHUB_COM_TOKEN_ENV_KEYS = ['GH_TOKEN', 'GITHUB_TOKEN'] as const
+
+/**
+ * A token for github.com and api.github.com only, for a caller that always
+ * sends it there: the container runs' GitHub read capability (A24). Unlike
+ * {@link resolveGitHubApiToken} it never answers with a GitHub Enterprise
+ * credential. `GH_ENTERPRISE_TOKEN`, `GITHUB_ENTERPRISE_TOKEN` and the account
+ * `GH_HOST` names belong to another server, so `gh auth token` is asked for
+ * github.com by name, with no env token and no `GH_HOST`. With no github.com
+ * sign-in the answer is null. Only a successful lookup is cached.
+ */
+export async function resolveGitHubComToken(): Promise<string | null> {
+  for (const key of GITHUB_COM_TOKEN_ENV_KEYS) {
+    const value = process.env[key]?.trim()
+    if (value) return value
+  }
+  if (cachedGitHubComToken) return cachedGitHubComToken
+  try {
+    const { stdout, code } = await runCommand('gh', ['auth', 'token', '--hostname', 'github.com'], {
+      cwd: homedir(),
+      unsandboxed: true,
+      timeout_ms: 10_000,
+      // ghEnv blanks every token variable; blank GH_HOST too, so the merge
+      // over this process's environment cannot point gh at another server.
+      env: { ...ghEnv(process.env), GH_HOST: '' },
+    })
+    if (code === 0 && stdout.trim()) cachedGitHubComToken = stdout.trim()
+  } catch {
+    // Leave the cache empty so the next call retries.
+  }
+  return cachedGitHubComToken
 }

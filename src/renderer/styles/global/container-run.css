@@ -181,7 +181,8 @@
 
 /* The arming form's opt-ins: a box and its sentence on one line, the hint under. */
 .container-run-agent-login-label,
-.container-run-install-label {
+.container-run-install-label,
+.container-run-github-label {
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -190,13 +191,19 @@
   color: var(--text-primary);
 }
 .container-run-agent-login-label input,
-.container-run-install-label input {
+.container-run-install-label input,
+.container-run-github-label input {
   width: auto;
   margin: 0;
 }
 .container-run-agent-login-field,
-.container-run-install-field {
+.container-run-install-field,
+.container-run-github-field {
   margin-top: var(--spacing-md);
+}
+/* The arming record's own "GitHub: …" line, quoted as the run will record it. */
+.container-run-github-arming {
+  font-family: var(--font-mono);
 }
 
 /* A container run's card on the thread (A13): the follow-up under the record. */

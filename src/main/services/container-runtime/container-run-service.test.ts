@@ -17,6 +17,8 @@ import type { loadRunForContinuation } from './thread-container.ts'
 import type { OrphanSweep } from './thread-container.ts'
 import type { ThreadContainerRecord, ThreadContainerRequest } from './thread-container.ts'
 import type { ThreadContainerEngine } from './container-engine.ts'
+import { HOST_GITHUB_TARGET } from './github-capability-wire.ts'
+import { runWithDecisionRecorder, type RecordedDecision } from '../security/decision-log-store.ts'
 import { installInMemorySecretCipher } from '../storage/secret-cipher.test-support.ts'
 
 installInMemorySecretCipher()
@@ -214,6 +216,7 @@ describe('ContainerRunService', () => {
       budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
     })
     assert.equal(first.phase, 'preparing')
+    // The provider's origin only: GitHub reads are off unless the run asks (A24).
     assert.deepEqual(first.egressAllowlist, ['inference.copse.internal:443'])
 
     const finished = await waitFor(service, THREAD, (p) => p.phase === 'finished')
@@ -227,6 +230,7 @@ describe('ContainerRunService', () => {
     assert.ok(request.hostInference)
     assert.equal(request.contextWindow, 1_000_000)
     assert.equal(request.apiKey, undefined)
+    assert.equal(request.github, undefined)
     assert.equal(first.credential, 'host')
     assert.deepEqual(envDuringRun, [])
     assert.ok(!Object.values(process.env).includes('sk-ant-test'))
@@ -334,6 +338,7 @@ describe('ContainerRunService', () => {
       model: 'claude-sonnet-4-6',
       budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
       installDependencies: true,
+      githubReads: true,
     })
     await waitFor(service, 'install-on', (p) => p.phase === 'finished')
     await service.start({
@@ -349,9 +354,89 @@ describe('ContainerRunService', () => {
     assert.equal(withInstall.installDependencies, true)
     assert.ok(withInstall.egressAllowlist.includes('registry.npmjs.org:443'))
     assert.ok(withInstall.egressAllowlist.includes('github.com:443'))
+    // Install scripts must not share the GitHub read capability, even when
+    // the run asked for it.
+    assert.ok(!withInstall.egressAllowlist.includes(HOST_GITHUB_TARGET))
+    assert.equal(withInstall.github, undefined)
     assert.equal(without.installDependencies, undefined)
     assert.ok(!without.egressAllowlist.includes('registry.npmjs.org:443'))
+    // No GitHub origin, and no read capability: the run did not ask for one.
     assert.ok(!without.egressAllowlist.some((origin) => origin.includes('github')))
+    assert.equal(without.github, undefined)
+  })
+
+  it('offers GitHub reads only when the run turns them on, and records the choice when armed', async () => {
+    const seen: ThreadContainerRequest[] = []
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      run: (request): Promise<ThreadContainerRecord> => {
+        seen.push(request)
+        return Promise.resolve(fakeRecord(request.prompt))
+      },
+    })
+    /** Start one host-inference run and return its arming record's GitHub line. */
+    async function arm(
+      threadId: string,
+      choice: Pick<ContainerRunRequest, 'githubReads' | 'installDependencies'>,
+    ): Promise<{ progress: ContainerRunProgress; line: string | undefined }> {
+      const recorded: RecordedDecision[] = []
+      const progress = await runWithDecisionRecorder(
+        (decision) => recorded.push(decision),
+        () =>
+          service.start({
+            projectId: PROJECT,
+            threadId,
+            prompt: threadId,
+            model: 'claude-sonnet-4-6',
+            budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+            ...choice,
+          }),
+      )
+      await waitFor(service, threadId, (p) => p.phase === 'finished')
+      const arming = recorded.find((decision) => decision.line.cause === 'mode-arming')
+      return {
+        progress,
+        line: arming?.line.reasons?.find((reason) => reason.startsWith('GitHub:')),
+      }
+    }
+
+    // Off by default: no capability, and the record says nobody turned it on.
+    const unasked = await arm('github-default', {})
+    assert.ok(!unasked.progress.egressAllowlist.includes(HOST_GITHUB_TARGET))
+    assert.equal(unasked.progress.settings?.githubReads, false)
+    assert.equal(unasked.line, 'GitHub: off, not turned on for this run')
+
+    // Turned on, on host inference with no install: the capability, with the
+    // desktop's sign-in looked up on the host.
+    const asked = await arm('github-on', { githubReads: true })
+    assert.deepEqual(asked.progress.egressAllowlist, [
+      'inference.copse.internal:443',
+      HOST_GITHUB_TARGET,
+    ])
+    assert.equal(asked.progress.settings?.githubReads, true)
+    assert.equal(
+      asked.line,
+      'GitHub: read-only through your desktop GitHub sign-in, turned on for this run; writes refused',
+    )
+
+    // Turned on beside an install: none, and the record says why.
+    const installing = await arm('github-install', { githubReads: true, installDependencies: true })
+    assert.ok(!installing.progress.egressAllowlist.includes(HOST_GITHUB_TARGET))
+    assert.equal(installing.progress.settings?.githubReads, true)
+    assert.equal(installing.line, 'GitHub: off, because the run installs dependencies')
+
+    const [unaskedRequest, askedRequest, installingRequest] = seen
+    assert.ok(unaskedRequest && askedRequest && installingRequest)
+    assert.equal(unaskedRequest.github, undefined)
+    assert.equal(typeof askedRequest.github?.token, 'function')
+    assert.equal(installingRequest.github, undefined)
   })
 
   it('runs an ACP agent under its vendor key on its own domains, with no provider', async () => {
@@ -380,11 +465,17 @@ describe('ContainerRunService', () => {
       prompt: 'Tidy the README',
       model: 'acp:claude-acp#claude-opus-5',
       budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+      githubReads: true,
     })
     assert.ok(first.egressAllowlist.includes('*.anthropic.com:443'))
+    // The agent's shell children share its vendor tunnel, so GitHub reads
+    // beside it could leave the machine: an ACP run never gets them, even
+    // when the user turned them on.
+    assert.ok(!first.egressAllowlist.includes(HOST_GITHUB_TARGET))
     await waitFor(service, THREAD, (p) => p.phase === 'finished')
     const request = seen[0]
     assert.ok(request)
+    assert.equal(request.github, undefined)
     assert.equal(request.model, 'acp:claude-acp#claude-opus-5')
     assert.equal(request.provider, undefined)
     assert.ok(request.acp)
