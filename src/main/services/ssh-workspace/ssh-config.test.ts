@@ -50,6 +50,11 @@ Host lab
     assert.deepEqual(aliases, [{ alias: 'prod', hostname: 'prod.example' }])
   })
 
+  it('does not import aliases that ssh would read as options', () => {
+    const aliases = parseSshConfig('Host -x lab -oFoo=bar\n  HostName lab.local\nHost -p22\n')
+    assert.deepEqual(aliases, [{ alias: 'lab', hostname: 'lab.local' }])
+  })
+
   it('strips quotes from identity file paths', () => {
     const aliases = parseSshConfig(`
 Host dev

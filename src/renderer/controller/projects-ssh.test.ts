@@ -91,6 +91,35 @@ describe('ssh workspace settings helpers', () => {
     }
   })
 
+  it('rejects a host or user that ssh would read as an option', () => {
+    const draft = { ...emptySshHostDraft(), label: 'Prod', host: 'prod.example' }
+    const optionHost = 'Host cannot start with “-”; ssh would read it as an option.'
+    for (const host of ['-oFoo=bar', '  -oFoo=bar', 'ubuntu@-oFoo=bar']) {
+      assert.deepEqual(parseSshHostDraft({ ...draft, host }), {
+        ok: false,
+        error: optionHost,
+        fields: ['host'],
+      })
+    }
+    assert.deepEqual(parseSshHostDraft({ ...draft, user: '-p22' }), {
+      ok: false,
+      error: 'User cannot start with “-”; ssh would read it as an option.',
+      fields: ['user'],
+    })
+    for (const host of ['prod.example -p22', 'prod\nexample', 'prod\u0001example']) {
+      assert.deepEqual(parseSshHostDraft({ ...draft, host }), {
+        ok: false,
+        error: 'Host cannot contain spaces or control characters.',
+        fields: ['host'],
+      })
+    }
+    for (const host of ['prod.example', 'ubuntu@prod.example', '[::1]', 'prod-box-2']) {
+      const parsed = parseSshHostDraft({ ...draft, host, user: 'ubuntu' })
+      assert.ok(parsed.ok, host)
+      assert.equal(parsed.host.host, host)
+    }
+  })
+
   it('names the fields a rejected draft is about', () => {
     const noHost = parseSshHostDraft({ ...emptySshHostDraft(), label: 'Prod' })
     assert.ok(!noHost.ok)
