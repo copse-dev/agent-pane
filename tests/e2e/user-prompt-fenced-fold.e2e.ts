@@ -6,7 +6,12 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
-import { FOLDED_CODE_PAYLOAD, FOLDED_CODE_PROMPT } from './helpers/folded-code-prompt.ts'
+import {
+  FOLDED_CODE_PAYLOAD,
+  FOLDED_CODE_PROMPT,
+  settleFoldedPromptCapture,
+  assertFoldedPromptCaptureSettled,
+} from './helpers/folded-code-prompt.ts'
 import { waitForActiveThreadTitle, waitForAgentIdle } from './helpers.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 
@@ -57,7 +62,10 @@ describe('fenced user prompt mid-fold accordion', () => {
       }
     }, row)
     expect(collapsed).toEqual({ emptyTailBlocks: 0, tailText: '', radius: '6px' })
-    await saveElementScreenshot(row, 'user-prompt-fenced-fold-collapsed.png')
+    await saveElementScreenshot(row, 'user-prompt-fenced-fold-collapsed.png', {
+      beforeCapture: () => settleFoldedPromptCapture(row),
+    })
+    await assertFoldedPromptCaptureSettled(row)
     await saveAppScreenshot('user-prompt-fenced-fold-collapsed-app.png')
 
     await $(toggle).click()
@@ -69,7 +77,10 @@ describe('fenced user prompt mid-fold accordion', () => {
       row,
     )
     expect(codes).toEqual([`${FOLDED_CODE_PAYLOAD}\n`])
-    await saveElementScreenshot(row, 'user-prompt-fenced-fold-expanded.png')
+    await saveElementScreenshot(row, 'user-prompt-fenced-fold-expanded.png', {
+      beforeCapture: () => settleFoldedPromptCapture(row),
+    })
+    await assertFoldedPromptCaptureSettled(row)
     await saveAppScreenshot('user-prompt-fenced-fold-expanded-app.png')
     await $(toggle).click()
     await browser.reloadSession()

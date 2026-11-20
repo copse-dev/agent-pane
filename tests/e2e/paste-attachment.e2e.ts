@@ -5,7 +5,12 @@ import { $, $$, browser, expect } from '@wdio/globals'
 import { Key } from 'webdriverio'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
-import { FOLDED_CODE_PAYLOAD, FOLDED_CODE_PROMPT } from './helpers/folded-code-prompt.ts'
+import {
+  FOLDED_CODE_PAYLOAD,
+  FOLDED_CODE_PROMPT,
+  settleFoldedPromptCapture,
+  assertFoldedPromptCaptureSettled,
+} from './helpers/folded-code-prompt.ts'
 import { setComposerValue, composerText } from './helpers/composer.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { waitForActiveThreadTitle, waitForAgentIdle } from './helpers.ts'
@@ -281,7 +286,10 @@ describe('Pasting text into the composer', () => {
     expect(await $(`${resent} .transcript-attachment-chip`).isExisting()).toBe(false)
     expect(await $(`${resent} .msg-user-fold-tail pre`).isExisting()).toBe(false)
     await expect($(`${resent} .msg-user-fold-tail`)).toHaveText('')
-    await saveElementScreenshot(resent, 'paste-attachment-raw-resend-folded.png')
+    await saveElementScreenshot(resent, 'paste-attachment-raw-resend-folded.png', {
+      beforeCapture: () => settleFoldedPromptCapture(resent),
+    })
+    await assertFoldedPromptCaptureSettled(resent)
     await saveAppScreenshot('paste-attachment-raw-resend-folded-app.png')
 
     await $(toggle).click()
@@ -293,7 +301,10 @@ describe('Pasting text into the composer', () => {
         resent,
       ),
     ).toEqual([`${FOLDED_CODE_PAYLOAD}\n`])
-    await saveElementScreenshot(resent, 'paste-attachment-raw-resend-expanded.png')
+    await saveElementScreenshot(resent, 'paste-attachment-raw-resend-expanded.png', {
+      beforeCapture: () => settleFoldedPromptCapture(resent),
+    })
+    await assertFoldedPromptCaptureSettled(resent)
     await saveAppScreenshot('paste-attachment-raw-resend-expanded-app.png')
     await $(toggle).click()
     await browser.reloadSession()
