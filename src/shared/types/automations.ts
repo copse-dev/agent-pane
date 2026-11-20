@@ -8,12 +8,17 @@ export type AutomationLiveWorktreeLimit = number | 'unlimited'
  *
  * Deliberately narrow: shell commands, file changes, web origins, and broad ACP
  * permission kinds are not representable here. Those approvals need a different
- * scope than an exact Copse action or MCP tool name.
+ * scope than an exact Copse action, MCP tool name, or reviewed preparation plan.
  */
-export interface AutomationPermission {
-  kind: 'copse-action' | 'mcp-tool'
-  toolName: string
-}
+export type AutomationPermission =
+  | { kind: 'copse-action' | 'mcp-tool'; toolName: string }
+  | {
+      kind: 'worktree-preparation'
+      toolName: 'prepare_worktree'
+      directory: string
+      planFingerprint: string
+      offline: boolean
+    }
 
 /** One currently-selectable permission shown by the schedule editor. */
 export interface AutomationPermissionOption {
@@ -22,9 +27,30 @@ export interface AutomationPermissionOption {
   detail: string
 }
 
+export interface AutomationPreparationInput {
+  directory?: string
+  offline?: boolean
+}
+
+/** Main-computed setup details; reviewing does not execute a command or save a grant. */
+export interface AutomationPreparationReview {
+  projectId: string
+  projectName: string
+  permission: Extract<AutomationPermission, { kind: 'worktree-preparation' }>
+  body: string
+  bodyAdvice: string
+  bodyFooter: string
+}
+
 /** Stable key used to deduplicate grants without flattening their typed shape on disk. */
 export function automationPermissionKey(permission: AutomationPermission): string {
-  return JSON.stringify([permission.kind, permission.toolName])
+  return JSON.stringify([
+    permission.kind,
+    permission.toolName,
+    ...(permission.kind === 'worktree-preparation'
+      ? [permission.directory, permission.planFingerprint, permission.offline]
+      : []),
+  ])
 }
 
 export interface AutomationSchedule {

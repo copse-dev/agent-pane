@@ -1,4 +1,5 @@
 import { $, browser, expect } from '@wdio/globals'
+import { observePageScrollAfterSetup } from './helpers/page-scroll-observer.ts'
 
 /**
  * The hero embeds the demo in a same-origin iframe, where two ordinary things
@@ -26,25 +27,10 @@ describe('marketing hero demo', () => {
     )
 
     const READING_OFFSET = 1800
-    const settled = await browser.execute((offset: number) => {
-      window.scrollTo(0, offset)
-      return Math.round(window.scrollY)
-    }, READING_OFFSET)
+    // Consume the deliberate setup scroll before observing the embedding page.
+    // A synchronous scrollY read alone can leave its event queued for the observer.
+    const settled = await browser.execute(observePageScrollAfterSetup, READING_OFFSET)
     expect(settled).toBe(READING_OFFSET)
-
-    // Record every scroll of the *embedding page* from here on. The demo's own
-    // scrolling happens inside the iframe and never reaches this listener.
-    await browser.execute(() => {
-      window.addEventListener(
-        'scroll',
-        () => {
-          const seen = window.__pageJumps ?? []
-          seen.push(Math.round(window.scrollY))
-          window.__pageJumps = seen
-        },
-        { passive: true },
-      )
-    })
 
     // The walkthrough types, replays a turn, then opens and expands the preview.
     await browser.waitUntil(
@@ -64,5 +50,26 @@ describe('marketing hero demo', () => {
     const jumps = await browser.execute(() => window.__pageJumps ?? [])
     expect(jumps).toEqual([])
     expect(await browser.execute(() => Math.round(window.scrollY))).toBe(READING_OFFSET)
+
+    // Positive control after the run assertion: the same observer must detect
+    // real movement away and back, including a later event at the setup offset.
+    for (const offset of [READING_OFFSET + 80, READING_OFFSET]) {
+      const count = await browser.execute(() => window.__pageJumps?.length ?? 0)
+      await browser.execute((next: number) => {
+        window.scrollTo(0, next)
+      }, offset)
+      await browser.waitUntil(
+        () =>
+          browser.execute(
+            (previous: number) => (window.__pageJumps?.length ?? 0) > previous,
+            count,
+          ),
+        { timeout: 5_000, timeoutMsg: `expected the control scroll event at ${String(offset)}` },
+      )
+    }
+    expect(await browser.execute(() => window.__pageJumps)).toEqual([
+      READING_OFFSET + 80,
+      READING_OFFSET,
+    ])
   })
 })

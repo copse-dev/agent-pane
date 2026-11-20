@@ -34,10 +34,11 @@ does not resolve the automatic choice before the first ask. Assessment uses the 
 classifier and model fallback routes, so hosted routes receive the bounded context
 and may incur a small additional charge. Assessment token usage is recorded.
 
-This applies only to primary turns. Subagent routing is unchanged. The existing
-`suggest_model` tool remains the heuristic advisory implementation below; connecting
-it and subagent selection to the new assessment is follow-up work. Primary automatic
-routing does not require the experimental advisory-tool toggle.
+This applies only to primary turns. Subagent routing is unchanged: it uses the
+Research role model chosen in Settings, so connecting it to the assessment is follow-up
+work. The experimental `suggest_model` tool shares the same assessment and the same
+configured, policy-filtered pool (below). Primary automatic routing does not require the
+experimental advisory-tool toggle.
 
 ## What this is
 
@@ -57,14 +58,21 @@ real lever on quality and spend.
   (`packages/llm/src/model-intellect.ts`, see
   [`advisor-strategy.md`](./advisor-strategy.md)): bands `low` / `mid` / `top` are
   derived from the annotated distribution, and each band's representative model
-  (`BAND_REPRESENTATIVE_MODEL`: `claude-haiku-4-5` / `claude-sonnet-4-6` /
-  `claude-opus-4-8`) provides a fallback. Candidates in each band are ranked by
-  LiteLLM catalog pricing and filtered by context-window fit, keeping cost as a
-  separate axis from intellect. Signals: keyword hints, prompt length,
-  context-window need, and whether the task is agentic.
-- **Tool** `suggest_model` (`src/main/tools/model-classifier-tool.ts`) — advisory; returns
-  the recommendation including its estimated catalog rate. Registered only when
-  the flag is on (`registry-bootstrap.ts`).
+  (`BAND_REPRESENTATIVE_MODEL` in `model-intellect.ts`) provides a fallback. Candidates in
+  each band are the shipped catalog models (`TRACKED_MODELS`), ranked by LiteLLM catalog
+  pricing and filtered by context-window fit, keeping cost as a separate axis from
+  intellect. Signals: keyword hints, prompt length, context-window need, and whether the
+  task is agentic.
+- **Tool** `suggest_model` (`src/main/tools/model-classifier-tool.ts`) — advisory. It
+  assesses the task with Match task's chain (Background questions classifier → Small
+  tasks → chat-model backup → the heuristic above) and recommends from the same
+  configured, policy-filtered pool with the same ranking (`recommendTaskModel` in
+  `prompt-model-routing.ts`), skipping routes smaller than `contextTokensEstimate`. It
+  never names a model whose provider is not configured. With an empty pool, or no route
+  wide enough, it recommends none; when nothing meets the demand floor it names the
+  strongest configured model and says it is below the floor, as Match task would choose.
+  The assessment may call a hosted classifier or Small tasks route, like Match task.
+  Registered only when the flag is on (`registry-bootstrap.ts`).
 - **Tests** `model-classifier.test.ts`.
 
 The tool is advisory only and the classifier is pure — while the flag is off nothing is
@@ -72,10 +80,10 @@ registered and the model in use is never changed.
 
 ## Not yet built (follow-ups on the issue)
 
-- **Share the model-based assessment with the advisory tool and subagent routing**.
-- **Map band representatives to configured/available providers** — today the mapping is
-  Anthropic-only; respect which providers have keys, cost/latency preferences, and
-  on-device-only constraints (cf. #518).
+- **Share the model-based assessment with subagent routing**. Primary routing and
+  `suggest_model` already map the band's intellect floor onto the configured,
+  policy-filtered model pool (see [Primary agent](#primary-agent-match-task)); subagents
+  still use the Research role's chosen model.
 - **Feedback loop** — measure whether the chosen primary model succeeds or needs escalation.
 - Add latency metadata alongside pricing for latency-aware routing.
 

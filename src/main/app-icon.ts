@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import { app, nativeImage, type BrowserWindow } from 'electron'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -37,7 +37,7 @@ function getDockIconPath(variant = effectiveAppIconVariant()): string {
 }
 
 function icnsFingerprint(path: string): string {
-  return createHash('sha256').update(readFileSync(path)).digest('hex').slice(0, 12)
+  return sha256Hex(readFileSync(path)).slice(0, 12)
 }
 
 export function getAppIcon(variant = effectiveAppIconVariant()): Electron.NativeImage | undefined {

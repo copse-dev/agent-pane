@@ -242,25 +242,33 @@ describe('tool permissions', () => {
     })
   })
 
-  it('exposes and enforces catalog restrictions for tools that must always ask', async () => {
+  it('keeps worktree preparation on Ask while explaining exact plan grants', async () => {
     const registry = new ToolRegistry()
     registerTool(registry, 'prepare_worktree')
     const id = copseToolPermissionId('prepare_worktree')
 
     const initial = listToolPermissionCatalog(registry, []).groups[0]?.tools[0]
     assert.ok(initial)
+    assert.equal(initial.defaultPolicy, 'ask')
+    assert.equal(initial.policy, 'ask')
     assert.deepEqual(initial.disabledPolicies, ['allow'])
-    assert.match(initial.disabledReason ?? '', /every invocation/u)
+    assert.match(initial.disabledReason ?? '', /exact plan/u)
+    assert.match(initial.disabledReason ?? '', /matching automation preparation grant/u)
 
     const afterAllow = await updateToolPermissions(registry, [], {
       toolIds: [id],
       policy: 'allow',
     })
     assert.deepEqual(overrides(), {})
-    assert.equal(afterAllow.groups[0]?.tools[0]?.overridden, false)
+    const afterAllowTool = afterAllow.groups[0]?.tools[0]
+    assert.ok(afterAllowTool)
+    assert.equal(afterAllowTool.policy, 'ask')
+    assert.equal(afterAllowTool.overridden, false)
+    assert.equal(resolveToolPermission('prepare_worktree'), null)
 
     await updateToolPermissions(registry, [], { toolIds: [id], policy: 'block' })
     assert.deepEqual(overrides(), { [id]: 'block' })
+    assert.deepEqual(resolveToolPermission('prepare_worktree'), { id, policy: 'block' })
   })
 
   it('requires approval for pull-request creation and rejects an allow update', async () => {

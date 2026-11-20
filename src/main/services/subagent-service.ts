@@ -4,7 +4,6 @@ import { readFileLimitsForSubagent } from '@copse/agent/read-file-limits.ts'
 import type {
   LLMProvider,
   LLMMessage,
-  LLMTool,
   ModelUsage,
   StreamChunk,
   ToolExecuteResult,
@@ -49,11 +48,6 @@ export interface ExploreSubagentResult {
    */
   text: string
   usage: ModelUsage
-}
-
-function filterExploreTools(registry: ToolRegistry): LLMTool[] {
-  const names = new Set<string>(SUBAGENT_ALLOWED_TOOL_NAMES)
-  return registry.toLLMTools().filter((t) => names.has(t.name))
 }
 
 async function executeExploreTool(
@@ -107,7 +101,7 @@ export async function runExploreSubagent(
           provider,
           prompt,
           parentGoal: `${parentGoal}\nWorkspace: ${workspace}`,
-          tools: filterExploreTools(registry),
+          tools: registry.toLLMToolsNamed(SUBAGENT_ALLOWED_TOOL_NAMES),
           parentToolCallId,
           signal,
           maxContextTokens: contextWindow,

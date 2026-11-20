@@ -1,0 +1,12 @@
+{
+  "id": "strands-decider-local",
+  "label": "Strands Decider 2B local eval",
+  "model": "StrandsAgents/strands-decider-2B-qwen3.5-v1-2610",
+  "timeoutMs": 60000,
+  "connection": {
+    "type": "http",
+    "protocol": "systemone",
+    "baseUrl": "http://127.0.0.1:8011/v1",
+    "auth": "none"
+  }
+}

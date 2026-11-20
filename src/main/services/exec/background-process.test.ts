@@ -24,6 +24,8 @@ import {
   stopBackgroundProcess,
   stopBackgroundProcessesForThread,
   stopAllBackgroundProcesses,
+  hasBackgroundProcessRecord,
+  hasBackgroundProcessesForThread,
 } from './background-process.ts'
 import { hasLiveWorktreeWriter } from '../worktree-writers.ts'
 import {
@@ -271,6 +273,39 @@ describe('background process manager', () => {
       listBackgroundProcesses(OWNER).find((entry) => entry.id === info.id)?.timedOut,
       false,
     )
+  })
+
+  it('keeps an owner-scoped completion record without observing the exit', async () => {
+    const entered = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    const settled = Promise.withResolvers<undefined>()
+    const info = await startBackgroundProcess({
+      command: `node -e "setTimeout(() => console.log('completion-held'), 50)"`,
+      cwd: process.cwd(),
+      waitMs: 10,
+      timeoutMs: 5000,
+      owner: OWNER,
+      onCompletion: async () => {
+        entered.resolve(undefined)
+        await release.promise
+        settled.resolve(undefined)
+      },
+    })
+    try {
+      await entered.promise
+      assert.equal(hasBackgroundProcessesForThread(OWNER), false)
+      assert.equal(hasBackgroundProcessRecord(OWNER), true)
+      assert.equal(hasBackgroundProcessRecord(OTHER_OWNER), false)
+      assert.equal(isBackgroundExitObserved(info.id, OWNER), false)
+      release.resolve(undefined)
+      await settled.promise
+      assert.equal(hasBackgroundProcessRecord(OWNER), true, 'settled records remain ambiguous')
+      assert.equal(isBackgroundExitObserved(info.id, OWNER), false)
+    } finally {
+      release.resolve(undefined)
+      stopBackgroundProcess(info.id, OWNER)
+    }
+    assert.equal(hasBackgroundProcessRecord(OWNER), false)
   })
 
   it('marks an exit observed only once the owner reads the exited task', async () => {

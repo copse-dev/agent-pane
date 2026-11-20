@@ -26,8 +26,10 @@ import { showToast } from './toast.ts'
 import { createSimulatorDesktopView, type SimulatorDesktopView } from './simulator-desktop-view.ts'
 import { openRightPanel, selectRightPanelMode } from '../controller/panels.ts'
 import { DESKTOP_VIEWER_OFF_DETAIL, DESKTOP_VIEWER_OFF_TITLE } from '@shared/desktop-viewer.ts'
+import { createSurfaceRecorder } from '../recording/surface-recorder.ts'
 import { createVncSshHostForm } from './vnc-ssh-host-form.ts'
 import { selectActiveWorkspace } from '../controller/active-workspace.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 const CHOOSE_MACHINE_TEXT = 'Choose a device, enter an address, or select a saved SSH machine.'
 
@@ -231,6 +233,12 @@ function mountVncSession(
       hidden: true,
     },
     'Control desktop',
+  )
+  const recordButton = el(
+    'button',
+    { type: 'button', class: 'ui-btn vnc-record-btn', hidden: true },
+    el('span', { class: 'recording-dot is-idle', 'aria-hidden': 'true' }),
+    'Record screen',
   )
   const shareButton = el(
     'button',
@@ -464,12 +472,37 @@ function mountVncSession(
     forgetLoginButton,
     controlButton,
     captureActions,
+    recordButton,
     deviceNavigation,
     disconnectButton,
   )
   controlsRoot.append(controlsBody)
 
   const screen = el('div', { class: 'vnc-screen', 'aria-label': 'Remote desktop' })
+  // Records the canvas this pane already paints — the remote framebuffer or the
+  // device stream — so nothing else on this Mac is captured and no OS
+  // screen-recording permission is involved.
+  const recorder = createSurfaceRecorder({
+    sourceKind: () =>
+      simulatorSessionId
+        ? selectedSimulator()?.platform === 'android'
+          ? 'Emulator'
+          : 'Simulator'
+        : 'Desktop',
+    sourceLabel: () => connectedMachineName ?? selectedMachineName(),
+    openCapture: () => {
+      const canvas = screen.querySelector<HTMLCanvasElement>('canvas')
+      if (!connectedAtLeastOnce || !canvas || canvas.width === 0 || canvas.height === 0) {
+        return Promise.reject(new Error('Connect to a desktop before recording it.'))
+      }
+      return Promise.resolve({ canvas, dispose: () => {} })
+    },
+    onChange: (recording) => {
+      recordButton.hidden = recording || !connectedAtLeastOnce
+      screen.classList.toggle('is-recording', recording)
+    },
+  })
+  recordButton.after(recorder.indicator)
   const empty = el('div', { class: 'panel-empty vnc-empty' }, CHOOSE_MACHINE_TEXT)
   viewerRoot.append(screen, empty)
 
@@ -620,6 +653,7 @@ function mountVncSession(
     connectButton.hidden = active
     disconnectButton.hidden = !active
     controlButton.hidden = !connected
+    recordButton.hidden = !connected || recorder.isRecording()
     shareButton.hidden = !connected
     annotateButton.hidden = !connected
     homeButton.hidden = !connected || simulatorSessionId === null
@@ -733,6 +767,8 @@ function mountVncSession(
   }
 
   function clearViewer(title: string, kind: VncStatusKind = 'idle', detail = ''): void {
+    // Keep what was recorded before the canvas goes away.
+    recorder.stop('source-ended')
     annotation?.dispose()
     annotation = null
     annotateButton.setAttribute('aria-pressed', 'false')
@@ -1169,7 +1205,7 @@ function mountVncSession(
     } catch (error) {
       if (generation !== discoveryGeneration) return
       discoveryStatus.dataset['kind'] = 'error'
-      discoveryStatus.textContent = error instanceof Error ? error.message : String(error)
+      discoveryStatus.textContent = errorMessage(error)
       discoverButton.hidden = false
     } finally {
       if (generation === discoveryGeneration) discoverButton.disabled = channel !== null
@@ -1199,7 +1235,7 @@ function mountVncSession(
     } catch (error) {
       if (generation !== nearbyGeneration) return
       nearbyStatus.dataset['kind'] = 'error'
-      nearbyStatus.textContent = error instanceof Error ? error.message : String(error)
+      nearbyStatus.textContent = errorMessage(error)
       nearbyButton.hidden = false
     } finally {
       if (generation === nearbyGeneration) nearbyButton.disabled = channel !== null
@@ -1223,7 +1259,7 @@ function mountVncSession(
     const [canStoreCredentials, devices] = await Promise.all([
       api.vnc.canStoreCredentials().catch(() => false),
       api.simulatorDesktop.list().catch((error: unknown) => {
-        discoveryError = error instanceof Error ? error.message : String(error)
+        discoveryError = errorMessage(error)
         return []
       }),
     ])
@@ -1319,11 +1355,7 @@ function mountVncSession(
         },
         onInputError: (error) => {
           if (simulatorSessionId !== connection.id) return
-          setStatus(
-            `Connected to ${device.name}`,
-            'error',
-            error instanceof Error ? error.message : String(error),
-          )
+          setStatus(`Connected to ${device.name}`, 'error', errorMessage(error))
         },
       })
       simulatorView = view
@@ -1336,7 +1368,7 @@ function mountVncSession(
       clearViewer(
         android ? 'Couldn’t open the Android emulator' : 'Couldn’t open the Simulator',
         'error',
-        error instanceof Error ? error.message : String(error),
+        errorMessage(error),
       )
     } finally {
       connectButton.disabled = false
@@ -1585,7 +1617,7 @@ function mountVncSession(
         nextChannel.open()
       })
     } catch (error) {
-      clearViewer(error instanceof Error ? error.message : String(error), 'error')
+      clearViewer(errorMessage(error), 'error')
     } finally {
       connectButton.disabled = false
     }
@@ -1597,11 +1629,7 @@ function mountVncSession(
     if (simulatorSessionId) {
       const connectionId = simulatorSessionId
       void api.simulatorDesktop.close(connectionId).catch((error: unknown) => {
-        clearViewer(
-          'Couldn’t close the Simulator stream',
-          'error',
-          error instanceof Error ? error.message : String(error),
-        )
+        clearViewer('Couldn’t close the Simulator stream', 'error', errorMessage(error))
       })
       return
     }
@@ -1672,6 +1700,12 @@ function mountVncSession(
     event.stopPropagation()
     showContextMenu(event.clientX, event.clientY, [
       { label: 'Share screen with model', onSelect: shareCurrentScreen },
+      {
+        label: recorder.isRecording() ? 'Stop recording' : 'Record screen',
+        onSelect: (): void => {
+          recorder.toggle()
+        },
+      },
     ])
   }
 
@@ -1679,6 +1713,9 @@ function mountVncSession(
     void connect()
   })
   disconnectButton.addEventListener('click', disconnect)
+  recordButton.addEventListener('click', () => {
+    recorder.toggle()
+  })
   controlButton.addEventListener('click', () => {
     setControlEnabled(!controlEnabled)
   })
@@ -1688,11 +1725,7 @@ function mountVncSession(
     void api.simulatorDesktop
       .input(connectionId, { type: 'button-tap', name })
       .catch((error: unknown) => {
-        setStatus(
-          'Device control failed',
-          'error',
-          error instanceof Error ? error.message : String(error),
-        )
+        setStatus('Device control failed', 'error', errorMessage(error))
       })
   }
   homeButton.addEventListener('click', () => {
@@ -1858,6 +1891,7 @@ function mountVncSession(
       discoveryGeneration++
       nearbyGeneration++
       sshHostsGeneration++
+      recorder.dispose()
       rfb?.disconnect()
       channel?.close()
       simulatorView?.cleanup()

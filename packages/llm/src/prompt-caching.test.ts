@@ -270,6 +270,7 @@ function captureDiagnostics(t: TestContext, enabled: boolean): Record<string, un
   })
   const output: Record<string, unknown>[] = []
   t.mock.method(console, 'error', (prefix: unknown, serialized: unknown) => {
+    if (prefix === '[prompt-cache-dispatch]') return
     assert.equal(prefix, '[prompt-cache]')
     assert.equal(typeof serialized, 'string')
     const parsed = safeJsonParse(String(serialized))

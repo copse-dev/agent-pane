@@ -14,7 +14,7 @@ import {
 } from '../browser/browser-network-grants.ts'
 import { existsSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { resolve } from 'node:path'
+import { relative, resolve } from 'node:path'
 import { getChatStoreRoot } from '../workspace.ts'
 import { ensureThreadAccess, needsOtherThreadRead } from './thread-access.ts'
 import { currentAgentRoots, getAgentExecutionRoot, getAgentProjectRoot } from '../execution-root.ts'
@@ -36,7 +36,7 @@ import type { ShellPermissionDecision, ShellPromptParts } from './permission-pol
 import { errorMessage } from '@shared/errors.ts'
 import type { PromptCause } from '@shared/threads/prompt-cause.ts'
 import { isRecord, nonEmptyStringOr } from '@shared/unknown-value.ts'
-import type { AutomationPermission } from '@shared/types'
+import { automationPermissionKey, type AutomationPermission } from '@shared/types'
 import { darwinUserTempDir } from '../../project-sandbox/config.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { spawnRunsOnSshTarget } from '../../project-sandbox/spawn.ts'
@@ -52,7 +52,12 @@ import { currentRunIsUnattendedContainer } from './unattended-run.ts'
 import { decideContainedShellEffect } from '@copse/shell-guard/container-effects.ts'
 import { detectCheckoutDetachingCommand } from '@copse/shell-guard/checkout-detach.ts'
 import { isInsideManagedThreadWorktree } from '../worktree-manager.ts'
-import { observeApprovalResolutions, requestApproval, type ApprovalRequest } from '../approval.ts'
+import {
+  observeApprovalResolutions,
+  requestApproval,
+  type ApprovalRequest,
+  type ApprovalResponse,
+} from '../approval.ts'
 import { checkDesktopAppPermission, isDesktopControlTool } from './desktop-app-permission.ts'
 import { recordDecision } from './decision-log-store.ts'
 import { getSetting, updateSetting, resolveApiKey } from '../storage/settings.ts'
@@ -164,10 +169,11 @@ import {
 import { getAutomationService } from '../automations/automation-service.ts'
 import { getGithubRepoSlug } from '../github/git-service.ts'
 
-const SANDBOX_REPLAY_LABEL = 'Allow retries for this task (up to 10, for 15 minutes)'
+const SANDBOX_REPLAY_LABEL =
+  'Retry this exact command for this task (up to 10, for 15 minutes). Stop revokes retries.'
 const EXTERNAL_REPLAY_LABEL = `Allow retries outside the sandbox (up to ${String(
   SHELL_REPLAY_LEASE_EXTERNAL_MAX_REPLAYS,
-)}, for ${String(SHELL_REPLAY_LEASE_EXTERNAL_TTL_MS / 3_600_000)} hours)`
+)}, for ${String(SHELL_REPLAY_LEASE_EXTERNAL_TTL_MS / 3_600_000)} hours). This exact command only; Stop revokes retries. Changed scripts can change what it does.`
 
 /**
  * @param wholeCommandFallback lease the exact command line when no single
@@ -178,13 +184,15 @@ const EXTERNAL_REPLAY_LABEL = `Allow retries outside the sandbox (up to ${String
 function issueShellReplayLease(
   identity: ShellReplayLeaseIdentity,
   command: string,
+  approval: ApprovalResponse,
   wholeCommandFallback = false,
 ): void {
   const core =
     replayLeaseCore(command, (segment) => leaseCompanionAllowed(segment, identity.executionRoot)) ??
     (wholeCommandFallback ? command : null)
   if (!core) return
-  const lease = shellReplayLeaseStore.issue(identity, core)
+  const lease = shellReplayLeaseStore.issue(identity, core, approval)
+  if (!lease) return
   recordDecision({
     kind: 'shell',
     actor: 'user',
@@ -341,7 +349,7 @@ async function requestEscalationApproval(
     opts.offerTrustedCommand === false
       ? null
       : offerableTrustedCommand(parts.command, getAgentProjectRoot())
-  const { approved, remember, grantScope } = await requestApproval(
+  const response = await requestApproval(
     {
       title,
       approveLabel: 'Run command',
@@ -365,11 +373,13 @@ async function requestEscalationApproval(
     },
     signal,
   )
+  if (signal?.aborted) return false
+  const { approved, remember, grantScope } = response
   if (approved && remember && trustable) await addTrustedShellCommand(trustable)
-  if (approved && grantScope === 'turn-tree' && leaseIdentity) {
-    issueShellReplayLease(leaseIdentity, parts.command, true)
+  if (!signal?.aborted && approved && grantScope === 'turn-tree' && leaseIdentity) {
+    issueShellReplayLease(leaseIdentity, parts.command, response, true)
   }
-  return approved
+  return approved && !signal?.aborted
 }
 
 /** Whether every path sits under macOS's per-user temp directory (`/var/folders/…/T`). */
@@ -507,7 +517,7 @@ async function promptShell(
     containedCause !== 'shell-no-containment' &&
     (containedCause !== 'shell-network-scope-overlap' ||
       commandRunsSandboxed(getAgentExecutionRoot()))
-  const { approved, grantScope } = await requestApproval(
+  const response = await requestApproval(
     {
       title: sandboxed ? 'Run shell command?' : 'Run without sandbox?',
       approveLabel: 'Run command',
@@ -532,8 +542,10 @@ async function promptShell(
     },
     signal,
   )
+  if (signal?.aborted) return false
+  const { approved, grantScope } = response
   if (approved && grantScope === 'turn-tree' && leaseIdentity) {
-    issueShellReplayLease(leaseIdentity, command)
+    issueShellReplayLease(leaseIdentity, command, response)
   }
   return approved
 }
@@ -603,6 +615,7 @@ export async function promptUnsandboxedShell(
     oneShot?: boolean
   } = {},
 ): Promise<boolean> {
+  if (signal?.aborted) return false
   const forceAsk =
     opts.requireInteractiveApproval === true || resolveToolPermission('run_shell')?.policy === 'ask'
   const oneShot = opts.oneShot === true
@@ -648,6 +661,7 @@ export async function promptExpectedSandboxBlock(
     requireInteractiveApproval?: boolean
   } = {},
 ): Promise<boolean> {
+  if (signal?.aborted) return false
   // An agent rerunning the same browser demo or test harness after each fix asks
   // to leave the sandbox with the same command every time. Bounded opaque local
   // execution may carry the same exact-command replay lease a verified-block
@@ -660,7 +674,7 @@ export async function promptExpectedSandboxBlock(
   if (leaseIdentity && consumeShellReplayLease(leaseIdentity, command)) return true
   // An explicit escape request must reach the user even when deterministic tiers
   // would approve the command. The caller handles already-authorized run modes.
-  const { approved, grantScope } = await requestApproval(
+  const response = await requestApproval(
     {
       title:
         opts.source === 'prior-denial' ? 'Run outside sandbox?' : 'Agent requests sandbox escape',
@@ -684,8 +698,10 @@ export async function promptExpectedSandboxBlock(
     },
     signal,
   )
+  if (signal?.aborted) return false
+  const { approved, grantScope } = response
   if (approved && grantScope === 'turn-tree' && leaseIdentity) {
-    issueShellReplayLease(leaseIdentity, command, true)
+    issueShellReplayLease(leaseIdentity, command, response, true)
   }
   return approved
 }
@@ -798,8 +814,25 @@ function automationPermissionTarget(
   }
 }
 
-function automationRememberLabel(subject: 'action' | 'tool', scheduleName: string): string {
-  return `Allow this ${subject} for future “${scheduleName}” runs`
+/**
+ * Only a preparation grant starts ticked: it is pinned to one plan fingerprint,
+ * folder and network scope that the automation editor previews. MCP tools and
+ * GitHub writes (approve, enable auto-merge, open a PR) stay opt-in, so one
+ * Approve click cannot silently authorize every future unattended run.
+ */
+function automationRememberOptions(
+  automation: AutomationPermissionTarget,
+  permission: AutomationPermission,
+): Pick<ApprovalRequest, 'rememberLabel' | 'rememberDefault' | 'rememberSubject'> {
+  return {
+    rememberLabel: `Remember for this automation (“${automation.scheduleName}”)`,
+    rememberDefault: permission.kind === 'worktree-preparation',
+    rememberSubject: JSON.stringify([
+      automation.projectId,
+      automation.scheduleId,
+      automationPermissionKey(permission),
+    ]),
+  }
 }
 
 /**
@@ -857,7 +890,7 @@ async function checkMcpPermission(
       cause: 'mcp-tool',
       allowRemember: explicitPolicy !== 'ask',
       ...(automation
-        ? { rememberLabel: automationRememberLabel('tool', automation.scheduleName) }
+        ? automationRememberOptions(automation, permission)
         : { rememberLabel: `Always allow ${mcpToolLabel(toolName)}` }),
     },
     signal,
@@ -1049,6 +1082,7 @@ async function checkCustomToolPermission(
 async function checkWorktreePreparationPermission(
   args: unknown,
   signal?: AbortSignal,
+  explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
 ): Promise<boolean> {
   const parsed = z
     .object({
@@ -1063,18 +1097,40 @@ async function checkWorktreePreparationPermission(
     containedPreparationPath(root, parsed.directory),
     parsed.planFingerprint,
   )
-  const { approved } = await requestApproval(
+  const permission: AutomationPermission = {
+    kind: 'worktree-preparation',
+    toolName: 'prepare_worktree',
+    directory: relative(realpathSync(root), plan.root) || '.',
+    planFingerprint: plan.contentFingerprint,
+    offline: parsed.offline === true,
+  }
+  const automation = explicitPolicy === 'ask' ? null : automationPermissionTarget(permission)
+  if (automation?.allowed) return true
+  const details = formatPreparationApproval(plan, permission.offline)
+  const { approved, remember } = await requestApproval(
     {
       title: 'Prepare this worktree?',
-      ...formatPreparationApproval(plan, parsed.offline === true),
-      interactiveClientApproval: 'once',
+      ...details,
+      ...(automation
+        ? {
+            ...automationRememberOptions(automation, permission),
+            bodyFooter: `${details.bodyFooter}\nRemembering permits this exact preparation plan and network scope in future runs of this automation. Changed inputs require approval again.`,
+          }
+        : { interactiveClientApproval: 'once' }),
       type: 'shell',
       cause: 'shell-package-install',
-      allowRemember: false,
+      allowRemember: automation !== null,
       subject: 'prepare_worktree',
     },
     signal,
   )
+  if (approved && remember && automation) {
+    await getAutomationService().grantPermission(
+      automation.projectId,
+      automation.scheduleId,
+      permission,
+    )
+  }
   return approved
 }
 
@@ -1113,9 +1169,7 @@ async function checkGithubWriteToolPermission(
       type: 'mcp',
       cause: 'github-write',
       allowRemember: automation !== null,
-      ...(automation
-        ? { rememberLabel: automationRememberLabel('action', automation.scheduleName) }
-        : {}),
+      ...(automation ? automationRememberOptions(automation, permission) : {}),
       subject: toolName,
     },
     signal,
@@ -2300,7 +2354,7 @@ async function decideToolPermitted(
     permitted =
       explicitPolicy === 'ask' ? await promptExplicitToolAsk(toolName, args, signal) : true
   } else if (toolName === 'prepare_worktree') {
-    permitted = await checkWorktreePreparationPermission(args, signal)
+    permitted = await checkWorktreePreparationPermission(args, signal, explicitPolicy)
   } else if (GITHUB_WRITE_TOOLS.has(toolName)) {
     permitted = await checkGithubWriteToolPermission(toolName, args, signal, explicitPolicy)
   } else if (toolName.startsWith('mcp__')) {

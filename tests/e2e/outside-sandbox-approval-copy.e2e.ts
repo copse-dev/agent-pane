@@ -91,7 +91,7 @@ describe('outside-sandbox approval copy', () => {
     const leaseOption = dialog.$('.approval-turn-tree')
     await expect(leaseOption).toBeDisplayed()
     await expect(leaseOption).toHaveText(
-      'Allow retries outside the sandbox (up to 10, for 2 hours)',
+      'Allow retries outside the sandbox (up to 10, for 2 hours). This exact command only; Stop revokes retries. Changed scripts can change what it does.',
     )
     // Opt-in: leaving the sandbox again is never the default.
     await expect(leaseOption.$('.approval-turn-tree-input')).not.toBeChecked()

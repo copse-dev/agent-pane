@@ -44,6 +44,32 @@ afterEach(() => {
 })
 
 describe('file tree selection', () => {
+  it('shows checkout recovery guidance without exposing Electron transport details', async () => {
+    const store = localStore()
+    const base = makeApi([])
+    const api: ApiClient = {
+      ...base,
+      fs: {
+        ...base.fs,
+        listDir: async () => {
+          throw new Error(
+            "Error invoking remote method 'fs:list-dir': Error: Checkout unavailable. Resume this chat to restore it.",
+          )
+        },
+      },
+    }
+    const root = document.createElement('div')
+    document.body.append(root)
+    const unmount = mountFileTree(root, store, api)
+    await tick()
+    assert.equal(
+      root.querySelector('.sidebar-empty')?.textContent,
+      'Checkout unavailable. Resume this chat to restore it.',
+    )
+    assert.equal(root.querySelector('.tree-row'), null)
+    unmount()
+  })
+
   it('selects the open file when the store opens it, with no event', async () => {
     const store = localStore()
     const root = document.createElement('div')

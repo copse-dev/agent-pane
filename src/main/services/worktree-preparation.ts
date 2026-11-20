@@ -1,7 +1,8 @@
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { delimiter, dirname, isAbsolute, join, relative, sep } from 'node:path'
+import { delimiter, dirname, join, sep } from 'node:path'
+import { isPathWithin } from '@copse/std/path-containment.ts'
 import { satisfies, valid, validRange } from 'semver'
 import { errorMessage } from '@shared/errors.ts'
 import { copseCacheDir } from './storage/copse-paths.ts'
@@ -126,10 +127,7 @@ function containedToolchainFile(toolchain: string, path: string): string | null 
   try {
     if (!statSync(path).isFile()) return null
     const canonical = realpathSync(path)
-    const rel = relative(toolchain, canonical)
-    return rel.length === 0 || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)
-      ? null
-      : canonical
+    return isPathWithin(toolchain, canonical, { allowSelf: false }) ? canonical : null
   } catch {
     return null
   }
@@ -189,9 +187,7 @@ export function resolveInstalledRustToolchainBin(
       )
       if (!installedName) return null
       const toolchain = realpathSync(join(toolchains, installedName))
-      const rel = relative(toolchains, toolchain)
-      if (rel.length === 0 || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel))
-        return null
+      if (!isPathWithin(toolchains, toolchain, { allowSelf: false })) return null
       const bin = join(toolchain, 'bin')
       return containedToolchainFile(toolchain, join(bin, 'cargo')) &&
         containedToolchainFile(toolchain, join(bin, 'rustc'))
@@ -213,10 +209,9 @@ export function resolveInstalledRustToolchainBin(
       const cargo = realpathSync(candidate)
       if (!statSync(cargo).isFile()) continue
       if (basenameWithoutExtension(cargo) !== 'rustup') {
-        const trustedRoot = ['/usr', '/usr/local', '/opt/homebrew'].find((prefix) => {
-          const rel = relative(prefix, cargo)
-          return rel.length > 0 && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel)
-        })
+        const trustedRoot = ['/usr', '/usr/local', '/opt/homebrew'].find((prefix) =>
+          isPathWithin(prefix, cargo, { allowSelf: false }),
+        )
         if (!trustedRoot) continue
         const bin = dirname(cargo)
         if (containedToolchainFile(dirname(bin), join(bin, 'rustc'))) return bin
@@ -497,7 +492,7 @@ async function inspectPlan(
       ready: true,
       detail: 'No dependency installation or additional checks declared.',
     })
-  const expectedFingerprint = createHash('sha256').update(JSON.stringify(identity)).digest('hex')
+  const expectedFingerprint = sha256Hex(JSON.stringify(identity))
   const stamp = readStamp(plan.root)
   const allReady = components.every((component) => component.ready)
   const noWork = !plan.manager && plan.prepare.length === 0 && plan.checks.length === 0

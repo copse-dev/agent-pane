@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { prepareE2eScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 
 describe('settings usage sections', () => {
   before(async () => {
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-usage-sections')
+    seedEmptyProject(seedStableWorkspace(), 'e2e-usage-sections')
     await browser.reloadSession()
   })
 

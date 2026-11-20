@@ -14,12 +14,13 @@ export interface ToolResultWithReminders {
 /**
  * Split off the system-reminder blocks the tool registry appended to a result
  * (argument-clamp notes, a `toolGate` hook's injected context — H2), using the
- * lengths it recorded (`ToolCall.appendedReminderLengths`), so the card can
- * show them as notes instead of raw tags. The text is never searched for tags:
+ * lengths it recorded (`ToolCall.appendedReminderLengths`), so transcript
+ * projections can read the original output and cards can show separate notes.
+ * The text is never searched for tags:
  * tool output that happens to end in a reminder-shaped block stays output.
  * Without lengths (older threads), or when they do not describe the end of
- * `result`, the result is shown raw. Display only: the model and the thread
- * keep the unmodified result.
+ * `result`, the result is returned raw. This does not change tool execution:
+ * the model and the thread keep the unmodified result.
  */
 export function splitAppendedReminders(
   result: string,

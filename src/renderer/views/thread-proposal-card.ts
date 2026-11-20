@@ -175,7 +175,6 @@ function buildBody(
   rerender: (next: ThreadProposalCardState) => void,
 ): HTMLElement {
   const body = el('div', { class: 'thread-proposal-body' })
-  body.append(el('h4', { class: 'thread-proposal-title' }, proposal.title))
 
   // The description the user actually judges the offer on. Deliberately the
   // largest block on the card and always visible — the prompt below it is
@@ -238,8 +237,9 @@ export function createThreadProposalCard(
         { class: 'thread-proposal-icon', 'aria-hidden': 'true' },
         gitBranchIcon('ui-icon ui-icon-sm'),
       ),
-      el('span', { class: 'thread-proposal-eyebrow' }, 'Proposed thread'),
-      el('span', { class: 'thread-proposal-header-title' }, proposal.title),
+      // The title names the offer, so it leads the card from the header: the
+      // same line reads on a collapsed (answered) card without expanding it.
+      el('h4', { class: 'thread-proposal-title' }, proposal.title),
     )
     const pill = statePill(next)
     if (pill) header.append(pill)

@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import { z } from 'zod'
 import type { TurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import type { MachineDispatchResult } from '@shared/types/machine-dispatch.ts'
@@ -14,6 +14,7 @@ import {
 import type { SupervisedTaskMeta } from '@shared/supervisor/task-schema.ts'
 import type { TaskSupervisor } from '../supervisor/task-supervisor.ts'
 import { getCiWatchStatus, type CiStatus } from './github-ci-service.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 export const CI_WATCH_HANDLER = 'ci_watch'
 
@@ -93,18 +94,16 @@ function stableWatchInput(input: CiWatchInput): Omit<CiWatchInput, 'consecutiveE
 }
 
 function watchIdentity(context: ThreadExecutionContext, input: CiWatchInput): string {
-  return createHash('sha256')
-    .update(
-      JSON.stringify([
-        context.projectId,
-        context.threadId,
-        context.root,
-        context.checkoutMode,
-        context.branch,
-        stableWatchInput(input),
-      ]),
-    )
-    .digest('hex')
+  return sha256Hex(
+    JSON.stringify([
+      context.projectId,
+      context.threadId,
+      context.root,
+      context.checkoutMode,
+      context.branch,
+      stableWatchInput(input),
+    ]),
+  )
 }
 
 function ciResultPrompt(status: CiStatus, input: CiWatchInput, outcome: string): string {
@@ -191,7 +190,7 @@ export function installCiWatchConsumer(
           reschedule: {
             trigger: { kind: 'wake_at', wakeAt: now + pollDelay(nextInput) },
             handlerInput: nextInput,
-            reason: `CI status read failed: ${error instanceof Error ? error.message : String(error)}`,
+            reason: `CI status read failed: ${errorMessage(error)}`,
           },
         }
       }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { fileExtension, formatByteSize } from './file-bytes.ts'
+import { fileExtension, formatByteSize, sanitizeStoredFileName } from './file-bytes.ts'
 
 describe('fileExtension', () => {
   it('lower-cases the last dotted segment', () => {
@@ -10,6 +10,26 @@ describe('fileExtension', () => {
 
   it('returns empty for a name with no dot', () => {
     assert.equal(fileExtension('Makefile'), '')
+  })
+})
+
+describe('sanitizeStoredFileName', () => {
+  it('dashes unsafe runs and lower-cases the extension', () => {
+    assert.equal(sanitizeStoredFileName('my clip (1).MP4', 'video'), 'my-clip-1-.mp4')
+  })
+
+  it('strips path separators and leading dots', () => {
+    assert.equal(sanitizeStoredFileName('../../etc/passwd', 'video'), 'etc-passwd')
+  })
+
+  it('caps the name at 80 characters, keeping the extension', () => {
+    const stored = sanitizeStoredFileName(`${'a'.repeat(100)}.zip`, 'archive.zip')
+    assert.equal(stored, `${'a'.repeat(76)}.zip`)
+  })
+
+  it('falls back when nothing safe is left', () => {
+    assert.equal(sanitizeStoredFileName('', 'archive.zip'), 'archive.zip')
+    assert.equal(sanitizeStoredFileName('...', 'video'), 'video')
   })
 })
 

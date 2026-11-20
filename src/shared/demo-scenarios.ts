@@ -148,6 +148,8 @@ export interface DemoScenario {
     type: string
     allowRemember?: boolean
     rememberLabel?: string
+    rememberDefault?: boolean
+    rememberSubject?: string
     approveLabel?: string
     collapseDetails?: boolean
     approveOnceLabel?: string
@@ -3558,6 +3560,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       rightPanelMode: 'context',
       threadReadAccess: [SIDE_CHATS_MAIN_ID],
       threadSendAccess: [SIDE_CHATS_MAIN_ID],
+      threadSubthreadAccess: [SIDE_CHATS_MAIN_ID],
       webAllowedOrigins: ['https://example.org:443'],
       toolPermissionOverrides: { 'copse:run_shell': 'ask' },
       layout: {
@@ -3971,7 +3974,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
   ...SITE_TOUR_SCENARIOS,
   // Concise thread view in each state a thread can be in (see demo-concise-states.ts).
   ...CONCISE_STATE_SCENARIOS,
-  ...(['read', 'send'] as const).map((access) =>
+  ...(['read', 'send', 'orchestrate'] as const).map((access) =>
     approvalRiskScenario(`approval-thread-${access}`, {
       id: `thread-${access}`,
       type: 'mcp',
@@ -3985,6 +3988,20 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       ...gitPushApproval('copse/friendly-action-names-213c32', sha),
     }),
   ),
+  approvalRiskScenario('approval-automation-preparation', {
+    id: 'automation-preparation',
+    title: 'Prepare this worktree?',
+    type: 'shell',
+    body: "Install dependencies:\n'corepack' 'pnpm@10.34.5' 'install' '--frozen-lockfile' '--ignore-scripts' '--prod=false'\nProject setup:\n'node' 'scripts/prepare-native-artifacts.mts'",
+    bodyAdvice:
+      'Install locked dependencies with lifecycle scripts disabled. Project setup executes repository code.',
+    bodyFooter:
+      'Network: allowed during preparation; checks stay offline. Writes are limited to this project and Copse-managed caches.\nRemembering permits this exact preparation plan and network scope in future runs of this automation. Changed inputs require approval again.',
+    allowRemember: true,
+    rememberLabel: 'Remember for this automation (“Morning caretaker”)',
+    rememberDefault: true,
+    rememberSubject: 'project/schedule/preparation-plan',
+  }),
   approvalRiskScenario('approval-web-url', {
     id: 'web-url',
     title: 'Allow web origin?',
