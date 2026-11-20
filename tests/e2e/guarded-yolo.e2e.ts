@@ -5,12 +5,17 @@ import {
   prepareMockTurn,
   prepareMockToolTurn,
 } from './helpers/mock-scenario.ts'
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { saveElementScreenshot } from './helpers/screenshot.ts'
+import {
+  parkPointer,
+  saveAppViewportScreenshot,
+  saveElementScreenshot,
+  waitForSettledLayout,
+} from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
@@ -239,6 +244,7 @@ describe('Guarded YOLO shell mode', function () {
       { timeout: 30_000, timeoutMsg: 'The catastrophic command was never rendered' },
     )
     await waitForAgentIdle()
+    await expectAssistantReply('The destructive command was blocked.')
 
     await expect($('#approval-dialog')).not.toBeDisplayed()
     const rollups = await $$('.tool-card-rollup[data-status="error"]').getElements()
@@ -264,9 +270,51 @@ describe('Guarded YOLO shell mode', function () {
     expect(await failedTool.getText()).toContain('Guarded YOLO harm gate')
     const toolId = await failedTool.getAttribute('data-tool-id')
     if (!toolId) throw new Error('Missing failed tool id')
-    await saveElementScreenshot(
-      `.tool-card[data-tool-id="${toolId}"]`,
-      'guarded-yolo-hard-deny.png',
-    )
+    await expect($('.chat-row.selected .chat-title')).toHaveText('Remove the root filesystem')
+    await expect($('.guarded-yolo-banner')).toBeDisplayed()
+    await expect($('.guarded-yolo-banner')).toHaveAttribute('data-phase', 'active')
+    expect(await failedTool.getText()).toContain('Did not start')
+    await parkPointer()
+    // Element screenshots retain an earlier measured origin during their later
+    // layout and capture steps. A transcript scroll can then crop a stale
+    // origin; the complete viewport keeps the denial in its real app context.
+    await saveAppViewportScreenshot('guarded-yolo-hard-deny.png', async () => {
+      await browser.execute((id) => {
+        document.querySelector(`[data-tool-id="${CSS.escape(id)}"]`)?.scrollIntoView({
+          block: 'center',
+          inline: 'nearest',
+          behavior: 'instant',
+        })
+      }, toolId)
+      await waitForSettledLayout('#app')
+      const frame = await browser.execute((id) => {
+        const card = document.querySelector(`[data-tool-id="${CSS.escape(id)}"]`)
+        const viewport = document.querySelector('.messages-list')
+        if (!card || !viewport) throw new Error('Denied tool card or transcript is missing')
+        const bounds = card.getBoundingClientRect()
+        const port = viewport.getBoundingClientRect()
+        const style = getComputedStyle(viewport)
+        return {
+          top: bounds.top,
+          bottom: bounds.bottom,
+          left: bounds.left,
+          right: bounds.right,
+          viewportTop: port.top + (Number.parseFloat(style.scrollPaddingTop) || 0),
+          viewportBottom: port.bottom - (Number.parseFloat(style.scrollPaddingBottom) || 0),
+          viewportLeft: port.left,
+          viewportRight: port.right,
+          text: card.textContent,
+          status: card.getAttribute('data-status'),
+        }
+      }, toolId)
+      expect(frame.status).toBe('error')
+      expect(frame.top).toBeGreaterThanOrEqual(frame.viewportTop)
+      expect(frame.bottom).toBeLessThanOrEqual(frame.viewportBottom)
+      expect(frame.left).toBeGreaterThanOrEqual(frame.viewportLeft)
+      expect(frame.right).toBeLessThanOrEqual(frame.viewportRight)
+      const artifactRoot = join(process.cwd(), 'tests/e2e/artifacts/guarded-yolo-hard-deny')
+      mkdirSync(artifactRoot, { recursive: true })
+      writeFileSync(join(artifactRoot, 'frame.json'), JSON.stringify(frame, null, 2) + '\n')
+    })
   })
 })

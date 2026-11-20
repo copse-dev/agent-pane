@@ -4,6 +4,13 @@ import { mkdirSync, writeFileSync, openSync, closeSync, readSync, writeSync } fr
 import { join } from 'node:path'
 import { bundleCarryOut } from '../container-runtime/guest-carry-out.ts'
 
+/**
+ * Not the host's internal policy (`security/internal-git-exec.ts`), on purpose:
+ * this repository is one the worker just `git init`ed inside the hosted
+ * sandbox, whose only other occupant is the agent, which can already run any
+ * program there. No host boundary is crossed, and it needs `checkout`, which
+ * the internal allowlist does not admit. `hooksPath` is hygiene only.
+ */
 const git = (cwd: string, args: string[]): string =>
   execFileSync('git', ['-c', 'core.hooksPath=/dev/null', ...args], {
     cwd,

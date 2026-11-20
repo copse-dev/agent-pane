@@ -701,6 +701,54 @@ PY`,
     assert.equal(analyzeShellCommand('git submodule update --init', root).verdict, 'external')
   })
 
+  it('keeps remote URL listings local while remote operations stay external', () => {
+    for (const command of [
+      'git remote',
+      'git remote -v',
+      'git remote --verbose',
+      'git branch --show-current && git remote -v',
+      'git remote -v; git status',
+    ])
+      assert.equal(analyzeShellCommand(command, root).verdict, 'sandbox', command)
+    for (const command of [
+      'git remote update',
+      'git remote show origin',
+      'git remote add other https://example.invalid/repo',
+      'git remote -v && git remote update',
+      'git remote -v update',
+      'git -c core.sshCommand=other remote update',
+    ])
+      assert.equal(analyzeShellCommand(command, root).verdict, 'external', command)
+  })
+
+  it('treats a complete signature-printing sed filter as text while keeping active scripts external', () => {
+    const filter =
+      "git cat-file commit HEAD | sed -n '/^gpgsig /{s/^gpgsig /Commit signature: /;p;}'"
+    assert.equal(analyzeShellCommand(filter, root).verdict, 'sandbox')
+    for (const command of [
+      "sed -n '/world/{r /etc/passwd;p;}' a.txt",
+      "sed -n '/world/{w /tmp/output;p;}' a.txt",
+      "sed -n '/world/{s/hello/reader/e;p;}' a.txt",
+      "sed -n '/world/{p;}' /etc/passwd",
+      "sed -e 's/a/\\' -e 's/w /tmp/output/'",
+    ])
+      assert.equal(analyzeShellCommand(command, root).verdict, 'external', command)
+  })
+
+  it('masks literal braces only in inert single-quoted operands and preserves live or expandable paths', () => {
+    assert.equal(analyzeShellCommand("rg '/{a,b}' src", root).verdict, 'sandbox')
+    for (const command of [
+      'rg /{a,b} src',
+      'rg "/{a,b}" src',
+      "rg '/{a,b}' '/{a,b}'",
+      "rg '/{a,b}' /{a,b}",
+      "sed -n '/word/{p;}' /{a,b}",
+      "sed -n '/word/{p;}' '/word/{p;}'",
+      "printf '%s' '/{a,b}' | xargs cat",
+    ])
+      assert.equal(analyzeShellCommand(command, root).verdict, 'external', command)
+  })
+
   it('treats git fetch as a network read (ambiguous), not hard-external (#500)', () => {
     // `git fetch` only reads from the remote — auto-run inside an OS sandbox (blocked
     // network escalates to a retry), prompt without one. `pull`/`clone`/`push` stay

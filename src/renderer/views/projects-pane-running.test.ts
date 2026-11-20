@@ -9,6 +9,7 @@ import { setThreadStatus } from '@shared/store/thread-helpers.ts'
 import type { Thread } from '@shared/types'
 import { mountProjectsPane } from './projects-pane.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import { prNewThreadDraft, startPrDiscussThread } from './pr-pane-thread.ts'
 
 function thread(id: string, title: string, status: Thread['status'] = 'idle'): Thread {
   return {
@@ -107,6 +108,39 @@ describe('projects pane running status (component)', () => {
     setThreadStatus(store, 't1', 'idle')
     assert.equal(document.querySelectorAll('.chat-running-status').length, 0)
     assert.equal(rowByTitle('One')?.classList.contains('is-running'), false)
+  })
+
+  it('leaves a PR-linked draft idle until the user sends it', () => {
+    const store = createStore({
+      projects: [{ id: 'p1', path: '/proj', name: 'Proj' }],
+      activeProjectId: 'p1',
+      expandedProjectId: 'p1',
+      workspaceRoot: '/proj',
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const dispose = mountProjectsPane(host, store, apiStub)
+    try {
+      const pr = {
+        number: 42,
+        title: 'Add GitHub PR panel tab',
+        url: 'https://github.com/copse-dev/copse-panel/pull/42',
+      }
+      const id = startPrDiscussThread(store, pr)
+      const draft = store.getState().threads.find((candidate) => candidate.id === id)
+      assert.ok(draft)
+      assert.equal(draft.status, 'idle')
+      assert.equal(draft.automation, undefined)
+      assert.equal(draft.draftPrompt, prNewThreadDraft(pr))
+      assert.equal(draft.messages.length, 0)
+      assert.equal(draft.pendingMessages?.length ?? 0, 0)
+      const row = host.querySelector(`.chat-row[data-thread-id="${id}"]`)
+      assert.ok(row)
+      assert.equal(row.classList.contains('is-running'), false)
+      assert.equal(row.querySelectorAll('.chat-running-status').length, 0)
+    } finally {
+      dispose()
+    }
   })
 
   it('marks an automation thread as starting before its status flips to running', () => {

@@ -535,6 +535,40 @@ Thread deletion becomes an ordered main-process operation:
 Do not let renderer autosave delete the thread directory before cleanup completes.
 Cleanup should be idempotent so a crash between steps is recoverable.
 
+The checkout lifecycle owns the whole persisted `worktree` value. Generic
+renderer create/autosave IPC strips that field, including stale snapshots and
+explicit `undefined`; native lifecycle writers retain their direct store
+authority. After automation cleanup, the renderer invalidates pending project
+metadata reads and refreshes only checkout state through the existing thread
+load API. It preserves local drafts, transcripts and other projects. A delayed
+headless-completion read retries its metadata/transcript reads against that
+revision before replacing a thread, without dispatching another turn. If the
+refresh fails after physical cleanup, the UI reports the freed count and asks
+the user to reopen the project; it does not retry cleanup or claim a rollback.
+
+Passive native Git queries, filesystem listings/previews/watch registration,
+owner-scoped file-link resolution, automatic app-capability detection, app
+operation-history polling and automatic follow-up suggestions use read-only
+managed-path inspection. Browsing a historical chat must not recreate a
+released checkout or clear its retirement marker. A retired or missing checkout
+never falls back to the shared project: file reads/listings report unavailable
+with guidance to resume the chat, image previews use their existing error
+response, watch registration does nothing, and file-link resolution returns an
+empty list. Git queries retain their empty/unavailable results; app detection
+returns false and app history/follow-up suggestions return an empty list.
+Read-only and executing contexts share owner/SSH routing and checkout-mode
+construction. Live dirty PR checkouts remain readable; the sidebar's separate
+PR change-summary exclusion is unchanged. Actual agent/terminal execution,
+file writes, external editor/browser opens, prompt state captured on submit,
+explicit branch checkout, app discovery/launch and explicit restore retain the
+execution lifecycle's restoration behavior.
+
+For a project opened inside a repository, passive reads use the same existing,
+canonical project subdirectory in its linked checkout as deliberate execution.
+The managed checkout and its Git top level are validated before this mapping;
+a missing, non-directory or escaped project root is unavailable. Sidebar and
+cleanup inspection retain their separate whole-checkout policy.
+
 **What ships today** (`src/main/services/thread-deletion.ts`): steps 3, 4, and 7, plus the
 safe half of steps 5 and 6. After the run, ACP session, terminals, and background processes
 are stopped and before the store is deleted, a thread with a live (not retired) worktree is

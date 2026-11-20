@@ -755,7 +755,14 @@ describe('settings → plugins list', () => {
     assert.equal(first.querySelector('.plugin-name')?.textContent, 'Demo')
     assert.equal(first.querySelector('.plugin-version')?.textContent, '1.2.3')
     assert.equal(first.querySelector('.plugin-badge-first-party')?.textContent, 'Copse')
-    assert.equal(first.querySelector('.plugin-badge-stable')?.textContent, 'stable')
+    // The publisher follows the version in the name line ("1.2.3 · Copse"), and
+    // Stable, the default, carries no badge.
+    assert.equal(
+      first.querySelector('.plugin-row-name-line')?.textContent.replaceAll(/\s+/g, ' '),
+      'Demo1.2.3·Copse',
+    )
+    assert.equal(first.querySelector('.plugin-row-title > .plugin-badge'), null)
+    assert.equal(first.querySelector('.plugin-badge-stable'), null)
     const toggle = first.querySelector<HTMLInputElement>('input.plugin-toggle-input')
     assert.ok(toggle)
     assert.equal(toggle.type, 'checkbox')

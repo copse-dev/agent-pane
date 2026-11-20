@@ -1,9 +1,15 @@
 import type { Message, Thread, ThreadUsage, ToolCall } from './thread-types.ts'
 import type { ThreadMeta } from './spine-schema.ts'
+import { z } from 'zod'
 import { isRecord } from '@copse/std/unknown-value.ts'
 import { isNonNull } from '@copse/std/nullish.ts'
 import { repairLegacyAcpTotalInputTokens } from '@copse/llm/model-usage.ts'
 import { prProductionSchema, commitProductionSchema } from './thread-pr-relations.ts'
+import { MAX_CURSOR_AGENT_IDS, MAX_CURSOR_AGENT_ID_LENGTH } from './remote-agent-link.ts'
+
+const cursorAgentIdsSchema = z
+  .array(z.string().min(1).max(MAX_CURSOR_AGENT_ID_LENGTH))
+  .max(MAX_CURSOR_AGENT_IDS)
 
 /**
  * Raise legacy ACP `byModel` entries recorded with fresh-only input to their
@@ -105,10 +111,12 @@ export function parseThreadMetaValue(value: unknown): ThreadMeta | null {
   const commitProductions = commitProductionSchema
     .array()
     .safeParse(value['commitProductions'] ?? [])
-  const { executionMode: _rawExecutionMode, ...rest } = value
+  const { executionMode: _rawExecutionMode, cursorAgentIds: _rawCursorAgentIds, ...rest } = value
+  const cursorAgentIds = cursorAgentIdsSchema.safeParse(value['cursorAgentIds'])
   return {
     ...rest,
     ...(value['executionMode'] === 'agent' ? { executionMode: 'agent' as const } : {}),
+    ...(cursorAgentIds.success ? { cursorAgentIds: cursorAgentIds.data } : {}),
     id: value['id'],
     title: value['title'],
     status: value['status'],

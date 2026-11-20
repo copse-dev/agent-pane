@@ -62,6 +62,7 @@ import {
   projectDisplayName,
   removeProject,
   recoverOrphanProject,
+  refreshProjectThreadWorktrees,
   relocateProject,
   SIDEBAR_THREADS_PAGE_SIZE,
   switchProject,
@@ -326,6 +327,15 @@ async function cleanUpScheduleRuns(
     const result = await api.automations.cleanupRuns(target.project.id, target.scheduleId)
     const freed = result.released.length
     const freedText = `${String(freed)} worktree${freed === 1 ? '' : 's'}`
+    try {
+      await refreshProjectThreadWorktrees(store, api, target.project.id)
+    } catch (error) {
+      showErrorToast(
+        'Cleanup finished, but the run list could not refresh',
+        `${freedText} freed. Reopen the project to refresh its runs.\n\n${ipcErrorMessage(error, 'The run list could not be loaded')}`,
+      )
+      if (result.retained.length === 0) return
+    }
     if (result.retained.length === 0) {
       showToast(
         freed === 0
@@ -855,10 +865,17 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   // revalidation runs, and lifecycle changes re-render without blocking first paint.
   const prLifecycleCache = new Map<
     string,
-    { state: PrLifecycleState; checks?: GhPrChecksState; conflicts?: boolean; fetchedAt: number }
+    {
+      state: PrLifecycleState
+      checks?: GhPrChecksState
+      conflicts?: boolean
+      fetchedAt: number
+      failed?: true
+    }
   >()
   const prFetchInFlight = new Set<string>()
   let prStatusGeneration = 0
+  let prWorkspaceGeneration = 0
 
   function beginThreadRename(threadId: string, currentTitle: string): void {
     renaming = { threadId, draft: currentTitle || 'New Thread' }
@@ -1004,6 +1021,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     })
     if (stale.length === 0) return
     const generation = prStatusGeneration
+    const workspaceGeneration = prWorkspaceGeneration
     for (const ref of stale) {
       const key = githubPrKey(ref)
       let lifecycleChanged = false
@@ -1035,10 +1053,26 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         .catch(() => {
           if (generation !== prStatusGeneration) return
           const cached = prLifecycleCache.get(key)
+          // Preload cancels a workspace-dependent IPC queued for a selection
+          // that was superseded. Retry on the current selection instead of
+          // treating that cancellation as a fresh unknown status for a minute.
+          // Keep any resolved icon while retrying, including when only checks
+          // were cancelled after details had already refreshed the entry.
+          if (workspaceGeneration !== prWorkspaceGeneration) {
+            if (cached) {
+              prLifecycleCache.set(key, {
+                ...cached,
+                fetchedAt: Date.now() - PR_STATUS_CACHE_TTL_MS - 1,
+              })
+            }
+            lifecycleChanged = true
+            return
+          }
           prLifecycleCache.set(key, {
+            ...cached,
             state: cached?.state ?? 'unknown',
-            ...(cached?.conflicts !== undefined ? { conflicts: cached.conflicts } : {}),
             fetchedAt: Date.now(),
+            failed: true,
           })
         })
         .finally(() => {
@@ -2891,15 +2925,26 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       render()
     }),
     selectActiveWorkspace(store, () => {
+      prWorkspaceGeneration += 1
+      // Preload can reject a superseded read before this renderer commits the
+      // new workspace. Keep failures memoized within a workspace, then retry
+      // them at its successor even when the rejection preceded this event.
+      for (const [key, cached] of prLifecycleCache) {
+        if (cached.failed) {
+          prLifecycleCache.set(key, {
+            ...cached,
+            fetchedAt: Date.now() - PR_STATUS_CACHE_TTL_MS - 1,
+          })
+        }
+      }
       // Only a switch to another workspace invalidates the filter; adding or
       // removing some other project leaves the open one's search intact.
       if (store.getState().activeProjectId !== filteredProjectId) closeThreadFilter()
       else if (threadFilter) contentFilter.search(threadFilter)
-      // Drop cached PR lifecycles when the workspace changes so we don't paint
-      // another project's GitHub state onto the new sidebar.
-      prStatusGeneration += 1
-      prLifecycleCache.clear()
-      prFetchInFlight.clear()
+      // PR state is keyed by owner/repo/number, not the active workspace.
+      // Keep fresh results and in-flight reads across switches: clearing them
+      // drops resolved icons and repeats every visible PR's details/checks.
+      // The normal TTL still revalidates them; teardown ignores late results.
       render()
     }),
     store.on('attention_changed', render),

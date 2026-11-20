@@ -49,7 +49,8 @@ import {
   type ThreadRefAttachment,
   type VideoRefAttachment,
 } from '@copse/agent/build-text-with-attachments.ts'
-import { mountComposerEditor } from './composer-editor.ts'
+import { createChatComposer } from './chat-composer.ts'
+import { mountRemoteComposer, type ChatTransport } from './remote-composer.ts'
 import {
   registerPromptAttachments,
   type PromptArchiveAttachment,
@@ -134,11 +135,18 @@ import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import { commitThreadModelSelection } from '../controller/model-selection.ts'
 import { mark as perfMark } from '../perf.ts'
 import type { GitPromptState } from '@shared/types/git.ts'
+import {
+  formatRecordingClock,
+  subscribeActiveRecordings,
+  type ActiveRecording,
+} from '../recording/active-recordings.ts'
 import { isTypingTarget } from '../keyboard-shortcuts.ts'
 import { isAnyDialogOpen } from './dialog-shell.ts'
 import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 
-interface MountInputBarOptions {
+export interface MountInputBarOptions {
+  /** A replica submits to its owning desktop instead of running a local queue. */
+  transport?: ChatTransport
   /**
    * Dock the portrait panel tabs to the chat/panel seam instead of making them
    * part of the floating composer card. Tests that mount the input in isolation
@@ -194,26 +202,12 @@ export function mountInputBar(
   openModelPicker: () => void
   unmount: () => void
 } {
+  if (opts.transport) return mountRemoteComposer(root, store, api, opts.transport)
   const chips = el('div', { class: 'attachment-chips' })
-  const composer = mountComposerEditor()
-  composer.setPlaceholder('Message…')
-  const submitBtn = el(
-    'button',
-    { class: 'submit-btn', type: 'button', 'data-tooltip-placement': 'top' },
-    'Send',
-  )
-  const stopBtn = el(
-    'button',
-    {
-      class: 'stop-btn',
-      type: 'button',
-      hidden: '',
-      'aria-label': 'Stop agent',
-      'data-tooltip': 'Stop the running agent',
-      'data-tooltip-placement': 'top',
-    },
-    'Stop',
-  )
+  // Running pane recordings. A separate row from `chips`, which is cleared on
+  // send and thread switch: a recording outlives both until it is stopped.
+  const recordingChips = el('div', { class: 'attachment-chips recording-chips' })
+  const { composer, submitBtn, stopBtn } = createChatComposer()
   // Hidden native file picker driven by the paperclip button — gives an
   // explicit "browse" affordance alongside drag-and-drop and @-mentions.
   const fileInput = el('input', {
@@ -807,6 +801,7 @@ export function mountInputBar(
   // Directly above the draft, below the suggestions: attachments are part of
   // the message being composed, not chrome for the whole composer.
   root.insertBefore(chips, inputRow)
+  root.insertBefore(recordingChips, chips)
   const defaultPlaceholder = 'Message…'
   const followUpPlaceholder = 'Send follow-up'
 
@@ -1198,7 +1193,9 @@ export function mountInputBar(
       size: formatByteSize(a.sizeBytes),
     }))
   let mismatchBranch: string | null = null
+  let branchWarningVersion = 0
   let checkoutInProgress = false
+  let checkoutWarningVersion: number | null = null
   let dirtyWarningThreadId: string | null = null
   let lastBreakdown: ContextBreakdown | null = null
   // Model the last estimate was computed for. The context-fit warning quotes a
@@ -1537,24 +1534,29 @@ export function mountInputBar(
   }
   document.addEventListener('keydown', disarmStopOnOtherKey, true)
 
-  function showBranchMismatch(branch: string): void {
-    mismatchBranch = branch
-    branchWarning.hidden = false
-    branchWarningText.textContent = threadGitBranchMismatchMessage(branch)
-    branchWarningText.title = threadGitBranchMismatchMessage(branch)
+  function updateBranchMismatchActions(): void {
     checkoutBranchBtn.disabled = checkoutInProgress
     checkoutBranchBtn.textContent = checkoutInProgress ? 'Checking out...' : 'Check out'
     continueBranchBtn.disabled = checkoutInProgress
   }
 
+  function showBranchMismatch(branch: string): void {
+    branchWarningVersion++
+    mismatchBranch = branch
+    branchWarning.hidden = false
+    branchWarningText.textContent = threadGitBranchMismatchMessage(branch)
+    branchWarningText.title = threadGitBranchMismatchMessage(branch)
+    updateBranchMismatchActions()
+  }
+
   function hideBranchMismatch(): void {
+    branchWarningVersion++
     mismatchBranch = null
     checkoutInProgress = false
+    checkoutWarningVersion = null
     branchWarning.hidden = true
     branchWarningText.title = ''
-    checkoutBranchBtn.disabled = false
-    checkoutBranchBtn.textContent = 'Check out'
-    continueBranchBtn.disabled = false
+    updateBranchMismatchActions()
   }
 
   function showDirtyWarning(threadId: string): void {
@@ -1925,16 +1927,34 @@ export function mountInputBar(
     const branch = mismatchBranch
     checkoutInProgress = true
     showBranchMismatch(branch)
+    const warningVersion = branchWarningVersion
+    checkoutWarningVersion = warningVersion
+    const finishCheckout = (): boolean => {
+      if (
+        checkoutWarningVersion !== warningVersion ||
+        store.getState().activeProjectId !== activeProjectId ||
+        getActiveThreadId() !== activeThreadId ||
+        activeComposerThreadId !== activeThreadId
+      )
+        return false
+      checkoutWarningVersion = null
+      checkoutInProgress = false
+      // A replacement warning still needs its completed operation's busy state cleared.
+      updateBranchMismatchActions()
+      return branchWarningVersion === warningVersion
+    }
 
     void api.git
       .checkoutBranch(activeProjectId, activeThreadId, branch)
       .then(() => {
-        hideBranchMismatch()
-        showToast(`Checked out ${branch}`)
+        if (finishCheckout()) {
+          hideBranchMismatch()
+          showToast(`Checked out ${branch}`)
+        }
         store.emit('git_branch_changed')
       })
       .catch((error: unknown) => {
-        checkoutInProgress = false
+        if (!finishCheckout()) return
         showBranchMismatch(branch)
         showErrorToast(`Failed to check out ${branch}`, error)
       })
@@ -1949,9 +1969,19 @@ export function mountInputBar(
     if (!id) return
     const projectId = store.getState().activeProjectId
     if (!projectId) return
+    // The request belongs to this warning and draft, even if navigation returns here.
+    const warningVersion = branchWarningVersion
+    const draftKey = draftFingerprint(composer.expandedValue(), snapshotDraftAttachments())
+    const isCurrent = (): boolean =>
+      branchWarningVersion === warningVersion &&
+      store.getState().activeProjectId === projectId &&
+      getActiveThreadId() === id &&
+      activeComposerThreadId === id &&
+      draftFingerprint(composer.expandedValue(), snapshotDraftAttachments()) === draftKey
     void api.git
       .branchStatus(projectId, id)
       .then(({ currentBranch }) => {
+        if (!isCurrent()) return
         if (syncThreadGitBranchIfChanged(store, id, currentBranch)) {
           store.emit('git_branch_changed')
         }
@@ -1959,6 +1989,7 @@ export function mountInputBar(
         void submit()
       })
       .catch((error: unknown) => {
+        if (!isCurrent()) return
         showErrorToast('Failed to read the current branch', error)
       })
   })
@@ -2816,6 +2847,52 @@ export function mountInputBar(
   }
   const unregisterAttachments = registerPromptAttachments(attachmentHandlers)
 
+  let recordingClockTimer: number | null = null
+  let recordingClocks: { clock: HTMLElement; startedAt: number }[] = []
+  function renderRecordingChips(recordings: readonly ActiveRecording[]): void {
+    recordingClocks = []
+    recordingChips.replaceChildren(
+      ...recordings.map((recording) => {
+        const clock = el('span', { class: 'recording-chip-clock' })
+        recordingClocks.push({ clock, startedAt: recording.startedAt })
+        const stop = el(
+          'button',
+          { type: 'button', 'aria-label': `Stop recording ${recording.label}` },
+          closeIcon('ui-icon ui-icon-sm'),
+        )
+        stop.addEventListener('click', () => {
+          recording.stop()
+        })
+        const chip = el(
+          'span',
+          {
+            class: 'attachment-chip recording-chip',
+            title: `${recording.label} — becomes a video attachment when you stop`,
+          },
+          el('span', { class: 'recording-dot', 'aria-hidden': 'true' }),
+          el('span', { class: 'attachment-chip-label' }, `Recording ${recording.label}`),
+          clock,
+          stop,
+        )
+        return chip
+      }),
+    )
+    tickRecordingClocks()
+    if (recordings.length > 0 && recordingClockTimer === null) {
+      recordingClockTimer = window.setInterval(tickRecordingClocks, 500)
+    } else if (recordings.length === 0 && recordingClockTimer !== null) {
+      window.clearInterval(recordingClockTimer)
+      recordingClockTimer = null
+    }
+  }
+  function tickRecordingClocks(): void {
+    const now = performance.now()
+    for (const { clock, startedAt } of recordingClocks) {
+      clock.textContent = formatRecordingClock(now - startedAt)
+    }
+  }
+  const unsubscribeRecordings = subscribeActiveRecordings(renderRecordingChips)
+
   attachBtn.addEventListener('click', () => {
     fileInput.click()
   })
@@ -3129,6 +3206,8 @@ export function mountInputBar(
       }, 0)
     },
     unmount(): void {
+      branchWarningVersion++
+      checkoutWarningVersion = null
       window.removeEventListener('beforeunload', stopContextEstimates)
       stopContextEstimates()
       draftAutosave.cancel()
@@ -3154,6 +3233,8 @@ export function mountInputBar(
       })
       unbindDrop()
       unregisterAttachments()
+      unsubscribeRecordings()
+      if (recordingClockTimer !== null) window.clearInterval(recordingClockTimer)
       imageDescriptionSeq++
       descriptionPicker?.destroy()
       modelPicker.destroy()

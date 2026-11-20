@@ -35,6 +35,8 @@ describe('user prompt mid-fold accordion', () => {
     await expect(bubble.$('.msg-user-fold-head')).toHaveText(/Session notes/)
     await expect(bubble.$('.msg-user-fold-tail')).toHaveText(/What I saw/)
     await expect(bubble.$('.msg-user-fold-middle')).not.toBeDisplayed()
+    // A disclosure takes the kit corner; only primary actions are pills.
+    await expect(toggle).toHaveStyle({ 'border-top-left-radius': '6px' })
 
     await saveElementScreenshot(
       '[data-message-id="msg-user-fold"]',

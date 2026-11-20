@@ -106,6 +106,9 @@ describe('AgentDispatcher', () => {
       display: 'hidden',
     })
     assert.equal(result, 'completed')
+    assert.equal(dispatcher.isActive('project-1', 'thread-1'), false)
+    assert.equal(dispatcher.hasMachineOperationRecord('project-1', 'thread-1'), true)
+    assert.equal(dispatcher.hasMachineOperationRecord('another-project', 'thread-1'), false)
     assert.deepEqual(epochs, [1])
     assert.deepEqual(chunks[0], {
       type: 'machine_turn_start',

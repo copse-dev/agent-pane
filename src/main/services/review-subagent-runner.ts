@@ -10,7 +10,6 @@ import {
 import type {
   LLMProvider,
   LLMMessage,
-  LLMTool,
   ModelUsage,
   StreamChunk,
   ToolExecuteResult,
@@ -37,11 +36,6 @@ export interface PostTurnReviewResult {
   summary: string
   issuesFound: boolean
   usage: ModelUsage
-}
-
-function filterReviewTools(registry: ToolRegistry): LLMTool[] {
-  const names = new Set<string>(REVIEW_TOOL_NAMES)
-  return registry.toLLMTools().filter((t) => names.has(t.name))
 }
 
 function executeReviewTool(
@@ -111,7 +105,7 @@ export async function runPostTurnReview(
       provider,
       prompt,
       parentGoal: `${parentGoal}\nWorkspace: ${workspace}`,
-      tools: filterReviewTools(registry),
+      tools: registry.toLLMToolsNamed(REVIEW_TOOL_NAMES),
       parentToolCallId: 'post-turn-review',
       signal,
       maxContextTokens: contextWindow,

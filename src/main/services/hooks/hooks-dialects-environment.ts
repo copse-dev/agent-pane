@@ -33,6 +33,7 @@ configureHooksDialects({
         env: opts.env,
         stdio: ['pipe', 'pipe', 'pipe'],
         violationId: opts.violationId,
+        ...(opts.localOnly ? { executionTarget: { kind: 'local' as const } } : {}),
         ...(opts.signal ? { signal: opts.signal } : {}),
       }),
     violationCount: (violationId) => sandboxViolationCountForRun(violationId),

@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import {
   constants,
   existsSync,
@@ -130,8 +130,7 @@ export class PromptSearchIndex {
               const raw = read(guarded(threadDir, ref.ref))
               const body = parseOkfMessage(raw)?.body
               if (body === undefined) throw new Error('Invalid prompt file')
-              if (createHash('sha256').update(body, 'utf8').digest('hex') !== ref.sha256)
-                throw new Error('Prompt integrity check failed')
+              if (sha256Hex(body) !== ref.sha256) throw new Error('Prompt integrity check failed')
               text = normalizePromptSearch(body)
             }
             prompts.push({ key, text })

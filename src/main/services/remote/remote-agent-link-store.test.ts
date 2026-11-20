@@ -64,6 +64,7 @@ describe('remote-agent-link-store', () => {
     assert.equal(launched.runId, 'run-1')
     assert.equal(launched.createdAt, 42)
     assert.equal(launched.prUrl, undefined)
+    assert.deepEqual(afterLaunch.cursorAgentIds, ['agent-1'])
 
     await attachRemoteAgentPrFromText(
       'proj-1',
@@ -86,6 +87,53 @@ describe('remote-agent-link-store', () => {
       agentId: 'agent-1',
       provider: 'cursor',
     })
+  })
+
+  it("retains only this thread's recent Cursor launches after a session replacement", async () => {
+    await createThread('proj-1', thread('t1'))
+    await createThread('proj-1', thread('t2'))
+    for (let i = 0; i < 130; i++) {
+      await recordRemoteAgentLaunch({
+        projectId: 'proj-1',
+        threadId: 't1',
+        provider: 'cursor',
+        agentId: `agent-${String(i)}`,
+        createdAt: i + 1,
+      })
+    }
+    await recordRemoteAgentLaunch({
+      projectId: 'proj-1',
+      threadId: 't2',
+      provider: 'cursor',
+      agentId: 'other-thread-agent',
+      createdAt: 1,
+    })
+    const beforeSwitch = await getThreadMeta('proj-1', 't1')
+    assert.equal(beforeSwitch?.cursorAgentIds?.length, 128)
+    assert.equal(beforeSwitch.cursorAgentIds[0], 'agent-2')
+    assert.equal(beforeSwitch.cursorAgentIds.at(-1), 'agent-129')
+    await recordRemoteAgentLaunch({
+      projectId: 'proj-1',
+      threadId: 't1',
+      provider: 'cursor',
+      agentId: 'agent-2',
+      createdAt: 130,
+    })
+    const afterReuse = await getThreadMeta('proj-1', 't1')
+    assert.equal(afterReuse?.cursorAgentIds?.length, 128)
+    assert.equal(afterReuse.cursorAgentIds[0], 'agent-3')
+    assert.equal(afterReuse.cursorAgentIds.at(-1), 'agent-2')
+    await recordRemoteAgentLaunch({
+      projectId: 'proj-1',
+      threadId: 't1',
+      provider: 'openai',
+      agentId: 'openai-run',
+      createdAt: 131,
+    })
+    const switched = await getThreadMeta('proj-1', 't1')
+    assert.equal(switched?.remoteAgentLink?.provider, 'openai')
+    assert.deepEqual(switched.cursorAgentIds, afterReuse.cursorAgentIds)
+    assert.deepEqual((await getThreadMeta('proj-1', 't2'))?.cursorAgentIds, ['other-thread-agent'])
   })
 
   it("lists and finds each project's links in that project, never the window's", async () => {

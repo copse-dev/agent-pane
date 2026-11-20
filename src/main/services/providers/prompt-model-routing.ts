@@ -121,25 +121,35 @@ export async function assessPromptDemandWithFallback(
   return demand
 }
 
+/** The demand level's capability floor on the Intelligence Index scale. */
+function demandFloor(demand: Demand): number | null {
+  return modelIntellect(BAND_REPRESENTATIVE_MODEL[demand])
+}
+
+/** Match task's ranking over a pool; null only when the pool is empty. */
+function pickPromptPoint(floor: number, pool: readonly FrontierPoint[]): FrontierPoint | null {
+  const qualified = pool.filter((point) => point.intellect >= floor)
+  const price = (point: FrontierPoint): number =>
+    point.local || point.plan ? 0 : point.costPerMTok
+  // Subscription routes often all cost zero. Unlike best-value routing, a
+  // task-sized choice should use the least capability that meets the floor,
+  // not the most powerful model simply because it is also included.
+  return qualified.length
+    ? ([...qualified].sort(
+        (a, b) => price(a) - price(b) || a.intellect - b.intellect || a.id.localeCompare(b.id),
+      )[0] ?? null)
+    : pickDynamicModel({ kind: 'best-intellect' }, pool)
+}
+
 /** Apply demand to the live, policy-filtered pool, using normal plan/cost rules. */
 export function pickPromptModel(
   demand: Demand,
   pool: readonly FrontierPoint[],
   fallback: string,
 ): string {
-  const threshold = modelIntellect(BAND_REPRESENTATIVE_MODEL[demand])
-  if (threshold === null) return fallback
-  const qualified = pool.filter((point) => point.intellect >= threshold)
-  const price = (point: FrontierPoint): number =>
-    point.local || point.plan ? 0 : point.costPerMTok
-  // Subscription routes often all cost zero. Unlike best-value routing, a
-  // task-sized choice should use the least capability that meets the floor,
-  // not the most powerful model simply because it is also included.
-  const picked = qualified.length
-    ? [...qualified].sort(
-        (a, b) => price(a) - price(b) || a.intellect - b.intellect || a.id.localeCompare(b.id),
-      )[0]
-    : pickDynamicModel({ kind: 'best-intellect' }, pool)
+  const floor = demandFloor(demand)
+  if (floor === null) return fallback
+  const picked = pickPromptPoint(floor, pool)
   return picked ? toRoutableModelId(picked) : fallback
 }
 
@@ -181,4 +191,116 @@ export async function resolvePromptModel(
   assertModelMakerAllowed(model)
   console.info('[prompt-model-routing] Selected primary model', { demand, model })
   return model
+}
+
+export interface TaskModelRecommendation {
+  demand: Demand
+  /** Routes in the configured, policy-filtered pool. */
+  poolSize: number
+  /** Null when no configured route can hold the task. */
+  pick: {
+    model: string
+    point: FrontierPoint
+    /** False when nothing configured meets the floor and the strongest route stands in. */
+    meetsDemand: boolean
+  } | null
+}
+
+/**
+ * Settle with `work`, or reject with the abort reason as soon as `signal`
+ * aborts. The work itself keeps running (pool discovery and context-window
+ * lookups take no signal and are shared with other callers); the caller just
+ * stops waiting for it.
+ */
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (!signal) return work
+  // The work may still settle after the caller has stopped waiting; its
+  // rejection is the caller's no longer, so it must not go unhandled.
+  work.catch(() => undefined)
+  const abortError = (): Error => {
+    const reason: unknown = signal.reason
+    return reason instanceof Error ? reason : new Error('The operation was aborted.')
+  }
+  if (signal.aborted) return Promise.reject(abortError())
+  let onAbort = (): void => undefined
+  const aborted = new Promise<never>((_, reject) => {
+    onAbort = (): void => {
+      reject(abortError())
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+  return Promise.race([work, aborted]).finally(() => {
+    signal.removeEventListener('abort', onAbort)
+  })
+}
+
+/**
+ * Match task's choice over a configured pool, without a fallback model: a
+ * recommendation names only a route the user can run, or nothing at all.
+ * With `signal`, an abort stops the wait on each context-window lookup, and no
+ * lookup starts once it has fired.
+ */
+export async function recommendFromPool(
+  demand: Demand,
+  pool: readonly FrontierPoint[],
+  requiredTokens: number,
+  contextWindowForModel: (model: string) => Promise<number> = resolveContextWindow,
+  signal?: AbortSignal,
+): Promise<TaskModelRecommendation> {
+  const floor = demandFloor(demand) ?? 0
+  let remaining = [...pool]
+  while (remaining.length > 0) {
+    const point = pickPromptPoint(floor, remaining)
+    if (!point) break
+    const model = toRoutableModelId(point)
+    // Check before starting a lookup: the call it makes cannot be taken back.
+    if (requiredTokens > 0) signal?.throwIfAborted()
+    if (
+      requiredTokens <= 0 ||
+      (await untilAborted(contextWindowForModel(model), signal)) >= requiredTokens
+    ) {
+      return {
+        demand,
+        poolSize: pool.length,
+        pick: { model, point, meetsDemand: point.intellect >= floor },
+      }
+    }
+    remaining = remaining.filter((candidate) => candidate !== point)
+  }
+  return { demand, poolSize: pool.length, pick: null }
+}
+
+/**
+ * Advisory counterpart to {@link resolvePromptModel}: the same assessment and
+ * the same configured, policy-filtered pool, but it never selects or persists a
+ * model, and it never substitutes one the user has not configured.
+ */
+export async function recommendTaskModel(
+  context: string,
+  routes: AsyncIterable<SmallTasksRoute>,
+  signal: AbortSignal,
+  requiredTokens: number,
+): Promise<TaskModelRecommendation> {
+  // Route setup (Small tasks resolution, model discovery) takes no signal, so
+  // stop waiting on the whole assessment as soon as the call is cancelled.
+  const demand = await untilAborted(assessPromptDemandWithFallback(context, routes, signal), signal)
+  signal.throwIfAborted()
+  const pool = await untilAborted(
+    routableFrontierPoints().catch(() => []),
+    signal,
+  )
+  signal.throwIfAborted()
+  const recommendation = await recommendFromPool(
+    demand,
+    pool,
+    requiredTokens,
+    resolveContextWindow,
+    signal,
+  )
+  signal.throwIfAborted()
+  console.info('[prompt-model-routing] Recommended model', {
+    demand,
+    model: recommendation.pick?.model ?? null,
+  })
+  return recommendation
 }

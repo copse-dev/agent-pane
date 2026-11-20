@@ -55,10 +55,9 @@ import { isNonNull } from '@copse/std/nullish.ts'
 
 /**
  * The repo root, derived from this file's own location rather than `cwd`.
- * Cursor and Copse spawn a hook with the *declaring config's* directory as its
- * working directory (`.cursor/`, `.copse/`), so `process.cwd()` would resolve
- * every path — and the ESLint/Prettier config lookup — one level down and find
- * nothing.
+ * Project hooks run from the thread's execution root, while user hooks retain
+ * their declaring config's directory. Anchoring checks here also keeps direct
+ * invocations independent of the caller's cwd and locates this repo's config.
  */
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
