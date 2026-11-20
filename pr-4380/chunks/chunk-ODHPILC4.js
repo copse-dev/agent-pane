@@ -71368,11 +71368,12 @@ var init_experimental_markup = __esm({
               </label>
               <p class="field-hint">
                 Agent shell commands and background tasks on this computer no longer receive
-                <code>GH_TOKEN</code> or <code>GITHUB_TOKEN</code>. Their <code>gh</code> calls go
-                through Copse instead, which adds your GitHub login for <code>api.github.com</code>
-                only. Commands inside the sandbox can only read. Not covered: <code>git</code> over
-                HTTPS, SSH workspaces, and Linux commands inside the sandbox. A command you approve
-                outside the sandbox can still read your gh login from disk.
+                <code>GH_TOKEN</code> or <code>GITHUB_TOKEN</code>. Inside the sandbox, their
+                <code>gh</code> calls can only read and go through Copse instead, which adds your
+                GitHub login for <code>api.github.com</code> only. Not covered: <code>git</code>
+                over HTTPS, SSH workspaces, and Linux commands inside the sandbox.
+                A command you approve outside the sandbox does not go through Copse: its
+                <code>gh</code> uses your gh login from disk.
               </p>
             </fieldset>
 
