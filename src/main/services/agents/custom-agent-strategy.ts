@@ -36,6 +36,16 @@ export const CUSTOM_AGENT_FORBIDDEN_TOOLS: readonly string[] = [
   // A worker reports findings; the parent owns the shared thread plan.
   'update_thread_plan',
   'report_plan_completion',
+  // The runner opens no todo context of its own, so `update_todos` would
+  // rewrite (and stream) the parent run's todo list.
+  'update_todos',
+  // Thread orchestration and work that outlives the worker's step budget stay
+  // with the parent: starting or prompting threads would escape depth 1, and a
+  // background task or long-task `continue` can schedule turns on the parent.
+  'subthreads',
+  'send_thread_prompt',
+  'run_background',
+  'track_long_task',
 ]
 
 /** Steps a custom agent may take when its definition sets no `maxTurns`. */

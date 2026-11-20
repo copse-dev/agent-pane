@@ -1,6 +1,7 @@
 import { constants } from 'node:fs'
 import { cp, lstat, mkdir, readlink, rm } from 'node:fs/promises'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
+import { isPathWithin } from '@copse/std/path-containment.ts'
 
 /**
  * Git-ignored content (installed dependencies, build output, local config) is
@@ -69,11 +70,6 @@ function errorCode(error: unknown): string | undefined {
   return typeof error.code === 'string' ? error.code : undefined
 }
 
-function isWithin(root: string, path: string): boolean {
-  const rel = relative(root, path)
-  return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
-}
-
 async function exists(path: string): Promise<boolean> {
   try {
     await lstat(path)
@@ -107,7 +103,7 @@ export async function cloneIgnoredEntries(input: {
     const stat = await lstat(source)
     if (stat.isSymbolicLink()) {
       const target = await readlink(source)
-      return !isAbsolute(target) && isWithin(projectRoot, resolve(dirname(source), target))
+      return !isAbsolute(target) && isPathWithin(projectRoot, resolve(dirname(source), target))
     }
     return stat.isFile() || stat.isDirectory()
   }

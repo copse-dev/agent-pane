@@ -23,6 +23,7 @@ import {
 import { parseAcpModelSelection } from './src/shared/acp.ts'
 import { KNOWN_ACP_AGENTS, canonicalAcpAgentId } from './src/shared/acp-known-agents.ts'
 import { removeE2eTree } from './tests/e2e/helpers/remove-tree.ts'
+import { cleanupEvalGortex } from './scripts/lib/eval-gortex-cleanup.mts'
 
 const EVAL_ENV_FILE = join(process.cwd(), 'tests/e2e/electron-shell/.eval-env.json')
 const DEFAULT_SCENARIO = join(process.cwd(), 'tests/e2e/scenarios/agent-eval.example.json')
@@ -239,8 +240,11 @@ export const config: WebdriverIO.Config = {
         ]),
     }))
   },
-  afterSession() {
+  async afterSession() {
     rmSync(EVAL_ENV_FILE, { force: true })
+    // KEEP_EVAL_WDIO preserves evidence, never background services. If ownership
+    // or shutdown cannot be verified, leave all profile/project files intact.
+    if (evalUserDataDir && process.platform !== 'win32') await cleanupEvalGortex(evalUserDataDir)
     cleanupEvalProject?.()
     cleanupEvalProject = null
     cleanupEvalRunDirs()

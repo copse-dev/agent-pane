@@ -1,9 +1,10 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { createInterface } from 'node:readline'
+import { pathExists } from '@copse/std/path-exists.ts'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { getElectronUserDataPath, isElectronAppPackaged } from '../electron-app-runtime.ts'
@@ -363,15 +364,6 @@ function helperSourceDirectory(): string {
   return join(__dirname, '..', 'resources', 'desktop-control')
 }
 
-async function exists(path: string): Promise<boolean> {
-  try {
-    await stat(path)
-    return true
-  } catch {
-    return false
-  }
-}
-
 /** Run a build tool and resolve with its stdout. */
 function run(file: string, args: readonly string[], env: NodeJS.ProcessEnv): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -579,7 +571,7 @@ async function compileHelper(): Promise<string> {
   const stamp = join(directory, 'build-stamp')
   const expectedStamp = `${digest} ${identity}`
   const currentStamp = await readFile(stamp, 'utf8').catch(() => '')
-  if (currentStamp === expectedStamp && (await exists(binary))) return binary
+  if (currentStamp === expectedStamp && (await pathExists(binary))) return binary
   await mkdir(moduleCache, { recursive: true })
   const compiledSource = join(directory, 'copse-desktop.swift')
   await writeFile(compiledSource, generatedSource)

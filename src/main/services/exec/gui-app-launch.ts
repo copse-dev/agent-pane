@@ -3,6 +3,7 @@ import { isAbsolute, resolve } from 'node:path'
 import { runAppProcess } from '../app-run/app-run-process.ts'
 import { getAgentExecutionRoot } from '../execution-root.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 /**
  * Launch a macOS GUI app through Launch Services (`/usr/bin/open`) from the
@@ -146,14 +147,14 @@ export async function launchGuiApp(
   try {
     resolvedTarget = await resolveTargetPath(request.target, cwd)
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    return { ok: false, error: errorMessage(err) }
   }
 
   let argv: string[]
   try {
     argv = buildOpenArgv({ ...request, target: resolvedTarget })
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    return { ok: false, error: errorMessage(err) }
   }
 
   try {
@@ -163,7 +164,7 @@ export async function launchGuiApp(
   } catch (err) {
     return {
       ok: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessage(err),
     }
   }
 

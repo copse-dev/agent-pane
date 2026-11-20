@@ -11,6 +11,7 @@ import {
   tooltipFor,
   type FrontierTooltip,
 } from './intellect-frontier-tooltip.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
@@ -975,10 +976,6 @@ export function renderChart(
       ? renderFrontierSvg(points, size, gutters, tooltip, costAxis, labelMode)
       : el('p', { class: 'field-hint' }, 'No models with a sourced intellect score yet.')
   } catch (err) {
-    return el(
-      'p',
-      { class: 'field-hint' },
-      `The value map failed to render: ${err instanceof Error ? err.message : String(err)}`,
-    )
+    return el('p', { class: 'field-hint' }, `The value map failed to render: ${errorMessage(err)}`)
   }
 }

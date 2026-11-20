@@ -3,14 +3,14 @@
  *
  * Copse offers the bridge in `session/new`, but an offer is not a mount: an
  * agent whose MCP client failed to reach it carries on without any
- * `mcp__copse__*` tool. The bridge records the agent's `tools/list`; a turn
+ * `mcp__copse-<nonce>__*` tool. The bridge records the agent's `tools/list`; a turn
  * waits briefly for it after the session opens, and until it has happened Copse
  * neither tells the agent to prefer those tools nor lets the thread assume them.
  */
 import type { SessionUpdate } from '@agentclientprotocol/sdk/unstable'
 import { z } from 'zod'
 import { isRecord } from '@shared/unknown-value.ts'
-import { BRIDGE_MCP_SERVER_NAME } from './acp-bridge-name.ts'
+import { escapeRegex } from './acp-bridge-name.ts'
 import { acpToolIdentityOf, type AcpToolIdentity } from './acp-tool-provenance.ts'
 
 /**
@@ -88,22 +88,25 @@ export function acpBridgeUnavailableNotice(agentTitle: string): string {
   )
 }
 
-/** Prompt note: overrides the notes, operator guidance or memory that name the bridge. */
-export const ACP_COPSE_TOOLS_UNAVAILABLE_PROMPT_NOTE =
-  `Tool note: Copse's "${BRIDGE_MCP_SERVER_NAME}" MCP server is not connected in this ` +
-  `session, so none of its tools (mcp__${BRIDGE_MCP_SERVER_NAME}__*) are available to you. ` +
-  'Ignore any guidance, earlier in this session or below, to prefer them, and use your ' +
-  'own tools instead.'
+/**
+ * Prompt note: overrides the notes, operator guidance or memory that name the
+ * bridge. `server` is the name this session's bridge was offered under.
+ */
+export function acpCopseToolsUnavailablePromptNote(server: string): string {
+  return (
+    `Tool note: Copse's "${server}" MCP server is not connected in this ` +
+    `session, so none of its tools (mcp__${server}__*) are available to you. ` +
+    'Ignore any guidance, earlier in this session or below, to prefer them, and use your ' +
+    'own tools instead.'
+  )
+}
 
 /**
  * Prompt note: the bridge connected after the agent was told it had not.
  * `toolsNote` is all the steering the session's notes left out without the tools.
  */
-export function acpCopseToolsConnectedPromptNote(toolsNote: string): string {
-  return (
-    `Tool note: Copse's "${BRIDGE_MCP_SERVER_NAME}" MCP server is now connected in this ` +
-    `session. ${toolsNote}`
-  )
+export function acpCopseToolsConnectedPromptNote(server: string, toolsNote: string): string {
+  return `Tool note: Copse's "${server}" MCP server is now connected in this session. ${toolsNote}`
 }
 
 /**
@@ -120,16 +123,16 @@ const claudeMcpServerStatusMeta = z.object({
 })
 
 /**
- * True for Claude Agent ACP's transcript fallback saying Copse's own bridge
- * failed to start ("MCP server "copse" failed to start … Run /mcp for the
- * error"). Its `/mcp` pointer means nothing in Copse.
+ * True for Claude Agent ACP's transcript fallback saying Copse's own bridge,
+ * mounted as `server`, failed to start ("MCP server "copse-…" failed to start
+ * … Run /mcp for the error"). Its `/mcp` pointer means nothing in Copse.
  */
-export function isAcpBridgeStartupFailure(update: SessionUpdate): boolean {
+export function isAcpBridgeStartupFailure(update: SessionUpdate, server: string): boolean {
   if (update.sessionUpdate !== 'agent_message_chunk') return false
   const meta = claudeMcpServerStatusMeta.safeParse(update._meta)
   return (
     meta.success &&
-    meta.data.claudeCode.server === BRIDGE_MCP_SERVER_NAME &&
+    meta.data.claudeCode.server === server &&
     meta.data.claudeCode.status === 'failed'
   )
 }
@@ -137,7 +140,7 @@ export function isAcpBridgeStartupFailure(update: SessionUpdate): boolean {
 /**
  * Claude Code's result for a call of a tool that is not in its tool list. The
  * Claude adapter reports it as that call's failed `tool_call_update`
- * (`<tool_use_error>Error: No such tool available: mcp__copse__gh_pr_view</tool_use_error>`).
+ * (`<tool_use_error>Error: No such tool available: mcp__copse-k3v9x2mq__gh_pr_view</tool_use_error>`).
  * Current CLIs append why, after the name; the second group captures it.
  *
  * Anchored: that error is the whole result, so it must lead the text (after an
@@ -145,23 +148,27 @@ export function isAcpBridgeStartupFailure(update: SessionUpdate): boolean {
  * the call did reach fails with its own message first, and its output may
  * quote this phrase, e.g. a missing file whose name contains it.
  */
-const NO_SUCH_BRIDGE_TOOL = new RegExp(
-  `^\\s*(?:\`\`\`[^\\n]*\\n\\s*)?(?:<tool_use_error>)?Error: No such tool available: ` +
-    `mcp__${BRIDGE_MCP_SERVER_NAME}__([A-Za-z0-9_-]+)([^<\\n]*)`,
-)
+function noSuchBridgeTool(server: string): RegExp {
+  return new RegExp(
+    `^\\s*(?:\`\`\`[^\\n]*\\n\\s*)?(?:<tool_use_error>)?Error: No such tool available: ` +
+      `mcp__${escapeRegex(server)}__([A-Za-z0-9_-]+)([^<\\n]*)`,
+  )
+}
 
 /**
- * The reasons Claude Code gives (after the tool name) that mean the copse
+ * The reasons Claude Code gives (after the tool name) that mean the bridge's
  * server does not offer the tool in this session: none at all (older CLIs, and
  * #4142's report), a connected server without the tool, or no such server. Any
  * other reason is transient ("still connecting; try again shortly") or about
  * something else (a deny rule, a subagent's context), and is not evidence.
  */
-const SERVER_LACKS_TOOL_REASONS: readonly string[] = [
-  '',
-  `. Its MCP server '${BRIDGE_MCP_SERVER_NAME}' is connected but does not offer this tool here.`,
-  '. No MCP server in this session provides it;',
-]
+function serverLacksToolReasons(server: string): readonly string[] {
+  return [
+    '',
+    `. Its MCP server '${server}' is connected but does not offer this tool here.`,
+    '. No MCP server in this session provides it;',
+  ]
+}
 
 /** How much of a failed call's output is searched; the error leads it. */
 const MAX_SCANNED_TEXT = 2_000
@@ -190,7 +197,7 @@ function failureTexts(
 
 /**
  * The bridged tool an agent's own runtime just reported it does not have, or
- * null. After the agent has listed Copse's tools, this is the evidence that it
+ * null. `server` is the name this session's bridge was mounted under. After the agent has listed Copse's tools, this is the evidence that it
  * dropped them anyway: Claude Code accepts the listing, then discards every
  * tool of a server when one schema breaks its rules (#4142), and the mount
  * check (#4144) cannot see that.
@@ -205,13 +212,16 @@ function failureTexts(
 export function acpBridgeToolMissing(
   update: SessionUpdate,
   identities: readonly AcpToolIdentity[],
+  server: string,
 ): string | null {
   if (update.sessionUpdate !== 'tool_call_update' || update.status !== 'failed') return null
+  const noSuchTool = noSuchBridgeTool(server)
+  const lacksToolReasons = serverLacksToolReasons(server)
   let missing: string | null = null
   for (const text of failureTexts(update)) {
-    const match = NO_SUCH_BRIDGE_TOOL.exec(text)
+    const match = noSuchTool.exec(text)
     const reason = match?.[2]?.trim() ?? ''
-    const serverLacksTool = SERVER_LACKS_TOOL_REASONS.some((known) =>
+    const serverLacksTool = lacksToolReasons.some((known) =>
       known === '' ? reason === '' : reason.startsWith(known),
     )
     if (match?.[1] && serverLacksTool) {
@@ -220,7 +230,7 @@ export function acpBridgeToolMissing(
     }
   }
   if (missing === null) return null
-  const qualified = `mcp__${BRIDGE_MCP_SERVER_NAME}__${missing}`
+  const qualified = `mcp__${server}__${missing}`
   const named = [acpToolIdentityOf(update), ...identities].some(
     (identity) => identity.metaToolName === qualified || identity.name === qualified,
   )
@@ -274,8 +284,11 @@ export function acpBridgeToolsDroppedNotice(agentTitle: string): string {
 }
 
 /** Prompt note: the agent's runtime refused a Copse tool it was told to prefer. */
-export const ACP_COPSE_TOOLS_DROPPED_PROMPT_NOTE =
-  `Tool note: the tools of Copse's "${BRIDGE_MCP_SERVER_NAME}" MCP server ` +
-  `(mcp__${BRIDGE_MCP_SERVER_NAME}__*) are not in your tool list this session, although the ` +
-  'server is connected. Ignore any guidance, earlier in this session or below, to prefer ' +
-  'them, and use your own tools instead.'
+export function acpCopseToolsDroppedPromptNote(server: string): string {
+  return (
+    `Tool note: the tools of Copse's "${server}" MCP server ` +
+    `(mcp__${server}__*) are not in your tool list this session, although the ` +
+    'server is connected. Ignore any guidance, earlier in this session or below, to prefer ' +
+    'them, and use your own tools instead.'
+  )
+}

@@ -1536,6 +1536,36 @@ Reviewers read it before the diff. Copse Reviewer now does the same, under B4 as
   starts no workflow run for an event that token causes; with the App token, every push cost
   two full CI runs. The findings job still writes as the App, once per full review, so a
   review still costs one extra CI run.
+
+  **2026-11-13 — separate full-review summary publisher.** The full-review model job
+  retains its read-only workflow token for conversation and image reads. Its App token
+  still posts findings, supersedes reviews and applies feedback labels. The trusted CLI
+  now exports the already rendered, evidence-grounded summary as bounded inert data for
+  a separate model-free publisher; it does not PATCH a description from that job. The
+  publisher has only its own workflow token with PR write and artifact read access, no
+  model/App credentials and no contributor checkout. It checks the exact same-run
+  immutable artifact ID, producer ZIP digest and payload digest, decodes a versioned
+  size-limited payload against the authoritative authorized request, and derives the
+  target only from that request. Before merging into the freshly read author body it
+  rechecks exact head/base, open state, draft consent and opt-out. Authentication or
+  identity failures stop publication without App fallback. Publisher-only reruns use
+  the successful producer artifact ID; full or findings reruns produce a new immutable
+  artifact. Ordinary CLI and Forgejo publication defaults remain unchanged. This extends
+  the workflow-token metadata-event suppression policy to full-review summary PATCHes
+  without broadening the model job read-context credential. Feedback-label events
+  retain their existing App semantics; required CI aggregates are unchanged.
+
+  **Failed-review handoff.** As before deferred publication, a summary successfully
+  rendered before a review's nonzero exit remains publishable. Identity and upload
+  steps use explicit non-cancellation guards, validate a bounded regular file against
+  the authorized request and emit no artifact for an absent summary. Invalid files
+  fail closed. A failed producer with a valid artifact can feed the model-free
+  publisher; the review job remains failed. Canceled producers and canceled workflows
+  do not publish. No `continue-on-error` or App fallback masks a failed review.
+  Every reusable caller must grant the publisher's `actions: read` ceiling before
+  updating its pin, even when summaries are disabled; the model-context token remains
+  read-only in the protected Copse job.
+
 - **Limits.** The forge has no conditional update for a description, so an author's edit
   landing between the read and the write is lost, as is the earlier of two runs that write
   within the same round trip. A tool that

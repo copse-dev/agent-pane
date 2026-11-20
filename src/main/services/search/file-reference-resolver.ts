@@ -1,5 +1,6 @@
 import { existsSync, statSync } from 'node:fs'
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { resolve, sep } from 'node:path'
+import { relativeWithin } from '@copse/std/path-containment.ts'
 import { getIndex, resolveFileIndexTarget } from './file-index.ts'
 import { getWorkspaceRoot, resolvePathWithinRoot, toRelativePathWithinRoot } from '../workspace.ts'
 
@@ -22,24 +23,18 @@ export interface WorkspaceLinkResolutionContext {
 // against the owning thread, never against a path on the desktop filesystem.
 const HOSTED_CHECKOUT_PREFIX = '/workspace/repo/'
 
-function relativePathInside(root: string, target: string): string | null {
-  const rel = relative(resolve(root), resolve(target))
-  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null
-  return rel
-}
-
 function normalizeWorkspaceLinkCandidate(
   candidate: string,
   root: string,
   context: WorkspaceLinkResolutionContext,
 ): string {
   if (!candidate.startsWith('/')) return candidate
-  const fromExecutionRoot = relativePathInside(root, candidate)
+  const fromExecutionRoot = relativeWithin(root, candidate)
   if (fromExecutionRoot) return fromExecutionRoot
 
   // Links from the shared checkout remain useful after a thread moves into an
   // isolated checkout.
-  const fromProjectRoot = relativePathInside(context.projectRoot, candidate)
+  const fromProjectRoot = relativeWithin(context.projectRoot, candidate)
   if (fromProjectRoot) return fromProjectRoot
 
   if (candidate.startsWith(HOSTED_CHECKOUT_PREFIX))
@@ -50,7 +45,7 @@ function normalizeWorkspaceLinkCandidate(
   // execution root. This is lexical on purpose: the earlier checkout may have
   // already been retired, while the final containment check still resolves the
   // resulting relative path strictly inside `root`.
-  const fromManagedProject = relativePathInside(context.managedProjectRoot, candidate)
+  const fromManagedProject = relativeWithin(context.managedProjectRoot, candidate)
   if (fromManagedProject) {
     const [sourceThreadId] = fromManagedProject.split(sep)
     if (sourceThreadId) {
@@ -59,7 +54,7 @@ function normalizeWorkspaceLinkCandidate(
         sourceThreadId,
         context.projectRelativePath,
       )
-      const rebased = relativePathInside(sourceExecutionRoot, candidate)
+      const rebased = relativeWithin(sourceExecutionRoot, candidate)
       if (rebased) return rebased
     }
   }

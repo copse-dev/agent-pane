@@ -10,7 +10,7 @@ import { clearOpenAiAgentSession, runOpenAiAgentFromSettings } from './openai-ag
  */
 import { getAgentExecutionRoot } from '../execution-root.ts'
 import type { LLMMessage, Message, StreamChunk } from '@shared/types'
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import {
   applyRemoteAgentHandoffContext,
   formatRemoteGitSummary,
@@ -42,12 +42,14 @@ import { getCurrentBranchName } from '../github/git-service.ts'
 import { storageGet, storageSet } from '../storage/storage.ts'
 import { clearManagedAgentSession, runManagedAgentFromSettings } from './managed-agents-client.ts'
 import {
+  joinUrl,
   resolveRemoteAgentProjectId,
   resolveRemoteAgentRepository,
   type RemoteAgentRunOptions,
   type RemoteAgentRunResult,
 } from './remote-agent-shared.ts'
 import { attachRemoteAgentPrFromText, recordRemoteAgentLaunch } from './remote-agent-link-store.ts'
+import { cursorAuthHeader } from './cursor-cloud-models.ts'
 
 // Re-exported for callers/tests that import the repository resolver from here.
 export { resolveRemoteAgentRepository } from './remote-agent-shared.ts'
@@ -261,14 +263,6 @@ export function clearRemoteAgentSession(threadId: string): void {
   // starts a new remote session regardless of which provider was last used.
   clearManagedAgentSession(threadId)
   clearOpenAiAgentSession(threadId)
-}
-
-function cursorAuthHeader(apiKey: string): string {
-  return `Basic ${Buffer.from(`${apiKey}:`).toString('base64')}`
-}
-
-function joinUrl(baseUrl: string, path: string): string {
-  return `${baseUrl.replace(/\/+$/, '')}${path}`
 }
 
 function remoteArtifactDownloadEndpoint(baseUrl: string, agentId: string, path: string): string {
@@ -749,9 +743,7 @@ function isTerminalRunStatus(status: string | null | undefined): boolean {
 
 /** Filesystem-safe deterministic identity for one provider agent/run snapshot. */
 export function cursorRunMessageId(agentId: string, runId: string): string {
-  return `remote-cursor-run-${createHash('sha256')
-    .update(`${agentId}\u0000${runId}`, 'utf8')
-    .digest('hex')}`
+  return `remote-cursor-run-${sha256Hex(`${agentId}\u0000${runId}`)}`
 }
 
 /**

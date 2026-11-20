@@ -1,16 +1,8 @@
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
-import { randomUUID } from 'node:crypto'
-import {
-  appendFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs'
-import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { isPathWithin } from '@copse/std/path-containment.ts'
+import { writeFileAtomicSync } from '@copse/std/write-file-atomic.ts'
 import {
   parseSupervisedTaskMeta,
   serializeSupervisedTaskAuditEvent,
@@ -67,8 +59,7 @@ function containedTaskDir(projectId: string, taskId: string, env: NodeJS.Process
   }
   const root = resolve(projectStoreDir(projectId, env), TASKS_DIR)
   const candidate = resolve(root, taskId)
-  const rel = relative(root, candidate)
-  if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+  if (!isPathWithin(root, candidate, { allowSelf: false })) {
     throw new Error('Task id resolves outside the project task store')
   }
   return candidate
@@ -80,8 +71,7 @@ function containedArchivePath(projectId: string, taskId: string, env: NodeJS.Pro
   }
   const root = resolve(projectStoreDir(projectId, env), ARCHIVE_DIR)
   const candidate = resolve(root, `${taskId}.json`)
-  const rel = relative(root, candidate)
-  if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+  if (!isPathWithin(root, candidate, { allowSelf: false })) {
     throw new Error('Task id resolves outside the project task archive')
   }
   return candidate
@@ -107,12 +97,6 @@ function archiveTask(task: SupervisedTaskMeta): SupervisedTaskArchive | null {
     ...(task.lastError ? { lastError: task.lastError } : {}),
     ...(task.resultRef ? { resultRef: task.resultRef } : {}),
   })
-}
-
-function atomicWrite(path: string, data: string): void {
-  const temporary = `${path}.copse-${String(process.pid)}-${randomUUID()}.tmp`
-  writeFileSync(temporary, data, 'utf8')
-  renameSync(temporary, path)
 }
 
 function queueKey(projectId: string, taskId: string): string {
@@ -196,7 +180,7 @@ export class FileSupervisedTaskStore implements SupervisedTaskStore {
     return runSerialized(queueKey(meta.projectId, meta.taskId), () => {
       const dir = containedTaskDir(meta.projectId, meta.taskId, this.env)
       mkdirSync(dir, { recursive: true })
-      atomicWrite(join(dir, META_FILE), `${JSON.stringify(validatedMeta, null, 2)}\n`)
+      writeFileAtomicSync(join(dir, META_FILE), `${JSON.stringify(validatedMeta, null, 2)}\n`)
       appendFileSync(
         join(dir, AUDIT_FILE),
         `${serializeSupervisedTaskAuditEvent(validatedAudit)}\n`,
@@ -221,7 +205,7 @@ export class FileSupervisedTaskStore implements SupervisedTaskStore {
           mkdirSync(join(projectStoreDir(task.projectId, this.env), ARCHIVE_DIR), {
             recursive: true,
           })
-          atomicWrite(archivePath, `${JSON.stringify(archive, null, 2)}\n`)
+          writeFileAtomicSync(archivePath, `${JSON.stringify(archive, null, 2)}\n`)
           rmSync(containedTaskDir(task.projectId, task.taskId, this.env), {
             recursive: true,
             force: true,

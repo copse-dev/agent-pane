@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { constants } from 'node:fs'
-import { mkdir, open, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { open, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { randomUUID } from 'node:crypto'
@@ -8,6 +8,7 @@ import { z } from 'zod'
 import { copseDataRoot } from '@copse/store-kit/copse-paths.ts'
 import { safeJsonParse, decodeWithSchema } from '@copse/std/safe-json.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
+import { writeFileAtomic } from '@copse/std/write-file-atomic.ts'
 
 export const DESKTOP_LEASE_LABEL = 'dev.copse.isolated-desktop'
 const nameSchema = z.string().regex(/^copse-desktop-probe-[a-f0-9-]{36}$/)
@@ -51,25 +52,18 @@ export class DesktopLeaseRecovery {
 
   async begin(name: string): Promise<string> {
     nameSchema.parse(name)
-    await mkdir(this.directory, { recursive: true, mode: 0o700 })
     const nonce = randomUUID()
-    const temporary = join(this.directory, '.lease-' + randomUUID() + '.tmp')
-    try {
-      await writeFile(
-        temporary,
-        JSON.stringify({
-          version: 1,
-          name,
-          nonce,
-          pid: this.owner.pid,
-          expiresAt: this.owner.now() + 15 * 60_000,
-        }),
-        { mode: 0o600, flag: 'wx' },
-      )
-      await rename(temporary, join(this.directory, name + '.json'))
-    } finally {
-      await rm(temporary, { force: true })
-    }
+    await writeFileAtomic(
+      join(this.directory, name + '.json'),
+      JSON.stringify({
+        version: 1,
+        name,
+        nonce,
+        pid: this.owner.pid,
+        expiresAt: this.owner.now() + 15 * 60_000,
+      }),
+      { mode: 0o600, directoryMode: 0o700 },
+    )
     return nonce
   }
 

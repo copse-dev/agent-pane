@@ -92,8 +92,7 @@ export interface RunParentContinuationOptions {
 }
 
 function filterReviewTools(registry: ToolRegistry, specialistEnabled: boolean): LLMTool[] {
-  const names = new Set<string>(REVIEW_TOOL_NAMES)
-  const tools = registry.toLLMTools().filter((t) => names.has(t.name))
+  const tools = registry.toLLMToolsNamed(REVIEW_TOOL_NAMES)
   return specialistEnabled ? [...tools, specialistCheckTool] : tools
 }
 

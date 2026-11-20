@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -44,7 +44,7 @@ export function sshControlDir(): string {
 
 /** Stable short filename for a host id (avoids long alias names in the path). */
 export function controlSocketFileName(hostId: string): string {
-  const hash = createHash('sha256').update(hostId).digest('hex').slice(0, 16)
+  const hash = sha256Hex(hostId).slice(0, 16)
   return `${hash}.sock`
 }
 

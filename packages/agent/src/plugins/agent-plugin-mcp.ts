@@ -23,6 +23,7 @@
 import { z } from 'zod'
 import { AGENT_PLUGINS_SPEC_VERSION } from './agent-plugin-manifest.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
+import { errorMessage } from '@copse/std/errors.ts'
 
 /** Canonical `$schema` identifier for `mcp.json` (§7.2.1). */
 export const AGENT_PLUGIN_MCP_SCHEMA_ID = 'https://agent-plugins.org/schemas/1.0.0/mcp.schema.json'
@@ -324,7 +325,7 @@ export function parseAgentPluginMcp(raw: unknown): AgentPluginMcpParseResult {
           : validateHttp(name, parsed.data),
       )
     } catch (error) {
-      warnings.push(`Skipping MCP ${error instanceof Error ? error.message : String(error)}`)
+      warnings.push(`Skipping MCP ${errorMessage(error)}`)
     }
   }
   return { servers, warnings }
