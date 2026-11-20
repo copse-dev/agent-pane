@@ -46,10 +46,6 @@ describe('analyzeReadOutsideProject — eligible reads', () => {
     assert.equal(analyze('grep -n proxy ${HOME}/.gitconfig').eligible, true)
   })
 
-  it('accepts a read-only git command against a checkout outside the project', () => {
-    assert.equal(analyze('git log --oneline -5 ../sibling-repo').eligible, true)
-  })
-
   it('reports every distinct outside target it reads', () => {
     const analysis = analyze('cat /etc/hosts ~/.gitconfig')
     assert.deepEqual(analysis.targets, ['/etc/hosts', '~/.gitconfig'])
@@ -86,6 +82,17 @@ describe('analyzeReadOutsideProject — ineligible commands', () => {
     ineligible('cat $(which node)', /command substitution/)
     ineligible('cat "$CONFIG_PATH"', /variable expansion/)
     ineligible('cat `ls ~`', /command substitution/)
+  })
+
+  it('rejects parent segments before path.resolve can hide a symlink traversal', () => {
+    for (const command of [
+      'cat /home/dev/notes/link/../note.txt',
+      'cat < /home/dev/notes/link/../note.txt',
+      'cd /home/dev/notes/link/.. && cat note.txt',
+      'git log --oneline -5 ../sibling-repo',
+    ]) {
+      ineligible(command, /parent path segment/)
+    }
   })
 
   it('rejects privilege and environment wrappers even around a read', () => {

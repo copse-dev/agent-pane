@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
@@ -14,6 +14,7 @@ import {
   loadThreadMessages,
   recordThreadPrRefs,
   saveProjectThread,
+  threadReadRevision,
   updateMeta,
 } from './thread-store.ts'
 import { runSerialized } from './storage/write-queue.ts'
@@ -213,6 +214,77 @@ describe('thread-store meta cache', () => {
     const [loaded] = await loadProjectThreadMetas('p')
 
     assert.equal(loaded?.title, 'from disk')
+  })
+})
+
+describe('thread-store read revision', () => {
+  let root: string
+  let previousRoot: string | undefined
+
+  beforeEach(() => {
+    previousRoot = process.env['COPSE_WORKSPACE_DIR']
+    root = mkdtempSync(join(tmpdir(), 'copse-read-revision-'))
+    process.env['COPSE_WORKSPACE_DIR'] = root
+  })
+
+  afterEach(() => {
+    if (previousRoot === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+    else process.env['COPSE_WORKSPACE_DIR'] = previousRoot
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it('holds while nothing writes the thread, across repeated reads', async () => {
+    await saveProjectThread('p', thread('t1', { messages: [userMsg('m1', 'hello')] }))
+    const before = await threadReadRevision('p', 't1')
+    await loadThreadMessages('p', 't1')
+    await loadProjectThreadMetas('p')
+    assert.equal(await threadReadRevision('p', 't1'), before)
+  })
+
+  it('changes when a message is appended or the metadata is patched', async () => {
+    await saveProjectThread('p', thread('t1', { messages: [userMsg('m1', 'hello')] }))
+    const saved = await threadReadRevision('p', 't1')
+    await appendMessage('p', 't1', userMsg('m2', 'again'))
+    const appended = await threadReadRevision('p', 't1')
+    assert.notEqual(appended, saved)
+    await updateMeta('p', 't1', { title: 'Renamed' })
+    assert.notEqual(await threadReadRevision('p', 't1'), appended)
+  })
+
+  it('changes for every thread of a project a queued write touched', async () => {
+    // A nested subagent transcript can grow without its parent spine changing,
+    // so a write anywhere in the project retires every thread's revision.
+    await saveProjectThread('p', thread('t1', { messages: [userMsg('m1', 'hello')] }))
+    await saveProjectThread('p', thread('t2', { messages: [userMsg('m1', 'hello')] }))
+    const before = await threadReadRevision('p', 't1')
+    await appendMessage('p', 't2', userMsg('m2', 'elsewhere'))
+    assert.notEqual(await threadReadRevision('p', 't1'), before)
+  })
+
+  it('leaves another project’s threads current', async () => {
+    await saveProjectThread('p', thread('t1', { messages: [userMsg('m1', 'hello')] }))
+    await saveProjectThread('q', thread('t1', { messages: [userMsg('m1', 'hello')] }))
+    const before = await threadReadRevision('p', 't1')
+    await appendMessage('q', 't1', userMsg('m2', 'elsewhere'))
+    assert.equal(await threadReadRevision('p', 't1'), before)
+  })
+
+  it('changes when the spine is rewritten outside the write queue', async () => {
+    // History-edit recovery rewrites a thread from a read, with no queued write
+    // to announce it. The files' own size and mtime still give it away.
+    await saveProjectThread('p', thread('t1', { messages: [userMsg('m1', 'hello')] }))
+    const before = await threadReadRevision('p', 't1')
+    const spine = join(root, 'p', 't1', 'events.jsonl')
+    writeFileSync(spine, readFileSync(spine, 'utf8'))
+    utimesSync(spine, new Date(1), new Date(1))
+    assert.notEqual(await threadReadRevision('p', 't1'), before)
+  })
+
+  it('names a thread that does not exist without throwing', async () => {
+    const missing = await threadReadRevision('p', 'never-created')
+    assert.equal(await threadReadRevision('p', 'never-created'), missing)
+    await saveProjectThread('p', thread('never-created'))
+    assert.notEqual(await threadReadRevision('p', 'never-created'), missing)
   })
 })
 

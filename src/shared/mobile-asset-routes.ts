@@ -1,6 +1,13 @@
 import { MOBILE_CONTENT_SECURITY_POLICY } from './mobile-content-security-policy.ts'
 
-/** Headers for every Copse LAN response: no caching, no framing, no sniffing. */
+/**
+ * Headers for every Copse LAN response: no caching, no framing, no sniffing.
+ *
+ * `no-store` is the default for every route. The server lifts it for exactly one
+ * case: a script or stylesheet requested under the content hash the page pinned
+ * it to with Subresource Integrity (`pinPageAssets`). Every API response, and the
+ * page itself, is never stored.
+ */
 export function mobileResponseHeaders(contentType: string): Record<string, string> {
   return {
     'Content-Type': contentType,
@@ -39,7 +46,8 @@ export function mobileAssetRoutes(): Map<
         headers: {
           ...mobileResponseHeaders(html),
           // Large and loaded once per diagram: revalidate (ETag) instead of
-          // re-downloading. The page assets stay no-store.
+          // re-downloading. A frame cannot carry Subresource Integrity, so it
+          // is revalidated rather than pinned like the page's own bundles.
           'Cache-Control': 'no-cache',
           'Content-Security-Policy': "frame-ancestors 'self'",
           'X-Frame-Options': 'SAMEORIGIN',

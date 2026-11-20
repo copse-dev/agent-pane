@@ -1,6 +1,6 @@
 # Main-process synchronous read audit
 
-Copse's Electron main process currently contains **39** `readFileSync` call sites in **24**
+Copse's Electron main process currently contains **38** `readFileSync` call sites in **23**
 production files. This register makes that debt explicit and shrink-only: the unit invariant in
 [`scripts/main-sync-read-invariants.test.ts`](../scripts/main-sync-read-invariants.test.ts) rejects a
 new call, a new file, an aliased import that could evade counting, or a stale baseline after a call is
@@ -16,7 +16,7 @@ would require changing a synchronous store or security contract rather than mere
 | ------------------------------------------------- | ----: | ---------------------------------------------------------------------------------------------------------------------- |
 | Short-lived startup, worker, or preparation paths |    18 | Bounded and outside steady-state interaction. Keep last in the migration order, but retain size/input bounds.          |
 | Serialized durable stores                         |    14 | Preserve their single-writer and fail-closed semantics while moving the store contract to async I/O.                   |
-| Interactive/configuration reads                   |     7 | Highest priority: provider/SSH/Git configuration, attachments, and served assets can run while the app is interactive. |
+| Interactive/configuration reads                   |     6 | Highest priority: provider, SSH and Git configuration reads and attachment reads can run while the app is interactive. |
 
 The exact per-file counts and reasons live beside the executable baseline so code review cannot let
 the prose and enforcement diverge. The largest concentrations are container lifecycle code (nine
