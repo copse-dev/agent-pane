@@ -26,6 +26,8 @@ import { projectStoreDir } from '../storage/copse-paths.ts'
 import { setSetting, getSetting } from '../storage/settings.ts'
 import { storageGet, storageSet } from '../storage/storage.ts'
 import { getActiveExecutionTarget } from '../ssh-workspace/execution-target.ts'
+import { runWithActiveRunIdentity } from '../active-run-identity.ts'
+import { ensureWorkspaceTmpDir } from '../../project-sandbox/config.ts'
 import {
   SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT,
   SHARE_TERMINAL_HISTORY_ENABLED_SETTING,
@@ -230,6 +232,60 @@ describe('terminal-service', () => {
       restore()
       await rm(projectRoot, { recursive: true, force: true })
       await rm(threadRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('gives each known local thread PTY the same scratch as its agent tools', async (t) => {
+    if (process.platform === 'win32') {
+      t.skip('POSIX shell assertion')
+      return
+    }
+    const previousShell = process.env['SHELL']
+    const previousStore = process.env['COPSE_WORKSPACE_DIR']
+    const previousClaudeTmp = process.env['CLAUDE_CODE_TMPDIR']
+    const fixture = await mkdtemp(join(tmpdir(), 'copse-thread-pty-scratch-'))
+    process.env['SHELL'] = join(process.cwd(), 'tests/e2e/fixtures/e2e-bash-shell.sh')
+    process.env['COPSE_WORKSPACE_DIR'] = fixture
+    const restore = setWorkspaceRootForTest(fixture)
+    try {
+      if (!(await ptySpawnAvailable())) {
+        t.skip('PTY spawn unavailable in this environment')
+        return
+      }
+      const scratchRoots: string[] = []
+      for (const [threadId, claudeTmp] of [
+        ['pty-thread-a', undefined],
+        ['pty-thread-b', join(fixture, 'user-claude')],
+      ] as const) {
+        if (claudeTmp === undefined) delete process.env['CLAUDE_CODE_TMPDIR']
+        else process.env['CLAUDE_CODE_TMPDIR'] = claudeTmp
+        const scratch = runWithActiveRunIdentity(threadId, ensureWorkspaceTmpDir)
+        scratchRoots.push(scratch)
+        const win = mockWindow()
+        const sessionId = await createTerminalSession(win, 80, 24, { threadId }, fixture)
+        try {
+          writeTerminalSession(
+            sessionId,
+            OWNER,
+            'printf \'__COPSE_TMPDIR__:%s\\n__COPSE_CLAUDE_TMPDIR__:%s\\n\' "$TMPDIR" "${CLAUDE_CODE_TMPDIR-unset}"\n',
+          )
+          const output = await waitForTerminalOutput(win, /__COPSE_CLAUDE_TMPDIR__:(?:unset|\/)/)
+          assert.ok(output.includes(`__COPSE_TMPDIR__:${scratch}`), output)
+          assert.ok(output.includes(`__COPSE_CLAUDE_TMPDIR__:${claudeTmp ?? 'unset'}`), output)
+        } finally {
+          destroyTerminalSession(sessionId, OWNER)
+        }
+      }
+      assert.notEqual(scratchRoots[0], scratchRoots[1])
+    } finally {
+      restore()
+      if (previousShell === undefined) delete process.env['SHELL']
+      else process.env['SHELL'] = previousShell
+      if (previousStore === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previousStore
+      if (previousClaudeTmp === undefined) delete process.env['CLAUDE_CODE_TMPDIR']
+      else process.env['CLAUDE_CODE_TMPDIR'] = previousClaudeTmp
+      await rm(fixture, { recursive: true, force: true })
     }
   })
 

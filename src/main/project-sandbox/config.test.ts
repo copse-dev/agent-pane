@@ -1,4 +1,6 @@
-import { describe, it } from 'node:test'
+import { describe, it, mock } from 'node:test'
+import fs from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
 import assert from 'node:assert/strict'
 import {
   accessSync,
@@ -1322,7 +1324,7 @@ describe('workspaceSandboxOverlay', () => {
     // so it must be re-allowed for read as well as write.
     const overlay = workspaceSandboxOverlay('/Users/me/project')
     const tmpDir = ensureWorkspaceTmpDir()
-    assert.ok(tmpDir.endsWith(join('.copse', 'workspace', 'tmp')))
+    assert.ok(tmpDir.endsWith(join('.copse', 'workspace', 'tmp', 'host')))
     const allowWrite = overlay.filesystem?.allowWrite ?? []
     const allowRead = overlay.filesystem?.allowRead ?? []
     assert.ok(allowWrite.includes(tmpDir))
@@ -1398,7 +1400,7 @@ describe('workspaceSandboxOverlay', () => {
     // eval cannot import this module — its graph reaches settings and node-pty —
     // so it resolves the path from `copse-paths.ts` instead. Pinned here so a
     // move cannot leave the eval passing runs the seatbelt would block.
-    assert.equal(workspaceTmpDir(), copseWorkspaceTmpDir())
+    assert.equal(dirname(workspaceTmpDir()), copseWorkspaceTmpDir())
   })
 
   it('falls back to resolve for a non-existent workspace root', () => {
@@ -1410,6 +1412,109 @@ describe('workspaceSandboxOverlay', () => {
 })
 
 describe('ensureWorkspaceTmpDir', () => {
+  it('never derives a scratch grant from a leaf swapped after its inspection', () => {
+    const fixture = realpathSync(mkdtempSync(join(tmpdir(), 'copse-scratch-race-')))
+    const store = join(fixture, 'store')
+    const outside = join(fixture, 'outside')
+    mkdirSync(outside)
+    const previous = process.env['COPSE_WORKSPACE_DIR']
+    process.env['COPSE_WORKSPACE_DIR'] = store
+    const scratch = runWithActiveRunIdentity('race-thread', ensureWorkspaceTmpDir)
+    const inspect = fs.lstatSync
+    let swapped = false
+    const inspection = mock.method(fs, 'lstatSync', (path: fs.PathLike) => {
+      const entry = inspect(path)
+      if (path === scratch && !swapped) {
+        swapped = true
+        fs.renameSync(scratch, `${scratch}-before-swap`)
+        symlinkSync(outside, scratch, 'dir')
+      }
+      return entry
+    })
+    syncBuiltinESMExports()
+    try {
+      const writes =
+        runWithActiveRunIdentity('race-thread', () => workspaceSandboxOverlay('/project'))
+          .filesystem?.allowWrite ?? []
+      assert.equal(swapped, true)
+      assert.ok(writes.includes(scratch))
+      assert.equal(
+        writes.some((path) => path === outside || path.startsWith(`${outside}/`)),
+        false,
+      )
+    } finally {
+      inspection.mock.restore()
+      syncBuiltinESMExports()
+      if (previous === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previous
+      rmSync(fixture, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps unscoped host scratch from granting every thread scratch', () => {
+    const fixture = realpathSync(mkdtempSync(join(tmpdir(), 'copse-host-scratch-')))
+    const previous = process.env['COPSE_WORKSPACE_DIR']
+    process.env['COPSE_WORKSPACE_DIR'] = fixture
+    try {
+      const thread = runWithActiveRunIdentity('private-thread', ensureWorkspaceTmpDir)
+      const host = ensureWorkspaceTmpDir()
+      const writes = workspaceSandboxOverlay('/project').filesystem?.allowWrite ?? []
+      assert.notEqual(host, join(fixture, 'tmp'))
+      assert.equal(
+        writes.some((entry) => {
+          const root = entry.replace(/\/\*\*$/, '')
+          return thread === root || thread.startsWith(`${root}/`)
+        }),
+        false,
+      )
+    } finally {
+      if (previous === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previous
+      rmSync(fixture, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses a redirected scratch root instead of granting its target', () => {
+    const fixture = realpathSync(mkdtempSync(join(tmpdir(), 'copse-redirected-scratch-')))
+    const workspace = join(fixture, 'store')
+    const outside = join(fixture, 'outside')
+    mkdirSync(workspace)
+    mkdirSync(outside)
+    symlinkSync(outside, join(workspace, 'tmp'), 'dir')
+    const previous = process.env['COPSE_WORKSPACE_DIR']
+    process.env['COPSE_WORKSPACE_DIR'] = workspace
+    try {
+      assert.throws(ensureWorkspaceTmpDir, /scratch must be a directory, not a symlink/)
+      assert.throws(() => workspaceSandboxOverlay('/project'), /scratch must be a directory/)
+    } finally {
+      if (previous === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previous
+      rmSync(fixture, { recursive: true, force: true })
+    }
+  })
+
+  it('gives concurrent threads distinct writable scratch roots', () => {
+    const workspace = realpathSync(mkdtempSync(join(tmpdir(), 'copse-thread-scratch-')))
+    const previous = process.env['COPSE_WORKSPACE_DIR']
+    process.env['COPSE_WORKSPACE_DIR'] = workspace
+    try {
+      const first = runWithActiveRunIdentity('scratch-a', ensureWorkspaceTmpDir)
+      const second = runWithActiveRunIdentity('scratch-b', ensureWorkspaceTmpDir)
+      assert.notEqual(first, second)
+      runWithActiveRunIdentity('scratch-a', () => {
+        assert.equal(ensureWorkspaceTmpDir(), first)
+        const writes = workspaceSandboxOverlay('/project').filesystem?.allowWrite ?? []
+        assert.ok(writes.includes(first))
+        assert.equal(writes.includes(second), false)
+        assert.equal(writes.includes(join(workspace, 'tmp')), false)
+      })
+    } finally {
+      if (previous === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previous
+      rmSync(workspace, { recursive: true, force: true })
+    }
+  })
+
   it('creates the workspace tmp dir and returns its path', () => {
     // Exercise the supported workspace override rather than creating app data
     // in the developer's real home (which may be read-only on a test runner).
@@ -1418,7 +1523,7 @@ describe('ensureWorkspaceTmpDir', () => {
     process.env['COPSE_WORKSPACE_DIR'] = workspace
     try {
       const dir = ensureWorkspaceTmpDir()
-      assert.equal(dir, join(workspace, 'tmp'))
+      assert.equal(dir, join(workspace, 'tmp', 'host'))
       assert.equal(dir, workspaceTmpDir())
       // Callers get the canonical path, so sandbox rules match what the OS reports.
       assert.equal(dir, realpathSync.native(workspaceTmpDir()))

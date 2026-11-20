@@ -665,6 +665,14 @@ and destructive-command checks still apply. Without containment or auto-run, app
 is required. Guarded YOLO's bounded script-content harm scan remains a separate check;
 reading a script is not proof that it is safe or permission to escape containment.
 
+A single direct literal `ln -s`, `ln -sf` or `ln -sfn` (including separate `-s`, `-f`
+and `-n` flags) stays contained when both its actual link destination and target resolve
+inside the workspace. Relative targets are anchored at the link's parent, including when
+the destination is an existing directory. Existing parent and target symlinks are resolved
+before judging containment; `-n` replaces a final directory symlink instead of following it.
+Compounds, redirects, expansions and other flags retain conservative path classification.
+Trailing `/` or `/.` on the destination also keeps that conservative treatment.
+
 `safetyExternalDenyThreshold` defaults to `1` (off). At a lower threshold, a command is hard-denied
 only when both conditions hold:
 
@@ -1358,7 +1366,18 @@ use the same Save dialog after checking the owning project and chat.
 ## Implementation map
 
 Sandboxed native commands and ACP processes redirect `TMPDIR`, `TMP`, `TEMP`, zsh's
-`TMPPREFIX` and `CLAUDE_CODE_TMPDIR` into the existing workspace scratch directory. zsh uses
+`TMPPREFIX` and `CLAUDE_CODE_TMPDIR` into the active thread's scratch under
+`workspace/tmp/threads/<thread-id-hash>`. A local Shells-tab PTY with a known thread uses that same
+directory; host operations without a thread use the separate `workspace/tmp/host` leaf. User
+Shells tabs retain their own `CLAUDE_CODE_TMPDIR`. The sandbox write grant,
+child environment and classifier resolve the same directory. Absolute scratch paths, including
+macOS `/var` and `/private/var` spellings, are recognized; sibling prefixes, another thread's
+directory and escaping symlinks retain outside-path classification. Setting `TMPDIR` in command
+text never grants a root. Grants are anchored to the trusted canonical store parent and fixed
+scratch components; validation refuses scratch symlinks and grant roots never follow a controlled
+leaf. The private ACP session-host request
+carries the main-owned thread identity so hosted agents resolve the same assignment; agent
+environment text supplies no scratch authority. zsh uses
 `TMPPREFIX` for large heredocs independently of `TMPDIR`; leaving its default `/tmp/zsh` breaks
 patch commands even when every destination file is inside the workspace. This redirect does not
 widen the sandbox's writable roots or change the approval policy. When `COPSE_DIR` is reached
@@ -1424,8 +1443,8 @@ shim mode) get only the shim directory, so their `node` fails contained and offe
   (the Guarded YOLO harm gate), `read-outside-project.ts` (read-shape proof and refusals),
   `gh-argv.ts` (GitHub CLI shapes), `command-routing.ts` (trusted-command routing). The
   `src/main/services/security/` files of the same names re-export them and bind the two facts
-  only the app knows through `shell-guard-environment.ts`: the read-only chat-store mount and
-  the scratch directories configured ACP agents declare. Docker run/pull/push and Apple
+  the app knows through `shell-guard-environment.ts`: read-only mounts, authoritative scratch
+  roots, and filesystem proof for supported symbolic links. Docker run/pull/push and Apple
   container run/image pull/image push are hard-external; read-only list/inspect/status commands
   remain sandbox-scoped.
 - `github/gh-api-read.ts` and `git-fetch-origin.ts`: validation and argv construction for the

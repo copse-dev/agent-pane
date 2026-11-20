@@ -409,6 +409,40 @@ describe('analyzeShellCommand', () => {
     assert.equal(r.verdict, 'sandbox')
   })
 
+  it('only waives a supported literal symbolic link after host filesystem proof', () => {
+    const command = 'ln -sfn ../../src/fixture.txt nested/links/evidence'
+    assert.equal(analyzeShellCommand(command, root).verdict, 'external')
+    let checks = 0
+    configureShellScopeEnvironment({
+      isContainedSymlink: (request) => {
+        checks++
+        assert.deepEqual(request, {
+          target: '../../src/fixture.txt',
+          linkPath: 'nested/links/evidence',
+          workspaceRoot: root,
+          noDereference: true,
+        })
+        return true
+      },
+    })
+    try {
+      assert.equal(analyzeShellCommand(command, root).verdict, 'sandbox')
+      assert.equal(checks, 1)
+      for (const unsupported of [
+        `${command} && echo done`,
+        `${command} > local.log`,
+        'ln -sr ../../src/fixture.txt nested/links/evidence',
+        'ln -s "$TARGET/../fixture.txt" nested/links/evidence',
+        'env ln -s ../../src/fixture.txt nested/links/evidence',
+      ]) {
+        assert.equal(analyzeShellCommand(unsupported, root).verdict, 'external', unsupported)
+      }
+      assert.equal(checks, 1, 'unsupported syntax must not ask the host to waive its paths')
+    } finally {
+      configureShellScopeEnvironment()
+    }
+  })
+
   it('flags a sibling dir sharing the workspace name prefix as outside', () => {
     const ext = analyzeShellCommand('cat /srv/project-secrets/x', '/srv/project')
     assert.equal(ext.verdict, 'external')
