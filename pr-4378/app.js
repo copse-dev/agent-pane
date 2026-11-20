@@ -10,6 +10,7 @@ import {
   PRODUCT_ANNOUNCEMENTS,
   ThreadPrRelationshipIndex,
   backlinksFor,
+  clipStart,
   detectLanguage,
   emptyContainerStorage,
   external_exports,
@@ -17,6 +18,7 @@ import {
   init_advisor_strategy_plugin,
   init_announcement_catalog,
   init_automations_plugin,
+  init_clip_text,
   init_files,
   init_model_capabilities,
   init_model_parameters,
@@ -38,7 +40,7 @@ import {
   sleep,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-FMGP6ZEQ.js";
+} from "./chunks/chunk-WCHNCTK7.js";
 import "./chunks/chunk-X6JZSFJR.js";
 import {
   init_icons,
@@ -96,7 +98,7 @@ function toUserContent(content) {
 }
 function parseReviewContext(value) {
   if (typeof value !== "string" || value.trim() === "") return void 0;
-  return value.length <= REVIEW_CONTEXT_CHAR_CAP ? value : `${value.slice(0, REVIEW_CONTEXT_CHAR_CAP)}
+  return value.length <= REVIEW_CONTEXT_CHAR_CAP ? value : `${clipStart(value, REVIEW_CONTEXT_CHAR_CAP)}
 [review summary truncated]`;
 }
 function parseAgentRunPayload(rawPrompt) {
@@ -148,6 +150,7 @@ var init_parse_agent_run_payload = __esm({
   "packages/agent/src/parse-agent-run-payload.ts"() {
     init_wire_types();
     init_model_parameters();
+    init_clip_text();
     init_zod();
     init_unknown_value();
     userContentSchema = external_exports.union([
@@ -7521,7 +7524,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-GTQTML2E.js").then(async (main) => {
+    void import("./chunks/main-GGWVR5YB.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(

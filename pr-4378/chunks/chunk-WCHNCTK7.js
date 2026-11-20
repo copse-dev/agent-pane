@@ -22411,11 +22411,37 @@ var init_thread_proposal2 = __esm({
   }
 });
 
+// packages/agent/src/clip-text.ts
+function isHighSurrogate(codeUnit) {
+  return codeUnit >= 55296 && codeUnit <= 56319;
+}
+function isLowSurrogate(codeUnit) {
+  return codeUnit >= 56320 && codeUnit <= 57343;
+}
+function clipStart(text, maxLength) {
+  if (text.length <= maxLength) return text;
+  if (maxLength <= 0) return "";
+  const splitsPair = isHighSurrogate(text.charCodeAt(maxLength - 1)) && isLowSurrogate(text.charCodeAt(maxLength));
+  return text.slice(0, splitsPair ? maxLength - 1 : maxLength);
+}
+function clipEnd(text, maxLength) {
+  if (text.length <= maxLength) return text;
+  if (maxLength <= 0) return "";
+  const start = text.length - maxLength;
+  const splitsPair = isLowSurrogate(text.charCodeAt(start)) && isHighSurrogate(text.charCodeAt(start - 1));
+  return text.slice(splitsPair ? start + 1 : start);
+}
+var init_clip_text = __esm({
+  "packages/agent/src/clip-text.ts"() {
+  }
+});
+
 // packages/agent/src/hooks/inject-context.ts
 var SYSTEM_REMINDER_TAG;
 var init_inject_context = __esm({
   "packages/agent/src/hooks/inject-context.ts"() {
     init_nullish();
+    init_clip_text();
     SYSTEM_REMINDER_TAG = "system-reminder";
   }
 });
@@ -72565,10 +72591,10 @@ var init_thread_links2 = __esm({
 function workingBriefFromUserContent(content) {
   if (typeof content === "string") {
     const trimmed = content.trim();
-    return trimmed ? trimmed.slice(0, WORKING_BRIEF_MAX_LEN) : null;
+    return trimmed ? clipStart(trimmed, WORKING_BRIEF_MAX_LEN) : null;
   }
   const text = content.filter((block) => block.type === "text").map((block) => block.text).join("\n").trim();
-  return text ? text.slice(0, WORKING_BRIEF_MAX_LEN) : null;
+  return text ? clipStart(text, WORKING_BRIEF_MAX_LEN) : null;
 }
 function nextWorkingBrief(current, userContent) {
   if (current) return current;
@@ -72577,6 +72603,7 @@ function nextWorkingBrief(current, userContent) {
 var WORKING_BRIEF_MAX_LEN;
 var init_working_brief = __esm({
   "packages/agent/src/working-brief.ts"() {
+    init_clip_text();
     WORKING_BRIEF_MAX_LEN = 2e3;
   }
 });
@@ -74918,6 +74945,9 @@ export {
   init_copse_tool_call,
   isThreadProposalCall,
   init_thread_proposal2 as init_thread_proposal,
+  clipStart,
+  clipEnd,
+  init_clip_text,
   splitAppendedReminders,
   init_tool_result_reminders,
   decodeWithSchema,

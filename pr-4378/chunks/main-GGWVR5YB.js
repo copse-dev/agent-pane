@@ -91,6 +91,8 @@ import {
   canonicalAcpAgentId,
   classifyAutomationFailureMessage,
   clearThreadProposalDecisionFor,
+  clipEnd,
+  clipStart,
   closeSettingsDialog,
   collectThreadLinks,
   collectThreadPrRefs,
@@ -197,6 +199,7 @@ import {
   init_automations_plugin,
   init_background_threads,
   init_chatgpt_plan_section,
+  init_clip_text,
   init_composite_intellect,
   init_confirm_dialog,
   init_context_menu,
@@ -490,7 +493,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-FMGP6ZEQ.js";
+} from "./chunk-WCHNCTK7.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -16332,7 +16335,7 @@ function isTextBlockAttachment(text) {
 }
 function textBlockLabel(content) {
   const firstLine2 = content.split("\n").find((line) => line.trim() !== "")?.trim() ?? "Pasted text";
-  return firstLine2.length > 48 ? `${firstLine2.slice(0, 45)}\u2026` : firstLine2;
+  return firstLine2.length > 48 ? `${clipStart(firstLine2, 45)}\u2026` : firstLine2;
 }
 function countNewlines(s) {
   let n = 0;
@@ -16351,8 +16354,8 @@ function truncateAttachmentContent(content, maxChars = ATTACHMENT_MAX_CHARS) {
   if (content.length <= maxChars) return content;
   const headBudget = Math.floor(maxChars * HEAD_FRACTION);
   const tailBudget = maxChars - headBudget;
-  const head = trimToLastLine(content.slice(0, headBudget));
-  const tail = trimToFirstLine(content.slice(content.length - tailBudget));
+  const head = trimToLastLine(clipStart(content, headBudget));
+  const tail = trimToFirstLine(clipEnd(content, tailBudget));
   const omittedChars = content.length - head.length - tail.length;
   const omittedLines = Math.max(
     0,
@@ -16429,6 +16432,7 @@ function buildTextWithAttachments(text, files, textBlocks = [], options = {}) {
 var TEXT_BLOCK_MIN_CHARS, TEXT_BLOCK_MIN_LINES, ATTACHMENT_MAX_CHARS, HEAD_FRACTION, THREAD_STEERING_PREAMBLE, VIDEO_STEERING_PREAMBLE, ARCHIVE_STEERING_PREAMBLE;
 var init_build_text_with_attachments = __esm({
   "packages/agent/src/build-text-with-attachments.ts"() {
+    init_clip_text();
     TEXT_BLOCK_MIN_CHARS = 200;
     TEXT_BLOCK_MIN_LINES = 10;
     ATTACHMENT_MAX_CHARS = 16e3;
