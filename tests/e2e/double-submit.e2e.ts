@@ -1,7 +1,7 @@
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
-import { setComposerValue, submitComposer } from './helpers/composer.ts'
+import { acceptProtectedPrompt, setComposerValue, submitComposer } from './helpers/composer.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
@@ -77,6 +77,7 @@ describe('double submit guard', function () {
     await saveAppScreenshot('double-submit-single-queued.png')
 
     await scenario.release('parser-review')
+    await acceptProtectedPrompt()
     // The agent can briefly read as idle after the first reply, before the
     // queued prompt dispatches. Wait for every scripted response to be served.
     await scenario.waitForComplete(60_000)

@@ -4,7 +4,7 @@ import {
   installMockScenario,
   type ScenarioHandle,
 } from './helpers/mock-scenario.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { acceptanceWakeTurn, readTranscriptNotices } from './helpers/acceptance-wake.ts'
 import { mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -58,7 +58,7 @@ async function proposeFileChange(
     ],
   })
   await setComposerValue(user)
-  await $('.submit-btn').click()
+  await submitComposer()
   // Every proposal ends with the same reply; wait for this turn's own.
   await scenario.waitForTurns(1)
   await expectAssistantReply(PROPOSED_REPLY)

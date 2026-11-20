@@ -1,5 +1,6 @@
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
+import { acceptProtectedPrompt } from './helpers/composer.ts'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import {
@@ -176,6 +177,7 @@ describe('saved reviewer input', () => {
     await row.$('.reviewer-input-question').click()
     await row.$('.reviewer-input-option').click()
     await row.$('.ui-btn-primary').click()
+    await acceptProtectedPrompt()
     await expectAssistantReply(ANSWER_REPLY)
     await scenario.assertComplete()
     await expect($('.reviewer-input-toggle')).toHaveText('2 questions')

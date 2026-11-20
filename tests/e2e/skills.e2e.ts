@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { waitForActiveThreadTitle, waitForAgentIdle } from './helpers.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
@@ -82,7 +82,7 @@ describe('skills', () => {
       ],
     })
     await setComposerValue('/demo-skill validate skills support')
-    await $('.submit-btn').click()
+    await submitComposer()
     await $('.msg-user').waitForExist({ timeout: 30_000 })
     await browser.waitUntil(
       async () =>

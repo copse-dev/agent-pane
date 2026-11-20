@@ -129,6 +129,12 @@ revisiting this document, not silently diverging in an implementation PR.
    entirely; only an explicit human action (send-now / release) submits it, and that
    human action starts a fresh turn tree with a reset budget. Plus a visible thread
    note. `COPSE_HOOK_DEPTH` env guard prevents hook→Copse recursion.
+   Deleting a queued item first holds it against draining and flushes metadata,
+   then awaits main's atomic retirement of the saved queued user-message ID.
+   Failure leaves the note held and visible. Successful deletion survives stale
+   metadata/full saves and appends; retry after interrupted metadata cleanup is
+   idempotent. This does not edit accepted provider history or grant a new turn,
+   append receipt, epoch or budget. See [queued-message deletion](../thread-store-format.md#queued-message-deletion-type-queued_message_deleted).
    An ACP agent can resume itself after its prompt returned (a background-task notification
    re-enters the model; the adapter tags the turn `_claude/origin: task-notification`), so Copse
    never dispatched that turn. The update pump (`startAcpUpdatePump`) treats agent work arriving

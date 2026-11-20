@@ -11,6 +11,7 @@ import {
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
+import { acceptProtectedPrompt } from './helpers/composer.ts'
 
 // Visual eval for the model-proposed-thread card (`propose_thread`). The card's
 // DOM, its three states and the start/dismiss wiring are covered at component
@@ -178,6 +179,7 @@ describe('starting a proposed thread in an isolated checkout', () => {
       null,
     )
     await $('.thread-proposal-start').click()
+    await acceptProtectedPrompt()
     // Starting runs in the background: the source thread ("Config loader
     // guard") stays active, and the card settles to 'started' without ever
     // navigating the user away from it.

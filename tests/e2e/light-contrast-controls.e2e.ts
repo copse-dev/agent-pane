@@ -11,6 +11,7 @@ import {
   saveElementScreenshot,
 } from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
+import { submitComposer } from './helpers/composer.ts'
 
 // Real-app visual + numeric evidence for issue #2488: the roadmap Save button
 // and the titlebar Changes-count badge painting `--text-on-accent` (a dark
@@ -142,7 +143,7 @@ describe('light-contrast controls: roadmap Save button + Changes badge (issue #2
       },
       'The proposed contrast proof is ready.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
     await expectAssistantReply('The proposed contrast proof is ready.')
     await scenario.assertComplete()
 

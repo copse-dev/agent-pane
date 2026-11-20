@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { waitForAgentIdle } from './helpers.ts'
@@ -56,7 +56,7 @@ describe('shared UI polish', () => {
 
     // Hold a normal request while the live activity strip is inspected.
     await setComposerValue('Review the current layout for spacing and alignment issues.')
-    await $('.submit-btn').click()
+    await submitComposer()
     await scenario.waitForHold('layout-review')
     const activity = $('.agent-activity')
     await activity.waitForDisplayed({ timeout: 10_000 })

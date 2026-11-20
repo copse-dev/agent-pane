@@ -34,6 +34,14 @@ export const mobileActionSchema = z
       action: z.literal('message'),
       threadId: id.nullable(),
       text: z.string().trim().max(32_000),
+      planReview: z
+        .strictObject({
+          planId: z.string().min(1).max(256),
+          revision: z.number().int().positive(),
+          contentHash: z.string().regex(/^[a-f0-9]{64}$/),
+          authorityHash: z.string().regex(/^[a-f0-9]{64}$/),
+        })
+        .optional(),
       image: z
         .string()
         .regex(/^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/)
@@ -71,12 +79,16 @@ export async function performMobileAction(
   if (!stillAuthorized())
     return { status: 403, body: { error: 'Phone control was disabled on the desktop.' } }
   if (action.action === 'message') {
-    const result = await MOBILE_WRITE_DISPATCH.message({
-      projectId: action.projectId,
-      threadId: action.threadId,
-      text: action.text,
-      ...(action.image ? { image: action.image } : {}),
-    })
+    const result = await MOBILE_WRITE_DISPATCH.message(
+      {
+        projectId: action.projectId,
+        threadId: action.threadId,
+        text: action.text,
+        ...(action.image ? { image: action.image } : {}),
+        ...(action.planReview ? { planReview: action.planReview } : {}),
+      },
+      stillAuthorized,
+    )
     if (!result.ok) return { status: 409, body: { error: result.error } }
     recordDecision({
       projectId: action.projectId,

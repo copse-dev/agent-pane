@@ -918,6 +918,26 @@ export function awaitPendingThreadPersistence(): Promise<void> {
   return activeAutosave?.whenIdle() ?? Promise.resolve()
 }
 
+/** Flush debounced metadata before an action whose admission reads it from disk. */
+export function flushPendingThreadPersistence(): Promise<void> {
+  return activeAutosave?.flush() ?? Promise.resolve()
+}
+
+/**
+ * Record a deletion that main already confirmed and completed directly.
+ * The following `threads_changed` reconcile must not issue a second delete or
+ * reopen the native confirmation for the same absent thread.
+ */
+export function acknowledgeThreadDeletion(projectId: string, threadId: string): void {
+  persistedMeta.get(projectId)?.delete(threadId)
+  const creations = unconfirmedCreates.get(projectId)
+  creations?.delete(threadId)
+  if (creations?.size === 0) unconfirmedCreates.delete(projectId)
+  const uncertainties = uncertainThreadWrites.get(projectId)
+  uncertainties?.delete(threadId)
+  if (uncertainties?.size === 0) uncertainThreadWrites.delete(projectId)
+}
+
 /**
  * Run `task` once a thread the current write introduced exists in main.
  *

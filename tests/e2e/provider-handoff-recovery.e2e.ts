@@ -9,7 +9,8 @@ import { z } from 'zod'
 import { safeJsonParse, decodeWithSchema } from '../../src/shared/safe-json.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
-import { setComposerValue, submitComposer } from './helpers/composer.ts'
+import { acceptProtectedPrompt, setComposerValue, submitComposer } from './helpers/composer.ts'
+import { INTERRUPTED_TURN_CONTINUATION } from '../../src/shared/turn-recovery.ts'
 import { agentIsIdle } from './helpers.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
@@ -87,6 +88,29 @@ async function settle(): Promise<void> {
 async function send(text: string): Promise<void> {
   await setComposerValue(text)
   await submitComposer()
+}
+
+// Review only the prompt dispatched by this explicit human action.
+async function reviewHumanPrompt(action: () => Promise<void>, expectedText: string): Promise<void> {
+  const mainHandle = await browser.getWindowHandle()
+  const handlesBefore = await browser.getWindowHandles()
+  const threadId = await $('.chat-row.selected').getAttribute('data-thread-id')
+  if (!threadId) throw new Error('The human prompt must target the selected thread')
+  const threadTitle = await $('.chat-row.selected .chat-title').getText()
+  await action()
+  await browser.waitUntil(
+    async () =>
+      (await browser.getWindowHandles()).some((handle) => !handlesBefore.includes(handle)),
+    { timeout: 15_000, timeoutMsg: 'Expected this human action to open protected review' },
+  )
+  const reviewHandle = (await browser.getWindowHandles()).find(
+    (handle) => !handlesBefore.includes(handle),
+  )
+  if (!reviewHandle) throw new Error('The human prompt review window is missing')
+  await browser.switchToWindow(reviewHandle)
+  await expect($('#protected-prompt-text')).toHaveValue(expectedText)
+  await expect($('#protected-prompt-thread')).toHaveText(`${threadTitle} — ${threadId}`)
+  await acceptProtectedPrompt(mainHandle, handlesBefore)
 }
 
 describe('recover into a reused ACP session after another provider', function () {
@@ -190,7 +214,9 @@ send({jsonrpc:'2.0',id:q.id,result:r})});process.stdin.on('end',()=>process.exit
       'completed before provider failure\n',
     )
     await chooseModel('acp:history-fixture')
-    await $('[data-turn-recovery-card]').$('button*=Retry this turn').click()
+    await reviewHumanPrompt(async () => {
+      await $('[data-turn-recovery-card]').$('button*=Retry this turn').click()
+    }, INTERRUPTED_TURN_CONTINUATION)
     await settle()
     await expect($('.messages-list')).toHaveText('Recovered the current provider request.', {
       containing: true,
@@ -239,7 +265,9 @@ send({jsonrpc:'2.0',id:q.id,result:r})});process.stdin.on('end',()=>process.exit
     )
     await $('[data-turn-recovery-card]').waitForDisplayed({ timeout: 30_000 })
     await chooseModel('acp:history-fixture#holding')
-    await $('[data-turn-recovery-card]').$('button*=Retry this turn').click()
+    await reviewHumanPrompt(async () => {
+      await $('[data-turn-recovery-card]').$('button*=Retry this turn').click()
+    }, INTERRUPTED_TURN_CONTINUATION)
     await browser.waitUntil(async () => existsSync(join(root, 'config-held')), { timeout: 15_000 })
     await $('.stop-btn').click()
     writeFileSync(join(root, 'release-config'), '')

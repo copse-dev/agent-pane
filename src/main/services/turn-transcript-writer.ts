@@ -47,7 +47,7 @@ export interface TurnTranscriptWriterDependencies {
   forward: (threadId: string, chunk: StreamChunk, stamp?: TranscriptStamp) => void
   snapshot?: (snapshot: TranscriptSnapshot) => void
   loadThread: (projectId: string, threadId: string) => Promise<Thread | null>
-  appendMessage: (projectId: string, threadId: string, message: Message) => Promise<void>
+  appendMessage: (projectId: string, threadId: string, message: Message) => Promise<unknown>
   updateMeta: (
     projectId: string,
     threadId: string,
@@ -380,7 +380,7 @@ export class TurnTranscriptWriter {
     }
     session.created = []
     try {
-      session.reducer.apply(session.threadId, chunk)
+      session.reducer.apply(session.threadId, this.forPersistence(chunk))
     } catch (error) {
       // A chunk the reducer cannot place must not take the turn down with it.
       this.deps.onError?.(error)
@@ -389,6 +389,14 @@ export class TurnTranscriptWriter {
     session.created = []
     this.deps.forward(session.threadId, this.forWindow(session.threadId, chunk), stamp)
     if (chunk.type === 'done') this.complete(session)
+  }
+
+  /** Keep renderer-only presentation hints out of Main's canonical transcript. */
+  private forPersistence(chunk: StreamChunk): StreamChunk {
+    if (chunk.type !== 'protected_human_turn_start' || chunk.preserveOptimisticDisplay !== true)
+      return chunk
+    const { preserveOptimisticDisplay: _displayOnly, ...canonical } = chunk
+    return canonical
   }
 
   /** The chunk as the window should see it: a user Stop carries main's label. */
@@ -474,6 +482,7 @@ export class TurnTranscriptWriter {
       session,
       this.deps
         .appendMessage(session.projectId, session.threadId, snapshot)
+        .then(() => undefined)
         .catch((error: unknown) => {
           if (session.written.get(messageId) === json) session.written.delete(messageId)
           this.deps.onError?.(error)

@@ -2,6 +2,11 @@ import type { WebContents } from 'electron'
 import { shell } from 'electron'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { join } from 'node:path'
+import { confirmNativeAction } from '../services/native-human-confirmation.ts'
+import {
+  externalLinkConfirmationDetail,
+  openExternalWithConsent,
+} from '../services/external-link-consent.ts'
 
 const lockedDown = new WeakSet<WebContents>()
 
@@ -69,7 +74,7 @@ export function attachWebContentsLockdown(contents: WebContents): void {
   lockedDown.add(contents)
 
   contents.setWindowOpenHandler(({ url }) => {
-    if (isExternalHttpUrl(url)) void shell.openExternal(url)
+    if (isExternalHttpUrl(url)) openExternalFromRenderer(contents, url)
     return { action: 'deny' }
   })
 
@@ -89,10 +94,25 @@ export function attachWebContentsLockdown(contents: WebContents): void {
   const blockIfDisallowed = (event: Electron.Event, url: string): void => {
     if (!isAllowedRendererNavigation(url)) {
       event.preventDefault()
-      if (isExternalHttpUrl(url)) void shell.openExternal(url)
+      if (isExternalHttpUrl(url)) openExternalFromRenderer(contents, url)
     }
   }
 
   contents.on('will-navigate', blockIfDisallowed)
   contents.on('will-redirect', blockIfDisallowed)
+}
+
+function openExternalFromRenderer(contents: WebContents, url: string): void {
+  void openExternalWithConsent(
+    url,
+    (review) =>
+      confirmNativeAction(contents, {
+        title: 'Open external website?',
+        detail: externalLinkConfirmationDetail(review),
+        approveLabel: 'Open link',
+      }),
+    (href) => shell.openExternal(href),
+  ).catch((error: unknown) => {
+    console.warn('[external-link] Could not open confirmed link:', error)
+  })
 }

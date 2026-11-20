@@ -14,6 +14,7 @@ import {
   clearSshCredentialCache,
   releaseSshCredentialNonce,
   resolveSshSecret,
+  type SshSecretMode,
 } from './ssh-credential-cache.ts'
 
 export const COPSE_SSH_ASKPASS_SOCKET = 'COPSE_SSH_ASKPASS_SOCKET'
@@ -28,6 +29,7 @@ export interface SshAskpassLease {
 
 interface AskpassSession {
   nonce: string
+  mode: SshSecretMode
   hostId?: string
   timer: NodeJS.Timeout
   release: () => void
@@ -167,6 +169,12 @@ async function respondToAskpass(socket: Socket, line: string): Promise<void> {
 
   const kind = classifySshPrompt(message.prompt)
   if (kind === 'confirm') {
+    if (session.mode === 'cache-only') {
+      // Host trust is not a cached credential. OpenSSH's host-key policy
+      // still applies; background work cannot approve a new confirmation.
+      socket.end(JSON.stringify({ response: null }) + '\n')
+      return
+    }
     // Host-key trust is recorded by OpenSSH in known_hosts; nothing to cache.
     const { value } = await onAskingRenderer(() =>
       requestSshPrompt({ prompt: message.prompt, kind }),
@@ -188,6 +196,7 @@ async function respondToAskpass(socket: Socket, line: string): Promise<void> {
         return { value: answer.value, remember: answer.remember ?? false }
       },
       session.hostId,
+      session.mode,
     ),
   )
   socket.end(JSON.stringify({ response: value || null }) + '\n')
@@ -221,7 +230,11 @@ export function initSshAskpassServer(userDataDirectory?: string): void {
  * `{}` — Node replaces the child env entirely, which strips PATH/HOME/
  * SSH_AUTH_SOCK and breaks ProxyCommand hosts.
  */
-export function leaseSshAskpassEnv(baseEnv: NodeJS.ProcessEnv, hostId?: string): SshAskpassLease {
+export function leaseSshAskpassEnv(
+  baseEnv: NodeJS.ProcessEnv,
+  hostId?: string,
+  mode: SshSecretMode = 'interactive',
+): SshAskpassLease {
   if (!isAskpassAvailable() && !userDataDirOverride) {
     return { env: baseEnv, release: (): void => {} }
   }
@@ -244,6 +257,7 @@ export function leaseSshAskpassEnv(baseEnv: NodeJS.ProcessEnv, hostId?: string):
   const promptTarget = currentRendererPromptTarget()
   sessionsByNonce.set(nonce, {
     nonce,
+    mode,
     ...(hostId === undefined ? {} : { hostId }),
     timer,
     release,

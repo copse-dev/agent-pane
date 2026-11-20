@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src data:; connect-src 'none'; font-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Protected prompt</title>
+    <link rel="stylesheet" href="./protected-prompt.css" />
+  </head>
+  <body>
+    <main class="protected-shell">
+      <header>
+        <p class="protected-eyebrow">Protected message entry</p>
+        <h1>Review the prompt Copse will send</h1>
+        <p class="protected-intro">
+          This window is isolated from the chat interface. Review the message, images, target, and
+          additional context before starting this turn.
+        </p>
+      </header>
+
+      <dl class="protected-target" aria-label="Prompt target">
+        <div>
+          <dt>Project</dt>
+          <dd id="protected-prompt-project"></dd>
+        </div>
+        <div>
+          <dt>Thread</dt>
+          <dd id="protected-prompt-thread"></dd>
+        </div>
+        <div>
+          <dt>Model</dt>
+          <dd id="protected-prompt-model"></dd>
+        </div>
+        <div>
+          <dt>Context</dt>
+          <dd id="protected-prompt-details"></dd>
+        </div>
+      </dl>
+
+      <section id="protected-prompt-images" class="protected-images" hidden>
+        <h2>Images sent with this message</h2>
+        <div id="protected-prompt-image-list" class="protected-image-list"></div>
+      </section>
+
+      <section id="protected-prompt-context" class="protected-context" hidden>
+        <h2>Additional turn context</h2>
+        <p>
+          The chat interface also supplied these model instructions or turn controls. Cancel if
+          anything here is unexpected.
+        </p>
+        <dl id="protected-prompt-context-list"></dl>
+      </section>
+
+      <form id="protected-prompt-form">
+        <label for="protected-prompt-text">Message</label>
+        <textarea
+          id="protected-prompt-text"
+          data-testid="protected-prompt-text"
+          spellcheck="true"
+        ></textarea>
+        <p class="protected-note">Editing here changes the exact text sent to the model.</p>
+        <div class="protected-actions">
+          <button id="protected-prompt-cancel" class="secondary" type="button">Cancel</button>
+          <button id="protected-prompt-send" class="primary" type="submit">Send prompt</button>
+        </div>
+      </form>
+    </main>
+    <script type="module" src="./protected-prompt.js"></script>
+  </body>
+</html>

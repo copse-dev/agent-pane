@@ -24,6 +24,7 @@ export async function listRemoteDirectory(
 export async function registerRemoteWorkspaceRoot(
   hostId: string,
   dirPath: string,
+  confirm: (canonical: string) => Promise<boolean>,
 ): Promise<string> {
   const normalized = normalizeRemoteWorkspacePath(dirPath)
   const mgr = getSshConnectionManager()
@@ -34,5 +35,6 @@ export async function registerRemoteWorkspaceRoot(
   if (!stat.isDirectory()) {
     throw new Error(`Remote path is not a directory: ${dirPath}`)
   }
+  if (!(await confirm(canonical))) throw new Error('Remote project folder was not confirmed')
   return registerAllowedWorkspaceRoot(canonical, hostId)
 }

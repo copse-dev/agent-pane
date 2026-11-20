@@ -9,7 +9,7 @@ import {
   prepareChatMessageScreenshot,
   saveAppScreenshot,
 } from './helpers/screenshot.ts'
-import { composerText, setComposerValue } from './helpers/composer.ts'
+import { acceptProtectedPrompt, composerText, setComposerValue } from './helpers/composer.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 
 const MENU_SHOT = 'transcript-quote-context-menu.png'
@@ -126,6 +126,29 @@ async function expectReplyCaret(expectedText: string): Promise<void> {
       }, expectedText),
     { timeout: 5_000, timeoutMsg: 'expected a focused caret after the quote and blank separator' },
   )
+}
+
+// Review only the prompt dispatched by this explicit human action.
+async function reviewHumanPrompt(action: () => Promise<void>, expectedText: string): Promise<void> {
+  const mainHandle = await browser.getWindowHandle()
+  const handlesBefore = await browser.getWindowHandles()
+  const threadId = await $('.chat-row.selected').getAttribute('data-thread-id')
+  if (!threadId) throw new Error('The human prompt must target the selected thread')
+  const threadTitle = await $('.chat-row.selected .chat-title').getText()
+  await action()
+  await browser.waitUntil(
+    async () =>
+      (await browser.getWindowHandles()).some((handle) => !handlesBefore.includes(handle)),
+    { timeout: 15_000, timeoutMsg: 'Expected this human action to open protected review' },
+  )
+  const reviewHandle = (await browser.getWindowHandles()).find(
+    (handle) => !handlesBefore.includes(handle),
+  )
+  if (!reviewHandle) throw new Error('The human prompt review window is missing')
+  await browser.switchToWindow(reviewHandle)
+  await expect($('#protected-prompt-text')).toHaveValue(expectedText)
+  await expect($('#protected-prompt-thread')).toHaveText(`${threadTitle} — ${threadId}`)
+  await acceptProtectedPrompt(mainHandle, handlesBefore)
 }
 
 describe('transcript selection: quote into the reply', () => {
@@ -445,7 +468,13 @@ describe('transcript selection: quote into the reply', () => {
     }
   })
 
-  it('sends the selected quote and reply immediately with the platform shortcut', async () => {
+  it('sends the selected quote and reply immediately with the platform shortcut', async function () {
+    this.timeout(60_000)
+    // Earlier selection cases deliberately leave transient focus/range state in
+    // this renderer. Start the native protected-entry assertion in a fresh
+    // renderer session so its window handoff is the only pending interaction.
+    await browser.reloadSession()
+    await $('.chat-row.selected').waitForExist({ timeout: 30_000 })
     await setComposerValue('')
     await installMockScenario({
       title: 'Reply to selected transcript text',
@@ -460,7 +489,9 @@ describe('transcript selection: quote into the reply', () => {
     await $('.transcript-selection-reply').waitForDisplayed({ timeout: 5_000 })
     await browser.keys('Send this reply now.')
     expect(await $('.transcript-selection-reply').getValue()).toBe('Send this reply now.')
-    await browser.keys([process.platform === 'darwin' ? 'Meta' : 'Control', 'Enter'])
+    await reviewHumanPrompt(async () => {
+      await browser.keys([process.platform === 'darwin' ? 'Meta' : 'Control', 'Enter'])
+    }, `> ${SELECTED_PHRASE}\n\nSend this reply now.`)
     await browser.waitUntil(
       async () =>
         browser.execute(() =>

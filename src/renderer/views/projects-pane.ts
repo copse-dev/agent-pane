@@ -34,12 +34,7 @@ import {
   describeThreadChanges,
   sameThreadChangeSummary,
 } from '@shared/git/thread-change-summary.ts'
-import {
-  archiveThread,
-  deleteThread,
-  isThreadArchived,
-  setThreadTitle,
-} from '@shared/store/thread-helpers.ts'
+import { archiveThread, isThreadArchived, setThreadTitle } from '@shared/store/thread-helpers.ts'
 import { githubPrKey, type GithubPrRef } from '@shared/git/github-pr-url.ts'
 import {
   describeThreadPrStatus,
@@ -83,6 +78,7 @@ import {
 } from '../controller/automation-held-runs.ts'
 import { describeRetainedWorktree } from './automation-retained-worktrees.ts'
 import { forkThread } from '../controller/fork-thread.ts'
+import { deleteThreadAfterNativeReview } from '../controller/delete-thread.ts'
 import { createFollowUpThread } from '../controller/follow-up-thread.ts'
 import {
   createThreadFilter,
@@ -1879,8 +1875,17 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                     ) {
                       return
                     }
-                    void api.agent.clearHistory(project.id, thread.id)
-                    deleteThread(store, thread.id)
+                    void deleteThreadAfterNativeReview(store, api, project.id, thread.id).catch(
+                      (error: unknown) => {
+                        if (
+                          !ipcErrorMessage(error, 'Deletion failed')
+                            .toLowerCase()
+                            .includes('cancelled')
+                        ) {
+                          showErrorToast('Could not delete conversation', error)
+                        }
+                      },
+                    )
                   },
                 },
               ]

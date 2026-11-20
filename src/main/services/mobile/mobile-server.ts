@@ -25,6 +25,9 @@ import { isVirtualInterface } from './default-route.ts'
 import { ClientPairings } from '../clients/client-pairings.ts'
 import type { PublicIdentity } from '../remote-names/names-service.ts'
 import { clientLabelSchema, type ClientAccess } from '../../../shared/client-auth.ts'
+import { MOBILE_PORT } from '../../../shared/mobile-server.ts'
+
+export { MOBILE_PORT }
 
 /** The complete data surface available to a paired phone. */
 export const MOBILE_READ_DISPATCH = Object.freeze({
@@ -33,8 +36,6 @@ export const MOBILE_READ_DISPATCH = Object.freeze({
   threadImage: mobileThreadImage,
 })
 
-/** A stable origin preserves the phone's paired token across Copse restarts. */
-export const MOBILE_PORT = 42773
 const pairSchema = z.strictObject({ label: clientLabelSchema })
 const idPattern = /^[\w-]{1,128}$/
 

@@ -167,6 +167,8 @@ export async function spawnInProjectSandbox(
     unsandboxed?: boolean
     /** Refuse fallback if authorization depended on local OS containment. */
     requireSandbox?: boolean
+    /** Subscribe synchronously to a local child before Node emits spawn/error/output. */
+    onChildCreated?: (child: ChildProcess) => void
     sandboxConfig?: Partial<SandboxRuntimeConfig>
     executionTarget?: ExecutionTarget
   } & Pick<SpawnOptionsWithoutStdio, 'stdio'>,
@@ -181,6 +183,7 @@ export async function spawnInProjectSandbox(
     )
   }
   if (isSshExecutionTarget(target)) {
+    if (opts.onChildCreated) throw new Error('Cannot subscribe to a remote child before spawn')
     const command = shellCommand(executable, args)
     return spawnRemoteShellCommand(command, {
       hostId: target.hostId,
@@ -198,13 +201,15 @@ export async function spawnInProjectSandbox(
         'The project sandbox became unavailable before execution. Request authorization again.',
       )
     }
-    return spawn(executable, args, {
+    const child = spawn(executable, args, {
       cwd: opts.cwd,
       env: mergeSpawnEnv(strippedBaseEnv(), opts.env),
       stdio: opts.stdio,
       signal: opts.signal,
       detached: detachForGroupKill,
     })
+    opts.onChildCreated?.(child)
+    return child
   }
 
   const command = shellCommand(executable, args)
@@ -227,7 +232,7 @@ export async function spawnInProjectSandbox(
 
   const file = argv[0]
   if (!file) throw new Error('sandbox wrap produced empty argv')
-  return spawn(resolveSandboxShellExecutable(file), argv.slice(1), {
+  const child = spawn(resolveSandboxShellExecutable(file), argv.slice(1), {
     cwd: opts.cwd,
     env: withSandboxShellPath(
       withSandboxTmpEnv(mergeSpawnEnv(strippedBaseEnv(env), opts.env), tmpDir),
@@ -236,6 +241,8 @@ export async function spawnInProjectSandbox(
     signal: opts.signal,
     detached: detachForGroupKill,
   })
+  opts.onChildCreated?.(child)
+  return child
 }
 
 export async function spawnShellInProjectSandbox(

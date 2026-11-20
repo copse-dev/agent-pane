@@ -7,6 +7,7 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
+import { submitComposer } from './helpers/composer.ts'
 
 const PROJECT_ID = 'e2e-thread-switch-isolated-project'
 const THREAD_A = 'e2e-thread-switch-isolated-a'
@@ -159,7 +160,7 @@ describe('switching between isolated running threads', () => {
       },
       { text: 'The checkout files are listed above.' },
     ])
-    await $('.submit-btn').click()
+    await submitComposer()
     await browser.waitUntil(
       async () =>
         aRow.getAttribute('class').then((value) => value?.includes('is-running') === true),
@@ -192,7 +193,7 @@ describe('switching between isolated running threads', () => {
       },
       { text: 'The checkout files are listed above.' },
     ])
-    await $('.submit-btn').click()
+    await submitComposer()
     await browser.waitUntil(async () => (await runningThreadIds()).includes(THREAD_B), {
       timeout: 15_000,
       timeoutMsg: 'thread B did not enter a running state after switching threads',

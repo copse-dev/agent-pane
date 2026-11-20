@@ -14,7 +14,7 @@ import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { acceptProtectedPrompt, setComposerValue, submitComposer } from './helpers/composer.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
@@ -284,7 +284,7 @@ describe('footer branch status for a detached thread worktree', function () {
       ],
     })
     await setComposerValue('Inspect the paused rebase.')
-    await $('.submit-btn').click()
+    await submitComposer()
     await scenario.waitForHold('paused-rebase')
     await expect($('.chat-row.selected')).toHaveElementClass('is-running')
     await expect($('.footer-branch-status')).toHaveElementClass('is-detached')
@@ -327,8 +327,13 @@ describe('footer branch status for a detached thread worktree', function () {
     })
     await continueBtn.click()
     await approveUnsandboxedTerminalIfPrompted()
+    await acceptProtectedPrompt()
     await expect($('.branch-reattach-button')).not.toBeDisplayed({ wait: 30_000 })
     await expect($('.msg-machine-origin')).toBeDisplayed({ wait: 30_000 })
+    const machinePrompt = await $('.msg-machine-origin .message-text').getElement()
+    expect(await machinePrompt.getText()).not.toContain('```')
+    await expect(machinePrompt.$('.msg-user-fold-toggle')).not.toExist()
+    await expect(machinePrompt.$('.transcript-attachment-shell')).toBeDisplayed()
     await saveElementScreenshot('#conversation', 'footer-branch-recovery-continued.png')
   })
 
@@ -411,6 +416,7 @@ describe('footer branch status for a detached thread worktree', function () {
     })
     await button.click()
     await approveUnsandboxedTerminalIfPrompted()
+    await acceptProtectedPrompt()
     await expect($('.branch-reattach-button')).not.toBeDisplayed({ wait: 30_000 })
     await expect($('.msg-machine-origin')).toBeDisplayed({ wait: 30_000 })
   })

@@ -589,6 +589,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     },
     threadPrompts: {
       // Demo scenarios never dispatch native delegated work.
+      activateGrant: () => resolved('rejected' as const),
       canDispatch: () => resolved(false),
       canSubmit: () => resolved(true),
       onPrompt: () => () => {},
@@ -851,7 +852,6 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       runningThreadIds: () =>
         resolved(threads.filter((t) => t.status === 'running').map((t) => t.id)),
       retryReview: resolvedVoid,
-      clearHistory: resolvedVoid,
       refreshModelContext: resolvedVoid,
       suggestTitle: () => resolved(null),
       suggestTerminalTitle: () => resolved(null),
@@ -1161,6 +1161,16 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         const thread = threads.find((candidate) => candidate.id === threadId)
         if (thread && !thread.messages.some((candidate) => candidate.id === message.id)) {
           thread.messages.push(message)
+        }
+        return resolvedVoid()
+      },
+      deleteQueuedMessage: (_projectId: string, threadId: string, messageId: string) => {
+        const thread = threads.find((candidate) => candidate.id === threadId)
+        if (thread) {
+          thread.messages = thread.messages.filter((message) => message.id !== messageId)
+          const pending = thread.pendingMessages?.filter((item) => item.messageId !== messageId)
+          if (pending?.length) thread.pendingMessages = pending
+          else delete thread.pendingMessages
         }
         return resolvedVoid()
       },

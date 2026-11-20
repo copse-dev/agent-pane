@@ -10,6 +10,7 @@ import {
 } from './helpers/screenshot.ts'
 import { resetUserData, seedOpenRouterFixture } from './helpers/seed-config.ts'
 import { readFocusedFilterStyle, readModelPickerMenuStyle } from './helpers/model-picker-style.ts'
+import { submitComposer } from './helpers/composer.ts'
 
 const OPENROUTER_FIXTURE_PORT = 51235
 
@@ -509,7 +510,7 @@ describe('OpenRouter model picker', () => {
         },
       ],
     })
-    await $('.submit-btn').click()
+    await submitComposer()
     await browser.waitUntil(
       async () => (await $$('.messages-list .msg-user').getElements()).length === 2,
       {

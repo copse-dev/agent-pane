@@ -45,7 +45,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['git-changes-thread-retention.png'],
   },
   'tests/e2e/light-contrast-controls.e2e.ts': {
-    sourceSha256: '091f450cc1519b580790f9f7292d7a705bea55e0fa9c65a0d0e99ad75a25d0ae',
+    sourceSha256: '4724592cdddfed9f191a482b71a9be7e4336ff16e6749f6c494b3cb51a1e268b',
     filenames: [
       'light-contrast-changes-badge-dark.png',
       'light-contrast-changes-badge-light.png',
@@ -72,7 +72,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/new-thread-default-branch.e2e.ts': {
-    sourceSha256: '92888b33dcea51894f3b9ccf9442ac2d7c5f8eed42131b08fc3c7ebda33f6bdb',
+    sourceSha256: '262e65948bffa964ef2736fde280405d5e730c0607620b06cff8e2c7d8011126',
     filenames: [
       'new-thread-default-branch-explicit-sent.png',
       'new-thread-default-branch-shared-picker.png',
@@ -83,8 +83,13 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/paired-browser-chat.e2e.ts': {
-    sourceSha256: 'b9e38f816bbea857c192bcd603bf2cf55bd5ce331d73102450535fd2973f0558',
-    filenames: ['paired-browser-approval-dark.png', 'paired-browser-approval-light.png'],
+    sourceSha256: '43669ae34dd1b6c99e4837ecd6da4f124cea720e9a59aeb4d0862f423048ec02',
+    filenames: [
+      'paired-browser-approval-dark.png',
+      'paired-browser-approval-light.png',
+      'paired-browser-plan-comments.png',
+      'paired-browser-plan-review.png',
+    ],
   },
   'tests/e2e/pane-loading.e2e.ts': {
     sourceSha256: 'a4a2f58f9e9e8414b419dea33171f14aa0ae084874dcfb12beeeefd0a3f123f9',
@@ -110,15 +115,19 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['pr-native-provenance-offline-restart.png', 'pr-native-provenance.png'],
   },
   'tests/e2e/queued-held.e2e.ts': {
-    sourceSha256: '60093096f47a51beafa83a86b8a22415270c0c47a9e706b583050550c7347b88',
-    filenames: ['queued-held-contrast-dark.png', 'queued-held-contrast-light.png'],
+    sourceSha256: '21d20b04e90354e99868418c847e81c9973bad03ab0681c8a5c86ce0c63ea08a',
+    filenames: [
+      'queued-held-contrast-dark.png',
+      'queued-held-contrast-light.png',
+      'queued-reviewed-canonical-row.png',
+    ],
   },
   'tests/e2e/queued-message-delete.e2e.ts': {
-    sourceSha256: '17a68f9014690da1c32f6e8369f3cd4553d83444f7096d9f2f70c1b8042316e3',
+    sourceSha256: 'f30a414089427ffb02b9592a4a6d14eebaf08ba01cd971b3f34228ddf595d144',
     filenames: ['queued-actions-row-hover-dark.png', 'queued-actions-row-hover-light.png'],
   },
   'tests/e2e/scroll-to-bottom.e2e.ts': {
-    sourceSha256: '697dfa80f72d9c8e6b4bae7f30190ae4595f0d16f374f475a6ca358a856e2f0a',
+    sourceSha256: '969ce9c227164336aad94f978651d6dc9bd911cf1deda581e5850f9411dfadf2',
     filenames: ['scroll-to-bottom-dark.png', 'scroll-to-bottom-light.png'],
   },
   'tests/e2e/settings-acp-agents-list.e2e.ts': {

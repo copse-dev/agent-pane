@@ -8,6 +8,7 @@ import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
+import { submitComposer } from './helpers/composer.ts'
 
 process.env['COPSE_PANEL_MOCK_LLM'] = '1'
 process.env['ANTHROPIC_API_KEY'] = ''
@@ -76,7 +77,7 @@ describe('settings sources nested AGENTS.md (#1354)', function () {
       { toolCalls: [{ name: 'read_file', args: { path: 'packages/api/src/router.ts' } }] },
       { text: reply, expectToolResults: [{ name: 'read_file', includes: '/health' }] },
     ])
-    await $('.submit-btn').click()
+    await submitComposer()
     await expectAssistantReply(reply)
     await waitForAgentIdle(30_000)
 

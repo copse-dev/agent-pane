@@ -132,6 +132,7 @@ interface PreparedInstall {
 
 export interface PluginInstallService {
   prepare(catalogId: string): Promise<PluginInstallReview>
+  preparedReview(token: string): PluginInstallReview | null
   cancel(token: string): Promise<void>
   commit(token: string): Promise<PluginInstallCommitResult>
   records(): Promise<readonly PluginInstallRecord[]>
@@ -592,11 +593,18 @@ export function createPluginInstallService(
     await fsp.rm(join(stagingRoot(root), token), { recursive: true, force: true })
   }
 
+  function preparedReview(token: string): PluginInstallReview | null {
+    return pending.get(token)?.review ?? null
+  }
+
   async function commit(token: string): Promise<PluginInstallCommitResult> {
     const prepared = pending.get(token)
     if (!prepared) throw new Error('Install review expired; review the package again.')
     pending.delete(token)
     try {
+      if ((await hashPluginToolSource(prepared.root)) !== prepared.review.contentHash) {
+        throw new Error('The reviewed plugin package changed before installation.')
+      }
       const previous = findExistingInstall(
         await readRecords(root),
         prepared.review.catalogId,
@@ -619,9 +627,16 @@ export function createPluginInstallService(
 
       const payload = payloadPath(root, prepared.review.contentHash)
       await fsp.mkdir(payloadRoot(root), { recursive: true })
-      if ((await pathKind(payload)) === null) {
+      const existingPayloadKind = await pathKind(payload)
+      if (existingPayloadKind === null) {
         await fsp.rename(prepared.root, payload)
       } else {
+        if (
+          existingPayloadKind !== 'directory' ||
+          (await hashPluginToolSource(payload)) !== prepared.review.contentHash
+        ) {
+          throw new Error('The previously installed plugin payload changed on disk.')
+        }
         await fsp.rm(join(stagingRoot(root), token), { recursive: true, force: true })
       }
 
@@ -758,6 +773,7 @@ export function createPluginInstallService(
 
   return {
     prepare,
+    preparedReview,
     cancel,
     commit,
     records: () => readRecords(root),

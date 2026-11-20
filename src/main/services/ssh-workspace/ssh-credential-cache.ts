@@ -34,6 +34,8 @@ export interface SshSecretAnswer {
   remember: boolean
 }
 
+export type SshSecretMode = 'interactive' | 'cache-only'
+
 interface CachedSecret {
   value: string
   generation: number
@@ -74,6 +76,7 @@ export async function resolveSshSecret(
   prompt: string,
   ask: () => Promise<SshSecretAnswer>,
   hostId?: string,
+  mode: SshSecretMode = 'interactive',
 ): Promise<string> {
   const key = cacheKey(hostId, prompt)
   let generation = generations.get(key) ?? 0
@@ -100,6 +103,10 @@ export async function resolveSshSecret(
     markServed(nonce, key, generation)
     return stored
   }
+
+  // Background work must neither open a dialog nor wait for a foreground
+  // dialog already in flight. Rejected answers were retired above as usual.
+  if (mode === 'cache-only') return ''
 
   const inFlight = pending.get(key)
   if (inFlight && inFlight.generation === generation) {

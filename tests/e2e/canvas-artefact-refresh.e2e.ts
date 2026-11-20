@@ -10,7 +10,7 @@ import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedCanvasArtefactThreadFixture } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 
 const PROJECT_ID = 'e2e-canvas-artefact-project'
 const ACTIVE_THREAD_ID = 'e2e-canvas-active-thread'
@@ -46,7 +46,7 @@ async function renderVersion(heading: string): Promise<void> {
     { name: CANVAS_TOOL, args: { title: 'Sales Dashboard', html } },
     reply,
   )
-  await $('.submit-btn').click()
+  await submitComposer()
   // A missing legacy submit-button class can look idle before the turn starts.
   // Wait for this version's reply and the real idle state before replacing its
   // scenario with the next render or browser_show request.
@@ -98,7 +98,7 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<voi
     { name, args },
     reply,
   )
-  await $('.submit-btn').click()
+  await submitComposer()
   await expectAssistantReply(reply)
   await waitForAgentIdle(25_000)
   await scenario.assertComplete()
@@ -252,7 +252,7 @@ describe('canvas artefact refresh', () => {
       ],
     })
     await setComposerValue('Render a background dashboard.')
-    await $('.submit-btn').click()
+    await submitComposer()
     await scenario.waitForHold('before-canvas')
 
     await selectThread(HISTORY_THREAD_ID)

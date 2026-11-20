@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedLongPromptScrollFixture, writeSettings } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import {
   navigationTextOverlaps,
@@ -110,7 +110,7 @@ describe('scroll the transcript to the prompt on submit', () => {
     )
 
     await setComposerValue(LONG_PROMPT)
-    await $('.submit-btn').click()
+    await submitComposer()
 
     await browser.waitUntil(
       async () => {

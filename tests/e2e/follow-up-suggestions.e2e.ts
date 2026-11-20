@@ -15,6 +15,30 @@ import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 import { e2eGitBranch } from './helpers/e2e-env.ts'
 import { expectAssistantReply } from './helpers/mock-scenario.ts'
+import { acceptProtectedPrompt } from './helpers/composer.ts'
+
+// Review only the prompt dispatched by this explicit human action.
+async function reviewHumanPrompt(action: () => Promise<void>, expectedText: string): Promise<void> {
+  const mainHandle = await browser.getWindowHandle()
+  const handlesBefore = await browser.getWindowHandles()
+  const threadId = await $('.chat-row.selected').getAttribute('data-thread-id')
+  if (!threadId) throw new Error('The human prompt must target the selected thread')
+  const threadTitle = await $('.chat-row.selected .chat-title').getText()
+  await action()
+  await browser.waitUntil(
+    async () =>
+      (await browser.getWindowHandles()).some((handle) => !handlesBefore.includes(handle)),
+    { timeout: 15_000, timeoutMsg: 'Expected this human action to open protected review' },
+  )
+  const reviewHandle = (await browser.getWindowHandles()).find(
+    (handle) => !handlesBefore.includes(handle),
+  )
+  if (!reviewHandle) throw new Error('The human prompt review window is missing')
+  await browser.switchToWindow(reviewHandle)
+  await expect($('#protected-prompt-text')).toHaveValue(expectedText)
+  await expect($('#protected-prompt-thread')).toHaveText(`${threadTitle} — ${threadId}`)
+  await acceptProtectedPrompt(mainHandle, handlesBefore)
+}
 
 describe('follow-up suggestion bubbles', () => {
   describe('mock demo (Debug CI + Compare models + Continue Plan)', () => {
@@ -97,7 +121,9 @@ describe('follow-up suggestion bubbles', () => {
         'Continue: Run the test suite',
       )
 
-      await $('.follow-up-bubble[data-id="debug-ci"]').click()
+      await reviewHumanPrompt(async () => {
+        await $('.follow-up-bubble[data-id="debug-ci"]').click()
+      }, 'The pull request for this branch has failing CI checks. Investigate the failures and fix them.')
       await expect($('.chat-row.selected .chat-title')).toHaveText(originalThreadTitle)
       await expect($('.messages-list .msg-user')).toBeDisplayed()
       await waitForAgentIdle()

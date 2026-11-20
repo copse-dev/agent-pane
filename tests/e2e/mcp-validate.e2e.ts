@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import {
@@ -163,7 +163,7 @@ describe('MCP validation', () => {
     })
 
     await setComposerValue('Look up the note hello from MCP in the documentation service.')
-    await $('.submit-btn').click()
+    await submitComposer()
 
     const dialog = await $('#approval-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: 30_000 })
@@ -249,7 +249,7 @@ describe('MCP validation', () => {
         ],
       })
       await setComposerValue('Apply these native session defaults.')
-      await $('.submit-btn').click()
+      await submitComposer()
       const dialog = $('#approval-dialog')
       await dialog.waitForDisplayed({ timeout: 30_000 })
       await dialog.$('.approval-approve').click()
@@ -293,7 +293,7 @@ describe('MCP validation', () => {
     })
 
     await setComposerValue('Ask the documentation service to echo needs approval.')
-    await $('.submit-btn').click()
+    await submitComposer()
 
     const dialog = await $('#approval-dialog').getElement()
     await dialog.waitForDisplayed({ timeout: 30_000 })

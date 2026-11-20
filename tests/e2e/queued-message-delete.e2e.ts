@@ -22,7 +22,7 @@ describe('queued message delete', function () {
     writeE2eEnv({ COPSE_PANEL_MOCK_BRANCH: previousMockBranch })
   })
 
-  it('removes a queued follow-up from the pinned panel', async function () {
+  it('durably removes a queued follow-up through completion and reload', async function () {
     resetUserData()
     previousMockBranch = process.env['COPSE_PANEL_MOCK_BRANCH']
     // Later queue submissions must observe the branch the real checkout committed.
@@ -205,6 +205,18 @@ describe('queued message delete', function () {
     }
     await $('.prompt-input').moveTo()
 
+    // Delete must remove a prompt already committed by autosave, not merely a
+    // bubble whose first write has not reached disk yet.
+    await browser.waitUntil(
+      async () =>
+        browser.execute(async (content) => {
+          const threads = await window.api.threads.loadProject('e2e-queued-delete')
+          return threads.some((thread) =>
+            thread.pendingMessages?.some((item) => item.payload.content === content),
+          )
+        }, QUEUED_TEXT),
+      { timeout: 10_000 },
+    )
     await $('.queued-delete').click()
 
     await browser.waitUntil(
@@ -222,5 +234,14 @@ describe('queued message delete', function () {
     await scenario.release('parser-refactor')
     await waitForAgentIdle()
     await scenario.assertComplete()
+
+    await browser.reloadSession()
+    await expect($('.messages-list')).toHaveText(expect.stringContaining(FIRST_PROMPT))
+    await expect($('.messages-list')).toHaveText(
+      expect.stringContaining('Extract the repeated error conversion'),
+    )
+    await expect($('.messages-list')).not.toHaveText(expect.stringContaining(QUEUED_TEXT))
+    await expect($('.conversation-queued .msg-queued')).not.toExist()
+    await saveAppScreenshot('queued-message-delete-reloaded.png')
   })
 })

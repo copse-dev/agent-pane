@@ -202,6 +202,7 @@ export interface ApiClient {
     reply: (id: string, accepted: boolean) => Promise<void>
   }
   threadPrompts: {
+    activateGrant: (id: string, messageId: string) => Promise<'activated' | 'rejected'>
     canDispatch: (projectId: string, parentId: string, childId: string) => Promise<boolean>
     canSubmit: (id: string) => Promise<boolean>
     revokeAccess: (threadId: string, access: 'read' | 'send' | 'orchestrate') => Promise<void>
@@ -372,16 +373,19 @@ export interface ApiClient {
   }
   agent: {
     /**
-     * Start a turn. With `delegation`, main starts it only while the parent
-     * still owns the child and holds orchestration, rechecked as it dispatches;
-     * otherwise it rejects with `SubthreadPromptHeldError` and runs nothing.
+     * Start a turn. A delegated machine prompt also carries Main's one-use,
+     * exact command grant. Main rechecks parent ownership at dispatch; missing
+     * or altered grants use protected human review instead.
      */
     run: (
       projectId: string,
       threadId: string,
       prompt: string,
       delegation?: import('@shared/thread-prompt.ts').SubthreadRunDelegation,
-    ) => Promise<void>
+      display?: import('@shared/types').ProtectedHumanTurnDisplay,
+      /** Opaque one-use authority minted by authenticated Mobile Companion input. */
+      mobilePromptGrantId?: string,
+    ) => Promise<unknown>
     runMachine: (request: MachineAgentRunRequest) => Promise<MachineDispatchResult>
     describeImages: (
       projectId: string,
@@ -419,7 +423,6 @@ export interface ApiClient {
     abort: (threadId: string, reason?: 'send_now') => Promise<void>
     runningThreadIds: () => Promise<string[]>
     retryReview: (projectId: string, threadId: string, payload: string) => Promise<void>
-    clearHistory: (projectId: string, threadId: string) => Promise<void>
     refreshModelContext: () => Promise<void>
     suggestTitle: (text: string) => Promise<string | null>
     suggestTerminalTitle: (text: string) => Promise<string | null>
@@ -772,6 +775,8 @@ export interface ApiClient {
       threadId: string,
       message: import('@shared/types').Message,
     ) => Promise<void>
+    /** Delete a persisted queued message before removing it from the local queue. */
+    deleteQueuedMessage: (projectId: string, threadId: string, messageId: string) => Promise<void>
     /** Merge a window-derived label into a message main owns, and persist it. */
     annotateMessage: (
       projectId: string,
@@ -820,7 +825,7 @@ export interface ApiClient {
     fork: (
       projectId: string,
       sourceThreadId: string,
-      targetThreadId: string,
+      targetThread: import('@shared/types').Thread,
       throughMessageId?: string,
     ) => Promise<import('@shared/types').ForkedHistoryResult>
     /** Active threads that link to a URL or another thread (recorded links only). */
