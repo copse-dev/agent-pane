@@ -27,8 +27,14 @@ it(
       )
       return result.status === 0 && result.stdout.trim() === '3.9'
     })
-    if (!python || spawnSync('uv', ['--version']).status !== 0) {
-      t.skip('requires already-installed Python3.9 and uv; no runtime or installer download')
+    // The readiness check needs `uv pip sync --check`, which uv 0.12.18 added.
+    // An older uv rejects the option, so the fixture could never reach ready.
+    const syncHelp = spawnSync('uv', ['pip', 'sync', '--help'], { encoding: 'utf8' })
+    const uvHasSyncCheck = syncHelp.status === 0 && /^\s*--check(?:\s|$)/m.test(syncHelp.stdout)
+    if (!python || !uvHasSyncCheck) {
+      t.skip(
+        'requires already-installed Python 3.9 and uv 0.12.18 or later (`uv pip sync --check`); no runtime or installer download',
+      )
       return
     }
     const parent = realpathSync(mkdtempSync(join(tmpdir(), 'uv-requirements-declaration-')))
@@ -183,7 +189,7 @@ with zipfile.ZipFile(sys.argv[1], 'w') as wheel:
         hostIdentity.stdout,
       )
       t.diagnostic(
-        'Existing declaration prepared/repaired exact installedPython3.9 offline with ordinary hash-locked wheel; no pip bootstrap or security-overlay execution',
+        'Existing declaration prepared/repaired exact installed Python 3.9 offline with ordinary hash-locked wheel; no pip bootstrap or security-overlay execution',
       )
     } finally {
       setProjectSandboxEnabled(false)

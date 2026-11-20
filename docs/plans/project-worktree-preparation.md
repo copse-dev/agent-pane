@@ -230,13 +230,17 @@ pip into its environment. For example, a project with reviewed wheels in `vendor
 }
 ```
 
-Choose the actual installed interpreter that satisfies the project's constraints; `python3.9`
-is an example, not a runtime Copse downloads. uv must also already be installed. The declaration
-and its inputs receive the ordinary exact-plan approval, project/cache confinement and kernel
-offline policy. Preflight checks stay read-only and use disposable scratch. `uv pip sync --check`
-exits unsuccessfully when the environment differs; `--dry-run` alone does not establish readiness.
-The lock and Python constraints remain unchanged. Sync removes packages absent from the lock,
-including pip or setuptools if they were previously installed but are not required.
+Choose the actual installed interpreter that satisfies the project's constraints; `python3.9` is an
+example, not a runtime Copse downloads. uv must also already be installed, at version 0.12.18 or
+later: the readiness check relies on `uv pip sync --check`, which that release added
+([astral-sh/uv#21844](https://github.com/astral-sh/uv/pull/21844)). An older uv rejects the option,
+so validation fails after every install and the worktree never reads ready; upgrade uv rather than
+dropping or weakening the check. The declaration and its inputs receive the ordinary exact-plan
+approval, project/cache confinement and kernel offline policy. Preflight checks stay read-only and
+use disposable scratch. `uv pip sync --check` exits unsuccessfully when the environment differs;
+`--dry-run` alone does not establish readiness. The lock and Python constraints remain unchanged.
+Sync removes packages absent from the lock, including pip or setuptools if they were previously
+installed but are not required.
 
 The example uses only local reviewed wheels and can prepare offline. For an approved registry
 workflow, remove its local-wheelhouse options and review the resulting network scope. uv
