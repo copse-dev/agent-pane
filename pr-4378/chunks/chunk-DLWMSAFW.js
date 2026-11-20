@@ -52633,8 +52633,8 @@ function createAcpAgentsSection(api, opts = {}) {
           probe.modes ? `${String(probe.modes.choices.length)} permission modes (agent default: ${probe.modes.currentValue})` : ""
         ].filter(Boolean);
         setInlineStatus(modelStatus, "ok", `Detected ${bits.join(", ")}.`);
-      }).catch((err) => {
-        setInlineStatus(modelStatus, "error", errorMessage(err));
+      }).catch(() => {
+        setInlineStatus(modelStatus, "error", "Could not check this coding agent. Try again.");
       }).finally(() => {
         detectModels.disabled = !canDetectModels;
       });
@@ -52897,7 +52897,6 @@ var init_acp_agents_section = __esm({
     init_model_picker();
     init_slug();
     init_acp_registry_browser();
-    init_errors4();
     AGENT_DATA_POLICY_URLS = {
       "claude-acp": "https://github.com/anthropics/claude-code#data-collection-usage-and-retention",
       "claude-code-acp": "https://github.com/anthropics/claude-code#data-collection-usage-and-retention",
