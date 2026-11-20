@@ -484,15 +484,18 @@
   gap: 4px;
   align-items: center;
 }
+/* Sentence case at the badge size (docs/ui-taste.md, "Badges are labels"). */
 .roadmap-review-applied-badge {
-  font-size: var(--font-size-2xs);
+  display: inline-block;
+  font-size: var(--badge-font-size);
   line-height: 1.4;
   padding: 0 6px;
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--success, #3fb950) 18%, transparent);
   color: var(--success, #3fb950);
+}
+.roadmap-review-applied-badge::first-letter {
   text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 .roadmap-review-row-actions {
   flex-wrap: wrap;

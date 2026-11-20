@@ -230,18 +230,30 @@ async function bundleTests(testFiles: string[], outputDir: string): Promise<void
 /**
  * Reporters for the run, as `node --test` arguments.
  *
- * Off CI, nothing: node picks `spec` on a TTY, which is what you want when you
- * are reading it live.
+ * Off CI, Node's default `spec` reporter plus a summary that marks failures
+ * matching a known host difference (`scripts/lib/host-differences.mts`), so a
+ * local full run does not have to be triaged against
+ * `docs/host-environment-test-noise.md` by hand for the same known failures
+ * every time. It adds lines only; failures still fail the run.
  *
  * On CI it defaults to `tap`, and 6000+ tests of TAP is ~49k lines. GitHub's
  * job-log API only returns the last ~5000, so a failure early in a green-ish
  * run is not reachable through the API at all — the `headless-agent-host`
  * failure in this repo had to be read off a screenshot of the web UI. Print the
  * `dot` reporter instead (one character per test, failures re-listed in full at
- * the end) and keep the machine-readable TAP in a file the job uploads.
+ * the end), stream named failures through the review reporter, and keep the
+ * machine-readable TAP in a file the job uploads. Diagnostics stream failure
+ * events Node has delivered to reporters without waiting for EOF. Node may
+ * buffer events from concurrent files, so no diagnostic after interruption
+ * does not establish that nothing failed.
+ *
+ * Node 24 can warn about eleven fixed TestsStream end listeners for these three
+ * CI reporters (also present with CI + --review-report before this was the
+ * default). This wiring does not grow with the test count. Keep the stock dot
+ * and TAP reporters rather than suppressing warnings or changing listener limits.
  */
 function reporterArgs(tapLog: string): string[] {
-  if (reviewReport)
+  if (reviewReport || process.env['CI'])
     return [
       '--test-reporter=dot',
       '--test-reporter-destination=stdout',
@@ -251,12 +263,11 @@ function reporterArgs(tapLog: string): string[] {
         ? ['--test-reporter=tap', `--test-reporter-destination=${tapLog}`]
         : []),
     ]
-  if (!process.env['CI']) return []
   return [
-    '--test-reporter=dot',
+    '--test-reporter=spec',
     '--test-reporter-destination=stdout',
-    '--test-reporter=tap',
-    `--test-reporter-destination=${tapLog}`,
+    `--test-reporter=${resolve('scripts/lib/host-noise-reporter.mts')}`,
+    '--test-reporter-destination=stdout',
   ]
 }
 

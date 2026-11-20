@@ -1,8 +1,4 @@
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
-const exec = promisify(execFile)
-const git = async (root: string, args: string[]): Promise<string> =>
-  (await exec('git', ['-c', 'core.hooksPath=/dev/null', ...args], { cwd: root })).stdout.trim()
+import { internalGit as git } from '../security/internal-git-exec.ts'
 
 export async function githubArchiveBase(
   root: string,

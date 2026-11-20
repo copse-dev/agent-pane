@@ -80,13 +80,21 @@ follow-up). File read guards,
 the shell classifier and the sandbox read mount use the same thread-scoped permission;
 the chat store is never writable through these grants.
 
+A sandboxed coding agent (ACP) gets the same read mount. Its isolated session host has no run of
+its own, so the main process resolves the thread's readable directories when the turn starts and
+hands them to the host; a host given none mounts no conversations, rather than the whole store an
+app-owned operation without a thread would see. Granting or revoking access reaches the agent at
+its next turn, which restarts it and reattaches its session. Agent processes started without a
+thread, such as model probes and advisor consultations, read no conversations.
+
 Local shell reads also check each named target's symlink destination before reusing an
 outside-project path grant. A file or directory alias into another thread still requires
 conversation-read consent; revoking that consent leaves the outside-path grant insufficient.
 
 `list_threads` searches conversation titles and summaries and returns paths for the existing
-read tools. `send_thread_prompt` asks a separate **Send prompts to your other threads?**
-approval. Reading never grants sending. Both grants are persisted in main-owned settings,
+read tools. Under the same read grant, `include_state` also returns saved briefs, plans,
+recorded checkout data and native production receipts. `send_thread_prompt` asks a separate
+**Send prompts to your other threads?** approval. Reading never grants sending. Both grants are persisted in main-owned settings,
 keyed by the requesting thread; they are not inherited by destination or forked threads.
 Either permission can be revoked in the thread’s Context panel → Permissions.
 Destination prompts enter the normal queue with machine provenance, consume the existing
@@ -286,7 +294,9 @@ Reactive retries remain inside the same guest and never grant host execution.
 Network has no direct route out of the guest. A host broker enforces named destinations;
 per-command access is token-gated. The run receives the model credential it needs, not ambient
 host credentials or Git remotes. Results return as Git bundles to `refs/copse/runs/<id>` for
-explicit adoption, without moving the host checkout's HEAD or pushing. This is not a
+explicit adoption, without moving the host checkout's HEAD or pushing. Carry-in, carry-out and
+adoption run on the host under the internal Git policy, so the checkout's fsmonitor, hooks and
+signer never run for them, and adopted commits land unsigned. This is not a
 hostile-workload/multi-tenant guarantee; syntactic effect classification cannot identify every
 possible action of arbitrary guest code.
 
@@ -505,8 +515,8 @@ with every `session/new`, `session/resume` and `session/load`: one Bash
 `PreToolUse` command hook (`acp/acp-claude-sandbox-escape.ts`). When a call asks
 for the escape, the hook exits 2 and Claude Code returns its message to the model
 as the tool result. The message says the process runs inside Copse's sandbox and
-names `run_shell` with `expects_sandbox_block`, which can ask the user to approve
-an outside run. When the session mounted no bridge, the message says so and tells
+names the session's own bridge tool (`mcp__copse-<nonce>__run_shell`) with
+`expects_sandbox_block`, which can ask the user to approve an outside run. When the session mounted no bridge, the message says so and tells
 the agent to ask the user instead.
 
 The hook only refuses. It runs inside the agent's sandbox, lets nothing run that
@@ -540,14 +550,20 @@ point for a stdio or HTTP MCP server the external agent mounts itself.
 
 Because every bridged call is re-gated there, the agent's own ACP permission request for one only
 duplicates that gate. Copse approves the ACP-layer request only when **adapter-authored provenance**
-on the request itself names a `copse` tool that this session's own bridge serves. Provenance comes
-from:
+on the request itself names a tool of this session's own bridge, under the bridge's exact server
+name, and the bridge serves that tool. Each bridge is mounted as `copse-<nonce>`, eight random
+lowercase letters or digits (`newBridgeServerName`, `acp/acp-bridge-name.ts`), never as the bare
+`copse`: an MCP config the agent reads for itself (`~/.claude.json`, a repository's `.mcp.json`,
+a plugin manifest) can define a server named `copse`, and its tools would otherwise carry the same
+adapter-authored names (#4125). A server named `copse`, or any other nonce, never matches.
+Provenance comes from:
 
 - the adapter's structured tool name (`_meta.claudeCode.toolName`, or a qualified ACP `name`);
-- a title in one of the literal observed shapes: `copse-<tool>: <tool>`, `mcp__copse__<tool>` or
-  `mcp.copse.<tool>`. Separators are fixed, the tool name is ASCII and spelled exactly as offered,
-  and nothing is unwrapped or case-folded first. A looser grammar reads shell text as a tool:
-  `copse=;. ./run_shell` sources `./run_shell`.
+- a title in one of the literal observed shapes, where `<server>` is the session's exact bridge
+  name: `<server>-<tool>: <tool>`, `mcp__<server>__<tool>` or `mcp.<server>.<tool>`. Separators
+  are fixed, the tool name is ASCII and spelled exactly as offered, and nothing is unwrapped or
+  case-folded first. A looser grammar reads shell text as a tool: `copse=;. ./run_shell` sources
+  `./run_shell`.
 
 The agent's earlier reports of the same `toolCallId` can veto the request's claim but never stand
 in for one: every claim must agree. A request whose kind is `execute`, `edit`, `delete` or `move`, or that carries a command line (`acpShellCommandText`, as for an unclassified request with `rawInput.command`),
@@ -667,7 +683,8 @@ to need network or outside-workspace access. This only advances the same unsandb
 
 When the command is bounded opaque local execution — its only reasons are a project script or
 executable, with no network, outside-path, destructive or install signal — the advanced prompt
-also offers “Allow retries outside the sandbox (up to 10, for 2 hours)”. Ticking it leases that
+also offers a ten-retry, two-hour outside-sandbox grant. Its label explains exact-command
+scope, Stop revocation and the risk of changed scripts. Ticking it leases that
 exact command line, byte for byte, to the current human turn tree in this thread and execution
 root, so an agent rerunning the same browser demo or harness after each fix is not asked again.
 Any other command, a changed command, another turn tree or another thread asks again. The same
@@ -900,6 +917,17 @@ pinned ASRT patch provides per-spawn macOS socket permissions for these isolated
 processes. See [the threat model](threat-model.md#scoped-ssh-signing) for exact limits.
 
 ## What an approval prompt says
+
+Task retries authorize the exact displayed command in one project, chat, human task,
+execution root and containment mode. The contained option allows ten additional runs
+within 15 minutes; the separately selected outside-sandbox option allows ten within two
+hours. Stop revokes the chat's retries immediately, including saved answers to abandoned
+approval requests. Cancellation also revokes them, except send-now interruption, which
+can continue the same task. A new human task cannot reuse the
+previous task's answer. Restart forgets these memory-only grants; expiry or exhaustion
+requires approval again. Ordinary completion preserves retries for the same task.
+Outside-sandbox scripts still use normal account access, and changing a script's contents
+can change what the same command does. These are not all-command session grants.
 
 Prompt prose explains the effect, execution boundary, and duration of the grant outside the
 detail box. The box holds the complete command, arguments, or variable URL. Web-fetch,

@@ -1,5 +1,6 @@
 import { createServer, type Server, type Socket } from 'node:net'
-import { createHash, randomBytes } from 'node:crypto'
+import { randomBytes } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import { chmodSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -61,7 +62,7 @@ function askpassDir(): string {
  * wrapper with the profile, but bind the socket in a short private temp dir.
  */
 function askpassSocketPath(): string {
-  const identity = createHash('sha256').update(userDataDir()).digest('hex').slice(0, 16)
+  const identity = sha256Hex(userDataDir()).slice(0, 16)
   if (process.platform === 'win32') {
     return `\\\\.\\pipe\\copse-ssh-askpass-${identity}`
   }

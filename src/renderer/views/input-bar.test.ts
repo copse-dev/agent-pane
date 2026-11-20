@@ -2161,6 +2161,442 @@ describe('input bar debug trace', () => {
 })
 
 describe('input bar branch mismatch warning', () => {
+  for (const change of [
+    'switch chat',
+    'away and back',
+    'replace warning',
+    'edit draft',
+    'attach file',
+    'unmount',
+  ] as const) {
+    it(`does not resume an old Continue here action after ${change}`, async () => {
+      const status = deferred<Awaited<ReturnType<ApiClient['git']['branchStatus']>>>()
+      const runs: string[] = []
+      const store = createStore({
+        workspaceRoot: '/repo',
+        projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+        activeProjectId: 'project-1',
+        activeThreadId: 'thread-1',
+        threads: [
+          { ...thread('feature/first'), draftPrompt: 'First draft' },
+          { ...thread('main'), id: 'thread-2', draftPrompt: 'Other unsent draft' },
+        ],
+      })
+      const api = createApi({
+        currentBranch: 'main',
+        onRun: async (_projectId, threadId) => {
+          runs.push(threadId)
+        },
+      })
+      const host = document.createElement('div')
+      document.body.append(host)
+      const bar = mountInputBar(host, store, {
+        ...api,
+        git: {
+          ...api.git,
+          branchStatus: (projectId, threadId, forBranch) =>
+            forBranch === undefined
+              ? status.promise
+              : api.git.branchStatus(projectId, threadId, forBranch),
+        },
+      })
+      let mounted = true
+      try {
+        await flush()
+        const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+        const warning = host.querySelector<HTMLElement>('.composer-branch-warning')
+        const continueHere = host.querySelector<HTMLButtonElement>('.composer-branch-continue-btn')
+        const composer = host.querySelector<HTMLElement>('.prompt-input')
+        assert.ok(submit && warning && continueHere && composer)
+        composer.textContent = 'First draft'
+        submit.click()
+        await flush()
+        assert.equal(warning.hidden, false)
+        continueHere.click()
+
+        switch (change) {
+          case 'switch chat':
+            switchThread(store, 'thread-2')
+            break
+          case 'away and back':
+            switchThread(store, 'thread-2')
+            switchThread(store, 'thread-1')
+            break
+          case 'replace warning':
+            submit.click()
+            await flush()
+            break
+          case 'edit draft':
+            composer.textContent = 'A newer unsent draft'
+            composer.dispatchEvent(new Event('input', { bubbles: true }))
+            break
+          case 'attach file': {
+            const attachments = getPromptAttachmentHandlers()
+            assert.ok(attachments)
+            attachments.attachFile({ path: 'notes.md', content: 'New unsent context' })
+            break
+          }
+          case 'unmount':
+            bar.unmount()
+            mounted = false
+            break
+        }
+        const draft = composer.textContent
+        const hidden = warning.hidden
+        status.resolve({ currentBranch: 'main', pr: null })
+        await flush()
+
+        assert.deepEqual(runs, [], 'a stale confirmation must not start any chat')
+        assert.equal(composer.textContent, draft, 'the current draft stays unsent')
+        assert.equal(warning.hidden, hidden, 'the current warning is not cleared')
+        assert.equal(getThreadById(store, 'thread-1')?.gitBranch, 'feature/first')
+      } finally {
+        if (mounted) bar.unmount()
+      }
+    })
+  }
+
+  it('does not briefly hide another chat warning when the old branch lookup finishes', async () => {
+    const status = deferred<Awaited<ReturnType<ApiClient['git']['branchStatus']>>>()
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [
+        { ...thread('feature/first'), draftPrompt: 'First draft' },
+        { ...thread('feature/second'), id: 'thread-2', draftPrompt: 'Other unsent draft' },
+      ],
+    })
+    const api = createApi({ currentBranch: 'main' })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const bar = mountInputBar(host, store, {
+      ...api,
+      git: {
+        ...api.git,
+        branchStatus: (projectId, threadId, forBranch) =>
+          forBranch === undefined
+            ? status.promise
+            : api.git.branchStatus(projectId, threadId, forBranch),
+      },
+    })
+    const mutations: MutationRecord[] = []
+    const observer = new MutationObserver((records) => mutations.push(...records))
+    try {
+      await flush()
+      const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+      const warning = host.querySelector<HTMLElement>('.composer-branch-warning')
+      const continueHere = host.querySelector<HTMLButtonElement>('.composer-branch-continue-btn')
+      const composer = host.querySelector<HTMLElement>('.prompt-input')
+      assert.ok(submit && warning && continueHere && composer)
+      composer.textContent = 'First draft'
+      submit.click()
+      await flush()
+      continueHere.click()
+      switchThread(store, 'thread-2')
+      submit.click()
+      await flush()
+      assert.equal(warning.hidden, false)
+      assert.match(warning.textContent, /feature\/second/)
+      observer.observe(warning, { attributes: true, attributeFilter: ['hidden'] })
+
+      status.resolve({ currentBranch: 'main', pr: null })
+      await flush()
+
+      assert.equal(mutations.length, 0, 'the other chat warning must stay visible throughout')
+      assert.equal(warning.hidden, false)
+      assert.equal(composer.textContent, 'Other unsent draft')
+    } finally {
+      observer.disconnect()
+      bar.unmount()
+    }
+  })
+
+  for (const outcome of ['resolve', 'reject', 'stale rejection'] as const) {
+    it(`keeps the current Continue here ${outcome} behavior`, async () => {
+      const status = deferred<Awaited<ReturnType<ApiClient['git']['branchStatus']>>>()
+      const runs: string[] = []
+      const store = createStore({
+        workspaceRoot: '/repo',
+        projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+        activeProjectId: 'project-1',
+        activeThreadId: 'thread-1',
+        threads: [
+          { ...thread('feature/first'), draftPrompt: 'First draft' },
+          { ...thread('main'), id: 'thread-2', draftPrompt: 'Other unsent draft' },
+        ],
+      })
+      const api = createApi({
+        currentBranch: 'main',
+        onRun: async (_projectId, threadId) => {
+          runs.push(threadId)
+        },
+      })
+      const host = document.createElement('div')
+      document.body.append(host)
+      const bar = mountInputBar(host, store, {
+        ...api,
+        git: {
+          ...api.git,
+          branchStatus: (projectId, threadId, forBranch) =>
+            forBranch === undefined
+              ? status.promise
+              : api.git.branchStatus(projectId, threadId, forBranch),
+        },
+      })
+      try {
+        await flush()
+        const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+        const continueHere = host.querySelector<HTMLButtonElement>('.composer-branch-continue-btn')
+        const composer = host.querySelector<HTMLElement>('.prompt-input')
+        assert.ok(submit && continueHere && composer)
+        composer.textContent = 'First draft'
+        submit.click()
+        await flush()
+        continueHere.click()
+        if (outcome === 'stale rejection') switchThread(store, 'thread-2')
+        if (outcome === 'resolve') status.resolve({ currentBranch: 'main', pr: null })
+        else status.reject(new Error('Branch lookup failed'))
+        await flush()
+
+        if (outcome === 'resolve') {
+          assert.deepEqual(runs, ['thread-1'])
+          assert.equal(getThreadById(store, 'thread-1')?.gitBranch, 'main')
+          assert.equal(composer.textContent, '')
+        } else if (outcome === 'reject') {
+          assert.deepEqual(runs, [])
+          assert.equal(composer.textContent, 'First draft')
+          assert.match(document.body.textContent, /Failed to read the current branch/)
+        } else {
+          assert.deepEqual(runs, [])
+          assert.equal(composer.textContent, 'Other unsent draft')
+          assert.doesNotMatch(document.body.textContent, /Failed to read the current branch/)
+        }
+      } finally {
+        bar.unmount()
+      }
+    })
+  }
+
+  for (const outcome of ['success', 'error'] as const) {
+    for (const change of [
+      'switch chat',
+      'away and back',
+      'replace warning',
+      'other checkout',
+      'unmount',
+    ] as const) {
+      it(`keeps a late checkout ${outcome} from changing feedback after ${change}`, async () => {
+        const checkout = deferred<undefined>()
+        const otherCheckout = deferred<undefined>()
+        const checkouts: string[] = []
+        const runs: string[] = []
+        let branchRefreshes = 0
+        const store = createStore({
+          workspaceRoot: '/repo',
+          projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+          activeProjectId: 'project-1',
+          activeThreadId: 'thread-1',
+          threads: [
+            { ...thread('feature/first'), draftPrompt: 'First draft' },
+            { ...thread('feature/second'), id: 'thread-2', draftPrompt: 'Other unsent draft' },
+          ],
+        })
+        store.on('git_branch_changed', () => {
+          branchRefreshes++
+        })
+        const host = document.createElement('div')
+        document.body.append(host)
+        const bar = mountInputBar(
+          host,
+          store,
+          createApi({
+            currentBranch: 'main',
+            onCheckoutBranch: (branch) => {
+              checkouts.push(branch)
+              return branch === 'feature/first' ? checkout.promise : otherCheckout.promise
+            },
+            onRun: async (_projectId, threadId) => {
+              runs.push(threadId)
+            },
+          }),
+        )
+        let mounted = true
+        try {
+          await flush()
+          const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+          const warning = host.querySelector<HTMLElement>('.composer-branch-warning')
+          const checkoutButton = host.querySelector<HTMLButtonElement>(
+            '.composer-branch-checkout-btn',
+          )
+          const composer = host.querySelector<HTMLElement>('.prompt-input')
+          assert.ok(submit && warning && checkoutButton && composer)
+          composer.textContent = 'First draft'
+          submit.click()
+          await flush()
+          assert.equal(warning.hidden, false)
+          checkoutButton.click()
+          assert.equal(checkoutButton.disabled, true)
+          assert.deepEqual(checkouts, ['feature/first'])
+
+          switch (change) {
+            case 'switch chat':
+              switchThread(store, 'thread-2')
+              submit.click()
+              await flush()
+              assert.equal(warning.hidden, false)
+              assert.match(warning.textContent, /feature\/second/)
+              break
+            case 'away and back':
+              switchThread(store, 'thread-2')
+              switchThread(store, 'thread-1')
+              submit.click()
+              await flush()
+              assert.equal(warning.hidden, false)
+              break
+            case 'replace warning':
+              submit.click()
+              await flush()
+              assert.equal(warning.hidden, false)
+              break
+            case 'other checkout':
+              switchThread(store, 'thread-2')
+              submit.click()
+              await flush()
+              checkoutButton.click()
+              assert.deepEqual(checkouts, ['feature/first', 'feature/second'])
+              assert.equal(checkoutButton.disabled, true)
+              break
+            case 'unmount':
+              bar.unmount()
+              mounted = false
+              break
+          }
+          const draft = composer.textContent
+          const currentWarning = warning.outerHTML
+          const currentWarningText = warning.textContent
+          if (outcome === 'success') checkout.resolve(undefined)
+          else checkout.reject(new Error('Original checkout failed'))
+          await flush()
+
+          assert.equal(
+            branchRefreshes,
+            outcome === 'success' ? 1 : 0,
+            'successful Git work still refreshes',
+          )
+          assert.deepEqual(runs, [], 'checkout completion must not submit any draft')
+          assert.equal(composer.textContent, draft, 'the current draft stays unsent')
+          if (change === 'replace warning') {
+            assert.equal(warning.hidden, false, 'the replacement warning remains visible')
+            assert.equal(
+              warning.textContent,
+              currentWarningText.replace('Checking out...', 'Check out'),
+              'only the completed operation busy indicator changes',
+            )
+            assert.equal(checkoutButton.disabled, false, 'the replaced warning must not stay busy')
+            assert.equal(
+              host.querySelector<HTMLButtonElement>('.composer-branch-continue-btn')?.disabled,
+              false,
+            )
+          } else {
+            assert.equal(
+              warning.outerHTML,
+              currentWarning,
+              'the current warning and busy controls stay owned',
+            )
+          }
+          assert.equal(
+            document.querySelector('.toast')?.textContent ?? '',
+            '',
+            'stale feedback must not appear in another context',
+          )
+        } finally {
+          otherCheckout.resolve(undefined)
+          await flush()
+          if (mounted) bar.unmount()
+        }
+      })
+    }
+
+    for (const editDraft of [false, true]) {
+      it(`keeps current checkout ${outcome} feedback${editDraft ? ' after editing the draft' : ''}`, async () => {
+        const checkout = deferred<undefined>()
+        const runs: string[] = []
+        let branchRefreshes = 0
+        const store = createStore({
+          workspaceRoot: '/repo',
+          projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+          activeProjectId: 'project-1',
+          activeThreadId: 'thread-1',
+          threads: [{ ...thread('feature/first'), draftPrompt: 'First draft' }],
+        })
+        store.on('git_branch_changed', () => {
+          branchRefreshes++
+        })
+        const host = document.createElement('div')
+        document.body.append(host)
+        const bar = mountInputBar(
+          host,
+          store,
+          createApi({
+            currentBranch: 'main',
+            onCheckoutBranch: () => checkout.promise,
+            onRun: async (_projectId, threadId) => {
+              runs.push(threadId)
+            },
+          }),
+        )
+        try {
+          await flush()
+          const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+          const warning = host.querySelector<HTMLElement>('.composer-branch-warning')
+          const checkoutButton = host.querySelector<HTMLButtonElement>(
+            '.composer-branch-checkout-btn',
+          )
+          const composer = host.querySelector<HTMLElement>('.prompt-input')
+          assert.ok(submit && warning && checkoutButton && composer)
+          composer.textContent = 'First draft'
+          submit.click()
+          await flush()
+          checkoutButton.click()
+          assert.equal(checkoutButton.disabled, true)
+          if (editDraft) {
+            composer.textContent = 'Edited while checkout was pending'
+            composer.dispatchEvent(new Event('input', { bubbles: true }))
+            await flush()
+          }
+          const draft = composer.textContent
+          if (outcome === 'success') checkout.resolve(undefined)
+          else checkout.reject(new Error('Current checkout failed'))
+          await flush()
+
+          assert.deepEqual(runs, [])
+          assert.equal(composer.textContent, draft)
+          assert.equal(checkoutButton.disabled, false)
+          assert.equal(branchRefreshes, outcome === 'success' ? 1 : 0)
+          if (outcome === 'success') {
+            assert.equal(warning.hidden, true)
+            assert.match(
+              document.querySelector('.toast')?.textContent ?? '',
+              /Checked out feature\/first/,
+            )
+          } else {
+            assert.equal(warning.hidden, false)
+            assert.match(warning.textContent, /feature\/first/)
+            assert.equal(checkoutButton.textContent, 'Check out')
+            assert.match(
+              document.querySelector('.toast-error')?.textContent ?? '',
+              /Current checkout failed/,
+            )
+          }
+        } finally {
+          bar.unmount()
+        }
+      })
+    }
+  }
+
   it('checks the local branch without waiting for pull-request status', async () => {
     let runs = 0
     const store = createStore({

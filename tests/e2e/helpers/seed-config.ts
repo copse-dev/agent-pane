@@ -422,8 +422,10 @@ const E2E_WORKSPACE_FILES: Record<string, string> = {
 /** Commit date for the fixture's one commit; fixed so the hash never moves. */
 export const E2E_WORKSPACE_COMMIT_DATE = '2026-01-01T00:00:00Z'
 
-export function seedStableWorkspace(options: { files?: Record<string, string> } = {}): string {
-  const root = E2E_WORKSPACE_ROOT
+export function seedStableWorkspace(
+  options: { files?: Record<string, string>; root?: string } = {},
+): string {
+  const root = options.root ?? E2E_WORKSPACE_ROOT
   removeE2eTree(root)
   mkdirSync(root, { recursive: true })
   for (const [relative, content] of Object.entries({ ...E2E_WORKSPACE_FILES, ...options.files })) {
@@ -595,12 +597,6 @@ export function seedEmptyProject(
      * Roadmap pane). Ships off, like the other experimental packs.
      */
     roadmapPlansEnabled?: boolean
-    /**
-     * Opt into the `copse.mcp-ui-canvas` pack (the bundled canvas MCP server's
-     * `render_html_artefact` tool, artefact rendering in the Browser pane, and
-     * the prototype steering hook). Ships off, like the other experimental packs.
-     */
-    mcpUiCanvasEnabled?: boolean
     /** Opt into the experimental CI investigator pack. */
     ciInvestigatorEnabled?: boolean
     developerMode?: boolean
@@ -670,7 +666,6 @@ export function seedEmptyProject(
   if (options?.reviewEnabled) enabledPlugins.push('copse.review')
   if (options?.roadmapPlansEnabled) enabledPlugins.push('copse.roadmap-plans')
   if (options?.okfMemoriesEnabled) enabledPlugins.push('copse.okf-memories')
-  if (options?.mcpUiCanvasEnabled) enabledPlugins.push('copse.mcp-ui-canvas')
   if (options?.ciInvestigatorEnabled) enabledPlugins.push('copse.ci-investigator')
   seedConfig['pluginDisabled'] =
     options?.pluginDisabled !== undefined
@@ -796,7 +791,7 @@ export function seedCanvasArtefactThreadFixture(
     activeProjectId: projectId,
     expandedProjectId: projectId,
     activeThreadId,
-    pluginDisabled: pluginDisabledSeed(['copse.mcp-ui-canvas']),
+    pluginDisabled: pluginDisabledSeed([]),
     [`threads:${projectId}`]: [
       {
         id: activeThreadId,

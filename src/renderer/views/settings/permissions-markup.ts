@@ -46,18 +46,16 @@ export const permissionsMarkup = `
                   ).join('')}
                 </select>
                 <span class="field-hint">
-                  Matches a fixed list of command shapes exactly, never a model's judgement, and
-                  never anything it doesn't recognise. Reads cover local queries plus
-                  <code>git fetch</code> and <code>gh pr view</code> against a remote this project
-                  already has configured; a URL never qualifies. Higher levels add local commits,
-                  then <code>git push</code> and <code>gh pr create</code>. Force pushes, deleting
-                  branches, installs, <code>npx</code>, project scripts like <code>npm test</code>,
-                  and anything containing <code>$(…)</code> always ask. Only applies in a trusted
-                  project with the setting above turned on, and only while the project sandbox is
-                  running. Without a sandbox, Windows, or if the sandbox failed to start, every
-                  recognised shape still asks. At the two write levels
-                  <code>git commit</code>, <code>checkout</code> and <code>push</code> run this
-                  project's git hooks; the project sandbox contains those.
+                  Only exact command shapes, never a model's judgement. Reads include
+                  <code>git fetch</code> and <code>gh pr view</code> against a remote the project
+                  already has; a URL never counts. Higher levels add local commits, then
+                  <code>git push</code> and <code>gh pr create</code>. Force pushes, branch
+                  deletes, installs, <code>npx</code>, project scripts and anything with
+                  <code>$(…)</code> always ask. It applies only in a trusted project with the
+                  setting above on, and only while the project sandbox is running. Without a
+                  sandbox, on Windows, or if it failed to start, every shape asks. At the write levels,
+                  <code>git commit</code>, <code>checkout</code> and <code>push</code> run the
+                  project's git hooks inside the project sandbox.
                 </span>
               </label>
               <label class="checkbox-label">
@@ -173,11 +171,10 @@ export const permissionsMarkup = `
                 Skip approval for deletes, renames, and new folders in an isolated worktree
               </label>
               <p class="field-hint">
-                A thread on an isolated worktree edits its own checkout on its own branch, your
-                files and branch are never touched, so it applies these straight away instead of
-                asking. Threads on the shared checkout keep asking. Copse still asks if the file
-                changed underneath it or its work could not be backed up. Turn off to review every
-                one.
+                A thread on an isolated worktree edits its own checkout and branch, never yours,
+                so it applies these without asking. Threads on the shared checkout still ask, and
+                so does any thread when the file changed underneath it or its work could not be
+                backed up. Turn off to review every one.
               </p>
             </fieldset>
 
@@ -260,15 +257,13 @@ export const permissionsMarkup = `
                 Allow signed commits (macOS)
               </label>
               <p class="field-hint">
-                On by default. Copse's system SSH signer uses your configured key through
-                ssh-agent to sign commits without asking each time. A changed key, signer or
-                socket is re-verified before it's used again. Git hooks keep their project
-                sandbox; they receive no ssh-agent access. Set the git_commit tool to Always ask
-                in Tool Permissions to confirm every signing helper use. Turning this off
-                prevents further ssh-agent signing. With this off, a configured private key file
-                can be read and used only after a separate approval for each commit. Key contents
-                are never sent to the agent. Custom signing programs run with ordinary project
-                access. Scoped signing is macOS only.
+                On by default: Copse's system SSH signer signs commits with your key through
+                ssh-agent without asking, and re-checks a changed key, signer or socket before
+                using it again. Git hooks keep their sandbox, with no ssh-agent access. To confirm
+                each signature, set git_commit to Always ask in Tool Permissions. Off: no further
+                ssh-agent signing, and a configured key file signs only after a separate approval
+                for each commit. Key contents are never sent to the agent, and custom signing
+                programs run with ordinary project access. Scoped signing is macOS only.
               </p>
             </fieldset>
 
@@ -279,12 +274,11 @@ export const permissionsMarkup = `
                 Fetch each project's default branch in the background
               </label>
               <p class="field-hint">
-                Copse fetches the latest default branch from origin hourly and when a thread
-                starts, so new threads begin from current upstream code. It updates only the
-                stored copy of origin's branch; your checkout and branches are never changed. The
-                fetch uses your own Git credentials but ignores the project's Git configuration.
-                Turn off to keep Copse from contacting origin; threads then start from whatever
-                you last fetched yourself.
+                Copse fetches origin's default branch hourly and when a thread starts, so new
+                threads begin from current code. It updates only its stored copy of origin's branch;
+                your checkout and branches are never changed. The fetch uses your Git credentials
+                but ignores the project's Git configuration. Turn off to stop contacting origin;
+                threads then start from your last fetch.
               </p>
             </fieldset>
           </section>

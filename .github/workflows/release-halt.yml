@@ -1,14 +1,15 @@
 name: Halt release
 
 # Withdraw a bad release from both update channels, or restore one halted in
-# error. Halting turns the GitHub Release back into a draft: drafts are absent
-# from `releases.atom` (the beta check) and `releases/latest` (the stable
-# check), and their assets stop downloading, so no client is offered it and no
+# error. Halting drafts the release and archives its binary-repository tag:
+# a bare version tag still appears in `releases.atom` after drafting. Removing
+# that alias after preserving its exact Git object under halted/ withdraws it
+# from beta checks too. Draft assets stop downloading, so no client is offered it and no
 # new user downloads it. If it was the latest stable release, the newest
 # remaining stable release becomes latest again, so the stable download link
 # and feed fall back to it. Installed copies stay where they are: Copse never
 # downgrades, so a halted version is replaced by a corrective newer release.
-# The bytes are kept in the draft for investigation, never deleted.
+# The bytes stay in the draft; the source tag and archived Git object stay intact.
 #
 # `resume` republishes a halted release unchanged, for a halt raised in error.
 on:
@@ -73,23 +74,52 @@ jobs:
           list_releases
           jq -e --arg tag "$TAG" '[.[] | select(.tag_name == $tag)] | if length == 1 then .[0] else error("no single release for \($tag)") end' \
             "$RUNNER_TEMP/releases.json" > "$RUNNER_TEMP/release.json"
+          if [ -z "$(jq -r '.published_at // empty' "$RUNNER_TEMP/release.json")" ]; then
+            echo "$TAG has never been published; halt/resume only supports previously published releases" >&2
+            exit 1
+          fi
           prerelease="$(jq -r .prerelease "$RUNNER_TEMP/release.json")"
           if [ "$ACTION" = halt ]; then
-            node scripts/release-promotion.mts check-halt "$RUNNER_TEMP/release.json"
-            gh release edit "$TAG" --repo "$RELEASE_REPOSITORY" --draft=true
+            # Stop downloads first, even if preserving the tag later fails.
+            # A retry may find the release already drafted but its tag still
+            # visible after a failed withdrawal. Finish that halt safely.
+            if [ "$(jq -r .draft "$RUNNER_TEMP/release.json")" != true ]; then
+              node scripts/release-promotion.mts check-halt "$RUNNER_TEMP/release.json"
+              gh release edit "$TAG" --repo "$RELEASE_REPOSITORY" --draft=true
+            fi
+            # A tag error must not prevent the stable channel falling back.
+            # Keep the halt failed until beta withdrawal has also completed.
+            tag_change_failed=false
+            if ! bash scripts/release-tag-state.sh "$RELEASE_REPOSITORY" "$TAG" archive; then
+              tag_change_failed=true
+            elif ! bash scripts/release-tag-state.sh "$RELEASE_REPOSITORY" "$TAG" withdraw; then
+              tag_change_failed=true
+            fi
             list_releases
             fallback="$(node scripts/release-promotion.mts fallback-latest "$RUNNER_TEMP/releases.json" "$TAG")"
             if [ "$prerelease" = false ] && [ -n "$fallback" ]; then
               gh release edit "$fallback" --repo "$RELEASE_REPOSITORY" --latest
             fi
+            if [ "$tag_change_failed" = true ]; then
+              echo "$TAG is drafted but tag withdrawal is incomplete; resolve the tag error and retry halt" >&2
+              exit 1
+            fi
             state=halted
             summary="**$TAG** was halted on $(date -u +%Y-%m-%d): no update channel offers it. A corrective release follows."
           else
-            if [ "$(jq -r .draft "$RUNNER_TEMP/release.json")" != true ]; then
-              echo "$TAG is not halted"
-              exit 1
+            if [ "$(jq -r .draft "$RUNNER_TEMP/release.json")" = true ]; then
+              bash scripts/release-tag-state.sh "$RELEASE_REPOSITORY" "$TAG" restore
+              # GitHub otherwise makes a republished stable latest immediately,
+              # even when a newer stable exists. Decide latest explicitly below.
+              gh release edit "$TAG" --repo "$RELEASE_REPOSITORY" --draft=false --latest=false
+              summary="**$TAG** was restored on $(date -u +%Y-%m-%d) after a halt."
+            else
+              # A failed list/latest update can leave resume partly complete.
+              # Only matching restored refs permit retry; do not republish and
+              # reset the candidate's publication time again.
+              bash scripts/release-tag-state.sh "$RELEASE_REPOSITORY" "$TAG" verify-restored
+              summary="Restoration of **$TAG** was rechecked on $(date -u +%Y-%m-%d) after a halt."
             fi
-            gh release edit "$TAG" --repo "$RELEASE_REPOSITORY" --draft=false
             list_releases
             # Only the newest stable release may be latest again.
             state=listed
@@ -98,7 +128,6 @@ jobs:
               gh release edit "$TAG" --repo "$RELEASE_REPOSITORY" --latest
               state=promoted
             fi
-            summary="**$TAG** was restored on $(date -u +%Y-%m-%d) after a halt."
           fi
           {
             echo '# Latest Copse release'
@@ -121,12 +150,20 @@ jobs:
         run: |
           set -euo pipefail
           title="Release halted: $TAG"
+          action_label=Halt
+          if [ "$ACTION" = resume ]; then action_label=Resume; fi
+          # A resumed halt may already have been closed. Annotate that issue
+          # without creating a fresh halt alert for a retry or a legacy halt.
+          issue_state=open
+          if [ "$ACTION" = resume ]; then issue_state=all; fi
           body="$(printf '%s of %s by %s.\n\nReason: %s\n\nRun: %s\n\nSee docs/releasing-macos.md#halting-a-release. Close this once a corrective release is published or the halt is resumed.' \
-            "${ACTION^}" "$TAG" "$GITHUB_ACTOR" "$REASON" "$RUN_URL")"
-          number="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --label area:release --search "$title in:title" --json number,title |
+            "$action_label" "$TAG" "$GITHUB_ACTOR" "$REASON" "$RUN_URL")"
+          number="$(gh issue list --repo "$GITHUB_REPOSITORY" --state "$issue_state" --label area:release --search "$title in:title" --json number,title |
             jq -r --arg title "$title" 'map(select(.title == $title)) | .[0].number // empty')"
           if [ -n "$number" ]; then
             gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body "$body"
-          else
+          elif [ "$ACTION" = halt ]; then
             gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --label area:release --body "$body"
+          else
+            echo "No halt issue exists for $TAG; resume does not create a new halt alert"
           fi

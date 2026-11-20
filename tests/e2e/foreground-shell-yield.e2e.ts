@@ -12,6 +12,7 @@ import {
 } from './helpers/seed-config.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { parkPointer, saveAppScreenshot } from './helpers/screenshot.ts'
+import { waitForTranscriptScrollSettled } from './helpers/scroll-to-bottom.ts'
 import { fixtureHostPids } from './helpers/foreground-fixture-processes.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
@@ -250,6 +251,23 @@ describe('bounded foreground command yielding', function () {
     await scenario.waitForComplete()
     await waitForAgentIdle(30_000)
     await $('.msg-machine-origin .msg-origin-command-link').click()
+    assert.ok(
+      await browser.execute((selector) => {
+        const target = document.querySelector(selector)
+        const list = target?.closest<HTMLElement>('.messages-list')
+        if (!target || !list || !target.classList.contains('tool-card-revealed')) return false
+        const rect = target.getBoundingClientRect()
+        const view = list.getBoundingClientRect()
+        const band = Number.parseFloat(list.style.getPropertyValue('--sticky-prompt-band')) || 0
+        return (
+          rect.bottom > view.top + band &&
+          rect.top < view.bottom &&
+          rect.right > view.left &&
+          rect.left < view.right
+        )
+      }, card),
+      'Show command must reveal the originating command inside the transcript viewport',
+    )
     await openCard()
     // Successful exits intentionally retire the phase badge. Check the saved
     // exit as well as the visible success state, rather than inventing a badge.
@@ -279,7 +297,47 @@ describe('bounded foreground command yielding', function () {
     await browser.waitUntil(async () => pids.every((pid) => !alive(pid)), { timeout: 10_000 })
     await settleReveal()
     await parkPointer()
-    await saveAppScreenshot('foreground-shell-yield-completed.png')
+    await saveAppScreenshot('foreground-shell-yield-completed.png', undefined, async () => {
+      // Agent idle does not guarantee the final review or scroll position. Frame
+      // the completed turn only after the screenshot helper has sized the app.
+      const reviewSelector =
+        '.messages-list > .msg-assistant:not(:has(~ .msg-assistant)) + details[data-review-card]'
+      await $(
+        `${reviewSelector}[data-status="done"][data-issues-found="false"]:not([open])`,
+      ).waitForExist({ timeout: 30_000 })
+      await browser.execute(() => {
+        const list = document.querySelector<HTMLElement>('.messages-list')
+        if (!list) throw new Error('Transcript is missing')
+        list.scrollTop = list.scrollHeight
+      })
+      await waitForTranscriptScrollSettled(false)
+      const framing = await browser.execute((selector) => {
+        const review = document.querySelector(selector)
+        const reply = review?.previousElementSibling
+        const list = review?.closest<HTMLElement>('.messages-list')
+        if (!review || !reply || !list) return null
+        const view = list.getBoundingClientRect()
+        const band = Number.parseFloat(list.style.getPropertyValue('--sticky-prompt-band')) || 0
+        return {
+          bottomGap: list.scrollHeight - list.clientHeight - list.scrollTop,
+          visible: [reply, review].every((element) => {
+            const rect = element.getBoundingClientRect()
+            return (
+              rect.width > 0 &&
+              rect.height > 0 &&
+              rect.top >= view.top + band - 1 &&
+              rect.bottom <= view.bottom + 1 &&
+              rect.left >= view.left - 1 &&
+              rect.right <= view.right + 1
+            )
+          }),
+        }
+      }, reviewSelector)
+      assert.ok(framing)
+      // Back to latest hides within 48px, which still permits a clipped review.
+      assert.ok(Math.abs(framing.bottomGap) <= 1, 'Completed capture must be at the exact bottom')
+      assert.ok(framing.visible, 'The final reply and review must be fully inside the transcript')
+    })
   })
 
   for (const ending of ['failure', 'deadline'] as const) {

@@ -2,7 +2,11 @@ import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { createServer, type Server } from 'node:net'
 import { $, $$, browser, expect } from '@wdio/globals'
-import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  pinTextForCapture,
+  saveElementScreenshot,
+} from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 
@@ -53,6 +57,9 @@ describe('local classifier servers in settings', () => {
     await expect(winnow).toHaveText(expect.stringContaining('Not installed'))
     // Whether a server can be downloaded depends on the tools on this machine's PATH.
     await expect($('[data-local-id="kev"]')).toHaveText(expect.stringContaining('Not installed'))
+    const strands = $('[data-local-id="strands-decider"]')
+    await expect(strands).toHaveText(expect.stringContaining('Strands Decider 2B'))
+    await expect(strands).toHaveText(expect.stringContaining('Not installed'))
     const hosted = $('[data-hosted-id="typesafe"]')
     await expect(hosted).toHaveText(expect.stringContaining('TYPESAFE_API_KEY'))
     assert.equal(
@@ -117,5 +124,34 @@ describe('local classifier servers in settings', () => {
       '[data-local-id="winnow"]',
       'settings-classifiers-local-detected.png',
     )
+  })
+
+  it('offers Strands Decider as a keyless preset for its local server', async () => {
+    // Strands Decider's catalog row looks like Winnow's (above), and its offer depends on
+    // uv being on PATH, as Kev's does; the preset it saves is what this captures.
+    const host = $('#settings-classifiers-host')
+    await host.$('.classifier-add').click()
+    await host.$('[name="classifierPreset"]').selectByAttribute('value', 'strands-decider')
+    await host.$('.classifier-create').click()
+    await expect(host.$('[name="classifierLabel"]')).toHaveValue('Strands Decider 2B (local)')
+    await expect(host.$('[name="classifierModel"]')).toHaveValue(
+      'StrandsAgents/strands-decider-2B-qwen3.5-v1-2610',
+    )
+    await expect(host.$('[name="classifierUrl"]')).toHaveValue('http://127.0.0.1:8011/v1')
+    await expect(host.$('.classifier-credentials')).not.toBeDisplayed()
+    // The draft's profile ID ends in a random suffix.
+    const restore = await pinTextForCapture(
+      '#settings-classifiers-host .classifier-form .field-hint code',
+      /-[0-9a-f]{8}$/,
+      '-00000000',
+    )
+    try {
+      await saveElementScreenshot(
+        '#settings-classifiers-host .classifier-form',
+        'settings-classifiers-local-strands-preset.png',
+      )
+    } finally {
+      await restore()
+    }
   })
 })

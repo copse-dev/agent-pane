@@ -141,7 +141,12 @@ runner's final exit status additionally reflects this checkout invariant.
 
 The [test oracle](../scripts/test-oracle.mts) maps your diff to the tests that
 can reach it — unit tests through the import graph (exact), e2e specs through
-their selector vocabulary (heuristic):
+their selector vocabulary (heuristic). For unit tests the graph skips type-only
+imports (`import type`, `export type … from`) everywhere but the test file
+itself: they are erased, so a module a test reaches only through another
+module's type import is never loaded and cannot change its result. An e2e spec
+tests the running app, so its imports, type-only ones included, still stand in
+for the app code it observes.
 
 ```bash
 npm run oracle                  # what would you run, and how confident is it?
@@ -161,6 +166,21 @@ Read the **confidence line** before trusting the subset:
 
 The oracle deliberately refuses to shrink below what it can back up: an empty
 selection runs the **full** suite rather than reporting a green on zero tests.
+A few tests read their input from disk instead of importing it, so the import
+graph cannot see them. `DISK_READERS` in `scripts/test-oracle.mts` lists them
+with the files they read:
+
+- `ci-workflow-invariants` and `small-gate` read the CI spec list, shard weights,
+  CI excludes and smoke inventory.
+- `screenshot-producers` and `readme-screenshots` read the screenshots specs save
+  and the screenshot manifest; `readme-screenshots` also reads `README.md`.
+- `check-mock-fixtures` reads the executable mock fixtures: e2e sources, ACP
+  tests and benchmark packs.
+
+A change to one of those files adds its readers to whatever subset the graph
+chose. That subset then catches, for example, a spec added without a shard
+weight, which used to surface only in the full check. A test that starts
+reading files from disk this way belongs in that table.
 
 ### Choose the local gate by risk
 
@@ -431,6 +451,36 @@ separate from the product's own [browser network policy](browser-network-policy.
   `huggingface.co` reached from `agent-service.test.ts` and `acp-app-entry.test.ts`, and
   `openrouter.ai` and `models.lan` from `container-provider.test.ts`. Undici's connection runs off
   the caller's stack, so `fetch` attempts carry no initiator frame.
+
+### Burn-in admission
+
+A spec joins the required e2e gate the moment it merges, so one passing run must not admit it. On a
+same-repository pull request, the `e2e-burn-in` job in `ci.yml` repeats each spec the PR adds,
+modifies or renames under `tests/e2e/**/*.e2e.ts`, and each spec it restores (any exclusion marker
+removed from [`tests/e2e/exclusions.json`](../tests/e2e/exclusions.json)). It runs ten full runs in
+fresh WebdriverIO processes with no retry, then each statically titled `it` alone through an anchored
+Mocha grep. The spec passes only if every run passes. An isolated run that matches no test fails;
+one that only skips is reported. The job summary shows per-spec pass counts and failing titles;
+logs and per-run outcomes are kept in the `e2e-burn-in-<spec>-<attempt>` artifact.
+
+- **Selection** (`scripts/e2e-burn-in.mts plan`, run in `precheck`) covers spec files only, under any file name WDIO globs. Shared
+  helpers and fixtures do not select specs, because one helper edit would select hundreds; the
+  oracle-selected shards already cover them. A spec the CI suite still excludes is listed and not
+  run.
+- **Cost bound:** at most **5** specs per PR. Above that the job fails and asks you to split the PR,
+  or a maintainer can add the `e2e-burn-in-large` label to burn in all of them anyway. Each spec is
+  its own matrix job on the `build` job's `dist` artifact. Like `build`, it (and the over-cap
+  refusal) does not run on drafts unless they carry `ci-full`.
+- **Locally:** `node scripts/e2e-burn-in.mts tests --spec <spec>` prints the isolated-test greps.
+  After `pnpm run build`, `node scripts/e2e-burn-in.mts run --spec <spec>` runs the same loop. CI passes the spec in `E2E_BURN_IN_SPEC` instead, so
+  the process reaper's `pkill -f` patterns cannot match the burn-in process's own command line.
+- **Result check:** the matrix job's check names vary by spec, so the `e2e burn-in` job
+  (`e2e-burn-in-result`) reports one stable context on every event. It passes when nothing needed
+  burning in, or on a draft without `ci-full`. It fails when a planned burn-in failed, was cancelled
+  or never ran. It is not part of `CI Passed`. Making `e2e burn-in` a required check (or adding it to
+  `CI Passed`) is a branch-protection decision; until then a red burn-in does not block a merge.
+- A failure here means the spec is not ready to be required. Fix the order dependence or timing
+  instead of adding a retry or raising a timeout.
 
 ## Browser geometry tier
 
@@ -727,12 +777,16 @@ tip CI. To return to individual review, remove the declaration and rerun the
 individual PR's CI. The **Screenshot stack gates** workflow can be dispatched
 manually to refresh status/comments after an interrupted reconciliation. Normal
 events reconcile the affected PR and connected stacks, including old membership
-from body edits. The workflow retains queued events and runs a full repair sweep
-every 30 minutes. Publisher, decision and selection completions carry no usable
-PR association, so they read the latest statuses on every declared head and
-reconcile only the stacks whose screenshot evidence changed since that run
-started. Selection only reduces work: live heads, declarations and approval
-provenance are still verified before a stack status is written.
+from body edits. Pending events coalesce, so selection also recovers PR updates
+(including closed PRs and removed declarations) and declared-head screenshot
+evidence changes since the last successful reconciliation was created. The
+watermark overlaps by one second and includes changes while that run was queued
+or running; failures do not advance it. Publisher, decision and selection
+completions need no PR association for this recovery. Unchanged ordinary heads
+are not read individually. A full repair sweep runs every 30 minutes, on manual
+dispatch, and when no successful-run watermark exists. Selection only reduces
+work: live heads, declarations and approval provenance are still verified before
+a stack status is written.
 
 Intermediate screenshot drift is accepted through the stack gate; do not individually decline
 unreviewed lower candidates to simulate a deferral.
@@ -770,6 +824,13 @@ cut from.
 | PR from `main` into `release` (promotion) | **full** — adds e2e (8 shards) and bench       |
 | Push to `release` (a promotion landed)    | **full**                                       |
 | Nightly `schedule`, release tags          | **full**, on GitHub-hosted runners             |
+
+In every tier above, the unit suite runs on Linux. The advisory
+[`macos-unit.yml`](../.github/workflows/macos-unit.yml) workflow also runs it on a hosted `macos-26`
+runner, so the `darwin`-gated unit tests run somewhere: nightly, on manual dispatch, and on PRs that
+touch the paths its filter lists. It is not part of `CI Passed`.
+[`host-environment-test-noise.md`](host-environment-test-noise.md) says how it treats the known
+macOS host differences.
 
 The semantic and agent benchmark tier is paid once per _promotion_ rather than
 once per PR. Full e2e is also repeated at promotion, but it first runs on any PR

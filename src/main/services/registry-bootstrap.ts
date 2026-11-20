@@ -49,9 +49,11 @@ import { updateTodosTool } from '../tools/todo-tool.ts'
 import { askUserTool } from '../tools/ask-user-tool.ts'
 import { reviewerInputTool } from '../tools/reviewer-input-tool.ts'
 import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-plugin.ts'
+import { PROJECT_CONTEXT_PLUGIN_ID } from '@copse/agent/plugins/project-context-plugin.ts'
 import { proposeThreadTool } from '../tools/propose-thread-tool.ts'
 import { listThreadsTool, sendThreadPromptTool } from '../tools/thread-tools.ts'
 import { subthreadsTool } from '../tools/subthreads-tool.ts'
+import { searchProjectContextTool, readProjectContextTool } from '../tools/project-context-tools.ts'
 import { webSearchTool, fetchUrlTool } from '../tools/web-tools.ts'
 import { askClassifierTool } from '../tools/classifier-tool.ts'
 import { registerBrowserTools } from '../tools/browser-tools.ts'
@@ -247,6 +249,7 @@ export function createRegistry(): ToolRegistry {
   // (see `propose-thread-tool.ts`), so there is nothing to gate.
   registry.register(proposeThreadTool)
   registry.register(listThreadsTool)
+  syncProjectContextTools(registry)
   registry.register(sendThreadPromptTool)
   registry.register(subthreadsTool)
   // Always-on setup health check ("doctor"). Read-only — gathers diagnostics and
@@ -351,6 +354,17 @@ export function syncReviewerInputTools(registry: ToolRegistry): void {
     if (!registry.has(reviewerInputTool.name)) registry.register(reviewerInputTool)
   } else {
     registry.unregister(reviewerInputTool.name)
+  }
+}
+
+/** Explicit retrieval stays out of native tool schemas until the user opts in. */
+export function syncProjectContextTools(registry: ToolRegistry): void {
+  if (getDefaultPluginRegistry().isEnabled(PROJECT_CONTEXT_PLUGIN_ID)) {
+    if (!registry.has(searchProjectContextTool.name)) registry.register(searchProjectContextTool)
+    if (!registry.has(readProjectContextTool.name)) registry.register(readProjectContextTool)
+  } else {
+    registry.unregister(searchProjectContextTool.name)
+    registry.unregister(readProjectContextTool.name)
   }
 }
 

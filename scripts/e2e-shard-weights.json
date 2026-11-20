@@ -1,5 +1,5 @@
 {
-  "source": "automation-active-acp-worktree provisional at the median (7.9s) until its first CI run is measured, 2026-11-08; median PASSED seconds over 160 CI e2e shard logs, 2026-11-07; acp-bridge-unavailable provisional at its local macOS run (11s) until its first CI run is measured, 2026-11-05; acp-bridge-tools-dropped provisional at its local Linux Xvfb run (9s) until its first CI run is measured, 2026-11-06; pane-recording measured at 14.3s from CI run 41210627124 shard 4 (job 124568187113), 2026-10-31; subthread-orchestration-recovery provisional at the median (8s) until its first Linux CI run is measured, 2026-11-05; subthread-orchestration provisional at the median (8s) until its first CI run is measured, 2026-10-31",
+  "source": "suggest-model-configured-pool provisional at the median (7.9s) until its first CI run is measured, 2026-11-15; canvas-blocked-scripts provisional at the median (7.9s) until its first CI run is measured, 2026-11-15; thread-compact-state provisional at the median (7.9s) until its first CI run is measured, 2026-11-08; automation-active-acp-worktree provisional at the median (7.9s) until its first CI run is measured, 2026-11-08; median PASSED seconds over 160 CI e2e shard logs, 2026-11-07; acp-bridge-unavailable provisional at its local macOS run (11s) until its first CI run is measured, 2026-11-05; acp-bridge-tools-dropped provisional at its local Linux Xvfb run (9s) until its first CI run is measured, 2026-11-06; pane-recording measured at 14.3s from CI run 41210627124 shard 4 (job 124568187113), 2026-10-31; subthread-orchestration-recovery provisional at the median (8s) until its first Linux CI run is measured, 2026-11-05; subthread-orchestration provisional at the median (8s) until its first CI run is measured, 2026-10-31",
   "seconds": {
     "tests/e2e/accent-color.e2e.ts": 15.3,
     "tests/e2e/accessibility.e2e.ts": 24.6,
@@ -77,6 +77,7 @@
     "tests/e2e/callout-surfaces.e2e.ts": 11.5,
     "tests/e2e/canvas-artefact-refresh.e2e.ts": 12.9,
     "tests/e2e/canvas-background-parity.e2e.ts": 10.1,
+    "tests/e2e/canvas-blocked-scripts.e2e.ts": 7.9,
     "tests/e2e/capability-lease-approval.e2e.ts": 7.2,
     "tests/e2e/changes-chip-committed.e2e.ts": 10.3,
     "tests/e2e/chat-multi-model-labels.e2e.ts": 6.7,
@@ -386,6 +387,7 @@
     "tests/e2e/subagent-badge-model-label.e2e.ts": 7.7,
     "tests/e2e/subthread-orchestration-recovery.e2e.ts": 8,
     "tests/e2e/subthread-orchestration.e2e.ts": 8,
+    "tests/e2e/suggest-model-configured-pool.e2e.ts": 7.9,
     "tests/e2e/supervised-task-recovery.e2e.ts": 6.6,
     "tests/e2e/supervised-tasks.e2e.ts": 6.4,
     "tests/e2e/terminal-display.e2e.ts": 13.3,
@@ -399,6 +401,7 @@
     "tests/e2e/thread-auto-archive.e2e.ts": 14.5,
     "tests/e2e/thread-auto-retitle.e2e.ts": 15.5,
     "tests/e2e/thread-checkout-switch.e2e.ts": 12.4,
+    "tests/e2e/thread-compact-state.e2e.ts": 7.9,
     "tests/e2e/thread-content-filter.e2e.ts": 7.2,
     "tests/e2e/thread-cycle-shortcuts.e2e.ts": 6.3,
     "tests/e2e/thread-deep-links.e2e.ts": 9.4,

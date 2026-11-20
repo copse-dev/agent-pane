@@ -1,4 +1,5 @@
 import { AgentTurnBusyError } from '@shared/agent-turn-busy.ts'
+import { shellReplayLeaseStore } from './security/capability-lease.ts'
 import { agentTurnScheduler, AGENT_TURN_QUEUE_NOTICE } from './agent-turn-scheduler.ts'
 import { OpenAiCancellationError } from './remote/openai-agents-api.ts'
 import { runWithInlineCanvas } from './inline-canvas-context.ts'
@@ -59,6 +60,7 @@ import {
   classifyAgentError,
   classifyProviderAccessFailure,
   turnErrorDetail,
+  type ClassifyAgentErrorContext,
 } from './agent-errors.ts'
 import { normalizeStopReason } from '@copse/agent/headless-contract.ts'
 import { resolveParentGoal } from '@copse/agent/working-brief.ts'
@@ -119,6 +121,7 @@ import {
 import {
   requestApproval,
   cancelApprovalsForThread,
+  discardApprovalsForThread,
   pendingApprovalParkedToolCallIds,
   releaseParkedApprovalsForThread,
 } from './approval.ts'
@@ -179,7 +182,10 @@ import {
   collectDiscoveryRoots,
   discoverAgentsFromRoots,
 } from './agents/agents-registry.ts'
-import { buildAgentReportBlock, customAgentInvocationTask } from './agents/custom-agent-strategy.ts'
+import {
+  buildAgentReportHistory,
+  customAgentInvocationTask,
+} from './agents/custom-agent-strategy.ts'
 import { setCurrentShellTaskId } from './exec/shell-output-context.ts'
 import {
   isPhasedCommandCall,
@@ -206,7 +212,11 @@ import {
   type ReviewRunResult,
 } from './review/review-service.ts'
 import { withReviewContext } from '@shared/store/review-reports.ts'
-import { runWithSubagentUsageScope, getAccumulatedSubagentUsage } from './subagent-usage.ts'
+import {
+  runWithSubagentUsageScope,
+  getAccumulatedSubagentUsage,
+  getSubagentUsageByModel,
+} from './subagent-usage.ts'
 import {
   runWithAgentRunTodoContext,
   getAgentRunTodos,
@@ -853,6 +863,12 @@ export async function runAgent(
   // continue to own a queued turn even though no provider process has started.
   if (abortMap.has(threadId)) throw new AgentTurnBusyError(threadId)
   const admission = new AbortController()
+  const revokeTaskApprovals = (): void => {
+    if (admission.signal.reason === 'send_now') return
+    shellReplayLeaseStore.revokeThread(threadId)
+    discardApprovalsForThread(threadId)
+  }
+  admission.signal.addEventListener('abort', revokeTaskApprovals, { once: true })
   abortMap.set(threadId, admission)
   const phase = { preflightComplete: false }
   try {
@@ -862,18 +878,20 @@ export async function runAgent(
         host.emit(threadId, { type: 'text', text: AGENT_TURN_QUEUE_NOTICE })
       },
       () => {
-        return runWithInlineCanvas(threadId, host, (inlineHost) =>
-          runAgentWithInlineCanvas(
-            threadId,
-            userPrompt,
-            priorMessages,
-            inlineHost,
-            registry,
-            admission,
-            () => {
-              phase.preflightComplete = true
-            },
-            options,
+        return runWithSubagentUsageScope(() =>
+          runWithInlineCanvas(threadId, host, (inlineHost) =>
+            runAgentWithInlineCanvas(
+              threadId,
+              userPrompt,
+              priorMessages,
+              inlineHost,
+              registry,
+              admission,
+              () => {
+                phase.preflightComplete = true
+              },
+              options,
+            ),
           ),
         )
       },
@@ -887,6 +905,7 @@ export async function runAgent(
       messages: [...priorMessages, { role: 'user', content: userPrompt }],
     }
   } finally {
+    admission.signal.removeEventListener('abort', revokeTaskApprovals)
     if (abortMap.get(threadId) === admission) abortMap.delete(threadId)
   }
 }
@@ -949,6 +968,13 @@ async function runAgentWithInlineCanvas(
   let firstActivitySent = false
 
   const sendChunk = (chunk: StreamChunk): void => {
+    // Flush once, before the terminal event commits the thread. This includes
+    // explicit workers, continuation workers, and usage accrued before failure.
+    if (chunk.type === 'done' && !terminalOutcomeSent) {
+      for (const [usageModel, usage] of getSubagentUsageByModel()) {
+        emitChunk({ type: 'usage', model: usageModel, subagentUsage: true, ...usage })
+      }
+    }
     const firstVisibleActivity =
       chunk.type === 'tool_call' ||
       chunk.type === 'acp_content' ||
@@ -998,10 +1024,17 @@ async function runAgentWithInlineCanvas(
     emitChunk(chunk)
   }
 
-  const resultWithOutcome = (result: Omit<RunAgentResult, 'turnOutcome'>): RunAgentResult => ({
-    ...result,
-    ...(terminalOutcome !== undefined ? { turnOutcome: terminalOutcome } : {}),
-  })
+  const resultWithOutcome = (result: Omit<RunAgentResult, 'turnOutcome'>): RunAgentResult => {
+    const subUsage = getAccumulatedSubagentUsage()
+    return {
+      ...result,
+      usage: {
+        inputTokens: result.usage.inputTokens + subUsage.inputTokens,
+        outputTokens: result.usage.outputTokens + subUsage.outputTokens,
+      },
+      ...(terminalOutcome !== undefined ? { turnOutcome: terminalOutcome } : {}),
+    }
+  }
 
   const recordTurnFailure = (
     err: unknown,
@@ -1557,9 +1590,15 @@ async function runAgentWithInlineCanvas(
       // reason: an abort landing mid-catch must not offer a re-auth and then
       // record the turn as merely stopped.
       const aborted = controller.signal.aborted
-      const authFailure = aborted
-        ? null
-        : classifyAcpAuthFailure(err, { acpAgentId: acpRunAgentId })
+      // One context for both readings. The agent's last message joins it
+      // because an agent may write the cause there and then fail with a bare
+      // code (Claude's expired OAuth sign-in reads only `-32000`).
+      const errorContext: ClassifyAgentErrorContext = {
+        acpAgentId: acpRunAgentId,
+        acpSandboxed: err instanceof AcpTurnFailure && err.sandboxed,
+        ...(partial?.finalMessageText ? { acpFinalMessage: partial.finalMessageText } : {}),
+      }
+      const authFailure = aborted ? null : classifyAcpAuthFailure(err, errorContext)
       // A helper that cannot nest a second seatbelt inside the agent's own dies
       // the same way on every retry, so the marker must say that instead of the
       // generic provider-error note (2026-09-23: Codex CUA node_repl under the
@@ -1569,13 +1608,13 @@ async function runAgentWithInlineCanvas(
         authFailure,
         acpAgentId: acpRunAgentId,
       })
-      const msg = agentErrorNotice(
-        classifyAgentError(err, {
-          acpAgentId: acpRunAgentId,
-          acpSandboxed: err instanceof AcpTurnFailure && err.sandboxed,
-        }),
-      )
-      sendChunk({ type: 'text', text: partial?.assistantText ? `\n\n${msg}` : msg })
+      const msg = agentErrorNotice(classifyAgentError(err, errorContext))
+      // The notice is a block of its own (a GitHub alert renders only at the
+      // start of one), so it never runs on from the agent's last words. The
+      // partial transcript says the agent wrote some; `lastTurnEvent` covers
+      // anything else that left the bubble ending in text.
+      const followsText = Boolean(partial?.assistantText) || lastTurnEvent === 'text'
+      sendChunk({ type: 'text', text: followsText ? `\n\n${msg}` : msg })
       // A credentials failure is the one ACP error the user can't act on from
       // the chat alone — the fix lives in a separate program's login flow. Offer
       // to open it, after the diagnosis has been streamed so the ask arrives
@@ -1920,7 +1959,7 @@ async function runAgentWithInlineCanvas(
     // assistant message.
     sendChunk({ type: 'turn_parameters', model, parameters: turnParameters, requestedModel })
     const subagentRoute = subagentsEnabled ? await buildSubagentRoute(model) : null
-    const subagentUsageModel = subagentRoute?.usageModel ?? model
+    const exploreUsageModel = subagentRoute?.usageModel ?? model
     // Local routing was asked for (cloud parent + setting on) but no local
     // route resolved (LM Studio down / no model): the fallback to the cloud
     // parent model is silent, so stamp it on subagent cards (issue feedback).
@@ -1941,12 +1980,9 @@ async function runAgentWithInlineCanvas(
     // inline below, not because a chunk is withheld.
     let loopStopReason: string | undefined
 
-    // A definition can disappear between composing and sending. Do not expose a
-    // task tool that could only fail when that happens.
-    const invokedAgent =
-      options?.invokedAgent !== undefined && getAgent(options.invokedAgent) !== null
-        ? options.invokedAgent
-        : undefined
+    // Preserve an explicit invocation even if its definition has disappeared:
+    // report that failure instead of silently running the task on the parent.
+    const invokedAgent = options?.invokedAgent
 
     // One nested-AGENTS.md walk per turn: the prompt build below seeds the memo
     // and every file tool call of this turn reuses it.
@@ -2068,67 +2104,97 @@ async function runAgentWithInlineCanvas(
       operatorInstructionPlacement(model),
     )
 
-    // Deterministic pre-invocation (docs/plans/custom-subagents.md, decision 2).
-    // The user named an agent, so it runs — before the parent's first LLM call,
-    // not because the parent chose to call a tool. Three evals against a real
-    // model showed a turn directive is not enough: asked to delegate, the model
-    // answered directly instead. Running it here makes `/name` mean what it says
-    // whatever model the thread is on.
-    //
-    // The card is synthesized rather than model-issued: a `task` tool call the
-    // subagent stream attaches to, so the timeline renders exactly as it would
-    // for any other subagent, with the agent's own steps inside it.
+    // An explicit /name turn runs the named worker and returns its report.
+    // Instructions alone did not prevent parents from repeating the task, and
+    // tool-free parents still emitted pretend tool calls in real-model evals.
+    // No parent inference is needed to relay the report (custom-subagents.md, D2).
     if (invokedAgent !== undefined) {
-      const agent = getAgent(invokedAgent)
-      if (agent) {
-        const agentToolCallId = randomUUID()
-        // Use the provider-bound, redacted form. `userTextForSteering` is raw by
-        // design for local hooks and must never become a second outbound path.
-        const agentTask = customAgentInvocationTask(outboundPrompt)
-        sendChunk({
-          type: 'tool_call',
-          toolCall: {
-            id: agentToolCallId,
-            name: 'task',
-            args: { subagent_type: invokedAgent, prompt: agentTask },
-          },
-        })
-        let report: string
-        let reportIsError = false
-        try {
-          report = await runCustomAgent(
-            {
-              parentToolCallId: agentToolCallId,
-              parentGoal,
-              provider,
-              parentModel: model,
-              registry,
-              contextWindow,
-              toolSchemaReserve,
-              onChunk: sendChunk,
+      const agentToolCallId = randomUUID()
+      // Keep the same redaction boundary as every outbound provider request.
+      const agentTask = customAgentInvocationTask(outboundPrompt)
+      sendChunk({
+        type: 'tool_call',
+        toolCall: {
+          id: agentToolCallId,
+          name: 'task',
+          args: { subagent_type: invokedAgent, prompt: agentTask },
+        },
+      })
+      let report: string
+      let reportIsError = false
+      const workerProgress = { started: false }
+      try {
+        const agent = getAgent(invokedAgent)
+        if (!agent) throw new Error('The agent definition is no longer available.')
+        report = await runCustomAgent(
+          {
+            parentToolCallId: agentToolCallId,
+            parentGoal,
+            provider,
+            parentModel: model,
+            registry,
+            contextWindow,
+            toolSchemaReserve,
+            operatorContext: [turnStartInjected, submitInjectContext].filter(Boolean).join('\n\n'),
+            onChunk: (chunk) => {
+              if (chunk.type === 'subagent_start') workerProgress.started = true
+              sendChunk(chunk)
             },
-            agent,
-            agentTask,
-            controller.signal,
-          )
-        } catch (err) {
-          // The parent still answers: it is told the agent failed rather than
-          // being left to describe a report that never arrived.
-          report = `The "${invokedAgent}" agent did not finish: ${errorMessage(err)}`
-          reportIsError = true
-        }
-        sendChunk({
-          type: 'tool_result',
-          toolCallId: agentToolCallId,
-          result: report,
-          isError: reportIsError,
-        })
-        appendOperatorInstruction(
-          messages,
-          [buildAgentReportBlock(invokedAgent, report)],
-          operatorInstructionPlacement(model),
+          },
+          agent,
+          agentTask,
+          controller.signal,
         )
+      } catch (err) {
+        report = `The "${invokedAgent}" agent did not finish: ${errorMessage(err)}`
+        reportIsError = true
+        const timedOut = isAgentRunTimeoutAbort(controller.signal)
+        recordTurnFailure(err, {
+          source: hookHaltStopReason
+            ? 'hook'
+            : timedOut
+              ? 'host'
+              : controller.signal.aborted
+                ? 'user'
+                : workerProgress.started
+                  ? 'provider'
+                  : 'host',
+          ...(timedOut
+            ? { stopReason: 'timeout' }
+            : controller.signal.aborted
+              ? { stopReason: 'cancelled' }
+              : {}),
+          ...(hookHaltStopReason ? { rawStopReason: hookHaltStopReason } : {}),
+        })
       }
+      sendChunk({
+        type: 'tool_result',
+        toolCallId: agentToolCallId,
+        result: report,
+        isError: reportIsError,
+      })
+      const response = reportIsError ? report : `Agent ${invokedAgent} reports:\n\n${report}`
+      sendChunk({ type: 'text', text: response })
+      trimmed.push({ role: 'assistant', content: buildAgentReportHistory(invokedAgent, report) })
+      checkpointHistory()
+      sendChunk(continuationBudgetChunk(budgetLedger.used(turnTreeId), turnTreeId))
+      const stopReason = isAgentRunTimeoutAbort(controller.signal)
+        ? 'timeout'
+        : controller.signal.aborted
+          ? 'cancelled'
+          : reportIsError
+            ? 'error'
+            : undefined
+      sendChunk(
+        withHookHaltStopReason(
+          { type: 'done', ...(stopReason ? { stopReason } : {}) },
+          hookHaltStopReason,
+        ),
+      )
+      return resultWithOutcome({
+        usage: { inputTokens: 0, outputTokens: 0 },
+        messages: persistableHistory(),
+      })
     }
 
     const prepared = prepareAgentHistory(
@@ -2256,7 +2322,7 @@ async function runAgentWithInlineCanvas(
               outputTokens += worker.usage.outputTokens
               sendChunk({
                 type: 'usage',
-                model: subagentUsageModel,
+                model: exploreUsageModel,
                 inputTokens: worker.usage.inputTokens,
                 outputTokens: worker.usage.outputTokens,
               })
@@ -2393,7 +2459,7 @@ async function runAgentWithInlineCanvas(
                 contextWindow: subagentRoute?.contextWindow ?? contextWindow,
                 toolSchemaReserve: subagentRoute?.toolSchemaReserve ?? toolSchemaReserve,
                 onChunk: sendChunk,
-                usageModel: subagentUsageModel,
+                usageModel: exploreUsageModel,
                 localFallback: subagentLocalFallback,
               },
               () => registry.execute(name, args, signal),
@@ -2411,7 +2477,7 @@ async function runAgentWithInlineCanvas(
                 contextWindow: subagentRoute?.contextWindow ?? contextWindow,
                 toolSchemaReserve: subagentRoute?.toolSchemaReserve ?? toolSchemaReserve,
                 onChunk: sendChunk,
-                usageModel: subagentUsageModel,
+                usageModel: exploreUsageModel,
                 localFallback: subagentLocalFallback,
               },
               () => registry.execute(name, args, signal),
@@ -2683,114 +2749,91 @@ async function runAgentWithInlineCanvas(
           }
         }
 
-        // Subagent usage is scoped to this run's loop so a concurrent thread
-        // cannot reset or collect it; the fold below reads the same scope.
-        await runWithSubagentUsageScope(() =>
-          runWithAgentRunReadonly(readonlyMode, async () => {
-            await runWithAgentRunReadFileLimits(runReadLimits, async () => {
-              await runWithAgentRunExploreMode(subagentsEnabled, async () => {
-                await runAgentLoop({
-                  provider: parentInstructionDelivery.provider,
-                  messages: trimmed,
-                  tools: parentLoopTools,
-                  usageModel: model,
-                  maxLlmCalls: options?.maxLlmCalls ?? DEFAULT_MAX_LLM_CALLS,
-                  ...(options?.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
-                  ...(options?.adaptiveExtensions !== undefined
-                    ? { adaptiveExtensions: options.adaptiveExtensions }
-                    : {}),
-                  reasoningCheckpointPolicy: productReasoningCheckpointPolicy(
-                    options?.reasoningRecoveryMaxTokens,
-                  ),
-                  reasoningRunawayTextToleranceChars:
-                    PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
-                  runDeadline: runAbort.deadline,
-                  onRunDeadlineActivity: runAbort.schedule,
-                  coerceTextToolCallArgs: (name, args) => registry.tryCoerceArgs(name, args),
-                  getOpenTodos: () => getAgentRunTodos(),
-                  continuationBudget,
-                  resolvePluginSetting,
-                  artifactCheckpointEligible: true,
-                  recordHookRun: recordFunctionHookRun,
-                  recordAppliedNudge: recordAppliedNudgeRun,
-                  onLlmCall: (count) => {
-                    setHookRunStep(count)
-                    // `messages` above is `trimmed`, mutated in place as turns land, so
-                    // this persists everything the previous step produced.
-                    checkpointHistory()
-                    // The previous step's tool results have been streamed; a notice
-                    // here cannot come between a tool call and its result.
-                    flushNestedInstructionNotices()
-                  },
-                  recordStreamCut: (record) => {
-                    recordStreamCut(record, model)
-                  },
-                  recordReasoningCheckpoint: (record) => {
-                    recordReasoningCheckpoint(record, model)
-                  },
-                  executeTool: executeParentTool,
-                  signal: controller.signal,
-                  maxContextTokens: contextWindow,
-                  toolSchemaReserveTokens: toolSchemaReserve,
-                  onHistoryTrimmed: () => {
-                    notifyTrimmed(sendTrimNotice)
-                  },
-                  getLastUsage: () => (hasLastUsage(provider) ? provider.lastUsage : null),
-                  onChunk: (chunk) => {
-                    if (chunk.type === 'done') {
-                      // Suppress the loop's terminal `done` (E3): the run emits one
-                      // terminal `done` after post-turn work. Keep its stop reason.
-                      loopStopReason = chunk.stopReason
-                      return
-                    }
-                    sendLoopChunk(chunk)
-                    if (chunk.type === 'context_compacted' && runContext) {
-                      // The boundary is canonical; the opaque item stays in the
-                      // provider-history projection. Best effort like the other
-                      // observational spine lines: a failed append must not fail the turn.
-                      void appendContextCompaction(runContext.projectId, threadId, {
-                        v: SPINE_SCHEMA_VERSION,
-                        type: 'context_compaction',
-                        id: randomUUID(),
-                        recordedAt: Date.now(),
-                        provider: chunk.provider,
-                        model: chunk.model,
-                        projectionVersion: 1,
-                        itemId: chunk.itemId,
-                      }).catch(() => undefined)
-                    }
-                    if (chunk.type === 'usage') {
-                      inputTokens += chunk.inputTokens
-                      outputTokens += chunk.outputTokens
-                    }
-                  },
-                })
-                // A loop that stopped on a tool step (step cap, abort) still owes
-                // the notice for what that step activated.
-                flushNestedInstructionNotices()
-
-                const subUsage = getAccumulatedSubagentUsage()
-                if (subUsage.inputTokens || subUsage.outputTokens) {
-                  inputTokens += subUsage.inputTokens
-                  outputTokens += subUsage.outputTokens
-                  sendChunk({
-                    type: 'usage',
-                    model: subagentUsageModel,
-                    subagentUsage: true,
-                    inputTokens: subUsage.inputTokens,
-                    outputTokens: subUsage.outputTokens,
-                    ...(subUsage.cacheReadTokens !== undefined
-                      ? { cacheReadTokens: subUsage.cacheReadTokens }
-                      : {}),
-                    ...(subUsage.cacheCreationTokens !== undefined
-                      ? { cacheCreationTokens: subUsage.cacheCreationTokens }
-                      : {}),
-                  })
-                }
+        await runWithAgentRunReadonly(readonlyMode, async () => {
+          await runWithAgentRunReadFileLimits(runReadLimits, async () => {
+            await runWithAgentRunExploreMode(subagentsEnabled, async () => {
+              await runAgentLoop({
+                provider: parentInstructionDelivery.provider,
+                messages: trimmed,
+                tools: parentLoopTools,
+                usageModel: model,
+                maxLlmCalls: options?.maxLlmCalls ?? DEFAULT_MAX_LLM_CALLS,
+                ...(options?.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
+                ...(options?.adaptiveExtensions !== undefined
+                  ? { adaptiveExtensions: options.adaptiveExtensions }
+                  : {}),
+                reasoningCheckpointPolicy: productReasoningCheckpointPolicy(
+                  options?.reasoningRecoveryMaxTokens,
+                ),
+                reasoningRunawayTextToleranceChars:
+                  PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
+                runDeadline: runAbort.deadline,
+                onRunDeadlineActivity: runAbort.schedule,
+                coerceTextToolCallArgs: (name, args) => registry.tryCoerceArgs(name, args),
+                getOpenTodos: () => getAgentRunTodos(),
+                continuationBudget,
+                resolvePluginSetting,
+                artifactCheckpointEligible: true,
+                recordHookRun: recordFunctionHookRun,
+                recordAppliedNudge: recordAppliedNudgeRun,
+                onLlmCall: (count) => {
+                  setHookRunStep(count)
+                  // `messages` above is `trimmed`, mutated in place as turns land, so
+                  // this persists everything the previous step produced.
+                  checkpointHistory()
+                  // The previous step's tool results have been streamed; a notice
+                  // here cannot come between a tool call and its result.
+                  flushNestedInstructionNotices()
+                },
+                recordStreamCut: (record) => {
+                  recordStreamCut(record, model)
+                },
+                recordReasoningCheckpoint: (record) => {
+                  recordReasoningCheckpoint(record, model)
+                },
+                executeTool: executeParentTool,
+                signal: controller.signal,
+                maxContextTokens: contextWindow,
+                toolSchemaReserveTokens: toolSchemaReserve,
+                onHistoryTrimmed: () => {
+                  notifyTrimmed(sendTrimNotice)
+                },
+                getLastUsage: () => (hasLastUsage(provider) ? provider.lastUsage : null),
+                onChunk: (chunk) => {
+                  if (chunk.type === 'done') {
+                    // Suppress the loop's terminal `done` (E3): the run emits one
+                    // terminal `done` after post-turn work. Keep its stop reason.
+                    loopStopReason = chunk.stopReason
+                    return
+                  }
+                  sendLoopChunk(chunk)
+                  if (chunk.type === 'context_compacted' && runContext) {
+                    // The boundary is canonical; the opaque item stays in the
+                    // provider-history projection. Best effort like the other
+                    // observational spine lines: a failed append must not fail the turn.
+                    void appendContextCompaction(runContext.projectId, threadId, {
+                      v: SPINE_SCHEMA_VERSION,
+                      type: 'context_compaction',
+                      id: randomUUID(),
+                      recordedAt: Date.now(),
+                      provider: chunk.provider,
+                      model: chunk.model,
+                      projectionVersion: 1,
+                      itemId: chunk.itemId,
+                    }).catch(() => undefined)
+                  }
+                  if (chunk.type === 'usage') {
+                    inputTokens += chunk.inputTokens
+                    outputTokens += chunk.outputTokens
+                  }
+                },
               })
+              // A loop that stopped on a tool step (step cap, abort) still owes
+              // the notice for what that step activated.
+              flushNestedInstructionNotices()
             })
-          }),
-        )
+          })
+        })
 
         const parentContinuationBase: RunParentContinuationOptions = {
           provider: parentInstructionDelivery.provider,
@@ -3158,6 +3201,10 @@ async function runAgentWithInlineCanvas(
 }
 
 export function abortAgent(threadId: string, reason?: 'send_now'): void {
+  if (reason !== 'send_now') {
+    shellReplayLeaseStore.revokeThread(threadId)
+    discardApprovalsForThread(threadId)
+  }
   abortMap.get(threadId)?.abort(reason)
   // A turn the coding agent resumed on its own has no entry above.
   cancelAgentInitiatedAcpTurn(threadId)
@@ -3166,6 +3213,7 @@ export function abortAgent(threadId: string, reason?: 'send_now'): void {
 /** Fence new turns and interrupt existing work before command cleanup can settle tools. */
 export function stopAllAgentRuns(): void {
   shuttingDown = true
+  shellReplayLeaseStore.clear()
   for (const controller of abortMap.values()) controller.abort()
   cancelAllAgentInitiatedAcpTurns()
 }

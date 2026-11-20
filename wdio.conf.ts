@@ -9,6 +9,7 @@ import { dirname, join } from 'node:path'
 import {
   forceKillWedgedE2eSession,
   installDeleteSessionSafety,
+  shouldPreCloseBeforeReload,
   shouldSkipAfterTestSessionTraffic,
   withTimeout,
 } from './tests/e2e/helpers/after-test-safety.ts'
@@ -425,13 +426,19 @@ export const config: WebdriverIO.Config = {
     // for its replacement to lose the app's single-instance lock. Closing the
     // current app window first lets Electron terminate cleanly before
     // reloadSession deletes the WebDriver session and launches its successor.
+    //
+    // Linux ChromeDriver 152 reports Target.closeTarget success, detaches the
+    // renderer, then waits 20s for that now-gone renderer and retries the same
+    // CloseWindow request. Run 44643832092 paid this ~40s penalty nine times in
+    // shard 6 alone. Skip that redundant pre-close on Linux; reloadSession's
+    // deleteSession already has a 5s cap that kills a genuinely wedged Electron.
     try {
       // Mark the shutdown as a quit first: a bare window close reads as the
       // user discarding that window, and multi-window persistence would drop
       // its record — breaking any spec that relaunches expecting the full
       // window set to restore (multiple-main-windows.e2e.ts).
       await browser.execute(() => window.__copseE2e?.markQuit())
-      await browser.closeWindow()
+      if (shouldPreCloseBeforeReload(process.platform)) await browser.closeWindow()
     } catch {
       // A session that is already gone needs no extra shutdown work.
     }

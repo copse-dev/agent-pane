@@ -32,6 +32,28 @@ design references. The [Shipping quality roadmap](plans/sdlc-improvement-roadmap
 [#2718](https://github.com/copse-dev/agent-pane/issues/2718) until five completed changes demonstrate
 the convention. These records do not establish or change branch-review requirements.
 
+### Coordinating two workers
+
+Give each worker one outcome, its owned paths, acceptance examples and a shared brief location.
+Keep the brief in the project and use `update_todos` for each chat's saved plan. A verifier should
+report failures to the repair owner rather than silently editing the same files. Assign one
+controller to the GUI and serialize native suites; record each runtime's checkout, profile,
+ports and owned processes in the task evidence before launch.
+
+Use `list_threads` with `project_id`, a narrow `query`, and `include_state: true` to retrieve
+saved briefs, plans, recorded checkout metadata and native commit/PR receipts in one bounded
+response. State pages default to 10 results and accept at most 20; use `offset` to continue.
+State titles are capped at 240 characters with an explicit truncation flag; mentioned PR links
+and other unneeded catalog fields are omitted. Truncation and omitted counts are explicit.
+Ordinary catalog searches retain their existing pagination. This uses the existing
+conversation-read consent and grants no sending access.
+
+The state is saved metadata, not a live resource lock or a verification verdict. Confirm actual
+checkout ownership before writing. An idle chat or completed todo does not establish acceptance;
+check the exact commit, test result and outstanding gaps. Native production receipts identify
+what the thread created; a mentioned PR link is not a production receipt. Read detailed evidence
+only when the compact state leaves a specific question unanswered.
+
 ## Runtime and standard scripts
 
 For a removable-drive toolchain, see [portable development](portable-development.md).
@@ -473,9 +495,13 @@ anywhere accepts or merges screenshots.
   a new review), or opens a new draft when none is open. It skips the night when the `main` commit
   the newest refresh PR rendered is current, or when nothing since it reaches a render: no committed
   hash changed and the test oracle plans `skip`, the same answer that runs no e2e on a PR. It never
-  moves the branch while the open PR carries anything but its own empty commit, so committed
-  screenshots are never discarded: merge or close the PR first. If its CI failed, re-run it, or
-  dispatch the workflow with `force`.
+  moves the branch while the open PR carries a hand push, or a committed screenshot `main` has not
+  changed since, so no decision `main` lacks is discarded: merge or close the PR first. Once `main`
+  has changed every screenshot the PR committed, the branch moves again, because those reviews
+  are superseded and merging them would put older renders back. While reviewed screenshots hold
+  the branch after `main` has moved, the workflow keeps one comment on the PR naming them: a held
+  refresh renders none of `main`'s newer drift, which then reaches feature PRs (#3985 held it for 16
+  nights unnoticed). If its CI failed, re-run it, or dispatch the workflow with `force`.
 
 ### Triage a recurring candidate before re-baselining
 

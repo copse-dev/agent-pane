@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import { z } from 'zod'
 import { clientAccessSchema, type ClientAccess } from '../../../shared/client-auth.ts'
 
@@ -47,7 +48,7 @@ export class ClientCredentials {
       {
         id,
         label,
-        tokenHash: createHash('sha256').update(token).digest('hex'),
+        tokenHash: sha256Hex(token),
         createdAt: Date.now(),
         access,
         ...(binding === undefined ? {} : { binding }),
