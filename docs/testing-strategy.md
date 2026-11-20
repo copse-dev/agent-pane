@@ -275,6 +275,15 @@ marker count stays the same. Platform-only and live-service cases remain distinc
 
 ### Flake visibility
 
+Local native runs keep the ordinary driver logs in `e2e-failure-artifacts/wdio-logs`
+and the existing failure HTML/screenshots; they do not archive a new snapshot on every
+invocation. To retain separate raw attempt logs and a byte-verified snapshot for a local
+investigation, use `COPSE_E2E_ATTEMPT=1 pnpm run test:e2e --spec tests/e2e/<name>.e2e.ts`.
+Each explicit attempt gets a unique directory, including repeated attempt numbers, and
+survives later runs. Remove only your own retained investigation artifacts when finished.
+CI supplies numbered attempts and seals them after its outer watchdog returns, so partial
+and failed attempts remain available even when the inner runner is killed.
+
 CI reruns a failed e2e shard once (`wdio.ci.conf.ts` keeps `specFileRetries: 0`). A spec that
 fails attempt 1 and passes attempt 2 leaves the job green, so every such disagreement is reported
 instead of dropped ([#2719](https://github.com/copse-dev/agent-pane/issues/2719)):
