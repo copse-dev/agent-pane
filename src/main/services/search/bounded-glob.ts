@@ -78,7 +78,11 @@ function matchWithin(
     timeoutMs,
     ...(opts.limit !== undefined ? { limit: opts.limit } : {}),
   })
-  if (budget) budget.remainingMs -= performance.now() - started
+  // A call that timed out spent its whole allowance. Charging only the measured
+  // time can leave a sliver of budget, because V8's watchdog runs on libuv's
+  // millisecond timer and may fire slightly before `performance.now()` agrees.
+  const elapsed = performance.now() - started
+  if (budget) budget.remainingMs -= hits === 'timeout' ? Math.max(elapsed, timeoutMs) : elapsed
   return hits
 }
 

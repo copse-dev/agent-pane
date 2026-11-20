@@ -6,6 +6,7 @@ import { createServer, type Server, type Socket } from 'node:net'
 import { $, $$, browser } from '@wdio/globals'
 import { seedStableWorkspace } from './helpers/seed-config.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
+import { selectAnnotationShape } from './helpers/annotation-tool.ts'
 import { assertCheckboxBesideLabel } from './helpers/checkbox-row.ts'
 import {
   E2E_SCREENSHOT_DIR,
@@ -752,7 +753,8 @@ describe('VNC viewer', function () {
 
     await annotateButton.click()
     assert.equal(await annotateButton.getAttribute('aria-pressed'), 'true')
-    await $('.vnc-screen [data-tool="rect"]').click()
+    // The screen shares the window with the chat and the device rail: the shapes fold.
+    await selectAnnotationShape('.vnc-screen', 'rect', 'folded')
     await browser.execute(() => {
       const surface = document.querySelector('.vnc-screen .annotation-layer-svg')
       if (!surface) throw new Error('Missing desktop annotation surface')

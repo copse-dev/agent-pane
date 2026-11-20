@@ -174,6 +174,41 @@ x={"pa\u0074h"="../outside"}
   }
 })
 
+it(
+  'resolves the selected toolchain, never the proxies, when rustup is packaged as wrapper scripts',
+  { skip: process.platform === 'win32' && 'homedir() ignores HOME on Windows' },
+  () => {
+    // Homebrew's rustup puts shell scripts named `cargo`, `rustc` and `rustup`
+    // in its bin, each exec-ing the real proxy, so `cargo` there is neither
+    // named `rustup` nor linked to it. Running that `cargo` in the sandbox
+    // would need all of RUSTUP_HOME.
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'cargo-rustup-home-')))
+    const savedHome = process.env['HOME']
+    try {
+      const proxies = join(home, 'rustup-prefix', 'bin')
+      mkdirSync(proxies, { recursive: true })
+      for (const name of ['cargo', 'rustc', 'rustup']) {
+        writeFileSync(join(proxies, name), `#!/bin/sh\nexec /libexec/bin/${name} "$@"\n`)
+      }
+      mkdirSync(join(home, '.rustup'))
+      writeFileSync(join(home, '.rustup', 'settings.toml'), 'default_toolchain = "stable-test"\n')
+      const toolchainBin = join(home, '.rustup', 'toolchains', 'stable-test', 'bin')
+      mkdirSync(toolchainBin, { recursive: true })
+      writeFileSync(join(toolchainBin, 'cargo'), 'cargo')
+      writeFileSync(join(toolchainBin, 'rustc'), 'rustc')
+      process.env['HOME'] = home
+
+      assert.equal(resolveInstalledRustToolchainBin(root, { PATH: proxies }), toolchainBin)
+      rmSync(join(home, '.rustup', 'toolchains', 'stable-test'), { recursive: true })
+      assert.equal(resolveInstalledRustToolchainBin(root, { PATH: proxies }), null)
+    } finally {
+      if (savedHome === undefined) delete process.env['HOME']
+      else process.env['HOME'] = savedHome
+      rmSync(home, { recursive: true, force: true })
+    }
+  },
+)
+
 it('rejects untrusted toolchains and scrubs ambient Cargo and Rust controls', async () => {
   const toolchain = join(root, 'toolchain')
   write('toolchain/bin/cargo', 'cargo fixture')

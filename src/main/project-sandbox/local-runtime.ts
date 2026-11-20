@@ -21,7 +21,6 @@ import type {
 import { envForRendererChildProcess } from '../services/exec/child-process-env.ts'
 import { ensureWorkspaceTmpDir } from './config.ts'
 import { isProjectSandboxEnabled } from './enabled.ts'
-import { acquireSandboxNetworkScope } from './network-scope.ts'
 import {
   detachForGroupKill,
   formatArgvForShell,
@@ -151,16 +150,10 @@ export function createLocalExecutionRuntime(
       const local = request.local
       if (!local) throw new Error('local containment request missing')
       const plan = local.plan()
-      const scope = plan.networkScope
-      // ASRT's proxies consult the GLOBAL config per connection, so a process
-      // that needs wider network holds a scope for exactly its own lifetime.
-      const releaseScope = scope
-        ? acquireSandboxNetworkScope({
-            domains: [...scope.domains],
-            allowLocalBinding: scope.allowLocalBinding,
-            label: scope.label,
-          })
-        : (): void => {}
+      if (plan.hostedLaunch) {
+        if (request.abortCheckpoints) request.signal?.throwIfAborted()
+        return { child: plan.hostedLaunch(), profile, capabilities }
+      }
       let hasSandboxLease = false
       const releaseLease = (): void => {
         if (!hasSandboxLease) return
@@ -197,18 +190,15 @@ export function createLocalExecutionRuntime(
         })
         child.once('close', () => {
           releaseLease()
-          releaseScope()
         })
         child.once('error', () => {
           // A failed kill can emit an error while the wrapped process is still
           // alive. Keep its deny-path mounts until close; a failed spawn has no PID.
           if (child.pid === undefined) releaseLease()
-          releaseScope()
         })
         return { child, profile, capabilities }
       } catch (err) {
         releaseLease()
-        releaseScope()
         throw err
       }
     },
