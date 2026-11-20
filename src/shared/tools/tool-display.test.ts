@@ -35,6 +35,12 @@ function rollupChildren(
 }
 
 describe('tool-display', () => {
+  it('labels and groups viewport changes with the other browser tools', () => {
+    assert.equal(getToolDisplayName('browser_resize', 'running'), 'Resizing browser')
+    assert.equal(getToolDisplayName('browser_resize', 'done'), 'Resized browser')
+    assert.equal(getToolGroupKey('mcp.copse.browser_resize'), 'browser')
+  })
+
   for (const name of ['run_background', 'mcp__copse__run_background', 'mcp.copse.run_background']) {
     it(`does not claim a rejected ${name} started`, () => {
       const call: ToolCall = {

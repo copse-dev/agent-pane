@@ -1,7 +1,193 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { runInNewContext } from 'node:vm'
-import { capturePreviewDataUrl } from './session-manager.ts'
+import {
+  BrowserSessionManager,
+  capturePreviewDataUrl,
+  captureBrowserScreenshotDataUrl,
+  resizeBrowserViewport,
+} from './session-manager.ts'
+
+interface ViewportFixture {
+  window: Parameters<typeof resizeBrowserViewport>[0]
+  size: () => number[]
+  rendererSize: () => number[]
+  polls: () => number
+}
+
+function viewportFixture(
+  capture?: () => Promise<unknown>,
+  maxWidth = 2560,
+  maxHeight = 1600,
+): ViewportFixture {
+  let width = 1280
+  let height = 800
+  let rendererWidth = width
+  let rendererHeight = height
+  let rendererZoom = 1
+  let polls = 0
+  const tab = contents(capture)
+  tab.executeJavaScript = async (code): Promise<unknown> => {
+    const result: unknown = runInNewContext(code, {
+      window: {
+        get innerWidth(): number {
+          return Math.round(rendererWidth / rendererZoom)
+        },
+        get innerHeight(): number {
+          return Math.round(rendererHeight / rendererZoom)
+        },
+      },
+      performance: { now: () => 0 },
+      setTimeout: (callback: () => void) => {
+        polls += 1
+        queueMicrotask(() => {
+          rendererWidth = width
+          rendererHeight = height
+          rendererZoom = tab.zoom()
+          callback()
+        })
+      },
+    })
+    return await result
+  }
+  const window: ViewportFixture['window'] = {
+    setContentSize: (w, h) => {
+      width = Math.min(w, maxWidth)
+      height = Math.min(h, maxHeight)
+    },
+    getContentSize: () => [width, height],
+    webContents: tab,
+  }
+  return {
+    window,
+    size: window.getContentSize,
+    rendererSize: () => [
+      Math.round(rendererWidth / rendererZoom),
+      Math.round(rendererHeight / rendererZoom),
+    ],
+    polls: () => polls,
+  }
+}
+
+describe('browser viewport validation', () => {
+  it('rejects invalid sizes before creating a native window', async () => {
+    const manager = new BrowserSessionManager()
+    await assert.rejects(manager.resize({ width: 0, height: 844 }, 'tab-1'), /240/)
+    assert.deepEqual(manager.listTabs(), [])
+  })
+
+  it('refuses an unknown tab instead of resizing another one', async () => {
+    const manager = new BrowserSessionManager()
+    await assert.rejects(
+      manager.resize({ width: 390, height: 844 }, 'missing'),
+      /unknown browser tab/,
+    )
+    assert.deepEqual(manager.listTabs(), [])
+  })
+
+  it('refuses an empty tab id before resolving or creating a tab', async () => {
+    const manager = new BrowserSessionManager()
+    await assert.rejects(manager.resize({ width: 390, height: 844 }, ''), /explicit tab id/)
+    assert.deepEqual(manager.listTabs(), [])
+  })
+
+  it('waits for renderer acknowledgement and restores desktop bounds', async () => {
+    const fixture = viewportFixture()
+    assert.deepEqual(await resizeBrowserViewport(fixture.window, { width: 390, height: 844 }), {
+      width: 390,
+      height: 844,
+    })
+    assert.equal(fixture.polls(), 1)
+    assert.deepEqual(await resizeBrowserViewport(fixture.window, { width: 1280, height: 800 }), {
+      width: 1280,
+      height: 800,
+    })
+  })
+
+  it('reports measured dimensions when native bounds are clamped', async () => {
+    const fixture = viewportFixture(undefined, 1000, 700)
+    assert.deepEqual(await resizeBrowserViewport(fixture.window, { width: 2560, height: 1600 }), {
+      width: 1000,
+      height: 700,
+    })
+    assert.equal(fixture.polls(), 1)
+  })
+
+  it('serializes preview A, resize, preview B and reads B bounds when it starts', async () => {
+    const captured = Promise.withResolvers<undefined>()
+    const deliver = Promise.withResolvers<unknown>()
+    const widths: number[] = []
+    const fixture = viewportFixture(() => {
+      const width = fixture.size()[0] ?? 0
+      widths.push(width / fixture.window.webContents.getZoomFactor())
+      if (widths.length === 1) {
+        captured.resolve(undefined)
+        return deliver.promise
+      }
+      return Promise.resolve({ data: String(width) })
+    })
+    const wc = fixture.window.webContents
+    const getWidth = (): number => fixture.size()[0] ?? 0
+    const first = capturePreviewDataUrl(wc, decodeImage, 1280, getWidth)
+    await captured.promise
+    const resize = resizeBrowserViewport(fixture.window, { width: 390, height: 844 })
+    const second = capturePreviewDataUrl(wc, decodeImage, 1280, getWidth)
+    assert.deepEqual(fixture.size(), [1280, 800])
+    assert.equal(wc.getZoomFactor(), 2)
+    deliver.resolve({ data: '1280' })
+    assert.equal(await first, 'data:image/png;base64,1280')
+    assert.deepEqual(await resize, { width: 390, height: 844 })
+    assert.equal(await second, 'data:image/png;base64,390')
+    assert.deepEqual(widths, [640, 195])
+    assert.equal(wc.getZoomFactor(), 1)
+    assert.equal(wc.debugger.isAttached(), false)
+  })
+
+  it('serializes two resizes until each renderer acknowledgement completes', async () => {
+    const fixture = viewportFixture()
+    const wc = fixture.window.webContents
+    const entered = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    const execute = wc.executeJavaScript.bind(wc)
+    let calls = 0
+    wc.executeJavaScript = async (code): Promise<unknown> => {
+      if (++calls === 1) {
+        entered.resolve(undefined)
+        await release.promise
+      }
+      return execute(code)
+    }
+    const first = resizeBrowserViewport(fixture.window, { width: 390, height: 844 })
+    await entered.promise
+    const second = resizeBrowserViewport(fixture.window, { width: 1280, height: 800 })
+    assert.deepEqual(fixture.size(), [390, 844])
+    release.resolve(undefined)
+    assert.deepEqual(await first, { width: 390, height: 844 })
+    assert.deepEqual(await second, { width: 1280, height: 800 })
+  })
+
+  it('releases the queue after a timed-out resize so the next preview can complete', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] })
+    const fixture = viewportFixture()
+    const wc = fixture.window.webContents
+    const execute = wc.executeJavaScript.bind(wc)
+    const entered = Promise.withResolvers<undefined>()
+    wc.executeJavaScript = (): Promise<unknown> => {
+      entered.resolve(undefined)
+      return new Promise(() => {})
+    }
+    const resize = resizeBrowserViewport(fixture.window, { width: 390, height: 844 })
+    const rejected = assert.rejects(resize, /Browser resize timed out/)
+    await entered.promise
+    wc.executeJavaScript = execute
+    const capture = capturePreviewDataUrl(wc, decodeImage, 1280, () => fixture.size()[0] ?? 0)
+    t.mock.timers.tick(5000)
+    await rejected
+    assert.equal(await capture, 'data:image/png;base64,1280')
+    assert.equal(wc.getZoomFactor(), 1)
+    assert.equal(wc.debugger.isAttached(), false)
+  })
+})
 
 interface FakeImage {
   isEmpty(): boolean
@@ -75,6 +261,128 @@ function contents(
   }
 }
 
+describe('captureBrowserScreenshotDataUrl', () => {
+  it('serializes preview, screenshot, resize and screenshot with acknowledged renderer bounds', async () => {
+    const started = Promise.withResolvers<undefined>()
+    const deliver = Promise.withResolvers<unknown>()
+    const capturedSizes: number[][] = []
+    const fixture = viewportFixture(() => {
+      capturedSizes.push(fixture.rendererSize())
+      if (capturedSizes.length === 1) {
+        started.resolve(undefined)
+        return deliver.promise
+      }
+      return Promise.resolve({ data: String(capturedSizes.length) })
+    })
+    const wc = fixture.window.webContents
+    const preview = capturePreviewDataUrl(wc, decodeImage)
+    await started.promise
+    const desktop = captureBrowserScreenshotDataUrl(fixture.window)
+    const resize = resizeBrowserViewport(fixture.window, { width: 390, height: 844 })
+    const mobile = captureBrowserScreenshotDataUrl(fixture.window)
+    assert.deepEqual(capturedSizes, [[640, 400]])
+    assert.deepEqual(fixture.size(), [1280, 800])
+    deliver.resolve({ data: '1280' })
+    assert.equal(await preview, 'data:image/png;base64,1280')
+    assert.equal(await desktop, 'data:image/png;base64,2')
+    assert.deepEqual(await resize, { width: 390, height: 844 })
+    assert.equal(await mobile, 'data:image/png;base64,3')
+    assert.deepEqual(capturedSizes, [
+      [640, 400],
+      [1280, 800],
+      [390, 844],
+    ])
+    assert.equal(fixture.polls(), 3, 'screenshot must wait for preview zoom restoration')
+    assert.equal(wc.getZoomFactor(), 1)
+    assert.equal(wc.debugger.isAttached(), false)
+  })
+
+  it('preserves current zoom and an already attached debugger', async () => {
+    const tab = contents(undefined, 1.25, true)
+    assert.equal(
+      await captureBrowserScreenshotDataUrl({
+        webContents: tab,
+        getContentSize: () => [1280, 800],
+      }),
+      'data:image/png;base64,1280',
+    )
+    assert.equal(tab.zoom(), 1.25)
+    assert.equal(tab.debugger.isAttached(), true)
+    assert.deepEqual(tab.events, ['layout', 'capture at 1.25'])
+  })
+
+  it('propagates capture failures while preserving debugger ownership', async () => {
+    for (const existingDebugger of [false, true]) {
+      const failure = new Error('compositor unavailable')
+      const tab = contents(() => Promise.reject(failure), 1.25, existingDebugger)
+      await assert.rejects(
+        captureBrowserScreenshotDataUrl({ webContents: tab, getContentSize: () => [1280, 800] }),
+        (error: unknown) => error === failure,
+      )
+      assert.equal(tab.zoom(), 1.25)
+      assert.equal(tab.debugger.isAttached(), existingDebugger)
+      assert.equal(tab.events.includes('detach'), !existingDebugger)
+    }
+  })
+
+  it('rejects malformed screenshot responses and still releases its debugger', async () => {
+    for (const response of [null, {}, { data: 3 }]) {
+      const tab = contents(() => Promise.resolve(response))
+      await assert.rejects(
+        captureBrowserScreenshotDataUrl({ webContents: tab, getContentSize: () => [1280, 800] }),
+      )
+      assert.equal(tab.debugger.isAttached(), false)
+    }
+  })
+
+  for (const stalledStage of ['layout', 'capture'] as const) {
+    it(`bounds stalled ${stalledStage}, ignores late completion and lets the next resize and capture run`, async (t) => {
+      t.mock.timers.enable({ apis: ['setTimeout'] })
+      const started = Promise.withResolvers<undefined>()
+      const late = Promise.withResolvers<unknown>()
+      let captures = 0
+      const fixture = viewportFixture(() => {
+        captures += 1
+        if (stalledStage === 'capture' && captures === 1) {
+          started.resolve(undefined)
+          return late.promise
+        }
+        return Promise.resolve({ data: '390' })
+      })
+      const wc = fixture.window.webContents
+      const execute = wc.executeJavaScript.bind(wc)
+      if (stalledStage === 'layout') {
+        wc.executeJavaScript = (): Promise<unknown> => {
+          started.resolve(undefined)
+          return late.promise
+        }
+      }
+      const screenshot = captureBrowserScreenshotDataUrl(fixture.window)
+      const rejected = assert.rejects(
+        screenshot,
+        stalledStage === 'layout'
+          ? /Browser screenshot layout timed out/
+          : /Browser screenshot timed out/,
+      )
+      await started.promise
+      wc.executeJavaScript = execute
+      const resize = resizeBrowserViewport(fixture.window, { width: 390, height: 844 })
+      const next = captureBrowserScreenshotDataUrl(fixture.window)
+      t.mock.timers.tick(5000)
+      await rejected
+      assert.deepEqual(await resize, { width: 390, height: 844 })
+      assert.equal(await next, 'data:image/png;base64,390')
+      const expectedCaptures = stalledStage === 'capture' ? 2 : 1
+      assert.equal(captures, expectedCaptures)
+      late.resolve({ data: 'stale' })
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      assert.equal(captures, expectedCaptures)
+      assert.equal(wc.getZoomFactor(), 1)
+      assert.equal(wc.debugger.isAttached(), false)
+    })
+  }
+})
+
 describe('capturePreviewDataUrl', () => {
   it('requests a fresh screenshot rather than copying a cached frame twice', async () => {
     const tab = contents()
@@ -110,7 +418,7 @@ describe('capturePreviewDataUrl', () => {
         return await result
       }
       assert.equal(
-        await capturePreviewDataUrl(tab, decodeImage, 1280, viewportWidth),
+        await capturePreviewDataUrl(tab, decodeImage, 1280, () => viewportWidth),
         'data:image/png;base64,1280',
       )
       assert.equal(polls, 1)
