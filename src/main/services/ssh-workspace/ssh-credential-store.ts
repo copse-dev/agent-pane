@@ -7,7 +7,7 @@
  * Plaintext persistence is deliberately unsupported: when the keyring is not
  * available, the session cache remains the only remember option.
  */
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { getSecretCipher, isSecretEncryptionAvailable } from '../storage/secret-cipher.ts'
 import { lazyPersistentStore } from '../storage/persistent-store.ts'
@@ -21,7 +21,7 @@ const store = lazyPersistentStore({ name: 'ssh-credentials' })
 const HOSTS_KEY = 'hosts'
 
 function promptKey(prompt: string): string {
-  return createHash('sha256').update(prompt.trim()).digest('hex')
+  return sha256Hex(prompt.trim())
 }
 
 function parseCredentials(raw: unknown): Map<string, StoredCredential> {

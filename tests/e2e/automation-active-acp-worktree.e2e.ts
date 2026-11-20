@@ -307,6 +307,53 @@ describe('automation checkout while an ACP background tool owns it', function ()
     const epoch = join(e2eWorkspaceDir(), PROJECT, oldId, 'agent-epoch.json')
     assert.ok(existsSync(epoch), 'the admitted ACP turn must have its authoritative epoch')
     const epochBefore = readFileSync(epoch)
+    await $(`.project-entry[data-project-id="${PROJECT}"] .project-menu-btn`).click()
+    await $('.context-menu-item=Automations').click()
+    const manager = $('#automation-dialog')
+    await manager.$('.automation-run-btn').click()
+    await expect(manager.$('.automation-status')).toHaveText(
+      '“Background verification” is already pending or running.',
+    )
+    assert.equal(runs().length, 1, 'Run now must not overlap the live background owner')
+    assert.equal(live(pid), true)
+    assert.deepEqual(readFileSync(epoch), epochBefore)
+    for (let index = 0; index < raw.length; index++) {
+      const path = paths[index]
+      assert.ok(path)
+      assert.deepEqual(readFileSync(path), raw[index])
+    }
+    await expect(manager.$('.automation-row-last-run')).toHaveText(/^Last started .+/)
+    const restoreBusyLastRun = await pinTextForCapture(
+      '#automation-dialog .automation-row-last-run',
+      /^Last started .+$/,
+      'Last started Jan 1, 2026, 12:00 AM',
+    )
+    const restoreBusyRows = await pinRunTimes()
+    const restoreBusyBranch = await pinRunBranch()
+    await parkPointer()
+    await saveAppScreenshot('automation-active-acp-busy.png', undefined, async () => {
+      // Fixture writes are ignored; the idle prompt does not imply unlanded
+      // changes. Verify the real checkout before capturing its clean sidebar.
+      const changes = await browser.execute(
+        async (projectId, threadId) =>
+          window.api.git.threadChangeSummary([{ projectId, threadId }], { fresh: true }),
+        PROJECT,
+        oldId,
+      )
+      assert.deepEqual(changes, [{ dirty: false }])
+      assert.equal(
+        execFileSync('git', ['status', '--porcelain=v1', '--untracked-files=all'], {
+          cwd: oldCheckout,
+          encoding: 'utf8',
+        }),
+        '',
+      )
+      await expect($(`.chat-row[data-thread-id="${oldId}"] .chat-changes-status`)).not.toExist()
+    })
+    await restoreBusyBranch()
+    await restoreBusyRows()
+    await restoreBusyLastRun()
+    await manager.$('[aria-label="Close automations"]').click()
     await cleanUp()
     const held = $('#confirm-dialog')
     await held.waitForDisplayed({ timeout: 10_000 })

@@ -4,7 +4,15 @@ import { OpenAiAgentsApi } from './openai-agents-api.ts'
 import { uploadSourceBundle, SOURCE_PART_BYTES } from './openai-source-upload.ts'
 import { it } from 'node:test'
 import { execFileSync } from 'node:child_process'
-import { copyFileSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
+import {
+  copyFileSync,
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  rmSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { prepareGitTransfer, importGitTransfer, type GitTransfer } from './openai-git-transfer.ts'
@@ -72,6 +80,35 @@ it('round trips new binary files, deletions and commits; adoption retry is idemp
     f.transfer.imported = false
     await importGitTransfer(f.transfer, f.host, f.files)
     assert.equal(git(f.host, ['rev-parse', 'HEAD']), head)
+  } finally {
+    rmSync(f.directory, { recursive: true, force: true })
+  }
+})
+
+// Regression: the automatic import ran snapshot, status and cherry-pick on the
+// user's checkout without the internal policy, so its fsmonitor, hooks and
+// signer ran on the host with no prompt once a hosted task finished.
+it("imports without running the checkout's fsmonitor, hooks or signer", async () => {
+  const f = await fixture()
+  try {
+    writeFileSync(join(f.guest, 'hosted.txt'), 'hosted\n')
+    f.exportChanges()
+    const marker = join(f.directory, 'marker')
+    const script = join(f.directory, 'helper.sh')
+    writeFileSync(script, `#!/bin/sh\nprintf '%s\\n' "$0" >> '${marker}'\nexit 0\n`, {
+      mode: 0o700,
+    })
+    const hooks = join(f.directory, 'hooks')
+    mkdirSync(hooks)
+    for (const hook of ['reference-transaction', 'prepare-commit-msg', 'post-commit'])
+      writeFileSync(join(hooks, hook), `#!/bin/sh\nexec '${script}'\n`, { mode: 0o700 })
+    git(f.host, ['config', 'core.fsmonitor', script])
+    git(f.host, ['config', 'core.hooksPath', hooks])
+    git(f.host, ['config', 'commit.gpgSign', 'true'])
+    git(f.host, ['config', 'gpg.program', script])
+    await importGitTransfer(f.transfer, f.host, f.files)
+    assert.equal(readFileSync(join(f.host, 'hosted.txt'), 'utf8'), 'hosted\n')
+    assert.equal(existsSync(marker), false, 'a checkout-configured program ran on the host')
   } finally {
     rmSync(f.directory, { recursive: true, force: true })
   }

@@ -21,6 +21,7 @@ import {
 import type { BackgroundProcessCompletion } from './background-process.ts'
 import { getThreadExecutionContext } from '../thread-execution-context.ts'
 import { captureCommandPhaseReport, captureLateCommandPhaseReport } from './command-phase.ts'
+import { sleep } from '@copse/std/sleep.ts'
 
 /** Tells the model how to reach output dropped from the middle of an over-cap run. */
 const RUN_SHELL_TRUNCATION_HINT =
@@ -238,6 +239,7 @@ export async function runShellOnce(
             startedAt,
             output: outputAcc.toString(),
             timeoutMs: Math.max(1, timeout_ms - (Date.now() - startedAt)),
+            completionWakeArmed: yieldOptions?.onCompletion !== undefined,
             onCancelled: ({ id }) => {
               void reportEnd('cancelled', { backgroundTaskId: id })
             },
@@ -298,7 +300,7 @@ export async function runShellOnce(
           const groupAlive =
             proc.pid !== undefined && process.platform !== 'win32' && isPidAlive(-proc.pid)
           if (!leaderAlive && !groupAlive) break
-          await new Promise((resolve) => setTimeout(resolve, 20))
+          await sleep(20)
         }
         cancel()
       }

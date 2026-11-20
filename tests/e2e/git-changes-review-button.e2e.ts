@@ -14,6 +14,47 @@ import {
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
+async function stagedDiffIsReady(): Promise<boolean> {
+  return browser.execute(() => {
+    const list = document.getElementById('git-changes-host')
+    const viewer = document.getElementById('git-diff-viewer-host')
+    if (!list || !viewer || list.textContent.includes('Checking committed changes')) return false
+    const visible = (element: Element): boolean => {
+      const bounds = element.getBoundingClientRect()
+      return (
+        bounds.width > 0 && bounds.height > 0 && getComputedStyle(element).visibility !== 'hidden'
+      )
+    }
+    if ([...viewer.querySelectorAll('.panel-empty')].some(visible)) return false
+    const selectedPath = list.querySelector('.git-change-row.is-selected .git-change-path')
+    if (selectedPath?.textContent !== 'staged.ts') return false
+    const editor = viewer.querySelector('.modified-in-monaco-diff-editor[data-uri]')
+    const uri = editor?.getAttribute('data-uri')
+    if (!editor || !visible(editor) || !uri?.endsWith('/modified/staged.ts')) return false
+    // Use the actual product-owned Monaco models, matched to this visible
+    // editor. In the narrow inline view the original editor is hidden and
+    // Monaco virtualizes line text, so raw textContent is not the contract.
+    const models = window.__copseMonaco?.editor.getModels() ?? []
+    const modified = models.find((model) => model.uri.toString() === uri)
+    const originalUri = uri.replace('/modified/', '/original/')
+    const original = models.find((model) => model.uri.toString() === originalUri)
+    if (
+      !modified?.getLinesContent().includes('export const value = 2') ||
+      !original?.getLinesContent().includes('export const value = 1')
+    ) {
+      return false
+    }
+    if (
+      ![...viewer.querySelectorAll('.line-insert, .char-insert')].some(visible) ||
+      ![...viewer.querySelectorAll('.line-delete, .char-delete')].some(visible)
+    ) {
+      return false
+    }
+    const bars = [...viewer.querySelectorAll('.scrollbar.horizontal')]
+    return bars.length > 0 && bars.every((element) => getComputedStyle(element).opacity === '0')
+  })
+}
+
 async function openChanges(): Promise<void> {
   await browser.waitUntil(
     async () => (await (await $('.workspace-name').getElement()).getText()) !== 'No folder',
@@ -69,20 +110,13 @@ describe('Changes view "Review" gesture', function () {
     await prepareE2eScreenshot()
     await parkPointer()
     await $('.git-change-row*=committed.ts').waitForDisplayed({ timeout: 30_000 })
-    await browser.waitUntil(
-      () =>
-        browser.execute(() => {
-          const host = document.getElementById('git-changes-host')
-          return (
-            Boolean(host && !host.textContent.includes('Checking committed changes')) &&
-            [...document.querySelectorAll('#git-diff-viewer-host .scrollbar.horizontal')].every(
-              (element) => getComputedStyle(element).opacity === '0',
-            )
-          )
-        }),
-      { timeout: 30_000, timeoutMsg: 'Changes list and diff chrome did not settle' },
-    )
+    await browser.waitUntil(stagedDiffIsReady, {
+      timeout: 30_000,
+      timeoutMsg: 'Expected the selected staged.ts diff and settled viewer chrome',
+    })
+    expect(await stagedDiffIsReady()).toBe(true)
     await savePreparedAppScreenshot('git-changes-review-button.png')
+    expect(await stagedDiffIsReady()).toBe(true)
   })
 
   it('hides Review while the review plugin is off', async () => {

@@ -41,7 +41,7 @@ import {
 } from '../thread-execution-context.ts'
 import { REQUEST_WRITE_ACCESS_TOOL } from '@shared/tools/readonly-tools.ts'
 import { ACP_WRITE_ACCESS_HANDOFF_NOTE } from './acp-write-access.ts'
-import { BRIDGE_MCP_SERVER_NAME } from './acp-bridge-name.ts'
+import { BRIDGE_MCP_SERVER_NAME, newBridgeServerName } from './acp-bridge-name.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { isAppleDevelopmentToolOffered } from '../apple-development/apple-development-tool-scope.ts'
 import { configuredClassifierProfiles } from '../classifiers/classifier-service.ts'
@@ -404,6 +404,12 @@ export interface AcpNativeBridge {
   whenToolsListed: (timeoutMs: number, signal?: AbortSignal) => Promise<boolean>
   /** Per-turn bearer token the agent must send as `Authorization: Bearer …`. */
   token: string
+  /**
+   * The MCP server name this bridge is mounted under, `copse-<nonce>`. Unique
+   * to this bridge so that no MCP config the agent reads for itself can
+   * define a server whose tools pass for this bridge's (#4125).
+   */
+  serverName: string
   /** Set only while this bridge's owning thread is running an ACP turn. */
   setAdvisorContext: (context: AdvisorRunnerContext | null) => void
   /** Independent run-owned allowance; cleared between prompts. Never capture a parent ALS store. */
@@ -1029,6 +1035,7 @@ export async function startAcpNativeBridge(
   return {
     url: `http://127.0.0.1:${String(address.port)}/mcp`,
     token,
+    serverName: newBridgeServerName(),
     toolNames: offeredToolNames,
     toolsListed: () => listedToolNames !== null,
     listedToolNames: () => listedToolNames,
