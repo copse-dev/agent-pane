@@ -31,6 +31,15 @@ describe('afterFileEditGlobMatches', () => {
     assert.equal(afterFileEditGlobMatches(['+(*a)'], '/work/repo/x.ts', root), true)
     assert.ok(Date.now() - again < 40, 'a pathological glob list is remembered')
   })
+
+  // picomatch throws for a glob longer than 65,536 characters; the throw used to
+  // leave the adapter's filter and drop every afterFileEdit hook for the edit.
+  it('treats a glob picomatch refuses as matching nothing, without throwing', () => {
+    const oversized = 'a'.repeat(65_537)
+    assert.equal(afterFileEditGlobMatches([oversized], '/work/repo/src/b.ts', root), false)
+    assert.equal(afterFileEditGlobMatches([oversized, '*.ts'], '/work/repo/src/b.ts', root), true)
+    assert.equal(afterFileEditGlobMatches([oversized, '*.md'], '/work/repo/src/b.ts', root), false)
+  })
 })
 
 describe('createRecentKeySet', () => {

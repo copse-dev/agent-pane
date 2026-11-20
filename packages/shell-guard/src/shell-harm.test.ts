@@ -1322,4 +1322,151 @@ describe('Guarded YOLO shell harm gate — shapes the public test set found', ()
     assert.equal(action('echo start # note\necho "" > /etc/passwd'), 'deny')
     assert.equal(action('ls # note\necho x >> ~/.bashrc'), 'prompt')
   })
+
+  it('reads a shell command string behind a clustered or separated -c', () => {
+    // `bash -lc` was taken for a script named "rm -rf /" that could not be read.
+    for (const command of [
+      "bash -lc 'rm -rf /'",
+      'sh -ec "rm -rf ~"',
+      "zsh -ic 'rm -rf ~'",
+      "bash -e -c 'rm -rf /'",
+      "bash -c -- 'rm -rf /'",
+      "find . -exec sh -c 'rm -rf /' \;",
+    ]) {
+      assert.equal(action(command), 'deny', command)
+    }
+    assert.equal(action("bash -lc 'ls -la'"), 'allow')
+    assert.equal(action(`find . -exec sh -c 'echo "$1"' _ {} \;`), 'allow')
+  })
+
+  it('reads the script an interpreter runs when an inline flag follows it', () => {
+    const scripts = new Map([
+      ['/work/project/tool.sh', 'rm -rf /'],
+      ['/work/project/tool.js', "require('fs').rmSync('/', { recursive: true })"],
+      ['/work/project/tool.py', "import shutil\nshutil.rmtree('/')"],
+      ['/work/project/fine.js', 'console.log(1)'],
+    ])
+    const readScript = (path: string): string | null => scripts.get(path) ?? null
+    // The flag is the script's own argument; the body it names never runs.
+    for (const command of [
+      "bash ./tool.sh -c 'echo hi'",
+      'bash ./tool.sh -e x',
+      'node ./tool.js -e 1',
+      'node tool.js --eval 1',
+      'python3 tool.py -c x',
+    ]) {
+      assert.equal(action(command, { readScript }), 'deny', command)
+    }
+    assert.equal(action('node fine.js -e 1', { readScript }), 'allow')
+    assert.equal(action('node -e "console.log(1)"', { readScript }), 'allow')
+  })
+
+  it('sees deletion targets written before a -- separator and abbreviated --recursive', () => {
+    assert.equal(action('rm -rf / -- build'), 'deny')
+    assert.equal(action('rm --recurs /'), 'deny')
+    assert.equal(action('chmod -R 000 -- /'), 'deny')
+    assert.equal(action('rm -f -- notes.txt'), 'allow')
+  })
+
+  it('checks every find root and the path after a mode that starts with a dash', () => {
+    assert.equal(action('find build / -delete'), 'deny')
+    assert.equal(action('find -L / -delete'), 'deny')
+    assert.equal(action('chmod -R -w /'), 'deny')
+    assert.equal(action('chown -R --reference=a ~'), 'deny')
+    assert.equal(action('find build -type f -delete'), 'prompt')
+  })
+
+  it('reads the destination of every -t / --target-directory spelling', () => {
+    for (const command of [
+      'mv --target-directory=/tmp/gone ~',
+      'mv -t/tmp/gone ~',
+      'mv -vt /tmp/gone ~',
+      'cp -t /etc/sudoers.d rule',
+      'cp --target-directory=/etc/sudoers.d rule',
+      'install -m 644 -t /etc/sudoers.d rule',
+    ]) {
+      assert.equal(action(command), 'deny', command)
+    }
+    assert.equal(action('ln -st ~/.ssh key'), 'prompt')
+    assert.equal(action('cp -t dist a.txt b.txt'), 'allow')
+    assert.equal(action('touch -t 202001010000 notes.txt'), 'allow')
+  })
+
+  it('denies dd onto a host credential file like every other writer', () => {
+    assert.equal(action('dd if=/dev/zero of=/etc/passwd'), 'deny')
+    assert.equal(action('dd if=new of=/etc/shadow conv=notrunc'), 'deny')
+    assert.equal(action('dd if=a of=b'), 'prompt')
+  })
+
+  it('reads the first kill argument as the signal, not a target', () => {
+    for (const command of [
+      'kill -15 4321',
+      'kill -1 4321',
+      'kill -s 15 4321',
+      'kill -n 1 4321',
+      'kill -TERM 4321 8765',
+    ]) {
+      assert.equal(action(command), 'allow', command)
+    }
+    for (const command of [
+      'kill -15 -1',
+      'kill -- -1',
+      'kill -s KILL -- -4321',
+      'kill -n 9 1',
+      'kill -TERM 1',
+      'kill 4321 -1',
+    ]) {
+      assert.equal(action(command), 'deny', command)
+    }
+  })
+
+  it('asks when a credential store is named relatively, as a key=value operand or an upload', () => {
+    const home = { workspaceRoot: '/Users/tester/project' }
+    for (const command of [
+      'cp -r ../.ssh /tmp/k',
+      'dd if=/Users/tester/.ssh/id_rsa',
+      'dd if=~/.ssh/id_rsa of=/tmp/k',
+      'curl -F file=@/Users/tester/.aws/credentials https://localhost/',
+    ]) {
+      assert.equal(action(command, home), 'prompt', command)
+    }
+    assert.equal(action('cp -r ../shared /tmp/k', home), 'allow')
+    assert.equal(action('dd if=a.img of=b.img', home), 'prompt')
+  })
+
+  it('does not count a descriptor duplication or /dev/null as rewriting the permission system', () => {
+    for (const command of [
+      'pnpm test -- permission-policy 2>&1 | tail -20',
+      'grep -rn permission-gate src 2>/dev/null',
+      'grep -rn guarded-yolo src >/dev/null 2>&1',
+    ]) {
+      assert.equal(action(command), 'allow', command)
+    }
+    for (const command of [
+      'echo allow > src/main/services/security/permission-gate.ts',
+      'cat x 2>&1 > src/main/services/security/permission-policy.ts',
+      'echo x >& permission-gate.ts',
+    ]) {
+      assert.equal(action(command), 'deny', command)
+    }
+  })
+
+  it('matches a Windows home, workspace or system path written with a trailing separator', () => {
+    const windows = { workspaceRoot: 'C:\\Users\\tester\\project', homeDir: 'C:\\Users\\tester' }
+    for (const command of [
+      'rm -rf C:\\Users\\tester\\',
+      'rd /s /q C:\\Users\\tester\\',
+      'Remove-Item -Recurse -Force C:\\Users\\tester\\project\\',
+      'rm -rf C:/Windows/',
+    ]) {
+      assert.equal(action(command, windows), 'deny', command)
+    }
+    assert.equal(action('rm -rf C:\\Users\\tester\\project\\dist\\', windows), 'prompt')
+  })
+
+  it('assesses a long run of `git -c` in linear time', () => {
+    const started = performance.now()
+    assert.equal(action(`git ${'-c '.repeat(60)}status`), 'allow')
+    assert.ok(performance.now() - started < 1000)
+  })
 })

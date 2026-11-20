@@ -16,6 +16,7 @@ describe('detectCheckoutDetachingCommand', () => {
     assert.equal(operation('cd app && git fetch && git rebase origin/main'), 'git rebase')
     assert.equal(operation('GIT_EDITOR=true git rebase main'), 'git rebase')
     assert.equal(operation('sh -c "git rebase main"'), 'git rebase')
+    assert.equal(operation("bash -lc 'git rebase main'"), 'git rebase')
   })
 
   it('refuses a rebasing pull but not a merging one', () => {

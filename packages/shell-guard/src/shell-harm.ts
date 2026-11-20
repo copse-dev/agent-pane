@@ -14,6 +14,7 @@ import {
   SHELL_LANGUAGE_INTERPRETERS,
   commandName,
   inlineCodeBody,
+  inlineCodeBodyIndex,
   printfAssignsShellVariable,
   rawShellArgv,
   shellInputRedirects,
@@ -159,10 +160,22 @@ function expandPathToken(token: string, context: ShellHarmContext): string {
   return canonicalPath(lexicalPathToken(token, context), context)
 }
 
+/**
+ * `win32.normalize` keeps a trailing separator, unlike the POSIX `resolve` used
+ * below, so `C:\Users\me\` compared unequal to the home directory and
+ * `rm -rf C:\Users\me\` was not a home-root deletion.
+ */
+function comparableWindowsPath(path: string): string {
+  const normalized = win32.normalize(path).toLowerCase()
+  return normalized.length > win32.parse(normalized).root.length
+    ? normalized.replace(/\\+$/, '')
+    : normalized
+}
+
 function isAtOrAbove(path: string, boundary: string): boolean {
   if (isWindowsPath(path) || isWindowsPath(boundary)) {
-    const normalizedPath = win32.normalize(path).toLowerCase()
-    const normalizedBoundary = win32.normalize(boundary).toLowerCase()
+    const normalizedPath = comparableWindowsPath(path)
+    const normalizedBoundary = comparableWindowsPath(boundary)
     return (
       normalizedPath === normalizedBoundary ||
       normalizedBoundary.startsWith(normalizedPath + win32.sep)
@@ -347,15 +360,86 @@ function embeddedProcessBodies(command: string): string[] {
  * `rm -r ~` fell through to a generic prompt instead of a hard deny.
  */
 function hasRecursive(args: string[]): boolean {
+  // GNU `rm` takes any prefix of a long option: `rm --rec /` is `rm -r /`.
   return args.some(
-    (arg) => arg.startsWith('-') && (/^--recursive$/.test(arg) || /^-[A-Za-z]*[rR]/.test(arg)),
+    (arg) =>
+      arg.startsWith('-') &&
+      ((arg.length > 2 && '--recursive'.startsWith(arg)) || /^-[A-Za-z]*[rR]/.test(arg)),
   )
 }
 
+/**
+ * Operands on both sides of `--`. GNU tools permute their arguments, so
+ * `rm -rf / -- build` deletes `/` as well as `build`; keeping only the words
+ * after the separator hid every target written before it.
+ */
 function nonOptionArgs(args: string[]): string[] {
   const separator = args.indexOf('--')
-  if (separator >= 0) return args.slice(separator + 1).filter(Boolean)
-  return args.filter((arg) => arg.length > 0 && !arg.startsWith('-'))
+  if (separator < 0) return args.filter((arg) => arg.length > 0 && !arg.startsWith('-'))
+  return [
+    ...args.slice(0, separator).filter((arg) => arg.length > 0 && !arg.startsWith('-')),
+    ...args.slice(separator + 1).filter(Boolean),
+  ]
+}
+
+/**
+ * The directories `find` searches: every word before its expression, past the
+ * leading `-H`/`-L`/`-P` (and GNU `-D`/`-O`) options; `.` when none is named.
+ */
+function findSearchRoots(args: readonly string[]): string[] {
+  const roots: string[] = []
+  let index = 0
+  for (; index < args.length; index += 1) {
+    const arg = args[index] ?? ''
+    if (arg === '-D') index += 1
+    else if (!/^-(?:[HLP]+|O\d*|D.+)$/.test(arg)) break
+  }
+  for (; index < args.length; index += 1) {
+    const arg = args[index] ?? ''
+    if (arg.startsWith('-') || arg === '(' || arg === '!' || arg === '\\(') break
+    roots.push(arg)
+  }
+  return roots.length > 0 ? roots : ['.']
+}
+
+/**
+ * `cp`/`mv`/`install`/`ln` with `-t DIR` or `--target-directory=DIR` name the
+ * destination first, in any of GNU's spellings (`-tDIR`, `--target=DIR`), and
+ * every operand is then a source.
+ */
+function targetDirectoryForm(args: readonly string[]): {
+  target: string | null
+  operands: string[]
+} {
+  let target: string | null = null
+  const operands: string[] = []
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index] ?? ''
+    if (arg === '--') {
+      operands.push(...args.slice(index + 1).filter(Boolean))
+      break
+    }
+    if (arg.startsWith('--')) {
+      const equals = arg.indexOf('=')
+      const name = equals === -1 ? arg : arg.slice(0, equals)
+      if (name.length > 2 && '--target-directory'.startsWith(name)) {
+        if (equals === -1) index += 1
+        target = equals === -1 ? (args[index] ?? null) : arg.slice(equals + 1)
+      }
+      continue
+    }
+    if (arg.startsWith('-') && arg.length > 1) {
+      const at = arg.indexOf('t')
+      // A letter that takes a value ends the cluster: `install -oroot` is an owner.
+      if (at === -1 || /[gmoS]/.test(arg.slice(1, at))) continue
+      const attached = arg.slice(at + 1)
+      if (attached === '') index += 1
+      target = attached === '' ? (args[index] ?? null) : attached
+      continue
+    }
+    if (arg.length > 0) operands.push(arg)
+  }
+  return { target, operands }
 }
 
 function inspectDeletion(argv: string[], context: ShellHarmContext, out: MutableDecision): void {
@@ -377,10 +461,16 @@ function inspectDeletion(argv: string[], context: ShellHarmContext, out: Mutable
   }
 
   if (command === 'find' && args.includes('-delete')) {
-    const target = args.find((arg) => !arg.startsWith('-')) ?? '.'
-    const hit = catastrophicTarget(target, context)
-    if (hit) addUnique(out.deny, catastrophicReason('broad deletion', hit))
-    else addUnique(out.prompt, REASON_FIND_DELETE)
+    // Every search root is emptied, not only the first: `find build / -delete`.
+    let flagged = false
+    for (const target of findSearchRoots(args)) {
+      const hit = catastrophicTarget(target, context)
+      if (hit) {
+        addUnique(out.deny, catastrophicReason('broad deletion', hit))
+        flagged = true
+      }
+    }
+    if (!flagged) addUnique(out.prompt, REASON_FIND_DELETE)
     return
   }
 
@@ -432,8 +522,16 @@ function inspectOwnershipChange(
   if (!recursive) return
   // chmod/chown/chattr take a mode/owner/attribute operand before the paths; drop
   // it. takeown/icacls name their path with `/f <path>` or as the first operand.
+  // A mode that removes bits starts with a dash (`chmod -R -w /`) and
+  // `--reference=FILE` replaces the operand altogether, so neither leaves one
+  // among the operands to drop; dropping the first path instead hid the target.
+  const modeIsNotAnOperand =
+    args.some((arg) => arg.startsWith('--reference=')) ||
+    (command === 'chmod' && args.some((arg) => /^-[rwxXstugo]/.test(arg)))
   const operands =
-    posixOwnership || command === 'chattr' ? nonOptionArgs(args).slice(1) : nonOptionArgs(args)
+    (posixOwnership || command === 'chattr') && !modeIsNotAnOperand
+      ? nonOptionArgs(args).slice(1)
+      : nonOptionArgs(args)
   let flagged = false
   for (const target of operands) {
     const hit = catastrophicTarget(target, context)
@@ -452,14 +550,17 @@ function inspectOwnershipChange(
 function inspectRelocation(argv: string[], context: ShellHarmContext, out: MutableDecision): void {
   const command = commandName(argv[0])
   if (command !== 'mv' && command !== 'move' && command !== 'move-item') return
-  const args = argv.slice(1)
-  const operands = nonOptionArgs(args)
-  if (operands.length < 2) return
   // `mv -t DEST SRC…` puts the destination first, so the last operand is a source,
-  // not the target. Reading it positionally let `mv -t /tmp/gone ~` through.
-  const explicitTarget = args.some((arg) => /^(?:-t|--target-directory)/.test(arg))
-  const sources = explicitTarget ? operands.slice(1) : operands.slice(0, -1)
-  const destination = explicitTarget ? operands[0] : operands[operands.length - 1]
+  // not the target. Reading it positionally let `mv -t /tmp/gone ~` through, and
+  // the attached spellings (`-t/tmp/gone`, `--target-directory=/tmp/gone`) left a
+  // single operand that was not read at all.
+  const { target, operands } =
+    command === 'mv'
+      ? targetDirectoryForm(argv.slice(1))
+      : { target: null, operands: nonOptionArgs(argv.slice(1)) }
+  if (target === null && operands.length < 2) return
+  const sources = target === null ? operands.slice(0, -1) : operands
+  const destination = target ?? operands[operands.length - 1]
   let flagged = false
   for (const source of sources) {
     const hit = catastrophicTarget(source, context)
@@ -779,10 +880,19 @@ function inspectArgumentWrites(
   const command = commandName(argv[0])
   if (!ARGUMENT_WRITERS.has(command)) return
   const operands = nonOptionArgs(argv.slice(1))
-  // For the copy/move/link family only the last operand is the destination; for
-  // `tee`/`touch` every operand is written.
-  const written =
-    command === 'tee' || command === 'sponge' || command === 'touch' ? operands : operands.slice(-1)
+  // For the copy/move/link family only the destination is written: the last
+  // operand, or the `-t`/`--target-directory` value, which `cp -t /etc/sudoers.d x`
+  // names first. For `tee`/`touch` every operand is written, and `dd` names its
+  // output as `of=PATH`.
+  let written: string[]
+  if (command === 'tee' || command === 'sponge' || command === 'touch') {
+    written = operands
+  } else if (command === 'dd') {
+    written = operands.filter((arg) => /^of=/i.test(arg)).map((arg) => arg.slice(3))
+  } else {
+    const form = targetDirectoryForm(argv.slice(1))
+    written = form.target === null ? operands.slice(-1) : [form.target]
+  }
   for (const target of written) {
     const reason = sensitiveWriteReason(target, context)
     if (reason === null) continue
@@ -820,8 +930,18 @@ function inspectMirrorDeletion(
 function inspectProcessKill(argv: string[], out: MutableDecision): void {
   const command = commandName(argv[0])
   if (command === 'kill') {
-    for (const arg of argv.slice(1)) {
-      if (arg === '-1' || arg === '1' || /^-\d{2,}$/.test(arg)) {
+    // The first word may be the signal (`-15`, `-HUP`, or `-s`/`-n` and its
+    // value); only the words after it are targets. Reading every word as a
+    // target hard-denied `kill -15 1234` and `kill -1 1234` (SIGTERM and SIGHUP
+    // by number) as a process-group kill.
+    const args = argv.slice(1)
+    const first = args[0] ?? ''
+    let start = 0
+    if (first === '-s' || first === '-n' || first === '--signal') start = 2
+    else if (first.startsWith('-') && first !== '--') start = 1
+    if (args[start] === '--') start += 1
+    for (const target of args.slice(start)) {
+      if (target === '1' || /^-\d+$/.test(target)) {
         addUnique(out.deny, 'killing every process in a process group or init is never allowed')
         return
       }
@@ -840,8 +960,12 @@ function inspectPermissionBypass(command: string, normalized: string, out: Mutab
     /\b(?:permission-gate|permission-policy|guarded[-_]?yolo|autoRunSandboxCommands|safetyExternalDenyThreshold|approval:respond)\b/i.test(
       normalized,
     )
+  // A `>` that duplicates or closes a descriptor (`2>&1`, `>&-`) or discards
+  // output (`>/dev/null`) writes no file. Counting it hard-denied every read or
+  // test run that names one of these files and merges its streams, such as
+  // `pnpm test -- permission-policy 2>&1 | tail`.
   const mutatesNormalized =
-    /(?:^|[;&|]\s*)(?:rm|mv|cp|sed\s+-i|perl\s+-pi|truncate|defaults\s+write|reg\s+add)\b|(?:>|\btee\b)|\b(?:writeFile(?:Sync)?|appendFile(?:Sync)?|unlink(?:Sync)?|rename(?:Sync)?|truncate(?:Sync)?|write_text|write_bytes|rmtree|Set-Content|Out-File|Remove-Item)\b|\bopen\s*\([^)]*,\s*['"][wax+]/i.test(
+    /(?:^|[;&|]\s*)(?:rm|mv|cp|sed\s+-i|perl\s+-pi|truncate|defaults\s+write|reg\s+add)\b|(?:>(?!&\s*(?:\d+|-)(?=$|[\s;|&)]))(?!\s*\/dev\/null(?=$|[\s;|&)]))|\btee\b)|\b(?:writeFile(?:Sync)?|appendFile(?:Sync)?|unlink(?:Sync)?|rename(?:Sync)?|truncate(?:Sync)?|write_text|write_bytes|rmtree|Set-Content|Out-File|Remove-Item)\b|\bopen\s*\([^)]*,\s*['"][wax+]/i.test(
       normalized,
     )
   const mutatesQuotedOpen = /\bopen\s*\([^)]*,\s*['"][wax+]/i.test(command)
@@ -1420,19 +1544,24 @@ function inspectInterpreter(
     ? 'shell'
     : 'code'
 
-  const inline = isInterpreter ? inlineCodeBody(argv) : null
-  if (inline !== null) {
+  const inlineAt = isInterpreter ? inlineCodeBodyIndex(argv) : -1
+  let operand: string | null
+  if (inlineAt !== -1) {
     if (depth >= MAX_SCRIPT_DEPTH) {
       addUnique(out.prompt, 'nested inline interpreter code could not be fully inspected')
       return
     }
-    mergeDecision(out, assess(inline, context, depth + 1, seenScripts, interpreterLanguage))
-    return
+    mergeDecision(
+      out,
+      assess(argv[inlineAt] ?? '', context, depth + 1, seenScripts, interpreterLanguage),
+    )
+    // A script named before the flag is what runs, with the flag as its
+    // argument: `node ./tool.js -e 1` and `python3 tool.py -c x` were read as
+    // the harmless inline body and `tool.js` ran uninspected.
+    operand = interpreterScriptOperand(argv.slice(0, inlineAt - 1))
+  } else {
+    operand = isInterpreter ? (interpreterScriptOperand(argv) ?? directExecution) : directExecution
   }
-
-  const operand = isInterpreter
-    ? (interpreterScriptOperand(argv) ?? directExecution)
-    : directExecution
   if (!operand) return
   const invoked = lexicalPathToken(operand, context)
   // Screenshots and other assets are not scripts the shell authored for us to
@@ -1659,16 +1788,20 @@ function inspectObviousCatastrophe(normalized: string, out: MutableDecision): vo
  * mode that asked for the coverage, so Guarded YOLO is where it applies.
  */
 const DESTRUCTIVE_VCS: Array<{ re: RegExp; reason: string }> = [
+  // As in shell-scope's git matchers, the generic option alternative must not
+  // also match a bare `-c`: two readings of every `-c -c` pair made
+  // `git -c -c -c …` backtrack exponentially (34 pairs took half a second,
+  // 50 would not finish).
   {
-    re: /\bgit\s+(?:-c\s+\S+\s+|--?\S+\s+)*push\b[^\n|;&]*(?:--force\b(?!-with-lease)|(?:^|\s)-f(?:\s|$))/i,
+    re: /\bgit\s+(?:-c\s+\S+\s+|(?!-c\s)--?\S+\s+)*push\b[^\n|;&]*(?:--force\b(?!-with-lease)|(?:^|\s)-f(?:\s|$))/i,
     reason: 'git push --force overwrites remote history',
   },
   {
-    re: /\bgit\s+(?:-c\s+\S+\s+|--?\S+\s+)*push\b[^\n|;&]*\s:\S/i,
+    re: /\bgit\s+(?:-c\s+\S+\s+|(?!-c\s)--?\S+\s+)*push\b[^\n|;&]*\s:\S/i,
     reason: 'git push with a colon refspec deletes a remote branch',
   },
   {
-    re: /\bgit\s+(?:-c\s+\S+\s+|--?\S+\s+)*push\b[^\n|;&]*--delete\b/i,
+    re: /\bgit\s+(?:-c\s+\S+\s+|(?!-c\s)--?\S+\s+)*push\b[^\n|;&]*--delete\b/i,
     reason: 'git push --delete removes a remote ref',
   },
   {
@@ -1955,8 +2088,12 @@ function inspectCredentialStoreOperands(
 ): void {
   if (CREDENTIAL_OWNERS.has(commandName(argv[0]))) return
   for (const arg of argv.slice(1)) {
-    const token = arg.includes('=') && arg.startsWith('-') ? arg.slice(arg.indexOf('=') + 1) : arg
-    if (!/^(?:~|\/)/.test(token) || isRunTimePlaceholder(token)) continue
+    // The path may be an option or operand value (`--key=~/.ssh/id`,
+    // `dd if=~/.ssh/id_rsa`), an upload reference (`curl -F f=@~/.ssh/id_rsa`),
+    // or relative (`cp -r ../.ssh /tmp/k` from a project directly under home).
+    const value = /^[\w-]+=/.test(arg) ? arg.slice(arg.indexOf('=') + 1) : arg
+    const token = value.startsWith('@') ? value.slice(1) : value
+    if (!/^(?:~|\/|\.)/.test(token) || isRunTimePlaceholder(token)) continue
     const resolved = expandPathToken(destructiveTargetBase(token), context)
     for (const store of CREDENTIAL_STORES) {
       const path = isWindowsPath(context.homeDir)
@@ -1990,12 +2127,7 @@ function inspectFindDeletion(
   )
   for (const argv of argvs) {
     if (commandName(argv[0]) !== 'find') continue
-    const roots: string[] = []
-    for (const arg of argv.slice(1)) {
-      if (arg.startsWith('-') || arg === '(' || arg === '!' || arg === '\\(') break
-      roots.push(arg)
-    }
-    const outside = roots.filter(
+    const outside = findSearchRoots(argv.slice(1)).filter(
       (root) => !isRunTimePlaceholder(root) && !isInsideWorkspace(root, context),
     )
     if (outside.length === 0) continue
@@ -2083,7 +2215,9 @@ function inspectCommandLine(
     inspectProcessKill(argv, out)
     inspectInterpreter(argv, context, out, depth, seenScripts, parsedHeads)
     inspectPackageRunner(argv, context, out, depth, seenScripts, nestedCommands)
-    nestedCommands.push(...findExecPayloads(argv))
+    // Re-quoted like the container payload: joined bare, `-exec sh -c 'rm -rf /' \;`
+    // became `sh -c rm -rf /`, whose command string is the single word `rm`.
+    for (const payload of findExecPayloads(argv)) nestedCommands.push([quoteWords(payload)])
     // `eval "rm -rf /"` hands a string to the shell. Unlike the pass-through
     // wrappers, its argument is code, not argv, so it has to be re-assessed.
     if (commandName(argv[0]) === 'eval' && argv.length > 1) {

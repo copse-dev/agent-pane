@@ -700,12 +700,53 @@ function unwrap(argv: readonly string[], chain: string[]): string[] {
   }
 }
 
+/** Shell options whose value is a separate word (`bash -o pipefail -c …`). */
+const SHELL_SEPARATE_VALUE_OPTIONS: ReadonlySet<string> = new Set([
+  '-o',
+  '+o',
+  '-O',
+  '+O',
+  '--rcfile',
+  '--init-file',
+])
+
+/**
+ * Where a POSIX shell's command string sits in its argv, or -1 when it runs a
+ * script file or reads stdin. `-c` may end a cluster of single-letter options
+ * (`bash -lc`, `sh -ec`), more options may follow it (`bash -c -- 'cmd'`), and
+ * the string is then the first operand. A shell's `-e` is errexit, not inline
+ * code, and anything after a script operand belongs to that script:
+ * `bash ./deploy.sh -c x` runs `deploy.sh`.
+ */
+function shellCommandStringIndex(argv: readonly string[]): number {
+  let commandString = false
+  for (let index = 1; index < argv.length; index += 1) {
+    const arg = argv[index] ?? ''
+    if (arg === '--') return commandString && index + 1 < argv.length ? index + 1 : -1
+    if (!/^[-+]./.test(arg)) return commandString ? index : -1
+    if (SHELL_SEPARATE_VALUE_OPTIONS.has(arg)) index += 1
+    else if (/^-[A-Za-z]*c[A-Za-z]*$/.test(arg)) commandString = true
+  }
+  return -1
+}
+
+/**
+ * The index of the inline code body a `-c`/`-e`/`--eval`/`-Command` flag
+ * introduces, or -1. Words before it may still name a file the interpreter runs
+ * (`node ./tool.js -e x` runs `tool.js` and hands it `-e x`).
+ */
+export function inlineCodeBodyIndex(argv: readonly string[]): number {
+  if (SHELL_INTERPRETERS.has(commandName(argv[0]))) return shellCommandStringIndex(argv)
+  for (let index = 1; index < argv.length - 1; index += 1) {
+    if (INLINE_CODE_FLAGS.has(argv[index] ?? '')) return index + 1
+  }
+  return -1
+}
+
 /** The inline code body a `-c`/`-e`/`--eval`/`-Command` flag introduces, if any. */
 export function inlineCodeBody(argv: readonly string[]): string | null {
-  for (let index = 1; index < argv.length - 1; index += 1) {
-    if (INLINE_CODE_FLAGS.has(argv[index] ?? '')) return argv[index + 1] ?? null
-  }
-  return null
+  const index = inlineCodeBodyIndex(argv)
+  return index === -1 ? null : (argv[index] ?? null)
 }
 
 /**

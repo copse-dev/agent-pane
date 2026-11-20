@@ -1,4 +1,4 @@
-// Hook `matcher` regex evaluation shared by the Cursor and Claude adapters.
+// Hook `matcher` regex evaluation shared by the Cursor, Claude and Copse adapters.
 //
 // A matcher is evaluated on the main process for every candidate event, so it
 // runs under a wall-clock bound: a catastrophically backtracking pattern

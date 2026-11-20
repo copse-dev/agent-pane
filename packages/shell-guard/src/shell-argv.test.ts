@@ -193,6 +193,20 @@ describe('shared interpreter and script tables', () => {
     assert.equal(inlineCodeBody(['pwsh', '-Command', 'x']), 'x')
     assert.equal(inlineCodeBody(['bash', 'script.sh']), null)
   })
+
+  it('finds a shell command string behind a clustered -c and later options', () => {
+    assert.equal(inlineCodeBody(['bash', '-lc', 'git status']), 'git status')
+    assert.equal(inlineCodeBody(['sh', '-ec', 'make']), 'make')
+    assert.equal(inlineCodeBody(['bash', '-o', 'pipefail', '-c', 'make']), 'make')
+    assert.equal(inlineCodeBody(['bash', '-c', '--', 'make']), 'make')
+    // A shell's -e is errexit, so the word after it is not code.
+    assert.equal(inlineCodeBody(['bash', '-e', '-c', 'make']), 'make')
+    assert.equal(inlineCodeBody(['bash', '-e', 'script.sh']), null)
+    // Everything after a script operand belongs to the script.
+    assert.equal(inlineCodeBody(['bash', 'script.sh', '-c', 'make']), null)
+    assert.equal(inlineCodeBody(['bash', '--norc', 'script.sh']), null)
+    assert.equal(inlineCodeBody(['bash', '-c']), null)
+  })
 })
 
 describe('shellRedirects', () => {
