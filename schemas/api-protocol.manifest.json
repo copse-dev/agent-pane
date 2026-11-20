@@ -160,8 +160,8 @@
       "agent:suggest-command-summary": {
         "api": "agent.suggestCommandSummary",
         "args": [
-          1,
-          1
+          3,
+          3
         ]
       },
       "agent:suggest-follow-ups": {
@@ -174,8 +174,8 @@
       "agent:suggest-next-step": {
         "api": "agent.suggestNextStep",
         "args": [
-          1,
-          1
+          3,
+          3
         ]
       },
       "agent:suggest-pr-body": {
@@ -188,22 +188,22 @@
       "agent:suggest-terminal-title": {
         "api": "agent.suggestTerminalTitle",
         "args": [
-          1,
-          1
+          3,
+          3
         ]
       },
       "agent:suggest-title": {
         "api": "agent.suggestTitle",
         "args": [
-          1,
-          1
+          3,
+          3
         ]
       },
       "agent:suggest-tool-turn-summary": {
         "api": "agent.suggestToolTurnSummary",
         "args": [
-          1,
-          1
+          3,
+          3
         ]
       },
       "agents:list": {

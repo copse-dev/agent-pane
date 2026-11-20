@@ -56,6 +56,7 @@
     "tests/e2e/automation-dialog.e2e.ts": 12.6,
     "tests/e2e/automation-event-states.e2e.ts": 11,
     "tests/e2e/automation-held-runs.e2e.ts": 6.6,
+    "tests/e2e/automation-model-allowance.e2e.ts": 13.9,
     "tests/e2e/automation-pending-start.e2e.ts": 6.3,
     "tests/e2e/automation-settings-link.e2e.ts": 7,
     "tests/e2e/automation-trigger-problem.e2e.ts": 6.1,

@@ -279,9 +279,31 @@ export interface PromptCatalogFootprint {
   readonly approximateTokens: number
 }
 
+/** Transport-owned cost inputs, computed from the final request body. */
+export interface LLMRequestEstimate {
+  /** Absent for opaque content such as images: reserve the catalogue window. */
+  readonly inputTokensUpperBound?: number
+  readonly maxOutputTokens?: number
+}
+
+export interface LLMRequestUsage {
+  /** Total input, including cached and newly cached tokens. */
+  readonly inputTokens: number
+  readonly outputTokens: number
+  readonly cacheReadTokens?: number
+  readonly cacheCreationTokens?: number
+}
+
 export interface LLMStreamOptions {
   /** Local diagnostics only; adapters must never serialize this into a request. */
   readonly promptCatalog?: PromptCatalogFootprint | undefined
+  /** Awaited before each HTTP attempt by Anthropic; disables SDK-level retries.
+   * The returned receipt settles only this successfully completed attempt.
+   * Missing/partial usage, errors and cancellation must never settle a receipt.
+   * Hosts must refuse providers that do not implement this admission boundary. */
+  readonly beforeRequest?:
+    | ((request: LLMRequestEstimate) => Promise<(usage: LLMRequestUsage) => Promise<void>>)
+    | undefined
   /** Request one named function tool when the provider supports exact tool choice. */
   readonly toolChoice?: { readonly name: string } | undefined
   /**
