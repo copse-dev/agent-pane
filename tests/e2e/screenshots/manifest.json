@@ -42,8 +42,8 @@
       "bytes": 178980
     },
     "acp-auth-expired-mid-turn.png": {
-      "sha256": "12cfa533a8d2167e5b62502a174de583d0147f81744f426f62407224f36a86df",
-      "bytes": 194729
+      "sha256": "a6eda959410a3bdab54be850aa2635de1527aeeeddd62be15b37860ad8add1de",
+      "bytes": 196907
     },
     "acp-auto-install-approval.png": {
       "sha256": "34d3d109daaf6129847e347c05726bfb92e5e0aa76bf98b32f6cd390d01510ae",
@@ -1462,16 +1462,16 @@
       "bytes": 121995
     },
     "composer-observer-bordered.png": {
-      "sha256": "84eaf2098862be335abc77b689a2f39c18c991a48fd257d76130d5e8082e9ba5",
-      "bytes": 326418
+      "sha256": "9ec5c870f2ef9a06b812ebf2664af9d35fbc3a62dce7a9c4ae976860e6aac25d",
+      "bytes": 326198
     },
     "composer-observer-borderless.png": {
       "sha256": "1abd984edbea24533bd1bd585df612dbc12b99f1f0382e9a777790af5fb4c27e",
       "bytes": 325624
     },
     "composer-observer-content-grown.png": {
-      "sha256": "7468721de6ae9dff53e21125e6b4722a3a31c4cbde74ba33284f2c4f639b3aa7",
-      "bytes": 331619
+      "sha256": "4d337bc1c62eb559b2c81c723b781243c77e0c4376cb039425ff92966e5b51a0",
+      "bytes": 330602
     },
     "composer-pills-light.png": {
       "sha256": "af2f58084f15f76fb5a2b730c79e188aa46a9a73e81650cff62bfb9dfcbc00e0",
