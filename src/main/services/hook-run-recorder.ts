@@ -233,12 +233,14 @@ function emitLiveHookCard(threadId: string, line: SpineHookRunLine): void {
  * would be written to an orphan `workspace/<activeProject>/<threadId>/`.
  */
 function projectIdForThread(threadId: string): string | null {
+  // No active project means no desktop project store to write into (a headless
+  // run keeps its records to itself), so recording stays off as it always has.
+  const activeProjectId = storageGet('activeProjectId')
+  if (typeof activeProjectId !== 'string' || activeProjectId.length === 0) return null
   const executionContext = currentThreadExecutionContext()
   const projectId =
-    executionContext?.threadId === threadId
-      ? executionContext.projectId
-      : storageGet('activeProjectId')
-  return typeof projectId === 'string' && projectId.length > 0 ? projectId : null
+    executionContext?.threadId === threadId ? executionContext.projectId : activeProjectId
+  return projectId.length > 0 ? projectId : null
 }
 
 /**
