@@ -8,7 +8,6 @@ import { parseAcpAgentConfigs, parseAcpModelSelection } from '@shared/acp.ts'
 import { canonicalAcpAgentId } from '@shared/acp-known-agents.ts'
 import { parseRemoteAgentModelSelection } from '@shared/remote-agent.ts'
 import { parsePluginModelSelection } from '@shared/plugin-model.ts'
-import { resolveLocalServerUrl } from '@shared/lm-studio-defaults.ts'
 import { blockedModelMaker, parseBlockedModelMakers } from '@copse/llm/model-maker-block.ts'
 import type {
   ModelInvalidation,
@@ -19,7 +18,11 @@ import { getSetting, getSettingTrimmed, resolveApiKey, updateSetting } from '../
 import { storageUpdate } from '../storage/storage.ts'
 import { getResolvedExtraProviders } from './extra-providers-store.ts'
 import { providerKeyStatus } from './provider-key-status.ts'
-import { fetchLmStudioModels, fetchLmStudioModelsCached } from './lm-studio-models.ts'
+import {
+  fetchLmStudioModels,
+  fetchLmStudioModelsCached,
+  localServerUrl,
+} from './lm-studio-models.ts'
 import { getChatGptPlanService } from './chatgpt-plan-service.ts'
 import { getPluginService } from '../plugins/plugin-service.ts'
 import { pluginSettingsKey, readPluginSettings } from '../plugins/plugin-settings-read.ts'
@@ -277,10 +280,6 @@ function savedModels(): SavedModel[] {
   return saved
 }
 
-function localUrl(): string {
-  return resolveLocalServerUrl(getSetting<string>('localServerUrl', ''), process.env)
-}
-
 /** Negative evidence is used only when the query succeeded or credentials were rejected. */
 export async function modelInvalidationReason(
   model: string,
@@ -353,8 +352,8 @@ export async function modelInvalidationReason(
   if (model.startsWith('lmstudio:')) {
     const id = model.replace(/^lmstudio:/, '')
     const catalog = await (freshLocal
-      ? fetchLmStudioModels(localUrl())
-      : fetchLmStudioModelsCached(localUrl()))
+      ? fetchLmStudioModels(localServerUrl())
+      : fetchLmStudioModelsCached(localServerUrl()))
     return catalog.ok &&
       !catalog.models.some((entry) => entry.id === id && entry.embedding !== true)
       ? 'The configured local server no longer offers this chat model.'
@@ -399,8 +398,8 @@ async function modelRouteVerified(model: string, freshLocal = false): Promise<bo
   }
   if (model.startsWith('lmstudio:')) {
     const catalog = await (freshLocal
-      ? fetchLmStudioModels(localUrl())
-      : fetchLmStudioModelsCached(localUrl()))
+      ? fetchLmStudioModels(localServerUrl())
+      : fetchLmStudioModelsCached(localServerUrl()))
     return (
       catalog.ok &&
       catalog.models.some(
@@ -434,7 +433,7 @@ function providerRevision(): string {
       'lmstudio',
       ...extras.map((entry) => entry.id),
     ].map((id) => resolveApiKey(id)),
-    localUrl(),
+    localServerUrl(),
     getSetting('registeredAcpAgents', []),
     getSetting('blockedModelMakers', []),
     getChatGptPlanService().status(),
@@ -449,7 +448,7 @@ export const modelInvalidationService = createModelInvalidationService({
   reason: modelInvalidationReason,
   verified: modelRouteVerified,
   localModels: async (fresh) => {
-    const url = localUrl()
+    const url = localServerUrl()
     if (!isLocalBaseUrl(url)) return []
     const result = await (fresh ? fetchLmStudioModels(url) : fetchLmStudioModelsCached(url))
     const blocked = parseBlockedModelMakers(getSetting('blockedModelMakers', []))

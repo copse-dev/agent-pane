@@ -13,7 +13,9 @@ import {
 } from '@agentclientprotocol/sdk/unstable'
 import { randomInt } from 'node:crypto'
 import { realpathSync } from 'node:fs'
-import { acpProbeErrorMessage, spawnProbeTransport } from './acp-behavior-probe.ts'
+import { spawnProbeTransport } from './acp-behavior-probe.ts'
+import { acpErrorMessage } from './acp-error-detail.ts'
+import { sleep } from '@copse/std/sleep.ts'
 
 /**
  * Tier-2 ACP **session-continuity probe** (docs/plans/acp-session-continuity.md):
@@ -246,7 +248,7 @@ async function ask(
     'session/prompt',
   )
   // Notifications precede the response on the wire; let the last ones land.
-  await new Promise((resolve) => setTimeout(resolve, 50))
+  await sleep(50)
   return conn.updates
     .slice(start)
     .filter((update) => update.sessionUpdate === 'agent_message_chunk')
@@ -265,7 +267,7 @@ async function reattach(
     method === 'load'
       ? await conn.agent.request(methods.agent.session.load, { sessionId, cwd, mcpServers: [] })
       : await conn.agent.request(methods.agent.session.resume, { sessionId, cwd, mcpServers: [] })
-  await new Promise((resolve) => setTimeout(resolve, 50))
+  await sleep(50)
   const replay = conn.updates
     .slice(start)
     .filter(
@@ -344,7 +346,7 @@ export async function probeAgentContinuity(
     agentVersion = first.init.agentInfo?.version ?? null
     await first.dispose()
   } catch (err) {
-    return { ok: false, error: acpProbeErrorMessage(err) }
+    return { ok: false, error: acpErrorMessage(err) }
   }
 
   const trials: AcpContinuityTrial[] = []
@@ -428,7 +430,7 @@ async function runTrial(
     }
   } catch (err) {
     await deleteSeed()
-    return { ...trial, error: `seeding failed: ${acpProbeErrorMessage(err)}` }
+    return { ...trial, error: `seeding failed: ${acpErrorMessage(err)}` }
   }
   const sessionId = seedState.sessionId
   const seedReplyText = seedState.reply
@@ -454,7 +456,7 @@ async function runTrial(
       try {
         ;({ replay, response } = await reattach(conn, method, sessionId, target))
       } catch (err) {
-        return { kind: 'rejected', error: acpProbeErrorMessage(err) }
+        return { kind: 'rejected', error: acpErrorMessage(err) }
       }
       await pinModel(conn, sessionId, response, modelHint)
       const answer = await ask(conn, sessionId, RECALL_PROMPT, turnTimeoutMs)
@@ -497,7 +499,7 @@ async function runTrial(
         trial.survivesSecondRestart = second.kind === 'answered' && second.answer.includes(codeword)
       }
     } catch (err) {
-      trial.error = acpProbeErrorMessage(err)
+      trial.error = acpErrorMessage(err)
     }
     return trial
   }

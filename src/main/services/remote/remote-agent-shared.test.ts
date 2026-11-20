@@ -1,6 +1,10 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { resolveRemoteAgentProjectId, resolveRemoteAgentRepository } from './remote-agent-shared.ts'
+import {
+  joinUrl,
+  resolveRemoteAgentProjectId,
+  resolveRemoteAgentRepository,
+} from './remote-agent-shared.ts'
 import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
 import { storageSet } from '../storage/storage.ts'
 
@@ -92,5 +96,19 @@ describe('remote agent execution ownership', () => {
     } finally {
       storageSet('activeProjectId', null)
     }
+  })
+})
+
+describe('joinUrl', () => {
+  it('drops every trailing slash on the base before appending the path', () => {
+    assert.equal(
+      joinUrl('https://api.cursor.com', '/v1/agents'),
+      'https://api.cursor.com/v1/agents',
+    )
+    assert.equal(
+      joinUrl('https://api.cursor.com///', '/v1/agents'),
+      'https://api.cursor.com/v1/agents',
+    )
+    assert.equal(joinUrl('https://host/base/', '/v1?x=1'), 'https://host/base/v1?x=1')
   })
 })
