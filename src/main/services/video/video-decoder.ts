@@ -139,6 +139,10 @@ async function ensureDecoderWindow(): Promise<BrowserWindow> {
       if (decoderWindow === win) decoderWindow = null
       readyPromise = null
       settleAll(new Error('The video decoder window closed before the decode finished.'))
+      // Closed while still starting up (its renderer crashed, or the app is
+      // quitting): fail the waiting decode. Otherwise it never settles, and the
+      // serialized queue behind it never runs again. A no-op once ready.
+      reject(new Error('The video decoder window closed before it was ready.'))
     })
 
     win.webContents.once('render-process-gone', (_event, details) => {
@@ -150,8 +154,9 @@ async function ensureDecoderWindow(): Promise<BrowserWindow> {
 
     win.loadFile(join(__dirname, '../renderer/video/decoder.html')).catch((err: unknown) => {
       readyPromise = null
-      if (!win.isDestroyed()) win.destroy()
+      // Before the destroy: its `closed` handler rejects too, less specifically.
       reject(err instanceof Error ? err : new Error(String(err)))
+      if (!win.isDestroyed()) win.destroy()
     })
   })
   return readyPromise

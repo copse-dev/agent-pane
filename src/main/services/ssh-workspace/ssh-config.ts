@@ -38,11 +38,35 @@ function expandHome(path: string): string {
   return path
 }
 
-/** Resolve an Include path relative to the including file (OpenSSH semantics). */
-export function resolveSshIncludePath(pattern: string, includingFile: string): string {
+/**
+ * Resolve an Include path. OpenSSH reads a relative path against the directory
+ * of the user configuration file (`~/.ssh`), wherever the `Include` itself is
+ * written — so `rootConfigFile` is the top-level config, not a nested include.
+ */
+export function resolveSshIncludePath(pattern: string, rootConfigFile: string): string {
   const expanded = expandHome(unquoteConfigValue(pattern))
   if (isAbsolute(expanded)) return expanded
-  return resolve(dirname(includingFile), expanded)
+  return resolve(dirname(rootConfigFile), expanded)
+}
+
+/**
+ * Drop a comment from a config line. As in OpenSSH, `#` starts one only at the
+ * beginning of a word and outside quotes: `IdentityFile ~/.ssh/id#work` and
+ * `"my #key"` keep theirs.
+ */
+function stripConfigComment(rawLine: string): string {
+  let quote: string | null = null
+  for (let i = 0; i < rawLine.length; i++) {
+    const char = rawLine.charAt(i)
+    if (quote !== null) {
+      if (char === quote) quote = null
+    } else if (char === '"' || char === "'") {
+      quote = char
+    } else if (char === '#' && (i === 0 || /\s/.test(rawLine.charAt(i - 1)))) {
+      return rawLine.slice(0, i).trim()
+    }
+  }
+  return rawLine.trim()
 }
 
 /** Parse OpenSSH `Host` stanzas from a config file (best-effort, no full ssh-config semantics). */
@@ -67,7 +91,7 @@ export function parseSshConfig(content: string): SshConfigAlias[] {
   }
 
   for (const rawLine of content.split('\n')) {
-    const line = rawLine.split('#')[0]?.trim() ?? ''
+    const line = stripConfigComment(rawLine)
     if (!line) continue
     // Support both `Key value` and `Key=value` (some configs use the latter).
     const match = /^(?<key>[A-Za-z][A-Za-z0-9*]*)(?:\s+|=)(?<value>.+)$/.exec(line)
@@ -116,7 +140,7 @@ export function parseSshConfig(content: string): SshConfigAlias[] {
 function collectIncludePatterns(content: string): string[] {
   const patterns: string[] = []
   for (const rawLine of content.split('\n')) {
-    const line = rawLine.split('#')[0]?.trim() ?? ''
+    const line = stripConfigComment(rawLine)
     if (!line) continue
     const match = /^(?<key>[A-Za-z][A-Za-z0-9*]*)(?:\s+|=)(?<value>.+)$/.exec(line)
     if (!match?.groups) continue
@@ -144,7 +168,8 @@ export function readSshConfigAliases(
   const aliases: SshConfigAlias[] = []
   const seenAlias = new Set<string>()
   const visitedFiles = new Set<string>()
-  const queue: string[] = [resolve(configPath)]
+  const rootConfig = resolve(configPath)
+  const queue: string[] = [rootConfig]
 
   while (queue.length > 0 && visitedFiles.size < MAX_INCLUDE_FILES) {
     const file = queue.shift()
@@ -165,7 +190,7 @@ export function readSshConfigAliases(
     }
 
     for (const pattern of collectIncludePatterns(content)) {
-      const resolved = resolveSshIncludePath(pattern, file)
+      const resolved = resolveSshIncludePath(pattern, rootConfig)
       let matches: string[]
       try {
         matches = globSync(resolved)

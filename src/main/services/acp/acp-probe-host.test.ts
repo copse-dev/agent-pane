@@ -5,7 +5,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { isPidAlive } from '../exec/subprocess-kill.ts'
 import { existsSync } from 'node:fs'
-import { AcpProbeAgentError, acpProbeWorkerPath, probeAcpAgentIsolated } from './acp-probe-host.ts'
+import {
+  AcpProbeAgentError,
+  acpProbeWorkerPath,
+  parseProbeWorkerOutput,
+  probeAcpAgentIsolated,
+} from './acp-probe-host.ts'
 import { ACP_PROBE_REQUEST_ENV } from './acp-probe-worker.ts'
 
 async function waitFor(condition: () => boolean, timeoutMs: number): Promise<boolean> {
@@ -98,5 +103,33 @@ setInterval(() => {}, 1000)
       ),
     )
     assert.equal(existsSync(marker), true, 'the in-process probe ran the agent')
+  })
+})
+
+describe('parseProbeWorkerOutput', () => {
+  it('keeps the config options the worker probed', () => {
+    const configOptions = [
+      {
+        configId: 'thought_level',
+        name: 'Reasoning',
+        category: 'thought_level',
+        currentValue: 'medium',
+        choices: [
+          { value: 'low', label: 'Low' },
+          { value: 'medium', label: 'Medium' },
+        ],
+      },
+    ]
+    const probe = parseProbeWorkerOutput(
+      `noise\n${JSON.stringify({ ok: true, probe: { models: null, modes: null, configOptions } })}\n`,
+    )
+    assert.deepEqual(probe, { models: null, modes: null, configOptions })
+  })
+
+  it('omits config options when the agent advertised none', () => {
+    const probe = parseProbeWorkerOutput(
+      JSON.stringify({ ok: true, probe: { models: null, modes: null } }),
+    )
+    assert.deepEqual(probe, { models: null, modes: null })
   })
 })

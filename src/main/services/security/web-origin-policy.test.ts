@@ -37,6 +37,23 @@ describe('web-origin-policy', () => {
     assert.equal(isWebOriginAllowed(new URL('https://example.com'), allowed), false)
   })
 
+  it('keeps an explicitly written default port, as a remembered origin key carries one', () => {
+    // "Always allow https://example.com:443" saves webOriginKey() verbatim.
+    const allowed = [webOriginKey(new URL('https://example.com/docs')), 'http://plain.example:80/']
+    assert.equal(isWebOriginAllowed(new URL('https://example.com/other'), allowed), true)
+    assert.equal(isWebOriginAllowed(new URL('https://example.com:443/'), allowed), true)
+    assert.equal(isWebOriginAllowed(new URL('https://example.com:8443/'), allowed), false)
+    assert.equal(isWebOriginAllowed(new URL('http://plain.example/'), allowed), true)
+    assert.equal(isWebOriginAllowed(new URL('http://plain.example:8080/'), allowed), false)
+    // No port written: any port, as before.
+    assert.equal(
+      isWebOriginAllowed(new URL('https://b.example:8443/'), ['https://b.example']),
+      true,
+    )
+    assert.equal(isWebOriginAllowed(new URL('http://[::1]:3000/'), ['http://[::1]']), true)
+    assert.equal(isWebOriginAllowed(new URL('http://[::1]:3000/'), ['http://[::1]:80']), false)
+  })
+
   it('normalizes explicit origin keys with default ports', () => {
     assert.equal(webOriginKey(new URL('https://example.com/docs')), 'https://example.com:443')
     assert.equal(webOriginKey(new URL('http://[::1]:3000')), 'http://[::1]:3000')

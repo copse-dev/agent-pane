@@ -257,4 +257,43 @@ describe('catalogue plugin installation lifecycle', () => {
     assert.equal(existsSync(join(data, 'state.json')), true)
     assert.deepEqual(await service.records(), [])
   })
+
+  it('drops the payload an update pushes out of the rollback window', async () => {
+    const service = serviceWith([
+      await cursorArchive('# review v1'),
+      await cursorArchive('# review v2'),
+      await cursorArchive('# review v3'),
+    ])
+    const payloads = join(root, '.managed', 'payloads')
+    const hashes: string[] = []
+    for (let update = 0; update < 3; update += 1) {
+      const review = await service.prepare(CATALOG_ID)
+      await service.commit(review.token)
+      hashes.push(review.contentHash.slice('sha256:'.length))
+    }
+    // v3 is active and v2 is its rollback pin; nothing refers to v1 any more.
+    assert.deepEqual((await fsp.readdir(payloads)).sort(), [hashes[1], hashes[2]].sort())
+
+    await service.uninstall('pstack', false)
+    assert.deepEqual(await fsp.readdir(payloads), [])
+  })
+
+  it('reads MCP servers a Claude Code manifest declares inline', async () => {
+    const archive = await createZipArchive(
+      Object.entries({
+        'plugins-revision/pstack/.claude-plugin/plugin.json': JSON.stringify({
+          name: 'pstack',
+          version: '2.0.0',
+          mcpServers: { docs: { type: 'http', url: 'https://mcp.example.com/mcp' } },
+        }),
+        'plugins-revision/pstack/skills/review/SKILL.md': '# review',
+      }).map(([path, body]) => ({ path, data: utf8(body), modifiedAt: MODIFIED })),
+    )
+    const review = await serviceWith([archive]).prepare(CATALOG_ID)
+    assert.deepEqual(review.warnings, [])
+    assert.equal(review.version, '2.0.0')
+    assert.deepEqual(review.mcpServers, [
+      { name: 'docs', transport: 'streamable-http', target: 'https://mcp.example.com/mcp' },
+    ])
+  })
 })
