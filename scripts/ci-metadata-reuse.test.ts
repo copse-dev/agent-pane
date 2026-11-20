@@ -347,6 +347,44 @@ describe('completed exact-candidate verification', () => {
     }
   })
 
+  it('requires the full nine-shard render plan, not a subset or a different shard count', async () => {
+    for (const plan of ['render / subset / 9 shards', 'render / full / 8 shards']) {
+      const f = fixture()
+      const precheck = f.jobs.find((j) => j['name'] === 'precheck')
+      assert.ok(precheck)
+      precheck['steps'] = z
+        .array(z.object({ name: z.string() }).loose())
+        .parse(precheck['steps'])
+        .map((entry) =>
+          entry.name.startsWith('Screenshot evidence plan: ')
+            ? { ...entry, name: `Screenshot evidence plan: ${plan}` }
+            : entry,
+        )
+      assert.equal(await findCompletedVerification(f.request, f.input), null, plan)
+    }
+  })
+
+  it('walks past a newer green reuse run to the full run it reused', async () => {
+    const f = fixture()
+    f.runs.unshift({ ...f.run, id: 15, updated_at: new Date(NOW - 10_000).toISOString() })
+    const reuseJobs = [
+      job('precheck', [
+        passedStep(candidateIdentity(f.input)),
+        passedStep(`Native runtime v1 / ${f.input.runnerImage}`),
+        passedStep('Reusing verified native suites'),
+      ]),
+    ]
+    const request: typeof f.request = async (route, params) => {
+      if (route.endsWith('/attempts/{attempt_number}/jobs') && params['run_id'] === 15)
+        return { data: { jobs: reuseJobs, total_count: reuseJobs.length } }
+      return f.request(route, params)
+    }
+    assert.equal(
+      await findCompletedVerification(request, f.input),
+      'https://github.com/copse-dev/agent-pane/actions/runs/10/attempts/1',
+    )
+  })
+
   it('does not turn reuse-only runs into original verification', async () => {
     const f = fixture()
     const precheck = f.jobs.find((job) => job['name'] === 'precheck')

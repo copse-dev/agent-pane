@@ -133,6 +133,7 @@ describe('required CI gate decisions', { skip: process.platform === 'win32' }, (
       { ANY_FAILURE: 'true' },
       { ANY_CANCELLED: 'true' },
       { BUILD_RESULT: 'skipped' },
+      { E2E_RESULT: 'success' },
     ])
       assert.equal(gate({ ...reuse, ...invalid }), 1)
   })
