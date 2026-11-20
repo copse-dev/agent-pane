@@ -278,6 +278,12 @@ describe('foreground shell completion', () => {
     })
   })
 
+  it('keeps a multibyte character whose bytes arrive in separate chunks', async () => {
+    // U+4E2D is e4 b8 ad; the pause puts the last byte in a later pipe read.
+    const result = await run("printf '\\344\\270'; sleep 0.3; printf '\\255\\n'", 5_000)
+    assert.equal(result.output, '\u4e2d\n')
+  })
+
   it('reports a signal-killed command as a failure', async () => {
     const result = await run('kill -9 $$', 5_000)
     assert.equal(result.exitCode, 137)

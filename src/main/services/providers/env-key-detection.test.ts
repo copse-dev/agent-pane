@@ -35,6 +35,19 @@ describe('parseEnvAssignments', () => {
     assert.equal(parsed.get('OPENAI_API_KEY'), 'sk-bare-value')
   })
 
+  it('strips inline comments and terminators after quoted values', () => {
+    const parsed = parseEnvAssignments(
+      [
+        'export OPENAI_API_KEY="sk-quoted-value" # set at work',
+        "export ANTHROPIC_API_KEY='sk-ant-quoted-1';",
+        'set -gx GROQ_API_KEY "gsk_fish_quoted" # fish',
+      ].join('\n'),
+    )
+    assert.equal(parsed.get('OPENAI_API_KEY'), 'sk-quoted-value')
+    assert.equal(parsed.get('ANTHROPIC_API_KEY'), 'sk-ant-quoted-1')
+    assert.equal(parsed.get('GROQ_API_KEY'), 'gsk_fish_quoted')
+  })
+
   it('parses fish and csh export syntax', () => {
     const parsed = parseEnvAssignments(
       ['set -gx ANTHROPIC_API_KEY sk-ant-fish-key1', 'setenv OPENAI_API_KEY sk-csh-key-12'].join(

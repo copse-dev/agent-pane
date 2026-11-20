@@ -50,25 +50,43 @@ async function ensureHostConnected(hostId: string): Promise<void> {
   if (!mgr.getConnection(hostId)) await mgr.connect(hostId)
 }
 
-function attachPgidParser(proc: ChildProcess, hostId: string, stdout: PassThrough): void {
-  let captured = false
-  let buffer = ''
-  proc.stdout?.on('data', (chunk: Buffer) => {
-    if (captured) {
-      stdout.write(chunk)
-      return
+const NEWLINE_BYTE = 0x0a
+
+/**
+ * Peel the `__COPSE_PGID__=…` marker line off a remote process's stdout and
+ * return whatever followed it in the same reads. Works on bytes: the reads that
+ * carry the marker can end in the middle of a multibyte character, and decoding
+ * them here would hand the consumer U+FFFD instead of the character.
+ */
+export function createRemotePgidLineParser(
+  onPgid: (pgid: number) => void,
+): (chunk: Buffer) => Buffer | null {
+  let pending: Buffer[] | null = []
+  return (chunk) => {
+    if (pending === null) return chunk
+    const newline = chunk.indexOf(NEWLINE_BYTE)
+    if (newline === -1) {
+      pending.push(chunk)
+      return null
     }
-    buffer += chunk.toString()
-    const newline = buffer.indexOf('\n')
-    if (newline === -1) return
-    const firstLine = buffer.slice(0, newline)
-    buffer = buffer.slice(newline + 1)
-    captured = true
+    const firstLine = Buffer.concat([...pending, chunk.subarray(0, newline)]).toString('utf8')
+    pending = null
     if (firstLine.startsWith(REMOTE_PGID_PREFIX)) {
       const pgid = Number.parseInt(firstLine.slice(REMOTE_PGID_PREFIX.length), 10)
-      if (Number.isFinite(pgid)) registerRemoteProcessMeta(proc, { hostId, pgid })
+      if (Number.isFinite(pgid)) onPgid(pgid)
     }
-    if (buffer) stdout.write(buffer)
+    const rest = chunk.subarray(newline + 1)
+    return rest.length > 0 ? rest : null
+  }
+}
+
+function attachPgidParser(proc: ChildProcess, hostId: string, stdout: PassThrough): void {
+  const parse = createRemotePgidLineParser((pgid) => {
+    registerRemoteProcessMeta(proc, { hostId, pgid })
+  })
+  proc.stdout?.on('data', (chunk: Buffer) => {
+    const rest = parse(chunk)
+    if (rest) stdout.write(rest)
   })
 }
 

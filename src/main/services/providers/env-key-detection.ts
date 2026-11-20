@@ -104,6 +104,13 @@ function isPlausibleSecret(value: string): boolean {
 
 function stripQuotes(raw: string): string {
   const v = raw.trim()
+  const quote = v[0]
+  if (quote === '"' || quote === "'") {
+    // A quoted value ends at its closing quote; an inline comment or `;` after
+    // it is not part of the value (`FOO="bar" # note`).
+    const close = v.indexOf(quote, 1)
+    if (close !== -1 && /^(?:\s|;)/.test(v.slice(close + 1))) return v.slice(1, close)
+  }
   if (
     v.length >= 2 &&
     ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'")))
