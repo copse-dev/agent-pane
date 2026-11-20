@@ -224,6 +224,11 @@ describe('SSH destination validation', () => {
       host: withDestination('dev.example', 'first last'),
       target: 'first last@dev.example',
     },
+    {
+      name: 'a user@host host whose unused user field is option-shaped',
+      host: withDestination('ubuntu@dev.example', '-p22'),
+      target: 'ubuntu@dev.example',
+    },
   ]
   for (const { name, host: ok, target } of accepted) {
     it(`accepts ${name}`, () => {

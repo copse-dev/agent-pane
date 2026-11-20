@@ -4,8 +4,8 @@
  * so a host or user of that shape would change how ssh runs rather than where
  * it connects. Whitespace and control characters never belong in a host name.
  *
- * Shared by the transport (which refuses at connect), the settings schema and
- * the host forms (which refuse at entry).
+ * Shared by the transport (which refuses at connect) and by the host form and
+ * ssh config import (which refuse at entry).
  */
 
 // ASCII C0 controls and DEL.

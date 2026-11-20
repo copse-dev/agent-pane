@@ -53,10 +53,13 @@ function keepaliveArgs(): string[] {
  * stopped at connect.
  */
 function resolveTarget(host: SshWorkspaceHost): string {
-  const problem = sshDestinationProblem(host.host, host.user)
-  if (problem) throw new Error(`Cannot use SSH host “${host.id}”: ${problem.message}`)
   const hostname = host.host.trim()
-  if (host.user && !hostname.includes('@')) return `${host.user}@${hostname}`
+  // A host that carries its own `user@` is used as it is, so the separate user
+  // field never reaches the command line and is not checked.
+  const user = hostname.includes('@') ? undefined : host.user
+  const problem = sshDestinationProblem(host.host, user)
+  if (problem) throw new Error(`Cannot use SSH host “${host.id}”: ${problem.message}`)
+  if (user) return `${user}@${hostname}`
   return hostname
 }
 
