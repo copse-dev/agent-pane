@@ -6,7 +6,9 @@ import { $, browser, expect } from '@wdio/globals'
 import { prepareMockTurn, expectAssistantReply } from './helpers/mock-scenario.ts'
 import { submitComposer } from './helpers/composer.ts'
 import { e2eWorkspaceDir, resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { saveAppScreenshot, saveAppViewportScreenshot } from './helpers/screenshot.ts'
+import { frameInTranscript } from './helpers/sticky-prompt.ts'
+import { waitForTranscriptScrollSettled } from './helpers/scroll-to-bottom.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import type { MockResponse } from '../../packages/llm/src/mock-script.ts'
@@ -30,7 +32,30 @@ document.querySelector('form').addEventListener('submit',event=>{event.preventDe
 document.querySelector('#reload').addEventListener('click',()=>location.reload());
 </script></body></html>`
 
+// Only the uncertainty case has an own-input mutation. The visible probe is
+// read by the genuine agent browser snapshot, not by a separate preview guest.
+const UNCONFIRMED_PAGE = PAGE.replace(
+  '<textarea id="notes">Keep the user note</textarea>',
+  '<input id="notes" value="Keep the user note">',
+)
+  .replace('<p id="status">', '<p id="probe"></p><p id="status">')
+  .replace(
+    'let inputs=0,changes=0;',
+    `let inputs=0,changes=0,priorityEvents=0;
+const updateProbe=()=>{document.querySelector('#probe').textContent='Title: '+title.value+'; Notes type: '+notes.type+'; Notes value: '+notes.value+'; Priority: '+priority.value+'; Priority events: '+priorityEvents+'; Saved: '+(localStorage.getItem('release')?'yes':'no')+'; Input events: '+inputs+'; change events: '+changes;};
+notes.addEventListener('input',()=>{const value=notes.value;notes.type='checkbox';notes.value=value;updateProbe();});
+for(const event of ['input','change'])priority.addEventListener(event,()=>{priorityEvents++;updateProbe();});
+updateProbe();`,
+  )
+  .replace('inputs++;', 'inputs++;updateProbe();')
+  .replace('changes++;', 'changes++;updateProbe();')
+
+interface PreviewWebview extends HTMLElement {
+  executeJavaScript(code: string): Promise<unknown>
+}
+
 let root = ''
+let projectId = ''
 let caseNumber = 0
 const fields = [
   { ref: 'e1', text: 'Ready for release' },
@@ -39,18 +64,24 @@ const fields = [
 ]
 
 describe('native browser form entry', () => {
-  beforeEach(async () => {
+  beforeEach(async function () {
     root = mkdtempSync(join(tmpdir(), 'copse-form-entry-'))
     // The old single-field path picks the first matching ref. Leave the
     // invisible draft unnumbered in its legacy control; grouped entry must
     // also handle stale snapshot refs retained by a hidden dialog.
     writeFileSync(
       join(root, 'index.html'),
-      caseNumber === 0 ? PAGE.replace(' data-copse-ref="e1"', '') : PAGE,
+      this.currentTest?.title === 'keeps the existing three-call form workflow working'
+        ? PAGE.replace(' data-copse-ref="e1"', '')
+        : this.currentTest?.title ===
+            'shows an uncertain current field and leaves later fields untouched after its handler changes type'
+          ? UNCONFIRMED_PAGE
+          : PAGE,
     )
     resetUserData()
     removeE2eTree(e2eWorkspaceDir())
-    seedEmptyProject(root, `browser-form-entry-${String(++caseNumber)}`, {
+    projectId = `browser-form-entry-${String(++caseNumber)}`
+    seedEmptyProject(root, projectId, {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
       windowBounds: { width: 1440, height: 1000 },
@@ -163,5 +194,146 @@ describe('native browser form entry', () => {
 
   it('fills the same form in one call, preserves a hidden draft and saves only on explicit click', async () => {
     await enterAndSave(true)
+  })
+
+  it('shows an uncertain current field and leaves later fields untouched after its handler changes type', async () => {
+    const reply =
+      'Form entry stopped at Notes. Title is confirmed; inspect the form before retrying without replaying it.'
+    const state =
+      'Title: Ready for release; Notes type: checkbox; Notes value: Keep the user note; checks passed; Priority: low; Priority events: 0; Saved: no; Input events: 2; change events: 1'
+    const scenario = await prepareMockTurn(
+      'Enter the release draft fields together. If the page changes a field, stop and inspect without submitting or replaying input.',
+      [
+        { toolCalls: [{ name: 'browser_preview', args: {} }] },
+        { toolCalls: [{ name: 'browser_snapshot', args: {} }] },
+        { toolCalls: [{ name: 'browser_type', args: { fields } }] },
+        {
+          toolCalls: [{ name: 'browser_snapshot', args: {} }],
+          expectToolResults: [{ name: 'browser_type', includes: 'e2 may already have changed' }],
+        },
+        {
+          toolCalls: [{ name: 'browser_screenshot', args: {} }],
+          expectToolResults: [{ name: 'browser_snapshot', includes: state }],
+        },
+        {
+          text: reply,
+          expectToolResults: [
+            { name: 'browser_screenshot', includes: 'The screenshot is attached' },
+          ],
+        },
+      ],
+    )
+    await submitComposer()
+    await expectAssistantReply(reply)
+    await waitForAgentIdle(15_000)
+    await scenario.assertComplete()
+    const calls = await browser.execute(async (project) => {
+      const thread = document.querySelector<HTMLElement>('.chat-row.selected')?.dataset['threadId']
+      if (!thread) throw new Error('No selected form thread')
+      const messages = await window.api.threads.loadMessages(project, thread)
+      return messages.flatMap((message) =>
+        message.toolCalls.map(({ id, name, status, result }) => ({ id, name, status, result })),
+      )
+    }, projectId)
+    assert.deepEqual(
+      calls.map((call) => call.name),
+      [
+        'browser_preview',
+        'browser_snapshot',
+        'browser_type',
+        'browser_snapshot',
+        'browser_screenshot',
+      ],
+    )
+    const typed = calls.find((call) => call.name === 'browser_type')
+    assert.ok(typed)
+    assert.equal(typed.status, 'error')
+    assert.match(typed.result ?? '', /stopped after 1 confirmed fields of 3.*Entered: e1/)
+    assert.match(typed.result ?? '', /e2 may already have changed.*do not replay confirmed input/)
+    assert.ok(
+      calls.filter((call) => call.name !== 'browser_type').every((call) => call.status === 'done'),
+    )
+    assert.ok(
+      calls
+        .filter((call) => call.name === 'browser_snapshot')
+        .at(-1)
+        ?.result?.includes(state),
+    )
+    const card = `.tool-card[data-tool-id="${typed.id}"]`
+    await $(card).waitForDisplayed({ timeout: 15_000 })
+    await expect($(`${card} .tool-status-icon`)).toHaveAttribute('aria-label', 'error')
+    if (!(await $(card).getProperty('open'))) await $(`${card} > summary`).click()
+    await expect($(`${card} .tool-result`)).toHaveText(
+      expect.stringContaining('e2 may already have changed'),
+    )
+    await expect($('#approval-dialog[open]')).not.toExist()
+    const imageSelector = '.tool-result-preview-image.image-expandable'
+    const image = $(imageSelector)
+    await image.waitForDisplayed({ timeout: 15_000 })
+    const capturedPage = await image.getAttribute('src')
+    assert.ok(capturedPage)
+    assert.ok(capturedPage.startsWith('data:image/png;base64,'))
+    mkdirSync(join(process.cwd(), '.tmp'), { recursive: true })
+    writeFileSync(
+      join(process.cwd(), '.tmp/browser-form-unconfirmed-captured-page.png'),
+      Buffer.from(capturedPage.slice('data:image/png;base64,'.length), 'base64'),
+    )
+    const address = $('.browser-tab-panel.is-active .browser-url-input')
+    const actualAddress = await address.getValue()
+    assert.match(actualAddress, /^http:\/\/localhost:\d+\/$/)
+    try {
+      await saveAppViewportScreenshot('browser-form-entry-unconfirmed.png', async () => {
+        const framed = await frameInTranscript([card, imageSelector])
+        assert.ok(framed.fits, JSON.stringify(framed))
+        await expect($(`${card} .tool-result`)).toBeDisplayed()
+        await browser.waitUntil(
+          () =>
+            browser.execute(() => {
+              const img = document.querySelector<HTMLImageElement>(
+                '.tool-result-preview-image.image-expandable',
+              )
+              return Boolean(img?.complete && img.naturalWidth > 0)
+            }),
+          {
+            timeout: 15_000,
+            timeoutMsg: 'actual agent screenshot preview must decode before capture',
+          },
+        )
+        // This separate guest check establishes capture geometry only. All
+        // agent-edit assertions above come from actual tool responses.
+        await browser.waitUntil(
+          () =>
+            browser.execute(async () => {
+              const guest = document.querySelector<PreviewWebview>(
+                '.browser-tab-panel.is-active webview',
+              )
+              if (!guest) return false
+              const width = await guest.executeJavaScript(
+                'new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(window.innerWidth))))',
+              )
+              return (
+                typeof width === 'number' &&
+                Math.abs(width - guest.getBoundingClientRect().width) <= 1
+              )
+            }),
+          { timeout: 10_000, timeoutMsg: 'visible preview viewport must match its framed bounds' },
+        )
+        await browser.execute(() => {
+          const input = document.querySelector<HTMLInputElement>(
+            '.browser-tab-panel.is-active .browser-url-input',
+          )
+          if (!input) throw new Error('Preview address is missing')
+          input.value = 'http://localhost:4321/'
+        })
+        await waitForTranscriptScrollSettled()
+      })
+    } finally {
+      await browser.execute((value) => {
+        const input = document.querySelector<HTMLInputElement>(
+          '.browser-tab-panel.is-active .browser-url-input',
+        )
+        if (input) input.value = value
+      }, actualAddress)
+    }
   })
 })

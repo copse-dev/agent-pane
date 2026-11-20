@@ -1073,6 +1073,10 @@
       "sha256": "7c497d79c0790430d24a6b2ab9dfe9d5e9e350e046ddcfd4f454006fe501322d",
       "bytes": 271912
     },
+    "browser-form-entry-unconfirmed.png": {
+      "sha256": "fdb6c153ed55ace786065f30e84b013f860b40fce31aece7c2c39aed41faab5e",
+      "bytes": 1161193
+    },
     "browser-form-fields-entered.png": {
       "sha256": "9089e83916d2c0c5546be9f0ee948960da29439af2d1265a7756765fcfb5efb3",
       "bytes": 223705
@@ -3458,8 +3462,8 @@
       "bytes": 133650
     },
     "pr-panel-settings-gh-cli.png": {
-      "sha256": "964526f1a8a857dc7a0e2e4f5f70f19f96c6820bf5b54954a3684dd486eeac09",
-      "bytes": 259882
+      "sha256": "c96042fc9aa89b1dfedb7e23622e405dd56aafc2cbbc775d2e47d22817abd78e",
+      "bytes": 275848
     },
     "pr-panel-status-icons.png": {
       "sha256": "007d7cce0630d4e10a3d7c1662987ba76b98e28704dac64f4778b77892f7f47b",
@@ -4590,8 +4594,8 @@
       "bytes": 240764
     },
     "settings-git-thread-links.png": {
-      "sha256": "964526f1a8a857dc7a0e2e4f5f70f19f96c6820bf5b54954a3684dd486eeac09",
-      "bytes": 259882
+      "sha256": "c96042fc9aa89b1dfedb7e23622e405dd56aafc2cbbc775d2e47d22817abd78e",
+      "bytes": 275848
     },
     "settings-gui-app-permission.png": {
       "sha256": "b3380118ea20c10e89d5dc77b313d7a4c58f68f1c0ec0486b758ae76527a44d3",
@@ -6468,6 +6472,10 @@
     "worktree-preparation-tools.png": {
       "sha256": "b74f6180f926480ed731466344e8dee9415493c5a5de0fcf4da37e479d4f13f8",
       "bytes": 436743
+    },
+    "worktree-preparation-uv-requirements.png": {
+      "sha256": "c283341ab9fe44fd6770231ccbfda9da107a214c9813b484426fbeb770edf6d3",
+      "bytes": 85277
     }
   }
 }
