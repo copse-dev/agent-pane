@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
@@ -172,7 +173,7 @@ export function prepareExplainer(input: unknown): PreparedExplainer {
   const beats = story.scenes ?? story.beats ?? []
   const weights = beats.map((beat) => Math.max(4, beat.caption.split(/\s+/).length / 2.5 + 1))
   const sum = weights.reduce((a, b) => a + b, 0)
-  const duration = Math.min(60, Math.max(story.duration, Math.ceil(sum)))
+  const duration = clamp(Math.ceil(sum), story.duration, 60)
   return {
     ...story,
     beats,

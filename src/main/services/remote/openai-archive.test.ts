@@ -157,6 +157,35 @@ it('captures only an allowlisted manual GitHub redirect and never forwards autho
   }
 })
 
+it('authenticates the archive request to api.github.com with a github.com token whatever GH_HOST says', async () => {
+  const keys = ['GH_HOST', 'GH_TOKEN', 'GH_ENTERPRISE_TOKEN'] as const
+  const previous = keys.map((key) => [key, process.env[key]] as const)
+  process.env['GH_HOST'] = 'ghe.example.com'
+  process.env['GH_TOKEN'] = 'dotcom-test-token'
+  process.env['GH_ENTERPRISE_TOKEN'] = 'enterprise-test-token'
+  try {
+    await githubArchiveUrl(
+      'example/project',
+      'a'.repeat(40),
+      AbortSignal.timeout(1000),
+      (_, init) => {
+        assert.equal(new Headers(init?.headers).get('authorization'), 'Bearer dotcom-test-token')
+        return Promise.resolve(
+          new Response(null, {
+            status: 302,
+            headers: { location: 'https://codeload.github.com/example/project/legacy.tar.gz/abc' },
+          }),
+        )
+      },
+    )
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) Reflect.deleteProperty(process.env, key)
+      else process.env[key] = value
+    }
+  }
+})
+
 it('fails closed for expired URLs and archive tree mismatches, without leaving the URL file', async () => {
   const root = mkdtempSync(join(tmpdir(), 'archive-errors-'))
   try {
