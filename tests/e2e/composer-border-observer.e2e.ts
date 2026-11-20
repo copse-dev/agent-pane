@@ -42,6 +42,58 @@ async function expectSynchronized(): Promise<void> {
   )
 }
 
+async function transcriptPose(): Promise<{
+  top: number
+  maximum: number
+  height: number
+  resultTop: number
+}> {
+  return browser.execute(() => {
+    const list = document.querySelector<HTMLElement>('#pane-chat .messages-list')
+    const result = list?.querySelector<HTMLElement>('[data-message-id="msg-assistant-result"]')
+    if (!list || !result) throw new Error('Composer capture transcript missing')
+    return {
+      top: list.scrollTop,
+      maximum: list.scrollHeight - list.clientHeight,
+      height: list.clientHeight,
+      resultTop: result.getBoundingClientRect().top,
+    }
+  })
+}
+
+async function captureAtTranscriptEnd(filename: string): Promise<void> {
+  // The reserve assertions above exercise layout without scroll corrections.
+  // Capture a defined reading position after they pass: changing the reserve
+  // can otherwise leave two stable transcript positions in identical builds.
+  await browser.execute(() => {
+    const list = document.querySelector<HTMLElement>('#pane-chat .messages-list')
+    if (!list) throw new Error('Composer capture transcript missing')
+    list.scrollTo({ top: list.scrollHeight, behavior: 'instant' })
+  })
+  let previous = ''
+  let stable = 0
+  await browser.waitUntil(
+    async () => {
+      const pose = await transcriptPose()
+      const current = JSON.stringify(pose)
+      const atEnd = pose.maximum > 0 && Math.abs(pose.maximum - pose.top) <= 1
+      stable = atEnd && current === previous ? stable + 1 : 0
+      previous = current
+      return stable >= 2
+    },
+    {
+      timeout: 5_000,
+      interval: 50,
+      timeoutMsg: 'Composer capture transcript did not settle at its end',
+    },
+  )
+  const before = await transcriptPose()
+  assert.equal(JSON.stringify(before), previous, 'Transcript moved after settling')
+  await savePreparedAppScreenshot(filename)
+  assert.deepEqual(await transcriptPose(), before, 'Transcript moved during composer capture')
+  await expectSynchronized()
+}
+
 describe('composer border-box reservation', () => {
   before(async () => {
     resetUserData()
@@ -75,7 +127,7 @@ describe('composer border-box reservation', () => {
         assert.equal(bordered.actual, original.actual + 2)
         assert.equal(bordered.contentWidth, original.contentWidth)
         observations.push({ phase: 'bordered', ...bordered })
-        await savePreparedAppScreenshot('composer-observer-bordered.png')
+        await captureAtTranscriptEnd('composer-observer-bordered.png')
         await expectSynchronized()
 
         await browser.execute(() => {
@@ -87,7 +139,7 @@ describe('composer border-box reservation', () => {
         assert.equal(borderless.actual, original.actual)
         assert.equal(borderless.contentWidth, original.contentWidth)
         observations.push({ phase: 'borderless', ...borderless })
-        await savePreparedAppScreenshot('composer-observer-borderless.png')
+        await captureAtTranscriptEnd('composer-observer-borderless.png')
 
         await browser.execute(() => {
           const strip = document.createElement('div')
@@ -100,7 +152,7 @@ describe('composer border-box reservation', () => {
         const grown = await geometry()
         assert.equal(grown.actual, borderless.actual + 24)
         observations.push({ phase: 'content-grown', ...grown })
-        await savePreparedAppScreenshot('composer-observer-content-grown.png')
+        await captureAtTranscriptEnd('composer-observer-content-grown.png')
       } finally {
         await browser.execute(() => {
           document.getElementById('input-bar')?.style.removeProperty('border')
