@@ -59,7 +59,8 @@ export function absolutePathEntries(pathValue: string | undefined): string[] {
 }
 
 /**
- * The env a sandbox wrapper shell is spawned with.
+ * The env a sandbox wrapper shell is spawned with, and the env of each worker
+ * process that runs ASRT itself (port-binding, ACP session host, ACP probe).
  *
  * `PATH` keeps only its absolute entries ({@link absolutePathEntries}), so the
  * wrapper's own lookups (the first word of ASRT's command) never depend on the

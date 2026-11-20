@@ -1,6 +1,5 @@
 import { accessSync, constants, statSync } from 'node:fs'
 import { posix } from 'node:path'
-import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { absolutePathEntries } from './sandbox-argv.ts'
 
 /** Where Linux distributions install bubblewrap and socat; searched before `PATH`. */
@@ -40,12 +39,14 @@ export function resolveSandboxBinary(
 
 /**
  * ASRT's Linux helpers by absolute path, for every config Copse initializes
- * ASRT with. Unset, ASRT names a bare `bwrap` as the first word of each wrapped
- * command and a bare `socat` inside the namespace, both resolved through the
- * spawn's `PATH`. Resolved once per initialization. macOS has no such option:
- * its wrapper relies on the absolute-only `PATH` from `withSandboxShellPath`.
+ * ASRT with and for worktree preparation's direct Linux wrap. Unset, ASRT
+ * names a bare `bwrap` as the first word of each wrapped command and a bare
+ * `socat` inside the namespace, both resolved through the spawn's `PATH`.
+ * Resolved once per initialization. macOS has no such option: there the
+ * wrapper's lookup searches only the absolute `PATH` entries that
+ * `withSandboxShellPath` keeps.
  */
-export function linuxSandboxBinaryPaths(): Pick<SandboxRuntimeConfig, 'bwrapPath' | 'socatPath'> {
+export function linuxSandboxBinaryPaths(): { bwrapPath?: string; socatPath?: string } {
   if (process.platform !== 'linux') return {}
   return { bwrapPath: resolveSandboxBinary('bwrap'), socatPath: resolveSandboxBinary('socat') }
 }

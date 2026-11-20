@@ -1420,14 +1420,16 @@ it can write (`sandboxTmpDirFor`): the workspace scratch directory when the over
 ASRT's `/tmp/claude` for a read-only overlay, and the cell's own `tmp` for a review cell.
 
 The wrapper shell that starts each sandboxed process (native commands, PTYs, background tasks,
-review cells and ACP agents) gets a `PATH` with only its absolute entries, in order
-(`withSandboxShellPath` in `sandbox-argv.ts`), plus `/usr/bin` and `/bin` when missing. Empty and
-relative entries (`::`, `.`, `bin`) are dropped, so no lookup the wrapper makes depends on its
-working directory; the confined process inherits the same `PATH`. On Linux every ASRT config also
-names `bwrap` and `socat` by absolute path (`sandbox-binaries.ts`): the first executable copy in
-`/usr/bin`, `/bin`, then the absolute entries of Copse's own `PATH`. When none exists the sandbox
-does not start, as when bubblewrap is not installed. macOS ASRT has no option for the path of the
-`env` it starts with, so there the absolute-only `PATH` is what keeps that lookup fixed.
+review cells, worktree preparation and ACP agents) gets a `PATH` with only its absolute entries, in
+order (`withSandboxShellPath` in `sandbox-argv.ts`), plus `/usr/bin` and `/bin` when missing. Empty
+and relative entries (`::`, `.`, `bin`) are dropped, so no lookup the wrapper makes depends on its
+working directory; the confined process inherits the same `PATH`. The worker processes that run
+ASRT themselves (the port-binding, ACP session-host and ACP probe workers) start in the workspace
+and get the same `PATH`. On Linux every ASRT config, and worktree preparation's direct bubblewrap
+wrap, also names `bwrap` and `socat` by absolute path (`sandbox-binaries.ts`): the first executable
+copy in `/usr/bin`, `/bin`, then the absolute entries of Copse's own `PATH`. When none exists the
+sandbox does not start, as when bubblewrap is not installed. macOS ASRT has no option for the path
+of the `env` it starts with, so there that lookup searches the absolute `PATH` entries in order.
 
 On macOS the project seatbelt also allows writes to direct children of the per-user Darwin temp
 directory returned by `getconf DARWIN_USER_TEMP_DIR` (typically `/var/folders/…/T`). Apple
