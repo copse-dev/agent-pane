@@ -74,10 +74,12 @@ function send(
 describe('native parent steering through the real provider and IPC', function () {
   this.timeout(120_000)
   let root = ''
+  let baseUrl = ''
   let previousMockBranch: string | undefined
   let pending: ServerResponse | undefined
   let calls = 0
   let activeThreadId: string | undefined
+  let scenario: 'applied' | 'stop' | 'later' = 'applied'
   const failures: string[] = []
   const requests: z.infer<typeof requestSchema>[] = []
   const server = createServer((request, response) => {
@@ -103,7 +105,7 @@ describe('native parent steering through the real provider and IPC', function ()
       assert.equal(parsed.model, 'chat')
       requests.push(parsed)
       calls++
-      if (calls === 1 || calls === 3 || calls === 4) {
+      if (calls === 1) {
         pending = response
         send(
           response,
@@ -112,7 +114,7 @@ describe('native parent steering through the real provider and IPC', function ()
         )
         return
       }
-      assert.ok(calls === 2 || calls === 5, 'Steering must not dispatch another turn after Stop')
+      assert.equal(calls, 2, 'Steering must not dispatch another turn after Stop')
       assert.equal(parsed.messages.at(-1)?.role, 'user')
       assert.equal(parsed.messages.at(-1)?.content, NOTE)
       const noteId = receipts().find((receipt) => receipt.state === 'accepted')?.messageId
@@ -137,11 +139,11 @@ describe('native parent steering through the real provider and IPC', function ()
       )
       assert.equal(parsed.messages.filter((message) => message.role === 'tool').length, 2)
       assert.ok(!parsed.messages.some((message) => message.content === LATER_NOTE))
-      if (calls === 5) pending = response
+      if (scenario === 'later') pending = response
       send(
         response,
         { content: 'Both files were read. The existing public API stays unchanged.' },
-        calls === 5 ? null : 'stop',
+        scenario === 'later' ? null : 'stop',
       )
     })().catch((error: unknown) => {
       failures.push(error instanceof Error ? error.message : String(error))
@@ -170,7 +172,9 @@ describe('native parent steering through the real provider and IPC', function ()
     return parsed
   }
   function receipts(): z.infer<typeof userSteeringReceiptSchema>[] {
-    return readFileSync(join(directory(), 'user-steering.jsonl'), 'utf8')
+    const path = join(directory(), 'user-steering.jsonl')
+    if (!existsSync(path)) return []
+    return readFileSync(path, 'utf8')
       .trim()
       .split('\n')
       .map((line) => {
@@ -368,8 +372,7 @@ describe('native parent steering through the real provider and IPC', function ()
   before(async () => {
     previousMockBranch = process.env['COPSE_PANEL_MOCK_BRANCH']
     root = join(process.cwd(), '.tmp', 'native-steering-workspace')
-    seedStableWorkspace({ root, files: { 'first.txt': 'First read', 'second.txt': 'Second read' } })
-    const baseUrl = await new Promise<string>((resolve, reject) => {
+    baseUrl = await new Promise<string>((resolve, reject) => {
       server.once('error', reject)
       server.listen(0, '127.0.0.1', () => {
         const address = server.address()
@@ -377,6 +380,18 @@ describe('native parent steering through the real provider and IPC', function ()
         resolve(`http://127.0.0.1:${String(address.port)}/v1`)
       })
     })
+  })
+  beforeEach(async () => {
+    server.closeAllConnections()
+    pending = undefined
+    calls = 0
+    activeThreadId = undefined
+    scenario = 'applied'
+    failures.splice(0)
+    if (existsSync(root)) removeE2eTree(root)
+    const project = join(e2eWorkspaceDir(), PROJECT)
+    if (existsSync(project)) removeE2eTree(project)
+    seedStableWorkspace({ root, files: { 'first.txt': 'First read', 'second.txt': 'Second read' } })
     resetUserData()
     seedEmptyProject(root, PROJECT)
     // Like queued-message-delete: subsequent submissions must see the branch
@@ -410,7 +425,7 @@ describe('native parent steering through the real provider and IPC', function ()
       process.cwd(),
       '.tmp',
       'native-steering-evidence',
-      `after-${String(calls)}`,
+      `after-${scenario}-${String(calls)}`,
     )
     if (existsSync(project)) cpSync(project, evidence, { recursive: true })
   })
@@ -517,9 +532,10 @@ describe('native parent steering through the real provider and IPC', function ()
   })
 
   it('leaves an unaccepted note held when Stop closes protected review', async () => {
+    scenario = 'stop'
     await setComposerValue('Read both files again before suggesting a follow-up.')
     await submitComposer()
-    await browser.waitUntil(() => calls === 3, { timeout: 20_000 })
+    await browser.waitUntil(() => calls === 1, { timeout: 20_000 })
     await setComposerValue(STOP_NOTE)
     await submitComposer()
     const main = await browser.getWindowHandle()
@@ -542,34 +558,27 @@ describe('native parent steering through the real provider and IPC', function ()
     await expect($('.conversation-queued .queued-release')).toBeDisplayed()
     assert.deepEqual(
       receipts().map((receipt) => receipt.state),
-      ['accepted', 'applied'],
+      [],
     )
     assert.equal(meta().pendingMessages?.[0]?.autoDispatch, false)
-    assert.equal(calls, 3)
+    assert.equal(calls, 1)
     await browser.reloadSession()
     await expect($('.conversation-queued .message-text')).toHaveText(STOP_NOTE)
     await expect($('.conversation-queued .queued-release')).toBeDisplayed()
-    assert.equal(calls, 3)
+    assert.equal(calls, 1)
     assert.deepEqual(failures, [])
     await parkPointer()
     await saveAppScreenshot('native-steering-stopped.png')
   })
 
   it('places an applied note at its boundary while a later follow-up stays queued', async () => {
-    const previousId = await $('.chat-row.selected').getAttribute('data-thread-id')
-    await $('.project-new-thread-btn').click()
-    await browser.waitUntil(
-      async () => {
-        const id = await $('.chat-row.selected').getAttribute('data-thread-id')
-        if (!id || id === previousId) return false
-        activeThreadId = id
-        return true
-      },
-      { timeout: 10_000 },
-    )
+    scenario = 'later'
+    const threadId = await $('.chat-row.selected').getAttribute('data-thread-id')
+    assert.ok(threadId)
+    activeThreadId = threadId
     await setComposerValue('Read first.txt and second.txt, then report API compatibility.')
     await submitComposer()
-    await browser.waitUntil(() => calls === 4, { timeout: 20_000 })
+    await browser.waitUntil(() => calls === 1, { timeout: 20_000 })
     await expect($('.chat-row.selected .chat-title')).toHaveText('Review API compatibility')
     await queueNote(NOTE_SOURCE, NOTE)
     await setComposerValue(LATER_NOTE)
@@ -590,7 +599,7 @@ describe('native parent steering through the real provider and IPC', function ()
       'tool_calls',
     )
     pending = undefined
-    await browser.waitUntil(() => calls === 5, { timeout: 20_000 })
+    await browser.waitUntil(() => calls === 2, { timeout: 20_000 })
     await expect($('.messages-list')).toHaveText(expect.stringContaining(NOTE))
     await expect($('.messages-list')).toHaveText(expect.stringContaining('Both files were read.'))
     await expect($('.messages-list')).not.toHaveText(expect.stringContaining(LATER_NOTE))
@@ -614,13 +623,13 @@ describe('native parent steering through the real provider and IPC', function ()
       receipts().map((receipt) => receipt.state),
       ['accepted', 'applied', 'held'],
     )
-    assert.equal(calls, 5)
+    assert.equal(calls, 2)
     await browser.reloadSession()
     await expect($('.messages-list')).toHaveText(expect.stringContaining(NOTE))
     await expect($('.conversation-queued .message-text')).toHaveText(LATER_NOTE)
     await expect($('.conversation-queued .queued-release')).toBeDisplayed()
     assert.ok(!readFileSync(join(directory(), 'agent-history.json'), 'utf8').includes(LATER_NOTE))
-    assert.equal(calls, 5)
+    assert.equal(calls, 2)
     assert.deepEqual(failures, [])
   })
 })
