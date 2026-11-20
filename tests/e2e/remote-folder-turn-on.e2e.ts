@@ -64,6 +64,8 @@ describe('Open remote folder — turning SSH workspaces on where they are used',
   })
 
   it('turns them on in one click and carries on to choosing a host', async () => {
+    // Stands on its own: CI's burn-in also runs every test alone.
+    await $('.prompt-input').waitForExist({ timeout: 15_000 })
     const dialog = await openRemoteProject()
     await dialog.$('.ssh-consent-turn-on').click()
 

@@ -12,6 +12,18 @@ async function connectionStatus(): Promise<string | undefined> {
   return states.find((state) => state.hostId === HOST_ID)?.status
 }
 
+/**
+ * Wait for the restored SSH project to connect. Each test starts here, so it
+ * passes when run on its own (CI's burn-in runs every test in isolation).
+ */
+async function waitUntilConnected(): Promise<void> {
+  await $('.prompt-input').waitForExist({ timeout: 15_000 })
+  await browser.waitUntil(async () => (await connectionStatus()) === 'connected', {
+    timeout: 15_000,
+    timeoutMsg: 'the restored SSH project never connected',
+  })
+}
+
 describe('SSH connection status follows the link', () => {
   let host: FakeSshHost
 
@@ -30,11 +42,7 @@ describe('SSH connection status follows the link', () => {
   })
 
   it('shows no banner for a healthy, watched host', async () => {
-    await $('.prompt-input').waitForExist({ timeout: 15_000 })
-    await browser.waitUntil(async () => (await connectionStatus()) === 'connected', {
-      timeout: 15_000,
-      timeoutMsg: 'the restored SSH project never connected',
-    })
+    await waitUntilConnected()
     // Open files on the host are watched, so there is nothing to warn about:
     // the old unconditional "remote file watching is not yet supported" line is
     // gone. The banner shows while the project connects, so wait for it to leave.
@@ -42,6 +50,7 @@ describe('SSH connection status follows the link', () => {
   })
 
   it('says the connection was lost when the link drops, and reconnects on request', async () => {
+    await waitUntilConnected()
     host.takeDown()
     // A real action, not a test hook: a command that fails at the connection is
     // what tells the app to check the link without waiting for its timer.

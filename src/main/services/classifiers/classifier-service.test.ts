@@ -217,6 +217,11 @@ describe('configured classifiers', () => {
   it('rejects unrelated environment secrets and binds preset variables to their official endpoints', async () => {
     const invalidConnections = [
       {
+        apiKeyEnv: 'PERPLEXITY_API_KEY',
+        baseUrl: 'https://openrouter.ai/api/alpha',
+        protocol: 'decisions',
+      },
+      {
         apiKeyEnv: 'LIQUID_API_KEY',
         baseUrl: 'https://api.typesafe.ai/v1',
         protocol: 'systemone',
@@ -271,6 +276,8 @@ describe('configured classifiers', () => {
     await saveClassifierProfile(preset('typesafe'))
     await saveClassifierProfile(preset('featherless'))
     await saveClassifierProfile(preset('liquid'))
+    await saveClassifierProfile(preset('perplexity-decider-direct'))
+    await saveClassifierProfile(preset('perplexity-decider-flash'))
   })
 
   it('uses Liquid’s environment key at its endpoint, with a saved key taking precedence', async () => {

@@ -93,3 +93,4 @@ docs/plans/perf-data*/runs/*warmup*/
 /.screenshot-policy/
 
 /e2e-evidence/
+/e2e-burn-in/

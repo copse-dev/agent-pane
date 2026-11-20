@@ -58,7 +58,9 @@ describe('Open remote folder — where browsing starts', () => {
     resetUserData()
   })
 
-  it("opens a host with no projects in the account's home directory", async () => {
+  // One test, because the second visit depends on the project the first adds;
+  // CI's burn-in also runs every test on its own.
+  it("opens in the account's home, then beside the last project from that host", async () => {
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
     const dialog = await openRemoteFolderDialog()
 
@@ -84,13 +86,12 @@ describe('Open remote folder — where browsing starts', () => {
         ),
       { timeout: 15_000, timeoutMsg: 'the remote project never connected' },
     )
-  })
 
-  it('opens beside the last project from that host the next time', async () => {
-    const dialog = await openRemoteFolderDialog()
+    // The next time, the dialog opens beside that project.
+    const again = await openRemoteFolderDialog()
     assert.deepEqual(await listing('projects'), ['api', 'web'])
     await saveElementScreenshot('#remote-folder-dialog', 'remote-folder-browse-start-beside.png')
-    await dialog.$('.remote-folder-cancel').click()
-    await expect(dialog).not.toBeDisplayed()
+    await again.$('.remote-folder-cancel').click()
+    await expect(again).not.toBeDisplayed()
   })
 })
