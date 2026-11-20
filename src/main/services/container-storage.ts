@@ -197,6 +197,16 @@ export class ContainerStorage {
       )
     )
   }
+  /** Optional startup/daily upkeep must not require starting Apple's container service. */
+  async expireWorkerImages(cutoff: number): Promise<void> {
+    if (!this.dependencies.supported) return
+    try {
+      await this.dependencies.run(['system', 'status'])
+    } catch {
+      return
+    }
+    await this.clean('worker-images', cutoff)
+  }
   async clean(action: ContainerStorageAction, olderThan?: number): Promise<StorageCleanupResult> {
     if (!this.dependencies.supported) return { removed: 0, bytes: 0, skipped: 0 }
     try {

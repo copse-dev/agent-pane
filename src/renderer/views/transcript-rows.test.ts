@@ -24,6 +24,7 @@ import {
   relinkReadingAnchor,
   removeTranscriptRow,
   sameExceptTurnOutcome,
+  transcriptRowElement,
   type TranscriptRow,
   type TranscriptRowSignature,
   transcriptRowSignature,
@@ -583,6 +584,29 @@ describe('applyTranscriptRowPlan', () => {
     const next = removeTranscriptRow(list, 'a')
     assert.ok(next instanceof HTMLElement && next.dataset['messageId'] === 'b')
     assert.deepEqual(order(list), ['b'])
+  })
+
+  it('finds a row by key among the list children only, from either end', () => {
+    for (const count of [1, 2, 5, 6]) {
+      const list = document.createElement('div')
+      const keys = Array.from({ length: count }, (_, i) => `m${String(i)}`)
+      for (const key of keys) list.append(row(key), card('data-review-for', key))
+      for (const key of keys) {
+        assert.equal(
+          transcriptRowElement(list, key)?.dataset['messageId'],
+          key,
+          `${key} of ${String(count)}`,
+        )
+      }
+      assert.equal(transcriptRowElement(list, 'missing'), null)
+    }
+    // A descendant that carries a message id (a nested transcript) is not a row.
+    const list = document.createElement('div')
+    const host = row('a')
+    host.append(row('nested'))
+    list.append(host)
+    assert.equal(transcriptRowElement(list, 'nested'), null)
+    assert.equal(transcriptRowElement(document.createElement('div'), 'a'), null)
   })
 
   it('relinks a reading anchor to the rebuilt row with the same key', () => {

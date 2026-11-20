@@ -1,3 +1,4 @@
+import { collapseWhitespace } from '@copse/std/one-line-text.ts'
 import { el } from '../dom/helpers.ts'
 import { scrollIntoTranscriptView } from './transcript-scroll.ts'
 import { searchIcon, chevronUpIcon, chevronDownIcon, closeIcon } from '../dom/icons.ts'
@@ -44,7 +45,7 @@ export function findMatchOffsets(haystack: string, needle: string): number[] {
  * spacing, still matches the rendered text.
  */
 export function normalizeSearchText(text: string): string {
-  return text.replace(/\s+/g, ' ').trim()
+  return collapseWhitespace(text)
 }
 
 /** One transcript text node's contribution to the flattened search text. */
