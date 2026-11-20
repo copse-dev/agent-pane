@@ -26,6 +26,10 @@
   cursor: crosshair;
   overflow: visible;
 }
+/* One row, always: the strip sits on top of the page being annotated, so a
+   second row costs the thing the user came to mark. annotation-layer.ts measures
+   it against the host and picks what to show (the data-* attributes below);
+   nothing here wraps. */
 .annotation-toolstrip {
   position: absolute;
   top: var(--spacing-sm);
@@ -33,9 +37,10 @@
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  justify-content: center;
   gap: 2px;
+  /* An explicit width, because `left: 50%` leaves an auto-width absolute box
+     only the space to its right: it would shrink-wrap to half the host. */
+  width: max-content;
   max-width: calc(100% - 2 * var(--spacing-sm));
   padding: var(--spacing-xs);
   border: 1px solid var(--border);
@@ -66,6 +71,11 @@
   opacity: 0.4;
   cursor: default;
 }
+/* The button a menu hangs from stays lit while the menu is open. */
+.annotation-tool[aria-expanded='true'] {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
 .annotation-tool[aria-pressed='true'] {
   background: var(--bg-selected);
   color: var(--accent);
@@ -85,11 +95,62 @@
 .annotation-swatch[aria-pressed='true'] {
   border-color: var(--text-primary);
 }
+/* The current ink, as one button on the strip; its menu holds the swatches. */
+.annotation-ink-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--annotation-swatch);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.25);
+}
+/* Stands in for the four shape buttons when the strip is tight: the last shape
+   used, and a caret for the rest. */
+.annotation-shape-fold {
+  width: auto;
+  gap: 1px;
+  padding-inline: var(--spacing-sm) var(--spacing-xs);
+}
+.annotation-fold-caret {
+  width: 9px;
+  height: 9px;
+}
+.annotation-toolstrip[data-shapes='folded'] .annotation-shape,
+.annotation-toolstrip:not([data-shapes='folded']) .annotation-shape-fold,
+.annotation-toolstrip[data-spacing='tight'] .annotation-sep {
+  display: none;
+}
+/* The last step, for a side pane beside two others: no separators, and
+   buttons at the 24px target minimum. */
+.annotation-toolstrip[data-spacing='tight'] .annotation-tool {
+  width: 24px;
+}
+.annotation-toolstrip[data-spacing='tight'] .annotation-shape-fold {
+  width: auto;
+  padding-inline: var(--spacing-xs) 2px;
+}
 .annotation-sep {
+  /* Never the item that gives way: the strip's overflow is what gets measured. */
+  flex: none;
   width: 1px;
   height: 18px;
   margin: 0 var(--spacing-xs);
   background: var(--border);
+}
+/* The ink and shape menus: a second, shorter strip hung under the first. */
+.annotation-popover {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  /* The strip's own height, so a row of swatches gets the same band as tools. */
+  min-height: calc(28px + 2 * var(--spacing-xs) + 2px);
+  margin-top: var(--spacing-xs);
+  padding: var(--spacing-xs);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+  -webkit-app-region: no-drag;
 }
 .annotation-send {
   min-height: 28px;
