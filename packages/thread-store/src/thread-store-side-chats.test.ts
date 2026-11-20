@@ -120,6 +120,28 @@ describe('side-chat metadata and recorded links in the thread store', () => {
     )
   })
 
+  it('never lists a thread as a backlink to itself', async () => {
+    const a = '11111111-1111-4111-8111-111111111111'
+    const b = '22222222-2222-4222-8222-222222222222'
+    const legacy = '33333333-3333-4333-8333-333333333333'
+    await saveProjectThread('p', thread(a))
+    await saveProjectThread('p', thread(b))
+    // A self-mention recorded before appends dropped it must not surface either.
+    await saveProjectThread('p', thread(legacy, { links: [{ kind: 'thread', target: legacy }] }))
+    await appendMessage(
+      'p',
+      a,
+      message('a1', `This is copse://thread/${a}; compare copse://thread/${b}`),
+    )
+    assert.deepEqual((await getThreadMeta('p', a))?.links, [{ kind: 'thread', target: b }])
+    assert.deepEqual(
+      (await lookupThreadBacklinks('p', 'thread', b)).map((row) => row.threadId),
+      [a],
+    )
+    assert.deepEqual(await lookupThreadBacklinks('p', 'thread', a), [])
+    assert.deepEqual(await lookupThreadBacklinks('p', 'thread', legacy), [])
+  })
+
   it('a rebuild with a repeated thread id keeps only the last copy of its link rows', async () => {
     mkdirSync(join(root, 'p'), { recursive: true })
     const index = new SqliteThreadIndex(join(root, 'p', THREAD_INDEX_FILE))

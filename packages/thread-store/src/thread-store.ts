@@ -154,10 +154,18 @@ const REASONING_CHECKPOINTS_FILE = 'reasoning-checkpoints.jsonl'
 const CONTENT_DIRS = ['messages', 'blobs', 'subagents']
 /**
  * Subdirectories of `blobs/` written outside the spine: user-attached media
- * ({@link threadMediaDir}) and extracted archives ({@link threadArchivesDir}).
+ * ({@link threadMediaDir}), extracted archives ({@link threadArchivesDir}) and
+ * the hosted OpenAI agent's transfer and artifact files.
  * Their files are never spine refs, so {@link pruneStaleFiles} leaves them alone.
  */
-const UNREFERENCED_BLOB_PREFIXES = ['blobs/media/', 'blobs/archives/']
+const UNREFERENCED_BLOB_PREFIXES = [
+  'blobs/media/',
+  'blobs/archives/',
+  // Hosted OpenAI agent sidecars: the Git transfer checkpoint a pending import
+  // resumes from, and downloaded artifacts that message links point at.
+  'blobs/openai-git/',
+  'blobs/openai-artifacts/',
+]
 /** Directories a spine ref may point into (plan artifacts are refs but never pruned). */
 const REF_DIRS = [...CONTENT_DIRS, 'plans']
 
@@ -892,7 +900,10 @@ async function mergePrRefsIntoMeta(
       projectId,
       threadId,
       extractGithubPrUrls(message.content),
-      extractThreadLinks(message.content),
+      // A thread never links to itself (see `collectThreadLinks`).
+      extractThreadLinks(message.content).filter(
+        (link) => !(link.kind === 'thread' && link.target === threadId),
+      ),
     )
   } catch {
     // Diagnostic metadata; never worth failing the write it rides along with.
@@ -1626,13 +1637,15 @@ export function lookupThreadBacklinks(
   kind: ThreadLink['kind'],
   target: string,
 ): Promise<ThreadBacklink[]> {
-  return runSerialized(queueKey(projectId), () =>
-    withThreadIndex(
+  return runSerialized(queueKey(projectId), async () => {
+    const rows = await withThreadIndex(
       projectId,
       (index) => index.backlinks(kind, target),
       async () => backlinksFor(await readProjectThreadMetas(projectId), kind, target),
-    ),
-  )
+    )
+    // A self-mention recorded before appends filtered it is not a backlink.
+    return kind === 'thread' ? rows.filter((row) => row.threadId !== target) : rows
+  })
 }
 
 /** Direct source reader for diagnostics/rebuilds; deliberately bypasses the projection. */
@@ -2662,7 +2675,13 @@ function recoverPendingHistoryEdit(projectId: string, threadId: string, force = 
   if (rollback === null || rollback.thread.id !== threadId) {
     throw new Error(`Thread history recovery data for "${threadId}" is invalid`)
   }
-  writeThread(projectId, rollback.thread)
+  try {
+    writeThread(projectId, rollback.thread)
+  } finally {
+    // Reads reach this outside `runStoreWrite`, so drop the snapshots here: they
+    // describe the abandoned replacement, not the metadata just restored.
+    invalidateProjectMetaCache(projectId)
+  }
   upsertCatalogEntry(projectId, rollback.thread)
   if (rollback.hadAgentHistory) {
     writeAgentHistorySnapshot(projectId, threadId, rollback.agentHistory)
