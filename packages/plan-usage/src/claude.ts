@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 import {
   clampPercent,
   CLAUDE_PROFILE_SCOPE_HINT,
@@ -103,7 +104,7 @@ function parseSeverity(raw: unknown): string | null {
 }
 
 function formatMoneyMinor(amountMinor: number, currency: string, exponent: number): string {
-  const scale = 10 ** Math.max(0, Math.min(6, exponent))
+  const scale = 10 ** clamp(exponent, 0, 6)
   const major = amountMinor / scale
   const formatted = Number.isInteger(major) ? String(major) : major.toFixed(exponent)
   if (currency === 'USD') return `$${formatted}`

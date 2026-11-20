@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 /**
  * The contract between the main process and the offscreen decoder window.
  *
@@ -81,11 +82,15 @@ export const MAX_SAMPLES_PER_CALL = 600
  * request and otherwise aiming at {@link DEFAULT_TARGET_SAMPLES}.
  */
 export function resolveSampleInterval(spanSeconds: number, requested?: number | null): number {
-  const clamp = (v: number): number =>
-    Math.min(MAX_SAMPLE_INTERVAL_SECONDS, Math.max(MIN_SAMPLE_INTERVAL_SECONDS, v))
-  if (requested !== undefined && requested !== null && requested > 0) return clamp(requested)
+  if (requested !== undefined && requested !== null && requested > 0) {
+    return clamp(requested, MIN_SAMPLE_INTERVAL_SECONDS, MAX_SAMPLE_INTERVAL_SECONDS)
+  }
   if (!(spanSeconds > 0)) return MIN_SAMPLE_INTERVAL_SECONDS
-  return clamp(spanSeconds / Math.max(1, DEFAULT_TARGET_SAMPLES - 1))
+  return clamp(
+    spanSeconds / Math.max(1, DEFAULT_TARGET_SAMPLES - 1),
+    MIN_SAMPLE_INTERVAL_SECONDS,
+    MAX_SAMPLE_INTERVAL_SECONDS,
+  )
 }
 
 /**

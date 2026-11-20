@@ -23,6 +23,7 @@ import {
   copseWorkspaceTmpDir,
 } from '../services/storage/copse-paths.ts'
 import { sanctionedAgentScratchEntries } from './agent-scratch-roots.ts'
+import { linuxSandboxBinaryPaths } from './sandbox-binaries.ts'
 import { canonicalizePathCached } from './canonical-path-cache.ts'
 import { DANGEROUS_CONFIG_DIR_NAMES, DANGEROUS_CONFIG_FILENAMES } from './mandatory-write-deny.ts'
 import {
@@ -537,7 +538,11 @@ export function containedSandboxNetworkConfig(): NonNullable<SandboxRuntimeConfi
   }
 }
 
-/** Base ASRT config; workspace-specific paths are passed per spawn via `customConfig`. */
+/**
+ * Base ASRT config; workspace-specific paths are passed per spawn via
+ * `customConfig`. On Linux it names bubblewrap and socat by absolute path
+ * ({@link linuxSandboxBinaryPaths}).
+ */
 export function baseSandboxConfig(): SandboxRuntimeConfig {
   return {
     network: containedSandboxNetworkConfig(),
@@ -547,6 +552,7 @@ export function baseSandboxConfig(): SandboxRuntimeConfig {
       denyWrite: [],
       allowGitConfig: true,
     },
+    ...linuxSandboxBinaryPaths(),
   }
 }
 

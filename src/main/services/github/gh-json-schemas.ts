@@ -11,23 +11,11 @@
  * single module stay next to their call site.
  */
 import { z } from 'zod'
+import { nullAsUndefined, optionalNumber, optionalString } from '@shared/zod-null-optional.ts'
 
-/**
- * `gh` emits `null` for absent fields rather than omitting them, so every
- * optional scalar folds `null` into `undefined` before validating.
- */
-export const optionalString = z.preprocess(
-  (value) => (value === null ? undefined : value),
-  z.string().optional(),
-)
-export const optionalNumber = z.preprocess(
-  (value) => (value === null ? undefined : value),
-  z.number().optional(),
-)
-export const optionalAuthorSchema = z.preprocess(
-  (value) => (value === null ? undefined : value),
-  z.object({ login: optionalString }).optional(),
-)
+// `gh` emits `null` for absent fields rather than omitting them, so every
+// optional field folds `null` into `undefined` before validating.
+export const optionalAuthorSchema = nullAsUndefined(z.object({ login: optionalString }).optional())
 
 /**
  * The union of every `gh pr view` / `gh pr list` field the app reads. Consumers
