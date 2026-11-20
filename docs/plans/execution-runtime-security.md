@@ -306,7 +306,8 @@ observable from a test or a recorded thread spine. Unchecked items are open.
 - [x] **R1-6 Principal on every decision.** Every decision recorded inside a turn carries
       `principalId` and `principalKind`, so every approval and grant is bound to one
       principal. Lines written before this change still parse.
-- [x] **R1-7 Process and runtime audit.** Every in-turn process an adapter starts appends a
+- [x] **R1-7 Process and runtime audit.** Every in-turn agent command an adapter starts
+      (shell, background, hook) appends a
       `process-run` start line and a `process-exit` line (exit code or signal) to the thread
       spine. Both carry the runtime and principal, and neither includes arguments. The
       first use of a runtime profile in a thread appends a `runtime-state` line with its

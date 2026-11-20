@@ -60,17 +60,29 @@ function sshRemoteWorkingDirectory(
   return cwd || target.remoteRoot
 }
 
-const localRuntime = withExecutionAudit(createLocalExecutionRuntime())
+const localRuntime = createLocalExecutionRuntime()
+const auditedLocalRuntime = withExecutionAudit(localRuntime)
 
 /**
  * The runtime that executes for a resolved target (R1 of
- * `docs/plans/execution-runtime-security.md`). Every adapter is wrapped in the
- * execution audit, so in-turn processes record their runtime and principal.
+ * `docs/plans/execution-runtime-security.md`).
+ *
+ * Agent commands (`run_shell`, `run_background`, hook commands) are audited:
+ * each records its runtime and principal on the thread spine. Copse's own
+ * fixed-argv subprocesses (`spawnInProjectSandbox`: git reads, the sandbox-fs
+ * worker, probes) are not. They are not the agent's actions, and a probe that
+ * runs in an async context inherited from a finished turn would otherwise
+ * append to that idle thread's spine.
  */
-function runtimeFor(target: ExecutionTarget): ExecutionRuntime {
-  return isSshExecutionTarget(target)
-    ? withExecutionAudit(createSshExecutionRuntime(target))
-    : localRuntime
+function runtimeFor(
+  target: ExecutionTarget,
+  audit: 'agent-command' | 'internal',
+): ExecutionRuntime {
+  if (isSshExecutionTarget(target)) {
+    const runtime = createSshExecutionRuntime(target)
+    return audit === 'agent-command' ? withExecutionAudit(runtime) : runtime
+  }
+  return audit === 'agent-command' ? auditedLocalRuntime : localRuntime
 }
 
 /**
@@ -143,7 +155,7 @@ export async function spawnInProjectSandbox(
       'This command requires an active local project sandbox. Request authorization again.',
     )
   }
-  const execution = await runtimeFor(target).exec({
+  const execution = await runtimeFor(target, 'internal').exec({
     command: { kind: 'argv', executable, args },
     cwd: opts.cwd,
     stdio: opts.stdio,
@@ -189,7 +201,7 @@ export async function spawnShellInProjectSandbox(
     throw new Error('A read-only checkout cannot run commands outside the project sandbox')
   }
   const readGrantTargets = opts.readGrantTargets ?? []
-  const execution = await runtimeFor(target).exec({
+  const execution = await runtimeFor(target, 'agent-command').exec({
     command: { kind: 'shell', commandLine: shellCommandLine },
     cwd: opts.cwd,
     stdio: opts.stdio,
@@ -245,7 +257,7 @@ export async function spawnBackgroundProcess(
   },
 ): Promise<ChildProcess> {
   const target = resolveSpawnTarget(opts.executionTarget, opts.cwd)
-  const execution = await runtimeFor(target).exec({
+  const execution = await runtimeFor(target, 'agent-command').exec({
     command: { kind: 'shell', commandLine: shellCommandLine },
     cwd: opts.cwd,
     stdio: 'pipe',
