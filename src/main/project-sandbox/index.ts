@@ -36,7 +36,8 @@ export {
  * (a sandboxed Node worker). `fs.watch` still uses main-process watchers; content
  * reloads go through the same gateway.
  *
- * Linux needs `bubblewrap` on PATH *and* usable unprivileged user namespaces.
+ * Linux needs `bubblewrap` (found by absolute path, see `sandbox-binaries.ts`)
+ * *and* usable unprivileged user namespaces.
  * Where either is missing (a locked-down container, say) `initialize` throws and
  * we degrade to unsandboxed exactly as before — with one consequence worth
  * knowing: executable plugin behavior fails closed without a sandbox, so plugins
