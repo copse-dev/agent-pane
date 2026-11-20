@@ -1,0 +1,1632 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Annotation tool strip: one row, ink on demand</title>
+    <style>
+      /* Prototype for src/renderer/drawing/annotation-layer.ts and
+         src/renderer/styles/global/annotation.css. Self-contained: the token
+         values are copied from tokens.css / themes.css, and the "Today" strip
+         uses the shipped rules verbatim so its wrapping is the real behaviour. */
+      @font-face {
+        font-family: 'Pliant';
+        src: url('../assets/fonts/Pliant-Variable.ttf') format('truetype');
+        font-style: normal;
+        font-weight: 100 900;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: 'Averia Serif Libre';
+        src: url('../assets/fonts/AveriaSerifLibre-Regular.ttf') format('truetype');
+        font-style: normal;
+        font-weight: 400;
+        font-display: swap;
+      }
+
+      :root {
+        color-scheme: dark;
+        --tint-hue: #244c25;
+        --tint-amount: 4%;
+        --bg-base: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #1e1e1e);
+        --bg-elevated: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #252526);
+        --bg-hover: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #2a2d2e);
+        --bg-muted: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #2d2d2d);
+        --bg-selected: color-mix(in srgb, var(--accent) 20%, var(--bg-elevated));
+        --text-primary: #d4d4d4;
+        --text-secondary: #a6a6a6;
+        --text-muted: #808080;
+        --border: #414141;
+        --border-subtle: #333333;
+        --border-strong: #565656;
+        --accent-color: #ff93d0;
+        --accent: var(--accent-color);
+        --accent-fill: var(--accent-color);
+        --accent-fill-hover: color-mix(in srgb, var(--accent-fill) 85%, white);
+        --text-on-accent: #444444;
+        --warning: #cca700;
+        --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
+        --font-family: 'Pliant', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        --font-display: 'Averia Serif Libre', Georgia, serif;
+        --font-prose: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+        --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+        --font-size-xs: 11px;
+        --font-size-sm: 12px;
+        --font-size-base: 14px;
+        --line-height-base: 22px;
+        --radius-sm: 4px;
+        --radius: 6px;
+        --radius-lg: 8px;
+        --spacing-xs: 4px;
+        --spacing-sm: 8px;
+        --spacing-md: 12px;
+        --spacing-lg: 16px;
+        --spacing-xl: 24px;
+      }
+      [data-theme='light'] {
+        color-scheme: light;
+        --tint-amount-light: calc(var(--tint-amount) * 1.9);
+        --bg-base: color-mix(in srgb, var(--tint-hue) var(--tint-amount-light), #ffffff);
+        --bg-elevated: color-mix(in srgb, var(--tint-hue) var(--tint-amount-light), #f3f3f3);
+        --bg-hover: color-mix(in srgb, var(--tint-hue) var(--tint-amount-light), #e8e8e8);
+        --bg-muted: color-mix(in srgb, var(--tint-hue) var(--tint-amount-light), #ececec);
+        --bg-selected: color-mix(in srgb, var(--accent-fill) 22%, var(--bg-elevated));
+        --text-primary: #333333;
+        --text-secondary: #5f5f5f;
+        --text-muted: #767676;
+        --border: #d4d4d4;
+        --border-subtle: #e4e4e4;
+        --border-strong: #ababab;
+        --accent: color-mix(in srgb, var(--accent-color) 30%, black);
+        --accent-fill-hover: color-mix(in srgb, var(--accent-fill) 85%, black);
+        --warning: #9a6700;
+        --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.14);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg-base);
+        color: var(--text-primary);
+        font-family: var(--font-family);
+        font-size: var(--font-size-base);
+        line-height: var(--line-height-base);
+        user-select: none;
+      }
+      /* forms.css */
+      button {
+        cursor: pointer;
+        border: none;
+        background: none;
+        color: var(--text-primary);
+        font-family: inherit;
+        font-size: inherit;
+        line-height: inherit;
+      }
+      button:hover {
+        opacity: 0.8;
+      }
+      button:focus-visible,
+      input:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+      [hidden] {
+        display: none !important;
+      }
+
+      /* ---- Page chrome (prototype only) ---------------------------------- */
+      .page {
+        padding: var(--spacing-xl) var(--spacing-xl) calc(var(--spacing-xl) * 3);
+      }
+      .intro {
+        max-width: 720px;
+      }
+      h1,
+      h2 {
+        margin: 0;
+        font-family: var(--font-display);
+        font-weight: 400;
+        color: var(--text-primary);
+      }
+      h1 {
+        font-size: 26px;
+        line-height: 1.2;
+      }
+      h2 {
+        margin-top: calc(var(--spacing-xl) * 2);
+        font-size: 19px;
+        line-height: 1.3;
+      }
+      /* Sentences take the platform face, as assistant prose does: Pliant's
+         word gaps are tuned for labels. */
+      .intro p,
+      .notes li,
+      .notes p {
+        margin: var(--spacing-sm) 0 0;
+        color: var(--text-secondary);
+        font-family: var(--font-prose);
+        text-wrap: pretty;
+      }
+      .intro strong,
+      .notes strong {
+        color: var(--text-primary);
+        font-weight: 600;
+      }
+      code {
+        font-family: var(--font-mono);
+        font-size: 0.86em;
+        color: var(--text-primary);
+      }
+      .num {
+        font-variant-numeric: tabular-nums;
+      }
+
+      .controls {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: var(--spacing-sm) var(--spacing-lg);
+        margin: var(--spacing-lg) calc(-1 * var(--spacing-xl)) 0;
+        padding: var(--spacing-sm) var(--spacing-xl);
+        border-block: 1px solid var(--border-subtle);
+        background: var(--bg-base);
+        font-size: var(--font-size-sm);
+        color: var(--text-secondary);
+      }
+      .control {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        min-width: 0;
+      }
+      .control-label {
+        flex-shrink: 0;
+        font-weight: 600;
+      }
+      .control output {
+        flex-shrink: 0;
+        min-width: 6ch;
+        color: var(--text-primary);
+        font-variant-numeric: tabular-nums;
+      }
+      input[type='range'] {
+        width: 220px;
+        max-width: 40vw;
+        accent-color: var(--accent-fill);
+      }
+      .seg {
+        display: inline-flex;
+        gap: 2px;
+      }
+      .seg button {
+        min-height: 24px;
+        padding: 0 var(--spacing-sm);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        color: var(--text-secondary);
+        font-size: var(--font-size-xs);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      .seg button:hover {
+        opacity: 1;
+        background: var(--bg-hover);
+        color: var(--text-primary);
+      }
+      .seg button[aria-pressed='true'] {
+        border-color: var(--border-strong);
+        background: var(--bg-selected);
+        color: var(--text-primary);
+      }
+
+      .specimens {
+        /* The 1040px preset is wider than most windows; the list scrolls, the page does not. */
+        margin-inline: calc(-1 * var(--spacing-xl));
+        padding-inline: var(--spacing-xl);
+        overflow-x: auto;
+      }
+      .specimen {
+        margin-top: calc(var(--spacing-xl) + var(--spacing-sm));
+      }
+      .specimen-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 2px var(--spacing-md);
+        max-width: 720px;
+      }
+      .specimen-name {
+        font-size: var(--font-size-base);
+        font-weight: 600;
+      }
+      .specimen-tag {
+        padding: 1px 6px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        color: var(--text-secondary);
+        font-size: var(--font-size-xs);
+        font-weight: 500;
+      }
+      .specimen-readout {
+        margin-left: auto;
+        color: var(--text-muted);
+        font-size: var(--font-size-sm);
+        font-variant-numeric: tabular-nums;
+      }
+      .specimen-readout[data-state='wraps'] {
+        color: var(--warning);
+      }
+      .specimen-desc {
+        max-width: 720px;
+        margin: 2px 0 var(--spacing-sm);
+        color: var(--text-secondary);
+        font-family: var(--font-prose);
+        font-size: var(--font-size-sm);
+        text-wrap: pretty;
+      }
+
+      /* A stand-in for the Browser pane: URL toolbar over the page being annotated. */
+      .pane {
+        width: var(--pane-width, 420px);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+        background: var(--bg-elevated);
+      }
+      .pane-bar {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+        height: 37px;
+        padding: 0 var(--spacing-xs);
+        border-bottom: 1px solid var(--border);
+      }
+      .pane-btn {
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border-radius: var(--radius);
+        color: var(--text-secondary);
+      }
+      .pane-btn:hover {
+        opacity: 1;
+        background: var(--bg-hover);
+        color: var(--text-primary);
+      }
+      .pane-btn[aria-pressed='true'] {
+        background: var(--bg-selected);
+        color: var(--accent);
+      }
+      .pane-url {
+        flex: 1 1 0;
+        min-width: 0;
+        height: 26px;
+        padding: 0 var(--spacing-sm);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--bg-base);
+        color: var(--text-secondary);
+        font-size: var(--font-size-sm);
+        line-height: 24px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .pane-host {
+        position: relative;
+        height: 208px;
+        background: #ffffff;
+        overflow: hidden;
+      }
+      .pane-status {
+        min-height: 18px;
+        margin: var(--spacing-xs) 0 0;
+        color: var(--text-muted);
+        font-size: var(--font-size-xs);
+      }
+
+      /* The page under the layer: unthemed web content, black on white. */
+      .mock {
+        position: absolute;
+        inset: 0;
+        padding: 14px 20px;
+        color: #1c1c1e;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+        font-size: 12px;
+        line-height: 1.4;
+      }
+      .mock-nav {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        color: #6b6b70;
+        white-space: nowrap;
+      }
+      .mock-logo {
+        width: 18px;
+        height: 18px;
+        border-radius: 5px;
+        background: #1c1c1e;
+      }
+      .mock-title {
+        margin: 34px 0 2px;
+        font-size: 20px;
+        font-weight: 650;
+        letter-spacing: -0.01em;
+      }
+      .mock-sub {
+        color: #6b6b70;
+        white-space: nowrap;
+      }
+      .mock-plans {
+        display: flex;
+        gap: 10px;
+        margin-top: 12px;
+      }
+      .mock-plan {
+        flex: 0 0 112px;
+        padding: 8px 10px;
+        border: 1px solid #dcdce0;
+        border-radius: 8px;
+      }
+      .mock-plan b {
+        display: block;
+        font-size: 15px;
+      }
+      .mock-plan span {
+        color: #6b6b70;
+      }
+
+      /* ---- Shipped rules, verbatim from global/annotation.css ------------- */
+      .annotation-layer {
+        position: absolute;
+        inset: 0;
+        z-index: 5;
+      }
+      .annotation-layer[data-active='false'] {
+        pointer-events: none;
+      }
+      .annotation-layer[data-active='false'] .annotation-toolstrip {
+        display: none;
+      }
+      .annotation-layer-svg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        touch-action: none;
+        cursor: crosshair;
+        overflow: visible;
+      }
+      .annotation-toolstrip {
+        position: absolute;
+        top: var(--spacing-sm);
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 2px;
+        max-width: calc(100% - 2 * var(--spacing-sm));
+        padding: var(--spacing-xs);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: var(--bg-elevated);
+        box-shadow: var(--shadow-md);
+      }
+      .annotation-tool {
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        border: 1px solid transparent;
+        border-radius: var(--radius);
+        background: transparent;
+        color: var(--text-secondary);
+        cursor: pointer;
+      }
+      .annotation-tool:hover:not(:disabled) {
+        background: var(--bg-hover);
+        color: var(--text-primary);
+      }
+      .annotation-tool:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      .annotation-tool[aria-pressed='true'] {
+        background: var(--bg-selected);
+        color: var(--accent);
+      }
+      .annotation-swatch {
+        flex-shrink: 0;
+        width: 18px;
+        height: 18px;
+        margin: 0 3px;
+        padding: 0;
+        border: 2px solid transparent;
+        border-radius: 50%;
+        background: var(--annotation-swatch);
+        box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.25);
+        cursor: pointer;
+      }
+      .annotation-swatch[aria-pressed='true'],
+      .annotation-swatch[aria-checked='true'] {
+        border-color: var(--text-primary);
+      }
+      .annotation-sep {
+        width: 1px;
+        height: 18px;
+        margin: 0 var(--spacing-xs);
+        background: var(--border);
+      }
+      /* .ui-btn + .ui-btn-primary (global/ui.css), then .annotation-send */
+      .annotation-send {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: none;
+        min-height: 28px;
+        padding: 0 var(--spacing-sm);
+        border: 1px solid var(--accent-fill);
+        border-radius: var(--radius);
+        background: var(--accent-fill);
+        color: var(--text-on-accent);
+        font-size: var(--font-size-xs);
+        line-height: var(--line-height-base);
+        white-space: nowrap;
+      }
+      .annotation-send:hover:not(:disabled) {
+        opacity: 1;
+        border-color: var(--accent-fill-hover);
+        background: var(--accent-fill-hover);
+      }
+      .annotation-send:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .ui-icon {
+        flex-shrink: 0;
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .ui-icon-sm {
+        width: 12px;
+        height: 12px;
+      }
+      .app-tooltip {
+        position: fixed;
+        z-index: 400;
+        left: 0;
+        top: 0;
+        max-width: 260px;
+        padding: 4px 8px;
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-sm);
+        background: var(--bg-elevated);
+        color: var(--text-primary);
+        font-size: var(--font-size-xs);
+        line-height: 1.4;
+        box-shadow: var(--shadow-md);
+        pointer-events: none;
+      }
+
+      /* ---- Proposed rules -------------------------------------------------- */
+      /* The fix on its own. `left: 50%` leaves an auto-width absolute box only
+         the space to its right, so the strip shrink-wraps to half its host. An
+         explicit width takes that out of the calculation; the image viewer
+         already carries this exact override. */
+      .annotation-toolstrip.is-centred {
+        width: max-content;
+      }
+      /* A toolbar is one row. Which controls it shows is decided by measuring
+         (fitStrip below), never by letting the row break. */
+      .annotation-toolstrip.is-lean {
+        width: max-content;
+        max-width: none;
+        flex-wrap: nowrap;
+      }
+      .is-lean .annotation-tool {
+        position: relative;
+      }
+      .annotation-toolstrip[data-shapes='folded'] .is-each,
+      .annotation-toolstrip[data-shapes='each'] .is-fold,
+      .annotation-toolstrip[data-send='short'] .annotation-send-rest,
+      .annotation-toolstrip[data-rules='dropped'] .annotation-sep {
+        display: none;
+      }
+      /* The selected drawing tool is underlined in the ink it will draw in,
+         the way a text-colour button carries its colour. That is the only
+         standing colour cue once the swatches leave the strip. A bar with its
+         own hairline holds up where a tinted glyph would not (yellow on the
+         light theme's selected fill is under 2:1), and unlike a corner dot it
+         cannot be read as an unread badge. */
+      .has-ink-badge .annotation-tool[data-ink][aria-pressed='true']::after {
+        content: '';
+        position: absolute;
+        left: 50%;
+        bottom: 2px;
+        width: 12px;
+        height: 4px;
+        border-radius: 2px;
+        background: var(--ink);
+        box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.22);
+        transform: translateX(-50%);
+      }
+      /* Under the shape glyph, not under the caret beside it. */
+      .has-ink-badge .annotation-tool.is-fold[aria-pressed='true']::after {
+        left: 13px;
+      }
+      /* One button for the four shapes: shows the last one used, opens the rest. */
+      .annotation-tool.is-fold {
+        width: auto;
+        gap: 1px;
+        padding: 0 4px 0 7px;
+      }
+      .annotation-fold-caret {
+        width: 9px;
+        height: 9px;
+        opacity: 0.7;
+      }
+      .annotation-ink-dot {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: var(--ink);
+        box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.25);
+      }
+      .annotation-popover {
+        position: absolute;
+        z-index: 2;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: var(--spacing-xs);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: var(--bg-elevated);
+        box-shadow: var(--shadow-md);
+        animation: annotation-popover-in 90ms ease-out;
+      }
+      .annotation-popover-row {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+      }
+      .annotation-popover-row.is-ink {
+        min-height: 28px;
+      }
+      .annotation-popover-rule {
+        height: 1px;
+        margin: 2px 0;
+        background: var(--border);
+      }
+      @keyframes annotation-popover-in {
+        from {
+          opacity: 0;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .annotation-popover {
+          animation: none;
+        }
+      }
+
+      .notes {
+        max-width: 720px;
+      }
+      .notes ul,
+      .notes ol {
+        margin: 0;
+        padding-left: 1.2em;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header class="intro">
+        <h1>Annotation tool strip</h1>
+        <p>
+          Today's strip is <strong class="num" data-stat="natural">504px</strong> wide but breaks
+          onto a second row in any pane narrower than about
+          <strong class="num" data-stat="threshold">1,010px</strong>. It is centred with
+          <code>left: 50%</code>, and an auto-width box placed that way may only use the space to
+          its right, which is half its host. The swatches are
+          <span class="num" data-stat="swatches">104px</span> of that width.
+        </p>
+        <p>
+          Five strips over the same pane. Drag the width, then draw: right-click a tool in A or C,
+          or click the one already selected, to change ink.
+        </p>
+      </header>
+
+      <div class="controls">
+        <label class="control">
+          <span class="control-label">Pane width</span>
+          <input id="width" type="range" min="280" max="1100" step="2" value="420" />
+          <output id="width-out" for="width">420px</output>
+        </label>
+        <div class="control">
+          <div class="seg" id="presets" role="group" aria-label="Pane width presets">
+            <button type="button" data-width="320">320</button>
+            <button type="button" data-width="420">420</button>
+            <button type="button" data-width="560">560</button>
+            <button type="button" data-width="1040">1040</button>
+          </div>
+        </div>
+        <div class="control">
+          <span class="control-label">Theme</span>
+          <div class="seg" id="themes" role="group" aria-label="Theme">
+            <button type="button" data-theme-choice="dark">Dark</button>
+            <button type="button" data-theme-choice="light">Light</button>
+          </div>
+        </div>
+      </div>
+
+      <main class="specimens" id="specimens"></main>
+
+      <section class="notes">
+        <h2>What would change</h2>
+        <ul>
+          <li>
+            <strong>One row, always.</strong> <code>width: max-content</code> and
+            <code>flex-wrap: nowrap</code> on the strip. The layer already watches its host with a
+            ResizeObserver; the same callback picks the widest layout that fits: every tool with
+            "Send to agent", then "Send", then the four shapes behind one button, and under about
+            280px the separators go too.
+          </li>
+          <li>
+            <strong>Ink on demand.</strong> The four swatches move into a popover on the drawing
+            tools, opened by right-click or by clicking the tool that is already selected. Ink stays
+            one colour shared by every tool, as today, and each mark still records its own.
+          </li>
+          <li>
+            <strong>The selected tool shows the ink.</strong> An underline in the current colour
+            replaces the pressed swatch as the standing cue, and the tooltip names the gesture.
+          </li>
+        </ul>
+        <h2>Open questions</h2>
+        <ol>
+          <li>
+            Is right-click plus click-again findable enough (A), or should one ink dot stay on the
+            strip (B, 30px)?
+          </li>
+          <li>
+            Should the shapes fold only when the pane is tight (A, B) or always (C)? Always is one
+            layout to learn; folding costs a second click to change shape.
+          </li>
+          <li>
+            The fix alone (second strip) is a one-line change and could ship ahead of the rest.
+          </li>
+        </ol>
+      </section>
+    </div>
+
+    <div class="app-tooltip" id="tooltip" role="tooltip" hidden></div>
+
+    <script>
+      const SVG_NS = 'http://www.w3.org/2000/svg'
+
+      // ANNOTATION_COLOURS in annotation-layer.ts.
+      const INK = [
+        { name: 'Red', value: '#e5484d' },
+        { name: 'Blue', value: '#3b82f6' },
+        { name: 'Green', value: '#22c55e' },
+        { name: 'Yellow', value: '#eab308' },
+      ]
+      const TOOL_LABELS = {
+        pen: 'Pen',
+        line: 'Line',
+        arrow: 'Arrow',
+        rect: 'Rectangle',
+        ellipse: 'Ellipse',
+        eraser: 'Eraser',
+      }
+      const SHAPES = ['line', 'arrow', 'rect', 'ellipse']
+
+      // Paths from src/renderer/dom/icons.ts.
+      const ICONS = {
+        pen: [
+          'M12 20h9',
+          'M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z',
+        ],
+        line: ['M20 4 4 20'],
+        arrow: ['M7 7h10v10', 'M7 17 17 7'],
+        rect: ['M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z'],
+        ellipse: ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z'],
+        eraser: [
+          'm7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21',
+          'M22 21H7',
+          'm5 11 9 9',
+        ],
+        undo: ['M9 14 4 9l5-5', 'M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11'],
+        trash: [
+          'M3 6h18',
+          'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6',
+          'M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2',
+        ],
+        close: ['M18 6 6 18', 'm6 6 12 12'],
+        chevronDown: ['m6 9 6 6 6-6'],
+        arrowLeft: ['M19 12H5', 'm12 19-7-7 7-7'],
+        refresh: [
+          'M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8',
+          'M21 3v5h-5',
+          'M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16',
+          'M8 16H3v5',
+        ],
+      }
+
+      const VARIANTS = [
+        {
+          id: 'today',
+          name: 'Today',
+          desc: 'The shipped strip and stylesheet, unchanged.',
+        },
+        {
+          id: 'fix',
+          name: 'Today, centring fixed',
+          desc: 'One added declaration, width: max-content. The strip gets the whole pane rather than half of it, and still wraps below its own width.',
+          centred: true,
+        },
+        {
+          id: 'a',
+          name: 'A · Right-click ink',
+          tag: 'Suggested',
+          desc: 'No swatches. The selected tool is underlined in the current ink; right-click a drawing tool, or click the selected one again, for the four colours. Shapes fold only when the pane is too tight for them.',
+          lean: true,
+          ink: 'menu',
+          fold: 'auto',
+        },
+        {
+          id: 'b',
+          name: 'B · Ink dot',
+          desc: 'As A, but one dot stays on the strip and opens the same four colours on a plain click.',
+          lean: true,
+          ink: 'dot',
+          fold: 'auto',
+        },
+        {
+          id: 'c',
+          name: 'C · Folded shapes',
+          desc: 'As A, with line, arrow, rectangle and ellipse always behind one button that remembers the last shape used. The narrowest strip, and the same layout at every width.',
+          lean: true,
+          ink: 'menu',
+          fold: 'always',
+        },
+      ]
+
+      function el(tag, attrs = {}, ...children) {
+        const node = document.createElement(tag)
+        for (const [key, value] of Object.entries(attrs)) {
+          if (value === false || value === null || value === undefined) continue
+          node.setAttribute(key, value === true ? '' : String(value))
+        }
+        node.append(...children)
+        return node
+      }
+
+      function icon(name, className = 'ui-icon ui-icon-sm') {
+        const svg = document.createElementNS(SVG_NS, 'svg')
+        svg.setAttribute('class', className)
+        svg.setAttribute('viewBox', '0 0 24 24')
+        svg.setAttribute('aria-hidden', 'true')
+        svg.setAttribute('data-icon', name)
+        for (const d of ICONS[name]) {
+          const path = document.createElementNS(SVG_NS, 'path')
+          path.setAttribute('d', d)
+          svg.append(path)
+        }
+        return svg
+      }
+
+      function svgEl(tag, attrs) {
+        const node = document.createElementNS(SVG_NS, tag)
+        for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, String(value))
+        return node
+      }
+
+      /** Rows the strip's controls occupy: 1 unless it has wrapped. */
+      function rowCount(strip) {
+        const tops = new Set()
+        for (const child of strip.children) {
+          const rect = child.getBoundingClientRect()
+          if (rect.width === 0) continue
+          tops.add(Math.round(rect.top + rect.height / 2))
+        }
+        return tops.size
+      }
+
+      // One popover at a time across the whole page, like the app's context menu.
+      // A press on its own anchor is left to that button, which toggles it.
+      let openPopoverRef = null
+      const closeOpenPopover = () => openPopoverRef?.close()
+      document.addEventListener(
+        'pointerdown',
+        (event) => {
+          if (!openPopoverRef || !(event.target instanceof Node)) return
+          const { node, anchor } = openPopoverRef
+          if (node.contains(event.target) || anchor.contains(event.target)) return
+          openPopoverRef.close()
+        },
+        true,
+      )
+
+      const specimens = VARIANTS.map(mountSpecimen)
+
+      function mountSpecimen(variant) {
+        const state = {
+          tool: 'pen',
+          colour: INK[0].value,
+          shape: 'arrow',
+          active: true,
+          undo: [],
+        }
+        const lean = variant.lean === true
+        const inkMenu = variant.ink === 'menu'
+        // Widest first; fitStrip() stops at the first layout the pane can hold.
+        const ladder =
+          variant.fold === 'always'
+            ? [
+                ['long', 'folded', 'shown'],
+                ['short', 'folded', 'shown'],
+                ['short', 'folded', 'dropped'],
+              ]
+            : [
+                ['long', 'each', 'shown'],
+                ['short', 'each', 'shown'],
+                ['short', 'folded', 'shown'],
+                ['short', 'folded', 'dropped'],
+              ]
+
+        const toolButtons = new Map()
+        const swatchButtons = new Map()
+        let popover = null
+
+        const surface = svgEl('svg', {
+          class: 'annotation-layer-svg',
+          role: 'img',
+          'aria-label': `Annotations over Pricing page (${variant.name})`,
+        })
+
+        // ---- Strip -----------------------------------------------------------
+        const hint = (label, name) =>
+          lean && inkMenu && name !== 'eraser' ? `${label} (right-click for colour)` : label
+
+        const toolButton = (name, extraClass = '') => {
+          const button = el(
+            'button',
+            {
+              type: 'button',
+              class: `annotation-tool ${extraClass}`.trim(),
+              'data-tool': name,
+              'data-ink': name !== 'eraser',
+              'aria-label': TOOL_LABELS[name],
+              'data-tooltip': hint(TOOL_LABELS[name], name),
+              'aria-pressed': 'false',
+            },
+            icon(name),
+          )
+          button.addEventListener('click', () => {
+            // Clicking the tool you already hold opens its ink, as in most markup tools.
+            if (lean && inkMenu && state.tool === name && name !== 'eraser') {
+              togglePopover(button, 'ink')
+              return
+            }
+            setTool(name)
+          })
+          if (lean && name !== 'eraser') {
+            button.addEventListener('contextmenu', (event) => {
+              event.preventDefault()
+              setTool(name)
+              openPopover(button, 'ink')
+            })
+          }
+          toolButtons.set(name, button)
+          return button
+        }
+
+        const separator = () => el('span', { class: 'annotation-sep', 'aria-hidden': 'true' })
+
+        const foldButton = el(
+          'button',
+          {
+            type: 'button',
+            class: 'annotation-tool is-fold',
+            'data-ink': true,
+            'aria-haspopup': 'menu',
+            'aria-pressed': 'false',
+          },
+          icon(state.shape),
+          icon('chevronDown', 'ui-icon annotation-fold-caret'),
+        )
+        foldButton.addEventListener('click', () => {
+          if (SHAPES.includes(state.tool)) togglePopover(foldButton, 'shapes')
+          else setTool(state.shape)
+        })
+        foldButton.addEventListener('contextmenu', (event) => {
+          event.preventDefault()
+          if (!SHAPES.includes(state.tool)) setTool(state.shape)
+          openPopover(foldButton, 'shapes')
+        })
+
+        const inkButton = el(
+          'button',
+          {
+            type: 'button',
+            class: 'annotation-tool annotation-ink',
+            'aria-label': 'Ink colour',
+            'data-tooltip': 'Ink colour',
+            'aria-haspopup': 'menu',
+          },
+          el('span', { class: 'annotation-ink-dot' }),
+        )
+        inkButton.addEventListener('click', () => {
+          togglePopover(inkButton, 'ink')
+        })
+
+        const makeSwatch = ({ name, value }, role) => {
+          const button = el('button', {
+            type: 'button',
+            class: 'annotation-swatch',
+            'aria-label': name,
+            'data-tooltip': name,
+            ...(role ? { role, 'aria-checked': 'false' } : { 'aria-pressed': 'false' }),
+          })
+          button.style.setProperty('--annotation-swatch', value)
+          button.addEventListener('click', () => {
+            state.colour = value
+            closePopover()
+            sync()
+          })
+          return button
+        }
+
+        const undoBtn = el(
+          'button',
+          {
+            type: 'button',
+            class: 'annotation-tool',
+            'aria-label': 'Undo',
+            'data-tooltip': 'Undo',
+          },
+          icon('undo'),
+        )
+        undoBtn.addEventListener('click', () => {
+          const previous = state.undo.pop()
+          if (previous !== undefined) surface.innerHTML = previous
+          sync()
+        })
+        const clearBtn = el(
+          'button',
+          {
+            type: 'button',
+            class: 'annotation-tool',
+            'aria-label': 'Clear',
+            'data-tooltip': 'Clear',
+          },
+          icon('trash'),
+        )
+        clearBtn.addEventListener('click', () => {
+          remember()
+          surface.replaceChildren()
+          sync()
+        })
+        const sendBtn = el(
+          'button',
+          { type: 'button', class: 'annotation-send', disabled: true },
+          'Send',
+          el('span', { class: 'annotation-send-rest' }, ' to agent'),
+        )
+        sendBtn.addEventListener('click', () => {
+          const count = surface.childElementCount
+          setActive(false)
+          status.textContent = `Sent ${count} ${count === 1 ? 'mark' : 'marks'} with a capture of the page. The marks stay until cleared.`
+        })
+        const doneBtn = el(
+          'button',
+          {
+            type: 'button',
+            class: 'annotation-tool',
+            'aria-label': 'Done',
+            'data-tooltip': 'Done (Esc)',
+          },
+          icon('close'),
+        )
+        doneBtn.addEventListener('click', () => {
+          setActive(false)
+        })
+
+        const stripClass = [
+          'annotation-toolstrip',
+          variant.centred ? 'is-centred' : '',
+          lean ? 'is-lean' : '',
+          lean && inkMenu ? 'has-ink-badge' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')
+        const strip = el('div', {
+          class: stripClass,
+          role: 'toolbar',
+          'aria-label': 'Annotation tools',
+        })
+        if (lean) {
+          strip.append(
+            toolButton('pen'),
+            ...SHAPES.map((name) => toolButton(name, 'is-each')),
+            foldButton,
+            toolButton('eraser'),
+            ...(variant.ink === 'dot' ? [inkButton] : []),
+            separator(),
+            undoBtn,
+            clearBtn,
+            separator(),
+            sendBtn,
+            doneBtn,
+          )
+        } else {
+          const swatches = INK.map((ink) => {
+            const button = makeSwatch(ink)
+            swatchButtons.set(ink.value, button)
+            return button
+          })
+          strip.append(
+            ...['pen', ...SHAPES, 'eraser'].map((name) => toolButton(name)),
+            separator(),
+            ...swatches,
+            separator(),
+            undoBtn,
+            clearBtn,
+            separator(),
+            sendBtn,
+            doneBtn,
+          )
+        }
+        // Clicks on the strip must not start a stroke underneath it.
+        strip.addEventListener('pointerdown', (event) => {
+          event.stopPropagation()
+        })
+        // Right-click belongs to the tools; nowhere on the strip opens a page menu.
+        strip.addEventListener('contextmenu', (event) => {
+          event.preventDefault()
+        })
+
+        // ---- Popover ---------------------------------------------------------
+        function closePopover() {
+          if (!popover) return
+          popover.remove()
+          popover = null
+          if (openPopoverRef?.close === closePopover) openPopoverRef = null
+        }
+
+        function openPopover(anchor, kind) {
+          closeOpenPopover()
+          hideTooltip()
+          popover = el('div', { class: 'annotation-popover', role: 'menu' })
+          if (kind === 'shapes') {
+            const row = el('div', { class: 'annotation-popover-row' })
+            for (const name of SHAPES) {
+              const button = el(
+                'button',
+                {
+                  type: 'button',
+                  class: 'annotation-tool',
+                  role: 'menuitemradio',
+                  'aria-checked': String(state.tool === name),
+                  'aria-pressed': String(state.tool === name),
+                  'aria-label': TOOL_LABELS[name],
+                  'data-tooltip': TOOL_LABELS[name],
+                },
+                icon(name),
+              )
+              button.addEventListener('click', () => {
+                setTool(name)
+              })
+              row.append(button)
+            }
+            popover.append(row)
+            if (inkMenu) popover.append(el('div', { class: 'annotation-popover-rule' }))
+          }
+          if (kind === 'ink' || inkMenu) {
+            const row = el('div', { class: 'annotation-popover-row is-ink' })
+            for (const ink of INK) {
+              const button = makeSwatch(ink, 'menuitemradio')
+              button.setAttribute('aria-checked', String(ink.value === state.colour))
+              row.append(button)
+            }
+            popover.append(row)
+          }
+          layer.append(popover)
+          // Under the strip, centred on the button that opened it, kept inside the pane.
+          const bounds = layer.getBoundingClientRect()
+          const from = anchor.getBoundingClientRect()
+          const below = strip.getBoundingClientRect().bottom - bounds.top + 4
+          const centre = from.left + from.width / 2 - bounds.left
+          const width = popover.offsetWidth
+          const left = Math.max(4, Math.min(centre - width / 2, bounds.width - width - 4))
+          popover.style.left = `${Math.round(left)}px`
+          popover.style.top = `${Math.round(below)}px`
+          popover.dataset.for = kind
+          openPopoverRef = { node: popover, anchor, close: closePopover }
+          const current = popover.querySelector('[aria-checked="true"]')
+          ;(current ?? popover.querySelector('button'))?.focus({ preventScroll: true })
+        }
+
+        function togglePopover(anchor, kind) {
+          if (popover) closePopover()
+          else openPopover(anchor, kind)
+        }
+
+        // ---- State -----------------------------------------------------------
+        function setTool(name) {
+          state.tool = name
+          if (SHAPES.includes(name)) state.shape = name
+          closePopover()
+          sync()
+        }
+
+        function remember() {
+          state.undo.push(surface.innerHTML)
+        }
+
+        function setActive(next) {
+          state.active = next
+          closePopover()
+          layer.dataset.active = String(next)
+          annotateBtn.setAttribute('aria-pressed', String(next))
+          if (next) status.textContent = ''
+          fitStrip()
+        }
+
+        function sync() {
+          for (const [name, button] of toolButtons)
+            button.setAttribute('aria-pressed', String(name === state.tool))
+          for (const [value, button] of swatchButtons)
+            button.setAttribute('aria-pressed', String(value === state.colour))
+          const shapeActive = SHAPES.includes(state.tool)
+          foldButton.setAttribute('aria-pressed', String(shapeActive))
+          foldButton.replaceChild(icon(state.shape), foldButton.firstChild)
+          const foldLabel = TOOL_LABELS[state.shape]
+          foldButton.setAttribute('aria-label', `${foldLabel}, more shapes`)
+          foldButton.setAttribute(
+            'data-tooltip',
+            shapeActive
+              ? `${foldLabel} (click for ${inkMenu ? 'shapes and colour' : 'shapes'})`
+              : `${foldLabel} (right-click for ${inkMenu ? 'shapes and colour' : 'shapes'})`,
+          )
+          strip.style.setProperty('--ink', state.colour)
+          const empty = surface.childElementCount === 0
+          sendBtn.disabled = empty
+          clearBtn.disabled = empty
+          undoBtn.disabled = state.undo.length === 0
+        }
+
+        /**
+         * Pick the widest layout the pane can hold. Measured rather than keyed to
+         * a breakpoint, because the label, the interface scale and the font all
+         * move the strip's width (see ui-taste.md, "Responsive titlebar chrome").
+         */
+        function fitStrip() {
+          if (lean && state.active) {
+            const available = host.clientWidth - 16
+            for (const [send, shapes, rules] of ladder) {
+              strip.dataset.send = send
+              strip.dataset.shapes = shapes
+              strip.dataset.rules = rules
+              if (strip.offsetWidth <= available) break
+            }
+          }
+          report()
+        }
+
+        function report() {
+          if (!state.active) {
+            readout.textContent = 'Strip hidden'
+            readout.dataset.state = 'ok'
+            return
+          }
+          const rows = rowCount(strip)
+          const width = Math.round(strip.offsetWidth)
+          const height = Math.round(strip.offsetHeight)
+          if (rows > 1) {
+            const share = Math.round((height / host.clientHeight) * 100)
+            readout.textContent = `Wraps to ${rows} rows · ${width} × ${height}px · ${share}% of this pane's height`
+            readout.dataset.state = 'wraps'
+            return
+          }
+          const steps = []
+          if (strip.dataset.send === 'short') steps.push('short Send')
+          if (strip.dataset.shapes === 'folded' && variant.fold === 'auto')
+            steps.push('shapes folded')
+          readout.textContent = `One row · ${width}px${steps.length > 0 ? ` · ${steps.join(', ')}` : ''}`
+          readout.dataset.state = 'ok'
+        }
+
+        // ---- Drawing (a stand-in for drauu, enough to see the ink) -----------
+        const point = (event) => {
+          const rect = surface.getBoundingClientRect()
+          return { x: event.clientX - rect.left, y: event.clientY - rect.top }
+        }
+        const fmt = (value) => String(Math.round(value * 10) / 10)
+
+        function arrowHead(from, to) {
+          const angle = Math.atan2(to.y - from.y, to.x - from.x)
+          const size = 11
+          const wing = (offset) =>
+            `${fmt(to.x - size * Math.cos(angle + offset))} ${fmt(to.y - size * Math.sin(angle + offset))}`
+          return `M${wing(0.45)} L${fmt(to.x)} ${fmt(to.y)} L${wing(-0.45)}`
+        }
+
+        function createMark(tool, colour, from) {
+          const stroke = {
+            fill: 'none',
+            stroke: colour,
+            'stroke-linecap': 'round',
+            'stroke-linejoin': 'round',
+            'data-tool': tool,
+            'data-colour': colour,
+            'data-mark': '',
+          }
+          if (tool === 'pen') {
+            const path = svgEl('path', {
+              ...stroke,
+              'stroke-width': 5,
+              d: `M${fmt(from.x)} ${fmt(from.y)}`,
+            })
+            return {
+              node: path,
+              update(to) {
+                path.setAttribute('d', `${path.getAttribute('d')} L${fmt(to.x)} ${fmt(to.y)}`)
+              },
+            }
+          }
+          if (tool === 'line' || tool === 'arrow') {
+            const group = svgEl('g', { ...stroke, 'stroke-width': 3 })
+            const shaft = svgEl('path', { d: '' })
+            const head = svgEl('path', { d: '' })
+            group.append(shaft, head)
+            return {
+              node: group,
+              update(to) {
+                shaft.setAttribute('d', `M${fmt(from.x)} ${fmt(from.y)} L${fmt(to.x)} ${fmt(to.y)}`)
+                if (tool === 'arrow') head.setAttribute('d', arrowHead(from, to))
+              },
+            }
+          }
+          if (tool === 'rect') {
+            const rect = svgEl('rect', { ...stroke, 'stroke-width': 3, rx: 2 })
+            return {
+              node: rect,
+              update(to) {
+                rect.setAttribute('x', fmt(Math.min(from.x, to.x)))
+                rect.setAttribute('y', fmt(Math.min(from.y, to.y)))
+                rect.setAttribute('width', fmt(Math.abs(to.x - from.x)))
+                rect.setAttribute('height', fmt(Math.abs(to.y - from.y)))
+              },
+            }
+          }
+          const ellipse = svgEl('ellipse', { ...stroke, 'stroke-width': 3 })
+          return {
+            node: ellipse,
+            update(to) {
+              ellipse.setAttribute('cx', fmt((from.x + to.x) / 2))
+              ellipse.setAttribute('cy', fmt((from.y + to.y) / 2))
+              ellipse.setAttribute('rx', fmt(Math.abs(to.x - from.x) / 2))
+              ellipse.setAttribute('ry', fmt(Math.abs(to.y - from.y) / 2))
+            },
+          }
+        }
+
+        /** A committed mark without the pointer: used to seed the pane. */
+        function seed(tool, colour, from, to) {
+          const mark = createMark(tool, colour, from)
+          mark.update(to)
+          surface.append(mark.node)
+        }
+
+        function markAt(event) {
+          // A 3px stroke is a small target; probe a ring around the pointer too.
+          const probes = [
+            [0, 0],
+            [5, 0],
+            [-5, 0],
+            [0, 5],
+            [0, -5],
+            [4, 4],
+            [-4, 4],
+            [4, -4],
+            [-4, -4],
+          ]
+          for (const [dx, dy] of probes) {
+            const hit = document
+              .elementFromPoint(event.clientX + dx, event.clientY + dy)
+              ?.closest('[data-mark]')
+            if (hit && surface.contains(hit)) return hit
+          }
+          return null
+        }
+
+        let gesture = null
+        /** Remove the mark under the pointer; one undo step covers the whole drag. */
+        function eraseUnder(event) {
+          const hit = markAt(event)
+          if (!hit) return
+          if (!gesture.remembered) {
+            remember()
+            gesture.remembered = true
+          }
+          hit.remove()
+          sync()
+        }
+        surface.addEventListener('pointerdown', (event) => {
+          if (event.button !== 0 || !state.active) return
+          surface.setPointerCapture(event.pointerId)
+          if (state.tool === 'eraser') {
+            gesture = { erasing: true, remembered: false }
+            eraseUnder(event)
+            return
+          }
+          const start = point(event)
+          const mark = createMark(state.tool, state.colour, start)
+          gesture = { mark, start, before: surface.innerHTML, moved: 0 }
+          surface.append(mark.node)
+        })
+        surface.addEventListener('pointermove', (event) => {
+          if (!gesture) return
+          if (gesture.erasing) {
+            eraseUnder(event)
+            return
+          }
+          const here = point(event)
+          gesture.moved = Math.max(
+            gesture.moved,
+            Math.hypot(here.x - gesture.start.x, here.y - gesture.start.y),
+          )
+          gesture.mark.update(here)
+        })
+        const endGesture = () => {
+          if (!gesture) return
+          if (!gesture.erasing) {
+            // A tap is not a mark.
+            if (gesture.moved < 4) gesture.mark.node.remove()
+            else state.undo.push(gesture.before)
+          }
+          gesture = null
+          sync()
+        }
+        surface.addEventListener('pointerup', endGesture)
+        surface.addEventListener('pointercancel', endGesture)
+        // The pane keeps its own right-click free for the strip.
+        surface.addEventListener('contextmenu', (event) => {
+          event.preventDefault()
+        })
+
+        // ---- Pane ------------------------------------------------------------
+        const layer = el(
+          'div',
+          { class: 'annotation-layer', 'data-active': 'true' },
+          surface,
+          strip,
+        )
+        const mock = el(
+          'div',
+          { class: 'mock', 'aria-hidden': 'true' },
+          el(
+            'div',
+            { class: 'mock-nav' },
+            el('span', { class: 'mock-logo' }),
+            el('span', {}, 'Product'),
+            el('span', {}, 'Pricing'),
+            el('span', {}, 'Docs'),
+          ),
+          el('div', { class: 'mock-title' }, 'Pricing'),
+          el('div', { class: 'mock-sub' }, 'Start free. Upgrade when the team grows.'),
+          el(
+            'div',
+            { class: 'mock-plans' },
+            el('div', { class: 'mock-plan' }, el('b', {}, 'Free'), el('span', {}, '1 project')),
+            el('div', { class: 'mock-plan' }, el('b', {}, '£12'), el('span', {}, 'per seat')),
+            el('div', { class: 'mock-plan' }, el('b', {}, '£40'), el('span', {}, 'per seat')),
+          ),
+        )
+        const host = el('div', { class: 'pane-host' }, mock, layer)
+        const annotateBtn = el(
+          'button',
+          {
+            type: 'button',
+            class: 'pane-btn',
+            'aria-label': 'Annotate',
+            'data-tooltip': 'Annotate',
+            'aria-pressed': 'true',
+          },
+          icon('pen', 'ui-icon'),
+        )
+        annotateBtn.addEventListener('click', () => {
+          setActive(!state.active)
+        })
+        const pane = el(
+          'div',
+          { class: 'pane' },
+          el(
+            'div',
+            { class: 'pane-bar' },
+            el(
+              'button',
+              { type: 'button', class: 'pane-btn', 'aria-label': 'Back', tabindex: '-1' },
+              icon('arrowLeft', 'ui-icon'),
+            ),
+            el(
+              'button',
+              { type: 'button', class: 'pane-btn', 'aria-label': 'Reload', tabindex: '-1' },
+              icon('refresh', 'ui-icon'),
+            ),
+            el('div', { class: 'pane-url' }, 'localhost:5173/pricing'),
+            annotateBtn,
+          ),
+          host,
+        )
+
+        const readout = el('span', { class: 'specimen-readout', 'aria-live': 'off' })
+        const status = el('p', { class: 'pane-status', 'aria-live': 'polite' })
+        const section = el(
+          'section',
+          { class: 'specimen', 'data-variant': variant.id },
+          el(
+            'div',
+            { class: 'specimen-head' },
+            el('span', { class: 'specimen-name' }, variant.name),
+            ...(variant.tag ? [el('span', { class: 'specimen-tag' }, variant.tag)] : []),
+            readout,
+          ),
+          el('p', { class: 'specimen-desc' }, variant.desc),
+          pane,
+          status,
+        )
+        document.getElementById('specimens').append(section)
+
+        // Two marks to start from, so the ink and Send are live at first glance.
+        seed('rect', INK[0].value, { x: 137, y: 121 }, { x: 259, y: 186 })
+        seed('arrow', INK[0].value, { x: 298, y: 92 }, { x: 264, y: 118 })
+        sync()
+
+        new ResizeObserver(fitStrip).observe(host)
+
+        return {
+          variant,
+          strip,
+          fitStrip,
+          closePopover,
+          /** The strip's width with nothing constraining it. */
+          naturalWidth() {
+            const { width, maxWidth } = strip.style
+            strip.style.width = 'max-content'
+            strip.style.maxWidth = 'none'
+            const measured = strip.getBoundingClientRect().width
+            strip.style.width = width
+            strip.style.maxWidth = maxWidth
+            return measured
+          },
+        }
+      }
+
+      // ---- Page controls -----------------------------------------------------
+      const params = new URLSearchParams(location.search)
+      const widthInput = document.getElementById('width')
+      const widthOut = document.getElementById('width-out')
+      const list = document.getElementById('specimens')
+
+      function setWidth(value) {
+        const width = Math.max(280, Math.min(1100, Math.round(Number(value) || 420)))
+        widthInput.value = String(width)
+        widthOut.textContent = `${width}px`
+        list.style.setProperty('--pane-width', `${width}px`)
+        for (const button of document.querySelectorAll('#presets button'))
+          button.setAttribute('aria-pressed', String(Number(button.dataset.width) === width))
+      }
+      widthInput.addEventListener('input', () => {
+        closeOpenPopover()
+        setWidth(widthInput.value)
+      })
+      document.getElementById('presets').addEventListener('click', (event) => {
+        const button = event.target.closest('button[data-width]')
+        if (button) setWidth(button.dataset.width)
+      })
+
+      function setTheme(theme) {
+        document.documentElement.dataset.theme = theme
+        for (const button of document.querySelectorAll('#themes button'))
+          button.setAttribute('aria-pressed', String(button.dataset.themeChoice === theme))
+      }
+      document.getElementById('themes').addEventListener('click', (event) => {
+        const button = event.target.closest('button[data-theme-choice]')
+        if (button) setTheme(button.dataset.themeChoice)
+      })
+
+      setTheme(params.get('theme') === 'light' ? 'light' : 'dark')
+      setWidth(params.get('w') ?? 420)
+
+      // The intro's numbers come from the strip on this page, in whatever font loaded.
+      function fillStats() {
+        const today = specimens.find((specimen) => specimen.variant.id === 'today')
+        if (!today) return
+        const natural = today.naturalWidth()
+        // What the swatches cost: the strip's width with and without them and
+        // the separator that follows them.
+        const swatches = [...today.strip.querySelectorAll('.annotation-swatch')]
+        const dropped = [...swatches, swatches.at(-1)?.nextElementSibling].filter(Boolean)
+        for (const node of dropped) node.hidden = true
+        const swatchRun = natural - today.naturalWidth()
+        for (const node of dropped) node.hidden = false
+        const set = (name, text) => {
+          const node = document.querySelector(`[data-stat="${name}"]`)
+          if (node) node.textContent = text
+        }
+        set('natural', `${Math.round(natural)}px`)
+        set('threshold', `${(Math.ceil((natural * 2) / 10) * 10).toLocaleString('en-GB')}px`)
+        set('swatches', `${Math.round(swatchRun)}px`)
+      }
+      function refit() {
+        for (const specimen of specimens) specimen.fitStrip()
+        fillStats()
+      }
+      refit()
+      // Pliant arrives after first paint and changes the Send label's width.
+      document.fonts?.ready.then(refit)
+
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && openPopoverRef) {
+          event.preventDefault()
+          closeOpenPopover()
+        }
+      })
+
+      // ---- Tooltip (dom/tooltip.ts stand-in) ----------------------------------
+      const tooltip = document.getElementById('tooltip')
+      let tooltipTimer = 0
+      function hideTooltip() {
+        clearTimeout(tooltipTimer)
+        tooltip.hidden = true
+      }
+      document.addEventListener('mouseover', (event) => {
+        const target = event.target.closest?.('[data-tooltip]')
+        if (!target) return
+        clearTimeout(tooltipTimer)
+        tooltipTimer = setTimeout(() => {
+          tooltip.textContent = target.getAttribute('data-tooltip') ?? ''
+          tooltip.hidden = false
+          const rect = target.getBoundingClientRect()
+          const width = tooltip.offsetWidth
+          const left = Math.max(
+            4,
+            Math.min(rect.left + rect.width / 2 - width / 2, innerWidth - width - 4),
+          )
+          tooltip.style.left = `${Math.round(left)}px`
+          tooltip.style.top = `${Math.round(rect.bottom + 6)}px`
+        }, 350)
+      })
+      document.addEventListener('mouseout', (event) => {
+        if (event.target.closest?.('[data-tooltip]')) hideTooltip()
+      })
+      document.addEventListener('pointerdown', hideTooltip, true)
+    </script>
+  </body>
+</html>
