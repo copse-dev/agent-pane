@@ -30,6 +30,7 @@
     "erasableSyntaxOnly": true
   },
   "include": [
+    ".agents/skills/**/*.mts",
     "src/main/**/*",
     "src/preload/**/*",
     "src/sidecar/**/*",

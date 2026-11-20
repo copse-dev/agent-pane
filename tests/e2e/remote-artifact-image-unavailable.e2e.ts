@@ -1,7 +1,12 @@
 import { mkdirSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
+import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
-import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  saveAppScreenshot,
+  saveElementScreenshot,
+} from './helpers/screenshot.ts'
 import {
   resetUserData,
   seedRemoteAgentModelsFixture,
@@ -18,8 +23,10 @@ import {
  */
 
 const PROJECT_ID = 'e2e-remote-models-project'
+const OTHER_PROJECT_ID = 'e2e-remote-models-other-project'
 const THREAD_ID = 'remote-artifact-image-thread'
 const LINKED_AGENT = 'bc-e2e-linked-artifacts'
+const OTHER_AGENT = 'bc-e2e-other-project-artifacts'
 const SPOOFED_AGENT = 'bc-e2e-spoofed'
 
 async function startCursorArtifactServer(): Promise<{
@@ -117,6 +124,13 @@ describe('remote artifact image unavailable states', () => {
               toolCalls: [],
               createdAt: now,
             },
+            {
+              id: 'msg-artifact-download',
+              role: 'assistant',
+              content: `Download the [other screenshot](${fixture.apiBase}/v1/agents/${SPOOFED_AGENT}/artifacts/download?path=artifacts/other.png).`,
+              toolCalls: [],
+              createdAt: now + 1,
+            },
           ],
           usage: { inputTokens: 0, outputTokens: 0 },
           remoteAgentLink: { provider: 'cursor', agentId: LINKED_AGENT, createdAt: now - 1 },
@@ -179,5 +193,76 @@ describe('remote artifact image unavailable states', () => {
     // Park the pointer off the message so its hover-only actions stay hidden.
     await browser.action('pointer').move({ x: 4, y: 4, origin: 'viewport' }).perform()
     await saveElementScreenshot(message, 'remote-artifact-image-origin-denied.png')
+  })
+
+  it('rejects a clicked artifact link for an agent outside the chat', async () => {
+    const before = fixture?.artifactRequests().length ?? 0
+    const link = $('[data-message-id="msg-artifact-download"] a')
+    await link.waitForDisplayed()
+    await link.click()
+    const toast = $('.toast-error')
+    await toast.waitForDisplayed({ timeout: 10_000 })
+    await expect(toast).toHaveText(expect.stringContaining('not linked to this chat'))
+    expect(fixture?.artifactRequests().length).toBe(before)
+    await saveAppScreenshot('remote-artifact-download-unlinked.png')
+    // The e2e error ledger records even expected toasts until a new session.
+    await browser.reloadSession()
+  })
+
+  it('refuses an artifact request for a project outside the asking window', async () => {
+    const now = Date.now()
+    writeSeedConfig({
+      projects: [
+        { id: PROJECT_ID, path: process.cwd(), name: 'workspace' },
+        { id: OTHER_PROJECT_ID, path: process.cwd(), name: 'other workspace' },
+      ],
+      activeProjectId: PROJECT_ID,
+      activeThreadId: THREAD_ID,
+      [`threads:${OTHER_PROJECT_ID}`]: [
+        {
+          id: THREAD_ID,
+          title: 'Other project cloud agent',
+          model: 'remote-agent:cursor',
+          status: 'idle',
+          messages: [],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          remoteAgentLink: { provider: 'cursor', agentId: OTHER_AGENT, createdAt: now - 1 },
+          createdAt: now - 1,
+          updatedAt: now,
+        },
+      ],
+    })
+    await browser.reloadSession()
+    const result = await browser.execute(async () => {
+      const image = await window.api.remoteAgent.artifactImageDataUrl({
+        projectId: 'e2e-remote-models-other-project',
+        threadId: 'remote-artifact-image-thread',
+        agentId: 'bc-e2e-other-project-artifacts',
+        path: 'artifacts/shot.png',
+      })
+      const downloadError = await Promise.race([
+        window.api.remoteAgent
+          .downloadArtifact({
+            projectId: 'e2e-remote-models-other-project',
+            threadId: 'remote-artifact-image-thread',
+            agentId: 'bc-e2e-other-project-artifacts',
+            path: 'artifacts/shot.png',
+          })
+          .then(
+            () => 'unexpected success',
+            (error: unknown) => (error instanceof Error ? error.message : 'unknown error'),
+          ),
+        new Promise<string>((resolve) => {
+          setTimeout(() => {
+            resolve('timed out waiting for denial')
+          }, 3_000)
+        }),
+      ])
+      return { image, downloadError }
+    })
+    if (result.downloadError === 'timed out waiting for denial') await browser.keys('Escape')
+    assert.deepEqual(result.image, { ok: false, code: 'invalid-request', retryable: false })
+    assert.match(result.downloadError, /outside the active project/)
+    expect(fixture?.artifactRequests().some((url) => url.includes(OTHER_AGENT))).toBe(false)
   })
 })

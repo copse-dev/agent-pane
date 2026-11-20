@@ -441,7 +441,7 @@ export function createSourcesSection({
       fillSourceList(
         '#sources-instructions-list',
         instructions.map((f) => makeInstructionRow(f)),
-        'No instruction files (add AGENT.md, AGENTS.md, or CLAUDE.md to the workspace root; nested directories may add AGENTS.md; or add ~/AGENTS.md globally).',
+        'No instruction files yet. Add AGENTS.md to the project root.',
       )
       // Discovery is bounded; say so rather than let a missing nested file
       // look like it was never written.

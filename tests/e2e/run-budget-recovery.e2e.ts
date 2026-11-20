@@ -187,7 +187,7 @@ describe('productive run budget and explicit checkpoint continuation', function 
     assert.equal(readFileSync(join(root, 'phase-1.txt'), 'utf8'), 'Phase 1 completed once.\n')
     const checkpointTime = statSync(join(root, 'phase-1.txt')).mtimeMs
     const card = $('[data-turn-recovery-card]')
-    await expect(card.$('.turn-recovery-title')).toHaveText('RUN LIMIT REACHED')
+    await expect(card.$('.turn-recovery-title')).toHaveText('Run limit reached')
     await expect(card).toHaveText(expect.stringContaining('Your completed work is saved.'))
     await expect(card.$('.turn-recovery-button')).toHaveText('Continue task')
     await expect($('.messages-list')).toHaveText(
@@ -256,7 +256,7 @@ describe('productive run budget and explicit checkpoint continuation', function 
     await browser.reloadSession()
     const card = $('[data-turn-recovery-card]')
     await card.waitForDisplayed({ timeout: 30_000 })
-    await expect(card.$('.turn-recovery-title')).toHaveText('TIME LIMIT REACHED')
+    await expect(card.$('.turn-recovery-title')).toHaveText('Time limit reached')
     await expect(card.$('.turn-recovery-button')).toHaveText('Continue task')
     await parkPointer()
     await saveAppScreenshot('run-budget-deadline-recovery.png')
@@ -323,7 +323,7 @@ describe('productive run budget and explicit checkpoint continuation', function 
     await browser.reloadSession()
     const card = $('[data-turn-recovery-card]')
     await card.waitForDisplayed({ timeout: 30_000 })
-    await expect(card.$('.turn-recovery-title')).toHaveText('RUN LIMIT REACHED')
+    await expect(card.$('.turn-recovery-title')).toHaveText('Run limit reached')
     await expect(card.$('.turn-recovery-button')).toHaveText('Continue task')
     const transcript = $('.messages-list')
     await expect(transcript).toHaveText(

@@ -131,8 +131,23 @@ describe('live subagent trailing icon sizing', () => {
       await browser.waitUntil(() => browser.execute(() => window.subagentToolSizingFixture.held), {
         timeoutMsg: 'Expected the checkpoint before the actual child tool result',
       })
-      await expect($(PARENT)).not.toHaveAttribute('open')
-      await $(`${PARENT} > summary.tool-card-header`).click()
+      await expect($(`${PARENT} > summary.tool-card-header`)).toBeDisplayed()
+      // The normal running-card policy may already have revealed this card.
+      // Choose user-open in one task so that reveal cannot interleave with a
+      // separate closed check and invert the intended click into user-closed.
+      const disclosure = await browser.execute((selector) => {
+        const card = document.querySelector<HTMLDetailsElement>(selector)
+        const summary = card?.querySelector<HTMLElement>(':scope > summary.tool-card-header')
+        if (!card || !summary) throw new Error('Missing live subagent disclosure')
+        const wasOpen = card.open
+        if (wasOpen) summary.click()
+        summary.click()
+        return { wasOpen, open: card.open, status: card.dataset['status'] }
+      }, PARENT)
+      console.info('subagent-tool-sizing disclosure', JSON.stringify(disclosure))
+      assert.equal(disclosure.open, true)
+      assert.equal(disclosure.status, 'running')
+      await expect($(HEADER)).toBeDisplayed()
       await $(HEADER).scrollIntoView({ block: 'center', inline: 'nearest' })
       await waitForSettledLayout(HEADER)
       await parkPointer()

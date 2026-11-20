@@ -22,6 +22,7 @@ import {
   clearAllowedWorkspaceRootsForTest,
   getChatStoreRoot,
   getInternalWorkspaceRootRegistration,
+  getLocalProjectRoot,
   getProjectRoot,
   getWorkspaceRoot,
   isResolvedPathInsideWorkspace,
@@ -108,6 +109,34 @@ describe('workspace path containment', () => {
     assert.equal(resolved, join(realpathSync.native(ws), 'src', 'new-file.ts'))
     assert.ok(!existsSync(resolved))
   })
+
+  it('allows a file or directory whose name starts with two dots', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'copse-ws-'))
+    mkdirSync(join(ws, '..cache'))
+    writeFileSync(join(ws, '..cache', 'a.ts'), 'ok')
+    writeFileSync(join(ws, '..env'), 'ok')
+    await registerAllowedWorkspaceRoot(ws)
+    cleanupRoot = setWorkspaceRootForTest(ws)
+    const real = realpathSync.native(ws)
+    assert.equal(await resolveWorkspacePath('..cache/a.ts'), join(real, '..cache', 'a.ts'))
+    assert.equal(await resolveWorkspacePath(join(ws, '..env')), join(real, '..env'))
+    await assert.rejects(() => resolveWorkspacePath('..'), /outside workspace/)
+  })
+
+  // `relative` across Windows drives returns the absolute target, which no
+  // `..` test catches: the other drive used to count as inside the workspace.
+  it(
+    'rejects a path on another Windows drive',
+    { skip: process.platform !== 'win32' },
+    async () => {
+      const ws = mkdtempSync(join(tmpdir(), 'copse-ws-'))
+      await registerAllowedWorkspaceRoot(ws)
+      cleanupRoot = setWorkspaceRootForTest(ws)
+      const otherDrive = ws.toUpperCase().startsWith('Z:') ? 'Y:\\x.txt' : 'Z:\\x.txt'
+      await assert.rejects(() => resolveWorkspacePath(otherDrive), /outside workspace/)
+      await assert.rejects(() => assertWorkspaceWriteTarget(otherDrive), /outside workspace/)
+    },
+  )
 })
 
 describe('assertWorkspaceWriteTarget (symlink write escape)', () => {
@@ -168,6 +197,17 @@ describe('assertWorkspaceWriteTarget (symlink write escape)', () => {
     await assert.doesNotReject(() =>
       assertWorkspaceWriteTarget(join(realpathSync.native(ws), 'src', 'new.ts')),
     )
+  })
+
+  it('allows writing under a directory whose name starts with two dots', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'copse-ws-'))
+    mkdirSync(join(ws, '..cache'))
+    await registerAllowedWorkspaceRoot(ws)
+    cleanupRoot = setWorkspaceRootForTest(ws)
+    const real = realpathSync.native(ws)
+    await assert.doesNotReject(() => assertWorkspaceWriteTarget(join(real, '..cache', 'a.ts')))
+    await assert.rejects(() => assertWorkspaceWriteTarget(real), /outside workspace/)
+    await assert.rejects(() => assertWorkspaceWriteTarget(join(real, '..')), /outside workspace/)
   })
 })
 
@@ -564,6 +604,18 @@ describe('allowed workspace roots', () => {
 
     assert.equal(getProjectRoot('p2'), '/projects/two')
     assert.equal(getProjectRoot('missing'), null)
+  })
+
+  it('resolves local hook discovery by project identity when remote and local paths collide', () => {
+    storageSet('projects', [
+      { id: 'remote', path: '/projects/shared', sshHost: 'dev' },
+      { id: 'local', path: '/projects/shared' },
+      { id: 'empty', path: '' },
+    ])
+    assert.equal(getLocalProjectRoot('remote'), null)
+    assert.equal(getLocalProjectRoot('local'), '/projects/shared')
+    assert.equal(getLocalProjectRoot('empty'), null)
+    assert.equal(getLocalProjectRoot('missing'), null)
   })
 
   it('listLocalProjectRoots returns only projects without an sshHost', () => {

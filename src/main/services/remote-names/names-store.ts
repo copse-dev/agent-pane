@@ -1,5 +1,5 @@
-import { randomUUID, X509Certificate, createPrivateKey } from 'node:crypto'
-import { chmodSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { X509Certificate, createPrivateKey } from 'node:crypto'
+import { chmodSync, rmSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
@@ -9,6 +9,7 @@ import {
   keyThumbprint,
 } from '@copse/remote-protocol/keys.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
+import { writeFileAtomicSync } from '@copse/std/write-file-atomic.ts'
 import type { SecretCipher } from '@copse/store-kit/secret-cipher.ts'
 import { copseDataRoot } from '../storage/copse-paths.ts'
 import type { NamesDeviceKey } from './names-client.ts'
@@ -60,14 +61,12 @@ const ALGORITHM: EcKeyImportParams = { name: 'ECDSA', namedCurve: 'P-256' }
  */
 export class NamesStore {
   private readonly cipher: () => SecretCipher | null
-  private readonly directory: string
   private readonly recordPath: string
   private readonly keyPath: string
   private readonly chainPath: string
 
   constructor(cipher: () => SecretCipher | null, directory = join(copseDataRoot(), 'names')) {
     this.cipher = cipher
-    this.directory = directory
     this.recordPath = join(directory, 'device.json')
     this.keyPath = join(directory, 'tls-key.pem')
     this.chainPath = join(directory, 'tls-chain.pem')
@@ -156,10 +155,7 @@ export class NamesStore {
   }
 
   private atomic(path: string, text: string): void {
-    mkdirSync(this.directory, { recursive: true, mode: 0o700 })
-    const temporary = `${path}.${randomUUID()}.tmp`
-    writeFileSync(temporary, text, { mode: 0o600, flag: 'wx' })
-    renameSync(temporary, path)
+    writeFileAtomicSync(path, text, { mode: 0o600, directoryMode: 0o700 })
     chmodSync(path, 0o600)
   }
 }

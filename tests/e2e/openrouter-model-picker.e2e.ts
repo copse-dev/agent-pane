@@ -369,8 +369,8 @@ describe('OpenRouter model picker', () => {
       'qwen/qwen3-vl',
     ])
     assert.deepEqual(await $$('.model-picker-group-label').map((label) => label.getText()), [
-      'OPENROUTER (ZDR ROUTING)',
-      'LOCAL MODELS',
+      'OpenRouter (ZDR routing)',
+      'Local models',
     ])
 
     await filter.setValue('no-such-model')

@@ -1,8 +1,10 @@
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { formatTimedOutResult } from '@copse/agent/ask-user-format.ts'
+import { formatDeferredAskUserResult, formatTimedOutResult } from '@copse/agent/ask-user-format.ts'
 import { askUserTool } from './ask-user-tool.ts'
 import { setAskUserHandler, type AskUserRequest } from '../services/ask-user.ts'
+import { runWithActiveRunIdentity } from '../services/thread-models.ts'
+import { beginDeferralMode, endDeferralMode } from '../services/security/deferral-mode.ts'
 
 const signal = new AbortController().signal
 
@@ -29,6 +31,26 @@ describe('askUserTool', () => {
     const result = await askUserTool.execute({ questions: [{ question: 'Which DB?' }] }, signal)
     assert.equal(result, 'The user answered: Postgres')
     assert.deepEqual(received, { questions: [{ question: 'Which DB?' }] })
+  })
+
+  it('does not claim an unattended question was answered or authorize a default choice', async () => {
+    let asked = 0
+    setAskUserHandler(async () => {
+      asked++
+      return { answers: ['Yes'] }
+    })
+    beginDeferralMode('scheduled-question')
+    try {
+      const result = await runWithActiveRunIdentity('scheduled-question', () =>
+        askUserTool.execute({ questions: [{ question: 'Publish the release?' }] }, signal),
+      )
+      assert.equal(result, formatDeferredAskUserResult([{ question: 'Publish the release?' }]))
+      assert.equal(asked, 0)
+      assert.doesNotMatch(result, /The user answered|Proceed with your recommended or default/)
+      assert.match(result, /leave work that depends on this answer pending/)
+    } finally {
+      endDeferralMode('scheduled-question')
+    }
   })
 
   it('formats multiple answers against their questions', async () => {

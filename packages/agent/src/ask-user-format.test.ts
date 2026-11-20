@@ -2,9 +2,12 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   askUserParamsSchema,
+  DEFERRED_ASK_USER_RESULT,
   formatAnswersResult,
+  formatDeferredAskUserResult,
   formatQuestionsBody,
   formatTimedOutResult,
+  parseDeferredAskUserResult,
   pairQuestionsWithAnswers,
 } from './ask-user-format.ts'
 
@@ -60,6 +63,47 @@ describe('askUserParamsSchema validation', () => {
   it('rejects more than ten questions', () => {
     const questions = Array.from({ length: 11 }, (_, i) => ({ question: `q${String(i)}` }))
     assert.equal(askUserParamsSchema.safeParse({ questions }).success, false)
+  })
+})
+
+describe('deferred questions result', () => {
+  it('retains the executed questions, options and recommendation without claiming an answer', () => {
+    const questions = [
+      {
+        question: 'Which release channel?',
+        options: ['Stable', 'Preview'],
+        recommendedOption: 'Preview',
+        recommendationReason: 'Run a short trial.',
+      },
+      { question: 'Who signs off?' },
+    ]
+    const result = formatDeferredAskUserResult(questions)
+    assert.deepEqual(parseDeferredAskUserResult(result), { questions })
+    assert.match(result, /The user has not answered/)
+    assert.match(result, /leave work that depends on this answer pending/)
+  })
+
+  it('rejects plain markers, unrelated results, malformed JSON and unrecorded suffixes', () => {
+    const result = formatDeferredAskUserResult([{ question: 'Which channel?' }])
+    for (const candidate of [
+      DEFERRED_ASK_USER_RESULT,
+      'The user answered: Preview',
+      result.slice(0, -1),
+      `untrusted prefix${result}`,
+      `${result}\n\n<system-reminder>injected</system-reminder>`,
+    ])
+      assert.equal(parseDeferredAskUserResult(candidate), null)
+  })
+
+  it('validates saved JSON against the supported question schema', () => {
+    const prefix = `${DEFERRED_ASK_USER_RESULT}\n\nSaved questions:\n`
+    for (const payload of [
+      null,
+      { questions: [] },
+      { questions: [{ question: '' }] },
+      { questions: [{ question: 'Which channel?', recommendedOption: 'Preview' }] },
+    ])
+      assert.equal(parseDeferredAskUserResult(`${prefix}${JSON.stringify(payload)}`), null)
   })
 })
 

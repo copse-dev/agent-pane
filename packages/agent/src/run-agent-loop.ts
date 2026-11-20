@@ -1080,8 +1080,15 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
             )
           }
         }
-        const { result, editStats, resultFormat, images, visualEvidence, appendedReminderLengths } =
-          normalizeToolExecuteResult(raw)
+        const {
+          result,
+          editStats,
+          resultFormat,
+          images,
+          visualEvidence,
+          appendedReminderLengths,
+          deferred,
+        } = normalizeToolExecuteResult(raw)
         // Any other tool (an edit, a shell command, an MCP call) may have changed
         // what an earlier read returned, so re-reading after it is fresh work,
         // not a repeat: without this, `read_file` of a range just edited with
@@ -1116,6 +1123,8 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
           ...(editStats ? { editStats } : {}),
           ...(resultFormat ? { resultFormat } : {}),
           ...(appendedReminderLengths ? { appendedReminderLengths } : {}),
+          // Display metadata only: the model reads why from `result`.
+          ...(deferred ? { deferred } : {}),
           ...(images && images.length > 0 ? { images } : {}),
         })
       } catch (err) {

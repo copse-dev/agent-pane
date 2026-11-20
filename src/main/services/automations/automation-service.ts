@@ -7,6 +7,8 @@ import type {
   AutomationProblem,
   AutomationCleanupResult,
   AutomationPermissionOption,
+  AutomationPreparationInput,
+  AutomationPreparationReview,
   AutomationRetainedWorktree,
   AutomationSchedule,
   AutomationScheduleInput,
@@ -16,7 +18,10 @@ import type {
 } from '@shared/types'
 import { AUTOMATION_RETAINED_REASONS, automationPermissionKey } from '@shared/types'
 import { automationRunBlock } from '@shared/automation-run-state.ts'
-import { classifyAutomationFailureMessage } from '@shared/automation-failure.ts'
+import {
+  classifyAutomationCheckoutFailure,
+  classifyAutomationFailureMessage,
+} from '@shared/automation-failure.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import type { AgentDispatchRequest } from '../agent-dispatcher.ts'
 import { getPluginService } from '../plugins/plugin-service.ts'
@@ -34,6 +39,7 @@ import {
 } from '../thread-checkout-transaction.ts'
 import { createHeadlessAutomationRun } from './headless-message-assembler.ts'
 import {
+  automationRunBlocksAdmission,
   reconcileInterruptedAutomationRuns,
   type AutomationRunLiveness,
 } from './automation-run-recovery.ts'
@@ -46,12 +52,14 @@ import { listMcpPermissionCandidates } from '../mcp/mcp-registry.ts'
 import { parseMcpToolName } from '../mcp/mcp-config.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { cronMatches, validateCronExpression } from './cron.ts'
+import { reviewAutomationPreparation } from './preparation-permission.ts'
 import {
   getTaskSupervisor,
   type EnqueueSupervisedTaskInput,
   type SupervisedTaskHandler,
 } from '../supervisor/task-supervisor.ts'
 import type { SupervisedTaskMeta } from '@shared/supervisor/task-schema.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 const STORAGE_KEY = `plugin.${AUTOMATIONS_PLUGIN_ID}.storage`
 const SCHEDULER_HANDLER = 'automation_scheduler_tick'
@@ -122,6 +130,16 @@ const COPSE_AUTOMATION_ACTIONS: readonly CopseAutomationAction[] = [
 
 function isAutomationPermission(value: unknown): boolean {
   if (!isRecord(value)) return false
+  if (value['kind'] === 'worktree-preparation') {
+    return (
+      value['toolName'] === 'prepare_worktree' &&
+      typeof value['directory'] === 'string' &&
+      value['directory'].length > 0 &&
+      typeof value['planFingerprint'] === 'string' &&
+      /^[a-f0-9]{64}$/.test(value['planFingerprint']) &&
+      typeof value['offline'] === 'boolean'
+    )
+  }
   return (
     (value['kind'] === 'copse-action' || value['kind'] === 'mcp-tool') &&
     typeof value['toolName'] === 'string' &&
@@ -178,6 +196,7 @@ function permissionOptions(): AutomationPermissionOption[] {
 
 function canGrantPermissionFromPrompt(permission: AutomationPermission): boolean {
   if (!isAutomationPermission(permission)) return false
+  if (permission.kind === 'worktree-preparation') return true
   if (permission.kind === 'copse-action') {
     return COPSE_AUTOMATION_ACTIONS.some((action) => action.toolName === permission.toolName)
   }
@@ -272,6 +291,10 @@ function minuteStamp(timestamp: number): number {
 export interface AutomationService {
   list(projectId: string): AutomationSchedule[]
   permissionOptions(): AutomationPermissionOption[]
+  reviewPreparation(
+    projectId: string,
+    input: AutomationPreparationInput,
+  ): AutomationPreparationReview
   /** Main-owned proof that a thread is the latest run created by this schedule. */
   ownsRunThread(
     projectId: string,
@@ -320,6 +343,7 @@ export interface AutomationService {
     dispatch: DispatchHeadlessTurn,
     shownProjectId: () => string | null,
     isRunActive?: AutomationRunLiveness,
+    ownsAgentWork?: AutomationRunLiveness,
   ): void
   sync(): Promise<void>
   stop(): void
@@ -391,6 +415,7 @@ export function createAutomationService(
   let notifiedWindowProjectId: (() => string | null) | null = null
   let dispatchHeadlessTurn: DispatchHeadlessTurn | null = null
   let isRunActive: AutomationRunLiveness | undefined
+  let ownsAgentWork: AutomationRunLiveness | undefined
   let disposeSupervisorHandler: (() => void) | null = null
   let disposeSupervisorSubscription: (() => void) | null = null
   let recoveryTimer: ReturnType<typeof setTimeout> | null = null
@@ -463,7 +488,7 @@ export function createAutomationService(
   }
 
   async function logTriggerFailure(schedule: AutomationSchedule, error: unknown): Promise<void> {
-    const message = error instanceof Error ? error.message : String(error)
+    const message = errorMessage(error)
     console.error(`[automations] Failed to create task for “${schedule.name}”: ${message}`)
     await recordProblem(schedule, {
       at: dependencies.now(),
@@ -628,10 +653,7 @@ export function createAutomationService(
       recoveryTimer = null
       void ensureSupervisorTask().catch((error: unknown) => {
         console.error('[automations] Scheduler recovery failed:', error)
-        setHealth(
-          'stopped',
-          `Scheduled triggers are not firing: ${error instanceof Error ? error.message : String(error)}`,
-        )
+        setHealth('stopped', `Scheduled triggers are not firing: ${errorMessage(error)}`)
       })
     }, dependencies.recoveryDelayMs ?? SCHEDULER_RECOVERY_DELAY_MS)
     recoveryTimer.unref()
@@ -689,12 +711,12 @@ export function createAutomationService(
           current.automation.triggeredAt !== automation.triggeredAt
         )
           return
-        const message = error instanceof Error ? error.message : String(error)
+        const message = errorMessage(error)
         await updateMetaOrThrow(projectId, threadId, {
           automation: { ...automation, startFailedAt: dependencies.now() },
         })
         await service.reportStartFailure(projectId, threadId, {
-          code: 'worktree-failed',
+          code: classifyAutomationCheckoutFailure(message),
           message,
         })
         console.error(`[automations] Headless checkout failed for thread ${threadId}:`, error)
@@ -859,7 +881,9 @@ export function createAutomationService(
       const previous = schedule.lastCreatedThreadId
         ? (scheduleThreads.find((thread) => thread.id === schedule.lastCreatedThreadId) ?? null)
         : null
-      const busy = scheduleThreads.find((thread) => automationRunBlock(thread) !== null)
+      const busy = scheduleThreads.find((thread) =>
+        automationRunBlocksAdmission(schedule.projectId, thread, ownsAgentWork),
+      )
 
       if (busy) {
         if (automationRunBlock(busy) === 'pending-start') {
@@ -1018,6 +1042,7 @@ export function createAutomationService(
         .sort((a, b) => a.createdAt - b.createdAt)
     },
     permissionOptions,
+    reviewPreparation: reviewAutomationPreparation,
     ownsRunThread(projectId, threadId, automation) {
       return service
         .list(projectId)
@@ -1086,7 +1111,14 @@ export function createAutomationService(
       )
       const unavailable = permissions.find((permission) => {
         const key = automationPermissionKey(permission)
-        return !selectable.has(key) && !retained.has(key)
+        if (selectable.has(key) || retained.has(key)) return false
+        if (permission.kind !== 'worktree-preparation') return true
+        // A newly selected plan must still describe this project's exact
+        // setup at save time. Retained grants remain removable when stale.
+        const current = reviewAutomationPreparation(projectId, permission)
+        if (automationPermissionKey(current.permission) !== key)
+          throw new Error('Worktree setup has changed. Review it again before saving.')
+        return false
       })
       if (unavailable) {
         throw new Error(`Automation permission is not available: ${unavailable.toolName}`)
@@ -1197,11 +1229,12 @@ export function createAutomationService(
         inFlight.delete(schedule.id)
       }
     },
-    start(sender, dispatch, shownProjectId, runtimeIsActive) {
+    start(sender, dispatch, shownProjectId, runtimeIsActive, runtimeOwnsAgentWork) {
       notify = sender
       notifiedWindowProjectId = shownProjectId
       dispatchHeadlessTurn = dispatch
       isRunActive = runtimeIsActive
+      ownsAgentWork = runtimeOwnsAgentWork
       disposeSupervisorHandler ??= (dependencies.supervisor ?? getTaskSupervisor)().registerHandler(
         SCHEDULER_HANDLER,
         async (task) => {
@@ -1241,6 +1274,7 @@ export function createAutomationService(
       notify = null
       notifiedWindowProjectId = null
       isRunActive = undefined
+      ownsAgentWork = undefined
     },
     async tick(scheduledFor) {
       if (!dependencies.isPluginEnabled()) return

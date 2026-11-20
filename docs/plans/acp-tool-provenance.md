@@ -29,12 +29,12 @@ call that only claims to be bridged.
 A permission request is delegated to the bridge's gate only when its stable `{server, tool}`
 identity is established from adapter-authored fields:
 
-| Field                                     | Claim                                                                                                                                                                                                                                                                       |
-| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `_meta.claudeCode.toolName`               | `mcp__<server>__<tool>` names an MCP tool; any other value (`Bash`) names an agent-native tool. The Claude adapter sets this from the real tool name, on both the notification and the request.                                                                             |
-| `_meta.claudeCode.mcpServer.name`         | Server only.                                                                                                                                                                                                                                                                |
-| ACP `name`                                | Only a qualified `mcp__<server>__<tool>` value.                                                                                                                                                                                                                             |
-| `title`, only in a literal observed shape | `copse-<tool>: <tool>` (Cursor), `mcp__copse__<tool>` (Claude), `mcp.copse.<tool>` (Codex notifications). Fixed separators, an ASCII tool name spelled exactly as offered, no case folding and no inline-code unwrapping. Anything else is display text and claims nothing. |
+| Field                                     | Claim                                                                                                                                                                                                                                                                                                                     |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `_meta.claudeCode.toolName`               | `mcp__<server>__<tool>` names an MCP tool; any other value (`Bash`) names an agent-native tool. The Claude adapter sets this from the real tool name, on both the notification and the request.                                                                                                                           |
+| `_meta.claudeCode.mcpServer.name`         | Server only.                                                                                                                                                                                                                                                                                                              |
+| ACP `name`                                | Only a qualified `mcp__<server>__<tool>` value.                                                                                                                                                                                                                                                                           |
+| `title`, only in a literal observed shape | `<server>-<tool>: <tool>` (Cursor), `mcp__<server>__<tool>` (Claude), `mcp.<server>.<tool>` (Codex notifications), for the session's exact bridge name. Fixed separators, an ASCII tool name spelled exactly as offered, no case folding and no inline-code unwrapping. Anything else is display text and claims nothing. |
 
 The title grammar is literal on purpose. An earlier version accepted any run of non-alphanumeric
 characters between the server and the tool, case-insensitively, after unwrapping inline code. The
@@ -49,9 +49,12 @@ Claims are collected from the permission request and from the agent's earlier `t
 most 512 calls with 8 reports each. Rules:
 
 - The **request itself** must carry a claim. Earlier reports can veto it, never stand in for it.
-  Otherwise a Codex call, whose notification is titled `mcp.copse.<tool>` but whose request names
+  Otherwise a Codex call, whose notification is titled `mcp.<server>.<tool>` but whose request names
   nothing, would newly skip a prompt.
 - Every claim must agree on the server and the tool, compared exactly.
+- The server must be this session's bridge, named exactly. Each bridge is mounted as
+  `copse-<nonce>` (`newBridgeServerName`), so `copse` alone, or another session's nonce, is
+  another server (#4125).
 - A title is the weakest evidence. A request the agent classifies as `execute`, `edit`, `delete`
   or `move`, or that carries a command line (`acpShellCommandText`: an unclassified request with
   `rawInput.command`), is never delegated when every claim comes from a title. The second case came
@@ -89,7 +92,8 @@ Everything in a permission request comes from the adapter. The threat this desig
 model-controlled content such as commands, file names and prompt-injected text, not a malicious
 adapter. A malicious adapter already runs its own tools outside Copse. The model can choose which
 tool to call, but it cannot choose the name the adapter records for that tool. A call that really
-names `mcp__copse__…` is routed to Copse's bridge, where Copse's gate runs again. A forged display
+names `mcp__copse-<nonce>__…` with this session's nonce is routed to Copse's bridge, where
+Copse's gate runs again. A forged display
 title cannot outvote an adapter's own tool name: when the two disagree, the request falls back to
 the ordinary prompt.
 
@@ -176,7 +180,7 @@ needs a security review and a change to `shell-permissions.md` in the same PR.
 
 ### Other limits
 
-- **Codex** titles its notifications `mcp.copse.<tool>`, but its permission requests carry
+- **Codex** titles its notifications `mcp.<server>.<tool>`, but its permission requests carry
   neither a title nor `_meta` identity. Earlier reports can only veto, so its bridged calls still
   prompt at the ACP layer. That is fail-closed and unchanged. Delegating them needs an
   adapter-authored identity on the Codex request.
@@ -185,11 +189,15 @@ needs a security review and a change to `shell-permissions.md` in the same PR.
   request are unaffected.
 - **Linking an ACP call to a bridge execution** matches tool and arguments, because the MCP
   request carries no ACP `toolCallId`. See the residual under Attribution.
-- **Server-name collision (follow-up).** An MCP server the user configured in the agent itself
-  and named `copse` would produce the same `mcp__copse__<tool>` names, and Copse's bridge would not
-  see those calls. The offered-tool check narrows this to tool names Copse also serves. A
-  per-session `copse-<nonce>` bridge name would close it; that changes every bridged tool name the
-  agent sees, so it is left to its own change.
+- **Server-name collision (closed by #4125).** An MCP server the agent reads from its own config
+  (`~/.claude.json`, a repository's `.mcp.json`, a plugin manifest) and named `copse` would
+  produce the names the bridge had when it was mounted as `copse`, and Copse's bridge would not
+  see those calls. Each bridge is now mounted as `copse-<nonce>`, a fresh random name per bridge,
+  and every claim is compared with that exact name. No static config can name a server it cannot
+  predict. Model-facing steering names the session's server where it gives a tool's full name, and
+  in the tool-steering session note, which also says a look-alike such as `copse-tools` is not
+  Copse's; elsewhere it says "Copse's MCP server" and means that one. A session reattached in a new process gets a new bridge and
+  name; its history may name the old one, and the agent's tool list carries the new one.
 - **Export fields not yet added:** a prompt or batch episode ID and a command fingerprint. The
   existing detail blob's `toolCallIds` covers coalesced prompts. A non-reversible command
   fingerprint already exists for `tier-shadow` and could be reused later.

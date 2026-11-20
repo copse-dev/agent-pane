@@ -17,6 +17,7 @@ import { runWithThreadExecutionContext } from './thread-execution-context.ts'
 import { humanDecisions } from './human-decisions.ts'
 import { mobileDecisions } from './mobile/mobile-decisions.ts'
 import { storageGet, storageSet } from './storage/storage.ts'
+import { beginDeferralMode, endDeferralMode } from './security/deferral-mode.ts'
 
 const req: AskUserRequest = {
   questions: [{ question: 'Which DB?', options: ['Postgres'] }, { question: 'Async?' }],
@@ -130,6 +131,60 @@ function fakeWindowDeps(): {
 describe('window ask_user handler', () => {
   afterEach(() => {
     setAskUserHandler(null)
+  })
+
+  it('does not open or wait on a question during an unattended run', async () => {
+    const window = fakeWindowDeps()
+    setAskUserHandler(createWindowAskUserHandler(window.deps))
+    const controller = new AbortController()
+    const threadId = 'unattended-question-thread'
+    beginDeferralMode(threadId)
+    const pending = runWithActiveRunIdentity(threadId, () =>
+      requestUserAnswers(req, controller.signal),
+    )
+    try {
+      assert.deepEqual(window.sent, [])
+      assert.deepEqual(await pending, { answers: ['', ''], deferred: true })
+    } finally {
+      controller.abort()
+      endDeferralMode(threadId)
+      await pending
+    }
+  })
+
+  it('keeps other threads and later interactive turns waiting for an actual answer', async () => {
+    const window = fakeWindowDeps()
+    setAskUserHandler(createWindowAskUserHandler(window.deps))
+    beginDeferralMode('scheduled-thread')
+    try {
+      const other = runWithActiveRunIdentity('interactive-thread', () => requestUserAnswers(req))
+      assert.equal(window.requests.length, 1)
+      window.answer(['Postgres', 'Yes'])
+      assert.deepEqual(await other, { answers: ['Postgres', 'Yes'] })
+      endDeferralMode('scheduled-thread')
+      const followUp = runWithActiveRunIdentity('scheduled-thread', () => requestUserAnswers(req))
+      assert.equal(window.requests.length, 2)
+      window.answer(['SQLite', 'No'])
+      assert.deepEqual(await followUp, { answers: ['SQLite', 'No'] })
+    } finally {
+      endDeferralMode('scheduled-thread')
+    }
+  })
+
+  it('keeps cancellation distinct from an unattended question', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    beginDeferralMode('cancelled-schedule')
+    try {
+      assert.deepEqual(
+        await runWithActiveRunIdentity('cancelled-schedule', () =>
+          requestUserAnswers(req, controller.signal),
+        ),
+        { answers: ['', ''], cancelled: true },
+      )
+    } finally {
+      endDeferralMode('cancelled-schedule')
+    }
   })
 
   it('returns what the user answered in the window', async () => {
@@ -350,6 +405,21 @@ describe('requestUserAnswers host-wait deadline pause', () => {
       },
     }
   }
+
+  it('does not pause the run budget when an unattended question returns immediately', async () => {
+    const { deadline, log } = recordingDeadline()
+    registerRunDeadline('unattended-deadline', deadline)
+    beginDeferralMode('unattended-deadline')
+    try {
+      const result = await runWithActiveRunIdentity('unattended-deadline', () =>
+        requestUserAnswers(req),
+      )
+      assert.equal(result.deferred, true)
+      assert.deepEqual(log, [])
+    } finally {
+      endDeferralMode('unattended-deadline')
+    }
+  })
 
   it('pauses the run deadline for the whole wait and resumes after', async () => {
     const { deadline, log } = recordingDeadline()

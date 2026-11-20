@@ -161,6 +161,81 @@ test('a blank destination prepares its checkout before running', async () => {
   assert.equal(getThreadById(store, 'destination')?.worktreeChoice, 'automatic')
 })
 
+test('authorized isolated child starts without changing focus and consumes machine continuation budget', async () => {
+  const { store, api, runs, command } = fixture()
+  command.requireWorktree = true
+  api.agent.prepareCheckout = async (): Promise<PreparedThreadCheckout> => ({
+    choice: 'worktree',
+    checkoutMode: 'worktree',
+    branch: 'child',
+    worktree: {
+      path: '/repo/child',
+      branch: 'child',
+      baseBranch: 'main',
+      baseCommit: 'abc',
+      createdAt: 1,
+      seededFromDirtyProject: false,
+    },
+  })
+  assert.deepEqual(await acceptThreadPrompt(store, api, command), { ok: true, queued: false })
+  assert.deepEqual(runs, ['visible-project/destination'])
+  assert.equal(store.getState().activeThreadId, 'visible-thread')
+  assert.equal(getThreadById(store, 'destination')?.worktree?.branch, 'child')
+  assert.equal(getThreadById(store, 'destination')?.continuationUsed, 1)
+  assert.equal(getThreadById(store, 'destination')?.messages[0]?.origin?.kind, 'machine')
+})
+
+test('expired main authorization after checkout prevents subthread dispatch', async () => {
+  const { store, api, runs, command } = fixture()
+  command.requireWorktree = true
+  let prepared = false
+  api.agent.prepareCheckout = async (): Promise<PreparedThreadCheckout> => {
+    prepared = true
+    return {
+      choice: 'worktree',
+      checkoutMode: 'worktree',
+      branch: 'child',
+      worktree: {
+        path: '/repo/child',
+        branch: 'child',
+        baseBranch: 'main',
+        baseCommit: 'abc',
+        createdAt: 1,
+        seededFromDirtyProject: false,
+      },
+    }
+  }
+  api.threadPrompts.canSubmit = async (): Promise<boolean> => {
+    assert.equal(prepared, true)
+    return false
+  }
+  assert.equal((await acceptThreadPrompt(store, api, command)).ok, false)
+  assert.deepEqual(runs, [])
+  assert.equal(getThreadById(store, 'destination')?.messages.length, 0)
+})
+
+test('subthread startup requests isolation and rejects shared fallback before adding a prompt', async () => {
+  const { store, api, runs, command } = fixture()
+  command.requireWorktree = true
+  const choices: unknown[] = []
+  api.agent.prepareCheckout = async (
+    _project,
+    _thread,
+    _prompt,
+    choice,
+  ): Promise<PreparedThreadCheckout> => {
+    choices.push(choice)
+    return { choice: 'worktree', checkoutMode: 'shared', branch: null }
+  }
+  assert.deepEqual(await acceptThreadPrompt(store, api, command), {
+    ok: false,
+    error: 'Subthreads require an isolated checkout.',
+  })
+  assert.deepEqual(choices, ['worktree'])
+  assert.deepEqual(runs, [])
+  assert.equal(getThreadById(store, 'destination')?.messages.length, 0)
+})
+
 for (const status of ['idle', 'running'] as const) {
   test(`metadata failure preserves acceptance of a prompt to an ${status} destination`, async (t) => {
     const { store, api, runs, command } = fixture(status)

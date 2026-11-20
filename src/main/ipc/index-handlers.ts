@@ -1,7 +1,7 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import { dirname, relative } from 'node:path'
 import { z } from 'zod'
-import micromatch from 'micromatch'
+import picomatch from 'picomatch'
 import { getWorkspaceRoot } from '../services/workspace.ts'
 import {
   isIndexQueryPattern,
@@ -12,7 +12,7 @@ import {
   zThreadId,
 } from './ipc-guards.ts'
 import {
-  resolveThreadExecutionContext,
+  inspectThreadReadContext,
   runWithThreadExecutionContext,
 } from '../services/thread-execution-context.ts'
 import { expectedThreadWorktreePath, repositoryLocation } from '../services/worktree-manager.ts'
@@ -41,7 +41,9 @@ export function registerIndexHandlers(win: BrowserWindow): void {
     if (!root) return []
     const idx = await getReadyFileIndex(root)
     if (!idx) return []
-    return query ? micromatch(idx.paths, `**/*${query}*`).slice(0, 20) : idx.paths.slice(0, 20)
+    if (!query) return idx.paths.slice(0, 20)
+    const isMatch = picomatch(`**/*${query}*`)
+    return idx.paths.filter((path) => isMatch(path)).slice(0, 20)
   })
 
   ipcMain.handle('index:status', (event) => {
@@ -70,7 +72,8 @@ export function registerIndexHandlers(win: BrowserWindow): void {
         if (root) await whenFileIndexReady(root, target)
         return await resolveFileReferences(candidates, root, undefined, target)
       }
-      const context = await resolveThreadExecutionContext(owner.projectId, owner.threadId)
+      const context = await inspectThreadReadContext(owner.projectId, owner.threadId)
+      if (!context) return []
       return runWithThreadExecutionContext(context, async () => {
         const root = context.root
         await whenFileIndexReady(root)

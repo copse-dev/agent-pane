@@ -111,7 +111,16 @@ An owner admitted just after the repair can still be publishing its own status.
 Admission therefore rechecks liveness after the metadata read and on later
 attempts involving an already-interrupted idle run. A live or uncertain owner
 produces a busy admission view; it never rolls persisted metadata back over that
-owner's write. Ordinary idle history and unsent drafts keep their existing rules.
+owner's write. Ordinary idle history and unsent drafts keep their existing recovery rules. Admission
+also checks for a proven live agent owner after a prompt has returned: manual, cron
+and event triggers coalesce while a dispatcher, local/ACP/container turn, or armed
+background completion wake still owns work, independently of the live-worktree cap.
+The supervised process registry retains an armed wake until its completion callback
+settles. Ordinary dev servers and watchers do not own an agent wake: they still protect
+their checkout and count against its retention cap, but permit Run now and Unlimited
+repeats as before. The broader interrupted-run recovery probe remains conservative. This is an admission check only; it does not rewrite settled metadata or hide the
+cleanup report that the checkout is still in use. Unknown ordinary idle history does
+not become a permanent blocker merely because completion records remain in memory.
 
 Prototype boundaries:
 
@@ -158,6 +167,40 @@ of these hold (`adoptThreadWorktree`, re-proved under the repository lock):
 - it has no PR (those follow the parking lifecycle) and the requested base branch is unchanged;
 - the project checkout is clean, so a fresh allocation would not have seeded anything this one
   lacks.
+
+A returned ACP prompt is not proof that the checkout is unused. A self-started turn,
+reported unfinished tool, cancellation acknowledgement or in-progress session operation keeps
+automatic hand-over, completed-run release and PR parking blocked. Idle session disposal and
+the checkout mutation share the pool's existing per-thread operation: activity is rechecked
+immediately before closing the connection, and a new acquire waits until the checkout mutation
+finishes. An uncertain shutdown keeps the existing pool entry through idle reaping and failed
+replacement acquisition, and cannot authorize a later automatic mutation. It is not a cached
+verdict: each later reap, acquire or automatic mutation asks the transport to stop again (an SSH
+agent keeps its remote process group until a kill reaches it) and fails with that attempt's
+reason. Once one succeeds the entry leaves the pool and the next acquire starts a fresh agent
+session; a session whose process outlived a failed stop is never resumed. A replacement can be
+requested by a machine wake, so it is not an implicit human override. Explicit Stop and archive
+behavior is unchanged. Reaping still reports a failed shutdown after processing unrelated idle
+sessions, so retaining one uncertain writer cannot prevent safe resource cleanup elsewhere.
+
+These paths also hold the old owner's existing thread-resource fence, re-read settled metadata
+and check native resources and writers of the same root before touching Git. The thread's own
+terminals and background processes count wherever they run; any other writer counts only when
+it is scoped to the checkout or a path inside it. An ancestor-scoped writer, such as a local
+terminal in the home directory that holds `~/.copse/worktrees`, and an unscoped one, such as an
+MCP call, contain every checkout and do not block. Completed native background records and their
+retained logs do not by themselves block a later clean run; their existing running-process policy
+remains unchanged. This adds no permission, continuation grant, cap increase or automatic replay.
+
+PR parking records a PR the turn created (`gh pr create`) in the thread's metadata as soon as
+the turn reports in. Only the Git change waits, while the thread is running or an automation
+run's draft has not started; an ordinary chat's unsent draft is editable text and defers
+nothing.
+
+The same-root writer check is advisory: this is not a global checkout-writer mutex through
+awaited Git operations. A foreign-thread or unscoped writer that starts after the last check is
+outside this ACP-specific guarantee. The old owner's resource fence and ACP pool operation,
+unlike that advisory check, remain held through the checkout mutation.
 
 The result is meant to be indistinguishable from a fresh allocation: every ignored file is
 deleted (confined to the checkout's real path), the branch and tree move to the current base

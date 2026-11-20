@@ -2,7 +2,7 @@ import { storageCleanup } from '../storage-cleanup.ts'
 import type { TaskSupervisor } from '../supervisor/task-supervisor.ts'
 import type { ContainerRunProgress, ContainerRunRequest } from '@shared/types/container-run.ts'
 import { isRecord } from '@shared/unknown-value.ts'
-import { execFileSync } from 'node:child_process'
+import { internalGit } from '../security/internal-git-exec.ts'
 import { storageGet } from '../storage/storage.ts'
 import { getSetting } from '../storage/settings.ts'
 import {
@@ -32,6 +32,7 @@ import {
 } from './thread-container.ts'
 import type { ThreadContainerRecord } from '@shared/types/container-run.ts'
 import type { ThreadContainerEngine } from './container-engine.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 /**
  * One unattended container run per thread, driven from the UI
@@ -112,9 +113,9 @@ const productionDependencies: RunDependencies = {
  * the failure surfaces mid-run as a raw `git rev-parse` error from carry-in,
  * after the image build and the container start.
  */
-function assertGitCheckout(root: string, describe: string): void {
+async function assertGitCheckout(root: string, describe: string): Promise<void> {
   try {
-    execFileSync('git', ['rev-parse', '--verify', 'HEAD'], { cwd: root, stdio: 'ignore' })
+    await internalGit(root, ['rev-parse', '--verify', 'HEAD'])
   } catch {
     throw new Error(
       `${describe} (${root}) is not a git checkout with a commit; a container run carries the work in as a git snapshot`,
@@ -443,7 +444,7 @@ export class ContainerRunService {
           'This thread has no worktree yet. Ask the agent to make a change (or call request_write_access) first.',
         )
       }
-      assertGitCheckout(
+      await assertGitCheckout(
         checkout.root,
         checkout.checkoutMode === 'worktree' ? "The thread's worktree" : 'The project checkout',
       )
@@ -651,7 +652,7 @@ export class ContainerRunService {
       this.update(progress, {
         phase: 'failed',
         finishedAt: Date.now(),
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage(error),
       })
     } finally {
       if (supervisor && taskId) {
