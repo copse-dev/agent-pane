@@ -38,7 +38,7 @@ import { postTurnReviewPlugin } from '@copse/agent/plugins/post-turn-review-plug
 import { shellReplayLeaseStore } from './security/capability-lease.ts'
 import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 
-it('Stop revokes task retries from earlier turns without affecting another chat', () => {
+it('Stop revokes task retries from earlier turns without affecting another chat', async () => {
   const identity = {
     projectId: 'stop-lease-project',
     threadId: 'stop-lease-thread',
@@ -54,16 +54,24 @@ it('Stop revokes task retries from earlier turns without affecting another chat'
     // Between machine turns there need not be a live AbortController. Stop is
     // still an explicit revocation of the task's previous replay approvals.
     agentService.abortAgent(identity.threadId)
-    assert.equal(shellReplayLeaseStore.consume(identity, 'npm test', () => false).matched, false)
     assert.equal(
-      shellReplayLeaseStore.consume(
-        { ...identity, containment: 'external' },
-        'node check.mjs',
-        () => false,
+      (await shellReplayLeaseStore.consume(identity, 'npm test', () => false)).matched,
+      false,
+    )
+    assert.equal(
+      (
+        await shellReplayLeaseStore.consume(
+          { ...identity, containment: 'external' },
+          'node check.mjs',
+          () => false,
+        )
       ).matched,
       false,
     )
-    assert.equal(shellReplayLeaseStore.consume(other, 'npm test', () => false).matched, true)
+    assert.equal(
+      (await shellReplayLeaseStore.consume(other, 'npm test', () => false)).matched,
+      true,
+    )
   } finally {
     shellReplayLeaseStore.clear()
   }
@@ -107,12 +115,17 @@ it('send-now preserves task retries while interrupting an admitted turn', async 
     agentService.abortAgent(threadId, 'send_now')
     await pending
     assert.deepEqual(chunks, [{ type: 'done', stopReason: 'cancelled' }])
-    assert.equal(shellReplayLeaseStore.consume(identity, 'npm test', () => false).matched, true)
     assert.equal(
-      shellReplayLeaseStore.consume(
-        { ...identity, containment: 'external' },
-        'node check.mjs',
-        () => false,
+      (await shellReplayLeaseStore.consume(identity, 'npm test', () => false)).matched,
+      true,
+    )
+    assert.equal(
+      (
+        await shellReplayLeaseStore.consume(
+          { ...identity, containment: 'external' },
+          'node check.mjs',
+          () => false,
+        )
       ).matched,
       true,
     )

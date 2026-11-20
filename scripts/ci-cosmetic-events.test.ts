@@ -23,6 +23,7 @@ const workflow = z
   .parse(load(readFileSync('.github/workflows/ci.yml', 'utf8')))
 const meaningfulLabels = [
   'ci-full',
+  'ci-macos-sandbox',
   'update-screenshots',
   'bench-agent',
   'bench-doctrine',

@@ -168,12 +168,19 @@ import {
 } from './shell-scope.ts'
 import { getAutomationService } from '../automations/automation-service.ts'
 import { getGithubRepoSlug } from '../github/git-service.ts'
+import { scriptReplayScope } from './script-replay-scope.ts'
 
 const SANDBOX_REPLAY_LABEL =
   'Retry this exact command for this task (up to 10, for 15 minutes). Stop revokes retries.'
 const EXTERNAL_REPLAY_LABEL = `Allow retries outside the sandbox (up to ${String(
   SHELL_REPLAY_LEASE_EXTERNAL_MAX_REPLAYS,
 )}, for ${String(SHELL_REPLAY_LEASE_EXTERNAL_TTL_MS / 3_600_000)} hours). This exact command only; Stop revokes retries. Changed scripts can change what it does.`
+
+function externalReplayLabel(scriptScope: string | null): string {
+  return scriptScope
+    ? `Allow this script with different arguments outside the sandbox for this task (up to ${String(SHELL_REPLAY_LEASE_EXTERNAL_MAX_REPLAYS)} runs, for ${String(SHELL_REPLAY_LEASE_EXTERNAL_TTL_MS / 3_600_000)} hours). Stop revokes retries.`
+    : EXTERNAL_REPLAY_LABEL
+}
 
 /**
  * @param wholeCommandFallback lease the exact command line when no single
@@ -186,12 +193,15 @@ function issueShellReplayLease(
   command: string,
   approval: ApprovalResponse,
   wholeCommandFallback = false,
+  scriptScope: string | null = null,
 ): void {
-  const core =
-    replayLeaseCore(command, (segment) => leaseCompanionAllowed(segment, identity.executionRoot)) ??
-    (wholeCommandFallback ? command : null)
+  const core = scriptScope
+    ? command
+    : (replayLeaseCore(command, (segment) =>
+        leaseCompanionAllowed(segment, identity.executionRoot),
+      ) ?? (wholeCommandFallback ? command : null))
   if (!core) return
-  const lease = shellReplayLeaseStore.issue(identity, core, approval)
+  const lease = shellReplayLeaseStore.issue(identity, core, approval, scriptScope)
   if (!lease) return
   recordDecision({
     kind: 'shell',
@@ -200,7 +210,9 @@ function issueShellReplayLease(
     subject: SHELL_DECISION_SUBJECT,
     scope: identity.containment === 'external' ? 'external' : 'sandbox',
     remembered: false,
-    reasons: ['bounded exact replay lease issued'],
+    reasons: [
+      scriptScope ? 'bounded script argument lease issued' : 'bounded exact replay lease issued',
+    ],
     source: `turn-tree-capability-lease:${lease.id}`,
     projectId: identity.projectId,
     threadId: identity.threadId,
@@ -345,6 +357,9 @@ async function requestEscalationApproval(
   opts: { offerTrustedCommand?: boolean } = {},
 ): Promise<boolean> {
   if (signal?.aborted) return false
+  const scriptScope = leaseIdentity
+    ? await scriptReplayScope(parts.command, leaseIdentity.executionRoot)
+    : null
   const trustable =
     opts.offerTrustedCommand === false
       ? null
@@ -365,7 +380,7 @@ async function requestEscalationApproval(
       ...(leaseIdentity
         ? {
             allowTurnTreeLease: true,
-            turnTreeLeaseLabel: EXTERNAL_REPLAY_LABEL,
+            turnTreeLeaseLabel: externalReplayLabel(scriptScope),
             turnTreeLeaseDefault: false,
             turnTreeLeaseSubject: parts.command,
           }
@@ -375,9 +390,19 @@ async function requestEscalationApproval(
   )
   if (signal?.aborted) return false
   const { approved, remember, grantScope } = response
+  if (
+    approved &&
+    grantScope === 'turn-tree' &&
+    leaseIdentity &&
+    scriptScope &&
+    (await scriptReplayScope(parts.command, leaseIdentity.executionRoot)) !== scriptScope
+  ) {
+    return false
+  }
+  if (signal?.aborted) return false
   if (approved && remember && trustable) await addTrustedShellCommand(trustable)
   if (!signal?.aborted && approved && grantScope === 'turn-tree' && leaseIdentity) {
-    issueShellReplayLease(leaseIdentity, parts.command, response, true)
+    issueShellReplayLease(leaseIdentity, parts.command, response, true, scriptScope)
   }
   return approved && !signal?.aborted
 }
@@ -627,7 +652,9 @@ export async function promptUnsandboxedShell(
   // command output, always reaches the user and never offers one.
   const leaseIdentity =
     forceAsk || oneShot ? null : expectedBlockLeaseIdentity(command, getAgentExecutionRoot())
-  if (leaseIdentity && consumeShellReplayLease(leaseIdentity, command)) return true
+  if (leaseIdentity && (await consumeShellReplayLease(leaseIdentity, command))) {
+    return !signal?.aborted
+  }
   // A command that failed inside the sandbox because it reads a file in the
   // user's home directory is the same read-access question as the up-front gate,
   // so a thread that already granted that scope should not be asked again.
@@ -671,7 +698,12 @@ export async function promptExpectedSandboxBlock(
   const leaseIdentity = forceAsk
     ? null
     : expectedBlockLeaseIdentity(command, opts.executionRoot ?? null)
-  if (leaseIdentity && consumeShellReplayLease(leaseIdentity, command)) return true
+  if (leaseIdentity && (await consumeShellReplayLease(leaseIdentity, command))) {
+    return !signal?.aborted
+  }
+  const scriptScope = leaseIdentity
+    ? await scriptReplayScope(command, leaseIdentity.executionRoot)
+    : null
   // An explicit escape request must reach the user even when deterministic tiers
   // would approve the command. The caller handles already-authorized run modes.
   const response = await requestApproval(
@@ -690,7 +722,7 @@ export async function promptExpectedSandboxBlock(
       ...(leaseIdentity
         ? {
             allowTurnTreeLease: true,
-            turnTreeLeaseLabel: EXTERNAL_REPLAY_LABEL,
+            turnTreeLeaseLabel: externalReplayLabel(scriptScope),
             turnTreeLeaseDefault: false,
             turnTreeLeaseSubject: command,
           }
@@ -700,8 +732,18 @@ export async function promptExpectedSandboxBlock(
   )
   if (signal?.aborted) return false
   const { approved, grantScope } = response
+  if (
+    approved &&
+    grantScope === 'turn-tree' &&
+    leaseIdentity &&
+    scriptScope &&
+    (await scriptReplayScope(command, leaseIdentity.executionRoot)) !== scriptScope
+  ) {
+    return false
+  }
+  if (signal?.aborted) return false
   if (approved && grantScope === 'turn-tree' && leaseIdentity) {
-    issueShellReplayLease(leaseIdentity, command, response, true)
+    issueShellReplayLease(leaseIdentity, command, response, true, scriptScope)
   }
   return approved
 }
@@ -1256,8 +1298,11 @@ async function checkShellPermission(
 }
 
 /** Spend a matching replay lease, recording that it answered the question. */
-function consumeShellReplayLease(identity: ShellReplayLeaseIdentity, command: string): boolean {
-  const match = shellReplayLeaseStore.consume(identity, command, (segment) =>
+async function consumeShellReplayLease(
+  identity: ShellReplayLeaseIdentity,
+  command: string,
+): Promise<boolean> {
+  const match = await shellReplayLeaseStore.consume(identity, command, (segment) =>
     leaseCompanionAllowed(segment, identity.executionRoot),
   )
   if (!match.matched) return false
@@ -1758,7 +1803,9 @@ export async function ensureShellCommandPermitted(
   const leaseIdentity =
     leaseRoot !== null ? activeShellReplayLeaseIdentity(leaseRoot, 'project-sandbox') : null
   const leaseOfferIdentity = leaseCore !== null ? leaseIdentity : null
-  if (!forceAsk && leaseIdentity && consumeShellReplayLease(leaseIdentity, command)) return true
+  if (!forceAsk && leaseIdentity && (await consumeShellReplayLease(leaseIdentity, command))) {
+    return !opts.signal?.aborted
+  }
 
   // Reads of accountable paths outside the project ask the narrower read-access
   // question — and can be answered once for the whole thread — instead of the
