@@ -128,18 +128,23 @@ describe('remote browser chat replica', () => {
   it('validates snapshots, caches hints per exchange and spends an accepted hint', async () => {
     let reads = 0
     const live = thread()
+    const states: string[] = []
     const client = new RemoteChatClient(async (path) => {
-      if (path === '/api/remote/state')
+      if (path.startsWith('/api/remote/state')) {
+        states.push(path)
         return {
           version: 1,
           sessionId: '11111111-1111-4111-8111-111111111111',
           revision: 1,
           views: [{ projectId: 'p', threads: [live] }],
         }
+      }
       reads++
       return { value: reads === 1 ? true : 'Test the release build.' }
     })
     assert.equal((await client.thread('p', 't'))?.title, 'Release')
+    // One open chat asks only for that chat, not every project's transcripts.
+    assert.deepEqual(states, ['/api/remote/state?project=p&thread=t'])
     assert.equal(await client.hint(live), 'Test the release build.')
     assert.equal(await client.hint(live), 'Test the release build.')
     assert.equal(reads, 2)
@@ -165,6 +170,48 @@ describe('remote browser chat replica', () => {
     })
     assert.equal(await client.hint(live), null)
     assert.equal(reads, 0)
+  })
+
+  it('reuses the state it validated when the transport reports it unchanged', async () => {
+    const state = (revision: number, title: string): unknown => ({
+      version: 1,
+      sessionId: '11111111-1111-4111-8111-111111111111',
+      revision,
+      views: [{ projectId: 'p', threads: [{ ...thread(), title }] }],
+    })
+    // A conditional transport answers an unchanged read with the same object.
+    let answer = state(1, 'Release')
+    const client = new RemoteChatClient(() => Promise.resolve(answer))
+    const first = await client.thread('p', 't')
+    assert.equal(
+      await client.thread('p', 't'),
+      first,
+      'an unchanged poll is the same thread object',
+    )
+    answer = state(2, 'Release 2')
+    const second = await client.thread('p', 't')
+    assert.equal(second?.title, 'Release 2')
+    assert.notEqual(second, first)
+  })
+
+  it('keeps the states of different scopes apart at one revision', async () => {
+    const client = new RemoteChatClient((path) =>
+      Promise.resolve({
+        version: 1,
+        sessionId: '11111111-1111-4111-8111-111111111111',
+        revision: 7,
+        views: [
+          {
+            projectId: 'p',
+            threads: [{ ...thread(), id: path.endsWith('thread=other') ? 'other' : 't' }],
+          },
+        ],
+      }),
+    )
+    assert.equal((await client.thread('p', 't'))?.id, 't')
+    // Same revision, another chat: the first chat's state must not answer for it.
+    assert.equal((await client.thread('p', 'other'))?.id, 'other')
+    assert.equal((await client.thread('p', 't'))?.id, 't')
   })
 
   it('rejects incompatible snapshots without changing the replica', async () => {

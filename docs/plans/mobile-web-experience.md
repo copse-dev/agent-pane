@@ -2,6 +2,52 @@
 
 Tracking: [#659](https://github.com/copse-dev/agent-pane/issues/659)
 
+## Performance (2026-11-20)
+
+Measured before changing anything, then after, against the same build:
+
+| What                                       | Before                    | After                                      |
+| ------------------------------------------ | ------------------------- | ------------------------------------------ |
+| Companion page, first visit                | 2.9 MB, 1.5 s             | 1.0 MB, 0.64 s                             |
+| Companion page, repeat visit               | 2.5 MB, 1.2 s             | 3 KB, 0.26 s                               |
+| Shared chat page (`/remote/`), first visit | 6.3 MB, 3.0 s             | 1.5 MB, 1.1 s                              |
+| Shared chat page, repeat visit             | 6.0 MB, 2.7 s             | 2 KB, 0.39 s                               |
+| Thread poll, 300-message thread, unchanged | 68 ms of main-process I/O | 0.3 ms, then a bodiless `304`              |
+| Each transcript image                      | 71 ms (a full fold each)  | 0.2 ms                                     |
+| Live state poll (desktop with 2 projects)  | 8.5 MB re-serialized      | the open chat only (1 MB), once per change |
+
+Page loads are headless Chromium at 390 px with 4× CPU throttling and 20 Mbit/s Wi-Fi, over
+loopback HTTP; a real phone adds TLS and radio latency. Server timings are the unit-level
+read paths on a seeded store. Neither replaces the physical-phone gate above.
+
+What changed, and the decisions behind it:
+
+- **Compression.** Brotli (quality 5 for bundles, made once on first request; 4 for JSON) or
+  gzip, by `Accept-Encoding`, on the Node thread pool. Bundles shrink 4–6×.
+- **The page's own bundles may be cached; nothing else may.** `index.html` stays `no-store` and
+  pins `app.js`/`app.css` (and `/remote/`'s `chat.js`/`chat.css`) by content hash: `?v=<hash>`
+  plus Subresource Integrity. Only a request under that exact hash is answered
+  `immutable`. A stale or substituted cached copy fails the integrity check and is not run.
+  This narrows the Security section's "`Cache-Control: no-store`" rule rather than dropping
+  it: API answers, the page and the Mermaid frame are never stored. Chromium keeps no cache
+  for a page loaded over a certificate warning, so the click-through tier still downloads the
+  bundles on each visit, compressed.
+- **Unchanged polls are `304`s.** Activity, thread and live-state reads carry a weak validator;
+  the page keeps the last answer per read in memory (never browser storage) and skips
+  re-rendering on identity.
+- **Main stops re-folding the open thread.** `threadReadRevision` (project write serial plus
+  the thread's `meta.json`/spine size and mtime) keys a two-entry transcript cache that empties
+  after a minute without reads. Images share it. Action checks use metadata only.
+- **The live state is scoped.** `/api/remote/state?project=…&thread=…` returns the open chat's
+  transcript and its siblings as metadata. The unscoped read still works.
+- **Activity rows are kept, not rebuilt,** so a poll no longer replaces the button under a
+  finger. A running chat's live view is polled every second; the saved view stays at 2.5 s.
+
+Not done here: minifying the phone bundles (a further ~30% of compressed bytes) needs a
+production-only build step with source maps decided for the packaged app; the fonts are still
+inlined into `app.css` as base64 (~400 KB compressed). Server-Sent Events remain the L1 plan;
+`304`s make the remaining polling cheap enough that they are not urgent.
+
 ## Paired-browser acceptance (2026-11-06)
 
 The [capability matrix](../remote-client-capabilities.md) and its checked wire inventory
@@ -659,7 +705,9 @@ Non-negotiable controls, all fail-closed, on every request and every SSE connect
   `Content-Security-Policy: … frame-ancestors 'none'`, `X-Frame-Options: DENY`,
   `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control:
   no-store`. Without these, an attacker page frames the decision screen and overlays a
-  transparent button on Approve — one tap approves a shell command.
+  transparent button on Approve — one tap approves a shell command. _Amended 2026-11-20:_
+  the page's own script and stylesheet, requested under the hash the page pins with
+  Subresource Integrity, are the one `immutable` exception (see Performance above).
 - **401 before reading any body** (the one thing the ACP bridge gets exactly right), a
   hard body-size cap, `server.maxConnections`, header and idle timeouts, and a temporary
   per-peer cooldown after repeated failed auth attempts. The listener stays enabled.
