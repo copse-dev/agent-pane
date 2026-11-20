@@ -30,11 +30,13 @@ Main-process and `scripts/` suites only; renderer/settings tests are unaffected.
 - **GNU-only `stat -c`** — `screenshot-publication.test.ts` fails on macOS
   (`stat: illegal option -- c`).
 
-These macOS host differences fail on every run on an affected Mac, in isolation too. CI runs on
-Linux, so it never sees them. A local `pnpm test` recognises them: its closing summary lists every
-failed test and marks each one that matches an entry in `scripts/lib/host-differences.mts` by
-platform, file, test name and error shape. They still fail the run. When you add a deterministic
-host difference here, add it there too.
+These macOS host differences fail on every run on an affected Mac, in isolation too. Required CI
+runs on Linux, so it never sees them. A local `pnpm test` recognises them: its closing summary lists
+every failed test and marks each one that matches an entry in `scripts/lib/host-differences.mts` by
+platform, file, test name and error shape. They still fail the run. The advisory
+[`macos-unit.yml`](../.github/workflows/macos-unit.yml) workflow runs the suite on a hosted macOS
+runner and reads the same summary: it warns about a failure that matches an entry and fails on any
+other. When you add a deterministic host difference here, add it there too.
 
 - **macOS `/bin/bash` 3.2** — `ci-workflow-invariants.test.ts` "compares the synthetic checked-out
   protocol against the supplied queue base" runs a `ci.yml` step under `set -u`; bash 3.2 treats an
