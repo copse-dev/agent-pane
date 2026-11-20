@@ -57102,7 +57102,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       el(
         "p",
         { class: "field-hint container-run-github-hint" },
-        "The container's gh and git fetch can then read everything your github.com sign-in can read, in every repository and organisation you can reach, not only this project, including secret-scanning alerts, Actions variables and secret gists. The token stays on the desktop and writes are refused. A run that installs dependencies, or runs a coding agent, gets none."
+        "The container's gh and git fetch can then read everything your github.com sign-in can read, in every repository and organisation you can reach, not only this project, including secret-scanning alerts, Actions variables and secret gists. The token stays on the desktop and writes are refused, but reads can still carry data out: which repositories and files the run reads shows in their owners' download and traffic counts. Turn this on only when you trust the task and everything the run will read. A run that installs dependencies, or runs a coding agent, gets none."
       ),
       githubArming
     );
