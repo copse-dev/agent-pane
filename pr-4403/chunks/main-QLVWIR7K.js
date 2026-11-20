@@ -53734,7 +53734,10 @@ function initSkillPicker(opts) {
   function filterSkills(query, skills) {
     const q2 = query.toLowerCase();
     if (!q2) return [...skills];
-    const matched = skills.filter(
+    const candidates = skills.map(
+      (skill) => q2.includes(":") && skill.kind === "skill" && skill.plugin ? { ...skill, name: `${skill.plugin}:${skill.name}` } : skill
+    );
+    const matched = candidates.filter(
       (skill) => skill.name.toLowerCase().includes(q2) || skill.description.toLowerCase().includes(q2)
     );
     return matched.sort((a, b2) => {
@@ -54013,7 +54016,7 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 function invocationTokenPattern(name) {
-  return `\\/${escapeRegExp(name)}(?![a-z0-9-])`;
+  return `\\/${escapeRegExp(name)}(?![a-z0-9:/_-]|\\.[a-z0-9_-])`;
 }
 function inlineInvocationPattern(name) {
   return new RegExp(`(^|\\s)${invocationTokenPattern(name)}`);
@@ -54030,25 +54033,35 @@ function parseLeadingInvocation(text) {
   return { name, remainder: (match[2] ?? "").trim() };
 }
 function resolveInvocation(text, invocables) {
-  const kindOf = (name) => invocables.find((entry) => entry.name === name)?.kind ?? null;
+  const candidates = invocables.flatMap((entry) => [
+    { token: entry.name, entry },
+    ...entry.kind === "skill" && entry.plugin ? [{ token: `${entry.plugin}:${entry.name}`, entry }] : []
+  ]);
   const leading = parseLeadingInvocation(text);
-  if (leading) return { ...leading, kind: kindOf(leading.name) };
+  if (leading) {
+    const match = candidates.find(({ token }) => token === leading.name);
+    return {
+      name: match?.entry.name ?? leading.name,
+      remainder: leading.remainder,
+      kind: match?.entry.kind ?? null
+    };
+  }
   const trimmed2 = text.trim();
   if (!trimmed2 || invocables.length === 0) return null;
-  const sorted = [...invocables].sort((a, b2) => b2.name.length - a.name.length);
-  for (const { name, kind } of sorted) {
-    if (!inlineInvocationPattern(name).test(trimmed2)) continue;
-    return { name, kind, remainder: stripInvocationToken(trimmed2, name) };
+  const sorted = candidates.sort((a, b2) => b2.token.length - a.token.length);
+  for (const { token, entry } of sorted) {
+    if (!inlineInvocationPattern(token).test(trimmed2)) continue;
+    return { name: entry.name, kind: entry.kind, remainder: stripInvocationToken(trimmed2, token) };
   }
   return null;
 }
-function mergeInvocables(skillNames, agentNames) {
+function mergeInvocables(skills, agentNames) {
   const seen = /* @__PURE__ */ new Set();
   const merged = [];
-  for (const name of skillNames) {
+  for (const { name, plugin } of skills) {
     if (seen.has(name)) continue;
     seen.add(name);
-    merged.push({ name, kind: "skill" });
+    merged.push({ name, kind: "skill", ...plugin ? { plugin } : {} });
   }
   for (const name of agentNames) {
     if (seen.has(name)) continue;
@@ -54061,7 +54074,7 @@ var LEADING_INVOCATION_RE;
 var init_parse_invocation = __esm({
   "src/shared/invocation/parse-invocation.ts"() {
     init_one_line_text();
-    LEADING_INVOCATION_RE = /^\/([a-z0-9][a-z0-9-]*)\b(?:\s+(.*))?$/s;
+    LEADING_INVOCATION_RE = /^\/((?:[a-z0-9][a-z0-9._-]*:)?[a-z0-9][a-z0-9-]*)(?:\s+(.*))?$/s;
   }
 });
 
@@ -58962,7 +58975,7 @@ ${description}
   }
   function currentInvocables() {
     return mergeInvocables(
-      (skillsCache ?? []).map((skill) => skill.name),
+      skillsCache ?? [],
       (agentsCache ?? []).map((agent2) => agent2.name)
     );
   }
@@ -59330,7 +59343,7 @@ ${description}
     const invocation = resolveInvocation(
       rawText,
       mergeInvocables(
-        skills.map((skill) => skill.name),
+        skills,
         agents.map((agent2) => agent2.name)
       )
     );
@@ -59901,6 +59914,7 @@ ${reply}`);
       return [
         ...skills.map((skill) => ({
           name: skill.name,
+          ...skill.plugin ? { plugin: skill.plugin } : {},
           description: skill.description,
           kind: "skill"
         })),
@@ -71032,6 +71046,33 @@ var init_selection_to_chat = __esm({
   }
 });
 
+// packages/std/src/with-timeout.ts
+function withTimeout(promise, ms, onTimeout) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      try {
+        resolve(onTimeout());
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error(String(error), { cause: error }));
+      }
+    }, ms);
+    const settled = Promise.resolve(promise);
+    settled.then(resolve, reject);
+    settled.then(
+      () => {
+        clearTimeout(timer);
+      },
+      () => {
+        clearTimeout(timer);
+      }
+    );
+  });
+}
+var init_with_timeout = __esm({
+  "packages/std/src/with-timeout.ts"() {
+  }
+});
+
 // src/renderer/monaco/diff-scroll.ts
 function nextAnimationFrame() {
   return new Promise(
@@ -71054,19 +71095,11 @@ function waitForDidUpdateDiff(diffEditor, timeoutMs) {
   });
 }
 async function waitForViewModelDiff(viewModel, timeoutMs) {
-  let timeoutId;
-  try {
-    await Promise.race([
-      viewModel.waitForDiff().catch(() => void 0),
-      new Promise((resolve) => {
-        timeoutId = setTimeout(() => {
-          resolve();
-        }, timeoutMs);
-      })
-    ]);
-  } finally {
-    if (timeoutId !== void 0) clearTimeout(timeoutId);
-  }
+  await withTimeout(
+    viewModel.waitForDiff().catch(() => void 0),
+    timeoutMs,
+    () => void 0
+  );
 }
 async function refreshGitChangesDiffCollapse(diffEditor) {
   diffEditor.updateOptions({
@@ -71107,6 +71140,7 @@ function revealFirstDiffChange(diffEditor) {
 var HIDE_UNCHANGED_REGIONS, GIT_CHANGES_DIFF_EDITOR_OPTIONS;
 var init_diff_scroll = __esm({
   "src/renderer/monaco/diff-scroll.ts"() {
+    init_with_timeout();
     HIDE_UNCHANGED_REGIONS = {
       enabled: true,
       contextLineCount: 3,
@@ -81606,10 +81640,7 @@ async function openScreencastCapture(api2, webContentsId, onEnded) {
   let requested = 0;
   let drawn = 0;
   let disposed = false;
-  let resolveFirstFrame = null;
-  const firstFrame = new Promise((resolve) => {
-    resolveFirstFrame = resolve;
-  });
+  const firstFrame = Promise.withResolvers();
   const stopFrames = api2.onRecordingFrame((id, jpeg) => {
     if (id !== webContentsId || disposed) return;
     const sequence = ++requested;
@@ -81626,7 +81657,7 @@ async function openScreencastCapture(api2, webContentsId, onEnded) {
         }
         context.drawImage(bitmap, 0, 0);
         bitmap.close();
-        resolveFirstFrame?.();
+        firstFrame.resolve();
       },
       () => {
       }
@@ -81645,17 +81676,9 @@ async function openScreencastCapture(api2, webContentsId, onEnded) {
   };
   try {
     await api2.startRecording(webContentsId);
-    let timer = 0;
-    const timedOut = new Promise((resolve) => {
-      timer = window.setTimeout(() => {
-        resolve("timeout");
-      }, FIRST_FRAME_TIMEOUT_MS);
-    });
-    const outcome = await Promise.race([firstFrame, timedOut]);
-    window.clearTimeout(timer);
-    if (outcome === "timeout") {
+    await withTimeout(firstFrame.promise, FIRST_FRAME_TIMEOUT_MS, () => {
       throw new Error("The tab is not painting. Show the Browser pane and try again.");
-    }
+    });
   } catch (error) {
     dispose();
     throw error;
@@ -81665,6 +81688,7 @@ async function openScreencastCapture(api2, webContentsId, onEnded) {
 var FIRST_FRAME_TIMEOUT_MS;
 var init_screencast_capture = __esm({
   "src/renderer/recording/screencast-capture.ts"() {
+    init_with_timeout();
     FIRST_FRAME_TIMEOUT_MS = 3e3;
   }
 });
@@ -90038,10 +90062,7 @@ async function run3(store2) {
   let firstTokenSeen = false;
   let paintSampling = false;
   const paints = [];
-  let resolveDone = () => void 0;
-  const donePromise = new Promise((resolve) => {
-    resolveDone = resolve;
-  });
+  const { promise: donePromise, resolve: resolveDone } = Promise.withResolvers();
   const endTotal = begin("autopilot:total");
   let endFirstActivity = () => void 0;
   let endFirstToken = () => void 0;
@@ -90671,28 +90692,23 @@ function loadMonaco() {
 }
 function ensureMonacoEditorWorker() {
   if (typeof Worker === "undefined") return Promise.resolve();
-  let timeoutId;
-  return Promise.race([
+  return withTimeout(
     // This warmed instance is the one EditorWorkerService's first diff request
     // takes over (see EDITOR_WORKER_SERVICE_LABEL for the coupling contract).
     monacoWorkers.warm(EDITOR_WORKER_SERVICE_LABEL).then(
       () => void 0,
       () => void 0
     ),
-    new Promise((resolve) => {
-      timeoutId = setTimeout(() => {
-        resolve();
-      }, 2e3);
-    })
-  ]).finally(() => {
-    if (timeoutId !== void 0) clearTimeout(timeoutId);
-  });
+    2e3,
+    () => void 0
+  );
 }
 var MONACO_BASE_META, WARM_WORKER_TTL_MS, monacoWorkers, EDITOR_WORKER_SERVICE_LABEL, bundlePromise, monacoPromise;
 var init_setup = __esm({
   "src/renderer/monaco/setup.ts"() {
     init_worker_handout();
     init_editor_theme();
+    init_with_timeout();
     MONACO_BASE_META = "copse-monaco-base";
     WARM_WORKER_TTL_MS = 45e3;
     monacoWorkers = createWorkerHandout(createMonacoWorkerOnce, {
