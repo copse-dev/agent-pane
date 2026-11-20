@@ -1,3 +1,4 @@
+import { lazyBodyDialog } from './dialog-shell.ts'
 import { el, clear } from '../dom/helpers.ts'
 import { showToast } from './toast.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -21,14 +22,7 @@ export interface RemoteFolderPick {
   path: string
 }
 
-let dialogEl: HTMLDialogElement | null = null
-
-function ensureDialog(): HTMLDialogElement {
-  if (dialogEl) return dialogEl
-  dialogEl = el('dialog', { id: 'remote-folder-dialog', class: 'remote-folder-dialog' })
-  document.body.append(dialogEl)
-  return dialogEl
-}
+const ensureDialog = lazyBodyDialog('remote-folder-dialog', 'remote-folder-dialog')
 
 /**
  * Minimal remote directory browser: pick or add an SSH host, browse folders

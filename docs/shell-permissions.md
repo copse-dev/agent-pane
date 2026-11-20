@@ -347,6 +347,30 @@ anything else (`grep x f; ssh host`, `bash -c "ssh host"`, `timeout 5 ssh host`,
 variable in an operand or redirect target (`grep ssh $FILE > $TMPDIR/out`) names no program.
 Destructive and privileged matchers (`sudo`, `rm -rf`, `kill -9`, `chmod 777`, `dd`) never relax.
 
+A word found only inside a compound name in a file path operand is no signal at all:
+`mkdir -p src/ssh-config`, `touch src/curl-helpers.ts` and, in a checkout at
+`~/agent-pane-agent-exec`, `cd ~/agent-pane-agent-exec && pnpm test` score `sandbox`. A path
+operand has a slash and only name characters; a compound name joins parts with `-` or `.`. The
+word still counts as the program a segment runs, directly or behind a wrapper (`exec-foo`,
+`/usr/bin/curl`, `./bin/ssh-x`, `env ./bin/ssh-x`, `timeout 5 ./a/ssh-b`), as a bare name another
+command may run from PATH (`xargs ssh-copy-id`, `xargs curl-wrapper.sh`), as a bare directory
+(`services/exec/a.ts`), and in a word with a space or another non-name character (an option,
+`host:dir`, `$`). Quotes alone change nothing: the parser removes them first, so
+`mkdir "src/ssh-config"` is a path too.
+
+A name fragment is confirmed, never inferred from what is absent. With every such operand
+blanked, the whole line must stop matching, so a mention the parser drops (a here-string, a
+comment, a redirect target such as `pnpm test > .tmp/agent-exec-test/out.log`) keeps the hard
+reason. A line that can run text as code confirms nothing: one with a shell, an interpreter,
+`source`, `.`, `eval` or `parallel`, or with `xargs` in front of anything but a plain read
+(`| xargs wc -l` is fine; `| xargs env`, a bare `| xargs` and `xargs -I{} …` are not), because a
+pipeline or a written file can turn a path into a program and its arguments. An unconfirmed word
+is an ordinary mention, judged by the inert-read rule above with the same fail-closed cases,
+process substitution included. Limits: a program that runs its operand without being a wrapper
+Copse looks through (`strace ./x/ssh-y`), or that runs code from a file without being an
+interpreter (`make`), is not modelled. What it runs is an opaque workspace program, contained like
+any other.
+
 `rm` prompts inside an active sandbox as a recursive delete when it is recursive (`-r`, `-R`,
 `--recursive`). A forced `rm -f` without `-r` deletes exactly what a plain `rm` does, which runs
 contained, so `rm -f e2e-failure-artifacts/demo-failure.png` does too when every `rm` on the line
@@ -1395,6 +1419,18 @@ files in the scratch directory every contained command can write. `envForRendere
 and the ACP worker spawns drop it if a child starts mid-wrap. Each flavour gets one temp directory
 it can write (`sandboxTmpDirFor`): the workspace scratch directory when the overlay grants it,
 ASRT's `/tmp/claude` for a read-only overlay, and the cell's own `tmp` for a review cell.
+
+The wrapper shell that starts each sandboxed process (native commands, PTYs, background tasks,
+review cells, worktree preparation and ACP agents) gets a `PATH` with only its absolute entries, in
+order (`withSandboxShellPath` in `sandbox-argv.ts`), plus `/usr/bin` and `/bin` when missing. Empty
+and relative entries (`::`, `.`, `bin`) are dropped, so no lookup the wrapper makes depends on its
+working directory; the confined process inherits the same `PATH`. The worker processes that run
+ASRT themselves (the port-binding, ACP session-host and ACP probe workers) start in the workspace
+and get the same `PATH`. On Linux every ASRT config, and worktree preparation's direct bubblewrap
+wrap, also names `bwrap` and `socat` by absolute path (`sandbox-binaries.ts`): the first executable
+copy in `/usr/bin`, `/bin`, then the absolute entries of Copse's own `PATH`. When none exists the
+sandbox does not start, as when bubblewrap is not installed. macOS ASRT has no option for the path
+of the `env` it starts with, so there that lookup searches the absolute `PATH` entries in order.
 
 On macOS the project seatbelt also allows writes to direct children of the per-user Darwin temp
 directory returned by `getconf DARWIN_USER_TEMP_DIR` (typically `/var/folders/…/T`). Apple
