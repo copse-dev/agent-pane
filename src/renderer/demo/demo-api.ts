@@ -1824,7 +1824,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       enableAutoMerge: () =>
         resolved({ ok: false, message: 'Unavailable in demo', backend: 'mock' }),
     },
-    shell: { openExternal: resolvedVoid, openWorkspaceFileInBrowser: resolvedVoid },
+    shell: { openExternal: resolvedVoid },
     editors: {
       list: () => resolved({ editors: [], lastUsedId: null }),
       open: resolvedVoid,

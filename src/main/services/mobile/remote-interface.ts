@@ -10,6 +10,7 @@ import {
   remoteViewSchema,
   type RemoteRead,
   type RemoteReply,
+  type RemoteScope,
   type RemoteState,
   type RemoteView,
 } from '../../../shared/remote-interface.ts'
@@ -21,19 +22,58 @@ export class RemoteInterface {
   private sessionId = randomUUID()
   private deliver: ((id: string, request: RemoteRead) => void) | null = null
   private pending = new Map<string, (reply: RemoteReply) => void>()
+  /** Snapshots already built at the current revision, by scope. */
+  private snapshots = new Map<string, RemoteState>()
 
-  snapshot(): RemoteState {
-    return {
+  /**
+   * The live views, or the part of them one client is showing.
+   *
+   * A phone polls this for a single open chat. Unscoped, every poll carried
+   * every loaded transcript of every project the desktop had published. With a
+   * project, only that project's view is returned; with a thread as well, its
+   * sibling threads keep their metadata and lose their transcripts, in the same
+   * `messagesLoaded: false` shape the desktop uses for a thread it has not opened.
+   *
+   * The same object is returned until something is published, so a caller may
+   * key its own serialization on it.
+   */
+  snapshot(scope?: RemoteScope): RemoteState {
+    const key = scope ? `${scope.projectId}\0${scope.threadId ?? ''}` : ''
+    const cached = this.snapshots.get(key)
+    if (cached) return cached
+    const state: RemoteState = {
       version: REMOTE_INTERFACE_VERSION,
       sessionId: this.sessionId,
       revision: this.revision,
-      views: [...this.views.values()],
+      views: scope ? this.scopedViews(scope) : [...this.views.values()],
     }
+    // A handful of clients at most; an unbounded map would be a phone-controlled leak.
+    if (this.snapshots.size >= 8) this.snapshots.clear()
+    this.snapshots.set(key, state)
+    return state
+  }
+
+  private scopedViews(scope: RemoteScope): RemoteView[] {
+    const view = this.views.get(scope.projectId)
+    if (!view) return []
+    const { threadId } = scope
+    if (threadId === undefined) return [view]
+    return [
+      {
+        ...view,
+        threads: view.threads.map((thread) =>
+          thread.id === threadId || thread.messages.length === 0
+            ? thread
+            : { ...thread, messages: [], messagesLoaded: false },
+        ),
+      },
+    ]
   }
 
   publish(view: RemoteView): void {
     this.views.set(view.projectId, view)
     this.revision++
+    this.snapshots.clear()
   }
 
   attach(deliver: (id: string, request: RemoteRead) => void): () => void {
@@ -49,6 +89,7 @@ export class RemoteInterface {
     this.views.clear()
     this.sessionId = randomUUID()
     this.revision++
+    this.snapshots.clear()
     for (const [id, settle] of this.pending)
       settle({ id, ok: false, error: 'The desktop window closed. Reopen Copse to continue.' })
   }

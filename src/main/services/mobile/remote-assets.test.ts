@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -19,6 +20,44 @@ describe('remote renderer assets', () => {
       assert.equal(assets.has('/remote/../private.txt'), false)
       assert.equal(assets.get('/remote/')?.headers['Content-Security-Policy'], REMOTE_INTERFACE_CSP)
       assert.match(REMOTE_INTERFACE_CSP, /connect-src 'self'/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('pins the document to the hash of each bundle it loads', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'copse-remote-assets-'))
+    try {
+      writeFileSync(
+        join(root, 'assets.json'),
+        JSON.stringify(['index.html', 'chat.js', 'chat.css', 'mermaid-frame.html']),
+      )
+      writeFileSync(
+        join(root, 'index.html'),
+        '<link rel="stylesheet" href="/remote/chat.css" /><script defer src="/remote/chat.js"></script>',
+      )
+      writeFileSync(join(root, 'chat.js'), 'document.title="Copse"')
+      writeFileSync(join(root, 'chat.css'), 'body{margin:0}')
+      writeFileSync(join(root, 'mermaid-frame.html'), '<script>1</script>')
+      const assets = await loadRemoteAssets(root)
+      const page = assets.get('/remote/')
+      assert.ok(page)
+      assert.equal(assets.get('/remote/index.html'), page)
+      const html = page.body.toString('utf8')
+      for (const route of ['/remote/chat.js', '/remote/chat.css']) {
+        const asset = assets.get(route)
+        assert.ok(asset)
+        const integrity = `sha256-${createHash('sha256').update(asset.body).digest('base64')}`
+        assert.equal(asset.integrity, integrity)
+        assert.ok(html.includes(`${route}?v=${asset.version}" integrity="${integrity}"`), route)
+      }
+      // The document that carries the hashes is itself never kept.
+      assert.equal(page.headers['Cache-Control'], 'no-store')
+      assert.equal(
+        assets.get('/remote/mermaid-frame.html')?.body.toString('utf8'),
+        '<script>1</script>',
+        'the frame document is served exactly as built',
+      )
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
