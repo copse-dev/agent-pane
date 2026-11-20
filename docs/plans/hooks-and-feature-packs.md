@@ -166,8 +166,10 @@ revisiting this document, not silently diverging in an implementation PR.
    its caller detaches or its turn completes normally saves the textual result
    as a private `bridge-result` decision detail before requesting continuation.
    Recovery delivers output and never executes the tool again. Bridge execution
-   ids deduplicate delivery. Stop, failed turns and session closure do not
-   request result recovery; missing epochs permit no synthesized wake. Saved
+   ids deduplicate delivery. Stop, send-now interruption, failed turns and
+   session closure do not request result recovery; missing epochs permit no
+   synthesized wake. Send-now still keeps parked answers for the same task
+   (decision 4), so the agent's own exact retry can use them. Saved
    results remain inspectable when delivery is stale or budget-exhausted.
    This does not introduce automatic recovery after app restart.
    Each in-run grant carries its bounded mechanism reason

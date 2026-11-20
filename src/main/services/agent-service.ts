@@ -285,7 +285,7 @@ import {
   cancelAgentInitiatedAcpTurn,
   cancelAllAgentInitiatedAcpTurns,
 } from './acp/acp-session-pool.ts'
-import { AcpTurnEnded } from './acp/turn-end.ts'
+import { abortedTurnEndReason, AcpTurnEnded } from './acp/turn-end.ts'
 import {
   ACP_UNFINISHED_TURN_BUDGET_FALLBACK,
   ACP_UNFINISHED_TURN_FALLBACK,
@@ -867,7 +867,10 @@ export async function runAgent(
   const revokeTaskApprovals = (): void => {
     if (admission.signal.reason === 'send_now') return
     shellReplayLeaseStore.revokeThread(threadId)
-    discardApprovalsForThread(threadId)
+    discardApprovalsForThread(
+      threadId,
+      isAgentRunTimeoutAbort(admission.signal) ? 'run-timeout' : 'stopped',
+    )
   }
   admission.signal.addEventListener('abort', revokeTaskApprovals, { once: true })
   abortMap.set(threadId, admission)
@@ -1681,13 +1684,14 @@ async function runAgentWithInlineCanvas(
           controller.signal.aborted
             ? isAgentRunTimeoutAbort(controller.signal)
               ? 'idle-timeout'
-              : 'stopped'
+              : abortedTurnEndReason(controller.signal)
             : bridgeTurnCompleted
               ? 'completed'
               : 'failed',
         ),
       )
-      if (controller.signal.aborted) {
+      // Send-now keeps same-task approvals (hooks plan decision 4); other aborts revoke.
+      if (controller.signal.aborted && controller.signal.reason !== 'send_now') {
         discardApprovalsForThread(
           threadId,
           isAgentRunTimeoutAbort(controller.signal) ? 'run-timeout' : 'stopped',
@@ -3232,7 +3236,7 @@ export function abortAgent(threadId: string, reason?: 'send_now'): void {
   }
   abortMap.get(threadId)?.abort(reason)
   // A turn the coding agent resumed on its own has no entry above.
-  cancelAgentInitiatedAcpTurn(threadId)
+  cancelAgentInitiatedAcpTurn(threadId, reason === 'send_now' ? 'send-now' : 'stopped')
 }
 
 /** Fence new turns and interrupt existing work before command cleanup can settle tools. */

@@ -1,6 +1,6 @@
 import { checkpointAcpTranscript, unseenAcpTranscript } from './acp-transcript-checkpoint.ts'
 import { canonicalAcpAgentId } from '@shared/acp-known-agents.ts'
-import { AcpTurnEnded } from './turn-end.ts'
+import { abortedTurnEndReason, AcpTurnEnded } from './turn-end.ts'
 import { normalizeStopReason } from '@copse/agent/headless-contract.ts'
 import { AGENT_EXECUTION_GUIDANCE } from '../agent-execution-guidance.ts'
 import * as fsp from 'node:fs/promises'
@@ -1103,7 +1103,7 @@ async function runAcpAgentTurn(
       promptEnd.abort(
         new AcpTurnEnded(
           options.signal.aborted
-            ? 'stopped'
+            ? abortedTurnEndReason(options.signal)
             : normalizeStopReason(outcome.stopReason.toLowerCase()) === 'end_turn'
               ? 'completed'
               : 'failed',
@@ -1111,7 +1111,9 @@ async function runAcpAgentTurn(
       )
       return outcome
     } catch (err) {
-      promptEnd.abort(new AcpTurnEnded(options.signal.aborted ? 'stopped' : 'failed'))
+      promptEnd.abort(
+        new AcpTurnEnded(options.signal.aborted ? abortedTurnEndReason(options.signal) : 'failed'),
+      )
       await disposeAcpSession(options.threadId, {
         preserveForResume: isAcpConnectionDropped(err),
       })

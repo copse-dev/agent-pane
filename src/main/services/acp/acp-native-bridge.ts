@@ -1180,7 +1180,13 @@ export async function startAcpNativeBridge(
       // Observe the owner separately: the call's combined signal aborts only once.
       const onTurnAbort = (): void => {
         const reason: unknown = next.reason
-        if (reason instanceof AcpTurnEnded && reason.reason === 'completed') return
+        // Completion and send-now keep same-task answers; any other end revokes them.
+        if (
+          reason instanceof AcpTurnEnded &&
+          (reason.reason === 'completed' || reason.reason === 'send-now')
+        ) {
+          return
+        }
         discardApprovalsForBridge(
           bridgeOwnerId,
           reason instanceof AcpTurnEnded ? reason.reason : 'aborted',

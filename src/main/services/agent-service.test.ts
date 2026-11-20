@@ -37,6 +37,16 @@ import { execFileSync } from 'node:child_process'
 import { postTurnReviewPlugin } from '@copse/agent/plugins/post-turn-review-plugin.ts'
 import { shellReplayLeaseStore } from './security/capability-lease.ts'
 import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
+import {
+  AbandonedCallAbort,
+  ApprovalPendingError,
+  discardApprovalsForThread,
+  requestApproval,
+  setApprovalHandler,
+  type ApprovalResponse,
+} from './approval.ts'
+import { setActiveRunTurnTreeId } from './thread-models.ts'
+import { AcpTurnEnded, type AcpTurnEndReason } from './acp/turn-end.ts'
 
 it('Stop revokes task retries from earlier turns without affecting another chat', () => {
   const identity = {
@@ -120,6 +130,174 @@ it('send-now preserves task retries while interrupting an admitted turn', async 
     agentService.abortAgent(threadId)
     await pending
     shellReplayLeaseStore.clear()
+  }
+})
+
+function acpRunnerTransport(runner: AcpTurnRunner): () => Promise<{
+  stream: ReturnType<typeof ndJsonStream>
+  dispose: () => void
+}> {
+  return () => {
+    const clientToAgent = new TransformStream<Uint8Array, Uint8Array>()
+    const agentToClient = new TransformStream<Uint8Array, Uint8Array>()
+    const connection = buildAcpAgentApp(runner, { name: 'send-now-test-agent' }).connect(
+      ndJsonStream(agentToClient.writable, clientToAgent.readable),
+    )
+    return Promise.resolve({
+      stream: ndJsonStream(clientToAgent.writable, agentToClient.readable),
+      dispose: (): void => {
+        connection.close()
+      },
+    })
+  }
+}
+
+it('send-now keeps a saved ACP approval answer for the same task', async (t) => {
+  const previousWorkspace = process.env['COPSE_WORKSPACE_DIR']
+  const root = await mkdtemp(join(tmpdir(), 'copse-agent-acp-send-now-'))
+  process.env['COPSE_WORKSPACE_DIR'] = root
+  const suffix = randomUUID()
+  const threadId = `thread-acp-send-now-${suffix}`
+  const agentId = `send-now-agent-${suffix}`
+  const command = `unused-send-now-agent-${suffix}`
+  const turnTreeId = `tree-${suffix}`
+  const previousAgents = getSetting('registeredAcpAgents', [])
+  const context = {
+    projectId: `project-acp-send-now-${suffix}`,
+    threadId,
+    projectRoot: root,
+    root,
+    checkoutMode: 'shared' as const,
+    branch: null,
+  }
+  const started = Promise.withResolvers<undefined>()
+  const runner: AcpTurnRunner = (ctx) => {
+    started.resolve(undefined)
+    return new Promise((resolve) => {
+      ctx.signal.addEventListener(
+        'abort',
+        () => {
+          resolve({ stopReason: 'cancelled' })
+        },
+        { once: true },
+      )
+    })
+  }
+  let prompts = 0
+  let answer: (response: ApprovalResponse) => void = () => {}
+  setApprovalHandler(() => {
+    prompts++
+    // A second prompt means the earlier answer was revoked: decline so the test ends.
+    if (prompts > 1) return Promise.resolve({ approved: false, remember: false })
+    return new Promise<ApprovalResponse>((resolve) => {
+      answer = resolve
+    })
+  })
+  const ask = (signal?: AbortSignal): Promise<ApprovalResponse> =>
+    runWithThreadExecutionContext(context, () =>
+      runWithActiveRunIdentity(threadId, () => {
+        setActiveRunTurnTreeId(asTurnTreeId(turnTreeId))
+        return requestApproval({ title: 'Run npm test?', body: 'npm test', type: 'shell' }, signal)
+      }),
+    )
+  try {
+    // A call earlier in this task was abandoned with its prompt open, then answered.
+    const call = new AbortController()
+    const detached = assert.rejects(ask(call.signal), ApprovalPendingError)
+    await Promise.resolve()
+    call.abort(new AbandonedCallAbort('client gave up'))
+    await detached
+    answer({ approved: true, remember: false, resolution: 'user' })
+    await Promise.resolve()
+
+    await setSetting('registeredAcpAgents', [
+      { id: agentId, title: 'Send-now test agent', command, enabled: true },
+    ])
+    // A bridgeable tool gives the session a real native-tool bridge to observe.
+    const registry = new ToolRegistry()
+    registry.register({
+      name: 'run_shell',
+      description: 'Run a shell command',
+      parameters: z.object({ command: z.string() }),
+      execute: () => Promise.resolve('not run in this test'),
+    })
+    const { entry } = await acquireAcpSession({
+      threadId,
+      config: { command, cwd: root },
+      createTransport: acpRunnerTransport(runner),
+      registry,
+    })
+    assert.ok(entry.bridge)
+    const setTurnSignal = t.mock.method(entry.bridge, 'setTurnSignal')
+    const pending = runWithThreadExecutionContext(context, () =>
+      runWithActiveRunIdentity(threadId, () =>
+        agentService.runAgent(
+          threadId,
+          'Keep going with the task.',
+          [],
+          { emit: () => {} },
+          new ToolRegistry(),
+          { model: `acp:${agentId}`, turnTreeId },
+        ),
+      ),
+    )
+    await started.promise
+    agentService.abortAgent(threadId, 'send_now')
+    await pending
+
+    // The bridge keeps its parked prompts and saved answers only if it is told
+    // the turn ended by send-now rather than by Stop.
+    const boundTurns = setTurnSignal.mock.calls.flatMap((call) => call.arguments[0] ?? [])
+    assert.equal(boundTurns.length, 1)
+    const ended: unknown = boundTurns[0]?.reason
+    assert.ok(ended instanceof AcpTurnEnded)
+    assert.equal(ended.reason, 'send-now')
+    assert.equal((await ask()).approved, true)
+    assert.equal(prompts, 1, 'the same-task retry reuses the answer given before send-now')
+  } finally {
+    setApprovalHandler(null)
+    discardApprovalsForThread(threadId, 'stopped')
+    await disposeAllAcpSessions()
+    await setSetting('registeredAcpAgents', previousAgents)
+    if (previousWorkspace === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+    else process.env['COPSE_WORKSPACE_DIR'] = previousWorkspace
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+it('tells a self-started ACP turn whether send-now or Stop interrupted it', async (t) => {
+  const threadId = `thread-self-started-${randomUUID()}`
+  const ends: (AcpTurnEndReason | undefined)[] = []
+  try {
+    const { entry } = await acquireAcpSession({
+      threadId,
+      config: { command: 'unused-self-started-agent', cwd: tmpdir() },
+      createTransport: acpRunnerTransport(() => Promise.resolve({ stopReason: 'end_turn' })),
+    })
+    // Only the lease's end reason matters here, not the session/cancel wire message.
+    t.mock.method(entry.open.connection.agent, 'notify', () => Promise.resolve())
+    let active = false
+    entry.open.agentInitiated = {
+      begin: (): void => {
+        active = true
+      },
+      touch: (): void => {},
+      end: (reason): void => {
+        active = false
+        ends.push(reason)
+      },
+      isActive: (): boolean => active,
+    }
+    for (const reason of ['send_now', undefined] as const) {
+      entry.open.agentInitiated.begin()
+      agentService.abortAgent(threadId, reason)
+      // The agent acknowledges the cancel, so the session is not disposed.
+      entry.open.agentInitiatedCancel?.acknowledge()
+      await entry.open.agentInitiatedCancel?.settled
+    }
+    assert.deepEqual(ends, ['send-now', 'stopped'])
+  } finally {
+    await disposeAllAcpSessions()
   }
 })
 

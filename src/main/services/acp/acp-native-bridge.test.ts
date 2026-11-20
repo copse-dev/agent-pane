@@ -889,7 +889,7 @@ describe('startAcpNativeBridge', () => {
     },
   )
 
-  for (const ending of ['completed', 'stopped', 'connected', 'queued-stop'] as const) {
+  for (const ending of ['completed', 'stopped', 'send-now', 'connected', 'queued-stop'] as const) {
     it(
       `tracks late result recovery across the owning turn boundary: ${ending}`,
       { timeout: 5_000 },
@@ -1086,6 +1086,56 @@ describe('startAcpNativeBridge', () => {
         },
       )
     }
+  }
+
+  for (const answered of [false, true]) {
+    it(
+      `keeps a ${answered ? 'saved answer' : 'parked prompt'} for the same task when send-now ends an abandoned call's turn`,
+      { timeout: 5_000 },
+      async () => {
+        const executed: string[] = []
+        const gate = promptingGate()
+        const owner = new AbortController()
+        const threadId = 'bridge-abandoned-send-now'
+        bridge = await startAcpNativeBridge(testRegistry(executed), new AbortController().signal, {
+          threadId,
+        })
+        assert.ok(bridge)
+        bridge.setExecutionContext(worktreeContext(threadId, '/worktrees/abandoned-send-now'))
+        bridge.setTurnSignal(owner.signal)
+        for (const init of initialized()) await rpc(bridge, init)
+        const started = gate.started()
+        const pending = rpc(bridge, SHELL_CALL)
+        await started
+        await rpc(bridge, {
+          jsonrpc: '2.0',
+          method: 'notifications/cancelled',
+          params: { requestId: SHELL_CALL.id, reason: 'client gave up' },
+        })
+        assert.match(contentText(await pending) ?? '', /Approval is still pending/)
+        assert.equal(parkedApprovalCount(), 1)
+        if (answered) {
+          gate.release({ approved: true, remember: false, resolution: 'user' })
+          await Promise.resolve()
+        }
+        // Send-now interrupts the turn but is not a revocation (hooks plan decision 4).
+        owner.abort(new AcpTurnEnded('send-now'))
+        if (!answered) {
+          assert.equal(parkedApprovalCount(), 1)
+          assert.equal(gate.handlerSignal()?.aborted, false)
+          gate.release({ approved: true, remember: false, resolution: 'user' })
+          await Promise.resolve()
+        }
+
+        bridge.setTurnSignal(new AbortController().signal)
+        assert.equal(
+          contentText(await rpc(bridge, SHELL_CALL)),
+          'ran git worktree list --porcelain',
+        )
+        assert.equal(gate.handlerCalls(), 1, 'the same-task retry reuses the decision once')
+        assert.deepEqual(executed, ['run_shell:git worktree list --porcelain'])
+      },
+    )
   }
 
   for (const boundary of ['session-abort', 'bridge-close'] as const) {

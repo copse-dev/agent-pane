@@ -53,6 +53,7 @@ import { sessionUpdateToStreamChunks } from './session-update-adapter.ts'
 import { acpBridgeToolMissing, isAcpBridgeStartupFailure } from './acp-bridge-mount.ts'
 import { acpStaleModelNotice } from './acp-stale-model-notice.ts'
 import type { AgentInitiatedTurnLease } from './agent-initiated-turn.ts'
+import type { AcpTurnEndReason } from './turn-end.ts'
 import { tapAcpWireStream, type AcpWireSink } from './acp-wire-tap.ts'
 import { cancelApprovalsForAcpToolCall } from './acp-permission-registry.ts'
 import {
@@ -1129,15 +1130,18 @@ export function endsSelfStartedTurn(update: SessionUpdate): boolean {
  * the turn finished. One that does not is disposed, so it can neither keep
  * working unseen nor write into the next prompt's turn once that turn clears
  * the suppression. Returns false when there is no self-started turn to stop.
+ * `reason` is what the lease reports to the bridge: send-now ends the turn but,
+ * unlike Stop, keeps same-task approvals (hooks plan decision 4).
  */
 export function cancelAgentInitiatedTurn(
   open: OpenAcpSession,
   cancelGraceMs: number = ACP_CANCEL_GRACE_MS,
+  reason: AcpTurnEndReason = 'stopped',
 ): boolean {
   if (open.turnStop !== null || !open.agentInitiated?.isActive()) return false
   open.suppressChunks = true
   void open.connection.agent.notify('session/cancel', { sessionId: open.session.sessionId })
-  open.agentInitiated.end('stopped')
+  open.agentInitiated.end(reason)
   if (!open.agentInitiatedCancel) {
     let acknowledge = (): void => {}
     const acknowledged = new Promise<'acknowledged'>((resolve) => {

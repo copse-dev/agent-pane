@@ -76,7 +76,7 @@ Stop, failure, idle expiry, session closure, and thread deletion revoke both pen
 revocation: like ordinary completion, it keeps detached prompts and stored answers for the same
 task (see [What an approval prompt says](#what-an-approval-prompt-says)). The bridge observes
 turn and session termination separately from a disconnected call so the first abort cannot hide
-later revocation. Self-started turns distinguish completion from Stop,
+later revocation. Self-started turns distinguish completion and send-now from Stop,
 idle expiry, and session closure. Ordinary prompts have no approval deadline. Client abandonment
 and turn completion are logged as pending requests with distinct sources; cancellation, window
 closure, and explicit safety-check timeouts retain their own audit sources.
