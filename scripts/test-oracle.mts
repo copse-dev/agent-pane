@@ -1015,6 +1015,23 @@ export function listDemoSpecs(tree: OracleFiles = workingTree): string[] {
 }
 
 /**
+ * Fixture pages a demo bundles with esbuild rather than importing: a quoted
+ * `tests/demo/helpers/….ts` entry point, or the name passed to
+ * `buildDemoFixturePage`. Their imports are what the demo's page renders, so
+ * they count as import roots alongside the spec.
+ */
+function demoFixtureEntries(src: string, tree: OracleFiles): string[] {
+  const entries = new Set<string>()
+  for (const m of src.matchAll(/['"`](tests\/demo\/helpers\/[\w./-]+\.ts)['"`]/g)) {
+    if (m[1] !== undefined) entries.add(m[1])
+  }
+  for (const m of src.matchAll(/\bbuildDemoFixturePage\(\s*['"`]([\w-]+)['"`]/g)) {
+    if (m[1] !== undefined) entries.add(`${DEMO_DIR}/helpers/${m[1]}.ts`)
+  }
+  return [...entries].filter((entry) => tree.exists(entry)).sort()
+}
+
+/**
  * Demo specs whose shots a change owns, by the rules computeSelection applies to
  * e2e specs: the spec itself changed, its imports reach a changed file, or one
  * of its selectors appears in changed shipped source. A broad change owns them
@@ -1033,8 +1050,10 @@ export function selectDemoSpecs(
   const hosts = changed.filter(isSelectorHost).map((f) => tree.read(f))
   return demos.filter((spec) => {
     if (changed.includes(spec)) return true
-    const imports = reachableFiles(spec, importCache, tree)
-    if (changed.some((f) => imports.has(f))) return true
+    const roots = [spec, ...demoFixtureEntries(tree.read(spec), tree)]
+    if (roots.some((root) => changed.includes(root))) return true
+    const imports = roots.map((root) => reachableFiles(root, importCache, tree))
+    if (changed.some((f) => imports.some((reached) => reached.has(f)))) return true
     const tokens = extractSpecTokens(tree.read(spec))
     return hosts.some((body) => selectorHits(body, tokens).length > 0)
   })
