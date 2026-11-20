@@ -207,7 +207,13 @@ export class NativeSteeringSession {
       }),
     )
     if (reviewResult?.state === 'interrupted') {
-      settle({ state: 'held', draft: reviewResult.draft })
+      // Stop can arrive after the isolated renderer registered its interrupt
+      // listener but before it received the seed. Its textarea is still empty
+      // in that window; never let that initialization race erase the durable
+      // note. An intentionally cleared draft is invalid for Send as well, so
+      // retaining the last non-empty revision is the lossless outcome.
+      const draft = reviewResult.draft.trim() ? reviewResult.draft : snapshot.message.content
+      settle({ state: 'held', draft })
       return
     }
     if (reviewResult === null) {

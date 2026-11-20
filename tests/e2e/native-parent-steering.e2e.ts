@@ -560,10 +560,21 @@ describe('native parent steering through the real provider and IPC', function ()
       receipts().map((receipt) => receipt.state),
       [],
     )
-    assert.equal(meta().pendingMessages?.[0]?.autoDispatch, false)
+    const heldMessage = meta().pendingMessages?.[0]
+    assert.equal(heldMessage?.autoDispatch, false)
+    assert.ok(heldMessage)
     assert.equal(calls, 1)
     await browser.reloadSession()
-    await expect($('.conversation-queued .message-text')).toHaveText(STOP_NOTE)
+    await browser.waitUntil(
+      async () => {
+        const row = $(`.conversation-queued [data-message-id="${heldMessage.messageId}"]`)
+        return (await row.isExisting()) && (await row.$('.message-text').getText()) === STOP_NOTE
+      },
+      {
+        timeout: 10_000,
+        timeoutMsg: 'The exact held message did not finish rendering after reload',
+      },
+    )
     await expect($('.conversation-queued .queued-release')).toBeDisplayed()
     assert.equal(calls, 1)
     assert.deepEqual(failures, [])
