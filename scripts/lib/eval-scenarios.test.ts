@@ -5,6 +5,8 @@ import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import {
+  createEvalProject,
+  evalMayChangeCheckout,
   loadEvalScenario,
   seedEvalWorkspace,
   type EvalScenario,
@@ -157,6 +159,36 @@ describe('commitSeedFiles', () => {
       )
     } finally {
       rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('evalMayChangeCheckout', () => {
+  it("never lets the driver switch or force-send in the operator's own checkout unasked", () => {
+    const previous = process.env['COPSE_EVAL_ALLOW_CURRENT_CHECKOUT']
+    const scenarios = scenarioFiles().map((name) => loadEvalScenario(join(SCENARIO_DIR, name)))
+    try {
+      delete process.env['COPSE_EVAL_ALLOW_CURRENT_CHECKOUT']
+      let ownCheckout = 0
+      for (const scenario of scenarios) {
+        const project = createEvalProject(scenario)
+        try {
+          // The eval runs in the operator's checkout exactly when the project is the cwd.
+          const own = project.root === process.cwd()
+          if (own) ownCheckout++
+          assert.equal(evalMayChangeCheckout(scenario), !own, scenario.id)
+        } finally {
+          project.cleanup()
+        }
+      }
+      assert.ok(ownCheckout > 0, 'expected scenarios that run in the current checkout')
+      process.env['COPSE_EVAL_ALLOW_CURRENT_CHECKOUT'] = 'true'
+      assert.ok(scenarios.some((scenario) => !evalMayChangeCheckout(scenario)))
+      process.env['COPSE_EVAL_ALLOW_CURRENT_CHECKOUT'] = '1'
+      assert.ok(scenarios.every((scenario) => evalMayChangeCheckout(scenario)))
+    } finally {
+      if (previous === undefined) delete process.env['COPSE_EVAL_ALLOW_CURRENT_CHECKOUT']
+      else process.env['COPSE_EVAL_ALLOW_CURRENT_CHECKOUT'] = previous
     }
   })
 })

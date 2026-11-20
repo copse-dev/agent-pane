@@ -190,6 +190,23 @@ export function createEvalProject(scenario: EvalScenario): {
   }
 }
 
+/** Operator opt-in that lets the eval change their own checkout (see `evalMayChangeCheckout`). */
+export const EVAL_ALLOW_CURRENT_CHECKOUT_ENV = 'COPSE_EVAL_ALLOW_CURRENT_CHECKOUT'
+
+/**
+ * Whether the driver may switch the scenario's checkout to another branch or
+ * confirm the dirty-checkout warning. Only a `tempProject` workspace is
+ * disposable: every other scenario runs in the operator's own checkout
+ * (`createEvalProject` returns `process.cwd()`), so both need the explicit
+ * `COPSE_EVAL_ALLOW_CURRENT_CHECKOUT=1`.
+ */
+export function evalMayChangeCheckout(scenario: EvalScenario): boolean {
+  return (
+    scenario.workspace?.type === 'tempProject' ||
+    process.env[EVAL_ALLOW_CURRENT_CHECKOUT_ENV] === '1'
+  )
+}
+
 export function resolvePromptAttachment(attachment: PromptAttachment): {
   path: string
   content: string

@@ -11,7 +11,9 @@ import { loadProjectThreads } from '../../src/main/services/thread-store.ts'
 import { agentIsIdle, getCopseUserDataDir, waitForPromptReady } from './helpers.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
 import {
+  EVAL_ALLOW_CURRENT_CHECKOUT_ENV,
   EVAL_GIT_BASELINE_ENV,
+  evalMayChangeCheckout,
   loadEvalScenario,
   resolvePromptAttachment,
   selectedEvalPrompts,
@@ -33,7 +35,7 @@ import {
 } from '../../scripts/lib/eval-tool-expectations.mts'
 import { readDecisionLog } from '../../src/main/services/security/decision-log-store.ts'
 import { defaultScratchRoots } from '../../scripts/lib/eval-scratch-paths.mts'
-import { setComposerValue, submitComposer } from './helpers/composer.ts'
+import { composerText, setComposerValue, submitComposer } from './helpers/composer.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { acceptEvalProposals, selectEvalBranch } from './helpers/agent-eval-ui.ts'
 import { failedTurn } from '../../src/main/services/container-runtime/guest-turn.ts'
@@ -230,6 +232,30 @@ async function attachPromptFiles(attachments: PromptAttachment[]): Promise<void>
       interval: 100,
       timeoutMsg: `Expected ${String(files.length)} prompt attachment chip(s)`,
     },
+  )
+}
+
+const OWN_CHECKOUT_REFUSAL = `uses your own checkout; use a tempProject scenario, or set ${EVAL_ALLOW_CURRENT_CHECKOUT_ENV}=1 to let the eval change it`
+
+/**
+ * Submit the typed prompt. The dirty-checkout warning is confirmed only where
+ * the eval may change the checkout; anywhere else it fails the run before the
+ * agent is sent into uncommitted work.
+ */
+async function submitEvalPrompt(mayChangeCheckout: boolean): Promise<void> {
+  if (mayChangeCheckout) {
+    await submitComposer()
+    return
+  }
+  await $('.submit-btn').click()
+  const dirtyWarning = $('.composer-dirty-send-btn')
+  await browser.waitUntil(
+    async () => (await dirtyWarning.isDisplayed()) || (await composerText()).trim() === '',
+    { timeout: 30_000, interval: 100, timeoutMsg: 'The composer prompt did not submit' },
+  )
+  assert.ok(
+    !(await dirtyWarning.isDisplayed()),
+    `The checkout has uncommitted changes and this scenario ${OWN_CHECKOUT_REFUSAL}`,
   )
 }
 
@@ -629,8 +655,15 @@ describe('agent eval drive', () => {
 
     const idleTimeout = Number(process.env['COPSE_EVAL_IDLE_MS'] ?? 15 * 60_000)
     const prompts = selectedEvalPrompts(scenario)
+    const mayChangeCheckout = evalMayChangeCheckout(scenario)
     const requestedBranch = process.env['COPSE_EVAL_BRANCH']?.trim()
-    if (requestedBranch) await selectEvalBranch(requestedBranch)
+    if (requestedBranch) {
+      assert.ok(
+        mayChangeCheckout,
+        `COPSE_EVAL_BRANCH switches branches, and this scenario ${OWN_CHECKOUT_REFUSAL}`,
+      )
+      await selectEvalBranch(requestedBranch)
+    }
     const shouldArmGuardedYolo =
       scenario.toolUse?.armGuardedYolo === true || process.env['COPSE_EVAL_GUARDED_YOLO'] === '1'
     if (shouldArmGuardedYolo) {
@@ -639,7 +672,7 @@ describe('agent eval drive', () => {
 
     for (const [index, prompt] of prompts.entries()) {
       await typePrompt(prompt)
-      await submitComposer()
+      await submitEvalPrompt(mayChangeCheckout)
       await waitForEvalAgentIdle(idleTimeout)
       await assertNoFailedTurn(index + 1)
     }

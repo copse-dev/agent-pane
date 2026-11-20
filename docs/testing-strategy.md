@@ -513,9 +513,12 @@ loops driven by an actual local model rather than the mock:
   agent evals (`tests/e2e/agent-eval-drive.e2e.ts`), reading `LM_STUDIO_API_KEY`
   / `LM_API_TOKEN` and talking to a local OpenAI-compatible endpoint
   (`createLMStudioProvider`, default `http://localhost:1234/v1`).
-  For an existing checkout, set `COPSE_EVAL_BRANCH=<branch>` to choose that branch
-  through the new-thread picker before submitting; otherwise the product's default
-  branch selection applies. The driver confirms dirty-checkout warnings, accepts
+  Set `COPSE_EVAL_BRANCH=<branch>` to choose that branch through the new-thread
+  picker before submitting; otherwise the product's default branch selection
+  applies. The driver confirms dirty-checkout warnings only in a `tempProject`
+  workspace. Any other scenario runs in your own checkout, so a branch request or a
+  dirty checkout fails the run there unless you set
+  `COPSE_EVAL_ALLOW_CURRENT_CHECKOUT=1`. The driver accepts
   both single-file and bulk proposals through Changes, waits for acceptance wakes,
   and fails if any proposals remain before judging workspace files. It stops at the
   first turn whose `turnOutcome` is `failed` and reports that provider error, rather
