@@ -21,8 +21,10 @@ on:
       - 'src/main/services/apple-development/**'
       - 'src/main/services/container-runtime/**'
       - 'src/main/services/desktop-control/**'
+      - 'src/main/services/acp/acp-ssh-transport*.ts'
       - 'src/main/services/thread-git-roots*.ts'
       - 'src/main/services/thread-history-edit*.ts'
+      - 'src/main/services/worktree-preparation*.ts'
       - 'src/main/tools/**'
       - 'scripts/build-invariants*.ts'
       - 'scripts/host-differences*.ts'
@@ -37,9 +39,11 @@ on:
 permissions:
   contents: read
 
+# A newer push supersedes a PR run. A nightly and a manual dispatch on the same branch are
+# separate runs that should both finish, so they never cancel each other.
 concurrency:
-  group: macos-unit-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: macos-unit-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   unit:
