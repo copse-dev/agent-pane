@@ -1,6 +1,6 @@
 import { describe, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { normalizeToolExecuteResult } from '@shared/types'
@@ -155,5 +155,34 @@ describe('search_codebase tool', () => {
     ).result
     assert.match(result, /still building/)
     assert.match(result, /search_code/)
+  })
+
+  // The regex path searches the read-only chat store too (#644). The semantic
+  // scope filter is workspace-only, and resolving it used to reject the path
+  // before the regex search ever ran.
+  ownedIt('regex-searches a chat-store directory given by absolute path', async () => {
+    const prevChatDir = process.env['COPSE_WORKSPACE_DIR']
+    const chatRoot = await mkdtemp(join(tmpdir(), 'copse-panel-search-codebase-chat-'))
+    process.env['COPSE_WORKSPACE_DIR'] = chatRoot
+    try {
+      const threadDir = join(chatRoot, 'proj', 'thread')
+      await mkdir(join(threadDir, 'messages'), { recursive: true })
+      await writeFile(join(threadDir, 'messages', 'm.md'), 'pastThreadNeedle body\n', 'utf-8')
+      for (const mode of ['regex', 'auto']) {
+        const result = normalizeToolExecuteResult(
+          await registry.execute(
+            'search_codebase',
+            { query: 'pastThreadNeedle', mode, path: threadDir },
+            new AbortController().signal,
+          ),
+        ).result
+        assert.match(result, /\[regex search\]/)
+        assert.match(result, /m\.md:1: pastThreadNeedle body/)
+      }
+    } finally {
+      if (prevChatDir === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = prevChatDir
+      await rm(chatRoot, { recursive: true, force: true })
+    }
   })
 })

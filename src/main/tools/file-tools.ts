@@ -11,7 +11,8 @@ import { getActiveWorkspaceFs } from '../services/workspace-fs/get-workspace-fs.
 import { runCommand } from '../services/exec/command-runner.ts'
 import { getIndex } from '../services/search/file-index.ts'
 import { getAgentRunReadFileLimits } from '../services/agent-run-read-limits.ts'
-import { readTextLineRangeFromUtf8Content } from '../services/read-text-file.ts'
+import { detectTextEncoding, readTextLineRangeFromUtf8Content } from '../services/read-text-file.ts'
+import type { WorkspaceFs } from '../services/workspace-fs/workspace-fs.ts'
 import { buildReadFilePageMeta, formatReadFilePageFooter } from '@copse/agent/read-file-page.ts'
 import { getStagedDiffEntry } from '../services/diff-queue.ts'
 import { isRecord } from '@shared/unknown-value.ts'
@@ -46,6 +47,32 @@ function friendlyFsError(err: unknown, relPath: string, op: 'read' | 'list'): st
   }
 }
 
+const ENCODING_SNIFF_CHARS = 8192
+
+/**
+ * Read a text file as a string, decoding UTF-16 (Xcode `.strings` tables,
+ * `.reg` exports, PowerShell redirects) instead of handing the model the
+ * U+FFFD / NUL-interleaved text a UTF-8 decode of those bytes produces.
+ *
+ * The UTF-8 read stays the only read for ordinary files. The bytes are fetched
+ * a second time only when the decoded text carries a UTF-16 misread's marks: a
+ * mangled byte-order mark (two invalid bytes, so two U+FFFD) or a NUL.
+ */
+async function readTextContent(fs: WorkspaceFs, absPath: string): Promise<string> {
+  const content = await fs.readFile(absPath, 'utf-8')
+  if (
+    !content.startsWith('\uFFFD\uFFFD') &&
+    !content.slice(0, ENCODING_SNIFF_CHARS).includes('\u0000')
+  ) {
+    return content
+  }
+  const bytes = await fs.readFileBytes(absPath)
+  const { encoding } = detectTextEncoding(bytes.subarray(0, ENCODING_SNIFF_CHARS))
+  if (encoding === 'utf8') return content
+  // TextDecoder drops a leading byte-order mark itself.
+  return new TextDecoder(encoding === 'utf16le' ? 'utf-16le' : 'utf-16be').decode(bytes)
+}
+
 export const readFileTool = defineTool({
   name: 'read_file',
   description:
@@ -66,8 +93,7 @@ export const readFileTool = defineTool({
 
     let result
     try {
-      const fs = getActiveWorkspaceFs()
-      const content = await fs.readFile(absPath, 'utf-8')
+      const content = await readTextContent(getActiveWorkspaceFs(), absPath)
       result = readTextLineRangeFromUtf8Content(content, {
         startLine: start_line ?? 1,
         endLine: end_line,

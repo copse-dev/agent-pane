@@ -1,5 +1,6 @@
 import { ipcMain, type BrowserWindow, type WebContents } from 'electron'
 import { z } from 'zod'
+import { errorMessage } from '@shared/errors.ts'
 import { getSetting } from '../services/storage/settings.ts'
 import { listConfiguredSshHosts } from '../services/ssh-workspace/hosts.ts'
 import {
@@ -48,6 +49,30 @@ function parseClientBytes(raw: unknown): Uint8Array {
     throw new Error('VNC client message exceeds the size limit')
   }
   return bytes
+}
+
+/**
+ * Keep a fire-and-forget VNC event from throwing out of `ipcMain.on`.
+ *
+ * `vnc:start` and `vnc:send` are one-way: there is no caller to reject to, so a
+ * throw in their listener is an uncaught exception in the main process, which
+ * Electron reports with its "A JavaScript error occurred in the main process"
+ * dialog. And the listeners do throw in ordinary use: input the viewer sent just
+ * before it learned the server had hung up reaches a connection that is already
+ * closed. The viewer hears about the close on `vnc:status`; the stray event is
+ * dropped.
+ */
+export function containVncEventErrors<E, A extends unknown[]>(
+  channel: string,
+  listener: (event: E, ...args: A) => void,
+): (event: E, ...args: A) => void {
+  return (event, ...args) => {
+    try {
+      listener(event, ...args)
+    } catch (error) {
+      console.warn(`[copse-panel] dropped ${channel}: ${errorMessage(error)}`)
+    }
+  }
 }
 
 export function initVnc(win: BrowserWindow): () => Promise<void> {
@@ -195,8 +220,10 @@ export function initVnc(win: BrowserWindow): () => Promise<void> {
     const id = parseIpcArgs(vncConnectionIdSchema, [rawId])
     service.send(id, event.sender.id, parseClientBytes(rawBytes))
   }
-  ipcMain.on('vnc:start', onStart)
-  ipcMain.on('vnc:send', onSend)
+  const guardedStart = containVncEventErrors('vnc:start', onStart)
+  const guardedSend = containVncEventErrors('vnc:send', onSend)
+  ipcMain.on('vnc:start', guardedStart)
+  ipcMain.on('vnc:send', guardedSend)
 
   return async () => {
     ipcMain.removeHandler('vnc:open')
@@ -213,8 +240,8 @@ export function initVnc(win: BrowserWindow): () => Promise<void> {
     ipcMain.removeHandler('vnc:forget-password')
     ipcMain.removeHandler('vnc:forget-credentials')
     ipcMain.removeHandler('vnc:close')
-    ipcMain.off('vnc:start', onStart)
-    ipcMain.off('vnc:send', onSend)
+    ipcMain.off('vnc:start', guardedStart)
+    ipcMain.off('vnc:send', guardedSend)
     await service.closeAll()
   }
 }
