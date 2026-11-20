@@ -34,10 +34,10 @@ import {
  * Reaching a paired machine through a saved SSH host: a forward on that host's
  * multiplexed master to the machine's loopback listener.
  *
- * `interactive` is true only for work a person started (pairing, a classifier
- * call). Status checks run on a timer and pass false, so they never open a
- * connection or raise an SSH prompt (docs/plans/multi-machine-access.md
- * decision 5).
+ * `interactive` is true only for work a person started (pairing, Test
+ * classifier). Status checks and the classifier calls that screening and
+ * background questions make pass false, so they never open a connection or
+ * raise an SSH prompt (docs/plans/multi-machine-access.md decision 5).
  */
 export interface MachineSshReach {
   open(
@@ -476,12 +476,18 @@ export class MachineManager {
       )
     return model
   }
+  /**
+   * Evaluate one of the machine's shared models. Only an `interactive` call (a
+   * person pressed Test classifier) may open the route's SSH connection; any
+   * other call uses one that is already open.
+   */
   async call(
     machineId: string,
     profileId: string,
     request: ClassifierRequest,
     signal: AbortSignal,
     timeoutMs: number,
+    { interactive = false }: { interactive?: boolean } = {},
   ): Promise<unknown> {
     this.assertEnabled()
     const peer = this.data.machines.find((entry) => entry.id === machineId)
@@ -491,7 +497,7 @@ export class MachineManager {
       const result = await this.viaRoute(
         this.route(peer.id),
         peer.endpoint.port,
-        true,
+        interactive,
         (connectTo) =>
           this.request(
             peer.id,
