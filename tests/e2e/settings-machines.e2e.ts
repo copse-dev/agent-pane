@@ -372,6 +372,9 @@ describe('Machines settings', function () {
     writeE2eEnv({ COPSE_E2E_SECRET_STORAGE: 'unavailable' })
     await browser.reloadSession()
     await openMachines()
+    // Stands on its own: CI's burn-in also runs every test alone, and the
+    // experiment defaults off, which would hide pairing rather than lock it.
+    await setExperiment(true)
     await expect($('.machine-pair')).toBeDisabled()
     await expect($('.machine-secure-storage')).toHaveText(expect.stringContaining('Unlock'))
     await assert.rejects(
