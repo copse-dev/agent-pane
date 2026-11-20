@@ -27,6 +27,15 @@ import { E2E_GIT_BRANCH, E2E_NAMES_API_URL, E2E_SHELL } from './tests/e2e/helper
 import { installE2eProfileCleanup } from './tests/e2e/helpers/profile-cleanup.ts'
 import { makeE2eScratchDir } from './tests/e2e/helpers/scratch-dir.ts'
 import {
+  beginRelaunchQuitTimeline,
+  finishAllQuitTimelines,
+  latestRelaunchQuitTimeline,
+  QUIT_TIMELINE_DIR_ENV,
+  quitTimelineDir,
+  setQuitTimelineSpec,
+  setQuitTimelineTest,
+} from './tests/e2e/helpers/quit-timeline.ts'
+import {
   assertE2eDeviceScaleFactor,
   E2E_DEVICE_SCALE_FACTOR,
 } from './tests/e2e/helpers/screenshot.ts'
@@ -160,7 +169,9 @@ export const config: WebdriverIO.Config = {
       afterEach: errorToastGuard.afterEach,
     },
   },
-  async before() {
+  async before(_capabilities, specs) {
+    // Issue #4407 diagnostic (do not merge): label each relaunch's quit timeline.
+    setQuitTimelineSpec(specs[0])
     // A wedged deleteSession must not flip a green suite red (main tip cdeb3abf
     // attempt 3 / git-changes-image; tip 2686950f / shard 4 still FAILED until
     // overwriteCommand patched the real browser behind @wdio/globals' Proxy).
@@ -179,6 +190,9 @@ export const config: WebdriverIO.Config = {
   },
   async onReload() {
     await parkSessionPointer()
+  },
+  beforeTest(test) {
+    setQuitTimelineTest(test.title)
   },
   afterTest: async (test, context: { test?: object }, result) => {
     // Mocha timeout / dead chromedriver session: skip post-test WebDriver traffic
@@ -304,6 +318,9 @@ export const config: WebdriverIO.Config = {
       LM_STUDIO_API_KEY: '',
       LMSTUDIO_API_KEY: '',
       LM_API_TOKEN: '',
+      // Issue #4407 diagnostic (do not merge): where the e2e shell's
+      // quit-timeline fixture writes the app's own view of each quit.
+      [QUIT_TIMELINE_DIR_ENV]: quitTimelineDir(),
     }
     if (process.env['COPSE_PANEL_MOCK_GH_STATUS']) {
       e2eEnv['COPSE_PANEL_MOCK_GH_STATUS'] = process.env['COPSE_PANEL_MOCK_GH_STATUS']
@@ -337,6 +354,10 @@ export const config: WebdriverIO.Config = {
     // detached child that inherited its socket, may still be listening on.
     // Rotate to a fresh, unbound port first; see helpers/debug-port.ts.
     if (commandName !== 'reloadSession') return
+    // Issue #4407 diagnostic (do not merge): time the pre-close below from the
+    // outside and watch the outgoing Electron until it and its devtools port
+    // are gone. Observes only; the pre-close itself is unchanged.
+    const quitTimeline = beginRelaunchQuitTimeline(browser.requestedCapabilities)
     // On macOS, ChromeDriver can leave the Electron process alive long enough
     // for its replacement to lose the app's single-instance lock. Closing the
     // current app window first lets Electron terminate cleanly before
@@ -346,9 +367,14 @@ export const config: WebdriverIO.Config = {
       // user discarding that window, and multi-window persistence would drop
       // its record — breaking any spec that relaunches expecting the full
       // window set to restore (multiple-main-windows.e2e.ts).
+      quitTimeline.mark('markQuit:start')
       await browser.execute(() => window.__copseE2e?.markQuit())
+      quitTimeline.mark('markQuit:end')
+      quitTimeline.mark('closeWindow:start')
       await browser.closeWindow()
-    } catch {
+      quitTimeline.mark('closeWindow:end')
+    } catch (error) {
+      quitTimeline.markError('pre-close:error', error)
       // A session that is already gone needs no extra shutdown work.
     }
     const requested: unknown = browser.requestedCapabilities
@@ -363,7 +389,11 @@ export const config: WebdriverIO.Config = {
     await assignDebugPort(cap)
     updateChromeOptions(requested, () => cap['goog:chromeOptions'])
   },
+  afterCommand(commandName, _args, _result, error) {
+    if (commandName === 'reloadSession') latestRelaunchQuitTimeline()?.reloadEnded(error)
+  },
   afterSession() {
+    finishAllQuitTimelines('session-end')
     cleanupE2eUserDataDir?.()
     cleanupE2eUserDataDir = null
     e2eUserDataDir = null

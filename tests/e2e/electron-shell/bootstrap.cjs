@@ -135,4 +135,13 @@ if (process.env.COPSE_E2E_ACP_REGISTRY_FIXTURE) {
   require('./acp-registry-fixture.cjs').install(process.env.COPSE_E2E_ACP_REGISTRY_FIXTURE)
 }
 
+// Issue #4407 diagnostic (do not merge): the app's own quit timeline. Installed
+// before the app module so its listeners run ahead of the app's own.
+const quitTimeline =
+  process.env.COPSE_E2E === '1' && process.env.COPSE_E2E_QUIT_TIMELINE_DIR
+    ? require('./quit-timeline-fixture.cjs').install(process.env.COPSE_E2E_QUIT_TIMELINE_DIR)
+    : null
+
 require('../../../dist/main/index.js')
+
+quitTimeline?.afterAppLoaded()

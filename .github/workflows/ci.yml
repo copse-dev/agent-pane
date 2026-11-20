@@ -2058,7 +2058,7 @@ jobs:
           # the error-adjacent lines instead, and fall back to a raw tail only
           # when nothing matched, so a novel failure is never silently dropped.
           # The uploaded artifact remains the complete record.
-          E2E_LOG_SIGNALS='ERROR|WARN|Unable to connect|ECONNREFUSED|ECONNRESET|EPIPE|UND_ERR|bind\(\) failed|Cannot start http server|DevTools HTTP Request failed|aborted due to timeout|Timed out receiving message|no such session|invalid session id|session not created|boot-complete|was started successfully'
+          E2E_LOG_SIGNALS='ERROR|WARN|Unable to connect|ECONNREFUSED|ECONNRESET|EPIPE|UND_ERR|bind\(\) failed|Cannot start http server|DevTools HTTP Request failed|aborted due to timeout|Timed out receiving message|no such session|invalid session id|session not created|boot-complete|was started successfully|\[shutdown\]|\[quit-timeline\]'
           dump_e2e_session_logs() {
             local logs_dir="e2e-failure-artifacts/wdio-logs"
             [ -d "$logs_dir" ] || return 0
@@ -2080,6 +2080,40 @@ jobs:
               echo
             done
             echo "::endgroup::"
+          }
+
+          # Issue #4407 diagnostic (do not merge): every relaunch's quit timeline,
+          # for passing attempts as well as failing ones. The wdio harness and
+          # the e2e shell write it outside the checkout (no workspace watcher
+          # sees those writes); this prints one summary line per relaunch, then
+          # the full timeline of each slow relaunch and of the first fast one as
+          # a baseline, and copies the files next to the other artifacts.
+          summarise_quit_timeline() {
+            local attempt="$1" dir="$RUNNER_TEMP/e2e-quit-timeline/attempt-$1" file printed=0
+            echo "── shard ${{ matrix.shard }} attempt ${attempt} quit timeline (#4407) ──"
+            echo "kernel=$(uname -r) runner=${RUNNER_ENVIRONMENT:-?}/${ImageOS:-?}/${ImageVersion:-?}"
+            mkdir -p e2e-failure-artifacts
+            if [ -d "$dir" ]; then
+              cp -r "$dir" "e2e-failure-artifacts/quit-timeline-attempt-${attempt}" || true
+            fi
+            if [ ! -f "$dir/summary.log" ]; then
+              echo "(no relaunch summaries recorded)"
+              return 0
+            fi
+            cat "$dir/summary.log"
+            while IFS= read -r file; do
+              [ "$printed" -lt 8 ] || break
+              [ -f "$dir/$file" ] || continue
+              echo "### slow: $file"
+              head -n 400 "$dir/$file"
+              printed=$((printed + 1))
+            done < <(grep '^SLOW ' "$dir/summary.log" | sed -E 's/.* file=//')
+            file="$(grep -v '^SLOW ' "$dir/summary.log" | head -n 1 | sed -E 's/.* file=//')"
+            if [ -n "$file" ] && [ -f "$dir/$file" ]; then
+              echo "### baseline (fast): $file"
+              head -n 400 "$dir/$file"
+            fi
+            echo "──────────────────────────────────────────────────────────"
           }
 
           # A failing spec reports what it could not see; the renderer console
@@ -2208,18 +2242,21 @@ jobs:
             # Full shards can exceed twelve minutes as the native suite grows. Keep
             # a bounded fourteen-minute attempt watchdog; the enclosing step allows
             # both attempts plus cleanup without changing individual test caps.
+            COPSE_E2E_QUIT_TIMELINE_DIR="$RUNNER_TEMP/e2e-quit-timeline/attempt-${attempt}" \
             COPSE_E2E_OUTCOMES_DIR="$GITHUB_WORKSPACE/e2e-evidence/outcomes" COPSE_E2E_ATTEMPT="$attempt" SHARD_INDEX="${{ matrix.shard }}" \
             ${TIMEOUT:+$TIMEOUT -k 15 840} npm run test:e2e:ci -- $SHARD_ARGS $SPEC_ARGS 2>&1 \
               | tee "$run_log"
             attempt_status=${PIPESTATUS[0]}
             echo "::endgroup::"
             if [ "$attempt_status" -eq 0 ]; then
+              summarise_quit_timeline "$attempt" || true
               exit 0
             fi
             # Order matters as much as volume: the job-log API returns the tail,
             # so the biggest output goes first and the smallest, most useful
             # output goes last. Bulk dumps, then diagnostics, then the digest.
             dump_e2e_session_logs "$attempt" || true
+            summarise_quit_timeline "$attempt" || true
             capture_e2e_runner_diagnostics "$attempt" "$attempt_status" || true
             summarise_e2e_attempt "$attempt" "$run_log" || true
             echo "e2e shard ${{ matrix.shard }} attempt $attempt failed or timed out"
@@ -2349,6 +2386,18 @@ jobs:
           path: e2e-failure-artifacts/
           if-no-files-found: ignore
           retention-days: 3
+      # Issue #4407 diagnostic (do not merge): keep the quit timelines and the
+      # driver logs (which carry the app's console) for passing shards too.
+      - uses: actions/upload-artifact@v7
+        if: always()
+        continue-on-error: true
+        with:
+          name: e2e-quit-timeline-shard-${{ matrix.shard }}-${{ github.run_attempt }}
+          path: |
+            e2e-failure-artifacts/quit-timeline-attempt-*/
+            e2e-failure-artifacts/wdio-logs/
+          if-no-files-found: ignore
+          retention-days: 7
 
   # Preserve reference screenshots as immutable run evidence. Each e2e shard
   # uploads only PNGs that differ from the checked-out baseline; this job merges

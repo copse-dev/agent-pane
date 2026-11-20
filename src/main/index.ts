@@ -225,6 +225,12 @@ import {
 import { installProcessFaultHandlers } from './services/diagnostics/process-faults.ts'
 import { installStdioGuard, isLogSinkAlive } from './services/diagnostics/stdio-guard.ts'
 import { runWithDeadline } from './services/diagnostics/shutdown-deadline.ts'
+import {
+  logOpenShutdownSteps,
+  markShutdown,
+  timeShutdownStep,
+  timeShutdownStepAsync,
+} from './services/diagnostics/shutdown-timeline.ts'
 import { reportStartupBudget } from './services/diagnostics/startup-budget.ts'
 import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
 import { getSetting } from './services/storage/settings.ts'
@@ -1477,77 +1483,130 @@ let disposeDarkFactorySensor: (() => void) | undefined
 let disposeTaskSupervisorEvents: (() => void) | undefined
 let interruptTurnTranscripts: (() => Promise<void>) | undefined
 
+// Every step is wrapped in `timeShutdownStep*` (#4407 diagnostic): inert, and a
+// direct call, unless COPSE_E2E=1 or COPSE_DEBUG_SHUTDOWN=1.
 async function cleanupBeforeQuit(): Promise<void> {
-  const transcriptDrain = interruptTurnTranscripts?.()
-  setAgentInitiatedTurnAuthority(null)
-  stopAllAgentRuns()
-  await stopAllForegroundShellProcesses()
-  // Revoke input and inference synchronously, then await VM deletion within the quit deadline.
-  await stopAllIsolatedDesktops().catch((error: unknown) => {
-    console.error('[isolated-desktop] Shutdown VM cleanup failed:', error)
+  const transcriptDrain = interruptTurnTranscripts
+    ? timeShutdownStepAsync('interruptTurnTranscripts', interruptTurnTranscripts)
+    : undefined
+  timeShutdownStep('setAgentInitiatedTurnAuthority', () => {
+    setAgentInitiatedTurnAuthority(null)
   })
-  stopEventLoopWatchdog()
+  timeShutdownStep('stopAllAgentRuns', stopAllAgentRuns)
+  await timeShutdownStepAsync('stopAllForegroundShellProcesses', stopAllForegroundShellProcesses)
+  // Revoke input and inference synchronously, then await VM deletion within the quit deadline.
+  await timeShutdownStepAsync('stopAllIsolatedDesktops', () =>
+    stopAllIsolatedDesktops().catch((error: unknown) => {
+      console.error('[isolated-desktop] Shutdown VM cleanup failed:', error)
+    }),
+  )
+  timeShutdownStep('stopEventLoopWatchdog', stopEventLoopWatchdog)
   perfMark('main:quit')
   perfDumpCounters('quit')
   flushPerfTrace()
-  getAutomationService().stop()
-  getBranchCiAutomationService().stop()
-  await stopMobileCompanion()
-  await stopPluginClientApi()
-  disposeDarkFactorySensor?.()
+  timeShutdownStep('automationService.stop', () => {
+    getAutomationService().stop()
+  })
+  timeShutdownStep('branchCiAutomationService.stop', () => {
+    getBranchCiAutomationService().stop()
+  })
+  await timeShutdownStepAsync('stopMobileCompanion', stopMobileCompanion)
+  await timeShutdownStepAsync('stopPluginClientApi', stopPluginClientApi)
+  timeShutdownStep('disposeDarkFactorySensor', () => {
+    disposeDarkFactorySensor?.()
+  })
   disposeDarkFactorySensor = undefined
-  disposeTaskSupervisorEvents?.()
+  timeShutdownStep('disposeTaskSupervisorEvents', () => {
+    disposeTaskSupervisorEvents?.()
+  })
   disposeTaskSupervisorEvents = undefined
-  await getContainerRunService().stopAll()
-  await cancelAllSupervisedBackgroundProcesses()
-  await taskSupervisor.shutdown()
-  disposeContainerRunSupervisor?.()
+  await timeShutdownStepAsync('containerRunService.stopAll', () =>
+    getContainerRunService().stopAll(),
+  )
+  await timeShutdownStepAsync(
+    'cancelAllSupervisedBackgroundProcesses',
+    cancelAllSupervisedBackgroundProcesses,
+  )
+  await timeShutdownStepAsync('taskSupervisor.shutdown', () => taskSupervisor.shutdown())
+  timeShutdownStep('disposeContainerRunSupervisor', () => {
+    disposeContainerRunSupervisor?.()
+  })
   disposeContainerRunSupervisor = undefined
-  disposeBackgroundProcessSupervisor?.()
+  timeShutdownStep('disposeBackgroundProcessSupervisor', () => {
+    disposeBackgroundProcessSupervisor?.()
+  })
   disposeBackgroundProcessSupervisor = undefined
-  disposeLongTaskWake?.()
+  timeShutdownStep('disposeLongTaskWake', () => {
+    disposeLongTaskWake?.()
+  })
   disposeLongTaskWake = undefined
-  disposeCiWatchConsumer?.()
+  timeShutdownStep('disposeCiWatchConsumer', () => {
+    disposeCiWatchConsumer?.()
+  })
   disposeCiWatchConsumer = undefined
-  await disposeAllAcpSessions()
-  destroyAllTerminalSessions()
-  stopAllBackgroundProcesses()
-  disposeTerminal?.()
+  await timeShutdownStepAsync('disposeAllAcpSessions', disposeAllAcpSessions)
+  timeShutdownStep('destroyAllTerminalSessions', destroyAllTerminalSessions)
+  timeShutdownStep('stopAllBackgroundProcesses', stopAllBackgroundProcesses)
+  timeShutdownStep('disposeTerminal', () => {
+    disposeTerminal?.()
+  })
   disposeTerminal = undefined
-  await disposeVnc?.()
+  await timeShutdownStepAsync('disposeVnc', async () => {
+    await disposeVnc?.()
+  })
   disposeVnc = undefined
-  await disposeSimulatorDesktop?.()
+  await timeShutdownStepAsync('disposeSimulatorDesktop', async () => {
+    await disposeSimulatorDesktop?.()
+  })
   disposeSimulatorDesktop = undefined
-  disposeDesktopControlService()
-  closeAllWatchers()
-  stopWorkspaceIndexWatcher()
-  await clearSshWorkspaceFsCache()
-  shutdownBrowserSession()
-  await stopMachineService()
-  await shutdownStaticPreviewServers()
-  await transcriptDrain
-  await drainWriteQueue()
+  timeShutdownStep('disposeDesktopControlService', disposeDesktopControlService)
+  timeShutdownStep('closeAllWatchers', closeAllWatchers)
+  timeShutdownStep('stopWorkspaceIndexWatcher', () => {
+    stopWorkspaceIndexWatcher()
+  })
+  await timeShutdownStepAsync('clearSshWorkspaceFsCache', clearSshWorkspaceFsCache)
+  timeShutdownStep('shutdownBrowserSession', shutdownBrowserSession)
+  await timeShutdownStepAsync('stopMachineService', stopMachineService)
+  await timeShutdownStepAsync('shutdownStaticPreviewServers', shutdownStaticPreviewServers)
+  await timeShutdownStepAsync('awaitTranscriptDrain', async () => {
+    await transcriptDrain
+  })
+  await timeShutdownStepAsync('drainWriteQueue', drainWriteQueue)
   // Reap the detached gortex daemon too — left running it accumulates multi-GB
   // graphs across sessions and OOM-kills the app on a later launch.
-  await Promise.allSettled([shutdownMcpServers(), shutdownProjectSandbox(), stopGortexDaemon()])
+  await Promise.allSettled([
+    timeShutdownStepAsync('shutdownMcpServers', shutdownMcpServers),
+    timeShutdownStepAsync('shutdownProjectSandbox', shutdownProjectSandbox),
+    timeShutdownStepAsync('stopGortexDaemon', stopGortexDaemon),
+  ])
 }
 
 app.on('before-quit', (event) => {
-  if (quitCleanupFinished) return
+  if (quitCleanupFinished) {
+    markShutdown('before-quit: cleanup already finished; letting the quit through')
+    return
+  }
   // Ask before anything below runs: the cleanup this handler starts is what
   // kills the in-flight turns the user is being warned about, so a prompt after
   // it would come too late to save them. Re-issues the quit once confirmed.
-  if (deferQuitForCloseConfirmation(event)) return
-  beginMainWindowQuit()
-  destroyAllTerminalSessions()
-  stopAllBackgroundProcesses()
-  stopLocalClassifierServers()
+  if (deferQuitForCloseConfirmation(event)) {
+    markShutdown('before-quit: deferred for close confirmation')
+    return
+  }
+  timeShutdownStep('before-quit:beginMainWindowQuit', beginMainWindowQuit)
+  timeShutdownStep('before-quit:destroyAllTerminalSessions', destroyAllTerminalSessions)
+  timeShutdownStep('before-quit:stopAllBackgroundProcesses', stopAllBackgroundProcesses)
+  timeShutdownStep('before-quit:stopLocalClassifierServers', stopLocalClassifierServers)
   // The hidden video-decoder window is not the main window, so nothing else
   // closes it — left open it would keep the app alive past the last quit.
-  closeVideoDecoder()
+  timeShutdownStep('before-quit:closeVideoDecoder', closeVideoDecoder)
   event.preventDefault()
-  if (quitCleanupStarted) return
+  if (quitCleanupStarted) {
+    markShutdown('before-quit: cleanup already running')
+    return
+  }
   quitCleanupStarted = true
+  markShutdown(`cleanup:start deadline=${String(QUIT_CLEANUP_DEADLINE_MS)}ms`)
   void runWithDeadline(cleanupBeforeQuit, QUIT_CLEANUP_DEADLINE_MS, {
     onError: (err) => {
       console.error('[shutdown] Cleanup failed:', err)
@@ -1556,8 +1615,10 @@ app.on('before-quit', (event) => {
       console.error(
         `[shutdown] Cleanup exceeded ${String(QUIT_CLEANUP_DEADLINE_MS)}ms; exiting anyway`,
       )
+      logOpenShutdownSteps('deadline')
     },
   }).then((outcome) => {
+    markShutdown(`cleanup:outcome ${outcome}`)
     quitCleanupFinished = true
     // A cleanup that blew its deadline is still pending, so `app.quit()` would
     // hand control back to a teardown that has already proved it will not
@@ -1568,7 +1629,7 @@ app.on('before-quit', (event) => {
 })
 
 app.on('will-quit', () => {
-  closeThreadStoreIndexes()
+  timeShutdownStep('will-quit:closeThreadStoreIndexes', closeThreadStoreIndexes)
 })
 
 function quitFromSignal(signal: NodeJS.Signals): void {
