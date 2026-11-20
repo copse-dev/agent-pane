@@ -628,16 +628,22 @@ describe('approved env forwarding (stdin preamble)', () => {
 })
 
 describe('remote agent probe', () => {
+  // `--norc` keeps the host's startup files out of the PATH these tests assert
+  // on. Node hands a child a socketpair for stdin, and bash takes a socket on
+  // stdin to mean sshd started it, so a plain `bash -c` reads the system and
+  // user bashrc. That is what the real probe wants over SSH, but here it lets a
+  // developer's or runner's bashrc prepend directories to `$PATH`.
   it('reports FOUND with the shell PATH when the agent is on PATH', () => {
     const dir = mkdtempSync(join(tmpdir(), 'acp-probe-'))
     try {
       const bin = join(dir, 'claude-code-acp')
       writeFileSync(bin, '#!/bin/sh\nexit 0\n')
       chmodSync(bin, 0o755)
-      const stdout = execFileSync('bash', ['-c', remoteAgentProbeScript('claude-code-acp')], {
-        env: { PATH: `${dir}:/usr/bin:/bin` },
-        encoding: 'utf8',
-      })
+      const stdout = execFileSync(
+        'bash',
+        ['--norc', '-c', remoteAgentProbeScript('claude-code-acp')],
+        { env: { PATH: `${dir}:/usr/bin:/bin` }, encoding: 'utf8' },
+      )
       const parsed = parseRemoteAgentProbe(stdout)
       assert.ok(parsed?.found, 'agent on PATH must parse as found')
       assert.ok(parsed.path?.includes(dir), 'the probe must capture the PATH that resolved it')
@@ -649,7 +655,7 @@ describe('remote agent probe', () => {
   it('reports MISSING when the agent is absent, even with rc noise on stdout', () => {
     const noisy = `Welcome to devbox!\n${execFileSync(
       'bash',
-      ['-c', remoteAgentProbeScript('definitely-not-installed-agent')],
+      ['--norc', '-c', remoteAgentProbeScript('definitely-not-installed-agent')],
       { env: { PATH: '/usr/bin:/bin' }, encoding: 'utf8' },
     )}trailing motd line`
     const parsed = parseRemoteAgentProbe(noisy)

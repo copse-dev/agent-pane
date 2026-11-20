@@ -299,6 +299,8 @@ describe('unsignedCommitsToPublish', { skip: !gitOk && 'git not installed' }, ()
       await mkdir(repo)
       spawnSync('git', ['init', '--bare', '-q', remote])
       spawnSync('git', ['init', '-q', '-b', 'feature/sign'], { cwd: repo })
+      // Start from "signing not required" whatever the host's global config says.
+      git('config', 'commit.gpgsign', 'false')
       git('remote', 'add', 'origin', remote)
       await commit('published.txt')
       git('push', '-q', 'origin', 'feature/sign')
