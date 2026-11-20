@@ -72,9 +72,12 @@ export function createSshWorkspaceSection(
     hostFields.reset()
   }
 
+  // A save, a refresh and a connection change can each start a render; only
+  // the newest one draws, so overlapping renders never duplicate rows.
+  let renderGeneration = 0
   async function renderHosts(signal?: AbortSignal): Promise<void> {
     if (signal?.aborted) return
-    clear(hostList)
+    const generation = ++renderGeneration
     const [rawHosts, credentialHostIds, states, agentsOnRemote, desktop, trusted] =
       await Promise.all([
         api.settings.get('sshWorkspaceHosts'),
@@ -84,7 +87,8 @@ export function createSshWorkspaceSection(
         api.settings.get('vncEnabled'),
         api.settings.get('trustedSshHosts'),
       ])
-    if (signal?.aborted) return
+    if (signal?.aborted || generation !== renderGeneration) return
+    clear(hostList)
     const list = parseSshWorkspaceHosts(rawHosts)
     const credentialHosts = new Set(credentialHostIds)
     const context = {
@@ -252,6 +256,11 @@ export function createSshWorkspaceSection(
     status,
   )
 
+  // Each row shows its live connection: pairing a machine over SSH, for one,
+  // connects a host while Settings is open.
+  api.sshWorkspace.onConnectionChanged(() => {
+    void renderHosts()
+  })
   return {
     root,
     refresh,
