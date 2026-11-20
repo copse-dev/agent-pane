@@ -249,7 +249,13 @@ describe('linked-worktree sandbox integration', () => {
     assert.match((await runSandboxed('git', ['diff', '--', '.'], nested)).stdout, /changed/)
     const add = await runSandboxed('git', ['add', 'tracked.txt', 'new.txt'], nested)
     assert.equal(add.code, 0, add.stderr)
-    const commit = await runSandboxed('git', ['commit', '-q', '-m', 'sandbox commit'], nested)
+    // Not a signing test: keep a host's global commit.gpgsign from reaching a
+    // signer the sandbox cannot.
+    const commit = await runSandboxed(
+      'git',
+      ['-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'sandbox commit'],
+      nested,
+    )
     assert.equal(commit.code, 0, commit.stderr)
 
     const configWrite = await runSandboxed('git', ['config', 'copse.sandbox-test', 'true'], nested)
