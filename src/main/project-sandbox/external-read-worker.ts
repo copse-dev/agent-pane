@@ -1,9 +1,9 @@
 import { constants } from 'node:fs'
 import { lstat, open, readdir, realpath } from 'node:fs/promises'
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import micromatch from 'micromatch'
 import { z } from 'zod'
 import { sensitiveTargetReason } from '@copse/shell-guard/read-outside-project.ts'
+import { GLOB_TIMEOUT_HINT, globFilterWithin } from '../services/search/bounded-glob.ts'
 
 /** Fixed read operations only; this worker never accepts executable code. */
 export const externalReadRequestSchema = z.object({
@@ -107,10 +107,19 @@ export async function executeExternalRead(
   const output: string[] = []
   let matches = 0
   let skipped = false
+  const label = (path: string): string => relative(root, path) || basename(path)
+  // The glob comes from the model, so it is matched under a time budget.
+  const globbed = action.glob
+    ? globFilterWithin(
+        paths.map((entry) => label(entry.path)),
+        action.glob,
+        { basename: true, dot: true },
+      )
+    : null
+  if (globbed === 'timeout') throw new Error(GLOB_TIMEOUT_HINT)
+  const included = globbed ? new Set(globbed) : null
   for (const entry of paths) {
-    const label = relative(root, entry.path) || basename(entry.path)
-    if (action.glob && !micromatch.isMatch(label, action.glob, { matchBase: true, dot: true }))
-      continue
+    if (included && !included.has(label(entry.path))) continue
     let text: string
     try {
       text = await read(entry.path)
