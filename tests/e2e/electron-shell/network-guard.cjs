@@ -174,8 +174,10 @@ function install(options) {
   }
 
   // --- dns: direct lookups and resolver queries also leak names off the host.
-  // A lookup of an IP literal never leaves the process (listen() on a LAN address does one).
-  const passes = (hostname) => isLoopbackHost(hostname) || net.isIP(String(hostname)) !== 0
+  // Only `dns.lookup` (getaddrinfo) answers an IP literal locally (listen() on a LAN address
+  // does one). A reverse lookup or a resolver query for the same literal still asks a resolver.
+  const passes = (hostname, kind) =>
+    isLoopbackHost(hostname) || (kind === 'dns.lookup' && net.isIP(String(hostname)) !== 0)
   // Names the e2e stand-ins issue (the fake names API's `lan.<label>.u.copse.me`) have no
   // real record; answer as unresolved instead of asking a public resolver.
   const unresolvable = (hostname) =>
@@ -190,7 +192,7 @@ function install(options) {
   }
   const wrapCallbackLookup = (original, kind) =>
     function guardedLookup(hostname, ...rest) {
-      if (passes(hostname)) return original.call(this, hostname, ...rest)
+      if (passes(hostname, kind)) return original.call(this, hostname, ...rest)
       if (unresolvable(hostname)) {
         const callback = rest.findLast((value) => typeof value === 'function')
         const error = unresolved(hostname)
@@ -206,7 +208,7 @@ function install(options) {
     }
   const wrapPromiseLookup = (original, kind) =>
     function guardedPromiseLookup(hostname, ...rest) {
-      if (passes(hostname)) return original.call(this, hostname, ...rest)
+      if (passes(hostname, kind)) return original.call(this, hostname, ...rest)
       if (unresolvable(hostname)) {
         return Promise.reject(unresolved(hostname))
       }

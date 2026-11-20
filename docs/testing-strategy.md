@@ -438,10 +438,11 @@ separate from the product's own [browser network policy](browser-network-policy.
     heuristics-only, as it does offline.
   - `*.u.copse.me` names, which the fake names API issues, resolve to nothing.
   - mDNS (Bonjour) queries go unanswered, as on an empty LAN.
-  - Lookups of IP literals pass, because `listen()` on a LAN address does one and nothing leaves
-    the host. `expectNetworkEgress(host)` is
-    the only per-test exception: the request is still refused, but the test must make it. Current
-    uses: `tests/e2e/network-guard.e2e.ts` (the guard's own proof).
+  - A `dns.lookup` of an IP literal passes, because `listen()` on a LAN address does one and
+    getaddrinfo answers it without a query. Reverse lookups (`lookupService`) and resolver queries
+    (`resolve*`) of an IP literal still ask a resolver, so they are refused like any other name.
+- `expectNetworkEgress(host)` is the only per-test exception: the request is still refused, but the
+  test must make it. Current uses: `tests/e2e/network-guard.e2e.ts` (the guard's own proof).
 - Not covered: product child processes (agent CLIs, MCP servers, git), worker threads and utility
   processes. They run outside Electron main's patched modules.
 - **Unit tests:** survey only, not enforced. `COPSE_UNIT_NETWORK_GUARD=log pnpm test` preloads the

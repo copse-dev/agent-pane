@@ -208,6 +208,48 @@ const note = (name) => (error) => { outcomes[name] = error ? String(error.messag
     )
   })
 
+  it('refuses reverse lookups and resolver queries of an IP literal, which leave the host', () => {
+    const { stdout, ledger } = runGuarded(
+      'enforce',
+      `
+const dns = require('node:dns')
+const outcomes = {}
+const note = (name) => (error) => { outcomes[name] = error ? String(error.message) : 'ok' }
+;(async () => {
+  await new Promise((resolve) => dns.lookupService('10.1.0.178', 22, (e) => { note('lookupService')(e); resolve() }))
+  await dns.promises.lookupService('10.1.0.178', 22).then(() => note('promises.lookupService')(), note('promises.lookupService'))
+  await new Promise((resolve) => dns.resolve4('10.1.0.178', (e) => { note('resolve4')(e); resolve() }))
+  await dns.promises.resolve4('10.1.0.178').then(() => note('promises.resolve4')(), note('promises.resolve4'))
+  await new Promise((resolve) => new dns.Resolver().resolvePtr('10.1.0.178', (e) => { note('Resolver.resolvePtr')(e); resolve() }))
+  process.stdout.write(JSON.stringify(outcomes))
+})()
+`,
+    )
+    const outcomes: unknown = JSON.parse(stdout)
+    assert.ok(outcomes && typeof outcomes === 'object')
+    const values = Object.entries(outcomes)
+    assert.equal(values.length, 5)
+    for (const [name, message] of values) {
+      assert.match(String(message), /\[e2e-network-guard\] .* refused/, name)
+    }
+    const kinds = ledger
+      .trim()
+      .split('\n')
+      .map((line) => {
+        const parsed: unknown = JSON.parse(line)
+        assert.ok(parsed && typeof parsed === 'object')
+        assert.equal(Reflect.get(parsed, 'host'), '10.1.0.178')
+        return String(Reflect.get(parsed, 'kind'))
+      })
+    assert.deepEqual(kinds.sort(), [
+      'dns.lookupService',
+      'dns.lookupService',
+      'dns.resolve4',
+      'dns.resolve4',
+      'dns.resolvePtr',
+    ])
+  })
+
   it('lets IP-literal lookups through and answers stand-in names as unresolved', () => {
     const { stdout, ledger } = runGuarded(
       'enforce',
