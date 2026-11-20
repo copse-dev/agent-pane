@@ -572,7 +572,9 @@ describe('isolated mermaid diagram rendering', () => {
   })
 
   it('blocks network, inline script, navigation, and unsolicited parent messages even with code execution in the frame', async () => {
-    const frame = await $('.message-text iframe.mermaid-frame').getElement()
+    const frameSelector = '.message-text iframe.mermaid-frame[data-rendered="true"]'
+    await $(frameSelector).waitForExist({ timeout: 40_000 })
+    const frame = await $(frameSelector).getElement()
     const originalHeight = await frame.getCSSProperty('height')
     await browser.switchFrame(frame)
     const probes = await browser.execute(
