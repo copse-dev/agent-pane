@@ -408,7 +408,8 @@ export async function spawnBackgroundProcess(
     const child = spawn(process.execPath, [portBindingWorkerPath()], {
       cwd: opts.cwd,
       env: {
-        ...withoutSandboxWrapTmpPin(strippedBaseEnv()),
+        // The worker runs ASRT, which looks its helpers up through PATH from this cwd.
+        ...withSandboxShellPath(withoutSandboxWrapTmpPin(strippedBaseEnv())),
         ELECTRON_RUN_AS_NODE: '1',
         [PORT_BINDING_REQUEST_ENV]: JSON.stringify({
           command: shellCommandLine,

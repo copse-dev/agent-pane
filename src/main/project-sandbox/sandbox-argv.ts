@@ -1,4 +1,4 @@
-import { basename, dirname } from 'node:path'
+import { basename, dirname, posix } from 'node:path'
 import { posixQuote } from '../services/security/safe-install.ts'
 
 /**
@@ -47,14 +47,33 @@ export function resolveSandboxShellExecutable(file: string): string {
   return file
 }
 
-/** Ensure the child env can resolve `/bin` shells even when opts.env was snapshotted earlier. */
+/**
+ * The absolute entries of a `PATH` value, in their original order.
+ *
+ * A POSIX lookup resolves an empty entry (`::`, or a leading or trailing `:`)
+ * and a relative one (`.`, `bin`, `./tools`) against the working directory,
+ * so only absolute entries name the same directory wherever the lookup runs.
+ */
+export function absolutePathEntries(pathValue: string | undefined): string[] {
+  return (pathValue ?? '').split(':').filter((entry) => posix.isAbsolute(entry))
+}
+
+/**
+ * The env a sandbox wrapper shell is spawned with, and the env of each worker
+ * process that runs ASRT itself (port-binding, ACP session host, ACP probe).
+ *
+ * `PATH` keeps only its absolute entries ({@link absolutePathEntries}), so the
+ * wrapper's own lookups (the first word of ASRT's command) never depend on the
+ * working directory it starts in; the confined command inherits the same
+ * `PATH`. `/usr/bin` and `/bin` are added when missing, so the wrapper still
+ * finds its shell when `opts.env` was snapshotted earlier.
+ */
 export function withSandboxShellPath(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   if (process.platform === 'win32') return env
-  const required = ['/usr/bin', '/bin']
-  const parts = (env['PATH'] ?? '').split(':').filter(Boolean)
-  const missing = required.filter((dir) => !parts.includes(dir))
-  if (missing.length === 0) return env
-  return { ...env, PATH: [...missing, ...parts].join(':') }
+  const parts = absolutePathEntries(env['PATH'])
+  const missing = ['/usr/bin', '/bin'].filter((dir) => !parts.includes(dir))
+  const path = [...missing, ...parts].join(':')
+  return path === env['PATH'] ? env : { ...env, PATH: path }
 }
 
 export function shellForSandboxWrap(shellPath: string = DEFAULT_SANDBOX_SHELL): string {
