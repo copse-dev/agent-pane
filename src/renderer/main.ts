@@ -380,6 +380,8 @@ async function boot(): Promise<void> {
   }
   applyExternalLinkMarks()
   store.on('settings_changed', applyExternalLinkMarks)
+  // Hand-rolled deferred: the public demo runs boot() in ordinary browsers,
+  // some older than `Promise.withResolvers` (see main.test.ts).
   let mobileRestored: () => void = () => {}
   const mobileReady = new Promise<void>((resolve) => {
     mobileRestored = resolve
