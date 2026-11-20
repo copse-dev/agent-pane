@@ -1,5 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { ipcFrame } from '../../../tests/helpers/ipc-frame.ts'
+import { registerTrustedAppFrame, unregisterTrustedAppFrame } from '../windows/app-frames.ts'
 import {
   INDEX_QUERY_PATTERN,
   IpcValidationError,
@@ -7,6 +9,8 @@ import {
   estimateContextPayloadSchema,
   followUpContextSchema,
   isIndexQueryPattern,
+  isMainFrameSender,
+  isWindowMainFrameSender,
   lmStudioDetectSchema,
   lmStudioDownloadSchema,
   lmStudioTestSchema,
@@ -24,6 +28,45 @@ import {
 } from './ipc-guards.ts'
 
 describe('ipc-guards assertMainFrameSender', () => {
+  it('accepts registered main and pop-out frames even after the boot window closes', () => {
+    const frames = [ipcFrame(), ipcFrame()]
+    const closedBootWindow = {
+      isDestroyed: (): boolean => true,
+      get webContents(): never {
+        throw new Error('must not read a destroyed window')
+      },
+    }
+    try {
+      for (const frame of frames) {
+        registerTrustedAppFrame(frame)
+        assert.doesNotThrow(() => {
+          assertMainFrameSender({ senderFrame: frame }, closedBootWindow)
+        })
+        assert.equal(isMainFrameSender({ senderFrame: frame }, closedBootWindow), true)
+      }
+    } finally {
+      for (const frame of frames) unregisterTrustedAppFrame(frame)
+    }
+    for (const frame of frames) {
+      assert.equal(isMainFrameSender({ senderFrame: frame }, closedBootWindow), false)
+    }
+  })
+
+  it('rejects null, child, guest and unregistered frames while retaining the boot-window fallback', () => {
+    const mainFrame = ipcFrame()
+    const win = { isDestroyed: (): boolean => false, webContents: { mainFrame } }
+    assert.doesNotThrow(() => {
+      assertMainFrameSender({ senderFrame: mainFrame }, win)
+    })
+    for (const senderFrame of [null, ipcFrame(mainFrame), ipcFrame(), ipcFrame()]) {
+      const event = { senderFrame }
+      assert.throws(() => {
+        assertMainFrameSender(event, win)
+      }, IpcValidationError)
+      assert.equal(isMainFrameSender(event, win), false, 'event-style rejection does not throw')
+    }
+  })
+
   it('never reads webContents of a closed boot window', () => {
     // Electron throws on `win.webContents` after destroy. With a second main
     // window still open, every request it sends must reach the trusted-frame
@@ -48,6 +91,39 @@ describe('project-scoped artifact IPC', () => {
     assert.equal(projectIsActiveForSender('project-1', 'project-1'), true)
     assert.equal(projectIsActiveForSender('project-1', 'project-2'), false)
     assert.equal(projectIsActiveForSender(null, 'project-1'), false)
+  })
+})
+
+describe('ipc-guards designated utility owner', () => {
+  it('requires both the designated WebContents and its exact main frame', () => {
+    const frame = ipcFrame()
+    const contents = { mainFrame: frame }
+    const win: Parameters<typeof assertMainFrameSender>[1] = {
+      isDestroyed: () => false,
+      webContents: contents,
+    }
+    assert.equal(isWindowMainFrameSender({ sender: contents, senderFrame: frame }, win), true)
+    for (const event of [
+      { sender: contents, senderFrame: null },
+      { sender: contents, senderFrame: ipcFrame(frame) },
+      { sender: { mainFrame: ipcFrame() }, senderFrame: frame },
+      { sender: { mainFrame: ipcFrame() }, senderFrame: ipcFrame() },
+    ]) {
+      assert.equal(isWindowMainFrameSender(event, win), false)
+    }
+    assert.equal(isWindowMainFrameSender({ sender: contents, senderFrame: frame }, null), false)
+    assert.equal(
+      isWindowMainFrameSender(
+        { sender: contents, senderFrame: frame },
+        {
+          isDestroyed: () => true,
+          get webContents(): never {
+            throw new Error('destroyed')
+          },
+        },
+      ),
+      false,
+    )
   })
 })
 

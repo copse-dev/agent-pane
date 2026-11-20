@@ -1,4 +1,4 @@
-import type { BrowserWindow, IpcMainInvokeEvent } from 'electron'
+import type { BrowserWindow, IpcMainInvokeEvent, WebContents } from 'electron'
 import { z } from 'zod'
 import {
   MAX_FOLLOW_UP_OPEN_TODO_CHARS,
@@ -26,10 +26,23 @@ export function projectIsActiveForSender(
   return activeProjectId !== null && activeProjectId === requestedProjectId
 }
 
+type SenderWindow = Pick<BrowserWindow, 'isDestroyed'> & {
+  readonly webContents: Pick<WebContents, 'mainFrame'>
+}
+
 export function assertMainFrameSender(
   event: Pick<IpcMainInvokeEvent, 'senderFrame'>,
-  win: Pick<BrowserWindow, 'isDestroyed' | 'webContents'>,
+  win: SenderWindow,
 ): void {
+  if (isMainFrameSender(event, win)) return
+  throw new IpcValidationError('Request rejected: it did not come from the app window')
+}
+
+/** Non-throwing sender gate for event-style IPC, which has no rejection promise. */
+export function isMainFrameSender(
+  event: Pick<IpcMainInvokeEvent, 'senderFrame'>,
+  win: SenderWindow,
+): boolean {
   const frame = event.senderFrame
   // Any main window's main frame, or a pane pop-out window we created — all
   // load our renderer; sub-frames and <webview> guests are still rejected.
@@ -37,9 +50,21 @@ export function assertMainFrameSender(
   // closed while another main window stays open, and Electron throws on
   // reading `webContents` after destroy, so consult the registry first and
   // only touch `win` while it is alive.
-  if (isTrustedAppFrame(frame)) return
-  if (!win.isDestroyed() && frame === win.webContents.mainFrame) return
-  throw new IpcValidationError('Request rejected: it did not come from the app window')
+  return isTrustedAppFrame(frame) || (!win.isDestroyed() && frame === win.webContents.mainFrame)
+}
+
+/** Utility replies belong to one live window's main frame, not all app windows. */
+export function isWindowMainFrameSender(
+  event: { sender: Pick<WebContents, 'mainFrame'>; senderFrame: IpcMainInvokeEvent['senderFrame'] },
+  win: SenderWindow | null,
+): boolean {
+  if (!win || win.isDestroyed()) return false
+  const contents = win.webContents
+  return (
+    event.senderFrame != null &&
+    event.sender === contents &&
+    event.senderFrame === contents.mainFrame
+  )
 }
 
 export function parseIpcArgs<T extends z.ZodType>(schema: T, args: unknown[]): z.infer<T> {

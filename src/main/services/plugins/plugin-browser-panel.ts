@@ -1,4 +1,5 @@
 import { BrowserWindow, ipcMain, webContents, type WebContents } from 'electron'
+import { isWindowMainFrameSender } from '../../ipc/ipc-guards.ts'
 import { z } from 'zod'
 import { errorMessage } from '@shared/errors.ts'
 import type { PluginBrowserTab, PluginBrowserUploadFile } from './plugin-tool-protocol.ts'
@@ -289,7 +290,7 @@ export function createPluginBrowserPanelService(win: BrowserWindow): PluginBrows
   >()
 
   const onReady = (event: Electron.IpcMainEvent, raw: unknown): void => {
-    if (event.sender.id !== win.webContents.id) return
+    if (!isWindowMainFrameSender(event, win)) return
     const parsed = zTabReady.safeParse(raw)
     if (!parsed.success) return
     const ready = parsed.data

@@ -2860,6 +2860,7 @@ export function seedMermaidDiagramFixture(workspaceRoot: string): void {
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
     activeProjectId: projectId,
+    pluginDisabled: pluginDisabledSeed(['copse.mcp-ui-canvas']),
     [`threads:${projectId}`]: [
       {
         id: threadId,
