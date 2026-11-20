@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 import type { ContextBreakdown, ContextSegmentKey, ContextSnapshot } from '@shared/types'
 import type { FooterUsageTooltipModel } from '@shared/usage/footer-usage-tooltip.ts'
 import type { ThreadClassifierUse } from '@shared/usage/classifier-use.ts'
@@ -270,7 +271,7 @@ export function createContextWheel(): {
     running: boolean,
     options?: ContextWheelOptions,
   ): void {
-    const ratio = Math.min(1, Math.max(0, snapshot.fillRatio))
+    const ratio = clamp(snapshot.fillRatio, 0, 1)
     const visible = running || ratio > 0.01 || currentUsage !== null
     root.hidden = !visible
     if (!visible) return
