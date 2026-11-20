@@ -8,7 +8,10 @@ import { attachCodeBlockCopyButtons } from './code-block-copy.ts'
 import { renderMermaidIn } from './mermaid.ts'
 import { attachTableCopyButtons } from './table-copy.ts'
 import { fillUserPromptFold, splitUserPromptForFold } from '../views/user-prompt-fold.ts'
-import { userPromptFoldMarkdownPieces } from './user-prompt-fold-markdown.ts'
+import {
+  userPromptFoldMarkdownPieces,
+  type UserPromptFoldPiece,
+} from './user-prompt-fold-markdown.ts'
 
 /**
  * Chat message rendering shared by every transcript: the main conversation, side
@@ -169,6 +172,29 @@ export function paintUserMarkdown(
   attachCodeBlockCopyButtons(el)
 }
 
+function isRootFenceContext(source: string, code: string): boolean {
+  const context = document.createElement('div')
+  context.innerHTML = renderMarkdown(source, { htmlPolicy: 'escape-all', codeHighlighter: null })
+  const matches = [...context.querySelectorAll('pre > code')].filter(
+    (candidate) => candidate.textContent === code,
+  )
+  return matches.length === 1 && matches[0]?.parentElement?.parentElement === context
+}
+
+function paintUserPromptPieces(
+  el: HTMLElement,
+  pieces: readonly UserPromptFoldPiece[],
+  renderOptions?: MarkdownConfig,
+): void {
+  // Keep references, lists and footnotes in one document. Only prose gets
+  // composer hard breaks; complete and clipped code retains its exact bytes.
+  const markdown = pieces
+    .map((piece) => (piece.kind === 'code' ? piece.source : userPromptMarkdown(piece.source)))
+    .join('')
+  el.innerHTML = renderMarkdown(markdown, { ...renderOptions, htmlPolicy: 'escape-all' })
+  attachCodeBlockCopyButtons(el)
+}
+
 /**
  * Settled user prompt: markdown like assistant replies. Long prompts get a
  * mid-fold accordion — opening and closing stay visible; the middle collapses.
@@ -183,18 +209,17 @@ export function renderUserPromptMarkdown(
     paintUserMarkdown(el, content, renderOptions)
     return
   }
-  const pieces = userPromptFoldMarkdownPieces(content, parts)
+  const pieces = userPromptFoldMarkdownPieces(content, parts, isRootFenceContext)
+  if (pieces?.kind === 'full') {
+    el.classList.remove('msg-user-fold', 'is-expanded')
+    paintUserPromptPieces(el, pieces.pieces, renderOptions)
+    return
+  }
   fillUserPromptFold(el, parts, (region, text, name) => {
     if (!pieces) {
       paintUserMarkdown(region, text, renderOptions)
       return
     }
-    // Keep references, lists and footnotes in one document within each region.
-    // Only clipped code gets balanced wrappers; prose keeps composer breaks.
-    const markdown = pieces[name]
-      .map((piece) => (piece.kind === 'code' ? piece.source : userPromptMarkdown(piece.source)))
-      .join('')
-    region.innerHTML = renderMarkdown(markdown, { ...renderOptions, htmlPolicy: 'escape-all' })
-    attachCodeBlockCopyButtons(region)
+    paintUserPromptPieces(region, pieces.pieces[name], renderOptions)
   })
 }

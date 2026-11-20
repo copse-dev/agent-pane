@@ -98,4 +98,67 @@ describe('fenced user prompt mid-fold accordion', () => {
     expect(await $(`${row} .msg-user-fold-tail pre`).isExisting()).toBe(false)
     await saveAppScreenshot('user-prompt-fenced-fold-reloaded-app.png')
   })
+  it('keeps a crossing list fence in its original container after reload', async () => {
+    await $('.project-new-thread-btn').waitForClickable({ timeout: 30_000 })
+    await $('.project-new-thread-btn').click()
+    await $('.messages-list .msg-user').waitForExist({ timeout: 10_000, reverse: true })
+    const payload = Array.from(
+      { length: 12 },
+      (_, i) => `setting_${String(i)} = ${String(i)}`,
+    ).join('\n')
+    const source = [
+      '- Configuration changes',
+      '  ~~~text',
+      ...payload.split('\n').map((line) => `  ${line}`),
+      '  ~~~',
+      '  Keep these settings together.',
+      '',
+      'What should change?',
+    ].join('\n')
+    const scenario = await installMockScenario({
+      title: 'Review a nested configuration',
+      turns: [{ user: source, responses: [{ text: 'The nested configuration is intact.' }] }],
+    })
+    await setComposerValue(source)
+    await $('.submit-btn').waitForEnabled({ timeout: 30_000 })
+    await $('.submit-btn').click()
+    await scenario.waitForComplete()
+    await waitForAgentIdle()
+    await scenario.assertComplete()
+    await waitForActiveThreadTitle()
+    const row = '.messages-list .msg-user'
+    async function assertListContext(): Promise<void> {
+      const state = await browser.execute((selector) => {
+        const row = document.querySelector(selector)
+        return {
+          foldControls: row?.querySelectorAll('.msg-user-fold-toggle').length,
+          nestedCode: row?.querySelector('li pre code')?.textContent,
+          rootCodeBlocks: [...(row?.querySelectorAll('pre') ?? [])].filter(
+            (pre) => !pre.closest('li'),
+          ).length,
+          keptItemProse: row
+            ?.querySelector('li')
+            ?.textContent.includes('Keep these settings together.'),
+          keptFinalAsk: row?.textContent.includes('What should change?'),
+        }
+      }, row)
+      expect(state).toEqual({
+        foldControls: 0,
+        nestedCode: `${payload}\n`,
+        rootCodeBlocks: 0,
+        keptItemProse: true,
+        keptFinalAsk: true,
+      })
+      await expect($(`${row} li pre code`)).toBeDisplayed()
+    }
+    await assertListContext()
+    await browser.reloadSession()
+    await $(row).waitForExist({ timeout: 30_000 })
+    await waitForAgentIdle()
+    await waitForActiveThreadTitle()
+    await assertListContext()
+    await settleFoldedPromptCapture(row)
+    await saveAppScreenshot('user-prompt-list-fence-app.png')
+    await assertFoldedPromptCaptureSettled(row)
+  })
 })

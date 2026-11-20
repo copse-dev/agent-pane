@@ -4,6 +4,10 @@ export type UserPromptFoldPiece =
   | { kind: 'markdown'; source: string }
   | { kind: 'code'; source: string }
 
+export type UserPromptFoldMarkdown =
+  | { kind: 'fold'; pieces: Record<UserPromptFoldRegion, UserPromptFoldPiece[]> }
+  | { kind: 'full'; pieces: UserPromptFoldPiece[] }
+
 interface OpenFence {
   start: number
   bodyStart: number
@@ -92,7 +96,8 @@ function piecesInRange(
 export function userPromptFoldMarkdownPieces(
   source: string,
   parts: UserPromptFoldParts,
-): Record<UserPromptFoldRegion, UserPromptFoldPiece[]> | null {
+  isRootFence: (context: string, code: string) => boolean,
+): UserPromptFoldMarkdown | null {
   const fences = standaloneFences(source)
   if (!fences || fences.length === 0) return null
   const hardLines = `${parts.head}\n${parts.middle}\n${parts.tail}`
@@ -102,17 +107,32 @@ export function userPromptFoldMarkdownPieces(
   const middleEnd = headEnd + parts.middle.length + separator
   // Entirely contained blocks already have all their syntax context. Leave
   // that ordinary region render alone unless a fence actually crosses a cut.
-  if (
-    !fences.some(
-      (fence) =>
-        (fence.start < headEnd && fence.end > headEnd) ||
-        (fence.start < middleEnd && fence.end > middleEnd),
-    )
+  const spanning = fences.filter(
+    (fence) =>
+      (fence.start < headEnd && fence.end > headEnd) ||
+      (fence.start < middleEnd && fence.end > middleEnd),
   )
-    return null
+  if (spanning.length === 0) return null
+  for (const fence of spanning) {
+    if (!fence.opening.startsWith(' ')) continue
+    // The same indentation can open a root fence or continue a list item.
+    // Let the public parser decide from the original prefix. Neutral fence
+    // info avoids diagram handlers; the terminal code identifies this opener.
+    const indent = /^ */.exec(fence.opening)?.[0] ?? ''
+    const code = 'copse-fold-context-probe'
+    const context = `${source.slice(0, fence.start)}${indent}${fence.marker}\n${indent}${code}\n${indent}${fence.marker}\n`
+    if (!isRootFence(context, `${code}\n`)) {
+      // Independent region paints would also lose the enclosing container.
+      // Keep the whole document and its original code whitespace together.
+      return { kind: 'full', pieces: piecesInRange(source, fences, 0, source.length) }
+    }
+  }
   return {
-    head: piecesInRange(source, fences, 0, headEnd),
-    middle: piecesInRange(source, fences, headEnd, middleEnd),
-    tail: piecesInRange(source, fences, middleEnd, source.length),
+    kind: 'fold',
+    pieces: {
+      head: piecesInRange(source, fences, 0, headEnd),
+      middle: piecesInRange(source, fences, headEnd, middleEnd),
+      tail: piecesInRange(source, fences, middleEnd, source.length),
+    },
   }
 }
