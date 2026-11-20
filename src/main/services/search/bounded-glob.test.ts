@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import micromatch from 'micromatch'
+import picomatch from 'picomatch'
 import { boundedGlobMatcher, createGlobBudget, globFilterWithin } from './bounded-glob.ts'
 
 // GHSA-fc5q-39xc-vjpf: picomatch <=4.0.7 compiles these to nested unbounded
@@ -22,8 +22,8 @@ const PATHS = [
 ]
 
 describe('globFilterWithin', () => {
-  it('returns what micromatch returns, in list order', () => {
-    const cases: Array<[string, micromatch.Options]> = [
+  it('returns what picomatch matches, in list order', () => {
+    const cases: Array<[string, picomatch.PicomatchOptions]> = [
       ['*.ts', { basename: true }],
       ['src/**/*.ts', {}],
       ['**/*.{ts,tsx}', {}],
@@ -37,7 +37,7 @@ describe('globFilterWithin', () => {
     for (const [pattern, options] of cases) {
       assert.deepEqual(
         globFilterWithin(PATHS, pattern, options),
-        micromatch(PATHS, pattern, options),
+        PATHS.filter((path) => picomatch(pattern, options)(path)),
         pattern,
       )
     }
@@ -73,7 +73,7 @@ describe('globFilterWithin', () => {
 })
 
 describe('boundedGlobMatcher', () => {
-  it('matches each subject like micromatch.isMatch with any of several patterns', () => {
+  it('matches each subject like picomatch.isMatch with any of several patterns', () => {
     const matches = boundedGlobMatcher(['**/dist/**', '**/*.log'], { dot: true, contains: true })
     assert.deepEqual(matches(['dist/out.js', 'tmp/debug.log', 'src/index.ts']), [true, true, false])
     assert.deepEqual(matches([]), [])

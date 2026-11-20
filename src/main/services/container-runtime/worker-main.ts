@@ -167,6 +167,15 @@ const DEFAULT_GUEST_CONTEXT_WINDOW = 128_000
 /** The checkout's path once the spec is read, for the fatal handler's volume probe. */
 let workspaceForDiagnosis: string | null = null
 
+/**
+ * Guest-side Git, deliberately without the host's internal policy
+ * (`security/internal-git-exec.ts`): it runs inside the attested container on
+ * the run's own checkout (carried in as a bundle, or baselined in place by
+ * `git init`), where the agent can already run any program. The container, not
+ * Git configuration, is the boundary here, and carry-out needs `commit`, which
+ * the internal allowlist does not admit. Carry-out reaches the host only as a
+ * bundle, fetched and applied there under the internal policy.
+ */
 function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).trim()
 }

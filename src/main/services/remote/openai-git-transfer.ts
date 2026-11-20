@@ -1,6 +1,4 @@
 export { prepareGitTransfer } from './openai-git-snapshot.ts'
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
@@ -10,8 +8,8 @@ import {
   fetchCarryOut,
   adoptCarryOut,
 } from '../container-runtime/thread-container.ts'
+import { internalGit as git } from '../security/internal-git-exec.ts'
 
-const exec = promisify(execFile)
 const sha = z.string().regex(/^[a-f0-9]{40,64}$/)
 export const gitTransferSchema = z.object({
   id: z.uuid(),
@@ -25,14 +23,6 @@ export const gitTransferSchema = z.object({
 })
 export type GitTransfer = z.infer<typeof gitTransferSchema>
 export const gitResultSchema = z.object({ base: sha, head: sha, changed: z.boolean() })
-const git = async (root: string, args: string[]): Promise<string> =>
-  (
-    await exec('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', ...args], {
-      cwd: root,
-      maxBuffer: 64 * 1024 * 1024,
-    })
-  ).stdout.trim()
-
 /** Validate the expected base and guest ref before using the existing container adoption path. */
 export async function importGitTransfer(
   transfer: GitTransfer,
