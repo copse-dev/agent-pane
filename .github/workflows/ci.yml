@@ -1619,15 +1619,18 @@ jobs:
     # timed out with no failing assertion. Spec bodies matched their recorded
     # weights and the LPT split was already within seconds across shards, so
     # the suite total itself had outgrown 8 x 720s. By 20 November 2026 healthy
-    # full 54-55-spec shards took 12:11-13:40 against fourteen minutes, and on
-    # slow hosted runners two specs (scroll-to-bottom, acp-unfinished-turn-
-    # recovery) ran 3-6x their usual time, so both attempts of a shard reached
-    # 840s at 78-93% with no failing assertion (shard 6 on #4311, #4355 and
-    # #4248; shard 9 on #4273). Eighteen minutes is interim headroom, not a
-    # latency target: the slowdown itself is tracked separately, and this
-    # budget comes back down once it is fixed. The job's 65-minute timeout
-    # covers that 39-minute step plus setup, which took 18-20 minutes on slow
-    # hosted runners, so a retried shard still reaches its digest.
+    # full 54-55-spec shards took 10-13 minutes (9:58-13:17 over 17 sampled)
+    # against fourteen minutes. On slow hosted runners two specs ran far over
+    # their recorded weights (scroll-to-bottom about 3-4x, acp-unfinished-turn-
+    # recovery about 7x), so both attempts of a shard reached 840s at 78-100%
+    # of their specs, at least one of each pair with no failing assertion
+    # (shard 6 on #4311, #4355 and #4248; shard 9 on #4273). Eighteen minutes
+    # is interim headroom, not a latency target: the slowdown itself is
+    # tracked separately (#4393), and this budget comes back down once it is
+    # fixed. The worst cited attempt scales to about 1080s, so the headroom is
+    # thin for that case. The job's 65-minute timeout covers that 39-minute
+    # step plus setup (1-2 minutes in the runs cited here, longer on a cold
+    # runner), so a retried shard still reaches its digest.
     # Eight shards is the memory floor (#339): never pack the suite into fewer.
     # The ninth was added when the suite outgrew 8 x 600s of recorded spec time.
     # Shards are balanced by recorded spec durations; refresh them with
