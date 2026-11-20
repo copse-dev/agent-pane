@@ -945,6 +945,10 @@
       "sha256": "edeebe61332df27a58c2041060db57e0dd8b06551a6bf6ca193e6e582844af6a",
       "bytes": 87379
     },
+    "background-fetch-auth-local-work.png": {
+      "sha256": "f1093399b2f40d1e455a920b29dc82a3d91cf2ee7d4848bd92a4f2b338966b29",
+      "bytes": 269677
+    },
     "background-sandbox-cleanup.png": {
       "sha256": "a2654f227a835ba5967075ab2e7ac5e50338383da4ef1c15a4c091fefa01bc01",
       "bytes": 292108
