@@ -380,7 +380,12 @@ revisiting this document, not silently diverging in an implementation PR.
     when the agent was offered no bridge, never listed it (#4144), or dropped the tools
     after listing them (#4142). An offer is not enough, so the ACP event fires once
     the session's bridge mount is known, still before the prompt is sent. A hook must
-    not name a tool absent from that list. Disabling a pack removes
+    not name a tool absent from that list. Separately from pack guidance, each
+    Copse-managed ACP prompt identifies the current exact native bridge once its
+    usable listing is known. This identity supersedes earlier bridge identities
+    preserved by provider resume/load without transferring approvals or trusting
+    other servers by prefix or overlapping tool names. Agent-managed turns still
+    omit Copse's prompt assembly. Disabling a pack removes
     its guidance from both executors on the next turn and leaves prior history intact
     (decision 17). `invokedSkills` carries explicit user-selected skill names from
     both host fire sites. `TurnStartPayload.firstTurn` (the same "no prior

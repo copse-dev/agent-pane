@@ -175,6 +175,12 @@ describe('completed background task sandbox cleanup', function () {
     assert.equal(call.commandPhase.launched, true)
     backgroundId = call.commandPhase.backgroundTaskId
     assert.ok(backgroundId)
+    const liveLogs = await browser.execute(
+      ({ id, project, thread }) => window.api.backgroundTasks.logs(project, thread, id),
+      { id: backgroundId, project: PROJECT, thread: THREAD },
+    )
+    assert.ok(liveLogs)
+    assert.doesNotMatch(liveLogs.logs, /\[network-scope\]/)
     const during = { status: gitStatus(), prompt: await promptState(), call }
     const artifacts = join(process.cwd(), 'tests/e2e/artifacts/background-sandbox-cleanup')
     mkdirSync(artifacts, { recursive: true })
