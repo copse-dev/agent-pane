@@ -23,6 +23,7 @@ import { registerShellCatalog } from '../terminal/shell-catalog.ts'
 import { READ_TERMINAL_DEFAULT_LINES } from '@shared/terminal/read-terminal.ts'
 import { scaledEditorFontSize } from '@shared/ui-scale.ts'
 import { createTerminalAfterPersist } from '../terminal/create-after-persist.ts'
+import { TerminalCreateEvents } from '../terminal/create-events.ts'
 import { terminalStartFailureMessage } from '../terminal/start-failure-message.ts'
 import { resolveTerminalTabScope } from '../terminal/tab-scope.ts'
 import {
@@ -155,20 +156,28 @@ export function mountTerminalsPane(
   viewerRoot.append(body)
 
   const tabs = new Map<string, TerminalTab>()
+  const createEvents = new TerminalCreateEvents()
+  let disposed = false
   let activeTabId: string | null = null
   let tabCounter = 0
   // Which thread's shells are currently shown. Tracked so the workspace switch
   // (which may land on the same thread id) only re-scopes on a real change.
   let lastThreadId: string | null = store.getState().activeThreadId
 
+  function isTabOpen(tab: TerminalTab): boolean {
+    return !disposed && tabs.get(tab.id) === tab
+  }
+
+  function writeOutput(tab: TerminalTab, data: string): void {
+    tab.term.write(data)
+    tab.fileLinks.refresh()
+    if (tab.commandRan) scheduleAutoName(tab)
+  }
+
   const unsubOutput = api.terminal.onOutput((id, data) => {
-    for (const tab of tabs.values()) {
-      if (tab.sessionId === id) {
-        tab.term.write(data)
-        tab.fileLinks.refresh()
-        if (tab.commandRan) scheduleAutoName(tab)
-      }
-    }
+    const tab = [...tabs.values()].find((candidate) => candidate.sessionId === id)
+    if (tab) writeOutput(tab, data)
+    else createEvents.output(id, data)
   })
 
   // Main-process surfaces (the ACP re-authentication offer) route through the
@@ -177,9 +186,7 @@ export function mountTerminalsPane(
     void runCommandInNewShell(command)
   })
 
-  const unsubExit = api.terminal.onExit((id, code) => {
-    const tab = [...tabs.values()].find((t) => t.sessionId === id)
-    if (!tab) return
+  function finishSession(tab: TerminalTab, code: number): void {
     tab.sessionId = null
     // Capture a Play run once its output is parsed but before the exit banner:
     // the result reports the exit code on its own.
@@ -191,6 +198,12 @@ export function mountTerminalsPane(
         ? '\r\n\x1b[90m[Terminal stopped]\x1b[0m'
         : `\r\n\x1b[90m[Process exited with code ${String(code)}]\x1b[0m`,
     )
+  }
+
+  const unsubExit = api.terminal.onExit((id, code) => {
+    const tab = [...tabs.values()].find((candidate) => candidate.sessionId === id)
+    if (tab) finishSession(tab, code)
+    else createEvents.exit(id, code)
   })
 
   async function createXterm(): Promise<{ term: Terminal; fitAddon: FitAddon }> {
@@ -354,14 +367,14 @@ export function mountTerminalsPane(
   async function flushPendingInput(tab: TerminalTab): Promise<void> {
     if (!tab.sessionId) return
     let chunk = tab.pendingInput.shift()
-    while (chunk !== undefined) {
+    while (chunk !== undefined && tab.sessionId && isTabOpen(tab)) {
       await api.terminal.write(tab.sessionId, chunk)
       chunk = tab.pendingInput.shift()
     }
   }
 
   async function ensureSession(tab: TerminalTab): Promise<void> {
-    if (tab.sessionId || tab.creating) return
+    if (!isTabOpen(tab) || tab.sessionId || tab.creating) return
     if (tab.awaitingConnect) {
       openTerminalSurface(tab)
       fitTab(tab)
@@ -374,6 +387,7 @@ export function mountTerminalsPane(
       return
     }
     tab.creating = true
+    const finishCreate = createEvents.begin()
     try {
       if (!tab.codeBlockRun) {
         openTerminalSurface(tab)
@@ -390,16 +404,25 @@ export function mountTerminalsPane(
           ...(tab.executionTarget ? { executionTarget: tab.executionTarget } : {}),
         },
       )
+      const early = createEvents.take(created.sessionId)
+      finishCreate()
+      if (!isTabOpen(tab)) {
+        await api.terminal.destroy(created.sessionId)
+        return
+      }
       tab.sessionId = created.sessionId
+      if (early?.output) writeOutput(tab, early.output)
+      if (early && early.exitCode !== null) finishSession(tab, early.exitCode)
       const worktreePath = currentWorktreePath(tab.scopeId)
       tab.checkoutPath = created.checkoutMode === 'worktree' ? worktreePath : null
       tab.checkoutBadge.hidden = true
       publishActive(tab)
       await flushPendingInput(tab)
-      if (created.checkoutMode === 'shared' && worktreePath) {
+      if (isTabOpen(tab) && tab.sessionId && created.checkoutMode === 'shared' && worktreePath) {
         await preserveSharedShell(tab, worktreePath)
       }
     } catch (err) {
+      if (!isTabOpen(tab)) return
       // The console keeps the original, wrapping and all; the pane shows the
       // part the user can do something about (#2484).
       console.error('[terminals] could not start a shell:', err)
@@ -411,6 +434,7 @@ export function mountTerminalsPane(
       )
     } finally {
       tab.creating = false
+      finishCreate()
     }
   }
 
@@ -422,7 +446,12 @@ export function mountTerminalsPane(
   }
 
   function fitTab(tab: TerminalTab): void {
-    if (!terminalModeActive(store) || !tab.panel.classList.contains('is-active') || !tab.termOpened)
+    if (
+      !isTabOpen(tab) ||
+      !terminalModeActive(store) ||
+      !tab.panel.classList.contains('is-active') ||
+      !tab.termOpened
+    )
       return
     try {
       tab.fitAddon.fit()
@@ -435,6 +464,7 @@ export function mountTerminalsPane(
   }
 
   function focusTab(tab: TerminalTab, opts?: { grabFocus?: boolean }): void {
+    if (!isTabOpen(tab)) return
     openTerminalSurface(tab)
     fitTab(tab)
     if (opts?.grabFocus ?? true) tab.term.focus()
@@ -635,6 +665,11 @@ export function mountTerminalsPane(
       else creatingTabs.delete(scopeId)
     }
     const { term, fitAddon } = xterm
+    if (disposed) {
+      term.dispose()
+      fitAddon.dispose()
+      return id
+    }
     const fileLinks = installTerminalFileLinks(term, store, api)
     const remoteHost = remoteTerminalHostLabel(
       store.getState().projects,
@@ -742,6 +777,7 @@ export function mountTerminalsPane(
   async function removeTab(tabId: string): Promise<void> {
     const tab = tabs.get(tabId)
     if (!tab) return
+    tabs.delete(tabId)
     if (tab.nameTimer != null) clearTimeout(tab.nameTimer)
     tab.fileLinks.dispose()
     await destroySession(tab)
@@ -752,7 +788,6 @@ export function mountTerminalsPane(
     finishCodeBlockRun(tab, null)
     tab.term.dispose()
     tab.tabSwitch.remove()
-    tabs.delete(tabId)
 
     if (activeTabId !== tabId) return
     const remaining = visibleTabs()
@@ -800,7 +835,7 @@ export function mountTerminalsPane(
   })
 
   function showActiveTab(): void {
-    if (!terminalModeActive(store)) return
+    if (disposed || !terminalModeActive(store)) return
     const tab = activeTabId ? tabs.get(activeTabId) : null
     if (!tab) return
     resizeObserver.observe(tab.container)
@@ -996,6 +1031,11 @@ export function mountTerminalsPane(
   )
 
   return () => {
+    if (disposed) return
+    disposed = true
+    createEvents.clear()
+    const closedTabs = [...tabs.values()]
+    tabs.clear()
     unregisterCatalog()
     unsubs.forEach((u) => {
       u()
@@ -1005,13 +1045,13 @@ export function mountTerminalsPane(
     unsubExit()
     unsubRunCommand()
     void (async (): Promise<void> => {
-      for (const tab of tabs.values()) {
+      for (const tab of closedTabs) {
         if (tab.nameTimer != null) clearTimeout(tab.nameTimer)
         tab.fileLinks.dispose()
         await destroySession(tab)
+        finishCodeBlockRun(tab, null)
         tab.term.dispose()
       }
-      tabs.clear()
     })()
   }
 }
