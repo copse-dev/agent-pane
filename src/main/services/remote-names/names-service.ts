@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 import { createPrivateKey, X509Certificate } from 'node:crypto'
 import type { MobileCompanionPublicName } from '../../../shared/types/mobile-companion.ts'
 import { NamesApiError, type NamesClient, type NamesDeviceKey } from './names-client.ts'
@@ -351,7 +352,7 @@ export class RemoteNames {
         if (this.now() < at) this.arm(slot, at, work)
         else void this.serial(work)
       },
-      Math.max(0, Math.min(at - this.now(), MAX_TIMER_MS)),
+      clamp(at - this.now(), 0, MAX_TIMER_MS),
     )
     timer.unref()
     this.timers.set(slot, timer)

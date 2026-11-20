@@ -66,10 +66,12 @@ import {
  * ({@link sensitiveTargetReason}). The whole home directory and the filesystem
  * root are therefore refused outright as targets, but a granted read of a
  * narrower directory is a real (bounded) trust decision, which is what the
- * prompt's warning says. Paths are judged as text and symlinks are not
- * resolved, so a link inside a granted directory reaches whatever it points at.
- * A seatbelt does not stop that either: the read overlay canonicalizes each
- * target with `realpath` and widens `allowRead` to the link's destination.
+ * prompt's warning says. This analyser judges command shape and path text;
+ * this analyser rejects `..` segments before lexical path normalization can
+ * erase a symlink traversal. The standing-grant ledger separately resolves
+ * read destinations before reusing a directory grant, and the per-spawn
+ * overlay rejects symlinked read targets rather than widening the sandbox to
+ * their destination.
  */
 
 /** Read-only heads beyond {@link READ_ONLY_SHELL_BASENAMES} that this shape allows. */
@@ -191,6 +193,11 @@ function resolveTarget(token: string, workspaceRoot: string, homeDir: string): s
     path = homeDir + path.replace(/^\$\{?HOME\}?/, '')
   }
   return isAbsolute(path) ? resolve(path) : resolve(workspaceRoot, path)
+}
+
+/** A kernel follows a symlink before `..`; `path.resolve` erases that evidence. */
+export function hasParentTraversalSegment(path: string): boolean {
+  return path.split(/[\\/]/u).includes('..')
 }
 
 /**
@@ -434,6 +441,8 @@ export function analyzeReadOutsideProject(
   const targets: string[] = []
   const resolvedTargets: string[] = []
   const addTarget = (token: string, resolvedAsWritten: string): void => {
+    if (hasParentTraversalSegment(token))
+      addBlocker('parent path segment hides a symlink traversal')
     const unresolved = UNRESOLVED_TILDE.test(token)
     if (unresolved) addBlocker(`names a home directory that cannot be resolved (${token})`)
     const resolved = otherUserHomeGuess(token, homeDir) ?? resolvedAsWritten
@@ -473,7 +482,11 @@ export function analyzeReadOutsideProject(
       const target = rawArgv[0] === 'cd' ? cdTarget(argv) : null
       if (target === null) {
         addBlocker(`changes to a directory that cannot be resolved (${argv.join(' ')})`)
-      } else if (tracked) {
+      } else {
+        if (hasParentTraversalSegment(target))
+          addBlocker('parent path segment hides a symlink traversal')
+      }
+      if (target !== null && tracked) {
         base = resolveTarget(target, root, homeDir)
         baseToken = target
       }
@@ -498,6 +511,8 @@ export function analyzeReadOutsideProject(
       if (inert.has(offset + 1)) continue
       if (token.startsWith('-')) continue
       if (!looksLikePath(token) && !(tracked && base !== root)) continue
+      if (hasParentTraversalSegment(token))
+        addBlocker('parent path segment hides a symlink traversal')
       operands++
       const resolved = resolveTarget(token, tracked ? base : root, homeDir)
       if (collect || UNRESOLVED_TILDE.test(token)) addTarget(token, resolved)
