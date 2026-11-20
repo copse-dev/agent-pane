@@ -57,12 +57,15 @@ Measured on `main` at the base revision:
   (`src/renderer/views/setup/ssh-workspace-section.ts`), the open-remote dialog
   (`src/renderer/views/remote-folder-dialog.ts`) and the Desktop pane
   (`src/renderer/views/vnc-ssh-host-form.ts`) each build their own form for an
-  `SshWorkspaceHost`. Two of them cannot set agent forwarding. All three ask the user to
-  invent an Id.
+  `SshWorkspaceHost`. Two of them cannot set agent forwarding. All three fill the Id from
+  the label (`slugifyHostId`) until the user edits it, but nothing makes it unique. The
+  Desktop pane refuses an Id that is taken. Settings and the open-remote dialog save
+  through `upsertHost`, so a second host with the same label silently replaces the first.
 - **`~/.ssh/config` is parsed but never offered.** `ssh-config.ts` reads it, `Include`
   globs and all. The user must press Import, which saves every alias at once.
-- **The folder browser opens at `/`** on every open (`remote-folder-dialog.ts`, both
-  `browse('/')` calls).
+- **The folder browser opens at `/`** on every open. `remote-folder-dialog.ts` has four
+  `browse('/')` calls: on opening, after saving a host, after importing hosts, and on
+  choosing another host.
 - **Nothing watches the connection.** `SshConnectionManager` changes a host's status only
   inside `connect`, `disconnect` and `reconnect`
   (`src/main/services/ssh-workspace/connection-manager.ts`). After a drop the window still
@@ -132,8 +135,9 @@ leaves reaching in to the device that cannot use SSH: the phone.
 4. **Consent is asked where the feature is first used, once.** The main process keeps
    enforcing `sshWorkspaceEnabled` exactly as now. What changes is that the open-remote
    dialog and the Desktop pane can turn it on, after saying what it means, instead of
-   sending the user to Settings and back. Whether the switch should exist at all is a
-   default-on decision owned by [`default-on-readiness.md`](default-on-readiness.md).
+   sending the user to Settings and back. Whether the switch should exist at all is left
+   to the owner under M4. [`default-on-readiness.md`](default-on-readiness.md) audits
+   experimental plugins and switches and has no row for it.
 
 5. **Connection state is observed, never assumed.** A host shown as connected has answered
    a probe recently. A failed probe makes one reconnect attempt that cannot raise a prompt;
@@ -147,8 +151,9 @@ leaves reaching in to the device that cannot use SSH: the phone.
    machine's compute".
 
 7. **One form writes a host.** The three host forms become one component with the same
-   fields in each place. The Id is derived from the label and shown read-only; a user never
-   has to invent one.
+   fields in each place. The Id is derived from the label, made unique among the saved
+   hosts and shown read-only. A second host with the same label can then no longer replace
+   the first.
 
 8. **No address is typed that Copse can work out.** A machine reached through a saved SSH
    host has no IP to choose and nothing to re-pair when its address changes.
@@ -178,7 +183,8 @@ spec needs an `sshd` and the product gains no test-only option.
 - One reconnect is attempted in batch mode, so it succeeds silently with an agent or an
   unencrypted key and otherwise fails without a prompt.
 - The banner's watching warning appears only when the host has neither the native watcher
-  nor polling.
+  nor polling. The comment in `ssh-status-banner.ts` that says "no remote watcher exists
+  yet" is corrected with it.
 
 _Acceptance:_ with a `FakeSshTransport` that stops answering, the manager emits a
 not-connected state and the banner shows Reconnect; with one that recovers, the state
@@ -203,7 +209,8 @@ _Acceptance:_ a first open on a host lists the home directory; after a project a
 - The Id is derived from the label, de-duplicated, and read-only.
 
 _Acceptance:_ the three surfaces render the same fields; a host saved from any of them
-round-trips every field; existing saved hosts are unchanged.
+round-trips every field; existing saved hosts are unchanged. A second host saved with an
+existing host's label gets its own Id and leaves the first unchanged.
 
 ### M1d — `~/.ssh/config` hosts are offered directly
 
@@ -232,8 +239,14 @@ project-restore guards still refuse while the setting is off.
 
 - Settings → Machines opens with one list. A row is a saved SSH host, a paired machine, or
   both when M3 has linked them. It shows the connection status and the capabilities that
-  apply: files and shell, agents, screen, models, and whether it is trusted for
-  auto-approval.
+  apply: files and shell, agents, screen, models, and whether Guarded YOLO runs `ssh` to it
+  without asking.
+- That trust is read-only on the row. A row is trusted when its saved `host`, without any
+  `user@` and normalised as the shell gate normalises it (`normalizeSshHost`), equals an
+  entry in `trustedSshHosts`. An `~/.ssh/config` alias matches by its own name, not its
+  `HostName`, because the gate compares the host named on the command line and does not
+  read the config. Trust is still changed only under Settings → Permissions, so M2 changes
+  no permission surface.
 - "Add a machine" opens the M1c form with the M1d picker. Pairing with an invitation and
   sharing this machine's models keep their own controls below the list.
 - The SSH options (the switch, host key policy, agents on the remote machine) move into one
@@ -260,10 +273,13 @@ written by this build load unchanged in the previous build.
 - Pairing beside an invitation offers "Reach it through": this network, or any saved SSH
   host. Only an invitation that shares on loopback can be paired through SSH, because a
   forward reaches only the SSH host's own loopback.
-- The sharing side needs no code: "This computer only" (loopback) is already its default.
-  Its label says what that choice is for.
+- The sharing side changes only the loopback choice's label and one error message.
+  Loopback is already its default; the label, "This computer only", now says what that
+  choice is for, and the error points a network-address invitation at it.
 - A call that fails because the SSH connection is down reports that, and is never replayed.
-  A status check uses only an SSH connection that is already open, so it never prompts.
+  Only pairing and **Test classifier** may open the SSH connection. A status check, and a
+  classifier call made for screening or a background question, uses only one that is
+  already open, so none of them prompts.
 
 _Acceptance:_ against the real machine service bound to loopback and reached through a
 forward, pairing succeeds, **Test classifier** returns the host's typed result, and stopping
@@ -278,13 +294,19 @@ additive change only; independent review before leaving draft.
 
 These need an owner's decision, not an implementation, and nothing above depends on them.
 
+- **Whether the SSH workspace switch should exist.** M1e moves where `sshWorkspaceEnabled`
+  is turned on and keeps every check of it. Removing the switch, or turning it on by
+  default, decides whether a saved host may run commands without that consent.
+  [`default-on-readiness.md`](default-on-readiness.md) does not cover it, because it audits
+  only experimental plugins and switches.
 - **Pairing without pasting.** Let the client ask the host for an invitation over SSH. It
   removes the last manual step in M3 and changes who may use a machine's models (decision
   6).
 - **Listeners on an overlay network.** Allowing an overlay address (for example the
   `100.64.0.0/10` range) in `isRfc1918` and `machineAddressSchema` would let the Mobile
   Companion work away from home for users who already run such a network. It is a few lines
-  and a change to the threat model's scenario 11, so it belongs with
+  and a change to the threat model's scenarios 10 (the listener binds a private address)
+  and 11 (the names service publishes only RFC 1918 addresses), so it belongs with
   [`../remote-access.md`](../remote-access.md), beside the relay it would partly replace.
 
 ## Security and trust
@@ -362,5 +384,8 @@ These need an owner's decision, not an implementation, and nothing above depends
   same master, so everything here is on its path.
 - [`client-server-split.md`](client-server-split.md) owns the always-detached client those
   need.
-- [`default-on-readiness.md`](default-on-readiness.md) owns whether any switch named here
-  becomes default-on.
+- [`copse-cloud-workspaces.md`](copse-cloud-workspaces.md) makes a cloud workspace a
+  provisioner plus an SSH-remote workspace (its decision 1), so a provisioned host is one
+  more row in M2's list and needs no path of its own.
+- [`default-on-readiness.md`](default-on-readiness.md) owns whether any experimental
+  switch named here becomes default-on. The SSH workspace switch is under M4.
