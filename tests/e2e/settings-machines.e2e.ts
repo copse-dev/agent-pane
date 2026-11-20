@@ -184,7 +184,7 @@ describe('Machines settings', function () {
     await expect($('.machine-status')).toHaveText(expect.stringContaining('Paste the invitation'))
     await $('[name="machineInvitation"]').setValue(invitation)
     await click('.machine-pair')
-    await expect($('.machine-row h4')).toHaveText('Model computer')
+    await expect($('.machines-overview .machine-row h4')).toHaveText('Model computer')
     await expect($('.machine-connection-status')).toHaveText(expect.stringContaining('Connected'))
     assert.equal(calls, 0, 'pairing and discovery never invoke inference')
     await browser.execute(() => {
@@ -255,7 +255,7 @@ describe('Machines settings', function () {
       (await browser.execute(async () => window.api.machines.state())).featureEnabled,
       false,
     )
-    await expect($('.machine-row h4')).toHaveText('Model computer')
+    await expect($('.machines-overview .machine-row h4')).toHaveText('Model computer')
     await saveElementScreenshot('#settings-dialog', 'settings-machines-paused.png')
     assert.equal(calls, 2)
     await setExperiment(true)
