@@ -318,7 +318,10 @@ observable from a test or a recorded thread spine. Unchecked items are open.
       `process-run` start line and a `process-exit` line (exit code or signal) to the thread
       spine. Both carry the runtime and principal, and neither includes arguments. The
       first use of a runtime profile in a thread appends a `runtime-state` line with its
-      capability snapshot.
+      capability snapshot. **Not yet recorded:** processes started through
+      `spawnInProjectSandbox`. These include the plugin tool worker, Apple development
+      commands and app runs, which an agent's tool call can start. Recording them as agent
+      actions is a follow-up (#4376).
 - [x] **R1-8 Export answers the exit gate.** A test seeds a thread, runs local and SSH
       processes, exports the decision log and finds the principal and runtime for every
       recorded process.

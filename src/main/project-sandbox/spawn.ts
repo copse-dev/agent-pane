@@ -305,9 +305,11 @@ export async function spawnBackgroundProcess(
         const network = portBindingSandboxOverlay(opts.cwd).network
         if (!network) throw new Error('Loopback task has no network policy')
         const overlay = { ...base, network }
+        // The host process owns this task's wrap, lease and violation log, so
+        // the plan carries none of them: main must never release a lease it
+        // did not take.
         return {
           config: overlay,
-          ...lease,
           hostedLaunch: (): ChildProcess => spawnPortBindingHost(shellCommandLine, opts, overlay),
         }
       },
