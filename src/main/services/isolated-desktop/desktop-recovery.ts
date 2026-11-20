@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { copseDataRoot } from '@copse/store-kit/copse-paths.ts'
 import { safeJsonParse, decodeWithSchema } from '@copse/std/safe-json.ts'
+import { aggregateFailure } from '@copse/std/errors.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
 import { writeFileAtomic } from '@copse/std/write-file-atomic.ts'
 
@@ -138,13 +139,21 @@ export async function deleteDesktopContainer(
     try {
       await run(['delete', '--force', name])
     } catch (error) {
-      if (!isMissingContainer(error, name)) throw error
+      if (isMissingContainer(error, name)) return
+      // Node kills the command at its limit and reports only "Command failed".
+      if (isRecord(error) && error['killed'] === true)
+        throw new Error('container delete timed out', { cause: error })
+      throw error
     }
   }
   try {
     await attempt()
-  } catch {
-    await attempt()
+  } catch (first) {
+    try {
+      await attempt()
+    } catch (second) {
+      throw aggregateFailure([first, second], 'VM deletion failed twice')
+    }
   }
 }
 

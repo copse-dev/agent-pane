@@ -120,10 +120,23 @@ it('counts a VM deleted by a timed-out command as deleted, and nothing else', as
   await deleteDesktopContainer(name, gone.run)
   assert.equal(gone.calls.length, 1)
 
-  // Another container's absence, or a second real failure, is never success.
+  // Another container's absence, or a second real failure, is never success,
+  // and the error names both attempts' causes.
+  const busy = failure('engine busy')
   const other = failure('Error: notFound: "container with ID copse-desktop-probe-other not found"')
-  const failing = scripted(failure('engine busy'), other)
-  await assert.rejects(deleteDesktopContainer(name, failing.run), (error) => error === other)
+  const failing = scripted(busy, other)
+  await assert.rejects(deleteDesktopContainer(name, failing.run), (error) => {
+    assert.ok(error instanceof AggregateError)
+    assert.deepEqual(error.errors, [busy, other])
+    return true
+  })
   assert.equal(failing.calls.length, 2)
+
+  // A command killed at its limit says so; Node's own message does not.
+  const killed = (): Error => Object.assign(new Error('Command failed'), { killed: true })
+  const stuck = scripted(killed(), killed())
+  await assert.rejects(deleteDesktopContainer(name, stuck.run), {
+    message: 'VM deletion failed twice: container delete timed out; container delete timed out',
+  })
   await assert.rejects(deleteDesktopContainer('not-a-desktop', gone.run))
 })

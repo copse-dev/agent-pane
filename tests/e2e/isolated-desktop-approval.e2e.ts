@@ -248,7 +248,8 @@ async function importTrustedDesktopPin(): Promise<void> {
   })
 
   it('keeps an approved VM between turns, and archive asks before deleting it', async function () {
-    this.timeout(240_000)
+    // Stop and archive may wait out a whole VM deletion attempt (120 s) before it settles.
+    this.timeout(480_000)
     resetUserData()
     seedEmptyProject(seedStableWorkspace(), 'e2e-isolated-desktop-cross-turn', {
       subagentsEnabled: false,
@@ -362,10 +363,10 @@ async function importTrustedDesktopPin(): Promise<void> {
     await confirm.$('.confirm-dialog-confirm').click()
     await $(`.chat-row[data-thread-id="${threadId}"]`).waitForExist({
       reverse: true,
-      timeout: 30_000,
+      timeout: 130_000,
     })
     await browser.waitUntil(() => isolatedDesktopVms().length === 0, {
-      timeout: 30_000,
+      timeout: 130_000,
       timeoutMsg: 'Archiving left the isolated desktop VM behind',
     })
   })
