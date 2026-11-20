@@ -152,6 +152,11 @@ describe('skills', () => {
     })
     await setComposerValue('/acme.tools:qualified-review review the parser change')
     await $('.submit-btn').click()
+    // Send lists skills and reads Git state before it dispatches the run, and
+    // the Stop button only appears once the run starts. An idle check straight
+    // after the click can pass before the turn begins, so wait for the model
+    // requests first.
+    await scenario.waitForComplete()
     await waitForAgentIdle()
     await scenario.assertComplete()
     await expectAssistantReply('The plugin review workflow is active for the parser change.')
