@@ -1,7 +1,7 @@
-import { describe, it } from 'node:test'
+import { afterEach, beforeEach, describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { runInNewContext } from 'node:vm'
-import { capturePreviewDataUrl } from './session-manager.ts'
+import { captureTabFrame, capturePreviewDataUrl, type TabFrameContents } from './session-manager.ts'
 
 interface FakeImage {
   isEmpty(): boolean
@@ -314,5 +314,123 @@ describe('capturePreviewDataUrl', () => {
       throw new Error('Object has been destroyed')
     }
     assert.equal(await capturePreviewDataUrl(tab, decodeImage), null)
+  })
+})
+
+/**
+ * A tab whose frame copies follow `copies` in order (an image width, 0 for
+ * empty, or an error) and whose fresh-frame requests paint `paints` in order
+ * (a width, 0 for an empty frame, or null for no paint at all).
+ */
+function frameTab(
+  copies: Array<number | Error>,
+  paints: Array<number | null> = [],
+  options: { destroyed?: boolean } = {},
+): TabFrameContents<FakeImage> & { copies: number; invalidations: number } {
+  let paint: ((event: unknown, dirty: unknown, image: FakeImage) => void) | null = null
+  const tab = {
+    copies: 0,
+    invalidations: 0,
+    capturePage(): Promise<FakeImage> {
+      const outcome = copies[tab.copies++] ?? new Error('no copy scripted')
+      return outcome instanceof Error ? Promise.reject(outcome) : Promise.resolve(image(outcome))
+    },
+    invalidate(): void {
+      const width = paints[tab.invalidations++] ?? null
+      if (width !== null && paint) {
+        const listener = paint
+        paint = null
+        listener({}, {}, image(width))
+      }
+    },
+    once(
+      _event: 'paint',
+      listener: (event: unknown, dirty: unknown, image: FakeImage) => void,
+    ): void {
+      paint = listener
+    },
+    removeListener(
+      _event: 'paint',
+      listener: (event: unknown, dirty: unknown, image: FakeImage) => void,
+    ): void {
+      if (paint === listener) paint = null
+    },
+    isDestroyed: (): boolean => options.destroyed === true,
+  }
+  return tab
+}
+
+describe('captureTabFrame', () => {
+  // A recovery logs one warning; keep test output clean and assert it below.
+  let warnings: unknown[][] = []
+  beforeEach(() => {
+    warnings = []
+    mock.method(console, 'warn', (...args: unknown[]) => {
+      warnings.push(args)
+    })
+  })
+  afterEach(() => {
+    mock.restoreAll()
+  })
+
+  it('returns the first copy without asking for a fresh frame', async () => {
+    const tab = frameTab([320])
+    assert.equal((await captureTabFrame(tab, 'tab-1')).getSize().width, 320)
+    assert.equal(tab.invalidations, 0)
+    assert.equal(warnings.length, 0)
+  })
+
+  it('takes the next painted frame when the compositor fails the copy mid-reload (#4425)', async () => {
+    const tab = frameTab([new Error('UnknownVizError')], [1280])
+    assert.equal((await captureTabFrame(tab, 'tab-1')).getSize().width, 1280)
+    assert.equal(tab.copies, 1)
+    assert.equal(warnings.length, 1)
+    assert.match(String(warnings[0]?.[0]), /tab-1 could not copy the frame; recovering/)
+    assert.equal(warnings[0]?.[1], 'UnknownVizError')
+  })
+
+  it('copies again when the fresh frame paints empty', async () => {
+    const tab = frameTab([new Error('UnknownVizError'), 640], [0])
+    assert.equal((await captureTabFrame(tab, 'tab-1')).getSize().width, 640)
+    assert.equal(tab.copies, 2)
+  })
+
+  it('keeps recovering until a later round paints the frame', async () => {
+    const tab = frameTab([new Error('UnknownVizError'), new Error('UnknownVizError')], [0, 1280])
+    assert.equal((await captureTabFrame(tab, 'tab-1')).getSize().width, 1280)
+    assert.equal(tab.invalidations, 2)
+  })
+
+  it('recovers an empty first copy the same way', async () => {
+    const tab = frameTab([0], [800])
+    assert.equal((await captureTabFrame(tab, 'tab-1')).getSize().width, 800)
+  })
+
+  it('does not recover a destroyed tab', async () => {
+    const tab = frameTab([new Error('Object has been destroyed')], [1280], { destroyed: true })
+    await assert.rejects(captureTabFrame(tab, 'tab-1'), /destroyed/)
+    assert.equal(tab.invalidations, 0)
+  })
+
+  it('reports the last failure once its bounded recovery runs out', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+    const tab = frameTab([
+      0,
+      new Error('UnknownVizError'),
+      new Error('UnknownVizError'),
+      new Error('UnknownVizError'),
+      new Error('UnknownVizError'),
+    ])
+    const capture = captureTabFrame(tab, 'tab-2')
+    const outcome = capture.then(
+      () => 'resolved',
+      (error: unknown) => (error instanceof Error ? error.message : String(error)),
+    )
+    for (let round = 0; round < 4; round++) {
+      for (let turn = 0; turn < 20 && tab.invalidations === round; turn++) await Promise.resolve()
+      t.mock.timers.tick(500)
+    }
+    assert.equal(await outcome, 'UnknownVizError')
+    assert.equal(tab.invalidations, 4)
   })
 })

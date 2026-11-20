@@ -81,6 +81,92 @@ async function waitForPreviewOperation(operation: Promise<unknown>): Promise<unk
  */
 const previewCaptures = new WeakMap<PreviewContents, Promise<string | null>>()
 
+/** The parts of an agent tab's `WebContents` that a screenshot needs. */
+export interface TabFrameContents<Image extends { isEmpty(): boolean }> {
+  capturePage(): Promise<Image>
+  /** Offscreen tabs only paint when damaged; this asks for a fresh frame. */
+  invalidate(): void
+  /** An offscreen tab's `paint` event carries the whole frame as an image. */
+  once(event: 'paint', listener: (event: unknown, dirty: unknown, image: Image) => void): unknown
+  removeListener(
+    event: 'paint',
+    listener: (event: unknown, dirty: unknown, image: Image) => void,
+  ): unknown
+  isDestroyed(): boolean
+}
+
+/** How long a screenshot keeps recovering after its first copy fails. */
+const TAB_FRAME_RECOVERY_MS = 2000
+/** How long one recovery round waits for the tab's next painted frame. */
+const TAB_FRAME_PAINT_WAIT_MS = 500
+
+/** Copy the tab's frame once, returning the failure instead of throwing it. */
+async function copyTabFrame<Image extends { isEmpty(): boolean }>(
+  contents: TabFrameContents<Image>,
+  tabId: string,
+): Promise<Image | Error> {
+  try {
+    const image = await contents.capturePage()
+    return image.isEmpty() ? new Error(`browser screenshot of ${tabId} was empty`) : image
+  } catch (error) {
+    return error instanceof Error ? error : new Error(errorMessage(error))
+  }
+}
+
+/** Ask for a fresh frame and resolve with the image it paints, or null on timeout. */
+function nextPaintedImage<Image extends { isEmpty(): boolean }>(
+  contents: TabFrameContents<Image>,
+  timeoutMs: number,
+): Promise<Image | null> {
+  return new Promise((resolve) => {
+    const painted = (_event: unknown, _dirty: unknown, image: Image): void => {
+      clearTimeout(timer)
+      resolve(image)
+    }
+    const timer = setTimeout(() => {
+      contents.removeListener('paint', painted)
+      resolve(null)
+    }, timeoutMs)
+    contents.once('paint', painted)
+    contents.invalidate()
+  })
+}
+
+/**
+ * Copy an agent tab's current frame. Right after a navigation or reload,
+ * Chromium can fail the copy while the page's compositor surface is swapped:
+ * `capturePage()` rejects with `UnknownVizError` or yields an empty image
+ * (#4425). Waiting does not help reliably (a copy right after the load
+ * finishes fails most often), but an offscreen tab still paints, and its
+ * `paint` event carries the whole frame. So after a failed copy, for a bounded
+ * time, ask for a fresh frame and take the painted image, or copy again if the
+ * paint was empty. The last failure is still reported if nothing succeeds.
+ */
+export async function captureTabFrame<Image extends { isEmpty(): boolean }>(
+  contents: TabFrameContents<Image>,
+  tabId: string,
+): Promise<Image> {
+  const first = await copyTabFrame(contents, tabId)
+  if (!(first instanceof Error)) return first
+  let failure = first
+  console.warn(
+    `[copse-panel] browser screenshot of ${tabId} could not copy the frame; recovering from a fresh paint:`,
+    failure.message,
+  )
+  const deadline = Date.now() + TAB_FRAME_RECOVERY_MS
+  while (Date.now() < deadline && !contents.isDestroyed()) {
+    const painted = await nextPaintedImage(
+      contents,
+      Math.min(TAB_FRAME_PAINT_WAIT_MS, deadline - Date.now()),
+    )
+    if (painted && !painted.isEmpty()) return painted
+    const copied = await copyTabFrame(contents, tabId)
+    if (!(copied instanceof Error)) return copied
+    failure = copied
+  }
+  throw failure
+}
+
 /**
  * Capture `wc` as a preview laid out at the preview zoom, then put the tab's
  * zoom back so the agent's own screenshots and snapshots keep the desktop
@@ -345,8 +431,7 @@ export class BrowserSessionManager {
 
   async screenshot(viewId?: string): Promise<BrowserScreenshot> {
     const tab = this.resolveTab(viewId)
-    const image = await tab.window.webContents.capturePage()
-    if (image.isEmpty()) throw new Error(`browser screenshot of ${tab.id} was empty`)
+    const image = await captureTabFrame(tab.window.webContents, tab.id)
     const { width, height } = image.getSize()
     return {
       png: image.toPNG(),
