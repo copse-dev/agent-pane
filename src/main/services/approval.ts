@@ -961,7 +961,7 @@ function requestApprovalUnpaused(
 
 /**
  * The waiter that stands in for an abandoned caller. It has no signal of its
- * own: it leaves only when the prompt settles (the answer goes to the ledger)
+ * own: it leaves only when the prompt settles (a user's answer goes to the ledger)
  * or when the thread's turn ends / the transport is torn down, in which case
  * the answer was never given and nothing is stored.
  */
@@ -981,6 +981,10 @@ function parkedWaiter(
     ...(bridgeExecutionId ? { bridgeExecutionId } : {}),
     ...(toolCallId !== undefined ? { toolCallId } : {}),
     resolve: (response) => {
+      // Only a person's answer is a verdict. A prompt that timed out, lost its
+      // window or had no transport was never answered: storing that would hand
+      // the retry a denial the user did not give, logged as theirs.
+      if ((response.resolution ?? 'user') !== 'user') return
       storeAbandonedVerdict(ledgerKey, response, threadId)
     },
     onAbort: () => {
