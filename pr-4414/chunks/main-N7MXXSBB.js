@@ -56407,6 +56407,7 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
     store2.on("thread_status_changed", (tid, status) => {
       if (status === "running") {
         suggestionsByThread.delete(tid);
+        inFlightFetches.delete(tid);
         nextChangesRefreshToken(tid);
         if (tid === store2.getState().activeThreadId) {
           nextFetchToken(tid);
