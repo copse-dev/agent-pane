@@ -13,14 +13,17 @@ export type ToolProvenance = 'trusted' | 'workspace' | 'external'
 const TAG = 'external_content'
 
 /**
- * Characters that render as nothing: zero-width spaces and joiners, the word
- * joiner, the byte-order mark, bidi controls and the like. One of them inside
- * a tag leaves it reading as the tag, so the match below skips them.
+ * Characters a reader does not see, or that are dropped before a model reads
+ * the text: control characters (C0 and C1), format characters (zero-width
+ * spaces and joiners, the word joiner, the byte-order mark, bidi controls,
+ * interlinear annotation marks and the like) and the rest of the
+ * default-ignorable set. One of them inside a tag leaves it reading as the tag,
+ * so the match below skips them.
  */
-const INVISIBLE = String.raw`\p{Default_Ignorable_Code_Point}`
-const GAP = String.raw`[\s${INVISIBLE}]*`
-// The tag name with invisible characters allowed between its (ASCII) letters.
-const TAG_NAME = Array.from(TAG).join(`${INVISIBLE}*`)
+const HIDDEN = String.raw`\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}`
+const GAP = String.raw`[\s${HIDDEN}]*`
+// The tag name with hidden characters allowed between its (ASCII) letters.
+const TAG_NAME = Array.from(TAG).join(String.raw`[${HIDDEN}]*`)
 // The `/` is matched before the second gap, so the two gaps never compete for
 // the same characters: the lookahead stays linear in the length of a gap.
 const TAG_START = new RegExp(String.raw`<(?=${GAP}(?:\/${GAP})?${TAG_NAME})`, 'giu')
@@ -30,8 +33,10 @@ const TAG_START = new RegExp(String.raw`<(?=${GAP}(?:\/${GAP})?${TAG_NAME})`, 'g
  * wrapped content cannot forge or terminate its own envelope. Only the `<` of
  * an offending tag is entity-escaped — everything else passes through
  * verbatim, keeping the content readable and the transform deterministic.
- * Whitespace and invisible characters around the `/` or inside the name do
- * not hide a tag. Without this the envelope is theatre.
+ * Whitespace and hidden characters around the `/` or inside the name do not
+ * hide a tag. Look-alike characters, combining marks and lone surrogates are
+ * not covered: no list of tag spellings can be complete, which is why the
+ * envelope is framing, not a boundary. Without this the envelope is theatre.
  */
 export function escapeExternalContent(text: string): string {
   return text.replace(TAG_START, '&lt;')
