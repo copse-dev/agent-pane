@@ -150,8 +150,8 @@ describe('Settings → Machines pairs a machine over SSH', function () {
       expect.stringContaining('over SSH through Dev Server'),
     )
     const chips = await browser.execute(() =>
-      [...document.querySelectorAll('.machines-overview .machine-row .machine-capability')].map(
-        (item) => item.textContent.trim(),
+      [...document.querySelectorAll('.machines-overview .machine-row .machine-use')].map((item) =>
+        item.textContent.trim(),
       ),
     )
     assert.deepEqual(chips, ['1 shared model', 'Over SSH through Dev Server'])
