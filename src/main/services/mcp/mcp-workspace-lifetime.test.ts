@@ -587,6 +587,48 @@ describe('MCP workspace connection ownership', () => {
     }
   })
 
+  it('joins the visible B reload while idle A is still closing, without a second B server', async () => {
+    const closing = Promise.withResolvers<undefined>()
+    const released = Promise.withResolvers<undefined>()
+    const originalClose = Object.getOwnPropertyDescriptors(Client.prototype).close.value
+    assert.ok(originalClose)
+    const close = mock.method(Client.prototype, 'close', async function (this: Client) {
+      if (this === originalClient) {
+        closing.resolve(undefined)
+        await released.promise
+        await closeOriginal()
+      } else {
+        await originalClose.call(this)
+      }
+    })
+    let navigation: Promise<unknown> | undefined
+    let admission: Promise<McpToolScope> | undefined
+    try {
+      // A has no owners, so navigation closes it before B becomes the visible set.
+      navigation = runWithWorkspaceRoot(b, () => reloadMcpServersForWorkspace(registry))
+      await closing.promise
+      admission = acquire(b)
+      released.resolve(undefined)
+      await navigation
+      const scopeB = await admission
+      const result = await scopeB.run(() =>
+        registry.executeNormalized(TOOL, {}, new AbortController().signal),
+      )
+      assert.ok(result.result.includes(b))
+      assert.equal(
+        (await events()).filter((event) => event.type === 'started' && event.workspace === b)
+          .length,
+        1,
+        'the turn reuses the visible B connection',
+      )
+    } finally {
+      released.resolve(undefined)
+      await navigation
+      await admission
+      close.mock.restore()
+    }
+  })
+
   it('stops held tool discovery, closes its child and admits the next project without releasing the server', async () => {
     await configure('held listing', true, false, true)
     const closed = Promise.withResolvers<number | null>()

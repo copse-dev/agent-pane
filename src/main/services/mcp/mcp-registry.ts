@@ -193,6 +193,10 @@ function createConnectionSet(workspace: string | null): McpConnectionSet {
 const connectionScope = new AsyncLocalStorage<McpBinding | undefined>()
 const loadingSet = new AsyncLocalStorage<McpConnectionSet>()
 let visibleSet = createConnectionSet(null)
+// The newest set a visible reload asked for. It is recorded before that reload
+// queues, so a turn sent right after navigation joins it while the previous
+// project is still closing instead of loading a second copy of its servers.
+let requestedVisibleSet = visibleSet
 const connectionSets = new Set([visibleSet])
 let discoveryStarted = false
 
@@ -1052,7 +1056,8 @@ export function acquireMcpToolScope(
   if (signal) state.connectSignal = signal
   connectionSets.add(state)
   const canReuseVisible =
-    !discoveryStarted || (visibleSet.workspace === workspace && !visibleSet.revoked)
+    !discoveryStarted ||
+    (requestedVisibleSet.workspace === workspace && !requestedVisibleSet.revoked)
   const checkAdmission = (): void => {
     signal?.throwIfAborted()
     if (connectionSetIsRevoked(state))
@@ -1268,6 +1273,7 @@ function requestVisibleConnections(
   // Track the requested set before queueing. Quit/revocation can then cancel
   // initialization even when this operation has not reached the queue head.
   const next = createConnectionSet(getWorkspaceRoot())
+  requestedVisibleSet = next
   const previousSets = [...connectionSets]
   for (const state of previousSets) {
     if (!preserveTurns || (state.owners === 0 && !state.retired)) revokeConnectionSet(state)
