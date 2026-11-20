@@ -110,6 +110,42 @@ describe('skill picker', () => {
     assert.equal(picker.hidden, true)
   })
 
+  it('completes a qualified query without adding duplicate bare-name rows', async () => {
+    const inputBar = document.createElement('div')
+    const input = mountComposerEditor()
+    inputBar.append(input.el)
+    document.body.append(inputBar)
+    const controller = initSkillPicker({
+      input,
+      inputBar,
+      listInvocables: async () => [
+        { name: 'review', plugin: 'acme.tools', description: 'Review code', kind: 'skill' },
+        { name: 'other', plugin: 'another', description: 'Other plugin', kind: 'skill' },
+        { name: 'reviewer', description: 'Review agent', kind: 'agent' },
+      ],
+    })
+    try {
+      for (const [query, names] of [
+        ['/review', ['/review', '/revieweragent']],
+        ['/acme.tools:', ['/acme.tools:review']],
+      ] as const) {
+        input.value = query
+        input.setSelectionRange(query.length, query.length)
+        input.el.dispatchEvent(new Event('input', { bubbles: true }))
+        await settle()
+        assert.deepEqual(
+          [...inputBar.querySelectorAll('.skill-item-name')].map((el) => el.textContent),
+          names,
+        )
+      }
+      input.el.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
+      assert.equal(input.value, '/acme.tools:review ')
+      assert.equal(input.selectionStart, input.value.length)
+    } finally {
+      controller.destroy()
+    }
+  })
+
   it('ranks name-prefix matches ahead of description-only hits for Enter', async () => {
     const inputBar = document.createElement('div')
     const input = mountComposerEditor()
