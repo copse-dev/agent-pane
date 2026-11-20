@@ -728,8 +728,10 @@ export async function spawnRemoteAcpTransport(
     label: `Starting ${input.command} on ${hostLabel}…`,
   })
   const wrapped = buildRemoteAcpCommand(input, target.remoteRoot, loginShell, remotePath)
+  // Build argv before leasing askpass: a refused destination throws here.
+  const args = sshExecArgs(host, wrapped)
   const askpass = leaseSshAskpassEnv(process.env, target.hostId)
-  const child = spawn('ssh', sshExecArgs(host, wrapped), {
+  const child = spawn('ssh', args, {
     env: askpass.env,
     stdio: ['pipe', 'pipe', 'pipe'],
     detached: process.platform !== 'win32',

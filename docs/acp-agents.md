@@ -582,7 +582,7 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   message when the check's single, unretried request to Anthropic fails on the
   network, so Copse reports it as a sign-in Claude couldn't verify: usually
   expired (with the Keychain cause only for a sandboxed agent on macOS), or a
-  network failure worth one retry. It offers `claude auth login`, since signing
+  network failure worth one retry. It offers `claude-agent-acp --cli auth login`, since signing
   in from a terminal saves a fresh token, and the note it leaves for the next
   turn does not claim a re-run must fail.
 - **`gh` does not run in a sandboxed agent's own shell.** `~/.config/gh` holds
