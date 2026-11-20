@@ -1,4 +1,5 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import {
   automationRunBlocksAdmission,
   reconcileInterruptedAutomationRuns,
@@ -53,6 +54,7 @@ import {
 } from '../supervisor/event-inbox.ts'
 import { FileEventInboxStore, type EventInboxStore } from '../supervisor/event-inbox-store.ts'
 import { runGh } from '../github/gh-service.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 const STORAGE_KEY = `plugin.${AUTOMATIONS_PLUGIN_ID}.ci-definitions`
 const CONNECTION_ID = 'github-cli'
@@ -171,7 +173,7 @@ export interface BranchCiSnapshot {
 }
 
 function digest(value: unknown): string {
-  return createHash('sha256').update(JSON.stringify(value)).digest('hex')
+  return sha256Hex(JSON.stringify(value))
 }
 function readableDefinitions(raw: unknown): {
   readable: BranchCiAutomation[]
@@ -935,7 +937,7 @@ export function createBranchCiAutomationService(
           if (definition.lastProblem && definition.lastProblem.threadId === undefined)
             await setProblem(definition, null)
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error)
+          const message = errorMessage(error)
           console.error(`[automations] Event polling failed for “${definition.name}”:`, error)
           await setProblem(definition, {
             at: deps.now(),

@@ -1,8 +1,9 @@
 import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, rmdir } from 'node:fs/promises'
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import { realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { isPathWithin, relativeWithin } from '@copse/std/path-containment.ts'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
 import type {
   ThreadWorktreeAttachment,
@@ -46,6 +47,7 @@ import {
   inspectSubmoduleRetention,
   submoduleRetentionPaths,
 } from './worktree-submodules.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 const OWNER_ID = /^[\w-]{1,128}$/
 
@@ -688,8 +690,8 @@ export async function repositoryLocation(projectRoot: string): Promise<Repositor
     'Cannot resolve repository root',
   )
   const canonicalTopLevel = await realpath(topLevel)
-  const projectRelativePath = relative(canonicalTopLevel, canonicalProject)
-  if (projectRelativePath === '..' || projectRelativePath.startsWith(`..${sep}`)) {
+  const projectRelativePath = relativeWithin(canonicalTopLevel, canonicalProject)
+  if (projectRelativePath === null) {
     throw new Error('Project root is outside its resolved Git repository')
   }
   return {
@@ -708,8 +710,7 @@ export async function existingWorktreeProjectRoot(
     resolve(canonicalCheckoutRoot, projectRelativePath),
     localWorkspaceFs,
   )
-  const rel = relative(canonicalCheckoutRoot, root)
-  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+  if (!isPathWithin(canonicalCheckoutRoot, root)) {
     throw new Error('Internal execution root is outside its linked Git worktree')
   }
   return root
@@ -814,7 +815,7 @@ async function fetchDefaultBranchOnce(projectRoot: string, branch: string): Prom
       (await noninteractiveProjectGit(git)(projectRoot, ['fetch', '--quiet', 'origin', branch]))
     failure = result.code === 0 ? null : describeFetchFailure(result)
   } catch (error) {
-    failure = redactFetchUrlUserinfo(error instanceof Error ? error.message : String(error))
+    failure = redactFetchUrlUserinfo(errorMessage(error))
   }
   const previous = defaultBranchFetchFailures.get(projectRoot)
   if (failure === null) {
@@ -1249,7 +1250,7 @@ export async function allocateThreadWorktree(
       return worktree
     } catch (error) {
       if (snapshotRef) {
-        throw new WorktreeAllocationError(error instanceof Error ? error.message : String(error), {
+        throw new WorktreeAllocationError(errorMessage(error), {
           worktree,
           snapshotRef,
         })
@@ -1634,7 +1635,9 @@ export async function validateThreadWorktreeRecovery(
 /**
  * Report whether the thread checkout is on a branch without throwing for a
  * detached HEAD, so the renderer can offer `reattachThreadWorktree` instead of
- * a dead-end error.
+ * a dead-end error. A checkout on its base branch is reported too: passive
+ * reads still show its files, so without this nothing tells the user that
+ * Copse will refuse to run in it until they send a message (#1882).
  */
 export async function inspectThreadWorktreeAttachment(
   input: ValidateWorktreeInput,
@@ -1644,6 +1647,9 @@ export async function inspectThreadWorktreeAttachment(
   try {
     validated = await validateThreadWorktreeState(input)
   } catch (error) {
+    if (error instanceof ThreadWorktreeOnBaseBranchError) {
+      return { state: 'on-base-branch', branch: error.branch, baseBranch: error.baseBranch }
+    }
     if (!(error instanceof MissingThreadWorktreeError)) throw error
     const projectRoot = (await repositoryLocation(input.projectRoot)).repositoryRoot
     return {
@@ -1898,19 +1904,17 @@ export async function archiveThreadWorktree(
       // hold. Ignored files are regenerable here as in the superproject.
       const submodules = await inspectSubmoduleRetention(validated.path, { includeIgnored: false })
       const retained = submoduleRetentionPaths(submodules)
-      const fingerprint = createHash('sha256')
-        .update(
-          JSON.stringify([
-            input.projectId,
-            input.threadId,
-            validated.path,
-            branch.stdout,
-            head.stdout,
-            status.stdout,
-            submodules,
-          ]),
-        )
-        .digest('hex')
+      const fingerprint = sha256Hex(
+        JSON.stringify([
+          input.projectId,
+          input.threadId,
+          validated.path,
+          branch.stdout,
+          head.stdout,
+          status.stdout,
+          submodules,
+        ]),
+      )
       return {
         paths: [...new Set([...changedPaths(status.stdout), ...retained])],
         fingerprint,

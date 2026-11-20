@@ -4,6 +4,7 @@ import { NamesApiError, type NamesClient, type NamesDeviceKey } from './names-cl
 import { createCertificateRequest, DEVICE_ZONE } from './names-csr.ts'
 import { backoffDelay, nextOrderAllowedAt, recentOrders, renewalTime } from './names-renewal.ts'
 import type { NamesRecord, NamesStore, StoredCertificate } from './names-store.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 type Client = Pick<NamesClient, 'register' | 'setAddress' | 'certificate' | 'status' | 'remove'>
 type Registration = NonNullable<NamesRecord['registration']>
@@ -381,7 +382,7 @@ export class RemoteNames {
   }
 
   private fail(error: unknown): void {
-    this.lastError = error instanceof Error ? error.message : String(error)
+    this.lastError = errorMessage(error)
     console.error('[remote-names]', this.lastError)
   }
 

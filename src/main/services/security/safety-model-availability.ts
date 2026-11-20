@@ -1,6 +1,4 @@
-import { getSetting } from '../storage/settings.ts'
-import { resolveLocalServerUrl } from '@shared/lm-studio-defaults.ts'
-import { fetchLmStudioModelsCached } from '../providers/lm-studio-models.ts'
+import { fetchLmStudioModelsCached, localServerUrl } from '../providers/lm-studio-models.ts'
 import { recordDecision } from './decision-log-store.ts'
 import { getActiveRunThread } from '../thread-models.ts'
 
@@ -36,10 +34,6 @@ const LM_STUDIO_PREFIX = 'lmstudio:'
  */
 export function safetyModelDisplayId(model: string): string {
   return model.startsWith(LM_STUDIO_PREFIX) ? model.slice(LM_STUDIO_PREFIX.length) : model
-}
-
-function localServerUrl(): string {
-  return resolveLocalServerUrl(getSetting<string>('localServerUrl', ''), process.env)
 }
 
 /**

@@ -7,9 +7,22 @@ const INTERNAL_GIT_COMMANDS = new Set([
   '--version',
   'add',
   'branch',
+  // Carry-in/carry-out and hosted transfer bundles; `assertBundle` admits
+  // create, verify and list-heads. Packing and reading a bundle consult no
+  // configured program.
+  'bundle',
   'cat-file',
   'check-ignore',
   'check-ref-format',
+  // Patch ids use Git's internal diff: no external diff or textconv (those are
+  // enabled only by the diff/log porcelains).
+  'cherry',
+  // Applying a container/hosted run's commits (`adoptCarryOut`). Only the exact
+  // shape `assertCherryPick` admits: `--no-edit` (no editor) and full SHAs (no
+  // `-s` strategy, which would run an external `git-merge-*`, and no `-S`).
+  // Hooks, fsmonitor and signing are off through the overrides below; merge
+  // drivers, like content filters, keep Git's semantics.
+  'cherry-pick',
   // Only the local submodule clone `assertLocalSubmoduleClone` admits: no
   // checkout (so no hooks or smudge filters), no templates, and no option that
   // selects a helper program. `internalGitTransport` limits it to `file`.
@@ -21,6 +34,9 @@ const INTERNAL_GIT_COMMANDS = new Set([
   'diff',
   'fetch',
   'for-each-ref',
+  // Revision searches for LFS markers; textconv off and `-O` (which runs a
+  // pager program named in its argument) refused.
+  'grep',
   'log',
   'init',
   'ls-files',
@@ -50,6 +66,10 @@ const INTERNAL_GIT_COMMANDS = new Set([
 const INTERNAL_GIT_CONFIG = [
   'core.fsmonitor=false',
   'core.hooksPath=/dev/null',
+  // fetch and push run this program to list an alternate object store's refs
+  // when the checkout has `objects/info/alternates`. Empty means unset: Git
+  // lists those refs itself, which only feeds negotiation.
+  'core.alternateRefsCommand=',
   'core.pager=cat',
   'color.ui=false',
   'maintenance.auto=false',
@@ -113,12 +133,18 @@ export function withGitInvocationArgs(
     throw new Error(`Unsupported internal Git command: ${command ?? '(missing)'}`)
   }
   if (command === 'clone') assertLocalSubmoduleClone(rest)
+  if (command === 'cherry-pick') assertCherryPick(rest)
+  if (command === 'bundle') assertBundle(rest)
+  if (command === 'grep' && rest.some((arg) => /^(-O|--open-files-in-pager)/.test(arg)))
+    throw new Error('Unsupported internal Git grep')
   // A caller cannot prepend -c/--config-env to undo the policy. Diff flags go
   // before revisions/pathspecs, never after a caller's `--` separator.
   const diffFlags =
     command === 'diff' || command === 'show' || command === 'log'
       ? ['--no-ext-diff', '--no-textconv']
-      : []
+      : command === 'grep'
+        ? ['--no-textconv']
+        : []
   return [
     '--no-pager',
     // `config` itself does not dispatch these helpers. Inspection must see the
@@ -156,6 +182,34 @@ function assertLocalSubmoduleClone(args: string[]): void {
   ) {
     throw new Error('Unsupported internal Git clone')
   }
+}
+
+const FULL_SHA = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/
+
+/**
+ * Admit exactly `cherry-pick --abort` or
+ * `cherry-pick --no-edit [--allow-empty-message] <full sha>...`.
+ *
+ * Config-execution audit: `--no-edit` starts no editor; hooks
+ * (prepare-commit-msg, post-commit, reference-transaction), fsmonitor and
+ * signing are disabled by `INTERNAL_GIT_CONFIG`; full SHAs leave no room for a
+ * `-s <strategy>` (an external `git-merge-<strategy>` program), `-S`, `-e` or
+ * `-x`. Merge drivers and content filters that the checkout configures keep
+ * Git's normal semantics, as for `switch` and `restore`.
+ */
+function assertCherryPick(args: string[]): void {
+  if (args.length === 1 && args[0] === '--abort') return
+  const [noEdit, ...rest] = args
+  const commits = rest[0] === '--allow-empty-message' ? rest.slice(1) : rest
+  if (noEdit !== '--no-edit' || commits.length === 0 || !commits.every((c) => FULL_SHA.test(c)))
+    throw new Error('Unsupported internal Git cherry-pick')
+}
+
+/** Admit `bundle create|verify|list-heads`; `unbundle` and future subcommands are refused. */
+function assertBundle(args: string[]): void {
+  const [subcommand] = args
+  if (subcommand !== 'create' && subcommand !== 'verify' && subcommand !== 'list-heads')
+    throw new Error(`Unsupported internal Git bundle: ${subcommand ?? '(missing)'}`)
 }
 
 /**

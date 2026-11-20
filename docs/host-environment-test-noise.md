@@ -9,7 +9,7 @@ signatures below as a floor to expect every time.
 
 ## Known noise signatures
 
-Main-process suites only; renderer/settings tests are unaffected.
+Main-process and `scripts/` suites only; renderer/settings tests are unaffected.
 
 - **Sandbox blocks `/tmp`** (`EPERM: mkdir '/tmp/...'`) — SSH workspace, workspace-index-watcher,
   and subprocess-kill tests that shell out or watch real paths.
@@ -30,10 +30,32 @@ Main-process suites only; renderer/settings tests are unaffected.
 - **GNU-only `stat -c`** — `screenshot-publication.test.ts` fails on macOS
   (`stat: illegal option -- c`).
 
+These macOS host differences fail on every run on an affected Mac, in isolation too. CI runs on
+Linux, so it never sees them. A local `pnpm test` recognises them: its closing summary lists every
+failed test and marks each one that matches an entry in `scripts/lib/host-differences.mts` by
+platform, file, test name and error shape. They still fail the run. When you add a deterministic
+host difference here, add it there too.
+
+- **macOS `/bin/bash` 3.2** — `ci-workflow-invariants.test.ts` "compares the synthetic checked-out
+  protocol against the supplied queue base" runs a `ci.yml` step under `set -u`; bash 3.2 treats an
+  empty `"${array[@]}"` as unset (`exclude_head[@]: unbound variable`).
+- **`/var` is a symlink** — `screenshot-review.test.ts` (the "screenshot review packets" suite, six
+  tests) fails with `Unsafe review directory: /var`. The review CLI refuses any symlinked ancestor of
+  its output directory, and macOS `tmpdir()` sits under `/var/folders/…` (`/var` → `private/var`).
+- **LibreSSL as `openssl`** — `mobile-certificate.test.ts` "issues an IP-only P-256 server leaf under
+  a name-constrained root" expects OpenSSL's `permitted subtree violation`; macOS `/usr/bin/openssl`
+  is LibreSSL, whose `openssl verify` rejects the certificate with different wording.
+- **System Python 3.9's bundled pip** — `worktree-preparation-python.test.ts` "installs a real
+  hash-locked wheel through pip without running source builds" fails preparation validation
+  (`Hash-locked Python dependencies: .venv/bin/python failed (2): Usage:`). A venv made by macOS
+  `/usr/bin/python3` (3.9.6) gets pip 21.2.4, which predates `pip install --dry-run` (pip 22.2).
+
 ## Triage procedure
 
 1. Capture the full log (`npm test > "$TMPDIR/check.log" 2>&1`, not piped through `tail`, which cuts
-   the pass/fail totals) and list failing files, not just a count.
+   the pass/fail totals) and list failing files, not just a count. A local run ends with that list
+   (`[run-tests] N tests failed.`), with the known macOS host differences above already marked; the
+   rest of this procedure is for the ones under "Need triage".
 2. Re-run the same files on a clean checkout (stash the diff, or diff against `HEAD`) in a worktree
    that has had its own `pnpm install`. If the same files fail with the same error shapes there too,
    they are host noise, not your diff.

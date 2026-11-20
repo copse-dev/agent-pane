@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import { existsSync, mkdirSync, renameSync, rmSync, statSync } from 'node:fs'
 import { readdir, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, sep } from 'node:path'
@@ -121,7 +121,7 @@ export interface ExtractArchiveInput {
 export async function extractArchiveForThread(
   input: ExtractArchiveInput,
 ): Promise<ExtractedArchive> {
-  const digest = createHash('sha256').update(input.bytes).digest('hex').slice(0, 12)
+  const digest = sha256Hex(input.bytes).slice(0, 12)
   const root = join(
     threadArchivesDir(input.projectId, input.threadId),
     `${sanitizeName(input.name)}-${digest}`,
