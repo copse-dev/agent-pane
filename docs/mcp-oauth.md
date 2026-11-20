@@ -81,6 +81,12 @@ call through the newly selected project. A background turn starting offscreen
 loads its own project's trusted configuration and default server directory.
 Ordinary Copse tools and saved allow/ask/block policy remain live.
 
+A turn for the project shown in the window starts at once, even while that
+project's servers are still connecting at launch, after a project switch or
+during a reconnect. Each server's tools join the turn as that server connects,
+so one slow or unreachable server does not hold the prompt until its connect
+timeout.
+
 Native-tool bridge requests explicitly bind the same connection scope, including
 approved agent-initiated turns. An outstanding request retains its connection
 until it settles, even if the prompt binding ends first. Retired connections

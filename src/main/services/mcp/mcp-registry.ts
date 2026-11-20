@@ -19,6 +19,7 @@ import type {
   McpToolAnnotations,
 } from '@shared/types/mcp.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
+import type { ToolDefinition } from '@shared/types/tools.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
 import { getThreadExecutionContext } from '../thread-execution-context.ts'
@@ -141,6 +142,10 @@ interface McpConnectionSet {
   owners: number
   retired: boolean
   revoked: boolean
+  /** A requested visible set whose servers are still connecting and listing tools. */
+  discovering: boolean
+  /** Turns admitted during that discovery; each tool it registers is added to them too. */
+  followers: Set<McpBinding>
   disconnect: AbortController
   connectSignal?: AbortSignal
   lifecycleTail: Promise<void>
@@ -185,6 +190,8 @@ function createConnectionSet(workspace: string | null): McpConnectionSet {
     owners: 0,
     retired: false,
     revoked: false,
+    discovering: false,
+    followers: new Set(),
     disconnect: new AbortController(),
     lifecycleTail: Promise.resolve(),
   }
@@ -666,7 +673,8 @@ function registerListedTools(
   const toolNames: string[] = []
   for (const tool of tools) {
     const fullName = mcpToolName(server.serverName, tool.name)
-    registerMcpToolPermissionTarget({ ...server, toolName: tool.name })
+    const target: McpPermissionTarget = { ...server, toolName: tool.name }
+    registerMcpToolPermissionTarget(target)
     toolNames.push(tool.name)
     const meta: McpToolMeta = { server: server.serverName }
     if (bundled) meta.bundled = true
@@ -688,7 +696,7 @@ function registerListedTools(
       meta.annotations = annotations
     }
     mcpState().toolMeta.set(fullName, meta)
-    registry.register({
+    const definition: ToolDefinition = {
       name: fullName,
       description: `[MCP:${server.serverName}] ${tool.description ?? ''}`.trim(),
       // MCP servers are untrusted (see mcp-schema.ts); their results carry the
@@ -761,7 +769,15 @@ function registerListedTools(
         }
         return images.length > 0 ? { result: text, images } : text
       },
-    })
+    }
+    registry.register(definition)
+    // Turns admitted while this set discovers its servers gain each tool as it connects.
+    for (const follower of state.followers) {
+      follower.permissions(() => registerMcpToolPermissionTarget(target))
+      follower.tools(() => {
+        registry.register(definition)
+      })
+    }
   }
   return toolNames
 }
@@ -1003,6 +1019,7 @@ function leaseBinding(binding: McpBinding): McpToolScope {
       released = true
       binding.set.owners--
       binding.owners--
+      if (binding.owners === 0) binding.set.followers.delete(binding)
       if (!binding.set.retired || binding.set.owners !== 0) return Promise.resolve()
       return serializeConnectionLifecycle(binding.set, async () => {
         if (binding.set.retired && binding.set.owners === 0) {
@@ -1022,6 +1039,28 @@ export function captureMcpToolScope(workspace?: string | null): McpToolScope | n
     (workspace === undefined || binding.set.workspace === mcpWorkspaceIdentity(workspace))
     ? leaseBinding(binding)
     : null
+}
+
+/**
+ * Lease a visible set that is still discovering its servers. Until it is swapped
+ * in, the live registry holds the previous project's tools, so the turn starts
+ * from none of them; once it is visible, from the tools it has listed so far.
+ */
+function followVisibleDiscovery(registry: ToolRegistry, state: McpConnectionSet): McpToolScope {
+  const inherit = state === visibleSet
+  const binding: McpBinding = runInVisibleSet(registry, () => ({
+    set: state,
+    tools: registry.createToolScope(MCP_TOOL_PREFIX, inherit),
+    permissions: createMcpPermissionScope(inherit),
+    owners: 0,
+  }))
+  state.followers.add(binding)
+  return leaseBinding(binding)
+}
+
+function endDiscovery(state: McpConnectionSet): void {
+  state.discovering = false
+  state.followers.clear()
 }
 
 /**
@@ -1048,6 +1087,15 @@ export function acquireMcpToolScope(
   }
   if (discoveryStarted && ![...connectionSets].some((state) => !state.revoked))
     return Promise.reject(new Error('MCP connections are shut down.'))
+  const canReuseVisible =
+    !discoveryStarted ||
+    (requestedVisibleSet.workspace === workspace && !requestedVisibleSet.revoked)
+  // The visible project is still connecting its servers (startup, a project switch
+  // or a reconnect). Admit now rather than wait up to the connect timeout; its
+  // tools join this turn as each server connects.
+  if (canReuseVisible && requestedVisibleSet.discovering) {
+    return Promise.resolve(followVisibleDiscovery(registry, requestedVisibleSet))
+  }
   // Reserve admission before queueing, just like visible reloads. Explicit
   // shutdown/config revocation must reach it before it can reuse or initialize
   // any connection; ordinary navigation preserves retired turn reservations.
@@ -1055,9 +1103,6 @@ export function acquireMcpToolScope(
   state.retired = true
   if (signal) state.connectSignal = signal
   connectionSets.add(state)
-  const canReuseVisible =
-    !discoveryStarted ||
-    (requestedVisibleSet.workspace === workspace && !requestedVisibleSet.revoked)
   const checkAdmission = (): void => {
     signal?.throwIfAborted()
     if (connectionSetIsRevoked(state))
@@ -1273,6 +1318,7 @@ function requestVisibleConnections(
   // Track the requested set before queueing. Quit/revocation can then cancel
   // initialization even when this operation has not reached the queue head.
   const next = createConnectionSet(getWorkspaceRoot())
+  next.discovering = true
   requestedVisibleSet = next
   const previousSets = [...connectionSets]
   for (const state of previousSets) {
@@ -1294,6 +1340,7 @@ async function replaceVisibleConnections(
   // explicit disconnect that was already requested for these older clients.
   if (!preserveTurns) await Promise.all(previousSets.map(disposeConnectionSet))
   if (connectionSetIsRevoked(next)) {
+    endDiscovery(next)
     connectionSets.delete(next)
     return visibleSet.statuses.map((status) => ({ ...status }))
   }
@@ -1303,6 +1350,7 @@ async function replaceVisibleConnections(
     await disposeConnectionSet(previous)
   }
   if (connectionSetIsRevoked(next)) {
+    endDiscovery(next)
     connectionSets.delete(next)
     return visibleSet.statuses.map((status) => ({ ...status }))
   }
@@ -1312,7 +1360,11 @@ async function replaceVisibleConnections(
       if (name.startsWith(MCP_TOOL_PREFIX)) registry.unregister(name)
     }
     clearMcpToolPermissionTargets()
-    await loadConnectionSet(registry)
+    try {
+      await loadConnectionSet(registry)
+    } finally {
+      endDiscovery(next)
+    }
     return getMcpServerStatuses()
   })
 }

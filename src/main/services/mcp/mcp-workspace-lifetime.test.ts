@@ -608,6 +608,11 @@ describe('MCP workspace connection ownership', () => {
       navigation = runWithWorkspaceRoot(b, () => reloadMcpServersForWorkspace(registry))
       await closing.promise
       admission = acquire(b)
+      assert.equal(
+        (await admission).run(() => registry.has(TOOL)),
+        false,
+        'the admitted B turn never sees the closing A tools',
+      )
       released.resolve(undefined)
       await navigation
       const scopeB = await admission
@@ -626,6 +631,57 @@ describe('MCP workspace connection ownership', () => {
       await navigation
       await admission
       close.mock.restore()
+    }
+  })
+
+  it('admits a turn for the visible project during its own discovery, then adds its tools', async () => {
+    await configure('held visible B', true, true)
+    const navigation = runWithWorkspaceRoot(b, () => reloadMcpServersForWorkspace(registry))
+    let admission: Promise<McpToolScope> | undefined
+    try {
+      // B is the visible project now, and its only server is held in initialize.
+      await waitForEvent(b, 'started')
+      admission = acquire(b)
+      assert.equal(
+        await Promise.race([admission.then(() => true), delay(2000).then(() => false)]),
+        true,
+        'A turn for the visible project must not wait for its discovery or connect timeout',
+      )
+      const scopeB = await admission
+      assert.equal(
+        scopeB.run(() => registry.has(TOOL)),
+        false,
+        'neither A tools nor an unconnected B server',
+      )
+      await writeFile(join(b, 'mcp.init-release'), '')
+      await navigation
+      const result = await scopeB.run(() =>
+        registry.executeNormalized(TOOL, {}, new AbortController().signal),
+      )
+      assert.ok(result.result.includes(b), 'the B tool joins the admitted turn once it connects')
+      assert.equal(
+        (await events()).filter((event) => event.type === 'started' && event.workspace === b)
+          .length,
+        1,
+        'the turn uses the visible B connection',
+      )
+      const id = mcpToolPermissionId({
+        serverName: 'owned',
+        toolName: 'report_workspace',
+        origin: 'user',
+        source: join(directory, 'mcp.json'),
+      })
+      await setSetting('toolPermissionOverrides', { [id]: 'block' })
+      assert.deepEqual(
+        scopeB.run(() => resolveToolPermission(TOOL)),
+        { id, policy: 'block' },
+        'a saved permission applies to the joined tool',
+      )
+    } finally {
+      await writeFile(join(b, 'mcp.init-release'), '')
+      await navigation
+      await admission
+      await setSetting('toolPermissionOverrides', {})
     }
   })
 

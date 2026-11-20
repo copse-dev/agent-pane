@@ -308,6 +308,15 @@ describe('MCP project navigation during automation', function () {
     const idA = await settled(A, 2)
     assert.ok(conversationA)
     conversationA.assertComplete()
+    // A turn no longer waits for the selected project's discovery, and this
+    // scripted run calls B's tool in its first step.
+    await browser.waitUntil(
+      async () =>
+        (await browser.execute(() => window.api.mcp.list())).some(
+          (server) => server.name === 'owned' && server.state === 'connected',
+        ),
+      { timeout: 30_000 },
+    )
     await runNow(B, 'Check project B')
     const idB = await settled(B, 1)
     assert.ok(conversationB)
