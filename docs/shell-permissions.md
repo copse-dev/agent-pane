@@ -294,7 +294,9 @@ Reactive retries remain inside the same guest and never grant host execution.
 Network has no direct route out of the guest. A host broker enforces named destinations;
 per-command access is token-gated. The run receives the model credential it needs, not ambient
 host credentials or Git remotes. Results return as Git bundles to `refs/copse/runs/<id>` for
-explicit adoption, without moving the host checkout's HEAD or pushing. This is not a
+explicit adoption, without moving the host checkout's HEAD or pushing. Carry-in, carry-out and
+adoption run on the host under the internal Git policy, so the checkout's fsmonitor, hooks and
+signer never run for them, and adopted commits land unsigned. This is not a
 hostile-workload/multi-tenant guarantee; syntactic effect classification cannot identify every
 possible action of arbitrary guest code.
 
@@ -386,10 +388,17 @@ sandbox state, and whatever containment a caller reports. It asks the same execu
 resolution the spawn uses (`spawnRunsOnSshTarget` in `project-sandbox/spawn.ts`), and a remote
 project that cannot route over SSH counts as unsandboxed rather than local.
 
-On macOS, ASRT's network allowlist is process-wide. While a sandboxed ACP agent or background task
-temporarily widens it, a newly started network-capable command could inherit that access. Copse
-therefore pauses auto-run and names the holder in an approval prompt before overlapping the two.
-Structurally read-only commands do not prompt because they cannot open a network connection.
+On macOS, ASRT's network allowlist is process-wide. Approved loopback-binding background tasks
+and sandboxed ACP sessions and probes run in dedicated ASRT host processes, so their permissions
+cannot widen main's allowlist for already-running contained commands. If a host cannot start or
+initialize ASRT, that sandboxed operation fails rather than acquiring a scope in main or spawning
+an uncontained agent. A resolved `SandboxManager.initialize()` is insufficient: main and each
+isolated host check `isSandboxingEnabled()` before claiming protection. If it remains false, main
+records an init failure so commands prompt, and isolated hosts stop before spawning. The overlap
+gate remains for any scope held directly by main (none of the ACP or loopback task paths above):
+while one is active, Copse pauses auto-run and names the holder in an approval prompt before
+starting a new network-capable command. Structurally read-only
+commands do not prompt because they cannot open a network connection.
 
 ### Linked worktree recovery
 

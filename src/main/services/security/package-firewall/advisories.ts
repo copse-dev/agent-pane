@@ -1,5 +1,6 @@
-import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
+import { writeFileAtomic } from '@copse/std/write-file-atomic.ts'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import {
@@ -157,10 +158,7 @@ export async function loadCachedManifest(
     const downloaded = parseMalwareManifest(text, ecosystem)
     if (!downloaded) return cached
     try {
-      await mkdir(options.cacheDir, { recursive: true })
-      const temp = `${path}.${String(process.pid)}.tmp`
-      await writeFile(temp, text)
-      await rename(temp, path)
+      await writeFileAtomic(path, text)
     } catch {
       // A read-only cache (e.g. inside a sandbox) still gets this run's copy.
     }

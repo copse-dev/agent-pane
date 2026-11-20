@@ -140,12 +140,12 @@ patchedDependencies:
 #
 # GHSA-vfj7-8cjw-p6xm (braces <=3.0.3, recursive AST walkers can exhaust the
 # stack on deeply nested patterns) also has no patched npm release as of
-# 2026-10-03. Copse uses micromatch's matching/isMatch APIs, which call
-# picomatch directly, not braces' parse/compile/expand walkers. The remaining
-# consumers are Mocha's chokidar watch mode and type-coverage's fast-glob,
-# which process developer-controlled watch/source patterns. Reassess before
-# using micromatch.parse/braces/braceExpand or passing untrusted patterns to
-# those build tools, and remove the exception when a patched release exists.
+# 2026-10-03. Copse matches globs with picomatch, which does not depend on
+# braces, so no shipped code reaches it. The only remaining consumer is
+# micromatch under type-coverage's fast-glob, a build tool that processes
+# developer-controlled source patterns. Reassess before adding a dependency
+# on micromatch or braces, or passing untrusted patterns to that build tool,
+# and remove the exception when a patched release exists.
 #
 # GHSA-mrhx-c7xc-m3w5 (zod <4.6.6, validating oversized constrained
 # collections can exhaust memory) is fixed only in zod 4. Copse's own zod is
@@ -161,20 +161,21 @@ patchedDependencies:
 # as `+(*a)` compile to nested quantifiers that backtrack exponentially) has no
 # patched npm release as of 2026-11-18; upstream PR micromatch/picomatch#194 is
 # still open and leaves `+(*a)` exponential. It IS reachable in production:
-# micromatch 4.0.8 -> picomatch 2.3.2 matches globs from model tool arguments
+# Copse's own picomatch 4.0.7 matches globs from model tool arguments
 # (find_files, search_code's file_glob in the no-ripgrep fallback) and from
 # repository files (.gitignore in that fallback, .cursor/rules/*.mdc globs,
 # hooks.json afterFileEdit globs). Raw groups such as `(a|*a)+` compile to the
 # same shape without an extglob, so `noextglob` is no defence. Those callers
-# now match under the @copse/std/bounded-regex.ts wall-clock budget
+# match under the @copse/std/bounded-regex.ts wall-clock budget
 # (src/main/services/search/bounded-glob.ts and
 # packages/hooks-dialects/src/after-file-edit-glob.ts), so a pathological glob
-# costs at most one budget instead of freezing the main process. The other
-# path, @electron/rebuild -> node-gyp -> tinyglobby -> picomatch 4.0.7, is a
-# build tool fed developer-controlled patterns. index:query only accepts
-# [\w.\-/+$@ ] around a fixed `**/*…*`. Any new micromatch/picomatch caller
-# fed a non-developer pattern must go through the bounded helpers. Remove this
-# once a patched picomatch reaches both micromatch and tinyglobby.
+# costs at most one budget instead of freezing the main process. index:query
+# only accepts [\w.\-/+$@ ] around a fixed `**/*…*`. Every other copy is build
+# or test tooling fed developer-controlled patterns: tinyglobby under
+# typescript-eslint and electron-builder's node-gyp, WebdriverIO, and
+# type-coverage's micromatch -> picomatch 2.3.2. Any new picomatch caller fed a
+# non-developer pattern must go through the bounded helpers. Remove this once a
+# patched picomatch release replaces every copy in the lockfile.
 auditConfig:
   ignoreGhsas:
     - GHSA-ch52-4w7c-c8xp

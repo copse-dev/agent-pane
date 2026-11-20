@@ -89,6 +89,7 @@ import {
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import { runSerialized } from '@copse/thread-store/write-queue.ts'
 import { snapshotWorkingTree } from '../git-snapshot.mts'
+import { internalGit, internalGitBundleCreate } from '../security/internal-git-exec.ts'
 import { providerEndpointUrl, type ProviderDescription } from '../providers/provider-description.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { sleep } from '@copse/std/sleep.ts'
@@ -602,21 +603,21 @@ async function originUrlOf(cwd: string): Promise<string | null> {
 }
 
 /**
- * Run git and return its stdout. Asynchronous on purpose: this runs in
- * Electron's main process, and the snapshot of a large working tree plus the
+ * Run git on the host checkout and return its trimmed stdout. Every call here
+ * is automatic plumbing on the user's checkout, run in Electron's main process
+ * with no project sandbox, so it takes the internal policy
+ * (`internalGit`): the checkout's fsmonitor, hooks and signer never run.
+ * That includes adoption's `cherry-pick`: a button press is not the
+ * `git_commit` tool's gated `user-command` profile, and the hosted import
+ * adopts without one, so the guest's commits land unsigned and hook-free.
+ * Asynchronous on purpose: the snapshot of a large working tree plus the
  * bundle of its whole history take tens of seconds — done synchronously they
  * froze the entire app until the container started (A14). stderr is captured,
  * not inherited: git's own account of a failure belongs in the thrown error,
  * where the record and the dialog can show it.
  */
-async function git(cwd: string, args: string[], env?: Record<string, string>): Promise<string> {
-  const { stdout } = await execFileAsync('git', args, {
-    cwd,
-    encoding: 'utf8',
-    env: { ...process.env, ...env },
-    maxBuffer: 64 * 1024 * 1024,
-  })
-  return stdout.trim()
+function git(cwd: string, args: string[], env?: Record<string, string>): Promise<string> {
+  return internalGit(cwd, args, env ? { env } : {})
 }
 
 /**
@@ -653,10 +654,7 @@ export async function writeCarryInBundle(
   await git(workspace, ['update-ref', ref, snapshot.sha])
   try {
     if (rebaseOnto) await git(workspace, ['update-ref', `${ref}-base`, rebaseOnto])
-    await git(workspace, [
-      'bundle',
-      'create',
-      bundlePath,
+    await internalGitBundleCreate(workspace, bundlePath, [
       ref,
       ...(rebaseOnto ? [`${ref}-base`] : []),
     ])

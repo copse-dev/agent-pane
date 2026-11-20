@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import micromatch from 'micromatch'
+import picomatch from 'picomatch'
 import { boundedGlobMatcher, createGlobBudget, globFilterWithin } from './bounded-glob.ts'
 
 // GHSA-fc5q-39xc-vjpf: picomatch <=4.0.7 compiles these to nested unbounded
@@ -22,8 +22,8 @@ const PATHS = [
 ]
 
 describe('globFilterWithin', () => {
-  it('returns what micromatch returns, in list order', () => {
-    const cases: Array<[string, micromatch.Options]> = [
+  it('returns what picomatch matches, in list order', () => {
+    const cases: Array<[string, picomatch.PicomatchOptions]> = [
       ['*.ts', { basename: true }],
       ['src/**/*.ts', {}],
       ['**/*.{ts,tsx}', {}],
@@ -37,7 +37,7 @@ describe('globFilterWithin', () => {
     for (const [pattern, options] of cases) {
       assert.deepEqual(
         globFilterWithin(PATHS, pattern, options),
-        micromatch(PATHS, pattern, options),
+        PATHS.filter((path) => picomatch(pattern, options)(path)),
         pattern,
       )
     }
@@ -70,10 +70,25 @@ describe('globFilterWithin', () => {
     // A glob that would match instantly is refused without running.
     assert.equal(globFilterWithin(['a'], '(a|*a)+', {}, { budget }), 'timeout')
   })
+  // A timed-out call is charged its whole allowance, not just the time measured
+  // around it: V8's watchdog can fire a hair before `performance.now()` reaches
+  // the allowance, which used to leave a sliver of budget and let the next call
+  // run. No sleep: each call ends when the watchdog interrupts the backtracking.
+  it('leaves no budget after a call that timed out on the last of it', () => {
+    for (let trial = 0; trial < 25; trial++) {
+      const budget = createGlobBudget(10)
+      const result = globFilterWithin([REDOS_SUBJECT], '(a|*a)+', {}, { timeoutMs: 1_000, budget })
+      assert.equal(result, 'timeout')
+      assert.ok(
+        budget.remainingMs <= 0,
+        `trial ${String(trial)}: ${String(budget.remainingMs)}ms left`,
+      )
+    }
+  })
 })
 
 describe('boundedGlobMatcher', () => {
-  it('matches each subject like micromatch.isMatch with any of several patterns', () => {
+  it('matches each subject like picomatch.isMatch with any of several patterns', () => {
     const matches = boundedGlobMatcher(['**/dist/**', '**/*.log'], { dot: true, contains: true })
     assert.deepEqual(matches(['dist/out.js', 'tmp/debug.log', 'src/index.ts']), [true, true, false])
     assert.deepEqual(matches([]), [])

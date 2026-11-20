@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import * as fsp from 'node:fs/promises'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { isPathWithin } from '@copse/std/path-containment.ts'
+import { writeFileAtomic } from '@copse/std/write-file-atomic.ts'
 import { z } from 'zod'
 import {
   AGENT_PLUGIN_MANIFEST_FILE,
@@ -450,12 +451,7 @@ async function normalizePackage(
 }
 
 async function writeRecord(root: string, record: PluginInstallRecord): Promise<void> {
-  const directory = recordsRoot(root)
-  await fsp.mkdir(directory, { recursive: true })
-  const path = recordPath(root, record.pluginId)
-  const temporary = `${path}.${randomUUID()}.tmp`
-  await fsp.writeFile(temporary, `${JSON.stringify(record, null, 2)}\n`)
-  await fsp.rename(temporary, path)
+  await writeFileAtomic(recordPath(root, record.pluginId), `${JSON.stringify(record, null, 2)}\n`)
 }
 
 async function readRecords(root: string): Promise<PluginInstallRecord[]> {
