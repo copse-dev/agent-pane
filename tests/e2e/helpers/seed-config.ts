@@ -597,12 +597,6 @@ export function seedEmptyProject(
      * Roadmap pane). Ships off, like the other experimental packs.
      */
     roadmapPlansEnabled?: boolean
-    /**
-     * Opt into the `copse.mcp-ui-canvas` pack (the bundled canvas MCP server's
-     * `render_html_artefact` tool, artefact rendering in the Browser pane, and
-     * the prototype steering hook). Ships off, like the other experimental packs.
-     */
-    mcpUiCanvasEnabled?: boolean
     /** Opt into the experimental CI investigator pack. */
     ciInvestigatorEnabled?: boolean
     developerMode?: boolean
@@ -672,7 +666,6 @@ export function seedEmptyProject(
   if (options?.reviewEnabled) enabledPlugins.push('copse.review')
   if (options?.roadmapPlansEnabled) enabledPlugins.push('copse.roadmap-plans')
   if (options?.okfMemoriesEnabled) enabledPlugins.push('copse.okf-memories')
-  if (options?.mcpUiCanvasEnabled) enabledPlugins.push('copse.mcp-ui-canvas')
   if (options?.ciInvestigatorEnabled) enabledPlugins.push('copse.ci-investigator')
   seedConfig['pluginDisabled'] =
     options?.pluginDisabled !== undefined
@@ -798,7 +791,7 @@ export function seedCanvasArtefactThreadFixture(
     activeProjectId: projectId,
     expandedProjectId: projectId,
     activeThreadId,
-    pluginDisabled: pluginDisabledSeed(['copse.mcp-ui-canvas']),
+    pluginDisabled: pluginDisabledSeed([]),
     [`threads:${projectId}`]: [
       {
         id: activeThreadId,

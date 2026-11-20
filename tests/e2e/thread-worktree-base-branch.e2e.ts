@@ -1,10 +1,14 @@
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { $, browser, expect } from '@wdio/globals'
+import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig, writeSettings } from './helpers/seed-config.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
-import { pinTextForCapture, saveAppScreenshot } from './helpers/screenshot.ts'
+import {
+  pinTextForCapture,
+  saveAppScreenshot,
+  saveElementScreenshot,
+} from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 import { acceptProtectedPrompt } from './helpers/composer.ts'
 
@@ -54,15 +58,8 @@ describe('a thread checkout accidentally on its base branch', () => {
           id: THREAD,
           title: 'Recover the thread checkout',
           status: 'idle',
-          messages: [
-            {
-              id: 'checkout-request',
-              role: 'user',
-              content: PROMPT,
-              toolCalls: [],
-              createdAt: now,
-            },
-          ],
+          // Protected dispatch appends the sole canonical user message.
+          messages: [],
           usage: { inputTokens: 0, outputTokens: 0 },
           gitBranch: BRANCH,
           worktreeChoice: 'worktree',
@@ -81,7 +78,7 @@ describe('a thread checkout accidentally on its base branch', () => {
     })
     writeSettings({ model: 'claude-sonnet-4-6' })
     await browser.reloadSession()
-    await $('[data-message-id="checkout-request"]').waitForDisplayed({ timeout: 30_000 })
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
   })
 
   after(() => {
@@ -89,6 +86,21 @@ describe('a thread checkout accidentally on its base branch', () => {
     resetUserData()
     if (worktreeRoot) removeE2eTree(worktreeRoot)
     if (projectRoot) removeE2eTree(projectRoot)
+  })
+
+  it('flags the checkout in the footer before any message is sent', async () => {
+    // Passive reads still list the checkout's files, so the footer is the only
+    // sign, before a run is refused, that this thread will not run.
+    const trigger = $('#input-bar .footer-branch-status')
+    await expect(trigger).toHaveElementClass('is-detached')
+    await expect(trigger.$('.footer-branch-label')).toHaveText(BRANCH)
+    await expect(trigger).toHaveAttribute(
+      'title',
+      `This checkout is on main, its base branch, instead of ${BRANCH}. Copse will not run in it, so no edit lands on main. Your files are preserved. Check out ${BRANCH} in this checkout to continue.`,
+    )
+    await expect($('#input-bar .branch-reattach-button')).not.toBeDisplayed()
+    await expect($('.toast-error')).not.toExist()
+    await saveElementScreenshot('#input-bar', 'footer-branch-on-base-branch.png')
   })
 
   it('refuses the agent run and explains how to return to the thread branch', async () => {
@@ -107,6 +119,24 @@ describe('a thread checkout accidentally on its base branch', () => {
       expect.stringContaining('git checkout copse/recover\\(checkout\\)'),
     )
     await expect(text).toHaveText(expect.stringContaining('Your files are preserved.'))
+    const userMessages = await $$('.messages-list .msg-user .message-text').getElements()
+    expect(userMessages).toHaveLength(1)
+    await expect(userMessages[0]).toHaveText(PROMPT)
+    const canonicalUsers = await browser.execute(
+      async ({ project, thread }) =>
+        (await window.api.threads.loadMessages(project, thread))
+          .filter((message) => message.role === 'user')
+          .map(({ id, content }) => ({ id, content })),
+      { project: PROJECT, thread: THREAD },
+    )
+    expect(canonicalUsers).toHaveLength(1)
+    const canonicalPrompt = canonicalUsers[0]
+    if (!canonicalPrompt) throw new Error('Missing canonical checkout request')
+    expect(canonicalPrompt.content).toBe(PROMPT)
+    await expect($('.messages-list .msg-user')).toHaveAttribute(
+      'data-message-id',
+      canonicalPrompt.id,
+    )
     await expect($('.toast-error')).not.toExist()
     await expect($('.apple-development-error')).not.toExist()
     expect(git(worktreeRoot, 'branch', '--show-current')).toBe('main')
@@ -134,5 +164,9 @@ describe('a thread checkout accidentally on its base branch', () => {
     execFileSync('/bin/sh', ['-c', command], { cwd: worktreeRoot, stdio: 'pipe' })
     expect(git(worktreeRoot, 'branch', '--show-current')).toBe(BRANCH)
     expect(git(worktreeRoot, 'status', '--porcelain')).toBe('')
+    // The footer drops its warning once the checkout is back on its branch.
+    await expect($('#input-bar .footer-branch-status')).not.toHaveElementClass('is-detached', {
+      wait: 20_000,
+    })
   })
 })

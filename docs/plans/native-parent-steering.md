@@ -170,9 +170,24 @@ The whole protected review pauses idle and absolute hard deadlines through the
 run-owned host-wait registry (decision 13), then resumes the original budgets.
 Cancel closes review and retains the original held note. A declined review or
 Stop/completion before durable acceptance leaves the note held without canonical
-acceptance. Completion closes an open review and does not preserve unapproved edits;
-this bounded prototype does not automatically start a follow-up turn. Late
-approval cannot revive the closed run.
+acceptance. Stop/completion sends a trusted interruption only to the isolated
+protected window and waits at most one second for its current draft. A returned draft
+replaces the held note text, but remains held and requires a fresh protected review on
+Release; it is never auto-dispatched into the closed run. The held row remains busy
+until the canonical message body and matching queue metadata are durable, and only then
+reports the edit as saved or enables Edit/Release. A failed draft write restores the
+original held note for an explicit retry. This busy lease is renderer-local and is
+discarded on reload; an old persisted steering nonce does not suppress held actions.
+Every post-review lookup, local patch, busy lease, body write and queue metadata write
+remains bound to the captured source project, thread and queued message if the user
+switches projects while review is open. Colliding thread or message ids in the newly
+active project cannot receive the draft or inherit the source project's busy state. An
+unloaded source thread's metadata and transcript are re-read from its captured project
+and retained only for the bounded body and metadata writes; it is not reinserted into
+another project's live state. A missing thread or changed frozen note is treated as
+deleted/replaced and is never recreated from the snapshot. An unresponsive or already
+closed window falls back to the original held note. Late approval cannot revive the
+closed run.
 
 Before insertion, the project write queue validates that exact saved revision and commits
 canonical reviewed text with accepted lifecycle state under the existing message ID.

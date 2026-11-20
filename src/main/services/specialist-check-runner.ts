@@ -79,8 +79,7 @@ export async function runApprovedEvidenceExploration(
 }
 
 function specialistTools(registry: ToolRegistry): LLMTool[] {
-  const allowed = new Set<string>(SPECIALIST_DIRECT_TOOL_NAMES)
-  return [...registry.toLLMTools().filter((tool) => allowed.has(tool.name)), gatherEvidenceTool]
+  return [...registry.toLLMToolsNamed(SPECIALIST_DIRECT_TOOL_NAMES), gatherEvidenceTool]
 }
 
 export async function runSpecialistCheck(

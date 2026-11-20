@@ -65,6 +65,7 @@ import {
   classifyAgentError,
   classifyProviderAccessFailure,
   turnErrorDetail,
+  type ClassifyAgentErrorContext,
 } from './agent-errors.ts'
 import { normalizeStopReason } from '@copse/agent/headless-contract.ts'
 import { resolveParentGoal } from '@copse/agent/working-brief.ts'
@@ -1596,9 +1597,15 @@ async function runAgentWithInlineCanvas(
       // reason: an abort landing mid-catch must not offer a re-auth and then
       // record the turn as merely stopped.
       const aborted = controller.signal.aborted
-      const authFailure = aborted
-        ? null
-        : classifyAcpAuthFailure(err, { acpAgentId: acpRunAgentId })
+      // One context for both readings. The agent's last message joins it
+      // because an agent may write the cause there and then fail with a bare
+      // code (Claude's expired OAuth sign-in reads only `-32000`).
+      const errorContext: ClassifyAgentErrorContext = {
+        acpAgentId: acpRunAgentId,
+        acpSandboxed: err instanceof AcpTurnFailure && err.sandboxed,
+        ...(partial?.finalMessageText ? { acpFinalMessage: partial.finalMessageText } : {}),
+      }
+      const authFailure = aborted ? null : classifyAcpAuthFailure(err, errorContext)
       // A helper that cannot nest a second seatbelt inside the agent's own dies
       // the same way on every retry, so the marker must say that instead of the
       // generic provider-error note (2026-09-23: Codex CUA node_repl under the
@@ -1608,13 +1615,13 @@ async function runAgentWithInlineCanvas(
         authFailure,
         acpAgentId: acpRunAgentId,
       })
-      const msg = agentErrorNotice(
-        classifyAgentError(err, {
-          acpAgentId: acpRunAgentId,
-          acpSandboxed: err instanceof AcpTurnFailure && err.sandboxed,
-        }),
-      )
-      sendChunk({ type: 'text', text: partial?.assistantText ? `\n\n${msg}` : msg })
+      const msg = agentErrorNotice(classifyAgentError(err, errorContext))
+      // The notice is a block of its own (a GitHub alert renders only at the
+      // start of one), so it never runs on from the agent's last words. The
+      // partial transcript says the agent wrote some; `lastTurnEvent` covers
+      // anything else that left the bubble ending in text.
+      const followsText = Boolean(partial?.assistantText) || lastTurnEvent === 'text'
+      sendChunk({ type: 'text', text: followsText ? `\n\n${msg}` : msg })
       // A credentials failure is the one ACP error the user can't act on from
       // the chat alone — the fix lives in a separate program's login flow. Offer
       // to open it, after the diagnosis has been streamed so the ask arrives

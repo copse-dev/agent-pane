@@ -10237,6 +10237,105 @@
       "indexVersion": "v5",
       "source": "Artificial Analysis API (index v5), model 'claude-fable-5-2-high', fetched 2026-11-10",
       "asOf": "2026-11-10"
+    },
+    {
+      "modelId": "apodex-1-1",
+      "value": 13.7,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'apodex-1-1', fetched 2026-11-17",
+      "asOf": "2026-11-17"
+    },
+    {
+      "modelId": "solar-pro4",
+      "value": 14.2,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'solar-pro4', fetched 2026-11-17",
+      "asOf": "2026-11-17"
+    },
+    {
+      "modelId": "k-exaone-2-0",
+      "value": 7.6,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'k-exaone-2-0', fetched 2026-11-17",
+      "asOf": "2026-11-17"
+    },
+    {
+      "modelId": "gemini-4-argon-medium",
+      "value": 47.6,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gemini-4-argon-medium', fetched 2026-11-17",
+      "asOf": "2026-11-17"
+    },
+    {
+      "modelId": "ling-3-1-flash",
+      "value": 29.6,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'ling-3-1-flash', fetched 2026-11-17",
+      "asOf": "2026-11-17"
+    },
+    {
+      "modelId": "gemini-4-hydrogen-low",
+      "value": 26.9,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gemini-4-hydrogen-low', fetched 2026-11-17",
+      "asOf": "2026-11-17"
+    },
+    {
+      "modelId": "qwen3-8-flash-next",
+      "value": 28.6,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'qwen3-8-flash-next', fetched 2026-11-17",
+      "asOf": "2026-11-17"
+    },
+    {
+      "modelId": "jt-4-1-flash-236b-a21b",
+      "value": 19,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'jt-4-1-flash-236b-a21b', fetched 2026-11-17",
+      "asOf": "2026-11-17"
+    },
+    {
+      "modelId": "google/gemma-4-e4b",
+      "value": 4.8,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gemma-4-e4b', fetched 2026-11-17",
+      "asOf": "2026-11-17",
+      "aliases": ["gemma-4-e4b", "gemma-4-e4b-it", "Gemma 4 E4B"]
+    },
+    {
+      "modelId": "gemini-4-hydrogen",
+      "value": 53.9,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gemini-4-hydrogen', fetched 2026-11-17",
+      "asOf": "2026-11-17"
+    },
+    {
+      "modelId": "gemini-4-hydrogen-high",
+      "value": 50.8,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gemini-4-hydrogen-high', fetched 2026-11-17",
+      "asOf": "2026-11-17"
+    },
+    {
+      "modelId": "deepseek-v4-pro-high",
+      "value": 20.8,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'deepseek-v4-pro-high', fetched 2026-11-17",
+      "asOf": "2026-11-17"
+    },
+    {
+      "modelId": "gemini-4-hydrogen-medium",
+      "value": 41.2,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'gemini-4-hydrogen-medium', fetched 2026-11-17",
+      "asOf": "2026-11-17"
+    },
+    {
+      "modelId": "qwen4-max",
+      "value": 42.9,
+      "indexVersion": "v5",
+      "source": "Artificial Analysis API (index v5), model 'qwen4-max', fetched 2026-11-17",
+      "asOf": "2026-11-17"
     }
   ],
   "wanted": [

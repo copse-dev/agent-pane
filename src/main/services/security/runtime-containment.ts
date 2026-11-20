@@ -6,6 +6,7 @@ import type {
   RuntimeContainmentTier,
 } from '@shared/types/unattended-run.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 /**
  * What confines *this process* (`docs/plans/thread-in-container.md`).
@@ -230,7 +231,7 @@ export async function observeGuestContainment(): Promise<GuestContainmentObserva
       uid: process.getuid?.() ?? -1,
     })
   } catch (error) {
-    return `cannot observe the guest: ${error instanceof Error ? error.message : String(error)}`
+    return `cannot observe the guest: ${errorMessage(error)}`
   }
 }
 

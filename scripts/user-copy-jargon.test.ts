@@ -76,7 +76,7 @@ const ALLOWED: readonly Allowance[] = [
   {
     file: 'src/main/services/acp/acp-behavior-probe.ts',
     term: 'ACP',
-    count: 4,
+    count: 1,
     reason: REASON.devTool,
   },
   {
@@ -94,7 +94,7 @@ const ALLOWED: readonly Allowance[] = [
   {
     file: 'src/main/services/acp/acp-long-run-probe.ts',
     term: 'ACP',
-    count: 4,
+    count: 1,
     reason: REASON.devTool,
   },
   {

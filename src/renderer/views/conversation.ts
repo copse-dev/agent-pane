@@ -97,6 +97,10 @@ import {
   type ArtifactImageScope,
 } from '../markdown/remote-artifact-images.ts'
 import { stripTextToolCallBlocks } from '@copse/agent/parse-text-tool-calls.ts'
+import {
+  projectPromptTextForDisplay,
+  type ProjectedPromptText,
+} from '@shared/threads/prompt-placeholders.ts'
 import { splitCursorAcpTransportNoise } from '@shared/acp-cursor-transport-noise.ts'
 import { stripInlineVisualizationReferences } from '@shared/inline-visualization.ts'
 import type {
@@ -219,6 +223,7 @@ import {
   drainMessageQueue,
   steerQueuedMessage,
   canSteerQueuedMessage,
+  queuedSteeringIsBusy,
   isHeldMessage,
   queuedMessageIds,
   queuedPayloadText,
@@ -2191,6 +2196,7 @@ function appendMessageContent(
     contentBlocks?: AcpContentBlock[]
     reasoningBlocks?: AcpContentBlock[]
     attachments?: TranscriptAttachment[]
+    promptRepresentation?: Message['promptRepresentation']
   },
   api: ApiClient,
   workspaceRoot: string | null,
@@ -2216,7 +2222,18 @@ function appendMessageContent(
   if (msg.role === 'assistant' && msg.content) {
     setAssistantMarkdown(textEl, msg.content, false, api)
   } else if (msg.role === 'user' && msg.attachments?.length) {
-    renderUserTranscript(textEl, msg.content, msg.attachments, api)
+    const projection = projectPromptTextForDisplay(
+      msg.content,
+      msg.attachments,
+      msg.promptRepresentation,
+    )
+    renderUserTranscript(
+      textEl,
+      projection.content,
+      msg.attachments,
+      api,
+      projection.projectedAttachments,
+    )
   } else if (msg.role === 'user') {
     setUserMarkdown(textEl, msg.content)
   } else {
@@ -2308,23 +2325,32 @@ function renderUserTranscript(
   content: string,
   attachments: TranscriptAttachment[],
   api: ApiClient,
+  projectedAttachments: ProjectedPromptText['projectedAttachments'],
 ): void {
   // Positional composer attachments lead the array in the same order as the
   // placeholders. Anything after the final placeholder belongs in the trailing
   // row. This also keeps older messages compatible: their paste attachments
   // already led the array, while legacy thread refs followed them.
-  const inlineCount = countChipPlaceholders(content)
-  const firstNonPositional = attachments.findIndex(
-    (attachment) => attachment.kind !== 'paste' && attachment.kind !== 'thread',
-  )
-  const positionalPrefixLength = firstNonPositional === -1 ? attachments.length : firstNonPositional
-  const boundInlineCount = Math.min(inlineCount, positionalPrefixLength)
-  const inline = attachments.slice(0, boundInlineCount)
-  const trailing = attachments.slice(boundInlineCount)
+  let inline: TranscriptAttachment[]
+  let trailing: TranscriptAttachment[]
+  if (projectedAttachments !== undefined) {
+    inline = projectedAttachments.inline.map((slot) => slot.attachment)
+    trailing = projectedAttachments.trailing
+  } else {
+    const inlineCount = countChipPlaceholders(content)
+    const firstNonPositional = attachments.findIndex(
+      (attachment) => attachment.kind !== 'paste' && attachment.kind !== 'thread',
+    )
+    const positionalPrefixLength =
+      firstNonPositional === -1 ? attachments.length : firstNonPositional
+    const boundInlineCount = Math.min(inlineCount, positionalPrefixLength)
+    inline = attachments.slice(0, boundInlineCount)
+    trailing = attachments.slice(boundInlineCount)
+  }
 
   // Restore each positional paste/thread chip at its placeholder. `firstChip`
   // is where this fold region starts in the message's attachment list.
-  const paintRegion = (sink: HTMLElement, text: string, firstChip: number): void => {
+  const paintLegacyRegion = (sink: HTMLElement, text: string, firstChip: number): void => {
     const parts = text.split(CHIP_CHAR)
     parts.forEach((part, i) => {
       if (part) sink.append(document.createTextNode(part))
@@ -2339,6 +2365,28 @@ function renderUserTranscript(
     })
   }
 
+  const paintProjectedRegion = (
+    sink: HTMLElement,
+    text: string,
+    start: number,
+    ownerEnd: number,
+    includeOwnerEnd = false,
+  ): void => {
+    const slots = projectedAttachments?.inline.filter(
+      (slot) =>
+        slot.offset >= start &&
+        (slot.offset < ownerEnd || (includeOwnerEnd && slot.offset === ownerEnd)),
+    )
+    let cursor = 0
+    for (const slot of slots ?? []) {
+      const offset = slot.offset - start
+      if (offset > cursor) sink.append(document.createTextNode(text.slice(cursor, offset)))
+      sink.append(transcriptChip(slot.attachment, api))
+      cursor = offset
+    }
+    if (cursor < text.length) sink.append(document.createTextNode(text.slice(cursor)))
+  }
+
   // A prompt carrying attachments is still a prompt: fold its middle when it is
   // long, exactly as the plain-text path does. The head/middle/tail are
   // contiguous slices of `content`, so counting placeholders in the earlier
@@ -2351,11 +2399,31 @@ function renderUserTranscript(
       middle: headChips,
       tail: headChips + countChipPlaceholders(fold.middle),
     }
+    const regionStart: Record<UserPromptFoldRegion, number> = {
+      head: 0,
+      middle: content.indexOf(fold.middle, fold.head.length),
+      tail: content.lastIndexOf(fold.tail),
+    }
+    const regionOwnerEnd: Record<UserPromptFoldRegion, number> = {
+      head: regionStart.middle,
+      middle: regionStart.tail,
+      tail: content.length,
+    }
     fillUserPromptFold(host, fold, (sink, text, region) => {
-      paintRegion(sink, text, firstChip[region])
+      if (projectedAttachments === undefined) paintLegacyRegion(sink, text, firstChip[region])
+      else
+        paintProjectedRegion(
+          sink,
+          text,
+          regionStart[region],
+          regionOwnerEnd[region],
+          region === 'tail',
+        )
     })
+  } else if (projectedAttachments === undefined) {
+    paintLegacyRegion(host, content, 0)
   } else {
-    paintRegion(host, content, 0)
+    paintProjectedRegion(host, content, 0, content.length, true)
   }
 
   // Outside the fold: non-positional and legacy attachments stay visible while
@@ -3013,10 +3081,9 @@ export function mountConversation(
     const deleting = deletionStatus(messageId)
     if (deleting) return deleting
     const thread = getThreadById(store, store.getState().activeThreadId ?? '')
-    if (
-      thread?.status === 'running' &&
-      thread.pendingMessages?.some((item) => item.messageId === messageId && item.steeringRequested)
-    ) {
+    const queued = thread?.pendingMessages?.find((item) => item.messageId === messageId)
+    const projectId = store.getState().activeProjectId
+    if (projectId && thread && queued && queuedSteeringIsBusy(store, projectId, thread, queued)) {
       return el(
         'div',
         { class: 'message-queued-ui steering-pending', role: 'status' },
@@ -3923,7 +3990,7 @@ export function mountConversation(
     if (result.omittedImages) {
       showToast('Resent without the original image.')
     } else if (result.droppedAttachments) {
-      showToast('Resent without the original attachments.')
+      showToast('Resent the saved prompt without attachment chips.')
     } else if (result.queued) {
       showToast('Resend queued behind the running turn.')
     }

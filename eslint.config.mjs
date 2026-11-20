@@ -1,6 +1,5 @@
 import js from '@eslint/js'
 import ts from 'typescript-eslint'
-import prettier from 'eslint-config-prettier'
 
 // The one restricted module, hoisted because it must be repeated in the renderer block
 // below: ESLint replaces a rule's options wholesale rather than merging them, so a
@@ -71,7 +70,6 @@ export default ts.config(
   },
   js.configs.recommended,
   ...ts.configs.strictTypeChecked,
-  prettier,
   {
     // Adapter implementations must accept every input their shared contract
     // permits. Method signatures bypass strictFunctionTypes' parameter checks;

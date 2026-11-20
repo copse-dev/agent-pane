@@ -1395,6 +1395,42 @@ test('a live runtime seed supersedes a held idle status before its first stream 
   unsub()
 })
 
+test('a runtime snapshot replaces or clears a stale local steering run id', () => {
+  const initial = { ...thread('t1'), nativeSteeringRunId: 'stale-run' }
+  const { store, snapshot, unsub } = setup([initial])
+  snapshot({
+    source: 'runtime',
+    projectId: 'project-1',
+    thread: { ...initial, nativeSteeringRunId: 'live-run' },
+    checkpoint: { stream: null, pendingTurn: null },
+  })
+  assert.equal(requireThread(store, 't1').nativeSteeringRunId, 'live-run')
+
+  const { nativeSteeringRunId: _endedRun, ...ended } = requireThread(store, 't1')
+  snapshot({
+    source: 'runtime',
+    projectId: 'project-1',
+    thread: ended,
+    checkpoint: { stream: null, pendingTurn: null },
+  })
+  assert.equal(requireThread(store, 't1').nativeSteeringRunId, undefined)
+  unsub()
+})
+
+test('a disk snapshot cannot clear a live runtime steering run id', () => {
+  const initial = { ...thread('t1'), nativeSteeringRunId: 'live-run' }
+  const { store, snapshot, unsub } = setup([initial])
+  const { nativeSteeringRunId: _runtimeOnly, ...disk } = initial
+  snapshot({
+    source: 'disk',
+    projectId: 'project-1',
+    thread: disk,
+    checkpoint: { stream: null, pendingTurn: null },
+  })
+  assert.equal(requireThread(store, 't1').nativeSteeringRunId, 'live-run')
+  unsub()
+})
+
 test('a fresh controller ignores missed-prefix chunks until a runtime checkpoint arrives', () => {
   const runtime = createStore({ threads: [thread('t1')] })
   const reducer = createTranscriptReducer(runtime, { createMessageId: () => 'runtime-answer' })

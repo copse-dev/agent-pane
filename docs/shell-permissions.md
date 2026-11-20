@@ -324,7 +324,9 @@ Reactive retries remain inside the same guest and never grant host execution.
 Network has no direct route out of the guest. A host broker enforces named destinations;
 per-command access is token-gated. The run receives the model credential it needs, not ambient
 host credentials or Git remotes. Results return as Git bundles to `refs/copse/runs/<id>` for
-explicit adoption, without moving the host checkout's HEAD or pushing. This is not a
+explicit adoption, without moving the host checkout's HEAD or pushing. Carry-in, carry-out and
+adoption run on the host under the internal Git policy, so the checkout's fsmonitor, hooks and
+signer never run for them, and adopted commits land unsigned. This is not a
 hostile-workload/multi-tenant guarantee; syntactic effect classification cannot identify every
 possible action of arbitrary guest code.
 
@@ -543,8 +545,8 @@ with every `session/new`, `session/resume` and `session/load`: one Bash
 `PreToolUse` command hook (`acp/acp-claude-sandbox-escape.ts`). When a call asks
 for the escape, the hook exits 2 and Claude Code returns its message to the model
 as the tool result. The message says the process runs inside Copse's sandbox and
-names `run_shell` with `expects_sandbox_block`, which can ask the user to approve
-an outside run. When the session mounted no bridge, the message says so and tells
+names the session's own bridge tool (`mcp__copse-<nonce>__run_shell`) with
+`expects_sandbox_block`, which can ask the user to approve an outside run. When the session mounted no bridge, the message says so and tells
 the agent to ask the user instead.
 
 The hook only refuses. It runs inside the agent's sandbox, lets nothing run that
@@ -578,14 +580,20 @@ point for a stdio or HTTP MCP server the external agent mounts itself.
 
 Because every bridged call is re-gated there, the agent's own ACP permission request for one only
 duplicates that gate. Copse approves the ACP-layer request only when **adapter-authored provenance**
-on the request itself names a `copse` tool that this session's own bridge serves. Provenance comes
-from:
+on the request itself names a tool of this session's own bridge, under the bridge's exact server
+name, and the bridge serves that tool. Each bridge is mounted as `copse-<nonce>`, eight random
+lowercase letters or digits (`newBridgeServerName`, `acp/acp-bridge-name.ts`), never as the bare
+`copse`: an MCP config the agent reads for itself (`~/.claude.json`, a repository's `.mcp.json`,
+a plugin manifest) can define a server named `copse`, and its tools would otherwise carry the same
+adapter-authored names (#4125). A server named `copse`, or any other nonce, never matches.
+Provenance comes from:
 
 - the adapter's structured tool name (`_meta.claudeCode.toolName`, or a qualified ACP `name`);
-- a title in one of the literal observed shapes: `copse-<tool>: <tool>`, `mcp__copse__<tool>` or
-  `mcp.copse.<tool>`. Separators are fixed, the tool name is ASCII and spelled exactly as offered,
-  and nothing is unwrapped or case-folded first. A looser grammar reads shell text as a tool:
-  `copse=;. ./run_shell` sources `./run_shell`.
+- a title in one of the literal observed shapes, where `<server>` is the session's exact bridge
+  name: `<server>-<tool>: <tool>`, `mcp__<server>__<tool>` or `mcp.<server>.<tool>`. Separators
+  are fixed, the tool name is ASCII and spelled exactly as offered, and nothing is unwrapped or
+  case-folded first. A looser grammar reads shell text as a tool: `copse=;. ./run_shell` sources
+  `./run_shell`.
 
 The agent's earlier reports of the same `toolCallId` can veto the request's claim but never stand
 in for one: every claim must agree. A request whose kind is `execute`, `edit`, `delete` or `move`, or that carries a command line (`acpShellCommandText`, as for an unclassified request with `rawInput.command`),

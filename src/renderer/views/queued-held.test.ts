@@ -8,6 +8,7 @@ import {
   setThreadStatus,
   patchThreadAnywhere,
 } from '@shared/store/thread-helpers.ts'
+import { createTranscriptReducer } from '@shared/store/transcript-reducer.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import {
   continuationBudgetHeldNote,
@@ -110,6 +111,33 @@ describe('held queued message (component)', () => {
     assert.ok(document.querySelector('.queued-release'))
   })
 
+  it('restores held actions when a steering request belongs to an ended run', () => {
+    const store = createProjectStore()
+    const api = fakeApi()
+    const threadId = createThread(store)
+    setThreadStatus(store, threadId, 'running')
+    patchThreadAnywhere(store, threadId, (thread) => ({
+      ...thread,
+      nativeSteeringRunId: 'replacement-run',
+    }))
+    const messageId = addMessage(store, threadId, 'user', 'Keep this draft available.')
+    enqueueUserMessage(store, threadId, {
+      messageId,
+      payload: { content: 'Keep this draft available.' },
+      createdAt: 1,
+      autoDispatch: false,
+      steeringRequested: 'ended-run',
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, api)
+
+    assert.equal(host.querySelector('.steering-pending'), null)
+    assert.ok(host.querySelector('.queued-release'))
+    assert.ok(host.querySelector('.queued-edit'))
+    assert.ok(host.querySelector('.queued-delete'))
+  })
+
   it('does not offer Steer without a native run or for machine messages', () => {
     const store = createProjectStore()
     const api = fakeApi()
@@ -143,6 +171,55 @@ describe('held queued message (component)', () => {
     store.emit('threads_changed')
     assert.equal(document.querySelector('.queued-steer'), null)
   })
+
+  it('redraws an already running released row with the newly reviewed canonical prompt', () => {
+    const store = createProjectStore()
+    const api = fakeApi()
+    const threadId = createThread(store)
+    const original = 'Preserve the lifecycle API draft.'
+    const reviewed = 'Keep the API stable after explicit follow-up.'
+    const messageId = addMessage(store, threadId, 'user', original)
+    enqueueUserMessage(store, threadId, {
+      messageId,
+      payload: { content: original },
+      createdAt: 2,
+      autoDispatch: false,
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, api)
+    const release = host.querySelector<HTMLButtonElement>('.queued-release')
+    assert.ok(release)
+    release.click()
+    assert.equal(api.runs.length, 1)
+    assert.equal(host.querySelector('.conversation-queued .msg-queued'), null)
+    assert.equal(
+      host.querySelector('.messages-list .msg-user .message-text')?.textContent,
+      original,
+    )
+    // Main's start arrives after Release has already rendered the original
+    // ordinary row and marked the thread running. No status transition can
+    // provide an incidental redraw for the reviewed replacement.
+    setThreadStatus(store, threadId, 'running')
+    const reducer = createTranscriptReducer(store)
+    reducer.apply(threadId, {
+      type: 'protected_human_turn_start',
+      messageId,
+      content: reviewed,
+      promptRepresentation: 'canonical-provider',
+    })
+    assert.equal(
+      store.getState().threads.find((thread) => thread.id === threadId)?.messages[0]?.content,
+      reviewed,
+    )
+    assert.equal(
+      host.querySelector('.messages-list .msg-user .message-text')?.textContent,
+      reviewed,
+    )
+    assert.equal(host.querySelector('.transcript-attachment-chip'), null)
+    assert.equal(host.querySelector('.steering-pending'), null)
+  })
+
   it('renders a Held badge + Release action for a held hook message', () => {
     const store = createProjectStore()
     const api = fakeApi()

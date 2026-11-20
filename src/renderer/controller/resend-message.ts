@@ -3,7 +3,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { AgentRunPayload } from '@shared/types/skills.ts'
 import type { Message, Thread, UserContent } from '@shared/types'
 import { addMessage, getThreadById } from '@shared/store/thread-helpers.ts'
-import { stripPastePlaceholders } from '@shared/threads/prompt-placeholders.ts'
+import { replayPromptText } from '@shared/threads/prompt-placeholders.ts'
 import {
   dispatchAgentRun,
   enqueueUserMessage,
@@ -22,12 +22,11 @@ import {
  * honest about what was actually sent, and means a resend behaves identically
  * whether the agent is idle (dispatch now) or running (queue behind the turn).
  *
- * Fidelity note: the transcript stores the prompt's *visible* text and images,
- * not the run payload — an inline paste survives only as a U+FFFC placeholder,
- * and `@`-file / `@`-thread / shell chips as labels. The fenced blocks those
- * stood for were expanded into the payload and are gone. A resend therefore
- * repeats the prompt's own words (placeholders stripped) and reports the
- * dropped attachments, rather than quietly sending less than it appears to.
+ * Fidelity note: legacy transcript prompts store only visible text, so their
+ * attachment placeholders cannot be rebuilt. Protected prompts instead retain
+ * canonical provider text and Main-owned projection provenance. Their exact
+ * reviewed bytes can be resent from `content` even though the display chip is
+ * omitted from the new bubble.
  */
 
 export interface ResendResult {
@@ -35,7 +34,7 @@ export interface ResendResult {
   messageId: string
   /** Queued behind a live run rather than dispatched immediately. */
   queued: boolean
-  /** The original prompt carried attachment chips that a resend cannot rebuild. */
+  /** The original prompt carried attachment chips omitted from the new bubble. */
   droppedAttachments: boolean
   /** The user explicitly chose the text-only recovery for an image prompt. */
   omittedImages: boolean
@@ -57,7 +56,11 @@ export function lastResendableMessage(thread: Thread): Message | null {
     const message = thread.messages[i]
     if (!message || message.role !== 'user' || queued.has(message.id)) continue
     // A prompt whose only content was chips has nothing left to re-send.
-    if (!stripPastePlaceholders(message.content) && (message.images?.length ?? 0) === 0) return null
+    if (
+      !replayPromptText(message.content, message.attachments, message.promptRepresentation) &&
+      (message.images?.length ?? 0) === 0
+    )
+      return null
     return message
   }
   return null
@@ -88,7 +91,11 @@ export function resendLastMessage(
 
   const originalImages = original.images ?? []
   const images = options.includeImages === false ? [] : originalImages
-  const text = stripPastePlaceholders(original.content)
+  const text = replayPromptText(
+    original.content,
+    original.attachments,
+    original.promptRepresentation,
+  )
   const payload: AgentRunPayload = {
     content: contentOf(text, images),
     invokedSkills: [],

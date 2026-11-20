@@ -212,8 +212,10 @@ import {
 } from './services/agent-dispatcher.ts'
 import {
   protectedPromptMessageMatches,
+  reviewedTranscriptAttachments,
   protectedPromptSubmissionIsUnchanged,
   protectedPromptStoredContext,
+  protectedPromptWasInterrupted,
   ProtectedPromptReviewService,
   withProtectedPromptText,
 } from './windows/protected-prompt-review.ts'
@@ -1256,6 +1258,15 @@ app
                 protectedHumanStart: {
                   content: grant.content,
                   preserveOptimisticDisplay: true,
+                  ...(optimistic.attachments !== undefined
+                    ? {
+                        attachments: reviewedTranscriptAttachments(
+                          optimistic.attachments,
+                          optimistic.content,
+                          grant.content,
+                        ),
+                      }
+                    : {}),
                   acceptMessageId: async (): Promise<string> => {
                     const messageId = await acceptExactReviewedUserMessage(projectId, threadId, {
                       message: optimistic,
@@ -1409,7 +1420,9 @@ app
                   context: protectedPromptContext(payload, protectedInputs),
                   kind: 'human',
                 })
-                if (!submission) throw new ProtectedPromptAdmissionCancelledError()
+                if (!submission || protectedPromptWasInterrupted(submission)) {
+                  throw new ProtectedPromptAdmissionCancelledError()
+                }
                 const reviewedContent = withProtectedPromptText(
                   payload.userContent,
                   submission.text,
@@ -1426,6 +1439,15 @@ app
                     content: reviewedContent,
                     ...(preserveOptimisticDisplay
                       ? { preserveOptimisticDisplay: true as const }
+                      : {}),
+                    ...(preserveOptimisticDisplay && optimistic.attachments !== undefined
+                      ? {
+                          attachments: reviewedTranscriptAttachments(
+                            optimistic.attachments,
+                            optimistic.content,
+                            payload.userContent,
+                          ),
+                        }
                       : {}),
                     acceptMessageId: async (): Promise<string> => {
                       const messageId = await acceptAuthorizedReviewedUserMessage(
@@ -1538,7 +1560,7 @@ app
               context: protectedPromptContext(payload, protectedInputs),
               kind: 'human',
             })
-            if (!submission) return 'cancelled'
+            if (!submission || protectedPromptWasInterrupted(submission)) return 'cancelled'
             const reviewedContent = withProtectedPromptText(payload.userContent, submission.text)
             const preserveOptimisticDisplay =
               optimistic !== undefined &&
@@ -1553,6 +1575,15 @@ app
               protectedHumanStart: {
                 content: reviewedContent,
                 ...(preserveOptimisticDisplay ? { preserveOptimisticDisplay: true as const } : {}),
+                ...(preserveOptimisticDisplay && optimistic.attachments !== undefined
+                  ? {
+                      attachments: reviewedTranscriptAttachments(
+                        optimistic.attachments,
+                        optimistic.content,
+                        payload.userContent,
+                      ),
+                    }
+                  : {}),
                 acceptMessageId: () =>
                   acceptReviewedUserMessage(
                     projectId,
@@ -1603,7 +1634,8 @@ app
         context: protectedPromptContext(payload, protectedInputs),
         kind: 'machine',
       })
-      if (!submission) return 'cancelled'
+      if (!submission || protectedPromptWasInterrupted(submission)) return 'cancelled'
+      const unchanged = protectedPromptSubmissionIsUnchanged(payload.userContent, submission)
       const result = await agentDispatcher.dispatchMachine({
         projectId: request.projectId,
         threadId: request.threadId,
@@ -1615,7 +1647,20 @@ app
         },
         protectedHistory: protectedInputs.history,
         protectedPlan: protectedInputs.plan,
-        display: { ...request.display, content: submission.text },
+        canonicalPrompt: true,
+        display: {
+          ...request.display,
+          content: submission.text,
+          ...(unchanged && request.display.attachments !== undefined
+            ? {
+                attachments: reviewedTranscriptAttachments(
+                  request.display.attachments,
+                  request.display.content,
+                  payload.userContent,
+                ),
+              }
+            : {}),
+        },
       })
       if (result === 'completed') {
         await parkCompletedPullRequestWorktree(request.projectId, request.threadId).catch(
@@ -1756,6 +1801,9 @@ app
               { label: 'Frozen revision', value: note.revision },
             ],
           })
+          if (protectedPromptWasInterrupted(submission)) {
+            return { state: 'interrupted', draft: submission.text }
+          }
           return submission
             ? {
                 text: submission.text,

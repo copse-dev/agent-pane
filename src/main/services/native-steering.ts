@@ -1,5 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto'
-import type { LLMMessage, QueuedUserMessage, UserContent } from '@shared/types'
+import type {
+  LLMMessage,
+  NativeSteeringResult,
+  QueuedUserMessage,
+  UserContent,
+} from '@shared/types'
 import type { UserSteeringReceipt } from '@copse/thread-store/user-steering.ts'
 import { withRunDeadlinePaused } from './hooks/run-deadline.ts'
 import {
@@ -9,10 +14,6 @@ import {
   type QueuedUserMessageSnapshot,
   loadUserSteeringReceipts,
 } from './thread-store.ts'
-
-export interface NativeSteeringResult {
-  state: 'applied' | 'held'
-}
 
 export interface PreparedNativeSteeringNote {
   apply: () => LLMMessage[]
@@ -43,8 +44,14 @@ export async function prepareNativeSteeringNote(
 }
 
 export interface NativeSteeringApproval {
+  state?: never
   text: string
   claim: () => boolean
+}
+
+export interface NativeSteeringInterruption {
+  state: 'interrupted'
+  draft: string
 }
 
 export type NativeSteeringReview = (note: {
@@ -54,7 +61,7 @@ export type NativeSteeringReview = (note: {
   model: string
   revision: string
   signal: AbortSignal
-}) => Promise<NativeSteeringApproval | null>
+}) => Promise<NativeSteeringApproval | NativeSteeringInterruption | null>
 
 interface PendingNote {
   snapshot: QueuedUserMessageSnapshot
@@ -189,7 +196,7 @@ export class NativeSteeringSession {
       settle({ state: 'held' })
       return
     }
-    const approval = await withRunDeadlinePaused(this.threadId, () =>
+    const reviewResult = await withRunDeadlinePaused(this.threadId, () =>
       review({
         text: snapshot.message.content,
         messageId,
@@ -199,11 +206,19 @@ export class NativeSteeringSession {
         signal: AbortSignal.any([this.signal, this.reviewController.signal]),
       }),
     )
-    if (approval === null || this.stopped()) {
+    if (reviewResult?.state === 'interrupted') {
+      settle({ state: 'held', draft: reviewResult.draft })
+      return
+    }
+    if (reviewResult === null) {
       settle({ state: 'held' })
       return
     }
-    const { text, claim } = approval
+    if (this.stopped()) {
+      settle({ state: 'held', draft: reviewResult.text })
+      return
+    }
+    const { text, claim } = reviewResult
     if (!text.trim() || text.length > 16_000)
       throw new Error('Reviewed steering notes must contain 1 to 16,000 characters.')
     this.pending.push({ snapshot, claim, item, text, settle, reject })
@@ -228,7 +243,7 @@ export class NativeSteeringSession {
         continue
       }
       if (this.stopped()) {
-        note.settle({ state: 'held' })
+        note.settle({ state: 'held', draft: note.text })
         continue
       }
       const originalLength = messages.length
@@ -244,7 +259,7 @@ export class NativeSteeringSession {
           note.claim,
         )
         if (!accepted) {
-          note.settle({ state: 'held' })
+          note.settle(this.stopped() ? { state: 'held', draft: note.text } : { state: 'held' })
           continue
         }
         await this.receipt(note.item.messageId, 'accepted')
@@ -275,7 +290,7 @@ export class NativeSteeringSession {
         try {
           await this.receipt(note.item.messageId, 'held')
         } finally {
-          note.settle({ state: 'held' })
+          note.settle({ state: 'held', draft: note.text })
         }
       }),
     )

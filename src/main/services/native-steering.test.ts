@@ -18,6 +18,7 @@ import {
   appendHookRun,
   freezeQueuedUserMessage,
   acceptReviewedQueuedUserMessage,
+  acceptExactReviewedUserMessage,
   deleteQueuedMessage,
   getThreadMeta,
   getProjectThread,
@@ -28,6 +29,11 @@ import {
   appendUserSteeringReceipt,
 } from './thread-store.ts'
 import {
+  consumeProtectedPromptMessageAppend,
+  hasProtectedPromptMessageAppend,
+  recordProtectedPromptMessageAppend,
+} from './protected-prompt-receipts.ts'
+import {
   NativeSteeringSession,
   bindNativeSteering,
   steerNativeParent,
@@ -35,6 +41,7 @@ import {
   type PreparedNativeSteeringNote,
   type NativeSteeringApproval,
 } from './native-steering.ts'
+import { ProtectedPromptReviewQueue } from '../windows/protected-prompt-review.ts'
 
 const review = async (note: { text: string }): Promise<NativeSteeringApproval> => ({
   text: note.text,
@@ -575,6 +582,49 @@ describe('native human steering boundary and durability', () => {
     }
   })
 
+  it('closes without waiting for an unrelated protected review ahead of queued steering', async () => {
+    await queue('queued-review-stop')
+    const reviewQueue = new ProtectedPromptReviewQueue()
+    const releaseUnrelated = Promise.withResolvers<undefined>()
+    const unrelatedOpened = Promise.withResolvers<undefined>()
+    const unrelated = reviewQueue.run(1, async () => {
+      unrelatedOpened.resolve(undefined)
+      await releaseUnrelated.promise
+      return 'unrelated'
+    })
+    await unrelatedOpened.promise
+
+    const steeringQueued = Promise.withResolvers<undefined>()
+    const delivery = session.enqueue('queued-review-stop', async (note) => {
+      steeringQueued.resolve(undefined)
+      return reviewQueue.run(
+        1,
+        async () => assert.fail('A stopped queued steering review must not open'),
+        { signal: note.signal, result: () => null },
+      )
+    })
+    await steeringQueued.promise
+
+    const closing = session.close()
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    try {
+      await Promise.race([
+        closing,
+        new Promise<never>((_resolve, reject) => {
+          timeout = setTimeout(() => {
+            reject(new Error('Stop waited for the unrelated protected review'))
+          }, 250)
+        }),
+      ])
+    } finally {
+      if (timeout) clearTimeout(timeout)
+      releaseUnrelated.resolve(undefined)
+      await unrelated
+      await closing
+    }
+    assert.deepEqual(await delivery, { state: 'held' })
+  })
+
   it('finishes the local checkpoint when Stop arrives immediately after durable edited acceptance', async () => {
     session = new NativeSteeringSession('p', 't', 'human-epoch', 'test-model', controller.signal, {
       freeze: freezeQueuedUserMessage,
@@ -758,11 +808,39 @@ describe('native human steering boundary and durability', () => {
         () => assert.fail(),
         prepare,
       )
-      assert.deepEqual(await delivery, { state: 'held' })
+      assert.deepEqual(await delivery, { state: 'held', draft: 'Late approval' })
       assert.deepEqual(await loadAgentHistory('p', 't'), [])
       await deleteQueuedMessage('p', 't', 'late-review')
     })
   }
+
+  it('returns an interrupted isolated-window edit as held without accepting it', async () => {
+    await queue('interrupted-review')
+    const opened = Promise.withResolvers<undefined>()
+    const delivery = session.enqueue('interrupted-review', async (note) => {
+      const interrupted = Promise.withResolvers<{
+        state: 'interrupted'
+        draft: string
+      }>()
+      note.signal.addEventListener(
+        'abort',
+        () => {
+          interrupted.resolve({ state: 'interrupted', draft: 'Keep the reviewed draft.' })
+        },
+        { once: true },
+      )
+      opened.resolve(undefined)
+      return interrupted.promise
+    })
+    await opened.promise
+    await session.close()
+    assert.deepEqual(await delivery, {
+      state: 'held',
+      draft: 'Keep the reviewed draft.',
+    })
+    assert.deepEqual(await loadAgentHistory('p', 't'), [])
+    assert.deepEqual(await loadUserSteeringReceipts('p', 't'), [])
+  })
 
   for (const mutation of ['retire', 'body', 'queue'] as const) {
     it(`rejects a frozen note after ${mutation} wins before acceptance`, async () => {
@@ -1007,15 +1085,17 @@ describe('native human steering boundary and durability', () => {
     })
   }
 
-  it('preserves original body and spine when Stop wins after the real edited-body write', async () => {
+  it('preserves the one-use receipt when Stop wins so Release accepts the original ID', async () => {
     await queue('body-stop')
+    const senderId = 73
+    recordProtectedPromptMessageAppend(senderId, 'p', 't', 'body-stop')
     const events = join(root, 'p', 't', 'events.jsonl')
     const body = join(root, 'p', 't', 'messages', 'body-stop.md')
     const originalSpine = readFileSync(events, 'utf8')
     const originalBody = readFileSync(body, 'utf8')
     const delivery = session.enqueue('body-stop', async (): Promise<NativeSteeringApproval> => ({
       text: 'Edited protected body',
-      claim: () => true,
+      claim: () => consumeProtectedPromptMessageAppend(senderId, 'p', 't', 'body-stop'),
     }))
     const realRename = fsPromises.rename
     let bodyWrites = 0
@@ -1058,24 +1138,54 @@ describe('native human steering boundary and durability', () => {
             },
           ),
       })
-      assert.deepEqual(await delivery, { state: 'held' })
+      assert.deepEqual(await delivery, { state: 'held', draft: 'Edited protected body' })
     } finally {
       restore()
     }
     assert.ok(bodyWrites > 0, 'Stop after the real body-file rename')
     closeThreadStoreIndexes()
     const reloaded = await getProjectThread('p', 't')
+    assert.ok(reloaded)
     assert.deepEqual(
       {
         spine: readFileSync(events, 'utf8'),
         body: readFileSync(body, 'utf8'),
-        loaded: reloaded !== null,
-        content: reloaded?.messages.find((m) => m.id === 'body-stop')?.content,
+        content: reloaded.messages.find((m) => m.id === 'body-stop')?.content,
       },
-      { spine: originalSpine, body: originalBody, loaded: true, content: 'Note body-stop' },
+      { spine: originalSpine, body: originalBody, content: 'Note body-stop' },
     )
     assert.deepEqual(messages, [])
-    assert.equal(reloaded?.pendingMessages?.[0]?.autoDispatch, false)
+    assert.equal(reloaded.pendingMessages?.[0]?.autoDispatch, false)
+    assert.equal(
+      hasProtectedPromptMessageAppend(senderId, 'p', 't', 'body-stop'),
+      true,
+      'Stop before atomic acceptance must not consume the Release proof',
+    )
+    const original = reloaded.messages.find((message) => message.id === 'body-stop')
+    assert.ok(original)
+    assert.equal(
+      await acceptExactReviewedUserMessage('p', 't', {
+        message: original,
+        claim: () => consumeProtectedPromptMessageAppend(senderId, 'p', 't', 'body-stop'),
+      }),
+      'body-stop',
+    )
+    assert.equal(hasProtectedPromptMessageAppend(senderId, 'p', 't', 'body-stop'), false)
+    closeThreadStoreIndexes()
+    const released = await getProjectThread('p', 't')
+    assert.deepEqual(
+      released?.messages.map((message) => message.id),
+      ['body-stop'],
+      'Release reuses the original bubble without a ghost replacement ID',
+    )
+    assert.deepEqual(
+      parseSpineEntries(readFileSync(events, 'utf8')).flatMap((entry) =>
+        entry.line?.type === 'user_message_lifecycle' && entry.line.state === 'accepted'
+          ? [entry.line.id]
+          : [],
+      ),
+      ['body-stop'],
+    )
   })
 
   it('never turns a retired frozen identity into a fresh accepted ID', async () => {

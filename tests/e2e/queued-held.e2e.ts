@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
   resetUserData,
+  seedEmptyProject,
   seedHeldQueueFixture,
   seedStableWorkspace,
   writeSeedConfig,
@@ -13,6 +14,7 @@ import { AA_BODY_TEXT, fillContrast } from './helpers/fill-contrast.ts'
 import { switchTheme } from './helpers/theme.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { acceptProtectedPrompt, setComposerValue, submitComposer } from './helpers/composer.ts'
+import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 const ROW_SELECTOR = '.conversation-queued .msg-held .message-queued-actions'
@@ -27,14 +29,24 @@ const ROW_SELECTOR = '.conversation-queued .msg-held .message-queued-actions'
 
 describe('held hook message in the queue', function () {
   this.timeout(90_000)
+  let ownedWorkspaceRoot: string | null = null
+
+  function seedHeldQueueWorkspace(): string {
+    ownedWorkspaceRoot = seedStableWorkspace()
+    return ownedWorkspaceRoot
+  }
 
   afterEach(() => {
     resetUserData()
+    if (ownedWorkspaceRoot !== null) {
+      removeE2eTree(ownedWorkspaceRoot)
+      ownedWorkspaceRoot = null
+    }
   })
 
   it('renders a held badge + Release action and captures a screenshot', async function () {
     resetUserData()
-    seedHeldQueueFixture(process.cwd())
+    seedHeldQueueFixture(seedHeldQueueWorkspace())
     await browser.reloadSession()
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
@@ -121,7 +133,7 @@ describe('held hook message in the queue', function () {
 
   it('keeps the HELD badge and Release labels readable in both themes, hovered too', async function () {
     resetUserData()
-    seedHeldQueueFixture(process.cwd())
+    seedHeldQueueFixture(seedHeldQueueWorkspace())
     await browser.reloadSession()
     await $('.conversation-queued .msg-queued.msg-held').waitForExist({ timeout: 30_000 })
 
@@ -152,6 +164,102 @@ describe('held hook message in the queue', function () {
     }
   })
 
+  it('repaints a released user row with the reviewed canonical prompt while running', async () => {
+    resetUserData()
+    const projectId = 'e2e-reviewed-release'
+    const first = 'Inspect the lifecycle API before the follow-up.'
+    const original = 'Preserve the lifecycle API draft.'
+    const reviewed = 'Keep the API stable after explicit follow-up.'
+    const reply = 'The API review is complete.'
+    seedEmptyProject(seedHeldQueueWorkspace(), projectId, {
+      model: 'claude-sonnet-4-6',
+      subagentsEnabled: false,
+    })
+    await browser.reloadSession()
+    const scenario = await installMockScenario({
+      title: 'Reviewed release display',
+      turns: [
+        {
+          user: first,
+          allowAbort: true,
+          responses: [{ waitFor: 'first-turn', text: 'The initial inspection is complete.' }],
+        },
+        {
+          user: reviewed,
+          responses: [{ waitFor: 'reviewed-row', text: reply }],
+        },
+      ],
+    })
+    try {
+      await setComposerValue(first)
+      await submitComposer()
+      await scenario.waitForHold('first-turn')
+      await setComposerValue(original)
+      await submitComposer()
+      await expect($('.conversation-queued .message-text')).toHaveText(original)
+
+      // Cancel the first protected review so Main holds this real renderer-
+      // appended message. Releasing it below exercises the supported path with
+      // the append receipt needed to preserve its identity.
+      const mainHandle = await browser.getWindowHandle()
+      const handlesBefore = await browser.getWindowHandles()
+      await $('.conversation-queued .queued-send-now').click()
+      await browser.waitUntil(
+        async () =>
+          (await browser.getWindowHandles()).some((handle) => !handlesBefore.includes(handle)),
+        { timeout: 15_000, timeoutMsg: 'Protected prompt window did not open for Send now' },
+      )
+      const cancelledHandle = (await browser.getWindowHandles()).find(
+        (handle) => !handlesBefore.includes(handle),
+      )
+      if (!cancelledHandle) throw new Error('Protected prompt window handle is missing')
+      await browser.switchToWindow(cancelledHandle)
+      await $('#protected-prompt-cancel').click()
+      await browser.waitUntil(
+        async () => !(await browser.getWindowHandles()).includes(cancelledHandle),
+        { timeout: 15_000, timeoutMsg: 'Protected prompt window did not close after cancelling' },
+      )
+      await browser.switchToWindow(mainHandle)
+      await $('.conversation-queued .msg-held .queued-release').waitForDisplayed({
+        timeout: 15_000,
+      })
+
+      const releaseHandles = await browser.getWindowHandles()
+      await $('.conversation-queued .msg-held .queued-release').click()
+      await browser.waitUntil(
+        async () =>
+          (await browser.getWindowHandles()).some((handle) => !releaseHandles.includes(handle)),
+        { timeout: 15_000, timeoutMsg: 'Protected prompt window did not open after Release' },
+      )
+      const protectedHandle = (await browser.getWindowHandles()).find(
+        (handle) => !releaseHandles.includes(handle),
+      )
+      if (!protectedHandle) throw new Error('Protected prompt window handle is missing')
+      await browser.switchToWindow(protectedHandle)
+      await expect($('#protected-prompt-text')).toHaveValue(original)
+      await $('#protected-prompt-text').setValue(reviewed)
+      await $('#protected-prompt-send').click()
+      await browser.waitUntil(
+        async () => !(await browser.getWindowHandles()).includes(protectedHandle),
+        { timeout: 15_000, timeoutMsg: 'Protected prompt window did not close after sending' },
+      )
+      await browser.switchToWindow(mainHandle)
+      const userMessages = await $$('.messages-list .msg-user .message-text').getElements()
+      const releasedMessage = userMessages.at(-1)
+      if (!releasedMessage) throw new Error('Released user message is missing')
+      await expect(releasedMessage).toHaveText(reviewed)
+      await expect(releasedMessage).not.toHaveText(original)
+      await expect($('.conversation-queued .msg-queued')).not.toBeExisting()
+      await saveElementScreenshot('.messages-list', 'queued-reviewed-canonical-row.png')
+      await scenario.release('reviewed-row')
+      await expectAssistantReply(reply)
+      await scenario.assertComplete()
+    } finally {
+      await scenario.release('first-turn')
+      await scenario.release('reviewed-row')
+    }
+  })
+
   it('holds an already queued hook when human Send now starts another task', async () => {
     resetUserData()
     const projectId = 'e2e-queue-task-boundary'
@@ -164,7 +272,7 @@ describe('held hook message in the queue', function () {
     writeSeedConfig({
       projects: [
         { id: 'queue-fixture-lobby', path: process.cwd(), name: 'Copse' },
-        { id: projectId, path: seedStableWorkspace(), name: 'workspace' },
+        { id: projectId, path: seedHeldQueueWorkspace(), name: 'workspace' },
       ],
       // Recovery intentionally clears saved queue pauses. Keep this project
       // unopened until its scoped model hold is installed instead.

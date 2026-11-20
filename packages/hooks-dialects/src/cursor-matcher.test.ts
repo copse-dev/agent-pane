@@ -267,6 +267,15 @@ describe('Cursor per-event matcher semantics (D3)', () => {
     )
   })
 
+  it('afterFileEdit glob matches the workspace-relative path under a two-dot directory', async () => {
+    // `..gen` is inside the workspace, so its relative spelling is a candidate;
+    // a `startsWith('..')` test dropped it and the glob never fired.
+    await writeUserHooks({ hooks: { afterFileEdit: [{ command: './fmt.sh', glob: '..gen/**' }] } })
+    const opts = { workspaceRoot: '/repo', projectTrusted: false }
+    assert.equal((await cursorAfterFileEditHooks({ filePath: '/repo/..gen/a.ts' }, opts)).length, 1)
+    assert.equal((await cursorAfterFileEditHooks({ filePath: '/..gen/a.ts' }, opts)).length, 0)
+  })
+
   // --- defaults + invalid-matcher behavior ---
 
   it('a hook with no matcher fires for every action (Cursor default)', async () => {

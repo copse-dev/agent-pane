@@ -2,17 +2,43 @@ import type { ToolCall } from '@shared/types'
 import { isRecord } from '@shared/unknown-value.ts'
 
 /**
+ * The server names Copse's bridge has had: `copse` in threads recorded before
+ * #4125, and `copse-<nonce>` since. Mirrors `BRIDGE_SERVER_NAME_PATTERN` in
+ * `acp-bridge-name.ts`, which shared code cannot import; a test there keeps
+ * the two in step.
+ */
+const COPSE_SERVER = 'copse(?:-[a-z0-9]{8})?'
+const COPSE_SERVER_NAME = new RegExp(`^${COPSE_SERVER}$`, 'i')
+const COPSE_WRAPPED_TOOL = new RegExp(
+  `^(?:mcp[^a-z0-9]+)?${COPSE_SERVER}[^a-z0-9]+([a-z][a-z0-9_.-]*)`,
+  'i',
+)
+
+/**
+ * Whether `server` names Copse's bridge in an MCP dispatch envelope
+ * (`{ server, tool, arguments }`, as Codex ACP records it): the bare `copse` of
+ * threads recorded before #4125, or a `copse-<nonce>` name since. Exact case:
+ * the envelope carries the mounted name verbatim, and Copse mounts it in lower
+ * case, so `COPSE` is some other server.
+ */
+export function isCopseServerName(server: unknown): boolean {
+  return typeof server === 'string' && ENVELOPE_SERVER_NAME.test(server)
+}
+const ENVELOPE_SERVER_NAME = new RegExp(`^${COPSE_SERVER}$`)
+
+/**
  * Display/behavior identity only; never rewrite the persisted execution name.
- * ACP clients flatten Copse's "copse" MCP server into different names
- * (`mcp__copse__tool`, `copse.tool`, `copse-tool: <title>`, ...), so this
- * treats any run of non-alphanumeric characters as an acceptable separator
- * and only anchors the tool name at the start.
+ * ACP clients flatten Copse's MCP server into different names
+ * (`mcp__copse-k3v9x2mq__tool`, `copse.tool`, `copse-tool: <title>`, ...), so
+ * this treats any run of non-alphanumeric characters as an acceptable
+ * separator and only anchors the tool name at the start. It says what a row
+ * looks like, never whether the call reached Copse's bridge.
  */
 export function normalizeCopseToolName(name: string): string {
   // A dotted server alias (e.g. `copse.git`) is a separate MCP server.
   const server = /^mcp__([\w.-]+?)__/i.exec(name)?.[1]
-  if (server && server.toLowerCase() !== 'copse') return name
-  const match = /^(?:mcp[^a-z0-9]+)?copse[^a-z0-9]+([a-z][a-z0-9_.-]*)/i.exec(name)
+  if (server && !COPSE_SERVER_NAME.test(server)) return name
+  const match = COPSE_WRAPPED_TOOL.exec(name)
   return match?.[1]?.toLowerCase() ?? name
 }
 

@@ -3577,7 +3577,9 @@ describe('input bar thread mentions', () => {
     const message = getThreadById(store, first.id)?.messages[0]
     assert.ok(message)
     assert.equal(message.content, `From ${CHIP_CHAR} please compare`)
-    assert.deepEqual(message.attachments, [{ kind: 'thread', label: 'Auth refactor' }])
+    assert.deepEqual(message.attachments, [
+      { kind: 'thread', label: 'Auth refactor', placement: 'inline' },
+    ])
   })
 })
 

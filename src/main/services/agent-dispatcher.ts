@@ -8,6 +8,7 @@ import type {
   MachineDispatchResult,
   MachineTurnDisplay,
   StreamChunk,
+  TranscriptAttachment,
   UserContent,
 } from '@shared/types'
 import {
@@ -86,6 +87,8 @@ export interface AgentDispatchRequest {
     content: UserContent
     /** Keep a verified optimistic bubble when isolated review made no text edit. */
     preserveOptimisticDisplay?: true
+    /** Display snapshots retained only after Main verifies that optimistic bubble. */
+    attachments?: TranscriptAttachment[]
     /** Persist acceptance and claim display reconciliation after this dispatcher owns the thread. */
     acceptMessageId: () => Promise<string>
   }
@@ -99,6 +102,8 @@ export interface MachineAgentDispatchRequest extends AgentDispatchRequest {
   operationId: string
   turnTreeId: string
   display?: MachineTurnDisplay | 'hidden'
+  /** Main reviewed the exact machine prompt before this dispatch. */
+  canonicalPrompt?: true
   /**
    * Checked once the thread is claimed: true when the agent already saw what
    * this wake would report, so it is recorded without a turn or budget charge.
@@ -318,8 +323,17 @@ export class AgentDispatcher {
         type: 'protected_human_turn_start',
         content: request.protectedHumanStart.content,
         messageId,
+        promptRepresentation: 'canonical-provider',
         ...(request.protectedHumanStart.preserveOptimisticDisplay === true
           ? { preserveOptimisticDisplay: true as const }
+          : {}),
+        ...(request.protectedHumanStart.preserveOptimisticDisplay === true &&
+        request.protectedHumanStart.attachments !== undefined
+          ? {
+              attachments: request.protectedHumanStart.attachments.map((attachment) => ({
+                ...attachment,
+              })),
+            }
           : {}),
       })
     }
@@ -668,6 +682,9 @@ export class AgentDispatcher {
         ...(hidden ? { hidden: true as const } : {}),
         content: display?.content ?? request.payload.userContent,
         origin: { kind: 'machine', operationId: request.operationId },
+        ...(request.canonicalPrompt === true
+          ? { promptRepresentation: 'canonical-provider' as const }
+          : {}),
         ...(display?.attachments ? { attachments: display.attachments } : {}),
         ...(display?.startingCommit !== undefined
           ? { startingCommit: display.startingCommit }

@@ -27,6 +27,7 @@ import { setSetting } from '../storage/settings.ts'
 import { AppleAppDriver } from './apple-app-driver.ts'
 import { AndroidAppDriver } from './android-app-driver.ts'
 import type { AppRunDriver, AppRunProgress } from './app-run-driver.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 const STORE = 'app-run.state'
 const schema = z.object({
@@ -324,7 +325,7 @@ export class AppRunService {
         try {
           await this.present(result.desktopId, owner)
         } catch (error) {
-          entry.operation.logs += `\nApp launched, but Desktop could not open: ${error instanceof Error ? error.message : String(error)}`
+          entry.operation.logs += `\nApp launched, but Desktop could not open: ${errorMessage(error)}`
         }
       }
     })
@@ -337,7 +338,7 @@ export class AppRunService {
       await run()
     } catch (error) {
       entry.operation.stage = entry.controller.signal.aborted ? 'cancelled' : 'failed'
-      entry.operation.error = error instanceof Error ? error.message : String(error)
+      entry.operation.error = errorMessage(error)
     } finally {
       entry.operation.updatedAt = Date.now()
       await this.save(entry.operation).catch(() => {})

@@ -14,14 +14,15 @@ import {
   realpathSync,
   writeFileSync,
 } from 'node:fs'
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, join, relative, resolve, sep } from 'node:path'
+import { relativeWithin } from '@copse/std/path-containment.ts'
 
 /** Resolve an existing path, rejecting traversal and symlinks below the checkout. */
 export function jailPath(root: string, path: string): string {
   const absRoot = realpathSync(root)
   const target = resolve(absRoot, path || '.')
-  const rel = relative(absRoot, target)
-  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+  const rel = relativeWithin(absRoot, target)
+  if (rel === null) {
     throw new Error(`Path is outside the change under review: ${path}`)
   }
   let current = absRoot
@@ -85,8 +86,8 @@ export function readCheckoutBytes(root: string, path: string): Buffer {
 /** Create parents individually, checking each before descending into it. */
 export function writeCheckoutFile(root: string, path: string, content: string): string {
   const absRoot = jailPath(root, '.')
-  const rel = relative(absRoot, resolve(absRoot, path))
-  if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+  const rel = relativeWithin(absRoot, resolve(absRoot, path))
+  if (!rel) {
     throw new Error(`Path is outside the change under review: ${path}`)
   }
   let parent = absRoot

@@ -55,7 +55,7 @@ describe('resolveCustomAgentTools', () => {
     }
   })
   it('cannot overwrite the parent plan, even through an explicit allow-list', () => {
-    for (const parentTool of ['update_thread_plan', 'report_plan_completion']) {
+    for (const parentTool of ['update_thread_plan', 'report_plan_completion', 'update_todos']) {
       assert.deepEqual(
         names(
           resolveCustomAgentTools(tools('read_file', parentTool), {
@@ -63,6 +63,17 @@ describe('resolveCustomAgentTools', () => {
             disallowedTools: [],
           }),
         ),
+        ['read_file'],
+      )
+    }
+  })
+
+  it('cannot orchestrate threads or outlive its budget, inherited or named', () => {
+    const parentOnly = ['subthreads', 'send_thread_prompt', 'run_background', 'track_long_task']
+    const available = tools('read_file', ...parentOnly)
+    for (const allowed of [null, ['read_file', ...parentOnly]]) {
+      assert.deepEqual(
+        names(resolveCustomAgentTools(available, { tools: allowed, disallowedTools: [] })),
         ['read_file'],
       )
     }

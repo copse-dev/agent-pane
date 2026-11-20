@@ -14,8 +14,23 @@ import {
 } from './thread-store.ts'
 import { forkThreadHistory, rebuildAgentHistory } from './thread-fork.ts'
 
-function userMsg(id: string, content: string, images?: string[]): Message {
-  return { id, role: 'user', content, toolCalls: [], createdAt: 1, ...(images ? { images } : {}) }
+function userMsg(
+  id: string,
+  content: string,
+  images?: string[],
+  attachments?: Message['attachments'],
+  promptRepresentation?: Message['promptRepresentation'],
+): Message {
+  return {
+    id,
+    role: 'user',
+    content,
+    toolCalls: [],
+    createdAt: 1,
+    ...(images ? { images } : {}),
+    ...(attachments ? { attachments } : {}),
+    ...(promptRepresentation ? { promptRepresentation } : {}),
+  }
 }
 
 function assistantMsg(id: string, content: string, toolCalls: Message['toolCalls'] = []): Message {
@@ -148,6 +163,38 @@ describe('rebuildAgentHistory', () => {
   it('drops the paste placeholders whose expanded blocks were never stored', () => {
     const history = rebuildAgentHistory([userMsg('u1', 'Explain ￼ please')])
     assert.deepEqual(history, [{ role: 'user', content: 'Explain please' }])
+  })
+
+  it('preserves exact reviewed provider bytes when rebuilding protected history', () => {
+    const pasteBytes = 'before ￼  after\nkept exactly'
+    const canonical = `  Review this  \n\n\`\`\`\n// pasted log\n${pasteBytes}\n\`\`\`\n`
+    const history = rebuildAgentHistory([
+      userMsg(
+        'u1',
+        canonical,
+        undefined,
+        [
+          {
+            kind: 'paste',
+            label: 'pasted log',
+            content: pasteBytes,
+            placement: 'inline',
+          },
+        ],
+        'canonical-provider',
+      ),
+    ])
+
+    assert.deepEqual(history, [{ role: 'user', content: canonical }])
+  })
+
+  it('preserves exact zero-chip canonical bytes when rebuilding fork history', () => {
+    const exact = '  Keep literal \uFFFC in the note.  \n\n'
+    const history = rebuildAgentHistory([
+      userMsg('canonical-note', exact, undefined, undefined, 'canonical-provider'),
+    ])
+
+    assert.deepEqual(history, [{ role: 'user', content: exact }])
   })
 
   it('skips error notes and empty assistant turns — neither was ever sent upstream', () => {

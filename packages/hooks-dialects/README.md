@@ -8,7 +8,7 @@ and `src/shared/` into an in-repo workspace package — the same staging step
 `@copse/llm`, `@copse/agent`, `@copse/plan-usage`, `@copse/std`, `@copse/shell-guard`,
 and `@copse/thread-store` took. About 6,000 LOC plus tests. Runtime dependencies:
 `@copse/agent` (canonical events, executor contract, outcome vocabulary),
-`@copse/std`, `micromatch`, `zod`. No host-app imports.
+`@copse/std`, `picomatch`, `zod`. No host-app imports.
 
 The design source of truth is `docs/plans/hooks-and-feature-packs.md` (decision 25
 records this package; execution-guidance rule 4 names the layout). The landed

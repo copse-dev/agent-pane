@@ -186,4 +186,90 @@ describe('protected prompt entry', () => {
     await expect($('.msg-user .message-text')).not.toHaveText(FORGED)
     await scenario.assertComplete()
   })
+
+  it('holds a machine prompt until the current protected review is settled', async () => {
+    const first = 'Review the first renderer message.'
+    const machine = 'Continue after the native command completed.'
+    const mainHandle = (await browser.getWindowHandles())[0]
+    if (!mainHandle) throw new Error('Main window handle is missing')
+
+    await browser.execute(
+      ({ projectId, threadId, payload }) => {
+        void window.api.agent.run(projectId, threadId, payload)
+      },
+      {
+        projectId: PROJECT,
+        threadId: THREAD,
+        payload: JSON.stringify({ content: first }),
+      },
+    )
+    await browser.waitUntil(async () => (await browser.getWindowHandles()).length === 2, {
+      timeout: 15_000,
+      timeoutMsg: 'First protected prompt window did not open',
+    })
+    const firstProtectedHandle = (await browser.getWindowHandles()).find(
+      (handle) => handle !== mainHandle,
+    )
+    if (!firstProtectedHandle) throw new Error('First protected prompt window handle is missing')
+
+    await browser.switchToWindow(mainHandle)
+    await browser.execute(
+      ({ projectId, threadId, content }) => {
+        void window.api.agent
+          .runMachine({
+            projectId,
+            threadId,
+            operationId: 'queued-machine-operation',
+            turnTreeId: 'queued-machine-tree',
+            payload: JSON.stringify({ content }),
+            display: { content },
+          })
+          .then((result) => {
+            sessionStorage.setItem('queued-machine-result', result)
+          })
+          .catch((error: unknown) => {
+            sessionStorage.setItem(
+              'queued-machine-result',
+              error instanceof Error ? `error:${error.message}` : 'error:unknown',
+            )
+          })
+      },
+      { projectId: PROJECT, threadId: THREAD, content: machine },
+    )
+    expect(await browser.getWindowHandles()).toEqual(
+      expect.arrayContaining([mainHandle, firstProtectedHandle]),
+    )
+
+    await browser.switchToWindow(firstProtectedHandle)
+    await expect($('#protected-prompt-text')).toHaveValue(first)
+    await $('#protected-prompt-cancel').click()
+    await browser.waitUntil(
+      async () =>
+        (await browser.getWindowHandles()).some(
+          (handle) => handle !== mainHandle && handle !== firstProtectedHandle,
+        ),
+      { timeout: 15_000, timeoutMsg: 'Queued machine protected prompt did not open' },
+    )
+    const machineProtectedHandle = (await browser.getWindowHandles()).find(
+      (handle) => handle !== mainHandle && handle !== firstProtectedHandle,
+    )
+    if (!machineProtectedHandle)
+      throw new Error('Machine protected prompt window handle is missing')
+    await browser.switchToWindow(machineProtectedHandle)
+    await expect($('#protected-prompt-text')).toHaveValue(machine)
+    await $('#protected-prompt-cancel').click()
+    await browser.waitUntil(async () => (await browser.getWindowHandles()).length === 1, {
+      timeout: 15_000,
+      timeoutMsg: 'Machine protected prompt window did not close after cancellation',
+    })
+    await browser.switchToWindow(mainHandle)
+    await browser.waitUntil(
+      async () =>
+        (await browser.execute(() => sessionStorage.getItem('queued-machine-result'))) !== null,
+      { timeout: 15_000, timeoutMsg: 'Machine cancellation result was not returned to the caller' },
+    )
+    expect(await browser.execute(() => sessionStorage.getItem('queued-machine-result'))).toBe(
+      'cancelled',
+    )
+  })
 })

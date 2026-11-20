@@ -170,7 +170,8 @@ aliases, external `git-*` commands and executable config overrides are refused;
 the shared snapshot builder can supply only `user.name` and `user.email` overrides.
 
 Execution-time overrides disable fsmonitor (GitSpawn), hooks, automatic maintenance,
-submodule recursion, signing and signature display. Diff/log/show request raw output
+submodule recursion, signing, signature display and the alternate-refs command that
+fetch and push would otherwise run for an alternate object store. Diff/log/show request raw output
 without external diff or textconv. Included and worktree configuration cannot undo
 these overrides. Inherited Git config/executable injection is removed. Implicit
 partial-clone fetches are disabled. Explicit fetch/push retain their existing caller
@@ -178,6 +179,21 @@ authorization and only built-in HTTP(S), SSH and file transports are enabled. Th
 `clone` is the worktree manager's local submodule copy: no checkout, no templates, no
 option that names a program, and the `file` transport alone.
 Configuration inspection reads real values without invoking the configured helpers.
+
+Container-run carry-in, carry-out and adoption, and the hosted (OpenAI) source
+transfer and import, run on the host checkout outside the project sandbox. They use
+the same policy through one runner (`security/internal-git-exec.ts`), which also
+limits every command, `fetch` included, to the `file` transport: these operations
+read bundles and sibling checkouts, so a checkout's `url.<base>.insteadOf` cannot
+turn a bundle path into an SSH remote that runs its `core.sshCommand`. Missing
+objects are never fetched on demand, so a partial clone whose history is not fully
+downloaded cannot start a run: carry-in reports that and asks for `git backfill` or a
+full clone. Adoption's
+`cherry-pick` is admitted only as `--no-edit` with full SHAs (no merge strategy
+program), so the checkout's hooks and signer do not run and adopted commits are
+unsigned. It is app plumbing, not the gated `git_commit` profile. Guest-side Git
+(`worker-main.ts`, the hosted workers) runs on repositories the guest created, beside
+an agent that can already run any program there, so it keeps its own wrappers.
 
 Worktree bookkeeping uses the available project sandbox, with grants for Git
 administration, the selected destination and temporary indexes. Metadata and checkout
@@ -320,9 +336,9 @@ and platforms without socket-level confinement get no scoped escalation. They ke
 ordinary project access; deliberate host execution remains a separate shell approval.
 
 This is not a general allowlist of every Git configuration key or helper. Content
-filters such as Git LFS retain Git's normal conversion semantics and rely on the
-available sandbox; automatic Git without OS containment still has that residual
-risk. Silently bypassing filters would corrupt committed/restored content. Background
+filters such as Git LFS, and merge drivers for internal `switch` and `cherry-pick`,
+retain Git's normal semantics and rely on the available sandbox; automatic Git
+without OS containment still has that residual risk. Silently bypassing filters would corrupt committed/restored content. Background
 operations do not acquire helper grants from repository-supplied configuration.
 
 Regression tests cover hostile fsmonitor, included config, diff/textconv, hooks and

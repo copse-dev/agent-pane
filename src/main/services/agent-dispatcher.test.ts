@@ -806,6 +806,15 @@ describe('AgentDispatcher', () => {
         protectedHumanStart: {
           content: 'reviewed prompt',
           preserveOptimisticDisplay: true,
+          attachments: [
+            {
+              kind: 'paste',
+              placement: 'inline',
+              label: 'Reviewed notes',
+              content: 'exact snapshot',
+              projection: 'canonical-block',
+            },
+          ],
           acceptMessageId: async () => {
             order.push('accept:start')
             await acceptance
@@ -832,7 +841,17 @@ describe('AgentDispatcher', () => {
         type: 'protected_human_turn_start',
         content: 'reviewed prompt',
         messageId: 'accepted-message',
+        promptRepresentation: 'canonical-provider',
         preserveOptimisticDisplay: true,
+        attachments: [
+          {
+            kind: 'paste',
+            placement: 'inline',
+            label: 'Reviewed notes',
+            content: 'exact snapshot',
+            projection: 'canonical-block',
+          },
+        ],
       },
     ])
   })
@@ -1705,6 +1724,7 @@ describe('AgentDispatcher', () => {
         ...request(),
         operationId: 'git-recovery:1',
         turnTreeId: 'tree-1',
+        canonicalPrompt: true,
         payload: {
           userContent: 'Continue with the attached shell result:\n```\nprivate output\n```',
           invokedSkills: [],
@@ -1729,6 +1749,7 @@ describe('AgentDispatcher', () => {
       type: 'machine_turn_start',
       content: 'Continue after the Git recovery command completed.',
       origin: { kind: 'machine', operationId: 'git-recovery:1' },
+      promptRepresentation: 'canonical-provider',
       attachments: [
         { kind: 'shell', label: 'Run · git rebase --continue', content: 'private output' },
       ],

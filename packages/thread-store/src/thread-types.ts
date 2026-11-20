@@ -632,6 +632,14 @@ export interface ThreadCatalogHit extends ThreadCatalogEntry {
 export interface TranscriptAttachment {
   kind: 'paste' | 'file' | 'thread' | 'shell' | 'video' | 'archive'
   label: string
+  /** The composer placed this paste/thread chip at an exact text position. */
+  placement?: 'inline'
+  /**
+   * Main verified that this paste snapshot is represented by its exact
+   * generated block in canonical protected prompt content. Display-only;
+   * renderer IPC cannot set it.
+   */
+  projection?: 'canonical-block' | 'canonical-thread-label'
   /**
    * Exact text snapshot represented by a text-like chip. Persisted out-of-line
    * in the thread store so the sent attachment remains inspectable even when a
@@ -652,6 +660,8 @@ export interface Message {
   id: string
   role: 'user' | 'assistant' | 'error'
   content: string // accumulated text (appended during streaming)
+  /** Main accepted `content` as the exact validated bytes before dispatch policy. */
+  promptRepresentation?: 'canonical-provider'
   /** Display-only attachment chips for user messages (see {@link TranscriptAttachment}). */
   attachments?: TranscriptAttachment[]
   /**

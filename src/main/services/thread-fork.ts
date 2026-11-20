@@ -7,7 +7,7 @@ import type {
   UserContent,
 } from '@shared/types'
 import { isDeepStrictEqual } from 'node:util'
-import { stripPastePlaceholders } from '@shared/threads/prompt-placeholders.ts'
+import { replayPromptText } from '@shared/threads/prompt-placeholders.ts'
 import { explicitAgentForMessage } from '@shared/threads/explicit-agent.ts'
 import { buildForkedThread } from '@shared/store/fork-thread.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
@@ -60,9 +60,10 @@ function toolResultsOf(message: Message): ToolResult[] {
 }
 
 function userContentOf(message: Message): UserContent {
-  // The stored prompt keeps inline pastes as U+FFFC placeholders; the pasted
-  // text only ever existed in the run payload, so the placeholders go too.
-  const text = stripPastePlaceholders(message.content)
+  // Legacy stored prompts keep optimistic U+FFFC placeholders whose expanded
+  // bytes never reached the transcript. Protected prompts instead store exact
+  // reviewed provider content and must replay it byte-for-byte.
+  const text = replayPromptText(message.content, message.attachments, message.promptRepresentation)
   const images = message.images ?? []
   if (images.length === 0) return text
   return [

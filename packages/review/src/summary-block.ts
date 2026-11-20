@@ -4,7 +4,7 @@
 // before the description reaches a reviewer, so the review never reads its own
 // summary as the author's intent.
 
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 
 export const START_MARKER = '<!-- copse-review-summary -->'
 export const END_MARKER = '<!-- /copse-review-summary -->'
@@ -15,7 +15,7 @@ export const END_MARKER = '<!-- /copse-review-summary -->'
  * the digest, so the block becomes theirs.
  */
 export function digestLine(body: readonly string[]): string {
-  const digest = createHash('sha256').update(body.join('\n')).digest('hex').slice(0, 16)
+  const digest = sha256Hex(body.join('\n')).slice(0, 16)
   return `<!-- copse-review-summary-digest:${digest} -->`
 }
 

@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@copse/std/sha256.ts'
 import * as fsp from 'node:fs/promises'
 import { join } from 'node:path'
 import { pluginSdkEnvironment } from './environment.ts'
@@ -19,7 +19,7 @@ function snapshotRoot(): string {
 }
 
 function pluginDirectoryName(pluginId: string): string {
-  return createHash('sha256').update(pluginId).digest('hex').slice(0, 24)
+  return sha256Hex(pluginId).slice(0, 24)
 }
 
 async function copyReviewedTree(source: string, destination: string): Promise<void> {

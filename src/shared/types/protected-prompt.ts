@@ -21,8 +21,11 @@ export interface ProtectedPromptSeed {
 }
 
 export interface ProtectedPromptSubmission {
+  kind?: never
   text: string
 }
+
+export type NativeSteeringResult = { state: 'applied' } | { state: 'held'; draft?: string }
 
 /** Renderer hint used only to reconcile the already-visible optimistic bubble. */
 export interface ProtectedHumanTurnDisplay {

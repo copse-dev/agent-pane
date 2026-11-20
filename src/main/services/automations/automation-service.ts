@@ -63,6 +63,7 @@ import {
   type SupervisedTaskHandler,
 } from '../supervisor/task-supervisor.ts'
 import type { SupervisedTaskMeta } from '@shared/supervisor/task-schema.ts'
+import { errorMessage } from '@shared/errors.ts'
 
 const STORAGE_KEY = `plugin.${AUTOMATIONS_PLUGIN_ID}.storage`
 const SCHEDULER_HANDLER = 'automation_scheduler_tick'
@@ -517,7 +518,7 @@ export function createAutomationService(
   }
 
   async function logTriggerFailure(schedule: AutomationSchedule, error: unknown): Promise<void> {
-    const message = error instanceof Error ? error.message : String(error)
+    const message = errorMessage(error)
     console.error(`[automations] Failed to create task for “${schedule.name}”: ${message}`)
     await recordProblem(schedule, {
       at: dependencies.now(),
@@ -712,10 +713,7 @@ export function createAutomationService(
       recoveryTimer = null
       void ensureSupervisorTask().catch((error: unknown) => {
         console.error('[automations] Scheduler recovery failed:', error)
-        setHealth(
-          'stopped',
-          `Scheduled triggers are not firing: ${error instanceof Error ? error.message : String(error)}`,
-        )
+        setHealth('stopped', `Scheduled triggers are not firing: ${errorMessage(error)}`)
       })
     }, dependencies.recoveryDelayMs ?? SCHEDULER_RECOVERY_DELAY_MS)
     recoveryTimer.unref()
@@ -773,7 +771,7 @@ export function createAutomationService(
           current.automation.triggeredAt !== automation.triggeredAt
         )
           return
-        const message = error instanceof Error ? error.message : String(error)
+        const message = errorMessage(error)
         await updateMetaOrThrow(projectId, threadId, {
           automation: { ...automation, startFailedAt: dependencies.now() },
         })

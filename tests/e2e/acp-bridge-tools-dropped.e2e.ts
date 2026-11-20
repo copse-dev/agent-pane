@@ -32,13 +32,39 @@ function renderedNotice(): string {
     .replaceAll('**', '')
 }
 
+const assistantCount = (): Promise<number> =>
+  browser.execute(() => document.querySelectorAll('.messages-list .msg-assistant').length)
+
+/**
+ * Send a prompt and wait until the fixture's reply has finished painting. The
+ * user bubble already holds the reply text, and the reply keeps revealing
+ * after the turn ends, so neither the list's text nor an idle composer means
+ * the reply is complete. Wait for a new assistant bubble whose last paragraph
+ * is exactly the reply, with no message still mid-reveal.
+ */
 async function send(prompt: string, reply: string): Promise<void> {
+  const before = await assistantCount()
   await setComposerValue(prompt)
   await submitComposer()
-  await browser.waitUntil(async () => (await $('.messages-list').getText()).includes(reply), {
-    timeout: 30_000,
-    timeoutMsg: `the fixture agent did not answer "${reply}"`,
-  })
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        (expected, previous) => {
+          const replies = document.querySelectorAll('.messages-list .msg-assistant')
+          if (replies.length <= previous) return false
+          if (document.querySelector('.messages-list .is-streaming')) return false
+          const paragraphs = replies.item(replies.length - 1).querySelectorAll('.message-text p')
+          return [...paragraphs].at(-1)?.textContent === expected
+        },
+        reply,
+        before,
+      ),
+    {
+      timeout: 30_000,
+      interval: 100,
+      timeoutMsg: `the fixture agent's reply "${reply}" did not finish painting`,
+    },
+  )
   await waitForAgentIdle(15_000)
 }
 
@@ -89,14 +115,30 @@ describe('ACP agent that dropped the tools it listed', function () {
         [...reply.querySelectorAll('.message-text p')].map((p) => p.textContent),
       ),
     )
+    // The bridge is mounted under a fresh `copse-<nonce>` name each session (#4125).
+    const named = replies.map((reply) =>
+      reply.map((text) => text.replace(/copse-[a-z0-9]{8}/g, 'copse-<nonce>')),
+    )
     // The agent's own failed call, then Copse's notice ahead of the reply; the
     // next turn does not repeat it.
-    expect(replies).toEqual([
-      ['<tool_use_error>Error: No such tool available: mcp__copse__read_file</tool_use_error>'],
+    expect(named).toEqual([
+      [
+        '<tool_use_error>Error: No such tool available: mcp__copse-<nonce>__read_file</tool_use_error>',
+      ],
       [renderedNotice(), 'Read the README with my own tools.'],
       ['Listed the files with my own shell.'],
     ])
 
+    // Hold the random nonce still so the capture is the same on every run.
+    await browser.execute(() => {
+      const walker = document.createTreeWalker(
+        document.querySelector('.messages-list') ?? document.body,
+        NodeFilter.SHOW_TEXT,
+      )
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        node.textContent = (node.textContent ?? '').replace(/copse-[a-z0-9]{8}/g, 'copse-xxxxxxxx')
+      }
+    })
     await waitForImagesSettled('.messages-list')
     await parkPointer()
     await saveElementScreenshot('.messages-list', 'acp-bridge-tools-dropped.png')

@@ -758,6 +758,55 @@ test('updateQueuedMessageText edits the payload text and the displayed bubble', 
   assert.equal(thread.messages.find((m) => m.id === messageId)?.content, 'edited prompt')
 })
 
+for (const targetPosition of ['first', 'second'] as const) {
+  test(`updateQueuedMessageText scopes duplicate message IDs when target thread is ${targetPosition}`, () => {
+    const store = createProjectStore()
+    const firstThreadId = createThread(store)
+    const firstOriginalId = addMessage(store, firstThreadId, 'user', 'first original')
+    const secondThreadId = createThread(store)
+    const secondOriginalId = addMessage(store, secondThreadId, 'user', 'second original')
+    const targetThreadId = targetPosition === 'first' ? firstThreadId : secondThreadId
+    const otherThreadId = targetPosition === 'first' ? secondThreadId : firstThreadId
+    const targetOriginalId = targetPosition === 'first' ? firstOriginalId : secondOriginalId
+    const otherOriginalId = targetPosition === 'first' ? secondOriginalId : firstOriginalId
+    const targetOriginal = targetPosition === 'first' ? 'first original' : 'second original'
+    const otherOriginal = targetPosition === 'first' ? 'second original' : 'first original'
+    const sharedMessageId = 'duplicate-loaded-message-id'
+    store.setState({
+      threads: store.getState().threads.map((thread) => ({
+        ...thread,
+        messages: thread.messages.map((message) =>
+          message.id === targetOriginalId || message.id === otherOriginalId
+            ? { ...message, id: sharedMessageId }
+            : message,
+        ),
+      })),
+    })
+    enqueueUserMessage(store, targetThreadId, {
+      messageId: sharedMessageId,
+      payload: { content: targetOriginal },
+      createdAt: 1,
+    })
+
+    updateQueuedMessageText(store, targetThreadId, sharedMessageId, 'target reviewed draft')
+
+    assert.equal(
+      getThread(store, targetThreadId).messages.find((message) => message.id === sharedMessageId)
+        ?.content,
+      'target reviewed draft',
+    )
+    assert.equal(
+      getThread(store, targetThreadId).pendingMessages?.[0]?.payload.content,
+      'target reviewed draft',
+    )
+    assert.equal(
+      getThread(store, otherThreadId).messages.find((message) => message.id === sharedMessageId)
+        ?.content,
+      otherOriginal,
+    )
+  })
+}
+
 test('removeQueuedMessage drops the pending entry and user bubble', () => {
   const store = createProjectStore()
   const threadId = createThread(store)
