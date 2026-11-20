@@ -15,6 +15,10 @@ import { initAgentsRegistry } from './agents/agents-registry.ts'
 import { runWithActiveRunIdentity } from './thread-models.ts'
 import { runWithThreadExecutionContext } from './thread-execution-context.ts'
 import { runWithWorkspaceTrust } from './security/workspace-trust.ts'
+import { setRampartLoaderForTest } from './security/pii-redactor.ts'
+import { runWithDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
+import { PII_REDACTION_PLUGIN_ID } from '@copse/agent/plugins/pii-redaction-plugin.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
 import { getSetting, setSetting, deleteSetting } from './storage/settings.ts'
 
@@ -46,34 +50,53 @@ describe('explicit agent delegation and turn usage', () => {
       let reads = 0
       let childCalls = 0
       let parentCalls = 0
-      const network = mock.method(globalThis, 'fetch', async (): Promise<Response> => {
-        childCalls++
-        if (scenario === 'worker-error' && childCalls === 2) {
-          return new Response('Worker could not finish', { status: 400 })
-        }
-        const delta =
-          childCalls === 1
-            ? {
-                tool_calls: [
-                  {
-                    index: 0,
-                    id: 'child-read',
-                    type: 'function',
-                    function: {
-                      name: 'read_file',
-                      arguments: JSON.stringify({ path: 'evidence.txt' }),
-                    },
-                  },
-                ],
-              }
-            : { content: WORKER_REPORT }
-        return new Response(
-          `data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason: childCalls === 1 ? 'tool_calls' : 'stop' }] })}\n\n` +
-            `data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 50, completion_tokens: 5, prompt_tokens_details: { cached_tokens: 7 } } })}\n\n` +
-            'data: [DONE]\n\n',
-          { headers: { 'content-type': 'text/event-stream' } },
-        )
+      let piiLoads = 0
+      let ancillaryRequests = 0
+      // Observe accidental PII initialization without loading transformers or writing its cache.
+      setRampartLoaderForTest(() => {
+        piiLoads++
+        return Promise.resolve(null)
       })
+      const network = mock.method(
+        globalThis,
+        'fetch',
+        async (input: Parameters<typeof fetch>[0]): Promise<Response> => {
+          const url = input instanceof Request ? input.url : String(input)
+          // Ancillary model downloads must not consume the worker's scripted turns.
+          if (url !== 'http://127.0.0.1:59991/v1/chat/completions') {
+            ancillaryRequests++
+            return new Response('This fixture serves only worker completions.', { status: 503 })
+          }
+          childCalls++
+          if (scenario === 'worker-error' && childCalls === 2) {
+            return new Response('Worker could not finish', { status: 400 })
+          }
+          const delta =
+            childCalls === 1
+              ? {
+                  tool_calls: [
+                    {
+                      index: 0,
+                      id: 'child-read',
+                      type: 'function',
+                      function: {
+                        name: 'read_file',
+                        arguments: JSON.stringify({ path: 'evidence.txt' }),
+                      },
+                    },
+                  ],
+                }
+              : { content: WORKER_REPORT }
+          return new Response(
+            `data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason: childCalls === 1 ? 'tool_calls' : 'stop' }] })}\n\n` +
+              `data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 50, completion_tokens: 5, prompt_tokens_details: { cached_tokens: 7 } } })}\n\n` +
+              'data: [DONE]\n\n',
+            { headers: { 'content-type': 'text/event-stream' } },
+          )
+        },
+      )
+      const plugins = createFirstPartyPluginRegistry()
+      plugins.disable(PII_REDACTION_PLUGIN_ID)
       const registry = new ToolRegistry()
       registry.register(readonlyWorkersTool)
       registry.register(
@@ -144,28 +167,33 @@ describe('explicit agent delegation and turn usage', () => {
             },
             () =>
               runWithActiveRunIdentity(threadId, () =>
-                runAgent(
-                  threadId,
-                  'Use usage-reader to read retry evidence and report the defect.',
-                  [],
-                  host,
-                  registry,
-                  {
-                    provider,
-                    model: PARENT_MODEL,
-                    contextWindow: 100_000,
-                    ...(scenario === 'parent-error'
-                      ? {}
-                      : {
-                          invokedAgent: scenario === 'missing' ? 'missing-reader' : 'usage-reader',
-                        }),
-                    maxSteps: 3,
-                    maxLlmCalls: 3,
-                  },
+                runWithDefaultPluginRegistry(plugins, () =>
+                  runAgent(
+                    threadId,
+                    'Use usage-reader to read retry evidence and report the defect.',
+                    [],
+                    host,
+                    registry,
+                    {
+                      provider,
+                      model: PARENT_MODEL,
+                      contextWindow: 100_000,
+                      ...(scenario === 'parent-error'
+                        ? {}
+                        : {
+                            invokedAgent:
+                              scenario === 'missing' ? 'missing-reader' : 'usage-reader',
+                          }),
+                      maxSteps: 3,
+                      maxLlmCalls: 3,
+                    },
+                  ),
                 ),
               ),
           )
         })
+        assert.equal(piiLoads, 0, 'delegation fixtures must not initialize the PII model')
+        assert.equal(ancillaryRequests, 0, 'delegation fixtures must not request ancillary models')
         assert.equal(
           reads,
           scenario === 'missing' ? 0 : 1,
@@ -248,6 +276,7 @@ describe('explicit agent delegation and turn usage', () => {
         if (previousTaskRoot === undefined) delete process.env['COPSE_WORKSPACE_DIR']
         else process.env['COPSE_WORKSPACE_DIR'] = previousTaskRoot
         network.mock.restore()
+        setRampartLoaderForTest(null)
         restoreWorkspace()
         await initAgentsRegistry()
         for (const setting of settings) {
