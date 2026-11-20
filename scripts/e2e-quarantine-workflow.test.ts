@@ -65,3 +65,18 @@ describe('nightly quarantine workflow', () => {
     assert.equal(fetch.split('gh run download').length - 1, 1)
   })
 })
+
+describe('nightly quarantine expiry workflow', () => {
+  const expiry = readFileSync(resolve('.github/workflows/e2e-quarantine-expiry.yml'), 'utf8')
+
+  it('enforces quarantine expiry nightly in its own workflow, never in CI', () => {
+    assert.match(expiry, /^ {2}schedule:\n {4}- cron: '\d+ \d+ \* \* \*'$/m)
+    assert.match(expiry, /^ {2}workflow_dispatch:$/m)
+    assert.doesNotMatch(expiry, /^ {2}(?:pull_request|pull_request_target|push|merge_group):/m)
+    assert.match(expiry, /^permissions:\n {2}contents: read\n\n/m)
+    assert.match(expiry, /^ {6}- run: npm run check:e2e-exclusions -- --enforce$/m)
+    // An expired quarantine must not turn the nightly CI run red: that
+    // conclusion is the signal that main or its environment regressed.
+    assert.doesNotMatch(ci, /check:e2e-exclusions -- --enforce/)
+  })
+})
