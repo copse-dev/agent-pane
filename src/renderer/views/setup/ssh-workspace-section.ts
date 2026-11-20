@@ -10,12 +10,16 @@ import {
   upsertHost,
 } from './ssh-host-helpers.ts'
 import { createSshHostFields } from './ssh-host-fields.ts'
+import { describeSshMachine, machineSummaryElement } from './machine-capabilities.ts'
+import { sanitizeTrustedSshHosts } from '@shared/trusted-ssh-hosts.ts'
 
 export { slugifyHostId, upsertHost, removeHost } from './ssh-host-helpers.ts'
 
 export interface SshWorkspaceSection {
   root: HTMLFieldSetElement
   refresh: (signal?: AbortSignal) => Promise<void>
+  /** Bring the empty host form into view, ready for a new machine. */
+  addHost: () => void
   load: (snapshot: SettingsSnapshot) => void
   collect: (data: FormData, dirty: ReadonlySet<string>) => SettingsUpdate
 }
@@ -24,13 +28,18 @@ export interface SshWorkspaceSectionOptions {
   /** Fired after a live-persisted setting change (enable toggle, host key policy). */
   onChanged?: () => void
   deferOrdinaryWrites?: boolean
+  /**
+   * Where the saved hosts are listed. Settings passes the shared Machines list,
+   * so each machine appears once; without it the section lists them itself.
+   */
+  hostList?: HTMLElement
 }
 
 export function createSshWorkspaceSection(
   api: ApiClient,
   opts: SshWorkspaceSectionOptions = {},
 ): SshWorkspaceSection {
-  const hostList = el('div', { class: 'ssh-host-list' })
+  const hostList = opts.hostList ?? el('div', { class: 'ssh-host-list' })
   const status = el('span', { class: 'ssh-host-status' })
   const enabledInput = el('input', { type: 'checkbox', name: 'sshWorkspaceEnabled' })
   const strictSelect = el('select', { name: 'sshStrictHostKeys' })
@@ -66,15 +75,32 @@ export function createSshWorkspaceSection(
   async function renderHosts(signal?: AbortSignal): Promise<void> {
     if (signal?.aborted) return
     clear(hostList)
-    const [rawHosts, credentialHostIds] = await Promise.all([
-      api.settings.get('sshWorkspaceHosts'),
-      api.sshWorkspace.listCredentialHostIds(),
-    ])
+    const [rawHosts, credentialHostIds, states, agentsOnRemote, desktop, trusted] =
+      await Promise.all([
+        api.settings.get('sshWorkspaceHosts'),
+        api.sshWorkspace.listCredentialHostIds(),
+        api.sshWorkspace.getStates().catch(() => []),
+        api.settings.get('acpOverSshEnabled'),
+        api.settings.get('vncEnabled'),
+        api.settings.get('trustedSshHosts'),
+      ])
     if (signal?.aborted) return
     const list = parseSshWorkspaceHosts(rawHosts)
     const credentialHosts = new Set(credentialHostIds)
+    const context = {
+      states,
+      agentsOnRemote: agentsOnRemote === true,
+      desktop: desktop === true,
+      trustedHosts: sanitizeTrustedSshHosts(trusted),
+    }
     if (list.length === 0) {
-      hostList.append(el('p', { class: 'field-hint' }, 'No SSH hosts configured yet.'))
+      hostList.append(
+        el(
+          'p',
+          { class: 'field-hint ssh-host-empty' },
+          'No SSH machines yet. Add one below, or open a remote project.',
+        ),
+      )
       return
     }
     for (const host of list) {
@@ -85,6 +111,7 @@ export function createSshWorkspaceSection(
         'div',
         { class: 'ssh-host-summary' },
         el('div', {}, el('strong', {}, host.label), `: ${target}`),
+        machineSummaryElement(describeSshMachine(host, context)),
         el(
           'div',
           {
@@ -217,7 +244,9 @@ export function createSshWorkspaceSection(
     ),
     el('label', { class: 'checkbox-label' }, enabledInput, ' Enable SSH workspaces (experimental)'),
     el('label', {}, 'Host key policy ', strictSelect),
-    hostList,
+    // A shared list lives elsewhere (Settings → Machines "Your machines");
+    // appending it here would move it out of that list.
+    ...(opts.hostList ? [] : [hostList]),
     importBtn,
     form,
     status,
@@ -226,6 +255,12 @@ export function createSshWorkspaceSection(
   return {
     root,
     refresh,
+    addHost: (): void => {
+      hostFields.reset()
+      status.replaceChildren()
+      form.scrollIntoView({ block: 'center' })
+      hostFields.focus()
+    },
     load,
     collect: (data, dirty): SettingsUpdate => ({
       ...(dirty.has('sshWorkspaceEnabled')

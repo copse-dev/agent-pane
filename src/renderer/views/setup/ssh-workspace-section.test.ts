@@ -244,3 +244,33 @@ describe('createSshWorkspaceSection', () => {
     )
   })
 })
+
+describe('createSshWorkspaceSection in the shared Machines list', () => {
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('renders its rows, with status and capabilities, into the list it is given', async () => {
+    const { api } = mockApi({ hosts: [{ id: 'dev', label: 'Dev Server', host: 'dev.example' }] })
+    const overview = document.createElement('div')
+    const shared = document.createElement('div')
+    overview.append(shared)
+    const section = createSshWorkspaceSection(api, { hostList: shared })
+    document.body.append(overview, section.root)
+    await section.refresh()
+
+    assert.equal(shared.parentElement, overview, 'the shared list stays where it was put')
+    assert.equal(section.root.querySelector('.ssh-host-row'), null, 'no second list of its own')
+    const row = shared.querySelector('.ssh-host-row')
+    assert.ok(row)
+    assert.equal(row.querySelector('.machine-summary-status')?.textContent, 'Not connected')
+    assert.deepEqual(
+      [...row.querySelectorAll('.machine-capability')].map((item) => item.textContent),
+      ['Files and shell'],
+    )
+    // Every action the row had before is still on it.
+    for (const action of ['.ssh-host-edit', '.ssh-host-delete']) {
+      assert.ok(row.querySelector(action), action)
+    }
+  })
+})

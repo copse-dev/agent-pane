@@ -4,9 +4,9 @@ export const sshMarkup = `
           <section class="settings-section" data-section="ssh">
             <h3>Machines</h3>
             <p class="settings-section-desc">
-              Connect other computers to use their models, or manage SSH hosts for remote projects and agents.
+              Every computer Copse can reach, and how. SSH options come first, then pairing with other Copse computers to use their models.
             </p>
-            <div id="settings-machines-host" class="settings-mount"></div>
+            <div id="settings-machines-overview" class="settings-mount"></div>
             <div id="settings-ssh-workspace-host" class="settings-mount"></div>
 
             <fieldset>
@@ -21,6 +21,7 @@ export const sshMarkup = `
                 before installing it; you sign in on that machine yourself.
               </p>
             </fieldset>
+            <div id="settings-machines-host" class="settings-mount"></div>
           </section>
 `
 
