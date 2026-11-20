@@ -1,4 +1,4 @@
-import { beforeEach, describe, it } from 'node:test'
+import { afterEach, beforeEach, describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { runInNewContext } from 'node:vm'
 import { captureTabFrame, capturePreviewDataUrl, type TabFrameContents } from './session-manager.ts'
@@ -344,7 +344,7 @@ function frameTab(
     removeListener(_event: 'paint', listener: () => void): void {
       if (paint === listener) paint = null
     },
-    isDestroyed: () => options.destroyed === true,
+    isDestroyed: (): boolean => options.destroyed === true,
   }
   return tab
 }
@@ -352,11 +352,14 @@ function frameTab(
 describe('captureTabFrame', () => {
   // Each retry logs one warning; keep test output clean and assert it below.
   let warnings: unknown[][] = []
-  beforeEach((t) => {
+  beforeEach(() => {
     warnings = []
-    t.mock.method(console, 'warn', (...args: unknown[]) => {
+    mock.method(console, 'warn', (...args: unknown[]) => {
       warnings.push(args)
     })
+  })
+  afterEach(() => {
+    mock.restoreAll()
   })
 
   it('copies again after a fresh frame when the compositor fails mid-reload (#4425)', async () => {

@@ -129,7 +129,7 @@ export async function captureTabFrame<Image extends { isEmpty(): boolean }>(
   contents: TabFrameContents<Image>,
   tabId: string,
 ): Promise<Image> {
-  let failure = new Error(`browser screenshot of ${tabId} was empty`)
+  let failure: Error
   for (let attempt = 1; ; attempt++) {
     try {
       const image = await contents.capturePage()
