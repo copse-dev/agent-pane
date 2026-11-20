@@ -239,8 +239,18 @@ Opportunistic startup, hourly and allocation refreshes use a cache-only Copse
 askpass lease. It reads already remembered answers with the existing host scope
 and rejected-secret invalidation, but never opens a credential or trust dialog or
 waits for one already pending. Terminal prompts and the configured `core.askPass`
-fallback are disabled. SSH is forced through the trusted cache-only helper;
-without that bridge it uses `BatchMode=yes` and disables all askpass fallbacks.
+fallback are disabled. SSH uses `BatchMode=yes` when the unscoped session cache
+is empty or the trusted bridge is unavailable. With remembered session answers,
+the trusted cache-only helper is allowed with `NumberOfPasswordPrompts=1`.
+This is one prompt attempt per password or keyboard-interactive method, not one
+total authentication attempt; keyboard-interactive can request several answers.
+A warm cache is not proof of an answer for this destination, so a missing or
+stale answer can still be submitted without UI. A failed unattended Git command
+or expired askpass lease conservatively retires only the current generations of
+session answers actually served to it. Nonzero Git can follow successful
+authentication, so this can also evict a good answer; it is not proof that the
+server rejected the credential. Without the bridge, all askpass fallbacks are
+disabled.
 The configured host-key policy, SSH agent and credential helpers remain available.
 Git Credential Manager receives its
 [documented noninteractive setting](https://github.com/git-ecosystem/git-credential-manager/blob/main/docs/environment.md#gcm_interactive).

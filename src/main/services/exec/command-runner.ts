@@ -103,7 +103,7 @@ function prepareGitInvocation(
   policy: GitConfigPolicy,
   signing?: GitSigningBridge,
   authMode: GitAuthMode = 'interactive',
-): { args: string[]; env: NodeJS.ProcessEnv; releaseGitSsh?: () => void } {
+): { args: string[]; env: NodeJS.ProcessEnv; releaseGitSsh?: (successful: boolean) => void } {
   const preparedArgs = withGitInvocationArgs(args, policy, signing)
   const transport = policy === 'internal-network' ? 'network' : internalGitTransport(args[0])
   // Remove ambient Git/SSH executable injection before installing Copse's own
@@ -167,7 +167,8 @@ function runCommandImpl(
   // tool tokens (GITHUB_TOKEN, NPM_TOKEN, AWS_*). Callers that genuinely need
   // a secret can pass it explicitly via `opts.env`.
   let spawnEnv: NodeJS.ProcessEnv = envForRendererChildProcess()
-  let releaseGitSsh: (() => void) | undefined
+  let releaseGitSsh: ((successful: boolean) => void) | undefined
+  let commandSucceeded = false
   if (opts.env) {
     spawnEnv = { ...spawnEnv, ...opts.env }
   }
@@ -213,7 +214,7 @@ function runCommandImpl(
           }
         }
       } catch (err) {
-        releaseGitSsh?.()
+        releaseGitSsh?.(false)
         reject(err instanceof Error ? err : new Error(String(err)))
         return
       }
@@ -264,7 +265,7 @@ function runCommandImpl(
         if (timer) clearTimeout(timer)
         cancelKill?.()
         opts.signal?.removeEventListener('abort', onAbort)
-        releaseGitSsh?.()
+        releaseGitSsh?.(commandSucceeded)
         releaseSandbox()
       }
 
@@ -283,6 +284,7 @@ function runCommandImpl(
       })
 
       proc.on('close', (code) => {
+        commandSucceeded = code === 0 && !terminationRequested && !settled
         if (settled) {
           releaseResources()
           return

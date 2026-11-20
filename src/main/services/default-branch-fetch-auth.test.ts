@@ -409,7 +409,7 @@ describe('default-branch HTTP authentication interaction', () => {
   })
 
   it(
-    'real OpenSSH key reading reuses a remembered passphrase through the cache-only helper',
+    'real OpenSSH applies cold and warm prompt limits and reuses a remembered key passphrase',
     { skip: process.platform === 'win32' },
     async () => {
       await withAuthFixture(async ({ root, prompts }) => {
@@ -419,8 +419,30 @@ describe('default-branch HTTP authentication interaction', () => {
           prompts.push(request.prompt)
           return { value: 'owned-passphrase', remember: true }
         })
+        const cold = leaseGitSshEnv(process.env, 'noninteractive')
+        try {
+          // -G with an empty config prints effective options without a
+          // connection. Key decryption below exercises the actual helper;
+          // neither check is a server authentication-traffic measurement.
+          const configuration = execFileSync(
+            'ssh',
+            [
+              '-G',
+              '-T',
+              '-F',
+              '/dev/null',
+              ...String(cold.env['GIT_SSH_COMMAND']).split(' ').slice(1),
+              'git@owned-fixture.invalid',
+            ],
+            { env: cold.env, encoding: 'utf8', timeout: 10_000 },
+          )
+          assert.match(configuration, /^batchmode yes$/m)
+          assert.match(configuration, /^numberofpasswordprompts 1$/m)
+          assert.deepEqual(prompts, [], 'cold option resolution must not request credentials')
+        } finally {
+          cold.release()
+        }
         const foreground = leaseGitSshEnv(process.env)
-        const background = leaseGitSshEnv(process.env, 'noninteractive')
         try {
           const first = await promisify(execFile)('ssh-keygen', ['-y', '-f', key], {
             env: foreground.env,
@@ -429,16 +451,38 @@ describe('default-branch HTTP authentication interaction', () => {
           })
           assert.match(first.stdout, /^ssh-ed25519 /)
           assert.equal(prompts.length, 1, 'real OpenSSH must have asked through Copse once')
-          const second = await promisify(execFile)('ssh-keygen', ['-y', '-f', key], {
-            env: background.env,
-            encoding: 'utf8',
-            timeout: 10_000,
-          })
-          assert.equal(second.stdout, first.stdout)
-          assert.equal(prompts.length, 1, 'cache-only helper must serve the passphrase without UI')
+          const background = leaseGitSshEnv(process.env, 'noninteractive')
+          try {
+            const configuration = execFileSync(
+              'ssh',
+              [
+                '-G',
+                '-T',
+                '-F',
+                '/dev/null',
+                ...String(background.env['GIT_SSH_COMMAND']).split(' ').slice(1),
+                'git@owned-fixture.invalid',
+              ],
+              { env: background.env, encoding: 'utf8', timeout: 10_000 },
+            )
+            assert.match(configuration, /^batchmode no$/m)
+            assert.match(configuration, /^numberofpasswordprompts 1$/m)
+            const second = await promisify(execFile)('ssh-keygen', ['-y', '-f', key], {
+              env: background.env,
+              encoding: 'utf8',
+              timeout: 10_000,
+            })
+            assert.equal(second.stdout, first.stdout)
+            assert.equal(
+              prompts.length,
+              1,
+              'cache-only helper must serve the passphrase without UI',
+            )
+          } finally {
+            background.release()
+          }
         } finally {
           foreground.release()
-          background.release()
         }
       })
     },

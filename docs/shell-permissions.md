@@ -806,6 +806,14 @@ the person remembered in Copse, but never opens or waits for an authentication o
 host-trust dialog. Missing credentials leave the cached tip unchanged and report
 the failed refresh, with URL userinfo removed from the background warning.
 Existing configured helpers and SSH agents can still refresh it.
+When the session cache has no remembered answers, SSH uses batch mode and skips
+password and keyboard-interactive prompts. A warm cache enables the trusted
+helper with one prompt attempt per authentication method; it does not prove a
+matching answer for this destination. Missing or stale answers can still be
+submitted, and keyboard-interactive may request several answers in one attempt.
+Failed background Git commands and expired askpass leases retire only the
+current session answers actually served to that invocation. This is conservative:
+a later Git error can evict a credential even after successful authentication.
 Explicit `git_fetch` and foreground push keep their normal authentication path;
 the background-only interaction policy adds no network or shell approval grant.
 
