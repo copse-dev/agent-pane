@@ -151,7 +151,7 @@
   --group-header-font-weight: 600;
 }
 
-/* node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/styles/core.css */
+/* node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/styles/core.css */
 .streaming-markdown {
   & .stream-pending {
     white-space: pre-wrap;
@@ -227,7 +227,7 @@
   }
 }
 
-/* node_modules/.pnpm/@copse+streaming-markdown@1.8.0_dompurify@3.4.17_entities@8.1.0_highlight.js@11.12.0_ka_e82f9a16770bd25972d57b2fbb19aaf5/node_modules/@copse/streaming-markdown/styles/default.css */
+/* node_modules/.pnpm/@copse+streaming-markdown@1.8.1_dompurify@3.4.17_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2_pele@1.6.0/node_modules/@copse/streaming-markdown/styles/default.css */
 .streaming-markdown {
   line-height: var(--sm-line-height, 1.55);
   word-break: break-word;
@@ -8329,6 +8329,9 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   min-width: 0;
   font-family: inherit;
 }
+.branch-picker-trigger.footer-branch-status[hidden] {
+  display: none;
+}
 .branch-picker-trigger.footer-branch-status:hover {
   color: var(--text-primary);
 }
@@ -8387,6 +8390,30 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 }
 .branch-reattach-button[hidden] {
   display: none;
+}
+.branch-deferred-note {
+  flex: 1 1 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 12px;
+  max-width: max-content;
+  overflow: hidden;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  cursor: default;
+}
+.branch-deferred-note[hidden] {
+  display: none;
+}
+.branch-deferred-note-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.footer-branch-host .branch-picker:has(> .branch-deferred-note:not([hidden])) {
+  max-width: min(360px, 50vw);
 }
 .footer-branch-label,
 .branch-picker-label {

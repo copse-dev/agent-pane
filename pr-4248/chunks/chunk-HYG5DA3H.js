@@ -1,7 +1,7 @@
 import {
   dompurifyBackend,
   init_sanitize_dompurify
-} from "./chunk-D55J6ZRP.js";
+} from "./chunk-X6JZSFJR.js";
 import {
   arrowLeftIcon,
   arrowRightIcon,
@@ -64,7 +64,7 @@ import {
   unwrapIpcErrorText,
   upsertHost,
   warningIcon
-} from "./chunk-WYJRFZZW.js";
+} from "./chunk-CK4AOU5N.js";
 import {
   clear,
   el,
@@ -22230,6 +22230,15 @@ function splitServiceTierUsage(usage) {
   }
   return { standard: remaining, tiers };
 }
+function legacyAcpCachedTokens(model, usage) {
+  if (parseModelSelection(model).namespace !== "acp") return null;
+  const cached2 = nonNegative(usage.cacheReadTokens) + nonNegative(usage.cacheCreationTokens);
+  return cached2 > usage.inputTokens ? cached2 : null;
+}
+function repairLegacyAcpTotalInputTokens(model, usage) {
+  const cached2 = legacyAcpCachedTokens(model, usage);
+  return cached2 === null ? usage : { ...usage, inputTokens: cached2 };
+}
 var init_model_usage = __esm({
   "packages/llm/src/model-usage.ts"() {
     init_unknown_value();
@@ -22341,10 +22350,13 @@ var init_thread_proposal = __esm({
 });
 
 // src/shared/tools/copse-tool-call.ts
+function isCopseServerName(server) {
+  return typeof server === "string" && ENVELOPE_SERVER_NAME.test(server);
+}
 function normalizeCopseToolName(name) {
   const server = /^mcp__([\w.-]+?)__/i.exec(name)?.[1];
-  if (server && server.toLowerCase() !== "copse") return name;
-  const match = /^(?:mcp[^a-z0-9]+)?copse[^a-z0-9]+([a-z][a-z0-9_.-]*)/i.exec(name);
+  if (server && !COPSE_SERVER_NAME.test(server)) return name;
+  const match = COPSE_WRAPPED_TOOL.exec(name);
   return match?.[1]?.toLowerCase() ?? name;
 }
 function copseToolCallName(call) {
@@ -22373,9 +22385,17 @@ function acpDelegateKind(call) {
 function acpDelegatePrompt(call) {
   return call.title ?? stringArg(call.args, "prompt") ?? stringArg(call.args, "description") ?? "";
 }
+var COPSE_SERVER, COPSE_SERVER_NAME, COPSE_WRAPPED_TOOL, ENVELOPE_SERVER_NAME;
 var init_copse_tool_call = __esm({
   "src/shared/tools/copse-tool-call.ts"() {
     init_unknown_value3();
+    COPSE_SERVER = "copse(?:-[a-z0-9]{8})?";
+    COPSE_SERVER_NAME = new RegExp(`^${COPSE_SERVER}$`, "i");
+    COPSE_WRAPPED_TOOL = new RegExp(
+      `^(?:mcp[^a-z0-9]+)?${COPSE_SERVER}[^a-z0-9]+([a-z][a-z0-9_.-]*)`,
+      "i"
+    );
+    ENVELOPE_SERVER_NAME = new RegExp(`^${COPSE_SERVER}$`);
   }
 });
 
@@ -22539,7 +22559,7 @@ function parseReviewerInputCall(call, messageId) {
 }
 function reviewerInputArguments(call) {
   const args = call.args;
-  if (isRecord(args) && args["server"] === "copse" && typeof args["tool"] === "string" && isCopseToolCall(call, args["tool"]) && Object.hasOwn(args, "arguments"))
+  if (isRecord(args) && isCopseServerName(args["server"]) && typeof args["tool"] === "string" && isCopseToolCall(call, args["tool"]) && Object.hasOwn(args, "arguments"))
     return args["arguments"];
   return args;
 }
@@ -24422,6 +24442,7 @@ var init_transcript_state = __esm({
   "src/shared/store/transcript-state.ts"() {
     TRANSCRIPT_META_KEYS = [
       "status",
+      "interruptedTurnAt",
       "usage",
       "updatedAt",
       "todos",
@@ -27361,6 +27382,11 @@ var init_tool_display = __esm({
       explore: { running: "Exploring files", done: "Explored files" },
       read_explored: { running: "Quoting explored lines", done: "Quoted explored lines" },
       read_file: { running: "Reading file", done: "Read file" },
+      search_project_context: {
+        running: "Searching project history",
+        done: "Searched project history"
+      },
+      read_project_context: { running: "Reading project history", done: "Read project history" },
       list_dir: { running: "Listing directory", done: "Listed directory" },
       search_code: { running: "Searching code", done: "Searched code" },
       search_codebase: { running: "Searching codebase", done: "Searched codebase" },
@@ -28403,6 +28429,7 @@ function compactSidebarThread(thread) {
     ...thread.createdAt !== void 0 ? { createdAt: thread.createdAt } : {},
     ...thread.updatedAt !== void 0 ? { updatedAt: thread.updatedAt } : {},
     ...thread.lastSettledAt !== void 0 ? { lastSettledAt: thread.lastSettledAt } : {},
+    ...thread.interruptedTurnAt !== void 0 ? { interruptedTurnAt: thread.interruptedTurnAt } : {},
     ...lastPromptAt !== void 0 ? { lastPromptAt } : {},
     status: thread.status,
     // A prompt found in the loaded transcript counts too, matching the `lastPromptAt` kept above.
@@ -29255,7 +29282,7 @@ async function addProject(store, api) {
   return true;
 }
 async function addRemoteProject(store, api) {
-  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-YAI5BBCL.js");
+  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-AN5HFQ3E.js");
   const picked = await openRemoteFolderDialog(api);
   if (!picked) return false;
   await addProjectFromRemotePath(store, api, picked.hostId, picked.path);
@@ -30139,6 +30166,20 @@ var init_presets = __esm({
           type: "http",
           protocol: "systemone",
           baseUrl: "http://127.0.0.1:8091/v1",
+          auth: "none"
+        }
+      },
+      {
+        id: "strands-decider",
+        label: "Strands Decider 2B (local)",
+        // The server ignores this and reports the checkpoint it serves, without the `StrandsAgents/` owner.
+        model: "StrandsAgents/strands-decider-2B-qwen3.5-v1-2610",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "systemone",
+          // Not the server's default 8000, which a stray dev server would be mistaken for.
+          baseUrl: "http://127.0.0.1:8011/v1",
           auth: "none"
         }
       },
@@ -32504,10 +32545,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 18.7,
+          value: 18.9,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'minimax-m3', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'minimax-m3', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "QwQ-32B-Preview": [
@@ -32566,6 +32607,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         }
       ],
+      "agnes-2-5-pro-theta": [
+        {
+          value: 24,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'agnes-2-5-pro-theta', fetched 2026-11-10",
+          asOf: "2026-11-10"
+        }
+      ],
       "agnes-3-0-flash": [
         {
           value: 35.5,
@@ -32614,6 +32663,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'apodex-1-1', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 13.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'apodex-1-1', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       "apriel-v1-5-15b-thinker": [
@@ -32866,6 +32921,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-4-5-haiku-reasoning', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 7.4,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-4-5-haiku-reasoning', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-4-5-sonnet": [
@@ -32974,10 +33035,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         },
         {
-          value: 49,
+          value: 49.2,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-fable-5-1-high": [
@@ -32988,10 +33049,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         },
         {
-          value: 47,
+          value: 47.2,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-high', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-high', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-fable-5-1-low": [
@@ -33002,10 +33063,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 38.5,
+          value: 38.7,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-low', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-low', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-fable-5-1-medium": [
@@ -33016,10 +33077,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 43,
+          value: 43.2,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-medium', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-medium', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-fable-5-1-xhigh": [
@@ -33030,10 +33091,50 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         },
         {
-          value: 49.7,
+          value: 50,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-xhigh', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-1-xhigh', fetched 2026-11-10",
+          asOf: "2026-11-10"
+        }
+      ],
+      "claude-fable-5-2": [
+        {
+          value: 64.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-2', fetched 2026-11-10",
+          asOf: "2026-11-10"
+        }
+      ],
+      "claude-fable-5-2-high": [
+        {
+          value: 61.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-2-high', fetched 2026-11-10",
+          asOf: "2026-11-10"
+        }
+      ],
+      "claude-fable-5-2-low": [
+        {
+          value: 53.9,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-2-low', fetched 2026-11-10",
+          asOf: "2026-11-10"
+        }
+      ],
+      "claude-fable-5-2-medium": [
+        {
+          value: 56.4,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-2-medium', fetched 2026-11-10",
+          asOf: "2026-11-10"
+        }
+      ],
+      "claude-fable-5-2-xhigh": [
+        {
+          value: 62.2,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-fable-5-2-xhigh', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-haiku-4-5": [
@@ -33052,10 +33153,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-13"
         },
         {
-          value: 36.2,
+          value: 36.5,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-haiku-5-5', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-haiku-5-5', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-haiku-5-5-high": [
@@ -33066,10 +33167,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-13"
         },
         {
-          value: 29.6,
+          value: 29.9,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-haiku-5-5-high', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-haiku-5-5-high', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-haiku-5-5-low": [
@@ -33108,10 +33209,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-13"
         },
         {
-          value: 34.3,
+          value: 34.6,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-haiku-5-5-xhigh', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-haiku-5-5-xhigh', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-instant": [
@@ -33244,6 +33345,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'claude-opus-5', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 44.2,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'claude-opus-5', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-opus-5-5": [
@@ -33254,10 +33361,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 58.4,
+          value: 59.1,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-opus-5-5-high": [
@@ -33268,10 +33375,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 51.7,
+          value: 51.8,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-high', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-high', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-opus-5-5-low": [
@@ -33282,10 +33389,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 34.5,
+          value: 34.8,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-low', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-low', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-opus-5-5-medium": [
@@ -33296,10 +33403,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 48.1,
+          value: 48.2,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-medium', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-medium', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-opus-5-5-xhigh": [
@@ -33310,10 +33417,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 57,
+          value: 57.4,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-xhigh', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-opus-5-5-xhigh', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-opus-5-high": [
@@ -33436,10 +33543,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-06"
         },
         {
-          value: 54.2,
+          value: 54.5,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-sonnet-5-5-high": [
@@ -33450,10 +33557,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-06"
         },
         {
-          value: 41.1,
+          value: 41.5,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-high', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-high', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-sonnet-5-5-low": [
@@ -33464,10 +33571,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-06"
         },
         {
-          value: 25.3,
+          value: 25.6,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-low', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-low', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-sonnet-5-5-medium": [
@@ -33478,10 +33585,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-06"
         },
         {
-          value: 30.3,
+          value: 30.8,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-medium', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-medium', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-sonnet-5-5-xhigh": [
@@ -33492,10 +33599,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-06"
         },
         {
-          value: 49.6,
+          value: 49.9,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-xhigh', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'claude-sonnet-5-5-xhigh', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "claude-sonnet-5-high": [
@@ -34000,18 +34107,18 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-20"
         },
         {
-          value: 32.5,
+          value: 32.6,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'deepseek-v4-1-flash-1017', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'deepseek-v4-1-flash-1017', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "deepseek-v4-1-flash-1017-high": [
         {
-          value: 28.5,
+          value: 28.6,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'deepseek-v4-1-flash-1017-high', fetched 2026-11-03",
-          asOf: "2026-11-03"
+          source: "Artificial Analysis API (index v5), model 'deepseek-v4-1-flash-1017-high', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "deepseek-v4-1-flash-1017-non-reasoning": [
@@ -34170,12 +34277,26 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         }
       ],
+      "deepseek-v4-pro-high": [
+        {
+          value: 20.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'deepseek-v4-pro-high', fetched 2026-11-17",
+          asOf: "2026-11-17"
+        }
+      ],
       "deepseek-v4-pro-non-reasoning": [
         {
           value: 20.4,
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'deepseek-v4-pro-non-reasoning', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 12.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'deepseek-v4-pro-non-reasoning', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "deepseek/deepseek-coder-v2-lite": [
@@ -34820,6 +34941,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gemini-3-1-flash-lite-preview', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 6.2,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-3-1-flash-lite-preview', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gemini-3-1-pro-preview": [
@@ -34962,10 +35089,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 30.5,
+          value: 30.8,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gemini-3-8-flash', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gemini-3-8-flash', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gemini-3-8-flash-low": [
@@ -34976,10 +35103,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 22.3,
+          value: 22.5,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gemini-3-8-flash-low', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gemini-3-8-flash-low', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gemini-3-8-flash-medium": [
@@ -34990,10 +35117,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 30,
+          value: 30.1,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gemini-3-8-flash-medium', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gemini-3-8-flash-medium', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gemini-3-flash": [
@@ -35066,28 +35193,68 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-29"
         }
       ],
+      "gemini-4-argon-medium": [
+        {
+          value: 47.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-4-argon-medium', fetched 2026-11-17",
+          asOf: "2026-11-17"
+        }
+      ],
       "gemini-4-carbon": [
         {
-          value: 59.4,
+          value: 60,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gemini-4-carbon', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gemini-4-carbon', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gemini-4-carbon-low": [
         {
-          value: 53.7,
+          value: 54.2,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gemini-4-carbon-low', fetched 2026-11-03",
-          asOf: "2026-11-03"
+          source: "Artificial Analysis API (index v5), model 'gemini-4-carbon-low', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gemini-4-carbon-medium": [
         {
-          value: 57.7,
+          value: 58.3,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gemini-4-carbon-medium', fetched 2026-11-03",
-          asOf: "2026-11-03"
+          source: "Artificial Analysis API (index v5), model 'gemini-4-carbon-medium', fetched 2026-11-10",
+          asOf: "2026-11-10"
+        }
+      ],
+      "gemini-4-hydrogen": [
+        {
+          value: 53.9,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-4-hydrogen', fetched 2026-11-17",
+          asOf: "2026-11-17"
+        }
+      ],
+      "gemini-4-hydrogen-high": [
+        {
+          value: 50.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-4-hydrogen-high', fetched 2026-11-17",
+          asOf: "2026-11-17"
+        }
+      ],
+      "gemini-4-hydrogen-low": [
+        {
+          value: 26.9,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-4-hydrogen-low', fetched 2026-11-17",
+          asOf: "2026-11-17"
+        }
+      ],
+      "gemini-4-hydrogen-medium": [
+        {
+          value: 41.2,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-4-hydrogen-medium', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       "gemma-3-1b": [
@@ -35256,6 +35423,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gemma-4-31b', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 4.4,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemma-4-31b', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gemma-4-31b-non-reasoning": [
@@ -35660,6 +35833,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gemma-4-e4b', fetched 2026-09-11",
           asOf: "2026-09-11"
+        },
+        {
+          value: 4.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemma-4-e4b', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       "gpt-35-turbo": [
@@ -36374,6 +36553,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-terra', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 32.3,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-5-6-terra', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-5-6-terra-high": [
@@ -36626,6 +36811,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-5-6-luna', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 23.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-5-6-luna', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-5.6-sol": [
@@ -36652,10 +36843,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-30"
         },
         {
-          value: 54.5,
+          value: 54.6,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-1-sol-high": [
@@ -36666,10 +36857,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-30"
         },
         {
-          value: 50.2,
+          value: 50.3,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-high', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-high', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-1-sol-low": [
@@ -36680,10 +36871,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-30"
         },
         {
-          value: 34.5,
+          value: 34.8,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-low', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-low', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-1-sol-medium": [
@@ -36694,10 +36885,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-30"
         },
         {
-          value: 46.1,
+          value: 46.3,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-medium', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-medium', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-1-sol-xhigh": [
@@ -36708,10 +36899,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-30"
         },
         {
-          value: 52.3,
+          value: 52.5,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-xhigh', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-sol-xhigh', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-1-terra": [
@@ -36722,10 +36913,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-27"
         },
         {
-          value: 51,
+          value: 51.3,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-1-terra-high": [
@@ -36736,10 +36927,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-27"
         },
         {
-          value: 42.3,
+          value: 42.4,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-high', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-high', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-1-terra-low": [
@@ -36750,10 +36941,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-27"
         },
         {
-          value: 29.2,
+          value: 29.4,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-low', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-low', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-1-terra-medium": [
@@ -36764,10 +36955,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-27"
         },
         {
-          value: 38.1,
+          value: 38.2,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-medium', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-medium', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-1-terra-non-reasoning": [
@@ -36778,10 +36969,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-27"
         },
         {
-          value: 30.4,
+          value: 30.5,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-non-reasoning', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-non-reasoning', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-1-terra-xhigh": [
@@ -36792,10 +36983,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-27"
         },
         {
-          value: 45,
+          value: 45.3,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-xhigh', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-1-terra-xhigh', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-astra": [
@@ -36834,10 +37025,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 43,
+          value: 43.3,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-astra-low', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-astra-low', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-astra-medium": [
@@ -36848,10 +37039,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 51.5,
+          value: 51.6,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-astra-medium', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-astra-medium', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-astra-non-reasoning": [
@@ -36884,10 +37075,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-06"
         },
         {
-          value: 27.8,
+          value: 27.9,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-luna', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-luna', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-luna-high": [
@@ -36926,10 +37117,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-06"
         },
         {
-          value: 18.3,
+          value: 18.5,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-luna-medium', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-luna-medium', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-luna-non-reasoning": [
@@ -36954,10 +37145,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-06"
         },
         {
-          value: 23.3,
+          value: 23.5,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'gpt-6-luna-xhigh', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'gpt-6-luna-xhigh', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-sol": [
@@ -36966,6 +37157,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-6-sol', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 44.2,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-6-sol', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-6-sol-high": [
@@ -37020,6 +37217,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gpt-oss-120b', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 3.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gpt-oss-120b', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "gpt-oss-120b-low": [
@@ -37536,6 +37739,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'grok-4-6-xhigh', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 31,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'grok-4-6-xhigh', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "grok-4-7": [
@@ -37546,10 +37755,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 35.3,
+          value: 35.5,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'grok-4-7', fetched 2026-11-03",
-          asOf: "2026-11-03"
+          source: "Artificial Analysis API (index v5), model 'grok-4-7', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "grok-4-7-high": [
@@ -37560,10 +37769,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 35,
+          value: 35.2,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'grok-4-7-high', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'grok-4-7-high', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "grok-4-7-low": [
@@ -37574,10 +37783,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-06"
         },
         {
-          value: 30.9,
+          value: 31.1,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'grok-4-7-low', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'grok-4-7-low', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "grok-4-fast": [
@@ -37824,6 +38033,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-29"
         }
       ],
+      "inkling-2-small": [
+        {
+          value: 30.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'inkling-2-small', fetched 2026-11-10",
+          asOf: "2026-11-10"
+        }
+      ],
       "inkling-small": [
         {
           value: 41.2,
@@ -37982,6 +38199,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'jt-4-1-flash-236b-a21b', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 19,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'jt-4-1-flash-236b-a21b', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       "jt-4-1-flash-236b-a21b-non-reasoning": [
@@ -38020,6 +38243,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         }
       ],
+      "k-exaone-2-0": [
+        {
+          value: 7.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'k-exaone-2-0', fetched 2026-11-17",
+          asOf: "2026-11-17"
+        }
+      ],
       "k-exaone-2-0-0803": [
         {
           value: 31,
@@ -38032,6 +38263,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'k-exaone-2-0-0803', fetched 2026-09-11",
           asOf: "2026-09-11"
+        },
+        {
+          value: 7.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'k-exaone-2-0-0803', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "k-exaone-non-reasoning": [
@@ -38324,10 +38561,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-27"
         },
         {
-          value: 46,
+          value: 46.5,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'kimi-k3-1-pro', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'kimi-k3-1-pro', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "kimi-k3-low": [
@@ -38596,6 +38833,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'ling-3-1-flash', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 29.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'ling-3-1-flash', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       "ling-3-1-flash-1019": [
@@ -38606,10 +38849,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-27"
         },
         {
-          value: 29.5,
+          value: 29.6,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'ling-3-1-flash-1019', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'ling-3-1-flash-1019', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "ling-flash-2-0": [
@@ -39392,10 +39635,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-20"
         },
         {
-          value: 28.9,
+          value: 29.1,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'minimax-m3-1-flash', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'minimax-m3-1-flash', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "ministral-3-14b": [
@@ -39532,10 +39775,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-06"
         },
         {
-          value: 26,
+          value: 26.1,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'mistral-large-4', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'mistral-large-4', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "mistral-large-4-medium": [
@@ -39608,6 +39851,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'mistral-medium-3-5', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 4.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'mistral-medium-3-5', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "mistral-saba": [
@@ -39832,6 +40081,22 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         }
       ],
+      "muse-ember": [
+        {
+          value: 36,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'muse-ember', fetched 2026-11-10",
+          asOf: "2026-11-10"
+        }
+      ],
+      "muse-ember-xhigh": [
+        {
+          value: 34.1,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'muse-ember-xhigh', fetched 2026-11-10",
+          asOf: "2026-11-10"
+        }
+      ],
       "muse-glimmer": [
         {
           value: 35.1,
@@ -39902,10 +40167,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 36.4,
+          value: 36.6,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'muse-spark-1-3', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'muse-spark-1-3', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "muse-spark-1-3-xhigh": [
@@ -39924,10 +40189,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-20"
         },
         {
-          value: 24.7,
+          value: 24.9,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'muse-spark-open', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'muse-spark-open', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "muse-wonder": [
@@ -39938,10 +40203,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-13"
         },
         {
-          value: 43.3,
+          value: 43.6,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'muse-wonder', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'muse-wonder', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "muse-wonder-full": [
@@ -39952,10 +40217,18 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-13"
         },
         {
-          value: 49.7,
+          value: 50.1,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'muse-wonder-full', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'muse-wonder-full', fetched 2026-11-10",
+          asOf: "2026-11-10"
+        }
+      ],
+      "muse-wonder-high": [
+        {
+          value: 40.5,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'muse-wonder-high', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "nanbeige4-1-3b": [
@@ -40076,6 +40349,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'north-mini-code', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 3.4,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'north-mini-code', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "nova-2-0-lite": [
@@ -41618,6 +41897,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'qwen3-8-flash-next', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 28.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'qwen3-8-flash-next', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       "qwen3-8-max": [
@@ -41634,10 +41919,10 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-22"
         },
         {
-          value: 33.6,
+          value: 33.7,
           indexVersion: "v5",
-          source: "Artificial Analysis API (index v5), model 'qwen3-8-max', fetched 2026-10-29",
-          asOf: "2026-10-29"
+          source: "Artificial Analysis API (index v5), model 'qwen3-8-max', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "qwen3-8-max-0803": [
@@ -41970,6 +42255,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         }
       ],
+      "qwen4-max": [
+        {
+          value: 42.9,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'qwen4-max', fetched 2026-11-17",
+          asOf: "2026-11-17"
+        }
+      ],
       "qwq-32b": [
         {
           value: 13.4,
@@ -42270,6 +42563,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'solar-pro4', fetched 2026-10-20",
           asOf: "2026-10-20"
+        },
+        {
+          value: 14.2,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'solar-pro4', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       sonar: [
@@ -42396,6 +42695,14 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v5",
           source: "Artificial Analysis API (index v5), model 'step-5', fetched 2026-10-29",
           asOf: "2026-10-29"
+        }
+      ],
+      "tencent-hy4": [
+        {
+          value: 34.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'tencent-hy4', fetched 2026-11-10",
+          asOf: "2026-11-10"
         }
       ],
       "tiny-aya-global": [
@@ -45895,11 +46202,7 @@ function renderChart(points, gutters, tooltip, size = {}, costAxis = "blended", 
   try {
     return points.length > 0 ? renderFrontierSvg(points, size, gutters, tooltip, costAxis, labelMode) : el("p", { class: "field-hint" }, "No models with a sourced intellect score yet.");
   } catch (err) {
-    return el(
-      "p",
-      { class: "field-hint" },
-      `The value map failed to render: ${err instanceof Error ? err.message : String(err)}`
-    );
+    return el("p", { class: "field-hint" }, `The value map failed to render: ${errorMessage(err)}`);
   }
 }
 var SVG_NS, WIDTH, HEIGHT, MARGIN, LABEL_LINE_GAP, POINT_SPLAY_COLUMN_PX, POINT_SPLAY_STEP_PX, POINT_SPLAY_MAX_PX, UNPRICED_GUTTER_W, UNSCORED_ROW_LIMIT, UNPRICED_GUTTER_LIMIT;
@@ -45908,6 +46211,7 @@ var init_intellect_frontier_chart = __esm({
     init_model_intellect();
     init_helpers();
     init_intellect_frontier_tooltip();
+    init_errors4();
     SVG_NS = "http://www.w3.org/2000/svg";
     WIDTH = 460;
     HEIGHT = 290;
@@ -51677,6 +51981,15 @@ var init_acp_agents_list = __esm({
   }
 });
 
+// src/shared/slug.ts
+function slugify2(text) {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64);
+}
+var init_slug = __esm({
+  "src/shared/slug.ts"() {
+  }
+});
+
 // src/shared/acp-registry.ts
 var ACP_REGISTRY_URL;
 var init_acp_registry = __esm({
@@ -51880,9 +52193,6 @@ function parseArgsText(text) {
 }
 function formatArgsText(args) {
   return (args ?? []).join("\n");
-}
-function slugify2(value) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64);
 }
 function upsertAgent(list, agent) {
   const idx = list.findIndex((a4) => a4.id === agent.id);
@@ -52195,7 +52505,7 @@ function createAcpAgentsSection(api, opts = {}) {
         ].filter(Boolean);
         setInlineStatus(modelStatus, "ok", `Detected ${bits.join(", ")}.`);
       }).catch((err) => {
-        setInlineStatus(modelStatus, "error", err instanceof Error ? err.message : String(err));
+        setInlineStatus(modelStatus, "error", errorMessage(err));
       }).finally(() => {
         detectModels.disabled = !canDetectModels;
       });
@@ -52456,7 +52766,9 @@ var init_acp_agents_section = __esm({
     init_inline_markdown();
     init_inline_status();
     init_model_picker();
+    init_slug();
     init_acp_registry_browser();
+    init_errors4();
     AGENT_DATA_POLICY_URLS = {
       "claude-acp": "https://github.com/anthropics/claude-code#data-collection-usage-and-retention",
       "claude-code-acp": "https://github.com/anthropics/claude-code#data-collection-usage-and-retention",
@@ -68105,7 +68417,7 @@ function createAppleDevelopmentPanel(store, api, options) {
       await action();
       await refresh();
     } catch (error62) {
-      const message = error62 instanceof Error ? error62.message : String(error62);
+      const message = errorMessage(error62);
       host.querySelector(".apple-development-error")?.remove();
       host.append(el("p", { class: "apple-development-error", role: "alert" }, message));
     } finally {
@@ -68279,7 +68591,7 @@ function createAppleDevelopmentPanel(store, api, options) {
             destination.replaceChildren(el("option", { value: "" }, "No destinations available"));
             destination.disabled = true;
             save.disabled = true;
-            destinationStatus.textContent = error62 instanceof Error ? error62.message : String(error62);
+            destinationStatus.textContent = errorMessage(error62);
             destinationStatus.hidden = false;
           }
         };
@@ -68481,11 +68793,7 @@ function createAppleDevelopmentPanel(store, api, options) {
       }
       host.hidden = false;
       host.replaceChildren(
-        el(
-          "p",
-          { class: "apple-development-error", role: "alert" },
-          error62 instanceof Error ? error62.message : String(error62)
-        )
+        el("p", { class: "apple-development-error", role: "alert" }, errorMessage(error62))
       );
     }
   };
@@ -68500,6 +68808,7 @@ var init_apple_development_panel = __esm({
     init_helpers();
     init_icons();
     init_ipc_error_message();
+    init_errors4();
   }
 });
 
@@ -71028,9 +71337,11 @@ var init_experimental_markup = __esm({
                 Let the agent get a best-fit model recommendation for a task
               </label>
               <p class="field-hint">
-                Lets the agent judge how hard a task is and name a model that suits it, so simple
-                work goes to a cheap, fast model and the hard problems get a top one. Advice only:
-                it never switches the model you are using.
+                Lets the agent judge how hard a task is and name one of your configured models that
+                suits it, so simple work goes to a cheap, fast model and the hard problems get a top
+                one. To judge, it sends the task description to your Background questions or Small
+                tasks model, or to your chat model when those can't answer, which can add a little
+                usage. Advice only: it never switches the model you are using.
               </p>
             </fieldset>
 
@@ -72216,6 +72527,15 @@ var WORKING_BRIEF_MAX_LEN;
 var init_working_brief = __esm({
   "packages/agent/src/working-brief.ts"() {
     WORKING_BRIEF_MAX_LEN = 2e3;
+  }
+});
+
+// packages/std/src/sleep.ts
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+var init_sleep = __esm({
+  "packages/std/src/sleep.ts"() {
   }
 });
 
@@ -74520,6 +74840,8 @@ export {
   sideChatsOf,
   withoutSideChats,
   init_side_chat2 as init_side_chat,
+  repairLegacyAcpTotalInputTokens,
+  init_model_usage,
   beginThreadSubmission,
   endThreadSubmission,
   isThreadSubmitting,
@@ -74529,6 +74851,7 @@ export {
   threadProposalStatus,
   findThreadProposalDecision,
   threadProposalFileSummary,
+  isCopseServerName,
   isCopseToolCall,
   isAcpDelegateToolCall,
   acpDelegateKind,
@@ -74696,6 +75019,7 @@ export {
   startHumanTurnTree,
   foldBackContinuationUsed,
   refreshAgentRunPayload,
+  hasPendingDispatch,
   dispatchAgentRun,
   enqueueUserMessage,
   updateQueuedMessageModel,
@@ -74798,10 +75122,13 @@ export {
   announcementCatalog,
   useAnnouncementCatalog,
   init_announcement_catalog,
+  prProductionSchema,
+  commitProductionSchema,
   prRelationKey,
   threadPrRelationships,
   ThreadPrRelationshipIndex,
-  init_thread_pr_relations2 as init_thread_pr_relations,
+  init_thread_pr_relations,
+  init_thread_pr_relations2,
   mergeThreadLinks,
   collectThreadLinks,
   backlinksFor,
@@ -74810,6 +75137,8 @@ export {
   workingBriefFromUserContent,
   nextWorkingBrief,
   init_working_brief,
+  sleep,
+  init_sleep,
   getActiveThreadOwner,
   requireActiveThreadOwner,
   activeThreadOf,
