@@ -139,6 +139,10 @@ export async function captureTabFrame<Image extends { isEmpty(): boolean }>(
       failure = error instanceof Error ? error : new Error(errorMessage(error))
     }
     if (attempt >= TAB_FRAME_ATTEMPTS || contents.isDestroyed()) throw failure
+    console.warn(
+      `[copse-panel] browser screenshot of ${tabId} failed on copy ${String(attempt)}; retrying after a fresh frame:`,
+      failure.message,
+    )
     await nextPaintedFrame(contents, TAB_FRAME_WAIT_MS)
   }
 }

@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test'
+import { beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { runInNewContext } from 'node:vm'
 import { captureTabFrame, capturePreviewDataUrl, type TabFrameContents } from './session-manager.ts'
@@ -350,12 +350,24 @@ function frameTab(
 }
 
 describe('captureTabFrame', () => {
+  // Each retry logs one warning; keep test output clean and assert it below.
+  let warnings: unknown[][] = []
+  beforeEach((t) => {
+    warnings = []
+    t.mock.method(console, 'warn', (...args: unknown[]) => {
+      warnings.push(args)
+    })
+  })
+
   it('copies again after a fresh frame when the compositor fails mid-reload (#4425)', async () => {
     const tab = frameTab([new Error('UnknownVizError'), 320])
     const captured = await captureTabFrame(tab, 'tab-1')
     assert.equal(captured.getSize().width, 320)
     assert.equal(tab.copies, 2)
     assert.equal(tab.invalidations, 1)
+    assert.equal(warnings.length, 1)
+    assert.match(String(warnings[0]?.[0]), /tab-1 failed on copy 1; retrying/)
+    assert.equal(warnings[0]?.[1], 'UnknownVizError')
   })
 
   it('copies again when the first frame is empty', async () => {
