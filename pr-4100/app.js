@@ -22,9 +22,10 @@ import {
   init_product_announcement_dialog,
   init_product_announcements,
   init_settings_dialog,
+  init_sleep,
   init_storage_cleanup,
   init_thread_links2 as init_thread_links,
-  init_thread_pr_relations,
+  init_thread_pr_relations2 as init_thread_pr_relations,
   init_token_estimate,
   init_tool_interruption,
   init_working_brief,
@@ -32,10 +33,11 @@ import {
   isReasoningLevel,
   mountProductAnnouncements,
   openSettingsDialog,
+  sleep,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-DEW7PTV7.js";
-import "./chunks/chunk-D55J6ZRP.js";
+} from "./chunks/chunk-FJ5WDSTJ.js";
+import "./chunks/chunk-X6JZSFJR.js";
 import {
   init_icons,
   init_unknown_value,
@@ -44,7 +46,7 @@ import {
   maximizeIcon,
   minimizeIcon,
   stringRecordOrEmpty
-} from "./chunks/chunk-HZHR2CRE.js";
+} from "./chunks/chunk-CK4AOU5N.js";
 import "./chunks/chunk-EMIRHVRH.js";
 import {
   __commonJS,
@@ -164,9 +166,6 @@ var init_parse_agent_run_payload = __esm({
 });
 
 // src/renderer/demo/trace-player.ts
-function defaultSleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 function sliceForStreaming(text, sliceChars) {
   if (text === "") return [];
   const slices = [];
@@ -189,7 +188,7 @@ async function playTrace(trace, emit, options = {}) {
     stepPauseMs = DEFAULT_STEP_PAUSE_MS,
     instant = false,
     signal,
-    sleep: sleep2 = defaultSleep
+    sleep: sleep2 = sleep
   } = options;
   const pause = async (ms) => {
     if (instant || ms <= 0) return;
@@ -215,6 +214,7 @@ async function playTrace(trace, emit, options = {}) {
 var DEFAULT_CHARS_PER_SECOND, DEFAULT_SLICE_CHARS, DEFAULT_STEP_PAUSE_MS;
 var init_trace_player = __esm({
   "src/renderer/demo/trace-player.ts"() {
+    init_sleep();
     DEFAULT_CHARS_PER_SECOND = 240;
     DEFAULT_SLICE_CHARS = 12;
     DEFAULT_STEP_PAUSE_MS = 260;
@@ -1808,6 +1808,15 @@ var init_demo_bridged_tools = __esm({
 
 // src/shared/approval-copy.ts
 function threadAccessApproval(access) {
+  if (access === "orchestrate")
+    return {
+      title: "Allow subthread orchestration?",
+      body: "",
+      bodyAdvice: "Allow this thread to start subthreads in isolated checkouts, read their conversations, and send them further instructions. This allows additional model usage. Only subthreads created by this thread are included; their normal permissions and limits still apply.",
+      bodyFooter: "Applies only to this thread until revoked in the thread\u2019s Context panel \u2192 Permissions.",
+      approveLabel: "Allow orchestration",
+      allowRemember: false
+    };
   return {
     title: access === "read" ? "Read your other threads?" : "Send prompts to your other threads?",
     body: "",
@@ -1815,6 +1824,20 @@ function threadAccessApproval(access) {
     bodyFooter: "Applies only to this thread. Revoke it in the thread\u2019s Context panel \u2192 Permissions.",
     approveLabel: access === "read" ? "Allow reading" : "Allow sending",
     allowRemember: false
+  };
+}
+function gitPushApproval(branch, expectedRemoteSha) {
+  return {
+    title: "Push branch to origin?",
+    approveLabel: "Push branch",
+    body: [
+      `Branch: ${branch}`,
+      "Remote: origin",
+      expectedRemoteSha ? `Push mode: Force with lease
+Expected remote commit: ${expectedRemoteSha}` : "Push mode: Fast-forward only"
+    ].join("\n"),
+    bodyAdvice: expectedRemoteSha ? "This publishes the branch to origin and can replace remote history only if the remote branch still points to the expected commit." : "This publishes the branch to origin without replacing existing remote history.",
+    bodyFooter: "Approval covers this push once."
   };
 }
 function webApprovalDetails(origin, url, allowRemember, context) {
@@ -1838,6 +1861,22 @@ function providerApprovalDetails(host, baseUrl) {
     body: baseUrl.trim(),
     bodyAdvice: `Your API key and prompts will be sent to ${host} at this base URL:`,
     bodyFooter: "Approval always allows this provider host, including other base URLs on it. The grant is saved in Settings."
+  };
+}
+function desktopAppApproval(input) {
+  const { bundleId, caution, threadScoped } = input;
+  const allowRemember = input.allowRemember && !caution;
+  const scope = threadScoped ? "Applies to this thread." : "Applies to this request only.";
+  return {
+    title: `Let the agent use ${bundleId}?`,
+    body: bundleId,
+    bodyAdvice: `The agent wants to ${input.action}. Allowing lets it read and operate this app (click, type and choose menu items) ${threadScoped ? "for the rest of this thread" : "for this request"}, not just this step. It works in the background through Accessibility and can see anything this app shows, including signed-in accounts. Text it reads from the app is treated as untrusted.` + (caution ? `
+
+${caution}` : ""),
+    bodyFooter: allowRemember ? `${scope} \u201CAlways allow\u201D lets every thread use this app without asking and is saved in Settings.` : caution ? `${scope} This app is asked about in every thread and cannot be always allowed.` : scope,
+    approveLabel: threadScoped ? "Allow for this thread" : "Allow once",
+    allowRemember,
+    rememberLabel: `Always allow ${bundleId}`
   };
 }
 var init_approval_copy = __esm({
@@ -3070,6 +3109,45 @@ var init_demo_scenarios = __esm({
                         }
                       ]
                     }
+                  }
+                ],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
+      },
+      {
+        // #1433 Fix 0b: read_explored quotes lines an explore call already read.
+        id: "read-explored",
+        label: "Quote explored lines",
+        project: project("demo-read-explored-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        threads: [
+          {
+            id: "demo-read-explored-thread",
+            title: "Read explored",
+            status: "idle",
+            messages: [
+              {
+                id: "demo-read-explored-assistant",
+                role: "assistant",
+                content: "Quoting the whole function before editing it.",
+                toolCalls: [
+                  {
+                    id: "demo-read-explored-call",
+                    name: "read_explored",
+                    args: { path: "src/renderer/browser-pane.ts", start_line: 289, end_line: 296 },
+                    status: "done",
+                    resultFormat: "markdown",
+                    result: "`src/renderer/browser-pane.ts` lines 289\u2013296:\n```\nexport function wireToolbar(urlInput: HTMLInputElement): void {\n  urlInput.addEventListener('keydown', (event) => {\n    if (event.key === 'Enter') {\n      submitUrl(urlInput.value)\n    }\n  })\n}\n```"
                   }
                 ],
                 createdAt: FIXED_TIME
@@ -5081,6 +5159,7 @@ var init_demo_scenarios = __esm({
           rightPanelMode: "context",
           threadReadAccess: [SIDE_CHATS_MAIN_ID],
           threadSendAccess: [SIDE_CHATS_MAIN_ID],
+          threadSubthreadAccess: [SIDE_CHATS_MAIN_ID],
           webAllowedOrigins: ["https://example.org:443"],
           toolPermissionOverrides: { "copse:run_shell": "ask" },
           layout: {
@@ -5447,17 +5526,73 @@ var init_demo_scenarios = __esm({
           }
         ]
       },
+      {
+        id: "chatgpt-plan-expired",
+        label: "ChatGPT plan whose sign-in has expired",
+        project: project("demo-chatgpt-plan-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          chatGptPlanWelcomeSeen: true
+        },
+        chatGptPlan: {
+          activeClientId: "demo-plan-account",
+          accounts: [
+            {
+              clientId: "demo-plan-account",
+              label: "you@example.com",
+              connected: true,
+              planEnabled: true
+            }
+          ]
+        },
+        chatGptPlanRefreshFailure: {
+          error: "Error invoking remote method 'chat-gpt-plan:refresh-account': Error: ChatGPT sign-in expired. Reconnect this account.",
+          status: {
+            activeClientId: "demo-plan-account",
+            accounts: [
+              {
+                clientId: "demo-plan-account",
+                label: "you@example.com",
+                connected: false,
+                planEnabled: false
+              }
+            ]
+          }
+        },
+        threads: []
+      },
       // Authored states for the copse.dev feature tour (see demo-site-tour.ts).
       ...SITE_TOUR_SCENARIOS,
       // Concise thread view in each state a thread can be in (see demo-concise-states.ts).
       ...CONCISE_STATE_SCENARIOS,
-      ...["read", "send"].map(
+      ...["read", "send", "orchestrate"].map(
         (access) => approvalRiskScenario(`approval-thread-${access}`, {
           id: `thread-${access}`,
           type: "mcp",
           ...threadAccessApproval(access)
         })
       ),
+      ...[void 0, "0123456789abcdef0123456789abcdef01234567"].map(
+        (sha) => approvalRiskScenario(sha ? "approval-git-push-lease" : "approval-git-push", {
+          id: "git-push",
+          type: "mcp",
+          ...gitPushApproval("copse/friendly-action-names-213c32", sha)
+        })
+      ),
+      approvalRiskScenario("approval-automation-preparation", {
+        id: "automation-preparation",
+        title: "Prepare this worktree?",
+        type: "shell",
+        body: "Install dependencies:\n'corepack' 'pnpm@10.34.5' 'install' '--frozen-lockfile' '--ignore-scripts' '--prod=false'\nProject setup:\n'node' 'scripts/prepare-native-artifacts.mts'",
+        bodyAdvice: "Install locked dependencies with lifecycle scripts disabled. Project setup executes repository code.",
+        bodyFooter: "Network: allowed during preparation; checks stay offline. Writes are limited to this project and Copse-managed caches.\nRemembering permits this exact preparation plan and network scope in future runs of this automation. Changed inputs require approval again.",
+        allowRemember: true,
+        rememberLabel: "Remember for this automation (\u201CMorning caretaker\u201D)",
+        rememberDefault: true,
+        rememberSubject: "project/schedule/preparation-plan"
+      }),
       approvalRiskScenario("approval-web-url", {
         id: "web-url",
         title: "Allow web origin?",
@@ -5491,6 +5626,27 @@ var init_demo_scenarios = __esm({
         ...providerApprovalDetails("api.example.com", "https://api.example.com/v1"),
         allowRemember: false,
         approveLabel: "Always allow host"
+      }),
+      approvalRiskScenario("approval-desktop-app", {
+        id: "desktop-app",
+        type: "mcp",
+        ...desktopAppApproval({
+          bundleId: "com.apple.Notes",
+          action: "read its window contents",
+          allowRemember: true,
+          threadScoped: true
+        })
+      }),
+      approvalRiskScenario("approval-desktop-finder", {
+        id: "desktop-finder",
+        type: "mcp",
+        ...desktopAppApproval({
+          bundleId: "com.apple.finder",
+          action: "activate element e12",
+          caution: "Finder can open scripts and apps, including ones the agent wrote, and they run outside the shell permission gate.",
+          allowRemember: true,
+          threadScoped: true
+        })
       })
     ];
   }
@@ -5549,6 +5705,10 @@ function unsupported() {
 }
 function createDemoApi(scenario2, options = {}) {
   const settings = new Map(Object.entries(scenario2.settings));
+  let chatGptPlan = scenario2.chatGptPlan ?? {
+    accounts: [],
+    activeClientId: null
+  };
   const guardedYoloPhases = new Map(
     scenario2.guardedYoloPhase && scenario2.threads[0] ? [[scenario2.threads[0].id, scenario2.guardedYoloPhase]] : []
   );
@@ -5660,6 +5820,8 @@ function createDemoApi(scenario2, options = {}) {
     typeof scenarioModel === "string" ? scenarioModel : void 0
   );
   const api = {
+    remote: { publish: async () => {
+    } },
     clientActions: {
       claim: () => Promise.resolve(false),
       publish: async () => {
@@ -5670,11 +5832,21 @@ function createDemoApi(scenario2, options = {}) {
       }
     },
     threadPrompts: {
+      // Demo scenarios never dispatch native delegated work.
+      canDispatch: () => resolved(false),
+      canSubmit: () => resolved(true),
       onPrompt: () => () => {
       },
       reply: async () => {
       },
-      revokeAccess: async () => {
+      revokeAccess: (threadId, access) => {
+        const key = access === "read" ? "threadReadAccess" : access === "send" ? "threadSendAccess" : "threadSubthreadAccess";
+        const grants = settings.get(key);
+        settings.set(
+          key,
+          Array.isArray(grants) ? grants.filter((id) => id !== threadId) : []
+        );
+        return resolvedVoid();
       }
     },
     mobile: {
@@ -5775,6 +5947,7 @@ function createDemoApi(scenario2, options = {}) {
           portBindingAllowed: false
         }
       ),
+      revokeProjectPortBinding: () => resolved(void 0),
       enableGuardedYolo: (threadId) => updateGuardedYolo(threadId, "armed"),
       disableGuardedYolo: (threadId) => updateGuardedYolo(threadId, "off"),
       onGuardedYoloChanged: (listener) => {
@@ -6141,6 +6314,15 @@ function createDemoApi(scenario2, options = {}) {
       // exceptions are scenarios built around the hydration window itself,
       // which hold the read open (or fail it) so the mid-switch state stays
       // on screen.
+      searchRequests: (_projectId, query) => resolved({
+        matches: threads.filter(
+          (thread) => thread.archivedAt == null && thread.messages.some(
+            (message) => message.role === "user" && (message.origin === void 0 || message.editedByUser === true) && message.content.normalize("NFC").toLowerCase().includes(query.normalize("NFC").toLowerCase())
+          )
+        ).map((thread) => thread.id),
+        incomplete: false
+      }),
+      cancelRequestSearch: () => resolvedVoid(),
       loadMessages: (_projectId, threadId) => scenario2.holdThreadHydration === true ? new Promise(() => void 0) : scenario2.failThreadHydration === true ? Promise.reject(new Error("demo: transcript read failed")) : resolved(structuredClone(threads.find((t) => t.id === threadId)?.messages ?? [])),
       // Demo threads link no PRs, so a backfill answers each one with an empty ref set —
       // the settled "no PR" the sidebar waits for before it draws a row's changes glyph.
@@ -6360,9 +6542,14 @@ function createDemoApi(scenario2, options = {}) {
       dismiss: resolvedVoid
     },
     chatGptPlan: {
-      status: () => resolved(scenario2.chatGptPlan ?? { accounts: [], activeClientId: null }),
+      status: () => resolved(chatGptPlan),
       signIn: unsupported,
-      refreshAccount: () => scenario2.chatGptPlan ? resolved(scenario2.chatGptPlan) : unsupported(),
+      refreshAccount: () => {
+        const failure = scenario2.chatGptPlanRefreshFailure;
+        if (!failure) return scenario2.chatGptPlan ? resolved(scenario2.chatGptPlan) : unsupported();
+        chatGptPlan = failure.status;
+        return Promise.reject(new Error(failure.error));
+      },
       cancelSignIn: resolvedVoid,
       selectAccount: unsupported,
       signOut: unsupported,
@@ -6557,6 +6744,9 @@ function createDemoApi(scenario2, options = {}) {
       setThread: () => resolved(null),
       findByThread: () => resolved(null)
     },
+    backgroundTasks: {
+      logs: () => resolved(null)
+    },
     supervisor: {
       list: () => resolved({ tasks: [] }),
       cancel: () => resolved({ task: null }),
@@ -6621,6 +6811,7 @@ function createDemoApi(scenario2, options = {}) {
     automations: {
       list: () => resolved(structuredClone(automationSchedules)),
       permissionOptions: () => resolved(showAutomationPermissions ? structuredClone(DEMO_AUTOMATION_PERMISSIONS) : []),
+      reviewPreparation: unsupported,
       upsert: unsupported,
       remove: unsupported,
       runNow: unsupported,
@@ -7128,9 +7319,6 @@ var init_scenarios = __esm({
 });
 
 // src/renderer/demo/autoplay.ts
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 async function waitForElement(root, selector, timeoutMs, signal) {
   const deadline = Date.now() + timeoutMs;
   for (; ; ) {
@@ -7267,6 +7455,7 @@ async function startAutoplay(doc, options) {
 var COMPOSER_SELECTOR, SUBMIT_SELECTOR, RUNNING_CLASS, MOUNT_TIMEOUT_MS, RUN_TIMEOUT_MS, PREVIEW_TIMEOUT_MS, POLL_MS, DEFAULT_CHARS_PER_SECOND2, DEFAULT_START_DELAY_MS, DEFAULT_LOOP_PAUSE_MS;
 var init_autoplay = __esm({
   "src/renderer/demo/autoplay.ts"() {
+    init_sleep();
     COMPOSER_SELECTOR = ".prompt-input";
     SUBMIT_SELECTOR = ".submit-btn";
     RUNNING_CLASS = "with-stop";
@@ -7310,7 +7499,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-UYGQ5ZFS.js").then(async (main) => {
+    void import("./chunks/main-5VNQS2WR.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(
