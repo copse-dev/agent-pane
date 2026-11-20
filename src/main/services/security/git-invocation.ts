@@ -34,8 +34,8 @@ const INTERNAL_GIT_COMMANDS = new Set([
   'diff',
   'fetch',
   'for-each-ref',
-  // Revision searches for LFS markers; textconv off and `-O` (which runs a
-  // pager program named in its argument) refused.
+  // Revision searches for LFS markers. Only the exact shape `assertGrep`
+  // admits, so no `-O` pager program and no textconv in any spelling.
   'grep',
   'log',
   'init',
@@ -135,8 +135,7 @@ export function withGitInvocationArgs(
   if (command === 'clone') assertLocalSubmoduleClone(rest)
   if (command === 'cherry-pick') assertCherryPick(rest)
   if (command === 'bundle') assertBundle(rest)
-  if (command === 'grep' && rest.some((arg) => /^(-O|--open-files-in-pager)/.test(arg)))
-    throw new Error('Unsupported internal Git grep')
+  if (command === 'grep') assertGrep(rest)
   // A caller cannot prepend -c/--config-env to undo the policy. Diff flags go
   // before revisions/pathspecs, never after a caller's `--` separator.
   const diffFlags =
@@ -203,6 +202,29 @@ function assertCherryPick(args: string[]): void {
   const commits = rest[0] === '--allow-empty-message' ? rest.slice(1) : rest
   if (noEdit !== '--no-edit' || commits.length === 0 || !commits.every((c) => FULL_SHA.test(c)))
     throw new Error('Unsupported internal Git cherry-pick')
+}
+
+/** The flags the hosted transfer's LFS scan passes. None takes a value. */
+const GREP_FLAGS = new Set(['-I', '-l', '-E'])
+
+/**
+ * Admit exactly `grep [-I] [-l] [-E] <pattern> [<full sha>] [-- <path>...]`.
+ *
+ * Config-execution audit: `-O`/`--open-files-in-pager` runs the program named
+ * in its argument, and `--textconv` after the injected `--no-textconv` runs the
+ * checkout's textconv drivers. Git also accepts abbreviated long options
+ * (`--open=<prog>`) and bundled short ones (`-IO<prog>`), so each flag must be
+ * one of {@link GREP_FLAGS} exactly rather than avoid a known prefix. Git stops
+ * parsing options at the first non-option, so a pattern that starts with `-`
+ * would be read as one and is refused; after the pattern, only a full SHA and
+ * `--` pathspecs are admitted.
+ */
+function assertGrep(args: string[]): void {
+  const patternAt = args.findIndex((arg) => !GREP_FLAGS.has(arg))
+  const [pattern, ...rest] = patternAt === -1 ? [] : args.slice(patternAt)
+  const tail = FULL_SHA.test(rest[0] ?? '') ? rest.slice(1) : rest
+  if (!pattern || pattern.startsWith('-') || (tail.length > 0 && tail[0] !== '--'))
+    throw new Error('Unsupported internal Git grep')
 }
 
 /** Admit `bundle create|verify|list-heads`; `unbundle` and future subcommands are refused. */
