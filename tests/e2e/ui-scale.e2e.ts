@@ -8,9 +8,11 @@ import {
 import { removeE2eTree } from './helpers/remove-tree.ts'
 import {
   E2E_SCREENSHOT_DIR,
+  prepareE2eScreenshot,
   saveAppViewportScreenshot,
   saveElementScreenshot,
   waitForSettledLayout,
+  withCaptureFrame,
 } from './helpers/screenshot.ts'
 
 interface UiScaleSnapshot {
@@ -90,37 +92,64 @@ async function visualViewportSnapshot(): Promise<VisualViewportSnapshot | null> 
   })
 }
 
-// Compare scale at a fixed transcript position. Settings focus and the capture
-// resize can otherwise leave the transcript scrolled under its sticky prompt.
-async function saveScaleComparisonScreenshot(filename: string): Promise<void> {
-  await saveAppViewportScreenshot(filename, async () => {
-    await browser.execute(() => {
-      const transcript = document.querySelector<HTMLElement>('.messages-list')
-      if (!transcript) throw new Error('missing scale comparison transcript')
-      transcript.scrollTo({ top: 0, behavior: 'instant' })
-    })
-    await waitForSettledLayout('.messages-list')
-    const geometry = await browser.execute(() => {
-      const transcript = document.querySelector<HTMLElement>('.messages-list')
-      const prompt = document.querySelector('[data-message-id="msg-user-hierarchy"]')
-      const result = document.querySelector(
-        '[data-message-id="msg-assistant-result"] .message-text p',
-      )
-      if (!transcript || !prompt || !result) throw new Error('missing scale comparison content')
-      return {
-        scrollTop: transcript.scrollTop,
-        viewportTop: transcript.getBoundingClientRect().top,
-        viewportBottom: transcript.getBoundingClientRect().bottom,
-        promptBottom: prompt.getBoundingClientRect().bottom,
-        resultTop: result.getBoundingClientRect().top,
-        resultBottom: result.getBoundingClientRect().bottom,
-      }
-    })
-    expect(geometry.scrollTop).toBe(0)
-    expect(geometry.resultTop).toBeGreaterThanOrEqual(geometry.promptBottom)
-    expect(geometry.resultTop).toBeGreaterThanOrEqual(geometry.viewportTop)
-    expect(geometry.resultBottom).toBeLessThanOrEqual(geometry.viewportBottom)
+// Use the same explicit transcript position for native and comparison captures.
+// The composer box can settle before its ResizeObserver reserve is applied.
+async function prepareScaleComparisonCapture(): Promise<void> {
+  await waitForSettledLayout('#input-bar')
+  await browser.waitUntil(
+    () =>
+      browser.execute(() => {
+        const pane = document.getElementById('pane-chat')
+        const composer = document.getElementById('input-bar')
+        if (!pane || !composer) return false
+        const reserve = Number.parseFloat(
+          getComputedStyle(pane).getPropertyValue('--chat-composer-height'),
+        )
+        const expected = Math.max(Math.ceil(composer.getBoundingClientRect().height), 72)
+        return document.fonts.status === 'loaded' && reserve === expected
+      }),
+    { timeoutMsg: 'Scale capture composer reserve did not match its measured height' },
+  )
+  await browser.execute(() => {
+    const transcript = document.querySelector<HTMLElement>('.messages-list')
+    if (!transcript) throw new Error('missing scale comparison transcript')
+    transcript.scrollTo({ top: 0, behavior: 'instant' })
   })
+  await waitForSettledLayout('.messages-list')
+  const geometry = await browser.execute(() => {
+    const transcript = document.querySelector<HTMLElement>('.messages-list')
+    const prompt = document.querySelector('[data-message-id="msg-user-hierarchy"]')
+    const result = document.querySelector(
+      '[data-message-id="msg-assistant-result"] .message-text p',
+    )
+    const pane = document.getElementById('pane-chat')
+    const composer = document.getElementById('input-bar')
+    if (!transcript || !prompt || !result || !pane || !composer)
+      throw new Error('missing scale comparison content')
+    return {
+      fonts: document.fonts.status,
+      appliedInset: Number.parseFloat(
+        getComputedStyle(pane).getPropertyValue('--chat-composer-height'),
+      ),
+      expectedInset: Math.max(Math.ceil(composer.getBoundingClientRect().height), 72),
+      scrollTop: transcript.scrollTop,
+      viewportTop: transcript.getBoundingClientRect().top,
+      viewportBottom: transcript.getBoundingClientRect().bottom,
+      promptBottom: prompt.getBoundingClientRect().bottom,
+      resultTop: result.getBoundingClientRect().top,
+      resultBottom: result.getBoundingClientRect().bottom,
+    }
+  })
+  expect(geometry.fonts).toBe('loaded')
+  expect(geometry.appliedInset).toBe(geometry.expectedInset)
+  expect(geometry.scrollTop).toBe(0)
+  expect(geometry.resultTop).toBeGreaterThanOrEqual(geometry.promptBottom)
+  expect(geometry.resultTop).toBeGreaterThanOrEqual(geometry.viewportTop)
+  expect(geometry.resultBottom).toBeLessThanOrEqual(geometry.viewportBottom)
+}
+
+async function saveScaleComparisonScreenshot(filename: string): Promise<void> {
+  await saveAppViewportScreenshot(filename, prepareScaleComparisonCapture)
 }
 
 describe('interface scale (--ui-scale)', () => {
@@ -170,87 +199,100 @@ describe('interface scale (--ui-scale)', () => {
     ).toBeLessThan(1)
     expect(visualViewport?.offsetLeft).toBe(0)
     expect(visualViewport?.offsetTop).toBe(0)
-    await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'ui-scale-native-window-default.png'))
-    const nativeGeometry = await browser.execute(() => {
-      const bounded = (value: number): number | null =>
-        Number.isFinite(value) && Math.abs(value) <= 10_000_000 ? Number(value.toFixed(4)) : null
-      const rect = (node: Element | null): (number | null)[] | null => {
-        if (!node) return null
-        const box = node.getBoundingClientRect()
-        return [box.x, box.y, box.width, box.height].map(bounded)
+    if (!visualViewport) throw new Error('missing native visual viewport')
+    await withCaptureFrame(async () => {
+      // Prepare at the actual native size, including the normal resize sync,
+      // without applying the comparison screenshot's smaller viewport.
+      await prepareE2eScreenshot({
+        width: visualViewport.innerWidth,
+        height: visualViewport.innerHeight,
+      })
+      await prepareScaleComparisonCapture()
+      expect(await visualViewportSnapshot()).toEqual(visualViewport)
+      await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'ui-scale-native-window-default.png'))
+      const nativeGeometry = await browser.execute(() => {
+        const bounded = (value: number): number | null =>
+          Number.isFinite(value) && Math.abs(value) <= 10_000_000 ? Number(value.toFixed(4)) : null
+        const rect = (node: Element | null): (number | null)[] | null => {
+          if (!node) return null
+          const box = node.getBoundingClientRect()
+          return [box.x, box.y, box.width, box.height].map(bounded)
+        }
+        const pane = document.getElementById('pane-chat')
+        const input = document.getElementById('input-bar')
+        const conversation = document.getElementById('conversation')
+        const list = document.querySelector<HTMLElement>('.messages-list')
+        const prompt = document.querySelector('[data-message-id="msg-user-hierarchy"]')
+        const result = document.querySelector('[data-message-id="msg-assistant-result"]')
+        const tool = document.querySelector('[data-tool-id="tc-format-check"]')
+        const toolHost = tool?.closest('.tool-card-rollup') ?? tool
+        const bullets = result?.querySelectorAll('.message-text li')
+        const viewport = window.visualViewport
+        return {
+          file: 'ui-scale-native-window-default.png',
+          phase: 'after-native-window-capture-before-comparison-helper',
+          atMs: bounded(performance.now()),
+          viewport: [innerWidth, innerHeight, devicePixelRatio, scrollX, scrollY].map(bounded),
+          visualViewport: viewport
+            ? [
+                viewport.width,
+                viewport.height,
+                viewport.offsetLeft,
+                viewport.offsetTop,
+                viewport.scale,
+              ].map(bounded)
+            : null,
+          fonts: document.fonts.status,
+          composerH: input ? bounded(input.getBoundingClientRect().height) : null,
+          composerReserve: pane
+            ? bounded(
+                Number.parseFloat(
+                  getComputedStyle(pane).getPropertyValue('--chat-composer-height'),
+                ),
+              )
+            : null,
+          conversationPaddingBottom: conversation
+            ? bounded(Number.parseFloat(getComputedStyle(conversation).paddingBottom))
+            : null,
+          paneRect: rect(pane),
+          inputRect: rect(input),
+          listRect: rect(list),
+          listScroll: list
+            ? [list.scrollTop, list.clientHeight, list.scrollHeight].map(bounded)
+            : null,
+          promptRect: rect(prompt),
+          resultRect: rect(result),
+          resultParagraphRect: rect(result?.querySelector('.message-text p') ?? null),
+          bulletCount: bounded(bullets?.length ?? 0),
+          bulletRects: [...(bullets ?? [])].slice(0, 4).map(rect),
+          toolRect: rect(tool),
+          toolHostRect: rect(toolHost ?? null),
+          toolSummaryRect: rect(toolHost?.querySelector(':scope > summary') ?? null),
+        }
+      })
+      const [{ readFile, writeFile }, { createHash }] = await Promise.all([
+        import('node:fs/promises'),
+        import('node:crypto'),
+      ])
+      const nativePngBytes = await readFile(
+        join(E2E_SCREENSHOT_DIR, 'ui-scale-native-window-default.png'),
+      )
+      const pngSHA256 = createHash('sha256').update(nativePngBytes).digest('hex')
+      const { E2E_ATTEMPT_DIRECTORY_ENV, managedAttemptDirectory } =
+        await import('../../scripts/lib/e2e-attempt-diagnostics.mts')
+      const attemptDirectory = managedAttemptDirectory(process.env[E2E_ATTEMPT_DIRECTORY_ENV])
+      if (attemptDirectory) {
+        await writeFile(
+          join(attemptDirectory, `ui-scale-native-window-default-${pngSHA256}.png`),
+          nativePngBytes,
+        )
+        await writeFile(
+          join(attemptDirectory, `ui-scale-native-window-default-${pngSHA256}.json`),
+          JSON.stringify({ ...nativeGeometry, pngSHA256 }) + '\n',
+        )
       }
-      const pane = document.getElementById('pane-chat')
-      const input = document.getElementById('input-bar')
-      const conversation = document.getElementById('conversation')
-      const list = document.querySelector<HTMLElement>('.messages-list')
-      const prompt = document.querySelector('[data-message-id="msg-user-hierarchy"]')
-      const result = document.querySelector('[data-message-id="msg-assistant-result"]')
-      const tool = document.querySelector('[data-tool-id="tc-format-check"]')
-      const toolHost = tool?.closest('.tool-card-rollup') ?? tool
-      const bullets = result?.querySelectorAll('.message-text li')
-      const viewport = window.visualViewport
-      return {
-        file: 'ui-scale-native-window-default.png',
-        phase: 'after-native-window-capture-before-comparison-helper',
-        atMs: bounded(performance.now()),
-        viewport: [innerWidth, innerHeight, devicePixelRatio, scrollX, scrollY].map(bounded),
-        visualViewport: viewport
-          ? [
-              viewport.width,
-              viewport.height,
-              viewport.offsetLeft,
-              viewport.offsetTop,
-              viewport.scale,
-            ].map(bounded)
-          : null,
-        fonts: document.fonts.status,
-        composerH: input ? bounded(input.getBoundingClientRect().height) : null,
-        composerReserve: pane
-          ? bounded(
-              Number.parseFloat(getComputedStyle(pane).getPropertyValue('--chat-composer-height')),
-            )
-          : null,
-        conversationPaddingBottom: conversation
-          ? bounded(Number.parseFloat(getComputedStyle(conversation).paddingBottom))
-          : null,
-        paneRect: rect(pane),
-        inputRect: rect(input),
-        listRect: rect(list),
-        listScroll: list
-          ? [list.scrollTop, list.clientHeight, list.scrollHeight].map(bounded)
-          : null,
-        promptRect: rect(prompt),
-        resultRect: rect(result),
-        resultParagraphRect: rect(result?.querySelector('.message-text p') ?? null),
-        bulletCount: bounded(bullets?.length ?? 0),
-        bulletRects: [...(bullets ?? [])].slice(0, 4).map(rect),
-        toolRect: rect(tool),
-        toolHostRect: rect(toolHost ?? null),
-        toolSummaryRect: rect(toolHost?.querySelector(':scope > summary') ?? null),
-      }
+      console.info(`[ui-scale-native-geometry] ${JSON.stringify({ ...nativeGeometry, pngSHA256 })}`)
     })
-    const [{ readFile, writeFile }, { createHash }] = await Promise.all([
-      import('node:fs/promises'),
-      import('node:crypto'),
-    ])
-    const nativePngBytes = await readFile(
-      join(E2E_SCREENSHOT_DIR, 'ui-scale-native-window-default.png'),
-    )
-    const pngSHA256 = createHash('sha256').update(nativePngBytes).digest('hex')
-    const { E2E_ATTEMPT_DIRECTORY_ENV, managedAttemptDirectory } =
-      await import('../../scripts/lib/e2e-attempt-diagnostics.mts')
-    const attemptDirectory = managedAttemptDirectory(process.env[E2E_ATTEMPT_DIRECTORY_ENV])
-    if (attemptDirectory) {
-      await writeFile(
-        join(attemptDirectory, `ui-scale-native-window-default-${pngSHA256}.png`),
-        nativePngBytes,
-      )
-      await writeFile(
-        join(attemptDirectory, `ui-scale-native-window-default-${pngSHA256}.json`),
-        JSON.stringify({ ...nativeGeometry, pngSHA256 }) + '\n',
-      )
-    }
-    console.info(`[ui-scale-native-geometry] ${JSON.stringify({ ...nativeGeometry, pngSHA256 })}`)
     await saveScaleComparisonScreenshot('ui-scale-default.png')
 
     await $('[aria-label="Settings"]').click()
