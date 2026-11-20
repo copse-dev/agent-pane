@@ -531,7 +531,9 @@ app
   .whenReady()
   .then(async () => {
     await appRuntimeReady
-    await recoverIsolatedDesktops().catch((error: unknown) => {
+    // Deleting a stale VM can take minutes, so it must not hold the first window.
+    // Every Start awaits this same pass before it admits a new guest.
+    void recoverIsolatedDesktops().catch((error: unknown) => {
       console.error('[isolated-desktop] Orphan VM recovery failed:', error)
     })
     // Ahead of the mode branches below: every mode, headless included, should
