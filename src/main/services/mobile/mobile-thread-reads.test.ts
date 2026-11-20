@@ -20,7 +20,7 @@ function store(): {
     revisions,
     loads,
     revision: (_projectId, threadId) => Promise.resolve(revisions.get(threadId) ?? 'r0'),
-    load: (_projectId, threadId) => {
+    load: (_projectId, threadId): Promise<Message[]> => {
       loads.push(threadId)
       return Promise.resolve([message(`${threadId}@${revisions.get(threadId) ?? 'r0'}`)])
     },
