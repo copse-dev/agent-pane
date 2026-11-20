@@ -75,6 +75,28 @@ describe('ACP client against a spawned agent process', () => {
     assert.match(streamedText(chunks), /client answered reject/)
   })
 
+  it('passes the RPC cancellation signal to file callbacks and returns raw contents', async () => {
+    const { entry } = await acquireAcpSession({
+      threadId: 'acp-spawn-read',
+      config: { command: process.execPath, args: [MOCK_AGENT], cwd: process.cwd() },
+    })
+    const chunks: StreamChunk[] = []
+    let reads = 0
+    entry.open.handlers.current = {
+      ...collectingHandlers(chunks, 'allow'),
+      readTextFile: async (request, signal): Promise<{ content: string }> => {
+        reads++
+        assert.equal(request.path, '/fixture/notes.txt')
+        assert.ok(signal instanceof AbortSignal)
+        assert.equal(signal.aborted, false)
+        return { content: 'first\nsecond\n' }
+      },
+    }
+    await runAcpSessionPrompt(entry.open, 'client-read:/fixture/notes.txt', undefined)
+    assert.equal(reads, 1)
+    assert.equal(streamedText(chunks), 'client-read-result:\nfirst\nsecond\n')
+  })
+
   it('surfaces the child stderr when the agent dies mid-turn', async () => {
     const { entry } = await acquireAcpSession({
       threadId: 'acp-spawn-crash',

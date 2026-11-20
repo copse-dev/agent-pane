@@ -189,6 +189,16 @@ agent({ name: 'mock-acp-agent' })
       return { stopReason: 'end_turn' }
     }
 
+    const clientRead = /client-read:(\/[^\s]+)/.exec(text)
+    if (clientRead) {
+      const response = await ctx.client.request(methods.client.fs.readTextFile, {
+        sessionId,
+        path: clientRead[1],
+      })
+      await say(`client-read-result:\n${response.content}`)
+      return { stopReason: 'end_turn' }
+    }
+
     // Claude Code after it dropped every tool of the copse server (#4142): the
     // model still calls one, and the CLI answers "No such tool available". The
     // Claude adapter names the call in `_meta.claudeCode.toolName` and reports
