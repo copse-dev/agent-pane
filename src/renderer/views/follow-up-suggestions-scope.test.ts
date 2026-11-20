@@ -108,4 +108,48 @@ describe('follow-up suggestions thread scope', () => {
     assert.ok(mount.root.querySelector('.follow-up-bubble[data-id="run-tests"]'))
     mount.destroy()
   })
+
+  it('starts one fetch per exchange while mid-turn writes keep emitting threads_changed', async () => {
+    const store = createStore()
+    store.setState({ activeProjectId: 'project-1' })
+    const thread = createThread(store)
+    addMessage(store, thread, 'user', 'fix the parser')
+    addMessage(store, thread, 'assistant', 'Working on it.')
+    let fetches = 0
+    let settle: (suggestions: FollowUpSuggestion[]) => void = () => {}
+    const base = createFakeApi()
+    const api: ApiClient = {
+      ...base,
+      agent: {
+        ...base.agent,
+        suggestFollowUps: () => {
+          fetches += 1
+          return new Promise<FollowUpSuggestion[]>((resolve) => {
+            settle = resolve
+          })
+        },
+      },
+    }
+    const mount = mountFollowUpSuggestions(store, api, () => {})
+    document.body.append(mount.root)
+    setThreadStatus(store, thread, 'running')
+    await flush()
+
+    // A streaming turn emits threads_changed several times a second, and each
+    // fetch costs git/gh processes and a small-model call in main. The fetch
+    // already in flight for this exchange serves every one of them.
+    for (let i = 0; i < 20; i++) {
+      store.emit('threads_changed')
+      await flush()
+    }
+    assert.equal(fetches, 1)
+
+    settle([SUGGESTION])
+    await flush()
+    assert.ok(mount.root.querySelector('.follow-up-bubble[data-id="run-tests"]'))
+    store.emit('threads_changed')
+    await flush()
+    assert.equal(fetches, 1, 'the settled result is cached for the exchange')
+    mount.destroy()
+  })
 })

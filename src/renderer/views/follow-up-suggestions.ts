@@ -165,6 +165,11 @@ export function mountFollowUpSuggestions(
   let displayedThreadId: string | null = null
   const suggestionsByThread = new Map<string, CachedSuggestions>()
   const consumedTurnKeys = new Map<string, string>()
+  // The exchange each thread's outstanding fetch is for. `threads_changed`
+  // fires several times a second while a turn streams, and every fetch costs
+  // git/gh processes on main plus a small-model call; without this, each event
+  // started another fetch that superseded the last, so none was ever cached.
+  const inFlightTurnKeys = new Map<string, string>()
 
   function consumeSuggestions(threadId: string): void {
     // Creating a PR appends a synthetic assistant card, not a new user turn.
@@ -295,7 +300,9 @@ export function mountFollowUpSuggestions(
 
     const { activeProjectId } = store.getState()
     if (!activeProjectId) return
+    if (inFlightTurnKeys.get(threadId) === exchange.turnKey) return
 
+    inFlightTurnKeys.set(threadId, exchange.turnKey)
     const token = nextFetchToken(threadId)
     try {
       const suggestions = await api.agent.suggestFollowUps(
@@ -316,6 +323,8 @@ export function mountFollowUpSuggestions(
       if (token !== fetchTokens.get(threadId)) return
       suggestionsByThread.delete(threadId)
       if (store.getState().activeThreadId === threadId) clearSuggestions()
+    } finally {
+      if (inFlightTurnKeys.get(threadId) === exchange.turnKey) inFlightTurnKeys.delete(threadId)
     }
   }
 
