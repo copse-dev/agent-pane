@@ -937,7 +937,8 @@ export async function findGitContentStates(
  * budgeted for it), cannot be read, or changes while being read: the
  * descriptor is checked again afterwards, and a different size, modification
  * time or change time means the bytes read may be no version the file ever
- * held whole.
+ * held whole. The path is checked again last, so a file renamed over it
+ * during the read (an editor's atomic save) is not reported as the path's.
  */
 export async function gitBlobIdOfRegularFile(
   path: string,
@@ -962,8 +963,11 @@ export async function gitBlobIdOfRegularFile(
     // The path must still name this same regular file. On Windows the open
     // follows a final symlink, so a link swapped in before it would otherwise
     // hash its target as this path; elsewhere this repeats `O_NOFOLLOW`.
-    const named = await fsp.lstat(path, { bigint: true })
-    if (!named.isFile() || named.dev !== stat.dev || named.ino !== stat.ino) return null
+    const pathNamesThisFile = async (): Promise<boolean> => {
+      const named = await fsp.lstat(path, { bigint: true })
+      return named.isFile() && named.dev === stat.dev && named.ino === stat.ino
+    }
+    if (!(await pathNamesThisFile())) return null
     const size = Number(stat.size)
     const hash = createHash(algorithm).update(`blob ${String(size)}\0`)
     const buffer = Buffer.alloc(Math.min(1024 * 1024, Math.max(1, size)))
@@ -987,6 +991,10 @@ export async function gitBlobIdOfRegularFile(
     ) {
       return null
     }
+    // An atomic save renames a new file over the path and leaves this
+    // descriptor on the unlinked old one, whose size and times need not move:
+    // the hash is the path's only if the path still names this file.
+    if (!(await pathNamesThisFile())) return null
     return hash.digest('hex')
   } catch {
     return null
