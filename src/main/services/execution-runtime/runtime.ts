@@ -27,7 +27,8 @@ export interface LocalSandboxPlan {
    * Run this contained command in a dedicated host process instead of wrapping
    * it here (an approved loopback-binding background task, whose ASRT network
    * scope must never be shared with other contained commands in this process).
-   * The host owns the wrap, its lease and its network scope.
+   * The host owns the wrap, its lease and its network scope; the adapter
+   * ignores this plan's lease fields and never releases a lease for it.
    */
   readonly hostedLaunch?: () => ChildProcess
   /** Working directory ASRT resolves the wrap's relative paths against. */

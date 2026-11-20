@@ -124,10 +124,13 @@ Optional argv / Guarded-YOLO extras live next to tool results:
   `sandbox` for a contained local process and `external` otherwise. The subject is
   `shell command (arguments omitted)`, so neither line records arguments. The first use of a runtime profile in a thread during a session also
   writes a `kind: "runtime-state"` line with its `capabilities`. `observed` records an
-  effect, not an authorization. Copse's own fixed-argv subprocesses (Git reads, the
-  sandbox file worker, probes) are not recorded, even when they run inside a turn's async
-  context: they are not the agent's actions, and a probe outliving its turn must not append
-  to an idle thread's spine. Processes outside a turn are not recorded. Interactive terminals are not recorded yet either. Headless and
+  effect, not an authorization. Processes Copse starts through `spawnInProjectSandbox`
+  are not recorded, even when they run inside a turn's async context. These are Git
+  reads, the sandbox file worker, probes, the plugin tool worker, Apple development
+  commands and app runs. A probe outliving its turn must not append to an idle thread's
+  spine. Some of these start because an agent called a tool (a plugin tool, an Apple
+  build, an app run), so this is a known gap in the audit, not a claim that they are
+  never the agent's actions. Processes outside a turn are not recorded. Interactive terminals are not recorded yet either. Headless and
   container runs record the same lines into the run's own decision list. The Context panel's
   Recent decisions list leaves `observed` lines out; the export keeps them.
 - **Hook verdicts** — any non-`allow` Cursor hook decision

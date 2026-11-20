@@ -236,6 +236,7 @@ describe('local runtime containment decisions', () => {
 
   it('hands a hosted contained launch to its host without wrapping it here', async () => {
     let wrapped = false
+    let released = 0
     const observations: ExecutionObservation[] = []
     const runtime = withExecutionAudit(
       createLocalExecutionRuntime({
@@ -243,6 +244,9 @@ describe('local runtime containment decisions', () => {
         wrapWithSandboxArgv: (command) => {
           wrapped = true
           return Promise.resolve({ argv: ['/bin/sh', '-c', command], env: {} })
+        },
+        releaseSandboxLease: () => {
+          released += 1
         },
       }),
       () =>
@@ -255,8 +259,11 @@ describe('local runtime containment decisions', () => {
         request(tmpdir(), {
           local: {
             sandbox: true,
+            // Lease fields on a hosted plan must be ignored: main never took
+            // the lease, so releasing one would unbalance ASRT's count.
             plan: () => ({
               config: {},
+              ownsSandboxLease: true,
               hostedLaunch: (): ChildProcess =>
                 spawn('/bin/sh', ['-c', 'exit 4'], { stdio: 'pipe' }),
             }),
@@ -266,6 +273,7 @@ describe('local runtime containment decisions', () => {
     )
     assert.equal((await collect(execution.child)).code, 4)
     assert.equal(wrapped, false)
+    assert.equal(released, 0)
     assert.deepEqual(execution.profile, { kind: 'local', containment: 'contained' })
     assert.deepEqual(
       observations.map((o) => o.type),
