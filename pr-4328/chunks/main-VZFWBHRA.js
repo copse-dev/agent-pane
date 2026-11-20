@@ -257,6 +257,7 @@ import {
   init_settings_dialog,
   init_side_chat,
   init_sidebar_thread,
+  init_sleep,
   init_state,
   init_store,
   init_theme,
@@ -291,6 +292,7 @@ import {
   isAutomationPendingStart,
   isBestValueChatModel,
   isBlankThread,
+  isCopseServerName,
   isCopseToolCall,
   isDynamicModel,
   isHeldMessage,
@@ -380,6 +382,7 @@ import {
   proposingThreadId,
   queuedMessageIds,
   queuedPayloadText,
+  queuedSteeringIsBusy,
   recordContextTrim,
   recordThreadArchives,
   recordThreadVideos,
@@ -453,6 +456,7 @@ import {
   sidebarHasRun,
   sidebarLastPromptAt,
   sidebarPrRefs,
+  sleep,
   sortThreadsNewestFirst,
   splitAppendedReminders,
   startHumanTurnTree,
@@ -490,7 +494,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-7EGNMEWX.js";
+} from "./chunk-A7JYBDAH.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -511,6 +515,7 @@ import {
   escapeHtml,
   expectString,
   externalLinkIcon,
+  eyeIcon,
   fileTextIcon,
   firstNonEmptyString,
   gitBranchIcon,
@@ -573,7 +578,7 @@ import {
   warningIcon,
   workspaceLinkTargetFromHref,
   zapIcon
-} from "./chunk-TYQO7O5R.js";
+} from "./chunk-CK4AOU5N.js";
 import {
   clear,
   el,
@@ -1276,7 +1281,7 @@ function createAppRunPanel(api2, owner, onLaunched = () => {
   let timer;
   const currentApp = () => discovery.apps.find((app) => app.id === appSelect.value);
   function fail(value) {
-    notice.textContent = value instanceof Error ? value.message : String(value);
+    notice.textContent = errorMessage(value);
     notice.hidden = false;
     notice.dataset["kind"] = "error";
   }
@@ -1458,7 +1463,7 @@ function createAppRunPanel(api2, owner, onLaunched = () => {
     try {
       options = await api2.appRun.setupOptions(owner, platform);
     } catch (value) {
-      setupHost.replaceChildren(el("p", {}, value instanceof Error ? value.message : String(value)));
+      setupHost.replaceChildren(el("p", {}, errorMessage(value)));
       return;
     }
     if (disposed || generation !== setupGeneration) return;
@@ -1641,6 +1646,7 @@ var init_app_run_dialog = __esm({
     init_icons();
     init_dialog_shell();
     init_active_workspace();
+    init_errors2();
     isBusy = (operation) => !["running", "succeeded", "failed", "cancelled", "stopped"].includes(operation.stage);
   }
 });
@@ -1940,7 +1946,7 @@ function mountOpenInEditor(root, store2, api2) {
       },
       (err) => {
         const name = editors.find((e) => e.id === editorId)?.name ?? "editor";
-        showToast(`Couldn't open ${name}: ${err instanceof Error ? err.message : String(err)}`, {
+        showToast(`Couldn't open ${name}: ${errorMessage(err)}`, {
           variant: "error"
         });
       }
@@ -2035,6 +2041,7 @@ var init_open_in_editor = __esm({
     init_toast();
     init_active_thread_owner();
     init_active_workspace();
+    init_errors2();
   }
 });
 
@@ -6157,9 +6164,6 @@ function replaceThread(store2, projectId, thread) {
   });
   store2.emit("threads_changed");
 }
-function errorText(error) {
-  return error instanceof Error ? error.message : String(error);
-}
 function openThreadHistoryEditor(store2, api2, options) {
   document.querySelector("#thread-history-editor")?.close();
   const overlay = createOverlayDialog({
@@ -6386,7 +6390,7 @@ function openThreadHistoryEditor(store2, api2, options) {
         saving = false;
         undo2.textContent = "Undo last edit";
         updateControls();
-        showErrorToast("Could not undo history edit", errorText(error));
+        showErrorToast("Could not undo history edit", errorMessage(error));
       }
     };
     undo2.addEventListener("click", () => {
@@ -6413,7 +6417,7 @@ function openThreadHistoryEditor(store2, api2, options) {
         "div",
         { class: "history-editor-load-error", role: "alert" },
         "Could not load this thread\u2019s history.",
-        el("span", {}, errorText(error))
+        el("span", {}, errorMessage(error))
       )
     );
     footer.append(el("button", { class: "ui-btn ui-btn-secondary", type: "button" }, "Close"));
@@ -6427,6 +6431,7 @@ var init_thread_history_editor = __esm({
     init_persistence();
     init_dialog_shell();
     init_toast();
+    init_errors2();
   }
 });
 
@@ -6451,14 +6456,188 @@ var init_automation_fold = __esm({
   }
 });
 
+// packages/agent/src/build-text-with-attachments.ts
+function isTextBlockAttachment(text) {
+  const trimmed2 = text.trim();
+  if (!trimmed2) return false;
+  if (trimmed2.length >= TEXT_BLOCK_MIN_CHARS) return true;
+  return countNewlines(trimmed2) + 1 >= TEXT_BLOCK_MIN_LINES;
+}
+function textBlockLabel(content) {
+  const firstLine2 = content.split("\n").find((line) => line.trim() !== "")?.trim() ?? "Pasted text";
+  return firstLine2.length > 48 ? `${firstLine2.slice(0, 45)}\u2026` : firstLine2;
+}
+function countNewlines(s) {
+  let n = 0;
+  for (let i2 = 0; i2 < s.length; i2++) if (s[i2] === "\n") n++;
+  return n;
+}
+function trimToLastLine(s) {
+  const idx = s.lastIndexOf("\n");
+  return idx > 0 ? s.slice(0, idx) : s;
+}
+function trimToFirstLine(s) {
+  const idx = s.indexOf("\n");
+  return idx >= 0 && idx < s.length - 1 ? s.slice(idx + 1) : s;
+}
+function truncateAttachmentContent(content, maxChars = ATTACHMENT_MAX_CHARS) {
+  if (content.length <= maxChars) return content;
+  const headBudget = Math.floor(maxChars * HEAD_FRACTION);
+  const tailBudget = maxChars - headBudget;
+  const head = trimToLastLine(content.slice(0, headBudget));
+  const tail = trimToFirstLine(content.slice(content.length - tailBudget));
+  const omittedChars = content.length - head.length - tail.length;
+  const omittedLines = Math.max(
+    0,
+    countNewlines(content) - countNewlines(head) - countNewlines(tail)
+  );
+  const marker = `
+
+\u2026 [Copse trimmed ${omittedChars.toLocaleString()} characters` + (omittedLines > 0 ? ` (~${omittedLines.toLocaleString()} lines)` : "") + ` from the middle of this attachment to keep the request within the model's context window. Only the first and last portions are shown. If you need the omitted content, ask the user to save the full file into the workspace so you can read it with read_file or explore.] \u2026
+
+`;
+  return head + marker + tail;
+}
+function buildThreadRefBlock(refs) {
+  const lines = refs.map((r) => `- "${r.title}" (${r.date}): ${r.spinePath}`);
+  return `${THREAD_STEERING_PREAMBLE}
+
+Referenced threads:
+${lines.join("\n")}`;
+}
+function buildVideoRefBlock(refs) {
+  const lines = refs.map((r) => `- "${r.name}" (${r.size}): ${r.path}`);
+  return `${VIDEO_STEERING_PREAMBLE}
+
+Attached videos:
+${lines.join("\n")}`;
+}
+function buildArchiveRefBlock(refs) {
+  const lines = refs.map((r) => `- "${r.name}" (${r.size}): ${r.path}`);
+  return `${ARCHIVE_STEERING_PREAMBLE}
+
+Attached archives:
+${lines.join("\n")}`;
+}
+function fenceFor(content) {
+  let longest = 0;
+  let run4 = 0;
+  for (const ch of content) {
+    if (ch === "`") {
+      run4++;
+      if (run4 > longest) longest = run4;
+    } else {
+      run4 = 0;
+    }
+  }
+  return "`".repeat(Math.max(3, longest + 1));
+}
+function sanitizeLabel(label) {
+  return label.replace(/\p{Cc}+/gu, " ").trim();
+}
+function renderTextBlock(label, content, maxChars = ATTACHMENT_MAX_CHARS) {
+  const body = truncateAttachmentContent(content, maxChars);
+  const fence = fenceFor(body);
+  return `${fence}
+// ${sanitizeLabel(label)}
+${body}
+${fence}`;
+}
+function buildTextWithAttachments(text, files, textBlocks = [], options = {}) {
+  const cap = options.maxCharsPerAttachment ?? ATTACHMENT_MAX_CHARS;
+  const threadRefs = options.threadRefs ?? [];
+  const videoRefs = options.videoRefs ?? [];
+  const archiveRefs = options.archiveRefs ?? [];
+  const blocks = [
+    ...files.map((f2) => renderTextBlock(f2.path, f2.content, cap)),
+    ...textBlocks.map((b2) => renderTextBlock(b2.label, b2.content, cap)),
+    // No truncation path — thread, video and archive refs inline nothing, so
+    // ATTACHMENT_MAX_CHARS never applies here.
+    ...threadRefs.length > 0 ? [buildThreadRefBlock(threadRefs)] : [],
+    ...videoRefs.length > 0 ? [buildVideoRefBlock(videoRefs)] : [],
+    ...archiveRefs.length > 0 ? [buildArchiveRefBlock(archiveRefs)] : []
+  ];
+  return [text, ...blocks].filter(Boolean).join("\n\n");
+}
+var TEXT_BLOCK_MIN_CHARS, TEXT_BLOCK_MIN_LINES, ATTACHMENT_MAX_CHARS, HEAD_FRACTION, THREAD_STEERING_PREAMBLE, VIDEO_STEERING_PREAMBLE, ARCHIVE_STEERING_PREAMBLE;
+var init_build_text_with_attachments = __esm({
+  "packages/agent/src/build-text-with-attachments.ts"() {
+    TEXT_BLOCK_MIN_CHARS = 200;
+    TEXT_BLOCK_MIN_LINES = 10;
+    ATTACHMENT_MAX_CHARS = 16e3;
+    HEAD_FRACTION = 0.7;
+    THREAD_STEERING_PREAMBLE = "The past conversation(s) referenced below are available read-only through your file tools. Each is a directory: `events.jsonl` is the linear history (one JSON line per finalized message, oldest first); message prose is under `messages/*.md`; tool results and images under `blobs/`; nested subagent runs under `subagents/`. Read a file with read_file, grep with search_code, or summarize a whole thread with explore. The paths are absolute; do not try to write to them.";
+    VIDEO_STEERING_PREAMBLE = "The user attached the video(s) below. The video itself is NOT in your context \u2014 only these paths are. Use the `video_frames` tool to read one as still images: it samples the recording and returns only the frames that are visually different from each other, so a whole screen recording usually costs a handful of images. Call it with just the path to survey the whole video, then again with `start`/`end` around a moment you need to see more closely. There is no audio track available. Your client may offer that tool under a namespaced name, so look for one whose name ends in `video_frames` \u2014 for example `mcp__copse__video_frames`. If no such tool is offered to you, say so and ask how to proceed \u2014 do not try to read the video with shell commands.";
+    ARCHIVE_STEERING_PREAMBLE = "The user attached the archive(s) below. The archive itself is NOT in your context \u2014 only these paths are. If you have a `read_archive` tool, use it to unpack one: it extracts the archive into this conversation's own directory and returns a listing of everything inside. After that the contents are ordinary files \u2014 read them with read_file, grep them with search_code, or summarize the tree with explore, using the paths under the extraction root it gives you. Unpack once, then work with the files. Your client may offer that tool under a namespaced name, so look for one whose name ends in `read_archive` \u2014 for example `mcp__copse__read_archive`. If no such tool is offered to you, say so and ask how to proceed \u2014 do not silently ignore the archive, and do not unpack it yourself with shell commands.";
+  }
+});
+
 // packages/thread-store/src/prompt-placeholders.ts
 function stripPastePlaceholders(content) {
   if (!content.includes(PASTE_PLACEHOLDER)) return content.trim();
   return content.split(PASTE_PLACEHOLDER).join("").replace(/[^\S\n]+\n/g, "\n").replace(/[^\S\n]{2,}/g, " ").trim();
 }
+function replayPromptText(content, attachments, promptRepresentation) {
+  return promptRepresentation === "canonical-provider" || attachments?.some((attachment) => attachment.projection !== void 0) ? content : stripPastePlaceholders(content);
+}
+function projectPromptTextForDisplay(content, attachments, promptRepresentation) {
+  if (promptRepresentation !== "canonical-provider" || attachments === void 0) {
+    return { content };
+  }
+  const candidates = attachments.flatMap((attachment, attachmentIndex) => {
+    const token = attachment.projection === "canonical-block" && attachment.content !== void 0 ? renderTextBlock(
+      attachment.kind === "shell" ? `Shell: ${attachment.label}` : attachment.label,
+      attachment.content
+    ) : attachment.projection === "canonical-thread-label" && attachment.kind === "thread" ? `@${attachment.label}` : null;
+    if (token === null) return [];
+    const start = content.indexOf(token);
+    if (start < 0 || content.indexOf(token, start + 1) >= 0) return [];
+    return [{ attachment, attachmentIndex, start, end: start + token.length }];
+  });
+  const matches3 = candidates.filter(
+    (candidate) => !candidates.some(
+      (other) => other !== candidate && candidate.start < other.end && other.start < candidate.end
+    )
+  ).sort((left, right) => left.start - right.start);
+  const operations = [];
+  let previousOperationEnd = 0;
+  for (const match of matches3) {
+    if (match.attachment.placement === "inline") {
+      operations.push(match);
+      previousOperationEnd = match.end;
+      continue;
+    }
+    const start = match.start >= 2 && match.start - 2 >= previousOperationEnd && content.slice(match.start - 2, match.start) === "\n\n" ? match.start - 2 : match.start;
+    const end = start === match.start && content.slice(match.end, match.end + 2) === "\n\n" ? match.end + 2 : match.end;
+    operations.push({ ...match, start, end });
+    previousOperationEnd = end;
+  }
+  let cursor = 0;
+  let projected = "";
+  const inline = [];
+  for (const operation of operations) {
+    projected += content.slice(cursor, operation.start);
+    if (operation.attachment.placement === "inline") {
+      inline.push({ offset: projected.length, attachment: operation.attachment });
+    }
+    cursor = operation.end;
+  }
+  projected += content.slice(cursor);
+  const inlineIndices = new Set(
+    matches3.filter((match) => match.attachment.placement === "inline").map((match) => match.attachmentIndex)
+  );
+  return {
+    content: projected,
+    projectedAttachments: {
+      inline,
+      trailing: attachments.filter((_attachment, index) => !inlineIndices.has(index))
+    }
+  };
+}
 var PASTE_PLACEHOLDER;
 var init_prompt_placeholders = __esm({
   "packages/thread-store/src/prompt-placeholders.ts"() {
+    init_build_text_with_attachments();
     PASTE_PLACEHOLDER = "\uFFFC";
   }
 });
@@ -6491,6 +6670,9 @@ function isInitialThreadWorktreeBranchName(branch, threadId) {
     if (branch === initialThreadWorktreeBranchName(threadId, collision)) return true;
   }
   return false;
+}
+function isWorktreeDeferralPending(thread) {
+  return thread.deferredWorktree !== void 0 && thread.worktree === void 0;
 }
 var init_worktree_policy = __esm({
   "src/shared/git/worktree-policy.ts"() {
@@ -12645,7 +12827,7 @@ function threadProposalCardSignature(tc, store2, sourceThreadId) {
 }
 function createThreadProposalToolCard(tc, store2, api2, sourceThreadId) {
   const args = tc.args;
-  const proposalArgs = isRecord(args) && args["server"] === "copse" && args["tool"] === THREAD_PROPOSAL_TOOL ? args["arguments"] : args;
+  const proposalArgs = isRecord(args) && isCopseServerName(args["server"]) && args["tool"] === THREAD_PROPOSAL_TOOL ? args["arguments"] : args;
   const proposal = parseThreadProposal(tc.id, proposalArgs);
   if (!proposal) return null;
   return createThreadProposalCard(proposal, cardState(store2, sourceThreadId, tc.id), {
@@ -12673,6 +12855,7 @@ function createThreadProposalToolCard(tc, store2, api2, sourceThreadId) {
 var init_thread_proposal_tool_card = __esm({
   "src/renderer/views/thread-proposal-tool-card.ts"() {
     init_unknown_value2();
+    init_copse_tool_call();
     init_thread_proposal();
     init_thread_helpers();
     init_thread_proposals();
@@ -16344,122 +16527,6 @@ var init_video_expand = __esm({
   }
 });
 
-// packages/agent/src/build-text-with-attachments.ts
-function isTextBlockAttachment(text) {
-  const trimmed2 = text.trim();
-  if (!trimmed2) return false;
-  if (trimmed2.length >= TEXT_BLOCK_MIN_CHARS) return true;
-  return countNewlines(trimmed2) + 1 >= TEXT_BLOCK_MIN_LINES;
-}
-function textBlockLabel(content) {
-  const firstLine2 = content.split("\n").find((line) => line.trim() !== "")?.trim() ?? "Pasted text";
-  return firstLine2.length > 48 ? `${firstLine2.slice(0, 45)}\u2026` : firstLine2;
-}
-function countNewlines(s) {
-  let n = 0;
-  for (let i2 = 0; i2 < s.length; i2++) if (s[i2] === "\n") n++;
-  return n;
-}
-function trimToLastLine(s) {
-  const idx = s.lastIndexOf("\n");
-  return idx > 0 ? s.slice(0, idx) : s;
-}
-function trimToFirstLine(s) {
-  const idx = s.indexOf("\n");
-  return idx >= 0 && idx < s.length - 1 ? s.slice(idx + 1) : s;
-}
-function truncateAttachmentContent(content, maxChars = ATTACHMENT_MAX_CHARS) {
-  if (content.length <= maxChars) return content;
-  const headBudget = Math.floor(maxChars * HEAD_FRACTION);
-  const tailBudget = maxChars - headBudget;
-  const head = trimToLastLine(content.slice(0, headBudget));
-  const tail = trimToFirstLine(content.slice(content.length - tailBudget));
-  const omittedChars = content.length - head.length - tail.length;
-  const omittedLines = Math.max(
-    0,
-    countNewlines(content) - countNewlines(head) - countNewlines(tail)
-  );
-  const marker = `
-
-\u2026 [Copse trimmed ${omittedChars.toLocaleString()} characters` + (omittedLines > 0 ? ` (~${omittedLines.toLocaleString()} lines)` : "") + ` from the middle of this attachment to keep the request within the model's context window. Only the first and last portions are shown. If you need the omitted content, ask the user to save the full file into the workspace so you can read it with read_file or explore.] \u2026
-
-`;
-  return head + marker + tail;
-}
-function buildThreadRefBlock(refs) {
-  const lines = refs.map((r) => `- "${r.title}" (${r.date}): ${r.spinePath}`);
-  return `${THREAD_STEERING_PREAMBLE}
-
-Referenced threads:
-${lines.join("\n")}`;
-}
-function buildVideoRefBlock(refs) {
-  const lines = refs.map((r) => `- "${r.name}" (${r.size}): ${r.path}`);
-  return `${VIDEO_STEERING_PREAMBLE}
-
-Attached videos:
-${lines.join("\n")}`;
-}
-function buildArchiveRefBlock(refs) {
-  const lines = refs.map((r) => `- "${r.name}" (${r.size}): ${r.path}`);
-  return `${ARCHIVE_STEERING_PREAMBLE}
-
-Attached archives:
-${lines.join("\n")}`;
-}
-function fenceFor(content) {
-  let longest = 0;
-  let run4 = 0;
-  for (const ch of content) {
-    if (ch === "`") {
-      run4++;
-      if (run4 > longest) longest = run4;
-    } else {
-      run4 = 0;
-    }
-  }
-  return "`".repeat(Math.max(3, longest + 1));
-}
-function sanitizeLabel(label) {
-  return label.replace(/\p{Cc}+/gu, " ").trim();
-}
-function renderTextBlock(label, content, maxChars = ATTACHMENT_MAX_CHARS) {
-  const body = truncateAttachmentContent(content, maxChars);
-  const fence = fenceFor(body);
-  return `${fence}
-// ${sanitizeLabel(label)}
-${body}
-${fence}`;
-}
-function buildTextWithAttachments(text, files, textBlocks = [], options = {}) {
-  const cap = options.maxCharsPerAttachment ?? ATTACHMENT_MAX_CHARS;
-  const threadRefs = options.threadRefs ?? [];
-  const videoRefs = options.videoRefs ?? [];
-  const archiveRefs = options.archiveRefs ?? [];
-  const blocks = [
-    ...files.map((f2) => renderTextBlock(f2.path, f2.content, cap)),
-    ...textBlocks.map((b2) => renderTextBlock(b2.label, b2.content, cap)),
-    // No truncation path — thread, video and archive refs inline nothing, so
-    // ATTACHMENT_MAX_CHARS never applies here.
-    ...threadRefs.length > 0 ? [buildThreadRefBlock(threadRefs)] : [],
-    ...videoRefs.length > 0 ? [buildVideoRefBlock(videoRefs)] : [],
-    ...archiveRefs.length > 0 ? [buildArchiveRefBlock(archiveRefs)] : []
-  ];
-  return [text, ...blocks].filter(Boolean).join("\n\n");
-}
-var TEXT_BLOCK_MIN_CHARS, TEXT_BLOCK_MIN_LINES, ATTACHMENT_MAX_CHARS, HEAD_FRACTION, THREAD_STEERING_PREAMBLE, VIDEO_STEERING_PREAMBLE, ARCHIVE_STEERING_PREAMBLE;
-var init_build_text_with_attachments = __esm({
-  "packages/agent/src/build-text-with-attachments.ts"() {
-    TEXT_BLOCK_MIN_CHARS = 200;
-    TEXT_BLOCK_MIN_LINES = 10;
-    ATTACHMENT_MAX_CHARS = 16e3;
-    HEAD_FRACTION = 0.7;
-    THREAD_STEERING_PREAMBLE = "The past conversation(s) referenced below are available read-only through your file tools. Each is a directory: `events.jsonl` is the linear history (one JSON line per finalized message, oldest first); message prose is under `messages/*.md`; tool results and images under `blobs/`; nested subagent runs under `subagents/`. Read a file with read_file, grep with search_code, or summarize a whole thread with explore. The paths are absolute; do not try to write to them.";
-    VIDEO_STEERING_PREAMBLE = "The user attached the video(s) below. The video itself is NOT in your context \u2014 only these paths are. Use the `video_frames` tool to read one as still images: it samples the recording and returns only the frames that are visually different from each other, so a whole screen recording usually costs a handful of images. Call it with just the path to survey the whole video, then again with `start`/`end` around a moment you need to see more closely. There is no audio track available. Your client may offer that tool under a namespaced name, so look for one whose name ends in `video_frames` \u2014 for example `mcp__copse__video_frames`. If no such tool is offered to you, say so and ask how to proceed \u2014 do not try to read the video with shell commands.";
-    ARCHIVE_STEERING_PREAMBLE = "The user attached the archive(s) below. The archive itself is NOT in your context \u2014 only these paths are. If you have a `read_archive` tool, use it to unpack one: it extracts the archive into this conversation's own directory and returns a listing of everything inside. After that the contents are ordinary files \u2014 read them with read_file, grep them with search_code, or summarize the tree with explore, using the paths under the extraction root it gives you. Unpack once, then work with the files. Your client may offer that tool under a namespaced name, so look for one whose name ends in `read_archive` \u2014 for example `mcp__copse__read_archive`. If no such tool is offered to you, say so and ask how to proceed \u2014 do not silently ignore the archive, and do not unpack it yourself with shell commands.";
-  }
-});
-
 // src/renderer/views/composer-editor.ts
 function visibleText(node) {
   if (node.nodeType === Node.TEXT_NODE) return node.nodeValue ?? "";
@@ -18790,7 +18857,8 @@ function lastResendableMessage(thread) {
   for (let i2 = thread.messages.length - 1; i2 >= 0; i2--) {
     const message2 = thread.messages[i2];
     if (!message2 || message2.role !== "user" || queued.has(message2.id)) continue;
-    if (!stripPastePlaceholders(message2.content) && (message2.images?.length ?? 0) === 0) return null;
+    if (!replayPromptText(message2.content, message2.attachments, message2.promptRepresentation) && (message2.images?.length ?? 0) === 0)
+      return null;
     return message2;
   }
   return null;
@@ -18809,7 +18877,11 @@ function resendLastMessage(store2, api2, threadId, options = {}) {
   if (!original) return null;
   const originalImages = original.images ?? [];
   const images = options.includeImages === false ? [] : originalImages;
-  const text = stripPastePlaceholders(original.content);
+  const text = replayPromptText(
+    original.content,
+    original.attachments,
+    original.promptRepresentation
+  );
   const payload = {
     content: contentOf(text, images),
     invokedSkills: [],
@@ -20901,7 +20973,18 @@ function appendMessageContent(body, msg, api2, workspaceRoot, opts) {
   if (msg.role === "assistant" && msg.content) {
     setAssistantMarkdown(textEl, msg.content, false, api2);
   } else if (msg.role === "user" && msg.attachments?.length) {
-    renderUserTranscript(textEl, msg.content, msg.attachments, api2);
+    const projection = projectPromptTextForDisplay(
+      msg.content,
+      msg.attachments,
+      msg.promptRepresentation
+    );
+    renderUserTranscript(
+      textEl,
+      projection.content,
+      msg.attachments,
+      api2,
+      projection.projectedAttachments
+    );
   } else if (msg.role === "user") {
     setUserMarkdown(textEl, msg.content);
   } else {
@@ -20956,16 +21039,23 @@ function transcriptChip(attachment, api2) {
   }
   return chip2;
 }
-function renderUserTranscript(host, content, attachments, api2) {
-  const inlineCount = countChipPlaceholders(content);
-  const firstNonPositional = attachments.findIndex(
-    (attachment) => attachment.kind !== "paste" && attachment.kind !== "thread"
-  );
-  const positionalPrefixLength = firstNonPositional === -1 ? attachments.length : firstNonPositional;
-  const boundInlineCount = Math.min(inlineCount, positionalPrefixLength);
-  const inline = attachments.slice(0, boundInlineCount);
-  const trailing = attachments.slice(boundInlineCount);
-  const paintRegion = (sink, text, firstChip) => {
+function renderUserTranscript(host, content, attachments, api2, projectedAttachments) {
+  let inline;
+  let trailing;
+  if (projectedAttachments !== void 0) {
+    inline = projectedAttachments.inline.map((slot) => slot.attachment);
+    trailing = projectedAttachments.trailing;
+  } else {
+    const inlineCount = countChipPlaceholders(content);
+    const firstNonPositional = attachments.findIndex(
+      (attachment) => attachment.kind !== "paste" && attachment.kind !== "thread"
+    );
+    const positionalPrefixLength = firstNonPositional === -1 ? attachments.length : firstNonPositional;
+    const boundInlineCount = Math.min(inlineCount, positionalPrefixLength);
+    inline = attachments.slice(0, boundInlineCount);
+    trailing = attachments.slice(boundInlineCount);
+  }
+  const paintLegacyRegion = (sink, text, firstChip) => {
     const parts = text.split(CHIP_CHAR);
     parts.forEach((part, i2) => {
       if (part) sink.append(document.createTextNode(part));
@@ -20976,6 +21066,19 @@ function renderUserTranscript(host, content, attachments, api2) {
       }
     });
   };
+  const paintProjectedRegion = (sink, text, start, ownerEnd, includeOwnerEnd = false) => {
+    const slots = projectedAttachments?.inline.filter(
+      (slot) => slot.offset >= start && (slot.offset < ownerEnd || includeOwnerEnd && slot.offset === ownerEnd)
+    );
+    let cursor = 0;
+    for (const slot of slots ?? []) {
+      const offset = slot.offset - start;
+      if (offset > cursor) sink.append(document.createTextNode(text.slice(cursor, offset)));
+      sink.append(transcriptChip(slot.attachment, api2));
+      cursor = offset;
+    }
+    if (cursor < text.length) sink.append(document.createTextNode(text.slice(cursor)));
+  };
   const fold = splitUserPromptForFold(content);
   if (fold) {
     const headChips = countChipPlaceholders(fold.head);
@@ -20984,11 +21087,31 @@ function renderUserTranscript(host, content, attachments, api2) {
       middle: headChips,
       tail: headChips + countChipPlaceholders(fold.middle)
     };
+    const regionStart = {
+      head: 0,
+      middle: content.indexOf(fold.middle, fold.head.length),
+      tail: content.lastIndexOf(fold.tail)
+    };
+    const regionOwnerEnd = {
+      head: regionStart.middle,
+      middle: regionStart.tail,
+      tail: content.length
+    };
     fillUserPromptFold(host, fold, (sink, text, region) => {
-      paintRegion(sink, text, firstChip[region]);
+      if (projectedAttachments === void 0) paintLegacyRegion(sink, text, firstChip[region]);
+      else
+        paintProjectedRegion(
+          sink,
+          text,
+          regionStart[region],
+          regionOwnerEnd[region],
+          region === "tail"
+        );
     });
+  } else if (projectedAttachments === void 0) {
+    paintLegacyRegion(host, content, 0);
   } else {
-    paintRegion(host, content, 0);
+    paintProjectedRegion(host, content, 0, content.length, true);
   }
   if (trailing.length) {
     const row2 = el("div", { class: "transcript-attachment-row" });
@@ -21429,7 +21552,9 @@ function mountConversation(root, store2, api2, options = {}) {
     const deleting = deletionStatus(messageId);
     if (deleting) return deleting;
     const thread = getThreadById(store2, store2.getState().activeThreadId ?? "");
-    if (thread?.status === "running" && thread.pendingMessages?.some((item) => item.messageId === messageId && item.steeringRequested)) {
+    const queued = thread?.pendingMessages?.find((item) => item.messageId === messageId);
+    const projectId = store2.getState().activeProjectId;
+    if (projectId && thread && queued && queuedSteeringIsBusy(store2, projectId, thread, queued)) {
       return el(
         "div",
         { class: "message-queued-ui steering-pending", role: "status" },
@@ -22101,7 +22226,7 @@ function mountConversation(root, store2, api2, options = {}) {
     if (result.omittedImages) {
       showToast("Resent without the original image.");
     } else if (result.droppedAttachments) {
-      showToast("Resent without the original attachments.");
+      showToast("Resent the saved prompt without attachment chips.");
     } else if (result.queued) {
       showToast("Resend queued behind the running turn.");
     }
@@ -23084,6 +23209,7 @@ var init_conversation = __esm({
     init_workspace_links();
     init_remote_artifact_images();
     init_parse_text_tool_calls();
+    init_prompt_placeholders2();
     init_acp_cursor_transport_noise();
     init_inline_visualization();
     init_message_model();
@@ -54355,6 +54481,9 @@ function detachedTitle(detached) {
   }
   return detached.recovery ? `This checkout is detached from ${detached.branch} because a ${detached.recovery} stopped part-way. Continue it in a terminal for this thread; it puts the checkout back on the branch when it finishes.` : `This checkout is detached from ${detached.branch}. Your files are preserved. Reattach to put it back on the branch.`;
 }
+function onBaseBranchTitle(onBase) {
+  return `This checkout is on ${onBase.baseBranch}, its base branch, instead of ${onBase.branch}. Copse will not run in it, so no edit lands on ${onBase.baseBranch}. Your files are preserved. Check out ${onBase.branch} in this checkout to continue.`;
+}
 function recoveryCommand(detached, recovery) {
   if (recovery === "bisect") return "git bisect reset";
   const pick = detached.uncommittedPick;
@@ -54418,7 +54547,13 @@ function mountFooterBranchStatus(host, store2, api2) {
     "aria-label": "Branches"
   });
   menu.append(filterInput, list);
-  wrap2.append(trigger, reattachButton, menu);
+  const deferredNote = el(
+    "span",
+    { class: "branch-deferred-note", title: DEFERRED_NOTE_TITLE, hidden: "" },
+    eyeIcon("ui-icon ui-icon-sm"),
+    el("span", { class: "branch-deferred-note-text" }, DEFERRED_NOTE_TEXT)
+  );
+  wrap2.append(trigger, deferredNote, reattachButton, menu);
   host.append(wrap2);
   let status = null;
   let detached = null;
@@ -54455,8 +54590,11 @@ function mountFooterBranchStatus(host, store2, api2) {
   function getActiveThread2() {
     return getThreadById(store2, store2.getState().activeThreadId);
   }
+  function canPickBaseBranch(thread) {
+    return isBlankThread(thread) && thread.gitBranch === void 0 && thread.worktree === void 0;
+  }
   function startBranch(thread) {
-    if (!isBlankThread(thread)) return void 0;
+    if (!canPickBaseBranch(thread)) return void 0;
     const picked = baseBranchByThread.get(thread.id);
     if (picked) return picked;
     if (thread.id !== store2.getState().activeThreadId) return void 0;
@@ -54471,10 +54609,17 @@ function mountFooterBranchStatus(host, store2, api2) {
   }
   function isPickerMode() {
     const thread = getActiveThread2();
-    return thread ? isBlankThread(thread) : false;
+    return thread ? canPickBaseBranch(thread) : false;
+  }
+  function readsCheckout() {
+    const thread = getActiveThread2();
+    return thread ? isWorktreeDeferralPending(thread) : false;
   }
   function getDisplayBranch() {
-    return activeBaseBranch() ?? getActiveThreadBranch() ?? getActiveThread2()?.worktree?.branch ?? status?.currentBranch ?? null;
+    const pending = activeBaseBranch();
+    if (pending) return pending;
+    if (readsCheckout() && status) return status.currentBranch;
+    return getActiveThreadBranch() ?? getActiveThread2()?.worktree?.branch ?? status?.currentBranch ?? null;
   }
   function getVisiblePr() {
     const pr = status?.pr;
@@ -54503,15 +54648,17 @@ function mountFooterBranchStatus(host, store2, api2) {
     const displayBranch = getDisplayBranch();
     const pickerMode = isPickerMode();
     const pr = getVisiblePr();
+    deferredNote.hidden = !readsCheckout();
+    trigger.hidden = !displayBranch;
     if (!displayBranch) {
-      wrap2.hidden = true;
+      wrap2.hidden = !readsCheckout();
       branchToCopy = null;
       setOpen(false);
       renderReattach();
       return;
     }
     const mismatch = threadGitBranchMismatch(threadBranch, currentBranch, {
-      isolatedWorktree: Boolean(getActiveThread2()?.worktree)
+      isolatedWorktree: Boolean(getActiveThread2()?.worktree) || readsCheckout()
     });
     const mismatchMessage = mismatch && threadBranch ? threadGitBranchMismatchMessage(threadBranch) : "";
     wrap2.hidden = false;
@@ -54561,6 +54708,15 @@ function mountFooterBranchStatus(host, store2, api2) {
   function renderReattach() {
     const current = activeDetached();
     const visible = current !== null && !isPickerMode() && !wrap2.hidden;
+    if (current?.state === "on-base-branch") {
+      reattachButton.hidden = true;
+      trigger.classList.toggle("is-detached", visible);
+      if (!visible) return;
+      const title2 = onBaseBranchTitle(current);
+      trigger.title = title2;
+      trigger.setAttribute("aria-label", `${title2} Copy branch name.`);
+      return;
+    }
     const shown = visible && !agentCanTouchCheckout(current);
     reattachButton.hidden = !shown;
     trigger.classList.toggle("is-detached", visible);
@@ -54634,7 +54790,7 @@ function mountFooterBranchStatus(host, store2, api2) {
   async function reattach() {
     const owner = getActiveThreadOwner(store2);
     const current = activeDetached();
-    if (!owner || !current || agentCanTouchCheckout(current) || reattaching || activeRecoveryRunId() !== null)
+    if (!owner || !current || current.state === "on-base-branch" || agentCanTouchCheckout(current) || reattaching || activeRecoveryRunId() !== null)
       return;
     if (current.state === "detached" && current.recovery) {
       const runId = globalThis.crypto.randomUUID();
@@ -54816,7 +54972,7 @@ function mountFooterBranchStatus(host, store2, api2) {
   function pruneBaseBranches() {
     if (baseBranchByThread.size === 0) return;
     const blank = new Set(
-      store2.getState().threads.filter((thread) => isBlankThread(thread)).map((thread) => thread.id)
+      store2.getState().threads.filter((thread) => canPickBaseBranch(thread)).map((thread) => thread.id)
     );
     for (const threadId of baseBranchByThread.keys()) {
       if (!blank.has(threadId)) baseBranchByThread.delete(threadId);
@@ -55027,7 +55183,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     refresh: refreshNow,
     resolveBaseBranch: async (projectId, threadId) => {
       const thread = getThreadById(store2, threadId);
-      if (!thread || !isBlankThread(thread)) return void 0;
+      if (!thread || !canPickBaseBranch(thread)) return void 0;
       const picked = baseBranchByThread.get(threadId);
       if (picked) return picked;
       const [listed, defaultName] = await Promise.all([
@@ -55048,7 +55204,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     }
   };
 }
-var COPIED_BRANCH_TOAST, COPY_FEEDBACK_MS, nextPickerId;
+var COPIED_BRANCH_TOAST, COPY_FEEDBACK_MS, DEFERRED_NOTE_TEXT, DEFERRED_NOTE_TITLE, nextPickerId;
 var init_footer_branch_status = __esm({
   "src/renderer/views/footer-branch-status.ts"() {
     init_helpers();
@@ -55059,8 +55215,11 @@ var init_footer_branch_status = __esm({
     init_panels();
     init_active_thread_owner();
     init_active_workspace();
+    init_worktree_policy();
     COPIED_BRANCH_TOAST = "Copied branch name";
     COPY_FEEDBACK_MS = 1600;
+    DEFERRED_NOTE_TEXT = "Reading your checkout";
+    DEFERRED_NOTE_TITLE = "This thread is reading your checkout and can\u2019t change it. It gets its own worktree once it asks to make changes; until then, anything that tries to write here is refused.";
     nextPickerId = 0;
   }
 });
@@ -56217,7 +56376,7 @@ async function createPrFromBubble(store2, api2, threadId, onConfirmed) {
     if (!result.ok)
       showToast(`Could not open the pull request: ${result.message}`, { variant: "error" });
   } catch (err) {
-    settlePrCard(store2, card, "error", err instanceof Error ? err.message : String(err));
+    settlePrCard(store2, card, "error", errorMessage(err));
     showErrorToast("Could not open the pull request", err);
   }
 }
@@ -56488,6 +56647,7 @@ var init_follow_up_suggestions = __esm({
     init_last_exchange();
     init_review_actions();
     init_toast();
+    init_errors2();
   }
 });
 
@@ -59445,9 +59605,16 @@ ${description}
     const attachments = [
       ...inlineChips.flatMap((chip2) => {
         if (chip2.kind === "paste") {
-          return [{ kind: "paste", label: chip2.block.label, content: chip2.block.content }];
+          return [
+            {
+              kind: "paste",
+              label: chip2.block.label,
+              content: chip2.block.content,
+              placement: "inline"
+            }
+          ];
         }
-        return [{ kind: "thread", label: chip2.thread.label }];
+        return [{ kind: "thread", label: chip2.thread.label, placement: "inline" }];
       }),
       ...attachedFiles2.map((file) => ({
         kind: "file",
@@ -83182,6 +83349,7 @@ var init_simulator_desktop = __esm({
 var VncIpcChannel;
 var init_vnc_channel = __esm({
   "src/renderer/views/vnc-channel.ts"() {
+    init_errors2();
     VncIpcChannel = class {
       binaryType = "arraybuffer";
       protocol = "";
@@ -83213,7 +83381,7 @@ var init_vnc_channel = __esm({
         }
         this.readyState = WebSocket.CLOSING;
         void this.api.vnc.close(this.connectionId).catch((error) => {
-          this.fail(error instanceof Error ? error.message : String(error));
+          this.fail(errorMessage(error));
         });
       }
       receive(bytes2) {
@@ -84667,7 +84835,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     } catch (error) {
       if (generation !== discoveryGeneration) return;
       discoveryStatus.dataset["kind"] = "error";
-      discoveryStatus.textContent = error instanceof Error ? error.message : String(error);
+      discoveryStatus.textContent = errorMessage(error);
       discoverButton.hidden = false;
     } finally {
       if (generation === discoveryGeneration) discoverButton.disabled = channel !== null;
@@ -84696,7 +84864,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     } catch (error) {
       if (generation !== nearbyGeneration) return;
       nearbyStatus.dataset["kind"] = "error";
-      nearbyStatus.textContent = error instanceof Error ? error.message : String(error);
+      nearbyStatus.textContent = errorMessage(error);
       nearbyButton.hidden = false;
     } finally {
       if (generation === nearbyGeneration) nearbyButton.disabled = channel !== null;
@@ -84714,7 +84882,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     const [canStoreCredentials, devices] = await Promise.all([
       api2.vnc.canStoreCredentials().catch(() => false),
       api2.simulatorDesktop.list().catch((error) => {
-        discoveryError = error instanceof Error ? error.message : String(error);
+        discoveryError = errorMessage(error);
         return [];
       })
     ]);
@@ -84790,11 +84958,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
         },
         onInputError: (error) => {
           if (simulatorSessionId !== connection.id) return;
-          setStatus(
-            `Connected to ${device.name}`,
-            "error",
-            error instanceof Error ? error.message : String(error)
-          );
+          setStatus(`Connected to ${device.name}`, "error", errorMessage(error));
         }
       });
       simulatorView = view;
@@ -84808,7 +84972,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       clearViewer(
         android2 ? "Couldn\u2019t open the Android emulator" : "Couldn\u2019t open the Simulator",
         "error",
-        error instanceof Error ? error.message : String(error)
+        errorMessage(error)
       );
     } finally {
       connectButton.disabled = false;
@@ -85022,7 +85186,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
         nextChannel.open();
       });
     } catch (error) {
-      clearViewer(error instanceof Error ? error.message : String(error), "error");
+      clearViewer(errorMessage(error), "error");
     } finally {
       connectButton.disabled = false;
     }
@@ -85033,11 +85197,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     if (simulatorSessionId) {
       const connectionId = simulatorSessionId;
       void api2.simulatorDesktop.close(connectionId).catch((error) => {
-        clearViewer(
-          "Couldn\u2019t close the Simulator stream",
-          "error",
-          error instanceof Error ? error.message : String(error)
-        );
+        clearViewer("Couldn\u2019t close the Simulator stream", "error", errorMessage(error));
       });
       return;
     }
@@ -85126,11 +85286,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     const connectionId = simulatorSessionId;
     if (!connectionId || !controlEnabled) return;
     void api2.simulatorDesktop.input(connectionId, { type: "button-tap", name }).catch((error) => {
-      setStatus(
-        "Device control failed",
-        "error",
-        error instanceof Error ? error.message : String(error)
-      );
+      setStatus("Device control failed", "error", errorMessage(error));
     });
   };
   homeButton.addEventListener("click", () => {
@@ -85516,6 +85672,7 @@ var init_vnc_pane = __esm({
     init_surface_recorder();
     init_vnc_ssh_host_form();
     init_active_workspace();
+    init_errors2();
     CHOOSE_MACHINE_TEXT = "Choose a device, enter an address, or select a saved SSH machine.";
     MANUAL_MACHINE = "network:manual";
     NEARBY_MACHINE_PREFIX = "network:nearby:";
@@ -88752,7 +88909,7 @@ function createTranscriptReducer(store2, hooks = {}) {
             id: chunk.messageId
           });
         } else {
-          setMessagePromptContent(store2, chunk.messageId, chunk.text, void 0);
+          setMessagePromptContent(store2, threadId, chunk.messageId, chunk.text, void 0);
           store2.emit("message_done", chunk.messageId);
         }
         patchThreadAnywhere(store2, threadId, (current) => {
@@ -88793,6 +88950,7 @@ function createTranscriptReducer(store2, hooks = {}) {
           chunk.attachments,
           {
             origin: chunk.origin,
+            ...chunk.promptRepresentation !== void 0 ? { promptRepresentation: chunk.promptRepresentation } : {},
             ...chunk.startingCommit !== void 0 ? { startingCommit: chunk.startingCommit } : {},
             ...chunk.dirty !== void 0 ? { dirty: chunk.dirty } : {},
             ...id !== void 0 ? { id } : {}
@@ -88810,13 +88968,25 @@ function createTranscriptReducer(store2, hooks = {}) {
         const content = typeof chunk.content === "string" ? chunk.content : chunk.content.filter((block) => block.type === "text").map((block) => block.text).join("\n");
         const images = typeof chunk.content === "string" ? void 0 : chunk.content.filter((block) => block.type === "image").map((block) => block.dataUrl);
         if (existing) {
-          if (chunk.preserveOptimisticDisplay !== true) {
-            setMessagePromptContent(store2, existing.id, content, images);
+          const optimisticImages = existing.images ?? [];
+          const reviewedImages = images ?? [];
+          const exactTextOnlyDisplay = chunk.preserveOptimisticDisplay === true && existing.content === content && (existing.attachments?.length ?? 0) === 0 && optimisticImages.length === reviewedImages.length && optimisticImages.every((image, index) => image === reviewedImages[index]);
+          if (chunk.preserveOptimisticDisplay !== true || exactTextOnlyDisplay) {
+            setMessagePromptContent(
+              store2,
+              threadId,
+              existing.id,
+              content,
+              images,
+              chunk.attachments,
+              chunk.promptRepresentation
+            );
           }
           store2.emit("message_done", existing.id);
         } else {
-          addMessage(store2, threadId, "user", content, images, void 0, {
-            id: chunk.messageId
+          addMessage(store2, threadId, "user", content, images, chunk.attachments, {
+            id: chunk.messageId,
+            promptRepresentation: chunk.promptRepresentation
           });
         }
         break;
@@ -89465,9 +89635,11 @@ function startAgentController(store2, api2) {
         thread.messages.map((message2) => message2.id),
         () => {
           patchThreadAnywhere(store2, thread.id, (current2) => {
+            const { nativeSteeringRunId: _staleRunId, ...runtimeBase } = current2;
             return {
-              ...current2,
+              ...source === "runtime" ? runtimeBase : current2,
               ...transcriptMeta(thread),
+              ...source === "runtime" && thread.nativeSteeringRunId !== void 0 ? { nativeSteeringRunId: thread.nativeSteeringRunId } : {},
               // A cold read can arrive while a queued dispatch awaits its grant,
               // or after that dispatch has been denied and restored as held.
               // Preserve that local status/interruption decision against an
@@ -89892,9 +90064,6 @@ var init_provider_invalidation = __esm({
 });
 
 // src/renderer/perf-autopilot.ts
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 async function waitForComposer() {
   const deadline = Date.now() + MOUNT_TIMEOUT_MS;
   for (; ; ) {
@@ -90309,6 +90478,7 @@ async function run3(store2) {
 var PROMPT, MOUNT_TIMEOUT_MS, FIRST_ACTIVITY_TIMEOUT_MS, TURN_TIMEOUT_MS, SWEEP_SURFACES, SWEEP_DWELL_MS;
 var init_perf_autopilot = __esm({
   "src/renderer/perf-autopilot.ts"() {
+    init_sleep();
     init_perf();
     PROMPT = "Explain, in about 300 words, why a process tree can report more resident memory than the machine actually has allocated to it. Plain prose, no lists, no code.";
     MOUNT_TIMEOUT_MS = 3e4;

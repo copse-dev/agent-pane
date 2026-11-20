@@ -64,7 +64,7 @@ import {
   unwrapIpcErrorText,
   upsertHost,
   warningIcon
-} from "./chunk-TYQO7O5R.js";
+} from "./chunk-CK4AOU5N.js";
 import {
   clear,
   el,
@@ -22357,10 +22357,13 @@ var init_thread_proposal = __esm({
 });
 
 // src/shared/tools/copse-tool-call.ts
+function isCopseServerName(server) {
+  return typeof server === "string" && ENVELOPE_SERVER_NAME.test(server);
+}
 function normalizeCopseToolName(name) {
   const server = /^mcp__([\w.-]+?)__/i.exec(name)?.[1];
-  if (server && server.toLowerCase() !== "copse") return name;
-  const match = /^(?:mcp[^a-z0-9]+)?copse[^a-z0-9]+([a-z][a-z0-9_.-]*)/i.exec(name);
+  if (server && !COPSE_SERVER_NAME.test(server)) return name;
+  const match = COPSE_WRAPPED_TOOL.exec(name);
   return match?.[1]?.toLowerCase() ?? name;
 }
 function copseToolCallName(call) {
@@ -22389,9 +22392,17 @@ function acpDelegateKind(call) {
 function acpDelegatePrompt(call) {
   return call.title ?? stringArg(call.args, "prompt") ?? stringArg(call.args, "description") ?? "";
 }
+var COPSE_SERVER, COPSE_SERVER_NAME, COPSE_WRAPPED_TOOL, ENVELOPE_SERVER_NAME;
 var init_copse_tool_call = __esm({
   "src/shared/tools/copse-tool-call.ts"() {
     init_unknown_value3();
+    COPSE_SERVER = "copse(?:-[a-z0-9]{8})?";
+    COPSE_SERVER_NAME = new RegExp(`^${COPSE_SERVER}$`, "i");
+    COPSE_WRAPPED_TOOL = new RegExp(
+      `^(?:mcp[^a-z0-9]+)?${COPSE_SERVER}[^a-z0-9]+([a-z][a-z0-9_.-]*)`,
+      "i"
+    );
+    ENVELOPE_SERVER_NAME = new RegExp(`^${COPSE_SERVER}$`);
   }
 });
 
@@ -22555,7 +22566,7 @@ function parseReviewerInputCall(call, messageId) {
 }
 function reviewerInputArguments(call) {
   const args = call.args;
-  if (isRecord(args) && args["server"] === "copse" && typeof args["tool"] === "string" && isCopseToolCall(call, args["tool"]) && Object.hasOwn(args, "arguments"))
+  if (isRecord(args) && isCopseServerName(args["server"]) && typeof args["tool"] === "string" && isCopseToolCall(call, args["tool"]) && Object.hasOwn(args, "arguments"))
     return args["arguments"];
   return args;
 }
@@ -23906,6 +23917,7 @@ function addMessage(store, threadId, role, content = "", images, attachments, op
     ...opts?.origin !== void 0 ? { origin: opts.origin } : {},
     ...opts?.startingCommit !== void 0 ? { startingCommit: opts.startingCommit } : {},
     ...opts?.dirty !== void 0 ? { dirty: opts.dirty } : {},
+    ...opts?.promptRepresentation !== void 0 ? { promptRepresentation: opts.promptRepresentation } : {},
     toolCalls: [],
     createdAt: Date.now()
   };
@@ -24045,14 +24057,26 @@ function setMessageContent(store, messageId, content) {
   });
   store.emit("message_token", messageId, content);
 }
-function setMessagePromptContent(store, messageId, content, images) {
-  updateMessage(store, messageId, (message) => {
-    message.content = content;
-    if (images === void 0) delete message.images;
-    else message.images = images;
-    delete message.attachments;
-  });
+function setMessagePromptContent(store, threadId, messageId, content, images, attachments, promptRepresentation) {
+  const existing = getThreadById(store, threadId)?.messages.find(
+    (candidate) => candidate.id === messageId
+  );
+  if (!existing) return;
+  const message = { ...existing, content };
+  if (images === void 0) delete message.images;
+  else message.images = images;
+  if (attachments === void 0) delete message.attachments;
+  else message.attachments = attachments.map((attachment) => ({ ...attachment }));
+  if (promptRepresentation === void 0) delete message.promptRepresentation;
+  else message.promptRepresentation = promptRepresentation;
+  patchThreadAnywhere(store, threadId, (thread) => ({
+    ...thread,
+    messages: thread.messages.map(
+      (candidate) => candidate.id === messageId ? message : candidate
+    )
+  }));
   store.emit("message_token", messageId, content);
+  store.emit("threads_changed");
 }
 function addMessageCanvasArtefact(store, messageId, artefact) {
   updateMessage(store, messageId, (message) => {
@@ -24626,6 +24650,12 @@ function afterThreadWrites(projectId, threadId, start) {
   const pending = writeChains.get(threadWriteKey(projectId, threadId));
   return pending ? pending.catch(() => void 0).then(start) : start();
 }
+function persistThreadMessageNow(api, projectId, threadId, message) {
+  return serializedWrite(
+    threadWriteKey(projectId, threadId),
+    () => api.threads.appendMessage(projectId, threadId, message)
+  );
+}
 function metaOf(thread) {
   const {
     messages: _messages,
@@ -24776,6 +24806,13 @@ function queueThreadWrite(api, projectId, threadId, target) {
         pendingThreadWrites.delete(projectId);
       }
     }
+  });
+}
+function persistThreadMetadataNow(api, projectId, thread) {
+  return queueThreadWrite(api, projectId, thread.id, {
+    kind: "save",
+    thread,
+    meta: metaOf(thread)
   });
 }
 function reconcileThreads(api, projectId, threads) {
@@ -27766,6 +27803,25 @@ var init_send_now_aborts = __esm({
 });
 
 // src/renderer/controller/message-queue.ts
+function steeringPersistenceKey(projectId, threadId, messageId) {
+  return `${projectId}\0${threadId}\0${messageId}`;
+}
+function beginSteeringPersistence(store, projectId, threadId, messageId) {
+  let inFlight2 = steeringPersistenceInFlight.get(store);
+  if (!inFlight2) {
+    inFlight2 = /* @__PURE__ */ new Set();
+    steeringPersistenceInFlight.set(store, inFlight2);
+  }
+  const key = steeringPersistenceKey(projectId, threadId, messageId);
+  inFlight2.add(key);
+  return () => {
+    inFlight2.delete(key);
+    if (inFlight2.size === 0) steeringPersistenceInFlight.delete(store);
+  };
+}
+function queuedSteeringIsBusy(store, projectId, thread, item) {
+  return steeringPersistenceInFlight.get(store)?.has(steeringPersistenceKey(projectId, thread.id, item.messageId)) === true || queuedSteeringIsPending(thread, item);
+}
 function isHeldMessage(item) {
   return item.autoDispatch === false;
 }
@@ -28122,45 +28178,53 @@ function withPayloadText(content, text) {
     (block, index) => index === firstText && block.type === "text" ? { ...block, text } : block
   );
 }
-function updateQueuedMessageText(store, threadId, messageId, text) {
-  const thread = store.getState().threads.find((t2) => t2.id === threadId);
-  const item = thread?.pendingMessages?.find((p2) => p2.messageId === messageId);
-  if (!item) return;
-  const threads = store.getState().threads.map(
-    (t2) => t2.id !== threadId ? t2 : {
-      ...t2,
-      pendingMessages: (t2.pendingMessages ?? []).map((p2) => {
-        if (p2.messageId !== messageId) return p2;
-        const {
-          mobilePromptGrantId: _mobilePromptGrantId,
-          threadPromptGrantId: _threadPromptGrantId,
-          ...editable
-        } = p2;
-        return {
-          ...editable,
-          payload: { ...p2.payload, content: withPayloadText(p2.payload.content, text) },
-          // Editing a hook-originated message keeps `kind: 'hook'` but
-          // flips `editedByUser` so the spine stays honest (decision 10).
-          ...p2.origin?.kind === "hook" ? { editedByUser: true } : {}
-        };
-      }),
-      updatedAt: Date.now()
-    }
+function replaceQueuedMessageText(store, projectId, threadId, messageId, text) {
+  patchQueuedMessageOwner(
+    store,
+    projectId,
+    threadId,
+    (current) => replaceQueuedMessageTextInThread(current, messageId, text)
   );
-  store.setState({ threads });
-  setMessageContent(store, messageId, text);
-  if (item.origin?.kind === "hook") {
-    const withEdit = store.getState().threads.map((t2) => ({
-      ...t2,
-      messages: t2.messages.map((m2) => m2.id !== messageId ? m2 : { ...m2, editedByUser: true })
-    }));
-    store.setState({ threads: withEdit });
-  }
   store.emit("threads_changed");
+}
+function replaceQueuedMessageTextInThread(thread, messageId, text) {
+  const item = thread.pendingMessages?.find((pending) => pending.messageId === messageId);
+  if (!item) return thread;
+  const editedByUser = item.origin?.kind === "hook";
+  return {
+    ...thread,
+    pendingMessages: (thread.pendingMessages ?? []).map((pending) => {
+      if (pending.messageId !== messageId) return pending;
+      const {
+        mobilePromptGrantId: _mobilePromptGrantId,
+        threadPromptGrantId: _threadPromptGrantId,
+        ...editable
+      } = pending;
+      return {
+        ...editable,
+        payload: {
+          ...pending.payload,
+          content: withPayloadText(pending.payload.content, text)
+        },
+        // Editing a hook-originated message keeps `kind: 'hook'` but
+        // flips `editedByUser` so the spine stays honest (decision 10).
+        ...editedByUser ? { editedByUser: true } : {}
+      };
+    }),
+    messages: thread.messages.map(
+      (message) => message.id !== messageId ? message : { ...message, content: text, ...editedByUser ? { editedByUser: true } : {} }
+    ),
+    updatedAt: Date.now()
+  };
+}
+function updateQueuedMessageText(store, threadId, messageId, text) {
+  const owner = getQueuedMessageOwner(store, threadId, messageId);
+  if (!owner || queuedSteeringIsBusy(store, owner.projectId, owner.thread, owner.item)) return;
+  replaceQueuedMessageText(store, owner.projectId, threadId, messageId, text);
 }
 function patchQueuedMessageOwner(store, projectId, threadId, patch) {
   const state = store.getState();
-  if (state.activeProjectId === projectId) {
+  if (state.activeProjectId === projectId && state.threads.some((thread) => thread.id === threadId)) {
     store.setState({
       threads: state.threads.map((thread) => thread.id === threadId ? patch(thread) : thread)
     });
@@ -28173,10 +28237,50 @@ function patchQueuedMessageOwner(store, projectId, threadId, patch) {
   }
   store.emit("threads_changed");
 }
+function getProjectThread(store, projectId, threadId) {
+  const state = store.getState();
+  if (state.activeProjectId === projectId) {
+    const active2 = state.threads.find((thread) => thread.id === threadId);
+    if (active2) return active2;
+  }
+  return state.backgroundThreads.find(
+    (entry) => entry.projectId === projectId && entry.thread.id === threadId
+  )?.thread;
+}
+function getQueuedMessageOwner(store, threadId, messageId) {
+  const state = store.getState();
+  const active2 = state.threads.find((thread) => thread.id === threadId);
+  const activeItem = active2?.pendingMessages?.find((item) => item.messageId === messageId);
+  if (state.activeProjectId && active2 && activeItem) {
+    return { projectId: state.activeProjectId, thread: active2, item: activeItem };
+  }
+  for (const entry of state.backgroundThreads) {
+    if (entry.thread.id !== threadId) continue;
+    const item = entry.thread.pendingMessages?.find(
+      (candidate) => candidate.messageId === messageId
+    );
+    if (item) return { projectId: entry.projectId, thread: entry.thread, item };
+  }
+  return void 0;
+}
+function withProjectMessage(thread, role, content) {
+  const message = {
+    id: globalThis.crypto.randomUUID(),
+    role,
+    content,
+    toolCalls: [],
+    createdAt: Date.now()
+  };
+  return {
+    ...thread,
+    messages: [...thread.messages, message],
+    updatedAt: Date.now()
+  };
+}
 async function deleteQueuedMessage(store, api, threadId, messageId) {
-  const projectId = getThreadProjectId(store, threadId);
-  const thread = getThreadById(store, threadId);
-  if (!projectId || !thread?.pendingMessages?.some((item) => item.messageId === messageId)) return;
+  const owner = getQueuedMessageOwner(store, threadId, messageId);
+  if (!owner || queuedSteeringIsBusy(store, owner.projectId, owner.thread, owner.item)) return;
+  const { projectId } = owner;
   patchQueuedMessageOwner(store, projectId, threadId, (current) => ({
     ...current,
     pendingMessages: (current.pendingMessages ?? []).map(
@@ -28250,64 +28354,217 @@ function prioritizeQueuedMessage(store, api, threadId, messageId) {
     drainMessageQueue(store, api, threadId);
   }
 }
+function queuedSteeringIsPending(thread, item) {
+  return thread.status === "running" && thread.nativeSteeringRunId !== void 0 && item.steeringRequested === thread.nativeSteeringRunId;
+}
 function canSteerQueuedMessage(thread, item) {
-  return thread.status === "running" && !!thread.nativeSteeringRunId && !item.steeringRequested && item.origin === void 0 && typeof item.payload.content === "string" && item.payload.content.trim().length > 0 && item.payload.content.length <= 16e3 && (item.payload.invokedSkills?.length ?? 0) === 0 && item.payload.invokedAgent === void 0;
+  return thread.status === "running" && !!thread.nativeSteeringRunId && !queuedSteeringIsPending(thread, item) && item.origin === void 0 && typeof item.payload.content === "string" && item.payload.content.trim().length > 0 && item.payload.content.length <= 16e3 && (item.payload.invokedSkills?.length ?? 0) === 0 && item.payload.invokedAgent === void 0;
 }
 async function steerQueuedMessage(store, api, threadId, messageId) {
-  const thread = getThreadById(store, threadId);
-  const item = thread?.pendingMessages?.find((entry) => entry.messageId === messageId);
-  if (!thread || !item || !canSteerQueuedMessage(thread, item)) return;
+  const owner = getQueuedMessageOwner(store, threadId, messageId);
+  if (!owner || !canSteerQueuedMessage(owner.thread, owner.item)) return;
+  const { item, projectId, thread } = owner;
+  const originalMessage = thread.messages.find((message) => message.id === messageId);
   const runId = thread.nativeSteeringRunId;
   if (!runId) return;
-  const state = store.getState();
-  const projectId = state.backgroundThreads.find((entry) => entry.thread.id === threadId)?.projectId ?? state.activeProjectId;
-  if (!projectId) return;
-  patchThreadAnywhere(store, threadId, (current) => ({
-    ...current,
-    pendingMessages: (current.pendingMessages ?? []).map(
-      (entry) => entry.messageId === messageId ? { ...entry, autoDispatch: false, steeringRequested: runId } : entry
-    )
-  }));
-  store.emit("threads_changed");
-  try {
-    await flushPendingThreadPersistence();
-    const result = await afterThreadWrites(
-      projectId,
-      threadId,
-      () => api.agent.steer(projectId, threadId, messageId, runId)
+  let sourceSnapshot = thread;
+  let sourceAvailable = true;
+  const hasCapturedPending = (candidate) => {
+    const pending = candidate.pendingMessages?.find((entry) => entry.messageId === messageId);
+    const snapshotPending = sourceSnapshot.pendingMessages?.find(
+      (entry) => entry.messageId === messageId
     );
-    if (result.state === "applied") {
-      patchThreadAnywhere(store, threadId, (current) => ({
-        ...current,
-        pendingMessages: (current.pendingMessages ?? []).filter(
-          (entry) => entry.messageId !== messageId
-        )
-      }));
-    } else {
-      addMessage(
-        store,
+    const payload = pending && JSON.stringify(pending.payload);
+    return candidate.createdAt === thread.createdAt && pending?.createdAt === item.createdAt && (payload === JSON.stringify(item.payload) || payload === (snapshotPending && JSON.stringify(snapshotPending.payload)));
+  };
+  const hasCapturedNote = (candidate) => {
+    const message = candidate.messages.find((entry) => entry.id === messageId);
+    const snapshotMessage = sourceSnapshot.messages.find((entry) => entry.id === messageId);
+    const messageContent = message?.content;
+    return hasCapturedPending(candidate) && messageContent !== void 0 && (messageContent === originalMessage?.content || messageContent === snapshotMessage?.content);
+  };
+  const withCapturedNote = (candidate) => {
+    const capturedMessage = sourceSnapshot.messages.find((entry) => entry.id === messageId);
+    const capturedPending = sourceSnapshot.pendingMessages?.find(
+      (entry) => entry.messageId === messageId
+    );
+    if (!capturedMessage || !capturedPending) return candidate;
+    const pendingMessages = candidate.pendingMessages?.map(
+      (entry) => entry.messageId === messageId ? capturedPending : entry
+    );
+    return {
+      ...candidate,
+      messages: candidate.messages.map(
+        (entry) => entry.id === messageId ? capturedMessage : entry
+      ),
+      ...pendingMessages ? { pendingMessages } : {}
+    };
+  };
+  const patchSource = (patch) => {
+    if (!sourceAvailable) return;
+    const live = getProjectThread(store, projectId, threadId);
+    if (live) {
+      if (!hasCapturedNote(live)) {
+        sourceAvailable = false;
+        return;
+      }
+      sourceSnapshot = patch(withCapturedNote(live));
+      patchQueuedMessageOwner(store, projectId, threadId, () => sourceSnapshot);
+      return;
+    }
+    sourceSnapshot = patch(sourceSnapshot);
+  };
+  const refreshSourceAfterHostWait = async () => {
+    const live = getProjectThread(store, projectId, threadId);
+    if (live) {
+      if (!hasCapturedNote(live)) return false;
+      sourceSnapshot = live;
+      return true;
+    }
+    try {
+      const persisted = await loadPersistedThread(api, projectId, threadId);
+      if (!persisted || !hasCapturedPending(persisted)) return false;
+      const messages = await api.threads.loadMessages(projectId, threadId);
+      const hydrated = {
+        ...persisted,
+        messages,
+        messagesLoaded: true
+      };
+      if (!hasCapturedNote(hydrated)) return false;
+      sourceSnapshot = hydrated;
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const finishPersistence = beginSteeringPersistence(store, projectId, threadId, messageId);
+  const persistMetadata = async () => {
+    if (!sourceAvailable) throw new Error("The steering note source thread is no longer available");
+    await persistThreadMetadataNow(api, projectId, sourceSnapshot);
+  };
+  try {
+    patchSource((current) => ({
+      ...current,
+      pendingMessages: (current.pendingMessages ?? []).map(
+        (entry) => entry.messageId === messageId ? { ...entry, autoDispatch: false, steeringRequested: runId } : entry
+      )
+    }));
+    store.emit("threads_changed");
+    try {
+      await persistMetadata();
+      const result = await afterThreadWrites(
+        projectId,
         threadId,
-        "error",
-        "Your steering note was not delivered. It remains held for you to release or edit."
+        () => api.agent.steer(projectId, threadId, messageId, runId)
+      );
+      sourceAvailable = await refreshSourceAfterHostWait();
+      if (!sourceAvailable) return;
+      if (result.state === "applied") {
+        patchSource((current) => ({
+          ...current,
+          pendingMessages: (current.pendingMessages ?? []).filter(
+            (entry) => entry.messageId !== messageId
+          )
+        }));
+        store.emit("threads_changed");
+        return;
+      }
+      if (result.draft !== void 0) {
+        const draft = result.draft;
+        patchSource((current) => replaceQueuedMessageTextInThread(current, messageId, draft));
+      }
+      try {
+        if (result.draft !== void 0) {
+          const message = sourceSnapshot.messages.find((candidate) => candidate.id === messageId);
+          if (!message) throw new Error("The interrupted steering note is no longer available");
+          await persistThreadMessageNow(api, projectId, threadId, message);
+        }
+      } catch (error62) {
+        if (result.draft !== void 0 && originalMessage) {
+          const { steeringRequested: _requested, ...originalHeld } = item;
+          patchSource((current) => ({
+            ...current,
+            messages: current.messages.map(
+              (message) => message.id === messageId ? originalMessage : message
+            ),
+            pendingMessages: (current.pendingMessages ?? []).map(
+              (entry) => entry.messageId === messageId ? { ...originalHeld, autoDispatch: false, steeringRequested: runId } : entry
+            ),
+            updatedAt: Date.now()
+          }));
+          store.emit("threads_changed");
+          try {
+            await persistThreadMessageNow(api, projectId, threadId, originalMessage);
+          } catch {
+          }
+        }
+        patchSource((current) => ({
+          ...current,
+          pendingMessages: (current.pendingMessages ?? []).map((entry) => {
+            if (entry.messageId !== messageId) return entry;
+            const { steeringRequested: _requested, ...held } = entry;
+            return held;
+          })
+        }));
+        store.emit("threads_changed");
+        try {
+          await persistMetadata();
+        } catch {
+        }
+        patchSource(
+          (current) => withProjectMessage(
+            current,
+            "error",
+            ipcErrorMessage(error62, "Steering failed. Your note remains held.")
+          )
+        );
+        return;
+      }
+      patchSource((current) => ({
+        ...current,
+        pendingMessages: (current.pendingMessages ?? []).map((entry) => {
+          if (entry.messageId !== messageId) return entry;
+          const { steeringRequested: _requested, ...held } = entry;
+          return held;
+        })
+      }));
+      store.emit("threads_changed");
+      await persistMetadata();
+      patchSource(
+        (current) => withProjectMessage(
+          current,
+          "error",
+          result.draft === void 0 ? "Your steering note was not delivered. It remains held for you to release or edit." : "The turn ended during review. Your edits were saved as a held note; Release will open a new protected review."
+        )
+      );
+    } catch (error62) {
+      sourceAvailable = await refreshSourceAfterHostWait();
+      if (!sourceAvailable) return;
+      patchSource((current) => ({
+        ...current,
+        pendingMessages: (current.pendingMessages ?? []).map((entry) => {
+          if (entry.messageId !== messageId) return entry;
+          const { steeringRequested: _requested, ...held } = entry;
+          return held;
+        })
+      }));
+      store.emit("threads_changed");
+      try {
+        await persistMetadata();
+      } catch {
+      }
+      patchSource(
+        (current) => withProjectMessage(
+          current,
+          "error",
+          ipcErrorMessage(error62, "Steering failed. Your note remains held.")
+        )
       );
     }
-  } catch (error62) {
-    addMessage(
-      store,
-      threadId,
-      "error",
-      ipcErrorMessage(error62, "Steering failed. Your note remains held.")
-    );
+  } finally {
+    finishPersistence();
+    store.emit("threads_changed");
   }
-  patchThreadAnywhere(store, threadId, (current) => ({
-    ...current,
-    pendingMessages: (current.pendingMessages ?? []).map((entry) => {
-      if (entry.messageId !== messageId) return entry;
-      const { steeringRequested: _requested, ...held } = entry;
-      return held;
-    })
-  }));
-  store.emit("threads_changed");
 }
 function enqueueHookMessage(store, api, threadId, input2) {
   const thread = store.getState().threads.find((t2) => t2.id === threadId);
@@ -28331,9 +28588,11 @@ function enqueueHookMessage(store, api, threadId, input2) {
   else drainMessageQueue(store, api, threadId);
 }
 function releaseHeldMessage(store, api, threadId, messageId) {
-  const thread = store.getState().threads.find((t2) => t2.id === threadId);
+  const state = store.getState();
+  const thread = state.threads.find((t2) => t2.id === threadId);
   const item = thread?.pendingMessages?.find((p2) => p2.messageId === messageId);
-  if (!thread || !item) return;
+  if (!state.activeProjectId || !thread || !item || queuedSteeringIsBusy(store, state.activeProjectId, thread, item))
+    return;
   const epoch = newEpoch();
   const threads = store.getState().threads.map((t2) => {
     if (t2.id !== threadId) return t2;
@@ -28354,7 +28613,7 @@ function releaseHeldMessage(store, api, threadId, messageId) {
   store.emit("threads_changed");
   prioritizeQueuedMessage(store, api, threadId, messageId);
 }
-var pendingDispatches, SUBTHREAD_OPERATION_PREFIX;
+var steeringPersistenceInFlight, pendingDispatches, SUBTHREAD_OPERATION_PREFIX;
 var init_message_queue = __esm({
   "src/renderer/controller/message-queue.ts"() {
     init_lm_studio_defaults();
@@ -28369,6 +28628,7 @@ var init_message_queue = __esm({
     init_send_now_aborts();
     init_persistence();
     init_ipc_error_message();
+    steeringPersistenceInFlight = /* @__PURE__ */ new WeakMap();
     pendingDispatches = /* @__PURE__ */ new WeakMap();
     SUBTHREAD_OPERATION_PREFIX = "subthread:";
   }
@@ -29473,7 +29733,7 @@ async function addProject(store, api) {
   return true;
 }
 async function addRemoteProject(store, api) {
-  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-PRYAKWO4.js");
+  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-AN5HFQ3E.js");
   const picked = await openRemoteFolderDialog(api);
   if (!picked) return false;
   await addProjectFromRemotePath(store, api, picked.hostId, picked.path);
@@ -30312,8 +30572,8 @@ var init_presets = __esm({
       },
       {
         id: "perplexity-decider",
-        label: "Perplexity / Decider v1.1 (OpenRouter)",
-        model: "perplexity/pplx-decider-v1.1-27b",
+        label: "Perplexity / Decider v1.3 (OpenRouter)",
+        model: "perplexity/pplx-decider-v1.3",
         timeoutMs: 6e4,
         connection: {
           type: "http",
@@ -30321,6 +30581,32 @@ var init_presets = __esm({
           baseUrl: "https://openrouter.ai/api/alpha",
           auth: "bearer",
           apiKeyEnv: "OPENROUTER_API_KEY"
+        }
+      },
+      {
+        id: "perplexity-decider-direct",
+        label: "Perplexity / Decider v1.3",
+        model: "pplx-decider-v1.3",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "decisions",
+          baseUrl: "https://api.perplexity.ai/v1",
+          auth: "bearer",
+          apiKeyEnv: "PERPLEXITY_API_KEY"
+        }
+      },
+      {
+        id: "perplexity-decider-flash",
+        label: "Perplexity / Decider Flash v1.3",
+        model: "pplx-decider-flash-v1.3",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "decisions",
+          baseUrl: "https://api.perplexity.ai/v1",
+          auth: "bearer",
+          apiKeyEnv: "PERPLEXITY_API_KEY"
         }
       },
       {
@@ -30334,6 +30620,18 @@ var init_presets = __esm({
           baseUrl: "https://openrouter.ai/api/alpha",
           auth: "bearer",
           apiKeyEnv: "OPENROUTER_API_KEY"
+        }
+      },
+      {
+        id: "perplexity-decider-local",
+        label: "Perplexity / Decider for Mac (local)",
+        model: "pplx-decider-flash-v1.2",
+        timeoutMs: 6e4,
+        connection: {
+          type: "http",
+          protocol: "decisions",
+          baseUrl: "http://127.0.0.1:8080/v1",
+          auth: "none"
         }
       },
       {
@@ -30916,6 +31214,25 @@ function createClassifiersSection(api) {
       el("label", {}, "Model ID", model),
       el("span", { class: "field-hint" }, "Profile ID for evals: ", el("code", {}, profile.id))
     );
+    if (profile.id === "perplexity-decider-local" || profile.id.startsWith("perplexity-decider-local-")) {
+      form.prepend(
+        el(
+          "p",
+          { class: "field-hint classifier-local-guide" },
+          "Start Decider for Mac and wait until it shows Ready. It runs Flash v1.2 locally on an Apple silicon Mac with at least 16 GB of memory. No API key is needed. ",
+          el(
+            "a",
+            {
+              href: "https://docs.perplexity.ai/docs/decisions/decider-for-mac",
+              target: "_blank",
+              rel: "noopener noreferrer"
+            },
+            "Set up Decider for Mac"
+          ),
+          ". Save this connection, then select it for Background questions or Safety screening."
+        )
+      );
+    }
     const read = (name) => controls.get(name)?.value.trim() ?? "";
     const advanced = el(
       "details",
@@ -32854,6 +33171,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'apodex-1-1', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 13.7,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'apodex-1-1', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       "apriel-v1-5-15b-thinker": [
@@ -34462,6 +34785,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         }
       ],
+      "deepseek-v4-pro-high": [
+        {
+          value: 20.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'deepseek-v4-pro-high', fetched 2026-11-17",
+          asOf: "2026-11-17"
+        }
+      ],
       "deepseek-v4-pro-non-reasoning": [
         {
           value: 20.4,
@@ -35370,6 +35701,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-10-29"
         }
       ],
+      "gemini-4-argon-medium": [
+        {
+          value: 47.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-4-argon-medium', fetched 2026-11-17",
+          asOf: "2026-11-17"
+        }
+      ],
       "gemini-4-carbon": [
         {
           value: 60,
@@ -35392,6 +35731,38 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v5",
           source: "Artificial Analysis API (index v5), model 'gemini-4-carbon-medium', fetched 2026-11-10",
           asOf: "2026-11-10"
+        }
+      ],
+      "gemini-4-hydrogen": [
+        {
+          value: 53.9,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-4-hydrogen', fetched 2026-11-17",
+          asOf: "2026-11-17"
+        }
+      ],
+      "gemini-4-hydrogen-high": [
+        {
+          value: 50.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-4-hydrogen-high', fetched 2026-11-17",
+          asOf: "2026-11-17"
+        }
+      ],
+      "gemini-4-hydrogen-low": [
+        {
+          value: 26.9,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-4-hydrogen-low', fetched 2026-11-17",
+          asOf: "2026-11-17"
+        }
+      ],
+      "gemini-4-hydrogen-medium": [
+        {
+          value: 41.2,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemini-4-hydrogen-medium', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       "gemma-3-1b": [
@@ -35970,6 +36341,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'gemma-4-e4b', fetched 2026-09-11",
           asOf: "2026-09-11"
+        },
+        {
+          value: 4.8,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'gemma-4-e4b', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       "gpt-35-turbo": [
@@ -38330,6 +38707,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'jt-4-1-flash-236b-a21b', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 19,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'jt-4-1-flash-236b-a21b', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       "jt-4-1-flash-236b-a21b-non-reasoning": [
@@ -38366,6 +38749,14 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'k-exaone', fetched 2026-09-11",
           asOf: "2026-09-11"
+        }
+      ],
+      "k-exaone-2-0": [
+        {
+          value: 7.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'k-exaone-2-0', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       "k-exaone-2-0-0803": [
@@ -38950,6 +39341,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'ling-3-1-flash', fetched 2026-10-06",
           asOf: "2026-10-06"
+        },
+        {
+          value: 29.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'ling-3-1-flash', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       "ling-3-1-flash-1019": [
@@ -42008,6 +42405,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'qwen3-8-flash-next', fetched 2026-09-22",
           asOf: "2026-09-22"
+        },
+        {
+          value: 28.6,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'qwen3-8-flash-next', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       "qwen3-8-max": [
@@ -42360,6 +42763,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-09-11"
         }
       ],
+      "qwen4-max": [
+        {
+          value: 42.9,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'qwen4-max', fetched 2026-11-17",
+          asOf: "2026-11-17"
+        }
+      ],
       "qwq-32b": [
         {
           value: 13.4,
@@ -42660,6 +43071,12 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.3",
           source: "Artificial Analysis API (index v4.3), model 'solar-pro4', fetched 2026-10-20",
           asOf: "2026-10-20"
+        },
+        {
+          value: 14.2,
+          indexVersion: "v5",
+          source: "Artificial Analysis API (index v5), model 'solar-pro4', fetched 2026-11-17",
+          asOf: "2026-11-17"
         }
       ],
       sonar: [
@@ -46293,11 +46710,7 @@ function renderChart(points, gutters, tooltip, size = {}, costAxis = "blended", 
   try {
     return points.length > 0 ? renderFrontierSvg(points, size, gutters, tooltip, costAxis, labelMode) : el("p", { class: "field-hint" }, "No models with a sourced intellect score yet.");
   } catch (err) {
-    return el(
-      "p",
-      { class: "field-hint" },
-      `The value map failed to render: ${err instanceof Error ? err.message : String(err)}`
-    );
+    return el("p", { class: "field-hint" }, `The value map failed to render: ${errorMessage(err)}`);
   }
 }
 var SVG_NS, WIDTH, HEIGHT, MARGIN, LABEL_LINE_GAP, POINT_SPLAY_COLUMN_PX, POINT_SPLAY_STEP_PX, POINT_SPLAY_MAX_PX, UNPRICED_GUTTER_W, UNSCORED_ROW_LIMIT, UNPRICED_GUTTER_LIMIT;
@@ -46306,6 +46719,7 @@ var init_intellect_frontier_chart = __esm({
     init_model_intellect();
     init_helpers();
     init_intellect_frontier_tooltip();
+    init_errors4();
     SVG_NS = "http://www.w3.org/2000/svg";
     WIDTH = 460;
     HEIGHT = 290;
@@ -52075,6 +52489,15 @@ var init_acp_agents_list = __esm({
   }
 });
 
+// src/shared/slug.ts
+function slugify2(text) {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64);
+}
+var init_slug = __esm({
+  "src/shared/slug.ts"() {
+  }
+});
+
 // src/shared/acp-registry.ts
 var ACP_REGISTRY_URL;
 var init_acp_registry = __esm({
@@ -52278,9 +52701,6 @@ function parseArgsText(text) {
 }
 function formatArgsText(args) {
   return (args ?? []).join("\n");
-}
-function slugify2(value) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64);
 }
 function upsertAgent(list, agent) {
   const idx = list.findIndex((a4) => a4.id === agent.id);
@@ -52593,7 +53013,7 @@ function createAcpAgentsSection(api, opts = {}) {
         ].filter(Boolean);
         setInlineStatus(modelStatus, "ok", `Detected ${bits.join(", ")}.`);
       }).catch((err) => {
-        setInlineStatus(modelStatus, "error", err instanceof Error ? err.message : String(err));
+        setInlineStatus(modelStatus, "error", errorMessage(err));
       }).finally(() => {
         detectModels.disabled = !canDetectModels;
       });
@@ -52854,7 +53274,9 @@ var init_acp_agents_section = __esm({
     init_inline_markdown();
     init_inline_status();
     init_model_picker();
+    init_slug();
     init_acp_registry_browser();
+    init_errors4();
     AGENT_DATA_POLICY_URLS = {
       "claude-acp": "https://github.com/anthropics/claude-code#data-collection-usage-and-retention",
       "claude-code-acp": "https://github.com/anthropics/claude-code#data-collection-usage-and-retention",
@@ -68503,7 +68925,7 @@ function createAppleDevelopmentPanel(store, api, options) {
       await action();
       await refresh();
     } catch (error62) {
-      const message = error62 instanceof Error ? error62.message : String(error62);
+      const message = errorMessage(error62);
       host.querySelector(".apple-development-error")?.remove();
       host.append(el("p", { class: "apple-development-error", role: "alert" }, message));
     } finally {
@@ -68677,7 +69099,7 @@ function createAppleDevelopmentPanel(store, api, options) {
             destination.replaceChildren(el("option", { value: "" }, "No destinations available"));
             destination.disabled = true;
             save.disabled = true;
-            destinationStatus.textContent = error62 instanceof Error ? error62.message : String(error62);
+            destinationStatus.textContent = errorMessage(error62);
             destinationStatus.hidden = false;
           }
         };
@@ -68879,11 +69301,7 @@ function createAppleDevelopmentPanel(store, api, options) {
       }
       host.hidden = false;
       host.replaceChildren(
-        el(
-          "p",
-          { class: "apple-development-error", role: "alert" },
-          error62 instanceof Error ? error62.message : String(error62)
-        )
+        el("p", { class: "apple-development-error", role: "alert" }, errorMessage(error62))
       );
     }
   };
@@ -68898,6 +69316,7 @@ var init_apple_development_panel = __esm({
     init_helpers();
     init_icons();
     init_ipc_error_message();
+    init_errors4();
   }
 });
 
@@ -71431,9 +71850,11 @@ var init_experimental_markup = __esm({
                 Let the agent get a best-fit model recommendation for a task
               </label>
               <p class="field-hint">
-                Lets the agent judge how hard a task is and name a model that suits it, so simple
-                work goes to a cheap, fast model and the hard problems get a top one. Advice only:
-                it never switches the model you are using.
+                Lets the agent judge how hard a task is and name one of your configured models that
+                suits it, so simple work goes to a cheap, fast model and the hard problems get a top
+                one. To judge, it sends the task description to your Background questions or Small
+                tasks model, or to your chat model when those can't answer, which can add a little
+                usage. Advice only: it never switches the model you are using.
               </p>
             </fieldset>
 
@@ -72619,6 +73040,15 @@ var WORKING_BRIEF_MAX_LEN;
 var init_working_brief = __esm({
   "packages/agent/src/working-brief.ts"() {
     WORKING_BRIEF_MAX_LEN = 2e3;
+  }
+});
+
+// packages/std/src/sleep.ts
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+var init_sleep = __esm({
+  "packages/std/src/sleep.ts"() {
   }
 });
 
@@ -74934,6 +75364,7 @@ export {
   threadProposalStatus,
   findThreadProposalDecision,
   threadProposalFileSummary,
+  isCopseServerName,
   isCopseToolCall,
   isAcpDelegateToolCall,
   acpDelegateKind,
@@ -75100,6 +75531,7 @@ export {
   init_thread_hydration,
   takeSendNowAbort,
   init_send_now_aborts,
+  queuedSteeringIsBusy,
   isHeldMessage,
   startHumanTurnTree,
   foldBackContinuationUsed,
@@ -75224,6 +75656,8 @@ export {
   workingBriefFromUserContent,
   nextWorkingBrief,
   init_working_brief,
+  sleep,
+  init_sleep,
   getActiveThreadOwner,
   requireActiveThreadOwner,
   activeThreadOf,
