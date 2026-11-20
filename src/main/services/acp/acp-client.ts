@@ -65,7 +65,6 @@ import {
   watchAgentStderr,
   type AcpAgentResourceFault,
 } from './acp-resource-fault.ts'
-import { BRIDGE_MCP_SERVER_NAME } from './acp-bridge-name.ts'
 import { claudeSandboxEscapeSessionMeta } from './acp-claude-sandbox-escape.ts'
 import { AcpToolCallObservations, type AcpToolIdentity } from './acp-tool-provenance.ts'
 import {
@@ -249,7 +248,7 @@ export interface AcpAgentSpawnConfig {
    * `session/new` `mcpServers` as an http server when the agent advertises
    * `mcpCapabilities.http`; ignored otherwise.
    */
-  nativeBridge?: { url: string; token: string }
+  nativeBridge?: { url: string; token: string; serverName: string }
 }
 
 const UNSUPPORTED = (method: string) => (): Promise<never> =>
@@ -524,17 +523,18 @@ export function willSandboxAcpAgent(sandbox: AcpAgentSandboxConfig | undefined):
  * under Copse's sandbox on this machine: Claude Code flag settings whose hook
  * refuses its `dangerouslyDisableSandbox` escape with an explanation, since
  * Copse's sandbox wraps the whole process and the escape cannot lift it
- * (#4146, `acp-claude-sandbox-escape.ts`). `bridgeMounted` says whether this
- * session offered Copse's native-tool bridge, which the refusal points to.
+ * (#4146, `acp-claude-sandbox-escape.ts`). `bridgeServer` is the server name
+ * this session offered Copse's native-tool bridge under, which the refusal
+ * points to, or null when it offered none.
  */
 export function acpSessionMeta(
   config: Pick<AcpAgentSpawnConfig, 'command' | 'args' | 'sandbox' | 'executionMode'>,
-  opts: { remote: boolean; bridgeMounted: boolean },
+  opts: { remote: boolean; bridgeServer: string | null },
 ): ReturnType<typeof claudeSandboxEscapeSessionMeta> | undefined {
   if (opts.remote || config.executionMode === 'agent') return undefined
   if (!config.sandbox || !willSandboxAcpAgent(config.sandbox)) return undefined
   if (!isClaudeAcpAgent(config)) return undefined
-  return claudeSandboxEscapeSessionMeta(opts.bridgeMounted)
+  return claudeSandboxEscapeSessionMeta(opts.bridgeServer)
 }
 
 /** The SDK can observe the request-pipe closure before the child exit event. */
@@ -894,6 +894,8 @@ export interface OpenAcpSession {
   availableCommands: AvailableCommand[]
   /** What the agent has said about a tool call's identity so far (`AcpToolCallObservations`). */
   toolCallIdentities: (toolCallId: string) => readonly AcpToolIdentity[]
+  /** The server name this session mounted Copse's native-tool bridge under, or null. */
+  bridgeServerName: string | null
   /** Mutable ACP-owned metadata for the live session. */
   sessionInfo: { title?: string; updatedAt?: string }
   /** True when this connection restored a prior ACP session rather than creating one. */
@@ -1054,17 +1056,9 @@ async function spawnTransport(
   if (sshTarget) return spawnRemoteAcpTransport(config, sshTarget, signal)
   let child: ChildProcess
   if (config.sandbox && willSandboxAcpAgent(config.sandbox)) {
-    try {
-      child = await spawnSandboxedAcpSessionHost(config)
-    } catch (err) {
-      // Preserve containment if the standalone host cannot start. This is the
-      // pre-phase-5 path: it widens the main process's ASRT network singleton,
-      // so the overlap gate remains necessary as a bounded fallback.
-      console.warn(
-        `[acp-session-host] isolated host unavailable, falling back in-process (this widens the global network scope): ${errorMessage(err)}`,
-      )
-      child = await spawnAcpAgentProcess(config)
-    }
+    // A host failure cannot fall back into main: that would give all existing
+    // contained commands the agent's public-domain allowlist for its lifetime.
+    child = await spawnSandboxedAcpSessionHost(config)
   } else {
     child = await spawnAcpAgentProcess(config)
   }
@@ -1200,7 +1194,8 @@ function startAcpUpdatePump(open: OpenAcpSession): void {
           cancelApprovalsForAcpToolCall(update.toolCallId)
         }
         if (
-          isAcpBridgeStartupFailure(update) &&
+          open.bridgeServerName !== null &&
+          isAcpBridgeStartupFailure(update, open.bridgeServerName) &&
           open.handlers.current?.onBridgeStartupFailure?.() === true
         ) {
           continue
@@ -1208,12 +1203,16 @@ function startAcpUpdatePump(open: OpenAcpSession): void {
         for (const chunk of sessionUpdateToStreamChunks(update)) {
           open.handlers.current?.onChunk(chunk)
         }
-        const missingTool = acpBridgeToolMissing(
-          update,
-          update.sessionUpdate === 'tool_call_update'
-            ? open.toolCallIdentities(update.toolCallId)
-            : [],
-        )
+        const missingTool =
+          open.bridgeServerName === null
+            ? null
+            : acpBridgeToolMissing(
+                update,
+                update.sessionUpdate === 'tool_call_update'
+                  ? open.toolCallIdentities(update.toolCallId)
+                  : [],
+                open.bridgeServerName,
+              )
         if (missingTool !== null) open.handlers.current?.onBridgeToolMissing?.(missingTool)
       } catch {
         // A sink failure must not kill the pump: turn-stop routing (and every
@@ -1430,14 +1429,14 @@ export async function openAcpSession(
     // loopback, and the bearer token must not leave it (the pool already skips
     // starting a bridge for one; this keeps a caller-supplied bridge local too).
     const remote = spawnConfigSshTarget(config) !== null
-    let bridgeMounted = false
+    let bridgeServer: string | null = null
     if (config.nativeBridge && remote) {
       console.warn('[acp-bridge] native tools are not offered to an agent running on an SSH host')
     } else if (config.nativeBridge && mcpCapabilities?.http === true) {
-      bridgeMounted = true
+      bridgeServer = config.nativeBridge.serverName
       mcpServers.push({
         type: 'http',
-        name: BRIDGE_MCP_SERVER_NAME,
+        name: bridgeServer,
         url: config.nativeBridge.url,
         headers: [{ name: 'Authorization', value: `Bearer ${config.nativeBridge.token}` }],
       })
@@ -1449,7 +1448,7 @@ export async function openAcpSession(
         '[acp-bridge] agent does not advertise MCP-over-http capability; native tools were not offered this session',
       )
     }
-    const sessionMeta = acpSessionMeta(config, { remote, bridgeMounted })
+    const sessionMeta = acpSessionMeta(config, { remote, bridgeServer })
     const canLoad = initResponse.agentCapabilities?.loadSession === true
     let session: ManagedAcpSession | null = null
     let restoredBy: AcpReattachMethod | null = null
@@ -1560,6 +1559,7 @@ export async function openAcpSession(
       promptImage,
       availableCommands: [],
       toolCallIdentities: (toolCallId) => observedToolCalls.get(openedSessionId, toolCallId),
+      bridgeServerName: bridgeServer,
       sessionInfo: {},
       resumed: restoredBy !== null,
       restoredBy,

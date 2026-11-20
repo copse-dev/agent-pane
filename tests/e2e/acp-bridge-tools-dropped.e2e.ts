@@ -110,19 +110,53 @@ describe('ACP agent that dropped the tools it listed', function () {
     )
     await send('say:Listed the files with my own shell.', 'Listed the files with my own shell.')
 
+    // The message list can contain the complete streamed reply before its
+    // final markdown paragraph has committed. Assert the rendered paragraph
+    // only after that specific node catches up.
+    await browser.waitUntil(
+      () =>
+        browser.execute(() => {
+          const replies = document.querySelectorAll('.messages-list .msg-assistant')
+          const last = replies[replies.length - 1]
+          const paragraphs = last?.querySelectorAll('.message-text p')
+          return (
+            paragraphs !== undefined &&
+            paragraphs.length > 0 &&
+            paragraphs[paragraphs.length - 1]?.textContent === 'Listed the files with my own shell.'
+          )
+        }),
+      { timeout: 5_000, timeoutMsg: 'the final reply paragraph was not fully rendered' },
+    )
+
     const replies = await browser.execute(() =>
       [...document.querySelectorAll('.messages-list .msg-assistant')].map((reply) =>
         [...reply.querySelectorAll('.message-text p')].map((p) => p.textContent),
       ),
     )
+    // The bridge is mounted under a fresh `copse-<nonce>` name each session (#4125).
+    const named = replies.map((reply) =>
+      reply.map((text) => text.replace(/copse-[a-z0-9]{8}/g, 'copse-<nonce>')),
+    )
     // The agent's own failed call, then Copse's notice ahead of the reply; the
     // next turn does not repeat it.
-    expect(replies).toEqual([
-      ['<tool_use_error>Error: No such tool available: mcp__copse__read_file</tool_use_error>'],
+    expect(named).toEqual([
+      [
+        '<tool_use_error>Error: No such tool available: mcp__copse-<nonce>__read_file</tool_use_error>',
+      ],
       [renderedNotice(), 'Read the README with my own tools.'],
       ['Listed the files with my own shell.'],
     ])
 
+    // Hold the random nonce still so the capture is the same on every run.
+    await browser.execute(() => {
+      const walker = document.createTreeWalker(
+        document.querySelector('.messages-list') ?? document.body,
+        NodeFilter.SHOW_TEXT,
+      )
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        node.textContent = (node.textContent ?? '').replace(/copse-[a-z0-9]{8}/g, 'copse-xxxxxxxx')
+      }
+    })
     await waitForImagesSettled('.messages-list')
     await parkPointer()
     await saveElementScreenshot('.messages-list', 'acp-bridge-tools-dropped.png')

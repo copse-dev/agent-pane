@@ -1,7 +1,14 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from 'node:fs'
 import { join, sep } from 'node:path'
 import { describe, it } from 'node:test'
 import * as esbuild from 'esbuild'
@@ -261,6 +268,41 @@ describe('ACP session host worker', () => {
       child.kill('SIGTERM')
     }
   })
+
+  it('does not start an agent when initialization reports protection disabled', async () => {
+    const dir = makeBundleDir('disabled-')
+    const enabledStub = 'isSandboxingEnabled() { return config !== null }'
+    assert.ok(SANDBOX_RUNTIME_STUB.includes(enabledStub))
+    const stub = join(dir, 'sandbox-runtime-disabled.mjs')
+    writeFileSync(
+      stub,
+      SANDBOX_RUNTIME_STUB.replace(enabledStub, 'isSandboxingEnabled() { return false }'),
+    )
+    const child = spawnWorker(
+      bundleWorker(dir, stub),
+      dir,
+      "require('node:fs').writeFileSync('spawned', 'yes')",
+    )
+    const messages: AcpSessionHostMessage[] = []
+    child.on('message', (message: AcpSessionHostMessage) => messages.push(message))
+    const timeout = setTimeout(() => child.kill('SIGKILL'), 5_000)
+    try {
+      const exit = await once(child, 'exit')
+      const code: unknown = exit[0]
+      assert.equal(code, 1)
+      assert.ok(
+        messages.some(
+          (message) =>
+            message.type === 'error' &&
+            message.error.includes('Workspace protection did not start'),
+        ),
+      )
+      assert.equal(existsSync(join(dir, 'spawned')), false)
+    } finally {
+      clearTimeout(timeout)
+      child.kill('SIGKILL')
+    }
+  })
 })
 
 describe('parseSessionHostRequest', () => {
@@ -293,7 +335,7 @@ describe('parseSessionHostRequest', () => {
       readonlyCheckout: true,
       stateDir: '/profile/workspace/p/t/acp-agent-config/claude-acp',
       chatReadRoots: ['/profile/workspace/p/t'],
-      nativeBridge: { url: 'http://127.0.0.1:1/mcp', token: 'x' },
+      nativeBridge: { url: 'http://127.0.0.1:1/mcp', token: 'x', serverName: 'copse-k3v9x2mq' },
       model: 'not-a-spawn-field',
     }
     const request = parseSessionHostRequest(JSON.stringify(acpSessionHostRequest(config)))

@@ -652,9 +652,36 @@ function resolveImport(fromRel: string, spec: string, tree: OracleFiles): string
 // are computed once. Without this every `reachableFiles` walk re-read and
 // re-resolved the whole shared graph: `check:oracle`, which calls
 // `computeSelection` once per invariant, took ~3 minutes of every CI precheck.
-const directImportsCaches = new WeakMap<OracleFiles, Map<string, string[]>>()
+const directImportsCaches = new WeakMap<OracleFiles, Map<string, ModuleImports>>()
 
-function directImports(rel: string, tree: OracleFiles): string[] {
+/**
+ * `import type …` and `export type … from`: erased before the code runs, so the
+ * module they name is not loaded. `import { type A }` is not matched: with no
+ * value names it can still compile to a side-effect import. Nor is a default
+ * import named `type` (`import type from …`), since `from` must follow the names.
+ */
+const TYPE_ONLY_MODULE_STATEMENT =
+  /\b(?:import|export)\s+type\s+(?:\{[^}]*\}|\*\s+as\s+[\w$]+|\*|[\w$]+)\s*from\s*['"][^'"]+['"]/g
+const MODULE_SPECIFIER = /(?:\bfrom\s*|\bimport\s*(?:\(\s*)?|\brequire\s*\(\s*)['"]([^'"]+)['"]/g
+
+type ModuleImports = {
+  /** Modules this file loads when it runs. */
+  runtime: string[]
+  /** Modules it names only in `import type` / `export type … from`. */
+  typeOnly: string[]
+}
+
+function resolvedSpecifiers(rel: string, source: string, tree: OracleFiles): string[] {
+  const out: string[] = []
+  for (const m of source.matchAll(MODULE_SPECIFIER)) {
+    if (m[1] === undefined) continue
+    const resolved = resolveImport(rel, m[1], tree)
+    if (resolved) out.push(resolved)
+  }
+  return out
+}
+
+function directImports(rel: string, tree: OracleFiles): ModuleImports {
   let directImportsCache = directImportsCaches.get(tree)
   if (!directImportsCache) {
     directImportsCache = new Map()
@@ -662,24 +689,40 @@ function directImports(rel: string, tree: OracleFiles): string[] {
   }
   const cached = directImportsCache.get(rel)
   if (cached) return cached
-  const body = tree.read(rel)
-  const out: string[] = []
-  for (const m of body.matchAll(
-    /(?:\bfrom\s*|\bimport\s*(?:\(\s*)?|\brequire\s*\(\s*)['"]([^'"]+)['"]/g,
-  )) {
-    if (m[1] === undefined) continue
-    const resolved = resolveImport(rel, m[1], tree)
-    if (resolved) out.push(resolved)
+  const typeOnlyStatements: string[] = []
+  const runtimeSource = tree.read(rel).replace(TYPE_ONLY_MODULE_STATEMENT, (statement) => {
+    typeOnlyStatements.push(statement)
+    return ' '.repeat(statement.length)
+  })
+  const imports = {
+    runtime: resolvedSpecifiers(rel, runtimeSource, tree),
+    typeOnly: resolvedSpecifiers(rel, typeOnlyStatements.join('\n'), tree),
   }
-  directImportsCache.set(rel, out)
-  return out
+  directImportsCache.set(rel, imports)
+  return imports
 }
 
-/** Transitive set of local files reachable from `entry` (excluding itself). */
+/**
+ * Transitive set of local files reachable from `entry` (excluding itself).
+ *
+ * `followTypeImports: false` is for a unit test: it runs exactly what it
+ * imports, and a module it reaches only through another module's `import type`
+ * is never loaded, so a change there cannot change its result. Following those
+ * tied a shared types file, and whatever a barrel re-exports, to hundreds of
+ * unit tests. The test's own type-only imports are still followed: a test that
+ * names a type is usually about it, and a pure types file would otherwise map
+ * to no test and fall back to the full suite.
+ *
+ * An e2e spec tests the running app instead, and its imports, type-only ones
+ * included, stand in for the app code it observes (the classifier settings spec
+ * names `classifier-service.ts` only as a type), so spec selection and
+ * screenshot identity follow them all.
+ */
 export function reachableFiles(
   entry: string,
   cache: Map<string, Set<string>>,
   tree: OracleFiles = workingTree,
+  followTypeImports = true,
 ): Set<string> {
   const cached = cache.get(entry)
   if (cached) return cached
@@ -688,7 +731,12 @@ export function reachableFiles(
   while (stack.length) {
     const cur = stack.pop()
     if (cur === undefined) break
-    for (const dep of directImports(cur, tree)) {
+    const imports = directImports(cur, tree)
+    const deps =
+      followTypeImports || cur === entry
+        ? [...imports.runtime, ...imports.typeOnly]
+        : imports.runtime
+    for (const dep of deps) {
       if (!seen.has(dep)) {
         seen.add(dep)
         stack.push(dep)
@@ -814,8 +862,10 @@ export function computeSelection(
   const importCache = new Map<string, Set<string>>()
   const specImports = new Map<string, Set<string>>()
   for (const s of specs) specImports.set(s, reachableFiles(s, importCache, tree))
+  // Unit tests run what they import, so type-only imports are not edges for them.
+  const unitImportCache = new Map<string, Set<string>>()
   const unitImports = new Map<string, Set<string>>()
-  for (const t of unitTests) unitImports.set(t, reachableFiles(t, importCache, tree))
+  for (const t of unitTests) unitImports.set(t, reachableFiles(t, unitImportCache, tree, false))
 
   const broadHits = changed.filter((f) => BROAD_PATTERNS.some((re) => re.test(f)))
   const broad = baseUnknown || broadHits.length > 0

@@ -30,8 +30,13 @@ Main-process and `scripts/` suites only; renderer/settings tests are unaffected.
 - **GNU-only `stat -c`** — `screenshot-publication.test.ts` fails on macOS
   (`stat: illegal option -- c`).
 
-These macOS host differences fail on every run on an affected Mac, in isolation too. CI runs on
-Linux, so it never sees them:
+These macOS host differences fail on every run on an affected Mac, in isolation too. Required CI
+runs on Linux, so it never sees them. A local `pnpm test` recognises them: its closing summary lists
+every failed test and marks each one that matches an entry in `scripts/lib/host-differences.mts` by
+platform, file, test name and error shape. They still fail the run. The advisory
+[`macos-unit.yml`](../.github/workflows/macos-unit.yml) workflow runs the suite on a hosted macOS
+runner and reads the same summary: it warns about a failure that matches an entry and fails on any
+other. When you add a deterministic host difference here, add it there too.
 
 - **macOS `/bin/bash` 3.2** — `ci-workflow-invariants.test.ts` "compares the synthetic checked-out
   protocol against the supplied queue base" runs a `ci.yml` step under `set -u`; bash 3.2 treats an
@@ -50,7 +55,9 @@ Linux, so it never sees them:
 ## Triage procedure
 
 1. Capture the full log (`npm test > "$TMPDIR/check.log" 2>&1`, not piped through `tail`, which cuts
-   the pass/fail totals) and list failing files, not just a count.
+   the pass/fail totals) and list failing files, not just a count. A local run ends with that list
+   (`[run-tests] N tests failed.`), with the known macOS host differences above already marked; the
+   rest of this procedure is for the ones under "Need triage".
 2. Re-run the same files on a clean checkout (stash the diff, or diff against `HEAD`) in a worktree
    that has had its own `pnpm install`. If the same files fail with the same error shapes there too,
    they are host noise, not your diff.
