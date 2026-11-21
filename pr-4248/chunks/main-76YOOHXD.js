@@ -11862,6 +11862,104 @@ var init_user_prompt_fold = __esm({
   }
 });
 
+// src/renderer/markdown/user-prompt-fold-markdown.ts
+function standaloneFences(source) {
+  const fences = [];
+  let open;
+  let offset = 0;
+  for (const line of source.split("\n")) {
+    const next = Math.min(source.length, offset + line.length + 1);
+    if (open) {
+      const closing = /^ {0,3}(`{3,}|~{3,})[\t ]*\r?$/.exec(line)?.[1];
+      if (closing && closing[0] === open.marker[0] && closing.length >= open.marker.length) {
+        fences.push({ ...open, bodyEnd: offset, end: next });
+        open = void 0;
+      }
+    } else {
+      if (/^ {0,3}(?:>|[-+*][\t ]|\d+[.)][\t ])/.test(line) && /`{3,}|~{3,}/.test(line)) return null;
+      const match = /^ {0,3}(`{3,}|~{3,})([^\r\n]*)\r?$/.exec(line);
+      const marker = match?.[1];
+      const info = match?.[2] ?? "";
+      if (marker && !(marker.startsWith("`") && info.includes("`"))) {
+        open = { start: offset, bodyStart: next, opening: line.replace(/\r$/, ""), marker };
+      }
+    }
+    offset = next;
+  }
+  if (open) fences.push({ ...open, bodyEnd: source.length, end: source.length });
+  return fences;
+}
+function piecesInRange(source, fences, start, end) {
+  const pieces = [];
+  let cursor = start;
+  for (const fence of fences) {
+    if (fence.start >= end || fence.end <= start) continue;
+    if (cursor < fence.start) {
+      pieces.push({ kind: "markdown", source: source.slice(cursor, fence.start) });
+    }
+    const from2 = Math.max(start, fence.bodyStart);
+    const to = Math.min(end, fence.bodyEnd);
+    const emptyBlock = fence.bodyStart === fence.bodyEnd && fence.start >= start;
+    if (fence.start >= start && fence.end <= end) {
+      pieces.push({ kind: "code", source: source.slice(fence.start, fence.end) });
+    } else if (from2 < to || emptyBlock) {
+      const body = source.slice(from2, Math.max(from2, to));
+      const indent = /^ */.exec(fence.opening)?.[0] ?? "";
+      pieces.push({
+        kind: "code",
+        // Balanced wrappers are presentation only. They never enter message
+        // storage, resend payloads or the generic arithmetic fold parts.
+        source: `${fence.opening}
+${body}${body.length > 0 && !body.endsWith("\n") ? "\n" : ""}${indent}${fence.marker}${fence.end <= end && source[fence.end - 1] === "\n" ? "\n" : ""}`
+      });
+    }
+    cursor = Math.min(end, fence.end);
+  }
+  if (cursor < end) pieces.push({ kind: "markdown", source: source.slice(cursor, end) });
+  return pieces;
+}
+function userPromptFoldMarkdownPieces(source, parts, isRootFence) {
+  const fences = standaloneFences(source);
+  if (!fences || fences.length === 0) return null;
+  const hardLines = `${parts.head}
+${parts.middle}
+${parts.tail}`;
+  const separator = source === hardLines || source === `${hardLines}
+` ? 1 : 0;
+  if (!separator && source !== parts.head + parts.middle + parts.tail) return null;
+  const headEnd = parts.head.length + separator;
+  const middleEnd = headEnd + parts.middle.length + separator;
+  const spanning = fences.filter(
+    (fence) => fence.start < headEnd && fence.end > headEnd || fence.start < middleEnd && fence.end > middleEnd
+  );
+  if (spanning.length === 0) return null;
+  for (const fence of spanning) {
+    if (!fence.opening.startsWith(" ")) continue;
+    const indent = /^ */.exec(fence.opening)?.[0] ?? "";
+    const code2 = "copse-fold-context-probe";
+    const context = `${source.slice(0, fence.start)}${indent}${fence.marker}
+${indent}${code2}
+${indent}${fence.marker}
+`;
+    if (!isRootFence(context, `${code2}
+`)) {
+      return { kind: "full", pieces: piecesInRange(source, fences, 0, source.length) };
+    }
+  }
+  return {
+    kind: "fold",
+    pieces: {
+      head: piecesInRange(source, fences, 0, headEnd),
+      middle: piecesInRange(source, fences, headEnd, middleEnd),
+      tail: piecesInRange(source, fences, middleEnd, source.length)
+    }
+  };
+}
+var init_user_prompt_fold_markdown = __esm({
+  "src/renderer/markdown/user-prompt-fold-markdown.ts"() {
+  }
+});
+
 // src/renderer/markdown/message-markdown.ts
 function paintStreamingMarkdown(el2, display, host) {
   let renderer = streamingRenderers.get(el2);
@@ -11945,14 +12043,37 @@ function paintUserMarkdown(el2, content, renderOptions) {
   });
   attachCodeBlockCopyButtons(el2);
 }
+function isRootFenceContext(source, code2) {
+  const context = document.createElement("div");
+  context.innerHTML = renderMarkdown(source, { htmlPolicy: "escape-all", codeHighlighter: null });
+  const matches3 = [...context.querySelectorAll("pre > code")].filter(
+    (candidate) => candidate.textContent === code2
+  );
+  return matches3.length === 1 && matches3[0]?.parentElement?.parentElement === context;
+}
+function paintUserPromptPieces(el2, pieces, renderOptions) {
+  const markdown = pieces.map((piece) => piece.kind === "code" ? piece.source : userPromptMarkdown(piece.source)).join("");
+  el2.innerHTML = renderMarkdown(markdown, { ...renderOptions, htmlPolicy: "escape-all" });
+  attachCodeBlockCopyButtons(el2);
+}
 function renderUserPromptMarkdown(el2, content, renderOptions) {
   const parts = splitUserPromptForFold(content);
   if (!parts) {
     paintUserMarkdown(el2, content, renderOptions);
     return;
   }
-  fillUserPromptFold(el2, parts, (region, text) => {
-    paintUserMarkdown(region, text, renderOptions);
+  const pieces = userPromptFoldMarkdownPieces(content, parts, isRootFenceContext);
+  if (pieces?.kind === "full") {
+    el2.classList.remove("msg-user-fold", "is-expanded");
+    paintUserPromptPieces(el2, pieces.pieces, renderOptions);
+    return;
+  }
+  fillUserPromptFold(el2, parts, (region, text, name) => {
+    if (!pieces) {
+      paintUserMarkdown(region, text, renderOptions);
+      return;
+    }
+    paintUserPromptPieces(region, pieces.pieces[name], renderOptions);
   });
 }
 var STREAM_PAINT_EVENT, STREAM_SETTLED_EVENT, streamingRenderers, streamSmoothers;
@@ -11964,6 +12085,7 @@ var init_message_markdown = __esm({
     init_mermaid();
     init_table_copy();
     init_user_prompt_fold();
+    init_user_prompt_fold_markdown();
     STREAM_PAINT_EVENT = "copse:stream-paint";
     STREAM_SETTLED_EVENT = "copse:stream-settled";
     streamingRenderers = /* @__PURE__ */ new WeakMap();
