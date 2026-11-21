@@ -19,7 +19,14 @@ import {
 import { runWithApprovalHandler } from '../services/approval.ts'
 import { runWithActiveRunIdentity } from '../services/active-run-identity.ts'
 import { setSetting } from '../services/storage/settings.ts'
-import { listThreadsTool, readThreadTool, sendThreadPromptTool } from './thread-tools.ts'
+import {
+  listThreadsTool,
+  peerPromptSender,
+  readThreadTool,
+  sendThreadPromptTool,
+} from './thread-tools.ts'
+import { setActiveRunTurnTreeId } from '../services/thread-models.ts'
+import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import { storageGet, storageSet } from '../services/storage/storage.ts'
 import { hasThreadAccess, revokeThreadAccess } from '../services/security/thread-access.ts'
 import { ToolRegistry, setPermissionGateForTests } from '../services/tool-registry.ts'
@@ -790,6 +797,49 @@ describe('conversation tools', () => {
     assert.equal(title, 'Send prompts to your other threads?')
     assert.match(normalizeToolExecuteResult(result).result, /not granted/)
     assert.equal(hasThreadAccess('thread-tools-source', 'send'), false)
+  })
+
+  it('lets a headless automation run send, charged to its own thread', async () => {
+    // A scheduled run that main drives without a renderer has no user turn tree.
+    for (const runThread of ['automation-run-1', 'automation-run-2']) {
+      await setSetting('threadSendAccess', [runThread])
+      const result = await runWithApprovalHandler(
+        async () => {
+          assert.fail('send access is already granted')
+        },
+        () =>
+          runWithActiveRunIdentity(runThread, async () => {
+            // Each scheduled run starts in a new thread, so it gets its own allowance.
+            assert.deepEqual(peerPromptSender(), {
+              sourceThreadId: runThread,
+              crossThreadScope: JSON.stringify([runThread, null]),
+            })
+            return sendThreadPromptTool.execute(
+              {
+                project_id: 'thread-tools-project',
+                thread_id: 'thread-tools-destination',
+                prompt: 'Post the nightly summary',
+              },
+              signal,
+            )
+          }),
+      )
+      // It reaches the desktop sender instead of being refused for lack of a user turn.
+      assert.equal(
+        normalizeToolExecuteResult(result).result,
+        'Open the desktop window to send a prompt.',
+      )
+    }
+    // A run with a user turn is charged to that turn and passes it on.
+    runWithActiveRunIdentity('thread-tools-source', () => {
+      setActiveRunTurnTreeId(asTurnTreeId('user-turn'))
+      assert.deepEqual(peerPromptSender(), {
+        sourceThreadId: 'thread-tools-source',
+        sourceTurnTreeId: 'user-turn',
+        crossThreadScope: JSON.stringify(['thread-tools-source', 'user-turn']),
+      })
+    })
+    assert.equal(peerPromptSender(), null)
   })
 
   it('does not request permission for self-targeted or missing destinations', async () => {

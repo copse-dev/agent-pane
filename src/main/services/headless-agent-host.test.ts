@@ -96,6 +96,28 @@ class BackgroundWakeProvider implements LLMProvider {
   }
 }
 
+class ShellTaskProvider implements LLMProvider {
+  callCount = 0
+
+  async *stream(): AsyncIterable<ProviderStreamChunk> {
+    this.callCount++
+    if (this.callCount === 1) {
+      yield {
+        type: 'tool_call',
+        toolCall: {
+          id: 'run-one-command',
+          name: 'run_shell',
+          args: { command: 'node -e "process.exit(0)"' },
+        },
+      }
+      yield { type: 'done' }
+      return
+    }
+    yield { type: 'text', text: 'The command ran.' }
+    yield { type: 'done' }
+  }
+}
+
 class CaptureTaskProvider implements LLMProvider {
   seenMessages: LLMMessage[] = []
   seenTools: LLMTool[] = []
@@ -354,6 +376,44 @@ describe('runHeadlessAgent', () => {
         rm(workspace, { recursive: true, force: true }),
         rm(ambientStore, { recursive: true, force: true }),
       ])
+    }
+  })
+
+  it('records the process audit for a headless run (execution-runtime R1-7)', async () => {
+    const workspace = await mkdtemp(join(tmpdir(), 'copse-headless-audit-'))
+    try {
+      const result = await runHeadlessAgent(
+        {
+          ...smokeProfile(workspace),
+          workspaceTrusted: true,
+          interaction: {
+            approve: (): Promise<{ approved: boolean; remember: boolean }> =>
+              Promise.resolve({ approved: true, remember: false }),
+          },
+        },
+        { prompt: 'Run one command.', projectId: 'headless-audit', threadId: 'headless-audit-run' },
+        { provider: new ShellTaskProvider(), contextWindow: 32_000 },
+      )
+
+      const lines = result.decisions.map((decision) => decision.line)
+      const start = lines.find((line) => line.kind === 'process-run')
+      const exit = lines.find((line) => line.kind === 'process-exit')
+      assert.ok(start, JSON.stringify(lines.map((line) => line.kind)))
+      assert.ok(exit)
+      assert.equal(exit.processRunId, start.processRunId)
+      // The audit records how the process ended, whatever the host's sandbox made of it.
+      assert.equal(typeof exit.exitCode, 'number')
+      assert.equal(start.principalId, 'human:local')
+      assert.match(start.runtime ?? '', /^local\//)
+      assert.ok(lines.some((line) => line.kind === 'runtime-state' && line.capabilities))
+      assert.ok(
+        result.decisions.every(
+          (decision) =>
+            decision.projectId === 'headless-audit' && decision.threadId === 'headless-audit-run',
+        ),
+      )
+    } finally {
+      await rm(workspace, { recursive: true, force: true })
     }
   })
 
