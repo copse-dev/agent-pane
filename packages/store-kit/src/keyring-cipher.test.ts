@@ -41,6 +41,28 @@ function brokenStore(): DataKeyStore {
   }
 }
 
+/**
+ * `@napi-rs/keyring` on Linux with no Secret Service, falling back to kernel
+ * keyutils: an item never written reads as empty, the first write leaves a
+ * half-written item behind and is refused, and every read after that fails.
+ */
+function keyutilsWithoutSecretService(): DataKeyStore & { writes: number } {
+  let halfWritten = false
+  const store = {
+    writes: 0,
+    read(): string | null {
+      if (halfWritten) throw new Error("Couldn't access platform storage: AccessDenied")
+      return null
+    },
+    write(): void {
+      store.writes += 1
+      halfWritten = true
+      throw new Error("Couldn't access platform storage: AccessDenied")
+    },
+  }
+  return store
+}
+
 /** A stand-in for `safeStorage`: reversible, prefixed, not our format. */
 function legacyCipher(available = true): SecretCipher & { encrypts: number } {
   const cipher = {
@@ -146,9 +168,30 @@ describe('createKeyringCipher', () => {
     assert.equal(calls.n, 2)
   })
 
-  it('is available with an empty keyring (the key is created on first write)', () => {
-    assert.equal(createKeyringCipher(memoryStore()).isEncryptionAvailable(), true)
+  it('creates the data key when an empty keyring is first probed, then stops asking', () => {
+    const store = memoryStore()
+    const cipher = createKeyringCipher(store)
+    assert.equal(cipher.isEncryptionAvailable(), true)
+    assert.equal(store.writes, 1)
+    assert.ok(store.value !== null && Buffer.from(store.value, 'base64').length === 32)
+    assert.equal(cipher.isEncryptionAvailable(), true)
+    assert.equal(store.reads, 1, 'a held key answers without another keyring round-trip')
     assert.equal(createKeyringCipher(brokenStore()).isEncryptionAvailable(), false)
+  })
+
+  it('keeps its first verdict when an empty-reading keyring refuses the first write', () => {
+    let clock = 0
+    const store = keyutilsWithoutSecretService()
+    const cipher = createKeyringCipher(store, { unavailableRetryMs: 1000, now: () => clock })
+    assert.equal(
+      cipher.isEncryptionAvailable(),
+      false,
+      'reading as empty does not prove the key can be stored',
+    )
+    assert.equal(store.writes, 1)
+    assert.throws(() => cipher.encryptString('secret'), /AccessDenied/)
+    clock = 1000
+    assert.equal(cipher.isEncryptionAvailable(), false, 'the retry after the window agrees')
   })
 
   it('refuses a stored key of the wrong size', () => {
@@ -200,13 +243,13 @@ describe('createMigratingCipher', () => {
     const legacy = legacyCipher()
     const cipher = createMigratingCipher(createKeyringCipher(store), legacy)
 
-    assert.equal(cipher.isEncryptionAvailable(), true, 'the read probe itself succeeds')
+    assert.equal(cipher.isEncryptionAvailable(), true, 'the legacy cipher can still write')
     const blob = cipher.encryptString('fallback after write refusal')
     assert.equal(legacy.encrypts, 1)
     assert.equal(cipher.decryptString(blob), 'fallback after write refusal')
     assert.throws(
       () => cipher.encryptStringForMigration?.('must use the preferred format'),
-      /user interaction is not allowed/,
+      /primary secret cipher is unavailable/,
     )
   })
 
