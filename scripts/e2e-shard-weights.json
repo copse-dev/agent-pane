@@ -1,5 +1,5 @@
 {
-  "source": "settings-usage-sections provisional at the median (7.9s) until its first CI run is measured, 2026-11-07; background-fetch-auth provisional from one successful local macOS Chrome 152.0.7977.167 WDIO spec sample (3.5s; whole invocation 5s), 2026-11-14; retained .tmp/background-fetch-auth-20261114/native-ui-v2.log SHA256 36050fd11854c491f37c7b59bee84681dc15c715a1df0592b77744e97f68b702; replace after its first Linux CI measurement; agent-eval-maintenance provisional at the median (8.0s) until its first CI run is measured, 2026-11-14; workflow-read-evidence provisional at the median (7.9s) until its first CI run is measured, 2026-11-20; median PASSED seconds over 160 CI e2e shard logs, 2026-11-20; workspace-preview-security measured at 5.8s from CI run 44655367196 shard 5 (job 136027574986), 2026-11-20",
+  "source": "settings-usage-sections provisional at the median (7.9s) until its first CI run is measured, 2026-11-07; ssh-connection-lost provisional at the median (6.6s) until its first CI run is measured, 2026-11-20; background-fetch-auth provisional from one successful local macOS Chrome 152.0.7977.167 WDIO spec sample (3.5s; whole invocation 5s), 2026-11-14; retained .tmp/background-fetch-auth-20261114/native-ui-v2.log SHA256 36050fd11854c491f37c7b59bee84681dc15c715a1df0592b77744e97f68b702; replace after its first Linux CI measurement; agent-eval-maintenance provisional at the median (8.0s) until its first CI run is measured, 2026-11-14; workflow-read-evidence provisional at the median (7.9s) until its first CI run is measured, 2026-11-20; median PASSED seconds over 160 CI e2e shard logs, 2026-11-20; workspace-preview-security measured at 5.8s from CI run 44655367196 shard 5 (job 136027574986), 2026-11-20",
   "seconds": {
     "tests/e2e/accent-color.e2e.ts": 15,
     "tests/e2e/accessibility.e2e.ts": 21.8,
@@ -401,6 +401,7 @@
     "tests/e2e/smoke.e2e.ts": 1.8,
     "tests/e2e/source-app-version.e2e.ts": 4.8,
     "tests/e2e/ssh-config-alias-collision.e2e.ts": 4.7,
+    "tests/e2e/ssh-connection-lost.e2e.ts": 6.6,
     "tests/e2e/ssh-project-path-labels.e2e.ts": 4,
     "tests/e2e/ssh-projects-pane.e2e.ts": 5.3,
     "tests/e2e/ssh-prompt-dialog.e2e.ts": 5.2,
