@@ -21389,7 +21389,12 @@ var init_state = __esm({
     init_member_of2();
     RIGHT_PANEL_POSITIONS = ["auto", "side", "bottom"];
     isRightPanelPosition = memberOf(RIGHT_PANEL_POSITIONS);
-    THREAD_SORT_MODES = ["activity", "created", "title"];
+    THREAD_SORT_MODES = [
+      "activity",
+      "created",
+      "title",
+      "action"
+    ];
     isThreadSortMode = memberOf(THREAD_SORT_MODES);
     THREAD_GROUP_MODES = ["project", "status", "none"];
     isThreadGroupMode = memberOf(THREAD_GROUP_MODES);
