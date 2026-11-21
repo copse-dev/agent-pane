@@ -490,7 +490,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-NRIMB6TQ.js";
+} from "./chunk-T4QESDU7.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -13897,7 +13897,16 @@ function isRowCardOf(node, key) {
   return ROW_CARD_ATTRIBUTES.some((attribute) => node.getAttribute(attribute) === key);
 }
 function transcriptRowElement(list, key) {
-  return list.querySelector(`:scope > [data-message-id="${CSS.escape(key)}"]`);
+  let head = list.firstElementChild;
+  let tail = list.lastElementChild;
+  while (head && tail) {
+    if (head instanceof HTMLElement && head.dataset["messageId"] === key) return head;
+    if (tail instanceof HTMLElement && tail.dataset["messageId"] === key) return tail;
+    if (head === tail || head.nextElementSibling === tail) return null;
+    head = head.nextElementSibling;
+    tail = tail.previousElementSibling;
+  }
+  return null;
 }
 function removeTranscriptRow(list, key) {
   const element = transcriptRowElement(list, key);
@@ -22711,7 +22720,7 @@ function mountConversation(root, store2, api2, options = {}) {
     store2.on("message_token", (mid) => {
       const thread = getActiveThread(store2);
       const msg = thread?.messages.find((m2) => m2.id === mid);
-      const msgEl = list.querySelector(`[data-message-id="${mid}"]`);
+      const msgEl = transcriptRowElement(list, mid);
       const textEl = msgEl?.querySelector(".message-text");
       if (textEl && msg?.role === "assistant") {
         setAssistantMarkdown(textEl, msg.content, true, api2);
@@ -53725,7 +53734,10 @@ function initSkillPicker(opts) {
   function filterSkills(query, skills) {
     const q2 = query.toLowerCase();
     if (!q2) return [...skills];
-    const matched = skills.filter(
+    const candidates = skills.map(
+      (skill) => q2.includes(":") && skill.kind === "skill" && skill.plugin ? { ...skill, name: `${skill.plugin}:${skill.name}` } : skill
+    );
+    const matched = candidates.filter(
       (skill) => skill.name.toLowerCase().includes(q2) || skill.description.toLowerCase().includes(q2)
     );
     return matched.sort((a, b2) => {
@@ -54004,7 +54016,7 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 function invocationTokenPattern(name) {
-  return `\\/${escapeRegExp(name)}(?![a-z0-9-])`;
+  return `\\/${escapeRegExp(name)}(?![a-z0-9:/_-]|\\.[a-z0-9_-])`;
 }
 function inlineInvocationPattern(name) {
   return new RegExp(`(^|\\s)${invocationTokenPattern(name)}`);
@@ -54021,25 +54033,35 @@ function parseLeadingInvocation(text) {
   return { name, remainder: (match[2] ?? "").trim() };
 }
 function resolveInvocation(text, invocables) {
-  const kindOf = (name) => invocables.find((entry) => entry.name === name)?.kind ?? null;
+  const candidates = invocables.flatMap((entry) => [
+    { token: entry.name, entry },
+    ...entry.kind === "skill" && entry.plugin ? [{ token: `${entry.plugin}:${entry.name}`, entry }] : []
+  ]);
   const leading = parseLeadingInvocation(text);
-  if (leading) return { ...leading, kind: kindOf(leading.name) };
+  if (leading) {
+    const match = candidates.find(({ token }) => token === leading.name);
+    return {
+      name: match?.entry.name ?? leading.name,
+      remainder: leading.remainder,
+      kind: match?.entry.kind ?? null
+    };
+  }
   const trimmed2 = text.trim();
   if (!trimmed2 || invocables.length === 0) return null;
-  const sorted = [...invocables].sort((a, b2) => b2.name.length - a.name.length);
-  for (const { name, kind } of sorted) {
-    if (!inlineInvocationPattern(name).test(trimmed2)) continue;
-    return { name, kind, remainder: stripInvocationToken(trimmed2, name) };
+  const sorted = candidates.sort((a, b2) => b2.token.length - a.token.length);
+  for (const { token, entry } of sorted) {
+    if (!inlineInvocationPattern(token).test(trimmed2)) continue;
+    return { name: entry.name, kind: entry.kind, remainder: stripInvocationToken(trimmed2, token) };
   }
   return null;
 }
-function mergeInvocables(skillNames, agentNames) {
+function mergeInvocables(skills, agentNames) {
   const seen = /* @__PURE__ */ new Set();
   const merged = [];
-  for (const name of skillNames) {
+  for (const { name, plugin } of skills) {
     if (seen.has(name)) continue;
     seen.add(name);
-    merged.push({ name, kind: "skill" });
+    merged.push({ name, kind: "skill", ...plugin ? { plugin } : {} });
   }
   for (const name of agentNames) {
     if (seen.has(name)) continue;
@@ -54052,7 +54074,7 @@ var LEADING_INVOCATION_RE;
 var init_parse_invocation = __esm({
   "src/shared/invocation/parse-invocation.ts"() {
     init_one_line_text();
-    LEADING_INVOCATION_RE = /^\/([a-z0-9][a-z0-9-]*)\b(?:\s+(.*))?$/s;
+    LEADING_INVOCATION_RE = /^\/((?:[a-z0-9][a-z0-9._-]*:)?[a-z0-9][a-z0-9-]*)(?:\s+(.*))?$/s;
   }
 });
 
@@ -56209,9 +56231,11 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
   });
   let offered = [];
   const fetchTokens = /* @__PURE__ */ new Map();
+  const inFlightFetches = /* @__PURE__ */ new Map();
   const nextFetchToken = (threadId) => {
     const token = (fetchTokens.get(threadId) ?? 0) + 1;
     fetchTokens.set(threadId, token);
+    inFlightFetches.delete(threadId);
     return token;
   };
   const changesRefreshTokens = /* @__PURE__ */ new Map();
@@ -56224,6 +56248,14 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
   let displayedThreadId = null;
   const suggestionsByThread = /* @__PURE__ */ new Map();
   const consumedTurnKeys = /* @__PURE__ */ new Map();
+  function servingCache(threadId, turnKey) {
+    const cached = suggestionsByThread.get(threadId);
+    if (cached?.turnKey !== turnKey) return null;
+    return cached.settled || !turnSettled(threadId) ? cached : null;
+  }
+  function turnSettled(threadId) {
+    return store2.getState().threads.find((thread) => thread.id === threadId)?.status !== "running";
+  }
   function consumeSuggestions(threadId) {
     const exchange = lastExchange(store2, threadId);
     if (exchange) consumedTurnKeys.set(threadId, exchange.turnKey);
@@ -56319,8 +56351,8 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
     const consumedTurnKey = consumedTurnKeys.get(threadId);
     if (consumedTurnKey === exchange.turnKey) return;
     if (consumedTurnKey) consumedTurnKeys.delete(threadId);
-    const cached = suggestionsByThread.get(threadId);
-    if (cached?.turnKey === exchange.turnKey) {
+    const cached = servingCache(threadId, exchange.turnKey);
+    if (cached) {
       if (store2.getState().activeThreadId === threadId) {
         renderSuggestions(threadId, cached.suggestions);
       }
@@ -56328,7 +56360,11 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
     }
     const { activeProjectId } = store2.getState();
     if (!activeProjectId) return;
+    const settled = turnSettled(threadId);
+    const fetchKey = `${exchange.turnKey}\0${settled ? "settled" : "live"}`;
+    if (inFlightFetches.get(threadId)?.key === fetchKey) return;
     const token = nextFetchToken(threadId);
+    inFlightFetches.set(threadId, { key: fetchKey, token });
     try {
       const suggestions = await api2.agent.suggestFollowUps(
         activeProjectId,
@@ -56336,7 +56372,7 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
         JSON.stringify(exchange.context)
       );
       if (token !== fetchTokens.get(threadId)) return;
-      suggestionsByThread.set(threadId, { turnKey: exchange.turnKey, suggestions });
+      suggestionsByThread.set(threadId, { turnKey: exchange.turnKey, suggestions, settled });
       if (store2.getState().activeThreadId === threadId) {
         renderSuggestions(threadId, suggestions);
         void refreshChangesStat();
@@ -56345,6 +56381,8 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
       if (token !== fetchTokens.get(threadId)) return;
       suggestionsByThread.delete(threadId);
       if (store2.getState().activeThreadId === threadId) clearSuggestions();
+    } finally {
+      if (inFlightFetches.get(threadId)?.token === token) inFlightFetches.delete(threadId);
     }
   }
   async function refreshChangesStat() {
@@ -56364,7 +56402,7 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
     if (suggestionsByThread.get(activeId) !== cached) return;
     const next = reconcileChangesSuggestion(cached.suggestions, stats);
     if (next === cached.suggestions) return;
-    suggestionsByThread.set(activeId, { turnKey: cached.turnKey, suggestions: next });
+    suggestionsByThread.set(activeId, { ...cached, suggestions: next });
     if (store2.getState().activeThreadId === activeId) renderSuggestions(activeId, next);
   }
   function scheduleChangesRefresh() {
@@ -56389,8 +56427,8 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
       return;
     }
     if (consumedTurnKey) consumedTurnKeys.delete(activeId);
-    const cached = suggestionsByThread.get(activeId);
-    if (cached?.turnKey === exchange.turnKey) {
+    const cached = servingCache(activeId, exchange.turnKey);
+    if (cached) {
       renderSuggestions(activeId, cached.suggestions);
       return;
     }
@@ -56400,11 +56438,9 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
     store2.on("thread_status_changed", (tid, status) => {
       if (status === "running") {
         suggestionsByThread.delete(tid);
+        nextFetchToken(tid);
         nextChangesRefreshToken(tid);
-        if (tid === store2.getState().activeThreadId) {
-          nextFetchToken(tid);
-          clearSuggestions();
-        }
+        if (tid === store2.getState().activeThreadId) clearSuggestions();
         return;
       }
       if (status === "idle") void maybeFetchSuggestions(tid);
@@ -58939,7 +58975,7 @@ ${description}
   }
   function currentInvocables() {
     return mergeInvocables(
-      (skillsCache ?? []).map((skill) => skill.name),
+      skillsCache ?? [],
       (agentsCache ?? []).map((agent2) => agent2.name)
     );
   }
@@ -59307,7 +59343,7 @@ ${description}
     const invocation = resolveInvocation(
       rawText,
       mergeInvocables(
-        skills.map((skill) => skill.name),
+        skills,
         agents.map((agent2) => agent2.name)
       )
     );
@@ -59878,6 +59914,7 @@ ${reply}`);
       return [
         ...skills.map((skill) => ({
           name: skill.name,
+          ...skill.plugin ? { plugin: skill.plugin } : {},
           description: skill.description,
           kind: "skill"
         })),
@@ -71009,6 +71046,33 @@ var init_selection_to_chat = __esm({
   }
 });
 
+// packages/std/src/with-timeout.ts
+function withTimeout(promise, ms, onTimeout) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      try {
+        resolve(onTimeout());
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error(String(error), { cause: error }));
+      }
+    }, ms);
+    const settled = Promise.resolve(promise);
+    settled.then(resolve, reject);
+    settled.then(
+      () => {
+        clearTimeout(timer);
+      },
+      () => {
+        clearTimeout(timer);
+      }
+    );
+  });
+}
+var init_with_timeout = __esm({
+  "packages/std/src/with-timeout.ts"() {
+  }
+});
+
 // src/renderer/monaco/diff-scroll.ts
 function nextAnimationFrame() {
   return new Promise(
@@ -71031,19 +71095,11 @@ function waitForDidUpdateDiff(diffEditor, timeoutMs) {
   });
 }
 async function waitForViewModelDiff(viewModel, timeoutMs) {
-  let timeoutId;
-  try {
-    await Promise.race([
-      viewModel.waitForDiff().catch(() => void 0),
-      new Promise((resolve) => {
-        timeoutId = setTimeout(() => {
-          resolve();
-        }, timeoutMs);
-      })
-    ]);
-  } finally {
-    if (timeoutId !== void 0) clearTimeout(timeoutId);
-  }
+  await withTimeout(
+    viewModel.waitForDiff().catch(() => void 0),
+    timeoutMs,
+    () => void 0
+  );
 }
 async function refreshGitChangesDiffCollapse(diffEditor) {
   diffEditor.updateOptions({
@@ -71084,6 +71140,7 @@ function revealFirstDiffChange(diffEditor) {
 var HIDE_UNCHANGED_REGIONS, GIT_CHANGES_DIFF_EDITOR_OPTIONS;
 var init_diff_scroll = __esm({
   "src/renderer/monaco/diff-scroll.ts"() {
+    init_with_timeout();
     HIDE_UNCHANGED_REGIONS = {
       enabled: true,
       contextLineCount: 3,
@@ -81583,10 +81640,7 @@ async function openScreencastCapture(api2, webContentsId, onEnded) {
   let requested = 0;
   let drawn = 0;
   let disposed = false;
-  let resolveFirstFrame = null;
-  const firstFrame = new Promise((resolve) => {
-    resolveFirstFrame = resolve;
-  });
+  const firstFrame = Promise.withResolvers();
   const stopFrames = api2.onRecordingFrame((id, jpeg) => {
     if (id !== webContentsId || disposed) return;
     const sequence = ++requested;
@@ -81603,7 +81657,7 @@ async function openScreencastCapture(api2, webContentsId, onEnded) {
         }
         context.drawImage(bitmap, 0, 0);
         bitmap.close();
-        resolveFirstFrame?.();
+        firstFrame.resolve();
       },
       () => {
       }
@@ -81622,17 +81676,9 @@ async function openScreencastCapture(api2, webContentsId, onEnded) {
   };
   try {
     await api2.startRecording(webContentsId);
-    let timer = 0;
-    const timedOut = new Promise((resolve) => {
-      timer = window.setTimeout(() => {
-        resolve("timeout");
-      }, FIRST_FRAME_TIMEOUT_MS);
-    });
-    const outcome = await Promise.race([firstFrame, timedOut]);
-    window.clearTimeout(timer);
-    if (outcome === "timeout") {
+    await withTimeout(firstFrame.promise, FIRST_FRAME_TIMEOUT_MS, () => {
       throw new Error("The tab is not painting. Show the Browser pane and try again.");
-    }
+    });
   } catch (error) {
     dispose();
     throw error;
@@ -81642,6 +81688,7 @@ async function openScreencastCapture(api2, webContentsId, onEnded) {
 var FIRST_FRAME_TIMEOUT_MS;
 var init_screencast_capture = __esm({
   "src/renderer/recording/screencast-capture.ts"() {
+    init_with_timeout();
     FIRST_FRAME_TIMEOUT_MS = 3e3;
   }
 });
@@ -86905,6 +86952,16 @@ function mountSshPromptDialog(api2) {
   confirmReject.addEventListener("click", () => {
     finish("");
   });
+  api2.sshPrompt.onDismissed((id) => {
+    const queued = queue.findIndex((request) => request.id === id);
+    if (queued !== -1) queue.splice(queued, 1);
+    if (active2?.id !== id) return;
+    active2 = null;
+    secretInput.value = "";
+    dialog.close();
+    active2 = queue.shift() ?? null;
+    renderActive();
+  });
   api2.sshPrompt.onRequest((req) => {
     if (active2) queue.push(req);
     else {
@@ -90013,10 +90070,7 @@ async function run3(store2) {
   let firstTokenSeen = false;
   let paintSampling = false;
   const paints = [];
-  let resolveDone = () => void 0;
-  const donePromise = new Promise((resolve) => {
-    resolveDone = resolve;
-  });
+  const { promise: donePromise, resolve: resolveDone } = Promise.withResolvers();
   const endTotal = begin("autopilot:total");
   let endFirstActivity = () => void 0;
   let endFirstToken = () => void 0;
@@ -90646,28 +90700,23 @@ function loadMonaco() {
 }
 function ensureMonacoEditorWorker() {
   if (typeof Worker === "undefined") return Promise.resolve();
-  let timeoutId;
-  return Promise.race([
+  return withTimeout(
     // This warmed instance is the one EditorWorkerService's first diff request
     // takes over (see EDITOR_WORKER_SERVICE_LABEL for the coupling contract).
     monacoWorkers.warm(EDITOR_WORKER_SERVICE_LABEL).then(
       () => void 0,
       () => void 0
     ),
-    new Promise((resolve) => {
-      timeoutId = setTimeout(() => {
-        resolve();
-      }, 2e3);
-    })
-  ]).finally(() => {
-    if (timeoutId !== void 0) clearTimeout(timeoutId);
-  });
+    2e3,
+    () => void 0
+  );
 }
 var MONACO_BASE_META, WARM_WORKER_TTL_MS, monacoWorkers, EDITOR_WORKER_SERVICE_LABEL, bundlePromise, monacoPromise;
 var init_setup = __esm({
   "src/renderer/monaco/setup.ts"() {
     init_worker_handout();
     init_editor_theme();
+    init_with_timeout();
     MONACO_BASE_META = "copse-monaco-base";
     WARM_WORKER_TTL_MS = 45e3;
     monacoWorkers = createWorkerHandout(createMonacoWorkerOnce, {

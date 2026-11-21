@@ -27384,6 +27384,7 @@ var init_tool_display = __esm({
       explore: { running: "Exploring files", done: "Explored files" },
       read_explored: { running: "Quoting explored lines", done: "Quoted explored lines" },
       read_file: { running: "Reading file", done: "Read file" },
+      read_thread: { running: "Reading conversation", done: "Read conversation" },
       search_project_context: {
         running: "Searching project history",
         done: "Searched project history"
@@ -55809,11 +55810,17 @@ function createGhCliSection(api, options = {}) {
       el("strong", {}, "Automatic"),
       " uses the ",
       el("code", {}, "gh"),
-      " CLI when it is signed in, otherwise the GitHub REST/GraphQL API with a ",
-      el("code", {}, "GITHUB_TOKEN"),
+      " CLI when it is signed in, otherwise the GitHub REST/GraphQL API with your ",
+      el("code", {}, "gh"),
+      " login or a token: ",
+      el("code", {}, "GH_TOKEN"),
       " or ",
-      el("code", {}, "gh auth token"),
-      "."
+      el("code", {}, "GITHUB_TOKEN"),
+      " for github.com, or ",
+      el("code", {}, "GH_ENTERPRISE_TOKEN"),
+      " when ",
+      el("code", {}, "GH_HOST"),
+      " names a GitHub Enterprise server."
     ),
     backendField
   );
