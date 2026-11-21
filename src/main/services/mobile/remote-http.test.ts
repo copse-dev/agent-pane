@@ -22,6 +22,11 @@ describe('paired remote HTTP boundary', () => {
     })
     bridge.publish({ projectId: 'p', threads: [] })
     assert.deepEqual((await remoteHttp(bridge, () => true)).body, bridge.snapshot())
+    bridge.publish({ projectId: 'q', threads: [] })
+    const scoped = await remoteHttp(bridge, () => true, undefined, { projectId: 'q' })
+    assert.equal(scoped.body, bridge.snapshot({ projectId: 'q' }))
+    assert.deepEqual(bridge.snapshot({ projectId: 'q' }).views, [{ projectId: 'q', threads: [] }])
+    assert.equal((await remoteHttp(bridge, () => false, undefined, { projectId: 'q' })).status, 403)
     const request = JSON.stringify({ version: 1, channel: 'agent:suggest-next-step', args: ['{}'] })
     assert.deepEqual(await remoteHttp(bridge, () => true, request), {
       status: 200,

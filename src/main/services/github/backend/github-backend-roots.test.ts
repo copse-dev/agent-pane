@@ -76,10 +76,10 @@ describe('GitHub backend with two roots at once', { skip: !posix || !gitOk }, ()
     dirs.alpha = await makeRepo('alpha')
     dirs.beta = await makeRepo('beta')
     dirs.window = await makeRepo('window')
-    for (const key of [...TOKEN_ENV_KEYS, 'PATH', 'COPSE_PRESERVE_PATH']) {
+    for (const key of [...TOKEN_ENV_KEYS, 'GH_HOST', 'PATH', 'COPSE_PRESERVE_PATH']) {
       savedEnv[key] = process.env[key]
     }
-    for (const key of TOKEN_ENV_KEYS) Reflect.deleteProperty(process.env, key)
+    for (const key of [...TOKEN_ENV_KEYS, 'GH_HOST']) Reflect.deleteProperty(process.env, key)
     // Put the fake ahead of any real `gh` (the probe PATH otherwise leads with /usr/bin).
     process.env['COPSE_PRESERVE_PATH'] = '1'
     process.env['PATH'] = `${dirs.bin}:${savedEnv['PATH'] ?? '/usr/bin:/bin'}`
@@ -165,7 +165,7 @@ describe('GitHub backend with two roots at once', { skip: !posix || !gitOk }, ()
     assert.deepEqual(tokens, [`token-for:${home}`, `token-for:${home}`])
     const seen = await calls()
     assert.ok(seen.length >= 1)
-    assert.ok(seen.every((line) => line === `${home} auth token`))
+    assert.ok(seen.every((line) => line === `${home} auth token --hostname github.com`))
   })
 })
 

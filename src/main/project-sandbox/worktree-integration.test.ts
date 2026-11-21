@@ -2,7 +2,16 @@ import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
@@ -30,7 +39,12 @@ import {
 } from '../services/worktree-manager.ts'
 import { fetchThroughScratchRepository, originBranchRef } from '../services/default-branch-fetch.ts'
 import { copseWorkspaceDir } from '../services/storage/copse-paths.ts'
-import { acpAgentSandboxOverlay, gitBackupSandboxOverlay, workspaceTmpDir } from './config.ts'
+import {
+  acpAgentSandboxOverlay,
+  gitBackupSandboxOverlay,
+  readAllowedSandboxOverlay,
+  workspaceTmpDir,
+} from './config.ts'
 
 interface CommandResult {
   stdout: string
@@ -91,6 +105,45 @@ describe('linked-worktree sandbox integration', () => {
     clearAllowedWorkspaceRootsForTest()
     for (const path of cleanups.splice(0).reverse()) {
       await rm(path, { recursive: true, force: true })
+    }
+  })
+
+  it('confines a granted external read to its directory on Linux', async (t) => {
+    if (process.platform !== 'linux') {
+      t.skip('bubblewrap read grants are Linux-specific')
+      return
+    }
+
+    const parent = await mkdtemp(join(homedir(), 'copse-read-grant-'))
+    cleanups.push(parent)
+    const workspace = join(parent, 'workspace')
+    const granted = join(parent, 'granted')
+    const denied = join(parent, 'denied')
+    await Promise.all([mkdir(workspace), mkdir(granted), mkdir(denied)])
+    const grantedFile = join(granted, 'allowed.txt')
+    const deniedFile = join(denied, 'secret.txt')
+    await Promise.all([
+      writeFile(grantedFile, 'approved read\n'),
+      writeFile(deniedFile, 'private read\n'),
+      symlink(denied, join(granted, 'redirect')),
+    ])
+
+    await initProjectSandbox()
+    if (!isProjectSandboxEnabled()) {
+      if (process.env['CI']) assert.fail('Linux CI must run with bubblewrap enabled')
+      t.skip('bubblewrap sandbox unavailable')
+      return
+    }
+
+    const overlay = readAllowedSandboxOverlay(workspace, [granted])
+    const approved = await runSandboxed('/bin/cat', [grantedFile], workspace, overlay)
+    assert.equal(approved.code, 0, approved.stderr)
+    assert.equal(approved.stdout, 'approved read\n')
+
+    for (const target of [deniedFile, join(granted, 'redirect', 'secret.txt')]) {
+      const attempt = await runSandboxed('/bin/cat', [target], workspace, overlay)
+      assert.notEqual(attempt.code, 0, `unexpected read of ${target}`)
+      assert.equal(attempt.stdout, '')
     }
   })
 
@@ -196,7 +249,13 @@ describe('linked-worktree sandbox integration', () => {
     assert.match((await runSandboxed('git', ['diff', '--', '.'], nested)).stdout, /changed/)
     const add = await runSandboxed('git', ['add', 'tracked.txt', 'new.txt'], nested)
     assert.equal(add.code, 0, add.stderr)
-    const commit = await runSandboxed('git', ['commit', '-q', '-m', 'sandbox commit'], nested)
+    // Not a signing test: keep a host's global commit.gpgsign from reaching a
+    // signer the sandbox cannot.
+    const commit = await runSandboxed(
+      'git',
+      ['-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'sandbox commit'],
+      nested,
+    )
     assert.equal(commit.code, 0, commit.stderr)
 
     const configWrite = await runSandboxed('git', ['config', 'copse.sandbox-test', 'true'], nested)

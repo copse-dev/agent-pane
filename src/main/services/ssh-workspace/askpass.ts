@@ -12,8 +12,10 @@ import {
 } from '../renderer-prompt-target.ts'
 import {
   clearSshCredentialCache,
+  invalidateSessionSshCredentialNonce,
   releaseSshCredentialNonce,
   resolveSshSecret,
+  type SshSecretMode,
 } from './ssh-credential-cache.ts'
 
 export const COPSE_SSH_ASKPASS_SOCKET = 'COPSE_SSH_ASKPASS_SOCKET'
@@ -23,11 +25,13 @@ const ASKPASS_SESSION_TIMEOUT_MS = 60_000
 
 export interface SshAskpassLease {
   env: NodeJS.ProcessEnv
-  release: () => void
+  /** Failed cache-only Git invocations retire only the current answers they used. */
+  release: (successful?: boolean) => void
 }
 
 interface AskpassSession {
   nonce: string
+  mode: SshSecretMode
   hostId?: string
   timer: NodeJS.Timeout
   release: () => void
@@ -167,6 +171,12 @@ async function respondToAskpass(socket: Socket, line: string): Promise<void> {
 
   const kind = classifySshPrompt(message.prompt)
   if (kind === 'confirm') {
+    if (session.mode === 'cache-only') {
+      // Host trust is not a cached credential. OpenSSH's host-key policy
+      // still applies; background work cannot approve a new confirmation.
+      socket.end(JSON.stringify({ response: null }) + '\n')
+      return
+    }
     // Host-key trust is recorded by OpenSSH in known_hosts; nothing to cache.
     const { value } = await onAskingRenderer(() =>
       requestSshPrompt({ prompt: message.prompt, kind }),
@@ -188,6 +198,7 @@ async function respondToAskpass(socket: Socket, line: string): Promise<void> {
         return { value: answer.value, remember: answer.remember ?? false }
       },
       session.hostId,
+      session.mode,
     ),
   )
   socket.end(JSON.stringify({ response: value || null }) + '\n')
@@ -221,7 +232,11 @@ export function initSshAskpassServer(userDataDirectory?: string): void {
  * `{}` — Node replaces the child env entirely, which strips PATH/HOME/
  * SSH_AUTH_SOCK and breaks ProxyCommand hosts.
  */
-export function leaseSshAskpassEnv(baseEnv: NodeJS.ProcessEnv, hostId?: string): SshAskpassLease {
+export function leaseSshAskpassEnv(
+  baseEnv: NodeJS.ProcessEnv,
+  hostId?: string,
+  mode: SshSecretMode = 'interactive',
+): SshAskpassLease {
   if (!isAskpassAvailable() && !userDataDirOverride) {
     return { env: baseEnv, release: (): void => {} }
   }
@@ -229,21 +244,27 @@ export function leaseSshAskpassEnv(baseEnv: NodeJS.ProcessEnv, hostId?: string):
   const nonce = randomBytes(16).toString('hex')
   let released = false
 
-  const release = (): void => {
+  const release = (successful = true): void => {
     if (released) return
     released = true
     clearTimeout(timer)
     sessionsByNonce.delete(nonce)
+    if (mode === 'cache-only' && !successful) invalidateSessionSshCredentialNonce(nonce)
     releaseSshCredentialNonce(nonce)
   }
 
-  const timer = setTimeout(release, ASKPASS_SESSION_TIMEOUT_MS)
+  // Expiry cannot discard the served-generation receipt before a delayed
+  // command close accounts for an unsuccessful unattended authentication.
+  const timer = setTimeout(() => {
+    release(false)
+  }, ASKPASS_SESSION_TIMEOUT_MS)
   if (typeof timer.unref === 'function') timer.unref()
   // Captured here, while still inside the caller's scope; by the time OpenSSH
   // asks, that scope is gone (see AskpassSession.promptTarget).
   const promptTarget = currentRendererPromptTarget()
   sessionsByNonce.set(nonce, {
     nonce,
+    mode,
     ...(hostId === undefined ? {} : { hostId }),
     timer,
     release,

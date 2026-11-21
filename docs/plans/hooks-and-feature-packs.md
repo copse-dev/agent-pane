@@ -79,7 +79,8 @@ revisiting this document, not silently diverging in an implementation PR.
    send-now and ordinary completion retain same-task retry authority. A new human
    turn tree still cannot inherit that authority. No mid-turn injection
    path exists for async hooks; late results are therefore safe by construction.
-5. **One auto-continuation budget.** Persistent subthreads are a bounded delegation
+5. **One self-continuation budget, plus a separate cross-thread allowance.** Persistent
+   subthreads are a bounded delegation
    exception: a parent may start at most four children over its lifetime and keep at
    most two unarchived children. Owned children cannot orchestrate grandchildren.
    Each child retains its own continuation budget; this explicitly permits bounded
@@ -88,8 +89,21 @@ revisiting this document, not silently diverging in an implementation PR.
    Queued delegated prompts recheck ownership and the parent's grant before dispatch,
    including after restart; revoked prompts are held and never auto-drain.
    This exception does not change hook or background-wake accounting.
-   Otherwise, a single counter per **turn tree** (everything
-   descending from one human-originated submission). Change acceptance wakes the
+   Otherwise, a single self-continuation counter per **turn tree** (everything
+   descending from one human-originated submission). Incoming cross-thread prompts
+   (`send_thread_prompt`; delegated subthread prompts stay on the counter above) have an
+   independent cap of five per destination, per sending thread's user turn. Each new human or
+   scheduled automation root in the sender gives it five fresh prompts for every
+   destination. A sender run without a human root (a headless scheduled automation's
+   turn, a turn the ACP agent started itself) is charged to a fallback scope keyed on
+   the sender thread from main's active-run identity, never on tool arguments
+   (amended 20 November 2026). Every scheduled automation run starts in a new thread,
+   so each gets its own five; machine runs of one thread share that scope, cannot mint
+   another, and only a human release at the destination resets it. The fallback grants
+   nothing else: it binds no turn tree, gives the destination no epoch and owns no
+   lease, wake or task tracking. Incoming prompts neither spend nor reset the self-continuation
+   counter. Human release permits a held prompt to run. This keeps authorized coordination
+   usable after local continuations are exhausted without unbounding thread-to-thread loops. Change acceptance wakes the
    proposing thread after successful GUI application, at most once per approval batch
    and originating epoch. The wake waits until the thread runs no turn and no machine
    wake already dispatched to it; approvals for the same epoch made while it waits
@@ -374,7 +388,12 @@ revisiting this document, not silently diverging in an implementation PR.
     when the agent was offered no bridge, never listed it (#4144), or dropped the tools
     after listing them (#4142). An offer is not enough, so the ACP event fires once
     the session's bridge mount is known, still before the prompt is sent. A hook must
-    not name a tool absent from that list. Disabling a pack removes
+    not name a tool absent from that list. Separately from pack guidance, each
+    Copse-managed ACP prompt identifies the current exact native bridge once its
+    usable listing is known. This identity supersedes earlier bridge identities
+    preserved by provider resume/load without transferring approvals or trusting
+    other servers by prefix or overlapping tool names. Agent-managed turns still
+    omit Copse's prompt assembly. Disabling a pack removes
     its guidance from both executors on the next turn and leaves prior history intact
     (decision 17). `invokedSkills` carries explicit user-selected skill names from
     both host fire sites. `TurnStartPayload.firstTurn` (the same "no prior
@@ -1192,12 +1211,31 @@ Git hook process's sandbox. See `docs/shell-permissions.md#native-commits-and-si
 
 `send_thread_prompt` is a machine submission surface, authorized by a separate durable
 send grant on the source thread. It enters the destination's pending-message queue with
-`kind: 'machine'` provenance. These queued items consume the same continuation budget as
-hook-originated items (decision 5), never start a human turn tree, never interrupt an
+`kind: 'machine'` provenance and the reserved `thread:<sourceThreadId>` operation namespace.
+These items carry a host-bound sender scope and consume a separate allowance of
+five prompts per destination, per sender user turn (decision 5, amended 1 November 2026).
+Main computes the scope in `peerPromptSender` from its own run identity: the sender's
+turn-tree ID, or `null` with the sender thread as the fallback for a run without one
+(decision 5, amended 20 November 2026).
+Metadata `crossThreadPromptCounts` keys each count by the JSON-encoded sender ID and
+sender turn-tree ID; it survives reloads and destination human submissions. Each sender
+and new sender root has its own allowance for every destination. Charging happens at drain
+time and busy rejections refund the same scope. Legacy prompts without a sender epoch
+retain the old `crossThreadPromptsUsed` destination counter. Exhaustion holds further
+prompts from that sender turn with an allowance-specific note; new sender turns can drain
+past those held prompts. Human release resets only the selected scope. Neither reloads
+nor interleaved old/new sender prompts replenish an existing scope. Hooks and human
+prompts may still drain. A destination without any epoch inherits the sender's existing
+root so machine runs cannot mint fresh outgoing allowances; a fallback-scoped prompt has
+no root to give, so the destination stays without one. Incoming prompts never reset
+self-continuation spend or replace an existing destination epoch, never interrupt an
 active run, and respect held/paused queues. The renderer remains the queue writer; the
 turn a drained item starts is written by main like any dispatched turn (`client-server-split.md`
 step 1a).
 Sending does not transfer the source's read or send grants to the destination.
+Delegated subthread prompts use the `subthread:<parentThreadId>` namespace instead. They
+carry no sender turn-tree ID, inherit no epoch and stay on the destination's
+self-continuation budget, including its refund when a revoked prompt is held.
 
 ### Mobile human submissions (26 September 2026)
 

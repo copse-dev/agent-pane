@@ -17,7 +17,7 @@ Preflight is read-only. It returns the detected package manager, runtime require
 - Automatic JavaScript adapters: npm, pnpm, Yarn Classic, modern Yarn (including Plug'n'Play), and Bun. Prefer an exact `packageManager` declaration; otherwise require an unambiguous lockfile. No package name, scripts field, or `.nvmrc` is required. Respect Node version files and `engines.node` when present.
 - Automatic Python adapters: a root `pyproject.toml` and `uv.lock` select uv. Run `uv sync --locked --all-packages --no-python-downloads` against the project's `.venv`, including workspace packages and default dependency groups. A root `requirements.lock` or `requirements.txt` selects pip only when every entry is an exact `name==version` pin followed solely by one or more SHA-256 hashes. Pip creates `.venv` and installs wheels only with `--require-hashes --only-binary=:all:`, so automatic preparation never builds source distributions or runs package build scripts. An installed Python is required; Copse does not install runtimes globally. An explicit declaration owns non-JavaScript setup and can override detection; mixed roots and conflicting Python locks require that declaration or selection of a nested project.
 - Automatic Go adapter: a root `go.mod` or `go.work` selects Go modules. Load the package and test import graph with `go list -mod=readonly -deps -test all`, then verify downloaded inputs with `go mod verify`. `GOTOOLCHAIN=local` forbids runtime/toolchain downloads; `GOENV=off`, a fixed `GOWORK`, and `GOFLAGS=-mod=readonly` prevent ambient configuration from changing the approved plan. The adapter does not run `go generate`, compile packages, or execute tests, so readiness is not a build or test result. Mixed ecosystem roots require an explicit declaration or selection of a nested project.
-- Automatic Cargo adapter: a root `Cargo.toml` and reviewed `Cargo.lock` select Rust dependency fetching. `cargo fetch --locked` populates a private Copse-managed `CARGO_HOME`; readiness repeats that command with `--offline`. The adapter invokes canonical `cargo` and `rustc` binaries from an already-installed toolchain directly, never a rustup proxy, and does not compile crates, run build scripts, tests, or project binaries. Project/ancestor Cargo configuration, local path/workspace manifests, and `rust-toolchain.toml` require a reviewed declaration; automatic setup accepts registry/Git dependencies and an optional bounded plain `rust-toolchain` channel.
+- Automatic Cargo adapter: a root `Cargo.toml` and reviewed `Cargo.lock` select Rust dependency fetching. `cargo fetch --locked` populates a private Copse-managed `CARGO_HOME`; readiness repeats that command with `--offline`. The adapter invokes canonical `cargo` and `rustc` binaries from an already-installed toolchain directly, never a rustup proxy (a `cargo` with `rustup` beside it, whether a link or one of Homebrew's wrapper scripts, resolves to the toolchain rustup would select), and does not compile crates, run build scripts, tests, or project binaries. Project/ancestor Cargo configuration, local path/workspace manifests, and `rust-toolchain.toml` require a reviewed declaration; automatic setup accepts registry/Git dependencies and an optional bounded plain `rust-toolchain` channel.
 - Frozen/immutable installs; no automatic lockfile generation or package-manager migration. Include development dependencies. General install lifecycle scripts remain disabled.
 - Any other ecosystem can declare preparation commands and read-only checks in `.copse/worktree-preparation.json`. This is a general extension mechanism, not a claim that every ecosystem is automatically detected. An unknown project gets actionable configuration guidance rather than a false `ready` result.
 - Project-specific native setup is opt-in through the same declaration. Copse's Electron/gortex setup becomes one ordinary declaration in this repository; there is no privileged application-side adapter for it.
@@ -135,6 +135,119 @@ The real uv regression creates an unrelated application with a local wheel, cons
 Validated against uv 0.12.2. Command semantics: [uv CLI reference](https://docs.astral.sh/uv/reference/cli/).
 
 Hash-locked pip accepts one root `requirements.lock` or `requirements.txt`; recursive includes, constraints, indexes, URLs, editable installs, environment markers, unhashed entries, and non-exact versions fail closed into the reviewed declaration path. Preparation creates `.venv`, then invokes its interpreter with `pip install --require-hashes --only-binary=:all:`. The managed pip cache is the only shared writable location, and offline mode retains kernel network isolation. Readiness fingerprints the interpreter and pip identities, dry-runs the locked install, and runs `pip check`; it does not claim tests pass. Wheel-only installation is the automatic adapter's build-script policy. Projects that require an sdist or a richer pip configuration use `.copse/worktree-preparation.json`, where the exact executable code is shown for approval.
+
+### Requirements projects with an older bundled pip
+
+The automatic pip adapter requires `pip install --dry-run`. A Python 3.9 environment can bundle
+pip 21.2.4, which lacks that command. This remains an automatic-adapter limitation; a failed
+readiness check must not be waived or treated as successful preparation.
+
+When uv is already installed, the existing declaration mechanism can use its supported
+[pip interface](https://docs.astral.sh/uv/reference/cli/#uv-pip-sync) with the project's exact
+installed interpreter. This does not require changing the project's Python version or installing
+pip into its environment. For example, a project with reviewed wheels in `vendor/` can declare:
+
+```json
+{
+  "version": 1,
+  "inputs": ["requirements.lock", "pyproject.toml", ".python-version", "uv.toml", "vendor"],
+  "prepare": [
+    { "command": "python3.9", "args": ["-m", "venv", "--without-pip", ".venv"] },
+    {
+      "command": "uv",
+      "args": [
+        "pip",
+        "sync",
+        "--python",
+        ".venv/bin/python",
+        "--no-python-downloads",
+        "--require-hashes",
+        "--only-binary=:all:",
+        "--no-index",
+        "--find-links",
+        "vendor",
+        "requirements.lock"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "name": "uv",
+      "command": { "command": "uv", "args": ["--version"] },
+      "fingerprintOutput": true
+    },
+    {
+      "name": "Python environment",
+      "path": ".venv/bin/python",
+      "command": {
+        "command": ".venv/bin/python",
+        "args": [
+          "-I",
+          "-c",
+          "import sys; print(sys.version); print(sys.implementation.cache_tag); print(sys.base_prefix)"
+        ]
+      },
+      "fingerprintOutput": true
+    },
+    {
+      "name": "Hash-locked requirements",
+      "command": {
+        "command": "uv",
+        "args": [
+          "pip",
+          "sync",
+          "--python",
+          ".venv/bin/python",
+          "--no-python-downloads",
+          "--require-hashes",
+          "--only-binary=:all:",
+          "--no-index",
+          "--find-links",
+          "vendor",
+          "requirements.lock",
+          "--check",
+          "--offline",
+          "--no-cache"
+        ]
+      }
+    },
+    {
+      "name": "Consistent dependencies",
+      "command": {
+        "command": "uv",
+        "args": [
+          "pip",
+          "check",
+          "--python",
+          ".venv/bin/python",
+          "--no-python-downloads",
+          "--offline",
+          "--no-cache"
+        ]
+      }
+    }
+  ]
+}
+```
+
+Choose the actual installed interpreter that satisfies the project's constraints; `python3.9` is an
+example, not a runtime Copse downloads. uv must also already be installed, at version 0.12.18 or
+later: the readiness check relies on `uv pip sync --check`, which that release added
+([astral-sh/uv#21844](https://github.com/astral-sh/uv/pull/21844)). An older uv rejects the option,
+so validation fails after every install and the worktree never reads ready; upgrade uv rather than
+dropping or weakening the check. The declaration and its inputs receive the ordinary exact-plan
+approval, project/cache confinement and kernel offline policy. Preflight checks stay read-only and
+use disposable scratch. `uv pip sync --check` exits unsuccessfully when the environment differs;
+`--dry-run` alone does not establish readiness. The lock and Python constraints remain unchanged.
+Sync removes packages absent from the lock, including pip or setuptools if they were previously
+installed but are not required.
+
+The example uses only local reviewed wheels and can prepare offline. For an approved registry
+workflow, remove its local-wheelhouse options and review the resulting network scope. uv
+[does not inherit pip-specific configuration or `PIP_INDEX_URL`](https://docs.astral.sh/uv/pip/compatibility/#configuration-files-and-environment-variables).
+Review uv's own index configuration and include its project files in the declaration's inputs;
+do not silently change an existing pip project's package source. This is an explicit supported
+setup choice, not an automatic pip-to-uv migration or an installer-security clearance.
 
 ## Go adapter evidence and remaining work (#2654)
 
