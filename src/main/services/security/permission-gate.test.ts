@@ -90,6 +90,7 @@ import { installInMemorySecretCipher } from '../storage/secret-cipher.test-suppo
 import { execFileSync } from 'node:child_process'
 import { runWithToolAvailability } from '../tool-availability.ts'
 import { clearRunDeadline, registerRunDeadline } from '../hooks/run-deadline.ts'
+import { runWithAutomationGrantScope } from './automation-grant-scope.ts'
 
 installInMemorySecretCipher()
 
@@ -114,7 +115,11 @@ function seedAutomationSchedule(permissions: AutomationPermission[] = []): void 
   ])
 }
 
-function underAutomation<T>(fn: () => T, root = '/tmp/automation-project'): T {
+function underAutomation<T>(
+  fn: () => Promise<T>,
+  root = '/tmp/automation-project',
+  verifiedFirstTurn = true,
+): Promise<T> {
   return runWithThreadExecutionContext(
     {
       projectId: 'project-1',
@@ -129,7 +134,7 @@ function underAutomation<T>(fn: () => T, root = '/tmp/automation-project'): T {
         triggeredAt: 1,
       },
     },
-    fn,
+    () => (verifiedFirstTurn ? runWithAutomationGrantScope(fn) : fn()),
   )
 }
 
@@ -887,6 +892,26 @@ describe('ensureToolPermitted', () => {
         false,
       )
       assert.equal(prompts, 1, 'an explicit cross-repository target must still prompt')
+    } finally {
+      setApprovalHandler(null)
+      storageSet(AUTOMATIONS_STORAGE_KEY, [])
+    }
+  })
+
+  it('does not reuse a schedule grant for a later message in the same thread', async () => {
+    setPermissionGateForTests(null)
+    seedAutomationSchedule([{ kind: 'copse-action', toolName: 'gh_pr_approve' }])
+    let prompts = 0
+    setApprovalHandler(async () => {
+      prompts += 1
+      return { approved: false, remember: false }
+    })
+    const action = (): Promise<boolean> =>
+      ensureToolPermitted({ toolName: 'gh_pr_approve', args: { number: 1 } })
+    try {
+      assert.equal(await underAutomation(action), true)
+      assert.equal(await underAutomation(action, '/tmp/automation-project', false), false)
+      assert.equal(prompts, 1)
     } finally {
       setApprovalHandler(null)
       storageSet(AUTOMATIONS_STORAGE_KEY, [])

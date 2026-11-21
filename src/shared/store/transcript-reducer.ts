@@ -18,6 +18,7 @@ import {
   findToolCall,
   findToolCallOwner,
   setMessageContent,
+  setMessagePromptContent,
   setThreadStatus,
   markAutomationRunFailed,
   addUsageDelta,
@@ -255,11 +256,67 @@ export function createTranscriptReducer(
           chunk.attachments,
           {
             origin: chunk.origin,
+            ...(chunk.promptRepresentation !== undefined
+              ? { promptRepresentation: chunk.promptRepresentation }
+              : {}),
             ...(chunk.startingCommit !== undefined ? { startingCommit: chunk.startingCommit } : {}),
             ...(chunk.dirty !== undefined ? { dirty: chunk.dirty } : {}),
             ...(id !== undefined ? { id } : {}),
           },
         )
+        break
+      }
+      case 'protected_human_turn_start': {
+        hooks.turnStarted?.(threadId)
+        setThreadStatus(store, threadId, 'running')
+        const thread = getThreadById(store, threadId)
+        const existing = thread?.messages.find(
+          (message) => message.id === chunk.messageId && message.role === 'user',
+        )
+        const content =
+          typeof chunk.content === 'string'
+            ? chunk.content
+            : chunk.content
+                .filter((block) => block.type === 'text')
+                .map((block) => block.text)
+                .join('\n')
+        const images =
+          typeof chunk.content === 'string'
+            ? undefined
+            : chunk.content.filter((block) => block.type === 'image').map((block) => block.dataUrl)
+        if (existing) {
+          const optimisticImages = existing.images ?? []
+          const reviewedImages = images ?? []
+          const exactTextOnlyDisplay =
+            chunk.preserveOptimisticDisplay === true &&
+            existing.content === content &&
+            (existing.attachments?.length ?? 0) === 0 &&
+            optimisticImages.length === reviewedImages.length &&
+            optimisticImages.every((image, index) => image === reviewedImages[index])
+          if (chunk.preserveOptimisticDisplay !== true || exactTextOnlyDisplay) {
+            // Main has authenticated the reviewed representation. A byte-for-byte
+            // text-only optimistic bubble can safely inherit that provenance so a
+            // second live resend does not fall back to legacy placeholder cleanup.
+            // Chip-bearing bubbles keep their display form and remain unmarked.
+            setMessagePromptContent(
+              store,
+              threadId,
+              existing.id,
+              content,
+              images,
+              chunk.attachments,
+              chunk.promptRepresentation,
+            )
+          }
+          // User prompts do not receive the assistant stream's later
+          // `message_done`, so finalize this canonical replacement now.
+          store.emit('message_done', existing.id)
+        } else {
+          addMessage(store, threadId, 'user', content, images, chunk.attachments, {
+            id: chunk.messageId,
+            promptRepresentation: chunk.promptRepresentation,
+          })
+        }
         break
       }
       case 'text': {

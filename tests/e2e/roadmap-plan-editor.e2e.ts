@@ -8,6 +8,7 @@ import {
 } from './helpers/seed-config.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
+import { acceptProtectedPrompt } from './helpers/composer.ts'
 import { waitForAgentIdle } from './helpers.ts'
 
 const PROJECT = 'e2e-roadmap-plan-editor'
@@ -28,8 +29,80 @@ async function selectRoadmapItem(): Promise<void> {
   await $('.roadmap-row[data-id="session-recovery"]').click()
 }
 
+async function editRoadmapBrief(): Promise<void> {
+  await $('.roadmap-new-btn').click()
+  await expect($('.roadmap-prompt-input')).toBeDisplayed()
+  await $('.roadmap-prompt-input').setValue('A small idea can stay small.')
+  await $('.roadmap-editor-modes').$('button=Document').click()
+  await expect($('#roadmap-body')).toHaveText('A small idea can stay small.')
+  await $('.roadmap-editor-modes').$('button=Quick edit').click()
+  await expect($('.roadmap-prompt-input')).toHaveValue('A small idea can stay small.')
+  await saveAppScreenshot('roadmap-quick-capture.png')
+  await $('.roadmap-cancel-btn').click()
+  await selectRoadmapItem()
+  await expect($('#roadmap-body h2')).toHaveText('Expected experience')
+  await expect($('.roadmap-details')).not.toHaveAttribute('open')
+  await $('[aria-label="Expand roadmap over chat"]').click()
+  await saveAppScreenshot('roadmap-document-editor.png')
+  await $('.roadmap-editor-modes').$('button=Quick edit').click()
+  await expect($('.roadmap-prompt-input')).toHaveValue(BRIEF)
+  await $('.roadmap-prompt-input').setValue(`${BRIEF}\n\nPreserve keyboard focus during recovery.`)
+  await $('.roadmap-editor-modes').$('button=Document').click()
+  await expect($('#roadmap-body')).toHaveText(
+    expect.stringContaining('Preserve keyboard focus during recovery.'),
+  )
+  await $('.roadmap-save-btn').click()
+  const saved = await browser.execute(async () =>
+    (await window.api.roadmap.list()).find((item) => item.id === 'session-recovery'),
+  )
+  expect(saved?.body).toBe(`${BRIEF}\n\nPreserve keyboard focus during recovery.`)
+  expect(saved?.title).toBe('Let people recover an expired session without losing their work.')
+}
+
+async function developRoadmapDraft(): Promise<void> {
+  await $('.roadmap-develop-btn').click()
+  await $('#thread-plan-dialog').waitForDisplayed()
+  await expect($('[data-testid="plan-status"]')).toHaveText('draft · r1')
+  await expect($('#plan-body')).toHaveText(
+    expect.stringContaining('Preserve keyboard focus during recovery.'),
+  )
+  const plan = await currentPlan()
+  expect(plan?.approval).toBeNull()
+  expect(plan?.completion).toBeNull()
+  await expect($('.msg-assistant')).not.toExist()
+  await $('#thread-plan-dialog').$('button=Close').click()
+  // A roadmap draft is durable even if its prefilled composer is cleared.
+  if (await $('[aria-label="Restore roadmap"]').isDisplayed())
+    await $('[aria-label="Restore roadmap"]').click()
+  await $('.prompt-input').click()
+  await browser.keys([process.platform === 'darwin' ? 'Meta' : 'Control', 'a'])
+  await browser.keys('Backspace')
+  await expect($('.prompt-input')).toHaveText('')
+  await $('.project-new-thread-btn').click()
+  await $('.roadmap-attempt').$('button=Open plan').waitForDisplayed()
+  await $('.roadmap-attempt').$('button=Open plan').click()
+  await expect($('[data-testid="plan-status"]')).toHaveText('draft · r1')
+  expect((await currentPlan())?.meta.planId).toBe(plan?.meta.planId)
+  await $('#thread-plan-dialog').$('button=Markdown').click()
+  await $('#plan-source').setValue(PLAN)
+  await $('#thread-plan-dialog').$('button=Save revision').click()
+  await expect($('[data-testid="plan-status"]')).toHaveText('draft · r2')
+  await $('#thread-plan-dialog').$('button=Document').click()
+  await saveElementScreenshot('#thread-plan-dialog', 'roadmap-linked-plan.png')
+  await $('#thread-plan-dialog').$('button=Close').click()
+  await browser.reloadSession()
+  await $('.prompt-input').waitForExist({ timeout: 30_000 })
+  if (!(await $('.roadmap-new-btn').isDisplayed())) await $('[aria-label="Open roadmap"]').click()
+  await $('.roadmap-row').waitForDisplayed({ timeout: 30_000 })
+  await selectRoadmapItem()
+  await $('.roadmap-attempt').$('button=Open plan').waitForDisplayed()
+  await $('.roadmap-attempt').$('button=Open plan').click()
+  await expect($('[data-testid="plan-status"]')).toHaveText('draft · r2')
+  expect((await currentPlan())?.meta.planId).toBe(plan?.meta.planId)
+}
+
 describe('roadmap document and linked planning prototype', () => {
-  before(async () => {
+  beforeEach(async () => {
     resetUserData()
     seedEmptyProject(seedStableWorkspace(), PROJECT, {
       roadmapPlansEnabled: true,
@@ -66,80 +139,17 @@ describe('roadmap document and linked planning prototype', () => {
   })
 
   it('keeps quick capture and opens saved briefs in a clean document view', async () => {
-    await $('.roadmap-new-btn').click()
-    await expect($('.roadmap-prompt-input')).toBeDisplayed()
-    await $('.roadmap-prompt-input').setValue('A small idea can stay small.')
-    await $('.roadmap-editor-modes').$('button=Document').click()
-    await expect($('#roadmap-body')).toHaveText('A small idea can stay small.')
-    await $('.roadmap-editor-modes').$('button=Quick edit').click()
-    await expect($('.roadmap-prompt-input')).toHaveValue('A small idea can stay small.')
-    await saveAppScreenshot('roadmap-quick-capture.png')
-    await $('.roadmap-cancel-btn').click()
-    await selectRoadmapItem()
-    await expect($('#roadmap-body h2')).toHaveText('Expected experience')
-    await expect($('.roadmap-details')).not.toHaveAttribute('open')
-    await $('[aria-label="Expand roadmap over chat"]').click()
-    await saveAppScreenshot('roadmap-document-editor.png')
-    await $('.roadmap-editor-modes').$('button=Quick edit').click()
-    await expect($('.roadmap-prompt-input')).toHaveValue(BRIEF)
-    await $('.roadmap-prompt-input').setValue(
-      `${BRIEF}\n\nPreserve keyboard focus during recovery.`,
-    )
-    await $('.roadmap-editor-modes').$('button=Document').click()
-    await expect($('#roadmap-body')).toHaveText(
-      expect.stringContaining('Preserve keyboard focus during recovery.'),
-    )
-    await $('.roadmap-save-btn').click()
-    const saved = await browser.execute(async () =>
-      (await window.api.roadmap.list()).find((item) => item.id === 'session-recovery'),
-    )
-    expect(saved?.body).toBe(`${BRIEF}\n\nPreserve keyboard focus during recovery.`)
-    expect(saved?.title).toBe('Let people recover an expired session without losing their work.')
+    await editRoadmapBrief()
   })
 
   it('develops a real draft without starting implementation and reopens the same plan', async () => {
-    await $('.roadmap-develop-btn').click()
-    await $('#thread-plan-dialog').waitForDisplayed()
-    await expect($('[data-testid="plan-status"]')).toHaveText('draft · r1')
-    await expect($('#plan-body')).toHaveText(
-      expect.stringContaining('Preserve keyboard focus during recovery.'),
-    )
-    const plan = await currentPlan()
-    expect(plan?.approval).toBeNull()
-    expect(plan?.completion).toBeNull()
-    await expect($('.msg-assistant')).not.toExist()
-    await $('#thread-plan-dialog').$('button=Close').click()
-    // A roadmap draft is durable even if its prefilled composer is cleared.
-    if (await $('[aria-label="Restore roadmap"]').isDisplayed())
-      await $('[aria-label="Restore roadmap"]').click()
-    await $('.prompt-input').click()
-    await browser.keys([process.platform === 'darwin' ? 'Meta' : 'Control', 'a'])
-    await browser.keys('Backspace')
-    await expect($('.prompt-input')).toHaveText('')
-    await $('.project-new-thread-btn').click()
-    await $('.roadmap-attempt').$('button=Open plan').waitForDisplayed()
-    await $('.roadmap-attempt').$('button=Open plan').click()
-    await expect($('[data-testid="plan-status"]')).toHaveText('draft · r1')
-    expect((await currentPlan())?.meta.planId).toBe(plan?.meta.planId)
-    await $('#thread-plan-dialog').$('button=Markdown').click()
-    await $('#plan-source').setValue(PLAN)
-    await $('#thread-plan-dialog').$('button=Save revision').click()
-    await expect($('[data-testid="plan-status"]')).toHaveText('draft · r2')
-    await $('#thread-plan-dialog').$('button=Document').click()
-    await saveElementScreenshot('#thread-plan-dialog', 'roadmap-linked-plan.png')
-    await $('#thread-plan-dialog').$('button=Close').click()
-    await browser.reloadSession()
-    await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    if (!(await $('.roadmap-new-btn').isDisplayed())) await $('[aria-label="Open roadmap"]').click()
-    await $('.roadmap-row').waitForDisplayed({ timeout: 30_000 })
-    await selectRoadmapItem()
-    await $('.roadmap-attempt').$('button=Open plan').waitForDisplayed()
-    await $('.roadmap-attempt').$('button=Open plan').click()
-    await expect($('[data-testid="plan-status"]')).toHaveText('draft · r2')
-    expect((await currentPlan())?.meta.planId).toBe(plan?.meta.planId)
+    await editRoadmapBrief()
+    await developRoadmapDraft()
   })
 
   it('shows reported evidence and preserves previous attempts and their origin links', async () => {
+    await editRoadmapBrief()
+    await developRoadmapDraft()
     const plan = await currentPlan()
     if (!plan) throw new Error('Missing plan')
     await $('#thread-plan-dialog').$('button=Close').click()
@@ -197,6 +207,7 @@ describe('roadmap document and linked planning prototype', () => {
     )
     if (await $('.composer-dirty-send-btn').isDisplayed())
       await $('.composer-dirty-send-btn').click()
+    await acceptProtectedPrompt()
     await expectAssistantReply(
       'Draft preservation passed; the integration test still needs verification.',
     )

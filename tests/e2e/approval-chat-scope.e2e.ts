@@ -6,6 +6,7 @@ import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 import { waitForActiveThreadTitle } from './helpers.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
+import { submitComposer } from './helpers/composer.ts'
 
 const PROJECT_ID = 'e2e-approval-chat-scope'
 const TERMINAL_MARKER = 'approval-terminal-stays-live'
@@ -50,7 +51,7 @@ describe('chat-scoped approval', () => {
       { name: 'run_shell', args: { command: 'npm install' } },
       'The dependency installation was declined.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
 
     const dialog = $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })

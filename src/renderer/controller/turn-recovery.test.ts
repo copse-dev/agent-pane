@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
-import type { TurnOutcome } from '@shared/types'
+import type { ProtectedHumanTurnDisplay, TurnOutcome } from '@shared/types'
 import { createStore } from '@shared/store/store.ts'
 import {
   addMessage,
@@ -40,19 +40,29 @@ function outcome(
 function setup(): {
   store: ReturnType<typeof createStore>
   api: ApiClient
-  runs: Array<{ projectId: string; threadId: string; payload: string }>
+  runs: Array<{
+    projectId: string
+    threadId: string
+    payload: string
+    display: ProtectedHumanTurnDisplay | undefined
+  }>
   selections: Array<{ threadId: string; from: string | undefined; to: string }>
 } {
   const store = createStore({ activeProjectId: 'project-1' })
-  const runs: Array<{ projectId: string; threadId: string; payload: string }> = []
+  const runs: Array<{
+    projectId: string
+    threadId: string
+    payload: string
+    display: ProtectedHumanTurnDisplay | undefined
+  }> = []
   const selections: Array<{ threadId: string; from: string | undefined; to: string }> = []
   const base = createFakeApi()
   const api: ApiClient = {
     ...base,
     agent: {
       ...base.agent,
-      run: (projectId, threadId, payload) => {
-        runs.push({ projectId, threadId, payload })
+      run: (projectId, threadId, payload, _delegation, display) => {
+        runs.push({ projectId, threadId, payload, display })
         return Promise.resolve()
       },
     },
@@ -309,6 +319,12 @@ describe('explicit failed-turn recovery', () => {
       parseAgentRunPayload(runs[0]?.payload ?? '').userContent,
       INTERRUPTED_TURN_CONTINUATION,
     )
+    const continuation = thread.messages.at(-1)
+    assert.ok(continuation)
+    assert.deepEqual(runs[0]?.display, {
+      messageId: continuation.id,
+      snapshot: { content: INTERRUPTED_TURN_CONTINUATION },
+    })
   })
 
   it('offers the most recent earlier completed model for provider failures across executors', () => {

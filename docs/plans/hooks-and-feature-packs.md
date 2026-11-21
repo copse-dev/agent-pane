@@ -143,6 +143,12 @@ revisiting this document, not silently diverging in an implementation PR.
    entirely; only an explicit human action (send-now / release) submits it, and that
    human action starts a fresh turn tree with a reset budget. Plus a visible thread
    note. `COPSE_HOOK_DEPTH` env guard prevents hook→Copse recursion.
+   Deleting a queued item first holds it against draining and flushes metadata,
+   then awaits main's atomic retirement of the saved queued user-message ID.
+   Failure leaves the note held and visible. Successful deletion survives stale
+   metadata/full saves and appends; retry after interrupted metadata cleanup is
+   idempotent. This does not edit accepted provider history or grant a new turn,
+   append receipt, epoch or budget. See [queued-message deletion](../thread-store-format.md#queued-message-deletion-type-queued_message_deleted).
    An ACP agent can resume itself after its prompt returned (a background-task notification
    re-enters the model; the adapter tags the turn `_claude/origin: task-notification`), so Copse
    never dispatched that turn. The update pump (`startAcpUpdatePump`) treats agent work arriving
@@ -1245,7 +1251,10 @@ turn-tree ID, or `null` with the sender thread as the fallback for a run without
 Metadata `crossThreadPromptCounts` keys each count by the JSON-encoded sender ID and
 sender turn-tree ID; it survives reloads and destination human submissions. Each sender
 and new sender root has its own allowance for every destination. Charging happens at drain
-time and busy rejections refund the same scope. Legacy prompts without a sender epoch
+time; busy rejections and cancelled protected entry refund only that drain's recorded
+charge in the same scope. Direct/manual submissions without a charge never refund
+other spend, and a changed count or self-continuation epoch is not refunded by a late
+failure. Legacy prompts without a sender epoch
 retain the old `crossThreadPromptsUsed` destination counter. Exhaustion holds further
 prompts from that sender turn with an allowance-specific note; new sender turns can drain
 past those held prompts. Human release resets only the selected scope. Neither reloads

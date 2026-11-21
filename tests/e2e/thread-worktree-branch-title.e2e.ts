@@ -11,7 +11,7 @@ import {
   writeSeedConfig,
   writeSettings,
 } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { waitForAgentIdle, waitForPromptReady } from './helpers.ts'
 import { startConversationServer, type ConversationServer } from './helpers/conversation-server.ts'
 import {
@@ -93,7 +93,7 @@ describe('automatic worktree branch naming', () => {
     const prompt = 'Repair the authentication session flow.'
     server.enqueue({ user: prompt, text: 'The repair is ready.' })
     await setComposerValue(prompt)
-    await $('.submit-btn').click()
+    await submitComposer()
     await waitForAgentIdle()
 
     const branchLabel = $('.footer-branch-status .footer-branch-label')

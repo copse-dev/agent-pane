@@ -4,7 +4,10 @@ import type { SshPromptRequest, SshPromptResponse } from './ssh-prompt.ts'
 
 /** Main owns expiry; renderer dismissal follows the exact request and owner. */
 export class SshPromptLifecycle {
-  private readonly pending = new Map<string, (result: SshPromptResponse) => void>()
+  private readonly pending = new Map<
+    string,
+    { request: SshPromptRequest; resolve: (result: SshPromptResponse) => void }
+  >()
 
   request(req: SshPromptRequest, dest: RendererPromptTarget): Promise<SshPromptResponse> {
     if (dest.isDestroyed()) return Promise.resolve({ value: '' })
@@ -14,13 +17,16 @@ export class SshPromptLifecycle {
         this.settle(id, { value: '' })
       }, 60_000)
       timer.unref()
-      this.pending.set(id, (result) => {
-        clearTimeout(timer)
-        try {
-          if (!dest.isDestroyed()) dest.send('ssh-prompt:dismissed', id)
-        } finally {
-          resolve(result)
-        }
+      this.pending.set(id, {
+        request: req,
+        resolve: (result) => {
+          clearTimeout(timer)
+          try {
+            if (!dest.isDestroyed()) dest.send('ssh-prompt:dismissed', id)
+          } finally {
+            resolve(result)
+          }
+        },
       })
       try {
         dest.send('ssh:prompt-request', { ...req, id })
@@ -30,13 +36,17 @@ export class SshPromptLifecycle {
     })
   }
 
+  requestFor(id: string): SshPromptRequest | undefined {
+    return this.pending.get(id)?.request
+  }
+
   settle(id: string, result: SshPromptResponse): void {
-    const resolve = this.pending.get(id)
-    if (!resolve) return
+    const entry = this.pending.get(id)
+    if (!entry) return
     this.pending.delete(id)
     // A renderer can disappear between the isDestroyed check and send.
     try {
-      resolve(result)
+      entry.resolve(result)
     } catch {
       // The promise was settled in the callback's finally block.
     }

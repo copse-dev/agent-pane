@@ -35,7 +35,12 @@ import {
 } from '../../scripts/lib/eval-tool-expectations.mts'
 import { readDecisionLog } from '../../src/main/services/security/decision-log-store.ts'
 import { defaultScratchRoots } from '../../scripts/lib/eval-scratch-paths.mts'
-import { composerText, setComposerValue, submitComposer } from './helpers/composer.ts'
+import {
+  acceptProtectedPrompt,
+  composerText,
+  setComposerValue,
+  submitComposer,
+} from './helpers/composer.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { acceptEvalProposals, selectEvalBranch } from './helpers/agent-eval-ui.ts'
 import { failedTurn } from '../../src/main/services/container-runtime/guest-turn.ts'
@@ -247,6 +252,8 @@ async function submitEvalPrompt(mayChangeCheckout: boolean): Promise<void> {
     await submitComposer()
     return
   }
+  const handlesBefore = await browser.getWindowHandles()
+  const mainHandle = await browser.getWindowHandle()
   await $('.submit-btn').click()
   const dirtyWarning = $('.composer-dirty-send-btn')
   await browser.waitUntil(
@@ -257,6 +264,7 @@ async function submitEvalPrompt(mayChangeCheckout: boolean): Promise<void> {
     !(await dirtyWarning.isDisplayed()),
     `The checkout has uncommitted changes and this scenario ${OWN_CHECKOUT_REFUSAL}`,
   )
+  await acceptProtectedPrompt(mainHandle, handlesBefore)
 }
 
 async function typePrompt(prompt: EvalPrompt): Promise<void> {

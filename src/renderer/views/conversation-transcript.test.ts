@@ -2,6 +2,8 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
+import type { Message } from '@shared/types'
+import { renderTextBlock } from '@copse/agent/build-text-with-attachments.ts'
 import {
   addMessage,
   addMessageCanvasArtefact,
@@ -60,10 +62,13 @@ function drag(surface: Element): void {
 function mountWithUserMessage(
   content: string,
   attachments: Parameters<typeof addMessage>[5],
+  promptRepresentation?: Message['promptRepresentation'],
 ): void {
   const store = createStore()
   const threadId = createThread(store)
-  addMessage(store, threadId, 'user', content, undefined, attachments)
+  addMessage(store, threadId, 'user', content, undefined, attachments, {
+    ...(promptRepresentation === undefined ? {} : { promptRepresentation }),
+  })
   const host = document.createElement('div')
   document.body.append(host)
   mountConversation(host, store, fakeApi())
@@ -158,6 +163,124 @@ describe('user transcript attachment chips', () => {
       1,
       'only the non-positional file stays in the trailing row',
     )
+  })
+
+  it('projects a reviewed canonical paste block back to its compact transcript chip', () => {
+    const content =
+      'The opening repeats the product description twice. Keep the first explanation and remove the second.'
+    const label = 'Editor feedback summary'
+    mountWithUserMessage(
+      `Summarize this feedback:\n\n${renderTextBlock(label, content)}`,
+      [
+        {
+          kind: 'paste',
+          label,
+          content,
+          placement: 'inline',
+          projection: 'canonical-block',
+        },
+      ],
+      'canonical-provider',
+    )
+
+    const textEl = document.querySelector('.msg-user .message-text')
+    assert.ok(textEl)
+    assert.match(textEl.textContent, /Summarize this feedback:/)
+    assert.match(textEl.textContent, /Editor feedback summary/)
+    assert.doesNotMatch(textEl.textContent, /```/)
+    assert.equal(textEl.querySelector('.msg-user-fold-toggle'), null)
+    assert.ok(textEl.querySelector('.transcript-attachment-paste'))
+  })
+
+  it('binds only the exact reviewed inline attachment and keeps unmatched chips trailing', () => {
+    const reviewed = {
+      kind: 'paste' as const,
+      label: 'Reviewed paste',
+      content: 'exact bytes',
+      placement: 'inline' as const,
+      projection: 'canonical-block' as const,
+    }
+    mountWithUserMessage(
+      `Keep authored \uE000 and ${CHIP_CHAR}.\n\n${renderTextBlock(reviewed.label, reviewed.content)}`,
+      [
+        { kind: 'thread', label: 'Unreviewed thread', placement: 'inline' },
+        {
+          kind: 'paste',
+          label: 'Unreviewed paste',
+          content: 'not present',
+          placement: 'inline',
+        },
+        reviewed,
+      ],
+      'canonical-provider',
+    )
+
+    const textEl = document.querySelector('.msg-user .message-text')
+    assert.ok(textEl)
+    assert.match(textEl.textContent, /Keep authored \uE000 and ￼\./)
+    assert.equal(textEl.querySelectorAll(':scope > .transcript-attachment-chip').length, 1)
+    assert.equal(
+      textEl.querySelector(':scope > .transcript-attachment-paste .transcript-attachment-label')
+        ?.textContent,
+      reviewed.label,
+    )
+    const trailingLabels = [
+      ...textEl.querySelectorAll('.transcript-attachment-row .transcript-attachment-label'),
+    ].map((label) => label.textContent)
+    assert.deepEqual(trailingLabels, ['Unreviewed thread', 'Unreviewed paste'])
+  })
+
+  it('keeps reviewed chips at the end of folded head and middle regions', () => {
+    const headThread = {
+      kind: 'thread' as const,
+      label: 'Head boundary',
+      placement: 'inline' as const,
+      projection: 'canonical-thread-label' as const,
+    }
+    const middleThread = {
+      kind: 'thread' as const,
+      label: 'Middle boundary',
+      placement: 'inline' as const,
+      projection: 'canonical-thread-label' as const,
+    }
+    const lines = [
+      'Opening line',
+      `Second line @${headThread.label}`,
+      ...Array.from({ length: 8 }, (_, index) => `Middle line ${String(index + 1)}`),
+      `Last middle line @${middleThread.label}`,
+      'Closing line',
+    ]
+    mountWithUserMessage(lines.join('\n'), [headThread, middleThread], 'canonical-provider')
+
+    const textEl = document.querySelector('.msg-user .message-text')
+    assert.ok(textEl)
+    const headLabels = [
+      ...textEl.querySelectorAll('.msg-user-fold-head .transcript-attachment-label'),
+    ].map((label) => label.textContent)
+    const middleLabels = [
+      ...textEl.querySelectorAll('.msg-user-fold-middle .transcript-attachment-label'),
+    ].map((label) => label.textContent)
+    assert.deepEqual(headLabels, [headThread.label])
+    assert.deepEqual(middleLabels, [middleThread.label])
+    assert.equal(textEl.querySelectorAll('.transcript-attachment-chip').length, 2)
+  })
+
+  it('projects a reviewed trailing shell block back to its compact transcript chip', () => {
+    const label = 'Run · git rebase --continue · exit 0'
+    const content = 'Successfully rebased and updated refs/heads/topic.'
+    mountWithUserMessage(
+      `Continue after recovery.\n\n${renderTextBlock(`Shell: ${label}`, content)}`,
+      [{ kind: 'shell', label, content, projection: 'canonical-block' }],
+      'canonical-provider',
+    )
+
+    const textEl = document.querySelector('.msg-user .message-text')
+    assert.ok(textEl)
+    assert.match(textEl.textContent, /Continue after recovery\./)
+    assert.match(textEl.textContent, /Run · git rebase --continue · exit 0/)
+    assert.doesNotMatch(textEl.textContent, /```/)
+    assert.equal(textEl.querySelector('.msg-user-fold-toggle'), null)
+    assert.ok(textEl.querySelector('.transcript-attachment-shell'))
   })
 
   it('never consumes a trailing file to satisfy an unmatched placeholder', () => {

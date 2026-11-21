@@ -8,7 +8,7 @@ import {
   seedEmptyProject,
   seedStableWorkspace,
 } from './helpers/seed-config.ts'
-import { composerText, setComposerValue } from './helpers/composer.ts'
+import { acceptProtectedPrompt, setComposerValue, submitComposer } from './helpers/composer.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
@@ -31,25 +31,7 @@ async function expectChangesBubble(additions: string): Promise<void> {
 }
 
 async function submitPrompt(): Promise<void> {
-  await $('.submit-btn').click()
-  await browser.waitUntil(
-    async () => {
-      const continueHere = $('.composer-branch-continue-btn')
-      if (await continueHere.isDisplayed()) {
-        await continueHere.click()
-        await continueHere.waitForDisplayed({ reverse: true })
-        await $('.submit-btn').click()
-      }
-      const sendAnyway = $('.composer-dirty-send-btn')
-      if (await sendAnyway.isDisplayed()) await sendAnyway.click()
-      return (await composerText()).trim() === ''
-    },
-    {
-      timeout: 30_000,
-      interval: 100,
-      timeoutMsg: 'The prompt did not submit after accepting checkout warnings',
-    },
-  )
+  await submitComposer()
 }
 
 describe('Send now preserves a running shell', function () {
@@ -112,6 +94,7 @@ describe('Send now preserves a running shell', function () {
     await expect($('.conversation-queued .queued-send-now')).toBeDisplayed()
     await $('.prompt-input').click()
     await browser.keys(['Control', 'Enter'])
+    await acceptProtectedPrompt()
     await expectAssistantReply(
       'The workspace check continues in the background while I answer your question.',
     )

@@ -15,12 +15,6 @@ import {
   startHumanTurnTree,
 } from './message-queue.ts'
 
-/**
- * History seeds still in flight, by side chat id. A question asked before its seed
- * lands waits for it, so the first run reads the parent's context.
- */
-const pendingSeeds = new Map<string, Promise<void>>()
-
 export interface StartSideChatOptions {
   /** Parent message to branch from; defaults to the parent's latest settled message. */
   anchorMessageId?: string
@@ -39,10 +33,10 @@ export interface StartSideChatOptions {
  * or `null` when there is nothing to branch from (unknown or empty parent, an
  * unknown anchor, or a parent that is itself a side chat).
  *
- * The side chat is inserted the way a fork is, so autosave sees a new id and
- * flushes `threads:create` before the history seed runs. Unlike a fork its
- * transcript starts empty: only the agent's provider history is seeded, from the
- * parent up to the anchor, through the same `threads:fork` main-process path.
+ * Main creates the side chat and its provider history before the renderer
+ * inserts it, so the fork path can reject every pre-existing target id. Unlike
+ * a fork its transcript starts empty: only the agent's provider history is
+ * seeded from the parent up to the anchor.
  * By default it opens beside the main thread (the Side chat panel) rather than
  * replacing it.
  */
@@ -70,6 +64,17 @@ export async function startSideChat(
   })
   if (!side) return null
 
+  const projectId = store.getState().activeProjectId
+  if (projectId) {
+    try {
+      await api.threads.fork(projectId, parentThreadId, side, anchorMessageId)
+    } catch (error) {
+      // Do not let autosave recreate copied prompts as renderer-authored input.
+      console.error('[side-chat] failed to create history from the parent:', error)
+      return null
+    }
+  }
+
   const openAs = options.open ?? 'panel'
   if (openAs === 'thread') {
     store.emit('composer_draft_flush')
@@ -82,28 +87,13 @@ export async function startSideChat(
     })
     store.emit('threads_changed')
   } else {
-    // The main thread stays active; autosave sees the new id and flushes its create.
+    // The main thread stays active; autosave's create is idempotent because
+    // main already committed the side chat and provider history together.
     store.setState({ threads: [side, ...store.getState().threads] })
     store.emit('threads_changed')
     store.emit('side_chat_open_requested', side.id)
   }
 
-  const projectId = store.getState().activeProjectId
-  if (projectId) {
-    const seed = api.threads.fork(projectId, parentThreadId, side.id, anchorMessageId).then(
-      () => undefined,
-      (error: unknown) => {
-        // The side chat is still usable; it just starts without the parent's context.
-        console.error('[side-chat] failed to seed history from the parent:', error)
-      },
-    )
-    pendingSeeds.set(side.id, seed)
-    try {
-      await seed
-    } finally {
-      pendingSeeds.delete(side.id)
-    }
-  }
   return side.id
 }
 
@@ -139,9 +129,7 @@ export function sendSideChatMessage(
       dispatchAgentRun(store, api, sideThreadId, payload, queued)
     }
   }
-  const seed = pendingSeeds.get(sideThreadId)
-  if (seed) void seed.then(dispatch)
-  else dispatch()
+  dispatch()
   return messageId
 }
 
@@ -163,8 +151,6 @@ export async function promoteSideChat(
   api: ApiClient,
   sideThreadId: string,
 ): Promise<string | null> {
-  // Its agent history is copied below, so let a seed still in flight land first.
-  await pendingSeeds.get(sideThreadId)
   const side = getThreadById(store, sideThreadId)
   if (!side || side.sideChat === undefined || side.status === 'running') return null
   const parent = getThreadById(store, side.sideChat.parentThreadId)
@@ -196,6 +182,20 @@ export async function promoteSideChat(
     links: collectThreadLinks({ id: base.id, messages }),
     ...(side.model !== undefined ? { model: side.model } : {}),
   }
+
+  const projectId = store.getState().activeProjectId
+  if (projectId) {
+    try {
+      if (own) await api.threads.fork(projectId, sideThreadId, promoted)
+      else if (parent) {
+        await api.threads.fork(projectId, parent.id, promoted, side.sideChat.anchorMessageId)
+      }
+    } catch (error) {
+      console.error('[side-chat] failed to create the promoted thread history:', error)
+      return null
+    }
+  }
+
   store.emit('composer_draft_flush')
   store.setState({
     threads: [promoted, ...store.getState().threads],
@@ -206,17 +206,6 @@ export async function promoteSideChat(
   })
   store.emit('threads_changed')
   archiveThread(store, sideThreadId)
-
-  const projectId = store.getState().activeProjectId
-  if (projectId) {
-    try {
-      if (own) await api.threads.fork(projectId, sideThreadId, promoted.id)
-      else if (parent)
-        await api.threads.fork(projectId, parent.id, promoted.id, side.sideChat.anchorMessageId)
-    } catch (error) {
-      console.error('[side-chat] failed to seed the promoted thread history:', error)
-    }
-  }
   return promoted.id
 }
 

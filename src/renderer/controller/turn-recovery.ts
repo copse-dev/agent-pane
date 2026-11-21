@@ -118,8 +118,12 @@ export function recoverFailedTurn(
     priorTodos: thread.todos ?? [],
     ...(thread.workingBrief !== undefined ? { workingBrief: thread.workingBrief } : {}),
   }
-  addMessage(store, threadId, 'user', INTERRUPTED_TURN_CONTINUATION)
+  const messageId = addMessage(store, threadId, 'user', INTERRUPTED_TURN_CONTINUATION)
   startHumanTurnTree(store, threadId)
-  dispatchAgentRun(store, api, threadId, payload)
+  dispatchAgentRun(store, api, threadId, payload, {
+    messageId,
+    payload,
+    createdAt: Date.now(),
+  })
   return true
 }

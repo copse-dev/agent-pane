@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig, writeSettings } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
@@ -139,7 +139,7 @@ describe('new thread default branch checkout', () => {
         THREAD,
       )
       await setComposerValue(prompt)
-      await $('.submit-btn').click()
+      await submitComposer()
       await expectAssistantReply(reply)
       await scenario.assertComplete()
       const checkout = mode === 'worktree' ? worktree : root

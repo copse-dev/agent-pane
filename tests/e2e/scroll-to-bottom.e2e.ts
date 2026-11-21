@@ -6,7 +6,7 @@ import {
   seedStableWorkspace,
 } from './helpers/seed-config.ts'
 import { waitForAgentIdle, waitForPromptReady } from './helpers.ts'
-import { composerText, setComposerValue } from './helpers/composer.ts'
+import { composerText, setComposerValue, submitComposer } from './helpers/composer.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import {
   prepareE2eScreenshot,
@@ -399,7 +399,7 @@ describe('scroll to bottom', () => {
       ],
     })
     await setComposerValue(STREAMING_PROMPT)
-    await $('.submit-btn').click()
+    await submitComposer()
 
     await waitForLastAssistantText('The implementation plan starts')
 
@@ -436,7 +436,7 @@ describe('scroll to bottom', () => {
       ],
     })
     await setComposerValue(STREAMING_PROMPT)
-    await $('.submit-btn').click()
+    await submitComposer()
 
     await waitForLastAssistantText('The implementation plan starts')
 

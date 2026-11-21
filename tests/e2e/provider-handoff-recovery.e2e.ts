@@ -9,7 +9,8 @@ import { z } from 'zod'
 import { safeJsonParse, decodeWithSchema } from '../../src/shared/safe-json.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
-import { setComposerValue, submitComposer } from './helpers/composer.ts'
+import { acceptProtectedPrompt, setComposerValue, submitComposer } from './helpers/composer.ts'
+import { INTERRUPTED_TURN_CONTINUATION } from '../../src/shared/turn-recovery.ts'
 import { agentIsIdle } from './helpers.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
@@ -89,6 +90,29 @@ async function send(text: string): Promise<void> {
   await submitComposer()
 }
 
+// Review only the prompt dispatched by this explicit human action.
+async function reviewHumanPrompt(action: () => Promise<void>, expectedText: string): Promise<void> {
+  const mainHandle = await browser.getWindowHandle()
+  const handlesBefore = await browser.getWindowHandles()
+  const threadId = await $('.chat-row.selected').getAttribute('data-thread-id')
+  if (!threadId) throw new Error('The human prompt must target the selected thread')
+  const threadTitle = await $('.chat-row.selected .chat-title').getText()
+  await action()
+  await browser.waitUntil(
+    async () =>
+      (await browser.getWindowHandles()).some((handle) => !handlesBefore.includes(handle)),
+    { timeout: 15_000, timeoutMsg: 'Expected this human action to open protected review' },
+  )
+  const reviewHandle = (await browser.getWindowHandles()).find(
+    (handle) => !handlesBefore.includes(handle),
+  )
+  if (!reviewHandle) throw new Error('The human prompt review window is missing')
+  await browser.switchToWindow(reviewHandle)
+  await expect($('#protected-prompt-text')).toHaveValue(expectedText)
+  await expect($('#protected-prompt-thread')).toHaveText(`${threadTitle} — ${threadId}`)
+  await acceptProtectedPrompt(mainHandle, handlesBefore)
+}
+
 describe('recover into a reused ACP session after another provider', function () {
   this.timeout(120_000)
   before(async () => {
@@ -101,7 +125,7 @@ rl.on('line',line=>{const q=JSON.parse(line);if(q.id===undefined)return;let r={}
 if(q.method==='initialize')r={protocolVersion:1,agentCapabilities:{},authMethods:[],agentInfo:{name:'History fixture',version:'1'}};
 if(q.method==='session/new'){fs.appendFileSync('wire.jsonl',JSON.stringify({kind:'new'})+'\\n');r={sessionId:'history-session',configOptions:[{id:'model',name:'Model',category:'model',type:'select',currentValue:'ready',options:[{value:'ready',name:'Ready'},{value:'holding',name:'Holding'}]}]}};
 if(q.method==='session/set_config_option'){fs.writeFileSync('config-held','');const timer=setInterval(()=>{if(!fs.existsSync('release-config'))return;clearInterval(timer);send({jsonrpc:'2.0',id:q.id,result:{configOptions:[{id:'model',name:'Model',category:'model',type:'select',currentValue:q.params.value,options:[{value:'ready',name:'Ready'},{value:'holding',name:'Holding'}]}]}})},20);return};
-if(q.method==='session/prompt'){const text=q.params.prompt.filter(b=>b.type==='text').map(b=>b.text).join('');fs.appendFileSync('wire.jsonl',JSON.stringify({kind:'prompt',text})+'\\n');const n=fs.readFileSync('wire.jsonl','utf8').split('\\n').filter(x=>x.includes('"kind":"prompt"')).length;const reply=n===1?'Completed the old goal.':text.includes('${NEW_GOAL}')?'Recovered the current provider request.':'STALE: still answering the old goal.';send({jsonrpc:'2.0',method:'session/update',params:{sessionId:'history-session',update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:reply}}}});r={stopReason:'end_turn'}};
+if(q.method==='session/prompt'){const text=q.params.prompt.filter(b=>b.type==='text').map(b=>b.text).join('');fs.appendFileSync('wire.jsonl',JSON.stringify({kind:'prompt',text})+'\\n');const reply=text.includes('${NEW_GOAL}')?'Recovered the current provider request.':text.includes('OLD_AGENT_GOAL:')?'Completed the old goal.':'STALE: still answering the old goal.';send({jsonrpc:'2.0',method:'session/update',params:{sessionId:'history-session',update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:reply}}}});r={stopReason:'end_turn'}};
 send({jsonrpc:'2.0',id:q.id,result:r})});process.stdin.on('end',()=>process.exit(0));\n`,
     )
     execFileSync('git', ['init', '-b', 'main'], { cwd: root })
@@ -190,7 +214,9 @@ send({jsonrpc:'2.0',id:q.id,result:r})});process.stdin.on('end',()=>process.exit
       'completed before provider failure\n',
     )
     await chooseModel('acp:history-fixture')
-    await $('[data-turn-recovery-card]').$('button*=Retry this turn').click()
+    await reviewHumanPrompt(async () => {
+      await $('[data-turn-recovery-card]').$('button*=Retry this turn').click()
+    }, INTERRUPTED_TURN_CONTINUATION)
     await settle()
     await expect($('.messages-list')).toHaveText('Recovered the current provider request.', {
       containing: true,
@@ -229,29 +255,59 @@ send({jsonrpc:'2.0',id:q.id,result:r})});process.stdin.on('end',()=>process.exit
   it('keeps unseen provider context when Stop cancels before prompt dispatch', async () => {
     const goal = 'SECOND_PROVIDER_REQUEST_91c2'
     const promptRecords = (): string[] =>
-      readFileSync(join(root, 'wire.jsonl'), 'utf8')
-        .trim()
-        .split('\n')
-        .filter((line) => line.includes('"kind":"prompt"'))
+      existsSync(join(root, 'wire.jsonl'))
+        ? readFileSync(join(root, 'wire.jsonl'), 'utf8')
+            .trim()
+            .split('\n')
+            .filter((line) => line.includes('"kind":"prompt"'))
+        : []
     await chooseModel(`lmstudio:${MODEL}`)
     await send(
       `${NEW_GOAL}: ${goal}. Continue using the existing checkpoint and finish this newer request.`,
     )
     await $('[data-turn-recovery-card]').waitForDisplayed({ timeout: 30_000 })
     await chooseModel('acp:history-fixture#holding')
-    await $('[data-turn-recovery-card]').$('button*=Retry this turn').click()
+    const promptsBeforeRetry = promptRecords()
+    await reviewHumanPrompt(async () => {
+      await $('[data-turn-recovery-card]').$('button*=Retry this turn').click()
+    }, INTERRUPTED_TURN_CONTINUATION)
     await browser.waitUntil(async () => existsSync(join(root, 'config-held')), { timeout: 15_000 })
     await $('.stop-btn').click()
     writeFileSync(join(root, 'release-config'), '')
     await settle()
-    assert.equal(promptRecords().length, 2, 'Stop during configuration must not dispatch a prompt')
+    assert.deepEqual(
+      promptRecords(),
+      promptsBeforeRetry,
+      'Stop during configuration must not dispatch a prompt',
+    )
     await send('Continue the interrupted provider request from the existing checkpoint.')
     await settle()
     const prompts = promptRecords()
-    assert.equal(prompts.length, 3)
+    assert.equal(prompts.length, promptsBeforeRetry.length + 1)
+    assert.deepEqual(prompts.slice(0, -1), promptsBeforeRetry)
     assert.ok(
       prompts.at(-1)?.includes(goal),
       'the stopped turn must not consume unseen provider history',
+    )
+    const resumed = safeJsonParse(
+      prompts.at(-1) ?? '',
+      decodeWithSchema(z.object({ kind: z.literal('prompt'), text: z.string() })),
+    )
+    if (!resumed) throw new Error('Missing resumed ACP prompt record')
+    const oldGoalAt = resumed.text.indexOf('OLD_AGENT_GOAL:')
+    const newGoalAt = resumed.text.indexOf(goal)
+    console.info(
+      'E2E_PROVIDER_HANDOFF_CONTEXT',
+      JSON.stringify({
+        priorPromptCount: promptsBeforeRetry.length,
+        resumedPromptCount: prompts.length,
+        sessionStarts: readFileSync(join(root, 'wire.jsonl'), 'utf8')
+          .split('\n')
+          .filter((line) => line.includes('"kind":"new"')).length,
+        oldGoalContext:
+          oldGoalAt < 0 ? null : resumed.text.slice(Math.max(0, oldGoalAt - 80), oldGoalAt + 100),
+        currentGoalContext: resumed.text.slice(Math.max(0, newGoalAt - 80), newGoalAt + 100),
+      }),
     )
     await browser.waitUntil(
       async () =>

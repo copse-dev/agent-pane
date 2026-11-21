@@ -1,13 +1,20 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { AgentRunPayload } from '@shared/types/skills.ts'
-import type { Message, QueuedUserMessage, Thread, UserContent } from '@shared/types'
+import type {
+  Message,
+  ProtectedHumanTurnDisplay,
+  QueuedUserMessage,
+  Thread,
+  UserContent,
+} from '@shared/types'
 import type { QueuedMessageOrigin } from '@shared/types/thread.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import {
   addMessage,
   clearContextSnapshot,
   getThreadById,
+  getThreadProjectId,
   patchThreadAnywhere,
   setMessageContent,
   setQueuePaused,
@@ -28,7 +35,7 @@ import { mark as perfMark } from '../perf.ts'
 import { isAgentTurnBusyError } from '@shared/agent-turn-busy.ts'
 import { isSubthreadPromptHeldError } from '@shared/thread-prompt.ts'
 import { markSendNowAbort } from './send-now-aborts.ts'
-import { afterThreadWrites } from './persistence.ts'
+import { afterThreadWrites, flushPendingThreadPersistence } from './persistence.ts'
 
 /**
  * A **held** queued message (decisions 5 & 16): `autoDispatch: false` means the
@@ -234,6 +241,27 @@ export function hasPendingDispatch(store: AppStore, threadId: string): boolean {
   return (pendingDispatches.get(store)?.get(threadId) ?? 0) > 0
 }
 
+/** Snapshot an optimistic bubble for display-only reconciliation in main. */
+function protectedHumanTurnDisplay(
+  store: AppStore,
+  threadId: string,
+  messageId: string,
+): ProtectedHumanTurnDisplay | undefined {
+  const message = getThreadById(store, threadId)?.messages.find(
+    (candidate) => candidate.id === messageId && candidate.role === 'user',
+  )
+  if (!message) return undefined
+  return {
+    messageId,
+    snapshot: {
+      content: message.content,
+      ...(message.attachments !== undefined
+        ? { attachments: message.attachments.map((attachment) => ({ ...attachment })) }
+        : {}),
+    },
+  }
+}
+
 /**
  * Start a turn for `threadId`. Pass `queued` when the payload belongs to a user
  * message already in the transcript: if the main process turns the run away
@@ -249,6 +277,23 @@ export function dispatchAgentRun(
   threadId: string,
   payload: AgentRunPayload,
   queued?: QueuedUserMessage,
+): void {
+  dispatchAgentRunWithCharge(store, api, threadId, payload, queued)
+}
+
+/** An ephemeral receipt minted only by the drain that actually charged a prompt. */
+type QueuedBudgetCharge = { chargedCount: number } & (
+  | { kind: 'continuation' | 'legacy-cross-thread'; epoch: Thread['currentEpoch'] }
+  | { kind: 'cross-thread'; scope: string }
+)
+
+function dispatchAgentRunWithCharge(
+  store: AppStore,
+  api: AgentRunApi,
+  threadId: string,
+  payload: AgentRunPayload,
+  queued?: QueuedUserMessage,
+  charge?: QueuedBudgetCharge,
 ): void {
   const { activeProjectId, backgroundThreads } = store.getState()
   const projectId =
@@ -267,8 +312,22 @@ export function dispatchAgentRun(
   const runPayload = JSON.stringify(refreshAgentRunPayload(store, threadId, payload, queued?.model))
   const run = afterThreadWrites(projectId, threadId, async () => {
     const parentThreadId = queued ? subthreadParentOf(queued) : undefined
+    const display = queued
+      ? protectedHumanTurnDisplay(store, threadId, queued.messageId)
+      : undefined
     if (!queued || parentThreadId === undefined) {
-      await api.agent.run(projectId, threadId, runPayload)
+      const result = await api.agent.run(
+        projectId,
+        threadId,
+        runPayload,
+        undefined,
+        display,
+        queued?.mobilePromptGrantId,
+      )
+      if (result === 'cancelled') {
+        if (queued) holdCancelledProtectedPrompt(store, threadId, queued, charge)
+        else setThreadStatus(store, threadId, 'idle')
+      }
       return
     }
     // The pre-check holds an already-revoked prompt without a round trip to the
@@ -279,13 +338,25 @@ export function dispatchAgentRun(
       .catch(() => false)
     if (authorized) {
       try {
-        await api.agent.run(projectId, threadId, runPayload, { parentThreadId })
+        const result = await api.agent.run(
+          projectId,
+          threadId,
+          runPayload,
+          {
+            parentThreadId,
+            ...(queued.threadPromptGrantId !== undefined
+              ? { promptGrantId: queued.threadPromptGrantId }
+              : {}),
+          },
+          display,
+        )
+        if (result === 'cancelled') holdCancelledProtectedPrompt(store, threadId, queued, charge)
         return
       } catch (err) {
         if (!isSubthreadPromptHeldError(err)) throw err
       }
     }
-    holdRevokedSubthreadPrompt(store, threadId, queued)
+    holdRevokedSubthreadPrompt(store, threadId, queued, charge)
   })
   if (!queued) {
     void run
@@ -294,7 +365,7 @@ export function dispatchAgentRun(
   void run
     .catch((err: unknown) => {
       if (!isAgentTurnBusyError(err)) throw err
-      requeueBusyMessage(store, api, threadId, queued)
+      requeueBusyMessage(store, api, threadId, queued, charge)
     })
     .finally(() => {
       finishPendingDispatch(store, threadId)
@@ -316,6 +387,31 @@ function subthreadParentOf(item: QueuedUserMessage): string | undefined {
     : undefined
 }
 
+/** Return only the still-owned charge, never a manual dispatch's unrelated spend. */
+function refundedQueuedBudget(
+  thread: Thread,
+  charge: QueuedBudgetCharge | undefined,
+): Pick<Thread, 'continuationUsed' | 'crossThreadPromptsUsed' | 'crossThreadPromptCounts'> {
+  if (!charge || charge.chargedCount <= 0) return {}
+  if (charge.kind === 'cross-thread') {
+    if (thread.crossThreadPromptCounts?.[charge.scope] !== charge.chargedCount) return {}
+    return {
+      crossThreadPromptCounts: {
+        ...thread.crossThreadPromptCounts,
+        [charge.scope]: charge.chargedCount - 1,
+      },
+    }
+  }
+  if (thread.currentEpoch !== charge.epoch) return {}
+  if (charge.kind === 'legacy-cross-thread')
+    return thread.crossThreadPromptsUsed === charge.chargedCount
+      ? { crossThreadPromptsUsed: charge.chargedCount - 1 }
+      : {}
+  return thread.continuationUsed === charge.chargedCount
+    ? { continuationUsed: charge.chargedCount - 1 }
+    : {}
+}
+
 /**
  * Put a delegated prompt whose parent lost orchestration back at the queue
  * front, held: it never auto-drains, and the budget unit its drain charged is
@@ -325,11 +421,12 @@ function holdRevokedSubthreadPrompt(
   store: AppStore,
   threadId: string,
   item: QueuedUserMessage,
+  charge: QueuedBudgetCharge | undefined,
 ): void {
   patchThreadAnywhere(store, threadId, (thread) => ({
     ...thread,
     status: 'idle',
-    continuationUsed: Math.max(0, (thread.continuationUsed ?? 0) - 1),
+    ...refundedQueuedBudget(thread, charge),
     pendingMessages: [{ ...item, autoDispatch: false }, ...(thread.pendingMessages ?? [])],
     updatedAt: Date.now(),
   }))
@@ -343,32 +440,13 @@ function requeueBusyMessage(
   api: AgentRunApi,
   threadId: string,
   item: QueuedUserMessage,
+  charge: QueuedBudgetCharge | undefined,
 ): void {
   patchThreadAnywhere(store, threadId, (t) => {
     const pending = t.pendingMessages ?? []
     if (pending.some((entry) => entry.messageId === item.messageId)) return t
     const requeued = { ...t, pendingMessages: [item, ...pending], updatedAt: Date.now() }
-    // The drain that sent a machine continuation charged the turn tree's budget
-    // for a turn that never ran; hand the unit back so the retry is not charged twice.
-    if (isCrossThreadPrompt(item)) {
-      if (item.origin?.kind === 'machine' && item.origin.crossThreadScope !== undefined) {
-        const scope = item.origin.crossThreadScope
-        return {
-          ...requeued,
-          crossThreadPromptCounts: {
-            ...t.crossThreadPromptCounts,
-            [scope]: Math.max(0, (t.crossThreadPromptCounts?.[scope] ?? 0) - 1),
-          },
-        }
-      }
-      return {
-        ...requeued,
-        crossThreadPromptsUsed: Math.max(0, (t.crossThreadPromptsUsed ?? 0) - 1),
-      }
-    }
-    return isMachineContinuation(item) && (t.continuationUsed ?? 0) > 0
-      ? { ...requeued, continuationUsed: (t.continuationUsed ?? 0) - 1 }
-      : requeued
+    return { ...requeued, ...refundedQueuedBudget(t, charge) }
   })
   store.emit('message_queued', threadId, item.messageId)
   store.emit('threads_changed')
@@ -376,6 +454,47 @@ function requeueBusyMessage(
   // `done` drains the queue. If that `done` got here first the thread is already
   // idle and nothing else will drain it.
   if (getThreadById(store, threadId)?.status === 'idle') drainMessageQueue(store, api, threadId)
+}
+
+/** A cancelled protected review returns the optimistic bubble as an explicit hold. */
+function holdCancelledProtectedPrompt(
+  store: AppStore,
+  threadId: string,
+  item: QueuedUserMessage,
+  charge: QueuedBudgetCharge | undefined,
+): void {
+  patchThreadAnywhere(store, threadId, (thread) => {
+    const pending = thread.pendingMessages ?? []
+    // A cancelled mobile claim is expired, replayed or mismatched. Retain the
+    // prompt, but discard that authority so a later desktop send must open the
+    // ordinary protected review window.
+    const {
+      mobilePromptGrantId: _mobilePromptGrantId,
+      threadPromptGrantId: _threadPromptGrantId,
+      ...heldItem
+    } = item
+    const held = pending.some((entry) => entry.messageId === item.messageId)
+      ? pending.map((entry) => {
+          if (entry.messageId !== item.messageId) return entry
+          const {
+            mobilePromptGrantId: _mobileGrant,
+            threadPromptGrantId: _threadGrant,
+            ...rest
+          } = entry
+          return { ...rest, autoDispatch: false as const }
+        })
+      : [{ ...heldItem, autoDispatch: false as const }, ...pending]
+    return {
+      ...thread,
+      ...refundedQueuedBudget(thread, charge),
+      status: 'idle',
+      pendingMessages: held,
+      updatedAt: Date.now(),
+    }
+  })
+  syncAgentActivity(store, threadId, false)
+  store.emit('message_queued', threadId, item.messageId)
+  store.emit('threads_changed')
 }
 
 export function enqueueUserMessage(
@@ -527,7 +646,23 @@ export function drainMessageQueue(store: AppStore, api: AgentRunApi, threadId: s
     addMessage(store, threadId, 'error', crossThreadBudgetHeldNote())
 
   store.emit('threads_changed')
-  if (next) dispatchAgentRun(store, api, threadId, next.payload, next)
+  if (next) {
+    let charge: QueuedBudgetCharge | undefined
+    if (isCrossThreadPrompt(next)) {
+      const scope = next.origin?.kind === 'machine' ? next.origin.crossThreadScope : undefined
+      charge =
+        scope === undefined
+          ? {
+              kind: 'legacy-cross-thread',
+              chargedCount: crossThreadUsed,
+              epoch: thread.currentEpoch,
+            }
+          : { kind: 'cross-thread', chargedCount: crossThreadCounts[scope] ?? 0, scope }
+    } else if (isMachineContinuation(next)) {
+      charge = { kind: 'continuation', chargedCount: used, epoch: thread.currentEpoch }
+    }
+    dispatchAgentRunWithCharge(store, api, threadId, next.payload, next, charge)
+  }
 }
 
 export function movePendingUserMessagesToEnd(
@@ -647,17 +782,23 @@ export function updateQueuedMessageText(
       ? t
       : {
           ...t,
-          pendingMessages: (t.pendingMessages ?? []).map((p) =>
-            p.messageId !== messageId
-              ? p
-              : {
-                  ...p,
-                  payload: { ...p.payload, content: withPayloadText(p.payload.content, text) },
-                  // Editing a hook-originated message keeps `kind: 'hook'` but
-                  // flips `editedByUser` so the spine stays honest (decision 10).
-                  ...(p.origin?.kind === 'hook' ? { editedByUser: true } : {}),
-                },
-          ),
+          pendingMessages: (t.pendingMessages ?? []).map((p) => {
+            if (p.messageId !== messageId) return p
+            // Editing requires fresh desktop review. An authenticated phone grant
+            // authorizes only the exact text that crossed the HTTP boundary.
+            const {
+              mobilePromptGrantId: _mobilePromptGrantId,
+              threadPromptGrantId: _threadPromptGrantId,
+              ...editable
+            } = p
+            return {
+              ...editable,
+              payload: { ...p.payload, content: withPayloadText(p.payload.content, text) },
+              // Editing a hook-originated message keeps `kind: 'hook'` but
+              // flips `editedByUser` so the spine stays honest (decision 10).
+              ...(p.origin?.kind === 'hook' ? { editedByUser: true } : {}),
+            }
+          }),
           updatedAt: Date.now(),
         },
   )
@@ -680,6 +821,66 @@ export function updateQueuedMessageText(
  * editing pause, then abort the active run. The trailing `done` chunk triggers
  * the normal FIFO drain, which now dispatches this message first.
  */
+/** Apply a deletion result only to the project that started it. */
+function patchQueuedMessageOwner(
+  store: AppStore,
+  projectId: string,
+  threadId: string,
+  patch: (thread: Thread) => Thread,
+): void {
+  const state = store.getState()
+  if (state.activeProjectId === projectId) {
+    store.setState({
+      threads: state.threads.map((thread) => (thread.id === threadId ? patch(thread) : thread)),
+    })
+  } else {
+    store.setState({
+      backgroundThreads: state.backgroundThreads.map((entry) =>
+        entry.projectId === projectId && entry.thread.id === threadId
+          ? { ...entry, thread: patch(entry.thread) }
+          : entry,
+      ),
+    })
+  }
+  store.emit('threads_changed')
+}
+
+/** Hold against automatic draining, then await the durable deletion before hiding it. */
+export async function deleteQueuedMessage(
+  store: AppStore,
+  api: ApiClient,
+  threadId: string,
+  messageId: string,
+): Promise<void> {
+  const projectId = getThreadProjectId(store, threadId)
+  const thread = getThreadById(store, threadId)
+  if (!projectId || !thread?.pendingMessages?.some((item) => item.messageId === messageId)) return
+  patchQueuedMessageOwner(store, projectId, threadId, (current) => ({
+    ...current,
+    pendingMessages: (current.pendingMessages ?? []).map((item) =>
+      item.messageId === messageId ? { ...item, autoDispatch: false } : item,
+    ),
+  }))
+  await flushPendingThreadPersistence()
+  await afterThreadWrites(projectId, threadId, () =>
+    api.threads.deleteQueuedMessage(projectId, threadId, messageId),
+  )
+  if (store.getState().activeProjectId === projectId) {
+    removeQueuedMessage(store, threadId, messageId)
+  } else {
+    patchQueuedMessageOwner(store, projectId, threadId, (current) => {
+      const { pendingMessages: _removed, ...rest } = current
+      const remaining =
+        current.pendingMessages?.filter((item) => item.messageId !== messageId) ?? []
+      return {
+        ...rest,
+        messages: current.messages.filter((message) => message.id !== messageId),
+        ...(remaining.length ? { pendingMessages: remaining } : {}),
+      }
+    })
+  }
+}
+
 /** Drop a queued follow-up from the FIFO list and remove its user bubble. */
 export function removeQueuedMessage(store: AppStore, threadId: string, messageId: string): void {
   const thread = store.getState().threads.find((t) => t.id === threadId)

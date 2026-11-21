@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
@@ -50,12 +50,12 @@ describe('whitespace-only reasoning', () => {
     })
 
     await setComposerValue('Summarize the build status in one sentence.')
-    await $('.submit-btn').click()
+    await submitComposer()
     await expectAssistantReply('The build is ready.')
     await waitForAgentIdle()
 
     await setComposerValue('Explain why the visible reasoning trail still works.')
-    await $('.submit-btn').click()
+    await submitComposer()
     await expectAssistantReply('Meaningful reasoning remains available.')
     await waitForAgentIdle()
     await scenario.assertComplete()

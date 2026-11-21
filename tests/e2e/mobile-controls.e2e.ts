@@ -9,14 +9,22 @@ import { z } from 'zod'
 import { $, browser, expect } from '@wdio/globals'
 import { decodeWithSchema, safeJsonParse } from '../../packages/std/src/safe-json.ts'
 import { parseDecisionLog } from '../../src/shared/threads/decision-log.ts'
+import type { Thread } from '@shared/types'
 import { copseDataRoot } from '../../src/main/services/storage/copse-paths.ts'
-import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
+import {
+  resetUserData,
+  seedEmptyProject,
+  seedStableWorkspace,
+  writeSeedConfig,
+} from './helpers/seed-config.ts'
+import { readFixtureJsonObject } from './helpers/fixture-json.ts'
 import { installMockScenario, expectAssistantReply } from './helpers/mock-scenario.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { waitForTranscriptScrollSettled } from './helpers/scroll-to-bottom.ts'
 
 const projectId = 'e2e-mobile-control'
+const otherProjectId = 'e2e-mobile-control-other'
 const token = randomBytes(32).toString('hex')
 const readToken = randomBytes(32).toString('hex')
 const addresses = Object.values(networkInterfaces())
@@ -64,6 +72,18 @@ const responseSchema = z.object({
   error: z.string().optional(),
   runId: z.string().nullable().optional(),
   decisions: z.array(z.object({ id: z.string(), kind: z.string() })).optional(),
+  plan: z
+    .object({
+      planId: z.string(),
+      title: z.string(),
+      status: z.enum(['draft', 'approved', 'superseded']),
+      revision: z.number().int().positive(),
+      contentHash: z.string(),
+      authorityHash: z.string(),
+      body: z.string(),
+    })
+    .nullable()
+    .optional(),
 })
 
 function request(path: string, body?: object, bearer = token): z.infer<typeof responseSchema> {
@@ -95,6 +115,15 @@ function action(sessionId: string, payload: object): Record<string, unknown> {
   return { sessionId, issuedAt: Date.now(), requestId: randomUUID(), projectId, ...payload }
 }
 
+function persistedProviderHistory(threadId: string): string {
+  const stored = readFixtureJsonObject(
+    join(copseDataRoot(), 'workspace', projectId, threadId, 'agent-history.json'),
+  )
+  const messages = stored['messages']
+  assert.ok(Array.isArray(messages), 'provider history persisted a message array')
+  return JSON.stringify(messages)
+}
+
 /** Whether the desktop transcript is scrolled to its live end. */
 function transcriptAtBottom(): Promise<boolean> {
   return browser.execute(() => {
@@ -113,10 +142,24 @@ describe('Mobile Companion control over verified local HTTPS', function () {
     )
     origin = `https://${address}:42773`
     resetUserData()
-    seedEmptyProject(seedStableWorkspace(), projectId, {
+    const workspaceRoot = seedStableWorkspace()
+    seedEmptyProject(workspaceRoot, projectId, {
       model: 'claude-sonnet-4-6',
       subagentsEnabled: false,
       autoRunSandboxCommands: false,
+    })
+    const otherRoot = join(workspaceRoot, 'other-mobile-project')
+    mkdirSync(otherRoot, { recursive: true })
+    const seeded = readFixtureJsonObject(join(copseDataRoot(), 'config.json'))
+    writeSeedConfig({
+      ...seeded,
+      projects: [
+        { id: otherProjectId, path: otherRoot, name: 'other workspace' },
+        { id: projectId, path: workspaceRoot, name: 'workspace' },
+      ],
+      activeProjectId: otherProjectId,
+      [`threads:${otherProjectId}`]: [],
+      [`threads:${projectId}`]: [],
     })
     // Fixture at the persisted-device boundary: no test-only product authority flag.
     mkdirSync(root, { recursive: true, mode: 0o700 })
@@ -145,6 +188,15 @@ describe('Mobile Companion control over verified local HTTPS', function () {
     )
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    assert.equal(
+      await browser.execute(() =>
+        document
+          .querySelector('.project-row.active')
+          ?.closest('.project-entry')
+          ?.getAttribute('data-project-id'),
+      ),
+      otherProjectId,
+    )
   })
   after(() => {
     resetUserData()
@@ -153,6 +205,7 @@ describe('Mobile Companion control over verified local HTTPS', function () {
   it('starts once, queues a follow-up, answers the desktop prompt, and rejects stale actions', async () => {
     const first = 'Start this chat from my phone and ask which tests to run.'
     const followup = 'Report the final result to my phone.'
+    const deletedFollowup = 'This deleted phone follow-up must never reach inference.'
     const scenario = await installMockScenario(
       {
         title: 'Phone runtime control',
@@ -203,6 +256,16 @@ describe('Mobile Companion control over verified local HTTPS', function () {
     const started = request('/api/action', start)
     assert.equal(started.ok, true, started.error ?? 'Mobile message start failed')
     assert.ok(started.threadId)
+    assert.equal(
+      await browser.execute(() =>
+        document
+          .querySelector('.project-row.active')
+          ?.closest('.project-entry')
+          ?.getAttribute('data-project-id'),
+      ),
+      projectId,
+      'new phone chat switched projects and reused Main reserved identity',
+    )
     const threadId = started.threadId
     assert.deepEqual(
       request('/api/action', start),
@@ -214,6 +277,69 @@ describe('Mobile Companion control over verified local HTTPS', function () {
     const question = waiting.decisions?.find((decision) => decision.kind === 'question')
     assert.ok(question)
     assert.ok(waiting.runId)
+    await browser.execute((text) => {
+      const stop = window.api.mobile.onChat((command) => {
+        if (command.text !== text) return
+        sessionStorage.setItem('e2e-deleted-mobile-grant', command.id)
+        sessionStorage.setItem('e2e-deleted-mobile-message', command.messageId)
+        stop()
+      })
+    }, deletedFollowup)
+    const toDelete = request(
+      '/api/action',
+      action(sessionId, { action: 'message', threadId, text: deletedFollowup }),
+    )
+    assert.equal(toDelete.queued, true, toDelete.error ?? 'Mobile message queue failed')
+    await expect($('.footer-queue')).toHaveText('1 queued')
+    await browser.waitUntil(
+      async () =>
+        browser.execute(
+          async ({ pid, tid, text }) => {
+            const thread = (await window.api.threads.loadProject(pid)).find(
+              (candidate) => candidate.id === tid,
+            )
+            return thread?.pendingMessages?.some((item) => item.payload.content === text) ?? false
+          },
+          { pid: projectId, tid: threadId, text: deletedFollowup },
+        ),
+      { timeout: 10_000 },
+    )
+    const deletedAdmission = await browser.execute(
+      async ({ pid, tid, text }) => {
+        const grant = sessionStorage.getItem('e2e-deleted-mobile-grant')
+        const messageId = sessionStorage.getItem('e2e-deleted-mobile-message')
+        if (!grant || !messageId) throw new Error('Phone command identities were not captured')
+        const message = (await window.api.threads.loadMessages(pid, tid)).find(
+          (candidate) => candidate.id === messageId && candidate.role === 'user',
+        )
+        if (!message || message.content !== text)
+          throw new Error('Queued phone display was not durably persisted')
+        return {
+          grant,
+          messageId,
+          display: {
+            messageId,
+            snapshot: {
+              content: message.content,
+              ...(message.attachments !== undefined
+                ? { attachments: message.attachments.map((attachment) => ({ ...attachment })) }
+                : {}),
+            },
+          },
+        }
+      },
+      { pid: projectId, tid: threadId, text: deletedFollowup },
+    )
+    await browser.execute(() => {
+      const button = document.querySelector<HTMLButtonElement>('.queued-delete')
+      if (!button) throw new Error('Queued phone message has no delete control')
+      button.click()
+    })
+    await browser.waitUntil(
+      async () => (await $('.conversation-queued').getProperty('hidden')) === true,
+      { timeout: 5_000 },
+    )
+
     const queued = request(
       '/api/action',
       action(sessionId, { action: 'message', threadId, text: followup }),
@@ -252,6 +378,266 @@ describe('Mobile Companion control over verified local HTTPS', function () {
     await waitForAgentIdle(60_000)
     await expectAssistantReply('Your phone started this chat and queued this follow-up.')
     await scenario.assertComplete()
+    // The follow-up was admitted while the first run was still waiting. Its
+    // provider request and final checkpoint must retain the answer/tool result
+    // and assistant completion appended after admission, not replace the
+    // sidecar with the earlier frozen prefix.
+    const queuedHistory = persistedProviderHistory(threadId)
+    assert.match(queuedHistory, /Focused tests/)
+    assert.match(queuedHistory, /The focused tests passed\./)
+    assert.match(queuedHistory, /Your phone started this chat and queued this follow-up\./)
+    // Replay the original otherwise-valid display only after every legitimate
+    // turn is idle. This isolates durable retirement/revocation from the
+    // dispatcher's busy guard and from display-schema rejection.
+    const replay = await browser.execute(
+      async ({ pid, tid, text, admission }) => {
+        const result = await window.api.agent.run(
+          pid,
+          tid,
+          JSON.stringify({ content: text }),
+          undefined,
+          admission.display,
+          admission.grant,
+        )
+        const messages = await window.api.threads.loadMessages(pid, tid)
+        const thread = (await window.api.threads.loadProject(pid)).find(
+          (candidate) => candidate.id === tid,
+        )
+        return {
+          result,
+          hasMessage: messages.some(
+            (message) => message.id === admission.messageId || message.content === text,
+          ),
+          hasPending:
+            thread?.pendingMessages?.some(
+              (item) => item.messageId === admission.messageId || item.payload.content === text,
+            ) ?? false,
+        }
+      },
+      { pid: projectId, tid: threadId, text: deletedFollowup, admission: deletedAdmission },
+    )
+    assert.deepEqual(replay, { result: 'cancelled', hasMessage: false, hasPending: false })
+
+    // Simulate renderer XSS racing a new phone chat: intercept Main's reserved
+    // UUID and try the ordinary, canonical fork IPC before the phone grant is
+    // consumed. Main must keep the new identity reserved through protected
+    // dispatch, so the fork is rejected and the exact phone prompt still runs.
+    await browser.execute(
+      async ({ pid, sourceThreadId }) => {
+        const source = (await window.api.threads.loadProject(pid)).find(
+          (thread) => thread.id === sourceThreadId,
+        )
+        if (!source) throw new Error('Fork attack source thread is unavailable')
+        source.messages = await window.api.threads.loadMessages(pid, sourceThreadId)
+        let unsubscribe = (): void => {}
+        unsubscribe = window.api.mobile.onChat((command) => {
+          if (!command.createThread) return
+          unsubscribe()
+          const messages = source.messages.map((message) => {
+            const copied = structuredClone(message)
+            copied.id = crypto.randomUUID()
+            delete copied.hookCards
+            delete copied.review
+            delete copied.reviewReport
+            return copied
+          })
+          const now = Date.now()
+          const target: Thread = {
+            id: command.threadId,
+            title: `${source.title} (fork)`,
+            status: 'idle',
+            messages,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            ...(source.model !== undefined ? { model: source.model } : {}),
+            ...(source.todos !== undefined
+              ? { todos: source.todos.map((todo) => ({ ...todo })) }
+              : {}),
+            ...(source.workingBrief !== undefined ? { workingBrief: source.workingBrief } : {}),
+            ...(source.worktree === undefined && source.gitBranch !== undefined
+              ? { gitBranch: source.gitBranch }
+              : {}),
+            createdAt: now,
+            updatedAt: now,
+          }
+          void window.api.threads
+            .fork(pid, sourceThreadId, target)
+            .catch((error: unknown) =>
+              window.__copseE2e?.pushErrorToast(`Fork attack failed: ${String(error)}`),
+            )
+        })
+      },
+      { pid: projectId, sourceThreadId: threadId },
+    )
+    const forgedPrompt = 'Run this phone prompt with the renderer-selected fork context.'
+    const attackScenario = await installMockScenario(
+      {
+        title: 'Reserved phone target',
+        turns: [
+          {
+            user: forgedPrompt,
+            responses: [{ text: 'The phone target ignored the renderer fork.' }],
+          },
+        ],
+      },
+      null,
+    )
+    const attacked = request(
+      '/api/action',
+      action(sessionId, { action: 'message', threadId: null, text: forgedPrompt }),
+    )
+    assert.equal(attacked.ok, true, attacked.error ?? 'Fork-race phone message was not admitted')
+    assert.ok(attacked.threadId)
+    await waitForAgentIdle(30_000)
+    await expectAssistantReply('The phone target ignored the renderer fork.')
+    await attackScenario.assertComplete()
+    await browser.waitUntil(
+      async () =>
+        (await browser.execute(() => window.__copseE2e?.getErrorToasts() ?? [])).some((message) =>
+          message.startsWith('Fork attack failed:'),
+        ),
+      { timeout: 10_000, timeoutMsg: 'Renderer fork attempt was not rejected' },
+    )
+    const attackedHistory = persistedProviderHistory(attacked.threadId)
+    assert.match(attackedHistory, /renderer-selected fork context/)
+    assert.match(attackedHistory, /phone target ignored the renderer fork/i)
+    assert.doesNotMatch(attackedHistory, /Focused tests/)
+
+    const initialPlanBody =
+      '# Goal\n\nKeep planned phone sends working safely.\n\n# Constraints\n\nUse only phone-reviewed plan authority.\n\n# Scope\n\nMobile prompt admission.\n\n# Definition of done\n\n- The exact reviewed plan reaches inference.'
+    const revisedPlanBody =
+      '# Goal\n\nUse only the exact plan revision shown on the phone.\n\n# Constraints\n\nReject stale phone reviews.\n\n# Scope\n\nMobile prompt admission.\n\n# Definition of done\n\n- A stale revision cannot start inference.'
+    const initialPlan = await browser.execute(
+      ({ pid, tid, body }) =>
+        window.api.plans.change(pid, tid, {
+          action: 'create',
+          title: 'Phone-reviewed plan',
+          body,
+        }),
+      { pid: projectId, tid: threadId, body: initialPlanBody },
+    )
+    assert.ok(initialPlan)
+    const phoneView = request(`/api/thread/${projectId}/${threadId}`)
+    assert.equal(phoneView.plan?.body, initialPlanBody)
+    await browser.execute(
+      ({ pid, tid, planId, revision }) =>
+        window.api.plans.change(pid, tid, {
+          action: 'comment',
+          planId,
+          revision,
+          body: 'Keep this additional planning constraint.',
+          anchor: { start: 0, end: 6 },
+        }),
+      {
+        pid: projectId,
+        tid: threadId,
+        planId: initialPlan.meta.planId,
+        revision: initialPlan.meta.currentRevision,
+      },
+    )
+    assert.ok(phoneView.plan)
+    assert.match(
+      request(
+        '/api/action',
+        action(sessionId, {
+          action: 'message',
+          threadId,
+          text: 'Do not admit a plan comment I have not reviewed.',
+          planReview: {
+            planId: phoneView.plan.planId,
+            revision: phoneView.plan.revision,
+            contentHash: phoneView.plan.contentHash,
+            authorityHash: phoneView.plan.authorityHash,
+          },
+        }),
+      ).error ?? '',
+      /plan changed/i,
+    )
+    const commentedView = request(`/api/thread/${projectId}/${threadId}`).plan
+    assert.ok(commentedView)
+    assert.equal(commentedView.revision, phoneView.plan.revision)
+    assert.equal(commentedView.contentHash, phoneView.plan.contentHash)
+    assert.notEqual(commentedView.authorityHash, phoneView.plan.authorityHash)
+    const revisedPlan = await browser.execute(
+      ({ pid, tid, planId, revision, body }) =>
+        window.api.plans.change(pid, tid, {
+          action: 'revise',
+          planId,
+          revision,
+          title: 'Phone-reviewed plan',
+          body,
+        }),
+      {
+        pid: projectId,
+        tid: threadId,
+        planId: initialPlan.meta.planId,
+        revision: initialPlan.meta.currentRevision,
+        body: revisedPlanBody,
+      },
+    )
+    assert.ok(revisedPlan)
+    const plannedPrompt = 'Continue this planned thread from my phone.'
+    assert.match(
+      request(
+        '/api/action',
+        action(sessionId, {
+          action: 'message',
+          threadId,
+          text: plannedPrompt,
+          planReview: {
+            planId: phoneView.plan.planId,
+            revision: phoneView.plan.revision,
+            contentHash: phoneView.plan.contentHash,
+            authorityHash: phoneView.plan.authorityHash,
+          },
+        }),
+      ).error ?? '',
+      /plan changed/i,
+    )
+    const reviewed = request(`/api/thread/${projectId}/${threadId}`).plan
+    assert.equal(reviewed?.body, revisedPlanBody)
+    assert.ok(reviewed)
+    const plannedScenario = await installMockScenario(
+      {
+        title: 'Phone-reviewed planned thread',
+        turns: [
+          {
+            user: plannedPrompt,
+            responses: [{ text: 'The exact phone-reviewed plan was retained.' }],
+          },
+        ],
+      },
+      threadId,
+    )
+    assert.equal(
+      request(
+        '/api/action',
+        action(sessionId, {
+          action: 'message',
+          threadId,
+          text: plannedPrompt,
+          planReview: {
+            planId: reviewed.planId,
+            revision: reviewed.revision,
+            contentHash: reviewed.contentHash,
+            authorityHash: reviewed.authorityHash,
+          },
+        }),
+      ).ok,
+      true,
+    )
+    await waitForAgentIdle(30_000)
+    await expectAssistantReply('The exact phone-reviewed plan was retained.')
+    await plannedScenario.assertComplete()
+    await browser.execute(
+      ({ pid, tid, planId, revision }) =>
+        window.api.plans.change(pid, tid, { action: 'abandon', planId, revision }),
+      {
+        pid: projectId,
+        tid: threadId,
+        planId: revisedPlan.meta.planId,
+        revision: revisedPlan.meta.currentRevision,
+      },
+    )
     assert.match(
       request('/api/action', action(sessionId, { action: 'stop', threadId, runId: waiting.runId }))
         .error ?? '',
@@ -424,6 +810,11 @@ describe('Mobile Companion control over verified local HTTPS', function () {
       })
       await waitForTranscriptScrollSettled(false)
     })
+    const beforeReload = persistedProviderHistory(threadId)
+    await browser.reloadSession()
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    assert.equal(persistedProviderHistory(threadId), beforeReload)
+    assert.match(beforeReload, /The focused tests passed\./)
   })
 
   it('pairs through shared auth, retains phone credentials on restart, revokes them and cancels pending consent on stop', async () => {

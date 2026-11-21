@@ -11,6 +11,7 @@ import { z } from 'zod'
 import type {
   AutomationFailureCode,
   AutomationProblem,
+  AutomationLiveWorktreeLimit,
   BranchCiAutomation,
   BranchCiAutomationInput,
   AutomationTriggerEvent,
@@ -371,7 +372,15 @@ export interface BranchCiAutomationDependencies {
 
 export interface BranchCiAutomationService {
   list(projectId: string): BranchCiAutomation[]
-  upsert(projectId: string, input: BranchCiAutomationInput): Promise<BranchCiAutomation>
+  previewUpsert(
+    projectId: string,
+    input: BranchCiAutomationInput,
+  ): Promise<{ trigger: EventAutomationTrigger; maxLiveWorktrees: AutomationLiveWorktreeLimit }>
+  upsert(
+    projectId: string,
+    input: BranchCiAutomationInput,
+    reviewed?: { trigger: EventAutomationTrigger; maxLiveWorktrees: AutomationLiveWorktreeLimit },
+  ): Promise<BranchCiAutomation>
   remove(projectId: string, id: string): Promise<void>
   testMatch(
     projectId: string,
@@ -1049,6 +1058,16 @@ export function createBranchCiAutomationService(
   }
 
   const service: BranchCiAutomationService = {
+    async previewUpsert(projectId, input) {
+      const existing = input.id
+        ? definitions().find((item) => item.id === input.id && item.projectId === projectId)
+        : undefined
+      if (input.id && !existing) throw new Error('CI automation not found in this project')
+      return {
+        trigger: await resolveTrigger(projectId, input, existing),
+        maxLiveWorktrees: input.maxLiveWorktrees ?? existing?.maxLiveWorktrees ?? 1,
+      }
+    },
     async canStart(
       projectId: string,
       threadId: string,
@@ -1141,12 +1160,24 @@ export function createBranchCiAutomationService(
       })
       return true
     },
-    async upsert(projectId: string, input: BranchCiAutomationInput): Promise<BranchCiAutomation> {
+    async upsert(
+      projectId: string,
+      input: BranchCiAutomationInput,
+      reviewed?: { trigger: EventAutomationTrigger; maxLiveWorktrees: AutomationLiveWorktreeLimit },
+    ): Promise<BranchCiAutomation> {
       const existing = input.id
         ? definitions().find((item) => item.id === input.id && item.projectId === projectId)
         : undefined
       if (input.id && !existing) throw new Error('CI automation not found in this project')
       const trigger = await resolveTrigger(projectId, input, existing)
+      const maxLiveWorktrees = input.maxLiveWorktrees ?? existing?.maxLiveWorktrees ?? 1
+      if (
+        reviewed &&
+        (JSON.stringify(trigger) !== JSON.stringify(reviewed.trigger) ||
+          maxLiveWorktrees !== reviewed.maxLiveWorktrees)
+      ) {
+        throw new Error('Event automation changed during confirmation; review it again')
+      }
       const now = deps.now()
       const changedSource =
         !existing ||
@@ -1195,7 +1226,7 @@ export function createBranchCiAutomationService(
         prompt: input.prompt.trim(),
         model: input.model.trim(),
         enabled: input.enabled,
-        maxLiveWorktrees: input.maxLiveWorktrees ?? existing?.maxLiveWorktrees ?? 1,
+        maxLiveWorktrees,
         revision: randomUUID(),
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,

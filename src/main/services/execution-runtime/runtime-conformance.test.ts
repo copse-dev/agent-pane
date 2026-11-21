@@ -7,7 +7,7 @@
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { spawn, type ChildProcess } from 'node:child_process'
+import { spawn, ChildProcess } from 'node:child_process'
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -179,6 +179,87 @@ for (const adapter of adapters) {
     })
   })
 }
+
+describe('local runtime child subscriptions', () => {
+  for (const mode of ['host', 'contained', 'hosted'] as const) {
+    it(`subscribes before queued spawn events for a ${mode} launch`, async () => {
+      const events: string[] = []
+      let released = 0
+      const launch = (): ChildProcess => {
+        const child = new ChildProcess()
+        events.push('created')
+        queueMicrotask(() => {
+          events.push('emitted')
+          child.emit('spawn')
+        })
+        return child
+      }
+      const runtime = createLocalExecutionRuntime({
+        ...fakeSandboxWrap,
+        spawn: launch,
+        isSandboxEnabled: () => mode !== 'host',
+        releaseSandboxLease: () => {
+          released += 1
+        },
+      })
+      let observed: ChildProcess | undefined
+      const execution = await runtime.exec(
+        request(tmpdir(), {
+          local: {
+            sandbox: true,
+            onChildCreated: (child) => {
+              observed = child
+              events.push('subscribed')
+              child.once('spawn', () => events.push('observed'))
+            },
+            plan: () => ({
+              config: {},
+              ownsSandboxLease: true,
+              ...(mode === 'hosted' ? { hostedLaunch: launch } : {}),
+            }),
+          },
+        }),
+      )
+      events.push('returned')
+      assert.deepEqual(events, ['created', 'subscribed', 'emitted', 'observed', 'returned'])
+      assert.equal(observed, execution.child)
+      assert.equal(released, 0)
+      execution.child.emit('close', 0, null)
+      execution.child.emit('close', 0, null)
+      assert.equal(released, mode === 'contained' ? 1 : 0)
+    })
+  }
+
+  it('keeps an owned lease until close if a child observer throws', async () => {
+    const child = new ChildProcess()
+    const failure = new Error('controlled observer failure')
+    let released = 0
+    const runtime = createLocalExecutionRuntime({
+      ...fakeSandboxWrap,
+      spawn: () => child,
+      releaseSandboxLease: () => {
+        released += 1
+      },
+    })
+    await assert.rejects(
+      runtime.exec(
+        request(tmpdir(), {
+          local: {
+            sandbox: true,
+            onChildCreated: () => {
+              throw failure
+            },
+            plan: () => ({ config: {}, ownsSandboxLease: true }),
+          },
+        }),
+      ),
+      (error: unknown) => error === failure,
+    )
+    assert.equal(released, 0)
+    child.emit('close', 0, null)
+    assert.equal(released, 1)
+  })
+})
 
 describe('local runtime containment decisions', () => {
   it('refuses rather than falling back outside when the sandbox is required', async () => {

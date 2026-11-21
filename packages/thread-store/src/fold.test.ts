@@ -102,6 +102,7 @@ test('round-trips a user message with transcript attachments', () => {
       role: 'user',
       // The ￼ placeholder marks where the pasted block sits inline.
       content: 'apply this ￼ to the intro',
+      promptRepresentation: 'canonical-provider',
       attachments: [
         { kind: 'paste', label: 'Editor feedback', content: 'Use the shorter heading.' },
         { kind: 'file', label: 'notes.txt', content: 'release checklist\n- test\n' },

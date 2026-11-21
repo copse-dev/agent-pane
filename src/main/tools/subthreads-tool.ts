@@ -219,6 +219,7 @@ export function createSubthreadsTool(
             text,
             requireWorktree: true,
             authorizingAccess: 'orchestrate',
+            unattended: true,
           },
           signal,
         )

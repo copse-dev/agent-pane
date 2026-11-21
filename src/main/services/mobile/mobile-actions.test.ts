@@ -72,6 +72,48 @@ describe('mobile control boundary', () => {
     assert.equal(
       mobileActionSchema.safeParse({
         ...message(randomUUID()),
+        planReview: {
+          planId: 'plan',
+          revision: 2,
+          contentHash: 'a'.repeat(64),
+          authorityHash: 'b'.repeat(64),
+        },
+      }).success,
+      true,
+    )
+    for (const planReview of [
+      {
+        planId: '',
+        revision: 2,
+        contentHash: 'a'.repeat(64),
+        authorityHash: 'b'.repeat(64),
+      },
+      {
+        planId: 'plan',
+        revision: 0,
+        contentHash: 'a'.repeat(64),
+        authorityHash: 'b'.repeat(64),
+      },
+      {
+        planId: 'plan',
+        revision: 2,
+        contentHash: '<script>',
+        authorityHash: 'b'.repeat(64),
+      },
+      {
+        planId: 'plan',
+        revision: 2,
+        contentHash: 'a'.repeat(64),
+        authorityHash: '<script>',
+      },
+    ])
+      assert.equal(
+        mobileActionSchema.safeParse({ ...message(randomUUID()), planReview }).success,
+        false,
+      )
+    assert.equal(
+      mobileActionSchema.safeParse({
+        ...message(randomUUID()),
         image: 'data:text/html;base64,AA==',
       }).success,
       false,

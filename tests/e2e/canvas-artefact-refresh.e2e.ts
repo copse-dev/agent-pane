@@ -10,7 +10,7 @@ import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedCanvasArtefactThreadFixture } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 
 const PROJECT_ID = 'e2e-canvas-artefact-project'
 const ACTIVE_THREAD_ID = 'e2e-canvas-active-thread'
@@ -46,7 +46,7 @@ async function renderVersion(heading: string): Promise<void> {
     { name: CANVAS_TOOL, args: { title: 'Sales Dashboard', html } },
     reply,
   )
-  await $('.submit-btn').click()
+  await submitComposer()
   // A missing legacy submit-button class can look idle before the turn starts.
   // Wait for this version's reply and the real idle state before replacing its
   // scenario with the next render or browser_show request.
@@ -98,7 +98,7 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<voi
     { name, args },
     reply,
   )
-  await $('.submit-btn').click()
+  await submitComposer()
   await expectAssistantReply(reply)
   await waitForAgentIdle(25_000)
   await scenario.assertComplete()
@@ -116,6 +116,15 @@ async function activeTabLabel(): Promise<string | null> {
 const tabLabels = async (): Promise<string[]> =>
   await $$('.browser-tabs-tab-label').map(async (el) => await el.getText())
 
+async function ensureVersion(heading: string): Promise<string[]> {
+  if ((await activeArtefactHeading()) !== heading) await renderVersion(heading)
+  await browser.waitUntil(async () => (await activeArtefactHeading()) === heading, {
+    timeout: 20_000,
+    timeoutMsg: `expected ${heading} to render in the canvas`,
+  })
+  return await tabLabels()
+}
+
 async function selectThread(threadId: string): Promise<void> {
   await $(`.chat-row[data-thread-id="${threadId}"]`).click()
   await browser.waitUntil(
@@ -124,6 +133,52 @@ async function selectThread(threadId: string): Promise<void> {
         () => document.querySelector<HTMLElement>('.chat-row.selected')?.dataset['threadId'],
       )) === threadId,
     { timeout: 10_000, timeoutMsg: `expected thread ${threadId} to be selected` },
+  )
+}
+
+async function renderBackgroundDashboard(): Promise<void> {
+  await selectThread(ACTIVE_THREAD_ID)
+  const reply = 'The background dashboard is ready.'
+  const scenario = await installMockScenario({
+    title: 'Render a background dashboard',
+    turns: [
+      {
+        user: 'Render a background dashboard.',
+        responses: [
+          {
+            waitFor: 'before-canvas',
+            toolCalls: [
+              {
+                name: CANVAS_TOOL,
+                args: {
+                  title: 'Background Dashboard',
+                  html: '<!doctype html><h1 id="version">background</h1>',
+                },
+              },
+            ],
+          },
+          { text: reply, expectToolResults: [{ name: CANVAS_TOOL }] },
+        ],
+      },
+    ],
+  })
+  await setComposerValue('Render a background dashboard.')
+  await submitComposer()
+  await scenario.waitForHold('before-canvas')
+
+  await selectThread(HISTORY_THREAD_ID)
+  await scenario.release('before-canvas')
+  await scenario.waitForComplete()
+  await scenario.assertComplete()
+}
+
+async function hasAssistantReply(text: string): Promise<boolean> {
+  return await browser.execute(
+    (expected) =>
+      [...document.querySelectorAll<HTMLElement>('.msg-assistant .message-text')].some(
+        (reply) => reply.innerText.trim() === expected,
+      ),
+    text,
   )
 }
 
@@ -172,6 +227,7 @@ describe('canvas artefact refresh', () => {
   })
 
   it('offers a download action for the live canvas document', async () => {
+    labelsAfterFirstRender = await ensureVersion('v1')
     await $('.browser-tab-panel.is-active .browser-menu-btn').click()
     await $('.browser-tab-panel.is-active .browser-menu').waitForDisplayed({ timeout: 5_000 })
     const downloadState = await browser.execute(() => {
@@ -186,6 +242,7 @@ describe('canvas artefact refresh', () => {
   })
 
   it('refreshes that tab in place instead of stacking a duplicate', async () => {
+    labelsAfterFirstRender = await ensureVersion('v1')
     await renderVersion('v2')
     await browser.waitUntil(async () => (await activeArtefactHeading()) === 'v2', {
       timeout: 20_000,
@@ -198,6 +255,7 @@ describe('canvas artefact refresh', () => {
   })
 
   it('leaves a re-render in the background and promotes it only when asked', async () => {
+    labelsAfterFirstRender = await ensureVersion('v2')
     // The user moves off the artefact tab, as they would while reading something
     // else in the pane.
     await browser.execute(() => {
@@ -225,42 +283,8 @@ describe('canvas artefact refresh', () => {
   })
 
   it('does not focus a canvas created by a background thread until it is selected', async () => {
-    await selectThread(ACTIVE_THREAD_ID)
     const before = await tabLabels()
-    const reply = 'The background dashboard is ready.'
-    const scenario = await installMockScenario({
-      title: 'Render a background dashboard',
-      turns: [
-        {
-          user: 'Render a background dashboard.',
-          responses: [
-            {
-              waitFor: 'before-canvas',
-              toolCalls: [
-                {
-                  name: CANVAS_TOOL,
-                  args: {
-                    title: 'Background Dashboard',
-                    html: '<!doctype html><h1 id="version">background</h1>',
-                  },
-                },
-              ],
-            },
-            { text: reply, expectToolResults: [{ name: CANVAS_TOOL }] },
-          ],
-        },
-      ],
-    })
-    await setComposerValue('Render a background dashboard.')
-    await $('.submit-btn').click()
-    await scenario.waitForHold('before-canvas')
-
-    await selectThread(HISTORY_THREAD_ID)
-    await scenario.release('before-canvas')
-    // The run lives in the background thread, so the selected thread is already
-    // idle: wait on the scenario itself rather than the footer's stop button.
-    await scenario.waitForComplete()
-    await scenario.assertComplete()
+    await renderBackgroundDashboard()
 
     expect(await tabLabels()).toEqual(before)
     expect(await activeTabLabel()).not.toEqual('Background Dashboard')
@@ -278,6 +302,10 @@ describe('canvas artefact refresh', () => {
   })
 
   it('shows a preview thumbnail of the render in the transcript', async () => {
+    if (!(await hasAssistantReply('The background dashboard is ready.'))) {
+      await renderBackgroundDashboard()
+      await selectThread(ACTIVE_THREAD_ID)
+    }
     await expectAssistantReply('The background dashboard is ready.')
     await waitForAgentIdle(25_000)
     // End-to-end proof that the artefact reached the headless agent session: the

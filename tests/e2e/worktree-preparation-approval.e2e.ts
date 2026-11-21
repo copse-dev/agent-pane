@@ -17,6 +17,7 @@ import { readWorktreePreparationPlan } from '../../src/main/services/worktree-pr
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
+import { submitComposer } from './helpers/composer.ts'
 
 async function json<T extends z.ZodType>(response: Response, schema: T): Promise<z.infer<T>> {
   const value = safeJsonParse(await response.text(), decodeWithSchema(schema))
@@ -84,7 +85,7 @@ describe('project preparation approval', () => {
       { name: 'prepare_worktree', args: { planFingerprint, offline: true } },
       'The worktree preparation request was declined.',
     )
-    await $('.submit-btn').click()
+    await submitComposer()
     const dialog = $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
     await expect(dialog.$('.approval-heading')).toHaveText('Prepare this worktree?')
@@ -151,7 +152,7 @@ describe('project preparation approval', () => {
           },
         ],
       )
-      await $('.submit-btn').click()
+      await submitComposer()
       const dialog = $('#approval-dialog')
       await dialog.waitForDisplayed({ timeout: 30000 })
       await expect(dialog.$('.approval-heading')).toHaveText('Prepare this worktree?')

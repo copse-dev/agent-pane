@@ -3,6 +3,7 @@ import type { TranscriptAttachment } from './thread.ts'
 /** Main-process decision for one host-native machine continuation. */
 export type MachineDispatchResult =
   | 'completed'
+  | 'cancelled'
   | 'duplicate'
   | 'stale'
   | 'budget-exhausted'

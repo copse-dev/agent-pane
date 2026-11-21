@@ -1,4 +1,4 @@
-import type { BrowserWindow, IpcMain } from 'electron'
+import type { BrowserWindow, IpcMain, WebContents } from 'electron'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { SshPromptLifecycle } from './ssh-prompt-lifecycle.ts'
 import {
@@ -55,13 +55,37 @@ export function classifySshPrompt(prompt: string): SshPromptKind {
     : 'secret'
 }
 
-export function initSshPrompt(win: BrowserWindow, ipcMain: IpcMain): void {
+export function initSshPrompt(
+  win: BrowserWindow,
+  ipcMain: IpcMain,
+  confirmSshPrompt: (
+    sender: WebContents,
+    request: SshPromptRequest,
+    response: SshPromptResponse,
+  ) => Promise<boolean>,
+): void {
   const lifecycle = new SshPromptLifecycle()
 
-  ipcMain.handle('ssh-prompt:respond', (event, ...rawArgs) => {
+  ipcMain.handle('ssh-prompt:respond', async (event, ...rawArgs) => {
     try {
       assertMainFrameSender(event, win)
       const [id, value, remember] = parseIpcArgs(sshPromptRespondSchema, rawArgs)
+      const request = lifecycle.requestFor(id)
+      if (!request) return
+      if (request.kind === 'confirm' && value !== '' && value !== 'yes') {
+        throw new IpcValidationError('Invalid SSH confirmation response')
+      }
+      if (remember && request.kind !== 'secret') {
+        throw new IpcValidationError('This SSH secret cannot be remembered')
+      }
+      if (value && (request.kind === 'confirm' || remember)) {
+        const confirmed = await confirmSshPrompt(event.sender, request, { value, remember })
+        if (!confirmed) {
+          lifecycle.settle(id, { value: '' })
+          return
+        }
+      }
+      if (lifecycle.requestFor(id) !== request) return
       lifecycle.settle(id, { value, remember })
     } catch (err) {
       if (err instanceof IpcValidationError) return

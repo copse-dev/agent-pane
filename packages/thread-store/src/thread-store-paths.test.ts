@@ -27,6 +27,7 @@ import {
   appendHookRun,
   appendMessage,
   createThread,
+  createThreadWithResult,
   loadProjectCatalog,
   loadProjectThreads,
   readHookRun,
@@ -230,6 +231,11 @@ describe('thread-store paths', () => {
     assert.deepEqual(strayFiles(), [])
     const [loaded] = await loadProjectThreads('proj')
     assert.deepEqual(loaded?.messages, messages)
+  })
+
+  it('reports atomically whether an idempotent create actually created the thread', async () => {
+    assert.equal(await createThreadWithResult('proj', thread('create-once', [])), true)
+    assert.equal(await createThreadWithResult('proj', thread('create-once', [])), false)
   })
 
   it('keeps plain message and subagent paths stable while tool blobs use their message slot', async () => {

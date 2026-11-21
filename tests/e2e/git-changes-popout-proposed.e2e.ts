@@ -4,7 +4,7 @@ import {
   installMockScenario,
   type ScenarioHandle,
 } from './helpers/mock-scenario.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { acceptanceWakeTurn, readTranscriptNotices } from './helpers/acceptance-wake.ts'
 import { mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -58,7 +58,7 @@ async function proposeFileChange(
     ],
   })
   await setComposerValue(user)
-  await $('.submit-btn').click()
+  await submitComposer()
   // Every proposal ends with the same reply; wait for this turn's own.
   await scenario.waitForTurns(1)
   await expectAssistantReply(PROPOSED_REPLY)
@@ -233,6 +233,27 @@ describe('proposed diffs across embed and pop-out (#1753)', function () {
     // the main window's panel closed; a new proposal must reveal a coloured
     // embed.
     await browser.switchToWindow(mainHandle)
+    const handles = await browser.getWindowHandles()
+    if (!handles.includes(popoutHandle)) {
+      // Burn-in runs this case alone, so create the pre-existing proposal and
+      // pop-out that the user journey begins with instead of inheriting them
+      // from the preceding case.
+      await proposeFileChange('src/e2e-popout-setup.ts', 'export const setup = true\n')
+      const before = await browser.getWindowHandles()
+      await $('#git-changes-host .pane-popout-btn').click()
+      await browser.waitUntil(
+        async () => (await browser.getWindowHandles()).length > before.length,
+        {
+          timeout: 15_000,
+          timeoutMsg: 'expected a pop-out window for the isolated case',
+        },
+      )
+      const newHandle = (await browser.getWindowHandles()).find(
+        (handle) => !before.includes(handle),
+      )
+      if (!newHandle) throw new Error('Expected a new pop-out window handle')
+      popoutHandle = newHandle
+    }
     const paneFiles = await $('#pane-files').getElement()
     if (await paneFiles.isDisplayed()) {
       await $('.titlebar-btn[aria-label="Open changes"]').click()

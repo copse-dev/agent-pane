@@ -144,6 +144,7 @@ export function createLocalExecutionRuntime(
           signal: request.signal,
           detached: detachForGroupKill,
         })
+        request.local?.onChildCreated?.(child)
         return { child, profile, capabilities }
       }
 
@@ -152,7 +153,9 @@ export function createLocalExecutionRuntime(
       const plan = local.plan()
       if (plan.hostedLaunch) {
         if (request.abortCheckpoints) request.signal?.throwIfAborted()
-        return { child: plan.hostedLaunch(), profile, capabilities }
+        const child = plan.hostedLaunch()
+        local.onChildCreated?.(child)
+        return { child, profile, capabilities }
       }
       let hasSandboxLease = false
       const releaseLease = (): void => {
@@ -160,6 +163,7 @@ export function createLocalExecutionRuntime(
         hasSandboxLease = false
         dependencies.releaseSandboxLease()
       }
+      let child: ChildProcess
       try {
         const tmpDir = sandboxTmpDir(plan.config)
         const { argv, env } = await dependencies.wrapWithSandboxArgv(
@@ -177,7 +181,7 @@ export function createLocalExecutionRuntime(
         const file = argv[0]
         if (!file) throw new Error('sandbox wrap produced empty argv')
         if (request.abortCheckpoints) request.signal?.throwIfAborted()
-        const child = dependencies.spawn(resolveSandboxShellExecutable(file), argv.slice(1), {
+        child = dependencies.spawn(resolveSandboxShellExecutable(file), argv.slice(1), {
           cwd: request.cwd,
           // The workspace tmp dir goes last: ASRT's baked-in TMPDIR beats the
           // spawn env, so a caller's TMP or TEMP could only disagree with it.
@@ -196,11 +200,13 @@ export function createLocalExecutionRuntime(
           // alive. Keep its deny-path mounts until close; a failed spawn has no PID.
           if (child.pid === undefined) releaseLease()
         })
-        return { child, profile, capabilities }
       } catch (err) {
         releaseLease()
         throw err
       }
+      // An observer failure must not release the live child's sandbox lease.
+      local.onChildCreated?.(child)
+      return { child, profile, capabilities }
     },
   }
 }

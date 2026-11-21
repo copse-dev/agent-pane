@@ -53,6 +53,8 @@ export interface LocalContainmentRequest {
   readonly sandbox: boolean
   /** Refuse with this message rather than run outside the sandbox. */
   readonly requireSandbox?: string
+  /** Subscribe at local child creation, before Node emits spawn/error/output. */
+  readonly onChildCreated?: (child: ChildProcess) => void
   readonly plan: () => LocalSandboxPlan
 }
 

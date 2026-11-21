@@ -6,6 +6,7 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
+import { submitComposer } from './helpers/composer.ts'
 
 describe('LM Studio prompt processing progress', () => {
   let workspaceRoot: string
@@ -33,7 +34,7 @@ describe('LM Studio prompt processing progress', () => {
       [{ waitFor: 'inspection', promptProgress: 0.47, text: 'I am reviewing the workspace.' }],
       true,
     )
-    await $('.submit-btn').click()
+    await submitComposer()
 
     const activity = $('.agent-activity')
     await activity.waitForDisplayed({ timeout: 10_000 })

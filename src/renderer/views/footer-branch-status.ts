@@ -223,6 +223,11 @@ export function mountFooterBranchStatus(
     return getThreadById(store, store.getState().activeThreadId)
   }
 
+  /** A prepared checkout already owns its branch, even before its first message is appended. */
+  function canPickBaseBranch(thread: Thread): boolean {
+    return isBlankThread(thread) && thread.gitBranch === undefined && thread.worktree === undefined
+  }
+
   /**
    * Where a blank thread starts: the user's pick, else the repository's default
    * branch. Falling back to the live checkout instead would make a new thread
@@ -231,7 +236,7 @@ export function mountFooterBranchStatus(
    * base the repository does not hold.
    */
   function startBranch(thread: Thread): string | undefined {
-    if (!isBlankThread(thread)) return undefined
+    if (!canPickBaseBranch(thread)) return undefined
     const picked = baseBranchByThread.get(thread.id)
     if (picked) return picked
     if (thread.id !== store.getState().activeThreadId) return undefined
@@ -266,7 +271,7 @@ export function mountFooterBranchStatus(
 
   function isPickerMode(): boolean {
     const thread = getActiveThread()
-    return thread ? isBlankThread(thread) : false
+    return thread ? canPickBaseBranch(thread) : false
   }
 
   /** Whether the active thread still reads the user's checkout (a deferred worktree). */
@@ -792,7 +797,7 @@ export function mountFooterBranchStatus(
     const blank = new Set(
       store
         .getState()
-        .threads.filter((thread) => isBlankThread(thread))
+        .threads.filter((thread) => canPickBaseBranch(thread))
         .map((thread) => thread.id),
     )
     for (const threadId of baseBranchByThread.keys()) {
@@ -1037,7 +1042,7 @@ export function mountFooterBranchStatus(
     refresh: refreshNow,
     resolveBaseBranch: async (projectId: string, threadId: string): Promise<string | undefined> => {
       const thread = getThreadById(store, threadId)
-      if (!thread || !isBlankThread(thread)) return undefined
+      if (!thread || !canPickBaseBranch(thread)) return undefined
       // Capture the explicit pick before any await. Default discovery uses the
       // submission's owner, never whichever thread becomes active while waiting.
       const picked = baseBranchByThread.get(threadId)

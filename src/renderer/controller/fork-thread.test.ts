@@ -27,8 +27,8 @@ function fakeApi(result: ForkedHistoryResult | Error = { source: 'copied', messa
     ...base,
     threads: {
       ...base.threads,
-      fork: (projectId: string, source: string, target: string, through?: string) => {
-        forks.push([projectId, source, target, through])
+      fork: (projectId: string, source: string, target: Thread, through?: string) => {
+        forks.push([projectId, source, target.id, through])
         return result instanceof Error ? Promise.reject(result) : Promise.resolve(result)
       },
     },
@@ -155,14 +155,14 @@ test('returns null when there is nothing to fork', async () => {
   assert.equal(forks.length, 0)
 })
 
-test('keeps the fork usable when seeding its provider history fails', async () => {
+test('does not insert copied prompts when main cannot create the fork atomically', async () => {
   const store = createProjectStore()
   const { api } = fakeApi(new Error('disk full'))
   const { threadId } = seedConversation(store)
 
   const result = await forkThread(store, api, threadId)
 
-  assert.ok(result)
-  assert.equal(result.history, null)
-  assert.equal(store.getState().activeThreadId, result.threadId)
+  assert.equal(result, null)
+  assert.equal(store.getState().activeThreadId, threadId)
+  assert.equal(store.getState().threads.length, 1)
 })
