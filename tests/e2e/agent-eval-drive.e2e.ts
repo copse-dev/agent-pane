@@ -11,6 +11,9 @@ import { loadProjectThreads } from '../../src/main/services/thread-store.ts'
 import { agentIsIdle, getCopseUserDataDir, waitForPromptReady } from './helpers.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
 import {
+  EVAL_ALLOW_CURRENT_CHECKOUT_ENV,
+  EVAL_GIT_BASELINE_ENV,
+  evalMayChangeCheckout,
   loadEvalScenario,
   resolvePromptAttachment,
   selectedEvalPrompts,
@@ -32,6 +35,10 @@ import {
 } from '../../scripts/lib/eval-tool-expectations.mts'
 import { readDecisionLog } from '../../src/main/services/security/decision-log-store.ts'
 import { defaultScratchRoots } from '../../scripts/lib/eval-scratch-paths.mts'
+import { composerText, setComposerValue, submitComposer } from './helpers/composer.ts'
+import { errorMessage } from '@shared/errors.ts'
+import { acceptEvalProposals, selectEvalBranch } from './helpers/agent-eval-ui.ts'
+import { failedTurn } from '../../src/main/services/container-runtime/guest-turn.ts'
 
 const ARTIFACTS = join(process.cwd(), 'tests/e2e/artifacts')
 const DEFAULT_SCENARIO = join(process.cwd(), 'tests/e2e/scenarios/agent-eval.example.json')
@@ -70,13 +77,10 @@ async function approvePendingApprovalDialogs(): Promise<void> {
 }
 
 async function approvePendingDiffs(): Promise<void> {
-  const queuedCount = await browser.execute(
-    () => document.querySelectorAll('.diff-file-btn').length,
-  )
-  if (queuedCount === 0) return
-  await $('button*=Accept all').click()
-  acceptedDiffsSinceSettle = true
-  await browser.pause(200)
+  if (await acceptEvalProposals(activeProjectId())) {
+    acceptedDiffsSinceSettle = true
+    await browser.pause(200)
+  }
 }
 
 /** Longest gap between an acceptance and the hidden turn it wakes starting. */
@@ -231,18 +235,37 @@ async function attachPromptFiles(attachments: PromptAttachment[]): Promise<void>
   )
 }
 
+const OWN_CHECKOUT_REFUSAL = `uses your own checkout; use a tempProject scenario, or set ${EVAL_ALLOW_CURRENT_CHECKOUT_ENV}=1 to let the eval change it`
+
+/**
+ * Submit the typed prompt. The dirty-checkout warning is confirmed only where
+ * the eval may change the checkout; anywhere else it fails the run before the
+ * agent is sent into uncommitted work.
+ */
+async function submitEvalPrompt(mayChangeCheckout: boolean): Promise<void> {
+  if (mayChangeCheckout) {
+    await submitComposer()
+    return
+  }
+  await $('.submit-btn').click()
+  const dirtyWarning = $('.composer-dirty-send-btn')
+  await browser.waitUntil(
+    async () => (await dirtyWarning.isDisplayed()) || (await composerText()).trim() === '',
+    { timeout: 30_000, interval: 100, timeoutMsg: 'The composer prompt did not submit' },
+  )
+  assert.ok(
+    !(await dirtyWarning.isDisplayed()),
+    `The checkout has uncommitted changes and this scenario ${OWN_CHECKOUT_REFUSAL}`,
+  )
+}
+
 async function typePrompt(prompt: EvalPrompt): Promise<void> {
   const text = typeof prompt === 'string' ? prompt : prompt.text
   const attachments = typeof prompt === 'string' ? [] : (prompt.attachments ?? [])
   await waitForPromptReady()
+  await $('.chat-row.selected').waitForExist({ timeout: 30_000 })
   await attachPromptFiles(attachments)
-  await browser.execute((value) => {
-    const el = document.querySelector<HTMLElement>('.prompt-input')
-    if (!el) throw new Error('.prompt-input not found')
-    el.focus()
-    el.textContent = value
-    el.dispatchEvent(new Event('input', { bubbles: true }))
-  }, text)
+  await setComposerValue(text)
 }
 
 function walkFiles(root: string): string[] {
@@ -297,20 +320,24 @@ function assertWorkspaceExpectations(root: string, scenario: EvalScenario): void
       encoding: 'utf8',
     }).trim()
     assert.equal(isRepo, 'true')
+    // A seeded baseline is the harness's commit, not the agent's: judge only
+    // what the run added on top of it.
+    const baseline = process.env[EVAL_GIT_BASELINE_ENV]?.trim()
+    const range = baseline ? `${baseline}..HEAD` : 'HEAD'
     if (exp.git.minCommits !== undefined) {
       const count = Number(
-        execFileSync('git', ['rev-list', '--count', 'HEAD'], {
+        execFileSync('git', ['rev-list', '--count', range], {
           cwd: root,
           encoding: 'utf8',
         }).trim(),
       )
       assert.ok(
         count >= exp.git.minCommits,
-        `Expected at least ${String(exp.git.minCommits)} commits`,
+        `Expected at least ${String(exp.git.minCommits)} commits${baseline ? ' after the seeded baseline' : ''}; found ${String(count)}`,
       )
     }
     if (exp.git.allCommitMessagesContain) {
-      const messages = execFileSync('git', ['log', '--format=%B%x00'], {
+      const messages = execFileSync('git', ['log', '--format=%B%x00', range], {
         cwd: root,
         encoding: 'utf8',
       })
@@ -390,6 +417,33 @@ async function readActiveThread(): Promise<Thread> {
   const thread = threads.find((t) => t.id === activeId) ?? threads[threads.length - 1]
   if (!thread) throw new Error('Could not resolve active thread')
   return thread
+}
+
+/** Longest provider error kept in a failure message; the artifact holds the rest. */
+const FAILED_TURN_MESSAGE_LIMIT = 2_000
+
+/**
+ * Stop at the first turn that ended in failure.
+ *
+ * A provider error (an LM Studio 400, an ACP child that could not start) ends
+ * the turn with `turnOutcome.status: 'failed'` rather than an error toast, so
+ * the drive used to type the next prompt into a broken thread and report the
+ * run as whichever workspace assertion it reached first. That message named
+ * the symptom (no git repo) and hid the cause; the failure hook still keeps
+ * the screenshot and thread, so failing here loses no evidence.
+ */
+async function assertNoFailedTurn(afterPrompt: number): Promise<void> {
+  const thread = await readActiveThread()
+  for (const message of thread.messages) {
+    const outcome = message.turnOutcome
+    const reason = failedTurn(outcome)
+    if (reason === null) continue
+    const source = outcome?.source ?? 'unknown source'
+    throw new Error(
+      `Eval turn after prompt ${String(afterPrompt)} failed (${source}): ` +
+        reason.slice(0, FAILED_TURN_MESSAGE_LIMIT),
+    )
+  }
 }
 
 function assertExploreSubagentCompleted(thread: Thread): void {
@@ -578,25 +632,54 @@ describe('agent eval drive', () => {
     workspaceRoot = preparedWorkspace
   })
 
+  afterEach(async function () {
+    if (this.currentTest?.state !== 'failed') return
+    const prefix = join(ARTIFACTS, `${scenario.id}-${String(Date.now())}-failure`)
+    try {
+      await browser.saveScreenshot(`${prefix}.png`)
+      const state = await browser.execute(() => ({
+        composer: document.querySelector('.prompt-input')?.textContent ?? '',
+        visibleText: document.body.innerText.slice(-4_000),
+      }))
+      writeFileSync(`${prefix}.json`, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+      const thread = await readActiveThread()
+      writeFileSync(`${prefix}.jsonl`, threadToJsonl(thread), 'utf8')
+      process.stdout.write(`\nCOPSE_EVAL_FAILURE_ARTIFACT=${prefix}\n`)
+    } catch (error) {
+      process.stderr.write(`Could not preserve eval failure evidence: ${errorMessage(error)}\n`)
+    }
+  })
+
   it('runs scenario prompts against the real agent and writes JSONL artifact', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
     const idleTimeout = Number(process.env['COPSE_EVAL_IDLE_MS'] ?? 15 * 60_000)
     const prompts = selectedEvalPrompts(scenario)
+    const mayChangeCheckout = evalMayChangeCheckout(scenario)
+    const requestedBranch = process.env['COPSE_EVAL_BRANCH']?.trim()
+    if (requestedBranch) {
+      assert.ok(
+        mayChangeCheckout,
+        `COPSE_EVAL_BRANCH switches branches, and this scenario ${OWN_CHECKOUT_REFUSAL}`,
+      )
+      await selectEvalBranch(requestedBranch)
+    }
     const shouldArmGuardedYolo =
       scenario.toolUse?.armGuardedYolo === true || process.env['COPSE_EVAL_GUARDED_YOLO'] === '1'
     if (shouldArmGuardedYolo) {
       await armGuardedYoloForEval()
     }
 
-    for (const prompt of prompts) {
+    for (const [index, prompt] of prompts.entries()) {
       await typePrompt(prompt)
-      await $('.submit-btn').click()
+      await submitEvalPrompt(mayChangeCheckout)
       await waitForEvalAgentIdle(idleTimeout)
+      await assertNoFailedTurn(index + 1)
     }
     if (scenario.backgroundWake) {
       assert.equal(prompts.length, 1, 'background wake eval requires exactly one human prompt')
       await waitForBackgroundWake(scenario.backgroundWake)
+      await assertNoFailedTurn(prompts.length)
     }
 
     const thread = await readActiveThread()
@@ -609,6 +692,17 @@ describe('agent eval drive', () => {
     const outPath = join(ARTIFACTS, `${scenario.id}-${String(timestamp)}.jsonl`)
     writeFileSync(outPath, body, 'utf8')
     process.stdout.write(`\nCOPSE_EVAL_ARTIFACT=${outPath}\n`)
+
+    const pendingPaths = await browser.execute(
+      async (owner) =>
+        (await window.api.diff.queue(owner.projectId, owner.threadId)).map((entry) => entry.path),
+      { projectId: activeProjectId(), threadId: thread.id },
+    )
+    assert.deepEqual(
+      pendingPaths,
+      [],
+      'The eval must apply all proposed files before judging the workspace',
+    )
 
     assertWorkspaceExpectations(workspaceRoot, scenario)
     await assertShellEscalationPrompts(scenario)
