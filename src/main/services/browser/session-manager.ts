@@ -13,6 +13,8 @@ import { CANVAS_TRANSPARENT_ROOT_PROBE, canvasGuestTextCss } from '@shared/canva
 import { browserViewportSchema, type BrowserViewport } from '@shared/browser-viewport.ts'
 import { previewCapabilityForUrl } from './static-preview-server.ts'
 import { fillBrowserForm, type BrowserFormField } from './browser-form.ts'
+import { withTimeout } from '@copse/std/with-timeout.ts'
+import { createKeyedSerialQueue } from '@copse/std/keyed-serial-queue.ts'
 
 const MAX_TABS = 8
 const DEFAULT_WIDTH = 1280
@@ -67,33 +69,21 @@ async function waitForBrowserOperation(
   operation: Promise<unknown>,
   timeoutMessage = 'Preview capture timed out',
 ): Promise<unknown> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  try {
-    return await Promise.race([
-      operation,
-      new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => {
-          reject(new Error(timeoutMessage))
-        }, 5000)
-      }),
-    ])
-  } finally {
-    clearTimeout(timer)
-  }
+  return withTimeout(operation, 5000, () => {
+    throw new Error(timeoutMessage)
+  })
 }
 
 /**
  * Preview captures temporarily change zoom, while responsive checks change
  * the viewport. Serialize captures and resizes on each tab so a screenshot
- * cannot observe another operation's temporary layout.
+ * cannot observe another operation's temporary layout. The queue keeps going
+ * after a failure, so one failed operation cannot stall the tab.
  */
-const tabOperations = new WeakMap<PreviewContents, Promise<unknown>>()
+const tabOperations = createKeyedSerialQueue<PreviewContents>()
 
 function queueTabOperation<T>(wc: PreviewContents, operation: () => Promise<T>): Promise<T> {
-  const previous = tabOperations.get(wc) ?? Promise.resolve()
-  const next = previous.catch(() => {}).then(operation)
-  tabOperations.set(wc, next)
-  return next
+  return tabOperations.run(wc, operation)
 }
 
 /**
