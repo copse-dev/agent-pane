@@ -97,8 +97,11 @@ revisiting this document, not silently diverging in an implementation PR.
    destination. A sender run without a human root (a headless scheduled automation's
    turn) is charged to a fallback scope keyed on the sender thread from main's
    active-run identity, never on tool arguments (amended 20 November 2026). A turn the
-   ACP agent starts itself is not such a run: it is bound to the turn tree of the task
-   it resumes (below), so it is charged to that tree like the human turn it continues
+   ACP agent starts itself in a thread whose epoch a dispatch established is not such a
+   run: it is bound to the turn tree of the task it resumes (below), so it is charged to
+   that tree like the human turn it continues. In a thread without one, such as a
+   headless automation's thread, there is no human turn to continue: the self-start
+   binds no turn tree and uses that thread's fallback scope like the headless run
    (amended 21 November 2026). Every scheduled automation run starts in a new thread,
    so each gets its own five; machine runs of one thread share that scope, cannot mint
    another, and only a human release at the destination resets it. The fallback grants
@@ -174,8 +177,11 @@ revisiting this document, not silently diverging in an implementation PR.
    for HTTP tool calls. Clearing the context clears the snapshot; a legacy run
    without an explicit human epoch cannot synthesize one from its thread id.
    Bounded background tasks launched through ACP therefore use the same wake
-   budget and stale-epoch checks as native launches. Self-resume budget grants
-   return that same epoch for binding the bridge; the lease must not drop it.
+   budget and stale-epoch checks as native launches. A self-resume budget grant
+   returns that epoch for binding the bridge only when a dispatch established it,
+   and the lease must not drop it. The thread-id fallback the grant charges, and
+   persists, in a thread without one is no epoch: the grant names no turn tree,
+   so the bridge stays unbound and that self-start requests no wake.
    Approving a parked approval requests one host-native continuation to retry the
    exact call through the ordinary gate; rejecting it requests none, so a refusal
    never restarts autonomous work. A consumed, expired or revoked answer
@@ -1233,7 +1239,10 @@ five prompts per destination, per sender user turn (decision 5, amended 1 Novemb
 Main computes the scope in `peerPromptSender` from its own run identity: the sender's
 turn-tree ID, or `null` with the sender thread as the fallback for a run without one
 (decision 5, amended 20 November 2026). A self-started ACP turn carries the turn tree of
-the task it resumes, so it never uses the fallback (amended 21 November 2026).
+the task it resumes when a dispatch established the thread's epoch. In a thread without
+one, such as a headless automation's, it carries none and uses the same fallback as the
+headless run: `claimAgentInitiatedTurn` never returns the thread-id key it charges as a
+turn tree (amended 21 November 2026).
 Metadata `crossThreadPromptCounts` keys each count by the JSON-encoded sender ID and
 sender turn-tree ID; it survives reloads and destination human submissions. Each sender
 and new sender root has its own allowance for every destination. Charging happens at drain

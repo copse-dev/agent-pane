@@ -143,7 +143,9 @@ instruction in the sending thread gives it five fresh prompts for every destinat
 Work the sending thread runs without a user turn, such as a scheduled automation run, shares
 one allowance per destination for that thread; each scheduled run starts in a new thread. That
 fallback grants no other authority. A turn the coding agent starts on its own continues the
-task it resumes and uses that task's allowance.
+task it resumes and uses that task's allowance. In a thread that never had a user turn, such
+as a scheduled run's thread, there is no task allowance to continue: such a turn shares the
+thread's fallback allowance and gains no other authority either.
 Incoming prompts do not spend or reset the self-continuation budget. Exhaustion holds
 further prompts from that sender turn for human release. Prompts respect held/paused queues. They do not interrupt active work or
 switch the visible thread. An unavailable or archived destination is rejected.

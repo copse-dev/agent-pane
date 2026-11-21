@@ -16,7 +16,17 @@ import { AcpTurnEnded, type AcpTurnEndReason } from './turn-end.ts'
  */
 
 export type AgentInitiatedTurnClaim =
-  | { status: 'granted'; turnTreeId: string; release: () => Promise<void> }
+  | {
+      status: 'granted'
+      /**
+       * The turn tree of the task this turn resumes, present only when a real
+       * dispatch established the thread's epoch. Absent, the turn binds no tree,
+       * so it requests no wake and prompts other threads under the sender-thread
+       * fallback (hooks plan decision 5).
+       */
+      turnTreeId?: string
+      release: () => Promise<void>
+    }
   | { status: 'budget-exhausted' }
 
 export interface AgentInitiatedTurnAuthority {

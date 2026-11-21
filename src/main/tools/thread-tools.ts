@@ -235,10 +235,11 @@ export const readThreadTool = defineTool({
  * run identity, never from the tool's arguments. A run with a human root uses
  * that user turn tree, and so does a turn the ACP agent started itself, which is
  * bound to the turn tree of the task it resumes. A run without one, such as a
- * headless scheduled automation's turn, falls back to the sender thread (`null`
- * in place of the turn tree). Every scheduled automation run starts in a new
- * thread, so each one gets its own five prompts per destination; machine runs
- * of one thread share theirs and cannot mint more.
+ * headless scheduled automation's turn or an ACP self-start in a thread no
+ * dispatch gave an epoch, falls back to the sender thread (`null` in place of
+ * the turn tree). Every scheduled automation run starts in a new thread, so
+ * each one gets its own five prompts per destination; machine runs of one
+ * thread share theirs and cannot mint more.
  * The fallback grants nothing else: it carries no turn tree, so the destination
  * inherits no epoch from it and no lease, wake or tracking is bound to it.
  */
