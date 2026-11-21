@@ -36,7 +36,7 @@ import {
   sleep,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-XTZ7QIHP.js";
+} from "./chunks/chunk-SFSS65W6.js";
 import "./chunks/chunk-X6JZSFJR.js";
 import {
   init_icons,
@@ -6640,37 +6640,7 @@ function createDemoApi(scenario2, options = {}) {
         });
       },
       getThreadClassifierUse: () => resolved({ calls: 0, rows: [] }),
-      getPlanUsage: () => resolved({ providers: [], checkedAt: DEMO_TIME }),
-      getPlanWorthIt: () => resolved({
-        worthIt: {
-          verdict: "insufficient_history",
-          reason: "Need a couple of completed weekly windows \u2014 keep Copse signed into Claude and reopen Usage after resets.",
-          apiEquivalentBurnPerWeek: null,
-          planFeePerWeek: null,
-          monthlyFeeUsd: null,
-          feeHint: null,
-          completedWeeklyCount: 0,
-          inferenceFrontierNote: null
-        },
-        windowExhaustion: [],
-        historySampleCount: 0,
-        completedWeeklyCount: 0
-      }),
-      setClaudePlanMonthlyFee: () => resolved({
-        worthIt: {
-          verdict: "insufficient_history",
-          reason: "Need a couple of completed weekly windows \u2014 keep Copse signed into Claude and reopen Usage after resets.",
-          apiEquivalentBurnPerWeek: null,
-          planFeePerWeek: null,
-          monthlyFeeUsd: null,
-          feeHint: null,
-          completedWeeklyCount: 0,
-          inferenceFrontierNote: null
-        },
-        windowExhaustion: [],
-        historySampleCount: 0,
-        completedWeeklyCount: 0
-      })
+      getPlanUsage: () => resolved({ providers: [], checkedAt: DEMO_TIME })
     },
     index: {
       query: (pattern) => resolved(
@@ -7511,7 +7481,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-KCSIRCXM.js").then(async (main) => {
+    void import("./chunks/main-LHTMFSXE.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(

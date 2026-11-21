@@ -496,7 +496,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-XTZ7QIHP.js";
+} from "./chunk-SFSS65W6.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -54762,7 +54762,11 @@ function mountFooterBranchStatus(host, store2, api2) {
     const picked = baseBranchByThread.get(thread.id);
     if (picked) return picked;
     if (thread.id !== store2.getState().activeThreadId) return void 0;
+    if (projectCheckoutDetached()) return void 0;
     return defaultBranch && branches.some((branch) => branch.name === defaultBranch) ? defaultBranch : void 0;
+  }
+  function projectCheckoutDetached() {
+    return isPickerMode() && status?.detached === true;
   }
   function activeBaseBranch() {
     const thread = getActiveThread2();
@@ -54812,9 +54816,10 @@ function mountFooterBranchStatus(host, store2, api2) {
     const displayBranch = getDisplayBranch();
     const pickerMode = isPickerMode();
     const pr = getVisiblePr();
+    const startsDetached = !displayBranch && projectCheckoutDetached();
     deferredNote.hidden = !readsCheckout();
-    trigger.hidden = !displayBranch;
-    if (!displayBranch) {
+    trigger.hidden = !displayBranch && !startsDetached;
+    if (!displayBranch && !startsDetached) {
       wrap2.hidden = !readsCheckout();
       branchToCopy = null;
       setOpen(false);
@@ -54837,7 +54842,14 @@ function mountFooterBranchStatus(host, store2, api2) {
       trigger.removeAttribute("aria-expanded");
       setOpen(false);
     }
-    if (pr) {
+    if (!displayBranch) {
+      label.textContent = DETACHED_HEAD_LABEL;
+      trigger.title = DETACHED_START_TITLE;
+      trigger.classList.remove("is-link");
+      trigger.classList.remove("is-copyable");
+      branchToCopy = null;
+      trigger.setAttribute("aria-label", DETACHED_START_TITLE);
+    } else if (pr) {
       label.textContent = `PR #${String(pr.number)}`;
       trigger.title = mismatch ? `${mismatchMessage} (${pr.title})` : pr.title;
       trigger.classList.add("is-link");
@@ -55004,11 +55016,11 @@ function mountFooterBranchStatus(host, store2, api2) {
     const ordered = orderBranchesWithDefaultFirst(branches, defaultBranch);
     const query = filterInput.value.trim().toLocaleLowerCase();
     const matches3 = query ? ordered.filter((branch) => branch.name.toLocaleLowerCase().includes(query)) : ordered;
-    return { pr, matches: matches3 };
+    return { pr, head: !query && projectCheckoutDetached(), matches: matches3 };
   }
   function rowCount() {
-    const { pr, matches: matches3 } = filteredRows();
-    return (pr ? 1 : 0) + matches3.length;
+    const { pr, head, matches: matches3 } = filteredRows();
+    return (pr ? 1 : 0) + (head ? 1 : 0) + matches3.length;
   }
   function clampActiveIndex() {
     const count = rowCount();
@@ -55034,15 +55046,29 @@ function mountFooterBranchStatus(host, store2, api2) {
     renderTrigger();
     renderMenu();
   }
+  function selectDetachedHead() {
+    setOpen(false);
+    trigger.focus();
+    const thread = getActiveThread2();
+    if (!thread) return;
+    baseBranchByThread.delete(thread.id);
+    renderTrigger();
+    renderMenu();
+  }
   function activateRow(index) {
-    const { pr, matches: matches3 } = filteredRows();
+    const { pr, head, matches: matches3 } = filteredRows();
     if (pr && index === 0) {
       setOpen(false);
       trigger.focus();
       openBrowserUrl(store2, pr.url);
       return;
     }
-    const branch = matches3[pr ? index - 1 : index];
+    const headIndex = pr ? 1 : 0;
+    if (head && index === headIndex) {
+      selectDetachedHead();
+      return;
+    }
+    const branch = matches3[index - headIndex - (head ? 1 : 0)];
     if (branch) selectBranch(branch.name);
   }
   function moveActive(direction) {
@@ -55056,7 +55082,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     filterInput.removeAttribute("aria-activedescendant");
     if (!isPickerMode()) return;
     const selected = activeBaseBranch() ?? status?.currentBranch ?? null;
-    const { pr, matches: matches3 } = filteredRows();
+    const { pr, head, matches: matches3 } = filteredRows();
     clampActiveIndex();
     let rowIndex = 0;
     if (pr) {
@@ -55079,6 +55105,27 @@ function mountFooterBranchStatus(host, store2, api2) {
         openBrowserUrl(store2, pr.url);
       });
       list.append(prItem);
+      rowIndex++;
+    }
+    if (head) {
+      const headItem = el(
+        "button",
+        {
+          type: "button",
+          class: "branch-picker-option branch-picker-detached-head",
+          id: `${listId}-option-${String(rowIndex)}`,
+          role: "option",
+          tabindex: "-1",
+          title: DETACHED_START_TITLE,
+          "aria-selected": rowIndex === activeIndex ? "true" : "false"
+        },
+        el("span", { class: "branch-picker-option-label" }, DETACHED_HEAD_LABEL),
+        el("span", { class: "branch-picker-default-badge" }, "current")
+      );
+      if (selected === null) headItem.classList.add("is-selected");
+      if (rowIndex === activeIndex) headItem.classList.add("is-active");
+      headItem.addEventListener("click", selectDetachedHead);
+      list.append(headItem);
       rowIndex++;
     }
     for (const branch of matches3) {
@@ -55350,10 +55397,13 @@ function mountFooterBranchStatus(host, store2, api2) {
       if (!thread || !canPickBaseBranch(thread)) return void 0;
       const picked = baseBranchByThread.get(threadId);
       if (picked) return picked;
-      const [listed, defaultName] = await Promise.all([
+      const loaded = threadId === store2.getState().activeThreadId && status !== null ? status : null;
+      const [listed, defaultName, head] = await Promise.all([
         api2.git.listBranches(projectId, threadId),
-        api2.git.getDefaultBranch(projectId, threadId)
+        api2.git.getDefaultBranch(projectId, threadId),
+        loaded ?? api2.git.branchStatus(projectId, threadId)
       ]);
+      if (head.detached === true) return void 0;
       return defaultName && listed.some((branch) => branch.name === defaultName) ? defaultName : void 0;
     },
     destroy: () => {
@@ -55368,7 +55418,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     }
   };
 }
-var COPIED_BRANCH_TOAST, COPY_FEEDBACK_MS, DEFERRED_NOTE_TEXT, DEFERRED_NOTE_TITLE, nextPickerId;
+var COPIED_BRANCH_TOAST, COPY_FEEDBACK_MS, DEFERRED_NOTE_TEXT, DEFERRED_NOTE_TITLE, nextPickerId, DETACHED_HEAD_LABEL, DETACHED_START_TITLE;
 var init_footer_branch_status = __esm({
   "src/renderer/views/footer-branch-status.ts"() {
     init_clamp();
@@ -55386,6 +55436,8 @@ var init_footer_branch_status = __esm({
     DEFERRED_NOTE_TEXT = "Reading your checkout";
     DEFERRED_NOTE_TITLE = "This thread is reading your checkout and can\u2019t change it. It gets its own worktree once it asks to make changes; until then, anything that tries to write here is refused.";
     nextPickerId = 0;
+    DETACHED_HEAD_LABEL = "Detached HEAD";
+    DETACHED_START_TITLE = "Start this thread from the checked-out commit (detached HEAD). Pick a branch to switch the checkout to it instead.";
   }
 });
 
@@ -72560,6 +72612,58 @@ var init_create_after_persist = __esm({
   }
 });
 
+// src/renderer/terminal/create-events.ts
+var MAX_SESSIONS, MAX_OUTPUT, TerminalCreateEvents;
+var init_create_events = __esm({
+  "src/renderer/terminal/create-events.ts"() {
+    MAX_SESSIONS = 16;
+    MAX_OUTPUT = 64 * 1024;
+    TerminalCreateEvents = class {
+      pending = 0;
+      sessions = /* @__PURE__ */ new Map();
+      begin() {
+        this.pending += 1;
+        let finished = false;
+        return () => {
+          if (finished) return;
+          finished = true;
+          this.pending -= 1;
+          if (this.pending === 0) this.clear();
+        };
+      }
+      output(sessionId, data) {
+        if (this.pending === 0) return;
+        const events = this.get(sessionId);
+        if (events.exitCode === null) events.output = (events.output + data).slice(-MAX_OUTPUT);
+      }
+      exit(sessionId, code2) {
+        if (this.pending === 0) return;
+        this.get(sessionId).exitCode ??= code2;
+      }
+      take(sessionId) {
+        const events = this.sessions.get(sessionId);
+        this.sessions.delete(sessionId);
+        return events;
+      }
+      clear() {
+        this.sessions.clear();
+      }
+      get(sessionId) {
+        let events = this.sessions.get(sessionId);
+        if (!events) {
+          if (this.sessions.size === MAX_SESSIONS) {
+            const oldest = this.sessions.keys().next().value;
+            if (oldest !== void 0) this.sessions.delete(oldest);
+          }
+          events = { output: "", exitCode: null };
+          this.sessions.set(sessionId, events);
+        }
+        return events;
+      }
+    };
+  }
+});
+
 // src/renderer/terminal/start-failure-message.ts
 function terminalStartFailureMessage(err) {
   const detail = unwrapIpcErrorText(errorMessage(err));
@@ -72660,25 +72764,30 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
   listRoot.append(section2);
   viewerRoot.append(body);
   const tabs = /* @__PURE__ */ new Map();
+  const createEvents = new TerminalCreateEvents();
+  let disposed = false;
   let activeTabId = null;
   let tabCounter = 0;
   let lastThreadId = store2.getState().activeThreadId;
+  function isTabOpen(tab) {
+    return !disposed && tabs.get(tab.id) === tab;
+  }
+  function writeOutput(tab, data) {
+    tab.term.write(data);
+    tab.fileLinks.refresh();
+    if (tab.commandRan) scheduleAutoName(tab);
+  }
   const unsubOutput = api2.terminal.onOutput((id, data) => {
-    for (const tab of tabs.values()) {
-      if (tab.sessionId === id) {
-        tab.term.write(data);
-        tab.fileLinks.refresh();
-        if (tab.commandRan) scheduleAutoName(tab);
-      }
-    }
+    const tab = [...tabs.values()].find((candidate) => candidate.sessionId === id);
+    if (tab) writeOutput(tab, data);
+    else createEvents.output(id, data);
   });
   const unsubRunCommand = api2.terminal.onRunCommand((command2) => {
     void runCommandInNewShell(command2);
   });
-  const unsubExit = api2.terminal.onExit((id, code2) => {
-    const tab = [...tabs.values()].find((t) => t.sessionId === id);
-    if (!tab) return;
+  function finishSession(tab, code2) {
     tab.sessionId = null;
+    tab.pendingInput.length = 0;
     tab.term.write("", () => {
       finishCodeBlockRun(tab, code2);
     });
@@ -72686,6 +72795,11 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
       code2 === -1 ? "\r\n\x1B[90m[Terminal stopped]\x1B[0m" : `\r
 \x1B[90m[Process exited with code ${String(code2)}]\x1B[0m`
     );
+  }
+  const unsubExit = api2.terminal.onExit((id, code2) => {
+    const tab = [...tabs.values()].find((candidate) => candidate.sessionId === id);
+    if (tab) finishSession(tab, code2);
+    else createEvents.exit(id, code2);
   });
   async function createXterm() {
     const { Terminal, FitAddon } = await loadXterm();
@@ -72826,13 +72940,13 @@ ${output}` : "Terminal output: (none)"
   async function flushPendingInput(tab) {
     if (!tab.sessionId) return;
     let chunk = tab.pendingInput.shift();
-    while (chunk !== void 0) {
+    while (chunk !== void 0 && tab.sessionId && isTabOpen(tab)) {
       await api2.terminal.write(tab.sessionId, chunk);
       chunk = tab.pendingInput.shift();
     }
   }
   async function ensureSession(tab) {
-    if (tab.sessionId || tab.creating) return;
+    if (!isTabOpen(tab) || tab.sessionId || tab.creating) return;
     if (tab.awaitingConnect) {
       openTerminalSurface(tab);
       fitTab(tab);
@@ -72845,6 +72959,7 @@ ${output}` : "Terminal output: (none)"
       return;
     }
     tab.creating = true;
+    const finishCreate = createEvents.begin();
     try {
       if (!tab.codeBlockRun) {
         openTerminalSurface(tab);
@@ -72861,16 +72976,26 @@ ${output}` : "Terminal output: (none)"
           ...tab.executionTarget ? { executionTarget: tab.executionTarget } : {}
         }
       );
+      const early = createEvents.take(created.sessionId);
+      finishCreate();
+      if (!isTabOpen(tab)) {
+        await api2.terminal.destroy(created.sessionId);
+        return;
+      }
       tab.sessionId = created.sessionId;
+      if (early?.output) writeOutput(tab, early.output);
+      if (early && early.exitCode !== null) finishSession(tab, early.exitCode);
       const worktreePath = currentWorktreePath(tab.scopeId);
       tab.checkoutPath = created.checkoutMode === "worktree" ? worktreePath : null;
       tab.checkoutBadge.hidden = true;
       publishActive(tab);
       await flushPendingInput(tab);
-      if (created.checkoutMode === "shared" && worktreePath) {
+      if (isTabOpen(tab) && tab.sessionId && created.checkoutMode === "shared" && worktreePath) {
         await preserveSharedShell(tab, worktreePath);
       }
     } catch (err) {
+      if (!isTabOpen(tab)) return;
+      tab.pendingInput.length = 0;
       console.error("[terminals] could not start a shell:", err);
       tab.term.writeln(
         `\x1B[31mFailed to start terminal: ${terminalStartFailureMessage(err)}\x1B[0m`,
@@ -72880,6 +73005,7 @@ ${output}` : "Terminal output: (none)"
       );
     } finally {
       tab.creating = false;
+      finishCreate();
     }
   }
   async function destroySession(tab) {
@@ -72889,7 +73015,7 @@ ${output}` : "Terminal output: (none)"
     await api2.terminal.destroy(old);
   }
   function fitTab(tab) {
-    if (!terminalModeActive(store2) || !tab.panel.classList.contains("is-active") || !tab.termOpened)
+    if (!isTabOpen(tab) || !terminalModeActive(store2) || !tab.panel.classList.contains("is-active") || !tab.termOpened)
       return;
     try {
       tab.fitAddon.fit();
@@ -72900,6 +73026,7 @@ ${output}` : "Terminal output: (none)"
     }
   }
   function focusTab(tab, opts) {
+    if (!isTabOpen(tab)) return;
     openTerminalSurface(tab);
     fitTab(tab);
     if (opts?.grabFocus ?? true) tab.term.focus();
@@ -73057,6 +73184,11 @@ ${output}` : "Terminal output: (none)"
       else creatingTabs.delete(scopeId);
     }
     const { term, fitAddon } = xterm;
+    if (disposed) {
+      term.dispose();
+      fitAddon.dispose();
+      return id;
+    }
     const fileLinks = installTerminalFileLinks(term, store2, api2);
     const remoteHost = remoteTerminalHostLabel(
       store2.getState().projects,
@@ -73156,13 +73288,13 @@ ${output}` : "Terminal output: (none)"
   async function removeTab(tabId) {
     const tab = tabs.get(tabId);
     if (!tab) return;
+    tabs.delete(tabId);
     if (tab.nameTimer != null) clearTimeout(tab.nameTimer);
     tab.fileLinks.dispose();
     await destroySession(tab);
     finishCodeBlockRun(tab, null);
     tab.term.dispose();
     tab.tabSwitch.remove();
-    tabs.delete(tabId);
     if (activeTabId !== tabId) return;
     const remaining = visibleTabs();
     const lastRemaining = remaining[remaining.length - 1];
@@ -73199,7 +73331,7 @@ ${output}` : "Terminal output: (none)"
     if (tab) fitTab(tab);
   });
   function showActiveTab() {
-    if (!terminalModeActive(store2)) return;
+    if (disposed || !terminalModeActive(store2)) return;
     const tab = activeTabId ? tabs.get(activeTabId) : null;
     if (!tab) return;
     resizeObserver.observe(tab.container);
@@ -73357,6 +73489,11 @@ ${output}` : "Terminal output: (none)"
     }
   );
   return () => {
+    if (disposed) return;
+    disposed = true;
+    createEvents.clear();
+    const closedTabs = [...tabs.values()];
+    tabs.clear();
     unregisterCatalog();
     unsubs.forEach((u3) => {
       u3();
@@ -73366,13 +73503,13 @@ ${output}` : "Terminal output: (none)"
     unsubExit();
     unsubRunCommand();
     void (async () => {
-      for (const tab of tabs.values()) {
+      for (const tab of closedTabs) {
         if (tab.nameTimer != null) clearTimeout(tab.nameTimer);
         tab.fileLinks.dispose();
         await destroySession(tab);
+        finishCodeBlockRun(tab, null);
         tab.term.dispose();
       }
-      tabs.clear();
     })();
   };
 }
@@ -73399,6 +73536,7 @@ var init_terminals_pane = __esm({
     init_read_terminal();
     init_ui_scale();
     init_create_after_persist();
+    init_create_events();
     init_start_failure_message();
     init_tab_scope();
     init_remote_connect();
