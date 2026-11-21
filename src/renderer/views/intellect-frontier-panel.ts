@@ -48,11 +48,7 @@ import { compositeIntellect } from '@copse/llm/composite-intellect.ts'
 import { getLocalModelCapability } from '@copse/llm/local-model-catalog.ts'
 import { isNoTrainingModelPath, isZeroRetentionModelPath } from '@copse/llm/data-policies.ts'
 import type { PlanUsageSnapshot } from '@copse/plan-usage'
-import {
-  applyPlanCoverage,
-  resolvePlanInclusion,
-  type PlanCoverageMode,
-} from '@shared/plan-inclusion.ts'
+import { applyPlanCoverage, type PlanCoverageMode } from '@shared/plan-inclusion.ts'
 import { planAcpFrontierCandidates } from '@shared/plan-frontier-candidates.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import { el } from '../dom/helpers.ts'
@@ -280,11 +276,6 @@ function buildAuxLists(
 export interface IntellectFrontierPanel {
   root: HTMLFieldSetElement
   refresh: (signal?: AbortSignal) => Promise<void>
-  /** Switch plan re-pricing for the value map (Plan / Inference / Expected). */
-  setPlanCoverageMode: (mode: PlanCoverageMode) => void
-  getPlanCoverageMode: () => PlanCoverageMode
-  /** Feed completed-window exhaustion rates for Expected plan mode. */
-  setWindowExhaustion: (rates: ReadonlyMap<string, { hit: number; total: number }>) => void
 }
 
 /**
@@ -338,8 +329,6 @@ export function createIntellectFrontierPanel(
   let noTrainingOnly = false
   let costAxis: FrontierCostAxis = 'blended'
   let planCoverageMode: PlanCoverageMode = 'plan'
-  let windowExhaustion: ReadonlyMap<string, { hit: number; total: number }> = new Map()
-  let historyAvailable = false
   let expandPlanCoverageGroup: HTMLElement | null = null
   // The full lists behind the chart, cached so the pop-out can show the same
   // "below the chart" content the inline panel does.
@@ -383,11 +372,6 @@ export function createIntellectFrontierPanel(
     planCoverageMode = next
     render()
   }
-  function setWindowExhaustion(rates: ReadonlyMap<string, { hit: number; total: number }>): void {
-    windowExhaustion = rates
-    render()
-  }
-
   function syncZdrBtn(btn: HTMLButtonElement | null): void {
     if (!btn) return
     btn.textContent = 'ZDR only'
@@ -463,12 +447,6 @@ export function createIntellectFrontierPanel(
         label: 'Inference',
         title: 'Ignore the plan · plot every cloud model at catalog API $/MTok',
       },
-      {
-        mode: 'expected',
-        label: 'Expected',
-        title:
-          'Use prior window history: if a binding window usually hits its limit, plot at API price',
-      },
     ]
     for (const { mode, label, title } of modes) {
       const btn = el(
@@ -477,7 +455,6 @@ export function createIntellectFrontierPanel(
           type: 'button',
           class: 'frontier-btn frontier-cost-axis-btn',
           'data-plan-coverage': mode,
-          hidden: mode === 'expected',
           title,
         },
         label,
@@ -494,7 +471,6 @@ export function createIntellectFrontierPanel(
     if (!group) return
     for (const btn of group.querySelectorAll<HTMLButtonElement>('[data-plan-coverage]')) {
       const mode = btn.dataset['planCoverage']
-      btn.hidden = mode === 'expected' && !historyAvailable
       const active = mode === planCoverageMode
       btn.classList.toggle('active', active)
       btn.setAttribute('aria-pressed', active ? 'true' : 'false')
@@ -966,21 +942,6 @@ export function createIntellectFrontierPanel(
       candidateHasRoute(candidate) ||
       candidate.discovery === true ||
       (discover && trackedCandidateIsDiscovery(candidate))
-    historyAvailable = allRouteCandidates.some((candidate) => {
-      if (
-        !planUsage ||
-        !candidate.planAccess ||
-        candidate.discovery ||
-        !candidateIsIncluded(candidate)
-      )
-        return false
-      const inclusion = resolvePlanInclusion(
-        candidate.planAccess.provider,
-        candidate.planAccess.modelId,
-        planUsage,
-      )
-      return inclusion !== null && (windowExhaustion.get(inclusion.windowId)?.total ?? 0) > 0
-    })
     const adjustCandidate = (candidate: FrontierCandidate): FrontierCandidate => {
       const surfaced = trackedCandidateIsDiscovery(candidate)
         ? { ...candidate, discovery: true }
@@ -992,7 +953,6 @@ export function createIntellectFrontierPanel(
         ? enriched
         : applyPlanCoverage(enriched, planUsage, {
             mode: planCoverageMode,
-            windowExhaustion,
           })
     }
     const routePolicy = {
@@ -1019,7 +979,6 @@ export function createIntellectFrontierPanel(
         })
       )
     }
-    if (planCoverageMode === 'expected' && !historyAvailable) planCoverageMode = 'plan'
     const unfilteredBlendedPoints = frontierForKnownModels(
       allRouteCandidates,
       adjustCandidate,
@@ -1250,8 +1209,5 @@ export function createIntellectFrontierPanel(
   return {
     root: fieldset,
     refresh,
-    setPlanCoverageMode,
-    getPlanCoverageMode: () => planCoverageMode,
-    setWindowExhaustion,
   }
 }

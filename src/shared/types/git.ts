@@ -82,6 +82,13 @@ export interface GitOpenPr {
 export interface GitBranchStatus {
   currentBranch: string | null
   pr: GitOpenPr | null
+  /**
+   * True only when the checkout was found and Git reports HEAD on no branch. A
+   * null `currentBranch` alone is not detached: no checkout found yet, a folder
+   * that is not a repository and an unreadable HEAD look the same. Absent (an
+   * older host) means not detached.
+   */
+  detached?: boolean
 }
 
 /**
