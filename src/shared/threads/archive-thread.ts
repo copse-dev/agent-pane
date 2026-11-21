@@ -5,6 +5,11 @@ export interface ThreadLiveResources {
   agent: boolean
   terminals: boolean
   backgroundProcesses: boolean
+  /**
+   * A thread-owned isolated desktop VM, which outlives turns and mounts no host
+   * folders. Optional so older hosts stay compatible; this host always sets it.
+   */
+  isolatedDesktop?: boolean
 }
 
 export type ThreadArchiveResult =

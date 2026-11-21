@@ -48,7 +48,12 @@ interface PendingEvent {
   timer: NodeJS.Timeout
 }
 
-/** One session has one authority owner and at most one outstanding guest operation. */
+/**
+ * One session has one authority owner and at most one outstanding guest operation.
+ * The grant belongs to the owning thread, not to the turn that started it: only
+ * {@link stop} (explicit stop, user Stop, thread cleanup, shutdown), expiry and
+ * guest failure end it.
+ */
 export class DesktopSession {
   readonly id = randomUUID()
   private readonly controller = new AbortController()
@@ -58,7 +63,6 @@ export class DesktopSession {
   private readonly timer: NodeJS.Timeout
   readonly owner: ThreadExecutionOwner
   private readonly transport: DesktopTransport
-  private readonly parentSignal: AbortSignal
   private readonly onCleanupError: (error: unknown) => void
   private readonly onRemoved: () => void
   private readonly abort = (): void => {
@@ -68,19 +72,16 @@ export class DesktopSession {
   constructor(
     owner: ThreadExecutionOwner,
     transport: DesktopTransport,
-    parentSignal: AbortSignal,
     onCleanupError: (error: unknown) => void,
     onRemoved: () => void = () => {},
     lifetimeMs = 15 * 60_000,
   ) {
     this.owner = owner
     this.transport = transport
-    this.parentSignal = parentSignal
     this.onCleanupError = onCleanupError
     this.onRemoved = onRemoved
     this.timer = setTimeout(this.abort, lifetimeMs)
     this.timer.unref()
-    parentSignal.addEventListener('abort', this.abort, { once: true })
   }
 
   private assertOwner(owner: ThreadExecutionOwner): void {
@@ -89,12 +90,12 @@ export class DesktopSession {
   }
 
   private assertActive(): void {
-    if (this.parentSignal.aborted || this.revoked) throw new Error('Desktop grant revoked')
+    if (this.revoked) throw new Error('Desktop grant revoked')
   }
 
   private wait(timeoutMs: number): Promise<DesktopEvent> {
     if (this.pending) throw new Error('A desktop operation is already in progress')
-    if (this.revoked || this.parentSignal.aborted) throw new Error('Desktop grant revoked')
+    if (this.revoked) throw new Error('Desktop grant revoked')
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.fail(new Error('Desktop response timed out'))
@@ -159,7 +160,7 @@ export class DesktopSession {
     try {
       await this.transport.send(request)
       const event = await result
-      if (this.revoked || this.parentSignal.aborted) throw new Error('Desktop grant revoked')
+      if (this.revoked) throw new Error('Desktop grant revoked')
       if (request.action !== 'screenshot') {
         if (event.event !== 'input-complete')
           throw new Error('Expected desktop input acknowledgement')
@@ -188,7 +189,6 @@ export class DesktopSession {
     if (!this.revoked) {
       this.revoked = true
       clearTimeout(this.timer)
-      this.parentSignal.removeEventListener('abort', this.abort)
       this.controller.abort()
       this.transport.revoke()
       const pending = this.pending

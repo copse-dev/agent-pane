@@ -100,10 +100,17 @@ async function main(): Promise<void> {
       assert.ok(maximum > 0 && maximum <= 100_000)
       return Promise.resolve(provider)
     }),
-    controller.signal,
     (error) => {
       cleanupErrors.push(error)
     },
+  )
+  // The deadline and signals revoke the grant the way the product's Stop does.
+  controller.signal.addEventListener(
+    'abort',
+    () => {
+      void session.stop().catch((error: unknown) => cleanupErrors.push(error))
+    },
+    { once: true },
   )
   let png: Buffer | undefined
   let title: string

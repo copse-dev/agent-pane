@@ -8,6 +8,8 @@ import { safeJsonParse, decodeWithSchema } from '@copse/std/safe-json.ts'
 import { initializeDesktopGuestSettings } from './apple-desktop-inference.mts'
 import { DESKTOP_PARENT_MODEL } from '../../src/main/services/isolated-desktop/guest-provider.ts'
 import { loadStartupSettings } from '../../src/renderer/controller/startup-settings.ts'
+import { resolveRoutedModel } from '../../src/main/services/providers/role-models.ts'
+import { normalizeRoleModelSelection } from '../../src/main/services/providers/provider-selection.ts'
 
 it('opens the preconfigured guest without onboarding replacing its approved model', async () => {
   const root = await mkdtemp(join(tmpdir(), 'copse-desktop-settings-'))
@@ -27,6 +29,16 @@ it('opens the preconfigured guest without onboarding replacing its approved mode
     }
     assert.equal(await settings.get('onboardingCompleted'), true)
     assert.equal((await loadStartupSettings(settings)).model, DESKTOP_PARENT_MODEL)
+    for (const key of ['smallTasksModel', 'subagentModel', 'advisorModel', 'reviewModel']) {
+      const selection = resolveRoutedModel(key, 'lmstudio:unavailable-default', {
+        roleModels: {},
+        legacy: (name, fallback) => {
+          const value = values[name]
+          return typeof value === 'string' ? value : fallback
+        },
+      })
+      assert.equal(normalizeRoleModelSelection(selection), DESKTOP_PARENT_MODEL)
+    }
     assert.deepEqual(values['extraProviders'], [
       {
         slug: 'isolated-parent',

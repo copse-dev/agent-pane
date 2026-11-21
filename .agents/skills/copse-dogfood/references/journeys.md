@@ -18,6 +18,12 @@ that optional reviewer disabled, set it through the guest's normal Plugins UI an
 report that scope; it is not a default-configuration pass. Preserve any failure
 observed with review enabled. Do not change permission policy or the grant limit.
 
+Each model step also counts its repeated input context, including system
+instructions and tool definitions. Even tiny edits can reach the budget guard.
+Report provider-reported usage separately from retained input estimates; the
+budget error alone does not establish an exact consumed-token total. Preserve
+required inspection and review when deciding whether the journey is complete.
+
 Budget the outer controller too: repeated screenshot polls consume its model
 context even while the guest is idle. Use the controller's supported wait (a
 scoped read-only `sleep` command is sufficient when authorized), wait several

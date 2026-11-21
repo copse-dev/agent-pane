@@ -65,6 +65,13 @@ same from Copse's point of view.
 
 ### Decisions
 
+When a replacement process resumes a conversation, its authenticated native-tool
+bridge has a new server name. Once that bridge lists its tools, Copse sends its
+exact current name and tool guidance even though the resumed conversation does
+not need the full session notes or transcript replay. That note supersedes any
+disposed bridge named in retained notes. Reusing the same bridge does not repeat
+the note, and an unmounted or dropped bridge remains unavailable.
+
 1. **A session outlives its process.** The pool used to key reuse on one
    fingerprint that includes cwd, sandbox, permission mode, and MCP servers. Any
    change to it discarded the agent session. The fingerprint still decides

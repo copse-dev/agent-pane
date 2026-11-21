@@ -298,7 +298,12 @@ describe('projects pane thread rename + archive (component)', () => {
     const api = makeApi()
     api.threads.archive = async (): Promise<ThreadArchiveResult> => ({
       status: 'blocked-running',
-      running: { agent: true, terminals: false, backgroundProcesses: false },
+      running: {
+        agent: true,
+        terminals: false,
+        backgroundProcesses: false,
+        isolatedDesktop: false,
+      },
     })
     mount(store, api)
     mountConfirmDialog()
@@ -324,6 +329,54 @@ describe('projects pane thread rename + archive (component)', () => {
     )
   })
 
+  it('names an isolated desktop VM as the only running work, without worktree wording', async () => {
+    const store = createStore({
+      projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+      threads: [thread('t1', 'Keep me'), thread('t2', 'Desktop chat')],
+      activeThreadId: 't1',
+    })
+    const api = makeApi()
+    const calls: boolean[] = []
+    api.threads.archive = async (
+      _projectId,
+      _threadId,
+      _discard,
+      stopProcesses,
+    ): Promise<ThreadArchiveResult> => {
+      calls.push(stopProcesses)
+      return stopProcesses
+        ? { status: 'archived', archivedAt: 9 }
+        : {
+            status: 'blocked-running',
+            running: {
+              agent: false,
+              terminals: false,
+              backgroundProcesses: false,
+              isolatedDesktop: true,
+            },
+          }
+    }
+    mount(store, api)
+    mountConfirmDialog()
+    rowFor('Desktop chat').querySelector<HTMLButtonElement>('.chat-menu-btn')?.click()
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.context-menu-item'))
+      .find((candidate) => candidate.textContent === 'Archive')
+      ?.click()
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    const dialog = document.querySelector('#confirm-dialog')
+    assert.ok(dialog)
+    assert.match(dialog.textContent, /its isolated Copse desktop VM/)
+    assert.match(dialog.textContent, /The VM is deleted with everything inside it\./)
+    assert.doesNotMatch(dialog.textContent, /background processes|worktree/)
+    clickActiveConfirmDialogConfirm()
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    assert.deepEqual(calls, [false, true])
+    assert.equal(store.getState().threads.find((t) => t.id === 't2')?.archivedAt, 9)
+  })
+
   it('asks before stopping running work, then archives with the stop flag set', async () => {
     const store = createStore({
       projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
@@ -346,7 +399,12 @@ describe('projects pane thread rename + archive (component)', () => {
         ? { status: 'archived', archivedAt: 7 }
         : {
             status: 'blocked-running',
-            running: { agent: true, terminals: true, backgroundProcesses: true },
+            running: {
+              agent: true,
+              terminals: true,
+              backgroundProcesses: true,
+              isolatedDesktop: false,
+            },
           }
     }
     mount(store, api)

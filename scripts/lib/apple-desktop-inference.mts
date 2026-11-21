@@ -29,6 +29,12 @@ export async function initializeDesktopGuestSettings(root = '/tmp/copse'): Promi
     JSON.stringify({
       onboardingCompleted: true,
       model: DESKTOP_PARENT_MODEL,
+      // Every task role must use the granted model, including the review that
+      // runs after a file edit. Ordinary desktop defaults are unavailable here.
+      smallTasksModel: DESKTOP_PARENT_MODEL,
+      subagentModel: DESKTOP_PARENT_MODEL,
+      advisorModel: DESKTOP_PARENT_MODEL,
+      reviewModel: DESKTOP_PARENT_MODEL,
       extraProviders: [
         {
           slug: 'isolated-parent',

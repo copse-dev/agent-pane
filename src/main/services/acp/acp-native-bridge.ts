@@ -3,7 +3,6 @@ import {
   runWithSkillActivationTurn,
   type SkillActivationTurn,
 } from '../skills/skill-activation.ts'
-import { runWithIsolatedDesktopLifetime } from '../isolated-desktop/desktop-lifetime.ts'
 import { patchTouchedPaths } from '@shared/patch/apply-patch.ts'
 import { captureInlineCanvasScope } from '../inline-canvas-context.ts'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
@@ -732,10 +731,9 @@ function buildMcpServer(
     extra.signal.addEventListener('abort', onExtraAbort, { once: true })
     let stopKeepalive = (): void => {}
     try {
-      const capturedTurnSignal = ctx.getTurnSignal()
       const executeSignal = mergeBridgeExecuteSignal(
         ctx.sessionSignal,
-        capturedTurnSignal,
+        ctx.getTurnSignal(),
         ctx.getCallSignal(),
       )
       // The client's idle timeout can be shorter than run_shell's foreground
@@ -788,14 +786,6 @@ function buildMcpServer(
           // arguments, never the redacted decision summary shown in the UI.
           detail: { mcpRequestId: requestKey, arguments: request.params.arguments ?? {} },
         })
-        if (name === 'isolated_copse') {
-          if (!capturedTurnSignal)
-            throw new Error('Isolated desktop control requires an active agent turn')
-          return runWithIsolatedDesktopLifetime(
-            mergeBridgeExecuteSignal(ctx.sessionSignal, capturedTurnSignal),
-            () => registry.executeNormalized(name, request.params.arguments, executeSignal),
-          )
-        }
         return registry.executeNormalized(name, request.params.arguments, executeSignal)
       }
       // Rebind the thread identity so approval prompts / idle-deadline pauses

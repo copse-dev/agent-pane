@@ -1,7 +1,10 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { lstatSync, mkdirSync, mkdtempSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { buildSync } from 'esbuild'
+import { z } from 'zod'
+import { safeJsonParse, decodeWithSchema } from '@copse/std/safe-json.ts'
 import { copseDataRoot } from '@copse/store-kit/copse-paths.ts'
 import { readAppleDesktopPin } from '../../scripts/lib/apple-desktop-pin.mts'
 import { $, browser, expect } from '@wdio/globals'
@@ -10,6 +13,7 @@ import { waitForAgentIdle } from './helpers.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 import {
   expectAssistantReply,
+  installMockScenario,
   prepareMockToolTurn,
   prepareMockTurn,
 } from './helpers/mock-scenario.ts'
@@ -25,14 +29,51 @@ import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 // Apple container is a native Apple-silicon feature; Linux has no host fallback.
 const supported = process.platform === 'darwin' && process.arch === 'arm64'
 
-async function importTrustedDesktopPin(): Promise<void> {
-  // Import only the builder's validated image identity, never a host profile or key.
-  const digest = await readAppleDesktopPin({ COPSE_DIR: join(homedir(), '.copse') })
-  const directory = join(copseDataRoot(), 'isolated-desktop')
-  mkdirSync(directory, { recursive: true, mode: 0o700 })
-  writeFileSync(join(directory, 'image-pin.json'), JSON.stringify({ version: 1, digest }), {
-    mode: 0o600,
+const containerListSchema = z.array(z.object({ configuration: z.object({ id: z.string() }) }))
+
+/** Names of guest VMs the Apple engine knows about, running or not. */
+function isolatedDesktopVms(): string[] {
+  const output = execFileSync('container', ['list', '--all', '--format', 'json'], {
+    encoding: 'utf8',
+    env: { PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin', HOME: homedir() },
   })
+  const listed = safeJsonParse(output, decodeWithSchema(containerListSchema))
+  if (!listed) throw new Error('container list returned unexpected JSON')
+  return listed
+    .map((entry) => entry.configuration.id)
+    .filter((id) => id.startsWith('copse-desktop-probe-'))
+}
+
+const imagePreparations = new Map<string, Promise<void>>()
+
+async function prepareTrustedDesktopPin(): Promise<void> {
+  const profile = copseDataRoot()
+  if (
+    process.env['COPSE_DIR'] !== profile ||
+    !basename(profile).startsWith('.wdio-profile-') ||
+    realpathSync(profile) !== profile
+  ) {
+    throw new Error('Desktop acceptance requires a generated isolated e2e profile')
+  }
+  const info = lstatSync(profile)
+  if (!info.isDirectory() || info.uid !== process.getuid?.() || (info.mode & 0o022) !== 0) {
+    throw new Error('Desktop acceptance profile must be owned and protected from other writers')
+  }
+  let preparation = imagePreparations.get(profile)
+  if (!preparation) {
+    preparation = Promise.resolve().then(() => {
+      // The supported builder creates this profile's receipt before any grant.
+      // Keep a failed preparation so another case cannot silently retry it.
+      execFileSync(process.execPath, ['scripts/build-apple-desktop.mts'], {
+        env: { ...process.env, COPSE_DIR: profile },
+        timeout: 180_000,
+        maxBuffer: 8 * 1024 * 1024,
+      })
+    })
+    imagePreparations.set(profile, preparation)
+  }
+  await preparation
+  await readAppleDesktopPin({ COPSE_DIR: profile })
 }
 
 ;(supported ? describe : describe.skip)('isolated Copse desktop consent', function () {
@@ -93,6 +134,9 @@ async function importTrustedDesktopPin(): Promise<void> {
       '100,000',
       '15 minutes',
       'No host folders',
+      // The grant outlives the turn, so consent says how it ends instead.
+      'stays up between turns',
+      'Stop or archiving the thread deletes it',
     ]) {
       await expect(dialog.$('.approval-body')).toHaveText(expect.stringContaining(text))
     }
@@ -111,8 +155,8 @@ async function importTrustedDesktopPin(): Promise<void> {
   })
 
   it('approves a real VM, captures its screen and revokes it through the registered tool', async function () {
-    this.timeout(120_000)
-    await importTrustedDesktopPin()
+    this.timeout(300_000) // Supported image preparation precedes the guest grant.
+    await prepareTrustedDesktopPin()
     const scenario = await prepareMockTurn('Test the approved isolated desktop.', [
       {
         toolCalls: [
@@ -160,7 +204,7 @@ async function importTrustedDesktopPin(): Promise<void> {
   })
 
   it('starts and stops a real VM through the authenticated ACP bridge and consent UI', async function () {
-    this.timeout(120_000)
+    this.timeout(300_000) // Also works when this real-VM case is selected alone.
     // Inject a scripted agent at the supported executable boundary. The MCP
     // bridge, registry, consent service and Apple VM transport remain real.
     const workspace = seedStableWorkspace()
@@ -198,7 +242,7 @@ async function importTrustedDesktopPin(): Promise<void> {
         },
       ],
     })
-    await importTrustedDesktopPin()
+    await prepareTrustedDesktopPin()
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await setComposerValue('Verify isolated desktop control through ACP.')
@@ -223,5 +267,129 @@ async function importTrustedDesktopPin(): Promise<void> {
     await expectAssistantReply('Authenticated ACP desktop captured, deleted and revoked.')
     await waitForAgentIdle()
     await saveAppScreenshot('isolated-desktop-acp-complete.png')
+  })
+
+  it('keeps an approved VM between turns, and archive asks before deleting it', async function () {
+    // Stop and archive may wait out a whole VM deletion attempt (120 s) before it settles.
+    this.timeout(480_000)
+    resetUserData()
+    seedEmptyProject(seedStableWorkspace(), 'e2e-isolated-desktop-cross-turn', {
+      subagentsEnabled: false,
+      model: 'claude-sonnet-4-6',
+    })
+    writeSettings({
+      ...readSeededSettings(),
+      extraProviders: [
+        {
+          slug: 'isolated-approval',
+          label: 'Approval fixture',
+          baseUrl: 'http://127.0.0.1:1/v1',
+          models: [{ id: 'demo', contextWindow: 8192 }],
+        },
+      ],
+    })
+    await prepareTrustedDesktopPin()
+    await browser.reloadSession()
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    expect(isolatedDesktopVms()).toEqual([])
+    const first = 'Start the isolated desktop and leave it running.'
+    const second = 'Capture the isolated desktop.'
+    const scenario = await installMockScenario({
+      title: 'Keep the isolated desktop',
+      turns: [
+        {
+          user: first,
+          responses: [
+            {
+              toolCalls: [
+                {
+                  name: 'isolated_copse',
+                  args: { action: 'start', model: 'isolated-approval:demo' },
+                },
+              ],
+            },
+            {
+              expectToolResults: [{ name: 'isolated_copse', includes: 'Started isolated desktop' }],
+              text: 'The isolated desktop is running.',
+            },
+          ],
+        },
+        {
+          user: second,
+          responses: [
+            { toolCalls: [{ name: 'isolated_copse', args: { action: 'screenshot' } }] },
+            {
+              expectToolResults: [{ name: 'isolated_copse', includes: 'screenshot is attached' }],
+              text: 'The isolated desktop is still running.',
+            },
+          ],
+        },
+      ],
+    })
+    await setComposerValue(first)
+    await submitComposer()
+    const dialog = $('#approval-dialog')
+    await dialog.waitForDisplayed({ timeout: 10_000 })
+    await dialog.$('.approval-approve').click()
+    await dialog.waitForDisplayed({ reverse: true, timeout: 10_000 })
+    await scenario.waitForTurns(1, 100_000)
+    await expectAssistantReply('The isolated desktop is running.')
+    await waitForAgentIdle()
+    // The turn has ended; the guest must still be there.
+    const vms = isolatedDesktopVms()
+    expect(vms).toHaveLength(1)
+
+    // A new turn reuses the same guest without a second consent. A fresh
+    // consent dialog would hold the turn, and a deleted guest would answer
+    // "This thread has no isolated desktop" instead of attaching a screenshot.
+    await setComposerValue(second)
+    await submitComposer()
+    await scenario.waitForTurns(2, 60_000)
+    await expect(dialog).not.toBeDisplayed()
+    await scenario.assertComplete()
+    await expectAssistantReply('The isolated desktop is still running.')
+    await waitForAgentIdle()
+    expect(isolatedDesktopVms()).toEqual(vms)
+    const preview = $('.tool-result-preview-image')
+    await preview.waitForDisplayed({ timeout: 10_000 })
+    await preview.scrollIntoView({ block: 'center' })
+    await saveAppScreenshot('isolated-desktop-second-turn.png')
+
+    // Archive treats the idle thread's live guest as running work.
+    const row = $('.chat-row.selected')
+    const threadId = await row.getAttribute('data-thread-id')
+    if (!threadId) throw new Error('The selected chat row has no thread id')
+    const openArchive = async (): Promise<void> => {
+      await row.moveTo()
+      await row.$('.chat-menu-btn').click()
+      await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
+      await $('.context-menu-item=Archive').click()
+    }
+    await openArchive()
+    const confirm = $('#confirm-dialog')
+    await confirm.waitForDisplayed({ timeout: 10_000 })
+    await expect(confirm.$('.confirm-dialog-message')).toHaveText(
+      expect.stringContaining('Stop running work and archive'),
+    )
+    // The guest is the only live work: name the VM, not host processes or the worktree.
+    const detail = await confirm.$('.confirm-dialog-detail').getText()
+    expect(detail).toContain('its isolated Copse desktop VM')
+    expect(detail).toContain('The VM is deleted with everything inside it.')
+    expect(detail).not.toContain('background processes')
+    expect(detail).not.toContain('worktree')
+    await saveAppScreenshot('isolated-desktop-archive-confirm.png')
+    await confirm.$('.confirm-dialog-cancel').click()
+    expect(isolatedDesktopVms()).toEqual(vms)
+    await openArchive()
+    await confirm.waitForDisplayed({ timeout: 10_000 })
+    await confirm.$('.confirm-dialog-confirm').click()
+    await $(`.chat-row[data-thread-id="${threadId}"]`).waitForExist({
+      reverse: true,
+      timeout: 130_000,
+    })
+    await browser.waitUntil(() => isolatedDesktopVms().length === 0, {
+      timeout: 130_000,
+      timeoutMsg: 'Archiving left the isolated desktop VM behind',
+    })
   })
 })

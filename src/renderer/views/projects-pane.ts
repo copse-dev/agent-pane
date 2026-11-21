@@ -159,6 +159,17 @@ export function describeLiveResources(running: ThreadLiveResources): string[] {
     ...(running.agent ? ['• the chat’s running agent'] : []),
     ...(running.terminals ? ['• its open terminals'] : []),
     ...(running.backgroundProcesses ? ['• its background processes'] : []),
+    ...(running.isolatedDesktop === true ? ['• its isolated Copse desktop VM'] : []),
+  ]
+}
+
+/** What stopping means for each kind of live work: host work ends in the worktree; the VM is deleted. */
+function describeLiveResourceStop(running: ThreadLiveResources): string[] {
+  return [
+    ...(running.agent || running.terminals || running.backgroundProcesses
+      ? ['Anything still running in the chat’s worktree is ended before it is removed.']
+      : []),
+    ...(running.isolatedDesktop === true ? ['The VM is deleted with everything inside it.'] : []),
   ]
 }
 
@@ -955,7 +966,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           detail: [
             'Archiving will stop:',
             ...describeLiveResources(result.running),
-            'Anything still running in the chat’s worktree is ended before it is removed.',
+            ...describeLiveResourceStop(result.running),
           ].join('\n'),
           confirmLabel: 'Stop and archive',
           danger: true,

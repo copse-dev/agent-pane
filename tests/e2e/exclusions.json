@@ -19,9 +19,12 @@
       "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
       "ownerRole": "Sandbox and isolated desktop maintainer (person assignment pending in #2719)",
       "recordedOn": "2026-11-05",
-      "coverage": "PR #4127 merged November 3 with passing check/build and all nine Linux e2e shards; those shards skip this macOS-only spec. On November 5 all three on-device cases passed: consent/rejection, native approval -> real VM -> screenshot -> Stop, and a registered scripted ACP process -> real bearer-authenticated bridge (including unauthenticated rejection) -> registered isolated_copse -> consent -> real VM -> 1280x800 PNG -> Stop/deletion -> refused screenshot. Consent, guest and completion captures were inspected. Fresh host/controller used the existing trusted November 2 Linux image. Separate producer evidence covers real-model GUI inference, child-approved synthetic host-file/service denial, cancellation and orphan recovery; no paid inference was used for the November 5 acceptance.",
+      "coverage": "Linux e2e shards skip this macOS-only spec. On November 15, at the codex/copse-nested-runtime head with copse-desktop:local rebuilt and pinned from that head, all four on-device cases passed on 5 of 6 runs: consent copy/rejection; native approval -> real VM -> 1280x800 screenshot -> stop; scripted ACP process -> authenticated bridge -> real VM -> stop; and the thread-owned grant: a VM approved in one turn survives the end of that turn, a second turn captures it with no second consent, archive asks before deleting it, Cancel keeps it, and Stop and archive deletes it. The one failure was Stop and archive reporting Failed to stop all thread processes, likely the 30-second limit on a VM deletion the engine then completed (the cause was not captured); deletion now allows 120 seconds, retries once and treats this VM's notFound as deleted, and stop failures name their causes. With that fix and the archive dialog naming the VM rather than background processes, all four cases passed on 4 of 4 consecutive runs. Consent, second-turn and archive-confirm captures were inspected. No paid inference was used. On November 20, the unpublished ad7 + Main3dd validation candidate passed all four cases again using the supported image builder in its own generated profile, with seven full captures inspected and scoped cleanup verified. The separate real native Qwen3.8 one-edit/two-user-turn journey also passed with default review and its original fixed grant; the earlier two-edit reservation-limited result remains partial. Exact source/tree/runtime/image bindings and remaining visual holds are recorded in PR #4294.",
       "markers": ["describe.skip"],
-      "lastVerified": null
+      "lastVerified": {
+        "on": "2026-11-20",
+        "evidence": "https://github.com/copse-dev/agent-pane/pull/4294"
+      }
     },
     {
       "spec": "tests/e2e/agent-eval-drive.e2e.ts",

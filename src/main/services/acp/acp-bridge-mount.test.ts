@@ -22,7 +22,12 @@ import {
 } from './acp-bridge-mount.ts'
 import { escapeRegex } from './acp-bridge-name.ts'
 import { acpSandboxGithubSteer } from './acp-network-denial-steer.ts'
-import { acquireAcpSession, acpSessionPoolSize, disposeAllAcpSessions } from './acp-session-pool.ts'
+import {
+  acquireAcpSession,
+  acpSessionPoolSize,
+  disposeAcpSession,
+  disposeAllAcpSessions,
+} from './acp-session-pool.ts'
 import { acpSessionHostWorkerPath } from './acp-session-host.ts'
 import { ToolRegistry } from '../tool-registry.ts'
 import { setSetting } from '../storage/settings.ts'
@@ -352,6 +357,43 @@ describe('ACP native bridge mount (#4144)', () => {
     assert.doesNotMatch(shown, UNAVAILABLE)
     assert.ok(prompt.includes(acpCopseToolsPromptNote(offeredServer(prompt))))
     assert.ok(!UNAVAILABLE_NOTE.test(prompt))
+  })
+
+  it('refreshes the exact bridge name after resuming a conversation in a new process', async () => {
+    await useFixtureAgent(['--mcp-http', '--list-mcp-tools', '--resume-session'])
+    const registry = registryWithOneBridgedTool()
+    const first = await turn('loaded-bridge', registry)
+    const oldServer = offeredServer(first.prompt)
+    await disposeAcpSession('loaded-bridge', { preserveForResume: true })
+
+    const resumed = await turn('loaded-bridge', registry)
+    assert.doesNotMatch(
+      resumed.prompt,
+      /Session notes:/,
+      'resumed conversation keeps its existing notes',
+    )
+    const currentServer = offeredServer(resumed.prompt)
+    assert.notEqual(
+      currentServer,
+      oldServer,
+      'replacement process owns a fresh authenticated bridge',
+    )
+    assert.ok(
+      resumed.prompt.includes(
+        acpCopseToolsConnectedPromptNote(currentServer, acpCopseToolsPromptNote(currentServer)),
+      ),
+    )
+    assert.ok(
+      !resumed.prompt.includes(oldServer),
+      'current turn does not endorse the disposed bridge',
+    )
+
+    const warm = await turn('loaded-bridge', registry)
+    assert.doesNotMatch(
+      warm.prompt,
+      /MCP server is now connected|Prefer the tools of Copse's MCP server/,
+      'warm reuse does not repeat bridge steering',
+    )
   })
 
   it('takes a Stop during the mount window for a cancel, not a failed mount', async () => {

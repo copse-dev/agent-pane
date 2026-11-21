@@ -10,6 +10,7 @@ import { agentInputSchemaProblem } from '../services/tool-input-schema.ts'
 import { runWithThreadExecutionContext } from '../services/thread-execution-context.ts'
 import { ToolRegistry, setPermissionGateForTests } from '../services/tool-registry.ts'
 import { createIsolatedDesktopTool, isolatedDesktopTool } from './isolated-desktop-tool.ts'
+import { runWithBridgeExecutionId } from '../services/approval-tool-call-context.ts'
 
 /** The flat schema agents are shown for isolated_copse. */
 function advertisedSchema(): Record<string, unknown> {
@@ -103,6 +104,43 @@ describe('isolated_copse input', () => {
 
     assert.match(result, /Guest input completed\./)
     assert.deepEqual(requests, [{ action: 'click', x: 10, y: 20, button: 1 }])
+  })
+
+  it('asks a bridged start for its model and hands the service no lifetime beyond the call', async () => {
+    const starts: { model: string; extra: number }[] = []
+    const registry = new ToolRegistry()
+    registry.register(
+      createIsolatedDesktopTool({
+        start: (_owner, model, _signal, ...rest: unknown[]) => {
+          starts.push({ model, extra: rest.length })
+          return Promise.resolve('started')
+        },
+        control: () => Promise.reject(new Error('control is not part of this test')),
+      }),
+    )
+    setPermissionGateForTests(() => Promise.resolve(true))
+    const context = {
+      projectId: 'project-1',
+      threadId: 'desktop-owner',
+      projectRoot: process.cwd(),
+      root: process.cwd(),
+      checkoutMode: 'shared' as const,
+      branch: null,
+    }
+    const call = new AbortController()
+    const bridged = (args: Record<string, unknown>): Promise<{ result: string }> =>
+      runWithBridgeExecutionId('bridge-execution', () =>
+        runWithThreadExecutionContext(context, () =>
+          registry.executeNormalized('isolated_copse', args, call.signal),
+        ),
+      )
+
+    await assert.rejects(bridged({ action: 'start' }), /Specify the API/)
+    assert.equal(starts.length, 0)
+    const { result } = await bridged({ action: 'start', model: 'isolated-approval:demo' })
+    assert.match(result, /started/)
+    // The grant is the thread's: the service sees only the starting call's signal.
+    assert.deepEqual(starts, [{ model: 'isolated-approval:demo', extra: 0 }])
   })
 
   it('accepts a screenshot with an empty text', () => {

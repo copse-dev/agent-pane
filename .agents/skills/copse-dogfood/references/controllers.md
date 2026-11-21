@@ -56,9 +56,13 @@ The current grant lasts at most 15 minutes / 100,000 input-and-output tokens and
 has no shared host folders, credentials, host display, or general network access.
 Use an offline, dependency-free sample. Package downloads, host-repository repairs,
 authenticated ACP inside the guest, and overnight runs are not supplied by this
-route. The guest cannot start another isolated Copse. Stop/cancellation/expiry
-revokes access; an ACP grant is also bound to its parent turn/session. Keep an
-interactive journey within that lifetime and capture evidence as it proceeds.
+route. The guest cannot start another isolated Copse. The grant belongs to the
+parent thread: a turn ending or an ACP session being disposed or reaped does not
+stop the guest. A later turn of the same thread can continue within the original
+grant without another approval. Explicit Stop, thread archive/delete, blocking
+the tool, expiry, guest failure, or app shutdown revokes access. Keep the journey
+within the original lifetime and capture evidence as it proceeds; see the plan's
+[grant lifetime decision](../../../../docs/plans/apple-container-desktop.md#grant-lifetime-decided-november-15-2026).
 Chat, auxiliary tasks and automatic review share that token grant. A second edit
 can be written before its turn or review exhausts the grant; record that as partial,
 not a completed journey. Preserve default review unless the scenario explicitly

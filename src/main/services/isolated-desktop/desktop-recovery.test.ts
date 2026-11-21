@@ -3,7 +3,11 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, readdir, rm } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { DESKTOP_LEASE_LABEL, DesktopLeaseRecovery } from './desktop-recovery.ts'
+import {
+  DESKTOP_LEASE_LABEL,
+  DesktopLeaseRecovery,
+  deleteDesktopContainer,
+} from './desktop-recovery.ts'
 
 it('reclaims only dead or expired owned desktops, retaining failed deletion for retry', async () => {
   await mkdir('.tmp', { recursive: true })
@@ -86,4 +90,53 @@ it('refuses a name collision with a different VM and forgets an explicit missing
   } finally {
     await rm(directory, { recursive: true, force: true })
   }
+})
+
+it('counts a VM deleted by a timed-out command as deleted, and nothing else', async () => {
+  const name = 'copse-desktop-probe-' + randomUUID()
+  const failure = (stderr: string): Error => Object.assign(new Error('Command failed'), { stderr })
+  const missing = failure(`Error: notFound: "container with ID ${name} not found"`)
+  const scripted = (
+    ...outcomes: (Error | undefined)[]
+  ): { calls: string[][]; run: (args: string[]) => Promise<void> } => {
+    const calls: string[][] = []
+    const run = (args: string[]): Promise<void> => {
+      calls.push(args)
+      const outcome = outcomes.shift()
+      return outcome ? Promise.reject(outcome) : Promise.resolve()
+    }
+    return { calls, run }
+  }
+
+  // The engine finished the deletion the timed-out command asked for.
+  const timedOut = scripted(Object.assign(new Error('Command failed'), { killed: true }), missing)
+  await deleteDesktopContainer(name, timedOut.run)
+  assert.deepEqual(timedOut.calls, [
+    ['delete', '--force', name],
+    ['delete', '--force', name],
+  ])
+
+  const gone = scripted(missing)
+  await deleteDesktopContainer(name, gone.run)
+  assert.equal(gone.calls.length, 1)
+
+  // Another container's absence, or a second real failure, is never success,
+  // and the error names both attempts' causes.
+  const busy = failure('engine busy')
+  const other = failure('Error: notFound: "container with ID copse-desktop-probe-other not found"')
+  const failing = scripted(busy, other)
+  await assert.rejects(deleteDesktopContainer(name, failing.run), (error) => {
+    assert.ok(error instanceof AggregateError)
+    assert.deepEqual(error.errors, [busy, other])
+    return true
+  })
+  assert.equal(failing.calls.length, 2)
+
+  // A command killed at its limit says so; Node's own message does not.
+  const killed = (): Error => Object.assign(new Error('Command failed'), { killed: true })
+  const stuck = scripted(killed(), killed())
+  await assert.rejects(deleteDesktopContainer(name, stuck.run), {
+    message: 'VM deletion failed twice: container delete timed out; container delete timed out',
+  })
+  await assert.rejects(deleteDesktopContainer('not-a-desktop', gone.run))
 })

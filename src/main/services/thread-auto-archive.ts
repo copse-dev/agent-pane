@@ -16,7 +16,7 @@ import { recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { getThreadMeta, loadProjectThreadMetas, updateMetaIfUnchanged } from './thread-store.ts'
 import { getProjectRoot } from './workspace.ts'
 import { listStagedDiffEntries } from './diff-queue.ts'
-import { hasBackgroundProcessesForThread } from './exec/background-process.ts'
+import { hasSupervisedBackgroundWorkForThread } from './exec/supervised-background-process.ts'
 import { hasTerminalSessions } from './exec/terminal-service.ts'
 import { withThreadResourceFence } from './thread-resource-fence.ts'
 import type { ThreadArchivingRuntime } from './thread-archiving.ts'
@@ -59,7 +59,7 @@ const defaults: AutoArchiveDependencies = {
   unchanged: checkoutStillClean,
   busy: (projectId, threadId) =>
     hasTerminalSessions(threadId) ||
-    hasBackgroundProcessesForThread({ projectId, threadId }) ||
+    hasSupervisedBackgroundWorkForThread({ projectId, threadId }) ||
     listStagedDiffEntries({ projectId, threadId }).length > 0,
 }
 

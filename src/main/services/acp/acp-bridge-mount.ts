@@ -69,13 +69,18 @@ export function markAcpBridgeUnavailable(bridge: MountableBridge): boolean {
 }
 
 /**
- * Record that this session's agent has mounted the bridge. True when it had
- * earlier been told the tools were unavailable, so the next prompt says so.
+ * Record that this session's agent has mounted the bridge. Announce recovery
+ * from an unavailable bridge, and the first mount of a replacement bridge in a
+ * resumed conversation: its retained notes still name the disposed bridge.
+ * A fresh conversation gets the name through its initial session notes.
  */
-export function markAcpBridgeAvailable(bridge: MountableBridge): boolean {
+export function markAcpBridgeAvailable(
+  bridge: MountableBridge,
+  freshConversation: boolean,
+): boolean {
   const before = announced.get(bridge)
   announced.set(bridge, 'available')
-  return before === 'unavailable'
+  return before === 'unavailable' || (before === undefined && !freshConversation)
 }
 
 /** Thread message: the agent never connected to Copse's tools this session. */
@@ -102,11 +107,15 @@ export function acpCopseToolsUnavailablePromptNote(server: string): string {
 }
 
 /**
- * Prompt note: the bridge connected after the agent was told it had not.
- * `toolsNote` is all the steering the session's notes left out without the tools.
+ * Prompt note: a bridge became available, including after conversation resume.
+ * `toolsNote` identifies the current bridge and restores its tool guidance.
  */
 export function acpCopseToolsConnectedPromptNote(server: string, toolsNote: string): string {
-  return `Tool note: Copse's "${server}" MCP server is now connected in this session. ${toolsNote}`
+  return (
+    `Tool note: Copse's "${server}" MCP server is now connected in this session. ` +
+    'Use this exact server name for this turn; earlier session notes may name a disposed bridge. ' +
+    toolsNote
+  )
 }
 
 /**
