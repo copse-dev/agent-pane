@@ -1,13 +1,23 @@
 import { describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { ChildProcess } from 'node:child_process'
+import { watch } from 'node:fs'
 import { networkActivity } from '../diagnostics/network-activity.ts'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { fileURLToPath } from 'node:url'
+import { quote } from 'shell-quote'
+import { build } from 'esbuild'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import { setProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
 import { isCommandTimeoutError, runCommand } from './command-runner.ts'
+import {
+  leaseSshAskpassEnv,
+  resetSshAskpassForTests,
+  setSshAskpassUserDataDirForTests,
+} from '../ssh-workspace/askpass.ts'
+import { resolveSshSecret } from '../ssh-workspace/ssh-credential-cache.ts'
 import {
   COMMAND_OUTPUT_MAX_BYTES,
   COMMAND_OUTPUT_TRUNCATED_MARKER,
@@ -208,6 +218,188 @@ describe('runCommand git wrapper', () => {
     assert.equal(result.code, 0, result.stderr || result.stdout)
     assert.equal(result.stdout.trim(), 'true')
   })
+})
+
+describe('runCommand cache-only authentication completion', () => {
+  for (const outcome of [
+    'success',
+    'failure',
+    'timeout',
+    'abort',
+    'abort-error',
+    'spawn-error',
+  ] as const) {
+    // The actual askpass executable is an owned POSIX shell wrapper.
+    it(
+      `accounts for served credentials after ${outcome}`,
+      { timeout: 15_000, skip: process.platform === 'win32' },
+      async (t) => {
+        const root = await mkdtemp(join(tmpdir(), 'command-auth-completion-'))
+        const controller = new AbortController()
+        t.after(async () => {
+          controller.abort()
+          t.mock.timers.reset()
+          setProjectSandboxEnabled(false)
+          mock.restoreAll()
+          resetSshAskpassForTests()
+          await rm(root, { recursive: true, force: true })
+        })
+        resetSshAskpassForTests()
+        setSshAskpassUserDataDirForTests(join(root, 'profile'))
+        const probe = leaseSshAskpassEnv(process.env)
+        try {
+          const wrapper = probe.env['GIT_ASKPASS']
+          assert.ok(wrapper)
+          // As in the real HTTP auth fixture, unit bundles relocate __dirname.
+          // Only this disposable wrapper points at the compiled production helper.
+          const helper = join(root, 'real-askpass-helper.mjs')
+          await build({
+            entryPoints: [
+              fileURLToPath(new URL('../ssh-workspace/askpass-helper.ts', import.meta.url)),
+            ],
+            outfile: helper,
+            platform: 'node',
+            format: 'esm',
+            bundle: true,
+          })
+          await writeFile(wrapper, `#!/bin/sh\nexec ${quote([process.execPath, helper])} "$@"\n`)
+        } finally {
+          probe.release()
+        }
+        const prompt = "Enter passphrase for key '/owned/command-key':"
+        const otherPrompt = "Password for 'https://unrelated.example':"
+        const remember = async (): Promise<{ value: string; remember: boolean }> => ({
+          value: 'owned-remembered-answer',
+          remember: true,
+        })
+        await resolveSshSecret('foreground-seed', prompt, remember)
+        await resolveSshSecret('unrelated-seed', otherPrompt, remember)
+
+        // Inject only at the existing OS-sandbox boundary. The real command
+        // runner still leases auth, spawns a child and observes its lifecycle;
+        // that child executes the actual askpass helper before signaling ready.
+        const childSource = `
+        const { execFile } = require('node:child_process')
+        const { writeFileSync } = require('node:fs')
+        process.on('SIGTERM', () => process.exit(0))
+        execFile(process.env.GIT_ASKPASS, [${JSON.stringify(prompt)}], { env: process.env }, (error, stdout) => {
+          if (error || stdout !== 'owned-remembered-answer') process.exit(91)
+          writeFileSync(${JSON.stringify(join(root, 'served'))}, 'ready')
+          if (${JSON.stringify(outcome)} === 'success') process.exit(0)
+          if (${JSON.stringify(outcome)} === 'failure') process.exit(7)
+          if (${JSON.stringify(outcome)} === 'abort-error') setTimeout(() => process.exit(0), 1000)
+          else setInterval(() => {}, 1000)
+        })
+      `
+        let released = 0
+        let closed!: () => void
+        const childClosed = new Promise<void>((resolve) => {
+          closed = resolve
+        })
+        mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+        mock.method(SandboxManager, 'cleanupAfterCommand', () => {
+          released += 1
+          closed()
+        })
+        mock.method(SandboxManager, 'wrapWithSandboxArgv', () => {
+          if (outcome === 'spawn-error') throw new Error('owned spawn refusal')
+          return Promise.resolve({
+            argv: [process.execPath, '-e', childSource],
+            env: { ...process.env },
+          })
+        })
+        if (outcome === 'abort-error') {
+          const originalKill = process.kill.bind(process)
+          mock.method(process, 'kill', (pid: number, signal?: string | number) => {
+            if (pid < 0 && (signal === 'SIGTERM' || signal === 'SIGKILL')) {
+              throw new Error('owned process-group signal failure')
+            }
+            return originalKill(pid, signal)
+          })
+          mock.method(ChildProcess.prototype, 'kill', function (this: ChildProcess) {
+            setImmediate(() => {
+              this.emit('error', new Error('owned child signal failure'))
+            })
+            return false
+          })
+        }
+        let ready!: () => void
+        const helperAnswered = new Promise<void>((resolve) => {
+          ready = resolve
+        })
+        const watcher = watch(root, (_event, filename) => {
+          if (filename === 'served') ready()
+        })
+        t.after(() => {
+          watcher.close()
+        })
+        setProjectSandboxEnabled(true)
+        if (outcome === 'timeout') t.mock.timers.enable({ apis: ['setTimeout'] })
+        const result = runCommand('git', ['fetch', 'origin'], {
+          cwd: root,
+          gitAuth: 'noninteractive',
+          timeout_ms: outcome === 'timeout' ? 1000 : 10_000,
+          signal: controller.signal,
+        }).then(
+          (value) => ({ value, error: undefined }),
+          (error: unknown) => ({ value: undefined, error }),
+        )
+        if (outcome !== 'spawn-error') {
+          await Promise.race([
+            helperAnswered,
+            result.then(({ value, error }) => {
+              if (error !== undefined) {
+                assert.ok(error instanceof Error)
+                throw error
+              }
+              assert.notEqual(
+                value?.code,
+                91,
+                'the actual askpass helper must serve the cached answer',
+              )
+            }),
+          ])
+          if (outcome === 'timeout') t.mock.timers.tick(1000)
+          if (outcome === 'abort' || outcome === 'abort-error') controller.abort()
+        }
+        const completed = await result
+        if (outcome === 'spawn-error') {
+          assert.ok(completed.error instanceof Error)
+          assert.match(completed.error.message, /owned spawn refusal/)
+          assert.equal(released, 0, 'a refused spawn acquired no OS sandbox lease')
+        } else {
+          await childClosed
+          assert.equal(released, 1, 'error and close must not complete the lease twice')
+          if (outcome === 'success' || outcome === 'failure') {
+            assert.equal(completed.error, undefined)
+            assert.equal(completed.value?.code, outcome === 'success' ? 0 : 7)
+          } else if (outcome === 'timeout') {
+            assert.ok(isCommandTimeoutError(completed.error))
+          } else {
+            assert.ok(completed.error instanceof Error)
+          }
+        }
+        const mustNotAsk = async (): Promise<{ value: string; remember: boolean }> => {
+          assert.fail('completion checks must not prompt')
+        }
+        assert.equal(
+          await resolveSshSecret('probe', prompt, mustNotAsk, undefined, 'cache-only'),
+          outcome === 'success' || outcome === 'spawn-error' ? 'owned-remembered-answer' : '',
+        )
+        assert.equal(
+          await resolveSshSecret(
+            'unrelated-probe',
+            otherPrompt,
+            mustNotAsk,
+            undefined,
+            'cache-only',
+          ),
+          'owned-remembered-answer',
+          'failure must retire only the answer actually served to this invocation',
+        )
+      },
+    )
+  }
 })
 
 describe('runCommand missing cwd', () => {
