@@ -38,11 +38,15 @@ const UNCONFIRMED_PAGE = PAGE.replace(
   '<textarea id="notes">Keep the user note</textarea>',
   '<input id="notes" value="Keep the user note">',
 )
+  .replace(
+    '<body>',
+    '<body><div id="capture-state" aria-hidden="true" style="position:fixed;top:0;right:0;width:24px;height:24px;background:#d31f61;pointer-events:none"></div>',
+  )
   .replace('<p id="status">', '<p id="probe"></p><p id="status">')
   .replace(
     'let inputs=0,changes=0;',
     `let inputs=0,changes=0,priorityEvents=0;
-const updateProbe=()=>{document.querySelector('#probe').textContent='Title: '+title.value+'; Notes type: '+notes.type+'; Notes value: '+notes.value+'; Priority: '+priority.value+'; Priority events: '+priorityEvents+'; Saved: '+(localStorage.getItem('release')?'yes':'no')+'; Input events: '+inputs+'; change events: '+changes;};
+const updateProbe=()=>{document.querySelector('#probe').textContent='Title: '+title.value+'; Notes type: '+notes.type+'; Notes value: '+notes.value+'; Priority: '+priority.value+'; Priority events: '+priorityEvents+'; Saved: '+(localStorage.getItem('release')?'yes':'no')+'; Input events: '+inputs+'; change events: '+changes;const complete=title.value==='Ready for release'&&notes.type==='checkbox'&&notes.value==='Keep the user note; checks passed'&&priority.value==='low'&&priorityEvents===0&&!localStorage.getItem('release')&&inputs===2&&changes===1;document.querySelector('#capture-state').style.background=complete?'#25c571':'#d31f61';};
 notes.addEventListener('input',()=>{const value=notes.value;notes.type='checkbox';notes.value=value;updateProbe();});
 for(const event of ['input','change'])priority.addEventListener(event,()=>{priorityEvents++;updateProbe();});
 updateProbe();`,
@@ -277,6 +281,26 @@ describe('native browser form entry', () => {
     writeFileSync(
       join(process.cwd(), '.tmp/browser-form-unconfirmed-captured-page.png'),
       Buffer.from(capturedPage.slice('data:image/png;base64,'.length), 'base64'),
+    )
+    // A correct DOM snapshot does not establish which compositor frame was
+    // returned. The marker turns green only for the complete post-edit state;
+    // a cached pre-edit or partly edited frame retains the red marker.
+    const capturedPixel = await browser.execute(async (dataUrl) => {
+      const decoded = new Image()
+      decoded.src = dataUrl
+      await decoded.decode()
+      const canvas = document.createElement('canvas')
+      canvas.width = decoded.naturalWidth
+      canvas.height = decoded.naturalHeight
+      const context = canvas.getContext('2d')
+      if (!context) throw new Error('Cannot inspect the returned screenshot PNG')
+      context.drawImage(decoded, 0, 0)
+      return [...context.getImageData(canvas.width - 8, 8, 1, 1).data]
+    }, capturedPage)
+    assert.deepEqual(
+      capturedPixel,
+      [37, 197, 113, 255],
+      'the actual returned native PNG must contain the complete current page state',
     )
     const address = $('.browser-tab-panel.is-active .browser-url-input')
     const actualAddress = await address.getValue()
