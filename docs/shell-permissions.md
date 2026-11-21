@@ -133,8 +133,14 @@ history stored only in another application. `send_thread_prompt` asks a separate
 your other threads?** approval. Reading never grants sending. Both grants are persisted in main-owned settings,
 keyed by the requesting thread; they are not inherited by destination or forked threads.
 Either permission can be revoked in the thread’s Context panel → Permissions.
-Destination prompts enter the normal queue with machine provenance, consume the existing
-continuation budget and respect held/paused queues. They do not interrupt active work or
+Destination prompts enter the normal queue with machine provenance and consume a separate
+allowance of five prompts to each destination per user turn in the sending thread. A new
+instruction in the sending thread gives it five fresh prompts for every destination.
+Work the sending thread runs without a user turn, such as a scheduled automation run or a turn
+the coding agent started itself, shares one allowance per destination for that thread; each
+scheduled run starts in a new thread. That fallback grants no other authority.
+Incoming prompts do not spend or reset the self-continuation budget. Exhaustion holds
+further prompts from that sender turn for human release. Prompts respect held/paused queues. They do not interrupt active work or
 switch the visible thread. An unavailable or archived destination is rejected.
 
 The \`subthreads\` tool asks once for **Allow subthread orchestration?** Its separate, revocable grant permits starting children in isolated checkouts, listing their status, reading their conversations through the tool, and sending further prompts. Main-owned ownership records limit access to children this parent created in this project; a follow-up link alone grants no orchestration authority. Children inherit neither this grant nor the parent's other permissions. Normal model usage, queue pauses, continuation budgets and tool permissions still apply. A parent may start at most four children over its lifetime and keep at most two unarchived children. Owned children cannot orchestrate grandchildren. Repeating a start with the same task key returns the existing live child without resubmitting; replacing an unavailable child consumes another start and preserves the former child's ownership record. Transcript reads return capped text excerpts, excluding reasoning, attachments and tool payloads. The main process rechecks ownership and the parent's grant as it dispatches each queued delegated prompt. For only the exact first prompt of a newly created child, Main mints a one-use grant bound to the parent, child, prompt text and optimistic message id. It activates only after that message is durable in a validated isolated worktree, carries no renderer-mutable prompt controls, revalidates the worktree inside the dispatch slot, and reads current provider history only from the Main-owned sidecar there. Further child prompts require protected human review after any active child turn settles; the provider history and plan shown there are exactly what the reviewed prompt receives. Renderer-authored machine, status, pause and budget fields are not authority. Editing or deleting the initial message revokes its grant; a mismatched, replayed, missing or post-restart grant requires protected human review, while a revoked prompt is held. Revoke orchestration in Context → Permissions. This does not authorize raw chat-store writes or reads of unrelated conversations.
@@ -234,6 +240,18 @@ with the reason before it follows the ordinary path. A request delegated to the 
 records an `allowed` `acp` decision with its ACP tool-call ID. The bridge's `bridge-request` record repeats that ID when it
 can name the call unambiguously, beside the `bridgeExecutionId` that the native gate's decisions
 carry.
+
+Every decision recorded inside a turn also names the turn's execution principal. That is
+the local human, or the automation run when the schedule's own record corroborates the
+thread's claim; renderer-visible thread metadata alone never makes a turn an automation.
+Native commands, background tasks and Copse's own subprocesses run through an
+`ExecutionRuntime` adapter (local or SSH). For agent commands (shell, background and hook
+commands) the adapter records a start and an exit line
+naming the runtime profile it actually ran under (`local/contained`, `local/host` or
+`ssh:<hostId>`), plus that profile's capability snapshot once per thread. The adapter
+records containment and decides nothing: the gate and routing above are unchanged. See
+[the decision-log format](decision-log-format.md#where-events-come-from) and
+[the runtime plan](plans/execution-runtime-security.md).
 
 ## High-level tool restrictions
 
@@ -873,6 +891,14 @@ the person remembered in Copse, but never opens or waits for an authentication o
 host-trust dialog. Missing credentials leave the cached tip unchanged and report
 the failed refresh, with URL userinfo removed from the background warning.
 Existing configured helpers and SSH agents can still refresh it.
+When the session cache has no remembered answers, SSH uses batch mode and skips
+password and keyboard-interactive prompts. A warm cache enables the trusted
+helper with one prompt attempt per authentication method; it does not prove a
+matching answer for this destination. Missing or stale answers can still be
+submitted, and keyboard-interactive may request several answers in one attempt.
+Failed background Git commands and expired askpass leases retire only the
+current session answers actually served to that invocation. This is conservative:
+a later Git error can evict a credential even after successful authentication.
 Explicit `git_fetch` and foreground push keep their normal authentication path;
 the background-only interaction policy adds no network or shell approval grant.
 

@@ -12,6 +12,7 @@ import {
 } from '../renderer-prompt-target.ts'
 import {
   clearSshCredentialCache,
+  invalidateSessionSshCredentialNonce,
   releaseSshCredentialNonce,
   resolveSshSecret,
   type SshSecretMode,
@@ -24,7 +25,8 @@ const ASKPASS_SESSION_TIMEOUT_MS = 60_000
 
 export interface SshAskpassLease {
   env: NodeJS.ProcessEnv
-  release: () => void
+  /** Failed cache-only Git invocations retire only the current answers they used. */
+  release: (successful?: boolean) => void
 }
 
 interface AskpassSession {
@@ -242,15 +244,20 @@ export function leaseSshAskpassEnv(
   const nonce = randomBytes(16).toString('hex')
   let released = false
 
-  const release = (): void => {
+  const release = (successful = true): void => {
     if (released) return
     released = true
     clearTimeout(timer)
     sessionsByNonce.delete(nonce)
+    if (mode === 'cache-only' && !successful) invalidateSessionSshCredentialNonce(nonce)
     releaseSshCredentialNonce(nonce)
   }
 
-  const timer = setTimeout(release, ASKPASS_SESSION_TIMEOUT_MS)
+  // Expiry cannot discard the served-generation receipt before a delayed
+  // command close accounts for an unsuccessful unattended authentication.
+  const timer = setTimeout(() => {
+    release(false)
+  }, ASKPASS_SESSION_TIMEOUT_MS)
   if (typeof timer.unref === 'function') timer.unref()
   // Captured here, while still inside the caller's scope; by the time OpenSSH
   // asks, that scope is gone (see AskpassSession.promptTarget).

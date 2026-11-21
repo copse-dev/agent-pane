@@ -206,6 +206,29 @@ describe('Pasting text into the composer', () => {
    * its label alone, dropping the snapshot the message already carried.
    */
   it('opens a pasted block in the preview modal, in the composer and after sending', async () => {
+    const priorVisiblePrompts = await browser.execute(() =>
+      [...document.querySelectorAll('.messages-list .msg-user')].map((row) => {
+        const bounds = row.getBoundingClientRect()
+        return {
+          text: row.querySelector<HTMLElement>('.message-text')?.innerText ?? '',
+          folded: row.querySelector('.msg-user-fold-toggle') !== null,
+          width: bounds.width,
+          height: bounds.height,
+        }
+      }),
+    )
+    const priorStoredPrompts = await browser.execute(async (projectId: string) => {
+      const threadId =
+        document.querySelector<HTMLElement>('.chat-row.selected')?.dataset['threadId']
+      if (!threadId) return []
+      return (await window.api.threads.loadMessages(projectId, threadId))
+        .filter((message) => message.role === 'user')
+        .map((message) => ({
+          content: message.content,
+          promptRepresentation: message.promptRepresentation,
+          attachments: message.attachments,
+        }))
+    }, PROJECT_ID)
     await setComposerValue('Please apply this feedback: ')
     await pasteIntoComposer(LONG_PASTE)
 
@@ -226,8 +249,8 @@ describe('Pasting text into the composer', () => {
     await $('.attachment-preview-close').click()
     await dialog.waitForExist({ timeout: 5_000, reverse: true })
 
-    // This spec has already sent one paste, so target the chip this send adds
-    // rather than the one left in the transcript by the previous test.
+    // Target this send, preserving any earlier canonical rows when the whole
+    // spec runs and requiring the same contract when this case runs alone.
     const sentChips =
       '.messages-list .msg-user .transcript-attachment-chip.transcript-attachment-paste'
     const before = (await $$(sentChips).getElements()).length
@@ -264,7 +287,7 @@ describe('Pasting text into the composer', () => {
       const chips = document.querySelectorAll(target)
       const row = chips.item(chips.length - 1).closest('.msg-user')
       return {
-        text: row?.querySelector('.message-text')?.textContent ?? '',
+        text: row?.querySelector<HTMLElement>('.message-text')?.innerText ?? '',
         folded: row?.querySelector('.msg-user-fold-toggle') !== null,
       }
     }, sentChips)
@@ -272,10 +295,15 @@ describe('Pasting text into the composer', () => {
     expect(settledRow.text).not.toContain('```')
     expect(settledRow.folded).toBe(false)
     const settledPrompts = await browser.execute(() =>
-      [...document.querySelectorAll('.messages-list .msg-user')].map((row) => ({
-        text: row.querySelector('.message-text')?.textContent ?? '',
-        folded: row.querySelector('.msg-user-fold-toggle') !== null,
-      })),
+      [...document.querySelectorAll('.messages-list .msg-user')].map((row) => {
+        const bounds = row.getBoundingClientRect()
+        return {
+          text: row.querySelector<HTMLElement>('.message-text')?.innerText ?? '',
+          folded: row.querySelector('.msg-user-fold-toggle') !== null,
+          width: bounds.width,
+          height: bounds.height,
+        }
+      }),
     )
     const storedPrompts = await browser.execute(async (projectId: string) => {
       const threadId =
@@ -289,15 +317,21 @@ describe('Pasting text into the composer', () => {
           attachments: message.attachments,
         }))
     }, PROJECT_ID)
-    expect(settledPrompts).toHaveLength(2)
-    expect(storedPrompts.map((prompt) => prompt.attachments?.[0]?.projection)).toEqual([
-      'canonical-block',
-      'canonical-block',
-    ])
-    expect(storedPrompts[0]?.content).toBe(PASTE_PROMPT)
-    expect(storedPrompts[0]?.attachments?.[0]?.content).toBe(LONG_PASTE)
-    expect(settledPrompts.map((prompt) => prompt.text.includes('```'))).toEqual([false, false])
-    expect(settledPrompts.every((prompt) => !prompt.folded)).toBe(true)
+    expect(settledPrompts).toHaveLength(priorVisiblePrompts.length + 1)
+    expect(storedPrompts).toHaveLength(priorStoredPrompts.length + 1)
+    expect(settledPrompts.slice(0, -1)).toEqual(priorVisiblePrompts)
+    expect(storedPrompts.slice(0, -1)).toEqual(priorStoredPrompts)
+    const currentPrompt = storedPrompts.at(-1)
+    expect(currentPrompt?.content).toBe(
+      PASTE_PROMPT.replace('Summarize this feedback:', 'Please apply this feedback:'),
+    )
+    expect(currentPrompt?.promptRepresentation).toBe('canonical-provider')
+    expect(currentPrompt?.attachments?.[0]?.projection).toBe('canonical-block')
+    expect(currentPrompt?.attachments?.[0]?.content).toBe(LONG_PASTE)
+    expect({
+      text: settledPrompts.at(-1)?.text,
+      folded: settledPrompts.at(-1)?.folded,
+    }).toEqual(settledRow)
     await saveAppScreenshot(TRANSCRIPT_PREVIEW_SCREENSHOT)
     await $('.attachment-preview-close').click()
   })

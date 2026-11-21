@@ -16,6 +16,7 @@ import type {
 } from './thread-types.ts'
 import type { TurnOutcome } from './turn-outcome.ts'
 import { type DecisionEvent } from './decision-log.ts'
+import { isExecutionPrincipalKind } from './execution-runtime.ts'
 import { isPromptCause } from './prompt-cause.ts'
 import { planArtifactRefs } from './plan-schema.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
@@ -690,7 +691,8 @@ const DECISION_LINE_FIELDS: RequiredFieldChecks<SpineDecisionLine> = {
     value === 'classified' ||
     value === 'timeout' ||
     value === 'cancelled' ||
-    value === 'deferred',
+    value === 'deferred' ||
+    value === 'observed',
 }
 
 const DECISION_LINE_OPTIONAL: OptionalFieldChecks<SpineDecisionLine, 'cause'> = {
@@ -700,6 +702,12 @@ const DECISION_LINE_OPTIONAL: OptionalFieldChecks<SpineDecisionLine, 'cause'> = 
   bridgeExecutionId: (value) => typeof value === 'string',
   turnId: (value) => typeof value === 'string',
   step: (value) => typeof value === 'number',
+  principalId: (value) => typeof value === 'string',
+  principalKind: isExecutionPrincipalKind,
+  runtime: (value) => typeof value === 'string',
+  processRunId: (value) => typeof value === 'string',
+  exitCode: (value) => typeof value === 'number',
+  exitSignal: (value) => typeof value === 'string',
 }
 
 const isSpineDecisionLine: (value: unknown) => value is SpineDecisionLine = (value) =>

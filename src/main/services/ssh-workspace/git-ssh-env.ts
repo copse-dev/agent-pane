@@ -1,4 +1,5 @@
 import { getSetting } from '../storage/settings.ts'
+import { hasSessionSshCredentials } from './ssh-credential-cache.ts'
 import {
   COPSE_SSH_ASKPASS_NONCE,
   COPSE_SSH_ASKPASS_SOCKET,
@@ -51,15 +52,17 @@ export function leaseGitSshEnv(
       'cache-only',
     )
     const hasAskpass = typeof askpass.env['SSH_ASKPASS'] === 'string'
+    const canUseRememberedAnswer = hasAskpass && hasSessionSshCredentials()
     return {
       env: {
         ...askpass.env,
         GIT_OPTIONAL_LOCKS: '0',
         GIT_PAGER: 'cat',
         GIT_TERMINAL_PROMPT: '0',
-        // BatchMode would also disable the trusted cache-only SSH helper.
-        // Force that helper instead of a terminal; a cache miss exits empty.
-        GIT_SSH_COMMAND: `${buildGitSshCommand({}, strictHostKeys)} -oBatchMode=${hasAskpass ? 'no' : 'yes'}`,
+        // A cold cache must not turn askpass misses into repeated empty SSH
+        // passwords. A warm cache permits one prompt attempt per auth method;
+        // its presence does not establish a matching answer for this server.
+        GIT_SSH_COMMAND: `${buildGitSshCommand({}, strictHostKeys)} -oBatchMode=${canUseRememberedAnswer ? 'no' : 'yes'} -oNumberOfPasswordPrompts=1`,
         // GCM's documented unattended mode still permits cached credentials.
         GCM_INTERACTIVE: '0',
       },

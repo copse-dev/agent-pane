@@ -54,6 +54,12 @@ async function dropVideoOnComposer(name: string, byteLength: number): Promise<vo
   )
 }
 
+async function prepareVideoAttachment(): Promise<void> {
+  await setComposerValue('what goes wrong at the end of this?')
+  await dropVideoOnComposer(VIDEO_NAME, VIDEO_BYTE_LENGTH)
+  await $('.attachment-chips .video-chip').waitForDisplayed({ timeout: 10_000 })
+}
+
 describe('Attaching a video to the chat', () => {
   let workspaceRoot = ''
 
@@ -73,14 +79,20 @@ describe('Attaching a video to the chat', () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
   })
 
+  beforeEach(async () => {
+    await $('.project-new-thread-btn').click()
+    await expect($('.prompt-input')).toHaveText('')
+    await expect($('.attachment-chips .video-chip')).not.toExist()
+    await expect($('.msg-user')).not.toExist()
+  })
+
   after(() => {
     resetUserData()
     if (workspaceRoot) removeE2eTree(dirname(workspaceRoot))
   })
 
   it('shows a dropped video as a film chip with its size, not an image thumbnail', async () => {
-    await setComposerValue('what goes wrong at the end of this?')
-    await dropVideoOnComposer(VIDEO_NAME, VIDEO_BYTE_LENGTH)
+    await prepareVideoAttachment()
 
     const chip = await $('.attachment-chips .video-chip').getElement()
     await chip.waitForDisplayed({ timeout: 10_000 })
@@ -96,6 +108,7 @@ describe('Attaching a video to the chat', () => {
   })
 
   it('sends the video as a path reference and renders a transcript chip', async () => {
+    await prepareVideoAttachment()
     await installMockScenario({
       title: 'Review the screen recording',
       turns: [
