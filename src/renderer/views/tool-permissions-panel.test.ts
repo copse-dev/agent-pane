@@ -201,6 +201,19 @@ describe('tool permissions panel', () => {
     assert.equal(summary.querySelector('.tool-permission-count-sr')?.textContent, '2 tools')
   })
 
+  it('speaks a one-tool count in the singular', async () => {
+    const initialCatalog = catalog()
+    const proton = initialCatalog.groups.find((group) => group.id === 'mcp:project:proton')
+    assert.ok(proton)
+    proton.tools = proton.tools.slice(0, 1)
+    const root = await mount(apiHarness({ initialCatalog }))
+    const summary = root.querySelector(
+      '[data-group-id="mcp:project:proton"] .tool-permission-group-summary',
+    )
+    assert.equal(summary?.querySelector('.tool-permission-count')?.textContent, '1')
+    assert.equal(summary?.querySelector('.tool-permission-count-sr')?.textContent, '1 tool')
+  })
+
   it('shows backticked names in a tool description as inline code', async () => {
     const root = await mount(apiHarness())
     const description = root.querySelector(
