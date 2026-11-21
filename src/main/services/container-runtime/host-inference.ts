@@ -111,10 +111,8 @@ export class HostInference {
         signal.throwIfAborted()
         if (this.active !== null) throw new Error('Only one inference request may run at a time')
       }
-      let release: () => void = () => {}
-      const released = new Promise<void>((resolve) => {
-        release = resolve
-      })
+      const { promise: released, resolve: release }: PromiseWithResolvers<void> =
+        Promise.withResolvers()
       slot = { signal, stream, released, release }
       this.active = slot
       const parts: Buffer[] = []

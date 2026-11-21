@@ -23,6 +23,7 @@ import {
   normalizeAdvisorResult,
   renderAdvisorResult,
 } from './advisor-strategy.ts'
+import { withTimeout } from '@copse/std/with-timeout.ts'
 
 /**
  * Resolve the configured advisor *selection*: a model assigned to the `advisor`
@@ -68,17 +69,11 @@ export async function resolveAdvisorModelForGating(
   resolve: (value: string) => Promise<string> = resolveDynamicModelId,
   deadlineMs: number = ADVISOR_GATING_DEADLINE_MS,
 ): Promise<string> {
-  let timer: NodeJS.Timeout | undefined
-  const deadline = new Promise<string>((done) => {
-    timer = setTimeout(() => {
-      done(selection)
-    }, deadlineMs)
-  })
-  try {
-    return await Promise.race([resolve(selection).catch(() => selection), deadline])
-  } finally {
-    clearTimeout(timer)
-  }
+  return withTimeout(
+    resolve(selection).catch(() => selection),
+    deadlineMs,
+    () => selection,
+  )
 }
 
 /**
