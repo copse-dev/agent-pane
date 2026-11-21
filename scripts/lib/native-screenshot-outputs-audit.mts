@@ -142,6 +142,14 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
       'settings-classifiers-install-offline.png',
     ],
   },
+  'tests/e2e/settings-classifiers.e2e.ts': {
+    sourceSha256: '349252db8750d7424bc0dca34f864e0629ebac70c4771814482aac613045183a',
+    filenames: [
+      'settings-classifiers-perplexity-decider-direct.png',
+      'settings-classifiers-perplexity-decider-flash.png',
+      'settings-classifiers-perplexity-decider.png',
+    ],
+  },
   'tests/e2e/settings-model-parameters.e2e.ts': {
     sourceSha256: 'b05fbb9d1ad58fa8be306b84a44868f95ffbb856298455d048f1fb4a02288424',
     filenames: [

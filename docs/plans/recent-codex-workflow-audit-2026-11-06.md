@@ -93,3 +93,169 @@ four worker scenarios also pass on macOS. All ten local captures were inspected;
 the baseline source. Final phone and running-worker captures explicitly frame the transcript after
 shell resizing and wait for scrolling to settle. Required final-head cloud checks and screenshot
 review remain prerequisites for merging.
+
+## Post-merge live evaluation
+
+The five workflow PRs (#4183, #4185, #4187, #4188, #4189) were merged before this
+follow-up. Evaluation started from main `20e805b016d8efa8646790c938c568ef6f40e289`;
+fixes were subsequently rebased onto `92c89179fdf386d262957f600de1aceb187d2cf2`.
+The original checkout and daily app profile were preserved. Tests used isolated
+visible Electron sessions, the already-loaded local Qwen3.6 35B A3B model, and
+ordinary permissions. No model was loaded/unloaded or security policy relaxed.
+
+Acceptance recorded before editing: native dated history and exact-commit CI;
+read-only CI diagnosis; globally recent chat discovery and readable progress;
+separately consented synthetic handoff; real mobile/worker/reference integration;
+and explicit distinction between Copse history and history stored only in Codex.
+The expired-SSH-prompt acceptance criterion was added when a live run reproduced
+that failure, before its implementation changed.
+
+### Product gaps reproduced and fixed
+
+- Native `git_log` lacked timestamps, causing a local shell `git log` solely to
+  answer “since last night.” Return ISO committer timestamps with each bounded
+  history row. Named history also explicitly identifies its local provenance:
+  a local main SHA can lag the current remote CI SHA. Tool guidance describes
+  comparing SHAs and reading remote commits through the existing GitHub API tool.
+- Discovery returned project IDs but no names, and reading a selected chat
+  required navigating spine references. Add project names and a native
+  `read_thread` tool: 10 messages by default, at most 20, chronological within
+  each page, backward offset and explicit next-page offset. Cap each message at
+  4,000 characters and summarize tool names/statuses without loading tool blobs.
+  Preserve integrity checks, path guards, existing thread-scoped read consent,
+  own/parent exceptions, cancellation/revocation, and separate send consent.
+  Both native and ACP agents receive the tool. It reads Copse's store only.
+- Main expired an SSH askpass request after 60 seconds but left its modal open.
+  A screenshot showed the expired modal covering the next ordinary approval.
+  Main now dismisses the exact request on its original renderer when settled;
+  renderer removes expired queued requests and advances without answering or
+  remembering a secret. Late dismissal cannot close a newer prompt. The new
+  event is protocol-additive (two additions, zero breaks; version remains 66).
+- The documented `pnpm run analyze:thread -- ...` invocation forwarded the
+  separator as a filename. Strip that leading separator while preserving
+  analyzer failure exit codes; the CLI regression exercises both forms and a
+  negative scorer result.
+
+### Live results and limits
+
+Raw traces and screenshots remain local under the isolated evaluation worktree;
+private source chats were used only to recover workflow intent. Cross-project
+fixtures contain anonymized checkpoint text, not copied private conversations.
+
+| Workflow                                                    | Evidence                                                                                             | Result                                                                                                                                                                                                                                                                                                                                                       |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Original “validate what landed since last night”            | `git-ci-first-class-tools-1793990785791.jsonl`                                                       | Baseline tool scorer passed, but needed local shell dates and had an inconsistent merge count.                                                                                                                                                                                                                                                               |
+| Same broad wording after dated history                      | `git-ci-first-class-tools-1793993405590.jsonl`                                                       | Failed the unchanged CI-tool assertion: used native history but omitted CI. Do not count as a successful validation.                                                                                                                                                                                                                                         |
+| Original explicit merged-history + CI wording               | `git-ci-first-class-tools-1793993527105.jsonl`                                                       | Tool scorer passed in 25.6 seconds; no shell. Qualitative limit: history was an older local SHA than the remote CI SHA, and “mostly green” overstated pending evidence. This prompted the provenance fix.                                                                                                                                                    |
+| Explicit history + CI after provenance fix                  | `git-ci-first-class-tools-1793994144019.jsonl`                                                       | Tool scorer passed in 91 seconds. Native fetch failed SSH authentication, but later GitHub log approvals and completion proceeded. It reported CI not green and real rate-limit failures. The final answer still omitted the local/remote SHA mismatch and overclaimed that the failures were not code defects; qualitative result remains partial.          |
+| Global discovery + selected progress read, same two prompts | `cross-project-workflow-main-1793991220982.jsonl`, `cross-project-workflow-main-1793992253933.jsonl` | Before: four explore calls and spine/body navigation. Final facts were correct; the old direct-read assertion failed because reads occurred inside children. After: one `list_threads`, one `read_thread`, correct project names and three remaining items, no sends/shell/writes, 27.4 seconds. One paired observation is not a reliability estimate.       |
+| CI diagnosis, original prompt, ordinary mode                | `ci-diagnose-first-class-tools-1793993615836.jsonl`                                                  | Native run/log calls and safety scorer passed in 51.8 seconds. Logs establish installation API-rate-limit 403s. The answer added unsupported quota-cause/retry/token advice and an incorrect epoch conversion; diagnosis quality is only partial. Only the scenario's explicit Guarded-YOLO opt-in was removed; assertions were preserved.                   |
+| Synthetic handoff                                           | `cross-project-handoff-main-1793993928245.jsonl`                                                     | A user-started fixture receives a separately consented send; recipient completes an acknowledgement naming all three items, keeps agents frozen, and makes no tool calls. The earlier assistant-only fixture submitted successfully but failed the local model template; retain that failed attempt rather than treating a submission receipt as completion. |
+
+The original vague validation wording and unsupported causal claims remain model
+judgment limitations; passing tool-use assertions does not establish factual
+correctness. No claim is made that all original Codex workflows now work reliably.
+The existing external-history import/connector and paired-browser window-close
+work remain separate scope; the mobile-control test does not prove #4095 is on
+main or establish physical-phone/window-close behavior.
+
+### Regression and device evidence
+
+The new date/provenance, analyzer-separator and expired-dialog tests fail against
+their prior implementations. Focused store/tool tests cover pagination, lazy
+reads, truncation, missing/tampered/symlink content, invalid bounds, denied read,
+separate sending, cancellation and project removal during consent. Registration
+and ACP tests cover the model-visible schema and readonly classification.
+
+Four real Electron specs pass (nine cases): `workflow-read-evidence`,
+`mobile-controls`, `native-isolated-workers`, and `thread-reference-picker`.
+The focused Chromium `ssh-prompt-expiry` spec passes: assert the modal opens,
+dismiss it by request ID, then type into and focus the real composer. Main
+lifecycle tests advance the actual 60-second deadline with fake timers. This
+proves the two boundaries and additive IPC contract; it is not a live SSH-server
+credential test. No credentials were entered or changed.
+
+Inspected captures include dated history, conversation title/project/checklist,
+composer usable after expiry, live before/after conversation answers, and the
+blocked SSH prompt. Local macOS captures are evidence only; Linux CI owns
+committed screenshot references. No baseline was accepted from a Mac capture.
+
+Final full-check and cloud-gate results are recorded in the follow-up PR. Keep
+publication draft until required gates and screenshot review complete. Earlier
+static runs exposed new lint/type errors in tests; those were fixed, not treated
+as host noise.
+
+### Final provenance review and Codex ACP control
+
+Final review added the existing external-content envelope to both conversation
+catalog and transcript results. Text from another conversation is historical
+data, including any quoted instructions. A real registry regression returns
+catalog/transcript text containing a forged closing tag and proves that it
+cannot terminate the envelope; sending permission remains ungranted. The test
+fails before the provenance declarations. The focused tool/registry suite then
+passes all 53 cases; the complete focused selection passes all 192 cases. The
+framed-payload Electron card spec passes both cases, and its capture was
+inspected. This framing does not change permission decisions.
+
+The completed local full check on `733b3b848f53cbea48ecb9e8328c282019156ea4`
+passed all static gates: 17,217 unit tests passed, nine failed, one skipped.
+All nine failures reproduce on unchanged main: one Bash 3.2 protocol fixture,
+six `/var` screenshot-review guards, one per-user-temp read assertion, and the
+shell replay. The replay initially differed between worktree locations; checking
+out unchanged main in the exact fix directory, keeping dependencies and build
+artifacts constant, reproduces all 37 differing rows with an identical digest.
+Do not label the full suite zero-failure. The later provenance follow-up is
+validated by focused checks and the final-head full cloud run under the
+previously documented draft/cloud-validation route.
+
+To separate local-model judgment from app capability, two additional controls
+used the existing authenticated `acp:codex` route with explicit normal `agent`
+permissions. Matching backend turn-context metadata establishes `gpt-6.1-sol`,
+medium effort. These controls ran on the committed build before the provenance
+follow-up, without changing credentials, model defaults or assertions:
+
+- `git-ci-first-class-tools-1793996156940.jsonl`: the original explicit question
+  obtains current remote history through `gh_api_read` and exact-SHA CI through
+  `get_ci_status`. It correctly reports all six observed push workflows green
+  at `92c89179`, explicitly excluding PR-only/protection requirements. The
+  unchanged tool scorer fails because its history group permits only `git_log`,
+  `gh_pr_list`, or `gh_pr_view`, not the valid commits API route. Preserve this
+  failed score; do not relabel it an assertion pass.
+- `cross-project-workflow-main-1793996311184.jsonl`: the same two fixture prompts
+  pass the unchanged scorer and final-fact assertions in 42.4 seconds. Calls
+  are two native MCP `list_threads` reads and one `read_thread`; no sends,
+  shell or file writes. The inspected capture shows the correct project,
+  three-item checklist and instruction to keep agents frozen.
+
+These are diagnostic controls with a different model, not paired evidence that
+Qwen's quality failures were fixed. The native/ACP product route is established;
+model reliability and the history scorer's narrow successful-tool group remain
+explicit limits.
+
+### Preserve failed-turn progress
+
+The failed handoff fixture had an idle thread with a failed recorded turn. Bounded
+retrieval now preserves each selected message's `turnOutcome.status` and
+`stopReason`, with null for a legacy unknown outcome. It returns no raw error
+details. A failing-before regression retains positive partial prose alongside a
+failed `max_steps` outcome: idle and a few green observations cannot become a
+clean completed review merely because the reader omitted terminal metadata.
+Turn completion is still distinct from task acceptance. Final validation uses
+the same read-only workflow prompts plus a separate failed-review fixture probe.
+
+The final focused selection passes all 193 tests. The initial implementation
+`733b3b848f53cbea48ecb9e8328c282019156ea4` passed full Linux cloud CI
+[42283579487](https://github.com/copse-dev/agent-pane/actions/runs/42283579487),
+including static/unit/build/browser/bench gates and all nine Electron shards.
+That success is baseline evidence for the implementation before the later
+provenance and turn-outcome follow-ups; the final head must earn its own gates.
+
+The final production code `f2a9f10abf11eb8cc9ffd5c4896fc3b287844aca` also passes
+`cross-project-budget-outcome-final-1793998199500.jsonl` in visible Copse with
+Qwen and ordinary permissions (34.2 seconds). It preserves the original two
+conversation prompts and their final-fact assertions, then asks whether an idle
+review with positive partial prose finished cleanly. The recorded failed
+`max_steps` outcome is returned, and the answer identifies the incomplete review.
+No shell, writes or sends are permitted by the unchanged read-only scorer.
+The final screenshot fixture uses the producer's compact JSON payload rather
+than introducing pretty-printing absent from the real tool result.

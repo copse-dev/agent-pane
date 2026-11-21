@@ -51,7 +51,7 @@ import { reviewerInputTool } from '../tools/reviewer-input-tool.ts'
 import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-plugin.ts'
 import { PROJECT_CONTEXT_PLUGIN_ID } from '@copse/agent/plugins/project-context-plugin.ts'
 import { proposeThreadTool } from '../tools/propose-thread-tool.ts'
-import { listThreadsTool, sendThreadPromptTool } from '../tools/thread-tools.ts'
+import { listThreadsTool, readThreadTool, sendThreadPromptTool } from '../tools/thread-tools.ts'
 import { subthreadsTool } from '../tools/subthreads-tool.ts'
 import { searchProjectContextTool, readProjectContextTool } from '../tools/project-context-tools.ts'
 import { webSearchTool, fetchUrlTool } from '../tools/web-tools.ts'
@@ -249,6 +249,7 @@ export function createRegistry(): ToolRegistry {
   // (see `propose-thread-tool.ts`), so there is nothing to gate.
   registry.register(proposeThreadTool)
   registry.register(listThreadsTool)
+  registry.register(readThreadTool)
   syncProjectContextTools(registry)
   registry.register(sendThreadPromptTool)
   registry.register(subthreadsTool)
