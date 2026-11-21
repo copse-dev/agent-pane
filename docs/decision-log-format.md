@@ -133,6 +133,24 @@ Optional argv / Guarded-YOLO extras live next to tool results:
   never the agent's actions. Processes outside a turn are not recorded. Interactive terminals are not recorded yet either. Headless and
   container runs record the same lines into the run's own decision list. The Context panel's
   Recent decisions list leaves `observed` lines out; the export keeps them.
+- **Brokered credentials** — with the experimental GitHub broker on
+  ([shell permissions](shell-permissions.md#brokered-github-credentials-experimental)),
+  each grant writes a `kind: "execution-grant"` line (`verdict: "allowed"`, `scope`
+  `github-api-read`, reasons naming the methods and expiry). Every grant is read-only, and only
+  a contained command gets one: a command approved to run outside the sandbox is not brokered,
+  runs with the account's on-disk `gh` login and writes none of these lines. It loses the raw
+  token variables, so where `GH_TOKEN` or `GITHUB_TOKEN` is the account's only login it has no
+  GitHub access. Each request
+  the broker relays writes a `kind: "credential-use"` line: `subject` is method and host,
+  and the reasons carry the status and byte counts. Each refusal writes a
+  `kind: "network-access"` line with `verdict: "blocked"` and the reason. A grant writes the
+  first 20 `credential-use` and 20 `network-access` lines; when it ends, one more line of each
+  kind it stopped writing gives the count in its `subject` (`"35 more relayed requests"`,
+  `"12 more refused requests"`). All three are
+  `actor: "system"`, carry the principal and `runtime`, and set `source` to the opaque
+  credential reference `github:user-login`. None records the token, the execution's
+  capability, request paths or bodies. The Context panel's Recent decisions
+  list leaves these three kinds out as well; the export keeps them.
 - **Hook verdicts** — any non-`allow` Cursor hook decision
   ([`cursor-hooks.ts`](../src/shared/types/cursor-hooks.ts)) is recorded
   as an `actor: "hook"` event (`blocked` / `ask`).

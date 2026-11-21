@@ -27,10 +27,13 @@ export interface LocalSandboxPlan {
    * Run this contained command in a dedicated host process instead of wrapping
    * it here (an approved loopback-binding background task, whose ASRT network
    * scope must never be shared with other contained commands in this process).
-   * The host owns the wrap, its lease and its network scope; the adapter
-   * ignores this plan's lease fields and never releases a lease for it.
+   * The host owns the wrap, its lease and its network scope. `childEnv` is the
+   * filter the adapter applies to every child's env (it drops raw GitHub tokens
+   * while brokering); the host applies it to its own env and the command's.
+   * The adapter ignores this plan's lease fields and never releases a lease
+   * for it.
    */
-  readonly hostedLaunch?: () => ChildProcess
+  readonly hostedLaunch?: (childEnv: (env: NodeJS.ProcessEnv) => NodeJS.ProcessEnv) => ChildProcess
   /** Working directory ASRT resolves the wrap's relative paths against. */
   readonly wrapCwd?: string
   /** Host-owned attempt id ASRT attributes this command's sandbox violations to. */
@@ -54,6 +57,14 @@ export interface LocalContainmentRequest {
   /** Refuse with this message rather than run outside the sandbox. */
   readonly requireSandbox?: string
   readonly plan: () => LocalSandboxPlan
+  /**
+   * Keep raw GitHub tokens out of this child and, for a contained command the
+   * broker can reach, attach GitHub credentials host-side instead
+   * (execution-runtime-security R2). A command outside the sandbox is not
+   * brokered. Set by the spawn layer only for in-turn agent commands while the
+   * experimental setting is on.
+   */
+  readonly brokerGitHubCredentials?: boolean
 }
 
 export interface RuntimeExecRequest {

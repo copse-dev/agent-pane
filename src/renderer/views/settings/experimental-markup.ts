@@ -69,6 +69,23 @@ export const experimentalMarkup = `
             </fieldset>
 
             <fieldset>
+              <legend>Brokered GitHub credentials</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="githubCredentialBrokerEnabled" />
+                Keep your GitHub token out of agent commands
+              </label>
+              <p class="field-hint">
+                Agent shell commands and background tasks on this computer no longer receive
+                <code>GH_TOKEN</code> or <code>GITHUB_TOKEN</code>. Inside the sandbox, their
+                <code>gh</code> calls can only read and go through Copse instead, which adds your
+                GitHub login for <code>api.github.com</code> only. Not covered: <code>git</code>
+                over HTTPS, SSH workspaces, and Linux commands inside the sandbox.
+                A command you approve outside the sandbox does not go through Copse: its
+                <code>gh</code> uses your gh login from disk.
+              </p>
+            </fieldset>
+
+            <fieldset>
               <legend>Unattended container runs</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="containerRunsEnabled" />
@@ -169,6 +186,7 @@ export const experimentalFields: readonly SettingField[] = [
   { name: 'deferredWorktreesEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'containerRunsEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'planModeEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'githubCredentialBrokerEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'orchestrationStrategyEnabled', kind: 'checkbox', default: false, save: true },
   { name: DEVELOPER_MODE_SETTING, kind: 'checkbox', default: false, save: true },
 ]

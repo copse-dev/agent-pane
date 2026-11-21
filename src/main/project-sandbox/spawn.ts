@@ -57,6 +57,8 @@ import {
   type ExecutionTarget,
 } from '../services/ssh-workspace/execution-target.ts'
 import { buildRemotePtyLaunch } from '../services/ssh-workspace/ssh-spawn.ts'
+import { getSetting } from '../services/storage/settings.ts'
+import { currentThreadExecutionContext } from '../services/thread-execution-context-store.ts'
 
 export type { ExecutionTarget }
 
@@ -135,6 +137,18 @@ export function spawnRunsOnSshTarget(cwd: string | null): boolean {
   } catch {
     return true
   }
+}
+
+/**
+ * Whether an agent command spawned now keeps raw GitHub tokens out and gets a
+ * brokered grant instead (execution-runtime-security R2). Only in-turn
+ * commands: the grant is bound to the turn's thread and principal.
+ */
+function brokerGitHubForAgentCommand(): boolean {
+  return (
+    getSetting<boolean>('githubCredentialBrokerEnabled', false) &&
+    currentThreadExecutionContext() !== null
+  )
 }
 
 const SANDBOX_BECAME_UNAVAILABLE =
@@ -218,6 +232,7 @@ export async function spawnShellInProjectSandbox(
     ...(opts.signal ? { signal: opts.signal } : {}),
     local: {
       sandbox: opts.unsandboxed !== true,
+      brokerGitHubCredentials: brokerGitHubForAgentCommand(),
       ...(opts.readonlyCheckout
         ? { requireSandbox: 'A read-only checkout needs the project sandbox, which is unavailable' }
         : {}),
@@ -273,6 +288,7 @@ export async function spawnBackgroundProcess(
     ...(opts.env ? { env: opts.env } : {}),
     local: {
       sandbox: opts.unsandboxed !== true,
+      brokerGitHubCredentials: brokerGitHubForAgentCommand(),
       plan: () => {
         const readGrantTargets = opts.readGrantTargets ?? []
         const base =
@@ -295,7 +311,8 @@ export async function spawnBackgroundProcess(
         // did not take.
         return {
           config: overlay,
-          hostedLaunch: (): ChildProcess => spawnPortBindingHost(shellCommandLine, opts, overlay),
+          hostedLaunch: (childEnv): ChildProcess =>
+            spawnPortBindingHost(shellCommandLine, opts, overlay, childEnv),
         }
       },
     },
@@ -307,20 +324,23 @@ function spawnPortBindingHost(
   shellCommandLine: string,
   opts: SpawnBackgroundOptions,
   overlay: Partial<SandboxRuntimeConfig>,
+  childEnv: (env: NodeJS.ProcessEnv) => NodeJS.ProcessEnv,
 ): ChildProcess {
   // Resolve while main still owns the thread context; the isolated host has none.
   const tmpDir = sandboxTmpDir(overlay)
+  // The worker hands the task its own env plus the request's, so both go
+  // through the adapter's filter (no raw GitHub token while brokering).
   const child = spawn(process.execPath, [portBindingWorkerPath()], {
     cwd: opts.cwd,
     env: {
       // The worker runs ASRT, which looks its helpers up through PATH from this cwd.
-      ...withSandboxShellPath(withoutSandboxWrapTmpPin(strippedBaseEnv())),
+      ...withSandboxShellPath(childEnv(withoutSandboxWrapTmpPin(strippedBaseEnv()))),
       ELECTRON_RUN_AS_NODE: '1',
       [PORT_BINDING_REQUEST_ENV]: JSON.stringify({
         command: shellCommandLine,
         cwd: opts.cwd,
         tmpDir,
-        ...(opts.env ? { env: opts.env } : {}),
+        ...(opts.env ? { env: childEnv(opts.env) } : {}),
         overlay,
         ...(opts.violationId ? { violationId: opts.violationId } : {}),
       }),

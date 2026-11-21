@@ -266,6 +266,8 @@ import { getAutomationService } from './services/automations/automation-service.
 import { setAutomationRunCorroborator } from './services/execution-runtime/principal.ts'
 import { setExecutionAuditSink } from './services/execution-runtime/audit.ts'
 import { recordExecutionObservation } from './services/execution-runtime/audit-recorder.ts'
+import { setLocalGitHubBroker } from './project-sandbox/local-runtime.ts'
+import { createLocalGitHubBroker } from './services/credential-broker/local-github-broker.ts'
 import { getBranchCiAutomationService } from './services/automations/branch-ci-automation-service.ts'
 import { getTaskSupervisor } from './services/supervisor/task-supervisor.ts'
 import { installLongTaskWakeConsumer } from './services/supervisor/long-task-wake.ts'
@@ -753,6 +755,7 @@ app
       getAutomationService().ownsRunThread(projectId, threadId, automation),
     )
     setExecutionAuditSink(recordExecutionObservation)
+    setLocalGitHubBroker(createLocalGitHubBroker())
 
     const alertUser = createElectronUserAlertSender(win, app.dock, getFocusedMainWindow)
     setExplainerPreviewCapture(captureExplainerFrames)
