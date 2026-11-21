@@ -18,6 +18,7 @@ import {
   getGitWorkingFileDiff,
   getAheadBehind,
   getCurrentBranchName,
+  isRebaseInProgress,
   getGitLogText,
   getGitStatusText,
   getGithubRepoSlug,
@@ -1405,6 +1406,60 @@ describe('getGitPromptState', { skip: !gitOk && 'git not installed' }, () => {
 
     assert.equal(await getCurrentCommitHash(repo), null)
     assert.deepEqual(await getGitPromptState(repo), { startingCommit: null, dirty: false })
+  })
+})
+
+describe('isRebaseInProgress', { skip: !gitOk && 'git not installed' }, () => {
+  let base = ''
+  let restore: (() => void) | undefined
+
+  const git = (cwd: string, ...args: string[]): SpawnSyncReturns<string> =>
+    spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], {
+      cwd,
+      encoding: 'utf8',
+    })
+
+  afterEach(async () => {
+    setGitAvailableForTest(null)
+    restore?.()
+    restore = undefined
+    if (base) await rm(base, { recursive: true, force: true })
+    base = ''
+  })
+
+  it('sees a rebase stopped in a linked detached checkout, and only there', async () => {
+    base = await realpath(await mkdtemp(join(tmpdir(), 'copse-git-rebase-state-')))
+    const holder = join(base, 'holder')
+    const project = join(base, 'project')
+    await mkdir(join(holder, 'docs'), { recursive: true })
+    git(holder, 'init', '-q', '-b', 'main')
+    git(holder, 'config', 'commit.gpgsign', 'false')
+    await writeFile(join(holder, 'docs', 'one.txt'), 'one\n')
+    git(holder, 'add', '.')
+    git(holder, 'commit', '-qm', 'one')
+    await writeFile(join(holder, 'two.txt'), 'two\n')
+    git(holder, 'add', '.')
+    git(holder, 'commit', '-qm', 'two')
+    git(holder, 'worktree', 'add', '-q', '--detach', project, 'HEAD')
+    restore = setWorkspaceRootForTest(project)
+    setGitAvailableForTest(true)
+
+    assert.equal(await isRebaseInProgress(project), false)
+    // A failing `exec` stops the rebase with the checkout detached.
+    assert.notEqual(git(project, 'rebase', '-x', 'false', 'HEAD~1').status, 0)
+    assert.equal(await isRebaseInProgress(project), true)
+    assert.equal(await isRebaseInProgress(join(project, 'docs')), true)
+    assert.equal(await isRebaseInProgress(holder), false)
+
+    assert.equal(git(project, 'rebase', '--abort').status, 0)
+    assert.equal(await isRebaseInProgress(project), false)
+  })
+
+  it('reports no rebase outside a repository', async () => {
+    base = await realpath(await mkdtemp(join(tmpdir(), 'copse-git-rebase-none-')))
+    restore = setWorkspaceRootForTest(base)
+    setGitAvailableForTest(true)
+    assert.equal(await isRebaseInProgress(base), false)
   })
 })
 
