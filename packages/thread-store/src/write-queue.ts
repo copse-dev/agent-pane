@@ -5,25 +5,17 @@
 //
 // `runSerialized` chains async write operations per key so they run strictly one
 // at a time, in submission order. Different keys run independently. A rejecting
-// operation does not poison the chain for later submissions.
+// operation does not poison the chain for later submissions. This is the
+// process-wide store write queue that `drainWriteQueue` flushes at shutdown;
+// code that wants the same ordering without joining that drain makes its own
+// `createKeyedSerialQueue()`.
 
-const chains = new Map<string, Promise<unknown>>()
+import { createKeyedSerialQueue } from '@copse/std/keyed-serial-queue.ts'
+
+const writes = createKeyedSerialQueue<string>()
 
 export function runSerialized<T>(key: string, op: () => T | Promise<T>): Promise<T> {
-  const prev = chains.get(key) ?? Promise.resolve()
-  const next = prev.then(
-    () => op(),
-    () => op(),
-  )
-  chains.set(key, next)
-  // Once this op settles, drop the chain entry if nothing newer was queued, so
-  // the map does not grow unbounded across distinct keys.
-  void next
-    .catch(() => undefined)
-    .finally(() => {
-      if (chains.get(key) === next) chains.delete(key)
-    })
-  return next
+  return writes.run(key, op)
 }
 
 /**
@@ -46,15 +38,6 @@ export function runSerializedUpdate<T>(
 }
 
 /** Resolve once every currently-queued write, including writes it enqueues, has settled. */
-export async function drainWriteQueue(): Promise<void> {
-  // A settling operation can enqueue follow-up durability work. Awaiting one
-  // snapshot would let shutdown continue while that newer tail was still in
-  // flight, so keep draining until no key points at a promise newer than the
-  // snapshot just settled.
-  for (;;) {
-    const pending = [...chains.values()]
-    if (pending.length === 0) return
-    await Promise.allSettled(pending)
-    if ([...chains.values()].every((chain) => pending.includes(chain))) return
-  }
+export function drainWriteQueue(): Promise<void> {
+  return writes.drain()
 }
