@@ -550,17 +550,13 @@ dialog.settings-overlay::backdrop {
   margin-bottom: 0;
 }
 /* Chat, lightweight prompts, and task-role routing are one decision surface.
-   Keep the roles visibly nested inside the Models card without introducing a
-   second card / nested fieldset. */
+   Keep the roles inside the Models section without introducing a second card /
+   nested fieldset; space, not a rule, separates them from the fields above. */
 #settings-model-routing-host {
   margin-top: var(--spacing-xl);
-  padding-top: var(--spacing-lg);
-  border-top: 1px solid var(--border);
 }
 #settings-model-maker-block-host {
   margin-top: var(--spacing-xl);
-  padding-top: var(--spacing-lg);
-  border-top: 1px solid var(--border);
 }
 .model-maker-block-list {
   display: grid;
@@ -575,8 +571,6 @@ dialog.settings-overlay::backdrop {
    one card, three stacked decisions, no second border box. */
 #settings-model-parameters-host {
   margin-top: var(--spacing-xl);
-  padding-top: var(--spacing-lg);
-  border-top: 1px solid var(--border);
 }
 .model-parameter-note {
   margin-bottom: var(--spacing-lg);
@@ -3363,13 +3357,11 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   font-size: var(--font-size-sm);
 }
 
-/* Coding agents list: logo, name + status chip on one row, action on the right. */
-.acp-list {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-elevated);
-  overflow: hidden;
-}
+/* Coding agents list (`.acp-list`): logo, name + status chip on one row, action
+   on the right. The rows sit on the page like plugin rows, without a filled
+   card or rules between them. The list does not clip its overflow either: each
+   row's last action ends flush with the list's edge, so a clip would cut off
+   its focus ring. */
 .acp-list-bar {
   display: flex;
   align-items: baseline;
@@ -3381,11 +3373,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   display: none;
 }
 .acp-row {
-  padding: var(--spacing-md);
-  border-bottom: 1px solid var(--border);
-}
-.acp-row:last-child {
-  border-bottom: 0;
+  padding: var(--spacing-md) 0;
 }
 .acp-row-head {
   display: flex;
@@ -3495,6 +3483,15 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 }
 .acp-add-menu[hidden] {
   display: none;
+}
+/* The Add menu is still a card, so its rows keep the inset and the rule between
+   them that rows in the unframed list above do without. */
+.acp-add-menu .acp-row {
+  padding: var(--spacing-md);
+  border-bottom: 1px solid var(--border);
+}
+.acp-add-menu .acp-row:last-child {
+  border-bottom: 0;
 }
 /* Models & agents Add menu: group labels between rows, and inline add forms. */
 .connections-menu-group {
