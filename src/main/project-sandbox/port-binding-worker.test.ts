@@ -1,5 +1,18 @@
+import { tmpdir } from 'node:os'
+import { z } from 'zod'
+import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
+import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
+import { AUTO_APPROVAL_LEVEL_SETTING } from '@shared/auto-approval.ts'
+import { initProjectSandbox, isProjectSandboxEnabled, shutdownProjectSandbox } from './index.ts'
+import { runWithThreadExecutionContext } from '../services/thread-execution-context.ts'
+import { setWorkspaceRootForTest } from '../services/workspace.ts'
+import { setApprovalHandler } from '../services/approval.ts'
+import { ensureToolPermitted } from '../services/security/permission-gate.ts'
+import { shellRunsOutsideSandbox } from '../services/security/command-routing-config.ts'
+import { setSetting } from '../services/storage/settings.ts'
 import assert from 'node:assert/strict'
-import { execFileSync, spawnSync } from 'node:child_process'
+import { execFileSync, spawnSync, type ChildProcess } from 'node:child_process'
 import { once } from 'node:events'
 import {
   existsSync,
@@ -10,11 +23,11 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, describe, it, mock } from 'node:test'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import * as esbuild from 'esbuild'
-import { baseSandboxConfig } from './config.ts'
+import { baseSandboxConfig, ensureWorkspaceTmpDir } from './config.ts'
 import {
   activeSandboxNetworkScopeLabels,
   networkDenialMarker,
@@ -39,8 +52,6 @@ import {
 } from '../services/security/thread-read-roots.ts'
 import { runWithActiveRunIdentity } from '../services/active-run-identity.ts'
 import { runWithDecisionRecorder } from '../services/security/decision-log-store.ts'
-import { setSetting } from '../services/storage/settings.ts'
-import { runWithThreadExecutionContext } from '../services/thread-execution-context.ts'
 import {
   registerInternalWorkspaceRoot,
   unregisterInternalWorkspaceRoot,
@@ -239,6 +250,7 @@ describe('port-binding background host', () => {
           JSON.stringify({
             command: 'inspect policy',
             cwd: worktree,
+            tmpDir: worktree,
             overlay: rawOverlay,
           }),
         )
@@ -350,6 +362,7 @@ describe('port-binding background host', () => {
         "require('node:fs').writeFileSync('spawned', 'yes')",
       ]),
       cwd: fixture,
+      tmpDir: fixture,
       overlay: {
         network: {
           allowedDomains: ['localhost', '127.0.0.1', '::1'],
@@ -398,23 +411,20 @@ describe('port-binding host protocol', () => {
         allowGitConfig: true,
       },
     }
+    const request = { command: 'x', cwd: '/tmp', tmpDir: '/tmp', overlay }
     assert.equal(parsePortBindingRequest('{'), null)
     assert.equal(parsePortBindingRequest(JSON.stringify({ command: 'x', cwd: '/tmp' })), null)
     assert.equal(
-      parsePortBindingRequest(JSON.stringify({ command: 'x', cwd: 'relative', overlay })),
+      parsePortBindingRequest(JSON.stringify({ command: 'x', cwd: '/tmp', overlay })),
       null,
     )
-    assert.equal(
-      parsePortBindingRequest(
-        JSON.stringify({ command: 'x', cwd: '/tmp', env: { A: 1 }, overlay }),
-      ),
-      null,
-    )
+    assert.equal(parsePortBindingRequest(JSON.stringify({ ...request, tmpDir: 'relative' })), null)
+    assert.equal(parsePortBindingRequest(JSON.stringify({ ...request, cwd: 'relative' })), null)
+    assert.equal(parsePortBindingRequest(JSON.stringify({ ...request, env: { A: 1 } })), null)
     assert.equal(
       parsePortBindingRequest(
         JSON.stringify({
-          command: 'x',
-          cwd: '/tmp',
+          ...request,
           overlay: {
             ...overlay,
             network: { ...overlay.network, allowedDomains: ['public.example'] },
@@ -425,14 +435,202 @@ describe('port-binding host protocol', () => {
     )
     assert.equal(parsePortBindingMessage({ type: 'violations', count: -1 }), null)
     assert.equal(parsePortBindingMessage({ type: 'network-denial', host: 4 }), null)
-    assert.deepEqual(
-      parsePortBindingRequest(JSON.stringify({ command: 'x', cwd: '/tmp', overlay })),
-      {
-        command: 'x',
-        cwd: '/tmp',
-        overlay,
-      },
-    )
+    assert.deepEqual(parsePortBindingRequest(JSON.stringify(request)), request)
     assert.equal(PORT_BINDING_REQUEST_ENV, 'COPSE_PORT_BINDING_REQUEST')
   })
+})
+
+const evidenceSchema = z.object({
+  temps: z.record(z.string(), z.string()),
+  blocked: z.array(z.object({ path: z.string(), code: z.string() })),
+})
+
+it('keeps real approved port hosts on their parent thread scratch', async (t) => {
+  if (process.platform === 'win32') {
+    t.skip('no project OS sandbox on Windows')
+    return
+  }
+  const fixture = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-port-scratch-')))
+  const root = join(fixture, 'project')
+  const store = join(fixture, 'store')
+  const unassigned = join(fixture, 'unassigned')
+  mkdirSync(root)
+  mkdirSync(unassigned)
+  const previousProfile = process.env['COPSE_DIR']
+  const previousStore = process.env['COPSE_WORKSPACE_DIR']
+  process.env['COPSE_DIR'] = join(fixture, 'profile')
+  process.env['COPSE_WORKSPACE_DIR'] = store
+  const restoreRoot = setWorkspaceRootForTest(root)
+  const worker = portBindingWorkerPath()
+  const originalWorker = existsSync(worker) ? readFileSync(worker) : null
+  const children: ChildProcess[] = []
+  const tempKeys = ['TMPDIR', 'TMP', 'TEMP', 'TMPPREFIX', 'CLAUDE_CODE_TMPDIR']
+  const inThread = <T>(threadId: string, action: () => T): T =>
+    runWithThreadExecutionContext(
+      {
+        projectId: 'port-scratch-project',
+        threadId,
+        projectRoot: root,
+        root,
+        checkoutMode: 'shared',
+        branch: null,
+      },
+      () => runWithActiveRunIdentity(threadId, action),
+    )
+  const prompts = { ports: 0, unexpected: 0 }
+  setDefaultPluginRegistry(createFirstPartyPluginRegistry())
+  setApprovalHandler(async (request) => {
+    const approved = request.cause === 'shell-port-binding'
+    if (approved) prompts.ports++
+    else prompts.unexpected++
+    return { approved, remember: false }
+  })
+  try {
+    await setSetting('autoRunSandboxCommands', true)
+    await setSetting('safetyClassifierEnabled', false)
+    await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+    await setSetting('toolPermissionOverrides', {})
+    await initProjectSandbox()
+    if (!isProjectSandboxEnabled()) {
+      t.skip('ASRT unavailable; real port-host containment requires a capable host')
+      return
+    }
+    mkdirSync(dirname(worker), { recursive: true })
+    esbuild.buildSync({
+      entryPoints: [join(process.cwd(), 'src/main/project-sandbox/port-binding-worker.ts')],
+      outfile: worker,
+      bundle: true,
+      platform: 'node',
+      format: 'cjs',
+      target: 'node24',
+      alias: { '@shared': join(process.cwd(), 'src/shared') },
+      external: [
+        'electron',
+        '@anthropic-ai/sandbox-runtime',
+        'shell-quote',
+        'node-pty',
+        'jsdom',
+        '@mozilla/readability',
+        'turndown',
+        'electron-updater',
+      ],
+    })
+    const threads = ['binding-thread-a', 'binding-thread-b']
+    const scratch = threads.map((thread) => inThread(thread, ensureWorkspaceTmpDir))
+    const host = ensureWorkspaceTmpDir(null)
+    const results: { own: string; evidence: z.infer<typeof evidenceSchema> }[] = []
+    for (const [index, thread] of threads.entries()) {
+      const own = scratch[index] ?? ''
+      const other = scratch[1 - index] ?? ''
+      const denied = [other, host, unassigned].map((dir) => join(dir, 'forbidden.txt'))
+      for (const dir of [other, host, unassigned]) {
+        writeFileSync(join(dir, 'host-control.txt'), 'ready')
+      }
+      const filename = `verify-binder-${String(index)}.mjs`
+      writeFileSync(
+        join(root, filename),
+        [
+          "import fs from 'node:fs'",
+          `const own = ${JSON.stringify(own)}`,
+          "fs.writeFileSync(own + '/assigned.txt', 'assigned')",
+          '// Never write the shared ASRT fallback, even when TMPDIR is wrong.',
+          "if (process.env.TMPDIR === own) fs.writeFileSync(own + '/env.txt', 'assigned')",
+          'const blocked = []',
+          `for (const path of ${JSON.stringify(denied)}) {`,
+          "  let code = 'none'",
+          "  try { fs.writeFileSync(path, 'unexpected') } catch (error) { code = String(error.code) }",
+          '  blocked.push({ path, code })',
+          '}',
+          `const temps = Object.fromEntries(${JSON.stringify(tempKeys)}.map((key) => [key, process.env[key] ?? 'unset']))`,
+          "console.log('evidence:' + JSON.stringify({ temps, blocked }))",
+        ].join('\n'),
+      )
+      await inThread(thread, async () => {
+        const command = `node ${filename}`
+        assert.equal(
+          await ensureToolPermitted({
+            toolName: 'run_background',
+            args: { action: 'start', command, allow_port_binding: true },
+          }),
+          true,
+        )
+        assert.equal(
+          shellRunsOutsideSandbox(
+            command,
+            { projectRoot: root, executionRoot: root },
+            'run_background',
+          ),
+          false,
+        )
+        const child = await spawnBackgroundProcess(command, {
+          cwd: root,
+          allowPortBinding: true,
+          env: Object.fromEntries(tempKeys.map((key) => [key, unassigned])),
+          executionTarget: { kind: 'local' },
+        })
+        children.push(child)
+        let stdout = ''
+        let stderr = ''
+        child.stdout?.on('data', (chunk: Buffer) => {
+          stdout += chunk.toString()
+        })
+        child.stderr?.on('data', (chunk: Buffer) => {
+          stderr += chunk.toString()
+        })
+        const exit = await once(child, 'close', { signal: AbortSignal.timeout(15_000) })
+        assert.equal(exit[0], 0, stderr)
+        const line = stdout.split('\n').find((value) => value.startsWith('evidence:'))
+        assert.ok(line, `${stdout}\n${stderr}`)
+        const evidence = safeJsonParse(
+          line.slice('evidence:'.length),
+          decodeWithSchema(evidenceSchema),
+        )
+        assert.ok(evidence, stdout)
+        t.diagnostic(`Thread ${String(index)}: ${JSON.stringify(evidence)}`)
+        assert.equal(readFileSync(join(own, 'assigned.txt'), 'utf8'), 'assigned')
+        assert.ok(
+          evidence.blocked.every(({ code }) =>
+            ['EPERM', 'EACCES', 'EROFS', 'ENOENT'].includes(code),
+          ),
+          stdout,
+        )
+        assert.ok(
+          denied.every((path) => !existsSync(path)),
+          stdout,
+        )
+        results.push({ own, evidence })
+      })
+    }
+    assert.deepEqual(prompts, { ports: 2, unexpected: 0 })
+    assert.deepEqual(activeSandboxNetworkScopeLabels(), [])
+    for (const { own, evidence } of results) {
+      for (const key of tempKeys) {
+        assert.equal(evidence.temps[key], key === 'TMPPREFIX' ? join(own, 'zsh') : own)
+      }
+      assert.equal(readFileSync(join(own, 'env.txt'), 'utf8'), 'assigned')
+    }
+  } finally {
+    await Promise.all(
+      children.map(async (child) => {
+        if (child.exitCode !== null || child.signalCode !== null) return
+        const cancelEscalation = terminateProcessTree(child)
+        try {
+          await once(child, 'close', { signal: AbortSignal.timeout(3_000) })
+        } finally {
+          cancelEscalation()
+        }
+      }),
+    )
+    await shutdownProjectSandbox()
+    setApprovalHandler(null)
+    setDefaultPluginRegistry(null)
+    restoreRoot()
+    if (previousProfile === undefined) delete process.env['COPSE_DIR']
+    else process.env['COPSE_DIR'] = previousProfile
+    if (previousStore === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+    else process.env['COPSE_WORKSPACE_DIR'] = previousStore
+    if (originalWorker === null) rmSync(worker, { force: true })
+    else writeFileSync(worker, originalWorker)
+    rmSync(fixture, { recursive: true, force: true })
+  }
 })

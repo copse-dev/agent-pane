@@ -326,6 +326,8 @@ function spawnPortBindingHost(
   overlay: Partial<SandboxRuntimeConfig>,
   childEnv: (env: NodeJS.ProcessEnv) => NodeJS.ProcessEnv,
 ): ChildProcess {
+  // Resolve while main still owns the thread context; the isolated host has none.
+  const tmpDir = sandboxTmpDir(overlay)
   // The worker hands the task its own env plus the request's, so both go
   // through the adapter's filter (no raw GitHub token while brokering).
   const child = spawn(process.execPath, [portBindingWorkerPath()], {
@@ -337,6 +339,7 @@ function spawnPortBindingHost(
       [PORT_BINDING_REQUEST_ENV]: JSON.stringify({
         command: shellCommandLine,
         cwd: opts.cwd,
+        tmpDir,
         ...(opts.env ? { env: childEnv(opts.env) } : {}),
         overlay,
         ...(opts.violationId ? { violationId: opts.violationId } : {}),

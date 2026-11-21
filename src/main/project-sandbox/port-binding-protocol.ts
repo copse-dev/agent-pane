@@ -25,6 +25,8 @@ const overlaySchema = z.object({
 const requestSchema = z.object({
   command: z.string().min(1),
   cwd: z.string().refine(isAbsolute),
+  // Selected by main with its thread identity, never from the command's env.
+  tmpDir: z.string().refine(isAbsolute),
   env: z.record(z.string(), z.string()).optional(),
   overlay: overlaySchema,
   violationId: z.string().optional(),

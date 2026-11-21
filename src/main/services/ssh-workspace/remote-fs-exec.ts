@@ -16,10 +16,30 @@ export async function execOnSshHost(
   shellCommand: string,
   stdin?: string,
 ): Promise<SshExecResult> {
-  const transport = await connectedTransport(hostId)
+  const manager = getSshConnectionManager()
+  // Through the connection rather than its bare transport, so a command that
+  // fails at the link is what tells the manager to check the link.
+  const connection = manager.getConnection(hostId) ?? (await manager.connect(hostId))
   const options: { cwd: string; stdin?: string } = { cwd: remoteRoot }
   if (stdin !== undefined) options.stdin = stdin
-  return transport.execShell(shellCommand, options)
+  return connection.execShell(shellCommand, options)
+}
+
+/**
+ * Run a command only if the host is connected right now; `null` when it is not.
+ *
+ * For work no user action started, such as polling. It never opens a
+ * connection, so a timer can never be the reason an SSH prompt appears: a lost
+ * host stays quiet until the user, or a command they ran, reconnects it.
+ */
+export async function execOnConnectedSshHost(
+  hostId: string,
+  remoteRoot: string,
+  shellCommand: string,
+): Promise<SshExecResult | null> {
+  const connection = getSshConnectionManager().getConnection(hostId)
+  if (!connection) return null
+  return connection.execShell(shellCommand, { cwd: remoteRoot })
 }
 
 /** Stream remote bytes to disk without routing them through capped command output. */

@@ -103,8 +103,14 @@ history stored only in another application. `send_thread_prompt` asks a separate
 your other threads?** approval. Reading never grants sending. Both grants are persisted in main-owned settings,
 keyed by the requesting thread; they are not inherited by destination or forked threads.
 Either permission can be revoked in the thread’s Context panel → Permissions.
-Destination prompts enter the normal queue with machine provenance, consume the existing
-continuation budget and respect held/paused queues. They do not interrupt active work or
+Destination prompts enter the normal queue with machine provenance and consume a separate
+allowance of five prompts to each destination per user turn in the sending thread. A new
+instruction in the sending thread gives it five fresh prompts for every destination.
+Work the sending thread runs without a user turn, such as a scheduled automation run or a turn
+the coding agent started itself, shares one allowance per destination for that thread; each
+scheduled run starts in a new thread. That fallback grants no other authority.
+Incoming prompts do not spend or reset the self-continuation budget. Exhaustion holds
+further prompts from that sender turn for human release. Prompts respect held/paused queues. They do not interrupt active work or
 switch the visible thread. An unavailable or archived destination is rejected.
 
 The \`subthreads\` tool asks once for **Allow subthread orchestration?** Its separate, revocable grant permits starting children in isolated checkouts, listing their status, reading their conversations through the tool, and sending further prompts. Main-owned ownership records limit access to children this parent created in this project; a follow-up link alone grants no orchestration authority. Children inherit neither this grant nor the parent's other permissions. Normal model usage, queue pauses, continuation budgets and tool permissions still apply. A parent may start at most four children over its lifetime and keep at most two unarchived children. Owned children cannot orchestrate grandchildren. Repeating a start with the same task key returns the existing live child without resubmitting; replacing an unavailable child consumes another start and preserves the former child's ownership record. Transcript reads return capped text excerpts, excluding reasoning, attachments and tool payloads. The main process rechecks ownership and the parent's grant as it dispatches each queued delegated prompt; revoked prompts are held, including after restart. Revoke orchestration in Context → Permissions. This does not authorize raw chat-store writes or reads of unrelated conversations.
@@ -714,6 +720,16 @@ and destructive-command checks still apply. Without containment or auto-run, app
 is required. Guarded YOLO's bounded script-content harm scan remains a separate check;
 reading a script is not proof that it is safe or permission to escape containment.
 
+A single direct literal `ln -s`, `ln -sf` or `ln -sfn` (including separate `-s`, `-f`
+and `-n` flags) stays contained when both its actual link destination and target resolve
+inside the workspace. Relative targets are anchored at the link's parent, including when
+the destination is an existing directory. Existing parent and target symlinks are resolved
+before judging containment; `-n` replaces a final directory symlink instead of following it.
+An explicit `--` before both operands permits literal dash-leading filenames. Unsupported
+option positions receive no containment waiver. Compounds, redirects, expansions and other flags
+retain conservative path classification. Trailing `/` or `/.` on the destination also keeps that
+treatment.
+
 `safetyExternalDenyThreshold` defaults to `1` (off). At a lower threshold, a command is hard-denied
 only when both conditions hold:
 
@@ -849,6 +865,22 @@ message pointing at `run_shell git fetch`.
 `git_fetch`. That setting controls Copse's own unattended hourly/allocation fetches; `git_fetch` is
 an agent-requested action, governed like any tool by its per-tool permission (set it to Ask or
 Block to require approval or disable it).
+
+Unattended default-branch refresh uses a cache-only askpass lease: it reuses answers
+the person remembered in Copse, but never opens or waits for an authentication or
+host-trust dialog. Missing credentials leave the cached tip unchanged and report
+the failed refresh, with URL userinfo removed from the background warning.
+Existing configured helpers and SSH agents can still refresh it.
+When the session cache has no remembered answers, SSH uses batch mode and skips
+password and keyboard-interactive prompts. A warm cache enables the trusted
+helper with one prompt attempt per authentication method; it does not prove a
+matching answer for this destination. Missing or stale answers can still be
+submitted, and keyboard-interactive may request several answers in one attempt.
+Failed background Git commands and expired askpass leases retire only the
+current session answers actually served to that invocation. This is conservative:
+a later Git error can evict a credential even after successful authentication.
+Explicit `git_fetch` and foreground push keep their normal authentication path;
+the background-only interaction policy adds no network or shell approval grant.
 
 ## Brokered GitHub credentials (experimental)
 
@@ -1478,7 +1510,22 @@ use the same Save dialog after checking the owning project and chat.
 ## Implementation map
 
 Sandboxed native commands and ACP processes redirect `TMPDIR`, `TMP`, `TEMP`, zsh's
-`TMPPREFIX` and `CLAUDE_CODE_TMPDIR` into the existing workspace scratch directory. zsh uses
+`TMPPREFIX` and `CLAUDE_CODE_TMPDIR` into the active thread's scratch under
+`workspace/tmp/threads/<thread-id-hash>`. Sandboxed PTYs use that assignment through the active
+thread execution context; host operations without a thread use the separate `workspace/tmp/host`
+leaf. Explicitly unsandboxed user Shells tabs preserve their original temp environment, including
+`TMPDIR`, `TMP`, `TEMP`, `TMPPREFIX` and `CLAUDE_CODE_TMPDIR`; they do not share the agent-writable
+scratch directory. The sandbox write grant,
+child environment and classifier resolve the same directory. Absolute scratch paths, including
+macOS `/var` and `/private/var` spellings, are recognized; sibling prefixes, another thread's
+directory and escaping symlinks retain outside-path classification. Setting `TMPDIR` in command
+text never grants a root. Grants are anchored to the trusted canonical store parent and fixed
+scratch components; validation refuses scratch symlinks and grant roots never follow a controlled
+leaf. The private ACP session-host request
+carries the main-owned thread identity so hosted agents resolve the same assignment; agent
+environment text supplies no scratch authority. For isolated loopback tasks, main selects the
+temp directory before crossing the process boundary; the host checks that choice against the
+carried filesystem overlay and uses the same read-only fallback. zsh uses
 `TMPPREFIX` for large heredocs independently of `TMPDIR`; leaving its default `/tmp/zsh` breaks
 patch commands even when every destination file is inside the workspace. This redirect does not
 widen the sandbox's writable roots or change the approval policy. When `COPSE_DIR` is reached
@@ -1556,8 +1603,8 @@ shim mode) get only the shim directory, so their `node` fails contained and offe
   (the Guarded YOLO harm gate), `read-outside-project.ts` (read-shape proof and refusals),
   `gh-argv.ts` (GitHub CLI shapes), `command-routing.ts` (trusted-command routing). The
   `src/main/services/security/` files of the same names re-export them and bind the two facts
-  only the app knows through `shell-guard-environment.ts`: the read-only chat-store mount and
-  the scratch directories configured ACP agents declare. Docker run/pull/push and Apple
+  the app knows through `shell-guard-environment.ts`: read-only mounts, authoritative scratch
+  roots, and filesystem proof for supported symbolic links. Docker run/pull/push and Apple
   container run/image pull/image push are hard-external; read-only list/inspect/status commands
   remain sandbox-scoped.
 - `github/gh-api-read.ts` and `git-fetch-origin.ts`: validation and argv construction for the

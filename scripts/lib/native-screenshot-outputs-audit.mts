@@ -6,7 +6,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
   Record<string, { readonly sourceSha256: string; readonly filenames: readonly string[] }>
 > = {
   'tests/e2e/acp-auth-error.e2e.ts': {
-    sourceSha256: '715fe08b8032d0999de9bd40a5833aef110613f5d0b926b8e21e922177ade0fb',
+    sourceSha256: '32631700988dbc2a43f006533b63ad79c533f0f9b7c161d177ad3f2ab752f461',
     filenames: [
       'acp-auth-error.png',
       'acp-auth-expired-mid-turn.png',
@@ -110,7 +110,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['pr-native-provenance-offline-restart.png', 'pr-native-provenance.png'],
   },
   'tests/e2e/queued-held.e2e.ts': {
-    sourceSha256: '440260c4d6717e765e22b27fe8c3852676895aad2330518975b65653307c2686',
+    sourceSha256: '8baf3b531458e0f0cc6306eea841f5f75f5f7c266c83b1d18486608011b19945',
     filenames: ['queued-held-contrast-dark.png', 'queued-held-contrast-light.png'],
   },
   'tests/e2e/queued-message-delete.e2e.ts': {
