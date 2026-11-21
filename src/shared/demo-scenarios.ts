@@ -4001,6 +4001,17 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       '/home/mira/harbor-board',
     ),
   },
+  approvalRiskScenario('approval-port-binding', {
+    id: 'port-binding-pending',
+    threadId: 'demo-approval-port-binding-thread',
+    title: 'Allow this project to bind a local port?',
+    body: 'npm run dev',
+    bodyAdvice:
+      'The agent wants to start a long-running background task that binds a loopback port and stays alive across turns:\n\nProject: /workspace/copse',
+    type: 'shell',
+    allowRemember: true,
+    rememberLabel: 'Always allow local port binding in this project',
+  }),
   approvalRiskScenario('approval-automation-preparation', {
     id: 'automation-preparation',
     title: 'Prepare this worktree?',
