@@ -129,6 +129,10 @@
       "smoke": null
     },
     {
+      "prefix": "src/main/services/execution-runtime/",
+      "smoke": null
+    },
+    {
       "prefix": "src/main/services/git/",
       "smoke": null
     },
