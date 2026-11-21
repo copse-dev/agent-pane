@@ -10,7 +10,7 @@ import { AgentRunDeadline } from '@copse/agent/agent-loop-limits.ts'
 import { registerRunDeadline, clearRunDeadline } from './hooks/run-deadline.ts'
 import type { LLMMessage, LLMProvider, ProviderStreamChunk } from '@copse/llm/wire-types.ts'
 import { configureThreadStore } from '@copse/thread-store/environment.ts'
-import type { QueuedUserMessage } from '@shared/types'
+import type { Message, QueuedUserMessage } from '@shared/types'
 import {
   closeThreadStoreIndexes,
   saveProjectThread,
@@ -79,11 +79,22 @@ describe('native human steering boundary and durability', () => {
     configureThreadStore()
     rmSync(root, { recursive: true, force: true })
   })
-  async function queue(id: string, overrides: Partial<QueuedUserMessage> = {}): Promise<void> {
+  async function queue(
+    id: string,
+    overrides: Partial<QueuedUserMessage> = {},
+    messageOverrides: Partial<Pick<Message, 'content' | 'images' | 'attachments'>> = {},
+  ): Promise<void> {
     await appendMessage(
       'p',
       't',
-      { id, role: 'user', content: `Note ${id}`, toolCalls: [], createdAt: 2 },
+      {
+        id,
+        role: 'user',
+        content: `Note ${id}`,
+        toolCalls: [],
+        createdAt: 2,
+        ...messageOverrides,
+      },
       { source: 'renderer' },
     )
     const meta = await getThreadMeta('p', 't')
@@ -733,9 +744,10 @@ describe('native human steering boundary and durability', () => {
   })
 
   it('durably accepts the exact protected text before checkpoint and delivers once', async () => {
+    const exact = '  Protected \uFFFC correction  \n\n'
     await queue('reviewed')
     const delivery = session.enqueue('reviewed', async (): Promise<NativeSteeringApproval> => ({
-      text: 'Protected correction',
+      text: exact,
       claim: () => true,
     }))
     const messages: LLMMessage[] = []
@@ -744,10 +756,12 @@ describe('native human steering boundary and durability', () => {
       messages,
       async () => {
         checkpoints++
-        assert.equal(
-          (await getProjectThread('p', 't'))?.messages.find((m) => m.id === 'reviewed')?.content,
-          'Protected correction',
+        const accepted = (await getProjectThread('p', 't'))?.messages.find(
+          (message) => message.id === 'reviewed',
         )
+        assert.equal(accepted?.content, exact)
+        assert.equal(accepted.attachments, undefined)
+        assert.equal(accepted.promptRepresentation, 'canonical-provider')
         await assert.rejects(deleteQueuedMessage('p', 't', 'reviewed'), /accepted/)
         await assert.rejects(
           appendMessage(
@@ -775,7 +789,53 @@ describe('native human steering boundary and durability', () => {
       prepare,
     )
     assert.equal(checkpoints, 1)
-    assert.deepEqual(messages, [{ role: 'user', content: 'Protected correction' }])
+    assert.deepEqual(messages, [{ role: 'user', content: exact }])
+    const reloaded = (await getProjectThread('p', 't'))?.messages.find(
+      (message) => message.id === 'reviewed',
+    )
+    assert.equal(reloaded?.content, exact)
+    assert.equal(reloaded.promptRepresentation, 'canonical-provider')
+  })
+
+  it('drops stale optimistic media claims at the edited acceptance checkpoint', async () => {
+    const exact = '  Reviewed literal \uFFFC text only.  \n\n'
+    await queue(
+      'reviewed-media',
+      {},
+      {
+        images: ['data:image/png;base64,unreviewed'],
+        attachments: [
+          {
+            kind: 'paste',
+            label: 'stale optimistic paste',
+            content: 'not part of the reviewed provider text',
+          },
+        ],
+      },
+    )
+    const snapshot = await freezeQueuedUserMessage('p', 't', 'reviewed-media')
+
+    assert.equal(
+      await acceptReviewedQueuedUserMessage(
+        'p',
+        't',
+        snapshot,
+        exact,
+        () => true,
+        () => true,
+      ),
+      true,
+    )
+
+    closeThreadStoreIndexes()
+    const accepted = (await getProjectThread('p', 't'))?.messages.find(
+      (message) => message.id === 'reviewed-media',
+    )
+    assert.ok(accepted)
+    assert.equal(accepted.content, exact)
+    assert.equal(accepted.promptRepresentation, 'canonical-provider')
+    assert.equal(accepted.attachments, undefined)
+    assert.equal(accepted.images, undefined)
   })
 
   for (const finish of ['stop', 'close'] as const) {

@@ -230,7 +230,7 @@ test('resends canonical protected attachment bytes while reporting its omitted c
   assert.equal(getThread(store, threadId).messages[0]?.attachments?.[0]?.content, pasteBytes)
 })
 
-test('resends canonical bytes exactly across repeated live resends', () => {
+test('resends applied steering bytes exactly across repeated live resends', () => {
   const store = createProjectStore()
   const { api, runs } = fakeApi()
   const threadId = createThread(store)
