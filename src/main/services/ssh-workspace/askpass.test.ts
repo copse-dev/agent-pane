@@ -14,6 +14,8 @@ import {
   type SshAskpassLease,
 } from './askpass.ts'
 import { setSshPromptHandler } from './ssh-prompt.ts'
+import { getSetting, setSetting } from '../storage/settings.ts'
+import { hasSessionSshCredentials } from './ssh-credential-cache.ts'
 import {
   resolveRendererPromptTarget,
   runWithRendererPromptTarget,
@@ -54,7 +56,11 @@ describe('buildGitSshCommand', () => {
 })
 
 /** One askpass round-trip over the bridge socket, as the helper script does it. */
-function askOverSocket(lease: SshAskpassLease, prompt: string): Promise<string> {
+function askOverSocket(
+  lease: SshAskpassLease,
+  prompt: string,
+  extra: Record<string, unknown> = {},
+): Promise<string> {
   const socketPath = lease.env['COPSE_SSH_ASKPASS_SOCKET']
   const nonce = lease.env['COPSE_SSH_ASKPASS_NONCE']
   assert.ok(typeof socketPath === 'string' && socketPath.length > 0)
@@ -63,7 +69,7 @@ function askOverSocket(lease: SshAskpassLease, prompt: string): Promise<string> 
     const client = connect(socketPath)
     let buffer = ''
     client.on('error', reject)
-    client.write(`${JSON.stringify({ nonce, prompt })}\n`)
+    client.write(`${JSON.stringify({ nonce, prompt, ...extra })}\n`)
     client.on('data', (chunk) => {
       buffer += chunk.toString()
     })
@@ -331,6 +337,7 @@ describe('leaseGitSshEnv', () => {
   })
 
   afterEach(() => {
+    setSshPromptHandler(null)
     resetSshAskpassForTests()
     rmSync(testDir, { recursive: true, force: true })
   })
@@ -343,6 +350,243 @@ describe('leaseGitSshEnv', () => {
       assert.equal(lease.env['SSH_ASKPASS_REQUIRE'], 'force')
       assert.match(String(lease.env['GIT_SSH_COMMAND']), /StrictHostKeyChecking=accept-new/)
       assert.doesNotMatch(String(lease.env['GIT_SSH_COMMAND']), /BatchMode/)
+    } finally {
+      lease.release()
+    }
+  })
+
+  for (const checking of ['accept-new', 'strict'] as const) {
+    it(`uses only cached answers after ambient injection while preserving ${checking} host policy`, async () => {
+      const previous = getSetting('sshStrictHostKeys', 'accept-new')
+      await setSetting('sshStrictHostKeys', checking)
+      const lease = leaseGitSshEnv(
+        {
+          HOME: '/owned/home',
+          PATH: '/usr/bin:/bin',
+          SSH_AUTH_SOCK: '/owned/agent.sock',
+          GIT_SSH_COMMAND: 'ssh -oBatchMode=no -oStrictHostKeyChecking=no',
+          GIT_ASKPASS: '/untrusted/git-askpass',
+          SSH_ASKPASS: '/untrusted/ssh-askpass',
+          SSH_ASKPASS_REQUIRE: 'force',
+          COPSE_SSH_ASKPASS_SOCKET: '/old/socket',
+          COPSE_SSH_ASKPASS_NONCE: 'old-nonce',
+          GCM_INTERACTIVE: '1',
+        },
+        'noninteractive',
+      )
+      try {
+        assert.ok(lease.env['GIT_ASKPASS']?.startsWith(testDir))
+        assert.ok(lease.env['SSH_ASKPASS']?.startsWith(testDir))
+        assert.equal(lease.env['SSH_ASKPASS_REQUIRE'], 'force')
+        assert.notEqual(lease.env['COPSE_SSH_ASKPASS_SOCKET'], '/old/socket')
+        assert.notEqual(lease.env['COPSE_SSH_ASKPASS_NONCE'], 'old-nonce')
+        assert.equal(lease.env['GIT_TERMINAL_PROMPT'], '0')
+        assert.equal(lease.env['GCM_INTERACTIVE'], '0')
+        assert.equal(
+          lease.env['GIT_SSH_COMMAND'],
+          `ssh -oStrictHostKeyChecking=${checking === 'strict' ? 'yes' : 'accept-new'} -oBatchMode=yes -oNumberOfPasswordPrompts=1`,
+        )
+        assert.equal(lease.env['SSH_AUTH_SOCK'], '/owned/agent.sock')
+        assert.equal(lease.env['HOME'], '/owned/home')
+        assert.equal(lease.env['PATH'], '/usr/bin:/bin')
+        let prompts = 0
+        setSshPromptHandler(async () => {
+          prompts += 1
+          return { value: 'must not be asked' }
+        })
+        assert.deepEqual(
+          JSON.parse(
+            await askOverSocket(lease, 'Password for fresh host:', { mode: 'interactive' }),
+          ),
+          {
+            response: null,
+          },
+        )
+        assert.deepEqual(
+          JSON.parse(
+            await askOverSocket(lease, 'Are you sure you want to continue connecting (yes/no)?'),
+          ),
+          { response: null },
+        )
+        assert.equal(prompts, 0)
+      } finally {
+        setSshPromptHandler(null)
+        lease.release()
+        await setSetting('sshStrictHostKeys', previous)
+      }
+    })
+  }
+
+  it('enables a bounded warm lease only after an answer is remembered', async () => {
+    const prompt = "Password for 'https://remembered.example':"
+    setSshPromptHandler(async () => ({ value: 'remembered', remember: true }))
+    const foreground = leaseGitSshEnv({})
+    const cold = leaseGitSshEnv({}, 'noninteractive')
+    try {
+      assert.match(
+        String(cold.env['GIT_SSH_COMMAND']),
+        /BatchMode=yes -oNumberOfPasswordPrompts=1$/,
+      )
+      assert.deepEqual(JSON.parse(await askOverSocket(foreground, prompt)), {
+        response: 'remembered',
+      })
+      const warm = leaseGitSshEnv({}, 'noninteractive')
+      try {
+        assert.match(
+          String(warm.env['GIT_SSH_COMMAND']),
+          /BatchMode=no -oNumberOfPasswordPrompts=1$/,
+        )
+        assert.deepEqual(JSON.parse(await askOverSocket(warm, prompt)), { response: 'remembered' })
+        assert.deepEqual(JSON.parse(await askOverSocket(warm, "other@host's password:")), {
+          response: null,
+        })
+        assert.doesNotMatch(
+          String(foreground.env['GIT_SSH_COMMAND']),
+          /BatchMode|NumberOfPasswordPrompts/,
+        )
+      } finally {
+        warm.release()
+      }
+      assert.equal(
+        hasSessionSshCredentials(),
+        true,
+        'successful release retains the remembered answer',
+      )
+    } finally {
+      foreground.release()
+      cold.release()
+    }
+  })
+
+  for (const successful of [true, false]) {
+    it(`${successful ? 'keeps' : 'retires'} served answers after a cache-only ${successful ? 'success' : 'failure'}`, async () => {
+      const prompt = "Enter passphrase for key '/owned/result-key':"
+      setSshPromptHandler(async () => ({ value: 'remembered', remember: true }))
+      const foreground = leaseGitSshEnv({})
+      try {
+        await askOverSocket(foreground, prompt)
+        const background = leaseGitSshEnv({}, 'noninteractive')
+        try {
+          assert.deepEqual(JSON.parse(await askOverSocket(background, prompt)), {
+            response: 'remembered',
+          })
+          background.release(successful)
+          background.release(!successful)
+          assert.equal(hasSessionSshCredentials(), successful, 'completion is applied only once')
+          const probe = leaseGitSshEnv({}, 'noninteractive')
+          try {
+            assert.deepEqual(JSON.parse(await askOverSocket(probe, prompt)), {
+              response: successful ? 'remembered' : null,
+            })
+          } finally {
+            probe.release()
+          }
+        } finally {
+          background.release()
+        }
+      } finally {
+        foreground.release()
+      }
+    })
+  }
+
+  for (const mode of ['interactive', 'cache-only'] as const) {
+    it(`${mode} expiry preserves its credential completion policy`, async (t) => {
+      const prompt = "Enter passphrase for key '/owned/expiry-key':"
+      setSshPromptHandler(async () => ({ value: 'remembered', remember: true }))
+      const foreground = leaseGitSshEnv({})
+      try {
+        await askOverSocket(foreground, prompt)
+        t.mock.timers.enable({ apis: ['setTimeout'] })
+        const expiring = leaseSshAskpassEnv({}, undefined, mode)
+        try {
+          assert.deepEqual(JSON.parse(await askOverSocket(expiring, prompt)), {
+            response: 'remembered',
+          })
+          t.mock.timers.tick(60_000)
+          t.mock.timers.reset()
+          assert.deepEqual(JSON.parse(await askOverSocket(expiring, prompt)), { response: null })
+          assert.equal(hasSessionSshCredentials(), mode === 'interactive')
+          expiring.release(true)
+          assert.equal(hasSessionSshCredentials(), mode === 'interactive')
+        } finally {
+          t.mock.timers.reset()
+          expiring.release()
+        }
+      } finally {
+        foreground.release(false)
+      }
+    })
+  }
+
+  it('does not invalidate an interactive answer on failed release', async () => {
+    setSshPromptHandler(async () => ({ value: 'remembered', remember: true }))
+    const foreground = leaseGitSshEnv({})
+    try {
+      await askOverSocket(foreground, 'Password:')
+      foreground.release(false)
+      assert.equal(hasSessionSshCredentials(), true)
+    } finally {
+      foreground.release()
+    }
+  })
+
+  it('reuses a remembered SSH key passphrase but never prompts for a rejected or missing answer', async () => {
+    const prompt = "Enter passphrase for key '/owned/id_ed25519':"
+    let prompts = 0
+    setSshPromptHandler(async () => {
+      prompts += 1
+      return { value: 'owned-passphrase', remember: true }
+    })
+    const foreground = leaseGitSshEnv({})
+    const background = leaseGitSshEnv({}, 'noninteractive')
+    const afterRejection = leaseGitSshEnv({}, 'noninteractive')
+    try {
+      assert.deepEqual(JSON.parse(await askOverSocket(foreground, prompt)), {
+        response: 'owned-passphrase',
+      })
+      assert.equal(prompts, 1)
+      assert.deepEqual(JSON.parse(await askOverSocket(background, prompt)), {
+        response: 'owned-passphrase',
+      })
+      assert.deepEqual(
+        JSON.parse(await askOverSocket(background, prompt)),
+        { response: null },
+        'a re-ask invalidates the rejected cached answer',
+      )
+      assert.deepEqual(JSON.parse(await askOverSocket(afterRejection, prompt)), { response: null })
+      assert.equal(prompts, 1, 'cache-only nonces must never dispatch UI')
+      assert.deepEqual(JSON.parse(await askOverSocket(foreground, prompt)), {
+        response: 'owned-passphrase',
+      })
+      assert.equal(prompts, 2, 'foreground auth can recover normally')
+    } finally {
+      setSshPromptHandler(null)
+      foreground.release()
+      background.release()
+      afterRejection.release()
+    }
+  })
+
+  it('disables all askpass fallbacks and uses BatchMode when the trusted bridge is unavailable', () => {
+    resetSshAskpassForTests()
+    const lease = leaseGitSshEnv(
+      {
+        GIT_ASKPASS: '/untrusted/helper',
+        SSH_ASKPASS: '/untrusted/ssh',
+        COPSE_SSH_ASKPASS_NONCE: 'old',
+      },
+      'noninteractive',
+    )
+    try {
+      assert.equal(lease.env['GIT_ASKPASS'], undefined)
+      assert.equal(lease.env['SSH_ASKPASS'], undefined)
+      assert.equal(lease.env['SSH_ASKPASS_REQUIRE'], 'never')
+      assert.equal(lease.env['COPSE_SSH_ASKPASS_NONCE'], undefined)
+      assert.match(
+        String(lease.env['GIT_SSH_COMMAND']),
+        /BatchMode=yes -oNumberOfPasswordPrompts=1$/,
+      )
     } finally {
       lease.release()
     }
