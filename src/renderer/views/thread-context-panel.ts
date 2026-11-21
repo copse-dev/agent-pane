@@ -686,7 +686,10 @@ export function mountThreadContextPane(
       result.append(emptyNote(accessStatus))
       return result
     }
-    const recent = accessGrants.decisions.slice(-4).reverse()
+    // Process and runtime-state lines (`observed`) record effects, not
+    // decisions; they belong in the export, not in this list or its count.
+    const decisions = accessGrants.decisions.filter((decision) => decision.verdict !== 'observed')
+    const recent = decisions.slice(-4).reverse()
     if (!recent.length) {
       result.append(emptyNote('No recorded decisions for this thread.'))
       return result
@@ -704,7 +707,7 @@ export function mountThreadContextPane(
       el(
         'p',
         { class: 'thread-context-note' },
-        `Showing the latest ${String(recent.length)} of ${String(accessGrants.decisions.length)} recorded decisions. Current access is shown above.`,
+        `Showing the latest ${String(recent.length)} of ${String(decisions.length)} recorded decisions. Current access is shown above.`,
       ),
     )
     return result
