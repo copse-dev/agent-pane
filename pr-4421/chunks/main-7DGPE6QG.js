@@ -77644,7 +77644,8 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
       result.append(emptyNote(accessStatus));
       return result;
     }
-    const recent = accessGrants.decisions.slice(-4).reverse();
+    const decisions = accessGrants.decisions.filter((decision) => decision.verdict !== "observed");
+    const recent = decisions.slice(-4).reverse();
     if (!recent.length) {
       result.append(emptyNote("No recorded decisions for this thread."));
       return result;
@@ -77662,7 +77663,7 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
       el(
         "p",
         { class: "thread-context-note" },
-        `Showing the latest ${String(recent.length)} of ${String(accessGrants.decisions.length)} recorded decisions. Current access is shown above.`
+        `Showing the latest ${String(recent.length)} of ${String(decisions.length)} recorded decisions. Current access is shown above.`
       )
     );
     return result;
