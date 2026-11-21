@@ -613,6 +613,20 @@ input[type=password] {
   }
 }
 
+/* src/renderer/styles/thread-action.css */
+.thread-action-progress {
+  margin: 4px 12px 8px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+.thread-action-status {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-2xs);
+}
+
 /* src/renderer/styles/global/icons.css */
 .ui-icon {
   flex-shrink: 0;
