@@ -1,5 +1,15 @@
 # Shell and tool permission contract
 
+A tool cancelled while waiting for permission reports cancellation and never
+executes after the signal aborts. A negative gate result preserves its denial
+reason, distinguishing a user decline from policy, hook and unanswered-prompt
+refusals. Pending ACP approval remains a separate retryable error.
+
+When an authorized bridged action finishes after its caller detaches, Copse
+records its textual result before requesting continuation against the original
+human epoch. This delivers an outcome, never re-executes the action, and does
+not grant authority to run another tool.
+
 This document describes current shipped behavior. Read it before changing permission policy, shell
 scope analysis, the project sandbox, escalation, or approval UI. Historical design decisions
 remain in `docs/plans/`; this is the durable cross-platform contract.
@@ -51,6 +61,30 @@ ACP turn/session; closing a completed MCP response does not revoke it, while aba
 startup, stopping the turn or closing the ACP session does. The created VM's image digest
 must match the owner-controlled local build receipt before startup. Host-only leases and
 VM ownership labels allow dead-parent/expired cleanup without deleting unrelated VMs.
+
+## Unanswered approvals across ACP turns
+
+Normal ACP turn completion ends tool execution and releases the execution context, but it does
+not cancel an unanswered approval. The prompt remains answerable even when turn completion
+arrives before the MCP client's disconnect. A later identical request in the same thread,
+project, human task and execution root can consume that decision once, within the existing
+ten-minute replay window. Changed commands or arguments require their own approval; answering a
+detached prompt never starts the old tool call. Approving it requests one continuation in the
+same task so the agent can retry the call; rejecting it does not wake the agent.
+
+Stop, failure, idle expiry, session closure, and thread deletion revoke both pending prompts
+(including detached ones) and stored answers for that thread. Send-now interruption is not a
+revocation: like ordinary completion, it keeps detached prompts and stored answers for the same
+task (see [What an approval prompt says](#what-an-approval-prompt-says)). The bridge observes
+turn and session termination separately from a disconnected call so the first abort cannot hide
+later revocation. Self-started turns distinguish completion and send-now from Stop,
+idle expiry, and session closure. Ordinary prompts have no approval deadline. Client abandonment
+and turn completion are logged as pending requests with distinct sources; cancellation, window
+closure, and explicit safety-check timeouts retain their own audit sources.
+
+Settings holds ordinary approval dialogs back while it is open. A request for the focused thread
+still receives an attention indicator and a **Review approval** action in Settings. Reviewing
+closes Settings and surfaces the request through the ordinary approval dialog.
 
 ## Per-tool permission settings
 
@@ -106,9 +140,12 @@ Either permission can be revoked in the thread’s Context panel → Permissions
 Destination prompts enter the normal queue with machine provenance and consume a separate
 allowance of five prompts to each destination per user turn in the sending thread. A new
 instruction in the sending thread gives it five fresh prompts for every destination.
-Work the sending thread runs without a user turn, such as a scheduled automation run or a turn
-the coding agent started itself, shares one allowance per destination for that thread; each
-scheduled run starts in a new thread. That fallback grants no other authority.
+Work the sending thread runs without a user turn, such as a scheduled automation run, shares
+one allowance per destination for that thread; each scheduled run starts in a new thread. That
+fallback grants no other authority. A turn the coding agent starts on its own continues the
+task it resumes and uses that task's allowance. In a thread that never had a user turn, such
+as a scheduled run's thread, there is no task allowance to continue: such a turn shares the
+thread's fallback allowance and gains no other authority either.
 Incoming prompts do not spend or reset the self-continuation budget. Exhaustion holds
 further prompts from that sender turn for human release. Prompts respect held/paused queues. They do not interrupt active work or
 switch the visible thread. An unavailable or archived destination is rejected.
@@ -411,7 +448,12 @@ Options are read on one line only, so a shell `exec` on the following line stays
 execution.
 
 Remembered local port-binding consent is keyed by the project root, shared across its
-thread worktrees. Command execution still uses the thread's execution root and passes
+thread worktrees. The first prompt emphasizes **Allow once**, with **Allow for this project**
+as an explicit secondary action. Only the project action saves consent; once and Reject save
+nothing. The prompt names the project, explains future reuse, and points to
+Context → Permissions → Project → Local port binding for revocation. A mixed
+batch falls back to ordinary approval, with a remember checkbox only when every
+request shares the exact project grant. Command execution still uses the thread's execution root and passes
 the shell gate. Other projects require their own consent, and disabling the Background
 tasks plugin still revokes its loopback-binding capability. Legacy worktree-root grants
 are not broadened automatically; the next project-level consent can be remembered.
@@ -1050,10 +1092,12 @@ Unknown flags, shell expansions, scripts, and compound commands retain the gener
 These explanations are presentation only and never authorize or reroute a command.
 
 Remembered tool approvals cover the exact tool with other arguments; schedule grants cover
-future runs of the named schedule. The outside-project read grant still covers all eligible
-outside-project reads for the chat, not only the paths currently displayed. Its primary action
-is labeled “Allow reads for this chat”; the secondary action approves just the displayed command.
-Batch and Activity views use the same advice, complete details, and footer as individual prompts.
+future runs of the named schedule. An outside-project read grant covers the named approved files
+and directories for that chat, including eligible descendants of approved directories. Other paths
+ask again. The collapsed card shows “Allow reads for this chat” as its sole primary approval action.
+After “Show details”, “Approve this command” is primary and “Allow reads for this chat” is secondary.
+The per-command action approves only the displayed command. Batch and Activity views use the same
+advice, complete details, and footer as individual prompts.
 
 Classifier reasons are **identifiers, not copy**. The regex pass and the token pass share them
 verbatim so the two dedupe against each other, and every answered prompt writes them into the

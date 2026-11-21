@@ -487,7 +487,7 @@ jobs:
             while IFS= read -r tag; do
               exclude_head+=(--exclude "$tag")
             done < <(git tag --points-at HEAD --list 'v[0-9]*')
-            released_ref=$(git describe --tags --abbrev=0 --match 'v[0-9]*' "${exclude_head[@]}" \
+            released_ref=$(git describe --tags --abbrev=0 --match 'v[0-9]*' ${exclude_head[@]+"${exclude_head[@]}"} \
               refs/remotes/origin/release) || released_ref=''
           fi
           # Skip the promotion when it already contains the commit under test
@@ -508,7 +508,7 @@ jobs:
           else
             echo "::warning::Could not read the latest release, so this run requires a bump over the base. If main already carries an unreleased bump, re-run before bumping."
           fi
-          if ! node scripts/gen-api-protocol.mts --compare-ref "$BASE_SHA" "${released_args[@]}"; then
+          if ! node scripts/gen-api-protocol.mts --compare-ref "$BASE_SHA" ${released_args[@]+"${released_args[@]}"}; then
             if [ "${TARGET_REF#refs/heads/}" = release ]; then
               echo "::error::A promotion only carries main's commits: land the version bump on main, then promote again."
             fi
@@ -631,6 +631,11 @@ jobs:
           # than waiting for the nightly net (e.g. infra/runner changes whose
           # blast radius the selector-vocabulary map cannot see).
           CI_FULL_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'ci-full') }}
+          # A new explicit request can recover missing screenshot evidence on a
+          # reference-only head; a label left on an acceptance commit cannot.
+          FRESH_FULL_E2E_REQUEST: >-
+            ${{ github.event_name == 'pull_request' && github.event.action == 'labeled' &&
+            (github.event.label.name == 'update-screenshots' || github.event.label.name == 'ci-full') }}
           # The drift refresh PR's diff is empty, so the oracle would skip it.
           SCREENSHOT_REFRESH: ${{ steps.screenshot-refresh.outputs.refresh }}
         run: |
@@ -653,6 +658,11 @@ jobs:
           # the coverage attestation must belong to this exact combined head.
           if [ "${STACK_TIP:-false}" = "true" ]; then
             echo "Declared screenshot stack tip -> full combined e2e suite"
+            { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${FRESH_FULL_E2E_REQUEST:-false}" = "true" ]; then
+            echo "New explicit full-run label request -> full e2e suite"
             { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi

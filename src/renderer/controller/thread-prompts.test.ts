@@ -197,7 +197,7 @@ test('a prompt from a run without a user turn is charged to the sender thread an
   api.agent.run = async (_projectId, threadId): Promise<void> => {
     runs.push(threadId)
   }
-  // What main sends for a headless automation run or a self-started ACP turn.
+  // What main sends for a run without a user turn, such as a headless automation run.
   const { sourceTurnTreeId: _none, ...headless } = command
   const scope = JSON.stringify(['source', null])
   for (let i = 0; i < 6; i++) {

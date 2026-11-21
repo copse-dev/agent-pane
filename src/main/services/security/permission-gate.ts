@@ -1,7 +1,11 @@
 import { projectAllowsPortBinding, rememberProjectPortBinding } from './project-port-grants.ts'
 import { planToolBlockReason } from '../thread-plan-context.ts'
 import { z } from 'zod'
-import { browserApprovalDetails, webApprovalDetails } from '@shared/approval-copy.ts'
+import {
+  browserApprovalDetails,
+  projectPortBindingApproval,
+  webApprovalDetails,
+} from '@shared/approval-copy.ts'
 import { assertPreparationPlan } from '../worktree-preparation.ts'
 import {
   containedPreparationPath,
@@ -73,7 +77,6 @@ import {
   fetchUrlFromArgs,
   shellCommandFromArgs,
   formatShellPromptParts,
-  formatPortBindingPromptParts,
   backgroundAllowsPortBinding,
   backgroundCommandFromArgs,
   formatExternalSandboxPromptParts,
@@ -403,9 +406,10 @@ function readsOnlyUserTemp(paths: readonly string[]): boolean {
  *
  * Returns null when the command is not that shape, so the caller falls through
  * to its normal prompt. Otherwise the thread's standing grant answers it, or the
- * user is asked with the narrower read-access wording — where the primary button
- * grants the named paths (and descendants of any directories) for the rest
- * of the thread; the secondary button approves just this command.
+ * user is asked with the narrower read-access wording. The collapsed card offers
+ * the named-path grant (and eligible descendants of approved directories) for the
+ * rest of this thread as its sole approval action. Expanding the details makes
+ * approval of just this command primary and keeps the grant action secondary.
  *
  * Every outcome lands in the durable decision log, naming the paths that were at
  * stake. The grant itself is held in memory (`read-outside-grant.ts`) and dies
@@ -2029,14 +2033,9 @@ async function checkBackgroundProcessPermission(
 
   const { approved, remember } = await requestApproval(
     {
-      title: 'Allow this project to bind a local port?',
       type: 'shell',
       cause: 'shell-port-binding',
-      ...shellPromptToApprovalFields(
-        formatPortBindingPromptParts(root, backgroundCommandFromArgs(args)),
-      ),
-      allowRemember: true,
-      rememberLabel: 'Always allow local port binding in this project',
+      ...projectPortBindingApproval(root, backgroundCommandFromArgs(args)),
     },
     signal,
   )

@@ -277,6 +277,7 @@ see `storageAppendFile` / `storageWriteFile` in `src/main/services/storage/user-
 | `user-data/settings.json`                                                            | settings, including encrypted API keys                                |
 | `user-data/` (rest)                                                                  | `mcp.json`, `tools/`, browser profiles, `gortex/` semantic index      |
 | `user-data/usage-events.jsonl`                                                       | usage ledger, one JSON event per line (90 days; Settings → Usage)     |
+| `user-data/thread-action-assessments-v1.json`                                        | Needs action sort: one verdict per thread and the hourly model budget |
 | `user-data/apple-development/logs/<operationId>.log`                                 | build output of Apple Development operations                          |
 | `workspace/<projectId>/<threadId>/`                                                  | threads, tasks, decision log, deferred approvals                      |
 | `workspace/<projectId>/terminal-history`                                             | shared HISTFILE for the project's interactive Shells-tab PTYs (#2433) |
