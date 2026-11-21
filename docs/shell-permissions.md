@@ -103,8 +103,14 @@ history stored only in another application. `send_thread_prompt` asks a separate
 your other threads?** approval. Reading never grants sending. Both grants are persisted in main-owned settings,
 keyed by the requesting thread; they are not inherited by destination or forked threads.
 Either permission can be revoked in the thread’s Context panel → Permissions.
-Destination prompts enter the normal queue with machine provenance, consume the existing
-continuation budget and respect held/paused queues. They do not interrupt active work or
+Destination prompts enter the normal queue with machine provenance and consume a separate
+allowance of five prompts to each destination per user turn in the sending thread. A new
+instruction in the sending thread gives it five fresh prompts for every destination.
+Work the sending thread runs without a user turn, such as a scheduled automation run or a turn
+the coding agent started itself, shares one allowance per destination for that thread; each
+scheduled run starts in a new thread. That fallback grants no other authority.
+Incoming prompts do not spend or reset the self-continuation budget. Exhaustion holds
+further prompts from that sender turn for human release. Prompts respect held/paused queues. They do not interrupt active work or
 switch the visible thread. An unavailable or archived destination is rejected.
 
 The \`subthreads\` tool asks once for **Allow subthread orchestration?** Its separate, revocable grant permits starting children in isolated checkouts, listing their status, reading their conversations through the tool, and sending further prompts. Main-owned ownership records limit access to children this parent created in this project; a follow-up link alone grants no orchestration authority. Children inherit neither this grant nor the parent's other permissions. Normal model usage, queue pauses, continuation budgets and tool permissions still apply. A parent may start at most four children over its lifetime and keep at most two unarchived children. Owned children cannot orchestrate grandchildren. Repeating a start with the same task key returns the existing live child without resubmitting; replacing an unavailable child consumes another start and preserves the former child's ownership record. Transcript reads return capped text excerpts, excluding reasoning, attachments and tool payloads. The main process rechecks ownership and the parent's grant as it dispatches each queued delegated prompt; revoked prompts are held, including after restart. Revoke orchestration in Context → Permissions. This does not authorize raw chat-store writes or reads of unrelated conversations.
