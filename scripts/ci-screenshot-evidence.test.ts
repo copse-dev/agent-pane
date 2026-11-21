@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
+import { runInNewContext } from 'node:vm'
 import { load } from 'js-yaml'
 import { z } from 'zod'
 
@@ -50,7 +51,12 @@ const producers = z
 
 // Stub only process boundaries: execute CI's real shell, including its early
 // exits, while the existing oracle tests own diff-to-spec selection itself.
-function selectedPlan(changed: string, oracleMode: string, draft: boolean): Map<string, string> {
+function selectedPlan(
+  changed: string,
+  oracleMode: string,
+  draft: boolean,
+  request: { event?: string; action?: string; label?: string; labels?: string[] } = {},
+): Map<string, string> {
   const directory = mkdtempSync(join(tmpdir(), 'screenshot-plan-'))
   try {
     const bin = join(directory, 'bin')
@@ -66,6 +72,25 @@ function selectedPlan(changed: string, oracleMode: string, draft: boolean): Map<
       { mode: 0o755 },
     )
     const output = join(directory, 'outputs')
+    const event = request.event ?? 'pull_request'
+    const binding = plan.env?.['FRESH_FULL_E2E_REQUEST']
+    const freshRequest: unknown = binding
+      ? runInNewContext(
+          binding
+            .trim()
+            .slice(3, -2)
+            .replace(/\bgithub(?:\.[\w-]+)+/g, (path) => path.replaceAll('.', '?.')),
+          {
+            github: {
+              event_name: event,
+              event: {
+                ...(request.action ? { action: request.action } : {}),
+                ...(request.label ? { label: { name: request.label } } : {}),
+              },
+            },
+          },
+        )
+      : false
     const result = spawnSync('bash', ['-eu', '-o', 'pipefail', '-c', plan.run ?? 'exit 1'], {
       encoding: 'utf8',
       cwd: directory,
@@ -75,15 +100,16 @@ function selectedPlan(changed: string, oracleMode: string, draft: boolean): Map<
         GITHUB_OUTPUT: output,
         GITHUB_STEP_SUMMARY: join(directory, 'summary'),
         RUNNER_TEMP: directory,
-        EVENT: 'pull_request',
+        EVENT: event,
         REF: 'refs/pull/123/merge',
         BASE_REF: 'main',
         BASE_SHA: 'a'.repeat(40),
         HEAD_SHA: 'b'.repeat(40),
         PR_DRAFT: String(draft),
         STACK_TIP: 'false',
-        CI_FULL_LABEL: 'false',
-        UPDATE_SCREENSHOTS_LABEL: 'false',
+        CI_FULL_LABEL: String(request.labels?.includes('ci-full') ?? false),
+        UPDATE_SCREENSHOTS_LABEL: String(request.labels?.includes('update-screenshots') ?? false),
+        FRESH_FULL_E2E_REQUEST: String(freshRequest),
         SCREENSHOT_REFRESH: 'false',
         FIXTURE_CHANGED: changed,
         FIXTURE_ORACLE: `mode=${oracleMode}\nspecs=\nunit_mode=full`,
@@ -245,6 +271,39 @@ describe('CI screenshot evidence provenance', () => {
     const output = selectedPlan('tests/e2e/screenshots/manifest.json\nREADME.md', 'full', false)
     assert.equal(output.get('mode'), 'skip')
     assert.equal(output.get('screenshot_scope'), 'reference-followup')
+  })
+
+  it('honors only a fresh explicit full-run request on a reference-only followup', () => {
+    const check = (
+      request: { event: string; action: string; label: string },
+      mode: 'full' | 'skip',
+    ): void => {
+      for (const draft of [true, false]) {
+        const output = selectedPlan(
+          'tests/e2e/screenshots/manifest.json\nREADME.md',
+          'full',
+          draft,
+          { ...request, labels: ['ci-full', 'update-screenshots'] },
+        )
+        const context = JSON.stringify({ ...request, draft })
+        assert.equal(output.get('mode'), mode, context)
+        assert.equal(output.get('unit_mode'), 'full', context)
+        assert.equal(
+          output.get('screenshot_scope'),
+          mode === 'full' ? 'render' : 'reference-followup',
+          context,
+        )
+      }
+    }
+    for (const label of ['update-screenshots', 'ci-full']) {
+      check({ event: 'pull_request', action: 'labeled', label }, 'full')
+      for (const action of ['synchronize', 'edited', 'ready_for_review', 'unlabeled', ''])
+        check({ event: 'pull_request', action, label }, 'skip')
+      for (const event of ['push', 'merge_group', ''])
+        check({ event, action: 'labeled', label }, 'skip')
+    }
+    for (const label of ['review-has-feedback', ''])
+      check({ event: 'pull_request', action: 'labeled', label }, 'skip')
   })
 
   it('binds the checkpoint to real plan/shard outputs and rejects ambiguous or suppressed skip shapes', () => {
