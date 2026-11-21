@@ -798,6 +798,27 @@ expectation, not a confirmed sandbox failure. A cached denial instead retains ‚Ä
 sandbox?‚Äù and states that a previous denial was recorded, without attributing a new request
 to the agent. Approval authorizes one outside execution; rejection keeps the contained attempt.
 
+A verified block is a non-zero exit plus at least one denial the OS sandbox itself reported for that
+attempt. On macOS, ASRT's log monitor (started with the project sandbox) reads each seatbelt
+denial from the unified log and attributes it to the attempt by a per-attempt id baked into the
+profile, so an earlier run of the same command never counts. A denial can reach that store a few
+milliseconds after the process closes, so a failed `run_shell` attempt with none yet waits up to
+200 ms for one, ending as soon as one arrives. Only file and network denials count:
+every sandboxed process also trips incidental ones such as `sysctl-read kern.iossupportversion`,
+and counting those would make any ordinary failure look like a block. A typical case is `git
+init` in a folder that is not yet a repository, because the sandbox protects `.git`. Linux does not
+start the runtime's seccomp observer yet, so there only the denial signatures below can verify a
+block. A verified block is real evidence, but of an access the policy refused, such as a read of a
+protected credential, so its retry outside still asks in Guarded YOLO. Guarded YOLO answers the retry
+itself only when the sandbox wrapper failed to start the command. Deterministic shell auto-approval
+judges the command's shape, not what the sandbox refused, so it may answer a verified block only
+when every blocking denial was a network denial and the command is a read-tier shape: a `git fetch
+origin` blocked from the network is the reach its shape is rated for. A local-write or
+remote-write shape asks even when its configured level allows it, because outside the sandbox the
+repository hooks it runs (`git commit`'s, say) are no longer contained. Any file denial, or a
+denial in another shape, always asks, because a read-tier `grep` can reach a protected credential
+through a workspace symlink.
+
 Some sandboxed failures come from a broker or helper that does not increment the OS sandbox's
 violation counter. After a non-zero attempt, `run_shell` may recognise the bounded denial signatures
 for a Git network read, GitHub CLI config access, or a package install unable to download from inside the sandbox and offer the

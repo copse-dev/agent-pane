@@ -200,6 +200,12 @@ export async function spawnShellInProjectSandbox(
      * contained way to honour that request, so it fails instead.
      */
     readonlyCheckout?: boolean
+    /**
+     * Unique host-owned attempt id for runner-side violation attribution. Without
+     * it violations are keyed by the command text, so an earlier run of the same
+     * command would count toward this one.
+     */
+    violationId?: string
     executionTarget?: ExecutionTarget
   } & Pick<SpawnOptions, 'stdio'>,
 ): Promise<ChildProcess> {
@@ -228,6 +234,8 @@ export async function spawnShellInProjectSandbox(
             : workspaceSandboxOverlay(opts.cwd)
         return {
           config: opts.readonlyCheckout ? withoutCheckoutWrites(baseConfig, opts.cwd) : baseConfig,
+          // Attributes each denial to this attempt, for the verified-block retry.
+          ...(opts.violationId ? { violationId: opts.violationId } : {}),
         }
       },
     },
@@ -361,21 +369,122 @@ export function sandboxViolationCountForBackgroundProcess(
 }
 
 /**
- * Number of sandbox policy violations the runner (ASRT) recorded for a command.
- * This is a runner/kernel-side signal — it is NOT derived from the command's own
- * stdout/stderr, so a command cannot forge it by echoing "operation not permitted"
- * to trick the user into an unsandboxed re-run (issue #104).
+ * A seatbelt denial of something other than a file or network operation. The
+ * runtime itself trips some on every command (`sysctl-read
+ * kern.iossupportversion` from each process that starts), so counting them
+ * would make any ordinary failure, a red test run or a `grep` with no match,
+ * look like a sandbox block and offer to run it outside.
+ */
+const INCIDENTAL_SEATBELT_DENIAL = /\bdeny\(\d+\) (?!file-|network-)\S/
+
+/** A seatbelt denial of a network operation. */
+const NETWORK_SEATBELT_DENIAL = /\bdeny\(\d+\) network-\S/
+
+function blockingViolations<T extends { line: string }>(violations: readonly T[]): T[] {
+  return violations.filter((violation) => !INCIDENTAL_SEATBELT_DENIAL.test(violation.line))
+}
+
+/** Violations that can be what made a sandboxed command fail. */
+export function countBlockingViolations(violations: readonly { line: string }[]): number {
+  return blockingViolations(violations).length
+}
+
+/**
+ * Whether every violation that can have blocked a command was a seatbelt
+ * network denial. False when there were none, or when any was a file denial or
+ * a line in another shape: a file denial can be the sandbox refusing a read of
+ * a protected credential, which no command-shape auto-approval may answer.
+ */
+export function blockingViolationsAreNetworkOnly(violations: readonly { line: string }[]): boolean {
+  const blocking = blockingViolations(violations)
+  return (
+    blocking.length > 0 &&
+    blocking.every((violation) => NETWORK_SEATBELT_DENIAL.test(violation.line))
+  )
+}
+
+/**
+ * {@link blockingViolationsAreNetworkOnly} for the violations the runner
+ * recorded against `attribution` (see {@link sandboxViolationCountForCommand}).
+ * False when the sandbox is inactive or no violation log is available.
+ */
+export function sandboxViolationsAreNetworkOnlyForCommand(attribution: string): boolean {
+  if (!isProjectSandboxEnabled()) return false
+  try {
+    const store = SandboxManager.getSandboxViolationStore()
+    return blockingViolationsAreNetworkOnly(store.getViolationsForCommand(attribution))
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Number of sandbox policy violations the runner (ASRT) recorded for a command
+ * that can have blocked it (see {@link countBlockingViolations}). `attribution`
+ * is the per-attempt `violationId` the spawn was given, or else the command
+ * text. This is a runner/kernel-side signal — it is NOT derived from the
+ * command's own stdout/stderr, so a command cannot forge it by echoing
+ * "operation not permitted" to trick the user into an unsandboxed re-run
+ * (issue #104).
  *
  * Returns 0 when the sandbox is inactive or no violation log is available.
  */
-export function sandboxViolationCountForCommand(command: string): number {
+export function sandboxViolationCountForCommand(attribution: string): number {
   if (!isProjectSandboxEnabled()) return 0
   try {
     const store = SandboxManager.getSandboxViolationStore()
-    return store.getViolationsForCommand(command).length
+    return countBlockingViolations(store.getViolationsForCommand(attribution))
   } catch {
     return 0
   }
+}
+
+/**
+ * Whether ASRT's violation monitor runs with the project sandbox. Only the macOS
+ * log monitor is started; Linux's seccomp observer is a separate path not yet
+ * validated here.
+ */
+export const SANDBOX_VIOLATION_MONITOR = process.platform === 'darwin'
+
+/**
+ * The log monitor delivers a denial asynchronously: in 250 refused `git init`
+ * runs, 14 denials arrived after the process closed, all within 5 ms. A failed
+ * attempt with no blocking violation yet waits at most this long for one.
+ */
+const LATE_VIOLATION_WAIT_MS = 200
+
+/**
+ * {@link sandboxViolationCountForCommand} for an attempt that has just exited
+ * non-zero, once a late denial has had time to arrive. Resolves as soon as one
+ * does, and at once when one already has or no monitor runs.
+ */
+export async function settledSandboxViolationCount(attribution: string): Promise<number> {
+  const now = sandboxViolationCountForCommand(attribution)
+  if (now > 0 || !SANDBOX_VIOLATION_MONITOR || !isProjectSandboxEnabled()) return now
+  let store: ReturnType<typeof SandboxManager.getSandboxViolationStore>
+  try {
+    store = SandboxManager.getSandboxViolationStore()
+  } catch {
+    return now
+  }
+  return new Promise((resolve) => {
+    let done = false
+    const timer = setTimeout(() => {
+      finish()
+    }, LATE_VIOLATION_WAIT_MS)
+    // `subscribe` calls the listener once before returning, with the same store
+    // the count above just read as 0, so `finish` never runs before this binds.
+    const unsubscribe = store.subscribe(() => {
+      if (sandboxViolationCountForCommand(attribution) > 0) finish()
+    })
+    function finish(): void {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      unsubscribe()
+      resolve(sandboxViolationCountForCommand(attribution))
+    }
+  })
 }
 
 export interface SpawnPtyOptions {

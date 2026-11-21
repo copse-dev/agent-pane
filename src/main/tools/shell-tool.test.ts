@@ -171,6 +171,8 @@ describe('run_shell unsandboxed retry of a piped command (pipefail)', () => {
    */
   async function runFailingSandboxedPipeline(
     command: string,
+    violationLine = 'deny(1) network-outbound',
+    level: 'read' | 'local-write' = 'read',
   ): Promise<{ prompts: ApprovalRequest[]; outcome: string }> {
     const root = await realpath(await mkdtemp(join(tmpdir(), 'copse-shell-retry-')))
     cleanups.push(async () => rm(root, { recursive: true, force: true }))
@@ -186,7 +188,7 @@ describe('run_shell unsandboxed retry of a piped command (pipefail)', () => {
     cleanups.push(() => {
       setWorkspaceTrusted(root, false)
     })
-    await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'read')
+    await setSetting(AUTO_APPROVAL_LEVEL_SETTING, level)
     await setSetting('autoRunSandboxCommands', true)
     await setSetting('safetyClassifierEnabled', false)
     cleanups.push(async () => {
@@ -200,19 +202,30 @@ describe('run_shell unsandboxed retry of a piped command (pipefail)', () => {
     })
 
     const executed = `set -o pipefail\n${command}`
+    // Violations belong to the attempt id the spawn attributed the executed
+    // (pipefail) line with, never to the command text.
+    const attempts = new Set<string>()
     mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
     mock.method(SandboxManager, 'cleanupAfterCommand', () => undefined)
-    mock.method(SandboxManager, 'wrapWithSandboxArgv', () =>
-      Promise.resolve({
-        argv: ['/bin/sh', '-c', `echo '${SANDBOXED_OUTPUT}'; exit 1`],
-        env: { ...process.env },
-      }),
+    mock.method(
+      SandboxManager,
+      'wrapWithSandboxArgv',
+      (
+        wrapped: string,
+        ...rest: [unknown, unknown, unknown, unknown, { commandId?: string } | undefined]
+      ) => {
+        const commandId = rest[4]?.commandId
+        if (wrapped === executed && commandId) attempts.add(commandId)
+        return Promise.resolve({
+          argv: ['/bin/sh', '-c', `echo '${SANDBOXED_OUTPUT}'; exit 1`],
+          env: { ...process.env },
+        })
+      },
     )
     mock.method(
       SandboxManager.getSandboxViolationStore(),
       'getViolationsForCommand',
-      (c: string) =>
-        c === executed ? [{ line: 'deny(1) network-outbound', timestamp: new Date() }] : [],
+      (c: string) => (attempts.has(c) ? [{ line: violationLine, timestamp: new Date() }] : []),
     )
     setProjectSandboxEnabled(true)
     cleanups.push(() => {
@@ -260,6 +273,37 @@ describe('run_shell unsandboxed retry of a piped command (pipefail)', () => {
     assert.notEqual(outcome, 'User declined to run outside the sandbox.')
     // The retry replaced the sandboxed attempt's result.
     assert.ok(!outcome.includes(SANDBOXED_OUTPUT), outcome)
+  })
+
+  it('asks before retrying outside after a file denial, even for a read-tier shape', async () => {
+    // The same `git fetch origin` auto-approves after a network denial above. A
+    // file denial can be the sandbox refusing a protected credential read
+    // through a workspace symlink: the command's shape says nothing about that.
+    const { prompts, outcome } = await runFailingSandboxedPipeline(
+      'git fetch origin 2>&1 | tail -5',
+      'git(2) deny(1) file-read-data /Users/someone/.ssh/id_ed25519',
+    )
+    assert.equal(outcome, 'User declined to run outside the sandbox.')
+    assert.deepEqual(
+      prompts.map((p) => p.cause),
+      ['shell-sandbox-retry'],
+    )
+  })
+
+  it('asks before retrying a local-write shape outside after a network denial', async () => {
+    // The local-write tier is on, so `git commit` would auto-approve at the
+    // gate. Outside the sandbox its repository hooks run uncontained, and the
+    // network denial says nothing about them, so only the read tier answers.
+    const { prompts, outcome } = await runFailingSandboxedPipeline(
+      'git commit -m wip 2>&1 | tail -5',
+      'deny(1) network-outbound',
+      'local-write',
+    )
+    assert.equal(outcome, 'User declined to run outside the sandbox.')
+    assert.deepEqual(
+      prompts.map((p) => p.cause),
+      ['shell-sandbox-retry'],
+    )
   })
 
   it('shows the agent-authored command, without pipefail, when the retry prompts', async () => {

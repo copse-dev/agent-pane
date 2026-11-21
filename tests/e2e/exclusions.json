@@ -143,6 +143,17 @@
       "coverage": "Main-owned transcript writing runs on every platform: turn-transcript-writer.test.ts drives the real AgentDispatcher and thread store with no window receiving chunks, and transcript-reducer.test.ts proves main and window reductions match. The macOS close, completion and reopen flow passed locally.",
       "markers": ["this.skip"],
       "lastVerified": null
+    },
+    {
+      "spec": "tests/e2e/sandbox-block-git-init-retry.e2e.ts",
+      "category": "platform",
+      "reason": "Suite needs the macOS seatbelt's violation log monitor, the only platform where a contained command's sandbox block is verified.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
+      "ownerRole": "Sandbox maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-11-17",
+      "coverage": "Ran on macOS on 2026-11-17 (passing). Linux has no violation monitor, so the verified-block retry is not offered there yet.",
+      "markers": ["describe.skip"],
+      "lastVerified": null
     }
   ]
 }

@@ -12,7 +12,7 @@ index 185a9bd6a092041c24190a9216d2aa88ef910dd4..7e3226fedbdfd6997be425178c12574e
          // Duplicate deny entries must be collapsed: a duplicate
          // --ro-bind /dev/null <dest> hits a char device on the second pass and
 diff --git a/dist/sandbox/macos-sandbox-utils.js b/dist/sandbox/macos-sandbox-utils.js
-index e6d9fb687115a70c6d1dd538e01945c68e324810..d4ffc48ec0c0eb6f4236e7d5dcd3422ff3206cd6 100644
+index e6d9fb687115a70c6d1dd538e01945c68e324810..8ec8fde91f22026611b98a8414690bacb6b36ba9 100644
 --- a/dist/sandbox/macos-sandbox-utils.js
 +++ b/dist/sandbox/macos-sandbox-utils.js
 @@ -433,7 +433,7 @@ function generateWriteRules(config, logTag, allowGitConfig = false) {
@@ -24,8 +24,52 @@ index e6d9fb687115a70c6d1dd538e01945c68e324810..d4ffc48ec0c0eb6f4236e7d5dcd3422f
      ];
      const denyFilters = new Set();
      for (const pathPattern of denyPaths) {
+@@ -904,13 +904,28 @@ resolveCommandText = id => id) {
+         '--style',
+         'compact',
+     ]);
++    // Copse patch: `log stream` writes whatever has accumulated, so under load
++    // one chunk holds several events and a line can straddle two chunks.
++    // Reading only the first violation in each chunk dropped the rest. Read
++    // every line, and pair each violation with the CMD64 tag line after it.
++    let partialLine = '';
++    let pendingViolation = null;
+     logProcess.stdout?.on('data', (data) => {
+-        const lines = data.toString().split('\n');
+-        // Get violation and command lines
+-        const violationLine = lines.find(line => line.includes('Sandbox:') && line.includes('deny'));
+-        const commandLine = lines.find(line => line.startsWith('CMD64_'));
+-        if (!violationLine)
+-            return;
++        const lines = (partialLine + data.toString()).split('\n');
++        partialLine = lines.pop() ?? '';
++        for (const line of lines) {
++            if (line.includes('Sandbox:') && line.includes('deny')) {
++                if (pendingViolation !== null)
++                    reportViolation(pendingViolation, undefined);
++                pendingViolation = line;
++            }
++            else if (pendingViolation !== null && line.startsWith('CMD64_')) {
++                reportViolation(pendingViolation, line);
++                pendingViolation = null;
++            }
++        }
++    });
++    function reportViolation(violationLine, commandLine) {
+         // Extract violation details
+         const sandboxMatch = violationLine.match(sandboxExtractRegex);
+         if (!sandboxMatch?.[1])
+@@ -948,7 +963,7 @@ resolveCommandText = id => id) {
+             encodedCommand,
+             timestamp: new Date(), // We could parse the timestamp from the log but this feels more reliable
+         });
+-    });
++    }
+     logProcess.stderr?.on('data', (data) => {
+         logForDebugging(`[Sandbox Monitor] Log stream stderr: ${data.toString()}`);
+     });
 diff --git a/dist/sandbox/sandbox-manager.js b/dist/sandbox/sandbox-manager.js
-index 3a2d9c8abd01fefff36edea0cd76e9c31a3ed411..7e422b7a159da0ae00902cefcd5d38ac501c223c 100644
+index 3a2d9c8abd01fefff36edea0cd76e9c31a3ed411..69b955ff4e149367c807d5f3aafb7fb0665943da 100644
 --- a/dist/sandbox/sandbox-manager.js
 +++ b/dist/sandbox/sandbox-manager.js
 @@ -1293,7 +1293,7 @@ async function wrapWithSandbox(command, binShell, customConfig, abortSignal, opt
