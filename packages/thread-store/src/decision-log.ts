@@ -23,6 +23,12 @@
  */
 
 import { isPromptCause, type PromptCause } from './prompt-cause.ts'
+import {
+  isExecutionPrincipalKind,
+  parseExecutionRuntimeCapabilities,
+  type ExecutionPrincipalKind,
+  type ExecutionRuntimeCapabilities,
+} from './execution-runtime.ts'
 import { memberOf } from '@copse/std/member-of.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
 
@@ -50,7 +56,8 @@ export type DecisionActor = (typeof DECISION_ACTORS)[number]
  * unanswered (treated as a denial by the caller, recorded distinctly here);
  * `deferred` is a prompt an unattended run queued for later review instead of
  * showing — the action did not run, and a separate line records the human's
- * eventual answer.
+ * eventual answer. `observed` records a runtime effect (a runtime profile in
+ * use, a process starting or exiting) rather than an authorization.
  */
 const DECISION_VERDICTS = [
   'requested',
@@ -63,6 +70,7 @@ const DECISION_VERDICTS = [
   'timeout',
   'cancelled',
   'deferred',
+  'observed',
 ] as const
 
 export type DecisionVerdict = (typeof DECISION_VERDICTS)[number]
@@ -119,6 +127,21 @@ export interface DecisionEvent {
   /** Tokens the classifier's own call consumed; absent when it reported none. */
   inputTokens?: number
   outputTokens?: number
+  /**
+   * Principal the decision or effect was made for (execution-runtime-security
+   * R1). Every in-turn line carries one, so each approval is bound to it.
+   */
+  principalId?: string
+  principalKind?: ExecutionPrincipalKind
+  /** Runtime profile id (`local/contained`, `local/host`, `ssh:<hostId>`). */
+  runtime?: string
+  /** Joins a `process-run` start line to its `process-exit` line. */
+  processRunId?: string
+  /** `process-exit` lines: the exit code, or the signal that ended the process. */
+  exitCode?: number
+  exitSignal?: string
+  /** `runtime-state` lines: the profile's capability snapshot. */
+  capabilities?: ExecutionRuntimeCapabilities
 }
 
 /** Longest subject/reason we persist; keeps a runaway command line bounded. */
@@ -212,6 +235,14 @@ export function makeDecisionEvent(input: DecisionInput, id: string, at: number):
   if (input.latencyMs !== undefined) event.latencyMs = input.latencyMs
   if (input.inputTokens !== undefined) event.inputTokens = input.inputTokens
   if (input.outputTokens !== undefined) event.outputTokens = input.outputTokens
+  // Identifiers and enums Copse builds, never model or user text: not redacted.
+  if (input.principalId !== undefined) event.principalId = clampField(input.principalId)
+  if (input.principalKind !== undefined) event.principalKind = input.principalKind
+  if (input.runtime !== undefined) event.runtime = clampField(input.runtime)
+  if (input.processRunId !== undefined) event.processRunId = input.processRunId
+  if (input.exitCode !== undefined) event.exitCode = input.exitCode
+  if (input.exitSignal !== undefined) event.exitSignal = input.exitSignal
+  if (input.capabilities !== undefined) event.capabilities = input.capabilities
   return event
 }
 
@@ -250,6 +281,11 @@ export function parseDecisionLine(raw: string): DecisionEvent | null {
   const { scope, remembered, confidence, reasons, threadId, toolCallId, source, cause } = event
   const { latencyMs, inputTokens, outputTokens } = event
   const { bridgeExecutionId } = event
+  const { principalId, principalKind, runtime, processRunId, exitCode, exitSignal } = event
+  const capabilities =
+    event['capabilities'] === undefined
+      ? undefined
+      : parseExecutionRuntimeCapabilities(event['capabilities'])
   if (
     v !== DECISION_LOG_SCHEMA_VERSION ||
     type !== 'decision' ||
@@ -277,7 +313,14 @@ export function parseDecisionLine(raw: string): DecisionEvent | null {
     !isOptionalString(source) ||
     !isOptionalCount(latencyMs) ||
     !isOptionalCount(inputTokens) ||
-    !isOptionalCount(outputTokens)
+    !isOptionalCount(outputTokens) ||
+    !isOptionalString(principalId) ||
+    (principalKind !== undefined && !isExecutionPrincipalKind(principalKind)) ||
+    !isOptionalString(runtime) ||
+    !isOptionalString(processRunId) ||
+    (exitCode !== undefined && (typeof exitCode !== 'number' || !Number.isSafeInteger(exitCode))) ||
+    !isOptionalString(exitSignal) ||
+    capabilities === null
   ) {
     return null
   }
@@ -304,6 +347,13 @@ export function parseDecisionLine(raw: string): DecisionEvent | null {
     ...(typeof latencyMs === 'number' ? { latencyMs } : {}),
     ...(typeof inputTokens === 'number' ? { inputTokens } : {}),
     ...(typeof outputTokens === 'number' ? { outputTokens } : {}),
+    ...(typeof principalId === 'string' ? { principalId } : {}),
+    ...(isExecutionPrincipalKind(principalKind) ? { principalKind } : {}),
+    ...(typeof runtime === 'string' ? { runtime } : {}),
+    ...(typeof processRunId === 'string' ? { processRunId } : {}),
+    ...(typeof exitCode === 'number' ? { exitCode } : {}),
+    ...(typeof exitSignal === 'string' ? { exitSignal } : {}),
+    ...(capabilities !== undefined ? { capabilities } : {}),
   }
 }
 

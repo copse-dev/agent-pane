@@ -249,6 +249,33 @@ background fetches on every platform, including the contained fallback; it canno
 contact origin or request authentication. Failures are logged once per distinct
 error and again on recovery.
 
+Opportunistic startup, hourly and allocation refreshes use a cache-only Copse
+askpass lease. It reads already remembered answers with the existing host scope
+and rejected-secret invalidation, but never opens a credential or trust dialog or
+waits for one already pending. Terminal prompts and the configured `core.askPass`
+fallback are disabled. SSH uses `BatchMode=yes` when the unscoped session cache
+is empty or the trusted bridge is unavailable. With remembered session answers,
+the trusted cache-only helper is allowed with `NumberOfPasswordPrompts=1`.
+This is one prompt attempt per password or keyboard-interactive method, not one
+total authentication attempt; keyboard-interactive can request several answers.
+A warm cache is not proof of an answer for this destination, so a missing or
+stale answer can still be submitted without UI. A failed unattended Git command
+or expired askpass lease conservatively retires only the current generations of
+session answers actually served to it. Nonzero Git can follow successful
+authentication, so this can also evict a good answer; it is not proof that the
+server rejected the credential. Without the bridge, all askpass fallbacks are
+disabled.
+The configured host-key policy, SSH agent and credential helpers remain available.
+Git Credential Manager receives its
+[documented noninteractive setting](https://github.com/git-ecosystem/git-credential-manager/blob/main/docs/environment.md#gcm_interactive).
+Trusted third-party helpers, SSH `ProxyCommand` programs, agent confirmations,
+security keys and OS keychain access can implement their own interaction; this
+policy does not sandbox them or promise to control their UI or latency. Missing
+credentials fail the refresh and retain the cached tip. Background failure
+warnings redact scheme URL userinfo, which can itself contain a token, before
+deduplication and truncation.
+Explicit foreground `git_fetch` and push operations retain normal authentication.
+
 Internal Git execution explicitly unsets inherited Git configuration, executable and
 SSH injection variables in the final spawn environment. These removals survive the
 spawn layer's environment overlay; Copse installs its own trusted SSH bridge afterwards.
