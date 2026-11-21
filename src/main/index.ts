@@ -19,6 +19,7 @@ import {
   initThreadPrompts,
 } from './services/thread-prompts.ts'
 import { SubthreadPromptHeldError } from '@shared/thread-prompt.ts'
+import { steerNativeParent } from './services/native-steering.ts'
 import { startStorageMaintenance } from './services/storage-maintenance.ts'
 import { startDefaultBranchRefresh } from './services/default-branch-refresh.ts'
 import { startMachineService, stopMachineService } from './services/machines/machine-service.ts'
@@ -193,6 +194,7 @@ import {
   acceptAuthorizedReviewedUserMessage,
   acceptReviewedUserMessage,
   appendMessage,
+  placeMessageAfter,
   closeThreadStoreIndexes,
   getProjectThread,
   getThreadMeta,
@@ -215,6 +217,7 @@ import {
   reviewedTranscriptAttachments,
   protectedPromptSubmissionIsUnchanged,
   protectedPromptStoredContext,
+  protectedPromptWasInterrupted,
   ProtectedPromptReviewService,
   withProtectedPromptText,
 } from './windows/protected-prompt-review.ts'
@@ -828,6 +831,7 @@ app
       },
       loadThread: getProjectThread,
       appendMessage,
+      placeMessageAfter,
       updateMeta,
       defaultModel: (): string | undefined => {
         const model = getSetting<unknown>('model', undefined)
@@ -1431,7 +1435,9 @@ app
                   context: protectedPromptContext(payload, protectedInputs),
                   kind: 'human',
                 })
-                if (!submission) throw new ProtectedPromptAdmissionCancelledError()
+                if (!submission || protectedPromptWasInterrupted(submission)) {
+                  throw new ProtectedPromptAdmissionCancelledError()
+                }
                 const reviewedContent = withProtectedPromptText(
                   payload.userContent,
                   submission.text,
@@ -1569,7 +1575,7 @@ app
               context: protectedPromptContext(payload, protectedInputs),
               kind: 'human',
             })
-            if (!submission) return 'cancelled'
+            if (!submission || protectedPromptWasInterrupted(submission)) return 'cancelled'
             const reviewedContent = withProtectedPromptText(payload.userContent, submission.text)
             const preserveOptimisticDisplay =
               optimistic !== undefined &&
@@ -1643,7 +1649,7 @@ app
         context: protectedPromptContext(payload, protectedInputs),
         kind: 'machine',
       })
-      if (!submission) return 'cancelled'
+      if (!submission || protectedPromptWasInterrupted(submission)) return 'cancelled'
       const unchanged = protectedPromptSubmissionIsUnchanged(payload.userContent, submission)
       const result = await agentDispatcher.dispatchMachine({
         projectId: request.projectId,
@@ -1774,6 +1780,60 @@ app
       transcriptWriter.noteUserAbort(threadId, reason ?? 'stop')
       abortAgent(threadId, reason)
     })
+
+    ipcMain.handle(
+      'agent:steer',
+      (
+        event,
+        projectIdArg: unknown,
+        threadIdArg: unknown,
+        messageIdArg: unknown,
+        runIdArg: unknown,
+      ) => {
+        assertMainFrameSender(event, win)
+        assertPrimaryMainWindow(event.sender)
+        const projectId = parseIpcArgs(zProjectId, [projectIdArg])
+        const threadId = parseIpcArgs(zThreadId, [threadIdArg])
+        const messageId = z.string().min(1).max(200).parse(messageIdArg)
+        const runId = parseIpcArgs(z.uuid(), [runIdArg])
+        return steerNativeParent(projectId, threadId, messageId, runId, async (note) => {
+          if (!hasProtectedPromptMessageAppend(event.sender.id, projectId, threadId, messageId))
+            return null
+          const submission = await protectedPromptReview.review(win, {
+            projectId,
+            threadId,
+            content: note.text,
+            model: note.model,
+            kind: 'human',
+            signal: note.signal,
+            context: [
+              {
+                label: 'Action',
+                value: 'Steer the current native turn after its complete tool batch',
+              },
+              { label: 'Active turn', value: note.runId },
+              { label: 'Queued message', value: note.messageId },
+              { label: 'Frozen revision', value: note.revision },
+            ],
+          })
+          if (protectedPromptWasInterrupted(submission)) {
+            return { state: 'interrupted', draft: submission.text }
+          }
+          return submission
+            ? {
+                text: submission.text,
+                claim: (): boolean =>
+                  consumeProtectedPromptMessageAppend(
+                    event.sender.id,
+                    projectId,
+                    threadId,
+                    messageId,
+                  ),
+              }
+            : null
+        })
+      },
+    )
 
     // Thread ids with a live in-process run, so a renderer that's just loaded a
     // project's threads can tell a genuinely still-running turn apart from a

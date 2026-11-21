@@ -18,13 +18,63 @@ import type { StoredThreadPlan } from '@copse/thread-store/plan-schema.ts'
 import { renderTextBlock } from '@copse/agent/build-text-with-attachments.ts'
 
 const PROTECTED_PROMPT_PARTITION = 'protected-prompt'
+const PROTECTED_PROMPT_INTERRUPTION_TIMEOUT_MS = 1_000
 const submissionSchema = z.object({ text: z.string().max(1_000_000) }).strict()
 const lockedSessions = new WeakSet<Session>()
 
+export interface ProtectedPromptInterruption {
+  kind: 'interrupted'
+  text: string
+}
+
+export type ProtectedPromptReviewResult =
+  | ProtectedPromptSubmission
+  | ProtectedPromptInterruption
+  | null
+
+export const protectedPromptWasInterrupted: (
+  result: ProtectedPromptReviewResult,
+) => result is ProtectedPromptInterruption = (result) => result?.kind === 'interrupted'
+
+/** A turn-ending abort gets one bounded chance to retrieve the isolated window's draft. */
+export class ProtectedPromptInterruptionDeadline {
+  private requested = false
+  private timer: ReturnType<typeof setTimeout> | undefined
+  private readonly timeoutMs: number
+
+  constructor(timeoutMs = PROTECTED_PROMPT_INTERRUPTION_TIMEOUT_MS) {
+    this.timeoutMs = timeoutMs
+  }
+
+  get isRequested(): boolean {
+    return this.requested
+  }
+
+  request(send: () => void, onTimeout: () => void): void {
+    if (this.requested) return
+    this.requested = true
+    try {
+      send()
+    } catch {
+      onTimeout()
+      return
+    }
+    this.timer = setTimeout(onTimeout, this.timeoutMs)
+  }
+
+  finish(): void {
+    if (this.timer !== undefined) clearTimeout(this.timer)
+    this.timer = undefined
+  }
+}
+
 interface PendingReview {
+  childId: number
+  parentId: number
   window: BrowserWindow
   seed: ProtectedPromptSeed
-  resolve: (submission: ProtectedPromptSubmission | null) => void
+  interruption: ProtectedPromptInterruptionDeadline
+  resolve: (submission: ProtectedPromptReviewResult) => void
 }
 
 export interface ProtectedPromptReviewInput {
@@ -35,6 +85,7 @@ export interface ProtectedPromptReviewInput {
   attachments?: TranscriptAttachment[]
   context: ProtectedPromptContextEntry[]
   kind: 'human' | 'machine'
+  signal?: AbortSignal
 }
 
 function promptText(content: UserContent): string {
@@ -249,7 +300,11 @@ function lockSessionNetwork(session: Session): void {
 export class ProtectedPromptReviewQueue {
   private readonly tails = new Map<number, Promise<void>>()
 
-  async run<T>(parentId: number, task: () => Promise<T>): Promise<T> {
+  async run<T>(
+    parentId: number,
+    task: () => Promise<T>,
+    abort?: { signal: AbortSignal; result: () => T },
+  ): Promise<T> {
     const previous = this.tails.get(parentId) ?? Promise.resolve()
     let release = (): void => {}
     const current = new Promise<void>((resolve) => {
@@ -257,12 +312,41 @@ export class ProtectedPromptReviewQueue {
     })
     const tail = previous.catch(() => undefined).then(() => current)
     this.tails.set(parentId, tail)
-    await previous.catch(() => undefined)
+    let released = false
+    const releaseSlot = (): void => {
+      if (released) return
+      released = true
+      release()
+      void tail.then(() => {
+        if (this.tails.get(parentId) === tail) this.tails.delete(parentId)
+      })
+    }
+    const ready = previous.catch(() => undefined)
+    if (abort) {
+      let onAbort: (() => void) | undefined
+      const aborted = new Promise<'aborted'>((resolve) => {
+        if (abort.signal.aborted) {
+          resolve('aborted')
+          return
+        }
+        onAbort = (): void => {
+          resolve('aborted')
+        }
+        abort.signal.addEventListener('abort', onAbort, { once: true })
+      })
+      const admitted = await Promise.race([ready.then(() => 'ready' as const), aborted])
+      if (onAbort) abort.signal.removeEventListener('abort', onAbort)
+      if (admitted === 'aborted' || abort.signal.aborted) {
+        releaseSlot()
+        return abort.result()
+      }
+    } else {
+      await ready
+    }
     try {
       return await task()
     } finally {
-      release()
-      if (this.tails.get(parentId) === tail) this.tails.delete(parentId)
+      releaseSlot()
     }
   }
 }
@@ -275,24 +359,47 @@ export class ProtectedPromptReviewService {
   constructor(ipcMain: IpcMain) {
     ipcMain.handle('protected-prompt:submit', (event, submission: unknown) => {
       const parsed = submissionSchema.parse(submission)
-      this.settle(event, parsed)
+      const pending = this.trustedPending(event)
+      this.finishPending(
+        pending,
+        pending.interruption.isRequested ? { kind: 'interrupted', text: parsed.text } : parsed,
+      )
     })
-    ipcMain.handle('protected-prompt:cancel', (event) => {
-      this.settle(event, null)
+    ipcMain.handle('protected-prompt:cancel', (event, draft: unknown) => {
+      const parsed = submissionSchema.parse(draft)
+      const pending = this.trustedPending(event)
+      this.finishPending(
+        pending,
+        pending.interruption.isRequested ? { kind: 'interrupted', text: parsed.text } : null,
+      )
+    })
+    ipcMain.handle('protected-prompt:interrupted', (event, draft: unknown) => {
+      const parsed = submissionSchema.parse(draft)
+      const pending = this.trustedPending(event)
+      if (!pending.interruption.isRequested) {
+        throw new Error('Protected prompt draft arrived without an interruption request')
+      }
+      this.finishPending(pending, { kind: 'interrupted', text: parsed.text })
     })
   }
 
   async review(
     parent: BrowserWindow,
     input: ProtectedPromptReviewInput,
-  ): Promise<ProtectedPromptSubmission | null> {
-    return this.reviewQueue.run(parent.webContents.id, () => this.openReview(parent, input))
+  ): Promise<ProtectedPromptReviewResult> {
+    if (input.signal?.aborted) return null
+    return this.reviewQueue.run(
+      parent.webContents.id,
+      () => this.openReview(parent, input),
+      input.signal ? { signal: input.signal, result: () => null } : undefined,
+    )
   }
 
   private async openReview(
     parent: BrowserWindow,
     input: ProtectedPromptReviewInput,
-  ): Promise<ProtectedPromptSubmission | null> {
+  ): Promise<ProtectedPromptReviewResult> {
+    if (input.signal?.aborted) return null
     const existing = this.pendingByParent.get(parent.webContents.id)
     if (existing) {
       existing.window.show()
@@ -315,6 +422,7 @@ export class ProtectedPromptReviewService {
       kind: input.kind,
     }
 
+    if (input.signal?.aborted) return null
     const window = new BrowserWindow({
       parent,
       modal: true,
@@ -345,17 +453,22 @@ export class ProtectedPromptReviewService {
       event.preventDefault()
     })
 
-    const result = new Promise<ProtectedPromptSubmission | null>((resolve) => {
-      const pending = { window, seed, resolve }
-      const childId = window.webContents.id
-      const parentId = parent.webContents.id
+    const childId = window.webContents.id
+    const parentId = parent.webContents.id
+    const result = new Promise<ProtectedPromptReviewResult>((resolve) => {
+      const pending = {
+        childId,
+        parentId,
+        window,
+        seed,
+        interruption: new ProtectedPromptInterruptionDeadline(),
+        resolve,
+      }
       this.pending.set(childId, pending)
       this.pendingByParent.set(parentId, pending)
       window.once('closed', () => {
         if (this.pending.get(childId) === pending) {
-          this.pending.delete(childId)
-          this.pendingByParent.delete(parentId)
-          resolve(null)
+          this.finishPending(pending, null, false)
         }
       })
       window.once('ready-to-show', () => {
@@ -365,19 +478,53 @@ export class ProtectedPromptReviewService {
         if (!window.isDestroyed()) window.webContents.send('protected-prompt:seed', seed)
       })
     })
-    await window.loadFile(join(__dirname, '../renderer/protected-prompt.html'))
-    return result
+    const interrupt = (): void => {
+      const pending = this.pending.get(childId)
+      if (!pending) return
+      pending.interruption.request(
+        () => {
+          if (window.isDestroyed()) throw new Error('Protected prompt window is closed')
+          window.webContents.send('protected-prompt:interrupt')
+        },
+        () => {
+          this.finishPending(pending, null)
+        },
+      )
+    }
+    input.signal?.addEventListener('abort', interrupt, { once: true })
+    try {
+      if (input.signal?.aborted) interrupt()
+      else await window.loadFile(join(__dirname, '../renderer/protected-prompt.html'))
+      return await result
+    } catch (error) {
+      const pending = this.pending.get(childId)
+      if (pending) this.finishPending(pending, null)
+      if (input.signal?.aborted) return null
+      throw error
+    } finally {
+      input.signal?.removeEventListener('abort', interrupt)
+    }
   }
 
-  private settle(event: IpcMainInvokeEvent, submission: ProtectedPromptSubmission | null): void {
+  private trustedPending(event: IpcMainInvokeEvent): PendingReview {
     const pending = this.pending.get(event.sender.id)
     if (!pending || pending.window.webContents !== event.sender) {
       throw new Error('Protected prompt response came from an untrusted window')
     }
-    this.pending.delete(event.sender.id)
-    const parentId = pending.window.getParentWindow()?.webContents.id
-    if (parentId !== undefined) this.pendingByParent.delete(parentId)
+    return pending
+  }
+
+  private finishPending(
+    pending: PendingReview,
+    submission: ProtectedPromptReviewResult,
+    destroy = true,
+  ): void {
+    pending.interruption.finish()
+    const { childId, parentId } = pending
+    if (this.pending.get(childId) !== pending) return
+    this.pending.delete(childId)
+    this.pendingByParent.delete(parentId)
     pending.resolve(submission)
-    if (!pending.window.isDestroyed()) pending.window.destroy()
+    if (destroy && !pending.window.isDestroyed()) pending.window.destroy()
   }
 }

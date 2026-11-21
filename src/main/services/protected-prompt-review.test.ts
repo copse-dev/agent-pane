@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   protectedPromptImageDataUrls,
+  ProtectedPromptInterruptionDeadline,
   protectedPromptMessageMatches,
   ProtectedPromptReviewQueue,
   reviewedTranscriptAttachments,
@@ -15,6 +16,44 @@ import {
   buildTextWithAttachments,
   renderTextBlock,
 } from '@copse/agent/build-text-with-attachments.ts'
+
+test('protected prompt interruption waits only for its bounded draft handoff', async () => {
+  const timeout = Promise.withResolvers<undefined>()
+  const deadline = new ProtectedPromptInterruptionDeadline(5)
+  let sends = 0
+  deadline.request(
+    () => {
+      sends += 1
+    },
+    () => {
+      timeout.resolve(undefined)
+    },
+  )
+  deadline.request(
+    () => {
+      sends += 1
+    },
+    () => assert.fail('a duplicate request must not replace the first deadline'),
+  )
+  await timeout.promise
+  assert.equal(sends, 1)
+  assert.equal(deadline.isRequested, true)
+})
+
+test('protected prompt interruption fails closed when the isolated window cannot reply', () => {
+  const deadline = new ProtectedPromptInterruptionDeadline()
+  let timedOut = false
+  deadline.request(
+    () => {
+      throw new Error('window closed')
+    },
+    () => {
+      timedOut = true
+    },
+  )
+  assert.equal(timedOut, true)
+  deadline.finish()
+})
 
 test('protected prompt reviews queue per parent without blocking another parent', async () => {
   const queue = new ProtectedPromptReviewQueue()
@@ -50,6 +89,42 @@ test('protected prompt reviews queue per parent without blocking another parent'
     'second:start',
     'second:end',
   ])
+})
+
+test('an aborted queued protected review exits without opening or breaking serialization', async () => {
+  const queue = new ProtectedPromptReviewQueue()
+  const releaseFirst = Promise.withResolvers<undefined>()
+  const firstOpened = Promise.withResolvers<undefined>()
+  const events: string[] = []
+  const first = queue.run(1, async () => {
+    events.push('first:start')
+    firstOpened.resolve(undefined)
+    await releaseFirst.promise
+    events.push('first:end')
+    return 'first'
+  })
+  await firstOpened.promise
+
+  const controller = new AbortController()
+  const second = queue.run(
+    1,
+    async () => {
+      events.push('second:opened')
+      return 'second'
+    },
+    { signal: controller.signal, result: () => 'aborted' },
+  )
+  const third = queue.run(1, async () => {
+    events.push('third:opened')
+    return 'third'
+  })
+
+  controller.abort()
+  assert.equal(await second, 'aborted')
+  assert.deepEqual(events, ['first:start'])
+  releaseFirst.resolve(undefined)
+  assert.deepEqual(await Promise.all([first, third]), ['first', 'third'])
+  assert.deepEqual(events, ['first:start', 'first:end', 'third:opened'])
 })
 
 test('protected prompt edits preserve image bytes while replacing renderer text', () => {

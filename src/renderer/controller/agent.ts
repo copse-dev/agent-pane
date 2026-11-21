@@ -250,9 +250,13 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         thread.messages.map((message) => message.id),
         () => {
           patchThreadAnywhere(store, thread.id, (current) => {
+            const { nativeSteeringRunId: _staleRunId, ...runtimeBase } = current
             return {
-              ...current,
+              ...(source === 'runtime' ? runtimeBase : current),
               ...transcriptMeta(thread),
+              ...(source === 'runtime' && thread.nativeSteeringRunId !== undefined
+                ? { nativeSteeringRunId: thread.nativeSteeringRunId }
+                : {}),
               // A cold read can arrive while a queued dispatch awaits its grant,
               // or after that dispatch has been denied and restored as held.
               // Preserve that local status/interruption decision against an

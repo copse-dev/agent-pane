@@ -10,12 +10,14 @@ import {
 } from './helpers/seed-config.ts'
 import { saveAppScreenshot, waitForSettledLayout } from './helpers/screenshot.ts'
 
-async function expectChangesSuggestion(): Promise<void> {
+async function expectComposerFollowUp(): Promise<void> {
   const changes = $('.follow-up-bubble-changes')
   await changes.waitForDisplayed({ timeout: 15_000 })
+  await expect(changes).toBeDisplayed()
   await expect(changes.$('.follow-up-label')).toHaveText('Changes')
   await expect(changes.$('.follow-up-stat-add')).toHaveText('+2')
   await expect(changes.$('.follow-up-stat-del')).toHaveText('-0')
+  await expect($('.prompt-input')).toHaveAttribute('data-placeholder', 'Send follow-up')
 }
 
 describe('ACP usage_update context wheel', () => {
@@ -57,9 +59,9 @@ describe('ACP usage_update context wheel', () => {
       /^Context 40% used, 80\.0k of 200\.0k tokens; Usage: 829 tokens/,
     )
 
-    // Agent idle and the sidebar change badge do not wait for the independent
-    // follow-up response. Its Changes chip changes the composer's height.
-    await expectChangesSuggestion()
+    // Agent idle, sidebar git status, and composer follow-ups settle separately.
+    // The Changes chip must settle before capturing the composer height/placeholder.
+    await expectComposerFollowUp()
     await waitForSettledLayout('.input-footer')
     await wheel.moveTo()
     const popover = wheel.$('.context-wheel-popover')
@@ -77,7 +79,7 @@ describe('ACP usage_update context wheel', () => {
     // Pinning the shell resizes it under a hovering pointer; capture only if
     // the popover is still the one asserted above.
     await saveAppScreenshot('acp-usage-update-context.png', undefined, async () => {
-      await expectChangesSuggestion()
+      await expectComposerFollowUp()
       await expect(popover).toBeDisplayed()
       await expect(popover.$('.context-wheel-popover-header')).toHaveText(
         'Context · 80.0k / 200.0k (40%)',

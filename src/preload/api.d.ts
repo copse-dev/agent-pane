@@ -23,6 +23,7 @@ import type {
   ContextBreakdown,
   MachineAgentRunRequest,
   MachineDispatchResult,
+  NativeSteeringResult,
   StreamChunk,
   TranscriptStamp,
 } from '@shared/types'
@@ -421,6 +422,12 @@ export interface ApiClient {
       payload: string,
     ) => Promise<ContextBreakdown>
     abort: (threadId: string, reason?: 'send_now') => Promise<void>
+    steer: (
+      projectId: string,
+      threadId: string,
+      messageId: string,
+      runId: string,
+    ) => Promise<NativeSteeringResult>
     runningThreadIds: () => Promise<string[]>
     retryReview: (projectId: string, threadId: string, payload: string) => Promise<void>
     refreshModelContext: () => Promise<void>

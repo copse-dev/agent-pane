@@ -846,6 +846,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         replay?.abort()
         return resolvedVoid()
       },
+      steer: () => resolved({ state: 'held' }),
       // A fixture thread seeded as running IS the live run in the demo world.
       // Answering [] here would have resumePendingQueues flip it to idle as a
       // crash leftover the moment the project loads (#1406's reconciliation).

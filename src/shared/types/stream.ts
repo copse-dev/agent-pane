@@ -58,6 +58,9 @@ export interface TranscriptAnnotation {
 
 export type StreamChunk =
   | AgentStreamChunk
+  | { type: 'steering_ready'; runId: string | null }
+  /** A human note was committed to the existing native parent turn. */
+  | { type: 'steering_applied'; messageId: string; text: string }
   /** One v1 ACP assistant/reasoning content item, retaining message boundaries. */
   | {
       type: 'acp_content'

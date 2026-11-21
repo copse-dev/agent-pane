@@ -1,6 +1,6 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import type { Project, ProjectGroup, Thread } from '@shared/types'
+import type { Message, Project, ProjectGroup, Thread } from '@shared/types'
 import type { MainWindowNavigation } from '@shared/types/main-window.ts'
 import { getThreadById, sortThreadsNewestFirst } from '@shared/store/thread-helpers.ts'
 import { TRANSCRIPT_META_KEYS, type TranscriptMeta } from '@shared/store/transcript-state.ts'
@@ -271,6 +271,18 @@ export function afterThreadWrites<T>(
   return pending ? pending.catch(() => undefined).then(start) : start()
 }
 
+/** Persist one known thread message through the same ordered write chain as autosave. */
+export function persistThreadMessageNow(
+  api: Pick<ApiClient, 'threads'>,
+  projectId: string,
+  threadId: string,
+  message: Message,
+): Promise<void> {
+  return serializedWrite(threadWriteKey(projectId, threadId), () =>
+    api.threads.appendMessage(projectId, threadId, message),
+  )
+}
+
 type ThreadMeta = Omit<Thread, 'messages' | 'messagesLoaded' | 'hasSavedPlan'>
 
 function metaOf(thread: Thread): ThreadMeta {
@@ -281,6 +293,7 @@ function metaOf(thread: Thread): ThreadMeta {
     messages: _messages,
     messagesLoaded: _messagesLoaded,
     hasSavedPlan: _hasSavedPlan,
+    nativeSteeringRunId: _nativeSteeringRunId,
     ...meta
   } = thread
   return meta
@@ -448,7 +461,7 @@ export function acceptRuntimeThreadMeta(
 
 /** Queue one target, updating the acknowledged baseline only after success. */
 function queueThreadWrite(
-  api: ApiClient,
+  api: Pick<ApiClient, 'threads'>,
   projectId: string,
   threadId: string,
   target: PendingThreadWrite,
@@ -484,7 +497,8 @@ function queueThreadWrite(
           }
           const creation = creations.get(threadId) ?? { meta: previous ?? target.meta }
           creations.set(threadId, creation)
-          await api.threads.create(projectId, { ...target.thread, ...target.meta })
+          const { nativeSteeringRunId: _nativeSteeringRunId, ...durableThread } = target.thread
+          await api.threads.create(projectId, { ...durableThread, ...target.meta })
           submittedPatch = retryMetaPatch(creation.meta, target.meta, uncertain)
         } else {
           submittedPatch = retryMetaPatch(previous, target.meta, uncertain)
@@ -527,6 +541,19 @@ function queueThreadWrite(
         pendingThreadWrites.delete(projectId)
       }
     }
+  })
+}
+
+/** Persist one captured thread's metadata even when another project is active. */
+export function persistThreadMetadataNow(
+  api: Pick<ApiClient, 'threads'>,
+  projectId: string,
+  thread: Thread,
+): Promise<void> {
+  return queueThreadWrite(api, projectId, thread.id, {
+    kind: 'save',
+    thread,
+    meta: metaOf(thread),
   })
 }
 
@@ -713,7 +740,7 @@ function threadWithMeta(thread: Thread, meta: ThreadMeta, projection?: ReadProje
 }
 
 async function readThreadMetadata(
-  api: ApiClient,
+  api: Pick<ApiClient, 'threads'>,
   projectId: string,
   onlyThreadId?: string,
 ): Promise<Thread[]> {
@@ -885,7 +912,7 @@ export function loadThreads(api: ApiClient, projectId: string): Promise<Thread[]
 
 /** Read/register one restored thread without letting a stale read erase newer writes. */
 export async function loadPersistedThread(
-  api: ApiClient,
+  api: Pick<ApiClient, 'threads'>,
   projectId: string,
   threadId: string,
 ): Promise<Thread | undefined> {

@@ -3,11 +3,11 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
+import { submitComposer } from './helpers/composer.ts'
 import { readWorktreePreparationPlan } from '../../src/main/services/worktree-preparation-plan.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
-import { submitComposer } from './helpers/composer.ts'
 
 const root = join(tmpdir(), 'copse-e2e', 'go-preparation-approval')
 describe('automatic Go preparation approval', () => {

@@ -181,11 +181,25 @@ describe('hook_run survives full save (decision 6)', () => {
     await saveProjectThread(PROJECT, thread([m1, m2]))
 
     const raw = readFileSync(join(root, PROJECT, THREAD, 'events.jsonl'), 'utf8')
+    const entries = parseSpineEntries(raw)
     assert.deepEqual(
-      parseSpineEntries(raw)
+      entries
         .filter((entry) => entry.line?.type !== 'user_message_lifecycle')
-        .map((entry) => entry.line?.id),
-      ['m1', 'h1', 'm2'],
+        .map((entry) => [entry.line?.type, entry.line?.id]),
+      [
+        ['message', 'm1'],
+        ['hook_run', 'h1'],
+        ['message', 'm2'],
+      ],
+    )
+    assert.deepEqual(
+      entries.flatMap((entry) =>
+        entry.line?.type === 'user_message_lifecycle' ? [[entry.line.id, entry.line.state]] : [],
+      ),
+      [
+        ['m1', 'accepted'],
+        ['m2', 'accepted'],
+      ],
     )
   })
 
@@ -196,11 +210,25 @@ describe('hook_run survives full save (decision 6)', () => {
     await appendMessage(PROJECT, THREAD, userMsg('m2', 'two'))
 
     const raw = readFileSync(join(root, PROJECT, THREAD, 'events.jsonl'), 'utf8')
+    const entries = parseSpineEntries(raw)
     assert.deepEqual(
-      parseSpineEntries(raw)
+      entries
         .filter((entry) => entry.line?.type !== 'user_message_lifecycle')
-        .map((entry) => entry.line?.id),
-      ['m1', 'h1', 'm2'],
+        .map((entry) => [entry.line?.type, entry.line?.id]),
+      [
+        ['message', 'm1'],
+        ['hook_run', 'h1'],
+        ['message', 'm2'],
+      ],
+    )
+    assert.deepEqual(
+      entries.flatMap((entry) =>
+        entry.line?.type === 'user_message_lifecycle' ? [[entry.line.id, entry.line.state]] : [],
+      ),
+      [
+        ['m1', 'accepted'],
+        ['m2', 'accepted'],
+      ],
     )
     // Old readers still see messages only.
     assert.deepEqual(
