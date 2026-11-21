@@ -137,7 +137,7 @@ describe('model value map interactions', () => {
     }
   })
 
-  it('hides unavailable history and task modes and falls back when history is removed', async () => {
+  it('offers Plan and Inference pricing and hides unavailable task mode', async () => {
     const snapshot: PlanUsageSnapshot = {
       checkedAt: '2026-10-04T00:00:00Z',
       providers: [
@@ -173,30 +173,20 @@ describe('model value map interactions', () => {
       ],
     )
     await panel.refresh()
-    const expected = panel.root.querySelector<HTMLButtonElement>('[data-plan-coverage="expected"]')
+    const expected = panel.root.querySelector('[data-plan-coverage="expected"]')
     const task = panel.root.querySelector<HTMLButtonElement>('[data-cost-axis="perTask"]')
-    assert.ok(expected && task)
-    assert.equal(expected.hidden, true)
+    assert.equal(expected, null)
+    assert.ok(task)
     assert.equal(task.hidden, true)
-    panel.setWindowExhaustion(new Map([['seven_day_fable', { hit: 0, total: 0 }]]))
-    assert.equal(expected.hidden, true)
-    panel.setWindowExhaustion(new Map([['unrelated_window', { hit: 1, total: 2 }]]))
-    assert.equal(
-      expected.hidden,
-      true,
-      'history for a different plan cannot enable this comparison',
+    const inference = panel.root.querySelector<HTMLButtonElement>(
+      '[data-plan-coverage="inference"]',
     )
-    panel.setWindowExhaustion(new Map([['seven_day_fable', { hit: 1, total: 2 }]]))
-    assert.equal(expected.hidden, false)
-    expected.click()
-    assert.equal(panel.getPlanCoverageMode(), 'expected')
-    panel.setWindowExhaustion(new Map())
-    assert.equal(expected.hidden, true)
-    assert.equal(panel.getPlanCoverageMode(), 'plan')
-    assert.equal(
-      panel.root.querySelector('[data-plan-coverage="plan"]')?.getAttribute('aria-pressed'),
-      'true',
-    )
+    const plan = panel.root.querySelector<HTMLButtonElement>('[data-plan-coverage="plan"]')
+    assert.ok(inference && plan)
+    inference.click()
+    assert.equal(inference.getAttribute('aria-pressed'), 'true')
+    plan.click()
+    assert.equal(plan.getAttribute('aria-pressed'), 'true')
   })
 
   it('dismisses pinned details when the Usage section becomes inactive', async () => {
