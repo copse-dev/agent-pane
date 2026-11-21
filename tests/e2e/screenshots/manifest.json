@@ -225,6 +225,10 @@
       "sha256": "9d424c4b77633478be2043028aa103c30af8cff5e927025ab4779c35c385f56e",
       "bytes": 110675
     },
+    "acp-tool-continuation.png": {
+      "sha256": "a91aa232a8160b835706a8ea4287927b60c530b1efd04b387108eb74b924e82d",
+      "bytes": 347787
+    },
     "acp-tool-diff.png": {
       "sha256": "02e87114ec9f5509cef47a1ba0b35742e7cd61df45345193704cc918545e9a15",
       "bytes": 301710
@@ -648,6 +652,14 @@
     "approval-reasons-list.png": {
       "sha256": "acc4ba546c86854fd1698bd1d90a633a6ab90b946f38f4c6bb0af5966c6fc1c0",
       "bytes": 70674
+    },
+    "approval-settings-pending.png": {
+      "sha256": "95e9beca5171d069602ac5017bc829bc5851df8d07f6930aaa44e30436d34471",
+      "bytes": 86792
+    },
+    "approval-settings-restored.png": {
+      "sha256": "140385934c6610994cf45aa4f7c1c217bddd9e436b5970f197cca4d6822f8e43",
+      "bytes": 19794
     },
     "approval-thread-orchestrate.png": {
       "sha256": "3d758e1649c38177c59ea911dc1514290dd4ea24292f2c14babd913e7f784ce6",
