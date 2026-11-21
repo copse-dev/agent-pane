@@ -21,6 +21,7 @@ import { runSerialized } from '../storage/write-queue.ts'
 import { currentThreadExecutionContext } from '../thread-execution-context-store.ts'
 import { getActiveRunThread } from '../thread-models.ts'
 import { appendSpineDecision } from '../thread-store.ts'
+import { currentExecutionPrincipal } from '../execution-runtime/principal.ts'
 
 function safeRead(path: string): string | null {
   try {
@@ -139,7 +140,19 @@ export function recordDecision(input: RecordDecisionInput): void {
     const { projectId: _p, threadId: _t, detail, turnId, step, ...rest } = input
     const id = randomUUID()
     const at = Date.now()
-    const event = makeDecisionEvent({ ...rest, threadId }, id, at)
+    // Bind every in-turn decision to the turn's principal (execution-runtime-
+    // security R1), unless the caller named one or the line is about another thread.
+    const principal =
+      rest.principalId === undefined ? currentExecutionPrincipal({ projectId, threadId }) : null
+    const event = makeDecisionEvent(
+      {
+        ...rest,
+        threadId,
+        ...(principal ? { principalId: principal.id, principalKind: principal.kind } : {}),
+      },
+      id,
+      at,
+    )
 
     let detailContents: string | undefined
     let line: SpineDecisionLine = {
