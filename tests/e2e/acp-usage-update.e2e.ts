@@ -12,7 +12,9 @@ import { saveAppScreenshot, waitForSettledLayout } from './helpers/screenshot.ts
 
 async function expectComposerFollowUp(): Promise<void> {
   const changes = $('.follow-up-bubble-changes')
+  await changes.waitForDisplayed({ timeout: 15_000 })
   await expect(changes).toBeDisplayed()
+  await expect(changes.$('.follow-up-label')).toHaveText('Changes')
   await expect(changes.$('.follow-up-stat-add')).toHaveText('+2')
   await expect(changes.$('.follow-up-stat-del')).toHaveText('-0')
   await expect($('.prompt-input')).toHaveAttribute('data-placeholder', 'Send follow-up')
@@ -57,8 +59,8 @@ describe('ACP usage_update context wheel', () => {
       /^Context 40% used, 80\.0k of 200\.0k tokens; Usage: 829 tokens/,
     )
 
-    // Sidebar git status and composer follow-ups settle through separate IPC
-    // requests. A ready context wheel does not pin the composer's placeholder.
+    // Agent idle, sidebar git status, and composer follow-ups settle separately.
+    // The Changes chip must settle before capturing the composer height/placeholder.
     await expectComposerFollowUp()
     await waitForSettledLayout('.input-footer')
     await wheel.moveTo()

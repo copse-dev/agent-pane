@@ -1,4 +1,6 @@
 import * as fsp from 'node:fs/promises'
+import { constants as fsConstants } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { errorMessage } from '@shared/errors.ts'
@@ -85,7 +87,7 @@ async function runGit(
 async function runGitRead(
   args: string[],
   root: string | null,
-  extra: { timeoutMs?: number; env?: NodeJS.ProcessEnv } = {},
+  extra: { timeoutMs?: number; env?: NodeJS.ProcessEnv; stdin?: Buffer } = {},
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   const cwd = root
   if (!cwd) return { stdout: '', stderr: 'No workspace open.', code: 1 }
@@ -95,6 +97,7 @@ async function runGitRead(
     sandboxConfig: readOnlyWorkspaceSandboxOverlay(cwd),
     ...(extra.timeoutMs !== undefined ? { timeout_ms: extra.timeoutMs } : {}),
     ...(extra.env ? { env: extra.env } : {}),
+    ...(extra.stdin ? { stdin: extra.stdin } : {}),
   })
 }
 
@@ -829,6 +832,231 @@ export async function getGitStatus(
   return normalizeGitStatusForWorkspace(parsePorcelainV1(stdout), prefix)
 }
 
+/** What git holds of a changed file's current content (#4006). */
+export type GitContentState = 'only-copy' | 'in-git'
+
+/** The largest file {@link findGitContentStates} hashes; a larger one is left unknown. */
+export const GIT_CONTENT_STATE_FILE_MAX_BYTES = 16 * 1024 * 1024
+/** The most bytes one {@link findGitContentStates} call hashes across all its files. */
+export const GIT_CONTENT_STATE_TOTAL_MAX_BYTES = 64 * 1024 * 1024
+
+/**
+ * Git's hold on the current content of `paths` (workspace-relative, as
+ * {@link getGitStatus} reports them). `only-copy`: git has no object for it, so
+ * no commit can contain this version and the copy on disk is the only one.
+ * `in-git`: git has the object, so it can give it back, even if no commit
+ * holds it yet (staged only, or written with `hash-object -w`). A path left out
+ * of the map is unknown, and callers must claim nothing about it.
+ *
+ * Nothing here runs a program or follows a link. Copse reads each file itself,
+ * opened without following a final symlink and without blocking on a FIFO, and
+ * hashes the bytes of a regular file as git's blob id. A path git would convert
+ * on `add` (a clean `filter`, `text` or its legacy `crlf`, `eol`, `ident` or `working-tree-encoding`
+ * attribute, or `core.autocrlf`) would hash differently from what git stores,
+ * so it is left unknown, as are links, special files and anything that stops
+ * being a regular file before it is read. Returns null when git can't answer,
+ * including for a path that is no longer there.
+ *
+ * Hashing reads every byte, and the end-of-turn audit waits for it, so the work
+ * is bounded: a file over {@link GIT_CONTENT_STATE_FILE_MAX_BYTES} is left
+ * unknown, and once {@link GIT_CONTENT_STATE_TOTAL_MAX_BYTES} are spoken for,
+ * so is every later one. Paths are taken in the order given.
+ */
+export async function findGitContentStates(
+  root: string | null,
+  paths: readonly string[],
+): Promise<Map<string, GitContentState> | null> {
+  if (paths.length === 0) return new Map()
+  if (!root) return null
+  const kinds = await Promise.all(
+    paths.map((path) =>
+      fsp.lstat(join(root, path)).then(
+        (stat) =>
+          stat.isFile() ? { kind: 'file' as const, size: stat.size } : { kind: 'other' as const },
+        () => ({ kind: 'gone' as const }),
+      ),
+    ),
+  )
+  if (kinds.some((entry) => entry.kind === 'gone')) return null
+  const sizes = new Map<string, number>()
+  paths.forEach((path, index) => {
+    const entry = kinds[index]
+    if (entry?.kind === 'file') sizes.set(path, entry.size)
+  })
+  const regular = paths.filter((path) => sizes.has(path))
+  if (regular.length === 0) return new Map()
+  const convertible = await unconvertedPaths(root, regular)
+  if (convertible === null) return null
+  let budget = GIT_CONTENT_STATE_TOTAL_MAX_BYTES
+  const unconverted = convertible.filter((path) => {
+    const size = sizes.get(path) ?? Infinity
+    if (size > GIT_CONTENT_STATE_FILE_MAX_BYTES || size > budget) return false
+    budget -= size
+    return true
+  })
+  if (unconverted.length === 0) return new Map()
+  const format = await runGitRead(['rev-parse', '--show-object-format'], root)
+  const algorithm = format.code === 0 ? format.stdout.trim() : ''
+  if (algorithm !== 'sha1' && algorithm !== 'sha256') return null
+  const ids = await Promise.all(
+    unconverted.map((path) =>
+      gitBlobIdOfRegularFile(join(root, path), algorithm, sizes.get(path) ?? 0),
+    ),
+  )
+  const files: string[] = []
+  const hashes: string[] = []
+  unconverted.forEach((path, index) => {
+    const id = ids[index]
+    if (id) {
+      files.push(path)
+      hashes.push(id)
+    }
+  })
+  if (files.length === 0) return new Map()
+  const checked = await runGitRead(['cat-file', '--batch-check=%(objectname)'], root, {
+    stdin: Buffer.from(hashes.map((hash) => `${hash}\n`).join('')),
+  })
+  if (checked.code !== 0) return null
+  const lines = checked.stdout.split('\n').filter(Boolean)
+  if (lines.length !== hashes.length) return null
+  const states = new Map<string, GitContentState>()
+  lines.forEach((line, index) => {
+    const path = files[index]
+    if (path !== undefined) states.set(path, line.endsWith(' missing') ? 'only-copy' : 'in-git')
+  })
+  return states
+}
+
+/**
+ * Git's blob id for the regular file at `path`, read through one descriptor:
+ * opened without following a final symlink (where the platform can refuse one)
+ * or blocking on a FIFO, then checked to be a regular file on that same
+ * descriptor and to be the file `path` itself names, so a path swapped for a
+ * link or device after an earlier check is refused rather than read. Null when it is
+ * not a regular file, is larger than `maxBytes` (it grew after the caller
+ * budgeted for it), cannot be read, or changes while being read: the
+ * descriptor is checked again afterwards, and a different size, modification
+ * time or change time means the bytes read may be no version the file ever
+ * held whole. The path is checked again last, so a file renamed over it
+ * during the read (an editor's atomic save) is not reported as the path's.
+ */
+export async function gitBlobIdOfRegularFile(
+  path: string,
+  algorithm: 'sha1' | 'sha256',
+  maxBytes: number,
+): Promise<string | null> {
+  // Windows defines neither flag; there `fstat` refuses a non-file and the
+  // identity check below refuses a link.
+  const flags =
+    process.platform === 'win32'
+      ? fsConstants.O_RDONLY
+      : fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | fsConstants.O_NONBLOCK
+  let handle: fsp.FileHandle
+  try {
+    handle = await fsp.open(path, flags)
+  } catch {
+    return null
+  }
+  try {
+    const stat = await handle.stat({ bigint: true })
+    if (!stat.isFile() || stat.size > BigInt(maxBytes)) return null
+    // The path must still name this same regular file. On Windows the open
+    // follows a final symlink, so a link swapped in before it would otherwise
+    // hash its target as this path; elsewhere this repeats `O_NOFOLLOW`.
+    const pathNamesThisFile = async (): Promise<boolean> => {
+      const named = await fsp.lstat(path, { bigint: true })
+      return named.isFile() && named.dev === stat.dev && named.ino === stat.ino
+    }
+    if (!(await pathNamesThisFile())) return null
+    const size = Number(stat.size)
+    const hash = createHash(algorithm).update(`blob ${String(size)}\0`)
+    const buffer = Buffer.alloc(Math.min(1024 * 1024, Math.max(1, size)))
+    let position = 0
+    while (position < size) {
+      const { bytesRead } = await handle.read(
+        buffer,
+        0,
+        Math.min(buffer.length, size - position),
+        position,
+      )
+      if (bytesRead === 0) return null
+      hash.update(buffer.subarray(0, bytesRead))
+      position += bytesRead
+    }
+    const after = await handle.stat({ bigint: true })
+    if (
+      after.size !== stat.size ||
+      after.mtimeNs !== stat.mtimeNs ||
+      after.ctimeNs !== stat.ctimeNs
+    ) {
+      return null
+    }
+    // An atomic save renames a new file over the path and leaves this
+    // descriptor on the unlinked old one, whose size and times need not move:
+    // the hash is the path's only if the path still names this file.
+    if (!(await pathNamesThisFile())) return null
+    return hash.digest('hex')
+  } catch {
+    return null
+  } finally {
+    await handle.close()
+  }
+}
+
+/** Attributes that make `git add` store something other than the file's bytes. */
+// `crlf` is git's legacy spelling of `text` (`crlf` = `text`, `crlf=input` =
+// `eol=lf`, `-crlf` = `-text`); `check-attr` reports it apart from `text`.
+const CONVERSION_ATTRIBUTES = [
+  'filter',
+  'text',
+  'crlf',
+  'eol',
+  'ident',
+  'working-tree-encoding',
+] as const
+
+/**
+ * The subset of `paths` (relative to `root`) git would store byte for byte:
+ * none of {@link CONVERSION_ATTRIBUTES} applies and `core.autocrlf` is off.
+ * Paths travel NUL-separated, so no name needs quoting. Null when git can't
+ * answer, including when any path lacks a record: the command runner caps
+ * output, and a path cut off the end must not read as unconverted. A record
+ * cut mid-value reads as converted, which only leaves the path unknown.
+ *
+ * `unspecified` and `unset` are also the values of a filter literally named
+ * that, so a driver configured under either name makes every path count as
+ * filtered: with such a repository the audit claims nothing.
+ */
+async function unconvertedPaths(root: string, paths: readonly string[]): Promise<string[] | null> {
+  const autocrlf = await runGitRead(['config', '--get', 'core.autocrlf'], root)
+  if (autocrlf.code !== 0 && autocrlf.code !== 1) return null
+  if (autocrlf.code === 0 && autocrlf.stdout.trim().toLowerCase() !== 'false') return []
+  const drivers = await runGitRead(
+    ['config', '--name-only', '--get-regexp', '^filter\\.(unspecified|unset)\\.(clean|process)$'],
+    root,
+  )
+  if (drivers.code !== 0 && drivers.code !== 1) return null
+  if (drivers.code === 0 && drivers.stdout.trim() !== '') return []
+  const attrs = await runGitRead(['check-attr', '-z', '--stdin', ...CONVERSION_ATTRIBUTES], root, {
+    stdin: Buffer.from(paths.map((path) => `${path}\0`).join('')),
+  })
+  if (attrs.code !== 0) return null
+  // Records are `<path> NUL <attribute> NUL <value> NUL`, one per attribute.
+  const fields = attrs.stdout.split('\0')
+  const converted = new Set<string>()
+  const records = new Map<string, number>()
+  for (let index = 0; index + 2 < fields.length; index += 3) {
+    const path = fields[index]
+    const attribute = fields[index + 1]
+    const value = fields[index + 2]
+    if (path === undefined || attribute === undefined || value === undefined) continue
+    records.set(path, (records.get(path) ?? 0) + 1)
+    if (value !== 'unspecified' && !(value === 'unset' && attribute !== 'eol')) converted.add(path)
+  }
+  if (!paths.every((path) => records.get(path) === CONVERSION_ATTRIBUTES.length)) return null
+  return paths.filter((path) => !converted.has(path))
+}
+
 const THREAD_CHANGE_GIT_TIMEOUT_MS = 10_000
 
 /**
@@ -1296,15 +1524,61 @@ export async function pushBranchToOrigin(
   return { ok: true, message: detail || `Pushed ${branch} to origin.` }
 }
 
+/** What HEAD names in a checkout. */
+export interface CheckoutHead {
+  /** The checked-out branch, or null when there is none to name. */
+  branch: string | null
+  /**
+   * Git answered and HEAD is on no branch (`rev-parse --abbrev-ref HEAD`
+   * printed `HEAD`). Only that positive reading counts: no root, a folder that
+   * is not a repository, an unborn branch and a failed read are all false, and
+   * so is the e2e branch override, which always names a branch.
+   */
+  detached: boolean
+}
+
+/** Read HEAD once: the checked-out branch and whether Git reports it detached. */
+export async function readCheckoutHead(root: string | null): Promise<CheckoutHead> {
+  if (!root) return { branch: null, detached: false }
+  const override = e2eBranchOverride()
+  if (override) return { branch: override, detached: false }
+  const { stdout, code } = await runGitRead(['rev-parse', '--abbrev-ref', 'HEAD'], root)
+  if (code !== 0) return { branch: null, detached: false }
+  const branch = stdout.trim()
+  if (branch === 'HEAD') return { branch: null, detached: true }
+  return { branch: branch || null, detached: false }
+}
+
 /** Current checked-out branch, or null when detached / outside a repo. */
 export async function getCurrentBranchName(root: string | null): Promise<string | null> {
-  if (!root) return null
-  const override = e2eBranchOverride()
-  if (override) return override
-  const { stdout, code } = await runGitRead(['rev-parse', '--abbrev-ref', 'HEAD'], root)
-  if (code !== 0) return null
-  const branch = stdout.trim()
-  return branch && branch !== 'HEAD' ? branch : null
+  return (await readCheckoutHead(root)).branch
+}
+
+/**
+ * Whether a `git rebase` is stopped in this checkout: at a conflict, an
+ * `edit`/`break` stop or a failed `exec`. `--git-path` resolves a linked
+ * worktree's own state directory, relative to `root`. An unanswered read
+ * counts as no rebase.
+ */
+export async function isRebaseInProgress(root: string): Promise<boolean> {
+  const { stdout, code } = await runGitRead(
+    ['rev-parse', '--git-path', 'rebase-merge', '--git-path', 'rebase-apply'],
+    root,
+  )
+  if (code !== 0) return false
+  const states = stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+  const present = await Promise.all(
+    states.map((state) =>
+      fsp.lstat(resolve(root, state)).then(
+        () => true,
+        () => false,
+      ),
+    ),
+  )
+  return present.includes(true)
 }
 
 /** Full SHA of the current `HEAD` commit, or null when unavailable / no commits yet. */

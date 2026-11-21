@@ -624,6 +624,31 @@ revisiting this document, not silently diverging in an implementation PR.
     tool-result substitution beside the duplicate-call guard, not a nudge, and stays
     in the loop with it (Phase E).
 
+33. **An empty turn is answered with a nudge; pinned benchmark profiles keep the replay.** A stream that ends
+    with no visible text and no tool call, and that no other post-stream outcome
+    claims (truncation, runaway cut, soft-budget cut, malformed call, refusal,
+    context overflow), used to `continue` with history unchanged. Reasoning never
+    lands in history, so the next request was byte-identical: a thinking model
+    reviewing an isolated-guest edit replayed one 6-message review request eight
+    times and spent about a quarter of a 100,000-token grant. The loop now sets
+    `emptyTurn` on the `postStream` payload, the first-party `empty-turn` hook
+    selects a "your reply had no answer or tool call; answer or call one tool"
+    text, and the harness applies it as a `tool-enabled-message` through the
+    applied-nudge path. It is applied at the top of the next iteration, after the
+    step/call budget check (and any extension) passes, so a run that the budget
+    ends never keeps an unanswered nudge in history. A pending empty-turn nudge
+    counts as a stuck signal when the budget runs out, so such a run earns no
+    adaptive extension: empty turns add nothing to the tool-progress window, and
+    without this a run stuck on them kept earning grants on the strength of the
+    calls it made before it got stuck. Beyond that it adds no bound of its own:
+    the existing step and LLM-call caps and the run deadline still limit how many
+    empty turns a run can take, and it creates no turn and consumes no
+    `ContinuationGrant` (decision 5). The text-only finalize, forced and closeout
+    turns keep their existing empty-turn handling. `emptyTurnRecoveryStrategy:
+    'replay-v1'` keeps the old unchanged retry; the Terminal-Bench host passes it
+    for every profile, because each was defined before the nudge existed and its
+    pinned loop fingerprint must not move.
+
 ## Target architecture
 
 ```mermaid
