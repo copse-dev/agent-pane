@@ -10,7 +10,17 @@ import type { AppleSuggestionAnswer } from '@shared/types/apple-development.ts'
 import { exposePerfBridge, installPreloadPerfTracing } from './perf-bridge.ts'
 import { createWorkspaceNavigation } from './workspace-navigation.ts'
 import { installRemoteReadRelay } from './remote-interface.ts'
+import { createIpcSizeGuard } from './ipc-size-guard.ts'
 import { errorMessage } from '@shared/errors.ts'
+
+// Innermost, so it checks what is actually sent at the moment of sending: an
+// oversized call is refused here instead of aborting the renderer (#4445).
+const sizeGuardedIpc = createIpcSizeGuard({
+  invoke: ipcRenderer.invoke.bind(ipcRenderer),
+  send: ipcRenderer.send.bind(ipcRenderer),
+})
+ipcRenderer.invoke = sizeGuardedIpc.invoke
+ipcRenderer.send = sizeGuardedIpc.send
 
 // DEBUG BRANCH (`COPSE_PERF=1` only): patch `invoke` before the API object below
 // captures it, so every channel the renderer calls is timed. No-op otherwise.
