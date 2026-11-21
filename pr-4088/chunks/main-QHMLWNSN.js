@@ -490,7 +490,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-2B5M6GB4.js";
+} from "./chunk-7RKBIMP5.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -54568,7 +54568,11 @@ function mountFooterBranchStatus(host, store2, api2) {
     const picked = baseBranchByThread.get(thread.id);
     if (picked) return picked;
     if (thread.id !== store2.getState().activeThreadId) return void 0;
+    if (projectCheckoutDetached()) return void 0;
     return defaultBranch && branches.some((branch) => branch.name === defaultBranch) ? defaultBranch : void 0;
+  }
+  function projectCheckoutDetached() {
+    return isPickerMode() && status?.detached === true;
   }
   function activeBaseBranch() {
     const thread = getActiveThread2();
@@ -54618,9 +54622,10 @@ function mountFooterBranchStatus(host, store2, api2) {
     const displayBranch = getDisplayBranch();
     const pickerMode = isPickerMode();
     const pr = getVisiblePr();
+    const startsDetached = !displayBranch && projectCheckoutDetached();
     deferredNote.hidden = !readsCheckout();
-    trigger.hidden = !displayBranch;
-    if (!displayBranch) {
+    trigger.hidden = !displayBranch && !startsDetached;
+    if (!displayBranch && !startsDetached) {
       wrap2.hidden = !readsCheckout();
       branchToCopy = null;
       setOpen(false);
@@ -54643,7 +54648,14 @@ function mountFooterBranchStatus(host, store2, api2) {
       trigger.removeAttribute("aria-expanded");
       setOpen(false);
     }
-    if (pr) {
+    if (!displayBranch) {
+      label.textContent = DETACHED_HEAD_LABEL;
+      trigger.title = DETACHED_START_TITLE;
+      trigger.classList.remove("is-link");
+      trigger.classList.remove("is-copyable");
+      branchToCopy = null;
+      trigger.setAttribute("aria-label", DETACHED_START_TITLE);
+    } else if (pr) {
       label.textContent = `PR #${String(pr.number)}`;
       trigger.title = mismatch ? `${mismatchMessage} (${pr.title})` : pr.title;
       trigger.classList.add("is-link");
@@ -54810,11 +54822,11 @@ function mountFooterBranchStatus(host, store2, api2) {
     const ordered = orderBranchesWithDefaultFirst(branches, defaultBranch);
     const query = filterInput.value.trim().toLocaleLowerCase();
     const matches3 = query ? ordered.filter((branch) => branch.name.toLocaleLowerCase().includes(query)) : ordered;
-    return { pr, matches: matches3 };
+    return { pr, head: !query && projectCheckoutDetached(), matches: matches3 };
   }
   function rowCount() {
-    const { pr, matches: matches3 } = filteredRows();
-    return (pr ? 1 : 0) + matches3.length;
+    const { pr, head, matches: matches3 } = filteredRows();
+    return (pr ? 1 : 0) + (head ? 1 : 0) + matches3.length;
   }
   function clampActiveIndex() {
     const count = rowCount();
@@ -54840,15 +54852,29 @@ function mountFooterBranchStatus(host, store2, api2) {
     renderTrigger();
     renderMenu();
   }
+  function selectDetachedHead() {
+    setOpen(false);
+    trigger.focus();
+    const thread = getActiveThread2();
+    if (!thread) return;
+    baseBranchByThread.delete(thread.id);
+    renderTrigger();
+    renderMenu();
+  }
   function activateRow(index) {
-    const { pr, matches: matches3 } = filteredRows();
+    const { pr, head, matches: matches3 } = filteredRows();
     if (pr && index === 0) {
       setOpen(false);
       trigger.focus();
       openBrowserUrl(store2, pr.url);
       return;
     }
-    const branch = matches3[pr ? index - 1 : index];
+    const headIndex = pr ? 1 : 0;
+    if (head && index === headIndex) {
+      selectDetachedHead();
+      return;
+    }
+    const branch = matches3[index - headIndex - (head ? 1 : 0)];
     if (branch) selectBranch(branch.name);
   }
   function moveActive(direction) {
@@ -54862,7 +54888,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     filterInput.removeAttribute("aria-activedescendant");
     if (!isPickerMode()) return;
     const selected = activeBaseBranch() ?? status?.currentBranch ?? null;
-    const { pr, matches: matches3 } = filteredRows();
+    const { pr, head, matches: matches3 } = filteredRows();
     clampActiveIndex();
     let rowIndex = 0;
     if (pr) {
@@ -54885,6 +54911,27 @@ function mountFooterBranchStatus(host, store2, api2) {
         openBrowserUrl(store2, pr.url);
       });
       list.append(prItem);
+      rowIndex++;
+    }
+    if (head) {
+      const headItem = el(
+        "button",
+        {
+          type: "button",
+          class: "branch-picker-option branch-picker-detached-head",
+          id: `${listId}-option-${String(rowIndex)}`,
+          role: "option",
+          tabindex: "-1",
+          title: DETACHED_START_TITLE,
+          "aria-selected": rowIndex === activeIndex ? "true" : "false"
+        },
+        el("span", { class: "branch-picker-option-label" }, DETACHED_HEAD_LABEL),
+        el("span", { class: "branch-picker-default-badge" }, "current")
+      );
+      if (selected === null) headItem.classList.add("is-selected");
+      if (rowIndex === activeIndex) headItem.classList.add("is-active");
+      headItem.addEventListener("click", selectDetachedHead);
+      list.append(headItem);
       rowIndex++;
     }
     for (const branch of matches3) {
@@ -55156,10 +55203,13 @@ function mountFooterBranchStatus(host, store2, api2) {
       if (!thread || !isBlankThread(thread)) return void 0;
       const picked = baseBranchByThread.get(threadId);
       if (picked) return picked;
-      const [listed, defaultName] = await Promise.all([
+      const loaded = threadId === store2.getState().activeThreadId && status !== null ? status : null;
+      const [listed, defaultName, head] = await Promise.all([
         api2.git.listBranches(projectId, threadId),
-        api2.git.getDefaultBranch(projectId, threadId)
+        api2.git.getDefaultBranch(projectId, threadId),
+        loaded ?? api2.git.branchStatus(projectId, threadId)
       ]);
+      if (head.detached === true) return void 0;
       return defaultName && listed.some((branch) => branch.name === defaultName) ? defaultName : void 0;
     },
     destroy: () => {
@@ -55174,7 +55224,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     }
   };
 }
-var COPIED_BRANCH_TOAST, COPY_FEEDBACK_MS, DEFERRED_NOTE_TEXT, DEFERRED_NOTE_TITLE, nextPickerId;
+var COPIED_BRANCH_TOAST, COPY_FEEDBACK_MS, DEFERRED_NOTE_TEXT, DEFERRED_NOTE_TITLE, nextPickerId, DETACHED_HEAD_LABEL, DETACHED_START_TITLE;
 var init_footer_branch_status = __esm({
   "src/renderer/views/footer-branch-status.ts"() {
     init_clamp();
@@ -55192,6 +55242,8 @@ var init_footer_branch_status = __esm({
     DEFERRED_NOTE_TEXT = "Reading your checkout";
     DEFERRED_NOTE_TITLE = "This thread is reading your checkout and can\u2019t change it. It gets its own worktree once it asks to make changes; until then, anything that tries to write here is refused.";
     nextPickerId = 0;
+    DETACHED_HEAD_LABEL = "Detached HEAD";
+    DETACHED_START_TITLE = "Start this thread from the checked-out commit (detached HEAD). Pick a branch to switch the checkout to it instead.";
   }
 });
 
