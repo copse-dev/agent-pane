@@ -27,16 +27,22 @@ interface Response {
 interface Harness {
   emit: (req: SshPromptRequest) => void
   responses: Response[]
+  dismiss: (id: string) => void
 }
 
 function stubApi(): { api: SshPromptApi; harness: Harness } {
   let listener: ((req: SshPromptRequest) => void) | null = null
+  let dismissed: ((id: string) => void) | null = null
   const responses: Response[] = []
   const api: SshPromptApi = {
     sshPrompt: {
       respond: (id: string, value: string, remember?: boolean): Promise<void> => {
         responses.push({ id, value, remember })
         return Promise.resolve()
+      },
+      onDismissed: (handler) => {
+        dismissed = handler
+        return () => {}
       },
       onRequest: (handler: (req: SshPromptRequest) => void): (() => void) => {
         listener = handler
@@ -50,6 +56,9 @@ function stubApi(): { api: SshPromptApi; harness: Harness } {
       listener(req)
     },
     responses,
+    dismiss: (id) => {
+      dismissed?.(id)
+    },
   }
   return { api, harness }
 }
@@ -126,6 +135,34 @@ const PASSWORD_PROMPT: SshPromptRequest = {
 describe('ssh prompt dialog (component)', () => {
   beforeEach(() => {
     document.body.innerHTML = ''
+  })
+
+  it('dismisses expired requests without submitting secrets and preserves the next request', () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    harness.emit(PASSWORD_PROMPT)
+    input('.ssh-prompt-input').value = 'never-submit'
+    harness.emit({ ...PASSWORD_PROMPT, id: 'req-2', prompt: 'Next connection' })
+    harness.dismiss('req-1')
+    assert.equal(dialog().open, true)
+    assert.equal(element('.ssh-prompt-body').textContent, 'Next connection')
+    assert.equal(input('.ssh-prompt-input').value, '')
+    harness.dismiss('req-1')
+    assert.equal(dialog().open, true)
+    harness.dismiss('req-2')
+    assert.equal(dialog().open, false)
+    assert.deepEqual(harness.responses, [])
+  })
+
+  it('removes an expired queued request before advancing', () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    harness.emit(PASSWORD_PROMPT)
+    harness.emit({ ...PASSWORD_PROMPT, id: 'req-2' })
+    harness.dismiss('req-2')
+    harness.dismiss('req-1')
+    assert.equal(dialog().open, false)
+    assert.deepEqual(harness.responses, [])
   })
 
   it('remembers the secret on this device by default when the OS keychain is available', () => {

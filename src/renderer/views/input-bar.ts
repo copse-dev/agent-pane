@@ -1794,7 +1794,7 @@ export function mountInputBar(
   /** Skills and agents as one `/name` namespace; skills win a collision. */
   function currentInvocables(): ReturnType<typeof mergeInvocables> {
     return mergeInvocables(
-      (skillsCache ?? []).map((skill) => skill.name),
+      skillsCache ?? [],
       (agentsCache ?? []).map((agent) => agent.name),
     )
   }
@@ -2318,7 +2318,7 @@ export function mountInputBar(
     const invocation = resolveInvocation(
       rawText,
       mergeInvocables(
-        skills.map((skill) => skill.name),
+        skills,
         agents.map((agent) => agent.name),
       ),
     )
@@ -3012,6 +3012,7 @@ export function mountInputBar(
       return [
         ...skills.map((skill) => ({
           name: skill.name,
+          ...(skill.plugin ? { plugin: skill.plugin } : {}),
           description: skill.description,
           kind: 'skill' as const,
         })),

@@ -201,6 +201,8 @@ export class TurnTranscriptWriter {
     if (this.shuttingDown) throw new Error('Copse is closing; the turn was not started.')
     this.revision += 1
     const store = createStore()
+    const drained: PromiseWithResolvers<void> = Promise.withResolvers()
+    const seeded: PromiseWithResolvers<void> = Promise.withResolvers()
     const session: Session = {
       projectId,
       threadId,
@@ -223,18 +225,12 @@ export class TurnTranscriptWriter {
       done: false,
       ended: false,
       unsubscribe: () => undefined,
-      drained: Promise.resolve(),
-      markDrained: () => undefined,
-      seeded: Promise.resolve(),
-      markSeeded: () => undefined,
+      drained: drained.promise,
+      markDrained: drained.resolve,
+      seeded: seeded.promise,
+      markSeeded: seeded.resolve,
       initialMeta: null,
     }
-    session.drained = new Promise<void>((resolve) => {
-      session.markDrained = resolve
-    })
-    session.seeded = new Promise<void>((resolve) => {
-      session.markSeeded = resolve
-    })
     session.unsubscribe = this.watch(session)
     const previous = this.settled(threadId)
     this.sessions.set(threadId, session)
