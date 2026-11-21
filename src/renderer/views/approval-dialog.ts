@@ -627,6 +627,12 @@ export function mountApprovalDialog(
     const showOnce = onceLabel !== '' && (!collapseDetails || detailsExpanded)
     approveOnceButton.hidden = !showOnce
     if (showOnce) approveOnceButton.textContent = onceLabel
+    // When both scopes are visible, emphasize the narrower, once-only answer.
+    // Collapsed read-access prompts keep their sole visible action primary.
+    approveOnceButton.classList.toggle('ui-btn-primary', showOnce)
+    approveOnceButton.classList.toggle('ui-btn-secondary', !showOnce)
+    approveButton.classList.toggle('ui-btn-primary', !showOnce)
+    approveButton.classList.toggle('ui-btn-secondary', showOnce)
 
     // A two-tier prompt owns the remember channel through its buttons, so the
     // checkbox stays out of the way rather than offering a second, conflicting
@@ -996,8 +1002,8 @@ export function mountApprovalDialog(
     // The settle guard disables the button, but honour it defensively in case a
     // click is dispatched anyway (e.g. keyboard activation during the window).
     if (approveButton.disabled) return
-    // On a two-tier prompt the primary button IS the grant — the checkbox is
-    // hidden there, and the secondary button carries the once-only answer.
+    // On a two-tier prompt this explicit scope action IS the grant; the checkbox
+    // is hidden, and the separate once-only action never remembers consent.
     resolve(true, approveOnceGrant() !== '' ? true : rememberInput.checked)
   })
   approveOnceButton.addEventListener('click', () => {

@@ -448,7 +448,12 @@ Options are read on one line only, so a shell `exec` on the following line stays
 execution.
 
 Remembered local port-binding consent is keyed by the project root, shared across its
-thread worktrees. Command execution still uses the thread's execution root and passes
+thread worktrees. The first prompt emphasizes **Allow once**, with **Allow for this project**
+as an explicit secondary action. Only the project action saves consent; once and Reject save
+nothing. The prompt names the project, explains future reuse, and points to
+Context → Permissions → Project → Local port binding for revocation. A mixed
+batch falls back to ordinary approval, with a remember checkbox only when every
+request shares the exact project grant. Command execution still uses the thread's execution root and passes
 the shell gate. Other projects require their own consent, and disabling the Background
 tasks plugin still revokes its loopback-binding capability. Legacy worktree-root grants
 are not broadened automatically; the next project-level consent can be remembered.
@@ -1099,10 +1104,12 @@ Unknown flags, shell expansions, scripts, and compound commands retain the gener
 These explanations are presentation only and never authorize or reroute a command.
 
 Remembered tool approvals cover the exact tool with other arguments; schedule grants cover
-future runs of the named schedule. The outside-project read grant still covers all eligible
-outside-project reads for the chat, not only the paths currently displayed. Its primary action
-is labeled “Allow reads for this chat”; the secondary action approves just the displayed command.
-Batch and Activity views use the same advice, complete details, and footer as individual prompts.
+future runs of the named schedule. An outside-project read grant covers the named approved files
+and directories for that chat, including eligible descendants of approved directories. Other paths
+ask again. The collapsed card shows “Allow reads for this chat” as its sole primary approval action.
+After “Show details”, “Approve this command” is primary and “Allow reads for this chat” is secondary.
+The per-command action approves only the displayed command. Batch and Activity views use the same
+advice, complete details, and footer as individual prompts.
 
 Classifier reasons are **identifiers, not copy**. The regex pass and the token pass share them
 verbatim so the two dedupe against each other, and every answered prompt writes them into the
