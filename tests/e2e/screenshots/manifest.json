@@ -469,6 +469,14 @@
       "sha256": "dee864c6178c79cd77aea2ca820198e01fb4a0c908627d33606a2fae86f7db13",
       "bytes": 108650
     },
+    "agent-eval-existing-branch.png": {
+      "sha256": "ea51714fb31bd93fbeb4b970f2956773202e2b6d0325f16718f0d41eb38ae20c",
+      "bytes": 280654
+    },
+    "agent-eval-proposals-applied.png": {
+      "sha256": "faa4d62e66576ef8fa98d6dc200767b0912571f3c8a6d3de5413bcce73c87933",
+      "bytes": 347584
+    },
     "agent-execution-mode-active.png": {
       "sha256": "672020f2e44a133e2ce84e44e7bf25048426c7639b59a382776d38c21798ff95",
       "bytes": 261330
@@ -1494,8 +1502,8 @@
       "bytes": 325624
     },
     "composer-observer-content-grown.png": {
-      "sha256": "7df5acc820b2fb347c7389514eb63ae1a0db05ca4e137b2c9a9ec46c2f26c5b9",
-      "bytes": 331961
+      "sha256": "4d337bc1c62eb559b2c81c723b781243c77e0c4376cb039425ff92966e5b51a0",
+      "bytes": 330602
     },
     "composer-pills-light.png": {
       "sha256": "af2f58084f15f76fb5a2b730c79e188aa46a9a73e81650cff62bfb9dfcbc00e0",
@@ -3228,6 +3236,26 @@
     "paste-attachment-composer-preview.png": {
       "sha256": "5d867d55a0390c0f298b31ae77c79a003b846cd2c2ff666320429e50f533f025",
       "bytes": 287079
+    },
+    "paste-attachment-raw-resend-expanded-app.png": {
+      "sha256": "1fc10b6fd0f7dc219d1b1aaaeb384aea3b77cdf29a4562baa2c0fdf555268cc4",
+      "bytes": 308350
+    },
+    "paste-attachment-raw-resend-expanded.png": {
+      "sha256": "996131330175f8fe6333e13b0020eaa775a267cd16f53c807e652752e1f349e9",
+      "bytes": 82306
+    },
+    "paste-attachment-raw-resend-folded-app.png": {
+      "sha256": "1ead679ba21a3c9e69e48999ced6fc42d75c45f5e45d1faeff86a7c4e24b6447",
+      "bytes": 268360
+    },
+    "paste-attachment-raw-resend-folded.png": {
+      "sha256": "455fb35112d307a9d347ee7c7144864d7530af3970ef238bd3d5c31fd80c27bb",
+      "bytes": 24563
+    },
+    "paste-attachment-raw-resend-reloaded-app.png": {
+      "sha256": "1ead679ba21a3c9e69e48999ced6fc42d75c45f5e45d1faeff86a7c4e24b6447",
+      "bytes": 268360
     },
     "paste-attachment-transcript-preview.png": {
       "sha256": "98bca69eb2914d5f444a364d3fc50dc59b9860bd146527340c6fbca71849a723",
@@ -6305,6 +6333,26 @@
       "sha256": "7a90a21d4a19d8b0ac598bf0a52a62152510ad2b8e982c52ab44669630c033e6",
       "bytes": 18606
     },
+    "user-prompt-fenced-fold-collapsed-app.png": {
+      "sha256": "2f50972b2e88abfe333cd44086da5aab0e803e37882d095a4789d16665d48352",
+      "bytes": 247487
+    },
+    "user-prompt-fenced-fold-collapsed.png": {
+      "sha256": "c44472d59d5604afa158a9d71e844bd9b3a4391aa24eaa53d73643cff7bb3b10",
+      "bytes": 31348
+    },
+    "user-prompt-fenced-fold-expanded-app.png": {
+      "sha256": "41eb212d1df7faa190691b0d90de961910d978ab642bed1bb829fd725c0874ae",
+      "bytes": 235306
+    },
+    "user-prompt-fenced-fold-expanded.png": {
+      "sha256": "b2b202a5bbe5ca9fd01e9f3062cf55f0f84c757ddb7577cf1b143fb21976e0a4",
+      "bytes": 91847
+    },
+    "user-prompt-fenced-fold-reloaded-app.png": {
+      "sha256": "2f50972b2e88abfe333cd44086da5aab0e803e37882d095a4789d16665d48352",
+      "bytes": 247487
+    },
     "user-prompt-fill-dark.png": {
       "sha256": "02f0949d1eb6589108754a4ac6d10986b6174e52801dc23ea29b9a12f30eadf7",
       "bytes": 4566
@@ -6328,6 +6376,10 @@
     "user-prompt-fold-expanded.png": {
       "sha256": "a584cf8fad2c373471dce81d85a33ac045cb655a7c9514d983262bf9f870d19b",
       "bytes": 129842
+    },
+    "user-prompt-list-fence-app.png": {
+      "sha256": "0a21097fec6c406612429f30961ff2721668b398c5cf5eec7352b1fbb2fff0bb",
+      "bytes": 236830
     },
     "user-prompt-markdown.png": {
       "sha256": "c66062957cc70331c242edf79acf9cfca7844a5f910cc0e6e5a04416608cd59f",

@@ -105,6 +105,7 @@ import {
   shellForSandboxWrap,
   withSandboxShellPath,
 } from '../../project-sandbox/sandbox-argv.ts'
+import { findExecutableOnPath } from './acp-detect.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
 import { isSpawnableWorkingDirectory } from '../../project-sandbox/spawn-cwd.ts'
 import {
@@ -581,6 +582,25 @@ function waitForAcpChildExit(
   })
 }
 
+/**
+ * The agent's executable as the sandboxed wrapper shell will find it on `env`'s
+ * PATH, for the overlay's read-only `executables` grant, which decides what of
+ * it and its symlink target may be read. `env` has been through
+ * `withSandboxShellPath`, so only absolute entries remain, as for the wrapper.
+ * Found by reading the filesystem: this runs before the sandbox exists, so
+ * running a lookup program from the agent's PATH (an entry inside the
+ * workspace can supply one) would run it unconfined. Empty when it does not
+ * resolve: the spawn then fails as before, naming the command.
+ */
+async function agentExecutables(
+  command: string,
+  env: NodeJS.ProcessEnv,
+  cwd: string,
+): Promise<string[]> {
+  const found = await findExecutableOnPath(command, env['PATH'] ?? '/usr/bin:/bin', cwd)
+  return found ? [found] : []
+}
+
 export async function spawnAcpAgentProcess(
   config: AcpAgentSpawnConfig,
   options: {
@@ -606,7 +626,11 @@ export async function spawnAcpAgentProcess(
   if (config.sandbox && willSandboxAcpAgent(config.sandbox)) {
     // The agent runs git with the user's config; pick up its current includes.
     await refreshGitConfigIncludeReadPaths()
+    const executables = await perfSpan('ttft:acp-agent-executable', () =>
+      agentExecutables(config.command, withSandboxShellPath(env), config.cwd),
+    )
     const overlay = acpAgentSandboxOverlay(config.cwd, config.sandbox, {
+      executables,
       allowLocalhost: options.allowLocalhost ?? Boolean(config.nativeBridge),
       ...(config.readonlyCheckout ? { readonlyCheckout: true } : {}),
       ...(config.stateDir ? { stateDirs: [config.stateDir] } : {}),

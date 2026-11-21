@@ -49,9 +49,64 @@ describe('usedTool', () => {
 describe('toolExpectationViolations', () => {
   it('passes a run that used a bridged form of every required tool', () => {
     assert.deepEqual(
-      toolExpectationViolations(called('mcp.copse.gh_pr_view', 'mcp.copse.get_ci_status'), {
-        requireTools: ['gh_pr_view'],
-        forbidGithubNetworkDenial: true,
+      toolExpectationViolations(
+        [
+          { name: 'mcp.copse.gh_pr_view', status: 'done' },
+          { name: 'mcp.copse.get_ci_status', status: 'done' },
+        ],
+        { requireTools: ['gh_pr_view'], forbidGithubNetworkDenial: true },
+      ),
+      [],
+    )
+  })
+
+  it('reports a required tool that was never called', () => {
+    assert.deepEqual(
+      toolExpectationViolations(called('read_file'), { requireTools: ['git_commit'] }),
+      ['missing required tool: git_commit'],
+    )
+  })
+
+  it('fails a required tool whose every call errored', () => {
+    // The #4178 dogfood run: both git_commit calls failed with "must be run in
+    // a work tree", no commit existed, and the analyzer still reported a pass.
+    assert.deepEqual(
+      toolExpectationViolations(
+        [
+          { name: 'git_commit', status: 'error' },
+          { name: 'git_commit', status: 'error' },
+          { name: 'run_shell', status: 'done' },
+        ],
+        { requireTools: ['git_commit'] },
+      ),
+      ['required tool never succeeded: git_commit (2 call(s), none done)'],
+    )
+  })
+
+  it('does not count a call with no recorded outcome as a success', () => {
+    assert.deepEqual(
+      toolExpectationViolations(called('git_commit'), { requireTools: ['git_commit'] }),
+      ['required tool never succeeded: git_commit (1 call(s), none done)'],
+    )
+  })
+
+  it('passes a required tool once any call succeeded after earlier failures', () => {
+    assert.deepEqual(
+      toolExpectationViolations(
+        [
+          { name: 'mcp__copse__git_commit', status: 'error' },
+          { name: 'mcp__copse__git_commit', status: 'done' },
+        ],
+        { requireTools: ['git_commit'] },
+      ),
+      [],
+    )
+  })
+
+  it('still lets requireAnyTools accept an attempted call whatever its outcome', () => {
+    assert.deepEqual(
+      toolExpectationViolations([{ name: 'git_commit', status: 'error' }], {
+        requireAnyTools: ['git_commit'],
       }),
       [],
     )
