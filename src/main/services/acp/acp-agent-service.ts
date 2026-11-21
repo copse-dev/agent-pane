@@ -110,8 +110,10 @@ import {
   awaitStagedDiffDecision,
   captureWorktreeBaseline,
   listWorktreeChangesSince,
+  listWorktreeGitContentStates,
   stageDiff,
 } from '../diff-queue.ts'
+import { auditablePaths, formatBypassedWriteAudit, type BypassedWrite } from './acp-edit-audit.ts'
 import type { WorktreeBaseline } from '../diff-queue.ts'
 import { beginWorktreeWriter } from '../worktree-writers.ts'
 import { networkDenialMarker, networkDenialsSince } from '../../project-sandbox/network-scope.ts'
@@ -1716,17 +1718,25 @@ async function emitBypassedWriteAudit(
   queueWrites: ReadonlySet<string>,
   onChunk: (chunk: StreamChunk) => void,
 ): Promise<void> {
-  let bypassed: string[]
+  let bypassed: BypassedWrite[]
   try {
-    bypassed = (await listWorktreeChangesSince(baseline)).filter((p) => !queueWrites.has(p))
+    bypassed = (await listWorktreeChangesSince(baseline)).filter((c) => !queueWrites.has(c.path))
   } catch {
     return
   }
   if (bypassed.length === 0) return
+  // Whether git holds each file's content is extra detail; without it the
+  // card still names the files.
+  const auditable = auditablePaths(bypassed)
+  const states = auditable ? await listWorktreeGitContentStates(auditable).catch(() => null) : null
   const id = `acp-edit-audit-${randomUUID()}`
   onChunk({
     type: 'tool_call',
-    toolCall: { id, name: 'workspace_edit_audit', args: { files: bypassed } },
+    toolCall: {
+      id,
+      name: 'workspace_edit_audit',
+      args: { files: bypassed.map((c) => c.path) },
+    },
   })
   // Warn, don't revert: the change may be legitimate (the agent's own shell, a
   // formatter it ran) or external (another editor mid-turn) — the audit can't
@@ -1734,12 +1744,7 @@ async function emitBypassedWriteAudit(
   onChunk({
     type: 'tool_result',
     toolCallId: id,
-    result:
-      'Warning: these files changed on disk during the agent’s turn outside the approved ' +
-      "sphere — no diff was reviewed for them. The write came from the agent's own " +
-      'tools (e.g. its shell) or from something else entirely:\n' +
-      bypassed.map((p) => `- ${p}`).join('\n') +
-      '\nReview them (e.g. git diff) before relying on the workspace state.',
+    result: formatBypassedWriteAudit(bypassed, states),
     isError: false,
   })
 }
