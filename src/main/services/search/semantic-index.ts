@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 import { execFile, spawn } from 'node:child_process'
 import { access, mkdir, open, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { cpus, setPriority } from 'node:os'
@@ -30,6 +31,7 @@ import { semanticIndexAllowed, semanticIndexPending } from './workspace-index-ga
 import { isNonNull } from '@shared/nullish.ts'
 import { isNonEmptyString } from '@shared/nullish.ts'
 import { sleep } from '@copse/std/sleep.ts'
+import { withTimeout } from '@copse/std/with-timeout.ts'
 import { writeFileAtomic } from '@copse/std/write-file-atomic.ts'
 
 /**
@@ -89,7 +91,7 @@ export function gortexIndexKillTimeoutMs(): number {
 /** Number of worker threads the indexer may use, capped for CPU fairness (#517). */
 export function semanticThreadCap(): number {
   const cores = Math.max(1, cpus().length)
-  return Math.max(1, Math.min(SEMANTIC_MAX_THREADS, Math.floor(cores / 2)))
+  return clamp(Math.floor(cores / 2), 1, SEMANTIC_MAX_THREADS)
 }
 
 /**
@@ -454,17 +456,11 @@ function runDaemonSpawningCommand(
 
 async function abortGortexRuns(runs: readonly DaemonSpawningRun[]): Promise<void> {
   for (const run of runs) run.abort()
-  let timer: ReturnType<typeof setTimeout> | undefined
-  try {
-    await Promise.race([
-      Promise.allSettled(runs.map((run) => run.settled)),
-      new Promise<void>((resolve_) => {
-        timer = setTimeout(resolve_, DAEMON_SPAWN_SETTLE_MS)
-      }),
-    ])
-  } finally {
-    clearTimeout(timer)
-  }
+  await withTimeout(
+    Promise.allSettled(runs.map((run) => run.settled)),
+    DAEMON_SPAWN_SETTLE_MS,
+    () => undefined,
+  )
 }
 
 async function probeWithOpts(

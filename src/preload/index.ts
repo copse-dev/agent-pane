@@ -730,6 +730,15 @@ const api: ApiClient = {
     },
   },
   sshPrompt: {
+    onDismissed: (handler: (id: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, id: unknown): void => {
+        if (typeof id === 'string') handler(id)
+      }
+      ipcRenderer.on('ssh-prompt:dismissed', listener)
+      return (): void => {
+        ipcRenderer.off('ssh-prompt:dismissed', listener)
+      }
+    },
     respond: (id: string, value: string, remember = false) =>
       ipcRenderer.invoke('ssh-prompt:respond', id, value, remember),
     onRequest: (
@@ -1910,8 +1919,6 @@ const api: ApiClient = {
   },
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url),
-    openWorkspaceFileInBrowser: (projectId: string, threadId: string, path: string) =>
-      ipcRenderer.invoke('shell:open-workspace-file-in-browser', projectId, threadId, path),
   },
   editors: {
     list: () => ipcRenderer.invoke('editors:list'),

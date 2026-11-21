@@ -1,6 +1,7 @@
 import type * as Monaco from 'monaco-editor'
 import { createWorkerHandout } from './worker-handout.ts'
 import { installMonacoEditorTheme } from '../dom/editor-theme.ts'
+import { withTimeout } from '@copse/std/with-timeout.ts'
 
 declare global {
   // Monaco's ESM worker loader joins `vs/...` module ids against this root.
@@ -226,20 +227,14 @@ export function loadMonaco(): Promise<typeof Monaco> {
  */
 export function ensureMonacoEditorWorker(): Promise<void> {
   if (typeof Worker === 'undefined') return Promise.resolve()
-  let timeoutId: ReturnType<typeof setTimeout> | undefined
-  return Promise.race([
+  return withTimeout(
     // This warmed instance is the one EditorWorkerService's first diff request
     // takes over (see EDITOR_WORKER_SERVICE_LABEL for the coupling contract).
     monacoWorkers.warm(EDITOR_WORKER_SERVICE_LABEL).then(
       () => undefined,
       () => undefined,
     ),
-    new Promise<void>((resolve) => {
-      timeoutId = setTimeout(() => {
-        resolve()
-      }, 2_000)
-    }),
-  ]).finally(() => {
-    if (timeoutId !== undefined) clearTimeout(timeoutId)
-  })
+    2_000,
+    () => undefined,
+  )
 }

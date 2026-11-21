@@ -130,6 +130,8 @@ export interface FollowUpSuggestionsMount {
 interface CachedSuggestions {
   turnKey: string
   suggestions: FollowUpSuggestion[]
+  /** Fetched after the turn ended, so from the whole answer, not a prefix. */
+  settled: boolean
 }
 
 export function mountFollowUpSuggestions(
@@ -150,9 +152,17 @@ export function mountFollowUpSuggestions(
   // threads go idle), so A's suggestions were silently dropped and never cached.
   let offered: OfferedClientAction[] = []
   const fetchTokens = new Map<string, number>()
+  // Each thread's outstanding fetch: the exchange and phase it is for, and its
+  // token. `threads_changed` fires several times a second while a turn
+  // streams, and every fetch costs git/gh processes on main plus a small-model
+  // call; without this, each event started another fetch that superseded the
+  // last, so none was ever cached. A fetch whose token is bumped will be
+  // discarded, so it stops standing in for a new one.
+  const inFlightFetches = new Map<string, { key: string; token: number }>()
   const nextFetchToken = (threadId: string): number => {
     const token = (fetchTokens.get(threadId) ?? 0) + 1
     fetchTokens.set(threadId, token)
+    inFlightFetches.delete(threadId)
     return token
   }
   const changesRefreshTokens = new Map<string, number>()
@@ -165,6 +175,21 @@ export function mountFollowUpSuggestions(
   let displayedThreadId: string | null = null
   const suggestionsByThread = new Map<string, CachedSuggestions>()
   const consumedTurnKeys = new Map<string, string>()
+
+  /**
+   * The cached set that can stand for the thread's last exchange now, if any.
+   * A set fetched mid-turn saw only a prefix of the answer: it serves the rest
+   * of the turn, and the turn's end fetches once more from the finished answer.
+   */
+  function servingCache(threadId: string, turnKey: string): CachedSuggestions | null {
+    const cached = suggestionsByThread.get(threadId)
+    if (cached?.turnKey !== turnKey) return null
+    return cached.settled || !turnSettled(threadId) ? cached : null
+  }
+
+  function turnSettled(threadId: string): boolean {
+    return store.getState().threads.find((thread) => thread.id === threadId)?.status !== 'running'
+  }
 
   function consumeSuggestions(threadId: string): void {
     // Creating a PR appends a synthetic assistant card, not a new user turn.
@@ -285,8 +310,8 @@ export function mountFollowUpSuggestions(
     if (consumedTurnKey === exchange.turnKey) return
     if (consumedTurnKey) consumedTurnKeys.delete(threadId)
 
-    const cached = suggestionsByThread.get(threadId)
-    if (cached?.turnKey === exchange.turnKey) {
+    const cached = servingCache(threadId, exchange.turnKey)
+    if (cached) {
       if (store.getState().activeThreadId === threadId) {
         renderSuggestions(threadId, cached.suggestions)
       }
@@ -295,8 +320,12 @@ export function mountFollowUpSuggestions(
 
     const { activeProjectId } = store.getState()
     if (!activeProjectId) return
+    const settled = turnSettled(threadId)
+    const fetchKey = `${exchange.turnKey}\0${settled ? 'settled' : 'live'}`
+    if (inFlightFetches.get(threadId)?.key === fetchKey) return
 
     const token = nextFetchToken(threadId)
+    inFlightFetches.set(threadId, { key: fetchKey, token })
     try {
       const suggestions = await api.agent.suggestFollowUps(
         activeProjectId,
@@ -304,7 +333,7 @@ export function mountFollowUpSuggestions(
         JSON.stringify(exchange.context),
       )
       if (token !== fetchTokens.get(threadId)) return
-      suggestionsByThread.set(threadId, { turnKey: exchange.turnKey, suggestions })
+      suggestionsByThread.set(threadId, { turnKey: exchange.turnKey, suggestions, settled })
       if (store.getState().activeThreadId === threadId) {
         renderSuggestions(threadId, suggestions)
         // Reconcile the Changes chip against the thread checkout immediately —
@@ -316,6 +345,8 @@ export function mountFollowUpSuggestions(
       if (token !== fetchTokens.get(threadId)) return
       suggestionsByThread.delete(threadId)
       if (store.getState().activeThreadId === threadId) clearSuggestions()
+    } finally {
+      if (inFlightFetches.get(threadId)?.token === token) inFlightFetches.delete(threadId)
     }
   }
 
@@ -346,7 +377,7 @@ export function mountFollowUpSuggestions(
     if (suggestionsByThread.get(activeId) !== cached) return
     const next = reconcileChangesSuggestion(cached.suggestions, stats)
     if (next === cached.suggestions) return
-    suggestionsByThread.set(activeId, { turnKey: cached.turnKey, suggestions: next })
+    suggestionsByThread.set(activeId, { ...cached, suggestions: next })
     if (store.getState().activeThreadId === activeId) renderSuggestions(activeId, next)
   }
 
@@ -375,8 +406,8 @@ export function mountFollowUpSuggestions(
     }
     if (consumedTurnKey) consumedTurnKeys.delete(activeId)
 
-    const cached = suggestionsByThread.get(activeId)
-    if (cached?.turnKey === exchange.turnKey) {
+    const cached = servingCache(activeId, exchange.turnKey)
+    if (cached) {
       renderSuggestions(activeId, cached.suggestions)
       return
     }
@@ -388,11 +419,12 @@ export function mountFollowUpSuggestions(
     store.on('thread_status_changed', (tid, status) => {
       if (status === 'running') {
         suggestionsByThread.delete(tid)
+        // A fetch still out is for the exchange as it stood before this run,
+        // on a background thread too: drop its answer whenever it lands, and
+        // stop it standing in for the fetch the run's end makes.
+        nextFetchToken(tid)
         nextChangesRefreshToken(tid)
-        if (tid === store.getState().activeThreadId) {
-          nextFetchToken(tid)
-          clearSuggestions()
-        }
+        if (tid === store.getState().activeThreadId) clearSuggestions()
         return
       }
       if (status === 'idle') void maybeFetchSuggestions(tid)

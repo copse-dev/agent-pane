@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 import { CLASSIFIER_CALL_KIND, type ClassifierSubject } from '@shared/usage/classifier-use.ts'
 import { currentThreadExecutionContext } from '../thread-execution-context-store.ts'
 import { getActiveRunThread } from '../thread-models.ts'
@@ -49,9 +50,7 @@ export function recordClassifierCall(call: ClassifierCall): void {
     threadId,
     projectId,
     ...(call.verdictLabel !== null ? { scope: call.verdictLabel } : {}),
-    ...(call.confidence !== undefined
-      ? { confidence: Math.min(1, Math.max(0, call.confidence)) }
-      : {}),
+    ...(call.confidence !== undefined ? { confidence: clamp(call.confidence, 0, 1) } : {}),
     ...(call.usage
       ? {
           inputTokens: wholeNumber(call.usage.inputTokens),

@@ -16,6 +16,7 @@ import type {
 } from '@shared/types'
 import { normalizeToolExecuteResult, type ToolResultImage } from '@shared/types'
 import { wrapExternalContent } from '@copse/agent/external-content.ts'
+import { errorMessage } from '@shared/errors.ts'
 import { formatSystemReminder } from '@copse/agent/hooks/inject-context.ts'
 import { markTurnExternalIngestion } from './security/turn-taint.ts'
 import {
@@ -145,6 +146,17 @@ function appendSystemReminders(
 function wrapProvenance(name: string, result: ToolExecuteResult): ToolExecuteResult {
   if (typeof result === 'string') return wrapExternalContent(name, result)
   return { ...result, result: wrapExternalContent(name, result.result) }
+}
+
+/**
+ * What an external tool's thrown error becomes. Its message can carry the same
+ * outside text as a result (an MCP server's error content, a remote response),
+ * and the agent loop hands it to the model as the tool result, so it gets the
+ * same envelope and marks the turn the same way.
+ */
+function externalToolError(name: string, error: unknown): Error {
+  markTurnExternalIngestion()
+  return new Error(wrapExternalContent(name, errorMessage(error)), { cause: error })
 }
 
 export class ToolRegistry {
@@ -381,7 +393,11 @@ export class ToolRegistry {
       // The registered execute wrapper parses again. Pass the same input used
       // for the first parse so schema transforms are applied exactly once to
       // the value each consumer sees.
-      result = await tool.execute(executeArgs, signal)
+      try {
+        result = await tool.execute(executeArgs, signal)
+      } catch (error) {
+        throw tool.provenance === 'external' ? externalToolError(tool.name, error) : error
+      }
       if (identity && !isToolAllowedInReadonlyMode(name, { mcpAnnotations })) {
         // A tool that can mutate the workspace ran — this thread's cached
         // results may now be stale.
@@ -404,6 +420,7 @@ export class ToolRegistry {
     // can tell them apart from workspace- and Copse-authored text. Applied
     // after caching (the cache holds the bare result) and before hook-injected
     // context, which is Copse-authored and must stay outside the envelope.
+    // A thrown error from such a tool is wrapped where it is caught, above.
     if (tool.provenance === 'external') {
       // Phase 4: the turn now carries untrusted bytes — remembered memories
       // record that provenance so recall can surface it in later threads.

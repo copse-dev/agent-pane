@@ -83,6 +83,10 @@ Source files remain authoritative; deleting this cache is safe.
                                      #   Shells-tab PTYs (#2433); fish remains shell-managed
   <threadId>/
     meta.json                        # mutable thread metadata (everything except messages)
+                                     # crossThreadPromptCounts: counts per sender/user-turn scope,
+                                     # JSON-encoded [senderThreadId, senderTurnTreeId] keys
+                                     # (turn tree null for a sender run without one); absent means zero
+                                     # crossThreadPromptsUsed: legacy unscoped incoming count
     events.jsonl                     # append-only spine: message + hook/audit + plan lines
     agent-history.json               # provider-format LLM resume snapshot (issue #993)
     openai-agent-session.json        # private hosted session, pending input, terminal result + Git import checkpoint
@@ -92,6 +96,11 @@ Source files remain authoritative; deleting this cache is safe.
     history-edit-undo.json           # previous transcript/history for one-step Undo (optional, private)
     messages/<messageId>.md          # OKF: verbatim message content (frontmatter + body)
     messages/<messageId>.reasoning.md  # OKF: thinking text (optional)
+    messages/~rev-<sha256>.md        # an already-saved message's replacement prose; its reasoning,
+                                     #   rich blocks, images and attachment snapshots likewise get
+                                     #   `~rev-<sha256>` names, so a failed spine write leaves the
+                                     #   previous files intact (see "re-finalized" below for when
+                                     #   superseded ones are removed)
     blobs/<messageId>.tool-<n>.result.txt        # verbatim result of the message's n-th tool call
     blobs/<messageId>.tool-<n>.args.json         # oversized tool args (when spilled from spine)
     blobs/<messageId>.tool-<n>.acp-content.json  # ACP tool-call display content (optional)
@@ -402,6 +411,21 @@ that arrives between turns). The writer replaces that message's spine line in
 place without reordering history, and rewrites its referenced result blob before
 the spine commit. In-progress tools are not re-finalized because v1 deliberately
 persists only terminal `done` / `error` tool states.
+
+A re-finalized message never overwrites a top-level file that a load verifies
+strictly. Its prose, reasoning, rich blocks, images and attachment snapshots are
+written first under `~rev-<sha256>` names, so a failed spine write leaves the
+previous line resolving against intact files. Once the new line has committed,
+the writer removes the replaced line's prose and reasoning files in `messages/`
+(the original `<messageId>.md` / `.reasoning.md` or an earlier revision) that no
+committed line references. A failed removal is logged and leaves an orphan; it
+never fails the write. Superseded blob revisions (`blobs/~rev-<sha256>…`) can be
+shared by two messages, so they stay until the next whole-thread save prunes
+unreferenced files (a history edit or its undo, for example) or the thread is
+deleted. A transcript read outside the store's write queue that took the previous
+spine folds the committed one again rather than skip the thread. A nested
+subagent transcript under `subagents/<subagentId>/` is still rewritten in place
+([#4438](https://github.com/copse-dev/agent-pane/issues/4438)).
 
 ## Machine-continuation line schema (`type: "machine_continuation"`)
 

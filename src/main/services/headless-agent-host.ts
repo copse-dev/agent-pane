@@ -33,6 +33,9 @@ import {
 import { getTaskSupervisor, type TaskSupervisor } from './supervisor/task-supervisor.ts'
 import { runWithThreadResourceStateLookup } from './thread-resource-fence.ts'
 import { runWithDecisionRecorder, type RecordedDecision } from './security/decision-log-store.ts'
+import { setExecutionAuditSink } from './execution-runtime/audit.ts'
+import { recordExecutionObservation } from './execution-runtime/audit-recorder.ts'
+import { withTimeout } from '@copse/std/with-timeout.ts'
 
 export interface HeadlessInteractionProfile {
   readonly approve?: ApprovalHandler
@@ -160,6 +163,11 @@ export async function runHeadlessAgent(
   run: HeadlessAgentRun,
   dependencies: HeadlessAgentDependencies = {},
 ): Promise<HeadlessAgentResult> {
+  // The execution audit (execution-runtime-security R1-7) records every
+  // in-turn process. The desktop registers this sink at startup; a headless
+  // host, such as an unattended container worker, never runs that bootstrap.
+  // Its lines reach this run's decisions through the scoped recorder below.
+  setExecutionAuditSink(recordExecutionObservation)
   const workspaceRoot = await canonicalWorkspaceRoot(profile.workspaceRoot, localWorkspaceFs)
   const threadId = nonEmptyStringOr(run.threadId, `headless-${randomUUID()}`)
   const projectId = nonEmptyStringOr(run.projectId, `headless-project-${randomUUID()}`)
@@ -329,11 +337,8 @@ export async function runHeadlessAgent(
                         })
                         const wait = run.waitForMachineContinuations
                         let machineContinuations = 0
-                        let resolveMachineWait: (() => void) | null = null
-                        const machineWait = wait
-                          ? new Promise<void>((resolve) => {
-                              resolveMachineWait = resolve
-                            })
+                        const machineWait: PromiseWithResolvers<void> | null = wait
+                          ? Promise.withResolvers()
                           : null
                         const dispatchAndWait = async (): Promise<void> => {
                           await dispatcher.dispatch({
@@ -347,23 +352,11 @@ export async function runHeadlessAgent(
                             },
                           })
                           if (wait && machineWait) {
-                            let timer: ReturnType<typeof setTimeout> | undefined
-                            try {
-                              await Promise.race([
-                                machineWait,
-                                new Promise<never>((_resolve, reject) => {
-                                  timer = setTimeout(() => {
-                                    reject(
-                                      new Error(
-                                        `Timed out waiting for ${String(wait.count)} machine continuations`,
-                                      ),
-                                    )
-                                  }, wait.timeoutMs)
-                                }),
-                              ])
-                            } finally {
-                              if (timer) clearTimeout(timer)
-                            }
+                            await withTimeout(machineWait.promise, wait.timeoutMs, () => {
+                              throw new Error(
+                                `Timed out waiting for ${String(wait.count)} machine continuations`,
+                              )
+                            })
                           }
                         }
                         if (wait) {
@@ -386,7 +379,7 @@ export async function runHeadlessAgent(
                             if (result === 'completed' || result === 'observed') {
                               machineContinuations += 1
                               if (machineContinuations >= wait.count) {
-                                resolveMachineWait?.()
+                                machineWait?.resolve()
                               }
                             }
                             return result

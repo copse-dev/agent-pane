@@ -1,3 +1,4 @@
+import { ellipsize } from '@copse/std/one-line-text.ts'
 import type { Project, ReviewerInputAnswer, Thread } from '@shared/types'
 import {
   reviewerInputAnswer,
@@ -83,7 +84,7 @@ export interface ThreadContextInput {
 
 function firstLine(text: string): string {
   const line = text.trim().split('\n', 1)[0] ?? ''
-  return line.length <= 90 ? line : `${line.slice(0, 89)}…`
+  return ellipsize(line, 90)
 }
 
 function prLabel(ref: GithubPrRef): string {

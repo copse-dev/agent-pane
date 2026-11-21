@@ -75,9 +75,16 @@ import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-re
 import {
   requireThreadExecutionContext,
   requireThreadExecutionOwner,
+  runWithThreadExecutionContext,
   type ThreadExecutionContext,
   type ThreadExecutionOwner,
 } from '../thread-execution-context.ts'
+import {
+  createAgentInitiatedTurnLease,
+  type AgentInitiatedTurnClaim,
+} from './agent-initiated-turn.ts'
+import { peerPromptSender, sendThreadPromptTool } from '../../tools/thread-tools.ts'
+import { createThread } from '../thread-store.ts'
 import { getAgentExecutionRoot } from '../execution-root.ts'
 import { suggestModelTool } from '../../tools/model-classifier-tool.ts'
 import {
@@ -1829,6 +1836,119 @@ describe('startAcpNativeBridge', () => {
     assert.equal(rpcResult(declined)['isError'], true)
     assert.match(contentText(declined) ?? '', /was not approved to continue/)
     assert.deepEqual(executed, [])
+  })
+
+  it('lets a turn the agent started itself send a thread prompt', async () => {
+    setPermissionGateForTests(() => Promise.resolve(true))
+    const previousRoot = process.env['COPSE_WORKSPACE_DIR']
+    const root = mkdtempSync(join(tmpdir(), 'copse-self-started-send-'))
+    process.env['COPSE_WORKSPACE_DIR'] = root
+    const threadId = 'self-started-sender'
+    const registry = new ToolRegistry()
+    registry.register(sendThreadPromptTool)
+    // Records which allowance a bridged call in this turn would charge.
+    const senders: ReturnType<typeof peerPromptSender>[] = []
+    registry.register({
+      name: 'staged_diffs',
+      description: 'List pending proposed file edits',
+      parameters: z.object({}),
+      execute: () => {
+        senders.push(peerPromptSender())
+        return Promise.resolve('no pending diffs')
+      },
+    })
+    try {
+      await createThread('project-1', {
+        id: 'self-started-destination',
+        title: 'Destination',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: 1,
+        updatedAt: 1,
+      })
+      await setSetting('threadSendAccess', [threadId])
+      bridge = await startAcpNativeBridge(registry, new AbortController().signal, { threadId })
+      assert.ok(bridge)
+      const currentBridge = bridge
+      // Bound as the ACP service binds a self-started turn: to the turn tree
+      // of the task it resumes, which the budget claim returns.
+      let binding: Promise<ThreadExecutionContext | null> | null = null
+      const lease = createAgentInitiatedTurnLease<ThreadExecutionContext>({
+        projectId: 'project-1',
+        threadId,
+        bridge: {
+          setExecutionContext: (context, turnTreeId) => {
+            if (!context) {
+              currentBridge.setExecutionContext(null)
+              return
+            }
+            runWithThreadExecutionContext(context, () => {
+              runWithActiveRunIdentity(threadId, () => {
+                if (turnTreeId !== undefined) setActiveRunTurnTreeId(asTurnTreeId(turnTreeId))
+                currentBridge.setExecutionContext(context)
+              })
+            })
+          },
+          setTurnSignal: (signal) => {
+            currentBridge.setTurnSignal(signal)
+          },
+          setPendingExecutionContext: (pending) => {
+            binding = pending
+            currentBridge.setPendingExecutionContext(pending)
+          },
+        },
+        resolveContext: async () => worktreeContext(threadId, '/worktrees/self-started'),
+        confirmContinue: async () => false,
+        beginWriter: () => (): void => {},
+        getAuthority: () => ({
+          claimAgentInitiatedTurn: async (): Promise<AgentInitiatedTurnClaim> => ({
+            status: 'granted',
+            turnTreeId: 'tree-self-started',
+            release: async (): Promise<void> => {},
+          }),
+        }),
+      })
+      lease.begin()
+      const bound = (): Promise<ThreadExecutionContext | null> | null => binding
+      assert.ok(await bound())
+      for (const init of initialized()) await rpc(currentBridge, init)
+      await rpc(currentBridge, {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: 'staged_diffs', arguments: {} },
+      })
+      // Charged to the resumed task's turn tree, not the run-without-a-turn fallback.
+      assert.deepEqual(senders, [
+        {
+          sourceThreadId: threadId,
+          sourceTurnTreeId: 'tree-self-started',
+          crossThreadScope: JSON.stringify([threadId, 'tree-self-started']),
+        },
+      ])
+      const result = await rpc(currentBridge, {
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: {
+          name: 'send_thread_prompt',
+          arguments: {
+            project_id: 'project-1',
+            thread_id: 'self-started-destination',
+            prompt: 'The background build finished; please review it.',
+          },
+        },
+      })
+      // It reaches the desktop sender instead of being refused for lack of a user turn.
+      assert.equal(contentText(result), 'Open the desktop window to send a prompt.')
+      lease.end()
+    } finally {
+      await setSetting('threadSendAccess', [])
+      if (previousRoot === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previousRoot
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('keeps concurrent thread bridges resolving their own worktree roots', async () => {

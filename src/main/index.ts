@@ -41,6 +41,8 @@ import { captureExplainerFrames } from './windows/explainer-preview.ts'
 import { attachWebContentsLockdown } from './windows/web-contents-lockdown.ts'
 import {
   attachBrowserGuestWindowOpen,
+  authorizeBrowserPartitionPreview,
+  browserPartitionHasPreview,
   getAgentBrowserSession,
   getBrowserSessionForPartition,
   isBrowserWebContents,
@@ -262,6 +264,9 @@ import {
   renameThreadWorktreeBranchAfterTitle,
 } from './services/thread-checkout-transaction.ts'
 import { getAutomationService } from './services/automations/automation-service.ts'
+import { setAutomationRunCorroborator } from './services/execution-runtime/principal.ts'
+import { setExecutionAuditSink } from './services/execution-runtime/audit.ts'
+import { recordExecutionObservation } from './services/execution-runtime/audit-recorder.ts'
 import { getBranchCiAutomationService } from './services/automations/branch-ci-automation-service.ts'
 import { getTaskSupervisor } from './services/supervisor/task-supervisor.ts'
 import { installLongTaskWakeConsumer } from './services/supervisor/long-task-wake.ts'
@@ -334,6 +339,8 @@ installProcessFaultHandlers({
 setBrowserSessionPlatform({
   createWindow: (options) => new BrowserWindow(options),
   getAgentSession: (scope) => getAgentBrowserSession(scope),
+  authorizePreview: authorizeBrowserPartitionPreview,
+  hasPreview: browserPartitionHasPreview,
   showUrl: (url, partition) => {
     const win = getMainWindow()
     if (!win || win.isDestroyed()) return
@@ -739,6 +746,14 @@ app
     setHookQueueMessageSender((payload) => {
       if (!win.isDestroyed()) win.webContents.send('agent:hook-queue-message', payload)
     })
+
+    // Execution audit (execution-runtime-security R1): every in-turn process
+    // records its runtime and principal; automation principals need the
+    // schedule's own record to corroborate the thread's claim.
+    setAutomationRunCorroborator((projectId, threadId, automation) =>
+      getAutomationService().ownsRunThread(projectId, threadId, automation),
+    )
+    setExecutionAuditSink(recordExecutionObservation)
 
     const alertUser = createElectronUserAlertSender(win, app.dock, getFocusedMainWindow)
     setExplainerPreviewCapture(captureExplainerFrames)

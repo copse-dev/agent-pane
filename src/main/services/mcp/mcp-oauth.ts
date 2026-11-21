@@ -38,6 +38,7 @@ import type {
   OAuthTokens,
 } from '@modelcontextprotocol/sdk/shared/auth.js'
 import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js'
+import { isStaticPreviewUrl } from '../browser/static-preview-server.ts'
 import {
   canStoreMcpOAuth,
   deleteMcpOAuthRecord,
@@ -235,10 +236,8 @@ async function openLoopbackCallback(
   state: string,
   preferredPorts: readonly number[],
 ): Promise<LoopbackCallback> {
-  let settle: { resolve: (code: string) => void; reject: (error: Error) => void } | undefined
-  const code = new Promise<string>((resolve, reject) => {
-    settle = { resolve, reject }
-  })
+  const settle = Promise.withResolvers<string>()
+  const code = settle.promise
   // A refusal can arrive while the first `auth()` leg is still running, before
   // anything awaits `code`; without a handler that rejection would be unhandled.
   code.catch(() => undefined)
@@ -263,11 +262,11 @@ async function openLoopbackCallback(
       const reason = (url.searchParams.get('error_description') ?? error ?? 'no code returned')
         .replace(/\s+/g, ' ')
         .slice(0, 200)
-      settle?.reject(new Error(`The server declined the sign-in: ${reason}`))
+      settle.reject(new Error(`The server declined the sign-in: ${reason}`))
       return
     }
     response.end(callbackPage('Signed in', 'You can close this tab and return to Copse.'))
-    settle?.resolve(authorizationCode)
+    settle.resolve(authorizationCode)
   })
   let port: number | undefined
   for (const candidate of preferredPorts) {
@@ -428,7 +427,10 @@ export async function signInMcpServer(
         tokens = next
       },
       redirectToAuthorization: async (authorizationUrl) => {
-        if (authorizationUrl.protocol !== 'https:' && authorizationUrl.protocol !== 'http:') {
+        if (
+          (authorizationUrl.protocol !== 'https:' && authorizationUrl.protocol !== 'http:') ||
+          isStaticPreviewUrl(authorizationUrl.href)
+        ) {
           throw new Error('The server returned an authorization URL Copse will not open.')
         }
         await dependencies.openExternal(authorizationUrl.href)

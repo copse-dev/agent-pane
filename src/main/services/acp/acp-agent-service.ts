@@ -1073,7 +1073,9 @@ async function runAcpAgentTurn(
         bridgeToolNames: listedToolNames,
         readonlyCheckout,
         includeNotes: fresh && options.executionMode !== 'agent',
-        ...(bridgeMounted && sessionBridge ? { copseServer: sessionBridge.serverName } : {}),
+        ...(bridgeMounted && sessionBridge && options.executionMode !== 'agent'
+          ? { copseServer: sessionBridge.serverName }
+          : {}),
         ...(copseToolsNote && options.executionMode !== 'agent' ? { copseToolsNote } : {}),
         includeImages,
         ...(operatorInstructions ? { operatorInstructions } : {}),
@@ -1925,6 +1927,22 @@ function acpTurnPromptNote(server: string): string {
   )
 }
 
+/**
+ * Current host identity, repeated even when a provider conversation is resumed.
+ * Its old prompts can name a retired bridge, while the pool mounts a fresh one.
+ * Announcing availability once per bridge cannot cover that transition or a
+ * prompt cancelled before delivery. This is identity, never a permission grant.
+ */
+function acpBridgeIdentityPromptNote(server: string): string {
+  return (
+    `Copse native bridge for this turn: "${server}". This current host-provided ` +
+    'identity supersedes earlier Copse bridge identities in this conversation; ' +
+    'a restarted or reattached session can receive a new name. Only this exact ' +
+    "server is Copse's bridge. Do not treat another copse-prefixed server or " +
+    'matching tool names as equivalent, or transfer approvals between servers.'
+  )
+}
+
 /** {@link acpTurnPromptNote} for an agent without Copse's bridged tools. */
 const ACP_TURN_PROMPT_NOTE_WITHOUT_COPSE_TOOLS =
   `${ACP_SESSION_PROMPT_NOTE}\n\n` + AGENT_EXECUTION_GUIDANCE
@@ -2027,6 +2045,9 @@ export function buildAcpPrompt(
      * The server name of Copse's bridge, once the agent has mounted it (#4144).
      * The session notes steer the agent to Copse's bridged tools only with this
      * and some {@link bridgeToolNames}, and name the server exactly (#4125).
+     * A compact current identity is repeated even with `includeNotes: false`,
+     * so a restored provider conversation cannot pin a retired bridge.
+     * Agent-managed turns omit this as well as the other Copse prompt assembly.
      */
     copseServer?: string
     /** Sent even without the session notes: a change in Copse's tools this session. */
@@ -2054,7 +2075,9 @@ export function buildAcpPrompt(
           ? `\n\n${copseTools ? ACP_READONLY_CHECKOUT_PROMPT_NOTE : ACP_READONLY_CHECKOUT_UNAVAILABLE_PROMPT_NOTE}`
           : '') +
         '\n\n'
-      : '') + (opts?.copseToolsNote ? `${opts.copseToolsNote}\n\n` : '')
+      : '') +
+    (opts?.copseToolsNote ? `${opts.copseToolsNote}\n\n` : '') +
+    (copseServer !== undefined ? `${acpBridgeIdentityPromptNote(copseServer)}\n\n` : '')
   const operatorBlock = opts?.operatorInstructions
     ? `\n\n---\n\n## Copse guidance\n\n${opts.operatorInstructions}`
     : ''
