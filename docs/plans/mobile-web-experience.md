@@ -2,6 +2,24 @@
 
 Tracking: [#659](https://github.com/copse-dev/agent-pane/issues/659)
 
+## The live state carries only watched transcripts (2026-11-21, #4445)
+
+The desktop published the transcript of every thread it had loaded, inline images included,
+and sent the whole project again on each streamed token, whether or not a phone was connected.
+With a few large transcripts open, one `remote:publish` call passed 1 GB, and the renderer
+aborted while serializing it, so the window reloaded.
+
+Main now records the threads clients poll through the scoped state read. A poll keeps a thread
+watched for 15 s, and at most 8 threads are watched. Main hands the list to every app window
+(`remote:watched`, `remote:watched-changed`). The desktop publishes transcripts for watched
+threads only, and every other thread as a row in the `messagesLoaded: false` shape clients
+already fill from the saved transcript. It also re-sends a project only when that project
+changed. With no phone watching, a 962-thread project with eight large transcripts loaded
+publishes 0.2 MB instead of about 640 MB.
+
+The cost: a chat a phone has just opened shows its saved view for one poll, until its live
+view is published.
+
 ## Performance (2026-11-20)
 
 Measured before changing anything, then after, against the same build:

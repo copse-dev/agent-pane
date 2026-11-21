@@ -13,7 +13,23 @@ import {
   type RemoteScope,
   type RemoteState,
   type RemoteView,
+  type RemoteWatchedThread,
 } from '../../../shared/remote-interface.ts'
+import { broadcastToAppWindows } from '../../windows/app-window-broadcast.ts'
+
+/**
+ * How long one poll keeps a thread watched. Clients poll an open chat every
+ * 1–2.5 s and stop while their page is hidden, so this outlasts a slow poll
+ * and lets a closed chat's transcript leave the published view soon after.
+ */
+export const REMOTE_WATCH_TTL_MS = 15_000
+
+/**
+ * Each phone or shared-chat page polls one chat, so a few devices fit well
+ * inside this. A client naming ever more threads cannot make the desktop
+ * publish more transcripts than this.
+ */
+const MAX_WATCHED = 8
 
 /** Live renderer views are replicas; all prompt and queue writes still use mobile-chat. */
 export class RemoteInterface {
@@ -24,6 +40,10 @@ export class RemoteInterface {
   private pending = new Map<string, (reply: RemoteReply) => void>()
   /** Snapshots already built at the current revision, by scope. */
   private snapshots = new Map<string, RemoteState>()
+  /** Threads clients have polled, by `projectId\0threadId`, least recently polled first. */
+  private watching = new Map<string, RemoteWatchedThread & { seenAt: number }>()
+  private watchTimer: ReturnType<typeof setTimeout> | null = null
+  private watchListeners = new Set<(watched: RemoteWatchedThread[]) => void>()
 
   /**
    * The live views, or the part of them one client is showing.
@@ -38,6 +58,8 @@ export class RemoteInterface {
    * key its own serialization on it.
    */
   snapshot(scope?: RemoteScope): RemoteState {
+    // A client asking for one thread is showing it: keep its transcript published.
+    if (scope?.threadId !== undefined) this.watch(scope.projectId, scope.threadId)
     const key = scope ? `${scope.projectId}\0${scope.threadId ?? ''}` : ''
     const cached = this.snapshots.get(key)
     if (cached) return cached
@@ -74,6 +96,76 @@ export class RemoteInterface {
     this.views.set(view.projectId, view)
     this.revision++
     this.snapshots.clear()
+  }
+
+  /**
+   * The threads clients are showing, which the desktop publishes in full.
+   *
+   * The desktop used to publish the transcript of every thread it had loaded,
+   * and to send that whole project again on every streamed token. A project
+   * with a few large transcripts open passed 1 GB per call, which aborts the
+   * renderer while it serializes the call (#4445). A scoped poll never reads a
+   * sibling's transcript, so only the polled threads need one.
+   */
+  watched(): RemoteWatchedThread[] {
+    return [...this.watching.values()].map(({ projectId, threadId }) => ({ projectId, threadId }))
+  }
+
+  /** Called with the full list whenever a thread starts or stops being watched. */
+  onWatchedChange(listener: (watched: RemoteWatchedThread[]) => void): () => void {
+    this.watchListeners.add(listener)
+    return () => {
+      this.watchListeners.delete(listener)
+    }
+  }
+
+  private watch(projectId: string, threadId: string): void {
+    const key = `${projectId}\0${threadId}`
+    const known = this.watching.get(key)
+    if (known) {
+      known.seenAt = Date.now()
+      // Re-insert so the map stays least recently polled first.
+      this.watching.delete(key)
+      this.watching.set(key, known)
+      return
+    }
+    this.watching.set(key, { projectId, threadId, seenAt: Date.now() })
+    for (const oldest of this.watching.keys()) {
+      if (this.watching.size <= MAX_WATCHED) break
+      this.watching.delete(oldest)
+    }
+    this.notifyWatched()
+    this.scheduleWatchExpiry()
+  }
+
+  private scheduleWatchExpiry(): void {
+    if (this.watchTimer !== null) return
+    const oldest = this.watching.values().next().value
+    if (!oldest) return
+    const delay = Math.max(0, oldest.seenAt + REMOTE_WATCH_TTL_MS - Date.now())
+    this.watchTimer = setTimeout(() => {
+      this.watchTimer = null
+      this.expireWatches()
+    }, delay)
+    // A watch must never keep the app (or a test run) alive on its own.
+    this.watchTimer.unref()
+  }
+
+  private expireWatches(): void {
+    const cutoff = Date.now() - REMOTE_WATCH_TTL_MS
+    let changed = false
+    for (const [key, entry] of this.watching) {
+      if (entry.seenAt > cutoff) continue
+      this.watching.delete(key)
+      changed = true
+    }
+    if (changed) this.notifyWatched()
+    this.scheduleWatchExpiry()
+  }
+
+  private notifyWatched(): void {
+    const watched = this.watched()
+    for (const listener of this.watchListeners) listener(watched)
   }
 
   attach(deliver: (id: string, request: RemoteRead) => void): () => void {
@@ -147,6 +239,15 @@ export function initRemoteInterface(win: BrowserWindow, ipcMain: IpcMain): void 
     assertMainFrameSender(event, win)
     const reply = parseIpcArgs(remoteReplySchema, args)
     remoteInterface.reply(reply)
+  })
+  // Every window that publishes needs the list, and a reloaded one asks for it.
+  ipcMain.handle('remote:watched', (event) => {
+    assertMainFrameSender(event, win)
+    return remoteInterface.watched()
+  })
+  // For the app's lifetime: other main windows keep publishing after this one closes.
+  remoteInterface.onWatchedChange((watched) => {
+    broadcastToAppWindows('remote:watched-changed', watched)
   })
   win.once('closed', detach)
 }

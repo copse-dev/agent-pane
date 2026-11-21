@@ -1837,6 +1837,13 @@
           1
         ]
       },
+      "remote:watched": {
+        "api": "remote.watched",
+        "args": [
+          0,
+          0
+        ]
+      },
       "review:dismiss-finding": {
         "api": "review.dismissFinding",
         "args": [
@@ -3250,6 +3257,13 @@
       },
       "popout:switch-mode": {
         "api": "panes.onSwitchMode",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "remote:watched-changed": {
+        "api": "remote.onWatchedChanged",
         "args": [
           1,
           1

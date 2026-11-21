@@ -1,7 +1,11 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { RemoteInterface } from './remote-interface.ts'
-import type { RemoteRead, RemoteView } from '../../../shared/remote-interface.ts'
+import { REMOTE_WATCH_TTL_MS, RemoteInterface } from './remote-interface.ts'
+import type {
+  RemoteRead,
+  RemoteView,
+  RemoteWatchedThread,
+} from '../../../shared/remote-interface.ts'
 
 const request: RemoteRead = { version: 1, channel: 'agent:running-thread-ids', args: [] }
 
@@ -132,5 +136,52 @@ describe('remote desktop relay', () => {
     assert.notEqual(before.sessionId, after.sessionId)
     assert.deepEqual(after.views, [])
     assert.ok(after.revision > before.revision)
+  })
+
+  it('watches the threads clients poll and forgets them once polls stop (#4445)', (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+    const host = new RemoteInterface()
+    host.attach(() => {})
+    const changes: RemoteWatchedThread[][] = []
+    host.onWatchedChange((watched) => changes.push(watched))
+
+    // A whole-project or unscoped read shows no one thread.
+    host.snapshot()
+    host.snapshot({ projectId: 'p' })
+    assert.deepEqual(host.watched(), [])
+
+    host.snapshot({ projectId: 'p', threadId: 'a' })
+    assert.deepEqual(host.watched(), [{ projectId: 'p', threadId: 'a' }])
+    assert.equal(changes.length, 1)
+
+    // Polling keeps it watched without announcing anything new.
+    for (let poll = 0; poll < 10; poll++) {
+      context.mock.timers.tick(2_500)
+      host.snapshot({ projectId: 'p', threadId: 'a' })
+    }
+    assert.equal(changes.length, 1)
+
+    host.snapshot({ projectId: 'p', threadId: 'b' })
+    assert.equal(changes.length, 2)
+    // Only `b` is polled from here on: `a` lapses, then `b` once its polls stop too.
+    for (let poll = 0; poll < 7; poll++) {
+      context.mock.timers.tick(2_500)
+      host.snapshot({ projectId: 'p', threadId: 'b' })
+    }
+    assert.deepEqual(host.watched(), [{ projectId: 'p', threadId: 'b' }])
+    context.mock.timers.tick(REMOTE_WATCH_TTL_MS + 1)
+    assert.deepEqual(host.watched(), [])
+    assert.deepEqual(changes.at(-1), [])
+  })
+
+  it('bounds the threads one client can make it watch', () => {
+    const host = new RemoteInterface()
+    host.attach(() => {})
+    for (let index = 0; index < 100; index++) {
+      host.snapshot({ projectId: 'p', threadId: `t${String(index)}` })
+    }
+    const watched = host.watched()
+    assert.equal(watched.length, 8)
+    assert.equal(watched.at(-1)?.threadId, 't99', 'the most recent polls are kept')
   })
 })

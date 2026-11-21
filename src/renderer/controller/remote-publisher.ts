@@ -2,21 +2,48 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { MobileCompanionState } from '@shared/types/mobile-companion.ts'
 import type { Thread } from '@shared/types'
-import { remoteViewSchema } from '@shared/remote-interface.ts'
+import { remoteViewSchema, type RemoteWatchedThread } from '@shared/remote-interface.ts'
 
-/** Only an opted-in desktop owner publishes; remote clients never autosave these views. */
+interface CapturedView {
+  projectId: string
+  threads: Thread[]
+}
+
+/** What a project was last published from, so an unchanged project is not sent again. */
+interface PublishedFrom {
+  threads: Thread[]
+  watching: string
+}
+
+/**
+ * Only an opted-in desktop owner publishes; remote clients never autosave these views.
+ *
+ * A view carries every thread's metadata, and a transcript only for the threads
+ * a paired client is polling. Clients read any other thread's saved transcript
+ * from disk, and a scoped poll never returns a sibling's transcript anyway.
+ * Publishing every loaded transcript, and the whole project again on each
+ * streamed token, passed 1 GB per call on a large profile and aborted the
+ * renderer while it serialized the call (#4445).
+ */
 export function attachRemotePublisher(store: AppStore, api: ApiClient): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null
   let running = false
   let disposed = false
   let receivedState = false
-  const views = new Map<string, { projectId: string; threads: Thread[] }>()
+  let receivedWatched = false
+  /** Watched thread ids by project. */
+  let watched = new Map<string, Set<string>>()
+  const views = new Map<string, CapturedView>()
+  const published = new Map<string, PublishedFrom>()
 
   function capture(): void {
     const { activeProjectId, threads, backgroundThreads } = store.getState()
     if (activeProjectId) views.set(activeProjectId, { projectId: activeProjectId, threads })
     for (const { projectId, thread } of backgroundThreads) {
       const existing = views.get(projectId)?.threads ?? []
+      // Already captured as this very object: keep the array, so the project
+      // still reads as unchanged.
+      if (existing.includes(thread)) continue
       views.set(projectId, {
         projectId,
         threads: [...existing.filter((item) => item.id !== thread.id), thread],
@@ -24,12 +51,30 @@ export function attachRemotePublisher(store: AppStore, api: ApiClient): () => vo
     }
   }
 
+  function forClients(projectId: string, thread: Thread): Thread {
+    if (thread.messages.length === 0 || watched.get(projectId)?.has(thread.id)) return thread
+    // The shape the desktop uses for a thread it has not opened.
+    return { ...thread, messages: [], messagesLoaded: false }
+  }
+
   function publish(): void {
     timer = null
     if (!running || disposed) return
-    for (const value of views.values()) {
-      const view = remoteViewSchema.safeParse(value)
-      if (view.success) void api.remote.publish(view.data).catch(() => {})
+    for (const { projectId, threads } of views.values()) {
+      const watching = [...(watched.get(projectId) ?? [])].sort().join('\0')
+      const last = published.get(projectId)
+      if (last?.threads === threads && last.watching === watching) continue
+      const view = remoteViewSchema.safeParse({
+        projectId,
+        threads: threads.map((thread) => forClients(projectId, thread)),
+      })
+      if (!view.success) continue
+      const from: PublishedFrom = { threads, watching }
+      published.set(projectId, from)
+      void api.remote.publish(view.data).catch(() => {
+        // Not delivered: the next change sends this project again.
+        if (published.get(projectId) === from) published.delete(projectId)
+      })
     }
   }
 
@@ -38,6 +83,17 @@ export function attachRemotePublisher(store: AppStore, api: ApiClient): () => vo
     // Capture now: final background bookkeeping may drop the thread before the timer fires.
     capture()
     timer ??= setTimeout(publish, 150)
+  }
+
+  function setWatched(list: readonly RemoteWatchedThread[]): void {
+    const next = new Map<string, Set<string>>()
+    for (const { projectId, threadId } of list) {
+      const ids = next.get(projectId) ?? new Set<string>()
+      ids.add(threadId)
+      next.set(projectId, ids)
+    }
+    watched = next
+    schedule()
   }
 
   function setAvailability(state: Pick<MobileCompanionState, 'enabled' | 'running'>): void {
@@ -54,6 +110,10 @@ export function attachRemotePublisher(store: AppStore, api: ApiClient): () => vo
       receivedState = true
       setAvailability(state)
     }),
+    api.remote.onWatchedChanged((list) => {
+      receivedWatched = true
+      setWatched(list)
+    }),
     store.on('threads_changed', schedule),
     store.on('thread_status_changed', schedule),
     store.on('message_added', schedule),
@@ -68,6 +128,13 @@ export function attachRemotePublisher(store: AppStore, api: ApiClient): () => vo
     .getState()
     .then((state) => {
       if (!disposed && !receivedState) setAvailability(state)
+    })
+    .catch(() => {})
+  // A reloaded window joins clients that are already watching.
+  void api.remote
+    .watched()
+    .then((list) => {
+      if (!disposed && !receivedWatched) setWatched(list)
     })
     .catch(() => {})
 
