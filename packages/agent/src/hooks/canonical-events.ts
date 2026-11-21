@@ -149,6 +149,13 @@ export interface StepBoundaryPayload {
    */
   malformedToolCallHitCeiling?: boolean
   /**
+   * `postStream`: the just-finished stream ended without visible text or a tool
+   * call, and no other post-stream outcome (truncation, runaway cut, malformed
+   * call, refusal, context overflow) claims it. Read by `empty-turn`. Omitted
+   * or false otherwise.
+   */
+  emptyTurn?: boolean
+  /**
    * Consecutive `explore` tool calls with no intervening `read_file` call
    * (#1433), read by `loop-nudge` for its explore-without-read condition.
    * `preStream` only; omitted (treated as 0) wherever the caller does not

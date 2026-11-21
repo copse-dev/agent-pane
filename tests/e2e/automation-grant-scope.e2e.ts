@@ -19,6 +19,8 @@ const SCHEDULE_PROMPT = 'Review pull requests.'
 const MODEL = 'claude-sonnet-4-6'
 const LATER_PROMPT = 'Approve pull request 1478.'
 
+// Provisional shard weight: 3.2s from a successful isolated macOS run on 2026-11-14.
+// Replace it with the first successful CI measurement.
 describe('automation grant scope', () => {
   before(async () => {
     resetUserData()

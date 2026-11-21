@@ -23,6 +23,8 @@ const FORGED_BRIEF = [
   ),
 ].join(' ')
 
+// Provisional shard weight: 3s from a successful local macOS run on 2026-11-13.
+// Replace it with the first successful CI measurement.
 describe('protected prompt entry', () => {
   before(async () => {
     resetUserData()
