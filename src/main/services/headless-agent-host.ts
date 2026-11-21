@@ -33,6 +33,7 @@ import {
 import { getTaskSupervisor, type TaskSupervisor } from './supervisor/task-supervisor.ts'
 import { runWithThreadResourceStateLookup } from './thread-resource-fence.ts'
 import { runWithDecisionRecorder, type RecordedDecision } from './security/decision-log-store.ts'
+import { withTimeout } from '@copse/std/with-timeout.ts'
 
 export interface HeadlessInteractionProfile {
   readonly approve?: ApprovalHandler
@@ -329,11 +330,8 @@ export async function runHeadlessAgent(
                         })
                         const wait = run.waitForMachineContinuations
                         let machineContinuations = 0
-                        let resolveMachineWait: (() => void) | null = null
-                        const machineWait = wait
-                          ? new Promise<void>((resolve) => {
-                              resolveMachineWait = resolve
-                            })
+                        const machineWait: PromiseWithResolvers<void> | null = wait
+                          ? Promise.withResolvers()
                           : null
                         const dispatchAndWait = async (): Promise<void> => {
                           await dispatcher.dispatch({
@@ -347,23 +345,11 @@ export async function runHeadlessAgent(
                             },
                           })
                           if (wait && machineWait) {
-                            let timer: ReturnType<typeof setTimeout> | undefined
-                            try {
-                              await Promise.race([
-                                machineWait,
-                                new Promise<never>((_resolve, reject) => {
-                                  timer = setTimeout(() => {
-                                    reject(
-                                      new Error(
-                                        `Timed out waiting for ${String(wait.count)} machine continuations`,
-                                      ),
-                                    )
-                                  }, wait.timeoutMs)
-                                }),
-                              ])
-                            } finally {
-                              if (timer) clearTimeout(timer)
-                            }
+                            await withTimeout(machineWait.promise, wait.timeoutMs, () => {
+                              throw new Error(
+                                `Timed out waiting for ${String(wait.count)} machine continuations`,
+                              )
+                            })
                           }
                         }
                         if (wait) {
@@ -386,7 +372,7 @@ export async function runHeadlessAgent(
                             if (result === 'completed' || result === 'observed') {
                               machineContinuations += 1
                               if (machineContinuations >= wait.count) {
-                                resolveMachineWait?.()
+                                machineWait?.resolve()
                               }
                             }
                             return result
