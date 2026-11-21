@@ -30,11 +30,20 @@ const VALUE_BYTES = 16
 /** Begin and end tags plus the counts an object, array, Map or Set writes. */
 const CONTAINER_BYTES = 32
 
+/**
+ * Distinct objects remembered, so a repeat is counted as the back-reference the
+ * serializer writes for it. Past this many the set stops growing, which bounds
+ * its memory; a later object is then counted on every path that reaches it.
+ */
+const SEEN_LIMIT = 1_000_000
+
 interface Walk {
   bytes: number
   readonly limit: number
-  /** Containers on the path to the value being visited, to stop at a cycle. */
-  ancestors: Set<object> | null
+  /** Objects already counted in full. */
+  seen: Set<object> | null
+  /** Past `SEEN_LIMIT`: unremembered containers above the current value, to stop at a cycle. */
+  path: Set<object> | null
 }
 
 /**
@@ -42,15 +51,14 @@ interface Walk {
  *
  * It reads lengths, never contents, so the cost follows the number of values
  * rather than their bytes. A string counts two bytes per character because V8
- * may hold it either way and JavaScript cannot tell which. A value reachable by
- * two paths is counted on each, where the serializer would write a
- * back-reference. Both choices keep this an overestimate.
+ * may hold it either way and JavaScript cannot tell which. An object reached
+ * again is counted as a back-reference, which is how the serializer writes it.
  *
  * The walk stops once the total passes `limit`, so a result above the limit
  * means only "more than `limit`", not the full size.
  */
 export function estimateIpcArgumentBytes(args: readonly unknown[], limit: number): number {
-  const walk: Walk = { bytes: 0, limit, ancestors: null }
+  const walk: Walk = { bytes: 0, limit, seen: null, path: null }
   for (const arg of args) {
     if (walk.bytes > limit) break
     visit(arg, walk)
@@ -78,6 +86,13 @@ function visit(value: unknown, walk: Walk): void {
 }
 
 function visitObject(value: object, walk: Walk): void {
+  const seen = (walk.seen ??= new Set())
+  if (seen.has(value) || walk.path?.has(value)) {
+    walk.bytes += VALUE_BYTES
+    return
+  }
+  const remembered = seen.size < SEEN_LIMIT
+  if (remembered) seen.add(value)
   walk.bytes += CONTAINER_BYTES
   // `SharedArrayBuffer` is deliberately not named: the global is absent unless
   // the page is cross-origin isolated, and a reference to it would throw.
@@ -86,8 +101,15 @@ function visitObject(value: object, walk: Walk): void {
     return
   }
   if (ArrayBuffer.isView(value)) {
-    // A view is written with its whole backing buffer, not just its window.
-    walk.bytes += value.buffer.byteLength + CONTAINER_BYTES
+    // A view is written with its whole backing buffer, not just its window,
+    // and views that share a buffer write it once.
+    const buffer = value.buffer
+    if (seen.has(buffer)) {
+      walk.bytes += VALUE_BYTES
+      return
+    }
+    if (seen.size < SEEN_LIMIT) seen.add(buffer)
+    walk.bytes += buffer.byteLength + CONTAINER_BYTES
     return
   }
   if (value instanceof Date) return
@@ -95,18 +117,24 @@ function visitObject(value: object, walk: Walk): void {
     walk.bytes += (value.source.length + value.flags.length) * 2
     return
   }
-  const ancestors = (walk.ancestors ??= new Set())
-  // A cycle is written as a back-reference, already counted above.
-  if (ancestors.has(value)) return
-  ancestors.add(value)
-  try {
-    if (Array.isArray(value)) visitArray(value, walk)
-    else if (value instanceof Map) visitMap(value, walk)
-    else if (value instanceof Set) visitSet(value, walk)
-    else visitProperties(value, walk)
-  } finally {
-    ancestors.delete(value)
+  if (remembered) {
+    visitChildren(value, walk)
+    return
   }
+  const path = (walk.path ??= new Set())
+  path.add(value)
+  try {
+    visitChildren(value, walk)
+  } finally {
+    path.delete(value)
+  }
+}
+
+function visitChildren(value: object, walk: Walk): void {
+  if (Array.isArray(value)) visitArray(value, walk)
+  else if (value instanceof Map) visitMap(value, walk)
+  else if (value instanceof Set) visitSet(value, walk)
+  else visitProperties(value, walk)
 }
 
 function visitArray(value: readonly unknown[], walk: Walk): void {
@@ -188,9 +216,9 @@ export function createIpcSizeGuard(raw: { invoke: Invoke; send: Send }): {
       // A diagnostic must never break the call it describes.
     }
     if (!refused) return null
+    // Worded for a person as well as a log: callers show this in error toasts.
     return new Error(
-      `Refused to send "${channel}" to the main process: its arguments are larger than ` +
-        `${megabytes(IPC_ARGUMENT_LIMIT_BYTES)}. A call that size can crash this window.`,
+      `Too large to send in one request: more than ${megabytes(IPC_ARGUMENT_LIMIT_BYTES)} (${channel}).`,
     )
   }
   return {

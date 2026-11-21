@@ -59,17 +59,17 @@ export function installRemoteReadRelay(): void {
     const parsed = remoteReadSchema.safeParse(value)
     if (!parsed.success || !remoteReadAllowed(parsed.data)) return
     void invokeRead(parsed.data)
-      .then(
-        (result: unknown) => ipcRenderer.invoke('remote:reply', { id, ok: true, value: result }),
-        (error: unknown) =>
-          ipcRenderer.invoke('remote:reply', {
-            id,
-            ok: false,
-            error: (error instanceof Error ? error.message : 'Desktop request failed').slice(
-              0,
-              2000,
-            ),
-          }),
+      .then((result: unknown) =>
+        ipcRenderer.invoke('remote:reply', { id, ok: true, value: result }),
+      )
+      // Also reached when the reply itself cannot be sent, such as a result too
+      // large for one request: the remote gets that reason instead of a timeout.
+      .catch((error: unknown) =>
+        ipcRenderer.invoke('remote:reply', {
+          id,
+          ok: false,
+          error: (error instanceof Error ? error.message : 'Desktop request failed').slice(0, 2000),
+        }),
       )
       .catch(() => {})
   })

@@ -11,7 +11,7 @@
 import { z } from 'zod'
 import { IPC_ARGUMENT_LIMIT_BYTES, IPC_LARGE_CALL_CHANNEL } from '@shared/ipc-size-limits.ts'
 
-/** One line per channel in this window; the rest are counted, not printed. */
+/** At most one line per channel in this interval, across all windows; the rest are counted. */
 export const LARGE_IPC_LOG_INTERVAL_MS = 30_000
 /** How long a report stays relevant to a renderer death. */
 export const LARGE_IPC_RECENT_MS = 60_000

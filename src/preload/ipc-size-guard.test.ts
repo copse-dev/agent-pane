@@ -113,6 +113,30 @@ describe('estimateIpcArgumentBytes', () => {
     assert.ok(estimate(wide) < 1_024)
   })
 
+  it('counts an object reached by many paths once', () => {
+    // 2^26 paths to the innermost object; serialized, it is a few hundred bytes.
+    let diamond: unknown = { leaf: 'x' }
+    for (let level = 0; level < 26; level++) diamond = { left: diamond, right: diamond }
+    assert.ok(estimate(diamond) >= wireBytes(diamond))
+    assert.ok(estimate(diamond) < 8_192, `estimated ${String(estimate(diamond))}`)
+
+    const attachment = { content: 'y'.repeat(1_000) }
+    assert.ok(estimate({ first: attachment, second: attachment }) < 3_000)
+  })
+
+  it('counts a buffer shared by two views once', () => {
+    const buffer = new ArrayBuffer(4_096)
+    assert.ok(estimate([new Uint8Array(buffer), new Uint16Array(buffer)]) < 2 * 4_096)
+  })
+
+  it('still ends on a cycle among more objects than it remembers', () => {
+    const many: unknown[] = Array.from({ length: 1_000_001 }, () => ({}))
+    const late: { self?: unknown } = {}
+    late.self = late
+    many.push(late, late)
+    assert.ok(estimate(many) >= wireBytes(many))
+  })
+
   it('stops walking once the limit is passed', () => {
     let read = 0
     const items = Array.from({ length: 1_000 }, () => ({
@@ -181,7 +205,7 @@ describe('createIpcSizeGuard', () => {
     const { guard, sent } = fixture()
     await assert.rejects(
       guard.invoke('threads:create', 'p', { messages: [{ content: OVERSIZED_TEXT }] }),
-      /Refused to send "threads:create".*960 MB/s,
+      { message: 'Too large to send in one request: more than 960 MB (threads:create).' },
     )
     assert.deepEqual(order(sent), [`send:${IPC_LARGE_CALL_CHANNEL}`])
     const report = reportIn(sent[0])
@@ -191,9 +215,12 @@ describe('createIpcSizeGuard', () => {
 
   it('throws on an oversized send without sending it', () => {
     const { guard, sent } = fixture()
-    assert.throws(() => {
-      guard.send('vnc:send', 'c', OVERSIZED_TEXT)
-    }, /Refused to send "vnc:send"/)
+    assert.throws(
+      () => {
+        guard.send('vnc:send', 'c', OVERSIZED_TEXT)
+      },
+      { message: 'Too large to send in one request: more than 960 MB (vnc:send).' },
+    )
     assert.deepEqual(order(sent), [`send:${IPC_LARGE_CALL_CHANNEL}`])
   })
 

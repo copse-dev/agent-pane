@@ -19,7 +19,8 @@ describe('IPC size guard', () => {
         return error instanceof Error ? error.message : String(error)
       }
     })
-    expect(outcome).toContain('Refused to send "agent:suggest-command-summary"')
+    expect(outcome).toContain('Too large to send in one request')
+    expect(outcome).toContain('(agent:suggest-command-summary)')
 
     const probe = await browser.execute(() => document.documentElement.dataset['ipcSizeGuardProbe'])
     expect(probe).toBe('kept')
