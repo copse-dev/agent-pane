@@ -24,6 +24,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { dispatchAgentRun, startAutomationTurnTree } from './message-queue.ts'
 import { ensureThreadMessages } from './thread-hydration.ts'
 import { projectThreadLoadRevision } from './persistence.ts'
+import { isAutomationPendingStart } from './sidebar-thread.ts'
 
 export interface AutomationControllerApi {
   agent: Pick<ApiClient['agent'], 'prepareCheckout' | 'run'>
@@ -99,12 +100,7 @@ function startFailureDetail(error: unknown): string {
 }
 
 function isPendingAutomation(thread: Thread): boolean {
-  return (
-    thread.automation !== undefined &&
-    thread.status === 'idle' &&
-    thread.automation.startFailedAt === undefined &&
-    Boolean(thread.draftPrompt?.trim())
-  )
+  return thread.status === 'idle' && isAutomationPendingStart(thread)
 }
 
 /**
@@ -178,6 +174,11 @@ export function attachAutomationController(
       await ensureThreadMessages(projectId, threadId)
       hydrated = true
       if (store.getState().activeProjectId !== projectId) return
+      const hydratedThread = store.getState().threads.find((thread) => thread.id === threadId)
+      if (!hydratedThread || !isPendingAutomation(hydratedThread)) {
+        clearRetry(projectId, threadId)
+        return
+      }
       const admission = await api.automations.canStart(projectId, threadId)
       if (!admission.allowed) {
         let shouldRecord = true

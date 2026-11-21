@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
@@ -22,7 +22,7 @@ import { storageGet, storageSet } from '../storage/storage.ts'
 import { getSetting, setSetting } from '../storage/settings.ts'
 import { copseToolPermissionId } from '../security/tool-permissions.ts'
 import { readWorktreePreparationPlan } from '../worktree-preparation-plan.ts'
-import { createThread, getThreadMeta, updateMetaOrThrow } from '../thread-store.ts'
+import { appendMessage, createThread, getThreadMeta, updateMetaOrThrow } from '../thread-store.ts'
 import {
   createAutomationService,
   type AutomationTaskSupervisor,
@@ -1171,14 +1171,29 @@ describe('AutomationService', () => {
       updatedAt: now,
     })
     threads.set('clean', held('clean', 'idle'))
-    threads.set('dirty', held('dirty', 'idle'))
+    threads.set('completed-draft', {
+      ...held('completed-draft', 'idle'),
+      lastPromptAt: now,
+      draftPrompt: 'Keep this completed follow-up manual.',
+    })
+    threads.set('dirty', {
+      ...held('dirty', 'idle'),
+      lastPromptAt: now,
+      draftPrompt: 'Keep these local changes.',
+    })
+    threads.set('pending', { ...held('pending', 'idle'), draftPrompt: 'Start the first check.' })
     threads.set('running', held('running', 'running'))
     threads.set('retired', held('retired', 'idle', now))
 
     const result = await service.cleanupRuns('project-a', schedule.id)
 
-    assert.deepEqual(released, ['clean'])
-    assert.deepEqual(result.released, ['clean'])
+    assert.deepEqual(released, ['clean', 'completed-draft'])
+    assert.deepEqual(result.released, ['clean', 'completed-draft'])
+    assert.equal(
+      threads.get('completed-draft')?.draftPrompt,
+      'Keep this completed follow-up manual.',
+    )
+    assert.equal(threads.get('dirty')?.draftPrompt, 'Keep these local changes.')
     assert.deepEqual(result.retained, [
       {
         threadId: 'dirty',
@@ -2127,6 +2142,106 @@ describe('AutomationService', () => {
       service.stop()
       assert.equal(created.length, 1)
     })
+  })
+
+  describe('admitting a run after a completed human follow-up draft', () => {
+    let root: string
+    let previousRoot: string | undefined
+
+    beforeEach(() => {
+      previousRoot = process.env['COPSE_WORKSPACE_DIR']
+      root = mkdtempSync(join(tmpdir(), 'copse-completed-automation-draft-'))
+      process.env['COPSE_WORKSPACE_DIR'] = root
+    })
+
+    afterEach(() => {
+      if (previousRoot === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previousRoot
+      rmSync(root, { recursive: true, force: true })
+    })
+
+    for (const source of ['manual', 'timer']) {
+      it(`admits a distinct ${source} run without sending or changing the saved draft`, async (t) => {
+        let now = new Date(2026, 6, 27, 9, 0, 0).getTime()
+        const events: AutomationTriggerEvent[] = []
+        const service = createAutomationService({
+          now: () => now,
+          isPluginEnabled: () => true,
+          createProjectThread: createThread,
+          releasePreviousRun: () => Promise.resolve({ released: true }),
+          supervisor: () => new FakeTaskSupervisor(),
+        })
+        service.start(
+          (event) => events.push(event),
+          () => Promise.reject(new Error('The focused project must not dispatch headlessly')),
+          () => 'project-a',
+        )
+        t.after(() => {
+          service.stop()
+        })
+        const schedule = await service.upsert('project-a', {
+          name: 'Release check',
+          cron: '* * * * *',
+          prompt: 'Check the release.',
+          model: 'gpt-test',
+          enabled: true,
+        })
+        const first = await service.runNow('project-a', schedule.id)
+        assert.equal(first.disposition, 'started')
+        const pending = await service.runNow('project-a', schedule.id)
+        assert.equal(pending.disposition, 'coalesced')
+        assert.equal(pending.threadId, first.threadId)
+
+        await appendMessage('project-a', first.threadId, {
+          id: 'scheduled-submission',
+          role: 'user',
+          content: schedule.prompt,
+          toolCalls: [],
+          createdAt: now,
+        })
+        await appendMessage('project-a', first.threadId, {
+          id: 'completed-answer',
+          role: 'assistant',
+          content: 'The release check finished.',
+          toolCalls: [],
+          createdAt: now + 1,
+        })
+        await updateMetaOrThrow('project-a', first.threadId, {
+          status: 'running',
+          lastPromptAt: now,
+          draftPrompt: 'Keep this follow-up manual.',
+          currentEpoch: 'original-human-turn',
+          continuationUsed: 3,
+        })
+        const running = await service.runNow('project-a', schedule.id)
+        assert.equal(running.disposition, 'coalesced')
+        assert.equal(running.threadId, first.threadId)
+        await updateMetaOrThrow('project-a', first.threadId, { status: 'idle' })
+        const before = await getThreadMeta('project-a', first.threadId)
+        assert.ok(before)
+        const spine = join(root, 'project-a', first.threadId, 'events.jsonl')
+        const beforeSpine = readFileSync(spine)
+
+        now += 60_000
+        if (source === 'manual') {
+          const next = await service.runNow('project-a', schedule.id)
+          assert.equal(next.disposition, 'started')
+        } else {
+          await service.tick()
+        }
+        const nextId = service.list('project-a')[0]?.lastCreatedThreadId
+        assert.ok(nextId)
+        assert.notEqual(nextId, first.threadId)
+        const next = await getThreadMeta('project-a', nextId)
+        assert.ok(next)
+        assert.equal(next.draftPrompt, schedule.prompt)
+        assert.equal(next.lastPromptAt, undefined)
+        assert.equal(next.currentEpoch, undefined)
+        assert.equal(events.filter((event) => event.disposition === 'started').length, 2)
+        assert.deepEqual(await getThreadMeta('project-a', first.threadId), before)
+        assert.deepEqual(readFileSync(spine), beforeSpine)
+      })
+    }
   })
 
   describe('running an unfocused schedule headlessly', () => {
