@@ -75,6 +75,34 @@ describe('outside-sandbox approval copy', () => {
     await scenario.assertComplete()
   })
 
+  it('names what running outside the sandbox changes', async () => {
+    // Opaque local execution: always an escape request, never an auto-run read.
+    const command = 'node scripts/run-demo.mts --spec tests/demo/remote-acp-first-run.demo.ts'
+    const scenario = await prepareMockToolTurn(
+      'Run the browser demo with the access it needs.',
+      { name: 'run_shell', args: { command, expects_sandbox_block: true } },
+      'I left the browser demo unrun.',
+    )
+    await submitComposer()
+
+    const dialog = await $('#approval-dialog')
+    await dialog.waitForDisplayed({ timeout: 30_000 })
+    await expect(dialog.$('.approval-heading')).toHaveText('Agent requests sandbox escape')
+    const advice = await dialog.$('.approval-advice').getText()
+    expect(advice).toContain('Approving changes how it runs:')
+    expect(advice).toContain(
+      'Files: this project only → everything your account can open on this computer',
+    )
+    expect(advice).toContain('Network: only hosts the sandbox already allows → any host')
+    expect(advice).toContain('Isolation: the project sandbox → none')
+
+    await saveElementScreenshot('#approval-dialog', 'outside-sandbox-runtime-change-approval.png')
+    await dialog.$('.approval-reject').click()
+    await waitForAgentIdle(30_000)
+    await expectAssistantReply('I left the browser demo unrun.')
+    await scenario.assertComplete()
+  })
+
   it('offers bounded retries when the agent expects a project script to need the outside', async () => {
     // A browser demo rerun after each fix: opaque local execution, nothing else.
     const command = 'node scripts/run-demo.mts --spec tests/demo/remote-acp-first-run.demo.ts'

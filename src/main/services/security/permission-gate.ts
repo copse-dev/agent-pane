@@ -39,7 +39,9 @@ import { isRecord, nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { automationPermissionKey, type AutomationPermission } from '@shared/types'
 import { darwinUserTempDir } from '../../project-sandbox/config.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
-import { spawnRunsOnSshTarget } from '../../project-sandbox/spawn.ts'
+import { spawnRunsOnSshTarget, spawnSshHostId } from '../../project-sandbox/spawn.ts'
+import { displayTarget, findConfiguredSshHost } from '../ssh-workspace/hosts.ts'
+import { sshPromptRuntime, type PromptRuntime } from './runtime-prompt.ts'
 import { isProjectSandboxPlatform, projectSandboxInitFailure } from '../../project-sandbox/state.ts'
 import {
   activeSandboxNetworkScopeLabels,
@@ -497,6 +499,23 @@ async function resolveReadOutsideProject(
   return approved
 }
 
+/** Where an ordinary shell prompt's command will run, for the prompt's opening line. */
+function shellPromptRuntime(sandboxed: boolean): PromptRuntime {
+  const hostId = sandboxed ? null : spawnSshHostId(getAgentExecutionRoot())
+  if (hostId) {
+    const host = findConfiguredSshHost(hostId)
+    return sshPromptRuntime(
+      hostId,
+      host && {
+        label: host.label,
+        address: displayTarget(host),
+        forwardAgent: host.forwardAgent === true,
+      },
+    )
+  }
+  return { kind: 'local', containment: sandboxed ? 'contained' : 'host' }
+}
+
 /**
  * @param containedCause why an *in-sandbox* prompt is interrupting. The
  *   escalation branch always records `shell-sandbox-escalation`, because that is
@@ -533,7 +552,9 @@ async function promptShell(
       title: sandboxed ? 'Run shell command?' : 'Run without sandbox?',
       approveLabel: 'Run command',
       type: 'shell',
-      ...shellPromptToApprovalFields(formatShellPromptParts(command, reasons, sandboxed)),
+      ...shellPromptToApprovalFields(
+        formatShellPromptParts(command, reasons, sandboxed, shellPromptRuntime(sandboxed)),
+      ),
       subject: SHELL_DECISION_SUBJECT,
       scope: sandboxed ? 'sandbox' : 'external',
       cause: containedCause,

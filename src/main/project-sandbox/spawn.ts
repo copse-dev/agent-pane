@@ -137,6 +137,21 @@ export function spawnRunsOnSshTarget(cwd: string | null): boolean {
   }
 }
 
+/**
+ * The SSH host a spawn in `cwd` with no explicit target runs on, or null when
+ * it runs locally or cannot route (the spawn then refuses). Used to name the
+ * host in approval prompts; containment decisions use
+ * {@link spawnRunsOnSshTarget}, which fails toward "remote".
+ */
+export function spawnSshHostId(cwd: string | null): string | null {
+  try {
+    const target = resolveSpawnTarget(undefined, cwd ?? '')
+    return isSshExecutionTarget(target) ? target.hostId : null
+  } catch {
+    return null
+  }
+}
+
 const SANDBOX_BECAME_UNAVAILABLE =
   'The project sandbox became unavailable before execution. Request authorization again.'
 

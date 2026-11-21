@@ -1766,6 +1766,34 @@ describe('ensureShellCommandPermitted — SSH workspace execution target', () =>
     assert.equal(unroutable.permitted, false)
     assert.deepEqual(unroutable.prompts, ['shell-no-containment'])
   })
+
+  it('opens an SSH prompt with the host, its network and the agent Copse forwards there', async () => {
+    setPermissionGateForTests(null)
+    await setSetting('safetyClassifierEnabled', false)
+    const restore = await useSshProject()
+    await setSetting('sshWorkspaceHosts', [
+      { id: 'dev', label: 'Dev', host: 'dev.example.com', user: 'alice', forwardAgent: true },
+    ])
+    let advice = ''
+    setApprovalHandler((request) => {
+      advice = request.bodyAdvice ?? ''
+      return Promise.resolve({ approved: false, remember: false })
+    })
+    try {
+      await ensureShellCommandPermitted(AMBIGUOUS, { sandboxEnabled: true, autoRun: true })
+    } finally {
+      setApprovalHandler(null)
+      restore()
+      await setSetting('sshWorkspaceEnabled', false)
+      await setSetting('sshWorkspaceHosts', [])
+    }
+    assert.match(
+      advice,
+      /^This runs on Dev \(alice@dev\.example\.com\) over SSH, as that account\./,
+    )
+    assert.match(advice, /reach any network that host can\./)
+    assert.match(advice, /SSH keys in your local agent, which Copse forwards to this host\./)
+  })
   it("keeps a turn on its own project's target when the window switches projects", async () => {
     // A turn in a local project, with the user switching the window to an SSH
     // project between the gate's decision and the spawn. Both must still see
