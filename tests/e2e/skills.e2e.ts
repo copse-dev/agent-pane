@@ -1,26 +1,42 @@
+import { join } from 'node:path'
 import { readFileSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { waitForActiveThreadTitle, waitForAgentIdle } from './helpers.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
-import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
+import {
+  resetUserData,
+  seedEmptyProject,
+  seedStableWorkspace,
+  writeSettings,
+} from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
-import { installMockScenario } from './helpers/mock-scenario.ts'
+import { installMockScenario, expectAssistantReply } from './helpers/mock-scenario.ts'
 
 describe('skills', () => {
   before(async () => {
     resetUserData()
     const workspaceRoot = seedStableWorkspace({
       files: {
+        'review-plugin/.cursor-plugin/plugin.json': JSON.stringify({
+          name: 'acme.tools',
+          skills: './skills/',
+        }),
+        'review-plugin/skills/qualified-review/SKILL.md':
+          '---\nname: qualified-review\ndescription: Review changes using the plugin workflow\ndisable-model-invocation: true\n---\n\nReview the change and summarize the findings.',
         '.cursor/skills/demo-skill/SKILL.md': readFileSync(
           new URL('../../.cursor/skills/demo-skill/SKILL.md', import.meta.url),
           'utf8',
         ),
       },
     })
-    seedEmptyProject(workspaceRoot, 'skills-demo-project', {
-      model: 'claude-sonnet-4-6',
-      subagentsEnabled: false,
+    const projectSettings = { model: 'claude-sonnet-4-6', subagentsEnabled: false }
+    seedEmptyProject(workspaceRoot, 'skills-demo-project', projectSettings)
+    // writeSettings replaces the whole settings file, so restate the project's
+    // model and subagent settings alongside the plugin path.
+    writeSettings({
+      ...projectSettings,
+      skillPluginPaths: [join(workspaceRoot, 'review-plugin')],
     })
     await browser.reloadSession()
   })
@@ -103,5 +119,47 @@ describe('skills', () => {
     await waitForActiveThreadTitle()
     await assertNoErrorToasts('after /demo-skill')
     await saveAppScreenshot('skills-demo-invoked.png')
+  })
+
+  it('completes and invokes a plugin-qualified skill through the live agent path', async () => {
+    await setComposerValue('/acme.tools:qual')
+    const skill = $('.skill-picker').$('.skill-item*=/acme.tools:qualified-review')
+    await skill.waitForDisplayed({ timeout: 10_000 })
+    await expect(skill.$('.skill-item-name')).toHaveText('/acme.tools:qualified-review')
+    await saveAppScreenshot('skills-qualified-picker.png')
+    await browser.execute(() => document.querySelector<HTMLElement>('.prompt-input')?.focus())
+    await browser.keys('Tab')
+    expect(await browser.execute(() => document.querySelector('.prompt-input')?.textContent)).toBe(
+      '/acme.tools:qualified-review ',
+    )
+
+    const scenario = await installMockScenario({
+      title: 'Review with plugin skill',
+      turns: [
+        {
+          user: 'review the parser change',
+          responses: [
+            { toolCalls: [{ name: 'read_skill', args: { name: 'qualified-review' } }] },
+            {
+              expectToolResults: [
+                { name: 'read_skill', includes: 'was explicitly invoked by the user' },
+              ],
+              text: 'The plugin review workflow is active for the parser change.',
+            },
+          ],
+        },
+      ],
+    })
+    await setComposerValue('/acme.tools:qualified-review review the parser change')
+    await submitComposer()
+    // Send lists skills and reads Git state before it dispatches the run, and
+    // the Stop button only appears once the run starts. An idle check straight
+    // after the click can pass before the turn begins, so wait for the model
+    // requests first.
+    await scenario.waitForComplete()
+    await waitForAgentIdle()
+    await scenario.assertComplete()
+    await expectAssistantReply('The plugin review workflow is active for the parser change.')
+    await assertNoErrorToasts('after /acme.tools:qualified-review')
   })
 })

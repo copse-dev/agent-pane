@@ -1,6 +1,6 @@
 import type { BrowserWindow, IpcMain, WebContents } from 'electron'
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { randomUUID } from 'node:crypto'
+import { SshPromptLifecycle } from './ssh-prompt-lifecycle.ts'
 import {
   assertMainFrameSender,
   IpcValidationError,
@@ -29,8 +29,6 @@ export interface SshPromptResponse {
    */
   remember?: boolean
 }
-
-const SSH_PROMPT_TIMEOUT_MS = 60_000
 
 export type SshPromptHandler = (req: SshPromptRequest) => Promise<SshPromptResponse>
 
@@ -66,38 +64,29 @@ export function initSshPrompt(
     response: SshPromptResponse,
   ) => Promise<boolean>,
 ): void {
-  const pending = new Map<
-    string,
-    { request: SshPromptRequest; resolve: (result: SshPromptResponse) => void }
-  >()
-  const settle = (id: string, result: SshPromptResponse): void => {
-    const entry = pending.get(id)
-    if (!entry) return
-    pending.delete(id)
-    entry.resolve(result)
-  }
+  const lifecycle = new SshPromptLifecycle()
 
   ipcMain.handle('ssh-prompt:respond', async (event, ...rawArgs) => {
     try {
       assertMainFrameSender(event, win)
       const [id, value, remember] = parseIpcArgs(sshPromptRespondSchema, rawArgs)
-      const entry = pending.get(id)
-      if (!entry) return
-      if (entry.request.kind === 'confirm' && value !== '' && value !== 'yes') {
+      const request = lifecycle.requestFor(id)
+      if (!request) return
+      if (request.kind === 'confirm' && value !== '' && value !== 'yes') {
         throw new IpcValidationError('Invalid SSH confirmation response')
       }
-      if (remember && entry.request.kind !== 'secret') {
+      if (remember && request.kind !== 'secret') {
         throw new IpcValidationError('This SSH secret cannot be remembered')
       }
-      if (value && (entry.request.kind === 'confirm' || remember)) {
-        const confirmed = await confirmSshPrompt(event.sender, entry.request, { value, remember })
+      if (value && (request.kind === 'confirm' || remember)) {
+        const confirmed = await confirmSshPrompt(event.sender, request, { value, remember })
         if (!confirmed) {
-          settle(id, { value: '' })
+          lifecycle.settle(id, { value: '' })
           return
         }
       }
-      if (pending.get(id) !== entry) return
-      settle(id, { value, remember })
+      if (lifecycle.requestFor(id) !== request) return
+      lifecycle.settle(id, { value, remember })
     } catch (err) {
       if (err instanceof IpcValidationError) return
       throw err
@@ -105,42 +94,17 @@ export function initSshPrompt(
   })
 
   win.on('closed', () => {
-    for (const [id] of pending) settle(id, { value: '' })
+    lifecycle.cancelAll()
   })
 
-  setSshPromptHandler(
-    (req) =>
-      new Promise<SshPromptResponse>((resolve) => {
-        const id = randomUUID()
-        // The window that asked for the connection, falling back to the main
-        // one. A pop-out pane opening an SSH terminal used to get its passphrase
-        // and host-key questions on the main window, where nothing said which
-        // connection they belonged to — and, unanswered, they timed out under a
-        // pop-out still showing a blank shell (#2507). A host key is exactly the
-        // question you cannot answer without seeing what asked it.
-        const dest = resolveRendererPromptTarget(win.webContents)
-        if (dest.isDestroyed()) {
-          resolve({ value: '' })
-          return
-        }
-        dest.send('ssh:prompt-request', {
-          id,
-          prompt: req.prompt,
-          kind: req.kind,
-          canRememberOnDevice:
-            req.kind === 'secret' && req.canRememberOnDevice === true && canStoreSshCredentials(),
-        })
-        const timer = setTimeout(() => {
-          settle(id, { value: '' })
-        }, SSH_PROMPT_TIMEOUT_MS)
-        if (typeof timer.unref === 'function') timer.unref()
-        pending.set(id, {
-          request: req,
-          resolve: (result) => {
-            clearTimeout(timer)
-            resolve(result)
-          },
-        })
-      }),
+  setSshPromptHandler((req) =>
+    lifecycle.request(
+      {
+        ...req,
+        canRememberOnDevice:
+          req.kind === 'secret' && req.canRememberOnDevice === true && canStoreSshCredentials(),
+      },
+      resolveRendererPromptTarget(win.webContents),
+    ),
   )
 }

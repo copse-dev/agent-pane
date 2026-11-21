@@ -229,12 +229,11 @@ export async function authorizeChatGpt(
   const nonce = randomBytes(32).toString('base64url')
   const verifier = randomBytes(32).toString('base64url')
   const challenge = createHash('sha256').update(verifier).digest('base64url')
-  let accept: (value: { code: string; clientId: string }) => void = () => {}
-  let reject: (reason: Error) => void = () => {}
-  const callback = new Promise<{ code: string; clientId: string }>((resolve, fail) => {
-    accept = resolve
-    reject = fail
-  })
+  const {
+    promise: callback,
+    resolve: accept,
+    reject,
+  } = Promise.withResolvers<{ code: string; clientId: string }>()
   // Attach the rejection handler before opening the browser or starting the listener.
   void callback.catch(() => {})
   let consumed = false
