@@ -8,11 +8,129 @@
 import { after, beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { homedir } from 'node:os'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { analyzeShellCommand } from './shell-scope.ts'
 import { setSetting } from '../storage/settings.ts'
 import { runWithActiveRunIdentity } from '../thread-models.ts'
 import { clearThreadReadRoots, grantThreadReadRoot } from './thread-read-roots.ts'
+import { ensureWorkspaceTmpDir } from '../../project-sandbox/config.ts'
+
+describe('authoritative scratch and local symbolic links', () => {
+  it('contains the active thread scratch in its absolute and aliased spelling', () => {
+    const fixture = realpathSync(mkdtempSync(join(tmpdir(), 'copse-scratch-scope-')))
+    const store = join(fixture, 'store')
+    const alias = join(fixture, 'store-alias')
+    mkdirSync(store)
+    symlinkSync(store, alias, 'dir')
+    const previous = process.env['COPSE_WORKSPACE_DIR']
+    process.env['COPSE_WORKSPACE_DIR'] = alias
+    try {
+      const own = runWithActiveRunIdentity('scratch-a', ensureWorkspaceTmpDir)
+      const other = runWithActiveRunIdentity('scratch-b', ensureWorkspaceTmpDir)
+      const aliased = own.replace(store, alias)
+      runWithActiveRunIdentity('scratch-a', () => {
+        const spellings = [own, aliased]
+        if (own.startsWith('/private/var/')) spellings.push(own.slice('/private'.length))
+        for (const path of spellings) {
+          const result = analyzeShellCommand(
+            `node scripts/verify.mjs > '${path}/evidence.log'`,
+            '/project',
+          )
+          assert.notEqual(result.verdict, 'external', result.reasons.join('; '))
+        }
+        for (const path of [`${own}-sibling`, `${own}/../../outside`, other]) {
+          assert.equal(
+            analyzeShellCommand(`echo ok > '${path}/evidence.log'`, '/project').verdict,
+            'external',
+            path,
+          )
+        }
+        assert.equal(
+          analyzeShellCommand(`TMPDIR=/var/unassigned node scripts/verify.mjs`, '/project').verdict,
+          'external',
+        )
+        const outside = join(fixture, 'outside')
+        mkdirSync(outside)
+        symlinkSync(outside, join(own, 'escape'), 'dir')
+        symlinkSync('escape', join(own, 'chain'), 'dir')
+        for (const path of [
+          `${own}/escape/evidence.log`,
+          `${own}/chain/evidence.log`,
+          `${own}/chain/../evidence.log`,
+        ]) {
+          assert.equal(
+            analyzeShellCommand(`echo ok > '${path}'`, '/project').verdict,
+            'external',
+            path,
+          )
+        }
+      })
+    } finally {
+      if (previous === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previous
+      rmSync(fixture, { recursive: true, force: true })
+    }
+  })
+
+  it('uses the link parent for literal symlink targets and retains escape controls', () => {
+    const fixture = realpathSync(mkdtempSync(join(tmpdir(), 'copse-link-scope-')))
+    const root = join(fixture, 'project')
+    const outside = join(fixture, 'outside')
+    mkdirSync(join(root, 'nested', 'links'), { recursive: true })
+    mkdirSync(join(root, 'src'))
+    mkdirSync(outside)
+    writeFileSync(join(root, 'src', 'fixture.txt'), 'fixture')
+    symlinkSync(outside, join(root, 'escape'), 'dir')
+    symlinkSync('escape', join(root, 'chain'), 'dir')
+    symlinkSync(outside, join(root, 'nested', 'links', 'escape-dir'), 'dir')
+    try {
+      for (const command of [
+        'ln -s ../../src/fixture.txt nested/links/evidence',
+        'ln -sfn ../../src/fixture.txt nested/links/evidence',
+        'ln -s ../src/fixture.txt nested',
+      ]) {
+        const result = analyzeShellCommand(command, root)
+        assert.equal(result.verdict, 'sandbox', `${command}: ${result.reasons.join('; ')}`)
+      }
+      for (const command of [
+        'ln -s ../../../outside/fixture.txt nested/links/evidence',
+        'ln -s ../../chain/fixture.txt nested/links/evidence',
+        'ln -s ../src/fixture.txt chain/evidence',
+        'ln -sr ../../src/fixture.txt nested/links/evidence',
+        'ln -s "$TARGET/../fixture.txt" nested/links/evidence',
+        'ln -s ../../src/fixture.txt nested/links/evidence && echo done',
+        'ln -sfn ../../src/fixture.txt nested/links/escape-dir/',
+        'ln -sfn ../../src/fixture.txt nested/links/escape-dir/.',
+      ]) {
+        assert.equal(analyzeShellCommand(command, root).verdict, 'external', command)
+      }
+    } finally {
+      rmSync(fixture, { recursive: true, force: true })
+    }
+  })
+  it('retains the raw outside-path scan for late ln option positions', () => {
+    const fixture = realpathSync(mkdtempSync(join(tmpdir(), 'copse-ln-options-')))
+    const root = join(fixture, 'project')
+    const outside = join(fixture, 'outside')
+    mkdirSync(root)
+    mkdirSync(outside)
+    writeFileSync(join(root, 'fixture.txt'), 'fixture')
+    try {
+      for (const command of [
+        `ln -s fixture.txt --target-directory=${outside}`,
+        `ln -s ../../fixture.txt -t${outside}`,
+        `ln -s fixture.txt -t ${outside}`,
+      ]) {
+        assert.equal(analyzeShellCommand(command, root).verdict, 'external', command)
+      }
+      assert.equal(analyzeShellCommand('ln -snf -- fixture.txt -evidence', root).verdict, 'sandbox')
+    } finally {
+      rmSync(fixture, { recursive: true, force: true })
+    }
+  })
+})
 
 describe('analyzeShellCommand (app environment)', () => {
   const root = '/Users/me/project'
