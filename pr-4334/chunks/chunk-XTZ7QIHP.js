@@ -27743,10 +27743,11 @@ var init_agent_activity = __esm({
 function canContinue(used, cap = DEFAULT_CONTINUATION_BUDGET) {
   return used < cap;
 }
-var DEFAULT_CONTINUATION_BUDGET;
+var DEFAULT_CONTINUATION_BUDGET, DEFAULT_CROSS_THREAD_PROMPT_BUDGET;
 var init_continuation_budget = __esm({
   "packages/agent/src/hooks/continuation-budget.ts"() {
     DEFAULT_CONTINUATION_BUDGET = 5;
+    DEFAULT_CROSS_THREAD_PROMPT_BUDGET = 5;
   }
 });
 
@@ -27832,8 +27833,14 @@ function isHeldMessage(item) {
 function isMachineContinuation(item) {
   return item.origin !== void 0;
 }
+function isCrossThreadPrompt(item) {
+  return item.origin?.kind === "machine" && item.origin.operationId.startsWith("thread:");
+}
+function crossThreadBudgetHeldNote() {
+  return `Cross-thread prompt allowance reached \u2014 ${String(DEFAULT_CROSS_THREAD_PROMPT_BUDGET)} prompts from this sender's user turn have run here. This prompt is held; release it to continue, or send a new instruction in the sender thread for a fresh allowance.`;
+}
 function continuationBudgetHeldNote() {
-  return `Auto-continuation budget reached \u2014 ${String(DEFAULT_CONTINUATION_BUDGET)} machine-initiated follow-ups have run in this turn. The next hook follow-up is held; release it to continue (that starts a fresh turn with a reset budget).`;
+  return `Auto-continuation budget reached \u2014 ${String(DEFAULT_CONTINUATION_BUDGET)} machine-initiated follow-ups have run in this turn. The next automatic follow-up is held; release it to continue (that starts a fresh turn with a reset budget).`;
 }
 function isStaleEpoch(thread, epoch) {
   return thread.currentEpoch !== void 0 && thread.currentEpoch !== epoch;
@@ -27852,7 +27859,8 @@ function startRootTurnTree(store, threadId) {
   patchThreadAnywhere(store, threadId, (t2) => ({
     ...t2,
     currentEpoch: epoch,
-    continuationUsed: 0
+    continuationUsed: 0,
+    crossThreadPromptsUsed: 0
   }));
   return epoch;
 }
@@ -27925,6 +27933,9 @@ function protectedHumanTurnDisplay(store, threadId, messageId) {
   };
 }
 function dispatchAgentRun(store, api, threadId, payload, queued) {
+  dispatchAgentRunWithCharge(store, api, threadId, payload, queued);
+}
+function dispatchAgentRunWithCharge(store, api, threadId, payload, queued, charge) {
   const { activeProjectId, backgroundThreads } = store.getState();
   const projectId = backgroundThreads.find((entry) => entry.thread.id === threadId)?.projectId ?? activeProjectId;
   if (!projectId) throw new Error("Cannot run thread without an owning project");
@@ -27952,7 +27963,7 @@ function dispatchAgentRun(store, api, threadId, payload, queued) {
         queued?.mobilePromptGrantId
       );
       if (result === "cancelled") {
-        if (queued) holdCancelledProtectedPrompt(store, threadId, queued);
+        if (queued) holdCancelledProtectedPrompt(store, threadId, queued, charge);
         else setThreadStatus(store, threadId, "idle");
       }
       return;
@@ -27970,13 +27981,13 @@ function dispatchAgentRun(store, api, threadId, payload, queued) {
           },
           display
         );
-        if (result === "cancelled") holdCancelledProtectedPrompt(store, threadId, queued);
+        if (result === "cancelled") holdCancelledProtectedPrompt(store, threadId, queued, charge);
         return;
       } catch (err) {
         if (!isSubthreadPromptHeldError(err)) throw err;
       }
     }
-    holdRevokedSubthreadPrompt(store, threadId, queued);
+    holdRevokedSubthreadPrompt(store, threadId, queued, charge);
   });
   if (!queued) {
     void run;
@@ -27984,7 +27995,7 @@ function dispatchAgentRun(store, api, threadId, payload, queued) {
   }
   void run.catch((err) => {
     if (!isAgentTurnBusyError(err)) throw err;
-    requeueBusyMessage(store, api, threadId, queued);
+    requeueBusyMessage(store, api, threadId, queued, charge);
   }).finally(() => {
     finishPendingDispatch(store, threadId);
     if (getThreadById(store, threadId)?.status === "idle") {
@@ -27996,11 +28007,27 @@ function subthreadParentOf(item) {
   const operationId = item.origin?.kind === "machine" ? item.origin.operationId : "";
   return operationId.startsWith(SUBTHREAD_OPERATION_PREFIX) ? operationId.slice(SUBTHREAD_OPERATION_PREFIX.length) : void 0;
 }
-function holdRevokedSubthreadPrompt(store, threadId, item) {
+function refundedQueuedBudget(thread, charge) {
+  if (!charge || charge.chargedCount <= 0) return {};
+  if (charge.kind === "cross-thread") {
+    if (thread.crossThreadPromptCounts?.[charge.scope] !== charge.chargedCount) return {};
+    return {
+      crossThreadPromptCounts: {
+        ...thread.crossThreadPromptCounts,
+        [charge.scope]: charge.chargedCount - 1
+      }
+    };
+  }
+  if (thread.currentEpoch !== charge.epoch) return {};
+  if (charge.kind === "legacy-cross-thread")
+    return thread.crossThreadPromptsUsed === charge.chargedCount ? { crossThreadPromptsUsed: charge.chargedCount - 1 } : {};
+  return thread.continuationUsed === charge.chargedCount ? { continuationUsed: charge.chargedCount - 1 } : {};
+}
+function holdRevokedSubthreadPrompt(store, threadId, item, charge) {
   patchThreadAnywhere(store, threadId, (thread) => ({
     ...thread,
     status: "idle",
-    continuationUsed: Math.max(0, (thread.continuationUsed ?? 0) - 1),
+    ...refundedQueuedBudget(thread, charge),
     pendingMessages: [{ ...item, autoDispatch: false }, ...thread.pendingMessages ?? []],
     updatedAt: Date.now()
   }));
@@ -28008,18 +28035,18 @@ function holdRevokedSubthreadPrompt(store, threadId, item) {
   store.emit("message_queued", threadId, item.messageId);
   store.emit("threads_changed");
 }
-function requeueBusyMessage(store, api, threadId, item) {
+function requeueBusyMessage(store, api, threadId, item, charge) {
   patchThreadAnywhere(store, threadId, (t2) => {
     const pending = t2.pendingMessages ?? [];
     if (pending.some((entry) => entry.messageId === item.messageId)) return t2;
     const requeued = { ...t2, pendingMessages: [item, ...pending], updatedAt: Date.now() };
-    return isMachineContinuation(item) && (t2.continuationUsed ?? 0) > 0 ? { ...requeued, continuationUsed: (t2.continuationUsed ?? 0) - 1 } : requeued;
+    return { ...requeued, ...refundedQueuedBudget(t2, charge) };
   });
   store.emit("message_queued", threadId, item.messageId);
   store.emit("threads_changed");
   if (getThreadById(store, threadId)?.status === "idle") drainMessageQueue(store, api, threadId);
 }
-function holdCancelledProtectedPrompt(store, threadId, item) {
+function holdCancelledProtectedPrompt(store, threadId, item, charge) {
   patchThreadAnywhere(store, threadId, (thread) => {
     const pending = thread.pendingMessages ?? [];
     const {
@@ -28036,8 +28063,13 @@ function holdCancelledProtectedPrompt(store, threadId, item) {
       } = entry;
       return { ...rest, autoDispatch: false };
     }) : [{ ...heldItem, autoDispatch: false }, ...pending];
-    const refunded = isMachineContinuation(item) && (thread.continuationUsed ?? 0) > 0 ? { continuationUsed: (thread.continuationUsed ?? 0) - 1 } : {};
-    return { ...thread, ...refunded, status: "idle", pendingMessages: held, updatedAt: Date.now() };
+    return {
+      ...thread,
+      ...refundedQueuedBudget(thread, charge),
+      status: "idle",
+      pendingMessages: held,
+      updatedAt: Date.now()
+    };
   });
   syncAgentActivity(store, threadId, false);
   store.emit("message_queued", threadId, item.messageId);
@@ -28075,11 +28107,26 @@ function drainMessageQueue(store, api, threadId) {
   const pending = thread.pendingMessages ?? [];
   if (pending.length === 0) return;
   let used = thread.continuationUsed ?? 0;
+  let crossThreadUsed = thread.crossThreadPromptsUsed ?? 0;
+  const crossThreadCounts = { ...thread.crossThreadPromptCounts };
   let next;
   const heldByBudget = [];
+  const heldByCrossThreadBudget = [];
   const heldByEpoch = [];
   for (const item of pending) {
     if (isHeldMessage(item)) continue;
+    if (isCrossThreadPrompt(item)) {
+      const scope = item.origin?.kind === "machine" ? item.origin.crossThreadScope : void 0;
+      const count = scope === void 0 ? crossThreadUsed : crossThreadCounts[scope] ?? 0;
+      if (!canContinue(count, DEFAULT_CROSS_THREAD_PROMPT_BUDGET)) {
+        heldByCrossThreadBudget.push(item.messageId);
+        continue;
+      }
+      if (scope === void 0) crossThreadUsed += 1;
+      else crossThreadCounts[scope] = count + 1;
+      next = item;
+      break;
+    }
     if (isMachineContinuation(item)) {
       if (item.epoch !== void 0 && isStaleEpoch(thread, item.epoch)) {
         heldByEpoch.push(item.messageId);
@@ -28096,10 +28143,11 @@ function drainMessageQueue(store, api, threadId) {
     next = item;
     break;
   }
-  if (!next && heldByBudget.length === 0 && heldByEpoch.length === 0) return;
+  if (!next && heldByBudget.length === 0 && heldByCrossThreadBudget.length === 0 && heldByEpoch.length === 0)
+    return;
   if (next && !isMachineContinuation(next)) startHumanTurnTree(store, threadId);
   const rest = pending.filter((item) => item !== next);
-  const held = /* @__PURE__ */ new Set([...heldByBudget, ...heldByEpoch]);
+  const held = /* @__PURE__ */ new Set([...heldByBudget, ...heldByCrossThreadBudget, ...heldByEpoch]);
   patchThreadAnywhere(store, threadId, (t2) => {
     const { pendingMessages: _removed, ...restThread } = t2;
     const messages = movePendingUserMessagesToEnd(t2.messages, pending);
@@ -28107,11 +28155,32 @@ function drainMessageQueue(store, api, threadId) {
       (item) => held.has(item.messageId) ? { ...item, autoDispatch: false } : item
     );
     const base = nextPending.length > 0 ? { ...restThread, messages, pendingMessages: nextPending, updatedAt: Date.now() } : { ...restThread, messages, updatedAt: Date.now() };
+    if (next && isCrossThreadPrompt(next))
+      return {
+        ...base,
+        crossThreadPromptsUsed: crossThreadUsed,
+        crossThreadPromptCounts: crossThreadCounts
+      };
     return next && isMachineContinuation(next) ? { ...base, continuationUsed: used } : base;
   });
   if (heldByBudget.length > 0) addMessage(store, threadId, "error", continuationBudgetHeldNote());
+  if (heldByCrossThreadBudget.length > 0)
+    addMessage(store, threadId, "error", crossThreadBudgetHeldNote());
   store.emit("threads_changed");
-  if (next) dispatchAgentRun(store, api, threadId, next.payload, next);
+  if (next) {
+    let charge;
+    if (isCrossThreadPrompt(next)) {
+      const scope = next.origin?.kind === "machine" ? next.origin.crossThreadScope : void 0;
+      charge = scope === void 0 ? {
+        kind: "legacy-cross-thread",
+        chargedCount: crossThreadUsed,
+        epoch: thread.currentEpoch
+      } : { kind: "cross-thread", chargedCount: crossThreadCounts[scope] ?? 0, scope };
+    } else if (isMachineContinuation(next)) {
+      charge = { kind: "continuation", chargedCount: used, epoch: thread.currentEpoch };
+    }
+    dispatchAgentRunWithCharge(store, api, threadId, next.payload, next, charge);
+  }
 }
 function movePendingUserMessagesToEnd(messages, pending) {
   const messagesById = new Map(messages.map((message) => [message.id, message]));
@@ -28605,6 +28674,13 @@ function releaseHeldMessage(store, api, threadId, messageId) {
       currentEpoch: epoch,
       // A human release starts a fresh turn tree with a reset budget (decision 5).
       continuationUsed: 0,
+      crossThreadPromptsUsed: 0,
+      ...item.origin?.kind === "machine" && item.origin.crossThreadScope !== void 0 ? {
+        crossThreadPromptCounts: {
+          ...t2.crossThreadPromptCounts,
+          [item.origin.crossThreadScope]: 0
+        }
+      } : {},
       pendingMessages: (t2.pendingMessages ?? []).map((p2) => {
         if (p2.messageId !== messageId) return p2;
         const { autoDispatch: _released, ...rest } = p2;
@@ -45108,13 +45184,13 @@ var init_acp_known_agents = __esm({
           scratchPaths: ["/tmp/claude-${uid}", "/tmp/claude-*", "/tmp/claude"]
         },
         sandboxedPermissionMode: "acceptEdits",
-        // setup-token only prints a token; it does not save the login this
-        // desktop setup needs. Use the dedicated login command and leave the
-        // account method to the login flow rather than forcing SSO or Console.
-        setup: "claude auth login",
-        reauth: "claude auth login",
+        // The adapter delegates --cli to the Claude Code binary bundled with its
+        // Agent SDK. Sign-in must use that same binary: a fresh machine can have
+        // the adapter without a separate `claude` executable on PATH.
+        setup: "claude-agent-acp --cli auth login",
+        reauth: "claude-agent-acp --cli auth login",
         docsUrl: "https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp",
-        note: "Runs Claude Code. Sign in with `claude auth login` (or `ANTHROPIC_API_KEY`)."
+        note: "Runs Claude Code. Sign in with `claude-agent-acp --cli auth login` (or `ANTHROPIC_API_KEY`)."
       },
       {
         id: "cursor",
