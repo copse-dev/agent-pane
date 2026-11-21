@@ -1,5 +1,5 @@
 import { sha256Hex } from '@copse/std/sha256.ts'
-import { mkdirSync } from 'node:fs'
+import fs, { type Stats } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -25,6 +25,10 @@ export function setSshControlDirForTests(dir: string | null): void {
   controlDirOverride = dir
 }
 
+function currentUid(): number {
+  return typeof process.getuid === 'function' ? process.getuid() : 0
+}
+
 function shortControlRoot(): string {
   if (controlDirOverride) return controlDirOverride
   // Prefer `/tmp` on Unix — `os.tmpdir()` on macOS is under `/var/folders/…/T`
@@ -32,13 +36,60 @@ function shortControlRoot(): string {
   if (process.platform === 'win32') {
     return join(tmpdir(), 'copse-ssh')
   }
-  const uid = typeof process.getuid === 'function' ? process.getuid() : 0
-  return join('/tmp', `copse-ssh-${String(uid)}`)
+  return join('/tmp', `copse-ssh-${String(currentUid())}`)
+}
+
+/**
+ * Why an existing control directory must not hold ControlMaster sockets, and
+ * what the user can do about it, or `null` when it is a private directory of
+ * the current user.
+ *
+ * The directory sits in a shared temp root, and `mkdir`'s mode applies only
+ * when `mkdir` creates the directory, so an existing path is checked with
+ * `lstat`: a symbolic link is refused, never followed.
+ */
+export function controlDirProblem(
+  stats: Pick<Stats, 'isSymbolicLink' | 'isDirectory' | 'uid' | 'mode'>,
+  uid: number,
+): string | null {
+  // Checked first: in a sticky temp root only the owner (or an administrator)
+  // can remove the entry, so "remove it" is advice this user cannot follow.
+  if (stats.uid !== uid) {
+    return (
+      `it belongs to another account (uid ${String(stats.uid)}, not ${String(uid)}). ` +
+      'Only that account or an administrator can remove it; on most systems a restart also clears it.'
+    )
+  }
+  const removeIt = 'Remove it and try again.'
+  if (stats.isSymbolicLink()) return `it is a symbolic link. ${removeIt}`
+  if (!stats.isDirectory()) return `it is not a directory. ${removeIt}`
+  const mode = stats.mode & 0o777
+  if (mode !== 0o700) return `its mode is ${mode.toString(8)}, not 700. ${removeIt}`
+  return null
+}
+
+function isAlreadyExists(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && error.code === 'EEXIST'
 }
 
 export function sshControlDir(): string {
   const dir = shortControlRoot()
-  mkdirSync(dir, { recursive: true, mode: 0o700 })
+  if (process.platform === 'win32') {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
+    return dir
+  }
+  try {
+    // Not recursive, so an existing entry of any kind is left as it is.
+    fs.mkdirSync(dir, { mode: 0o700 })
+  } catch (error) {
+    // Already there: made by an earlier run, by another Copse process of the
+    // same user a moment ago, or by someone else. The check below decides.
+    if (!isAlreadyExists(error)) throw error
+  }
+  const problem = controlDirProblem(fs.lstatSync(dir), currentUid())
+  if (problem !== null) {
+    throw new Error(`Refusing to use SSH control directory ${dir}: ${problem}`)
+  }
   return dir
 }
 

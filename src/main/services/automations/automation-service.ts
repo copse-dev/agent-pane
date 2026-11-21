@@ -60,6 +60,7 @@ import {
 } from '../supervisor/task-supervisor.ts'
 import type { SupervisedTaskMeta } from '@shared/supervisor/task-schema.ts'
 import { errorMessage } from '@shared/errors.ts'
+import { withTimeout } from '@copse/std/with-timeout.ts'
 
 const STORAGE_KEY = `plugin.${AUTOMATIONS_PLUGIN_ID}.storage`
 const SCHEDULER_HANDLER = 'automation_scheduler_tick'
@@ -1315,30 +1316,28 @@ export function createAutomationService(
       await Promise.all(
         due.map(async (schedule) => {
           const attempt = new AbortController()
-          let timer: ReturnType<typeof setTimeout> | undefined
-          const timedOut = new Promise<never>((_resolve, reject) => {
-            timer = setTimeout(() => {
-              const error = new Error(
-                `Trigger timed out after ${String(SCHEDULER_TRIGGER_TIMEOUT_MS)}ms; any unfinished creation will not start a turn`,
-              )
-              attempt.abort(error)
-              if (triggerAttempts.get(schedule.id) === attempt) {
-                triggerAttempts.delete(schedule.id)
-                inFlight.delete(schedule.id)
-              }
-              reject(error)
-            }, SCHEDULER_TRIGGER_TIMEOUT_MS)
-          })
           try {
-            await Promise.race([trigger(schedule, now, 'schedule', attempt), timedOut])
+            await withTimeout(
+              trigger(schedule, now, 'schedule', attempt),
+              SCHEDULER_TRIGGER_TIMEOUT_MS,
+              () => {
+                const error = new Error(
+                  `Trigger timed out after ${String(SCHEDULER_TRIGGER_TIMEOUT_MS)}ms; any unfinished creation will not start a turn`,
+                )
+                attempt.abort(error)
+                if (triggerAttempts.get(schedule.id) === attempt) {
+                  triggerAttempts.delete(schedule.id)
+                  inFlight.delete(schedule.id)
+                }
+                throw error
+              },
+            )
           } catch (error) {
             // Isolate failures — including a hang, which would otherwise block this
             // Promise.all and take the whole tick past its own duration budget — so
             // one project cannot prevent other matching schedules from running.
             // Do not retry repeatedly in the same minute.
             await logTriggerFailure(schedule, error)
-          } finally {
-            clearTimeout(timer)
           }
         }),
       )
