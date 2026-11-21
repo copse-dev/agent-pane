@@ -88,9 +88,11 @@ import {
   bumpUiScale,
   canOpenWorkspaceFileInBrowser,
   canonicalAcpAgentId,
+  clamp,
   classifyAutomationFailureMessage,
   clearThreadProposalDecisionFor,
   closeSettingsDialog,
+  collapseWhitespace,
   collectThreadLinks,
   collectThreadPrRefs,
   commitProductionSchema,
@@ -105,7 +107,6 @@ import {
   createCustomProvidersSection,
   createLmStudioSection,
   createNewProject,
-  createOverlayDialog,
   createPasteKeyForm,
   createStore,
   createThread,
@@ -122,6 +123,7 @@ import {
   displayModelLabel,
   drainMessageQueue,
   dropBackgroundThread,
+  ellipsize,
   endThreadSubmission,
   enqueueHookMessage,
   enqueueUserMessage,
@@ -196,6 +198,7 @@ import {
   init_automations_plugin,
   init_background_threads,
   init_chatgpt_plan_section,
+  init_clamp,
   init_composite_intellect,
   init_confirm_dialog,
   init_context_menu,
@@ -203,7 +206,6 @@ import {
   init_copse_tool_call,
   init_custom_providers_section,
   init_developer_mode,
-  init_dialog_shell,
   init_dynamic_model,
   init_environment_setup,
   init_errors,
@@ -234,6 +236,7 @@ import {
   init_model_picker,
   init_model_usage,
   init_nullish as init_nullish2,
+  init_one_line_text,
   init_pane_tabs,
   init_panels,
   init_paste_key_form,
@@ -282,7 +285,6 @@ import {
   invalidateProjectThreadLoads,
   isAcpDelegateToolCall,
   isAcpModel,
-  isAnyDialogOpen,
   isApprovalStalled,
   isAutomationFailureCode,
   isAutomationPendingStart,
@@ -488,7 +490,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-WAM6ARDL.js";
+} from "./chunk-IS4OMBZS.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -572,15 +574,19 @@ import {
   warningIcon,
   workspaceLinkTargetFromHref,
   zapIcon
-} from "./chunk-UAI3U54O.js";
+} from "./chunk-KYBBGUKM.js";
 import {
   clear,
+  createOverlayDialog,
   el,
+  init_dialog_shell,
   init_helpers,
+  isAnyDialogOpen,
+  lazyBodyDialog,
   on,
   qs,
   qsRequired
-} from "./chunk-EMIRHVRH.js";
+} from "./chunk-OB2CWITE.js";
 import {
   __esm
 } from "./chunk-WW3EXSJD.js";
@@ -1637,7 +1643,7 @@ function fits(placement, input) {
       return anchor.left + anchor.width + gap + tip.width <= viewport.width - pad;
   }
 }
-function clamp(value, min, max) {
+function clamp2(value, min, max) {
   if (max < min) return min;
   return Math.min(Math.max(value, min), max);
 }
@@ -1662,8 +1668,8 @@ function computeTooltipPosition(input) {
     left = placement === "left" ? anchor.left - gap - tip.width : anchor.left + anchor.width + gap;
   }
   return {
-    left: clamp(left, pad, viewport.width - tip.width - pad),
-    top: clamp(top, pad, viewport.height - tip.height - pad),
+    left: clamp2(left, pad, viewport.width - tip.width - pad),
+    top: clamp2(top, pad, viewport.height - tip.height - pad),
     placement
   };
 }
@@ -3388,7 +3394,7 @@ function forkThreadTitle(title) {
   return truncateTitle(`${base2}${FORK_SUFFIX}`);
 }
 function truncateTitle(title) {
-  return title.length <= MAX_TITLE_LENGTH ? title : `${title.slice(0, MAX_TITLE_LENGTH - 1)}\u2026`;
+  return ellipsize(title, MAX_TITLE_LENGTH);
 }
 function buildForkedThread(source, options = {}) {
   const excluded = options.excludeMessageIds ?? /* @__PURE__ */ new Set();
@@ -3461,6 +3467,7 @@ function copyMessage(message2) {
 var randomUUID, MAX_TITLE_LENGTH, FORK_SUFFIX;
 var init_fork_thread = __esm({
   "packages/thread-store/src/fork-thread.ts"() {
+    init_one_line_text();
     init_thread_pr_status();
     init_thread_links();
     randomUUID = () => globalThis.crypto.randomUUID();
@@ -3698,8 +3705,7 @@ var init_thread_filter = __esm({
 
 // src/renderer/controller/activity-model.ts
 function truncateText(text, max = WANT_MAX_CHARS) {
-  const flat = text.replace(/\s+/g, " ").trim();
-  return flat.length <= max ? flat : `${flat.slice(0, max - 1).trimEnd()}\u2026`;
+  return ellipsize(collapseWhitespace(text), max, { trimEnd: true });
 }
 function threadName(thread) {
   const title = thread?.title.trim();
@@ -3995,6 +4001,7 @@ function formatAgeLong(elapsedMs) {
 var RECENT_ROW_LIMIT, RECENT_WINDOW_MS, FUTURE_SKEW_MS, SCHEDULE_FOLD_AT, WANT_MAX_CHARS, UNTITLED_THREAD, GROUP_LABELS, MINUTE, HOUR, DAY;
 var init_activity_model = __esm({
   "src/renderer/controller/activity-model.ts"() {
+    init_one_line_text();
     init_types();
     init_automation_failure();
     init_projects();
@@ -6224,7 +6231,7 @@ function openThreadHistoryEditor(store2, api2, options) {
       );
       const textarea = el("textarea", {
         class: "history-editor-message-input",
-        rows: String(Math.min(8, Math.max(2, draft.content.split("\n").length))),
+        rows: String(clamp(draft.content.split("\n").length, 2, 8)),
         spellcheck: "true",
         "aria-label": `Edit ${draft.role} message`
       });
@@ -6391,6 +6398,7 @@ function openThreadHistoryEditor(store2, api2, options) {
 }
 var init_thread_history_editor = __esm({
   "src/renderer/views/thread-history-editor.ts"() {
+    init_clamp();
     init_helpers();
     init_icons();
     init_persistence();
@@ -11429,9 +11437,6 @@ var init_mermaid_frame = __esm({
 });
 
 // src/renderer/markdown/mermaid-expand.ts
-function clamp2(n, min, max) {
-  return Math.min(max, Math.max(min, n));
-}
 function applyTransform() {
   if (!stageEl) return;
   stageEl.style.transform = `translate(${String(translateX)}px, ${String(translateY)}px) scale(${String(scale)})`;
@@ -11460,7 +11465,7 @@ function fitToViewport() {
   }
   const inset = 8;
   const fitScale = Math.min((vw - inset * 2) / contentW, (vh - inset * 2) / contentH);
-  scale = clamp2(fitScale, MIN_SCALE, MAX_SCALE);
+  scale = clamp(fitScale, MIN_SCALE, MAX_SCALE);
   translateX = (vw - contentW * scale) / 2;
   translateY = (vh - contentH * scale) / 2;
   stageEl.style.transform = "";
@@ -11471,7 +11476,7 @@ function zoomAt(clientX, clientY, factor) {
   const rect = viewportEl.getBoundingClientRect();
   const mx = clientX - rect.left;
   const my = clientY - rect.top;
-  const nextScale = clamp2(scale * factor, MIN_SCALE, MAX_SCALE);
+  const nextScale = clamp(scale * factor, MIN_SCALE, MAX_SCALE);
   const contentX = (mx - translateX) / scale;
   const contentY = (my - translateY) / scale;
   scale = nextScale;
@@ -11627,6 +11632,7 @@ function attachMermaidExpand(root, recreate = recreateMermaidFrame) {
 var MIN_SCALE, MAX_SCALE, ZOOM_STEP, expandDialog, viewportEl, stageEl, zoomLabelEl, expandedFrame, scale, translateX, translateY;
 var init_mermaid_expand = __esm({
   "src/renderer/markdown/mermaid-expand.ts"() {
+    init_clamp();
     init_helpers();
     init_icons();
     init_mermaid_frame();
@@ -11706,7 +11712,7 @@ var init_mermaid = __esm({
 // src/renderer/markdown/table-copy.ts
 function tableToTsv(table) {
   return Array.from(table.querySelectorAll("tr")).map(
-    (row2) => Array.from(row2.querySelectorAll("th, td")).map((cell) => cell.textContent.replace(/\s+/g, " ").trim()).join("	")
+    (row2) => Array.from(row2.querySelectorAll("th, td")).map((cell) => collapseWhitespace(cell.textContent)).join("	")
   ).join("\n");
 }
 function attachTableCopyButtons(root) {
@@ -11743,6 +11749,7 @@ function attachTableCopyButtons(root) {
 var COPY_LABEL2, COPIED_LABEL2, FEEDBACK_MS2;
 var init_table_copy = __esm({
   "src/renderer/markdown/table-copy.ts"() {
+    init_one_line_text();
     init_helpers();
     COPY_LABEL2 = "Copy";
     COPIED_LABEL2 = "Copied";
@@ -13897,7 +13904,16 @@ function isRowCardOf(node, key) {
   return ROW_CARD_ATTRIBUTES.some((attribute) => node.getAttribute(attribute) === key);
 }
 function transcriptRowElement(list, key) {
-  return list.querySelector(`:scope > [data-message-id="${CSS.escape(key)}"]`);
+  let head = list.firstElementChild;
+  let tail = list.lastElementChild;
+  while (head && tail) {
+    if (head instanceof HTMLElement && head.dataset["messageId"] === key) return head;
+    if (tail instanceof HTMLElement && tail.dataset["messageId"] === key) return tail;
+    if (head === tail || head.nextElementSibling === tail) return null;
+    head = head.nextElementSibling;
+    tail = tail.previousElementSibling;
+  }
+  return null;
 }
 function removeTranscriptRow(list, key) {
   const element = transcriptRowElement(list, key);
@@ -15461,7 +15477,13 @@ function bindBrowserLinkClicks(root, store2, api2) {
   root.classList.add("browser-links-scope");
   const openPlainLink = (href) => {
     if (!store2.getState().openLinksInBuiltInBrowser && api2?.shell) {
-      void api2.shell.openExternal(href);
+      void api2.shell.openExternal(href).catch((error) => {
+        if (String(error).includes("Workspace previews open inside Copse")) {
+          openBrowserUrl(store2, href);
+          return;
+        }
+        showErrorToast("Could not open link", error);
+      });
       return;
     }
     openBrowserUrl(store2, href);
@@ -17108,6 +17130,7 @@ var init_turn_start_hooks = __esm({
 // packages/agent/src/read-file-limits.ts
 var init_read_file_limits = __esm({
   "packages/agent/src/read-file-limits.ts"() {
+    init_clamp();
   }
 });
 
@@ -17118,6 +17141,7 @@ function hasOpenTodos(todos) {
 var DUPLICATE_GUARDED_TOOL_NAMES, MAX_TODO_CLOSEOUT_ATTEMPTS, OPEN_TODOS_FINALIZE_NUDGE, OPEN_TODOS_FINALIZE_NUDGE_STRICT, WORKSPACE_READ_ONLY_TOOL_NAMES;
 var init_agent_loop_guards = __esm({
   "packages/agent/src/agent-loop-guards.ts"() {
+    init_one_line_text();
     init_read_file_limits();
     init_unknown_value();
     DUPLICATE_GUARDED_TOOL_NAMES = /* @__PURE__ */ new Set([
@@ -18906,7 +18930,7 @@ function findMatchOffsets(haystack, needle) {
   return Array.from(haystack.matchAll(pattern), (match) => match.index);
 }
 function normalizeSearchText(text) {
-  return text.replace(/\s+/g, " ").trim();
+  return collapseWhitespace(text);
 }
 function buildSearchIndex(segments) {
   const capacity = segments.reduce((n, segment) => n + segment.text.length + 1, 0);
@@ -19172,6 +19196,7 @@ function mountConversationSearch(root) {
 var BASE_HIGHLIGHT, CURRENT_HIGHLIGHT, highlightsSupported, WHITESPACE_CHAR, SEARCH_BLOCK_SELECTOR, openImpl, closeImpl, isOpenImpl;
 var init_conversation_search = __esm({
   "src/renderer/views/conversation-search.ts"() {
+    init_one_line_text();
     init_helpers();
     init_transcript_scroll();
     init_icons();
@@ -19972,9 +19997,9 @@ function createSubagentMessageEl(content, streaming, api2) {
   return textEl;
 }
 function timelineShowsText(session, text) {
-  const target = text.replace(/\s+/g, " ").trim();
+  const target = collapseWhitespace(text);
   if (!target) return false;
-  return session.messages.some((m2) => m2.content.replace(/\s+/g, " ").trim() === target);
+  return session.messages.some((m2) => collapseWhitespace(m2.content) === target);
 }
 function textAfterTimelinePrefix(session, result) {
   for (const m2 of session.messages) {
@@ -22702,7 +22727,7 @@ function mountConversation(root, store2, api2, options = {}) {
     store2.on("message_token", (mid) => {
       const thread = getActiveThread(store2);
       const msg = thread?.messages.find((m2) => m2.id === mid);
-      const msgEl = list.querySelector(`[data-message-id="${mid}"]`);
+      const msgEl = transcriptRowElement(list, mid);
       const textEl = msgEl?.querySelector(".message-text");
       if (textEl && msg?.role === "assistant") {
         setAssistantMarkdown(textEl, msg.content, true, api2);
@@ -22978,6 +23003,7 @@ function attachCopyButton(body, msgId, store2) {
 var PATCH_OP_LABEL, lazyToolCardBodies, toolResultContentSignatures, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolGroupItemSignatures, acpDiffLineSigns, acpDiffLineNames, emptyReasoningBlocks, reasoningRenders, INITIAL_RENDER_WINDOW, REOPENABLE_REASONING, BACKFILL_CHUNK_SIZE, UNSIGNED_ROW;
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
+    init_one_line_text();
     init_helpers();
     init_transcript_rows();
     init_thread_archive_review();
@@ -51265,7 +51291,7 @@ function preprocessTablePipes(src) {
     return escapeTableCellPipes(line);
   }).join("\n");
 }
-function collapseWhitespace(s) {
+function collapseWhitespace2(s) {
   return (s || "").replaceAll("", " ").replace(/\s+/g, " ").trim();
 }
 function replaceCellLineSeparator(value, cellLineSeparator) {
@@ -51284,7 +51310,7 @@ function renderTableToMarkdown(node, h2, options = {}) {
       let raw = "";
       if (cellNode.content && Array.isArray(cellNode.content) && cellNode.content.length > 1) raw = cellNode.content.map((child) => replaceCellLineSeparator(h2.renderChildren(child), options.cellLineSeparator)).join("\n");
       else raw = replaceCellLineSeparator(cellNode.content ? h2.renderChildren(cellNode.content) : "", options.cellLineSeparator);
-      const text = escapePipesInCellText(collapseWhitespace(raw.replace(/[ \t]*\r?\n[ \t]*/g, "<br>")));
+      const text = escapePipesInCellText(collapseWhitespace2(raw.replace(/[ \t]*\r?\n[ \t]*/g, "<br>")));
       const isHeader = cellNode.type === "tableHeader";
       const align = normalizeTableCellAlignFromAttributes(cellNode.attrs);
       cells.push({
@@ -52906,6 +52932,7 @@ var init_thread_branch = __esm({
 var READ_TERMINAL_ENABLED_SETTING, READ_TERMINAL_ENABLED_DEFAULT, READ_TERMINAL_DEFAULT_LINES;
 var init_read_terminal = __esm({
   "src/shared/terminal/read-terminal.ts"() {
+    init_clamp();
     READ_TERMINAL_ENABLED_SETTING = "readTerminalEnabled";
     READ_TERMINAL_ENABLED_DEFAULT = true;
     READ_TERMINAL_DEFAULT_LINES = 200;
@@ -53279,6 +53306,7 @@ var init_remote_composer = __esm({
 var MIN_SAMPLE_INTERVAL_SECONDS;
 var init_decode_contract = __esm({
   "src/shared/video/decode-contract.ts"() {
+    init_clamp();
     MIN_SAMPLE_INTERVAL_SECONDS = 1 / 30;
   }
 });
@@ -53713,7 +53741,10 @@ function initSkillPicker(opts) {
   function filterSkills(query, skills) {
     const q2 = query.toLowerCase();
     if (!q2) return [...skills];
-    const matched = skills.filter(
+    const candidates = skills.map(
+      (skill) => q2.includes(":") && skill.kind === "skill" && skill.plugin ? { ...skill, name: `${skill.plugin}:${skill.name}` } : skill
+    );
+    const matched = candidates.filter(
       (skill) => skill.name.toLowerCase().includes(q2) || skill.description.toLowerCase().includes(q2)
     );
     return matched.sort((a, b2) => {
@@ -53992,13 +54023,13 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 function invocationTokenPattern(name) {
-  return `\\/${escapeRegExp(name)}(?![a-z0-9-])`;
+  return `\\/${escapeRegExp(name)}(?![a-z0-9:/_-]|\\.[a-z0-9_-])`;
 }
 function inlineInvocationPattern(name) {
   return new RegExp(`(^|\\s)${invocationTokenPattern(name)}`);
 }
 function stripInvocationToken(text, name) {
-  return text.replace(inlineInvocationPattern(name), "$1").replace(/\s+/g, " ").trim();
+  return collapseWhitespace(text.replace(inlineInvocationPattern(name), "$1"));
 }
 function parseLeadingInvocation(text) {
   const trimmed2 = text.trim();
@@ -54009,25 +54040,35 @@ function parseLeadingInvocation(text) {
   return { name, remainder: (match[2] ?? "").trim() };
 }
 function resolveInvocation(text, invocables) {
-  const kindOf = (name) => invocables.find((entry) => entry.name === name)?.kind ?? null;
+  const candidates = invocables.flatMap((entry) => [
+    { token: entry.name, entry },
+    ...entry.kind === "skill" && entry.plugin ? [{ token: `${entry.plugin}:${entry.name}`, entry }] : []
+  ]);
   const leading = parseLeadingInvocation(text);
-  if (leading) return { ...leading, kind: kindOf(leading.name) };
+  if (leading) {
+    const match = candidates.find(({ token }) => token === leading.name);
+    return {
+      name: match?.entry.name ?? leading.name,
+      remainder: leading.remainder,
+      kind: match?.entry.kind ?? null
+    };
+  }
   const trimmed2 = text.trim();
   if (!trimmed2 || invocables.length === 0) return null;
-  const sorted = [...invocables].sort((a, b2) => b2.name.length - a.name.length);
-  for (const { name, kind } of sorted) {
-    if (!inlineInvocationPattern(name).test(trimmed2)) continue;
-    return { name, kind, remainder: stripInvocationToken(trimmed2, name) };
+  const sorted = candidates.sort((a, b2) => b2.token.length - a.token.length);
+  for (const { token, entry } of sorted) {
+    if (!inlineInvocationPattern(token).test(trimmed2)) continue;
+    return { name: entry.name, kind: entry.kind, remainder: stripInvocationToken(trimmed2, token) };
   }
   return null;
 }
-function mergeInvocables(skillNames, agentNames) {
+function mergeInvocables(skills, agentNames) {
   const seen = /* @__PURE__ */ new Set();
   const merged = [];
-  for (const name of skillNames) {
+  for (const { name, plugin } of skills) {
     if (seen.has(name)) continue;
     seen.add(name);
-    merged.push({ name, kind: "skill" });
+    merged.push({ name, kind: "skill", ...plugin ? { plugin } : {} });
   }
   for (const name of agentNames) {
     if (seen.has(name)) continue;
@@ -54039,7 +54080,8 @@ function mergeInvocables(skillNames, agentNames) {
 var LEADING_INVOCATION_RE;
 var init_parse_invocation = __esm({
   "src/shared/invocation/parse-invocation.ts"() {
-    LEADING_INVOCATION_RE = /^\/([a-z0-9][a-z0-9-]*)\b(?:\s+(.*))?$/s;
+    init_one_line_text();
+    LEADING_INVOCATION_RE = /^\/((?:[a-z0-9][a-z0-9._-]*:)?[a-z0-9][a-z0-9-]*)(?:\s+(.*))?$/s;
   }
 });
 
@@ -54640,7 +54682,7 @@ function mountFooterBranchStatus(host, store2, api2) {
   }
   function clampActiveIndex() {
     const count = rowCount();
-    activeIndex = count === 0 ? 0 : Math.max(0, Math.min(count - 1, activeIndex));
+    activeIndex = count === 0 ? 0 : clamp(activeIndex, 0, count - 1);
   }
   function scrollActiveRowIntoView() {
     const active2 = list.querySelector(".branch-picker-option.is-active");
@@ -54676,7 +54718,7 @@ function mountFooterBranchStatus(host, store2, api2) {
   function moveActive(direction) {
     const count = rowCount();
     if (count === 0) return;
-    activeIndex = Math.max(0, Math.min(count - 1, activeIndex + direction));
+    activeIndex = clamp(activeIndex + direction, 0, count - 1);
     renderMenu();
   }
   function renderMenu() {
@@ -54999,6 +55041,7 @@ function mountFooterBranchStatus(host, store2, api2) {
 var COPIED_BRANCH_TOAST, COPY_FEEDBACK_MS, DEFERRED_NOTE_TEXT, DEFERRED_NOTE_TITLE, nextPickerId;
 var init_footer_branch_status = __esm({
   "src/renderer/views/footer-branch-status.ts"() {
+    init_clamp();
     init_helpers();
     init_icons();
     init_thread_branch();
@@ -55342,7 +55385,7 @@ function createContextWheel() {
     fill.classList.toggle("is-warn", ratio >= CONTEXT_WARN_RATIO && ratio < CONTEXT_DANGER_RATIO);
   }
   function renderSnapshot(snapshot, running, options) {
-    const ratio = Math.min(1, Math.max(0, snapshot.fillRatio));
+    const ratio = clamp(snapshot.fillRatio, 0, 1);
     const visible = running || ratio > 0.01 || currentUsage !== null;
     root.hidden = !visible;
     if (!visible) return;
@@ -55412,6 +55455,7 @@ function createContextWheel() {
 var RADIUS, CIRCUMFERENCE, SVG_NS3, CONTEXT_WARN_RATIO, CONTEXT_DANGER_RATIO, SEGMENT_COLORS;
 var init_context_wheel = __esm({
   "src/renderer/views/context-wheel.ts"() {
+    init_clamp();
     init_footer_usage_popover();
     RADIUS = 6;
     CIRCUMFERENCE = 2 * Math.PI * RADIUS;
@@ -55926,6 +55970,7 @@ function buildChangesSuggestion(stats) {
 var DETERMINISTIC_FOLLOW_UP_IDS;
 var init_presets = __esm({
   "src/shared/follow-ups/presets.ts"() {
+    init_one_line_text();
     DETERMINISTIC_FOLLOW_UP_IDS = {
       changes: "changes",
       createPr: "create-pr",
@@ -55976,12 +56021,6 @@ var init_changes_stat = __esm({
 });
 
 // src/renderer/views/create-pr-dialog.ts
-function ensureDialog() {
-  if (dialogEl2) return dialogEl2;
-  dialogEl2 = el("dialog", { id: "create-pr-dialog", class: "create-pr-dialog" });
-  document.body.append(dialogEl2);
-  return dialogEl2;
-}
 function openCreatePrDialog(opts) {
   const dialog = ensureDialog();
   clear(dialog);
@@ -56135,11 +56174,12 @@ function openCreatePrDialog(opts) {
     titleInput.select();
   });
 }
-var dialogEl2;
+var ensureDialog;
 var init_create_pr_dialog = __esm({
   "src/renderer/views/create-pr-dialog.ts"() {
+    init_dialog_shell();
     init_helpers();
-    dialogEl2 = null;
+    ensureDialog = lazyBodyDialog("create-pr-dialog", "create-pr-dialog");
   }
 });
 
@@ -56198,9 +56238,11 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
   });
   let offered = [];
   const fetchTokens = /* @__PURE__ */ new Map();
+  const inFlightFetches = /* @__PURE__ */ new Map();
   const nextFetchToken = (threadId) => {
     const token = (fetchTokens.get(threadId) ?? 0) + 1;
     fetchTokens.set(threadId, token);
+    inFlightFetches.delete(threadId);
     return token;
   };
   const changesRefreshTokens = /* @__PURE__ */ new Map();
@@ -56213,6 +56255,14 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
   let displayedThreadId = null;
   const suggestionsByThread = /* @__PURE__ */ new Map();
   const consumedTurnKeys = /* @__PURE__ */ new Map();
+  function servingCache(threadId, turnKey) {
+    const cached = suggestionsByThread.get(threadId);
+    if (cached?.turnKey !== turnKey) return null;
+    return cached.settled || !turnSettled(threadId) ? cached : null;
+  }
+  function turnSettled(threadId) {
+    return store2.getState().threads.find((thread) => thread.id === threadId)?.status !== "running";
+  }
   function consumeSuggestions(threadId) {
     const exchange = lastExchange(store2, threadId);
     if (exchange) consumedTurnKeys.set(threadId, exchange.turnKey);
@@ -56308,8 +56358,8 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
     const consumedTurnKey = consumedTurnKeys.get(threadId);
     if (consumedTurnKey === exchange.turnKey) return;
     if (consumedTurnKey) consumedTurnKeys.delete(threadId);
-    const cached = suggestionsByThread.get(threadId);
-    if (cached?.turnKey === exchange.turnKey) {
+    const cached = servingCache(threadId, exchange.turnKey);
+    if (cached) {
       if (store2.getState().activeThreadId === threadId) {
         renderSuggestions(threadId, cached.suggestions);
       }
@@ -56317,7 +56367,11 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
     }
     const { activeProjectId } = store2.getState();
     if (!activeProjectId) return;
+    const settled = turnSettled(threadId);
+    const fetchKey = `${exchange.turnKey}\0${settled ? "settled" : "live"}`;
+    if (inFlightFetches.get(threadId)?.key === fetchKey) return;
     const token = nextFetchToken(threadId);
+    inFlightFetches.set(threadId, { key: fetchKey, token });
     try {
       const suggestions = await api2.agent.suggestFollowUps(
         activeProjectId,
@@ -56325,7 +56379,7 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
         JSON.stringify(exchange.context)
       );
       if (token !== fetchTokens.get(threadId)) return;
-      suggestionsByThread.set(threadId, { turnKey: exchange.turnKey, suggestions });
+      suggestionsByThread.set(threadId, { turnKey: exchange.turnKey, suggestions, settled });
       if (store2.getState().activeThreadId === threadId) {
         renderSuggestions(threadId, suggestions);
         void refreshChangesStat();
@@ -56334,6 +56388,8 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
       if (token !== fetchTokens.get(threadId)) return;
       suggestionsByThread.delete(threadId);
       if (store2.getState().activeThreadId === threadId) clearSuggestions();
+    } finally {
+      if (inFlightFetches.get(threadId)?.token === token) inFlightFetches.delete(threadId);
     }
   }
   async function refreshChangesStat() {
@@ -56353,7 +56409,7 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
     if (suggestionsByThread.get(activeId) !== cached) return;
     const next = reconcileChangesSuggestion(cached.suggestions, stats);
     if (next === cached.suggestions) return;
-    suggestionsByThread.set(activeId, { turnKey: cached.turnKey, suggestions: next });
+    suggestionsByThread.set(activeId, { ...cached, suggestions: next });
     if (store2.getState().activeThreadId === activeId) renderSuggestions(activeId, next);
   }
   function scheduleChangesRefresh() {
@@ -56378,8 +56434,8 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
       return;
     }
     if (consumedTurnKey) consumedTurnKeys.delete(activeId);
-    const cached = suggestionsByThread.get(activeId);
-    if (cached?.turnKey === exchange.turnKey) {
+    const cached = servingCache(activeId, exchange.turnKey);
+    if (cached) {
       renderSuggestions(activeId, cached.suggestions);
       return;
     }
@@ -56389,11 +56445,9 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
     store2.on("thread_status_changed", (tid, status) => {
       if (status === "running") {
         suggestionsByThread.delete(tid);
+        nextFetchToken(tid);
         nextChangesRefreshToken(tid);
-        if (tid === store2.getState().activeThreadId) {
-          nextFetchToken(tid);
-          clearSuggestions();
-        }
+        if (tid === store2.getState().activeThreadId) clearSuggestions();
         return;
       }
       if (status === "idle") void maybeFetchSuggestions(tid);
@@ -58928,7 +58982,7 @@ ${description}
   }
   function currentInvocables() {
     return mergeInvocables(
-      (skillsCache ?? []).map((skill) => skill.name),
+      skillsCache ?? [],
       (agentsCache ?? []).map((agent2) => agent2.name)
     );
   }
@@ -59296,7 +59350,7 @@ ${description}
     const invocation = resolveInvocation(
       rawText,
       mergeInvocables(
-        skills.map((skill) => skill.name),
+        skills,
         agents.map((agent2) => agent2.name)
       )
     );
@@ -59867,6 +59921,7 @@ ${reply}`);
       return [
         ...skills.map((skill) => ({
           name: skill.name,
+          ...skill.plugin ? { plugin: skill.plugin } : {},
           description: skill.description,
           kind: "skill"
         })),
@@ -70998,6 +71053,33 @@ var init_selection_to_chat = __esm({
   }
 });
 
+// packages/std/src/with-timeout.ts
+function withTimeout(promise, ms, onTimeout) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      try {
+        resolve(onTimeout());
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error(String(error), { cause: error }));
+      }
+    }, ms);
+    const settled = Promise.resolve(promise);
+    settled.then(resolve, reject);
+    settled.then(
+      () => {
+        clearTimeout(timer);
+      },
+      () => {
+        clearTimeout(timer);
+      }
+    );
+  });
+}
+var init_with_timeout = __esm({
+  "packages/std/src/with-timeout.ts"() {
+  }
+});
+
 // src/renderer/monaco/diff-scroll.ts
 function nextAnimationFrame() {
   return new Promise(
@@ -71020,19 +71102,11 @@ function waitForDidUpdateDiff(diffEditor, timeoutMs) {
   });
 }
 async function waitForViewModelDiff(viewModel, timeoutMs) {
-  let timeoutId;
-  try {
-    await Promise.race([
-      viewModel.waitForDiff().catch(() => void 0),
-      new Promise((resolve) => {
-        timeoutId = setTimeout(() => {
-          resolve();
-        }, timeoutMs);
-      })
-    ]);
-  } finally {
-    if (timeoutId !== void 0) clearTimeout(timeoutId);
-  }
+  await withTimeout(
+    viewModel.waitForDiff().catch(() => void 0),
+    timeoutMs,
+    () => void 0
+  );
 }
 async function refreshGitChangesDiffCollapse(diffEditor) {
   diffEditor.updateOptions({
@@ -71073,6 +71147,7 @@ function revealFirstDiffChange(diffEditor) {
 var HIDE_UNCHANGED_REGIONS, GIT_CHANGES_DIFF_EDITOR_OPTIONS;
 var init_diff_scroll = __esm({
   "src/renderer/monaco/diff-scroll.ts"() {
+    init_with_timeout();
     HIDE_UNCHANGED_REGIONS = {
       enabled: true,
       contextLineCount: 3,
@@ -71107,7 +71182,7 @@ var init_diff_scroll = __esm({
 
 // src/renderer/dom/editor-theme.ts
 function hexByte(value) {
-  return Math.round(Math.min(255, Math.max(0, value))).toString(16).padStart(2, "0");
+  return Math.round(clamp(value, 0, 255)).toString(16).padStart(2, "0");
 }
 function isOpaque(alpha2) {
   if (alpha2 === void 0) return true;
@@ -71244,6 +71319,7 @@ function installMonacoEditorTheme(monaco) {
 var EDITOR_THEME_TOKEN_PROPERTIES, FALLBACK_EDITOR_THEME_TOKENS, COPSE_MONACO_THEME, HEX_PATTERN, FUNCTION_PATTERN, INACTIVE_SELECTION_WEIGHT, EDITOR_THEME_TOKEN_FIELDS;
 var init_editor_theme = __esm({
   "src/renderer/dom/editor-theme.ts"() {
+    init_clamp();
     EDITOR_THEME_TOKEN_PROPERTIES = {
       background: "--bg-base",
       elevated: "--bg-elevated",
@@ -72843,7 +72919,7 @@ ${output}` : "Terminal output: (none)"
     const command2 = request.command.trim();
     if (!command2) return;
     const oneLine = command2.split(/\s+/).join(" ");
-    const summary = oneLine.length > 48 ? `${oneLine.slice(0, 47)}\u2026` : oneLine;
+    const summary = ellipsize(oneLine, 48);
     const initialInput = `${command2.replace(/\r\n?|\n/g, "\r")}\rexit\r`;
     const label = `Run \xB7 ${summary}`;
     let tabId;
@@ -72966,6 +73042,7 @@ ${output}` : "Terminal output: (none)"
 var xtermModules;
 var init_terminals_pane = __esm({
   "src/renderer/views/terminals-pane.ts"() {
+    init_one_line_text();
     init_xterm();
     init_helpers();
     init_icons();
@@ -76800,7 +76877,7 @@ var init_memories_pane = __esm({
 // src/renderer/views/thread-context-model.ts
 function firstLine(text) {
   const line = text.trim().split("\n", 1)[0] ?? "";
-  return line.length <= 90 ? line : `${line.slice(0, 89)}\u2026`;
+  return ellipsize(line, 90);
 }
 function prLabel(ref) {
   return `${ref.owner}/${ref.repo}#${String(ref.number)}`;
@@ -76917,6 +76994,7 @@ function deriveThreadContext(input) {
 }
 var init_thread_context_model = __esm({
   "src/renderer/views/thread-context-model.ts"() {
+    init_one_line_text();
     init_reviewer_input();
     init_github_pr_url2();
     init_side_chat();
@@ -78604,10 +78682,7 @@ function assignCurrentWeights(root) {
 }
 function resizePair(before, after, beforeStart, afterStart, delta) {
   const total2 = beforeStart + afterStart;
-  const beforeSize = Math.min(
-    total2 - minimumHeight(after),
-    Math.max(minimumHeight(before), beforeStart + delta)
-  );
+  const beforeSize = clamp(beforeStart + delta, minimumHeight(before), total2 - minimumHeight(after));
   before.style.flexGrow = String(beforeSize);
   after.style.flexGrow = String(total2 - beforeSize);
 }
@@ -78706,6 +78781,7 @@ function mountTerminalRailResizers(root) {
 var SECTION_SELECTOR, SHELLS_MIN_RATIO;
 var init_terminal_rail_resizer = __esm({
   "src/renderer/views/terminal-rail-resizer.ts"() {
+    init_clamp();
     init_helpers();
     SECTION_SELECTOR = ":scope > .terminal-rail-section";
     SHELLS_MIN_RATIO = 1 / 3;
@@ -78835,7 +78911,7 @@ var init_roadmap_attempts = __esm({
 // src/renderer/views/roadmap-plan.ts
 function roadmapPlanDraft(item) {
   const parsed = parsePlanDocument(item.body);
-  const title = item.title.replace(/\s+/g, " ").trim().slice(0, 200) || "Implementation plan";
+  const title = collapseWhitespace(item.title).slice(0, 200) || "Implementation plan";
   if (REQUIRED_PLAN_SECTIONS.every((section2) => parsed.sections.get(section2)?.trim()) && parsed.criteria.length > 0)
     return { title, body: item.body };
   const quote = (text) => text.split("\n").map((line) => `> ${line}`).join("\n");
@@ -78863,6 +78939,7 @@ ${quote(context)}
 }
 var init_roadmap_plan = __esm({
   "src/renderer/views/roadmap-plan.ts"() {
+    init_one_line_text();
     init_plan_schema();
   }
 });
@@ -81570,10 +81647,7 @@ async function openScreencastCapture(api2, webContentsId, onEnded) {
   let requested = 0;
   let drawn = 0;
   let disposed = false;
-  let resolveFirstFrame = null;
-  const firstFrame = new Promise((resolve) => {
-    resolveFirstFrame = resolve;
-  });
+  const firstFrame = Promise.withResolvers();
   const stopFrames = api2.onRecordingFrame((id, jpeg) => {
     if (id !== webContentsId || disposed) return;
     const sequence = ++requested;
@@ -81590,7 +81664,7 @@ async function openScreencastCapture(api2, webContentsId, onEnded) {
         }
         context.drawImage(bitmap, 0, 0);
         bitmap.close();
-        resolveFirstFrame?.();
+        firstFrame.resolve();
       },
       () => {
       }
@@ -81609,17 +81683,9 @@ async function openScreencastCapture(api2, webContentsId, onEnded) {
   };
   try {
     await api2.startRecording(webContentsId);
-    let timer = 0;
-    const timedOut = new Promise((resolve) => {
-      timer = window.setTimeout(() => {
-        resolve("timeout");
-      }, FIRST_FRAME_TIMEOUT_MS);
-    });
-    const outcome = await Promise.race([firstFrame, timedOut]);
-    window.clearTimeout(timer);
-    if (outcome === "timeout") {
+    await withTimeout(firstFrame.promise, FIRST_FRAME_TIMEOUT_MS, () => {
       throw new Error("The tab is not painting. Show the Browser pane and try again.");
-    }
+    });
   } catch (error) {
     dispose();
     throw error;
@@ -81629,6 +81695,7 @@ async function openScreencastCapture(api2, webContentsId, onEnded) {
 var FIRST_FRAME_TIMEOUT_MS;
 var init_screencast_capture = __esm({
   "src/renderer/recording/screencast-capture.ts"() {
+    init_with_timeout();
     FIRST_FRAME_TIMEOUT_MS = 3e3;
   }
 });
@@ -82749,7 +82816,15 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     openExternalItem.addEventListener("click", () => {
       setMenuOpen(false);
       const url = currentHttpUrl(tab);
-      if (url && api2?.shell) void api2.shell.openExternal(url).catch(() => void 0);
+      if (url && api2?.shell) {
+        void api2.shell.openExternal(url).catch((error) => {
+          if (String(error).includes("Workspace previews open inside Copse")) {
+            showToast("Workspace previews can only open inside Copse.");
+            return;
+          }
+          showErrorToast("Could not open in default browser", error);
+        });
+      }
     });
     inspectorItem.addEventListener("click", () => {
       setMenuOpen(false);
@@ -83339,8 +83414,8 @@ function createSimulatorDesktopView(options) {
   const point = (event) => {
     const bounds = canvas.getBoundingClientRect();
     return {
-      x: Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width)),
-      y: Math.min(1, Math.max(0, (event.clientY - bounds.top) / bounds.height))
+      x: clamp((event.clientX - bounds.left) / bounds.width, 0, 1),
+      y: clamp((event.clientY - bounds.top) / bounds.height, 0, 1)
     };
   };
   const onPointerDown = (event) => {
@@ -83445,6 +83520,7 @@ function createSimulatorDesktopView(options) {
 }
 var init_simulator_desktop_view = __esm({
   "src/renderer/views/simulator-desktop-view.ts"() {
+    init_clamp();
     init_helpers();
   }
 });
@@ -86883,6 +86959,16 @@ function mountSshPromptDialog(api2) {
   confirmReject.addEventListener("click", () => {
     finish("");
   });
+  api2.sshPrompt.onDismissed((id) => {
+    const queued = queue.findIndex((request) => request.id === id);
+    if (queued !== -1) queue.splice(queued, 1);
+    if (active2?.id !== id) return;
+    active2 = null;
+    secretInput.value = "";
+    dialog.close();
+    active2 = queue.shift() ?? null;
+    renderActive();
+  });
   api2.sshPrompt.onRequest((req) => {
     if (active2) queue.push(req);
     else {
@@ -87082,10 +87168,10 @@ function openFileSearchDialog() {
   openImpl2?.();
 }
 function closeFileSearchDialog() {
-  if (dialogEl3?.open) dialogEl3.close();
+  if (dialogEl2?.open) dialogEl2.close();
 }
 function isFileSearchDialogOpen() {
-  return !!dialogEl3?.open;
+  return !!dialogEl2?.open;
 }
 function mountFileSearchDialog(store2, api2) {
   const dialog = document.createElement("dialog");
@@ -87105,7 +87191,7 @@ function mountFileSearchDialog(store2, api2) {
   const shell2 = el("div", { class: "file-search-shell" }, input, list, empty2);
   dialog.append(shell2);
   document.body.append(dialog);
-  dialogEl3 = dialog;
+  dialogEl2 = dialog;
   let results = [];
   let selectedIdx = 0;
   let roadmapItems = [];
@@ -87257,7 +87343,7 @@ function mountFileSearchDialog(store2, api2) {
     void runQuery("");
   };
 }
-var ROADMAP_RESULT_LIMIT, ROADMAP_ICON_PATHS, dialogEl3, openImpl2;
+var ROADMAP_RESULT_LIMIT, ROADMAP_ICON_PATHS, dialogEl2, openImpl2;
 var init_file_search_dialog = __esm({
   "src/renderer/views/file-search-dialog.ts"() {
     init_helpers();
@@ -87268,7 +87354,7 @@ var init_file_search_dialog = __esm({
     init_roadmap_plans_plugin();
     ROADMAP_RESULT_LIMIT = 8;
     ROADMAP_ICON_PATHS = ["M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4Z", "M8 2v16", "M16 6v16"];
-    dialogEl3 = null;
+    dialogEl2 = null;
     openImpl2 = null;
   }
 });
@@ -87297,10 +87383,10 @@ function openCommandPalette() {
   openImpl3?.();
 }
 function closeCommandPalette() {
-  if (dialogEl4?.open) dialogEl4.close();
+  if (dialogEl3?.open) dialogEl3.close();
 }
 function isCommandPaletteOpen() {
-  return !!dialogEl4?.open;
+  return !!dialogEl3?.open;
 }
 function mountCommandPalette(store2, api2) {
   const dialog = document.createElement("dialog");
@@ -87320,7 +87406,7 @@ function mountCommandPalette(store2, api2) {
   const shell2 = el("div", { class: "command-palette-shell" }, input, list, empty2);
   dialog.append(shell2);
   document.body.append(dialog);
-  dialogEl4 = dialog;
+  dialogEl3 = dialog;
   let entries = [];
   let selectedIdx = 0;
   let threadHits = [];
@@ -87545,7 +87631,7 @@ function mountCommandPalette(store2, api2) {
     void loadThreads2();
   };
 }
-var PANEL_ITEMS, THREAD_LIMIT, PROJECT_LIMIT, dialogEl4, openImpl3;
+var PANEL_ITEMS, THREAD_LIMIT, PROJECT_LIMIT, dialogEl3, openImpl3;
 var init_command_palette = __esm({
   "src/renderer/views/command-palette.ts"() {
     init_helpers();
@@ -87569,7 +87655,7 @@ var init_command_palette = __esm({
     ];
     THREAD_LIMIT = 25;
     PROJECT_LIMIT = 25;
-    dialogEl4 = null;
+    dialogEl3 = null;
     openImpl3 = null;
   }
 });
@@ -89979,10 +90065,7 @@ async function run3(store2) {
   let firstTokenSeen = false;
   let paintSampling = false;
   const paints = [];
-  let resolveDone = () => void 0;
-  const donePromise = new Promise((resolve) => {
-    resolveDone = resolve;
-  });
+  const { promise: donePromise, resolve: resolveDone } = Promise.withResolvers();
   const endTotal = begin("autopilot:total");
   let endFirstActivity = () => void 0;
   let endFirstToken = () => void 0;
@@ -90612,28 +90695,23 @@ function loadMonaco() {
 }
 function ensureMonacoEditorWorker() {
   if (typeof Worker === "undefined") return Promise.resolve();
-  let timeoutId;
-  return Promise.race([
+  return withTimeout(
     // This warmed instance is the one EditorWorkerService's first diff request
     // takes over (see EDITOR_WORKER_SERVICE_LABEL for the coupling contract).
     monacoWorkers.warm(EDITOR_WORKER_SERVICE_LABEL).then(
       () => void 0,
       () => void 0
     ),
-    new Promise((resolve) => {
-      timeoutId = setTimeout(() => {
-        resolve();
-      }, 2e3);
-    })
-  ]).finally(() => {
-    if (timeoutId !== void 0) clearTimeout(timeoutId);
-  });
+    2e3,
+    () => void 0
+  );
 }
 var MONACO_BASE_META, WARM_WORKER_TTL_MS, monacoWorkers, EDITOR_WORKER_SERVICE_LABEL, bundlePromise, monacoPromise;
 var init_setup = __esm({
   "src/renderer/monaco/setup.ts"() {
     init_worker_handout();
     init_editor_theme();
+    init_with_timeout();
     MONACO_BASE_META = "copse-monaco-base";
     WARM_WORKER_TTL_MS = 45e3;
     monacoWorkers = createWorkerHandout(createMonacoWorkerOnce, {
@@ -90712,12 +90790,9 @@ var init_portrait_right_panel_layout = __esm({
 });
 
 // src/renderer/views/pane-resizer.ts
-function clamp3(n, min, max) {
-  return Math.min(max, Math.max(min, n));
-}
 function clampNumber(val, fallback, min, max) {
   if (typeof val !== "number" || !Number.isFinite(val)) return fallback;
-  return clamp3(val, min, max);
+  return clamp(val, min, max);
 }
 function parseSavedLayout(raw) {
   if (!isRecord(raw)) return { ...DEFAULT_LAYOUT };
@@ -90767,7 +90842,7 @@ function maxStackedFilesHeight(body) {
 function defaultStackedFilesHeight(body) {
   if (body.clientHeight <= 0) return DEFAULT_LAYOUT.filesPaneHeight;
   const target = Math.round(body.clientHeight * LAYOUT_LIMITS.filesStacked.defaultRatio);
-  return clamp3(target, LAYOUT_LIMITS.filesStacked.min, maxStackedFilesHeight(body));
+  return clamp(target, LAYOUT_LIMITS.filesStacked.min, maxStackedFilesHeight(body));
 }
 function mountResizeHandle(handle, opts) {
   handle.addEventListener("pointerdown", (e) => {
@@ -90780,7 +90855,7 @@ function mountResizeHandle(handle, opts) {
     const initial = opts.startSize();
     const cursor = opts.cursor();
     const onMove = (ev) => {
-      const size = clamp3(
+      const size = clamp(
         opts.deltaToSize(initial, ev.clientX - startX, ev.clientY - startY),
         opts.min(),
         opts.max()
@@ -90894,6 +90969,7 @@ function mountPaneResizers(body, store2, api2) {
 }
 var init_pane_resizer = __esm({
   "src/renderer/views/pane-resizer.ts"() {
+    init_clamp();
     init_layout();
     init_portrait_right_panel_layout();
     init_unknown_value2();
