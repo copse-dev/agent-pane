@@ -490,7 +490,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-ZYLQHDK6.js";
+} from "./chunk-2B5M6GB4.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -88463,10 +88463,18 @@ async function acceptThreadPrompt(store2, api2, command2) {
     current = getThreadById(store2, threadId);
     if (!current || current.archivedAt !== void 0 || Date.now() >= command2.expiresAt)
       return { ok: false, error: "The destination conversation is unavailable." };
+    const peerTurnTreeId = command2.authorizingAccess ? void 0 : command2.sourceTurnTreeId;
+    const peerScope = command2.authorizingAccess ? void 0 : command2.crossThreadScope;
     const origin = {
       kind: "machine",
-      operationId: `${command2.authorizingAccess ? "subthread" : "thread"}:${command2.sourceThreadId}`
+      operationId: `${command2.authorizingAccess ? "subthread" : "thread"}:${command2.sourceThreadId}`,
+      ...peerScope === void 0 ? {} : { crossThreadScope: peerScope }
     };
+    if (current.currentEpoch === void 0 && peerTurnTreeId !== void 0)
+      patchThreadAnywhere(store2, threadId, (thread) => ({
+        ...thread,
+        currentEpoch: peerTurnTreeId
+      }));
     if (current.status === "error")
       patchThreadAnywhere(store2, threadId, (thread) => ({ ...thread, status: "idle" }));
     const messageId = addMessage(store2, threadId, "user", command2.text, void 0, void 0, {
@@ -88486,6 +88494,8 @@ async function acceptThreadPrompt(store2, api2, command2) {
         await api2.threads.updateMeta(command2.projectId, threadId, {
           pendingMessages: accepted.pendingMessages ?? [],
           continuationUsed: accepted.continuationUsed ?? 0,
+          crossThreadPromptsUsed: accepted.crossThreadPromptsUsed ?? 0,
+          crossThreadPromptCounts: accepted.crossThreadPromptCounts ?? {},
           ...accepted.currentEpoch !== void 0 ? { currentEpoch: accepted.currentEpoch } : {},
           updatedAt: accepted.updatedAt
         });
@@ -89504,6 +89514,8 @@ function startAgentController(store2, api2) {
           title: finished.title,
           pendingMessages: finished.pendingMessages ?? [],
           continuationUsed: finished.continuationUsed ?? 0,
+          crossThreadPromptsUsed: finished.crossThreadPromptsUsed ?? 0,
+          crossThreadPromptCounts: finished.crossThreadPromptCounts ?? {},
           ...finished.currentEpoch !== void 0 ? { currentEpoch: finished.currentEpoch } : {},
           ...finished.todos !== void 0 ? { todos: finished.todos } : {}
         }).catch((err) => {
