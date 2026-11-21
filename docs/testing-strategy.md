@@ -607,6 +607,25 @@ loops driven by an actual local model rather than the mock:
   agent evals (`tests/e2e/agent-eval-drive.e2e.ts`), reading `LM_STUDIO_API_KEY`
   / `LM_API_TOKEN` and talking to a local OpenAI-compatible endpoint
   (`createLMStudioProvider`, default `http://localhost:1234/v1`).
+  Set `COPSE_EVAL_BRANCH=<branch>` to choose that branch through the new-thread
+  picker before submitting; otherwise the product's default branch selection
+  applies. The driver confirms dirty-checkout warnings only in a `tempProject`
+  workspace. Any other scenario runs in your own checkout, so a branch request or a
+  dirty checkout fails the run there unless you set
+  `COPSE_EVAL_ALLOW_CURRENT_CHECKOUT=1`. The driver accepts
+  both single-file and bulk proposals through Changes, waits for acceptance wakes,
+  and fails if any proposals remain before judging workspace files. It stops at the
+  first turn whose `turnOutcome` is `failed` and reports that provider error, rather
+  than sending the next prompt. Failed runs preserve a window screenshot, visible
+  composer/error text, and the thread export under `tests/e2e/artifacts/` when
+  available. `requireTools` (driver and `analyze:thread`) needs a call that
+  completed with `done`; an attempted call satisfies only `requireAnyTools`. A
+  sandboxed shell cannot create `.git` (it is an ancestor of the protected
+  `.git/hooks`), so a scenario that needs a repository sets `workspace.initializeGit`,
+  and `commitSeedFiles` to start from the New project scaffold's initial commit;
+  git assertions then count only the commits made after that baseline. An eval
+  prompt must never ask a sandboxed agent to create `.git` (`git init`, "initialize
+  the repository"); `scripts/lib/eval-scenarios.test.ts` enforces this.
 - `npm run validate:local-agent` exercises the agent loop headlessly.
 - `npm run eval:doctrine -- --provider lmstudio --repeats 3 --sections tools`
   holds a fixed task/model/tool set constant and compares the full system prompt
