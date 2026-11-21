@@ -308,6 +308,8 @@ function spawnPortBindingHost(
   opts: SpawnBackgroundOptions,
   overlay: Partial<SandboxRuntimeConfig>,
 ): ChildProcess {
+  // Resolve while main still owns the thread context; the isolated host has none.
+  const tmpDir = sandboxTmpDir(overlay)
   const child = spawn(process.execPath, [portBindingWorkerPath()], {
     cwd: opts.cwd,
     env: {
@@ -317,6 +319,7 @@ function spawnPortBindingHost(
       [PORT_BINDING_REQUEST_ENV]: JSON.stringify({
         command: shellCommandLine,
         cwd: opts.cwd,
+        tmpDir,
         ...(opts.env ? { env: opts.env } : {}),
         overlay,
         ...(opts.violationId ? { violationId: opts.violationId } : {}),

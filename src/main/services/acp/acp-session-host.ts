@@ -8,6 +8,8 @@ import { withoutSandboxWrapTmpPin } from '../../project-sandbox/tmp-env.ts'
 import { perfMark } from '../diagnostics/perf-trace.ts'
 import { terminateProcessTree } from '../exec/subprocess-kill.ts'
 import type { AcpAgentSpawnConfig } from './acp-client.ts'
+import { getActiveRunThread } from '../active-run-identity.ts'
+import { currentThreadExecutionContext } from '../thread-execution-context-store.ts'
 import {
   ACP_SESSION_HOST_REQUEST_ENV,
   type AcpSessionHostMessage,
@@ -22,7 +24,9 @@ import {
 export function acpSessionHostRequest(config: AcpAgentSpawnConfig): {
   config: Partial<AcpAgentSpawnConfig>
   allowLocalhost: boolean
+  threadId?: string
 } {
+  const threadId = currentThreadExecutionContext()?.threadId ?? getActiveRunThread()
   return {
     config: {
       command: config.command,
@@ -37,6 +41,7 @@ export function acpSessionHostRequest(config: AcpAgentSpawnConfig): {
       ...(config.chatReadRoots ? { chatReadRoots: config.chatReadRoots } : {}),
     },
     allowLocalhost: Boolean(config.nativeBridge),
+    ...(threadId !== null ? { threadId } : {}),
   }
 }
 

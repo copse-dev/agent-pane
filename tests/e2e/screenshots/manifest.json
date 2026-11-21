@@ -1086,8 +1086,8 @@
       "bytes": 271912
     },
     "browser-form-entry-unconfirmed.png": {
-      "sha256": "fdb6c153ed55ace786065f30e84b013f860b40fce31aece7c2c39aed41faab5e",
-      "bytes": 1161193
+      "sha256": "a6b3de493669ecc8a37418f5e92b630fe83ce20f9f2f2b1c805e225b3ca39756",
+      "bytes": 1197721
     },
     "browser-form-fields-entered.png": {
       "sha256": "dc56d39471a8ed146ee5e9abd7e4785681ef6b80e46507e526d1bbcd1335700f",
@@ -5652,6 +5652,10 @@
     "ssh-prompt-secret.png": {
       "sha256": "09ee4b1fa9e7b70d23f852923123b8317ecf81725d7807ec5a0061f5f538a645",
       "bytes": 38003
+    },
+    "ssh-status-banner-connection-lost.png": {
+      "sha256": "8231a75610f71f0a0c2a31a1780111382603a9e71db12ce04ff94b8656ee7623",
+      "bytes": 22599
     },
     "ssh-status-banner-no-lightning.png": {
       "sha256": "05f2c24c22023b9c5fcb8e26d5f2d65a1f43c0c61c24856cfab2841d477c801f",
