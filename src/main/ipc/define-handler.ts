@@ -6,7 +6,6 @@ import {
   positionalIpcHandler,
   senderCheck,
   senderPositionalIpcHandler,
-  type IpcHandlerOptions,
   type PositionalArgsOptions,
 } from './ipc-handler.ts'
 
@@ -26,8 +25,8 @@ export type InvokeChannel = keyof (typeof apiProtocolManifest)['channels']['invo
  * )
  * ```
  *
- * The sender is checked first (unless `{ sender: 'any' }`), then the arguments
- * are parsed as `parsePositionalIpcArgs` describes: extra ones are ignored and
+ * The sender is checked first, then the arguments are parsed as
+ * `parsePositionalIpcArgs` describes: extra ones are ignored and
  * the validation error reads as it did when the handler was written by hand.
  * Pass `{ errors: 'per-argument' }` for a handler that parsed each argument on
  * its own, so only the first invalid one is reported.
@@ -37,9 +36,9 @@ export function defineHandler<T extends readonly z.ZodType[]>(
   channel: InvokeChannel,
   args: z.ZodTuple<T, null>,
   fn: (...parsed: z.output<z.ZodTuple<T, null>>) => unknown,
-  options?: IpcHandlerOptions & PositionalArgsOptions,
+  options?: PositionalArgsOptions,
 ): void {
-  ipcMain.handle(channel, positionalIpcHandler(senderCheck(win, options), args, fn, options))
+  ipcMain.handle(channel, positionalIpcHandler(senderCheck(win), args, fn, options))
 }
 
 /**
@@ -52,9 +51,9 @@ export function defineSenderHandler<T extends readonly z.ZodType[]>(
   channel: InvokeChannel,
   args: z.ZodTuple<T, null>,
   fn: (sender: WebContents, ...parsed: z.output<z.ZodTuple<T, null>>) => unknown,
-  options?: IpcHandlerOptions & PositionalArgsOptions,
+  options?: PositionalArgsOptions,
 ): void {
-  ipcMain.handle(channel, senderPositionalIpcHandler(senderCheck(win, options), args, fn, options))
+  ipcMain.handle(channel, senderPositionalIpcHandler(senderCheck(win), args, fn, options))
 }
 
 /**
@@ -68,7 +67,6 @@ export function defineArgumentListHandler<S extends z.ZodType>(
   channel: InvokeChannel,
   schema: S,
   fn: (parsed: z.output<S>) => unknown,
-  options?: IpcHandlerOptions,
 ): void {
-  ipcMain.handle(channel, argumentListIpcHandler(senderCheck(win, options), schema, fn))
+  ipcMain.handle(channel, argumentListIpcHandler(senderCheck(win), schema, fn))
 }

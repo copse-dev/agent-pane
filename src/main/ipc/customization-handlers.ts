@@ -1,5 +1,4 @@
 import { BrowserWindow, ipcMain, type WebContents } from 'electron'
-import { skillRootsSchema } from '../services/skills/skill-roots-schema.ts'
 import { z } from 'zod'
 import {
   assertMainFrameSender,
@@ -13,6 +12,7 @@ import {
 import { resolveHookTestTarget } from './hook-test-target.ts'
 import type { HooksListResult } from '@shared/types/hooks.ts'
 import { setSetting } from '../services/storage/settings.ts'
+import { createSkillRootsHandler } from './skill-roots-handler.ts'
 import {
   listSkills,
   listSkillSources,
@@ -32,30 +32,33 @@ import { getLocalProjectRoot } from '../services/workspace.ts'
 import { isWorkspaceTrusted } from '../services/security/workspace-trust.ts'
 
 export function registerCustomizationHandlers(win: BrowserWindow): void {
-  ipcMain.handle('skills:list', async () => {
+  ipcMain.handle('skills:list', async (event) => {
+    assertMainFrameSender(event, win)
     await waitForSkillsRegistryRefresh()
     return listSkills()
   })
-  ipcMain.handle('skills:sources', async () => {
+  ipcMain.handle('skills:sources', async (event) => {
+    assertMainFrameSender(event, win)
     await initSkillsRegistry()
     return listSkillSources()
   })
-  ipcMain.handle('skills:set-roots', async (_event, value: unknown) => {
-    const roots = skillRootsSchema.safeParse(value)
-    if (!roots.success)
-      throw new IpcValidationError(
-        'Extra skill folders must be at most 64 absolute paths, one per line',
-      )
-    await setSetting('skillPluginPaths', roots.data)
-    await initSkillsRegistry()
-    return listSkillSources()
-  })
-  ipcMain.handle('agents:list', async () => {
+  ipcMain.handle(
+    'skills:set-roots',
+    createSkillRootsHandler(win, { setSetting, initSkillsRegistry, listSkillSources }),
+  )
+  ipcMain.handle('agents:list', async (event) => {
+    assertMainFrameSender(event, win)
     await waitForAgentsRegistryRefresh()
     return listAgents()
   })
-  ipcMain.handle('cursor-plugins:list', () => listCursorPlugins())
-  ipcMain.handle('bundled-skill-plugins:list', () => listBundledSkillPlugins())
+  ipcMain.handle('cursor-plugins:list', (event) => {
+    assertMainFrameSender(event, win)
+    return listCursorPlugins()
+  })
+  ipcMain.handle('bundled-skill-plugins:list', (event) => {
+    assertMainFrameSender(event, win)
+    return listBundledSkillPlugins()
+  })
   async function listDiscoveredHooks(root: string | null): Promise<HooksListResult> {
     const opts = { workspaceRoot: root, projectTrusted: isWorkspaceTrusted(root) }
     const [cursor, claude, copse] = await Promise.all([
@@ -74,7 +77,10 @@ export function registerCustomizationHandlers(win: BrowserWindow): void {
     // identically named local path eligible; local user hooks remain available.
     return projectId === null ? null : getLocalProjectRoot(projectId)
   }
-  ipcMain.handle('hooks:list', (event) => listDiscoveredHooks(hookProjectRoot(event.sender)))
+  ipcMain.handle('hooks:list', (event) => {
+    assertMainFrameSender(event, win)
+    return listDiscoveredHooks(hookProjectRoot(event.sender))
+  })
   ipcMain.handle('hooks:test', async (event, rawReq: unknown) => {
     assertMainFrameSender(event, win)
     // G2 dry-run tester: run one discovered hook once against a synthetic

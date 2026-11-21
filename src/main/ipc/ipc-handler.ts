@@ -3,16 +3,6 @@ import type { z } from 'zod'
 import { IpcValidationError, assertMainFrameSender, parseIpcArgs } from './ipc-guards.ts'
 
 /**
- * Who may invoke a handler. `'main-frame'` (the default) runs
- * `assertMainFrameSender` before anything else. `'any'` is only for the few
- * channels that were registered without a sender guard; spelling it out keeps
- * each one a visible exception.
- */
-export interface IpcHandlerOptions {
-  readonly sender?: 'main-frame' | 'any'
-}
-
-/**
  * How a positional handler reports invalid arguments. `'tuple'` (the default)
  * reports every failing position, as `parseIpcArgs(z.tuple([...]), [a, b])`
  * does. `'per-argument'` reports only the first failing argument, with no tuple
@@ -31,9 +21,7 @@ type PositionalArgs<T extends readonly z.ZodType[]> = z.ZodTuple<T, null>
 /** The check a handler runs on its sender before reading any argument. */
 export function senderCheck(
   win: Pick<BrowserWindow, 'isDestroyed' | 'webContents'>,
-  options: IpcHandlerOptions = {},
 ): SenderCheck<Pick<IpcMainInvokeEvent, 'senderFrame'>> {
-  if (options.sender === 'any') return () => undefined
   return (event) => {
     assertMainFrameSender(event, win)
   }
