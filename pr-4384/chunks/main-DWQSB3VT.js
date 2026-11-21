@@ -490,7 +490,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-AP3HCCPP.js";
+} from "./chunk-LVMMDWQ3.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -86952,6 +86952,16 @@ function mountSshPromptDialog(api2) {
   });
   confirmReject.addEventListener("click", () => {
     finish("");
+  });
+  api2.sshPrompt.onDismissed((id) => {
+    const queued = queue.findIndex((request) => request.id === id);
+    if (queued !== -1) queue.splice(queued, 1);
+    if (active2?.id !== id) return;
+    active2 = null;
+    secretInput.value = "";
+    dialog.close();
+    active2 = queue.shift() ?? null;
+    renderActive();
   });
   api2.sshPrompt.onRequest((req) => {
     if (active2) queue.push(req);
