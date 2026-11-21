@@ -4,7 +4,7 @@ import { runGh, parseGhJson } from './gh-service.ts'
 import { isGitAvailableForTarget, isGhAvailable } from '../tool-availability.ts'
 import {
   isInsideGitWorkTree,
-  getCurrentBranchName,
+  readCheckoutHead,
   getGitChangeStats,
   getDefaultBranch,
   getCommittedChanges,
@@ -317,12 +317,18 @@ export async function getGitBranchStatus(
   root: string | null,
   dependencies: { runGh: typeof runGh } = { runGh },
 ): Promise<GitBranchStatus> {
+  // No checkout found yet (a thread not saved yet), or not a repository: not
+  // detached, which the renderer would otherwise read as a reason to start
+  // where HEAD is instead of on the default branch. `detached` is set only when
+  // Git reports it, so every other status keeps the shape older hosts send.
   const empty: GitBranchStatus = { currentBranch: null, pr: null }
   if (!root) return empty
 
-  // Routes through getCurrentBranchName so the e2e branch override (screenshot
+  // Routes through readCheckoutHead so the e2e branch override (screenshot
   // determinism) is honored here too, not just bypassed by a raw rev-parse.
-  const currentBranch = await getCurrentBranchName(root)
+  const head = await readCheckoutHead(root)
+  if (head.detached) return { currentBranch: null, pr: null, detached: true }
+  const currentBranch = head.branch
   if (!currentBranch) return empty
 
   // gh may be absent (minimal installs, the e2e runner image) — checkToolAvailability
