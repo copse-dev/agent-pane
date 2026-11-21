@@ -44961,16 +44961,12 @@ function applyPlanCoverage(candidate, snapshot, options = {}) {
   if (!access) return candidate;
   const inclusion = resolvePlanInclusion(access.provider, access.modelId, snapshot);
   if (!inclusion) return candidate;
-  const exhaustion = options.windowExhaustion?.get(inclusion.windowId);
-  const expectedExhausted = mode === "expected" && exhaustion !== void 0 && exhaustion.total > 0 && exhaustion.hit / exhaustion.total >= EXPECTED_PLAN_EXHAUSTION_THRESHOLD;
-  const priorLimitHits = mode === "expected" && exhaustion && exhaustion.total > 0 ? { hit: exhaustion.hit, total: exhaustion.total } : void 0;
-  if (inclusion.exhausted || expectedExhausted) {
+  if (inclusion.exhausted) {
     return {
       ...candidate,
       planLimitReached: {
         label: inclusion.windowLabel,
-        resetsAt: inclusion.resetsAt,
-        ...priorLimitHits ? { priorLimitHits } : {}
+        resetsAt: inclusion.resetsAt
       }
     };
   }
@@ -44981,15 +44977,12 @@ function applyPlanCoverage(candidate, snapshot, options = {}) {
     planDetail: {
       usedPercent: inclusion.usedPercent,
       resetsAt: inclusion.resetsAt,
-      apiPricePerMTok: candidate.costPerMTok,
-      ...priorLimitHits ? { priorLimitHits } : {}
+      apiPricePerMTok: candidate.costPerMTok
     }
   };
 }
-var EXPECTED_PLAN_EXHAUSTION_THRESHOLD;
 var init_plan_inclusion = __esm({
   "src/shared/plan-inclusion.ts"() {
-    EXPECTED_PLAN_EXHAUSTION_THRESHOLD = 0.5;
   }
 });
 
@@ -45805,23 +45798,12 @@ function pointTooltipContent(p2, costAxis = "blended") {
       ),
       ttRow("tt-muted", `Off-plan you'd pay ${formatPrice(p2.planDetail.apiPricePerMTok)} blended.`)
     );
-    if (p2.planDetail.priorLimitHits) {
-      const { hit, total } = p2.planDetail.priorLimitHits;
-      root.append(
-        ttRow(
-          "tt-muted",
-          `Limit hit in ${String(hit)}/${String(total)} prior windows \xB7 still treating as included.`
-        )
-      );
-    }
   }
   if (p2.planLimitReached) {
-    const prior = p2.planLimitReached.priorLimitHits;
-    const priorNote = prior ? ` Limit hit in ${String(prior.hit)}/${String(prior.total)} prior windows.` : "";
     root.append(
       ttRow(
         "tt-muted",
-        prior ? `${p2.planLimitReached.label} usually exhausted \xB7 plotted at off-plan price.${priorNote}` : `${p2.planLimitReached.label} plan limit reached${formatReset(p2.planLimitReached.resetsAt)} \xB7 plotted at its off-plan price.`
+        `${p2.planLimitReached.label} plan limit reached${formatReset(p2.planLimitReached.resetsAt)} \xB7 plotted at its off-plan price.`
       )
     );
   }
@@ -46945,8 +46927,6 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
   let noTrainingOnly = false;
   let costAxis = "blended";
   let planCoverageMode = "plan";
-  let windowExhaustion = /* @__PURE__ */ new Map();
-  let historyAvailable = false;
   let expandPlanCoverageGroup = null;
   let lastUnpriced = [];
   let lastUnscored = [];
@@ -46982,10 +46962,6 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
   function setPlanCoverageMode(next) {
     if (planCoverageMode === next) return;
     planCoverageMode = next;
-    render();
-  }
-  function setWindowExhaustion(rates) {
-    windowExhaustion = rates;
     render();
   }
   function syncZdrBtn(btn) {
@@ -47053,11 +47029,6 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
         mode: "inference",
         label: "Inference",
         title: "Ignore the plan \xB7 plot every cloud model at catalog API $/MTok"
-      },
-      {
-        mode: "expected",
-        label: "Expected",
-        title: "Use prior window history: if a binding window usually hits its limit, plot at API price"
       }
     ];
     for (const { mode, label, title } of modes) {
@@ -47067,7 +47038,6 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
           type: "button",
           class: "frontier-btn frontier-cost-axis-btn",
           "data-plan-coverage": mode,
-          hidden: mode === "expected",
           title
         },
         label
@@ -47083,7 +47053,6 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
     if (!group) return;
     for (const btn of group.querySelectorAll("[data-plan-coverage]")) {
       const mode = btn.dataset["planCoverage"];
-      btn.hidden = mode === "expected" && !historyAvailable;
       const active2 = mode === planCoverageMode;
       btn.classList.toggle("active", active2);
       btn.setAttribute("aria-pressed", active2 ? "true" : "false");
@@ -47500,22 +47469,11 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
     const allRouteCandidates = [...baseCandidates, ...discoveryCandidates];
     const trackedCandidateIsDiscovery = (candidate) => exactRoutes !== null && isTrackedCloudCandidate(candidate) && !candidateHasRoute(candidate);
     const candidateIsIncluded = (candidate) => candidateHasRoute(candidate) || candidate.discovery === true || discover && trackedCandidateIsDiscovery(candidate);
-    historyAvailable = allRouteCandidates.some((candidate) => {
-      if (!planUsage || !candidate.planAccess || candidate.discovery || !candidateIsIncluded(candidate))
-        return false;
-      const inclusion = resolvePlanInclusion(
-        candidate.planAccess.provider,
-        candidate.planAccess.modelId,
-        planUsage
-      );
-      return inclusion !== null && (windowExhaustion.get(inclusion.windowId)?.total ?? 0) > 0;
-    });
     const adjustCandidate = (candidate) => {
       const surfaced = trackedCandidateIsDiscovery(candidate) ? { ...candidate, discovery: true } : candidate;
       const enriched = enrichTaskCost(surfaced);
       return enriched.discovery === true ? enriched : applyPlanCoverage(enriched, planUsage, {
-        mode: planCoverageMode,
-        windowExhaustion
+        mode: planCoverageMode
       });
     };
     const routePolicy = {
@@ -47536,7 +47494,6 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
         ...local ? { local: true } : {}
       });
     };
-    if (planCoverageMode === "expected" && !historyAvailable) planCoverageMode = "plan";
     const unfilteredBlendedPoints = frontierForKnownModels(
       allRouteCandidates,
       adjustCandidate,
@@ -47727,10 +47684,7 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
   }
   return {
     root: fieldset,
-    refresh,
-    setPlanCoverageMode,
-    getPlanCoverageMode: () => planCoverageMode,
-    setWindowExhaustion
+    refresh
   };
 }
 var MAX_CARD_PREFETCH, SEVERE_DOMINATION_PRICE_RATIO;
@@ -48989,94 +48943,6 @@ function renderPlanSection(host, snapshot, error62, onSignIn) {
   }
   host.append(list);
 }
-function renderPlanWorthItSection(host, payload, error62, opts) {
-  host.replaceChildren();
-  const heading = document.createElement("h4");
-  heading.className = "usage-worth-heading";
-  heading.textContent = "Is your plan worth it?";
-  host.append(heading);
-  const intro = document.createElement("p");
-  intro.className = "settings-fieldset-desc";
-  intro.textContent = "Compares your Claude subscription\u2019s account-wide weekly API-equivalent burn (from plan windows, including other apps and devices) to paying catalog inference rates. Copse\u2019s local ledger is not used here.";
-  host.append(intro);
-  if (error62) {
-    const err = document.createElement("p");
-    err.className = "usage-plan-status usage-plan-status-error field-hint";
-    err.textContent = error62;
-    host.append(err);
-    return;
-  }
-  if (!payload) {
-    const loading = document.createElement("p");
-    loading.className = "field-hint";
-    loading.textContent = "Loading plan worth-it\u2026";
-    host.append(loading);
-    return;
-  }
-  const { worthIt } = payload;
-  const card = document.createElement("div");
-  card.className = "usage-worth-card";
-  card.dataset["verdict"] = worthIt.verdict;
-  const verdict = document.createElement("p");
-  verdict.className = "usage-worth-verdict";
-  verdict.textContent = VERDICT_LABELS[worthIt.verdict];
-  card.append(verdict);
-  const reason = document.createElement("p");
-  reason.className = "usage-worth-reason field-hint";
-  reason.textContent = worthIt.reason.replaceAll("\u2014", "\xB7");
-  card.append(reason);
-  const feeRow = document.createElement("div");
-  feeRow.className = "usage-worth-fee-row";
-  const feeLabel = document.createElement("label");
-  feeLabel.className = "usage-worth-fee-label";
-  feeLabel.htmlFor = "usage-worth-fee-input";
-  feeLabel.textContent = "Claude plan monthly fee (USD)";
-  const feeInput = document.createElement("input");
-  feeInput.id = "usage-worth-fee-input";
-  feeInput.type = "number";
-  feeInput.min = "1";
-  feeInput.max = "10000";
-  feeInput.step = "1";
-  feeInput.className = "usage-worth-fee-input";
-  feeInput.placeholder = worthIt.feeHint ? String(worthIt.feeHint.monthlyFeeUsd) : "e.g. 100";
-  if (worthIt.monthlyFeeUsd !== null) {
-    feeInput.value = String(worthIt.monthlyFeeUsd);
-  }
-  if (worthIt.feeHint && worthIt.monthlyFeeUsd === worthIt.feeHint.monthlyFeeUsd) {
-    feeInput.title = `Hinted from weekly limit (${worthIt.feeHint.label})`;
-  }
-  feeInput.disabled = opts.busy === true;
-  feeInput.addEventListener("change", () => {
-    const raw = feeInput.value.trim();
-    if (!raw) {
-      opts.onFeeChange(null);
-      return;
-    }
-    const n2 = Number(raw);
-    opts.onFeeChange(Number.isFinite(n2) && n2 > 0 ? n2 : null);
-  });
-  feeRow.append(feeLabel, feeInput);
-  card.append(feeRow);
-  if (worthIt.feeHint && worthIt.monthlyFeeUsd === null) {
-    const hint = document.createElement("p");
-    hint.className = "field-hint";
-    hint.textContent = `Suggested from weekly limit: ${worthIt.feeHint.label} (~$${String(worthIt.feeHint.monthlyFeeUsd)}/mo).`;
-    card.append(hint);
-  }
-  const actions = document.createElement("div");
-  actions.className = "usage-worth-actions";
-  const inferenceBtn = document.createElement("button");
-  inferenceBtn.type = "button";
-  inferenceBtn.className = "usage-worth-inference-btn";
-  inferenceBtn.textContent = "Show inference prices on value map";
-  inferenceBtn.title = "Plot the cancel-the-plan frontier (catalog API $/MTok)";
-  inferenceBtn.addEventListener("click", () => {
-    opts.onShowInference();
-  });
-  actions.append(inferenceBtn);
-  card.append(actions);
-  host.append(card);
-}
 function renderModelTable(host, title, rows, emptyText, accounts = []) {
   const section = document.createElement("div");
   section.className = "usage-model-group";
@@ -49267,7 +49133,6 @@ function createUsageSection(api, store, onRequestClose) {
   root.className = "usage-section-root";
   root.innerHTML = `
     <div class="usage-plan-section" id="usage-plan-section"></div>
-    <div class="usage-worth-section" id="usage-worth-section"></div>
     <div class="usage-ledger-section">
       <h4 class="usage-ledger-heading">Local usage ledger</h4>
       <div class="usage-period-tabs" role="tablist" aria-label="Usage period">
@@ -49314,7 +49179,6 @@ function createUsageSection(api, store, onRequestClose) {
   );
   root.append(frontierPanel.root);
   const planEl = qsRequired(root, "#usage-plan-section");
-  const worthEl = qsRequired(root, "#usage-worth-section");
   const bodyEl2 = qsRequired(root, "#usage-period-body");
   const labelEl = qsRequired(root, "#usage-period-label");
   const tabBtns = root.querySelectorAll(".usage-period-btn");
@@ -49323,41 +49187,6 @@ function createUsageSection(api, store, onRequestClose) {
   let cachedSummary = null;
   let cachedPlanSnapshot = null;
   let ledgerRefreshTimer;
-  let feeBusy = false;
-  async function persistPlanFee(fee) {
-    feeBusy = true;
-    try {
-      const next = await api.usage.setClaudePlanMonthlyFee(fee);
-      applyWorthItPayload(next);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to save Claude plan monthly fee.";
-      renderPlanWorthItSection(worthEl, null, message, {
-        onFeeChange: () => void 0,
-        onShowInference: () => void 0
-      });
-    } finally {
-      feeBusy = false;
-    }
-  }
-  function applyWorthItPayload(payload) {
-    const rates = new Map(
-      payload.windowExhaustion.map((row) => [row.windowId, { hit: row.hit, total: row.total }])
-    );
-    frontierPanel.setWindowExhaustion(rates);
-    renderPlanWorthItSection(worthEl, payload, null, {
-      busy: feeBusy,
-      onFeeChange: (fee) => {
-        void persistPlanFee(fee);
-      },
-      onShowInference: () => {
-        frontierPanel.setPlanCoverageMode("inference");
-        frontierPanel.root.scrollIntoView({
-          block: "nearest",
-          behavior: "smooth"
-        });
-      }
-    });
-  }
   function showPeriod(period) {
     activePeriod = period;
     tabBtns.forEach((btn) => {
@@ -49409,25 +49238,6 @@ function createUsageSection(api, store, onRequestClose) {
       renderPlanSection(planEl, null, message, handleSignIn);
     }
   }
-  async function refreshWorthIt(signal = currentSignal) {
-    renderPlanWorthItSection(worthEl, null, null, {
-      onFeeChange: () => void 0,
-      onShowInference: () => void 0
-    });
-    try {
-      const payload = await api.usage.getPlanWorthIt();
-      if (signal?.aborted) return;
-      applyWorthItPayload(payload);
-    } catch (err) {
-      if (signal?.aborted) return;
-      const message = err instanceof Error ? err.message : "Failed to load plan worth-it.";
-      frontierPanel.setWindowExhaustion(/* @__PURE__ */ new Map());
-      renderPlanWorthItSection(worthEl, null, message, {
-        onFeeChange: () => void 0,
-        onShowInference: () => void 0
-      });
-    }
-  }
   async function refreshLedger(signal = currentSignal) {
     try {
       const summary = await api.usage.getSummary();
@@ -49460,10 +49270,7 @@ function createUsageSection(api, store, onRequestClose) {
     if (!cachedSummary) {
       bodyEl2.textContent = "Loading usage\u2026";
     }
-    const planThenWorth = refreshPlan(signal).then(() => {
-      if (!signal?.aborted) return refreshWorthIt(signal);
-      return void 0;
-    });
+    const planPromise = refreshPlan(signal);
     const frontierPromise = frontierPanel.refresh(signal);
     try {
       const summary = await api.usage.getSummary();
@@ -49474,7 +49281,7 @@ function createUsageSection(api, store, onRequestClose) {
       if (signal?.aborted) return;
       bodyEl2.textContent = err instanceof Error ? `Failed to load usage: ${err.message}` : "Failed to load usage.";
     }
-    await planThenWorth;
+    await planPromise;
     await frontierPromise;
   }
   const unsubUsage = store?.on("usage_updated", () => {
@@ -49491,7 +49298,7 @@ function createUsageSection(api, store, onRequestClose) {
     }
   };
 }
-var PERIOD_LABELS, PROVIDER_LABELS, LEDGER_REFRESH_DEBOUNCE_MS, VERDICT_LABELS;
+var PERIOD_LABELS, PROVIDER_LABELS, LEDGER_REFRESH_DEBOUNCE_MS;
 var init_usage_section = __esm({
   "src/renderer/views/setup/usage-section.ts"() {
     init_clamp();
@@ -49518,13 +49325,6 @@ var init_usage_section = __esm({
       cursor: "Cursor"
     };
     LEDGER_REFRESH_DEBOUNCE_MS = 400;
-    VERDICT_LABELS = {
-      worth_it: "Worth it vs inference",
-      borderline: "Close to break-even",
-      not_worth_it: "Inference may be cheaper",
-      insufficient_history: "Need more history",
-      needs_fee: "Enter your plan fee"
-    };
   }
 });
 
