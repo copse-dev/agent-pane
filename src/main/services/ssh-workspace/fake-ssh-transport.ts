@@ -1,7 +1,7 @@
 import type { SshExecResult } from '@shared/types/ssh-workspace.ts'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import type { SshExecOptions, SshTransport } from './transport.ts'
+import type { SshConnectOptions, SshExecOptions, SshTransport } from './transport.ts'
 
 interface FakeExecScript {
   when: RegExp
@@ -13,7 +13,7 @@ interface FakeExecScript {
 }
 
 interface FakeSshTransportHooks {
-  onConnect?: () => void
+  onConnect?: (options: SshConnectOptions) => void
   onDisconnect?: () => void
 }
 
@@ -40,9 +40,22 @@ export class FakeSshTransport implements SshTransport {
     return this.connected
   }
 
-  async connect(): Promise<void> {
+  /**
+   * Drop the connection the way a lost link does: nothing is told to
+   * disconnect, the next liveness check simply finds it gone.
+   */
+  dropConnection(): void {
+    this.connected = false
+  }
+
+  async checkAlive(): Promise<boolean> {
+    return Promise.resolve(this.connected)
+  }
+
+  async connect(options: SshConnectOptions = {}): Promise<void> {
+    // The hook may throw to script a refused connection.
+    this.hooks.onConnect?.(options)
     this.connected = true
-    this.hooks.onConnect?.()
     await Promise.resolve()
   }
 
