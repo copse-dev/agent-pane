@@ -64,14 +64,16 @@ import {
   unwrapIpcErrorText,
   upsertHost,
   warningIcon
-} from "./chunk-UAI3U54O.js";
+} from "./chunk-KYBBGUKM.js";
 import {
   clear,
+  createOverlayDialog,
   el,
+  init_dialog_shell,
   init_helpers,
   on,
   qsRequired
-} from "./chunk-EMIRHVRH.js";
+} from "./chunk-OB2CWITE.js";
 import {
   __esm,
   __export
@@ -20870,31 +20872,6 @@ var init_product_announcement_dialog = __esm({
   }
 });
 
-// src/renderer/views/dialog-shell.ts
-function createOverlayDialog(opts) {
-  const dialog2 = document.createElement("dialog");
-  dialog2.id = opts.id;
-  if (opts.className) dialog2.className = opts.className;
-  document.body.append(dialog2);
-  return {
-    dialog: dialog2,
-    open: () => {
-      if (!dialog2.open) dialog2.showModal();
-    },
-    close: () => {
-      if (dialog2.open) dialog2.close();
-    },
-    isOpen: () => dialog2.open
-  };
-}
-function isAnyDialogOpen() {
-  return document.querySelector("dialog[open]") !== null;
-}
-var init_dialog_shell = __esm({
-  "src/renderer/views/dialog-shell.ts"() {
-  }
-});
-
 // packages/std/src/member-of.ts
 function memberOf(members2) {
   const set2 = new Set(members2);
@@ -21454,10 +21431,19 @@ var init_theme2 = __esm({
   }
 });
 
+// packages/std/src/clamp.ts
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+var init_clamp = __esm({
+  "packages/std/src/clamp.ts"() {
+  }
+});
+
 // src/shared/ui-scale.ts
 function clampUiScale(value) {
   if (!Number.isFinite(value)) return DEFAULT_UI_SCALE;
-  const clamped = Math.min(UI_SCALE_MAX, Math.max(UI_SCALE_MIN, value));
+  const clamped = clamp(value, UI_SCALE_MIN, UI_SCALE_MAX);
   return Math.round(clamped * 100) / 100;
 }
 function normalizeUiScale(value) {
@@ -21473,6 +21459,7 @@ function scaledEditorFontSize(fontSize, uiScale) {
 var DEFAULT_UI_SCALE, UI_SCALE_MIN, UI_SCALE_MAX, UI_SCALE_STEP;
 var init_ui_scale = __esm({
   "src/shared/ui-scale.ts"() {
+    init_clamp();
     DEFAULT_UI_SCALE = 1;
     UI_SCALE_MIN = 0.75;
     UI_SCALE_MAX = 1.5;
@@ -22287,10 +22274,27 @@ var init_array_utils2 = __esm({
   }
 });
 
+// packages/std/src/one-line-text.ts
+function collapseWhitespace(text) {
+  return text.replace(/\s+/g, " ").trim();
+}
+function ellipsize(text, max, options = {}) {
+  if (text.length <= max) return text;
+  if (max < 1) return "";
+  const head = text.slice(0, max - 1);
+  return `${options.trimEnd === true ? head.trimEnd() : head}\u2026`;
+}
+function truncateLine(text, max) {
+  return ellipsize(collapseWhitespace(text), max);
+}
+var init_one_line_text = __esm({
+  "packages/std/src/one-line-text.ts"() {
+  }
+});
+
 // packages/thread-store/src/thread-proposal.ts
 function trimTo(value, max) {
-  const trimmed = value.trim();
-  return trimmed.length <= max ? trimmed : `${trimmed.slice(0, max - 1).trimEnd()}\u2026`;
+  return ellipsize(value.trim(), max, { trimEnd: true });
 }
 function stringField(args, key) {
   const value = args[key];
@@ -22340,6 +22344,7 @@ function threadProposalFileSummary(files) {
 var THREAD_PROPOSAL_TOOL, THREAD_PROPOSAL_TITLE_MAX, THREAD_PROPOSAL_SUMMARY_MAX, THREAD_PROPOSAL_FILES_SHOWN;
 var init_thread_proposal = __esm({
   "packages/thread-store/src/thread-proposal.ts"() {
+    init_one_line_text();
     init_unknown_value();
     init_nullish();
     THREAD_PROPOSAL_TOOL = "propose_thread";
@@ -23489,8 +23494,7 @@ function subagentRunLabel(session) {
   const kind = session.kind === "custom" && session.agentName ? session.agentName : SUBAGENT_KIND_LABEL[session.kind];
   const firstLine = session.prompt.trim().split("\n")[0] ?? "";
   if (!firstLine) return kind;
-  const prompt = firstLine.length > RUN_PROMPT_MAX_CHARS ? `${firstLine.slice(0, RUN_PROMPT_MAX_CHARS - 1).trimEnd()}\u2026` : firstLine;
-  return `${kind} \xB7 ${prompt}`;
+  return `${kind} \xB7 ${ellipsize(firstLine, RUN_PROMPT_MAX_CHARS, { trimEnd: true })}`;
 }
 function collectSubagentRuns(toolCalls, runs) {
   for (const toolCall of toolCalls) {
@@ -23606,6 +23610,7 @@ function formatFooterUsageDetail(display, opts) {
 var SUBAGENT_KIND_LABEL, RUN_PROMPT_MAX_CHARS;
 var init_footer_usage_summary = __esm({
   "src/shared/usage/footer-usage-summary.ts"() {
+    init_one_line_text();
     init_estimate_cost();
     init_token_estimate();
     init_format_usage_summary();
@@ -26746,7 +26751,7 @@ function stripInlineMarkdown(text) {
 }
 function excerptText(text) {
   const line = stripInlineMarkdown(text.trim().split("\n", 1)[0] ?? "");
-  return line.length <= MAX_TITLE_LENGTH ? line : `${line.slice(0, MAX_TITLE_LENGTH - 1)}\u2026`;
+  return ellipsize(line, MAX_TITLE_LENGTH);
 }
 function excerpt(message) {
   return excerptText(message.content);
@@ -26813,6 +26818,7 @@ function unreadSideChatParents(threads) {
 var MAX_TITLE_LENGTH;
 var init_side_chat = __esm({
   "packages/thread-store/src/side-chat.ts"() {
+    init_one_line_text();
     init_marked_esm();
     MAX_TITLE_LENGTH = 80;
   }
@@ -26850,10 +26856,6 @@ function reviewReportsAwaitingModel(thread) {
   anchored.sort((a4, b2) => a4.startedAt - b2.startedAt);
   return [...awaiting, ...anchored];
 }
-function clip(text, max) {
-  const flat = text.replace(/\s+/g, " ").trim();
-  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}\u2026`;
-}
 function reviewedLine(report) {
   const parts = ["Copse Reviewer"];
   if (report.baseRef !== "") {
@@ -26873,7 +26875,7 @@ function groundLine(report) {
   return all.length === 0 ? null : `Checks: ${all.join("; ")}.`;
 }
 function findingLine(finding, index) {
-  return `${String(index + 1)}. [${finding.severity} \xB7 ${finding.class} \xB7 ${finding.verdict.status}] ${findingLocation(finding)} \u2014 ${clip(finding.claim, MAX_CONTEXT_CLAIM_CHARS)}`;
+  return `${String(index + 1)}. [${finding.severity} \xB7 ${finding.class} \xB7 ${finding.verdict.status}] ${findingLocation(finding)} \u2014 ${truncateLine(finding.claim, MAX_CONTEXT_CLAIM_CHARS)}`;
 }
 function reportContextText(report) {
   const lines = [reviewedLine(report)];
@@ -26912,6 +26914,7 @@ ${body}
 var MAX_CONTEXT_REPORTS, MAX_CONTEXT_FINDINGS, MAX_CONTEXT_CLAIM_CHARS, REVIEW_CONTEXT_TAG;
 var init_review_reports = __esm({
   "src/shared/store/review-reports.ts"() {
+    init_one_line_text();
     MAX_CONTEXT_REPORTS = 3;
     MAX_CONTEXT_FINDINGS = 12;
     MAX_CONTEXT_CLAIM_CHARS = 400;
@@ -27103,9 +27106,7 @@ function stripShellCdPrefix(command) {
   return command.replace(SHELL_CD_PREFIX_RE, "");
 }
 function shellCommandLabel(command) {
-  const cleaned = stripShellCdPrefix(command).replace(/\s+/g, " ").trim();
-  if (cleaned.length <= SHELL_LABEL_MAX) return cleaned;
-  return `${cleaned.slice(0, SHELL_LABEL_MAX - 1)}\u2026`;
+  return truncateLine(stripShellCdPrefix(command), SHELL_LABEL_MAX);
 }
 function shellCommandArg(args) {
   if (!isRecord(args)) return null;
@@ -27372,6 +27373,7 @@ function buildToolRunDisplayItems(run, opts) {
 var TOOL_DISPLAY_NAMES, TOOL_GROUPS, TOOL_TO_GROUP, ACP_KIND_TO_GROUP, MCP_GROUP_PREFIX, TURN_ROLLUP_KEY, RUN_ROLLUP_KEY, FILE_EDIT_PATH_ARG, SHELL_CD_PREFIX_RE, SHELL_LABEL_MAX, ERROR_BUCKET_SUFFIX;
 var init_tool_display = __esm({
   "src/shared/tools/tool-display.ts"() {
+    init_one_line_text();
     init_apply_patch();
     init_unknown_value3();
     init_humanize_identifier();
@@ -27382,6 +27384,7 @@ var init_tool_display = __esm({
       explore: { running: "Exploring files", done: "Explored files" },
       read_explored: { running: "Quoting explored lines", done: "Quoted explored lines" },
       read_file: { running: "Reading file", done: "Read file" },
+      read_thread: { running: "Reading conversation", done: "Read conversation" },
       search_project_context: {
         running: "Searching project history",
         done: "Searched project history"
@@ -27605,7 +27608,7 @@ var init_todo_logic = __esm({
 // src/renderer/agent-activity.ts
 function promptProgressLabel(fraction) {
   if (!Number.isFinite(fraction)) return "Processing prompt\u2026";
-  const percent = Math.round(Math.min(1, Math.max(0, fraction)) * 100);
+  const percent = Math.round(clamp(fraction, 0, 1) * 100);
   return `Processing prompt\u2026 ${percent.toString()}%`;
 }
 function findRunningActivity(thread) {
@@ -27669,6 +27672,7 @@ function syncAgentActivity(store, threadId, writing) {
 var CONTEXT_TRIM_ACTIVITY;
 var init_agent_activity = __esm({
   "src/renderer/agent-activity.ts"() {
+    init_clamp();
     init_thread_helpers();
     init_tool_display();
     init_copse_tool_call();
@@ -27681,10 +27685,11 @@ var init_agent_activity = __esm({
 function canContinue(used, cap = DEFAULT_CONTINUATION_BUDGET) {
   return used < cap;
 }
-var DEFAULT_CONTINUATION_BUDGET;
+var DEFAULT_CONTINUATION_BUDGET, DEFAULT_CROSS_THREAD_PROMPT_BUDGET;
 var init_continuation_budget = __esm({
   "packages/agent/src/hooks/continuation-budget.ts"() {
     DEFAULT_CONTINUATION_BUDGET = 5;
+    DEFAULT_CROSS_THREAD_PROMPT_BUDGET = 5;
   }
 });
 
@@ -27751,8 +27756,14 @@ function isHeldMessage(item) {
 function isMachineContinuation(item) {
   return item.origin !== void 0;
 }
+function isCrossThreadPrompt(item) {
+  return item.origin?.kind === "machine" && item.origin.operationId.startsWith("thread:");
+}
+function crossThreadBudgetHeldNote() {
+  return `Cross-thread prompt allowance reached \u2014 ${String(DEFAULT_CROSS_THREAD_PROMPT_BUDGET)} prompts from this sender's user turn have run here. This prompt is held; release it to continue, or send a new instruction in the sender thread for a fresh allowance.`;
+}
 function continuationBudgetHeldNote() {
-  return `Auto-continuation budget reached \u2014 ${String(DEFAULT_CONTINUATION_BUDGET)} machine-initiated follow-ups have run in this turn. The next hook follow-up is held; release it to continue (that starts a fresh turn with a reset budget).`;
+  return `Auto-continuation budget reached \u2014 ${String(DEFAULT_CONTINUATION_BUDGET)} machine-initiated follow-ups have run in this turn. The next automatic follow-up is held; release it to continue (that starts a fresh turn with a reset budget).`;
 }
 function isStaleEpoch(thread, epoch) {
   return thread.currentEpoch !== void 0 && thread.currentEpoch !== epoch;
@@ -27771,7 +27782,8 @@ function startRootTurnTree(store, threadId) {
   patchThreadAnywhere(store, threadId, (t2) => ({
     ...t2,
     currentEpoch: epoch,
-    continuationUsed: 0
+    continuationUsed: 0,
+    crossThreadPromptsUsed: 0
   }));
   return epoch;
 }
@@ -27897,6 +27909,22 @@ function requeueBusyMessage(store, api, threadId, item) {
     const pending = t2.pendingMessages ?? [];
     if (pending.some((entry) => entry.messageId === item.messageId)) return t2;
     const requeued = { ...t2, pendingMessages: [item, ...pending], updatedAt: Date.now() };
+    if (isCrossThreadPrompt(item)) {
+      if (item.origin?.kind === "machine" && item.origin.crossThreadScope !== void 0) {
+        const scope = item.origin.crossThreadScope;
+        return {
+          ...requeued,
+          crossThreadPromptCounts: {
+            ...t2.crossThreadPromptCounts,
+            [scope]: Math.max(0, (t2.crossThreadPromptCounts?.[scope] ?? 0) - 1)
+          }
+        };
+      }
+      return {
+        ...requeued,
+        crossThreadPromptsUsed: Math.max(0, (t2.crossThreadPromptsUsed ?? 0) - 1)
+      };
+    }
     return isMachineContinuation(item) && (t2.continuationUsed ?? 0) > 0 ? { ...requeued, continuationUsed: (t2.continuationUsed ?? 0) - 1 } : requeued;
   });
   store.emit("message_queued", threadId, item.messageId);
@@ -27935,11 +27963,26 @@ function drainMessageQueue(store, api, threadId) {
   const pending = thread.pendingMessages ?? [];
   if (pending.length === 0) return;
   let used = thread.continuationUsed ?? 0;
+  let crossThreadUsed = thread.crossThreadPromptsUsed ?? 0;
+  const crossThreadCounts = { ...thread.crossThreadPromptCounts };
   let next;
   const heldByBudget = [];
+  const heldByCrossThreadBudget = [];
   const heldByEpoch = [];
   for (const item of pending) {
     if (isHeldMessage(item)) continue;
+    if (isCrossThreadPrompt(item)) {
+      const scope = item.origin?.kind === "machine" ? item.origin.crossThreadScope : void 0;
+      const count = scope === void 0 ? crossThreadUsed : crossThreadCounts[scope] ?? 0;
+      if (!canContinue(count, DEFAULT_CROSS_THREAD_PROMPT_BUDGET)) {
+        heldByCrossThreadBudget.push(item.messageId);
+        continue;
+      }
+      if (scope === void 0) crossThreadUsed += 1;
+      else crossThreadCounts[scope] = count + 1;
+      next = item;
+      break;
+    }
     if (isMachineContinuation(item)) {
       if (item.epoch !== void 0 && isStaleEpoch(thread, item.epoch)) {
         heldByEpoch.push(item.messageId);
@@ -27956,10 +27999,11 @@ function drainMessageQueue(store, api, threadId) {
     next = item;
     break;
   }
-  if (!next && heldByBudget.length === 0 && heldByEpoch.length === 0) return;
+  if (!next && heldByBudget.length === 0 && heldByCrossThreadBudget.length === 0 && heldByEpoch.length === 0)
+    return;
   if (next && !isMachineContinuation(next)) startHumanTurnTree(store, threadId);
   const rest = pending.filter((item) => item !== next);
-  const held = /* @__PURE__ */ new Set([...heldByBudget, ...heldByEpoch]);
+  const held = /* @__PURE__ */ new Set([...heldByBudget, ...heldByCrossThreadBudget, ...heldByEpoch]);
   patchThreadAnywhere(store, threadId, (t2) => {
     const { pendingMessages: _removed, ...restThread } = t2;
     const messages = movePendingUserMessagesToEnd(t2.messages, pending);
@@ -27967,9 +28011,17 @@ function drainMessageQueue(store, api, threadId) {
       (item) => held.has(item.messageId) ? { ...item, autoDispatch: false } : item
     );
     const base = nextPending.length > 0 ? { ...restThread, messages, pendingMessages: nextPending, updatedAt: Date.now() } : { ...restThread, messages, updatedAt: Date.now() };
+    if (next && isCrossThreadPrompt(next))
+      return {
+        ...base,
+        crossThreadPromptsUsed: crossThreadUsed,
+        crossThreadPromptCounts: crossThreadCounts
+      };
     return next && isMachineContinuation(next) ? { ...base, continuationUsed: used } : base;
   });
   if (heldByBudget.length > 0) addMessage(store, threadId, "error", continuationBudgetHeldNote());
+  if (heldByCrossThreadBudget.length > 0)
+    addMessage(store, threadId, "error", crossThreadBudgetHeldNote());
   store.emit("threads_changed");
   if (next) dispatchAgentRun(store, api, threadId, next.payload, next);
 }
@@ -28152,6 +28204,13 @@ function releaseHeldMessage(store, api, threadId, messageId) {
       currentEpoch: epoch,
       // A human release starts a fresh turn tree with a reset budget (decision 5).
       continuationUsed: 0,
+      crossThreadPromptsUsed: 0,
+      ...item.origin?.kind === "machine" && item.origin.crossThreadScope !== void 0 ? {
+        crossThreadPromptCounts: {
+          ...t2.crossThreadPromptCounts,
+          [item.origin.crossThreadScope]: 0
+        }
+      } : {},
       pendingMessages: (t2.pendingMessages ?? []).map((p2) => {
         if (p2.messageId !== messageId) return p2;
         const { autoDispatch: _released, ...rest } = p2;
@@ -29247,7 +29306,7 @@ async function restoreProject(store, api, id, preferredThreadId = null) {
   void resumePendingQueues(store, api);
 }
 async function createNewProject(store, api) {
-  const { openNewProjectDialog } = await import("./new-project-dialog-3EBGRTDT.js");
+  const { openNewProjectDialog } = await import("./new-project-dialog-J2LQIJL5.js");
   const inferred = lastProjectDirectory(store);
   const home = await api.workspace.getHomeDirectory();
   const parentDir = inferred !== "" ? inferred : home;
@@ -29282,7 +29341,7 @@ async function addProject(store, api) {
   return true;
 }
 async function addRemoteProject(store, api) {
-  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-KNMGRNB7.js");
+  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-CCTQT7EL.js");
   const picked = await openRemoteFolderDialog(api);
   if (!picked) return false;
   await addProjectFromRemotePath(store, api, picked.hostId, picked.path);
@@ -43267,11 +43326,11 @@ function baseDrop(bitsPerWeight) {
 }
 function sizeFactor(paramsB) {
   if (!(paramsB > 0)) return 3;
-  return Math.min(3, Math.max(0.5, Math.pow(REF_PARAMS_B / paramsB, SIZE_EXP)));
+  return clamp(Math.pow(REF_PARAMS_B / paramsB, SIZE_EXP), 0.5, 3);
 }
 function estimateQuantPenalty(ctx) {
   const raw = baseDrop(ctx.bitsPerWeight) * sizeFactor(ctx.paramsB) * (ctx.taskSensitivity ?? 1);
-  return Math.min(MAX_DROP, Math.max(0, raw));
+  return clamp(raw, 0, MAX_DROP);
 }
 function estimateQuantizedScore(fullScore, ctx) {
   const penalty = estimateQuantPenalty(ctx);
@@ -43285,6 +43344,7 @@ function estimateQuantizedScore(fullScore, ctx) {
 var A2, B2, REF_PARAMS_B, SIZE_EXP, MAX_DROP;
 var init_quant_penalty = __esm({
   "packages/llm/src/quant-penalty.ts"() {
+    init_clamp();
     A2 = 3.35;
     B2 = 1.25;
     REF_PARAMS_B = 30;
@@ -44652,13 +44712,13 @@ var init_acp_known_agents = __esm({
           scratchPaths: ["/tmp/claude-${uid}", "/tmp/claude-*", "/tmp/claude"]
         },
         sandboxedPermissionMode: "acceptEdits",
-        // setup-token only prints a token; it does not save the login this
-        // desktop setup needs. Use the dedicated login command and leave the
-        // account method to the login flow rather than forcing SSO or Console.
-        setup: "claude auth login",
-        reauth: "claude auth login",
+        // The adapter delegates --cli to the Claude Code binary bundled with its
+        // Agent SDK. Sign-in must use that same binary: a fresh machine can have
+        // the adapter without a separate `claude` executable on PATH.
+        setup: "claude-agent-acp --cli auth login",
+        reauth: "claude-agent-acp --cli auth login",
         docsUrl: "https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp",
-        note: "Runs Claude Code. Sign in with `claude auth login` (or `ANTHROPIC_API_KEY`)."
+        note: "Runs Claude Code. Sign in with `claude-agent-acp --cli auth login` (or `ANTHROPIC_API_KEY`)."
       },
       {
         id: "cursor",
@@ -45340,12 +45400,12 @@ function positionFrontierTooltip(tip, container, evt) {
   if (left + tipWidth > rect.width) {
     left = cursorX - tipWidth - TOOLTIP_OFFSET_PX;
   }
-  left = Math.max(0, Math.min(left, Math.max(0, rect.width - tipWidth)));
+  left = clamp(left, 0, Math.max(0, rect.width - tipWidth));
   let top = cursorY + TOOLTIP_OFFSET_PX;
   if (top + tipHeight > rect.height) {
     top = cursorY - tipHeight - TOOLTIP_OFFSET_PX;
   }
-  top = Math.max(0, Math.min(top, Math.max(0, rect.height - tipHeight)));
+  top = clamp(top, 0, Math.max(0, rect.height - tipHeight));
   tip.style.left = `${String(left)}px`;
   tip.style.top = `${String(top)}px`;
 }
@@ -45508,6 +45568,7 @@ function tooltipFor(point, costAxis = "blended") {
 var formatPrice, formatTaskPrice, TOOLTIP_OFFSET_PX, TOOLTIP_HIDE_GRACE_MS, modelCardApi;
 var init_intellect_frontier_tooltip = __esm({
   "src/renderer/views/intellect-frontier-tooltip.ts"() {
+    init_clamp();
     init_model_catalog();
     init_model_intellect();
     init_model_card_cache();
@@ -45649,7 +45710,7 @@ function renderFrontierSvg(points, size = {}, gutters = {}, tooltip, costAxis = 
         const centered = (index - (column.length - 1) / 2) * POINT_SPLAY_STEP_PX;
         const fanPhase = index % 6;
         const fanStep = fanPhase <= 3 ? fanPhase : 6 - fanPhase;
-        const offset = nearLeft ? fanStep * POINT_SPLAY_STEP_PX : Math.max(-POINT_SPLAY_MAX_PX, Math.min(POINT_SPLAY_MAX_PX, centered));
+        const offset = nearLeft ? fanStep * POINT_SPLAY_STEP_PX : clamp(centered, -POINT_SPLAY_MAX_PX, POINT_SPLAY_MAX_PX);
         displayX.set(
           point.id,
           Math.max(plotLeft, Math.min(plotLeft + plotW, x3(point.costPerMTok) + offset))
@@ -45957,7 +46018,7 @@ function renderFrontierSvg(points, size = {}, gutters = {}, tooltip, costAxis = 
         Math.hypot(pointX(other) - displayedCx, y3(other.intellect) - y3(p2.intellect))
       );
     }, Infinity);
-    const hitRadius = Math.max(5, Math.min(11, nearestDistance / 2 - 0.5));
+    const hitRadius = clamp(nearestDistance / 2 - 0.5, 5, 11);
     const hit = svgEl("circle", {
       cx: cx2,
       cy,
@@ -46265,6 +46326,7 @@ function renderChart(points, gutters, tooltip, size = {}, costAxis = "blended", 
 var SVG_NS, WIDTH, HEIGHT, MARGIN, LABEL_LINE_GAP, POINT_SPLAY_COLUMN_PX, POINT_SPLAY_STEP_PX, POINT_SPLAY_MAX_PX, UNPRICED_GUTTER_W, UNSCORED_ROW_LIMIT, UNPRICED_GUTTER_LIMIT;
 var init_intellect_frontier_chart = __esm({
   "src/renderer/views/intellect-frontier-chart.ts"() {
+    init_clamp();
     init_model_intellect();
     init_helpers();
     init_intellect_frontier_tooltip();
@@ -48382,7 +48444,7 @@ function renderPlanProvider(host, result, onSignIn) {
   }
   if (result.usage.creditGrant) {
     const credit = result.usage.creditGrant;
-    const usedPercent = Math.min(100, Math.max(0, credit.usedCents / credit.totalCents * 100));
+    const usedPercent = clamp(credit.usedCents / credit.totalCents * 100, 0, 100);
     const row = document.createElement("div");
     row.className = "usage-credit-grant";
     row.innerHTML = `
@@ -48960,6 +49022,7 @@ function createUsageSection(api, store, onRequestClose) {
 var PERIOD_LABELS, PROVIDER_LABELS, LEDGER_REFRESH_DEBOUNCE_MS, VERDICT_LABELS;
 var init_usage_section = __esm({
   "src/renderer/views/setup/usage-section.ts"() {
+    init_clamp();
     init_format_usage_summary();
     init_helpers();
     init_inline_markdown();
@@ -50387,7 +50450,7 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
     const values = view === "group" && group ? group.choices.map((choice) => choice.value) : visibleOptions(cachedOptions).filter((opt) => !opt.disabled).map((opt) => opt.value);
     if (values.length === 0) return;
     const index = values.findIndex((value) => value === activeValue);
-    const nextIndex = Math.max(0, Math.min(values.length - 1, index + direction));
+    const nextIndex = clamp(index + direction, 0, values.length - 1);
     activeValue = values[nextIndex] ?? null;
     renderMenu(cachedOptions);
     if (view !== "all") focusActiveOption();
@@ -50707,6 +50770,7 @@ function mountModelSelectPicker(select, pickerOpts) {
 var RECENT_MODEL_LIMIT, COVERAGE_FILTERS, pickerAnchorId, fieldPickerId;
 var init_model_picker = __esm({
   "src/renderer/views/model-picker.ts"() {
+    init_clamp();
     init_context_menu();
     init_helpers();
     init_icons();
@@ -50842,9 +50906,6 @@ function modelParameterSupport(model) {
     upstreamDecides: true
   };
 }
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
 function roundToStep(value) {
   return Math.round(value * 100) / 100;
 }
@@ -50921,6 +50982,7 @@ function decodeModelParametersMap(value) {
 var REASONING_LEVELS, isReasoningLevel, VERBOSITY_LEVELS, isVerbosityLevel, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_COMPATIBLE_SAMPLING, OPENAI_SAMPLING, ANTHROPIC_SAMPLING, UNIVERSAL_SAMPLING, AGENT_NAMESPACES, CLAUDE_EFFORT_NO_SAMPLING, CLAUDE_EFFORT_WITH_SAMPLING, CLAUDE_THINKING_ALWAYS_ON, OPENAI_REASONING_PREFIXES, OPENAI_GPT6_PREFIXES, FULL_EFFORT_LADDER, CAPPED_EFFORT_LADDER, BUDGET_LADDER, OPENAI_LADDER, OPENAI_GPT6_LADDER, OPENAI_COMPATIBLE_LADDER, OPENAI_VERBOSITY_PREFIXES, OPENAI_VERBOSITY_EXCLUDED, SAMPLING_BOUNDS, RECOMMENDATIONS;
 var init_model_parameters = __esm({
   "packages/llm/src/model-parameters.ts"() {
+    init_clamp();
     init_model_catalog();
     init_model_families();
     init_model_selection();
@@ -54108,7 +54170,7 @@ function choiceForStored(value) {
 }
 function retainedLabel(value) {
   if (value === "scale") return "Scale (current advanced value)";
-  const visible = value.length > 80 ? `${value.slice(0, 79)}\u2026` : value;
+  const visible = ellipsize(value, 80);
   return `Current advanced value: ${visible || "(empty)"}`;
 }
 function describe3(value) {
@@ -54181,6 +54243,7 @@ function createOpenAiServiceTierField(api) {
 var OFFERED;
 var init_openai_service_tier_field = __esm({
   "src/renderer/views/setup/openai-service-tier-field.ts"() {
+    init_one_line_text();
     init_service_tier();
     init_helpers();
     init_ui();
@@ -55747,11 +55810,17 @@ function createGhCliSection(api, options = {}) {
       el("strong", {}, "Automatic"),
       " uses the ",
       el("code", {}, "gh"),
-      " CLI when it is signed in, otherwise the GitHub REST/GraphQL API with a ",
-      el("code", {}, "GITHUB_TOKEN"),
+      " CLI when it is signed in, otherwise the GitHub REST/GraphQL API with your ",
+      el("code", {}, "gh"),
+      " login or a token: ",
+      el("code", {}, "GH_TOKEN"),
       " or ",
-      el("code", {}, "gh auth token"),
-      "."
+      el("code", {}, "GITHUB_TOKEN"),
+      " for github.com, or ",
+      el("code", {}, "GH_ENTERPRISE_TOKEN"),
+      " when ",
+      el("code", {}, "GH_HOST"),
+      " names a GitHub Enterprise server."
     ),
     backendField
   );
@@ -74829,12 +74898,8 @@ async function openWorkspaceFile(store, api, path, reveal) {
 }
 async function openWorkspaceFileInBrowser(store, api, path) {
   const { projectId, threadId } = requireActiveThreadOwner(store);
-  if (store.getState().openLinksInBuiltInBrowser) {
-    const url2 = await api.browser.workspaceFileUrl(projectId, threadId, path);
-    openBrowserUrl(store, url2);
-    return;
-  }
-  await api.shell.openWorkspaceFileInBrowser(projectId, threadId, path);
+  const url2 = await api.browser.workspaceFileUrl(projectId, threadId, path);
+  openBrowserUrl(store, url2);
 }
 function canOpenWorkspaceFileInBrowser(store) {
   const { activeProjectId, projects } = store.getState();
@@ -74937,9 +75002,6 @@ export {
   init_ui,
   mountProductAnnouncements,
   init_product_announcement_dialog,
-  createOverlayDialog,
-  isAnyDialogOpen,
-  init_dialog_shell,
   memberOf,
   init_member_of,
   init_member_of2,
@@ -74949,6 +75011,8 @@ export {
   errorMessage,
   init_errors3 as init_errors,
   init_errors4 as init_errors2,
+  clamp,
+  init_clamp,
   formatUsd,
   formatTokenCount,
   init_format_usage_summary,
@@ -75022,6 +75086,9 @@ export {
   init_local_detection,
   createCustomProvidersSection,
   init_custom_providers_section,
+  collapseWhitespace,
+  ellipsize,
+  init_one_line_text,
   createPasteKeyForm,
   init_paste_key_form,
   contextFitAdvice,
