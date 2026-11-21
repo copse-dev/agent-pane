@@ -476,6 +476,7 @@
       "simulator-desktop:frame",
       "simulator-desktop:show",
       "simulator-desktop:status",
+      "ssh-prompt:dismissed",
       "ssh:connection-changed",
       "ssh:prompt-request",
       "supervisor:changed",
