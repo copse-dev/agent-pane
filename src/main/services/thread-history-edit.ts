@@ -150,6 +150,7 @@ function editedThread(thread: Thread, request: ThreadHistoryEditRequest, now: nu
   delete next.contextTrims
   delete next.currentEpoch
   delete next.continuationUsed
+  delete next.crossThreadPromptsUsed
   return next
 }
 
@@ -264,6 +265,7 @@ export async function undoThreadHistoryEdit(
     delete restoredThread.contextTrims
     delete restoredThread.currentEpoch
     delete restoredThread.continuationUsed
+    delete restoredThread.crossThreadPromptsUsed
     await stageThreadHistoryMutation(projectId, threadId, currentState)
     try {
       await replaceHistory(
