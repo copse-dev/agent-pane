@@ -1,5 +1,5 @@
 {
-  "source": "ssh-connection-lost provisional at the median (6.6s) until its first CI run is measured, 2026-11-20; background-fetch-auth provisional from one successful local macOS Chrome 152.0.7977.167 WDIO spec sample (3.5s; whole invocation 5s), 2026-11-14; retained .tmp/background-fetch-auth-20261114/native-ui-v2.log SHA256 36050fd11854c491f37c7b59bee84681dc15c715a1df0592b77744e97f68b702; replace after its first Linux CI measurement; agent-eval-maintenance provisional at the median (8.0s) until its first CI run is measured, 2026-11-14; workflow-read-evidence provisional at the median (7.9s) until its first CI run is measured, 2026-11-20; median PASSED seconds over 160 CI e2e shard logs, 2026-11-20; workspace-preview-security measured at 5.8s from CI run 44655367196 shard 5 (job 136027574986), 2026-11-20",
+  "source": "acp-edit-audit-git-state provisional at its local macOS run (9s) until its first CI run is measured, 2026-11-16; settings-usage-sections provisional at the median (7.9s) until its first CI run is measured, 2026-11-07; new-thread-detached-head provisional at the median (7.9s) until its first CI run is measured, 2026-11-17; ssh-connection-lost provisional at the median (6.6s) until its first CI run is measured, 2026-11-20; background-fetch-auth provisional from one successful local macOS Chrome 152.0.7977.167 WDIO spec sample (3.5s; whole invocation 5s), 2026-11-14; retained .tmp/background-fetch-auth-20261114/native-ui-v2.log SHA256 36050fd11854c491f37c7b59bee84681dc15c715a1df0592b77744e97f68b702; replace after its first Linux CI measurement; agent-eval-maintenance provisional at the median (8.0s) until its first CI run is measured, 2026-11-14; workflow-read-evidence provisional at the median (7.9s) until its first CI run is measured, 2026-11-20; median PASSED seconds over 160 CI e2e shard logs, 2026-11-20; workspace-preview-security measured at 5.8s from CI run 44655367196 shard 5 (job 136027574986), 2026-11-20",
   "seconds": {
     "tests/e2e/accent-color.e2e.ts": 15,
     "tests/e2e/accessibility.e2e.ts": 21.8,
@@ -10,6 +10,7 @@
     "tests/e2e/acp-catalog-entry.e2e.ts": 10.5,
     "tests/e2e/acp-command-preflight.e2e.ts": 11.3,
     "tests/e2e/acp-detect-mode-no-silent-pin.e2e.ts": 10.8,
+    "tests/e2e/acp-edit-audit-git-state.e2e.ts": 9,
     "tests/e2e/acp-execute-no-remember.e2e.ts": 6,
     "tests/e2e/acp-gpt-model-labels.e2e.ts": 7.7,
     "tests/e2e/acp-inline-visualization.e2e.ts": 10.5,
@@ -217,6 +218,7 @@
     "tests/e2e/nested-tool-activity-colors.e2e.ts": 5.8,
     "tests/e2e/new-project-flow.e2e.ts": 9.2,
     "tests/e2e/new-thread-default-branch.e2e.ts": 19.3,
+    "tests/e2e/new-thread-detached-head.e2e.ts": 7.9,
     "tests/e2e/next-step-hint.e2e.ts": 6.6,
     "tests/e2e/notification-open-thread.e2e.ts": 5.8,
     "tests/e2e/npx-approval.e2e.ts": 5.8,
@@ -376,8 +378,8 @@
     "tests/e2e/settings-usage-auth-errors.e2e.ts": 6.2,
     "tests/e2e/settings-usage-classifiers.e2e.ts": 6.7,
     "tests/e2e/settings-usage-codex-chatpass.e2e.ts": 6,
-    "tests/e2e/settings-usage-plan-worth-it.e2e.ts": 5.8,
     "tests/e2e/settings-usage-responses-cache.e2e.ts": 5,
+    "tests/e2e/settings-usage-sections.e2e.ts": 7.9,
     "tests/e2e/settings-usage-token-expired.e2e.ts": 6.2,
     "tests/e2e/settings-usage-unconfirmed-plans.e2e.ts": 6.3,
     "tests/e2e/settings-usage-value-map-card-link.e2e.ts": 8.5,
