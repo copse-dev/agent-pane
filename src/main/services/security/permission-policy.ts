@@ -521,22 +521,6 @@ export function backgroundAllowsPortBinding(args: unknown): boolean {
   return (args as { allow_port_binding?: unknown }).allow_port_binding === true
 }
 
-export function formatPortBindingPromptParts(
-  workspaceRoot: string,
-  command: string,
-): ShellPromptParts {
-  return {
-    command: command || '(no command given)',
-    bodyAdvice:
-      'The agent wants to start a long-running background task that binds a ' +
-      'loopback port and stays alive across turns:\n\n' +
-      `Project: ${workspaceRoot}`,
-    bodyFooter:
-      "It runs with the project's sandbox filesystem rules, relaxed only to allow " +
-      'binding on localhost.',
-  }
-}
-
 /**
  * Stand-in when the caller had no reasons to pass on, so the prompt still says
  * something. It travels as a reason: `describeShellScopeReasons` passes text it
