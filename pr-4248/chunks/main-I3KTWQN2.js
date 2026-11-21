@@ -490,7 +490,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-CI6MCNUP.js";
+} from "./chunk-UMYC47CJ.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -86537,17 +86537,28 @@ function activeSshHostId(store2) {
   const project = projects.find((p) => p.id === activeProjectId);
   return project?.sshHost ?? null;
 }
-function capabilityWarnings(state) {
+function capabilityWarnings(state, options = { watching: true }) {
   const caps = state.capabilities;
   if (!caps) return [];
   const warnings = [];
   if (!caps.git) warnings.push("git not found \u2014 git pane and backups will not work remotely");
   if (!caps.rg) warnings.push("ripgrep (rg) not found \u2014 search will use grep fallback");
-  warnings.push(
-    "external file edits may not appear immediately \u2014 remote file watching is not yet supported"
-  );
+  if (!options.watching) {
+    warnings.push(
+      "edits made outside Copse will not appear in open files \u2014 remote file watching is turned off"
+    );
+  }
   warnings.push(...caps.warnings);
   return warnings;
+}
+function disconnectedMessage(hostId, state) {
+  if (state?.status === "error" && state.lastError) {
+    return `SSH connection to ${state.target} failed: ${state.lastError}`;
+  }
+  if (state?.status === "disconnected") {
+    return `SSH connection to ${state.target} was lost. It reconnects on your next command.`;
+  }
+  return `SSH connection to ${state?.target ?? hostId} is disconnected.`;
 }
 function mountSshStatusBanner(store2, api2) {
   let hostEl = null;
@@ -86557,7 +86568,7 @@ function mountSshStatusBanner(store2, api2) {
   }
   function renderDisconnected(hostId, state) {
     remove();
-    const message2 = state?.status === "error" && state.lastError ? `SSH connection to ${state.target} failed: ${state.lastError}` : `SSH connection to ${state?.target ?? hostId} is disconnected.`;
+    const message2 = disconnectedMessage(hostId, state);
     const reconnectBtn = el("button", { type: "button", class: "ssh-status-action" }, "Reconnect");
     reconnectBtn.addEventListener("click", () => {
       void api2.sshWorkspace.reconnect(hostId).catch(() => void 0);
@@ -86576,8 +86587,8 @@ function mountSshStatusBanner(store2, api2) {
     if (titlebar?.parentElement) titlebar.after(hostEl);
     else (document.getElementById("app") ?? document.body).prepend(hostEl);
   }
-  function renderWarnings(state) {
-    const warnings = capabilityWarnings(state);
+  function renderWarnings(state, watching) {
+    const warnings = capabilityWarnings(state, { watching });
     if (warnings.length === 0) {
       remove();
       return;
@@ -86593,7 +86604,10 @@ function mountSshStatusBanner(store2, api2) {
     else (document.getElementById("app") ?? document.body).prepend(hostEl);
   }
   function sync(states) {
-    void api2.settings.get("sshWorkspaceEnabled").then((enabled) => {
+    void Promise.all([
+      api2.settings.get("sshWorkspaceEnabled"),
+      api2.settings.get("sshWatcherMode")
+    ]).then(([enabled, watcherMode]) => {
       if (enabled !== true) {
         remove();
         return;
@@ -86608,7 +86622,7 @@ function mountSshStatusBanner(store2, api2) {
         renderDisconnected(hostId, state);
         return;
       }
-      renderWarnings(state);
+      renderWarnings(state, watcherMode !== "off");
     });
   }
   const unsubs = [

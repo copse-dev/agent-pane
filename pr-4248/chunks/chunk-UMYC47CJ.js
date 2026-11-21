@@ -32475,7 +32475,7 @@ function createToolPermissionsPanel(api) {
     count.setAttribute("aria-hidden", "true");
     const spokenCount = document.createElement("span");
     spokenCount.className = "tool-permission-count-sr";
-    spokenCount.textContent = String(group.tools.length) + " tools";
+    spokenCount.textContent = `${String(group.tools.length)} tool${group.tools.length === 1 ? "" : "s"}`;
     summary.append(disclosure, heading, count, spokenCount);
     if (group.origin) {
       const origin = document.createElement("span");
