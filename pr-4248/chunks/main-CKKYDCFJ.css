@@ -7902,9 +7902,9 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   display: inline-block;
   margin-bottom: var(--spacing-xs);
   padding: 1px 6px;
-  border-radius: var(--radius);
-  font-size: var(--font-size-xs);
-  font-weight: 500;
+  border-radius: var(--badge-radius);
+  font-size: var(--badge-font-size);
+  font-weight: var(--badge-font-weight);
   color: var(--text-muted);
   background: var(--bg-hover);
 }
@@ -13750,6 +13750,14 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 }
 .tool-permission-count {
   font-variant-numeric: tabular-nums;
+}
+.tool-permission-count-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 .tool-permission-group-origin {
   max-width: 18ch;

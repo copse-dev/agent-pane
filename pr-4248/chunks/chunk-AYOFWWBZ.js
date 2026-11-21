@@ -32417,8 +32417,11 @@ function createToolPermissionsPanel(api) {
     const count = document.createElement("span");
     count.className = "tool-permission-count";
     count.textContent = String(group.tools.length);
-    count.setAttribute("aria-label", String(group.tools.length) + " tools");
-    summary.append(disclosure, heading, count);
+    count.setAttribute("aria-hidden", "true");
+    const spokenCount = document.createElement("span");
+    spokenCount.className = "tool-permission-count-sr";
+    spokenCount.textContent = String(group.tools.length) + " tools";
+    summary.append(disclosure, heading, count, spokenCount);
     if (group.origin) {
       const origin = document.createElement("span");
       origin.className = "tool-permission-group-origin";
