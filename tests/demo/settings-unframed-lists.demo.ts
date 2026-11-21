@@ -52,7 +52,7 @@ describe('Settings lists without frames', () => {
       const panel = document.querySelector('.tool-permissions-panel')
       return panel ? panel.scrollWidth - panel.clientWidth : -1
     })
-    assert.equal(overflow, 0, 'the gutter the groups carry stays inside the panel')
+    assert.equal(overflow, 0, 'the unframed groups stay inside the panel')
     await saveElementScreenshot(
       '[data-group-id="mcp:project:proton-mcp"]',
       'settings-tool-groups-unframed.png',

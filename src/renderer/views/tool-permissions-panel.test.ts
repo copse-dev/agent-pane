@@ -188,6 +188,19 @@ describe('tool permissions panel', () => {
     assert.equal(fixedAllow.title, 'Worktree preparation always requires approval.')
   })
 
+  it('shows a group its bare tool count and speaks it with the noun', async () => {
+    const root = await mount(apiHarness())
+    const summary = root.querySelector('.tool-permission-group .tool-permission-group-summary')
+    const count = summary?.querySelector('.tool-permission-count')
+    assert.ok(summary && count)
+    assert.equal(count.textContent, '2')
+    // A plain span has no accessible name, so the number is hidden from
+    // assistive tech and a visually hidden sibling says what it counts.
+    assert.equal(count.getAttribute('aria-hidden'), 'true')
+    assert.equal(count.hasAttribute('aria-label'), false)
+    assert.equal(summary.querySelector('.tool-permission-count-sr')?.textContent, '2 tools')
+  })
+
   it('shows backticked names in a tool description as inline code', async () => {
     const root = await mount(apiHarness())
     const description = root.querySelector(

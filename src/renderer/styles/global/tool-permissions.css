@@ -91,6 +91,14 @@
 .tool-permission-count {
   font-variant-numeric: tabular-nums;
 }
+.tool-permission-count-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
 
 .tool-permission-group-origin {
   max-width: 18ch;
