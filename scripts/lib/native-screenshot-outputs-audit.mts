@@ -110,7 +110,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['pr-native-provenance-offline-restart.png', 'pr-native-provenance.png'],
   },
   'tests/e2e/queued-held.e2e.ts': {
-    sourceSha256: '15307af47b9b4059877ad4e813bbf5181d0058fa66fb2794b24204baa36165ad',
+    sourceSha256: '8baf3b531458e0f0cc6306eea841f5f75f5f7c266c83b1d18486608011b19945',
     filenames: ['queued-held-contrast-dark.png', 'queued-held-contrast-light.png'],
   },
   'tests/e2e/queued-message-delete.e2e.ts': {
@@ -139,6 +139,14 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
       'settings-classifiers-install-bad-revision.png',
       'settings-classifiers-install-no-space.png',
       'settings-classifiers-install-offline.png',
+    ],
+  },
+  'tests/e2e/settings-classifiers.e2e.ts': {
+    sourceSha256: '349252db8750d7424bc0dca34f864e0629ebac70c4771814482aac613045183a',
+    filenames: [
+      'settings-classifiers-perplexity-decider-direct.png',
+      'settings-classifiers-perplexity-decider-flash.png',
+      'settings-classifiers-perplexity-decider.png',
     ],
   },
   'tests/e2e/settings-model-parameters.e2e.ts': {
