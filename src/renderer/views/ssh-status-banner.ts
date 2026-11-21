@@ -21,21 +21,40 @@ function activeSshHostId(store: AppStore): string | null {
 /**
  * One user-facing line per missing remote capability (plus any probe failures).
  *
- * The external-edit line is unconditional: no remote watcher exists yet, so
- * edits made outside Copse are not detected on any SSH host regardless of what
- * tools it has installed. Copse's own writes still refresh normally.
+ * Open files on an SSH host are watched for outside edits (a streaming watcher,
+ * or polling where that cannot run), so the external-edit line appears only
+ * when the `sshWatcherMode` setting has turned watching off. Copse's own writes
+ * refresh either way.
  */
-export function capabilityWarnings(state: SshConnectionState): string[] {
+export function capabilityWarnings(
+  state: SshConnectionState,
+  options: { watching: boolean } = { watching: true },
+): string[] {
   const caps = state.capabilities
   if (!caps) return []
   const warnings: string[] = []
   if (!caps.git) warnings.push('git not found — git pane and backups will not work remotely')
   if (!caps.rg) warnings.push('ripgrep (rg) not found — search will use grep fallback')
-  warnings.push(
-    'external file edits may not appear immediately — remote file watching is not yet supported',
-  )
+  if (!options.watching) {
+    warnings.push(
+      'edits made outside Copse will not appear in open files — remote file watching is turned off',
+    )
+  }
   warnings.push(...caps.warnings)
   return warnings
+}
+
+/** What the banner says when the active project's host is not connected. */
+export function disconnectedMessage(hostId: string, state: SshConnectionState | undefined): string {
+  if (state?.status === 'error' && state.lastError) {
+    return `SSH connection to ${state.target} failed: ${state.lastError}`
+  }
+  // A state that exists but is not connected was connected and then dropped:
+  // the manager found the link gone. No state means it was never opened.
+  if (state?.status === 'disconnected') {
+    return `SSH connection to ${state.target} was lost. It reconnects on your next command.`
+  }
+  return `SSH connection to ${state?.target ?? hostId} is disconnected.`
 }
 
 export function mountSshStatusBanner(store: AppStore, api: ApiClient): SshStatusBanner {
@@ -48,10 +67,7 @@ export function mountSshStatusBanner(store: AppStore, api: ApiClient): SshStatus
 
   function renderDisconnected(hostId: string, state: SshConnectionState | undefined): void {
     remove()
-    const message =
-      state?.status === 'error' && state.lastError
-        ? `SSH connection to ${state.target} failed: ${state.lastError}`
-        : `SSH connection to ${state?.target ?? hostId} is disconnected.`
+    const message = disconnectedMessage(hostId, state)
     const reconnectBtn = el('button', { type: 'button', class: 'ssh-status-action' }, 'Reconnect')
     reconnectBtn.addEventListener('click', () => {
       void api.sshWorkspace.reconnect(hostId).catch(() => undefined)
@@ -71,8 +87,8 @@ export function mountSshStatusBanner(store: AppStore, api: ApiClient): SshStatus
     else (document.getElementById('app') ?? document.body).prepend(hostEl)
   }
 
-  function renderWarnings(state: SshConnectionState): void {
-    const warnings = capabilityWarnings(state)
+  function renderWarnings(state: SshConnectionState, watching: boolean): void {
+    const warnings = capabilityWarnings(state, { watching })
     if (warnings.length === 0) {
       remove()
       return
@@ -89,7 +105,10 @@ export function mountSshStatusBanner(store: AppStore, api: ApiClient): SshStatus
   }
 
   function sync(states: SshConnectionState[]): void {
-    void api.settings.get('sshWorkspaceEnabled').then((enabled) => {
+    void Promise.all([
+      api.settings.get('sshWorkspaceEnabled'),
+      api.settings.get('sshWatcherMode'),
+    ]).then(([enabled, watcherMode]) => {
       if (enabled !== true) {
         remove()
         return
@@ -104,7 +123,7 @@ export function mountSshStatusBanner(store: AppStore, api: ApiClient): SshStatus
         renderDisconnected(hostId, state)
         return
       }
-      renderWarnings(state)
+      renderWarnings(state, watcherMode !== 'off')
     })
   }
 
