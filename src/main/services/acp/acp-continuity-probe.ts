@@ -16,6 +16,7 @@ import { realpathSync } from 'node:fs'
 import { spawnProbeTransport } from './acp-behavior-probe.ts'
 import { acpErrorMessage } from './acp-error-detail.ts'
 import { sleep } from '@copse/std/sleep.ts'
+import { withTimeout } from '@copse/std/with-timeout.ts'
 
 /**
  * Tier-2 ACP **session-continuity probe** (docs/plans/acp-session-continuity.md):
@@ -219,18 +220,6 @@ async function connect(
   }
 }
 
-function withTimeout<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      reject(new Error(`${what} timed out after ${String(ms)}ms`))
-    }, ms)
-  })
-  return Promise.race([promise, timeout]).finally(() => {
-    clearTimeout(timer)
-  })
-}
-
 /** Send one prompt and return the agent's text for that turn. */
 async function ask(
   conn: ProbeConnection,
@@ -245,7 +234,9 @@ async function ask(
       prompt: [{ type: 'text', text }],
     }),
     timeoutMs,
-    'session/prompt',
+    () => {
+      throw new Error(`session/prompt timed out after ${String(timeoutMs)}ms`)
+    },
   )
   // Notifications precede the response on the wire; let the last ones land.
   await sleep(50)
