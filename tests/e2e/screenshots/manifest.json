@@ -97,6 +97,10 @@
       "sha256": "8bb0c64d047c828c860a387dea3fafbba8cfc296a48763ca3903a8ebdcf11358",
       "bytes": 28444
     },
+    "acp-edit-audit-git-state.png": {
+      "sha256": "bf0193461fbfdabb83d647641cc611656e5e9fd78a29754c5bc6ff45d33f3aaf",
+      "bytes": 162368
+    },
     "acp-execute-no-remember.png": {
       "sha256": "f54a8c93ffa7167fe95b9cffe6d4e0023f9d4a855291ec8e5dcc0c5e060234ee",
       "bytes": 24307
@@ -1126,8 +1130,8 @@
       "bytes": 58806
     },
     "browser-preview-missing-entry.png": {
-      "sha256": "f5c2556a571ae3fcc81dde7ce5736f81f585413fba5078bdbe02070439f71787",
-      "bytes": 2105012
+      "sha256": "e12ddfef2c7a3e0dd7d1297374910f687f79cc9e1729e2c9707a661b1f654f6f",
+      "bytes": 2105607
     },
     "browser-preview-network-policy.png": {
       "sha256": "7d1dc20864635eb3bb4a42aefe1869e434c0bb9b464766721712c9498256d463",
@@ -5780,6 +5784,10 @@
     "theme-boot-popout-light.png": {
       "sha256": "0ca6f841648bff96a6404348b496e2f536ca6b7d9659fcf239424bf3bd064c8d",
       "bytes": 49188
+    },
+    "thread-action-assessment-onboarding.png": {
+      "sha256": "076305e97d18bcae84a16d76669118a3c391e9b98c2753d6148d813cdb7cb87f",
+      "bytes": 52447
     },
     "thread-actions-menu.png": {
       "sha256": "69b53cf0c65a1b187312d337bb2af09a53a19e5543eac75a88b1ea5f7644c610",

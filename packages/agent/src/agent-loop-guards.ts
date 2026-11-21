@@ -343,6 +343,15 @@ export function planClosedByVerifiedChecks(
   return closedNow.length > 0 && closedNow.every((t) => t.check !== undefined)
 }
 
+/**
+ * Nudge after a stream that ended normally with no visible answer and no tool
+ * call (typically a thinking model whose whole reply stayed in reasoning).
+ * Reasoning never lands in history, so without this message the next request
+ * would be byte-identical to the one that just produced nothing.
+ */
+export const EMPTY_TURN_NUDGE =
+  'Your previous reply contained no visible answer and no tool call, so nothing from it was kept (reasoning alone is not recorded). Reply now with your answer, or call the one tool you need next.'
+
 export const PLAN_VERIFIED_FINALIZE_NUDGE =
   "Every item in your plan is completed and the final item's acceptance check passed, so the task is done. Do not run more checks, re-verify, or inspect the repository again. Write the final answer for the user now: what changed, how it was verified, and anything left for them to do."
 
