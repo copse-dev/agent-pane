@@ -25,15 +25,22 @@ export interface ShellScopeAnalysis {
   reasons: string[]
 }
 
+export interface SymlinkScopeRequest {
+  readonly target: string
+  readonly linkPath: string
+  readonly workspaceRoot: string
+  readonly noDereference: boolean
+}
+
 /**
- * Host-provided facts the classifier cannot know on its own. Both are optional and
+ * Host-provided facts the classifier cannot know on its own. These are optional and
  * default to "nothing sanctioned", which is the strictest reading: every absolute
  * path outside the workspace is an escape.
  *
  * Copse installs its own values at startup (`shell-guard-environment.ts` in the
- * app): the chat store it mounts read-only into the seatbelt, and the scratch
- * directories a configured ACP agent declares. The hooks are functions rather than
- * values because both roots come from settings that can change at runtime, and
+ * app): read-only mounts, assigned scratch and literal symbolic-link path facts.
+ * The hooks are functions rather than values because roots and thread identity
+ * can change at runtime, and
  * `analyzeShellCommand` runs several times per approval — one read per scan, not
  * one per token.
  */
@@ -53,11 +60,14 @@ export interface ShellScopeEnvironment {
    * (masked out before the outside-path rules run), or null when there are none.
    */
   sanctionedScratchMatcher?: () => ((absPath: string) => boolean) | null
+  /** Filesystem proof for the actual destination and target of a supported literal ln. */
+  isContainedSymlink?: (request: SymlinkScopeRequest) => boolean
 }
 
 const DEFAULT_ENVIRONMENT: Required<ShellScopeEnvironment> = {
   containedReadRoots: () => [],
   sanctionedScratchMatcher: () => null,
+  isContainedSymlink: () => false,
 }
 
 let environment: Required<ShellScopeEnvironment> = DEFAULT_ENVIRONMENT
@@ -986,8 +996,48 @@ function maskAgentScratchPaths(command: string): string {
   const isScratch = environment.sanctionedScratchMatcher()
   if (!isScratch) return command
   return command.replace(ABSOLUTE_PATH_TOKENS, (match, lead: string, path: string) =>
-    isScratch(resolve(path)) ? `${lead}agent-scratch` : match,
+    isScratch(path) ? `${lead}agent-scratch` : match,
   )
+}
+
+/**
+ * Only a single direct literal ln with the common -s/-f/-n flags has known path
+ * semantics. Compounds, redirects, expansions and other flags retain the usual
+ * conservative outside-path scan. The host proves filesystem containment.
+ */
+function maskContainedSymlink(command: string, workspaceRoot: string | null): string {
+  if (workspaceRoot === null || /[\n\r$`\\*?[{]/.test(command)) return command
+  let tokens: ReturnType<typeof parseShell>
+  try {
+    tokens = parseShell(command)
+  } catch {
+    return command
+  }
+  if (!tokens.every((token) => typeof token === 'string')) return command
+  const [head, ...args] = tokens
+  if (head !== 'ln' && head !== '/bin/ln' && head !== '/usr/bin/ln') return command
+  let symbolic = false
+  let noDereference = false
+  let optionsTerminated = false
+  while (args[0]?.startsWith('-')) {
+    const flag = args.shift()
+    if (flag === '--') {
+      optionsTerminated = true
+      break
+    }
+    if (flag === undefined || !/^-[sfn]+$/.test(flag)) return command
+    symbolic ||= flag.includes('s')
+    noDereference ||= flag.includes('n')
+  }
+  // GNU ln also reads options after operands. Only an explicit -- makes a
+  // later dash-leading word a literal target/link path. Unsupported positions
+  // must retain the original scan rather than receive filesystem proof.
+  if (!optionsTerminated && args.some((arg) => arg.startsWith('-'))) return command
+  const [target, linkPath] = args
+  if (!symbolic || args.length !== 2 || !target || !linkPath) return command
+  return environment.isContainedSymlink({ target, linkPath, workspaceRoot, noDereference })
+    ? 'ln -s contained-target contained-link'
+    : command
 }
 
 /**
@@ -1219,7 +1269,9 @@ function referencesOutsideWorkspace(
   const command = maskPathAssignments(
     maskInertOperandPaths(
       maskContainedReadPaths(
-        maskSystemExecutableHeads(maskAgentScratchPaths(rawCommand)),
+        maskSystemExecutableHeads(
+          maskAgentScratchPaths(maskContainedSymlink(rawCommand, workspaceRoot)),
+        ),
         readRoots,
       ),
     ),
