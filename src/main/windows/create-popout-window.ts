@@ -8,6 +8,7 @@ import { registerTrustedAppFrame, unregisterTrustedAppFrame } from './app-frames
 import { registerAppWindow } from './app-window-broadcast.ts'
 import { bootThemeWindowOptions } from './boot-theme.ts'
 import { attachRendererCrashRecovery } from './renderer-crash-recovery.ts'
+import { largeIpcCalls } from './renderer-large-ipc.ts'
 import { attachVisualPinchZoom } from './visual-pinch-zoom.ts'
 import { shouldShowNativeWindows } from './native-window-visibility.ts'
 
@@ -93,7 +94,11 @@ export function createPanePopoutWindow(mode: PopoutMode, seed?: unknown): Browse
     event.preventDefault()
   })
   attachWebContentsLockdown(win.webContents)
-  attachRendererCrashRecovery(win.webContents)
+  // Read once: Electron throws on `win.webContents` after the window is destroyed.
+  const webContentsId = win.webContents.id
+  attachRendererCrashRecovery(win.webContents, {
+    context: () => largeIpcCalls.describeRecent(webContentsId),
+  })
   attachVisualPinchZoom(win.webContents)
   win.on('unresponsive', () => {
     console.warn('[renderer] pop-out window became unresponsive')
