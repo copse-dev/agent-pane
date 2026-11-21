@@ -16,6 +16,18 @@ describe('main layout boot', () => {
   })
 })
 
+// The public demo (the landing page's hero) imports this module in ordinary
+// browsers, and boot() runs on import. Some of them predate
+// Promise.withResolvers (Safari 17.4, Chrome 119, Firefox 121), and the
+// renderer build adds no polyfill, so boot would throw before the layout
+// mounts. Pinned at the source level, as above.
+describe('boot runs in the public demo browsers', () => {
+  it('does not call Promise.withResolvers', () => {
+    const src = readFileSync(join(process.cwd(), 'src/renderer/main.ts'), 'utf8')
+    assert.doesNotMatch(src, /Promise\.withResolvers\s*[(<]/)
+  })
+})
+
 // #2474: Cmd/Ctrl+W deletes the active thread, and with Settings — or any other
 // dialog — on screen the keystroke a user meant as "close this" destroyed a
 // conversation instead. main.ts binds its shortcuts inside a boot function with
