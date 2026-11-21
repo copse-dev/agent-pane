@@ -36,7 +36,7 @@ import {
   sleep,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-GBSDIY5K.js";
+} from "./chunks/chunk-VVUEQYLR.js";
 import "./chunks/chunk-X6JZSFJR.js";
 import {
   init_icons,
@@ -46,8 +46,8 @@ import {
   maximizeIcon,
   minimizeIcon,
   stringRecordOrEmpty
-} from "./chunks/chunk-UAI3U54O.js";
-import "./chunks/chunk-EMIRHVRH.js";
+} from "./chunks/chunk-KYBBGUKM.js";
+import "./chunks/chunk-OB2CWITE.js";
 import {
   __commonJS,
   __esm
@@ -6156,6 +6156,7 @@ function createDemoApi(scenario2, options = {}) {
     alerts: { threadFinished: resolvedVoid, onOpenThread: subscribe },
     deepLinks: { ready: resolvedVoid, onOpenThread: subscribe },
     sshPrompt: {
+      onDismissed: subscribe,
       respond: resolvedVoid,
       onRequest: subscribe
     },
@@ -6293,6 +6294,14 @@ function createDemoApi(scenario2, options = {}) {
         thread.updatedAt = Date.now();
         return resolved(true);
       },
+      actionState: () => resolved({
+        entries: [],
+        assessed: 0,
+        total: 0,
+        pending: 0,
+        assessing: false,
+        budgetLimited: false
+      }),
       onAutoArchived: () => () => {
       },
       storageSize: () => resolved({ bytes: 24576, truncated: false }),
@@ -6628,37 +6637,7 @@ function createDemoApi(scenario2, options = {}) {
         });
       },
       getThreadClassifierUse: () => resolved({ calls: 0, rows: [] }),
-      getPlanUsage: () => resolved({ providers: [], checkedAt: DEMO_TIME }),
-      getPlanWorthIt: () => resolved({
-        worthIt: {
-          verdict: "insufficient_history",
-          reason: "Need a couple of completed weekly windows \u2014 keep Copse signed into Claude and reopen Usage after resets.",
-          apiEquivalentBurnPerWeek: null,
-          planFeePerWeek: null,
-          monthlyFeeUsd: null,
-          feeHint: null,
-          completedWeeklyCount: 0,
-          inferenceFrontierNote: null
-        },
-        windowExhaustion: [],
-        historySampleCount: 0,
-        completedWeeklyCount: 0
-      }),
-      setClaudePlanMonthlyFee: () => resolved({
-        worthIt: {
-          verdict: "insufficient_history",
-          reason: "Need a couple of completed weekly windows \u2014 keep Copse signed into Claude and reopen Usage after resets.",
-          apiEquivalentBurnPerWeek: null,
-          planFeePerWeek: null,
-          monthlyFeeUsd: null,
-          feeHint: null,
-          completedWeeklyCount: 0,
-          inferenceFrontierNote: null
-        },
-        windowExhaustion: [],
-        historySampleCount: 0,
-        completedWeeklyCount: 0
-      })
+      getPlanUsage: () => resolved({ providers: [], checkedAt: DEMO_TIME })
     },
     index: {
       query: (pattern) => resolved(
@@ -7499,7 +7478,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-XM3BWNCK.js").then(async (main) => {
+    void import("./chunks/main-4VLVEHJ5.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(
