@@ -210,8 +210,9 @@ describe('tool permissions panel', () => {
     const summary = root.querySelector(
       '[data-group-id="mcp:project:proton"] .tool-permission-group-summary',
     )
-    assert.equal(summary?.querySelector('.tool-permission-count')?.textContent, '1')
-    assert.equal(summary?.querySelector('.tool-permission-count-sr')?.textContent, '1 tool')
+    assert.ok(summary)
+    assert.equal(summary.querySelector('.tool-permission-count')?.textContent, '1')
+    assert.equal(summary.querySelector('.tool-permission-count-sr')?.textContent, '1 tool')
   })
 
   it('shows backticked names in a tool description as inline code', async () => {
