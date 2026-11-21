@@ -1,5 +1,5 @@
 {
-  "source": "workflow-read-evidence provisional at the median (7.9s) until its first CI run is measured, 2026-11-20; median PASSED seconds over 160 CI e2e shard logs, 2026-11-20; workspace-preview-security measured at 5.8s from CI run 44655367196 shard 5 (job 136027574986), 2026-11-20",
+  "source": "browser-responsive-viewport provisional at the existing planner median (8s) until its first current-source Linux CI run is measured, 2026-11-20; workflow-read-evidence provisional at the median (7.9s) until its first CI run is measured, 2026-11-20; median PASSED seconds over 160 CI e2e shard logs, 2026-11-20; workspace-preview-security measured at 5.8s from CI run 44655367196 shard 5 (job 136027574986), 2026-11-20",
   "seconds": {
     "tests/e2e/accent-color.e2e.ts": 15,
     "tests/e2e/accessibility.e2e.ts": 21.8,
@@ -80,6 +80,7 @@
     "tests/e2e/browser-network-policy.e2e.ts": 6.6,
     "tests/e2e/browser-popout-capture.e2e.ts": 4.7,
     "tests/e2e/browser-preview-tool.e2e.ts": 7.4,
+    "tests/e2e/browser-responsive-viewport.e2e.ts": 8,
     "tests/e2e/browser-session-restore.e2e.ts": 9.4,
     "tests/e2e/browser-thread-sharing.e2e.ts": 8.4,
     "tests/e2e/browser-tools.e2e.ts": 6.8,
