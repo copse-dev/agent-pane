@@ -1,5 +1,5 @@
 {
-  "source": "new-thread-detached-head provisional at the median (7.9s) until its first CI run is measured, 2026-11-17; median PASSED seconds over 160 CI e2e shard logs, 2026-11-20; workspace-preview-security measured at 5.8s from CI run 44655367196 shard 5 (job 136027574986), 2026-11-20",
+  "source": "new-thread-detached-head provisional at the median (7.9s) until its first CI run is measured, 2026-11-17; workflow-read-evidence provisional at the median (7.9s) until its first CI run is measured, 2026-11-20; median PASSED seconds over 160 CI e2e shard logs, 2026-11-20; workspace-preview-security measured at 5.8s from CI run 44655367196 shard 5 (job 136027574986), 2026-11-20",
   "seconds": {
     "tests/e2e/accent-color.e2e.ts": 15,
     "tests/e2e/accessibility.e2e.ts": 21.8,
@@ -482,6 +482,7 @@
     "tests/e2e/visible-pr-backfill.e2e.ts": 4.8,
     "tests/e2e/visual-evidence.e2e.ts": 5.7,
     "tests/e2e/vnc-viewer.e2e.ts": 22.7,
+    "tests/e2e/workflow-read-evidence.e2e.ts": 7.9,
     "tests/e2e/workspace-preview-security.e2e.ts": 5.8,
     "tests/e2e/worktree-preparation-approval.e2e.ts": 7.1,
     "tests/e2e/worktree-preparation-cargo.e2e.ts": 4.9,
