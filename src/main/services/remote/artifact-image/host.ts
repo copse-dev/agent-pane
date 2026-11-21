@@ -14,6 +14,7 @@ import { homedir, tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { signalProcessTree } from '@copse/std/process-tree.ts'
+import { linuxSandboxBinaryPaths } from '../../../project-sandbox/sandbox-binaries.ts'
 import type { EgressDecision, EgressProxy, EgressProxyOptions } from './egress-proxy.ts'
 import {
   ARTIFACT_IMAGE_DOWNLOAD_DEADLINE_MS,
@@ -89,7 +90,8 @@ function protectedReadRoots(): string[] {
  * The download-specific sandbox profile. Not a project overlay: no workspace,
  * no home or temp reads, no writes, no local binding and no Unix sockets. The
  * only network route is ASRT's bridge to this job's proxy (both HTTP and SOCKS
- * point at it, so no ASRT-owned proxy exists to fall through to).
+ * point at it, so no ASRT-owned proxy exists to fall through to). On Linux,
+ * bubblewrap and socat are named by absolute path, as in the project config.
  */
 export function downloaderSandboxConfig(input: {
   proxyPort: number
@@ -115,6 +117,7 @@ export function downloaderSandboxConfig(input: {
       denyWrite: [],
       allowGitConfig: false,
     },
+    ...linuxSandboxBinaryPaths(),
   }
 }
 

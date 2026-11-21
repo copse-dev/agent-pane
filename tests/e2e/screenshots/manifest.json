@@ -1073,6 +1073,10 @@
       "sha256": "7c497d79c0790430d24a6b2ab9dfe9d5e9e350e046ddcfd4f454006fe501322d",
       "bytes": 271912
     },
+    "browser-form-entry-unconfirmed.png": {
+      "sha256": "fdb6c153ed55ace786065f30e84b013f860b40fce31aece7c2c39aed41faab5e",
+      "bytes": 1161193
+    },
     "browser-form-fields-entered.png": {
       "sha256": "9089e83916d2c0c5546be9f0ee948960da29439af2d1265a7756765fcfb5efb3",
       "bytes": 223705
@@ -1462,8 +1466,8 @@
       "bytes": 508067
     },
     "composer-context-warning-over.png": {
-      "sha256": "3570f7fc8ed5f3d727c40dfa0220c0b2bd2dea08b83f0361d3e3a5a457a5aa1d",
-      "bytes": 40759
+      "sha256": "c9bfd29ba17a99fb2a5ba2933412f3639fc64e5ab2d36abe6405869d0d56aef0",
+      "bytes": 40340
     },
     "composer-dirty-checkout-warning.png": {
       "sha256": "31ae1e083463b4912a0ea49151a3fce59a0a878865fecf5d596f2ebfd486ba15",
@@ -1737,6 +1741,10 @@
       "sha256": "84e390dfde345608081eff96c5eb84b56626f6ffa3c7db5755056be910a2038f",
       "bytes": 194540
     },
+    "conversation-page-evidence.png": {
+      "sha256": "1b20d15f46823e0974ee6dcb557df656ee3e7a0c013a59858a64b95b31add38a",
+      "bytes": 163671
+    },
     "conversation-search-unicode.png": {
       "sha256": "e7d4046f723b8cc2fe60459c1f6d69d1d5b723ee1ab1431e2fe81354eab10b40",
       "bytes": 279372
@@ -1780,6 +1788,10 @@
     "dark-syntax-contrast-json-ts.png": {
       "sha256": "f59c9b182949972b2fddd0c24ffa7894cc984d53e9cc063e94a9ce8ed58254cb",
       "bytes": 98596
+    },
+    "dated-git-history-evidence.png": {
+      "sha256": "c7f299a294d3301f01f977eb71f55aad99328917bc15eb931e97ce2977c61b41",
+      "bytes": 181784
     },
     "debug-trace-composer.png": {
       "sha256": "9b81686efb325e852250bec496c5bc60ba916c3923f169a33e1592d65699217e",
@@ -3205,6 +3217,26 @@
       "sha256": "5d867d55a0390c0f298b31ae77c79a003b846cd2c2ff666320429e50f533f025",
       "bytes": 287079
     },
+    "paste-attachment-raw-resend-expanded-app.png": {
+      "sha256": "1fc10b6fd0f7dc219d1b1aaaeb384aea3b77cdf29a4562baa2c0fdf555268cc4",
+      "bytes": 308350
+    },
+    "paste-attachment-raw-resend-expanded.png": {
+      "sha256": "996131330175f8fe6333e13b0020eaa775a267cd16f53c807e652752e1f349e9",
+      "bytes": 82306
+    },
+    "paste-attachment-raw-resend-folded-app.png": {
+      "sha256": "1ead679ba21a3c9e69e48999ced6fc42d75c45f5e45d1faeff86a7c4e24b6447",
+      "bytes": 268360
+    },
+    "paste-attachment-raw-resend-folded.png": {
+      "sha256": "455fb35112d307a9d347ee7c7144864d7530af3970ef238bd3d5c31fd80c27bb",
+      "bytes": 24563
+    },
+    "paste-attachment-raw-resend-reloaded-app.png": {
+      "sha256": "1ead679ba21a3c9e69e48999ced6fc42d75c45f5e45d1faeff86a7c4e24b6447",
+      "bytes": 268360
+    },
     "paste-attachment-transcript-preview.png": {
       "sha256": "98bca69eb2914d5f444a364d3fc50dc59b9860bd146527340c6fbca71849a723",
       "bytes": 275693
@@ -4594,8 +4626,8 @@
       "bytes": 275848
     },
     "settings-gui-app-permission.png": {
-      "sha256": "b3380118ea20c10e89d5dc77b313d7a4c58f68f1c0ec0486b758ae76527a44d3",
-      "bytes": 376843
+      "sha256": "44bef9ef327e92e250c92b62291588ed6d129e20c4ccf7cb35e3c5a6fa98abaf",
+      "bytes": 377256
     },
     "settings-load-failed.png": {
       "sha256": "d3af35e0b4b8ea669355ebe11392ea569102eae744e08c90361ee3e890cf6013",
@@ -5537,6 +5569,10 @@
       "sha256": "b4afed8e839c9aadcd5163a3ba5ad076cbafb6bbd34109dc2fc0581d0f139970",
       "bytes": 319082
     },
+    "skills-qualified-picker.png": {
+      "sha256": "f6bc834e266a6805c4bd6cf0ae7f4e589215f7452c7eaa88561440644694f1e1",
+      "bytes": 296045
+    },
     "source-app-version.png": {
       "sha256": "7f2a62708de20afcc90740bbbd80a78c7f5bf6dd9ea10dfb222b781eec042b81",
       "bytes": 24786
@@ -5560,6 +5596,10 @@
     "ssh-projects-pane.png": {
       "sha256": "05b50716622b8568a08d2f9e5231e2c9fac27462bb01710f8455db11fab20503",
       "bytes": 25092
+    },
+    "ssh-prompt-expired-composer-usable.png": {
+      "sha256": "b99a2c4e808fbb43cb6afe5fac2e0d667a02daa523b4a1683c1f85b319ad57ce",
+      "bytes": 87945
     },
     "ssh-prompt-host-key.png": {
       "sha256": "897644cd5b30f97c0bd7d43ab70139202b90c13b01894d850b774774b07fffeb",
@@ -6273,6 +6313,26 @@
       "sha256": "7a90a21d4a19d8b0ac598bf0a52a62152510ad2b8e982c52ab44669630c033e6",
       "bytes": 18606
     },
+    "user-prompt-fenced-fold-collapsed-app.png": {
+      "sha256": "2f50972b2e88abfe333cd44086da5aab0e803e37882d095a4789d16665d48352",
+      "bytes": 247487
+    },
+    "user-prompt-fenced-fold-collapsed.png": {
+      "sha256": "c44472d59d5604afa158a9d71e844bd9b3a4391aa24eaa53d73643cff7bb3b10",
+      "bytes": 31348
+    },
+    "user-prompt-fenced-fold-expanded-app.png": {
+      "sha256": "41eb212d1df7faa190691b0d90de961910d978ab642bed1bb829fd725c0874ae",
+      "bytes": 235306
+    },
+    "user-prompt-fenced-fold-expanded.png": {
+      "sha256": "b2b202a5bbe5ca9fd01e9f3062cf55f0f84c757ddb7577cf1b143fb21976e0a4",
+      "bytes": 91847
+    },
+    "user-prompt-fenced-fold-reloaded-app.png": {
+      "sha256": "2f50972b2e88abfe333cd44086da5aab0e803e37882d095a4789d16665d48352",
+      "bytes": 247487
+    },
     "user-prompt-fill-dark.png": {
       "sha256": "02f0949d1eb6589108754a4ac6d10986b6174e52801dc23ea29b9a12f30eadf7",
       "bytes": 4566
@@ -6296,6 +6356,10 @@
     "user-prompt-fold-expanded.png": {
       "sha256": "a584cf8fad2c373471dce81d85a33ac045cb655a7c9514d983262bf9f870d19b",
       "bytes": 129842
+    },
+    "user-prompt-list-fence-app.png": {
+      "sha256": "0a21097fec6c406612429f30961ff2721668b398c5cf5eec7352b1fbb2fff0bb",
+      "bytes": 236830
     },
     "user-prompt-markdown.png": {
       "sha256": "c66062957cc70331c242edf79acf9cfca7844a5f910cc0e6e5a04416608cd59f",
@@ -6468,6 +6532,10 @@
     "worktree-preparation-tools.png": {
       "sha256": "b74f6180f926480ed731466344e8dee9415493c5a5de0fcf4da37e479d4f13f8",
       "bytes": 436743
+    },
+    "worktree-preparation-uv-requirements.png": {
+      "sha256": "c283341ab9fe44fd6770231ccbfda9da107a214c9813b484426fbeb770edf6d3",
+      "bytes": 85277
     }
   }
 }

@@ -12,6 +12,8 @@ import type { CanvasArtefactIdentity } from '@shared/types/canvas.ts'
 import { CANVAS_TRANSPARENT_ROOT_PROBE, canvasGuestTextCss } from '@shared/canvas/guest-surface.ts'
 import { previewCapabilityForUrl } from './static-preview-server.ts'
 import { fillBrowserForm, type BrowserFormField } from './browser-form.ts'
+import { withTimeout } from '@copse/std/with-timeout.ts'
+import { createKeyedSerialQueue } from '@copse/std/keyed-serial-queue.ts'
 
 const MAX_TABS = 8
 const DEFAULT_WIDTH = 1280
@@ -63,28 +65,19 @@ function previewLayoutScript(width: number): string {
 
 /** Bound native IPC even when the renderer cannot run its own deadline. */
 async function waitForPreviewOperation(operation: Promise<unknown>): Promise<unknown> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  try {
-    return await Promise.race([
-      operation,
-      new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => {
-          reject(new Error('Preview capture timed out'))
-        }, 5000)
-      }),
-    ])
-  } finally {
-    clearTimeout(timer)
-  }
+  return withTimeout(operation, 5000, () => {
+    throw new Error('Preview capture timed out')
+  })
 }
 
 /**
- * The latest preview capture queued on each tab. Two quick re-renders of one
+ * Preview captures, queued per tab. Two quick re-renders of one
  * artefact can capture the same tab at once, and each capture restores the
  * zoom it found, so interleaved captures would leave the tab at the preview
- * zoom. Captures of one tab therefore run one after another.
+ * zoom. Captures of one tab therefore run one after another; the queue
+ * keeps going after a failure, and `captureAtPreviewZoom` never rejects anyway.
  */
-const previewCaptures = new WeakMap<PreviewContents, Promise<string | null>>()
+const previewCaptures = createKeyedSerialQueue<PreviewContents>()
 
 /**
  * Capture `wc` as a preview laid out at the preview zoom, then put the tab's
@@ -97,14 +90,9 @@ export function capturePreviewDataUrl(
   maxWidth = PREVIEW_WIDTH,
   viewportWidth = DEFAULT_WIDTH,
 ): Promise<string | null> {
-  const previous = previewCaptures.get(wc) ?? Promise.resolve(null)
-  // `captureAtPreviewZoom` never rejects, so one failed capture cannot stall
-  // the queue behind it.
-  const capture = previous.then(() =>
+  return previewCaptures.run(wc, () =>
     captureAtPreviewZoom(wc, decodeImage, maxWidth, viewportWidth),
   )
-  previewCaptures.set(wc, capture)
-  return capture
 }
 
 async function captureAtPreviewZoom(

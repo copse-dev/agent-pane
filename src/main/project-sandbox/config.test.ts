@@ -13,7 +13,7 @@ import {
 } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { homedir, tmpdir } from 'node:os'
-import { dirname, join, resolve, sep } from 'node:path'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import { wrapCommandWithSandboxMacOS } from '@anthropic-ai/sandbox-runtime/dist/sandbox/macos-sandbox-utils.js'
 import { removeTrailingGlobSuffix } from '@anthropic-ai/sandbox-runtime/dist/sandbox/sandbox-utils.js'
 import {
@@ -192,6 +192,59 @@ describe('acpAgentSandboxOverlay', () => {
     assert.deepEqual(fs.denyRead, base.filesystem?.denyRead)
     for (const path of base.filesystem?.allowWrite ?? []) {
       assert.ok(fs.allowWrite.includes(path))
+    }
+  })
+
+  it('grants the agent executable read-only, file by file, and nothing beside it', () => {
+    // A stand-in home layout. `bin` is under the home deny, like `~/.local/bin`;
+    // `share/cursor` is one of the agent's home dirs, like Cursor's install tree.
+    const root = realpathSync.native(mkdtempSync(join(homedir(), '.copse-exec-grant-test-')))
+    try {
+      const bin = join(root, 'bin')
+      const opt = join(root, 'opt')
+      const share = join(root, 'share', 'cursor')
+      const repo = join(root, 'workspace')
+      for (const dir of [bin, opt, share, join(repo, 'bin')]) mkdirSync(dir, { recursive: true })
+      const agent = join(opt, 'agent')
+      const installed = join(share, 'agent')
+      writeFileSync(agent, '')
+      writeFileSync(installed, '')
+      writeFileSync(join(bin, 'plain'), '')
+      writeFileSync(join(bin, 'other-tool'), '')
+      symlinkSync(agent, join(bin, 'linked'))
+      symlinkSync(installed, join(bin, 'cursor'))
+      symlinkSync(opt, join(bin, 'dir-link'))
+      symlinkSync(join(bin, 'linked'), join(bin, 'two-hop'))
+      symlinkSync(join(root, 'missing'), join(bin, 'dangling'))
+      // Links the repository or the agent can write.
+      symlinkSync(agent, join(repo, 'bin', 'agent'))
+      symlinkSync(agent, join(share, 'linked'))
+      const agentSandbox = { allowedDomains: [], homeDirs: [relative(homedir(), share)] }
+      const without = acpAgentSandboxOverlay(repo, agentSandbox).filesystem
+      const grants = (found: string): string[] => {
+        const fs = acpAgentSandboxOverlay(repo, agentSandbox, { executables: [found] }).filesystem
+        assert.deepEqual(fs?.allowWrite, without?.allowWrite, found)
+        return (fs?.allowRead ?? []).filter((path) => !(without?.allowRead ?? []).includes(path))
+      }
+
+      // A regular file, and a symlink with the file it points to.
+      assert.deepEqual(grants(join(bin, 'plain')), [join(bin, 'plain')])
+      assert.deepEqual(grants(join(bin, 'linked')), [join(bin, 'linked'), agent])
+      // A target the agent can read already is not granted again.
+      assert.deepEqual(grants(join(bin, 'cursor')), [join(bin, 'cursor')])
+      // Only regular files, one hop: never a directory, a further link or nothing.
+      assert.deepEqual(grants(join(bin, 'dir-link')), [])
+      assert.deepEqual(grants(join(bin, 'two-hop')), [])
+      assert.deepEqual(grants(join(bin, 'dangling')), [])
+      // A path the canonicalizer refuses (through a dangling link) loses its
+      // grant; the rest of the overlay is still built.
+      assert.deepEqual(grants(join(bin, 'dangling', 'agent')), [])
+      // A link the repository or the agent can write never picks a grant.
+      assert.deepEqual(grants(join(repo, 'bin', 'agent')), [])
+      assert.deepEqual(grants(join(share, 'linked')), [])
+      assert.deepEqual(grants('relative/agent'), [])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
     }
   })
 
