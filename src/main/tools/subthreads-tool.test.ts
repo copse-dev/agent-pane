@@ -23,6 +23,12 @@ import { hasThreadAccess, revokeThreadAccess } from '../services/security/thread
 import { z } from 'zod'
 import { ToolSchema } from '@modelcontextprotocol/sdk/types.js'
 import { safeJsonParse, decodeWithSchema } from '@shared/safe-json.ts'
+import {
+  createAutomationBudget,
+  withAutomationBudget,
+} from '../services/automations/automation-budget.ts'
+import { storageRemoveFile } from '../services/storage/user-data-files.ts'
+import { sendThreadPrompt } from '../services/thread-prompts.ts'
 
 describe('subthread orchestration', () => {
   let root: string
@@ -86,11 +92,63 @@ describe('subthread orchestration', () => {
     }
   })
   afterEach(async () => {
+    await storageRemoveFile('automation-budgets/project/parent.json')
     await setSetting('threadSubthreadAccess', [])
     await setSetting('threadSubthreadOwners', [])
     if (previous === undefined) delete process.env['COPSE_WORKSPACE_DIR']
     else process.env['COPSE_WORKSPACE_DIR'] = previous
     await rm(root, { recursive: true, force: true })
+  })
+
+  it('refuses budgeted child creation before approval, ownership or persistence', async () => {
+    await createAutomationBudget('project', 'parent', 10)
+    const before = await readdir(join(root, 'project'))
+    await assert.rejects(
+      withAutomationBudget('project', 'parent', () => run(start)),
+      /separate worker threads/,
+    )
+    assert.deepEqual(await readdir(join(root, 'project')), before)
+    assert.deepEqual(getSetting('threadSubthreadOwners', []), [])
+    assert.deepEqual(sent, [])
+  })
+
+  it('refuses detached sends and restored child dispatch using the durable parent allowance', async () => {
+    await setSetting('threadSubthreadAccess', ['parent'])
+    const childId = id(await run(start))
+    await createAutomationBudget('project', 'parent', 10)
+    sent.length = 0
+    // No inherited async budget context: model work recovered from a queue must
+    // recheck its parent's durable restriction before the new turn can start.
+    await assert.rejects(
+      run({ action: 'send', thread_id: childId, prompt: 'Continue' }),
+      /separate worker threads/,
+    )
+    let dispatched = false
+    await assert.rejects(
+      dispatchSubthreadPrompt('project', 'parent', childId, async () => {
+        dispatched = true
+      }),
+      /separate worker threads/,
+    )
+    assert.equal(dispatched, false)
+    assert.deepEqual(sent, [])
+  })
+
+  it('refuses the shared cross-thread prompt transport before queueing', async () => {
+    await createAutomationBudget('project', 'parent', 10)
+    const destination = await getProjectThread('other-project', 'other')
+    assert.ok(destination)
+    await assert.rejects(
+      withAutomationBudget('project', 'parent', () =>
+        sendThreadPrompt({
+          sourceThreadId: 'parent',
+          projectId: 'other-project',
+          thread: destination,
+          text: 'Work outside this allowance',
+        }),
+      ),
+      /separate worker threads/,
+    )
   })
 
   it('one approval starts multiple children, reads and sends, without granting unrelated access', async () => {
