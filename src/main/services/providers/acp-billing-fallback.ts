@@ -39,7 +39,8 @@ const ACCEPT = /^\s*(?:y|yes|ok|okay|sure|switch\b.*|use\b.*acp.*|acp)\s*$/i
  * processes with their own credentials — Copse's provider keys are deliberately
  * stripped from their environment — so an offer to switch is only honest if we
  * say whether that login exists. A configured `ANTHROPIC_API_KEY` in the agent's
- * own env counts too: that is the documented alternative to `claude auth login`.
+ * own env counts too: that is the documented alternative to signing in through
+ * the Claude adapter's bundled CLI.
  */
 async function hasClaudeAcpAuth(agentEnv: Record<string, string> | undefined): Promise<boolean> {
   if (agentEnv?.['ANTHROPIC_API_KEY']?.trim()) return true
@@ -78,7 +79,7 @@ export async function offerAcpClaudeFallback(input: {
 
   const authHint = (await hasClaudeAcpAuth(agent.env))
     ? ''
-    : ` No local \`claude\` login was found, so ${agent.title} may ask you to sign in with \`claude auth login\` first.`
+    : ` No local Claude login was found, so ${agent.title} may ask you to sign in with \`claude-agent-acp --cli auth login\` first.`
 
   const switchOption = `Switch to ${agent.title}`
   const { answers } = await requestUserAnswers({
