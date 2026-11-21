@@ -64,14 +64,16 @@ import {
   unwrapIpcErrorText,
   upsertHost,
   warningIcon
-} from "./chunk-CK4AOU5N.js";
+} from "./chunk-KYBBGUKM.js";
 import {
   clear,
+  createOverlayDialog,
   el,
+  init_dialog_shell,
   init_helpers,
   on,
   qsRequired
-} from "./chunk-EMIRHVRH.js";
+} from "./chunk-OB2CWITE.js";
 import {
   __esm,
   __export
@@ -20870,31 +20872,6 @@ var init_product_announcement_dialog = __esm({
   }
 });
 
-// src/renderer/views/dialog-shell.ts
-function createOverlayDialog(opts) {
-  const dialog2 = document.createElement("dialog");
-  dialog2.id = opts.id;
-  if (opts.className) dialog2.className = opts.className;
-  document.body.append(dialog2);
-  return {
-    dialog: dialog2,
-    open: () => {
-      if (!dialog2.open) dialog2.showModal();
-    },
-    close: () => {
-      if (dialog2.open) dialog2.close();
-    },
-    isOpen: () => dialog2.open
-  };
-}
-function isAnyDialogOpen() {
-  return document.querySelector("dialog[open]") !== null;
-}
-var init_dialog_shell = __esm({
-  "src/renderer/views/dialog-shell.ts"() {
-  }
-});
-
 // packages/std/src/member-of.ts
 function memberOf(members2) {
   const set2 = new Set(members2);
@@ -21454,10 +21431,19 @@ var init_theme2 = __esm({
   }
 });
 
+// packages/std/src/clamp.ts
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+var init_clamp = __esm({
+  "packages/std/src/clamp.ts"() {
+  }
+});
+
 // src/shared/ui-scale.ts
 function clampUiScale(value) {
   if (!Number.isFinite(value)) return DEFAULT_UI_SCALE;
-  const clamped = Math.min(UI_SCALE_MAX, Math.max(UI_SCALE_MIN, value));
+  const clamped = clamp(value, UI_SCALE_MIN, UI_SCALE_MAX);
   return Math.round(clamped * 100) / 100;
 }
 function normalizeUiScale(value) {
@@ -21473,6 +21459,7 @@ function scaledEditorFontSize(fontSize, uiScale) {
 var DEFAULT_UI_SCALE, UI_SCALE_MIN, UI_SCALE_MAX, UI_SCALE_STEP;
 var init_ui_scale = __esm({
   "src/shared/ui-scale.ts"() {
+    init_clamp();
     DEFAULT_UI_SCALE = 1;
     UI_SCALE_MIN = 0.75;
     UI_SCALE_MAX = 1.5;
@@ -22287,10 +22274,27 @@ var init_array_utils2 = __esm({
   }
 });
 
+// packages/std/src/one-line-text.ts
+function collapseWhitespace(text) {
+  return text.replace(/\s+/g, " ").trim();
+}
+function ellipsize(text, max, options = {}) {
+  if (text.length <= max) return text;
+  if (max < 1) return "";
+  const head = text.slice(0, max - 1);
+  return `${options.trimEnd === true ? head.trimEnd() : head}\u2026`;
+}
+function truncateLine(text, max) {
+  return ellipsize(collapseWhitespace(text), max);
+}
+var init_one_line_text = __esm({
+  "packages/std/src/one-line-text.ts"() {
+  }
+});
+
 // packages/thread-store/src/thread-proposal.ts
 function trimTo(value, max) {
-  const trimmed = value.trim();
-  return trimmed.length <= max ? trimmed : `${trimmed.slice(0, max - 1).trimEnd()}\u2026`;
+  return ellipsize(value.trim(), max, { trimEnd: true });
 }
 function stringField(args, key) {
   const value = args[key];
@@ -22340,6 +22344,7 @@ function threadProposalFileSummary(files) {
 var THREAD_PROPOSAL_TOOL, THREAD_PROPOSAL_TITLE_MAX, THREAD_PROPOSAL_SUMMARY_MAX, THREAD_PROPOSAL_FILES_SHOWN;
 var init_thread_proposal = __esm({
   "packages/thread-store/src/thread-proposal.ts"() {
+    init_one_line_text();
     init_unknown_value();
     init_nullish();
     THREAD_PROPOSAL_TOOL = "propose_thread";
@@ -23489,8 +23494,7 @@ function subagentRunLabel(session) {
   const kind = session.kind === "custom" && session.agentName ? session.agentName : SUBAGENT_KIND_LABEL[session.kind];
   const firstLine = session.prompt.trim().split("\n")[0] ?? "";
   if (!firstLine) return kind;
-  const prompt = firstLine.length > RUN_PROMPT_MAX_CHARS ? `${firstLine.slice(0, RUN_PROMPT_MAX_CHARS - 1).trimEnd()}\u2026` : firstLine;
-  return `${kind} \xB7 ${prompt}`;
+  return `${kind} \xB7 ${ellipsize(firstLine, RUN_PROMPT_MAX_CHARS, { trimEnd: true })}`;
 }
 function collectSubagentRuns(toolCalls, runs) {
   for (const toolCall of toolCalls) {
@@ -23606,6 +23610,7 @@ function formatFooterUsageDetail(display, opts) {
 var SUBAGENT_KIND_LABEL, RUN_PROMPT_MAX_CHARS;
 var init_footer_usage_summary = __esm({
   "src/shared/usage/footer-usage-summary.ts"() {
+    init_one_line_text();
     init_estimate_cost();
     init_token_estimate();
     init_format_usage_summary();
@@ -26746,7 +26751,7 @@ function stripInlineMarkdown(text) {
 }
 function excerptText(text) {
   const line = stripInlineMarkdown(text.trim().split("\n", 1)[0] ?? "");
-  return line.length <= MAX_TITLE_LENGTH ? line : `${line.slice(0, MAX_TITLE_LENGTH - 1)}\u2026`;
+  return ellipsize(line, MAX_TITLE_LENGTH);
 }
 function excerpt(message) {
   return excerptText(message.content);
@@ -26813,6 +26818,7 @@ function unreadSideChatParents(threads) {
 var MAX_TITLE_LENGTH;
 var init_side_chat = __esm({
   "packages/thread-store/src/side-chat.ts"() {
+    init_one_line_text();
     init_marked_esm();
     MAX_TITLE_LENGTH = 80;
   }
@@ -26850,10 +26856,6 @@ function reviewReportsAwaitingModel(thread) {
   anchored.sort((a4, b2) => a4.startedAt - b2.startedAt);
   return [...awaiting, ...anchored];
 }
-function clip(text, max) {
-  const flat = text.replace(/\s+/g, " ").trim();
-  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}\u2026`;
-}
 function reviewedLine(report) {
   const parts = ["Copse Reviewer"];
   if (report.baseRef !== "") {
@@ -26873,7 +26875,7 @@ function groundLine(report) {
   return all.length === 0 ? null : `Checks: ${all.join("; ")}.`;
 }
 function findingLine(finding, index) {
-  return `${String(index + 1)}. [${finding.severity} \xB7 ${finding.class} \xB7 ${finding.verdict.status}] ${findingLocation(finding)} \u2014 ${clip(finding.claim, MAX_CONTEXT_CLAIM_CHARS)}`;
+  return `${String(index + 1)}. [${finding.severity} \xB7 ${finding.class} \xB7 ${finding.verdict.status}] ${findingLocation(finding)} \u2014 ${truncateLine(finding.claim, MAX_CONTEXT_CLAIM_CHARS)}`;
 }
 function reportContextText(report) {
   const lines = [reviewedLine(report)];
@@ -26912,6 +26914,7 @@ ${body}
 var MAX_CONTEXT_REPORTS, MAX_CONTEXT_FINDINGS, MAX_CONTEXT_CLAIM_CHARS, REVIEW_CONTEXT_TAG;
 var init_review_reports = __esm({
   "src/shared/store/review-reports.ts"() {
+    init_one_line_text();
     MAX_CONTEXT_REPORTS = 3;
     MAX_CONTEXT_FINDINGS = 12;
     MAX_CONTEXT_CLAIM_CHARS = 400;
@@ -27103,9 +27106,7 @@ function stripShellCdPrefix(command) {
   return command.replace(SHELL_CD_PREFIX_RE, "");
 }
 function shellCommandLabel(command) {
-  const cleaned = stripShellCdPrefix(command).replace(/\s+/g, " ").trim();
-  if (cleaned.length <= SHELL_LABEL_MAX) return cleaned;
-  return `${cleaned.slice(0, SHELL_LABEL_MAX - 1)}\u2026`;
+  return truncateLine(stripShellCdPrefix(command), SHELL_LABEL_MAX);
 }
 function shellCommandArg(args) {
   if (!isRecord(args)) return null;
@@ -27372,6 +27373,7 @@ function buildToolRunDisplayItems(run, opts) {
 var TOOL_DISPLAY_NAMES, TOOL_GROUPS, TOOL_TO_GROUP, ACP_KIND_TO_GROUP, MCP_GROUP_PREFIX, TURN_ROLLUP_KEY, RUN_ROLLUP_KEY, FILE_EDIT_PATH_ARG, SHELL_CD_PREFIX_RE, SHELL_LABEL_MAX, ERROR_BUCKET_SUFFIX;
 var init_tool_display = __esm({
   "src/shared/tools/tool-display.ts"() {
+    init_one_line_text();
     init_apply_patch();
     init_unknown_value3();
     init_humanize_identifier();
@@ -27382,6 +27384,7 @@ var init_tool_display = __esm({
       explore: { running: "Exploring files", done: "Explored files" },
       read_explored: { running: "Quoting explored lines", done: "Quoted explored lines" },
       read_file: { running: "Reading file", done: "Read file" },
+      read_thread: { running: "Reading conversation", done: "Read conversation" },
       search_project_context: {
         running: "Searching project history",
         done: "Searched project history"
@@ -27605,7 +27608,7 @@ var init_todo_logic = __esm({
 // src/renderer/agent-activity.ts
 function promptProgressLabel(fraction) {
   if (!Number.isFinite(fraction)) return "Processing prompt\u2026";
-  const percent = Math.round(Math.min(1, Math.max(0, fraction)) * 100);
+  const percent = Math.round(clamp(fraction, 0, 1) * 100);
   return `Processing prompt\u2026 ${percent.toString()}%`;
 }
 function findRunningActivity(thread) {
@@ -27669,6 +27672,7 @@ function syncAgentActivity(store, threadId, writing) {
 var CONTEXT_TRIM_ACTIVITY;
 var init_agent_activity = __esm({
   "src/renderer/agent-activity.ts"() {
+    init_clamp();
     init_thread_helpers();
     init_tool_display();
     init_copse_tool_call();
@@ -27681,10 +27685,11 @@ var init_agent_activity = __esm({
 function canContinue(used, cap = DEFAULT_CONTINUATION_BUDGET) {
   return used < cap;
 }
-var DEFAULT_CONTINUATION_BUDGET;
+var DEFAULT_CONTINUATION_BUDGET, DEFAULT_CROSS_THREAD_PROMPT_BUDGET;
 var init_continuation_budget = __esm({
   "packages/agent/src/hooks/continuation-budget.ts"() {
     DEFAULT_CONTINUATION_BUDGET = 5;
+    DEFAULT_CROSS_THREAD_PROMPT_BUDGET = 5;
   }
 });
 
@@ -27751,8 +27756,14 @@ function isHeldMessage(item) {
 function isMachineContinuation(item) {
   return item.origin !== void 0;
 }
+function isCrossThreadPrompt(item) {
+  return item.origin?.kind === "machine" && item.origin.operationId.startsWith("thread:");
+}
+function crossThreadBudgetHeldNote() {
+  return `Cross-thread prompt allowance reached \u2014 ${String(DEFAULT_CROSS_THREAD_PROMPT_BUDGET)} prompts from this sender's user turn have run here. This prompt is held; release it to continue, or send a new instruction in the sender thread for a fresh allowance.`;
+}
 function continuationBudgetHeldNote() {
-  return `Auto-continuation budget reached \u2014 ${String(DEFAULT_CONTINUATION_BUDGET)} machine-initiated follow-ups have run in this turn. The next hook follow-up is held; release it to continue (that starts a fresh turn with a reset budget).`;
+  return `Auto-continuation budget reached \u2014 ${String(DEFAULT_CONTINUATION_BUDGET)} machine-initiated follow-ups have run in this turn. The next automatic follow-up is held; release it to continue (that starts a fresh turn with a reset budget).`;
 }
 function isStaleEpoch(thread, epoch) {
   return thread.currentEpoch !== void 0 && thread.currentEpoch !== epoch;
@@ -27771,7 +27782,8 @@ function startRootTurnTree(store, threadId) {
   patchThreadAnywhere(store, threadId, (t2) => ({
     ...t2,
     currentEpoch: epoch,
-    continuationUsed: 0
+    continuationUsed: 0,
+    crossThreadPromptsUsed: 0
   }));
   return epoch;
 }
@@ -27897,6 +27909,22 @@ function requeueBusyMessage(store, api, threadId, item) {
     const pending = t2.pendingMessages ?? [];
     if (pending.some((entry) => entry.messageId === item.messageId)) return t2;
     const requeued = { ...t2, pendingMessages: [item, ...pending], updatedAt: Date.now() };
+    if (isCrossThreadPrompt(item)) {
+      if (item.origin?.kind === "machine" && item.origin.crossThreadScope !== void 0) {
+        const scope = item.origin.crossThreadScope;
+        return {
+          ...requeued,
+          crossThreadPromptCounts: {
+            ...t2.crossThreadPromptCounts,
+            [scope]: Math.max(0, (t2.crossThreadPromptCounts?.[scope] ?? 0) - 1)
+          }
+        };
+      }
+      return {
+        ...requeued,
+        crossThreadPromptsUsed: Math.max(0, (t2.crossThreadPromptsUsed ?? 0) - 1)
+      };
+    }
     return isMachineContinuation(item) && (t2.continuationUsed ?? 0) > 0 ? { ...requeued, continuationUsed: (t2.continuationUsed ?? 0) - 1 } : requeued;
   });
   store.emit("message_queued", threadId, item.messageId);
@@ -27935,11 +27963,26 @@ function drainMessageQueue(store, api, threadId) {
   const pending = thread.pendingMessages ?? [];
   if (pending.length === 0) return;
   let used = thread.continuationUsed ?? 0;
+  let crossThreadUsed = thread.crossThreadPromptsUsed ?? 0;
+  const crossThreadCounts = { ...thread.crossThreadPromptCounts };
   let next;
   const heldByBudget = [];
+  const heldByCrossThreadBudget = [];
   const heldByEpoch = [];
   for (const item of pending) {
     if (isHeldMessage(item)) continue;
+    if (isCrossThreadPrompt(item)) {
+      const scope = item.origin?.kind === "machine" ? item.origin.crossThreadScope : void 0;
+      const count = scope === void 0 ? crossThreadUsed : crossThreadCounts[scope] ?? 0;
+      if (!canContinue(count, DEFAULT_CROSS_THREAD_PROMPT_BUDGET)) {
+        heldByCrossThreadBudget.push(item.messageId);
+        continue;
+      }
+      if (scope === void 0) crossThreadUsed += 1;
+      else crossThreadCounts[scope] = count + 1;
+      next = item;
+      break;
+    }
     if (isMachineContinuation(item)) {
       if (item.epoch !== void 0 && isStaleEpoch(thread, item.epoch)) {
         heldByEpoch.push(item.messageId);
@@ -27956,10 +27999,11 @@ function drainMessageQueue(store, api, threadId) {
     next = item;
     break;
   }
-  if (!next && heldByBudget.length === 0 && heldByEpoch.length === 0) return;
+  if (!next && heldByBudget.length === 0 && heldByCrossThreadBudget.length === 0 && heldByEpoch.length === 0)
+    return;
   if (next && !isMachineContinuation(next)) startHumanTurnTree(store, threadId);
   const rest = pending.filter((item) => item !== next);
-  const held = /* @__PURE__ */ new Set([...heldByBudget, ...heldByEpoch]);
+  const held = /* @__PURE__ */ new Set([...heldByBudget, ...heldByCrossThreadBudget, ...heldByEpoch]);
   patchThreadAnywhere(store, threadId, (t2) => {
     const { pendingMessages: _removed, ...restThread } = t2;
     const messages = movePendingUserMessagesToEnd(t2.messages, pending);
@@ -27967,9 +28011,17 @@ function drainMessageQueue(store, api, threadId) {
       (item) => held.has(item.messageId) ? { ...item, autoDispatch: false } : item
     );
     const base = nextPending.length > 0 ? { ...restThread, messages, pendingMessages: nextPending, updatedAt: Date.now() } : { ...restThread, messages, updatedAt: Date.now() };
+    if (next && isCrossThreadPrompt(next))
+      return {
+        ...base,
+        crossThreadPromptsUsed: crossThreadUsed,
+        crossThreadPromptCounts: crossThreadCounts
+      };
     return next && isMachineContinuation(next) ? { ...base, continuationUsed: used } : base;
   });
   if (heldByBudget.length > 0) addMessage(store, threadId, "error", continuationBudgetHeldNote());
+  if (heldByCrossThreadBudget.length > 0)
+    addMessage(store, threadId, "error", crossThreadBudgetHeldNote());
   store.emit("threads_changed");
   if (next) dispatchAgentRun(store, api, threadId, next.payload, next);
 }
@@ -28152,6 +28204,13 @@ function releaseHeldMessage(store, api, threadId, messageId) {
       currentEpoch: epoch,
       // A human release starts a fresh turn tree with a reset budget (decision 5).
       continuationUsed: 0,
+      crossThreadPromptsUsed: 0,
+      ...item.origin?.kind === "machine" && item.origin.crossThreadScope !== void 0 ? {
+        crossThreadPromptCounts: {
+          ...t2.crossThreadPromptCounts,
+          [item.origin.crossThreadScope]: 0
+        }
+      } : {},
       pendingMessages: (t2.pendingMessages ?? []).map((p2) => {
         if (p2.messageId !== messageId) return p2;
         const { autoDispatch: _released, ...rest } = p2;
@@ -29247,7 +29306,7 @@ async function restoreProject(store, api, id, preferredThreadId = null) {
   void resumePendingQueues(store, api);
 }
 async function createNewProject(store, api) {
-  const { openNewProjectDialog } = await import("./new-project-dialog-3EBGRTDT.js");
+  const { openNewProjectDialog } = await import("./new-project-dialog-J2LQIJL5.js");
   const inferred = lastProjectDirectory(store);
   const home = await api.workspace.getHomeDirectory();
   const parentDir = inferred !== "" ? inferred : home;
@@ -29282,7 +29341,7 @@ async function addProject(store, api) {
   return true;
 }
 async function addRemoteProject(store, api) {
-  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-AN5HFQ3E.js");
+  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-CCTQT7EL.js");
   const picked = await openRemoteFolderDialog(api);
   if (!picked) return false;
   await addProjectFromRemotePath(store, api, picked.hostId, picked.path);
@@ -43267,11 +43326,11 @@ function baseDrop(bitsPerWeight) {
 }
 function sizeFactor(paramsB) {
   if (!(paramsB > 0)) return 3;
-  return Math.min(3, Math.max(0.5, Math.pow(REF_PARAMS_B / paramsB, SIZE_EXP)));
+  return clamp(Math.pow(REF_PARAMS_B / paramsB, SIZE_EXP), 0.5, 3);
 }
 function estimateQuantPenalty(ctx) {
   const raw = baseDrop(ctx.bitsPerWeight) * sizeFactor(ctx.paramsB) * (ctx.taskSensitivity ?? 1);
-  return Math.min(MAX_DROP, Math.max(0, raw));
+  return clamp(raw, 0, MAX_DROP);
 }
 function estimateQuantizedScore(fullScore, ctx) {
   const penalty = estimateQuantPenalty(ctx);
@@ -43285,6 +43344,7 @@ function estimateQuantizedScore(fullScore, ctx) {
 var A2, B2, REF_PARAMS_B, SIZE_EXP, MAX_DROP;
 var init_quant_penalty = __esm({
   "packages/llm/src/quant-penalty.ts"() {
+    init_clamp();
     A2 = 3.35;
     B2 = 1.25;
     REF_PARAMS_B = 30;
@@ -44652,13 +44712,13 @@ var init_acp_known_agents = __esm({
           scratchPaths: ["/tmp/claude-${uid}", "/tmp/claude-*", "/tmp/claude"]
         },
         sandboxedPermissionMode: "acceptEdits",
-        // setup-token only prints a token; it does not save the login this
-        // desktop setup needs. Use the dedicated login command and leave the
-        // account method to the login flow rather than forcing SSO or Console.
-        setup: "claude auth login",
-        reauth: "claude auth login",
+        // The adapter delegates --cli to the Claude Code binary bundled with its
+        // Agent SDK. Sign-in must use that same binary: a fresh machine can have
+        // the adapter without a separate `claude` executable on PATH.
+        setup: "claude-agent-acp --cli auth login",
+        reauth: "claude-agent-acp --cli auth login",
         docsUrl: "https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp",
-        note: "Runs Claude Code. Sign in with `claude auth login` (or `ANTHROPIC_API_KEY`)."
+        note: "Runs Claude Code. Sign in with `claude-agent-acp --cli auth login` (or `ANTHROPIC_API_KEY`)."
       },
       {
         id: "cursor",
@@ -45340,12 +45400,12 @@ function positionFrontierTooltip(tip, container, evt) {
   if (left + tipWidth > rect.width) {
     left = cursorX - tipWidth - TOOLTIP_OFFSET_PX;
   }
-  left = Math.max(0, Math.min(left, Math.max(0, rect.width - tipWidth)));
+  left = clamp(left, 0, Math.max(0, rect.width - tipWidth));
   let top = cursorY + TOOLTIP_OFFSET_PX;
   if (top + tipHeight > rect.height) {
     top = cursorY - tipHeight - TOOLTIP_OFFSET_PX;
   }
-  top = Math.max(0, Math.min(top, Math.max(0, rect.height - tipHeight)));
+  top = clamp(top, 0, Math.max(0, rect.height - tipHeight));
   tip.style.left = `${String(left)}px`;
   tip.style.top = `${String(top)}px`;
 }
@@ -45508,6 +45568,7 @@ function tooltipFor(point, costAxis = "blended") {
 var formatPrice, formatTaskPrice, TOOLTIP_OFFSET_PX, TOOLTIP_HIDE_GRACE_MS, modelCardApi;
 var init_intellect_frontier_tooltip = __esm({
   "src/renderer/views/intellect-frontier-tooltip.ts"() {
+    init_clamp();
     init_model_catalog();
     init_model_intellect();
     init_model_card_cache();
@@ -45649,7 +45710,7 @@ function renderFrontierSvg(points, size = {}, gutters = {}, tooltip, costAxis = 
         const centered = (index - (column.length - 1) / 2) * POINT_SPLAY_STEP_PX;
         const fanPhase = index % 6;
         const fanStep = fanPhase <= 3 ? fanPhase : 6 - fanPhase;
-        const offset = nearLeft ? fanStep * POINT_SPLAY_STEP_PX : Math.max(-POINT_SPLAY_MAX_PX, Math.min(POINT_SPLAY_MAX_PX, centered));
+        const offset = nearLeft ? fanStep * POINT_SPLAY_STEP_PX : clamp(centered, -POINT_SPLAY_MAX_PX, POINT_SPLAY_MAX_PX);
         displayX.set(
           point.id,
           Math.max(plotLeft, Math.min(plotLeft + plotW, x3(point.costPerMTok) + offset))
@@ -45957,7 +46018,7 @@ function renderFrontierSvg(points, size = {}, gutters = {}, tooltip, costAxis = 
         Math.hypot(pointX(other) - displayedCx, y3(other.intellect) - y3(p2.intellect))
       );
     }, Infinity);
-    const hitRadius = Math.max(5, Math.min(11, nearestDistance / 2 - 0.5));
+    const hitRadius = clamp(nearestDistance / 2 - 0.5, 5, 11);
     const hit = svgEl("circle", {
       cx: cx2,
       cy,
@@ -46265,6 +46326,7 @@ function renderChart(points, gutters, tooltip, size = {}, costAxis = "blended", 
 var SVG_NS, WIDTH, HEIGHT, MARGIN, LABEL_LINE_GAP, POINT_SPLAY_COLUMN_PX, POINT_SPLAY_STEP_PX, POINT_SPLAY_MAX_PX, UNPRICED_GUTTER_W, UNSCORED_ROW_LIMIT, UNPRICED_GUTTER_LIMIT;
 var init_intellect_frontier_chart = __esm({
   "src/renderer/views/intellect-frontier-chart.ts"() {
+    init_clamp();
     init_model_intellect();
     init_helpers();
     init_intellect_frontier_tooltip();
@@ -48382,7 +48444,7 @@ function renderPlanProvider(host, result, onSignIn) {
   }
   if (result.usage.creditGrant) {
     const credit = result.usage.creditGrant;
-    const usedPercent = Math.min(100, Math.max(0, credit.usedCents / credit.totalCents * 100));
+    const usedPercent = clamp(credit.usedCents / credit.totalCents * 100, 0, 100);
     const row = document.createElement("div");
     row.className = "usage-credit-grant";
     row.innerHTML = `
@@ -48960,6 +49022,7 @@ function createUsageSection(api, store, onRequestClose) {
 var PERIOD_LABELS, PROVIDER_LABELS, LEDGER_REFRESH_DEBOUNCE_MS, VERDICT_LABELS;
 var init_usage_section = __esm({
   "src/renderer/views/setup/usage-section.ts"() {
+    init_clamp();
     init_format_usage_summary();
     init_helpers();
     init_inline_markdown();
@@ -50387,7 +50450,7 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
     const values = view === "group" && group ? group.choices.map((choice) => choice.value) : visibleOptions(cachedOptions).filter((opt) => !opt.disabled).map((opt) => opt.value);
     if (values.length === 0) return;
     const index = values.findIndex((value) => value === activeValue);
-    const nextIndex = Math.max(0, Math.min(values.length - 1, index + direction));
+    const nextIndex = clamp(index + direction, 0, values.length - 1);
     activeValue = values[nextIndex] ?? null;
     renderMenu(cachedOptions);
     if (view !== "all") focusActiveOption();
@@ -50707,6 +50770,7 @@ function mountModelSelectPicker(select, pickerOpts) {
 var RECENT_MODEL_LIMIT, COVERAGE_FILTERS, pickerAnchorId, fieldPickerId;
 var init_model_picker = __esm({
   "src/renderer/views/model-picker.ts"() {
+    init_clamp();
     init_context_menu();
     init_helpers();
     init_icons();
@@ -50842,9 +50906,6 @@ function modelParameterSupport(model) {
     upstreamDecides: true
   };
 }
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
 function roundToStep(value) {
   return Math.round(value * 100) / 100;
 }
@@ -50921,6 +50982,7 @@ function decodeModelParametersMap(value) {
 var REASONING_LEVELS, isReasoningLevel, VERBOSITY_LEVELS, isVerbosityLevel, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_COMPATIBLE_SAMPLING, OPENAI_SAMPLING, ANTHROPIC_SAMPLING, UNIVERSAL_SAMPLING, AGENT_NAMESPACES, CLAUDE_EFFORT_NO_SAMPLING, CLAUDE_EFFORT_WITH_SAMPLING, CLAUDE_THINKING_ALWAYS_ON, OPENAI_REASONING_PREFIXES, OPENAI_GPT6_PREFIXES, FULL_EFFORT_LADDER, CAPPED_EFFORT_LADDER, BUDGET_LADDER, OPENAI_LADDER, OPENAI_GPT6_LADDER, OPENAI_COMPATIBLE_LADDER, OPENAI_VERBOSITY_PREFIXES, OPENAI_VERBOSITY_EXCLUDED, SAMPLING_BOUNDS, RECOMMENDATIONS;
 var init_model_parameters = __esm({
   "packages/llm/src/model-parameters.ts"() {
+    init_clamp();
     init_model_catalog();
     init_model_families();
     init_model_selection();
@@ -52561,8 +52623,8 @@ function createAcpAgentsSection(api, opts = {}) {
           probe.modes ? `${String(probe.modes.choices.length)} permission modes (agent default: ${probe.modes.currentValue})` : ""
         ].filter(Boolean);
         setInlineStatus(modelStatus, "ok", `Detected ${bits.join(", ")}.`);
-      }).catch((err) => {
-        setInlineStatus(modelStatus, "error", errorMessage(err));
+      }).catch(() => {
+        setInlineStatus(modelStatus, "error", "Could not check this coding agent. Try again.");
       }).finally(() => {
         detectModels.disabled = !canDetectModels;
       });
@@ -52825,7 +52887,6 @@ var init_acp_agents_section = __esm({
     init_model_picker();
     init_slug();
     init_acp_registry_browser();
-    init_errors4();
     AGENT_DATA_POLICY_URLS = {
       "claude-acp": "https://github.com/anthropics/claude-code#data-collection-usage-and-retention",
       "claude-code-acp": "https://github.com/anthropics/claude-code#data-collection-usage-and-retention",
@@ -54109,7 +54170,7 @@ function choiceForStored(value) {
 }
 function retainedLabel(value) {
   if (value === "scale") return "Scale (current advanced value)";
-  const visible = value.length > 80 ? `${value.slice(0, 79)}\u2026` : value;
+  const visible = ellipsize(value, 80);
   return `Current advanced value: ${visible || "(empty)"}`;
 }
 function describe3(value) {
@@ -54182,6 +54243,7 @@ function createOpenAiServiceTierField(api) {
 var OFFERED;
 var init_openai_service_tier_field = __esm({
   "src/renderer/views/setup/openai-service-tier-field.ts"() {
+    init_one_line_text();
     init_service_tier();
     init_helpers();
     init_ui();
@@ -55748,11 +55810,17 @@ function createGhCliSection(api, options = {}) {
       el("strong", {}, "Automatic"),
       " uses the ",
       el("code", {}, "gh"),
-      " CLI when it is signed in, otherwise the GitHub REST/GraphQL API with a ",
-      el("code", {}, "GITHUB_TOKEN"),
+      " CLI when it is signed in, otherwise the GitHub REST/GraphQL API with your ",
+      el("code", {}, "gh"),
+      " login or a token: ",
+      el("code", {}, "GH_TOKEN"),
       " or ",
-      el("code", {}, "gh auth token"),
-      "."
+      el("code", {}, "GITHUB_TOKEN"),
+      " for github.com, or ",
+      el("code", {}, "GH_ENTERPRISE_TOKEN"),
+      " when ",
+      el("code", {}, "GH_HOST"),
+      " names a GitHub Enterprise server."
     ),
     backendField
   );
@@ -73795,6 +73863,20 @@ var init_drauu2 = __esm({
 });
 
 // src/renderer/drawing/annotation-layer.ts
+function isShape(tool) {
+  return SHAPE_TOOLS.includes(tool);
+}
+function toolIcon(tool) {
+  const icon = {
+    pen: penLineIcon,
+    line: slashIcon,
+    arrow: arrowUpRightIcon,
+    rect: squareIcon,
+    ellipse: circleIcon,
+    eraser: eraserIcon
+  }[tool];
+  return icon("ui-icon ui-icon-sm");
+}
 function measureBox(node2) {
   const getBBox = Reflect.get(node2, "getBBox");
   if (typeof getBBox !== "function") return null;
@@ -73855,14 +73937,20 @@ function composeAnnotationPng(svg, width, height, base) {
 }
 function mountAnnotationLayer(host, options) {
   let root = null;
+  let strip = null;
   let resizeObserver = null;
   let svg = null;
   let drauu = null;
   let active2 = false;
   let tool = "pen";
+  let shape = "arrow";
   let colour = ANNOTATION_COLOURS[0]?.value ?? "#e5484d";
   const toolButtons = /* @__PURE__ */ new Map();
-  const swatches = /* @__PURE__ */ new Map();
+  let foldBtn = null;
+  let inkBtn = null;
+  let popover = null;
+  const sendLabel = options.actionLabel ?? DEFAULT_ACTION_LABEL;
+  const compactSendLabel = options.actionLabel ?? COMPACT_ACTION_LABEL;
   let sendBtn = null;
   let undoBtn = null;
   let clearBtn = null;
@@ -73895,8 +73983,121 @@ function mountAnnotationLayer(host, options) {
     else if (mode === "eraseLine") drauu.model.onSelected(drauu.el);
     for (const [name, button] of toolButtons)
       button.setAttribute("aria-pressed", String(name === tool));
-    for (const [value, button] of swatches)
-      button.setAttribute("aria-pressed", String(value === colour));
+    if (foldBtn) {
+      const holdsShape = isShape(tool);
+      foldBtn.setAttribute("aria-pressed", String(holdsShape));
+      foldBtn.setAttribute("aria-label", TOOL_LABELS[shape]);
+      foldBtn.setAttribute("data-tooltip", holdsShape ? "More shapes" : TOOL_LABELS[shape]);
+      foldBtn.firstElementChild?.replaceWith(toolIcon(shape));
+    }
+    if (inkBtn) {
+      const name = ANNOTATION_COLOURS.find((entry) => entry.value === colour)?.name;
+      inkBtn.setAttribute("aria-label", name ? `Ink colour: ${name}` : "Ink colour");
+      inkBtn.style.setProperty("--annotation-swatch", colour);
+    }
+  };
+  const closePopover = () => {
+    if (!popover) return;
+    const { node: node2, anchor: anchor2 } = popover;
+    popover = null;
+    window.removeEventListener("pointerdown", onOutsidePress, true);
+    const heldFocus = node2.contains(document.activeElement);
+    node2.remove();
+    anchor2.setAttribute("aria-expanded", "false");
+    if (heldFocus) anchor2.focus({ preventScroll: true });
+  };
+  const onOutsidePress = (event) => {
+    if (!popover) return;
+    const { target } = event;
+    if (target instanceof Node && (popover.node.contains(target) || popover.anchor.contains(target)))
+      return;
+    closePopover();
+  };
+  const selectTool = (next) => {
+    tool = next;
+    if (isShape(next)) shape = next;
+    closePopover();
+    applyBrush();
+  };
+  const openPopover = (anchor2, kind) => {
+    if (!root || !strip) return;
+    closePopover();
+    const node2 = el("div", {
+      class: "annotation-popover",
+      role: "group",
+      "aria-label": kind === "ink" ? "Ink colour" : "Shapes"
+    });
+    if (kind === "ink") {
+      for (const { name, value } of ANNOTATION_COLOURS) {
+        const swatch = el("button", {
+          type: "button",
+          class: "annotation-swatch",
+          "aria-label": name,
+          "data-tooltip": name,
+          "aria-pressed": String(value === colour)
+        });
+        swatch.style.setProperty("--annotation-swatch", value);
+        swatch.addEventListener("click", () => {
+          colour = value;
+          closePopover();
+          applyBrush();
+        });
+        node2.append(swatch);
+      }
+    } else {
+      for (const name of SHAPE_TOOLS) {
+        const button = el(
+          "button",
+          {
+            type: "button",
+            class: "annotation-tool",
+            "data-tool": name,
+            "aria-label": TOOL_LABELS[name],
+            "data-tooltip": TOOL_LABELS[name],
+            "aria-pressed": String(name === tool)
+          },
+          toolIcon(name)
+        );
+        button.addEventListener("click", () => {
+          selectTool(name);
+        });
+        node2.append(button);
+      }
+    }
+    node2.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+    });
+    root.append(node2);
+    const bounds = root.getBoundingClientRect();
+    const edge = strip.getBoundingClientRect();
+    const from = anchor2.getBoundingClientRect();
+    const inset = edge.top - bounds.top;
+    const width = node2.offsetWidth;
+    const centred = from.left + from.width / 2 - bounds.left - width / 2;
+    node2.style.left = `${fmt(Math.max(inset, Math.min(centred, bounds.width - width - inset)))}px`;
+    node2.style.top = `${fmt(edge.bottom - bounds.top)}px`;
+    anchor2.setAttribute("aria-expanded", "true");
+    popover = { node: node2, anchor: anchor2 };
+    window.addEventListener("pointerdown", onOutsidePress, true);
+    node2.querySelector('[aria-pressed="true"]')?.focus({ preventScroll: true });
+  };
+  const togglePopover = (anchor2, kind) => {
+    if (popover?.anchor === anchor2) closePopover();
+    else openPopover(anchor2, kind);
+  };
+  const fitStrip = () => {
+    if (!strip || !sendBtn || !active2) return;
+    for (const layout of STRIP_LAYOUTS) {
+      strip.dataset["send"] = layout.send;
+      strip.dataset["shapes"] = layout.shapes;
+      strip.dataset["spacing"] = layout.spacing;
+      sendBtn.textContent = layout.send === "long" ? sendLabel : compactSendLabel;
+      if (strip.scrollWidth <= strip.clientWidth) break;
+    }
+  };
+  const currentToolButton = () => {
+    if (foldBtn && isShape(tool) && strip?.dataset["shapes"] === "folded") return foldBtn;
+    return toolButtons.get(tool);
   };
   const isEmpty = () => !svg || svg.childElementCount === 0;
   const syncButtons = () => {
@@ -73906,22 +74107,21 @@ function mountAnnotationLayer(host, options) {
     if (undoBtn) undoBtn.disabled = !drauu?.canUndo();
     if (root) root.hidden = !active2 && empty;
   };
-  const toolButton = (name, label, icon) => {
+  const toolButton = (name) => {
     const button = el(
       "button",
       {
         type: "button",
-        class: "annotation-tool",
+        class: isShape(name) ? "annotation-tool annotation-shape" : "annotation-tool",
         "data-tool": name,
-        "aria-label": label,
-        "data-tooltip": label,
+        "aria-label": TOOL_LABELS[name],
+        "data-tooltip": TOOL_LABELS[name],
         "aria-pressed": "false"
       },
-      icon
+      toolIcon(name)
     );
     button.addEventListener("click", () => {
-      tool = name;
-      applyBrush();
+      selectTool(name);
     });
     toolButtons.set(name, button);
     return button;
@@ -73934,22 +74134,36 @@ function mountAnnotationLayer(host, options) {
     svg.setAttribute("aria-label", `Annotations over ${options.label}`);
     applyViewBox();
     const separator = () => el("span", { class: "annotation-sep", "aria-hidden": "true" });
-    const swatchButtons = ANNOTATION_COLOURS.map(({ name, value }) => {
-      const button = el("button", {
+    const fold = el(
+      "button",
+      {
         type: "button",
-        class: "annotation-swatch",
-        "aria-label": name,
-        "data-tooltip": name,
+        class: "annotation-tool annotation-shape-fold",
+        "aria-expanded": "false",
         "aria-pressed": "false"
-      });
-      button.style.setProperty("--annotation-swatch", value);
-      button.addEventListener("click", () => {
-        colour = value;
-        applyBrush();
-      });
-      swatches.set(value, button);
-      return button;
+      },
+      toolIcon(shape),
+      chevronDownIcon("ui-icon ui-picker-chevron annotation-fold-caret")
+    );
+    fold.addEventListener("click", () => {
+      if (isShape(tool)) togglePopover(fold, "shapes");
+      else selectTool(shape);
     });
+    foldBtn = fold;
+    const ink = el(
+      "button",
+      {
+        type: "button",
+        class: "annotation-tool annotation-ink",
+        "data-tooltip": "Ink colour",
+        "aria-expanded": "false"
+      },
+      el("span", { class: "annotation-ink-dot" })
+    );
+    ink.addEventListener("click", () => {
+      togglePopover(ink, "ink");
+    });
+    inkBtn = ink;
     undoBtn = el(
       "button",
       { type: "button", class: "annotation-tool", "aria-label": "Undo", "data-tooltip": "Undo" },
@@ -73968,8 +74182,14 @@ function mountAnnotationLayer(host, options) {
     });
     sendBtn = el(
       "button",
-      { type: "button", class: "ui-btn ui-btn-primary annotation-send", disabled: true },
-      options.actionLabel ?? "Send to agent"
+      {
+        type: "button",
+        class: "ui-btn ui-btn-primary annotation-send",
+        // The name stays whole when the visible label is the compact one.
+        "aria-label": sendLabel,
+        disabled: true
+      },
+      sendLabel
     );
     sendBtn.addEventListener("click", () => {
       if (sending) return;
@@ -74000,17 +74220,14 @@ function mountAnnotationLayer(host, options) {
     doneBtn.addEventListener("click", () => {
       layer.deactivate();
     });
-    const strip = el(
+    const toolstrip = el(
       "div",
       { class: "annotation-toolstrip", role: "toolbar", "aria-label": "Annotation tools" },
-      toolButton("pen", "Pen", penLineIcon("ui-icon ui-icon-sm")),
-      toolButton("line", "Line", slashIcon("ui-icon ui-icon-sm")),
-      toolButton("arrow", "Arrow", arrowUpRightIcon("ui-icon ui-icon-sm")),
-      toolButton("rect", "Rectangle", squareIcon("ui-icon ui-icon-sm")),
-      toolButton("ellipse", "Ellipse", circleIcon("ui-icon ui-icon-sm")),
-      toolButton("eraser", "Eraser", eraserIcon("ui-icon ui-icon-sm")),
-      separator(),
-      ...swatchButtons,
+      toolButton("pen"),
+      ...SHAPE_TOOLS.map(toolButton),
+      fold,
+      toolButton("eraser"),
+      ink,
       separator(),
       undoBtn,
       clearBtn,
@@ -74018,15 +74235,28 @@ function mountAnnotationLayer(host, options) {
       sendBtn,
       doneBtn
     );
-    strip.addEventListener("pointerdown", (event) => {
+    toolstrip.addEventListener("pointerdown", (event) => {
       event.stopPropagation();
     });
-    root = el("div", { class: "annotation-layer", "data-active": "false" }, svg, strip);
+    strip = toolstrip;
+    const scaleProbe = el("span", { class: "annotation-scale-probe", "aria-hidden": "true" });
+    root = el(
+      "div",
+      { class: "annotation-layer", "data-active": "false" },
+      svg,
+      toolstrip,
+      scaleProbe
+    );
     root.hidden = true;
     host.append(root);
     if (typeof ResizeObserver === "function") {
-      resizeObserver = new ResizeObserver(applyViewBox);
+      resizeObserver = new ResizeObserver(() => {
+        applyViewBox();
+        closePopover();
+        fitStrip();
+      });
       resizeObserver.observe(host);
+      resizeObserver.observe(scaleProbe);
     }
     drauu = createDrauu({
       el: svg,
@@ -74045,7 +74275,8 @@ function mountAnnotationLayer(host, options) {
     if (!active2) return;
     if (event.key === "Escape") {
       event.preventDefault();
-      layer.deactivate();
+      if (popover) closePopover();
+      else layer.deactivate();
       return;
     }
     const meta3 = event.metaKey || event.ctrlKey;
@@ -74066,12 +74297,14 @@ function mountAnnotationLayer(host, options) {
       root?.setAttribute("data-active", "true");
       window.addEventListener("keydown", onKeyDown);
       syncButtons();
-      toolButtons.get(tool)?.focus({ preventScroll: true });
+      fitStrip();
+      currentToolButton()?.focus({ preventScroll: true });
     },
     deactivate() {
       if (!active2) return;
       active2 = false;
       drauu?.cancel();
+      closePopover();
       root?.setAttribute("data-active", "false");
       window.removeEventListener("keydown", onKeyDown);
       syncButtons();
@@ -74089,8 +74322,7 @@ function mountAnnotationLayer(host, options) {
     },
     setTool(next) {
       ensureMounted();
-      tool = next;
-      applyBrush();
+      selectTool(next);
     },
     setScrollOffset(x3, y3) {
       if (Number.isFinite(x3)) scrollX = x3;
@@ -74146,12 +74378,13 @@ function mountAnnotationLayer(host, options) {
       drauu = null;
       root?.remove();
       root = null;
+      strip = null;
       svg = null;
     }
   };
   return layer;
 }
-var TOOLS, ANNOTATION_COLOURS, SHAPE_SIZE, PEN_SIZE;
+var TOOLS, SHAPE_TOOLS, TOOL_LABELS, STRIP_LAYOUTS, DEFAULT_ACTION_LABEL, COMPACT_ACTION_LABEL, ANNOTATION_COLOURS, SHAPE_SIZE, PEN_SIZE;
 var init_annotation_layer = __esm({
   "src/renderer/drawing/annotation-layer.ts"() {
     init_helpers();
@@ -74159,6 +74392,23 @@ var init_annotation_layer = __esm({
     init_drauu2();
     init_utils();
     TOOLS = ["pen", "line", "arrow", "rect", "ellipse", "eraser"];
+    SHAPE_TOOLS = ["line", "arrow", "rect", "ellipse"];
+    TOOL_LABELS = {
+      pen: "Pen",
+      line: "Line",
+      arrow: "Arrow",
+      rect: "Rectangle",
+      ellipse: "Ellipse",
+      eraser: "Eraser"
+    };
+    STRIP_LAYOUTS = [
+      { send: "long", shapes: "each", spacing: "regular" },
+      { send: "short", shapes: "each", spacing: "regular" },
+      { send: "short", shapes: "folded", spacing: "regular" },
+      { send: "short", shapes: "folded", spacing: "tight" }
+    ];
+    DEFAULT_ACTION_LABEL = "Send to agent";
+    COMPACT_ACTION_LABEL = "Send";
     ANNOTATION_COLOURS = [
       { name: "Red", value: "#e5484d" },
       { name: "Blue", value: "#3b82f6" },
@@ -74648,12 +74898,8 @@ async function openWorkspaceFile(store, api, path, reveal) {
 }
 async function openWorkspaceFileInBrowser(store, api, path) {
   const { projectId, threadId } = requireActiveThreadOwner(store);
-  if (store.getState().openLinksInBuiltInBrowser) {
-    const url2 = await api.browser.workspaceFileUrl(projectId, threadId, path);
-    openBrowserUrl(store, url2);
-    return;
-  }
-  await api.shell.openWorkspaceFileInBrowser(projectId, threadId, path);
+  const url2 = await api.browser.workspaceFileUrl(projectId, threadId, path);
+  openBrowserUrl(store, url2);
 }
 function canOpenWorkspaceFileInBrowser(store) {
   const { activeProjectId, projects } = store.getState();
@@ -74756,9 +75002,6 @@ export {
   init_ui,
   mountProductAnnouncements,
   init_product_announcement_dialog,
-  createOverlayDialog,
-  isAnyDialogOpen,
-  init_dialog_shell,
   memberOf,
   init_member_of,
   init_member_of2,
@@ -74768,6 +75011,8 @@ export {
   errorMessage,
   init_errors3 as init_errors,
   init_errors4 as init_errors2,
+  clamp,
+  init_clamp,
   formatUsd,
   formatTokenCount,
   init_format_usage_summary,
@@ -74841,6 +75086,9 @@ export {
   init_local_detection,
   createCustomProvidersSection,
   init_custom_providers_section,
+  collapseWhitespace,
+  ellipsize,
+  init_one_line_text,
   createPasteKeyForm,
   init_paste_key_form,
   contextFitAdvice,
