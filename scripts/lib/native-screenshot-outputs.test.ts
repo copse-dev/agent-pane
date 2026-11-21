@@ -134,6 +134,11 @@ describe('native screenshot output ownership', () => {
         'composer-observer-borderless.png',
         'composer-observer-content-grown.png',
       ],
+      'tests/e2e/settings-classifiers.e2e.ts': [
+        'settings-classifiers-perplexity-decider-direct.png',
+        'settings-classifiers-perplexity-decider-flash.png',
+        'settings-classifiers-perplexity-decider.png',
+      ],
       'tests/e2e/settings-sources-agents.e2e.ts': ['settings-sources-agents.png'],
       'tests/e2e/image-expand.e2e.ts': ['image-expand-composer-updated-chip.png'],
       'tests/e2e/malformed-tool-call-inspector.e2e.ts': ['malformed-tool-call-inspector.png'],
