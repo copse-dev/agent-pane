@@ -95,9 +95,11 @@ revisiting this document, not silently diverging in an implementation PR.
    independent cap of five per destination, per sending thread's user turn. Each new human or
    scheduled automation root in the sender gives it five fresh prompts for every
    destination. A sender run without a human root (a headless scheduled automation's
-   turn, a turn the ACP agent started itself) is charged to a fallback scope keyed on
-   the sender thread from main's active-run identity, never on tool arguments
-   (amended 20 November 2026). Every scheduled automation run starts in a new thread,
+   turn) is charged to a fallback scope keyed on the sender thread from main's
+   active-run identity, never on tool arguments (amended 20 November 2026). A turn the
+   ACP agent starts itself is not such a run: it is bound to the turn tree of the task
+   it resumes (below), so it is charged to that tree like the human turn it continues
+   (amended 21 November 2026). Every scheduled automation run starts in a new thread,
    so each gets its own five; machine runs of one thread share that scope, cannot mint
    another, and only a human release at the destination resets it. The fallback grants
    nothing else: it binds no turn tree, gives the destination no epoch and owns no
@@ -1230,7 +1232,8 @@ These items carry a host-bound sender scope and consume a separate allowance of
 five prompts per destination, per sender user turn (decision 5, amended 1 November 2026).
 Main computes the scope in `peerPromptSender` from its own run identity: the sender's
 turn-tree ID, or `null` with the sender thread as the fallback for a run without one
-(decision 5, amended 20 November 2026).
+(decision 5, amended 20 November 2026). A self-started ACP turn carries the turn tree of
+the task it resumes, so it never uses the fallback (amended 21 November 2026).
 Metadata `crossThreadPromptCounts` keys each count by the JSON-encoded sender ID and
 sender turn-tree ID; it survives reloads and destination human submissions. Each sender
 and new sender root has its own allowance for every destination. Charging happens at drain
