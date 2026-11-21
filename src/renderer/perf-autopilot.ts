@@ -479,12 +479,7 @@ async function run(store: AppStore): Promise<void> {
   let firstTokenSeen = false
   let paintSampling = false
   const paints: number[] = []
-  // Hand-rolled deferred: the web tsconfig targets ES2022, which predates
-  // `Promise.withResolvers`.
-  let resolveDone: (outcome: 'done' | 'timeout') => void = () => undefined
-  const donePromise = new Promise<'done' | 'timeout'>((resolve) => {
-    resolveDone = resolve
-  })
+  const { promise: donePromise, resolve: resolveDone } = Promise.withResolvers<'done' | 'timeout'>()
 
   const endTotal = begin('autopilot:total')
   // Armed immediately before the click below. Starting these alongside the

@@ -91,10 +91,16 @@ Local shell reads also check each named target's symlink destination before reus
 outside-project path grant. A file or directory alias into another thread still requires
 conversation-read consent; revoking that consent leaves the outside-path grant insufficient.
 
-`list_threads` searches conversation titles and summaries and returns paths for the existing
-read tools. Under the same read grant, `include_state` also returns saved briefs, plans,
-recorded checkout data and native production receipts. `send_thread_prompt` asks a separate
-**Send prompts to your other threads?** approval. Reading never grants sending. Both grants are persisted in main-owned settings,
+`list_threads` searches Copse conversation titles and summaries, includes project names, and
+returns identifiers for `read_thread` plus spine paths for the existing read tools. Under the same
+read grant, `include_state` also returns saved briefs, plans, recorded checkout data and native
+production receipts. `read_thread` resolves recent message prose directly, with bounded pages and
+explicit truncation/older-page indicators; it uses the same conversation-read consent, including
+own/direct-follow-up-parent exceptions. Catalog and transcript results, and `read_file` reads of
+chat-store files, use the external-content envelope: historical instructions are data, not
+authority for the current turn. Neither tool imports
+history stored only in another application. `send_thread_prompt` asks a separate **Send prompts to
+your other threads?** approval. Reading never grants sending. Both grants are persisted in main-owned settings,
 keyed by the requesting thread; they are not inherited by destination or forked threads.
 Either permission can be revoked in the thread’s Context panel → Permissions.
 Destination prompts enter the normal queue with machine provenance, consume the existing
@@ -1418,6 +1424,18 @@ files in the scratch directory every contained command can write. `envForRendere
 and the ACP worker spawns drop it if a child starts mid-wrap. Each flavour gets one temp directory
 it can write (`sandboxTmpDirFor`): the workspace scratch directory when the overlay grants it,
 ASRT's `/tmp/claude` for a read-only overlay, and the cell's own `tmp` for a review cell.
+
+The wrapper shell that starts each sandboxed process (native commands, PTYs, background tasks,
+review cells, worktree preparation and ACP agents) gets a `PATH` with only its absolute entries, in
+order (`withSandboxShellPath` in `sandbox-argv.ts`), plus `/usr/bin` and `/bin` when missing. Empty
+and relative entries (`::`, `.`, `bin`) are dropped, so no lookup the wrapper makes depends on its
+working directory; the confined process inherits the same `PATH`. The worker processes that run
+ASRT themselves (the port-binding, ACP session-host and ACP probe workers) start in the workspace
+and get the same `PATH`. On Linux every ASRT config, and worktree preparation's direct bubblewrap
+wrap, also names `bwrap` and `socat` by absolute path (`sandbox-binaries.ts`): the first executable
+copy in `/usr/bin`, `/bin`, then the absolute entries of Copse's own `PATH`. When none exists the
+sandbox does not start, as when bubblewrap is not installed. macOS ASRT has no option for the path
+of the `env` it starts with, so there that lookup searches the absolute `PATH` entries in order.
 
 On macOS the project seatbelt also allows writes to direct children of the per-user Darwin temp
 directory returned by `getconf DARWIN_USER_TEMP_DIR` (typically `/var/folders/…/T`). Apple
