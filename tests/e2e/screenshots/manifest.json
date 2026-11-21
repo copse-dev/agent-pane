@@ -3053,6 +3053,18 @@
       "sha256": "b420630a18a86a1ea06cefa7f5b23d239e493c191957177c016e91eeb7659639",
       "bytes": 269987
     },
+    "new-thread-detached-head-picker.png": {
+      "sha256": "f55a163d1cf2d553f556eaea96f0834ccd3d04c6999b674d831e54aec81e6bfc",
+      "bytes": 327440
+    },
+    "new-thread-detached-head-rebasing.png": {
+      "sha256": "deb95c8649ed1008ad0d75d9b7410d6ad569a0afda8fb03828cc90f4b8cf8507",
+      "bytes": 322595
+    },
+    "new-thread-detached-head-sent.png": {
+      "sha256": "5abc09ba2d062d1c33569ffea63f1ebfb5b79b18deaef0c83df491543097e9c8",
+      "bytes": 265601
+    },
     "new-thread-project-picker.png": {
       "sha256": "57cf3d7f356f7b147f2136fa4bb0d554be9d519f7d9d318832290bf4f1c4704b",
       "bytes": 136100
