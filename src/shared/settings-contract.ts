@@ -87,7 +87,6 @@ export interface SettingsValues {
   localSubagentsEnabled: boolean
   localTodoItemsEnabled: boolean
   postTurnReviewMinChangedLines: number
-  claudePlanMonthlyFeeUsd: number | null
   bundledCursorSkillsEnabled: boolean
   bundledSkillPluginOverrides: Record<string, boolean>
   skillsEnabled: boolean
