@@ -496,7 +496,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-5VOTPABM.js";
+} from "./chunk-XTZ7QIHP.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -77866,7 +77866,8 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
       result.append(emptyNote(accessStatus));
       return result;
     }
-    const recent = accessGrants.decisions.slice(-4).reverse();
+    const decisions = accessGrants.decisions.filter((decision) => decision.verdict !== "observed");
+    const recent = decisions.slice(-4).reverse();
     if (!recent.length) {
       result.append(emptyNote("No recorded decisions for this thread."));
       return result;
@@ -77884,7 +77885,7 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
       el(
         "p",
         { class: "thread-context-note" },
-        `Showing the latest ${String(recent.length)} of ${String(accessGrants.decisions.length)} recorded decisions. Current access is shown above.`
+        `Showing the latest ${String(recent.length)} of ${String(decisions.length)} recorded decisions. Current access is shown above.`
       )
     );
     return result;
@@ -88684,10 +88685,18 @@ async function acceptThreadPrompt(store2, api2, command2) {
     current = getThreadById(store2, threadId);
     if (!current || current.archivedAt !== void 0 || Date.now() >= command2.expiresAt)
       return { ok: false, error: "The destination conversation is unavailable." };
+    const peerTurnTreeId = command2.authorizingAccess ? void 0 : command2.sourceTurnTreeId;
+    const peerScope = command2.authorizingAccess ? void 0 : command2.crossThreadScope;
     const origin = {
       kind: "machine",
-      operationId: `${command2.authorizingAccess ? "subthread" : "thread"}:${command2.sourceThreadId}`
+      operationId: `${command2.authorizingAccess ? "subthread" : "thread"}:${command2.sourceThreadId}`,
+      ...peerScope === void 0 ? {} : { crossThreadScope: peerScope }
     };
+    if (current.currentEpoch === void 0 && peerTurnTreeId !== void 0)
+      patchThreadAnywhere(store2, threadId, (thread) => ({
+        ...thread,
+        currentEpoch: peerTurnTreeId
+      }));
     if (current.status === "error")
       patchThreadAnywhere(store2, threadId, (thread) => ({ ...thread, status: "idle" }));
     const messageId = addMessage(store2, threadId, "user", command2.text, void 0, void 0, {
@@ -88719,6 +88728,8 @@ async function acceptThreadPrompt(store2, api2, command2) {
         await api2.threads.updateMeta(command2.projectId, threadId, {
           pendingMessages: accepted.pendingMessages ?? [],
           continuationUsed: accepted.continuationUsed ?? 0,
+          crossThreadPromptsUsed: accepted.crossThreadPromptsUsed ?? 0,
+          crossThreadPromptCounts: accepted.crossThreadPromptCounts ?? {},
           ...accepted.currentEpoch !== void 0 ? { currentEpoch: accepted.currentEpoch } : {},
           updatedAt: accepted.updatedAt
         });
@@ -89812,6 +89823,8 @@ function startAgentController(store2, api2) {
           title: finished.title,
           pendingMessages: finished.pendingMessages ?? [],
           continuationUsed: finished.continuationUsed ?? 0,
+          crossThreadPromptsUsed: finished.crossThreadPromptsUsed ?? 0,
+          crossThreadPromptCounts: finished.crossThreadPromptCounts ?? {},
           ...finished.currentEpoch !== void 0 ? { currentEpoch: finished.currentEpoch } : {},
           ...finished.todos !== void 0 ? { todos: finished.todos } : {}
         }).catch((err) => {
