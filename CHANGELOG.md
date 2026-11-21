@@ -9,6 +9,9 @@ released — rather than copying every published entry.
 ## Unreleased
 
 - Screen readers now announce the Settings dialog by name when it opens.
+- On Linux without a desktop keyring service, Copse no longer offers to remember
+  a remote desktop password and then fails to save it. It now says from the
+  start that your login is used for that connection only.
 - The annotation tools stay on one row in a narrow Browser or Desktop pane, where
   they used to wrap over the page being marked up. Ink colour is now one button
   on the strip, and in a tight pane the four shapes share a single button.

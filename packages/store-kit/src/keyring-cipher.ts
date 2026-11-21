@@ -31,6 +31,8 @@ const HEADER_BYTES = KEYRING_CIPHER_MAGIC.length + IV_BYTES + TAG_BYTES
  * Where the data key lives. `read` returns the stored key (base64) or `null`
  * when none has been created yet, and throws when the keyring itself cannot be
  * reached — a locked Linux keyring, no D-Bus session, a denied Keychain ACL.
+ * `write` throws when the keyring will not store the key, which can be true
+ * even of a keyring whose `read` just succeeded.
  */
 export interface DataKeyStore {
   read(): string | null
@@ -59,7 +61,7 @@ export function createKeyringCipher(
 ): SecretCipher {
   const retryMs = options.unavailableRetryMs ?? 30_000
   const now = options.now ?? Date.now
-  // The key never changes once created, so one successful read is sticky. A
+  // The key never changes once created, so one successful probe is sticky. A
   // failed probe is remembered briefly: availability is consulted on render
   // paths, and a Secret Service round-trip per call would be far too slow —
   // but a keyring that unlocks a minute later must become usable without a
@@ -88,8 +90,14 @@ export function createKeyringCipher(
       if (key) return true
       if (now() < unavailableUntil) return false
       try {
-        // Reachability is what matters; a missing key is created on first write.
-        store.read()
+        // Hold the data key, creating it if absent: a keyring that can be read
+        // may still refuse the first write. Linux's native keyring without a
+        // Secret Service falls back to kernel keyutils, which reads a missing
+        // item as empty, refuses to store it (AccessDenied) and fails every
+        // read after that. A read-only probe said "available" there until the
+        // first secret was saved and "unavailable" ever after, so a screen that
+        // asked before that save offered storage it could not deliver.
+        loadKey(true)
         return true
       } catch {
         unavailableUntil = now() + retryMs
@@ -151,9 +159,9 @@ export function createMigratingCipher(
       try {
         if (primary.isEncryptionAvailable()) return primary.encryptString(plainText)
       } catch (error) {
-        // A successful read probe does not prove the keyring will permit a
-        // first write. Preserve the existing safeStorage availability contract
-        // when creation is denied or the keyring locks between the two calls.
+        // The keyring cipher holds its data key once it reports available, but
+        // any primary can still fail between the check and the write. Preserve
+        // the existing safeStorage availability contract when it does.
         primaryFailure = { error }
       }
       if (legacy?.isEncryptionAvailable()) return legacy.encryptString(plainText)
