@@ -1470,8 +1470,8 @@
       "bytes": 508067
     },
     "composer-context-warning-over.png": {
-      "sha256": "3570f7fc8ed5f3d727c40dfa0220c0b2bd2dea08b83f0361d3e3a5a457a5aa1d",
-      "bytes": 40759
+      "sha256": "c9bfd29ba17a99fb2a5ba2933412f3639fc64e5ab2d36abe6405869d0d56aef0",
+      "bytes": 40340
     },
     "composer-dirty-checkout-warning.png": {
       "sha256": "31ae1e083463b4912a0ea49151a3fce59a0a878865fecf5d596f2ebfd486ba15",
@@ -1745,6 +1745,10 @@
       "sha256": "84e390dfde345608081eff96c5eb84b56626f6ffa3c7db5755056be910a2038f",
       "bytes": 194540
     },
+    "conversation-page-evidence.png": {
+      "sha256": "1b20d15f46823e0974ee6dcb557df656ee3e7a0c013a59858a64b95b31add38a",
+      "bytes": 163671
+    },
     "conversation-search-unicode.png": {
       "sha256": "e7d4046f723b8cc2fe60459c1f6d69d1d5b723ee1ab1431e2fe81354eab10b40",
       "bytes": 279372
@@ -1788,6 +1792,10 @@
     "dark-syntax-contrast-json-ts.png": {
       "sha256": "f59c9b182949972b2fddd0c24ffa7894cc984d53e9cc063e94a9ce8ed58254cb",
       "bytes": 98596
+    },
+    "dated-git-history-evidence.png": {
+      "sha256": "c7f299a294d3301f01f977eb71f55aad99328917bc15eb931e97ce2977c61b41",
+      "bytes": 181784
     },
     "debug-trace-composer.png": {
       "sha256": "9b81686efb325e852250bec496c5bc60ba916c3923f169a33e1592d65699217e",
@@ -4602,8 +4610,8 @@
       "bytes": 275848
     },
     "settings-gui-app-permission.png": {
-      "sha256": "b3380118ea20c10e89d5dc77b313d7a4c58f68f1c0ec0486b758ae76527a44d3",
-      "bytes": 376843
+      "sha256": "44bef9ef327e92e250c92b62291588ed6d129e20c4ccf7cb35e3c5a6fa98abaf",
+      "bytes": 377256
     },
     "settings-load-failed.png": {
       "sha256": "d3af35e0b4b8ea669355ebe11392ea569102eae744e08c90361ee3e890cf6013",
@@ -5572,6 +5580,10 @@
     "ssh-projects-pane.png": {
       "sha256": "05b50716622b8568a08d2f9e5231e2c9fac27462bb01710f8455db11fab20503",
       "bytes": 25092
+    },
+    "ssh-prompt-expired-composer-usable.png": {
+      "sha256": "b99a2c4e808fbb43cb6afe5fac2e0d667a02daa523b4a1683c1f85b319ad57ce",
+      "bytes": 87945
     },
     "ssh-prompt-host-key.png": {
       "sha256": "897644cd5b30f97c0bd7d43ab70139202b90c13b01894d850b774774b07fffeb",
