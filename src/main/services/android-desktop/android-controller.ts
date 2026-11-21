@@ -174,10 +174,9 @@ export class AndroidController {
 
   private getInputStream(): ClientWritableStream<Record<string, unknown>> {
     if (this.inputStream) return this.inputStream
-    let finish = (): void => {}
-    this.inputFinished = new Promise((resolve) => {
-      finish = resolve
-    })
+    const { promise: inputFinished, resolve: finish }: PromiseWithResolvers<void> =
+      Promise.withResolvers()
+    this.inputFinished = inputFinished
     const stream = this.client.makeClientStreamRequest(
       SERVICE + 'streamInputEvent',
       (request: Record<string, unknown>) => encode('InputEvent', request),
