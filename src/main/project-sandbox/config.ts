@@ -1,13 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import {
-  accessSync,
-  lstatSync,
-  mkdirSync,
-  readdirSync,
-  readlinkSync,
-  realpathSync,
-  statSync,
-} from 'node:fs'
+import { accessSync, lstatSync, readdirSync, readlinkSync, realpathSync, statSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
@@ -18,13 +10,12 @@ import { getApplySeccompBinaryPath } from '@anthropic-ai/sandbox-runtime/dist/sa
 import { expandScratchPath } from '@shared/acp-scratch-paths.ts'
 import type { AcpAgentSandboxConfig } from '@shared/types/acp.ts'
 import { getSetting } from '../services/storage/settings.ts'
-import {
-  copseManagedPreparationCacheDirs,
-  copseWorkspaceTmpDir,
-} from '../services/storage/copse-paths.ts'
+import { copseManagedPreparationCacheDirs } from '../services/storage/copse-paths.ts'
 import { sanctionedAgentScratchEntries } from './agent-scratch-roots.ts'
 import { linuxSandboxBinaryPaths } from './sandbox-binaries.ts'
 import { canonicalizePathCached } from './canonical-path-cache.ts'
+import { ensureWorkspaceTmpDir } from './workspace-tmp.ts'
+export { ensureWorkspaceTmpDir, workspaceTmpDir } from './workspace-tmp.ts'
 import { DANGEROUS_CONFIG_DIR_NAMES, DANGEROUS_CONFIG_FILENAMES } from './mandatory-write-deny.ts'
 import {
   getChatStoreRootSync,
@@ -402,44 +393,6 @@ export function uncoveredSiblingDenyPaths(
     const sibling = canonicalizeWorkspaceRoot(siblingRoot)
     return isPathWithin(denyRoot, sibling) ? [] : [sibling, `${sibling}/**`]
   })
-}
-
-/**
- * A workspace-owned scratch directory the sandbox permits writes to, used to
- * redirect $TMPDIR away from the system temp dir.
- *
- * Commands that write to the OS temp dir (`/tmp`, `$TMPDIR`, `/var/folders/...`)
- * get blocked by the workspace-scoped seatbelt, whose only writable roots are the
- * project and this dir (issue #481). Routing temp writes here keeps them on the
- * allow-list without widening it to all of `/tmp`. Lives under `~/.copse/` next
- * to the memories store rather than inside the repo so scratch files never dirty
- * the user's working tree.
- */
-export function workspaceTmpDir(): string {
-  return copseWorkspaceTmpDir()
-}
-
-/**
- * Create {@link workspaceTmpDir} if missing and return its canonical path.
- *
- * `$COPSE_DIR` may itself be a symlink. macOS seatbelt checks the symlink vnode
- * while resolving a path through it, before the more-specific allow for the
- * target can apply; that traversal fails under the broad home read-deny. Giving
- * `$TMPDIR` the canonical spelling avoids crossing the link at all and makes the
- * path the child uses identical to the path seatbelt evaluates.
- *
- * Best-effort: if creation or canonicalization fails (for example, a read-only
- * home), the resolved configured path is returned so callers retain the prior
- * fallback behaviour.
- */
-export function ensureWorkspaceTmpDir(): string {
-  const dir = workspaceTmpDir()
-  try {
-    mkdirSync(dir, { recursive: true })
-  } catch {
-    // Best-effort: a missing dir only means the redirect is a no-op this run.
-  }
-  return canonicalizePathCached(dir)
 }
 
 /**

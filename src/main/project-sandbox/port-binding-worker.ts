@@ -10,7 +10,7 @@ import { spawn } from 'node:child_process'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import { errorMessage } from '@shared/errors.ts'
 import { envForRendererChildProcess } from '../services/exec/child-process-env.ts'
-import { baseSandboxConfig, ensureWorkspaceTmpDir } from './config.ts'
+import { baseSandboxConfig } from './config.ts'
 import { acquireSandboxNetworkScope } from './network-scope.ts'
 import { isSpawnableWorkingDirectory } from './spawn-cwd.ts'
 import {
@@ -74,7 +74,9 @@ async function main(): Promise<void> {
     { logChanges: false },
   )
   try {
-    const tmpDir = sandboxTmpDirFor(overlay, ensureWorkspaceTmpDir())
+    // The host cannot reconstruct main's thread assignment. Reuse main's choice
+    // when the overlay permits it; read-only overlays keep ASRT's fallback.
+    const tmpDir = sandboxTmpDirFor(overlay, request.tmpDir)
     const { argv, env } = await withSandboxWrapTmpDir(tmpDir, () =>
       SandboxManager.wrapWithSandboxArgv(
         request.command,
