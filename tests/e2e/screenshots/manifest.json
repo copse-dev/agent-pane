@@ -97,6 +97,10 @@
       "sha256": "8bb0c64d047c828c860a387dea3fafbba8cfc296a48763ca3903a8ebdcf11358",
       "bytes": 28444
     },
+    "acp-edit-audit-git-state.png": {
+      "sha256": "bf0193461fbfdabb83d647641cc611656e5e9fd78a29754c5bc6ff45d33f3aaf",
+      "bytes": 162368
+    },
     "acp-execute-no-remember.png": {
       "sha256": "f54a8c93ffa7167fe95b9cffe6d4e0023f9d4a855291ec8e5dcc0c5e060234ee",
       "bytes": 24307
