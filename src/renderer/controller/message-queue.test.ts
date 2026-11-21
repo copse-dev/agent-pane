@@ -41,7 +41,10 @@ import {
   updateQueuedMessageModel,
   updateQueuedMessageText,
 } from './message-queue.ts'
-import { DEFAULT_CONTINUATION_BUDGET } from '@copse/agent/hooks/continuation-budget.ts'
+import {
+  DEFAULT_CONTINUATION_BUDGET,
+  DEFAULT_CROSS_THREAD_PROMPT_BUDGET,
+} from '@copse/agent/hooks/continuation-budget.ts'
 import type { QueuedMessageOrigin } from '@shared/types/thread.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { expectRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
@@ -679,6 +682,168 @@ test('a rejected protected grant is held without reusable authority', async () =
       autoDispatch: false,
     },
   ])
+})
+
+for (const scope of [undefined, JSON.stringify(['source', 'sender-turn'])]) {
+  test(`cancelled protected peer entry refunds only its ${scope === undefined ? 'legacy' : 'scoped'} charge`, async () => {
+    const store = createProjectStore()
+    const api = fakeApi()
+    let calls = 0
+    api.agent.run = (): Promise<unknown> => {
+      calls += 1
+      return Promise.resolve('cancelled')
+    }
+    const threadId = createThread(store)
+    store.setState({
+      threads: store.getState().threads.map((thread) => ({
+        ...thread,
+        continuationUsed: 3,
+        crossThreadPromptsUsed: 2,
+        crossThreadPromptCounts: { [scope ?? 'unused']: 2, otherSender: 4 },
+      })),
+    })
+    const messageId = addMessage(store, threadId, 'user', 'Review this peer prompt')
+    enqueueUserMessage(store, threadId, {
+      messageId,
+      payload: { content: 'Review this peer prompt' },
+      createdAt: 1,
+      origin: {
+        kind: 'machine',
+        operationId: 'thread:source',
+        ...(scope === undefined ? {} : { crossThreadScope: scope }),
+      },
+      mobilePromptGrantId: 'expired-mobile',
+      threadPromptGrantId: 'expired-thread',
+    })
+    drainMessageQueue(store, api, threadId)
+    const charged = getThread(store, threadId)
+    assert.equal(charged.continuationUsed, 3)
+    assert.equal(charged.crossThreadPromptsUsed, scope === undefined ? 3 : 2)
+    assert.equal(charged.crossThreadPromptCounts?.[scope ?? 'unused'], scope === undefined ? 2 : 3)
+    await settle()
+
+    const held = getThread(store, threadId)
+    assert.equal(held.continuationUsed, 3)
+    assert.equal(held.crossThreadPromptsUsed, 2)
+    assert.deepEqual(held.crossThreadPromptCounts, { [scope ?? 'unused']: 2, otherSender: 4 })
+    assert.equal(held.pendingMessages?.[0]?.autoDispatch, false)
+    assert.equal(held.pendingMessages[0].mobilePromptGrantId, undefined)
+    assert.equal(held.pendingMessages[0].threadPromptGrantId, undefined)
+    drainMessageQueue(store, api, threadId)
+    await settle()
+    assert.equal(calls, 1, 'cancelled review remains held rather than draining again')
+  })
+}
+
+for (const failure of ['cancelled', 'busy']) {
+  test(`direct manual ${failure} dispatch cannot refund unspent machine budgets`, async () => {
+    const origins: NonNullable<QueuedUserMessage['origin']>[] = [
+      HOOK_ORIGIN,
+      { kind: 'machine', operationId: 'thread:source' },
+      {
+        kind: 'machine',
+        operationId: 'thread:source',
+        crossThreadScope: JSON.stringify(['source', 'sender-turn']),
+      },
+    ]
+    for (const origin of origins) {
+      const store = createProjectStore()
+      const api = failure === 'busy' ? busyOnceApi() : fakeApi()
+      if (failure === 'cancelled')
+        api.agent.run = (): Promise<unknown> => Promise.resolve('cancelled')
+      const threadId = createThread(store)
+      const counters = {
+        continuationUsed: 3,
+        crossThreadPromptsUsed: 2,
+        crossThreadPromptCounts: { [JSON.stringify(['source', 'sender-turn'])]: 2, otherSender: 4 },
+      }
+      store.setState({
+        threads: store.getState().threads.map((thread) => ({ ...thread, ...counters })),
+      })
+      const item: QueuedUserMessage = {
+        messageId: addMessage(store, threadId, 'user', 'A manual retry'),
+        payload: { content: 'A manual retry' },
+        createdAt: 1,
+        origin,
+        autoDispatch: false,
+      }
+      dispatchAgentRun(store, api, threadId, item.payload, item)
+      await settle()
+      const current = getThread(store, threadId)
+      assert.equal(current.continuationUsed, counters.continuationUsed)
+      assert.equal(current.crossThreadPromptsUsed, counters.crossThreadPromptsUsed)
+      assert.deepEqual(current.crossThreadPromptCounts, counters.crossThreadPromptCounts)
+      assert.equal(current.pendingMessages?.[0]?.messageId, item.messageId)
+    }
+  })
+}
+
+test('cancelled protected hook entry returns only its recorded continuation charge', async () => {
+  const store = createProjectStore()
+  const api = fakeApi()
+  api.agent.run = (): Promise<unknown> => Promise.resolve('cancelled')
+  const threadId = createThread(store)
+  store.setState({
+    threads: store.getState().threads.map((thread) => ({
+      ...thread,
+      continuationUsed: 2,
+      crossThreadPromptsUsed: 4,
+      crossThreadPromptCounts: { otherSender: 5 },
+    })),
+  })
+  enqueueUserMessage(store, threadId, {
+    messageId: addMessage(store, threadId, 'user', 'A hook follow-up'),
+    payload: { content: 'A hook follow-up' },
+    createdAt: 1,
+    origin: HOOK_ORIGIN,
+  })
+  drainMessageQueue(store, api, threadId)
+  assert.equal(getThread(store, threadId).continuationUsed, 3)
+  await settle()
+  const thread = getThread(store, threadId)
+  assert.equal(thread.continuationUsed, 2)
+  assert.equal(thread.crossThreadPromptsUsed, 4)
+  assert.deepEqual(thread.crossThreadPromptCounts, { otherSender: 5 })
+  assert.equal(thread.pendingMessages?.[0]?.autoDispatch, false)
+})
+
+test('late protected cancellation does not refund a replacement epoch or changed scoped count', async () => {
+  const origins: NonNullable<QueuedUserMessage['origin']>[] = [
+    HOOK_ORIGIN,
+    { kind: 'machine', operationId: 'thread:source', crossThreadScope: 'sender-turn' },
+  ]
+  for (const origin of origins) {
+    const store = createProjectStore()
+    const api = fakeApi()
+    let complete: ((result: string) => void) | undefined
+    api.agent.run = (): Promise<string> =>
+      new Promise((resolve) => {
+        complete = resolve
+      })
+    const threadId = createThread(store)
+    enqueueUserMessage(store, threadId, {
+      messageId: addMessage(store, threadId, 'user', 'Review this follow-up'),
+      payload: { content: 'Review this follow-up' },
+      createdAt: 1,
+      origin,
+    })
+    drainMessageQueue(store, api, threadId)
+    await settle()
+    assert.ok(complete)
+    store.setState({
+      threads: store.getState().threads.map((thread) => ({
+        ...thread,
+        currentEpoch: 'replacement-epoch',
+        continuationUsed: 2,
+        crossThreadPromptCounts: { 'sender-turn': 4, otherSender: 5 },
+      })),
+    })
+    complete('cancelled')
+    await settle()
+    const thread = getThread(store, threadId)
+    assert.equal(thread.continuationUsed, 2)
+    assert.deepEqual(thread.crossThreadPromptCounts, { 'sender-turn': 4, otherSender: 5 })
+  }
 })
 
 test('resumePendingQueues drains idle threads with pending messages', async () => {
@@ -1670,6 +1835,120 @@ test('a busy rejection that lands after the blocking turn ended sends the messag
     ['later'],
   )
   assert.equal(getThread(store, threadId).status, 'running')
+})
+
+test('cross-thread prompts share a separate bounded allowance across senders and human release resets both', async () => {
+  const store = createProjectStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  setContinuationUsed(store, threadId, DEFAULT_CONTINUATION_BUDGET)
+  setCurrentEpoch(store, threadId, 'existing')
+  for (let i = 0; i <= DEFAULT_CROSS_THREAD_PROMPT_BUDGET; i++) {
+    const messageId = addMessage(store, threadId, 'user', 'Check progress')
+    enqueueUserMessage(store, threadId, {
+      messageId,
+      payload: { content: 'Check progress' },
+      createdAt: i,
+      origin: { kind: 'machine', operationId: `thread:sender-${String(i)}` },
+    })
+    drainMessageQueue(store, api, threadId)
+    await settle()
+    assert.equal(getThread(store, threadId).continuationUsed, DEFAULT_CONTINUATION_BUDGET)
+    assert.equal(getThread(store, threadId).currentEpoch, 'existing')
+    setThreadStatus(store, threadId, 'idle')
+  }
+  assert.equal(api.runs.length, DEFAULT_CROSS_THREAD_PROMPT_BUDGET)
+  const exhausted = getThread(store, threadId)
+  assert.equal(exhausted.crossThreadPromptsUsed, DEFAULT_CROSS_THREAD_PROMPT_BUDGET)
+  const held = exhausted.pendingMessages?.[0]
+  assert.ok(held)
+  assert.equal(held.autoDispatch, false)
+  assert.match(exhausted.messages.at(-1)?.content ?? '', /Cross-thread prompt allowance reached/)
+  releaseHeldMessage(store, api, threadId, held.messageId)
+  assert.equal(api.runs.length, DEFAULT_CROSS_THREAD_PROMPT_BUDGET + 1)
+  assert.equal(getThread(store, threadId).continuationUsed, 0)
+  assert.equal(getThread(store, threadId).crossThreadPromptsUsed, 1)
+  assert.notEqual(getThread(store, threadId).currentEpoch, 'existing')
+  startHumanTurnTree(store, threadId)
+  assert.equal(getThread(store, threadId).crossThreadPromptsUsed, 0)
+})
+
+test('exhausted cross-thread allowance does not block other machine continuations or human prompts', async () => {
+  for (const origin of [
+    HOOK_ORIGIN,
+    { kind: 'machine' as const, operationId: 'background-task' },
+    undefined,
+  ]) {
+    const store = createProjectStore()
+    const api = fakeApi()
+    const threadId = createThread(store)
+    store.setState({
+      threads: store
+        .getState()
+        .threads.map((t) => ({ ...t, crossThreadPromptsUsed: DEFAULT_CROSS_THREAD_PROMPT_BUDGET })),
+    })
+    enqueueUserMessage(store, threadId, {
+      messageId: 'cross',
+      payload: { content: 'Check progress' },
+      createdAt: 1,
+      origin: { kind: 'machine', operationId: 'thread:source' },
+    })
+    enqueueUserMessage(store, threadId, {
+      messageId: 'next',
+      payload: { content: 'Continue' },
+      createdAt: 2,
+      ...(origin ? { origin } : {}),
+    })
+    drainMessageQueue(store, api, threadId)
+    assert.equal(api.runs.length, 1)
+    assert.equal(getThread(store, threadId).pendingMessages?.[0]?.autoDispatch, false)
+    // A human prompt starts its own turn tree when the queue selects it, which
+    // resets both destination counters; the held prompt still needs Release.
+    assert.equal(getThread(store, threadId).continuationUsed, origin ? 1 : 0)
+    assert.equal(
+      getThread(store, threadId).crossThreadPromptsUsed,
+      origin ? DEFAULT_CROSS_THREAD_PROMPT_BUDGET : 0,
+    )
+    await settle()
+  }
+})
+
+test('a busy cross-thread dispatch refunds its own allowance without refunding self-continuations', async () => {
+  const store = createProjectStore()
+  const api = busyOnceApi()
+  const threadId = createThread(store)
+  setContinuationUsed(store, threadId, 3)
+  enqueueUserMessage(store, threadId, {
+    messageId: 'cross',
+    payload: { content: 'Continue' },
+    createdAt: 1,
+    origin: { kind: 'machine', operationId: 'thread:source' },
+  })
+  drainMessageQueue(store, api, threadId)
+  assert.equal(getThread(store, threadId).crossThreadPromptsUsed, 1)
+  await settle()
+  assert.equal(getThread(store, threadId).crossThreadPromptsUsed, 0)
+  assert.equal(getThread(store, threadId).continuationUsed, 3)
+  assert.equal(getThread(store, threadId).pendingMessages?.[0]?.messageId, 'cross')
+})
+
+test('a busy scoped cross-thread dispatch refunds only its sender user turn', async () => {
+  const store = createProjectStore()
+  const api = busyOnceApi()
+  const threadId = createThread(store)
+  const scope = JSON.stringify(['source', 'user-turn'])
+  const messageId = addMessage(store, threadId, 'user', 'Continue')
+  enqueueUserMessage(store, threadId, {
+    messageId,
+    payload: { content: 'Continue' },
+    createdAt: 1,
+    origin: { kind: 'machine', operationId: 'thread:source', crossThreadScope: scope },
+  })
+  drainMessageQueue(store, api, threadId)
+  assert.equal(getThread(store, threadId).crossThreadPromptCounts?.[scope], 1)
+  await settle()
+  assert.equal(getThread(store, threadId).crossThreadPromptCounts?.[scope], 0)
+  assert.equal(getThread(store, threadId).pendingMessages?.[0]?.messageId, messageId)
 })
 
 test('a busy rejection refunds the continuation unit its drain charged', async () => {
