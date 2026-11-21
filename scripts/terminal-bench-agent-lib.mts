@@ -158,6 +158,7 @@ export function terminalBenchLoopOptions(
   | 'maxStreamOutputTokens'
   | 'reasoningRunawayRecoveryOutputTokens'
   | 'reasoningRunawayRecoveryStrategy'
+  | 'emptyTurnRecoveryStrategy'
   | 'reasoningRunawaySuppressedNudge'
   | 'reasoningRunawaySuppressedOutputTokens'
   | 'reasoningRunawayRecoveryNudge'
@@ -178,6 +179,10 @@ export function terminalBenchLoopOptions(
   return {
     maxSteps: runtime.maxSteps,
     reasoningRunawayRecoveryStrategy: runtime.recoveryStrategy,
+    // Every profile so far was defined while an empty turn replayed its request
+    // unchanged; the product's empty-turn nudge came later. A profile that wants
+    // the nudge needs a new loop setting and version, not this fixed value.
+    emptyTurnRecoveryStrategy: 'replay-v1',
     ...(runtime.recoveryStrategy === 'suppression-ladder-v1'
       ? {
           reasoningRunawaySuppressedNudge: profile.loop.suppressedNudge,

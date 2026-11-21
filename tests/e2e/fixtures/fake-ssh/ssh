@@ -1,0 +1,54 @@
+#!/bin/sh
+# Stand-in for the OpenSSH client in e2e specs that need a reachable SSH host.
+#
+# The app runs the system `ssh` for every remote operation, so a spec puts this
+# directory first on the app's PATH (tests/e2e/helpers/fake-ssh.ts) and the
+# "remote host" becomes this machine: the remote command line, which OpenSSH
+# receives as its last argument, runs in a local shell. No product code knows
+# this exists.
+#
+# State lives in $COPSE_E2E_FAKE_SSH_STATE:
+#   master     present while the control master is "up"
+#   host-down  present while the host is unreachable; a spec creates and
+#              removes it to drop and restore the link
+state="${COPSE_E2E_FAKE_SSH_STATE:?fake ssh needs COPSE_E2E_FAKE_SSH_STATE}"
+
+# Control commands talk to the local master only; they never reach the host.
+case " $* " in
+  *" -O check "*)
+    [ -e "$state/master" ] && [ ! -e "$state/host-down" ] && exit 0
+    exit 255
+    ;;
+  *" -O exit "*)
+    rm -f "$state/master"
+    exit 0
+    ;;
+  *" -O forward "* | *" -O cancel "*)
+    exit 0
+    ;;
+esac
+
+if [ -e "$state/host-down" ]; then
+  rm -f "$state/master"
+  echo "ssh: connect to host dev.example port 22: Connection refused" >&2
+  exit 255
+fi
+
+# Starting the master, or any command (ControlMaster=auto), brings the link up.
+: >"$state/master"
+case " $* " in
+  *" -fNM "*) exit 0 ;;
+esac
+
+for remote_command; do :; done
+
+# Report the same tools on every runner, so a capability banner never depends
+# on what the CI image happens to have installed.
+case "$remote_command" in
+  "command -v "*)
+    echo "/usr/bin/${remote_command#command -v }"
+    exit 0
+    ;;
+esac
+
+exec /bin/sh -c "$remote_command"

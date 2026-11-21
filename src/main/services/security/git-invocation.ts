@@ -30,6 +30,8 @@ const INTERNAL_GIT_COMMANDS = new Set([
   // User-requested commits go through a permission-gated execution profile, so
   // hooks/signing work there. Only automatic commit-tree snapshots belong here.
   'commit-tree',
+  // Only the conversion-attribute read `assertAttributeRead` admits.
+  'check-attr',
   'config',
   'diff',
   'fetch',
@@ -133,6 +135,7 @@ export function withGitInvocationArgs(
     throw new Error(`Unsupported internal Git command: ${command ?? '(missing)'}`)
   }
   if (command === 'clone') assertLocalSubmoduleClone(rest)
+  if (command === 'check-attr') assertAttributeRead(rest)
   if (command === 'cherry-pick') assertCherryPick(rest)
   if (command === 'bundle') assertBundle(rest)
   if (command === 'grep') assertGrep(rest)
@@ -180,6 +183,32 @@ function assertLocalSubmoduleClone(args: string[]): void {
     extra.length > 0
   ) {
     throw new Error('Unsupported internal Git clone')
+  }
+}
+
+/** The attribute read the only-copy audit makes (`git-service.ts`). */
+const ADMITTED_ATTRIBUTE_READ = [
+  '-z',
+  '--stdin',
+  'filter',
+  'text',
+  'crlf',
+  'eol',
+  'ident',
+  'working-tree-encoding',
+]
+
+/**
+ * Admit exactly `check-attr -z --stdin filter text crlf eol ident
+ * working-tree-encoding`: it reads which paths git would convert on `add`, runs
+ * no program and writes nothing.
+ */
+function assertAttributeRead(args: string[]): void {
+  if (
+    args.length !== ADMITTED_ATTRIBUTE_READ.length ||
+    args.some((arg, index) => arg !== ADMITTED_ATTRIBUTE_READ[index])
+  ) {
+    throw new Error('Unsupported internal Git check-attr')
   }
 }
 

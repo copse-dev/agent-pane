@@ -205,7 +205,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   animateAgentAvatars: z.boolean(),
   autoPortraitRightPanel: z.boolean(),
   rightPanelPosition: z.enum(['auto', 'side', 'bottom']),
-  sidebarThreadSort: z.enum(['activity', 'created', 'title']),
+  sidebarThreadSort: z.enum(['activity', 'created', 'title', 'action']),
   sidebarThreadSortReverse: z.boolean(),
   sidebarThreadGroup: z.enum(['project', 'status', 'none']),
   // Interaction colour for links, primary actions, selections, and chat
@@ -302,7 +302,6 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
    * verdict. Null/absent means unset — the UI may still hint a fee from weekly
    * `limitDollars` tiers.
    */
-  claudePlanMonthlyFeeUsd: z.number().min(1).max(10_000).nullable(),
   bundledCursorSkillsEnabled: z.boolean(),
   // Per bundled Cursor plugin: the user's switch in Settings → Plugins, keyed
   // by plugin name. An absent name takes the plugin's default (most on; see
