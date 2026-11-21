@@ -1296,15 +1296,61 @@ export async function pushBranchToOrigin(
   return { ok: true, message: detail || `Pushed ${branch} to origin.` }
 }
 
+/** What HEAD names in a checkout. */
+export interface CheckoutHead {
+  /** The checked-out branch, or null when there is none to name. */
+  branch: string | null
+  /**
+   * Git answered and HEAD is on no branch (`rev-parse --abbrev-ref HEAD`
+   * printed `HEAD`). Only that positive reading counts: no root, a folder that
+   * is not a repository, an unborn branch and a failed read are all false, and
+   * so is the e2e branch override, which always names a branch.
+   */
+  detached: boolean
+}
+
+/** Read HEAD once: the checked-out branch and whether Git reports it detached. */
+export async function readCheckoutHead(root: string | null): Promise<CheckoutHead> {
+  if (!root) return { branch: null, detached: false }
+  const override = e2eBranchOverride()
+  if (override) return { branch: override, detached: false }
+  const { stdout, code } = await runGitRead(['rev-parse', '--abbrev-ref', 'HEAD'], root)
+  if (code !== 0) return { branch: null, detached: false }
+  const branch = stdout.trim()
+  if (branch === 'HEAD') return { branch: null, detached: true }
+  return { branch: branch || null, detached: false }
+}
+
 /** Current checked-out branch, or null when detached / outside a repo. */
 export async function getCurrentBranchName(root: string | null): Promise<string | null> {
-  if (!root) return null
-  const override = e2eBranchOverride()
-  if (override) return override
-  const { stdout, code } = await runGitRead(['rev-parse', '--abbrev-ref', 'HEAD'], root)
-  if (code !== 0) return null
-  const branch = stdout.trim()
-  return branch && branch !== 'HEAD' ? branch : null
+  return (await readCheckoutHead(root)).branch
+}
+
+/**
+ * Whether a `git rebase` is stopped in this checkout: at a conflict, an
+ * `edit`/`break` stop or a failed `exec`. `--git-path` resolves a linked
+ * worktree's own state directory, relative to `root`. An unanswered read
+ * counts as no rebase.
+ */
+export async function isRebaseInProgress(root: string): Promise<boolean> {
+  const { stdout, code } = await runGitRead(
+    ['rev-parse', '--git-path', 'rebase-merge', '--git-path', 'rebase-apply'],
+    root,
+  )
+  if (code !== 0) return false
+  const states = stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+  const present = await Promise.all(
+    states.map((state) =>
+      fsp.lstat(resolve(root, state)).then(
+        () => true,
+        () => false,
+      ),
+    ),
+  )
+  return present.includes(true)
 }
 
 /** Full SHA of the current `HEAD` commit, or null when unavailable / no commits yet. */
