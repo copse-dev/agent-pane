@@ -1,5 +1,4 @@
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
+import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
 import {
   resetUserData,
@@ -9,15 +8,92 @@ import {
   writeSeedConfig,
   writeSettings,
 } from './helpers/seed-config.ts'
-import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { E2E_VIEWPORT, saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { AA_BODY_TEXT, fillContrast } from './helpers/fill-contrast.ts'
 import { switchTheme } from './helpers/theme.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { acceptProtectedPrompt, setComposerValue, submitComposer } from './helpers/composer.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 
-const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 const ROW_SELECTOR = '.conversation-queued .msg-held .message-queued-actions'
+
+interface HeldCaptureGeometry {
+  reserve: number
+  inputHeight: number
+  inputTop: number
+  queueBottom: number
+  heldTop: number
+  heldBottom: number
+  releaseTop: number
+  releaseBottom: number
+  fits: boolean
+}
+
+async function heldCaptureGeometry(): Promise<HeldCaptureGeometry> {
+  return browser.execute(() => {
+    const pane = document.getElementById('pane-chat')
+    const input = document.getElementById('input-bar')
+    const queue = document.querySelector('.conversation-queued')
+    const held = queue?.querySelector('.msg-held')
+    const release = held?.querySelector('.queued-release')
+    if (!pane || !input || !queue || !held || !release) throw new Error('Missing held queue layout')
+    const inputRect = input.getBoundingClientRect()
+    const queueRect = queue.getBoundingClientRect()
+    const heldRect = held.getBoundingClientRect()
+    const releaseRect = release.getBoundingClientRect()
+    return {
+      reserve: Number.parseFloat(getComputedStyle(pane).getPropertyValue('--chat-composer-height')),
+      inputHeight: inputRect.height,
+      inputTop: inputRect.top,
+      queueBottom: queueRect.bottom,
+      heldTop: heldRect.top,
+      heldBottom: heldRect.bottom,
+      releaseTop: releaseRect.top,
+      releaseBottom: releaseRect.bottom,
+      fits:
+        heldRect.width > 0 &&
+        heldRect.top >= queueRect.top &&
+        heldRect.left >= queueRect.left &&
+        heldRect.right <= queueRect.right &&
+        releaseRect.width > 0 &&
+        releaseRect.height > 0 &&
+        releaseRect.left >= heldRect.left &&
+        releaseRect.right <= heldRect.right,
+    }
+  })
+}
+
+async function waitForHeldCaptureGeometry(): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      const before = await heldCaptureGeometry()
+      await browser.execute(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                resolve()
+              })
+            }),
+          ),
+      )
+      const after = await heldCaptureGeometry()
+      return (
+        before.reserve === Math.max(Math.ceil(before.inputHeight), 72) &&
+        Math.abs(before.queueBottom - before.inputTop) < 0.5 &&
+        before.heldBottom <= before.inputTop &&
+        before.releaseTop >= before.heldTop &&
+        before.releaseBottom <= before.heldBottom &&
+        before.fits &&
+        JSON.stringify(before) === JSON.stringify(after)
+      )
+    },
+    {
+      timeout: 10_000,
+      timeoutMsg: 'held queue must settle above the measured composer border box',
+    },
+  )
+}
 
 // C2 held-state visual eval (decisions 5 & 16). A hook-originated queued message
 // that was held (`autoDispatch: false`) renders in the pinned queue panel with a
@@ -58,8 +134,17 @@ describe('held hook message in the queue', function () {
     // A held item is released, not "Send now"-ed like a plain queued message.
     await expect($('.msg-held .queued-send-now')).not.toBeExisting()
 
-    mkdirSync(SCREENSHOT_DIR, { recursive: true })
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'queued-held.png'))
+    let captureGeometry: HeldCaptureGeometry | undefined
+    await saveAppScreenshot('queued-held.png', E2E_VIEWPORT, async () => {
+      await waitForHeldCaptureGeometry()
+      captureGeometry = await heldCaptureGeometry()
+    })
+    assert.ok(captureGeometry)
+    assert.deepEqual(
+      await heldCaptureGeometry(),
+      captureGeometry,
+      'held queue must stay still across capture',
+    )
 
     // The outlined chips carry almost no fill contrast, so the border is the only
     // thing marking where the button ends. Measure it against the surface behind
