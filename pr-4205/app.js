@@ -5607,6 +5607,16 @@ var init_demo_scenarios = __esm({
           "/home/mira/harbor-board"
         )
       },
+      approvalRiskScenario("approval-port-binding", {
+        id: "port-binding-pending",
+        threadId: "demo-approval-port-binding-thread",
+        title: "Allow this project to bind a local port?",
+        body: "npm run dev",
+        bodyAdvice: "The agent wants to start a long-running background task that binds a loopback port and stays alive across turns:\n\nProject: /workspace/copse",
+        type: "shell",
+        allowRemember: true,
+        rememberLabel: "Always allow local port binding in this project"
+      }),
       approvalRiskScenario("approval-automation-preparation", {
         id: "automation-preparation",
         title: "Prepare this worktree?",
@@ -7504,7 +7514,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-4A57C5DM.js").then(async (main) => {
+    void import("./chunks/main-ONXLWXZZ.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(

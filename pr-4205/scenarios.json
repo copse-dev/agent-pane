@@ -408,6 +408,10 @@
     "label": "Allow this project to bind a local port?"
   },
   {
+    "id": "approval-port-binding",
+    "label": "Allow this project to bind a local port?"
+  },
+  {
     "id": "approval-automation-preparation",
     "label": "Prepare this worktree?"
   },
