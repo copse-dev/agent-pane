@@ -200,7 +200,10 @@ describe('remember and revoke project local-port consent', function () {
       false,
     )
     assert.ok(decisions.some((decision) => decision.remembered && decision.verdict === 'approved'))
+    // The Recent decisions list leaves out execution-audit lines (`observed`):
+    // they record effects, not decisions.
     const subjects = decisions
+      .filter((decision) => decision.verdict !== 'observed')
       .slice(-4)
       .reverse()
       .map((decision) => decision.subject)
