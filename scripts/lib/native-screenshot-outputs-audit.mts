@@ -6,7 +6,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
   Record<string, { readonly sourceSha256: string; readonly filenames: readonly string[] }>
 > = {
   'tests/e2e/acp-auth-error.e2e.ts': {
-    sourceSha256: '715fe08b8032d0999de9bd40a5833aef110613f5d0b926b8e21e922177ade0fb',
+    sourceSha256: '32631700988dbc2a43f006533b63ad79c533f0f9b7c161d177ad3f2ab752f461',
     filenames: [
       'acp-auth-error.png',
       'acp-auth-expired-mid-turn.png',
@@ -115,7 +115,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['pr-native-provenance-offline-restart.png', 'pr-native-provenance.png'],
   },
   'tests/e2e/queued-held.e2e.ts': {
-    sourceSha256: '21d20b04e90354e99868418c847e81c9973bad03ab0681c8a5c86ce0c63ea08a',
+    sourceSha256: '6077378bd9cc9b56296cb5c913360ba9234a13a5040533d37278a679ad0bc7fd',
     filenames: [
       'queued-held-contrast-dark.png',
       'queued-held-contrast-light.png',
@@ -148,6 +148,14 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
       'settings-classifiers-install-bad-revision.png',
       'settings-classifiers-install-no-space.png',
       'settings-classifiers-install-offline.png',
+    ],
+  },
+  'tests/e2e/settings-classifiers.e2e.ts': {
+    sourceSha256: '349252db8750d7424bc0dca34f864e0629ebac70c4771814482aac613045183a',
+    filenames: [
+      'settings-classifiers-perplexity-decider-direct.png',
+      'settings-classifiers-perplexity-decider-flash.png',
+      'settings-classifiers-perplexity-decider.png',
     ],
   },
   'tests/e2e/settings-model-parameters.e2e.ts': {

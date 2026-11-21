@@ -300,6 +300,26 @@ describe('native supervised read-only workers', function () {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
   })
 
+  beforeEach(async () => {
+    await waitForAgentIdle()
+    for (const response of held.values())
+      assert.ok(
+        response.writableEnded || response.destroyed,
+        'prior worker request must be settled',
+      )
+    scenario = 'inspect'
+    parentCalls = 0
+    held.clear()
+    closedWorkers.clear()
+    workerCalls.clear()
+    offeredTools.clear()
+    workerHistories.clear()
+    errors.length = 0
+    trace.length = 0
+    await $('.project-new-thread-btn').click()
+    await expect($('.msg-user')).not.toExist()
+  })
+
   after(async () => {
     for (const response of held.values()) if (!response.writableEnded) response.destroy()
     server.closeAllConnections()
@@ -313,7 +333,7 @@ describe('native supervised read-only workers', function () {
     if (root) removeE2eTree(dirname(root))
   })
 
-  it('runs two named workers concurrently through real provider dispatch and blocks writes', async () => {
+  async function inspectWorkers(): Promise<void> {
     await setComposerValue(
       'Run alpha and beta as read-only workers on their independent inspections.',
     )
@@ -343,9 +363,15 @@ describe('native supervised read-only workers', function () {
     const cards = await $$('.tool-card-subagent')
     await expect(cards[0]).toHaveText(expect.stringContaining('alpha'))
     await expect(cards[1]).toHaveText(expect.stringContaining('beta'))
+  }
+
+  it('runs two named workers concurrently through real provider dispatch and blocks writes', async () => {
+    await inspectWorkers()
     await saveAppScreenshot('native-readonly-workers.png')
   })
   it('relays an explicit worker without parent inference and persists each actual model’s usage', async () => {
+    // This case owns the parent + two-worker usage before testing the slash delta.
+    await inspectWorkers()
     scenario = 'slash'
     parentCalls = 0
     workerCalls.clear()
@@ -360,8 +386,12 @@ describe('native supervised read-only workers', function () {
     assert.equal(workerCalls.get('alpha'), 2)
     assert.equal(parentCalls, 0)
     assert.deepEqual(errors, [])
-    const threads = await browser.execute((id) => window.api.threads.loadProject(id), PROJECT_ID)
-    const usage = threads[0]?.usage
+    const usage = await browser.execute(async (id) => {
+      const threadId =
+        document.querySelector<HTMLElement>('.chat-row.selected')?.dataset['threadId']
+      const threads = await window.api.threads.loadProject(id)
+      return threads.find((thread) => thread.id === threadId)?.usage ?? null
+    }, PROJECT_ID)
     assert.ok(usage)
     assert.equal(usage.inputTokens, 400)
     assert.equal(usage.outputTokens, 40)
@@ -442,7 +472,9 @@ describe('native supervised read-only workers', function () {
     assert.deepEqual(errors, [])
     await expect($('.messages-list')).toHaveText(expect.stringContaining('agent did not finish'))
     const outcome = await browser.execute(async (id) => {
-      const thread = (await window.api.threads.loadProject(id))[0]
+      const threadId =
+        document.querySelector<HTMLElement>('.chat-row.selected')?.dataset['threadId']
+      const thread = (await window.api.threads.loadProject(id)).find((row) => row.id === threadId)
       if (!thread) return null
       const messages = await window.api.threads.loadMessages(id, thread.id)
       const lastOutcome = messages.at(-1)?.turnOutcome

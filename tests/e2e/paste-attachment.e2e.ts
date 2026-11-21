@@ -4,8 +4,19 @@ import { dirname, join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { Key } from 'webdriverio'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
-import { composerText, setComposerValue, submitComposer } from './helpers/composer.ts'
+import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
+import {
+  FOLDED_CODE_PAYLOAD,
+  FOLDED_CODE_PROMPT,
+  settleFoldedPromptCapture,
+  assertFoldedPromptCaptureSettled,
+} from './helpers/folded-code-prompt.ts'
+import {
+  acceptProtectedPrompt,
+  composerText,
+  setComposerValue,
+  submitComposer,
+} from './helpers/composer.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { waitForActiveThreadTitle, waitForAgentIdle } from './helpers.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
@@ -195,6 +206,29 @@ describe('Pasting text into the composer', () => {
    * its label alone, dropping the snapshot the message already carried.
    */
   it('opens a pasted block in the preview modal, in the composer and after sending', async () => {
+    const priorVisiblePrompts = await browser.execute(() =>
+      [...document.querySelectorAll('.messages-list .msg-user')].map((row) => {
+        const bounds = row.getBoundingClientRect()
+        return {
+          text: row.querySelector<HTMLElement>('.message-text')?.innerText ?? '',
+          folded: row.querySelector('.msg-user-fold-toggle') !== null,
+          width: bounds.width,
+          height: bounds.height,
+        }
+      }),
+    )
+    const priorStoredPrompts = await browser.execute(async (projectId: string) => {
+      const threadId =
+        document.querySelector<HTMLElement>('.chat-row.selected')?.dataset['threadId']
+      if (!threadId) return []
+      return (await window.api.threads.loadMessages(projectId, threadId))
+        .filter((message) => message.role === 'user')
+        .map((message) => ({
+          content: message.content,
+          promptRepresentation: message.promptRepresentation,
+          attachments: message.attachments,
+        }))
+    }, PROJECT_ID)
     await setComposerValue('Please apply this feedback: ')
     await pasteIntoComposer(LONG_PASTE)
 
@@ -215,8 +249,8 @@ describe('Pasting text into the composer', () => {
     await $('.attachment-preview-close').click()
     await dialog.waitForExist({ timeout: 5_000, reverse: true })
 
-    // This spec has already sent one paste, so target the chip this send adds
-    // rather than the one left in the transcript by the previous test.
+    // Target this send, preserving any earlier canonical rows when the whole
+    // spec runs and requiring the same contract when this case runs alone.
     const sentChips =
       '.messages-list .msg-user .transcript-attachment-chip.transcript-attachment-paste'
     const before = (await $$(sentChips).getElements()).length
@@ -253,7 +287,7 @@ describe('Pasting text into the composer', () => {
       const chips = document.querySelectorAll(target)
       const row = chips.item(chips.length - 1).closest('.msg-user')
       return {
-        text: row?.querySelector('.message-text')?.textContent ?? '',
+        text: row?.querySelector<HTMLElement>('.message-text')?.innerText ?? '',
         folded: row?.querySelector('.msg-user-fold-toggle') !== null,
       }
     }, sentChips)
@@ -261,10 +295,15 @@ describe('Pasting text into the composer', () => {
     expect(settledRow.text).not.toContain('```')
     expect(settledRow.folded).toBe(false)
     const settledPrompts = await browser.execute(() =>
-      [...document.querySelectorAll('.messages-list .msg-user')].map((row) => ({
-        text: row.querySelector('.message-text')?.textContent ?? '',
-        folded: row.querySelector('.msg-user-fold-toggle') !== null,
-      })),
+      [...document.querySelectorAll('.messages-list .msg-user')].map((row) => {
+        const bounds = row.getBoundingClientRect()
+        return {
+          text: row.querySelector<HTMLElement>('.message-text')?.innerText ?? '',
+          folded: row.querySelector('.msg-user-fold-toggle') !== null,
+          width: bounds.width,
+          height: bounds.height,
+        }
+      }),
     )
     const storedPrompts = await browser.execute(async (projectId: string) => {
       const threadId =
@@ -278,16 +317,125 @@ describe('Pasting text into the composer', () => {
           attachments: message.attachments,
         }))
     }, PROJECT_ID)
-    expect(settledPrompts).toHaveLength(2)
-    expect(storedPrompts.map((prompt) => prompt.attachments?.[0]?.projection)).toEqual([
-      'canonical-block',
-      'canonical-block',
-    ])
-    expect(storedPrompts[0]?.content).toBe(PASTE_PROMPT)
-    expect(storedPrompts[0]?.attachments?.[0]?.content).toBe(LONG_PASTE)
-    expect(settledPrompts.map((prompt) => prompt.text.includes('```'))).toEqual([false, false])
-    expect(settledPrompts.every((prompt) => !prompt.folded)).toBe(true)
+    expect(settledPrompts).toHaveLength(priorVisiblePrompts.length + 1)
+    expect(storedPrompts).toHaveLength(priorStoredPrompts.length + 1)
+    expect(settledPrompts.slice(0, -1)).toEqual(priorVisiblePrompts)
+    expect(storedPrompts.slice(0, -1)).toEqual(priorStoredPrompts)
+    const currentPrompt = storedPrompts.at(-1)
+    expect(currentPrompt?.content).toBe(
+      PASTE_PROMPT.replace('Summarize this feedback:', 'Please apply this feedback:'),
+    )
+    expect(currentPrompt?.promptRepresentation).toBe('canonical-provider')
+    expect(currentPrompt?.attachments?.[0]?.projection).toBe('canonical-block')
+    expect(currentPrompt?.attachments?.[0]?.content).toBe(LONG_PASTE)
+    expect({
+      text: settledPrompts.at(-1)?.text,
+      folded: settledPrompts.at(-1)?.folded,
+    }).toEqual(settledRow)
     await saveAppScreenshot(TRANSCRIPT_PREVIEW_SCREENSHOT)
     await $('.attachment-preview-close').click()
+  })
+
+  it('resends a raw canonical fenced prompt without creating an empty code tail', async () => {
+    // Settings resets retain persisted chats; start a fresh one through the UI.
+    await $('.project-new-thread-btn').waitForClickable({ timeout: 30_000 })
+    await $('.project-new-thread-btn').click()
+    await $('.messages-list .msg-user').waitForExist({ timeout: 10_000, reverse: true })
+    const scenario = await installMockScenario({
+      title: 'Review notification configuration',
+      turns: [
+        { user: FOLDED_CODE_PROMPT, responses: [{ text: 'The timeout is thirty seconds.' }] },
+        {
+          user: FOLDED_CODE_PROMPT,
+          responses: [{ text: 'The same configuration is still intact.' }],
+        },
+      ],
+    })
+    await setComposerValue(FOLDED_CODE_PROMPT)
+    await $('.submit-btn').waitForEnabled({ timeout: 30_000 })
+    await submitComposer()
+    await scenario.waitForTurns(1)
+    await waitForAgentIdle()
+    await waitForActiveThreadTitle()
+    await expect(await $$('.messages-list .msg-user').getElements()).toBeElementsArrayOfSize(1)
+    const original = await $('.messages-list .msg-user').getElement()
+    const originalId = await original.getAttribute('data-message-id')
+    await original.moveTo()
+    await original.$('.msg-resend').click()
+    await acceptProtectedPrompt()
+    await scenario.waitForComplete()
+    await waitForAgentIdle()
+    await scenario.assertComplete()
+    const ids = await browser.execute(() =>
+      [...document.querySelectorAll('.messages-list .msg-user')].map((row) =>
+        row.getAttribute('data-message-id'),
+      ),
+    )
+    expect(ids.length).toBe(2)
+    expect(ids[0]).toBe(originalId)
+    const resentId = ids[1]
+    if (!resentId || resentId === originalId) throw new Error('Resend did not append a new message')
+    const resent = `[data-message-id="${resentId}"]`
+    const toggle = `${resent} .msg-user-fold-toggle`
+    await expect($(toggle)).toHaveAttribute('aria-expanded', 'false')
+    expect(await $(`${resent} .transcript-attachment-chip`).isExisting()).toBe(false)
+    expect(await $(`${resent} .msg-user-fold-tail pre`).isExisting()).toBe(false)
+    await expect($(`${resent} .msg-user-fold-tail`)).toHaveText('')
+    await saveElementScreenshot(resent, 'paste-attachment-raw-resend-folded.png', {
+      captureFromViewport: true,
+      beforeCapture: () => settleFoldedPromptCapture(resent),
+    })
+    await assertFoldedPromptCaptureSettled(resent)
+    await saveAppScreenshot('paste-attachment-raw-resend-folded-app.png')
+
+    await $(toggle).click()
+    await expect($(`${resent} .msg-user-fold-middle`)).toBeDisplayed()
+    expect(
+      await browser.execute(
+        (selector) =>
+          [...document.querySelectorAll(`${selector} pre code`)].map((code) => code.textContent),
+        resent,
+      ),
+    ).toEqual([`${FOLDED_CODE_PAYLOAD}\n`])
+    await saveElementScreenshot(resent, 'paste-attachment-raw-resend-expanded.png', {
+      captureFromViewport: true,
+      beforeCapture: () => settleFoldedPromptCapture(resent),
+    })
+    await assertFoldedPromptCaptureSettled(resent)
+    await saveAppScreenshot('paste-attachment-raw-resend-expanded-app.png')
+    await $(toggle).click()
+    await browser.reloadSession()
+    await $(toggle).waitForExist({ timeout: 30_000 })
+    await expect($(toggle)).toHaveAttribute('aria-expanded', 'false')
+    const restored = await browser.execute(() =>
+      [...document.querySelectorAll('.messages-list .msg-user')].map((row) => ({
+        id: row.getAttribute('data-message-id'),
+        codes: [...row.querySelectorAll('pre code')].map((code) => code.textContent),
+        tailBlocks: row.querySelectorAll('.msg-user-fold-tail pre').length,
+      })),
+    )
+    expect(restored).toEqual([
+      { id: originalId, codes: [`${FOLDED_CODE_PAYLOAD}\n`], tailBlocks: 0 },
+      { id: resentId, codes: [`${FOLDED_CODE_PAYLOAD}\n`], tailBlocks: 0 },
+    ])
+    await saveAppScreenshot('paste-attachment-raw-resend-reloaded-app.png')
+    // A real resend after reloading proves the restored canonical source is
+    // still what reaches the provider, not merely equivalent rendered text.
+    const restoredScenario = await installMockScenario({
+      title: 'Review restored notification configuration',
+      turns: [
+        {
+          user: FOLDED_CODE_PROMPT,
+          responses: [{ text: 'The restored configuration is intact.' }],
+        },
+      ],
+    })
+    await $(resent).moveTo()
+    await $(`${resent} .msg-resend`).click()
+    await acceptProtectedPrompt()
+    await restoredScenario.waitForComplete()
+    await waitForAgentIdle()
+    await restoredScenario.assertComplete()
+    expect((await $$('.messages-list .msg-user').getElements()).length).toBe(3)
   })
 })

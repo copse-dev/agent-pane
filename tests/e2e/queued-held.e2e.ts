@@ -1,7 +1,9 @@
+import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
+  e2eWorkspaceDir,
   resetUserData,
   seedEmptyProject,
   seedHeldQueueFixture,
@@ -9,15 +11,92 @@ import {
   writeSeedConfig,
   writeSettings,
 } from './helpers/seed-config.ts'
-import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { E2E_VIEWPORT, saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { AA_BODY_TEXT, fillContrast } from './helpers/fill-contrast.ts'
 import { switchTheme } from './helpers/theme.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { acceptProtectedPrompt, setComposerValue, submitComposer } from './helpers/composer.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 
-const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 const ROW_SELECTOR = '.conversation-queued .msg-held .message-queued-actions'
+
+interface HeldCaptureGeometry {
+  reserve: number
+  inputHeight: number
+  inputTop: number
+  queueBottom: number
+  heldTop: number
+  heldBottom: number
+  releaseTop: number
+  releaseBottom: number
+  fits: boolean
+}
+
+async function heldCaptureGeometry(): Promise<HeldCaptureGeometry> {
+  return browser.execute(() => {
+    const pane = document.getElementById('pane-chat')
+    const input = document.getElementById('input-bar')
+    const queue = document.querySelector('.conversation-queued')
+    const held = queue?.querySelector('.msg-held')
+    const release = held?.querySelector('.queued-release')
+    if (!pane || !input || !queue || !held || !release) throw new Error('Missing held queue layout')
+    const inputRect = input.getBoundingClientRect()
+    const queueRect = queue.getBoundingClientRect()
+    const heldRect = held.getBoundingClientRect()
+    const releaseRect = release.getBoundingClientRect()
+    return {
+      reserve: Number.parseFloat(getComputedStyle(pane).getPropertyValue('--chat-composer-height')),
+      inputHeight: inputRect.height,
+      inputTop: inputRect.top,
+      queueBottom: queueRect.bottom,
+      heldTop: heldRect.top,
+      heldBottom: heldRect.bottom,
+      releaseTop: releaseRect.top,
+      releaseBottom: releaseRect.bottom,
+      fits:
+        heldRect.width > 0 &&
+        heldRect.top >= queueRect.top &&
+        heldRect.left >= queueRect.left &&
+        heldRect.right <= queueRect.right &&
+        releaseRect.width > 0 &&
+        releaseRect.height > 0 &&
+        releaseRect.left >= heldRect.left &&
+        releaseRect.right <= heldRect.right,
+    }
+  })
+}
+
+async function waitForHeldCaptureGeometry(): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      const before = await heldCaptureGeometry()
+      await browser.execute(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                resolve()
+              })
+            }),
+          ),
+      )
+      const after = await heldCaptureGeometry()
+      return (
+        before.reserve === Math.max(Math.ceil(before.inputHeight), 72) &&
+        Math.abs(before.queueBottom - before.inputTop) < 0.5 &&
+        before.heldBottom <= before.inputTop &&
+        before.releaseTop >= before.heldTop &&
+        before.releaseBottom <= before.heldBottom &&
+        before.fits &&
+        JSON.stringify(before) === JSON.stringify(after)
+      )
+    },
+    {
+      timeout: 10_000,
+      timeoutMsg: 'held queue must settle above the measured composer border box',
+    },
+  )
+}
 
 // C2 held-state visual eval (decisions 5 & 16). A hook-originated queued message
 // that was held (`autoDispatch: false`) renders in the pinned queue panel with a
@@ -26,6 +105,95 @@ const ROW_SELECTOR = '.conversation-queued .msg-held .message-queued-actions'
 // it. Drain-skip + release semantics are unit-tested in
 // controller/message-queue.test.ts; the DOM shape in views/queued-held.test.ts.
 // This captures the rendered state for visual inspection per AGENTS.md.
+
+// Controller/component tests reach exhaustion through the real drain path.
+// This persisted fixture checks the resulting note and held card after reload.
+describe('held cross-thread prompt', function () {
+  this.timeout(90_000)
+  const projectId = 'cross-thread-project'
+  // resetUserData() clears config, not the thread store, so this thread would
+  // outlive the test and later captures would list it under Recoverable
+  // threads. Close the app first: removing the store while it runs would unlink
+  // a thread index the app still holds.
+  afterEach(async () => {
+    await browser.deleteSession({ shutdownDriver: false })
+    removeE2eTree(join(e2eWorkspaceDir(), projectId))
+    resetUserData()
+  })
+
+  it('shows which allowance is exhausted and offers Release after reload', async function () {
+    resetUserData()
+    const now = Date.now()
+    const prompt = 'Review the original task and continue its remaining authorized work.'
+    const scope = JSON.stringify(['coordinator', 'coordinator-user-turn'])
+    const origin = { kind: 'machine', operationId: 'thread:coordinator', crossThreadScope: scope }
+    const note =
+      "Cross-thread prompt allowance reached — 5 prompts from this sender's user turn have run here. This prompt is held; release it to continue, or send a new instruction in the sender thread for a fresh allowance."
+    writeSeedConfig({
+      projects: [{ id: projectId, path: process.cwd(), name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [
+        {
+          id: 'cross-thread-destination',
+          title: 'Cross-thread check-in',
+          status: 'idle',
+          currentEpoch: 'destination-turn',
+          continuationUsed: 5,
+          crossThreadPromptsUsed: 5,
+          crossThreadPromptCounts: { [scope]: 5 },
+          messages: [
+            {
+              id: 'user',
+              role: 'user',
+              content: 'Finish the original task.',
+              toolCalls: [],
+              createdAt: now,
+            },
+            {
+              id: 'prompt',
+              role: 'user',
+              content: prompt,
+              origin,
+              toolCalls: [],
+              createdAt: now + 1,
+            },
+            {
+              id: 'allowance-note',
+              role: 'error',
+              content: note,
+              toolCalls: [],
+              createdAt: now + 2,
+            },
+          ],
+          pendingMessages: [
+            {
+              messageId: 'prompt',
+              payload: { content: prompt },
+              createdAt: now + 1,
+              origin,
+              autoDispatch: false,
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: now,
+          updatedAt: now + 2,
+        },
+      ],
+    })
+    await browser.reloadSession()
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    const held = $('.conversation-queued .msg-queued.msg-held')
+    await held.waitForDisplayed({ timeout: 10_000 })
+    await expect($('.msg-held .message-queued-badge')).toHaveText('HELD')
+    await expect($('.msg-held .queued-release')).toBeDisplayed()
+    await expect($('.msg-held .queued-send-now')).not.toBeExisting()
+    await expect($('body')).toHaveText(expect.stringContaining(note))
+    await expect(held).toHaveText(expect.stringContaining(prompt))
+    const screenshots = join(process.cwd(), 'tests/e2e/screenshots')
+    mkdirSync(screenshots, { recursive: true })
+    await browser.saveScreenshot(join(screenshots, 'cross-thread-prompt-held.png'))
+  })
+})
 
 describe('held hook message in the queue', function () {
   this.timeout(90_000)
@@ -58,8 +226,17 @@ describe('held hook message in the queue', function () {
     // A held item is released, not "Send now"-ed like a plain queued message.
     await expect($('.msg-held .queued-send-now')).not.toBeExisting()
 
-    mkdirSync(SCREENSHOT_DIR, { recursive: true })
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'queued-held.png'))
+    let captureGeometry: HeldCaptureGeometry | undefined
+    await saveAppScreenshot('queued-held.png', E2E_VIEWPORT, async () => {
+      await waitForHeldCaptureGeometry()
+      captureGeometry = await heldCaptureGeometry()
+    })
+    assert.ok(captureGeometry)
+    assert.deepEqual(
+      await heldCaptureGeometry(),
+      captureGeometry,
+      'held queue must stay still across capture',
+    )
 
     // The outlined chips carry almost no fill contrast, so the border is the only
     // thing marking where the button ends. Measure it against the surface behind

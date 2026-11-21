@@ -8,10 +8,9 @@ import {
   readdirSync,
   writeFileSync,
 } from 'node:fs'
-import { parseOkfMessage } from '../../packages/thread-store/src/okf-message.ts'
 import { parseSpineEntries } from '../../packages/thread-store/src/spine-schema.ts'
 import { createServer, type ServerResponse } from 'node:http'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '../../src/shared/safe-json.ts'
@@ -133,10 +132,21 @@ describe('native parent steering through the real provider and IPC', function ()
       )?.line
       assert.ok(note?.type === 'message')
       assert.equal(note.promptRepresentation, 'canonical-provider')
-      assert.equal(
-        parseOkfMessage(readFileSync(join(directory(), note.content.ref), 'utf8'))?.body,
-        NOTE,
+      // A full save may replace the spine and prune its superseded revision
+      // between two raw filesystem reads. Use Main's serialized production
+      // reader, retaining the exact accepted identity and canonical-body check
+      // before allowing the provider to continue.
+      const savedNote = await browser.execute(
+        async ({ projectId, threadId, messageId }) => {
+          const messages = await window.api.threads.loadMessages(projectId, threadId)
+          const message = messages.find((candidate) => candidate.id === messageId)
+          return message ? { role: message.role, content: message.content } : null
+        },
+        { projectId: PROJECT, threadId: basename(directory()), messageId: noteId },
       )
+      assert.ok(savedNote)
+      assert.equal(savedNote.role, 'user')
+      assert.equal(savedNote.content, NOTE)
       assert.equal(parsed.messages.filter((message) => message.role === 'tool').length, 2)
       assert.ok(!parsed.messages.some((message) => message.content === LATER_NOTE))
       if (scenario === 'later') pending = response

@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, type ChildProcess } from 'node:child_process'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -13,8 +13,17 @@ import {
   spawnInProjectSandbox,
   spawnShellInProjectSandbox,
   withSandboxShellPath,
+  type ExecutionTarget,
 } from './spawn.ts'
 import { isSpawnableWorkingDirectory } from './spawn-cwd.ts'
+import {
+  setExecutionAuditSink,
+  type ExecutionObservation,
+} from '../services/execution-runtime/audit.ts'
+import {
+  threadExecutionContextStorage,
+  type ThreadExecutionContext,
+} from '../services/thread-execution-context-store.ts'
 
 describe('formatArgvForShell', () => {
   it('keeps workspace and Electron paths with spaces as single shell words', () => {
@@ -131,6 +140,37 @@ describe('the sandbox wrapper shell environment', { skip: process.platform === '
   })
 })
 
+describe('local child subscription refusals', () => {
+  const remote: ExecutionTarget = { kind: 'ssh', hostId: 'never-connect', remoteRoot: '/repo' }
+
+  it('refuses a remote child observer before starting any SSH execution', async () => {
+    let observed = false
+    await assert.rejects(
+      spawnInProjectSandbox('never-launch', [], {
+        cwd: '/repo',
+        executionTarget: remote,
+        onChildCreated: () => {
+          observed = true
+        },
+      }),
+      /Cannot subscribe to a remote child before spawn/,
+    )
+    assert.equal(observed, false)
+  })
+
+  it('keeps the required local sandbox refusal ahead of a remote observer', async () => {
+    await assert.rejects(
+      spawnInProjectSandbox('never-launch', [], {
+        cwd: '/repo',
+        executionTarget: remote,
+        requireSandbox: true,
+        onChildCreated: () => assert.fail('no remote child may be created'),
+      }),
+      /requires an active local project sandbox/,
+    )
+  })
+})
+
 describe('spawn environment overrides', () => {
   it('overlays caller variables without dropping the scrubbed base environment', async () => {
     const script =
@@ -199,5 +239,63 @@ describe('spawning into a deleted working directory', () => {
       spawnShellInProjectSandbox('echo hi', { cwd: missing, stdio: 'pipe' }),
       /Working directory no longer exists/,
     )
+  })
+})
+
+describe('execution audit split', () => {
+  const local: ExecutionTarget = { kind: 'local' }
+  const context: ThreadExecutionContext = {
+    projectId: 'proj',
+    threadId: 'thread',
+    projectRoot: tmpdir(),
+    root: tmpdir(),
+    checkoutMode: 'shared',
+    branch: null,
+  }
+
+  function closed(child: ChildProcess): Promise<void> {
+    return new Promise((resolve, reject) => {
+      child.once('error', reject)
+      child.once('close', () => {
+        resolve()
+      })
+    })
+  }
+
+  async function observe(spawnIt: () => Promise<ChildProcess>): Promise<string[]> {
+    const types: string[] = []
+    setExecutionAuditSink((o: ExecutionObservation): void => {
+      types.push(o.type)
+    })
+    try {
+      await closed(await threadExecutionContextStorage.run(context, spawnIt))
+    } finally {
+      setExecutionAuditSink(null)
+    }
+    return types
+  }
+
+  it('audits an agent shell command run inside a turn', async () => {
+    const types = await observe(() =>
+      spawnShellInProjectSandbox('exit 0', {
+        cwd: tmpdir(),
+        stdio: 'ignore',
+        unsandboxed: true,
+        executionTarget: local,
+      }),
+    )
+    assert.deepEqual(types, ['start', 'exit'])
+  })
+
+  it('does not audit an internal fixed-argv subprocess, even inside a turn', async () => {
+    const types = await observe(() =>
+      spawnInProjectSandbox(process.execPath, ['-e', ''], {
+        cwd: tmpdir(),
+        stdio: 'pipe',
+        unsandboxed: true,
+        executionTarget: local,
+      }),
+    )
+    assert.deepEqual(types, [])
   })
 })

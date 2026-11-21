@@ -168,12 +168,18 @@ describe('saved reviewer input', () => {
   })
 
   it('sends a saved answer and keeps it after reopening the task', async () => {
+    await expect($('.chat-row.selected')).toHaveAttribute('data-thread-id', THREAD_ID)
+    if (!(await $('.reviewer-input-panel').isDisplayed())) {
+      await $('[aria-label="Open thread context"]').click()
+    }
+    await $('.reviewer-input-panel').waitForDisplayed({ timeout: 30_000 })
     const scenario = await installMockScenario({
       title: 'Review answer',
       turns: [{ user: ANSWER_PROMPT, responses: [{ text: ANSWER_REPLY }] }],
     })
     const panel = $('.reviewer-input-panel')
     const row = panel.$('[data-reviewer-input-id="request-tokens"]')
+    await row.waitForDisplayed({ timeout: 30_000 })
     await row.$('.reviewer-input-question').click()
     await row.$('.reviewer-input-option').click()
     await row.$('.ui-btn-primary').click()
