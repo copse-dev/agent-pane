@@ -12,15 +12,8 @@
  * runs as an unprivileged uid with no network and a read-only root.
  */
 import { createHash } from 'node:crypto'
-import {
-  cpSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { copseDataRoot } from '@copse/store-kit/copse-paths.ts'
@@ -103,14 +96,17 @@ export interface CodeCellImageOptions {
  * its fingerprint label matches, so an app upgrade that changes the runner
  * rebuilds it instead of running the previous one.
  */
-export function codeCellImageFingerprint(options: CodeCellImageOptions = {}): string {
+export async function codeCellImageFingerprint(
+  options: CodeCellImageOptions = {},
+): Promise<string> {
+  const runner = await readFile(options.runner ?? defaultCodeCellRunnerPath())
   const hash = createHash('sha256')
   hash.update('copse-code-cell-image-v1\n')
   hash.update(`uid:${String(CODE_CELL_UID)}\n`)
   hash.update(`base:${options.baseImage ?? codeCellBaseImage()}\n`)
   hash.update(CODE_CELL_DOCKERFILE)
   hash.update(CODE_CELL_ENTRYPOINT_SH)
-  hash.update(readFileSync(options.runner ?? defaultCodeCellRunnerPath()))
+  hash.update(runner)
   return hash.digest('hex')
 }
 
@@ -156,7 +152,7 @@ export async function buildCodeCellImage(
     )
   }
   const baseImage = options.baseImage ?? codeCellBaseImage()
-  const fingerprint = codeCellImageFingerprint({ runner, baseImage })
+  const fingerprint = await codeCellImageFingerprint({ runner, baseImage })
   const prefix =
     engine === 'apple'
       ? join(copseDataRoot(), 'cache', 'code-cell-context')
@@ -205,7 +201,7 @@ export function ensureCodeCellImage(
         `Code-cell runner missing at ${runner}; run \`pnpm run build\` (it is a standalone main bundle)`,
       )
     }
-    const wanted = codeCellImageFingerprint(options)
+    const wanted = await codeCellImageFingerprint(options)
     if ((await imageFingerprint(engine, image)) === wanted) return image
     return await buildCodeCellImage(engine, { ...options, image })
   })()

@@ -182,9 +182,11 @@ export function appleCodeCellConfigShortfall(
   const config = container.configuration
   const uid = String(CODE_CELL_UID)
   if (!config.capDrop.some((cap) => cap.toUpperCase() === 'ALL')) {
-    return 'capabilities were not dropped'
+    return 'its Linux privileges were not all removed'
   }
-  if (config.capAdd.length > 0) return `capabilities were added: ${config.capAdd.join(', ')}`
+  if (config.capAdd.length > 0) {
+    return `it was given extra Linux privileges: ${config.capAdd.join(', ')}`
+  }
   if (!config.readOnly) return 'the root filesystem is writable'
   if (config.networks.length > 0) return 'the container is attached to a network'
   if (config.initProcess.user.raw.userString !== `${uid}:${uid}`) {

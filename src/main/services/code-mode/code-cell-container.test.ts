@@ -514,7 +514,8 @@ describe('appleCodeCellConfigShortfall', () => {
     const cases: Array<[Record<string, unknown>, RegExp]> = [
       [{ networks: [{ network: 'default' }] }, /attached to a network/],
       [{ readOnly: false }, /writable/],
-      [{ capDrop: [] }, /not dropped/],
+      [{ capDrop: [] }, /Linux privileges were not all removed/],
+      [{ capAdd: ['SYS_ADMIN'] }, /extra Linux privileges: SYS_ADMIN/],
       [{ ssh: true }, /SSH agent/],
       [
         {
