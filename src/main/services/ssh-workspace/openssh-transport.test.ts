@@ -1,6 +1,7 @@
-import { describe, it, afterEach } from 'node:test'
+import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
+import { once } from 'node:events'
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -14,6 +15,7 @@ import {
   sshPtyArgs,
 } from './openssh-transport.ts'
 import { controlSocketPath, setSshControlDirForTests } from './ssh-paths.ts'
+import { shortSocketDirectory } from '../../../../tests/helpers/short-socket-directory.ts'
 
 const host: SshWorkspaceHost = {
   id: 'dev-box',
@@ -23,6 +25,10 @@ const host: SshWorkspaceHost = {
 }
 
 describe('sshExecArgs / ControlPath', () => {
+  beforeEach((t) => {
+    setSshControlDirForTests(shortSocketDirectory(t))
+  })
+
   afterEach(() => {
     setSshControlDirForTests(null)
   })
@@ -33,24 +39,18 @@ describe('sshExecArgs / ControlPath', () => {
       skip: process.platform === 'win32' ? 'ControlMaster / -S unused on Windows OpenSSH' : false,
     },
     () => {
-      const dir = mkdtempSync('/tmp/copse-cm-')
-      try {
-        setSshControlDirForTests(dir)
-        const sock = controlSocketPath(host.id)
+      const sock = controlSocketPath(host.id)
 
-        const args = sshExecArgs(host, 'true')
-        const sIdx = args.indexOf('-S')
-        assert.notEqual(sIdx, -1)
-        assert.equal(args[sIdx + 1], sock)
+      const args = sshExecArgs(host, 'true')
+      const sIdx = args.indexOf('-S')
+      assert.notEqual(sIdx, -1)
+      assert.equal(args[sIdx + 1], sock)
 
-        for (const arg of args) {
-          assert.ok(
-            !arg.startsWith('ControlPath='),
-            `must not pass -o ControlPath=… (got ${arg}); OpenSSH splits on spaces`,
-          )
-        }
-      } finally {
-        rmSync(dir, { recursive: true, force: true })
+      for (const arg of args) {
+        assert.ok(
+          !arg.startsWith('ControlPath='),
+          `must not pass -o ControlPath=… (got ${arg}); OpenSSH splits on spaces`,
+        )
       }
     },
   )
@@ -61,18 +61,12 @@ describe('sshExecArgs / ControlPath', () => {
       skip: process.platform === 'win32' ? 'ControlMaster / -S unused on Windows OpenSSH' : false,
     },
     () => {
-      const dir = mkdtempSync('/tmp/copse-cm-')
-      try {
-        setSshControlDirForTests(dir)
-        const sock = controlSocketPath(host.id)
-        const args = sshPtyArgs(host, 'bash -l')
-        assert.equal(args[0], '-tt')
-        const sIdx = args.indexOf('-S')
-        assert.equal(args[sIdx + 1], sock)
-        assert.ok(!args.some((a) => a.startsWith('ControlPath=')))
-      } finally {
-        rmSync(dir, { recursive: true, force: true })
-      }
+      const sock = controlSocketPath(host.id)
+      const args = sshPtyArgs(host, 'bash -l')
+      assert.equal(args[0], '-tt')
+      const sIdx = args.indexOf('-S')
+      assert.equal(args[sIdx + 1], sock)
+      assert.ok(!args.some((a) => a.startsWith('ControlPath=')))
     },
   )
 
@@ -123,10 +117,11 @@ describe('sshExecArgs / ControlPath', () => {
           fakeSsh,
           [
             '#!/bin/sh',
-            'if [ "$1" = "-O" ]; then exit 1; fi',
+            'if [ "$1" = "-O" ]; then [ -e "${0%/*}/master-up" ] && exit 0; exit 1; fi',
             // Long enough that an event-loop turn must happen before connect
             // settles. A synchronous child here would settle connect first.
             '/bin/sleep 0.1',
+            ': > "${0%/*}/master-up"',
             'exit 0',
           ].join('\n'),
         )
@@ -146,6 +141,109 @@ describe('sshExecArgs / ControlPath', () => {
         else process.env['PATH'] = oldPath
         rmSync(dir, { recursive: true, force: true })
       }
+    },
+  )
+})
+
+describe('SSH destination validation', () => {
+  /** `host` with its destination fields replaced; `user: null` drops the user. */
+  function withDestination(target: string, user: string | null = 'ubuntu'): SshWorkspaceHost {
+    return { id: host.id, label: host.label, host: target, ...(user === null ? {} : { user }) }
+  }
+
+  const refused: { name: string; host: SshWorkspaceHost; message: RegExp }[] = [
+    { name: 'an option-shaped host', host: withDestination('-oFoo=bar'), message: /start with/ },
+    { name: 'a padded option-shaped host', host: withDestination('  -oFoo=bar'), message: /start/ },
+    {
+      name: 'an option-shaped user',
+      host: withDestination('dev.example', '-p22'),
+      message: /User cannot start/,
+    },
+    {
+      name: 'a host carrying an option-shaped user',
+      host: withDestination('-p22@dev.example', null),
+      message: /Host cannot start/,
+    },
+    {
+      name: 'an option-shaped name after user@',
+      host: withDestination('ubuntu@-oFoo=bar', null),
+      message: /Host cannot start/,
+    },
+    { name: 'a host with a space', host: withDestination('dev.example -p22'), message: /spaces/ },
+    {
+      name: 'a host with a newline',
+      host: withDestination('dev.example\n-p22'),
+      message: /spaces/,
+    },
+    {
+      name: 'a host with a control character',
+      host: withDestination('dev\u0001example'),
+      message: /control/,
+    },
+    {
+      name: 'a user with a control character',
+      host: withDestination('dev.example', 'ubuntu\u007f'),
+      message: /User cannot contain control/,
+    },
+    { name: 'a blank host', host: withDestination('   '), message: /required/ },
+  ]
+  for (const { name, host: bad, message } of refused) {
+    it(`refuses ${name} in every argv builder`, () => {
+      assert.throws(() => sshExecArgs(bad, 'true'), message)
+      assert.throws(() => sshPtyArgs(bad, 'bash -l'), message)
+    })
+  }
+
+  const accepted: { name: string; host: SshWorkspaceHost; target: string }[] = [
+    { name: 'a plain host', host: withDestination('dev.example', null), target: 'dev.example' },
+    {
+      name: 'a host with a user',
+      host: withDestination('dev.example'),
+      target: 'ubuntu@dev.example',
+    },
+    {
+      name: 'a user@host host',
+      host: withDestination('ubuntu@dev.example', null),
+      target: 'ubuntu@dev.example',
+    },
+    {
+      name: 'a padded host',
+      host: withDestination('  dev.example  '),
+      target: 'ubuntu@dev.example',
+    },
+    { name: 'a hyphenated host', host: withDestination('dev-box-2'), target: 'ubuntu@dev-box-2' },
+    { name: 'an IPv6 literal', host: withDestination('[::1]', null), target: '[::1]' },
+    { name: 'an IPv6 literal with a user', host: withDestination('[::1]'), target: 'ubuntu@[::1]' },
+    {
+      name: 'a user with a space',
+      host: withDestination('dev.example', 'first last'),
+      target: 'first last@dev.example',
+    },
+    {
+      name: 'a user@host host whose unused user field is option-shaped',
+      host: withDestination('ubuntu@dev.example', '-p22'),
+      target: 'ubuntu@dev.example',
+    },
+  ]
+  for (const { name, host: ok, target } of accepted) {
+    it(`accepts ${name}`, () => {
+      const args = sshExecArgs(ok, 'true')
+      assert.equal(args.at(-2), target)
+      assert.equal(args.at(-1), 'true')
+      const pty = sshPtyArgs(ok, 'bash -l')
+      assert.equal(pty.at(-2), target)
+    })
+  }
+
+  it(
+    'refuses an option-shaped host at connect without starting ssh',
+    { skip: process.platform === 'win32' },
+    async (t) => {
+      const dir = installFakeSsh(t, 'touch "$(dirname "$0")/ran"\nexit 0')
+      const transport = new OpenSshTransport({ ...host, host: '-oFoo=bar' })
+      await assert.rejects(transport.connect(), /Cannot use SSH host “dev-box”: Host cannot start/)
+      assert.equal(transport.isConnected(), false)
+      assert.equal(existsSync(join(dir, 'ran')), false, 'ssh must not run for a refused host')
     },
   )
 })
@@ -200,6 +298,33 @@ function installFakeSsh(t: { after: (fn: () => void) => void }, script: string):
   return dir
 }
 
+/**
+ * The stub's control master: `-O check` succeeds while `master-up` exists.
+ * A script that starts a master creates it; a test removes it to drop the link.
+ */
+const STUB_MASTER_CHECK = [
+  'case " $* " in',
+  '  *" -O check "*) [ -e "$(dirname "$0")/master-up" ] && exit 0 || exit 255 ;;',
+  'esac',
+].join('\n')
+
+/** Leave a socket file whose listener died without removing it, as a SIGKILLed master does. */
+async function leaveDeadSocket(path: string): Promise<void> {
+  const listener = spawn(
+    process.execPath,
+    [
+      '-e',
+      `require('node:net').createServer().listen(${JSON.stringify(path)}, () => console.log('ready'))`,
+    ],
+    { stdio: ['ignore', 'pipe', 'inherit'] },
+  )
+  await once(listener.stdout, 'data')
+  const exited = once(listener, 'exit')
+  listener.kill('SIGKILL')
+  await exited
+  assert.ok(existsSync(path), 'the dead listener left its socket file')
+}
+
 async function waitForCondition(condition: () => boolean, message: string): Promise<void> {
   const deadline = Date.now() + 5_000
   while (!condition() && Date.now() < deadline) await delay(20)
@@ -234,7 +359,10 @@ describe(
     it('keeps the event loop running while the control master authenticates', async (t) => {
       // The askpass bridge answers password prompts from this same event loop;
       // a blocking spawn while ssh waits on askpass would deadlock the main process.
-      installFakeSsh(t, 'case " $* " in *" -O check "*) exit 255 ;; esac\nsleep 0.3\nexit 0')
+      installFakeSsh(
+        t,
+        [STUB_MASTER_CHECK, 'sleep 0.3', 'touch "$(dirname "$0")/master-up"', 'exit 0'].join('\n'),
+      )
       const transport = new OpenSshTransport(host)
       let ranDuringConnect = false
       const timer = setTimeout(() => {
@@ -244,6 +372,96 @@ describe(
       clearTimeout(timer)
       assert.equal(transport.isConnected(), true)
       assert.equal(ranDuringConnect, true)
+    })
+
+    it('answers a liveness check from the control socket alone', async (t) => {
+      // Every invocation is logged so the test can prove a check never opens a
+      // connection.
+      const dir = installFakeSsh(
+        t,
+        [
+          'echo "$*" >> "$(dirname "$0")/calls"',
+          STUB_MASTER_CHECK,
+          'touch "$(dirname "$0")/master-up"',
+          'exit 0',
+        ].join('\n'),
+      )
+      const transport = new OpenSshTransport(host)
+      await transport.connect()
+      assert.equal(await transport.checkAlive(), true)
+
+      rmSync(join(dir, 'master-up'))
+      assert.equal(await transport.checkAlive(), false)
+      assert.equal(transport.isConnected(), false, 'a dead master is no longer reported connected')
+
+      // What `ControlMaster=auto` does when a command runs after the drop. The
+      // next check asks again rather than trusting the failed one.
+      writeFileSync(join(dir, 'master-up'), '')
+      assert.equal(await transport.checkAlive(), true)
+      assert.equal(transport.isConnected(), true)
+
+      const calls = readFileSync(join(dir, 'calls'), 'utf8').trim().split('\n')
+      // Only connect started a master; every other call asked the socket.
+      assert.deepEqual(
+        calls.filter((line) => !line.startsWith('-O check ')).map((line) => line.split(' ')[0]),
+        ['-fNM'],
+      )
+    })
+
+    it('clears a control socket its dead master left behind', async (t) => {
+      // Like OpenSSH, the stub gives up multiplexing when the socket path is
+      // taken: it stays connected as a plain connection and still exits 0.
+      const dir = installFakeSsh(
+        t,
+        [
+          'prev=; for arg; do [ "$prev" = -S ] && sock=$arg; prev=$arg; done',
+          STUB_MASTER_CHECK,
+          'if [ -S "$sock" ]; then echo "$*" >> "$(dirname "$0")/plain"; exit 0; fi',
+          'touch "$(dirname "$0")/master-up"',
+          'exit 0',
+        ].join('\n'),
+      )
+      await leaveDeadSocket(controlSocketPath(host.id))
+
+      const transport = new OpenSshTransport(host)
+      await transport.connect({ quiet: true })
+      assert.equal(transport.isConnected(), true)
+      assert.equal(existsSync(join(dir, 'plain')), false, 'no plain connection left running')
+    })
+
+    it('does not count a master that never answered on its socket', async (t) => {
+      installFakeSsh(
+        t,
+        [
+          'case " $* " in *" -O check "*) exit 255 ;; esac',
+          'echo "ControlSocket in use, disabling multiplexing" >&2',
+          'exit 0',
+        ].join('\n'),
+      )
+      const transport = new OpenSshTransport(host)
+      await assert.rejects(() => transport.connect({ quiet: true }), /disabling multiplexing/)
+      assert.equal(transport.isConnected(), false)
+    })
+
+    it('makes a quiet connect unable to prompt or hang', async (t) => {
+      const dir = installFakeSsh(
+        t,
+        [
+          STUB_MASTER_CHECK,
+          'echo "$*" >> "$(dirname "$0")/master-args"',
+          'touch "$(dirname "$0")/master-up"',
+          'exit 0',
+        ].join('\n'),
+      )
+      await new OpenSshTransport(host).connect({ quiet: true })
+      rmSync(join(dir, 'master-up'))
+      await new OpenSshTransport(host).connect()
+
+      const [quiet, interactive] = readFileSync(join(dir, 'master-args'), 'utf8').trim().split('\n')
+      assert.ok(quiet && interactive)
+      assert.match(quiet, /-o BatchMode=yes/)
+      assert.match(quiet, /-o ConnectTimeout=10/)
+      assert.doesNotMatch(interactive, /BatchMode|ConnectTimeout/)
     })
 
     it('reports the control master failure from stderr', async (t) => {

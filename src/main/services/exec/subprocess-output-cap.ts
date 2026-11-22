@@ -1,3 +1,4 @@
+import { collapseWhitespace } from '@copse/std/one-line-text.ts'
 /** Max bytes retained from subprocess stdout/stderr (matches run_shell tool). */
 export const COMMAND_OUTPUT_MAX_BYTES = 100 * 1024
 
@@ -252,7 +253,7 @@ export class CappedOutputAccumulator {
     this.maxBytes = maxBytes
     const markerBytes = utf8ByteLength(COMMAND_OUTPUT_TRUNCATED_MARKER)
     this.summarise = maxBytes >= OUTPUT_SUMMARY_MIN_CAP_BYTES
-    this.hint = this.summarise && options.hint ? options.hint.replace(/\s+/g, ' ').trim() : ''
+    this.hint = this.summarise && options.hint ? collapseWhitespace(options.hint) : ''
     const evidenceBudget =
       this.summarise && options.evidence === true
         ? Math.min(Math.floor(maxBytes / OUTPUT_EVIDENCE_CAP_DIVISOR), OUTPUT_EVIDENCE_MAX_BYTES)

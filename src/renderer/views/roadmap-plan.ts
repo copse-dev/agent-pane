@@ -1,3 +1,4 @@
+import { collapseWhitespace } from '@copse/std/one-line-text.ts'
 import { parsePlanDocument, REQUIRED_PLAN_SECTIONS } from '@copse/thread-store/plan-schema.ts'
 
 /** Keep an already structured plan byte-for-byte; otherwise retain the brief as context. */
@@ -7,7 +8,7 @@ export function roadmapPlanDraft(item: {
   fields: Record<string, string>
 }): { title: string; body: string } {
   const parsed = parsePlanDocument(item.body)
-  const title = item.title.replace(/\s+/g, ' ').trim().slice(0, 200) || 'Implementation plan'
+  const title = collapseWhitespace(item.title).slice(0, 200) || 'Implementation plan'
   if (
     REQUIRED_PLAN_SECTIONS.every((section) => parsed.sections.get(section)?.trim()) &&
     parsed.criteria.length > 0

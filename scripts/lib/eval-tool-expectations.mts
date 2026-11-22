@@ -29,7 +29,12 @@ import {
 import { dangerousInSandboxReasons } from '../../src/main/services/security/shell-scope.ts'
 
 export interface ToolExpectations {
+  /**
+   * A conjunction: every named tool needs at least one call that completed
+   * with `done`. A call that errored or was declined does not count.
+   */
   requireTools?: readonly string[] | undefined
+  /** At least one of these tools was invoked, whatever its outcome. */
   requireAnyTools?: readonly string[] | undefined
   /**
    * Every inner group is a disjunction, while the groups are a conjunction.
@@ -559,7 +564,16 @@ export function toolExpectationViolations(
   const observedNames = observed.map((call) => call.name)
   const violations: string[] = []
   for (const name of expectations.requireTools ?? []) {
-    if (!usedTool(observedNames, name)) violations.push(`missing required tool: ${name}`)
+    const calls = observed.filter((call) => toolCallIsNamed(call.name, name))
+    if (calls.length === 0) {
+      violations.push(`missing required tool: ${name}`)
+    } else if (!calls.some((call) => call.status === 'done')) {
+      // Invoking a required tool is not using it: a run whose every `git_commit`
+      // errored made no commit, and counting the attempts scored it a pass.
+      violations.push(
+        `required tool never succeeded: ${name} (${String(calls.length)} call(s), none done)`,
+      )
+    }
   }
   const anyOf = expectations.requireAnyTools ?? []
   if (anyOf.length > 0 && !anyOf.some((name) => usedTool(observedNames, name))) {

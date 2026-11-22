@@ -2173,13 +2173,6 @@
           1
         ]
       },
-      "shell:open-workspace-file-in-browser": {
-        "api": "shell.openWorkspaceFileInBrowser",
-        "args": [
-          3,
-          3
-        ]
-      },
       "simulator-desktop:close": {
         "api": "simulatorDesktop.close",
         "args": [
@@ -2453,6 +2446,13 @@
           2
         ]
       },
+      "threads:action-state": {
+        "api": "threads.actionState",
+        "args": [
+          0,
+          0
+        ]
+      },
       "threads:annotate-message": {
         "api": "threads.annotateMessage",
         "args": [
@@ -2656,13 +2656,6 @@
           1
         ]
       },
-      "usage:get-plan-worth-it": {
-        "api": "usage.getPlanWorthIt",
-        "args": [
-          0,
-          0
-        ]
-      },
       "usage:get-summary": {
         "api": "usage.getSummary",
         "args": [
@@ -2675,13 +2668,6 @@
         "args": [
           2,
           2
-        ]
-      },
-      "usage:set-claude-plan-monthly-fee": {
-        "api": "usage.setClaudePlanMonthlyFee",
-        "args": [
-          1,
-          1
         ]
       },
       "video:attach": {
@@ -3299,6 +3285,13 @@
       },
       "simulator-desktop:status": {
         "api": "simulatorDesktop.onStatus",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "ssh-prompt:dismissed": {
+        "api": "sshPrompt.onDismissed",
         "args": [
           1,
           1

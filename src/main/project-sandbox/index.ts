@@ -15,6 +15,7 @@ export {
   afterSandboxedCommand,
   isProjectSandboxEnabled,
   sandboxViolationCountForCommand,
+  sandboxViolationCountForBackgroundProcess,
 } from './spawn.ts'
 export {
   gatewayReadFile,
@@ -33,7 +34,8 @@ export {
  * (a sandboxed Node worker). `fs.watch` still uses main-process watchers; content
  * reloads go through the same gateway.
  *
- * Linux needs `bubblewrap` on PATH *and* usable unprivileged user namespaces.
+ * Linux needs `bubblewrap` (found by absolute path, see `sandbox-binaries.ts`)
+ * *and* usable unprivileged user namespaces.
  * Where either is missing (a locked-down container, say) `initialize` throws and
  * we degrade to unsandboxed exactly as before — with one consequence worth
  * knowing: executable plugin behavior fails closed without a sandbox, so plugins
@@ -68,6 +70,9 @@ export async function initProjectSandbox(): Promise<void> {
       },
       false,
     )
+    if (!SandboxManager.isSandboxingEnabled()) {
+      throw new Error('Workspace protection did not start for project commands')
+    }
     await refreshGitConfigIncludeReadPaths()
     setProjectSandboxEnabled(true)
     setProjectSandboxInitFailure(undefined)
@@ -79,6 +84,7 @@ export async function initProjectSandbox(): Promise<void> {
   } catch (err) {
     setProjectSandboxEnabled(false)
     setProjectSandboxInitFailure(errorMessage(err))
+    await SandboxManager.reset().catch(() => {})
     console.warn('[project-sandbox] ASRT init failed — project commands run unsandboxed:', err)
   }
 }

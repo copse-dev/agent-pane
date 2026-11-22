@@ -1,7 +1,7 @@
 import '../../../tests/setup-dom.ts'
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { createOverlayDialog, isAnyDialogOpen } from './dialog-shell.ts'
+import { createOverlayDialog, isAnyDialogOpen, lazyBodyDialog } from './dialog-shell.ts'
 
 describe('createOverlayDialog', () => {
   beforeEach(() => {
@@ -92,5 +92,35 @@ describe('isAnyDialogOpen', () => {
     // covered without being registered (#2474).
     document.body.insertAdjacentHTML('beforeend', '<dialog open id="ad-hoc"></dialog>')
     assert.equal(isAnyDialogOpen(), true)
+  })
+})
+
+describe('lazyBodyDialog', () => {
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('creates nothing until first called', () => {
+    lazyBodyDialog('lazy-dialog', 'lazy-dialog')
+    assert.equal(document.querySelector('dialog'), null)
+  })
+
+  it('appends one <dialog> with the id and class, and returns it again after', () => {
+    const getDialog = lazyBodyDialog('lazy-dialog', 'lazy-dialog-class')
+    const first = getDialog()
+    assert.equal(first.tagName, 'DIALOG')
+    assert.equal(first.parentElement, document.body)
+    assert.equal(first.id, 'lazy-dialog')
+    assert.equal(first.className, 'lazy-dialog-class')
+    assert.equal(getDialog(), first)
+    assert.equal(document.querySelectorAll('dialog').length, 1)
+  })
+
+  it('does not re-attach a dialog removed from the document', () => {
+    const getDialog = lazyBodyDialog('lazy-dialog', 'lazy-dialog')
+    const first = getDialog()
+    first.remove()
+    assert.equal(getDialog(), first)
+    assert.equal(first.isConnected, false)
   })
 })

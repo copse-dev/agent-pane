@@ -1,3 +1,4 @@
+import { lazyBodyDialog } from './dialog-shell.ts'
 import { el, clear } from '../dom/helpers.ts'
 
 export interface CreatePrChoice {
@@ -24,14 +25,7 @@ export interface CreatePrChoice {
  *
  * Resolves with the choice, or null when cancelled.
  */
-let dialogEl: HTMLDialogElement | null = null
-
-function ensureDialog(): HTMLDialogElement {
-  if (dialogEl) return dialogEl
-  dialogEl = el('dialog', { id: 'create-pr-dialog', class: 'create-pr-dialog' })
-  document.body.append(dialogEl)
-  return dialogEl
-}
+const ensureDialog = lazyBodyDialog('create-pr-dialog', 'create-pr-dialog')
 
 export function openCreatePrDialog(opts: {
   /** Prefills the title field — the thread's own title, when it has one. */

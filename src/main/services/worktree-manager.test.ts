@@ -35,6 +35,7 @@ import {
   allocateThreadWorktree,
   canAdoptThreadWorktree,
   expectedThreadWorktreePath,
+  fetchDefaultBranch,
   threadWorktreeOwner,
   inspectManagedThreadWorktreePath,
   inspectThreadWorktreeAttachment,
@@ -155,12 +156,14 @@ describe('changedPaths', () => {
 describe('worktree manager', () => {
   const cleanups: string[] = []
   let previousRoot: string | undefined
+  const previousProfile = process.env['COPSE_DIR']
 
   async function setup(): Promise<{ temp: string; repo: string }> {
     previousRoot = process.env['COPSE_WORKTREES_DIR']
     const temp = await mkdtemp(join(tmpdir(), 'copse-worktree-manager-'))
     cleanups.push(temp)
     process.env['COPSE_WORKTREES_DIR'] = join(temp, 'worktrees')
+    process.env['COPSE_DIR'] = join(temp, 'profile')
     setGitAvailableForTest(true)
     return { temp, repo: await repository(temp, 'repo') }
   }
@@ -169,6 +172,8 @@ describe('worktree manager', () => {
     if (previousRoot === undefined) delete process.env['COPSE_WORKTREES_DIR']
     else process.env['COPSE_WORKTREES_DIR'] = previousRoot
     previousRoot = undefined
+    if (previousProfile === undefined) delete process.env['COPSE_DIR']
+    else process.env['COPSE_DIR'] = previousProfile
     setGitAvailableForTest(null)
     clearAllowedWorkspaceRootsForTest()
     for (const path of cleanups.splice(0).reverse()) {
@@ -1120,6 +1125,28 @@ describe('worktree manager', () => {
     assert.equal(await readFile(join(worktree.path, 'from-remote.txt'), 'utf-8'), 'newer commit\n')
   })
 
+  it('fetches a local origin branch whose name starts with a dash as a branch, not an option', async () => {
+    const { temp, repo } = await setup()
+    const remote = join(temp, 'remote.git')
+    git(temp, ['init', '-q', '--bare', '-b', 'main', remote])
+    git(repo, ['remote', 'add', 'origin', remote])
+    git(repo, ['push', '-q', 'origin', 'main'])
+    // `git branch` refuses this name, but a full ref may start with `-`, so a
+    // remote can still hold one. The contained fallback fetch must keep it in
+    // a refspec instead of passing it where `git fetch` reads options.
+    const tip = git(remote, ['rev-parse', 'main']).trim()
+    git(remote, ['update-ref', 'refs/heads/-dash', tip])
+
+    // The fetch moves only the remote-tracking ref: a remote tag on that tip
+    // is not followed into the project.
+    git(remote, ['tag', 'remote-only', tip])
+
+    await fetchDefaultBranch(repo, '-dash')
+
+    assert.equal(git(repo, ['rev-parse', '--verify', 'refs/remotes/origin/-dash']).trim(), tip)
+    assert.equal(git(repo, ['tag', '--list', 'remote-only']).trim(), '')
+  })
+
   it('falls back to the local default branch when the best-effort fetch times out', async () => {
     const { repo } = await setup()
     // A remote that accepts the connection and never answers, as an offline or
@@ -1150,7 +1177,14 @@ describe('worktree manager', () => {
         prompt: 'Work offline',
         baseBranch: 'main',
       })
-      await started
+      await Promise.race([
+        started,
+        allocation.then(() => {
+          throw new Error(
+            'Worktree allocation finished before the fetch reached the fixture server',
+          )
+        }),
+      ])
       // The fetch is the only command in flight once the remote is contacted.
       mock.timers.tick(60_000)
       const worktree = await allocation
@@ -1309,10 +1343,13 @@ describe('worktree manager', () => {
       const picked = await commitFile(path, 'thread.txt')
       await commitFile(repo, 'main.txt')
       // A signing key that cannot load fails the pick's commit the way a
-      // sandboxed agent without the user's ssh-agent does.
+      // sandboxed agent without the user's ssh-agent does. Pinning the signer
+      // keeps a host's global gpg.ssh.program, which may ignore the key, out.
       stoppedRebase(path, [
         '-c',
         'gpg.format=ssh',
+        '-c',
+        'gpg.ssh.program=ssh-keygen',
         '-c',
         'user.signingkey=/nonexistent/copse-test-key',
         'rebase',

@@ -116,19 +116,15 @@ export async function openWorkspaceFile(
   })
 }
 
-/** Open a local workspace file using the user's global browser preference. */
+/** Keep untrusted workspace pages inside Copse's guarded browser preview. */
 export async function openWorkspaceFileInBrowser(
   store: AppStore,
   api: ApiClient,
   path: string,
 ): Promise<void> {
   const { projectId, threadId } = requireActiveThreadOwner(store)
-  if (store.getState().openLinksInBuiltInBrowser) {
-    const url = await api.browser.workspaceFileUrl(projectId, threadId, path)
-    openBrowserUrl(store, url)
-    return
-  }
-  await api.shell.openWorkspaceFileInBrowser(projectId, threadId, path)
+  const url = await api.browser.workspaceFileUrl(projectId, threadId, path)
+  openBrowserUrl(store, url)
 }
 
 /** Browser preview is local-only; SSH paths are meaningful only on the remote host. */

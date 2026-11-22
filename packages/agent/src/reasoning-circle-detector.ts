@@ -1,3 +1,4 @@
+import { collapseWhitespace } from '@copse/std/one-line-text.ts'
 import type { ReasoningSoftBudget } from './reasoning-budget.ts'
 
 /** High-confidence reasons that an in-progress reasoning stream is circling. */
@@ -59,7 +60,7 @@ const MARKDOWN_HEADING = /^\s*#{1,6}\s+(.+?)\s*$/
 const PLAIN_HEADING = /^\s*([^\n]{4,80}:)\s*$/
 
 function normalized(value: string): string {
-  return value.toLowerCase().replace(/\s+/g, ' ').trim()
+  return collapseWhitespace(value.toLowerCase())
 }
 
 function repeatedValue(values: readonly string[], repeatLimit: number): boolean {

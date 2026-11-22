@@ -1,6 +1,9 @@
 import { $, browser, expect } from '@wdio/globals'
 import {
+  removeProjectStoreOnRelaunch,
   resetUserData,
+  SCROLL_STREAMING_PROJECT_ID,
+  SCROLL_TO_BOTTOM_PROJECT_ID,
   seedScrollStreamingFixture,
   seedScrollToBottomFixture,
   seedStableWorkspace,
@@ -29,6 +32,71 @@ const STREAMING_RESPONSE = [
   'Next, update the affected module and its focused tests together so the new behavior is documented by an executable example.',
   'Finally, run the relevant checks, review the diff for unintended changes, and record any follow-up work that needs a separate decision.',
 ].join('\n\n')
+
+/** The streamed reply's middle paragraph: the last one is still to come when it lands. */
+const STREAMING_MIDDLE = 'Next, update the affected module'
+
+/** The streamed reply's final paragraph: it lands only once tokens have kept arriving. */
+const STREAMING_TAIL = 'Finally, run the relevant checks'
+
+/**
+ * Scrolled up during a streamed reply: the scroll-to-bottom control shows, the
+ * docked controls cover no transcript text, and the first question is still
+ * in view (the reply did not pull the view down).
+ */
+async function expectScrolledUpControls(): Promise<void> {
+  expect(await isScrollToBottomVisible()).toBe(true)
+  // Streamed text keeps landing below; the docked controls cover none of it.
+  expect(await navigationTextOverlaps()).toEqual([])
+  const firstQuestionVisible = await browser.execute(() => {
+    const firstUser = document.querySelector('.messages-list .msg-user')
+    if (!(firstUser instanceof HTMLElement)) return false
+    const list = document.querySelector('.messages-list')
+    if (!(list instanceof HTMLElement)) return false
+    const listRect = list.getBoundingClientRect()
+    const msgRect = firstUser.getBoundingClientRect()
+    return msgRect.top >= listRect.top - 4 && msgRect.top <= listRect.bottom
+  })
+  expect(firstQuestionVisible).toBe(true)
+}
+
+async function waitForLastAssistantText(text: string): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      const lastAssistant = await browser.execute(() => {
+        const nodes = document.querySelectorAll('.msg-assistant .message-text')
+        const last = nodes[nodes.length - 1]
+        return last?.textContent ?? ''
+      })
+      return lastAssistant.includes(text)
+    },
+    {
+      timeout: 30_000,
+      interval: 50,
+      timeoutMsg: `expected the streamed reply to include "${text}"`,
+    },
+  )
+}
+
+/** Wait until the pointer's hover applies to `selector` and no transition is still running. */
+async function waitForHoverSettled(selector: string): Promise<void> {
+  await browser.waitUntil(
+    async () =>
+      browser.execute((target) => {
+        const element = document.querySelector(target)
+        return (
+          element instanceof HTMLElement &&
+          element.matches(':hover') &&
+          element.getAnimations({ subtree: true }).length === 0
+        )
+      }, selector),
+    {
+      timeout: 5_000,
+      interval: 50,
+      timeoutMsg: `expected ${selector} to settle in its hover state`,
+    },
+  )
+}
 
 async function getScrollMetrics(): Promise<{
   scrollTop: number
@@ -74,8 +142,19 @@ async function isScrollToBottomVisible(): Promise<boolean> {
 describe('scroll to bottom', () => {
   let ownedWorkspaceRoot: string | null = null
 
+  /** A clean Git workspace this test owns, so fixtures never read the tested checkout. */
+  function seedOwnedWorkspace(): string {
+    ownedWorkspaceRoot = seedStableWorkspace()
+    return ownedWorkspaceRoot
+  }
+
   afterEach(() => {
     resetUserData()
+    // The running app still holds these thread stores open. Mark them so the
+    // launcher removes them once that app has exited, instead of leaving them
+    // to appear as recoverable threads in a later spec's fixture.
+    removeProjectStoreOnRelaunch(SCROLL_TO_BOTTOM_PROJECT_ID)
+    removeProjectStoreOnRelaunch(SCROLL_STREAMING_PROJECT_ID)
     if (ownedWorkspaceRoot !== null) {
       removeE2eTree(ownedWorkspaceRoot)
       ownedWorkspaceRoot = null
@@ -84,8 +163,7 @@ describe('scroll to bottom', () => {
 
   it('jumps to the first prompt and returns to the saved reading position without losing a draft', async () => {
     resetUserData()
-    ownedWorkspaceRoot = seedStableWorkspace()
-    seedScrollToBottomFixture(ownedWorkspaceRoot)
+    seedScrollToBottomFixture(seedOwnedWorkspace())
     await browser.reloadSession()
     await $('.messages-list .msg-user').waitForExist({ timeout: 30_000 })
     await $('.conversation-first-prompt').waitForDisplayed()
@@ -141,7 +219,7 @@ describe('scroll to bottom', () => {
 
   it('shows the scroll-to-bottom button when scrolled up', async () => {
     resetUserData()
-    seedScrollToBottomFixture(process.cwd())
+    seedScrollToBottomFixture(seedOwnedWorkspace())
     await browser.reloadSession()
 
     await $('.messages-list .msg-user').waitForExist({ timeout: 30_000 })
@@ -156,7 +234,7 @@ describe('scroll to bottom', () => {
 
   it('keeps First prompt and Back to latest clear of transcript text at narrow, default and scaled widths', async () => {
     resetUserData()
-    seedScrollToBottomFixture(process.cwd())
+    seedScrollToBottomFixture(seedOwnedWorkspace())
     await browser.reloadSession()
     await $('.messages-list .msg-user').waitForExist({ timeout: 30_000 })
 
@@ -229,7 +307,7 @@ describe('scroll to bottom', () => {
 
   it('paints the return label with readable contrast in both themes', async () => {
     resetUserData()
-    seedScrollToBottomFixture(process.cwd())
+    seedScrollToBottomFixture(seedOwnedWorkspace())
     await browser.reloadSession()
 
     await $('.messages-list .msg-user').waitForExist({ timeout: 30_000 })
@@ -273,7 +351,7 @@ describe('scroll to bottom', () => {
       await saveAppScreenshot(`scroll-to-bottom-${theme}.png`)
 
       await $('.scroll-to-bottom').moveTo()
-      await browser.pause(300)
+      await waitForHoverSettled('.scroll-to-bottom')
       const hovered = await fillContrast('.scroll-to-bottom')
       if (!hovered) throw new Error('scroll-to-bottom not found')
       expect(hovered.ratio).toBeGreaterThanOrEqual(AA_BODY_TEXT)
@@ -282,7 +360,7 @@ describe('scroll to bottom', () => {
 
   it('clicking scroll-to-bottom scrolls the view to the bottom', async () => {
     resetUserData()
-    seedScrollToBottomFixture(process.cwd())
+    seedScrollToBottomFixture(seedOwnedWorkspace())
     await browser.reloadSession()
 
     await $('.messages-list .msg-user').waitForExist({ timeout: 30_000 })
@@ -314,7 +392,7 @@ describe('scroll to bottom', () => {
 
   it('hides scroll-to-bottom while auto-scrolling during streaming', async () => {
     resetUserData()
-    seedScrollStreamingFixture(process.cwd())
+    seedScrollStreamingFixture(seedOwnedWorkspace())
     await browser.reloadSession()
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
@@ -331,23 +409,15 @@ describe('scroll to bottom', () => {
     await setComposerValue(STREAMING_PROMPT)
     await $('.submit-btn').click()
 
-    await browser.waitUntil(
-      async () => {
-        const lastAssistant = await browser.execute(() => {
-          const nodes = document.querySelectorAll('.msg-assistant .message-text')
-          const last = nodes[nodes.length - 1]
-          return last?.textContent ?? ''
-        })
-        return lastAssistant.includes('The implementation plan starts')
-      },
-      { timeout: 30_000, interval: 50 },
-    )
+    await waitForLastAssistantText('The implementation plan starts')
 
     expect(await isNearBottom()).toBe(true)
     expect(await isScrollToBottomVisible()).toBe(false)
 
-    // More tokens arrive while still pinned to the bottom.
-    await browser.pause(400)
+    // More tokens arrive while still pinned to the bottom: wait for the reply's
+    // last paragraph, then for the follow scroll to come to rest.
+    await waitForLastAssistantText(STREAMING_TAIL)
+    await waitForTranscriptScrollSettled(false)
 
     expect(await isNearBottom()).toBe(true)
     expect(await isScrollToBottomVisible()).toBe(false)
@@ -358,7 +428,7 @@ describe('scroll to bottom', () => {
 
   it('keeps the view pinned when the user scrolls up during streaming', async () => {
     resetUserData()
-    seedScrollStreamingFixture(process.cwd())
+    seedScrollStreamingFixture(seedOwnedWorkspace())
     await browser.reloadSession()
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
@@ -376,36 +446,29 @@ describe('scroll to bottom', () => {
     await setComposerValue(STREAMING_PROMPT)
     await $('.submit-btn').click()
 
-    await browser.waitUntil(
-      async () => {
-        const lastAssistant = await browser.execute(() => {
-          const nodes = document.querySelectorAll('.msg-assistant .message-text')
-          const last = nodes[nodes.length - 1]
-          return last?.textContent ?? ''
-        })
-        return lastAssistant.includes('The implementation plan starts')
-      },
-      { timeout: 30_000, interval: 50 },
-    )
+    await waitForLastAssistantText('The implementation plan starts')
 
     await scrollMessagesListToTop()
 
-    // Stay scrolled up while tokens keep arriving.
-    await browser.pause(400)
+    // Stay scrolled up while tokens keep arriving. Check the controls as soon
+    // as the middle paragraph has landed below, while the last one is still
+    // streaming, and again once the reply has come to rest.
+    await waitForLastAssistantText(STREAMING_MIDDLE)
+    await expectScrolledUpControls()
 
-    expect(await isScrollToBottomVisible()).toBe(true)
-    // Streamed text keeps landing below; the docked controls cover none of it.
-    expect(await navigationTextOverlaps()).toEqual([])
-    const firstQuestionVisible = await browser.execute(() => {
-      const firstUser = document.querySelector('.messages-list .msg-user')
-      if (!(firstUser instanceof HTMLElement)) return false
-      const list = document.querySelector('.messages-list')
-      if (!(list instanceof HTMLElement)) return false
-      const listRect = list.getBoundingClientRect()
-      const msgRect = firstUser.getBoundingClientRect()
-      return msgRect.top >= listRect.top - 4 && msgRect.top <= listRect.bottom
-    })
-    expect(firstQuestionVisible).toBe(true)
+    await waitForLastAssistantText(STREAMING_TAIL)
+    // The paced reveal keeps painting after the text lands and its settled
+    // render can change the transcript height; capture after it, not during.
+    await browser.waitUntil(
+      async () => browser.execute(() => !document.querySelector('.messages-list .is-streaming')),
+      {
+        timeout: 30_000,
+        interval: 50,
+        timeoutMsg: 'expected the streamed reply to finish revealing',
+      },
+    )
+    await waitForTranscriptScrollSettled(true)
+    await expectScrolledUpControls()
 
     await saveAppScreenshot('scroll-to-bottom-streaming-scrolled-up.png')
     await waitForAgentIdle()

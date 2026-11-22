@@ -1,5 +1,7 @@
 import { checkpointAcpTranscript, unseenAcpTranscript } from './acp-transcript-checkpoint.ts'
 import { canonicalAcpAgentId } from '@shared/acp-known-agents.ts'
+import { abortedTurnEndReason, AcpTurnEnded } from './turn-end.ts'
+import { normalizeStopReason } from '@copse/agent/headless-contract.ts'
 import { AGENT_EXECUTION_GUIDANCE } from '../agent-execution-guidance.ts'
 import * as fsp from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
@@ -110,8 +112,10 @@ import {
   awaitStagedDiffDecision,
   captureWorktreeBaseline,
   listWorktreeChangesSince,
+  listWorktreeGitContentStates,
   stageDiff,
 } from '../diff-queue.ts'
+import { auditablePaths, formatBypassedWriteAudit, type BypassedWrite } from './acp-edit-audit.ts'
 import type { WorktreeBaseline } from '../diff-queue.ts'
 import { beginWorktreeWriter } from '../worktree-writers.ts'
 import { networkDenialMarker, networkDenialsSince } from '../../project-sandbox/network-scope.ts'
@@ -129,7 +133,8 @@ import { ensureShellCommandPermitted } from '../security/permission-gate.ts'
 import { currentRunIsUnattendedContainer } from '../security/unattended-run.ts'
 import { recordDecision } from '../security/decision-log-store.ts'
 import { chatReadRootsForThread } from '../security/thread-access.ts'
-import { getActiveRunThread } from '../thread-models.ts'
+import { getActiveRunThread, setActiveRunTurnTreeId } from '../thread-models.ts'
+import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import { isStructurallyReadOnlyShellCommand } from '../security/permission-policy.ts'
 import { detectLanguage } from '../language.ts'
 import { getActiveWorkspaceFs } from '../workspace-fs/get-workspace-fs.ts'
@@ -484,7 +489,7 @@ function installAgentInitiatedTurnLease(
     projectId,
     threadId,
     bridge: {
-      setExecutionContext: (context) => {
+      setExecutionContext: (context, turnTreeId) => {
         if (!context) {
           bridge.setExecutionContext(null)
           return
@@ -492,6 +497,7 @@ function installAgentInitiatedTurnLease(
         // The bridge captures per-thread scopes from the async context at bind time.
         runWithThreadExecutionContext(context, () => {
           runWithActiveRunIdentity(threadId, () => {
+            if (turnTreeId !== undefined) setActiveRunTurnTreeId(asTurnTreeId(turnTreeId))
             bridge.setExecutionContext(context)
           })
         })
@@ -1039,7 +1045,9 @@ async function runAcpAgentTurn(
     entry.bridge?.setSkillActivationTurn(skillContext.activation)
     entry.bridge?.setAdvisorContext(options.advisorContext ?? null)
     entry.bridge?.setExecutionContext(executionContext)
-    entry.bridge?.setTurnSignal(options.bridgeTurnSignal ?? options.signal)
+    const promptEnd = new AbortController()
+    const parentSignal = options.bridgeTurnSignal ?? options.signal
+    entry.bridge?.setTurnSignal(AbortSignal.any([parentSignal, promptEnd.signal]))
     entry.bridge?.setWorkspaceWriteObserver((path) => queueWrites.add(auditKey(path)))
     entry.open.handlers.current = handlers
     // Issue #831: only attach image content blocks when the agent advertised
@@ -1067,7 +1075,9 @@ async function runAcpAgentTurn(
         bridgeToolNames: listedToolNames,
         readonlyCheckout,
         includeNotes: fresh && options.executionMode !== 'agent',
-        ...(bridgeMounted && sessionBridge ? { copseServer: sessionBridge.serverName } : {}),
+        ...(bridgeMounted && sessionBridge && options.executionMode !== 'agent'
+          ? { copseServer: sessionBridge.serverName }
+          : {}),
         ...(copseToolsNote && options.executionMode !== 'agent' ? { copseToolsNote } : {}),
         includeImages,
         ...(operatorInstructions ? { operatorInstructions } : {}),
@@ -1094,13 +1104,26 @@ async function runAcpAgentTurn(
           options.userPrompt,
         )
       }
+      promptEnd.abort(
+        new AcpTurnEnded(
+          options.signal.aborted
+            ? abortedTurnEndReason(options.signal)
+            : normalizeStopReason(outcome.stopReason.toLowerCase()) === 'end_turn'
+              ? 'completed'
+              : 'failed',
+        ),
+      )
       return outcome
     } catch (err) {
+      promptEnd.abort(
+        new AcpTurnEnded(options.signal.aborted ? abortedTurnEndReason(options.signal) : 'failed'),
+      )
       await disposeAcpSession(options.threadId, {
         preserveForResume: isAcpConnectionDropped(err),
       })
       throw err
     } finally {
+      promptEnd.abort(new AcpTurnEnded('failed'))
       entry.bridge?.setSkillActivationTurn(null)
       entry.bridge?.setAdvisorContext(null)
       entry.bridge?.setExecutionContext(null)
@@ -1714,17 +1737,25 @@ async function emitBypassedWriteAudit(
   queueWrites: ReadonlySet<string>,
   onChunk: (chunk: StreamChunk) => void,
 ): Promise<void> {
-  let bypassed: string[]
+  let bypassed: BypassedWrite[]
   try {
-    bypassed = (await listWorktreeChangesSince(baseline)).filter((p) => !queueWrites.has(p))
+    bypassed = (await listWorktreeChangesSince(baseline)).filter((c) => !queueWrites.has(c.path))
   } catch {
     return
   }
   if (bypassed.length === 0) return
+  // Whether git holds each file's content is extra detail; without it the
+  // card still names the files.
+  const auditable = auditablePaths(bypassed)
+  const states = auditable ? await listWorktreeGitContentStates(auditable).catch(() => null) : null
   const id = `acp-edit-audit-${randomUUID()}`
   onChunk({
     type: 'tool_call',
-    toolCall: { id, name: 'workspace_edit_audit', args: { files: bypassed } },
+    toolCall: {
+      id,
+      name: 'workspace_edit_audit',
+      args: { files: bypassed.map((c) => c.path) },
+    },
   })
   // Warn, don't revert: the change may be legitimate (the agent's own shell, a
   // formatter it ran) or external (another editor mid-turn) — the audit can't
@@ -1732,12 +1763,7 @@ async function emitBypassedWriteAudit(
   onChunk({
     type: 'tool_result',
     toolCallId: id,
-    result:
-      'Warning: these files changed on disk during the agent’s turn outside the approved ' +
-      "sphere — no diff was reviewed for them. The write came from the agent's own " +
-      'tools (e.g. its shell) or from something else entirely:\n' +
-      bypassed.map((p) => `- ${p}`).join('\n') +
-      '\nReview them (e.g. git diff) before relying on the workspace state.',
+    result: formatBypassedWriteAudit(bypassed, states),
     isError: false,
   })
 }
@@ -1906,6 +1932,22 @@ function acpTurnPromptNote(server: string): string {
   )
 }
 
+/**
+ * Current host identity, repeated even when a provider conversation is resumed.
+ * Its old prompts can name a retired bridge, while the pool mounts a fresh one.
+ * Announcing availability once per bridge cannot cover that transition or a
+ * prompt cancelled before delivery. This is identity, never a permission grant.
+ */
+function acpBridgeIdentityPromptNote(server: string): string {
+  return (
+    `Copse native bridge for this turn: "${server}". This current host-provided ` +
+    'identity supersedes earlier Copse bridge identities in this conversation; ' +
+    'a restarted or reattached session can receive a new name. Only this exact ' +
+    "server is Copse's bridge. Do not treat another copse-prefixed server or " +
+    'matching tool names as equivalent, or transfer approvals between servers.'
+  )
+}
+
 /** {@link acpTurnPromptNote} for an agent without Copse's bridged tools. */
 const ACP_TURN_PROMPT_NOTE_WITHOUT_COPSE_TOOLS =
   `${ACP_SESSION_PROMPT_NOTE}\n\n` + AGENT_EXECUTION_GUIDANCE
@@ -2008,6 +2050,9 @@ export function buildAcpPrompt(
      * The server name of Copse's bridge, once the agent has mounted it (#4144).
      * The session notes steer the agent to Copse's bridged tools only with this
      * and some {@link bridgeToolNames}, and name the server exactly (#4125).
+     * A compact current identity is repeated even with `includeNotes: false`,
+     * so a restored provider conversation cannot pin a retired bridge.
+     * Agent-managed turns omit this as well as the other Copse prompt assembly.
      */
     copseServer?: string
     /** Sent even without the session notes: a change in Copse's tools this session. */
@@ -2035,7 +2080,9 @@ export function buildAcpPrompt(
           ? `\n\n${copseTools ? ACP_READONLY_CHECKOUT_PROMPT_NOTE : ACP_READONLY_CHECKOUT_UNAVAILABLE_PROMPT_NOTE}`
           : '') +
         '\n\n'
-      : '') + (opts?.copseToolsNote ? `${opts.copseToolsNote}\n\n` : '')
+      : '') +
+    (opts?.copseToolsNote ? `${opts.copseToolsNote}\n\n` : '') +
+    (copseServer !== undefined ? `${acpBridgeIdentityPromptNote(copseServer)}\n\n` : '')
   const operatorBlock = opts?.operatorInstructions
     ? `\n\n---\n\n## Copse guidance\n\n${opts.operatorInstructions}`
     : ''

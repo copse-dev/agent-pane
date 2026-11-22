@@ -1,7 +1,14 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from 'node:fs'
 import { join, sep } from 'node:path'
 import { describe, it } from 'node:test'
 import * as esbuild from 'esbuild'
@@ -13,6 +20,16 @@ import {
 } from './acp-session-host-protocol.ts'
 import { parseSessionHostRequest } from './acp-session-host-worker.ts'
 import { acpSessionHostRequest } from './acp-session-host.ts'
+import { runWithActiveRunIdentity } from '../active-run-identity.ts'
+import { ensureWorkspaceTmpDir } from '../../project-sandbox/config.ts'
+import {
+  initProjectSandbox,
+  isProjectSandboxEnabled,
+  shutdownProjectSandbox,
+  spawnInProjectSandbox,
+  afterSandboxedCommand,
+} from '../../project-sandbox/index.ts'
+import { shutdownAcpChild } from './acp-client.ts'
 
 const REPO_ROOT = process.cwd()
 const TEST_OUTPUT_DIR = process.env['COPSE_TEST_OUTPUT_DIR'] ?? join(REPO_ROOT, 'dist-test')
@@ -89,7 +106,11 @@ function spawnWorker(
   workerPath: string,
   cwd: string,
   agentScript = RELAY_AGENT,
-  extra: { env?: Record<string, string>; config?: Record<string, unknown> } = {},
+  extra: {
+    env?: Record<string, string>
+    config?: Record<string, unknown>
+    request?: ReturnType<typeof acpSessionHostRequest>
+  } = {},
 ): ChildProcess {
   return spawn(process.execPath, [workerPath], {
     cwd,
@@ -97,19 +118,22 @@ function spawnWorker(
       ...process.env,
       ...extra.env,
       ELECTRON_RUN_AS_NODE: '1',
-      [ACP_SESSION_HOST_REQUEST_ENV]: JSON.stringify({
-        config: {
-          command: process.execPath,
-          args: ['-e', agentScript],
-          env: { AGENT_SETTING: 'kept' },
-          cwd,
-          sandbox: { allowedDomains: ['api.example'] },
-          ...extra.config,
+      [ACP_SESSION_HOST_REQUEST_ENV]: JSON.stringify(
+        extra.request ?? {
+          config: {
+            command: process.execPath,
+            args: ['-e', agentScript],
+            env: { AGENT_SETTING: 'kept' },
+            cwd,
+            sandbox: { allowedDomains: ['api.example'] },
+            ...extra.config,
+          },
+          allowLocalhost: true,
         },
-        allowLocalhost: true,
-      }),
+      ),
     },
     stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
+    detached: true,
   })
 }
 
@@ -164,6 +188,86 @@ function waitForStdout(child: ChildProcess, expected: string): Promise<string> {
 }
 
 describe('ACP session host worker', () => {
+  it('gives real hosted agents the same private thread scratch as native execution', async (t) => {
+    if (process.platform === 'win32') {
+      t.skip('no project OS sandbox on Windows')
+      return
+    }
+    const dir = realpathSync.native(makeBundleDir('thread-scratch-'))
+    const checkout = join(dir, 'checkout')
+    mkdirSync(checkout)
+    const store = join(dir, 'profile', 'workspace')
+    const previousStore = process.env['COPSE_WORKSPACE_DIR']
+    process.env['COPSE_WORKSPACE_DIR'] = store
+    const children: ChildProcess[] = []
+    try {
+      await initProjectSandbox()
+      if (!isProjectSandboxEnabled()) {
+        t.skip('ASRT unavailable; real session-host containment requires a capable host')
+        return
+      }
+      const worker = bundleWorker(dir)
+      const threads = ['hosted-thread-a', 'hosted-thread-b']
+      const scratch = threads.map((thread) =>
+        runWithActiveRunIdentity(thread, ensureWorkspaceTmpDir),
+      )
+      assert.notEqual(scratch[0], scratch[1])
+      for (const [index, thread] of threads.entries()) {
+        const own = scratch[index] ?? ''
+        const other = scratch[1 - index] ?? ''
+        const forbidden = join(other, 'forbidden.txt')
+        // Prove the host path exists and is writable. A sandbox can hide it
+        // instead of returning a permission errno; no forbidden file may appear.
+        writeFileSync(join(other, 'host-control.txt'), 'ready')
+        assert.equal(existsSync(forbidden), false)
+        const script = `const fs = require('node:fs'); const path = require('node:path'); fs.writeFileSync(path.join(process.env.TMPDIR, 'own.txt'), 'ok'); let denied = false; let code = 'none'; try { fs.writeFileSync(${JSON.stringify(forbidden)}, 'escape') } catch (error) { code = String(error.code); denied = ['EPERM','EACCES','EROFS','ENOENT'].includes(code) }; console.log('scratch:' + process.env.TMPDIR + ' denied:' + denied + ' code:' + code); process.stdin.resume(); process.stdin.on('end', () => process.exit(0))`
+        const request = runWithActiveRunIdentity(thread, () =>
+          acpSessionHostRequest({
+            command: process.execPath,
+            args: ['-e', script],
+            cwd: checkout,
+            env: { TMPDIR: '/unassigned/environment' },
+            sandbox: { allowedDomains: [] },
+          }),
+        )
+        const child = spawnWorker(worker, checkout, script, {
+          request,
+          env: { COPSE_DIR: join(dir, 'profile') },
+        })
+        children.push(child)
+        const output = waitForStdout(child, 'denied:')
+        await waitForReady(child)
+        const stdout = await output
+        t.diagnostic(`Cross-thread write errno: ${stdout.match(/ code:([A-Z]+)/)?.[1] ?? 'none'}`)
+        assert.ok(stdout.includes(`scratch:${own} denied:true`), stdout)
+        assert.equal(readFileSync(join(own, 'own.txt'), 'utf8'), 'ok')
+        assert.equal(existsSync(forbidden), false)
+        const native = await runWithActiveRunIdentity(thread, () =>
+          spawnInProjectSandbox('/bin/sh', ['-c', 'printf "%s" "$TMPDIR"'], {
+            cwd: checkout,
+            stdio: 'pipe',
+            requireSandbox: true,
+            executionTarget: { kind: 'local' },
+          }),
+        )
+        let nativeOutput = ''
+        native.stdout?.on('data', (chunk: Buffer) => {
+          nativeOutput += chunk.toString()
+        })
+        const exit = await once(native, 'close')
+        const code: unknown = exit[0]
+        afterSandboxedCommand()
+        assert.equal(code, 0)
+        assert.equal(nativeOutput, own)
+      }
+    } finally {
+      await Promise.all(children.map((child) => shutdownAcpChild(child)))
+      await shutdownProjectSandbox()
+      if (previousStore === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previousStore
+    }
+  })
+
   it('bundles free of electron and node-pty', () => {
     const dir = makeBundleDir('bundle-')
     const outfile = bundleWorker(dir)
@@ -261,9 +365,66 @@ describe('ACP session host worker', () => {
       child.kill('SIGTERM')
     }
   })
+
+  it('does not start an agent when initialization reports protection disabled', async () => {
+    const dir = makeBundleDir('disabled-')
+    const enabledStub = 'isSandboxingEnabled() { return config !== null }'
+    assert.ok(SANDBOX_RUNTIME_STUB.includes(enabledStub))
+    const stub = join(dir, 'sandbox-runtime-disabled.mjs')
+    writeFileSync(
+      stub,
+      SANDBOX_RUNTIME_STUB.replace(enabledStub, 'isSandboxingEnabled() { return false }'),
+    )
+    const child = spawnWorker(
+      bundleWorker(dir, stub),
+      dir,
+      "require('node:fs').writeFileSync('spawned', 'yes')",
+    )
+    const messages: AcpSessionHostMessage[] = []
+    child.on('message', (message: AcpSessionHostMessage) => messages.push(message))
+    const timeout = setTimeout(() => child.kill('SIGKILL'), 5_000)
+    try {
+      const exit = await once(child, 'exit')
+      const code: unknown = exit[0]
+      assert.equal(code, 1)
+      assert.ok(
+        messages.some(
+          (message) =>
+            message.type === 'error' &&
+            message.error.includes('Workspace protection did not start'),
+        ),
+      )
+      assert.equal(existsSync(join(dir, 'spawned')), false)
+    } finally {
+      clearTimeout(timeout)
+      child.kill('SIGKILL')
+    }
+  })
 })
 
 describe('parseSessionHostRequest', () => {
+  it('carries only the main-owned thread identity, independent of agent environment text', () => {
+    const request = runWithActiveRunIdentity('assigned-thread', () =>
+      acpSessionHostRequest({
+        command: 'agent',
+        cwd: '/workspace',
+        sandbox: { allowedDomains: [] },
+        env: { COPSE_THREAD_ID: 'unassigned-thread', TMPDIR: '/unassigned/environment' },
+      }),
+    )
+    assert.equal(parseSessionHostRequest(JSON.stringify(request))?.threadId, 'assigned-thread')
+    assert.equal(
+      parseSessionHostRequest(JSON.stringify({ config: request.config }))?.threadId,
+      undefined,
+    )
+    for (const threadId of ['', '../outside', '/outside', 3, null, 'x'.repeat(129)]) {
+      assert.equal(
+        parseSessionHostRequest(JSON.stringify({ ...request, threadId }))?.threadId,
+        undefined,
+      )
+    }
+  })
+
   it('preserves an explicit trustd grant and rejects truthy non-boolean values', () => {
     for (const value of [true, false, 'true', 1, null]) {
       const request = parseSessionHostRequest(

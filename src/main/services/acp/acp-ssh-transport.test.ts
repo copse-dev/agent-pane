@@ -367,13 +367,13 @@ describe('remote re-auth login terminal command', () => {
   })
 
   it('is the bare login command with a missing-CLI guard — never wrapped in ssh', () => {
-    const cmd = buildRemoteAcpLoginCommand('claude auth login', {
+    const cmd = buildRemoteAcpLoginCommand('claude-agent-acp --cli auth login', {
       hostId: 'dev',
       remoteRoot: REMOTE_ROOT,
     })
     assert.ok(cmd)
-    assert.ok(cmd.includes('claude auth login'))
-    assert.ok(cmd.includes('command -v claude'), 'missing-CLI hint guard precedes the login')
+    assert.ok(cmd.includes('claude-agent-acp --cli auth login'))
+    assert.ok(cmd.includes('command -v claude-agent-acp'), 'missing adapter hint precedes login')
     // Regression pin: on an SSH workspace the Shells tab is already a pty on
     // the host. Wrapping this in `ssh -tt …` ran ssh ON the host, nested, with
     // this machine's identity-file and ControlMaster-socket paths — which do
@@ -385,9 +385,41 @@ describe('remote re-auth login terminal command', () => {
 
   it('returns null when the host is no longer configured', () => {
     assert.equal(
-      buildRemoteAcpLoginCommand('claude auth login', { hostId: 'ghost', remoteRoot: REMOTE_ROOT }),
+      buildRemoteAcpLoginCommand('claude-agent-acp --cli auth login', {
+        hostId: 'ghost',
+        remoteRoot: REMOTE_ROOT,
+      }),
       null,
     )
+  })
+
+  it('uses the discovered remote Node PATH to run bundled Claude login', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'acp-remote-login-'))
+    try {
+      const bin = join(home, 'node-bin')
+      mkdirSync(bin)
+      writeFileSync(join(bin, 'claude-agent-acp'), '#!/bin/sh\nprintf "BUNDLED-LOGIN %s\\n" "$*"\n')
+      chmodSync(join(bin, 'claude-agent-acp'), 0o755)
+      await resolveCachedRemoteAgentPath(
+        'dev',
+        '/bin/bash',
+        'claude-agent-acp',
+        async () => `${bin}:/usr/bin:/bin`,
+      )
+      const script = buildRemoteAcpLoginCommand('claude-agent-acp --cli auth login', {
+        hostId: 'dev',
+        remoteRoot: REMOTE_ROOT,
+      })
+      assert.ok(script)
+      const output = execFileSync('bash', ['-c', script], {
+        env: { HOME: home, PATH: '/usr/bin:/bin' },
+        encoding: 'utf8',
+      })
+      assert.equal(output.trim(), 'BUNDLED-LOGIN --cli auth login')
+    } finally {
+      clearRemoteAgentPathCacheForTests()
+      rmSync(home, { recursive: true, force: true })
+    }
   })
 
   it('the remote script runs the login command (executed, not string-matched)', () => {
@@ -423,7 +455,7 @@ describe('remote re-auth login terminal command', () => {
           stdout = err.stdout
         }
       }
-      assert.ok(stdout.includes('definitely-missing-xyz-cmd is not installed on this host'))
+      assert.ok(stdout.includes('definitely-missing-xyz-cmd is not on this host'))
     } finally {
       rmSync(home, { recursive: true, force: true })
     }
@@ -594,16 +626,22 @@ describe('approved env forwarding (stdin preamble)', () => {
 })
 
 describe('remote agent probe', () => {
+  // `--norc` keeps the host's startup files out of the PATH these tests assert
+  // on. Node hands a child a socketpair for stdin, and bash takes a socket on
+  // stdin to mean sshd started it, so a plain `bash -c` reads the system and
+  // user bashrc. That is what the real probe wants over SSH, but here it lets a
+  // developer's or runner's bashrc prepend directories to `$PATH`.
   it('reports FOUND with the shell PATH when the agent is on PATH', () => {
     const dir = mkdtempSync(join(tmpdir(), 'acp-probe-'))
     try {
       const bin = join(dir, 'claude-code-acp')
       writeFileSync(bin, '#!/bin/sh\nexit 0\n')
       chmodSync(bin, 0o755)
-      const stdout = execFileSync('bash', ['-c', remoteAgentProbeScript('claude-code-acp')], {
-        env: { PATH: `${dir}:/usr/bin:/bin` },
-        encoding: 'utf8',
-      })
+      const stdout = execFileSync(
+        'bash',
+        ['--norc', '-c', remoteAgentProbeScript('claude-code-acp')],
+        { env: { PATH: `${dir}:/usr/bin:/bin` }, encoding: 'utf8' },
+      )
       const parsed = parseRemoteAgentProbe(stdout)
       assert.ok(parsed?.found, 'agent on PATH must parse as found')
       assert.ok(parsed.path?.includes(dir), 'the probe must capture the PATH that resolved it')
@@ -615,7 +653,7 @@ describe('remote agent probe', () => {
   it('reports MISSING when the agent is absent, even with rc noise on stdout', () => {
     const noisy = `Welcome to devbox!\n${execFileSync(
       'bash',
-      ['-c', remoteAgentProbeScript('definitely-not-installed-agent')],
+      ['--norc', '-c', remoteAgentProbeScript('definitely-not-installed-agent')],
       { env: { PATH: '/usr/bin:/bin' }, encoding: 'utf8' },
     )}trailing motd line`
     const parsed = parseRemoteAgentProbe(noisy)

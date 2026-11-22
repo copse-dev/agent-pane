@@ -730,6 +730,15 @@ const api: ApiClient = {
     },
   },
   sshPrompt: {
+    onDismissed: (handler: (id: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, id: unknown): void => {
+        if (typeof id === 'string') handler(id)
+      }
+      ipcRenderer.on('ssh-prompt:dismissed', listener)
+      return (): void => {
+        ipcRenderer.off('ssh-prompt:dismissed', listener)
+      }
+    },
     respond: (id: string, value: string, remember = false) =>
       ipcRenderer.invoke('ssh-prompt:respond', id, value, remember),
     onRequest: (
@@ -939,6 +948,7 @@ const api: ApiClient = {
     ) => ipcRenderer.invoke('plans:change', projectId, threadId, change),
   },
   threads: {
+    actionState: () => ipcRenderer.invoke('threads:action-state'),
     archiveState: (projectId: string, view: 'review' | 'archived') =>
       ipcRenderer.invoke('threads:archive-state', projectId, view),
     archiveDecision: (
@@ -1376,9 +1386,6 @@ const api: ApiClient = {
     getThreadClassifierUse: (projectId, threadId) =>
       ipcRenderer.invoke('usage:get-thread-classifier-use', projectId, threadId),
     getPlanUsage: (force?: boolean) => ipcRenderer.invoke('usage:get-plan-usage', force),
-    getPlanWorthIt: () => ipcRenderer.invoke('usage:get-plan-worth-it'),
-    setClaudePlanMonthlyFee: (fee: number | null) =>
-      ipcRenderer.invoke('usage:set-claude-plan-monthly-fee', fee),
   },
   decisions: {
     list: (projectId?: string) => ipcRenderer.invoke('decisions:list', projectId),
@@ -1910,8 +1917,6 @@ const api: ApiClient = {
   },
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url),
-    openWorkspaceFileInBrowser: (projectId: string, threadId: string, path: string) =>
-      ipcRenderer.invoke('shell:open-workspace-file-in-browser', projectId, threadId, path),
   },
   editors: {
     list: () => ipcRenderer.invoke('editors:list'),

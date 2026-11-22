@@ -7,6 +7,8 @@ import assert from 'node:assert/strict'
 import {
   clearSshCredentialCache,
   forgetSshCredentials,
+  hasSessionSshCredentials,
+  invalidateSessionSshCredentialNonce,
   releaseSshCredentialNonce,
   resolveSshSecret,
 } from './ssh-credential-cache.ts'
@@ -51,6 +53,53 @@ describe('resolveSshSecret', () => {
     assert.equal(await resolveSshSecret('nonce-c', PROMPT, ask), 'hunter2')
 
     assert.equal(calls(), 1)
+  })
+
+  it('cache-only misses and opt-outs never prompt', async () => {
+    const { ask, calls } = asker(['once'], false)
+    assert.equal(hasSessionSshCredentials(), false)
+    assert.equal(
+      await resolveSshSecret('background-miss', PROMPT, ask, undefined, 'cache-only'),
+      '',
+    )
+    assert.equal(calls(), 0)
+    assert.equal(await resolveSshSecret('foreground', PROMPT, ask), 'once')
+    assert.equal(
+      await resolveSshSecret('background-after-opt-out', PROMPT, ask, undefined, 'cache-only'),
+      '',
+    )
+    assert.equal(calls(), 1)
+    assert.equal(hasSessionSshCredentials(), false, 'an unremembered answer is not reusable')
+  })
+
+  it('cache-only work does not join or invalidate a pending interactive prompt', async () => {
+    let complete: (answer: { value: string; remember: boolean }) => void = () => {}
+    const pendingAnswer = resolveSshSecret(
+      'foreground-pending',
+      PROMPT,
+      () =>
+        new Promise((resolve) => {
+          complete = resolve
+        }),
+    )
+    const mustNotAsk = (): Promise<{ value: string; remember: boolean }> => {
+      assert.fail('background must never open UI')
+    }
+    try {
+      assert.equal(hasSessionSshCredentials(), false, 'a pending dialog is not a cached answer')
+      assert.equal(
+        await resolveSshSecret('background-pending', PROMPT, mustNotAsk, undefined, 'cache-only'),
+        '',
+      )
+    } finally {
+      complete({ value: 'remembered-after-dialog', remember: true })
+    }
+    assert.equal(await pendingAnswer, 'remembered-after-dialog')
+    assert.equal(hasSessionSshCredentials(), true)
+    assert.equal(
+      await resolveSshSecret('background-pending', PROMPT, mustNotAsk, undefined, 'cache-only'),
+      'remembered-after-dialog',
+    )
   })
 
   it('raises a single dialog for concurrent asks racing the control master', async () => {
@@ -125,6 +174,7 @@ describe('resolveSshSecret', () => {
     const { ask, calls } = asker(['', 'later'])
 
     assert.equal(await resolveSshSecret('nonce-a', PROMPT, ask), '')
+    assert.equal(hasSessionSshCredentials(), false)
     releaseSshCredentialNonce('nonce-a')
     assert.equal(await resolveSshSecret('nonce-b', PROMPT, ask), 'later')
 
@@ -135,6 +185,7 @@ describe('resolveSshSecret', () => {
     const { ask, calls } = asker(['hunter2'])
     await resolveSshSecret('nonce-a', PROMPT, ask)
     clearSshCredentialCache()
+    assert.equal(hasSessionSshCredentials(), false)
     await resolveSshSecret('nonce-b', PROMPT, ask)
     assert.equal(calls(), 2)
   })
@@ -154,9 +205,89 @@ describe('resolveSshSecret', () => {
     const { ask, calls } = asker(['hunter2'])
 
     assert.equal(await resolveSshSecret('nonce-a', PROMPT, ask, hostId), 'hunter2')
+    assert.equal(
+      hasSessionSshCredentials(),
+      false,
+      'a configured host is not the Git session scope',
+    )
     clearSshCredentialCache()
     assert.equal(await resolveSshSecret('nonce-b', PROMPT, ask, hostId), 'hunter2')
     assert.equal(calls(), 1)
+    clearSshCredentialCache()
+    assert.equal(
+      await resolveSshSecret('background-stored', PROMPT, ask, hostId, 'cache-only'),
+      'hunter2',
+    )
+    assert.equal(
+      await resolveSshSecret('background-other-host', PROMPT, ask, 'other-host', 'cache-only'),
+      '',
+    )
+    assert.equal(calls(), 1, 'cache-only persisted reads retain host scope and never prompt')
+    assert.equal(hasSessionSshCredentials(), false, 'persisted host reads do not warm Git auth')
+  })
+
+  it('observes remembered session answers without consuming or rejecting them', async () => {
+    const { ask, calls } = asker(['remembered'])
+    await resolveSshSecret('foreground', PROMPT, ask)
+    assert.equal(hasSessionSshCredentials(), true)
+    assert.equal(hasSessionSshCredentials(), true)
+    assert.equal(
+      await resolveSshSecret('background', PROMPT, ask, undefined, 'cache-only'),
+      'remembered',
+    )
+    assert.equal(calls(), 1)
+  })
+
+  it('retires only the session answers actually served to a failed nonce', async () => {
+    const { ask, calls } = asker(['remembered'])
+    const other = "Password for 'https://other.example':"
+    const hostId = 'persistent-cache-test'
+    await resolveSshSecret('seed', PROMPT, ask)
+    await resolveSshSecret('other-seed', other, ask)
+    await resolveSshSecret('host-seed', PROMPT, ask, hostId)
+    await resolveSshSecret('failed', PROMPT, ask, undefined, 'cache-only')
+    await resolveSshSecret('failed', PROMPT, ask, hostId, 'cache-only')
+    invalidateSessionSshCredentialNonce('never-served')
+    assert.equal(
+      await resolveSshSecret('unserved-control', PROMPT, ask, undefined, 'cache-only'),
+      'remembered',
+    )
+
+    invalidateSessionSshCredentialNonce('failed')
+    assert.equal(await resolveSshSecret('after-failure', PROMPT, ask, undefined, 'cache-only'), '')
+    assert.equal(
+      await resolveSshSecret('other-control', other, ask, undefined, 'cache-only'),
+      'remembered',
+    )
+    assert.equal(
+      await resolveSshSecret('host-control', PROMPT, ask, hostId, 'cache-only'),
+      'remembered',
+    )
+    assert.equal(calls(), 3, 'retirement never requests a replacement answer')
+  })
+
+  it('does not retire a newer pending or remembered answer when an old nonce fails', async () => {
+    const { ask } = asker(['old'])
+    await resolveSshSecret('foreground', PROMPT, ask)
+    await resolveSshSecret('old-background', PROMPT, ask, undefined, 'cache-only')
+    let complete: (answer: { value: string; remember: boolean }) => void = () => {}
+    const replacement = resolveSshSecret(
+      'foreground',
+      PROMPT,
+      () =>
+        new Promise((resolve) => {
+          complete = resolve
+        }),
+    )
+    invalidateSessionSshCredentialNonce('old-background')
+    complete({ value: 'new', remember: true })
+    assert.equal(await replacement, 'new')
+    invalidateSessionSshCredentialNonce('old-background')
+    assert.equal(
+      await resolveSshSecret('new-background', PROMPT, ask, undefined, 'cache-only'),
+      'new',
+    )
+    assert.equal(hasSessionSshCredentials(), true)
   })
 
   it('deletes rejected persisted authentication before asking again', async () => {
