@@ -86,7 +86,9 @@ describe('CodeCellContainer with the real guest', () => {
         ),
       )
       assert.equal(
-        valueOf(await container.runCell(cell("return [state.count, seen, typeof local].join(',')"))),
+        valueOf(
+          await container.runCell(cell("return [state.count, seen, typeof local].join(',')")),
+        ),
         '1,yes,undefined',
       )
     } finally {
@@ -146,7 +148,10 @@ describe('CodeCellContainer with the real guest', () => {
         ),
       )
       await new Promise((resolve) => setTimeout(resolve, 200))
-      assert.match(valueOf(await container.runCell(cell('return state.late'))), /No cell is running/)
+      assert.match(
+        valueOf(await container.runCell(cell('return state.late'))),
+        /No cell is running/,
+      )
       assert.equal(handled, 0)
     } finally {
       await container.stop()
