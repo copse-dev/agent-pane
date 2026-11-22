@@ -129,6 +129,16 @@ async function startDemoServer(): Promise<void> {
                   detail: 'Latest completed output',
                   lastSavedAt: Date.now() - 480_000,
                 },
+                ...[45, 60, 120].map((days, index) => ({
+                  projectId: 'proj-1',
+                  projectName: 'Copse',
+                  threadId: `thread-old-${String(index)}`,
+                  title: `Archived experiment ${String(index + 1)}`,
+                  group: 'recent',
+                  state: 'finished',
+                  detail: 'Latest completed output',
+                  lastSavedAt: Date.now() - days * 86_400_000,
+                })),
               ],
             }
           : {

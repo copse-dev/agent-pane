@@ -26,6 +26,8 @@ let sending = false
 let decisionSignature = ''
 let messageSignature = ''
 let projectSignature = ''
+const OLDER_THAN_MS = 30 * 24 * 60 * 60 * 1000
+const openOlderGroups = new Set()
 const drafts = new Map()
 const pendingActions = new Map()
 const composer = document.getElementById('composer')
@@ -97,21 +99,43 @@ function renderGroup(label, key, rows) {
             : 'Completed threads will appear here.',
       ),
     )
-  for (const row of rows) {
-    const button = element('button', 'row')
-    button.type = 'button'
-    const top = element('span', 'row-top')
-    const state = element('span', `state ${row.state}`, row.state.replaceAll('-', ' '))
-    top.append(state, element('span', 'time', age(row.lastSavedAt)))
-    button.append(
-      top,
-      element('span', 'row-title', row.title),
-      element('span', 'row-detail', `${row.detail} · ${row.projectName}`),
+  // A decision is never tucked away, however old the thread is.
+  const cutoff = Date.now() - OLDER_THAN_MS
+  const older = key === 'needs-you' ? [] : rows.filter((row) => row.lastSavedAt < cutoff)
+  section.append(...rows.filter((row) => !older.includes(row)).map(renderRow))
+  if (older.length > 0) {
+    const fold = element('details', 'older')
+    fold.dataset.group = key
+    // The list is rebuilt on every poll; keep the reader's choice across rebuilds.
+    fold.open = openOlderGroups.has(key)
+    const summary = element('summary', 'older-summary')
+    summary.append(
+      element('span', '', 'Older than 30 days'),
+      element('span', 'group-count', String(older.length)),
     )
-    button.addEventListener('click', () => openThread(row))
-    section.append(button)
+    fold.append(summary, ...older.map(renderRow))
+    fold.addEventListener('toggle', () => {
+      if (fold.open) openOlderGroups.add(key)
+      else openOlderGroups.delete(key)
+    })
+    section.append(fold)
   }
   return section
+}
+
+function renderRow(row) {
+  const button = element('button', 'row')
+  button.type = 'button'
+  const top = element('span', 'row-top')
+  const state = element('span', `state ${row.state}`, row.state.replaceAll('-', ' '))
+  top.append(state, element('span', 'time', age(row.lastSavedAt)))
+  button.append(
+    top,
+    element('span', 'row-title', row.title),
+    element('span', 'row-detail', `${row.detail} · ${row.projectName}`),
+  )
+  button.addEventListener('click', () => openThread(row))
+  return button
 }
 
 async function refresh() {

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { $, browser, expect } from '@wdio/globals'
+import { $, $$, browser, expect } from '@wdio/globals'
 import { join } from 'node:path'
 import { E2E_SCREENSHOT_DIR } from '../e2e/helpers/screenshot.ts'
 
@@ -102,7 +102,33 @@ describe('Mobile Companion at phone width', () => {
       await expect($('#groups')).toHaveText(expect.stringContaining('RECENT'))
       await expect($('.state.needs-approval')).toHaveText('needs approval')
       await expect($('.state.finished')).toHaveText('finished')
+      // Threads idle for over 30 days fold away so the sections stay a short scroll apart.
+      const fold = $('.group .older[data-group="recent"]')
+      await expect(fold).not.toHaveAttribute('open')
+      await expect(fold.$('summary')).toHaveText(expect.stringContaining('Older than 30 days'))
+      await expect(fold.$('summary .group-count')).toHaveText('3')
+      expect(await fold.$$('.row').filter((row) => row.isDisplayed())).toHaveLength(0)
+      expect(await $$('.group .row').filter((row) => row.isDisplayed())).toHaveLength(3)
       await screenshot(`mobile-companion-activity-${theme}.png`)
+
+      await fold.$('summary').click()
+      await expect(fold).toHaveAttribute('open')
+      // Polling rebuilds the list; an expanded fold must stay expanded.
+      await browser.execute(() => {
+        document.querySelector('.older')?.setAttribute('data-stale', '')
+      })
+      await browser.waitUntil(
+        () => browser.execute(() => !document.querySelector('.older[data-stale]')),
+        { timeout: 8000, timeoutMsg: 'Activity did not refresh' },
+      )
+      await expect($('.group .older[data-group="recent"]')).toHaveAttribute('open')
+      expect(
+        await $$('.older .row').filter((row) => row.isDisplayed()),
+      ).toHaveLength(3)
+      await $('.group .older summary').scrollIntoView({ block: 'start' })
+      await screenshot(`mobile-companion-activity-older-${theme}.png`)
+      await $('.group .older summary').click()
+      await browser.execute(() => window.scrollTo(0, 0))
 
       await $('.group .row').click()
       await expect($('#thread-title')).toHaveText('Review the release')
