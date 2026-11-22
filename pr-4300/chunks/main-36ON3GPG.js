@@ -4484,6 +4484,16 @@ function mountApprovalDialog(api2, store2, options = {}) {
   );
   const chatPane = document.getElementById("pane-chat") ?? document.body;
   chatPane.append(chatScrim, dialog);
+  const settingsPending = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary approval-settings-pending", hidden: "" },
+    "Review approval"
+  );
+  const settingsDialog = document.getElementById("settings-dialog");
+  settingsDialog?.querySelector(".settings-header")?.insertBefore(settingsPending, settingsDialog.querySelector("#settings-close"));
+  settingsPending.addEventListener("click", () => {
+    closeSettingsDialog();
+  });
   const rememberInput = qsRequired(rememberLabel, ".approval-remember-input");
   const turnTreeLeaseInput = qsRequired(
     turnTreeLeaseLabel,
@@ -4534,8 +4544,15 @@ function mountApprovalDialog(api2, store2, options = {}) {
   function syncAttention() {
     const activeThreadId = store2.getState().activeThreadId;
     const hidden = isWindowHidden();
-    const waiting = queue.map((req) => req.threadId ? attentionThreadId(store2, req.threadId) : void 0).filter((id) => !!id && (hidden || id !== activeThreadId));
+    const waiting = queue.map((req) => req.threadId ? attentionThreadId(store2, req.threadId) : void 0).filter(
+      (id) => !!id && (hidden || isSettingsDialogOpen() || id !== activeThreadId)
+    );
     setAttentionThreads(store2, "approval", waiting);
+    const hiddenBySettings = queue.filter(
+      (req) => !req.showWhileSettingsOpen && (!req.threadId || attentionThreadId(store2, req.threadId) === activeThreadId || activeThreadId !== null && proposingThreadId(store2, req.threadId) === activeThreadId)
+    ).length;
+    settingsPending.hidden = !isSettingsDialogOpen() || hiddenBySettings === 0;
+    settingsPending.textContent = hiddenBySettings === 1 ? "Review approval" : `Review ${String(hiddenBySettings)} approvals`;
     for (const listener of [...changeListeners]) listener();
   }
   function drainShowableIntoBatch() {
@@ -4665,6 +4682,10 @@ function mountApprovalDialog(api2, store2, options = {}) {
     const showOnce = onceLabel !== "" && (!collapseDetails || detailsExpanded);
     approveOnceButton.hidden = !showOnce;
     if (showOnce) approveOnceButton.textContent = onceLabel;
+    approveOnceButton.classList.toggle("ui-btn-primary", showOnce);
+    approveOnceButton.classList.toggle("ui-btn-secondary", !showOnce);
+    approveButton.classList.toggle("ui-btn-primary", !showOnce);
+    approveButton.classList.toggle("ui-btn-secondary", showOnce);
     const grant = onceLabel !== "" ? null : rememberGrant();
     rememberLabel.hidden = grant === null;
     if (grant === null) rememberInput.checked = false;
@@ -4892,6 +4913,10 @@ function mountApprovalDialog(api2, store2, options = {}) {
       withdrawUnshowable();
       syncAttention();
     } else show2();
+  });
+  settingsDialog?.addEventListener("settings-open", () => {
+    withdrawUnshowable();
+    syncAttention();
   });
   onSettingsDialogClose(() => {
     show2();
