@@ -3,7 +3,9 @@ import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import type { StreamChunk } from '@shared/types'
+import { setProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
 import { runAcpSessionPrompt, spawnAcpAgentProcess, type AcpClientHandlers } from './acp-client.ts'
 import { acquireAcpSession, disposeAllAcpSessions } from './acp-session-pool.ts'
 
@@ -147,5 +149,41 @@ describe('a read-only checkout', () => {
       }),
       /read-only checkout cannot run a coding agent outside the project sandbox/,
     )
+  })
+})
+
+describe('a sandboxed agent spawn', { skip: process.platform === 'win32' }, () => {
+  it('starts the sandbox wrapper with only absolute PATH entries', async (t) => {
+    t.mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+    // Stands in for ASRT: the wrapper prints the PATH it was spawned with.
+    t.mock.method(SandboxManager, 'wrapWithSandboxArgv', () =>
+      Promise.resolve({ argv: ['bash', '-c', 'printf %s "$PATH"'], env: { ...process.env } }),
+    )
+    const cwd = await mkdtemp(join(tmpdir(), 'copse-acp-wrapper-path-'))
+    setProjectSandboxEnabled(true)
+    try {
+      const child = await spawnAcpAgentProcess({
+        command: process.execPath,
+        args: [MOCK_AGENT],
+        cwd,
+        sandbox: { allowedDomains: [] },
+        env: { PATH: 'bin::/opt/tools/bin:.:/usr/bin:./x:/bin:' },
+      })
+      child.stdin?.end()
+      let output = ''
+      child.stdout?.setEncoding('utf8')
+      child.stdout?.on('data', (chunk: string) => {
+        output += chunk
+      })
+      const code = await new Promise<number | null>((resolveCode, reject) => {
+        child.once('error', reject)
+        child.once('close', resolveCode)
+      })
+      assert.equal(code, 0)
+      assert.equal(output, '/opt/tools/bin:/usr/bin:/bin')
+    } finally {
+      setProjectSandboxEnabled(false)
+      await rm(cwd, { recursive: true, force: true })
+    }
   })
 })

@@ -1,13 +1,15 @@
 # Execution runtime security
 
-**Status: Proposed (partly overtaken).** This is the implementation plan for making Copse's local,
-SSH, and future provisioned-cloud execution paths share one explicit security and
-lifecycle model. The container-runtime slices of R0/R2 shipped through
+**Status: Partially implemented.** This is the implementation plan for making Copse's
+local, SSH, and future provisioned-cloud execution paths share one explicit security
+and lifecycle model. The container-runtime slices of R0/R2 shipped through
 [`thread-in-container.md`](thread-in-container.md) (per-origin broker and secret-canary tests;
 [#3105](https://github.com/copse-dev/agent-pane/pull/3105) keeps container credentials out of the
 process environment), and the Linux sandbox landed in
-[#1440](https://github.com/copse-dev/agent-pane/pull/1440). The shared `ExecutionRuntime` adapter,
-principals and audit (R1), the local/SSH GitHub broker (R2) and R3–R6 are not implemented.
+[#1440](https://github.com/copse-dev/agent-pane/pull/1440). R1 (the shared `ExecutionRuntime`
+adapter, execution principals and the process audit trail) and R2 (brokered GitHub credentials
+for local execution) are in progress; their acceptance criteria and current state are under
+[R1 and R2 acceptance criteria](#r1-and-r2-acceptance-criteria). R3–R6 have not started.
 
 ## Why this plan exists
 
@@ -271,6 +273,91 @@ answer which principal and runtime executed every recorded process.
 
 Exit gate: a secret canary is absent from the workload, approved GitHub work succeeds,
 and the same process cannot reach an unapproved origin or reuse another thread's grant.
+
+### R1 and R2 acceptance criteria
+
+Recorded before the R1/R2 implementation started (2026-10-30). Each criterion is
+observable from a test or a recorded thread spine. Unchecked items are open.
+
+**R1 — runtime contract, principals and audit**
+
+- [x] **R1-1 Contract types.** `ExecutionRuntimeCapabilities`, `ExecutionPrincipal` and
+      `ExecutionGrant` exist in one pure module (`@copse/thread-store/execution-runtime.ts`)
+      with runtime validators. Capabilities report the six properties separately. No
+      `sandboxed: boolean` stands in for them.
+- [x] **R1-2 Honest capability derivation.** A pure function derives capabilities from
+      the execution target and containment. Local contained → `workspace` / `os-sandbox` /
+      `global-allowlist`. Local outside the sandbox, or with no sandbox → `host` / `none` /
+      `unrestricted`. SSH → `remote-account` / `none` / `unrestricted`, whatever this
+      machine's sandbox state. A table test pins every row.
+- [x] **R1-3 Adapters without behavior change.** `spawnInProjectSandbox`,
+      `spawnShellInProjectSandbox` and `spawnBackgroundProcess` dispatch through an
+      `ExecutionRuntime` adapter chosen from `ExecutionTarget` (one local, one SSH). The
+      existing spawn, SSH-spawn and permission tests pass unchanged. Interactive PTYs keep
+      their current path; they are user terminals, not agent executions.
+- [x] **R1-4 Conformance suite.** One suite runs both adapters through the same cases:
+      stdout and exit code propagate, the working directory and env overlay are honored,
+      capabilities match R1-2, `stop()` is idempotent, and every exec emits one start and
+      one exit observation.
+- [x] **R1-5 Principals.** An interactive turn resolves to the local human principal.
+      An automation thread whose claim the main-owned schedule state corroborates
+      resolves to an automation principal bound to that project, schedule and run. A claim
+      that is not corroborated never yields an automation principal.
+      **Known gap (does not yet meet binding decision 11):** two kinds of unattended work
+      are still recorded as `human:local`. The first is a run whose claim is no longer
+      corroborated because its schedule fired again while it was still running. The second
+      is a headless container run, which passes no automation claim at all. R1 authorizes
+      nothing by principal, so only the audit answer is wrong. The proposed follow-up is
+      a distinct `unverified-automation` kind, plus an automation claim passed into
+      headless runs (#4376).
+- [x] **R1-6 Principal on every decision.** Every decision recorded inside a turn carries
+      `principalId` and `principalKind`, so every approval and grant is bound to one
+      principal. Lines written before this change still parse.
+- [x] **R1-7 Process and runtime audit.** Every in-turn agent command an adapter starts
+      (shell, background, hook) appends a
+      `process-run` start line and a `process-exit` line (exit code or signal) to the thread
+      spine. Both carry the runtime and principal, and neither includes arguments. The
+      first use of a runtime profile in a thread appends a `runtime-state` line with its
+      capability snapshot. **Not yet recorded:** processes started through
+      `spawnInProjectSandbox`. These include the plugin tool worker, Apple development
+      commands and app runs, which an agent's tool call can start. Recording them as agent
+      actions is a follow-up (#4376).
+- [x] **R1-8 Export answers the exit gate.** A test seeds a thread, runs local and SSH
+      processes, exports the decision log and finds the principal and runtime for every
+      recorded process.
+- [ ] **R1-9 Approval prompt shows the runtime.** The approval prompt names the runtime
+      and the properties the grant changes. **Not in the first R1 PR:** this is a visible
+      change and needs its own WebdriverIO spec and screenshot.
+
+**R2 — brokered GitHub credentials for local execution**
+
+- [ ] **R2-1 Per-execution broker.** A host-side broker issues one grant per execution.
+      Each grant has its own unix socket and capability. The grant names the principal,
+      project, thread, origin (`api.github.com`), methods, opaque credential reference and
+      expiry.
+- [ ] **R2-2 Policy.** The broker refuses another `Host`, a method the grant does not
+      name, a GraphQL mutation in a read-only grant, an expired or revoked grant, and
+      another execution's capability. It never follows a redirect, so the credential is
+      never sent to a redirect target. Each case has a test.
+- [ ] **R2-3 Canary absent.** A brokered child's environment contains no `GH_TOKEN`,
+      `GITHUB_TOKEN`, `GH_ENTERPRISE_TOKEN` or `GITHUB_ENTERPRISE_TOKEN`, and no gh config
+      directory that holds the real login. A test with a canary token proves this.
+- [ ] **R2-4 Approved work succeeds.** A real `gh api` call from a brokered child reaches
+      the upstream through the broker, with the real token attached there (stub upstream
+      in tests).
+- [ ] **R2-5 Audit.** Each grant appends an `execution-grant` line. Each brokered request
+      appends a `credential-use` line with destination, method, status and byte counts,
+      plus the opaque credential reference, never the token. Each refusal appends a
+      `network-access` line with verdict `blocked`.
+- [ ] **R2-6 Opt-in rollout.** Local brokering sits behind an experimental setting that is
+      off by default. A contained command gets a read-only grant, matching `gh_api_read`.
+      A command approved to run outside the sandbox gets every method. Capabilities report
+      `brokeredCredentials: ['github']` for brokered executions.
+- [ ] **R2-7 Known limits stated.** The broker cannot contain a process outside the sandbox:
+      it can still reach other origins directly and read `~/.config/gh`. Linux bubblewrap
+      blocks AF_UNIX sockets, so contained Linux commands are not brokered yet. SSH
+      execution and `git` HTTPS transport are not brokered. The plan and
+      `shell-permissions.md` both say so.
 
 ### R3 — enforceable local profiles on every supported platform
 

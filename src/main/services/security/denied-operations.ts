@@ -1,3 +1,4 @@
+import { collapseWhitespace } from '@copse/std/one-line-text.ts'
 /**
  * Per-thread record of sandbox operations confirmed denied this run (issue
  * #1436 point 2). Keyed by an operation descriptor (`git fetch`, `read
@@ -85,7 +86,7 @@ export function formatCachedDenialCommandForDisplay(
   command: string,
   maxChars: number = CACHED_DENIAL_COMMAND_DISPLAY_MAX,
 ): string {
-  const singleLine = command.replace(/\s+/g, ' ').trim()
+  const singleLine = collapseWhitespace(command)
   if (singleLine.length <= maxChars) return singleLine
   const remaining = singleLine.length - maxChars
   return `${singleLine.slice(0, maxChars)}… (+${String(remaining)} more characters)`

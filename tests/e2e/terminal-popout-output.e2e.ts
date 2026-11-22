@@ -142,10 +142,18 @@ describe('terminal pop-out output (#1705)', function () {
     await helper.click()
     await browser.keys(['echo', ' ', 'popout-only', '\uE007'])
 
-    await browser.waitUntil(async () => (await xtermText()).includes('popout-only'), {
-      timeout: 20_000,
-      timeoutMsg: 'expected echo output in the popped-out terminal, not only in the main window',
-    })
+    await browser.waitUntil(
+      async () =>
+        browser.execute(() =>
+          [...document.querySelectorAll('.xterm-rows > div')].some(
+            (row) => row.textContent.trim() === 'popout-only',
+          ),
+        ),
+      {
+        timeout: 20_000,
+        timeoutMsg: 'expected an echo result row in the popped-out terminal',
+      },
+    )
 
     await saveAppScreenshot('terminal-popout-output.png')
   })

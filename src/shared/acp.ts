@@ -272,7 +272,7 @@ const ACP_CATALOG: readonly KnownAcpAgent[] = [...KNOWN_ACP_AGENTS, ...RETIRED_A
 
 /**
  * Adapters whose parent client is Claude. A configured agent that spawns one of
- * these drives Claude through the user's *own* `claude` login (or ANTHROPIC_API_KEY)
+ * these drives Claude through the user's Claude account login (or ANTHROPIC_API_KEY)
  * over ACP, rather than the API-billed Claude Cloud (managed) agent.
  */
 const CLAUDE_ADAPTERS = adapterSignature(

@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path'
 import { createServer } from 'node:net'
 import { createRequire } from 'node:module'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
+import { shortSocketDirectory } from '../../../tests/helpers/short-socket-directory.ts'
 import {
   gitCommitSigningSandboxOverlay,
   parseSshPublicKey,
@@ -91,10 +92,10 @@ describe('sshAgentSocketAllowList', () => {
     assert.deepEqual(sshAgentSocketAllowList({ ...base, authSock: '/', isSocket: false }), [])
   })
 
-  it('checks the path is a real unix socket', { skip: process.platform === 'win32' }, async () => {
+  it('checks the path is a real unix socket', { skip: process.platform === 'win32' }, async (t) => {
     // macOS TMPDIR can consume the entire sun_path budget before the filename.
     // Path-budget behavior has separate ssh-paths tests; this checks socket type.
-    const dir = await mkdtemp('/tmp/copse-sign-')
+    const dir = shortSocketDirectory(t)
     const socketPath = join(dir, 'agent.sock')
     const server = createServer()
     try {

@@ -935,6 +935,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     alerts: { threadFinished: resolvedVoid, onOpenThread: subscribe },
     deepLinks: { ready: resolvedVoid, onOpenThread: subscribe },
     sshPrompt: {
+      onDismissed: subscribe,
       respond: resolvedVoid,
       onRequest: subscribe,
     },
@@ -1078,6 +1079,15 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         thread.updatedAt = Date.now()
         return resolved(true)
       },
+      actionState: () =>
+        resolved({
+          entries: [],
+          assessed: 0,
+          total: 0,
+          pending: 0,
+          assessing: false,
+          budgetLimited: false,
+        }),
       onAutoArchived: () => () => {},
       storageSize: () => resolved({ bytes: 24_576, truncated: false }),
       archive: (_projectId, threadId) => {
@@ -1465,40 +1475,6 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       },
       getThreadClassifierUse: () => resolved({ calls: 0, rows: [] }),
       getPlanUsage: () => resolved({ providers: [], checkedAt: DEMO_TIME }),
-      getPlanWorthIt: () =>
-        resolved({
-          worthIt: {
-            verdict: 'insufficient_history',
-            reason:
-              'Need a couple of completed weekly windows — keep Copse signed into Claude and reopen Usage after resets.',
-            apiEquivalentBurnPerWeek: null,
-            planFeePerWeek: null,
-            monthlyFeeUsd: null,
-            feeHint: null,
-            completedWeeklyCount: 0,
-            inferenceFrontierNote: null,
-          },
-          windowExhaustion: [],
-          historySampleCount: 0,
-          completedWeeklyCount: 0,
-        }),
-      setClaudePlanMonthlyFee: () =>
-        resolved({
-          worthIt: {
-            verdict: 'insufficient_history',
-            reason:
-              'Need a couple of completed weekly windows — keep Copse signed into Claude and reopen Usage after resets.',
-            apiEquivalentBurnPerWeek: null,
-            planFeePerWeek: null,
-            monthlyFeeUsd: null,
-            feeHint: null,
-            completedWeeklyCount: 0,
-            inferenceFrontierNote: null,
-          },
-          windowExhaustion: [],
-          historySampleCount: 0,
-          completedWeeklyCount: 0,
-        }),
     },
     index: {
       query: (pattern: string) =>
@@ -1824,7 +1800,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       enableAutoMerge: () =>
         resolved({ ok: false, message: 'Unavailable in demo', backend: 'mock' }),
     },
-    shell: { openExternal: resolvedVoid, openWorkspaceFileInBrowser: resolvedVoid },
+    shell: { openExternal: resolvedVoid },
     editors: {
       list: () => resolved({ editors: [], lastUsedId: null }),
       open: resolvedVoid,

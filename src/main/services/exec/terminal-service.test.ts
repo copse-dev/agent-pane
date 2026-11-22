@@ -26,6 +26,8 @@ import { projectStoreDir } from '../storage/copse-paths.ts'
 import { setSetting, getSetting } from '../storage/settings.ts'
 import { storageGet, storageSet } from '../storage/storage.ts'
 import { getActiveExecutionTarget } from '../ssh-workspace/execution-target.ts'
+import { runWithActiveRunIdentity } from '../active-run-identity.ts'
+import { ensureWorkspaceTmpDir } from '../../project-sandbox/config.ts'
 import {
   SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT,
   SHARE_TERMINAL_HISTORY_ENABLED_SETTING,
@@ -230,6 +232,65 @@ describe('terminal-service', () => {
       restore()
       await rm(projectRoot, { recursive: true, force: true })
       await rm(threadRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps human terminal temp variables separate from agent scratch for known threads', async (t) => {
+    if (process.platform === 'win32') {
+      t.skip('POSIX shell assertion')
+      return
+    }
+    const previousShell = process.env['SHELL']
+    const previousStore = process.env['COPSE_WORKSPACE_DIR']
+    const tempKeys = ['TMPDIR', 'TMP', 'TEMP', 'TMPPREFIX', 'CLAUDE_CODE_TMPDIR'] as const
+    const previousTemps = new Map(tempKeys.map((key) => [key, process.env[key]]))
+    const fixture = await mkdtemp(join(tmpdir(), 'copse-human-pty-temp-'))
+    process.env['SHELL'] = join(process.cwd(), 'tests/e2e/fixtures/e2e-bash-shell.sh')
+    process.env['COPSE_WORKSPACE_DIR'] = fixture
+    const restore = setWorkspaceRootForTest(fixture)
+    try {
+      if (!(await ptySpawnAvailable())) {
+        t.skip('PTY spawn unavailable in this environment')
+        return
+      }
+      for (const variant of ['set', 'unset']) {
+        const threadId = `pty-thread-${variant}`
+        const scratch = runWithActiveRunIdentity(threadId, ensureWorkspaceTmpDir)
+        for (const key of tempKeys) {
+          if (variant === 'set') process.env[key] = join(fixture, 'human-temp', key)
+          else Reflect.deleteProperty(process.env, key)
+        }
+        const win = mockWindow()
+        const sessionId = await createTerminalSession(win, 80, 24, { threadId }, fixture)
+        try {
+          const print = tempKeys
+            .map((key) => `printf '__COPSE_${key}__:%s\\n' "\${${key}-unset}"`)
+            .join('; ')
+          writeTerminalSession(sessionId, OWNER, `${print}\n`)
+          const output = await waitForTerminalOutput(
+            win,
+            /__COPSE_CLAUDE_CODE_TMPDIR__:(?:unset|\/)/,
+          )
+          for (const key of tempKeys) {
+            const expected = variant === 'set' ? join(fixture, 'human-temp', key) : 'unset'
+            assert.ok(output.includes(`__COPSE_${key}__:${expected}`), output)
+          }
+          assert.ok(!output.includes(`__COPSE_TMPDIR__:${scratch}`), output)
+        } finally {
+          destroyTerminalSession(sessionId, OWNER)
+        }
+      }
+    } finally {
+      restore()
+      if (previousShell === undefined) delete process.env['SHELL']
+      else process.env['SHELL'] = previousShell
+      if (previousStore === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previousStore
+      for (const [key, previous] of previousTemps) {
+        if (previous === undefined) Reflect.deleteProperty(process.env, key)
+        else process.env[key] = previous
+      }
+      await rm(fixture, { recursive: true, force: true })
     }
   })
 

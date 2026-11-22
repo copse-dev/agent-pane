@@ -15,6 +15,7 @@ import { nodeReadableStream, nodeWritableStream } from './node-byte-streams.ts'
 import { acpSshTarget, spawnRemoteAcpTransport } from './acp-ssh-transport.ts'
 import type { AcpContinuitySnapshot } from './acp-continuity-probe.ts'
 import { errorMessage } from '@shared/errors.ts'
+import { withTimeout } from '@copse/std/with-timeout.ts'
 
 /**
  * Tier-1 ACP **capability probe** (issue #264): spawn an external ACP agent,
@@ -364,14 +365,7 @@ async function drainUpdates(
   while (Date.now() < deadline) {
     const remaining = deadline - Date.now()
     const next = nextUpdate()
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const timeout = new Promise<'timeout'>((res) => {
-      timer = setTimeout(() => {
-        res('timeout')
-      }, remaining)
-    })
-    const outcome = await Promise.race([next, timeout])
-    if (timer) clearTimeout(timer)
+    const outcome = await withTimeout(next, remaining, () => 'timeout')
     if (outcome === 'timeout') {
       // Abandon the pending waiter; the connection is torn down right after.
       void next.catch(() => {})

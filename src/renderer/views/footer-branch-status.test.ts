@@ -63,6 +63,7 @@ function createApi(
       git: {
         ...base['git'],
         branchStatus: async () => status,
+        currentBranch: async () => status.currentBranch,
         listBranches: async () => branches,
         getDefaultBranch: async () => defaultBranch,
         checkoutBranch: async (): Promise<void> => {},
@@ -1416,6 +1417,149 @@ describe('footer branch status', () => {
 
     assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'main')
     assert.equal(await control.resolveBaseBranch('project-1', 'thread-1'), 'main')
+  })
+
+  it('starts a blank thread on a detached project checkout where it is, unless a branch is picked', async () => {
+    // From dogfooding: a project checked out with `git worktree add --detach`
+    // defaulted to `main`, held by another worktree, and the first send failed.
+    // The thread shares a detached checkout, so a default branch would move it.
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const control = mountFooterBranchStatus(
+      host,
+      store,
+      createApi(
+        { currentBranch: null, pr: null, detached: true },
+        [
+          { name: 'main', lastCommitDate: '2024-01-01' },
+          { name: 'feature/review', lastCommitDate: '2024-01-02' },
+        ],
+        'main',
+      ),
+    )
+    await settle()
+
+    const label = (): string | null | undefined =>
+      host.querySelector('.footer-branch-label')?.textContent
+    assert.equal(label(), 'Detached HEAD')
+    assert.equal(await control.resolveBaseBranch('project-1', 'thread-1'), undefined)
+
+    await openBranchMenu(host)
+    const rows = (): HTMLElement[] => [
+      ...host.querySelectorAll<HTMLElement>('.branch-picker-option'),
+    ]
+    assert.deepEqual(
+      rows().map((row) => row.querySelector('.branch-picker-option-label')?.textContent),
+      ['Detached HEAD', 'main', 'feature/review'],
+    )
+    assert.ok(rows()[0]?.classList.contains('is-selected'))
+
+    // A pick switches the shared checkout to that branch, as on any project.
+    rows()[1]?.click()
+    assert.equal(label(), 'main')
+    assert.equal(await control.resolveBaseBranch('project-1', 'thread-1'), 'main')
+
+    // The detached row takes the pick back.
+    await openBranchMenu(host)
+    assert.ok(rows()[1]?.classList.contains('is-selected'))
+    rows()[0]?.click()
+    assert.equal(label(), 'Detached HEAD')
+    assert.equal(await control.resolveBaseBranch('project-1', 'thread-1'), undefined)
+  })
+
+  it('does not take a status that names no branch for a detached checkout', async () => {
+    // A new thread's first status read can run before the thread is saved:
+    // main finds no checkout and names no branch, the same as for a folder
+    // that is not a repository. The branch list loads after the save. Only
+    // main's `detached` reading means detached, and an older host omits it.
+    const statuses: GitBranchStatus[] = [
+      { currentBranch: null, pr: null, detached: false },
+      { currentBranch: null, pr: null },
+    ]
+    for (const status of statuses) {
+      const store = createStore({
+        workspaceRoot: '/repo',
+        activeProjectId: 'project-1',
+        activeThreadId: 'thread-1',
+        threads: [thread()],
+      })
+      const host = document.createElement('div')
+      document.body.append(host)
+      const control = mountFooterBranchStatus(
+        host,
+        store,
+        createApi(
+          status,
+          [
+            { name: 'main', lastCommitDate: '2024-01-01' },
+            { name: 'feature/review', lastCommitDate: '2024-01-02' },
+          ],
+          'main',
+        ),
+      )
+      await settle()
+
+      assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'main')
+      assert.equal(await control.resolveBaseBranch('project-1', 'thread-1'), 'main')
+      await openBranchMenu(host)
+      assert.deepEqual(
+        [...host.querySelectorAll('.branch-picker-option-label')].map((row) => row.textContent),
+        ['main', 'feature/review'],
+      )
+      control.destroy()
+      host.remove()
+    }
+  })
+
+  it('reads whether the checkout is detached when a send beats the footer refresh', async () => {
+    const branches = [{ name: 'main', lastCommitDate: '2024-01-01' }]
+    const cases: Array<{ status: GitBranchStatus; expected: string | undefined }> = [
+      { status: { currentBranch: null, pr: null, detached: true }, expected: undefined },
+      // No checkout found yet, or no readable HEAD: not detached.
+      { status: { currentBranch: null, pr: null, detached: false }, expected: 'main' },
+      {
+        status: { currentBranch: 'feature/left-behind', pr: null, detached: false },
+        expected: 'main',
+      },
+    ]
+    for (const { status, expected } of cases) {
+      const store = createStore({
+        workspaceRoot: '/repo',
+        activeProjectId: 'project-1',
+        activeThreadId: 'thread-1',
+        threads: [thread()],
+      })
+      const host = document.createElement('div')
+      document.body.append(host)
+      const control = mountFooterBranchStatus(host, store, createApi(status, branches, 'main'))
+      // No settle: the footer's own branch status has not loaded yet.
+      assert.equal(await control.resolveBaseBranch('project-1', 'thread-1'), expected)
+      control.destroy()
+    }
+  })
+
+  it('stays hidden for a folder that is not a repository', async () => {
+    const store = createStore({
+      workspaceRoot: '/folder',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountFooterBranchStatus(
+      host,
+      store,
+      createApi({ currentBranch: null, pr: null, detached: false }, [], null),
+    )
+    await settle()
+    assert.ok(qsRequired(host, '.branch-picker').hidden)
   })
 
   for (const defaultBranch of [null, 'unlisted/default']) {
