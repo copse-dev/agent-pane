@@ -95,9 +95,14 @@ revisiting this document, not silently diverging in an implementation PR.
    independent cap of five per destination, per sending thread's user turn. Each new human or
    scheduled automation root in the sender gives it five fresh prompts for every
    destination. A sender run without a human root (a headless scheduled automation's
-   turn, a turn the ACP agent started itself) is charged to a fallback scope keyed on
-   the sender thread from main's active-run identity, never on tool arguments
-   (amended 20 November 2026). Every scheduled automation run starts in a new thread,
+   turn) is charged to a fallback scope keyed on the sender thread from main's
+   active-run identity, never on tool arguments (amended 20 November 2026). A turn the
+   ACP agent starts itself in a thread whose epoch a dispatch established is not such a
+   run: it is bound to the turn tree of the task it resumes (below), so it is charged to
+   that tree like the human turn it continues. In a thread without one, such as a
+   headless automation's thread, there is no human turn to continue: the self-start
+   binds no turn tree and uses that thread's fallback scope like the headless run
+   (amended 21 November 2026). Every scheduled automation run starts in a new thread,
    so each gets its own five; machine runs of one thread share that scope, cannot mint
    another, and only a human release at the destination resets it. The fallback grants
    nothing else: it binds no turn tree, gives the destination no epoch and owns no
@@ -172,7 +177,24 @@ revisiting this document, not silently diverging in an implementation PR.
    for HTTP tool calls. Clearing the context clears the snapshot; a legacy run
    without an explicit human epoch cannot synthesize one from its thread id.
    Bounded background tasks launched through ACP therefore use the same wake
-   budget and stale-epoch checks as native launches.
+   budget and stale-epoch checks as native launches. A self-resume budget grant
+   returns that epoch for binding the bridge only when a dispatch established it,
+   and the lease must not drop it. The thread-id fallback the grant charges, and
+   persists, in a thread without one is no epoch: the grant names no turn tree,
+   so the bridge stays unbound and that self-start requests no wake.
+   Approving a parked approval requests one host-native continuation to retry the
+   exact call through the ordinary gate; rejecting it requests none, so a refusal
+   never restarts autonomous work. A consumed, expired or revoked answer
+   suppresses that wake at dispatch time. A bridged operation that returns after
+   its caller detaches or its turn completes normally saves the textual result
+   as a private `bridge-result` decision detail before requesting continuation.
+   Recovery delivers output and never executes the tool again. Bridge execution
+   ids deduplicate delivery. Stop, send-now interruption, failed turns and
+   session closure do not request result recovery; missing epochs permit no
+   synthesized wake. Send-now still keeps parked answers for the same task
+   (decision 4), so the agent's own exact retry can use them. Saved
+   results remain inspectable when delivery is stale or budget-exhausted.
+   This does not introduce automatic recovery after app restart.
    Each in-run grant carries its bounded mechanism reason
    (`todo-closeout`, `pre-review-todo`, or `post-review-remediation`) for reporting;
    the reason does not change first-come ordering or the shared count. When the limit
@@ -593,6 +615,31 @@ revisiting this document, not silently diverging in an implementation PR.
     suite re-run when nothing that could change the workspace ran since — is a
     tool-result substitution beside the duplicate-call guard, not a nudge, and stays
     in the loop with it (Phase E).
+
+33. **An empty turn is answered with a nudge; pinned benchmark profiles keep the replay.** A stream that ends
+    with no visible text and no tool call, and that no other post-stream outcome
+    claims (truncation, runaway cut, soft-budget cut, malformed call, refusal,
+    context overflow), used to `continue` with history unchanged. Reasoning never
+    lands in history, so the next request was byte-identical: a thinking model
+    reviewing an isolated-guest edit replayed one 6-message review request eight
+    times and spent about a quarter of a 100,000-token grant. The loop now sets
+    `emptyTurn` on the `postStream` payload, the first-party `empty-turn` hook
+    selects a "your reply had no answer or tool call; answer or call one tool"
+    text, and the harness applies it as a `tool-enabled-message` through the
+    applied-nudge path. It is applied at the top of the next iteration, after the
+    step/call budget check (and any extension) passes, so a run that the budget
+    ends never keeps an unanswered nudge in history. A pending empty-turn nudge
+    counts as a stuck signal when the budget runs out, so such a run earns no
+    adaptive extension: empty turns add nothing to the tool-progress window, and
+    without this a run stuck on them kept earning grants on the strength of the
+    calls it made before it got stuck. Beyond that it adds no bound of its own:
+    the existing step and LLM-call caps and the run deadline still limit how many
+    empty turns a run can take, and it creates no turn and consumes no
+    `ContinuationGrant` (decision 5). The text-only finalize, forced and closeout
+    turns keep their existing empty-turn handling. `emptyTurnRecoveryStrategy:
+    'replay-v1'` keeps the old unchanged retry; the Terminal-Bench host passes it
+    for every profile, because each was defined before the nudge existed and its
+    pinned loop fingerprint must not move.
 
 ## Target architecture
 
@@ -1216,7 +1263,11 @@ These items carry a host-bound sender scope and consume a separate allowance of
 five prompts per destination, per sender user turn (decision 5, amended 1 November 2026).
 Main computes the scope in `peerPromptSender` from its own run identity: the sender's
 turn-tree ID, or `null` with the sender thread as the fallback for a run without one
-(decision 5, amended 20 November 2026).
+(decision 5, amended 20 November 2026). A self-started ACP turn carries the turn tree of
+the task it resumes when a dispatch established the thread's epoch. In a thread without
+one, such as a headless automation's, it carries none and uses the same fallback as the
+headless run: `claimAgentInitiatedTurn` never returns the thread-id key it charges as a
+turn tree (amended 21 November 2026).
 Metadata `crossThreadPromptCounts` keys each count by the JSON-encoded sender ID and
 sender turn-tree ID; it survives reloads and destination human submissions. Each sender
 and new sender root has its own allowance for every destination. Charging happens at drain

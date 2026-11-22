@@ -93,7 +93,6 @@ describe('Settings rows sit on the page', () => {
     '.acp-agent-card',
     '.classifier-local-row',
     '.openai-connection-card',
-    '.usage-worth-card',
     '.about-licenses-list',
     '.plugin-settings-fold .apple-development-panel',
     '.environment-setup-list',

@@ -1,5 +1,15 @@
 # Shell and tool permission contract
 
+A tool cancelled while waiting for permission reports cancellation and never
+executes after the signal aborts. A negative gate result preserves its denial
+reason, distinguishing a user decline from policy, hook and unanswered-prompt
+refusals. Pending ACP approval remains a separate retryable error.
+
+When an authorized bridged action finishes after its caller detaches, Copse
+records its textual result before requesting continuation against the original
+human epoch. This delivers an outcome, never re-executes the action, and does
+not grant authority to run another tool.
+
 This document describes current shipped behavior. Read it before changing permission policy, shell
 scope analysis, the project sandbox, escalation, or approval UI. Historical design decisions
 remain in `docs/plans/`; this is the durable cross-platform contract.
@@ -51,6 +61,30 @@ ACP turn/session; closing a completed MCP response does not revoke it, while aba
 startup, stopping the turn or closing the ACP session does. The created VM's image digest
 must match the owner-controlled local build receipt before startup. Host-only leases and
 VM ownership labels allow dead-parent/expired cleanup without deleting unrelated VMs.
+
+## Unanswered approvals across ACP turns
+
+Normal ACP turn completion ends tool execution and releases the execution context, but it does
+not cancel an unanswered approval. The prompt remains answerable even when turn completion
+arrives before the MCP client's disconnect. A later identical request in the same thread,
+project, human task and execution root can consume that decision once, within the existing
+ten-minute replay window. Changed commands or arguments require their own approval; answering a
+detached prompt never starts the old tool call. Approving it requests one continuation in the
+same task so the agent can retry the call; rejecting it does not wake the agent.
+
+Stop, failure, idle expiry, session closure, and thread deletion revoke both pending prompts
+(including detached ones) and stored answers for that thread. Send-now interruption is not a
+revocation: like ordinary completion, it keeps detached prompts and stored answers for the same
+task (see [What an approval prompt says](#what-an-approval-prompt-says)). The bridge observes
+turn and session termination separately from a disconnected call so the first abort cannot hide
+later revocation. Self-started turns distinguish completion and send-now from Stop,
+idle expiry, and session closure. Ordinary prompts have no approval deadline. Client abandonment
+and turn completion are logged as pending requests with distinct sources; cancellation, window
+closure, and explicit safety-check timeouts retain their own audit sources.
+
+Settings holds ordinary approval dialogs back while it is open. A request for the focused thread
+still receives an attention indicator and a **Review approval** action in Settings. Reviewing
+closes Settings and surfaces the request through the ordinary approval dialog.
 
 ## Per-tool permission settings
 
@@ -106,9 +140,12 @@ Either permission can be revoked in the thread’s Context panel → Permissions
 Destination prompts enter the normal queue with machine provenance and consume a separate
 allowance of five prompts to each destination per user turn in the sending thread. A new
 instruction in the sending thread gives it five fresh prompts for every destination.
-Work the sending thread runs without a user turn, such as a scheduled automation run or a turn
-the coding agent started itself, shares one allowance per destination for that thread; each
-scheduled run starts in a new thread. That fallback grants no other authority.
+Work the sending thread runs without a user turn, such as a scheduled automation run, shares
+one allowance per destination for that thread; each scheduled run starts in a new thread. That
+fallback grants no other authority. A turn the coding agent starts on its own continues the
+task it resumes and uses that task's allowance. In a thread that never had a user turn, such
+as a scheduled run's thread, there is no task allowance to continue: such a turn shares the
+thread's fallback allowance and gains no other authority either.
 Incoming prompts do not spend or reset the self-continuation budget. Exhaustion holds
 further prompts from that sender turn for human release. Prompts respect held/paused queues. They do not interrupt active work or
 switch the visible thread. An unavailable or archived destination is rejected.
@@ -411,7 +448,12 @@ Options are read on one line only, so a shell `exec` on the following line stays
 execution.
 
 Remembered local port-binding consent is keyed by the project root, shared across its
-thread worktrees. Command execution still uses the thread's execution root and passes
+thread worktrees. The first prompt emphasizes **Allow once**, with **Allow for this project**
+as an explicit secondary action. Only the project action saves consent; once and Reject save
+nothing. The prompt names the project, explains future reuse, and points to
+Context → Permissions → Project → Local port binding for revocation. A mixed
+batch falls back to ordinary approval, with a remember checkbox only when every
+request shares the exact project grant. Command execution still uses the thread's execution root and passes
 the shell gate. Other projects require their own consent, and disabling the Background
 tasks plugin still revokes its loopback-binding capability. Legacy worktree-root grants
 are not broadened automatically; the next project-level consent can be remembered.
@@ -1041,10 +1083,12 @@ Unknown flags, shell expansions, scripts, and compound commands retain the gener
 These explanations are presentation only and never authorize or reroute a command.
 
 Remembered tool approvals cover the exact tool with other arguments; schedule grants cover
-future runs of the named schedule. The outside-project read grant still covers all eligible
-outside-project reads for the chat, not only the paths currently displayed. Its primary action
-is labeled “Allow reads for this chat”; the secondary action approves just the displayed command.
-Batch and Activity views use the same advice, complete details, and footer as individual prompts.
+future runs of the named schedule. An outside-project read grant covers the named approved files
+and directories for that chat, including eligible descendants of approved directories. Other paths
+ask again. The collapsed card shows “Allow reads for this chat” as its sole primary approval action.
+After “Show details”, “Approve this command” is primary and “Allow reads for this chat” is secondary.
+The per-command action approves only the displayed command. Batch and Activity views use the same
+advice, complete details, and footer as individual prompts.
 
 Classifier reasons are **identifiers, not copy**. The regex pass and the token pass share them
 verbatim so the two dedupe against each other, and every answered prompt writes them into the
@@ -1138,6 +1182,33 @@ Later project-sandbox shell commands receive read-only cache access and matching
 cache variables without changing their install policy. Offline preparation blocks network for every
 subprocess using kernel isolation with no proxy ports or sockets; other agents' network grants
 cannot widen this boundary. Missing runtime versions or offline inputs fail with remediation.
+Node preparation resolves PATH directory aliases and grants the canonical executable files and recognized
+npm/Corepack/package-manager implementation trees. When the command is a Volta, asdf, or mise shim
+in that manager's own shim directory, it also grants the manager's shim and install subtrees
+(Volta `bin` and `tools`; asdf `shims`, `installs`, `plugins`, `bin`, and `lib`; mise `shims`,
+`installs`, and `plugins`), read-only, since the shim runs an install it cannot otherwise reach. It
+does not grant a whole fnm registry, installation parent, manager data root, or home directory.
+Both the manager root and every subtree are checked after resolving aliases. A subtree that leaves
+the canonical manager root, resolves to that root itself, or names a credential store earns no
+recursive grant, including through its original alias. Relocate the whole manager data root rather
+than linking an individual install subtree outside it. Executable aliases into credential paths
+are not granted or linked into the preparation PATH.
+Toolchain file targets must be regular executables. Known Codex/Claude and configured
+Copse/XDG/Cargo credential stores, their aliases and ancestors are excluded. Grants name the
+checked canonical paths, omitting extra exceptions already covered by the workspace or cache.
+This is a point-in-time check: replacing a canonical path or its ancestors before ASRT constructs
+the profile still races; it does not pin filesystem identity atomically.
+Known credential-location overrides checked in both the host and child environment are
+`CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `CLAUDE_SECURESTORAGE_CONFIG_DIR`, `GH_CONFIG_DIR`,
+`DOCKER_CONFIG`, `GNUPGHOME`, `AWS_SHARED_CREDENTIALS_FILE`, `AWS_CONFIG_FILE`,
+`GOOGLE_APPLICATION_CREDENTIALS`, `CLOUDSDK_CONFIG`, `NPM_CONFIG_USERCONFIG`,
+`npm_config_userconfig`, `PIP_CONFIG_FILE`, each `KUBECONFIG` entry, XDG credential locations under
+`XDG_CONFIG_HOME`, Cargo credential/config files under `CARGO_HOME`, and Copse stores resolved
+through `COPSE_DIR`, `COPSE_PANEL_USER_DATA` and `COPSE_WORKSPACE_DIR`. This is a bounded known-store
+policy, not arbitrary secret discovery; unclassified data inside an allowed cache remains readable.
+bubblewrap bind-mounts a granted file through its symlink, which turns fnm's `bin/npm` into a copy
+whose relative requires break, so on Linux the contained process finds these commands first through
+private symlinks in its scratch directory that point at the canonical executables.
 Runtime installation/version switching and Windows sandbox support remain separate capabilities.
 
 ## Guarded YOLO
@@ -1535,6 +1606,38 @@ directory: Volta (`$VOLTA_HOME/bin`, default `~/.volta/bin`) adds `$VOLTA_HOME/t
 `$ASDF_DATA_DIR`, plus `~/.tool-versions` and `~/.asdfrc`. A manager root that is home or an ancestor
 of it adds nothing. Shims that resolve through their manager's whole directory (nodenv, `mise` in
 shim mode) get only the shim directory, so their `node` fails contained and offers to run outside.
+
+It also re-allows, read-only and only when the directory exists, the installed package-manager and
+interpreter caches: Corepack's cache (`$COREPACK_HOME`, else `${XDG_CACHE_HOME:-~/.cache}/node/corepack`,
+plus `~/Library/Caches/node/corepack` on macOS), `~/.bun/bin`, `~/.pyenv/versions`, and
+`~/.local/share/uv/python`. A Corepack-pinned pnpm or yarn, `bun test`, and a uv or pyenv `.venv`
+whose `bin/python` links into those installs therefore start contained instead of failing and
+offering to run outside. None of these roots is writable (a writable shim on `PATH` would run later
+outside the sandbox), and a root is dropped when it is or contains home, or contains or sits inside
+a credential path (`~/.npmrc`, `~/.yarnrc.yml`, `~/.config/pnpm/rc`, `~/.bunfig.toml`,
+`~/.config/uv`, `~/.pypirc`, `~/.config/pip`, `~/.netrc`), a shared sensitive-path policy credential
+store such as `~/.ssh` or `~/.config/gh`, or Codex/Claude profile data. Copse's user-data, LAN and
+conversation stores are protected at their configured locations; its managed Corepack cache stays
+eligible. Credential-store aliases are resolved too, so linking a credential directory into a cache
+does not make its canonical contents eligible. These checks also apply to cache-root aliases.
+Read grants use the checked canonical destination, so replacing the original alias cannot redirect
+a later ASRT normalization. Replacing the canonical path or an ancestor before profile construction
+still races; this check does not pin filesystem identity atomically.
+Known credential-location overrides checked in both the host and child environment are
+`CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `CLAUDE_SECURESTORAGE_CONFIG_DIR`, `GH_CONFIG_DIR`,
+`DOCKER_CONFIG`, `GNUPGHOME`, `AWS_SHARED_CREDENTIALS_FILE`, `AWS_CONFIG_FILE`,
+`GOOGLE_APPLICATION_CREDENTIALS`, `CLOUDSDK_CONFIG`, `NPM_CONFIG_USERCONFIG`,
+`npm_config_userconfig`, `PIP_CONFIG_FILE`, each `KUBECONFIG` entry, XDG credential locations under
+`XDG_CONFIG_HOME`, Cargo credential/config files under `CARGO_HOME`, and Copse stores resolved
+through `COPSE_DIR`, `COPSE_PANEL_USER_DATA` and `COPSE_WORKSPACE_DIR`. This is a bounded known-store
+policy, not arbitrary secret discovery; unclassified data inside an allowed cache remains readable.
+
+Everything inside an allowed root is readable, so a pyenv or conda prefix's own `pip.conf`, `pip.ini`, or `.condarc`
+can carry an index or channel token, and a contained command can read it. That is accepted, because
+the sandbox cannot deny a file pattern inside a read-only tree on both platforms (bubblewrap binds
+concrete paths). Keep such tokens in the user-level files above, which stay denied. Shells in a
+worktree with a valid preparation plan point `COREPACK_HOME` at Copse's Corepack cache only after
+preparation has stamped the worktree; before that, Copse's cache is empty, so they keep the user's.
 
 - `permission-policy.ts`: pure permission decisions, MCP decisions, outside-sandbox classification,
   and prompt-body formatting.

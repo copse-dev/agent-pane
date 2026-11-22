@@ -802,7 +802,7 @@ It fills the window and its sections run several screens, so it is typed and spa
   would be wearing our badge of trust.
 - **Settings rows sit on the page.** The plugin-row rule holds for every list in Settings: Sources
   rows, the plugin Browse catalogue, automations and their permission rows, reviewed MCP servers,
-  agent cards, local classifiers, the OpenAI connection, the Usage value card, Apple development,
+  agent cards, local classifiers, the OpenAI connection, Apple development,
   environment setup, the licences list, SSH hosts and mobile companion devices. No frame, fill or
   rules between rows; vertical padding and the list's gap separate them, and rows start flush with
   the section's text. A row that needs a state takes the plate rather than a tinted frame (a
