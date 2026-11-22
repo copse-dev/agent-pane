@@ -71,9 +71,12 @@ it(
       await readable(file, [file])
       await readable(file, [granted])
       await readable(join(granted, 'internal-link'), [granted])
-      await readable(join(external, 'directory-alias', 'note.txt'), [
-        join(external, 'directory-alias'),
-      ])
+      // A grant named through a symlink is refused before any sandbox is
+      // built; the agent retries with the canonical path.
+      assert.throws(
+        () => readAllowedSandboxOverlay(workspace, [join(external, 'directory-alias')]),
+        /symlink/,
+      )
       await denied(`/bin/cat ${quote(sibling)}`, [file])
       await denied(`/bin/cat ${quote(sibling)}`, [granted])
       await denied(`/bin/cat ${quote(join(granted, 'external-link'))}`, [granted])
