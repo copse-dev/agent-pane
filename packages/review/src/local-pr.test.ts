@@ -336,16 +336,16 @@ describe('review lock', () => {
     try {
       const path = join(dir, 'review.lock')
       const release = await acquireReviewLock(path, { label: 'first' })
-      let waitedOn = ''
+      // Await the wait itself rather than a wall-clock pause.
+      const { promise: waitedOn, resolve: noteWait } = Promise.withResolvers<string>()
       const second = acquireReviewLock(path, {
         label: 'second',
         pollMs: 10,
         onWait: (owner) => {
-          waitedOn = owner?.label ?? ''
+          noteWait(owner?.label ?? '')
         },
       })
-      await new Promise((resolve) => setTimeout(resolve, 50))
-      assert.equal(waitedOn, 'first')
+      assert.equal(await waitedOn, 'first')
       await release()
       const releaseSecond = await second
       await releaseSecond()
