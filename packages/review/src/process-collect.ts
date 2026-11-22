@@ -35,6 +35,47 @@ export function killProcessTree(child: ChildProcess, signal: NodeJS.Signals): vo
  */
 const EXIT_DRAIN_GRACE_MS = 500
 
+/** At most this much of `retainLinePrefix` lines is kept; a failure inventory is far smaller. */
+export const MAX_RETAINED_LINE_BYTES = 1024 * 1024
+
+/**
+ * Collects the lines of one stream that start with `prefix`, across chunk
+ * boundaries, up to {@link MAX_RETAINED_LINE_BYTES} in all.
+ */
+class RetainedLines {
+  readonly lines: string[] = []
+  private bytes = 0
+  private readonly partial = new Map<string, string>()
+  private readonly prefix: string
+
+  constructor(prefix: string) {
+    this.prefix = prefix
+  }
+
+  add(stream: string, text: string): void {
+    const pending = (this.partial.get(stream) ?? '') + text
+    const parts = pending.split('\n')
+    const last = parts.pop() ?? ''
+    for (const line of parts) this.keep(line)
+    // A partial line longer than the budget can never be kept; stop buffering it.
+    this.partial.set(stream, Buffer.byteLength(last, 'utf8') > MAX_RETAINED_LINE_BYTES ? '' : last)
+  }
+
+  flush(): void {
+    for (const last of this.partial.values()) this.keep(last)
+    this.partial.clear()
+  }
+
+  private keep(raw: string): void {
+    const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw
+    if (!line.startsWith(this.prefix)) return
+    const size = Buffer.byteLength(line, 'utf8')
+    if (this.bytes + size > MAX_RETAINED_LINE_BYTES) return
+    this.lines.push(line)
+    this.bytes += size
+  }
+}
+
 export interface CollectOptions {
   readonly now?: () => number
   /**
@@ -68,14 +109,26 @@ export function collectProcess(
   let truncated = false
   let timedOut = false
 
-  const onChunk = (chunk: Buffer | string): void => {
-    const text = typeof chunk === 'string' ? chunk : chunk.toString('utf8')
-    const next = appendTailCapped(output, text, command.maxOutputBytes)
-    output = next.text
-    truncated = truncated || next.truncated
+  const retained =
+    command.retainLinePrefix === undefined ? null : new RetainedLines(command.retainLinePrefix)
+  const onChunk =
+    (stream: string) =>
+    (chunk: Buffer | string): void => {
+      const text = typeof chunk === 'string' ? chunk : chunk.toString('utf8')
+      retained?.add(stream, text)
+      const next = appendTailCapped(output, text, command.maxOutputBytes)
+      output = next.text
+      truncated = truncated || next.truncated
+    }
+  child.stdout?.on('data', onChunk('stdout'))
+  child.stderr?.on('data', onChunk('stderr'))
+  /** The tail, with any retained line the cap dropped put back ahead of it. */
+  const collected = (): string => {
+    if (retained === null || !truncated) return output
+    retained.flush()
+    const dropped = retained.lines.filter((line) => !output.includes(line))
+    return dropped.length === 0 ? output : `${dropped.join('\n')}\n${output}`
   }
-  child.stdout?.on('data', onChunk)
-  child.stderr?.on('data', onChunk)
 
   return new Promise((resolve, reject) => {
     const onAbort = (): void => {
@@ -131,7 +184,7 @@ export function collectProcess(
         signal,
         timedOut,
         durationMs: now() - started,
-        output,
+        output: collected(),
         outputTruncated: truncated,
       })
     })

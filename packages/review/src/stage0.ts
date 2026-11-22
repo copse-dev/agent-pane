@@ -45,7 +45,12 @@ import {
   type UnsupportedProject,
 } from './project-commands.ts'
 import { removeTree } from './remove-tree.ts'
-import { newTestFailures, parseTestFailureReport, type TestFailureReport } from './test-failures.ts'
+import {
+  newTestFailures,
+  parseTestFailureReport,
+  TEST_FAILURE_REPORT_PREFIX,
+  type TestFailureReport,
+} from './test-failures.ts'
 import { newDiagnostics, parseTscDiagnostics, type TscDiagnostic } from './tsc-diagnostics.ts'
 
 export const STAGE0_REPORT_VERSION = 1
@@ -343,6 +348,9 @@ async function runTarget(
       argv: command.argv,
       timeoutMs: command.timeoutMs,
       maxOutputBytes: STAGE0_MAX_OUTPUT_BYTES,
+      // The failure inventory precedes the runner's detailed failure listing,
+      // which alone can exceed the cap on a host missing tools the tests use.
+      ...(command.kind === 'test' ? { retainLinePrefix: TEST_FAILURE_REPORT_PREFIX } : {}),
       signal,
     })
     const run: CheckRun = {

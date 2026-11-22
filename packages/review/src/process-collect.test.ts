@@ -68,3 +68,41 @@ describe('collectProcess', { skip: process.platform === 'win32' }, () => {
     assert.equal(result.timedOut, true)
   })
 })
+
+describe('collectProcess retained lines', () => {
+  const prefix = 'COPSE_TEST_FAILURES_V1 '
+  async function collect(script: string, maxOutputBytes: number): Promise<string> {
+    const child = spawn(process.execPath, ['-e', script], { stdio: ['ignore', 'pipe', 'pipe'] })
+    const result = await collectProcess(child, {
+      target: 'head',
+      argv: [process.execPath, '-e', script],
+      timeoutMs: 30_000,
+      maxOutputBytes,
+      retainLinePrefix: prefix,
+    })
+    return result.output
+  }
+
+  it('puts back a verdict line the tail cap dropped, once, ahead of the tail', async () => {
+    const output = await collect(
+      // The report, then far more failure detail than the cap keeps, split
+      // across many writes so the report line reaches the collector in pieces.
+      `process.stdout.write(${JSON.stringify(prefix)}); process.stdout.write('{"failed":2}\\n');` +
+        "for (let i = 0; i < 2000; i++) process.stderr.write('detail line ' + i + '\\n')",
+      4 * 1024,
+    )
+    const lines = output.split('\n')
+    assert.equal(lines.filter((line) => line.startsWith(prefix)).length, 1)
+    assert.equal(lines[0], `${prefix}{"failed":2}`)
+    assert.match(output, /detail line 1999/)
+    assert.doesNotMatch(output, /detail line 0\n/)
+  })
+
+  it('leaves the output alone when the line is still in the tail', async () => {
+    const output = await collect(
+      `console.log('before'); console.log(${JSON.stringify(prefix)} + '{"failed":0}'); console.log('after')`,
+      4 * 1024,
+    )
+    assert.equal(output, `before\n${prefix}{"failed":0}\nafter\n`)
+  })
+})

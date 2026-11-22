@@ -580,6 +580,17 @@ describe('runStage0', () => {
     )
     assert.equal(regressed.checks[0]?.verdict, 'regressed')
     assert.match(regressed.findings[0]?.claim ?? '', /a new regression/)
+    // The runner's detailed failure listing after the inventory can outrun the
+    // output cap on its own; the inventory still reaches the comparison.
+    const detail = 'stack frame of a failing test\n'.repeat(12_000)
+    // sleepMs lets the fixture's pipe drain before it exits.
+    const failing = { exit: 1, stdout: output(['wraps the command']) + detail, sleepMs: 200 }
+    const long = await run(
+      await scenario({ test: failing }, { test: failing }, { kinds: ['test'] }),
+    )
+    assert.equal(long.checks[0]?.verdict, 'failing-on-base')
+    assert.equal(long.checks[0].head?.outputTruncated, true)
+    assert.deepEqual(long.findings, [])
   })
 
   it('anchors a new type diagnostic at its line and ignores one that only moved', async () => {
