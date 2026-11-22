@@ -71263,7 +71263,7 @@ var init_experimental_markup = __esm({
                 and none of your files; code there reads the thread's files only through Copse's
                 read-only tools, which still ask wherever they normally would. Cells run without
                 asking. One spare container stays running while this is on. Needs Apple container
-                or Docker; the first cell builds a small image.
+                or Docker; turning it on builds a small image the first time.
               </p>
             </fieldset>
 
