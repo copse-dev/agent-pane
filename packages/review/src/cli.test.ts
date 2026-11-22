@@ -8,7 +8,13 @@ import { createServer, type Server } from 'node:http'
 import { z } from 'zod'
 import { setTimeout as delay } from 'node:timers/promises'
 import { HEADLESS_EXIT, headlessEventSchema } from '@copse/agent/headless-contract.ts'
-import { main, resolveForgeTarget, resolvePullRequestRef, reviewPermissionProfile } from './cli.ts'
+import {
+  endpointOrigin,
+  main,
+  resolveForgeTarget,
+  resolvePullRequestRef,
+  reviewPermissionProfile,
+} from './cli.ts'
 import { decodeFindings } from './finding.ts'
 import { createEphemeralRunnerBackend } from './host-process-backend.ts'
 import type { IsolationBackend } from './isolation.ts'
@@ -1479,7 +1485,7 @@ describe('copse-review CLI with local models', () => {
           role: 'challenger',
           model: 'challenger-model',
           provider: 'openai-compatible',
-          endpoint: baseUrl,
+          endpoint: new URL(baseUrl).origin,
           reasoning: 'high',
           local: { loadedContextLength: 65_536, quantization: 'Q4_K_M' },
         },
@@ -1487,6 +1493,15 @@ describe('copse-review CLI with local models', () => {
     } finally {
       server.close()
     }
+  })
+
+  it('records only an endpoint’s origin, never a path that may name an account', () => {
+    assert.equal(
+      endpointOrigin('https://user:secret@api.example.ai/0d2c5b7e-project/v1?key=x#f'),
+      'https://api.example.ai',
+    )
+    assert.equal(endpointOrigin('http://127.0.0.1:1234/v1'), 'http://127.0.0.1:1234')
+    assert.equal(endpointOrigin('not a url'), '(unparseable URL)')
   })
 
   it('rejects an unknown reasoning level, challenger provider or time limit as usage', async () => {

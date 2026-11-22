@@ -127,7 +127,7 @@ export interface ReviewModelRoute {
   readonly model: string
   /** The `--provider` kind the route went through. */
   readonly provider: string
-  /** A local or OpenAI-compatible server's base URL; never a credential. */
+  /** A local or OpenAI-compatible server's origin; never its path or a credential. */
   readonly endpoint?: string
   readonly reasoning?: string
   /** What the local server said about the model before the review started. */

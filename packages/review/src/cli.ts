@@ -263,7 +263,7 @@ function reportRoute(
     provider: selection.kind,
     ...(selection.endpoint === undefined
       ? {}
-      : { endpoint: credentialFreeUrl(selection.endpoint.baseUrl) }),
+      : { endpoint: endpointOrigin(selection.endpoint.baseUrl) }),
     ...(reasoning === undefined ? {} : { reasoning }),
     ...(local === undefined ? {} : { local }),
   }
@@ -287,15 +287,14 @@ function reasoningLevel(value: string | undefined, name: string): ReasoningLevel
   return value
 }
 
-/** A base URL as a report may carry it: no credential, query or fragment. */
-export function credentialFreeUrl(url: string): string {
+/**
+ * Where a route's server is, as a report may carry it: the origin alone. A
+ * path can hold an account or project identifier (CI's hosted route has one),
+ * and a report is an uploaded artifact; userinfo, query and fragment go too.
+ */
+export function endpointOrigin(url: string): string {
   try {
-    const parsed = new URL(url)
-    parsed.username = ''
-    parsed.password = ''
-    parsed.search = ''
-    parsed.hash = ''
-    return parsed.href.replace(/\/$/, '')
+    return new URL(url).origin
   } catch {
     return '(unparseable URL)'
   }

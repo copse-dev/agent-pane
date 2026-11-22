@@ -173,6 +173,9 @@ describe('copse-review pr', () => {
     assert.equal(run.profile, 'pnpm')
     assert.equal(run.exitCode, HEADLESS_EXIT.SUCCESS)
     assert.ok(run.reviewArgs.includes('--foreign'))
+    // The review runs on the commits resolved up front, not on refs that may move.
+    assert.equal(run.reviewArgs[run.reviewArgs.indexOf('--head') + 1], headCommit)
+    assert.equal(run.reviewArgs[run.reviewArgs.indexOf('--base') + 1], run.mergeBase)
     assert.equal(run.reviewArgs.includes('--trusted-prepare'), false)
     const report = reportSchema.parse(JSON.parse(await readFile(join(dir, 'report.json'), 'utf8')))
     assert.equal(report.stage0.headCommit, headCommit)
@@ -229,6 +232,52 @@ describe('copse-review pr', () => {
     assert.equal(code, HEADLESS_EXIT.SUCCESS, err)
     assert.doesNotMatch(err, /already reviewed/)
     assert.match(out, /reviewer mock under contracts/)
+  })
+
+  it('does not answer from a saved report made with other settings or another model', async () => {
+    const out = join(root, 'fixed-out')
+    assert.equal(await review(['--out', out]), HEADLESS_EXIT.SUCCESS, err)
+    assert.equal(await review(['--out', out]), HEADLESS_EXIT.SUCCESS, err)
+    assert.match(err, /already reviewed/)
+    // Same directory, other options: a different question, reviewed again.
+    assert.equal(await review(['--out', out, '--max-steps', '5']), HEADLESS_EXIT.SUCCESS, err)
+    assert.doesNotMatch(err, /already reviewed/)
+    // Same command line, another model chosen by the environment.
+    const previousEnv = io.env
+    io = { ...io, env: { ...previousEnv, LM_STUDIO_MODEL: 'another-model' } }
+    try {
+      assert.equal(await review(['--out', out, '--max-steps', '5']), HEADLESS_EXIT.SUCCESS, err)
+      assert.doesNotMatch(err, /already reviewed/)
+    } finally {
+      io = { ...io, env: previousEnv }
+    }
+  })
+
+  it('gives a change with no lockfile an empty store, never the host’s own', async () => {
+    execFileSync('git', ['checkout', '-q', '-b', 'no-lockfile', 'refs/copse-review/pr-7/head'], {
+      cwd: clone,
+      env: { ...process.env, ...GIT_ENV },
+    })
+    execFileSync('git', ['rm', '-q', 'pnpm-lock.yaml'], { cwd: clone })
+    execFileSync('git', ['commit', '-q', '-m', 'drop the lockfile'], {
+      cwd: clone,
+      env: { ...process.env, ...GIT_ENV },
+    })
+    out = ''
+    err = ''
+    const code = await localPullRequestMain(['no-lockfile', '--base', 'main', '--no-model'], io)
+    assert.equal(code, HEADLESS_EXIT.SUCCESS, err)
+    assert.match(err, /nothing to install/)
+    const dir = join(await repositoryDir(), 'no-lockfile')
+    const [entry] = await readdir(dir)
+    assert.ok(entry !== undefined)
+    const run = runSchema.parse(JSON.parse(await readFile(join(dir, entry, 'run.json'), 'utf8')))
+    assert.equal(run.profile, null)
+    assert.equal(
+      run.reviewArgs[run.reviewArgs.indexOf('--store') + 1],
+      join(copseDir, 'cache', 'review', 'empty-store'),
+    )
+    execFileSync('git', ['checkout', '-q', 'main'], { cwd: clone })
   })
 
   it('refuses the options it sets itself, and a pull request the remote does not have', async () => {
@@ -309,6 +358,29 @@ describe('review lock', () => {
       const takeover = await acquireReviewLock(path, { label: 'third', isAlive: () => false })
       await takeover()
       await assert.rejects(access(path), /ENOENT/)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('takes over a holder from before the last boot, and never releases another’s lock', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'review-lock-'))
+    try {
+      const path = join(dir, 'review.lock')
+      // This process is alive, but the record says it started before the boot.
+      await mkdir(path)
+      await writeFile(
+        join(path, 'owner.json'),
+        JSON.stringify({ pid: process.pid, startedAt: 1_000, label: 'before boot' }),
+      )
+      const release = await acquireReviewLock(path, { label: 'after boot', bootedAt: 2_000 })
+      // Someone else's lock now stands where ours was: our release leaves it.
+      await writeFile(
+        join(path, 'owner.json'),
+        JSON.stringify({ pid: process.pid, startedAt: Date.now(), label: 'other', nonce: 'x' }),
+      )
+      await release()
+      await access(join(path, 'owner.json'))
     } finally {
       await rm(dir, { recursive: true, force: true })
     }

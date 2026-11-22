@@ -46,6 +46,7 @@ import {
   type ContainerEngineCandidate,
   type ContainerLimits,
 } from './container-backend.ts'
+import { envValue } from './provider-selection.ts'
 import { acquireReviewLock } from './review-lock.ts'
 
 export const LOCAL_PR_USAGE = `usage: copse-review pr <number | pull request URL | ref> [options] [review options]
@@ -257,6 +258,8 @@ interface ResolvedChange {
   readonly headRef: string
   readonly baseRef: string
   readonly headCommit: string
+  /** The base ref's commit when it was resolved; what the review compares against. */
+  readonly baseCommit: string
   readonly mergeBase: string
 }
 
@@ -306,7 +309,7 @@ function resolveChange(
   const baseCommit = verifiedCommit(git, baseRef)
   if (baseCommit === null) throw new Error(`${baseRef} is not a commit`)
   const mergeBase = git(['merge-base', baseCommit, headCommit])
-  return { label, pr, headRef, baseRef, headCommit, mergeBase }
+  return { label, pr, headRef, baseRef, headCommit, baseCommit, mergeBase }
 }
 
 const manifestSchema = z.object({ name: z.string().optional() })
@@ -454,7 +457,29 @@ async function resolveCellImage(
   return { engine: builder, image, built: true }
 }
 
-const runRecordSchema = z.object({ exitCode: z.number(), headCommit: z.string() })
+const runRecordSchema = z.object({
+  exitCode: z.number(),
+  headCommit: z.string(),
+  key: z.string(),
+})
+
+/**
+ * The environment that chooses which model answers: the same command line
+ * with another `LM_STUDIO_MODEL` or endpoint is another question. Names only
+ * the routing settings, never a key.
+ */
+const MODEL_ROUTING_ENV = [
+  'LM_STUDIO_URL',
+  'LM_STUDIO_MODEL',
+  'COPSE_REVIEW_OPENROUTER_PROVIDER',
+] as const
+
+function modelRoutingEnvironment(
+  env: Readonly<Record<string, string | undefined>>,
+): Record<string, string | null> {
+  // Blank counts as unset, as the provider selection reads it.
+  return Object.fromEntries(MODEL_ROUTING_ENV.map((name) => [name, envValue(env, name) ?? null]))
+}
 
 export interface LocalPrRun {
   readonly target: string
@@ -469,6 +494,8 @@ export interface LocalPrRun {
   readonly image: string
   readonly reviewArgs: readonly string[]
   readonly outDir: string
+  /** The question's digest: commits, settings, routing and reviewer revision. */
+  readonly key: string
   readonly exitCode: number
   readonly startedAt: string
   readonly finishedAt: string
@@ -533,6 +560,7 @@ export async function localPullRequestMain(
       image: options.image ?? null,
       limits: options.limits,
       review: options.review,
+      routing: modelRoutingEnvironment(io.env),
     }),
   ).slice(0, 12)
   const outDir =
@@ -551,7 +579,8 @@ export async function localPullRequestMain(
     if (
       previous === null ||
       previous.exitCode !== HEADLESS_EXIT.SUCCESS ||
-      previous.headCommit !== change.headCommit
+      previous.headCommit !== change.headCommit ||
+      previous.key !== key
     ) {
       return false
     }
@@ -588,7 +617,10 @@ export async function localPullRequestMain(
   try {
     const runHost = io.runHost ?? defaultRunHost
     const platform: CellPlatform = cellPlatform(options.cpu)
-    let store: string | null = null
+    // With no lockfile there is nothing to install, and the cell gets an empty
+    // store rather than the CLI's default of this user's own pnpm store.
+    let store = join(cacheRoot, 'empty-store')
+    await mkdir(store, { recursive: true })
     if (profile !== null) {
       store = join(
         cacheRoot,
@@ -632,14 +664,18 @@ export async function localPullRequestMain(
     await mkdir(scratchParent, { recursive: true })
     await mkdir(outDir, { recursive: true })
     const trusted = profile === null ? null : trustedPreparationScript(profile)
+    // The commits resolved above, not the refs: a push or another queued
+    // review may move a ref before this one's turn, and the saved report is
+    // filed under these commits.
     const reviewArgs = [
       ...options.review,
       '--foreign',
       '--head',
-      change.headRef,
+      change.headCommit,
       '--base',
-      change.baseRef,
-      ...(store === null ? [] : ['--store', store]),
+      change.baseCommit,
+      '--store',
+      store,
       ...(trusted === null ? [] : ['--trusted-prepare', trusted]),
       '--scratch-parent',
       scratchParent,
@@ -676,6 +712,7 @@ export async function localPullRequestMain(
       image: cell.image,
       reviewArgs,
       outDir,
+      key,
       exitCode,
       startedAt,
       finishedAt: new Date().toISOString(),
