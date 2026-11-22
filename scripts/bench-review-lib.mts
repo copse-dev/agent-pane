@@ -21,8 +21,8 @@
 // src/main — so it doubles as an external-consumer proof of `@copse/review`.
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { cp, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
@@ -285,18 +285,20 @@ export async function materialiseCase(
   reviewCase: ReviewCase,
 ): Promise<{ root: string; remove: () => Promise<void> }> {
   const root = await mkdtemp(join(tmpdir(), `review-bench-${reviewCase.spec.id}-`))
-  const copyTree = (tree: string): void => {
+  // Async `cp`, not recursive `cpSync`: Node's native sync tree copy fails with
+  // EACCES on the virtiofs shares an Apple container mounts the checkout from.
+  const copyTree = async (tree: string): Promise<void> => {
     for (const entry of readdirSync(root)) {
       if (entry !== '.git') execFileSync('rm', ['-rf', join(root, entry)])
     }
-    cpSync(join(reviewCase.dir, tree), root, { recursive: true })
+    await cp(join(reviewCase.dir, tree), root, { recursive: true })
   }
   git(root, 'init', '-q', '-b', 'main')
-  copyTree('base')
+  await copyTree('base')
   git(root, 'add', '-A')
   git(root, 'commit', '-q', '-m', 'base')
   git(root, 'checkout', '-q', '-b', 'head')
-  copyTree('head')
+  await copyTree('head')
   git(root, 'add', '-A')
   git(root, 'commit', '-q', '--allow-empty', '-m', 'head')
   return { root, remove: () => rm(root, { recursive: true, force: true }) }

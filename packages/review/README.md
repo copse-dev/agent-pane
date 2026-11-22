@@ -366,7 +366,10 @@ and the reviewed `packages/extract-zip` directory dependency, and copies patch b
 validated paths. `pnpm fetch` runs in caller-owned scratch with manifests and hooks absent.
 It skips local dependencies. The cell installs offline with lifecycle scripts disabled,
 copies the immutable seed into a checkout-private writable store, then runs only the
-reviewed node-pty build through `scripts/prepare-review-stage0.mts`.
+reviewed node-pty build through `scripts/prepare-review-stage0.mts`. Electron's binary is
+never downloaded, so that script gives the cell a placeholder executable at the path
+Electron's loader returns: test files that import `electron` load and run, and anything
+that launches it fails with a message saying the cell has none.
 
 The protected `copse-findings` job rechecks the owner/caller/rerun context before entering
 `copse-review-models`, keeps its workflow token read-only, and calls the same findings
