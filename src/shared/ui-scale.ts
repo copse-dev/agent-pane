@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 /** Default interface scale (100%). Matches `:root { --ui-scale: 1 }` in tokens.css. */
 export const DEFAULT_UI_SCALE = 1
 
@@ -16,7 +17,7 @@ export const UI_SCALE_STEP = 0.1
  */
 export function clampUiScale(value: number): number {
   if (!Number.isFinite(value)) return DEFAULT_UI_SCALE
-  const clamped = Math.min(UI_SCALE_MAX, Math.max(UI_SCALE_MIN, value))
+  const clamped = clamp(value, UI_SCALE_MIN, UI_SCALE_MAX)
   return Math.round(clamped * 100) / 100
 }
 

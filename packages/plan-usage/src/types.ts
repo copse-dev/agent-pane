@@ -37,8 +37,8 @@ export interface PlanWindow {
   limitCredits?: number
   /**
    * API-equivalent dollars already consumed in this window, when the provider
-   * reports them (Claude legacy `used_dollars` / `spend` money). Powers
-   * plan-worth-it math; the UI progress bar still uses {@link usedPercent}.
+   * reports them (Claude legacy `used_dollars` / `spend` money).
+   * The UI progress bar uses {@link usedPercent}.
    */
   usedDollars?: number
   /**

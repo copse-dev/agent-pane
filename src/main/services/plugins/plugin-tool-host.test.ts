@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
+import { once } from 'node:events'
 import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -213,8 +214,119 @@ describe('plugin tool host', () => {
     )
   })
 
+  it(
+    'rejects closed worker stdin without an uncaught stream error',
+    { timeout: 10_000 },
+    async (t) => {
+      const candidate = await fixture()
+      let worker: ReturnType<typeof spawn> | undefined
+      let closedWorker: Promise<unknown[]> | undefined
+      t.after(async () => {
+        if (worker && worker.exitCode === null && worker.signalCode === null) worker.kill()
+        if (closedWorker) t.diagnostic(`Owned worker closed: ${JSON.stringify(await closedWorker)}`)
+      })
+      await assert.rejects(
+        PluginToolHost.start(candidate, {
+          ...fakeDependencies,
+          spawn: async () => {
+            const proc = spawn(
+              process.execPath,
+              [
+                '-e',
+                String.raw`
+require('node:fs').closeSync(0);
+process.stderr.write('stdin closed\n');
+setInterval(() => {}, 1_000);
+`,
+              ],
+              { stdio: 'pipe' },
+            )
+            worker = proc
+            closedWorker = once(proc, 'close')
+            assert.ok(proc.stderr)
+            proc.stderr.setEncoding('utf8')
+            const ready: unknown[] = await once(proc.stderr, 'data')
+            assert.equal(ready[0], 'stdin closed\n')
+            assert.equal(proc.exitCode, null)
+            assert.equal(proc.stdin.destroyed, false)
+            t.diagnostic(
+              `Owned worker ${String(proc.pid)} acknowledged closed stdin before host initialization`,
+            )
+            return proc
+          },
+        }),
+        (error: unknown) =>
+          error instanceof PluginToolHostUnavailable && /EPIPE/.test(error.message),
+      )
+    },
+  )
+
+  it(
+    'rejects pending and future requests after worker stdin fails',
+    { timeout: 10_000 },
+    async (t) => {
+      const invoked = Promise.withResolvers<undefined>()
+      let invocationCount = 0
+      const worker = spawn(
+        process.execPath,
+        [
+          '-e',
+          String.raw`
+let buffer = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', (chunk) => {
+  buffer += chunk;
+  let nl = buffer.indexOf('\n');
+  while (nl !== -1) {
+    const req = JSON.parse(buffer.slice(0, nl));
+    buffer = buffer.slice(nl + 1);
+    if (req.op === 'initialize') {
+      process.stdout.write(JSON.stringify({
+        type: 'response', id: req.id, ok: true, result: { tools: [], models: [] }
+      }) + '\n');
+    } else if (req.op === 'invoke') {
+      process.send('invoked');
+    }
+    nl = buffer.indexOf('\n');
+  }
+});
+`,
+        ],
+        { stdio: ['pipe', 'pipe', 'pipe', 'ipc'] },
+      )
+      const closedWorker: Promise<unknown[]> = once(worker, 'close')
+      t.after(async () => {
+        if (worker.exitCode === null && worker.signalCode === null) worker.kill()
+        await closedWorker
+      })
+      worker.on('message', (message: unknown) => {
+        if (message !== 'invoked') return
+        invocationCount += 1
+        if (invocationCount === 2) invoked.resolve(undefined)
+      })
+      const host = await PluginToolHost.start(await fixture(), {
+        ...fakeDependencies,
+        spawn: () => Promise.resolve(worker),
+      })
+      const first = assert.rejects(host.invokeTool('one', {}), PluginToolHostUnavailable)
+      const second = assert.rejects(host.invokeTool('two', {}), PluginToolHostUnavailable)
+      await invoked.promise
+      assert.ok(worker.stdin)
+      worker.stdin.destroy(new Error('worker input failed'))
+      await Promise.all([first, second])
+      await assert.rejects(host.invokeTool('three', {}), /not running/i)
+      await host.stop()
+      await host.stop()
+      t.diagnostic(
+        `Owned worker ${String(worker.pid)} closed: ${JSON.stringify(await closedWorker)}`,
+      )
+      assert.equal(invocationCount, 2)
+    },
+  )
+
   it('rejects startup when the worker exits before initialization', async () => {
     const candidate = await fixture()
+    let closedWorker: Promise<unknown[]> | undefined
     const warnings: string[] = []
     const warn = console.warn
     console.warn = (...values: unknown[]): void => {
@@ -224,17 +336,20 @@ describe('plugin tool host', () => {
       await assert.rejects(
         PluginToolHost.start(candidate, {
           ...fakeDependencies,
-          spawn: () =>
-            Promise.resolve(
-              spawn(
-                process.execPath,
-                ['-e', "process.stderr.write('fatal startup detail\\n'); process.exit(2)"],
-                { stdio: 'pipe' },
-              ),
-            ),
+          spawn: () => {
+            const worker = spawn(
+              process.execPath,
+              ['-e', "process.stderr.write('fatal startup detail\\n'); process.exit(2)"],
+              { stdio: 'pipe' },
+            )
+            closedWorker = once(worker, 'close')
+            return Promise.resolve(worker)
+          },
         }),
-        /worker exited/i,
+        (error: unknown) =>
+          error instanceof PluginToolHostUnavailable && /worker exited|EPIPE/i.test(error.message),
       )
+      await closedWorker
     } finally {
       console.warn = warn
     }

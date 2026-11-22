@@ -5,6 +5,7 @@ import { PII_REDACTION_PLUGIN_ID } from '@copse/agent/plugins/pii-redaction-plug
 import { isRecord } from '@shared/unknown-value.ts'
 import { isNonNull } from '@shared/nullish.ts'
 import { z } from 'zod'
+import { createKeyedSerialQueue } from '@copse/std/keyed-serial-queue.ts'
 
 /**
  * Experimental, opt-in client-side PII redaction (off by default).
@@ -336,6 +337,9 @@ async function protectUrlNestedPii(
   return { text: safeText, placeholders: [...placeholders] }
 }
 
+/** Rampart `protect` calls, ordered per underlying guard. */
+const protectQueue = createKeyedSerialQueue<PiiGuard>()
+
 function wrapGuard(guard: PiiGuard, mod: RampartModule): PiiGuard {
   // Rampart's guard owns the mutable forward/reverse placeholder maps. A
   // thread can submit overlapping redactions (for example, two queued turns),
@@ -343,16 +347,9 @@ function wrapGuard(guard: PiiGuard, mod: RampartModule): PiiGuard {
   // those maps atomically. Keep the complete operation — including the second
   // pass for PII nested in a preserved URL — ordered per guard. A failed call
   // must not poison the queue for later messages.
-  let tail = Promise.resolve()
   return {
-    protect: (text): Promise<ScrubResult> => {
-      const operation = tail.then(() => protectUrlNestedPii(guard, mod.detectHeuristics, text))
-      tail = operation.then(
-        () => undefined,
-        () => undefined,
-      )
-      return operation
-    },
+    protect: (text): Promise<ScrubResult> =>
+      protectQueue.run(guard, () => protectUrlNestedPii(guard, mod.detectHeuristics, text)),
     reveal: (reply) => guard.reveal(reply),
   }
 }

@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 import { el } from '../dom/helpers.ts'
 import { minusIcon, plusIcon } from '../dom/icons.ts'
 import { recreateMermaidFrame, type DiagramFrame } from './mermaid-frame.ts'
@@ -15,10 +16,6 @@ let expandedFrame: DiagramFrame | null = null
 let scale = 1
 let translateX = 0
 let translateY = 0
-
-function clamp(n: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, n))
-}
 
 function applyTransform(): void {
   if (!stageEl) return

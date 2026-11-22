@@ -581,7 +581,11 @@ export async function waitForSettledLayout(
 export async function saveElementScreenshot(
   selector: string,
   filename: string,
-  options: { frame?: 'app' | 'document'; beforeCapture?: () => Promise<void> } = {},
+  options: {
+    frame?: 'app' | 'document'
+    beforeCapture?: () => Promise<void>
+    captureFromViewport?: boolean
+  } = {},
 ): Promise<void> {
   await withCaptureFrame(async () => {
     // Scrolling web documents cannot reach subjects below an app-sized clip.
@@ -603,8 +607,45 @@ export async function saveElementScreenshot(
     await waitForSettledLayout(selector)
     await withSettledIndex(async () => {
       await captureWhileStill(selector, async () => {
-        const subject = await browser.$(selector).getElement()
-        await subject.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
+        if (options.captureFromViewport) {
+          // Preserve pointer state while capturing the same real element bounds.
+          await assertE2eDeviceScaleFactor()
+          const bounds = await browser.execute((sel) => {
+            const rect = document.querySelector(sel)?.getBoundingClientRect()
+            if (!rect) return null
+            const scale = window.devicePixelRatio
+            const left = Math.floor(rect.left * scale)
+            const top = Math.floor(rect.top * scale)
+            return {
+              left,
+              top,
+              width: Math.ceil(rect.right * scale) - left,
+              height: Math.ceil(rect.bottom * scale) - top,
+              viewportWidth: Math.round(window.innerWidth * scale),
+              viewportHeight: Math.round(window.innerHeight * scale),
+            }
+          }, selector)
+          if (!bounds || !Object.values(bounds).every(Number.isInteger))
+            throw new Error('Capture subject has no device-pixel bounds')
+          const viewport = PNG.sync.read(Buffer.from(await browser.takeScreenshot(), 'base64'))
+          if (viewport.width !== bounds.viewportWidth || viewport.height !== bounds.viewportHeight)
+            throw new Error('Captured viewport does not match the pinned device scale')
+          if (
+            bounds.left < 0 ||
+            bounds.top < 0 ||
+            bounds.width <= 0 ||
+            bounds.height <= 0 ||
+            bounds.left + bounds.width > viewport.width ||
+            bounds.top + bounds.height > viewport.height
+          )
+            throw new Error('Capture subject extends beyond the captured viewport')
+          const cropped = new PNG({ width: bounds.width, height: bounds.height })
+          PNG.bitblt(viewport, cropped, bounds.left, bounds.top, bounds.width, bounds.height, 0, 0)
+          writeFileSync(join(E2E_SCREENSHOT_DIR, filename), PNG.sync.write(cropped))
+        } else {
+          const subject = await browser.$(selector).getElement()
+          await subject.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
+        }
       })
     })
     // Hand the page back exactly as the caller left it — the scroll was for the

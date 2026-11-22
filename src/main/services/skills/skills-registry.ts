@@ -514,12 +514,13 @@ export async function runWithDiscoveredSkills<T>(fn: () => Promise<T>): Promise<
 export function listSkills(): SkillSummary[] {
   return activeSkills()
     .filter((skill) => skill.userInvocable !== false)
-    .map(({ name, description, source, skillPath, externalLinks }) => ({
+    .map(({ name, description, source, skillPath, externalLinks, plugin }) => ({
       name,
       description,
       source,
       skillPath,
       externalLinks,
+      ...(plugin ? { plugin } : {}),
     }))
 }
 

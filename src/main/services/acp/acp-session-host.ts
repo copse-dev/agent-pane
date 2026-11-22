@@ -3,11 +3,13 @@ import { join } from 'node:path'
 import { errorMessage } from '@shared/errors.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { recordNetworkDenial } from '../../project-sandbox/network-scope.ts'
-import { detachForGroupKill } from '../../project-sandbox/sandbox-argv.ts'
+import { detachForGroupKill, withSandboxShellPath } from '../../project-sandbox/sandbox-argv.ts'
 import { withoutSandboxWrapTmpPin } from '../../project-sandbox/tmp-env.ts'
 import { perfMark } from '../diagnostics/perf-trace.ts'
 import { terminateProcessTree } from '../exec/subprocess-kill.ts'
 import type { AcpAgentSpawnConfig } from './acp-client.ts'
+import { getActiveRunThread } from '../active-run-identity.ts'
+import { currentThreadExecutionContext } from '../thread-execution-context-store.ts'
 import {
   ACP_SESSION_HOST_REQUEST_ENV,
   type AcpSessionHostMessage,
@@ -22,7 +24,9 @@ import {
 export function acpSessionHostRequest(config: AcpAgentSpawnConfig): {
   config: Partial<AcpAgentSpawnConfig>
   allowLocalhost: boolean
+  threadId?: string
 } {
+  const threadId = currentThreadExecutionContext()?.threadId ?? getActiveRunThread()
   return {
     config: {
       command: config.command,
@@ -37,6 +41,7 @@ export function acpSessionHostRequest(config: AcpAgentSpawnConfig): {
       ...(config.chatReadRoots ? { chatReadRoots: config.chatReadRoots } : {}),
     },
     allowLocalhost: Boolean(config.nativeBridge),
+    ...(threadId !== null ? { threadId } : {}),
   }
 }
 
@@ -82,7 +87,8 @@ export function spawnSandboxedAcpSessionHost(config: AcpAgentSpawnConfig): Promi
       cwd: config.cwd,
       env: {
         // A wrap in flight here must not hand its scratch dir to the host (#4149).
-        ...withoutSandboxWrapTmpPin(process.env),
+        // The host runs ASRT, which looks its helpers up through PATH from this cwd.
+        ...withSandboxShellPath(withoutSandboxWrapTmpPin(process.env)),
         ELECTRON_RUN_AS_NODE: '1',
         [ACP_SESSION_HOST_REQUEST_ENV]: JSON.stringify(request),
       },

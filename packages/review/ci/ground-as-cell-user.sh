@@ -82,13 +82,20 @@ sudo install -d -o "$runner_user" -m 0755 "$store"
 pnpm fetch --frozen-lockfile --dir "$dependency_seed" --store-dir "$store"
 chmod -R a+rX,go-w "$store"
 
+# Every cell command starts in /, never in the directory this script runs in.
+# That is the runner's workspace, which the cell user cannot traverse, and a
+# clone started there fails on the hosted image's git (2.56):
+# "fatal: Invalid path '/home/runner/work': Permission denied".
 as_cell() {
-  sudo -u "$cell_user" -- env -i \
-    HOME="$cell_home" \
-    PATH="$cell_path" \
-    LANG=C.UTF-8 \
-    COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
-    "$@"
+  (
+    cd / &&
+      sudo -u "$cell_user" -- env -i \
+        HOME="$cell_home" \
+        PATH="$cell_path" \
+        LANG=C.UTF-8 \
+        COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
+        "$@"
+  )
 }
 
 # The cell's own clone and corepack cache; nothing of the runner's is shared.

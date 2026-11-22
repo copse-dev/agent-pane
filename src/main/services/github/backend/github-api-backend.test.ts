@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { expectRecord } from '@shared/unknown-value.ts'
-import { githubApiBackend } from './github-api-backend.ts'
+import { githubApiBackend, githubApiRestUrl } from './github-api-backend.ts'
 import { resetGitHubApiTokenCacheForTest } from './github-token.ts'
 import { resetGitHubHttpCacheForTest } from './github-http-cache.ts'
 import { PR_ACTIVITY_QUERY } from './pr-activity.ts'
@@ -13,7 +13,8 @@ interface RouteResult {
 
 type Router = (method: string, url: string, body: unknown) => RouteResult
 
-const calls: Array<{ method: string; url: string; body: unknown }> = []
+const calls: Array<{ method: string; url: string; body: unknown; authorization: string | null }> =
+  []
 let router: Router = (): RouteResult => ({ body: {} })
 const originalFetch = globalThis.fetch
 
@@ -28,7 +29,8 @@ function installFetch(): void {
     const url = urlOf(input)
     const method = init?.method ?? 'GET'
     const body: unknown = typeof init?.body === 'string' ? (JSON.parse(init.body) as unknown) : null
-    calls.push({ method, url, body })
+    const authorization = new Headers(init?.headers).get('authorization')
+    calls.push({ method, url, body, authorization })
     const { status = 200, body: responseBody } = router(method, url, body)
     return Promise.resolve(new Response(JSON.stringify(responseBody), { status }))
   }
@@ -63,6 +65,79 @@ describe('githubApiBackend', () => {
     assert.equal(status.username, 'octo')
     assert.equal(calls.length, 1)
     assert.match(calls[0]?.url ?? '', /\/user$/)
+  })
+
+  it('builds REST URLs only from a path under the API root, never an absolute URL', () => {
+    assert.equal(githubApiRestUrl('github.com', '/user'), 'https://api.github.com/user')
+    assert.equal(
+      githubApiRestUrl('ghe.example.com', '/user'),
+      'https://ghe.example.com/api/v3/user',
+    )
+    for (const path of [
+      'https://evil.example/user',
+      'http://api.github.com/user',
+      '.evil.example/x',
+    ]) {
+      assert.throws(() => githubApiRestUrl('github.com', path), /a path under the API root/, path)
+    }
+  })
+
+  describe('with GH_HOST set', () => {
+    const saved: Record<string, string | undefined> = {}
+    const KEYS = ['GH_HOST', 'GH_TOKEN', 'GH_ENTERPRISE_TOKEN'] as const
+
+    beforeEach(() => {
+      for (const key of KEYS) saved[key] = process.env[key]
+      process.env['GH_HOST'] = 'ghe.example.com'
+      process.env['GH_TOKEN'] = 'dotcom-token'
+      process.env['GH_ENTERPRISE_TOKEN'] = 'enterprise-token'
+    })
+
+    afterEach(() => {
+      for (const key of KEYS) {
+        const value = saved[key]
+        if (value === undefined) Reflect.deleteProperty(process.env, key)
+        else process.env[key] = value
+      }
+    })
+
+    it('sends REST and GraphQL requests there with its token, never the github.com one', async () => {
+      router = (_method, url): RouteResult =>
+        url.endsWith('/graphql')
+          ? { body: { data: { viewer: { pullRequests: { nodes: [] } } } } }
+          : { body: { login: 'octo' } }
+      await githubApiBackend.getStatus(null)
+      await githubApiBackend.listMyOpenPrs(null, 10)
+      assert.deepEqual(
+        calls.map(({ url, authorization }) => ({ url, authorization })),
+        [
+          { url: 'https://ghe.example.com/api/v3/user', authorization: 'Bearer enterprise-token' },
+          {
+            url: 'https://ghe.example.com/api/graphql',
+            authorization: 'Bearer enterprise-token',
+          },
+        ],
+      )
+    })
+
+    it('reads a github.com spelling as github.com and sends the github.com token', async () => {
+      process.env['GH_HOST'] = 'GitHub.com.:443'
+      router = (): RouteResult => ({ body: { login: 'octo' } })
+      await githubApiBackend.getStatus(null)
+      assert.deepEqual(
+        calls.map(({ url, authorization }) => ({ url, authorization })),
+        [{ url: 'https://api.github.com/user', authorization: 'Bearer dotcom-token' }],
+      )
+    })
+
+    it('sends nothing and says how to fix GH_HOST when it is a URL', async () => {
+      process.env['GH_HOST'] = 'https://ghe.example.com'
+      const status = await githubApiBackend.getStatus(null)
+      assert.equal(status.authenticated, false)
+      assert.match(status.message ?? '', /^GH_HOST is not a host name\./)
+      assert.equal(await githubApiBackend.listMyOpenPrs(null, 10), null)
+      assert.deepEqual(calls, [])
+    })
   })
 
   it('createPr POSTs the branches and returns the new PR coordinates', async () => {
