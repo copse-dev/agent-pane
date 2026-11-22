@@ -133,6 +133,19 @@ function expectOneBand(band: Awaited<ReturnType<typeof reviewHeaderBand>>): void
   }
 }
 
+/**
+ * Shows the fixture PR as the review subject unless it is already on screen, so
+ * each test that reads the PR viewer also passes when it runs alone.
+ */
+async function showFixturePr(): Promise<void> {
+  if (!(await $('#pane-files').isDisplayed())) {
+    await $('[aria-label="Toggle right panel"]').click()
+  }
+  if (!(await $('#pr-viewer-host .pr-viewer-title').isDisplayed())) await openReviewPr()
+  await expect($('.pr-viewer-title')).toHaveText('Add GitHub PR panel tab')
+  await $('.pr-detail-section[data-section="comments"]').waitForDisplayed({ timeout: 20_000 })
+}
+
 describe('UI consistency: PR pane, model picker and flat tabs', () => {
   before(async function () {
     this.timeout(120_000)
@@ -169,12 +182,7 @@ describe('UI consistency: PR pane, model picker and flat tabs', () => {
 
   it('sets PR body and comment prose in the reading face and its headings in the interface face', async function () {
     this.timeout(60_000)
-    if (!(await $('#pane-files').isDisplayed())) {
-      await $('[aria-label="Toggle right panel"]').click()
-    }
-    await openReviewPr()
-    await $('.pr-detail-section[data-section="comments"]').waitForDisplayed({ timeout: 20_000 })
-    await expect($('.pr-viewer-title')).toHaveText('Add GitHub PR panel tab')
+    await showFixturePr()
     await expect($('.pr-viewer-description h2')).toHaveText('Summary')
 
     const body = await fontFamilies('.pr-viewer-description')
@@ -200,6 +208,7 @@ describe('UI consistency: PR pane, model picker and flat tabs', () => {
 
   it('keeps every flat tab in place and at one weight when another is selected', async function () {
     this.timeout(60_000)
+    await showFixturePr()
     await expectSelectionKeepsTabsInPlace(
       '.pr-detail-section',
       () => $('.pr-detail-section[data-section="comments"]').click(),
@@ -258,6 +267,7 @@ describe('UI consistency: PR pane, model picker and flat tabs', () => {
 
   it('keeps the combined review header and subject picker inside a narrow pane', async function () {
     this.timeout(60_000)
+    await showFixturePr()
     await browser.execute(() => {
       const pane = document.getElementById('pane-files')
       if (pane) pane.style.width = '340px'

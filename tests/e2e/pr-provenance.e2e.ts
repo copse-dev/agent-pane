@@ -171,7 +171,14 @@ describe('native PR and commit provenance', function () {
     await saveElementScreenshot('#pane-files', screenshot)
   }
 
-  it('records actual tools, shows both directions, and reports exact and unknown commits', async () => {
+  let recorded = false
+  /**
+   * The producing commit and PR, and a separate chat that references the PR.
+   * Recorded once, by whichever test runs first, so the restart test also
+   * passes when it runs alone.
+   */
+  async function recordProvenance(): Promise<void> {
+    if (recorded) return
     await runTool(
       'git_commit',
       { message: 'Native provenance commit' },
@@ -210,6 +217,11 @@ describe('native PR and commit provenance', function () {
         updatedAt: 1,
       })
     }, PROJECT)
+    recorded = true
+  }
+
+  it('records actual tools, shows both directions, and reports exact and unknown commits', async () => {
+    await recordProvenance()
     await assertRelations()
     await runTool(
       'gh_pr_view',
@@ -238,6 +250,7 @@ describe('native PR and commit provenance', function () {
   })
 
   it('retains producing and related chats after an offline process restart', async () => {
+    await recordProvenance()
     writeE2eEnv({ COPSE_PANEL_MOCK_GH_STATUS: 'unavailable' })
     await browser.reloadSession()
     await $('.chat-row.selected').waitForExist({ timeout: 30_000 })
