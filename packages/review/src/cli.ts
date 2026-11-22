@@ -758,7 +758,13 @@ export async function main(argv: readonly string[], callerIo: CliIo): Promise<He
         reviewerReasoning === undefined ? undefined : { reasoning: reviewerReasoning }
       const selections = (ids.length === 0 ? [undefined] : ids).map((model) =>
         selectProvider(
-          { kind: providerKind, model, baseUrl: values['base-url'], script, params: reviewerParams },
+          {
+            kind: providerKind,
+            model,
+            baseUrl: values['base-url'],
+            script,
+            params: reviewerParams,
+          },
           io.env,
         ),
       )

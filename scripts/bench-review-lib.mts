@@ -372,7 +372,8 @@ export function modelProfile(options: ModelProfileOptions): BenchProfile {
   const identityFor = (selection: (typeof selections)[number]): BenchModelIdentity => ({
     model: selection.model,
     provider: selection.kind,
-    endpoint: selection.endpoint === undefined ? null : sanitiseEndpoint(selection.endpoint.baseUrl),
+    endpoint:
+      selection.endpoint === undefined ? null : sanitiseEndpoint(selection.endpoint.baseUrl),
   })
   return {
     id: selections.map((selection) => selection.model).join('+'),

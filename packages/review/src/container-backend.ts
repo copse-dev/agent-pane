@@ -209,7 +209,8 @@ export function appleCreateArgs(input: ContainerRunInput): string[] {
     '--network',
     'none',
   )
-  if (input.user !== null) args.push('--user', `${String(input.user.uid)}:${String(input.user.gid)}`)
+  if (input.user !== null)
+    args.push('--user', `${String(input.user.uid)}:${String(input.user.gid)}`)
   for (const path of new Set(input.writable)) args.push('--volume', `${path}:${path}`)
   for (const path of new Set(input.readOnly)) args.push('--volume', `${path}:${path}:ro`)
   args.push('--workdir', input.cwd)
