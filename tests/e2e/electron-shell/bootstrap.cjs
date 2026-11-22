@@ -21,6 +21,39 @@ function applyEnvFile(filePath) {
 applyEnvFile(path.join(__dirname, '.eval-env.json'))
 applyEnvFile(path.join(__dirname, '.e2e-env.json'))
 
+// Refuse (or, in log mode, record) Node egress past loopback before any app
+// module loads; Chromium traffic goes through the proxy wdio.conf.ts passes.
+// See docs/testing-strategy.md#outbound-network-guard.
+if (
+  process.env.COPSE_E2E === '1' &&
+  process.env.COPSE_E2E_NETWORK_LEDGER &&
+  (process.env.COPSE_E2E_NETWORK_GUARD === 'enforce' ||
+    process.env.COPSE_E2E_NETWORK_GUARD === 'log')
+) {
+  const networkGuard = require('./network-guard.cjs')
+  networkGuard.install({
+    mode: process.env.COPSE_E2E_NETWORK_GUARD,
+    ledgerPath: process.env.COPSE_E2E_NETWORK_LEDGER,
+    processLabel: 'electron main (Node)',
+    // COPSE_NAMES_API_URL is the loopback fake, so the trusted names it issues
+    // resolve nowhere; the real zone is never queried.
+    unresolvableSuffixes: ['.u.copse.me'],
+    // Settings validates saved (fake) provider keys against each provider, and
+    // PII redaction's classifier fetches its model from the Hugging Face hub.
+    fetchStub: networkGuard.e2eFetchStub,
+    // VNC discovery browses Bonjour; e2e runs on an empty LAN.
+    silentMulticast: true,
+  })
+  if (process.env.COPSE_E2E_NETWORK_GUARD === 'enforce') {
+    // Chromium fetches Hunspell dictionaries from redirector.gvt1.com (and its
+    // *.gvt1.com redirect) at startup in every spec. Point that external
+    // dependency at a closed loopback port: the download fails as it would offline.
+    require('electron').app.on('session-created', (session) => {
+      session.setSpellCheckerDictionaryDownloadURL('http://127.0.0.1:9/')
+    })
+  }
+}
+
 // Inject a deterministic LAN interface only for the Mobile Companion settings capture.
 // This lives at the OS dependency boundary in the test launcher, never in product config.
 if (process.env.COPSE_E2E === '1' && process.env.COPSE_E2E_MOBILE_NETWORK === '1') {
