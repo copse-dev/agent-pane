@@ -40,8 +40,22 @@ describe('mobile asset routes', () => {
     assert.equal(framed['Content-Type'], base['Content-Type'])
     assert.equal(framed['Cache-Control'], 'no-store')
     assert.equal(base['X-Frame-Options'], 'DENY')
-    // The Mermaid frame stays same-origin only, even under the trusted name.
+  })
+  it('lets the diagram frame be nested inside the shell too', () => {
+    // frame-ancestors checks every ancestor: a diagram frame inside the page inside
+    // copse.me must admit the shell as well as its own origin, or it is refused.
     const mermaid = mobileAssetRoutes().get('/mermaid-frame.html')?.headers ?? {}
-    assert.deepEqual(shellFramableHeaders(mermaid), mermaid)
+    const framed = shellFramableHeaders(mermaid)
+    assert.equal(framed['Content-Security-Policy'], "frame-ancestors 'self' https://copse.me")
+    assert.equal(framed['X-Frame-Options'], undefined)
+    assert.equal(framed['Cache-Control'], 'no-cache')
+    assert.equal(mermaid['X-Frame-Options'], 'SAMEORIGIN')
+  })
+  it('leaves a policy with other ancestors alone', () => {
+    const headers = { 'Content-Security-Policy': "frame-ancestors 'self' https://a.test" }
+    assert.deepEqual(shellFramableHeaders(headers), headers)
+    assert.deepEqual(shellFramableHeaders({ 'Content-Type': 'text/plain' }), {
+      'Content-Type': 'text/plain',
+    })
   })
 })

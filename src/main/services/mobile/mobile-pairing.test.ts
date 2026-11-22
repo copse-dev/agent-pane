@@ -63,6 +63,43 @@ it('shows the desktop that a phone asked through the relay', async () => {
   assert.equal(await result, 'control')
 })
 
+it('never lets a relayed request displace one from the local network', async () => {
+  const requests = new MobilePairing()
+  const lan = requests.request('Desk phone', '111111', new AbortController().signal, {
+    trustedName: true,
+    relayed: false,
+  })
+  const atDesk = requests.current()
+  assert.ok(atDesk)
+  // A relayed request while the LAN one is pending is refused at once.
+  const relayed = requests.request('Elsewhere', '222222', new AbortController().signal, {
+    trustedName: true,
+    relayed: true,
+  })
+  assert.equal(await relayed, null)
+  assert.deepEqual(requests.current(), atDesk)
+  assert.equal(requests.respond('control', atDesk.code, atDesk.id), true)
+  assert.equal(await lan, 'control')
+})
+
+it('lets a request from the local network replace a relayed one', async () => {
+  const requests = new MobilePairing()
+  const relayed = requests.request('Elsewhere', '222222', new AbortController().signal, {
+    trustedName: true,
+    relayed: true,
+  })
+  const lan = requests.request('Desk phone', '111111', new AbortController().signal, {
+    trustedName: true,
+    relayed: false,
+  })
+  assert.equal(await relayed, null)
+  const current = requests.current()
+  assert.equal(current?.label, 'Desk phone')
+  assert.equal(current.relayed, false)
+  assert.equal(requests.respond('read', current.code, current.id), true)
+  assert.equal(await lan, 'read')
+})
+
 it('allows read-only and denial for the matching request', async () => {
   const requests = new MobilePairing()
   for (const decision of ['read', 'deny'] as const) {

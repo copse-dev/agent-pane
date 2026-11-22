@@ -44,6 +44,8 @@ export interface FakeRelay {
     body?: string
     clientIp?: string
   }): Promise<{ status: number; headers: IncomingHttpHeaders; body: string }>
+  /** The HTTP/2 settings the Mac advertised on the newest tunnel, once received. */
+  peerSettings(): http2.Settings | null
   /** Close every tunnel, as a relay restart or a network drop would. */
   dropTunnels(): void
   close(): Promise<void>
@@ -200,6 +202,7 @@ export async function startFakeRelay(options: {
     authenticated,
     refused,
     tunnels: () => sessions.length,
+    peerSettings: () => sessions.at(-1)?.remoteSettings ?? null,
     waitForTunnel: (timeoutMs = 10_000) =>
       sessions.length > 0
         ? Promise.resolve()

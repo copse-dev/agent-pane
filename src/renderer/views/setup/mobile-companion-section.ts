@@ -333,7 +333,7 @@ export function createMobileCompanionSection(api: ApiClient): MobileCompanionSec
     const pairing = relay.enabled ? (state.shellPairing ?? null) : null
     if (pairing?.qrSvg && pairing.expiresAt > Date.now()) {
       shellQrImage.innerHTML = pairing.qrSvg
-      shellQrHint.textContent = `Scan with your phone’s camera, sign in at copse.me with a passkey and add this Mac. Then pair the phone in the page that opens. The code works once and expires at ${formatClock(pairing.expiresAt)}.`
+      shellQrHint.textContent = `Scan with your phone’s camera, sign in at copse.me with a passkey and add this Mac. Then pair the phone in the page that opens. The code works once and expires at ${formatClock(pairing.expiresAt)}; Done only hides it.`
       shellQr.hidden = false
       shellPairBtn.textContent = 'Show a new code'
     } else {
@@ -441,7 +441,7 @@ export function createMobileCompanionSection(api: ApiClient): MobileCompanionSec
           { class: 'field-hint' },
           'Read only shares thread names, saved messages, and activity. Allow control also lets this phone send messages, start chats, stop runs, answer questions, and approve individual requests. Only pair a phone you hold.',
           pairing.relayed
-            ? ' This phone connected through copse.me from outside this network, and its browser verified this Mac’s certificate.'
+            ? ' This phone connected through the Copse relay (copse.me), and its browser verified this Mac’s certificate.'
             : pairing.trustedName
               ? ' This phone connected over this Mac’s trusted name, and its browser verified the certificate.'
               : ' Confirm below that the Copse Local Root is installed and trusted on this phone before allowing control.',

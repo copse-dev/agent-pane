@@ -60,8 +60,6 @@ export interface RelayTunnelOptions {
   connect?: (options: ConnectionOptions) => TLSSocket
   now?: () => number
   random?: () => number
-  /** HTTP/2 PING interval; a ping still unanswered at the next one closes the tunnel. */
-  keepaliveMs?: number
   handshakeTimeoutMs?: number
 }
 
@@ -71,6 +69,8 @@ const MIN_BACKOFF_MS = 1000
 const MAX_BACKOFF_MS = 300_000
 /** A tunnel that stayed up this long resets the backoff; a flapping one keeps backing off. */
 const STABLE_MS = 60_000
+/** HTTP/2 PING interval; a ping still unanswered at the next one closes the tunnel. */
+const KEEPALIVE_MS = 25_000
 
 /** Delay before reconnect attempt `failures` (1-based): doubling, capped, with ±20% jitter. */
 export function relayBackoffMs(failures: number, random: () => number = Math.random): number {
@@ -220,7 +220,7 @@ export class RelayTunnel {
         awaitingPing = false
         if (error) session.destroy()
       })
-    }, this.options.keepaliveMs ?? 25_000)
+    }, KEEPALIVE_MS)
     this.keepalive.unref()
     socket.setKeepAlive(true, 30_000)
     this.update({ state: 'connected', error: null, retryAt: null })

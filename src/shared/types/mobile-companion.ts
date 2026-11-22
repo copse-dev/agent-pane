@@ -32,9 +32,9 @@ export interface MobileCompanionPairing {
    */
   trustedName: boolean
   /**
-   * The phone reached this Mac through the Copse relay, from a network other
-   * than this Mac's, after its copse.me account was paired with this Mac.
-   * Absent from a Mac that predates the relay.
+   * The phone reached this Mac through the Copse relay. That says nothing about
+   * where the phone is: the copse.me shell also falls back to the relay on the
+   * Mac's own network. Absent from a Mac that predates the relay.
    */
   relayed?: boolean
 }

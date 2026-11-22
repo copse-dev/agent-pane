@@ -1,6 +1,12 @@
 import { describe, it, afterEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import { connect, type ConnectionOptions, type TLSSocket } from 'node:tls'
+import { PassThrough } from 'node:stream'
+import {
+  connect,
+  createServer as createTlsServer,
+  type ConnectionOptions,
+  type TLSSocket,
+} from 'node:tls'
 import { generateDeviceKeyPair, signText } from '@copse/remote-protocol/keys.ts'
 import { createTestCa, testServerIdentity } from '../../../../tests/helpers/test-certificates.ts'
 import { startFakeRelay, type FakeRelay } from '../../../../tests/helpers/fake-relay.ts'
@@ -8,6 +14,7 @@ import { createRelayIngress, type RelayIngress } from '../mobile/relay-ingress.t
 import {
   parseRelayEndpoint,
   relayBackoffMs,
+  RELAY_MAX_STREAMS,
   RelayTunnel,
   type RelayTunnelStatus,
 } from './relay-tunnel.ts'
@@ -83,13 +90,24 @@ describe('RelayTunnel', () => {
   }
 
   async function setup(
-    options: { wrongKey?: boolean; random?: () => number } = {},
+    options: {
+      wrongKey?: boolean
+      /** Refuse this many handshakes (wrong key) before accepting. */
+      refuseFirst?: number
+      random?: () => number
+      now?: () => number
+    } = {},
   ): Promise<Fixture> {
     const keys = await generateDeviceKeyPair()
     const other = await generateDeviceKeyPair()
+    let attempts = 0
     const relay = await startFakeRelay({
-      deviceKey: (name) =>
-        Promise.resolve(name === label ? (options.wrongKey ? other : keys).publicKey : null),
+      deviceKey: (name) => {
+        if (name !== label) return Promise.resolve(null)
+        attempts += 1
+        const refuse = options.wrongKey === true || attempts <= (options.refuseFirst ?? 0)
+        return Promise.resolve((refuse ? other : keys).publicKey)
+      },
     })
     cleanups.push(() => relay.close())
     const seen: Fixture['seen'] = []
@@ -125,6 +143,7 @@ describe('RelayTunnel', () => {
       connect: (connection: ConnectionOptions): TLSSocket =>
         connect({ ...connection, host: '127.0.0.1', ca: relay.caPem }),
       ...(options.random ? { random: options.random } : {}),
+      ...(options.now ? { now: options.now } : {}),
     })
     cleanups.push(() => {
       tunnel.stop()
@@ -198,6 +217,27 @@ describe('RelayTunnel', () => {
     assert.deepEqual(fixture.relay.authenticated, [label, label])
   })
 
+  it('resets the backoff once a tunnel has stayed up a minute', async () => {
+    const clock = { now: Date.now() }
+    const fixture = await setup({ refuseFirst: 2, random: () => 0, now: () => clock.now })
+    fixture.tunnel.start()
+    // Two refusals back off 0.8 s then 1.6 s (no jitter), then the third attempt connects.
+    await fixture.relay.waitForTunnel(10_000)
+    await until(() => fixture.tunnel.status().state === 'connected', 5000)
+    clock.now += 61_000
+    fixture.relay.dropTunnels()
+    await until(() => fixture.tunnel.status().state === 'retrying')
+    // Back to the first step, not the third (3.2 s).
+    assert.equal((fixture.tunnel.status().retryAt ?? 0) - clock.now, 800)
+  })
+
+  it('advertises at most 32 concurrent browser streams to the relay', async () => {
+    const fixture = await setup()
+    await connected(fixture)
+    await until(() => fixture.relay.peerSettings()?.maxConcurrentStreams !== undefined)
+    assert.equal(fixture.relay.peerSettings()?.maxConcurrentStreams, RELAY_MAX_STREAMS)
+  })
+
   it('stops for good: no reconnect after stop', async () => {
     const fixture = await setup({ random: () => 0 })
     await connected(fixture)
@@ -239,9 +279,93 @@ describe('RelayTunnel', () => {
   })
 })
 
+describe('RelayTunnel limits', () => {
+  const cleanups: (() => Promise<void> | void)[] = []
+
+  afterEach(async () => {
+    for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
+  })
+
+  it('gives up on a relay that never sends its challenge', async () => {
+    const relayCa = createTestCa('Silent relay CA')
+    const silent = createTlsServer(testServerIdentity(relayCa, ['relay.copse.test']), () => {})
+    await new Promise<void>((resolve) => {
+      silent.listen(0, '127.0.0.1', resolve)
+    })
+    cleanups.push(
+      () =>
+        new Promise<void>((resolve) => {
+          silent.close(() => {
+            resolve()
+          })
+        }),
+    )
+    const address = silent.address()
+    const port = typeof address === 'object' && address ? address.port : 0
+    const keys = await generateDeviceKeyPair()
+    const tunnel = new RelayTunnel({
+      endpoint: { host: 'relay.copse.test', port },
+      label,
+      sign: (text): Promise<string> => signText(keys.privateKey, text),
+      onStream: (stream): void => {
+        stream.destroy()
+      },
+      onStatus: (): void => {},
+      connect: (connection: ConnectionOptions): TLSSocket =>
+        connect({ ...connection, host: '127.0.0.1', ca: relayCa.pem }),
+      handshakeTimeoutMs: 100,
+    })
+    cleanups.push(() => {
+      tunnel.stop()
+    })
+    tunnel.start()
+    await until(() => tunnel.status().state === 'retrying', 5000)
+    assert.match(tunnel.status().error ?? '', /did not answer in time/)
+  })
+})
+
 describe('relay ingress', () => {
+  const ca = createTestCa('Ingress test CA')
+  const served = testServerIdentity(ca, [`*.${label}.u.copse.me`])
+  const identity = {
+    hostname: `lan.${label}.u.copse.me`,
+    web: webHost,
+    key: served.key,
+    cert: served.cert,
+  }
+
+  it('serves at most maxConnections relayed connections at once', () => {
+    const ingress = createRelayIngress({
+      identity: () => identity,
+      handle: () => {},
+      maxConnections: 1,
+    })
+    const first = new PassThrough()
+    const second = new PassThrough()
+    ingress.accept(first, '198.51.100.3')
+    ingress.accept(second, '198.51.100.4')
+    assert.equal(ingress.connections(), 1)
+    assert.equal(first.destroyed, false)
+    assert.equal(second.destroyed, true)
+    ingress.close()
+    assert.equal(ingress.connections(), 0)
+  })
+
+  it('drops a connection whose TLS handshake never completes', async () => {
+    const ingress = createRelayIngress({
+      identity: () => identity,
+      handle: () => {},
+      handshakeTimeoutMs: 50,
+    })
+    const silent = new PassThrough()
+    ingress.accept(silent, '198.51.100.5')
+    assert.equal(ingress.connections(), 1)
+    await until(() => ingress.connections() === 0, 2000)
+    assert.equal(silent.destroyed, true)
+    ingress.close()
+  })
+
   it('closes a relayed connection when this Mac has no valid certificate', async () => {
-    const { PassThrough } = await import('node:stream')
     let handled = false
     const ingress = createRelayIngress({
       identity: () => null,

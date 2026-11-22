@@ -24,22 +24,33 @@ export const COPSE_SHELL_ORIGIN = 'https://copse.me'
 
 /**
  * The same headers for a response served under this Mac's trusted name
- * (`lan.` or `web.<label>.u.copse.me`), which the `copse.me` shell frames
- * (copse-web-access plan, decision 9): `frame-ancestors` names the shell and
- * nothing wider, and `X-Frame-Options: DENY` goes, since it would override it
- * in older browsers. The bare-IP origin is never framed and keeps both.
+ * (`lan.` or `web.<label>.u.copse.me`) while the `copse.me` shell may frame it
+ * (copse-web-access plan, decision 9; only while the relay is chosen). A page
+ * framable by nothing becomes framable by the shell and nothing wider; a
+ * same-origin-only frame (the Mermaid diagram frame) also admits the shell,
+ * because `frame-ancestors` checks every ancestor and the shell is the top one.
+ * `X-Frame-Options` goes either way: it cannot name another origin and would
+ * override the policy in older browsers. The bare-IP origin keeps both.
  */
 export function shellFramableHeaders(headers: Record<string, string>): Record<string, string> {
   const policy = headers['Content-Security-Policy']
-  if (headers['X-Frame-Options'] !== 'DENY' || !policy?.includes("frame-ancestors 'none'"))
-    return headers
+  if (policy === undefined) return headers
+  let framablePolicy: string
+  if (policy.includes("frame-ancestors 'none'"))
+    framablePolicy = policy.replace(
+      "frame-ancestors 'none'",
+      `frame-ancestors ${COPSE_SHELL_ORIGIN}`,
+    )
+  else if (/frame-ancestors 'self'(?:;|$)/.test(policy))
+    framablePolicy = policy.replace(
+      "frame-ancestors 'self'",
+      `frame-ancestors 'self' ${COPSE_SHELL_ORIGIN}`,
+    )
+  else return headers
   const framable: Record<string, string> = {}
   for (const [name, value] of Object.entries(headers))
     if (name !== 'X-Frame-Options') framable[name] = value
-  framable['Content-Security-Policy'] = policy.replace(
-    "frame-ancestors 'none'",
-    `frame-ancestors ${COPSE_SHELL_ORIGIN}`,
-  )
+  framable['Content-Security-Policy'] = framablePolicy
   return framable
 }
 

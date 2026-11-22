@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { mkdirSync, writeFileSync } from 'node:fs'
+import { request } from 'node:https'
 import { join } from 'node:path'
 import { z } from 'zod'
 import QRCode from 'qrcode'
@@ -50,6 +51,71 @@ describe('Mobile Companion through the relay', function () {
   this.timeout(180_000)
   let api: FakeNamesApi
   let relay: FakeRelay
+  let address = ''
+
+  /** A JSON POST to the `lan.` name over real TLS on the local address, as a phone at the desk. */
+  const lanPost = (path: string, body: object): Promise<{ status: number; json: unknown }> =>
+    new Promise((resolve, reject) => {
+      const lan = `lan.${label}.u.copse.me`
+      const req = request(
+        {
+          host: address,
+          port: 42773,
+          servername: lan,
+          ca: api.caPem,
+          path,
+          method: 'POST',
+          headers: {
+            host: `${lan}:42773`,
+            origin: `https://${lan}:42773`,
+            'content-type': 'application/json',
+          },
+          agent: false,
+        },
+        (res) => {
+          const chunks: Buffer[] = []
+          res.on('data', (chunk: Buffer) => chunks.push(chunk))
+          res.on('end', () => {
+            resolve({
+              status: res.statusCode ?? 0,
+              json: safeJsonParse(
+                Buffer.concat(chunks).toString('utf8'),
+                decodeWithSchema(jsonSchema),
+              ),
+            })
+          })
+        },
+      )
+      req.on('error', reject)
+      req.end(JSON.stringify(body))
+    })
+
+  /** The framing headers of the `lan.` name's page, over real TLS on the local address. */
+  const lanFraming = (): Promise<{ csp: string; xfo: string | undefined }> =>
+    new Promise((resolve, reject) => {
+      const lan = `lan.${label}.u.copse.me`
+      const req = request(
+        {
+          host: address,
+          port: 42773,
+          servername: lan,
+          ca: api.caPem,
+          path: '/',
+          headers: { host: `${lan}:42773` },
+          agent: false,
+        },
+        (res) => {
+          res.resume()
+          const xfo = res.headers['x-frame-options']
+          resolve({
+            csp: String(res.headers['content-security-policy']),
+            xfo: typeof xfo === 'string' ? xfo : undefined,
+          })
+        },
+      )
+      req.on('error', reject)
+      req.end()
+    })
 
   const relayed = async (
     path: string,
@@ -80,8 +146,9 @@ describe('Mobile Companion through the relay', function () {
   }
 
   before(async () => {
-    const address = await availableMobileAddress()
-    assert.ok(address, 'The relay eval requires an unused private IPv4 interface on port 42773')
+    const found = await availableMobileAddress()
+    assert.ok(found, 'The relay eval requires an unused private IPv4 interface on port 42773')
+    address = found
     api = await startFakeNamesApi({ port: E2E_NAMES_API_PORT, invite, label })
     relay = await startFakeRelay({
       hostname: 'localhost',
@@ -133,6 +200,10 @@ describe('Mobile Companion through the relay', function () {
     const toggle = block.$('input[name="mobileCompanionRelay"]')
     assert.equal(await toggle.isSelected(), false)
     assert.equal(relay.tunnels(), 0)
+    // Nothing may frame the trusted name until the relay is chosen.
+    const before = await lanFraming()
+    assert.match(before.csp, /frame-ancestors 'none'/)
+    assert.equal(before.xfo, 'DENY')
 
     await toggle.click()
     await relay.waitForTunnel(30_000)
@@ -164,6 +235,16 @@ describe('Mobile Companion through the relay', function () {
       /frame-ancestors https:\/\/copse\.me(;|$)/,
     )
     assert.equal(page.headers['x-frame-options'], undefined)
+    // Once chosen, the lan. name is framable by the shell too, and the diagram frame admits it.
+    const after = await lanFraming()
+    assert.match(after.csp, /frame-ancestors https:\/\/copse\.me(;|$)/)
+    assert.equal(after.xfo, undefined)
+    const diagram = await relayed('/mermaid-frame.html')
+    assert.equal(
+      diagram.headers['content-security-policy'],
+      "frame-ancestors 'self' https://copse.me",
+    )
+    assert.equal(diagram.headers['x-frame-options'], undefined)
 
     // Everything past pairing needs a token, and only the web name is served.
     assert.equal((await relayed('/api/activity')).status, 401)
@@ -180,7 +261,7 @@ describe('Mobile Companion through the relay', function () {
     const banner = $('.mobile-companion-pairing-banner')
     await banner.scrollIntoView({ block: 'center' })
     await expect(banner).toHaveText(expect.stringContaining(started.json.code), { wait: 15_000 })
-    await expect(banner).toHaveText(expect.stringContaining('through copse.me from outside'))
+    await expect(banner).toHaveText(expect.stringContaining('through the Copse relay (copse.me)'))
     const restoreCode = await pinTextForCapture(
       '.mobile-companion-pairing-code',
       /^\d{6}$/,
@@ -193,7 +274,7 @@ describe('Mobile Companion through the relay', function () {
     }
     await banner.$('button=Allow control').click()
 
-    // The result is bound to the address the relay reported for the request.
+    // Collected through the relay by whoever holds the pairing's random id.
     let token = ''
     await browser.waitUntil(
       async () => {
@@ -208,6 +289,32 @@ describe('Mobile Companion through the relay', function () {
     const feed = await relayed('/api/activity', { bearer: token })
     assert.equal(feed.status, 200)
     assert.equal(feed.json?.access, 'control')
+  })
+
+  it('keeps pairing open to the local network while a relayed request is pending', async () => {
+    // Each slot takes one request a second, and the previous test's request was moments ago:
+    // retry briefly. A slot still held by an earlier pairing would stay busy for two minutes.
+    let away: Awaited<ReturnType<typeof relayed>> | undefined
+    await browser.waitUntil(
+      async () => {
+        away = await relayed('/api/pair/request', {
+          body: { label: 'Relay squatter' },
+          clientIp: '198.51.100.41',
+        })
+        return away.status !== 429
+      },
+      { timeout: 5000, interval: 300, timeoutMsg: 'the relayed pairing slot stayed busy' },
+    )
+    assert.equal(away?.status, 200, `the relayed request took its own slot: ${away?.body ?? ''}`)
+    const banner = $('.mobile-companion-pairing-banner')
+    await expect(banner).toHaveText(expect.stringContaining('Relay squatter'), { wait: 15_000 })
+    // A phone at the desk is not told "Pairing already in progress"…
+    const desk = await lanPost('/api/pair/request', { label: 'Desk phone' })
+    assert.equal(desk.status, 200)
+    // …and it replaces the relayed request on the desktop.
+    await expect(banner).toHaveText(expect.stringContaining('Desk phone'), { wait: 15_000 })
+    await banner.$('button=Deny').click()
+    await expect(banner).not.toBeDisplayed({ wait: 15_000 })
   })
 
   it('shows a one-time copse.me code signed by the device key', async () => {

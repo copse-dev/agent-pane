@@ -302,6 +302,7 @@ function launch(address: string): Promise<MobileServer> {
     devices: devices(),
     approvePair,
     publicIdentity: () => remoteNames().identity(),
+    shellFraming: relayChosen,
     onDevicesChanged: publish,
     onStop: () => {
       active = null

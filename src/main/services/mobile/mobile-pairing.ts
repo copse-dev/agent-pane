@@ -24,6 +24,10 @@ export class MobilePairing {
     signal: AbortSignal,
     via: PairingVia = { trustedName: false, relayed: false },
   ): Promise<MobileCompanionAccess | null> {
+    // A relayed request never displaces one from the local network, so a client the relay
+    // admits cannot keep a phone at the desk from pairing. Otherwise the newest request wins.
+    if (via.relayed && this.pending && this.pending.pairing.relayed !== true)
+      return Promise.resolve(null)
     this.pending?.resolve(null)
     this.pending = null
     if (signal.aborted) return Promise.resolve(null)

@@ -776,6 +776,6 @@ describe('createMobileCompanionSection', () => {
     document.body.append(section.root)
     await section.refresh()
     const banner = section.root.querySelector<HTMLElement>('.mobile-companion-pairing-banner')
-    assert.match(banner?.textContent ?? '', /through copse\.me from outside this network/)
+    assert.match(banner?.textContent ?? '', /through the Copse relay \(copse\.me\)/)
   })
 })

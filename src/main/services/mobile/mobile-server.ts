@@ -150,9 +150,19 @@ function write(res: ServerResponse, spec: ResponseSpec): void {
 
 /** How a request that passed its transport's boundary check arrived. */
 interface RequestRoute extends PairingVia {
-  /** Who failed-auth limits and pairing polls are keyed to. */
+  /** Who failed-token limits are keyed to. */
   peer: string
+  /**
+   * Who may collect a pairing result. On the LAN, the peer address. Through the relay, any
+   * relayed client holding the pairing's random id: the id is returned only to the requester
+   * over TLS, and the address the relay reports can change between a phone's request and its
+   * polls (carrier NAT, IPv4 and IPv6).
+   */
+  binding: string
 }
+
+/** Distinct addresses whose failed token attempts are remembered at once. */
+const FAILED_AUTH_LIMIT = 1024
 
 function preferences(req: IncomingMessage): RequestPreferences {
   return {
@@ -204,6 +214,12 @@ export async function startMobileServer(options: {
   ) => Promise<ClientAccess | null>
   /** The publicly trusted name and certificate to serve beside the LAN IP, while valid. */
   publicIdentity?: () => PublicIdentity | null
+  /**
+   * Whether the copse.me shell may frame responses under the trusted name: only while the
+   * user has chosen to be reachable through the relay. Otherwise every response keeps
+   * `frame-ancestors 'none'` (or `'self'` for the diagram frame).
+   */
+  shellFraming?: () => boolean
   assetsDir?: string
   onDevicesChanged?: () => void
   onStop?: () => void
@@ -223,24 +239,30 @@ export async function startMobileServer(options: {
   const failedAuth = new Map<string, { attempts: number; blockedUntil: number }>()
   let stopped = false
   const active = (): boolean => !stopped
-  const pairings = new ClientPairings({
-    maxPending: 1,
-    canIssue: (): boolean => !stopped,
-    issue: (label, access): { id: string; token: string } => {
-      const issued = options.devices.issue(label, access)
-      options.onDevicesChanged?.()
-      return issued
-    },
-    revoke: (id): void => {
-      options.devices.revoke(id)
-      options.onDevicesChanged?.()
-    },
-    approve: (label, code, signal, context): Promise<ClientAccess | null> =>
-      options.approvePair(label, code, signal, {
-        trustedName: context?.trustedName === true,
-        relayed: context?.relayed === true,
-      }),
-  })
+  // One pending pairing per transport, so a client the relay admits cannot hold the only
+  // slot and keep a phone on the local network from pairing.
+  const newPairings = (): ClientPairings =>
+    new ClientPairings({
+      maxPending: 1,
+      canIssue: (): boolean => !stopped,
+      issue: (label, access): { id: string; token: string } => {
+        const issued = options.devices.issue(label, access)
+        options.onDevicesChanged?.()
+        return issued
+      },
+      revoke: (id): void => {
+        options.devices.revoke(id)
+        options.onDevicesChanged?.()
+      },
+      approve: (label, code, signal, context): Promise<ClientAccess | null> =>
+        options.approvePair(label, code, signal, {
+          trustedName: context?.trustedName === true,
+          relayed: context?.relayed === true,
+        }),
+    })
+  const pairings = newPairings()
+  const relayPairings = newPairings()
+
   let authority = ''
   let port = 0
   // The trusted name, when there is one, is served by SNI: a phone that opens
@@ -283,6 +305,7 @@ export async function startMobileServer(options: {
         mobileRequestAllowed(req, authorities())
           ? {
               peer: req.socket.remoteAddress ?? '',
+              binding: req.socket.remoteAddress ?? '',
               trustedName: req.headers.host !== authority,
               relayed: false,
             }
@@ -296,7 +319,7 @@ export async function startMobileServer(options: {
       serve(req, res, () => {
         const web = publicIdentity()?.web
         return web && relayedRequestAllowed(req, web)
-          ? { peer: `relay ${clientIp}`, trustedName: true, relayed: true }
+          ? { peer: `relay ${clientIp}`, binding: 'relay', trustedName: true, relayed: true }
           : null
       })
     },
@@ -312,7 +335,7 @@ export async function startMobileServer(options: {
         send(res, 403, { error: 'Forbidden' })
         return
       }
-      if (route.trustedName) shellFramed.add(res)
+      if (route.trustedName && options.shellFraming?.() === true) shellFramed.add(res)
       await handle(req, res, route)
     })().catch(() => {
       if (!res.headersSent) send(res, 500, { error: 'Request failed' })
@@ -355,7 +378,8 @@ export async function startMobileServer(options: {
         send(res, 403, { error: 'Mobile Companion stopped' })
         return
       }
-      const pairing = pairings.request(body.label, route.peer, {
+      const slot = route.relayed ? relayPairings : pairings
+      const pairing = slot.request(body.label, route.binding, {
         trustedName: route.trustedName,
         relayed: route.relayed,
       })
@@ -369,7 +393,7 @@ export async function startMobileServer(options: {
     // Never compressed: this answer carries a bearer token (BREACH).
     if (req.method === 'GET' && path.pathname === '/api/pair/result') {
       const id = path.searchParams.get('id') ?? ''
-      const pairing = pairings.poll(id, route.peer)
+      const pairing = (route.relayed ? relayPairings : pairings).poll(id, route.binding)
       if (!pairing) {
         send(res, 404, { error: 'Pairing expired' })
         return
@@ -388,6 +412,11 @@ export async function startMobileServer(options: {
     if (!principal) {
       const attempts =
         prior?.blockedUntil && prior.blockedUntil < Date.now() ? 1 : (prior?.attempts ?? 0) + 1
+      // Relayed peers are whatever addresses the relay reports: keep the map bounded.
+      if (!failedAuth.has(peer) && failedAuth.size >= FAILED_AUTH_LIMIT) {
+        const oldest = failedAuth.keys().next()
+        if (!oldest.done) failedAuth.delete(oldest.value)
+      }
       failedAuth.set(peer, {
         attempts,
         blockedUntil: attempts >= 30 ? Date.now() + 300_000 : 0,
@@ -524,6 +553,7 @@ export async function startMobileServer(options: {
     if (stopped) return
     stopped = true
     pairings.close()
+    relayPairings.close()
     relayed.close()
     server.closeAllConnections()
     await new Promise<void>((resolve) =>

@@ -59,25 +59,40 @@ Two credentials, held apart:
   `copse.me` account added to this Mac refreshed in the last few minutes. An account is added
   with a grant: **Add this Mac at copse.me** shows a QR for `https://copse.me/add#g=<grant>`, a
   label grant signed by the device key, valid for ten minutes and redeemed once by the names API.
-  The grant sits in the URL fragment, so it never reaches a server log.
+  The grant sits in the URL fragment, so it never reaches a server log. **Done** only hides the
+  QR: the code stays redeemable for the rest of its ten minutes. **Remove name** ends every
+  `copse.me` account's reach to this Mac, because the label is retired with it.
 - **Control** stays with the Mac. A relayed request must name exactly `web.<label>.u.copse.me`
   in `Host` (and its origin in `Origin`); there is no private-peer check, because the peer is the
   relay. Every route past pairing needs a device token, and pairing needs the desktop's approval:
-  the pairing banner says the phone came through copse.me from outside this network. Failed-token
-  limits and pairing results are keyed to the address the relay reported.
+  the pairing banner says the phone came through the Copse relay. That is all the Mac knows: the
+  shell also falls back to the relay on the Mac's own network. Relayed pairing has its own slot,
+  and a relayed request never displaces one from the local network on the desktop, so a client
+  the relay admits cannot keep a phone at the desk from pairing. Failed-token limits are keyed to
+  the address the relay reported (at most 1,024 remembered); a relayed pairing result goes to
+  whoever holds its random id, because a phone's address can change between its request and
+  its polls.
 
 The usual journey, at the desk: get a name, turn the relay on, choose Add this Mac at copse.me,
 scan the QR, sign in at `copse.me` with a passkey and add the Mac. The shell frames the Mac's page;
 pair the phone there and approve it on the desktop. Away from the desk, open `copse.me`.
 
-Device tokens belong to an origin: a phone paired at the local address or at `lan.` pairs once
-more under `web.`, and a phone that clears the site's data pairs again.
+A device token is accepted on every route this Mac serves. Once the relay is on, a phone paired
+on the local network can also act through the relay, and a phone paired through the relay can act
+on the local network; Settings does not show which route a phone paired on. Revoking a phone in
+Settings cuts it off on every route. What is per-origin is the phone's browser storage: a phone
+paired at the local address or at `lan.` keeps its token there, pairs once more the first time it
+uses `web.`, and pairs again if it clears the site's data.
 
 ### Framing and what crosses into the shell
 
-Responses under a trusted name (`lan.` or `web.`) send `frame-ancestors https://copse.me` and no
-`X-Frame-Options`, so only the shell may frame them; the bare-IP address still refuses all
-framing. When the shell frames the page, the page posts one message to `https://copse.me`:
+Only while the relay is chosen do responses under a trusted name (`lan.` or `web.`) send
+`frame-ancestors https://copse.me` and no `X-Frame-Options`, so the shell and nothing else may
+frame them; the diagram frame admits its own origin and the shell. With the relay off, and always
+on the bare-IP address, every response keeps `frame-ancestors 'none'` and `X-Frame-Options: DENY`.
+Framing is the one relaxation of the LAN plan's header rule, which exists against clickjacking of
+the decision screen: a compromised shell could overlay its own page on the framed Mac page and
+trick taps on Approve. See the [threat model](threat-model.md#threat-scenarios), scenario 12. When the shell frames the page, the page posts one message to `https://copse.me`:
 `{type: 'copse-status', v: 1, state, counts: {attention, running}}`. It carries no thread names,
 transcripts, diffs or file names, and the page never reads messages from the shell. The shell
 reads the message's arrival as proof that the frame reached the Mac.
@@ -97,6 +112,8 @@ servers; the status message stays in the phone's browser.
 ### Limits and known gaps
 
 - The Mac must be awake with Copse open; the relay cannot wake it.
+- The tunnel connects directly and ignores HTTP proxy settings, so a network that lets traffic
+  out only through a proxy cannot hold it.
 - Inside the shell, the frame tries `https://lan.<label>.u.copse.me:42773/` first, and falls back
   to `web.` through the relay if the page has not reported within four seconds. Chrome may first
   ask to allow access to the local network; declining sends the shell straight to the relay.
@@ -152,8 +169,8 @@ the Mac just generated and is currently valid.
   the registration and the certificate on the Mac. A later registration gets a new key and label.
 
 State lives in `~/.copse/names/` (0700): `device.json` (the sealed device key, the registration,
-the last address the service accepted, recent order times and certificate dates), and
-`tls-key.pem` / `tls-chain.pem` (0600). It is kept apart from `config.json`, which renderer
+the last address the service accepted, recent order times and certificate dates),
+`tls-key.pem` / `tls-chain.pem`, and `relay.json` (whether the relay is chosen), all 0600. It is kept apart from `config.json`, which renderer
 settings writes can reach.
 
 ## Networks whose DNS drops the name
@@ -192,5 +209,6 @@ never holds a key that decrypts Mobile Companion traffic.
 
 The relay and the `copse.me` shell are further parties, covered by scenario 12 of the threat
 model: the relay can deny service, see connection metadata and hand strangers' connections to the
-Mac's page, which still needs a device token or the desktop's approval; the shell can show a fake
-page around the frame, but holds nothing that acts on the Mac.
+Mac's page, which still needs a device token or the desktop's approval. The shell holds no device
+token of its own, but while the relay is chosen it frames a page that may: a compromised shell
+could show a fake page around the frame or overlay it to trick taps on the decision screen.
