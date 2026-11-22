@@ -182,7 +182,7 @@
 
   function prRow(record, options) {
     const lane = record.lane
-    const failing = (record.facts.checks?.failed ?? 0) > 0
+    const failing = record.action === 'Fix failing checks'
     const active = record.signals.some((signal) => signal.kind === 'active')
     const flagged = record.signals.some((signal) =>
       ['hidden-parent', 'heavy-overlap', 'far-behind'].includes(signal.kind),
@@ -274,7 +274,7 @@
           h('span', { class: 'stack-expand' }, open ? 'hide' : 'show'),
           h(
             'span',
-            { class: `row-action ${(lead.facts.checks?.failed ?? 0) > 0 ? 'failing' : ''}` },
+            { class: `row-action ${lead.action === 'Fix failing checks' ? 'failing' : ''}` },
             stack.action,
           ),
         ),
@@ -310,7 +310,11 @@
       h('span', { class: 'chevron', 'aria-hidden': 'true' }, '▾'),
       h('span', { class: 'section-label' }, label),
       h('span', { class: 'section-hint' }, hint),
-      h('span', { class: 'section-count' }, String(count)),
+      h(
+        'span',
+        { class: 'section-count', title: `${String(count)} rows; a stack counts once` },
+        String(count),
+      ),
     )
   }
 
@@ -339,27 +343,24 @@
     for (const lane of result.lanes) {
       const items = []
       const seenStacks = new Set()
-      let count = 0
       for (const record of visible) {
         const stack = record.stack ? stackById.get(record.stack.id) : null
         if (stack) {
           if (stack.lane !== lane.id || seenStacks.has(stack.id)) continue
           seenStacks.add(stack.id)
           const members = stack.members.filter((n) => visible.some((r) => r.number === n))
-          count += members.length
           items.push({
             order: stack.root,
             rank: actionRank(prs.get(stack.lead)),
             node: stackRow(stack, members),
           })
         } else if (record.lane === lane.id) {
-          count += 1
           items.push({ order: record.number, rank: actionRank(record), node: prRow(record) })
         }
       }
       if (items.length === 0) continue
       const section = h('section', {})
-      section.append(sectionToggle(lane.id, lane.label, lane.hint, count, state.collapsed))
+      section.append(sectionToggle(lane.id, lane.label, lane.hint, items.length, state.collapsed))
       if (!state.collapsed.has(lane.id) || state.filter.trim() !== '') {
         items.sort((a, b) => a.rank - b.rank || b.order - a.order)
         section.append(...items.map((item) => item.node))
@@ -715,10 +716,20 @@
         h(
           'dd',
           {},
-          checks
-            ? `${String(checks.passed)} passed · ${String(checks.failed)} failed · ${String(checks.running)} running · ${String(checks.skipped)} skipped`
+          checks && checks.total > 0
+            ? `Latest run of each check: ${String(checks.passed)} passed · ${String(checks.failed)} failed · ${String(checks.running)} running · ${String(checks.cancelled)} cancelled · ${String(checks.skipped)} skipped`
             : 'No check runs on the current head',
         ),
+        checks && checks.gate
+          ? [
+              h('dt', {}, 'CI gate'),
+              h(
+                'dd',
+                {},
+                `CI Passed: ${checks.gate}${checks.supersededFailures > 0 ? ` · ${String(checks.supersededFailures)} earlier failures superseded by re-runs` : ''}`,
+              ),
+            ]
+          : null,
         checks && checks.failed > 0
           ? [h('dt', {}, 'Failed'), h('dd', {}, checks.failedNames.join(', '))]
           : null,

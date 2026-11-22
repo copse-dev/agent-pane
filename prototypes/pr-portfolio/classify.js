@@ -150,12 +150,46 @@
     ).map((surface) => surface.id)
   }
 
+  // Checks hold only the latest run of each check name (snapshot.js), so a
+  // superseded failure never counts. Where the repository's aggregate
+  // `CI Passed` gate exists it decides pass or fail; other failures under a
+  // green gate are non-blocking. A failing `Base Current` means the branch is
+  // behind its required base. #4226 reads GitHub's own required flags instead.
+  function checkState(checks) {
+    if (!checks || checks.total === 0) return { kind: 'none', names: [], behindBase: false }
+    const behindBase = checks.failedNames.includes('Base Current')
+    const names = checks.failedNames.filter(
+      (name) => name !== 'Base Current' && name !== 'CI Passed',
+    )
+    if (checks.gate === 'failed') return { kind: 'failing', names, behindBase }
+    if (checks.running > 0 || checks.gate === 'running')
+      return { kind: 'running', names, behindBase }
+    if (checks.gate === null && names.length > 0) return { kind: 'failing', names, behindBase }
+    if (checks.gate === 'passed' || checks.passed > 0) return { kind: 'passed', names, behindBase }
+    return { kind: 'none', names, behindBase }
+  }
+
   function classifyLane(pr, now) {
     const idle = days(now - Date.parse(pr.updatedAt))
     const checks = pr.checks
     const labels = new Set(pr.labels)
     const stale = idle >= RULES.staleDays
     const staleReason = `No activity for ${String(idle)} days`
+    const ci = checkState(checks)
+    const nonBlocking =
+      ci.kind === 'passed' && ci.names.length > 0
+        ? [`Non-blocking failures under a green CI Passed gate: ${ci.names.join(', ')}`]
+        : []
+    // An agent's turn that nobody has taken for a week is stalled.
+    const agentTurn = (action, short, reasons) =>
+      stale
+        ? {
+            lane: 'stalled',
+            actor: 'nobody',
+            action: `${short} · idle ${String(idle)}d`,
+            reasons: [...reasons, staleReason],
+          }
+        : { lane: 'agent', actor: 'agent', action, reasons }
     if (/parked|do not merge/i.test(pr.title)) {
       return {
         lane: 'parked',
@@ -164,65 +198,36 @@
         reasons: ['Title marks it do-not-merge'],
       }
     }
-    if (
-      checks &&
-      checks.failed > 0 &&
-      checks.failedNames.every((name) => name === 'Base Current')
-    ) {
-      const reasons = ['Only the Base Current check fails: the branch is behind its required base']
-      if (stale) {
-        return {
-          lane: 'stalled',
-          actor: 'nobody',
-          action: `Needs rebase · idle ${String(idle)}d`,
-          reasons: [...reasons, staleReason],
-        }
-      }
-      return { lane: 'agent', actor: 'agent', action: 'Rebase onto main', reasons }
+    if (ci.kind === 'failing') {
+      const list = ci.names.slice(0, 3).join(', ')
+      return agentTurn('Fix failing checks', 'CI failing', [
+        checks.gate === 'failed'
+          ? `CI Passed gate failed${list ? `: ${list}` : ''}`
+          : `${plural(ci.names.length, 'check')} failed: ${list}`,
+      ])
     }
-    if (checks && checks.failed > 0) {
-      const names = checks.failedNames.slice(0, 3).join(', ')
-      const failed = `${plural(checks.failed, 'check')} failed: ${names}`
-      if (stale) {
-        return {
-          lane: 'stalled',
-          actor: 'nobody',
-          action: `CI failing · idle ${String(idle)}d`,
-          reasons: [failed, staleReason],
-        }
-      }
-      return {
-        lane: 'agent',
-        actor: 'agent',
-        action: 'Fix failing checks',
-        reasons: [
-          failed,
-          ...(checks.running > 0 ? [`${String(checks.running)} still running`] : []),
-        ],
-      }
+    if (ci.behindBase) {
+      return agentTurn('Rebase onto main', 'Needs rebase', [
+        'Base Current fails: the branch is behind its required base',
+        ...nonBlocking,
+      ])
     }
     if (labels.has('review-has-feedback')) {
-      if (stale) {
-        return {
-          lane: 'stalled',
-          actor: 'nobody',
-          action: `Feedback unaddressed · idle ${String(idle)}d`,
-          reasons: ['Labelled review-has-feedback', staleReason],
-        }
-      }
-      return {
-        lane: 'agent',
-        actor: 'agent',
-        action: 'Address review feedback',
-        reasons: ['Labelled review-has-feedback'],
-      }
+      return agentTurn('Address review feedback', 'Feedback unaddressed', [
+        'Labelled review-has-feedback',
+      ])
     }
-    if (checks && checks.running > 0) {
+    if (ci.kind === 'running') {
       return {
         lane: 'progress',
         actor: 'ci',
         action: 'Checks running',
-        reasons: [`${plural(checks.running, 'check')} running: ${checks.runningNames.join(', ')}`],
+        reasons: [
+          `${plural(checks.running, 'check')} running: ${checks.runningNames.join(', ')}`,
+          ...(ci.names.length > 0
+            ? [`Failed so far, before the gate reports: ${ci.names.slice(0, 3).join(', ')}`]
+            : []),
+        ],
       }
     }
     if (labels.has('screenshots-need-review')) {
@@ -230,17 +235,24 @@
         lane: 'user',
         actor: 'user',
         action: 'Review screenshots',
-        reasons: ['Labelled screenshots-need-review', ...(stale ? [staleReason] : [])],
+        reasons: [
+          'Labelled screenshots-need-review',
+          ...nonBlocking,
+          ...(stale ? [staleReason] : []),
+        ],
       }
     }
-    if (checks && checks.passed > 0) {
+    if (ci.kind === 'passed') {
       const ready = pr.draft ? 'Mark ready for review' : 'Ready to merge'
       return {
         lane: 'user',
         actor: 'user',
         action: pr.baseIsOpenPr && !pr.draft ? `Merge after #${String(pr.baseIsOpenPr)}` : ready,
         reasons: [
-          `${plural(checks.passed, 'check')} passed, none failing or running`,
+          checks.gate === 'passed'
+            ? 'CI Passed gate is green on the current head'
+            : `${plural(checks.passed, 'check')} passed, none failing or running`,
+          ...nonBlocking,
           pr.draft ? 'Still a draft' : 'Not a draft',
           ...(stale ? [`Waiting on you for ${String(idle)} days`] : []),
         ],
@@ -251,7 +263,7 @@
         lane: 'stalled',
         actor: 'nobody',
         action: `Idle ${String(idle)}d`,
-        reasons: [staleReason, checks ? 'No checks ran on the current head' : 'Checks unknown'],
+        reasons: [staleReason, 'No check results on the current head'],
       }
     }
     if (pr.draft) {
@@ -449,6 +461,13 @@
           text: `Branched from main of ${pr.mainBase.committedAt.slice(0, 10)}, ${String(pr.mainBase.behind)} commits behind`,
         })
       }
+      const ci = checkState(pr.checks)
+      if (ci.kind === 'passed' && ci.names.length > 0) {
+        signals.push({
+          kind: 'non-blocking-failures',
+          text: `${ci.names.join(', ')} failing; the CI Passed gate is still green`,
+        })
+      }
       if (idleMs < RULES.activeHours * HOUR) {
         signals.push({ kind: 'active', text: 'Pushed or updated in the last few hours' })
       }
@@ -540,7 +559,7 @@
       stack.lane = lanes.reduce((best, lane) => (LANE_ORDER[lane] < LANE_ORDER[best] ? lane : best))
       const lead = stack.members.find((number) => records.get(number).lane === stack.lane)
       stack.lead = lead
-      stack.action = `${records.get(lead).action} on #${String(lead)}`
+      stack.action = `#${String(lead)}: ${records.get(lead).action}`
     }
 
     return {

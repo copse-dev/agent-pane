@@ -31,8 +31,8 @@ What other tools do (research behind the layout)
 Files
 snapshot.js   Facts only, captured read-only: REST pull list (title, draft, refs,
               labels, dates), search comment counts, check runs on each head
-              (latest run per check name, so a superseded failure does not count),
-              and a local git diff of each head against its base (stack parent,
+              (latest run per check name, cancelled kept apart, CI Passed gate
+              recorded), and a local git diff of each head against its base (stack parent,
               base branch or main). Generated; no judgments.
 classify.js   Pure rules: classifyPortfolio(snapshot, now) returns lanes, stacks,
               workstreams, overlaps, hot files, type, size and sensitive surfaces,
@@ -42,15 +42,21 @@ prototype.js  Renders classify.js output only. No network, no writes.
 mocks/        Screenshots from the browser probe below.
 
 Lane rules (first match wins; actors match #4226's user / agent / ci vocabulary)
+Checks are the latest run of each check name on the current head, so a failure a
+re-run replaced does not count, and cancelled runs are not failures. Where the
+repository's aggregate CI Passed gate exists, it decides pass or fail; other
+failures under a green gate are shown as non-blocking (a stand-in for GitHub's
+required-check flags, which #4226 reads directly).
 1. Title says PARKED or DO NOT MERGE: Parked.
-2. Only Base Current fails: Needs an agent, "Rebase onto main".
-3. Any other current check fails: Needs an agent, "Fix failing checks".
+2. CI Passed gate failed (or, without a gate, any check failed): Needs an agent,
+   "Fix failing checks".
+3. Base Current fails: Needs an agent, "Rebase onto main".
 4. Labelled review-has-feedback: Needs an agent, "Address review feedback".
    Rules 2-4 become Stalled when the PR has been idle for 7+ days.
 5. Checks running: In progress (CI).
 6. Labelled screenshots-need-review: Needs you, "Review screenshots".
-7. Checks passed: Needs you, "Ready to merge", "Merge after #parent" or
-   "Mark ready for review".
+7. Gate green: Needs you, "Ready to merge", "Merge after #parent" or "Mark ready
+   for review" for a draft.
 8. Idle 7+ days: Stalled.
 9. Draft without checks: In progress, "Draft, no CI yet".
 10. Otherwise: Needs you, "Request CI".
@@ -69,11 +75,15 @@ Heavy overlap: 4+ shared files and 50%+ of combined files. Names are the most
 distinctive shared words, so they can read awkwardly; a model could name them.
 
 Findings on this snapshot
-- Lanes: 26 needs you, 3 needs an agent, 23 in progress, 10 stalled, 1 parked.
-- Actions: progress: Draft · no CI yet 23; user: Review screenshots 15; user:
-  Request CI 11; stalled: Idle 6; stalled: Feedback unaddressed 4; agent: Address
-  review feedback 3; parked: Parked 1.
-- 0 of 63 PRs have check runs on their current head; drafts here mostly run no CI.
+- Lanes: 36 needs you, 12 needs an agent, 4 in progress, 10 stalled, 1 parked.
+- Actions: user: Mark ready for review 17; user: Review screenshots 14; stalled:
+  Idle 6; agent: Rebase onto main 5; agent: Fix failing checks 5; stalled: Feedback
+  unaddressed 4; user: Ready to merge 4; progress: Draft · no CI yet 3; agent:
+  Address review feedback 2; parked: Parked 1; progress: Checks running 1; user:
+  Merge after parent 1.
+- 50 of 63 PRs have check runs on their current head (latest run per check). 7
+  have non-blocking failures under a green CI Passed gate. 17 drafts have a green
+  gate and wait only on you.
 - 17 PRs sit in 6 stacks, so the inbox shows 52 rows instead of 63.
 - 7 workstreams hold 28 PRs: GitHub · Sandbox · Desktop (6), Machine · SSH · Model
   (6), Contained · Preparation · Grant (5), Prompt · XSS · Renderer (4), Tool ·
@@ -124,18 +134,23 @@ URL parameters: layout=pane|split|expanded, view=inbox|workstreams,
 pr=<number>, ws=<workstream id>, theme=light|dark.
 Fonts, colours and theme foundations load from the repository.
 
-Completion evidence (interim)
-This commit's snapshot has no check-run data yet: every PR's checks are null, so
-lanes that depend on CI fall back to "Request CI" or "Draft, no CI yet". A
-follow-up commit adds current check results and the mocks/ screenshots.
-Chromium + Playwright browser probe passed 23 of 23 checks on this commit: Pliant
-loaded; lane bar and inbox each count all 63 PRs exactly once; selection shows
-reasons; agent context parses as JSON for the same PR; overlap rows expand to
-shared files; filter, no-match state and Escape; workstream list, graph nodes and
-edges, node click and keyboard activation; illustrative actions report nothing was
-sent; theme toggles both ways; no horizontal overflow at expanded 1280px, split
-1000px, pane 1000px and 390px widths; no JavaScript errors or failed responses.
+Completion evidence
+Chromium + Playwright browser probe passed 23 of 23 checks on the final files:
+- Pliant loaded from the repository; no JavaScript errors or failed responses.
+- Lane bar and inbox each count all 63 PRs exactly once (stacks expanded).
+- Selecting a PR shows its reasons; agent context parses as JSON for that PR;
+  overlap rows expand to the shared files.
+- Filter, no-match state and Escape; workstream list, graph nodes and edges,
+  node click and keyboard activation.
+- Illustrative actions report that nothing was sent; theme toggles both ways.
+- No horizontal page overflow at expanded 1280px, split 1000px, side pane 1000px
+  and 390px, and expanded at 390px.
+Rendered mocks/ at 2x: inbox.png, side-pane.png, workstream.png (dark) and
+agent-context.png (light). Visually inspected expanded, side pane, workstream,
+split, light and 390px renders.
+node --check on classify.js and prototype.js: passed.
 pnpm exec eslint prototypes/pr-portfolio: passed.
 pnpm exec oxfmt --check prototypes/pr-portfolio: passed.
-No app implementation, Electron screenshot or full-repository check is claimed.
+Screenshots are standalone browser mocks, not Electron screenshots. No app
+implementation or full-repository check is claimed.
 
