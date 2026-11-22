@@ -18,12 +18,14 @@ import {
   getGitWorkingFileDiff,
   getAheadBehind,
   getCurrentBranchName,
+  isRebaseInProgress,
   getGitLogText,
   getGitStatusText,
   getGithubRepoSlug,
   invalidateGitWorkTreeProbe,
   isInsideGitWorkTree,
   parseAheadBehind,
+  isPlainBranchName,
   parseOriginHeadSymbolicRef,
   parsePorcelainV1,
   resetDefaultBranchCache,
@@ -1236,7 +1238,54 @@ describe('parseOriginHeadSymbolicRef', () => {
   })
 
   it('returns null for unrelated refs', () => {
+    assert.equal(parseOriginHeadSymbolicRef('refs/remotes/origin/'), null)
     assert.equal(parseOriginHeadSymbolicRef('refs/heads/main'), null)
+  })
+
+  it('returns null for a target Git would not accept as a branch name', () => {
+    assert.equal(parseOriginHeadSymbolicRef('refs/remotes/origin/-dash'), null)
+    assert.equal(parseOriginHeadSymbolicRef('refs/remotes/origin/a..b'), null)
+  })
+})
+
+describe('isPlainBranchName', () => {
+  it('accepts ordinary branch names', () => {
+    for (const name of ['main', 'master', 'release/1.2', 'feature/a-b_c', 'v1.0', 'dépôt']) {
+      assert.equal(isPlainBranchName(name), true, name)
+    }
+  })
+
+  it('refuses names Git would not take as a branch, and HEAD or a bare @', () => {
+    for (const name of [
+      '',
+      '@',
+      'HEAD',
+      '-dash',
+      '--dashes',
+      '/lead',
+      'trail/',
+      'trail.',
+      'a..b',
+      'a//b',
+      'a@{1}',
+      'a b',
+      'tab\there',
+      'nl\nhere',
+      'del\u007f',
+      'a~1',
+      'a^',
+      'a:b',
+      'a?',
+      'a*',
+      'a[b',
+      'a\\b',
+      '.hidden',
+      'dir/.hidden',
+      'name.lock',
+      'dir/name.lock/leaf',
+    ]) {
+      assert.equal(isPlainBranchName(name), false, JSON.stringify(name))
+    }
   })
 })
 
@@ -1290,6 +1339,20 @@ describe('getDefaultBranch', { skip: !gitOk && 'git not installed' }, () => {
     restore = setWorkspaceRootForTest(repo)
 
     assert.equal(await getDefaultBranch(repo), 'develop')
+  })
+
+  it('skips an origin/HEAD that names something Git would not take as a branch', async () => {
+    repo = await mkdtemp(join(tmpdir(), 'copse-git-default-branch-origin-head-dash-'))
+    git('init', '-q', '-b', 'main')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    git('commit', '--allow-empty', '-m', 'init')
+    git('remote', 'add', 'origin', 'https://example.com/repo.git')
+    git('update-ref', 'refs/remotes/origin/-dash', 'HEAD')
+    git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/-dash')
+    restore = setWorkspaceRootForTest(repo)
+
+    assert.equal(await getDefaultBranch(repo), 'main')
   })
 
   it('uses init.defaultBranch from git config when origin is absent', async () => {
@@ -1454,6 +1517,60 @@ describe('getGitPromptState', { skip: !gitOk && 'git not installed' }, () => {
 
     assert.equal(await getCurrentCommitHash(repo), null)
     assert.deepEqual(await getGitPromptState(repo), { startingCommit: null, dirty: false })
+  })
+})
+
+describe('isRebaseInProgress', { skip: !gitOk && 'git not installed' }, () => {
+  let base = ''
+  let restore: (() => void) | undefined
+
+  const git = (cwd: string, ...args: string[]): SpawnSyncReturns<string> =>
+    spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], {
+      cwd,
+      encoding: 'utf8',
+    })
+
+  afterEach(async () => {
+    setGitAvailableForTest(null)
+    restore?.()
+    restore = undefined
+    if (base) await rm(base, { recursive: true, force: true })
+    base = ''
+  })
+
+  it('sees a rebase stopped in a linked detached checkout, and only there', async () => {
+    base = await realpath(await mkdtemp(join(tmpdir(), 'copse-git-rebase-state-')))
+    const holder = join(base, 'holder')
+    const project = join(base, 'project')
+    await mkdir(join(holder, 'docs'), { recursive: true })
+    git(holder, 'init', '-q', '-b', 'main')
+    git(holder, 'config', 'commit.gpgsign', 'false')
+    await writeFile(join(holder, 'docs', 'one.txt'), 'one\n')
+    git(holder, 'add', '.')
+    git(holder, 'commit', '-qm', 'one')
+    await writeFile(join(holder, 'two.txt'), 'two\n')
+    git(holder, 'add', '.')
+    git(holder, 'commit', '-qm', 'two')
+    git(holder, 'worktree', 'add', '-q', '--detach', project, 'HEAD')
+    restore = setWorkspaceRootForTest(project)
+    setGitAvailableForTest(true)
+
+    assert.equal(await isRebaseInProgress(project), false)
+    // A failing `exec` stops the rebase with the checkout detached.
+    assert.notEqual(git(project, 'rebase', '-x', 'false', 'HEAD~1').status, 0)
+    assert.equal(await isRebaseInProgress(project), true)
+    assert.equal(await isRebaseInProgress(join(project, 'docs')), true)
+    assert.equal(await isRebaseInProgress(holder), false)
+
+    assert.equal(git(project, 'rebase', '--abort').status, 0)
+    assert.equal(await isRebaseInProgress(project), false)
+  })
+
+  it('reports no rebase outside a repository', async () => {
+    base = await realpath(await mkdtemp(join(tmpdir(), 'copse-git-rebase-none-')))
+    restore = setWorkspaceRootForTest(base)
+    setGitAvailableForTest(true)
+    assert.equal(await isRebaseInProgress(base), false)
   })
 })
 

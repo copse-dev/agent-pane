@@ -192,12 +192,24 @@ describe('explicit foreground shell yield', () => {
     )
     const cancelled = assert.rejects(pending, /cancelled while moving to the background/)
     await entered
-    const pid = Number(readFileSync(join(root, 'pid.txt'), 'utf8'))
-    controller.abort()
-    // The child can close while the supervisor's record write is still held.
-    // Cancelling must win over the delayed completion, without a wake.
-    await waitUntil(() => !isPidAlive(pid))
-    releaseAdoption()
+    const pidFile = join(root, 'pid.txt')
+    let pid = 0
+    try {
+      // Yield can begin while a slow host is still starting the child.
+      // Keep adoption paused until there is a live command for Stop to cancel.
+      await waitUntil(() => {
+        if (!existsSync(pidFile)) return false
+        pid = Number(readFileSync(pidFile, 'utf8'))
+        return Number.isSafeInteger(pid) && pid > 0
+      })
+      assert.ok(isPidAlive(pid))
+      controller.abort()
+      // The child can close while the supervisor's record write is still held.
+      // Cancelling must win over the delayed completion, without a wake.
+      await waitUntil(() => !isPidAlive(pid))
+    } finally {
+      releaseAdoption()
+    }
     await cancelled
     await waitUntil(() => !isPidAlive(pid))
     assert.equal(supervisor.list(OWNER.projectId)[0]?.state, 'cancelled')

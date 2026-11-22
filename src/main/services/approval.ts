@@ -1,5 +1,6 @@
 import type { BrowserWindow, IpcMain } from 'electron'
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { AcpTurnEnded } from './acp/turn-end.ts'
 import {
   abortAllAcpPermissions,
   cancelApprovalsForAcpToolCall,
@@ -16,7 +17,12 @@ import {
   parseIpcArgs,
 } from '../ipc/ipc-guards.ts'
 import { getActiveRunThread, getActiveRunTurnTreeId } from './thread-models.ts'
-import { getApprovalToolCallId, getBridgeExecutionId } from './approval-tool-call-context.ts'
+import {
+  getApprovalOperationKey,
+  getApprovalBridgeOwnerId,
+  getApprovalToolCallId,
+  getBridgeExecutionId,
+} from './approval-tool-call-context.ts'
 import { withRunDeadlinePaused } from './hooks/run-deadline.ts'
 import { recordDecision } from './security/decision-log-store.ts'
 import { SHELL_DECISION_SUBJECT } from '@shared/threads/decision-log.ts'
@@ -79,8 +85,16 @@ export function isAbandonedCallAbort(reason: unknown): boolean {
 export class ApprovalPendingError extends Error {
   override readonly name = 'ApprovalPendingError'
 
-  constructor(title: string) {
+  readonly retry:
+    | {
+        settled: Promise<ApprovalResponse>
+        available: () => boolean
+      }
+    | undefined
+
+  constructor(title: string, retry?: ApprovalPendingError['retry']) {
     super(approvalPendingMessage(title))
+    this.retry = retry
   }
 }
 
@@ -296,12 +310,14 @@ interface InflightApproval {
 }
 
 interface InflightWaiter {
+  bridgeOwnerId: string | undefined
   /** Revocation ownership survives detaching turn-end audit attribution. */
   readonly ownerThreadId: string | null
   bridgeExecutionId?: string
   resolve: (response: ApprovalResponse) => void
   signal: AbortSignal | undefined
   onAbort: () => void
+  cancel: (source: string) => void
   /** Thread that opened this waiter; used to dismiss orphans when the turn ends. */
   threadId: string | null
   /**
@@ -339,6 +355,7 @@ const inflight = new Map<string, InflightApproval>()
  * rest of this module's state.
  */
 interface StoredVerdict {
+  bridgeOwnerId: string | undefined
   response: ApprovalResponse
   settledAt: number
   ownerThreadId: string | null
@@ -365,12 +382,13 @@ function storeAbandonedVerdict(
   ledgerKey: string,
   response: ApprovalResponse,
   ownerThreadId: string | null,
+  bridgeOwnerId: string | undefined,
 ): void {
   const now = approvalClock()
   for (const [key, entry] of abandonedVerdicts) {
     if (now - entry.settledAt > ABANDONED_VERDICT_TTL_MS) abandonedVerdicts.delete(key)
   }
-  abandonedVerdicts.set(ledgerKey, { response, settledAt: now, ownerThreadId })
+  abandonedVerdicts.set(ledgerKey, { response, settledAt: now, ownerThreadId, bridgeOwnerId })
 }
 
 function takeAbandonedVerdict(ledgerKey: string): ApprovalResponse | null {
@@ -572,19 +590,33 @@ export function cancelApprovalsForThread(threadId: string): number {
  * Revoke pending and saved approvals for Stop or thread deletion. Ordinary
  * completion preserves abandoned-call answers for retries in the same task.
  */
-export function discardApprovalsForThread(threadId: string): number {
-  for (const [key, verdict] of abandonedVerdicts) {
-    if (verdict.ownerThreadId === threadId) abandonedVerdicts.delete(key)
-  }
+export function discardApprovalsForThread(threadId: string, source = 'thread-deleted'): number {
   let discarded = 0
   for (const entry of [...inflight.values()]) {
     for (const waiter of [...entry.waiters]) {
       if (waiter.ownerThreadId !== threadId) continue
-      waiter.onAbort()
+      waiter.cancel(source)
       discarded++
     }
   }
+  // Stop also revokes an answer already given to a detached caller. Otherwise
+  // an identical request on a later turn could consume pre-Stop authority.
+  for (const [key, verdict] of abandonedVerdicts) {
+    if (verdict.ownerThreadId === threadId) abandonedVerdicts.delete(key)
+  }
   return discarded
+}
+
+/** Retiring a pooled bridge must not cancel a later native turn's questions. */
+export function discardApprovalsForBridge(bridgeOwnerId: string, source: string): void {
+  for (const entry of [...inflight.values()]) {
+    for (const waiter of [...entry.waiters]) {
+      if (waiter.bridgeOwnerId === bridgeOwnerId) waiter.cancel(source)
+    }
+  }
+  for (const [key, verdict] of abandonedVerdicts) {
+    if (verdict.bridgeOwnerId === bridgeOwnerId) abandonedVerdicts.delete(key)
+  }
 }
 
 /** How many in-flight approval waiters are attributed to `threadId`. */
@@ -836,6 +868,8 @@ function requestApprovalUnpaused(
     getThreadExecutionContext()?.projectId ?? null,
     getAgentExecutionRoot(),
     getActiveRunTurnTreeId(),
+    getApprovalOperationKey() ?? null,
+    getApprovalBridgeOwnerId() ?? null,
     req.standalone ? randomUUID() : approvalDedupeKey(req),
   ])
   // Only a thread-attributed request can be parked and replayed: the ledger is
@@ -887,41 +921,84 @@ function requestApprovalUnpaused(
       }
     }
 
+    const cancel = (source: string): void => {
+      if (!active.waiters.has(waiter)) return
+      active.waiters.delete(waiter)
+      signal?.removeEventListener('abort', waiter.onAbort)
+      recordApprovalDecision(req, DENIED, source)
+      resolve(DENIED)
+      teardownIfIdle()
+    }
     const waiter: InflightWaiter = {
-      ownerThreadId: threadId,
+      bridgeOwnerId: getApprovalBridgeOwnerId(),
       resolve,
       signal,
       threadId,
+      ownerThreadId: threadId,
+      cancel,
       ...(req.bridgeExecutionId ? { bridgeExecutionId: req.bridgeExecutionId } : {}),
       ...(toolCallId !== undefined ? { toolCallId } : {}),
       onAbort: () => {
         if (!active.waiters.has(waiter)) return
-        active.waiters.delete(waiter)
-        signal?.removeEventListener('abort', waiter.onAbort)
-        if (ledgerKey !== null && isAbandonedCallAbort(signal?.reason)) {
+        const reason: unknown = signal?.reason
+        const completed = reason instanceof AcpTurnEnded && reason.reason === 'completed'
+        if (ledgerKey !== null && (completed || isAbandonedCallAbort(reason))) {
+          active.waiters.delete(waiter)
+          signal?.removeEventListener('abort', waiter.onAbort)
           // The caller is gone but the question stands: keep the prompt open
           // with a stand-in waiter that files the answer for the caller's
           // retry, and tell the caller so — this is not a denial.
+          let retry: ApprovalPendingError['retry']
           if (![...active.waiters].some((other) => other.ledgerKey === ledgerKey)) {
+            let settleAnswer: (response: ApprovalResponse) => void
+            const settled = new Promise<ApprovalResponse>((resolve) => {
+              settleAnswer = resolve
+            })
+            let answer: ApprovalResponse | undefined
+            retry = {
+              settled,
+              available: (): boolean => {
+                const stored = abandonedVerdicts.get(ledgerKey)
+                return (
+                  stored !== undefined &&
+                  stored.response === answer &&
+                  approvalClock() - stored.settledAt <= ABANDONED_VERDICT_TTL_MS
+                )
+              },
+            }
             active.waiters.add(
               parkedWaiter(
                 ledgerKey,
                 threadId,
                 active,
                 teardownIfIdle,
+                req,
                 toolCallId,
                 req.bridgeExecutionId,
+                waiter.bridgeOwnerId,
+                (response) => {
+                  answer = response
+                  settleAnswer(response)
+                },
               ),
             )
           }
-          reject(new ApprovalPendingError(req.title))
+          recordDecision({
+            kind: req.type,
+            actor: 'system',
+            verdict: 'requested',
+            ...approvalAuditIdentities.get(req),
+            subject: req.subject ?? req.title,
+            ...(req.cause ? { cause: req.cause } : {}),
+            ...(req.bridgeExecutionId ? { bridgeExecutionId: req.bridgeExecutionId } : {}),
+            source: completed ? 'turn-completed' : 'client-abandoned',
+            detail: { abortReason: reason instanceof Error ? reason.message : String(reason) },
+          })
+          reject(new ApprovalPendingError(req.title, retry))
           return
         }
-        // Abort is a transport cancel, not a user denial — record per waiter so
-        // coalesced siblings that stay open are not blamed for this leave.
-        recordApprovalDecision(req, DENIED, 'aborted')
-        resolve(DENIED)
-        teardownIfIdle()
+        // Cancellation ends the question; completion only detaches its caller.
+        cancel(reason instanceof AcpTurnEnded ? reason.reason : 'aborted')
       },
     }
     active.waiters.add(waiter)
@@ -961,36 +1038,46 @@ function requestApprovalUnpaused(
 
 /**
  * The waiter that stands in for an abandoned caller. It has no signal of its
- * own: it leaves only when the prompt settles (a user's answer goes to the ledger)
- * or when the thread's turn ends / the transport is torn down, in which case
- * the answer was never given and nothing is stored.
+ * own: it leaves only when the prompt settles (the answer goes to the ledger)
+ * or when the user stops/deletes its owning thread or the transport closes.
+ * Normal turn completion leaves this stand-in alive for a later exact retry.
  */
 function parkedWaiter(
   ledgerKey: string,
   threadId: string | null,
   entry: InflightApproval,
   teardownIfIdle: () => void,
+  req: ApprovalRequest,
   toolCallId?: string,
   bridgeExecutionId?: string,
+  bridgeOwnerId?: string,
+  onSettled?: (response: ApprovalResponse) => void,
 ): InflightWaiter {
+  const cancel = (source: string): void => {
+    if (!entry.waiters.has(waiter)) return
+    entry.waiters.delete(waiter)
+    recordApprovalDecision(req, DENIED, source)
+    onSettled?.({ approved: false, remember: false, resolution: 'unavailable' })
+    teardownIfIdle()
+  }
   const waiter: InflightWaiter = {
-    ownerThreadId: threadId,
+    bridgeOwnerId,
     threadId,
+    ownerThreadId: threadId,
+    cancel,
     signal: undefined,
     ledgerKey,
     ...(bridgeExecutionId ? { bridgeExecutionId } : {}),
     ...(toolCallId !== undefined ? { toolCallId } : {}),
     resolve: (response) => {
-      // Only a person's answer is a verdict. A prompt that timed out, lost its
-      // window or had no transport was never answered: storing that would hand
-      // the retry a denial the user did not give, logged as theirs.
-      if ((response.resolution ?? 'user') !== 'user') return
-      storeAbandonedVerdict(ledgerKey, response, threadId)
+      // A closed window or failed transport supplied no human decision.
+      if (response.resolution === undefined || response.resolution === 'user') {
+        storeAbandonedVerdict(ledgerKey, response, threadId, bridgeOwnerId)
+      }
+      onSettled?.(response)
     },
     onAbort: () => {
-      if (!entry.waiters.has(waiter)) return
-      entry.waiters.delete(waiter)
-      teardownIfIdle()
+      cancel('aborted')
     },
   }
   return waiter

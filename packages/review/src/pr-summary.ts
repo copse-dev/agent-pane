@@ -10,6 +10,7 @@
 // a model that read an untrusted diff and is written under the App's identity,
 // so every model-written line goes through the same inert-markdown escaping as
 // review comments; that also keeps a crafted diff from forging the end marker.
+import { collapseWhitespace } from '@copse/std/one-line-text.ts'
 import { z } from 'zod'
 import type { HeadlessEvent } from '@copse/agent/headless-contract.ts'
 import { EXTERNAL_CONTENT_BLOCK } from '@copse/agent/external-content.ts'
@@ -199,7 +200,7 @@ export function applyEvidenceFloor(summary: PrSummary, report: ReviewReport | nu
 
 /** One line of model prose, inert, inside a blockquote. */
 function quotedLine(text: string): string {
-  return inertMarkdown(text.replace(/\s+/g, ' ').trim())
+  return inertMarkdown(collapseWhitespace(text))
 }
 
 const RISK_LABEL: Record<SummaryRisk, string> = {

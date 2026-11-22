@@ -1,3 +1,4 @@
+import { ellipsize } from '@copse/std/one-line-text.ts'
 import type { McpToolAnnotations } from '@shared/types/mcp.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { gitPushApproval, UNSANDBOXED_ACCESS_WARNING } from '@shared/approval-copy.ts'
@@ -520,22 +521,6 @@ export function backgroundAllowsPortBinding(args: unknown): boolean {
   return (args as { allow_port_binding?: unknown }).allow_port_binding === true
 }
 
-export function formatPortBindingPromptParts(
-  workspaceRoot: string,
-  command: string,
-): ShellPromptParts {
-  return {
-    command: command || '(no command given)',
-    bodyAdvice:
-      'The agent wants to start a long-running background task that binds a ' +
-      'loopback port and stays alive across turns:\n\n' +
-      `Project: ${workspaceRoot}`,
-    bodyFooter:
-      "It runs with the project's sandbox filesystem rules, relaxed only to allow " +
-      'binding on localhost.',
-  }
-}
-
 /**
  * Stand-in when the caller had no reasons to pass on, so the prompt still says
  * something. It travels as a reason: `describeShellScopeReasons` passes text it
@@ -656,8 +641,7 @@ const MAX_GUARDED_YOLO_HARM_REASON_CHARS = 160
 const MAX_GUARDED_YOLO_HARM_ADVICE_CHARS = 1200
 
 function truncateGuardedYoloHarmReason(reason: string): string {
-  if (reason.length <= MAX_GUARDED_YOLO_HARM_REASON_CHARS) return reason
-  return `${reason.slice(0, MAX_GUARDED_YOLO_HARM_REASON_CHARS - 1)}…`
+  return ellipsize(reason, MAX_GUARDED_YOLO_HARM_REASON_CHARS)
 }
 
 /** Advice shown outside the monospaced command block for Guarded YOLO harm prompts. */
@@ -669,12 +653,9 @@ export function formatGuardedYoloHarmPromptAdvice(reasons: string[]): string {
   // are shared for from diverging between this dialog and the ordinary prompt;
   // harm reasons with no entry pass through untouched.
   const listed = describeShellScopeReasons(reasons).map(truncateGuardedYoloHarmReason)
-  let harm = listed.length ? `Potential harm: ${listed.join('; ')}` : 'Potential harm: unknown'
+  const harm = listed.length ? `Potential harm: ${listed.join('; ')}` : 'Potential harm: unknown'
   const maxHarmChars = Math.max(24, MAX_GUARDED_YOLO_HARM_ADVICE_CHARS - footer.length)
-  if (harm.length > maxHarmChars) {
-    harm = `${harm.slice(0, maxHarmChars - 1)}…`
-  }
-  return `${harm}${footer}`
+  return `${ellipsize(harm, maxHarmChars)}${footer}`
 }
 
 /**

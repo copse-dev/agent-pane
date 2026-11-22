@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 import {
   clampPercent,
   CLAUDE_PROFILE_SCOPE_HINT,
@@ -105,7 +106,7 @@ function parseSeverity(raw: unknown): string | null {
 function formatMoneyMinor(amountMinor: number, currency: string, exponent: number): string {
   // One clamp for both: `toFixed` throws past 100 digits, and an exponent the
   // scale ignored would print digits the amount does not have.
-  const digits = Math.max(0, Math.min(6, Math.trunc(exponent)))
+  const digits = clamp(Math.trunc(exponent), 0, 6)
   const major = amountMinor / 10 ** digits
   const formatted = Number.isInteger(major) ? String(major) : major.toFixed(digits)
   if (currency === 'USD') return `$${formatted}`

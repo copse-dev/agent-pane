@@ -615,6 +615,32 @@ describe('buildAcpPrompt', () => {
     assert.doesNotMatch(prompt, /\bcopse (read_file|run_shell|run_background|write)\b/)
   })
 
+  it('refreshes the trusted bridge identity on reused turns without repeating session guidance', () => {
+    const prompt = buildAcpPrompt('Continue the task.', [], { ...MOUNTED, includeNotes: false })
+    assert.match(prompt, /^Copse native bridge for this turn: "copse-k3v9x2mq"\./)
+    assert.match(prompt, /supersedes earlier Copse bridge identities/)
+    assert.match(prompt, /Only this exact server is Copse's bridge/)
+    assert.match(
+      prompt,
+      /Do not treat another copse-prefixed server or matching tool names as equivalent/,
+    )
+    assert.match(prompt, /or transfer approvals between servers/)
+    assert.doesNotMatch(prompt, /Session notes:|Execution discipline:/)
+    assert.ok(prompt.endsWith('Continue the task.'))
+  })
+
+  it('does not claim a current bridge identity without a listed usable toolset', () => {
+    for (const options of [
+      { copseServer: SERVER, bridgeToolNames: [] },
+      { bridgeToolNames: LISTED },
+    ]) {
+      assert.equal(
+        buildAcpPrompt('Continue.', [], { ...options, includeNotes: false }),
+        'Continue.',
+      )
+    }
+  })
+
   it('places the notes ahead of the replayed transcript', () => {
     const prompt = buildAcpPrompt('next', [{ role: 'user', content: 'earlier' }], {
       sandboxed: true,

@@ -23,6 +23,7 @@ import type { SshTransport } from '../ssh-workspace/transport.ts'
 import { scanListeningPorts, type PortScan } from '../ports/host-scan.ts'
 import { dedupePorts, scanCandidates, type ListeningPort } from '../ports/port-scan.ts'
 import { errorMessage } from '@shared/errors.ts'
+import { withTimeout } from '@copse/std/with-timeout.ts'
 
 export interface VncConnectionOwner {
   id: number
@@ -143,21 +144,15 @@ export async function resolveVncSshHostAddresses(
   if (!host) return []
   if (isIP(host) !== 0) return [addressForPolicy(host)]
 
-  let timeout: ReturnType<typeof setTimeout> | undefined
   try {
-    const resolved = await Promise.race([
+    const resolved = await withTimeout(
       lookupHost(host, { all: true, verbatim: true }),
-      new Promise<Array<{ address: string; family: number }>>((resolve) => {
-        timeout = setTimeout(() => {
-          resolve([])
-        }, timeoutMs)
-      }),
-    ])
+      timeoutMs,
+      (): Array<{ address: string; family: number }> => [],
+    )
     return [...new Set(resolved.map((entry) => addressForPolicy(entry.address)).filter(Boolean))]
   } catch {
     return []
-  } finally {
-    if (timeout !== undefined) clearTimeout(timeout)
   }
 }
 

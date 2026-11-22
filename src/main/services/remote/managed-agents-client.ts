@@ -28,6 +28,7 @@ import {
 } from '@shared/remote-agent.ts'
 import { firstNonEmptyString, isRecord } from '@shared/unknown-value.ts'
 import { z } from 'zod'
+import { optionalNumber, optionalString } from '@shared/zod-null-optional.ts'
 import { getSetting, resolveApiKey } from '../storage/settings.ts'
 import { validateRemoteAgentBaseUrl } from '../security/web-origin-policy.ts'
 import { getCurrentBranchName } from '../github/git-service.ts'
@@ -80,14 +81,6 @@ interface ManagedAgentSession {
   usageCacheCreation?: number
 }
 
-const optionalString = z.preprocess(
-  (value) => (value === null ? undefined : value),
-  z.string().optional(),
-)
-const optionalNumber = z.preprocess(
-  (value) => (value === null ? undefined : value),
-  z.number().optional(),
-)
 const idResponseSchema = z.object({ id: optionalString }).loose()
 // Session usage (GET /v1/sessions/{id}) reports cache creation per TTL under
 // `cache_creation`, not as the Messages API's flat `cache_creation_input_tokens`.

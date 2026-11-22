@@ -80,14 +80,14 @@ export function copseWorkspaceDir(env: NodeJS.ProcessEnv = process.env): string 
 }
 
 /**
- * The workspace-owned scratch directory the sandbox points `$TMPDIR` at (#481).
+ * The namespace for workspace-owned scratch (#481). The sandbox allocator
+ * assigns a host or thread leaf below it and points `$TMPDIR` at that leaf.
  *
  * A leaf resolver here rather than only in the seatbelt overlay because three
- * parties must name the same directory or the contract silently splits: the
- * overlay that allows writes to it, the spawn that sets `$TMPDIR`, and the eval
- * scorer that decides whether an agent's scratch file landed somewhere
- * sanctioned. `project-sandbox/config.ts` re-exports it as `workspaceTmpDir`
- * together with the best-effort `mkdir`; callers that must not drag in the
+ * parties must agree on scratch ownership: the overlay that allows writes,
+ * the spawn that sets `$TMPDIR`, and the classifier use the assigned leaf;
+ * the eval scorer checks this namespace. `project-sandbox/config.ts` exposes
+ * `workspaceTmpDir` and its best-effort `mkdir`; callers that must not drag in the
  * seatbelt's dependency graph (the eval harness, notably) import it from here.
  */
 export function copseWorkspaceTmpDir(env: NodeJS.ProcessEnv = process.env): string {

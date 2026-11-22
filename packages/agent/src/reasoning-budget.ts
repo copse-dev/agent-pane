@@ -1,3 +1,4 @@
+import { collapseWhitespace } from '@copse/std/one-line-text.ts'
 import { clipEnd, clipStart } from './clip-text.ts'
 
 /**
@@ -57,7 +58,7 @@ export function validateReasoningSoftBudget(budget: ReasoningSoftBudget): void {
  * collapsed so the excerpt spends its budget on content.
  */
 export function excerptReasoningForCarryForward(reasoning: string, carryChars: number): string {
-  const collapsed = reasoning.replace(/\s+/g, ' ').trim()
+  const collapsed = collapseWhitespace(reasoning)
   if (collapsed.length <= carryChars) return collapsed
   const marker = ' [...] '
   if (carryChars <= marker.length) return clipEnd(collapsed, carryChars)

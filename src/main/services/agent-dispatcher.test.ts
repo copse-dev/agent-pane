@@ -13,6 +13,8 @@ import {
   type AgentDispatchRequest,
 } from './agent-dispatcher.ts'
 import type { ThreadExecutionContext } from './thread-execution-context.ts'
+import type { AgentTurnEpoch } from './thread-store.ts'
+import type { AgentInitiatedTurnClaim } from './acp/agent-initiated-turn.ts'
 import { getRunPlan } from './thread-plan-context.ts'
 import type { StoredThreadPlan } from '@copse/thread-store/plan-schema.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
@@ -41,6 +43,12 @@ function request(overrides?: Partial<AgentDispatchRequest>): AgentDispatchReques
     payload: { userContent: 'continue', invokedSkills: [], priorTodos: [] },
     ...overrides,
   }
+}
+
+/** The turn tree a granted self-start claim names for binding. */
+function grantedTurnTree(claim: AgentInitiatedTurnClaim): string | undefined {
+  assert.ok(claim.status === 'granted', claim.status)
+  return claim.turnTreeId
 }
 
 function dependencies(
@@ -1630,6 +1638,74 @@ describe('AgentDispatcher', () => {
       { phase: 'finished', result: 'budget-exhausted', budgetUsed: 5 },
       { phase: 'started', budgetUsed: 6 },
     ])
+  })
+
+  // Hooks plan decision 5: a thread without a dispatched epoch cannot have one
+  // synthesized from its thread id, so its self-started turns bind no tree.
+  it('binds no turn tree to an agent-started turn in a thread without a dispatched epoch', async () => {
+    let stored: AgentTurnEpoch | null = null
+    const store = dependencies({
+      loadEpoch: async () => stored,
+      saveEpoch: async (_projectId, _threadId, epoch) => {
+        stored = epoch
+      },
+    })
+    const dispatcher = new AgentDispatcher(host, registry, store)
+
+    const first = await dispatcher.claimAgentInitiatedTurn('project-1', 'thread-1', {
+      override: false,
+    })
+    assert.equal(grantedTurnTree(first), undefined)
+    // The budget is still charged, under the thread-id fallback.
+    assert.deepEqual(stored, { turnTreeId: 'thread-1', continuationUsed: 1 })
+
+    // Neither the cached nor the persisted fallback reads as a dispatched tree.
+    const second = await dispatcher.claimAgentInitiatedTurn('project-1', 'thread-1', {
+      override: false,
+    })
+    assert.equal(grantedTurnTree(second), undefined)
+    const restarted = new AgentDispatcher(host, registry, store)
+    const afterRestart = await restarted.claimAgentInitiatedTurn('project-1', 'thread-1', {
+      override: false,
+    })
+    assert.equal(grantedTurnTree(afterRestart), undefined)
+    assert.deepEqual(stored, { turnTreeId: 'thread-1', continuationUsed: 3 })
+  })
+
+  it('binds the dispatched turn tree to an agent-started turn', async () => {
+    let stored: AgentTurnEpoch | null = null
+    const store = dependencies({
+      loadEpoch: async () => stored,
+      saveEpoch: async (_projectId, _threadId, epoch) => {
+        stored = epoch
+      },
+    })
+    const dispatcher = new AgentDispatcher(host, registry, store)
+    // A self-start before any human turn leaves the thread-id fallback behind.
+    const before = await dispatcher.claimAgentInitiatedTurn('project-1', 'thread-1', {
+      override: false,
+    })
+    assert.equal(grantedTurnTree(before), undefined)
+
+    await dispatcher.dispatch(
+      request({
+        payload: {
+          userContent: 'start the task',
+          invokedSkills: [],
+          priorTodos: [],
+          turnTreeId: 'tree-human',
+        },
+      }),
+    )
+    const claim = await dispatcher.claimAgentInitiatedTurn('project-1', 'thread-1', {
+      override: false,
+    })
+    assert.equal(grantedTurnTree(claim), 'tree-human')
+    const restarted = new AgentDispatcher(host, registry, store)
+    const afterRestart = await restarted.claimAgentInitiatedTurn('project-1', 'thread-1', {
+      override: false,
+    })
+    assert.equal(grantedTurnTree(afterRestart), 'tree-human')
   })
 
   it('does not take the dispatch slot for an agent-started turn', async () => {

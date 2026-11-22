@@ -8,7 +8,8 @@ import { assertWriteTargetWithinRoot, resolvePathWithinRoot } from './workspace.
 import { getActiveWorkspaceFs } from './workspace-fs/get-workspace-fs.ts'
 import { readWorkspaceFileContent, writeWorkspaceFileContent } from './workspace-fs/file-content.ts'
 import { buildIndex } from './search/file-index.ts'
-import { getGitStatus } from './github/git-service.ts'
+import { findGitContentStates, getGitStatus, type GitContentState } from './github/git-service.ts'
+import type { GitChangeStatus } from '@shared/types/git.ts'
 import { assertMainFrameSender, parseIpcArgs, zProjectId, zThreadId } from '../ipc/ipc-guards.ts'
 import { isAgentRunReadonly } from './agent-run-readonly.ts'
 import { ensureSessionBackup, getSessionBackup } from './worktree-backup.ts'
@@ -31,6 +32,10 @@ import {
   type ThreadExecutionOwner,
 } from './thread-execution-context.ts'
 import { getAgentExecutionRoot, getAgentProjectRoot } from './execution-root.ts'
+import {
+  getActiveExecutionTarget,
+  threadProjectExecutionTarget,
+} from './ssh-workspace/execution-target.ts'
 import { hasLiveWorktreeWriter, worktreeWriteEpoch } from './worktree-writers.ts'
 import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
 import { getActiveRunTurnTreeId } from './thread-models.ts'
@@ -729,15 +734,20 @@ export async function captureBackgroundEditAdoption(
 async function worktreeChangesSince(
   baseline: WorktreeBaseline,
   options: { includeContent: boolean },
-): Promise<{ path: string; after: string }[]> {
+): Promise<{ path: string; status: GitChangeStatus; after: string }[]> {
   const state = stateFor()
   const root = executionRootFor(state)
   const status = await getGitStatus(executionRootFor(state), { untrackedFiles: 'all' })
   if (!status) return []
-  const paths = new Set([...status.staged, ...status.unstaged].map((c) => c.path))
-  const afterSnapshots = await snapshotWorktreePaths([...paths], root)
-  const changes: { path: string; after: string }[] = []
-  for (const path of paths) {
+  // The working-tree column describes the file on disk, so it wins over the
+  // index column for a path that has both (e.g. added, then edited again).
+  const statuses = new Map<string, GitChangeStatus>()
+  for (const change of [...status.staged, ...status.unstaged]) {
+    statuses.set(change.path, change.status)
+  }
+  const afterSnapshots = await snapshotWorktreePaths([...statuses.keys()], root)
+  const changes: { path: string; status: GitChangeStatus; after: string }[] = []
+  for (const [path, changeStatus] of statuses) {
     const key = ownedKey(path)
     const afterSnapshot = afterSnapshots.get(key) ?? { fingerprint: null }
     const beforeSnapshot = baseline.get(key)
@@ -745,7 +755,7 @@ async function worktreeChangesSince(
       const after = options.includeContent
         ? (afterSnapshot.content ?? (await readCurrentContent(path, root)))
         : ''
-      changes.push({ path, after })
+      changes.push({ path, status: changeStatus, after })
     }
   }
   return changes
@@ -761,8 +771,35 @@ async function worktreeChangesSince(
  * workspace is not a git repo — the audit degrades to silence rather than
  * failing the turn.
  */
-export async function listWorktreeChangesSince(baseline: WorktreeBaseline): Promise<string[]> {
-  return (await worktreeChangesSince(baseline, { includeContent: false })).map((c) => c.path)
+export async function listWorktreeChangesSince(
+  baseline: WorktreeBaseline,
+): Promise<{ path: string; status: GitChangeStatus }[]> {
+  return (await worktreeChangesSince(baseline, { includeContent: false })).map(
+    ({ path, status }) => ({ path, status }),
+  )
+}
+
+/**
+ * What git holds of these workspace-relative paths' current content, in the
+ * active thread's checkout; see {@link findGitContentStates}. Null when git
+ * can't say, and always in an SSH workspace: the hashing reads files from this
+ * machine's disk, where a remote root's paths are absent or, worse, name an
+ * unrelated local file that would answer for the remote one.
+ */
+export async function listWorktreeGitContentStates(
+  paths: readonly string[],
+): Promise<Map<string, GitContentState> | null> {
+  if (!runsOnLocalDisk()) return null
+  return findGitContentStates(executionRootFor(stateFor()), paths)
+}
+
+/** Whether this turn's checkout is on this machine; false when that can't be resolved. */
+function runsOnLocalDisk(): boolean {
+  try {
+    return (threadProjectExecutionTarget() ?? getActiveExecutionTarget()).kind === 'local'
+  } catch {
+    return false
+  }
 }
 
 /**

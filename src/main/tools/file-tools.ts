@@ -18,6 +18,8 @@ import { getStagedDiffEntry } from '../services/diff-queue.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { isNonNull } from '@shared/nullish.ts'
 import { recordExploredSpan } from '../services/explore-read-recorder.ts'
+import { markTurnExternalIngestion } from '../services/security/turn-taint.ts'
+import { wrapExternalContent } from '@copse/agent/external-content.ts'
 
 export const LIST_DIR_MAX_ENTRIES = 1000
 
@@ -114,11 +116,17 @@ export const readFileTool = defineTool({
       result.lineTruncated || result.charTruncated,
     )
     const pending = getStagedDiffEntry(path)
+    // A stored conversation is external text, as it is from list_threads and
+    // read_thread, which hand out these paths for longer reads.
+    const fromChatStore = await isInsideChatStore(absPath)
     // Inside an explore subagent, hand the exact lines to the parent (#1433,
     // Fix 0). Skipped when a staged diff is pending (str_replace edits that
     // proposed content, not these on-disk bytes), when nothing was read, and
-    // when the char cap left a single line that may be only a prefix.
+    // when the char cap left a single line that may be only a prefix. Also
+    // skipped for the chat store: the excerpts reach the parent unwrapped, and
+    // that read-only store is never a str_replace target.
     if (
+      !fromChatStore &&
       !pending &&
       result.endLine >= result.startLine &&
       !(result.charTruncated && result.endLine === result.startLine)
@@ -133,7 +141,13 @@ export const readFileTool = defineTool({
     const pendingNote = pending
       ? `\n\n[Note: ${path} has a pending Copse staged diff that is not written to disk yet. This read_file output is the on-disk content only. Use read_staged_diff with this path to inspect the proposed after content, or wait for user approval before validating.]`
       : ''
-    return result.text + formatReadFilePageFooter(pageMeta, result.charTruncated) + pendingNote
+    const output =
+      result.text + formatReadFilePageFooter(pageMeta, result.charTruncated) + pendingNote
+    if (fromChatStore) {
+      markTurnExternalIngestion()
+      return wrapExternalContent('read_file', output)
+    }
+    return output
   },
 })
 

@@ -102,7 +102,8 @@ describe('paired remote chat connection', () => {
           if (document.documentElement.dataset['offline'] === 'true')
             return new Response('{"error":"Disconnected"}', { status: 503 })
           const value =
-            path === '/api/remote/state'
+            // The page asks for the open chat alone: `?project=…&thread=…`.
+            path.startsWith('/api/remote/state')
               ? {
                   version: 1,
                   sessionId: '11111111-1111-4111-8111-111111111111',

@@ -14,6 +14,7 @@ import {
   createEvalProject,
   loadEvalScenario,
   seedEvalWorkspace,
+  EVAL_GIT_BASELINE_ENV,
 } from './tests/e2e/helpers/agent-eval-scenario.ts'
 import {
   DEFAULT_APP_CHAT_MODEL,
@@ -142,8 +143,10 @@ export const config: WebdriverIO.Config = {
     const scenario = loadEvalScenario(scenarioPath)
     const project = createEvalProject(scenario)
     cleanupEvalProject = project.cleanup
-    seedEvalWorkspace(project.root, scenario)
+    const gitBaseline = seedEvalWorkspace(project.root, scenario)
     process.env['COPSE_EVAL_WORKSPACE_ROOT'] = project.root
+    // Empty when nothing was committed: the driver treats a blank value as no baseline.
+    process.env[EVAL_GIT_BASELINE_ENV] = gitBaseline ?? ''
 
     const useMock = process.env['COPSE_EVAL_USE_MOCK'] === '1'
     // Matrix native arms pass an empty string; treat it as an absent model.

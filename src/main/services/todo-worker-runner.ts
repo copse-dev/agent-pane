@@ -1,3 +1,4 @@
+import { ellipsize } from '@copse/std/one-line-text.ts'
 import { runAgentLoop } from '@copse/agent/run-agent-loop.ts'
 import {
   PRODUCT_REASONING_CHECKPOINT_POLICY,
@@ -42,8 +43,7 @@ const MAX_PRIOR_SUMMARY_CONTEXT_CHARS = 2_000
 const MAX_PRIOR_SUMMARY_ENTRY_CHARS = 600
 
 function truncateForBrief(text: string, max: number): string {
-  const clean = text.trim()
-  return clean.length <= max ? clean : `${clean.slice(0, max - 1).trimEnd()}…`
+  return ellipsize(text.trim(), max, { trimEnd: true })
 }
 
 export interface RunTodoWorkerOptions {

@@ -34,6 +34,8 @@ export interface SshSecretAnswer {
   remember: boolean
 }
 
+export type SshSecretMode = 'interactive' | 'cache-only'
+
 interface CachedSecret {
   value: string
   generation: number
@@ -49,6 +51,29 @@ const generations = new Map<string, number>()
 const pending = new Map<string, PendingAsk>()
 /** Per-spawn askpass nonce → prompt key → generation that nonce was served. */
 const servedByNonce = new Map<string, Map<string, number>>()
+
+/** Whether Git's unscoped session cache contains a remembered answer, without asking or reading the keyring. */
+export function hasSessionSshCredentials(): boolean {
+  for (const [key, secret] of cache) {
+    if (key.startsWith('session\0') && secret.value) return true
+  }
+  return false
+}
+
+/**
+ * Conservatively retire answers used by an unsuccessful unattended Git spawn.
+ * Its one-prompt budget can prevent the usual re-ask rejection signal. Only
+ * answers actually served to this nonce are affected; an older failed child
+ * cannot retire a newer generation or a configured host's stored credential.
+ */
+export function invalidateSessionSshCredentialNonce(nonce: string): void {
+  for (const [key, generation] of servedByNonce.get(nonce) ?? []) {
+    if (!key.startsWith('session\0') || (generations.get(key) ?? 0) !== generation) continue
+    generations.set(key, generation + 1)
+    cache.delete(key)
+    pending.delete(key)
+  }
+}
 
 /** A host scope also separates identity-file prompts shared across connections. */
 function cacheKey(hostId: string | undefined, prompt: string): string {
@@ -74,6 +99,7 @@ export async function resolveSshSecret(
   prompt: string,
   ask: () => Promise<SshSecretAnswer>,
   hostId?: string,
+  mode: SshSecretMode = 'interactive',
 ): Promise<string> {
   const key = cacheKey(hostId, prompt)
   let generation = generations.get(key) ?? 0
@@ -100,6 +126,10 @@ export async function resolveSshSecret(
     markServed(nonce, key, generation)
     return stored
   }
+
+  // Background work must neither open a dialog nor wait for a foreground
+  // dialog already in flight. Rejected answers were retired above as usual.
+  if (mode === 'cache-only') return ''
 
   const inFlight = pending.get(key)
   if (inFlight && inFlight.generation === generation) {

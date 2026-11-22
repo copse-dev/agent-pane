@@ -53,6 +53,7 @@ import { sessionUpdateToStreamChunks } from './session-update-adapter.ts'
 import { acpBridgeToolMissing, isAcpBridgeStartupFailure } from './acp-bridge-mount.ts'
 import { acpStaleModelNotice } from './acp-stale-model-notice.ts'
 import type { AgentInitiatedTurnLease } from './agent-initiated-turn.ts'
+import type { AcpTurnEndReason } from './turn-end.ts'
 import { tapAcpWireStream, type AcpWireSink } from './acp-wire-tap.ts'
 import { cancelApprovalsForAcpToolCall } from './acp-permission-registry.ts'
 import {
@@ -80,6 +81,7 @@ import {
   ensureWorkspaceTmpDir,
   refreshGitConfigIncludeReadPaths,
 } from '../../project-sandbox/config.ts'
+import { withTimeout } from '@copse/std/with-timeout.ts'
 
 /**
  * Copse intentionally advertises no notice or compaction session capability.
@@ -104,6 +106,7 @@ import {
   shellForSandboxWrap,
   withSandboxShellPath,
 } from '../../project-sandbox/sandbox-argv.ts'
+import { findExecutableOnPath } from './acp-detect.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
 import { isSpawnableWorkingDirectory } from '../../project-sandbox/spawn-cwd.ts'
 import {
@@ -580,6 +583,25 @@ function waitForAcpChildExit(
   })
 }
 
+/**
+ * The agent's executable as the sandboxed wrapper shell will find it on `env`'s
+ * PATH, for the overlay's read-only `executables` grant, which decides what of
+ * it and its symlink target may be read. `env` has been through
+ * `withSandboxShellPath`, so only absolute entries remain, as for the wrapper.
+ * Found by reading the filesystem: this runs before the sandbox exists, so
+ * running a lookup program from the agent's PATH (an entry inside the
+ * workspace can supply one) would run it unconfined. Empty when it does not
+ * resolve: the spawn then fails as before, naming the command.
+ */
+async function agentExecutables(
+  command: string,
+  env: NodeJS.ProcessEnv,
+  cwd: string,
+): Promise<string[]> {
+  const found = await findExecutableOnPath(command, env['PATH'] ?? '/usr/bin:/bin', cwd)
+  return found ? [found] : []
+}
+
 export async function spawnAcpAgentProcess(
   config: AcpAgentSpawnConfig,
   options: {
@@ -605,7 +627,11 @@ export async function spawnAcpAgentProcess(
   if (config.sandbox && willSandboxAcpAgent(config.sandbox)) {
     // The agent runs git with the user's config; pick up its current includes.
     await refreshGitConfigIncludeReadPaths()
+    const executables = await perfSpan('ttft:acp-agent-executable', () =>
+      agentExecutables(config.command, withSandboxShellPath(env), config.cwd),
+    )
     const overlay = acpAgentSandboxOverlay(config.cwd, config.sandbox, {
+      executables,
       allowLocalhost: options.allowLocalhost ?? Boolean(config.nativeBridge),
       ...(config.readonlyCheckout ? { readonlyCheckout: true } : {}),
       ...(config.stateDir ? { stateDirs: [config.stateDir] } : {}),
@@ -1129,33 +1155,29 @@ export function endsSelfStartedTurn(update: SessionUpdate): boolean {
  * the turn finished. One that does not is disposed, so it can neither keep
  * working unseen nor write into the next prompt's turn once that turn clears
  * the suppression. Returns false when there is no self-started turn to stop.
+ * `reason` is what the lease reports to the bridge: send-now ends the turn but,
+ * unlike Stop, keeps same-task approvals (hooks plan decision 4).
  */
 export function cancelAgentInitiatedTurn(
   open: OpenAcpSession,
   cancelGraceMs: number = ACP_CANCEL_GRACE_MS,
+  reason: AcpTurnEndReason = 'stopped',
 ): boolean {
   if (open.turnStop !== null || !open.agentInitiated?.isActive()) return false
   open.suppressChunks = true
   void open.connection.agent.notify('session/cancel', { sessionId: open.session.sessionId })
-  open.agentInitiated.end()
+  open.agentInitiated.end(reason)
   if (!open.agentInitiatedCancel) {
-    let acknowledge = (): void => {}
-    const acknowledged = new Promise<'acknowledged'>((resolve) => {
-      acknowledge = (): void => {
-        resolve('acknowledged')
-      }
-    })
-    let graceTimer: ReturnType<typeof setTimeout> | undefined
-    const graceExpired = new Promise<'grace-expired'>((resolve) => {
-      graceTimer = setTimeout(() => {
-        resolve('grace-expired')
-      }, cancelGraceMs)
-    })
-    const settled = Promise.race([acknowledged, graceExpired]).then(async (outcome) => {
-      clearTimeout(graceTimer)
-      if (outcome === 'grace-expired') await open.dispose()
-      delete open.agentInitiatedCancel
-    })
+    const acknowledged = Promise.withResolvers<'acknowledged'>()
+    const acknowledge = (): void => {
+      acknowledged.resolve('acknowledged')
+    }
+    const settled = withTimeout(acknowledged.promise, cancelGraceMs, () => 'grace-expired').then(
+      async (outcome) => {
+        if (outcome === 'grace-expired') await open.dispose()
+        delete open.agentInitiatedCancel
+      },
+    )
     open.agentInitiatedCancel = { settled, acknowledge }
   }
   return true
@@ -1665,10 +1687,8 @@ export async function runAcpSessionPrompt(
   // Resolves only once the user has aborted AND the agent has failed to settle
   // its prompt within the grace window — our cue to stop waiting on a stuck
   // agent rather than hang the turn forever.
-  let onGraceExpired: (value: 'grace-expired') => void = () => {}
-  const graceExpired = new Promise<'grace-expired'>((resolve) => {
-    onGraceExpired = resolve
-  })
+  const { promise: graceExpired, resolve: onGraceExpired } =
+    Promise.withResolvers<'grace-expired'>()
   let graceTimer: ReturnType<typeof setTimeout> | undefined
   let promptSent = false
   const cancel = (): void => {
@@ -1687,10 +1707,8 @@ export async function runAcpSessionPrompt(
   // stop. Install BEFORE wiring the abort path so an already-aborted signal
   // re-suppresses.
   open.suppressChunks = false
-  let settleStop!: NonNullable<OpenAcpSession['turnStop']>
-  const stopped = new Promise<AcpTurnStop>((resolve, reject) => {
-    settleStop = { resolve, reject }
-  })
+  const { promise: stopped, resolve, reject } = Promise.withResolvers<AcpTurnStop>()
+  const settleStop: NonNullable<OpenAcpSession['turnStop']> = { resolve, reject }
   // The grace-expired path abandons `stopped`; swallow its late rejection (the
   // disposed connection rejects the in-flight prompt) so it never surfaces as
   // an unhandled rejection.

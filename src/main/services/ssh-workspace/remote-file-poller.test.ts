@@ -171,6 +171,31 @@ describe('pollRemoteFilesOnce', () => {
     assert.equal(sent.length, 2, 'a failing host does not abort the tick')
   })
 
+  it('skips a host that is not connected and keeps its baseline', async () => {
+    // Tick 1 records a baseline, tick 2 finds the host gone, tick 3 finds it
+    // back with the file changed while it was away.
+    const answers: Array<{ stdout: string } | null> = [
+      { stdout: '/srv/app/a.ts|100|10\n' },
+      null,
+      { stdout: '/srv/app/a.ts|200|12\n' },
+    ]
+    let call = 0
+    setRemotePollExecForTest(() => {
+      const answer = answers[call] ?? null
+      call += 1
+      return Promise.resolve(answer)
+    })
+    const seen: number[] = []
+    watchRemotePath('k', TARGET, (_key, size) => seen.push(size))
+
+    await pollRemoteFilesOnce()
+    await pollRemoteFilesOnce()
+    assert.deepEqual(seen, [], 'a host that is away is neither a change nor a deletion')
+    await pollRemoteFilesOnce()
+
+    assert.deepEqual(seen, [12], 'the edit made while disconnected is reported once it is back')
+  })
+
   it('stops reporting an unwatched path', async () => {
     fakeExec(['/srv/app/a.ts|100|10\n', '/srv/app/a.ts|200|10\n'])
     const seen: number[] = []

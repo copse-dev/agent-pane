@@ -62,7 +62,10 @@ export interface ExtensionHealthSignals {
   readonly distinctRecentToolCalls: number
   /** Consecutive reasoning-only streams cut and re-nudged without progress. */
   readonly reasoningRunawayStreak: number
-  /** Whether a loop or forced-finalize nudge fired during the run. */
+  /**
+   * Whether a loop or forced-finalize nudge fired during the run, or the last
+   * stream was an empty turn whose nudge is still pending.
+   */
   readonly nudged: boolean
 }
 

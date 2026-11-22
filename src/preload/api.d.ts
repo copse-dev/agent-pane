@@ -581,6 +581,7 @@ export interface ApiClient {
     ) => () => void
   }
   sshPrompt: {
+    onDismissed: (handler: (id: string) => void) => () => void
     respond: (id: string, value: string, remember?: boolean) => Promise<void>
     onRequest: (
       handler: (req: {
@@ -720,6 +721,7 @@ export interface ApiClient {
     ) => Promise<import('@copse/thread-store/plan-schema.ts').StoredThreadPlan | null>
   }
   threads: {
+    actionState: () => Promise<import('@shared/threads/action-assessment.ts').ThreadActionState>
     archiveState: (
       projectId: string,
       view: 'review' | 'archived',
@@ -1184,10 +1186,6 @@ export interface ApiClient {
       threadId: string,
     ) => Promise<import('@shared/usage/classifier-use.ts').ThreadClassifierUse>
     getPlanUsage: (force?: boolean) => Promise<import('@copse/plan-usage').PlanUsageSnapshot>
-    getPlanWorthIt: () => Promise<import('@shared/usage/plan-worth-it.ts').PlanWorthItPayload>
-    setClaudePlanMonthlyFee: (
-      fee: number | null,
-    ) => Promise<import('@shared/usage/plan-worth-it.ts').PlanWorthItPayload>
   }
   decisions: {
     /**
@@ -1680,7 +1678,6 @@ export interface ApiClient {
   }
   shell: {
     openExternal: (url: string) => Promise<void>
-    openWorkspaceFileInBrowser: (projectId: string, threadId: string, path: string) => Promise<void>
   }
   editors: {
     /** Installed external editors plus the sticky last-used default. */

@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 import Anthropic from '@anthropic-ai/sdk'
 import { ToolCallRequestError } from '@lmstudio/sdk'
 import OpenAI from 'openai'
@@ -286,7 +287,7 @@ export function streamRetryDelayMs(err: unknown, attempt: number): number {
     const asNum = Number(raw)
     if (Number.isFinite(asNum) && asNum >= 0) return Math.min(120_000, asNum * 1000)
     const asDate = Date.parse(raw)
-    if (!Number.isNaN(asDate)) return Math.min(120_000, Math.max(0, asDate - Date.now()))
+    if (!Number.isNaN(asDate)) return clamp(asDate - Date.now(), 0, 120_000)
   }
   // OpenRouter's HTTP-200 SSE rate limits have no Retry-After header. The
   // ordinary 1/2/4s delays exhausted all four attempts during live PR reviews

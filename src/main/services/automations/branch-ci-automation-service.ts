@@ -1,3 +1,5 @@
+import { truncateLine } from '@copse/std/one-line-text.ts'
+import { clamp } from '@copse/std/clamp.ts'
 import { randomUUID } from 'node:crypto'
 import { sha256Hex } from '@copse/std/sha256.ts'
 import {
@@ -428,11 +430,6 @@ function pullRequestDeliveryId(
   return `pr:${String(pr.number)}:${pr.head.sha.slice(0, PR_ID_SHA_LENGTH)}:${transition === 'ready-for-review' ? 'ready' : 'commits'}`
 }
 
-function clip(value: string, max = 200): string {
-  const flat = value.replace(/\s+/g, ' ').trim()
-  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}…`
-}
-
 function factNumber(record: EventInboxRecord, key: string): number | null {
   const value = record.delivery.facts[key]
   return typeof value === 'number' ? value : null
@@ -514,7 +511,7 @@ export function createBranchCiAutomationService(
       )
         return {
           kind: 'filtered',
-          reason: `Check “${clip(String(workflow ?? ''), 80)}” is not one of the selected checks`,
+          reason: `Check “${truncateLine(String(workflow ?? ''), 80)}” is not one of the selected checks`,
         }
       return { kind: 'match' }
     }
@@ -810,7 +807,7 @@ export function createBranchCiAutomationService(
           occurredAt: isoToMillis(pr.updated_at, clock),
           facts: {
             number: pr.number,
-            title: clip(pr.title, 512),
+            title: truncateLine(pr.title, 512),
             author: pr.author,
             base: trigger.baseBranch,
             headRef: pr.head.ref,
@@ -839,7 +836,7 @@ export function createBranchCiAutomationService(
         occurredAt: isoToMillis(event.created_at, clock),
         facts: {
           number: event.issue.number,
-          title: clip(event.issue.title, 512),
+          title: truncateLine(event.issue.title, 512),
           actor: event.actor,
           label: event.label,
           url: event.issue.html_url,
@@ -957,7 +954,7 @@ export function createBranchCiAutomationService(
           await setProblem(definition, {
             at: deps.now(),
             kind: 'failed',
-            message: clip(`Could not read GitHub: ${message}`, 500),
+            message: truncateLine(`Could not read GitHub: ${message}`, 500),
             code: classifyAutomationFailureMessage(message),
           })
         }
@@ -1107,14 +1104,14 @@ export function createBranchCiAutomationService(
       const records = (await inboxStore.list(projectId))
         .filter((record) => record.binding.automationId === id)
         .sort((a, b) => b.receivedAt - a.receivedAt)
-        .slice(0, Math.max(1, Math.min(limit, 100)))
+        .slice(0, clamp(limit, 1, 100))
       return records.map((record): EventDeliverySummary => {
         const facts = record.delivery.facts
         const number = factNumber(record, 'number')
         const summary =
           record.binding.eventType === ROUTES['github-ci-failed'].eventType
-            ? `${clip(String(facts['workflow'] ?? 'CI'), 120)} failed on ${clip(String(facts['branch'] ?? ''), 80)}`
-            : `#${String(number ?? '?')} ${clip(String(facts['title'] ?? ''), 160)}`
+            ? `${truncateLine(String(facts['workflow'] ?? 'CI'), 120)} failed on ${truncateLine(String(facts['branch'] ?? ''), 80)}`
+            : `#${String(number ?? '?')} ${truncateLine(String(facts['title'] ?? ''), 160)}`
         const url = facts['url']
         const base = {
           key: record.key,
@@ -1153,7 +1150,7 @@ export function createBranchCiAutomationService(
       await setProblem(definition, {
         at: deps.now(),
         kind: 'failed',
-        message: clip(failure.message, 500),
+        message: truncateLine(failure.message, 500),
         code: failure.code,
         threadId,
       })
@@ -1281,7 +1278,9 @@ export function createBranchCiAutomationService(
           repository: trigger.repository,
           branch: trigger.branch,
           latestFailure: matching[0]?.html_url ?? null,
-          recent: matching.slice(0, 5).map((run) => clip(`${run.name} · ${run.html_url}`, 200)),
+          recent: matching
+            .slice(0, 5)
+            .map((run) => truncateLine(`${run.name} · ${run.html_url}`, 200)),
         }
       }
       if (trigger.kind === 'github-pr-changed') {
@@ -1289,7 +1288,7 @@ export function createBranchCiAutomationService(
         const recent = observed
           .filter((pr) => (trigger.transition === 'ready-for-review' ? !pr.draft : !pr.draft))
           .slice(0, 5)
-          .map((pr) => `#${String(pr.number)} ${clip(pr.title, 120)}`)
+          .map((pr) => `#${String(pr.number)} ${truncateLine(pr.title, 120)}`)
         return {
           repository: trigger.repository,
           branch: trigger.baseBranch,
@@ -1304,7 +1303,7 @@ export function createBranchCiAutomationService(
         latestFailure: null,
         recent: events
           .slice(0, 5)
-          .map((event) => `#${String(event.issue.number)} ${clip(event.issue.title, 120)}`),
+          .map((event) => `#${String(event.issue.number)} ${truncateLine(event.issue.title, 120)}`),
       }
     },
     async poll(): Promise<void> {

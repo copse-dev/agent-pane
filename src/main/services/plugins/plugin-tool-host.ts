@@ -224,6 +224,11 @@ export class PluginToolHost {
   private attach(): void {
     const stdout = this.proc.stdout
     if (!stdout) return
+    // Write callbacks do not consume the stream's separate error event. Keep
+    // this listener through teardown so a closed worker pipe fails the host.
+    this.proc.stdin?.on('error', (err: Error) => {
+      this.fail(new PluginToolHostUnavailable(err.message))
+    })
     stdout.setEncoding('utf-8')
     stdout.on('data', (chunk: string) => {
       this.onData(chunk)
@@ -238,7 +243,7 @@ export class PluginToolHost {
       })
     }
     this.proc.on('exit', (code, signal) => {
-      if (this.alive && !this.initialized) {
+      if (!this.initialized) {
         const status = code !== null ? `code ${String(code)}` : `signal ${signal ?? 'unknown'}`
         const diagnostic = this.startupStderr
           .replace(/[\u0000-\u001f\u007f]+/gu, ' ')

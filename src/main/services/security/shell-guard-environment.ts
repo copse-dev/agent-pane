@@ -8,15 +8,19 @@
  * - the read-only roots granted to the active thread — the directories of the
  *   skills it invoked (`thread-read-roots.ts`) — which the overlay adds to
  *   `allowRead` for that thread's commands;
- * - the scratch directories configured ACP agents declare (#481), which the
- *   seatbelt allow-lists and the classifier must therefore not flag.
+ * - the active thread's workspace scratch and configured ACP scratch (#481),
+ *   which the sandbox allows and the classifier must therefore not flag;
+ * - actual filesystem paths for supported literal symbolic-link commands.
  *
  * The classifier and the seatbelt must agree, or a command stops prompting and
- * then fails EPERM instead; keeping all three bindings here, next to each
+ * then fails EPERM instead; keeping the bindings here, next to each
  * other, is what makes that agreement inspectable.
  */
 import { configureShellScopeEnvironment } from '@copse/shell-guard/shell-scope.ts'
 import { agentScratchMatcher } from '../../project-sandbox/agent-scratch-roots.ts'
+import { ensureWorkspaceTmpDir } from '../../project-sandbox/workspace-tmp.ts'
+import { sep } from 'node:path'
+import { isWorkspaceSymlink, resolveShellPath } from './shell-path-facts.ts'
 import { copseWorkspaceDir } from '../storage/copse-paths.ts'
 import { getChatStoreRootSync } from '../workspace.ts'
 import { activeThreadReadRootPaths } from './thread-read-roots.ts'
@@ -31,5 +35,22 @@ configureShellScopeEnvironment({
     )
     return [...roots, ...activeThreadReadRootPaths()]
   },
-  sanctionedScratchMatcher: agentScratchMatcher,
+  sanctionedScratchMatcher: () => {
+    const agentScratch = agentScratchMatcher()
+    let root: string | null = null
+    try {
+      root = ensureWorkspaceTmpDir()
+    } catch {
+      // No authoritative scratch grant when its directory cannot be established.
+    }
+    return (path: string): boolean => {
+      if (/[$`*?[\]{}\\]/.test(path)) return false
+      const canonical = resolveShellPath(path)?.path
+      if (!canonical) return false
+      if (root !== null && (canonical === root || canonical.startsWith(`${root}${sep}`)))
+        return true
+      return Boolean(agentScratch?.(path) && agentScratch(canonical))
+    }
+  },
+  isContainedSymlink: isWorkspaceSymlink,
 })

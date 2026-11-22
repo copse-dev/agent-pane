@@ -146,6 +146,17 @@ project-defined MCP servers are gated behind workspace trust, the
     so pairing there grants control on the desktop approval alone; the local-root
     acknowledgement applies only to pairings over the LAN IP, and the main process,
     not the renderer, decides which applies.
+    Every response is `no-store` except the page's own script and stylesheet, and only
+    when requested under the content hash that the never-stored page pins with Subresource
+    Integrity; a cached copy that is not those bytes is refused by the browser, and these
+    bundles carry no thread data. Polled reads are compressed and answered `304` when
+    unchanged. The bearer is never compressed: it travels only in a request header that a
+    cross-site page cannot make the phone send, and the pairing answer, the one body that
+    carries it, is sent uncompressed. A compressed thread or live-state answer can still
+    hold a secret a tool printed beside attacker-influenced text, such as a fetched page.
+    Using compression as a BREACH oracle against it would need a fresh guess placed into
+    the polled answer for each request, and every guess costs the attacker an agent turn.
+    A LAN observer can still see the size of each encrypted answer, compressed or not.
 11. **Names service compromise or error.** The Copse names service (`api.copse.dev`), or
     someone who controls it, issues a certificate for `*.<label>.u.copse.me` with a key it
     holds and points `lan.<label>.u.copse.me` at another private address, then waits on the
@@ -191,7 +202,10 @@ downloaded cannot start a run: carry-in reports that and asks for `git backfill`
 full clone. Adoption's
 `cherry-pick` is admitted only as `--no-edit` with full SHAs (no merge strategy
 program), so the checkout's hooks and signer do not run and adopted commits are
-unsigned. It is app plumbing, not the gated `git_commit` profile. Guest-side Git
+unsigned. It is app plumbing, not the gated `git_commit` profile. The hosted
+transfer's LFS scan admits `grep` only as `-I`, `-l` and `-E`, a pattern, a full SHA
+and `--` pathspecs, so no abbreviated or bundled spelling of `-O` names a pager
+program and textconv stays off. Guest-side Git
 (`worker-main.ts`, the hosted workers) runs on repositories the guest created, beside
 an agent that can already run any program there, so it keeps its own wrappers.
 
@@ -234,6 +248,33 @@ fetch, which leaves the ref unchanged on macOS. Turning the setting off skips al
 background fetches on every platform, including the contained fallback; it cannot
 contact origin or request authentication. Failures are logged once per distinct
 error and again on recovery.
+
+Opportunistic startup, hourly and allocation refreshes use a cache-only Copse
+askpass lease. It reads already remembered answers with the existing host scope
+and rejected-secret invalidation, but never opens a credential or trust dialog or
+waits for one already pending. Terminal prompts and the configured `core.askPass`
+fallback are disabled. SSH uses `BatchMode=yes` when the unscoped session cache
+is empty or the trusted bridge is unavailable. With remembered session answers,
+the trusted cache-only helper is allowed with `NumberOfPasswordPrompts=1`.
+This is one prompt attempt per password or keyboard-interactive method, not one
+total authentication attempt; keyboard-interactive can request several answers.
+A warm cache is not proof of an answer for this destination, so a missing or
+stale answer can still be submitted without UI. A failed unattended Git command
+or expired askpass lease conservatively retires only the current generations of
+session answers actually served to it. Nonzero Git can follow successful
+authentication, so this can also evict a good answer; it is not proof that the
+server rejected the credential. Without the bridge, all askpass fallbacks are
+disabled.
+The configured host-key policy, SSH agent and credential helpers remain available.
+Git Credential Manager receives its
+[documented noninteractive setting](https://github.com/git-ecosystem/git-credential-manager/blob/main/docs/environment.md#gcm_interactive).
+Trusted third-party helpers, SSH `ProxyCommand` programs, agent confirmations,
+security keys and OS keychain access can implement their own interaction; this
+policy does not sandbox them or promise to control their UI or latency. Missing
+credentials fail the refresh and retain the cached tip. Background failure
+warnings redact scheme URL userinfo, which can itself contain a token, before
+deduplication and truncation.
+Explicit foreground `git_fetch` and push operations retain normal authentication.
 
 Internal Git execution explicitly unsets inherited Git configuration, executable and
 SSH injection variables in the final spawn environment. These removals survive the
