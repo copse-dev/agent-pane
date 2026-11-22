@@ -300,8 +300,14 @@ describe('isolated thread terminal cwd', () => {
     assert.equal(git(worktreeRoot, ['branch', '--show-current']), '')
 
     const terminalBtn = await $('#titlebar .titlebar-btn[aria-label="Open terminal"]').getElement()
-    if (!((await terminalBtn.getAttribute('class')) ?? '').includes('active'))
+    if (!((await terminalBtn.getAttribute('class')) ?? '').includes('active')) {
+      // Run alone, this opens the panel, which starts its own first shell. Count
+      // tabs once that shell is up, or its late tab reads as the recovery tab.
       await terminalBtn.click()
+      await approveUnsandboxedTerminalIfPrompted()
+      await $('.terminal-container .xterm').waitForExist({ timeout: 30_000 })
+      await $('.terminals-tab').waitForExist({ timeout: 30_000 })
+    }
     const tabsBefore = await $$('.terminals-tab').getElements()
     await $('.terminals-new-btn').click()
     await approveUnsandboxedTerminalIfPrompted()
