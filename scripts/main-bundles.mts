@@ -133,6 +133,15 @@ export const STANDALONE_MAIN_BUNDLES: StandaloneMainBundle[] = [
     entry: 'src/main/services/ssh-workspace/askpass-helper.ts',
     outfile: 'dist/main/ssh-askpass-helper.js',
   },
+  // The guest side of code mode: runs a thread's TypeScript cells inside its
+  // code-cell container and forwards their tool calls to the host over the
+  // container's stdio. Copied into the code-cell image, where no node_modules
+  // exist, so nothing stays external.
+  {
+    entry: 'src/main/services/code-mode/code-cell-runner.ts',
+    outfile: 'dist/main/code-cell-runner.cjs',
+    external: [],
+  },
   // The guest side of an unattended container run
   // (docs/plans/thread-in-container.md). Copied into the worker image and
   // executed by Node inside the container, where the app's node_modules do

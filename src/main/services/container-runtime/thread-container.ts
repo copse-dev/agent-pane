@@ -1084,8 +1084,12 @@ export async function buildWorkerImage(options: BuildImageOptions = {}): Promise
 // Lifecycle
 // ---------------------------------------------------------------------------
 
-/** Every engine operation has a deadline, including preparation and teardown. */
-async function runEngine(
+/**
+ * Every engine operation has a deadline, including preparation and teardown.
+ * Exported for code mode's containers, which share the engines and their
+ * cleanup but not the run lifecycle (`../code-mode/`).
+ */
+export async function runEngine(
   engine: ThreadContainerEngine,
   args: string[],
   options: { timeoutMs?: number; env?: NodeJS.ProcessEnv } = {},
@@ -1661,9 +1665,9 @@ const appleContainerInspectSchema = z
   )
   .length(1)
 
-type AppleContainerInspect = z.infer<typeof appleContainerInspectSchema>[number]
+export type AppleContainerInspect = z.infer<typeof appleContainerInspectSchema>[number]
 
-function decodeAppleInspect(inspectJson: string): AppleContainerInspect | null {
+export function decodeAppleInspect(inspectJson: string): AppleContainerInspect | null {
   return safeJsonParse(inspectJson, decodeWithSchema(appleContainerInspectSchema))?.[0] ?? null
 }
 
@@ -1679,7 +1683,7 @@ export function appleContainerStarted(inspectJson: string): boolean {
 }
 
 /** `4g` → bytes, as Apple container records `--memory`. */
-function memoryBytes(limit: string): number | null {
+export function memoryBytes(limit: string): number | null {
   const match = /^(\d+)([kmgt]?)$/i.exec(limit)
   if (!match) return null
   const exponent = ['', 'k', 'm', 'g', 't'].indexOf((match[2] ?? '').toLowerCase())

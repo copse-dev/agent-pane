@@ -410,6 +410,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // Defer eligible new threads across projects until their first write. Off by default.
   deferredWorktreesEnabled: z.boolean(),
   containerRunsEnabled: z.boolean(),
+  // Experimental code mode: the agent's run_code tool runs TypeScript cells in
+  // a container kept per thread. Off by default; needs Docker or Apple
+  // container. See src/main/services/code-mode/.
+  codeModeEnabled: z.boolean(),
   // Experimental living-plan workflow: the composer's "Start planning" button
   // and dialog. Off by default — container, ACP, remote, and plugin-hosted
   // executors still fail closed while a plan is active, and completion is

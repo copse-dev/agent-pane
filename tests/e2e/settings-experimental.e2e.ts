@@ -188,5 +188,17 @@ describe('experimental settings section', () => {
     await $(classifierFieldset).scrollIntoView({ block: 'center' })
     await expect($(classifierFieldset).$('.field-hint')).toBeDisplayed()
     await saveElementScreenshot(classifierFieldset, 'settings-experimental-model-classifier.png')
+
+    // Code mode is off by default, and its hint says what turning it on lets
+    // run unasked, and where.
+    const codeModeFieldset = '#settings-dialog fieldset:has(input[name="codeModeEnabled"])'
+    await $(codeModeFieldset).scrollIntoView({ block: 'center' })
+    await expect($(codeModeFieldset).$('legend')).toHaveText('Code mode')
+    await expect($(codeModeFieldset).$('input[name="codeModeEnabled"]')).not.toBeSelected()
+    const codeModeHint = await $(codeModeFieldset).$('.field-hint').getText()
+    assert.match(codeModeHint, /no network/i)
+    assert.match(codeModeHint, /Cells run without asking/)
+    assert.match(codeModeHint, /Apple container or Docker/)
+    await saveElementScreenshot(codeModeFieldset, 'settings-experimental-code-mode.png')
   })
 })

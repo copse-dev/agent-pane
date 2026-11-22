@@ -86,6 +86,21 @@ export const experimentalMarkup = `
             </fieldset>
 
             <fieldset>
+              <legend>Code mode</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="codeModeEnabled" />
+                Let the agent run TypeScript in a container
+              </label>
+              <p class="field-hint">
+                Gives the agent a run_code tool. Each thread gets its own container with no network
+                and none of your files; code there reads the thread's files only through Copse's
+                read-only tools, which still ask wherever they normally would. Cells run without
+                asking. One spare container stays running while this is on. Needs Apple container
+                or Docker; the first cell builds a small image.
+              </p>
+            </fieldset>
+
+            <fieldset>
               <legend>Plans</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="planModeEnabled" />
@@ -168,6 +183,7 @@ export const experimentalFields: readonly SettingField[] = [
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'deferredWorktreesEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'containerRunsEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'codeModeEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'planModeEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'orchestrationStrategyEnabled', kind: 'checkbox', default: false, save: true },
   { name: DEVELOPER_MODE_SETTING, kind: 'checkbox', default: false, save: true },

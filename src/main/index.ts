@@ -239,6 +239,10 @@ import {
 import { recoverIsolatedDesktops } from './services/isolated-desktop/desktop-recovery.ts'
 import { stopAllIsolatedDesktops } from './services/isolated-desktop/desktop-service.ts'
 import {
+  stopAllCodeCellContainers,
+  syncCodeCellPool,
+} from './services/code-mode/code-mode-service.ts'
+import {
   cancelAllSupervisedBackgroundProcesses,
   hasBackgroundCompletionWake,
   installBackgroundProcessSupervisor,
@@ -919,6 +923,11 @@ app
     disposeCiWatchConsumer = installCiWatchConsumer(taskSupervisor, agentDispatcher)
     disposeBackgroundProcessSupervisor = installBackgroundProcessSupervisor(taskSupervisor)
     disposeContainerRunSupervisor = getContainerRunService().installSupervisor(taskSupervisor)
+    // Code mode keeps one spare container warm while its setting is on. In the
+    // background: a missing engine or a first image build must not hold start-up.
+    void syncCodeCellPool().catch((error: unknown) => {
+      console.error('[code-mode] Could not prepare a spare container:', error)
+    })
     disposeDarkFactorySensor = installDarkFactorySensor(taskSupervisor)
     disposeTaskSupervisorEvents = taskSupervisor.subscribe((task) => {
       if (!win.isDestroyed()) win.webContents.send('supervisor:changed', task.projectId)
@@ -1511,6 +1520,9 @@ async function cleanupBeforeQuit(): Promise<void> {
   // Revoke input and inference synchronously, then await VM deletion within the quit deadline.
   await stopAllIsolatedDesktops().catch((error: unknown) => {
     console.error('[isolated-desktop] Shutdown VM cleanup failed:', error)
+  })
+  await stopAllCodeCellContainers().catch((error: unknown) => {
+    console.error('[code-mode] Shutdown container cleanup failed:', error)
   })
   stopEventLoopWatchdog()
   perfMark('main:quit')

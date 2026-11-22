@@ -85,6 +85,7 @@ const TOOL_DISPLAY_NAMES: Record<string, DualLabel | string> = {
   make_directory: { running: 'Creating directory', done: 'Created directory' },
   run_shell: { running: 'Running command', done: 'Ran command' },
   run_background: { running: 'Starting background task', done: 'Started background task' },
+  run_code: { running: 'Running code', done: 'Ran code' },
   read_terminal: { running: 'Reading shell', done: 'Read shell' },
   video_frames: { running: 'Reading video', done: 'Read video' },
   ask_user: { running: 'Asking user', done: 'Asked user' },

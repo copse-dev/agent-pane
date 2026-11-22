@@ -77,6 +77,8 @@ import { ADVISOR_STRATEGY_PLUGIN_ID } from '@copse/agent/plugins/advisor-strateg
 import { advisorTool } from '../tools/advisor-tool.ts'
 import { ORCHESTRATION_STRATEGY_ENABLED_SETTING } from './orchestration-strategy.ts'
 import { delegateStepTool } from '../tools/delegate-step-tool.ts'
+import { createRunCodeTool, RUN_CODE_TOOL_NAME } from '../tools/run-code-tool.ts'
+import { CODE_MODE_ENABLED_SETTING } from './code-mode/code-mode-service.ts'
 import { reviewChangesTool } from '../tools/review-changes-tool.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { REVIEW_PLUGIN_ID } from '@copse/agent/plugins/review-plugin.ts'
@@ -187,6 +189,11 @@ export function createRegistry(): ToolRegistry {
   // running as a subagent, with the parent observing between steps. Live
   // toggles route through {@link syncOrchestrationStrategyTools} on `settings:set`.
   syncOrchestrationStrategyTools(registry)
+  // Experimental code mode (off by default): `run_code` runs a TypeScript cell
+  // in a container kept for the thread, and the cell calls read-only tools back
+  // through this registry. Live toggles route through
+  // {@link syncCodeModeTools} on `settings:set`.
+  syncCodeModeTools(registry)
   // Copse Reviewer on demand (docs/plans/copse-reviewer.md, Phase 3). Gated by
   // the `copse.review` first-party plugin — the plugin toggle in Settings >
   // Plugins is the atomic master switch. Live toggles route through
@@ -577,6 +584,19 @@ export function syncOrchestrationStrategyTools(registry: ToolRegistry): void {
     if (!registry.has(delegateStepTool.name)) registry.register(delegateStepTool)
   } else {
     registry.unregister(delegateStepTool.name)
+  }
+}
+
+/**
+ * Register or unregister `run_code` to match the experimental code-mode
+ * setting. Registration only: the containers follow the same setting through
+ * `syncCodeCellPool`, called at start-up and on `settings:set`.
+ */
+export function syncCodeModeTools(registry: ToolRegistry): void {
+  if (getSetting<boolean>(CODE_MODE_ENABLED_SETTING, false)) {
+    if (!registry.has(RUN_CODE_TOOL_NAME)) registry.register(createRunCodeTool(registry))
+  } else {
+    registry.unregister(RUN_CODE_TOOL_NAME)
   }
 }
 
