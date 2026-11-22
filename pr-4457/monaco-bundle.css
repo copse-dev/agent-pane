@@ -1,10 +1,10 @@
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/base/browser/ui/aria/aria.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/base/browser/ui/aria/aria.css */
 .monaco-aria-container {
   position: absolute;
   left: -999em;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/browser/widget/codeEditor/editor.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/browser/widget/codeEditor/editor.css */
 ::-ms-clear {
   display: none;
 }
@@ -102,7 +102,7 @@
   text-decoration-color: var(--vscode-editor-foreground, inherit);
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/base/browser/ui/scrollbar/media/scrollbars.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/base/browser/ui/scrollbar/media/scrollbars.css */
 .monaco-scrollable-element > .scrollbar > .scra {
   cursor: pointer;
   font-size: 11px !important;
@@ -167,7 +167,7 @@
   background: var(--vscode-scrollbarSlider-activeBackground);
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/blockDecorations/blockDecorations.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/blockDecorations/blockDecorations.css */
 .monaco-editor .blockDecorations-container {
   position: absolute;
   top: 0;
@@ -178,7 +178,7 @@
   box-sizing: border-box;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/currentLineHighlight/currentLineHighlight.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/currentLineHighlight/currentLineHighlight.css */
 .monaco-editor .view-overlays .current-line {
   display: block;
   position: absolute;
@@ -199,13 +199,13 @@
   border-right: 0;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/decorations/decorations.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/decorations/decorations.css */
 .monaco-editor .lines-content .cdr {
   position: absolute;
   height: 100%;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/glyphMargin/glyphMargin.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/glyphMargin/glyphMargin.css */
 .monaco-editor .glyph-margin {
   position: absolute;
   top: 0;
@@ -223,14 +223,14 @@
   transform: translate(-50%, -50%);
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/indentGuides/indentGuides.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/indentGuides/indentGuides.css */
 .monaco-editor .lines-content .core-guide {
   position: absolute;
   box-sizing: border-box;
   height: 100%;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/lineNumbers/lineNumbers.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/lineNumbers/lineNumbers.css */
 .monaco-editor .margin-view-overlays .line-numbers {
   bottom: 0;
   font-variant-numeric: tabular-nums;
@@ -256,15 +256,20 @@
   color: var(--vscode-editorLineNumber-activeForeground);
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/base/browser/ui/mouseCursor/mouseCursor.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/base/browser/ui/mouseCursor/mouseCursor.css */
 .monaco-mouse-cursor-text {
   cursor: text;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/viewLines/viewLines.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/viewLines/viewLines.css */
 .mtkcontrol {
   color: rgb(255, 255, 255) !important;
   background: rgb(150, 0, 0) !important;
+}
+.mtkfullwidth {
+  display: inline-block;
+  box-sizing: border-box;
+  text-align: center;
 }
 .mtkoverflow {
   background-color: var(--vscode-button-background, var(--vscode-editor-background));
@@ -317,7 +322,7 @@
   color: var(--vscode-editorWhitespace-foreground) !important;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/linesDecorations/linesDecorations.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/linesDecorations/linesDecorations.css */
 .monaco-editor .lines-decorations {
   position: absolute;
   top: 0;
@@ -328,12 +333,12 @@
   height: 100%;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/margin/margin.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/margin/margin.css */
 .monaco-editor .margin {
   background-color: var(--vscode-editorGutter-background);
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/marginDecorations/marginDecorations.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/marginDecorations/marginDecorations.css */
 .monaco-editor .margin-view-overlays .cmdr {
   position: absolute;
   left: 0;
@@ -341,7 +346,7 @@
   height: 100%;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/minimap/minimap.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/minimap/minimap.css */
 .monaco-editor .minimap.slider-mouseover .minimap-slider {
   opacity: 0;
   transition: opacity 100ms linear;
@@ -399,14 +404,14 @@
   opacity: 0.9;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/overlayWidgets/overlayWidgets.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/overlayWidgets/overlayWidgets.css */
 .monaco-editor .overlayWidgets {
   position: absolute;
   top: 0;
   left: 0;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/rulers/rulers.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/rulers/rulers.css */
 .monaco-editor .view-ruler {
   position: absolute;
   top: 0;
@@ -414,7 +419,7 @@
   pointer-events: none;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/scrollDecoration/scrollDecoration.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/scrollDecoration/scrollDecoration.css */
 .monaco-editor .scroll-decoration {
   position: absolute;
   top: 0;
@@ -423,7 +428,7 @@
   box-shadow: var(--vscode-scrollbar-shadow) 0 6px 6px -6px inset;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/selections/selections.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/selections/selections.css */
 .monaco-editor .lines-content .cslr {
   position: absolute;
 }
@@ -470,7 +475,7 @@
   border-bottom-right-radius: 0;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/viewCursors/viewCursors.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/viewCursors/viewCursors.css */
 .monaco-editor .cursors-layer {
   position: absolute;
   top: 0;
@@ -532,19 +537,26 @@
   animation: monaco-cursor-expand 0.5s ease-in-out 0s 20 alternate;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/whitespace/whitespace.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/whitespace/whitespace.css */
 .monaco-editor .mwh {
   position: absolute;
   color: var(--vscode-editorWhitespace-foreground) !important;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/browser/gpu/css/media/decorationCssRuleExtractor.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/wordWrapIndicator/wordWrapIndicator.css */
+.monaco-editor .wwi {
+  position: absolute;
+  pointer-events: none;
+  color: var(--vscode-editorWordWrapIndicator-foreground);
+}
+
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/browser/gpu/css/media/decorationCssRuleExtractor.css */
 .monaco-editor .monaco-decoration-css-rule-extractor {
   visibility: hidden;
   pointer-events: none;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/browser/controller/editContext/textArea/textAreaEditContext.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/browser/controller/editContext/textArea/textAreaEditContext.css */
 .monaco-editor .inputarea {
   min-width: 0;
   min-height: 0;
@@ -565,7 +577,7 @@
   color: var(--vscode-editor-foreground);
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/browser/controller/editContext/native/nativeEditContext.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/browser/controller/editContext/native/nativeEditContext.css */
 .monaco-editor .native-edit-context {
   margin: 0;
   padding: 0;
@@ -606,7 +618,7 @@
   border: 2px solid var(--vscode-editor-compositionBorder);
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/gpuMark/gpuMark.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/browser/viewParts/gpuMark/gpuMark.css */
 .monaco-editor .margin-view-overlays .gpu-mark {
   position: absolute;
   top: 0;
@@ -622,7 +634,7 @@
   background-color: var(--vscode-editorWarning-foreground);
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/base/browser/ui/selectBox/selectBox.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/base/browser/ui/selectBox/selectBox.css */
 .monaco-select-box {
   width: 100%;
   cursor: pointer;
@@ -648,7 +660,7 @@
   min-height: 24px;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/base/browser/ui/list/list.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/base/browser/ui/list/list.css */
 .monaco-list {
   position: relative;
   height: 100%;
@@ -711,7 +723,7 @@
   display: none;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/base/browser/ui/dnd/dnd.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/base/browser/ui/dnd/dnd.css */
 .monaco-drag-image {
   display: inline-block;
   padding: 1px 7px;
@@ -729,7 +741,7 @@
   white-space: nowrap;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/base/browser/ui/selectBox/selectBoxCustom.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/base/browser/ui/selectBox/selectBoxCustom.css */
 .monaco-select-box-dropdown-container {
   display: none;
   box-sizing: border-box;
@@ -842,7 +854,7 @@
   white-space: nowrap;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/base/browser/ui/actionbar/actionbar.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/base/browser/ui/actionbar/actionbar.css */
 .monaco-action-bar {
   white-space: nowrap;
   height: 100%;
@@ -944,7 +956,7 @@
   width: 1px;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/browser/widget/diffEditor/components/accessibleDiffViewer.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/browser/widget/diffEditor/components/accessibleDiffViewer.css */
 .monaco-diff-editor .diff-review {
   position: absolute;
 }
@@ -1003,7 +1015,7 @@
   }
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/base/browser/ui/sash/sash.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/base/browser/ui/sash/sash.css */
 :root {
   --vscode-sash-size: 4px;
   --vscode-sash-hover-size: 4px;
@@ -1119,7 +1131,7 @@
   background: red;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/base/browser/ui/dropdown/dropdown.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/base/browser/ui/dropdown/dropdown.css */
 .monaco-dropdown {
   height: 100%;
   padding: 0;
@@ -1160,7 +1172,19 @@
   background-repeat: no-repeat;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/base/browser/ui/toolbar/toolbar.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/base/browser/ui/contextview/contextview.css */
+.context-view {
+  position: absolute;
+}
+.context-view.fixed {
+  all: initial;
+  font-family: inherit;
+  font-size: 13px;
+  position: fixed;
+  color: inherit;
+}
+
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/base/browser/ui/toolbar/toolbar.css */
 .monaco-toolbar {
   height: 100%;
 }
@@ -1185,7 +1209,7 @@
   }
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/platform/actions/browser/menuEntryActionViewItem.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/platform/actions/browser/menuEntryActionViewItem.css */
 .monaco-action-bar .action-item.menu-entry .action-label.icon {
   width: 16px;
   height: 16px;
@@ -1243,7 +1267,7 @@
   background-repeat: no-repeat;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/browser/widget/diffEditor/style.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/browser/widget/diffEditor/style.css */
 .monaco-editor .diff-hidden-lines-widget {
   width: 100%;
 }
@@ -1309,6 +1333,9 @@
   height: 24px;
   box-shadow: inset 0 -5px 5px -7px var(--vscode-diffEditor-unchangedRegionShadow), inset 0 5px 5px -7px var(--vscode-diffEditor-unchangedRegionShadow);
 }
+.monaco-editor .diff-hidden-lines .first {
+  justify-content: center;
+}
 .monaco-editor .diff-hidden-lines .center span.codicon {
   vertical-align: middle;
 }
@@ -1321,6 +1348,111 @@
 }
 .monaco-editor .diff-hidden-lines div.breadcrumb-item:hover {
   color: var(--vscode-editorLink-activeForeground);
+}
+.monaco-editor .diff-hidden-lines .line-number-control,
+.monaco-editor .diff-hidden-lines .disclosure-toggle {
+  display: none;
+}
+.monaco-editor .diff-hidden-lines.diff-hidden-lines-disclosure {
+  display: grid;
+  grid-template-rows: var(--vscode-spacing-size80) var(--vscode-spacing-size240) var(--vscode-spacing-size80);
+  height: var(--vscode-spacing-size400);
+  transform: none;
+  font-size: var(--vscode-fontSize-label2);
+  line-height: var(--vscode-spacing-size160);
+}
+.monaco-editor .diff-hidden-lines-disclosure .top,
+.monaco-editor .diff-hidden-lines-disclosure .bottom {
+  box-sizing: border-box;
+  height: var(--vscode-spacing-size80);
+  border: 0;
+  transform: none;
+}
+.monaco-editor .diff-hidden-lines-disclosure .center {
+  position: relative;
+  box-sizing: border-box;
+  width: calc(100% - var(--vscode-spacing-size200));
+  height: var(--vscode-spacing-size240);
+  margin: 0 var(--vscode-spacing-size100);
+  border-radius: var(--vscode-cornerRadius-medium);
+  background: transparent;
+  box-shadow: none;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+}
+.monaco-editor .diff-hidden-lines-disclosure .center:hover,
+.monaco-editor .diff-hidden-lines-disclosure .center:focus-within {
+  background: var(--vscode-list-hoverBackground);
+  color: var(--vscode-foreground);
+}
+.monaco-editor .diff-hidden-lines-disclosure .disclosure-toggle[role=button] {
+  display: block;
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.monaco-editor .diff-hidden-lines-disclosure .disclosure-toggle:focus-visible,
+.monaco-editor .diff-hidden-lines-disclosure .breadcrumb-item:focus-visible {
+  outline: var(--vscode-strokeThickness) solid var(--vscode-focusBorder);
+  outline-offset: calc(-1 * var(--vscode-strokeThickness));
+}
+.monaco-editor .diff-hidden-lines-disclosure .first,
+.monaco-editor .diff-hidden-lines-disclosure .content-row {
+  position: relative;
+  pointer-events: none;
+}
+.monaco-editor .diff-hidden-lines-disclosure .content-row {
+  flex: 1;
+  min-width: 0;
+}
+.monaco-editor .diff-hidden-lines-disclosure .first {
+  z-index: 1;
+}
+.monaco-editor .diff-hidden-lines-disclosure .default-control {
+  display: none;
+}
+.monaco-editor .diff-hidden-lines-disclosure .line-number-control {
+  position: absolute;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  transform: translateX(calc(-1 * var(--vscode-spacing-size100)));
+  color: inherit;
+}
+.monaco-editor .diff-hidden-lines-disclosure .line-left,
+.monaco-editor .diff-hidden-lines-disclosure .line-right {
+  min-width: var(--vscode-spacing-size120);
+  height: var(--vscode-strokeThickness);
+  background: var(--vscode-widget-border, var(--vscode-contrastBorder));
+  flex: 1;
+}
+.monaco-editor .diff-hidden-lines-disclosure .disclosure-content {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin: 0 var(--vscode-spacing-size60);
+  color: inherit;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.monaco-editor .diff-hidden-lines-disclosure .disclosure-content > * {
+  flex-shrink: 0;
+}
+.monaco-editor .diff-hidden-lines-disclosure .breadcrumb-item {
+  pointer-events: auto;
+  border-radius: var(--vscode-cornerRadius-small);
+  min-width: 0;
+}
+.monaco-editor .diff-hidden-lines-disclosure .disclosure-content > .breadcrumb-item {
+  flex-shrink: 1;
+}
+.monaco-editor .diff-hidden-lines-disclosure .breadcrumb-label {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .monaco-editor .movedOriginal {
   border: 2px solid var(--vscode-diffEditor-move-border);
@@ -1625,20 +1757,20 @@
   -webkit-user-select: text !important;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/anchorSelect/browser/anchorSelect.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/anchorSelect/browser/anchorSelect.css */
 .monaco-editor .selection-anchor {
   background-color: #007ACC;
   width: 2px !important;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/bracketMatching/browser/bracketMatching.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/bracketMatching/browser/bracketMatching.css */
 .monaco-editor .bracket-match {
   box-sizing: border-box;
   background-color: var(--vscode-editorBracketMatch-background);
   border: 1px solid var(--vscode-editorBracketMatch-border);
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/inlineProgress/browser/inlineProgressWidget.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/inlineProgress/browser/inlineProgressWidget.css */
 .inline-editor-progress-decoration {
   display: inline-block;
   width: 1em;
@@ -1661,7 +1793,7 @@
   font-family: var(--vscode-icon-x-font-family);
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/message/browser/messageController.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/message/browser/messageController.css */
 .monaco-editor .monaco-editor-overlaymessage {
   padding-bottom: 8px;
   z-index: 10000;
@@ -1738,7 +1870,7 @@
   top: -8px;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/base/browser/ui/button/button.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/base/browser/ui/button/button.css */
 .monaco-text-button {
   box-sizing: border-box;
   display: flex;
@@ -1896,7 +2028,7 @@
   background-color: var(--vscode-button-separator);
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/platform/actionWidget/browser/actionWidget.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/platform/actionWidget/browser/actionWidget.css */
 .action-widget {
   font-size: 13px;
   min-width: 100px;
@@ -1911,6 +2043,38 @@
   padding: 4px;
   box-shadow: var(--vscode-shadow-lg);
 }
+.modern-ui.monaco-enable-motion .action-widget.action-widget-dropdown {
+  animation: action-widget-dropdown-open 250ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: bottom left;
+  will-change: transform, opacity;
+}
+.modern-ui.monaco-enable-motion .context-view.bottom .action-widget.action-widget-dropdown {
+  transform-origin: top left;
+}
+.modern-ui.monaco-enable-motion .action-widget.action-widget-dropdown.action-widget-dropdown-closing {
+  animation: action-widget-dropdown-close 150ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  pointer-events: none;
+}
+@keyframes action-widget-dropdown-open {
+  0% {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes action-widget-dropdown-close {
+  0% {
+    opacity: var(--action-widget-close-start-opacity, 1);
+    transform: var(--action-widget-close-start-transform, scale(1));
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.99);
+  }
+}
 .context-view-block {
   position: fixed;
   cursor: initial;
@@ -1919,15 +2083,6 @@
   width: 100%;
   height: 100%;
   z-index: -1;
-}
-.context-view-pointerBlock {
-  position: fixed;
-  cursor: initial;
-  left: 0;
-  top: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 2;
 }
 .action-widget .monaco-list {
   user-select: none;
@@ -1954,9 +2109,13 @@
   outline: 1px solid var(--vscode-menu-selectionBorder, transparent);
   outline-offset: -2px;
 }
+.action-widget .monaco-list.mouse-navigation .monaco-list-row.action.focused:not(.option-disabled),
+.action-widget .monaco-list:not(.keyboard-navigation):not(:focus-visible) .monaco-list-row.action.focused:not(.option-disabled) {
+  outline-color: var(--vscode-contrastActiveBorder, transparent);
+}
 .action-widget .monaco-list-row.group-header {
   color: var(--vscode-descriptionForeground) !important;
-  font-weight: 500;
+  font-weight: var(--vscode-fontWeight-semiBold);
   font-size: 11px;
 }
 .action-widget .monaco-list-row.group-header:not(:first-of-type) {
@@ -1966,8 +2125,8 @@
   border-top: 1px solid var(--vscode-editorHoverWidget-border);
   color: var(--vscode-descriptionForeground);
   font-size: 12px;
-  margin: 4px 0px;
-  width: 100%;
+  margin: 4px 6px;
+  width: calc(100% - 12px);
   cursor: default;
   -webkit-user-select: none;
   user-select: none;
@@ -2048,12 +2207,16 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.action-widget .monaco-list .monaco-list-row.action.focused:not(.option-disabled) .detail {
+  color: inherit;
+  opacity: 1;
+}
 .action-widget .monaco-list-row.action .action-item-badge {
-  padding: 0px 6px;
-  border-radius: 10px;
+  padding: 0 var(--vscode-spacing-size60, 6px);
+  border-radius: var(--vscode-cornerRadius-circle, 9999px);
   background-color: var(--vscode-badge-background);
   color: var(--vscode-badge-foreground);
-  font-size: 11px;
+  font-size: var(--vscode-fontSize-label2, 11px);
   line-height: 18px;
   flex-shrink: 0;
 }
@@ -2117,15 +2280,51 @@
   font-size: 12px;
   flex-shrink: 0;
 }
-.action-widget .monaco-list .monaco-list-row.action {
-  &:has(.detail:not([style*="display: none"])) {
-    flex-wrap: wrap;
-    align-content: center;
-    padding-right: 6px;
-    .title {
-      line-height: 14px;
-    }
+.action-widget .monaco-list .monaco-list-row.action.has-detail {
+  flex-wrap: wrap;
+  align-content: center;
+  padding-right: 6px;
+  .title {
+    line-height: 14px;
   }
+}
+.action-widget .monaco-list-row.action.has-inline-toggle {
+  flex-wrap: wrap;
+  align-content: center;
+  padding-right: 6px;
+  .title {
+    line-height: 14px;
+  }
+}
+.action-widget .monaco-list-row.action.has-standalone-toggle .title {
+  font-size: var(--vscode-fontSize-body1);
+  font-weight: var(--vscode-fontWeight-regular);
+}
+.action-widget .monaco-list-row.action.has-standalone-toggle .action-list-item-inline-toggle {
+  order: 100;
+  width: auto;
+  margin-left: auto;
+  padding: var(--vscode-spacing-sizeNone);
+}
+.action-widget .monaco-list-row.action .action-list-item-inline-toggle {
+  order: 100;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 18px;
+  padding-top: 6px;
+  line-height: 16px;
+}
+.action-widget .monaco-list-row.action .action-list-item-inline-toggle .action-list-item-inline-toggle-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--vscode-foreground);
 }
 .action-widget .inline-description .monaco-list-row.action {
   gap: 0;
@@ -2155,9 +2354,17 @@
 .action-widget .monaco-list-row.action .action-list-item-toolbar {
   display: none;
 }
+.action-widget .monaco-list-row.action.has-toolbar .action-list-item-toolbar {
+  margin-right: var(--vscode-spacing-size100, 10px);
+}
+.action-widget .monaco-list-row.action.has-detail.has-toolbar .action-list-item-toolbar {
+  display: flex;
+  visibility: hidden;
+}
 .action-widget .monaco-list-row.focused.action.has-toolbar .action-list-item-toolbar,
 .action-widget .monaco-list-row:hover.action.has-toolbar .action-list-item-toolbar {
   display: flex;
+  visibility: visible;
 }
 .action-widget .monaco-list-row .action-list-item-toolbar .monaco-action-bar:not(.vertical) .action-label:not(.disabled):hover {
   background-color: var(--vscode-toolbar-hoverBackground);
@@ -2185,6 +2392,7 @@
 }
 .action-widget .action-list-filter-input {
   width: 100%;
+  min-width: 0;
   flex: 1;
   box-sizing: border-box;
   padding: 4px 8px;
@@ -2247,6 +2455,21 @@
   flex: 1;
   font-size: 11px;
 }
+.action-widget .action-list-header .action-list-header-dismiss {
+  flex-shrink: 0;
+  cursor: pointer;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  line-height: 16px;
+}
+.action-widget .action-list-header .action-list-header-dismiss:hover {
+  color: var(--vscode-foreground);
+}
+.action-widget .action-list-header .action-list-header-dismiss:focus-visible {
+  outline: var(--vscode-strokeThickness) solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+  border-radius: var(--vscode-cornerRadius-small);
+}
 .action-widget .actionList {
   position: relative;
 }
@@ -2267,13 +2490,9 @@
   font-size: 16px;
 }
 .action-list-submenu-panel {
-  background-color: var(--vscode-menu-background);
-  color: var(--vscode-menu-foreground);
-  border: 1px solid var(--vscode-menu-border, var(--vscode-editorHoverWidget-border));
-  border-radius: 5px;
-  box-shadow: 0 2px 8px var(--vscode-widget-shadow);
   z-index: 50;
   width: max-content;
+  min-width: 0;
   outline: none;
 }
 .action-list-submenu-hover-header {
@@ -2284,6 +2503,9 @@
   word-wrap: break-word;
   -webkit-user-select: text;
   user-select: text;
+}
+.action-list-submenu-hover-header.content-owns-padding {
+  padding: 0;
 }
 .action-list-submenu-hover-header a {
   color: var(--vscode-textLink-foreground);
@@ -2306,19 +2528,7 @@
   margin-bottom: 0;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/base/browser/ui/contextview/contextview.css */
-.context-view {
-  position: absolute;
-}
-.context-view.fixed {
-  all: initial;
-  font-family: inherit;
-  font-size: 13px;
-  position: fixed;
-  color: inherit;
-}
-
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/base/browser/ui/keybindingLabel/keybindingLabel.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/base/browser/ui/keybindingLabel/keybindingLabel.css */
 .monaco-keybinding {
   display: flex;
   align-items: center;
@@ -2349,7 +2559,237 @@
   width: 6px;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/dropOrPasteInto/browser/postEditWidget.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/base/browser/ui/hover/hoverWidget.css */
+.monaco-hover {
+  cursor: default;
+  position: absolute;
+  overflow: hidden;
+  user-select: text;
+  -webkit-user-select: text;
+  box-sizing: border-box;
+  line-height: 1.5em;
+  white-space: var(--vscode-hover-whiteSpace, normal);
+}
+.monaco-hover.fade-in {
+  animation: fadein 100ms linear;
+}
+.monaco-hover.hidden {
+  display: none;
+}
+.monaco-hover a:hover:not(.disabled) {
+  cursor: pointer;
+}
+.monaco-hover .hover-contents:not(.html-hover-contents) {
+  padding: 4px 8px;
+}
+.monaco-hover .markdown-hover > .hover-contents:not(.code-hover-contents) {
+  max-width: var(--vscode-hover-maxWidth, 500px);
+  word-wrap: break-word;
+}
+.monaco-hover .markdown-hover > .hover-contents:not(.code-hover-contents) hr {
+  min-width: 100%;
+}
+.monaco-hover p,
+.monaco-hover .code,
+.monaco-hover ul,
+.monaco-hover h1,
+.monaco-hover h2,
+.monaco-hover h3,
+.monaco-hover h4,
+.monaco-hover h5,
+.monaco-hover h6 {
+  margin: 8px 0;
+}
+.monaco-hover h1,
+.monaco-hover h2,
+.monaco-hover h3,
+.monaco-hover h4,
+.monaco-hover h5,
+.monaco-hover h6 {
+  line-height: 1.1;
+}
+.monaco-hover code {
+  font-family: var(--monaco-monospace-font);
+}
+.monaco-hover hr {
+  box-sizing: border-box;
+  border-left: 0px;
+  border-right: 0px;
+  margin-top: 4px;
+  margin-bottom: -4px;
+  margin-left: -8px;
+  margin-right: -8px;
+  height: 1px;
+}
+.monaco-hover p:first-child,
+.monaco-hover .code:first-child,
+.monaco-hover ul:first-child {
+  margin-top: 0;
+}
+.monaco-hover p:last-child,
+.monaco-hover .code:last-child,
+.monaco-hover ul:last-child {
+  margin-bottom: 0;
+}
+.monaco-hover ul {
+  padding-left: 20px;
+}
+.monaco-hover ol {
+  padding-left: 20px;
+}
+.monaco-hover li > p {
+  margin-bottom: 0;
+}
+.monaco-hover li > ul {
+  margin-top: 0;
+}
+.monaco-hover code {
+  border-radius: 3px;
+  padding: 0 0.4em;
+}
+.monaco-hover .monaco-tokenized-source {
+  white-space: var(--vscode-hover-sourceWhiteSpace, pre-wrap);
+}
+.hover-row.status-bar {
+  font-size: 12px;
+  line-height: 22px;
+}
+.hover-row.status-bar .info {
+  font-style: italic;
+  padding: 0px 8px;
+}
+.hover-row.status-bar .actions {
+  display: flex;
+  padding: 0px 8px;
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--vscode-editorHoverWidget-statusBarBackground);
+}
+.hover-row.status-bar .actions .action-container {
+  margin-right: 16px;
+  cursor: pointer;
+  overflow: hidden;
+  text-wrap: nowrap;
+  text-overflow: ellipsis;
+}
+.hover-row.status-bar .actions .action-container .action {
+  display: inline-flex;
+  align-items: center;
+}
+.hover-row.status-bar .actions .action-container .action .icon {
+  padding-right: 4px;
+  font-size: inherit;
+}
+.hover-row.status-bar .actions .action-container a {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: var(--text-link-decoration);
+}
+.hover-row.status-bar .actions .action-container a .icon.codicon {
+  color: var(--vscode-textLink-foreground);
+}
+.monaco-hover .markdown-hover .hover-contents .codicon {
+  color: inherit;
+  font-size: inherit;
+  vertical-align: middle;
+}
+.monaco-hover .hover-contents a.code-link:hover,
+.monaco-hover .hover-contents a.code-link {
+  color: inherit;
+}
+.monaco-hover .hover-contents a.code-link:before {
+  content: "(";
+}
+.monaco-hover .hover-contents a.code-link:after {
+  content: ")";
+}
+.monaco-hover .hover-contents a.code-link > span {
+  text-decoration: underline;
+  border-bottom: 1px solid transparent;
+  text-underline-position: under;
+  color: var(--vscode-textLink-foreground);
+}
+.monaco-hover .hover-contents a.code-link > span:hover {
+  color: var(--vscode-textLink-activeForeground);
+}
+.monaco-hover .markdown-hover .hover-contents:not(.code-hover-contents):not(.html-hover-contents) span.codicon {
+  margin-bottom: 2px;
+}
+.monaco-hover-content .action-container a {
+  -webkit-user-select: none;
+  user-select: none;
+}
+.monaco-hover-content .action-container.disabled {
+  pointer-events: none;
+  opacity: 0.4;
+  cursor: default;
+}
+.monaco-hover .action-container,
+.monaco-hover .action,
+.monaco-hover button,
+.monaco-hover .monaco-button,
+.monaco-hover .monaco-text-button,
+.monaco-hover [role=button] {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/base/browser/ui/toggle/switch.css */
+.monaco-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: var(--vscode-spacing-size280);
+  height: var(--vscode-spacing-size160);
+  padding: 0;
+  border: var(--vscode-strokeThickness) solid transparent;
+  border-radius: var(--vscode-cornerRadius-circle);
+  background: color-mix(in srgb, var(--vscode-descriptionForeground) 36%, transparent);
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+.monaco-switch.checked {
+  background: var(--vscode-button-background);
+  border-color: var(--vscode-button-background);
+}
+.monaco-switch:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.monaco-switch:focus-visible {
+  outline: var(--vscode-strokeThickness) solid var(--vscode-focusBorder);
+  outline-offset: var(--vscode-spacing-size20);
+}
+.monaco-switch-thumb {
+  position: absolute;
+  top: var(--vscode-strokeThickness);
+  left: var(--vscode-strokeThickness);
+  width: var(--vscode-spacing-size120);
+  height: var(--vscode-spacing-size120);
+  border-radius: var(--vscode-cornerRadius-circle);
+  background: var(--vscode-button-foreground);
+  transition: transform 120ms ease;
+}
+.monaco-switch.checked .monaco-switch-thumb {
+  transform: translateX(var(--vscode-spacing-size120));
+}
+.hc-black .monaco-switch,
+.hc-light .monaco-switch,
+.vscode-high-contrast .monaco-switch {
+  border-color: var(--vscode-contrastBorder);
+}
+.monaco-reduce-motion .monaco-switch,
+.monaco-reduce-motion .monaco-switch-thumb {
+  transition: none;
+}
+
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/platform/opener/browser/link.css */
+.monaco-link {
+  color: var(--vscode-textLink-foreground);
+}
+.monaco-link:hover {
+  color: var(--vscode-textLink-activeForeground);
+}
+
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/dropOrPasteInto/browser/postEditWidget.css */
 .post-edit-widget {
   box-shadow: var(--vscode-shadow-lg);
   border: 1px solid var(--vscode-widget-border, transparent);
@@ -2370,11 +2810,11 @@
   margin: 0;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/base/browser/ui/codicons/codicon/codicon.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/base/browser/ui/codicons/codicon/codicon.css */
 @font-face {
   font-family: "codicon";
   font-display: block;
-  src: url("./codicon-KP4OV2OO.ttf") format("truetype");
+  src: url("./codicon-LTRFOK3N.ttf") format("truetype");
 }
 .codicon[class*=codicon-] {
   font: normal normal normal 16px/1 codicon;
@@ -2389,7 +2829,7 @@
   -webkit-user-select: none;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/base/browser/ui/codicons/codicon/codicon-modifiers.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/base/browser/ui/codicons/codicon/codicon-modifiers.css */
 .codicon-wrench-subaction {
   opacity: 0.5;
 }
@@ -2411,7 +2851,7 @@
   opacity: 0.4;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/symbolIcons/browser/symbolIcons.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/symbolIcons/browser/symbolIcons.css */
 .monaco-editor .codicon.codicon-symbol-array,
 .monaco-workbench .codicon-colored.codicon.codicon-symbol-array {
   color: var(--vscode-symbolIcon-arrayForeground);
@@ -2547,7 +2987,7 @@
   color: var(--vscode-symbolIcon-variableForeground);
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/codeAction/browser/lightBulbWidget.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/codeAction/browser/lightBulbWidget.css */
 .monaco-editor .lightBulbWidget {
   display: flex;
   align-items: center;
@@ -2598,7 +3038,7 @@
   color: var(--vscode-editorLightBulbAi-foreground, var(--vscode-icon-foreground));
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/codelens/browser/codelensWidget.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/codelens/browser/codelensWidget.css */
 .monaco-editor .codelens-decoration {
   overflow: hidden;
   display: inline-flex !important;
@@ -2653,7 +3093,7 @@
   animation: fadein 0.1s linear;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/inlineCompletions/browser/hintsWidget/inlineCompletionsHintsWidget.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/inlineCompletions/browser/hintsWidget/inlineCompletionsHintsWidget.css */
 .monaco-editor .inlineSuggestionsHints {
   padding: 4px;
   .warningMessage p {
@@ -2692,177 +3132,7 @@
   margin-right: 2px;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/base/browser/ui/hover/hoverWidget.css */
-.monaco-hover {
-  cursor: default;
-  position: absolute;
-  overflow: hidden;
-  user-select: text;
-  -webkit-user-select: text;
-  box-sizing: border-box;
-  line-height: 1.5em;
-  white-space: var(--vscode-hover-whiteSpace, normal);
-}
-.monaco-hover.fade-in {
-  animation: fadein 100ms linear;
-}
-.monaco-hover.hidden {
-  display: none;
-}
-.monaco-hover a:hover:not(.disabled) {
-  cursor: pointer;
-}
-.monaco-hover .hover-contents:not(.html-hover-contents) {
-  padding: 4px 8px;
-}
-.monaco-hover .markdown-hover > .hover-contents:not(.code-hover-contents) {
-  max-width: var(--vscode-hover-maxWidth, 500px);
-  word-wrap: break-word;
-}
-.monaco-hover .markdown-hover > .hover-contents:not(.code-hover-contents) hr {
-  min-width: 100%;
-}
-.monaco-hover p,
-.monaco-hover .code,
-.monaco-hover ul,
-.monaco-hover h1,
-.monaco-hover h2,
-.monaco-hover h3,
-.monaco-hover h4,
-.monaco-hover h5,
-.monaco-hover h6 {
-  margin: 8px 0;
-}
-.monaco-hover h1,
-.monaco-hover h2,
-.monaco-hover h3,
-.monaco-hover h4,
-.monaco-hover h5,
-.monaco-hover h6 {
-  line-height: 1.1;
-}
-.monaco-hover code {
-  font-family: var(--monaco-monospace-font);
-}
-.monaco-hover hr {
-  box-sizing: border-box;
-  border-left: 0px;
-  border-right: 0px;
-  margin-top: 4px;
-  margin-bottom: -4px;
-  margin-left: -8px;
-  margin-right: -8px;
-  height: 1px;
-}
-.monaco-hover p:first-child,
-.monaco-hover .code:first-child,
-.monaco-hover ul:first-child {
-  margin-top: 0;
-}
-.monaco-hover p:last-child,
-.monaco-hover .code:last-child,
-.monaco-hover ul:last-child {
-  margin-bottom: 0;
-}
-.monaco-hover ul {
-  padding-left: 20px;
-}
-.monaco-hover ol {
-  padding-left: 20px;
-}
-.monaco-hover li > p {
-  margin-bottom: 0;
-}
-.monaco-hover li > ul {
-  margin-top: 0;
-}
-.monaco-hover code {
-  border-radius: 3px;
-  padding: 0 0.4em;
-}
-.monaco-hover .monaco-tokenized-source {
-  white-space: var(--vscode-hover-sourceWhiteSpace, pre-wrap);
-}
-.monaco-hover .hover-row.status-bar {
-  font-size: 12px;
-  line-height: 22px;
-}
-.monaco-hover .hover-row.status-bar .info {
-  font-style: italic;
-  padding: 0px 8px;
-}
-.monaco-hover .hover-row.status-bar .actions {
-  display: flex;
-  padding: 0px 8px;
-  width: 100%;
-  box-sizing: border-box;
-}
-.monaco-hover .hover-row.status-bar .actions .action-container {
-  margin-right: 16px;
-  cursor: pointer;
-  overflow: hidden;
-  text-wrap: nowrap;
-  text-overflow: ellipsis;
-}
-.monaco-hover .hover-row.status-bar .actions .action-container .action .icon {
-  padding-right: 4px;
-  vertical-align: middle;
-  font-size: inherit;
-}
-.monaco-hover .hover-row.status-bar .actions .action-container a {
-  color: var(--vscode-textLink-foreground);
-  text-decoration: var(--text-link-decoration);
-}
-.monaco-hover .hover-row.status-bar .actions .action-container a .icon.codicon {
-  color: var(--vscode-textLink-foreground);
-}
-.monaco-hover .markdown-hover .hover-contents .codicon {
-  color: inherit;
-  font-size: inherit;
-  vertical-align: middle;
-}
-.monaco-hover .hover-contents a.code-link:hover,
-.monaco-hover .hover-contents a.code-link {
-  color: inherit;
-}
-.monaco-hover .hover-contents a.code-link:before {
-  content: "(";
-}
-.monaco-hover .hover-contents a.code-link:after {
-  content: ")";
-}
-.monaco-hover .hover-contents a.code-link > span {
-  text-decoration: underline;
-  border-bottom: 1px solid transparent;
-  text-underline-position: under;
-  color: var(--vscode-textLink-foreground);
-}
-.monaco-hover .hover-contents a.code-link > span:hover {
-  color: var(--vscode-textLink-activeForeground);
-}
-.monaco-hover .markdown-hover .hover-contents:not(.code-hover-contents):not(.html-hover-contents) span.codicon {
-  margin-bottom: 2px;
-}
-.monaco-hover-content .action-container a {
-  -webkit-user-select: none;
-  user-select: none;
-}
-.monaco-hover-content .action-container.disabled {
-  pointer-events: none;
-  opacity: 0.4;
-  cursor: default;
-}
-.monaco-hover .action-container,
-.monaco-hover .action,
-.monaco-hover button,
-.monaco-hover .monaco-button,
-.monaco-hover .monaco-text-button,
-.monaco-hover [role=button] {
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/base/browser/ui/toggle/toggle.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/base/browser/ui/toggle/toggle.css */
 .monaco-custom-toggle {
   margin-left: 2px;
   float: left;
@@ -2871,7 +3141,7 @@
   width: 20px;
   height: 20px;
   border-radius: 3px;
-  border: 1px solid transparent;
+  border: var(--vscode-strokeThickness, 1px) solid var(--monaco-custom-toggle-border-color, transparent);
   padding: 1px;
   box-sizing: border-box;
   user-select: none;
@@ -2879,6 +3149,12 @@
 }
 .monaco-custom-toggle:hover {
   background-color: var(--vscode-inputOption-hoverBackground);
+}
+div.monaco-custom-toggle:not(.monaco-checkbox):focus {
+  outline: none;
+}
+div.monaco-custom-toggle:not(.monaco-checkbox):focus-visible {
+  border: var(--vscode-strokeThickness, 1px) dashed var(--vscode-focusBorder);
 }
 .monaco-custom-toggle.disabled {
   opacity: 0.4;
@@ -2924,7 +3200,7 @@
   font-size: 12px;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/find/browser/findWidget.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/find/browser/findWidget.css */
 .monaco-editor .find-widget {
   position: absolute;
   z-index: 35;
@@ -3146,7 +3422,7 @@
   right: 4px;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/base/browser/ui/inputbox/inputBox.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/base/browser/ui/inputbox/inputBox.css */
 .monaco-inputbox {
   position: relative;
   display: block;
@@ -3230,7 +3506,7 @@
   color: var(--vscode-icon-foreground);
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/base/browser/ui/findinput/findInput.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/base/browser/ui/findinput/findInput.css */
 .monaco-findInput {
   position: relative;
 }
@@ -3298,7 +3574,7 @@
   }
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/colorPicker/browser/colorPicker.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/colorPicker/browser/colorPicker.css */
 .colorpicker-widget {
   height: 190px;
   user-select: none;
@@ -3308,8 +3584,8 @@
 .hc-light .colorpicker-color-decoration {
   border: solid 0.1em #000;
   box-sizing: border-box;
-  margin: 0.1em 0.2em 0 0.2em;
-  width: 0.8em;
+  margin: 0.1em var(--vscode-colorPicker-colorDecoratorMargin) 0;
+  width: var(--vscode-colorPicker-colorDecoratorWidth);
   height: 0.8em;
   line-height: 0.8em;
   display: inline-block;
@@ -3480,7 +3756,7 @@
   background: var(--vscode-button-hoverBackground);
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/peekView/browser/media/peekViewWidget.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/peekView/browser/media/peekViewWidget.css */
 .monaco-editor .peekview-widget {
   box-shadow: var(--vscode-shadow-lg);
 }
@@ -3549,7 +3825,7 @@
   color: inherit !important;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/zoneWidget/browser/zoneWidget.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/zoneWidget/browser/zoneWidget.css */
 .monaco-editor .zone-widget {
   position: absolute;
   z-index: 10;
@@ -3562,7 +3838,7 @@
   position: relative;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/base/browser/ui/splitview/splitview.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/base/browser/ui/splitview/splitview.css */
 .monaco-split-view2 {
   position: relative;
   width: 100%;
@@ -3618,7 +3894,7 @@
   width: 100%;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/base/browser/ui/table/table.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/base/browser/ui/table/table.css */
 .monaco-table {
   display: flex;
   flex-direction: column;
@@ -3665,7 +3941,7 @@
   transition: border-color 0.2s ease-out;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/base/browser/ui/tree/media/tree.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/base/browser/ui/tree/media/tree.css */
 .monaco-tl-row {
   display: flex;
   height: 100%;
@@ -3797,7 +4073,7 @@
   outline: none;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/gotoSymbol/browser/peek/referencesWidget.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/gotoSymbol/browser/peek/referencesWidget.css */
 .monaco-editor .zone-widget .zone-widget-container.reference-zone-widget {
   border-top-width: 1px;
   border-bottom-width: 1px;
@@ -3864,7 +4140,7 @@
   box-sizing: border-box;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/base/browser/ui/countBadge/countBadge.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/base/browser/ui/countBadge/countBadge.css */
 .monaco-count-badge {
   padding: 3px 5px;
   border-radius: 11px;
@@ -3884,7 +4160,7 @@
   line-height: normal;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/base/browser/ui/iconLabel/iconlabel.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/base/browser/ui/iconLabel/iconlabel.css */
 .monaco-icon-label {
   display: flex;
   overflow: hidden;
@@ -3944,10 +4220,12 @@
   opacity: .95;
 }
 .monaco-icon-label.bold > .monaco-icon-label-container > .monaco-icon-name-container > .label-name,
+.monaco-icon-label.bold > .monaco-icon-label-container > .monaco-icon-suffix-container > .label-suffix,
 .monaco-icon-label.bold > .monaco-icon-label-container > .monaco-icon-description-container > .label-description {
   font-weight: bold;
 }
 .monaco-icon-label.italic > .monaco-icon-label-container > .monaco-icon-name-container > .label-name,
+.monaco-icon-label.italic > .monaco-icon-label-container > .monaco-icon-suffix-container > .label-suffix,
 .monaco-icon-label.italic > .monaco-icon-label-container > .monaco-icon-description-container > .label-description {
   font-style: italic;
 }
@@ -3956,6 +4234,7 @@
   opacity: 0.66;
 }
 .monaco-icon-label.strikethrough > .monaco-icon-label-container > .monaco-icon-name-container > .label-name,
+.monaco-icon-label.strikethrough > .monaco-icon-label-container > .monaco-icon-suffix-container > .label-suffix,
 .monaco-icon-label.strikethrough > .monaco-icon-label-container > .monaco-icon-description-container > .label-description {
   text-decoration: line-through;
 }
@@ -3970,12 +4249,12 @@
 .monaco-list:focus .selected .monaco-icon-label::after {
   color: inherit !important;
 }
-.monaco-list-row.focused.selected .label-description,
-.monaco-list-row.selected .label-description {
-  opacity: .8;
+.monaco-list-row.focused .monaco-icon-label > .monaco-icon-label-container > .monaco-icon-description-container > .label-description,
+.monaco-list-row.selected .monaco-icon-label > .monaco-icon-label-container > .monaco-icon-description-container > .label-description {
+  opacity: 1;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/hover/browser/hover.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/hover/browser/hover.css */
 .monaco-editor .hoverHighlight {
   background-color: var(--vscode-editor-hoverHighlightBackground);
 }
@@ -4073,7 +4352,7 @@
   color: var(--vscode-foreground);
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/dnd/browser/dnd.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/dnd/browser/dnd.css */
 .monaco-editor.vs .dnd-target,
 .monaco-editor.hc-light .dnd-target {
   border-right: 2px dotted black;
@@ -4100,7 +4379,7 @@
   cursor: copy;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/find/browser/findOptionsWidget.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/find/browser/findOptionsWidget.css */
 .monaco-editor .findOptionsWidget {
   background-color: var(--vscode-editorWidget-background);
   color: var(--vscode-editorWidget-foreground);
@@ -4108,7 +4387,7 @@
   border: 2px solid var(--vscode-contrastBorder);
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/folding/browser/folding.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/folding/browser/folding.css */
 .monaco-editor .margin-view-overlays .codicon-folding-manual-collapsed,
 .monaco-editor .margin-view-overlays .codicon-folding-manual-expanded,
 .monaco-editor .margin-view-overlays .codicon-folding-expanded,
@@ -4152,7 +4431,7 @@
   color: var(--vscode-editorGutter-foldingControlForeground) !important;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/gotoError/browser/media/gotoErrorWidget.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/gotoError/browser/media/gotoErrorWidget.css */
 .monaco-editor .peekview-widget .head .peekview-title .severity-icon {
   display: inline-block;
   vertical-align: text-top;
@@ -4209,7 +4488,7 @@
   color: var(--vscode-textLink-activeForeground);
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/base/browser/ui/severityIcon/media/severityIcon.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/base/browser/ui/severityIcon/media/severityIcon.css */
 .monaco-editor .zone-widget .codicon.codicon-error,
 .markers-panel .marker-icon.error,
 .markers-panel .marker-icon .codicon.codicon-error,
@@ -4237,7 +4516,7 @@
   color: var(--vscode-problemsInfoIcon-foreground);
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/snippet/browser/snippetSession.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/snippet/browser/snippetSession.css */
 .monaco-editor .snippet-placeholder {
   min-width: 2px;
   outline-style: solid;
@@ -4252,7 +4531,7 @@
   outline-color: var(--vscode-editor-snippetFinalTabstopHighlightBorder, transparent);
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/rename/browser/renameWidget.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/rename/browser/renameWidget.css */
 .monaco-editor .rename-box {
   z-index: 100;
   color: inherit;
@@ -4297,14 +4576,14 @@
   display: inherit;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/suggest/browser/media/suggest.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/suggest/browser/media/suggest.css */
 .monaco-editor .suggest-widget {
   width: 430px;
   z-index: 40;
   display: flex;
   flex-direction: column;
   border-radius: var(--vscode-cornerRadius-large);
-  box-shadow: var(--vscode-shadow-lg);
+  box-shadow: 0 2px 8px var(--vscode-widget-shadow);
 }
 .monaco-editor .suggest-widget.message {
   flex-direction: row;
@@ -4324,6 +4603,10 @@
 .monaco-editor.hc-light .suggest-widget,
 .monaco-editor.hc-light .suggest-details {
   border-width: 2px;
+}
+.monaco-editor.hc-black .suggest-widget,
+.monaco-editor.hc-light .suggest-widget {
+  box-shadow: none;
 }
 .monaco-editor .suggest-widget .suggest-status-bar {
   box-sizing: border-box;
@@ -4384,6 +4667,8 @@
 }
 .monaco-editor .suggest-widget .monaco-list .monaco-list-row.focused {
   color: var(--vscode-editorSuggestWidget-selectedForeground);
+  outline: 1px solid var(--vscode-editorSuggestWidget-focusOutline);
+  outline-offset: -1px;
 }
 .monaco-editor .suggest-widget .monaco-list .monaco-list-row.focused .codicon {
   color: var(--vscode-editorSuggestWidget-selectedIconForeground);
@@ -4495,6 +4780,12 @@
   flex-shrink: 4;
   max-width: 70%;
 }
+.monaco-editor .suggest-widget.fit-width-to-details .monaco-list .monaco-list-row > .contents > .main > .left {
+  flex-shrink: 0;
+}
+.monaco-editor .suggest-widget.fit-width-to-details .monaco-list .monaco-list-row > .contents > .main > .right {
+  max-width: none;
+}
 .monaco-editor .suggest-widget .monaco-list .monaco-list-row > .contents > .main > .right > .readMore {
   display: inline-block;
   position: absolute;
@@ -4561,6 +4852,8 @@
   flex-direction: column;
   cursor: default;
   color: var(--vscode-editorSuggestWidget-foreground);
+  border-radius: var(--vscode-cornerRadius-large);
+  overflow: hidden;
 }
 .monaco-editor .suggest-details:focus {
   border-color: var(--vscode-focusBorder);
@@ -4652,7 +4945,7 @@
   font-family: var(--monaco-monospace-font);
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/inlineCompletions/browser/view/ghostText/ghostTextView.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/inlineCompletions/browser/view/ghostText/ghostTextView.css */
 .monaco-editor .suggest-preview-additional-widget {
   white-space: nowrap;
 }
@@ -4722,7 +5015,7 @@
   }
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/stickyScroll/browser/stickyScroll.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/stickyScroll/browser/stickyScroll.css */
 .monaco-editor .sticky-widget {
   overflow: hidden;
   border-bottom: 1px solid var(--vscode-editorStickyScroll-border);
@@ -4782,7 +5075,7 @@
   cursor: pointer;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/inlineCompletions/browser/view/inlineEdits/view.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/inlineCompletions/browser/view/inlineEdits/view.css */
 .monaco-editor {
   --inline-edit-border-radius: 3px;
   .inline-edits-view-indicator {
@@ -4999,25 +5292,25 @@
   background-repeat: no-repeat;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/gotoSymbol/browser/link/goToDefinitionAtPosition.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/gotoSymbol/browser/link/goToDefinitionAtPosition.css */
 .monaco-editor .goto-definition-link {
   text-decoration: underline;
   cursor: pointer;
   color: var(--vscode-editorLink-activeForeground) !important;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/inPlaceReplace/browser/inPlaceReplace.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/inPlaceReplace/browser/inPlaceReplace.css */
 .monaco-editor.vs .valueSetReplacement {
   outline: solid 2px var(--vscode-editorBracketMatch-border);
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/linkedEditing/browser/linkedEditing.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/linkedEditing/browser/linkedEditing.css */
 .monaco-editor .linked-editing-decoration {
   background-color: var(--vscode-editor-linkedEditingBackground);
   min-width: 1px;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/links/browser/links.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/links/browser/links.css */
 .monaco-editor .detected-link,
 .monaco-editor .detected-link-active {
   text-decoration: underline;
@@ -5028,7 +5321,7 @@
   color: var(--vscode-editorLink-activeForeground) !important;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/middleScroll/browser/middleScroll.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/middleScroll/browser/middleScroll.css */
 .monaco-editor {
   .scroll-editor-on-middle-click-dot {
     cursor: all-scroll;
@@ -5050,7 +5343,7 @@
   }
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/wordHighlighter/browser/highlightDecorations.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/wordHighlighter/browser/highlightDecorations.css */
 .monaco-editor .focused .selectionHighlight {
   background-color: var(--vscode-editor-selectionHighlightBackground);
   box-sizing: border-box;
@@ -5088,7 +5381,7 @@
   border-style: dotted;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/parameterHints/browser/parameterHints.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/parameterHints/browser/parameterHints.css */
 .monaco-editor .parameter-hints-widget {
   z-index: 39;
   display: flex;
@@ -5218,7 +5511,7 @@
   margin-right: 0.5em;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/placeholderText/browser/placeholderText.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/placeholderText/browser/placeholderText.css */
 .monaco-editor {
   .editorPlaceholder {
     top: 0px;
@@ -5231,14 +5524,14 @@
   }
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/unicodeHighlighter/browser/unicodeHighlighter.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/unicodeHighlighter/browser/unicodeHighlighter.css */
 .monaco-editor .unicode-highlight {
   border: 1px solid var(--vscode-editorUnicodeHighlight-border);
   background-color: var(--vscode-editorUnicodeHighlight-background);
   box-sizing: border-box;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/unicodeHighlighter/browser/bannerController.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/unicodeHighlighter/browser/bannerController.css */
 .editor-banner {
   box-sizing: border-box;
   cursor: default;
@@ -5306,15 +5599,7 @@
   color: var(--vscode-banner-iconForeground);
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/platform/opener/browser/link.css */
-.monaco-link {
-  color: var(--vscode-textLink-foreground);
-}
-.monaco-link:hover {
-  color: var(--vscode-textLink-activeForeground);
-}
-
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/contrib/floatingMenu/browser/floatingMenu.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/contrib/floatingMenu/browser/floatingMenu.css */
 .floating-menu-overlay-widget {
   padding: 2px 4px;
   color: var(--vscode-foreground);
@@ -5389,7 +5674,7 @@
   }
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/standalone/browser/iPadShowKeyboard/iPadShowKeyboard.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/standalone/browser/iPadShowKeyboard/iPadShowKeyboard.css */
 .monaco-editor .iPadShowKeyboard {
   width: 58px;
   min-width: 0;
@@ -5409,7 +5694,7 @@
   border: 4px solid #252526;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/standalone/browser/inspectTokens/inspectTokens.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/standalone/browser/inspectTokens/inspectTokens.css */
 .monaco-editor .tokens-inspect-widget {
   z-index: 50;
   user-select: text;
@@ -5447,8 +5732,10 @@
   font-family: var(--monaco-monospace-font);
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/standalone/browser/standalone-tokens.css */
-.monaco-editor {
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/standalone/browser/standalone-tokens.css */
+.monaco-editor,
+.monaco-component,
+.monaco-component.context-view.fixed {
   font-family:
     -apple-system,
     BlinkMacSystemFont,
@@ -5459,6 +5746,8 @@
     "Ubuntu",
     "Droid Sans",
     sans-serif;
+}
+.monaco-editor {
   --monaco-monospace-font:
     "SF Mono",
     Monaco,
@@ -5519,7 +5808,7 @@
   opacity: 1;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/platform/hover/browser/hover.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/platform/hover/browser/hover.css */
 .monaco-hover.workbench-hover {
   position: relative;
   font-size: 13px;
@@ -5553,6 +5842,9 @@
 .monaco-hover.workbench-hover.compact .hover-contents {
   padding: 2px 8px;
 }
+.monaco-hover.workbench-hover.managed-hover-content-owns-padding .hover-contents {
+  padding: 0;
+}
 .workbench-hover-container.locked .monaco-hover.workbench-hover {
   outline: 1px solid var(--vscode-editorHoverWidget-border);
 }
@@ -5567,15 +5859,14 @@
 .workbench-hover-pointer:after {
   content: "";
   position: absolute;
-  width: 5px;
-  height: 5px;
+  box-sizing: border-box;
+  width: 6px;
+  height: 6px;
   background-color: var(--vscode-editorHoverWidget-background);
   border-right: 1px solid var(--vscode-editorHoverWidget-border);
   border-bottom: 1px solid var(--vscode-editorHoverWidget-border);
 }
 .workbench-hover-container:not(:focus-within).locked .workbench-hover-pointer:after {
-  width: 4px;
-  height: 4px;
   border-right-width: 2px;
   border-bottom-width: 2px;
 }
@@ -5627,9 +5918,6 @@
 .monaco-hover.workbench-hover code {
   background: var(--vscode-textCodeBlock-background);
 }
-.monaco-hover.workbench-hover .hover-row .actions {
-  background: var(--vscode-editorHoverWidget-statusBarBackground);
-}
 .monaco-hover.workbench-hover.right-aligned {
   left: 1px;
 }
@@ -5641,7 +5929,7 @@
   margin-left: 16px;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/standalone/browser/quickInput/standaloneQuickInput.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/standalone/browser/quickInput/standaloneQuickInput.css */
 .quick-input-widget {
   font-size: 13px;
 }
@@ -5692,7 +5980,7 @@
   color: #ccc;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/platform/quickinput/browser/media/quickInput.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/platform/quickinput/browser/media/quickInput.css */
 .quick-input-widget {
   position: absolute;
   width: 600px;
@@ -5701,6 +5989,35 @@
   -webkit-app-region: no-drag;
   border-radius: var(--vscode-cornerRadius-xLarge);
   box-shadow: var(--vscode-shadow-xl);
+}
+.modern-ui.monaco-enable-motion .quick-input-widget:not(.quick-input-widget-overlay) {
+  animation: quick-input-widget-open 250ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: top center;
+  will-change: transform, opacity;
+}
+.modern-ui.monaco-enable-motion .quick-input-widget.quick-input-widget-closing:not(.quick-input-widget-overlay) {
+  animation: quick-input-widget-close 150ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  pointer-events: none;
+}
+@keyframes quick-input-widget-open {
+  0% {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes quick-input-widget-close {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.99);
+  }
 }
 .quick-input-titlebar {
   cursor: grab;
@@ -5926,6 +6243,9 @@
   text-overflow: ellipsis;
   overflow: hidden;
 }
+.quick-input-list .monaco-list-row.focused .quick-input-list-label-meta {
+  opacity: 1;
+}
 .quick-input-list .monaco-list .monaco-list-row .monaco-highlighted-label .highlight {
   font-weight: bold;
   background-color: unset;
@@ -5944,8 +6264,8 @@
   flex: 0;
   overflow: visible;
 }
-.quick-input-list .quick-input-list-entry-action-bar .action-label,
-.quick-input-list .quick-input-list-entry-action-bar .monaco-custom-toggle {
+.quick-input-list .quick-input-list-entry .quick-input-list-entry-action-bar .action-label,
+.quick-input-list .quick-input-list-entry .quick-input-list-entry-action-bar .monaco-custom-toggle {
   display: none;
 }
 .quick-input-list .quick-input-list-entry-action-bar .action-label.codicon {
@@ -6109,7 +6429,7 @@
   outline-offset: -1px;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/base/browser/ui/progressbar/progressbar.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/base/browser/ui/progressbar/progressbar.css */
 .monaco-progress-container {
   width: 100%;
   height: 2px;
@@ -6154,7 +6474,7 @@
   }
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/browser/widget/markdownRenderer/browser/renderedMarkdown.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/browser/widget/markdownRenderer/browser/renderedMarkdown.css */
 .monaco-editor .rendered-markdown kbd {
   background-color: var(--vscode-keybindingLabel-background);
   color: var(--vscode-keybindingLabel-foreground);
@@ -6171,35 +6491,32 @@
   list-style-type: none;
 }
 
-/* node_modules/.pnpm/monaco-editor@0.56.0/node_modules/monaco-editor/esm/vs/editor/browser/widget/multiDiffEditor/style.css */
+/* node_modules/.pnpm/monaco-editor@0.57.0/node_modules/monaco-editor/esm/vs/editor/browser/widget/multiDiffEditor/style.css */
 .monaco-component.multiDiffEditor {
-  background: var(--vscode-multiDiffEditor-background);
   position: relative;
-  height: 100%;
   width: 100%;
+  height: 100%;
   overflow-y: hidden;
+  background: var(--vscode-multiDiffEditor-background);
   > div {
     position: absolute;
-    top: 0px;
-    left: 0px;
-    height: 100%;
+    top: 0;
+    left: 0;
     width: 100%;
+    height: 100%;
     &.placeholder {
+      display: grid;
+      place-items: center;
+      place-content: center;
       visibility: hidden;
       &.visible {
         visibility: visible;
       }
-      display: grid;
-      place-items: center;
-      place-content: center;
     }
   }
   > .multi-diff-root-floating-menu {
     position: absolute;
-    top: auto;
-    right: 28px;
-    bottom: 24px;
-    left: auto;
+    inset: auto var(--vscode-spacing-size280) var(--vscode-spacing-size240) auto;
     width: auto;
   }
   .active {
@@ -6207,67 +6524,380 @@
   }
   .multiDiffEntry {
     display: flex;
-    flex-direction: column;
     flex: 1;
+    flex-direction: column;
     overflow: hidden;
     .collapse-button {
-      margin: 0 5px;
       cursor: pointer;
-      a {
-        display: block;
-      }
     }
     .header {
       z-index: 1000;
-      background: var(--vscode-editor-background);
-      &:not(.collapsed) .header-content {
-        border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border);
-      }
       .header-content {
-        margin: 8px 0px 0px 0px;
-        padding: 4px 5px;
-        border-top: 1px solid var(--vscode-multiDiffEditor-border);
         display: flex;
         align-items: center;
         color: var(--vscode-foreground);
-        background: var(--vscode-multiDiffEditor-headerBackground);
         &.shadow {
-          box-shadow: var(--vscode-scrollbar-shadow) 0px 6px 6px -6px;
+          box-shadow: var(--vscode-scrollbar-shadow) 0 6px 6px -6px;
         }
         .file-path {
           display: flex;
-          flex: 1;
+          flex: 1 1 auto;
           min-width: 0;
+          overflow: hidden;
           .title {
-            font-size: 14px;
+            flex: 0 1 auto;
+            min-width: 0;
+            overflow: hidden;
             line-height: 22px;
-            &.original {
-              flex: 1;
+            text-overflow: ellipsis;
+            &.modified {
+              display: flex;
+              align-items: center;
+            }
+            &.modified > .monaco-icon-label {
+              flex: 0 1 auto;
               min-width: 0;
-              text-overflow: ellipsis;
+            }
+            &.original {
+              flex: 1 1 auto;
             }
           }
-          .status {
-            font-weight: 600;
-            opacity: 0.75;
-            margin: 0px 10px;
-            line-height: 22px;
+          .multi-diff-resource-label-accessory:empty {
+            display: none;
+          }
+          .status:not(.added):not(.deleted):not(.renamed) {
+            display: none;
           }
         }
         .actions {
-          padding: 0 8px;
+          flex: 0 0 auto;
         }
       }
     }
     .editorParent {
-      flex: 1;
       display: flex;
+      flex: 1;
       flex-direction: column;
-      border-bottom: 1px solid var(--vscode-multiDiffEditor-border);
       overflow: hidden;
     }
     .editorContainer {
       flex: 1;
     }
+    .binary-file-placeholder {
+      display: none;
+      flex: 1;
+      place-items: center;
+      color: var(--vscode-descriptionForeground);
+      &:focus-visible {
+        outline: var(--vscode-strokeThickness) solid var(--vscode-focusBorder);
+        outline-offset: calc(-1 * var(--vscode-strokeThickness));
+      }
+      .binary-file-placeholder-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: var(--vscode-spacing-size80);
+      }
+    }
+  }
+  &.multiDiffEditor-standard {
+    .multiDiffEntry {
+      .collapse-button {
+        margin: 0 var(--vscode-spacing-size60);
+        a {
+          display: block;
+        }
+      }
+      .header {
+        background: var(--vscode-editor-background);
+        &:not(.collapsed) .header-content {
+          border-bottom: var(--vscode-strokeThickness) solid var(--vscode-sideBarSectionHeader-border);
+        }
+        .header-content {
+          margin: var(--vscode-spacing-size80) 0 0;
+          padding: var(--vscode-spacing-size40) var(--vscode-spacing-size60);
+          border-top: var(--vscode-strokeThickness) solid var(--vscode-multiDiffEditor-border);
+          background: var(--vscode-multiDiffEditor-headerBackground);
+          .file-path {
+            .title {
+              font-size: 14px;
+            }
+            .status {
+              margin: 0 var(--vscode-spacing-size100);
+              font-weight: var(--vscode-fontWeight-semiBold);
+              line-height: 22px;
+              opacity: 0.75;
+            }
+          }
+          .actions {
+            padding: 0 var(--vscode-spacing-size80);
+          }
+        }
+      }
+      .editorParent {
+        border-bottom: var(--vscode-strokeThickness) solid var(--vscode-multiDiffEditor-border);
+      }
+    }
+  }
+  &.multiDiffEditor-compact {
+    .multiDiffEntry {
+      box-sizing: border-box;
+      &::after {
+        position: absolute;
+        right: var(--vscode-spacing-size100);
+        bottom: 0;
+        left: var(--vscode-spacing-size100);
+        z-index: 1001;
+        height: var(--vscode-strokeThickness);
+        pointer-events: none;
+        content: "";
+        background: var(--vscode-panel-border);
+      }
+      &.header-hovered,
+      &.header-focused {
+        z-index: 1002;
+        overflow: visible;
+      }
+      &.header-hovered::after,
+      &.header-focused::after {
+        right: 0;
+        left: 0;
+        z-index: 1004;
+      }
+      &.header-hovered::before,
+      &.header-focused::before {
+        position: absolute;
+        top: calc(-1 * var(--vscode-strokeThickness));
+        right: 0;
+        left: 0;
+        z-index: 1004;
+        height: var(--vscode-strokeThickness);
+        pointer-events: none;
+        content: "";
+        background: var(--vscode-panel-border);
+      }
+      &.first-diff-entry.header-hovered::before,
+      &.first-diff-entry.header-focused::before {
+        top: 0;
+      }
+      .collapse-button {
+        margin: 0 var(--vscode-spacing-size60);
+        a {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: var(--vscode-spacing-size40);
+          border-radius: var(--vscode-cornerRadius-medium);
+          &:hover {
+            background: var(--vscode-toolbar-hoverBackground);
+          }
+          &:active {
+            background: var(--vscode-toolbar-activeBackground);
+          }
+          &:focus-visible {
+            outline: var(--vscode-strokeThickness) solid var(--vscode-focusBorder);
+            outline-offset: calc(-1 * var(--vscode-strokeThickness));
+          }
+          &:focus:not(:focus-visible) {
+            outline: none;
+          }
+        }
+      }
+      .header {
+        position: relative;
+        background: var(--vscode-multiDiffEditor-background);
+        &[role=button] {
+          cursor: pointer;
+        }
+        .header-content {
+          box-sizing: border-box;
+          height: var(--vscode-spacing-size320);
+          margin: 0;
+          padding: 0;
+          border: none;
+          background: transparent;
+          .file-path {
+            .title {
+              font-size: var(--vscode-fontSize-body1);
+            }
+            .status {
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              width: var(--vscode-spacing-size160);
+              min-width: var(--vscode-spacing-size160);
+              margin: 0 var(--vscode-spacing-size100);
+              font-size: var(--vscode-fontSize-body2);
+              font-weight: var(--vscode-fontWeight-semiBold);
+              line-height: 22px;
+              opacity: 0.9;
+              &.added {
+                color: var(--vscode-gitDecoration-addedResourceForeground);
+              }
+              &.deleted {
+                color: var(--vscode-gitDecoration-deletedResourceForeground);
+              }
+              &.renamed {
+                color: var(--vscode-gitDecoration-modifiedResourceForeground);
+              }
+            }
+          }
+          .actions {
+            padding: 0 var(--vscode-spacing-size80);
+            .actions-container {
+              gap: var(--vscode-spacing-size40);
+              .action-item:not(.multi-diff-action-always-visible) {
+                visibility: hidden;
+              }
+              .action-item:not(.checkbox-action-item) .action-label {
+                padding: var(--vscode-spacing-size40);
+              }
+            }
+          }
+        }
+        &:hover .header-content {
+          background: var(--vscode-list-hoverBackground);
+        }
+        &:active .header-content {
+          background: var(--vscode-toolbar-activeBackground);
+        }
+        &[aria-expanded=false] + .editorParent {
+          border: none;
+        }
+        &:focus {
+          outline: none;
+        }
+        &:focus-visible .header-content {
+          outline: var(--vscode-strokeThickness) solid var(--vscode-focusBorder);
+          outline-offset: calc(-1 * var(--vscode-strokeThickness));
+        }
+      }
+      &:hover .header .header-content .actions .actions-container .action-item,
+      &:focus-within .header .header-content .actions .actions-container .action-item {
+        visibility: visible;
+      }
+      .editorParent {
+        border: none;
+      }
+    }
+    &:focus-within .multiDiffEntry.active {
+      z-index: 1002;
+      overflow: visible;
+    }
+    &:focus-within .multiDiffEntry.active::after {
+      right: 0;
+      left: 0;
+      z-index: 1004;
+    }
+    &:focus-within .multiDiffEntry.active::before {
+      position: absolute;
+      top: calc(-1 * var(--vscode-strokeThickness));
+      right: 0;
+      left: 0;
+      z-index: 1004;
+      height: var(--vscode-strokeThickness);
+      pointer-events: none;
+      content: "";
+      background: var(--vscode-panel-border);
+    }
+    &:focus-within .multiDiffEntry.first-diff-entry.active::before {
+      top: 0;
+    }
+    &:focus-within .multiDiffEntry.active .header .header-content,
+    &:focus-within .multiDiffEntry.active .header:hover .header-content,
+    &:focus-within .multiDiffEntry.active .header:active .header-content {
+      background: var(--vscode-list-inactiveSelectionBackground);
+    }
+    .diff-hidden-lines .center {
+      overflow: hidden;
+      box-shadow: none;
+    }
+    .diff-hidden-lines .first {
+      box-sizing: border-box;
+      justify-content: flex-start;
+      padding-left: var(--vscode-spacing-size60);
+    }
+    .fold-unchanged {
+      box-sizing: border-box;
+    }
+    .editor.original .diff-hidden-lines .center {
+      border-top-left-radius: var(--vscode-cornerRadius-medium);
+      border-bottom-left-radius: var(--vscode-cornerRadius-medium);
+    }
+    .editor.modified .diff-hidden-lines .center {
+      border-top-right-radius: var(--vscode-cornerRadius-medium);
+      border-bottom-right-radius: var(--vscode-cornerRadius-medium);
+    }
+  }
+  &.multiDiffEditor-card {
+    .multiDiffEntry {
+      padding: 0 var(--vscode-spacing-size80);
+      &::before,
+      &::after {
+        display: none;
+        content: none;
+      }
+      .header {
+        .header-content {
+          margin: var(--vscode-spacing-size40) 0 0;
+          border: var(--vscode-strokeThickness) solid var(--vscode-widget-border, var(--vscode-editorWidget-border, transparent));
+          border-bottom: none;
+          border-radius: var(--vscode-cornerRadius-medium) var(--vscode-cornerRadius-medium) 0 0;
+          background: var(--vscode-sideBarSectionHeader-background);
+        }
+        &[aria-expanded=false] .header-content {
+          border-bottom: var(--vscode-strokeThickness) solid var(--vscode-widget-border, var(--vscode-editorWidget-border, transparent));
+          border-radius: var(--vscode-cornerRadius-medium);
+        }
+        &:hover .header-content {
+          background: linear-gradient(var(--vscode-toolbar-hoverBackground, transparent), var(--vscode-toolbar-hoverBackground, transparent)), var(--vscode-sideBarSectionHeader-background);
+        }
+        &:active .header-content {
+          background: linear-gradient(var(--vscode-toolbar-activeBackground, transparent), var(--vscode-toolbar-activeBackground, transparent)), var(--vscode-sideBarSectionHeader-background);
+        }
+      }
+      .editorParent {
+        overflow: hidden;
+        border: var(--vscode-strokeThickness) solid var(--vscode-widget-border, var(--vscode-editorWidget-border, transparent));
+        border-top: none;
+        border-radius: 0 0 var(--vscode-cornerRadius-medium) var(--vscode-cornerRadius-medium);
+      }
+      &:focus-within .header .header-content {
+        border-color: var(--vscode-focusBorder) var(--vscode-focusBorder) transparent var(--vscode-focusBorder);
+        background: linear-gradient(var(--vscode-list-focusBackground, transparent), var(--vscode-list-focusBackground, transparent)), var(--vscode-sideBarSectionHeader-background);
+      }
+      &:focus-within .header[aria-expanded=false] .header-content {
+        border-bottom-color: var(--vscode-focusBorder);
+      }
+      &:focus-within .editorParent {
+        border-color: var(--vscode-widget-border, var(--vscode-editorWidget-border, transparent)) var(--vscode-focusBorder) var(--vscode-focusBorder) var(--vscode-focusBorder);
+      }
+      .header.shadow[aria-expanded=true] .header-content {
+        height: calc(var(--vscode-spacing-size320) + var(--vscode-spacing-size40));
+        margin-top: 0;
+        border-top-color: transparent;
+        border-radius: 0;
+        box-shadow: var(--vscode-scrollbar-shadow) 0 6px 6px -6px;
+      }
+    }
+    &:focus-within .multiDiffEntry.active .header .header-content,
+    &:focus-within .multiDiffEntry.active .header:hover .header-content,
+    &:focus-within .multiDiffEntry.active .header:active .header-content {
+      background: linear-gradient(var(--vscode-list-focusBackground, transparent), var(--vscode-list-focusBackground, transparent)), var(--vscode-sideBarSectionHeader-background);
+    }
+  }
+}
+:is(.hc-black, .hc-light) .monaco-component.multiDiffEditor.multiDiffEditor-card .multiDiffEntry:focus-within {
+  .header .header-content {
+    border-color: var(--vscode-contrastActiveBorder, var(--vscode-focusBorder)) var(--vscode-contrastActiveBorder, var(--vscode-focusBorder)) transparent var(--vscode-contrastActiveBorder, var(--vscode-focusBorder));
+  }
+  .header[aria-expanded=false] .header-content {
+    border-bottom-color: var(--vscode-contrastActiveBorder, var(--vscode-focusBorder));
+  }
+  .editorParent {
+    border-color: var(--vscode-widget-border, var(--vscode-editorWidget-border, transparent)) var(--vscode-contrastActiveBorder, var(--vscode-focusBorder)) var(--vscode-contrastActiveBorder, var(--vscode-focusBorder)) var(--vscode-contrastActiveBorder, var(--vscode-focusBorder));
+  }
+  .header.shadow[aria-expanded=true] .header-content {
+    border-top-color: transparent;
   }
 }
