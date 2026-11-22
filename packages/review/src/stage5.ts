@@ -16,6 +16,7 @@ import {
   type FindingSeverity,
 } from './finding.ts'
 import type { CellCommandResult } from './isolation.ts'
+import type { LocalModelInfo } from './local-model-probe.ts'
 import type { ReportedCandidate, ReviewCompletion } from './reviewer-tools.ts'
 import type { Stage0Report } from './stage0.ts'
 import type { Stage2Result } from './stage2.ts'
@@ -116,6 +117,21 @@ export interface ReviewReport {
   /** Findings verification refuted; kept so a reader can see what was dropped and why. */
   readonly refuted: readonly Finding[]
   readonly durationMs: number
+  /** The model routes the review used; absent from reports that predate it. */
+  readonly models?: readonly ReviewModelRoute[]
+}
+
+/** One model route a review used, as its report records it. */
+export interface ReviewModelRoute {
+  readonly role: 'reviewer' | 'challenger'
+  readonly model: string
+  /** The `--provider` kind the route went through. */
+  readonly provider: string
+  /** A local or OpenAI-compatible server's base URL; never a credential. */
+  readonly endpoint?: string
+  readonly reasoning?: string
+  /** What the local server said about the model before the review started. */
+  readonly local?: LocalModelInfo
 }
 
 const SEVERITY_WEIGHT: Record<FindingSeverity, number> = { low: 1, medium: 2, high: 3, critical: 4 }
@@ -272,6 +288,7 @@ export interface AssembleReportInput {
   readonly findings: readonly Finding[]
   readonly startedAt: number
   readonly now?: () => number
+  readonly models?: readonly ReviewModelRoute[] | undefined
 }
 
 export function assembleReviewReport(input: AssembleReportInput): ReviewReport {
@@ -322,6 +339,7 @@ export function assembleReviewReport(input: AssembleReportInput): ReviewReport {
     appendix,
     refuted,
     durationMs: now() - input.startedAt,
+    ...(input.models === undefined ? {} : { models: input.models }),
   }
 }
 

@@ -37,6 +37,11 @@ export interface Stage2Options extends ReviewerToolHost {
   /** Receives each contract event as it happens (a CLI writes them to stdout). */
   readonly onEvent?: ((event: HeadlessEvent) => void) | undefined
   readonly maxSteps?: number | undefined
+  /**
+   * Whether the model accepts images. A text-only model is not offered
+   * `view_image`, whose result would put an image in front of it. Default true.
+   */
+  readonly canSeeImages?: boolean | undefined
 }
 
 export interface Stage2Result {
@@ -87,7 +92,10 @@ export async function runStage2(options: Stage2Options): Promise<Stage2Result> {
       renderReviewerValidation(options.validation),
     ].join('\n\n'),
     userPrompt: renderReviewContext(options.context),
-    tools: reviewerTools(),
+    tools:
+      options.canSeeImages === false
+        ? reviewerTools().filter((tool) => tool.name !== 'view_image')
+        : reviewerTools(),
     execute: (name, args, signal, toolCallId) => executor.execute(name, args, signal, toolCallId),
     threadId: options.threadId,
     turnId: options.turnId,
@@ -146,6 +154,10 @@ export interface ReviewerSpec {
   readonly model: string
   /** The provider for one lens (`review:<lens>`); a stateless provider returns itself. */
   providerFor(lens: Lens): LLMProvider
+  /** The lenses this model runs; default every lens of the fan-out. */
+  readonly lenses?: readonly Lens[] | undefined
+  /** See {@link Stage2Options.canSeeImages}. */
+  readonly canSeeImages?: boolean | undefined
 }
 
 export interface FanOutOptions extends ReviewerToolHost {
@@ -171,7 +183,7 @@ export interface FanOutOptions extends ReviewerToolHost {
 export async function runReviewers(options: FanOutOptions): Promise<Stage2Result[]> {
   const jobs: (() => Promise<Stage2Result>)[] = []
   for (const reviewer of options.reviewers) {
-    for (const lens of options.lenses) {
+    for (const lens of reviewer.lenses ?? options.lenses) {
       jobs.push(() =>
         runStage2({
           headCheckout: options.headCheckout,
@@ -189,6 +201,7 @@ export async function runReviewers(options: FanOutOptions): Promise<Stage2Result
           signal: options.signal,
           onEvent: options.onEvent,
           maxSteps: options.maxSteps,
+          canSeeImages: reviewer.canSeeImages,
         }),
       )
     }

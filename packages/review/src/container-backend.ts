@@ -17,12 +17,16 @@
 // start, `<engine> rm --force` ends a timed-out command and everything it forked in
 // one stroke, and nothing in the cell survives between commands except what it
 // wrote to its mounted checkouts and scratch — which is the plan's "lifetime"
-// row. The engine is Docker by default; Podman speaks the same argv.
+// row. The engine is Docker by default; Podman speaks the same argv. Apple
+// container (Apple silicon, macOS 26+) speaks its own dialect of the same
+// verbs, and runs every container in its own lightweight VM; see
+// `appleCreateArgs` for how each wall is spelled there.
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { errorMessage } from '@copse/std/errors.ts'
+import { memberOf } from '@copse/std/member-of.ts'
 import type {
   CellCommand,
   CellCommandResult,
@@ -35,10 +39,27 @@ import { removeTree } from './remove-tree.ts'
 
 export const CONTAINER_BACKEND_ID = 'container'
 
-/** The engine's argv prefix: `['docker']`, `['podman']`, or a test's stand-in. */
+/** The engine's argv prefix: `['docker']`, `['podman']`, `['container']`, or a test's stand-in. */
 export type ContainerEngine = readonly [string, ...string[]]
 
 export const DEFAULT_CONTAINER_ENGINE: ContainerEngine = ['docker']
+
+/** The CLI dialect an engine speaks: Docker's (Docker, Podman) or Apple container's. */
+export const CONTAINER_DIALECTS = ['docker', 'apple'] as const
+export type ContainerDialect = (typeof CONTAINER_DIALECTS)[number]
+
+/** An engine to try: the argv that drives it and the dialect it speaks. */
+export interface ContainerEngineCandidate {
+  readonly argv: ContainerEngine
+  readonly dialect: ContainerDialect
+}
+
+export const DOCKER_ENGINE: ContainerEngineCandidate = { argv: ['docker'], dialect: 'docker' }
+export const PODMAN_ENGINE: ContainerEngineCandidate = { argv: ['podman'], dialect: 'docker' }
+export const APPLE_CONTAINER_ENGINE: ContainerEngineCandidate = {
+  argv: ['container'],
+  dialect: 'apple',
+}
 
 export interface ContainerLimits {
   /** Docker memory limit syntax (`4g`). */
@@ -65,6 +86,8 @@ export interface ContainerBackendOptions {
   /** The image every command runs from; never pulled by this module. */
   readonly image: string
   readonly engine?: ContainerEngine
+  /** The dialect `engine` speaks. Default `docker`. */
+  readonly dialect?: ContainerDialect
   readonly limits?: Partial<ContainerLimits>
   /**
    * The name of one command's container. The app maps this onto the
@@ -106,7 +129,11 @@ export interface ContainerRunInput {
  * capabilities is a flag here and nowhere else, pinned by a unit test, so the
  * declaration and the container cannot drift apart.
  */
-export function containerCreateArgs(input: ContainerRunInput): string[] {
+export function containerCreateArgs(
+  input: ContainerRunInput,
+  dialect: ContainerDialect = 'docker',
+): string[] {
+  if (dialect === 'apple') return appleCreateArgs(input)
   const args = ['create', '--rm', '--pull=never', '--name', input.name]
   for (const [key, value] of Object.entries(input.labels)) args.push('--label', `${key}=${value}`)
   args.push(
@@ -130,14 +157,64 @@ export function containerCreateArgs(input: ContainerRunInput): string[] {
     args.push(`--mount=type=bind,source=${path},target=${path},readonly`)
   }
   args.push('--workdir', input.cwd)
-  for (const [key, value] of Object.entries(input.env)) {
+  pushEnvironment(args, input.env)
+  const [executable, ...argv] = input.argv
+  args.push('--entrypoint', executable, input.image, ...argv)
+  return args
+}
+
+function pushEnvironment(args: string[], env: Readonly<Record<string, string>>): void {
+  for (const [key, value] of Object.entries(env)) {
     // The image's PATH names the toolchain baked into it; the host's names
     // directories that do not exist in the container.
     if (key === 'PATH') continue
     args.push('--env', `${key}=${value}`)
   }
-  const [executable, ...argv] = input.argv
-  args.push('--entrypoint', executable, input.image, ...argv)
+}
+
+/**
+ * The same cell under Apple container, in its spelling, following the
+ * thread-in-container runtime's mapping (`appleCreateArgs` in
+ * `src/main/services/container-runtime/thread-container.ts`, and
+ * `docs/plans/thread-in-container.md`, "Apple container as the host engine"):
+ *
+ * - no-new-privileges: Apple container has no flag, so the command runs under
+ *   `setpriv --no-new-privs`, and `Dockerfile.cell` strips every setuid and
+ *   setgid bit at build time and fails without `setpriv`.
+ * - pids limit: no cgroup flag, so `RLIMIT_NPROC` on the cell's uid.
+ * - seccomp: none; the boundary is the container's own VM.
+ * - `--network none` leaves only loopback (measured by the thread runtime: the
+ *   gateway, the host and the internet are unreachable and DNS fails).
+ * - bind mounts are `--volume source:target[:ro]`, at the same host paths.
+ * - no `--rm` and no pull flag: the backend deletes every container itself,
+ *   and detection refuses an image the engine does not already hold.
+ */
+export function appleCreateArgs(input: ContainerRunInput): string[] {
+  const pids = String(input.limits.pids)
+  const args = ['create', '--name', input.name]
+  for (const [key, value] of Object.entries(input.labels)) args.push('--label', `${key}=${value}`)
+  args.push(
+    '--init',
+    '--read-only',
+    '--cap-drop',
+    'ALL',
+    '--ulimit',
+    `nproc=${pids}:${pids}`,
+    '--memory',
+    input.limits.memory,
+    '--cpus',
+    String(input.limits.cpus),
+    '--tmpfs',
+    '/tmp:rw,exec,nosuid,nodev,size=1g,mode=1777',
+    '--network',
+    'none',
+  )
+  if (input.user !== null) args.push('--user', `${String(input.user.uid)}:${String(input.user.gid)}`)
+  for (const path of new Set(input.writable)) args.push('--volume', `${path}:${path}`)
+  for (const path of new Set(input.readOnly)) args.push('--volume', `${path}:${path}:ro`)
+  args.push('--workdir', input.cwd)
+  pushEnvironment(args, input.env)
+  args.push('--entrypoint', 'setpriv', input.image, '--no-new-privs', '--', ...input.argv)
   return args
 }
 
@@ -148,6 +225,7 @@ class ContainerCell implements ExecutionCell {
   readonly spec: CellSpec
   private readonly options: ContainerBackendOptions
   private readonly engine: ContainerEngine
+  private readonly dialect: ContainerDialect
   private readonly spawn: SpawnEngine
   private readonly cellId: string
   private readonly homeDir: string
@@ -167,6 +245,7 @@ class ContainerCell implements ExecutionCell {
     this.spec = spec
     this.options = options
     this.engine = options.engine ?? DEFAULT_CONTAINER_ENGINE
+    this.dialect = options.dialect ?? 'docker'
     this.spawn = options.spawn ?? nodeSpawn
     this.cellId = randomBytes(4).toString('hex')
     this.homeDir = homeDir
@@ -196,10 +275,15 @@ class ContainerCell implements ExecutionCell {
   }
 
   private async remove(name: string): Promise<void> {
-    const [file, args] = this.engineArgv(['rm', '--force', name])
+    const verb = this.dialect === 'apple' ? 'delete' : 'rm'
+    const [file, args] = this.engineArgv([verb, '--force', name])
     const result = await probeEngine(this.spawn, file, args, KILL_GRACE_MS)
-    // --rm may already have removed a naturally completed container.
-    if (!result.ok && !/no such container|no container with (?:name|ID)/i.test(result.reason)) {
+    // --rm may already have removed a naturally completed container; Apple
+    // container says "not found" for one that is already gone.
+    if (
+      !result.ok &&
+      !/no such container|no container with (?:name|ID)|not found/i.test(result.reason)
+    ) {
       throw new Error(`Could not remove review container ${name}: ${result.reason}`)
     }
   }
@@ -209,7 +293,7 @@ class ContainerCell implements ExecutionCell {
     command: CellCommand,
   ): Promise<CellCommandResult> {
     const started = Date.now()
-    const [file, args] = this.engineArgv(containerCreateArgs(input))
+    const [file, args] = this.engineArgv(containerCreateArgs(input, this.dialect))
     let removal: Promise<void> | undefined
     const remove = (): Promise<void> => (removal ??= this.remove(input.name))
     try {
@@ -315,17 +399,97 @@ export function createContainerBackend(options: ContainerBackendOptions): Isolat
   }
 }
 
-export interface DetectContainerBackendOptions extends Omit<ContainerBackendOptions, 'engine'> {
-  /** Engines to try, in order. Default: Docker, then Podman. */
-  readonly engines?: readonly ContainerEngine[]
+export interface DetectContainerBackendOptions extends Omit<
+  ContainerBackendOptions,
+  'engine' | 'dialect'
+> {
+  /** Engines to try, in order. Default: {@link defaultContainerEngines}. */
+  readonly engines?: readonly ContainerEngineCandidate[]
   readonly timeoutMs?: number
 }
 
 export type ContainerDetection =
-  | { readonly backend: IsolationBackend; readonly engine: ContainerEngine; readonly reason: null }
+  | {
+      readonly backend: IsolationBackend
+      readonly engine: ContainerEngineCandidate
+      readonly reason: null
+    }
   | { readonly backend: null; readonly engine: null; readonly reason: string }
 
 const DETECT_TIMEOUT_MS = 15_000
+
+/** The variable that names an engine; the same one Copse's other container work reads. */
+export const CONTAINER_ENGINE_ENV = 'COPSE_CONTAINER_ENGINE'
+
+export const CONTAINER_ENGINE_PREFERENCES = ['auto', 'docker', 'podman', 'apple'] as const
+export type ContainerEnginePreference = (typeof CONTAINER_ENGINE_PREFERENCES)[number]
+const isContainerEnginePreference = memberOf(CONTAINER_ENGINE_PREFERENCES)
+
+/** Whether this host can run Apple container: Apple silicon under macOS. */
+export function canRunAppleContainer(platform: NodeJS.Platform, arch: string): boolean {
+  return platform === 'darwin' && arch === 'arm64'
+}
+
+/**
+ * The engines detection tries, in order. `COPSE_CONTAINER_ENGINE` names one
+ * (`docker`, `podman`, `apple`) and is then the only one tried; `auto` (the
+ * default) tries Docker, then Podman, then — on Apple silicon — Apple container.
+ */
+export function defaultContainerEngines(
+  options: {
+    readonly env?: Readonly<Record<string, string | undefined>>
+    readonly platform?: NodeJS.Platform
+    readonly arch?: string
+  } = {},
+): ContainerEngineCandidate[] {
+  const env = options.env ?? process.env
+  const raw = env[CONTAINER_ENGINE_ENV]?.trim().toLowerCase() ?? ''
+  const preference = raw === '' ? 'auto' : raw
+  if (!isContainerEnginePreference(preference)) {
+    throw new Error(
+      `Unsupported ${CONTAINER_ENGINE_ENV}=${JSON.stringify(raw)}; use ${CONTAINER_ENGINE_PREFERENCES.join(', ')}`,
+    )
+  }
+  const apple = canRunAppleContainer(
+    options.platform ?? process.platform,
+    options.arch ?? process.arch,
+  )
+  switch (preference) {
+    case 'docker':
+      return [DOCKER_ENGINE]
+    case 'podman':
+      return [PODMAN_ENGINE]
+    case 'apple':
+      return [APPLE_CONTAINER_ENGINE]
+    case 'auto':
+      return apple
+        ? [DOCKER_ENGINE, PODMAN_ENGINE, APPLE_CONTAINER_ENGINE]
+        : [DOCKER_ENGINE, PODMAN_ENGINE]
+  }
+}
+
+/** The argv (after the engine's own) that succeeds only when the engine holds `image`. */
+export function imageInspectArgs(dialect: ContainerDialect, image: string): string[] {
+  // Apple container's inspect prints JSON and takes no Go template.
+  return dialect === 'apple'
+    ? ['image', 'inspect', image]
+    : ['image', 'inspect', '--format', '{{.Id}}', image]
+}
+
+/** Whether `engine` answers and already holds `image`, or why not. */
+export function probeContainerImage(
+  engine: ContainerEngineCandidate,
+  image: string,
+  options: { readonly spawn?: SpawnEngine; readonly timeoutMs?: number } = {},
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const [file, ...prefix] = engine.argv
+  return probeEngine(
+    options.spawn ?? nodeSpawn,
+    file,
+    [...prefix, ...imageInspectArgs(engine.dialect, image)],
+    options.timeoutMs ?? DETECT_TIMEOUT_MS,
+  )
+}
 
 /**
  * The container backend when an engine is reachable and already holds the
@@ -337,22 +501,27 @@ const DETECT_TIMEOUT_MS = 15_000
 export async function detectContainerBackend(
   options: DetectContainerBackendOptions,
 ): Promise<ContainerDetection> {
-  const spawn = options.spawn ?? nodeSpawn
-  const engines = options.engines ?? [DEFAULT_CONTAINER_ENGINE, ['podman']]
+  let engines: readonly ContainerEngineCandidate[]
+  try {
+    engines = options.engines ?? defaultContainerEngines()
+  } catch (err) {
+    return { backend: null, engine: null, reason: errorMessage(err) }
+  }
   const reasons: string[] = []
   for (const engine of engines) {
-    const [file, ...prefix] = engine
-    const probe = await probeEngine(
-      spawn,
-      file,
-      [...prefix, 'image', 'inspect', '--format', '{{.Id}}', options.image],
-      options.timeoutMs ?? DETECT_TIMEOUT_MS,
-    )
+    const probe = await probeContainerImage(engine, options.image, {
+      ...(options.spawn === undefined ? {} : { spawn: options.spawn }),
+      ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+    })
     if (probe.ok) {
       const { engines: _engines, timeoutMs: _timeout, ...rest } = options
-      return { backend: createContainerBackend({ ...rest, engine }), engine, reason: null }
+      return {
+        backend: createContainerBackend({ ...rest, engine: engine.argv, dialect: engine.dialect }),
+        engine,
+        reason: null,
+      }
     }
-    reasons.push(`${file}: ${probe.reason}`)
+    reasons.push(`${engine.argv[0]}: ${probe.reason}`)
   }
   return { backend: null, engine: null, reason: reasons.join('; ') }
 }

@@ -1,6 +1,8 @@
 # Copse Reviewer
 
-Status: **Active — Phases 0 to 5 landed; B8's Martian-offline target is unmeasured.**
+Status: **Active — Phases 0 to 5 landed; B8's Martian-offline target is unmeasured.** The local
+pull-request shell (`copse-review pr`, local models, every change in a container) landed
+2026-11-22; see §Local pull-request shell.
 `@copse/review` is a workspace package on
 `main` with the finding schema, Stage 0 (the base-versus-head build and test delta), the
 `IsolationBackend` contract with the host-process, OS-sandbox and container backends, the
@@ -1026,15 +1028,16 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   tests that intentionally classify machine-global `/tmp` paths therefore see the same path
   semantics in a review cell as they do in normal CI, instead of producing baseline-only false
   failures.
-- **Known limit: the dependency store across platforms.** The cell resolves the offline
-  install from the host's pnpm store, which holds the host platform's packages. The GitHub
-  ground jobs prime that store from the exact contributor lockfile and patch data with
-  `pnpm fetch` in the secret-free job; manifests and lifecycle scripts still run only in
-  the isolated cell. On a Linux host (CI, a Linux desktop) the host and guest platforms
-  match. On macOS the Linux guest finds no Linux binaries for native packages and the
-  prepare step fails, which Stage 0 reports as "not checked" rather than pretending.
-  Pointing the cell at the runtime's shared store volume, populated by an installing
-  container run, is the follow-up there.
+- **Known limit: the dependency store across platforms — resolved 2026-11-22.** The cell
+  resolves the offline install from a host-filled store. The GitHub ground jobs prime it
+  from the exact contributor lockfile and patch data with `pnpm fetch` in the secret-free
+  job; manifests and lifecycle scripts still run only in the isolated cell. A Mac's store
+  held darwin builds of platform packages, so a Linux cell's prepare step failed and Stage 0
+  reported "not checked". The seed workspace now declares the cell's platform
+  (`supportedArchitectures`: linux, the cell's CPU, glibc), so `pnpm fetch` on any host fills
+  the store for the cell (`packages/review/src/cell-preparation.ts`, shared by the Actions
+  shell and `copse-review pr`). On GitHub's Linux runners that is the platform it always
+  fetched. See §Local pull-request shell.
 
 Not in Phase 4: Forgejo focused-validation parity, `bench:review` (Phase 5), and a foreign-diff
 gesture in the app (the app reviews the thread's own tree; a "review this pull request"
@@ -1136,6 +1139,64 @@ Not in Phase 5: a mapped Martian-offline or equivalent real-PR corpus, and the o
   see above. `bench:review`, an exact-configuration regression ratchet, and a separate
   absolute target gate. Arguably belongs at Phase 2; listed last only because it needs a
   corpus that Phases 1–2 generate.
+- **Local pull-request shell.** ✅ Landed 2026-11-22; Apple-hardware proof and the Q11
+  measurement remain. See §Local pull-request shell.
+
+## Local pull-request shell
+
+_Added 2026-11-22._ `copse-review pr <number | URL | ref>` reviews one pull request on the
+machine it runs on, with no forge API and no Copse service, so that an agent or a hook can
+ask for a review and read the answer from disk. The target is a Mac Studio running local
+models; nothing in it is Mac-only.
+
+- **Every change is foreign.** The shell always passes `--foreign` and brings its own
+  container backend: Stage 0, `run_command` and reproducers execute in network-disabled
+  containers whoever wrote the change. B3 is unchanged; the decision here is only that the
+  local shell never uses the own-tree exemption, so one path is exercised and measured.
+- **One machine does both CI jobs.** CI splits grounding from findings to keep the model
+  key from contributor code. A local model has no key, so the shell runs the CLI's ordinary
+  single pass and the diff never leaves the machine. With a hosted challenger
+  (`--challenger-provider`) the usual redaction applies to what leaves.
+- **Host preparation is CI's, factored out.** Fetch into a private ref namespace
+  (`refs/copse-review/pr-<n>/{head,base}`), validate both lockfiles
+  (`dependency-policy.ts`), fill the store for the cell's platform, and build
+  `Dockerfile.cell` once per Dockerfile digest and cell CPU (`--image` names a prebuilt one).
+  `ci/prepare-action.mts` calls the same functions, so the two shells cannot drift on what
+  the host fetches. The portable `pnpm` profile admits relative directory dependencies;
+  `copse-pnpm` keeps its one reviewed exception.
+- **Engines.** Docker and Podman (Docker dialect), and Apple container in its own dialect,
+  following the thread-in-container runtime's measured mapping. Apple container has no
+  no-new-privileges flag, so every command runs under `setpriv --no-new-privs`;
+  `Dockerfile.cell` fails to build without `setpriv` and strips every setuid and setgid bit.
+  `COPSE_CONTAINER_ENGINE` (`auto` / `docker` / `podman` / `apple`) chooses.
+- **Local models.** A pre-flight reads LM Studio's native catalogue before Stage 0: a model
+  loaded with less context than `--budget-chars` needs fails the run in seconds with the
+  `lms load … --context-length` that fixes it; a text-only model neither runs `visual` nor is
+  offered `view_image`; what the server reported is recorded under the report's `models`.
+  Reviewers and challenger take separate routes (`--challenger-provider`,
+  `--challenger-base-url`) and reasoning efforts; when every route is local, reviewers run one
+  at a time. `bench:review` takes the same challenger routes, so a local pair is measured
+  under its exact identity.
+- **Answers are kept and reused.** Reports land under
+  `~/.copse/reviews/<repo>/pr-<n>/<head>-<settings>/` keyed by head, merge-base, options and
+  the reviewer's own revision; asking again answers from the saved report. One review runs at
+  a time per machine (`cache/review/review.lock`), and a lock whose holder died is taken
+  over. `--time-limit` bounds a run.
+
+Evidence at landing, on Linux x64 with Docker 29: the hostile-fixture conformance suite against
+the real engine (with `setpriv` and the setuid strip in the image); and `copse-review pr` over a
+real pnpm project whose `refs/pull/3/head` breaks a test, with the store filled by real `pnpm fetch`,
+Stage 0 offline in containers confirming the regression, a scripted reviewer's `run_command`
+brokered into a cell, and the second ask answered from the saved report. `pnpm fetch` with the
+seed's `supportedArchitectures` fetched `@esbuild/linux-arm64` on an x64 host, and only the host's
+build without it.
+
+Not yet shown: the Apple container dialect on Apple hardware (unit-tested against the fake
+engine only); bind-mount ownership and speed under macOS file sharing; Copse's own `copse-pnpm`
+profile end to end on a Mac; and, deciding whether the shell is worth running, Q11 — whether
+a local model carries the reviewer lens. Agents and hooks that start reviews are later work
+and fall under [`hooks-and-feature-packs.md`](hooks-and-feature-packs.md), whose decision 5
+budgets any machine turn a review starts.
 
 ## Non-goals
 

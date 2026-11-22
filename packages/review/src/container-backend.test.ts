@@ -6,10 +6,16 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
 import {
+  APPLE_CONTAINER_ENGINE,
+  appleCreateArgs,
   containerCreateArgs,
   createContainerBackend,
+  defaultContainerEngines,
   detectContainerBackend,
   DEFAULT_CONTAINER_LIMITS,
+  DOCKER_ENGINE,
+  imageInspectArgs,
+  PODMAN_ENGINE,
   type ContainerRunInput,
 } from './container-backend.ts'
 import { FAKE_IMAGE, writeFakeContainerEngine } from './fake-container-engine.ts'
@@ -109,6 +115,49 @@ describe('container backend', () => {
         args.some((arg) => arg.startsWith('--user=')),
         false,
       )
+    })
+
+    it('spells every wall in Apple container dialect, with no-new-privileges set by setpriv', () => {
+      const args = containerCreateArgs(input, 'apple')
+      assert.deepEqual(args, appleCreateArgs(input))
+      assert.deepEqual(args.slice(0, 3), ['create', '--name', 'copse-review-abc-1'])
+      const pairs: [string, string][] = [
+        ['--cap-drop', 'ALL'],
+        ['--ulimit', 'nproc=512:512'],
+        ['--memory', '4g'],
+        ['--cpus', '2'],
+        ['--network', 'none'],
+        ['--user', '501:20'],
+        ['--tmpfs', '/tmp:rw,exec,nosuid,nodev,size=1g,mode=1777'],
+        ['--workdir', '/scratch/head'],
+      ]
+      for (const [flag, value] of pairs) {
+        assert.equal(args[args.indexOf(flag) + 1], value, `${flag} ${value}`)
+      }
+      assert.ok(args.includes('--init') && args.includes('--read-only'))
+      // Apple container has neither flag; the backend deletes every container itself.
+      assert.equal(args.includes('--rm'), false)
+      assert.equal(
+        args.some((arg) => arg.startsWith('--pull') || arg.startsWith('--security-opt')),
+        false,
+      )
+      assert.ok(args.includes('/scratch/head:/scratch/head'))
+      assert.ok(args.includes('/repo/.git:/repo/.git:ro'))
+      assert.equal(
+        args.some((arg) => arg.startsWith('PATH=')),
+        false,
+      )
+      assert.deepEqual(args.slice(-8), [
+        '--entrypoint',
+        'setpriv',
+        'copse-worker:local',
+        '--no-new-privs',
+        '--',
+        'pnpm',
+        'run',
+        'test',
+      ])
+      assert.doesNotMatch(args.join(' '), /--privileged|--cap-add|docker\.sock/)
     })
 
     it('mounts a shared base and head checkout only once', () => {
@@ -348,15 +397,25 @@ describe('container backend', () => {
     })
 
     it('returns the backend when an engine holds the image', async () => {
-      const engine = await writeFakeContainerEngine(registry)
+      const engine = { argv: await writeFakeContainerEngine(registry), dialect: 'docker' as const }
       const detection = await detectContainerBackend({ image: FAKE_IMAGE, engines: [engine] })
       assert.equal(detection.reason, null)
       assert.equal(detection.backend.strength, 'container')
       assert.deepEqual(detection.engine, engine)
     })
 
+    it('tries the next engine and keeps the dialect of the one that answers', async () => {
+      const apple = { argv: await writeFakeContainerEngine(registry), dialect: 'apple' as const }
+      const detection = await detectContainerBackend({
+        image: FAKE_IMAGE,
+        engines: [{ argv: ['copse-review-no-such-engine-binary'], dialect: 'docker' }, apple],
+      })
+      assert.equal(detection.reason, null)
+      assert.deepEqual(detection.engine, apple)
+    })
+
     it('says why when the image is missing or no engine answers', async () => {
-      const engine = await writeFakeContainerEngine(registry)
+      const engine = { argv: await writeFakeContainerEngine(registry), dialect: 'docker' as const }
       const missing = await detectContainerBackend({
         image: 'copse-review-fake:absent',
         engines: [engine],
@@ -365,10 +424,121 @@ describe('container backend', () => {
       assert.match(missing.reason, /No such image/)
       const none = await detectContainerBackend({
         image: FAKE_IMAGE,
-        engines: [['copse-review-no-such-engine-binary']],
+        engines: [{ argv: ['copse-review-no-such-engine-binary'], dialect: 'docker' }],
       })
       assert.equal(none.backend, null)
       assert.match(none.reason, /not installed/)
+    })
+
+    it('reports an unknown engine preference instead of guessing', async () => {
+      const previous = process.env['COPSE_CONTAINER_ENGINE']
+      process.env['COPSE_CONTAINER_ENGINE'] = 'lxc'
+      try {
+        const detection = await detectContainerBackend({ image: FAKE_IMAGE })
+        assert.equal(detection.backend, null)
+        assert.match(detection.reason, /Unsupported COPSE_CONTAINER_ENGINE="lxc"/)
+      } finally {
+        if (previous === undefined) delete process.env['COPSE_CONTAINER_ENGINE']
+        else process.env['COPSE_CONTAINER_ENGINE'] = previous
+      }
+    })
+  })
+
+  describe('engine choice', () => {
+    const mac = { platform: 'darwin' as const, arch: 'arm64' }
+    it('tries Docker, then Podman, then Apple container only on Apple silicon', () => {
+      assert.deepEqual(defaultContainerEngines({ env: {}, ...mac }), [
+        DOCKER_ENGINE,
+        PODMAN_ENGINE,
+        APPLE_CONTAINER_ENGINE,
+      ])
+      assert.deepEqual(defaultContainerEngines({ env: {}, platform: 'darwin', arch: 'x64' }), [
+        DOCKER_ENGINE,
+        PODMAN_ENGINE,
+      ])
+      assert.deepEqual(defaultContainerEngines({ env: {}, platform: 'linux', arch: 'arm64' }), [
+        DOCKER_ENGINE,
+        PODMAN_ENGINE,
+      ])
+    })
+
+    it('tries only the engine COPSE_CONTAINER_ENGINE names', () => {
+      for (const [value, engine] of [
+        ['docker', DOCKER_ENGINE],
+        ['Podman', PODMAN_ENGINE],
+        [' apple ', APPLE_CONTAINER_ENGINE],
+      ] as const) {
+        assert.deepEqual(
+          defaultContainerEngines({ env: { COPSE_CONTAINER_ENGINE: value }, ...mac }),
+          [engine],
+        )
+      }
+      assert.deepEqual(
+        defaultContainerEngines({ env: { COPSE_CONTAINER_ENGINE: 'auto' }, ...mac }).length,
+        3,
+      )
+      assert.throws(
+        () => defaultContainerEngines({ env: { COPSE_CONTAINER_ENGINE: 'lxc' }, ...mac }),
+        /Unsupported/,
+      )
+    })
+
+    it('inspects an image in each dialect without a template Apple container does not take', () => {
+      assert.deepEqual(imageInspectArgs('docker', 'img'), [
+        'image',
+        'inspect',
+        '--format',
+        '{{.Id}}',
+        'img',
+      ])
+      assert.deepEqual(imageInspectArgs('apple', 'img'), ['image', 'inspect', 'img'])
+    })
+  })
+
+  describe('over the fake engine in Apple container dialect', () => {
+    let scratch = ''
+    let registry = ''
+    let cell: ExecutionCell
+
+    before(async () => {
+      scratch = await realpath(await mkdtemp(join(tmpdir(), 'review-apple-backend-')))
+      registry = join(scratch, 'registry')
+      await mkdir(registry)
+      await mkdir(join(scratch, 'base'))
+      await mkdir(join(scratch, 'head'))
+      cell = await createContainerBackend({
+        image: FAKE_IMAGE,
+        engine: await writeFakeContainerEngine(registry),
+        dialect: 'apple',
+        containerName: () => 'apple-cell',
+      }).createCell({
+        checkouts: { base: join(scratch, 'base'), head: join(scratch, 'head') },
+        scratchDir: scratch,
+        readOnlyPaths: [],
+        env: cellEnvironment({ PATH: process.env['PATH'] }),
+      })
+    })
+
+    after(async () => {
+      await cell.destroy()
+      await rm(scratch, { recursive: true, force: true })
+    })
+
+    it('runs the command under setpriv and deletes the container afterwards', async () => {
+      const result = await cell.run({
+        target: 'head',
+        argv: [process.execPath, '-e', 'console.log(process.cwd())'],
+        timeoutMs: 30_000,
+        maxOutputBytes: 1024,
+      })
+      assert.equal(result.exitCode, 0, result.output)
+      assert.equal(result.output.trim(), join(scratch, 'head'))
+      const record = recordSchema.parse(
+        JSON.parse(await readFile(join(registry, 'apple-cell.json'), 'utf8')),
+      )
+      assert.ok(record.flags.includes('--network') && record.flags.includes('none'))
+      assert.deepEqual(record.argv, [process.execPath, '-e', 'console.log(process.cwd())'])
+      await access(join(registry, 'apple-cell.removed'))
     })
   })
 })

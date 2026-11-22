@@ -740,6 +740,60 @@ describe('runStage2', () => {
     )
   })
 
+  it('runs a reviewer only under its own lenses and keeps view_image from a text-only model', async () => {
+    const offered: string[][] = []
+    const finish = (): ScriptedProvider =>
+      new ScriptedProvider([
+        {
+          type: 'tool_call',
+          name: 'finish_review',
+          args: { checked: 'The changed code.', couldNotVerify: 'Nothing' },
+        },
+        { type: 'text', text: 'Done.' },
+      ])
+    const recording = (scripted: ScriptedProvider): LLMProvider => ({
+      stream: (messages, tools, signal, options): AsyncIterable<ProviderStreamChunk> => {
+        offered.push(tools.map((tool) => tool.name))
+        return scripted.stream(messages, tools, signal, options)
+      },
+    })
+    const results = await runReviewers({
+      context,
+      validation,
+      headCheckout: checkouts.head,
+      cell: null,
+      shellDecision: 'deny',
+      scrub: (text) => text,
+      reviewers: [
+        {
+          model: 'text-only',
+          providerFor: (): LLMProvider => recording(finish()),
+          lenses: [CORRECTNESS_LENS],
+          canSeeImages: false,
+        },
+        { model: 'sighted', providerFor: (): LLMProvider => recording(finish()) },
+      ],
+      lenses: [CORRECTNESS_LENS, CONTRACTS_LENS],
+      threadId: 'thread',
+      turnPrefix: 'turn',
+      concurrency: 1,
+    })
+    assert.deepEqual(
+      results.map((result) => [result.model, result.lens]),
+      [
+        ['text-only', 'correctness'],
+        ['sighted', 'correctness'],
+        ['sighted', 'contracts'],
+      ],
+    )
+    const [textOnly] = offered
+    const sighted = offered.at(-1)
+    assert.ok(textOnly !== undefined && sighted !== undefined)
+    assert.equal(textOnly.includes('view_image'), false)
+    assert.equal(textOnly.includes('read_file'), true)
+    assert.equal(sighted.includes('view_image'), true)
+  })
+
   it('resolves lens specs and rejects unknown ids', () => {
     assert.deepEqual(
       resolveLenses(undefined).map((lens) => lens.id),

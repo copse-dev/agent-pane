@@ -123,6 +123,10 @@ the Docker CLI. `COPSE_CONTAINER_ENGINE` accepts `auto`, `apple`, or `docker`:
   running service (`container system start`). It never silently falls back.
 - `docker` requires a reachable Docker daemon and preserves the previous commands.
 
+Copse Reviewer's validation cells (`copse-review pr`, `--backend container`) read the same
+variable, also accepting `podman`; `auto` there tries Docker, Podman, then Apple container. See
+[`packages/review/README.md`](../packages/review/README.md#reviewing-a-pull-request-on-this-machine-copse-review-pr).
+
 The autonomy regression is portable across those engines:
 
 ```bash

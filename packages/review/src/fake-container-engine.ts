@@ -1,6 +1,9 @@
 // A stand-in container engine for the tests: a Node script that speaks the
 // engine verbs the container backend uses (`create`, `start`, `rm`, `image
-// inspect`) and runs the command on the host instead of in a container, in
+// inspect`, and Apple container's `delete` and space-separated flags), the
+// liveness probes (`info`, `system status`) and `build`, which only records the
+// tag as present. It runs
+// the command on the host instead of in a container, in
 // the requested working directory and with exactly the requested environment.
 // It builds no wall — the conformance test never holds it to one; the real
 // engine is exercised by the gated end-to-end test — but it lets the backend's
@@ -25,14 +28,27 @@ function record(name, data) {
   fs.writeFileSync(path.join(registry, name + '.json'), JSON.stringify(data))
 }
 
+function present(image) {
+  return image === ${JSON.stringify(FAKE_IMAGE)} || fs.existsSync(path.join(registry, 'images', encodeURIComponent(image)))
+}
+
+if (verb === 'info' || verb === 'system') process.exit(0)
+
+if (verb === 'build') {
+  const tag = rest[rest.indexOf('--tag') + 1]
+  fs.mkdirSync(path.join(registry, 'images'), { recursive: true })
+  fs.writeFileSync(path.join(registry, 'images', encodeURIComponent(tag)), JSON.stringify(rest))
+  process.exit(0)
+}
+
 if (verb === 'image') {
   const image = rest[rest.length - 1]
-  if (image === ${JSON.stringify(FAKE_IMAGE)}) { process.stdout.write('sha256:fake\\n'); process.exit(0) }
+  if (present(image)) { process.stdout.write('sha256:fake\\n'); process.exit(0) }
   process.stderr.write('Error response from daemon: No such image: ' + image + '\\n')
   process.exit(1)
 }
 
-if (verb === 'rm') {
+if (verb === 'rm' || verb === 'delete') {
   const name = rest[rest.length - 1]
   try {
     const { pid } = JSON.parse(fs.readFileSync(path.join(registry, name + '.json'), 'utf8'))
@@ -57,7 +73,11 @@ if (verb === 'start') {
 
 if (verb !== 'create') { process.stderr.write('fake engine: unknown verb ' + verb + '\\n'); process.exit(125) }
 
-const withValue = new Set(['--name', '--workdir', '--env', '--label', '--mount', '--volume', '--user', '--entrypoint'])
+const withValue = new Set([
+  '--name', '--workdir', '--env', '--label', '--mount', '--volume', '--user', '--entrypoint',
+  // Apple container's spelling of the same walls takes its values separately.
+  '--cap-drop', '--ulimit', '--memory', '--cpus', '--tmpfs', '--network',
+])
 let name = ''
 let entrypoint = '/app/entrypoint.sh'
 let cwd = process.cwd()
@@ -79,8 +99,11 @@ for (; i < rest.length; i++) {
   }
 }
 const image = rest[i]
-const argv = [entrypoint, ...rest.slice(i + 1)]
-if (image !== ${JSON.stringify(FAKE_IMAGE)}) {
+let argv = [entrypoint, ...rest.slice(i + 1)]
+// The host has no kernel flag to set for the cell, so the Apple dialect's
+// \`setpriv --no-new-privs -- <argv>\` wrapper runs <argv> directly here.
+if (entrypoint === 'setpriv' && argv[1] === '--no-new-privs' && argv[2] === '--') argv = argv.slice(3)
+if (!present(image)) {
   process.stderr.write('Unable to find image ' + image + ' locally\\n')
   process.exit(125)
 }
