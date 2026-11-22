@@ -1,3 +1,4 @@
+import { collapseWhitespace, ellipsize } from '@copse/std/one-line-text.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { AutomationFailureCode, Thread, ThreadStatus } from '@shared/types'
 import { isAutomationFailureCode } from '@shared/types'
@@ -138,8 +139,7 @@ const GROUP_LABELS: Record<ActivityGroupId, string> = {
 
 /** Collapse whitespace and cut to `max` characters with an ellipsis. */
 export function truncateText(text: string, max = WANT_MAX_CHARS): string {
-  const flat = text.replace(/\s+/g, ' ').trim()
-  return flat.length <= max ? flat : `${flat.slice(0, max - 1).trimEnd()}…`
+  return ellipsize(collapseWhitespace(text), max, { trimEnd: true })
 }
 
 function threadName(thread: ActivityThread | undefined): string {

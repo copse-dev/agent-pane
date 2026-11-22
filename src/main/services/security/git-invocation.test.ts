@@ -6,6 +6,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { internalGitEnv, internalGitTransport, withGitInvocationArgs } from './git-invocation.ts'
+import { internalGit } from './internal-git-exec.ts'
 import { runCommand } from '../exec/command-runner.ts'
 import {
   initProjectSandbox,
@@ -74,7 +75,7 @@ describe('internal Git policy', () => {
     }
   })
 
-  it('admits cherry-pick, bundle and grep only in the shapes run adoption and transfer use', () => {
+  it('admits cherry-pick and bundle only in the shapes run adoption and transfer use', () => {
     const sha = 'a'.repeat(40)
     for (const args of [
       ['cherry-pick', '--abort'],
@@ -101,21 +102,75 @@ describe('internal Git policy', () => {
     for (const args of [['bundle'], ['bundle', 'unbundle', 'x.bundle']]) {
       assert.throws(() => withGitInvocationArgs(args), /Unsupported internal Git bundle/)
     }
-    const grep = withGitInvocationArgs(['grep', '-I', '-E', 'lfs', sha])
-    assert.deepEqual(grep.slice(grep.indexOf('grep')), [
-      'grep',
-      '--no-textconv',
-      '-I',
-      '-E',
-      'lfs',
-      sha,
-    ])
-    for (const pager of ['-O/payload', '--open-files-in-pager=/payload']) {
-      assert.throws(
-        () => withGitInvocationArgs(['grep', pager, 'x', sha]),
-        /Unsupported internal Git grep/,
-      )
+  })
+
+  it('admits grep only in the LFS-scan shapes the hosted transfer uses', () => {
+    const sha = 'a'.repeat(40)
+    for (const args of [
+      // The two calls in `prepareGitTransfer`.
+      [
+        'grep',
+        '-I',
+        '-E',
+        'filter[=[:space:]]+lfs',
+        sha,
+        '--',
+        '.gitattributes',
+        '**/.gitattributes',
+      ],
+      ['grep', '-I', '-l', '-E', '^version https://git-lfs.github.com/spec/v1$', sha],
+      ['grep', '-I', '-E', 'lfs', 'b'.repeat(64)],
+      ['grep', '-E', 'lfs', '--', 'a.txt'],
+      ['grep', 'lfs'],
+    ]) {
+      const [, ...rest] = args
+      const prepared = withGitInvocationArgs(args)
+      assert.deepEqual(prepared.slice(prepared.indexOf('grep')), ['grep', '--no-textconv', ...rest])
     }
+    for (const args of [
+      // Git accepts unambiguous abbreviations of `--open-files-in-pager`.
+      ['grep', '--open=/payload', 'x', sha],
+      ['grep', '--open-files=/payload', 'x', sha],
+      ['grep', '--open-files-in-pager=/payload', 'x', sha],
+      // A bundled short flag carries the pager program after `-O`.
+      ['grep', '-IO/payload', 'x', sha],
+      ['grep', '-O/payload', 'x', sha],
+      ['grep', '-O', '/payload', 'x', sha],
+      // After the injected `--no-textconv`, this would run textconv drivers.
+      ['grep', '-I', '-E', '--textconv', 'x', sha],
+      ['grep', '-I', '-E', 'x', sha, '--textconv'],
+      ['grep', '-IE', 'x', sha],
+      ['grep', '-e', 'x', sha],
+      ['grep', '-I', '-E'],
+      ['grep', '-I', '-E', 'x', 'HEAD'],
+      ['grep', '-I', '-E', 'x', sha, 'a.txt'],
+    ]) {
+      assert.throws(() => withGitInvocationArgs(args), /Unsupported internal Git grep/)
+    }
+  })
+
+  it('never runs a grep pager or textconv program on the host runner', async () => {
+    const { repo, marker, script, git } = await fixture()
+    git(['config', 'diff.untrusted.textconv', script])
+    await writeFile(join(repo, '.gitattributes'), '*.txt diff=untrusted\n')
+    git(['add', '.gitattributes'])
+    git(['commit', '-q', '-m', 'attributes'])
+    const head = git(['rev-parse', 'HEAD']).trim()
+    // `token` is the textconv output, so that search matches and exits 0.
+    for (const args of [
+      [`--open=${script}`, 'before'],
+      ['--textconv', 'token', head],
+    ]) {
+      git(['grep', ...args])
+      assert.equal(existsSync(marker), true, 'fixture must execute without the policy')
+      await rm(marker)
+      await assert.rejects(internalGit(repo, ['grep', ...args]), /Unsupported internal Git grep/)
+    }
+    assert.equal(
+      await internalGit(repo, ['grep', '-I', '-l', '-E', '^before$', head, '--', 'tracked.txt']),
+      `${head}:tracked.txt`,
+    )
+    assert.equal(existsSync(marker), false)
   })
 
   it('admits clone only as a local, checkout-free, template-free submodule copy', () => {
@@ -153,6 +208,43 @@ describe('internal Git policy', () => {
       withGitInvocationArgs(['fetch', 'https://example.invalid/repo'], 'internal-network'),
       withGitInvocationArgs(['fetch', 'https://example.invalid/repo'], 'internal'),
     )
+  })
+
+  it('admits check-attr only as the conversion-attribute read', () => {
+    const read = [
+      'check-attr',
+      '-z',
+      '--stdin',
+      'filter',
+      'text',
+      'crlf',
+      'eol',
+      'ident',
+      'working-tree-encoding',
+    ]
+    assert.deepEqual(withGitInvocationArgs(read).slice(-read.length), read)
+    for (const args of [
+      read.filter((arg) => arg !== 'crlf'),
+      ['check-attr', '-z', '--stdin', 'filter'],
+      ['check-attr', '-z', '--stdin', '--all'],
+      [...read, 'diff'],
+      ['check-attr', 'filter', '--', 'a.txt'],
+      ['check-attr'],
+    ]) {
+      assert.throws(() => withGitInvocationArgs(args), /Unsupported internal Git check-attr/)
+    }
+  })
+
+  it('admits no hash-object: the only-copy audit hashes files itself', () => {
+    for (const args of [
+      ['hash-object', '--stdin-paths'],
+      ['hash-object', '-w', 'file.txt'],
+    ]) {
+      assert.throws(
+        () => withGitInvocationArgs(args),
+        /Unsupported internal Git command: hash-object/,
+      )
+    }
   })
 
   it('strips config/executable injection while retaining backup index and identity', () => {

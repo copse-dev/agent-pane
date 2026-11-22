@@ -20,6 +20,7 @@ import { acquireAcpSession, disposeAllAcpSessions } from './acp-session-pool.ts'
 import { requestApproval } from '../approval.ts'
 import { ToolRegistry } from '../tool-registry.ts'
 import { formatGithubWritePrompt } from '../security/permission-policy.ts'
+import { projectPortBindingApproval } from '@shared/approval-copy.ts'
 
 /** The assistant text the client received, reassembled from its stream chunks. */
 function streamedText(chunks: readonly StreamChunk[]): string {
@@ -105,6 +106,19 @@ const publicationProbeTool = defineTool({
     })
     const { approved } = await requestApproval({ ...prompt, type: 'mcp' })
     return approved ? 'publication approved' : 'publication declined'
+  },
+})
+
+const projectPreviewProbeTool = defineTool({
+  name: 'project_preview_probe',
+  description: 'Test approval transport without starting a process or saving a grant.',
+  parameters: z.object({}),
+  async execute() {
+    const { approved, remember } = await requestApproval({
+      ...projectPortBindingApproval('/projects/harbor-board', 'npm run dev'),
+      type: 'shell',
+    })
+    return approved ? (remember ? 'remembered project grant' : 'approved once') : 'declined'
   },
 })
 
@@ -281,6 +295,70 @@ describe('ACP agent mode: a real Copse turn, driven by Copse as the ACP client',
       'a refused ACP permission must reach the tool as a denial, not a silent allow',
     )
     assertMockScenarioComplete('acp-probe')
+  })
+
+  it('labels ACP consent as once-only and does not claim or return a remembered project grant', async () => {
+    workspace = await mkdtemp(join(tmpdir(), 'copse-acp-project-preview-'))
+    const root = workspace
+    const registry = new ToolRegistry()
+    registry.register(projectPreviewProbeTool)
+    const runner = createAcpTurnRunner({
+      registry,
+      history: [],
+      getActiveProjectId: () => 'acp-project-preview-project',
+      getProjectRoot: () => root,
+      runOptions: { provider: new MockLLMProvider('acp-project-preview'), contextWindow: 100_000 },
+    })
+    const { entry } = await acquireAcpSession({
+      threadId: 'acp-project-preview-thread',
+      config: { command: 'copse --acp (in-process)', cwd: root },
+      createTransport: inProcessAgentTransport(runner),
+    })
+    const chunks: StreamChunk[] = []
+    const permissionInputs: unknown[] = []
+    const handlers: AcpClientHandlers = {
+      onChunk: (chunk) => {
+        chunks.push(chunk)
+      },
+      requestPermission: (req) => {
+        permissionInputs.push(req.toolCall.rawInput)
+        return Promise.resolve({ outcome: { outcome: 'selected', optionId: 'allow' } })
+      },
+    }
+    entry.open.handlers.current = handlers
+    setMockScenario(
+      'acp-project-preview',
+      {
+        title: 'Start a preview',
+        turns: [
+          {
+            user: 'Start a preview.',
+            responses: [
+              { toolCalls: [{ name: 'project_preview_probe', args: {} }] },
+              {
+                text: 'Approved this start only.',
+                expectToolResults: [{ name: 'project_preview_probe', includes: 'approved once' }],
+              },
+            ],
+          },
+        ],
+      },
+      'acp-project-preview',
+    )
+    await runAcpSessionPrompt(entry.open, 'Start a preview.', undefined)
+
+    const prompt = projectPortBindingApproval('/projects/harbor-board', 'npm run dev')
+    assert.deepEqual(permissionInputs, [
+      {
+        type: 'shell',
+        body: prompt.body,
+        bodyAdvice: prompt.bodyAdvice,
+        bodyFooter: prompt.bodyFooter,
+        approveLabel: 'Allow once',
+      },
+    ])
+    assert.equal(resultOf(chunks, soleToolCallId(chunks, 'project_preview_probe')), 'approved once')
+    assertMockScenarioComplete('acp-project-preview')
   })
 
   it('preserves the complete publication description and warning across ACP approval', async () => {

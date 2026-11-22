@@ -2,9 +2,11 @@ import { z } from 'zod'
 import type { DecisionAnswer } from './decisions.ts'
 import { RemoteRequestError } from './transport.ts'
 import {
+  remoteStatePath,
   remoteStateSchema,
   remoteThreadSchema,
   type RemoteRead,
+  type RemoteScope,
   type RemoteState,
   type RemoteView,
 } from '../../shared/remote-interface.ts'
@@ -77,7 +79,8 @@ export type RemoteThread = RemoteView['threads'][number]
 export class RemoteChatClient {
   private hints = new Map<string, Promise<string | null>>()
   private session: string | null = null
-  private latest: RemoteState | null = null
+  /** The last state applied, with the request and raw answer it came from. */
+  private latest: { path: string; raw: unknown; state: RemoteState } | null = null
   private transcripts = new Map<string, RemoteThread>()
 
   private transport: Transport
@@ -86,21 +89,42 @@ export class RemoteChatClient {
     this.transport = transport
   }
 
-  async snapshot(): Promise<RemoteState> {
-    const state = remoteStateSchema.parse(await this.transport('/api/remote/state'))
+  /**
+   * The desktop's live state, narrowed to `scope` when the caller shows only
+   * part of it. An unchanged state resolves to the same object as before.
+   */
+  async snapshot(scope?: RemoteScope): Promise<RemoteState> {
+    const path = remoteStatePath(scope)
+    const raw = await this.transport(path)
+    // The transport hands back the very same answer when the Mac reported it
+    // unchanged: skip validating a state this client already validated.
+    if (
+      this.latest?.path === path &&
+      this.latest.raw === raw &&
+      typeof raw === 'object' &&
+      raw !== null
+    )
+      return this.latest.state
+    const state = remoteStateSchema.parse(raw)
     if (this.session !== state.sessionId) {
       this.session = state.sessionId
       this.hints.clear()
       this.transcripts.clear()
     }
-    if (this.latest?.sessionId === state.sessionId && this.latest.revision === state.revision)
-      return this.latest
-    this.latest = state
+    if (
+      this.latest?.path === path &&
+      this.latest.state.sessionId === state.sessionId &&
+      this.latest.state.revision === state.revision
+    ) {
+      this.latest = { path, raw, state: this.latest.state }
+      return this.latest.state
+    }
+    this.latest = { path, raw, state }
     return state
   }
 
   async thread(projectId: string, threadId: string): Promise<RemoteThread | null> {
-    const state = await this.snapshot()
+    const state = await this.snapshot({ projectId, threadId })
     const thread =
       state.views
         .find((view) => view.projectId === projectId)

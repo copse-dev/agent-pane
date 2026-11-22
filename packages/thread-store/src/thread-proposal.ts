@@ -24,6 +24,7 @@
  * one definition of the shape and one definition of the wording.
  */
 
+import { ellipsize } from '@copse/std/one-line-text.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
 import type { ThreadCheckoutMode } from './worktree-types.ts'
 import { isNonBlankString } from '@copse/std/nullish.ts'
@@ -87,8 +88,7 @@ export interface ThreadProposalDecision {
 }
 
 function trimTo(value: string, max: number): string {
-  const trimmed = value.trim()
-  return trimmed.length <= max ? trimmed : `${trimmed.slice(0, max - 1).trimEnd()}…`
+  return ellipsize(value.trim(), max, { trimEnd: true })
 }
 
 function stringField(args: Record<string, unknown>, key: string): string | null {

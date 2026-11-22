@@ -9,6 +9,11 @@ import {
 } from './settings-writable.ts'
 
 describe('settings-writable', () => {
+  it('persists the Needs action sort and rejects unsupported sort values', () => {
+    assert.equal(parseRendererWritableSetting('sidebarThreadSort', 'action'), 'action')
+    assert.throws(() => parseRendererWritableSetting('sidebarThreadSort', 'invalid'))
+  })
+
   it('accepts supported search providers and rejects arbitrary endpoints or legacy scraping providers', () => {
     assert.equal(isRendererWritableSettingKey('webSearchProvider'), true)
     for (const provider of ['none', 'tavily', 'parallel']) {
@@ -110,6 +115,20 @@ describe('settings-writable', () => {
     assert.equal(parseRendererWritableSetting('postTurnReviewMinChangedLines', 0), 0)
     assert.equal(parseRendererWritableSetting('postTurnReviewMinChangedLines', 15), 15)
     assert.throws(() => parseRendererWritableSetting('postTurnReviewMinChangedLines', -1))
+  })
+
+  it('keeps a stored SSH host list readable when one destination is unusable', () => {
+    // Reads validate the whole list, so the schema must not refuse a single
+    // entry: that would hide every other host. resolveTarget refuses such a
+    // destination before ssh runs, and the host form refuses it at entry.
+    const base = { id: 'dev', label: 'Dev', host: 'dev.example' }
+    const unusable = [
+      { ...base, id: 'opt-host', host: '-oFoo=bar' },
+      { ...base, id: 'opt-user', user: '-p22' },
+      { ...base, id: 'ctrl', host: 'dev\u0001example' },
+    ]
+    const list = [base, ...unusable]
+    assert.deepEqual(parseRendererWritableSetting('sshWorkspaceHosts', list), list)
   })
 
   it('parses security settings bundle', () => {

@@ -20,6 +20,7 @@ import {
 } from './config.ts'
 import { isProjectSandboxEnabled } from './enabled.ts'
 import { formatArgvForShell, withSandboxShellPath } from './sandbox-argv.ts'
+import { linuxSandboxBinaryPaths } from './sandbox-binaries.ts'
 import { withSandboxTmpEnv } from './tmp-env.ts'
 
 export function requirePreparationSandbox(): void {
@@ -352,6 +353,8 @@ async function runContainedPreparationProcess(
   } else {
     wrapped = await wrapCommandWithSandboxLinux({
       ...params,
+      // This wrap bypasses SandboxManager, so it takes the launcher paths itself.
+      ...linuxSandboxBinaryPaths(),
       ...(options.signal ? { abortSignal: options.signal } : {}),
     })
   }

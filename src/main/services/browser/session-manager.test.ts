@@ -1,7 +1,16 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { runInNewContext } from 'node:vm'
-import { capturePreviewDataUrl } from './session-manager.ts'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import {
+  BrowserSessionManager,
+  capturePreviewDataUrl,
+  captureBrowserScreenshotDataUrl,
+  setBrowserSessionPlatform,
+} from './session-manager.ts'
+import { getStaticPreviewServer, shutdownStaticPreviewServers } from './static-preview-server.ts'
 
 interface FakeImage {
   isEmpty(): boolean
@@ -75,6 +84,157 @@ function contents(
   }
 }
 
+describe('captureBrowserScreenshotDataUrl', () => {
+  it('waits for current renderer bounds and requests a fresh frame instead of the cached copy', async () => {
+    const tab = contents()
+    const viewport = { innerWidth: 640, innerHeight: 400 }
+    let polls = 0
+    tab.executeJavaScript = (code): Promise<unknown> => {
+      tab.events.push('layout')
+      return Promise.resolve(
+        runInNewContext(code, {
+          window: viewport,
+          performance: { now: () => 0 },
+          setTimeout: (resolve: () => void) => {
+            polls += 1
+            viewport.innerWidth = 1280
+            viewport.innerHeight = 800
+            resolve()
+          },
+        }),
+      )
+    }
+    assert.equal(
+      await captureBrowserScreenshotDataUrl({
+        webContents: tab,
+        getContentSize: () => [1280, 800],
+      }),
+      'data:image/png;base64,1280',
+    )
+    assert.equal(polls, 1)
+    assert.deepEqual(tab.events, ['attach', 'layout', 'capture at 1', 'detach'])
+    assert.equal((await tab.capturePage()).getSize().width, 320, 'the cached copy remains stale')
+  })
+
+  it('shares the preview queue and captures only after its temporary zoom is restored', async () => {
+    const started = Promise.withResolvers<undefined>()
+    const firstFrame = Promise.withResolvers<unknown>()
+    let captures = 0
+    const tab = contents(() => {
+      captures += 1
+      if (captures === 1) {
+        started.resolve(undefined)
+        return firstFrame.promise
+      }
+      return Promise.resolve({ data: '1280' })
+    })
+    const preview = capturePreviewDataUrl(tab, decodeImage)
+    await started.promise
+    const screenshot = captureBrowserScreenshotDataUrl({
+      webContents: tab,
+      getContentSize: () => [1280, 800],
+    })
+    await Promise.resolve()
+    assert.equal(captures, 1)
+    assert.equal(tab.zoom(), 2)
+    firstFrame.resolve({ data: '1280' })
+    assert.equal(await preview, 'data:image/png;base64,1280')
+    assert.equal(await screenshot, 'data:image/png;base64,1280')
+    assert.equal(captures, 2)
+    assert.equal(tab.zoom(), 1)
+    assert.deepEqual(
+      tab.events.filter((event) => event.startsWith('capture at')),
+      ['capture at 2', 'capture at 1'],
+    )
+  })
+
+  it('preserves current zoom and an already attached debugger', async () => {
+    const tab = contents(undefined, 1.25, true)
+    assert.equal(
+      await captureBrowserScreenshotDataUrl({
+        webContents: tab,
+        getContentSize: () => [1280, 800],
+      }),
+      'data:image/png;base64,1280',
+    )
+    assert.equal(tab.zoom(), 1.25)
+    assert.equal(tab.debugger.isAttached(), true)
+    assert.deepEqual(tab.events, ['layout', 'capture at 1.25'])
+  })
+
+  it('propagates capture failures while preserving debugger ownership', async () => {
+    for (const existingDebugger of [false, true]) {
+      const failure = new Error('compositor unavailable')
+      const tab = contents(() => Promise.reject(failure), 1.25, existingDebugger)
+      await assert.rejects(
+        captureBrowserScreenshotDataUrl({ webContents: tab, getContentSize: () => [1280, 800] }),
+        (error: unknown) => error === failure,
+      )
+      assert.equal(tab.zoom(), 1.25)
+      assert.equal(tab.debugger.isAttached(), existingDebugger)
+      assert.equal(tab.events.includes('detach'), !existingDebugger)
+    }
+  })
+
+  it('rejects malformed screenshot responses and still releases its debugger', async () => {
+    for (const response of [null, {}, { data: 3 }]) {
+      const tab = contents(() => Promise.resolve(response))
+      await assert.rejects(
+        captureBrowserScreenshotDataUrl({ webContents: tab, getContentSize: () => [1280, 800] }),
+      )
+      assert.equal(tab.debugger.isAttached(), false)
+    }
+  })
+})
+
+describe('scoped preview promotion', () => {
+  it('rejects preview creation without a task scope', async () => {
+    await assert.rejects(
+      new BrowserSessionManager().preview('http://localhost:43123/'),
+      /scoped browser task/,
+    )
+  })
+
+  it('does not turn a denied preview URL into a capability for another task', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'copse-preview-promotion-'))
+    await writeFile(join(root, 'index.html'), '<h1>Private workspace</h1>')
+    try {
+      const preview = await getStaticPreviewServer(root)
+      let shownUrl = ''
+      setBrowserSessionPlatform({
+        createWindow() {
+          throw new Error('This test does not create a browser window')
+        },
+        getAgentSession() {
+          throw new Error('This test does not create an agent session')
+        },
+        authorizePreview() {
+          throw new Error('This test does not authorize a preview')
+        },
+        hasPreview() {
+          return false
+        },
+        showUrl(url) {
+          shownUrl = url
+        },
+        showArtefact() {},
+      })
+
+      await assert.rejects(
+        new BrowserSessionManager('another-task').showUrl(preview.url),
+        /not open in this browser task/,
+      )
+
+      assert.equal(shownUrl, '')
+      assert.equal((await fetch(preview.url)).status, 403)
+    } finally {
+      setBrowserSessionPlatform(null)
+      await shutdownStaticPreviewServers()
+      await rm(root, { recursive: true })
+    }
+  })
+})
+
 describe('capturePreviewDataUrl', () => {
   it('requests a fresh screenshot rather than copying a cached frame twice', async () => {
     const tab = contents()
@@ -110,7 +270,7 @@ describe('capturePreviewDataUrl', () => {
         return await result
       }
       assert.equal(
-        await capturePreviewDataUrl(tab, decodeImage, 1280, viewportWidth),
+        await capturePreviewDataUrl(tab, decodeImage, 1280, () => viewportWidth),
         'data:image/png;base64,1280',
       )
       assert.equal(polls, 1)

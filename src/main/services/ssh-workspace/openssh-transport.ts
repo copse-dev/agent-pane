@@ -2,17 +2,19 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
 import { mkdir, rename, rm } from 'node:fs/promises'
+import { connect as connectSocket } from 'node:net'
 import { basename, dirname, join } from 'node:path'
 import { Transform } from 'node:stream'
 import { StringDecoder } from 'node:string_decoder'
 import { pipeline } from 'node:stream/promises'
 import type { SshWorkspaceHost, SshExecResult } from '@shared/types/ssh-workspace.ts'
+import { sshDestinationProblem } from '@shared/ssh-destination.ts'
 import { getSetting } from '../storage/settings.ts'
 import type { SshStrictHostKeys } from './git-ssh-env.ts'
 import { leaseSshAskpassEnv } from './askpass.ts'
 import { controlSocketPath } from './ssh-paths.ts'
 import { buildRemoteArgvCommand, buildRemoteShellCommand } from './remote-exec.ts'
-import type { SshExecOptions, SshTransport } from './transport.ts'
+import type { SshConnectOptions, SshExecOptions, SshTransport } from './transport.ts'
 import {
   appendFlatCapped,
   COMMAND_OUTPUT_MAX_BYTES,
@@ -32,6 +34,10 @@ const CONTROL_PERSIST_SECONDS = 14_400
 // reconnects cleanly.
 const SERVER_ALIVE_INTERVAL_SECONDS = 30
 const SERVER_ALIVE_COUNT_MAX = 3
+/** `ssh -O check` only asks the local control socket, so it answers at once or not at all. */
+const LIVENESS_CHECK_TIMEOUT_MS = 10_000
+/** How long a reconnect nobody asked for may wait on an unreachable host. */
+const QUIET_CONNECT_TIMEOUT_S = '10'
 /** A media transfer is bounded by the caller's size check, but may outlast a normal command. */
 const FILE_TRANSFER_TIMEOUT_MS = 5 * 60_000
 
@@ -45,9 +51,20 @@ function keepaliveArgs(): string[] {
   ]
 }
 
+/**
+ * The destination argument for every ssh invocation Copse builds. A host or
+ * user that ssh would read as an option, or that is not a usable host name, is
+ * refused here rather than at entry alone, so a value already in storage is
+ * stopped at connect.
+ */
 function resolveTarget(host: SshWorkspaceHost): string {
   const hostname = host.host.trim()
-  if (host.user && !hostname.includes('@')) return `${host.user}@${hostname}`
+  // A host that carries its own `user@` is used as it is, so the separate user
+  // field never reaches the command line and is not checked.
+  const user = hostname.includes('@') ? undefined : host.user
+  const problem = sshDestinationProblem(host.host, user)
+  if (problem) throw new Error(`Cannot use SSH host “${host.id}”: ${problem.message}`)
+  if (user) return `${user}@${hostname}`
   return hostname
 }
 
@@ -92,6 +109,7 @@ function baseSshArgs(host: SshWorkspaceHost, controlPath: string): string[] {
   if (host.port) args.push('-p', String(host.port))
   if (host.identityFile) args.push('-i', host.identityFile)
   if (host.forwardAgent) args.push('-o', 'ForwardAgent=yes')
+  // The destination is validated in resolveTarget.
   args.push(resolveTarget(host))
   return args
 }
@@ -333,6 +351,24 @@ async function runLocalSshToFile(
   }
 }
 
+/**
+ * Whether a socket file is left over from a process that died: nothing
+ * listens on it, so connecting is refused. OpenSSH uses the same test before
+ * it unlinks a stale control socket.
+ */
+function isDeadSocket(path: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = connectSocket(path)
+    socket.once('connect', () => {
+      socket.destroy()
+      resolve(false)
+    })
+    socket.once('error', (error) => {
+      resolve('code' in error && error.code === 'ECONNREFUSED')
+    })
+  })
+}
+
 export class OpenSshTransport implements SshTransport {
   private connected = false
   private readonly host: SshWorkspaceHost
@@ -348,22 +384,48 @@ export class OpenSshTransport implements SshTransport {
     return this.connected
   }
 
-  async connect(): Promise<void> {
+  async checkAlive(): Promise<boolean> {
+    // Without a control master there is nothing to ask that would not open a
+    // new connection, and a new connection can prompt. Report what we know.
+    if (!supportsControlMaster()) return this.connected
+    // `-O check` only talks to the local control socket: it tells us whether
+    // the master process is still there, without touching the network or
+    // authenticating. A master whose peer vanished exits on its own once the
+    // keepalives above give up, so a dead link shows up here within ~90s. It
+    // asks even after a failed check: a command can rebuild the master on its
+    // own (`ControlMaster=auto`), and only asking notices that.
+    this.connected = await this.masterAnswers(LIVENESS_CHECK_TIMEOUT_MS)
+    return this.connected
+  }
+
+  /** Whether a control master answers on this host's socket. */
+  private async masterAnswers(timeoutMs: number): Promise<boolean> {
+    const check = await runLocalSsh(
+      this.host.id,
+      ['-O', 'check', '-S', this.controlPath, resolveTarget(this.host)],
+      { timeoutMs },
+    )
+    return check.code === 0
+  }
+
+  async connect(options: SshConnectOptions = {}): Promise<void> {
     const target = resolveTarget(this.host)
     if (supportsControlMaster()) {
       // These control commands must stay asynchronous. Authentication prompts
       // are answered by the askpass socket in this Electron main process; a
       // spawnSync here blocks that socket and deadlocks password/passphrase
       // connections before the first remote command can run.
-      const check = await runLocalSsh(
-        this.host.id,
-        ['-O', 'check', '-S', this.controlPath, target],
-        { timeoutMs: 15_000 },
-      )
-      if (check.code === 0) {
+      if (await this.masterAnswers(15_000)) {
         this.connected = true
         return
       }
+      // A master that died without cleaning up (SIGKILL, a crash) leaves its
+      // socket file behind, and `-O check` leaves it there. A new master that
+      // finds the path taken gives up multiplexing: it backgrounds as a plain
+      // connection and still exits 0, so every retry would leave one more
+      // `ssh` running. Clear the dead socket first, as OpenSSH's own
+      // `ControlMaster=auto` client does.
+      if (await isDeadSocket(this.controlPath)) await rm(this.controlPath, { force: true })
 
       // `-S` alone sets ControlPath; see baseSshArgs for why `-o ControlPath=` is unsafe.
       const masterArgs = [
@@ -379,6 +441,12 @@ export class OpenSshTransport implements SshTransport {
       if (this.host.port) masterArgs.push('-p', String(this.host.port))
       if (this.host.identityFile) masterArgs.push('-i', this.host.identityFile)
       if (this.host.forwardAgent) masterArgs.push('-o', 'ForwardAgent=yes')
+      // BatchMode makes OpenSSH fail instead of asking for a password, a key
+      // passphrase or a host-key decision, and the bounded connect keeps an
+      // unreachable host from holding the attempt open.
+      if (options.quiet) {
+        masterArgs.push('-o', 'BatchMode=yes', '-o', `ConnectTimeout=${QUIET_CONNECT_TIMEOUT_S}`)
+      }
       masterArgs.push(target)
 
       const master = await runLocalSsh(this.host.id, masterArgs, { timeoutMs: 30_000 })
@@ -387,8 +455,18 @@ export class OpenSshTransport implements SshTransport {
           master.stderr.trim() || master.stdout.trim() || 'SSH control connection failed',
         )
       }
+      // `-fNM` also exits 0 when it could not take the socket (above), so only
+      // a master that answers on it is a connection the rest of Copse can use.
+      if (!(await this.masterAnswers(15_000))) {
+        throw new Error(
+          master.stderr.trim() || 'SSH connected, but its control socket did not answer',
+        )
+      }
       this.connected = true
     } else {
+      // Every command authenticates afresh here, so there is no way to probe
+      // without risking a prompt.
+      if (options.quiet) throw new Error('A quiet SSH reconnect needs ControlMaster support')
       // Windows OpenSSH lacks ControlMaster — verify reachability with a no-op exec.
       const probe = await this.execArgv(['true'], { timeoutMs: 15_000 })
       if (probe.code !== 0) {
