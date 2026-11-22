@@ -171,7 +171,11 @@ describe('native PR and commit provenance', function () {
     await saveElementScreenshot('#pane-files', screenshot)
   }
 
-  it('records actual tools, shows both directions, and reports exact and unknown commits', async () => {
+  let recorded = false
+
+  /** Commit, open the PR and add a chat that links it: the state both tests read.
+   * The restart test records it itself when run alone (e2e burn-in runs each test alone). */
+  async function recordProvenance(): Promise<void> {
     await runTool(
       'git_commit',
       { message: 'Native provenance commit' },
@@ -210,6 +214,20 @@ describe('native PR and commit provenance', function () {
         updatedAt: 1,
       })
     }, PROJECT)
+    recorded = true
+  }
+
+  async function nameProducer(): Promise<void> {
+    await browser.execute(
+      async ({ project, id }) => {
+        await window.api.threads.updateMeta(project, id, { title: 'Implementation chat' })
+      },
+      { project: PROJECT, id: producer },
+    )
+  }
+
+  it('records actual tools, shows both directions, and reports exact and unknown commits', async () => {
+    await recordProvenance()
     await assertRelations()
     await runTool(
       'gh_pr_view',
@@ -226,18 +244,17 @@ describe('native PR and commit provenance', function () {
     assert.match(output, /Producing threads:/)
     assert.ok(output.includes(`${git('rev-parse', 'HEAD')}: recorded in ${producer}`))
     assert.ok(output.includes(`${'f'.repeat(40)}: unknown`))
-    await browser.execute(
-      async ({ project, id }) => {
-        await window.api.threads.updateMeta(project, id, { title: 'Implementation chat' })
-      },
-      { project: PROJECT, id: producer },
-    )
+    await nameProducer()
     await browser.refresh()
     await $('.chat-row.selected').waitForExist({ timeout: 30_000 })
     await showRelationships('pr-native-provenance.png')
   })
 
   it('retains producing and related chats after an offline process restart', async () => {
+    if (!recorded) {
+      await recordProvenance()
+      await nameProducer()
+    }
     writeE2eEnv({ COPSE_PANEL_MOCK_GH_STATUS: 'unavailable' })
     await browser.reloadSession()
     await $('.chat-row.selected').waitForExist({ timeout: 30_000 })

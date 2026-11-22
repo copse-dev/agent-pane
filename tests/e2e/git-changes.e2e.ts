@@ -74,6 +74,14 @@ async function waitForDiffOf(path: string): Promise<void> {
   )
 }
 
+/** Open local review unless an earlier test left it open, so each test also passes
+ * when run on its own (e2e burn-in runs every test alone). */
+async function showLocalChanges(): Promise<void> {
+  if (await $('#git-changes-host').isDisplayed()) return
+  await $('.titlebar-btn[aria-label="Open review"]').click()
+  await $('#git-changes-host').waitForDisplayed({ timeout: 30_000 })
+}
+
 describe('git changes viewer', function () {
   this.timeout(120_000)
 
@@ -303,6 +311,7 @@ describe('git changes viewer', function () {
   })
 
   it('opens the diff of a file that was committed rather than left dirty', async () => {
+    await showLocalChanges()
     const committedRow = await $('.git-change-row-committed').getElement()
     await committedRow.waitForDisplayed({ timeout: 30_000 })
     await expect(committedRow.$('.git-change-path')).toHaveText('committed.ts')
@@ -333,6 +342,7 @@ describe('git changes viewer', function () {
   })
 
   it('paints change letters and diff washes from the status tokens in both themes', async () => {
+    await showLocalChanges()
     // Add the two statuses the fixture lacks: a staged rename and a deletion.
     // `after` resets the fixture (`checkout -f HEAD` + `clean -fd`), undoing both.
     execFileSync('git', ['mv', 'staged.ts', 'staged-moved.ts'], { cwd: repoRoot, stdio: 'pipe' })
