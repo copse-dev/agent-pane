@@ -350,7 +350,7 @@ await cp('src/renderer/icon-previews', `${rendererOutDir}/icon-previews`, { recu
 // packaging byte-identical.
 const monacoBaseUrl = isDemo ? (process.env['MONACO_BASE_URL'] ?? '').trim() : ''
 if (monacoBaseUrl === '') {
-  copyMonacoWorkers(rendererOutDir)
+  await copyMonacoWorkers(rendererOutDir)
 } else {
   console.log(`[build] Monaco served from ${monacoBaseUrl} — not copying the vs/ tree`)
   const indexPath = `${rendererOutDir}/index.html`
