@@ -225,6 +225,10 @@
       "sha256": "9d424c4b77633478be2043028aa103c30af8cff5e927025ab4779c35c385f56e",
       "bytes": 110675
     },
+    "acp-tool-continuation.png": {
+      "sha256": "a91aa232a8160b835706a8ea4287927b60c530b1efd04b387108eb74b924e82d",
+      "bytes": 347787
+    },
     "acp-tool-diff.png": {
       "sha256": "02e87114ec9f5509cef47a1ba0b35742e7cd61df45345193704cc918545e9a15",
       "bytes": 301710
@@ -648,6 +652,14 @@
     "approval-reasons-list.png": {
       "sha256": "acc4ba546c86854fd1698bd1d90a633a6ab90b946f38f4c6bb0af5966c6fc1c0",
       "bytes": 70674
+    },
+    "approval-settings-pending.png": {
+      "sha256": "95e9beca5171d069602ac5017bc829bc5851df8d07f6930aaa44e30436d34471",
+      "bytes": 86792
+    },
+    "approval-settings-restored.png": {
+      "sha256": "140385934c6610994cf45aa4f7c1c217bddd9e436b5970f197cca4d6822f8e43",
+      "bytes": 19794
     },
     "approval-thread-orchestrate.png": {
       "sha256": "3d758e1649c38177c59ea911dc1514290dd4ea24292f2c14babd913e7f784ce6",
@@ -3621,6 +3633,10 @@
       "sha256": "9b9510686f91583cbb6550a4409ae97a65b344f1cc88146cd24ab503088d0c20",
       "bytes": 358993
     },
+    "project-preview-permission-choice.png": {
+      "sha256": "6de2bd35022671bad110cd43bc7dd6dac2031e0d971137e608386eecdc49c8e4",
+      "bytes": 33744
+    },
     "project-quarantine-recovery-dismissed.png": {
       "sha256": "0a069fa29efdf4ec781ea7eed9b6839cc23bb8878a5f2057a97c518327d5a7d5",
       "bytes": 84841
@@ -3822,8 +3838,8 @@
       "bytes": 305156
     },
     "read-outside-approval-expanded.png": {
-      "sha256": "52619a2aeccd01705392fd908f3e05125089117e7a9b29f92ae70280c009227b",
-      "bytes": 315590
+      "sha256": "2378b7a4084fdf785678686f736c8bbb90023cfe44f7c49d3f9a5ce7e7980176",
+      "bytes": 320857
     },
     "read-outside-parent-traversal-reprompt.png": {
       "sha256": "0e28f13ed9420de1ec18ab8cc542fb1f44ad3202e70d10688b24db646073a19d",
