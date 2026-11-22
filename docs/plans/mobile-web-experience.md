@@ -838,8 +838,11 @@ by hand, on a device the app cannot reach.
   ACME/DNS service as breaking "no Copse-hosted backend". The Copse names service now runs the
   `u.copse.me` zone and ACME issuance for a per-Mac name
   ([remote-access.md](../remote-access.md)); it sees CSRs and private LAN addresses, never
-  thread data, and the Mac's keys never leave it. A Copse relay for reaching the Mac from
-  outside its network is phase 2 of that work and remains outside this plan.
+  thread data, and the Mac's keys never leave it. _Amended November 2026:_ phase 2 of that work,
+  a Copse relay that passes TLS through to the Mac from outside its network, is built on the Mac
+  side and off by default ([remote-access.md](../remote-access.md#from-anywhere-the-relay-and-copseme)).
+  It serves this plan's phone client, allow-list, device tokens and desktop-approved pairing
+  unchanged; the relayed path only replaces the private-peer check with an exact `web.` name.
 - mDNS/Bonjour advertisement. It broadcasts a live control plane to every network the
   laptop ever joins, and `.local` names are spoofable by any peer — which the app's own
   outbound policy already refuses for exactly this reason.

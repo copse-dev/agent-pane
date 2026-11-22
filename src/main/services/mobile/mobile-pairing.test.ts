@@ -37,10 +37,28 @@ it('grants control over the LAN IP only with the local-root acknowledgement', as
 
 it('grants control on desktop approval alone over the trusted name', async () => {
   const requests = new MobilePairing()
-  const result = requests.request('Phone', '123456', new AbortController().signal, true)
+  const result = requests.request('Phone', '123456', new AbortController().signal, {
+    trustedName: true,
+    relayed: false,
+  })
   const current = requests.current()
   assert.ok(current)
   assert.equal(current.trustedName, true)
+  assert.equal(current.relayed, false)
+  assert.equal(requests.respond('control', current.code, current.id), true)
+  assert.equal(await result, 'control')
+})
+
+it('shows the desktop that a phone asked through the relay', async () => {
+  const requests = new MobilePairing()
+  const result = requests.request('Phone', '123456', new AbortController().signal, {
+    trustedName: true,
+    relayed: true,
+  })
+  const current = requests.current()
+  assert.ok(current)
+  assert.equal(current.relayed, true)
+  // The relay serves only the publicly trusted name, so approval alone grants control.
   assert.equal(requests.respond('control', current.code, current.id), true)
   assert.equal(await result, 'control')
 })

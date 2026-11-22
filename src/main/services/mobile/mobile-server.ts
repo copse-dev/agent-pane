@@ -1,13 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import { type IncomingMessage, type ServerResponse } from 'node:http'
 import { createServer, type Server } from 'node:https'
+import type { Duplex } from 'node:stream'
 import { createSecureContext, type SecureContext } from 'node:tls'
 import { networkInterfaces, type NetworkInterfaceInfo } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { isPrivateOrLinkLocalHost } from '@copse/llm/credential-url.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
-import { mobileResponseHeaders } from '../../../shared/mobile-asset-routes.ts'
+import { mobileResponseHeaders, shellFramableHeaders } from '../../../shared/mobile-asset-routes.ts'
 import { remoteScopeFromQuery } from '../../../shared/remote-interface.ts'
 import {
   assetResponse,
@@ -25,6 +26,8 @@ import {
   mobileProjects,
 } from './mobile-activity.ts'
 import { mobileCertificate } from './mobile-certificate.ts'
+import type { PairingVia } from './mobile-pairing.ts'
+import { createRelayIngress } from './relay-ingress.ts'
 import { MobileDevices } from './mobile-devices.ts'
 import { loadPageAssets } from './page-assets.ts'
 import { loadRemoteAssets } from './remote-assets.ts'
@@ -110,16 +113,45 @@ export function mobileRequestAllowed(
   return true
 }
 
+/**
+ * The boundary for a request that arrived through the Copse relay. There is no
+ * private peer to check: the relay admits only source addresses that a
+ * copse.me account paired with this Mac refreshed in the last few minutes.
+ * `Host` must be exactly this Mac's `web.<label>.u.copse.me` (browsers omit
+ * the default port) and `Origin` its origin. Every route past pairing still
+ * needs a device token, and pairing still needs the desktop's approval.
+ */
+export function relayedRequestAllowed(req: IncomingMessage, hostname: string): boolean {
+  if (req.headers.host !== hostname) return false
+  const origin = `https://${hostname}`
+  if (req.headers.origin !== undefined && req.headers.origin !== origin) return false
+  if (req.method !== 'GET' && req.headers.origin !== origin) return false
+  return true
+}
+
 const JSON_HEADERS = mobileResponseHeaders('application/json; charset=utf-8')
 
+/** Responses served under a trusted name, which only the copse.me shell may frame. */
+const shellFramed = new WeakSet<ServerResponse>()
+
+function headersFor(res: ServerResponse, headers: Record<string, string>): Record<string, string> {
+  return shellFramed.has(res) ? shellFramableHeaders(headers) : headers
+}
+
 function send(res: ServerResponse, status: number, value: unknown): void {
-  res.writeHead(status, JSON_HEADERS)
+  res.writeHead(status, headersFor(res, JSON_HEADERS))
   res.end(JSON.stringify(value))
 }
 
 function write(res: ServerResponse, spec: ResponseSpec): void {
-  res.writeHead(spec.status, spec.headers)
+  res.writeHead(spec.status, headersFor(res, spec.headers))
   res.end(spec.body ?? undefined)
+}
+
+/** How a request that passed its transport's boundary check arrived. */
+interface RequestRoute extends PairingVia {
+  /** Who failed-auth limits and pairing polls are keyed to. */
+  peer: string
 }
 
 function preferences(req: IncomingMessage): RequestPreferences {
@@ -152,6 +184,12 @@ export interface MobileServer {
   rootPath: string
   devices: MobileDevices
   isRunning(): boolean
+  /**
+   * Serve one browser connection that reached this Mac through the Copse
+   * relay: its TLS bytes from the ClientHello on, completed here with the
+   * trusted name's certificate.
+   */
+  acceptRelayed(stream: Duplex, clientIp: string): void
   close(): Promise<void>
 }
 
@@ -162,7 +200,7 @@ export async function startMobileServer(options: {
     label: string,
     code: string,
     signal: AbortSignal,
-    trustedName: boolean,
+    via: PairingVia,
   ) => Promise<ClientAccess | null>
   /** The publicly trusted name and certificate to serve beside the LAN IP, while valid. */
   publicIdentity?: () => PublicIdentity | null
@@ -198,7 +236,10 @@ export async function startMobileServer(options: {
       options.onDevicesChanged?.()
     },
     approve: (label, code, signal, context): Promise<ClientAccess | null> =>
-      options.approvePair(label, code, signal, context?.trustedName === true),
+      options.approvePair(label, code, signal, {
+        trustedName: context?.trustedName === true,
+        relayed: context?.relayed === true,
+      }),
   })
   let authority = ''
   let port = 0
@@ -238,220 +279,243 @@ export async function startMobileServer(options: {
       },
     },
     (req, res) => {
-      void (async (): Promise<void> => {
-        if (!active() || !mobileRequestAllowed(req, authorities())) {
-          send(res, 403, { error: 'Forbidden' })
-          return
-        }
-        const origin = `https://${req.headers.host ?? authority}`
-        const trustedName = req.headers.host !== authority
-        const path = new URL(req.url ?? '/', origin)
-        // Polled reads carry a validator and a negotiated coding: an unchanged
-        // answer is a bodiless 304, and a changed one travels compressed.
-        const reply = async (
-          status: number,
-          value: unknown,
-          etag?: string | true,
-        ): Promise<void> => {
-          write(res, await jsonResponse(JSON_HEADERS, status, value, preferences(req), etag))
-        }
-        if (req.method === 'GET') {
-          const file = staticFiles.get(path.pathname) ?? remoteAssets.get(path.pathname)
-          if (file) {
-            write(
-              res,
-              await assetResponse(file, {
-                ...preferences(req),
-                version: path.searchParams.get('v'),
-              }),
-            )
-            return
-          }
-        }
-        if (req.method === 'POST' && path.pathname === '/api/pair/request') {
-          const raw = await readBody(req, 1024)
-          const body = raw === null ? null : safeJsonParse(raw, decodeWithSchema(pairSchema))
-          if (!body) {
-            send(res, 400, { error: 'Invalid pairing request' })
-            return
-          }
-          if (!active()) {
-            send(res, 403, { error: 'Mobile Companion stopped' })
-            return
-          }
-          const pairing = pairings.request(body.label, req.socket.remoteAddress, { trustedName })
-          if (!pairing) {
-            send(res, 429, { error: 'Pairing already in progress' })
-            return
-          }
-          send(res, 200, pairing)
-          return
-        }
-        // Never compressed: this answer carries a bearer token (BREACH).
-        if (req.method === 'GET' && path.pathname === '/api/pair/result') {
-          const id = path.searchParams.get('id') ?? ''
-          const pairing = pairings.poll(id, req.socket.remoteAddress)
-          if (!pairing) {
-            send(res, 404, { error: 'Pairing expired' })
-            return
-          }
-          send(res, 200, pairing.state === 'pending' ? { state: 'waiting' } : pairing)
-          return
-        }
-        // The bearer check precedes every protected body read and store access.
-        const peer = req.socket.remoteAddress ?? ''
-        const prior = failedAuth.get(peer)
-        if (prior && prior.blockedUntil > Date.now()) {
-          send(res, 429, { error: 'Too many failed requests' })
-          return
-        }
-        const principal = options.devices.principal(req.headers.authorization)
-        if (!principal) {
-          const attempts =
-            prior?.blockedUntil && prior.blockedUntil < Date.now() ? 1 : (prior?.attempts ?? 0) + 1
-          failedAuth.set(peer, {
-            attempts,
-            blockedUntil: attempts >= 30 ? Date.now() + 300_000 : 0,
-          })
-          send(res, 401, { error: 'Pair this phone from Copse on the desktop' })
-          return
-        }
-        failedAuth.delete(peer)
-        if (
-          (req.method === 'GET' && path.pathname === '/api/remote/state') ||
-          (req.method === 'POST' && path.pathname === '/api/remote/read')
-        ) {
-          const authorized = (): boolean =>
-            active() && options.devices.principal(req.headers.authorization, 'control') !== null
-          // Check control before reading a body, then again when the desktop replies.
-          if (!authorized()) {
-            send(res, 403, { error: 'Enable control for this phone on the Mac.' })
-            return
-          }
-          const body = req.method === 'POST' ? await readBody(req, 262_144) : undefined
-          const scope = req.method === 'GET' ? remoteScopeFromQuery(path.searchParams) : undefined
-          if (body === null || scope === null) {
-            send(res, 400, { error: 'Invalid remote request.' })
-            return
-          }
-          const result = await remoteHttp(remoteInterface, authorized, body, scope)
-          const state = req.method === 'GET' && result.status === 200 ? result.body : null
-          let spec: ResponseSpec
-          if (typeof state === 'object' && state !== null) {
-            let serialized = serializedStates.get(state)
-            if (!serialized) {
-              const text = JSON.stringify(state)
-              serialized = { text, etag: entityTag(text) }
-              serializedStates.set(state, serialized)
+      serve(req, res, () =>
+        mobileRequestAllowed(req, authorities())
+          ? {
+              peer: req.socket.remoteAddress ?? '',
+              trustedName: req.headers.host !== authority,
+              relayed: false,
             }
-            spec = await textResponse(
-              JSON_HEADERS,
-              200,
-              serialized.text,
-              preferences(req),
-              serialized.etag,
-            )
-          } else {
-            spec = await jsonResponse(JSON_HEADERS, result.status, result.body, preferences(req))
-          }
-          // Encoding is asynchronous: control may have been revoked since remoteHttp checked.
-          if (result.status === 200 && !authorized()) {
-            send(res, 403, { error: 'Phone control was disabled.' })
-            return
-          }
-          write(res, spec)
-          return
-        }
-        if (req.method === 'POST' && path.pathname === '/api/action') {
-          if (principal.access !== 'control') {
-            send(res, 403, {
-              error:
-                'Enable control for this phone in Settings → Experimental → Mobile Companion on the Mac.',
-            })
-            return
-          }
-          const raw = await readBody(req, 4_300_000)
-          const action =
-            raw === null ? null : safeJsonParse(raw, decodeWithSchema(mobileActionSchema))
-          if (!action) {
-            send(res, 400, { error: 'Invalid action.' })
-            return
-          }
-          const stillAuthorized = (): boolean =>
-            !stopped && options.devices.principal(req.headers.authorization, 'control') !== null
-          if (!stillAuthorized()) {
-            send(res, 403, { error: 'Phone control was disabled.' })
-            return
-          }
-          const result = await actions.run(action, principal, () =>
-            performMobileAction(action, principal, stillAuthorized),
-          )
-          send(res, result.status, result.body)
-          return
-        }
-        if (req.method === 'GET' && path.pathname === '/api/activity') {
-          const feed = {
-            rows: await MOBILE_READ_DISPATCH.activity(),
-            projects: mobileProjects(),
-            access: principal.access,
-            sessionId: actions.sessionId,
-          }
-          // `refreshedAt` moves on every poll; the validator covers the rest, so
-          // a quiet desktop answers 304 and the phone keeps the list it has.
-          await reply(200, { ...feed, refreshedAt: Date.now() }, entityTag(JSON.stringify(feed)))
-          return
-        }
-        const imageMatch = /^\/api\/thread\/([^/]+)\/([^/]+)\/image\/([^/]+)\/(\d+)$/.exec(
-          path.pathname,
-        )
-        const imageProjectId = imageMatch?.[1] ?? ''
-        const imageThreadId = imageMatch?.[2] ?? ''
-        const imageMessageId = imageMatch?.[3] ?? ''
-        if (
-          req.method === 'GET' &&
-          imageMatch &&
-          idPattern.test(imageProjectId) &&
-          idPattern.test(imageThreadId) &&
-          idPattern.test(imageMessageId)
-        ) {
-          const image = await MOBILE_READ_DISPATCH.threadImage(
-            imageProjectId,
-            imageThreadId,
-            imageMessageId,
-            Number(imageMatch[4]),
-          )
-          // Base64 gives back about a quarter of its size to the response coding.
-          await reply(image ? 200 : 404, image ? { image } : { error: 'Image unavailable' })
-          return
-        }
-        const match = /^\/api\/thread\/([^/]+)\/([^/]+)$/.exec(path.pathname)
-        const projectId = match?.[1] ?? ''
-        const threadId = match?.[2] ?? ''
-        if (
-          req.method === 'GET' &&
-          idPattern.test(projectId) &&
-          idPattern.test(threadId) &&
-          match
-        ) {
-          const thread = await MOBILE_READ_DISPATCH.thread(projectId, threadId)
-          if (!thread) {
-            send(res, 404, { error: 'Thread unavailable' })
-            return
-          }
-          await reply(
-            200,
-            { ...thread, access: principal.access, sessionId: actions.sessionId },
-            true,
-          )
-          return
-        }
-        send(res, 404, { error: 'Not found' })
-      })().catch(() => {
-        if (!res.headersSent) send(res, 500, { error: 'Request failed' })
-        else res.destroy()
-      })
+          : null,
+      )
     },
   )
+  const relayed = createRelayIngress({
+    identity: publicIdentity,
+    handle: (req, res, clientIp) => {
+      serve(req, res, () => {
+        const web = publicIdentity()?.web
+        return web && relayedRequestAllowed(req, web)
+          ? { peer: `relay ${clientIp}`, trustedName: true, relayed: true }
+          : null
+      })
+    },
+  })
+  function serve(
+    req: IncomingMessage,
+    res: ServerResponse,
+    admit: () => RequestRoute | null,
+  ): void {
+    void (async (): Promise<void> => {
+      const route = active() ? admit() : null
+      if (!route) {
+        send(res, 403, { error: 'Forbidden' })
+        return
+      }
+      if (route.trustedName) shellFramed.add(res)
+      await handle(req, res, route)
+    })().catch(() => {
+      if (!res.headersSent) send(res, 500, { error: 'Request failed' })
+      else res.destroy()
+    })
+  }
+  async function handle(
+    req: IncomingMessage,
+    res: ServerResponse,
+    route: RequestRoute,
+  ): Promise<void> {
+    const origin = `https://${req.headers.host ?? authority}`
+    const path = new URL(req.url ?? '/', origin)
+    // Polled reads carry a validator and a negotiated coding: an unchanged
+    // answer is a bodiless 304, and a changed one travels compressed.
+    const reply = async (status: number, value: unknown, etag?: string | true): Promise<void> => {
+      write(res, await jsonResponse(JSON_HEADERS, status, value, preferences(req), etag))
+    }
+    if (req.method === 'GET') {
+      const file = staticFiles.get(path.pathname) ?? remoteAssets.get(path.pathname)
+      if (file) {
+        write(
+          res,
+          await assetResponse(file, {
+            ...preferences(req),
+            version: path.searchParams.get('v'),
+          }),
+        )
+        return
+      }
+    }
+    if (req.method === 'POST' && path.pathname === '/api/pair/request') {
+      const raw = await readBody(req, 1024)
+      const body = raw === null ? null : safeJsonParse(raw, decodeWithSchema(pairSchema))
+      if (!body) {
+        send(res, 400, { error: 'Invalid pairing request' })
+        return
+      }
+      if (!active()) {
+        send(res, 403, { error: 'Mobile Companion stopped' })
+        return
+      }
+      const pairing = pairings.request(body.label, route.peer, {
+        trustedName: route.trustedName,
+        relayed: route.relayed,
+      })
+      if (!pairing) {
+        send(res, 429, { error: 'Pairing already in progress' })
+        return
+      }
+      send(res, 200, pairing)
+      return
+    }
+    // Never compressed: this answer carries a bearer token (BREACH).
+    if (req.method === 'GET' && path.pathname === '/api/pair/result') {
+      const id = path.searchParams.get('id') ?? ''
+      const pairing = pairings.poll(id, route.peer)
+      if (!pairing) {
+        send(res, 404, { error: 'Pairing expired' })
+        return
+      }
+      send(res, 200, pairing.state === 'pending' ? { state: 'waiting' } : pairing)
+      return
+    }
+    // The bearer check precedes every protected body read and store access.
+    const peer = route.peer
+    const prior = failedAuth.get(peer)
+    if (prior && prior.blockedUntil > Date.now()) {
+      send(res, 429, { error: 'Too many failed requests' })
+      return
+    }
+    const principal = options.devices.principal(req.headers.authorization)
+    if (!principal) {
+      const attempts =
+        prior?.blockedUntil && prior.blockedUntil < Date.now() ? 1 : (prior?.attempts ?? 0) + 1
+      failedAuth.set(peer, {
+        attempts,
+        blockedUntil: attempts >= 30 ? Date.now() + 300_000 : 0,
+      })
+      send(res, 401, { error: 'Pair this phone from Copse on the desktop' })
+      return
+    }
+    failedAuth.delete(peer)
+    if (
+      (req.method === 'GET' && path.pathname === '/api/remote/state') ||
+      (req.method === 'POST' && path.pathname === '/api/remote/read')
+    ) {
+      const authorized = (): boolean =>
+        active() && options.devices.principal(req.headers.authorization, 'control') !== null
+      // Check control before reading a body, then again when the desktop replies.
+      if (!authorized()) {
+        send(res, 403, { error: 'Enable control for this phone on the Mac.' })
+        return
+      }
+      const body = req.method === 'POST' ? await readBody(req, 262_144) : undefined
+      const scope = req.method === 'GET' ? remoteScopeFromQuery(path.searchParams) : undefined
+      if (body === null || scope === null) {
+        send(res, 400, { error: 'Invalid remote request.' })
+        return
+      }
+      const result = await remoteHttp(remoteInterface, authorized, body, scope)
+      const state = req.method === 'GET' && result.status === 200 ? result.body : null
+      let spec: ResponseSpec
+      if (typeof state === 'object' && state !== null) {
+        let serialized = serializedStates.get(state)
+        if (!serialized) {
+          const text = JSON.stringify(state)
+          serialized = { text, etag: entityTag(text) }
+          serializedStates.set(state, serialized)
+        }
+        spec = await textResponse(
+          JSON_HEADERS,
+          200,
+          serialized.text,
+          preferences(req),
+          serialized.etag,
+        )
+      } else {
+        spec = await jsonResponse(JSON_HEADERS, result.status, result.body, preferences(req))
+      }
+      // Encoding is asynchronous: control may have been revoked since remoteHttp checked.
+      if (result.status === 200 && !authorized()) {
+        send(res, 403, { error: 'Phone control was disabled.' })
+        return
+      }
+      write(res, spec)
+      return
+    }
+    if (req.method === 'POST' && path.pathname === '/api/action') {
+      if (principal.access !== 'control') {
+        send(res, 403, {
+          error:
+            'Enable control for this phone in Settings → Experimental → Mobile Companion on the Mac.',
+        })
+        return
+      }
+      const raw = await readBody(req, 4_300_000)
+      const action = raw === null ? null : safeJsonParse(raw, decodeWithSchema(mobileActionSchema))
+      if (!action) {
+        send(res, 400, { error: 'Invalid action.' })
+        return
+      }
+      const stillAuthorized = (): boolean =>
+        !stopped && options.devices.principal(req.headers.authorization, 'control') !== null
+      if (!stillAuthorized()) {
+        send(res, 403, { error: 'Phone control was disabled.' })
+        return
+      }
+      const result = await actions.run(action, principal, () =>
+        performMobileAction(action, principal, stillAuthorized),
+      )
+      send(res, result.status, result.body)
+      return
+    }
+    if (req.method === 'GET' && path.pathname === '/api/activity') {
+      const feed = {
+        rows: await MOBILE_READ_DISPATCH.activity(),
+        projects: mobileProjects(),
+        access: principal.access,
+        sessionId: actions.sessionId,
+      }
+      // `refreshedAt` moves on every poll; the validator covers the rest, so
+      // a quiet desktop answers 304 and the phone keeps the list it has.
+      await reply(200, { ...feed, refreshedAt: Date.now() }, entityTag(JSON.stringify(feed)))
+      return
+    }
+    const imageMatch = /^\/api\/thread\/([^/]+)\/([^/]+)\/image\/([^/]+)\/(\d+)$/.exec(
+      path.pathname,
+    )
+    const imageProjectId = imageMatch?.[1] ?? ''
+    const imageThreadId = imageMatch?.[2] ?? ''
+    const imageMessageId = imageMatch?.[3] ?? ''
+    if (
+      req.method === 'GET' &&
+      imageMatch &&
+      idPattern.test(imageProjectId) &&
+      idPattern.test(imageThreadId) &&
+      idPattern.test(imageMessageId)
+    ) {
+      const image = await MOBILE_READ_DISPATCH.threadImage(
+        imageProjectId,
+        imageThreadId,
+        imageMessageId,
+        Number(imageMatch[4]),
+      )
+      // Base64 gives back about a quarter of its size to the response coding.
+      await reply(image ? 200 : 404, image ? { image } : { error: 'Image unavailable' })
+      return
+    }
+    const match = /^\/api\/thread\/([^/]+)\/([^/]+)$/.exec(path.pathname)
+    const projectId = match?.[1] ?? ''
+    const threadId = match?.[2] ?? ''
+    if (req.method === 'GET' && idPattern.test(projectId) && idPattern.test(threadId) && match) {
+      const thread = await MOBILE_READ_DISPATCH.thread(projectId, threadId)
+      if (!thread) {
+        send(res, 404, { error: 'Thread unavailable' })
+        return
+      }
+      await reply(200, { ...thread, access: principal.access, sessionId: actions.sessionId }, true)
+      return
+    }
+    send(res, 404, { error: 'Not found' })
+  }
   server.maxConnections = 8
   server.headersTimeout = 10_000
   server.requestTimeout = 15_000
@@ -460,6 +524,7 @@ export async function startMobileServer(options: {
     if (stopped) return
     stopped = true
     pairings.close()
+    relayed.close()
     server.closeAllConnections()
     await new Promise<void>((resolve) =>
       server.close(() => {
@@ -491,6 +556,9 @@ export async function startMobileServer(options: {
       rootPath: identity.rootPath,
       devices: options.devices,
       isRunning: () => !stopped,
+      acceptRelayed: (stream, clientIp): void => {
+        relayed.accept(stream, clientIp)
+      },
       close: stop,
     }
   } catch (error) {

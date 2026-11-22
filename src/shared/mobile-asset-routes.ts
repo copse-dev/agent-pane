@@ -19,6 +19,30 @@ export function mobileResponseHeaders(contentType: string): Record<string, strin
   }
 }
 
+/** The `copse.me` shell: the one page that may frame this Mac's trusted names. */
+export const COPSE_SHELL_ORIGIN = 'https://copse.me'
+
+/**
+ * The same headers for a response served under this Mac's trusted name
+ * (`lan.` or `web.<label>.u.copse.me`), which the `copse.me` shell frames
+ * (copse-web-access plan, decision 9): `frame-ancestors` names the shell and
+ * nothing wider, and `X-Frame-Options: DENY` goes, since it would override it
+ * in older browsers. The bare-IP origin is never framed and keeps both.
+ */
+export function shellFramableHeaders(headers: Record<string, string>): Record<string, string> {
+  const policy = headers['Content-Security-Policy']
+  if (headers['X-Frame-Options'] !== 'DENY' || !policy?.includes("frame-ancestors 'none'"))
+    return headers
+  const framable: Record<string, string> = {}
+  for (const [name, value] of Object.entries(headers))
+    if (name !== 'X-Frame-Options') framable[name] = value
+  framable['Content-Security-Policy'] = policy.replace(
+    "frame-ancestors 'none'",
+    `frame-ancestors ${COPSE_SHELL_ORIGIN}`,
+  )
+  return framable
+}
+
 /**
  * The fixed asset routes, by URL path. Nothing here is derived from a request.
  *

@@ -40,6 +40,16 @@ export const E2E_SHELL = join(process.cwd(), 'tests/e2e/fixtures/e2e-bash-shell.
 export const E2E_NAMES_API_PORT = 42781
 export const E2E_NAMES_API_URL = `http://127.0.0.1:${String(E2E_NAMES_API_PORT)}`
 
+/**
+ * The relay every e2e app tunnels to (`COPSE_RELAY`): `localhost`, because the
+ * relay routes on the TLS server name and an IP literal is never sent as one.
+ * Nothing listens here unless a spec starts `tests/helpers/fake-relay.ts` on
+ * `E2E_RELAY_PORT` and trusts its root through `COPSE_E2E_EXTRA_CA_CERTS`
+ * (applied by `electron-shell/bootstrap.cjs`).
+ */
+export const E2E_RELAY_PORT = 42782
+export const E2E_RELAY = `localhost:${String(E2E_RELAY_PORT)}`
+
 /** Patch electron-shell env before `browser.reloadSession()` (see bootstrap.cjs). */
 export function writeE2eEnv(overrides: Record<string, string | undefined>): void {
   const env: Record<string, string> = {

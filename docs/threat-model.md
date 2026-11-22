@@ -31,9 +31,11 @@ We design for that.
 - **The names device key** — the P-256 key in `~/.copse/names/device.json`, sealed by the
   keyring cipher, is the only credential for this Mac's label with the Copse names service
   ([remote-access.md](remote-access.md)). Whoever holds it can point `lan.<label>.u.copse.me` at
-  any private address and order certificates for `*.<label>.u.copse.me`. The TLS key for the
-  current certificate (`~/.copse/names/tls-key.pem`, 0600) can impersonate that name until the
-  certificate expires, about six days after issue.
+  any private address and order certificates for `*.<label>.u.copse.me`. It also authenticates the
+  label's relay tunnel, so its holder can take that tunnel over (the relay keeps the newest one).
+  The TLS key for the current certificate (`~/.copse/names/tls-key.pem`, 0600) can impersonate
+  that name, on the LAN and through the relay, until the certificate expires, about six days after
+  issue.
 
 ## Adversary model
 
@@ -66,6 +68,7 @@ human approval** before it can reach the host or the network, and should leave a
 | Session vs. runtime        | Durable thread and execution metadata   | Replaceable process, container, VM, or provider session |
 | This device vs. LAN peers  | Desktop approval and local thread store | Other devices on the selected private network           |
 | This Mac vs. names service | Device and TLS keys; checks on replies  | `api.copse.dev` records, DNS answers and issuance       |
+| This Mac vs. relay, shell  | Device and TLS keys; tokens; approval   | `relay.copse.dev` streams and client IPs; `copse.me`    |
 
 LAN model serving is not part of the ordinary custom-provider trust grant. Literal private and
 link-local IP addresses, single-label names, and mDNS hostnames remain denied before the
@@ -125,7 +128,9 @@ project-defined MCP servers are gated behind workspace trust, the
     _Backstop:_ Mobile Companion is off by default; when enabled it binds one chosen
     private IPv4 address and requires exact Host and Origin checks: `Host` must be that
     `ip:port` literal or, once registered, this Mac's own `lan.<label>.u.copse.me:port`, and
-    `Origin` must match the authority the request named. Desktop-approved
+    `Origin` must match the authority the request named. A request that arrived through the
+    Copse relay skips the private-peer check and must name exactly `web.<label>.u.copse.me`
+    (scenario 12). Desktop-approved
     pairing grants reads; a separate per-device control grant permits bounded chat,
     question, approve-once/deny, and exact-run Stop actions. Existing pairings stay
     read-only until upgraded. Every write rechecks access and project/thread ownership;
@@ -171,6 +176,25 @@ project-defined MCP servers are gated behind workspace trust, the
     checks to five minutes, and the service URL is not renderer-writable, so a captured request
     cannot be redirected and replayed later. A failure of the service stops renewal and
     resolution; the LAN-IP address and its local root keep working.
+12. **Relay or shell compromise, or a stranger through the relay.** The Copse relay
+    (`relay.copse.dev`), or someone who controls it, drops or stalls the tunnel, reports false
+    client addresses, hands connections from strangers to the Mac, or replays a browser's bytes;
+    the `copse.me` shell shows a fake interface around, or instead of, the framed Mac; or a
+    stranger who learned `web.<label>.u.copse.me` tries to use it. _Backstop:_ the relay is off
+    until the user turns it on, and needs an active name with a valid certificate. Browsers' TLS
+    ends on the Mac with a key the relay and the names service never see, so the relay sees
+    ciphertext and connection metadata, and a replay fails the handshake; reading or altering
+    relayed traffic also needs a mis-issued certificate (scenario 11), which Certificate
+    Transparency records. The Mac accepts only `CONNECT` streams for its own
+    `web.<label>.u.copse.me:443`, at most 32 per tunnel and 16 open connections, and every route
+    past pairing needs a device token; pairing needs the desktop's approval, and the banner says
+    the phone came through copse.me. A false client address only skews the failed-token limit and
+    the pairing-result binding. The relay's own gate (an address a paired `copse.me` account
+    refreshed) keeps most strangers from the page at all, but the Mac does not rely on it. The
+    shell holds no device token: tokens live in the framed origin's storage, the page never reads
+    messages from the shell, and it posts the shell only a state and two counts. Only
+    `https://copse.me` may frame a trusted name, and the bare-IP origin may not be framed at all.
+    The shell can still phish (a fake page or prompt), which this design does not prevent.
 
 ## Internal Git execution
 

@@ -1543,6 +1543,20 @@
           4
         ]
       },
+      "mobile:clear-shell-pairing": {
+        "api": "mobile.clearShellPairing",
+        "args": [
+          0,
+          0
+        ]
+      },
+      "mobile:create-shell-pairing": {
+        "api": "mobile.createShellPairing",
+        "args": [
+          0,
+          0
+        ]
+      },
       "mobile:disable": {
         "api": "mobile.disable",
         "args": [
@@ -1618,6 +1632,13 @@
         "args": [
           2,
           3
+        ]
+      },
+      "mobile:set-relay": {
+        "api": "mobile.setRelayEnabled",
+        "args": [
+          1,
+          1
         ]
       },
       "model-cards:resolve": {

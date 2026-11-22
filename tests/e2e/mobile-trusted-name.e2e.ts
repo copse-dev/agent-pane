@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { createServer } from 'node:net'
-import { networkInterfaces } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
 import QRCode from 'qrcode'
@@ -11,6 +9,7 @@ import { decodeWithSchema, safeJsonParse } from '../../packages/std/src/safe-jso
 import { copseDataRoot } from '../../src/main/services/storage/copse-paths.ts'
 import { E2E_NAMES_API_PORT } from './helpers/e2e-env.ts'
 import { startFakeNamesApi, type FakeNamesApi } from './helpers/fake-names-api.ts'
+import { availableMobileAddress } from './helpers/mobile-address.ts'
 import { pinTextForCapture, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 
@@ -27,36 +26,6 @@ const label = 'abcdefgh2345'
 const hostname = `lan.${label}.u.copse.me`
 const projectId = 'e2e-mobile-trusted-name'
 const lanRoot = join(copseDataRoot(), 'lan')
-
-const addresses = Object.values(networkInterfaces())
-  .flatMap((entries) => entries ?? [])
-  .filter(
-    (entry) =>
-      entry.family === 'IPv4' &&
-      !entry.internal &&
-      /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(entry.address),
-  )
-  .map((entry) => entry.address)
-
-async function availableAddress(): Promise<string | undefined> {
-  // A daily Copse may already own the stable port on one interface. Probe only
-  // availability; never stop it or send requests to an unrelated profile.
-  for (const address of addresses) {
-    const available = await new Promise<boolean>((resolve) => {
-      const probe = createServer()
-      probe.once('error', () => {
-        resolve(false)
-      })
-      probe.listen(42773, address, () => {
-        probe.close(() => {
-          resolve(true)
-        })
-      })
-    })
-    if (available) return address
-  }
-  return undefined
-}
 
 const pairSchema = z.object({
   id: z.string().optional(),
@@ -116,7 +85,7 @@ describe('Mobile Companion trusted name', function () {
   }
 
   before(async () => {
-    const found = await availableAddress()
+    const found = await availableMobileAddress()
     assert.ok(
       found,
       'The trusted-name eval requires an unused private IPv4 interface on port 42773',

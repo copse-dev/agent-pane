@@ -1,6 +1,10 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mobileAssetRoutes } from './mobile-asset-routes.ts'
+import {
+  mobileAssetRoutes,
+  mobileResponseHeaders,
+  shellFramableHeaders,
+} from './mobile-asset-routes.ts'
 import { MOBILE_CONTENT_SECURITY_POLICY } from './mobile-content-security-policy.ts'
 
 describe('mobile asset routes', () => {
@@ -25,5 +29,19 @@ describe('mobile asset routes', () => {
     assert.equal(headers['X-Content-Type-Options'], 'nosniff')
     // Large and loaded once per diagram: revalidated rather than re-downloaded.
     assert.equal(headers['Cache-Control'], 'no-cache')
+  })
+  it('lets only the copse.me shell frame a trusted-name response', () => {
+    const base = mobileResponseHeaders('text/html; charset=utf-8')
+    const framed = shellFramableHeaders(base)
+    assert.equal(framed['X-Frame-Options'], undefined)
+    assert.match(framed['Content-Security-Policy'] ?? '', /frame-ancestors https:\/\/copse\.me$/)
+    assert.doesNotMatch(framed['Content-Security-Policy'] ?? '', /'none'$/)
+    // Everything else is unchanged, and the bare-IP headers are untouched.
+    assert.equal(framed['Content-Type'], base['Content-Type'])
+    assert.equal(framed['Cache-Control'], 'no-store')
+    assert.equal(base['X-Frame-Options'], 'DENY')
+    // The Mermaid frame stays same-origin only, even under the trusted name.
+    const mermaid = mobileAssetRoutes().get('/mermaid-frame.html')?.headers ?? {}
+    assert.deepEqual(shellFramableHeaders(mermaid), mermaid)
   })
 })

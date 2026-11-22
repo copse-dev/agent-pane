@@ -1,5 +1,5 @@
 import { lookup } from 'node:dns/promises'
-import { MobilePairing } from './mobile-pairing.ts'
+import { MobilePairing, type PairingVia } from './mobile-pairing.ts'
 import QRCode from 'qrcode'
 import { getSecretCipher } from '@copse/store-kit/secret-cipher.ts'
 import type {
@@ -15,6 +15,19 @@ import { DEFAULT_NAMES_API, NamesClient } from '../remote-names/names-client.ts'
 import { RemoteNames } from '../remote-names/names-service.ts'
 import { NamesStore } from '../remote-names/names-store.ts'
 import { errorMessage } from '@shared/errors.ts'
+import { nonEmptyStringOr } from '@copse/std/unknown-value.ts'
+import { toBase64Url, utf8 } from '@copse/remote-protocol/encoding.ts'
+import { COPSE_SHELL_ORIGIN } from '../../../shared/mobile-asset-routes.ts'
+import type {
+  MobileCompanionRelay,
+  MobileCompanionShellPairing,
+} from '../../../shared/types/mobile-companion.ts'
+import {
+  DEFAULT_RELAY,
+  parseRelayEndpoint,
+  RelayTunnel,
+  type RelayEndpoint,
+} from '../remote-names/relay-tunnel.ts'
 
 let active: MobileServer | null = null
 let preference: MobilePreference | null = null
@@ -28,6 +41,11 @@ const qrCache = new Map<string, string>()
 const pairingRequests = new MobilePairing()
 const RETRY_MS = 15_000
 let names: RemoteNames | null = null
+let store: NamesStore | null = null
+let relayEnabled: boolean | null = null
+let relayTunnel: { label: string; tunnel: RelayTunnel } | null = null
+let shellPairing: { url: string; expiresAt: number; timer: ReturnType<typeof setTimeout> } | null =
+  null
 let defaultInterface: string | null = null
 let defaultInterfaceCheckedAt = 0
 const DEFAULT_ROUTE_REFRESH_MS = 10_000
@@ -63,9 +81,29 @@ function namesServiceUrl(): string {
   return DEFAULT_NAMES_API
 }
 
+/**
+ * The relay this Mac holds its tunnel to. `COPSE_RELAY` (`host[:port]`) points
+ * a Mac at another deployment, like `COPSE_NAMES_API_URL`, and is likewise not
+ * a renderer-writable setting. A wrong relay cannot read relayed traffic (the
+ * browser's TLS ends on this Mac), but it could hold the tunnel open and drop it.
+ */
+function relayEndpoint(): RelayEndpoint | null {
+  return parseRelayEndpoint(nonEmptyStringOr(process.env['COPSE_RELAY']?.trim(), DEFAULT_RELAY))
+}
+
+function namesStore(): NamesStore {
+  store ??= new NamesStore(getSecretCipher)
+  return store
+}
+
+function relayChosen(): boolean {
+  relayEnabled ??= namesStore().readRelayEnabled()
+  return relayEnabled
+}
+
 function remoteNames(): RemoteNames {
   names ??= new RemoteNames({
-    store: new NamesStore(getSecretCipher),
+    store: namesStore(),
     client: (baseUrl, key): NamesClient => new NamesClient({ baseUrl, key }),
     serviceUrl: namesServiceUrl,
     lookup: async (hostname): Promise<string[]> => {
@@ -91,7 +129,77 @@ function devices(): MobileDevices {
 }
 
 function publish(): void {
+  syncRelay()
   broadcastToAppWindows('mobile:state-changed', getMobileCompanionState())
+}
+
+/**
+ * Hold the relay tunnel exactly while the user chose it, Mobile Companion is
+ * serving and the name is active with a valid certificate. Every state change
+ * re-runs this; it is idempotent.
+ */
+function syncRelay(): void {
+  const target =
+    !quitting && relayChosen() && active?.isRunning() ? remoteNames().relayTarget() : null
+  const endpoint = target ? relayEndpoint() : null
+  if (relayTunnel && (!target || !endpoint || relayTunnel.label !== target.label)) {
+    relayTunnel.tunnel.stop()
+    relayTunnel = null
+  }
+  if (!target || !endpoint || relayTunnel) return
+  const tunnel = new RelayTunnel({
+    endpoint,
+    label: target.label,
+    sign: (text): Promise<string> => remoteNames().signTunnel(text),
+    onStream: (stream, clientIp): void => {
+      if (active?.isRunning()) active.acceptRelayed(stream, clientIp)
+      else stream.destroy()
+    },
+    onStatus: (): void => {
+      broadcastToAppWindows('mobile:state-changed', getMobileCompanionState())
+    },
+  })
+  relayTunnel = { label: target.label, tunnel }
+  tunnel.start()
+}
+
+function relayState(): MobileCompanionRelay {
+  const endpoint = relayEndpoint()
+  const enabled = relayChosen()
+  const hostname = remoteNames().webHostname()
+  const base = {
+    enabled,
+    relay: endpoint
+      ? `${endpoint.host}${endpoint.port === 443 ? '' : `:${String(endpoint.port)}`}`
+      : '',
+    hostname,
+    error: null,
+    retryAt: null,
+  }
+  if (!enabled) return { ...base, status: 'off' }
+  if (!endpoint)
+    return {
+      ...base,
+      status: 'waiting',
+      error: 'COPSE_RELAY is not a host name with an optional port.',
+    }
+  const tunnel = relayTunnel?.tunnel.status()
+  if (!tunnel || tunnel.state === 'stopped') return { ...base, status: 'waiting' }
+  return { ...base, status: tunnel.state, error: tunnel.error, retryAt: tunnel.retryAt }
+}
+
+function currentShellPairing(): MobileCompanionShellPairing | null {
+  if (!shellPairing) return null
+  return {
+    url: shellPairing.url,
+    qrSvg: currentQrSvg(shellPairing.url),
+    expiresAt: shellPairing.expiresAt,
+  }
+}
+
+function clearShellPairing(): void {
+  if (shellPairing) clearTimeout(shellPairing.timer)
+  shellPairing = null
 }
 
 /**
@@ -106,8 +214,8 @@ function currentQrSvg(url: string | null): string | null {
   if (cached !== undefined) return cached
   void QRCode.toString(url, { type: 'svg', margin: 1 })
     .then((svg) => {
-      // At most the trusted-name and LAN-IP addresses are live at once.
-      if (qrCache.size >= 4) qrCache.clear()
+      // At most the trusted-name, LAN-IP and copse.me pairing codes are live at once.
+      if (qrCache.size >= 6) qrCache.clear()
       qrCache.set(url, svg)
       publish()
     })
@@ -132,6 +240,8 @@ export function getMobileCompanionState(): MobileCompanionState {
     localUrl,
     localQrSvg: currentQrSvg(localUrl),
     publicName: remoteNames().state(),
+    relay: relayState(),
+    shellPairing: currentShellPairing(),
     rootCertificatePath: running ? (active?.rootPath ?? null) : null,
     address: running ? (active?.address ?? null) : null,
     addresses: lanAddresses(),
@@ -160,9 +270,9 @@ function approvePair(
   label: string,
   code: string,
   signal: AbortSignal,
-  trustedName: boolean,
+  via: PairingVia,
 ): Promise<MobileCompanionAccess | null> {
-  const result = pairingRequests.request(label, code, signal, trustedName)
+  const result = pairingRequests.request(label, code, signal, via)
   publish()
   return result.finally(publish)
 }
@@ -290,6 +400,10 @@ export async function registerMobilePublicName(invite: string): Promise<void> {
 export async function removeMobilePublicName(): Promise<void> {
   if (quitting) return
   await remoteNames().remove()
+  // The store forgot the relay choice with the name; a new name starts with it off.
+  relayEnabled = null
+  clearShellPairing()
+  publish()
 }
 
 export async function recheckMobilePublicNameDns(): Promise<void> {
@@ -297,10 +411,50 @@ export async function recheckMobilePublicNameDns(): Promise<void> {
   await remoteNames().recheckDns()
 }
 
+/** Choose whether phones paired at copse.me reach this Mac through the Copse relay. */
+export function setMobileRelayEnabled(enabled: boolean): void {
+  if (quitting) return
+  namesStore().writeRelayEnabled(enabled)
+  relayEnabled = enabled
+  if (!enabled) clearShellPairing()
+  publish()
+}
+
+/**
+ * Show a one-time code that adds this Mac to a copse.me account. The grant is
+ * signed by the device key and redeemed once by the names API; it travels in
+ * the URL fragment so it never reaches a server log.
+ */
+export async function createMobileShellPairing(): Promise<void> {
+  if (quitting) return
+  const grant = await remoteNames().shellGrant()
+  clearShellPairing()
+  const url = `${COPSE_SHELL_ORIGIN}/add#g=${toBase64Url(utf8(JSON.stringify(grant)))}`
+  const timer = setTimeout(
+    () => {
+      if (shellPairing?.url !== url) return
+      shellPairing = null
+      publish()
+    },
+    Math.max(0, grant.expiresMs - Date.now()),
+  )
+  timer.unref()
+  shellPairing = { url, expiresAt: grant.expiresMs, timer }
+  publish()
+}
+
+export function clearMobileShellPairing(): void {
+  clearShellPairing()
+  publish()
+}
+
 export async function stopMobileCompanion(): Promise<void> {
   quitting = true
   generation += 1
   clearRetry()
+  clearShellPairing()
+  relayTunnel?.tunnel.stop()
+  relayTunnel = null
   names?.stop()
   await active?.close()
   active = null

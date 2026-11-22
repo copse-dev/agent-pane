@@ -2,6 +2,7 @@ import type { ApiClient } from '../../../preload/api.d.ts'
 import type {
   MobileCompanionDevice,
   MobileCompanionPublicName,
+  MobileCompanionRelay,
   MobileCompanionState,
 } from '../../../shared/types/mobile-companion.ts'
 import { el, clear } from '../../dom/helpers.ts'
@@ -86,6 +87,53 @@ export function createMobileCompanionSection(api: ApiClient): MobileCompanionSec
     'Remove name',
   )
   const nameStatus = el('span', { class: 'mobile-companion-name-status' })
+
+  // Away from this network: the Copse relay, and adding the Mac at copse.me.
+  const relayInput = el('input', { type: 'checkbox', name: 'mobileCompanionRelay' })
+  const relayStatus = el('div', { class: 'mobile-companion-relay-status' })
+  const shellPairBtn = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-secondary' },
+    'Add this Mac at copse.me',
+  )
+  const shellPairRow = el('div', { class: 'settings-action-row' }, shellPairBtn)
+  const shellQrImage = el('div', { class: 'mobile-companion-qr-image', 'aria-hidden': 'true' })
+  const shellQrHint = el('p', { class: 'field-hint' })
+  const shellDoneBtn = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-secondary ui-btn-compact' },
+    'Done',
+  )
+  const shellQr = el(
+    'div',
+    { id: 'mobile-companion-shell-qr', class: 'mobile-companion-qr', hidden: true },
+    shellQrImage,
+    el(
+      'div',
+      { class: 'mobile-companion-qr-text' },
+      shellQrHint,
+      el('div', { class: 'settings-action-row' }, shellDoneBtn),
+    ),
+  )
+  const relayBlock = el(
+    'div',
+    { class: 'mobile-companion-relay', hidden: true },
+    el(
+      'label',
+      { class: 'checkbox-label' },
+      relayInput,
+      ' Reach this Mac from anywhere through copse.me',
+    ),
+    el(
+      'p',
+      { class: 'field-hint' },
+      'Phones you add at copse.me connect through the Copse relay when they are away from this network. The relay passes the encrypted connection straight to this Mac and cannot read it; it sees when, and from which address, a phone connects. Each phone still pairs with this Mac, and you approve it here.',
+    ),
+    relayStatus,
+    shellPairRow,
+    shellQr,
+  )
+
   const nameCard = el(
     'fieldset',
     { class: 'mobile-companion-name' },
@@ -94,6 +142,7 @@ export function createMobileCompanionSection(api: ApiClient): MobileCompanionSec
     inviteRow,
     nameSummary,
     dnsNote,
+    relayBlock,
     el('div', { class: 'settings-action-row' }, removeNameBtn),
     nameStatus,
   )
@@ -269,6 +318,67 @@ export function createMobileCompanionSection(api: ApiClient): MobileCompanionSec
     else nameStatus.replaceChildren()
   }
 
+  function renderRelay(state: MobileCompanionState): void {
+    const relay = state.relay
+    // A Mac that predates the relay sends no relay state at all.
+    if (!relay || state.publicName.state === 'unregistered') {
+      relayBlock.hidden = true
+      return
+    }
+    relayBlock.hidden = false
+    relayInput.checked = relay.enabled
+    shellPairRow.hidden = !relay.enabled
+    shellPairBtn.toggleAttribute('disabled', state.publicName.state !== 'active')
+    renderRelayStatus(state, relay)
+    const pairing = relay.enabled ? (state.shellPairing ?? null) : null
+    if (pairing?.qrSvg && pairing.expiresAt > Date.now()) {
+      shellQrImage.innerHTML = pairing.qrSvg
+      shellQrHint.textContent = `Scan with your phone’s camera, sign in at copse.me with a passkey and add this Mac. Then pair the phone in the page that opens. The code works once and expires at ${formatClock(pairing.expiresAt)}.`
+      shellQr.hidden = false
+      shellPairBtn.textContent = 'Show a new code'
+    } else {
+      shellQr.hidden = true
+      shellPairBtn.textContent = 'Add this Mac at copse.me'
+    }
+  }
+
+  function renderRelayStatus(state: MobileCompanionState, relay: MobileCompanionRelay): void {
+    switch (relay.status) {
+      case 'off':
+        relayStatus.replaceChildren()
+        return
+      case 'connected':
+        setInlineStatus(
+          relayStatus,
+          'ok',
+          `Connected to ${relay.relay}. Phones added at copse.me reach this Mac as ${relay.hostname ?? 'its web name'}.`,
+        )
+        return
+      case 'connecting':
+        setInlineStatus(relayStatus, 'pending', `Connecting to ${relay.relay}…`)
+        return
+      case 'retrying':
+        setInlineStatus(
+          relayStatus,
+          'warn',
+          `${relay.error ?? 'The relay connection dropped.'} Trying again${relay.retryAt ? ` at ${formatClock(relay.retryAt)}` : ''}.`,
+        )
+        return
+      case 'waiting':
+        setInlineStatus(
+          relayStatus,
+          'idle',
+          relay.error ??
+            (!state.running
+              ? 'Connects to the relay while Mobile Companion is on.'
+              : state.publicName.state !== 'active'
+                ? 'Connects to the relay once this name is active again.'
+                : 'Connects to the relay once this name has a certificate.'),
+        )
+        return
+    }
+  }
+
   function renderDns(hostname: string, dns: MobileCompanionPublicName['dns']): void {
     if (dns === 'ok' || dns === 'unknown') return
     if (dns === 'checking') {
@@ -330,9 +440,11 @@ export function createMobileCompanionSection(api: ApiClient): MobileCompanionSec
           'p',
           { class: 'field-hint' },
           'Read only shares thread names, saved messages, and activity. Allow control also lets this phone send messages, start chats, stop runs, answer questions, and approve individual requests. Only pair a phone you hold.',
-          pairing.trustedName
-            ? ' This phone connected over this Mac’s trusted name, and its browser verified the certificate.'
-            : ' Confirm below that the Copse Local Root is installed and trusted on this phone before allowing control.',
+          pairing.relayed
+            ? ' This phone connected through copse.me from outside this network, and its browser verified this Mac’s certificate.'
+            : pairing.trustedName
+              ? ' This phone connected over this Mac’s trusted name, and its browser verified the certificate.'
+              : ' Confirm below that the Copse Local Root is installed and trusted on this phone before allowing control.',
         ),
         ...(pairing.trustedName
           ? []
@@ -422,6 +534,7 @@ export function createMobileCompanionSection(api: ApiClient): MobileCompanionSec
     renderAddresses(state)
     renderConnection(state)
     renderPublicName(state)
+    renderRelay(state)
     renderPairing(state)
     renderDevices(state)
     if (state.lastError) setInlineStatus(status, 'error', state.lastError)
@@ -476,6 +589,24 @@ export function createMobileCompanionSection(api: ApiClient): MobileCompanionSec
   recheckBtn.addEventListener('click', () => {
     void api.mobile.recheckNameDns()
   })
+  relayInput.addEventListener('change', () => {
+    void api.mobile.setRelayEnabled(relayInput.checked).catch((error: unknown) => {
+      if (lastState) renderRelay(lastState)
+      setInlineStatus(
+        relayStatus,
+        'error',
+        ipcErrorMessage(error, 'Could not change the relay setting.'),
+      )
+    })
+  })
+  shellPairBtn.addEventListener('click', () => {
+    void api.mobile.createShellPairing().catch((error: unknown) => {
+      setInlineStatus(relayStatus, 'error', ipcErrorMessage(error, 'Could not make a code.'))
+    })
+  })
+  shellDoneBtn.addEventListener('click', () => {
+    void api.mobile.clearShellPairing()
+  })
 
   async function refresh(): Promise<void> {
     const state = await api.mobile.getState()
@@ -493,7 +624,7 @@ export function createMobileCompanionSection(api: ApiClient): MobileCompanionSec
     el(
       'p',
       { class: 'field-hint' },
-      'Open your Copse threads from a phone on the same local network. Choose the network interface your phone uses, pair phones, or turn sharing off. Copse must stay open and this computer must stay awake.',
+      'Open your Copse threads from a phone on the same local network, or from anywhere through copse.me once this Mac has a trusted address. Choose the network interface your phone uses, pair phones, or turn sharing off. Copse must stay open and this computer must stay awake.',
     ),
     el('label', { class: 'checkbox-label' }, enabledInput, ' Enable Mobile Companion'),
     el('label', {}, 'Network ', addressSelect),
@@ -506,6 +637,10 @@ export function createMobileCompanionSection(api: ApiClient): MobileCompanionSec
   )
 
   return { root, refresh }
+}
+
+function formatClock(ms: number): string {
+  return new Date(ms).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
 }
 
 function formatTime(ms: number): string {
