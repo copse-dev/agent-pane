@@ -825,8 +825,8 @@ export interface RunAgentOptions {
    * Called with the turn's provider history as it grows, so a host can persist
    * progress a run that never returns would otherwise take with it. Fired once
    * the (redacted) prompt has been prepared and again at each LLM call, always
-   * with turn-local system/developer instructions already stripped — the same
-   * shape `runAgent` returns.
+   * with system messages stripped (developer steering is kept in place) — the
+   * same shape `runAgent` returns.
    * Purely observational: never awaited, and a throwing sink cannot fail a turn.
    */
   onHistoryCheckpoint?: (messages: LLMMessage[]) => void
@@ -1869,11 +1869,13 @@ async function runAgentWithInlineCanvas(
   let outputTokens = 0
 
   /**
-   * The turn's history in the shape the host persists: turn-local operator
-   * steering never outlives the turn that injected it.
+   * The turn's history in the shape the host persists. `system` messages (the
+   * leading prompt and late-system steering) are rebuilt every turn. A trailing
+   * `developer` instruction stays where it was injected so the next turn's
+   * request extends this turn's cached prefix instead of diverging right after
+   * the user message (decision 22).
    */
-  const persistableHistory = (): LLMMessage[] =>
-    trimmed.filter((m) => m.role !== 'system' && m.role !== 'developer')
+  const persistableHistory = (): LLMMessage[] => trimmed.filter((m) => m.role !== 'system')
 
   /**
    * Hand the host the turn's history so far. Observational — a sink that throws
@@ -2075,9 +2077,15 @@ async function runAgentWithInlineCanvas(
       })
     }
 
+    // Earlier GPT turns persist their developer steering. A model that cannot
+    // take that role (the thread switched models) gets the history without it;
+    // the switch has already invalidated the cached prefix.
+    const placement = operatorInstructionPlacement(model)
     const messages: LLMMessage[] = [
       { role: 'system', content: systemPrompt },
-      ...priorMessages,
+      ...(placement === 'trailing-developer'
+        ? priorMessages
+        : priorMessages.filter((m) => m.role !== 'developer')),
       { role: 'user', content: outboundPrompt },
     ]
 
@@ -2125,13 +2133,10 @@ async function runAgentWithInlineCanvas(
     // genuine late-system support gets a trailing system turn, and everything
     // else folds into the leading system prompt. In particular, an OpenAI-
     // compatible LM Studio / MLX transport does not imply developer-role support.
-    // Both operator roles stay turn-local and are stripped from persisted history.
+    // The developer turn is persisted in place so later requests only append;
+    // late-system turns stay turn-local (decision 22).
     const turnStartInjected = mergeBlockingOutcomes(turnStart.outcomes).injectContext
-    appendOperatorInstruction(
-      messages,
-      [turnStartInjected, submitInjectContext],
-      operatorInstructionPlacement(model),
-    )
+    appendOperatorInstruction(messages, [turnStartInjected, submitInjectContext], placement)
 
     // An explicit /name turn runs the named worker and returns its report.
     // Instructions alone did not prevent parents from repeating the task, and
@@ -2269,7 +2274,7 @@ async function runAgentWithInlineCanvas(
       sendChunk({ type: 'done' })
       return resultWithOutcome({
         usage: { inputTokens: 0, outputTokens: 0 },
-        messages: trimmed.filter((m) => m.role !== 'system' && m.role !== 'developer'),
+        messages: persistableHistory(),
       })
     }
 
