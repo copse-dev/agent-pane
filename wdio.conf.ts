@@ -260,7 +260,8 @@ export const config: WebdriverIO.Config = {
       // Every e2e app talks to a loopback names API (tests/e2e/helpers/fake-names-api.ts,
       // started by the spec that needs it) and never to the live api.copse.dev.
       COPSE_NAMES_API_URL: E2E_NAMES_API_URL,
-      // Likewise a loopback relay (tests/helpers/fake-relay.ts), never relay.copse.dev.
+      // Likewise a relay name that never resolves, never relay.copse.dev; the relay
+      // spec points it at tests/helpers/fake-relay.ts.
       COPSE_RELAY: E2E_RELAY,
       COPSE_PANEL_MOCK_GH: '1',
       // Deterministic Claude/Codex plan bars in Settings → Usage (no real OAuth).

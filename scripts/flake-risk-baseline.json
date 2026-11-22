@@ -358,7 +358,6 @@
     "e2e-fixed-port": {
       "tests/e2e/helpers/e2e-env.ts": 1,
       "tests/e2e/mobile-controls.e2e.ts": 1,
-      "tests/e2e/mobile-trusted-name.e2e.ts": 1,
       "tests/e2e/openrouter-model-picker.e2e.ts": 1,
       "tests/e2e/pane-recording.e2e.ts": 1,
       "tests/e2e/settings-classifiers-local.e2e.ts": 1,

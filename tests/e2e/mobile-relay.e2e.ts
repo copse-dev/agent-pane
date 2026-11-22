@@ -10,7 +10,7 @@ import { LabelGrant } from '@copse/remote-protocol/messages.ts'
 import { decodeWithSchema, safeJsonParse } from '../../packages/std/src/safe-json.ts'
 import { copseDataRoot } from '../../src/main/services/storage/copse-paths.ts'
 import { startFakeRelay, type FakeRelay } from '../helpers/fake-relay.ts'
-import { E2E_NAMES_API_PORT, E2E_RELAY_PORT, writeE2eEnv } from './helpers/e2e-env.ts'
+import { E2E_NAMES_API_PORT, E2E_RELAY, writeE2eEnv } from './helpers/e2e-env.ts'
 import { startFakeNamesApi, type FakeNamesApi } from './helpers/fake-names-api.ts'
 import { availableMobileAddress } from './helpers/mobile-address.ts'
 import { pinTextForCapture, saveElementScreenshot } from './helpers/screenshot.ts'
@@ -41,6 +41,10 @@ const jsonSchema = z.object({
   access: z.string().optional(),
   error: z.string().optional(),
 })
+
+function pinRelayName(): Promise<() => Promise<void>> {
+  return pinTextForCapture('.mobile-companion-relay-status', /localhost:\d+/, 'relay.copse.dev')
+}
 
 describe('Mobile Companion through the relay', function () {
   this.timeout(180_000)
@@ -81,7 +85,6 @@ describe('Mobile Companion through the relay', function () {
     api = await startFakeNamesApi({ port: E2E_NAMES_API_PORT, invite, label })
     relay = await startFakeRelay({
       hostname: 'localhost',
-      port: E2E_RELAY_PORT,
       deviceKey: (name) => Promise.resolve(name === label ? api.deviceKey() : null),
     })
     resetUserData()
@@ -97,13 +100,16 @@ describe('Mobile Companion through the relay', function () {
     // the TLS boundary (bootstrap.cjs); nothing in Copse knows about it.
     const caFile = join(copseDataRoot(), 'e2e-relay-ca.pem')
     writeFileSync(caFile, relay.caPem)
-    writeE2eEnv({ COPSE_E2E_EXTRA_CA_CERTS: caFile })
+    writeE2eEnv({
+      COPSE_RELAY: `localhost:${String(relay.port)}`,
+      COPSE_E2E_EXTRA_CA_CERTS: caFile,
+    })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
   })
 
   after(async () => {
-    writeE2eEnv({ COPSE_E2E_EXTRA_CA_CERTS: undefined })
+    writeE2eEnv({ COPSE_RELAY: E2E_RELAY, COPSE_E2E_EXTRA_CA_CERTS: undefined })
     await relay.close()
     await api.close()
     resetUserData()
@@ -133,12 +139,21 @@ describe('Mobile Companion through the relay', function () {
     assert.deepEqual(relay.authenticated, [label])
     assert.deepEqual(relay.refused, [])
     const status = block.$('.mobile-companion-relay-status')
-    await expect(status).toHaveText(expect.stringContaining('Connected to localhost:42782'), {
-      wait: 15_000,
-    })
+    await expect(status).toHaveText(
+      expect.stringContaining(`Connected to localhost:${String(relay.port)}`),
+      {
+        wait: 15_000,
+      },
+    )
     await expect(status).toHaveText(expect.stringContaining(web))
     await block.scrollIntoView({ block: 'center' })
-    await saveElementScreenshot('.mobile-companion-relay', 'mobile-relay-connected.png')
+    // The stand-in relay listens on a free port; capture the production relay's name.
+    const restoreRelay = await pinRelayName()
+    try {
+      await saveElementScreenshot('.mobile-companion-relay', 'mobile-relay-connected.png')
+    } finally {
+      await restoreRelay()
+    }
 
     // A browser elsewhere: TLS ends on the Mac, verified against the label's certificate.
     const page = await relayed('/')
@@ -248,9 +263,11 @@ describe('Mobile Companion through the relay', function () {
       /expires at .+\.$/,
       'expires at 10:42 AM.',
     )
+    const restoreRelay = await pinRelayName()
     try {
       await saveElementScreenshot('.mobile-companion-relay', 'mobile-relay-shell-code.png')
     } finally {
+      await restoreRelay()
       await restoreExpiry()
     }
     await qr.$('button=Done').click()

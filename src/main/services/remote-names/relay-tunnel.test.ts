@@ -1,4 +1,4 @@
-import { describe, it, afterEach } from 'node:test'
+import { describe, it, afterEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { connect, type ConnectionOptions, type TLSSocket } from 'node:tls'
 import { generateDeviceKeyPair, signText } from '@copse/remote-protocol/keys.ts'
@@ -201,11 +201,20 @@ describe('RelayTunnel', () => {
   it('stops for good: no reconnect after stop', async () => {
     const fixture = await setup({ random: () => 0 })
     await connected(fixture)
+    // Any reconnect is scheduled with setTimeout: run the clock past the longest backoff.
+    mock.timers.enable({ apis: ['setTimeout'] })
+    cleanups.push(() => {
+      mock.timers.reset()
+    })
     fixture.tunnel.stop()
     assert.equal(fixture.tunnel.status().state, 'stopped')
-    await new Promise((resolve) => setTimeout(resolve, 1200))
-    assert.deepEqual(fixture.relay.authenticated, [label])
+    // Let the closed socket's events run first, so a reconnect they schedule is ticked too.
+    for (let turn = 0; turn < 10; turn++) await new Promise((resolve) => setImmediate(resolve))
+    mock.timers.tick(10 * 60_000)
+    // A reconnect would have set `connecting` synchronously.
+    assert.equal(fixture.tunnel.status().state, 'stopped')
     assert.equal(fixture.statuses.at(-1)?.state, 'stopped')
+    assert.deepEqual(fixture.relay.authenticated, [label])
   })
 
   it('names the relay when it cannot be reached', async () => {
