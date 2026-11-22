@@ -14,7 +14,6 @@
 import {
   IPC_ARGUMENT_LIMIT_BYTES,
   IPC_ARGUMENT_REPORT_BYTES,
-  IPC_LARGE_CALL_CHANNEL,
   type IpcLargeCallReport,
 } from '@shared/ipc-size-limits.ts'
 
@@ -193,8 +192,16 @@ function megabytes(bytes: number): string {
  * Wrap the raw `invoke` and `send` so a call over the limit is refused, and a
  * large one is named to main before it is sent. The report goes first because a
  * call that still takes the renderer down leaves no other trace of its channel.
+ *
+ * `report` is passed in, not sent from here, so its call site can name the
+ * channel as a literal: the servo bridge allows only the literal channels it
+ * finds in this directory and closes a connection that uses any other.
  */
-export function createIpcSizeGuard(raw: { invoke: Invoke; send: Send }): {
+export function createIpcSizeGuard(raw: {
+  invoke: Invoke
+  send: Send
+  report: (report: IpcLargeCallReport) => void
+}): {
   invoke: Invoke
   send: Send
 } {
@@ -210,8 +217,7 @@ export function createIpcSizeGuard(raw: { invoke: Invoke; send: Send }): {
     if (bytes < IPC_ARGUMENT_REPORT_BYTES) return null
     const refused = bytes > IPC_ARGUMENT_LIMIT_BYTES
     try {
-      const report: IpcLargeCallReport = { channel, bytes, refused }
-      raw.send(IPC_LARGE_CALL_CHANNEL, report)
+      raw.report({ channel, bytes, refused })
     } catch {
       // A diagnostic must never break the call it describes.
     }

@@ -4,7 +4,7 @@ import { serialize } from 'node:v8'
 import {
   IPC_ARGUMENT_LIMIT_BYTES,
   IPC_ARGUMENT_REPORT_BYTES,
-  IPC_LARGE_CALL_CHANNEL,
+  type IpcLargeCallReport,
 } from '@shared/ipc-size-limits.ts'
 import { createIpcSizeGuard, estimateIpcArgumentBytes } from './ipc-size-guard.ts'
 
@@ -150,89 +150,86 @@ describe('estimateIpcArgumentBytes', () => {
   })
 })
 
-interface Sent {
-  via: 'invoke' | 'send'
-  channel: string
-  args: unknown[]
-}
+type Step =
+  | { via: 'invoke' | 'send'; channel: string; args: unknown[] }
+  | { via: 'report'; report: IpcLargeCallReport }
 
-function fixture(): { guard: ReturnType<typeof createIpcSizeGuard>; sent: Sent[] } {
-  const sent: Sent[] = []
+function fixture(): { guard: ReturnType<typeof createIpcSizeGuard>; steps: Step[] } {
+  const steps: Step[] = []
   const guard = createIpcSizeGuard({
     invoke: (channel, ...args) => {
-      sent.push({ via: 'invoke', channel, args })
+      steps.push({ via: 'invoke', channel, args })
       return Promise.resolve('reply')
     },
     send: (channel, ...args) => {
-      sent.push({ via: 'send', channel, args })
+      steps.push({ via: 'send', channel, args })
+    },
+    report: (report) => {
+      steps.push({ via: 'report', report })
     },
   })
-  return { guard, sent }
+  return { guard, steps }
 }
 
-function order(sent: readonly Sent[]): string[] {
-  return sent.map((call) => `${call.via}:${call.channel}`)
-}
-
-function reportIn(call: Sent | undefined): Record<string, unknown> {
-  const report: unknown = call?.args[0]
-  assert.ok(typeof report === 'object' && report !== null)
-  return { ...report }
+/** What happened, in order: a report is named by the call it describes. */
+function order(steps: readonly Step[]): string[] {
+  return steps.map((step) =>
+    step.via === 'report'
+      ? `report:${step.report.channel}:${step.report.refused ? 'refused' : 'large'}`
+      : `${step.via}:${step.channel}`,
+  )
 }
 
 describe('createIpcSizeGuard', () => {
   it('passes an ordinary call through untouched and unreported', async () => {
-    const { guard, sent } = fixture()
+    const { guard, steps } = fixture()
     const message = { id: 'm1', content: 'hello' }
     assert.equal(await guard.invoke('threads:append-message', 'p', 't', message), 'reply')
     guard.send('vnc:send', 'c', new Uint8Array(64))
-    assert.deepEqual(order(sent), ['invoke:threads:append-message', 'send:vnc:send'])
-    assert.equal(sent[0]?.args[2], message)
+    assert.deepEqual(order(steps), ['invoke:threads:append-message', 'send:vnc:send'])
+    const [first] = steps
+    assert.ok(first?.via === 'invoke')
+    assert.equal(first.args[2], message)
   })
 
   it('names a large call to main before sending it', async () => {
-    const { guard, sent } = fixture()
+    const { guard, steps } = fixture()
     assert.equal(await guard.invoke('threads:create', 'p', { content: LARGE_TEXT }), 'reply')
-    assert.deepEqual(order(sent), [`send:${IPC_LARGE_CALL_CHANNEL}`, 'invoke:threads:create'])
-    const report = reportIn(sent[0])
-    assert.equal(report['channel'], 'threads:create')
-    assert.equal(report['refused'], false)
-    const bytes = report['bytes']
-    assert.ok(typeof bytes === 'number' && bytes >= IPC_ARGUMENT_REPORT_BYTES)
+    assert.deepEqual(order(steps), ['report:threads:create:large', 'invoke:threads:create'])
+    const [first] = steps
+    assert.ok(first?.via === 'report')
+    assert.ok(first.report.bytes >= IPC_ARGUMENT_REPORT_BYTES)
   })
 
   it('rejects an oversized invoke without sending it, and says which channel', async () => {
-    const { guard, sent } = fixture()
+    const { guard, steps } = fixture()
     await assert.rejects(
       guard.invoke('threads:create', 'p', { messages: [{ content: OVERSIZED_TEXT }] }),
       { message: 'Too large to send in one request: more than 960 MB (threads:create).' },
     )
-    assert.deepEqual(order(sent), [`send:${IPC_LARGE_CALL_CHANNEL}`])
-    const report = reportIn(sent[0])
-    assert.equal(report['channel'], 'threads:create')
-    assert.equal(report['refused'], true)
+    assert.deepEqual(order(steps), ['report:threads:create:refused'])
   })
 
   it('throws on an oversized send without sending it', () => {
-    const { guard, sent } = fixture()
+    const { guard, steps } = fixture()
     assert.throws(
       () => {
         guard.send('vnc:send', 'c', OVERSIZED_TEXT)
       },
       { message: 'Too large to send in one request: more than 960 MB (vnc:send).' },
     )
-    assert.deepEqual(order(sent), [`send:${IPC_LARGE_CALL_CHANNEL}`])
+    assert.deepEqual(order(steps), ['report:vnc:send:refused'])
   })
 
   it('leaves a value it cannot walk to the real call', async () => {
-    const { guard, sent } = fixture()
+    const { guard, steps } = fixture()
     const unreadable = {
       get content(): string {
         throw new Error('not readable')
       },
     }
     assert.equal(await guard.invoke('threads:create', 'p', unreadable), 'reply')
-    assert.deepEqual(order(sent), ['invoke:threads:create'])
+    assert.deepEqual(order(steps), ['invoke:threads:create'])
   })
 
   it('still makes the call when the report cannot be sent', async () => {
@@ -242,7 +239,10 @@ describe('createIpcSizeGuard', () => {
         calls.push(channel)
         return Promise.resolve('reply')
       },
-      send: () => {
+      send: (channel) => {
+        calls.push(channel)
+      },
+      report: () => {
         throw new Error('channel closed')
       },
     })
