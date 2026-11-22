@@ -1,6 +1,5 @@
 import { X509Certificate, createPrivateKey } from 'node:crypto'
 import { chmodSync, rmSync } from 'node:fs'
-import { readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
@@ -147,10 +146,10 @@ export class NamesStore {
    * Whether the user chose to reach this Mac through the Copse relay. Off
    * until they turn it on, and off again when the file is missing or unreadable.
    */
-  readRelayEnabled(): boolean {
+  async readRelayEnabled(): Promise<boolean> {
     let text: string
     try {
-      text = readFileSync(this.relayPath, 'utf8')
+      text = await readFile(this.relayPath, 'utf8')
     } catch {
       return false
     }

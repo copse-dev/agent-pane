@@ -291,12 +291,12 @@ describe('RemoteNames', () => {
 
   it('keeps the relay choice beside the record and forgets it with the name', async () => {
     const store = new NamesStore(() => cipher, directory)
-    assert.equal(store.readRelayEnabled(), false)
+    assert.equal(await store.readRelayEnabled(), false)
     store.writeRelayEnabled(true)
-    assert.equal(store.readRelayEnabled(), true)
+    assert.equal(await store.readRelayEnabled(), true)
     assert.equal(statSync(join(directory, 'relay.json')).mode & 0o777, 0o600)
     store.clear()
-    assert.equal(store.readRelayEnabled(), false)
+    assert.equal(await store.readRelayEnabled(), false)
   })
 
   it('resumes after a restart without re-sending an unchanged address', async () => {

@@ -1634,7 +1634,7 @@
           3
         ]
       },
-      "mobile:set-relay": {
+      "mobile:set-relay-enabled": {
         "api": "mobile.setRelayEnabled",
         "args": [
           1,

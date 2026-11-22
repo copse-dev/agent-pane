@@ -66,7 +66,7 @@ export function registerMobileHandlers(win: BrowserWindow): void {
     assertMainFrameSender(event, win)
     await recheckMobilePublicNameDns()
   })
-  ipcMain.handle('mobile:set-relay', (event, rawEnabled: unknown) => {
+  ipcMain.handle('mobile:set-relay-enabled', (event, rawEnabled: unknown) => {
     assertMainFrameSender(event, win)
     const enabled = parseIpcArgs(z.boolean(), [rawEnabled])
     setMobileRelayEnabled(enabled)

@@ -96,9 +96,16 @@ function namesStore(): NamesStore {
   return store
 }
 
+/** Off until the saved choice is read; a choice made meanwhile wins over it. */
 function relayChosen(): boolean {
-  relayEnabled ??= namesStore().readRelayEnabled()
-  return relayEnabled
+  return relayEnabled === true
+}
+
+async function loadRelayChoice(): Promise<void> {
+  const enabled = await namesStore().readRelayEnabled()
+  if (relayEnabled !== null) return
+  relayEnabled = enabled
+  publish()
 }
 
 function remoteNames(): RemoteNames {
@@ -327,6 +334,7 @@ export async function resumeMobileCompanion(): Promise<void> {
   if (!namesStarted) {
     namesStarted = true
     void remoteNames().start()
+    void loadRelayChoice()
   }
   try {
     const choice = savedPreference().current()
@@ -400,10 +408,11 @@ export async function registerMobilePublicName(invite: string): Promise<void> {
 export async function removeMobilePublicName(): Promise<void> {
   if (quitting) return
   await remoteNames().remove()
-  // The store forgot the relay choice with the name; a new name starts with it off.
+  // The store forgot the relay choice with the name (unless removal failed and kept it).
   relayEnabled = null
   clearShellPairing()
   publish()
+  await loadRelayChoice()
 }
 
 export async function recheckMobilePublicNameDns(): Promise<void> {
