@@ -6,6 +6,7 @@ import type { RemoteArtifactDownloadRequest } from '@shared/remote-artifact-down
 import type { ApiClient, FilePathBridge } from './api.d.ts'
 import type { ClassifierProfile } from '@copse/llm/classifiers/types.ts'
 import type { PrComposerCreateRequest } from '@shared/types/git.ts'
+import type { ThreadBaseFallback } from '@shared/types/worktree.ts'
 import type { AppleSuggestionAnswer } from '@shared/types/apple-development.ts'
 import { exposePerfBridge, installPreloadPerfTracing } from './perf-bridge.ts'
 import { createWorkspaceNavigation } from './workspace-navigation.ts'
@@ -393,6 +394,7 @@ const api: ApiClient = {
       choice: 'automatic' | 'shared' | 'worktree',
       model?: string,
       baseBranch?: string,
+      baseFallback?: ThreadBaseFallback,
     ) =>
       ipcRenderer.invoke(
         'agent:prepare-checkout',
@@ -402,6 +404,7 @@ const api: ApiClient = {
         choice,
         model,
         baseBranch,
+        baseFallback,
       ),
     renameCheckoutBranch: (projectId: string, threadId: string, title: string) =>
       ipcRenderer.invoke('agent:rename-checkout-branch', projectId, threadId, title),
