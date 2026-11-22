@@ -131,7 +131,7 @@ export function createRunCodeTool(
       const omitted =
         session.remindersOmitted > 0
           ? [
-              `(${String(session.remindersOmitted)} more hook note${session.remindersOmitted === 1 ? '' : 's'} from the cell's tool calls left out)`,
+              `(${String(session.remindersOmitted)} more note${session.remindersOmitted === 1 ? '' : 's'} from the cell's tool calls left out)`,
             ]
           : []
       return [framed, ...session.reminders, ...omitted].join('\n\n')

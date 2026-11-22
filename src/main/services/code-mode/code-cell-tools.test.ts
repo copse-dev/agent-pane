@@ -175,6 +175,28 @@ describe('CellToolSession reminders', () => {
     assert.equal(session.reminders.length + session.remindersOmitted, 10)
     assert.ok(session.remindersOmitted > 0)
   })
+
+  it('counts a block that did not fit once, however often it repeats', async () => {
+    const first = block(`first:${'x'.repeat(10_000)}`)
+    const second = block(`second:${'y'.repeat(10_000)}`)
+    let n = 0
+    const session = new CellToolSession(
+      host({
+        executeNormalized: () => {
+          n += 1
+          const reminder = n === 1 ? first : second
+          return Promise.resolve({
+            result: `body\n\n${reminder}`,
+            appendedReminderLengths: [reminder.length],
+          })
+        },
+      }),
+      direct,
+    )
+    for (let i = 0; i < 100; i += 1) await session.handle('read_file', { path: String(i) }, signal)
+    assert.deepEqual(session.reminders, [first])
+    assert.equal(session.remindersOmitted, 1)
+  })
 })
 
 describe('splitAppendedReminders', () => {

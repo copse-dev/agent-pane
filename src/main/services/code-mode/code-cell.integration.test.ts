@@ -174,7 +174,7 @@ return todos
         t.skip('Apple container has no `wait` to observe the exit with')
         return
       }
-      let attached: ChildProcess | null = null
+      const attached: { child: ChildProcess | null } = { child: null }
       const name = newCodeCellRuntimeId()
       const container = await CodeCellContainer.start(
         { engine, image: IMAGE, runtimeId: name, ...DEFAULT_CODE_CELL_LIMITS },
@@ -188,7 +188,7 @@ return todos
                 stdio: ['pipe', 'pipe', 'pipe'],
               },
             )
-            attached = child
+            attached.child = child
             return child
           },
           // No teardown: the container must go on its own.
@@ -214,8 +214,8 @@ return todos
         await isSpinning
         // The app crashing takes the engine CLI it spawned with it; nothing is
         // closed gracefully.
-        assert.ok(attached)
-        ;(attached as ChildProcess).kill('SIGKILL')
+        assert.ok(attached.child)
+        attached.child.kill('SIGKILL')
         const started = Date.now()
         // `docker wait` returns once the container has exited (and `--rm`
         // removes it); one already gone reads as "No such container".

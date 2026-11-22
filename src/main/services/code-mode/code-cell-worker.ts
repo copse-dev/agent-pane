@@ -4,7 +4,10 @@
  * (`while (true) {}` after an `await`, or a timer an earlier cell left behind)
  * blocks only the worker: the main thread still sees the host close the link,
  * and exits, and the container exits with it. That holds when the app quits
- * and when it crashes.
+ * and when it crashes, with one exception. Code that escapes the cell's `vm`
+ * context can block the worker inside a native call (`execSync`, say), and
+ * `process.exit` waits for that call to return. Then only the host's teardown
+ * removes the container: on quit it does, and after a crash nothing does yet.
  *
  * The cells' context lives in the worker for the container's life, so state
  * persists between them as before. Messages between the threads are decoded

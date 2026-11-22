@@ -82,10 +82,28 @@ describe('the code-cell runner bundle', () => {
     }
   })
 
-  it('exits on its own when the link closes, even while a cell keeps its thread busy', async () => {
+  /**
+   * Starts a container whose runner reports, on its stderr, the moment a cell
+   * thread starts to spin. The cell writes the mark to fd 2 synchronously
+   * through its own process (the `vm` context is no boundary), so the mark is
+   * out before the loop whichever thread runs it.
+   */
+  async function startWatched(): Promise<{
+    container: CodeCellContainer
+    spinning: Promise<void>
+    exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }>
+  }> {
     const container = await CodeCellContainer.start(testSpec(), deps())
     const child = children.at(-1)
-    assert.ok(child)
+    assert.ok(child?.stderr)
+    const { stderr } = child
+    const spinning = new Promise<void>((resolve) => {
+      let seen = ''
+      stderr.on('data', (chunk: Buffer) => {
+        seen += chunk.toString('utf8')
+        if (seen.includes(SPIN_MARK)) resolve()
+      })
+    })
     const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
       (resolve) => {
         child.once('exit', (code, signal) => {
@@ -93,12 +111,31 @@ describe('the code-cell runner bundle', () => {
         })
       },
     )
-    // The cell spins after its first await, so only the host's deadline or
-    // the link closing can end it.
-    const spinning = container.runCell(cell('await null\nwhile (true) {}'))
+    return { container, spinning, exited }
+  }
+
+  const SPIN_MARK = '[test] cell thread spinning'
+  const SPIN = `;(console.log.constructor as FunctionConstructor)('return globalThis')().process.getBuiltinModule('fs').writeSync(2, '${SPIN_MARK}\\n')\nfor (;;) {}`
+
+  // Without the worker, the spinning cell holds the runner's only thread: it
+  // never sees the link close, and `stop` ends it with SIGKILL.
+  it('exits on its own when the link closes while a cell spins', async () => {
+    const { container, spinning, exited } = await startWatched()
+    const outcome = container.runCell(cell(`await null\n${SPIN}`))
+    await spinning
     await container.stop()
-    assert.equal((await spinning).kind, 'failed')
-    // Exited by itself: not the SIGKILL `stop` sends to a runner that does not.
+    assert.equal((await outcome).kind, 'failed')
+    assert.deepEqual(await exited, { code: 0, signal: null })
+  })
+
+  it('exits on its own when the link closes while a timer an earlier cell left spins', async () => {
+    const { container, spinning, exited } = await startWatched()
+    assert.equal(
+      valueOf(await container.runCell(cell(`setTimeout(() => {\n${SPIN}\n}, 0)\nreturn 1`))),
+      '1',
+    )
+    await spinning
+    await container.stop()
     assert.deepEqual(await exited, { code: 0, signal: null })
   })
 })

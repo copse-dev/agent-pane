@@ -97,7 +97,7 @@ export class CellToolSession {
   private keepReminder(reminder: string): void {
     if (this.reminders.includes(reminder)) return
     if (this.reminderLength + reminder.length > CODE_CELL_REMINDER_LIMIT) {
-      this.remindersOmitted += 1
+      this.omitted.add(reminder)
       return
     }
     this.reminders.push(reminder)
@@ -112,8 +112,7 @@ export class CellToolSession {
   external = false
   /** System-reminder blocks lifted off nested results, for the model: each once, within a budget. */
   readonly reminders: string[] = []
-  /** Distinct reminder blocks left out once the budget was spent. */
-  remindersOmitted = 0
+  private readonly omitted = new Set<string>()
   private reminderLength = 0
   /** How many images nested results carried that a cell cannot receive. */
   imagesDropped = 0
@@ -121,6 +120,11 @@ export class CellToolSession {
   constructor(host: CellToolHost, inTurn: InTurn) {
     this.host = host
     this.inTurn = inTurn
+  }
+
+  /** Distinct reminder blocks left out once the budget was spent. */
+  get remindersOmitted(): number {
+    return this.omitted.size
   }
 
   private available(): string[] {

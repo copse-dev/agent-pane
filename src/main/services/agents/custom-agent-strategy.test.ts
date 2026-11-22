@@ -31,6 +31,7 @@ const PARENT = tools(
   'task',
   'run_readonly_workers',
   'run_isolated_workers',
+  'run_code',
   'update_thread_plan',
   'report_plan_completion',
   'mcp__github__create_issue',
@@ -88,12 +89,22 @@ describe('resolveCustomAgentTools', () => {
       'explore',
       'run_readonly_workers',
       'run_isolated_workers',
+      'run_code',
       'ask_user',
       'git_commit',
       'update_thread_plan',
       'report_plan_completion',
     ]) {
       assert.ok(!resolved.includes(forbidden), `${forbidden} must never be inherited`)
+    }
+  })
+
+  it('cannot hold run_code, even when named: its cells share the thread’s container', () => {
+    for (const allowed of [['run_code'], ['read_file', 'run_code']]) {
+      assert.deepEqual(
+        names(resolveCustomAgentTools(PARENT, { tools: allowed, disallowedTools: [] })),
+        allowed.filter((name) => name !== 'run_code'),
+      )
     }
   })
 

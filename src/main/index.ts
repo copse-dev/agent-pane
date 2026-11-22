@@ -1523,7 +1523,8 @@ async function cleanupBeforeQuit(): Promise<void> {
   })
   // Bounded: container removal goes through the engine CLI, and the quit
   // deadline must leave time for the steps below (persisted writes among them).
-  // A container left behind exits once its link closes with this process.
+  // A container left behind exits once its link closes with this process,
+  // unless a cell that escaped `vm` holds its runner (`code-cell-worker.ts`).
   await Promise.race([
     stopAllCodeCellContainers().catch((error: unknown) => {
       console.error('[code-mode] Shutdown container cleanup failed:', error)

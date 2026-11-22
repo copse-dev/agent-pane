@@ -70,7 +70,8 @@ async function startCodeCellContainer(): Promise<CodeCellContainer> {
  * Remove code-cell containers an earlier app session left stopped. Docker
  * removes its own (`--rm`); Apple container keeps a stopped one until it is
  * deleted. A running one is left alone: it may belong to another instance of
- * the app, and one this host lost exits once its link closes.
+ * the app, and one this host lost exits once its link closes, unless a cell
+ * that escaped `vm` holds its runner in a native call (`code-cell-worker.ts`).
  */
 async function sweepCodeCellContainers(): Promise<void> {
   for (const each of await reachableThreadContainerEngines()) {
