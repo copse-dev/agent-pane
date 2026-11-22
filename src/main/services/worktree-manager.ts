@@ -779,7 +779,7 @@ async function symbolicHeadBranch(worktreePath: string): Promise<string | null> 
 }
 
 /**
- * Best-effort `git fetch origin <branch>` for a repository's default branch, so
+ * Best-effort fetch of `origin/<branch>` for a repository's default branch, so
  * a worktree based on it starts from the latest remote tip rather than whatever
  * the local branch happened to be pointed at. Never throws: no network / no
  * `origin` remote just means the next resolution step falls back to the local ref.
@@ -813,11 +813,21 @@ const defaultBranchFetchesInFlight = new Map<string, Promise<void>>()
 /**
  * The contained fallback fetch for a non-network origin. The branch only ever
  * appears inside a full refspec after `--end-of-options`, as on the host path,
- * so no branch name can be read as a `git fetch` option.
+ * so no branch name can be read as a `git fetch` option. `--no-tags` keeps the
+ * fetch to `refs/remotes/origin/<branch>`: a command-line refspec with a
+ * destination would otherwise make Git follow the remote's tags into the
+ * project.
  */
 function containedDefaultBranchFetchArgs(branch: string): string[] {
   const { source, destination } = originBranchRef(branch)
-  return ['fetch', '--quiet', '--end-of-options', 'origin', `+${source}:${destination}`]
+  return [
+    'fetch',
+    '--quiet',
+    '--no-tags',
+    '--end-of-options',
+    'origin',
+    `+${source}:${destination}`,
+  ]
 }
 
 async function fetchDefaultBranchOnce(projectRoot: string, branch: string): Promise<void> {

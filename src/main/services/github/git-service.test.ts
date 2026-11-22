@@ -1206,10 +1206,11 @@ describe('isPlainBranchName', () => {
     }
   })
 
-  it('refuses names Git would not take as a branch', () => {
+  it('refuses names Git would not take as a branch, and HEAD or a bare @', () => {
     for (const name of [
       '',
       '@',
+      'HEAD',
       '-dash',
       '--dashes',
       '/lead',

@@ -1620,8 +1620,9 @@ export async function getGitPromptState(root: string | null): Promise<GitPromptS
 const ORIGIN_HEAD_PREFIX = 'refs/remotes/origin/'
 
 /**
- * Whether `name` is a branch name Git itself would accept for a new branch
- * (`git check-ref-format --branch`, without the `@{-N}` shorthands).
+ * Whether `name` is a plain branch name: one `git check-ref-format --branch`
+ * accepts, without the `@{-N}` shorthands, and not `HEAD` or a bare `@`
+ * (Git's own name for HEAD), which would mean the checkout rather than a branch.
  *
  * The default branch is read from refs and configuration that processes
  * inside the project can change, and many callers pass it to Git as a bare
@@ -1629,7 +1630,7 @@ const ORIGIN_HEAD_PREFIX = 'refs/remotes/origin/'
  * resolver refuses anything Git would not take as a branch.
  */
 export function isPlainBranchName(name: string): boolean {
-  if (!name || name === '@' || name.startsWith('-')) return false
+  if (!name || name === '@' || name === 'HEAD' || name.startsWith('-')) return false
   if (name.startsWith('/') || name.endsWith('/') || name.endsWith('.')) return false
   if (name.includes('..') || name.includes('//') || name.includes('@{')) return false
   if (/[~^:?*[\\]/.test(name)) return false

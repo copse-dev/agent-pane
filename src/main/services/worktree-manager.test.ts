@@ -1137,9 +1137,14 @@ describe('worktree manager', () => {
     const tip = git(remote, ['rev-parse', 'main']).trim()
     git(remote, ['update-ref', 'refs/heads/-dash', tip])
 
+    // The fetch moves only the remote-tracking ref: a remote tag on that tip
+    // is not followed into the project.
+    git(remote, ['tag', 'remote-only', tip])
+
     await fetchDefaultBranch(repo, '-dash')
 
     assert.equal(git(repo, ['rev-parse', '--verify', 'refs/remotes/origin/-dash']).trim(), tip)
+    assert.equal(git(repo, ['tag', '--list', 'remote-only']).trim(), '')
   })
 
   it('falls back to the local default branch when the best-effort fetch times out', async () => {
