@@ -38,6 +38,33 @@ describe('checker failure classification', () => {
     }
   })
 
+  it('does not call a test run that reported its own failures one that could not start', () => {
+    const missingTool = 'Error: spawn bwrap ENOENT\n    at ChildProcess._handle.onexit'
+    assert.equal(
+      inconclusiveCheckFailure({ ...failed, kind: 'test', output: missingTool })?.kind,
+      'setup',
+    )
+    assert.equal(
+      inconclusiveCheckFailure({
+        ...failed,
+        kind: 'test',
+        output: missingTool,
+        testFailures: {
+          tier: 'unit-component',
+          complete: true,
+          failed: 1,
+          failures: [{ path: 'src/sandbox.test.ts', name: 'wraps the command' }],
+        },
+      }),
+      null,
+    )
+    // A runner that could not be found at all is still setup, report or not.
+    assert.equal(
+      inconclusiveCheckFailure({ ...failed, kind: 'test', exitCode: 127 })?.kind,
+      'setup',
+    )
+  })
+
   it('preserves normal failures and successful runs with nonfatal warmup warnings', () => {
     assert.equal(inconclusiveCheckFailure(failed), null)
     assert.equal(

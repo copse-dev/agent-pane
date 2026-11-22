@@ -1745,6 +1745,15 @@ causal finding. Imported legacy reports receive the same downgrade and lose the 
 automatic Stage 0 findings; independently raised model findings are retained. No report-version bump
 is needed: the signal is optional for older reports.
 
+_Amended 2026-11-22:_ "unavailable command/setup" means the checker itself did not start. A test
+run that printed its own complete failure inventory (`COPSE_TEST_FAILURES_V1`) did start, so a
+missing tool in one of its tests (`spawn bwrap ENOENT` from a sandbox test, `spawn ps ENOENT` in a
+slim cell) no longer marks the whole suite inconclusive. Base runs, and the two inventories are
+compared test by test as for any stable failure; a failure present on both sides is not a finding.
+Exit 126/127 and pnpm's missing-script errors without an inventory remain setup failures. Found
+reviewing Copse itself in an Apple container cell, where the suite ran for eight minutes and was
+reported as "could not start".
+
 GitHub conversation collection retains each prior Copse inline finding with its original commit,
 location, URL and latest three replies as one bounded historical entry. Conversation trimming drops
 that whole entry, never just its claim. Full Copse review summaries remain excluded to avoid

@@ -26,9 +26,14 @@ export function inconclusiveCheckFailure(run: CheckRun): InconclusiveCheckFailur
   if (
     run.exitCode === 126 ||
     run.exitCode === 127 ||
-    /\bERR_PNPM_(?:NO_SCRIPT|NO_IMPORTER_MANIFEST_FOUND)\b|\bCommand "[^"]+" not found\b|\bspawn \S+ ENOENT\b/.test(
-      run.output,
-    )
+    // A test run that printed its own complete failure report did start: a
+    // tool missing for one of its tests (`spawn ps ENOENT`) is that test's
+    // failure, compared test by test against base, not a checker that could
+    // not run at all.
+    (run.testFailures === undefined &&
+      /\bERR_PNPM_(?:NO_SCRIPT|NO_IMPORTER_MANIFEST_FOUND)\b|\bCommand "[^"]+" not found\b|\bspawn \S+ ENOENT\b/.test(
+        run.output,
+      ))
   ) {
     return {
       kind: 'setup',

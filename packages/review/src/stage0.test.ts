@@ -549,6 +549,39 @@ describe('runStage0', () => {
     assert.deepEqual(unknown.findings, [])
   })
 
+  it('compares a suite whose tests lack a tool on both sides instead of calling it unstartable', async () => {
+    // The cell has no bwrap, so the same sandbox test fails on base and head;
+    // the runner still started and reported its failures, so they are compared.
+    const output = (names: string[]): string =>
+      'Error: spawn bwrap ENOENT\n' +
+      TEST_FAILURE_REPORT_PREFIX +
+      JSON.stringify({
+        tier: 'unit-component',
+        complete: true,
+        failed: names.length,
+        failures: names.map((name) => ({ path: 'src/sandbox.test.ts', name })),
+      }) +
+      '\n'
+    const same = await run(
+      await scenario(
+        { test: { exit: 1, stdout: output(['wraps the command']) } },
+        { test: { exit: 1, stdout: output(['wraps the command']) } },
+        { kinds: ['test'] },
+      ),
+    )
+    assert.equal(same.checks[0]?.verdict, 'failing-on-base')
+    assert.deepEqual(same.findings, [])
+    const regressed = await run(
+      await scenario(
+        { test: { exit: 1, stdout: output(['wraps the command']) } },
+        { test: { exit: 1, stdout: output(['wraps the command', 'a new regression']) } },
+        { kinds: ['test'] },
+      ),
+    )
+    assert.equal(regressed.checks[0]?.verdict, 'regressed')
+    assert.match(regressed.findings[0]?.claim ?? '', /a new regression/)
+  })
+
   it('anchors a new type diagnostic at its line and ignores one that only moved', async () => {
     const repo = await scenario(
       { typecheck: { exit: 2, stdout: "src/a.ts(9,1): error TS2304: Cannot find name 'x'.\n" } },
