@@ -12,6 +12,7 @@ import { copseCacheDir, copseManagedPreparationCacheDirs } from '../services/sto
 import { envForRendererChildProcess } from '../services/exec/child-process-env.ts'
 import { terminateProcessTree } from '../services/exec/subprocess-kill.ts'
 import {
+  HOME_INTERPRETER_TOOLCHAIN_DIRS,
   electronRuntimeAllowReadPaths,
   sandboxRuntimeHelperAllowReadPaths,
   workspaceMandatoryWriteDenyPaths,
@@ -177,9 +178,7 @@ function preparationExecutableReadPaths(
   }
   for (const absolute of [
     ...legacyPreparationRuntimeReadPaths(automaticCargo),
-    ...['.bun/bin', '.pyenv/versions', '.local/share/uv/python'].map((path) =>
-      join(homedir(), path),
-    ),
+    ...HOME_INTERPRETER_TOOLCHAIN_DIRS.map((path) => join(homedir(), path)),
   ]) {
     if (lstatSync(absolute, { throwIfNoEntry: false })) paths.push(absolute)
   }
