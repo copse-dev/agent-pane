@@ -1,0 +1,141 @@
+PR portfolio study
+2026-11-22
+Base revision: 96ad0cd46053
+
+Task brief
+Explore how Copse could present a large set of open pull requests in one panel,
+and whether per-PR classifications could later be shared with agents. The repo
+had 63 open pull requests on 2026-11-22, 62 by one person and most from agent
+branches, so author grouping and the team "waiting on reviewer" model say little.
+Acceptance: a reviewable side-pane and expanded layout over a real snapshot; every
+PR grouped by who acts next, with the reason shown; stacks collapsed to one row;
+workstreams derived only from evidence a reader can inspect; the record an agent
+would receive shown beside each PR and workstream; no GitHub mutations. Scope is a
+design artifact only: no Electron renderer, runtime, dependency, permission or
+persisted-data changes.
+
+What other tools do (research behind the layout)
+- Group by next action, not by author or type: Gerrit's attention set ("Whose
+  turn is it?", from Google's Critique), Phabricator's six action buckets (which
+  replaced vaguer categories users disagreed about), Graphite's inbox sections,
+  GitHub's /pulls dashboard (generally available July 2026: review requests, needs
+  fixes, ready to merge), Linear's Reviews and Priority inbox.
+- Enrichment is secondary: CodeRabbit's 1-5 review effort, LinearB's estimated
+  review time labels, Meta's Diff Risk Score used as a percentile gate.
+- Structure: stacks as one unit (Graphite, Linear Diffs); concurrent-edit
+  detection between open PRs (Microsoft's ConE).
+- Copse's own risk rating is not used as an axis: benchmarks/review-risk found it
+  rated High on 71% of open PRs (September), against about 3% of merged changes
+  later blamed for a regression.
+
+Files
+snapshot.js   Facts only, captured read-only: REST pull list (title, draft, refs,
+              labels, dates), search comment counts, check runs on each head
+              (latest run per check name, so a superseded failure does not count),
+              and a local git diff of each head against its base (stack parent,
+              base branch or main). Generated; no judgments.
+classify.js   Pure rules: classifyPortfolio(snapshot, now) returns lanes, stacks,
+              workstreams, overlaps, hot files, type, size and sensitive surfaces,
+              each with its reasons. agentContextForPr / agentContextForWorkstream
+              return the record an agent would receive.
+prototype.js  Renders classify.js output only. No network, no writes.
+mocks/        Screenshots from the browser probe below.
+
+Lane rules (first match wins; actors match #4226's user / agent / ci vocabulary)
+1. Title says PARKED or DO NOT MERGE: Parked.
+2. Only Base Current fails: Needs an agent, "Rebase onto main".
+3. Any other current check fails: Needs an agent, "Fix failing checks".
+4. Labelled review-has-feedback: Needs an agent, "Address review feedback".
+   Rules 2-4 become Stalled when the PR has been idle for 7+ days.
+5. Checks running: In progress (CI).
+6. Labelled screenshots-need-review: Needs you, "Review screenshots".
+7. Checks passed: Needs you, "Ready to merge", "Merge after #parent" or
+   "Mark ready for review".
+8. Idle 7+ days: Stalled.
+9. Draft without checks: In progress, "Draft, no CI yet".
+10. Otherwise: Needs you, "Request CI".
+A stack sits in the most urgent lane of any member and names that member.
+
+Workstream rules
+PRs are linked when any of these hold, then grouped as connected components:
+- stacked on one another;
+- share 3+ source files and 10%+ of their combined source files, ignoring hot
+  files (touched by 12%+ of open PRs, e.g. scripts/e2e-shard-weights.json);
+- change the same plan doc, ignoring docs 4+ open PRs edit (the binding
+  hooks-and-feature-packs decisions log would otherwise link unrelated work);
+- titles and branch names score 0.25+ cosine similarity (TF-IDF) and share 2+
+  words.
+Heavy overlap: 4+ shared files and 50%+ of combined files. Names are the most
+distinctive shared words, so they can read awkwardly; a model could name them.
+
+Findings on this snapshot
+- Lanes: 26 needs you, 3 needs an agent, 23 in progress, 10 stalled, 1 parked.
+- Actions: progress: Draft · no CI yet 23; user: Review screenshots 15; user:
+  Request CI 11; stalled: Idle 6; stalled: Feedback unaddressed 4; agent: Address
+  review feedback 3; parked: Parked 1.
+- 0 of 63 PRs have check runs on their current head; drafts here mostly run no CI.
+- 17 PRs sit in 6 stacks, so the inbox shows 52 rows instead of 63.
+- 7 workstreams hold 28 PRs: GitHub · Sandbox · Desktop (6), Machine · SSH · Model
+  (6), Contained · Preparation · Grant (5), Prompt · XSS · Renderer (4), Tool ·
+  Automation · Update (3), Draft · Automation · Status (2), Change · Pull · Request
+  (2). 35 PRs stand alone.
+- Heavy overlap: #3909/#4164, #4117/#4164. Hidden stack parent: #4323. Far behind
+  main: #2658, #4462.
+- Hot files: scripts/e2e-shard-weights.json (18), src/main/index.ts (12),
+  src/preload/index.ts (10), src/main/services/agent-service.ts (10),
+  schemas/api-protocol.manifest.json (9), src/preload/api.d.ts (8).
+
+Recommendations, in implementation order
+1. Replace the PR pane's location sections (Viewing / From chat / this repo / Your
+   other PRs) with next-actor lanes. Keep "From chat" as a filter or pin. Drive
+   the lanes from #4226's readiness model once it lands: it already handles
+   check supersession, freshness and the next responsible actor, which this
+   study approximates.
+2. Collapse stacks to one row with a member strip, using #3715's stack
+   membership reads. Flag a base branch that has no open PR.
+3. Add the Workstreams view. In Copse it fits a full-width tab better than the
+   side pane; the pane stays a triage inbox.
+4. Serve the same classification to agents as a read-only main-process tool
+   (pr_portfolio.get / pr_portfolio.workstream). Agents can check overlaps before
+   starting work, avoid a second attempt at an open change, pick a merge order
+   around hot files, and see when the user is the bottleneck.
+5. Do not lead with risk. Flag only the surfaces bench:risk found most predictive
+   (security, sandbox/permissions, secrets). Revisit a risk badge once the
+   proposed rubric shows it discriminates.
+
+What Copse knows that this snapshot does not
+Whether an agent thread is running on a PR (the agent link store behind the PR
+pane's agent badge). That splits "In progress" into "Agent working" and "Nobody
+working", the largest gap here. Local worktree state, CI investigator results
+and follow-up suggestions could also feed the reasons.
+
+Proposal boundaries
+The snapshot is static (captured 2026-11-22 15:00 UTC). GitHub links are real; every
+button is illustrative and reports that nothing was sent. File overlap is
+file-level, not line-level. Lane rules use labels this repository already applies
+(screenshots-need-review, review-has-feedback). No open PR had a GitHub review
+decision, so GitHub reviews are not used. Type and size are
+heuristics from titles and paths.
+
+Open the prototype
+Serve the repository root with: python3 -m http.server 8765 --bind 127.0.0.1
+Then visit: http://localhost:8765/prototypes/pr-portfolio/
+URL parameters: layout=pane|split|expanded, view=inbox|workstreams,
+pr=<number>, ws=<workstream id>, theme=light|dark.
+Fonts, colours and theme foundations load from the repository.
+
+Completion evidence (interim)
+This commit's snapshot has no check-run data yet: every PR's checks are null, so
+lanes that depend on CI fall back to "Request CI" or "Draft, no CI yet". A
+follow-up commit adds current check results and the mocks/ screenshots.
+Chromium + Playwright browser probe passed 23 of 23 checks on this commit: Pliant
+loaded; lane bar and inbox each count all 63 PRs exactly once; selection shows
+reasons; agent context parses as JSON for the same PR; overlap rows expand to
+shared files; filter, no-match state and Escape; workstream list, graph nodes and
+edges, node click and keyboard activation; illustrative actions report nothing was
+sent; theme toggles both ways; no horizontal overflow at expanded 1280px, split
+1000px, pane 1000px and 390px widths; no JavaScript errors or failed responses.
+pnpm exec eslint prototypes/pr-portfolio: passed.
+pnpm exec oxfmt --check prototypes/pr-portfolio: passed.
+No app implementation, Electron screenshot or full-repository check is claimed.
+

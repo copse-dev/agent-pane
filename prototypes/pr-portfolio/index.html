@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Copse PR portfolio study</title>
+    <link rel="stylesheet" href="../../src/renderer/styles/tokens.css" />
+    <link rel="stylesheet" href="../../src/renderer/styles/themes.css" />
+    <link rel="stylesheet" href="prototype.css" />
+    <script src="snapshot.js" defer></script>
+    <script src="classify.js" defer></script>
+    <script src="prototype.js" defer></script>
+  </head>
+  <body>
+    <div class="study">
+      <header class="study-header">
+        <div>
+          <span class="eyebrow">Copse · PR portfolio study</span>
+          <h1>Whose turn is it?</h1>
+          <p class="study-lede" id="lede"></p>
+        </div>
+        <div class="study-controls">
+          <label
+            >Layout
+            <select id="layout">
+              <option value="pane">Side pane · 380px</option>
+              <option value="split">Split · 860px</option>
+              <option value="expanded">Expanded · 1180px</option>
+            </select></label
+          >
+          <button id="theme" class="button" type="button">Light theme</button>
+        </div>
+      </header>
+
+      <div class="workbench" data-layout="expanded" data-show="list">
+        <aside class="pane" aria-label="Pull requests">
+          <header class="pane-header">
+            <strong>Pull requests</strong>
+            <span class="pane-count" id="pane-count"></span>
+          </header>
+          <div class="view-switch" role="group" aria-label="View">
+            <button type="button" data-view="inbox" aria-pressed="true">Inbox</button>
+            <button type="button" data-view="workstreams" aria-pressed="false">Workstreams</button>
+          </div>
+          <div
+            class="lane-bar"
+            id="lane-bar"
+            aria-label="Open pull requests by who acts next"
+          ></div>
+          <div class="search-wrap">
+            <span aria-hidden="true">⌕</span>
+            <input
+              id="filter"
+              aria-label="Filter pull requests"
+              placeholder="Filter by title, #, branch, type…"
+            />
+          </div>
+          <div class="pane-body" id="pane-body"></div>
+          <footer class="pane-footer" id="pane-footer"></footer>
+        </aside>
+        <main class="detail" id="detail" tabindex="-1" aria-live="polite"></main>
+      </div>
+
+      <p class="study-note">
+        Prototype over a real snapshot of open pull requests. Classification runs in the page from
+        <code>snapshot.js</code> (facts only) through <code>classify.js</code> (pure rules). Actions
+        are illustrative: nothing here writes to GitHub.
+      </p>
+      <div id="toast" class="toast" role="status" hidden></div>
+    </div>
+  </body>
+</html>
