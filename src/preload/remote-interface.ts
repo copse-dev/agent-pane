@@ -52,25 +52,43 @@ function invokeRead(request: RemoteRead): Promise<unknown> {
   }
 }
 
+type Invoke = (channel: string, ...args: unknown[]) => Promise<unknown>
+
+/**
+ * Send the outcome of one remote read back to main. A reply that cannot be
+ * sent, such as a result too large for one request, is reported as a failure,
+ * so the remote gets that reason instead of a timeout.
+ */
+export function replyToRemoteRead(
+  invoke: Invoke,
+  id: string,
+  read: Promise<unknown>,
+): Promise<void> {
+  return read
+    .then((result: unknown) => invoke('remote:reply', { id, ok: true, value: result }))
+    .catch((error: unknown) =>
+      invoke('remote:reply', {
+        id,
+        ok: false,
+        error: (error instanceof Error ? error.message : 'Desktop request failed').slice(0, 2000),
+      }),
+    )
+    .then(
+      () => undefined,
+      () => undefined,
+    )
+}
+
 /** Actual preload invokes preserve ordinary sender guards and argument validation. */
 export function installRemoteReadRelay(): void {
   ipcRenderer.on('remote:read', (_event, id: unknown, value: unknown) => {
     if (typeof id !== 'string') return
     const parsed = remoteReadSchema.safeParse(value)
     if (!parsed.success || !remoteReadAllowed(parsed.data)) return
-    void invokeRead(parsed.data)
-      .then((result: unknown) =>
-        ipcRenderer.invoke('remote:reply', { id, ok: true, value: result }),
-      )
-      // Also reached when the reply itself cannot be sent, such as a result too
-      // large for one request: the remote gets that reason instead of a timeout.
-      .catch((error: unknown) =>
-        ipcRenderer.invoke('remote:reply', {
-          id,
-          ok: false,
-          error: (error instanceof Error ? error.message : 'Desktop request failed').slice(0, 2000),
-        }),
-      )
-      .catch(() => {})
+    void replyToRemoteRead(
+      (channel, ...args) => ipcRenderer.invoke(channel, ...args),
+      id,
+      invokeRead(parsed.data),
+    )
   })
 }
