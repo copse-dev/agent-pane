@@ -122,9 +122,7 @@ describe('Mobile Companion at phone width', () => {
         { timeout: 8000, timeoutMsg: 'Activity did not refresh' },
       )
       await expect($('.group .older[data-group="recent"]')).toHaveAttribute('open')
-      expect(
-        await $$('.older .row').filter((row) => row.isDisplayed()),
-      ).toHaveLength(3)
+      expect(await $$('.older .row').filter((row) => row.isDisplayed())).toHaveLength(3)
       await $('.group .older summary').scrollIntoView({ block: 'start' })
       await screenshot(`mobile-companion-activity-older-${theme}.png`)
       await $('.group .older summary').click()
