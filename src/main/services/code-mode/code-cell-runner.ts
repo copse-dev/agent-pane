@@ -3,15 +3,19 @@
  * into `dist/main/code-cell-runner.cjs`, copied into the code-cell image and
  * started by its entrypoint as an unprivileged user with no network.
  *
- * The container's stdin and stdout are the link to the host. Stdout's original
- * `write` is taken for the link first thing and the visible `process.stdout`
- * is pointed at stderr, so a stray `console.log` lands in the container's log
- * instead of inside a frame (the same rule as the thread-container worker).
- * When the host closes the link the runner exits, and the engine removes the
- * container.
+ * The same bundle runs on two threads. The main thread owns the link: the
+ * container's stdin and stdout. Stdout's original `write` is taken for the
+ * link first thing and the visible `process.stdout` is pointed at stderr, so a
+ * stray `console.log` lands in the container's log instead of inside a frame
+ * (the same rule as the thread-container worker). Cells run on a worker thread
+ * started from this same file (`code-cell-worker.ts`), so a cell that keeps
+ * its thread busy cannot stop the main thread from seeing the host close the
+ * link. When it closes, the runner exits, and the engine removes the container.
  */
+import { isMainThread, parentPort } from 'node:worker_threads'
 import { EgressLink } from '../container-runtime/egress-link.ts'
 import { serveCodeCells } from './code-cell-guest.ts'
+import { serveCellWorker, WorkerCellEngine } from './code-cell-worker.ts'
 
 function claimStdioLink(onHostGone: () => void): EgressLink {
   const stdout = process.stdout
@@ -38,15 +42,27 @@ function claimStdioLink(onHostGone: () => void): EgressLink {
   return link
 }
 
-const link = claimStdioLink(() => {
-  process.exit(0)
-})
-serveCodeCells(link, { nodeVersion: process.version }).then(
-  () => {
+function fail(reason: string): never {
+  process.stderr.write(`[code-cell] ${reason}\n`)
+  process.exit(1)
+}
+
+if (!isMainThread) {
+  if (parentPort === null) fail('the cell worker has no port to its runner')
+  serveCellWorker(parentPort)
+} else {
+  const link = claimStdioLink(() => {
     process.exit(0)
-  },
-  (error: unknown) => {
-    process.stderr.write(`[code-cell] ${error instanceof Error ? error.message : String(error)}\n`)
-    process.exit(1)
-  },
-)
+  })
+  serveCodeCells(link, {
+    nodeVersion: process.version,
+    engine: (callHost) => new WorkerCellEngine(__filename, callHost, fail),
+  }).then(
+    () => {
+      process.exit(0)
+    },
+    (error: unknown) => {
+      fail(error instanceof Error ? error.message : String(error))
+    },
+  )
+}

@@ -52,6 +52,12 @@ export const CODE_CELL_TOOLS: readonly string[] = [
 export const CODE_CELL_MAX_TOOL_CALLS = 100
 /** The most text one nested result hands back to the cell, in bytes. */
 export const CODE_CELL_TOOL_RESULT_LIMIT = 2 * 1024 * 1024
+/**
+ * The most reminder text lifted off one cell's nested results, in UTF-16
+ * code units. A hook that adds context to every read would otherwise append
+ * one block per call, past the cap on the cell's own output.
+ */
+export const CODE_CELL_REMINDER_LIMIT = 16 * 1024
 
 /** The part of the tool registry a cell's calls need. */
 export interface CellToolHost {
@@ -88,14 +94,27 @@ export function splitAppendedReminders(
 }
 
 export class CellToolSession {
+  private keepReminder(reminder: string): void {
+    if (this.reminders.includes(reminder)) return
+    if (this.reminderLength + reminder.length > CODE_CELL_REMINDER_LIMIT) {
+      this.remindersOmitted += 1
+      return
+    }
+    this.reminders.push(reminder)
+    this.reminderLength += reminder.length
+  }
+
   private readonly host: CellToolHost
   private readonly inTurn: InTurn
   /** How many tool calls the cell made. */
   calls = 0
   /** Whether any result the cell saw came from outside the workspace. */
   external = false
-  /** System-reminder blocks lifted off nested results, for the model. */
+  /** System-reminder blocks lifted off nested results, for the model: each once, within a budget. */
   readonly reminders: string[] = []
+  /** Distinct reminder blocks left out once the budget was spent. */
+  remindersOmitted = 0
+  private reminderLength = 0
   /** How many images nested results carried that a cell cannot receive. */
   imagesDropped = 0
 
@@ -130,7 +149,7 @@ export class CellToolSession {
         outcome.result,
         outcome.appendedReminderLengths,
       )
-      this.reminders.push(...reminders)
+      for (const reminder of reminders) this.keepReminder(reminder)
       this.imagesDropped += outcome.images?.length ?? 0
       return { ok: true, result: truncateToolOutput(body, CODE_CELL_TOOL_RESULT_LIMIT) }
     } catch (error) {

@@ -4,6 +4,7 @@ import { READONLY_AGENT_TOOLS } from '@shared/tools/readonly-tools.ts'
 import {
   CellToolSession,
   CODE_CELL_MAX_TOOL_CALLS,
+  CODE_CELL_REMINDER_LIMIT,
   CODE_CELL_TOOLS,
   splitAppendedReminders,
   type CellToolHost,
@@ -133,6 +134,46 @@ describe('CellToolSession', () => {
     )
     await session.handle('read_file', {}, signal)
     assert.equal(session.imagesDropped, 2)
+  })
+})
+
+describe('CellToolSession reminders', () => {
+  const block = (text: string): string => `<system-reminder>${text}</system-reminder>`
+
+  it('keeps each distinct reminder once', async () => {
+    const same = block('read the house rules first')
+    const session = new CellToolSession(
+      host({
+        executeNormalized: () =>
+          Promise.resolve({ result: `body\n\n${same}`, appendedReminderLengths: [same.length] }),
+      }),
+      direct,
+    )
+    for (let i = 0; i < 5; i += 1) await session.handle('read_file', { path: String(i) }, signal)
+    assert.deepEqual(session.reminders, [same])
+    assert.equal(session.remindersOmitted, 0)
+  })
+
+  it('stops keeping reminders past its budget and counts the rest', async () => {
+    let n = 0
+    const session = new CellToolSession(
+      host({
+        executeNormalized: () => {
+          n += 1
+          const reminder = block(`${String(n)}:${'x'.repeat(9_000)}`)
+          return Promise.resolve({
+            result: `body\n\n${reminder}`,
+            appendedReminderLengths: [reminder.length],
+          })
+        },
+      }),
+      direct,
+    )
+    for (let i = 0; i < 10; i += 1) await session.handle('read_file', { path: String(i) }, signal)
+    const kept = session.reminders.reduce((sum, reminder) => sum + reminder.length, 0)
+    assert.ok(kept <= CODE_CELL_REMINDER_LIMIT)
+    assert.equal(session.reminders.length + session.remindersOmitted, 10)
+    assert.ok(session.remindersOmitted > 0)
   })
 })
 

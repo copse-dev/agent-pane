@@ -128,7 +128,13 @@ export function createRunCodeTool(
         RUN_CODE_OUTPUT_MAX_BYTES,
       )
       const framed = session.external ? wrapExternalContent(RUN_CODE_TOOL_NAME, text) : text
-      return [framed, ...session.reminders].join('\n\n')
+      const omitted =
+        session.remindersOmitted > 0
+          ? [
+              `(${String(session.remindersOmitted)} more hook note${session.remindersOmitted === 1 ? '' : 's'} from the cell's tool calls left out)`,
+            ]
+          : []
+      return [framed, ...session.reminders, ...omitted].join('\n\n')
     },
   })
 }

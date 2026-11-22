@@ -46,6 +46,9 @@ export const CUSTOM_AGENT_FORBIDDEN_TOOLS: readonly string[] = [
   'send_thread_prompt',
   'run_background',
   'track_long_task',
+  // A code cell calls read tools on its own, past the definition's `tools` and
+  // `disallowedTools`, and its container and state belong to the parent's thread.
+  'run_code',
 ]
 
 /** Steps a custom agent may take when its definition sets no `maxTurns`. */

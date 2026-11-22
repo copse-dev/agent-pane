@@ -11,7 +11,7 @@ import type {
   CodeCellContainerDependencies,
   CodeCellContainerSpec,
 } from './code-cell-container.ts'
-import { serveCodeCells } from './code-cell-guest.ts'
+import { CodeCellRunner, serveCodeCells } from './code-cell-guest.ts'
 
 export interface InProcessEngine {
   deps: CodeCellContainerDependencies
@@ -58,7 +58,10 @@ export function inProcessEngine(options: { inspect?: string } = {}): InProcessEn
     )
     lastGuest = guest
     lastToHost = toHost
-    void serveCodeCells(guest, { nodeVersion: process.version }).finally(() => {
+    void serveCodeCells(guest, {
+      nodeVersion: process.version,
+      engine: (callHost) => new CodeCellRunner(callHost),
+    }).finally(() => {
       exit(0)
     })
     return {

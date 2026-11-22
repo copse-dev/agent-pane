@@ -71,9 +71,6 @@ export const cellResultSchema = z.discriminatedUnion('ok', [
 ])
 export type CellResult = z.infer<typeof cellResultSchema>
 
-export const guestControlMessageSchema = z.union([guestReadySchema, cellResultSchema])
-export type GuestControlMessage = z.infer<typeof guestControlMessageSchema>
-
 /** Tool names a cell may ask for: what first-party tools are called, nothing else. */
 export const CELL_TOOL_NAME = /^[a-z][a-z0-9_]{0,63}$/
 

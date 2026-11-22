@@ -1665,7 +1665,7 @@ const appleContainerInspectSchema = z
   )
   .length(1)
 
-export type AppleContainerInspect = z.infer<typeof appleContainerInspectSchema>[number]
+type AppleContainerInspect = z.infer<typeof appleContainerInspectSchema>[number]
 
 export function decodeAppleInspect(inspectJson: string): AppleContainerInspect | null {
   return safeJsonParse(inspectJson, decodeWithSchema(appleContainerInspectSchema))?.[0] ?? null

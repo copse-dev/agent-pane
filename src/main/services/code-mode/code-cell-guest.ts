@@ -124,15 +124,24 @@ function plainArguments(name: string, args: unknown): Record<string, unknown> {
   return Object.fromEntries(Object.entries(plain))
 }
 
-export class CodeCellRunner {
+/** Reaches the host for one `tools.<name>(args)`: resolves to the text, or throws the refusal. */
+export type GuestToolCaller = (name: string, args: Record<string, unknown>) => Promise<string>
+
+/** Runs cells, one at a time, in a context that persists between them. */
+export interface CellEngine {
+  /** Resolves once the engine can take a cell without starting up first. */
+  ready(): Promise<void>
+  run(cell: CellRun): Promise<CellResult>
+}
+
+export class CodeCellRunner implements CellEngine {
   private readonly context: Context
-  private activeCell = -1
   /** The current cell's log; a timer left by an earlier cell writes into the current one. */
   private logs = new BoundedText()
-  private readonly link: CodeCellGuestLink
+  private readonly callHost: GuestToolCaller
 
-  constructor(link: CodeCellGuestLink) {
-    this.link = link
+  constructor(callHost: GuestToolCaller) {
+    this.callHost = callHost
     const state: Record<string, unknown> = {}
     // Every property read goes through the trap, so the target's prototype is never seen.
     const target: Record<string, unknown> = {}
@@ -179,17 +188,14 @@ export class CodeCellRunner {
 
   private async callTool(name: string, args: unknown): Promise<string> {
     if (!CELL_TOOL_NAME.test(name)) throw new Error(`tools.${name} is not a Copse tool name`)
-    const plain = plainArguments(name, args)
-    const stream = await this.link.open(CODE_CELL_TOOL_TARGET)
-    stream.end(encodeLine({ cell: this.activeCell, name, args: plain }))
-    const reply = decodeLine((await readMessage(stream)).trim(), toolCallResponseSchema)
-    if (reply === null) throw new Error(`tools.${name}: the host sent an unreadable reply`)
-    if (!reply.ok) throw new Error(reply.error)
-    return reply.result
+    return await this.callHost(name, plainArguments(name, args))
+  }
+
+  ready(): Promise<void> {
+    return Promise.resolve()
   }
 
   async run(cell: CellRun): Promise<CellResult> {
-    this.activeCell = cell.id
     this.logs = new BoundedText()
     const value = new BoundedText()
     const filename = `cell-${String(cell.id)}.ts`
@@ -223,15 +229,38 @@ export class CodeCellRunner {
 }
 
 /**
+ * One tool request to the host, stamped with the cell the host asked for
+ * last: the host serves it only while that cell is running.
+ */
+async function requestTool(
+  link: CodeCellGuestLink,
+  cell: number,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<string> {
+  const stream = await link.open(CODE_CELL_TOOL_TARGET)
+  stream.end(encodeLine({ cell, name, args }))
+  const reply = decodeLine((await readMessage(stream)).trim(), toolCallResponseSchema)
+  if (reply === null) throw new Error(`tools.${name}: the host sent an unreadable reply`)
+  if (!reply.ok) throw new Error(reply.error)
+  return reply.result
+}
+
+/**
  * Serve cells until the host closes the control stream. Cells run one at a
  * time, in the order the host sent them; a malformed message ends the stream.
+ * `engine` runs them: in the product a worker thread (`code-cell-worker.ts`),
+ * so this thread keeps answering the link whatever a cell does.
  */
 export async function serveCodeCells(
   link: CodeCellGuestLink,
-  options: { nodeVersion: string },
+  options: { nodeVersion: string; engine: (callHost: GuestToolCaller) => CellEngine },
 ): Promise<void> {
   const control = await link.open(CODE_CELL_CONTROL_TARGET)
-  const runner = new CodeCellRunner(link)
+  let activeCell = -1
+  const engine = options.engine((name, args) => requestTool(link, activeCell, name, args))
+  // Ready means ready to run: a warm spare has its engine up already.
+  await engine.ready()
   let queue = Promise.resolve()
   control.write(encodeLine({ ready: true, node: options.nodeVersion.slice(0, 64) }))
   await readLines(control, (line) => {
@@ -241,7 +270,8 @@ export async function serveCodeCells(
       return
     }
     queue = queue.then(async () => {
-      const result = await runner.run(cell)
+      activeCell = cell.id
+      const result = await engine.run(cell)
       if (!control.destroyed) control.write(encodeLine(result))
     })
   })

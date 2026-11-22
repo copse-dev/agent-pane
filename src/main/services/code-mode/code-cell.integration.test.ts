@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { bundleCodeCellRunner } from '../../../../scripts/lib/thread-container-worker-bundle.mts'
 import type { ThreadContainerEngine } from '../container-runtime/container-engine.ts'
+import { spawn, type ChildProcess } from 'node:child_process'
+import { engineCommand } from '../container-runtime/container-engine.ts'
 import { listManagedRuntimes, runEngine } from '../container-runtime/thread-container.ts'
 import {
   CodeCellContainer,
@@ -160,6 +162,77 @@ return todos
       await container.stop()
     }
   })
+
+  // A runner whose only thread a spinning cell holds cannot even finish
+  // sending the second request, so without the worker this test would wait
+  // on it forever: hence the timeout.
+  it(
+    'exits by itself when the app dies mid-cell, even while the cell spins',
+    { timeout: 60_000 },
+    async (t) => {
+      if (engine !== 'docker') {
+        t.skip('Apple container has no `wait` to observe the exit with')
+        return
+      }
+      let attached: ChildProcess | null = null
+      const name = newCodeCellRuntimeId()
+      const container = await CodeCellContainer.start(
+        { engine, image: IMAGE, runtimeId: name, ...DEFAULT_CODE_CELL_LIMITS },
+        {
+          runEngine: (which, args) => runEngine(which, args),
+          attach: (which, containerId) => {
+            const child = spawn(
+              engineCommand(which),
+              ['start', '--attach', '--interactive', containerId],
+              {
+                stdio: ['pipe', 'pipe', 'pipe'],
+              },
+            )
+            attached = child
+            return child
+          },
+          // No teardown: the container must go on its own.
+          teardown: () => Promise.resolve(),
+        },
+      )
+      try {
+        // The cell's second request is sent on the line before its loop, so
+        // once the host has it the cell is certainly spinning.
+        let spinning = (): void => {}
+        const isSpinning = new Promise<void>((resolve) => {
+          spinning = resolve
+        })
+        void container.runCell({
+          code: "await tools.read_file({ path: 'a' })\nvoid tools.read_file({ path: 'b' }).catch(() => {})\nwhile (true) {}",
+          timeoutMs: 60_000,
+          signal: new AbortController().signal,
+          callTool: (_name, args) => {
+            if (args['path'] === 'b') spinning()
+            return Promise.resolve({ ok: true, result: 'text' })
+          },
+        })
+        await isSpinning
+        // The app crashing takes the engine CLI it spawned with it; nothing is
+        // closed gracefully.
+        assert.ok(attached)
+        ;(attached as ChildProcess).kill('SIGKILL')
+        const started = Date.now()
+        // `docker wait` returns once the container has exited (and `--rm`
+        // removes it); one already gone reads as "No such container".
+        await runEngine('docker', ['wait', `copse-${name}`], { timeoutMs: 20_000 }).catch(
+          (error: unknown) => {
+            if (!/No such container/i.test(String(error))) throw error
+          },
+        )
+        assert.ok(Date.now() - started < 20_000)
+        const left = await listManagedRuntimes(engine)
+        assert.ok(!left.some((runtime) => runtime.runtimeId === name), 'the container is gone')
+      } finally {
+        await runEngine('docker', ['rm', '--force', `copse-${name}`]).catch(() => '')
+        await container.stop()
+      }
+    },
+  )
 
   it('records how long a cold start and a cell on a warm container take', async () => {
     const cold: number[] = []

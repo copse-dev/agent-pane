@@ -65,6 +65,8 @@ const RESULT_GRACE_MS = 2_000
 const TOOL_REQUEST_LIMIT = 1024 * 1024
 /** How many lines of the container's log are kept for diagnosing a failure. */
 const LOG_TAIL_LINES = 40
+/** How long `stop` waits for the runner to exit on its own before removing the container. */
+const STOP_GRACE_MS = 1_000
 /** How many tool requests a guest may have open at once. */
 const MAX_OPEN_TOOL_STREAMS = 16
 /** The most bytes a guest may send the host in one second. */
@@ -594,15 +596,13 @@ export class CodeCellContainer {
       this.fail('the container was stopped')
       this.link.close(undefined)
       this.child.stdin.end()
+      // The runner exits when it sees the link close, and the attached start
+      // exits with it. Give that a moment, then remove the container whatever
+      // its state: a forced removal also ends a runner that did not exit, and
+      // it keeps stopping inside the quit budget.
       if (!this.exited) {
-        // The attached start exits with the container, which exits when its
-        // runner sees the link close. One that does not is killed; teardown
-        // below removes the container either way.
         await new Promise<void>((resolve) => {
-          const timer = setTimeout(() => {
-            this.child.kill('SIGKILL')
-            resolve()
-          }, 5_000)
+          const timer = setTimeout(resolve, STOP_GRACE_MS)
           this.child.once('exit', () => {
             clearTimeout(timer)
             resolve()
@@ -612,6 +612,9 @@ export class CodeCellContainer {
       await this.deps.teardown(this.spec.runtimeId, this.spec.engine).catch((error: unknown) => {
         console.error(`[code-mode] could not remove ${containerName(this.spec.runtimeId)}:`, error)
       })
+      // The engine CLI attached to a container that is gone exits on its own;
+      // this covers one that does not.
+      if (!this.exited) this.child.kill('SIGKILL')
     })()
     return this.stopping
   }
