@@ -58,6 +58,10 @@ const RESULT_GRACE_MS = 2_000
 const TOOL_REQUEST_LIMIT = 1024 * 1024
 /** How many lines of the container's log are kept for diagnosing a failure. */
 const LOG_TAIL_LINES = 40
+/** How many tool requests a guest may have open at once. */
+const MAX_OPEN_TOOL_STREAMS = 16
+const NO_CELL_RUNNING =
+  'No cell is running: tools can only be called while the cell that asks is running.'
 
 export interface CodeCellContainerSpec {
   engine: ThreadContainerEngine
@@ -267,6 +271,7 @@ export class CodeCellContainer {
   private active: ActiveCell | null = null
   private queue: Promise<unknown> = Promise.resolve()
   private nextCell = 1
+  private openToolStreams = 0
   private broken: string | null = null
   private stopping: Promise<void> | null = null
   private readonly logTail: string[] = []
@@ -391,7 +396,25 @@ export class CodeCellContainer {
       return
     }
     if (target === CODE_CELL_TOOL_TARGET && this.control !== null) {
-      void this.serveTool(this.link.accept(id))
+      // Each open request may buffer up to TOOL_REQUEST_LIMIT here, so a guest
+      // gets a bounded number at once, and none between cells.
+      if (this.active === null) {
+        this.link.refuse(id, NO_CELL_RUNNING)
+        return
+      }
+      if (this.openToolStreams >= MAX_OPEN_TOOL_STREAMS) {
+        this.link.refuse(
+          id,
+          `A cell may have at most ${String(MAX_OPEN_TOOL_STREAMS)} tool calls in flight at once.`,
+        )
+        return
+      }
+      this.openToolStreams += 1
+      const stream = this.link.accept(id)
+      stream.once('close', () => {
+        this.openToolStreams -= 1
+      })
+      void this.serveTool(stream)
       return
     }
     this.link.refuse(id, 'DENY not a code-cell stream')
@@ -421,11 +444,7 @@ export class CodeCellContainer {
       const active = this.active
       if (request === null) reply = { ok: false, error: 'The tool request was malformed.' }
       else if (active === null || request.cell !== active.id) {
-        reply = {
-          ok: false,
-          error:
-            'No cell is running: tools can only be called while the cell that asks is running.',
-        }
+        reply = { ok: false, error: NO_CELL_RUNNING }
       } else {
         reply = await active.callTool(request.name, request.args, active.controller.signal)
       }

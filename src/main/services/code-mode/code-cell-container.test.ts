@@ -11,7 +11,7 @@ import {
   type CodeCellContainerDependencies,
 } from './code-cell-container.ts'
 import { inProcessEngine, testSpec } from './code-cell-harness.test-support.ts'
-import type { ToolCallResponse } from './code-cell-wire.ts'
+import { CODE_CELL_TOOL_TARGET, type ToolCallResponse } from './code-cell-wire.ts'
 
 const noTools: CellToolHandler = () =>
   Promise.resolve({ ok: false, error: 'no tools in this test' })
@@ -86,7 +86,9 @@ describe('CodeCellContainer with the real guest', () => {
         ),
       )
       assert.equal(
-        valueOf(await container.runCell(cell("return [state.count, seen, typeof local].join(',')"))),
+        valueOf(
+          await container.runCell(cell("return [state.count, seen, typeof local].join(',')")),
+        ),
         '1,yes,undefined',
       )
     } finally {
@@ -146,7 +148,10 @@ describe('CodeCellContainer with the real guest', () => {
         ),
       )
       await new Promise((resolve) => setTimeout(resolve, 200))
-      assert.match(valueOf(await container.runCell(cell('return state.late'))), /No cell is running/)
+      assert.match(
+        valueOf(await container.runCell(cell('return state.late'))),
+        /No cell is running/,
+      )
       assert.equal(handled, 0)
     } finally {
       await container.stop()
@@ -223,6 +228,30 @@ describe('CodeCellContainer with the real guest', () => {
         toolSignals.map((signal) => signal.aborted),
         [true],
       )
+    } finally {
+      await container.stop()
+    }
+  })
+
+  it('refuses tool streams between cells and past the in-flight limit', async () => {
+    const { container, engine } = await started()
+    const guest = engine.guestLink()
+    try {
+      await assert.rejects(guest.open(CODE_CELL_TOOL_TARGET), /No cell is running/)
+      const running = container.runCell(
+        cell('await new Promise((resolve) => setTimeout(resolve, 300))\nreturn 1'),
+      )
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      // A hostile guest opens requests it never finishes.
+      const held = await Promise.all(
+        Array.from({ length: 16 }, () => guest.open(CODE_CELL_TOOL_TARGET)),
+      )
+      await assert.rejects(guest.open(CODE_CELL_TOOL_TARGET), /at most 16 tool calls in flight/)
+      for (const stream of held) stream.destroy()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      const again = await guest.open(CODE_CELL_TOOL_TARGET)
+      again.destroy()
+      assert.equal(valueOf(await running), '1')
     } finally {
       await container.stop()
     }
