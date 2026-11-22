@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { execFileSync, type ChildProcess } from 'node:child_process'
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
@@ -13,8 +13,17 @@ import {
   spawnInProjectSandbox,
   spawnShellInProjectSandbox,
   withSandboxShellPath,
+  type ExecutionTarget,
 } from './spawn.ts'
 import { isSpawnableWorkingDirectory } from './spawn-cwd.ts'
+import {
+  setExecutionAuditSink,
+  type ExecutionObservation,
+} from '../services/execution-runtime/audit.ts'
+import {
+  threadExecutionContextStorage,
+  type ThreadExecutionContext,
+} from '../services/thread-execution-context-store.ts'
 
 describe('formatArgvForShell', () => {
   it('keeps workspace and Electron paths with spaces as single shell words', () => {
@@ -32,20 +41,20 @@ describe('formatArgvForShell', () => {
     assert.equal(command, `'${exec}' '${worker}'`)
   })
 
-  it('runs a spaced executable path under bash -c without splitting on spaces', () => {
-    const dir = '/tmp/copse spaced spawn test'
+  it('runs a spaced executable path under bash -c without splitting on spaces', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'copse spaced spawn '))
     const execPath = `${dir}/fake-electron`
     const workerPath = `${dir}/worker.js`
     const command = formatArgvForShell(execPath, [workerPath])
-    const script = [
-      `mkdir -p ${JSON.stringify(dir)}`,
-      `printf '#!/bin/sh\\necho OK\\n' > ${JSON.stringify(execPath)}`,
-      `chmod +x ${JSON.stringify(execPath)}`,
-      `touch ${JSON.stringify(workerPath)}`,
-      command,
-    ].join('; ')
-    const out = execFileSync('/bin/bash', ['-c', script], { encoding: 'utf8' }).trim()
-    assert.equal(out, 'OK')
+    try {
+      await writeFile(execPath, '#!/bin/sh\necho OK\n')
+      await chmod(execPath, 0o755)
+      await writeFile(workerPath, '')
+      const out = execFileSync('/bin/bash', ['-c', command], { encoding: 'utf8' }).trim()
+      assert.equal(out, 'OK')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })
 
@@ -199,5 +208,63 @@ describe('spawning into a deleted working directory', () => {
       spawnShellInProjectSandbox('echo hi', { cwd: missing, stdio: 'pipe' }),
       /Working directory no longer exists/,
     )
+  })
+})
+
+describe('execution audit split', () => {
+  const local: ExecutionTarget = { kind: 'local' }
+  const context: ThreadExecutionContext = {
+    projectId: 'proj',
+    threadId: 'thread',
+    projectRoot: tmpdir(),
+    root: tmpdir(),
+    checkoutMode: 'shared',
+    branch: null,
+  }
+
+  function closed(child: ChildProcess): Promise<void> {
+    return new Promise((resolve, reject) => {
+      child.once('error', reject)
+      child.once('close', () => {
+        resolve()
+      })
+    })
+  }
+
+  async function observe(spawnIt: () => Promise<ChildProcess>): Promise<string[]> {
+    const types: string[] = []
+    setExecutionAuditSink((o: ExecutionObservation): void => {
+      types.push(o.type)
+    })
+    try {
+      await closed(await threadExecutionContextStorage.run(context, spawnIt))
+    } finally {
+      setExecutionAuditSink(null)
+    }
+    return types
+  }
+
+  it('audits an agent shell command run inside a turn', async () => {
+    const types = await observe(() =>
+      spawnShellInProjectSandbox('exit 0', {
+        cwd: tmpdir(),
+        stdio: 'ignore',
+        unsandboxed: true,
+        executionTarget: local,
+      }),
+    )
+    assert.deepEqual(types, ['start', 'exit'])
+  })
+
+  it('does not audit an internal fixed-argv subprocess, even inside a turn', async () => {
+    const types = await observe(() =>
+      spawnInProjectSandbox(process.execPath, ['-e', ''], {
+        cwd: tmpdir(),
+        stdio: 'pipe',
+        unsandboxed: true,
+        executionTarget: local,
+      }),
+    )
+    assert.deepEqual(types, [])
   })
 })

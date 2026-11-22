@@ -23,6 +23,7 @@ import { perfSpan } from '../diagnostics/perf-trace.ts'
 import { acpSessionActivity } from './acp-session-activity.ts'
 import { registerAcpSessionProcess } from './acp-process-registry.ts'
 import { errorMessage } from '@shared/errors.ts'
+import type { AcpTurnEndReason } from './turn-end.ts'
 
 /**
  * Per-thread pool of persistent ACP sessions (issue #605).
@@ -515,7 +516,7 @@ async function acquireAcpSessionUnlocked(
       // reap, acquire or checkout change asks again, and so either confirms
       // the writer stopped or reports why it still cannot.
       if (disposal) return disposal
-      open.agentInitiated?.end()
+      open.agentInitiated?.end('session-closed')
       const agentDisposal = open.dispose()
       bridgeAbort.abort()
       disposal = Promise.all([agentDisposal, bridge?.close() ?? Promise.resolve()])
@@ -610,10 +611,14 @@ function sessionHasActiveTurn(entry: PooledAcpSession): boolean {
 /**
  * Stop the turn a thread's agent started on its own, if one is running. Stop
  * otherwise only reaches runs Copse dispatched. Returns whether one was stopped.
+ * Pass `'send-now'` when send-now, not Stop, interrupts it.
  */
-export function cancelAgentInitiatedAcpTurn(threadId: string): boolean {
+export function cancelAgentInitiatedAcpTurn(
+  threadId: string,
+  reason: AcpTurnEndReason = 'stopped',
+): boolean {
   const entry = pool.get(threadId)
-  return entry ? cancelAgentInitiatedTurn(entry.open) : false
+  return entry ? cancelAgentInitiatedTurn(entry.open, undefined, reason) : false
 }
 
 /** Runtime ownership includes self-started turns and tools reported between prompts. */

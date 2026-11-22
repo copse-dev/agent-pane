@@ -1,5 +1,15 @@
 # Shell and tool permission contract
 
+A tool cancelled while waiting for permission reports cancellation and never
+executes after the signal aborts. A negative gate result preserves its denial
+reason, distinguishing a user decline from policy, hook and unanswered-prompt
+refusals. Pending ACP approval remains a separate retryable error.
+
+When an authorized bridged action finishes after its caller detaches, Copse
+records its textual result before requesting continuation against the original
+human epoch. This delivers an outcome, never re-executes the action, and does
+not grant authority to run another tool.
+
 This document describes current shipped behavior. Read it before changing permission policy, shell
 scope analysis, the project sandbox, escalation, or approval UI. Historical design decisions
 remain in `docs/plans/`; this is the durable cross-platform contract.
@@ -52,6 +62,30 @@ startup, stopping the turn or closing the ACP session does. The created VM's ima
 must match the owner-controlled local build receipt before startup. Host-only leases and
 VM ownership labels allow dead-parent/expired cleanup without deleting unrelated VMs.
 
+## Unanswered approvals across ACP turns
+
+Normal ACP turn completion ends tool execution and releases the execution context, but it does
+not cancel an unanswered approval. The prompt remains answerable even when turn completion
+arrives before the MCP client's disconnect. A later identical request in the same thread,
+project, human task and execution root can consume that decision once, within the existing
+ten-minute replay window. Changed commands or arguments require their own approval; answering a
+detached prompt never starts the old tool call. Approving it requests one continuation in the
+same task so the agent can retry the call; rejecting it does not wake the agent.
+
+Stop, failure, idle expiry, session closure, and thread deletion revoke both pending prompts
+(including detached ones) and stored answers for that thread. Send-now interruption is not a
+revocation: like ordinary completion, it keeps detached prompts and stored answers for the same
+task (see [What an approval prompt says](#what-an-approval-prompt-says)). The bridge observes
+turn and session termination separately from a disconnected call so the first abort cannot hide
+later revocation. Self-started turns distinguish completion and send-now from Stop,
+idle expiry, and session closure. Ordinary prompts have no approval deadline. Client abandonment
+and turn completion are logged as pending requests with distinct sources; cancellation, window
+closure, and explicit safety-check timeouts retain their own audit sources.
+
+Settings holds ordinary approval dialogs back while it is open. A request for the focused thread
+still receives an attention indicator and a **Review approval** action in Settings. Reviewing
+closes Settings and surfaces the request through the ordinary approval dialog.
+
 ## Per-tool permission settings
 
 ### Web search providers
@@ -103,8 +137,17 @@ history stored only in another application. `send_thread_prompt` asks a separate
 your other threads?** approval. Reading never grants sending. Both grants are persisted in main-owned settings,
 keyed by the requesting thread; they are not inherited by destination or forked threads.
 Either permission can be revoked in the thread’s Context panel → Permissions.
-Destination prompts enter the normal queue with machine provenance, consume the existing
-continuation budget and respect held/paused queues. They do not interrupt active work or
+Destination prompts enter the normal queue with machine provenance and consume a separate
+allowance of five prompts to each destination per user turn in the sending thread. A new
+instruction in the sending thread gives it five fresh prompts for every destination.
+Work the sending thread runs without a user turn, such as a scheduled automation run, shares
+one allowance per destination for that thread; each scheduled run starts in a new thread. That
+fallback grants no other authority. A turn the coding agent starts on its own continues the
+task it resumes and uses that task's allowance. In a thread that never had a user turn, such
+as a scheduled run's thread, there is no task allowance to continue: such a turn shares the
+thread's fallback allowance and gains no other authority either.
+Incoming prompts do not spend or reset the self-continuation budget. Exhaustion holds
+further prompts from that sender turn for human release. Prompts respect held/paused queues. They do not interrupt active work or
 switch the visible thread. An unavailable or archived destination is rejected.
 
 The \`subthreads\` tool asks once for **Allow subthread orchestration?** Its separate, revocable grant permits starting children in isolated checkouts, listing their status, reading their conversations through the tool, and sending further prompts. Main-owned ownership records limit access to children this parent created in this project; a follow-up link alone grants no orchestration authority. Children inherit neither this grant nor the parent's other permissions. Normal model usage, queue pauses, continuation budgets and tool permissions still apply. A parent may start at most four children over its lifetime and keep at most two unarchived children. Owned children cannot orchestrate grandchildren. Repeating a start with the same task key returns the existing live child without resubmitting; replacing an unavailable child consumes another start and preserves the former child's ownership record. Transcript reads return capped text excerpts, excluding reasoning, attachments and tool payloads. The main process rechecks ownership and the parent's grant as it dispatches each queued delegated prompt; revoked prompts are held, including after restart. Revoke orchestration in Context → Permissions. This does not authorize raw chat-store writes or reads of unrelated conversations.
@@ -204,6 +247,18 @@ with the reason before it follows the ordinary path. A request delegated to the 
 records an `allowed` `acp` decision with its ACP tool-call ID. The bridge's `bridge-request` record repeats that ID when it
 can name the call unambiguously, beside the `bridgeExecutionId` that the native gate's decisions
 carry.
+
+Every decision recorded inside a turn also names the turn's execution principal. That is
+the local human, or the automation run when the schedule's own record corroborates the
+thread's claim; renderer-visible thread metadata alone never makes a turn an automation.
+Native commands, background tasks and Copse's own subprocesses run through an
+`ExecutionRuntime` adapter (local or SSH). For agent commands (shell, background and hook
+commands) the adapter records a start and an exit line
+naming the runtime profile it actually ran under (`local/contained`, `local/host` or
+`ssh:<hostId>`), plus that profile's capability snapshot once per thread. The adapter
+records containment and decides nothing: the gate and routing above are unchanged. See
+[the decision-log format](decision-log-format.md#where-events-come-from) and
+[the runtime plan](plans/execution-runtime-security.md).
 
 ## High-level tool restrictions
 
@@ -393,7 +448,12 @@ Options are read on one line only, so a shell `exec` on the following line stays
 execution.
 
 Remembered local port-binding consent is keyed by the project root, shared across its
-thread worktrees. Command execution still uses the thread's execution root and passes
+thread worktrees. The first prompt emphasizes **Allow once**, with **Allow for this project**
+as an explicit secondary action. Only the project action saves consent; once and Reject save
+nothing. The prompt names the project, explains future reuse, and points to
+Context → Permissions → Project → Local port binding for revocation. A mixed
+batch falls back to ordinary approval, with a remember checkbox only when every
+request shares the exact project grant. Command execution still uses the thread's execution root and passes
 the shell gate. Other projects require their own consent, and disabling the Background
 tasks plugin still revokes its loopback-binding capability. Legacy worktree-root grants
 are not broadened automatically; the next project-level consent can be remembered.
@@ -702,6 +762,16 @@ and destructive-command checks still apply. Without containment or auto-run, app
 is required. Guarded YOLO's bounded script-content harm scan remains a separate check;
 reading a script is not proof that it is safe or permission to escape containment.
 
+A single direct literal `ln -s`, `ln -sf` or `ln -sfn` (including separate `-s`, `-f`
+and `-n` flags) stays contained when both its actual link destination and target resolve
+inside the workspace. Relative targets are anchored at the link's parent, including when
+the destination is an existing directory. Existing parent and target symlinks are resolved
+before judging containment; `-n` replaces a final directory symlink instead of following it.
+An explicit `--` before both operands permits literal dash-leading filenames. Unsupported
+option positions receive no containment waiver. Compounds, redirects, expansions and other flags
+retain conservative path classification. Trailing `/` or `/.` on the destination also keeps that
+treatment.
+
 `safetyExternalDenyThreshold` defaults to `1` (off). At a lower threshold, a command is hard-denied
 only when both conditions hold:
 
@@ -837,6 +907,22 @@ message pointing at `run_shell git fetch`.
 `git_fetch`. That setting controls Copse's own unattended hourly/allocation fetches; `git_fetch` is
 an agent-requested action, governed like any tool by its per-tool permission (set it to Ask or
 Block to require approval or disable it).
+
+Unattended default-branch refresh uses a cache-only askpass lease: it reuses answers
+the person remembered in Copse, but never opens or waits for an authentication or
+host-trust dialog. Missing credentials leave the cached tip unchanged and report
+the failed refresh, with URL userinfo removed from the background warning.
+Existing configured helpers and SSH agents can still refresh it.
+When the session cache has no remembered answers, SSH uses batch mode and skips
+password and keyboard-interactive prompts. A warm cache enables the trusted
+helper with one prompt attempt per authentication method; it does not prove a
+matching answer for this destination. Missing or stale answers can still be
+submitted, and keyboard-interactive may request several answers in one attempt.
+Failed background Git commands and expired askpass leases retire only the
+current session answers actually served to that invocation. This is conservative:
+a later Git error can evict a credential even after successful authentication.
+Explicit `git_fetch` and foreground push keep their normal authentication path;
+the background-only interaction policy adds no network or shell approval grant.
 
 ## Read access outside the project
 
@@ -997,10 +1083,12 @@ Unknown flags, shell expansions, scripts, and compound commands retain the gener
 These explanations are presentation only and never authorize or reroute a command.
 
 Remembered tool approvals cover the exact tool with other arguments; schedule grants cover
-future runs of the named schedule. The outside-project read grant still covers all eligible
-outside-project reads for the chat, not only the paths currently displayed. Its primary action
-is labeled “Allow reads for this chat”; the secondary action approves just the displayed command.
-Batch and Activity views use the same advice, complete details, and footer as individual prompts.
+future runs of the named schedule. An outside-project read grant covers the named approved files
+and directories for that chat, including eligible descendants of approved directories. Other paths
+ask again. The collapsed card shows “Allow reads for this chat” as its sole primary approval action.
+After “Show details”, “Approve this command” is primary and “Allow reads for this chat” is secondary.
+The per-command action approves only the displayed command. Batch and Activity views use the same
+advice, complete details, and footer as individual prompts.
 
 Classifier reasons are **identifiers, not copy**. The regex pass and the token pass share them
 verbatim so the two dedupe against each other, and every answered prompt writes them into the
@@ -1407,7 +1495,22 @@ use the same Save dialog after checking the owning project and chat.
 ## Implementation map
 
 Sandboxed native commands and ACP processes redirect `TMPDIR`, `TMP`, `TEMP`, zsh's
-`TMPPREFIX` and `CLAUDE_CODE_TMPDIR` into the existing workspace scratch directory. zsh uses
+`TMPPREFIX` and `CLAUDE_CODE_TMPDIR` into the active thread's scratch under
+`workspace/tmp/threads/<thread-id-hash>`. Sandboxed PTYs use that assignment through the active
+thread execution context; host operations without a thread use the separate `workspace/tmp/host`
+leaf. Explicitly unsandboxed user Shells tabs preserve their original temp environment, including
+`TMPDIR`, `TMP`, `TEMP`, `TMPPREFIX` and `CLAUDE_CODE_TMPDIR`; they do not share the agent-writable
+scratch directory. The sandbox write grant,
+child environment and classifier resolve the same directory. Absolute scratch paths, including
+macOS `/var` and `/private/var` spellings, are recognized; sibling prefixes, another thread's
+directory and escaping symlinks retain outside-path classification. Setting `TMPDIR` in command
+text never grants a root. Grants are anchored to the trusted canonical store parent and fixed
+scratch components; validation refuses scratch symlinks and grant roots never follow a controlled
+leaf. The private ACP session-host request
+carries the main-owned thread identity so hosted agents resolve the same assignment; agent
+environment text supplies no scratch authority. For isolated loopback tasks, main selects the
+temp directory before crossing the process boundary; the host checks that choice against the
+carried filesystem overlay and uses the same read-only fallback. zsh uses
 `TMPPREFIX` for large heredocs independently of `TMPDIR`; leaving its default `/tmp/zsh` breaks
 patch commands even when every destination file is inside the workspace. This redirect does not
 widen the sandbox's writable roots or change the approval policy. When `COPSE_DIR` is reached
@@ -1485,8 +1588,8 @@ shim mode) get only the shim directory, so their `node` fails contained and offe
   (the Guarded YOLO harm gate), `read-outside-project.ts` (read-shape proof and refusals),
   `gh-argv.ts` (GitHub CLI shapes), `command-routing.ts` (trusted-command routing). The
   `src/main/services/security/` files of the same names re-export them and bind the two facts
-  only the app knows through `shell-guard-environment.ts`: the read-only chat-store mount and
-  the scratch directories configured ACP agents declare. Docker run/pull/push and Apple
+  the app knows through `shell-guard-environment.ts`: read-only mounts, authoritative scratch
+  roots, and filesystem proof for supported symbolic links. Docker run/pull/push and Apple
   container run/image pull/image push are hard-external; read-only list/inspect/status commands
   remain sandbox-scoped.
 - `github/gh-api-read.ts` and `git-fetch-origin.ts`: validation and argv construction for the

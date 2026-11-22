@@ -80,6 +80,7 @@ function fixture(overrides: Partial<ThreadCheckoutTransactionDependencies> = {})
     checkoutBranch: async (branch, root) => {
       checkouts.push({ branch, root })
     },
+    rebaseInProgress: async () => false,
     validate: async ({ worktree }) => ({ branch: worktree.branch }),
     retire: async () => undefined,
     serialize: serial(),
@@ -480,6 +481,53 @@ describe('first-message checkout transaction', () => {
 
     assert.equal(result.checkoutMode, 'shared')
     assert.deepEqual(checkouts, [])
+  })
+
+  it('starts a shared thread on a detached checkout where it is, but not mid-rebase', async () => {
+    // A detached checkout cannot cut a worktree, so the automatic policy shares
+    // it, and with no pick nothing is switched. A stopped rebase is detached
+    // too: starting there would commit into the branch being rewritten.
+    const detached: ThreadCheckoutTransactionDependencies['inspect'] = async () => ({
+      isGitRepository: true,
+      currentBranch: null,
+      defaultBranch: 'main',
+      isDirty: false,
+    })
+    const probed: string[] = []
+    const clean = fixture({
+      inspect: detached,
+      rebaseInProgress: async (root) => {
+        probed.push(root)
+        return false
+      },
+    })
+    const started = await clean.prepare({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      prompt: 'Review this commit',
+      choice: 'automatic',
+    })
+    assert.equal(started.checkoutMode, 'shared')
+    assert.equal(started.branch, null)
+    assert.deepEqual(clean.checkouts, [])
+    assert.deepEqual(probed, ['/repo'])
+
+    for (const baseBranch of [undefined, 'main']) {
+      const rebasing = fixture({ inspect: detached, rebaseInProgress: async () => true })
+      await assert.rejects(
+        rebasing.prepare({
+          projectId: 'project-1',
+          threadId: 'thread-1',
+          prompt: 'Help me finish this rebase',
+          choice: 'automatic',
+          ...(baseBranch ? { baseBranch } : {}),
+        }),
+        /middle of a rebase/,
+      )
+      assert.deepEqual(rebasing.checkouts, [])
+      assert.deepEqual(rebasing.patches, [])
+      assert.equal(rebasing.getThread().worktreeChoice, undefined)
+    }
   })
 
   it('keeps a shared thread unstarted when the picked branch cannot be checked out', async () => {

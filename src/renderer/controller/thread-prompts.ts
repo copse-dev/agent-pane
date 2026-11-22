@@ -92,10 +92,23 @@ export async function acceptThreadPrompt(
     current = getThreadById(store, threadId)
     if (!current || current.archivedAt !== undefined || Date.now() >= command.expiresAt)
       return { ok: false, error: 'The destination conversation is unavailable.' }
+    // Delegated subthread prompts keep the continuation budget; only peer
+    // prompts carry main's per-destination allowance scope.
+    const peerTurnTreeId = command.authorizingAccess ? undefined : command.sourceTurnTreeId
+    const peerScope = command.authorizingAccess ? undefined : command.crossThreadScope
     const origin: MachineMessageOrigin = {
       kind: 'machine',
       operationId: `${command.authorizingAccess ? 'subthread' : 'thread'}:${command.sourceThreadId}`,
+      ...(peerScope === undefined ? {} : { crossThreadScope: peerScope }),
     }
+    // A never-used destination inherits the existing sender root instead of
+    // minting a fresh epoch on every machine run. Subsequent incoming prompts
+    // cannot replenish its own outgoing allowance or self-continuation budget.
+    if (current.currentEpoch === undefined && peerTurnTreeId !== undefined)
+      patchThreadAnywhere(store, threadId, (thread) => ({
+        ...thread,
+        currentEpoch: peerTurnTreeId,
+      }))
     // An earlier failed run does not prevent an authorized new prompt.
     if (current.status === 'error')
       patchThreadAnywhere(store, threadId, (thread) => ({ ...thread, status: 'idle' }))
@@ -116,6 +129,8 @@ export async function acceptThreadPrompt(
         await api.threads.updateMeta(command.projectId, threadId, {
           pendingMessages: accepted.pendingMessages ?? [],
           continuationUsed: accepted.continuationUsed ?? 0,
+          crossThreadPromptsUsed: accepted.crossThreadPromptsUsed ?? 0,
+          crossThreadPromptCounts: accepted.crossThreadPromptCounts ?? {},
           ...(accepted.currentEpoch !== undefined ? { currentEpoch: accepted.currentEpoch } : {}),
           updatedAt: accepted.updatedAt,
         })

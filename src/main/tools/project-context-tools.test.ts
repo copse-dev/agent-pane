@@ -13,6 +13,7 @@ import { runWithApprovalHandler } from '../services/approval.ts'
 import { createThread } from '../services/thread-store.ts'
 import { storageGet, storageSet } from '../services/storage/storage.ts'
 import { setSetting } from '../services/storage/settings.ts'
+import { drainWriteQueue } from '../services/storage/write-queue.ts'
 import { addKnowledgeNote, setKnowledgeRootForTest } from '../services/storage/knowledge-store.ts'
 import { hasThreadAccess, revokeThreadAccess } from '../services/security/thread-access.ts'
 import { runWithDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
@@ -84,6 +85,7 @@ describe('project context tools at the native boundary', () => {
     inTurn(() => addKnowledgeNote({ type: 'Memory', title: 'Saved fact', body: 'needle MEMORY' }))
   })
   afterEach(async () => {
+    await drainWriteQueue()
     mock.restoreAll()
     setPermissionGateForTests(null)
     await setSetting('threadReadAccess', [])

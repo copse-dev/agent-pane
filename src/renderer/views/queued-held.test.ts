@@ -55,6 +55,30 @@ afterEach(() => {
 })
 
 describe('held queued message (component)', () => {
+  it('renders the cross-thread allowance note and Release control after drain-time exhaustion', () => {
+    const store = createProjectStore()
+    const api = fakeApi()
+    const threadId = createThread(store)
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, api)
+    store.setState({
+      threads: store.getState().threads.map((t) => ({ ...t, crossThreadPromptsUsed: 5 })),
+    })
+    const messageId = addMessage(store, threadId, 'user', 'Check progress on the original task.')
+    enqueueUserMessage(store, threadId, {
+      messageId,
+      payload: { content: 'Check progress on the original task.' },
+      createdAt: 1,
+      origin: { kind: 'machine', operationId: 'thread:coordinator' },
+    })
+    drainMessageQueue(store, api, threadId)
+    assert.equal(api.runs.length, 0)
+    assert.ok(host.querySelector('.conversation-queued .msg-held .queued-release'))
+    assert.match(host.textContent, /Cross-thread prompt allowance reached/)
+    assert.doesNotMatch(host.textContent, /next hook follow-up/)
+  })
+
   it('renders a Held badge + Release action for a held hook message', () => {
     const store = createProjectStore()
     const api = fakeApi()
