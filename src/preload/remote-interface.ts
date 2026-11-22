@@ -52,7 +52,10 @@ function invokeRead(request: RemoteRead): Promise<unknown> {
   }
 }
 
-type Invoke = (channel: string, ...args: unknown[]) => Promise<unknown>
+/** What the relay tells main about one remote read. */
+export type RemoteReadReply =
+  | { id: string; ok: true; value: unknown }
+  | { id: string; ok: false; error: string }
 
 /**
  * Send the outcome of one remote read back to main. A reply that cannot be
@@ -60,14 +63,14 @@ type Invoke = (channel: string, ...args: unknown[]) => Promise<unknown>
  * so the remote gets that reason instead of a timeout.
  */
 export function replyToRemoteRead(
-  invoke: Invoke,
+  sendReply: (reply: RemoteReadReply) => Promise<unknown>,
   id: string,
   read: Promise<unknown>,
 ): Promise<void> {
   return read
-    .then((result: unknown) => invoke('remote:reply', { id, ok: true, value: result }))
+    .then((result: unknown) => sendReply({ id, ok: true, value: result }))
     .catch((error: unknown) =>
-      invoke('remote:reply', {
+      sendReply({
         id,
         ok: false,
         error: (error instanceof Error ? error.message : 'Desktop request failed').slice(0, 2000),
@@ -86,7 +89,9 @@ export function installRemoteReadRelay(): void {
     const parsed = remoteReadSchema.safeParse(value)
     if (!parsed.success || !remoteReadAllowed(parsed.data)) return
     void replyToRemoteRead(
-      (channel, ...args) => ipcRenderer.invoke(channel, ...args),
+      // The channel stays a literal: the bridge build derives its allowlist
+      // from the literal channels in this directory and rejects any other.
+      (reply) => ipcRenderer.invoke('remote:reply', reply),
       id,
       invokeRead(parsed.data),
     )
