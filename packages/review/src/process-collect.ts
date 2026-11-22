@@ -35,21 +35,21 @@ export function killProcessTree(child: ChildProcess, signal: NodeJS.Signals): vo
  */
 const EXIT_DRAIN_GRACE_MS = 500
 
-/** At most this much of `retainLinePrefix` lines is kept; a failure inventory is far smaller. */
+/** At most this much of `retainLinePrefixes` lines is kept; a failure inventory is far smaller. */
 export const MAX_RETAINED_LINE_BYTES = 1024 * 1024
 
 /**
- * Collects the lines of one stream that start with `prefix`, across chunk
- * boundaries, up to {@link MAX_RETAINED_LINE_BYTES} in all.
+ * Collects the lines that start with one of `prefixes`, per stream and across
+ * chunk boundaries, up to {@link MAX_RETAINED_LINE_BYTES} in all.
  */
 class RetainedLines {
   readonly lines: string[] = []
   private bytes = 0
   private readonly partial = new Map<string, string>()
-  private readonly prefix: string
+  private readonly prefixes: readonly string[]
 
-  constructor(prefix: string) {
-    this.prefix = prefix
+  constructor(prefixes: readonly string[]) {
+    this.prefixes = prefixes
   }
 
   add(stream: string, text: string): void {
@@ -68,7 +68,7 @@ class RetainedLines {
 
   private keep(raw: string): void {
     const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw
-    if (!line.startsWith(this.prefix)) return
+    if (!this.prefixes.some((prefix) => line.startsWith(prefix))) return
     const size = Buffer.byteLength(line, 'utf8')
     if (this.bytes + size > MAX_RETAINED_LINE_BYTES) return
     this.lines.push(line)
@@ -109,8 +109,8 @@ export function collectProcess(
   let truncated = false
   let timedOut = false
 
-  const retained =
-    command.retainLinePrefix === undefined ? null : new RetainedLines(command.retainLinePrefix)
+  const prefixes = command.retainLinePrefixes ?? []
+  const retained = prefixes.length === 0 ? null : new RetainedLines(prefixes)
   const onChunk =
     (stream: string) =>
     (chunk: Buffer | string): void => {

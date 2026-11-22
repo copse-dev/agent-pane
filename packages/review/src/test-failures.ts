@@ -4,6 +4,12 @@ import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 
 export const TEST_FAILURE_REPORT_PREFIX = 'COPSE_TEST_FAILURES_V1 '
+/**
+ * How the reporter begins the line it prints instead of an inventory when the
+ * results were incomplete (a cancelled test, a file that failed to load). The
+ * text has not changed since the inventory existed, so older revisions match.
+ */
+export const TEST_FAILURE_REPORT_UNAVAILABLE = 'Copse test failure inventory unavailable: '
 export const testFailureReportSchema = z
   .object({
     tier: z.literal('unit-component'),

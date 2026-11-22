@@ -1,8 +1,15 @@
 import type { CheckRun } from './stage0.ts'
+import { TEST_FAILURE_REPORT_UNAVAILABLE } from './test-failures.ts'
 import { parseTscDiagnostics } from './tsc-diagnostics.ts'
 
 export interface InconclusiveCheckFailure {
-  readonly kind: 'timeout' | 'termination' | 'resource' | 'setup' | 'missing-diagnostic'
+  readonly kind:
+    | 'timeout'
+    | 'termination'
+    | 'resource'
+    | 'incomplete-inventory'
+    | 'setup'
+    | 'missing-diagnostic'
   readonly reason: string
 }
 
@@ -21,6 +28,20 @@ export function inconclusiveCheckFailure(run: CheckRun): InconclusiveCheckFailur
       reason: run.signal
         ? `the checker was terminated by ${run.signal}`
         : `the checker terminated with exit ${String(run.exitCode)} without a completed check`,
+    }
+  }
+  // The runner finished and said its results were incomplete (a cancelled
+  // test, a file that failed to load). Name that, rather than reading a
+  // missing tool in one of its tests as a checker that never started.
+  if (
+    run.kind === 'test' &&
+    run.testFailures === undefined &&
+    run.output.split(/\r?\n/).some((line) => line.startsWith(TEST_FAILURE_REPORT_UNAVAILABLE))
+  ) {
+    return {
+      kind: 'incomplete-inventory',
+      reason:
+        'the test run finished without a complete failure list (cancelled tests, or test files that failed to load)',
     }
   }
   if (

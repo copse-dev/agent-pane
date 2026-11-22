@@ -78,7 +78,7 @@ describe('collectProcess retained lines', () => {
       argv: [process.execPath, '-e', script],
       timeoutMs: 30_000,
       maxOutputBytes,
-      retainLinePrefix: prefix,
+      retainLinePrefixes: [prefix],
     })
     return result.output
   }

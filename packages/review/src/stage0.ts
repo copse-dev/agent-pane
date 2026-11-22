@@ -49,6 +49,7 @@ import {
   newTestFailures,
   parseTestFailureReport,
   TEST_FAILURE_REPORT_PREFIX,
+  TEST_FAILURE_REPORT_UNAVAILABLE,
   type TestFailureReport,
 } from './test-failures.ts'
 import { newDiagnostics, parseTscDiagnostics, type TscDiagnostic } from './tsc-diagnostics.ts'
@@ -350,7 +351,9 @@ async function runTarget(
       maxOutputBytes: STAGE0_MAX_OUTPUT_BYTES,
       // The failure inventory precedes the runner's detailed failure listing,
       // which alone can exceed the cap on a host missing tools the tests use.
-      ...(command.kind === 'test' ? { retainLinePrefix: TEST_FAILURE_REPORT_PREFIX } : {}),
+      ...(command.kind === 'test'
+        ? { retainLinePrefixes: [TEST_FAILURE_REPORT_PREFIX, TEST_FAILURE_REPORT_UNAVAILABLE] }
+        : {}),
       signal,
     })
     const run: CheckRun = {

@@ -1,6 +1,10 @@
 // Live CI diagnostics and an EOF-only complete inventory for review consumers.
 import { z } from 'zod'
-import { TEST_FAILURE_REPORT_PREFIX, testFailureReportSchema } from '@copse/review/test-failures.ts'
+import {
+  TEST_FAILURE_REPORT_PREFIX,
+  TEST_FAILURE_REPORT_UNAVAILABLE,
+  testFailureReportSchema,
+} from '@copse/review/test-failures.ts'
 import { TestNames, testEntryPath } from './test-event-names.mts'
 
 const errorTextSchema = z.object({
@@ -110,6 +114,5 @@ export default async function* reviewTestReporter(
   })
   if (valid && report.success)
     yield `\n${TEST_FAILURE_REPORT_PREFIX}${JSON.stringify(report.data)}\n`
-  else
-    yield 'Copse test failure inventory unavailable: incomplete, cancelled, or ambiguous test results.\n'
+  else yield `${TEST_FAILURE_REPORT_UNAVAILABLE}incomplete, cancelled, or ambiguous test results.\n`
 }
