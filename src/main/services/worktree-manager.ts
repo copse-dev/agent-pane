@@ -17,7 +17,11 @@ import {
 } from '@shared/git/worktree-policy.ts'
 import { describeBranchCheckoutFailure } from '@shared/git/branch-held.ts'
 import { runCommand, type CommandResult } from './exec/command-runner.ts'
-import { fetchDefaultBranchFromHost, noninteractiveProjectGit } from './default-branch-fetch.ts'
+import {
+  fetchDefaultBranchFromHost,
+  noninteractiveProjectGit,
+  originBranchRef,
+} from './default-branch-fetch.ts'
 import type { GitAuthMode } from './ssh-workspace/git-ssh-env.ts'
 import { getSetting } from './storage/settings.ts'
 import { parseWorkingTreeSnapshotHead } from './git-snapshot.mts'
@@ -775,7 +779,7 @@ async function symbolicHeadBranch(worktreePath: string): Promise<string | null> 
 }
 
 /**
- * Best-effort `git fetch origin <branch>` for a repository's default branch, so
+ * Best-effort fetch of `origin/<branch>` for a repository's default branch, so
  * a worktree based on it starts from the latest remote tip rather than whatever
  * the local branch happened to be pointed at. Never throws: no network / no
  * `origin` remote just means the next resolution step falls back to the local ref.
@@ -806,13 +810,33 @@ export function fetchDefaultBranch(projectRoot: string, branch: string): Promise
 
 const defaultBranchFetchesInFlight = new Map<string, Promise<void>>()
 
+/**
+ * The contained fallback fetch for a non-network origin. The branch only ever
+ * appears inside a full refspec after `--end-of-options`, as on the host path,
+ * so no branch name can be read as a `git fetch` option. `--no-tags` keeps the
+ * fetch to `refs/remotes/origin/<branch>`: a command-line refspec with a
+ * destination would otherwise make Git follow the remote's tags into the
+ * project.
+ */
+function containedDefaultBranchFetchArgs(branch: string): string[] {
+  const { source, destination } = originBranchRef(branch)
+  return [
+    'fetch',
+    '--quiet',
+    '--no-tags',
+    '--end-of-options',
+    'origin',
+    `+${source}:${destination}`,
+  ]
+}
+
 async function fetchDefaultBranchOnce(projectRoot: string, branch: string): Promise<void> {
   if (!getSetting<boolean>('backgroundDefaultBranchFetch', true)) return
   let failure: string | null
   try {
     const result =
       (await fetchDefaultBranchFromHost(projectRoot, branch, git)) ??
-      (await noninteractiveProjectGit(git)(projectRoot, ['fetch', '--quiet', 'origin', branch]))
+      (await noninteractiveProjectGit(git)(projectRoot, containedDefaultBranchFetchArgs(branch)))
     failure = result.code === 0 ? null : describeFetchFailure(result)
   } catch (error) {
     failure = redactFetchUrlUserinfo(errorMessage(error))
