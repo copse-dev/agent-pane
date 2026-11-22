@@ -76,6 +76,31 @@ afterEach(() => {
 })
 
 describe('per-prompt fork + resend actions (component)', () => {
+  it('opens actions on click and closes them on another click, outside click, or Escape', () => {
+    mountConversationWithHistory()
+    const bubble = userBubbles()[1]
+    assert.ok(bubble)
+    const actions = bubble.querySelector<HTMLElement>('.msg-actions')
+    const trigger = bubble.querySelector<HTMLButtonElement>('.msg-actions-trigger')
+    assert.ok(actions)
+    assert.ok(trigger)
+
+    trigger.click()
+    assert.equal(actions.classList.contains('is-open'), true)
+    assert.equal(trigger.getAttribute('aria-expanded'), 'true')
+    trigger.click()
+    assert.equal(actions.classList.contains('is-open'), false)
+
+    trigger.click()
+    document.body.click()
+    assert.equal(actions.classList.contains('is-open'), false)
+
+    trigger.click()
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    assert.equal(actions.classList.contains('is-open'), false)
+    assert.equal(trigger.getAttribute('aria-expanded'), 'false')
+  })
+
   it('offers Fork from here on every prompt and Resend only on the latest', () => {
     mountConversationWithHistory()
 

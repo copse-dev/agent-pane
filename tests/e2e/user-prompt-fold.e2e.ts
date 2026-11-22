@@ -55,10 +55,10 @@ describe('user prompt mid-fold accordion', () => {
       () =>
         browser.execute(() =>
           [...document.querySelectorAll('.msg-actions')].every(
-            (actions) => getComputedStyle(actions).opacity === '0',
+            (actions) => !actions.classList.contains('is-open'),
           ),
         ),
-      { timeout: 2_000, timeoutMsg: 'Prompt actions did not leave their hover state' },
+      { timeout: 2_000, timeoutMsg: 'Prompt actions menu stayed open' },
     )
 
     await saveElementScreenshot(

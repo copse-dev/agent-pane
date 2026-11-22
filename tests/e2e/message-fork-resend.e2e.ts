@@ -66,7 +66,10 @@ describe('fork a thread and resend the last message', function () {
 
   it('offers per-prompt actions, and Fork from here branches the conversation', async function () {
     resetUserData()
-    const { title } = seedForkResendFixture(process.cwd())
+    const { title } = seedForkResendFixture(
+      process.cwd(),
+      'I want to build a mobile-first club site with ride signups, Strava login if possible, a digital brevet card, a leaderboard, and points for coming on the ride or going to the pub. Please prototype the screen first and show how the scoring might work.',
+    )
     await browser.reloadSession()
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
@@ -88,34 +91,42 @@ describe('fork a thread and resend the last message', function () {
     await expect(firstPrompt.$('.msg-resend')).toHaveAttribute('hidden')
     await expect(latestPrompt.$('.msg-resend')).not.toHaveAttribute('hidden')
 
-    // The row is a hover affordance (opacity 0 at rest), exactly like the Copy
-    // button on an assistant reply — so it only becomes visible on hover.
-    await expect(latestPrompt.$('.msg-actions')).not.toBeDisplayed()
-    await latestPrompt.moveTo()
-    await expect(latestPrompt.$('.msg-actions')).toBeDisplayed()
+    await expect(latestPrompt.$('.msg-actions-trigger')).toBeDisplayed()
+    await expect(latestPrompt.$('.msg-resend')).not.toBeDisplayed()
+    mkdirSync(SCREENSHOT_DIR, { recursive: true })
+    await saveAppScreenshot('message-fork-resend-collapsed.png')
+    await latestPrompt.$('.msg-actions-trigger').moveTo()
+    await expect(latestPrompt.$('.msg-resend')).not.toBeDisplayed()
+    await latestPrompt.$('.msg-actions-trigger').click()
     await expect(latestPrompt.$('.msg-resend')).toBeDisplayed()
+    await expect(latestPrompt.$('.msg-actions-trigger')).toHaveAttribute('aria-expanded', 'true')
 
-    const actionCenterOffset = await browser.execute(() => {
+    const geometry = await browser.execute(() => {
       const prompts = document.querySelectorAll<HTMLElement>('.messages-list .msg-user')
       const bubble = prompts[prompts.length - 1]
-      if (!bubble) return null
-      const actions = bubble.querySelector<HTMLElement>('.msg-actions')
-      if (!actions) return null
-      const bubbleRect = bubble.getBoundingClientRect()
-      const actionsRect = actions.getBoundingClientRect()
-      return actionsRect.top + actionsRect.height / 2 - (bubbleRect.top + bubbleRect.height / 2)
+      const text = bubble?.querySelector<HTMLElement>('.message-text')
+      const actions = bubble?.querySelector<HTMLElement>('.msg-actions')
+      if (!text || !actions) return null
+      return {
+        textHeight: text.getBoundingClientRect().height,
+        footerGap: actions.getBoundingClientRect().top - text.getBoundingClientRect().bottom,
+      }
     })
-    assert.ok(actionCenterOffset !== null, 'the latest prompt actions must render')
+    assert.ok(geometry !== null, 'the latest prompt actions must render')
+    assert.ok(geometry.textHeight > 40, 'the prompt must wrap across multiple lines')
     assert.ok(
-      Math.abs(actionCenterOffset) <= 1,
-      `one-line prompt actions must be vertically centred in the bubble, offset ${String(actionCenterOffset)}`,
+      geometry.footerGap >= 4,
+      `prompt actions must clear the text, gap ${String(geometry.footerGap)}`,
     )
 
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     await saveAppScreenshot('message-fork-resend-actions.png')
+    await latestPrompt.$('.msg-actions-trigger').click()
+    await expect(latestPrompt.$('.msg-resend')).not.toBeDisplayed()
+    await expect(latestPrompt.$('.msg-actions-trigger')).toHaveAttribute('aria-expanded', 'false')
 
     // Fork from the FIRST prompt: the new thread carries only that exchange.
-    await firstPrompt.moveTo()
+    await firstPrompt.$('.msg-actions-trigger').click()
     await firstPrompt.$('.msg-fork').click()
     await $('.context-menu-item*=Fork a copy').click()
 
@@ -165,7 +176,7 @@ describe('fork a thread and resend the last message', function () {
     )
 
     const latestPrompt = at([...(await $$('.messages-list .msg-user').getElements())], 1)
-    await latestPrompt.moveTo()
+    await latestPrompt.$('.msg-actions-trigger').click()
     await installMockScenario({
       title: 'Review the login redirect',
       turns: [

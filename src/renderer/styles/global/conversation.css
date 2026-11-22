@@ -781,30 +781,34 @@
 .msg-reply-actions .msg-action:focus-visible {
   opacity: 1;
 }
-/* Per-prompt actions (fork the conversation from here / resend the prompt).
-   Mirrors .msg-copy's hover affordance, anchored to the bubble's bottom-right
-   so it never covers the first line of a long prompt. */
+/* A single action icon keeps the footer compact until clicked. */
 .msg-actions {
-  position: absolute;
-  right: 0;
-  /* The containing block is `.message-body`, while the visible user bubble
-     adds its own block padding. Let the row sit halfway into that lower padding
-     so a one-line prompt and its 28px actions share a visual centre; keeping the
-     offset small preserves the bottom-right placement on wrapped prompts. */
-  bottom: calc(-1 * var(--spacing-xs));
   display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
   gap: var(--spacing-xs);
-  opacity: 0;
-  transition: opacity 0.1s;
+  margin-top: var(--spacing-xs);
 }
-.message-body:hover .msg-actions,
-.msg-actions:focus-within {
-  opacity: 1;
+.msg-actions .msg-action {
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  line-height: 1.25;
 }
-/* A deterministic image-input failure keeps both recovery actions visible on
-   the latest prompt, so switching model/resending does not depend on hover. */
-.msg-user:not(:has(~ .msg-user)):has(~ .msg-image-input-unsupported) .msg-actions {
-  opacity: 1;
+.msg-actions .msg-action:not(.msg-actions-trigger) {
+  display: none;
+}
+.msg-actions.is-open .msg-action:not(.msg-actions-trigger, [hidden]),
+/* A deterministic image-input failure keeps the recovery actions visible on
+   the latest prompt, so switching model/resending does not need the menu. */
+.msg-user:not(:has(~ .msg-user)):has(~ .msg-image-input-unsupported)
+  .msg-actions
+  .msg-action:not(.msg-actions-trigger, [hidden]) {
+  display: inline-block;
+}
+.msg-actions-trigger {
+  min-width: 24px;
+  font-size: var(--font-size-sm);
 }
 .msg-action {
   font-size: var(--font-size-xs);

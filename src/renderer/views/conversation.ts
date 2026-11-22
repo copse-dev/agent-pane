@@ -3778,8 +3778,7 @@ export function mountConversation(
   /**
    * Per-prompt actions. **Fork from here** branches the conversation as it stood
    * at that message into a new thread; **Resend** submits the prompt again as a
-   * fresh turn. Both are hover affordances on the user bubble, matching the
-   * assistant bubble's Copy.
+   * fresh turn. The actions follow the prompt text in the bubble footer.
    */
   function buildUserActions(threadId: string, msgId: string): HTMLElement {
     const fork = el(
@@ -3821,13 +3820,53 @@ export function mountConversation(
       runResend(threadId)
     })
     const sideChat = buildSideChatAction(threadId, msgId)
+    const trigger = el(
+      'button',
+      {
+        class: 'msg-action msg-actions-trigger',
+        type: 'button',
+        title: 'Message actions',
+        'aria-label': 'Message actions',
+        'aria-expanded': 'false',
+      },
+      '⋯',
+    )
     const actions = el(
       'div',
       { class: 'msg-actions' },
       fork,
       ...(sideChat ? [sideChat] : []),
       resend,
+      trigger,
     )
+    const closeActions = (): void => {
+      actions.classList.remove('is-open')
+      trigger.setAttribute('aria-expanded', 'false')
+      document.removeEventListener('click', closeOnOutsideClick)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+    const closeOnOutsideClick = (event: MouseEvent): void => {
+      if (event.target instanceof Node && !actions.contains(event.target)) closeActions()
+    }
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        closeActions()
+        trigger.focus()
+      }
+    }
+    trigger.addEventListener('click', () => {
+      if (actions.classList.contains('is-open')) {
+        closeActions()
+      } else {
+        actions.classList.add('is-open')
+        trigger.setAttribute('aria-expanded', 'true')
+        document.addEventListener('click', closeOnOutsideClick)
+        document.addEventListener('keydown', closeOnEscape)
+      }
+    })
+    actions.addEventListener('click', (event) => {
+      if (event.target !== trigger) closeActions()
+    })
     const message = getThreadById(store, threadId)?.messages.find((item) => item.id === msgId)
     if ((message?.images?.length ?? 0) > 0) {
       const imageCount = message?.images?.length ?? 0
