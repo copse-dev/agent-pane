@@ -1,6 +1,16 @@
 import type { LLMProvider, ModelUsage } from '@shared/types'
 import { parseAcpModelSelection } from '@shared/acp.ts'
-import { buildProvider, type BuildProviderOptions } from './providers/provider-selection.ts'
+import {
+  buildProvider,
+  isBillableModel,
+  type BuildProviderOptions,
+} from './providers/provider-selection.ts'
+import { getThreadExecutionContext } from './thread-execution-context.ts'
+import {
+  advisorUnavailableMessage,
+  toolCircuitBreaker,
+  type ToolCircuitBreaker,
+} from './tool-circuit-breaker.ts'
 import { completeMessagesWithUsage } from './providers/llm-complete-text.ts'
 import { getRoleModels } from './providers/role-models.ts'
 import { resolveDynamicModelId } from './providers/dynamic-model.ts'
@@ -129,6 +139,12 @@ export interface AdvisorRunnerDeps {
     prompt: string
     signal: AbortSignal
   }) => Promise<AcpAdvisorResult>
+  /** Per-thread breaker that stops re-consulting an advisor that cannot answer. */
+  breaker: ToolCircuitBreaker
+  /** The thread this consult belongs to; null outside a thread (no breaker). */
+  currentThreadId: () => string | null
+  /** Whether `model` runs on a local server, so "connection error" means "not running". */
+  isLocalServer: (model: string) => boolean
 }
 
 export const DEFAULT_ADVISOR_RUNNER_DEPS: AdvisorRunnerDeps = {
@@ -139,6 +155,23 @@ export const DEFAULT_ADVISOR_RUNNER_DEPS: AdvisorRunnerDeps = {
   buildWorkingDiff: () => buildAdvisorWorkingDiff(getAgentExecutionRoot()),
   buildProvider: (model, opts) => buildProvider(model, undefined, opts),
   runAcpPrompt: runAcpAdvisorPrompt,
+  breaker: toolCircuitBreaker,
+  currentThreadId: () => getThreadExecutionContext()?.threadId ?? null,
+  // Unbillable = LM Studio or a local extra provider (Ollama, llama.cpp, …).
+  isLocalServer: (model) => !isBillableModel(model),
+}
+
+/**
+ * True when the advisor's circuit breaker is open for this thread on its
+ * current selection — the turn builder withdraws the tool at the next turn
+ * boundary (see `parentTools` in agent-service.ts).
+ */
+export function isAdvisorWithdrawn(
+  threadId: string,
+  selection: string = resolveAdvisorModelId(),
+  breaker: ToolCircuitBreaker = toolCircuitBreaker,
+): boolean {
+  return breaker.get(threadId, 'advisor', selection) !== null
 }
 
 /** The runner for one executor call's advisor context. */
@@ -147,6 +180,39 @@ export function createAdvisorRunner(
   deps: AdvisorRunnerDeps = DEFAULT_ADVISOR_RUNNER_DEPS,
 ): AdvisorRunner {
   return async (signal: AbortSignal, options?: AdvisorCallOptions) => {
+    // An advisor that already failed unrecoverably in this thread (needs
+    // sign-in, local server down) answers instantly with the same actionable
+    // message instead of costing another consult — see tool-circuit-breaker.ts.
+    const threadId = deps.currentThreadId()
+    const selection = ctx.advisorModel
+    const open = threadId ? deps.breaker.get(threadId, 'advisor', selection) : null
+    if (open) throw new Error(advisorUnavailableMessage(open))
+    let advisorModel = selection
+    try {
+      // Expand a dynamic selection (`auto:best-intellect`, `auto:role:advisor`,
+      // …) here rather than at configuration time: the point of storing the
+      // rule is that it re-derives against whatever is reachable when the
+      // advice is actually needed. A pinned id passes through unchanged.
+      advisorModel = await deps.resolveModel(selection)
+      return await consult(signal, advisorModel, options)
+    } catch (err) {
+      // Stop is not a failure of the advisor; neither is a call outside a thread.
+      if (signal.aborted || !threadId) throw err
+      const trip = deps.breaker.record(threadId, 'advisor', {
+        selection,
+        model: advisorModel,
+        localServer: deps.isLocalServer(advisorModel),
+        error: err,
+      })
+      throw trip ? new Error(advisorUnavailableMessage(trip)) : err
+    }
+  }
+
+  async function consult(
+    signal: AbortSignal,
+    advisorModel: string,
+    options?: AdvisorCallOptions,
+  ): Promise<string> {
     // Capped (most recent context kept, truncation stated) so a long run does
     // not forward its whole history on every consult — see advisor-strategy.ts.
     const transcript = buildAdvisorTranscript(ctx.getTranscript())
@@ -163,11 +229,6 @@ export function createAdvisorRunner(
     const questionBlock = question ? `\n# The executor’s specific question\n\n${question}\n` : ''
     const prompt = `${ADVISOR_PREAMBLE}\n\n${repoState}${workingDiff}# Executor transcript\n\n${transcript}\n${questionBlock}`
 
-    // Expand a dynamic selection (`auto:best-intellect`, `auto:role:advisor`, …)
-    // here rather than at configuration time: the point of storing the rule is
-    // that it re-derives against whatever is reachable when the advice is
-    // actually needed. A pinned id passes through unchanged.
-    const advisorModel = await deps.resolveModel(ctx.advisorModel)
     assertModelMakerAllowed(advisorModel)
 
     let text: string

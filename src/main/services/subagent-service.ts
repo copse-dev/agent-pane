@@ -47,6 +47,11 @@ export interface ExploreSubagentResult {
    * subagent's read budget. Equal to `summary` when nothing was read.
    */
   text: string
+  /**
+   * The subagent's own failure, when its loop threw (the summary then reads
+   * `Subagent error: …`). Lets the caller tell a broken route from a finding.
+   */
+  error?: string
   usage: ModelUsage
 }
 
@@ -93,6 +98,7 @@ export async function runExploreSubagent(
   const subagentReadLimits = readFileLimitsForSubagent(subagentBudget)
 
   const spans: ExploredSpan[] = []
+  let error: string | undefined
   return runWithAgentRunReadFileLimits(subagentReadLimits, async () => {
     const { summary, session } = await runWithExploredSpanRecorder(
       (span) => spans.push(span),
@@ -107,7 +113,10 @@ export async function runExploreSubagent(
           maxContextTokens: contextWindow,
           toolSchemaReserveTokens: toolSchemaReserve,
           executeTool: (name, args, sig) => executeExploreTool(registry, name, args, sig),
-          onSubagentChunk: onChunk,
+          onSubagentChunk: (chunk) => {
+            if (chunk.type === 'subagent_error') error = chunk.error
+            onChunk(chunk)
+          },
           systemPromptSuffix: buildExploreSearchRoutingAddon(isSemanticSearchAvailable()),
           usageModel,
           ...(localFallback !== undefined ? { localFallback } : {}),
@@ -123,6 +132,9 @@ export async function runExploreSubagent(
     const selection = selectExploreExcerpts(spans, summary, subagentReadLimits.maxChars)
     // Everything read, not just what fit: read_explored serves the rest (Fix 0b).
     retainExploredSpans(spans)
-    return { summary, text: renderExploreResult(summary, selection), usage }
+    const text = renderExploreResult(summary, selection)
+    return session.status === 'error' && error !== undefined
+      ? { summary, text, usage, error }
+      : { summary, text, usage }
   })
 }

@@ -145,6 +145,7 @@ async function buildTaskRoleRoute(selection: string): Promise<SubagentRoute> {
   const contextWindow = await resolveContextWindow(model)
   return {
     provider: await buildProvider(model),
+    selection,
     usageModel: model,
     contextWindow,
     toolSchemaReserve: isLocalChatModel(model) ? 2_500 : 1_000,
@@ -153,6 +154,8 @@ async function buildTaskRoleRoute(selection: string): Promise<SubagentRoute> {
 
 export interface SubagentRoute {
   provider: LLMProvider
+  /** The role selection that chose `usageModel` (may be an `auto:` rule). */
+  selection: string
   usageModel: string
   contextWindow: number
   toolSchemaReserve: number
