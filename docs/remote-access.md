@@ -97,10 +97,9 @@ servers; the status message stays in the phone's browser.
 ### Limits and known gaps
 
 - The Mac must be awake with Copse open; the relay cannot wake it.
-- The shell tries `https://lan.<label>.u.copse.me/` on port 443 before `web.`, but the Mobile
-  Companion serves `lan.` on port 42773. Until the shell uses that port, the LAN attempt inside the
-  shell times out after four seconds and the shell falls back to the relay. Opening the `lan.`
-  address directly is unaffected.
+- Inside the shell, the frame tries `https://lan.<label>.u.copse.me:42773/` first, and falls back
+  to `web.` through the relay if the page has not reported within four seconds. Chrome may first
+  ask to allow access to the local network; declining sends the shell straight to the relay.
 - Content-free push (`POST /v1/attention`, "Copse needs your attention") exists on the service;
   Copse does not send it yet.
 - `COPSE_RELAY` (`host[:port]`) in the environment Copse starts with points the tunnel at another
