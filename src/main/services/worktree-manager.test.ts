@@ -35,6 +35,7 @@ import {
   allocateThreadWorktree,
   canAdoptThreadWorktree,
   expectedThreadWorktreePath,
+  fetchDefaultBranch,
   threadWorktreeOwner,
   inspectManagedThreadWorktreePath,
   inspectThreadWorktreeAttachment,
@@ -1122,6 +1123,23 @@ describe('worktree manager', () => {
       'should base off the fetched remote tip, not the stale local branch',
     )
     assert.equal(await readFile(join(worktree.path, 'from-remote.txt'), 'utf-8'), 'newer commit\n')
+  })
+
+  it('fetches a local origin branch whose name starts with a dash as a branch, not an option', async () => {
+    const { temp, repo } = await setup()
+    const remote = join(temp, 'remote.git')
+    git(temp, ['init', '-q', '--bare', '-b', 'main', remote])
+    git(repo, ['remote', 'add', 'origin', remote])
+    git(repo, ['push', '-q', 'origin', 'main'])
+    // `git branch` refuses this name, but a full ref may start with `-`, so a
+    // remote can still hold one. The contained fallback fetch must keep it in
+    // a refspec instead of passing it where `git fetch` reads options.
+    const tip = git(remote, ['rev-parse', 'main']).trim()
+    git(remote, ['update-ref', 'refs/heads/-dash', tip])
+
+    await fetchDefaultBranch(repo, '-dash')
+
+    assert.equal(git(repo, ['rev-parse', '--verify', 'refs/remotes/origin/-dash']).trim(), tip)
   })
 
   it('falls back to the local default branch when the best-effort fetch times out', async () => {

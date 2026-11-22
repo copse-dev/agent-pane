@@ -17,7 +17,11 @@ import {
 } from '@shared/git/worktree-policy.ts'
 import { describeBranchCheckoutFailure } from '@shared/git/branch-held.ts'
 import { runCommand, type CommandResult } from './exec/command-runner.ts'
-import { fetchDefaultBranchFromHost, noninteractiveProjectGit } from './default-branch-fetch.ts'
+import {
+  fetchDefaultBranchFromHost,
+  noninteractiveProjectGit,
+  originBranchRef,
+} from './default-branch-fetch.ts'
 import type { GitAuthMode } from './ssh-workspace/git-ssh-env.ts'
 import { getSetting } from './storage/settings.ts'
 import { parseWorkingTreeSnapshotHead } from './git-snapshot.mts'
@@ -806,13 +810,23 @@ export function fetchDefaultBranch(projectRoot: string, branch: string): Promise
 
 const defaultBranchFetchesInFlight = new Map<string, Promise<void>>()
 
+/**
+ * The contained fallback fetch for a non-network origin. The branch only ever
+ * appears inside a full refspec after `--end-of-options`, as on the host path,
+ * so no branch name can be read as a `git fetch` option.
+ */
+function containedDefaultBranchFetchArgs(branch: string): string[] {
+  const { source, destination } = originBranchRef(branch)
+  return ['fetch', '--quiet', '--end-of-options', 'origin', `+${source}:${destination}`]
+}
+
 async function fetchDefaultBranchOnce(projectRoot: string, branch: string): Promise<void> {
   if (!getSetting<boolean>('backgroundDefaultBranchFetch', true)) return
   let failure: string | null
   try {
     const result =
       (await fetchDefaultBranchFromHost(projectRoot, branch, git)) ??
-      (await noninteractiveProjectGit(git)(projectRoot, ['fetch', '--quiet', 'origin', branch]))
+      (await noninteractiveProjectGit(git)(projectRoot, containedDefaultBranchFetchArgs(branch)))
     failure = result.code === 0 ? null : describeFetchFailure(result)
   } catch (error) {
     failure = redactFetchUrlUserinfo(errorMessage(error))

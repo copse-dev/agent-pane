@@ -1619,12 +1619,33 @@ export async function getGitPromptState(root: string | null): Promise<GitPromptS
 
 const ORIGIN_HEAD_PREFIX = 'refs/remotes/origin/'
 
+/**
+ * Whether `name` is a branch name Git itself would accept for a new branch
+ * (`git check-ref-format --branch`, without the `@{-N}` shorthands).
+ *
+ * The default branch is read from refs and configuration that processes
+ * inside the project can change, and many callers pass it to Git as a bare
+ * argument. A full ref name may begin with `-`; a branch name may not, so the
+ * resolver refuses anything Git would not take as a branch.
+ */
+export function isPlainBranchName(name: string): boolean {
+  if (!name || name === '@' || name.startsWith('-')) return false
+  if (name.startsWith('/') || name.endsWith('/') || name.endsWith('.')) return false
+  if (name.includes('..') || name.includes('//') || name.includes('@{')) return false
+  if (/[~^:?*[\\]/.test(name)) return false
+  for (const char of name) {
+    const code = char.codePointAt(0) ?? 0
+    if (code <= 0x20 || code === 0x7f) return false
+  }
+  return name.split('/').every((part) => !part.startsWith('.') && !part.endsWith('.lock'))
+}
+
 /** Parse `git symbolic-ref refs/remotes/origin/HEAD` into a branch name. */
 export function parseOriginHeadSymbolicRef(ref: string): string | null {
   const trimmed = ref.trim()
   if (!trimmed.startsWith(ORIGIN_HEAD_PREFIX)) return null
   const branch = trimmed.slice(ORIGIN_HEAD_PREFIX.length)
-  return branch || null
+  return isPlainBranchName(branch) ? branch : null
 }
 
 /**
@@ -1731,7 +1752,8 @@ async function resolveDefaultBranch(root: string): Promise<string | null> {
   if (remoteCode === 0) {
     const match = remoteStdout.match(/HEAD branch:\s*(.+)/m)
     const remoteDefault = match?.[1]?.trim()
-    if (remoteDefault && !remoteDefault.startsWith('(')) return remoteDefault
+    if (remoteDefault && !remoteDefault.startsWith('(') && isPlainBranchName(remoteDefault))
+      return remoteDefault
   }
 
   // Without a remote, `init.defaultBranch` answers — but a global value follows
@@ -1747,7 +1769,8 @@ async function resolveDefaultBranch(root: string): Promise<string | null> {
   )
   if (configCode === 0 && configStdout.trim()) {
     const configured = configStdout.trim()
-    if (await localBranchExists(root, configured)) return configured
+    if (isPlainBranchName(configured) && (await localBranchExists(root, configured)))
+      return configured
   }
 
   if (await localBranchExists(root, DEFAULT_GIT_BRANCH)) return DEFAULT_GIT_BRANCH
