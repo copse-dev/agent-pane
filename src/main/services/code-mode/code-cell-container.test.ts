@@ -11,7 +11,15 @@ import {
   type CodeCellContainerDependencies,
 } from './code-cell-container.ts'
 import { inProcessEngine, testSpec } from './code-cell-harness.test-support.ts'
-import { CODE_CELL_TOOL_TARGET, type ToolCallResponse } from './code-cell-wire.ts'
+import { encodeFrame, FRAME } from '../container-runtime/egress-link.ts'
+import {
+  CODE_CELL_TOOL_TARGET,
+  decodeLine,
+  encodeLine,
+  readMessage,
+  toolCallResponseSchema,
+  type ToolCallResponse,
+} from './code-cell-wire.ts'
 
 const noTools: CellToolHandler = () =>
   Promise.resolve({ ok: false, error: 'no tools in this test' })
@@ -45,6 +53,52 @@ function errorOf(outcome: CellOutcome): string {
   const result = resultOf(outcome)
   assert.equal(result.ok, false, JSON.stringify(result))
   return result.error
+}
+
+const NO_CELL_RUNNING_TEXT =
+  'No cell is running: tools can only be called while the cell that asks is running.'
+
+/**
+ * A tool handler that holds every call until released, so a test can act
+ * while a cell is known to be running, without sleeping.
+ */
+function heldTool(): {
+  callTool: CellToolHandler
+  entered: Promise<void>
+  enteredTwice: Promise<void>
+  release: () => void
+  readonly calls: number
+} {
+  let calls = 0
+  let enter = (): void => {}
+  let enterTwice = (): void => {}
+  let open = (): void => {}
+  const entered = new Promise<void>((resolve) => {
+    enter = resolve
+  })
+  const enteredTwice = new Promise<void>((resolve) => {
+    enterTwice = resolve
+  })
+  const gate = new Promise<void>((resolve) => {
+    open = resolve
+  })
+  return {
+    callTool: async (): Promise<ToolCallResponse> => {
+      calls += 1
+      if (calls === 1) enter()
+      if (calls === 2) enterTwice()
+      await gate
+      return { ok: true, result: 'held' }
+    },
+    entered,
+    enteredTwice,
+    release: (): void => {
+      open()
+    },
+    get calls(): number {
+      return calls
+    },
+  }
 }
 
 async function started(): Promise<{
@@ -131,28 +185,23 @@ describe('CodeCellContainer with the real guest', () => {
     }
   })
 
-  it('refuses a tool call made after its cell has finished', async () => {
-    const { container } = await started()
-    let handled = 0
-    const callTool: CellToolHandler = () => {
-      handled += 1
-      return Promise.resolve({ ok: true, result: 'should not be reached' })
-    }
+  it('refuses a tool request that names a cell other than the running one', async () => {
+    const { container, engine } = await started()
+    const held = heldTool()
     try {
-      resultOf(
-        await container.runCell(
-          cell(
-            "setTimeout(() => { tools.read_file({ path: 'x' }).then((r) => { state.late = r }, (e) => { state.late = e.message }) }, 20)\nreturn 'done'",
-            { callTool },
-          ),
-        ),
+      assert.equal(valueOf(await container.runCell(cell('return 1'))), '1')
+      const running = container.runCell(
+        cell("await tools.read_file({ path: 'hold' })\nreturn 2", { callTool: held.callTool }),
       )
-      await new Promise((resolve) => setTimeout(resolve, 200))
-      assert.match(
-        valueOf(await container.runCell(cell('return state.late'))),
-        /No cell is running/,
-      )
-      assert.equal(handled, 0)
+      await held.entered
+      // Cell 2 is running; a request stamped with cell 1 is refused.
+      const stream = await engine.guestLink().open(CODE_CELL_TOOL_TARGET)
+      stream.end(encodeLine({ cell: 1, name: 'read_file', args: { path: 'x' } }))
+      const reply = decodeLine((await readMessage(stream)).trim(), toolCallResponseSchema)
+      assert.deepEqual(reply, { ok: false, error: NO_CELL_RUNNING_TEXT })
+      held.release()
+      assert.equal(valueOf(await running), '2')
+      assert.equal(held.calls, 1, 'only the running cell reached the handler')
     } finally {
       await container.stop()
     }
@@ -236,25 +285,94 @@ describe('CodeCellContainer with the real guest', () => {
   it('refuses tool streams between cells and past the in-flight limit', async () => {
     const { container, engine } = await started()
     const guest = engine.guestLink()
+    const held = heldTool()
     try {
       await assert.rejects(guest.open(CODE_CELL_TOOL_TARGET), /No cell is running/)
       const running = container.runCell(
-        cell('await new Promise((resolve) => setTimeout(resolve, 300))\nreturn 1'),
+        cell("await tools.read_file({ path: 'hold' })\nreturn 1", { callTool: held.callTool }),
       )
-      await new Promise((resolve) => setTimeout(resolve, 50))
-      // A hostile guest opens requests it never finishes.
-      const held = await Promise.all(
-        Array.from({ length: 16 }, () => guest.open(CODE_CELL_TOOL_TARGET)),
+      await held.entered
+      // One stream is the cell's own held call; a hostile guest opens the rest
+      // and never finishes them.
+      const extra = await Promise.all(
+        Array.from({ length: 15 }, () => guest.open(CODE_CELL_TOOL_TARGET)),
       )
       await assert.rejects(guest.open(CODE_CELL_TOOL_TARGET), /at most 16 tool calls in flight/)
-      for (const stream of held) stream.destroy()
-      await new Promise((resolve) => setTimeout(resolve, 20))
-      const again = await guest.open(CODE_CELL_TOOL_TARGET)
-      again.destroy()
+      for (const stream of extra) stream.destroy()
+      let reopened: Awaited<ReturnType<typeof guest.open>> | null = null
+      for (let attempt = 0; attempt < 50 && reopened === null; attempt += 1) {
+        await new Promise((resolve) => setImmediate(resolve))
+        reopened = await guest.open(CODE_CELL_TOOL_TARGET).catch(() => null)
+      }
+      assert.ok(reopened, 'a slot frees once a stream closes')
+      reopened.destroy()
+      held.release()
       assert.equal(valueOf(await running), '1')
     } finally {
       await container.stop()
     }
+  })
+
+  it('survives a guest that resets its tool stream while the host is answering', async () => {
+    const { container, engine } = await started()
+    const held = heldTool()
+    const uncaught: unknown[] = []
+    const record = (error: unknown): void => {
+      uncaught.push(error)
+    }
+    process.on('uncaughtException', record)
+    try {
+      const running = container.runCell(
+        cell("await tools.read_file({ path: 'hold' })\nreturn 1", { callTool: held.callTool }),
+      )
+      await held.entered
+      const stream = await engine.guestLink().open(CODE_CELL_TOOL_TARGET)
+      stream.end(encodeLine({ cell: 1, name: 'read_file', args: { path: 'hold' } }))
+      await held.enteredTwice
+      // The guest's own end reports the reset too; only the host's matters here.
+      stream.on('error', () => {})
+      stream.destroy(new Error('reset by a hostile guest'))
+      held.release()
+      assert.equal(valueOf(await running), '1')
+      for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setImmediate(resolve))
+      assert.deepEqual(uncaught, [])
+    } finally {
+      process.off('uncaughtException', record)
+      await container.stop()
+    }
+  })
+
+  it('stops answering a guest that broke its control stream, without crashing', async () => {
+    const { container, engine } = await started()
+    const uncaught: unknown[] = []
+    const record = (error: unknown): void => {
+      uncaught.push(error)
+    }
+    process.on('uncaughtException', record)
+    try {
+      // The control stream is the guest's first stream (id 1).
+      engine.sendRaw(encodeFrame(1, FRAME.DATA, 'not a control message\n'))
+      engine.sendRaw(encodeFrame(999, FRAME.OPEN, CODE_CELL_TOOL_TARGET))
+      for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setImmediate(resolve))
+      assert.equal(container.alive, false)
+      assert.deepEqual(uncaught, [])
+    } finally {
+      process.off('uncaughtException', record)
+      await container.stop()
+    }
+  })
+
+  it('stops and removes a container whose guest floods the link', async () => {
+    const { container, engine } = await started()
+    // Twenty-one thousand PINGs in one write: each asks the host for a PONG.
+    engine.sendRaw(Buffer.concat(Array.from({ length: 21_000 }, () => encodeFrame(0, FRAME.PING))))
+    for (let i = 0; i < 20 && engine.tornDown.length === 0; i += 1) {
+      await new Promise((resolve) => setImmediate(resolve))
+    }
+    assert.equal(container.alive, false)
+    assert.deepEqual(engine.tornDown, ['cell-test-1'])
+    const outcome = await container.runCell(cell('return 1'))
+    assert.equal(outcome.kind, 'failed')
   })
 
   it('refuses any stream but the two code-cell targets', async () => {
@@ -277,7 +395,6 @@ describe('CodeCellContainer with the real guest', () => {
   it('fails to start, with the container log, when the runner exits before it is ready', async () => {
     const events = new EventEmitter()
     const stderr = new PassThrough()
-    let exitCode: number | null = null
     const tornDown: string[] = []
     const deps: CodeCellContainerDependencies = {
       runEngine: () => Promise.resolve(''),
@@ -285,7 +402,6 @@ describe('CodeCellContainer with the real guest', () => {
         setImmediate(() => {
           stderr.write('node: cannot find /app/runner.cjs\n')
           setImmediate(() => {
-            exitCode = 1
             events.emit('exit')
           })
         })
@@ -293,10 +409,8 @@ describe('CodeCellContainer with the real guest', () => {
           stdin: new PassThrough(),
           stdout: new PassThrough(),
           stderr,
-          get exitCode(): number | null {
-            return exitCode
-          },
           once: (event, listener): unknown => events.once(event, listener),
+          on: (event, listener): unknown => events.on(event, listener),
           kill: (): boolean => true,
         }
       },
@@ -325,6 +439,8 @@ describe('codeCellCreateArgs', () => {
       '--user=1001:1001',
       '--pids-limit=64',
       '--memory=512m',
+      '--memory-swap=512m',
+      '--log-driver=none',
       '--cpus=1',
       '--init',
     ]) {

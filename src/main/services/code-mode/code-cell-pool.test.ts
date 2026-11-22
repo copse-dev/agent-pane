@@ -26,10 +26,13 @@ class FakeContainer implements PooledCodeCellContainer {
     return this.next
   }
 
-  stop(): Promise<void> {
+  /** Set to make `stop` take as long as a slow engine would. */
+  stopGate: Promise<void> | null = null
+
+  async stop(): Promise<void> {
     this.stopped += 1
     this.alive = false
-    return Promise.resolve()
+    if (this.stopGate) await this.stopGate
   }
 }
 
@@ -53,6 +56,10 @@ function pool(options: Partial<ConstructorParameters<typeof CodeCellPool>[0]> = 
       made.push(container)
       return Promise.resolve(container)
     },
+    sweep: (): Promise<void> => Promise.resolve(),
+    idleMs: 30 * 60_000,
+    maxLeases: 4,
+    now: Date.now,
     log: (): void => {},
     ...options,
   })
@@ -87,7 +94,6 @@ describe('CodeCellPool', () => {
       ran.map((container) => container.cells),
       [['a1', 'a2'], ['b1']],
     )
-    assert.equal(cells.leaseCount, 2)
     await cells.disable()
   })
 
@@ -100,7 +106,6 @@ describe('CodeCellPool', () => {
     first.next = { kind: 'timeout' }
     assert.deepEqual(await cells.run(threadA, request('slow')), { kind: 'timeout' })
     assert.equal(first.stopped, 1)
-    assert.equal(cells.leaseCount, 0)
     await cells.run(threadA, request('fresh'))
     const second = made.find((container) => container.cells.includes('fresh'))
     assert.notEqual(second, first)
@@ -132,7 +137,8 @@ describe('CodeCellPool', () => {
     const b = made.find((container) => container.cells.includes('b'))
     assert.equal(a?.stopped, 1, 'the oldest idle thread gave its container up')
     assert.equal(b?.stopped, 0)
-    assert.equal(cells.leaseCount, 2)
+    await cells.run(threadB, request('b again'))
+    assert.ok(b.cells.includes('b again'), 'the newer thread kept its container')
     await cells.disable()
   })
 
@@ -164,7 +170,6 @@ describe('CodeCellPool', () => {
       now = 5000
       mock.timers.tick(60_000)
       await flush()
-      assert.equal(cells.leaseCount, 0)
       assert.equal(made.find((container) => container.cells.includes('a'))?.stopped, 1)
       await cells.disable()
     } finally {
@@ -211,7 +216,59 @@ describe('CodeCellPool', () => {
     await cells.discard(threadA)
     assert.equal(made.find((container) => container.cells.includes('a'))?.stopped, 1)
     assert.equal(made.find((container) => container.cells.includes('b'))?.stopped, 0)
-    assert.equal(cells.leaseCount, 1)
+    await cells.run(threadB, request('b again'))
+    assert.ok(made.find((container) => container.cells.includes('b'))?.cells.includes('b again'))
     await cells.disable()
+  })
+
+  it('turns off without waiting for a container that is still starting, and stops it once up', async () => {
+    const made: FakeContainer[] = []
+    let finishStart = (): void => {}
+    const cells = new CodeCellPool({
+      start: (): Promise<FakeContainer> =>
+        new Promise((resolve) => {
+          finishStart = (): void => {
+            const container = new FakeContainer()
+            made.push(container)
+            resolve(container)
+          }
+        }),
+      sweep: (): Promise<void> => Promise.resolve(),
+      idleMs: 60_000,
+      maxLeases: 4,
+      now: Date.now,
+      log: (): void => {},
+    })
+    cells.enable()
+    await flush()
+    await cells.disable()
+    assert.equal(made.length, 0, 'disable returned while the spare was still starting')
+    finishStart()
+    await flush()
+    assert.equal(made[0]?.stopped, 1, 'the late container is removed once it is up')
+  })
+
+  it('starts nothing for a thread that was making room when code mode was turned off', async () => {
+    const { pool: cells, made } = pool({ maxLeases: 1 })
+    cells.enable()
+    await cells.run(threadA, request('a'))
+    const a = made.find((container) => container.cells.includes('a'))
+    assert.ok(a)
+    let finishStop = (): void => {}
+    a.stopGate = new Promise((resolve) => {
+      finishStop = resolve
+    })
+    const b = cells.run(threadB, request('b'))
+    await flush()
+    const disabling = cells.disable()
+    finishStop()
+    await assert.rejects(b, /Code mode is off/)
+    await disabling
+    await flush()
+    assert.ok(
+      made.every((container) => container.stopped >= 1),
+      'no container outlives turning code mode off',
+    )
+    assert.ok(made.every((container) => !container.cells.includes('b')))
   })
 })

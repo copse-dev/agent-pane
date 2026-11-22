@@ -6,8 +6,15 @@
  * no host mounts and an unprivileged uid, and it is created with limits on
  * processes, memory and CPU. Its only way out is the link, on which the host
  * answers exactly two stream names (`code-cell-wire.ts`) and refuses the rest.
- * Each tool request is matched to the cell that is running now; a request from
- * a timer an earlier cell left behind gets a refusal, not a tool.
+ * Tool requests are served only while a cell runs, and each must name that
+ * cell; between cells every request is refused. (Code a cell leaves behind,
+ * such as a timer, can still call tools while a later cell of the same thread
+ * runs, under that cell's turn and call budget: the guest is one process.)
+ *
+ * The host treats the guest as hostile. Besides the size and schema checks on
+ * every message, it bounds what the guest can make it do: requests in flight,
+ * the bytes it may send per second, and how much the host will queue for a
+ * guest that stops reading. Passing a bound stops and removes the container.
  *
  * Cells run one at a time. A cell that overruns its deadline, a cancelled one
  * and a link that fails all leave the container `broken`: its process may
@@ -60,6 +67,12 @@ const TOOL_REQUEST_LIMIT = 1024 * 1024
 const LOG_TAIL_LINES = 40
 /** How many tool requests a guest may have open at once. */
 const MAX_OPEN_TOOL_STREAMS = 16
+/** The most bytes a guest may send the host in one second. */
+const INBOUND_BYTES_PER_SECOND = 32 * 1024 * 1024
+/** The most frames the host will write to a guest in one second. */
+const OUTBOUND_WRITES_PER_SECOND = 20_000
+/** The most the host will queue for a guest that is not reading. */
+const OUTBOUND_BACKLOG_BYTES = 64 * 1024 * 1024
 const NO_CELL_RUNNING =
   'No cell is running: tools can only be called while the cell that asks is running.'
 
@@ -141,10 +154,15 @@ export function codeCellCreateArgs(spec: CodeCellContainerSpec): string[] {
     '--security-opt=no-new-privileges',
     `--pids-limit=${String(spec.pidsLimit)}`,
     `--memory=${spec.memoryLimit}`,
+    // No swap beyond the memory limit (Docker otherwise allows as much again).
+    `--memory-swap=${spec.memoryLimit}`,
     `--cpus=${String(spec.cpus)}`,
     `--user=${uid}:${uid}`,
     `--tmpfs=${tmp}`,
     '--network=none',
+    // The link carries tool results (repository text): keep no copy on the
+    // daemon's disk, and give a guest that writes endlessly nothing to fill.
+    '--log-driver=none',
     '--stop-timeout=5',
     spec.image,
   ]
@@ -214,8 +232,8 @@ export interface AttachedProcess {
   readonly stdin: Writable
   readonly stdout: Readable
   readonly stderr: Readable
-  readonly exitCode: number | null
   once(event: 'exit', listener: () => void): unknown
+  on(event: 'error', listener: (error: Error) => void): unknown
   kill(signal?: NodeJS.Signals): boolean
 }
 
@@ -274,7 +292,10 @@ export class CodeCellContainer {
   private openToolStreams = 0
   private broken: string | null = null
   private stopping: Promise<void> | null = null
+  private exited = false
   private readonly logTail: string[] = []
+  private inboundWindow = { start: 0, bytes: 0 }
+  private outboundWindow = { start: 0, writes: 0 }
 
   private constructor(
     spec: CodeCellContainerSpec,
@@ -297,9 +318,25 @@ export class CodeCellContainer {
       }
     })
     child.once('exit', () => {
+      this.exited = true
       this.fail('the container exited')
     })
-    this.link = new EgressLink(child.stdout, child.stdin, {
+    // A failed spawn (no engine CLI, no file descriptors) arrives as `error`
+    // rather than `exit`; without a listener it would take the app down.
+    child.on('error', (error) => {
+      this.exited = true
+      this.fail(`the engine could not be started: ${error.message}`)
+    })
+    child.stdout.on('data', (chunk: Buffer) => {
+      this.meterInbound(chunk.length)
+    })
+    const output = {
+      write: (chunk: Buffer): boolean => this.writeToGuest(chunk),
+      on: (event: 'drain' | 'error' | 'close', listener: (error?: Error) => void): void => {
+        child.stdin.on(event, listener)
+      },
+    }
+    this.link = new EgressLink(child.stdout, output, {
       onOpen: (id, target): void => {
         this.open(id, target)
       },
@@ -314,8 +351,9 @@ export class CodeCellContainer {
     spec: CodeCellContainerSpec,
     deps: CodeCellContainerDependencies = defaultDependencies,
   ): Promise<CodeCellContainer> {
-    await deps.runEngine(spec.engine, codeCellCreateArgs(spec))
     try {
+      // A `create` that timed out may still have made the container.
+      await deps.runEngine(spec.engine, codeCellCreateArgs(spec))
       if (spec.engine === 'apple') {
         const inspect = await deps.runEngine('apple', ['inspect', containerName(spec.runtimeId)])
         const shortfall = appleCodeCellConfigShortfall(spec, inspect)
@@ -357,12 +395,49 @@ export class CodeCellContainer {
 
   /** Usable for another cell: started, not stopping, not left in an unknown state. */
   get alive(): boolean {
-    return this.broken === null && this.stopping === null && this.child.exitCode === null
+    return this.broken === null && this.stopping === null && !this.exited
   }
 
   /** Whether a cell is running or waiting to. */
   get busy(): boolean {
     return this.active !== null
+  }
+
+  /** Stop a guest that sends faster than any cell needs to. */
+  private meterInbound(bytes: number): void {
+    const now = Date.now()
+    if (now - this.inboundWindow.start >= 1000) this.inboundWindow = { start: now, bytes: 0 }
+    this.inboundWindow.bytes += bytes
+    if (this.inboundWindow.bytes > INBOUND_BYTES_PER_SECOND) {
+      this.overrun('the runner sent more than the link allows')
+    }
+  }
+
+  /**
+   * Every frame the host writes goes through here. A guest can make the host
+   * answer (a PING, a refused OPEN) without reading the answers, so the
+   * queue and the write rate are both bounded.
+   */
+  private writeToGuest(chunk: Buffer): boolean {
+    if (this.broken !== null) return false
+    const now = Date.now()
+    if (now - this.outboundWindow.start >= 1000) this.outboundWindow = { start: now, writes: 0 }
+    this.outboundWindow.writes += 1
+    if (this.outboundWindow.writes > OUTBOUND_WRITES_PER_SECOND) {
+      this.overrun('the runner asked for more than the link allows')
+      return false
+    }
+    if (this.child.stdin.writableLength > OUTBOUND_BACKLOG_BYTES) {
+      this.overrun('the runner stopped reading the link')
+      return false
+    }
+    return this.child.stdin.write(chunk)
+  }
+
+  private overrun(reason: string): void {
+    if (this.stopping !== null) return
+    this.fail(reason)
+    void this.stop()
   }
 
   private describeLog(): string {
@@ -398,7 +473,7 @@ export class CodeCellContainer {
     if (target === CODE_CELL_TOOL_TARGET && this.control !== null) {
       // Each open request may buffer up to TOOL_REQUEST_LIMIT here, so a guest
       // gets a bounded number at once, and none between cells.
-      if (this.active === null) {
+      if (this.active === null || !this.alive) {
         this.link.refuse(id, NO_CELL_RUNNING)
         return
       }
@@ -411,6 +486,10 @@ export class CodeCellContainer {
       }
       this.openToolStreams += 1
       const stream = this.link.accept(id)
+      // The guest can reset the stream at any moment, and a write after the
+      // link closed fails: either surfaces as `error`, which must not be the
+      // main process's uncaught exception. `serveTool` sees the stream end.
+      stream.on('error', () => {})
       stream.once('close', () => {
         this.openToolStreams -= 1
       })
@@ -513,7 +592,7 @@ export class CodeCellContainer {
       this.fail('the container was stopped')
       this.link.close(undefined)
       this.child.stdin.end()
-      if (this.child.exitCode === null) {
+      if (!this.exited) {
         // The attached start exits with the container, which exits when its
         // runner sees the link close. One that does not is killed; teardown
         // below removes the container either way.

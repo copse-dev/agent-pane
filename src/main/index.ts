@@ -1521,9 +1521,15 @@ async function cleanupBeforeQuit(): Promise<void> {
   await stopAllIsolatedDesktops().catch((error: unknown) => {
     console.error('[isolated-desktop] Shutdown VM cleanup failed:', error)
   })
-  await stopAllCodeCellContainers().catch((error: unknown) => {
-    console.error('[code-mode] Shutdown container cleanup failed:', error)
-  })
+  // Bounded: container removal goes through the engine CLI, and the quit
+  // deadline must leave time for the steps below (persisted writes among them).
+  // A container left behind exits once its link closes with this process.
+  await Promise.race([
+    stopAllCodeCellContainers().catch((error: unknown) => {
+      console.error('[code-mode] Shutdown container cleanup failed:', error)
+    }),
+    new Promise<void>((resolve) => setTimeout(resolve, 5_000).unref()),
+  ])
   stopEventLoopWatchdog()
   perfMark('main:quit')
   perfDumpCounters('quit')

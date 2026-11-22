@@ -33,7 +33,7 @@ const RUN_CODE_OUTPUT_MAX_BYTES = 100 * 1024
 
 const DESCRIPTION = [
   "Run a TypeScript cell in this thread's code container and return its console output and return value.",
-  'Inside the cell, `await tools.<name>(args)` calls a read-only Copse tool with the same arguments as that tool and resolves to its text result; a refused or failed call throws.',
+  'Inside the cell, `await tools.<name>(args)` calls a read-only Copse tool with the same arguments as that tool and resolves to its text result, which is the refusal text when the call is blocked or denied; a call with bad arguments or an unavailable tool throws.',
   `Callable: ${CODE_CELL_TOOLS.join(', ')}. At most ${String(CODE_CELL_MAX_TOOL_CALLS)} calls per cell.`,
   'Use it to combine, filter or count several tool results in one step instead of reading each into the conversation.',
   "The cell is the body of an async function: use `await` and `return`. Values put on `state` (or globalThis) stay for this thread's later cells; `const` and `let` do not.",

@@ -22,8 +22,17 @@ import {
   DEFAULT_CODE_CELL_LIMITS,
   newCodeCellRuntimeId,
 } from './code-cell-container.ts'
-import { ensureCodeCellImage } from './code-cell-image.ts'
-import { CodeCellPool, type CodeCellOwner } from './code-cell-pool.ts'
+import {
+  CODE_CELL_IMAGE,
+  defaultCodeCellRunnerPath,
+  ensureCodeCellImage,
+} from './code-cell-image.ts'
+import {
+  CODE_CELL_IDLE_MS,
+  CODE_CELL_MAX_LEASES,
+  CodeCellPool,
+  type CodeCellOwner,
+} from './code-cell-pool.ts'
 
 export const CODE_MODE_ENABLED_SETTING = 'codeModeEnabled'
 
@@ -45,7 +54,10 @@ function codeCellEngine(): Promise<ThreadContainerEngine> {
 
 async function startCodeCellContainer(): Promise<CodeCellContainer> {
   const resolved = await codeCellEngine()
-  const image = await ensureCodeCellImage(resolved)
+  const image = await ensureCodeCellImage(resolved, {
+    runner: defaultCodeCellRunnerPath(),
+    image: CODE_CELL_IMAGE,
+  })
   return await CodeCellContainer.start({
     engine: resolved,
     image,
@@ -72,7 +84,16 @@ async function sweepCodeCellContainers(): Promise<void> {
 let pool: CodeCellPool | null = null
 
 export function getCodeCellPool(): CodeCellPool {
-  pool ??= new CodeCellPool({ start: startCodeCellContainer, sweep: sweepCodeCellContainers })
+  pool ??= new CodeCellPool({
+    start: startCodeCellContainer,
+    sweep: sweepCodeCellContainers,
+    idleMs: CODE_CELL_IDLE_MS,
+    maxLeases: CODE_CELL_MAX_LEASES,
+    now: Date.now,
+    log: (message): void => {
+      console.warn(`[code-mode] ${message}`)
+    },
+  })
   return pool
 }
 
@@ -93,7 +114,10 @@ export async function discardCodeCellContainer(owner: CodeCellOwner): Promise<vo
   await pool?.discard(owner)
 }
 
-/** Remove every code-cell container: on quit. */
+/**
+ * Remove every code-cell container and start no more: on quit. Waits only for
+ * containers that are up; one still starting is removed as soon as it is.
+ */
 export async function stopAllCodeCellContainers(): Promise<void> {
-  await pool?.stopAll()
+  await pool?.disable()
 }

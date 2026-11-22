@@ -63,6 +63,14 @@ describe('formatCellOutcome', () => {
   })
 })
 
+const POOL_OPTIONS = {
+  sweep: (): Promise<void> => Promise.resolve(),
+  idleMs: 60_000,
+  maxLeases: 4,
+  now: Date.now,
+  log: (): void => {},
+}
+
 describe('run_code', () => {
   afterEach(async () => {
     await setSetting(CODE_MODE_ENABLED_SETTING, false)
@@ -71,6 +79,7 @@ describe('run_code', () => {
   it('refuses to run while code mode is off', async () => {
     let started = 0
     const pool = new CodeCellPool({
+      ...POOL_OPTIONS,
       start: (): Promise<never> => {
         started += 1
         return Promise.reject(new Error('should not start'))
@@ -85,6 +94,7 @@ describe('run_code', () => {
   it('refuses to run outside a thread', async () => {
     await setSetting(CODE_MODE_ENABLED_SETTING, true)
     const pool = new CodeCellPool({
+      ...POOL_OPTIONS,
       start: (): Promise<never> => Promise.reject(new Error('should not start')),
     })
     const tool = createRunCodeTool(host, () => pool)

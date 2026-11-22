@@ -2,12 +2,17 @@
  * The host's answer to a cell's `await tools.<name>(args)`.
  *
  * A cell may call a fixed set of read-only tools. Each call goes through
- * `ToolRegistry.execute` exactly as if the model had made it, inside the
- * async context of the `run_code` call that started the cell: the permission
- * gate, hooks, read-only mode, plan blocks, the thread's execution root and
- * deferred-checkout handling all apply to it, and an external result still
- * marks the turn. Nothing a cell asks for runs with more authority than the
- * same call from the model would have.
+ * `ToolRegistry.execute` inside the async context of the `run_code` call that
+ * started the cell: the permission gate, tool-gate hooks, read-only mode, plan
+ * blocks, the thread's execution root and deferred-checkout handling all apply
+ * to it, and an external result still marks the turn. Nothing a cell asks for
+ * runs with more authority than the same call from the model would have.
+ *
+ * What the agent loop adds around a direct call does not happen for a nested
+ * one: `afterToolUse` hooks, nested instruction discovery for the paths read,
+ * and skill activation. A refusal the registry returns as text (a blocked
+ * tool, a denied approval) reaches the cell as that text, as it would reach
+ * the model.
  *
  * Two things the model would otherwise lose are kept for it: any
  * system-reminder blocks the registry appended to a nested result (a hook's
@@ -21,11 +26,12 @@ import type { CellToolHandler } from './code-cell-container.ts'
 import type { ToolCallResponse } from './code-cell-wire.ts'
 
 /**
- * What a cell may call: reads of the thread's checkout, search, Git
- * inspection and skills. Every entry is also in `READONLY_AGENT_TOOLS`
+ * What a cell may call: reads of the thread's checkout, search and Git
+ * inspection. Every entry is also in `READONLY_AGENT_TOOLS`
  * (`code-cell-tools.test.ts` holds that). Subagents, questions to the user,
  * plan updates and image-producing tools are left out: they are not data a
- * cell can combine.
+ * cell can combine. So is `read_skill`, which needs the agent loop's skill
+ * activation around the call, and a nested call has none.
  */
 export const CODE_CELL_TOOLS: readonly string[] = [
   'read_file',
@@ -40,7 +46,6 @@ export const CODE_CELL_TOOLS: readonly string[] = [
   'git_show',
   'staged_diffs',
   'read_staged_diff',
-  'read_skill',
 ]
 
 /** The most tool calls one cell may make. */
@@ -85,7 +90,6 @@ export function splitAppendedReminders(
 export class CellToolSession {
   private readonly host: CellToolHost
   private readonly inTurn: InTurn
-  private readonly allowed: readonly string[]
   /** How many tool calls the cell made. */
   calls = 0
   /** Whether any result the cell saw came from outside the workspace. */
@@ -95,14 +99,13 @@ export class CellToolSession {
   /** How many images nested results carried that a cell cannot receive. */
   imagesDropped = 0
 
-  constructor(host: CellToolHost, inTurn: InTurn, allowed: readonly string[] = CODE_CELL_TOOLS) {
+  constructor(host: CellToolHost, inTurn: InTurn) {
     this.host = host
     this.inTurn = inTurn
-    this.allowed = allowed
   }
 
   private available(): string[] {
-    return this.allowed.filter((name) => this.host.has(name))
+    return CODE_CELL_TOOLS.filter((name) => this.host.has(name))
   }
 
   readonly handle: CellToolHandler = async (name, args, signal): Promise<ToolCallResponse> => {

@@ -21,12 +21,15 @@ export interface InProcessEngine {
   tornDown: string[]
   /** The guest's link of the most recent attach, to act as a misbehaving guest. */
   guestLink: () => EgressLink
+  /** Write raw bytes to the host as the most recent guest, bypassing its link. */
+  sendRaw: (bytes: Buffer) => void
 }
 
 export function inProcessEngine(options: { inspect?: string } = {}): InProcessEngine {
   const engineCalls: string[][] = []
   const tornDown: string[] = []
   let lastGuest: EgressLink | null = null
+  let lastToHost: PassThrough | null = null
   const attach = (): AttachedProcess => {
     const toGuest = new PassThrough()
     const toHost = new PassThrough()
@@ -54,6 +57,7 @@ export function inProcessEngine(options: { inspect?: string } = {}): InProcessEn
       },
     )
     lastGuest = guest
+    lastToHost = toHost
     void serveCodeCells(guest, { nodeVersion: process.version }).finally(() => {
       exit(0)
     })
@@ -61,10 +65,8 @@ export function inProcessEngine(options: { inspect?: string } = {}): InProcessEn
       stdin: toGuest,
       stdout: toHost,
       stderr,
-      get exitCode(): number | null {
-        return exitCode
-      },
       once: (event, listener): unknown => events.once(event, listener),
+      on: (event, listener): unknown => events.on(event, listener),
       kill: (): boolean => {
         exit(137)
         return true
@@ -77,6 +79,10 @@ export function inProcessEngine(options: { inspect?: string } = {}): InProcessEn
     guestLink: (): EgressLink => {
       if (lastGuest === null) throw new Error('no container has been attached')
       return lastGuest
+    },
+    sendRaw: (bytes): void => {
+      if (lastToHost === null) throw new Error('no container has been attached')
+      lastToHost.write(bytes)
     },
     deps: {
       runEngine: (_engine, args): Promise<string> => {

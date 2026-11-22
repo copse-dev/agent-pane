@@ -14,6 +14,10 @@
  * At most {@link CODE_CELL_MAX_LEASES} threads hold a container at once (an
  * Apple container is a whole VM); past that, the least recently used idle one
  * is discarded to make room.
+ *
+ * Removing a container never waits for one that is still starting (an image
+ * build can take minutes): that one is stopped as soon as it is up instead, so
+ * turning code mode off or quitting returns promptly.
  */
 import { errorMessage } from '@shared/errors.ts'
 import type { CellOutcome, CellRequest } from './code-cell-container.ts'
@@ -34,8 +38,36 @@ export const CODE_CELL_IDLE_MS = 30 * 60_000
 export const CODE_CELL_MAX_LEASES = 4
 const IDLE_SWEEP_MS = 60_000
 
+/** A container on its way up, and the container once it is. */
+class Starting {
+  readonly promise: Promise<PooledCodeCellContainer>
+  private ready: PooledCodeCellContainer | null = null
+
+  constructor(promise: Promise<PooledCodeCellContainer>) {
+    this.promise = promise
+    promise.then(
+      (container) => {
+        this.ready = container
+      },
+      () => {},
+    )
+  }
+
+  /** Stop the container: now when it is up, else as soon as it is. Awaits only the first. */
+  async stop(): Promise<void> {
+    if (this.ready !== null) {
+      await this.ready.stop()
+      return
+    }
+    void this.promise.then(
+      (container) => container.stop(),
+      () => {},
+    )
+  }
+}
+
 interface Lease {
-  readonly container: Promise<PooledCodeCellContainer>
+  readonly starting: Starting
   lastUsed: number
   running: number
 }
@@ -43,11 +75,13 @@ interface Lease {
 export interface CodeCellPoolOptions {
   start: () => Promise<PooledCodeCellContainer>
   /** Remove containers an earlier app session left behind; run once, before the first start. */
-  sweep?: () => Promise<void>
-  idleMs?: number
-  maxLeases?: number
-  now?: () => number
-  log?: (message: string) => void
+  sweep: () => Promise<void>
+  /** How long a thread's container may sit unused before it is discarded. */
+  idleMs: number
+  /** How many threads may hold a container at once. */
+  maxLeases: number
+  now: () => number
+  log: (message: string) => void
 }
 
 function ownerKey(owner: CodeCellOwner): string {
@@ -57,7 +91,7 @@ function ownerKey(owner: CodeCellOwner): string {
 export class CodeCellPool {
   private readonly options: CodeCellPoolOptions
   private readonly leases = new Map<string, Lease>()
-  private spare: Promise<PooledCodeCellContainer> | null = null
+  private spare: Starting | null = null
   private enabled = false
   private swept: Promise<void> | null = null
   private idleTimer: NodeJS.Timeout | null = null
@@ -66,18 +100,9 @@ export class CodeCellPool {
     this.options = options
   }
 
-  private now(): number {
-    return this.options.now?.() ?? Date.now()
-  }
-
-  private log(message: string): void {
-    if (this.options.log) this.options.log(message)
-    else console.warn(`[code-mode] ${message}`)
-  }
-
-  /** Whether code mode is on for this pool: a spare is kept and leases are granted. */
-  get isEnabled(): boolean {
-    return this.enabled
+  /** Read fresh after an await: `disable` can run while a lease waits. */
+  private isOff(): boolean {
+    return !this.enabled
   }
 
   /** Turn the pool on and start warming the spare. Idempotent. */
@@ -91,17 +116,21 @@ export class CodeCellPool {
     this.fillSpare()
   }
 
-  /** Turn the pool off and remove every container it holds. */
+  /** Turn the pool off and remove every container it holds, the spare included. */
   async disable(): Promise<void> {
     this.enabled = false
     if (this.idleTimer !== null) clearInterval(this.idleTimer)
     this.idleTimer = null
-    await this.stopAll()
+    const spare = this.spare
+    this.spare = null
+    const leases = [...this.leases.values()]
+    this.leases.clear()
+    await Promise.all([spare?.stop(), ...leases.map((lease) => lease.starting.stop())])
   }
 
   private sweepOnce(): Promise<void> {
-    this.swept ??= (this.options.sweep?.() ?? Promise.resolve()).catch((error: unknown) => {
-      this.log(`could not remove earlier code-cell containers: ${errorMessage(error)}`)
+    this.swept ??= this.options.sweep().catch((error: unknown) => {
+      this.options.log(`could not remove earlier code-cell containers: ${errorMessage(error)}`)
     })
     return this.swept
   }
@@ -113,11 +142,11 @@ export class CodeCellPool {
   /** Keep one started container ready for the next thread that needs one. */
   private fillSpare(): void {
     if (!this.enabled || this.spare !== null) return
-    const spare = this.startContainer()
+    const spare = new Starting(this.startContainer())
     this.spare = spare
-    spare.catch((error: unknown) => {
+    spare.promise.catch((error: unknown) => {
       if (this.spare === spare) this.spare = null
-      this.log(`could not prepare a spare container: ${errorMessage(error)}`)
+      this.options.log(`could not prepare a spare container: ${errorMessage(error)}`)
     })
   }
 
@@ -125,7 +154,7 @@ export class CodeCellPool {
   private async takeContainer(): Promise<PooledCodeCellContainer> {
     const spare = this.spare
     this.spare = null
-    const ready = spare === null ? null : await spare.catch(() => null)
+    const ready = spare === null ? null : await spare.promise.catch(() => null)
     if (ready?.alive === true) return ready
     if (ready !== null) void ready.stop()
     return await this.startContainer()
@@ -133,7 +162,7 @@ export class CodeCellPool {
 
   /** Discard idle leases past the limit, the least recently used first, to make room. */
   private async makeRoom(): Promise<void> {
-    const max = this.options.maxLeases ?? CODE_CELL_MAX_LEASES
+    const max = this.options.maxLeases
     while (this.leases.size >= max) {
       let oldest: [string, Lease] | null = null
       for (const entry of this.leases) {
@@ -159,19 +188,20 @@ export class CodeCellPool {
     const existing = this.leases.get(key)
     if (existing !== undefined) {
       existing.running += 1
-      const container = await existing.container.catch(() => null)
+      const container = await existing.starting.promise.catch(() => null)
       if (container?.alive === true && this.leases.get(key) === existing) return existing
       existing.running -= 1
       if (this.leases.get(key) === existing) await this.discardKey(key)
       return await this.lease(owner)
     }
     await this.makeRoom()
-    const raced = this.leases.get(key)
-    if (raced !== undefined) return await this.lease(owner)
-    const container = this.takeContainer()
-    const lease: Lease = { container, lastUsed: this.now(), running: 1 }
+    // Making room can take a while; code mode may have been turned off since.
+    if (this.isOff()) throw new Error('Code mode is off.')
+    if (this.leases.has(key)) return await this.lease(owner)
+    const starting = new Starting(this.takeContainer())
+    const lease: Lease = { starting, lastUsed: this.options.now(), running: 1 }
     this.leases.set(key, lease)
-    container.then(
+    starting.promise.then(
       () => {
         this.fillSpare()
       },
@@ -192,13 +222,13 @@ export class CodeCellPool {
     const key = ownerKey(owner)
     const lease = await this.lease(owner)
     try {
-      const container = await lease.container
+      const container = await lease.starting.promise
       const outcome = await container.runCell(request)
       if (outcome.kind !== 'result' && this.leases.get(key) === lease) await this.discardKey(key)
       return outcome
     } finally {
       lease.running -= 1
-      lease.lastUsed = this.now()
+      lease.lastUsed = this.options.now()
     }
   }
 
@@ -211,35 +241,14 @@ export class CodeCellPool {
     const lease = this.leases.get(key)
     if (lease === undefined) return
     this.leases.delete(key)
-    const container = await lease.container.catch(() => null)
-    await container?.stop()
+    await lease.starting.stop()
   }
 
   private async discardIdle(): Promise<void> {
-    const limit = this.options.idleMs ?? CODE_CELL_IDLE_MS
-    const now = this.now()
+    const now = this.options.now()
     const idle = [...this.leases].filter(
-      ([, lease]) => lease.running === 0 && now - lease.lastUsed >= limit,
+      ([, lease]) => lease.running === 0 && now - lease.lastUsed >= this.options.idleMs,
     )
     await Promise.all(idle.map(([key]) => this.discardKey(key)))
-  }
-
-  /** Remove every container, the spare included. */
-  async stopAll(): Promise<void> {
-    const spare = this.spare
-    this.spare = null
-    const keys = [...this.leases.keys()]
-    await Promise.all([
-      ...keys.map((key) => this.discardKey(key)),
-      (async (): Promise<void> => {
-        const container = spare === null ? null : await spare.catch(() => null)
-        await container?.stop()
-      })(),
-    ])
-  }
-
-  /** How many threads hold a container; for tests and diagnostics. */
-  get leaseCount(): number {
-    return this.leases.size
   }
 }

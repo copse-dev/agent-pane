@@ -69,7 +69,7 @@ describe('CellToolSession', () => {
 
   it('refuses an allowed tool that is not registered right now', async () => {
     const session = new CellToolSession(host({ has: () => false }), direct)
-    const reply = await session.handle('read_skill', {}, signal)
+    const reply = await session.handle('git_show', {}, signal)
     assert.equal(reply.ok, false)
   })
 
@@ -115,12 +115,12 @@ describe('CellToolSession', () => {
 
   it('marks the session external when a tool authors external results', async () => {
     const session = new CellToolSession(
-      host({ provenanceOf: (name) => (name === 'read_skill' ? 'external' : 'workspace') }),
+      host({ provenanceOf: (name) => (name === 'git_show' ? 'external' : 'workspace') }),
       direct,
     )
     await session.handle('read_file', {}, signal)
     assert.equal(session.external, false)
-    await session.handle('read_skill', {}, signal)
+    await session.handle('git_show', {}, signal)
     assert.equal(session.external, true)
   })
 

@@ -188,8 +188,7 @@ const preparing = new Map<string, Promise<string>>()
 
 /**
  * The code-cell image for `engine`, built when it is missing or stale. One
- * preparation per engine and image is shared by concurrent callers; a failed
- * one is forgotten so the next caller tries again.
+ * preparation per engine and image is shared by the callers that overlap it.
  */
 export function ensureCodeCellImage(
   engine: ThreadContainerEngine,
@@ -200,13 +199,22 @@ export function ensureCodeCellImage(
   const existing = preparing.get(key)
   if (existing !== undefined) return existing
   const preparation = (async (): Promise<string> => {
+    const runner = options.runner ?? defaultCodeCellRunnerPath()
+    if (!existsSync(runner)) {
+      throw new Error(
+        `Code-cell runner missing at ${runner}; run \`pnpm run build\` (it is a standalone main bundle)`,
+      )
+    }
     const wanted = codeCellImageFingerprint(options)
     if ((await imageFingerprint(engine, image)) === wanted) return image
     return await buildCodeCellImage(engine, { ...options, image })
   })()
   preparing.set(key, preparation)
-  preparation.catch(() => {
+  // Shared while in flight only: an image removed later (a prune) is noticed
+  // and rebuilt by the next start, at the cost of one inspect.
+  const forget = (): void => {
     if (preparing.get(key) === preparation) preparing.delete(key)
-  })
+  }
+  preparation.then(forget, forget)
   return preparation
 }
