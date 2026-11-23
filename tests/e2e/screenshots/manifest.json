@@ -3181,6 +3181,14 @@
       "sha256": "758d2a08b3082248feeba4063f4f57c6ee0996dc2856632254e8b256d825bac1",
       "bytes": 154137
     },
+    "paired-browser-companion-live.png": {
+      "sha256": "701d0a61eaf9675e35bbc56871acf0141b3211d05767399b43b07ce79dd21af9",
+      "bytes": 101218
+    },
+    "paired-browser-companion-saved-view.png": {
+      "sha256": "4f3009198224db23c6ad78467dad7d38c6907aabfe3e574cbc731581fdfe8b0f",
+      "bytes": 104991
+    },
     "pane-header-band.png": {
       "sha256": "6b4e655680cd772c9c581df03cd6784646584a31e35a2362d7f16f2b4930f4c1",
       "bytes": 32643
