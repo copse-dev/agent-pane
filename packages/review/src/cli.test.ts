@@ -302,6 +302,53 @@ describe('copse-review CLI', () => {
     assert.ok(parsed.some((event) => event.type === 'tool_call' && event.name === 'run_command'))
   })
 
+  it('writes each event to --events as it happens, so the review can be followed from disk', async () => {
+    const repo = await fixture({})
+    const dir = await mkdtemp(join(tmpdir(), 'review-cli-'))
+    scratch.push(dir)
+    const events = join(dir, 'events.jsonl')
+    const script = join(dir, 'script.json')
+    // Mid-review, the reviewer's own command reads the events file.
+    await writeFile(
+      script,
+      JSON.stringify([
+        {
+          type: 'tool_call',
+          name: 'run_command',
+          args: {
+            argv: [
+              process.execPath,
+              '-e',
+              `process.stdout.write(require('fs').readFileSync(${JSON.stringify(events)}, 'utf8'))`,
+            ],
+          },
+        },
+        finishReviewStep('src/math.ts'),
+        { type: 'text', text: 'Done.' },
+      ]),
+    )
+    const result = await run(repo, [
+      '--base',
+      'main',
+      '--allow-unisolated',
+      '--provider',
+      'mock',
+      '--mock-script',
+      script,
+      '--events',
+      events,
+      '--no-verify',
+    ])
+    assert.equal(result.code, HEADLESS_EXIT.SUCCESS, result.err)
+    const parsed = (await readFile(events, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => headlessEventSchema.parse(JSON.parse(line)))
+    const seen = parsed.find((event) => event.type === 'tool_result')
+    assert.ok(seen?.type === 'tool_result')
+    assert.match(seen.result, /\\?"type\\?":\\?"turn_start\\?"/)
+  })
+
   it('fans out over lenses, clusters duplicate candidates, and verifies them', async () => {
     const repo = await fixture({})
     const dir = await mkdtemp(join(tmpdir(), 'review-cli-'))

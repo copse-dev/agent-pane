@@ -9,6 +9,7 @@
 // turn_end` event envelope (`--events`), the run resolves its tool permissions
 // from a declared profile that fails closed, and exit codes are the contract's.
 import { execFileSync } from 'node:child_process'
+import { createWriteStream, type WriteStream } from 'node:fs'
 import { access, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { parseArgs } from 'node:util'
 import { homedir } from 'node:os'
@@ -836,7 +837,6 @@ export async function main(argv: readonly string[], callerIo: CliIo): Promise<He
       // Only the visual lens asked for, and no reviewer can see: nothing would
       // run, and Stage 0 has not started yet, so say so now.
       if (
-        routes !== null &&
         lenses.length > 0 &&
         lenses.every((lens) => lens === VISUAL_LENS) &&
         routes.reviewers.every((selection) => preflightInfo(preflight, selection)?.vision === false)
@@ -943,6 +943,7 @@ export async function main(argv: readonly string[], callerIo: CliIo): Promise<He
     let context: ReviewContext | null = null
     let summarySelection: SelectedProvider | undefined
     let modelError: string | null = null
+    let eventsFile: WriteStream | null = null
     if (!values['no-model'] && ground.checkouts !== null) {
       try {
         if (importedStage0 !== null && ground.cell !== null) {
@@ -983,11 +984,19 @@ export async function main(argv: readonly string[], callerIo: CliIo): Promise<He
         if (skipped.length > 0) {
           io.stderr('copse-review: no image to look at; the visual lens did not run\n')
         }
-        const eventLines: string[] = []
+        // Each event reaches the file as it happens: an agent following a
+        // review from disk sees it progress, and a crash keeps what ran.
+        if (values.events !== undefined && values.events !== '-') {
+          const stream = createWriteStream(values.events, { encoding: 'utf8' })
+          stream.on('error', (err) => {
+            io.stderr(`copse-review: could not write --events: ${errorMessage(err)}\n`)
+          })
+          eventsFile = stream
+        }
         const onEvent = (event: Parameters<typeof serializeHeadlessEvent>[0]): void => {
           const line = serializeHeadlessEvent(event)
           if (values.events === '-') io.stdout(`${line}\n`)
-          else eventLines.push(line)
+          else eventsFile?.write(`${line}\n`)
         }
         const cell = ground.cell === null ? null : serializeCell(ground.cell)
         const threadId = `copse-review:${stage0.repositoryRoot}`
@@ -1070,11 +1079,11 @@ export async function main(argv: readonly string[], callerIo: CliIo): Promise<He
           })
           findings = [...verification.findings]
         }
-        if (values.events !== undefined && values.events !== '-') {
-          await writeFile(values.events, `${eventLines.join('\n')}\n`, 'utf8')
-        }
       } catch (err) {
         modelError = errorMessage(err)
+      } finally {
+        const stream = eventsFile
+        if (stream !== null) await new Promise<void>((done) => stream.end(done))
       }
     } else if (!values['no-model']) {
       modelError = ground.decision.execute
