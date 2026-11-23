@@ -32,15 +32,17 @@ import {
  *           restore HEAD (do not commit) and surface the shot for human review.
  *   contested
  *           The committed baseline is DELIBERATE: the file was modified on this
- *           branch since the merge-base by someone other than the CI bot (a human
- *           or agent hand-committed a specific reference shot), and/or main has
- *           modified it since the merge-base. CI must not override deliberate
- *           work with its own render — restore HEAD (the branch's committed
- *           version always wins) for deliberate local review. Set
+ *           branch since the merge-base by someone other than CI (a human or
+ *           agent hand-committed a specific reference shot; neither CI's own
+ *           commits nor the commit accepting shots ticked in the review comment
+ *           count, see CI_SCREENSHOT_AUTHORS), and/or main has modified it
+ *           since the merge-base. CI must not override deliberate work with
+ *           its own render — restore HEAD (the branch's committed version
+ *           always wins) for deliberate local review. Set
  *           UPDATE_SCREENSHOTS_LABEL=true to keep every candidate explicitly.
  *   out-of-scope
  *           The shot is not one this diff can legitimately move: the oracle maps
- *           no selected spec to it and nobody committed it on this branch. The
+ *           no selected spec to it and nobody hand-committed it on this branch. The
  *           e2e tier re-renders far more shots than a diff owns (a broad
  *           selection renders everything), so without this the PR commits render
  *           drift for screens it never touched. Restore HEAD and surface it. See
@@ -244,8 +246,9 @@ function mergeBaseWithMain(): string | null {
 
 /**
  * Whether the committed baseline of `path` is deliberate work CI must not
- * override: modified on this branch since the merge-base by a non-bot author
- * (a hand-committed reference shot), and/or modified on main since the
+ * override: modified on this branch since the merge-base by an author outside
+ * CI_SCREENSHOT_AUTHORS (a hand-committed reference shot, not CI's render or
+ * the review comment's acceptance commit), and/or modified on main since the
  * merge-base (main moved under the PR). Null when neither — or when MAIN_REF
  * isn't available, in which case contested detection is disabled and the
  * pre-existing behaviour applies.

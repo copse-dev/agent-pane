@@ -1,3 +1,4 @@
+import { openReviewPr } from './helpers/review-pane.ts'
 import { at } from '@copse/std/array-utils.ts'
 import { mkdirSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
@@ -34,7 +35,7 @@ const PANES = [
   },
   {
     mode: 'changes',
-    openLabel: 'Open changes',
+    openLabel: 'Open review',
     listHost: '#git-changes-host',
     probe: '#git-changes-host .git-changes-list',
     rowProbe: null,
@@ -42,9 +43,9 @@ const PANES = [
   },
   {
     mode: 'prs',
-    openLabel: 'Open pull requests',
-    listHost: '#pr-list-host',
-    probe: '.pr-list-body',
+    openLabel: 'Open review',
+    listHost: '#pr-viewer-host',
+    probe: '.pr-detail-sections',
     rowProbe: null,
     minImages: 0,
   },
@@ -119,11 +120,16 @@ describe('Pane pop-out (mock gh)', () => {
       await browser.switchToWindow(mainHandle)
 
       // Make this pane the active one in the docked right panel.
-      await $(`.titlebar-panel-controls [aria-label="${pane.openLabel}"]`).click()
+      if (pane.mode === 'prs') await openReviewPr()
+      else await $(`.titlebar-panel-controls [aria-label="${pane.openLabel}"]`).click()
       await $(pane.listHost).waitForDisplayed({ timeout: 20_000 })
 
       // The pop-out control lives inside the pane header, not the titlebar.
-      const popoutBtn = await $(`${pane.listHost} .pane-popout-btn`).getElement()
+      const popoutBtn = await $(
+        pane.mode === 'changes' || pane.mode === 'prs'
+          ? '.review-header .review-tools:not([hidden]) .pane-popout-btn'
+          : `${pane.listHost} .pane-popout-btn`,
+      ).getElement()
       await popoutBtn.waitForClickable({ timeout: 10_000 })
 
       if (pane.mode === 'browser') {

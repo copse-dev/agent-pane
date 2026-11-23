@@ -1,3 +1,4 @@
+import { openReviewPr } from './helpers/review-pane.ts'
 import assert from 'node:assert/strict'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -44,7 +45,7 @@ describe('PR panel new thread (mock gh)', () => {
 
       await pane.waitForDisplayed({ timeout: 10_000 })
     }
-    await $('[aria-label="Open pull requests"]').click()
+    await openReviewPr()
     await browser.pause(800)
   }
 
