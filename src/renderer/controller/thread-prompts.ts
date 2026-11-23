@@ -68,8 +68,8 @@ export async function acceptThreadPrompt(
       (!current.worktreeChoice && current.messages.length === 0) ||
       (command.requireWorktree && (!current.worktree || current.worktree.retiredAt !== undefined))
     ) {
-      // No base branch, so main starts the worktree from the freshly fetched
-      // default branch. A subthread deliberately does not inherit its parent's
+      // No base branch, so main starts the worktree from the fetched default
+      // branch. A subthread deliberately does not inherit its parent's
       // branch: it is an independent thread with its own branch and PR, and a
       // parent's unpublished worktree branch would leave the child's PR stacked
       // on work that may never merge. Work that must build on the parent's

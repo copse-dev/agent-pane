@@ -77,6 +77,7 @@ function fixture(overrides: Partial<ThreadCheckoutTransactionDependencies> = {})
     },
     recoverUnpersisted: async () => null,
     branchExists: async () => true,
+    defaultBranchResolves: async () => true,
     checkoutBranch: async (branch, root) => {
       checkouts.push({ branch, root })
     },

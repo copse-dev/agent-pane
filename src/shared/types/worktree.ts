@@ -7,7 +7,8 @@ export * from '@copse/thread-store/worktree-types.ts'
  * thread, decided by the caller of `prepareCheckout`.
  *
  * - `default-branch` — the repository default, which allocation then resolves
- *   to a freshly fetched `origin/<default>`. Every machine-initiated start uses
+ *   to `origin/<default>` after a best-effort fetch (then the project branch,
+ *   when that default no longer resolves). Every machine-initiated start uses
  *   this: an accepted `propose_thread` card, a subthread, a `send_thread_prompt`
  *   to a blank thread, an automation run. Nobody looked at the project
  *   checkout when those were started, so whatever branch it happens to be

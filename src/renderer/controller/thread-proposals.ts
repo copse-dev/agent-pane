@@ -104,10 +104,10 @@ export async function startProposedThread(
   await awaitPendingThreadPersistence()
 
   const model = getThreadById(store, threadId)?.model ?? store.getState().settings?.model
-  // No base branch: main cuts the worktree from the freshly fetched default
-  // branch (`baseFallback` defaults to `default-branch`), never from whatever
-  // branch the project checkout is parked on — the card's click is not a look
-  // at the branch picker.
+  // No base branch: main cuts the worktree from the fetched default branch
+  // (`baseFallback` defaults to `default-branch`), never from whatever branch
+  // the project checkout is parked on — the card's click is not a look at the
+  // branch picker.
   const prepared = await api.agent.prepareCheckout(
     projectId,
     threadId,

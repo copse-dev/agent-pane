@@ -24,6 +24,7 @@ import { isRecord } from '@shared/unknown-value.ts'
 import { warmupLmStudioModel } from './providers/lm-studio-warmup.ts'
 import {
   allocateThreadWorktree,
+  defaultBranchResolves,
   expectedThreadWorktreePath,
   listProjectWorktrees,
   projectCheckoutBehindDefaultBranch,
@@ -95,34 +96,48 @@ interface CheckoutInspection {
  *
  * With nothing requested, `fallback` decides (see {@link ThreadBaseFallback}).
  * `default-branch` returns the repository default, which allocation recognizes
- * and resolves to a freshly fetched `origin/<default>`: a proposed, delegated
- * or scheduled thread must not inherit whatever branch the project checkout
- * happens to be parked on. `project-branch` keeps the composer's rule: the
- * branch its picker displayed. Either falls back to the other source, then to
- * `main`, so a repository with no resolvable default (a fresh `git init` with
- * no remote) still starts somewhere real.
+ * and cuts from `origin/<default>` after a best-effort fetch (a failed fetch
+ * leaves the last fetched tip): a proposed, delegated or scheduled thread must
+ * not inherit whatever branch the project checkout happens to be parked on.
+ * `project-branch` keeps the composer's rule: the branch its picker displayed.
+ * Either falls back to the other source, then to `main`, so a repository with
+ * no usable default (a fresh `git init` with no remote) still starts somewhere
+ * real.
  *
- * `getDefaultBranch` only reports a default it resolved (origin's HEAD, or a
- * local branch), so it needs no ref check. The check on `currentBranch` is
+ * Both sources are names, not refs, so each is checked before it is used.
+ * `getDefaultBranch` reports whatever `refs/remotes/origin/HEAD` names even
+ * when that symref dangles, as it does once origin renames its default and a
+ * pruning fetch drops the tracking ref. Allocation would then cut from a stale
+ * local branch of that name, or fail if there is none; `defaultBranchResolves`
+ * refuses such a default. The check on `currentBranch` is just as
  * load-bearing: that is a *reported* name, and the e2e suite replaces it
  * wholesale via `COPSE_PANEL_MOCK_BRANCH`. Handing it straight to the
  * allocator would fail with "Base branch … does not exist in this repository"
  * and strand the thread with no transcript.
  */
 async function checkoutBaseBranch(
-  branchExists: (branch: string) => Promise<boolean>,
+  refs: {
+    branchExists: (branch: string) => Promise<boolean>
+    defaultBranchResolves: (branch: string) => Promise<boolean>
+  },
   inspection: CheckoutInspection,
   requested: string | undefined,
   fallback: ThreadBaseFallback,
 ): Promise<string> {
   if (requested) {
-    if (await branchExists(requested)) return requested
+    if (await refs.branchExists(requested)) return requested
     throw new Error(
       `Branch "${requested}" no longer exists in this repository. Pick another branch to start from.`,
     )
   }
-  if (fallback === 'default-branch' && inspection.defaultBranch) return inspection.defaultBranch
-  if (inspection.currentBranch && (await branchExists(inspection.currentBranch))) {
+  if (
+    fallback === 'default-branch' &&
+    inspection.defaultBranch &&
+    (await refs.defaultBranchResolves(inspection.defaultBranch))
+  ) {
+    return inspection.defaultBranch
+  }
+  if (inspection.currentBranch && (await refs.branchExists(inspection.currentBranch))) {
     return inspection.currentBranch
   }
   return inspection.defaultBranch ?? DEFAULT_GIT_BRANCH
@@ -183,6 +198,11 @@ export interface ThreadCheckoutTransactionDependencies {
   checkoutBehindDefaultBranch?: (projectRoot: string, branch: string) => Promise<boolean>
   /** Whether the repository holds this branch, checked against its refs. */
   branchExists: (projectRoot: string, branch: string) => Promise<boolean>
+  /**
+   * Whether the reported default branch still resolves to a commit a thread
+   * can start from; false for one named only by a dangling `origin/HEAD`.
+   */
+  defaultBranchResolves: (projectRoot: string, branch: string) => Promise<boolean>
   /** Switch the shared checkout, for a shared thread that picked a branch. */
   checkoutBranch: (branch: string, projectRoot: string) => Promise<void>
   /** Whether a `git rebase` is stopped in the project checkout. */
@@ -331,6 +351,7 @@ const defaultDependencies: ThreadCheckoutTransactionDependencies = {
   recoverUnpersisted: recoverUnpersistedWorktree,
   checkoutBehindDefaultBranch: projectCheckoutBehindDefaultBranch,
   branchExists: localBranchExists,
+  defaultBranchResolves,
   checkoutBranch: checkoutGitBranch,
   rebaseInProgress: isRebaseInProgress,
   validate: validateThreadWorktree,
@@ -492,7 +513,11 @@ export function createThreadCheckoutTransaction(
       // default and then fetches/uses the latest upstream tip instead of a
       // stale local commit.
       const baseBranch = await checkoutBaseBranch(
-        (branch) => dependencies.branchExists(project.path, branch),
+        {
+          branchExists: (branch) => dependencies.branchExists(project.path, branch),
+          defaultBranchResolves: (branch) =>
+            dependencies.defaultBranchResolves(project.path, branch),
+        },
         inspection,
         input.baseBranch,
         input.baseFallback ?? 'default-branch',
