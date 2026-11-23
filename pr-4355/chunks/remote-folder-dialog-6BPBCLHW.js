@@ -27,6 +27,16 @@ import {
 } from "./chunk-WW3EXSJD.js";
 
 // src/renderer/views/remote-folder-path.ts
+function initialRemoteBrowsePath(projects, hostId, home) {
+  for (let index = projects.length - 1; index >= 0; index -= 1) {
+    const project = projects[index];
+    if (project?.sshHost !== hostId) continue;
+    if (project.path.startsWith("/")) return parentRemotePath(project.path);
+    break;
+  }
+  if (home?.startsWith("/")) return home;
+  return "/";
+}
 function parentRemotePath(path) {
   if (path === "/" || path === "") return "/";
   const trimmed = path.replace(/\/+$/, "");
@@ -85,7 +95,8 @@ var init_remote_folder_path = __esm({
 });
 
 // src/renderer/views/remote-folder-dialog.ts
-function openRemoteFolderDialog(api) {
+function openRemoteFolderDialog(api, options = {}) {
+  const projects = options.projects ?? [];
   const dialog = ensureDialog();
   clear(dialog);
   const hostSelect = el("select", { class: "remote-folder-host", "aria-label": "SSH host" });
@@ -317,7 +328,7 @@ function openRemoteFolderDialog(api) {
       fillHostSelect(host.id);
       setAddingHost(false);
       status.textContent = `Saved host \u201C${host.label}\u201D.`;
-      await browse("/");
+      await browseStart();
     }
     saveHostBtn.addEventListener("click", () => {
       void (async () => {
@@ -357,7 +368,7 @@ function openRemoteFolderDialog(api) {
           fillHostSelect(imported.firstAliasHostId);
           setAddingHost(false);
           status.textContent = imported.importedHostIds.length === 0 ? "All SSH config aliases are already imported." : `Imported ${String(imported.importedHostIds.length)} alias(es) from SSH config.`;
-          if (currentHostId) await browse("/");
+          if (currentHostId) await browseStart();
         } catch (err) {
           const message = ipcErrorMessage(err, "Could not import from ~/.ssh/config.");
           setInlineStatus(status, "error", message);
@@ -377,10 +388,14 @@ function openRemoteFolderDialog(api) {
           return;
         }
         setAddingHost(false);
-        await browse("/");
+        await browseStart();
       } catch (err) {
         setInlineStatus(status, "error", ipcErrorMessage(err, "Could not load SSH hosts."));
       }
+    }
+    let listing = 0;
+    function browseStart() {
+      return browse(null);
     }
     function renderBreadcrumbs(path) {
       fillRemotePathBreadcrumbs(breadcrumbs, path, (next) => {
@@ -388,20 +403,35 @@ function openRemoteFolderDialog(api) {
       });
     }
     async function browse(path) {
-      if (!currentHostId || loading || addingHost) return;
+      const hostId = currentHostId;
+      if (!hostId || addingHost || loading && path !== null) return;
+      const run = ++listing;
       loading = true;
       openBtn.disabled = true;
       upBtn.disabled = true;
       status.textContent = "Connecting\u2026";
       clear(list);
+      let target = path ?? "/";
       try {
-        await api.sshWorkspace.connect(currentHostId);
-        currentPath = path;
+        const states = await api.sshWorkspace.connect(hostId);
+        if (run !== listing) return;
+        if (path === null) {
+          const home = states.find((state) => state.hostId === hostId)?.capabilities?.home;
+          target = initialRemoteBrowsePath(projects, hostId, home);
+        }
+        currentPath = target;
         renderBreadcrumbs(currentPath);
-        const entries = await api.sshWorkspace.listDirectory(
-          currentHostId,
-          currentPath
-        );
+        let entries;
+        try {
+          entries = await api.sshWorkspace.listDirectory(hostId, target);
+        } catch (err) {
+          if (path !== null || target === "/" || run !== listing) throw err;
+          target = "/";
+          currentPath = target;
+          renderBreadcrumbs(currentPath);
+          entries = await api.sshWorkspace.listDirectory(hostId, target);
+        }
+        if (run !== listing) return;
         status.textContent = entries.length === 0 ? "No subfolders here \u2014 open this folder or go up." : "";
         for (const entry of entries) {
           const row = el(
@@ -421,20 +451,23 @@ function openRemoteFolderDialog(api) {
         upBtn.disabled = currentPath === "/";
         openBtn.disabled = false;
       } catch (err) {
-        currentPath = path;
+        if (run !== listing) return;
+        currentPath = target;
         renderBreadcrumbs(currentPath);
         setInlineStatus(status, "error", ipcErrorMessage(err, "Could not reach the host."));
       } finally {
-        loading = false;
-        if (hosts.length > 0 && currentHostId) {
-          upBtn.disabled = currentPath === "/";
-          openBtn.disabled = false;
+        if (run === listing) {
+          loading = false;
+          if (hosts.length > 0 && currentHostId) {
+            upBtn.disabled = currentPath === "/";
+            openBtn.disabled = false;
+          }
         }
       }
     }
     hostSelect.addEventListener("change", () => {
       currentHostId = hostSelect.value;
-      void browse("/");
+      void browseStart();
     });
     upBtn.addEventListener("click", () => {
       void browse(parentRemotePath(currentPath));
