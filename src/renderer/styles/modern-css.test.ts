@@ -51,6 +51,24 @@ function nestedHasOffset(css: string): number {
   return -1
 }
 
+/** A selector list split on its own commas, not those inside `:is(…)` or `[…]`. */
+function topLevelSelectors(list: string): string[] {
+  const selectors: string[] = []
+  let depth = 0
+  let start = 0
+  for (let i = 0; i < list.length; i++) {
+    const char = list[i]
+    if (char === '(' || char === '[') depth++
+    else if (char === ')' || char === ']') depth--
+    else if (char === ',' && depth === 0) {
+      selectors.push(list.slice(start, i))
+      start = i + 1
+    }
+  }
+  selectors.push(list.slice(start))
+  return selectors
+}
+
 /**
  * Selectors whose subject follows a sibling combinator (`~` or `+`) but names no
  * element type, class, id or attribute: `legend ~ *`, `.a + :not(.b)`. Only
@@ -60,7 +78,7 @@ function nestedHasOffset(css: string): number {
 function unkeyedSiblingSubjects(css: string): string[] {
   const selectors = (css.match(/[^{};]+(?=\{)/g) ?? [])
     .filter((prelude) => !prelude.trim().startsWith('@'))
-    .flatMap((prelude) => prelude.split(/,(?![^(]*\))/))
+    .flatMap(topLevelSelectors)
     .map((selector) => selector.trim().replace(/\s+/g, ' '))
   return selectors.filter((selector) => {
     const compact = selector.replace(/\s*([~+>])\s*/g, '$1')
@@ -335,6 +353,9 @@ describe('modern CSS adoptions', () => {
       '.a > legend ~ *',
     ])
     assert.deepEqual(unkeyedSiblingSubjects('.a+:not(.b), .c ~ .d { top: 0 }'), ['.a+:not(.b)'])
+    assert.deepEqual(unkeyedSiblingSubjects('.x:not(.a, :is(.b, .c)) ~ *, .y { top: 0 }'), [
+      '.x:not(.a, :is(.b, .c)) ~ *',
+    ])
     assert.deepEqual(unkeyedSiblingSubjects('.x { color: red; & ~ * { top: 0 } }'), ['& ~ *'])
     assert.deepEqual(
       unkeyedSiblingSubjects(

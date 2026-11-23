@@ -3550,11 +3550,11 @@ export function mountConversation(
     // the rollups its members had painted for themselves.
     if (run) syncRunLayout(thread, run, msgId)
     // Restore an inline review this message already carries (rebuilt threads).
-    if (msg.review) renderMessageReview(threadId, msgId)
-    if (msg.reviewReport) renderMessageReviewReport(threadId, msgId)
+    if (msg.review) renderMessageReview(threadId, msgId, msgEl)
+    if (msg.reviewReport) renderMessageReviewReport(threadId, msgId, msgEl)
     // Render any hook cards folded onto this message's turn (decision 10).
-    renderMessageHookCards(threadId, msgId)
-    renderMessageTurnRecovery(threadId, msgId)
+    renderMessageHookCards(threadId, msgId, msgEl)
+    renderMessageTurnRecovery(threadId, msgId, msgEl)
     attachSideChatChip(threadId, msgId, msgEl)
     // Last, so the cards drawn above are covered too. Rows drawn earlier were
     // hydrated when they were drawn; streamed content is on message_done.
@@ -4170,9 +4170,12 @@ export function mountConversation(
     }
   }
 
-  function renderMessageHookCards(threadId: string, messageId: string): void {
+  // The card renderers below take the message's row when the caller holds it
+  // (finalizeMessageEl), so drawing a row in a long transcript doesn't walk the
+  // list to find it again; other callers leave it out and it is looked up.
+  function renderMessageHookCards(threadId: string, messageId: string, drawn?: HTMLElement): void {
     if (threadId !== store.getState().activeThreadId) return
-    const msgEl = transcriptRowElement(list, messageId)
+    const msgEl = drawn ?? transcriptRowElement(list, messageId)
     if (msgEl) rowCardElement(msgEl, 'data-hook-cards-for', messageId)?.remove()
     // Hook cards are a developer surface (same gate as the Hooks settings).
     if (!store.getState().developerMode) return
@@ -4190,13 +4193,13 @@ export function mountConversation(
     msgEl.after(createHookCardHost(messageId, cards, load))
   }
 
-  function renderMessageReview(threadId: string, messageId: string): void {
+  function renderMessageReview(threadId: string, messageId: string, drawn?: HTMLElement): void {
     if (threadId !== store.getState().activeThreadId) return
     // Each review is anchored to the message that concluded its turn and renders
     // as that message's next sibling, so reviews join the transcript inline (in
     // position, one per turn) rather than as a single trailing card. Drop any
     // prior card for this message first (status transitions, retries, rebuilds).
-    const msgEl = transcriptRowElement(list, messageId)
+    const msgEl = drawn ?? transcriptRowElement(list, messageId)
     if (msgEl) rowCardElement(msgEl, 'data-review-for', messageId)?.remove()
     const msg = getActiveThread(store)?.messages.find((m) => m.id === messageId)
     // A skipped review still carries the only durable explanation for a
@@ -4211,9 +4214,13 @@ export function mountConversation(
     msgEl.after(card)
   }
 
-  function renderMessageReviewReport(threadId: string, messageId: string): void {
+  function renderMessageReviewReport(
+    threadId: string,
+    messageId: string,
+    drawn?: HTMLElement,
+  ): void {
     if (threadId !== store.getState().activeThreadId) return
-    const msgEl = transcriptRowElement(list, messageId)
+    const msgEl = drawn ?? transcriptRowElement(list, messageId)
     if (msgEl) rowCardElement(msgEl, 'data-review-report-for', messageId)?.remove()
     const msg = getActiveThread(store)?.messages.find((message) => message.id === messageId)
     if (!msg?.reviewReport || !msgEl) return
@@ -4237,9 +4244,13 @@ export function mountConversation(
     ;(postTurnCard ?? msgEl).after(card)
   }
 
-  function renderMessageTurnRecovery(threadId: string, messageId: string): void {
+  function renderMessageTurnRecovery(
+    threadId: string,
+    messageId: string,
+    drawn?: HTMLElement,
+  ): void {
     if (threadId !== store.getState().activeThreadId) return
-    const msgEl = transcriptRowElement(list, messageId)
+    const msgEl = drawn ?? transcriptRowElement(list, messageId)
     if (msgEl) rowCardElement(msgEl, 'data-turn-recovery-for', messageId)?.remove()
     const state = store.getState()
     const projectId = state.activeProjectId
