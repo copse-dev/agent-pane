@@ -10,6 +10,7 @@ import type { PlanUsageSnapshot } from '@copse/plan-usage'
 import { resolveExtraProviders } from '@copse/llm/extra-providers.ts'
 import { cloudModelIntellectHint } from '@copse/llm/intellect-hints.ts'
 import { getIntellectScore } from '@copse/llm/model-intellect.ts'
+import { resolveAgentModelIdentity } from '@copse/llm/agent-model-identity.ts'
 import {
   fetchModelOptions,
   fetchRoleModelOptions,
@@ -849,6 +850,62 @@ describe('fetchModelOptions visibility', () => {
     assert.ok(stale)
     assert.equal(stale.disabled, true)
     assert.match(stale.label, /superseded by GPT-6\.2 Sol/)
+  })
+
+  it('names a scored successor by its release name, not its dashed intellect key', async () => {
+    // Both releases are scored, so the successor's lineage is the intellect
+    // catalog's dashed key rather than the id the agent advertised.
+    assert.equal(resolveAgentModelIdentity('gpt-6.1-sol'), 'gpt-6-1-sol')
+    assert.ok(resolveAgentModelIdentity('gpt-5.6-sol'))
+    const agents: AcpAgentConfig[] = [
+      {
+        id: 'codex-acp',
+        title: 'Codex',
+        command: 'codex-acp',
+        enabled: true,
+        availableModels: [
+          { value: 'gpt-6.1-sol', label: '6.1 Sol' },
+          { value: 'gpt-5.6-sol', label: '5.6 Sol' },
+        ],
+      },
+    ]
+
+    const unselected = await fetchModelOptions(mockApi({ acpAgents: agents }), '')
+    assert.deepEqual(
+      unselected.filter((o) => o.group === 'Codex on this device').map((o) => o.value),
+      ['acp:codex-acp#gpt-6.1-sol'],
+    )
+
+    const selected = await fetchModelOptions(
+      mockApi({ acpAgents: agents }),
+      'acp:codex-acp#gpt-5.6-sol',
+    )
+    const stale = selected.find((o) => o.value === 'acp:codex-acp#gpt-5.6-sol')
+    assert.ok(stale)
+    assert.equal(stale.superseded, true)
+    assert.match(stale.label, /\(superseded by GPT-6\.1 Sol\)$/)
+  })
+
+  it("suppresses an unscored newer GPT release in Cursor's own catalog", async () => {
+    const api = mockApi({
+      available: { cursor: true },
+      cursorCloudModels: [
+        { id: 'gpt-6', label: 'GPT-6' },
+        { id: 'gpt-6.2', label: 'GPT-6.2' },
+      ],
+    })
+
+    const unselected = await fetchModelOptions(api, '')
+    assert.deepEqual(
+      unselected.filter((o) => o.group === 'Cursor Cloud Agent').map((o) => o.value),
+      ['remote-agent:cursor', 'remote-agent:cursor#gpt-6.2'],
+    )
+
+    const selected = await fetchModelOptions(api, 'remote-agent:cursor#gpt-6')
+    const stale = selected.find((o) => o.value === 'remote-agent:cursor#gpt-6')
+    assert.ok(stale)
+    assert.equal(stale.superseded, true)
+    assert.match(stale.label, /\(superseded by GPT-6\.2\)$/)
   })
 
   it('offers the latest Sonnet version and suppresses older cloud options', async () => {
