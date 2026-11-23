@@ -112,6 +112,11 @@ export interface ContainerBackendOptions {
    * reported here.
    */
   readonly onUnremoved?: ((name: string, reason: string, command: string) => void) | undefined
+  /**
+   * Told each time a container is confirmed gone (removed, or already gone), so
+   * a caller that keeps a list of what may still need removing can drop it.
+   */
+  readonly onRemoved?: ((name: string) => void) | undefined
 }
 
 /** Everything `containerCreateArgs` needs; pure in these values. */
@@ -330,8 +335,12 @@ class ContainerCell implements ExecutionCell {
       spawn: this.spawn,
       timeoutMs,
     })
-    if (reason === null) this.unremoved.delete(name)
-    else this.unremoved.set(name, reason)
+    if (reason === null) {
+      this.unremoved.delete(name)
+      this.options.onRemoved?.(name)
+    } else {
+      this.unremoved.set(name, reason)
+    }
   }
 
   private async execute(

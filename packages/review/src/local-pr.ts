@@ -14,7 +14,7 @@
 // a time per machine (`review-lock.ts`).
 import { execFileSync } from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
-import { appendFileSync } from 'node:fs'
+import { appendFileSync, writeFileSync } from 'node:fs'
 import { access, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { availableParallelism, homedir, totalmem } from 'node:os'
 import { basename, join } from 'node:path'
@@ -839,6 +839,19 @@ export async function localPullRequestMain(
         appendFileSync(journal, `${JSON.stringify(entry)}\n`)
         created.set(name, entry)
         return name
+      },
+      // A container known gone leaves the journal at once. A run killed later
+      // then lists only what may still be there, and the next run's sweep
+      // counts the containers it really removes, not every one this run made.
+      onRemoved: (name) => {
+        const known = created.delete(name)
+        const stuck = pending.delete(name)
+        if (!known && !stuck) return
+        const listed = new Map([...pending, ...created])
+        writeFileSync(
+          journal,
+          [...listed.values()].map((entry) => `${JSON.stringify(entry)}\n`).join(''),
+        )
       },
       onUnremoved: (name, reason, command) => {
         const entry = created.get(name)

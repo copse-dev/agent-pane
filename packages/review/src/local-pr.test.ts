@@ -12,6 +12,7 @@ import {
   rm,
   writeFile,
 } from 'node:fs/promises'
+import { readFileSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
@@ -322,6 +323,42 @@ describe('copse-review pr', () => {
     assert.deepEqual(await readdir(join(reviewCache, 'scratch')), [])
     // This run's own cells were removed as it went, so nothing is left listed.
     assert.equal(await readFile(journal, 'utf8'), '')
+  })
+
+  it('drops a cell container from the journal as soon as it is gone', async () => {
+    const journal = join(copseDir, 'cache', 'review', 'containers.journal')
+    const removedBefore = new Set(readdirSync(registry).filter((n) => n.endsWith('.removed')))
+    const snapshots: string[][] = []
+    out = ''
+    err = ''
+    const code = await localPullRequestMain(
+      ['7', '--provider', 'mock', '--mock-script', script, '--no-verify', '--fresh'],
+      {
+        ...io,
+        // The report is printed after Stage 0's cells have come and gone: a run
+        // killed here must leave only containers that may still exist listed.
+        stdout: (text: string): void => {
+          out += text
+          if (snapshots.length > 0) return
+          snapshots.push(
+            readFileSync(journal, 'utf8')
+              .split('\n')
+              .filter((line) => line.length > 0)
+              .map((line) => z.object({ name: z.string() }).parse(JSON.parse(line)).name),
+          )
+        },
+      },
+    )
+    assert.equal(code, HEADLESS_EXIT.SUCCESS, err)
+    const removedThisRun = readdirSync(registry).filter(
+      (n) => n.endsWith('.removed') && !removedBefore.has(n),
+    )
+    assert.ok(removedThisRun.length > 0, 'the run made and removed cell containers')
+    const [listedWhileRunning] = snapshots
+    assert.ok(listedWhileRunning !== undefined)
+    for (const name of listedWhileRunning) {
+      assert.ok(!removedThisRun.includes(`${name}.removed`), `${name} was gone but still listed`)
+    }
   })
 
   it('refuses a missing local model before waiting for a review already running', async () => {
