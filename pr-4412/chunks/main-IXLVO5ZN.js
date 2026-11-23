@@ -84130,12 +84130,15 @@ function createVncSshHostForm(api2, onSaved, onClose) {
     onClose();
   }
   async function loadConfigHosts() {
+    configHosts = [];
     try {
-      const [saved, aliases] = await Promise.all([
-        api2.sshWorkspace.listHosts(),
-        api2.sshWorkspace.listConfigAliases()
-      ]);
-      configHosts = unsavedSshConfigHosts(saved, aliases);
+      if (await api2.settings.get("sshWorkspaceEnabled") === true) {
+        const [saved, aliases] = await Promise.all([
+          api2.sshWorkspace.listHosts(),
+          api2.sshWorkspace.listConfigAliases()
+        ]);
+        configHosts = unsavedSshConfigHosts(saved, aliases);
+      }
     } catch {
       configHosts = [];
     }
