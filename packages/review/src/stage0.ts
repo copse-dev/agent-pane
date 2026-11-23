@@ -48,6 +48,7 @@ import { removeTree } from './remove-tree.ts'
 import {
   newTestFailures,
   parseTestFailureReport,
+  reportedIncompleteTestInventory,
   TEST_FAILURE_REPORT_PREFIX,
   TEST_FAILURE_REPORT_UNAVAILABLE,
   type TestFailureReport,
@@ -775,8 +776,11 @@ export async function runStage0Checks(
         }
         continue
       }
+      const incomplete = [head, base].filter(reportedIncompleteTestInventory)
       const reason =
-        'both aggregate checks failed; individual failure comparison is unavailable, so new regressions remain unverified'
+        incomplete.length > 0
+          ? `both test runs failed, and ${incomplete.map((run) => run.target).join(' and ')} reported an incomplete failure list (a cancelled test with no failed suite above it, or an ambiguous count), so new failures could not be compared test by test`
+          : 'both aggregate checks failed; individual failure comparison is unavailable, so new regressions remain unverified'
       checks.push({ kind, verdict: 'undetermined', head, base, reason })
       notChecked.push({ kind, reason })
       continue

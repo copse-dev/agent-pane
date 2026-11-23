@@ -1,4 +1,12 @@
 // Live CI diagnostics and an EOF-only complete inventory for review consumers.
+//
+// The inventory names every failure once, so Copse Reviewer can compare a base
+// and a head run test by test. A suite that fails on its own (a `before` hook
+// that throws because a tool is missing, a `describe` body that throws) is one
+// entry, and the tests it cancelled are accounted for by it: they never ran, on
+// either side, until the suite itself is fixed. A cancellation with no failed
+// suite or test above it, a test without a name, or a count that does not
+// reconcile with Node's own summary still leaves the inventory unavailable.
 import { z } from 'zod'
 import {
   TEST_FAILURE_REPORT_PREFIX,
@@ -48,8 +56,17 @@ export default async function* reviewTestReporter(
   const failures: { path: string; name: string }[] = []
   let valid = true
   let failed: number | undefined
+  let cancelledInSummary: number | undefined
   const root = process.env['COPSE_TEST_OUTPUT_DIR'] ?? process.cwd()
   const names = new TestNames(root)
+  const key = (file: string, testId: number | undefined): string => `${file}:${String(testId)}`
+  const parents = new Map<string, string>()
+  // Recorded failures, by event key, and how many of them are suites: Node
+  // counts neither failed nor cancelled suites in its summary.
+  const recorded = new Set<string>()
+  let suiteFailures = 0
+  // Children cancelled by a parent arrive before that parent's own failure.
+  const cancelled: { key: string; suite: boolean }[] = []
   for await (const event of source) {
     const parsed = eventSchema.safeParse(event)
     if (!parsed.success) {
@@ -57,8 +74,11 @@ export default async function* reviewTestReporter(
       continue
     }
     const { type, data } = parsed.data
-    if (type === 'test:start' && data.file && data.name && data.testId !== undefined)
+    if (type === 'test:start' && data.file && data.name && data.testId !== undefined) {
       names.start(data.file, data.testId, data.parentId, data.name)
+      if (data.parentId !== undefined)
+        parents.set(key(data.file, data.testId), key(data.file, data.parentId))
+    }
     if (type === 'test:fail') {
       const error = data.details?.error
       const cause = errorTextSchema.safeParse(error?.cause)
@@ -89,8 +109,13 @@ export default async function* reviewTestReporter(
     if (type === 'test:fail' && !data.skip && !data.todo) {
       if (data.details?.error?.failureType === 'subtestsFailed') continue
       const name = names.get(data.file ?? '', data.testId)
-      if (!data.file || !name || data.details?.error?.failureType === 'cancelledByParent') {
+      if (!data.file || !name) {
         valid = false
+        continue
+      }
+      const suite = data.details?.type === 'suite'
+      if (data.details?.error?.failureType === 'cancelledByParent') {
+        cancelled.push({ key: key(data.file, data.testId), suite })
         continue
       }
       const path = testEntryPath(root, data.file)
@@ -99,17 +124,27 @@ export default async function* reviewTestReporter(
         continue
       }
       failures.push({ path, name })
+      recorded.add(key(data.file, data.testId))
+      if (suite) suiteFailures += 1
     }
     if (type === 'test:summary' && data.file === undefined) {
-      if (data.counts === undefined || data.counts.cancelled !== 0 || failed !== undefined)
-        valid = false
+      if (data.counts === undefined || failed !== undefined) valid = false
       failed = data.counts?.failed
+      cancelledInSummary = data.counts?.cancelled
     }
   }
+  const failedAbove = (start: string): boolean => {
+    for (let at = parents.get(start); at !== undefined; at = parents.get(at)) {
+      if (recorded.has(at)) return true
+    }
+    return false
+  }
+  if (!cancelled.every((entry) => failedAbove(entry.key))) valid = false
+  if (cancelledInSummary !== cancelled.filter((entry) => !entry.suite).length) valid = false
   const report = testFailureReportSchema.safeParse({
     tier: 'unit-component',
     complete: true,
-    failed,
+    failed: failed === undefined ? undefined : failed + suiteFailures,
     failures,
   })
   if (valid && report.success)

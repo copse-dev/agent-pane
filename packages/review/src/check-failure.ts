@@ -1,15 +1,9 @@
 import type { CheckRun } from './stage0.ts'
-import { TEST_FAILURE_REPORT_UNAVAILABLE } from './test-failures.ts'
+import { reportedIncompleteTestInventory } from './test-failures.ts'
 import { parseTscDiagnostics } from './tsc-diagnostics.ts'
 
 export interface InconclusiveCheckFailure {
-  readonly kind:
-    | 'timeout'
-    | 'termination'
-    | 'resource'
-    | 'incomplete-inventory'
-    | 'setup'
-    | 'missing-diagnostic'
+  readonly kind: 'timeout' | 'termination' | 'resource' | 'setup' | 'missing-diagnostic'
   readonly reason: string
 }
 
@@ -30,28 +24,16 @@ export function inconclusiveCheckFailure(run: CheckRun): InconclusiveCheckFailur
         : `the checker terminated with exit ${String(run.exitCode)} without a completed check`,
     }
   }
-  // The runner finished and said its results were incomplete (a cancelled
-  // test, a file that failed to load). Name that, rather than reading a
-  // missing tool in one of its tests as a checker that never started.
-  if (
-    run.kind === 'test' &&
-    run.testFailures === undefined &&
-    run.output.split(/\r?\n/).some((line) => line.startsWith(TEST_FAILURE_REPORT_UNAVAILABLE))
-  ) {
-    return {
-      kind: 'incomplete-inventory',
-      reason:
-        'the test run finished without a complete failure list (cancelled tests, or test files that failed to load)',
-    }
-  }
   if (
     run.exitCode === 126 ||
     run.exitCode === 127 ||
-    // A test run that printed its own complete failure report did start: a
-    // tool missing for one of its tests (`spawn ps ENOENT`) is that test's
-    // failure, compared test by test against base, not a checker that could
-    // not run at all.
+    // A test run that printed its own failure report, complete or not, did
+    // start: a tool missing for one of its tests (`spawn ps ENOENT`) is that
+    // test's failure. It is compared against base like any failed check (test
+    // by test when both reports are complete), never waved off as a checker
+    // that could not run, which would leave a real regression unchecked.
     (run.testFailures === undefined &&
+      !reportedIncompleteTestInventory(run) &&
       /\bERR_PNPM_(?:NO_SCRIPT|NO_IMPORTER_MANIFEST_FOUND)\b|\bCommand "[^"]+" not found\b|\bspawn \S+ ENOENT\b/.test(
         run.output,
       ))

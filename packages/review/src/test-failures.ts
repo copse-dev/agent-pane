@@ -48,6 +48,23 @@ export function parseTestFailureReport(output: string): TestFailureReport | null
   return safeJsonParse(reports[0]?.slice(TEST_FAILURE_REPORT_PREFIX.length) ?? '', decodeReport)
 }
 
+/**
+ * Whether a test run's own reporter finished and said its failure list was
+ * incomplete. The runner did run: this is a failed check without a list to
+ * compare, not a checker that could not start.
+ */
+export function reportedIncompleteTestInventory(run: {
+  readonly kind: string
+  readonly testFailures?: TestFailureReport | undefined
+  readonly output: string
+}): boolean {
+  return (
+    run.kind === 'test' &&
+    run.testFailures === undefined &&
+    run.output.split(/\r?\n/).some((line) => line.startsWith(TEST_FAILURE_REPORT_UNAVAILABLE))
+  )
+}
+
 export function newTestFailures(
   base: TestFailureReport,
   head: TestFailureReport,

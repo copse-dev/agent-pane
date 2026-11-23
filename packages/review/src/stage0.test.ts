@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { access, chmod, mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
-import { TEST_FAILURE_REPORT_PREFIX } from './test-failures.ts'
+import { TEST_FAILURE_REPORT_PREFIX, TEST_FAILURE_REPORT_UNAVAILABLE } from './test-failures.ts'
 import { decodeStage0Report } from './stage0-report.ts'
 import { decodeFindings } from './finding.ts'
 import { createHostProcessBackend } from './host-process-backend.ts'
@@ -591,6 +591,30 @@ describe('runStage0', () => {
     assert.equal(long.checks[0]?.verdict, 'failing-on-base')
     assert.equal(long.checks[0].head?.outputTruncated, true)
     assert.deepEqual(long.findings, [])
+  })
+
+  it('still compares a failed test run whose failure list was incomplete against base', async () => {
+    // A head that breaks a test file's import: its reporter finished but could
+    // not list every failure. That is a failed check, not an unstartable one,
+    // so base still runs and a clean base confirms the regression.
+    const incomplete = {
+      exit: 1,
+      stdout:
+        'Error: spawn ps ENOENT\n' +
+        TEST_FAILURE_REPORT_UNAVAILABLE +
+        'incomplete, cancelled, or ambiguous test results.\n',
+    }
+    const regressed = await run(await scenario({}, { test: incomplete }, { kinds: ['test'] }))
+    assert.equal(regressed.checks[0]?.verdict, 'regressed')
+    assert.equal(regressed.findings[0]?.verdict.status, 'confirmed')
+    // Failing on both sides without complete lists: undetermined, and says why.
+    const both = await run(
+      await scenario({ test: incomplete }, { test: incomplete }, { kinds: ['test'] }),
+    )
+    const [check] = both.checks
+    assert.equal(check?.verdict, 'undetermined')
+    assert.match(check.reason ?? '', /head and base reported an incomplete failure list/)
+    assert.deepEqual(both.findings, [])
   })
 
   it('anchors a new type diagnostic at its line and ignores one that only moved', async () => {

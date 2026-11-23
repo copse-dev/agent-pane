@@ -65,16 +65,18 @@ describe('checker failure classification', () => {
     )
   })
 
-  it('names a test run that reported an incomplete inventory instead of calling it unstartable', () => {
-    const failure = inconclusiveCheckFailure({
-      ...failed,
-      kind: 'test',
-      output:
-        'Error: spawnSync ps ENOENT\n' +
-        'Copse test failure inventory unavailable: incomplete, cancelled, or ambiguous test results.\n',
-    })
-    assert.equal(failure?.kind, 'incomplete-inventory')
-    assert.match(failure.reason, /without a complete failure list/)
+  it('treats a test run that reported an incomplete inventory as a failed check, not an unstartable one', () => {
+    // Inconclusive here would skip base entirely and hide a real regression.
+    assert.equal(
+      inconclusiveCheckFailure({
+        ...failed,
+        kind: 'test',
+        output:
+          'Error: spawn ps ENOENT\n' +
+          'Copse test failure inventory unavailable: incomplete, cancelled, or ambiguous test results.\n',
+      }),
+      null,
+    )
   })
 
   it('preserves normal failures and successful runs with nonfatal warmup warnings', () => {

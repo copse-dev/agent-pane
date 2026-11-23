@@ -621,8 +621,11 @@ states that boundary explicitly and treats an unspecified test command's tier as
 Two red exit codes cannot establish that failures are pre-existing. Stage 0 compares complete
 individual failure inventories for Node tests. Copse opts in through `review.config.json` and
 `run-tests --review-report`: a compact reporter emits the full failing file/name set only after
-Node's final summary, with no cancelled tests, consistent counts and unique identities. It excludes
-parent-suite failures, and normalizes per-run bundle roots and ignores source line movement.
+Node's final summary, with consistent counts and unique identities. It excludes parent suites that
+failed only because a child did, and normalizes per-run bundle roots and ignores source line
+movement. A suite that fails on its own (a `before` hook that throws because a tool is missing, a
+`describe` body that throws) is one identity, and the tests it cancelled are accounted for by it;
+any other cancelled test leaves the inventory unavailable.
 Stage 0 reads the inventory as untrusted data, preserves it in the report and mints one finding
 per new failing identity. It never says a new test passed on base, only that it was absent from the
 base failure inventory. Missing/ambiguous inventories or other doubly-failing check kinds remain
@@ -1753,6 +1756,14 @@ compared test by test as for any stable failure; a failure present on both sides
 Exit 126/127 and pnpm's missing-script errors without an inventory remain setup failures. Found
 reviewing Copse itself in an Apple container cell, where the suite ran for eight minutes and was
 reported as "could not start".
+
+_Amended 2026-11-23:_ the same holds for a test run whose reporter finished and printed that its
+inventory was unavailable. It started, so it is a failed check without a list, never inconclusive:
+head is confirmed, base runs, a passing base confirms the regression, and a base that fails too
+leaves it `undetermined` with that reason. A one-day interim rule that called such runs
+inconclusive skipped base and hid a real regression (a head that broke a test file's import), so it
+was withdrawn. To make the list complete in cells that lack a tool, tests cancelled by a failed
+enclosing suite are now accounted for by that suite's identity (see the inventory contract above).
 
 GitHub conversation collection retains each prior Copse inline finding with its original commit,
 location, URL and latest three replies as one bounded historical entry. Conversation trimming drops
