@@ -51,6 +51,56 @@ function nestedHasOffset(css: string): number {
   return -1
 }
 
+/** A selector list split on its own commas, not those inside `:is(…)` or `[…]`. */
+function topLevelSelectors(list: string): string[] {
+  const selectors: string[] = []
+  let depth = 0
+  let start = 0
+  for (let i = 0; i < list.length; i++) {
+    const char = list[i]
+    if (char === '(' || char === '[') depth++
+    else if (char === ')' || char === ']') depth--
+    else if (char === ',' && depth === 0) {
+      selectors.push(list.slice(start, i))
+      start = i + 1
+    }
+  }
+  selectors.push(list.slice(start))
+  return selectors
+}
+
+/**
+ * Selectors whose subject follows a sibling combinator (`~` or `+`) but names no
+ * element type, class, id or attribute: `legend ~ *`, `.a + :not(.b)`. Only
+ * top-level combinators count; `:has(~ *)`, `[title~="x"]` and `2n + 1` sit
+ * inside parentheses or brackets.
+ */
+function unkeyedSiblingSubjects(css: string): string[] {
+  const selectors = (css.match(/[^{};]+(?=\{)/g) ?? [])
+    .filter((prelude) => !prelude.trim().startsWith('@'))
+    .flatMap(topLevelSelectors)
+    .map((selector) => selector.trim().replace(/\s+/g, ' '))
+  return selectors.filter((selector) => {
+    const compact = selector.replace(/\s*([~+>])\s*/g, '$1')
+    let depth = 0
+    let combinator = ''
+    let subjectStart = 0
+    for (let i = 0; i < compact.length; i++) {
+      const char = compact[i] ?? ''
+      if (char === '(' || char === '[') depth++
+      else if (char === ')' || char === ']') depth--
+      else if (depth === 0 && '~+> '.includes(char)) {
+        combinator = char
+        subjectStart = i + 1
+      }
+    }
+    if (combinator !== '~' && combinator !== '+') return false
+    let subject = compact.slice(subjectStart)
+    while (/\([^()]*\)/.test(subject)) subject = subject.replace(/\([^()]*\)/g, '')
+    return /^[*:]/.test(subject) && !/[.#[]/.test(subject.replace(/^\*/, ''))
+  })
+}
+
 describe('modern CSS adoptions', () => {
   it('paints native form controls with the accent (#3065)', () => {
     // accent-color inherits, so one declaration on the root surface reaches every
@@ -278,6 +328,43 @@ describe('modern CSS adoptions', () => {
     assert.notEqual(nestedHasOffset('.a:has(:is(.b, :has(.c))) { top: 0 }'), -1)
     assert.equal(nestedHasOffset('.a:has(> .b > .c):not(:has(.d)) { top: 0 }'), -1)
     assert.equal(nestedHasOffset('.a:has(.b), .c:has(.d) { top: 0 }'), -1)
+  })
+
+  it('never puts a sibling combinator before a universal subject', () => {
+    // Chromium files a rule under its subject's type, class, id or attribute;
+    // with none, it tries the rule on every element. The Settings card rule
+    // `fieldset > legend ~ *` made each insert into a long transcript restyle the
+    // whole transcript, about a third of the time to open a 2,000-message thread,
+    // though no row is in a fieldset. Key the subject, or use a child selector
+    // such as `fieldset > :not(legend)`.
+    const renderer = resolve(process.cwd(), 'src/renderer')
+    const offenders = readdirSync(renderer, { recursive: true, encoding: 'utf8' })
+      .filter((file) => file.endsWith('.css'))
+      .flatMap((file) =>
+        unkeyedSiblingSubjects(
+          readFileSync(resolve(renderer, file), 'utf8').replace(/\/\*[\s\S]*?\*\//g, ''),
+        ).map((selector) => `${file}: ${selector}`),
+      )
+    assert.deepEqual(offenders, [])
+  })
+
+  it('finds universal sibling subjects however the selector is written', () => {
+    assert.deepEqual(unkeyedSiblingSubjects('.a > legend\n  ~ * { clear: both }'), [
+      '.a > legend ~ *',
+    ])
+    assert.deepEqual(unkeyedSiblingSubjects('.a+:not(.b), .c ~ .d { top: 0 }'), ['.a+:not(.b)'])
+    assert.deepEqual(unkeyedSiblingSubjects('.x:not(.a, :is(.b, .c)) ~ *, .y { top: 0 }'), [
+      '.x:not(.a, :is(.b, .c)) ~ *',
+    ])
+    assert.deepEqual(unkeyedSiblingSubjects('.x { color: red; & ~ * { top: 0 } }'), ['& ~ *'])
+    assert.deepEqual(
+      unkeyedSiblingSubjects(
+        '.a:has(~ :not(.b)) > *, [title~="x"] *, li:nth-child(2n + 1), .a ~ *.b, ' +
+          '.a ~ :not(.b) .c, fieldset:not(.a > b, .c > b) > :not(legend) { top: 0 } ' +
+          '@media (width > 1px) { .d + .e { top: 0 } }',
+      ),
+      [],
+    )
   })
 
   it('themes scrollbars from the active surface tokens', () => {
