@@ -282,6 +282,89 @@ describe('Mobile Companion at phone width', () => {
     }
   })
 
+  it('folds threads idle for over 30 days under their group and keeps the fold open across polls', async () => {
+    await browser.setWindowSize(390, 844)
+    await browser.sendCommand('Emulation.setDeviceMetricsOverride', {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+    })
+    await browser.url('/mobile/')
+    await browser.execute(async () => {
+      await fetch('/mobile-fixture/reset')
+      localStorage.setItem('copse-mobile-token', 'visual-test-token')
+      history.replaceState({ mobileView: 'activity' }, '')
+    })
+    // Age three finished threads and one waiting decision at the API boundary,
+    // and count polls so the test can wait for the list to be redrawn.
+    const added: unknown = await browser.sendCommandAndGetResult(
+      'Page.addScriptToEvaluateOnNewDocument',
+      {
+        source: `
+          const originalFetch = window.fetch.bind(window)
+          window.fetch = async (...args) => {
+            const response = await originalFetch(...args)
+            if (args[0] !== '/api/activity') return response
+            const data = await response.json()
+            const aged = (id, title, group, state, days) => ({
+              projectId: 'proj-1', projectName: 'Copse', threadId: id, title, group, state,
+              detail: 'Latest completed output', lastSavedAt: Date.now() - days * 86400000,
+            })
+            data.rows.push(
+              aged('thread-old-1', 'Archived experiment 1', 'recent', 'finished', 45),
+              aged('thread-old-2', 'Archived experiment 2', 'recent', 'finished', 60),
+              aged('thread-old-3', 'Archived experiment 3', 'recent', 'finished', 120),
+              aged('thread-old-4', 'Old question still open', 'needs-you', 'needs-answer', 90),
+            )
+            const root = document.documentElement
+            root.dataset.activityPolls = String(Number(root.dataset.activityPolls ?? '0') + 1)
+            return new Response(JSON.stringify(data), {
+              status: response.status, headers: response.headers,
+            })
+          }
+        `,
+      },
+    )
+    const identifier = isRecord(added) ? added['identifier'] : undefined
+    if (typeof identifier !== 'string')
+      throw new Error('Chromium did not return a script identifier')
+    const polls = async (): Promise<number> =>
+      Number((await $('html').getAttribute('data-activity-polls')) ?? '0')
+    try {
+      await browser.refresh()
+      const fold = $('.group .older[data-group="recent"]')
+      await fold.waitForExist()
+      await expect(fold).not.toHaveAttribute('open')
+      await expect(fold.$('summary')).toHaveText(expect.stringContaining('Older than 30 days'))
+      await expect(fold.$('summary .group-count')).toHaveText('3')
+      await expect($('.row-title=Document the migration')).toBeDisplayed()
+      await expect($('.row-title=Archived experiment 1')).not.toBeDisplayed()
+      // A waiting decision is never folded away, however old its thread is.
+      await expect($('.row-title=Old question still open')).toBeDisplayed()
+      await expect($('.group .older[data-group="needs-you"]')).not.toExist()
+      await fold.scrollIntoView({ block: 'center' })
+      await screenshot('mobile-companion-activity-older-collapsed.png')
+
+      await fold.$('summary').click()
+      await expect(fold).toHaveAttribute('open')
+      await expect($('.row-title=Archived experiment 3')).toBeDisplayed()
+      // Two more polls guarantee at least one full redraw after the fold opened.
+      const opened = await polls()
+      await browser.waitUntil(async () => (await polls()) >= opened + 2, {
+        timeout: 10_000,
+        timeoutMsg: 'Activity did not poll again',
+      })
+      await expect(fold).toHaveAttribute('open')
+      await expect($('.row-title=Archived experiment 3')).toBeDisplayed()
+      await fold.$('summary').scrollIntoView({ block: 'start' })
+      await screenshot('mobile-companion-activity-older-expanded.png')
+    } finally {
+      await browser.sendCommand('Page.removeScriptToEvaluateOnNewDocument', { identifier })
+      await browser.refresh()
+    }
+  })
+
   it('previews, removes and sends an image from the phone composer', async () => {
     await browser.setWindowSize(390, 844)
     await browser.sendCommand('Emulation.setDeviceMetricsOverride', {

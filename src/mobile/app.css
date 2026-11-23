@@ -160,6 +160,34 @@ h1 {
 .group-count {
   font-variant-numeric: tabular-nums;
 }
+.older {
+  margin-top: 7px;
+}
+.older-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 44px;
+  padding: 0 15px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  list-style: none;
+}
+.older-summary::-webkit-details-marker {
+  display: none;
+}
+.older-summary > span:first-child::before {
+  content: '▸';
+  display: inline-block;
+  width: 1.2em;
+}
+.older[open] > .older-summary > span:first-child::before {
+  content: '▾';
+}
 .row {
   display: block;
   width: 100%;

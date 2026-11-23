@@ -353,6 +353,8 @@ const EMPTY_GROUP = {
 }
 const groupSections = new Map()
 const activityRows = new Map()
+/** Rows idle longer than this fold away under their group, so sections stay a short scroll apart. */
+const OLDER_THAN_MS = 30 * 24 * 60 * 60 * 1000
 
 function setText(node, text) {
   if (node.textContent !== text) node.textContent = text
@@ -420,12 +422,28 @@ function renderGroup(label, key, rows, listed) {
     const heading = element('div', 'group-heading')
     const count = element('span', 'group-count')
     heading.append(element('span', '', label), count)
-    group = { section, heading, count, empty: element('div', 'empty', EMPTY_GROUP[key]) }
+    // Kept like the rows, so a fold the reader opened stays open across polls.
+    const older = element('details', 'older')
+    older.dataset.group = key
+    const olderSummary = element('summary', 'older-summary')
+    const olderCount = element('span', 'group-count')
+    olderSummary.append(element('span', '', 'Older than 30 days'), olderCount)
+    group = {
+      section,
+      heading,
+      count,
+      empty: element('div', 'empty', EMPTY_GROUP[key]),
+      older,
+      olderSummary,
+      olderCount,
+    }
     groupSections.set(key, group)
   }
   setText(group.count, String(rows.length))
   const children = [group.heading]
+  const olderChildren = [group.olderSummary]
   if (rows.length === 0) children.push(group.empty)
+  const cutoff = Date.now() - OLDER_THAN_MS
   for (const row of rows) {
     const isSelected =
       key === 'needs-you' &&
@@ -433,9 +451,17 @@ function renderGroup(label, key, rows, listed) {
       selectedDecisionRow?.threadId === row.threadId
     const entry = activityRow(row, key, isSelected)
     listed.add(entry)
-    children.push(entry.button)
+    // A decision is never tucked away, however old its thread is.
+    const target = key !== 'needs-you' && row.lastSavedAt < cutoff ? olderChildren : children
+    target.push(entry.button)
     // Expand the card directly under the tapped row, not after the whole list.
-    if (isSelected) children.push(inlineDecision)
+    if (isSelected) target.push(inlineDecision)
+  }
+  // Fill the fold first: a row moving into it leaves the section by being inserted here.
+  syncChildren(group.older, olderChildren)
+  if (olderChildren.length > 1) {
+    setText(group.olderCount, String(olderChildren.length - 1))
+    children.push(group.older)
   }
   syncChildren(group.section, children)
   return group.section
