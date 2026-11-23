@@ -90,6 +90,12 @@ function stubApi(
   const base = createFakeApi()
   const api: ApiClient = {
     ...base,
+    // These tests are about browsing; the turn-on question has its own tests.
+    settings: {
+      ...base.settings,
+      get: async (key: string): Promise<unknown> =>
+        key === 'sshWorkspaceEnabled' ? true : base.settings.get(key),
+    },
     sshWorkspace: {
       ...base.sshWorkspace,
       listHosts: () => Promise.resolve(HOSTS),
