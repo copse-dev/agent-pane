@@ -12,6 +12,7 @@ import { startFakeNamesApi, type FakeNamesApi } from './helpers/fake-names-api.t
 import { availableMobileAddress } from './helpers/mobile-address.ts'
 import { pinTextForCapture, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
+import { ensureTrustedName } from './helpers/trusted-name.ts'
 
 /**
  * Phase 1 remote access, end to end against a stand-in names API: redeem an
@@ -206,6 +207,7 @@ describe('Mobile Companion trusted name', function () {
   })
 
   it('grants control on the desktop approval alone when a phone pairs over the name', async () => {
+    await ensureTrustedName(invite, hostname)
     const started = nameRequest('/api/pair/request', {
       label: 'Trusted-name phone',
     })
@@ -246,6 +248,7 @@ describe('Mobile Companion trusted name', function () {
   })
 
   it('removes the name from the service and offers the invite again', async () => {
+    await ensureTrustedName(invite, hostname)
     const card = $('.mobile-companion-name')
     await card.scrollIntoView({ block: 'center' })
     await card.$('button=Remove name').click()

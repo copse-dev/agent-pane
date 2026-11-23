@@ -16,6 +16,7 @@ import { startFakeNamesApi, type FakeNamesApi } from './helpers/fake-names-api.t
 import { availableMobileAddress } from './helpers/mobile-address.ts'
 import { pinTextForCapture, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
+import { ensureTrustedName } from './helpers/trusted-name.ts'
 
 /**
  * Phase 2 remote access, end to end: with a trusted name, the user turns on
@@ -31,6 +32,7 @@ import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/
 const invite = 'e2e-relay-invite'
 const label = 'abcdefgh2345'
 const web = `web.${label}.u.copse.me`
+const lan = `lan.${label}.u.copse.me`
 const projectId = 'e2e-mobile-relay'
 const lanRoot = join(copseDataRoot(), 'lan')
 
@@ -56,7 +58,6 @@ describe('Mobile Companion through the relay', function () {
   /** A JSON POST to the `lan.` name over real TLS on the local address, as a phone at the desk. */
   const lanPost = (path: string, body: object): Promise<{ status: number; json: unknown }> =>
     new Promise((resolve, reject) => {
-      const lan = `lan.${label}.u.copse.me`
       const req = request(
         {
           host: address,
@@ -93,7 +94,6 @@ describe('Mobile Companion through the relay', function () {
   /** The framing headers of the `lan.` name's page, over real TLS on the local address. */
   const lanFraming = (): Promise<{ csp: string; xfo: string | undefined }> =>
     new Promise((resolve, reject) => {
-      const lan = `lan.${label}.u.copse.me`
       const req = request(
         {
           host: address,
@@ -145,6 +145,23 @@ describe('Mobile Companion through the relay', function () {
     }
   }
 
+  /**
+   * Leave the relay chosen and its tunnel connected, from whatever state the
+   * previous test left, so each test also passes when run alone.
+   */
+  const ensureRelayOn = async (): Promise<void> => {
+    await ensureTrustedName(invite, lan)
+    const block = $('.mobile-companion-relay')
+    await block.scrollIntoView({ block: 'center' })
+    const toggle = block.$('input[name="mobileCompanionRelay"]')
+    if (!(await toggle.isSelected())) await toggle.click()
+    await relay.waitForTunnel(30_000)
+    await expect(block.$('.mobile-companion-relay-status')).toHaveText(
+      expect.stringContaining(`Connected to localhost:${String(relay.port)}`),
+      { wait: 15_000 },
+    )
+  }
+
   before(async () => {
     const found = await availableMobileAddress()
     assert.ok(found, 'The relay eval requires an unused private IPv4 interface on port 42773')
@@ -183,16 +200,7 @@ describe('Mobile Companion through the relay', function () {
   })
 
   it('opens the tunnel once chosen, and serves the web name through it', async () => {
-    await $('[aria-label="Settings"]').click()
-    await $('.settings-nav-btn[data-section="experimental"]').click()
-    const card = $('.mobile-companion-name')
-    await card.scrollIntoView({ block: 'center' })
-    await card.$('input[name="mobileCompanionInvite"]').setValue(invite)
-    await card.$('button=Get a name').click()
-    await browser.waitUntil(async () => /Certificate valid until/.test(await card.getText()), {
-      timeout: 30_000,
-      timeoutMsg: 'the certificate never arrived',
-    })
+    await ensureTrustedName(invite, lan)
 
     // Off until the user chooses it: no tunnel yet.
     const block = $('.mobile-companion-relay')
@@ -248,11 +256,12 @@ describe('Mobile Companion through the relay', function () {
 
     // Everything past pairing needs a token, and only the web name is served.
     assert.equal((await relayed('/api/activity')).status, 401)
-    assert.equal((await relayed('/', { host: `lan.${label}.u.copse.me:42773` })).status, 403)
+    assert.equal((await relayed('/', { host: `${lan}:42773` })).status, 403)
     assert.equal((await relayed('/', { host: 'web.zzzzzzzzzzzz.u.copse.me' })).status, 403)
   })
 
   it('pairs a relayed phone on the desktop approval, and says it came through copse.me', async () => {
+    await ensureRelayOn()
     const started = await relayed('/api/pair/request', {
       body: { label: 'Away phone' },
       clientIp: '198.51.100.40',
@@ -292,8 +301,9 @@ describe('Mobile Companion through the relay', function () {
   })
 
   it('keeps pairing open to the local network while a relayed request is pending', async () => {
-    // Each slot takes one request a second, and the previous test's request was moments ago:
-    // retry briefly. A slot still held by an earlier pairing would stay busy for two minutes.
+    await ensureRelayOn()
+    // Each slot takes one request a second, and after the previous test its request was moments
+    // ago: retry briefly. A slot still held by an earlier pairing would stay busy for two minutes.
     let away: Awaited<ReturnType<typeof relayed>> | undefined
     await browser.waitUntil(
       async () => {
@@ -318,6 +328,7 @@ describe('Mobile Companion through the relay', function () {
   })
 
   it('shows a one-time copse.me code signed by the device key', async () => {
+    await ensureRelayOn()
     const block = $('.mobile-companion-relay')
     await block.scrollIntoView({ block: 'center' })
     await block.$('button=Add this Mac at copse.me').click()
@@ -382,6 +393,7 @@ describe('Mobile Companion through the relay', function () {
   })
 
   it('closes the tunnel when turned off', async () => {
+    await ensureRelayOn()
     const block = $('.mobile-companion-relay')
     await block.$('input[name="mobileCompanionRelay"]').click()
     await browser.waitUntil(() => relay.tunnels() === 0, {
