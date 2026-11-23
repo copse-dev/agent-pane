@@ -7,6 +7,7 @@ import type {
   PromptVideoAttachment,
 } from './prompt-attachments.ts'
 import {
+  MAX_TEXT_ATTACHMENT_BYTES,
   UNSUPPORTED_IMAGE_MESSAGE,
   WORKSPACE_PATH_MIME,
   attachFiles,
@@ -62,6 +63,17 @@ const api: FileDropApi = {
 
 function fakeFile(name: string, type: string): File {
   return new File([new Uint8Array([1, 2, 3])], name, { type })
+}
+
+/** The toast now showing, removed so the next test starts clean. */
+function takeToast(): string {
+  const toast = document.querySelector('.toast')
+  toast?.remove()
+  return toast?.textContent ?? ''
+}
+
+function utf8(text: string): number[] {
+  return [...new TextEncoder().encode(text)]
 }
 
 function workspacePathDrop(path: string): FileDropEvent {
@@ -146,6 +158,100 @@ describe('attaching dropped files', () => {
     } finally {
       delete window.copseFiles
     }
+  })
+
+  it('reads a picker file outside the workspace from its File blob', async () => {
+    const outside = new File(['%AI-3.0 illustrator data'], 'artwork.ai', {
+      type: 'application/postscript',
+    })
+    window.copseFiles = { pathForFile: (): string => '/Users/me/Downloads/artwork.ai' }
+    try {
+      const { handlers, recorded } = recordingHandlers()
+      const readApi: FileDropApi = {
+        fs: {
+          readFile: (): Promise<string> => Promise.reject(new Error('outside workspace')),
+          readImage: (): Promise<string> => Promise.resolve(''),
+        },
+      }
+      await attachFiles([outside], handlers, readApi, '/repo', { projectId: 'p', threadId: 't' })
+      assert.deepEqual(recorded.files, [
+        { path: '/Users/me/Downloads/artwork.ai', content: '%AI-3.0 illustrator data' },
+      ])
+    } finally {
+      delete window.copseFiles
+    }
+  })
+
+  it('refuses a binary file from outside the workspace instead of inlining its bytes', async () => {
+    // A current Illustrator file is a PDF container: a text header, then binary streams.
+    const streams = Array.from({ length: 512 }, (_, i) => 0x80 + (i % 0x80))
+    const outside = new File([new Uint8Array([...utf8('%PDF-1.6\n'), ...streams])], 'artwork.ai', {
+      type: 'application/postscript',
+    })
+    window.copseFiles = { pathForFile: (): string => '/Users/me/Downloads/artwork.ai' }
+    try {
+      const { handlers, recorded } = recordingHandlers()
+      await attachFiles([outside], handlers, api, '/repo', { projectId: 'p', threadId: 't' })
+      assert.deepEqual(recorded.files, [])
+      assert.match(
+        takeToast(),
+        /^Can't attach artwork\.ai — it isn't a text file\. Attach it inside a \.zip, or copy it into the project/,
+      )
+    } finally {
+      delete window.copseFiles
+    }
+  })
+
+  it('keeps a Latin-1 text file with a few undecodable accents as text', async () => {
+    const latin1 = new Uint8Array([
+      ...utf8('name,city\nRen'),
+      0xe9,
+      ...utf8(',Paris\nJos'),
+      0xe9,
+      ...utf8(',Lyon\n'),
+    ])
+    const { handlers, recorded } = recordingHandlers()
+    await attachFiles([new File([latin1], 'people.csv', { type: 'text/csv' })], handlers, api, null)
+    assert.equal(recorded.files.length, 1)
+    assert.match(recorded.files[0]?.content ?? '', /^name,city\nRen\uFFFD,Paris/)
+  })
+
+  it('refuses a text file too large for any model instead of inlining it', async () => {
+    const big = new File([new Uint8Array(MAX_TEXT_ATTACHMENT_BYTES + 1).fill(0x61)], 'server.log', {
+      type: 'text/plain',
+    })
+    const { handlers, recorded } = recordingHandlers()
+    await attachFiles([big], handlers, api, null)
+    assert.deepEqual(recorded.files, [])
+    assert.match(
+      takeToast(),
+      /^Can't attach server\.log — at 4\.0 MB it's more text than a model can take in at once\. Copy it into the project/,
+    )
+  })
+
+  it('refuses a binary workspace file and points at the agent tools instead', async () => {
+    const binaryApi: FileDropApi = {
+      fs: {
+        readFile: (): Promise<string> => Promise.resolve('%PDF-1.6\n\u0000\u0001streams'),
+        readImage: (): Promise<string> => Promise.resolve(''),
+      },
+    }
+    const { handlers, recorded } = recordingHandlers()
+    await handleFileDrop(
+      workspacePathDrop('/repo/design/artwork.ai'),
+      handlers,
+      binaryApi,
+      '/repo',
+      {
+        projectId: 'p',
+        threadId: 't',
+      },
+    )
+    assert.deepEqual(recorded.files, [])
+    assert.match(
+      takeToast(),
+      /^Can't attach artwork\.ai — it isn't a text file\. It's already in the project, so mention its path/,
+    )
   })
 
   it('references a workspace video by path rather than reading it as text', async () => {
