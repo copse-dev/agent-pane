@@ -313,7 +313,7 @@ describe('advisor circuit breaker', () => {
     assert.equal(errors.length, 5)
     for (const message of errors) {
       // Actionable for the user, and an explicit stop for the executor.
-      assert.match(message, /unavailable for the rest of this thread/)
+      assert.match(message, /The advisor is unavailable for now/)
       assert.match(message, /`acp:codex` needs you to sign in/)
       assert.match(message, /Advisor role in Settings → Models/)
       assert.match(message, /Do not call the advisor tool again/)

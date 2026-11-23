@@ -20,7 +20,7 @@ import { classifyAcpAuthFailure, classifyProviderAccessFailure } from './agent-e
  * to probe again, and nothing here is worth persisting into the thread store.
  */
 
-/** Why a helper model cannot be used for the rest of the thread. */
+/** Why a helper model cannot be used until the user fixes it or the cooldown lapses. */
 export type UnrecoverableToolFailure = 'auth' | 'credit' | 'unreachable'
 
 export type BreakerToolName = 'advisor' | 'explore'
@@ -160,8 +160,8 @@ function remedy(trip: ToolBreakerTrip, roleLabel: string): string {
  */
 export function advisorUnavailableMessage(trip: ToolBreakerTrip): string {
   return [
-    `The advisor is unavailable for the rest of this thread. ${remedy(trip, 'Advisor')}`,
-    `Do not call the advisor tool again in this thread; continue the task without it.`,
+    `The advisor is unavailable for now. ${remedy(trip, 'Advisor')}`,
+    `Do not call the advisor tool again unless the user says the problem is fixed; continue the task without it.`,
     trip.detail ? `Underlying error: ${trip.detail}` : '',
   ]
     .filter((line) => line.length > 0)

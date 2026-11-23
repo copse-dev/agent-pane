@@ -129,7 +129,13 @@ describe('breaker messages', () => {
     })
     assert.match(message, /`acp:codex` needs you to sign in again/)
     assert.match(message, /Advisor role in Settings → Models/)
-    assert.match(message, /Do not call the advisor tool again in this thread/)
+    assert.match(
+      message,
+      /Do not call the advisor tool again unless the user says the problem is fixed/,
+    )
+    // The breaker re-arms on a new selection or after the cooldown, so the copy
+    // must not promise the advisor is gone for good.
+    assert.doesNotMatch(message, /rest of this thread/)
     assert.match(message, /Underlying error: Authentication required/)
   })
 
