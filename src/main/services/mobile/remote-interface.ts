@@ -27,7 +27,8 @@ export const REMOTE_WATCH_TTL_MS = 15_000
 /**
  * Each phone or shared-chat page polls one chat, so a few devices fit well
  * inside this. A client naming ever more threads cannot make the desktop
- * publish more transcripts than this.
+ * publish more transcripts than this. While the list is full of chats still
+ * being polled, a newly polled chat stays on its saved view.
  */
 const MAX_WATCHED = 8
 
@@ -129,13 +130,25 @@ export class RemoteInterface {
       this.watching.set(key, known)
       return
     }
+    // Refuse the newcomer rather than evict a chat still being polled: with one
+    // chat too many polling in turn, evicting the oldest drops the next to poll,
+    // so every poll would miss and no client would get its live view.
+    if (this.watching.size >= MAX_WATCHED && !this.dropLapsed()) return
     this.watching.set(key, { projectId, threadId, seenAt: Date.now() })
-    for (const oldest of this.watching.keys()) {
-      if (this.watching.size <= MAX_WATCHED) break
-      this.watching.delete(oldest)
-    }
     this.notifyWatched()
     this.scheduleWatchExpiry()
+  }
+
+  /** Forgets threads no client has polled within the TTL; true when any went. */
+  private dropLapsed(): boolean {
+    const cutoff = Date.now() - REMOTE_WATCH_TTL_MS
+    let changed = false
+    for (const [key, entry] of this.watching) {
+      if (entry.seenAt > cutoff) continue
+      this.watching.delete(key)
+      changed = true
+    }
+    return changed
   }
 
   private scheduleWatchExpiry(): void {
@@ -152,14 +165,7 @@ export class RemoteInterface {
   }
 
   private expireWatches(): void {
-    const cutoff = Date.now() - REMOTE_WATCH_TTL_MS
-    let changed = false
-    for (const [key, entry] of this.watching) {
-      if (entry.seenAt > cutoff) continue
-      this.watching.delete(key)
-      changed = true
-    }
-    if (changed) this.notifyWatched()
+    if (this.dropLapsed()) this.notifyWatched()
     this.scheduleWatchExpiry()
   }
 

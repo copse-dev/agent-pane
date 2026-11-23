@@ -5,9 +5,13 @@ import { createFakeApi } from '../fake-api.test-support.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { RemoteView, RemoteWatchedThread } from '@shared/remote-interface.ts'
 import type { MobileCompanionState } from '@shared/types/mobile-companion.ts'
-import type { Message } from '@shared/types'
+import type { Message, ToolCall } from '@shared/types'
 import { attachRemotePublisher } from './remote-publisher.ts'
-import { createThread } from '@shared/store/thread-helpers.ts'
+import { addToolCall, appendToken, createThread } from '@shared/store/thread-helpers.ts'
+
+function toolCall(id: string): ToolCall {
+  return { id, name: 'read_file', args: {}, status: 'running', result: null }
+}
 
 interface Events {
   state?: (state: MobileCompanionState) => void
@@ -234,9 +238,10 @@ describe('desktop remote publisher', () => {
     context.mock.timers.tick(150)
     assert.equal(views.length, 1)
 
-    // Events without a change in this project send nothing.
+    // Streaming into a thread no client is watching changes nothing a client is sent.
     for (let index = 0; index < 5; index++) {
-      store.emit('message_token', `${id}-m`, 'x')
+      appendToken(store, `${id}-m`, 'x')
+      addToolCall(store, `${id}-m`, toolCall(`tc-${String(index)}`))
       context.mock.timers.tick(150)
     }
     assert.equal(views.length, 1)
@@ -262,6 +267,48 @@ describe('desktop remote publisher', () => {
     }
     assert.equal(views.filter((view) => view.projectId === 'p').length, 2)
     assert.ok(views.some((view) => view.projectId === 'other'))
+    dispose()
+  })
+
+  it('streams tokens and tool calls into a watched thread to clients', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] })
+    const { store, views, events, api, base } = setup()
+    const watchedId = createThread(store)
+    const otherId = createThread(store)
+    loadTranscripts(store, [watchedId, otherId])
+    const state = await base.mobile.getState()
+    const dispose = attachRemotePublisher(store, api)
+    events.state?.({ ...state, enabled: true, running: true })
+    await settle()
+    events.watched?.([{ projectId: 'p', threadId: watchedId }])
+    context.mock.timers.tick(150)
+    const sent = views.length
+    const watchedMessage = (): Message | undefined =>
+      views.at(-1)?.threads.find((thread) => thread.id === watchedId)?.messages[0]
+
+    // The store appends in place, keeping every thread and array identity.
+    appendToken(store, `${watchedId}-m`, ' streamed')
+    context.mock.timers.tick(150)
+    assert.equal(views.length, sent + 1)
+    assert.equal(watchedMessage()?.content, 'a long transcript streamed')
+
+    addToolCall(store, `${watchedId}-m`, toolCall('tc-1'))
+    context.mock.timers.tick(150)
+    assert.equal(views.length, sent + 2)
+    assert.deepEqual(
+      watchedMessage()?.toolCalls.map((call) => call.id),
+      ['tc-1'],
+    )
+
+    // A burst within one tick is one publish, as before.
+    for (let index = 0; index < 10; index++) appendToken(store, `${watchedId}-m`, '.')
+    context.mock.timers.tick(150)
+    assert.equal(views.length, sent + 3)
+
+    // A sibling's stream in the same project sends nothing while the watched one is quiet.
+    appendToken(store, `${otherId}-m`, ' elsewhere')
+    context.mock.timers.tick(150)
+    assert.equal(views.length, sent + 3)
     dispose()
   })
 

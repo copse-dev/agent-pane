@@ -3,6 +3,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { MobileCompanionState } from '@shared/types/mobile-companion.ts'
 import type { Thread } from '@shared/types'
 import { remoteViewSchema, type RemoteWatchedThread } from '@shared/remote-interface.ts'
+import { locateMessage } from '@shared/store/thread-helpers.ts'
 
 interface CapturedView {
   projectId: string
@@ -35,6 +36,12 @@ export function attachRemotePublisher(store: AppStore, api: ApiClient): () => vo
   let watched = new Map<string, Set<string>>()
   const views = new Map<string, CapturedView>()
   const published = new Map<string, PublishedFrom>()
+  /**
+   * Watched threads whose messages changed in place since the last publish.
+   * The store streams tokens and tool calls into a message without copying the
+   * thread or its array, so the identity check below cannot see them.
+   */
+  const streamedInto = new Set<string>()
 
   function capture(): void {
     const { activeProjectId, threads, backgroundThreads } = store.getState()
@@ -60,10 +67,14 @@ export function attachRemotePublisher(store: AppStore, api: ApiClient): () => vo
   function publish(): void {
     timer = null
     if (!running || disposed) return
+    const streamed = new Set(streamedInto)
+    streamedInto.clear()
     for (const { projectId, threads } of views.values()) {
-      const watching = [...(watched.get(projectId) ?? [])].sort().join('\0')
+      const watchedIds = [...(watched.get(projectId) ?? [])]
+      const watching = watchedIds.sort().join('\0')
       const last = published.get(projectId)
-      if (last?.threads === threads && last.watching === watching) continue
+      const unchanged = last?.threads === threads && last.watching === watching
+      if (unchanged && !watchedIds.some((id) => streamed.has(id))) continue
       const view = remoteViewSchema.safeParse({
         projectId,
         threads: threads.map((thread) => forClients(projectId, thread)),
@@ -83,6 +94,19 @@ export function attachRemotePublisher(store: AppStore, api: ApiClient): () => vo
     // Capture now: final background bookkeeping may drop the thread before the timer fires.
     capture()
     timer ??= setTimeout(publish, 150)
+  }
+
+  /**
+   * A message changed in place. Only a watched thread's transcript is sent, so
+   * only a watched thread's change makes an otherwise unchanged project go again.
+   */
+  function messageChanged(messageId: string): void {
+    if (!running || disposed) return
+    const threadId = locateMessage(store, messageId)?.thread.id
+    if (threadId !== undefined && [...watched.values()].some((ids) => ids.has(threadId))) {
+      streamedInto.add(threadId)
+    }
+    schedule()
   }
 
   function setWatched(list: readonly RemoteWatchedThread[]): void {
@@ -117,11 +141,11 @@ export function attachRemotePublisher(store: AppStore, api: ApiClient): () => vo
     store.on('threads_changed', schedule),
     store.on('thread_status_changed', schedule),
     store.on('message_added', schedule),
-    store.on('message_token', schedule),
-    store.on('message_reasoning', schedule),
-    store.on('message_done', schedule),
-    store.on('tool_call_started', schedule),
-    store.on('tool_call_updated', schedule),
+    store.on('message_token', messageChanged),
+    store.on('message_reasoning', messageChanged),
+    store.on('message_done', messageChanged),
+    store.on('tool_call_started', messageChanged),
+    store.on('tool_call_updated', messageChanged),
     store.on('todos_changed', schedule),
   ]
   void api.mobile

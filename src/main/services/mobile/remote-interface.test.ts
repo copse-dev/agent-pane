@@ -174,14 +174,37 @@ describe('remote desktop relay', () => {
     assert.deepEqual(changes.at(-1), [])
   })
 
-  it('bounds the threads one client can make it watch', () => {
+  it('bounds the threads clients can make it watch without evicting chats still polled', (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout', 'Date'] })
     const host = new RemoteInterface()
     host.attach(() => {})
-    for (let index = 0; index < 100; index++) {
-      host.snapshot({ projectId: 'p', threadId: `t${String(index)}` })
+    let changes = 0
+    host.onWatchedChange(() => {
+      changes++
+    })
+    const ids = (from: number, to: number): string[] =>
+      Array.from({ length: to - from }, (_, index) => `t${String(from + index)}`)
+    const watchedIds = (): string[] => host.watched().map(({ threadId }) => threadId)
+
+    // Nine open chats polling in turn: the ninth stays on its saved view, and
+    // the first eight keep theirs live instead of evicting one another.
+    for (let round = 0; round < 5; round++) {
+      for (const threadId of ids(0, 9)) host.snapshot({ projectId: 'p', threadId })
+      context.mock.timers.tick(2_500)
     }
-    const watched = host.watched()
-    assert.equal(watched.length, 8)
-    assert.equal(watched.at(-1)?.threadId, 't99', 'the most recent polls are kept')
+    assert.deepEqual(watchedIds().sort(), ids(0, 8).sort())
+    assert.equal(changes, 8, 'the list changed once per admitted chat, not on every poll')
+
+    // A client naming ever more threads cannot grow the list.
+    for (const threadId of ids(9, 100)) host.snapshot({ projectId: 'p', threadId })
+    assert.equal(host.watched().length, 8)
+
+    // Once one chat's polls stop and it lapses, the next chat to poll takes its place.
+    for (let poll = 0; poll < 7; poll++) {
+      context.mock.timers.tick(2_500)
+      for (const threadId of ids(1, 8)) host.snapshot({ projectId: 'p', threadId })
+    }
+    host.snapshot({ projectId: 'p', threadId: 't8' })
+    assert.deepEqual(watchedIds().sort(), ids(1, 9).sort())
   })
 })

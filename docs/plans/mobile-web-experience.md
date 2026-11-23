@@ -10,12 +10,15 @@ With a few large transcripts open, one `remote:publish` call passed 1 GB, and th
 aborted while serializing it, so the window reloaded.
 
 Main now records the threads clients poll through the scoped state read. A poll keeps a thread
-watched for 15 s, and at most 8 threads are watched. Main hands the list to every app window
-(`remote:watched`, `remote:watched-changed`). The desktop publishes transcripts for watched
-threads only, and every other thread as a row in the `messagesLoaded: false` shape clients
-already fill from the saved transcript. It also re-sends a project only when that project
-changed. With no phone watching, a 962-thread project with eight large transcripts loaded
-publishes 0.2 MB instead of about 640 MB.
+watched for 15 s, and at most 8 threads are watched; while 8 are still being polled, a newly
+polled chat stays on its saved view rather than displacing one. Main hands the list to every app
+window (`remote:watched`, `remote:watched-changed`). The desktop publishes transcripts for
+watched threads only, and every other thread as a row in the `messagesLoaded: false` shape
+clients already fill from the saved transcript. It also re-sends a project only when that
+project changed, which includes text and tool calls streamed into a watched thread: the store
+writes those into the message in place, so the publisher marks the watched thread rather than
+relying on a new threads array. With no phone watching, a 962-thread project with eight large
+transcripts loaded publishes 0.2 MB instead of about 640 MB.
 
 The cost: a chat a phone has just opened shows its saved view for one poll, until its live
 view is published.

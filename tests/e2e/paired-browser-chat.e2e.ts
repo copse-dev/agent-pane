@@ -571,6 +571,32 @@ describe('real paired browser chat with the desktop window closed', function () 
     await mobile().$('#connection[data-connected="true"]').waitForExist()
   })
 
+  it('streams an answer into a chat the phone is watching while it is written (#4445)', async () => {
+    // The store writes streamed text into the message in place. A watched chat
+    // must still go out on each change, so the phone sees the answer grow
+    // rather than all at once when the turn ends.
+    const prompt = 'Stream a long answer to the phone.'
+    const answer = 'Streaming to the phone one character at a time until this turn ends.'
+    const scenario = await installMockScenario({
+      title: 'Paired browser streaming',
+      turns: [{ user: prompt, responses: [{ text: answer, chunkDelayMs: 150 }] }],
+    })
+    await send(prompt)
+    await mobile().waitUntil(
+      async () => {
+        const text = await mobile().$('#conversation').getText()
+        return text.includes(answer.slice(0, 'Streaming'.length)) && !text.includes(answer)
+      },
+      {
+        timeout: 30_000,
+        interval: 100,
+        timeoutMsg: 'The phone never showed the answer while it was being written',
+      },
+    )
+    await waitText(answer)
+    await scenario.assertComplete()
+  })
+
   it('preserves drafts through network loss, stops a run, and blocks downgraded or revoked credentials', async () => {
     const scenario = await installMockScenario({
       title: 'Paired browser stop',
