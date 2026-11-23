@@ -33,6 +33,33 @@ describe('blocked model makers in Settings', () => {
         .querySelector('#settings-model-maker-block-host')
         ?.scrollIntoView({ block: 'center' })
     })
+    // Makers fill the grid row by row, three to a row. Every box in a row has to
+    // share its top, or the row reads as ragged.
+    const boxes = await browser.execute(() =>
+      Array.from(
+        document.querySelectorAll(
+          '#settings-model-maker-block-host input[name="blockedModelMakers"]',
+        ),
+        (input) => {
+          const { top, left } = input.getBoundingClientRect()
+          return { top, left }
+        },
+      ),
+    )
+    for (const row of [boxes.slice(0, 3), boxes.slice(3, 6)]) {
+      const [first, ...rest] = row
+      assert.ok(first, 'each row has a maker')
+      let previousLeft = first.left
+      for (const box of rest) {
+        assert.ok(box.left > previousLeft, 'a row runs left to right across the columns')
+        previousLeft = box.left
+        assert.ok(
+          Math.abs(box.top - first.top) <= 1,
+          `maker checkboxes in a row line up: ${JSON.stringify(row)}`,
+        )
+      }
+    }
+
     await block.$('h4').moveTo()
     await saveElementScreenshot('#settings-dialog', 'settings-blocked-model-makers.png')
 
