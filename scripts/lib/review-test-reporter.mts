@@ -65,6 +65,9 @@ export default async function* reviewTestReporter(
   // counts neither failed nor cancelled suites in its summary.
   const recorded = new Set<string>()
   let suiteFailures = 0
+  // Tests that outran their timeout. Each ran and failed, so it is recorded,
+  // but Node cancels it and counts it as cancelled, not failed, in its summary.
+  let timedOut = 0
   // Children cancelled by a parent arrive before that parent's own failure.
   const cancelled: { key: string; suite: boolean }[] = []
   for await (const event of source) {
@@ -126,6 +129,7 @@ export default async function* reviewTestReporter(
       failures.push({ path, name })
       recorded.add(key(data.file, data.testId))
       if (suite) suiteFailures += 1
+      else if (data.details?.error?.failureType === 'testTimeoutFailure') timedOut += 1
     }
     if (type === 'test:summary' && data.file === undefined) {
       if (data.counts === undefined || failed !== undefined) valid = false
@@ -140,11 +144,12 @@ export default async function* reviewTestReporter(
     return false
   }
   if (!cancelled.every((entry) => failedAbove(entry.key))) valid = false
-  if (cancelledInSummary !== cancelled.filter((entry) => !entry.suite).length) valid = false
+  if (cancelledInSummary !== cancelled.filter((entry) => !entry.suite).length + timedOut)
+    valid = false
   const report = testFailureReportSchema.safeParse({
     tier: 'unit-component',
     complete: true,
-    failed: failed === undefined ? undefined : failed + suiteFailures,
+    failed: failed === undefined ? undefined : failed + suiteFailures + timedOut,
     failures,
   })
   if (valid && report.success)

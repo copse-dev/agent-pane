@@ -230,6 +230,41 @@ it('accounts for tests a failed suite cancelled with that suite, so a missing to
   }
 })
 
+it('records a test that outran its timeout, which Node counts as cancelled, and keeps the inventory', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'review-reporter-'))
+  try {
+    const file = join(root, 'slow.test.mjs')
+    await writeFile(
+      file,
+      `import { it } from 'node:test';
+      it('passes', () => {});
+      it('fails', () => { throw Error('failure') });
+      it('times out', { timeout: 50 }, () => new Promise((done) => setTimeout(done, 500)));`,
+    )
+    const childEnv: NodeJS.ProcessEnv = { ...process.env, COPSE_TEST_OUTPUT_DIR: root }
+    delete childEnv['NODE_TEST_CONTEXT']
+    const result = spawnSync(
+      process.execPath,
+      ['--test', `--test-reporter=${resolve('scripts/lib/review-test-reporter.mts')}`, file],
+      { encoding: 'utf8', env: childEnv },
+    )
+    assert.equal(result.status, 1, result.stderr)
+    assert.match(result.stdout, /"failureType":"testTimeoutFailure"/)
+    const report = parseTestFailureReport(result.stdout)
+    assert.ok(report, result.stdout + result.stderr)
+    assert.deepEqual(
+      [...report.failures].sort((a, b) => a.name.localeCompare(b.name)),
+      [
+        { path: 'slow.test.ts', name: 'fails' },
+        { path: 'slow.test.ts', name: 'times out' },
+      ],
+    )
+    assert.equal(report.failed, 2)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 it('leaves the inventory unavailable when a cancelled test has no failed suite above it', async () => {
   const file = join(process.env['COPSE_TEST_OUTPUT_DIR'] ?? process.cwd(), 'example.test.mjs')
   async function* events(): AsyncGenerator<unknown, undefined> {

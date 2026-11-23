@@ -624,8 +624,9 @@ individual failure inventories for Node tests. Copse opts in through `review.con
 Node's final summary, with consistent counts and unique identities. It excludes parent suites that
 failed only because a child did, and normalizes per-run bundle roots and ignores source line
 movement. A suite that fails on its own (a `before` hook that throws because a tool is missing, a
-`describe` body that throws) is one identity, and the tests it cancelled are accounted for by it;
-any other cancelled test leaves the inventory unavailable.
+`describe` body that throws) is one identity, and the tests it cancelled are accounted for by it.
+A test that outruns its timeout is one failure, though Node's summary counts it as cancelled; any
+other cancelled test leaves the inventory unavailable.
 Stage 0 reads the inventory as untrusted data, preserves it in the report and mints one finding
 per new failing identity. It never says a new test passed on base, only that it was absent from the
 base failure inventory. Missing/ambiguous inventories or other doubly-failing check kinds remain
