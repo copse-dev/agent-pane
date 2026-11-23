@@ -42,6 +42,8 @@ export interface Stage2Options extends ReviewerToolHost {
    * `view_image`, whose result would put an image in front of it. Default true.
    */
   readonly canSeeImages?: boolean | undefined
+  /** The model's context window; see `TurnOptions.contextTokens`. */
+  readonly contextTokens?: number | undefined
 }
 
 export interface Stage2Result {
@@ -97,6 +99,7 @@ export async function runStage2(options: Stage2Options): Promise<Stage2Result> {
         ? reviewerTools().filter((tool) => tool.name !== 'view_image')
         : reviewerTools(),
     execute: (name, args, signal, toolCallId) => executor.execute(name, args, signal, toolCallId),
+    contextTokens: options.contextTokens,
     threadId: options.threadId,
     turnId: options.turnId,
     maxSteps,
@@ -158,6 +161,8 @@ export interface ReviewerSpec {
   readonly lenses?: readonly Lens[] | undefined
   /** See {@link Stage2Options.canSeeImages}. */
   readonly canSeeImages?: boolean | undefined
+  /** The model's context window; see `TurnOptions.contextTokens`. */
+  readonly contextTokens?: number | undefined
 }
 
 export interface FanOutOptions extends ReviewerToolHost {
@@ -202,6 +207,7 @@ export async function runReviewers(options: FanOutOptions): Promise<Stage2Result
           onEvent: options.onEvent,
           maxSteps: options.maxSteps,
           canSeeImages: reviewer.canSeeImages,
+          contextTokens: reviewer.contextTokens,
         }),
       )
     }

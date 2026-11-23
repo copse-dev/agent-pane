@@ -61,6 +61,20 @@ export interface TurnTiming {
   readonly modelAndOverheadMs: number
 }
 
+/**
+ * Headroom for the review tools' JSON schemas in each request, as the app
+ * reserves for an LM Studio model (`toolSchemaReserveForModel`).
+ */
+const REVIEW_TOOL_SCHEMA_RESERVE_TOKENS = 2_500
+
+/**
+ * The share of a model's context the loop may fill. It trims against the
+ * previous request's measured size, so the next request also carries that
+ * step's new tool results; the rest is headroom for them, so the request a
+ * local server receives still fits its window.
+ */
+export const REVIEW_CONTEXT_FILL = 0.75
+
 export interface TurnOptions {
   readonly provider: LLMProvider
   /** Model id, for usage attribution. */
@@ -77,6 +91,13 @@ export interface TurnOptions {
   readonly threadId: string
   readonly turnId: string
   readonly maxSteps: number
+  /**
+   * The model's context window, in tokens, when its server says so (a local
+   * model's loaded context). The loop then drops the oldest investigation steps
+   * itself before a request would overflow it, never the review request; left
+   * to the server, an overflowing request is cut from the middle unnoticed.
+   */
+  readonly contextTokens?: number | undefined
   /** A role-specific completion invariant, checked before the terminal event is emitted. */
   readonly completionError?: (() => string | undefined) | undefined
   /**
@@ -193,6 +214,12 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
       },
       ...(options.signal ? { signal: options.signal } : {}),
       maxSteps,
+      ...(options.contextTokens === undefined
+        ? {}
+        : {
+            maxContextTokens: Math.floor(options.contextTokens * REVIEW_CONTEXT_FILL),
+            toolSchemaReserveTokens: REVIEW_TOOL_SCHEMA_RESERVE_TOKENS,
+          }),
       ...(settings.maxLlmCalls !== undefined ? { maxLlmCalls: settings.maxLlmCalls } : {}),
       ...(settings.initialToolChoice ? { initialToolChoice: settings.initialToolChoice } : {}),
       adaptiveExtensions: false,

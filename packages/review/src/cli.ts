@@ -81,7 +81,7 @@ import {
 import { decodeStage0Report } from './stage0-report.ts'
 import { DEFAULT_PREPARE_TIMEOUT_MS } from './project-commands.ts'
 import { runReviewers, type Stage2Result } from './stage2.ts'
-import { verifyFindings, type Stage4Result } from './stage4.ts'
+import { verifyFindings, type Stage4Result, type VerifierRole } from './stage4.ts'
 import {
   assembleReviewReport,
   canonicalFindings,
@@ -965,6 +965,14 @@ export async function main(argv: readonly string[], callerIo: CliIo): Promise<He
           scrub: (text: string): string => ground.scrub(text),
           fetchRemoteImage,
         }
+        // The context a local model is loaded with, so its turns trim their own
+        // history to fit instead of the server cutting the request unnoticed.
+        const loadedContext = (model: string): number | undefined => {
+          const info = preflight?.models.get(model)
+          return info?.loaded === true && info.loadedContextLength !== null
+            ? info.loadedContextLength
+            : undefined
+        }
         // A model its server says is text-only neither runs the visual lens
         // nor is offered view_image, whose result would put an image in front
         // of it. Unknown (a server with no catalogue) counts as able to see.
@@ -974,6 +982,7 @@ export async function main(argv: readonly string[], callerIo: CliIo): Promise<He
             model: selection.model,
             providerFor: (lens: Lens): LLMProvider => selection.providerFor(`review:${lens.id}`),
             canSeeImages,
+            contextTokens: loadedContext(selection.model),
           }
           if (canSeeImages || !reviewLenses.includes(VISUAL_LENS)) return [spec]
           io.stderr(
@@ -1001,9 +1010,10 @@ export async function main(argv: readonly string[], callerIo: CliIo): Promise<He
         })
         findings = canonicalFindings(stage0, reviews)
         if (!values['no-verify']) {
-          const role = (name: string): { model: string; provider: LLMProvider } => ({
+          const role = (name: string): VerifierRole => ({
             model: challengerSelection.model,
             provider: challengerSelection.providerFor(name),
+            contextTokens: loadedContext(challengerSelection.model),
           })
           let baseReady: Promise<void> | undefined
           verification = await verifyFindings({

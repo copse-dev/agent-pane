@@ -14,6 +14,7 @@ import { z } from 'zod'
 import { errorMessage } from '@copse/std/errors.ts'
 import { safeJsonParse, decodeWithSchema } from '@copse/std/safe-json.ts'
 import type { LocalEndpoint } from './provider-selection.ts'
+import { REVIEW_CONTEXT_FILL } from './turn.ts'
 
 /** One model as the local server describes it. Every field the server omits is null. */
 export interface LocalModelInfo {
@@ -177,10 +178,11 @@ export async function probeLocalModel(
 /**
  * The context a review needs from a model, in tokens: the Stage 1 context at
  * a conservative three characters per token, plus the system prompt, the tool
- * schemas and room for a dozen tool results.
+ * schemas and room for a dozen tool results, within the share of the window a
+ * review turn lets its history fill (`REVIEW_CONTEXT_FILL`).
  */
 export function requiredContextTokens(budgetChars: number): number {
-  return Math.ceil(budgetChars / 3) + 16_384
+  return Math.ceil((Math.ceil(budgetChars / 3) + 16_384) / REVIEW_CONTEXT_FILL)
 }
 
 /** One route the pre-flight checks: a model behind a local server. */
