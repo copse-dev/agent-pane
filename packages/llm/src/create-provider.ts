@@ -235,6 +235,9 @@ export function createLocalOpenAIProvider(
     includeUsage: true,
     params: withoutVerbosity(params),
     reasoningSuppressionBody: LOCAL_REASONING_SUPPRESSION_BODY,
+    // LM Studio rejects a named tool_choice when reasoning is on; `required`
+    // with only that tool offered forces the same call on every local engine.
+    forcedToolChoice: 'only-tool',
     ...(ceiling === undefined ? {} : { maxOutputTokens: ceiling }),
   })
 }

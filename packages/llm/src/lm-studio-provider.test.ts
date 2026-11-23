@@ -1,3 +1,4 @@
+import { isRecord } from '@copse/std/unknown-value.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { ToolCallRequestError, type Chat, type LLMRespondOpts } from '@lmstudio/sdk'
@@ -276,6 +277,32 @@ async function collect(provider: LMStudioProvider): Promise<ProviderStreamChunk[
 }
 
 describe('LMStudioProvider', () => {
+  it('forces a named tool by offering only it, with the SDK told a tool call is required', async () => {
+    const client = new FakeClient()
+    const provider = new LMStudioProvider('local-model', { client })
+    const tools = [
+      { name: 'report_finding', description: 'Report', parameters: { type: 'object' } },
+      { name: 'finish_review', description: 'Finish', parameters: { type: 'object' } },
+    ]
+    for await (const _ of provider.stream([{ role: 'user', content: 'Finish' }], tools, undefined, {
+      toolChoice: { name: 'finish_review' },
+    })) {
+      // Drain the stream so the provider sends and captures the request options.
+    }
+    assert.deepEqual(Reflect.get(client.modelHandle.opts ?? {}, 'toolChoice'), {
+      type: 'generic',
+      mode: 'required',
+    })
+    const rawTools: unknown = Reflect.get(client.modelHandle.opts ?? {}, 'rawTools')
+    assert.ok(isRecord(rawTools) && Array.isArray(rawTools['tools']))
+    assert.deepEqual(
+      rawTools['tools'].map((tool: unknown) =>
+        isRecord(tool) && isRecord(tool['function']) ? tool['function']['name'] : null,
+      ),
+      ['finish_review'],
+    )
+  })
+
   it('retains union actions, shared required fields and branch constraints in SDK tools', async () => {
     const client = new FakeClient()
     const provider = new LMStudioProvider('local-model', { client })
