@@ -315,9 +315,20 @@ describe('copse-review pr', () => {
     )
     await writeFile(join(registry, 'copse-review-pr-dead-1.active'), '')
     await mkdir(join(reviewCache, 'scratch', 'review-dead', 'head'), { recursive: true })
+    // Its store-fill seed and its staging directory, which only its own
+    // `finally` would have removed.
+    const seed = join(reviewCache, 'seed-dead')
+    await mkdir(seed)
+    const staging = join(await repositoryDir(), 'pr-7', 'abc-dead.partial-dead')
+    await mkdir(staging, { recursive: true })
 
     assert.equal(await review(['--fresh']), HEADLESS_EXIT.SUCCESS, err)
-    assert.match(err, /cleared what an earlier review left: 1 container\(s\), 1 scratch/)
+    assert.match(
+      err,
+      /cleared what an earlier review left: 1 container\(s\), 1 scratch directory\(ies\), 2 half-made run directory\(ies\)/,
+    )
+    await assert.rejects(access(seed), /ENOENT/)
+    await assert.rejects(access(staging), /ENOENT/)
     await access(join(registry, 'copse-review-pr-dead-1.removed'))
     await assert.rejects(access(join(registry, 'copse-review-pr-dead-1.active')), /ENOENT/)
     assert.deepEqual(await readdir(join(reviewCache, 'scratch')), [])

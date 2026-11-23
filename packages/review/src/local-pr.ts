@@ -818,7 +818,13 @@ export async function localPullRequestMain(
     // Apple container has no `--rm`, so a stopped cell and its checkout would
     // stay for good. This machine's lock is held here, so whatever an earlier
     // run left behind is no live review's: remove it now.
-    for (const entry of await sweepEarlierRun(io, journal, scratchParent)) {
+    for (const entry of await sweepEarlierRun(io, {
+      journal,
+      scratchParent,
+      cacheRoot,
+      reviewsRoot: join(dataRoot, 'reviews'),
+      ownSeed: seed,
+    })) {
       pending.set(entry.name, entry)
     }
     journalling = true
@@ -1003,17 +1009,44 @@ const decodeJournalEntry = decodeWithSchema(journalEntrySchema)
 /** How long the sweep waits on each container an earlier run left. */
 const SWEEP_REMOVAL_MS = 60_000
 
+/** Where a run keeps what a hard kill would leave behind. */
+interface SweepPaths {
+  readonly journal: string
+  readonly scratchParent: string
+  /** Holds each run's `seed-*` store-fill directory. */
+  readonly cacheRoot: string
+  /** `reviews/<repository>/<label>/`, where a run stages `<dir>.partial-*`. */
+  readonly reviewsRoot: string
+  /** This run's own seed, which may already be in use. */
+  readonly ownSeed: string
+}
+
+/** The `.partial-*` run directories under `reviews/<repository>/<label>/`. */
+async function unfinishedRunDirectories(reviewsRoot: string): Promise<string[]> {
+  const dirs = async (path: string): Promise<string[]> =>
+    (await readdir(path, { withFileTypes: true }).catch(() => []))
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => join(path, entry.name))
+  const found: string[] = []
+  for (const repository of await dirs(reviewsRoot)) {
+    for (const label of await dirs(repository)) {
+      for (const run of await dirs(label)) {
+        if (basename(run).includes('.partial-')) found.push(run)
+      }
+    }
+  }
+  return found
+}
+
 /**
  * Remove what a review that never finished left behind: the cell containers
- * it journalled, each with the engine that made it, and its scratch
- * checkouts. Only called with this machine's review lock held, so nothing
- * here belongs to a live review. Returns the containers still there.
+ * it journalled, each with the engine that made it, its scratch checkouts,
+ * its store-fill seed and its half-made run directory. Only called with this
+ * machine's review lock held, so nothing here belongs to a live review.
+ * Returns the containers still there.
  */
-async function sweepEarlierRun(
-  io: LocalPrIo,
-  journal: string,
-  scratchParent: string,
-): Promise<JournalEntry[]> {
+async function sweepEarlierRun(io: LocalPrIo, paths: SweepPaths): Promise<JournalEntry[]> {
+  const { journal, scratchParent } = paths
   const text = await readFile(journal, 'utf8').catch(() => '')
   const entries = new Map<string, JournalEntry>()
   for (const line of text.split('\n')) {
@@ -1033,9 +1066,17 @@ async function sweepEarlierRun(
   }
   const scratch = await readdir(scratchParent).catch(() => [])
   for (const name of scratch) await rm(join(scratchParent, name), { recursive: true, force: true })
-  if (entries.size > stuck.length || scratch.length > 0) {
+  const halfMade = [
+    ...(await readdir(paths.cacheRoot).catch(() => []))
+      .filter((name) => name.startsWith('seed-'))
+      .map((name) => join(paths.cacheRoot, name))
+      .filter((path) => path !== paths.ownSeed),
+    ...(await unfinishedRunDirectories(paths.reviewsRoot)),
+  ]
+  for (const path of halfMade) await rm(path, { recursive: true, force: true })
+  if (entries.size > stuck.length || scratch.length > 0 || halfMade.length > 0) {
     io.stderr(
-      `copse-review pr: cleared what an earlier review left: ${String(entries.size - stuck.length)} container(s), ${String(scratch.length)} scratch directory(ies)\n`,
+      `copse-review pr: cleared what an earlier review left: ${String(entries.size - stuck.length)} container(s), ${String(scratch.length)} scratch directory(ies)${halfMade.length > 0 ? `, ${String(halfMade.length)} half-made run directory(ies)` : ''}\n`,
     )
   }
   await writeFile(journal, stuck.map((entry) => `${JSON.stringify(entry)}\n`).join(''))

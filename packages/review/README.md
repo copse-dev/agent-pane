@@ -338,7 +338,8 @@ clean. The model routes are checked before the run waits for another review. A c
 the engine is too slow to remove does not cost its check's result; one still left when
 the review ends is named with the command that removes it. Each cell container is
 journalled before it is created, so the next run removes whatever a killed review left
-(Apple container has no `--rm`), along with its scratch checkouts.
+(Apple container has no `--rm`), along with its scratch checkouts, its store-fill seed and
+its half-made run directory.
 
 ### On a Mac Studio
 
