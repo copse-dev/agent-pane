@@ -4738,28 +4738,32 @@
       "bytes": 223192
     },
     "settings-machines-connected.png": {
-      "sha256": "92cbb6ca187e225ba8be87e738fa7473ca325dc53b40bedbb4601192d58ae82c",
-      "bytes": 250526
+      "sha256": "5344933464565cb31d98e2545f67ee0fec133e70adcada14341add82ca74cd86",
+      "bytes": 326322
     },
     "settings-machines-disabled.png": {
-      "sha256": "7e11b5c3c878150b25d91cfb4b88eb83c128319ca6281ade837f5fe7348a2771",
-      "bytes": 240199
+      "sha256": "8d304536c966eb8750749cc42e96706d99dd363a1da6f9cf9c8176e7c34044e5",
+      "bytes": 278624
     },
     "settings-machines-experimental.png": {
       "sha256": "658133b351cde4e3d5f5949b031b00a47d348ca995959e6bbbcf9fa476c7ab12",
       "bytes": 43754
     },
+    "settings-machines-list.png": {
+      "sha256": "d3a72c8eb6781e1ee55bd7c31c8a37920061487733b834d1803770c15fe3469a",
+      "bytes": 102793
+    },
     "settings-machines-locked.png": {
-      "sha256": "600fee6c5269e59eba0ec0b91759af898429d61c2359eaeac20017d562a57d3e",
-      "bytes": 258129
+      "sha256": "afb3a67d1780123d307f79f51b8a4897629fae0a0e884451a064015a1932c8fe",
+      "bytes": 291744
     },
     "settings-machines-offline.png": {
-      "sha256": "75117868ba9a3ba86ede65b69f6e08fb22298428633cbd4993328e7070d9efae",
-      "bytes": 243516
+      "sha256": "edbc471593eb490834cfbf3105ca49493637d2cd9773ae1ade320374b9b633a5",
+      "bytes": 330897
     },
     "settings-machines-paused.png": {
-      "sha256": "1e133c069177b80917ec628ef0363ba29fc3d94ffc67b2ed3acef2629b3491bf",
-      "bytes": 275792
+      "sha256": "c5e2d7b5cae2b73e2ae497ce52ad9027617502512dff74a0cf3648c560126e6a",
+      "bytes": 285105
     },
     "settings-machines-sharing.png": {
       "sha256": "f03a8c1c870fe7cb91a0d2cae09a70aac50f7dbe3e0bf75f395874897f98c629",
