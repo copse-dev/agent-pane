@@ -49201,6 +49201,50 @@ function createMobileCompanionSection(api) {
     "Remove name"
   );
   const nameStatus = el("span", { class: "mobile-companion-name-status" });
+  const relayInput = el("input", { type: "checkbox", name: "mobileCompanionRelay" });
+  const relayStatus = el("div", { class: "mobile-companion-relay-status" });
+  const shellPairBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary" },
+    "Add this Mac at copse.me"
+  );
+  const shellPairRow = el("div", { class: "settings-action-row" }, shellPairBtn);
+  const shellQrImage = el("div", { class: "mobile-companion-qr-image", "aria-hidden": "true" });
+  const shellQrHint = el("p", { class: "field-hint" });
+  const shellDoneBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact" },
+    "Done"
+  );
+  const shellQr = el(
+    "div",
+    { id: "mobile-companion-shell-qr", class: "mobile-companion-qr", hidden: true },
+    shellQrImage,
+    el(
+      "div",
+      { class: "mobile-companion-qr-text" },
+      shellQrHint,
+      el("div", { class: "settings-action-row" }, shellDoneBtn)
+    )
+  );
+  const relayBlock = el(
+    "div",
+    { class: "mobile-companion-relay", hidden: true },
+    el(
+      "label",
+      { class: "checkbox-label" },
+      relayInput,
+      " Reach this Mac from anywhere through copse.me"
+    ),
+    el(
+      "p",
+      { class: "field-hint" },
+      "Phones you add at copse.me connect through the Copse relay when they are away from this network. The relay passes the encrypted connection straight to this Mac and cannot read it; it sees when, and from which address, a phone connects. Each phone still pairs with this Mac, and you approve it here."
+    ),
+    relayStatus,
+    shellPairRow,
+    shellQr
+  );
   const nameCard = el(
     "fieldset",
     { class: "mobile-companion-name" },
@@ -49209,6 +49253,7 @@ function createMobileCompanionSection(api) {
     inviteRow,
     nameSummary,
     dnsNote,
+    relayBlock,
     el("div", { class: "settings-action-row" }, removeNameBtn),
     nameStatus
   );
@@ -49363,6 +49408,59 @@ function createMobileCompanionSection(api) {
     if (name.lastError) setInlineStatus(nameStatus, "error", name.lastError);
     else nameStatus.replaceChildren();
   }
+  function renderRelay(state) {
+    const relay = state.relay;
+    if (!relay || state.publicName.state === "unregistered") {
+      relayBlock.hidden = true;
+      return;
+    }
+    relayBlock.hidden = false;
+    relayInput.checked = relay.enabled;
+    shellPairRow.hidden = !relay.enabled;
+    shellPairBtn.toggleAttribute("disabled", state.publicName.state !== "active");
+    renderRelayStatus(state, relay);
+    const pairing = relay.enabled ? state.shellPairing ?? null : null;
+    if (pairing?.qrSvg && pairing.expiresAt > Date.now()) {
+      shellQrImage.innerHTML = pairing.qrSvg;
+      shellQrHint.textContent = `Scan with your phone\u2019s camera, sign in at copse.me with a passkey and add this Mac. Then pair the phone in the page that opens. The code works once and expires at ${formatClock(pairing.expiresAt)}; Done only hides it.`;
+      shellQr.hidden = false;
+      shellPairBtn.textContent = "Show a new code";
+    } else {
+      shellQr.hidden = true;
+      shellPairBtn.textContent = "Add this Mac at copse.me";
+    }
+  }
+  function renderRelayStatus(state, relay) {
+    switch (relay.status) {
+      case "off":
+        relayStatus.replaceChildren();
+        return;
+      case "connected":
+        setInlineStatus(
+          relayStatus,
+          "ok",
+          `Connected to ${relay.relay}. Phones added at copse.me reach this Mac as ${relay.hostname ?? "its web name"}.`
+        );
+        return;
+      case "connecting":
+        setInlineStatus(relayStatus, "pending", `Connecting to ${relay.relay}\u2026`);
+        return;
+      case "retrying":
+        setInlineStatus(
+          relayStatus,
+          "warn",
+          `${relay.error ?? "The relay connection dropped."} Trying again${relay.retryAt ? ` at ${formatClock(relay.retryAt)}` : ""}.`
+        );
+        return;
+      case "waiting":
+        setInlineStatus(
+          relayStatus,
+          "idle",
+          relay.error ?? (!state.running ? "Connects to the relay while Mobile Companion is on." : state.publicName.state !== "active" ? "Connects to the relay once this name is active again." : "Connects to the relay once this name has a certificate.")
+        );
+        return;
+    }
+  }
   function renderDns(hostname3, dns) {
     if (dns === "ok" || dns === "unknown") return;
     if (dns === "checking") {
@@ -49420,7 +49518,7 @@ function createMobileCompanionSection(api) {
           "p",
           { class: "field-hint" },
           "Read only shares thread names, saved messages, and activity. Allow control also lets this phone send messages, start chats, stop runs, answer questions, and approve individual requests. Only pair a phone you hold.",
-          pairing.trustedName ? " This phone connected over this Mac\u2019s trusted name, and its browser verified the certificate." : " Confirm below that the Copse Local Root is installed and trusted on this phone before allowing control."
+          pairing.relayed ? " This phone connected through the Copse relay (copse.me), and its browser verified this Mac\u2019s certificate." : pairing.trustedName ? " This phone connected over this Mac\u2019s trusted name, and its browser verified the certificate." : " Confirm below that the Copse Local Root is installed and trusted on this phone before allowing control."
         ),
         ...pairing.trustedName ? [] : [
           el(
@@ -49505,6 +49603,7 @@ function createMobileCompanionSection(api) {
     renderAddresses(state);
     renderConnection(state);
     renderPublicName(state);
+    renderRelay(state);
     renderPairing(state);
     renderDevices(state);
     if (state.lastError) setInlineStatus(status, "error", state.lastError);
@@ -49553,6 +49652,24 @@ function createMobileCompanionSection(api) {
   recheckBtn.addEventListener("click", () => {
     void api.mobile.recheckNameDns();
   });
+  relayInput.addEventListener("change", () => {
+    void api.mobile.setRelayEnabled(relayInput.checked).catch((error62) => {
+      if (lastState) renderRelay(lastState);
+      setInlineStatus(
+        relayStatus,
+        "error",
+        ipcErrorMessage(error62, "Could not change the relay setting.")
+      );
+    });
+  });
+  shellPairBtn.addEventListener("click", () => {
+    void api.mobile.createShellPairing().catch((error62) => {
+      setInlineStatus(relayStatus, "error", ipcErrorMessage(error62, "Could not make a code."));
+    });
+  });
+  shellDoneBtn.addEventListener("click", () => {
+    void api.mobile.clearShellPairing();
+  });
   async function refresh() {
     const state = await api.mobile.getState();
     applyState(state);
@@ -49567,7 +49684,7 @@ function createMobileCompanionSection(api) {
     el(
       "p",
       { class: "field-hint" },
-      "Open your Copse threads from a phone on the same local network. Choose the network interface your phone uses, pair phones, or turn sharing off. Copse must stay open and this computer must stay awake."
+      "Open your Copse threads from a phone on the same local network, or from anywhere through copse.me once this Mac has a trusted address. Choose the network interface your phone uses, pair phones, or turn sharing off. Copse must stay open and this computer must stay awake."
     ),
     el("label", { class: "checkbox-label" }, enabledInput, " Enable Mobile Companion"),
     el("label", {}, "Network ", addressSelect),
@@ -49579,6 +49696,9 @@ function createMobileCompanionSection(api) {
     status
   );
   return { root, refresh };
+}
+function formatClock(ms) {
+  return new Date(ms).toLocaleTimeString(void 0, { hour: "numeric", minute: "2-digit" });
 }
 function formatTime(ms) {
   return new Date(ms).toLocaleString(void 0, {
