@@ -158,9 +158,10 @@ it('walks each contested range once for a batch while preserving manual, main an
       .filter(
         (line) => line.includes('log ') && line.includes('--format=%H') && !line.includes('%an'),
       )
+    // Hydration and the flap check share one walk of the shot's history.
     assert.equal(
       histories.length,
-      2,
+      1,
       'only the bot-owned real change needs hydration and flap history',
     )
     for (const line of histories) assert.match(line, /screenshots\/bot\.png/)

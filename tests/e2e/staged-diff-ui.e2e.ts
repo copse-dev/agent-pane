@@ -91,7 +91,7 @@ describe('staged diff approval UI', () => {
       { timeout: 30_000, timeoutMsg: 'expected write_file tool card' },
     )
 
-    await expect($('.titlebar-btn[aria-label="Open changes"]')).toHaveElementClass('active')
+    await expect($('.titlebar-btn[aria-label="Open review"]')).toHaveElementClass('active')
     await $('#git-changes-host').waitForDisplayed({ timeout: 30_000 })
     await $('.git-changes-section-proposed').waitForDisplayed({ timeout: 30_000 })
     await $('#git-diff-viewer-host .monaco-diff-editor').waitForDisplayed({ timeout: 30_000 })
@@ -322,7 +322,7 @@ describe('staged diff approval UI', () => {
     await $('.git-changes-section-proposed').waitForDisplayed({ timeout: 30_000 })
 
     const before = await browser.getWindowHandles()
-    const popoutBtn = await $('#git-changes-host .pane-popout-btn').getElement()
+    const popoutBtn = await $('.review-header .git-changes-header .pane-popout-btn').getElement()
     await popoutBtn.waitForClickable({ timeout: 10_000 })
     await popoutBtn.click()
 
