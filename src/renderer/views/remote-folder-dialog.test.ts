@@ -121,9 +121,13 @@ const entryNames = (): string[] =>
     (entry) => entry.textContent,
   )
 
-/** Lets the dialog's awaited calls settle. */
+/**
+ * Lets the dialog's awaited calls settle. A zero-delay macrotask runs only once
+ * every pending microtask has, so this holds however many awaits the dialog
+ * gains; a fixed count of microtask turns broke when a refactor added one.
+ */
 async function settle(): Promise<void> {
-  for (let turn = 0; turn < 10; turn += 1) await Promise.resolve()
+  await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
 function chooseHost(hostId: string): void {
