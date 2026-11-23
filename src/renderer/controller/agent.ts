@@ -37,7 +37,7 @@ import {
 import { takeSendNowAbort } from './send-now-aborts.ts'
 import { backgroundProjectOf, dropBackgroundThread } from './background-threads.ts'
 import { applyRuntimeOwnedChunk, isRuntimeOwnedMessage } from './runtime-transcript.ts'
-import type { Message, Thread, TranscriptAnnotation } from '@shared/types'
+import type { Message, Thread, TranscriptAnnotation, TranscriptStamp } from '@shared/types'
 import { mark as perfMark } from '../perf.ts'
 
 export function startAgentController(store: AppStore, api: ApiClient): () => void {
@@ -307,7 +307,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
   const unsub = api.agent.onChunk((threadId, chunk, stamp) => {
     // A new turn sends its snapshot before its first chunk. A reloaded window
     // ignores missed-prefix chunks until attachment restores that checkpoint.
-    if (stamp && !attached.has(threadId)) return
+    if (stamp && !attached.has(threadId) && !lateUpdateApplies(store, threadId, stamp)) return
     const st = get(threadId)
     const firstVisibleActivity =
       chunk.type === 'tool_call' ||
@@ -534,6 +534,26 @@ function mayBeBehindMain(store: AppStore, thread: Thread): boolean {
     thread.interruptedTurnAt !== undefined ||
     (thread.pendingMessages?.length ?? 0) > 0 ||
     hasPendingDispatch(store, thread.id)
+  )
+}
+
+/**
+ * Whether a stamped chunk for a thread this window has not attached can land
+ * anyway. Attach skips threads drawn from the same disk state main has, so a
+ * thread opened later is read from disk but never attached. Main still writes
+ * and forwards updates outside any turn, such as a background command exiting
+ * after its turn ended: those carry no messages. Once this window has read
+ * the thread whole and no turn is running in it, such an update is as current
+ * as the copy it patches. Output of a turn always follows that turn's own
+ * snapshot, so a chunk that names messages still waits for attachment.
+ */
+function lateUpdateApplies(store: AppStore, threadId: string, stamp: TranscriptStamp): boolean {
+  if (stamp.messageIds.length > 0) return false
+  const thread = getThreadById(store, threadId)
+  return (
+    thread?.messagesLoaded === true &&
+    thread.status !== 'running' &&
+    !hasPendingDispatch(store, threadId)
   )
 }
 
