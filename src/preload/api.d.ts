@@ -248,6 +248,11 @@ export interface ApiClient {
     /** Delete this Mac's name from the names service and forget its device key. */
     removeName: () => Promise<void>
     recheckNameDns: () => Promise<void>
+    /** Choose whether phones paired at copse.me reach this Mac through the Copse relay. */
+    setRelayEnabled: (enabled: boolean) => Promise<void>
+    /** Show a one-time code that adds this Mac to a copse.me account; it arrives as state. */
+    createShellPairing: () => Promise<void>
+    clearShellPairing: () => Promise<void>
     onChat: (
       handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void,
     ) => () => void

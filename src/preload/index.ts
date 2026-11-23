@@ -110,6 +110,9 @@ const api: ApiClient = {
     registerName: (invite: string) => ipcRenderer.invoke('mobile:register-name', invite),
     removeName: () => ipcRenderer.invoke('mobile:remove-name'),
     recheckNameDns: () => ipcRenderer.invoke('mobile:recheck-name-dns'),
+    setRelayEnabled: (enabled: boolean) => ipcRenderer.invoke('mobile:set-relay-enabled', enabled),
+    createShellPairing: () => ipcRenderer.invoke('mobile:create-shell-pairing'),
+    clearShellPairing: () => ipcRenderer.invoke('mobile:clear-shell-pairing'),
     onChat: (handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void) => {
       const listener = (
         _event: Electron.IpcRendererEvent,
