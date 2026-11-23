@@ -62,13 +62,12 @@ export function instructionsAheadOfCompaction(
   messages: readonly LLMMessage[],
   anchor: number,
 ): LLMMessage[] {
+  const ahead = messages.slice(0, anchor)
   const steeringFollows = messages.slice(anchor + 1).some((m) => m.role === 'developer')
-  const newestSteering = steeringFollows
-    ? -1
-    : messages.slice(0, anchor).findLastIndex((m) => m.role === 'developer')
-  return messages
-    .slice(0, anchor)
-    .filter((m, i) => m.role === 'system' || (m.role === 'developer' && i === newestSteering))
+  const newestSteering = steeringFollows ? -1 : ahead.map((m) => m.role).lastIndexOf('developer')
+  return ahead.filter(
+    (m, i) => m.role === 'system' || (m.role === 'developer' && i === newestSteering),
+  )
 }
 
 /** A message a provider that does not own provider state can convert to its wire format. */
