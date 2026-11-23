@@ -1,3 +1,4 @@
+import { openReviewPicker } from './helpers/review-pane.ts'
 import { mkdirSync } from 'node:fs'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
@@ -74,7 +75,7 @@ describe('PR panel mixed-case GitHub identity', () => {
       await $('.titlebar-panel-controls .titlebar-btn[aria-label="Toggle right panel"]').click()
       await pane.waitForDisplayed({ timeout: 10_000 })
     }
-    await $('[aria-label="Open pull requests"]').click()
+    await openReviewPicker()
 
     const linked = await $('.pr-list-row[data-pr-section="linked"]').getElement()
     await linked.waitForDisplayed({ timeout: 15_000 })

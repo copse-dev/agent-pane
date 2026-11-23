@@ -2627,8 +2627,11 @@ jobs:
     # cold runner, not the steady state. Raised again from 20 because the
     # filter itself scales with the candidate count: a PR restyling shared
     # surfaces rendered ~870 changed screenshots and the filter step took
-    # over 17 minutes, so 20 cancelled the job in most runs.
-    timeout-minutes: 30
+    # over 17 minutes, so 20 cancelled the job in most runs. Raised again from
+    # 30 after run 44012520378 on #4359 (the drift refresh PR, 846 changed
+    # shots) was cancelled mid-filter at 30 minutes, with its flap history
+    # walk for 431 shots still running.
+    timeout-minutes: 60
     permissions:
       contents: read
     steps:

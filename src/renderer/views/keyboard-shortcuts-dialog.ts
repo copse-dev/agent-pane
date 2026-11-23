@@ -76,7 +76,7 @@ const SECTIONS: ShortcutSection[] = [
       { label: 'Toggle panel', keys: ['Mod', 'J'] },
       { label: 'Explorer', keys: ['Mod', 'Shift', 'E'] },
       { label: 'Terminal', keys: ['Mod', '`'] },
-      { label: 'Changes', keys: ['Mod', 'Shift', 'G'] },
+      { label: 'Review', keys: ['Mod', 'Shift', 'G'] },
       { label: 'Browser', keys: ['Mod', 'Shift', 'B'] },
       { label: 'Focus browser address bar', keys: ['Mod', 'L'] },
       // Same physical key as above: while the browser page itself has focus,
