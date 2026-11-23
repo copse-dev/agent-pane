@@ -145,6 +145,18 @@ describe('browser-hosted tool permission settings', () => {
     await expect(toggle).toHaveAttribute('aria-expanded', 'true')
     await expect(description.$('code=run_shell')).toBeDisplayed()
     await expect(description.$('li=Commands run in the active workspace.')).toBeDisplayed()
+    // The group has no frame, so the description starts at the panel's edge. A
+    // list indents its own markers rather than hanging them into the gutter.
+    const listInset = await browser.execute(() => {
+      const text = document.querySelector(
+        '[data-tool-id="copse:run-shell"] .tool-permission-description',
+      )
+      const item = text?.querySelector('li')
+      return text && item
+        ? item.getBoundingClientRect().left - text.getBoundingClientRect().left
+        : -1
+    })
+    assert.ok(listInset >= 12, `list items start ${String(listInset)}px inside the description`)
     await expect(description.$('pre code')).toHaveText('pnpm test')
     assert.ok((await description.getSize()).height > compactHeight)
     await saveElementScreenshot('#settings-dialog', 'settings-tool-descriptions-expanded.png')

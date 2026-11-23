@@ -195,6 +195,13 @@
   margin-block: var(--spacing-xs);
 }
 
+/* A list in a description indents its own markers. Without a group frame the
+   description starts at the panel's edge, so markers hung outside the list
+   would sit in the page gutter. */
+.tool-permission-description :is(ul, ol) {
+  padding-inline-start: 1.25em;
+}
+
 .tool-permission-description pre {
   max-width: 100%;
   overflow-x: auto;
