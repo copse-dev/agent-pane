@@ -1154,8 +1154,9 @@ Collected from design review — each of these was _almost_ a bug in the plan it
   streams a **reasoning-suppressed, tool-enabled** recovery turn — `LLMStreamOptions.suppressReasoning`
   (a best-effort provider hint: `OpenAIProvider` sends its `reasoningSuppressionBody`, set only by
   `createLocalOpenAIProvider` and the Terminal-Bench providers as `reasoning_effort: 'none'` +
-  `chat_template_kwargs.enable_thinking: false`; the native LM Studio SDK, Anthropic and hosted
-  OpenAI ignore it) under `reasoningRunawaySuppressedOutputTokens` (default 1K; tool calls are
+  `chat_template_kwargs.enable_thinking: false`; `LMStudioProvider`, whose native SDK has no such
+  field, sends that one call through the `createLocalOpenAIProvider` route `createLMStudioProvider`
+  gives it; Anthropic and hosted OpenAI ignore it) under `reasoningRunawaySuppressedOutputTokens` (default 1K; tool calls are
   exempt, so a bare tool call always lands) and a checkpoint hard max clamped to match; cut 3 ends
   the run with the give-up message and `done.stopReason = 'reasoning_runaway_exhausted'`
   (`REASONING_RUNAWAY_EXHAUSTED_STOP_REASON`), which the bench harness records as its stop reason.

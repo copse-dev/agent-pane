@@ -260,7 +260,13 @@ export function createLMStudioProvider(
   if ((apiKey && apiKey !== 'lm-studio') || needsCompatibleParameters) {
     return createLocalOpenAIProvider(baseURL, model, apiKey, params)
   }
-  return new LMStudioProvider(model, { baseURL, params })
+  // For the same reason a call that asks for no reasoning goes to the
+  // compatible endpoint, which can turn a thinking model's reasoning off.
+  return new LMStudioProvider(model, {
+    baseURL,
+    params,
+    reasoningOff: createLocalOpenAIProvider(baseURL, model, apiKey, params),
+  })
 }
 
 // OpenRouter is an OpenAI-compatible cloud aggregator, so it reuses OpenAIProvider

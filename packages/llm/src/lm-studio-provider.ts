@@ -13,6 +13,7 @@ import {
   type PredictionResult,
 } from '@lmstudio/sdk'
 import { withoutProviderState, type ConversationMessage } from './provider-state.ts'
+import { hasLastUsage } from './provider-usage.ts'
 import {
   openAiParameterFields,
   resolvedOutputCeiling,
@@ -176,6 +177,13 @@ export interface LMStudioProviderOptions {
   params?: ModelParameters
   /** Test seam: production callers use the official SDK adapter. */
   client?: ClientAdapter
+  /**
+   * Serves a call that sets `suppressReasoning`. The SDK has no field that turns
+   * thinking off, so `createLMStudioProvider` passes LM Studio's
+   * OpenAI-compatible route to the same server and model, which has one. Without
+   * it such a call stays on the SDK and the hint is ignored.
+   */
+  reasoningOff?: LLMProvider
 }
 
 /**
@@ -189,10 +197,12 @@ export class LMStudioProvider implements LLMProvider {
   private readonly client: ClientAdapter
   private readonly modelName: string
   private readonly params: ModelParameters
+  private readonly reasoningOff: LLMProvider | undefined
 
   constructor(modelName: string, opts: LMStudioProviderOptions = {}) {
     this.modelName = modelName
     this.params = opts.params ?? {}
+    this.reasoningOff = opts.reasoningOff
     this.client = opts.client ?? new SdkClientAdapter(opts.baseURL ?? 'http://localhost:1234/v1')
   }
 
@@ -202,6 +212,13 @@ export class LMStudioProvider implements LLMProvider {
     signal?: AbortSignal,
     options?: LLMStreamOptions,
   ): AsyncIterable<ProviderStreamChunk> {
+    // The agent loop asks for no reasoning on its last-chance recovery from a
+    // reasoning runaway, and a review's forced closure can end there. On the SDK
+    // a thinking model would think again and the turn would fail, so that one
+    // call goes where thinking can be turned off.
+    if (options?.suppressReasoning && this.reasoningOff) {
+      return this.streamWithoutReasoning(this.reasoningOff, messages, tools, signal, options)
+    }
     const self = this
     const sendable = withoutProviderState(messages)
     // The SDK forces a tool call only generically (`required`), so a call that
@@ -216,6 +233,20 @@ export class LMStudioProvider implements LLMProvider {
       },
       { ...(signal ? { signal } : {}) },
     )
+  }
+
+  private async *streamWithoutReasoning(
+    provider: LLMProvider,
+    messages: LLMMessage[],
+    tools: LLMTool[],
+    signal: AbortSignal | undefined,
+    options: LLMStreamOptions,
+  ): AsyncIterable<ProviderStreamChunk> {
+    // Usage is read back from this provider, so it must describe this call,
+    // not the SDK prediction before it.
+    this.lastUsage = null
+    yield* provider.stream(messages, tools, signal, options)
+    this.lastUsage = hasLastUsage(provider) ? provider.lastUsage : null
   }
 
   private async *streamOnce(

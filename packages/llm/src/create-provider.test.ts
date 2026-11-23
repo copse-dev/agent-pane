@@ -104,6 +104,8 @@ interface CapturedRequestBody {
   stream_options?: { include_usage?: boolean }
   reasoning?: { effort?: string; enabled?: boolean }
   reasoning_effort?: string
+  chat_template_kwargs?: unknown
+  model?: string
   verbosity?: string
   parallel_tool_calls?: boolean
   temperature?: number
@@ -431,6 +433,37 @@ describe('createLMStudioProvider', () => {
     // The factory is the only place that can drop `params` on the way in, and
     // the transport assertion above would still pass if it did.
     assert.deepEqual(Reflect.get(provider, 'params'), { temperature: 0.4 })
+  })
+
+  it('turns reasoning off through the compatible endpoint when a native call asks', async () => {
+    // A review's forced closure can reach the loop's last-chance recovery from a
+    // reasoning runaway; on the SDK a thinking model would think again.
+    const provider = createLMStudioProvider(
+      'http://localhost:1234/v1',
+      'qwen/qwen3.6-35b-a3b',
+      'lm-studio',
+      { temperature: 0.4 },
+    )
+    assert.ok(provider instanceof LMStudioProvider)
+    const reasoningOff: unknown = Reflect.get(provider, 'reasoningOff')
+    assert.ok(reasoningOff instanceof OpenAIProvider)
+    const tools: LLMTool[] = [
+      { name: 'report_finding', description: 'Report', parameters: { type: 'object' } },
+      { name: 'finish_review', description: 'Finish', parameters: { type: 'object' } },
+    ]
+    const request = await captureRequest(reasoningOff, tools, {
+      toolChoice: { name: 'finish_review' },
+      suppressReasoning: true,
+    })
+    assert.equal(request.model, 'qwen/qwen3.6-35b-a3b')
+    assert.equal(request.reasoning_effort, 'none')
+    assert.deepEqual(request.chat_template_kwargs, { enable_thinking: false })
+    assert.equal(request.temperature, 0.4)
+    assert.equal(request.tool_choice, 'required')
+    assert.deepEqual(
+      request.tools?.map((tool) => tool.function.name),
+      ['finish_review'],
+    )
   })
 
   it('keeps parameters the native SDK cannot represent on the compatible transport', async () => {
