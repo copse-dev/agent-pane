@@ -463,7 +463,11 @@ revisiting this document, not silently diverging in an implementation PR.
     boundaries; stripping it after the turn made the next turn diverge right after
     the prior user message and resend that turn's tool work uncached (measured
     ~40% cached input on a long ChatGPT-plan thread). It is never moved or
-    rewritten later; when the thread continues on a model whose placement is not
+    rewritten later, so superseded copies (an earlier `## Current plan` snapshot)
+    stay in place until the next server-side compaction. Ahead of a compaction item
+    only the newest copy is replayed, and none when newer steering follows the item
+    (`instructionsAheadOfCompaction`), so steering does not pile up across
+    compactions. When the thread continues on a model whose placement is not
     `trailing-developer`, the run drops prior developer messages from the replayed
     history (Anthropic rejects the role, and the model switch has already broken
     the cache). Trailing `system` messages remain turn-local and are excluded from

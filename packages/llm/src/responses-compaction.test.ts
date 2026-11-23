@@ -204,6 +204,55 @@ describe('compaction replay', () => {
     ])
   })
 
+  it('replays only the newest developer steering ahead of the item', () => {
+    // Each GPT turn persists its steering where it was injected (decision 22).
+    // The item summarises the turns that carried the older copies.
+    const input = toResponsesInput(
+      [
+        { role: 'system', content: 'sys' },
+        { role: 'user', content: 'turn 1' },
+        { role: 'developer', content: 'plan: [~] step 1' },
+        { role: 'assistant', content: 'one' },
+        { role: 'user', content: 'turn 2' },
+        { role: 'developer', content: 'plan: [x] step 1, [~] step 2' },
+        { role: 'assistant', content: 'two' },
+        { role: 'provider_state', state: state() },
+        { role: 'assistant', content: 'still turn 2' },
+      ],
+      new Map(),
+      IDENTITY,
+    )
+
+    assert.deepEqual(input, [
+      { role: 'system', content: 'sys' },
+      { role: 'developer', content: 'plan: [x] step 1, [~] step 2' },
+      { type: 'compaction', id: 'cmp_1', encrypted_content: 'opaque-1' },
+      { role: 'assistant', content: 'still turn 2' },
+    ])
+  })
+
+  it('keeps no steering ahead of the item when newer steering follows it', () => {
+    const input = toResponsesInput(
+      [
+        { role: 'system', content: 'sys' },
+        { role: 'user', content: 'turn 1' },
+        { role: 'developer', content: 'plan: [~] step 1' },
+        { role: 'provider_state', state: state() },
+        { role: 'user', content: 'turn 2' },
+        { role: 'developer', content: 'plan: [x] step 1' },
+      ],
+      new Map(),
+      IDENTITY,
+    )
+
+    assert.deepEqual(input, [
+      { role: 'system', content: 'sys' },
+      { type: 'compaction', id: 'cmp_1', encrypted_content: 'opaque-1' },
+      { role: 'user', content: 'turn 2' },
+      { role: 'developer', content: 'plan: [x] step 1' },
+    ])
+  })
+
   it('replays only the latest compaction', () => {
     const input = toResponsesInput(
       [

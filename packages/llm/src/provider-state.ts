@@ -48,6 +48,29 @@ export function compactionReplayStart(
   return -1
 }
 
+/**
+ * The instructions replayed ahead of the compaction item at `anchor` (see
+ * {@link compactionReplayStart}): the item stands in for the turns before it,
+ * not for the instructions. Every `system` message stays. Developer steering is
+ * injected per turn, persisted where it lands, and each turn's supersedes the
+ * last, so keeping every copy would stack one stale snapshot per turn ahead of
+ * the item at each compaction. Only the newest copy before the item survives,
+ * and only when no steering already follows it (decision 22 in
+ * docs/plans/hooks-and-feature-packs.md).
+ */
+export function instructionsAheadOfCompaction(
+  messages: readonly LLMMessage[],
+  anchor: number,
+): LLMMessage[] {
+  const steeringFollows = messages.slice(anchor + 1).some((m) => m.role === 'developer')
+  const newestSteering = steeringFollows
+    ? -1
+    : messages.slice(0, anchor).findLastIndex((m) => m.role === 'developer')
+  return messages
+    .slice(0, anchor)
+    .filter((m, i) => m.role === 'system' || (m.role === 'developer' && i === newestSteering))
+}
+
 /** A message a provider that does not own provider state can convert to its wire format. */
 export type ConversationMessage = Exclude<LLMMessage, ProviderStateMessage>
 

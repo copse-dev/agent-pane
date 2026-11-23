@@ -457,6 +457,30 @@ describe('server-side compaction awareness', () => {
     assert.ok(estimateConversationTokens(messages) > 2_000)
   })
 
+  it('sizes only the newest developer steering ahead of the item', () => {
+    const messages: LLMMessage[] = [
+      { role: 'system', content: 'sys' },
+      { role: 'user', content: 'turn 1' },
+      { role: 'developer', content: 'plan one' },
+      { role: 'user', content: 'turn 2' },
+      { role: 'developer', content: 'plan two' },
+      { role: 'provider_state', state },
+      { role: 'assistant', content: 'reply' },
+    ]
+    assert.deepEqual(replayWindow(messages, IDENTITY), [
+      { role: 'system', content: 'sys' },
+      { role: 'developer', content: 'plan two' },
+      { role: 'assistant', content: 'reply' },
+    ])
+    // Steering after the item supersedes every copy before it.
+    assert.deepEqual(
+      replayWindow([...messages, { role: 'developer', content: 'plan three' }], IDENTITY).map(
+        (m) => m.role,
+      ),
+      ['system', 'assistant', 'developer'],
+    )
+  })
+
   it('counts every turn when the provider will not replay the item', () => {
     const messages = history()
     const sent = replayWindow(messages, { model: 'claude-sonnet-4-6', endpoint: '' })

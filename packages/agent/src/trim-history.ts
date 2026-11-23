@@ -1,5 +1,9 @@
 import type { LLMMessage, UserContent } from '@copse/llm/wire-types.ts'
-import { compactionReplayStart, type CompactionIdentity } from '@copse/llm/provider-state.ts'
+import {
+  compactionReplayStart,
+  instructionsAheadOfCompaction,
+  type CompactionIdentity,
+} from '@copse/llm/provider-state.ts'
 import { CHARS_PER_TOKEN, ESTIMATED_IMAGE_TOKENS } from './token-estimate.ts'
 
 // Re-exported so existing consumers keep importing from a single module.
@@ -128,22 +132,21 @@ export function conversationTokenBudget(
 /**
  * The messages a provider that replays `compaction` will actually send: the
  * compaction item stands in for every turn before it, so those are left out, and
- * the opaque item itself is not prompt text. Instructions stay. With no
- * applicable compaction this is `messages` minus any provider state, so callers
- * can size the request without knowing whether a compaction is in play.
+ * the opaque item itself is not prompt text. Instructions stay, as
+ * {@link instructionsAheadOfCompaction} picks them. With no applicable
+ * compaction this is `messages` minus any provider state, so callers can size
+ * the request without knowing whether a compaction is in play.
  */
 export function replayWindow(
   messages: readonly LLMMessage[],
   compaction: CompactionIdentity | undefined,
 ): LLMMessage[] {
   const anchor = compactionReplayStart(messages, compaction)
-  const out: LLMMessage[] = []
-  for (const [i, message] of messages.entries()) {
-    if (message.role === 'provider_state') continue
-    if (i < anchor && message.role !== 'system' && message.role !== 'developer') continue
-    out.push(message)
-  }
-  return out
+  const turns = anchor === -1 ? messages : messages.slice(anchor + 1)
+  return [
+    ...(anchor === -1 ? [] : instructionsAheadOfCompaction(messages, anchor)),
+    ...turns.filter((m) => m.role !== 'provider_state'),
+  ]
 }
 
 /**
@@ -327,10 +330,10 @@ export function trimMessagesInPlace(
       ? getLastMeasuredInputTokens()
       : opts.measuredInputTokens
   const anchor = compactionReplayStart(messages, opts?.compaction)
+  // Before a compaction item only the instructions it does not replace are sent.
+  const sentAhead = new Set(anchor === -1 ? [] : instructionsAheadOfCompaction(messages, anchor))
   const estimates = messages.map((message, i) =>
-    i < anchor && message.role !== 'system' && message.role !== 'developer'
-      ? 0
-      : conversationMessageEstimate(message),
+    i < anchor && !sentAhead.has(message) ? 0 : conversationMessageEstimate(message),
   )
   let currentTokens: number
   if (measured != null) {
