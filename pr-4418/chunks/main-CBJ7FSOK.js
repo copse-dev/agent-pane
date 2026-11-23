@@ -490,7 +490,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-72LXHUXD.js";
+} from "./chunk-U4M6LJON.js";
 import "./chunk-X6JZSFJR.js";
 import {
   createSshWorkspaceConsent,
