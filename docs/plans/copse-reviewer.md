@@ -1180,12 +1180,30 @@ models; nothing in it is Mac-only.
   Reviewers and challenger take separate routes (`--challenger-provider`,
   `--challenger-base-url`) and reasoning efforts; when every route is local, reviewers run one
   at a time. `bench:review` takes the same challenger routes, so a local pair is measured
-  under its exact identity.
+  under its exact identity. Each local model's turns keep their history within three quarters
+  of its loaded context (the agent loop trims against the previous request's size, so the
+  rest is headroom for one step's results), and the pre-flight's required context counts
+  that share. `copse-review pr` runs the pre-flight (`--preflight`) before waiting for the
+  machine. Model details are keyed by server and id, because LM Link lists one id per device.
 - **Answers are kept and reused.** Reports land under
   `~/.copse/reviews/<repo>/pr-<n>/<head>-<settings>/` keyed by head, merge-base, options and
   the reviewer's own revision; asking again answers from the saved report. One review runs at
   a time per machine (`cache/review/review.lock`), and a lock whose holder died is taken
   over. `--time-limit` bounds a run.
+- **Only a settled answer is reused.** _Amended 2026-11-23, after testing on a Mac Studio._ A
+  run writes beside the saved report and replaces it only when it finishes. A cancelled run,
+  one its own `--time-limit` cut short, or one that stopped without a report leaves the last
+  answer as it was. A report is reused only when its preparation passed, every check ran,
+  and no check is `transient`. Stage 0 marks a check transient when its verdict depends on
+  the run, not the code: a checker that ran out of memory or time, was killed or could not
+  start, or two head test runs that disagreed. The key includes the engine asked for and the
+  cell's limits, but not output-only options. A cell defaults to a quarter of the machine's
+  memory (4g to 16g) and half its CPUs (2 to 8); Copse needs about 16g.
+- **Nothing outlives a killed run.** Cell containers are journalled, with their engine,
+  before they are created. With the machine's lock held, a run removes what an earlier,
+  killed run left, containers and scratch alike. A container the engine will not remove in
+  time costs no result: it is retried when the cell ends, then named with its removal
+  command.
 
 Evidence at landing, on Linux x64 with Docker 29: the hostile-fixture conformance suite against
 the real engine (with `setpriv` and the setuid strip in the image); and `copse-review pr` over a

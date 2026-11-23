@@ -261,7 +261,12 @@ history within three quarters of it, dropping its oldest investigation steps (ne
 review request), so the server never receives a request it would silently cut from the
 middle. A forced closure (`finish_review`, the challenger's `verdict`) is sent as
 `tool_choice: "required"` with only that tool offered, which LM Studio accepts with
-reasoning on.
+reasoning on. Some models take only reasoning on or off: LM Studio then reads `low`,
+`medium` and `high` as on, and says so only in its own log. `--preflight` runs these
+checks and exits without reviewing. A model that is missing or loaded too small fails
+there, and so does a visual-only review by a model that cannot see. The same model id on
+two servers (LM Link) is checked on each. `--events <file>` gets each event as it
+happens, so a review can be followed from disk.
 
 ## Reviewing a contributor's branch
 
@@ -323,10 +328,15 @@ Copse itself, whose preparation builds node-pty in the cell. `--cell-memory` and
 and lint run Node out of heap, and the run says so. `--cell-cpu x64` runs the cell as x64
 Linux (under Rosetta on a Mac; the store and image follow it). A run writes beside the
 saved report and replaces it only when it finishes, so a cancelled or failed run leaves
-the last answer untouched; a report whose preparation failed or whose checks did not all
-run is never reused as the answer. A container the engine is too slow to remove does not
-cost its check's result; one still left when the review ends is named with the command
-that removes it.
+the last answer untouched. A report is not reused as the answer when its preparation
+failed, a check did not run, or a check did not settle on that run (out of memory, a
+timeout, or two head test runs that disagreed). A run where no check reached a verdict
+says so: exit 0 with "no findings" then means the review ran, not that the change is
+clean. The model routes are checked before the run waits for another review. A container
+the engine is too slow to remove does not cost its check's result; one still left when
+the review ends is named with the command that removes it. Each cell container is
+journalled before it is created, so the next run removes whatever a killed review left
+(Apple container has no `--rm`), along with its scratch checkouts.
 
 ### On a Mac Studio
 
@@ -336,6 +346,11 @@ that removes it.
    engine once with the conformance test:
    `COPSE_REVIEW_CONTAINER_E2E=1 COPSE_REVIEW_IMAGE=<tag> pnpm test -- packages/review/src/hostile-fixture.test.ts`
    (with `COPSE_REVIEW_DEPENDENCY_STORE` naming any store directory holding `v10/`).
+   With colima, three things are needed. `Dockerfile.cell` needs BuildKit, so install
+   `docker-buildx`: Homebrew's Docker CLI has none and fails with "the --mount option
+   requires BuildKit". The cells bind-mount `/var/folders/...` paths as they are, so share
+   that path with the VM. And raise the VM's open-file limit: virtiofs holds a descriptor
+   per file looked up, and copying the dependency store has hit `ENFILE`.
 2. **The model server.** LM Studio headless: `lms server start`, then
    `lms load <model> --context-length 65536` for each model (a review at the default
    `--budget-chars` needs about 49k tokens; the pre-flight says what is missing, and a
@@ -343,12 +358,20 @@ that removes it.
    reviewer and challenger together only if both fit in memory; otherwise the server
    swaps them between Stage 2 and Stage 4.
 3. **The reviewer.** A checkout of this repository with `pnpm install` done, on Node 24.
+4. **The repository under review** should hold its own objects. A clone made with
+   `--shared` or `--reference` keeps objects behind an alternates path the cells do not
+   mount. Git inside a cell then fails on the side whose commit lives there, and an
+   asymmetric failure reads as a regression. `git repack -a -d` and removing
+   `.git/objects/info/alternates` makes a clone self-contained.
 
 On a Mac Studio, Apple container and colima (the Docker dialect) both pass the
-conformance test, and Copse's own build, typecheck and lint run in Apple container cells
-at 16g and 8 CPUs. Whether a local reviewer and challenger carry the review (the plan's
-Q11) is still to be settled: measure it with
-`pnpm run bench:review --provider lmstudio --model <m>` before trusting the output.
+conformance test. In Apple container cells at 16g and 8 CPUs, Copse's own build,
+typecheck and lint pass, and its test suite is compared with base test by test. A cell
+lacks some tools Copse's tests use (`bwrap`, `ssh`, `lsof`), so those tests fail on both
+sides. A new test that needs one fails on head only and is reported as new. Whether a
+local reviewer and challenger carry the review (the plan's Q11) is still to be settled:
+measure it with `pnpm run bench:review --provider lmstudio --model <m>` before trusting
+the output.
 
 ## In CI
 
