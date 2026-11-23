@@ -13,7 +13,7 @@ import {
 // Directory trees are copied with the async `cp`: Node's native recursive
 // `cpSync` fails with EACCES on Apple container's virtiofs shares, where
 // Copse Reviewer's cells build a checkout, while `cp` copies the same tree.
-import { cp } from 'node:fs/promises'
+import { cp, rm } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { copyMonacoWorkers, pointHtmlAtMonacoBase } from './copy-monaco-workers.mts'
@@ -415,32 +415,43 @@ writeFileSync(
 )
 console.log(`[build] wrote ${API_PROTOCOL_SCHEMA_BUILD_PATH}`)
 
-const bundledGortex = resolve('vendor/gortex', bundledGortexName)
-try {
-  accessSync(bundledGortex)
-  // Dereference so a worktree symlink into ~/.copse/cache/gortex becomes a
-  // real binary inside the packaged app (symlinks would escape the bundle).
-  await cp('vendor/gortex', 'dist/resources/gortex', { recursive: true, dereference: true })
-} catch {
-  // Optional — postinstall may be skipped on unsupported platforms.
+/**
+ * Copy an optional vendored binary tree, dereferenced so a worktree symlink
+ * into ~/.copse/cache becomes a real binary inside the packaged app (symlinks
+ * would escape the bundle). The old copy goes first: an earlier build may have
+ * left a symlink there, and `cp` will not dereference onto one
+ * (ERR_FS_CP_EINVAL). Only a missing source is skipped; a failed copy fails
+ * the build rather than leaving the old tree in place.
+ */
+async function copyOptionalBinaries(source: string, required: string, dest: string): Promise<void> {
+  try {
+    accessSync(required)
+  } catch {
+    return
+  }
+  await rm(dest, { recursive: true, force: true })
+  await cp(source, dest, { recursive: true, dereference: true })
 }
+
+// Optional — postinstall may be skipped on unsupported platforms.
+await copyOptionalBinaries(
+  'vendor/gortex',
+  resolve('vendor/gortex', bundledGortexName),
+  'dist/resources/gortex',
+)
 
 await cp(BUNDLED_CURSOR_SKILLS_VENDOR_DIR, 'dist/resources/bundled-cursor-skills', {
   recursive: true,
 })
 
-try {
-  accessSync(resolve('vendor/remote-watcher'))
-  // Static per-target binaries uploaded to SSH workspace hosts (see
-  // native/remote-watcher). Dereference for the same worktree-symlink reason
-  // as gortex above.
-  await cp('vendor/remote-watcher', 'dist/resources/remote-watcher', {
-    recursive: true,
-    dereference: true,
-  })
-} catch {
-  // Optional — without it SSH workspaces fall back to remote file polling.
-}
+// Static per-target binaries uploaded to SSH workspace hosts (see
+// native/remote-watcher). Optional — without them SSH workspaces fall back to
+// remote file polling.
+await copyOptionalBinaries(
+  'vendor/remote-watcher',
+  resolve('vendor/remote-watcher'),
+  'dist/resources/remote-watcher',
+)
 
 // Last of the shipped inputs: the licence report reads every bundle's metafile
 // and fails the build if any shipped component lacks its licence text.
