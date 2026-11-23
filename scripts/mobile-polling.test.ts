@@ -353,6 +353,41 @@ describe('mobile companion polling', { timeout: 30_000 }, () => {
     assert.match(time() ?? '', /h ago$/)
   })
 
+  it('folds only finished threads idle for over 30 days, even when nothing changed', async () => {
+    const day = 86_400_000
+    const savedDaysAgo = (saved: Row, days: number): Row => ({
+      ...saved,
+      lastSavedAt: 1_000_000 - days * day,
+    })
+    const desktop = new Desktop()
+    desktop.rows = [
+      savedDaysAgo(row('q', 'Old question', 'needs-you'), 90),
+      savedDaysAgo(row('w', 'Old run', 'working'), 40),
+      savedDaysAgo(row('h', 'Old changes', 'has-changes'), 40),
+      savedDaysAgo(row('o', 'Old result'), 40),
+      { ...row('n', 'Nearly old'), lastSavedAt: 1_000_000 - 30 * day + 60_000 },
+    ]
+    const page = await open(desktop)
+    const { document } = page.window
+    const folded = (): Array<string | null | undefined> =>
+      [...document.querySelectorAll('details.older .row')].map(
+        (button) => button.querySelector('.row-title')?.textContent,
+      )
+    assert.deepEqual(folded(), ['Old result'])
+    const folds = [...document.querySelectorAll('details.older')]
+    assert.deepEqual(folds.map(groupOf), ['Recent'])
+    assert.equal(groupOf(rowButtons(page.window).get('Old changes')), 'Has changes')
+
+    // Two minutes on, the Mac still answers 304; the row that crossed 30 days folds.
+    const nearlyOld = rowButtons(page.window).get('Nearly old')
+    page.clock.now += 120_000
+    await page.tick()
+    assert.deepEqual(desktop.drain().at(-1), '/api/activity (conditional)')
+    assert.deepEqual(folded(), ['Old result', 'Nearly old'])
+    assert.equal(rowButtons(page.window).get('Nearly old'), nearlyOld, 'the same button, folded')
+    assert.equal(folds[0]?.querySelector('summary .group-count')?.textContent, '2')
+  })
+
   it('leaves an open thread alone while nothing changed, and follows a run closely', async () => {
     const desktop = new Desktop()
     const page = await open(desktop)

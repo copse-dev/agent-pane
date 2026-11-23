@@ -180,13 +180,18 @@ h1 {
 .older-summary::-webkit-details-marker {
   display: none;
 }
+/* The caret is decoration: `/ ''` keeps screen readers from announcing it, and
+   <summary> already reports whether the fold is open. The plain value before it
+   is the fallback for a browser without alt text. */
 .older-summary > span:first-child::before {
   content: '▸';
+  content: '▸' / '';
   display: inline-block;
   width: 1.2em;
 }
 .older[open] > .older-summary > span:first-child::before {
   content: '▾';
+  content: '▾' / '';
 }
 .row {
   display: block;

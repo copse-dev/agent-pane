@@ -282,7 +282,7 @@ describe('Mobile Companion at phone width', () => {
     }
   })
 
-  it('folds threads idle for over 30 days under their group and keeps the fold open across polls', async () => {
+  it('folds finished threads idle for over 30 days under Recent and keeps the fold open across polls', async () => {
     await browser.setWindowSize(390, 844)
     await browser.sendCommand('Emulation.setDeviceMetricsOverride', {
       width: 390,
@@ -296,8 +296,9 @@ describe('Mobile Companion at phone width', () => {
       localStorage.setItem('copse-mobile-token', 'visual-test-token')
       history.replaceState({ mobileView: 'activity' }, '')
     })
-    // Age three finished threads and one waiting decision at the API boundary,
-    // and count polls so the test can wait for the list to be redrawn.
+    // Age three finished threads, plus one thread in each group that still wants
+    // the reader, at the API boundary, and count polls so the test can wait for
+    // the list to be redrawn.
     const added: unknown = await browser.sendCommandAndGetResult(
       'Page.addScriptToEvaluateOnNewDocument',
       {
@@ -309,13 +310,18 @@ describe('Mobile Companion at phone width', () => {
             const data = await response.json()
             const aged = (id, title, group, state, days) => ({
               projectId: 'proj-1', projectName: 'Copse', threadId: id, title, group, state,
-              detail: 'Latest completed output', lastSavedAt: Date.now() - days * 86400000,
+              detail: state === 'working'
+                ? 'Agent running · last saved activity shown below'
+                : 'Latest completed output',
+              lastSavedAt: Date.now() - days * 86400000,
             })
             data.rows.push(
               aged('thread-old-1', 'Archived experiment 1', 'recent', 'finished', 45),
               aged('thread-old-2', 'Archived experiment 2', 'recent', 'finished', 60),
               aged('thread-old-3', 'Archived experiment 3', 'recent', 'finished', 120),
               aged('thread-old-4', 'Old question still open', 'needs-you', 'needs-answer', 90),
+              aged('thread-old-5', 'Long backfill still running', 'working', 'working', 50),
+              aged('thread-old-6', 'Uncommitted spike', 'has-changes', 'finished', 75),
             )
             const root = document.documentElement
             root.dataset.activityPolls = String(Number(root.dataset.activityPolls ?? '0') + 1)
@@ -340,9 +346,16 @@ describe('Mobile Companion at phone width', () => {
       await expect(fold.$('summary .group-count')).toHaveText('3')
       await expect($('.row-title=Document the migration')).toBeDisplayed()
       await expect($('.row-title=Archived experiment 1')).not.toBeDisplayed()
-      // A waiting decision is never folded away, however old its thread is.
-      await expect($('.row-title=Old question still open')).toBeDisplayed()
-      await expect($('.group .older[data-group="needs-you"]')).not.toExist()
+      // Only finished threads fold: a waiting decision, a run and uncommitted
+      // work stay in view, however old their thread is.
+      for (const title of [
+        'Old question still open',
+        'Long backfill still running',
+        'Uncommitted spike',
+      ])
+        await expect($(`.row-title=${title}`)).toBeDisplayed()
+      for (const group of ['needs-you', 'working', 'has-changes'])
+        await expect($(`.group .older[data-group="${group}"]`)).not.toExist()
       await fold.scrollIntoView({ block: 'center' })
       await screenshot('mobile-companion-activity-older-collapsed.png')
 

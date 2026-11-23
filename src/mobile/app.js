@@ -353,7 +353,7 @@ const EMPTY_GROUP = {
 }
 const groupSections = new Map()
 const activityRows = new Map()
-/** Rows idle longer than this fold away under their group, so sections stay a short scroll apart. */
+/** Recent rows idle longer than this fold away, so sections stay a short scroll apart. */
 const OLDER_THAN_MS = 30 * 24 * 60 * 60 * 1000
 
 function setText(node, text) {
@@ -451,8 +451,9 @@ function renderGroup(label, key, rows, listed) {
       selectedDecisionRow?.threadId === row.threadId
     const entry = activityRow(row, key, isSelected)
     listed.add(entry)
-    // A decision is never tucked away, however old its thread is.
-    const target = key !== 'needs-you' && row.lastSavedAt < cutoff ? olderChildren : children
+    // Only Recent folds. A decision, a run or uncommitted work still wants the
+    // reader, however long ago its thread last saved.
+    const target = key === 'recent' && row.lastSavedAt < cutoff ? olderChildren : children
     target.push(entry.button)
     // Expand the card directly under the tapped row, not after the whole list.
     if (isSelected) target.push(inlineDecision)
@@ -493,11 +494,6 @@ function renderGroups(rows) {
   for (const [id, entry] of activityRows) if (!listed.has(entry)) activityRows.delete(id)
 }
 
-/** Move the rows' "5m ago" on without redrawing a list that did not change. */
-function refreshAges() {
-  for (const entry of activityRows.values()) setText(entry.time, age(entry.row.lastSavedAt))
-}
-
 async function refresh() {
   if (!token || selected) return
   if (refreshing) {
@@ -511,8 +507,10 @@ async function refresh() {
     const freshness = (at) =>
       `Updated ${age(at)} · ${access === 'control' ? 'Chat and run control' : 'Read only · enable control on your Mac'}`
     if (data === appliedActivity) {
-      // The Mac confirmed the list it sent before is still current.
-      refreshAges()
+      // The Mac confirmed the list it sent before is still current. Laying it
+      // out again moves each kept row's "5m ago" on, and folds a Recent row
+      // that has just passed 30 days, without touching anything in place.
+      renderGroups(lastActivityRows)
       document.getElementById('freshness').textContent = freshness(Date.now())
       show(activity)
       return
