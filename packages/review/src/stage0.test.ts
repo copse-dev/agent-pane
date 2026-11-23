@@ -414,6 +414,7 @@ describe('runStage0', () => {
       const incomplete = report.checks.find((check) => check.verdict === 'undetermined')
       assert.ok(incomplete)
       assert.equal(incomplete.base, null, 'an incomplete head check needs no base execution')
+      assert.equal(incomplete.transient, true, 'another run may settle it')
       assert.equal(incomplete.headConfirmation, undefined)
       assert.deepEqual(report.findings, [])
       assert.match(
@@ -614,6 +615,8 @@ describe('runStage0', () => {
     const [check] = both.checks
     assert.equal(check?.verdict, 'undetermined')
     assert.match(check.reason ?? '', /head and base reported an incomplete failure list/)
+    // Both sides fail the same way every run: running again would not settle it.
+    assert.equal(check.transient, undefined)
     assert.deepEqual(both.findings, [])
   })
 
@@ -676,6 +679,7 @@ describe('runStage0', () => {
     const test = report.checks.find((check) => check.kind === 'test')
     assert.ok(test)
     assert.equal(test.verdict, 'undetermined')
+    assert.equal(test.transient, true)
     assert.equal(test.head?.status, 'timed-out')
     assert.deepEqual(report.coverage.checked, ['build', 'typecheck', 'lint'])
     assert.match(

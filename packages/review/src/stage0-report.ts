@@ -43,12 +43,14 @@ const checkOutcomeSchema = z
     base: checkRunSchema.nullable(),
     headConfirmation: checkRunSchema.optional(),
     reason: z.string().optional(),
+    transient: z.literal(true).optional(),
   })
   // `reason` is present or absent, never `undefined` (exactOptionalPropertyTypes).
-  .transform(({ reason, headConfirmation, ...outcome }) => ({
+  .transform(({ reason, headConfirmation, transient, ...outcome }) => ({
     ...outcome,
     ...(reason === undefined ? {} : { reason }),
     ...(headConfirmation === undefined ? {} : { headConfirmation }),
+    ...(transient === undefined ? {} : { transient }),
   }))
 
 const projectSchema = z.union([
@@ -114,7 +116,9 @@ function normalizeIncompleteChecks(report: Stage0Report): Stage0Report {
     ...report,
     checks: report.checks.map((check) => {
       const reason = incomplete.get(check.kind)
-      return reason === undefined ? check : { ...check, verdict: 'undetermined', reason }
+      return reason === undefined
+        ? check
+        : { ...check, verdict: 'undetermined', reason, transient: true }
     }),
     findings: report.findings.filter((finding) => {
       if (!finding.provenance.raisedBy.some((source) => source.kind === 'stage0')) return true

@@ -148,6 +148,12 @@ export interface CheckOutcome {
   /** Second head test run, only after the first failed. Never replaces the first evidence. */
   readonly headConfirmation?: CheckRun
   readonly reason?: string
+  /**
+   * The verdict depends on this run, not on the code: a checker that ran out
+   * of memory or time, was killed or could not start, on either side, or two
+   * head test runs that disagreed. Running again may settle it.
+   */
+  readonly transient?: true
 }
 
 export interface CoverageNote {
@@ -686,13 +692,20 @@ export async function runStage0Checks(
     const incompleteHead = inconclusiveCheckReason(head)
     if (incompleteHead !== null) {
       const reason = incompleteHead
-      checks.push({ kind, verdict: 'undetermined', head, base, reason })
+      checks.push({ kind, verdict: 'undetermined', head, base, reason, transient: true })
       notChecked.push({ kind, reason })
       continue
     }
     checked.push(kind)
     if (kind === 'test' && unstableTestReason !== null) {
-      checks.push({ kind, verdict: 'undetermined', head, base, reason: unstableTestReason })
+      checks.push({
+        kind,
+        verdict: 'undetermined',
+        head,
+        base,
+        reason: unstableTestReason,
+        transient: true,
+      })
       notChecked.push({ kind, reason: unstableTestReason })
       continue
     }
@@ -712,7 +725,14 @@ export async function runStage0Checks(
     }
     const incompleteBase = inconclusiveCheckReason(base)
     if (incompleteBase !== null) {
-      checks.push({ kind, verdict: 'undetermined', head, base, reason: incompleteBase })
+      checks.push({
+        kind,
+        verdict: 'undetermined',
+        head,
+        base,
+        reason: incompleteBase,
+        transient: true,
+      })
       notChecked.push({ kind, reason: incompleteBase })
       continue
     }
@@ -786,7 +806,7 @@ export async function runStage0Checks(
       continue
     }
     const reason = `failed on head, but timed out on base after ${String(base.durationMs)} ms`
-    checks.push({ kind, verdict: 'undetermined', head, base, reason })
+    checks.push({ kind, verdict: 'undetermined', head, base, reason, transient: true })
     notChecked.push({ kind, reason })
   }
 

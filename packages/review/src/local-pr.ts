@@ -531,7 +531,12 @@ const settledReportSchema = z.object({
       base: z.object({ status: z.string() }).nullable(),
     }),
     checks: z.array(
-      z.object({ kind: z.string(), verdict: z.string(), reason: z.string().optional() }),
+      z.object({
+        kind: z.string(),
+        verdict: z.string(),
+        reason: z.string().optional(),
+        transient: z.boolean().optional(),
+      }),
     ),
   }),
 })
@@ -539,7 +544,8 @@ type SettledReport = z.infer<typeof settledReportSchema>
 
 /**
  * Why a finished review should be asked again rather than answered from its
- * saved report: its preparation failed (a flaky install), or a check never ran.
+ * saved report: its preparation failed (a flaky install), a check never ran, or a
+ * check did not settle on this run (`transient`: out of memory, a timeout).
  * Null when Stage 0 settled and the report is the answer to this question.
  */
 export function reportNotReusable(report: SettledReport | null): string | null {
@@ -550,7 +556,11 @@ export function reportNotReusable(report: SettledReport | null): string | null {
   )
   if (!prepared) return 'its Stage 0 preparation did not pass'
   const notRun = checks.filter((check) => check.verdict === 'not-run').map((check) => check.kind)
-  return notRun.length > 0 ? `${notRun.join(', ')} did not run` : null
+  if (notRun.length > 0) return `${notRun.join(', ')} did not run`
+  // Out of memory, a timeout, or two head runs that disagreed: another run
+  // may settle it, so the next ask runs again rather than repeat this one.
+  const unsettled = checks.filter((check) => check.transient === true).map((check) => check.kind)
+  return unsettled.length > 0 ? `${unsettled.join(', ')} did not settle on this run` : null
 }
 
 /**

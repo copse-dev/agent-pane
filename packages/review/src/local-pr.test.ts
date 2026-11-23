@@ -451,6 +451,20 @@ describe('copse-review pr arguments', () => {
     // A flaky install is asked again, not saved as the answer.
     assert.match(reportNotReusable(settled({ status: 'failed' }, ['not-run'])) ?? '', /preparation/)
     assert.match(reportNotReusable(settled(passed, ['not-run'])) ?? '', /test did not run/)
+    // A check that ran out of memory, timed out, or whose head runs disagreed
+    // depends on that run; the 4g cell's report must not answer the next ask.
+    assert.match(
+      reportNotReusable({
+        stage0: {
+          preparation: { head: passed, base: null },
+          checks: [
+            { kind: 'typecheck', verdict: 'undetermined', transient: true },
+            { kind: 'test', verdict: 'undetermined' },
+          ],
+        },
+      }) ?? '',
+      /^typecheck did not settle on this run$/,
+    )
     assert.match(reportNotReusable(null) ?? '', /could not be read/)
   })
 
