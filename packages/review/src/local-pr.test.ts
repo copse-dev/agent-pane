@@ -263,6 +263,23 @@ describe('copse-review pr', () => {
     )
   })
 
+  it('leaves the saved report as it was when its own time limit cuts a re-run short', async (t) => {
+    const dir = await reportDir()
+    const saved = await readFile(join(dir, 'run.json'), 'utf8')
+    // The one-minute deadline fires at once; every other timeout is untouched.
+    const timeout = AbortSignal.timeout.bind(AbortSignal)
+    t.mock.method(AbortSignal, 'timeout', (ms: number) => timeout(ms === 60_000 ? 0 : ms))
+    const code = await review(['--fresh', '--time-limit', '1'])
+    assert.equal(code, HEADLESS_EXIT.CANCELLED, err)
+    assert.match(err, /time limit was reached/)
+    assert.match(err, /any saved report is unchanged/)
+    assert.equal(await readFile(join(dir, 'run.json'), 'utf8'), saved)
+    assert.deepEqual(
+      (await readdir(dirname(dir))).filter((name) => name.includes('.partial-')),
+      [],
+    )
+  })
+
   it('treats different review settings as a different question', async () => {
     const code = await review(['--lenses', 'contracts'])
     assert.equal(code, HEADLESS_EXIT.SUCCESS, err)

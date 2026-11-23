@@ -823,7 +823,13 @@ export async function localPullRequestMain(
         io.stdout(chunk)
       },
     })
-    if (io.signal?.aborted) return HEADLESS_EXIT.CANCELLED
+    // A cancelled run is not an answer, whether the caller cancelled it or its
+    // own --time-limit did (the review then returns CANCELLED with the
+    // caller's signal untouched): the saved report stays as it was.
+    if (io.signal?.aborted || exitCode === HEADLESS_EXIT.CANCELLED) {
+      io.stderr('copse-review pr: the review was cancelled; any saved report is unchanged\n')
+      return HEADLESS_EXIT.CANCELLED
+    }
     const settled = await readFile(join(staging, 'report.json'), 'utf8').then(
       (json) => safeJsonParse(json, decodeWithSchema(settledReportSchema)),
       () => null,
