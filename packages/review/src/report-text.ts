@@ -23,6 +23,18 @@ export interface Stage0RenderOptions {
   readonly withinReview?: boolean
 }
 
+/**
+ * Every check ran to no verdict, or not at all (a failed install, a checker
+ * out of memory). "No findings" would then read as clean to anyone who stops
+ * at that line, or at the exit code, which says only that the reviewer looked.
+ */
+function reachedNoVerdict(report: Stage0Report): boolean {
+  return (
+    report.checks.length > 0 &&
+    report.checks.every((check) => check.verdict === 'not-run' || check.verdict === 'undetermined')
+  )
+}
+
 export function renderStage0Report(
   report: Stage0Report,
   options: Stage0RenderOptions = {},
@@ -49,6 +61,12 @@ export function renderStage0Report(
 
   if (report.findings.length === 0 && report.coverage.notChecked.length === 0) {
     lines.push(options.withinReview ? 'Stage 0: no regressions.' : 'Clean.')
+  } else if (report.findings.length === 0 && reachedNoVerdict(report)) {
+    lines.push(
+      options.withinReview
+        ? 'Stage 0: no check reached a verdict.'
+        : 'No findings, but no check reached a verdict; this is not a clean result.',
+    )
   } else if (report.findings.length === 0) {
     lines.push(options.withinReview ? 'Stage 0: no findings.' : 'No findings.')
   } else {
@@ -147,7 +165,9 @@ export function renderReviewReport(report: ReviewReport): string {
   if (report.findings.length === 0) {
     lines.push(
       report.reviews.length === 0
-        ? 'No findings from Stage 0.'
+        ? reachedNoVerdict(report.stage0)
+          ? 'No findings, but no Stage 0 check reached a verdict; this is not a clean result.'
+          : 'No findings from Stage 0.'
         : incompleteReviews.length > 0
           ? 'No findings were produced before the incomplete review stopped.'
           : limitations.length > 0

@@ -247,7 +247,9 @@ pnpm run review --help
 container answers. Findings are the output, never the exit code; the exit codes are the
 headless contract's: `0` the reviewer looked, `1` the model turn failed or the review
 could not be posted, `2` bad usage or an undetectable project, `3` execution was refused
-for want of consent or isolation, `130` cancelled.
+for want of consent or isolation, `130` cancelled. So `0` with no findings is not by itself
+clean: when no Stage 0 check reached a verdict (a failed install, checkers out of memory),
+the text report says it is not a clean result, and `report.json` has every check's verdict.
 
 Local models get their own route options. `--challenger-provider` and
 `--challenger-base-url` put the challenger on a second server (another LM Studio, an
