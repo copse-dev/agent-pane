@@ -14,7 +14,8 @@
 // a time per machine (`review-lock.ts`).
 import { execFileSync } from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
-import { access, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { appendFileSync } from 'node:fs'
+import { access, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { availableParallelism, homedir, totalmem } from 'node:os'
 import { basename, join } from 'node:path'
 import { z } from 'zod'
@@ -38,10 +39,13 @@ import {
 } from './cell-preparation.ts'
 import { CLI_VERSION, main, type CliIo } from './cli.ts'
 import {
+  CONTAINER_DIALECTS,
   CONTAINER_ENGINE_ENV,
   DEFAULT_CONTAINER_LIMITS,
+  containerRemovalArgv,
   createContainerBackend,
   defaultContainerEngines,
+  removeContainer,
   probeContainerImage,
   type ContainerEngineCandidate,
   type ContainerLimits,
@@ -542,6 +546,15 @@ const settledReportSchema = z.object({
 })
 type SettledReport = z.infer<typeof settledReportSchema>
 
+/** Whether Stage 0 had checks to run and none reached a verdict (all not run or undetermined). */
+export function nothingConcluded(report: SettledReport | null): boolean {
+  const checks = report?.stage0.checks ?? []
+  return (
+    checks.length > 0 &&
+    checks.every((check) => check.verdict === 'not-run' || check.verdict === 'undetermined')
+  )
+}
+
 /**
  * Why a finished review should be asked again rather than answered from its
  * saved report: its preparation failed (a flaky install), a check never ran, or a
@@ -619,6 +632,8 @@ export interface LocalPrRun {
   readonly exitCode: number
   /** Whether a later ask of the same question is answered from this report. */
   readonly reusable: boolean
+  /** Each cell command's memory, CPUs and process limit. */
+  readonly limits: ContainerLimits
   readonly startedAt: string
   readonly finishedAt: string
   readonly reviewer: string
@@ -743,6 +758,12 @@ export async function localPullRequestMain(
   // finished: a cancelled or failed run leaves the last answer as it was, and
   // never an empty or half-written report directory.
   const staging = `${outDir}.partial-${randomBytes(4).toString('hex')}`
+  // Cell containers this run may create, by name, until they are known gone.
+  const journal = join(cacheRoot, 'containers.journal')
+  const created = new Map<string, JournalEntry>()
+  /** Containers still there when this run ends, for the next run to remove. */
+  const pending = new Map<string, JournalEntry>()
+  let journalling = false
   try {
     const runHost = io.runHost ?? defaultRunHost
     const platform: CellPlatform = cellPlatform(options.cpu)
@@ -783,19 +804,42 @@ export async function localPullRequestMain(
     }
 
     const cell = await resolveCellImage(io, options, cacheRoot, runHost)
+    const scratchParent = join(cacheRoot, 'scratch')
+    await mkdir(scratchParent, { recursive: true })
+    // A review killed outright (SIGKILL, a power cut) never removes its cells.
+    // Apple container has no `--rm`, so a stopped cell and its checkout would
+    // stay for good. This machine's lock is held here, so whatever an earlier
+    // run left behind is no live review's: remove it now.
+    for (const entry of await sweepEarlierRun(io, journal, scratchParent)) {
+      pending.set(entry.name, entry)
+    }
+    journalling = true
     const backend = createContainerBackend({
       image: cell.image,
       engine: cell.engine.argv,
       dialect: cell.engine.dialect,
       limits: options.limits,
+      // Journalled before the container exists, so a run killed mid-command
+      // leaves its name for the next run to remove.
+      containerName: (commandId) => {
+        const name = `copse-review-pr-${commandId}`
+        const entry: JournalEntry = {
+          name,
+          engine: [...cell.engine.argv],
+          dialect: cell.engine.dialect,
+        }
+        appendFileSync(journal, `${JSON.stringify(entry)}\n`)
+        created.set(name, entry)
+        return name
+      },
       onUnremoved: (name, reason, command) => {
+        const entry = created.get(name)
+        if (entry !== undefined) pending.set(name, entry)
         io.stderr(
           `copse-review pr: container ${name} could not be removed (${reason}); remove it with: ${command}\n`,
         )
       },
     })
-    const scratchParent = join(cacheRoot, 'scratch')
-    await mkdir(scratchParent, { recursive: true })
     await mkdir(staging, { recursive: true })
     const trusted = profile === null ? null : trustedPreparationScript(profile)
     // The commits resolved above, not the refs: a push or another queued
@@ -863,6 +907,13 @@ export async function localPullRequestMain(
         `copse-review pr: ${notReusable}, so this report will not answer the same question again\n`,
       )
     }
+    // Exit 0 says the review ran, not that the change is clean: say so when no
+    // check reached a verdict, for a caller that reads only the exit code.
+    if (nothingConcluded(settled)) {
+      io.stderr(
+        'copse-review pr: no check reached a verdict on this run, so "no findings" does not mean the change is clean\n',
+      )
+    }
     const outOfMemory =
       settled?.stage0.checks
         .filter((check) => check.reason?.includes('exhausted its memory') === true)
@@ -888,6 +939,7 @@ export async function localPullRequestMain(
       key,
       exitCode,
       reusable: notReusable === null,
+      limits: options.limits,
       startedAt,
       finishedAt: new Date().toISOString(),
       reviewer: reviewerRevision,
@@ -908,8 +960,65 @@ export async function localPullRequestMain(
   } finally {
     await rm(staging, { recursive: true, force: true })
     await rm(seed, { recursive: true, force: true })
+    // The cell is destroyed by now; only what it could not remove stays listed.
+    if (journalling) {
+      await writeFile(
+        journal,
+        [...pending.values()].map((entry) => `${JSON.stringify(entry)}\n`).join(''),
+      )
+    }
     await release()
   }
+}
+
+const journalEntrySchema = z.object({
+  name: z.string().regex(/^copse-review-pr-[\w-]+$/),
+  engine: z.tuple([z.string()], z.string()),
+  dialect: z.enum(CONTAINER_DIALECTS),
+})
+type JournalEntry = z.infer<typeof journalEntrySchema>
+const decodeJournalEntry = decodeWithSchema(journalEntrySchema)
+
+/** How long the sweep waits on each container an earlier run left. */
+const SWEEP_REMOVAL_MS = 60_000
+
+/**
+ * Remove what a review that never finished left behind: the cell containers
+ * it journalled, each with the engine that made it, and its scratch
+ * checkouts. Only called with this machine's review lock held, so nothing
+ * here belongs to a live review. Returns the containers still there.
+ */
+async function sweepEarlierRun(
+  io: LocalPrIo,
+  journal: string,
+  scratchParent: string,
+): Promise<JournalEntry[]> {
+  const text = await readFile(journal, 'utf8').catch(() => '')
+  const entries = new Map<string, JournalEntry>()
+  for (const line of text.split('\n')) {
+    const entry = line.length === 0 ? null : safeJsonParse(line, decodeJournalEntry)
+    if (entry !== null) entries.set(entry.name, entry)
+  }
+  const stuck: JournalEntry[] = []
+  for (const entry of entries.values()) {
+    const reason = await removeContainer(entry.engine, entry.dialect, entry.name, {
+      timeoutMs: SWEEP_REMOVAL_MS,
+    })
+    if (reason === null) continue
+    stuck.push(entry)
+    io.stderr(
+      `copse-review pr: container ${entry.name}, left by an earlier review, could not be removed (${reason}); remove it with: ${containerRemovalArgv(entry.engine, entry.dialect, entry.name).flat().join(' ')}\n`,
+    )
+  }
+  const scratch = await readdir(scratchParent).catch(() => [])
+  for (const name of scratch) await rm(join(scratchParent, name), { recursive: true, force: true })
+  if (entries.size > stuck.length || scratch.length > 0) {
+    io.stderr(
+      `copse-review pr: cleared what an earlier review left: ${String(entries.size - stuck.length)} container(s), ${String(scratch.length)} scratch directory(ies)\n`,
+    )
+  }
+  await writeFile(journal, stuck.map((entry) => `${JSON.stringify(entry)}\n`).join(''))
+  return stuck
 }
 
 /** Move a finished run's directory into place, replacing the report it supersedes. */

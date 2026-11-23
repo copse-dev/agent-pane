@@ -19,6 +19,7 @@ import { writeFakeContainerEngine } from './fake-container-engine.ts'
 import {
   defaultPrCellLimits,
   localPullRequestMain,
+  nothingConcluded,
   parsePrArgs,
   pullRequestNumber,
   pullRequestRepository,
@@ -47,6 +48,7 @@ const runSchema = z.object({
   image: z.string(),
   exitCode: z.number(),
   reusable: z.boolean(),
+  limits: z.object({ memory: z.string(), cpus: z.number(), pids: z.number() }),
   reviewArgs: z.array(z.string()),
 })
 
@@ -183,6 +185,8 @@ describe('copse-review pr', () => {
     assert.equal(run.profile, 'pnpm')
     assert.equal(run.exitCode, HEADLESS_EXIT.SUCCESS)
     assert.equal(run.reusable, true)
+    assert.match(run.limits.memory, /^\d+g$/)
+    assert.doesNotMatch(err, /no check reached a verdict/)
     assert.ok(run.reviewArgs.includes('--foreign'))
     // Paths recorded are the published report's, not the run's staging directory.
     assert.equal(run.reviewArgs[run.reviewArgs.indexOf('--json') + 1], join(dir, 'report.json'))
@@ -294,6 +298,29 @@ describe('copse-review pr', () => {
     const first = join(root, 'failed-first')
     assert.equal(await review(['--out', first, '--max-verify', 'lots']), HEADLESS_EXIT.USAGE)
     assert.match(await readFile(join(first, 'run.json'), 'utf8'), /"exitCode": 2/)
+  })
+
+  it('removes the cells and scratch a hard-killed earlier review left behind', async () => {
+    // As SIGKILL leaves things: a journalled cell container still there (Apple
+    // container has no --rm) and its scratch checkout.
+    const engine = io.containerEngines?.[0]?.argv
+    assert.ok(engine)
+    const reviewCache = join(copseDir, 'cache', 'review')
+    const journal = join(reviewCache, 'containers.journal')
+    await writeFile(
+      journal,
+      `${JSON.stringify({ name: 'copse-review-pr-dead-1', engine, dialect: 'docker' })}\nnot a record\n`,
+    )
+    await writeFile(join(registry, 'copse-review-pr-dead-1.active'), '')
+    await mkdir(join(reviewCache, 'scratch', 'review-dead', 'head'), { recursive: true })
+
+    assert.equal(await review(['--fresh']), HEADLESS_EXIT.SUCCESS, err)
+    assert.match(err, /cleared what an earlier review left: 1 container\(s\), 1 scratch/)
+    await access(join(registry, 'copse-review-pr-dead-1.removed'))
+    await assert.rejects(access(join(registry, 'copse-review-pr-dead-1.active')), /ENOENT/)
+    assert.deepEqual(await readdir(join(reviewCache, 'scratch')), [])
+    // This run's own cells were removed as it went, so nothing is left listed.
+    assert.equal(await readFile(journal, 'utf8'), '')
   })
 
   it('treats different review settings as a different question', async () => {
@@ -466,6 +493,10 @@ describe('copse-review pr arguments', () => {
       /^typecheck did not settle on this run$/,
     )
     assert.match(reportNotReusable(null) ?? '', /could not be read/)
+    // Exit 0 with no verdict anywhere is not a clean change, and the run says so.
+    assert.equal(nothingConcluded(settled(passed, ['undetermined', 'not-run'])), true)
+    assert.equal(nothingConcluded(settled(passed, ['undetermined', 'clean'])), false)
+    assert.equal(nothingConcluded(settled(null, [])), false)
   })
 
   it('separates its own options from the review’s, keeping the review’s order', () => {

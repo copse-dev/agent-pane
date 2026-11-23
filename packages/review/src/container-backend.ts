@@ -228,6 +228,40 @@ export function appleCreateArgs(input: ContainerRunInput): string[] {
 
 /** Maximum time to remove a container before terminating the attach client too. */
 const KILL_GRACE_MS = 5_000
+
+/** The engine command that force-removes container `name`, as `[file, args]`. */
+export function containerRemovalArgv(
+  engine: ContainerEngine,
+  dialect: ContainerDialect,
+  name: string,
+): [string, string[]] {
+  const [file, ...prefix] = engine
+  return [file, [...prefix, dialect === 'apple' ? 'delete' : 'rm', '--force', name]]
+}
+
+/**
+ * Force-remove container `name`. Null once it is gone, including when it
+ * already was (`--rm` removed a completed container; Apple container says
+ * "not found"); otherwise why it is still there.
+ */
+export async function removeContainer(
+  engine: ContainerEngine,
+  dialect: ContainerDialect,
+  name: string,
+  options: { readonly spawn?: SpawnEngine; readonly timeoutMs?: number } = {},
+): Promise<string | null> {
+  const [file, args] = containerRemovalArgv(engine, dialect, name)
+  const result = await probeEngine(
+    options.spawn ?? nodeSpawn,
+    file,
+    args,
+    options.timeoutMs ?? KILL_GRACE_MS,
+  )
+  return result.ok ||
+    /no such container|no container with (?:name|ID)|not found/i.test(result.reason)
+    ? null
+    : result.reason
+}
 /** The second, last attempt at a container the first could not remove, when its cell ends. */
 const CLEANUP_RETRY_MS = 60_000
 
@@ -287,23 +321,17 @@ class ContainerCell implements ExecutionCell {
   }
 
   private removalArgv(name: string): [string, string[]] {
-    return this.engineArgv([this.dialect === 'apple' ? 'delete' : 'rm', '--force', name])
+    return containerRemovalArgv(this.engine, this.dialect, name)
   }
 
   /** Remove a container; one that is not gone yet is remembered, not thrown. */
   private async remove(name: string, timeoutMs = KILL_GRACE_MS): Promise<void> {
-    const [file, args] = this.removalArgv(name)
-    const result = await probeEngine(this.spawn, file, args, timeoutMs)
-    // --rm may already have removed a naturally completed container; Apple
-    // container says "not found" for one that is already gone.
-    if (
-      result.ok ||
-      /no such container|no container with (?:name|ID)|not found/i.test(result.reason)
-    ) {
-      this.unremoved.delete(name)
-      return
-    }
-    this.unremoved.set(name, result.reason)
+    const reason = await removeContainer(this.engine, this.dialect, name, {
+      spawn: this.spawn,
+      timeoutMs,
+    })
+    if (reason === null) this.unremoved.delete(name)
+    else this.unremoved.set(name, reason)
   }
 
   private async execute(
