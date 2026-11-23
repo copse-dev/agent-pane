@@ -43,6 +43,7 @@ import {
   userInterruption,
 } from './tool-card-refresh.ts'
 import type { ReadingAnchor } from './transcript-scroll.ts'
+import { transcriptRowElement } from './transcript-row-element.ts'
 
 /**
  * What a row was built from, in the two parts a reconcile treats differently
@@ -179,25 +180,41 @@ function isRowCardOf(node: Element, key: string): boolean {
   return ROW_CARD_ATTRIBUTES.some((attribute) => node.getAttribute(attribute) === key)
 }
 
-/** The message element of row `key`, or null when it is not in the list. */
-export function transcriptRowElement(list: HTMLElement, key: string): HTMLElement | null {
-  // Rows are the list's direct children. A `querySelector`, even with
-  // `:scope >`, walks every descendant of every row in document order, so on a
-  // long transcript a lookup of the streaming reply (the tail row) paid for the
-  // whole DOM on every token. The rows that change are at one end or the other
-  // (the live tail, or the history backfill prepending at the head), so walk
-  // the children from both ends at once.
-  let head = list.firstElementChild
-  let tail = list.lastElementChild
-  while (head && tail) {
-    if (head instanceof HTMLElement && head.dataset['messageId'] === key) return head
-    if (tail instanceof HTMLElement && tail.dataset['messageId'] === key) return tail
-    if (head === tail || head.nextElementSibling === tail) return null
-    head = head.nextElementSibling
-    tail = tail.previousElementSibling
+/**
+ * The card row `key` anchors under `attribute`, or null. A row's cards follow
+ * its message element directly (as removeTranscriptRow relies on), so this
+ * walks those siblings. Searching the list instead scanned every node of the
+ * transcript on a miss, which is the usual answer, for every message drawn.
+ */
+export function rowCardElement(
+  row: Element,
+  attribute: (typeof ROW_CARD_ATTRIBUTES)[number],
+  key: string,
+): HTMLElement | null {
+  for (
+    let next = row.nextElementSibling;
+    next && isRowCardOf(next, key);
+    next = next.nextElementSibling
+  ) {
+    if (next instanceof HTMLElement && next.getAttribute(attribute) === key) return next
   }
   return null
 }
+
+/** Row `key`'s message element followed by the cards it anchors. */
+export function rowParts(row: Element, key: string): Element[] {
+  const parts = [row]
+  for (
+    let next = row.nextElementSibling;
+    next && isRowCardOf(next, key);
+    next = next.nextElementSibling
+  ) {
+    parts.push(next)
+  }
+  return parts
+}
+
+export { transcriptRowElement }
 
 /**
  * Detach row `key` (its message element and anchored cards), disposing any
