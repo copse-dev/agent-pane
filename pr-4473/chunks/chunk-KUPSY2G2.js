@@ -47711,6 +47711,9 @@ var init_model_coverage = __esm({
 function modelDisplayLabel(model) {
   return displayModelLabel2(model);
 }
+function successorDisplayLabel(lineageId) {
+  return cloudModelDisplayLabel(lineageId.replace(/^(gpt-\d{1,2})-(\d{1,2})(?=-[a-z]|$)/, "$1.$2"));
+}
 async function pluginModelOptions(api, includeAgentModels, current) {
   if (!includeAgentModels) return [];
   try {
@@ -48156,7 +48159,7 @@ async function fetchModelOptions(api, current, opts = {}) {
     return [
       {
         ...option,
-        label: `${option.label} (superseded by ${cloudModelDisplayLabel(successor)})`,
+        label: `${option.label} (superseded by ${successorDisplayLabel(successor)})`,
         disabled: true,
         // A row already disabled for another reason cannot run, so it keeps
         // the unavailable treatment rather than reading as the running model.
