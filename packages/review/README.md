@@ -28,7 +28,9 @@ shell's hand-offs (Phase 4).
   capabilities; `decideExecution` is the trust × isolation table (an own diff runs behind
   any isolation, or unisolated only with per-run consent; a foreign diff runs in a
   container or not at all — B3). `cellEnvironment` builds the allowlisted environment a
-  cell receives; `droppedHostSecrets` feeds everything it dropped to the redactor.
+  cell receives; `droppedHostSecrets` feeds everything it dropped to the redactor, except
+  a short list of exact names that are known not to be secrets (`HOME`, `PWD`, the locale,
+  npm's script metadata).
 - **`host-process-backend.ts`** — the weakest backend: the host process with a scrubbed
   environment and a `HOME`/`TMPDIR` inside the cell. It builds no filesystem or network
   wall and says so, which is what limits it to consented own-tree runs. The app's
