@@ -22087,10 +22087,10 @@ function mountConversation(root, store2, api2, options = {}) {
     syncMessageCanvasPreviews(msgEl, msg, store2.getState().activeProjectId, threadId, api2);
     syncMessageVisualEvidence(msgEl, msg);
     if (run4) syncRunLayout(thread, run4, msgId);
-    if (msg.review) renderMessageReview(threadId, msgId);
-    if (msg.reviewReport) renderMessageReviewReport(threadId, msgId);
-    renderMessageHookCards(threadId, msgId);
-    renderMessageTurnRecovery(threadId, msgId);
+    if (msg.review) renderMessageReview(threadId, msgId, msgEl);
+    if (msg.reviewReport) renderMessageReviewReport(threadId, msgId, msgEl);
+    renderMessageHookCards(threadId, msgId, msgEl);
+    renderMessageTurnRecovery(threadId, msgId, msgEl);
     attachSideChatChip(threadId, msgId, msgEl);
     const scope = artifactImageScope(threadId);
     for (const part of rowParts(msgEl, msgId)) {
@@ -22511,9 +22511,9 @@ function mountConversation(root, store2, api2, options = {}) {
       if ((msg.hookCards ?? []).length > 0) renderMessageHookCards(thread.id, msg.id);
     }
   }
-  function renderMessageHookCards(threadId, messageId) {
+  function renderMessageHookCards(threadId, messageId, drawn) {
     if (threadId !== store2.getState().activeThreadId) return;
-    const msgEl = transcriptRowElement(list, messageId);
+    const msgEl = drawn ?? transcriptRowElement(list, messageId);
     if (msgEl) rowCardElement(msgEl, "data-hook-cards-for", messageId)?.remove();
     if (!store2.getState().developerMode) return;
     const msg = getActiveThread(store2)?.messages.find((m2) => m2.id === messageId);
@@ -22526,9 +22526,9 @@ function mountConversation(root, store2, api2, options = {}) {
     };
     msgEl.after(createHookCardHost(messageId, cards, load));
   }
-  function renderMessageReview(threadId, messageId) {
+  function renderMessageReview(threadId, messageId, drawn) {
     if (threadId !== store2.getState().activeThreadId) return;
-    const msgEl = transcriptRowElement(list, messageId);
+    const msgEl = drawn ?? transcriptRowElement(list, messageId);
     if (msgEl) rowCardElement(msgEl, "data-review-for", messageId)?.remove();
     const msg = getActiveThread(store2)?.messages.find((m2) => m2.id === messageId);
     if (!msg?.review || !msgEl) return;
@@ -22539,9 +22539,9 @@ function mountConversation(root, store2, api2, options = {}) {
     card.setAttribute("data-review-for", messageId);
     msgEl.after(card);
   }
-  function renderMessageReviewReport(threadId, messageId) {
+  function renderMessageReviewReport(threadId, messageId, drawn) {
     if (threadId !== store2.getState().activeThreadId) return;
-    const msgEl = transcriptRowElement(list, messageId);
+    const msgEl = drawn ?? transcriptRowElement(list, messageId);
     if (msgEl) rowCardElement(msgEl, "data-review-report-for", messageId)?.remove();
     const msg = getActiveThread(store2)?.messages.find((message2) => message2.id === messageId);
     if (!msg?.reviewReport || !msgEl) return;
@@ -22564,9 +22564,9 @@ function mountConversation(root, store2, api2, options = {}) {
     const postTurnCard = rowCardElement(msgEl, "data-review-for", messageId);
     (postTurnCard ?? msgEl).after(card);
   }
-  function renderMessageTurnRecovery(threadId, messageId) {
+  function renderMessageTurnRecovery(threadId, messageId, drawn) {
     if (threadId !== store2.getState().activeThreadId) return;
-    const msgEl = transcriptRowElement(list, messageId);
+    const msgEl = drawn ?? transcriptRowElement(list, messageId);
     if (msgEl) rowCardElement(msgEl, "data-turn-recovery-for", messageId)?.remove();
     const state = store2.getState();
     const projectId = state.activeProjectId;
