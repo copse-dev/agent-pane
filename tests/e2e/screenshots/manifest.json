@@ -3961,6 +3961,14 @@
       "sha256": "7ee38570d991c086473ba27fb0fd8064729fad099cc7879bcfbe08cc2e7e74f5",
       "bytes": 49727
     },
+    "remote-folder-browse-start-beside.png": {
+      "sha256": "a047dd4092153078b993ccdf0d025282e5f62a43904b95921d7365154745adf3",
+      "bytes": 51985
+    },
+    "remote-folder-browse-start-home.png": {
+      "sha256": "0cc7836e9a14c26987ec5061997c02f85309798a28a0deacf76ed45db92ae15d",
+      "bytes": 51938
+    },
     "remote-watcher-install-approval.png": {
       "sha256": "4fbf339885c3410c5693b19b4ad008288391f04b9e95868dc05586552bc4ca29",
       "bytes": 66318
