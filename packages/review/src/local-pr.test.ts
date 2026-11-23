@@ -21,6 +21,7 @@ import {
   localPullRequestMain,
   parsePrArgs,
   pullRequestNumber,
+  pullRequestRepository,
   questionArgs,
   reportNotReusable,
   type LocalPrIo,
@@ -278,6 +279,25 @@ describe('copse-review pr', () => {
     assert.doesNotMatch(err, /already reviewed/)
   })
 
+  it('takes a forge URL for the remote’s own repository, and refuses one for another', async () => {
+    const remote = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: clone })
+      .toString()
+      .trim()
+      .split('/')
+      .slice(-2)
+      .join('/')
+    const args = ['--provider', 'mock', '--mock-script', script, '--no-verify']
+    out = ''
+    err = ''
+    const own = `https://forge.example/${remote.toUpperCase()}/pull/7`
+    assert.equal(await localPullRequestMain([own, ...args], io), HEADLESS_EXIT.SUCCESS, err)
+    assert.match(err, /already reviewed/)
+    err = ''
+    const other = 'https://github.com/someone-else/unrelated/pull/7'
+    assert.equal(await localPullRequestMain([other, ...args], io), HEADLESS_EXIT.USAGE)
+    assert.match(err, /is a pull request of someone-else\/unrelated, but origin is /)
+  })
+
   it('does not answer from a saved report made with other settings or another model', async () => {
     const out = join(root, 'fixed-out')
     assert.equal(await review(['--out', out]), HEADLESS_EXIT.SUCCESS, err)
@@ -345,6 +365,17 @@ describe('copse-review pr arguments', () => {
     assert.equal(pullRequestNumber('https://gitlab.example/g/r/-/merge_requests/3'), 3)
     assert.equal(pullRequestNumber('feature/branch'), null)
     assert.equal(pullRequestNumber('0'), null)
+    assert.equal(
+      pullRequestRepository('https://github.com/Copse-Dev/Agent-Pane/pull/4205'),
+      'copse-dev/agent-pane',
+    )
+    assert.equal(
+      pullRequestRepository('https://gitlab.example/g/sub/r/-/merge_requests/3'),
+      'sub/r',
+    )
+    assert.equal(pullRequestRepository('https://code.example/o/r/pulls/12/files'), 'o/r')
+    assert.equal(pullRequestRepository('123'), null)
+    assert.equal(pullRequestRepository('feature/branch'), null)
   })
 
   it('sizes a default cell from this machine, within 4g–16g and 2–8 CPUs', () => {

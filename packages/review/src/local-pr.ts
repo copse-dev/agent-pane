@@ -223,6 +223,19 @@ export function pullRequestNumber(target: string): number | null {
   return digits === undefined ? null : Number(digits)
 }
 
+/**
+ * The `owner/name` a forge pull-request URL names, lower-cased (forges match
+ * them without case); null for a bare number or anything that is not a URL.
+ */
+export function pullRequestRepository(target: string): string | null {
+  const url =
+    /^https?:\/\/[^/]+\/(.+?)\/(?:-\/)?(?:pull|pulls|merge_requests)\/[1-9]\d*(?:[/?#].*)?$/.exec(
+      target,
+    )
+  const parts = url?.[1]?.split('/').filter((part) => part.length > 0) ?? []
+  return parts.length < 2 ? null : parts.slice(-2).join('/').toLowerCase()
+}
+
 /** The extra hooks a caller (a test, an app) may give the command; the CLI passes none. */
 export interface LocalPrIo extends CliIo {
   /** Runs the store-priming and image-build commands; default inherits stdio onto stderr. */
@@ -299,6 +312,16 @@ function resolveChange(
   stderr: (text: string) => void,
 ): ResolvedChange {
   const pr = pullRequestNumber(options.target)
+  // A URL names its repository too. Pull request 7 of another repository is
+  // not the remote's pull request 7: refuse rather than review the wrong one.
+  const named = pullRequestRepository(options.target)
+  const remoteRepo = remoteRepository(git, options.remote)
+  const actual = remoteRepo === null ? null : `${remoteRepo.owner}/${remoteRepo.name}`
+  if (named !== null && actual !== null && named !== actual.toLowerCase()) {
+    throw new Error(
+      `${options.target} is a pull request of ${named}, but ${options.remote} is ${actual}; review it from a clone of ${named}, or name a remote for it with --remote`,
+    )
+  }
   let headRef: string
   let baseRef: string
   let label: string
@@ -370,12 +393,18 @@ function sha256(text: string): string {
   return createHash('sha256').update(text).digest('hex')
 }
 
-/** A directory name for the repository: its remote's owner and name, else its folder. */
-function repositorySlug(git: Git, repoRoot: string, remote: string): string {
+/** The remote's owner and name, from the last two parts of its URL; null without one. */
+function remoteRepository(git: Git, remote: string): { owner: string; name: string } | null {
   const url = tryGit(git, ['remote', 'get-url', remote])
   const fromUrl =
     url === null ? null : /([^/:]+)\/([^/:]+?)(?:\.git)?\/?$/.exec(url.replace(/^.*:\/\//, ''))
-  const name = fromUrl === null ? basename(repoRoot) : `${fromUrl[1] ?? ''}-${fromUrl[2] ?? ''}`
+  return fromUrl === null ? null : { owner: fromUrl[1] ?? '', name: fromUrl[2] ?? '' }
+}
+
+/** A directory name for the repository: its remote's owner and name, else its folder. */
+function repositorySlug(git: Git, repoRoot: string, remote: string): string {
+  const repository = remoteRepository(git, remote)
+  const name = repository === null ? basename(repoRoot) : `${repository.owner}-${repository.name}`
   return name.replace(/[^A-Za-z0-9._-]+/g, '-') || 'repository'
 }
 
