@@ -126,14 +126,33 @@ export function parseLocalModelCatalog(model: string, text: string): LocalModelP
     const parsed = modelRowSchema.safeParse(value)
     if (parsed.success) rows.push(parsed.data)
   }
-  const row = rows.find((candidate) => rowIds(candidate).includes(model))
-  if (row !== undefined) return { status: 'found', info: rowInfo(model, row) }
+  // LM Link lists a model once per device that has it, under the same key, and
+  // those rows can differ (format, vision, the context each is loaded with).
+  // The server answers with a loaded copy, so a loaded row describes the model
+  // a review will talk to; of several, the smallest loaded context is the one
+  // every copy can hold.
+  const matches = rows
+    .filter((candidate) => rowIds(candidate).includes(model))
+    .map((candidate) => rowInfo(model, candidate))
+  const loaded = matches
+    .filter((info) => info.loaded)
+    .sort(
+      (a, b) =>
+        (a.loadedContextLength ?? Number.POSITIVE_INFINITY) -
+        (b.loadedContextLength ?? Number.POSITIVE_INFINITY),
+    )
+  const info = loaded[0] ?? matches[0]
+  if (info !== undefined) return { status: 'found', info }
   return {
     status: 'missing',
-    available: rows
-      .filter((candidate) => candidate.type !== 'embedding' && candidate.type !== 'embeddings')
-      .map((candidate) => rowIds(candidate)[0] ?? '')
-      .filter((id) => id.length > 0),
+    available: [
+      ...new Set(
+        rows
+          .filter((candidate) => candidate.type !== 'embedding' && candidate.type !== 'embeddings')
+          .map((candidate) => rowIds(candidate)[0] ?? '')
+          .filter((id) => id.length > 0),
+      ),
+    ],
   }
 }
 

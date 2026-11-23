@@ -102,6 +102,52 @@ describe('local model probe', () => {
     assert.equal(probe.info.vision, true)
   })
 
+  it('describes the loaded copy when LM Link lists a model once per device', () => {
+    // The shape LM Studio answered on a Mac Studio with a second machine linked.
+    const row = (
+      format: string,
+      vision: boolean,
+      contextLength: number | null,
+    ): Record<string, unknown> => ({
+      type: 'llm',
+      key: 'qwen/qwen3.6-35b-a3b',
+      format,
+      capabilities: { vision },
+      max_context_length: 262_144,
+      loaded_instances:
+        contextLength === null
+          ? []
+          : [{ id: 'qwen/qwen3.6-35b-a3b', config: { context_length: contextLength } }],
+    })
+    const text = JSON.stringify({
+      models: [
+        row('gguf', false, null),
+        row('mlx', true, 262_144),
+        row('mlx', true, 65_536),
+        { type: 'llm', key: 'other' },
+        { type: 'llm', key: 'other' },
+      ],
+    })
+    assert.deepEqual(parseLocalModelCatalog('qwen/qwen3.6-35b-a3b', text), {
+      status: 'found',
+      info: {
+        server: 'lmstudio',
+        model: 'qwen/qwen3.6-35b-a3b',
+        loaded: true,
+        loadedContextLength: 65_536,
+        maxContextLength: 262_144,
+        vision: true,
+        quantization: null,
+        format: 'mlx',
+        architecture: null,
+      },
+    })
+    assert.deepEqual(parseLocalModelCatalog('missing', text), {
+      status: 'missing',
+      available: ['qwen/qwen3.6-35b-a3b', 'other'],
+    })
+  })
+
   it('names the chat models it has when the requested one is missing, and skips odd rows', () => {
     const text = JSON.stringify({
       models: [
