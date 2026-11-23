@@ -22,6 +22,20 @@ import {
 const label = 'abcdefgh2345'
 const webHost = `web.${label}.u.copse.me`
 
+/** Yield to pending I/O `count` times; unlike a timer, this still runs while timers are mocked. */
+async function turns(count: number): Promise<void> {
+  for (let turn = 0; turn < count; turn++) await new Promise((resolve) => setImmediate(resolve))
+}
+
+/** Wait for `check` by yielding to I/O, not by timers, so it also works while timers are mocked. */
+async function settled(check: () => boolean, limit = 2000): Promise<void> {
+  for (let turn = 0; turn < limit; turn++) {
+    if (check()) return
+    await turns(1)
+  }
+  throw new Error('condition never held')
+}
+
 function until(check: () => boolean, timeoutMs = 10_000): Promise<void> {
   return new Promise((resolve, reject) => {
     const started = Date.now()
@@ -249,7 +263,7 @@ describe('RelayTunnel', () => {
     fixture.tunnel.stop()
     assert.equal(fixture.tunnel.status().state, 'stopped')
     // Let the closed socket's events run first, so a reconnect they schedule is ticked too.
-    for (let turn = 0; turn < 10; turn++) await new Promise((resolve) => setImmediate(resolve))
+    await turns(10)
     mock.timers.tick(10 * 60_000)
     // A reconnect would have set `connecting` synchronously.
     assert.equal(fixture.tunnel.status().state, 'stopped')
@@ -313,13 +327,20 @@ describe('RelayTunnel limits', () => {
       onStatus: (): void => {},
       connect: (connection: ConnectionOptions): TLSSocket =>
         connect({ ...connection, host: '127.0.0.1', ca: relayCa.pem }),
-      handshakeTimeoutMs: 100,
     })
+    // The challenge wait is a setTimeout armed as the attempt starts: run the clock by hand.
+    mock.timers.enable({ apis: ['setTimeout'] })
     cleanups.push(() => {
       tunnel.stop()
+      mock.timers.reset()
     })
     tunnel.start()
-    await until(() => tunnel.status().state === 'retrying', 5000)
+    mock.timers.tick(14_999)
+    // Let the TLS connection open: the relay is up, it just never speaks.
+    await turns(20)
+    assert.equal(tunnel.status().state, 'connecting')
+    mock.timers.tick(1)
+    await settled(() => tunnel.status().state === 'retrying')
     assert.match(tunnel.status().error ?? '', /did not answer in time/)
   })
 })
@@ -334,35 +355,36 @@ describe('relay ingress', () => {
     cert: served.cert,
   }
 
-  it('serves at most maxConnections relayed connections at once', () => {
-    const ingress = createRelayIngress({
-      identity: () => identity,
-      handle: () => {},
-      maxConnections: 1,
+  it('serves at most 16 relayed connections at once', () => {
+    const ingress = createRelayIngress({ identity: () => identity, handle: () => {} })
+    const streams = Array.from({ length: 17 }, () => new PassThrough())
+    streams.forEach((stream, index) => {
+      ingress.accept(stream, `198.51.100.${String(index + 10)}`)
     })
-    const first = new PassThrough()
-    const second = new PassThrough()
-    ingress.accept(first, '198.51.100.3')
-    ingress.accept(second, '198.51.100.4')
-    assert.equal(ingress.connections(), 1)
-    assert.equal(first.destroyed, false)
-    assert.equal(second.destroyed, true)
+    assert.equal(ingress.connections(), 16)
+    assert.deepEqual(
+      streams.map((stream) => stream.destroyed),
+      [...Array.from({ length: 16 }, () => false), true],
+    )
     ingress.close()
     assert.equal(ingress.connections(), 0)
   })
 
-  it('drops a connection whose TLS handshake never completes', async () => {
-    const ingress = createRelayIngress({
-      identity: () => identity,
-      handle: () => {},
-      handshakeTimeoutMs: 50,
-    })
-    const silent = new PassThrough()
-    ingress.accept(silent, '198.51.100.5')
-    assert.equal(ingress.connections(), 1)
-    await until(() => ingress.connections() === 0, 2000)
-    assert.equal(silent.destroyed, true)
-    ingress.close()
+  it('drops a connection whose TLS handshake has not finished after ten seconds', async () => {
+    mock.timers.enable({ apis: ['setTimeout'] })
+    const ingress = createRelayIngress({ identity: () => identity, handle: () => {} })
+    try {
+      const silent = new PassThrough()
+      ingress.accept(silent, '198.51.100.5')
+      mock.timers.tick(9_999)
+      assert.equal(ingress.connections(), 1)
+      mock.timers.tick(1)
+      await settled(() => ingress.connections() === 0)
+      assert.equal(silent.destroyed, true)
+    } finally {
+      ingress.close()
+      mock.timers.reset()
+    }
   })
 
   it('closes a relayed connection when this Mac has no valid certificate', async () => {

@@ -92,7 +92,8 @@ frame them; the diagram frame admits its own origin and the shell. With the rela
 on the bare-IP address, every response keeps `frame-ancestors 'none'` and `X-Frame-Options: DENY`.
 Framing is the one relaxation of the LAN plan's header rule, which exists against clickjacking of
 the decision screen: a compromised shell could overlay its own page on the framed Mac page and
-trick taps on Approve. See the [threat model](threat-model.md#threat-scenarios), scenario 12. When the shell frames the page, the page posts one message to `https://copse.me`:
+trick taps on Approve. See the [threat model](threat-model.md#threat-scenarios), scenario 12.
+When the shell frames the page, the page posts one message to `https://copse.me`:
 `{type: 'copse-status', v: 1, state, counts: {attention, running}}`. It carries no thread names,
 transcripts, diffs or file names, and the page never reads messages from the shell. The shell
 reads the message's arrival as proof that the frame reached the Mac.
@@ -170,8 +171,8 @@ the Mac just generated and is currently valid.
 
 State lives in `~/.copse/names/` (0700): `device.json` (the sealed device key, the registration,
 the last address the service accepted, recent order times and certificate dates),
-`tls-key.pem` / `tls-chain.pem`, and `relay.json` (whether the relay is chosen), all 0600. It is kept apart from `config.json`, which renderer
-settings writes can reach.
+`tls-key.pem` / `tls-chain.pem`, and `relay.json` (whether the relay is chosen), all 0600. It is
+kept apart from `config.json`, which renderer settings writes can reach.
 
 ## Networks whose DNS drops the name
 

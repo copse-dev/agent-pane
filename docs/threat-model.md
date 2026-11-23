@@ -178,31 +178,30 @@ project-defined MCP servers are gated behind workspace trust, the
     resolution; the LAN-IP address and its local root keep working.
 12. **Relay or shell compromise, or a stranger through the relay.** The Copse relay
     (`relay.copse.dev`), or someone who controls it, drops or stalls the tunnel, reports false
-    client addresses, hands connections from strangers to the Mac, or replays a browser's bytes;
-    the `copse.me` shell shows a fake interface around, or instead of, the framed Mac, or
-    overlays the framed page to trick taps on Approve (clickjacking); a phone paired on one
-    route acts on the other; or a stranger who learned `web.<label>.u.copse.me` tries to use
-    it. _Backstop:_ the relay is off
-    until the user turns it on, and needs an active name with a valid certificate. Browsers' TLS
-    ends on the Mac with a key the relay and the names service never see, so the relay sees
+    client addresses, hands connections from strangers to the Mac, or replays a browser's bytes; the
+    `copse.me` shell shows a fake interface around, or instead of, the framed Mac, or overlays the
+    framed page to trick taps on Approve (clickjacking); a phone paired on one route acts on the
+    other; or a stranger who learned `web.<label>.u.copse.me` tries to use it. _Backstop:_ the relay
+    is off until the user turns it on, and needs an active name with a valid certificate. Browsers'
+    TLS ends on the Mac with a key the relay and the names service never see, so the relay sees
     ciphertext and connection metadata, and a replay fails the handshake; reading or altering
     relayed traffic also needs a mis-issued certificate (scenario 11), which Certificate
     Transparency records. The Mac accepts only `CONNECT` streams for its own
     `web.<label>.u.copse.me:443`, at most 32 per tunnel and 16 open connections, and every route
-    past pairing needs a device token; pairing needs the desktop's approval, and the banner says
-    the phone came through the relay. Relayed pairing has its own slot and never displaces a
-    pending request from the local network. A false client address only skews the failed-token
-    limit, which remembers at most 1,024 addresses. The relay's own gate (an address a paired `copse.me` account
-    refreshed) keeps most strangers from the page at all, but the Mac does not rely on it. The
-    shell holds no device token: tokens live in the framed origin's storage, the page never reads
-    messages from the shell, and it posts the shell only a state and two counts. Only
-    `https://copse.me` may frame a trusted name, and only while the relay is chosen; the bare-IP
-    origin may not be framed at all. **Accepted gap:** framing relaxes the LAN plan's
-    clickjacking rule (`frame-ancestors 'none'`) for one first-party origin, so a compromised
-    shell could overlay the framed page and trick taps on Approve or Stop, as well as phish with a
-    fake page. Nothing in the framed page detects that today. A device token is also accepted on
-    every route: once the relay is on, phones paired on the local network can act through it, and
-    Settings does not show which route a phone paired on; revoking a phone cuts it off on all.
+    past pairing needs a device token; pairing needs the desktop's approval, and the banner says the
+    phone came through the relay. Relayed pairing has its own slot and never displaces a pending
+    request from the local network. A false client address only skews the failed-token limit, which
+    remembers at most 1,024 addresses. The relay's own gate (an address a paired `copse.me` account
+    refreshed) keeps most strangers from the page at all, but the Mac does not rely on it. The shell
+    holds no device token: tokens live in the framed origin's storage, the page never reads messages
+    from the shell, and it posts the shell only a state and two counts. Only `https://copse.me` may
+    frame a trusted name, and only while the relay is chosen; the bare-IP origin may not be framed
+    at all. **Accepted gap:** framing relaxes the LAN plan's clickjacking rule (`frame-ancestors
+    'none'`) for one first-party origin, so a compromised shell could overlay the framed page and
+    trick taps on Approve or Stop, as well as phish with a fake page. Nothing in the framed page
+    detects that today. A device token is also accepted on every route: once the relay is on, phones
+    paired on the local network can act through it, and Settings does not show which route a phone
+    paired on; revoking a phone cuts it off on all.
 
 ## Internal Git execution
 

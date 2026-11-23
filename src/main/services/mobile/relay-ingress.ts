@@ -13,6 +13,8 @@ export interface RelayIngress {
 
 /** Relayed browser connections served at once; the tunnel and the relay cap streams too. */
 const MAX_CONNECTIONS = 16
+/** How long a relayed browser has to finish its TLS handshake. */
+const HANDSHAKE_TIMEOUT_MS = 10_000
 
 /**
  * Browser connections that reach this Mac through the Copse relay. Each one
@@ -26,8 +28,6 @@ export function createRelayIngress(options: {
   /** The label's certificate while it is valid; a connection arriving without one is closed. */
   identity: () => PublicIdentity | null
   handle: (req: IncomingMessage, res: ServerResponse, clientIp: string) => void
-  maxConnections?: number
-  handshakeTimeoutMs?: number
 }): RelayIngress {
   const clients = new Map<Socket, string>()
   let contextCache: { identity: PublicIdentity; context: SecureContext } | null = null
@@ -60,7 +60,7 @@ export function createRelayIngress(options: {
   return {
     accept(stream, clientIp): void {
       const identity = options.identity()
-      if (closed || !identity || clients.size >= (options.maxConnections ?? MAX_CONNECTIONS)) {
+      if (closed || !identity || clients.size >= MAX_CONNECTIONS) {
         stream.destroy()
         return
       }
@@ -78,7 +78,7 @@ export function createRelayIngress(options: {
       clients.set(socket, clientIp)
       const handshake = setTimeout(() => {
         socket.destroy()
-      }, options.handshakeTimeoutMs ?? 10_000)
+      }, HANDSHAKE_TIMEOUT_MS)
       handshake.unref()
       socket.once('secure', () => {
         clearTimeout(handshake)

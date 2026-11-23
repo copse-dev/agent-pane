@@ -60,7 +60,6 @@ export interface RelayTunnelOptions {
   connect?: (options: ConnectionOptions) => TLSSocket
   now?: () => number
   random?: () => number
-  handshakeTimeoutMs?: number
 }
 
 /** Browser connections one tunnel serves at once; the relay caps them per label too. */
@@ -71,6 +70,8 @@ const MAX_BACKOFF_MS = 300_000
 const STABLE_MS = 60_000
 /** HTTP/2 PING interval; a ping still unanswered at the next one closes the tunnel. */
 const KEEPALIVE_MS = 25_000
+/** How long the relay has to send each handshake line (its challenge, then ready). */
+const HANDSHAKE_TIMEOUT_MS = 15_000
 
 /** Delay before reconnect attempt `failures` (1-based): doubling, capped, with ±20% jitter. */
 export function relayBackoffMs(failures: number, random: () => number = Math.random): number {
@@ -161,9 +162,8 @@ export class RelayTunnel {
       this.closed(attempt, lastError ?? 'The relay closed the tunnel.', connectedAt)
     })
     try {
-      const timeoutMs = this.options.handshakeTimeoutMs ?? 15_000
       const challenge = safeJsonParse(
-        await readLine(socket, TUNNEL_LINE_MAX_BYTES, timeoutMs),
+        await readLine(socket, TUNNEL_LINE_MAX_BYTES, HANDSHAKE_TIMEOUT_MS),
         decodeWithSchema(TunnelChallenge),
       )
       if (!challenge) throw new TunnelRefused('The relay sent an unexpected greeting.')
@@ -176,7 +176,9 @@ export class RelayTunnel {
         socket,
         `${JSON.stringify({ type: 'auth', label: this.options.label, timestampMs, signature })}\n`,
       )
-      const readyLine = await readLine(socket, TUNNEL_LINE_MAX_BYTES, timeoutMs).catch(() => null)
+      const readyLine = await readLine(socket, TUNNEL_LINE_MAX_BYTES, HANDSHAKE_TIMEOUT_MS).catch(
+        () => null,
+      )
       const ready =
         readyLine === null ? null : safeJsonParse(readyLine, decodeWithSchema(TunnelReady))
       // The relay answers a bad signature, an inactive label or a blocklisted

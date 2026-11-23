@@ -283,12 +283,13 @@ describe('Mobile Companion through the relay', function () {
     }
     await banner.$('button=Allow control').click()
 
-    // Collected through the relay by whoever holds the pairing's random id.
+    // Collected through the relay by whoever holds the pairing's random id, even from
+    // another address: a phone's reported address can change between request and poll.
     let token = ''
     await browser.waitUntil(
       async () => {
         const result = await relayed(`/api/pair/result?id=${started.json?.id ?? ''}`, {
-          clientIp: '198.51.100.40',
+          clientIp: '2001:db8::5',
         })
         token = result.json?.token ?? ''
         return token !== ''

@@ -25,6 +25,7 @@ import {
   mobileThreadImage,
   mobileProjects,
 } from './mobile-activity.ts'
+import { FailedAuthLimiter } from './failed-auth-limiter.ts'
 import { mobileCertificate } from './mobile-certificate.ts'
 import type { PairingVia } from './mobile-pairing.ts'
 import { createRelayIngress } from './relay-ingress.ts'
@@ -161,9 +162,6 @@ interface RequestRoute extends PairingVia {
   binding: string
 }
 
-/** Distinct addresses whose failed token attempts are remembered at once. */
-const FAILED_AUTH_LIMIT = 1024
-
 function preferences(req: IncomingMessage): RequestPreferences {
   return {
     acceptEncoding: req.headers['accept-encoding'],
@@ -236,7 +234,7 @@ export async function startMobileServer(options: {
   // phone polls it far more often than that: serialize each one once.
   const serializedStates = new WeakMap<object, { text: string; etag: string }>()
   const actions = new MobileActionRequests(randomUUID())
-  const failedAuth = new Map<string, { attempts: number; blockedUntil: number }>()
+  const failedAuth = new FailedAuthLimiter()
   let stopped = false
   const active = (): boolean => !stopped
   // One pending pairing per transport, so a client the relay admits cannot hold the only
@@ -403,28 +401,17 @@ export async function startMobileServer(options: {
     }
     // The bearer check precedes every protected body read and store access.
     const peer = route.peer
-    const prior = failedAuth.get(peer)
-    if (prior && prior.blockedUntil > Date.now()) {
+    if (failedAuth.blocked(peer)) {
       send(res, 429, { error: 'Too many failed requests' })
       return
     }
     const principal = options.devices.principal(req.headers.authorization)
     if (!principal) {
-      const attempts =
-        prior?.blockedUntil && prior.blockedUntil < Date.now() ? 1 : (prior?.attempts ?? 0) + 1
-      // Relayed peers are whatever addresses the relay reports: keep the map bounded.
-      if (!failedAuth.has(peer) && failedAuth.size >= FAILED_AUTH_LIMIT) {
-        const oldest = failedAuth.keys().next()
-        if (!oldest.done) failedAuth.delete(oldest.value)
-      }
-      failedAuth.set(peer, {
-        attempts,
-        blockedUntil: attempts >= 30 ? Date.now() + 300_000 : 0,
-      })
+      failedAuth.failed(peer)
       send(res, 401, { error: 'Pair this phone from Copse on the desktop' })
       return
     }
-    failedAuth.delete(peer)
+    failedAuth.succeeded(peer)
     if (
       (req.method === 'GET' && path.pathname === '/api/remote/state') ||
       (req.method === 'POST' && path.pathname === '/api/remote/read')
