@@ -18111,6 +18111,25 @@ dialog.activity-panel-overlay {
 .mobile-companion-name-warning {
   color: var(--warning);
 }
+.mobile-companion-relay {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin: var(--spacing-sm) 0;
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--border);
+}
+.mobile-companion-relay > .mobile-companion-qr,
+.settings-content .mobile-companion-relay > .field-hint:not(:last-child) {
+  margin: 0;
+}
+.mobile-companion-relay .settings-action-row {
+  margin-bottom: 0;
+}
+#mobile-companion-shell-qr .mobile-companion-qr-image {
+  width: 176px;
+  height: 176px;
+}
 
 /* src/renderer/styles/global/memories.css */
 .memories-host {
