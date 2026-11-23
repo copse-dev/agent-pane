@@ -72583,55 +72583,6 @@ var init_active_thread_owner = __esm({
   }
 });
 
-// src/shared/fs/image-path.ts
-function extensionOf(path) {
-  const name = path.split(/[\\/]/).pop()?.toLowerCase() ?? "";
-  const dot = name.lastIndexOf(".");
-  return dot < 0 ? null : name.slice(dot + 1);
-}
-function imageMimeType(path) {
-  const ext = extensionOf(path);
-  return ext === null ? null : IMAGE_MIME_BY_EXT.get(ext) ?? null;
-}
-function isImagePath(path) {
-  return imageMimeType(path) !== null;
-}
-function isRasterImagePath(path) {
-  const mime = imageMimeType(path);
-  return mime !== null && mime !== "image/svg+xml";
-}
-function isUnrenderableImageMime(mime) {
-  return UNRENDERABLE_IMAGE_MIME.has(mime.toLowerCase());
-}
-function isUnrenderableImagePath(path) {
-  const ext = extensionOf(path);
-  return ext !== null && UNRENDERABLE_IMAGE_EXT.has(ext);
-}
-var IMAGE_MIME_BY_EXT, UNRENDERABLE_IMAGE_MIME, UNRENDERABLE_IMAGE_EXT;
-var init_image_path = __esm({
-  "src/shared/fs/image-path.ts"() {
-    IMAGE_MIME_BY_EXT = /* @__PURE__ */ new Map([
-      ["avif", "image/avif"],
-      ["bmp", "image/bmp"],
-      ["gif", "image/gif"],
-      ["ico", "image/x-icon"],
-      ["jpeg", "image/jpeg"],
-      ["jpg", "image/jpeg"],
-      ["png", "image/png"],
-      ["svg", "image/svg+xml"],
-      ["webp", "image/webp"]
-    ]);
-    UNRENDERABLE_IMAGE_MIME = /* @__PURE__ */ new Set([
-      "image/heic",
-      "image/heic-sequence",
-      "image/heif",
-      "image/heif-sequence",
-      "image/tiff"
-    ]);
-    UNRENDERABLE_IMAGE_EXT = /* @__PURE__ */ new Set(["heic", "heif", "tif", "tiff"]);
-  }
-});
-
 // src/renderer/drawing/drauu/emitter.ts
 var Emitter;
 var init_emitter = __esm({
@@ -74711,6 +74662,55 @@ var init_image_expand = __esm({
     init_attach_annotation();
     init_toast();
     init_attachment_preview();
+  }
+});
+
+// src/shared/fs/image-path.ts
+function extensionOf(path) {
+  const name = path.split(/[\\/]/).pop()?.toLowerCase() ?? "";
+  const dot = name.lastIndexOf(".");
+  return dot < 0 ? null : name.slice(dot + 1);
+}
+function imageMimeType(path) {
+  const ext = extensionOf(path);
+  return ext === null ? null : IMAGE_MIME_BY_EXT.get(ext) ?? null;
+}
+function isImagePath(path) {
+  return imageMimeType(path) !== null;
+}
+function isRasterImagePath(path) {
+  const mime = imageMimeType(path);
+  return mime !== null && mime !== "image/svg+xml";
+}
+function isUnrenderableImageMime(mime) {
+  return UNRENDERABLE_IMAGE_MIME.has(mime.toLowerCase());
+}
+function isUnrenderableImagePath(path) {
+  const ext = extensionOf(path);
+  return ext !== null && UNRENDERABLE_IMAGE_EXT.has(ext);
+}
+var IMAGE_MIME_BY_EXT, UNRENDERABLE_IMAGE_MIME, UNRENDERABLE_IMAGE_EXT;
+var init_image_path = __esm({
+  "src/shared/fs/image-path.ts"() {
+    IMAGE_MIME_BY_EXT = /* @__PURE__ */ new Map([
+      ["avif", "image/avif"],
+      ["bmp", "image/bmp"],
+      ["gif", "image/gif"],
+      ["ico", "image/x-icon"],
+      ["jpeg", "image/jpeg"],
+      ["jpg", "image/jpeg"],
+      ["png", "image/png"],
+      ["svg", "image/svg+xml"],
+      ["webp", "image/webp"]
+    ]);
+    UNRENDERABLE_IMAGE_MIME = /* @__PURE__ */ new Set([
+      "image/heic",
+      "image/heic-sequence",
+      "image/heif",
+      "image/heif-sequence",
+      "image/tiff"
+    ]);
+    UNRENDERABLE_IMAGE_EXT = /* @__PURE__ */ new Set(["heic", "heif", "tif", "tiff"]);
   }
 });
 

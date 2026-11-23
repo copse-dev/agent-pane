@@ -495,7 +495,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-74TFCOUM.js";
+} from "./chunk-NQSONQKJ.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -2177,18 +2177,6 @@ function browserIcon() {
 function desktopIcon() {
   return outlineIcon("desktop", ["M2 3h20v14H2V3Z", "M8 21h8", "M12 17v4"], "titlebar-btn-icon");
 }
-function prsIcon() {
-  return outlineIcon(
-    "prs",
-    [
-      "M9 6a3 3 0 1 0-6 0 3 3 0 0 0 6 0Z",
-      "M6 9v12",
-      "M21 18a3 3 0 1 0-6 0 3 3 0 0 0 6 0Z",
-      "M13 6h3a2 2 0 0 1 2 2v7"
-    ],
-    "titlebar-btn-icon"
-  );
-}
 function memoriesIcon() {
   return outlineIcon(
     "memories",
@@ -2207,6 +2195,7 @@ function roadmapIcon() {
   );
 }
 function panelModeLabel(mode) {
+  if (mode === "prs") return "Review";
   return PANEL_CONTROL_DEFS.find((def) => def.mode === mode)?.label ?? "Panel";
 }
 function mountPanelModeControls(store2, api2, opts = {}) {
@@ -2254,7 +2243,8 @@ function mountPanelModeControls(store2, api2, opts = {}) {
     );
     if (isGated(def)) btn.setAttribute("data-experimental-hidden", "");
     btn.addEventListener("click", () => {
-      toggleRightPanelWithWorkspace(store2, api2, def.mode);
+      const mode = def.id === "changes" && store2.getState().rightPanelMode === "prs" ? "prs" : def.mode;
+      toggleRightPanelWithWorkspace(store2, api2, mode);
       syncPanelBtns();
     });
     buttons.set(def.id, btn);
@@ -2282,7 +2272,7 @@ function mountPanelModeControls(store2, api2, opts = {}) {
             def ? def.icon() : "",
             def?.label ?? btn.getAttribute("aria-label") ?? "Panel"
           );
-          if (def && filesPaneOpen && rightPanelMode === def.mode) {
+          if (def && filesPaneOpen && (rightPanelMode === def.mode || def.id === "changes" && rightPanelMode === "prs")) {
             item.classList.add("is-active");
           }
           item.addEventListener("click", () => {
@@ -2418,7 +2408,10 @@ function mountPanelModeControls(store2, api2, opts = {}) {
     for (const def of PANEL_CONTROL_DEFS) {
       const btn = buttons.get(def.id);
       if (!btn) continue;
-      btn.classList.toggle("active", filesPaneOpen && rightPanelMode === def.mode);
+      btn.classList.toggle(
+        "active",
+        filesPaneOpen && (rightPanelMode === def.mode || def.id === "changes" && rightPanelMode === "prs")
+      );
     }
     syncOverflow?.();
   }
@@ -2469,7 +2462,7 @@ function mountPanelModeControls(store2, api2, opts = {}) {
     if (changesBtn) {
       setTooltip(
         changesBtn,
-        pending > 0 ? `Open changes \u2014 ${String(pending)} pending ${pending === 1 ? "diff" : "diffs"}` : "Open changes"
+        pending > 0 ? `Open review \u2014 ${String(pending)} pending ${pending === 1 ? "diff" : "diffs"}` : "Open review"
       );
     }
     syncOverflow?.();
@@ -2576,16 +2569,9 @@ var init_panel_mode_controls = __esm({
       {
         id: "changes",
         mode: "changes",
-        ariaLabel: "Open changes",
-        label: "Changes",
+        ariaLabel: "Open review",
+        label: "Review",
         icon: changesIcon
-      },
-      {
-        id: "prs",
-        mode: "prs",
-        ariaLabel: "Open pull requests",
-        label: "PRs",
-        icon: prsIcon
       },
       {
         id: "memories",
@@ -2782,7 +2768,7 @@ var init_keyboard_shortcuts_dialog = __esm({
           { label: "Toggle panel", keys: ["Mod", "J"] },
           { label: "Explorer", keys: ["Mod", "Shift", "E"] },
           { label: "Terminal", keys: ["Mod", "`"] },
-          { label: "Changes", keys: ["Mod", "Shift", "G"] },
+          { label: "Review", keys: ["Mod", "Shift", "G"] },
           { label: "Browser", keys: ["Mod", "Shift", "B"] },
           { label: "Focus browser address bar", keys: ["Mod", "L"] },
           // Same physical key as above: while the browser page itself has focus,
@@ -72180,7 +72166,7 @@ function mountRightPanelLayout(store2) {
     const isBrowser = mode === "browser";
     const isVnc = mode === "vnc";
     const sidebar = document.getElementById("right-sidebar");
-    if (sidebar) sidebar.hidden = isContext;
+    if (sidebar) sidebar.hidden = isContext || isPrs;
     const treeHost = document.getElementById("file-tree-host");
     const contextHost = document.getElementById("context-host");
     const sideChatHost = document.getElementById("side-chat-host");
@@ -72222,7 +72208,7 @@ function mountRightPanelLayout(store2) {
     if (roadmapViewer) roadmapViewer.hidden = !isRoadmap;
     if (browserViewer) browserViewer.hidden = !isBrowser;
     if (vncViewer) vncViewer.hidden = !isVnc;
-    if (treeResizer) treeResizer.hidden = isContext || !store2.getState().filesPaneOpen;
+    if (treeResizer) treeResizer.hidden = isContext || isPrs || !store2.getState().filesPaneOpen;
   }
   function syncMaximized() {
     const maximized = isRightPanelMaximized(store2);
@@ -75784,6 +75770,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   let selectRequestId = 0;
   let diffLoadQueue = Promise.resolve();
   let pendingOpen = null;
+  let pickedFromList = false;
   let lastActionMessage = null;
   let otherExpanded = false;
   let otherLoaded = false;
@@ -75903,7 +75890,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     emptyState.textContent = ghStatus?.installed ? "GitHub CLI is not authenticated" : "GitHub CLI is not available";
   }
   function renderPrRow(pr, section2) {
-    const isSelected = selectedPr?.owner === pr.owner && selectedPr.repo === pr.repo && selectedPr.number === pr.number;
+    const isSelected = store2.getState().rightPanelMode === "prs" && selectedPr?.owner === pr.owner && selectedPr.repo === pr.repo && selectedPr.number === pr.number;
     const ci = el("span", {});
     const state = knownChecks(pr);
     const displayedState = state ?? (ghStatus && !ghStatus.authenticated ? "unavailable" : "loading");
@@ -75959,7 +75946,15 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
         checksLabel
       )
     );
-    row2.addEventListener("click", () => void selectPr(pr));
+    row2.addEventListener("click", () => {
+      const fromLocalReview = !prsModeActive(store2);
+      if (fromLocalReview) pickedFromList = true;
+      if (prDetails && githubPrKey(prDetails) === githubPrKey(pr)) {
+        if (fromLocalReview) void refreshDetailsAfterAction(pr);
+        return;
+      }
+      void selectPr(pr);
+    });
     if (!state) ensureCheck(pr);
     return row2;
   }
@@ -76700,7 +76695,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   }
   async function refresh(opts = {}) {
     const reason = opts.reason ?? "event";
-    if (refreshInFlight && reason === "poll") return;
+    if (refreshInFlight && (reason === "poll" || reason === "list")) return;
     refreshInFlight = true;
     try {
       await refreshBody(reason);
@@ -76758,7 +76753,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     }
     prList = mergePrLists(linkedRefs, [workspacePrs, myPrs]);
     renderList();
-    if (reason === "poll") return;
+    if (reason === "poll" || reason === "list") return;
     const openTarget = pendingOpen;
     pendingOpen = null;
     if (openTarget) {
@@ -76783,9 +76778,9 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   });
   filterInput.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
+    if (!filterQuery && !filterInput.value) return;
     e.preventDefault();
     e.stopPropagation();
-    if (!filterQuery && !filterInput.value) return;
     filterQuery = "";
     filterInput.value = "";
     renderList();
@@ -76801,10 +76796,18 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   const unbindActivityWorkspaceLinks = bindWorkspaceLinkClicks(activityHost, store2, api2);
   const unbindActivityBrowserLinks = bindBrowserLinkClicks(activityHost, store2, api2);
   const stopObservingLayout = observeDiffHostLayout(viewerRoot, () => diffEditor);
+  let wasPrSubject = prsModeActive(store2);
   const unsubs = [
-    selectRightPanelMode(store2, "prs", (active2) => {
+    selectRightPanel(store2, () => {
+      const active2 = prsModeActive(store2);
+      if (active2 === wasPrSubject) return;
+      wasPrSubject = active2;
+      const picked = pickedFromList;
+      pickedFromList = false;
       syncWatch();
-      if (active2) void refresh();
+      if (!active2) renderList();
+      else if (picked && !pendingOpen) renderList();
+      else void refresh();
     }),
     selectActiveWorkspace(store2, () => {
       threadRelationshipRequest++;
@@ -76876,7 +76879,11 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       if (next.selectedFile) selectedFile = next.selectedFile;
     }
   });
-  return () => {
+  function loadList() {
+    if (disposed || prsModeActive(store2)) return;
+    void refresh({ reason: "list" });
+  }
+  const destroy = () => {
     disposed = true;
     document.removeEventListener("pointerdown", dismissActions);
     titleGen++;
@@ -76899,6 +76906,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     diffEditor?.dispose();
     diffEditor = null;
   };
+  return Object.assign(destroy, { loadList });
 }
 var STATUS_LABEL2, AGENT_PROVIDER_LABEL, threadPrKeys, transcriptPrKeys, PR_PANE_INACTIVE;
 var init_pr_pane = __esm({
@@ -76948,6 +76956,170 @@ var init_pr_pane = __esm({
     threadPrKeys = /* @__PURE__ */ new WeakMap();
     transcriptPrKeys = /* @__PURE__ */ new WeakMap();
     PR_PANE_INACTIVE = "";
+  }
+});
+
+// src/renderer/views/review-pane.ts
+function mountReviewPane(root, store2, api2, monaco) {
+  const localList = qsRequired(root, "#git-changes-host");
+  const localViewer = qsRequired(root, "#git-diff-viewer-host");
+  const prList = qsRequired(root, "#pr-list-host");
+  const prViewer = qsRequired(root, "#pr-viewer-host");
+  const destroyLocal = mountGitChangesPane(localList, localViewer, store2, api2, monaco);
+  const prPane = mountPrPane(prList, prViewer, store2, api2, monaco);
+  const label = el("span", { class: "review-subject-label pane-header-title" });
+  const pickerHint = el(
+    "span",
+    { id: "review-subject-picker-hint", hidden: true },
+    "Choose local changes or a pull request to review"
+  );
+  const picker = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost ui-btn-compact review-subject-picker",
+      // The native invoker: clicking it again closes the popover instead of the
+      // light dismiss closing it on pointerup and the click reopening it.
+      popovertarget: "review-subject-choices",
+      "aria-describedby": "review-subject-picker-hint",
+      "aria-expanded": "false",
+      "aria-controls": "review-subject-choices",
+      "aria-haspopup": "dialog"
+    },
+    label,
+    chevronDownIcon("ui-icon ui-icon-sm"),
+    pickerHint
+  );
+  const localChoice = el(
+    "button",
+    { type: "button", class: "review-local-choice" },
+    "Local changes"
+  );
+  const choices = el("div", {
+    id: "review-subject-choices",
+    class: "review-subject-choices",
+    popover: "auto",
+    role: "dialog",
+    "aria-label": "Changes and pull requests"
+  });
+  const prListParent = prList.parentElement;
+  const prListNext = prList.nextSibling;
+  choices.append(localChoice, prList);
+  const localTools = qsRequired(localList, ".pane-header");
+  const prTools = qsRequired(prList, ".pane-header");
+  localTools.classList.add("review-tools");
+  prTools.classList.add("review-tools");
+  const header = el("div", { class: "review-header" }, picker, localTools, prTools);
+  const filesHeading = el("div", { class: "review-files-heading" }, "Files changed");
+  localList.prepend(filesHeading);
+  const title = el("h4", { class: "review-local-title" });
+  const location = el("div", { class: "pr-viewer-subtitle" });
+  const localMeta = el("div", { class: "review-local-meta" }, title, location);
+  localViewer.prepend(localMeta);
+  root.prepend(header, choices);
+  function closeChoices() {
+    if (choices.matches(":popover-open")) choices.hidePopover();
+  }
+  choices.addEventListener("beforetoggle", (event) => {
+    if (event.newState !== "open") return;
+    const rect = picker.getBoundingClientRect();
+    const width = Math.min(360, root.clientWidth - 16, window.innerWidth - 16);
+    choices.style.width = `${String(width)}px`;
+    choices.style.top = `${String(rect.bottom)}px`;
+    choices.style.left = `${String(Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)))}px`;
+    choices.style.maxHeight = `${String(Math.max(100, window.innerHeight - rect.bottom - 8))}px`;
+    prPane.loadList();
+  });
+  choices.addEventListener("toggle", () => {
+    const open = choices.matches(":popover-open");
+    picker.setAttribute("aria-expanded", String(open));
+    if (!open) return;
+    const current = store2.getState().rightPanelMode === "prs" ? prList.querySelector(".pr-list-row.is-selected") : null;
+    (current ?? localChoice).focus();
+  });
+  choices.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || event.defaultPrevented) return;
+    event.preventDefault();
+    event.stopPropagation();
+    closeChoices();
+    picker.focus();
+  });
+  localChoice.addEventListener("click", () => {
+    openRightPanel(store2, "changes");
+    closeChoices();
+    picker.focus();
+  });
+  const onPrChoice = (event) => {
+    if (!(event.target instanceof Element) || !event.target.closest(".pr-list-row")) return;
+    openRightPanel(store2, "prs");
+    closeChoices();
+    picker.focus();
+  };
+  prList.addEventListener("click", onPrChoice);
+  function sync() {
+    const { filesPaneOpen, rightPanelMode } = store2.getState();
+    const local = rightPanelMode === "changes";
+    const reviewing = local || rightPanelMode === "prs";
+    header.hidden = !reviewing;
+    root.classList.toggle("is-review-pane", reviewing);
+    localTools.hidden = !local;
+    prTools.hidden = local;
+    label.textContent = local ? "Local changes" : "Pull request";
+    localChoice.setAttribute("aria-current", String(local));
+    prList.hidden = false;
+    if (!filesPaneOpen || !reviewing) closeChoices();
+  }
+  function syncLocalSubject() {
+    const thread = getActiveThread(store2);
+    title.textContent = thread?.title.trim() ? thread.title : "Local changes";
+    const branch = thread?.worktree?.branch ?? thread?.gitBranch;
+    location.textContent = branch ? `${branch} \xB7 Only on this machine` : "Only on this machine";
+  }
+  syncLocalSubject();
+  sync();
+  const unsub = selectRightPanel(store2, sync);
+  const unsubSubject = store2.select(
+    (state) => {
+      const thread = getActiveThread(store2);
+      return [
+        state.activeProjectId,
+        state.activeThreadId,
+        thread?.title,
+        thread?.worktree?.branch,
+        thread?.gitBranch
+      ];
+    },
+    syncLocalSubject,
+    sameItems
+  );
+  return () => {
+    unsub();
+    unsubSubject();
+    prPane();
+    destroyLocal();
+    prList.removeEventListener("click", onPrChoice);
+    localTools.classList.remove("review-tools");
+    prTools.classList.remove("review-tools");
+    localList.prepend(localTools);
+    prList.prepend(prTools);
+    prListParent?.insertBefore(prList, prListNext);
+    closeChoices();
+    header.remove();
+    choices.remove();
+    filesHeading.remove();
+    localMeta.remove();
+    root.classList.remove("is-review-pane");
+  };
+}
+var init_review_pane = __esm({
+  "src/renderer/views/review-pane.ts"() {
+    init_helpers();
+    init_store();
+    init_thread_helpers();
+    init_icons();
+    init_panels();
+    init_git_changes_pane();
+    init_pr_pane();
   }
 });
 
@@ -88065,8 +88237,8 @@ var init_command_palette = __esm({
     PANEL_ITEMS = [
       { mode: "explorer", label: "Panel (Explorer)" },
       { mode: "terminal", label: "Terminal" },
-      { mode: "changes", label: "Changes" },
-      { mode: "prs", label: "Pull Requests" },
+      { mode: "changes", label: "Review: Local changes" },
+      { mode: "prs", label: "Review: Pull requests" },
       { mode: "browser", label: "Browser" }
     ];
     THREAD_LIMIT = 25;
@@ -91946,20 +92118,7 @@ function mountFullLayout() {
     api
   );
   void monacoReady.then((monaco) => {
-    mountGitChangesPane(
-      requireElement("git-changes-host"),
-      requireElement("git-diff-viewer-host"),
-      store,
-      api,
-      monaco
-    );
-    mountPrPane(
-      requireElement("pr-list-host"),
-      requireElement("pr-viewer-host"),
-      store,
-      api,
-      monaco
-    );
+    mountReviewPane(requireElement("pane-files"), store, api, monaco);
     mountContextPanel(requireElement("file-viewer"), store, api, monaco);
   });
   const body = document.getElementById("body");
@@ -92107,8 +92266,7 @@ var init_main = __esm({
     init_terminals_pane();
     init_agent_tasks();
     init_supervised_tasks();
-    init_git_changes_pane();
-    init_pr_pane();
+    init_review_pane();
     init_memories_pane();
     init_thread_context_panel();
     init_side_chat_panel();
