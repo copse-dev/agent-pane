@@ -47,13 +47,20 @@ export function createVncSshHostForm(
     status.textContent = ''
     onClose()
   }
+  /**
+   * Offer `~/.ssh/config` hosts once SSH workspaces are on. Until then the file
+   * is not read, so the form never lists the user's aliases before they agree.
+   */
   async function loadConfigHosts(): Promise<void> {
+    configHosts = []
     try {
-      const [saved, aliases] = await Promise.all([
-        api.sshWorkspace.listHosts(),
-        api.sshWorkspace.listConfigAliases(),
-      ])
-      configHosts = unsavedSshConfigHosts(saved, aliases)
+      if ((await api.settings.get('sshWorkspaceEnabled')) === true) {
+        const [saved, aliases] = await Promise.all([
+          api.sshWorkspace.listHosts(),
+          api.sshWorkspace.listConfigAliases(),
+        ])
+        configHosts = unsavedSshConfigHosts(saved, aliases)
+      }
     } catch {
       configHosts = []
     }

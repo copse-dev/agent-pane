@@ -98,8 +98,44 @@ it('offers ~/.ssh/config hosts that are not saved yet, and saves the chosen one 
   ])
 })
 
+it('reads ~/.ssh/config only once SSH workspaces are on', async () => {
+  const base = apiWithConfigHosts([{ id: 'studio', label: 'studio', host: 'studio' }])
+  let reads = 0
+  const api = {
+    ...base,
+    sshWorkspace: {
+      ...base.sshWorkspace,
+      listConfigAliases: async (): Promise<SshWorkspaceHost[]> => {
+        reads += 1
+        return base.sshWorkspace.listConfigAliases()
+      },
+    },
+  } satisfies ApiClient
+  await api.settings.set('sshWorkspaceEnabled', false)
+  const form = createVncSshHostForm(
+    api,
+    async () => {},
+    () => {},
+  )
+  const field = (): HTMLElement | null =>
+    form.root.querySelector<HTMLElement>('.vnc-ssh-config-field')
+
+  form.open()
+  await settle()
+  assert.equal(reads, 0, 'nothing reads ~/.ssh/config while SSH workspaces are off')
+  assert.equal(field()?.hidden, true)
+
+  await api.settings.set('sshWorkspaceEnabled', true)
+  form.close()
+  form.open()
+  await settle()
+  assert.equal(reads, 1)
+  assert.equal(field()?.hidden, false, 'once they are on, the form offers config hosts')
+})
+
 it('hides the config picker when every config host is already saved', async () => {
   const api = apiWithConfigHosts([{ id: 'studio', label: 'studio', host: 'studio' }])
+  await api.settings.set('sshWorkspaceEnabled', true)
   await api.settings.set('sshWorkspaceHosts', [{ id: 'studio', label: 'Studio', host: 'studio' }])
   const form = createVncSshHostForm(
     api,
