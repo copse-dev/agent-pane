@@ -22235,6 +22235,7 @@ function mountConversation(root, store2, api2, options = {}) {
       runResend(threadId);
     });
     const sideChat = buildSideChatAction(threadId, msgId);
+    const menuId = `msg-actions-menu-${String(++nextUserActionsMenuId)}`;
     const trigger = el(
       "button",
       {
@@ -22242,18 +22243,19 @@ function mountConversation(root, store2, api2, options = {}) {
         type: "button",
         title: "Message actions",
         "aria-label": "Message actions",
-        "aria-expanded": "false"
+        "aria-expanded": "false",
+        "aria-controls": menuId
       },
       "\u22EF"
     );
-    const actions = el(
+    const menu = el(
       "div",
-      { class: "msg-actions" },
+      { class: "msg-actions-menu", id: menuId },
       fork,
       ...sideChat ? [sideChat] : [],
-      resend,
-      trigger
+      resend
     );
+    const actions = el("div", { class: "msg-actions" }, trigger, menu);
     const closeActions = () => {
       actions.classList.remove("is-open");
       trigger.setAttribute("aria-expanded", "false");
@@ -22264,11 +22266,15 @@ function mountConversation(root, store2, api2, options = {}) {
       if (event.target instanceof Node && !actions.contains(event.target)) closeActions();
     };
     const closeOnEscape = (event) => {
-      if (event.key === "Escape") {
-        closeActions();
-        trigger.focus();
-      }
+      if (event.key !== "Escape") return;
+      closeActions();
+      if (event.target instanceof Node && actions.contains(event.target)) trigger.focus();
     };
+    actions.addEventListener("focusout", (event) => {
+      if (!document.hasFocus()) return;
+      if (event.relatedTarget instanceof Node && actions.contains(event.relatedTarget)) return;
+      closeActions();
+    });
     trigger.addEventListener("click", () => {
       if (actions.classList.contains("is-open")) {
         closeActions();
@@ -22297,7 +22303,7 @@ function mountConversation(root, store2, api2, options = {}) {
       resendWithoutImages.addEventListener("click", () => {
         runResend(threadId, false);
       });
-      actions.append(resendWithoutImages);
+      menu.append(resendWithoutImages);
     }
     return actions;
   }
@@ -23277,7 +23283,7 @@ function attachCopyButton(body, msgId, store2) {
   });
   body.append(copyBtn);
 }
-var PATCH_OP_LABEL, lazyToolCardBodies, toolResultContentSignatures, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolGroupItemSignatures, acpDiffLineSigns, acpDiffLineNames, emptyReasoningBlocks, reasoningRenders, INITIAL_RENDER_WINDOW, REOPENABLE_REASONING, BACKFILL_CHUNK_SIZE, UNSIGNED_ROW;
+var PATCH_OP_LABEL, lazyToolCardBodies, toolResultContentSignatures, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolGroupItemSignatures, acpDiffLineSigns, acpDiffLineNames, emptyReasoningBlocks, reasoningRenders, INITIAL_RENDER_WINDOW, REOPENABLE_REASONING, BACKFILL_CHUNK_SIZE, UNSIGNED_ROW, nextUserActionsMenuId;
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_one_line_text();
@@ -23385,6 +23391,7 @@ var init_conversation = __esm({
     REOPENABLE_REASONING = ".msg-assistant:not(.msg-concise) .message-reasoning";
     BACKFILL_CHUNK_SIZE = 30;
     UNSIGNED_ROW = { patched: "", settled: "" };
+    nextUserActionsMenuId = 0;
   }
 });
 

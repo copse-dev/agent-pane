@@ -5778,6 +5778,9 @@ label {
   gap: var(--spacing-xs);
   margin-top: var(--spacing-xs);
 }
+.msg-actions-menu {
+  display: contents;
+}
 .msg-actions .msg-action {
   padding: 0 4px;
   border: 0;
@@ -5792,6 +5795,7 @@ label {
   display: inline-block;
 }
 .msg-actions-trigger {
+  order: 1;
   min-width: 24px;
   font-size: var(--font-size-sm);
 }
