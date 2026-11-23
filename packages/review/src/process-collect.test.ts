@@ -98,6 +98,18 @@ describe('collectProcess retained lines', () => {
     assert.doesNotMatch(output, /detail line 0\n/)
   })
 
+  it('keeps a character whose bytes arrive in two chunks whole', async () => {
+    // `é` is two bytes in UTF-8; the first write ends after its first byte.
+    const output = await collect(
+      `const b = Buffer.from(${JSON.stringify(`${prefix}{"name":"café ✓"}\n`)}, 'utf8');` +
+        `const cut = b.indexOf(0xc3) + 1;` +
+        'process.stdout.write(b.subarray(0, cut));' +
+        'setTimeout(() => process.stdout.write(b.subarray(cut)), 50)',
+      4 * 1024,
+    )
+    assert.equal(output, `${prefix}{"name":"café ✓"}\n`)
+  })
+
   it('leaves the output alone when the line is still in the tail', async () => {
     const output = await collect(
       `console.log('before'); console.log(${JSON.stringify(prefix)} + '{"failed":0}'); console.log('after')`,

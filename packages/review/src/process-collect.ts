@@ -2,6 +2,7 @@
 // backend: the host-process backend spawns directly, the app's OS-sandbox
 // backend spawns through the seatbelt wrapper, and both hand the child here.
 import type { ChildProcess } from 'node:child_process'
+import { StringDecoder } from 'node:string_decoder'
 import { signalProcessTree } from '@copse/std/process-tree.ts'
 import type { CellCommand, CellCommandResult } from './isolation.ts'
 
@@ -111,15 +112,36 @@ export function collectProcess(
 
   const prefixes = command.retainLinePrefixes ?? []
   const retained = prefixes.length === 0 ? null : new RetainedLines(prefixes)
+  const append = (stream: string, text: string): void => {
+    if (text.length === 0) return
+    retained?.add(stream, text)
+    const next = appendTailCapped(output, text, command.maxOutputBytes)
+    output = next.text
+    truncated = truncated || next.truncated
+  }
+  // One decoder per stream: a character whose bytes arrive in two chunks is
+  // held until it is whole, rather than decoded as two U+FFFD halves. Test
+  // names are compared exactly, and many of them are not ASCII.
+  const decoders = new Map<string, StringDecoder>()
   const onChunk =
     (stream: string) =>
     (chunk: Buffer | string): void => {
-      const text = typeof chunk === 'string' ? chunk : chunk.toString('utf8')
-      retained?.add(stream, text)
-      const next = appendTailCapped(output, text, command.maxOutputBytes)
-      output = next.text
-      truncated = truncated || next.truncated
+      if (typeof chunk === 'string') {
+        append(stream, chunk)
+        return
+      }
+      let decoder = decoders.get(stream)
+      if (decoder === undefined) {
+        decoder = new StringDecoder('utf8')
+        decoders.set(stream, decoder)
+      }
+      append(stream, decoder.write(chunk))
     }
+  /** Whatever a decoder still holds when its stream ends: an incomplete character, as U+FFFD. */
+  const flushDecoders = (): void => {
+    for (const [stream, decoder] of decoders) append(stream, decoder.end())
+    decoders.clear()
+  }
   child.stdout?.on('data', onChunk('stdout'))
   child.stderr?.on('data', onChunk('stderr'))
   /** The tail, with any retained line the cap dropped put back ahead of it. */
@@ -169,6 +191,7 @@ export function collectProcess(
       if (timer) clearTimeout(timer)
       if (drain) clearTimeout(drain)
       command.signal?.removeEventListener('abort', onAbort)
+      flushDecoders()
       if (command.signal?.aborted) {
         reject(
           command.signal.reason instanceof Error
