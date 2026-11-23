@@ -1375,6 +1375,7 @@ describe('copse-review CLI', () => {
 async function catalogServer(
   model: string,
   contextLength: number,
+  vision = true,
 ): Promise<{ baseUrl: string; server: Server }> {
   const server = createServer((request, response) => {
     if (request.url === '/api/v1/models') {
@@ -1386,6 +1387,7 @@ async function catalogServer(
               type: 'llm',
               key: model,
               quantization: { name: 'Q4_K_M' },
+              capabilities: { vision },
               max_context_length: 131_072,
               loaded_instances: [{ id: model, config: { context_length: contextLength } }],
             },
@@ -1404,6 +1406,53 @@ async function catalogServer(
 }
 
 describe('copse-review CLI with local models', () => {
+  it('checks the model routes with --preflight and exits before anything runs', async () => {
+    const repo = await fixture({ test: { exit: 1 } })
+    const { baseUrl, server } = await catalogServer('roomy-model', 131_072)
+    const args = ['--provider', 'lmstudio', '--model', 'roomy-model', '--base-url', baseUrl]
+    try {
+      const ready = await run(repo, ['--preflight', ...args])
+      assert.equal(ready.code, HEADLESS_EXIT.SUCCESS, ready.err)
+      assert.match(ready.err, /the model routes can run this review/)
+      const missing = await run(repo, [
+        '--preflight',
+        ...args.slice(0, 3),
+        'absent-model',
+        ...args.slice(4),
+      ])
+      assert.equal(missing.code, HEADLESS_EXIT.USAGE, missing.err)
+      assert.match(missing.err, /has no model absent-model \(available: roomy-model\)/)
+      assert.equal(worktreeCount(repo), 1)
+    } finally {
+      server.close()
+    }
+  })
+
+  it('refuses a visual-only review by a model that cannot see before Stage 0 runs', async () => {
+    const repo = await fixture({ test: { exit: 1 } })
+    const { baseUrl, server } = await catalogServer('text-model', 131_072, false)
+    try {
+      const result = await run(repo, [
+        '--base',
+        'main',
+        '--allow-unisolated',
+        '--provider',
+        'lmstudio',
+        '--model',
+        'text-model',
+        '--base-url',
+        baseUrl,
+        '--lenses',
+        'visual',
+      ])
+      assert.equal(result.code, HEADLESS_EXIT.USAGE, result.err)
+      assert.match(result.err, /the visual lens needs a reviewer model that can see images/)
+      assert.equal(worktreeCount(repo), 1)
+    } finally {
+      server.close()
+    }
+  })
+
   it('refuses a local model loaded with too little context before Stage 0 runs', async () => {
     const repo = await fixture({ test: { exit: 1 } })
     const { baseUrl, server } = await catalogServer('small-model', 4_096)

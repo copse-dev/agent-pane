@@ -48,8 +48,10 @@ import type { DiffOrigin, IsolationBackend } from './isolation.ts'
 import { applicableLenses, resolveLenses, VISUAL_LENS, type Lens } from './lenses.ts'
 import { DEFAULT_CONTEXT_BUDGET_CHARS } from './context.ts'
 import {
+  localModelKey,
   preflightLocalModels,
   requiredContextTokens,
+  type LocalModelInfo,
   type LocalPreflight,
 } from './local-model-probe.ts'
 import { readPullRequestConversation, type PullRequestRef } from './pr-conversation.ts'
@@ -118,6 +120,9 @@ never the exit code.
   --image <name>          the container image (default ${DEFAULT_CONTAINER_IMAGE}); never pulled
   --allow-unisolated      consent to run your own tree with no isolation backend
   --no-model              Stage 0 only; no model is called
+  --preflight             check that the model routes can run this review (a local model is
+                          there, loaded with enough context, and can see images if the
+                          lenses need it), then exit without reviewing
   --stage0-json <path>    a Stage 0 report another run wrote (or its --json report): read-only
                           unless an explicit container backend supplies focused validation
   --trusted-prepare <path> caller-owned Node script that overrides checkout preparation;
@@ -250,12 +255,22 @@ interface ModelRoutes {
   readonly allLocal: boolean
 }
 
+/** What the pre-flight learned about this route's model on its own server. */
+function preflightInfo(
+  preflight: LocalPreflight | null,
+  selection: SelectedProvider,
+): LocalModelInfo | undefined {
+  return selection.endpoint === undefined
+    ? undefined
+    : preflight?.models.get(localModelKey(selection.endpoint, selection.model))
+}
+
 function reportRoute(
   role: ReviewModelRoute['role'],
   selection: SelectedProvider,
   preflight: LocalPreflight | null,
 ): ReviewModelRoute {
-  const local = preflight?.models.get(selection.model)
+  const local = preflightInfo(preflight, selection)
   const reasoning = selection.params?.reasoning
   return {
     role,
@@ -545,6 +560,7 @@ export async function main(argv: readonly string[], callerIo: CliIo): Promise<He
         image: { type: 'string' },
         'allow-unisolated': { type: 'boolean', default: false },
         'no-model': { type: 'boolean', default: false },
+        preflight: { type: 'boolean', default: false },
         'stage0-json': { type: 'string' },
         'trusted-prepare': { type: 'string' },
         provider: { type: 'string' },
@@ -817,7 +833,26 @@ export async function main(argv: readonly string[], callerIo: CliIo): Promise<He
         for (const problem of preflight.problems) io.stderr(`copse-review: ${problem}\n`)
         return HEADLESS_EXIT.USAGE
       }
+      // Only the visual lens asked for, and no reviewer can see: nothing would
+      // run, and Stage 0 has not started yet, so say so now.
+      if (
+        routes !== null &&
+        lenses.length > 0 &&
+        lenses.every((lens) => lens === VISUAL_LENS) &&
+        routes.reviewers.every((selection) => preflightInfo(preflight, selection)?.vision === false)
+      ) {
+        io.stderr('copse-review: the visual lens needs a reviewer model that can see images\n')
+        return HEADLESS_EXIT.USAGE
+      }
     }
+  }
+  if (values.preflight) {
+    io.stderr(
+      routeError === null
+        ? 'copse-review: the model routes can run this review\n'
+        : `copse-review: ${routeError}\n`,
+    )
+    return routeError === null ? HEADLESS_EXIT.SUCCESS : HEADLESS_EXIT.USAGE
   }
 
   // The backend. Imported Stage 0 stays read-only unless the caller explicitly
@@ -967,8 +1002,8 @@ export async function main(argv: readonly string[], callerIo: CliIo): Promise<He
         }
         // The context a local model is loaded with, so its turns trim their own
         // history to fit instead of the server cutting the request unnoticed.
-        const loadedContext = (model: string): number | undefined => {
-          const info = preflight?.models.get(model)
+        const loadedContext = (selection: SelectedProvider): number | undefined => {
+          const info = preflightInfo(preflight, selection)
           return info?.loaded === true && info.loadedContextLength !== null
             ? info.loadedContextLength
             : undefined
@@ -977,12 +1012,12 @@ export async function main(argv: readonly string[], callerIo: CliIo): Promise<He
         // nor is offered view_image, whose result would put an image in front
         // of it. Unknown (a server with no catalogue) counts as able to see.
         const reviewers = selections.flatMap((selection) => {
-          const canSeeImages = preflight?.models.get(selection.model)?.vision !== false
+          const canSeeImages = preflightInfo(preflight, selection)?.vision !== false
           const spec = {
             model: selection.model,
             providerFor: (lens: Lens): LLMProvider => selection.providerFor(`review:${lens.id}`),
             canSeeImages,
-            contextTokens: loadedContext(selection.model),
+            contextTokens: loadedContext(selection),
           }
           if (canSeeImages || !reviewLenses.includes(VISUAL_LENS)) return [spec]
           io.stderr(
@@ -1013,7 +1048,7 @@ export async function main(argv: readonly string[], callerIo: CliIo): Promise<He
           const role = (name: string): VerifierRole => ({
             model: challengerSelection.model,
             provider: challengerSelection.providerFor(name),
-            contextTokens: loadedContext(challengerSelection.model),
+            contextTokens: loadedContext(challengerSelection),
           })
           let baseReady: Promise<void> | undefined
           verification = await verifyFindings({

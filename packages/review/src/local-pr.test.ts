@@ -1,6 +1,7 @@
 import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
+import { createServer } from 'node:http'
 import {
   access,
   mkdir,
@@ -284,20 +285,20 @@ describe('copse-review pr', () => {
     )
   })
 
-  it('keeps a saved report when a re-run stops before writing one, and records a first one', async () => {
+  it('keeps a saved report when a re-run is refused before it starts, and leaves nothing new', async () => {
     const out = join(root, 'failed-out')
     assert.equal(await review(['--out', out]), HEADLESS_EXIT.SUCCESS, err)
     const saved = await readFile(join(out, 'run.json'), 'utf8')
-    // An option the review refuses stops it before Stage 0, with no report.
+    // An option the review refuses is caught by the pre-flight, before the
+    // lock, the store or a run directory.
     const code = await review(['--out', out, '--fresh', '--max-verify', 'lots'])
     assert.equal(code, HEADLESS_EXIT.USAGE, err)
-    assert.match(err, /the saved report in .* is unchanged/)
+    assert.match(err, /--max-verify/)
     assert.equal(await readFile(join(out, 'run.json'), 'utf8'), saved)
     assert.ok(await readFile(join(out, 'report.json'), 'utf8'))
-    // With no earlier report there is nothing to keep: the failed run's record is written.
     const first = join(root, 'failed-first')
     assert.equal(await review(['--out', first, '--max-verify', 'lots']), HEADLESS_EXIT.USAGE)
-    assert.match(await readFile(join(first, 'run.json'), 'utf8'), /"exitCode": 2/)
+    await assert.rejects(access(first), /ENOENT/)
   })
 
   it('removes the cells and scratch a hard-killed earlier review left behind', async () => {
@@ -321,6 +322,47 @@ describe('copse-review pr', () => {
     assert.deepEqual(await readdir(join(reviewCache, 'scratch')), [])
     // This run's own cells were removed as it went, so nothing is left listed.
     assert.equal(await readFile(journal, 'utf8'), '')
+  })
+
+  it('refuses a missing local model before waiting for a review already running', async () => {
+    const server = createServer((request, response) => {
+      response.setHeader('content-type', 'application/json')
+      response.end(
+        request.url === '/api/v1/models'
+          ? JSON.stringify({ models: [{ type: 'llm', key: 'loaded-model' }] })
+          : '{}',
+      )
+    })
+    await new Promise<void>((done) => server.listen(0, '127.0.0.1', done))
+    const address = server.address()
+    assert.ok(address !== null && typeof address === 'object')
+    // Another review holds this machine: a queued run would wait for it.
+    const release = await acquireReviewLock(join(copseDir, 'cache', 'review', 'review.lock'), {
+      label: 'the review ahead',
+    })
+    try {
+      out = ''
+      err = ''
+      const code = await localPullRequestMain(
+        [
+          '7',
+          '--provider',
+          'lmstudio',
+          '--model',
+          'absent-model',
+          '--base-url',
+          `http://127.0.0.1:${String(address.port)}/v1`,
+          '--fresh',
+        ],
+        io,
+      )
+      assert.equal(code, HEADLESS_EXIT.USAGE, err)
+      assert.match(err, /has no model absent-model/)
+      assert.doesNotMatch(err, /waiting for the review already running/)
+    } finally {
+      await release()
+      server.close()
+    }
   })
 
   it('treats different review settings as a different question', async () => {

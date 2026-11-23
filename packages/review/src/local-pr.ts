@@ -733,6 +733,14 @@ export async function localPullRequestMain(
   }
   if (await answeredBefore()) return HEADLESS_EXIT.SUCCESS
 
+  // The model routes, checked before this run waits its turn, fills a store or
+  // builds an image: a model that is missing, loaded too small or blind to a
+  // visual-only review fails now, not after the review ahead of it finishes.
+  if (!options.review.includes('--no-model')) {
+    const ready = await main(['--preflight', ...options.review], { ...io, cwd: repoRoot })
+    if (ready !== HEADLESS_EXIT.SUCCESS) return ready
+  }
+
   let release: () => Promise<void>
   try {
     release = await acquireReviewLock(join(cacheRoot, 'review.lock'), {

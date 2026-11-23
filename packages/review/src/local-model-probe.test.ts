@@ -4,6 +4,7 @@ import {
   parseLocalModelCatalog,
   preflightLocalModels,
   probeLocalModel,
+  localModelKey,
   requiredContextTokens,
   serverOrigin,
   type ProbeFetch,
@@ -204,7 +205,31 @@ describe('local model pre-flight', () => {
       result.problems[0] ?? '',
       new RegExp(`lms load qwen/qwen3-coder-30b --context-length ${String(needed)}`),
     )
-    assert.equal(result.models.get(route.model)?.vision, false)
+    assert.equal(result.models.get(localModelKey(endpoint, route.model))?.vision, false)
+  })
+
+  it('keeps the same model id on two servers apart', async () => {
+    // This Mac's LM Studio, and a second one (LM Link, another machine): one id, two loads.
+    const other: LocalEndpoint = { ...endpoint, baseUrl: 'http://studio-two.local:1234/v1' }
+    const fetch: ProbeFetch = (url) =>
+      Promise.resolve(
+        new URL(url).pathname === '/api/v1/models'
+          ? new Response(v1Catalog(new URL(url).hostname === '127.0.0.1' ? 65_536 : 4_096))
+          : new Response('', { status: 404 }),
+      )
+    const result = await preflightLocalModels([route, { model: route.model, endpoint: other }], {
+      minContextTokens: needed,
+      fetch,
+    })
+    assert.equal(
+      result.models.get(localModelKey(endpoint, route.model))?.loadedContextLength,
+      65_536,
+    )
+    assert.equal(result.models.get(localModelKey(other, route.model))?.loadedContextLength, 4_096)
+    assert.deepEqual(
+      result.problems.map((problem) => /4096-token/.test(problem)),
+      [true],
+    )
   })
 
   it('accepts enough context, notes a model that is not loaded, and can skip the check', async () => {

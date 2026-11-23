@@ -210,8 +210,17 @@ export interface LocalRoute {
   readonly endpoint: LocalEndpoint
 }
 
+/**
+ * How the pre-flight files what a server said about a model: the same id on
+ * two servers (an LM Studio here, another over LM Link or the network) is
+ * two models.
+ */
+export function localModelKey(endpoint: LocalEndpoint, model: string): string {
+  return `${endpoint.baseUrl}\n${model}`
+}
+
 export interface LocalPreflight {
-  /** What each checked model's server said, by model id. */
+  /** What each checked model's server said, by {@link localModelKey}. */
   readonly models: ReadonlyMap<string, LocalModelInfo>
   /** Reasons the review cannot run as configured. */
   readonly problems: readonly string[]
@@ -233,7 +242,7 @@ export async function preflightLocalModels(
   const notes: string[] = []
   const seen = new Set<string>()
   for (const route of routes) {
-    const key = `${route.endpoint.baseUrl}\n${route.model}`
+    const key = localModelKey(route.endpoint, route.model)
     if (seen.has(key)) continue
     seen.add(key)
     const probe = await probeLocalModel(
@@ -254,7 +263,7 @@ export async function preflightLocalModels(
       continue
     }
     const { info } = probe
-    models.set(route.model, info)
+    models.set(key, info)
     const needed = options.minContextTokens
     if (needed <= 0) continue
     const fix = `reload it with \`lms load ${route.model} --context-length ${String(needed)}\`, pass a smaller --budget-chars, or --min-context 0 to skip this check`
