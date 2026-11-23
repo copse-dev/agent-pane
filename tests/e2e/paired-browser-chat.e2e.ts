@@ -480,7 +480,17 @@ describe('real paired browser chat with the desktop window closed', function () 
   })
 
   it('publishes a transcript only while a client watches the chat, showing the saved view until then (#4445)', async () => {
-    const reply = 'The phone declined the profile read.'
+    // This test's own exchange, so it holds when run alone: a chat with no
+    // transcript is published the same way whether or not it is watched.
+    const prompt = 'Reply once for the saved and live views.'
+    const reply = 'The saved view and the live view both show this reply.'
+    const scenario = await installMockScenario({
+      title: 'Paired browser saved view',
+      turns: [{ user: prompt, responses: [{ text: reply }] }],
+    })
+    await send(prompt)
+    await waitText(reply)
+    await scenario.assertComplete()
     // The shared chat page has been polling this chat. Leave it so the watch lapses.
     await mobile().url(origin)
     await mobile().$('#activity').waitForDisplayed()
