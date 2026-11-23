@@ -312,8 +312,9 @@ Everything it keeps is under `~/.copse` (`COPSE_DIR` moves it):
 - `reviews/<owner-repo>/pr-<n>/<head>-<settings>/` — `report.json`, `report.sarif`,
   `events.jsonl`, `report.txt` and `run.json` (inputs, engine, image, exit code), plus
   `pr-<n>.latest.json` beside them. The directory is keyed by the head, the merge-base,
-  the review options and the reviewer's own revision: asking again answers from the saved
-  report (`--fresh` reviews again).
+  the engine asked for, the cell's limits, the review options (not the output-only
+  `--quiet` or `--time-limit`) and the reviewer's own revision: asking again answers from
+  the saved report (`--fresh` reviews again).
 
 The profile follows the lockfile: `npm` (`package-lock.json`), `pnpm`, or `copse-pnpm` for
 Copse itself, whose preparation builds node-pty in the cell. `--cell-memory` and

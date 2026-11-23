@@ -542,6 +542,26 @@ function modelRoutingEnvironment(
   return Object.fromEntries(MODEL_ROUTING_ENV.map((name) => [name, envValue(env, name) ?? null]))
 }
 
+/**
+ * The review's options that shape its answer, for the saved report's key.
+ * `--quiet` only hides the text report and `--time-limit` only bounds a run
+ * (one it cuts short is never saved as an answer), so neither makes asking
+ * again a different question.
+ */
+export function questionArgs(review: readonly string[]): string[] {
+  const kept: string[] = []
+  for (let index = 0; index < review.length; index++) {
+    const arg = review[index] ?? ''
+    if (arg === '--quiet' || arg.startsWith('--time-limit=')) continue
+    if (arg === '--time-limit') {
+      index++
+      continue
+    }
+    kept.push(arg)
+  }
+  return kept
+}
+
 export interface LocalPrRun {
   readonly target: string
   readonly pr: number | null
@@ -611,7 +631,8 @@ export async function localPullRequestMain(
   const slug = repositorySlug(git, repoRoot, options.remote)
   const profile = options.profile ?? detectProfile(git, change.headCommit)
   // The key: both commits, the settings and the reviewer revision. The same
-  // question asked again is answered from the saved report.
+  // question asked again is answered from the saved report. The engine asked
+  // for is part of it: Copse's own checks have differed between engines.
   const reviewerRevision = reviewerIdentity()
   const key = sha256(
     JSON.stringify({
@@ -621,8 +642,9 @@ export async function localPullRequestMain(
       profile,
       cpu: options.cpu,
       image: options.image ?? null,
+      engine: options.engine ?? envValue(io.env, CONTAINER_ENGINE_ENV) ?? 'auto',
       limits: options.limits,
-      review: options.review,
+      review: questionArgs(options.review),
       routing: modelRoutingEnvironment(io.env),
     }),
   ).slice(0, 12)

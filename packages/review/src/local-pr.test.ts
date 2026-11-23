@@ -21,6 +21,7 @@ import {
   localPullRequestMain,
   parsePrArgs,
   pullRequestNumber,
+  questionArgs,
   reportNotReusable,
   type LocalPrIo,
 } from './local-pr.ts'
@@ -268,6 +269,15 @@ describe('copse-review pr', () => {
     assert.match(out, /reviewer mock under contracts/)
   })
 
+  it('answers whatever the output flags, but not for another engine', async () => {
+    assert.equal(await review(['--quiet']), HEADLESS_EXIT.SUCCESS, err)
+    assert.match(err, /already reviewed/)
+    assert.equal(await review(['--time-limit', '30']), HEADLESS_EXIT.SUCCESS, err)
+    assert.match(err, /already reviewed/)
+    assert.equal(await review(['--engine', 'podman']), HEADLESS_EXIT.SUCCESS, err)
+    assert.doesNotMatch(err, /already reviewed/)
+  })
+
   it('does not answer from a saved report made with other settings or another model', async () => {
     const out = join(root, 'fixed-out')
     assert.equal(await review(['--out', out]), HEADLESS_EXIT.SUCCESS, err)
@@ -404,6 +414,22 @@ describe('copse-review pr arguments', () => {
     assert.throws(() => parsePrArgs(['1', '--cell-memory', 'lots']), /--cell-memory/)
     assert.throws(() => parsePrArgs(['1', '--json', 'x']), /--json is set by/)
     assert.throws(() => parsePrArgs(['1', '--remote']), /--remote needs a value/)
+  })
+
+  it('leaves output-only options out of the question a saved report answers', () => {
+    assert.deepEqual(
+      questionArgs([
+        '--model',
+        'm',
+        '--quiet',
+        '--time-limit',
+        '60',
+        '--time-limit=5',
+        '--lenses',
+        'all',
+      ]),
+      ['--model', 'm', '--lenses', 'all'],
+    )
   })
 })
 
