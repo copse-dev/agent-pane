@@ -4738,8 +4738,8 @@
       "bytes": 223192
     },
     "settings-machines-connected.png": {
-      "sha256": "5344933464565cb31d98e2545f67ee0fec133e70adcada14341add82ca74cd86",
-      "bytes": 326322
+      "sha256": "2b12beeaae844e22feb146ba2f2997723e10eef01a41b146727560bb013fb80b",
+      "bytes": 326305
     },
     "settings-machines-disabled.png": {
       "sha256": "8d304536c966eb8750749cc42e96706d99dd363a1da6f9cf9c8176e7c34044e5",
@@ -4754,20 +4754,28 @@
       "bytes": 102793
     },
     "settings-machines-locked.png": {
-      "sha256": "afb3a67d1780123d307f79f51b8a4897629fae0a0e884451a064015a1932c8fe",
-      "bytes": 291744
+      "sha256": "5cfb1da86819855c447992798ce0b7252a76d56ac3b23796641faa5af42702b5",
+      "bytes": 291726
     },
     "settings-machines-offline.png": {
-      "sha256": "edbc471593eb490834cfbf3105ca49493637d2cd9773ae1ade320374b9b633a5",
-      "bytes": 330897
+      "sha256": "dce8a7ef1869ef9797be5d8bc8bfcb0ec67e75c798deb2b80a68e81c5af1aa57",
+      "bytes": 330851
+    },
+    "settings-machines-over-ssh.png": {
+      "sha256": "ab41bf64f88ec769b91df5c92616777e138243f03ecb93147c6ca70d33412215",
+      "bytes": 108393
+    },
+    "settings-machines-pair-over-ssh.png": {
+      "sha256": "40bbd7a8c5526af4763133708d8f2ae4f08048cb8fbf0d11eeb8777cf09cc60f",
+      "bytes": 55490
     },
     "settings-machines-paused.png": {
       "sha256": "c5e2d7b5cae2b73e2ae497ce52ad9027617502512dff74a0cf3648c560126e6a",
       "bytes": 285105
     },
     "settings-machines-sharing.png": {
-      "sha256": "f03a8c1c870fe7cb91a0d2cae09a70aac50f7dbe3e0bf75f395874897f98c629",
-      "bytes": 102048
+      "sha256": "55e2689daa1300bde70b89e69d171a9a9e52d7df153976f4052357e6ae38c0f3",
+      "bytes": 105497
     },
     "settings-mcp-lens.png": {
       "sha256": "f6af8f46f96641a7245e8d62df62f036993623dc55a8fde057f26b7b3242f597",
