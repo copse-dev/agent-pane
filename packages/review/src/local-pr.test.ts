@@ -12,11 +12,18 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import { HEADLESS_EXIT } from '@copse/agent/headless-contract.ts'
 import { writeFakeContainerEngine } from './fake-container-engine.ts'
-import { localPullRequestMain, parsePrArgs, pullRequestNumber, type LocalPrIo } from './local-pr.ts'
+import {
+  defaultPrCellLimits,
+  localPullRequestMain,
+  parsePrArgs,
+  pullRequestNumber,
+  reportNotReusable,
+  type LocalPrIo,
+} from './local-pr.ts'
 import { REVIEW_CONFIG_FILENAME } from './project-commands.ts'
 import { acquireReviewLock } from './review-lock.ts'
 import { createTestRepo, type TestRepo } from './test-repo.ts'
@@ -37,6 +44,7 @@ const runSchema = z.object({
   profile: z.string().nullable(),
   image: z.string(),
   exitCode: z.number(),
+  reusable: z.boolean(),
   reviewArgs: z.array(z.string()),
 })
 
@@ -172,7 +180,10 @@ describe('copse-review pr', () => {
     assert.equal(run.headCommit, headCommit)
     assert.equal(run.profile, 'pnpm')
     assert.equal(run.exitCode, HEADLESS_EXIT.SUCCESS)
+    assert.equal(run.reusable, true)
     assert.ok(run.reviewArgs.includes('--foreign'))
+    // Paths recorded are the published report's, not the run's staging directory.
+    assert.equal(run.reviewArgs[run.reviewArgs.indexOf('--json') + 1], join(dir, 'report.json'))
     // The review runs on the commits resolved up front, not on refs that may move.
     assert.equal(run.reviewArgs[run.reviewArgs.indexOf('--head') + 1], headCommit)
     assert.equal(run.reviewArgs[run.reviewArgs.indexOf('--base') + 1], run.mergeBase)
@@ -225,6 +236,29 @@ describe('copse-review pr', () => {
     assert.doesNotMatch(err, /already reviewed|building the validation image|filling the/)
     assert.match(out, /reviewer mock under correctness/)
     assert.equal(calls.length, before)
+  })
+
+  it('leaves the saved report as it was when a re-run is cancelled, with nothing half-made', async () => {
+    const dir = await reportDir()
+    const saved = await readFile(join(dir, 'run.json'), 'utf8')
+    const controller = new AbortController()
+    // Cancel once the re-run has written its own report, before it is published.
+    const code = await localPullRequestMain(
+      ['7', '--provider', 'mock', '--mock-script', script, '--no-verify', '--fresh'],
+      {
+        ...io,
+        signal: controller.signal,
+        stdout: () => {
+          controller.abort(new Error('cancelled by the test'))
+        },
+      },
+    )
+    assert.equal(code, HEADLESS_EXIT.CANCELLED)
+    assert.equal(await readFile(join(dir, 'run.json'), 'utf8'), saved)
+    assert.deepEqual(
+      (await readdir(dirname(dir))).filter((name) => name.includes('.partial-')),
+      [],
+    )
   })
 
   it('treats different review settings as a different question', async () => {
@@ -301,6 +335,49 @@ describe('copse-review pr arguments', () => {
     assert.equal(pullRequestNumber('https://gitlab.example/g/r/-/merge_requests/3'), 3)
     assert.equal(pullRequestNumber('feature/branch'), null)
     assert.equal(pullRequestNumber('0'), null)
+  })
+
+  it('sizes a default cell from this machine, within 4g–16g and 2–8 CPUs', () => {
+    const gib = 1024 ** 3
+    assert.deepEqual(defaultPrCellLimits({ memoryBytes: 96 * gib, cpus: 28 }), {
+      memory: '16g',
+      cpus: 8,
+      pids: 512,
+    })
+    assert.deepEqual(defaultPrCellLimits({ memoryBytes: 32 * gib, cpus: 10 }), {
+      memory: '8g',
+      cpus: 5,
+      pids: 512,
+    })
+    assert.deepEqual(defaultPrCellLimits({ memoryBytes: 8 * gib, cpus: 2 }), {
+      memory: '4g',
+      cpus: 2,
+      pids: 512,
+    })
+    assert.deepEqual(parsePrArgs(['7'], { memoryBytes: 64 * gib, cpus: 16 }).limits, {
+      memory: '16g',
+      cpus: 8,
+      pids: 512,
+    })
+  })
+
+  it('reuses only a report whose Stage 0 preparation passed and whose checks all ran', () => {
+    const passed = { status: 'passed' }
+    const settled = (
+      head: { status: string } | null,
+      verdicts: string[],
+    ): Parameters<typeof reportNotReusable>[0] => ({
+      stage0: {
+        preparation: { head, base: null },
+        checks: verdicts.map((verdict) => ({ kind: 'test', verdict })),
+      },
+    })
+    assert.equal(reportNotReusable(settled(passed, ['clean', 'regressed'])), null)
+    assert.equal(reportNotReusable(settled(null, ['clean'])), null)
+    // A flaky install is asked again, not saved as the answer.
+    assert.match(reportNotReusable(settled({ status: 'failed' }, ['not-run'])) ?? '', /preparation/)
+    assert.match(reportNotReusable(settled(passed, ['not-run'])) ?? '', /test did not run/)
+    assert.match(reportNotReusable(null) ?? '', /could not be read/)
   })
 
   it('separates its own options from the review’s, keeping the review’s order', () => {

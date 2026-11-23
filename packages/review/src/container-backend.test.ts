@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process'
 import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { access, mkdtemp, mkdir, readFile, realpath, rm } from 'node:fs/promises'
@@ -337,6 +338,65 @@ describe('container backend', () => {
       } finally {
         await other.destroy()
       }
+    })
+
+    it('keeps a command result when its container cannot be removed, and reports one that stays', async () => {
+      // An engine too busy to remove a container (an Apple container VM under
+      // memory pressure) must not cost the check that already finished.
+      const engine = await writeFakeContainerEngine(registry)
+      const cellFor = async (
+        failures: number,
+        unremoved: string[],
+      ): Promise<{ cell: ExecutionCell; removals: () => number }> => {
+        let removals = 0
+        const cell = await createContainerBackend({
+          image: FAKE_IMAGE,
+          engine,
+          containerName: (id) => `copse-busy-${id}`,
+          onUnremoved: (name, reason, command) => {
+            unremoved.push(`${name}|${reason}|${command}`)
+          },
+          spawn: (file, args, options) => {
+            if (args.includes('rm') && removals++ < failures) {
+              return spawn(
+                process.execPath,
+                [
+                  '-e',
+                  "process.stderr.write('Error: removal already in progress\\n'); process.exit(1)",
+                ],
+                options,
+              )
+            }
+            return spawn(file, args, options)
+          },
+        }).createCell(spec)
+        return { cell, removals: () => removals }
+      }
+      const command = {
+        target: 'head' as const,
+        argv: [process.execPath, '-e', "console.log('checked')"] as [string, ...string[]],
+        timeoutMs: 10_000,
+        maxOutputBytes: 1024,
+      }
+
+      const retried: string[] = []
+      const once = await cellFor(1, retried)
+      const result = await once.cell.run(command)
+      assert.equal(result.exitCode, 0)
+      assert.match(result.output, /checked/)
+      await once.cell.destroy()
+      assert.equal(once.removals(), 2, 'retried once when the cell ended')
+      assert.deepEqual(retried, [])
+
+      const stuck: string[] = []
+      const always = await cellFor(Infinity, stuck)
+      assert.equal((await always.cell.run(command)).exitCode, 0)
+      await always.cell.destroy()
+      assert.equal(stuck.length, 1)
+      assert.match(
+        stuck[0] ?? '',
+        /^copse-busy-\S+\|Error: removal already in progress\|.* rm --force copse-busy-/,
+      )
     })
 
     for (const action of ['abort', 'destroy']) {

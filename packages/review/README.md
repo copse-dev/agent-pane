@@ -256,7 +256,12 @@ the reviewers; `--reasoning` and `--challenger-reasoning` set each role's effort
 every route is a local server, reviewers run one at a time (`--concurrency` overrides).
 `--min-context` sets the context a local model must be loaded with (default: what
 `--budget-chars` needs; `0` skips the check), and `--time-limit <minutes>` bounds the
-whole run.
+whole run. Each turn of a local model knows the context it is loaded with and keeps its
+history within three quarters of it, dropping its oldest investigation steps (never the
+review request), so the server never receives a request it would silently cut from the
+middle. A forced closure (`finish_review`, the challenger's `verdict`) is sent as
+`tool_choice: "required"` with only that tool offered, which LM Studio accepts with
+reasoning on.
 
 ## Reviewing a contributor's branch
 
@@ -312,8 +317,15 @@ Everything it keeps is under `~/.copse` (`COPSE_DIR` moves it):
 
 The profile follows the lockfile: `npm` (`package-lock.json`), `pnpm`, or `copse-pnpm` for
 Copse itself, whose preparation builds node-pty in the cell. `--cell-memory` and
-`--cell-cpus` size each cell command (default 4g and 2), and `--cell-cpu x64` runs the
-cell as x64 Linux (under Rosetta on a Mac; the store and image follow it).
+`--cell-cpus` size each cell command (default a quarter of the machine's memory, 4g to
+16g, and half its CPUs, 2 to 8). Copse itself needs about 16g and 8: at 4g its typecheck
+and lint run Node out of heap, and the run says so. `--cell-cpu x64` runs the cell as x64
+Linux (under Rosetta on a Mac; the store and image follow it). A run writes beside the
+saved report and replaces it only when it finishes, so a cancelled or failed run leaves
+the last answer untouched; a report whose preparation failed or whose checks did not all
+run is never reused as the answer. A container the engine is too slow to remove does not
+cost its check's result; one still left when the review ends is named with the command
+that removes it.
 
 ### On a Mac Studio
 
@@ -325,15 +337,16 @@ cell as x64 Linux (under Rosetta on a Mac; the store and image follow it).
    (with `COPSE_REVIEW_DEPENDENCY_STORE` naming any store directory holding `v10/`).
 2. **The model server.** LM Studio headless: `lms server start`, then
    `lms load <model> --context-length 65536` for each model (a review at the default
-   `--budget-chars` needs about 36k tokens; the pre-flight says what is missing). Load the
+   `--budget-chars` needs about 49k tokens; the pre-flight says what is missing, and a
+   large change reviews more comfortably at 131072). Load the
    reviewer and challenger together only if both fit in memory; otherwise the server
    swaps them between Stage 2 and Stage 4.
 3. **The reviewer.** A checkout of this repository with `pnpm install` done, on Node 24.
 
-Not proven on Apple hardware yet: the Apple container argv (taken from the thread
-runtime's measured mapping, unit-tested against a fake engine), bind-mount write
-ownership and speed on macOS file sharing, and whether a local model carries the
-reviewer lens at all (the plan's Q11). Measure that with
+On a Mac Studio, Apple container and colima (the Docker dialect) both pass the
+conformance test, and Copse's own build, typecheck and lint run in Apple container cells
+at 16g and 8 CPUs. Whether a local reviewer and challenger carry the review (the plan's
+Q11) is still to be settled: measure it with
 `pnpm run bench:review --provider lmstudio --model <m>` before trusting the output.
 
 ## In CI

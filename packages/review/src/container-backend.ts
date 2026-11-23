@@ -105,6 +105,13 @@ export interface ContainerBackendOptions {
    */
   readonly user?: ContainerUser | null
   readonly spawn?: SpawnEngine
+  /**
+   * Told about a container that still could not be removed when its cell was
+   * destroyed, with the command that removes it. A container the engine is too
+   * slow to remove never costs the command's result; it is retried once, then
+   * reported here.
+   */
+  readonly onUnremoved?: ((name: string, reason: string, command: string) => void) | undefined
 }
 
 /** Everything `containerCreateArgs` needs; pure in these values. */
@@ -221,6 +228,8 @@ export function appleCreateArgs(input: ContainerRunInput): string[] {
 
 /** Maximum time to remove a container before terminating the attach client too. */
 const KILL_GRACE_MS = 5_000
+/** The second, last attempt at a container the first could not remove, when its cell ends. */
+const CLEANUP_RETRY_MS = 60_000
 
 class ContainerCell implements ExecutionCell {
   readonly spec: CellSpec
@@ -241,6 +250,8 @@ class ContainerCell implements ExecutionCell {
   >()
   private sequence = 0
   private destroyed = false
+  /** Containers whose removal failed or timed out, with the reason. */
+  private readonly unremoved = new Map<string, string>()
 
   constructor(spec: CellSpec, options: ContainerBackendOptions, homeDir: string, tmpDir: string) {
     this.spec = spec
@@ -275,18 +286,24 @@ class ContainerCell implements ExecutionCell {
     }
   }
 
-  private async remove(name: string): Promise<void> {
-    const verb = this.dialect === 'apple' ? 'delete' : 'rm'
-    const [file, args] = this.engineArgv([verb, '--force', name])
-    const result = await probeEngine(this.spawn, file, args, KILL_GRACE_MS)
+  private removalArgv(name: string): [string, string[]] {
+    return this.engineArgv([this.dialect === 'apple' ? 'delete' : 'rm', '--force', name])
+  }
+
+  /** Remove a container; one that is not gone yet is remembered, not thrown. */
+  private async remove(name: string, timeoutMs = KILL_GRACE_MS): Promise<void> {
+    const [file, args] = this.removalArgv(name)
+    const result = await probeEngine(this.spawn, file, args, timeoutMs)
     // --rm may already have removed a naturally completed container; Apple
     // container says "not found" for one that is already gone.
     if (
-      !result.ok &&
-      !/no such container|no container with (?:name|ID)|not found/i.test(result.reason)
+      result.ok ||
+      /no such container|no container with (?:name|ID)|not found/i.test(result.reason)
     ) {
-      throw new Error(`Could not remove review container ${name}: ${result.reason}`)
+      this.unremoved.delete(name)
+      return
     }
+    this.unremoved.set(name, result.reason)
   }
 
   private async execute(
@@ -368,6 +385,10 @@ class ContainerCell implements ExecutionCell {
     for (const { controller } of commands) controller.abort(new Error('Review cell destroyed'))
     await Promise.all(commands.map(({ done }) => done.catch(() => undefined)))
     this.live.clear()
+    for (const name of [...this.unremoved.keys()]) await this.remove(name, CLEANUP_RETRY_MS)
+    for (const [name, reason] of this.unremoved) {
+      this.options.onUnremoved?.(name, reason, this.removalArgv(name).flat().join(' '))
+    }
     await removeTree(this.homeDir)
     await removeTree(this.tmpDir)
   }

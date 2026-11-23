@@ -14,8 +14,8 @@
 // a time per machine (`review-lock.ts`).
 import { execFileSync } from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
-import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
+import { access, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { availableParallelism, homedir, totalmem } from 'node:os'
 import { basename, join } from 'node:path'
 import { z } from 'zod'
 import { HEADLESS_EXIT, type HeadlessExitCode } from '@copse/agent/headless-contract.ts'
@@ -66,8 +66,9 @@ is, without fetching.
   --engine <name>       auto | docker | podman | apple (default ${CONTAINER_ENGINE_ENV}, else auto)
   --image <name>        use this already-built validation image instead of building one
   --cell-cpu <cpu>      arm64 | x64: the cell's Linux CPU (default this machine's)
-  --cell-memory <size>  memory per cell command (default ${DEFAULT_CONTAINER_LIMITS.memory})
-  --cell-cpus <n>       CPUs per cell command (default ${String(DEFAULT_CONTAINER_LIMITS.cpus)})
+  --cell-memory <size>  memory per cell command (default a quarter of this machine's,
+                        4g to 16g; Copse itself needs about 16g)
+  --cell-cpus <n>       CPUs per cell command (default half of this machine's, 2 to 8)
   --out <dir>           where the report goes (default under ~/.copse/reviews/)
   --fresh               review again even when a saved report matches
   --help
@@ -125,8 +126,37 @@ const PR_VALUE_FLAGS = [
 type PrValueFlag = (typeof PR_VALUE_FLAGS)[number]
 const isPrValueFlag = memberOf(PR_VALUE_FLAGS)
 
+/** What a default cell is sized from. */
+export interface HostResources {
+  readonly memoryBytes: number
+  readonly cpus: number
+}
+
+function hostResources(): HostResources {
+  return { memoryBytes: totalmem(), cpus: availableParallelism() }
+}
+
+/**
+ * A cell sized from this machine: a quarter of its memory (the rest is the
+ * local models' and the system's) and half its CPUs, within 4g–16g and 2–8.
+ * The container default of 4g and 2 CPUs cannot check a project Copse's size:
+ * its typecheck and lint run Node out of heap at about 2.2 GB.
+ */
+export function defaultPrCellLimits(host: HostResources): ContainerLimits {
+  const gib = Math.floor(host.memoryBytes / 4 / 1024 ** 3)
+  return {
+    ...DEFAULT_CONTAINER_LIMITS,
+    memory: `${String(Math.min(16, Math.max(4, gib)))}g`,
+    cpus: Math.min(8, Math.max(2, Math.floor(host.cpus / 2))),
+  }
+}
+
 /** Split `pr`'s own options from the review's; the target comes first. */
-export function parsePrArgs(argv: readonly string[]): PrOptions {
+export function parsePrArgs(
+  argv: readonly string[],
+  host: HostResources = hostResources(),
+): PrOptions {
+  const sized = defaultPrCellLimits(host)
   const [target, ...rest] = argv
   if (target === undefined || target.startsWith('-')) {
     throw new Error('name the pull request first: copse-review pr <number | URL | ref>')
@@ -159,12 +189,12 @@ export function parsePrArgs(argv: readonly string[]): PrOptions {
   }
   const cpu = values.get('--cell-cpu') ?? process.arch
   if (!isCellCpu(cpu)) throw new Error(`--cell-cpu must be arm64 or x64, not ${cpu}`)
-  const memory = values.get('--cell-memory') ?? DEFAULT_CONTAINER_LIMITS.memory
+  const memory = values.get('--cell-memory') ?? sized.memory
   if (!/^[1-9]\d*[kmg]?$/i.test(memory)) {
     throw new Error(`--cell-memory must be a size such as 8g, not ${memory}`)
   }
   const cpusText = values.get('--cell-cpus')
-  const cpus = cpusText === undefined ? DEFAULT_CONTAINER_LIMITS.cpus : Number(cpusText)
+  const cpus = cpusText === undefined ? sized.cpus : Number(cpusText)
   if (!Number.isFinite(cpus) || cpus <= 0) {
     throw new Error(`--cell-cpus must be a positive number, not ${cpusText ?? ''}`)
   }
@@ -461,7 +491,38 @@ const runRecordSchema = z.object({
   exitCode: z.number(),
   headCommit: z.string(),
   key: z.string(),
+  reusable: z.boolean().optional(),
 })
+
+/** What the saved report says about how Stage 0 went, for whether it may be reused. */
+const settledReportSchema = z.object({
+  stage0: z.object({
+    preparation: z.object({
+      head: z.object({ status: z.string() }).nullable(),
+      base: z.object({ status: z.string() }).nullable(),
+    }),
+    checks: z.array(
+      z.object({ kind: z.string(), verdict: z.string(), reason: z.string().optional() }),
+    ),
+  }),
+})
+type SettledReport = z.infer<typeof settledReportSchema>
+
+/**
+ * Why a finished review should be asked again rather than answered from its
+ * saved report: its preparation failed (a flaky install), or a check never ran.
+ * Null when Stage 0 settled and the report is the answer to this question.
+ */
+export function reportNotReusable(report: SettledReport | null): string | null {
+  if (report === null) return 'its report could not be read'
+  const { preparation, checks } = report.stage0
+  const prepared = [preparation.head, preparation.base].every(
+    (run) => run === null || run.status === 'passed',
+  )
+  if (!prepared) return 'its Stage 0 preparation did not pass'
+  const notRun = checks.filter((check) => check.verdict === 'not-run').map((check) => check.kind)
+  return notRun.length > 0 ? `${notRun.join(', ')} did not run` : null
+}
 
 /**
  * The environment that chooses which model answers: the same command line
@@ -497,6 +558,8 @@ export interface LocalPrRun {
   /** The question's digest: commits, settings, routing and reviewer revision. */
   readonly key: string
   readonly exitCode: number
+  /** Whether a later ask of the same question is answered from this report. */
+  readonly reusable: boolean
   readonly startedAt: string
   readonly finishedAt: string
   readonly reviewer: string
@@ -579,6 +642,7 @@ export async function localPullRequestMain(
     if (
       previous === null ||
       previous.exitCode !== HEADLESS_EXIT.SUCCESS ||
+      previous.reusable !== true ||
       previous.headCommit !== change.headCommit ||
       previous.key !== key
     ) {
@@ -614,6 +678,10 @@ export async function localPullRequestMain(
     return HEADLESS_EXIT.SUCCESS
   }
   const seed = join(cacheRoot, `seed-${randomBytes(4).toString('hex')}`)
+  // The run writes beside the saved report and replaces it only once it has
+  // finished: a cancelled or failed run leaves the last answer as it was, and
+  // never an empty or half-written report directory.
+  const staging = `${outDir}.partial-${randomBytes(4).toString('hex')}`
   try {
     const runHost = io.runHost ?? defaultRunHost
     const platform: CellPlatform = cellPlatform(options.cpu)
@@ -659,15 +727,20 @@ export async function localPullRequestMain(
       engine: cell.engine.argv,
       dialect: cell.engine.dialect,
       limits: options.limits,
+      onUnremoved: (name, reason, command) => {
+        io.stderr(
+          `copse-review pr: container ${name} could not be removed (${reason}); remove it with: ${command}\n`,
+        )
+      },
     })
     const scratchParent = join(cacheRoot, 'scratch')
     await mkdir(scratchParent, { recursive: true })
-    await mkdir(outDir, { recursive: true })
+    await mkdir(staging, { recursive: true })
     const trusted = profile === null ? null : trustedPreparationScript(profile)
     // The commits resolved above, not the refs: a push or another queued
     // review may move a ref before this one's turn, and the saved report is
     // filed under these commits.
-    const reviewArgs = [
+    const reviewArgsIn = (dir: string): string[] => [
       ...options.review,
       '--foreign',
       '--head',
@@ -680,17 +753,17 @@ export async function localPullRequestMain(
       '--scratch-parent',
       scratchParent,
       '--json',
-      join(outDir, 'report.json'),
+      join(dir, 'report.json'),
       '--sarif',
-      join(outDir, 'report.sarif'),
+      join(dir, 'report.sarif'),
       '--events',
-      join(outDir, 'events.jsonl'),
+      join(dir, 'events.jsonl'),
     ]
     io.stderr(
       `copse-review pr: reviewing ${change.headCommit.slice(0, 12)} against ${change.baseRef} in ${cell.engine.argv[0]} cells (${cell.image})\n`,
     )
     let text = ''
-    const exitCode = await main(reviewArgs, {
+    const exitCode = await main(reviewArgsIn(staging), {
       ...io,
       cwd: repoRoot,
       backend,
@@ -699,6 +772,26 @@ export async function localPullRequestMain(
         io.stdout(chunk)
       },
     })
+    if (io.signal?.aborted) return HEADLESS_EXIT.CANCELLED
+    const settled = await readFile(join(staging, 'report.json'), 'utf8').then(
+      (json) => safeJsonParse(json, decodeWithSchema(settledReportSchema)),
+      () => null,
+    )
+    const notReusable = reportNotReusable(settled)
+    if (notReusable !== null) {
+      io.stderr(
+        `copse-review pr: ${notReusable}, so this report will not answer the same question again\n`,
+      )
+    }
+    const outOfMemory =
+      settled?.stage0.checks
+        .filter((check) => check.reason?.includes('exhausted its memory') === true)
+        .map((check) => check.kind) ?? []
+    if (outOfMemory.length > 0) {
+      io.stderr(
+        `copse-review pr: ${outOfMemory.join(', ')} ran out of memory in a ${options.limits.memory} cell; give it more with --cell-memory (Copse itself needs about 16g)\n`,
+      )
+    }
     const record: LocalPrRun = {
       target: options.target,
       pr: change.pr,
@@ -710,16 +803,18 @@ export async function localPullRequestMain(
       profile,
       engine: cell.engine.dialect === 'apple' ? 'apple' : cell.engine.argv[0],
       image: cell.image,
-      reviewArgs,
+      reviewArgs: reviewArgsIn(outDir),
       outDir,
       key,
       exitCode,
+      reusable: notReusable === null,
       startedAt,
       finishedAt: new Date().toISOString(),
       reviewer: reviewerRevision,
     }
-    await writeFile(textPath, text)
-    await writeFile(runPath, `${JSON.stringify(record, null, 2)}\n`)
+    await writeFile(join(staging, 'report.txt'), text)
+    await writeFile(join(staging, 'run.json'), `${JSON.stringify(record, null, 2)}\n`)
+    await publishReport(staging, outDir)
     await writeFile(
       join(dataRoot, 'reviews', slug, `${change.label}.latest.json`),
       `${JSON.stringify(record, null, 2)}\n`,
@@ -731,7 +826,22 @@ export async function localPullRequestMain(
     io.stderr(`copse-review pr: ${errorMessage(err)}\n`)
     return HEADLESS_EXIT.FAILURE
   } finally {
+    await rm(staging, { recursive: true, force: true })
     await rm(seed, { recursive: true, force: true })
     await release()
   }
+}
+
+/** Move a finished run's directory into place, replacing the report it supersedes. */
+async function publishReport(staging: string, outDir: string): Promise<void> {
+  const superseded = `${staging}.superseded`
+  const moved = await rename(outDir, superseded).then(
+    () => true,
+    (err: unknown) => {
+      if (err instanceof Error && Reflect.get(err, 'code') === 'ENOENT') return false
+      throw err
+    },
+  )
+  await rename(staging, outDir)
+  if (moved) await rm(superseded, { recursive: true, force: true })
 }
