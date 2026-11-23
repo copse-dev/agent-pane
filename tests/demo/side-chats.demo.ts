@@ -8,7 +8,6 @@ const sidebarTitles = async (): Promise<string[]> =>
 
 const MAIN = 'Fix flaky mermaid e2e'
 
-/** Reveal a hover-only message action, then click it. */
 /** A prompt's actions sit behind its ⋯ menu: open it, then pick the action. */
 async function clickPromptAction(messageSelector: string, actionSelector: string): Promise<void> {
   const message = $(messageSelector)

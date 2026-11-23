@@ -6,7 +6,11 @@ import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { e2eWorkspaceDir, resetUserData, seedForkResendFixture } from './helpers/seed-config.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import {
+  saveAppScreenshot,
+  saveFramedElementScreenshot,
+  withCaptureFrame,
+} from './helpers/screenshot.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -159,6 +163,83 @@ describe('fork a thread and resend the last message', function () {
     await expect($('.messages-list .msg-user .msg-resend')).not.toHaveAttribute('hidden')
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'message-fork-resend-forked-thread.png'))
+  })
+
+  it('opens prompt actions from the keyboard and leaves an Escape in the composer alone', async function () {
+    resetUserData()
+    seedForkResendFixture(process.cwd())
+    await browser.reloadSession()
+
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await browser.waitUntil(
+      async () => (await $$('.messages-list .msg-user').getElements()).length === 2,
+      {
+        timeout: 10_000,
+        timeoutMsg: 'expected both seeded prompts in the transcript',
+      },
+    )
+    const latestId = await at(
+      [...(await $$('.messages-list .msg-user').getElements())],
+      1,
+    ).getAttribute('data-message-id')
+    if (!latestId) throw new Error('the latest prompt has no message id')
+    const latest = `.messages-list [data-message-id="${latestId}"]`
+    const trigger = `${latest} .msg-actions-trigger`
+    const focusedName = (): Promise<string | null> =>
+      browser.execute(() => {
+        const active = document.activeElement
+        if (!active || active === document.body) return null
+        return active.getAttribute('aria-label') ?? active.textContent
+      })
+
+    // ⋯ names the actions it reveals, and they follow it in the Tab order.
+    const menuId = await $(trigger).getAttribute('aria-controls')
+    if (!menuId) throw new Error('the ⋯ trigger must name the menu it controls')
+    await expect($(`${latest} .msg-actions-menu`)).toHaveAttribute('id', menuId)
+    await browser.execute((selector) => {
+      document.querySelector<HTMLElement>(selector)?.focus()
+    }, trigger)
+    await browser.keys(['Enter'])
+    await expect($(trigger)).toHaveAttribute('aria-expanded', 'true')
+    const tabbed: Array<string | null> = []
+    for (let press = 0; press < 3; press++) {
+      await browser.keys(['Tab'])
+      tabbed.push(await focusedName())
+    }
+    expect(tabbed).toEqual(['Fork from here', 'Side chat', 'Resend'])
+    await browser.keys(['Shift', 'Tab'])
+    await browser.keys(['Shift', 'Tab'])
+    expect(await focusedName()).toBe('Fork from here')
+    // The app-shell helpers dispatch resize, which can move focus; frame the
+    // prompt as it stands so the keyboard focus is what the capture shows.
+    await withCaptureFrame(async () => {
+      await saveFramedElementScreenshot(latest, 'message-fork-resend-keyboard-focus.png')
+    })
+    expect(await focusedName()).toBe('Fork from here')
+
+    // Escape from inside the menu closes it and hands focus back to ⋯.
+    await browser.keys(['Escape'])
+    await expect($(trigger)).toHaveAttribute('aria-expanded', 'false')
+    expect(await focusedName()).toBe('Message actions')
+
+    // Tabbing past the last action leaves the menu, which closes behind it.
+    await browser.keys(['Enter'])
+    await expect($(trigger)).toHaveAttribute('aria-expanded', 'true')
+    for (let press = 0; press < 4; press++) await browser.keys(['Tab'])
+    await expect($(trigger)).toHaveAttribute('aria-expanded', 'false')
+
+    // A menu opened without taking focus (as assistive tech can) must not pull
+    // an Escape typed in the composer, the first key of the stop gesture.
+    await $('.prompt-input').click()
+    await expect($('.prompt-input')).toBeFocused()
+    await browser.execute((selector) => {
+      document.querySelector<HTMLElement>(selector)?.click()
+    }, trigger)
+    await expect($(trigger)).toHaveAttribute('aria-expanded', 'true')
+    await expect($('.prompt-input')).toBeFocused()
+    await browser.keys(['Escape'])
+    await expect($(trigger)).toHaveAttribute('aria-expanded', 'false')
+    await expect($('.prompt-input')).toBeFocused()
   })
 
   it('Resend submits the latest prompt again as a new turn', async function () {

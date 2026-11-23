@@ -789,6 +789,11 @@
   gap: var(--spacing-xs);
   margin-top: var(--spacing-xs);
 }
+/* The menu wrapper exists for the trigger's `aria-controls`; its buttons lay
+   out as items of the row itself. */
+.msg-actions-menu {
+  display: contents;
+}
 .msg-actions .msg-action {
   padding: 0 4px;
   border: 0;
@@ -806,7 +811,9 @@
   .msg-action:not(.msg-actions-trigger, [hidden]) {
   display: inline-block;
 }
+/* First in the DOM, so Tab reaches the revealed actions after it; last on screen. */
 .msg-actions-trigger {
+  order: 1;
   min-width: 24px;
   font-size: var(--font-size-sm);
 }

@@ -2628,6 +2628,8 @@ const REOPENABLE_REASONING = '.msg-assistant:not(.msg-concise) .message-reasonin
 const BACKFILL_CHUNK_SIZE = 30
 /** Stands in for a row built without a signature, which matches no wanted row. */
 const UNSIGNED_ROW: TranscriptRowSignature = { patched: '', settled: '' }
+/** Gives each prompt's actions menu a unique id for its trigger's `aria-controls`. */
+let nextUserActionsMenuId = 0
 
 export function mountConversation(
   root: HTMLElement,
@@ -3820,6 +3822,9 @@ export function mountConversation(
       runResend(threadId)
     })
     const sideChat = buildSideChatAction(threadId, msgId)
+    const menuId = `msg-actions-menu-${String(++nextUserActionsMenuId)}`
+    // A disclosure, not an ARIA menu: the revealed actions are ordinary buttons
+    // in the Tab order, so `aria-haspopup` would promise menu keys they lack.
     const trigger = el(
       'button',
       {
@@ -3828,17 +3833,20 @@ export function mountConversation(
         title: 'Message actions',
         'aria-label': 'Message actions',
         'aria-expanded': 'false',
+        'aria-controls': menuId,
       },
       '⋯',
     )
-    const actions = el(
+    const menu = el(
       'div',
-      { class: 'msg-actions' },
+      { class: 'msg-actions-menu', id: menuId },
       fork,
       ...(sideChat ? [sideChat] : []),
       resend,
-      trigger,
     )
+    // The trigger leads in the DOM so Tab goes from ⋯ into the actions it just
+    // revealed; CSS `order` keeps it at the end of the row.
+    const actions = el('div', { class: 'msg-actions' }, trigger, menu)
     const closeActions = (): void => {
       actions.classList.remove('is-open')
       trigger.setAttribute('aria-expanded', 'false')
@@ -3849,11 +3857,19 @@ export function mountConversation(
       if (event.target instanceof Node && !actions.contains(event.target)) closeActions()
     }
     const closeOnEscape = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
-        closeActions()
-        trigger.focus()
-      }
+      if (event.key !== 'Escape') return
+      closeActions()
+      // Only an Escape pressed inside the row hands focus back to ⋯. One typed
+      // elsewhere, such as the composer's stop gesture, keeps its focus.
+      if (event.target instanceof Node && actions.contains(event.target)) trigger.focus()
     }
+    actions.addEventListener('focusout', (event) => {
+      // Switching windows blurs too, but focus returns here; only a move
+      // elsewhere in the app dismisses the menu.
+      if (!document.hasFocus()) return
+      if (event.relatedTarget instanceof Node && actions.contains(event.relatedTarget)) return
+      closeActions()
+    })
     trigger.addEventListener('click', () => {
       if (actions.classList.contains('is-open')) {
         closeActions()
@@ -3882,7 +3898,7 @@ export function mountConversation(
       resendWithoutImages.addEventListener('click', () => {
         runResend(threadId, false)
       })
-      actions.append(resendWithoutImages)
+      menu.append(resendWithoutImages)
     }
     return actions
   }
