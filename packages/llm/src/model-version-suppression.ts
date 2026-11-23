@@ -63,6 +63,20 @@ function parseModelLineage(id: string): ModelLineage | null {
   return null
 }
 
+/**
+ * `id` with a dashed GPT minor re-dotted the way OpenAI ships it
+ * (`gpt-6-1-sol` → `gpt-6.1-sol`), so a successor named by the intellect
+ * catalog's dashed key reads as its release. Any other id comes back unchanged.
+ */
+export function releaseSpelling(id: string): string {
+  const gpt = GPT_ID.exec(id)
+  const major = gpt?.[1]
+  const minor = gpt?.[2]
+  if (major === undefined || minor === undefined) return id
+  const tier = gpt?.[3]
+  return `gpt-${major}.${minor}${tier === undefined ? '' : `-${tier}`}`
+}
+
 /** Segment-wise comparison with missing segments read as 0: [5] < [5, 5] < [6]. */
 function compareVersions(a: readonly number[], b: readonly number[]): number {
   for (let i = 0; i < Math.max(a.length, b.length); i++) {

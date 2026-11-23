@@ -81,7 +81,7 @@ import { resolveAgentModelIdentity } from '@copse/llm/agent-model-identity.ts'
 import { displayModelLabel } from '@shared/model-display.ts'
 import { isNonNull } from '@shared/nullish.ts'
 import { blockedModelMaker, parseBlockedModelMakers } from '@copse/llm/model-maker-block.ts'
-import { supersedingModel } from '@copse/llm/model-version-suppression.ts'
+import { releaseSpelling, supersedingModel } from '@copse/llm/model-version-suppression.ts'
 import { modelCoverage, type ModelCoverage } from './model-coverage.ts'
 
 const ACP_GROUP = 'Agents on this device'
@@ -145,7 +145,7 @@ export function modelDisplayLabel(model: string): string {
  * reads "GPT-6.1 Sol" whether or not the successor has a score yet.
  */
 function successorDisplayLabel(lineageId: string): string {
-  return cloudModelDisplayLabel(lineageId.replace(/^(gpt-\d{1,2})-(\d{1,2})(?=-[a-z]|$)/, '$1.$2'))
+  return cloudModelDisplayLabel(releaseSpelling(lineageId))
 }
 
 async function pluginModelOptions(

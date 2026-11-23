@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { TRACKED_MODELS } from './model-catalog.ts'
-import { supersedingModel } from './model-version-suppression.ts'
+import { releaseSpelling, supersedingModel } from './model-version-suppression.ts'
 
 /** Every tracked id paired with the tracked successor that hides it, if any. */
 function trackedSuccessors(): Record<string, string | null> {
@@ -122,5 +122,24 @@ describe('supersedingModel', () => {
       'gpt-4o': null,
       'gpt-4o-mini': null,
     })
+  })
+})
+
+describe('releaseSpelling', () => {
+  it('re-dots a dashed GPT minor and leaves every other id alone', () => {
+    assert.equal(releaseSpelling('gpt-6-1-sol'), 'gpt-6.1-sol')
+    assert.equal(releaseSpelling('gpt-6-2'), 'gpt-6.2')
+    for (const id of [
+      'gpt-6.1-sol',
+      'gpt-6',
+      'gpt-5-mini',
+      'gpt-4-32k',
+      'gpt-4-0613',
+      'gpt-4-1106-preview',
+      'gpt-6-1-sol-high',
+      'claude-opus-5-5',
+    ]) {
+      assert.equal(releaseSpelling(id), id, id)
+    }
   })
 })
