@@ -13690,6 +13690,24 @@ var init_disclosure_model = __esm({
   }
 });
 
+// src/renderer/views/transcript-row-element.ts
+function transcriptRowElement(list, key) {
+  let head = list.firstElementChild;
+  let tail = list.lastElementChild;
+  while (head && tail) {
+    if (head.getAttribute("data-message-id") === key && head instanceof HTMLElement) return head;
+    if (tail.getAttribute("data-message-id") === key && tail instanceof HTMLElement) return tail;
+    if (head === tail || head.nextElementSibling === tail) return null;
+    head = head.nextElementSibling;
+    tail = tail.previousElementSibling;
+  }
+  return null;
+}
+var init_transcript_row_element = __esm({
+  "src/renderer/views/transcript-row-element.ts"() {
+  }
+});
+
 // src/renderer/views/tool-card-refresh.ts
 function markUserInterruptedCalls(thread) {
   if (!thread || markedTranscripts.has(thread.messages)) return;
@@ -13928,7 +13946,7 @@ function createToolCardRefresher(host) {
     if (messageKey && activeThread?.status === "running" && toolCalls.some((tool) => !tool.subagent)) {
       liveRollupMessages.add(messageKey);
     }
-    const run4 = opts.run && (opts.run.anchorId === msgId || list.querySelector(`[data-message-id="${opts.run.anchorId}"]`) !== null) ? opts.run : void 0;
+    const run4 = opts.run && (opts.run.anchorId === msgId || transcriptRowElement(list, opts.run.anchorId) !== null) ? opts.run : void 0;
     const isRunMember = run4 !== void 0 && run4.anchorId !== msgId;
     msgEl.classList.toggle("msg-tool-run-member", isRunMember);
     const message2 = activeThread?.messages.find((m2) => m2.id === msgId);
@@ -14017,7 +14035,7 @@ function createToolCardRefresher(host) {
   }
   function renderRunAnchor(thread, run4) {
     const anchor = thread?.messages.find((m2) => m2.id === run4.anchorId);
-    const anchorEl = list.querySelector(`[data-message-id="${run4.anchorId}"]`);
+    const anchorEl = transcriptRowElement(list, run4.anchorId);
     if (!anchor || !anchorEl) return;
     renderToolCards(anchorEl, anchor.toolCalls, {
       ...messageToolCardOpts(anchor),
@@ -14028,7 +14046,7 @@ function createToolCardRefresher(host) {
   function releaseRunMembers(thread, run4) {
     for (const id of run4.memberIds) {
       if (id === run4.anchorId) continue;
-      const memberEl = list.querySelector(`[data-message-id="${id}"]`);
+      const memberEl = transcriptRowElement(list, id);
       if (!memberEl?.querySelector(":scope > .tool-card-rollup")) continue;
       const msg = thread?.messages.find((m2) => m2.id === id);
       if (!msg) continue;
@@ -14060,7 +14078,7 @@ function createToolCardRefresher(host) {
     });
     refreshToolCards(msgId);
     const msg = thread?.messages.find((m2) => m2.id === msgId);
-    const msgEl = list.querySelector(`[data-message-id="${msgId}"]`);
+    const msgEl = transcriptRowElement(list, msgId);
     if (!msg || !msgEl || multiStepRunFor(thread, msgId)) return;
     syncReasoningEl2(msgEl, msg, isReasoningDisclosureLive(thread, msg), acpWorkspaceRoot(store2));
     registerReasoningDisclosures(msgEl);
@@ -14082,7 +14100,7 @@ function createToolCardRefresher(host) {
   function refreshToolCards(msgId) {
     const thread = store2.getState().threads.find((t) => t.messages.some((m2) => m2.id === msgId));
     const msg = thread?.messages.find((m2) => m2.id === msgId);
-    const msgEl = list.querySelector(`[data-message-id="${msgId}"]`);
+    const msgEl = transcriptRowElement(list, msgId);
     if (!msg || !msgEl) return;
     host.keepReadingPosition(() => {
       const run4 = multiStepRunFor(thread, msgId);
@@ -14131,6 +14149,7 @@ var init_tool_card_refresh = __esm({
     init_concise_thread();
     init_disclosure_model();
     init_render_signature();
+    init_transcript_row_element();
     init_thread_proposal_tool_card();
     init_turn_interruption();
     userInterruptedCalls = /* @__PURE__ */ new WeakMap();
@@ -14193,17 +14212,18 @@ function rowCardSelector(key) {
 function isRowCardOf(node, key) {
   return ROW_CARD_ATTRIBUTES.some((attribute) => node.getAttribute(attribute) === key);
 }
-function transcriptRowElement(list, key) {
-  let head = list.firstElementChild;
-  let tail = list.lastElementChild;
-  while (head && tail) {
-    if (head instanceof HTMLElement && head.dataset["messageId"] === key) return head;
-    if (tail instanceof HTMLElement && tail.dataset["messageId"] === key) return tail;
-    if (head === tail || head.nextElementSibling === tail) return null;
-    head = head.nextElementSibling;
-    tail = tail.previousElementSibling;
+function rowCardElement(row2, attribute, key) {
+  for (let next = row2.nextElementSibling; next && isRowCardOf(next, key); next = next.nextElementSibling) {
+    if (next instanceof HTMLElement && next.getAttribute(attribute) === key) return next;
   }
   return null;
+}
+function rowParts(row2, key) {
+  const parts = [row2];
+  for (let next = row2.nextElementSibling; next && isRowCardOf(next, key); next = next.nextElementSibling) {
+    parts.push(next);
+  }
+  return parts;
 }
 function removeTranscriptRow(list, key) {
   const element = transcriptRowElement(list, key);
@@ -14339,6 +14359,7 @@ var init_transcript_rows = __esm({
     init_render_signature();
     init_thread_proposal_tool_card();
     init_tool_card_refresh();
+    init_transcript_row_element();
     ROW_CARD_ATTRIBUTES = [
       "data-review-for",
       "data-review-report-for",
@@ -22107,12 +22128,10 @@ function mountConversation(root, store2, api2, options = {}) {
     if (msg.role === "user") body.append(buildUserActions(threadId, msgId));
     return msgEl;
   }
-  function finalizeMessageEl(threadId, msgId) {
+  function finalizeMessageEl(threadId, msgId, msgEl) {
     const thread = getThreadById(store2, threadId);
     const msg = thread?.messages.find((m2) => m2.id === msgId);
-    const msgEl = list.querySelector(`[data-message-id="${msgId}"]`);
-    if (!msg || !msgEl) return;
-    hydrateRemoteArtifactImages(list, api2, artifactImageScope(threadId));
+    if (!msg) return;
     const run4 = multiStepRunFor(thread, msgId);
     renderToolCards(msgEl, msg.toolCalls, {
       ...messageToolCardOpts(msg),
@@ -22121,11 +22140,15 @@ function mountConversation(root, store2, api2, options = {}) {
     syncMessageCanvasPreviews(msgEl, msg, store2.getState().activeProjectId, threadId, api2);
     syncMessageVisualEvidence(msgEl, msg);
     if (run4) syncRunLayout(thread, run4, msgId);
-    if (msg.review) renderMessageReview(threadId, msgId);
-    if (msg.reviewReport) renderMessageReviewReport(threadId, msgId);
-    renderMessageHookCards(threadId, msgId);
-    renderMessageTurnRecovery(threadId, msgId);
-    attachSideChatChip(threadId, msgId);
+    if (msg.review) renderMessageReview(threadId, msgId, msgEl);
+    if (msg.reviewReport) renderMessageReviewReport(threadId, msgId, msgEl);
+    renderMessageHookCards(threadId, msgId, msgEl);
+    renderMessageTurnRecovery(threadId, msgId, msgEl);
+    attachSideChatChip(threadId, msgId, msgEl);
+    const scope = artifactImageScope(threadId);
+    for (const part of rowParts(msgEl, msgId)) {
+      if (part instanceof HTMLElement) hydrateRemoteArtifactImages(part, api2, scope);
+    }
   }
   function appendMessageEl(threadId, msgId, batched = false) {
     if (threadId !== store2.getState().activeThreadId) return;
@@ -22142,7 +22165,7 @@ function mountConversation(root, store2, api2, options = {}) {
     if (trailingCard) {
       list.insertBefore(msgEl, activityBar.isConnected ? activityBar : trailingCard);
     } else list.insertBefore(msgEl, activityBar.isConnected ? activityBar : null);
-    finalizeMessageEl(threadId, msgId);
+    finalizeMessageEl(threadId, msgId, msgEl);
     if (batched) return;
     if (msg.role === "user") refreshStickyImagePrompt();
     syncModelLabels();
@@ -22156,7 +22179,7 @@ function mountConversation(root, store2, api2, options = {}) {
     if (!msgEl) return;
     const tail = activityBar.isConnected ? activityBar : firstTrailingCard();
     list.insertBefore(msgEl, before ?? tail);
-    finalizeMessageEl(threadId, msgId);
+    finalizeMessageEl(threadId, msgId, msgEl);
   }
   function markRowPatched(msgId, redraws = []) {
     const message2 = locateMessage(store2, msgId)?.message;
@@ -22172,7 +22195,7 @@ function mountConversation(root, store2, api2, options = {}) {
     const msgEl = buildMessageEl(threadId, msgId);
     if (!msgEl) return;
     list.insertBefore(msgEl, before);
-    finalizeMessageEl(threadId, msgId);
+    finalizeMessageEl(threadId, msgId, msgEl);
   }
   function attachReplyActions(body, threadId, msgId) {
     const sideChat = buildSideChatAction(threadId, msgId);
@@ -22225,8 +22248,7 @@ function mountConversation(root, store2, api2, options = {}) {
       (row2) => row2.anchorMessageId === msgId
     );
   }
-  function attachSideChatChip(threadId, msgId) {
-    const msgEl = list.querySelector(`[data-message-id="${msgId}"]`);
+  function attachSideChatChip(threadId, msgId, msgEl = transcriptRowElement(list, msgId)) {
     if (!msgEl) return;
     for (const child of Array.from(msgEl.children)) {
       if (child.classList.contains("msg-side-chat-chip")) child.remove();
@@ -22542,12 +22564,12 @@ function mountConversation(root, store2, api2, options = {}) {
       if ((msg.hookCards ?? []).length > 0) renderMessageHookCards(thread.id, msg.id);
     }
   }
-  function renderMessageHookCards(threadId, messageId) {
+  function renderMessageHookCards(threadId, messageId, drawn) {
     if (threadId !== store2.getState().activeThreadId) return;
-    list.querySelector(`[data-hook-cards-for="${messageId}"]`)?.remove();
+    const msgEl = drawn ?? transcriptRowElement(list, messageId);
+    if (msgEl) rowCardElement(msgEl, "data-hook-cards-for", messageId)?.remove();
     if (!store2.getState().developerMode) return;
     const msg = getActiveThread(store2)?.messages.find((m2) => m2.id === messageId);
-    const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
     const cards = msg?.hookCards ?? [];
     if (!msgEl || cards.length === 0) return;
     const load = (runId) => {
@@ -22557,11 +22579,11 @@ function mountConversation(root, store2, api2, options = {}) {
     };
     msgEl.after(createHookCardHost(messageId, cards, load));
   }
-  function renderMessageReview(threadId, messageId) {
+  function renderMessageReview(threadId, messageId, drawn) {
     if (threadId !== store2.getState().activeThreadId) return;
-    list.querySelector(`[data-review-card][data-review-for="${messageId}"]`)?.remove();
+    const msgEl = drawn ?? transcriptRowElement(list, messageId);
+    if (msgEl) rowCardElement(msgEl, "data-review-for", messageId)?.remove();
     const msg = getActiveThread(store2)?.messages.find((m2) => m2.id === messageId);
-    const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
     if (!msg?.review || !msgEl) return;
     const card = createReviewCardEl(msg.review, api2, () => {
       retryReview(store2, api2, threadId, messageId);
@@ -22570,11 +22592,11 @@ function mountConversation(root, store2, api2, options = {}) {
     card.setAttribute("data-review-for", messageId);
     msgEl.after(card);
   }
-  function renderMessageReviewReport(threadId, messageId) {
+  function renderMessageReviewReport(threadId, messageId, drawn) {
     if (threadId !== store2.getState().activeThreadId) return;
-    list.querySelector(`[data-review-report-card][data-review-report-for="${messageId}"]`)?.remove();
+    const msgEl = drawn ?? transcriptRowElement(list, messageId);
+    if (msgEl) rowCardElement(msgEl, "data-review-report-for", messageId)?.remove();
     const msg = getActiveThread(store2)?.messages.find((message2) => message2.id === messageId);
-    const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
     if (!msg?.reviewReport || !msgEl) return;
     const card = createReviewFindingsCardEl(msg.reviewReport, {
       onRetry: () => {
@@ -22592,16 +22614,16 @@ function mountConversation(root, store2, api2, options = {}) {
     });
     card.setAttribute("data-review-report-card", "");
     card.setAttribute("data-review-report-for", messageId);
-    const postTurnCard = list.querySelector(`[data-review-card][data-review-for="${messageId}"]`);
+    const postTurnCard = rowCardElement(msgEl, "data-review-for", messageId);
     (postTurnCard ?? msgEl).after(card);
   }
-  function renderMessageTurnRecovery(threadId, messageId) {
+  function renderMessageTurnRecovery(threadId, messageId, drawn) {
     if (threadId !== store2.getState().activeThreadId) return;
-    list.querySelector(`[data-turn-recovery-for="${messageId}"]`)?.remove();
+    const msgEl = drawn ?? transcriptRowElement(list, messageId);
+    if (msgEl) rowCardElement(msgEl, "data-turn-recovery-for", messageId)?.remove();
     const state = store2.getState();
     const projectId = state.activeProjectId;
     const thread = state.threads.find((candidate) => candidate.id === threadId);
-    const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
     const msg = thread?.messages.find((candidate) => candidate.id === messageId);
     if (msgEl && msg) syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(thread, messageId));
     scheduleConciseTurnFooterSync();
