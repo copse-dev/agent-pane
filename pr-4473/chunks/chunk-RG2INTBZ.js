@@ -47637,6 +47637,14 @@ function parseModelLineage(id) {
   }
   return null;
 }
+function releaseSpelling(id) {
+  const gpt = GPT_ID.exec(id);
+  const major = gpt?.[1];
+  const minor = gpt?.[2];
+  if (major === void 0 || minor === void 0) return id;
+  const tier = gpt?.[3];
+  return `gpt-${major}.${minor}${tier === void 0 ? "" : `-${tier}`}`;
+}
 function compareVersions(a4, b2) {
   for (let i2 = 0; i2 < Math.max(a4.length, b2.length); i2++) {
     const difference = (a4[i2] ?? 0) - (b2[i2] ?? 0);
@@ -47712,7 +47720,7 @@ function modelDisplayLabel(model) {
   return displayModelLabel2(model);
 }
 function successorDisplayLabel(lineageId) {
-  return cloudModelDisplayLabel(lineageId.replace(/^(gpt-\d{1,2})-(\d{1,2})(?=-[a-z]|$)/, "$1.$2"));
+  return cloudModelDisplayLabel(releaseSpelling(lineageId));
 }
 async function pluginModelOptions(api, includeAgentModels, current) {
   if (!includeAgentModels) return [];
