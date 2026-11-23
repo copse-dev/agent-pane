@@ -1,19 +1,15 @@
 import {
   clear,
   el,
-  init_helpers
-} from "./chunk-EMIRHVRH.js";
+  init_dialog_shell,
+  init_helpers,
+  lazyBodyDialog
+} from "./chunk-OB2CWITE.js";
 import {
   __esm
 } from "./chunk-WW3EXSJD.js";
 
 // src/renderer/views/new-project-dialog.ts
-function ensureDialog() {
-  if (dialogEl) return dialogEl;
-  dialogEl = el("dialog", { id: "new-project-dialog", class: "new-project-dialog" });
-  document.body.append(dialogEl);
-  return dialogEl;
-}
 function openNewProjectDialog(api, defaultParentDir) {
   const dialog = ensureDialog();
   clear(dialog);
@@ -122,11 +118,12 @@ function openNewProjectDialog(api, defaultParentDir) {
     nameInput.focus();
   });
 }
-var dialogEl;
+var ensureDialog;
 var init_new_project_dialog = __esm({
   "src/renderer/views/new-project-dialog.ts"() {
+    init_dialog_shell();
     init_helpers();
-    dialogEl = null;
+    ensureDialog = lazyBodyDialog("new-project-dialog", "new-project-dialog");
   }
 });
 init_new_project_dialog();

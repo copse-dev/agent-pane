@@ -1,7 +1,7 @@
 import {
   el,
   init_helpers
-} from "./chunk-EMIRHVRH.js";
+} from "./chunk-OB2CWITE.js";
 import {
   __esm
 } from "./chunk-WW3EXSJD.js";
@@ -8707,6 +8707,43 @@ var init_unknown_value3 = __esm({
   }
 });
 
+// src/shared/ssh-destination.ts
+function hasAsciiControlCharacter(value) {
+  return ASCII_CONTROL_RE.test(value);
+}
+function readsAsSshOption(value) {
+  return value.startsWith("-");
+}
+function sshDestinationProblem(host, user) {
+  const target = host.trim();
+  const hostname = target.slice(target.lastIndexOf("@") + 1);
+  if (!hostname) return { field: "host", message: "Host is required." };
+  if (/\s/.test(target) || hasAsciiControlCharacter(target)) {
+    return { field: "host", message: "Host cannot contain spaces or control characters." };
+  }
+  if (readsAsSshOption(target) || readsAsSshOption(hostname)) {
+    return { field: "host", message: "Host cannot start with \u201C-\u201D; ssh would read it as an option." };
+  }
+  if (user) {
+    if (readsAsSshOption(user)) {
+      return {
+        field: "user",
+        message: "User cannot start with \u201C-\u201D; ssh would read it as an option."
+      };
+    }
+    if (hasAsciiControlCharacter(user)) {
+      return { field: "user", message: "User cannot contain control characters." };
+    }
+  }
+  return null;
+}
+var ASCII_CONTROL_RE;
+var init_ssh_destination = __esm({
+  "src/shared/ssh-destination.ts"() {
+    ASCII_CONTROL_RE = /[\u0000-\u001f\u007f]/;
+  }
+});
+
 // src/renderer/views/setup/ssh-host-helpers.ts
 function parseSshWorkspaceHosts(value) {
   return recordArrayOrEmpty(value).flatMap((entry) => {
@@ -8797,6 +8834,8 @@ function parseSshHostDraft(draft) {
     if (!draft.host.trim()) fields.push("host");
     return { ok: false, error: "Label and host are required.", fields };
   }
+  const destination = sshDestinationProblem(draft.host, draft.user.trim());
+  if (destination) return { ok: false, error: destination.message, fields: [destination.field] };
   const host = {
     id,
     label: draft.label.trim(),
@@ -8819,6 +8858,7 @@ var SSH_HOST_ID_RE;
 var init_ssh_host_helpers = __esm({
   "src/renderer/views/setup/ssh-host-helpers.ts"() {
     init_unknown_value3();
+    init_ssh_destination();
     SSH_HOST_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
   }
 });

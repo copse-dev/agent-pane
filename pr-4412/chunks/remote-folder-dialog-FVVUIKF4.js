@@ -14,12 +14,14 @@ import {
   showToast,
   unsavedSshConfigHosts,
   upsertHost
-} from "./chunk-5VXMUG67.js";
+} from "./chunk-HIIVOQP4.js";
 import {
   clear,
   el,
-  init_helpers
-} from "./chunk-EMIRHVRH.js";
+  init_dialog_shell,
+  init_helpers,
+  lazyBodyDialog
+} from "./chunk-OB2CWITE.js";
 import {
   __esm
 } from "./chunk-WW3EXSJD.js";
@@ -93,12 +95,6 @@ var init_remote_folder_path = __esm({
 });
 
 // src/renderer/views/remote-folder-dialog.ts
-function ensureDialog() {
-  if (dialogEl) return dialogEl;
-  dialogEl = el("dialog", { id: "remote-folder-dialog", class: "remote-folder-dialog" });
-  document.body.append(dialogEl);
-  return dialogEl;
-}
 function openRemoteFolderDialog(api, options = {}) {
   const projects = options.projects ?? [];
   const dialog = ensureDialog();
@@ -320,19 +316,9 @@ function openRemoteFolderDialog(api, options = {}) {
         setInlineStatus(status, "error", ipcErrorMessage(err, "Could not load SSH hosts."));
       }
     }
-    async function browseStart() {
-      const hostId = currentHostId;
-      if (!hostId || loading || addingHost) return;
-      let home;
-      try {
-        const states = await api.sshWorkspace.connect(hostId);
-        home = states.find((state) => state.hostId === hostId)?.capabilities?.home;
-      } catch {
-      }
-      if (hostId !== currentHostId) return;
-      const start = initialRemoteBrowsePath(projects, hostId, home);
-      if (await browse(start) || start === "/" || hostId !== currentHostId) return;
-      await browse("/");
+    let listing = 0;
+    function browseStart() {
+      return browse(null);
     }
     function renderBreadcrumbs(path) {
       fillRemotePathBreadcrumbs(breadcrumbs, path, (next) => {
@@ -340,20 +326,35 @@ function openRemoteFolderDialog(api, options = {}) {
       });
     }
     async function browse(path) {
-      if (!currentHostId || loading || addingHost) return false;
+      const hostId = currentHostId;
+      if (!hostId || addingHost || loading && path !== null) return;
+      const run = ++listing;
       loading = true;
       openBtn.disabled = true;
       upBtn.disabled = true;
       status.textContent = "Connecting\u2026";
       clear(list);
+      let target = path ?? "/";
       try {
-        await api.sshWorkspace.connect(currentHostId);
-        currentPath = path;
+        const states = await api.sshWorkspace.connect(hostId);
+        if (run !== listing) return;
+        if (path === null) {
+          const home = states.find((state) => state.hostId === hostId)?.capabilities?.home;
+          target = initialRemoteBrowsePath(projects, hostId, home);
+        }
+        currentPath = target;
         renderBreadcrumbs(currentPath);
-        const entries = await api.sshWorkspace.listDirectory(
-          currentHostId,
-          currentPath
-        );
+        let entries;
+        try {
+          entries = await api.sshWorkspace.listDirectory(hostId, target);
+        } catch (err) {
+          if (path !== null || target === "/" || run !== listing) throw err;
+          target = "/";
+          currentPath = target;
+          renderBreadcrumbs(currentPath);
+          entries = await api.sshWorkspace.listDirectory(hostId, target);
+        }
+        if (run !== listing) return;
         status.textContent = entries.length === 0 ? "No subfolders here \u2014 open this folder or go up." : "";
         for (const entry of entries) {
           const row = el(
@@ -372,17 +373,18 @@ function openRemoteFolderDialog(api, options = {}) {
         }
         upBtn.disabled = currentPath === "/";
         openBtn.disabled = false;
-        return true;
       } catch (err) {
-        currentPath = path;
+        if (run !== listing) return;
+        currentPath = target;
         renderBreadcrumbs(currentPath);
         setInlineStatus(status, "error", ipcErrorMessage(err, "Could not reach the host."));
-        return false;
       } finally {
-        loading = false;
-        if (hosts.length > 0 && currentHostId) {
-          upBtn.disabled = currentPath === "/";
-          openBtn.disabled = false;
+        if (run === listing) {
+          loading = false;
+          if (hosts.length > 0 && currentHostId) {
+            upBtn.disabled = currentPath === "/";
+            openBtn.disabled = false;
+          }
         }
       }
     }
@@ -406,9 +408,10 @@ function openRemoteFolderDialog(api, options = {}) {
     dialog.showModal();
   });
 }
-var dialogEl, SSH_CONFIG_OPTION;
+var SSH_CONFIG_OPTION, ensureDialog;
 var init_remote_folder_dialog = __esm({
   "src/renderer/views/remote-folder-dialog.ts"() {
+    init_dialog_shell();
     init_helpers();
     init_toast();
     init_ssh_host_helpers();
@@ -417,8 +420,8 @@ var init_remote_folder_dialog = __esm({
     init_icons();
     init_inline_status();
     init_ipc_error_message();
-    dialogEl = null;
     SSH_CONFIG_OPTION = "ssh-config:";
+    ensureDialog = lazyBodyDialog("remote-folder-dialog", "remote-folder-dialog");
   }
 });
 init_remote_folder_dialog();
