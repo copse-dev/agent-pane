@@ -26,6 +26,8 @@ export interface SshCapabilityReport {
   os: string
   arch: string
   shell: string | null
+  /** The remote account's home directory, when the host reported an absolute one. */
+  home?: string
   git: boolean
   rg: boolean
   warnings: string[]
