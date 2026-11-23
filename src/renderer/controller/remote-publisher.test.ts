@@ -312,6 +312,35 @@ describe('desktop remote publisher', () => {
     dispose()
   })
 
+  it('sends what streamed while the companion was stopped once it resumes', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] })
+    const { store, views, events, api, base } = setup()
+    const watchedId = createThread(store)
+    loadTranscripts(store, [watchedId])
+    const state = await base.mobile.getState()
+    const dispose = attachRemotePublisher(store, api)
+    events.state?.({ ...state, enabled: true, running: true })
+    await settle()
+    events.watched?.([{ projectId: 'p', threadId: watchedId }])
+    context.mock.timers.tick(150)
+    const sent = views.length
+
+    events.state?.({ ...state, enabled: true, running: false })
+    appendToken(store, `${watchedId}-m`, ' while stopped')
+    context.mock.timers.tick(150)
+    assert.equal(views.length, sent)
+
+    // The watch outlives a short stop, and nothing else replaces the thread.
+    events.state?.({ ...state, enabled: true, running: true })
+    context.mock.timers.tick(150)
+    assert.equal(views.length, sent + 1)
+    assert.equal(
+      views.at(-1)?.threads.find((thread) => thread.id === watchedId)?.messages[0]?.content,
+      'a long transcript while stopped',
+    )
+    dispose()
+  })
+
   it('sends a project again after its publish failed', async (context) => {
     context.mock.timers.enable({ apis: ['setTimeout'] })
     const delivered: RemoteView[] = []

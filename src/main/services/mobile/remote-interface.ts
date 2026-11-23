@@ -32,6 +32,12 @@ export const REMOTE_WATCH_TTL_MS = 15_000
  */
 const MAX_WATCHED = 8
 
+/**
+ * Twice the slowest poll interval. When the list is full, a thread not polled
+ * for this long gives its place to a newly polled one.
+ */
+const REMOTE_WATCH_LEFT_MS = 5_000
+
 /** Live renderer views are replicas; all prompt and queue writes still use mobile-chat. */
 export class RemoteInterface {
   private views = new Map<string, RemoteView>()
@@ -130,13 +136,25 @@ export class RemoteInterface {
       this.watching.set(key, known)
       return
     }
-    // Refuse the newcomer rather than evict a chat still being polled: with one
-    // chat too many polling in turn, evicting the oldest drops the next to poll,
-    // so every poll would miss and no client would get its live view.
-    if (this.watching.size >= MAX_WATCHED && !this.dropLapsed()) return
+    // When full, make room only from threads whose polls have stopped. Evicting a
+    // thread still being polled would, with one chat too many polling in turn,
+    // always drop the next to poll, so no client would get its live view.
+    if (this.watching.size >= MAX_WATCHED && !this.dropLapsed() && !this.dropLeft()) return
     this.watching.set(key, { projectId, threadId, seenAt: Date.now() })
     this.notifyWatched()
     this.scheduleWatchExpiry()
+  }
+
+  /**
+   * Forgets the least recently polled thread if its client has most likely
+   * moved on: a phone opening chat after chat leaves each one behind long
+   * before the TTL runs out. True when it went.
+   */
+  private dropLeft(): boolean {
+    const oldest = this.watching.entries().next().value
+    if (!oldest || Date.now() - oldest[1].seenAt < REMOTE_WATCH_LEFT_MS) return false
+    this.watching.delete(oldest[0])
+    return true
   }
 
   /** Forgets threads no client has polled within the TTL; true when any went. */

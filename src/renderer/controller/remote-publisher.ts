@@ -123,9 +123,14 @@ export function attachRemotePublisher(store: AppStore, api: ApiClient): () => vo
   function setAvailability(state: Pick<MobileCompanionState, 'enabled' | 'running'>): void {
     running = state.enabled && state.running
     if (running) schedule()
-    else if (timer !== null) {
-      clearTimeout(timer)
-      timer = null
+    else {
+      if (timer !== null) {
+        clearTimeout(timer)
+        timer = null
+      }
+      // Nothing is marked while stopped, and main keeps the views it was sent,
+      // so send every project again when the companion resumes.
+      published.clear()
     }
   }
 

@@ -207,4 +207,30 @@ describe('remote desktop relay', () => {
     host.snapshot({ projectId: 'p', threadId: 't8' })
     assert.deepEqual(watchedIds().sort(), ids(1, 9).sort())
   })
+
+  it('gives a place in a full list to a new chat once the oldest has been left', (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+    const host = new RemoteInterface()
+    host.attach(() => {})
+    const watchedIds = (): string[] => host.watched().map(({ threadId }) => threadId)
+    // One phone opening chat after chat: each page polls only the chat it shows,
+    // so every chat it left stops polling long before the watch period ends.
+    for (let index = 0; index < 8; index++) {
+      host.snapshot({ projectId: 'p', threadId: `t${String(index)}` })
+      context.mock.timers.tick(1_000)
+    }
+    // `t0` was last polled 8 s ago: the ninth chat goes live at once.
+    host.snapshot({ projectId: 'p', threadId: 't8' })
+    assert.equal(host.watched().length, 8)
+    assert.ok(watchedIds().includes('t8'))
+    assert.ok(!watchedIds().includes('t0'))
+
+    // A chat polled within the last few seconds is never pushed out.
+    for (let index = 1; index <= 8; index++) {
+      host.snapshot({ projectId: 'p', threadId: `t${String(index)}` })
+    }
+    context.mock.timers.tick(2_500)
+    host.snapshot({ projectId: 'p', threadId: 't9' })
+    assert.ok(!watchedIds().includes('t9'))
+  })
 })
