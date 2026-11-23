@@ -79,26 +79,41 @@ interface Harness {
   api: ApiClient
   connects: string[]
   listings: string[]
+  /** Saved-host lists and `~/.ssh/config` reads, in call order. */
+  reads: string[]
 }
 
 function stubApi(
   connect: (hostId: string) => Promise<SshConnectionState[]>,
   listDirectory: (hostId: string, path: string) => Promise<SshRemoteDirEntry[]>,
+  options: { sshWorkspaceEnabled?: boolean } = {},
 ): Harness {
   const connects: string[] = []
   const listings: string[] = []
+  const reads: string[] = []
   const base = createFakeApi()
   const api: ApiClient = {
     ...base,
-    // These tests are about browsing; the turn-on question has its own tests.
-    settings: {
-      ...base.settings,
-      get: async (key: string): Promise<unknown> =>
-        key === 'sshWorkspaceEnabled' ? true : base.settings.get(key),
-    },
+    // Browsing tests start with SSH workspaces on. With `sshWorkspaceEnabled:
+    // false` the stored setting starts unset, so the dialog asks first.
+    settings:
+      options.sshWorkspaceEnabled === false
+        ? base.settings
+        : {
+            ...base.settings,
+            get: async (key: string): Promise<unknown> =>
+              key === 'sshWorkspaceEnabled' ? true : base.settings.get(key),
+          },
     sshWorkspace: {
       ...base.sshWorkspace,
-      listHosts: () => Promise.resolve(HOSTS),
+      listHosts: () => {
+        reads.push('listHosts')
+        return Promise.resolve(HOSTS)
+      },
+      listConfigAliases: () => {
+        reads.push('listConfigAliases')
+        return base.sshWorkspace.listConfigAliases()
+      },
       connect: (hostId) => {
         connects.push(hostId)
         return connect(hostId)
@@ -109,7 +124,7 @@ function stubApi(
       },
     },
   }
-  return { api, connects, listings }
+  return { api, connects, listings, reads }
 }
 
 function query<T extends Element>(selector: string, type: { new (): T; prototype: T }): T {
@@ -147,6 +162,27 @@ function cancelDialog(): void {
 
 describe('openRemoteFolderDialog', () => {
   before(patchDialogs)
+
+  it('lists, reads and connects nothing until SSH workspaces are turned on', async () => {
+    const harness = stubApi(
+      (hostId) => Promise.resolve(connected(hostId, `/home/${hostId}`)),
+      (_hostId, path) => Promise.resolve(folders(path, 'src')),
+      { sshWorkspaceEnabled: false },
+    )
+    void openRemoteFolderDialog(harness.api)
+    await settle()
+    query('.ssh-consent', window.HTMLElement)
+    assert.deepEqual(harness.reads, [], 'no saved hosts or ~/.ssh/config read while it asks')
+    assert.deepEqual(harness.connects, [], 'nothing connects while it asks')
+
+    query('.ssh-consent-turn-on', window.HTMLButtonElement).click()
+    await settle()
+    assert.equal(await harness.api.settings.get('sshWorkspaceEnabled'), true)
+    assert.deepEqual([...harness.reads].sort(), ['listConfigAliases', 'listHosts'])
+    assert.deepEqual(harness.connects, ['a'], 'turning on connects the first host')
+    assert.deepEqual(entryNames(), ['src'])
+    cancelDialog()
+  })
 
   it('keeps Open, Up and the old listing out of reach while the next host connects', async () => {
     const betaConnect = held<SshConnectionState[]>()
