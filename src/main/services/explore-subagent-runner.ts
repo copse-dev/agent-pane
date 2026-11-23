@@ -1,12 +1,17 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { ModelUsage, StreamChunk } from '@shared/types'
-import { runExploreSubagent, type RunExploreSubagentOptions } from './subagent-service.ts'
+import {
+  runExploreSubagent,
+  type ExploreSubagentResult,
+  type RunExploreSubagentOptions,
+} from './subagent-service.ts'
 import type { LLMProvider } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
 import { addSubagentUsage } from './subagent-usage.ts'
 import {
   exploreFallbackNotice,
   toolCircuitBreaker,
+  type ToolBreakerTrip,
   type ToolCircuitBreaker,
 } from './tool-circuit-breaker.ts'
 
@@ -110,9 +115,27 @@ export function createExploreSubagentRunner(
       usageModel: target.usageModel,
       ...(localFallback !== undefined ? { localFallback } : {}),
     })
+    const { route } = ctx
+    const runFallback = async (
+      fallback: ExploreTarget,
+      trip: ToolBreakerTrip,
+    ): Promise<ExploreSubagentResult> => {
+      const retried = await deps.run(options(fallback, true))
+      deps.addUsage(fallback.usageModel, retried.usage)
+      const notice = exploreFallbackNotice(trip)
+      return {
+        summary: `${notice}\n\n${retried.summary}`,
+        text: `${notice}\n\n${retried.text}`,
+        usage: retried.usage,
+      }
+    }
+    // An earlier call in this turn already tripped the route: the turn builder
+    // only skips it from the next turn, so go straight to the parent model
+    // rather than wait out the stream layer's retries against a dead route.
+    const open = route && deps.breaker.get(route.threadId, 'explore', route.selection)
+    if (route && open) return runFallback(route.fallback, open)
     const result = await deps.run(options(ctx, ctx.localFallback))
     deps.addUsage(ctx.usageModel, result.usage)
-    const { route } = ctx
     if (result.error === undefined || !route || signal.aborted) return result
     const trip = deps.breaker.record(route.threadId, 'explore', {
       selection: route.selection,
@@ -121,15 +144,14 @@ export function createExploreSubagentRunner(
       error: new Error(result.error),
     })
     if (!trip) return result
-    // The routed model will not recover in this thread: answer this call from
-    // the parent model now (the card is replaced and marked as a fallback), and
-    // the turn builder skips the route for the rest of the thread.
-    const retried = await deps.run(options(route.fallback, true))
-    deps.addUsage(route.fallback.usageModel, retried.usage)
-    const notice = exploreFallbackNotice(trip)
+    // The routed model will not recover soon: answer this call from the parent
+    // model now (the card is replaced and marked as a fallback). Later calls
+    // skip the route until its selection changes or the breaker's cooldown
+    // lapses — in this turn above, in later turns in the turn builder.
+    const retried = await runFallback(route.fallback, trip)
     return {
-      summary: `${notice}\n\n${retried.summary}`,
-      text: `${notice}\n\n${retried.text}`,
+      summary: retried.summary,
+      text: retried.text,
       usage: {
         inputTokens: result.usage.inputTokens + retried.usage.inputTokens,
         outputTokens: result.usage.outputTokens + retried.usage.outputTokens,

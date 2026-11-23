@@ -835,4 +835,57 @@ describe('classifyProviderAccessFailure', () => {
     )
     assert.equal(classifyProviderAccessFailure(new Error('socket hang up')), null)
   })
+
+  // OpenAI's exhausted balance and Gemini's per-minute free-tier limit share a
+  // 429 and the words "check your plan and billing details"; only OpenAI's
+  // structured code says the balance is gone.
+  const QUOTA_TEXT =
+    'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits.'
+
+  it('reads a 429 that only mentions billing as a rate limit', () => {
+    // Gemini's OpenAI-compatible endpoint, through the OpenAI SDK.
+    const gemini = OpenAI.APIError.generate(
+      429,
+      { error: { code: 429, message: QUOTA_TEXT, status: 'RESOURCE_EXHAUSTED' } },
+      undefined,
+      new Headers(),
+    )
+    assert.equal(classifyProviderAccessFailure(gemini), null)
+    // The same failure once only its text survives (an explore subagent's error).
+    assert.equal(classifyProviderAccessFailure(new Error(gemini.message)), null)
+    // An SSE error frame has no HTTP status; OpenRouter puts it in `code`.
+    assert.equal(
+      classifyProviderAccessFailure(
+        new OpenAI.APIError(undefined, { code: '429', message: QUOTA_TEXT }, undefined, undefined),
+      ),
+      null,
+    )
+  })
+
+  it('reads a 429 with the insufficient_quota code as credit', () => {
+    const openai = OpenAI.APIError.generate(
+      429,
+      {
+        error: {
+          message: QUOTA_TEXT,
+          type: 'insufficient_quota',
+          param: null,
+          code: 'insufficient_quota',
+        },
+      },
+      undefined,
+      new Headers(),
+    )
+    // The SDK keeps the code on the error, not in its message.
+    assert.doesNotMatch(openai.message, /insufficient_quota/)
+    assert.equal(classifyProviderAccessFailure(openai), 'credit')
+    assert.equal(
+      classifyProviderAccessFailure(
+        new Error(
+          `429 ${JSON.stringify({ error: { message: QUOTA_TEXT, code: 'insufficient_quota' } })}`,
+        ),
+      ),
+      'credit',
+    )
+  })
 })

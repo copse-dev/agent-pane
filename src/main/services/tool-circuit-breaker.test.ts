@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { RequestError } from '@agentclientprotocol/sdk'
+import OpenAI from 'openai'
 import {
   TOOL_BREAKER_COOLDOWN_MS,
   ToolCircuitBreaker,
@@ -8,6 +9,26 @@ import {
   classifyUnrecoverableToolFailure,
   exploreFallbackNotice,
 } from './tool-circuit-breaker.ts'
+
+const QUOTA_TEXT =
+  'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits.'
+
+/**
+ * A 429 as the OpenAI SDK raises it. Gemini's per-minute limit and OpenAI's
+ * exhausted balance share this text; only OpenAI's body carries a quota code.
+ */
+function quota429(code?: string): Error {
+  return OpenAI.APIError.generate(
+    429,
+    {
+      error: code
+        ? { message: QUOTA_TEXT, type: code, param: null, code }
+        : { code: 429, message: QUOTA_TEXT, status: 'RESOURCE_EXHAUSTED' },
+    },
+    undefined,
+    new Headers(),
+  )
+}
 
 describe('classifyUnrecoverableToolFailure', () => {
   it('treats sign-in failures as unrecoverable, wherever they come from', () => {
@@ -52,9 +73,16 @@ describe('classifyUnrecoverableToolFailure', () => {
       '529 Overloaded',
       '503 Service Unavailable',
       'Request timed out',
+      // Gemini's per-minute free-tier limit, as an explore subagent reports it.
+      `429 ${QUOTA_TEXT}`,
     ]) {
       assert.equal(classifyUnrecoverableToolFailure(new Error(message), true), null, message)
     }
+    assert.equal(classifyUnrecoverableToolFailure(quota429(), false), null)
+  })
+
+  it('treats a 429 as out of credit only with the insufficient_quota code', () => {
+    assert.equal(classifyUnrecoverableToolFailure(quota429('insufficient_quota'), false), 'credit')
   })
 })
 
@@ -109,14 +137,16 @@ describe('ToolCircuitBreaker', () => {
 
   it('stays closed on a transient failure', () => {
     const breaker = new ToolCircuitBreaker(() => 0)
-    const trip = breaker.record('t1', 'advisor', {
-      selection: 'acp:codex',
-      model: 'acp:codex',
-      localServer: false,
-      error: new Error('Rate limit reached'),
-    })
-    assert.equal(trip, null)
-    assert.equal(breaker.get('t1', 'advisor', 'acp:codex'), null)
+    for (const error of [new Error('Rate limit reached'), quota429()]) {
+      const trip = breaker.record('t1', 'advisor', {
+        selection: 'gemini:gemini-2.5-flash',
+        model: 'gemini:gemini-2.5-flash',
+        localServer: false,
+        error,
+      })
+      assert.equal(trip, null, error.message)
+      assert.equal(breaker.get('t1', 'advisor', 'gemini:gemini-2.5-flash'), null)
+    }
   })
 })
 
@@ -129,13 +159,16 @@ describe('breaker messages', () => {
     })
     assert.match(message, /`acp:codex` needs you to sign in again/)
     assert.match(message, /Advisor role in Settings → Models/)
+    assert.match(message, /Do not call the advisor tool again; continue the task without it/)
+    // The breaker re-arms on a new selection or after the cooldown, and on
+    // nothing else: the copy must neither promise the advisor is gone for good
+    // nor offer a recovery (the user saying it is fixed) that does not exist.
     assert.match(
       message,
-      /Do not call the advisor tool again unless the user says the problem is fixed/,
+      /unavailable for up to 15 minutes, or until a different model is chosen for the Advisor role/,
     )
-    // The breaker re-arms on a new selection or after the cooldown, so the copy
-    // must not promise the advisor is gone for good.
     assert.doesNotMatch(message, /rest of this thread/)
+    assert.doesNotMatch(message, /problem is fixed/)
     assert.match(message, /Underlying error: Authentication required/)
   })
 
@@ -148,5 +181,8 @@ describe('breaker messages', () => {
     assert.match(notice, /main model/)
     assert.match(notice, /is LM Studio running/)
     assert.match(notice, /Research role/)
+    // The fallback replaces the card, so the notice is the only place the
+    // routed model's own error survives.
+    assert.match(notice, /Underlying error: Connection error\.$/)
   })
 })

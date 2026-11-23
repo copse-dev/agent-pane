@@ -27,6 +27,8 @@ export type BreakerToolName = 'advisor' | 'explore'
 
 export const TOOL_BREAKER_COOLDOWN_MS = 15 * 60_000
 
+const COOLDOWN_MINUTES = TOOL_BREAKER_COOLDOWN_MS / 60_000
+
 /**
  * Transport-level failures that mean "nothing is listening": the OpenAI SDK's
  * `APIConnectionError` ("Connection error."), Node's `fetch failed`, and the raw
@@ -160,15 +162,30 @@ function remedy(trip: ToolBreakerTrip, roleLabel: string): string {
  */
 export function advisorUnavailableMessage(trip: ToolBreakerTrip): string {
   return [
-    `The advisor is unavailable for now. ${remedy(trip, 'Advisor')}`,
-    `Do not call the advisor tool again unless the user says the problem is fixed; continue the task without it.`,
-    trip.detail ? `Underlying error: ${trip.detail}` : '',
+    // Only a new selection or the cooldown clears a trip (see `get`): a fix
+    // made outside Copse, such as signing in again, is not observed.
+    `The advisor is unavailable for up to ${String(COOLDOWN_MINUTES)} minutes, or until a different model is chosen for the Advisor role. ${remedy(trip, 'Advisor')}`,
+    `Do not call the advisor tool again; continue the task without it.`,
+    underlyingError(trip),
   ]
     .filter((line) => line.length > 0)
     .join('\n\n')
 }
 
-/** Shown on the explore card when the routed model failed and the parent model took over. */
+/**
+ * Shown on the explore card when the routed model failed and the parent model
+ * took over. It carries the routed model's own error: the fallback run replaces
+ * the card, so nothing else in the transcript keeps it.
+ */
 export function exploreFallbackNotice(trip: ToolBreakerTrip): string {
-  return `Explore now runs on this thread's main model. ${remedy(trip, 'Research')}`
+  return [
+    `Explore now runs on this thread's main model. ${remedy(trip, 'Research')}`,
+    underlyingError(trip),
+  ]
+    .filter((line) => line.length > 0)
+    .join('\n\n')
+}
+
+function underlyingError(trip: ToolBreakerTrip): string {
+  return trip.detail ? `Underlying error: ${trip.detail}` : ''
 }
