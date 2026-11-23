@@ -13849,6 +13849,9 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .tool-permission-description ol {
   margin-block: var(--spacing-xs);
 }
+.tool-permission-description :is(ul, ol) {
+  padding-inline-start: 1.25em;
+}
 .tool-permission-description pre {
   max-width: 100%;
   overflow-x: auto;
