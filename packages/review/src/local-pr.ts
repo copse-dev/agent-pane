@@ -834,6 +834,19 @@ export async function localPullRequestMain(
       (json) => safeJsonParse(json, decodeWithSchema(settledReportSchema)),
       () => null,
     )
+    // A run that stopped before writing a report (a model the pre-flight
+    // refused, a bad option) has nothing to replace an earlier report with;
+    // its record is kept only where there is no earlier one.
+    const earlier = await access(runPath).then(
+      () => true,
+      () => false,
+    )
+    if (settled === null && exitCode !== HEADLESS_EXIT.SUCCESS && earlier) {
+      io.stderr(
+        `copse-review pr: the review stopped (exit ${String(exitCode)}) without a report; the saved report in ${outDir} is unchanged\n`,
+      )
+      return exitCode
+    }
     const notReusable = reportNotReusable(settled)
     if (notReusable !== null) {
       io.stderr(

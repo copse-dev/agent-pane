@@ -280,6 +280,22 @@ describe('copse-review pr', () => {
     )
   })
 
+  it('keeps a saved report when a re-run stops before writing one, and records a first one', async () => {
+    const out = join(root, 'failed-out')
+    assert.equal(await review(['--out', out]), HEADLESS_EXIT.SUCCESS, err)
+    const saved = await readFile(join(out, 'run.json'), 'utf8')
+    // An option the review refuses stops it before Stage 0, with no report.
+    const code = await review(['--out', out, '--fresh', '--max-verify', 'lots'])
+    assert.equal(code, HEADLESS_EXIT.USAGE, err)
+    assert.match(err, /the saved report in .* is unchanged/)
+    assert.equal(await readFile(join(out, 'run.json'), 'utf8'), saved)
+    assert.ok(await readFile(join(out, 'report.json'), 'utf8'))
+    // With no earlier report there is nothing to keep: the failed run's record is written.
+    const first = join(root, 'failed-first')
+    assert.equal(await review(['--out', first, '--max-verify', 'lots']), HEADLESS_EXIT.USAGE)
+    assert.match(await readFile(join(first, 'run.json'), 'utf8'), /"exitCode": 2/)
+  })
+
   it('treats different review settings as a different question', async () => {
     const code = await review(['--lenses', 'contracts'])
     assert.equal(code, HEADLESS_EXIT.SUCCESS, err)
