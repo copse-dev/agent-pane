@@ -351,6 +351,20 @@ export interface ContextBreakdown {
 }
 
 /**
+ * Why the loop wrote a `text` chunk itself instead of relaying model output.
+ * The `*_limit` kinds name the run budget the loop stopped at.
+ */
+export type AgentLoopNotice =
+  | 'step_limit'
+  | 'model_request_limit'
+  | 'time_limit'
+  | 'incomplete_run'
+  | 'refusal'
+  | 'context_overflow'
+  | 'reasoning_runaway'
+  | 'open_todos'
+
+/**
  * Everything the agent loop itself emits on its output stream: the provider
  * contract (`ProviderStreamChunk`) plus the orchestration events the loop
  * injects around provider output — text rewrites, context-pressure signals,
@@ -359,7 +373,14 @@ export interface ContextBreakdown {
  * those, so an app sink is always assignable to a loop sink.
  */
 export type AgentStreamChunk =
-  | ProviderStreamChunk
+  | Exclude<ProviderStreamChunk, { type: 'text' }>
+  /**
+   * Answer text. `loopNotice` marks text the loop wrote itself (a run-limit,
+   * refusal or context-overflow notice) rather than model output. It renders
+   * like any answer text; a host that keeps only the model's own words, such
+   * as a review summary, reads the marker instead of matching the English.
+   */
+  | (Extract<ProviderStreamChunk, { type: 'text' }> & { loopNotice?: AgentLoopNotice })
   /** Explicit assistant-owned visual proof produced by a tool call. */
   | {
       type: 'visual_evidence'
