@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
-import type { GhCliStatus } from '@shared/types/git.ts'
+import type { GhCliStatus, GhPrDetails } from '@shared/types/git.ts'
 import { mountPrPane } from './pr-pane.ts'
 import { createFakeApi, createPendingApi } from '../fake-api.test-support.ts'
 import type { GitDiffMonaco } from '../monaco/git-diff-viewer.ts'
@@ -72,6 +72,11 @@ async function settle(): Promise<void> {
   for (let i = 0; i < 10; i++) await Promise.resolve()
 }
 
+/** Let chained IPC promises and their follow-up renders finish. */
+async function flush(): Promise<void> {
+  for (let i = 0; i < 5; i++) await new Promise((resolve) => setTimeout(resolve, 0))
+}
+
 function listText(listRoot: HTMLElement): string {
   return listRoot.querySelector('.git-changes-empty')?.textContent ?? ''
 }
@@ -122,7 +127,168 @@ describe('pr pane loading state', () => {
     assert.match(listText(listRoot), /Install GitHub CLI/)
 
     store.setState({ rightPanelMode: 'changes' })
-    assert.equal(watches.at(-1), false, 'leaving the pane stops the shared list watch')
+    assert.equal(watches.at(-1), false, 'local changes do not poll GitHub')
+    store.setState({ rightPanelMode: 'prs' })
+    assert.equal(watches.at(-1), true)
+    store.setState({ rightPanelMode: 'explorer' })
+    assert.equal(watches.at(-1), false, 'leaving review stops the list watch')
+  })
+
+  it('makes no GitHub calls for local review until the subject picker asks for the list', async () => {
+    const pr: GhPrDetails = {
+      owner: 'acme',
+      repo: 'widgets',
+      number: 42,
+      title: 'Keep search results in order',
+      url: 'https://github.com/acme/widgets/pull/42',
+      state: 'OPEN',
+      body: '',
+      files: [],
+    }
+    const calls: string[] = []
+    const base = createFakeApi()
+    const api: ApiClient = {
+      ...base,
+      gh: {
+        ...base['gh'],
+        status: async () => {
+          calls.push('status')
+          return { installed: true, authenticated: true, username: 'alex', message: null }
+        },
+        agentPrLinks: async () => [],
+        onListsTick: noopUnsub,
+        setListWatch: async (watching) => {
+          calls.push(`watch:${String(watching)}`)
+        },
+        listWorkspaceOpenPrs: async () => {
+          calls.push('list')
+          return [pr]
+        },
+        prChecks: async () => {
+          calls.push('checks')
+          return 'success'
+        },
+        prDetails: async () => {
+          calls.push('details')
+          return pr
+        },
+        // Selecting a PR always starts here; a listing row's title lookup never does.
+        prThreadRelationships: async () => {
+          calls.push('select')
+          return []
+        },
+      },
+    }
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'explorer',
+    })
+    const listRoot = document.createElement('div')
+    document.body.append(listRoot)
+    const pane = mountPrPane(listRoot, document.createElement('div'), store, api, MONACO_STUB)
+    store.setState({ rightPanelMode: 'changes' })
+    await flush()
+    assert.deepEqual(
+      calls.filter((call) => call !== 'watch:false'),
+      [],
+      'opening local review calls nothing on GitHub',
+    )
+
+    pane.loadList()
+    await flush()
+    assert.ok(calls.includes('status') && calls.includes('list'), calls.join(', '))
+    assert.ok(!calls.includes('select'), 'listing PRs never opens one')
+    assert.ok(!calls.includes('watch:true'), 'no list poll while local changes are open')
+    assert.equal(listRoot.querySelectorAll('.pr-list-row.is-selected').length, 0)
+
+    // Picking a row loads that PR once; switching the subject to it does not refresh again.
+    calls.length = 0
+    listRoot.querySelector<HTMLButtonElement>('.pr-list-row')?.click()
+    store.setState({ rightPanelMode: 'prs' })
+    await flush()
+    assert.ok(calls.includes('select'), 'the picked PR loads')
+    assert.deepEqual(
+      calls.filter((call) => call === 'list' || call === 'status'),
+      [],
+      'switching to the picked PR does not refresh the list again',
+    )
+    assert.ok(calls.includes('watch:true'), 'the PR subject keeps its list live')
+    assert.equal(listRoot.querySelectorAll('.pr-list-row.is-selected').length, 1)
+
+    // The list is already live while a PR is the subject.
+    calls.length = 0
+    pane.loadList()
+    await flush()
+    assert.deepEqual(calls, [])
+  })
+
+  it('reloads the PR it was showing when picked again from local review', async () => {
+    let state: GhPrDetails['state'] = 'OPEN'
+    const pr: GhPrDetails = {
+      owner: 'acme',
+      repo: 'widgets',
+      number: 42,
+      title: 'Keep search results in order',
+      url: 'https://github.com/acme/widgets/pull/42',
+      state: 'OPEN',
+      body: '',
+      files: [],
+    }
+    const calls: string[] = []
+    const base = createFakeApi()
+    const api: ApiClient = {
+      ...base,
+      gh: {
+        ...base['gh'],
+        status: async () => ({
+          installed: true,
+          authenticated: true,
+          username: 'alex',
+          message: null,
+        }),
+        agentPrLinks: async () => [],
+        onListsTick: noopUnsub,
+        setListWatch: async () => {},
+        listWorkspaceOpenPrs: async () => [{ ...pr, state }],
+        prChecks: async () => 'success',
+        prDetails: async () => {
+          calls.push('details')
+          return { ...pr, state }
+        },
+        prThreadRelationships: async () => {
+          calls.push('select')
+          return []
+        },
+      },
+    }
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'prs',
+    })
+    const listRoot = document.createElement('div')
+    const viewerRoot = document.createElement('div')
+    document.body.append(listRoot, viewerRoot)
+    const pane = mountPrPane(listRoot, viewerRoot, store, api, MONACO_STUB)
+    await flush()
+    const lifecycle = (): string => viewerRoot.querySelector('.pr-lifecycle')?.textContent ?? ''
+    assert.equal(lifecycle(), 'Open')
+
+    // Review local changes, push them, and the PR moves on meanwhile.
+    store.setState({ rightPanelMode: 'changes' })
+    state = 'MERGED'
+    pane.loadList()
+    await flush()
+    calls.length = 0
+
+    listRoot.querySelector<HTMLButtonElement>('.pr-list-row')?.click()
+    store.setState({ rightPanelMode: 'prs' })
+    await flush()
+    assert.deepEqual(calls, ['details'], 'the re-picked PR reloads in place, once')
+    assert.equal(lifecycle(), 'Merged')
   })
 
   it('shows a loading row instead of the "install gh" copy while status is in flight', async () => {

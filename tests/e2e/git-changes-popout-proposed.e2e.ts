@@ -117,6 +117,31 @@ describe('proposed diffs across embed and pop-out (#1753)', function () {
     removeE2eTree(WORKSPACE)
   })
 
+  /**
+   * The local review pop-out: the one already open, else popped out of the
+   * main window now, so the second test also passes when it runs alone.
+   */
+  async function ensurePopout(): Promise<void> {
+    const handles = await browser.getWindowHandles()
+    if (popoutHandle && handles.includes(popoutHandle)) return
+    await browser.switchToWindow(mainHandle)
+    if (!(await $('#git-changes-host').isDisplayed())) {
+      await $('.titlebar-btn[aria-label="Open review"]').click()
+      await $('#git-changes-host').waitForDisplayed({ timeout: 30_000 })
+    }
+    await $('.review-header .git-changes-header .pane-popout-btn').click()
+    await browser.waitUntil(
+      async () => (await browser.getWindowHandles()).length > handles.length,
+      {
+        timeout: 15_000,
+        timeoutMsg: 'expected a pop-out window',
+      },
+    )
+    const newHandle = (await browser.getWindowHandles()).find((h) => !handles.includes(h))
+    if (!newHandle) throw new Error('Expected a new pop-out window handle')
+    popoutHandle = newHandle
+  }
+
   it('keeps the embed coloured through proposals and pop-out approvals', async () => {
     // First proposal opens the Changes panel and stages the diff.
     await proposeFileChange('src/e2e-popout-a.ts', 'export const a = 1\n')
@@ -128,16 +153,8 @@ describe('proposed diffs across embed and pop-out (#1753)', function () {
       timeoutMsg: `embed never coloured the first proposal: ${await describeViewer()}`,
     })
 
-    // Pop the Changes pane out.
-    const before = await browser.getWindowHandles()
-    await $('#git-changes-host .pane-popout-btn').click()
-    await browser.waitUntil(async () => (await browser.getWindowHandles()).length > before.length, {
-      timeout: 15_000,
-      timeoutMsg: 'expected a pop-out window',
-    })
-    const newHandle = (await browser.getWindowHandles()).find((h) => !before.includes(h))
-    if (!newHandle) throw new Error('Expected a new pop-out window handle')
-    popoutHandle = newHandle
+    // Pop local review out.
+    await ensurePopout()
 
     await browser.switchToWindow(popoutHandle)
     await $('#git-diff-viewer-host .monaco-diff-editor').waitForDisplayed({ timeout: 30_000 })
@@ -232,10 +249,11 @@ describe('proposed diffs across embed and pop-out (#1753)', function () {
     // The realistic sequence behind #1753: the user works in the pop-out with
     // the main window's panel closed; a new proposal must reveal a coloured
     // embed.
+    await ensurePopout()
     await browser.switchToWindow(mainHandle)
     const paneFiles = await $('#pane-files').getElement()
     if (await paneFiles.isDisplayed()) {
-      await $('.titlebar-btn[aria-label="Open changes"]').click()
+      await $('.titlebar-btn[aria-label="Open review"]').click()
       await browser.waitUntil(async () => !(await paneFiles.isDisplayed()), {
         timeout: 10_000,
         timeoutMsg: 'expected the main-window panel to close',

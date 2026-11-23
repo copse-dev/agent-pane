@@ -7,11 +7,19 @@ import { join, resolve } from 'node:path'
 import { z } from 'zod'
 import {
   assignShards,
+  computeScreenshotGate,
   computeSelection,
   computeUnitPlan,
+  demoScreenshots,
   reachableFiles,
+  selectDemoSpecs,
   type OracleFiles,
 } from './test-oracle.mts'
+import {
+  parseScreenshotManifest,
+  SCREENSHOT_MANIFEST,
+  serializeScreenshotManifest,
+} from './lib/screenshot-manifest.mts'
 
 const ORACLE = resolve('scripts/test-oracle.mts')
 
@@ -638,5 +646,135 @@ describe('assignShards', () => {
       [2, 2, 1, 1],
     )
     assert.deepEqual(assignShards([], 2, new Map()), [[], []])
+  })
+})
+
+describe('test oracle demo screenshot ownership', () => {
+  // Browser demo specs save reference shots beside the e2e ones, and every
+  // e2e-tier PR renders every demo, so the candidate filter holds any demo shot
+  // no change owns. Their shot names stay fictional here: the producer check
+  // reads quoted PNG names under scripts/ as producers.
+  const committed = [
+    'oracle-demo-phone-pair-light.png',
+    'oracle-demo-phone-pair-dark.png',
+    'oracle-demo-phone-settled.png',
+    'oracle-demo-other.png',
+    'oracle-demo-other-native.png',
+    'oracle-demo-unowned.png',
+  ]
+  const files: Record<string, string> = {
+    'tests/demo/phone.demo.ts': [
+      "import { fixture } from './helpers/phone-fixture.ts'",
+      'async function screenshot(name: string): Promise<void> { await fixture(name) }',
+      "await $('#oracle-demo-composer').click()",
+      "await $('.hidden').waitForExist()",
+      "for (const theme of ['light', 'dark']) await screenshot(`oracle-demo-phone-pair-${theme}.png`)",
+      "await screenshot('oracle-demo-phone-settled.png')",
+    ].join('\n'),
+    'tests/demo/helpers/phone-fixture.ts': 'export async function fixture(name: string) {}',
+    'tests/demo/other.demo.ts': [
+      "await $('.oracle-demo-other-pane').click()",
+      "await saveAppScreenshot('oracle-demo-other.png')",
+      'await saveAppScreenshot(`oracle-demo-other-${variant}.png`)',
+    ].join('\n'),
+    'src/mobile/app.css': '#oracle-demo-composer { display: grid; }',
+    'src/mobile/app.test.ts': "assert.ok(document.querySelector('#oracle-demo-composer'))",
+    'src/renderer/styles/generic.css': '.hidden { display: none; }',
+    'src/renderer/other.ts': "export const pane = 'oracle-demo-other-pane'",
+    'src/unrelated.ts': 'export const value = 1',
+    [SCREENSHOT_MANIFEST]: serializeScreenshotManifest({
+      version: 1,
+      screenshots: Object.fromEntries(
+        committed.map((name) => [name, { sha256: 'a'.repeat(64), bytes: 1 }]),
+      ),
+    }),
+  }
+  const tree: OracleFiles = {
+    paths: (dir) => Object.keys(files).filter((path) => path.startsWith(`${dir}/`)),
+    read: (path) => files[path] ?? '',
+    exists: (path) => Object.hasOwn(files, path),
+  }
+  const phone = 'tests/demo/phone.demo.ts'
+  const other = 'tests/demo/other.demo.ts'
+
+  it('selects a demo by its own change, its imports, or its selectors in shipped source', () => {
+    assert.deepEqual(selectDemoSpecs([other], false, tree), [other])
+    assert.deepEqual(selectDemoSpecs(['tests/demo/helpers/phone-fixture.ts'], false, tree), [phone])
+    assert.deepEqual(selectDemoSpecs(['src/mobile/app.css'], false, tree), [phone])
+    assert.deepEqual(selectDemoSpecs(['src/renderer/other.ts'], false, tree), [other])
+    assert.deepEqual(selectDemoSpecs([], true, tree), [other, phone])
+  })
+
+  it('follows the fixture pages a demo bundles with esbuild rather than imports', () => {
+    const bundled: Record<string, string> = {
+      'tests/demo/bundled.demo.ts':
+        "await build({ entryPoints: ['tests/demo/helpers/bundled-fixture.ts'] })",
+      'tests/demo/helpers/bundled-fixture.ts':
+        "import { tip } from '../../../src/shared/bundled-source.ts'",
+      'tests/demo/paged.demo.ts': "page = await buildDemoFixturePage('paged-fixture')",
+      'tests/demo/helpers/paged-fixture.ts':
+        "import { row } from '../../../src/shared/paged-source.ts'",
+      'src/shared/bundled-source.ts': 'export const tip = 1',
+      'src/shared/paged-source.ts': 'export const row = 1',
+    }
+    const bundledTree: OracleFiles = {
+      paths: (dir) => Object.keys(bundled).filter((path) => path.startsWith(`${dir}/`)),
+      read: (path) => bundled[path] ?? '',
+      exists: (path) => Object.hasOwn(bundled, path),
+    }
+    const select = (file: string): string[] => selectDemoSpecs([file], false, bundledTree)
+    assert.deepEqual(select('tests/demo/helpers/bundled-fixture.ts'), [
+      'tests/demo/bundled.demo.ts',
+    ])
+    assert.deepEqual(select('src/shared/bundled-source.ts'), ['tests/demo/bundled.demo.ts'])
+    assert.deepEqual(select('tests/demo/helpers/paged-fixture.ts'), ['tests/demo/paged.demo.ts'])
+    assert.deepEqual(select('src/shared/paged-source.ts'), ['tests/demo/paged.demo.ts'])
+  })
+
+  it('ignores unrelated source, test files and generic selectors', () => {
+    for (const file of [
+      'src/unrelated.ts',
+      'src/mobile/app.test.ts',
+      'src/renderer/styles/generic.css',
+    ])
+      assert.deepEqual(selectDemoSpecs([file], false, tree), [], file)
+  })
+
+  it("owns a demo's helper and per-theme captures, but never another spec's exact name", () => {
+    const e2e = new Map([['tests/e2e/other.e2e.ts', ['oracle-demo-other-native.png']]])
+    assert.deepEqual(demoScreenshots([phone], e2e, tree), [
+      'oracle-demo-phone-pair-dark.png',
+      'oracle-demo-phone-pair-light.png',
+      'oracle-demo-phone-settled.png',
+    ])
+    // `oracle-demo-other-${variant}` matches the e2e spec's shot too.
+    assert.deepEqual(demoScreenshots([other], e2e, tree), ['oracle-demo-other.png'])
+    assert.deepEqual(demoScreenshots([], e2e, tree), [])
+  })
+
+  it('owns the mobile companion shots for a mobile stylesheet change (#3949)', () => {
+    // #3949 changed src/mobile/app.css: 193 e2e shots were affected and no
+    // mobile-companion demo shot, so every one of their re-renders was held.
+    const manifest = parseScreenshotManifest(readFileSync(SCREENSHOT_MANIFEST, 'utf8'))
+    const mobile = Object.keys(manifest.screenshots).filter((name) =>
+      name.startsWith('mobile-companion-'),
+    )
+    assert.ok(mobile.length > 0)
+    const gate = computeScreenshotGate(['src/mobile/app.css'], false)
+    assert.deepEqual(
+      mobile.filter((name) => !gate.affected.includes(name)),
+      [],
+    )
+  })
+
+  it('owns only the shots a changed demo saves, though tests/demo/ is broad for selection', () => {
+    const spec = 'tests/demo/mobile-companion.demo.ts'
+    assert.equal(computeSelection([spec]).broad, true)
+    const gate = computeScreenshotGate([spec], false)
+    assert.ok(gate.affected.length > 0)
+    assert.deepEqual(
+      gate.affected.filter((name) => !name.startsWith('mobile-companion-')),
+      [],
+    )
   })
 })
