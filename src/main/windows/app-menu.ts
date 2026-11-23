@@ -142,7 +142,7 @@ export function buildAppMenu(windows: AppMenuWindowProvider, developerMode = fal
           },
         },
         {
-          label: 'Changes',
+          label: 'Review',
           accelerator: 'CmdOrCtrl+Shift+G',
           click: (): void => {
             sendToFocused('menu:show-changes')
