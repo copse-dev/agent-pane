@@ -2921,6 +2921,18 @@
       "sha256": "89291d549316e3d1d63df970e0c832b5a7152ad679f8fb164ef598d52d17a237",
       "bytes": 336849
     },
+    "mobile-relay-connected.png": {
+      "sha256": "ef09789af5bbcf9be2103ac1d3dc84749bce4d11d293ba4c1c2843baef0093f6",
+      "bytes": 71256
+    },
+    "mobile-relay-pairing.png": {
+      "sha256": "4a546be3c6606773ddf88a0424305394221b63deff55a68d3125386598727363",
+      "bytes": 60182
+    },
+    "mobile-relay-shell-code.png": {
+      "sha256": "f269b1f2111b141975a65fcccfb7bb0287a84c387800a019c70a597d11d3b589",
+      "bytes": 100694
+    },
     "mobile-trusted-name-connection.png": {
       "sha256": "a53fd19c8aa34e01cb44fad0d1207972f24aeebd36c38e2e036b1644dbfd6c62",
       "bytes": 78424
@@ -2930,8 +2942,8 @@
       "bytes": 57882
     },
     "mobile-trusted-name-registered.png": {
-      "sha256": "713df5ba9d36eb94876a029815b03dba044da39020096708422bf64296aed9a3",
-      "bytes": 76245
+      "sha256": "10d9f70542b4149f37341804a70c82d1304a061f754f1fdf710629a35a8b5e4e",
+      "bytes": 120451
     },
     "mobile-trusted-name-unregistered.png": {
       "sha256": "77758ea48ea8e61018d38544c8341ee84eb89090d4f81814b7f4e6790754dff1",
@@ -4638,8 +4650,8 @@
       "bytes": 90794
     },
     "settings-experimental.png": {
-      "sha256": "3e0071bf203bb284cfb73241053801c489d62cea73467e7369cda4c215d3efbe",
-      "bytes": 298315
+      "sha256": "200b556129b2edd0118ba393f7d8153b709212935f7b2a269d40e7c57fa06d41",
+      "bytes": 302604
     },
     "settings-explainers-browse-recovery.png": {
       "sha256": "22ecdbdcefbdd19400d0891461e709882952afa241a7dbd0cbcfff5b543d45b7",
@@ -4750,8 +4762,8 @@
       "bytes": 31593
     },
     "settings-mobile-companion.png": {
-      "sha256": "62d5eef8c414b26a54fee4d4d3a8f218d9082ea75997097f96e71d8d5348e0b2",
-      "bytes": 65001
+      "sha256": "1fe985284cafd7732a93b6ba7f6eee37399911b09a40abccd70e60fe55f9bcfd",
+      "bytes": 67208
     },
     "settings-model-parameters-glm-4-7-flash-page-2.png": {
       "sha256": "413dc2422d72fa85a811dcbc2dbcbcfc7b5ef75f09a33bcad0cb37d9ee3a37d9",
