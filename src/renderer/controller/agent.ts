@@ -37,7 +37,7 @@ import {
 import { takeSendNowAbort } from './send-now-aborts.ts'
 import { backgroundProjectOf, dropBackgroundThread } from './background-threads.ts'
 import { applyRuntimeOwnedChunk, isRuntimeOwnedMessage } from './runtime-transcript.ts'
-import type { Message, TranscriptAnnotation } from '@shared/types'
+import type { Message, Thread, TranscriptAnnotation } from '@shared/types'
 import { mark as perfMark } from '../perf.ts'
 
 export function startAgentController(store: AppStore, api: ApiClient): () => void {
@@ -284,13 +284,18 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
       )
     },
   )
+  // Attaching a thread makes main read it whole from disk and send it back, and
+  // each snapshot repaints the sidebar and transcript. Listing every thread in
+  // the project reloaded its entire history on each attach. Only a thread whose
+  // window copy can be behind main needs it; main adds any turn it is running,
+  // and a turn that starts later sends its own snapshot before its output.
   const attach = (): void => {
     const { activeProjectId, threads } = store.getState()
     if (!activeProjectId) return
     void api.agent
       .attachTranscripts(
         activeProjectId,
-        threads.map((thread) => thread.id),
+        threads.filter((thread) => mayBeBehindMain(store, thread)).map((thread) => thread.id),
       )
       .catch((error: unknown) => {
         console.error('[threads] could not attach transcripts:', error)
@@ -514,6 +519,22 @@ function maybeSummarizeToolRun(
       applySummary(store, api, threadId, run.anchorId, { runSummary: summary.trim() })
     }
   })()
+}
+
+/**
+ * Whether this window's copy of `thread` can be behind main, so attaching must
+ * reconcile it: the window believes it is running, holds queued or interrupted
+ * work, awaits a dispatch, or has its transcript loaded. An idle thread whose
+ * transcript was never read here is drawn from the same disk state main has.
+ */
+function mayBeBehindMain(store: AppStore, thread: Thread): boolean {
+  return (
+    thread.status === 'running' ||
+    thread.messagesLoaded !== false ||
+    thread.interruptedTurnAt !== undefined ||
+    (thread.pendingMessages?.length ?? 0) > 0 ||
+    hasPendingDispatch(store, thread.id)
+  )
 }
 
 /** A seed read must not undo the window's queue placement or pending labels. */

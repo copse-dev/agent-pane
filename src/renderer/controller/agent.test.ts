@@ -344,6 +344,37 @@ test('a workspace switch from setState alone attaches the new project transcript
   ])
 })
 
+test('attaches only the threads whose window copy can be behind main', () => {
+  // A cold idle thread is drawn from the same disk state main holds. Attaching
+  // it made main read its whole transcript and push it back, for every thread
+  // in the project, on each attach.
+  const cold = (id: string): Thread => ({ ...thread(id), status: 'idle', messagesLoaded: false })
+  const { store, attachCalls } = setup(
+    [
+      cold('cold'),
+      { ...cold('running'), status: 'running' },
+      { ...cold('loaded'), messagesLoaded: true },
+      { ...cold('interrupted'), interruptedTurnAt: 5 },
+      {
+        ...cold('queued'),
+        pendingMessages: [
+          { messageId: 'held', createdAt: 1, payload: { content: 'Wait for review' } },
+        ],
+      },
+    ],
+    'loaded',
+  )
+  assert.deepEqual(attachCalls, [['project-1', ['running', 'loaded', 'interrupted', 'queued']]])
+
+  store.setState({
+    activeProjectId: 'project-2',
+    // A thread created in this window has no `messagesLoaded`: it is all here.
+    threads: [cold('p2-cold'), { ...thread('p2-new'), status: 'idle' }],
+    activeThreadId: 'p2-new',
+  })
+  assert.deepEqual(attachCalls.at(-1), ['project-2', ['p2-new']])
+})
+
 test('text chunks create one assistant message and accumulate tokens', () => {
   const { send, messages } = setup()
   send({ type: 'text', text: 'Hello' })
