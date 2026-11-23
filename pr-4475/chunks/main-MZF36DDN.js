@@ -53349,10 +53349,15 @@ function looksBinary(text) {
   }
   return undecodable * 10 > text.length;
 }
-function refuseTextAttachment(name, reason, bytes2, inProject) {
-  const why = reason === "binary" ? "it isn't a text file" : `at ${formatByteSize(bytes2)} it's more text than a model can take in at once`;
-  const instead = inProject ? "It's already in the project, so mention its path and the agent can open it with its tools." : reason === "binary" ? "Attach it inside a .zip, or copy it into the project and mention its path so the agent can open it with its tools." : "Copy it into the project and mention its path so the agent can open it with its tools.";
-  showToast(`Can't attach ${name} \u2014 ${why}. ${instead}`, { variant: "error" });
+function refuseBinaryAttachment(name, inProject) {
+  const instead = inProject ? "It's already in the project, so mention its path and the agent can open it with its tools." : "Attach it inside a .zip, or copy it into the project and mention its path so the agent can open it with its tools.";
+  showToast(`Can't attach ${name} \u2014 it isn't a text file. ${instead}`, { variant: "error" });
+}
+function refuseOversizedPick(name, bytes2) {
+  showToast(
+    `Can't attach ${name} \u2014 at ${formatByteSize(bytes2)} it's too large to save with the conversation. Copy it into the project and mention its path so the agent can open it with its tools.`,
+    { variant: "error" }
+  );
 }
 function diskPathOf(file) {
   const path = window.copseFiles?.pathForFile(file) ?? "";
@@ -53391,12 +53396,8 @@ async function attachWorkspacePath(path, handlers3, api2, workspaceRoot, owner) 
       return;
     }
     const content = await api2.fs.readFile(owner.projectId, owner.threadId, path);
-    if (content.length > MAX_TEXT_ATTACHMENT_BYTES) {
-      refuseTextAttachment(name, "too-large", content.length, true);
-      return;
-    }
     if (looksBinary(content)) {
-      refuseTextAttachment(name, "binary", content.length, true);
+      refuseBinaryAttachment(name, true);
       return;
     }
     const relativePath = workspaceRoot ? workspaceRelativePath(path, workspaceRoot) : null;
@@ -53439,17 +53440,17 @@ async function attachDroppedFile(file, handlers3, api2, workspaceRoot, owner = n
     await attachWorkspacePath(absPath, handlers3, api2, workspaceRoot, owner);
     return;
   }
-  if (file.size > MAX_TEXT_ATTACHMENT_BYTES) {
-    refuseTextAttachment(file.name, "too-large", file.size, false);
-    return;
-  }
   try {
-    const content = await file.text();
-    if (looksBinary(content)) {
-      refuseTextAttachment(file.name, "binary", file.size, false);
+    const head = await file.slice(0, MAX_TEXT_ATTACHMENT_BYTES).text();
+    if (looksBinary(head)) {
+      refuseBinaryAttachment(file.name, false);
       return;
     }
-    handlers3.attachFile({ path: absPath ?? file.name, content });
+    if (file.size > MAX_TEXT_ATTACHMENT_BYTES) {
+      refuseOversizedPick(file.name, file.size);
+      return;
+    }
+    handlers3.attachFile({ path: absPath ?? file.name, content: head });
   } catch {
   }
 }
