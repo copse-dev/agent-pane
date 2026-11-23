@@ -5,6 +5,8 @@ import {
   applyTranscriptRowPlan,
   planTranscriptRows,
   relinkReadingAnchor,
+  rowCardElement,
+  rowParts,
   sameExceptTurnOutcome,
   ROW_CARD_ATTRIBUTES,
   sameSignature,
@@ -3525,13 +3527,15 @@ export function mountConversation(
    * Wire up everything that assumes the message element is already in `list`
    * (tool cards, inline review, hook cards). Shared by appendMessageEl and
    * prependMessageEl once each has inserted the built element.
+   *
+   * Everything here is scoped to this row. Each step used to search the whole
+   * transcript (and image hydration walked every image in it), so drawing a
+   * thread of n messages cost O(n²) DOM work.
    */
-  function finalizeMessageEl(threadId: string, msgId: string): void {
+  function finalizeMessageEl(threadId: string, msgId: string, msgEl: HTMLElement): void {
     const thread = getThreadById(store, threadId)
     const msg = thread?.messages.find((m) => m.id === msgId)
-    const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${msgId}"]`)
-    if (!msg || !msgEl) return
-    hydrateRemoteArtifactImages(list, api, artifactImageScope(threadId))
+    if (!msg) return
     const run = multiStepRunFor(thread, msgId)
     // Re-render any tool cards this message already carries (restored threads).
     renderToolCards(msgEl, msg.toolCalls, {
@@ -3551,7 +3555,13 @@ export function mountConversation(
     // Render any hook cards folded onto this message's turn (decision 10).
     renderMessageHookCards(threadId, msgId)
     renderMessageTurnRecovery(threadId, msgId)
-    attachSideChatChip(threadId, msgId)
+    attachSideChatChip(threadId, msgId, msgEl)
+    // Last, so the cards drawn above are covered too. Rows drawn earlier were
+    // hydrated when they were drawn; streamed content is on message_done.
+    const scope = artifactImageScope(threadId)
+    for (const part of rowParts(msgEl, msgId)) {
+      if (part instanceof HTMLElement) hydrateRemoteArtifactImages(part, api, scope)
+    }
   }
 
   /**
@@ -3591,7 +3601,7 @@ export function mountConversation(
       // while the cards preserve their last-children contract.
       list.insertBefore(msgEl, activityBar.isConnected ? activityBar : trailingCard)
     } else list.insertBefore(msgEl, activityBar.isConnected ? activityBar : null)
-    finalizeMessageEl(threadId, msgId)
+    finalizeMessageEl(threadId, msgId, msgEl)
     if (batched) return
     if (msg.role === 'user') refreshStickyImagePrompt()
     // Model labels appear only once the primary chat has used more than one
@@ -3620,7 +3630,7 @@ export function mountConversation(
     if (!msgEl) return
     const tail = activityBar.isConnected ? activityBar : firstTrailingCard()
     list.insertBefore(msgEl, before ?? tail)
-    finalizeMessageEl(threadId, msgId)
+    finalizeMessageEl(threadId, msgId, msgEl)
   }
 
   /**
@@ -3663,7 +3673,7 @@ export function mountConversation(
     const msgEl = buildMessageEl(threadId, msgId)
     if (!msgEl) return
     list.insertBefore(msgEl, before)
-    finalizeMessageEl(threadId, msgId)
+    finalizeMessageEl(threadId, msgId, msgEl)
   }
 
   /**
@@ -3734,8 +3744,11 @@ export function mountConversation(
       (row) => row.anchorMessageId === msgId,
     )
   }
-  function attachSideChatChip(threadId: string, msgId: string): void {
-    const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${msgId}"]`)
+  function attachSideChatChip(
+    threadId: string,
+    msgId: string,
+    msgEl = transcriptRowElement(list, msgId),
+  ): void {
     if (!msgEl) return
     for (const child of Array.from(msgEl.children)) {
       if (child.classList.contains('msg-side-chat-chip')) child.remove()
@@ -4159,11 +4172,11 @@ export function mountConversation(
 
   function renderMessageHookCards(threadId: string, messageId: string): void {
     if (threadId !== store.getState().activeThreadId) return
-    list.querySelector(`[data-hook-cards-for="${messageId}"]`)?.remove()
+    const msgEl = transcriptRowElement(list, messageId)
+    if (msgEl) rowCardElement(msgEl, 'data-hook-cards-for', messageId)?.remove()
     // Hook cards are a developer surface (same gate as the Hooks settings).
     if (!store.getState().developerMode) return
     const msg = getActiveThread(store)?.messages.find((m) => m.id === messageId)
-    const msgEl = list.querySelector(`[data-message-id="${messageId}"]`)
     const cards = msg?.hookCards ?? []
     if (!msgEl || cards.length === 0) return
     // The inspector resolves its thread at *open* time, not render time: a card
@@ -4183,9 +4196,9 @@ export function mountConversation(
     // as that message's next sibling, so reviews join the transcript inline (in
     // position, one per turn) rather than as a single trailing card. Drop any
     // prior card for this message first (status transitions, retries, rebuilds).
-    list.querySelector(`[data-review-card][data-review-for="${messageId}"]`)?.remove()
+    const msgEl = transcriptRowElement(list, messageId)
+    if (msgEl) rowCardElement(msgEl, 'data-review-for', messageId)?.remove()
     const msg = getActiveThread(store)?.messages.find((m) => m.id === messageId)
-    const msgEl = list.querySelector(`[data-message-id="${messageId}"]`)
     // A skipped review still carries the only durable explanation for a
     // below-threshold diff or declined spend prompt. createReviewCardEl keeps
     // that state to one compact annotation line rather than dropping it.
@@ -4200,9 +4213,9 @@ export function mountConversation(
 
   function renderMessageReviewReport(threadId: string, messageId: string): void {
     if (threadId !== store.getState().activeThreadId) return
-    list.querySelector(`[data-review-report-card][data-review-report-for="${messageId}"]`)?.remove()
+    const msgEl = transcriptRowElement(list, messageId)
+    if (msgEl) rowCardElement(msgEl, 'data-review-report-for', messageId)?.remove()
     const msg = getActiveThread(store)?.messages.find((message) => message.id === messageId)
-    const msgEl = list.querySelector(`[data-message-id="${messageId}"]`)
     if (!msg?.reviewReport || !msgEl) return
     const card = createReviewFindingsCardEl(msg.reviewReport, {
       onRetry: () => {
@@ -4220,17 +4233,17 @@ export function mountConversation(
     })
     card.setAttribute('data-review-report-card', '')
     card.setAttribute('data-review-report-for', messageId)
-    const postTurnCard = list.querySelector(`[data-review-card][data-review-for="${messageId}"]`)
+    const postTurnCard = rowCardElement(msgEl, 'data-review-for', messageId)
     ;(postTurnCard ?? msgEl).after(card)
   }
 
   function renderMessageTurnRecovery(threadId: string, messageId: string): void {
     if (threadId !== store.getState().activeThreadId) return
-    list.querySelector(`[data-turn-recovery-for="${messageId}"]`)?.remove()
+    const msgEl = transcriptRowElement(list, messageId)
+    if (msgEl) rowCardElement(msgEl, 'data-turn-recovery-for', messageId)?.remove()
     const state = store.getState()
     const projectId = state.activeProjectId
     const thread = state.threads.find((candidate) => candidate.id === threadId)
-    const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${messageId}"]`)
     // A failed turn keeps its text even in the concise view; the outcome lands
     // after the bubble was built, and this runs whenever it may have changed.
     const msg = thread?.messages.find((candidate) => candidate.id === messageId)
