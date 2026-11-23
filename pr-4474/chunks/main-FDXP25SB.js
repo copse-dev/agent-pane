@@ -90044,7 +90044,8 @@ function startAgentController(store2, api2) {
   const unsubWorkspace = selectActiveWorkspace(store2, attach);
   attach();
   const unsub = api2.agent.onChunk((threadId, chunk, stamp) => {
-    if (stamp && !attached.has(threadId) && !lateUpdateApplies(store2, threadId, stamp)) return;
+    if (stamp && !attached.has(threadId) && !lateUpdateApplies(store2, threadId, chunk, stamp))
+      return;
     const st = get2(threadId);
     const firstVisibleActivity = chunk.type === "tool_call" || chunk.type === "acp_content" || chunk.type === "acp_content_replace" || chunk.type === "text" && chunk.text.trim() !== "" || chunk.type === "reasoning" && chunk.text.trim() !== "";
     if (firstVisibleActivity && !st.firstActivityTraced) {
@@ -90178,7 +90179,8 @@ function maybeSummarizeToolRun(store2, api2, threadId, msgId, st) {
 function mayBeBehindMain(store2, thread) {
   return thread.status === "running" || thread.messagesLoaded !== false || thread.interruptedTurnAt !== void 0 || (thread.pendingMessages?.length ?? 0) > 0 || hasPendingDispatch(store2, thread.id);
 }
-function lateUpdateApplies(store2, threadId, stamp) {
+function lateUpdateApplies(store2, threadId, chunk, stamp) {
+  if (chunk.type !== "tool_call_update" || chunk.commandPhase === void 0) return false;
   if (stamp.messageIds.length > 0) return false;
   const thread = getThreadById(store2, threadId);
   return thread?.messagesLoaded === true && thread.status !== "running" && !hasPendingDispatch(store2, threadId);
