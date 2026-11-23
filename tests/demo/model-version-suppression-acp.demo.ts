@@ -76,6 +76,47 @@ async function installClaudeCodeFixture(): Promise<void> {
   })
 }
 
+async function installCodexVersionFixture(): Promise<void> {
+  await browser.execute(() => {
+    const getSetting = window.api.settings.get
+    window.api.settings.get = async (key): ReturnType<typeof getSetting> =>
+      key === 'registeredAcpAgents'
+        ? [
+            {
+              id: 'codex-acp',
+              title: 'Codex',
+              command: 'codex-acp',
+              enabled: true,
+              availableModels: [
+                { value: 'gpt-6', label: 'GPT-6' },
+                { value: 'gpt-6.2', label: 'GPT-6.2' },
+                { value: 'gpt-6.2-sol', label: '6.2 Sol' },
+                { value: 'gpt-6.1-sol', label: '6.1 Sol' },
+              ],
+            },
+          ]
+        : getSetting(key)
+    window.api.settings.availableProviders = async (): ReturnType<
+      typeof window.api.settings.availableProviders
+    > => ({
+      anthropic: false,
+      openai: false,
+      'openai:gpt-6-astra': false,
+      cursor: false,
+      openrouter: false,
+      perplexity: false,
+      mistral: false,
+      gemini: false,
+      deepseek: false,
+      huggingface: false,
+    })
+    window.api.settings.extraProviders = async (): ReturnType<
+      typeof window.api.settings.extraProviders
+    > => []
+    window.api.lmStudio.models = async (): ReturnType<typeof window.api.lmStudio.models> => []
+  })
+}
+
 describe('superseded ACP model versions in the model picker (browser-hosted)', () => {
   it('hides the older same-agent release from Plan coverage', async () => {
     await browser.url('/?scenario=chat-reading-layout&autoplay=0')
@@ -95,6 +136,42 @@ describe('superseded ACP model versions in the model picker (browser-hosted)', (
       $(MENU + ' .model-picker-option[data-value="acp:claude-acp#sonnet"]'),
     ).not.toExist()
     await saveElementScreenshot(MENU, 'model-version-suppression-acp-after.png')
+    await browser.keys('Escape')
+  })
+
+  it('shows only GPT-6.2 when the same Codex agent also advertises GPT-6', async () => {
+    await browser.url('/?scenario=chat-reading-layout&autoplay=0')
+    await $(TRIGGER).waitForDisplayed()
+    await installCodexVersionFixture()
+
+    await $(TRIGGER).click()
+    await $(MENU + ' .model-picker-browse').click()
+    await $(FILTER).setValue('GPT-6')
+
+    const latest = $(MENU + ' .model-picker-option[data-value="acp:codex-acp#gpt-6.2"]')
+    await expect(latest).toBeDisplayed()
+    await expect(latest).toBeEnabled()
+    await expect($(MENU + ' .model-picker-option[data-value="acp:codex-acp#gpt-6"]')).not.toExist()
+    await saveElementScreenshot(MENU, 'model-version-suppression-acp-gpt-after.png')
+    await browser.keys('Escape')
+  })
+
+  it('shows only 6.2 Sol when the agent also lists the scored 6.1 Sol', async () => {
+    await browser.url('/?scenario=chat-reading-layout&autoplay=0')
+    await $(TRIGGER).waitForDisplayed()
+    await installCodexVersionFixture()
+
+    await $(TRIGGER).click()
+    await $(MENU + ' .model-picker-browse').click()
+    await $(FILTER).setValue('Sol')
+
+    const latest = $(MENU + ' .model-picker-option[data-value="acp:codex-acp#gpt-6.2-sol"]')
+    await expect(latest).toBeDisplayed()
+    await expect(latest).toBeEnabled()
+    await expect(
+      $(MENU + ' .model-picker-option[data-value="acp:codex-acp#gpt-6.1-sol"]'),
+    ).not.toExist()
+    await saveElementScreenshot(MENU, 'model-version-suppression-acp-sol-after.png')
     await browser.keys('Escape')
   })
 })

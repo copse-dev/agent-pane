@@ -788,6 +788,69 @@ describe('fetchModelOptions visibility', () => {
     assert.match(stale.label, /superseded by Claude Sonnet 5\.5/)
   })
 
+  it('suppresses an unscored newer GPT release advertised by the same ACP agent', async () => {
+    // Agents can advertise a new release before the intellect catalog catches
+    // up. Version suppression must use the agent's raw id in that case rather
+    // than showing both versions indefinitely.
+    const agents: AcpAgentConfig[] = [
+      {
+        id: 'codex-acp',
+        title: 'Codex',
+        command: 'codex-acp',
+        enabled: true,
+        availableModels: [
+          { value: 'gpt-6', label: 'GPT-6' },
+          { value: 'gpt-6.2', label: 'GPT-6.2' },
+        ],
+      },
+    ]
+
+    const unselected = await fetchModelOptions(mockApi({ acpAgents: agents }), '')
+    assert.deepEqual(
+      unselected.filter((o) => o.group === 'Codex on this device').map((o) => o.value),
+      ['acp:codex-acp#gpt-6.2'],
+    )
+
+    const selected = await fetchModelOptions(mockApi({ acpAgents: agents }), 'acp:codex-acp#gpt-6')
+    const stale = selected.find((o) => o.value === 'acp:codex-acp#gpt-6')
+    assert.ok(stale)
+    assert.equal(stale.disabled, true)
+    assert.match(stale.label, /superseded by GPT-6\.2/)
+  })
+
+  it('suppresses a scored GPT release once the same agent advertises its unscored successor', async () => {
+    // A scored release resolves to the intellect catalog's dashed id
+    // (`gpt-6-1-sol`), while the newer, unscored one keeps its raw dotted id.
+    const agents: AcpAgentConfig[] = [
+      {
+        id: 'codex-acp',
+        title: 'Codex',
+        command: 'codex-acp',
+        enabled: true,
+        availableModels: [
+          { value: 'gpt-6.2-sol', label: '6.2 Sol' },
+          { value: 'gpt-6.1-sol', label: '6.1 Sol' },
+          { value: 'gpt-6.1-terra', label: '6.1 Terra' },
+        ],
+      },
+    ]
+
+    const unselected = await fetchModelOptions(mockApi({ acpAgents: agents }), '')
+    assert.deepEqual(
+      unselected.filter((o) => o.group === 'Codex on this device').map((o) => o.value),
+      ['acp:codex-acp#gpt-6.2-sol', 'acp:codex-acp#gpt-6.1-terra'],
+    )
+
+    const selected = await fetchModelOptions(
+      mockApi({ acpAgents: agents }),
+      'acp:codex-acp#gpt-6.1-sol',
+    )
+    const stale = selected.find((o) => o.value === 'acp:codex-acp#gpt-6.1-sol')
+    assert.ok(stale)
+    assert.equal(stale.disabled, true)
+    assert.match(stale.label, /superseded by GPT-6\.2 Sol/)
+  })
+
   it('offers the latest Sonnet version and suppresses older cloud options', async () => {
     const options = await fetchModelOptions(mockApi({ available: { anthropic: true } }), '')
     const cloud = options.filter((o) => o.group === 'Cloud models')

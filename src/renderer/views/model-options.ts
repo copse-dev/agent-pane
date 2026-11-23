@@ -190,8 +190,15 @@ function acpAgentOptions(agents: readonly AcpAgentConfig[]): ModelOption[] {
       for (const model of models) {
         const label = acpModelChoiceLabel(model, ': ')
         const versioned = acpModelVersionName(model.description)
-        const lineageId = resolveAgentModelIdentity(model.value, versioned, model.label, label)
-        const hint = lineageId === null ? null : modelIntellectHint(lineageId)
+        // New agent releases can arrive before we have an intellect score for
+        // them. Their raw id still carries enough version information for the
+        // picker to suppress an older sibling (for example `gpt-6` once the
+        // same agent advertises `gpt-6.2`). Keep the scored identity where we
+        // have one so aliases such as Claude's bare `sonnet` retain their
+        // version from the agent description.
+        const lineageId =
+          resolveAgentModelIdentity(model.value, versioned, model.label, label) ?? model.value
+        const hint = modelIntellectHint(lineageId)
         options.push({
           retention: ACP_RETENTION_NOTICE,
           value: acpModelValue(agent.id, model.value),
@@ -446,12 +453,14 @@ async function remoteAgentOptions(
       const vendorLabel = model.label || model.id
       const label = canonicalModelLabel(vendorLabel)
       // Intellect-only hint (remote agents are subscription-billed, no token price).
-      const lineageId = resolveAgentModelIdentity(model.id, vendorLabel, label)
-      const hint = lineageId === null ? null : modelIntellectHint(lineageId)
+      // See the ACP equivalent above: a raw, newly released id is sufficient
+      // for same-catalog version suppression even before it has a score.
+      const lineageId = resolveAgentModelIdentity(model.id, vendorLabel, label) ?? model.id
+      const hint = modelIntellectHint(lineageId)
       add(
         remoteAgentModelValue(REMOTE_AGENT_PROVIDER_CURSOR, model.id),
         hint ? `${label}: ${hint}` : label,
-        lineageId ?? undefined,
+        lineageId,
       )
     }
     const currentSelection = parseRemoteAgentModelSelection(current)
