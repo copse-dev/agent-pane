@@ -11,16 +11,30 @@ import { removeE2eTree } from './helpers/remove-tree.ts'
  * Files picked with the paperclip from outside the project (a download, say)
  * carry an absolute path the workspace reader refuses. A text file is read from
  * the picked file instead; a binary one is refused with a toast rather than
- * vanishing or inlining its bytes into the prompt.
+ * vanishing or inlining its bytes into the prompt, and a text file over the cap
+ * is refused as too large to save.
  */
 
 const PROJECT_ID = 'e2e-picker-outside-project'
-// A current Illustrator file is a PDF container: a text header, then binary streams.
+const MIB = 1024 * 1024
+
+function binaryStreams(length: number): Buffer {
+  const bytes = Buffer.alloc(length)
+  for (let i = 0; i < length; i++) bytes[i] = (i * 37) % 256
+  return bytes
+}
+
+// A current Illustrator file is a PDF container: a text header with tens of KB
+// of XMP metadata, then binary streams. Several MB, as the reported file was,
+// so the binary check must win over the size cap.
 const ILLUSTRATOR_FILE = Buffer.concat([
-  Buffer.from('%PDF-1.6\n1 0 obj\n<< /Creator (Adobe Illustrator 28.0) >>\nstream\n', 'latin1'),
-  Buffer.from(Array.from({ length: 4096 }, (_, i) => (i * 37) % 256)),
-  Buffer.from('\nendstream\nendobj\n%%EOF\n', 'latin1'),
+  Buffer.from('%PDF-1.5\n1 0 obj\n<< /Creator (Adobe Illustrator 28.0) >>\nendobj\n', 'latin1'),
+  Buffer.from(`2 0 obj\n<< /Subtype /XML >>\nstream\n${' '.repeat(64 * 1024)}\nendstream\n`),
+  binaryStreams(5 * MIB),
+  Buffer.from('\nendobj\n%%EOF\n', 'latin1'),
 ])
+// Exactly 5 MiB of text: 16-byte lines.
+const OVERSIZED_LOG = 'GET /health 200\n'.repeat((5 * MIB) / 16)
 
 async function pick(path: string): Promise<void> {
   // Hand chromedriver a real file on disk, exactly as the native dialog would.
@@ -53,6 +67,7 @@ describe('Attaching a file picked from outside the project', () => {
     mkdirSync(downloads)
     writeFileSync(join(downloads, 'print-sizes.csv'), 'size,width,height\nA3,297,420\n')
     writeFileSync(join(downloads, 'artwork.ai'), ILLUSTRATOR_FILE)
+    writeFileSync(join(downloads, 'server.log'), OVERSIZED_LOG)
     mkdirSync(join(process.cwd(), 'tests/e2e/screenshots'), { recursive: true })
     resetUserData()
     seedE2eViewport()
@@ -95,5 +110,22 @@ describe('Attaching a file picked from outside the project', () => {
     // The refusal is the expected outcome here; let it dismiss as a user would see it go.
     await toast.waitForExist({ reverse: true, timeout: 15_000 })
     await assertNoErrorToasts('after the binary-file refusal dismissed')
+  })
+
+  it('refuses a text file over the cap as too large to save, not too much for a model', async () => {
+    await pick(join(downloads, 'server.log'))
+    const toast = $('.toast-error')
+    await toast.waitForDisplayed({ timeout: 10_000 })
+    await expect(toast).toHaveText(
+      expect.stringContaining(
+        "Can't attach server.log — at 5.0 MB it's too large to save with the conversation.",
+      ),
+    )
+    await expect(
+      await $$('.attachment-chips .attachment-chip').getElements(),
+    ).toBeElementsArrayOfSize(1)
+    await saveAppScreenshot('picker-attachment-outside-project-too-large.png')
+    await toast.waitForExist({ reverse: true, timeout: 15_000 })
+    await assertNoErrorToasts('after the too-large refusal dismissed')
   })
 })

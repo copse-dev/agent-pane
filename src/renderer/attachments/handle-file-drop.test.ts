@@ -216,17 +216,81 @@ describe('attaching dropped files', () => {
     assert.match(recorded.files[0]?.content ?? '', /^name,city\nRen\uFFFD,Paris/)
   })
 
-  it('refuses a text file too large for any model instead of inlining it', async () => {
+  it('refuses a picked text file over the cap as too large to save, not too much for a model', async () => {
     const big = new File([new Uint8Array(MAX_TEXT_ATTACHMENT_BYTES + 1).fill(0x61)], 'server.log', {
       type: 'text/plain',
     })
     const { handlers, recorded } = recordingHandlers()
     await attachFiles([big], handlers, api, null)
     assert.deepEqual(recorded.files, [])
+    // The prompt only ever carries a head-and-tail preview, so the cap is about
+    // the full copy the conversation keeps, not what a model can take in.
     assert.match(
       takeToast(),
-      /^Can't attach server\.log — at 4\.0 MB it's more text than a model can take in at once\. Copy it into the project/,
+      /^Can't attach server\.log — at 4\.0 MB it's too large to save with the conversation\. Copy it into the project/,
     )
+  })
+
+  it('refuses a large picked Illustrator file as binary, not as too large', async () => {
+    // A real .ai opens with tens of KB of XMP metadata (text) before its first
+    // binary stream, so a small head sniff would still call it text.
+    const bytes = new Uint8Array(MAX_TEXT_ATTACHMENT_BYTES + 1024 * 1024)
+    const header = utf8('%PDF-1.5\n1 0 obj\n<</Metadata 2 0 R>>\nendobj\n<?xpacket begin=""?>')
+    bytes.set(header)
+    const metadataEnd = 64 * 1024
+    bytes.fill(0x20, header.length, metadataEnd)
+    for (let i = metadataEnd; i < bytes.length; i++) bytes[i] = (i * 37) % 256
+    const outside = new File([bytes], 'logo.ai', { type: 'application/postscript' })
+    window.copseFiles = { pathForFile: (): string => '/Users/me/Downloads/logo.ai' }
+    try {
+      const { handlers, recorded } = recordingHandlers()
+      await attachFiles([outside], handlers, api, '/repo', { projectId: 'p', threadId: 't' })
+      assert.deepEqual(recorded.files, [])
+      assert.match(
+        takeToast(),
+        /^Can't attach logo\.ai — it isn't a text file\. Attach it inside a \.zip, or copy it into the project/,
+      )
+    } finally {
+      delete window.copseFiles
+    }
+  })
+
+  it('refuses a large binary workspace file as binary, not as too large', async () => {
+    const binaryApi: FileDropApi = {
+      fs: {
+        readFile: (): Promise<string> =>
+          Promise.resolve(`%PDF-1.5\n${' '.repeat(MAX_TEXT_ATTACHMENT_BYTES)}\u0000\u0001streams`),
+        readImage: (): Promise<string> => Promise.resolve(''),
+      },
+    }
+    const { handlers, recorded } = recordingHandlers()
+    await handleFileDrop(workspacePathDrop('/repo/design/logo.ai'), handlers, binaryApi, '/repo', {
+      projectId: 'p',
+      threadId: 't',
+    })
+    assert.deepEqual(recorded.files, [])
+    assert.match(
+      takeToast(),
+      /^Can't attach logo\.ai — it isn't a text file\. It's already in the project, so mention its path/,
+    )
+  })
+
+  it('still attaches a project text file over the cap, as it did before the cap', async () => {
+    // The prompt trims it to a head-and-tail preview, and the agent can open the rest by path.
+    const log = 'a'.repeat(MAX_TEXT_ATTACHMENT_BYTES + 1)
+    const logApi: FileDropApi = {
+      fs: {
+        readFile: (): Promise<string> => Promise.resolve(log),
+        readImage: (): Promise<string> => Promise.resolve(''),
+      },
+    }
+    const { handlers, recorded } = recordingHandlers()
+    await handleFileDrop(workspacePathDrop('/repo/logs/server.log'), handlers, logApi, '/repo', {
+      projectId: 'p',
+      threadId: 't',
+    })
+    assert.equal(takeToast(), '')
+    assert.deepEqual(recorded.files, [{ path: 'logs/server.log', content: log }])
   })
 
   it('refuses a binary workspace file and points at the agent tools instead', async () => {

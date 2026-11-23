@@ -21,8 +21,15 @@ export const UNSUPPORTED_IMAGE_MESSAGE =
   "Can't attach this image — its format isn't supported here. Save it as PNG or JPEG and try again."
 
 /**
- * Largest file inlined into the prompt as text. Past about a million tokens no
- * model can take the whole file in, so the chip could only fail the turn.
+ * Largest file picked from outside the project that attaches as text, and the
+ * most of any picked file the binary check reads.
+ *
+ * The prompt never carries a whole attachment (`renderTextBlock` keeps a
+ * head-and-tail preview of `ATTACHMENT_MAX_CHARS`), but the chip holds the full
+ * text in the window and the thread saves all of it with the message, so this
+ * bounds what a download can copy into the conversation. A file inside the
+ * project is not capped, as before: the main process has already read it whole
+ * by the time the renderer sees it, and the agent can open the rest by path.
  */
 export const MAX_TEXT_ATTACHMENT_BYTES = 4 * 1024 * 1024
 
@@ -41,27 +48,24 @@ function looksBinary(text: string): boolean {
 }
 
 /**
- * Refuse a file that would otherwise be inlined as text: binary bytes are noise
- * to the model, and an oversized file cannot fit. Each points at a route that
- * does work: the agent's own tools for a file in the project, and an archive
- * attachment (which the model unpacks on demand) for a binary from elsewhere.
+ * Refuse a file whose bytes would be noise to the model if inlined as text.
+ * Points at a route that does work: the agent's own tools for a file in the
+ * project, and an archive attachment (which the model unpacks on demand) or the
+ * agent's tools for one from elsewhere.
  */
-function refuseTextAttachment(
-  name: string,
-  reason: 'binary' | 'too-large',
-  bytes: number,
-  inProject: boolean,
-): void {
-  const why =
-    reason === 'binary'
-      ? "it isn't a text file"
-      : `at ${formatByteSize(bytes)} it's more text than a model can take in at once`
+function refuseBinaryAttachment(name: string, inProject: boolean): void {
   const instead = inProject
     ? "It's already in the project, so mention its path and the agent can open it with its tools."
-    : reason === 'binary'
-      ? 'Attach it inside a .zip, or copy it into the project and mention its path so the agent can open it with its tools.'
-      : 'Copy it into the project and mention its path so the agent can open it with its tools.'
-  showToast(`Can't attach ${name} — ${why}. ${instead}`, { variant: 'error' })
+    : 'Attach it inside a .zip, or copy it into the project and mention its path so the agent can open it with its tools.'
+  showToast(`Can't attach ${name} — it isn't a text file. ${instead}`, { variant: 'error' })
+}
+
+/** Refuse a picked text file past {@link MAX_TEXT_ATTACHMENT_BYTES}. */
+function refuseOversizedPick(name: string, bytes: number): void {
+  showToast(
+    `Can't attach ${name} — at ${formatByteSize(bytes)} it's too large to save with the conversation. Copy it into the project and mention its path so the agent can open it with its tools.`,
+    { variant: 'error' },
+  )
 }
 
 /** A dropped or picked file's on-disk path, or null for one with none (a pasted blob). */
@@ -131,12 +135,10 @@ async function attachWorkspacePath(
       return
     }
     const content = await api.fs.readFile(owner.projectId, owner.threadId, path)
-    if (content.length > MAX_TEXT_ATTACHMENT_BYTES) {
-      refuseTextAttachment(name, 'too-large', content.length, true)
-      return
-    }
+    // No size cap here (see MAX_TEXT_ATTACHMENT_BYTES): a large project file
+    // still attaches, and the prompt keeps its head and tail.
     if (looksBinary(content)) {
-      refuseTextAttachment(name, 'binary', content.length, true)
+      refuseBinaryAttachment(name, true)
       return
     }
     const relativePath = workspaceRoot ? workspaceRelativePath(path, workspaceRoot) : null
@@ -202,17 +204,21 @@ async function attachDroppedFile(
     return
   }
 
-  if (file.size > MAX_TEXT_ATTACHMENT_BYTES) {
-    refuseTextAttachment(file.name, 'too-large', file.size, false)
-    return
-  }
   try {
-    const content = await file.text()
-    if (looksBinary(content)) {
-      refuseTextAttachment(file.name, 'binary', file.size, false)
+    // Text or binary is decided before size, on up to the cap: a large .ai
+    // opens with tens of KB of XML metadata before its first binary stream, so
+    // a small head would pass as text and get the wrong refusal.
+    const head = await file.slice(0, MAX_TEXT_ATTACHMENT_BYTES).text()
+    if (looksBinary(head)) {
+      refuseBinaryAttachment(file.name, false)
       return
     }
-    handlers.attachFile({ path: absPath ?? file.name, content })
+    if (file.size > MAX_TEXT_ATTACHMENT_BYTES) {
+      refuseOversizedPick(file.name, file.size)
+      return
+    }
+    // Within the cap, the slice is the whole file.
+    handlers.attachFile({ path: absPath ?? file.name, content: head })
   } catch {
     /* ignore read errors */
   }
