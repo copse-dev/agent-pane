@@ -1,6 +1,11 @@
 import { ipcRenderer } from 'electron'
 import { assertNever } from '@copse/std/assert-never.ts'
-import { remoteReadAllowed, remoteReadSchema, type RemoteRead } from '../shared/remote-interface.ts'
+import {
+  remoteReadAllowed,
+  remoteReadSchema,
+  type RemoteRead,
+  type RemoteReply,
+} from '../shared/remote-interface.ts'
 
 function invokeRead(request: RemoteRead): Promise<unknown> {
   const { channel, args } = request
@@ -52,18 +57,16 @@ function invokeRead(request: RemoteRead): Promise<unknown> {
   }
 }
 
-/** What the relay tells main about one remote read. */
-export type RemoteReadReply =
-  | { id: string; ok: true; value: unknown }
-  | { id: string; ok: false; error: string }
-
 /**
  * Send the outcome of one remote read back to main. A reply that cannot be
  * sent, such as a result too large for one request, is reported as a failure,
  * so the remote gets that reason instead of a timeout.
+ *
+ * The reply is typed by the schema main parses `remote:reply` with, so the
+ * relay cannot drift from what main accepts.
  */
 export function replyToRemoteRead(
-  sendReply: (reply: RemoteReadReply) => Promise<unknown>,
+  sendReply: (reply: RemoteReply) => Promise<unknown>,
   id: string,
   read: Promise<unknown>,
 ): Promise<void> {

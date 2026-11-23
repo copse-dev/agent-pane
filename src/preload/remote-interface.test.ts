@@ -1,16 +1,17 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { replyToRemoteRead, type RemoteReadReply } from './remote-interface.ts'
+import type { RemoteReply } from '../shared/remote-interface.ts'
+import { replyToRemoteRead } from './remote-interface.ts'
 
 /** A reply channel whose first `failures` sends are rejected with `reason`. */
 function fixture(
   failures = 0,
   reason = 'not sent',
 ): {
-  sendReply: (reply: RemoteReadReply) => Promise<unknown>
-  attempts: RemoteReadReply[]
+  sendReply: (reply: RemoteReply) => Promise<unknown>
+  attempts: RemoteReply[]
 } {
-  const attempts: RemoteReadReply[] = []
+  const attempts: RemoteReply[] = []
   return {
     attempts,
     sendReply: (reply): Promise<unknown> => {
