@@ -208,6 +208,11 @@ revisiting this document, not silently diverging in an implementation PR.
    never an automatic budget reset. Deadline stops use the same checkpoint action
    with a time-limit explanation. These outcomes do not raise any run or continuation
    allowance or replay a completed tool call.
+   The run-limit notice, like the loop's other fixed notices (incomplete run,
+   reasoning give-up, refusal fallback, context overflow, still-open plan), streams
+   as `{ type: 'text', author: 'loop' }`: it renders and persists like the model's
+   text, but a host that reports what the model said (a headless review's reviewer
+   summary) leaves it out rather than presenting the loop's words as the model's.
    Existing bounded pre-review reconciliation may still close the primary plan before
    the host's terminal outcome. A successful reconciliation with a closed plan clears
    the primary loop's stale `max_steps`; an unfinished continuation retains it.

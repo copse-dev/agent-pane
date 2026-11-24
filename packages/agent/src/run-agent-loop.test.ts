@@ -1594,6 +1594,9 @@ src/renderer/views/projects-pane.ts
       executeTool: async () => 'ok',
     })
     assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('model-request limit')))
+    // The notice is the loop's own text, so a host can tell it from the model's.
+    const notice = chunks.find((c) => c.type === 'text' && c.text.includes('model-request limit'))
+    assert.ok(notice && 'author' in notice)
     assert.deepEqual(chunks.at(-1), { type: 'done', stopReason: 'max_steps' })
   })
 

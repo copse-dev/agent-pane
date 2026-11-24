@@ -75,6 +75,11 @@ const REVIEW_TOOL_SCHEMA_RESERVE_TOKENS = 2_500
  */
 export const REVIEW_CONTEXT_FILL = 0.75
 
+/** Whether the loop wrote this text itself (a run limit, a give-up), not the model. */
+function writtenByLoop(chunk: AgentStreamChunk): boolean {
+  return 'author' in chunk
+}
+
 export interface TurnOptions {
   readonly provider: LLMProvider
   /** Model id, for usage attribution. */
@@ -173,7 +178,7 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
   }
   // Text and reasoning stream as deltas; coalesce each run into one item so a
   // message is one event, not one per token, before projecting it.
-  let pending: { type: 'text' | 'reasoning'; text: string } | null = null
+  let pending: Extract<AgentStreamChunk, { type: 'text' | 'reasoning' }> | null = null
   const flushPending = (): void => {
     if (pending === null) return
     for (const event of projectStreamChunk(pending, projectionContext)) {
@@ -228,9 +233,16 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
       getLastUsage: () => (hasLastUsage(options.provider) ? options.provider.lastUsage : null),
       onChunk: (chunk: AgentStreamChunk) => {
         if (chunk.type === 'text' || chunk.type === 'reasoning') {
-          if (pending !== null && pending.type !== chunk.type) flushPending()
-          pending = { type: chunk.type, text: (pending?.text ?? '') + chunk.text }
-          if (chunk.type === 'text') summary += chunk.text
+          // The loop's own notices stay apart from the model's text.
+          if (
+            pending !== null &&
+            (pending.type !== chunk.type || writtenByLoop(pending) !== writtenByLoop(chunk))
+          ) {
+            flushPending()
+          }
+          pending = pending === null ? chunk : { ...pending, text: pending.text + chunk.text }
+          // The loop's own notices (a run limit, a give-up) are not the reviewer's words.
+          if (chunk.type === 'text' && !writtenByLoop(chunk)) summary += chunk.text
           return
         }
         flushPending()

@@ -531,6 +531,41 @@ describe('runStage2', () => {
     assert.equal(provider.streamOptions[2], undefined)
   })
 
+  it("keeps the loop's run-limit notice out of a failed reviewer's summary", async () => {
+    // The reviewer spends every step reading, so the loop ends its investigation
+    // with its own run-limit notice, and the closure repair then answers in prose.
+    const provider = new ScriptedProvider([
+      { type: 'tool_call', name: 'read_file', args: { path: 'src/math.ts' } },
+      { type: 'tool_call', name: 'read_file', args: { path: 'src/other.ts' } },
+      { type: 'tool_call', name: 'read_file', args: { path: 'src/third.ts' } },
+      { type: 'text', text: 'Still reviewing.' },
+      { type: 'text', text: 'Still reviewing.' },
+      { type: 'text', text: 'Still reviewing.' },
+    ])
+    const result = await runStage2({
+      provider,
+      model: 'scripted',
+      lens: CORRECTNESS_LENS,
+      context,
+      validation,
+      headCheckout: checkouts.head,
+      cell: null,
+      shellDecision: 'deny',
+      scrub: (text) => text,
+      threadId: 'thread-run-limit',
+      turnId: 'turn-run-limit',
+      maxSteps: 3,
+    })
+    assert.equal(result.outcome, 'failed')
+    assert.equal(result.toolCalls, 3)
+    // The notice is still in the transcript, as the loop's message...
+    assert.ok(
+      result.events.some((event) => JSON.stringify(event).includes('reached its step limit')),
+    )
+    // ...but the reviewer said nothing, so its summary is empty, not the notice.
+    assert.equal(result.summary, '')
+  })
+
   it('feeds a rejected closure reason back so the repair can correct its arguments', async () => {
     const provider = new ScriptedProvider([
       { type: 'text', text: 'I checked the changed implementation and found no defect.' },
