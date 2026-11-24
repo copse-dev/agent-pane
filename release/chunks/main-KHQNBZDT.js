@@ -490,7 +490,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-PVSMJWYT.js";
+} from "./chunk-7EK6HJZA.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -507,6 +507,7 @@ import {
   clockIcon,
   closeIcon,
   cornerDownLeftIcon,
+  createSshHostFields,
   downloadIcon,
   escapeHtml,
   expectString,
@@ -518,7 +519,6 @@ import {
   gitMergeIcon,
   gitPullRequestIcon,
   imageIcon,
-  importSshConfigHosts,
   init_dist,
   init_icons,
   init_inline_links,
@@ -527,6 +527,7 @@ import {
   init_ipc_error_message,
   init_nullish,
   init_outline_icon,
+  init_ssh_host_fields,
   init_ssh_host_helpers,
   init_toast,
   init_unknown_value,
@@ -548,7 +549,6 @@ import {
   moreVerticalIcon,
   nonEmptyStringOr,
   outlineIcon,
-  parseSshHostDraft,
   parseSshWorkspaceHosts,
   penLineIcon,
   playIcon,
@@ -557,6 +557,7 @@ import {
   refreshIcon,
   renderMarkdown,
   runningStatusIcon,
+  saveSshConfigHost,
   searchIcon,
   setDefaultConfig,
   setInlineMarkdown,
@@ -564,17 +565,17 @@ import {
   shieldIcon,
   showErrorToast,
   showToast,
-  slugifyHostId,
   sparkleIcon,
   spinnerIcon,
   undoIcon,
+  unsavedSshConfigHosts,
   unwrapIpcErrorText,
   uploadIcon,
   upsertHost,
   warningIcon,
   workspaceLinkTargetFromHref,
   zapIcon
-} from "./chunk-KYBBGUKM.js";
+} from "./chunk-HIIVOQP4.js";
 import {
   clear,
   createOverlayDialog,
@@ -892,24 +893,47 @@ function attachRemotePublisher(store2, api2) {
   let running = false;
   let disposed = false;
   let receivedState = false;
+  let receivedWatched = false;
+  let watched = /* @__PURE__ */ new Map();
   const views = /* @__PURE__ */ new Map();
+  const published = /* @__PURE__ */ new Map();
+  const streamedInto = /* @__PURE__ */ new Set();
   function capture() {
     const { activeProjectId, threads, backgroundThreads } = store2.getState();
     if (activeProjectId) views.set(activeProjectId, { projectId: activeProjectId, threads });
     for (const { projectId, thread } of backgroundThreads) {
       const existing = views.get(projectId)?.threads ?? [];
+      if (existing.includes(thread)) continue;
       views.set(projectId, {
         projectId,
         threads: [...existing.filter((item) => item.id !== thread.id), thread]
       });
     }
   }
+  function forClients(projectId, thread) {
+    if (thread.messages.length === 0 || watched.get(projectId)?.has(thread.id)) return thread;
+    return { ...thread, messages: [], messagesLoaded: false };
+  }
   function publish() {
     timer = null;
     if (!running || disposed) return;
-    for (const value of views.values()) {
-      const view = remoteViewSchema.safeParse(value);
-      if (view.success) void api2.remote.publish(view.data).catch(() => {
+    const streamed = new Set(streamedInto);
+    streamedInto.clear();
+    for (const { projectId, threads } of views.values()) {
+      const watchedIds = [...watched.get(projectId) ?? []];
+      const watching = watchedIds.sort().join("\0");
+      const last = published.get(projectId);
+      const unchanged = last?.threads === threads && last.watching === watching;
+      if (unchanged && !watchedIds.some((id) => streamed.has(id))) continue;
+      const view = remoteViewSchema.safeParse({
+        projectId,
+        threads: threads.map((thread) => forClients(projectId, thread))
+      });
+      if (!view.success) continue;
+      const from2 = { threads, watching };
+      published.set(projectId, from2);
+      void api2.remote.publish(view.data).catch(() => {
+        if (published.get(projectId) === from2) published.delete(projectId);
       });
     }
   }
@@ -918,12 +942,33 @@ function attachRemotePublisher(store2, api2) {
     capture();
     timer ??= setTimeout(publish, 150);
   }
+  function messageChanged(messageId) {
+    if (!running || disposed) return;
+    const threadId = locateMessage(store2, messageId)?.thread.id;
+    if (threadId !== void 0 && [...watched.values()].some((ids) => ids.has(threadId))) {
+      streamedInto.add(threadId);
+    }
+    schedule();
+  }
+  function setWatched(list) {
+    const next = /* @__PURE__ */ new Map();
+    for (const { projectId, threadId } of list) {
+      const ids = next.get(projectId) ?? /* @__PURE__ */ new Set();
+      ids.add(threadId);
+      next.set(projectId, ids);
+    }
+    watched = next;
+    schedule();
+  }
   function setAvailability(state) {
     running = state.enabled && state.running;
     if (running) schedule();
-    else if (timer !== null) {
-      clearTimeout(timer);
-      timer = null;
+    else {
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      published.clear();
     }
   }
   const off = [
@@ -931,18 +976,26 @@ function attachRemotePublisher(store2, api2) {
       receivedState = true;
       setAvailability(state);
     }),
+    api2.remote.onWatchedChanged((list) => {
+      receivedWatched = true;
+      setWatched(list);
+    }),
     store2.on("threads_changed", schedule),
     store2.on("thread_status_changed", schedule),
     store2.on("message_added", schedule),
-    store2.on("message_token", schedule),
-    store2.on("message_reasoning", schedule),
-    store2.on("message_done", schedule),
-    store2.on("tool_call_started", schedule),
-    store2.on("tool_call_updated", schedule),
+    store2.on("message_token", messageChanged),
+    store2.on("message_reasoning", messageChanged),
+    store2.on("message_done", messageChanged),
+    store2.on("tool_call_started", messageChanged),
+    store2.on("tool_call_updated", messageChanged),
     store2.on("todos_changed", schedule)
   ];
   void api2.mobile.getState().then((state) => {
     if (!disposed && !receivedState) setAvailability(state);
+  }).catch(() => {
+  });
+  void api2.remote.watched().then((list) => {
+    if (!disposed && !receivedWatched) setWatched(list);
   }).catch(() => {
   });
   return () => {
@@ -954,6 +1007,7 @@ function attachRemotePublisher(store2, api2) {
 var init_remote_publisher = __esm({
   "src/renderer/controller/remote-publisher.ts"() {
     init_remote_interface();
+    init_thread_helpers();
   }
 });
 
@@ -13637,6 +13691,24 @@ var init_disclosure_model = __esm({
   }
 });
 
+// src/renderer/views/transcript-row-element.ts
+function transcriptRowElement(list, key) {
+  let head = list.firstElementChild;
+  let tail = list.lastElementChild;
+  while (head && tail) {
+    if (head.getAttribute("data-message-id") === key && head instanceof HTMLElement) return head;
+    if (tail.getAttribute("data-message-id") === key && tail instanceof HTMLElement) return tail;
+    if (head === tail || head.nextElementSibling === tail) return null;
+    head = head.nextElementSibling;
+    tail = tail.previousElementSibling;
+  }
+  return null;
+}
+var init_transcript_row_element = __esm({
+  "src/renderer/views/transcript-row-element.ts"() {
+  }
+});
+
 // src/renderer/views/tool-card-refresh.ts
 function markUserInterruptedCalls(thread) {
   if (!thread || markedTranscripts.has(thread.messages)) return;
@@ -13875,7 +13947,7 @@ function createToolCardRefresher(host) {
     if (messageKey && activeThread?.status === "running" && toolCalls.some((tool) => !tool.subagent)) {
       liveRollupMessages.add(messageKey);
     }
-    const run4 = opts.run && (opts.run.anchorId === msgId || list.querySelector(`[data-message-id="${opts.run.anchorId}"]`) !== null) ? opts.run : void 0;
+    const run4 = opts.run && (opts.run.anchorId === msgId || transcriptRowElement(list, opts.run.anchorId) !== null) ? opts.run : void 0;
     const isRunMember = run4 !== void 0 && run4.anchorId !== msgId;
     msgEl.classList.toggle("msg-tool-run-member", isRunMember);
     const message2 = activeThread?.messages.find((m2) => m2.id === msgId);
@@ -13964,7 +14036,7 @@ function createToolCardRefresher(host) {
   }
   function renderRunAnchor(thread, run4) {
     const anchor = thread?.messages.find((m2) => m2.id === run4.anchorId);
-    const anchorEl = list.querySelector(`[data-message-id="${run4.anchorId}"]`);
+    const anchorEl = transcriptRowElement(list, run4.anchorId);
     if (!anchor || !anchorEl) return;
     renderToolCards(anchorEl, anchor.toolCalls, {
       ...messageToolCardOpts(anchor),
@@ -13975,7 +14047,7 @@ function createToolCardRefresher(host) {
   function releaseRunMembers(thread, run4) {
     for (const id of run4.memberIds) {
       if (id === run4.anchorId) continue;
-      const memberEl = list.querySelector(`[data-message-id="${id}"]`);
+      const memberEl = transcriptRowElement(list, id);
       if (!memberEl?.querySelector(":scope > .tool-card-rollup")) continue;
       const msg = thread?.messages.find((m2) => m2.id === id);
       if (!msg) continue;
@@ -14007,7 +14079,7 @@ function createToolCardRefresher(host) {
     });
     refreshToolCards(msgId);
     const msg = thread?.messages.find((m2) => m2.id === msgId);
-    const msgEl = list.querySelector(`[data-message-id="${msgId}"]`);
+    const msgEl = transcriptRowElement(list, msgId);
     if (!msg || !msgEl || multiStepRunFor(thread, msgId)) return;
     syncReasoningEl2(msgEl, msg, isReasoningDisclosureLive(thread, msg), acpWorkspaceRoot(store2));
     registerReasoningDisclosures(msgEl);
@@ -14029,7 +14101,7 @@ function createToolCardRefresher(host) {
   function refreshToolCards(msgId) {
     const thread = store2.getState().threads.find((t) => t.messages.some((m2) => m2.id === msgId));
     const msg = thread?.messages.find((m2) => m2.id === msgId);
-    const msgEl = list.querySelector(`[data-message-id="${msgId}"]`);
+    const msgEl = transcriptRowElement(list, msgId);
     if (!msg || !msgEl) return;
     host.keepReadingPosition(() => {
       const run4 = multiStepRunFor(thread, msgId);
@@ -14078,6 +14150,7 @@ var init_tool_card_refresh = __esm({
     init_concise_thread();
     init_disclosure_model();
     init_render_signature();
+    init_transcript_row_element();
     init_thread_proposal_tool_card();
     init_turn_interruption();
     userInterruptedCalls = /* @__PURE__ */ new WeakMap();
@@ -14140,17 +14213,18 @@ function rowCardSelector(key) {
 function isRowCardOf(node, key) {
   return ROW_CARD_ATTRIBUTES.some((attribute) => node.getAttribute(attribute) === key);
 }
-function transcriptRowElement(list, key) {
-  let head = list.firstElementChild;
-  let tail = list.lastElementChild;
-  while (head && tail) {
-    if (head instanceof HTMLElement && head.dataset["messageId"] === key) return head;
-    if (tail instanceof HTMLElement && tail.dataset["messageId"] === key) return tail;
-    if (head === tail || head.nextElementSibling === tail) return null;
-    head = head.nextElementSibling;
-    tail = tail.previousElementSibling;
+function rowCardElement(row2, attribute, key) {
+  for (let next = row2.nextElementSibling; next && isRowCardOf(next, key); next = next.nextElementSibling) {
+    if (next instanceof HTMLElement && next.getAttribute(attribute) === key) return next;
   }
   return null;
+}
+function rowParts(row2, key) {
+  const parts = [row2];
+  for (let next = row2.nextElementSibling; next && isRowCardOf(next, key); next = next.nextElementSibling) {
+    parts.push(next);
+  }
+  return parts;
 }
 function removeTranscriptRow(list, key) {
   const element = transcriptRowElement(list, key);
@@ -14286,6 +14360,7 @@ var init_transcript_rows = __esm({
     init_render_signature();
     init_thread_proposal_tool_card();
     init_tool_card_refresh();
+    init_transcript_row_element();
     ROW_CARD_ATTRIBUTES = [
       "data-review-for",
       "data-review-report-for",
@@ -22054,12 +22129,10 @@ function mountConversation(root, store2, api2, options = {}) {
     if (msg.role === "user") body.append(buildUserActions(threadId, msgId));
     return msgEl;
   }
-  function finalizeMessageEl(threadId, msgId) {
+  function finalizeMessageEl(threadId, msgId, msgEl) {
     const thread = getThreadById(store2, threadId);
     const msg = thread?.messages.find((m2) => m2.id === msgId);
-    const msgEl = list.querySelector(`[data-message-id="${msgId}"]`);
-    if (!msg || !msgEl) return;
-    hydrateRemoteArtifactImages(list, api2, artifactImageScope(threadId));
+    if (!msg) return;
     const run4 = multiStepRunFor(thread, msgId);
     renderToolCards(msgEl, msg.toolCalls, {
       ...messageToolCardOpts(msg),
@@ -22068,11 +22141,15 @@ function mountConversation(root, store2, api2, options = {}) {
     syncMessageCanvasPreviews(msgEl, msg, store2.getState().activeProjectId, threadId, api2);
     syncMessageVisualEvidence(msgEl, msg);
     if (run4) syncRunLayout(thread, run4, msgId);
-    if (msg.review) renderMessageReview(threadId, msgId);
-    if (msg.reviewReport) renderMessageReviewReport(threadId, msgId);
-    renderMessageHookCards(threadId, msgId);
-    renderMessageTurnRecovery(threadId, msgId);
-    attachSideChatChip(threadId, msgId);
+    if (msg.review) renderMessageReview(threadId, msgId, msgEl);
+    if (msg.reviewReport) renderMessageReviewReport(threadId, msgId, msgEl);
+    renderMessageHookCards(threadId, msgId, msgEl);
+    renderMessageTurnRecovery(threadId, msgId, msgEl);
+    attachSideChatChip(threadId, msgId, msgEl);
+    const scope = artifactImageScope(threadId);
+    for (const part of rowParts(msgEl, msgId)) {
+      if (part instanceof HTMLElement) hydrateRemoteArtifactImages(part, api2, scope);
+    }
   }
   function appendMessageEl(threadId, msgId, batched = false) {
     if (threadId !== store2.getState().activeThreadId) return;
@@ -22089,7 +22166,7 @@ function mountConversation(root, store2, api2, options = {}) {
     if (trailingCard) {
       list.insertBefore(msgEl, activityBar.isConnected ? activityBar : trailingCard);
     } else list.insertBefore(msgEl, activityBar.isConnected ? activityBar : null);
-    finalizeMessageEl(threadId, msgId);
+    finalizeMessageEl(threadId, msgId, msgEl);
     if (batched) return;
     if (msg.role === "user") refreshStickyImagePrompt();
     syncModelLabels();
@@ -22103,7 +22180,7 @@ function mountConversation(root, store2, api2, options = {}) {
     if (!msgEl) return;
     const tail = activityBar.isConnected ? activityBar : firstTrailingCard();
     list.insertBefore(msgEl, before ?? tail);
-    finalizeMessageEl(threadId, msgId);
+    finalizeMessageEl(threadId, msgId, msgEl);
   }
   function markRowPatched(msgId, redraws = []) {
     const message2 = locateMessage(store2, msgId)?.message;
@@ -22119,7 +22196,7 @@ function mountConversation(root, store2, api2, options = {}) {
     const msgEl = buildMessageEl(threadId, msgId);
     if (!msgEl) return;
     list.insertBefore(msgEl, before);
-    finalizeMessageEl(threadId, msgId);
+    finalizeMessageEl(threadId, msgId, msgEl);
   }
   function attachReplyActions(body, threadId, msgId) {
     const sideChat = buildSideChatAction(threadId, msgId);
@@ -22172,8 +22249,7 @@ function mountConversation(root, store2, api2, options = {}) {
       (row2) => row2.anchorMessageId === msgId
     );
   }
-  function attachSideChatChip(threadId, msgId) {
-    const msgEl = list.querySelector(`[data-message-id="${msgId}"]`);
+  function attachSideChatChip(threadId, msgId, msgEl = transcriptRowElement(list, msgId)) {
     if (!msgEl) return;
     for (const child of Array.from(msgEl.children)) {
       if (child.classList.contains("msg-side-chat-chip")) child.remove();
@@ -22489,12 +22565,12 @@ function mountConversation(root, store2, api2, options = {}) {
       if ((msg.hookCards ?? []).length > 0) renderMessageHookCards(thread.id, msg.id);
     }
   }
-  function renderMessageHookCards(threadId, messageId) {
+  function renderMessageHookCards(threadId, messageId, drawn) {
     if (threadId !== store2.getState().activeThreadId) return;
-    list.querySelector(`[data-hook-cards-for="${messageId}"]`)?.remove();
+    const msgEl = drawn ?? transcriptRowElement(list, messageId);
+    if (msgEl) rowCardElement(msgEl, "data-hook-cards-for", messageId)?.remove();
     if (!store2.getState().developerMode) return;
     const msg = getActiveThread(store2)?.messages.find((m2) => m2.id === messageId);
-    const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
     const cards = msg?.hookCards ?? [];
     if (!msgEl || cards.length === 0) return;
     const load = (runId) => {
@@ -22504,11 +22580,11 @@ function mountConversation(root, store2, api2, options = {}) {
     };
     msgEl.after(createHookCardHost(messageId, cards, load));
   }
-  function renderMessageReview(threadId, messageId) {
+  function renderMessageReview(threadId, messageId, drawn) {
     if (threadId !== store2.getState().activeThreadId) return;
-    list.querySelector(`[data-review-card][data-review-for="${messageId}"]`)?.remove();
+    const msgEl = drawn ?? transcriptRowElement(list, messageId);
+    if (msgEl) rowCardElement(msgEl, "data-review-for", messageId)?.remove();
     const msg = getActiveThread(store2)?.messages.find((m2) => m2.id === messageId);
-    const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
     if (!msg?.review || !msgEl) return;
     const card = createReviewCardEl(msg.review, api2, () => {
       retryReview(store2, api2, threadId, messageId);
@@ -22517,11 +22593,11 @@ function mountConversation(root, store2, api2, options = {}) {
     card.setAttribute("data-review-for", messageId);
     msgEl.after(card);
   }
-  function renderMessageReviewReport(threadId, messageId) {
+  function renderMessageReviewReport(threadId, messageId, drawn) {
     if (threadId !== store2.getState().activeThreadId) return;
-    list.querySelector(`[data-review-report-card][data-review-report-for="${messageId}"]`)?.remove();
+    const msgEl = drawn ?? transcriptRowElement(list, messageId);
+    if (msgEl) rowCardElement(msgEl, "data-review-report-for", messageId)?.remove();
     const msg = getActiveThread(store2)?.messages.find((message2) => message2.id === messageId);
-    const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
     if (!msg?.reviewReport || !msgEl) return;
     const card = createReviewFindingsCardEl(msg.reviewReport, {
       onRetry: () => {
@@ -22539,16 +22615,16 @@ function mountConversation(root, store2, api2, options = {}) {
     });
     card.setAttribute("data-review-report-card", "");
     card.setAttribute("data-review-report-for", messageId);
-    const postTurnCard = list.querySelector(`[data-review-card][data-review-for="${messageId}"]`);
+    const postTurnCard = rowCardElement(msgEl, "data-review-for", messageId);
     (postTurnCard ?? msgEl).after(card);
   }
-  function renderMessageTurnRecovery(threadId, messageId) {
+  function renderMessageTurnRecovery(threadId, messageId, drawn) {
     if (threadId !== store2.getState().activeThreadId) return;
-    list.querySelector(`[data-turn-recovery-for="${messageId}"]`)?.remove();
+    const msgEl = drawn ?? transcriptRowElement(list, messageId);
+    if (msgEl) rowCardElement(msgEl, "data-turn-recovery-for", messageId)?.remove();
     const state = store2.getState();
     const projectId = state.activeProjectId;
     const thread = state.threads.find((candidate) => candidate.id === threadId);
-    const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
     const msg = thread?.messages.find((candidate) => candidate.id === messageId);
     if (msgEl && msg) syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(thread, messageId));
     scheduleConciseTurnFooterSync();
@@ -84099,72 +84175,66 @@ var init_desktop_viewer = __esm({
 
 // src/renderer/views/vnc-ssh-host-form.ts
 function createVncSshHostForm(api2, onSaved, onClose) {
-  const id = el("input", { type: "text", "aria-label": "SSH host id", placeholder: "my-server" });
-  const label = el("input", {
-    type: "text",
-    "aria-label": "SSH host label",
-    placeholder: "Production"
+  const hostFields = createSshHostFields({ labelClass: "vnc-field-label" });
+  const configSelect = el("select", {
+    class: "vnc-ssh-config-host",
+    "aria-label": "Host in ~/.ssh/config"
   });
-  const host = el("input", {
-    type: "text",
-    "aria-label": "SSH hostname",
-    placeholder: "example.com or ~/.ssh/config alias"
-  });
-  const user = el("input", { type: "text", "aria-label": "SSH user", placeholder: "ubuntu" });
-  const port = el("input", {
-    type: "text",
-    inputmode: "numeric",
-    "aria-label": "SSH port",
-    placeholder: "22"
-  });
-  const identityFile = el("input", {
-    type: "text",
-    "aria-label": "SSH identity file",
-    placeholder: "~/.ssh/id_ed25519"
-  });
+  const configField = el(
+    "label",
+    { class: "vnc-field-label vnc-ssh-config-field", hidden: true },
+    "In ~/.ssh/config",
+    configSelect
+  );
+  let configHosts = [];
   const status = el("p", { class: "vnc-ssh-host-status", role: "status" });
   const save = el("button", { type: "submit", class: "ui-btn ui-btn-primary" }, "Save SSH machine");
   const cancel = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, "Cancel");
-  const importButton = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-ghost" },
-    "Import SSH config"
-  );
   const root = el(
     "form",
     { class: "vnc-ssh-host-form", hidden: true, "aria-label": "Add SSH machine" },
     el("p", { class: "vnc-ssh-host-hint" }, "Use an SSH key to secure the desktop connection."),
-    el("label", { class: "vnc-field-label" }, "Id", id),
-    el("label", { class: "vnc-field-label" }, "Label", label),
-    el("label", { class: "vnc-field-label" }, "Host", host),
-    el("label", { class: "vnc-field-label" }, "User", user),
-    el("label", { class: "vnc-field-label" }, "Port", port),
-    el("label", { class: "vnc-field-label" }, "Identity file", identityFile),
+    configField,
+    ...hostFields.fields,
     status,
-    el("div", { class: "vnc-ssh-host-actions" }, importButton, cancel, save)
+    el("div", { class: "vnc-ssh-host-actions" }, cancel, save)
   );
-  let idTouched = false;
-  label.addEventListener("input", () => {
-    if (!idTouched) id.value = slugifyHostId(label.value);
-  });
-  id.addEventListener("input", () => {
-    idTouched = true;
-  });
   function close2() {
     root.hidden = true;
     status.textContent = "";
     onClose();
   }
+  async function loadConfigHosts() {
+    configHosts = [];
+    try {
+      if (await api2.settings.get("sshWorkspaceEnabled") === true) {
+        const [saved, aliases] = await Promise.all([
+          api2.sshWorkspace.listHosts(),
+          api2.sshWorkspace.listConfigAliases()
+        ]);
+        configHosts = unsavedSshConfigHosts(saved, aliases);
+      }
+    } catch {
+      configHosts = [];
+    }
+    configSelect.replaceChildren(
+      el("option", { value: "", selected: true }, "Choose a host"),
+      ...configHosts.map((host) => el("option", { value: host.host }, host.host))
+    );
+    configField.hidden = configHosts.length === 0;
+  }
   function open() {
     root.reset();
-    idTouched = false;
+    hostFields.reset();
     status.textContent = "";
+    configField.hidden = true;
     root.hidden = false;
-    label.focus();
+    hostFields.focus();
+    void loadConfigHosts();
   }
   function busy(value) {
     save.disabled = value;
-    importButton.disabled = value;
+    configSelect.disabled = value;
     cancel.disabled = value;
   }
   async function requireSshEnabled() {
@@ -84179,28 +84249,16 @@ function createVncSshHostForm(api2, onSaved, onClose) {
   cancel.addEventListener("click", close2);
   root.addEventListener("submit", (event) => {
     event.preventDefault();
-    const parsed = parseSshHostDraft({
-      id: id.value,
-      label: label.value,
-      host: host.value,
-      user: user.value,
-      port: port.value,
-      identityFile: identityFile.value,
-      forwardAgent: false
-    });
-    if (!parsed.ok) {
-      setInlineStatus(status, "error", parsed.error);
-      return;
-    }
     void (async () => {
       busy(true);
       try {
-        if (!await requireSshEnabled()) return;
         const existing = parseSshWorkspaceHosts(await api2.settings.get("sshWorkspaceHosts"));
-        if (existing.some((item) => item.id === parsed.host.id)) {
-          setInlineStatus(status, "error", "A machine with this id already exists.");
+        const parsed = hostFields.parse(existing);
+        if (!parsed.ok) {
+          setInlineStatus(status, "error", parsed.error);
           return;
         }
+        if (!await requireSshEnabled()) return;
         await api2.settings.set("sshWorkspaceHosts", upsertHost(existing, parsed.host));
         close2();
         await onSaved(parsed.host.id);
@@ -84211,25 +84269,20 @@ function createVncSshHostForm(api2, onSaved, onClose) {
       }
     })();
   });
-  importButton.addEventListener("click", () => {
+  configSelect.addEventListener("change", () => {
+    const chosen = configHosts.find((host) => host.host === configSelect.value);
+    if (!chosen) return;
     void (async () => {
       busy(true);
       try {
         if (!await requireSshEnabled()) return;
-        const aliases = await api2.sshWorkspace.listConfigAliases();
-        if (aliases.length === 0) {
-          setInlineStatus(status, "error", "No Host entries found in ~/.ssh/config.");
-          return;
-        }
         const existing = parseSshWorkspaceHosts(await api2.settings.get("sshWorkspaceHosts"));
-        const imported = importSshConfigHosts(existing, aliases);
-        await api2.settings.set("sshWorkspaceHosts", imported.hosts);
-        if (imported.firstAliasHostId) {
-          close2();
-          await onSaved(imported.firstAliasHostId);
-        }
+        const saved = saveSshConfigHost(existing, chosen);
+        await api2.settings.set("sshWorkspaceHosts", saved.hosts);
+        close2();
+        await onSaved(saved.hostId);
       } catch (error) {
-        setInlineStatus(status, "error", ipcErrorMessage(error, "Could not import SSH config."));
+        setInlineStatus(status, "error", ipcErrorMessage(error, "Could not save the SSH machine."));
       } finally {
         busy(false);
       }
@@ -84243,6 +84296,7 @@ var init_vnc_ssh_host_form = __esm({
     init_inline_status();
     init_ipc_error_message();
     init_ssh_host_helpers();
+    init_ssh_host_fields();
   }
 });
 
@@ -90036,7 +90090,7 @@ function startAgentController(store2, api2) {
     if (!activeProjectId) return;
     void api2.agent.attachTranscripts(
       activeProjectId,
-      threads.map((thread) => thread.id)
+      threads.filter((thread) => mayBeBehindMain(store2, thread)).map((thread) => thread.id)
     ).catch((error) => {
       console.error("[threads] could not attach transcripts:", error);
     });
@@ -90044,7 +90098,8 @@ function startAgentController(store2, api2) {
   const unsubWorkspace = selectActiveWorkspace(store2, attach);
   attach();
   const unsub = api2.agent.onChunk((threadId, chunk, stamp) => {
-    if (stamp && !attached.has(threadId)) return;
+    if (stamp && !attached.has(threadId) && !lateUpdateApplies(store2, threadId, chunk, stamp))
+      return;
     const st = get2(threadId);
     const firstVisibleActivity = chunk.type === "tool_call" || chunk.type === "acp_content" || chunk.type === "acp_content_replace" || chunk.type === "text" && chunk.text.trim() !== "" || chunk.type === "reasoning" && chunk.text.trim() !== "";
     if (firstVisibleActivity && !st.firstActivityTraced) {
@@ -90174,6 +90229,15 @@ function maybeSummarizeToolRun(store2, api2, threadId, msgId, st) {
       applySummary(store2, api2, threadId, run4.anchorId, { runSummary: summary.trim() });
     }
   })();
+}
+function mayBeBehindMain(store2, thread) {
+  return thread.status === "running" || thread.messagesLoaded !== false || thread.interruptedTurnAt !== void 0 || (thread.pendingMessages?.length ?? 0) > 0 || hasPendingDispatch(store2, thread.id);
+}
+function lateUpdateApplies(store2, threadId, chunk, stamp) {
+  if (chunk.type !== "tool_call_update" || chunk.commandPhase === void 0) return false;
+  if (stamp.messageIds.length > 0) return false;
+  const thread = getThreadById(store2, threadId);
+  return thread?.messagesLoaded === true && thread.status !== "running" && !hasPendingDispatch(store2, threadId);
 }
 function mergeRuntimeMessages(current, incoming) {
   const messages = [...current];
