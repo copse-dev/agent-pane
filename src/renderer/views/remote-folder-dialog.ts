@@ -4,14 +4,12 @@ import { showToast } from './toast.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { SshRemoteDirEntry, SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
 import {
-  emptySshHostDraft,
-  importSshConfigHosts,
-  parseSshHostDraft,
   parseSshWorkspaceHosts,
-  slugifyHostId,
+  saveSshConfigHost,
+  unsavedSshConfigHosts,
   upsertHost,
-  type SshHostDraft,
 } from './setup/ssh-host-helpers.ts'
+import { createSshHostFields } from './setup/ssh-host-fields.ts'
 import {
   fillRemotePathBreadcrumbs,
   initialRemoteBrowsePath,
@@ -30,6 +28,9 @@ export interface RemoteFolderDialogOptions {
   /** Projects already open, so a host's browser can start beside the last one. */
   projects?: ReadonlyArray<{ path: string; sshHost?: string }>
 }
+
+/** Picker values for `~/.ssh/config` hosts not saved yet; saved host ids never contain `:`. */
+const SSH_CONFIG_OPTION = 'ssh-config:'
 
 const ensureDialog = lazyBodyDialog('remote-folder-dialog', 'remote-folder-dialog')
 
@@ -75,50 +76,7 @@ export function openRemoteFolderDialog(
     'Cancel',
   )
 
-  const draft: SshHostDraft = emptySshHostDraft()
-  const idInput = el('input', {
-    type: 'text',
-    name: 'remoteFolderHostId',
-    class: 'remote-folder-host-id',
-    placeholder: 'my-server',
-    'aria-label': 'Host id',
-  })
-  const labelInput = el('input', {
-    type: 'text',
-    name: 'remoteFolderHostLabel',
-    class: 'remote-folder-host-label',
-    placeholder: 'Production',
-    'aria-label': 'Host label',
-  })
-  const hostInput = el('input', {
-    type: 'text',
-    name: 'remoteFolderHostHost',
-    class: 'remote-folder-host-host',
-    placeholder: 'example.com or ~/.ssh/config alias',
-    'aria-label': 'Hostname',
-  })
-  const userInput = el('input', {
-    type: 'text',
-    name: 'remoteFolderHostUser',
-    class: 'remote-folder-host-user',
-    placeholder: 'ubuntu',
-    'aria-label': 'SSH user',
-  })
-  const portInput = el('input', {
-    type: 'text',
-    name: 'remoteFolderHostPort',
-    class: 'remote-folder-host-port',
-    placeholder: '22',
-    inputmode: 'numeric',
-    'aria-label': 'SSH port',
-  })
-  const identityInput = el('input', {
-    type: 'text',
-    name: 'remoteFolderHostIdentity',
-    class: 'remote-folder-host-identity',
-    placeholder: '~/.ssh/id_ed25519',
-    'aria-label': 'Identity file',
-  })
+  const hostFields = createSshHostFields()
   const saveHostBtn = el(
     'button',
     { type: 'button', class: 'ui-btn ui-btn-primary remote-folder-save-host' },
@@ -128,11 +86,6 @@ export function openRemoteFolderDialog(
     'button',
     { type: 'button', class: 'ui-btn ui-btn-secondary remote-folder-cancel-add' },
     'Cancel',
-  )
-  const importBtn = el(
-    'button',
-    { type: 'button', class: 'ui-btn ui-btn-ghost remote-folder-import-config' },
-    'Import from ~/.ssh/config',
   )
   // The form's own lead-in, above its first field. With no hosts saved yet it
   // also says that this is the next step, rather than leaving that to the status
@@ -146,16 +99,10 @@ export function openRemoteFolderDialog(
     'div',
     { class: 'remote-folder-add-host-form ssh-host-form', hidden: true },
     addHostHint,
-    el('label', {}, 'Id ', idInput),
-    el('label', {}, 'Label ', labelInput),
-    el('label', {}, 'Host ', hostInput),
-    el('label', {}, 'User ', userInput),
-    el('label', {}, 'Port ', portInput),
-    el('label', {}, 'Identity file ', identityInput),
+    ...hostFields.fields,
     el(
       'div',
       { class: 'remote-folder-add-host-actions provider-actions' },
-      importBtn,
       cancelAddBtn,
       saveHostBtn,
     ),
@@ -184,11 +131,12 @@ export function openRemoteFolderDialog(
   )
 
   let hosts: SshWorkspaceHost[] = []
+  /** `~/.ssh/config` hosts not saved yet, offered in the picker below the saved ones. */
+  let configHosts: SshWorkspaceHost[] = []
   let currentHostId = ''
   let currentPath = '/'
   let loading = false
   let addingHost = false
-  let idTouched = false
 
   function setAddingHost(next: boolean): void {
     addingHost = next
@@ -197,21 +145,15 @@ export function openRemoteFolderDialog(
     browsePanel.hidden = next
     openBtn.hidden = next
     if (next) {
-      Object.assign(draft, emptySshHostDraft())
-      idTouched = false
-      idInput.value = ''
-      labelInput.value = ''
-      hostInput.value = ''
-      userInput.value = ''
-      portInput.value = ''
-      identityInput.value = ''
-      idInput.disabled = false
+      hostFields.reset()
       addHostHint.textContent =
-        hosts.length === 0
-          ? 'No SSH hosts yet. Add one to browse and open a remote folder.'
-          : 'Add an SSH host to browse and open a remote folder.'
+        hosts.length > 0
+          ? 'Add an SSH host to browse and open a remote folder.'
+          : configHosts.length > 0
+            ? 'No SSH hosts saved yet. Choose one from ~/.ssh/config above, or add one here.'
+            : 'No SSH hosts yet. Add one to browse and open a remote folder.'
       status.textContent = ''
-      labelInput.focus()
+      hostFields.focus()
     }
   }
 
@@ -220,11 +162,28 @@ export function openRemoteFolderDialog(
     for (const host of hosts) {
       hostSelect.append(el('option', { value: host.id }, `${host.label} (${host.host})`))
     }
+    if (configHosts.length > 0) {
+      hostSelect.append(
+        el(
+          'optgroup',
+          { label: 'In ~/.ssh/config' },
+          ...configHosts.map((host) =>
+            el('option', { value: `${SSH_CONFIG_OPTION}${host.host}` }, host.host),
+          ),
+        ),
+      )
+    }
     if (hosts.length === 0) {
       // Selected as well as disabled: a select whose only option is disabled
       // selects nothing and paints an empty box.
-      hostSelect.append(el('option', { value: '', disabled: true, selected: true }, 'No hosts yet'))
-      hostSelect.disabled = true
+      hostSelect.prepend(
+        el(
+          'option',
+          { value: '', disabled: true, selected: true },
+          configHosts.length > 0 ? 'Choose a host' : 'No hosts yet',
+        ),
+      )
+      hostSelect.disabled = configHosts.length === 0
       currentHostId = ''
       return
     }
@@ -267,56 +226,35 @@ export function openRemoteFolderDialog(
       status.textContent = ''
     })
 
-    labelInput.addEventListener('input', () => {
-      draft.label = labelInput.value
-      if (!idTouched && !idInput.disabled) {
-        idInput.value = slugifyHostId(draft.label)
-        draft.id = idInput.value
-      }
-    })
-    idInput.addEventListener('input', () => {
-      idTouched = true
-      draft.id = idInput.value
-    })
-    hostInput.addEventListener('input', () => {
-      draft.host = hostInput.value
-    })
-    userInput.addEventListener('input', () => {
-      draft.user = userInput.value
-    })
-    portInput.addEventListener('input', () => {
-      draft.port = portInput.value
-    })
-    identityInput.addEventListener('input', () => {
-      draft.identityFile = identityInput.value
-    })
+    /** Saved hosts and the config hosts not saved yet, read afresh. */
+    async function reloadHosts(): Promise<void> {
+      const [saved, aliases] = await Promise.all([
+        api.sshWorkspace.listHosts(),
+        api.sshWorkspace.listConfigAliases().catch(() => []),
+      ])
+      hosts = saved
+      configHosts = unsavedSshConfigHosts(saved, aliases)
+    }
 
-    async function persistAndSelect(host: SshWorkspaceHost): Promise<void> {
-      const raw = await api.settings.get('sshWorkspaceHosts')
-      const existing = parseSshWorkspaceHosts(raw)
-      await api.settings.set('sshWorkspaceHosts', upsertHost(existing, host))
-      hosts = await api.sshWorkspace.listHosts()
-      fillHostSelect(host.id)
+    async function persistAndSelect(hostId: string, label: string): Promise<void> {
+      await reloadHosts()
+      fillHostSelect(hostId)
       setAddingHost(false)
-      status.textContent = `Saved host “${host.label}”.`
+      status.textContent = `Saved host “${label}”.`
       await browseStart()
     }
 
     saveHostBtn.addEventListener('click', () => {
       void (async (): Promise<void> => {
-        draft.label = labelInput.value
-        draft.id = idInput.value
-        draft.host = hostInput.value
-        draft.user = userInput.value
-        draft.port = portInput.value
-        draft.identityFile = identityInput.value
-        const parsed = parseSshHostDraft(draft)
-        if (!parsed.ok) {
-          setInlineStatus(status, 'error', parsed.error)
-          return
-        }
         try {
-          await persistAndSelect(parsed.host)
+          const existing = parseSshWorkspaceHosts(await api.settings.get('sshWorkspaceHosts'))
+          const parsed = hostFields.parse(existing)
+          if (!parsed.ok) {
+            setInlineStatus(status, 'error', parsed.error)
+            return
+          }
+          await api.settings.set('sshWorkspaceHosts', upsertHost(existing, parsed.host))
+          await persistAndSelect(parsed.host.id, parsed.host.label)
         } catch (err) {
           const message = ipcErrorMessage(err, 'Could not save the host.')
           setInlineStatus(status, 'error', message)
@@ -325,38 +263,26 @@ export function openRemoteFolderDialog(
       })()
     })
 
-    importBtn.addEventListener('click', () => {
-      void (async (): Promise<void> => {
-        try {
-          const aliases = await api.sshWorkspace.listConfigAliases()
-          if (aliases.length === 0) {
-            setInlineStatus(status, 'error', 'No Host entries found in ~/.ssh/config.')
-            return
-          }
-          const raw = await api.settings.get('sshWorkspaceHosts')
-          const existing = parseSshWorkspaceHosts(raw)
-          const imported = importSshConfigHosts(existing, aliases)
-          await api.settings.set('sshWorkspaceHosts', imported.hosts)
-          hosts = await api.sshWorkspace.listHosts()
-          fillHostSelect(imported.firstAliasHostId)
-          setAddingHost(false)
-          status.textContent =
-            imported.importedHostIds.length === 0
-              ? 'All SSH config aliases are already imported.'
-              : `Imported ${String(imported.importedHostIds.length)} alias(es) from SSH config.`
-          if (currentHostId) await browseStart()
-        } catch (err) {
-          const message = ipcErrorMessage(err, 'Could not import from ~/.ssh/config.')
-          setInlineStatus(status, 'error', message)
-          showToast(message, { variant: 'error' })
-        }
-      })()
-    })
+    /** Save the `~/.ssh/config` host chosen in the picker, alone, then browse it. */
+    async function chooseConfigHost(alias: string): Promise<void> {
+      const chosen = configHosts.find((host) => host.host === alias)
+      if (!chosen) return
+      try {
+        const existing = parseSshWorkspaceHosts(await api.settings.get('sshWorkspaceHosts'))
+        const saved = saveSshConfigHost(existing, chosen)
+        await api.settings.set('sshWorkspaceHosts', saved.hosts)
+        await persistAndSelect(saved.hostId, chosen.label)
+      } catch (err) {
+        const message = ipcErrorMessage(err, 'Could not save the host.')
+        setInlineStatus(status, 'error', message)
+        showToast(message, { variant: 'error' })
+      }
+    }
 
     async function loadHosts(): Promise<void> {
       status.textContent = 'Loading hosts…'
       try {
-        hosts = await api.sshWorkspace.listHosts()
+        await reloadHosts()
         fillHostSelect()
         if (hosts.length === 0) {
           openBtn.disabled = true
@@ -461,7 +387,12 @@ export function openRemoteFolderDialog(
     }
 
     hostSelect.addEventListener('change', () => {
-      currentHostId = hostSelect.value
+      const value = hostSelect.value
+      if (value.startsWith(SSH_CONFIG_OPTION)) {
+        void chooseConfigHost(value.slice(SSH_CONFIG_OPTION.length))
+        return
+      }
+      currentHostId = value
       void browseStart()
     })
 
