@@ -18456,8 +18456,12 @@ dialog.activity-panel-overlay {
 .vnc-ssh-host-form[hidden] {
   display: none;
 }
-.vnc-ssh-host-form .vnc-field-label input {
+.vnc-ssh-host-form .vnc-field-label input,
+.vnc-ssh-host-form .vnc-field-label select {
   width: 100%;
+}
+.vnc-ssh-host-form .vnc-ssh-config-field[hidden] {
+  display: none;
 }
 .vnc-ssh-host-hint,
 .vnc-ssh-host-status {
