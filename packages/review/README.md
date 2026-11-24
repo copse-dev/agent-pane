@@ -50,8 +50,10 @@ shell's hand-offs (Phase 4).
   (`appleCreateArgs`, after the thread-in-container runtime's mapping): `--volume` mounts,
   `RLIMIT_NPROC` for the pid limit, `delete --force`, and no-new-privileges from
   `setpriv --no-new-privs`, which `Dockerfile.cell` guarantees by failing without it and
-  stripping every setuid bit. `COPSE_CONTAINER_ENGINE` (`auto` / `docker` / `podman` /
-  `apple`) picks the engine; `auto` tries Docker, Podman, then Apple container.
+  stripping every setuid bit. `COPSE_CONTAINER_ENGINE` (`auto` / `docker` / `apple`)
+  picks the engine, as it does for the app's own containers; `auto` tries Docker, Podman,
+  then Apple container. Choose Podman with `--engine podman`, not the variable: the app
+  does not accept `podman` there.
 - **`checkouts.ts`** — materialises the merge-base and head as detached worktrees under
   the review's scratch directory, with the working tree's uncommitted changes overlaid on
   head. Git runs on the host with hooks disabled; nothing from a checkout is executed

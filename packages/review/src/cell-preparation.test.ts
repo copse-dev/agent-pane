@@ -90,6 +90,12 @@ describe('cell preparation', () => {
           '--ignore-pnpmfile',
         ])
         assert.equal(call.args[call.args.indexOf('--store-dir') + 1], join(root, 'store'))
+        // The caller's own ~/.npmrc (and its tokens) never reaches the fetch.
+        for (const flag of ['--userconfig', '--globalconfig']) {
+          const config = call.args[call.args.indexOf(flag) + 1]
+          assert.ok(config !== undefined && call.args.includes(flag))
+          assert.equal(await readFile(config, 'utf8'), '')
+        }
       }
       const workspace = workspaceSchema.parse(
         loadYaml(await readFile(join(seed, 'pnpm-workspace.yaml'), 'utf8')),

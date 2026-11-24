@@ -138,6 +138,11 @@ export async function primeDependencyCache(input: PrimeDependencyCacheInput): Pr
   }
   await mkdir(input.cache, { recursive: true })
   const directories = input.profile === 'copse-pnpm' ? 'copse' : 'relative'
+  // As for npm: the caller's own ~/.npmrc (scoped registries, their tokens)
+  // never reaches the fetch, which takes only the pinned public registry.
+  const userconfig = join(input.seed, 'empty.npmrc')
+  await mkdir(input.seed, { recursive: true })
+  await writeFile(userconfig, '')
   for (const revision of input.revisions) {
     // pnpm fetch reads only these validated lockfiles and patch blobs. It skips
     // local directory dependencies; their contents are installed only inside
@@ -175,6 +180,10 @@ export async function primeDependencyCache(input: PrimeDependencyCacheInput): Pr
         input.cache,
         '--registry',
         'https://registry.npmjs.org',
+        '--userconfig',
+        userconfig,
+        '--globalconfig',
+        userconfig,
       ],
       { cwd: input.seed },
     )
