@@ -17,6 +17,7 @@ import { removeE2eTree } from './helpers/remove-tree.ts'
 
 const PROJECT_ID = 'e2e-picker-outside-project'
 const MIB = 1024 * 1024
+const CHIPS = '.attachment-chips .attachment-chip'
 
 function binaryStreams(length: number): Buffer {
   const bytes = Buffer.alloc(length)
@@ -84,18 +85,30 @@ describe('Attaching a file picked from outside the project', () => {
     if (temporaryRoot) removeE2eTree(temporaryRoot)
   })
 
-  it('attaches a text file from outside the project as a file chip', async () => {
+  const chipCount = async (): Promise<number> => (await $$(CHIPS).getElements()).length
+
+  async function attachTextFile(): Promise<void> {
     await pick(join(downloads, 'print-sizes.csv'))
-    await browser.waitUntil(
-      async () => (await $$('.attachment-chips .attachment-chip').getElements()).length === 1,
-      { timeout: 10_000, timeoutMsg: 'expected the picked text file to become a chip' },
-    )
-    await expect($('.attachment-chips .attachment-chip')).toHaveText(
-      expect.stringContaining('print-sizes.csv'),
-    )
+    await browser.waitUntil(async () => (await chipCount()) === 1, {
+      timeout: 10_000,
+      timeoutMsg: 'expected the picked text file to become a chip',
+    })
+  }
+
+  // Each refusal must leave an attached text file alone. The first test leaves
+  // that chip in place; a refusal test run on its own attaches it first, so it
+  // checks the same thing and captures the same screen.
+  async function withTextChip(): Promise<void> {
+    if ((await chipCount()) === 0) await attachTextFile()
+  }
+
+  it('attaches a text file from outside the project as a file chip', async () => {
+    await attachTextFile()
+    await expect($(CHIPS)).toHaveText(expect.stringContaining('print-sizes.csv'))
   })
 
   it('refuses a binary file from outside the project with a toast instead of a chip', async () => {
+    await withTextChip()
     await pick(join(downloads, 'artwork.ai'))
     const toast = $('.toast-error')
     await toast.waitForDisplayed({ timeout: 10_000 })
@@ -103,9 +116,7 @@ describe('Attaching a file picked from outside the project', () => {
       expect.stringContaining("Can't attach artwork.ai — it isn't a text file."),
     )
     await expect(toast).toHaveText(expect.stringContaining('Attach it inside a .zip'))
-    await expect(
-      await $$('.attachment-chips .attachment-chip').getElements(),
-    ).toBeElementsArrayOfSize(1)
+    await expect(await $$(CHIPS).getElements()).toBeElementsArrayOfSize(1)
     await saveAppScreenshot('picker-attachment-outside-project-binary.png')
     // The refusal is the expected outcome here; let it dismiss as a user would see it go.
     await toast.waitForExist({ reverse: true, timeout: 15_000 })
@@ -113,6 +124,7 @@ describe('Attaching a file picked from outside the project', () => {
   })
 
   it('refuses a text file over the cap as too large to save, not too much for a model', async () => {
+    await withTextChip()
     await pick(join(downloads, 'server.log'))
     const toast = $('.toast-error')
     await toast.waitForDisplayed({ timeout: 10_000 })
@@ -121,9 +133,7 @@ describe('Attaching a file picked from outside the project', () => {
         "Can't attach server.log — at 5.0 MB it's too large to save with the conversation.",
       ),
     )
-    await expect(
-      await $$('.attachment-chips .attachment-chip').getElements(),
-    ).toBeElementsArrayOfSize(1)
+    await expect(await $$(CHIPS).getElements()).toBeElementsArrayOfSize(1)
     await saveAppScreenshot('picker-attachment-outside-project-too-large.png')
     await toast.waitForExist({ reverse: true, timeout: 15_000 })
     await assertNoErrorToasts('after the too-large refusal dismissed')
