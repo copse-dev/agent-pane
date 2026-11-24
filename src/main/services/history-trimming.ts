@@ -34,7 +34,7 @@ export function prepareAgentHistory(
   const { messages: trimmed, trimmed: wasTrimmed } = trimHistory(messages, contextWindow, {
     reserveTokens: toolSchemaReserve,
     compaction,
-    measuredInputTokens: null,
+    measurement: null,
   })
   const conversationBudget = conversationTokenBudget(trimmed, contextWindow, {
     reserveTokens: toolSchemaReserve,

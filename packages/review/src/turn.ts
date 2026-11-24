@@ -68,10 +68,10 @@ export interface TurnTiming {
 const REVIEW_TOOL_SCHEMA_RESERVE_TOKENS = 2_500
 
 /**
- * The share of a model's context the loop may fill. It trims against the
- * previous request's measured size, so the next request also carries that
- * step's new tool results; the rest is headroom for them, so the request a
- * local server receives still fits its window.
+ * The share of a model's context the loop may fill. It sizes each request as
+ * the previous request's measured size plus an estimate of what was added since,
+ * at four characters per token, which undercounts code; the rest is headroom for
+ * that error, so the request a local server receives still fits its window.
  */
 export const REVIEW_CONTEXT_FILL = 0.75
 

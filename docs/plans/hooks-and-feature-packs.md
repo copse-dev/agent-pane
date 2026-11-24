@@ -1214,6 +1214,20 @@ Collected from design review — each of these was _almost_ a bug in the plan it
   streak/give-up path apply. It is disarmed while a runaway streak is active and never replaces
   the runaway path (a cross-turn circle still wins). Opt-in: the product policy does not set it;
   Terminal-Bench reports it as an explicit runtime override (`COPSE_TERMINAL_REASONING_SOFT_*`, default 768 tokens); the immutable baseline profile continues to declare no soft budget.
+- **A measured request size does not include what came after it.** The provider's input count
+  for a request covers that request only; the model's reply, the tool results and any nudge the
+  loop appends afterwards were never measured. Sizing by that count alone let the soft trim, the
+  `TRIM_CRITICAL_FILL` deferral check and the pressure signals the `stepBoundary` nudges read lag
+  one step, so a step's tool results went out untrimmed (a code review on a 65K LM Studio load
+  sent 58,757 tokens against a 49,152-token trim line). The loop therefore records each
+  measurement with the last history message its request carried (`InputMeasurement`), and
+  sizing adds the estimates of every message after it; when that message is no longer in the
+  history (trimmed, or the measurement came from a concurrent subagent's loop) sizing falls back
+  to the estimate. Pressure therefore reads one step earlier than before — it was undercounting
+  by exactly that step — so `loop-nudge` and `stuck-finalize` may fire a step sooner under real
+  pressure. Thresholds, the deferral rule and the once-per-run flags are unchanged. The
+  stuck-finalize forced turn still runs before the soft trim, so that one request can exceed the
+  trim line by a step's results.
 
 ## Codebase impact
 

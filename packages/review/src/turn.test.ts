@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { setTimeout } from 'node:timers/promises'
 import type { LLMProvider, ProviderStreamChunk } from '@copse/llm/wire-types.ts'
 import { ScriptedProvider } from './scripted-provider.ts'
-import { runTurn } from './turn.ts'
+import { REVIEW_CONTEXT_FILL, runTurn } from './turn.ts'
 
 it('separates tool wall time from model waits in a real review turn', async () => {
   const scripted = new ScriptedProvider([
@@ -112,8 +112,14 @@ it("trims its oldest investigation steps to the model's context, keeping the rev
   const trimmed = await turn(16_000)
   assert.match(lastRequest(trimmed), /Review this diff\./)
   // Later steps still ran and reached the model; only the oldest were dropped.
-  assert.ok(trimmed.calls.some((call) => JSON.stringify(call).includes('\\"part\\":4')))
+  assert.ok(trimmed.calls.some((call) => JSON.stringify(call).includes('\\"part\\":3')))
   assert.doesNotMatch(lastRequest(trimmed), /\\"part\\":0/)
   // No request the server receives outgrows the window, so it never cuts one.
   assert.ok(Math.max(...requestSizes(trimmed)) <= 16_000, String(requestSizes(trimmed)))
+  // Nor the share of it the loop may fill: sizing counts the step results added
+  // since the last measured request, so a step's reads are trimmed before they go.
+  assert.ok(
+    Math.max(...requestSizes(trimmed)) <= 16_000 * REVIEW_CONTEXT_FILL,
+    String(requestSizes(trimmed)),
+  )
 })

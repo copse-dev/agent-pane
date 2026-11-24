@@ -18,8 +18,8 @@ import {
   replayWindow,
   repairToolUseToolResultPairing,
   CANCELLED_TOOL_RESULT,
-  getLastMeasuredInputTokens,
-  setLastMeasuredInputTokens,
+  getLastInputMeasurement,
+  setLastInputMeasurement,
 } from './trim-history.ts'
 import type { TodoItem } from './wire-types.ts'
 import {
@@ -473,11 +473,13 @@ function emitStepUsage(
   streamUsage: StepUsage | null,
   getLastUsage: (() => StepUsage | null) | undefined,
   onChunk: (chunk: AgentStreamChunk) => void,
-  usageModel?: string,
+  usageModel: string | undefined,
+  /** The last history message the measured request carried. */
+  requestThrough: LLMMessage | undefined,
 ): void {
   const usage = streamUsage ?? getLastUsage?.()
-  if (usage?.inputTokens) {
-    setLastMeasuredInputTokens(usage.inputTokens)
+  if (usage?.inputTokens && requestThrough !== undefined) {
+    setLastInputMeasurement({ tokens: usage.inputTokens, through: requestThrough })
   }
   if (usage && (usage.inputTokens || usage.outputTokens) && usageModel) {
     onChunk({
@@ -582,6 +584,8 @@ async function streamTextOnlyTurn(
   const signal = budget.signal
   const turnMessages: LLMMessage[] =
     nudge === null ? [...messages] : [...messages, { role: 'user', content: nudge }]
+  // The nudge is not kept in history, so the measurement ends at the history's tail.
+  const requestThrough = messages.at(-1)
   let assistantText = ''
   const pendingToolCalls: ToolCallChunk[] = []
   let stopReason: string | undefined
@@ -655,7 +659,7 @@ async function streamTextOnlyTurn(
       role: 'assistant',
       content: pendingToolCalls.map((tc) => ({ id: tc.id, name: tc.name, args: tc.args })),
     })
-    emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
+    emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel, requestThrough)
     return { answerText: '', pendingToolCalls, retryAfterTruncation: false }
   }
 
@@ -664,20 +668,20 @@ async function streamTextOnlyTurn(
     const text = trimmed || REFUSAL_USER_MESSAGE
     if (!trimmed) onChunk({ type: 'text', text })
     messages.push({ role: 'assistant', content: text })
-    emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
+    emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel, requestThrough)
     return { answerText: text, pendingToolCalls: [], retryAfterTruncation: false }
   }
   const truncationNudge = await resolveTruncationNudge?.(stopReason)
   if (truncationNudge !== undefined) {
     if (trimmed) messages.push({ role: 'assistant', content: assistantText })
     messages.push({ role: 'user', content: truncationNudge })
-    emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
+    emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel, requestThrough)
     return { answerText: '', pendingToolCalls: [], retryAfterTruncation: true }
   }
   if (trimmed) {
     messages.push({ role: 'assistant', content: assistantText })
   }
-  emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
+  emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel, requestThrough)
   return { answerText: trimmed, pendingToolCalls: [], retryAfterTruncation: false }
 }
 
@@ -729,6 +733,7 @@ async function runToolEnabledNudgeTurn(
   // and each later closeout attempt would stack another user message on it.
   if (!reserveLlmCall(budget)) return { answerText: '', executedTools: false }
   messages.push({ role: 'user', content: nudge })
+  const requestThrough = messages.at(-1)
 
   let assistantText = ''
   const pendingToolCalls: ToolCallChunk[] = []
@@ -775,7 +780,7 @@ async function runToolEnabledNudgeTurn(
     budget.deadline.resume()
   }
   recordRunActivity(budget)
-  emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
+  emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel, requestThrough)
 
   assistantText = applyTextToolCallRecovery(
     assistantText,
@@ -944,11 +949,11 @@ type SettledToolExecution =
  * immediately so an early rejection can't raise an unhandled rejection while
  * the loop is still on an earlier call.
  *
- * Note: concurrent subagents share the `lastMeasuredInputTokens` global, so a
- * subagent's trim heuristic may read a sibling's measurement. Explore
- * histories are small (≤10 steps) and the parent's snapshot/restore around
- * the batch is unaffected, so the worst case is a slightly early/late trim
- * inside one subagent.
+ * Note: concurrent subagents share the `lastInputMeasurement` global, so a
+ * subagent may find a sibling's measurement there. It is anchored to the
+ * sibling's own history message, which this subagent's history does not hold,
+ * so the subagent then sizes by estimate; the parent's snapshot/restore around
+ * the batch is unaffected.
  */
 function startLeadingParallelExplores(
   ctx: ToolBatchContext,
@@ -1020,7 +1025,7 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
     consecutiveExploreWithoutRead,
     repeatVerification,
   } = ctx
-  const measuredInputBeforeTools = getLastMeasuredInputTokens()
+  const measuredInputBeforeTools = getLastInputMeasurement()
   const toolResults: ToolResult[] = []
   budget.deadline.pause()
   try {
@@ -1152,7 +1157,7 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
     budget.deadline.resume()
   }
 
-  setLastMeasuredInputTokens(measuredInputBeforeTools)
+  setLastInputMeasurement(measuredInputBeforeTools)
 
   if (toolResults.length > 0) {
     messages.push({ role: 'tool', toolResults })
@@ -1190,7 +1195,7 @@ function handleContextOverflowInLoop(
 }
 
 export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
-  setLastMeasuredInputTokens(null)
+  setLastInputMeasurement(null)
   const {
     provider,
     messages,
@@ -1622,6 +1627,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     let stopReason: string | undefined
     let malformedToolCall: MalformedToolCallInfo | undefined
     let streamUsage: StepUsage | null = null
+    let requestThrough: LLMMessage | undefined
 
     if (!reserveLlmCall(budget)) {
       runLimitStopReason = runBudgetStopReason(budget)
@@ -1695,6 +1701,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
             }
           : undefined
       initialToolChoice = undefined
+      requestThrough = messages.at(-1)
       for await (const chunk of provider.stream(messages, tools, signal, streamOptions)) {
         if (signal?.aborted) break
         if (chunk.type === 'reasoning') {
@@ -1893,7 +1900,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     }
     recordRunActivity(budget)
 
-    emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
+    emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel, requestThrough)
 
     if (maxContextTokens) {
       emitContextPressure(
@@ -2226,7 +2233,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     }
 
     // Execute tools and collect results. A tool may run a nested agent loop
-    // (explore subagent, local todo worker), and `setLastMeasuredInputTokens`
+    // (explore subagent, local todo worker), and `setLastInputMeasurement`
     // is a module global that the nested loop resets and repopulates with its
     // own stream sizes. Snapshot this loop's measured input here and restore it
     // after the tools finish so the next iteration's trim/escalation sizing
