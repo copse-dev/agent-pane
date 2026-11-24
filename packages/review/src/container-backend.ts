@@ -294,9 +294,11 @@ export function appleCellShortfall(input: ContainerRunInput, inspectJson: string
   if (container === undefined) return 'container inspect did not describe the container'
   const config = container.configuration
   if (!config.capDrop.some((cap) => cap.toUpperCase() === 'ALL')) {
-    return 'capabilities were not dropped'
+    return 'the container kept its Linux privileges (--cap-drop ALL was not applied)'
   }
-  if (config.capAdd.length > 0) return `capabilities were added: ${config.capAdd.join(', ')}`
+  if (config.capAdd.length > 0) {
+    return `the container was given extra Linux privileges: ${config.capAdd.join(', ')}`
+  }
   if (!config.readOnly) return 'the root filesystem is writable'
   if (config.networks.length > 0) return 'the container is attached to a network'
   if (input.user !== null) {
