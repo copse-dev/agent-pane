@@ -23,6 +23,8 @@ import {
   planTranscriptRows,
   relinkReadingAnchor,
   removeTranscriptRow,
+  rowCardElement,
+  rowParts,
   sameExceptTurnOutcome,
   transcriptRowElement,
   type TranscriptRow,
@@ -575,6 +577,23 @@ describe('applyTranscriptRowPlan', () => {
     assert.ok(list.children[1] !== b, 'the changed row is rebuilt')
     assert.equal(list.children[1]?.textContent, 'b-new')
     assert.equal(c.isConnected, false)
+  })
+
+  it("finds a row's cards among the siblings it anchors, not elsewhere in the list", () => {
+    const list = document.createElement('div')
+    const a = row('a')
+    const recovery = card('data-turn-recovery-for', 'a')
+    const review = card('data-review-for', 'a')
+    const b = row('b')
+    // A card for `a` that is not among `a`'s anchored siblings is not `a`'s.
+    const stray = card('data-hook-cards-for', 'a')
+    list.append(a, recovery, review, b, stray)
+    assert.ok(rowCardElement(a, 'data-turn-recovery-for', 'a') === recovery)
+    assert.ok(rowCardElement(a, 'data-review-for', 'a') === review)
+    assert.equal(rowCardElement(a, 'data-hook-cards-for', 'a'), null)
+    assert.equal(rowCardElement(b, 'data-review-for', 'b'), null)
+    assert.deepEqual(rowParts(a, 'a'), [a, recovery, review])
+    assert.deepEqual(rowParts(b, 'b'), [b])
   })
 
   it('rebuilds a row with cards before the node that followed them', () => {

@@ -1,9 +1,11 @@
 # Remote access: a trusted name for your Mac
 
-**Status: phase 1, invite-only beta.** A Mac can get a publicly trusted name for its
+**Status: invite-only beta.** Phase 1: a Mac can get a publicly trusted name for its
 [Mobile Companion](plans/mobile-web-experience.md), so a phone on the same network opens it with
-no certificate to install. Reaching the Mac from outside its network (a relay, and pairing through
-`copse.me`) is phase 2 and not built.
+no certificate to install. Phase 2: the Mac can also be reached from outside its network through
+the Copse relay, with phones added at `copse.me` ([below](#from-anywhere-the-relay-and-copseme)).
+Phase 2 is off by default and works once the relay (`relay.copse.dev`) and the `copse.me` shell
+are live.
 
 ## What it does
 
@@ -21,6 +23,107 @@ random twelve-character label. From then on Copse:
 Because the certificate is publicly trusted, the phone's browser verifies the connection itself.
 Pairing over the name grants control on the desktop approval alone; the local-root acknowledgement
 the LAN-IP path needs does not apply (this supersedes decision 11 of the LAN plan for that path).
+
+## From anywhere: the relay and copse.me
+
+Trusted address → **Reach this Mac from anywhere through copse.me** turns it on; it stays off
+until chosen, and Remove name turns it off again. While it is on, Mobile Companion is running and
+the name is active with a valid certificate, Copse holds one outbound TLS connection to
+`relay.copse.dev`, and phones added at `copse.me` reach the Mac as `web.<label>.u.copse.me`.
+
+### The tunnel
+
+1. Copse opens TLS to the relay, verified against the relay's own publicly trusted certificate.
+2. The relay sends a random challenge; Copse signs `copse-tunnel-v1`, the label, the challenge and
+   a timestamp with the device key, and the relay verifies it against the key the names service
+   holds for the label (five minutes of clock skew).
+3. Copse then serves HTTP/2 on the connection with the relay as the client. Each browser
+   connection is one `CONNECT` stream for `web.<label>.u.copse.me:443` that carries the address
+   the relay saw (`copse-client-ip`) and, as its body, the browser's TLS bytes from the
+   ClientHello on. Copse refuses any other stream.
+4. Copse completes each browser's TLS with its own `*.<label>.u.copse.me` certificate, whose key
+   the relay and the names service never see, and serves the Mobile Companion over it.
+
+Copse pings the relay every 25 seconds and closes a tunnel that misses a ping; it reconnects
+after a drop or a refusal from one second, doubling to five minutes with jitter. A newer tunnel
+for a label replaces an older one at the relay. Settings shows the tunnel's state and why the last
+attempt ended. The formats are `packages/remote-protocol/src/tunnel.ts`; the client is
+`src/main/services/remote-names/relay-tunnel.ts`, and relayed connections are served by
+`src/main/services/mobile/relay-ingress.ts`.
+
+### Who can reach the Mac, and who can act on it
+
+Two credentials, held apart:
+
+- **Reach** is the relay's gate. It admits a browser only from a source address that a
+  `copse.me` account added to this Mac refreshed in the last few minutes. An account is added
+  with a grant: **Add this Mac at copse.me** shows a QR for `https://copse.me/add#g=<grant>`, a
+  label grant signed by the device key, valid for ten minutes and redeemed once by the names API.
+  The grant sits in the URL fragment, so it never reaches a server log. **Done** only hides the
+  QR: the code stays redeemable for the rest of its ten minutes. **Remove name** ends every
+  `copse.me` account's reach to this Mac, because the label is retired with it.
+- **Control** stays with the Mac. A relayed request must name exactly `web.<label>.u.copse.me`
+  in `Host` (and its origin in `Origin`); there is no private-peer check, because the peer is the
+  relay. Every route past pairing needs a device token, and pairing needs the desktop's approval:
+  the pairing banner says the phone came through the Copse relay. That is all the Mac knows: the
+  shell also falls back to the relay on the Mac's own network. Relayed pairing has its own slot,
+  and a relayed request never displaces one from the local network on the desktop, so a client
+  the relay admits cannot keep a phone at the desk from pairing. Failed-token limits are keyed to
+  the address the relay reported (at most 1,024 remembered); a relayed pairing result goes to
+  whoever holds its random id, because a phone's address can change between its request and
+  its polls.
+
+The usual journey, at the desk: get a name, turn the relay on, choose Add this Mac at copse.me,
+scan the QR, sign in at `copse.me` with a passkey and add the Mac. The shell frames the Mac's page;
+pair the phone there and approve it on the desktop. Away from the desk, open `copse.me`.
+
+A device token is accepted on every route this Mac serves. Once the relay is on, a phone paired
+on the local network can also act through the relay, and a phone paired through the relay can act
+on the local network; Settings does not show which route a phone paired on. Revoking a phone in
+Settings cuts it off on every route. What is per-origin is the phone's browser storage: a phone
+paired at the local address or at `lan.` keeps its token there, pairs once more the first time it
+uses `web.`, and pairs again if it clears the site's data.
+
+### Framing and what crosses into the shell
+
+Only while the relay is chosen do responses under a trusted name (`lan.` or `web.`) send
+`frame-ancestors https://copse.me` and no `X-Frame-Options`, so the shell and nothing else may
+frame them; the diagram frame admits its own origin and the shell. With the relay off, and always
+on the bare-IP address, every response keeps `frame-ancestors 'none'` and `X-Frame-Options: DENY`.
+Framing is the one relaxation of the LAN plan's header rule, which exists against clickjacking of
+the decision screen: a compromised shell could overlay its own page on the framed Mac page and
+trick taps on Approve. See the [threat model](threat-model.md#threat-scenarios), scenario 12.
+When the shell frames the page, the page posts one message to `https://copse.me`:
+`{type: 'copse-status', v: 1, state, counts: {attention, running}}`. It carries no thread names,
+transcripts, diffs or file names, and the page never reads messages from the shell. The shell
+reads the message's arrival as proof that the frame reached the Mac.
+
+### What the relay sees
+
+| The relay sees                                                                  | Never visible to the relay                      |
+| ------------------------------------------------------------------------------- | ----------------------------------------------- |
+| The label, the tunnel's signature, and the Mac's public IP and connection times | The device key and the TLS key                  |
+| Each phone's public IP, when it connects, and how many bytes pass each way      | Anything inside a browser's TLS                 |
+| The server name in each browser's ClientHello (`web.<label>.u.copse.me`)        | Device tokens, threads, messages, pairing codes |
+
+The `copse.me` shell keeps an account's passkey, the labels it added and their reach refreshes;
+it never holds a device token or session content. The Mac never sends anything to the shell's
+servers; the status message stays in the phone's browser.
+
+### Limits and known gaps
+
+- The Mac must be awake with Copse open; the relay cannot wake it.
+- The tunnel connects directly and ignores HTTP proxy settings, so a network that lets traffic
+  out only through a proxy cannot hold it.
+- Inside the shell, the frame tries `https://lan.<label>.u.copse.me:42773/` first, and falls back
+  to `web.` through the relay if the page has not reported within four seconds. Chrome may first
+  ask to allow access to the local network; declining sends the shell straight to the relay.
+- Content-free push (`POST /v1/attention`, "Copse needs your attention") exists on the service;
+  Copse does not send it yet.
+- `COPSE_RELAY` (`host[:port]`) in the environment Copse starts with points the tunnel at another
+  relay deployment, beside `COPSE_NAMES_API_URL`. Like it, it is not a Settings field. A wrong
+  relay cannot read relayed traffic, since browsers' TLS ends on the Mac, but it could hold the
+  tunnel and drop connections.
 
 ## What the names service sees, and what it never sees
 
@@ -67,9 +170,9 @@ the Mac just generated and is currently valid.
   the registration and the certificate on the Mac. A later registration gets a new key and label.
 
 State lives in `~/.copse/names/` (0700): `device.json` (the sealed device key, the registration,
-the last address the service accepted, recent order times and certificate dates), and
-`tls-key.pem` / `tls-chain.pem` (0600). It is kept apart from `config.json`, which renderer
-settings writes can reach.
+the last address the service accepted, recent order times and certificate dates),
+`tls-key.pem` / `tls-chain.pem`, and `relay.json` (whether the relay is chosen), all 0600. It is
+kept apart from `config.json`, which renderer settings writes can reach.
 
 ## Networks whose DNS drops the name
 
@@ -104,3 +207,9 @@ mistaken service could:
 
 It cannot read or alter anything between a phone and the Mac when its records are honest, and it
 never holds a key that decrypts Mobile Companion traffic.
+
+The relay and the `copse.me` shell are further parties, covered by scenario 12 of the threat
+model: the relay can deny service, see connection metadata and hand strangers' connections to the
+Mac's page, which still needs a device token or the desktop's approval. The shell holds no device
+token of its own, but while the relay is chosen it frames a page that may: a compromised shell
+could show a fake page around the frame or overlay it to trick taps on the decision screen.

@@ -4,6 +4,7 @@ import { installComposerFocus } from './composer-focus.js'
 import { RemoteChatClient } from '../renderer/remote/client.ts'
 import { ConditionalReads, conditionalGet } from '../renderer/remote/conditional-reads.ts'
 import { mobileTranscriptMessages } from '../main/services/mobile/mobile-transcript.ts'
+import { shellStatus, shellStatusTarget } from '../shared/copse-shell-status.ts'
 
 const pair = document.getElementById('pair')
 const activity = document.getElementById('activity')
@@ -26,6 +27,13 @@ applyTheme()
 systemTheme.addEventListener('change', applyTheme)
 
 let token = localStorage.getItem('copse-mobile-token')
+// Framed by the copse.me shell under a trusted name: tell it this Mac answered,
+// and how many threads need attention or are running. Nothing else crosses.
+const shellOrigin = shellStatusTarget(location.hostname, window.parent !== window)
+
+function reportToShell(rows) {
+  if (shellOrigin) window.parent.postMessage(shellStatus(rows), shellOrigin)
+}
 let selected = null
 let sessionId = null
 let access = 'read'
@@ -513,6 +521,7 @@ async function refresh() {
     }
     lastActivityRows = data.rows
     renderGroups(data.rows)
+    reportToShell(data.rows)
     document.getElementById('freshness').textContent = freshness(data.refreshedAt)
     show(activity)
   } catch (cause) {
@@ -1161,6 +1170,7 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) poll()
 })
 
+reportToShell([])
 if (!history.state?.mobileView) history.replaceState({ mobileView: 'activity' }, '')
 show(token ? activity : pair)
 if (token && history.state?.mobileView === 'thread' && history.state.row)

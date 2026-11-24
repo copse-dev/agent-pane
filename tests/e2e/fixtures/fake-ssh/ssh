@@ -11,6 +11,8 @@
 #   master     present while the control master is "up"
 #   host-down  present while the host is unreachable; a spec creates and
 #              removes it to drop and restore the link
+#   home       if present, the remote account's home directory (its contents
+#              are the path); otherwise the local $HOME is reported
 state="${COPSE_E2E_FAKE_SSH_STATE:?fake ssh needs COPSE_E2E_FAKE_SSH_STATE}"
 
 # Control commands talk to the local master only; they never reach the host.
@@ -51,4 +53,8 @@ case "$remote_command" in
     ;;
 esac
 
+if [ -e "$state/home" ]; then
+  HOME="$(cat "$state/home")"
+  export HOME
+fi
 exec /bin/sh -c "$remote_command"
