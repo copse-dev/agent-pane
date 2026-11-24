@@ -1,13 +1,14 @@
 import { spawn } from 'node:child_process'
 import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { access, mkdtemp, mkdir, readFile, realpath, rm } from 'node:fs/promises'
+import { access, mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
 import {
   APPLE_CONTAINER_ENGINE,
+  appleCellShortfall,
   appleCreateArgs,
   containerCreateArgs,
   createContainerBackend,
@@ -599,6 +600,107 @@ describe('container backend', () => {
       assert.ok(record.flags.includes('--network') && record.flags.includes('none'))
       assert.deepEqual(record.argv, [process.execPath, '-e', 'console.log(process.cwd())'])
       await access(join(registry, 'apple-cell.removed'))
+    })
+
+    it('refuses to run in a cell whose walls do not read back, and runs nothing', async () => {
+      // An engine that accepted --read-only and did not apply it.
+      await writeFile(join(registry, 'inspect-override.json'), JSON.stringify({ readOnly: false }))
+      const marker = join(scratch, 'ran-in-a-writable-cell')
+      try {
+        await assert.rejects(
+          cell.run({
+            target: 'head',
+            argv: [
+              process.execPath,
+              '-e',
+              `require('fs').writeFileSync(${JSON.stringify(marker)}, 'ran')`,
+            ],
+            timeoutMs: 30_000,
+            maxOutputBytes: 1024,
+          }),
+          /Apple container did not create the review cell as asked \(the root filesystem is writable\)/,
+        )
+        await assert.rejects(access(marker), /ENOENT/)
+        await access(join(registry, 'apple-cell.removed'))
+      } finally {
+        await rm(join(registry, 'inspect-override.json'), { force: true })
+      }
+    })
+
+    it('reads back each mount and its access mode', () => {
+      const input: ContainerRunInput = {
+        name: 'apple-cell',
+        image: FAKE_IMAGE,
+        labels: {},
+        user: { uid: 501, gid: 20 },
+        limits: DEFAULT_CONTAINER_LIMITS,
+        writable: ['/scratch/head'],
+        readOnly: ['/store'],
+        cwd: '/scratch/head',
+        env: {},
+        argv: ['true'],
+      }
+      const inspect = (mounts: unknown[]): string =>
+        JSON.stringify([
+          {
+            configuration: {
+              capAdd: [],
+              capDrop: ['ALL'],
+              readOnly: true,
+              networks: [],
+              useInit: true,
+              ssh: false,
+              virtualization: false,
+              publishedPorts: [],
+              publishedSockets: [],
+              labels: {},
+              resources: { cpus: 2, memoryInBytes: 4 * 1024 ** 3 },
+              initProcess: {
+                user: { raw: { userString: '501:20' } },
+                rlimits: [{ limit: 'RLIMIT_NPROC', soft: 512, hard: 512 }],
+              },
+              mounts,
+            },
+          },
+        ])
+      const tmp = {
+        destination: '/tmp',
+        source: 'tmpfs',
+        options: ['rw', 'nosuid', 'nodev'],
+        type: { tmpfs: {} },
+      }
+      const head = {
+        destination: '/scratch/head',
+        source: '/scratch/head',
+        options: [],
+        type: { virtiofs: {} },
+      }
+      const store = (options: string[]): unknown => ({
+        destination: '/store',
+        source: '/store',
+        options,
+        type: { virtiofs: {} },
+      })
+      assert.equal(appleCellShortfall(input, inspect([tmp, head, store(['ro'])])), null)
+      assert.equal(
+        appleCellShortfall(input, inspect([tmp, head, store([])])),
+        'the mount at /store is not the one asked for',
+      )
+      assert.equal(
+        appleCellShortfall(input, inspect([tmp, head])),
+        'the mount at /store is missing',
+      )
+      assert.equal(
+        appleCellShortfall(
+          input,
+          inspect([tmp, head, store(['ro']), { ...head, destination: '/home' }]),
+        ),
+        'unexpected mount at /home',
+      )
+      assert.equal(
+        appleCellShortfall(input, 'not json'),
+        'container inspect did not describe the container',
+      )
     })
   })
 })

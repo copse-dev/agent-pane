@@ -59,6 +59,54 @@ if (verb === 'rm' || verb === 'delete') {
   process.exit(0)
 }
 
+if (verb === 'inspect') {
+  // Apple container's read-back: the configuration the create flags asked for,
+  // as Apple container reports it. inspect-override.json in the registry
+  // stands in for an engine that accepted a flag and did not apply it.
+  const name = rest[rest.length - 1]
+  let data
+  try { data = JSON.parse(fs.readFileSync(path.join(registry, name + '.json'), 'utf8')) } catch {
+    process.stderr.write('Error: container not found: ' + name + '\\n')
+    process.exit(1)
+  }
+  const f = data.flags
+  const values = (flag) => f.flatMap((value, index) => (f[index - 1] === flag ? [value] : []))
+  const one = (flag) => values(flag)[0]
+  const nproc = (one('--ulimit') || '').replace('nproc=', '').split(':').map(Number)
+  const memory = one('--memory') || ''
+  const units = { k: 1024, m: 1024 ** 2, g: 1024 ** 3, t: 1024 ** 4 }
+  const memoryInBytes = Number(memory.slice(0, -1)) * (units[memory.slice(-1).toLowerCase()] || 1)
+  const mounts = [
+    ...values('--tmpfs').map((spec) => {
+      const at = spec.indexOf(':')
+      return { destination: spec.slice(0, at), source: 'tmpfs', options: spec.slice(at + 1).split(','), type: { tmpfs: {} } }
+    }),
+    ...values('--volume').map((spec) => {
+      const [source, destination, mode] = spec.split(':')
+      return { destination, source, options: mode === 'ro' ? ['ro'] : [], type: { virtiofs: {} } }
+    }),
+  ]
+  const configuration = {
+    capAdd: [],
+    capDrop: values('--cap-drop'),
+    readOnly: f.includes('--read-only'),
+    networks: one('--network') === 'none' ? [] : ['default'],
+    useInit: f.includes('--init'),
+    ssh: false,
+    virtualization: false,
+    publishedPorts: [],
+    publishedSockets: [],
+    labels: Object.fromEntries(values('--label').map((label) => [label.slice(0, label.indexOf('=')), label.slice(label.indexOf('=') + 1)])),
+    resources: { cpus: Number(one('--cpus')), memoryInBytes },
+    initProcess: { user: { raw: { userString: one('--user') || '0:0' } }, rlimits: [{ limit: 'RLIMIT_NPROC', soft: nproc[0], hard: nproc[1] }] },
+    mounts,
+  }
+  const override = path.join(registry, 'inspect-override.json')
+  if (fs.existsSync(override)) Object.assign(configuration, JSON.parse(fs.readFileSync(override, 'utf8')))
+  process.stdout.write(JSON.stringify([{ configuration, status: { state: 'stopped' } }]))
+  process.exit(0)
+}
+
 if (verb === 'start') {
   const name = rest[rest.length - 1]
   if (!fs.existsSync(path.join(registry, name + '.active'))) process.exit(125)

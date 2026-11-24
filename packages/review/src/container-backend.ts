@@ -25,8 +25,10 @@ import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
+import { z } from 'zod'
 import { errorMessage } from '@copse/std/errors.ts'
 import { memberOf } from '@copse/std/member-of.ts'
+import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import type {
   CellCommand,
   CellCommandResult,
@@ -234,6 +236,125 @@ export function appleCreateArgs(input: ContainerRunInput): string[] {
 /** Maximum time to remove a container before terminating the attach client too. */
 const KILL_GRACE_MS = 5_000
 
+const appleInspectSchema = z
+  .array(
+    z.object({
+      configuration: z.object({
+        capAdd: z.array(z.string()),
+        capDrop: z.array(z.string()),
+        readOnly: z.boolean(),
+        networks: z.array(z.unknown()),
+        useInit: z.boolean(),
+        ssh: z.boolean(),
+        virtualization: z.boolean(),
+        publishedPorts: z.array(z.unknown()),
+        publishedSockets: z.array(z.unknown()),
+        labels: z.record(z.string(), z.string()),
+        resources: z.object({ cpus: z.number(), memoryInBytes: z.number() }),
+        initProcess: z.object({
+          user: z.object({ raw: z.object({ userString: z.string() }) }),
+          rlimits: z.array(z.object({ limit: z.string(), soft: z.number(), hard: z.number() })),
+        }),
+        mounts: z.array(
+          z.object({
+            destination: z.string(),
+            source: z.string(),
+            options: z.array(z.string()),
+            type: z.record(z.string(), z.unknown()),
+          }),
+        ),
+      }),
+    }),
+  )
+  .length(1)
+type AppleMount = z.infer<typeof appleInspectSchema>[number]['configuration']['mounts'][number]
+
+/** `4g` → bytes, as Apple container records `--memory`. */
+function limitBytes(limit: string): number | null {
+  const match = /^(\d+)([kmgt]?)$/i.exec(limit)
+  if (!match) return null
+  const exponent = ['', 'k', 'm', 'g', 't'].indexOf((match[2] ?? '').toLowerCase())
+  return Number(match[1]) * 1024 ** exponent
+}
+
+/**
+ * Why the container Apple container created is not the cell the backend asked
+ * for, from `container inspect`; null when every wall reads back. Apple
+ * container can accept an option and not apply it
+ * (`docs/plans/thread-in-container.md`), and a review cell runs the most
+ * hostile code in the repository, so nothing runs in one that does not read
+ * back: capabilities, read-only root, no network, the user, the process,
+ * CPU and memory limits, no SSH agent or nested virtualization, nothing
+ * published, the init process, the labels, and exactly the mounts asked for
+ * with their access modes. Ported from the thread runtime's
+ * `appleConfigShortfall`.
+ */
+export function appleCellShortfall(input: ContainerRunInput, inspectJson: string): string | null {
+  const container = safeJsonParse(inspectJson, decodeWithSchema(appleInspectSchema))?.[0]
+  if (container === undefined) return 'container inspect did not describe the container'
+  const config = container.configuration
+  if (!config.capDrop.some((cap) => cap.toUpperCase() === 'ALL')) {
+    return 'capabilities were not dropped'
+  }
+  if (config.capAdd.length > 0) return `capabilities were added: ${config.capAdd.join(', ')}`
+  if (!config.readOnly) return 'the root filesystem is writable'
+  if (config.networks.length > 0) return 'the container is attached to a network'
+  if (input.user !== null) {
+    const user = `${String(input.user.uid)}:${String(input.user.gid)}`
+    if (config.initProcess.user.raw.userString !== user) {
+      return `the cell runs as ${config.initProcess.user.raw.userString}, not ${user}`
+    }
+  }
+  const nproc = config.initProcess.rlimits.find((limit) => limit.limit === 'RLIMIT_NPROC')
+  if (nproc?.soft !== input.limits.pids || nproc.hard !== input.limits.pids) {
+    return 'the process limit was not applied'
+  }
+  if (config.resources.cpus !== input.limits.cpus) return 'the CPU limit was not applied'
+  if (config.resources.memoryInBytes !== limitBytes(input.limits.memory)) {
+    return 'the memory limit was not applied'
+  }
+  if (config.ssh) return 'the host SSH agent is forwarded'
+  if (config.virtualization) return 'nested virtualization is exposed'
+  if (config.publishedPorts.length > 0 || config.publishedSockets.length > 0) {
+    return 'a port or socket is published to the host'
+  }
+  if (!config.useInit) return 'the init process is missing'
+  for (const [key, value] of Object.entries(input.labels)) {
+    if (config.labels[key] !== value) return 'the container is not labelled as this cell'
+  }
+  const hasType = (mount: AppleMount, type: string): boolean =>
+    Object.keys(mount.type).length === 1 && Object.hasOwn(mount.type, type)
+  const hasMode = (mount: AppleMount, mode: 'ro' | 'rw'): boolean =>
+    !mount.options.includes(mode === 'ro' ? 'rw' : 'ro') &&
+    (mode === 'rw' || mount.options.includes('ro'))
+  const hostMount =
+    (path: string, mode: 'ro' | 'rw') =>
+    (mount: AppleMount): boolean =>
+      hasType(mount, 'virtiofs') && mount.source === path && hasMode(mount, mode)
+  const expected = new Map<string, (mount: AppleMount) => boolean>([
+    [
+      '/tmp',
+      (mount): boolean =>
+        hasType(mount, 'tmpfs') &&
+        !mount.options.includes('ro') &&
+        mount.options.includes('nosuid') &&
+        mount.options.includes('nodev'),
+    ],
+  ])
+  for (const path of new Set(input.writable)) expected.set(path, hostMount(path, 'rw'))
+  for (const path of new Set(input.readOnly)) expected.set(path, hostMount(path, 'ro'))
+  const seen = new Set<string>()
+  for (const mount of config.mounts) {
+    const check = expected.get(mount.destination)
+    if (check === undefined) return `unexpected mount at ${mount.destination}`
+    if (seen.has(mount.destination)) return `duplicate mount at ${mount.destination}`
+    if (!check(mount)) return `the mount at ${mount.destination} is not the one asked for`
+    seen.add(mount.destination)
+  }
+  const missing = [...expected.keys()].find((destination) => !seen.has(destination))
+  return missing === undefined ? null : `the mount at ${missing} is missing`
+}
+
 /** The engine command that force-removes container `name`, as `[file, args]`. */
 export function containerRemovalArgv(
   engine: ContainerEngine,
@@ -365,6 +486,29 @@ class ContainerCell implements ExecutionCell {
       )
       command.signal?.throwIfAborted()
       if (created.exitCode !== 0 || created.timedOut) return created
+      if (this.dialect === 'apple') {
+        const [inspectFile, inspectArgs] = this.engineArgv(['inspect', input.name])
+        const inspected = await collectProcess(
+          this.spawn(inspectFile, inspectArgs, { stdio: ['ignore', 'pipe', 'pipe'] }),
+          {
+            ...command,
+            signal: undefined,
+            timeoutMs: DETECT_TIMEOUT_MS,
+            maxOutputBytes: 1024 * 1024,
+            retainLinePrefixes: [],
+          },
+        )
+        const shortfall =
+          inspected.exitCode === 0
+            ? appleCellShortfall(input, inspected.output)
+            : `container inspect failed: ${inspected.output.trim()}`
+        // Fails closed: the change never runs in a cell missing a wall.
+        if (shortfall !== null) {
+          throw new Error(
+            `Apple container did not create the review cell as asked (${shortfall}); refusing to run the change in it`,
+          )
+        }
+      }
       const remaining = command.timeoutMs - (Date.now() - started)
       if (command.timeoutMs > 0 && remaining <= 0) {
         return { ...created, exitCode: null, timedOut: true }
