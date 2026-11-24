@@ -42,6 +42,19 @@ installRemoteReadRelay()
 const api: ApiClient = {
   remote: {
     publish: (view) => ipcRenderer.invoke('remote:publish', view),
+    watched: () => ipcRenderer.invoke('remote:watched'),
+    onWatchedChanged: (handler) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        watched: import('@shared/remote-interface.ts').RemoteWatchedThread[],
+      ): void => {
+        handler(watched)
+      }
+      ipcRenderer.on('remote:watched-changed', listener)
+      return () => {
+        ipcRenderer.off('remote:watched-changed', listener)
+      }
+    },
   },
   clientActions: {
     claim: (id) => ipcRenderer.invoke('client-actions:claim', id),

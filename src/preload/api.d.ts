@@ -216,6 +216,11 @@ export interface ApiClient {
   remote: {
     /** Publish the desktop-owned live view to authenticated remote clients. */
     publish: (view: import('@shared/remote-interface.ts').RemoteView) => Promise<void>
+    /** The threads remote clients are showing; only these are published with transcripts. */
+    watched: () => Promise<import('@shared/remote-interface.ts').RemoteWatchedThread[]>
+    onWatchedChanged: (
+      handler: (watched: import('@shared/remote-interface.ts').RemoteWatchedThread[]) => void,
+    ) => () => void
   }
   chatGptPlan: import('@shared/types/chatgpt-plan.ts').ChatGptPlanClient
   mobile: {
