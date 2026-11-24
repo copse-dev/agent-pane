@@ -818,6 +818,16 @@ export async function runStage0Checks(
     notChecked.push({ kind, reason })
   }
 
+  // A suite that failed (a missing tool in its `before` hook) cancels its
+  // tests on both sides alike: they count as accounted for, never as compared.
+  const notRun = headRuns.runs.get('test')?.testFailures?.notRun ?? 0
+  if (notRun > 0 && checked.includes('test')) {
+    notChecked.push({
+      kind: 'test',
+      reason: `${String(notRun)} test(s) on head did not run, because a suite above them failed; they were not compared`,
+    })
+  }
+
   return {
     ...skeleton,
     preparation: {

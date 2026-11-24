@@ -151,6 +151,11 @@ export default async function* reviewTestReporter(
     complete: true,
     failed: failed === undefined ? undefined : failed + suiteFailures + timedOut,
     failures,
+    // Only when a failed suite cancelled something, so an ordinary run's
+    // inventory keeps its shape.
+    ...(cancelled.some((entry) => !entry.suite)
+      ? { notRun: cancelled.filter((entry) => !entry.suite).length }
+      : {}),
   })
   if (valid && report.success)
     yield `\n${TEST_FAILURE_REPORT_PREFIX}${JSON.stringify(report.data)}\n`

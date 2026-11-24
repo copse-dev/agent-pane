@@ -225,6 +225,8 @@ it('accounts for tests a failed suite cancelled with that suite, so a missing to
       ],
     )
     assert.equal(report.failed, 4)
+    // The two tests the failed suite cancelled ran on neither side.
+    assert.equal(report.notRun, 2)
   } finally {
     await rm(root, { recursive: true, force: true })
   }

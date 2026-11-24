@@ -30,6 +30,11 @@ export const testFailureReportSchema = z
         name: z.string().min(1),
       }),
     ),
+    /**
+     * Tests that never ran because a suite above them failed (its own entry
+     * is in `failures`). They are accounted for, but were not compared.
+     */
+    notRun: z.number().int().nonnegative().optional(),
   })
   .refine(
     (report) =>

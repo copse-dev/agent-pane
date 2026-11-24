@@ -44,7 +44,8 @@ if (entry.stdout) process.stdout.write(entry.stdout)
 if (entry.env) process.stdout.write(JSON.stringify(process.env))
 if (entry.signal) process.kill(process.pid, entry.signal)
 if (entry.sleepMs) setTimeout(() => process.exit(entry.exit ?? 0), entry.sleepMs)
-else process.exit(entry.exit ?? 0)
+// Not process.exit: a natural exit drains stdout into the pipe first.
+else process.exitCode = entry.exit ?? 0
 `
 
 function config(kinds: readonly string[], timeoutsMs: Record<string, number> = {}): string {
@@ -557,7 +558,7 @@ describe('runStage0', () => {
   it('compares a suite whose tests lack a tool on both sides instead of calling it unstartable', async () => {
     // The cell has no bwrap, so the same sandbox test fails on base and head;
     // the runner still started and reported its failures, so they are compared.
-    const output = (names: string[]): string =>
+    const output = (names: string[], notRun?: number): string =>
       'Error: spawn bwrap ENOENT\n' +
       TEST_FAILURE_REPORT_PREFIX +
       JSON.stringify({
@@ -565,6 +566,7 @@ describe('runStage0', () => {
         complete: true,
         failed: names.length,
         failures: names.map((name) => ({ path: 'src/sandbox.test.ts', name })),
+        ...(notRun === undefined ? {} : { notRun }),
       }) +
       '\n'
     const same = await run(
@@ -576,6 +578,19 @@ describe('runStage0', () => {
     )
     assert.equal(same.checks[0]?.verdict, 'failing-on-base')
     assert.deepEqual(same.findings, [])
+    // Tests the failed suite cancelled were accounted for, not compared: say so.
+    const cancelled = await run(
+      await scenario(
+        { test: { exit: 1, stdout: output(['wraps the command'], 9) } },
+        { test: { exit: 1, stdout: output(['wraps the command'], 9) } },
+        { kinds: ['test'] },
+      ),
+    )
+    assert.equal(cancelled.checks[0]?.verdict, 'failing-on-base')
+    assert.match(
+      cancelled.coverage.notChecked.map((note) => note.reason).join('\n'),
+      /9 test\(s\) on head did not run, because a suite above them failed/,
+    )
     const regressed = await run(
       await scenario(
         { test: { exit: 1, stdout: output(['wraps the command']) } },
@@ -588,8 +603,7 @@ describe('runStage0', () => {
     // The runner's detailed failure listing after the inventory can outrun the
     // output cap on its own; the inventory still reaches the comparison.
     const detail = 'stack frame of a failing test\n'.repeat(12_000)
-    // sleepMs lets the fixture's pipe drain before it exits.
-    const failing = { exit: 1, stdout: output(['wraps the command']) + detail, sleepMs: 200 }
+    const failing = { exit: 1, stdout: output(['wraps the command']) + detail }
     const long = await run(
       await scenario({ test: failing }, { test: failing }, { kinds: ['test'] }),
     )

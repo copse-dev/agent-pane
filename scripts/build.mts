@@ -1,7 +1,6 @@
 import * as esbuild from 'esbuild'
 import { execSync, spawnSync } from 'node:child_process'
 import {
-  accessSync,
   copyFileSync,
   mkdirSync,
   readdirSync,
@@ -13,7 +12,7 @@ import {
 // Directory trees are copied with the async `cp`: Node's native recursive
 // `cpSync` fails with EACCES on Apple container's virtiofs shares, where
 // Copse Reviewer's cells build a checkout, while `cp` copies the same tree.
-import { cp, rm } from 'node:fs/promises'
+import { cp } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { copyMonacoWorkers, pointHtmlAtMonacoBase } from './copy-monaco-workers.mts'
@@ -23,6 +22,7 @@ import {
   generateApiProtocol,
   serializeApiProtocol,
 } from './lib/api-protocol.mts'
+import { copyOptionalBinaries } from './lib/copy-optional-binaries.mts'
 import { markTreeNoindex } from './lib/noindex.mts'
 import { STANDALONE_MAIN_BUNDLES } from './main-bundles.mts'
 import { MAIN_EXTERNALS, MAIN_LOG_OVERRIDE } from './main-externals.mts'
@@ -414,24 +414,6 @@ writeFileSync(
   serializeApiProtocol(generateApiProtocol({ version: API_PROTOCOL_VERSION })),
 )
 console.log(`[build] wrote ${API_PROTOCOL_SCHEMA_BUILD_PATH}`)
-
-/**
- * Copy an optional vendored binary tree, dereferenced so a worktree symlink
- * into ~/.copse/cache becomes a real binary inside the packaged app (symlinks
- * would escape the bundle). The old copy goes first: an earlier build may have
- * left a symlink there, and `cp` will not dereference onto one
- * (ERR_FS_CP_EINVAL). Only a missing source is skipped; a failed copy fails
- * the build rather than leaving the old tree in place.
- */
-async function copyOptionalBinaries(source: string, required: string, dest: string): Promise<void> {
-  try {
-    accessSync(required)
-  } catch {
-    return
-  }
-  await rm(dest, { recursive: true, force: true })
-  await cp(source, dest, { recursive: true, dereference: true })
-}
 
 // Optional — postinstall may be skipped on unsupported platforms.
 await copyOptionalBinaries(
