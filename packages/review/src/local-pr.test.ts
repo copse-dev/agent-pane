@@ -20,6 +20,8 @@ import { HEADLESS_EXIT } from '@copse/agent/headless-contract.ts'
 import { writeFakeContainerEngine } from './fake-container-engine.ts'
 import {
   defaultPrCellLimits,
+  fitCellLimits,
+  parseEngineCapacity,
   localPullRequestMain,
   nothingConcluded,
   parsePrArgs,
@@ -612,6 +614,32 @@ describe('copse-review pr arguments', () => {
       cpus: 8,
       pids: 512,
     })
+  })
+
+  it('fits a default cell to a smaller engine VM, and notes a limit the caller set beyond it', () => {
+    const gib = 1024 ** 3
+    // colima's default VM: 2 CPUs, 2 GiB. Docker and Podman say so differently.
+    const colima = parseEngineCapacity(
+      JSON.stringify({ NCPU: 2, MemTotal: 2 * gib, Name: 'colima' }),
+    )
+    assert.deepEqual(colima, { cpus: 2, memoryBytes: 2 * gib })
+    assert.deepEqual(
+      parseEngineCapacity(JSON.stringify({ host: { cpus: 4, memTotal: 8 * gib } })),
+      { cpus: 4, memoryBytes: 8 * gib },
+    )
+    assert.equal(parseEngineCapacity('not json'), null)
+    const sized = { memory: '16g', cpus: 8, pids: 512 }
+    const defaults = { memory: false, cpus: false }
+    assert.deepEqual(fitCellLimits(sized, defaults, colima), {
+      limits: { memory: '1g', cpus: 2, pids: 512 },
+      notes: [],
+    })
+    const asked = fitCellLimits(sized, { memory: true, cpus: true }, colima)
+    assert.deepEqual(asked.limits, sized)
+    assert.equal(asked.notes.length, 2)
+    assert.match(asked.notes.join('\n'), /--cell-cpus 8 is more than the engine's VM has \(2\)/)
+    // Apple container sizes a VM per cell: nothing to fit.
+    assert.deepEqual(fitCellLimits(sized, defaults, null), { limits: sized, notes: [] })
   })
 
   it('reuses only a report whose Stage 0 preparation passed and whose checks all ran', () => {

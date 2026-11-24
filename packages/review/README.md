@@ -353,7 +353,10 @@ its half-made run directory.
    `docker-buildx`: Homebrew's Docker CLI has none and fails with "the --mount option
    requires BuildKit". The cells bind-mount `/var/folders/...` paths as they are, so share
    that path with the VM. And raise the VM's open-file limit: virtiofs holds a descriptor
-   per file looked up, and copying the dependency store has hit `ENFILE`.
+   per file looked up, and copying the dependency store has hit `ENFILE`. A Docker or Podman VM also caps the cell: a default
+   cell is fitted to the VM's CPUs and three quarters of its memory, and colima's default VM
+   (2 CPUs) is far smaller than Copse needs, so start it larger (`colima start --cpu 8
+   --memory 24`).
 2. **The model server.** LM Studio headless: `lms server start`, then
    `lms load <model> --context-length 65536` for each model (a review at the default
    `--budget-chars` needs about 49k tokens; the pre-flight says what is missing, and a

@@ -110,6 +110,8 @@ interface PrOptions {
   readonly image: string | undefined
   readonly cpu: CellCpu
   readonly limits: ContainerLimits
+  /** Which limits the caller set; the rest are defaults a smaller engine VM may lower. */
+  readonly limitsGiven: { readonly memory: boolean; readonly cpus: boolean }
   readonly out: string | undefined
   readonly fresh: boolean
   /** Arguments for the review itself, in the order given. */
@@ -216,6 +218,10 @@ export function parsePrArgs(
     image: values.get('--image'),
     cpu,
     limits: { ...DEFAULT_CONTAINER_LIMITS, memory, cpus },
+    limitsGiven: {
+      memory: values.get('--cell-memory') !== undefined,
+      cpus: cpusText !== undefined,
+    },
     out: values.get('--out'),
     fresh,
     review,
@@ -487,6 +493,88 @@ function engineAnswers(engine: ContainerEngineCandidate): boolean {
   } catch {
     return false
   }
+}
+
+const engineInfoSchema = z.union([
+  // Docker
+  z.object({ NCPU: z.number().int().positive(), MemTotal: z.number().positive() }),
+  // Podman
+  z.object({
+    host: z.object({ cpus: z.number().int().positive(), memTotal: z.number().positive() }),
+  }),
+])
+
+/** An engine VM's CPUs and memory, from `info --format '{{json .}}'`; null when unreadable. */
+export function parseEngineCapacity(text: string): EngineCapacity | null {
+  const info = safeJsonParse(text, decodeWithSchema(engineInfoSchema))
+  if (info === null) return null
+  return 'host' in info
+    ? { cpus: info.host.cpus, memoryBytes: info.host.memTotal }
+    : { cpus: info.NCPU, memoryBytes: info.MemTotal }
+}
+
+export interface EngineCapacity {
+  readonly cpus: number
+  readonly memoryBytes: number
+}
+
+/**
+ * The CPUs and memory a Docker or Podman engine's VM has (colima's default is
+ * 2 CPUs); null for Apple container, which sizes a VM per container from the
+ * cell's own limits, and when the engine will not say.
+ */
+function engineCapacity(engine: ContainerEngineCandidate): EngineCapacity | null {
+  if (engine.dialect === 'apple') return null
+  const [file, ...prefix] = engine.argv
+  try {
+    const text = execFileSync(file, [...prefix, 'info', '--format', '{{json .}}'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 15_000,
+    })
+    return parseEngineCapacity(text)
+  } catch {
+    return null
+  }
+}
+
+function memoryBytes(size: string): number {
+  const match = /^(\d+)([kmg]?)$/i.exec(size)
+  const units: Record<string, number> = { '': 1, k: 1024, m: 1024 ** 2, g: 1024 ** 3 }
+  return match === null
+    ? Number.NaN
+    : Number(match[1]) * (units[(match[2] ?? '').toLowerCase()] ?? 1)
+}
+
+/**
+ * The cell's limits on this engine. A default sized from this machine is
+ * lowered to fit a smaller engine VM (CPUs, and three quarters of its memory);
+ * a limit the caller set is kept, and noted when the VM cannot give it.
+ */
+export function fitCellLimits(
+  limits: ContainerLimits,
+  given: PrOptions['limitsGiven'],
+  capacity: EngineCapacity | null,
+): { readonly limits: ContainerLimits; readonly notes: readonly string[] } {
+  if (capacity === null) return { limits, notes: [] }
+  const notes: string[] = []
+  const vmGib = Math.max(1, Math.floor((capacity.memoryBytes * 0.75) / 1024 ** 3))
+  let { memory, cpus } = limits
+  if (memoryBytes(memory) > vmGib * 1024 ** 3) {
+    if (given.memory) {
+      notes.push(
+        `--cell-memory ${memory} is more than the engine's VM can give (${String(vmGib)}g)`,
+      )
+    } else memory = `${String(vmGib)}g`
+  }
+  if (cpus > capacity.cpus) {
+    if (given.cpus) {
+      notes.push(
+        `--cell-cpus ${String(cpus)} is more than the engine's VM has (${String(capacity.cpus)})`,
+      )
+    } else cpus = capacity.cpus
+  }
+  return { limits: { ...limits, memory, cpus }, notes }
 }
 
 interface CellImage {
@@ -780,6 +868,14 @@ export async function localPullRequestMain(
     if (preflightOnly || ready !== HEADLESS_EXIT.SUCCESS) return ready
   }
 
+  // A machine with no engine fails here, before a queue, a store fill or a build.
+  if (!enginesFor(io, options).some(engineAnswers)) {
+    io.stderr(
+      'copse-review pr: no container engine answers; start Docker, Podman or Apple container (`container system start`)\n',
+    )
+    return HEADLESS_EXIT.FAILURE
+  }
+
   let release: () => Promise<void>
   try {
     release = await acquireReviewLock(join(cacheRoot, 'review.lock'), {
@@ -851,6 +947,9 @@ export async function localPullRequestMain(
     }
 
     const cell = await resolveCellImage(io, options, cacheRoot, runHost)
+    const fitted = fitCellLimits(options.limits, options.limitsGiven, engineCapacity(cell.engine))
+    for (const note of fitted.notes) io.stderr(`copse-review pr: ${note}\n`)
+    const limits = fitted.limits
     const scratchParent = join(cacheRoot, 'scratch')
     await mkdir(scratchParent, { recursive: true })
     // A review killed outright (SIGKILL, a power cut) never removes its cells.
@@ -871,7 +970,7 @@ export async function localPullRequestMain(
       image: cell.image,
       engine: cell.engine.argv,
       dialect: cell.engine.dialect,
-      limits: options.limits,
+      limits,
       // Journalled before the container exists, so a run killed mid-command
       // leaves its name for the next run to remove.
       containerName: (commandId) => {
@@ -1008,7 +1107,7 @@ export async function localPullRequestMain(
       key,
       exitCode,
       reusable: notReusable === null,
-      limits: options.limits,
+      limits,
       startedAt,
       finishedAt: new Date().toISOString(),
       reviewer: reviewerRevision,
