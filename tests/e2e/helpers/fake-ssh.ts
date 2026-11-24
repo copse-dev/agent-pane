@@ -65,3 +65,30 @@ export function installFakeSshHost(options: FakeSshHostOptions = {}): FakeSshHos
     },
   }
 }
+
+export interface LocalSshConfig {
+  /** Restore the app's real HOME and delete the scratch one. Call from `after`. */
+  remove: () => void
+}
+
+/**
+ * Give the app a `~/.ssh/config` the spec chooses, or an empty one.
+ *
+ * Copse reads `~/.ssh/config` to offer its hosts, so a spec that shows them
+ * cannot depend on the runner's own file. This points the app's HOME at a
+ * scratch directory holding `config` as `.ssh/config`, the same boundary the
+ * app reads; nothing in the product knows. Call before `browser.reloadSession()`.
+ */
+export function useLocalSshConfig(config: string): LocalSshConfig {
+  const originalHome = process.env['HOME']
+  const home = mkdtempSync(join(tmpdir(), 'copse-e2e-home-'))
+  mkdirSync(join(home, '.ssh'), { recursive: true, mode: 0o700 })
+  writeFileSync(join(home, '.ssh', 'config'), config, { mode: 0o600 })
+  writeE2eEnv({ HOME: home })
+  return {
+    remove: (): void => {
+      writeE2eEnv({ HOME: originalHome })
+      rmSync(home, { recursive: true, force: true })
+    },
+  }
+}

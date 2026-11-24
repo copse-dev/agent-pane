@@ -3950,12 +3950,12 @@
       "bytes": 40891
     },
     "remote-folder-add-host-error.png": {
-      "sha256": "247c1c616da3ffc110597c2e21d2d59bb8985be9ee16bc01e03d0ae70d61060e",
-      "bytes": 95725
+      "sha256": "116c385eed91af11eeec61ac1ad6de76e0cc3c0f7341dba089c1d07b955fac70",
+      "bytes": 93375
     },
     "remote-folder-add-host.png": {
-      "sha256": "c7b32e3e958c324ab440442cdafe8530ba020e9b8c4da137f569dd2415737042",
-      "bytes": 86810
+      "sha256": "c13cf8df1b77fef13a92ff4019e98b21cbbc4a4e20b970394e93e07c47480ce8",
+      "bytes": 75490
     },
     "remote-folder-breadcrumbs.png": {
       "sha256": "7ee38570d991c086473ba27fb0fd8064729fad099cc7879bcfbe08cc2e7e74f5",
@@ -3968,6 +3968,10 @@
     "remote-folder-browse-start-home.png": {
       "sha256": "0cc7836e9a14c26987ec5061997c02f85309798a28a0deacf76ed45db92ae15d",
       "bytes": 51938
+    },
+    "remote-folder-ssh-config-hosts.png": {
+      "sha256": "76e8d3dcccf0167db376718ee933bbcce276e01b50020fd013a9c6ceb53839af",
+      "bytes": 77392
     },
     "remote-watcher-install-approval.png": {
       "sha256": "4fbf339885c3410c5693b19b4ad008288391f04b9e95868dc05586552bc4ca29",
@@ -5062,8 +5066,8 @@
       "bytes": 59316
     },
     "settings-ssh-host-form.png": {
-      "sha256": "d57a5448d22834430a8cdb807254b00895e1f331615e570644ab10481f38b2cf",
-      "bytes": 65347
+      "sha256": "64c74d63f5b1494cde4fd53fcd4f62c73886c0c15addbbe5e19f6b20a91abd53",
+      "bytes": 45659
     },
     "settings-ssh-invalid-port.png": {
       "sha256": "1c49dd379e36c9b741242d81f8e04de1f9d13d4fea01d59bd6ceddf5f0033b3b",
@@ -5078,8 +5082,8 @@
       "bytes": 20359
     },
     "settings-ssh-workspace.png": {
-      "sha256": "8aff1dcaff6b21e49c86bc2e24650eea8fb60d0180e0b6195c7dd1ca8edcb99e",
-      "bytes": 171773
+      "sha256": "692b73269f4e4f8643a8a825aa9eae493b43036d12eb70334585c447ea553ef6",
+      "bytes": 174520
     },
     "settings-storage-maintenance-cleaned.png": {
       "sha256": "9d9a0463f1a34846857d9fe80309b9a67138c0f97caee7f604fe412db2d583d3",
@@ -5662,8 +5666,8 @@
       "bytes": 32761
     },
     "ssh-projects-pane-after-enable.png": {
-      "sha256": "ceafeb5d2fd48ea8f11fc46fbcf8950ea79bd34303216e8f6ec530f22a506d83",
-      "bytes": 311025
+      "sha256": "55edda2ae8d24f8068ddfb0d2dabc2c004e1df8329c16396acc5006f5891145e",
+      "bytes": 308646
     },
     "ssh-projects-pane.png": {
       "sha256": "05b50716622b8568a08d2f9e5231e2c9fac27462bb01710f8455db11fab20503",
@@ -6514,12 +6518,12 @@
       "bytes": 96548
     },
     "vnc-viewer-add-ssh-machine.png": {
-      "sha256": "0fc6ab17493a48950c0b46d731385817b42630f3b8da831acf096651839d83a5",
-      "bytes": 80423
+      "sha256": "02bc0f923d6df9bd49da00c58074d014617651505d4e3440494e95403062dd55",
+      "bytes": 85558
     },
     "vnc-viewer-annotate.png": {
-      "sha256": "603a34d55c6bf692c8ddb66b6ac9bae4c73f44486546dd103bf8ef7a99cfdf2d",
-      "bytes": 309111
+      "sha256": "f011af97034b08dcc73af60f7144142e13e1e0aa10c7f84ca98d41d2a34b8f22",
+      "bytes": 307463
     },
     "vnc-viewer-auth-failed.png": {
       "sha256": "20cfe23940d5d9a6038011e37c40d74bfa3ec8929c31dcce175ee08b7e295ba6",
@@ -6538,8 +6542,8 @@
       "bytes": 45329
     },
     "vnc-viewer-deduped-machines.png": {
-      "sha256": "1d257d15a7fb24a07e04c3f12c5c27ea05c148b7998e1c274791ea5b707aee84",
-      "bytes": 298154
+      "sha256": "fb559dcdd6094bdb583be496d17d5f5e632b615de7519f14743dc84b1fe8de73",
+      "bytes": 296616
     },
     "vnc-viewer-discovery-retry.png": {
       "sha256": "175e7bc6108691d8465ae3e562fee9632df7544e5ff2e2a48fccfb4d7b3b7d32",
@@ -6566,8 +6570,8 @@
       "bytes": 8980
     },
     "vnc-viewer-shared-screen.png": {
-      "sha256": "d2958085f8cd50e07b450d669bddcab03add6718ad65862e2462c9229f5bfb2e",
-      "bytes": 293649
+      "sha256": "77a390037fea03e6f7c379327d6aa60a1db76fb5948a4fefa2230d4000e6a8e5",
+      "bytes": 295703
     },
     "vnc-viewer-tabs.png": {
       "sha256": "837be62268a85be562c0b76e7dcaf2ec91c7f455f2bc829bc1467849d8a7bcac",
