@@ -302,6 +302,43 @@ describe('copse-review pr', () => {
     await assert.rejects(access(first), /ENOENT/)
   })
 
+  it('fetches only from a remote this repository has, so the name never reaches git as an option', async () => {
+    const marker = join(root, 'ran-a-host-command')
+    // A value that `git fetch` would read as --upload-pack and run on the host.
+    const hostile = await localPullRequestMain(
+      ['7', `--remote=--upload-pack=touch ${marker}`, '--no-model'],
+      io,
+    )
+    assert.equal(hostile, HEADLESS_EXIT.USAGE)
+    await assert.rejects(access(marker), /ENOENT/)
+    out = ''
+    err = ''
+    const unknown = await localPullRequestMain(['7', '--remote', 'upstream', '--no-model'], io)
+    assert.equal(unknown, HEADLESS_EXIT.USAGE, err)
+    assert.match(err, /upstream is not a remote of this repository \(it has origin\)/)
+  })
+
+  it('publishes into an existing --out directory without touching what else it holds', async () => {
+    const out = join(root, 'shared-out')
+    await mkdir(join(out, 'notes'), { recursive: true })
+    await writeFile(join(out, 'notes.txt'), 'mine\n')
+    await writeFile(join(out, 'notes', 'deep.txt'), 'also mine\n')
+    assert.equal(await review(['--out', out]), HEADLESS_EXIT.SUCCESS, err)
+    assert.equal(await readFile(join(out, 'notes.txt'), 'utf8'), 'mine\n')
+    assert.equal(await readFile(join(out, 'notes', 'deep.txt'), 'utf8'), 'also mine\n')
+    // A second run replaces only the run's own files.
+    assert.equal(await review(['--out', out, '--fresh']), HEADLESS_EXIT.SUCCESS, err)
+    assert.deepEqual((await readdir(out)).sort(), [
+      'events.jsonl',
+      'notes',
+      'notes.txt',
+      'report.json',
+      'report.sarif',
+      'report.txt',
+      'run.json',
+    ])
+  })
+
   it('removes the cells and scratch a hard-killed earlier review left behind', async () => {
     // As SIGKILL leaves things: a journalled cell container still there (Apple
     // container has no --rm) and its scratch checkout.
@@ -613,6 +650,9 @@ describe('copse-review pr arguments', () => {
     assert.throws(() => parsePrArgs(['1', '--cell-memory', 'lots']), /--cell-memory/)
     assert.throws(() => parsePrArgs(['1', '--json', 'x']), /--json is set by/)
     assert.throws(() => parsePrArgs(['1', '--remote']), /--remote needs a value/)
+    // Both reach git, where a leading dash is an option.
+    assert.throws(() => parsePrArgs(['1', '--remote=--upload-pack=touch x']), /--remote must not/)
+    assert.throws(() => parsePrArgs(['1', '--base', '-x']), /--base must not/)
   })
 
   it('leaves output-only options out of the question a saved report answers', () => {

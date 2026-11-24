@@ -202,6 +202,11 @@ export function parsePrArgs(
   if (!Number.isFinite(cpus) || cpus <= 0) {
     throw new Error(`--cell-cpus must be a positive number, not ${cpusText ?? ''}`)
   }
+  // Both reach git; a leading dash would read as an option, not a name.
+  for (const flag of ['--remote', '--base'] as const) {
+    const value = values.get(flag)
+    if (value?.startsWith('-') === true) throw new Error(`${flag} must not start with -: ${value}`)
+  }
   return {
     target,
     remote: values.get('--remote') ?? 'origin',
@@ -281,16 +286,32 @@ function tryGit(git: Git, args: readonly string[]): string | null {
 }
 
 function verifiedCommit(git: Git, ref: string): string | null {
-  return tryGit(git, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`])
+  return tryGit(git, ['rev-parse', '--verify', '--quiet', '--end-of-options', `${ref}^{commit}`])
 }
 
 /** The branch the remote's HEAD names: the local record, else asked of the remote. */
 function remoteDefaultBranch(git: Git, remote: string): string {
   const local = tryGit(git, ['symbolic-ref', '--quiet', '--short', `refs/remotes/${remote}/HEAD`])
   if (local !== null && local.startsWith(`${remote}/`)) return local.slice(remote.length + 1)
-  const asked = tryGit(git, ['ls-remote', '--symref', remote, 'HEAD'])
+  const asked = tryGit(git, ['ls-remote', '--symref', '--end-of-options', remote, 'HEAD'])
   const match = asked === null ? null : /^ref: refs\/heads\/(\S+)\s+HEAD$/m.exec(asked)
   return match?.[1] ?? 'main'
+}
+
+/**
+ * Refuse a remote this repository does not have. The name reaches `git fetch`
+ * and `ls-remote`; a caller (an agent, a hook) may pass it on as data, so only
+ * a configured remote's name is used, never a URL or an option.
+ */
+function requireRemote(git: Git, remote: string): void {
+  const remotes = git(['remote'])
+    .split('\n')
+    .filter((name) => name.length > 0)
+  if (!remotes.includes(remote)) {
+    throw new Error(
+      `${remote} is not a remote of this repository (it has ${remotes.length > 0 ? remotes.join(', ') : 'none'}); add it with git remote add, or pass --remote`,
+    )
+  }
 }
 
 /** A plain branch name, safe inside a refspec (the remote's answer included). */
@@ -330,6 +351,7 @@ function resolveChange(
   let baseRef: string
   let label: string
   if (pr !== null) {
+    requireRemote(git, options.remote)
     const namespace = `refs/copse-review/pr-${String(pr)}`
     headRef = `${namespace}/head`
     const baseBranch = options.base ?? remoteDefaultBranch(git, options.remote)
@@ -341,6 +363,7 @@ function resolveChange(
       'fetch',
       '--no-tags',
       '--quiet',
+      '--end-of-options',
       options.remote,
       `+refs/pull/${String(pr)}/head:${headRef}`,
     ])
@@ -348,6 +371,7 @@ function resolveChange(
       'fetch',
       '--no-tags',
       '--quiet',
+      '--end-of-options',
       options.remote,
       `+refs/heads/${baseBranch}:${namespace}/base`,
     ])
@@ -357,8 +381,12 @@ function resolveChange(
     label = `pr-${String(pr)}`
   } else {
     headRef = options.target
-    const fallback = `${options.remote}/${remoteDefaultBranch(git, options.remote)}`
-    baseRef = options.base ?? (verifiedCommit(git, fallback) !== null ? fallback : 'main')
+    if (options.base !== undefined) baseRef = options.base
+    else {
+      requireRemote(git, options.remote)
+      const fallback = `${options.remote}/${remoteDefaultBranch(git, options.remote)}`
+      baseRef = verifiedCommit(git, fallback) !== null ? fallback : 'main'
+    }
     label = options.target.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'ref'
   }
   const headCommit = verifiedCommit(git, headRef)
@@ -399,7 +427,7 @@ function sha256(text: string): string {
 
 /** The remote's owner and name, from the last two parts of its URL; null without one. */
 function remoteRepository(git: Git, remote: string): { owner: string; name: string } | null {
-  const url = tryGit(git, ['remote', 'get-url', remote])
+  const url = tryGit(git, ['remote', 'get-url', '--end-of-options', remote])
   const fromUrl =
     url === null ? null : /([^/:]+)\/([^/:]+?)(?:\.git)?\/?$/.exec(url.replace(/^.*:\/\//, ''))
   return fromUrl === null ? null : { owner: fromUrl[1] ?? '', name: fromUrl[2] ?? '' }
@@ -1083,16 +1111,26 @@ async function sweepEarlierRun(io: LocalPrIo, paths: SweepPaths): Promise<Journa
   return stuck
 }
 
-/** Move a finished run's directory into place, replacing the report it supersedes. */
+/** The files a run writes into its directory, apart from `run.json`. */
+const RUN_FILES = ['report.json', 'report.sarif', 'events.jsonl', 'report.txt'] as const
+
+/**
+ * Move a finished run's files into `outDir`, replacing the run before it.
+ * Only the run's own files are touched: `--out` may name a directory that
+ * holds other things. `run.json` goes first and comes back last, so the
+ * directory never answers a question from a half-replaced report.
+ */
 async function publishReport(staging: string, outDir: string): Promise<void> {
-  const superseded = `${staging}.superseded`
-  const moved = await rename(outDir, superseded).then(
-    () => true,
-    (err: unknown) => {
-      if (err instanceof Error && Reflect.get(err, 'code') === 'ENOENT') return false
-      throw err
-    },
-  )
-  await rename(staging, outDir)
-  if (moved) await rm(superseded, { recursive: true, force: true })
+  await mkdir(outDir, { recursive: true })
+  await rm(join(outDir, 'run.json'), { force: true })
+  for (const name of RUN_FILES) {
+    const from = join(staging, name)
+    const present = await access(from).then(
+      () => true,
+      () => false,
+    )
+    if (present) await rename(from, join(outDir, name))
+    else await rm(join(outDir, name), { force: true })
+  }
+  await rename(join(staging, 'run.json'), join(outDir, 'run.json'))
 }
