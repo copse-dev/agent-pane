@@ -5,7 +5,12 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
-import { e2eWorkspaceDir, resetUserData, seedForkResendFixture } from './helpers/seed-config.ts'
+import {
+  e2eWorkspaceDir,
+  resetUserData,
+  seedForkResendFixture,
+  seedStableWorkspace,
+} from './helpers/seed-config.ts'
 import {
   saveAppScreenshot,
   saveFramedElementScreenshot,
@@ -167,7 +172,7 @@ describe('fork a thread and resend the last message', function () {
 
   it('opens prompt actions from the keyboard and leaves an Escape in the composer alone', async function () {
     resetUserData()
-    seedForkResendFixture(process.cwd())
+    seedForkResendFixture(seedStableWorkspace())
     await browser.reloadSession()
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
