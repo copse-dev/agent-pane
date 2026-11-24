@@ -203,7 +203,7 @@ async function playTrace(trace, emit, options = {}) {
     if (chunk.type === "text" || chunk.type === "reasoning") {
       for (const slice of sliceForStreaming(chunk.text, sliceChars)) {
         if (aborted()) return;
-        emit({ type: chunk.type, text: slice });
+        emit({ ...chunk, text: slice });
         await pause(slice.length / charsPerSecond * 1e3);
       }
       continue;
