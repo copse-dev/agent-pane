@@ -897,6 +897,8 @@ export async function localPullRequestMain(
     return HEADLESS_EXIT.SUCCESS
   }
   const seed = join(cacheRoot, `seed-${randomBytes(4).toString('hex')}`)
+  // The repository the review runs in; see where it is filled, below.
+  const reviewed = join(cacheRoot, `repo-${randomBytes(4).toString('hex')}`)
   // The run writes beside the saved report and replaces it only once it has
   // finished: a cancelled or failed run leaves the last answer as it was, and
   // never an empty or half-written report directory.
@@ -1035,10 +1037,30 @@ export async function localPullRequestMain(
     io.stderr(
       `copse-review pr: reviewing ${change.headCommit.slice(0, 12)} against ${change.baseRef} in ${cell.engine.argv[0]} cells (${cell.image})\n`,
     )
+    // The review runs in a repository of its own that holds only the reviewed
+    // history, fetched from this clone. The cells mount that repository's git
+    // directory, so the change can read its own history and the base's, and
+    // nothing else of the caller's clone: no other branch, stash, reflog or
+    // config.
+    await mkdir(reviewed, { recursive: true })
+    const reviewedGit = gitIn(reviewed)
+    reviewedGit(['init', '--quiet'])
+    reviewedGit([
+      '-c',
+      'uploadpack.allowAnySHA1InWant=true',
+      'fetch',
+      '--quiet',
+      '--no-tags',
+      '--update-shallow',
+      '--end-of-options',
+      repoRoot,
+      `+${change.headCommit}:refs/copse-review/head`,
+      `+${change.baseCommit}:refs/copse-review/base`,
+    ])
     let text = ''
     const exitCode = await main(reviewArgsIn(staging), {
       ...io,
-      cwd: repoRoot,
+      cwd: reviewed,
       backend,
       stdout: (chunk) => {
         text += chunk
@@ -1128,6 +1150,7 @@ export async function localPullRequestMain(
   } finally {
     await rm(staging, { recursive: true, force: true })
     await rm(seed, { recursive: true, force: true })
+    await rm(reviewed, { recursive: true, force: true })
     // The cell is destroyed by now; only what it could not remove stays listed.
     if (journalling) {
       await writeFile(
@@ -1182,7 +1205,7 @@ async function unfinishedRunDirectories(reviewsRoot: string): Promise<string[]> 
 /**
  * Remove what a review that never finished left behind: the cell containers
  * it journalled, each with the engine that made it, its scratch checkouts,
- * its store-fill seed and its half-made run directory. Only called with this
+ * its store-fill seed, its review repository and its half-made run directory. Only called with this
  * machine's review lock held, so nothing here belongs to a live review.
  * Returns the containers still there.
  */
@@ -1209,7 +1232,7 @@ async function sweepEarlierRun(io: LocalPrIo, paths: SweepPaths): Promise<Journa
   for (const name of scratch) await rm(join(scratchParent, name), { recursive: true, force: true })
   const halfMade = [
     ...(await readdir(paths.cacheRoot).catch(() => []))
-      .filter((name) => name.startsWith('seed-'))
+      .filter((name) => name.startsWith('seed-') || name.startsWith('repo-'))
       .map((name) => join(paths.cacheRoot, name))
       .filter((path) => path !== paths.ownSeed),
     ...(await unfinishedRunDirectories(paths.reviewsRoot)),

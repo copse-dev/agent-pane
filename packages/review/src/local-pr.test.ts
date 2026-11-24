@@ -345,6 +345,45 @@ describe('copse-review pr', () => {
     assert.match(out_(), /reviewer mock under correctness/)
   })
 
+  it("shows the cells only the reviewed history, never the caller's other branches", async () => {
+    // The caller's clone holds private work the change must not be able to read.
+    execFileSync('git', ['branch', 'private-work'], { cwd: clone })
+    // A change whose test prints every ref its checkout's git directory holds.
+    origin.git('checkout', '-q', '-b', 'peek', 'main')
+    await origin.write({
+      'check.cjs':
+        "const { execFileSync } = require('node:child_process');\n" +
+        "console.log(execFileSync('git', ['for-each-ref', '--format=%(refname)'], { encoding: 'utf8' }));\n" +
+        'process.exit(1)\n',
+    })
+    origin.commit('print the refs')
+    origin.git('update-ref', 'refs/pull/8/head', 'peek')
+    origin.git('checkout', '-q', 'main')
+    out = ''
+    err = ''
+    const target = join(root, 'peek-out')
+    const code = await localPullRequestMain(['8', '--no-model', '--out', target], io)
+    assert.equal(code, HEADLESS_EXIT.SUCCESS, err)
+    const report = z
+      .object({
+        stage0: z.object({
+          checks: z.array(
+            z.object({ kind: z.string(), head: z.object({ output: z.string() }).nullable() }),
+          ),
+        }),
+      })
+      .parse(JSON.parse(await readFile(join(target, 'report.json'), 'utf8')))
+    const seen = report.stage0.checks.find((check) => check.kind === 'test')?.head?.output ?? ''
+    assert.match(seen, /refs\/copse-review\/head/)
+    assert.doesNotMatch(seen, /private-work|refs\/remotes\/|refs\/copse-review\/pr-/)
+    // Nothing of the review repository is left once the run ends.
+    const cache = await readdir(join(copseDir, 'cache', 'review'))
+    assert.deepEqual(
+      cache.filter((name) => name.startsWith('repo-')),
+      [],
+    )
+  })
+
   it('publishes into an existing --out directory without touching what else it holds', async () => {
     const out = join(root, 'shared-out')
     await mkdir(join(out, 'notes'), { recursive: true })

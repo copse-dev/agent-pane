@@ -1157,6 +1157,11 @@ models; nothing in it is Mac-only.
   container backend: Stage 0, `run_command` and reproducers execute in network-disabled
   containers whoever wrote the change. B3 is unchanged; the decision here is only that the
   local shell never uses the own-tree exemption, so one path is exercised and measured.
+  The review runs in a scratch repository that holds only the head and base commits' history,
+  fetched from the caller's clone. The cells mount that repository's git directory, never the
+  clone's, so the change cannot read the caller's other branches, stashes, reflogs or config.
+  Apple container cells are read back with `container inspect` before anything runs in them;
+  a wall that does not read back fails the cell closed.
 - **One machine does both CI jobs.** CI splits grounding from findings to keep the model
   key from contributor code. A local model has no key, so the shell runs the CLI's ordinary
   single pass and the diff never leaves the machine. With a hosted challenger
