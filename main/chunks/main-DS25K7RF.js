@@ -490,7 +490,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-4DH6IKXY.js";
+} from "./chunk-7EK6HJZA.js";
 import "./chunk-X6JZSFJR.js";
 import {
   StreamingMarkdownRenderer,
@@ -507,6 +507,7 @@ import {
   clockIcon,
   closeIcon,
   cornerDownLeftIcon,
+  createSshHostFields,
   downloadIcon,
   escapeHtml,
   expectString,
@@ -518,7 +519,6 @@ import {
   gitMergeIcon,
   gitPullRequestIcon,
   imageIcon,
-  importSshConfigHosts,
   init_dist,
   init_icons,
   init_inline_links,
@@ -527,6 +527,7 @@ import {
   init_ipc_error_message,
   init_nullish,
   init_outline_icon,
+  init_ssh_host_fields,
   init_ssh_host_helpers,
   init_toast,
   init_unknown_value,
@@ -548,7 +549,6 @@ import {
   moreVerticalIcon,
   nonEmptyStringOr,
   outlineIcon,
-  parseSshHostDraft,
   parseSshWorkspaceHosts,
   penLineIcon,
   playIcon,
@@ -557,6 +557,7 @@ import {
   refreshIcon,
   renderMarkdown,
   runningStatusIcon,
+  saveSshConfigHost,
   searchIcon,
   setDefaultConfig,
   setInlineMarkdown,
@@ -564,17 +565,17 @@ import {
   shieldIcon,
   showErrorToast,
   showToast,
-  slugifyHostId,
   sparkleIcon,
   spinnerIcon,
   undoIcon,
+  unsavedSshConfigHosts,
   unwrapIpcErrorText,
   uploadIcon,
   upsertHost,
   warningIcon,
   workspaceLinkTargetFromHref,
   zapIcon
-} from "./chunk-KYBBGUKM.js";
+} from "./chunk-HIIVOQP4.js";
 import {
   clear,
   createOverlayDialog,
@@ -84121,72 +84122,66 @@ var init_desktop_viewer = __esm({
 
 // src/renderer/views/vnc-ssh-host-form.ts
 function createVncSshHostForm(api2, onSaved, onClose) {
-  const id = el("input", { type: "text", "aria-label": "SSH host id", placeholder: "my-server" });
-  const label = el("input", {
-    type: "text",
-    "aria-label": "SSH host label",
-    placeholder: "Production"
+  const hostFields = createSshHostFields({ labelClass: "vnc-field-label" });
+  const configSelect = el("select", {
+    class: "vnc-ssh-config-host",
+    "aria-label": "Host in ~/.ssh/config"
   });
-  const host = el("input", {
-    type: "text",
-    "aria-label": "SSH hostname",
-    placeholder: "example.com or ~/.ssh/config alias"
-  });
-  const user = el("input", { type: "text", "aria-label": "SSH user", placeholder: "ubuntu" });
-  const port = el("input", {
-    type: "text",
-    inputmode: "numeric",
-    "aria-label": "SSH port",
-    placeholder: "22"
-  });
-  const identityFile = el("input", {
-    type: "text",
-    "aria-label": "SSH identity file",
-    placeholder: "~/.ssh/id_ed25519"
-  });
+  const configField = el(
+    "label",
+    { class: "vnc-field-label vnc-ssh-config-field", hidden: true },
+    "In ~/.ssh/config",
+    configSelect
+  );
+  let configHosts = [];
   const status = el("p", { class: "vnc-ssh-host-status", role: "status" });
   const save = el("button", { type: "submit", class: "ui-btn ui-btn-primary" }, "Save SSH machine");
   const cancel = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, "Cancel");
-  const importButton = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-ghost" },
-    "Import SSH config"
-  );
   const root = el(
     "form",
     { class: "vnc-ssh-host-form", hidden: true, "aria-label": "Add SSH machine" },
     el("p", { class: "vnc-ssh-host-hint" }, "Use an SSH key to secure the desktop connection."),
-    el("label", { class: "vnc-field-label" }, "Id", id),
-    el("label", { class: "vnc-field-label" }, "Label", label),
-    el("label", { class: "vnc-field-label" }, "Host", host),
-    el("label", { class: "vnc-field-label" }, "User", user),
-    el("label", { class: "vnc-field-label" }, "Port", port),
-    el("label", { class: "vnc-field-label" }, "Identity file", identityFile),
+    configField,
+    ...hostFields.fields,
     status,
-    el("div", { class: "vnc-ssh-host-actions" }, importButton, cancel, save)
+    el("div", { class: "vnc-ssh-host-actions" }, cancel, save)
   );
-  let idTouched = false;
-  label.addEventListener("input", () => {
-    if (!idTouched) id.value = slugifyHostId(label.value);
-  });
-  id.addEventListener("input", () => {
-    idTouched = true;
-  });
   function close2() {
     root.hidden = true;
     status.textContent = "";
     onClose();
   }
+  async function loadConfigHosts() {
+    configHosts = [];
+    try {
+      if (await api2.settings.get("sshWorkspaceEnabled") === true) {
+        const [saved, aliases] = await Promise.all([
+          api2.sshWorkspace.listHosts(),
+          api2.sshWorkspace.listConfigAliases()
+        ]);
+        configHosts = unsavedSshConfigHosts(saved, aliases);
+      }
+    } catch {
+      configHosts = [];
+    }
+    configSelect.replaceChildren(
+      el("option", { value: "", selected: true }, "Choose a host"),
+      ...configHosts.map((host) => el("option", { value: host.host }, host.host))
+    );
+    configField.hidden = configHosts.length === 0;
+  }
   function open() {
     root.reset();
-    idTouched = false;
+    hostFields.reset();
     status.textContent = "";
+    configField.hidden = true;
     root.hidden = false;
-    label.focus();
+    hostFields.focus();
+    void loadConfigHosts();
   }
   function busy(value) {
     save.disabled = value;
-    importButton.disabled = value;
+    configSelect.disabled = value;
     cancel.disabled = value;
   }
   async function requireSshEnabled() {
@@ -84201,28 +84196,16 @@ function createVncSshHostForm(api2, onSaved, onClose) {
   cancel.addEventListener("click", close2);
   root.addEventListener("submit", (event) => {
     event.preventDefault();
-    const parsed = parseSshHostDraft({
-      id: id.value,
-      label: label.value,
-      host: host.value,
-      user: user.value,
-      port: port.value,
-      identityFile: identityFile.value,
-      forwardAgent: false
-    });
-    if (!parsed.ok) {
-      setInlineStatus(status, "error", parsed.error);
-      return;
-    }
     void (async () => {
       busy(true);
       try {
-        if (!await requireSshEnabled()) return;
         const existing = parseSshWorkspaceHosts(await api2.settings.get("sshWorkspaceHosts"));
-        if (existing.some((item) => item.id === parsed.host.id)) {
-          setInlineStatus(status, "error", "A machine with this id already exists.");
+        const parsed = hostFields.parse(existing);
+        if (!parsed.ok) {
+          setInlineStatus(status, "error", parsed.error);
           return;
         }
+        if (!await requireSshEnabled()) return;
         await api2.settings.set("sshWorkspaceHosts", upsertHost(existing, parsed.host));
         close2();
         await onSaved(parsed.host.id);
@@ -84233,25 +84216,20 @@ function createVncSshHostForm(api2, onSaved, onClose) {
       }
     })();
   });
-  importButton.addEventListener("click", () => {
+  configSelect.addEventListener("change", () => {
+    const chosen = configHosts.find((host) => host.host === configSelect.value);
+    if (!chosen) return;
     void (async () => {
       busy(true);
       try {
         if (!await requireSshEnabled()) return;
-        const aliases = await api2.sshWorkspace.listConfigAliases();
-        if (aliases.length === 0) {
-          setInlineStatus(status, "error", "No Host entries found in ~/.ssh/config.");
-          return;
-        }
         const existing = parseSshWorkspaceHosts(await api2.settings.get("sshWorkspaceHosts"));
-        const imported = importSshConfigHosts(existing, aliases);
-        await api2.settings.set("sshWorkspaceHosts", imported.hosts);
-        if (imported.firstAliasHostId) {
-          close2();
-          await onSaved(imported.firstAliasHostId);
-        }
+        const saved = saveSshConfigHost(existing, chosen);
+        await api2.settings.set("sshWorkspaceHosts", saved.hosts);
+        close2();
+        await onSaved(saved.hostId);
       } catch (error) {
-        setInlineStatus(status, "error", ipcErrorMessage(error, "Could not import SSH config."));
+        setInlineStatus(status, "error", ipcErrorMessage(error, "Could not save the SSH machine."));
       } finally {
         busy(false);
       }
@@ -84265,6 +84243,7 @@ var init_vnc_ssh_host_form = __esm({
     init_inline_status();
     init_ipc_error_message();
     init_ssh_host_helpers();
+    init_ssh_host_fields();
   }
 });
 
