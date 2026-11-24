@@ -52,6 +52,17 @@ export function inconclusiveCheckFailure(run: CheckRun): InconclusiveCheckFailur
   return null
 }
 
+/**
+ * Whether another run of the same commits in the same image might settle this
+ * failure: the checker ran out of time or memory, or was killed. A checker
+ * that could not start, or a typecheck with no diagnostic, fails the same way
+ * every time.
+ */
+export function transientCheckFailure(run: CheckRun): boolean {
+  const kind = inconclusiveCheckFailure(run)?.kind
+  return kind === 'timeout' || kind === 'termination' || kind === 'resource'
+}
+
 export function inconclusiveCheckReason(run: CheckRun): string | null {
   const failure = inconclusiveCheckFailure(run)
   return failure === null

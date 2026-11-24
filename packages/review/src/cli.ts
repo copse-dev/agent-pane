@@ -707,7 +707,13 @@ export async function main(argv: readonly string[], callerIo: CliIo): Promise<He
     return HEADLESS_EXIT.USAGE
   }
 
-  if (timeLimitMinutes !== undefined) {
+  if (values.preflight && values['summary-only']) {
+    io.stderr('copse-review: --preflight cannot be used with --summary-only\n')
+    return HEADLESS_EXIT.USAGE
+  }
+  // A pre-flight ends in seconds; a deadline armed for it would outlive it and
+  // later announce that a review it never ran was being cancelled.
+  if (timeLimitMinutes !== undefined && !values.preflight) {
     const deadline = AbortSignal.timeout(timeLimitMinutes * 60_000)
     deadline.addEventListener(
       'abort',

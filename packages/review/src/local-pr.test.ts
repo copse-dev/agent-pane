@@ -158,6 +158,8 @@ describe('copse-review pr', () => {
     )
   }
 
+  const out_ = (): string => out
+
   /** The repository's directory under reviews/, named after the remote's last two path parts. */
   async function repositoryDir(): Promise<string> {
     const [slug] = await readdir(join(copseDir, 'reviews'))
@@ -316,6 +318,29 @@ describe('copse-review pr', () => {
     const unknown = await localPullRequestMain(['7', '--remote', 'upstream', '--no-model'], io)
     assert.equal(unknown, HEADLESS_EXIT.USAGE, err)
     assert.match(err, /upstream is not a remote of this repository \(it has origin\)/)
+  })
+
+  it('runs only the pre-flight for pr --preflight, and refuses --summary-only', async () => {
+    const out = join(root, 'preflight-out')
+    assert.equal(await review(['--out', out]), HEADLESS_EXIT.SUCCESS, err)
+    const saved = await readFile(join(out, 'run.json'), 'utf8')
+    assert.equal(await review(['--out', out, '--fresh', '--preflight']), HEADLESS_EXIT.SUCCESS, err)
+    assert.match(err, /the model routes can run this review/)
+    assert.doesNotMatch(err, /reviewing [0-9a-f]{12} against/)
+    assert.equal(await readFile(join(out, 'run.json'), 'utf8'), saved)
+    assert.ok(await readFile(join(out, 'report.json'), 'utf8'))
+    assert.equal(await review(['--summary-only']), HEADLESS_EXIT.USAGE)
+    assert.match(err, /--summary-only is not supported here/)
+  })
+
+  it('saves the text report of a --quiet run, so a later plain ask still reads it', async () => {
+    const out = join(root, 'quiet-out')
+    assert.equal(await review(['--out', out, '--quiet']), HEADLESS_EXIT.SUCCESS, err)
+    assert.equal(out_(), '', 'nothing on stdout for the quiet caller')
+    assert.match(await readFile(join(out, 'report.txt'), 'utf8'), /reviewer mock under correctness/)
+    assert.equal(await review(['--out', out]), HEADLESS_EXIT.SUCCESS, err)
+    assert.match(err, /was already reviewed with these settings/)
+    assert.match(out_(), /reviewer mock under correctness/)
   })
 
   it('publishes into an existing --out directory without touching what else it holds', async () => {

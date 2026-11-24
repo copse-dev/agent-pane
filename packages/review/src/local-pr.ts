@@ -687,6 +687,14 @@ export async function localPullRequestMain(
     io.stdout(`${LOCAL_PR_USAGE}\n`)
     return HEADLESS_EXIT.SUCCESS
   }
+  // A review summary of the caller's own checkout is not this command's job:
+  // `copse-review --summary-only` is.
+  if (options.review.includes('--summary-only')) {
+    io.stderr(
+      'copse-review pr: --summary-only is not supported here; run copse-review --summary-only\n',
+    )
+    return HEADLESS_EXIT.USAGE
+  }
   const startedAt = new Date().toISOString()
   const stderr = (text: string): void => {
     io.stderr(text)
@@ -764,9 +772,12 @@ export async function localPullRequestMain(
   // The model routes, checked before this run waits its turn, fills a store or
   // builds an image: a model that is missing, loaded too small or blind to a
   // visual-only review fails now, not after the review ahead of it finishes.
-  if (!options.review.includes('--no-model')) {
-    const ready = await main(['--preflight', ...options.review], { ...io, cwd: repoRoot })
-    if (ready !== HEADLESS_EXIT.SUCCESS) return ready
+  // `pr --preflight` asks for this check alone.
+  const preflightOnly = options.review.includes('--preflight')
+  const askedOf = options.review.filter((arg) => arg !== '--preflight')
+  if (preflightOnly || !options.review.includes('--no-model')) {
+    const ready = await main(['--preflight', ...questionArgs(askedOf)], { ...io, cwd: repoRoot })
+    if (preflightOnly || ready !== HEADLESS_EXIT.SUCCESS) return ready
   }
 
   let release: () => Promise<void>
@@ -900,8 +911,11 @@ export async function localPullRequestMain(
     // The commits resolved above, not the refs: a push or another queued
     // review may move a ref before this one's turn, and the saved report is
     // filed under these commits.
+    // The review always writes its text report, so the saved answer has one
+    // for whoever asks next; `--quiet` only keeps it off this caller's stdout.
+    const quiet = options.review.includes('--quiet')
     const reviewArgsIn = (dir: string): string[] => [
-      ...options.review,
+      ...options.review.filter((arg) => arg !== '--quiet'),
       '--foreign',
       '--head',
       change.headCommit,
@@ -929,7 +943,7 @@ export async function localPullRequestMain(
       backend,
       stdout: (chunk) => {
         text += chunk
-        io.stdout(chunk)
+        if (!quiet) io.stdout(chunk)
       },
     })
     // A cancelled run is not an answer, whether the caller cancelled it or its
@@ -950,7 +964,7 @@ export async function localPullRequestMain(
       () => true,
       () => false,
     )
-    if (settled === null && exitCode !== HEADLESS_EXIT.SUCCESS && earlier) {
+    if (settled === null && earlier) {
       io.stderr(
         `copse-review pr: the review stopped (exit ${String(exitCode)}) without a report; the saved report in ${outDir} is unchanged\n`,
       )

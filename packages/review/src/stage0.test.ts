@@ -414,7 +414,11 @@ describe('runStage0', () => {
       const incomplete = report.checks.find((check) => check.verdict === 'undetermined')
       assert.ok(incomplete)
       assert.equal(incomplete.base, null, 'an incomplete head check needs no base execution')
-      assert.equal(incomplete.transient, true, 'another run may settle it')
+      // Out of time, memory or killed: another run may settle it. A checker
+      // that could not start, or exited with no diagnostic, fails the same way.
+      const exit = incomplete.head?.exitCode
+      const settles = !(exit === 127 || (incomplete.kind === 'typecheck' && exit === 1))
+      assert.equal(incomplete.transient, settles ? true : undefined)
       assert.equal(incomplete.headConfirmation, undefined)
       assert.deepEqual(report.findings, [])
       assert.match(

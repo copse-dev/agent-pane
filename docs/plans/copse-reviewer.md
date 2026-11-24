@@ -1195,8 +1195,9 @@ models; nothing in it is Mac-only.
   one its own `--time-limit` cut short, or one that stopped without a report leaves the last
   answer as it was. A report is reused only when its preparation passed, every check ran,
   and no check is `transient`. Stage 0 marks a check transient when its verdict depends on
-  the run, not the code: a checker that ran out of memory or time, was killed or could not
-  start, or two head test runs that disagreed. The key includes the engine asked for and the
+  the run, not the code: a checker that ran out of memory or time or was killed, or two head
+  test runs that disagreed. A checker that could not start, or a typecheck with no
+  diagnostic, fails the same way again, so it is reused. The key includes the engine asked for and the
   cell's limits, but not output-only options. A cell defaults to a quarter of the machine's
   memory (4g to 16g) and half its CPUs (2 to 8); Copse needs about 16g.
 - **Nothing outlives a killed run.** Cell containers are journalled, with their engine,

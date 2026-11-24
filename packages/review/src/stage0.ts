@@ -18,7 +18,7 @@ import { basename, join } from 'node:path'
 import { redactSecrets } from '@copse/llm/redact-secrets.ts'
 import { materialiseCheckouts, type GitRunner, type MaterialisedCheckouts } from './checkouts.ts'
 import { readCheckoutFile } from './checkout-fs.ts'
-import { inconclusiveCheckReason } from './check-failure.ts'
+import { inconclusiveCheckReason, transientCheckFailure } from './check-failure.ts'
 import {
   findingId,
   type CheckoutTarget,
@@ -150,8 +150,9 @@ export interface CheckOutcome {
   readonly reason?: string
   /**
    * The verdict depends on this run, not on the code: a checker that ran out
-   * of memory or time, was killed or could not start, on either side, or two
-   * head test runs that disagreed. Running again may settle it.
+   * of memory or time or was killed, on either side, or two head test runs
+   * that disagreed. Running again may settle it. A checker that could not
+   * start, or a typecheck with no diagnostic, fails the same way again.
    */
   readonly transient?: true
 }
@@ -692,7 +693,14 @@ export async function runStage0Checks(
     const incompleteHead = inconclusiveCheckReason(head)
     if (incompleteHead !== null) {
       const reason = incompleteHead
-      checks.push({ kind, verdict: 'undetermined', head, base, reason, transient: true })
+      checks.push({
+        kind,
+        verdict: 'undetermined',
+        head,
+        base,
+        reason,
+        ...(transientCheckFailure(head) ? { transient: true } : {}),
+      })
       notChecked.push({ kind, reason })
       continue
     }
@@ -731,7 +739,7 @@ export async function runStage0Checks(
         head,
         base,
         reason: incompleteBase,
-        transient: true,
+        ...(transientCheckFailure(base) ? { transient: true } : {}),
       })
       notChecked.push({ kind, reason: incompleteBase })
       continue

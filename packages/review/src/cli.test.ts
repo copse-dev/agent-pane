@@ -1469,6 +1469,9 @@ describe('copse-review CLI with local models', () => {
       ])
       assert.equal(missing.code, HEADLESS_EXIT.USAGE, missing.err)
       assert.match(missing.err, /has no model absent-model \(available: roomy-model\)/)
+      const both = await run(repo, ['--preflight', '--summary-only', ...args])
+      assert.equal(both.code, HEADLESS_EXIT.USAGE, both.err)
+      assert.match(both.err, /--preflight cannot be used with --summary-only/)
       assert.equal(worktreeCount(repo), 1)
     } finally {
       server.close()
