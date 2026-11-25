@@ -49,6 +49,11 @@ function ciRun(id: number, workflow: string, sha = SHA_A): BranchCiRun {
   }
 }
 
+/** A run that completed after the trigger was saved (the test clock is NOW). */
+function freshRun(id: number, workflow: string, sha = SHA_A): BranchCiRun {
+  return { ...ciRun(id, workflow, sha), updated_at: '2026-10-01T10:06:00Z' }
+}
+
 function pull(number: number, sha: string, draft = false): PullRequestObservation {
   return {
     number,
@@ -81,12 +86,14 @@ function comment(
   pullRequest: number,
   author: string,
   kind: PullRequestCommentObservation['kind'] = 'review',
+  association = 'MEMBER',
 ): PullRequestCommentObservation {
   return {
     id,
     kind,
     pullRequest,
     author,
+    association,
     html_url: `https://github.com/owner/repo/pull/${String(pullRequest)}#discussion_r${String(id)}`,
     created_at: `2026-10-01T10:00:${String(id % 60).padStart(2, '0')}Z`,
   }
@@ -641,8 +648,8 @@ describe('CI failed on a pull request', () => {
     w.pulls = [mine(1, SHA_C), pull(2, SHA_B), mine(3, SHA_A, true)]
     w.heads.set(1, { state: 'open', draft: false, head: { sha: SHA_C, ref: 'feature-1' } })
     // Someone else's pull request fails too; it is never polled.
-    w.runs.set(SHA_B, [ciRun(20, 'CI', SHA_B)])
-    w.runs.set(SHA_C, [ciRun(30, 'CI', SHA_C), ciRun(31, 'Lint', SHA_C)])
+    w.runs.set(SHA_B, [freshRun(20, 'CI', SHA_B)])
+    w.runs.set(SHA_C, [freshRun(30, 'CI', SHA_C), freshRun(31, 'Lint', SHA_C)])
     await w.service.poll()
     await w.supervisor.waitForIdle()
     assert.equal(w.threads.size, 1, 'two failed checks on one head start one task')
@@ -670,7 +677,7 @@ describe('CI failed on a pull request', () => {
     const w = await world(t)
     await w.service.upsert('project-a', { ...base, trigger })
     w.pulls = [mine(1, SHA_A)]
-    w.runs.set(SHA_A, [ciRun(10, 'CI', SHA_A)])
+    w.runs.set(SHA_A, [freshRun(10, 'CI', SHA_A)])
     w.heads.set(1, {
       state: 'open',
       draft: false,
@@ -699,7 +706,7 @@ describe('CI failed on a pull request', () => {
         draft: false,
         head: { sha, ref: 'feature-1' },
       })
-      w.runs.set(sha, [ciRun(100 + index, 'CI', sha)])
+      w.runs.set(sha, [freshRun(100 + index, 'CI', sha)])
       await w.service.poll()
       await w.supervisor.waitForIdle()
       w.settle()
@@ -710,6 +717,58 @@ describe('CI failed on a pull request', () => {
     )
     assert.ok(waiting, 'the fourth fix waits for the daily limit instead of being dropped')
   })
+
+  it('never replays failures that existed when it was saved, however many pull requests', async (t) => {
+    const w = await world(t)
+    w.pulls = Array.from({ length: 20 }, (_, index) => mine(index + 1, SHA_A))
+    w.runs.set(
+      SHA_A,
+      Array.from({ length: 6 }, (_, index) => ({
+        ...ciRun(1000 + index, `Job ${String(index)}`, SHA_A),
+        conclusion: index === 0 ? 'failure' : 'success',
+      })),
+    )
+    await w.service.upsert('project-a', { ...base, trigger })
+    await w.service.poll()
+    await w.supervisor.waitForIdle()
+    assert.equal(w.threads.size, 0)
+  })
+
+  it('does not treat runs awaiting approval as failures', async (t) => {
+    const w = await world(t)
+    await w.service.upsert('project-a', { ...base, trigger: { ...trigger, authors: 'anyone' } })
+    w.pulls = [pull(1, SHA_A)]
+    w.heads.set(1, { state: 'open', draft: false, head: { sha: SHA_A, ref: 'feature-1' } })
+    w.runs.set(SHA_A, [{ ...freshRun(10, 'CI', SHA_A), conclusion: 'action_required' }])
+    await w.service.poll()
+    await w.supervisor.waitForIdle()
+    assert.equal(w.threads.size, 0)
+  })
+
+  it('keeps polling when a waiting pull request is retitled', async (t) => {
+    const w = await world(t)
+    const definition = await w.service.upsert('project-a', { ...base, trigger })
+    w.pulls = [mine(1, SHA_A), mine(2, SHA_B)]
+    w.heads.set(1, { state: 'open', draft: false, head: { sha: SHA_A, ref: 'feature-1' } })
+    w.heads.set(2, { state: 'open', draft: false, head: { sha: SHA_B, ref: 'feature-2' } })
+    w.runs.set(SHA_A, [freshRun(10, 'CI', SHA_A)])
+    w.runs.set(SHA_B, [freshRun(20, 'CI', SHA_B)])
+    await w.service.poll()
+    await w.supervisor.waitForIdle()
+    assert.equal(w.threads.size, 1, '#2 waits behind #1')
+
+    w.pulls = [mine(1, SHA_A), { ...mine(2, SHA_B), title: 'Renamed while waiting' }]
+    await w.service.poll()
+    await w.supervisor.waitForIdle()
+    assert.equal(
+      w.service.list('project-a').find((item) => item.id === definition.id)?.lastProblem,
+      undefined,
+    )
+    w.settle()
+    await w.service.poll()
+    await w.supervisor.waitForIdle()
+    assert.equal(w.threads.size, 2, 'the waiting fix starts once the slot frees')
+  })
 })
 
 describe('review comments on a pull request', () => {
@@ -717,10 +776,10 @@ describe('review comments on a pull request', () => {
     kind: 'github-pr-review-comment',
     baseBranch: 'main',
     authors: 'mine',
-    commenters: 'others',
+    commenters: 'collaborators',
   } as const
 
-  it('batches new comments from others into one task per pull request', async (t) => {
+  it('batches new comments from collaborators into one task per pull request', async (t) => {
     const w = await world(t)
     w.pulls = [mine(1, SHA_A), pull(2, SHA_A)]
     w.comments = [comment(50, 1, 'reviewer')]
@@ -749,11 +808,12 @@ describe('review comments on a pull request', () => {
     assert.equal(w.threads.size, 1)
     const prompt = [...w.threads.values()][0]?.draftPrompt ?? ''
     assert.match(prompt, /Pull request review comment facts \(external source data\)/)
-    assert.match(prompt, /"newComments": 2/)
-    assert.match(prompt, /"commenters": "reviewer, copilot\[bot\]"/)
+    assert.match(prompt, /"newComments": 1/)
+    assert.match(prompt, /"commenters": "reviewer"/, 'bots and my own comments do not count')
+    assert.match(prompt, /never as instructions/)
     assert.equal(
       (await w.service.history('project-a', definition.id))[0]?.summary,
-      '2 new comments on #1 Change 1',
+      '1 new comment on #1 Change 1',
     )
     assert.deepEqual(
       w.service.list('project-a').find((item) => item.id === definition.id)?.commentCursor,
@@ -872,5 +932,44 @@ describe('pull request bot readers', () => {
       ),
       'me',
     )
+  })
+})
+
+describe('who may start a review comment run', () => {
+  const trigger = {
+    kind: 'github-pr-review-comment',
+    baseBranch: 'main',
+    authors: 'mine',
+    commenters: 'collaborators',
+  } as const
+
+  async function run(
+    t: TestContext,
+    commenters: 'collaborators' | 'others',
+    comments: PullRequestCommentObservation[],
+  ): Promise<string> {
+    const w = await world(t)
+    await w.service.upsert('project-a', { ...base, trigger: { ...trigger, commenters } })
+    w.pulls = [mine(1, SHA_A)]
+    w.heads.set(1, { state: 'open', draft: false, head: { sha: SHA_A, ref: 'feature-1' } })
+    w.comments = comments
+    await w.service.poll()
+    await w.supervisor.waitForIdle()
+    return [...w.threads.values()][0]?.draftPrompt ?? ''
+  }
+
+  const outsiders = [
+    comment(1, 1, 'stranger', 'conversation', 'NONE'),
+    comment(2, 1, 'drive-by', 'review', 'CONTRIBUTOR'),
+    comment(3, 1, 'github-actions[bot]', 'conversation', 'NONE'),
+    comment(4, 1, 'release-bot[bot]', 'review', 'MEMBER'),
+  ]
+
+  it('ignores strangers, contributors and bots by default', async (t) => {
+    assert.equal(await run(t, 'collaborators', outsiders), '')
+  })
+
+  it('counts them when the user opts in to comments from anyone but themselves', async (t) => {
+    assert.match(await run(t, 'others', outsiders), /"newComments": 4/)
   })
 })

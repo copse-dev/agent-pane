@@ -158,13 +158,19 @@ export type EventAutomationTrigger =
       baseBranch: string
       authors: PullRequestAuthors
       viewer: string
-      /** Whose comments count. `others`: all but `viewer`, so a run's own replies never re-trigger it. */
+      /** Whose comments count; see `ReviewCommenters`. */
       commenters: ReviewCommenters
     }
 
 export type PullRequestTransition = 'ready-for-review' | 'new-commits'
 export type PullRequestAuthors = 'mine' | 'anyone'
-export type ReviewCommenters = 'others' | 'anyone'
+/**
+ * Whose comments start a run. `collaborators` (default): owners, members and collaborators of
+ * the repository, never bots and never `viewer`, so a stranger cannot start a run that acts as
+ * the user, and a run's own replies cannot restart it. `others`: any account but `viewer`,
+ * bots included. `anyone`: every comment, including `viewer`'s.
+ */
+export type ReviewCommenters = 'collaborators' | 'others' | 'anyone'
 
 /** Triggers that watch every open pull request into a base branch, so limits apply per pull request. */
 export const MULTI_PULL_REQUEST_TRIGGERS = [
@@ -217,6 +223,11 @@ export interface BranchCiAutomation {
    * within each). Review-comment triggers only; comments at or below it are history.
    */
   commentCursor?: { review: number; conversation: number } | undefined
+  /**
+   * When the trigger's source was baselined. CI triggers over every open pull request ignore
+   * runs that completed before it, so saving never replays failures that already existed.
+   */
+  watchingSince?: number | undefined
   lastRunAt?: number | undefined
   lastCreatedThreadId?: string | undefined
   /** Latest unresolved failure to start or poll, cleared by the next run that starts. */

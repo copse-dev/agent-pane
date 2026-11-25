@@ -81,7 +81,7 @@ describe('pull request bot automations', function () {
                   baseBranch: 'main',
                   authors: 'mine',
                   viewer: 'octocat',
-                  commenters: 'others',
+                  commenters: 'collaborators',
                 },
                 { commentCursor: { review: 100, conversation: 200 } },
               ),
@@ -131,7 +131,7 @@ describe('pull request bot automations', function () {
     await dialog.$('.automation-ci-cancel').click()
 
     await dialog.$(`[data-ci-automation-id="${REVIEW_ID}"]`).$('.automation-row-btn=Edit').click()
-    await expect(form.$('.automation-pr-commenters')).toHaveValue('others')
+    await expect(form.$('.automation-pr-commenters')).toHaveValue('collaborators')
     await expect(form.$('.automation-ci-checks')).not.toBeDisplayed()
     await expect(form.$('.automation-ci-summary')).toHaveText(
       expect.stringContaining('replies a run posts as me, are ignored'),

@@ -13,33 +13,42 @@ delivery history were added on 2026-10-07 (see the status update below).
 Two triggers watch **every open pull request into a base branch** instead of one branch or one
 PR number, so one automation can act as a fix bot for all of a user's PRs:
 
-| Trigger (`trigger.kind`)   | Filters                                                                                      | Delivery identity                               | Freshness rule before a run starts                                                    |
-| -------------------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `github-pr-ci-failed`      | base branch; authors `mine` (default) or `anyone`; optional workflow-name list (max 10)      | workflow run id + attempt                       | PR open, head SHA unchanged; not already started on this head by another failed check |
-| `github-pr-review-comment` | base branch; authors `mine` (default) or `anyone`; commenters `others` (default) or `anyone` | `rc:<pr>:r<newest review id>:c<newest conv id>` | PR open; no newer comment batch for the same PR                                       |
+| Trigger (`trigger.kind`)   | Filters                                                                                                     | Delivery identity                               | Freshness rule before a run starts                                                    |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `github-pr-ci-failed`      | base branch; authors `mine` (default) or `anyone`; optional workflow-name list (max 10)                     | workflow run id + attempt                       | PR open, head SHA unchanged; not already started on this head by another failed check |
+| `github-pr-review-comment` | base branch; authors `mine` (default) or `anyone`; commenters `collaborators` (default), `others`, `anyone` | `rc:<pr>:r<newest review id>:c<newest conv id>` | PR open; no newer comment batch for the same PR                                       |
 
-- `mine`/`others` compare against `viewer`, the `gh` account resolved when the trigger is saved
-  (re-resolved on every enabled save). Limiting to the user's own PRs keeps a fix bot from pushing
-  to someone else's branch; ignoring the user's own comments is the self-retrigger protection,
-  since a run replies to review threads as that same account.
+- **Who can start a run.** A review-comment run acts as the user and its job is to act on the
+  comment text, so the default counts only comments whose `author_association` is `OWNER`,
+  `MEMBER` or `COLLABORATOR`, never a `[bot]` login, and never `viewer` (the `gh` account
+  resolved when the trigger is saved). That keeps strangers from starting runs or spending the
+  user's model budget, and stops bot comments and the run's own replies from retriggering it.
+  `others` (any account but `viewer`) and `anyone` are explicit opt-ins with warning copy. The
+  run's facts state that comment text is untrusted feedback, not instructions.
+- **Whose pull requests.** `mine` keeps a fix bot off other people's branches. `anyone` warns
+  that fork PRs mean checking out and running outside code. `action_required` is not counted as
+  a failure for these triggers, since GitHub also reports it for a first-time contributor's runs
+  awaiting approval.
+- **No replay on save.** The CI trigger records `watchingSince` when it is saved and ignores
+  runs that completed before it, instead of a bounded list of run ids that could drop entries.
+- **Waiting deliveries.** A delivery already in the inbox is never re-admitted (its evidence
+  carries a mutable PR title, and re-admitting changed evidence is rejected, which used to stop
+  the whole automation polling). Every poll reconciles waiting deliveries instead; this applies
+  to every event trigger kind.
 - Review comments are read with two repository-wide calls (inline review comments and PR
-  conversation comments, newest 100 each) and consumed by a per-definition `commentCursor` of
-  the newest ids seen, not the 100-entry `seenDeliveries` list. Comment bodies are never read by
-  the poller: the run reads the threads itself, so untrusted text does not enter Copse's stores
-  or the first prompt. New comments are batched into one delivery per PR per poll; a newer batch
-  supersedes one still waiting for a slot. Reviews submitted with only a summary body (no inline
-  comment) are not observed: there is no repository-wide reviews endpoint.
-- CI over open PRs reads the open-PR list plus one workflow-runs call per watched head, capped at
-  the 20 most recently updated PRs. Several failed workflows on one head start one task.
+  conversation comments, newest 100 each) and consumed by a per-definition `commentCursor`.
+  Comment bodies are never read by the poller. New comments are batched into one delivery per
+  PR per poll; a newer batch supersedes one still waiting for a slot.
+- CI over open PRs reads the open-PR list (newest 50 by update) plus one workflow-runs call per
+  watched head, capped at the 20 most recently updated matching PRs.
 - Limits for both: at most three runs per PR and ten per automation per 24 hours (single-resource
-  triggers keep three per automation). The one-active-run rule and worktree cap still apply, so
-  runs for different PRs queue behind each other.
-- Because review deliveries are consumed by cursor rather than re-admitted, every poll of these
-  triggers reconciles the project's waiting deliveries.
+  triggers keep three per automation). The one-active-run rule and worktree cap still apply.
 
-Still open for a hands-off fix bot: unattended approvals (a run that must `git push` still stops
-on an approval prompt), default enablement of `copse.automations`, webhooks, and observing
-summary-only reviews.
+Known gaps: unattended approvals (a run that must `git push` still stops on a prompt); default
+enablement of `copse.automations`; webhooks; reviews submitted with only a summary body are not
+observed; inline comments drafted in a pending review may get ids older than the cursor by the
+time the review is submitted (unverified); a CI fix that fails again retriggers its own
+automation up to the per-PR cap; one runs call per watched head per minute.
 
 ## Status update (2026-10-07)
 

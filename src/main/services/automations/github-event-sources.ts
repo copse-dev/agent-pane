@@ -188,6 +188,8 @@ export const pullRequestCommentSchema = z.object({
   kind: z.enum(['review', 'conversation']),
   pullRequest: z.number().int().positive(),
   author: text(128).nullable(),
+  /** GitHub's `author_association`: OWNER, MEMBER, COLLABORATOR, CONTRIBUTOR, NONE, ... */
+  association: text(32),
   html_url: z.url(),
   created_at: text(64),
 })
@@ -214,7 +216,7 @@ export async function readRecentPullRequestComments(
       '--hostname',
       host,
       '--jq',
-      '[.[] | {id, kind: "review", pullRequest: (.pull_request_url | split("/") | last | tonumber), author: .user.login, html_url, created_at}]',
+      '[.[] | {id, kind: "review", pullRequest: (.pull_request_url | split("/") | last | tonumber), author: .user.login, association: .author_association, html_url, created_at}]',
     ],
     list,
     'pull request comment',
@@ -228,7 +230,7 @@ export async function readRecentPullRequestComments(
       '--hostname',
       host,
       '--jq',
-      '[.[] | select(.html_url | test("/pull/[0-9]+#")) | {id, kind: "conversation", pullRequest: (.issue_url | split("/") | last | tonumber), author: .user.login, html_url, created_at}]',
+      '[.[] | select(.html_url | test("/pull/[0-9]+#")) | {id, kind: "conversation", pullRequest: (.issue_url | split("/") | last | tonumber), author: .user.login, association: .author_association, html_url, created_at}]',
     ],
     list,
     'pull request comment',

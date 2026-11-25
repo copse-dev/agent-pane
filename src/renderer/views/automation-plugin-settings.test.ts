@@ -1379,9 +1379,15 @@ describe('automation plugin settings detail', () => {
     set('.automation-when-select', 'github-pr-review-comment', 'change')
     assert.equal(visible('.automation-pr-commenters'), true)
     assert.equal(visible('.automation-ci-checks'), false)
-    assert.match(summary(), /My own comments, including replies a run posts as me, are ignored/)
+    assert.match(
+      summary(),
+      /bots and my own comments, including replies a run posts as me, are ignored/,
+    )
     set('.automation-pr-commenters', 'anyone', 'change')
-    assert.match(summary(), /Replies posted by a run can start another run/)
+    assert.match(
+      summary(),
+      /including bots and strangers, can start a run that acts as you, and replies/,
+    )
     set('.automation-ci-name', 'Address review')
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await tick()

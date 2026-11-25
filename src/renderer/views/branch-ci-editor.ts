@@ -138,7 +138,8 @@ export function mountBranchCiEditor(options: {
   const commenters = el(
     'select',
     { class: 'automation-input automation-pr-commenters' },
-    el('option', { value: 'others' }, 'Anyone but me'),
+    el('option', { value: 'collaborators' }, 'Repository collaborators, not bots or me'),
+    el('option', { value: 'others' }, 'Anyone but me, including bots and strangers'),
     el('option', { value: 'anyone' }, 'Anyone, including me'),
   )
   const label = el('input', {
@@ -273,7 +274,10 @@ export function mountBranchCiEditor(options: {
         kind,
         baseBranch: baseBranch.value.trim(),
         authors: who,
-        commenters: commenters.value === 'anyone' ? 'anyone' : 'others',
+        commenters:
+          commenters.value === 'anyone' || commenters.value === 'others'
+            ? commenters.value
+            : 'collaborators',
       }
     const selected = splitChecks()
     if (kind === 'github-pr-ci-failed')
@@ -301,17 +305,23 @@ export function mountBranchCiEditor(options: {
     if (kind === 'github-pr-ci-failed' || kind === 'github-pr-review-comment') {
       const base = baseBranch.value.trim() || 'the base branch'
       const whose = authors.value === 'anyone' ? 'a pull request' : 'one of my pull requests'
+      const strangers =
+        authors.value === 'anyone'
+          ? ' Warning: this includes pull requests from forks, so a run checks out and runs code written by people outside the repository.'
+          : ''
       if (kind === 'github-pr-review-comment') {
         const from =
           commenters.value === 'anyone'
-            ? 'Replies posted by a run can start another run.'
-            : 'My own comments, including replies a run posts as me, are ignored.'
-        summary.textContent = `When ${whose} into ${base} gets new review or conversation comments, address them. New comments are batched into one task per pull request; at most three runs per pull request and ten in total per 24 hours. ${from}`
+            ? 'Warning: anyone who can comment, including bots and strangers, can start a run that acts as you, and replies a run posts can start another run.'
+            : commenters.value === 'others'
+              ? 'Warning: anyone who can comment, including bots and strangers, can start a run that acts as you. My own comments are ignored.'
+              : 'Only comments from repository owners, members and collaborators count; bots and my own comments, including replies a run posts as me, are ignored.'
+        summary.textContent = `When ${whose} into ${base} gets new review or conversation comments, address them. New comments are batched into one task per pull request; at most three runs per pull request and ten in total per 24 hours. ${from}${strangers}`
         return
       }
       const selected = splitChecks()
       const only = selected.length > 0 ? ` (only ${selected.join(', ')})` : ''
-      summary.textContent = `When CI fails${only} on the current head of ${whose} into ${base}, fix it. One task per pull request head; at most three runs per pull request and ten in total per 24 hours.`
+      summary.textContent = `When CI fails${only} on the current head of ${whose} into ${base}, fix it. One task per pull request head; at most three runs per pull request and ten in total per 24 hours.${strangers}`
       return
     }
     if (kind === 'github-pr-changed') {
@@ -379,7 +389,8 @@ export function mountBranchCiEditor(options: {
       trigger?.kind === 'github-pr-ci-failed' || trigger?.kind === 'github-pr-review-comment'
         ? trigger.authors
         : 'mine'
-    commenters.value = trigger?.kind === 'github-pr-review-comment' ? trigger.commenters : 'others'
+    commenters.value =
+      trigger?.kind === 'github-pr-review-comment' ? trigger.commenters : 'collaborators'
     transition.value =
       trigger?.kind === 'github-pr-changed' ? trigger.transition : 'ready-for-review'
     label.value = trigger?.kind === 'github-issue-labeled' ? trigger.label : ''

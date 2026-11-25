@@ -58,7 +58,7 @@ const zEventTriggerInput = z.discriminatedUnion('kind', [
     kind: z.literal('github-pr-review-comment'),
     baseBranch: z.string().trim().min(1).max(200),
     authors: z.enum(['mine', 'anyone']),
-    commenters: z.enum(['others', 'anyone']),
+    commenters: z.enum(['collaborators', 'others', 'anyone']),
   }),
 ])
 
