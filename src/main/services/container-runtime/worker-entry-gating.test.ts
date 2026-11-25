@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import { STANDALONE_MAIN_BUNDLES } from '../../../../scripts/main-bundles.mts'
@@ -128,6 +128,9 @@ describe('benchmark-only external container boundary is unreachable from the pro
 
   it('the product bundle contains no trace of it, and the Harbor bundle does (so the check can see it)', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'copse-worker-gating-'))
+    // dist-test/ exists only once a build or another test has made it, so a
+    // fresh checkout running this file alone must create it.
+    mkdirSync(join(ROOT, 'dist-test'), { recursive: true })
     const harborDir = mkdtempSync(join(ROOT, 'dist-test', 'gating-'))
     try {
       const product = readFileSync(
