@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { chatGptPlanModelValue } from '@copse/llm/chatgpt-plan.ts'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -123,6 +124,19 @@ describe('runTurnWorker', () => {
     )
     assert.deepEqual(outcome, { status: 'held', holder: { host: hostname(), pid: process.ppid } })
     assert.equal((await loadThreadMessages('p1', 't3')).length, 2)
+  })
+
+  it('leaves a ChatGPT plan turn for the next launch', async () => {
+    await saveProjectThread('p1', cutOff('t5', { model: chatGptPlanModelValue('codex', 'gpt-5') }))
+    const outcome = await runTurnWorker(
+      { projectId: 'p1', threadId: 't5' },
+      { registry: new ToolRegistry(), log: silent },
+    )
+    assert.deepEqual(outcome, { status: 'not-resumable' })
+    assert.equal(
+      (await loadProjectThreadMetas('p1')).find((meta) => meta.id === 't5')?.status,
+      'running',
+    )
   })
 
   it('does nothing for a thread that finished', async () => {
