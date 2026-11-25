@@ -967,9 +967,7 @@ async function runAcpAgentTurn(
       options.onChunk({ type: 'text', text: acpSessionHandoverNotice(handover, agent.title) })
     }
     const sessionBridge =
-      !remote && entry.bridge !== null && entry.open.bridgeServerName !== null
-        ? entry.bridge
-        : null
+      !remote && entry.bridge !== null && entry.open.bridgeServerName !== null ? entry.bridge : null
     offeredBridge = sessionBridge
     // An offer is not a mount (#4144): the agent has Copse's tools only once
     // it lists them. It normally does so while its session opens; give it the
