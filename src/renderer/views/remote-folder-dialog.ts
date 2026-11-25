@@ -10,6 +10,8 @@ import {
   upsertHost,
 } from './setup/ssh-host-helpers.ts'
 import { createSshHostFields } from './setup/ssh-host-fields.ts'
+import { createSshWorkspaceConsent } from './ssh-workspace-consent.ts'
+import { isSshWorkspaceEnabled } from '../controller/ssh-workspace-ui.ts'
 import {
   fillRemotePathBreadcrumbs,
   initialRemoteBrowsePath,
@@ -115,8 +117,10 @@ export function openRemoteFolderDialog(
     list,
   )
 
-  dialog.append(
-    el('h3', {}, 'Open remote folder'),
+  // Everything below the heading, hidden while the turn-on step is showing.
+  const picker = el(
+    'div',
+    { class: 'remote-folder-picker' },
     el('p', { class: 'field-hint' }, 'Choose an SSH host and folder on the remote machine.'),
     el(
       'div',
@@ -129,6 +133,7 @@ export function openRemoteFolderDialog(
     status,
     el('div', { class: 'remote-folder-actions' }, cancelBtn, openBtn),
   )
+  dialog.append(el('h3', {}, 'Open remote folder'), picker)
 
   let hosts: SshWorkspaceHost[] = []
   /** `~/.ssh/config` hosts not saved yet, offered in the picker below the saved ones. */
@@ -405,7 +410,26 @@ export function openRemoteFolderDialog(
       finish({ hostId: currentHostId, path: currentPath })
     })
 
-    void loadHosts()
+    // With SSH workspaces off, say what turning them on means before anything
+    // connects. Declining closes the dialog and leaves the setting off.
+    void isSshWorkspaceEnabled(api).then((enabled) => {
+      if (enabled) {
+        void loadHosts()
+        return
+      }
+      picker.hidden = true
+      const consent = createSshWorkspaceConsent(api, {
+        onEnabled: async () => {
+          consent.root.remove()
+          picker.hidden = false
+          await loadHosts()
+        },
+        onCancel: () => {
+          finish(null)
+        },
+      })
+      dialog.append(consent.root)
+    })
     dialog.showModal()
   })
 }
