@@ -131,7 +131,7 @@
       "modelId": "gpt-5",
       "publisher": "OpenAI",
       "kind": "system-card",
-      "title": "Gpt-5 system card",
+      "title": "GPT-5 system card",
       "url": "https://openai.com/index/gpt-5-system-card",
       "source": "Discovered by scripts/sync-model-cards.mts --discover from OpenAI's published card index on 2026-11-25.",
       "asOf": "2026-11-25"
@@ -140,7 +140,7 @@
       "modelId": "gpt-5.5",
       "publisher": "OpenAI",
       "kind": "system-card",
-      "title": "Gpt-5-5 system card",
+      "title": "GPT-5.5 system card",
       "url": "https://openai.com/index/gpt-5-5-system-card",
       "source": "Discovered by scripts/sync-model-cards.mts --discover from OpenAI's published card index on 2026-11-25.",
       "asOf": "2026-11-25"

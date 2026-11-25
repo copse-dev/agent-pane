@@ -124,14 +124,14 @@ export const MODEL_CARDS: Record<string, ModelCard> = {
   },
   'gpt-5': {
     url: 'https://openai.com/index/gpt-5-system-card',
-    title: 'Gpt-5 system card',
+    title: 'GPT-5 system card',
     publisher: 'OpenAI',
     kind: 'system-card',
     asOf: '2026-11-25',
   },
   'gpt-5.5': {
     url: 'https://openai.com/index/gpt-5-5-system-card',
-    title: 'Gpt-5-5 system card',
+    title: 'GPT-5.5 system card',
     publisher: 'OpenAI',
     kind: 'system-card',
     asOf: '2026-11-25',
