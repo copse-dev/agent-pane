@@ -94,7 +94,12 @@ export interface AcquireAcpSessionOptions {
 
 /** A thread's saved link to an agent session, kept beside the thread. */
 export interface AcpStoredSession {
-  load: () => Promise<{ sessionId: string; cwd: string } | null>
+  load: () => Promise<{
+    sessionId: string
+    cwd: string
+    /** How much of the thread's history the session holds; absent when unknown. */
+    transcriptCheckpoint?: AcpTranscriptCheckpoint
+  } | null>
   /** The agent took the session back: keep the link, under the id it now uses. */
   keep: (sessionId: string) => Promise<void>
   /** The agent could not take it back: forget the link and go on from the transcript. */
@@ -423,7 +428,15 @@ async function acquireAcpSessionUnlocked(
       return null
     })
     if (stored) {
-      carryOver = { lineage, sessionId: stored.sessionId, cwd: stored.cwd, hasHistory: true }
+      carryOver = {
+        lineage,
+        sessionId: stored.sessionId,
+        cwd: stored.cwd,
+        hasHistory: true,
+        ...(stored.transcriptCheckpoint
+          ? { transcriptCheckpoint: stored.transcriptCheckpoint }
+          : {}),
+      }
       fromStoredSession = true
     }
   }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Thread } from '@shared/types'
+import type { LLMMessage, Thread } from '@shared/types'
 import { claudeProjectDirName } from './claude-code-sessions.ts'
 import {
   importExternalSessions,
@@ -17,15 +17,25 @@ const ROOT = '/Users/dev/code/my-app'
 interface Harness {
   deps: ExternalSessionImportDeps
   threads: Thread[]
-  bindings: Array<{ threadId: string; agentId: string; sessionId: string; cwd: string }>
+  bindings: Array<{
+    threadId: string
+    agentId: string
+    sessionId: string
+    cwd: string
+    history: readonly LLMMessage[]
+    sharedFile?: { path: string; modifiedAt: number }
+  }>
+  histories: Map<string, LLMMessage[]>
 }
 
-function harness(enabledAgents: string[]): Harness {
+function harness(enabledAgents: string[], options: { claudeScoped?: boolean } = {}): Harness {
   const threads: Thread[] = []
   const bindings: Harness['bindings'] = []
+  const histories = new Map<string, LLMMessage[]>()
   return {
     threads,
     bindings,
+    histories,
     deps: {
       projectRoot: (id) => (id === 'p1' ? ROOT : null),
       loadThreadMetas: (): Promise<Thread[]> =>
@@ -34,7 +44,16 @@ function harness(enabledAgents: string[]): Harness {
         threads.push(thread)
         return Promise.resolve()
       },
-      agentEnabled: (id) => enabledAgents.includes(id),
+      findAgent: (id) =>
+        Promise.resolve(
+          enabledAgents.includes(id)
+            ? { id, sessionsStayInThread: options.claudeScoped ?? true }
+            : null,
+        ),
+      saveHistory: (_projectId, threadId, history): Promise<void> => {
+        histories.set(threadId, history)
+        return Promise.resolve()
+      },
       claudeThreadConfigDir: (_projectId, threadId, agentId) =>
         join(scratch, 'threads', threadId, agentId),
       saveBinding: (_projectId, threadId, binding): Promise<void> => {
@@ -156,8 +175,25 @@ describe('importing Claude Code and Codex sessions', () => {
         ['assistant', 'Done.'],
       ],
     )
+    // The model reads a labelled record, never the CLI's work as its own calls.
+    const history = h.histories.get(thread.id)
+    assert.deepEqual(history, [
+      {
+        role: 'user',
+        content:
+          "[This conversation was imported from Claude Code. Its earlier turns and tool calls ran in Claude Code, outside Copse's sandbox and approvals.]\n\nFix the flaky test",
+      },
+      { role: 'assistant', content: 'Done.' },
+    ])
+    // The binding carries that history, so a resume does not send it again.
     assert.deepEqual(h.bindings, [
-      { threadId: thread.id, agentId: 'claude-acp', sessionId: 'claude-session-1', cwd: ROOT },
+      {
+        threadId: thread.id,
+        agentId: 'claude-acp',
+        sessionId: 'claude-session-1',
+        cwd: ROOT,
+        history,
+      },
     ])
     // The thread's agent gets its own copy where its scoped config dir looks.
     const copy = join(
@@ -176,6 +212,36 @@ describe('importing Claude Code and Codex sessions', () => {
     assert.deepEqual(again.alreadyImported, [{ key: session.key, threadId: thread.id }])
     const relisted = await listExternalSessions(h.deps, 'p1')
     assert.equal(relisted.sessions[0]?.importedThreadId, thread.id)
+  })
+
+  it("does not link a Claude session its agent would resume in the user's own ~/.claude", async () => {
+    seedClaude()
+    const h = harness(['claude-acp'], { claudeScoped: false })
+    const [session] = (await listExternalSessions(h.deps, 'p1')).sessions
+    assert.ok(session)
+
+    const result = await importExternalSessions(h.deps, 'p1', [session.key])
+
+    const thread = result.imported[0]
+    assert.ok(thread)
+    assert.equal(thread.model, 'acp:claude-acp')
+    assert.deepEqual(h.bindings, [])
+    assert.equal(existsSync(join(scratch, 'threads')), false)
+    assert.equal(h.histories.get(thread.id)?.length, 2)
+  })
+
+  it('links a Codex session to the rollout it shares with the CLI, as last written', async () => {
+    seedCodex(ROOT)
+    const h = harness(['codex-acp'])
+    const [session] = (await listExternalSessions(h.deps, 'p1')).sessions
+    assert.ok(session)
+
+    await importExternalSessions(h.deps, 'p1', [session.key])
+
+    const shared = h.bindings[0]?.sharedFile
+    assert.ok(shared)
+    assert.match(shared.path, /rollout-2026-11-02T09-00-00-codex-1\.jsonl$/)
+    assert.equal(shared.modifiedAt, session.updatedAt)
   })
 
   it('imports the transcript alone when the matching agent is not set up', async () => {

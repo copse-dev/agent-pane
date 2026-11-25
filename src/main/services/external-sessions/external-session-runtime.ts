@@ -1,6 +1,12 @@
 import { getAcpAgent } from '../acp/acp-agent-registry.ts'
-import { acpAgentConfigDir } from '../acp/acp-agent-config-dir.ts'
-import { createThread, loadProjectThreadMetas, saveAcpSessionBinding } from '../thread-store.ts'
+import { acpAgentConfigDir, localClaudeConfigIsScoped } from '../acp/acp-agent-config-dir.ts'
+import { checkpointAcpHistory } from '../acp/acp-transcript-checkpoint.ts'
+import {
+  createThread,
+  loadProjectThreadMetas,
+  saveAcpSessionBinding,
+  saveAgentHistory,
+} from '../thread-store.ts'
 import { getLocalProjectRoot } from '../workspace.ts'
 import type { ExternalSessionImportDeps } from './external-session-import.ts'
 
@@ -10,8 +16,13 @@ export function externalSessionImportDeps(): ExternalSessionImportDeps {
     projectRoot: getLocalProjectRoot,
     loadThreadMetas: (projectId) => loadProjectThreadMetas(projectId),
     createThread,
-    agentEnabled: (agentId) => getAcpAgent(agentId) !== null,
+    findAgent: async (agentId): ReturnType<ExternalSessionImportDeps['findAgent']> => {
+      const agent = getAcpAgent(agentId)
+      if (!agent) return null
+      return { id: agent.id, sessionsStayInThread: await localClaudeConfigIsScoped(agent) }
+    },
     claudeThreadConfigDir: acpAgentConfigDir,
+    saveHistory: (projectId, threadId, history) => saveAgentHistory(projectId, threadId, history),
     saveBinding: (projectId, threadId, binding) =>
       saveAcpSessionBinding(projectId, threadId, {
         v: 1,
@@ -23,6 +34,8 @@ export function externalSessionImportDeps(): ExternalSessionImportDeps {
         agentConfigGeneration: 0,
         createdBy: 'external',
         lastAttachedAt: Date.now(),
+        transcriptCheckpoint: checkpointAcpHistory(binding.history),
+        ...(binding.sharedFile ? { sharedSessionFile: binding.sharedFile } : {}),
       }),
   }
 }

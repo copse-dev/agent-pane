@@ -435,10 +435,16 @@ describe('ACP session continuity across a new agent process', () => {
     function storedSession(
       sessionId: string,
       cwd: string,
+      transcriptCheckpoint?: { messageCount: number; prefixHash: string },
     ): { link: AcpStoredSession; calls: { kept: string[]; dropped: number } } {
       const calls: { kept: string[]; dropped: number } = { kept: [], dropped: 0 }
       const link: AcpStoredSession = {
-        load: () => Promise.resolve({ sessionId, cwd }),
+        load: () =>
+          Promise.resolve({
+            sessionId,
+            cwd,
+            ...(transcriptCheckpoint ? { transcriptCheckpoint } : {}),
+          }),
         keep: (id) => {
           calls.kept.push(id)
           return Promise.resolve()
@@ -470,6 +476,23 @@ describe('ACP session continuity across a new agent process', () => {
       assert.equal(acquired.entry.open.restoredBy, 'resume')
       assert.deepEqual(stored.calls.kept, ['s1'])
       assert.equal(stored.calls.dropped, 0)
+    })
+
+    it('carries the saved history checkpoint, so the resumed turn sends none of it again', async () => {
+      const fake = fakeAgent('global', { load: true, resume: true })
+      await prompt(fake, WRITABLE, 'started in the CLI')
+      await disposeAllAcpSessions()
+      const checkpoint = { messageCount: 2, prefixHash: 'imported' }
+      const stored = storedSession('s1', WORKTREE, checkpoint)
+
+      const acquired = await acquireAcpSession({
+        threadId: 'thread',
+        config: WRITABLE,
+        createTransport: fake.createTransport,
+        storedSession: stored.link,
+      })
+
+      assert.deepEqual(acquired.entry.transcriptCheckpoint, checkpoint)
     })
 
     it('forgets a saved session the agent no longer has, and says what was lost', async () => {

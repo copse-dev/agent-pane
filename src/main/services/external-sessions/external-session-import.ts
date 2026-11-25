@@ -3,6 +3,7 @@ import { copyFile, mkdir } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import type {
   ExternalSessionImportResult,
+  LLMMessage,
   ExternalSessionList,
   ExternalSessionSource,
   ExternalSessionSummary,
@@ -24,6 +25,7 @@ import {
 } from './codex-sessions.ts'
 import { cwdWithinRoot, externalSessionKey } from './session-files.ts'
 import type { ExternalSessionFile, ParsedExternalSession } from './external-session-types.ts'
+import { importedAgentHistory } from './imported-agent-history.ts'
 
 /**
  * Import saved Claude Code and Codex CLI sessions as Copse threads.
@@ -54,14 +56,29 @@ export interface ExternalSessionImportDeps {
   /** Threads already in the project, for the already-imported marks. */
   loadThreadMetas: (projectId: string) => Promise<Thread[]>
   createThread: (projectId: string, thread: Thread) => Promise<void>
-  /** Whether a coding agent with this id is set up and enabled. */
-  agentEnabled: (agentId: string) => boolean
+  /**
+   * The enabled coding agent with this id (aliases resolved), or null when none
+   * is set up. `sessionsStayInThread` says whether its Claude runs keep their
+   * sessions in the thread's own config dir; when they would use `~/.claude`,
+   * resuming would write to the user's original session, so it is not linked.
+   */
+  findAgent: (agentId: string) => Promise<{ id: string; sessionsStayInThread: boolean } | null>
   /** Where a thread's scoped Claude config lives (`CLAUDE_CONFIG_DIR` for its agent). */
   claudeThreadConfigDir: (projectId: string, threadId: string, agentId: string) => string
+  /** The provider history the thread's next turn starts from. */
+  saveHistory: (projectId: string, threadId: string, history: LLMMessage[]) => Promise<void>
   saveBinding: (
     projectId: string,
     threadId: string,
-    binding: { agentId: string; sessionId: string; cwd: string },
+    binding: {
+      agentId: string
+      sessionId: string
+      cwd: string
+      /** The history the linked session already holds, so a resume sends none of it again. */
+      history: readonly LLMMessage[]
+      /** The session file the agent shares with the CLI, when it does not get its own copy. */
+      sharedFile?: { path: string; modifiedAt: number }
+    },
   ) => Promise<void>
   env?: NodeJS.ProcessEnv
   now?: () => number
@@ -234,25 +251,35 @@ export async function importExternalSessions(
         result.failed.push({ key, reason: 'The session has no conversation to import.' })
         continue
       }
-      const agentId = AGENT_FOR_SOURCE[session.source]
-      const agentReady = deps.agentEnabled(agentId)
+      const agent = await deps.findAgent(AGENT_FOR_SOURCE[session.source])
       const thread = buildThread(
         session,
         found.relativeCwd,
         key,
-        agentReady ? acpModelValue(agentId) : null,
+        agent ? acpModelValue(agent.id) : null,
         now(),
       )
       await deps.createThread(projectId, thread)
-      if (agentReady) {
+      // Always seeded, agent or not: without it the thread's first turn would
+      // rebuild the CLI's tool calls as the model's own.
+      const history = importedAgentHistory(session.source, session.messages)
+      await deps.saveHistory(projectId, thread.id, history)
+      const linkable =
+        agent !== null && (session.source !== 'claude-code' || agent.sessionsStayInThread)
+      if (agent && linkable) {
         try {
           if (session.source === 'claude-code') {
-            await copyClaudeSessionForThread(deps, projectId, thread.id, agentId, found.file)
+            await copyClaudeSessionForThread(deps, projectId, thread.id, agent.id, found.file)
           }
           await deps.saveBinding(projectId, thread.id, {
-            agentId,
+            agentId: agent.id,
             sessionId: session.sessionId,
             cwd: session.cwd,
+            history,
+            // Codex resumes the user's own rollout; a Claude thread has its copy.
+            ...(session.source === 'codex'
+              ? { sharedFile: { path: found.file.path, modifiedAt: found.file.updatedAt } }
+              : {}),
           })
         } catch (error) {
           // The thread still has its transcript; the agent will start from that.
