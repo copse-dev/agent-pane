@@ -122,4 +122,10 @@ it("trims its oldest investigation steps to the model's context, keeping the rev
     Math.max(...requestSizes(trimmed)) <= 16_000 * REVIEW_CONTEXT_FILL,
     String(requestSizes(trimmed)),
   )
+  // The window is for trimming only: the chat agent's pressure nudges, which
+  // would end the review partway through its steps, never reach the model.
+  for (const call of trimmed.calls) {
+    assert.doesNotMatch(JSON.stringify(call), /Exploration is over|Stop calling tools/)
+  }
+  assert.equal(trimmed.calls.length, 7)
 })

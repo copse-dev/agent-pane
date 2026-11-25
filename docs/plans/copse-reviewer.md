@@ -1188,7 +1188,10 @@ models; nothing in it is Mac-only.
   under its exact identity. Each local model's turns keep their history within three quarters
   of its loaded context (the agent loop trims against the previous request's size, so the
   rest is headroom for one step's results), and the pre-flight's required context counts
-  that share. `copse-review pr` runs the pre-flight (`--preflight`) before waiting for the
+  that share. The window only trims: review turns pass `conversationPressureNudges: false`,
+  so the chat agent's pressure nudges ("Exploration is over", the forced tool-free turn) never
+  cut a role's own step budget short (`docs/plans/hooks-and-feature-packs.md`, Known
+  implementation traps). `copse-review pr` runs the pre-flight (`--preflight`) before waiting for the
   machine. Model details are keyed by server and id, because LM Link lists one id per device.
 - **Answers are kept and reused.** Reports land under
   `~/.copse/reviews/<repo>/pr-<n>/<head>-<settings>/` keyed by head, merge-base, options and

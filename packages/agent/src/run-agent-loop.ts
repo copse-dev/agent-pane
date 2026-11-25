@@ -264,6 +264,15 @@ export interface AgentLoopOptions {
    * prolonged inspection into a concrete edit without ending the run.
    */
   stuckToolRecoveryNudge?: string
+  /**
+   * Whether conversation pressure (tool-step counts and context fill under
+   * `maxContextTokens`) may select the `loop-nudge` and `stuck-finalize` nudges.
+   * Defaults to true. A host that passes `maxContextTokens` only so history is
+   * trimmed to a loaded context, and whose turns have a step budget of their
+   * own (a headless review), passes false: the pre-stream `stepBoundary` then
+   * carries no escalation signals, as for a host without a context window.
+   */
+  conversationPressureNudges?: boolean
   /** Shared sliding-idle deadline. When omitted, one is created from runTimeoutMs. */
   runDeadline?: AgentRunDeadline
   /** Idle timeout when runDeadline is omitted. */
@@ -1218,6 +1227,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     reasoningCheckpointPolicy,
     allowForcedTextEscalation = true,
     stuckToolRecoveryNudge,
+    conversationPressureNudges = true,
     runDeadline,
     runTimeoutMs = AGENT_RUN_IDLE_TIMEOUT_MS,
     runHardMaxMs = AGENT_RUN_HARD_MAX_MS,
@@ -1502,7 +1512,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       ) {
         const preNudges = await selectStepBoundaryNudges({
           phase: 'preStream',
-          escalation: { input: escalationInput, pressure },
+          ...(conversationPressureNudges
+            ? { escalation: { input: escalationInput, pressure } }
+            : {}),
           loopNudgeSent,
           forceTextAttempted,
           artifactCheckpointSent,

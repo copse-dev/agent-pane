@@ -224,6 +224,10 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
         : {
             maxContextTokens: Math.floor(options.contextTokens * REVIEW_CONTEXT_FILL),
             toolSchemaReserveTokens: REVIEW_TOOL_SCHEMA_RESERVE_TOKENS,
+            // The window is for trimming only. A role's step budget is its own,
+            // so the chat agent's "Exploration is over" and forced tool-free
+            // turns, which count tool steps, would end a lens partway through.
+            conversationPressureNudges: false,
           }),
       ...(settings.maxLlmCalls !== undefined ? { maxLlmCalls: settings.maxLlmCalls } : {}),
       ...(settings.initialToolChoice ? { initialToolChoice: settings.initialToolChoice } : {}),

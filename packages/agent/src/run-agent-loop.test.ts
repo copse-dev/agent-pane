@@ -1112,6 +1112,63 @@ describe('runAgentLoop', () => {
     )
   })
 
+  it('lets a host trim to a context window without the pressure nudges', async () => {
+    const pressureHooks = new Set(['loop-nudge', 'stuck-finalize-nudge'])
+    const run = async (
+      conversationPressureNudges?: boolean,
+    ): Promise<{ toolCalls: number; trims: number; nudges: string[] }> => {
+      let toolCalls = 0
+      let trims = 0
+      const applied: import('./run-agent-loop.ts').AppliedNudgeRecord[] = []
+      const provider: LLMProvider = {
+        async *stream(messages, tools): AsyncGenerator<ProviderStreamChunk> {
+          const isTextFinalize = messages.some(
+            (message) =>
+              message.role === 'user' &&
+              typeof message.content === 'string' &&
+              message.content.includes('Do not call any tools.'),
+          )
+          if (tools.length === 0 || isTextFinalize) {
+            yield { type: 'text', text: 'Final.' }
+            yield { type: 'done' }
+            return
+          }
+          toolCalls++
+          yield {
+            type: 'tool_call',
+            toolCall: { id: `tool-${String(toolCalls)}`, name: 'run_shell', args: {} },
+          }
+          yield { type: 'done' }
+        },
+      }
+      await runAgentLoop({
+        provider,
+        messages: [{ role: 'user', content: 'go' }],
+        tools: [{ name: 'run_shell', description: 'run', parameters: { type: 'object' } }],
+        maxSteps: 15,
+        maxContextTokens: 1_000,
+        ...(conversationPressureNudges === undefined ? {} : { conversationPressureNudges }),
+        recordAppliedNudge: (record) => applied.push(record),
+        onHistoryTrimmed: () => {
+          trims++
+        },
+        onChunk: () => {},
+        executeTool: async () => 'x'.repeat(2_000),
+      })
+      return {
+        toolCalls,
+        trims,
+        nudges: applied.map((record) => record.hookId).filter((id) => pressureHooks.has(id)),
+      }
+    }
+    // By default the same run is nudged: the opt-out is what keeps it quiet.
+    assert.notDeepEqual((await run()).nudges, [])
+    const quiet = await run(false)
+    assert.deepEqual(quiet.nudges, [])
+    assert.equal(quiet.toolCalls, 15)
+    assert.ok(quiet.trims > 0, 'history is still trimmed to the window')
+  })
+
   describe('reasoning-runaway recovery ladder', () => {
     const SHELL_TOOL = { name: 'run_shell', description: 'run', parameters: { type: 'object' } }
     const flood = (): ProviderStreamChunk[] => {

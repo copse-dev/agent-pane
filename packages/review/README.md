@@ -263,7 +263,9 @@ every route is a local server, reviewers run one at a time (`--concurrency` over
 whole run. Each turn of a local model knows the context it is loaded with and keeps its
 history within three quarters of it, dropping its oldest investigation steps (never the
 review request), so the server never receives a request it would silently cut from the
-middle. A forced closure (`finish_review`, the challenger's `verdict`) is sent as
+middle. The window is for trimming only: unlike the app's chat agent, a review turn is never
+told to stop exploring or given a forced tool-free turn as it fills, because each role's step
+budget is its own. A forced closure (`finish_review`, the challenger's `verdict`) is sent as
 `tool_choice: "required"` with only that tool offered, which LM Studio accepts with
 reasoning on. Some models take only reasoning on or off: LM Studio then reads `low`,
 `medium` and `high` as on, and says so only in its own log. `--preflight` runs these

@@ -1233,6 +1233,21 @@ Collected from design review — each of these was _almost_ a bug in the plan it
   pressure. Thresholds, the deferral rule and the once-per-run flags are unchanged. The
   stuck-finalize forced turn still runs before the soft trim, so that one request can exceed the
   trim line by a step's results.
+- **A context window given for trimming also turns on the pressure nudges.** `maxContextTokens`
+  does two things: it trims history, and it makes the pre-stream `stepBoundary` carry the
+  escalation signals `loop-nudge` and `stuck-finalize` select on. Some of their thresholds count
+  tool steps alone, whatever the fill. When headless review turns started passing a local model's
+  loaded context, so the server would not cut an oversized request from the middle, every
+  reviewer, challenger and reproducer began to get the chat agent's "Exploration is over" after
+  about 12 tool steps and a forced tool-free turn after about 18 (at a 65K load). That ended a lens
+  partway through its 20–24 steps. A Mac Studio review showed the first nudge quoted in a lens's
+  reasoning, and the trimming test sent both without failing. A host that wants the trimming
+  without the nudges passes `conversationPressureNudges: false`. The pre-stream `stepBoundary`
+  then carries no `escalation`, exactly as for a host without a window: `loop-nudge` can still
+  fire on its explore-without-read signal, `stuck-finalize` never fires, and trimming is
+  unchanged. The review's turns (`packages/review/src/turn.ts`) pass it, because each role's step
+  budget is its own. The default is unchanged for every other host, and nothing here touches the
+  continuation budget (decision 5).
 
 ## Codebase impact
 
