@@ -1,4 +1,5 @@
 import { getApplySeccompBinaryPath } from '@anthropic-ai/sandbox-runtime/dist/sandbox/generate-seccomp-filter.js'
+import { getJavaProxyAgentJarPath } from '@anthropic-ai/sandbox-runtime/dist/sandbox/java-proxy-agent.js'
 import { accessSync, constants, statSync } from 'node:fs'
 import { posix } from 'node:path'
 import { absolutePathEntries } from './sandbox-argv.ts'
@@ -51,13 +52,16 @@ export function linuxSandboxBinaryPaths(): {
   bwrapPath?: string
   socatPath?: string
   seccomp?: { applyPath: string }
+  javaAgentJarPath?: string
 } {
   if (process.platform !== 'linux') return {}
   const applyPath = applySeccompBinaryPath()
+  const javaAgentJarPath = javaProxyAgentJarPath()
   return {
     bwrapPath: resolveSandboxBinary('bwrap'),
     socatPath: resolveSandboxBinary('socat'),
     ...(applyPath === null ? {} : { seccomp: { applyPath } }),
+    ...(javaAgentJarPath === null ? {} : { javaAgentJarPath }),
   }
 }
 
@@ -84,6 +88,18 @@ export function unpackedAsarPath(path: string): string {
  */
 export function applySeccompBinaryPath(
   found: string | null = process.platform === 'linux' ? getApplySeccompBinaryPath() : null,
+): string | null {
+  return found === null ? null : unpackedAsarPath(found)
+}
+
+/**
+ * ASRT's JVM proxy agent jar on disk, or null where ASRT ships none. Like
+ * apply-seccomp, ASRT finds it beside its own module, inside `app.asar` in a
+ * packaged app, and bubblewrap then fails to bind that source path whenever
+ * the jar sits under a denied root such as `$HOME`.
+ */
+export function javaProxyAgentJarPath(
+  found: string | null = getJavaProxyAgentJarPath(),
 ): string | null {
   return found === null ? null : unpackedAsarPath(found)
 }

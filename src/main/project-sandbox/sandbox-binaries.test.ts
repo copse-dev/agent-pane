@@ -6,6 +6,7 @@ import { downloaderSandboxConfig } from '../services/remote/artifact-image/host.
 import { baseSandboxConfig } from './config.ts'
 import {
   applySeccompBinaryPath,
+  javaProxyAgentJarPath,
   resolveSandboxBinary,
   unpackedAsarPath,
 } from './sandbox-binaries.ts'
@@ -60,6 +61,16 @@ describe('apply-seccomp in a packaged app', () => {
     assert.equal(applySeccompBinaryPath(null), null)
   })
 
+  it('points the JVM proxy agent at the asarUnpack copy too', () => {
+    assert.equal(
+      javaProxyAgentJarPath(
+        '/opt/Copse/resources/app.asar/node_modules/x/vendor/java-proxy-agent/a.jar',
+      ),
+      '/opt/Copse/resources/app.asar.unpacked/node_modules/x/vendor/java-proxy-agent/a.jar',
+    )
+    assert.equal(javaProxyAgentJarPath(null), null)
+  })
+
   it('rewrites only a whole app.asar path segment', () => {
     assert.equal(unpackedAsarPath('/srv/my-app.asar/bin/x'), '/srv/my-app.asar/bin/x')
     assert.equal(unpackedAsarPath('/a/app.asar.unpacked/bin/x'), '/a/app.asar.unpacked/bin/x')
@@ -101,6 +112,12 @@ describe('the configs Copse initializes ASRT with on Linux', () => {
       const applyPath = onLinux(build).seccomp?.applyPath
       assert.ok(typeof applyPath === 'string' && posix.isAbsolute(applyPath), String(applyPath))
       assert.ok(!applyPath.includes('/app.asar/'), applyPath)
+    })
+
+    it(`names the JVM proxy agent jar outside app.asar in the ${name} config`, () => {
+      const jar = onLinux(build).javaAgentJarPath
+      assert.ok(typeof jar === 'string' && posix.isAbsolute(jar), String(jar))
+      assert.ok(!jar.includes('/app.asar/'), jar)
     })
   }
 })
