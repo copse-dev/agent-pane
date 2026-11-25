@@ -5,7 +5,13 @@ import { join } from 'node:path'
 import type { Message, ToolCall } from '@shared/types'
 import { safeJsonParse } from '@shared/safe-json.ts'
 import { isRecord } from '@shared/unknown-value.ts'
-import { capToolResult, oneLineTitle, parseTimestamp, readJsonlRecords } from './session-files.ts'
+import {
+  capToolResult,
+  oneLineTitle,
+  parseTimestamp,
+  readJsonlRecords,
+  withoutHarnessText,
+} from './session-files.ts'
 import type { ExternalSessionFile, ParsedExternalSession } from './external-session-types.ts'
 
 /**
@@ -68,14 +74,14 @@ function sessionMeta(line: Record<string, unknown>): Record<string, unknown> | n
   return null
 }
 
-function contentText(content: unknown): string {
+function contentText(content: unknown, separator = '\n\n'): string {
   if (typeof content === 'string') return content
   if (!Array.isArray(content)) return ''
   return content
     .flatMap((part) =>
       isRecord(part) && typeof part['text'] === 'string' && part['text'] ? [part['text']] : [],
     )
-    .join('\n\n')
+    .join(separator)
 }
 
 /**
@@ -89,11 +95,40 @@ function isInjectedUserText(text: string): boolean {
   return tag !== undefined && trimmed.endsWith(`</${tag}>`)
 }
 
+/**
+ * How a prompt Copse itself sent through the Codex agent begins (the session
+ * notes or the bridge identity, built in `buildAcpPrompt`). Such sessions are
+ * already Copse threads, so they are not offered for import.
+ */
+const COPSE_PROMPT_OPENINGS = [
+  'Session notes: this session persists across turns',
+  'Copse native bridge for this turn:',
+  'You are continuing an existing Copse chat.',
+]
+
+export function isCopsePrompt(text: string): boolean {
+  const trimmed = text.trimStart()
+  return COPSE_PROMPT_OPENINGS.some((opening) => trimmed.startsWith(opening))
+}
+
+/**
+ * A session Codex started on its own behalf (a reviewer or other subagent),
+ * not one the user ran.
+ */
+function isSubagentSession(meta: Record<string, unknown>): boolean {
+  const source = meta['source']
+  if (isRecord(source) && Object.hasOwn(source, 'subagent')) return true
+  if (typeof meta['parent_thread_id'] === 'string') return true
+  const threadSource = meta['thread_source']
+  return typeof threadSource === 'string' && threadSource.includes('review')
+}
+
 function userText(item: Record<string, unknown>): string | null {
   if (item['type'] !== 'message' || item['role'] !== 'user') return null
   const text = contentText(item['content'])
-  if (!text.trim() || isInjectedUserText(text)) return null
-  return text
+  if (isInjectedUserText(text)) return null
+  const typed = withoutHarnessText(text)
+  return typed ? typed : null
 }
 
 export async function readCodexSessionHeader(
@@ -115,6 +150,7 @@ export async function readCodexSessionHeader(
   )
   const { meta: header, title } = found
   if (!header || title === null) return null
+  if (isSubagentSession(header) || isCopsePrompt(title)) return null
   const sessionId = header['id']
   const cwd = header['cwd']
   if (typeof sessionId !== 'string' || typeof cwd !== 'string') return null
@@ -159,14 +195,49 @@ function toolCall(
       args,
       kind: 'execute',
     }
+  // Newer Codex runs commands as `exec` (a script, as the raw input) and polls a
+  // running one with `wait`.
+  if (name === 'exec' && typeof args === 'string' && args.trim())
+    return {
+      id,
+      name,
+      title: oneLineTitle(args.trim().split('\n')[0] ?? name, 120),
+      programmaticName: name,
+      args,
+      kind: 'execute',
+    }
+  if (name === 'wait' && isRecord(args) && typeof args['cell_id'] === 'string')
+    return {
+      id,
+      name,
+      title: `Wait for cell ${args['cell_id']}`,
+      programmaticName: name,
+      args,
+      kind: 'execute',
+    }
   if (name === 'apply_patch')
     return { id, name, title: 'Apply patch', programmaticName: name, args, kind: 'edit' }
   return { id, name, title: name, programmaticName: name, args }
 }
 
-/** Function-call output: a string, or the JSON `{ output, metadata: { exit_code } }` form. */
+/** Output parts: text runs end in their own newlines; images become a marker. */
+function outputPartsText(parts: unknown[]): string {
+  return parts
+    .map((part) => {
+      if (!isRecord(part)) return ''
+      if (typeof part['text'] === 'string') return part['text']
+      return part['type'] === 'input_image' ? '[image]\n' : ''
+    })
+    .join('')
+}
+
+/**
+ * Function-call output: a string, the JSON `{ output, metadata: { exit_code } }`
+ * form, or (newer Codex) an array of `{ type: 'input_text', text }` parts.
+ */
 function callOutput(output: unknown): { text: string; failed: boolean } {
   const raw = isRecord(output) ? output['content'] : output
+  if (Array.isArray(raw)) return { text: outputPartsText(raw), failed: false }
   if (typeof raw !== 'string') return { text: '', failed: false }
   const parsed = safeJsonParse(raw)
   if (isRecord(parsed) && typeof parsed['output'] === 'string') {

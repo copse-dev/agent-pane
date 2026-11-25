@@ -216,6 +216,106 @@ describe('Claude Code sessions', () => {
     assert.equal(call.title, 'Read /x')
   })
 
+  it("titles a row with the CLI's latest saved name, then its own title, then the prompt", async () => {
+    const file = (path: string): Parameters<typeof readClaudeCodeSessionHeader>[0] => ({
+      source: 'claude-code',
+      path,
+      updatedAt: 1,
+      bytes: 1,
+    })
+    const reminder = {
+      type: 'text',
+      text: '<system-reminder>\nYou are operating in a git worktree.\n</system-reminder>',
+    }
+    const named = writeSession(ROOT, 'named', [
+      user('u1', null, [reminder, { type: 'text', text: 'Look at all dependencies' }]),
+      { type: 'ai-title', aiTitle: 'Dependency audit', sessionId: 'named' },
+      { type: 'custom-title', customTitle: 'Dependency review', sessionId: 'named' },
+      { type: 'custom-title', customTitle: 'Dependency review (renamed)', sessionId: 'named' },
+    ])
+    const aiTitled = writeSession(ROOT, 'ai', [
+      user('u1', null, 'hello'),
+      { type: 'ai-title', aiTitle: 'Markdown sanitizer divergence', sessionId: 'ai' },
+    ])
+    const untitled = writeSession(ROOT, 'plain', [
+      user('u1', null, [reminder, { type: 'text', text: 'Look at all dependencies' }]),
+    ])
+
+    assert.equal(
+      (await readClaudeCodeSessionHeader(file(named)))?.title,
+      'Dependency review (renamed)',
+    )
+    assert.equal(
+      (await readClaudeCodeSessionHeader(file(aiTitled)))?.title,
+      'Markdown sanitizer divergence',
+    )
+    assert.equal(
+      (await readClaudeCodeSessionHeader(file(untitled)))?.title,
+      'Look at all dependencies',
+    )
+  })
+
+  it('gives every parallel tool call its result, though only the last is on the branch', async () => {
+    // Claude Code's layout: each call is its own line of one response, and each
+    // result hangs off its own call; the turn continues from the last result.
+    const path = writeSession(ROOT, 's1', [
+      user('u1', null, 'Read both files'),
+      assistant('c1', 'u1', 'msg_1', [
+        { type: 'tool_use', id: 't1', name: 'Read', input: { file_path: '/a' } },
+      ]),
+      assistant('c2', 'c1', 'msg_1', [
+        { type: 'tool_use', id: 't2', name: 'Read', input: { file_path: '/b' } },
+      ]),
+      user('r1', 'c1', [{ type: 'tool_result', tool_use_id: 't1', content: 'A' }]),
+      user('r2', 'c2', [{ type: 'tool_result', tool_use_id: 't2', content: 'B' }]),
+      assistant('a2', 'r2', 'msg_2', [{ type: 'text', text: 'Both read.' }]),
+    ])
+
+    const session = await readClaudeCodeSession({
+      source: 'claude-code',
+      path,
+      updatedAt: 1,
+      bytes: 1,
+    })
+
+    assert.deepEqual(
+      session?.messages[1]?.toolCalls.map((call) => [call.id, call.result]),
+      [
+        ['t1', 'A'],
+        ['t2', 'B'],
+      ],
+    )
+  })
+
+  it('leaves out turns the CLI or its host started, and injected context', async () => {
+    const path = writeSession(ROOT, 's1', [
+      user('u1', null, 'Watch the CI'),
+      assistant('a1', 'u1', 'msg_1', [{ type: 'text', text: 'Watching.' }]),
+      user('n1', 'a1', '<task-notification>\n<task-id>b1</task-id>\n</task-notification>', {
+        turnOrigin: 'task_notification',
+      }),
+      user('n2', 'n1', '<ci-monitor-event>CI failed</ci-monitor-event>'),
+      user('n3', 'n2', 'From another session', { turnOrigin: 'peer' }),
+      assistant('a2', 'n3', 'msg_2', [{ type: 'text', text: 'CI failed; fixing.' }]),
+    ])
+
+    const session = await readClaudeCodeSession({
+      source: 'claude-code',
+      path,
+      updatedAt: 1,
+      bytes: 1,
+    })
+
+    assert.deepEqual(
+      session?.messages.map((message) => [message.role, message.content]),
+      [
+        ['user', 'Watch the CI'],
+        ['assistant', 'Watching.'],
+        ['assistant', 'CI failed; fixing.'],
+      ],
+    )
+  })
+
   it('skips a file with no prompt in it', async () => {
     const path = writeSession(ROOT, 's1', [{ ...base, type: 'summary', summary: 'x' }])
     assert.equal(

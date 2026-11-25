@@ -85,7 +85,12 @@ function seedCodex(cwd: string): void {
   writeFileSync(
     join(dir, 'rollout-2026-11-02T09-00-00-codex-1.jsonl'),
     [
-      at('session_meta', { id: 'codex-1', timestamp: '2026-11-02T09:00:00.000Z', cwd }),
+      at('session_meta', {
+        id: 'codex-1',
+        timestamp: '2026-11-02T09:00:00.000Z',
+        cwd,
+        git: { branch: 'add-flag' },
+      }),
       at('response_item', {
         type: 'message',
         role: 'user',
@@ -182,8 +187,21 @@ describe('importing Claude Code and Codex sessions', () => {
     const result = await importExternalSessions(h.deps, 'p1', [session.key])
 
     assert.equal(result.imported[0]?.model, undefined)
+    assert.equal(result.imported[0]?.gitBranch, 'add-flag')
     assert.deepEqual(h.bindings, [])
     assert.equal(existsSync(join(scratch, 'threads')), false)
+  })
+
+  it("does not tie a session from a folder inside the project to the checkout's branch", async () => {
+    // Often a worktree of its own: its branch is checked out there, not here.
+    seedCodex(join(ROOT, '.claude', 'worktrees', 'tidy'))
+    const h = harness([])
+    const [session] = (await listExternalSessions(h.deps, 'p1')).sessions
+    assert.ok(session)
+
+    const result = await importExternalSessions(h.deps, 'p1', [session.key])
+
+    assert.equal(result.imported[0]?.gitBranch, undefined)
   })
 
   it('reports a key that no longer names a session', async () => {

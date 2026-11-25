@@ -42,8 +42,12 @@ const AGENT_FOR_SOURCE: Readonly<Record<ExternalSessionSource, string>> = {
   codex: 'codex-acp',
 }
 
-/** Files larger than this are listed but not imported. */
-const MAX_IMPORT_BYTES = 64 * 1024 * 1024
+/**
+ * Files larger than this are listed but not imported. Long Claude Code
+ * sessions pass 80 MB; tool output is capped as it is read, so the thread kept
+ * is far smaller than the file.
+ */
+const MAX_IMPORT_BYTES = 512 * 1024 * 1024
 
 export interface ExternalSessionImportDeps {
   projectRoot: (projectId: string) => string | null
@@ -141,6 +145,7 @@ export async function listExternalSessions(
 
 function buildThread(
   session: ParsedExternalSession,
+  relativeCwd: string,
   key: string,
   model: string | null,
   now: number,
@@ -156,7 +161,10 @@ function buildThread(
     // The session ran in the project's own checkout; continue it there rather
     // than moving it into a new worktree.
     worktreeChoice: 'shared',
-    ...(session.gitBranch ? { gitBranch: session.gitBranch } : {}),
+    // A session from a folder inside the project (often a worktree of its own)
+    // was on that folder's branch, not the checkout's: binding it would ask to
+    // check that branch out here.
+    ...(session.gitBranch && relativeCwd === '' ? { gitBranch: session.gitBranch } : {}),
     importedSession: { source: session.source, key, importedAt: now },
     ...(lastPrompt ? { lastPromptAt: lastPrompt.createdAt } : {}),
     createdAt: session.startedAt,
@@ -228,7 +236,13 @@ export async function importExternalSessions(
       }
       const agentId = AGENT_FOR_SOURCE[session.source]
       const agentReady = deps.agentEnabled(agentId)
-      const thread = buildThread(session, key, agentReady ? acpModelValue(agentId) : null, now())
+      const thread = buildThread(
+        session,
+        found.relativeCwd,
+        key,
+        agentReady ? acpModelValue(agentId) : null,
+        now(),
+      )
       await deps.createThread(projectId, thread)
       if (agentReady) {
         try {

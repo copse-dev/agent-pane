@@ -1,4 +1,5 @@
 import { createReadStream } from 'node:fs'
+import { open } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { relative, isAbsolute, sep } from 'node:path'
 import { createInterface } from 'node:readline'
@@ -32,6 +33,71 @@ export async function readJsonlRecords(
     lines.close()
     stream.destroy()
   }
+}
+
+/**
+ * The JSON-object records in the last `bytes` of a file, oldest first. The
+ * first, probably partial, line of the window is dropped unless the window
+ * starts at the beginning of the file.
+ */
+export async function readJsonlTail(
+  path: string,
+  bytes: number,
+): Promise<Record<string, unknown>[]> {
+  const handle = await open(path, 'r')
+  try {
+    const { size } = await handle.stat()
+    const start = Math.max(0, size - bytes)
+    const buffer = Buffer.alloc(size - start)
+    await handle.read(buffer, 0, buffer.length, start)
+    const lines = buffer.toString('utf8').split('\n')
+    if (start > 0) lines.shift()
+    return lines.flatMap((line) => {
+      if (!line.trim()) return []
+      const value = safeJsonParse(line)
+      return isRecord(value) ? [value] : []
+    })
+  } finally {
+    await handle.close()
+  }
+}
+
+/**
+ * Wrappers a tool or harness puts around text it sends as a user message: the
+ * user never typed it, so it is not a prompt to show or a title to use.
+ */
+const HARNESS_TAGS = [
+  'system-reminder',
+  'task-notification',
+  'ci-monitor-event',
+  'user-prompt-submit-hook',
+  'local-command-stdout',
+  'local-command-stderr',
+  'local-command-caveat',
+]
+const HARNESS_BLOCK = new RegExp(`<(${HARNESS_TAGS.join('|')})(?:\\s[^>]*)?>[\\s\\S]*?</\\1>`, 'g')
+
+/** `text` without harness blocks, trimmed; `''` when nothing the user typed is left. */
+export function withoutHarnessText(text: string): string {
+  return text.replace(HARNESS_BLOCK, '').trim()
+}
+
+/** True when the whole of `text` is one XML-style element, such as `<wake …>…</wake>`. */
+function isWholeElement(text: string): boolean {
+  const trimmed = text.trim()
+  const tag = /^<([a-z][\w-]*)(?:\s[^>]*)?>/i.exec(trimmed)?.[1]
+  return tag !== undefined && trimmed.endsWith(`</${tag}>`)
+}
+
+/**
+ * A list-row title for a prompt: its text without harness blocks, and without
+ * the tags when the whole prompt is one element (a harness that wraps what the
+ * user typed). `null` when nothing readable is left.
+ */
+export function titleFromPrompt(text: string): string | null {
+  const cleaned = withoutHarnessText(text)
+  const readable = isWholeElement(cleaned) ? cleaned.replace(/<[^>]*>/g, ' ').trim() : cleaned
+  return readable || null
 }
 
 /** Opaque, stable name for one tool's session, safe to hand to the renderer. */

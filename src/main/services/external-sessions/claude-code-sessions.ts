@@ -4,7 +4,15 @@ import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import type { Message, ToolCall } from '@shared/types'
 import { isRecord } from '@shared/unknown-value.ts'
-import { capToolResult, oneLineTitle, parseTimestamp, readJsonlRecords } from './session-files.ts'
+import {
+  capToolResult,
+  oneLineTitle,
+  parseTimestamp,
+  readJsonlRecords,
+  readJsonlTail,
+  titleFromPrompt,
+  withoutHarnessText,
+} from './session-files.ts'
 import type { ExternalSessionFile, ParsedExternalSession } from './external-session-types.ts'
 
 /**
@@ -30,6 +38,8 @@ export function claudeProjectDirName(cwd: string): string {
 }
 
 const HEADER_SCAN_BYTES = 2 * 1024 * 1024
+/** Titles set later in a session (`/rename`, or the CLI's own naming) are near its end. */
+const TAIL_SCAN_BYTES = 256 * 1024
 
 /**
  * Session files whose folder name could belong to `root` or a folder inside it.
@@ -73,34 +83,66 @@ export async function readClaudeCodeSessionHeader(
     startedAt: number | null
     title: string | null
     summary: string | null
-  } = { cwd: null, gitBranch: null, startedAt: null, title: null, summary: null }
+    named: string | null
+    aiTitle: string | null
+  } = {
+    cwd: null,
+    gitBranch: null,
+    startedAt: null,
+    title: null,
+    summary: null,
+    named: null,
+    aiTitle: null,
+  }
+  const noteTitle = (line: Record<string, unknown>): boolean => {
+    if (line['type'] === 'custom-title') {
+      // Rewritten after most turns; the last one carries any rename.
+      const name = stringField(line, 'customTitle')?.trim()
+      if (name) found.named = name
+      return true
+    }
+    if (line['type'] === 'ai-title') {
+      const name = stringField(line, 'aiTitle')?.trim()
+      if (name) found.aiTitle = name
+      return true
+    }
+    if (line['type'] === 'summary' && typeof line['summary'] === 'string') {
+      found.summary ??= line['summary']
+      return true
+    }
+    return false
+  }
   await readJsonlRecords(
     file.path,
     (line) => {
-      if (line['type'] === 'summary' && typeof line['summary'] === 'string') {
-        found.summary ??= line['summary']
-        return
-      }
+      if (noteTitle(line)) return
       if (line['isSidechain'] === true) return
       found.cwd ??= stringField(line, 'cwd')
       found.gitBranch ??= stringField(line, 'gitBranch')
       found.startedAt ??= parseTimestamp(line['timestamp'])
       if (found.title === null && line['type'] === 'user') {
         const prompt = userPrompt(line)
-        if (prompt?.text) found.title = prompt.text
+        if (prompt?.text) found.title = titleFromPrompt(prompt.text)
       }
-      return found.cwd === null || found.title === null
+      // The CLI's titles come a few lines in; keep reading until one has.
+      return found.cwd === null || (found.named === null && found.aiTitle === null)
     },
     { maxBytes: HEADER_SCAN_BYTES },
   )
-  const { cwd, gitBranch, startedAt, title, summary } = found
-  if (cwd === null || (title === null && summary === null)) return null
+  if (file.bytes > HEADER_SCAN_BYTES) {
+    for (const line of await readJsonlTail(file.path, TAIL_SCAN_BYTES).catch(() => []))
+      noteTitle(line)
+  }
+  const { cwd, gitBranch, startedAt, title, summary, named, aiTitle } = found
+  if (cwd === null) return null
+  const heading = named ?? aiTitle ?? summary ?? title
+  if (heading === null) return null
   return {
     source: 'claude-code',
     sessionId: basename(file.path, '.jsonl'),
     cwd,
     ...(gitBranch ? { gitBranch } : {}),
-    title: oneLineTitle(summary ?? title ?? ''),
+    title: oneLineTitle(heading),
     startedAt: startedAt ?? file.updatedAt,
     updatedAt: file.updatedAt,
     messages: [],
@@ -163,11 +205,32 @@ function isCliNoise(text: string): boolean {
   )
 }
 
+/**
+ * Turns the CLI or its host started rather than the user: background task
+ * notifications, CI monitor events, host-injected context and messages from
+ * other sessions. Newer files say so in `turnOrigin`; the tag check in
+ * {@link withoutHarnessText} covers older ones.
+ */
+const HARNESS_TURN_ORIGINS = new Set([
+  'task_notification',
+  'auto_continuation',
+  'host_synthetic',
+  'peer',
+])
+
+function isHarnessTurn(record: Record<string, unknown>): boolean {
+  const turnOrigin = record['turnOrigin']
+  if (typeof turnOrigin === 'string' && HARNESS_TURN_ORIGINS.has(turnOrigin)) return true
+  const origin = record['origin']
+  return isRecord(origin) && origin['kind'] === 'task-notification'
+}
+
 const MAX_IMAGE_DATA_URL_CHARS = 8 * 1024 * 1024
 
 /** The user's own words (and pasted images) on a `user` line, or `null` for tool results. */
 function userPrompt(record: Record<string, unknown>): { text: string; images: string[] } | null {
   if (record['isMeta'] === true || record['isCompactSummary'] === true) return null
+  if (isHarnessTurn(record)) return null
   const message = record['message']
   if (!isRecord(message)) return null
   const content = message['content']
@@ -190,7 +253,7 @@ function userPrompt(record: Record<string, unknown>): { text: string; images: st
     }
   }
   const words = texts
-    .map((text) => slashCommand(text) ?? (isCliNoise(text) ? '' : text))
+    .map((text) => slashCommand(text) ?? (isCliNoise(text) ? '' : withoutHarnessText(text)))
     .filter((text) => text.trim())
     .join('\n\n')
   if (!words && images.length === 0) return null
@@ -207,6 +270,28 @@ function toolResultText(content: unknown): string {
         : [],
     )
     .join('\n')
+}
+
+/**
+ * Move a `user` line's tool results into `results`, capped, and drop them from
+ * the line so a long session does not hold every output twice.
+ */
+function takeToolResults(
+  record: Record<string, unknown>,
+  results: Map<string, { text: string; failed: boolean }>,
+): void {
+  const message = record['message']
+  if (!isRecord(message) || !Array.isArray(message['content'])) return
+  for (const block of message['content']) {
+    if (!isRecord(block) || block['type'] !== 'tool_result') continue
+    const id = block['tool_use_id']
+    if (typeof id !== 'string') continue
+    results.set(id, {
+      text: capToolResult(toolResultText(block['content'])),
+      failed: block['is_error'] === true,
+    })
+    delete block['content']
+  }
 }
 
 /** ACP tool kinds, so imported cards group and label like a live Claude agent's. */
@@ -263,7 +348,13 @@ export async function readClaudeCodeSession(
   const header = await readClaudeCodeSessionHeader(file)
   if (!header) return null
   const lines: ClaudeLine[] = []
+  // Results are matched to their calls by id, wherever they sit: when Claude
+  // Code runs tools in parallel, each result hangs off its own call, so all but
+  // the last are off the active branch.
+  const results = new Map<string, { text: string; failed: boolean }>()
   await readJsonlRecords(file.path, (record) => {
+    if (record['type'] === 'user' && record['isSidechain'] !== true)
+      takeToolResults(record, results)
     // Every linked line is part of the chain, not only conversation lines:
     // current Claude Code threads a turn through `attachment` records between
     // the prompt and the answer, and the walk back must cross them.
@@ -333,17 +424,6 @@ export async function readClaudeCodeSession(
       continue
     }
     if (record['type'] !== 'user') continue
-    const content = message['content']
-    if (Array.isArray(content)) {
-      for (const block of content) {
-        if (!isRecord(block) || block['type'] !== 'tool_result') continue
-        const id = block['tool_use_id']
-        const call = typeof id === 'string' ? toolCallsById.get(id) : undefined
-        if (!call) continue
-        call.result = capToolResult(toolResultText(block['content']))
-        if (block['is_error'] === true) call.status = 'error'
-      }
-    }
     const prompt = userPrompt(record)
     if (!prompt) continue
     assistant = null
@@ -356,6 +436,12 @@ export async function readClaudeCodeSession(
       ...(prompt.images.length > 0 ? { images: prompt.images } : {}),
     })
   }
+  for (const [id, call] of toolCallsById) {
+    const result = results.get(id)
+    if (!result) continue
+    call.result = result.text
+    if (result.failed) call.status = 'error'
+  }
   // A response that only carried blocks Copse does not show leaves nothing to render.
   const kept = messages.filter(
     (message) =>
@@ -364,7 +450,7 @@ export async function readClaudeCodeSession(
       (message.reasoning ?? '') !== '' ||
       message.toolCalls.length > 0,
   )
-  if (!kept.some((message) => message.role === 'user')) return null
+  if (kept.length === 0) return null
   return {
     ...header,
     messages: kept,

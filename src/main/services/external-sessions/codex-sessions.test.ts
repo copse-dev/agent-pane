@@ -3,7 +3,9 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { buildAcpPrompt } from '../acp/acp-agent-service.ts'
 import {
+  isCopsePrompt,
   listCodexSessionFiles,
   readCodexSession,
   readCodexSessionHeader,
@@ -130,6 +132,92 @@ describe('Codex CLI sessions', () => {
         ['Apply patch', 'edit', 'done', 'Done!'],
       ],
     )
+  })
+
+  it("leaves out Codex's own reviewer sessions and sessions Copse itself ran", async () => {
+    const reviewer = writeRollout('rollout-r.jsonl', [
+      at(
+        {
+          id: 'r',
+          timestamp: '2026-11-01T09:00:00.000Z',
+          cwd: ROOT,
+          source: { subagent: { other: 'guardian' } },
+          thread_source: 'guardian_review',
+          parent_thread_id: '0199-codex-session',
+        },
+        'session_meta',
+      ),
+      userMessage(
+        'The following is the Codex agent history whose request action you are assessing',
+      ),
+    ])
+    const fromCopse = writeRollout('rollout-c.jsonl', [
+      meta,
+      userMessage('Session notes: this session persists across turns, and background…\n\nFix it'),
+    ])
+
+    assert.equal(await readCodexSessionHeader(reviewer), null)
+    assert.equal(await readCodexSessionHeader(fromCopse), null)
+  })
+
+  it('reads the output parts and commands of newer exec and wait calls', async () => {
+    const file = writeRollout('rollout-a.jsonl', [
+      meta,
+      userMessage('List the tools'),
+      at({
+        type: 'custom_tool_call',
+        name: 'exec',
+        call_id: 'call_1',
+        input: 'const xs = ALL_TOOLS.filter(Boolean)\nreturn xs',
+      }),
+      at({
+        type: 'custom_tool_call_output',
+        call_id: 'call_1',
+        output: [
+          { type: 'input_text', text: 'Script completed\nOutput:\n' },
+          { type: 'input_text', text: '[1, 2]' },
+          { type: 'input_image', image_url: 'data:image/png;base64,AAAA' },
+        ],
+      }),
+      at({
+        type: 'function_call',
+        name: 'wait',
+        call_id: 'call_2',
+        arguments: JSON.stringify({ cell_id: '16', yield_time_ms: 20000 }),
+      }),
+      at({
+        type: 'function_call_output',
+        call_id: 'call_2',
+        output: [{ type: 'input_text', text: 'Script completed\n' }],
+      }),
+    ])
+
+    const session = await readCodexSession(file)
+
+    assert.deepEqual(
+      session?.messages[1]?.toolCalls.map((call) => [call.title, call.kind, call.result]),
+      [
+        [
+          'const xs = ALL_TOOLS.filter(Boolean)',
+          'execute',
+          'Script completed\nOutput:\n[1, 2][image]\n',
+        ],
+        ['Wait for cell 16', 'execute', 'Script completed\n'],
+      ],
+    )
+  })
+
+  it("recognises every way Copse's agent prompts open", () => {
+    const mounted = { copseServer: 'copse_h0u45itf', bridgeToolNames: ['read_file'] }
+    const prior = [{ role: 'user' as const, content: 'Earlier' }]
+    for (const prompt of [
+      buildAcpPrompt('Fix it', []),
+      buildAcpPrompt('Fix it', [], mounted),
+      buildAcpPrompt('Fix it', [], { ...mounted, includeNotes: false }),
+      buildAcpPrompt('Fix it', prior, { includeNotes: false }),
+    ])
+      assert.ok(isCopsePrompt(prompt), prompt.slice(0, 80))
+    assert.equal(isCopsePrompt('Fix it'), false)
   })
 
   it('reads rollouts written before records were wrapped', async () => {
