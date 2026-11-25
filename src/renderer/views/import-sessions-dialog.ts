@@ -176,7 +176,7 @@ export function openImportSessionsDialog(
             { class: 'import-sessions-empty' },
             sourcesFound.length === 0
               ? 'No Claude Code or Codex sessions were found on this computer.'
-              : `No Claude Code or Codex sessions ran in ${project.name}’s folder.`,
+              : `No Claude Code or Codex sessions to import from ${project.name}’s folder. Sessions Copse ran are already threads.`,
           ),
         )
         return

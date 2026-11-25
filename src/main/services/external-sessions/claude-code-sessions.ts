@@ -153,6 +153,15 @@ interface ClaudeLine {
   record: Record<string, unknown>
   uuid: string | null
   parent: string | null
+  /** Position in the file. */
+  index: number
+}
+
+function isMainConversationLine(line: ClaudeLine): boolean {
+  return (
+    (line.record['type'] === 'user' || line.record['type'] === 'assistant') &&
+    line.record['isSidechain'] !== true
+  )
 }
 
 /**
@@ -163,11 +172,7 @@ interface ClaudeLine {
 function activeBranch(lines: ClaudeLine[]): Record<string, unknown>[] {
   const byUuid = new Map<string, ClaudeLine>()
   for (const line of lines) if (line.uuid) byUuid.set(line.uuid, line)
-  const leaf = lines.findLast(
-    (line) =>
-      (line.record['type'] === 'user' || line.record['type'] === 'assistant') &&
-      line.record['isSidechain'] !== true,
-  )
+  const leaf = lines.findLast(isMainConversationLine)
   // Without links (very old files), file order is the conversation order.
   if (!leaf?.uuid) return lines.map((line) => line.record)
   const branch: Record<string, unknown>[] = []
@@ -176,7 +181,13 @@ function activeBranch(lines: ClaudeLine[]): Record<string, unknown>[] {
   while (current && current.uuid && !seen.has(current.uuid)) {
     seen.add(current.uuid)
     branch.push(current.record)
-    current = current.parent ? byUuid.get(current.parent) : undefined
+    if (!current.parent) break
+    const before: number = current.index
+    // A parent the file does not hold (long live sessions have such gaps):
+    // carry on from the conversation line written just before.
+    current =
+      byUuid.get(current.parent) ??
+      lines.findLast((line) => line.index < before && isMainConversationLine(line))
   }
   return branch.reverse()
 }
@@ -207,16 +218,12 @@ function isCliNoise(text: string): boolean {
 
 /**
  * Turns the CLI or its host started rather than the user: background task
- * notifications, CI monitor events, host-injected context and messages from
- * other sessions. Newer files say so in `turnOrigin`; the tag check in
- * {@link withoutHarnessText} covers older ones.
+ * notifications, CI monitor events and messages from other sessions. Newer
+ * files say so in `turnOrigin`; the tag check in {@link withoutHarnessText}
+ * covers older ones. Host-written turns (`host_synthetic`) stay: once their
+ * injected context is stripped, what is left is often the session's brief.
  */
-const HARNESS_TURN_ORIGINS = new Set([
-  'task_notification',
-  'auto_continuation',
-  'host_synthetic',
-  'peer',
-])
+const HARNESS_TURN_ORIGINS = new Set(['task_notification', 'auto_continuation', 'peer'])
 
 function isHarnessTurn(record: Record<string, unknown>): boolean {
   const turnOrigin = record['turnOrigin']
@@ -263,13 +270,17 @@ function userPrompt(record: Record<string, unknown>): { text: string; images: st
 function toolResultText(content: unknown): string {
   if (typeof content === 'string') return content
   if (!Array.isArray(content)) return ''
-  return content
-    .flatMap((block) =>
-      isRecord(block) && block['type'] === 'text' && typeof block['text'] === 'string'
-        ? [block['text']]
-        : [],
-    )
-    .join('\n')
+  const parts: string[] = []
+  let loadedTools = 0
+  for (const block of content) {
+    if (!isRecord(block)) continue
+    if (block['type'] === 'text' && typeof block['text'] === 'string') parts.push(block['text'])
+    else if (block['type'] === 'image') parts.push('[image]')
+    else if (block['type'] === 'tool_reference') loadedTools += 1
+  }
+  if (loadedTools > 0)
+    parts.push(`Loaded ${String(loadedTools)} ${loadedTools === 1 ? 'tool' : 'tools'}`)
+  return parts.join('\n')
 }
 
 /**
@@ -364,6 +375,7 @@ export async function readClaudeCodeSession(
       record,
       uuid,
       parent: stringField(record, 'parentUuid') ?? stringField(record, 'logicalParentUuid'),
+      index: lines.length,
     })
   })
 

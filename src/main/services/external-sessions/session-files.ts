@@ -96,8 +96,27 @@ function isWholeElement(text: string): boolean {
  */
 export function titleFromPrompt(text: string): string | null {
   const cleaned = withoutHarnessText(text)
-  const readable = isWholeElement(cleaned) ? cleaned.replace(/<[^>]*>/g, ' ').trim() : cleaned
-  return readable || null
+  if (!isWholeElement(cleaned)) return cleaned || null
+  // A wrapper's inner text is escaped markup; read it as the user wrote it.
+  const inner = decodeEntities(cleaned.replace(/<[^>]*>/g, ' '))
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .trim()
+  return inner || null
+}
+
+const ENTITIES: Readonly<Record<string, string>> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+}
+
+function decodeEntities(text: string): string {
+  return text.replace(/&(amp|lt|gt|quot|apos|#\d+);/g, (whole, name: string) => {
+    if (name.startsWith('#')) return String.fromCodePoint(Number(name.slice(1)))
+    return ENTITIES[name] ?? whole
+  })
 }
 
 /** Opaque, stable name for one tool's session, safe to hand to the renderer. */
