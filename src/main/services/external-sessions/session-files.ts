@@ -4,8 +4,17 @@ import { createHash } from 'node:crypto'
 import { relative, isAbsolute, sep } from 'node:path'
 import { createInterface } from 'node:readline'
 import type { ExternalSessionSource } from '@shared/types'
-import { safeJsonParse } from '@shared/safe-json.ts'
-import { isRecord } from '@shared/unknown-value.ts'
+import { z } from 'zod'
+import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
+
+/**
+ * One line of a CLI's session file: any JSON object. The fields each reader
+ * uses are checked where it reads them, since both CLIs add and rename fields
+ * between releases and a line Copse cannot fully read is still worth the parts
+ * it can.
+ */
+const jsonlRecordSchema = z.record(z.string(), z.unknown())
+const decodeJsonlRecord = decodeWithSchema(jsonlRecordSchema)
 
 /**
  * Read a JSONL file one record at a time, skipping lines that are not JSON
@@ -25,8 +34,8 @@ export async function readJsonlRecords(
   try {
     for await (const line of lines) {
       if (!line.trim()) continue
-      const value = safeJsonParse(line)
-      if (!isRecord(value)) continue
+      const value = safeJsonParse(line, decodeJsonlRecord)
+      if (value === null) continue
       if (visit(value) === false) break
     }
   } finally {
@@ -54,8 +63,8 @@ export async function readJsonlTail(
     if (start > 0) lines.shift()
     return lines.flatMap((line) => {
       if (!line.trim()) return []
-      const value = safeJsonParse(line)
-      return isRecord(value) ? [value] : []
+      const value = safeJsonParse(line, decodeJsonlRecord)
+      return value === null ? [] : [value]
     })
   } finally {
     await handle.close()
@@ -114,7 +123,10 @@ const ENTITIES: Readonly<Record<string, string>> = {
 
 function decodeEntities(text: string): string {
   return text.replace(/&(amp|lt|gt|quot|apos|#\d+);/g, (whole, name: string) => {
-    if (name.startsWith('#')) return String.fromCodePoint(Number(name.slice(1)))
+    if (name.startsWith('#')) {
+      const point = Number(name.slice(1))
+      return point <= 0x10ffff ? String.fromCodePoint(point) : whole
+    }
     return ENTITIES[name] ?? whole
   })
 }
@@ -156,4 +168,20 @@ export function capToolResult(text: string): string {
   if (text.length <= MAX_IMPORTED_TOOL_RESULT_CHARS) return text
   const dropped = text.length - MAX_IMPORTED_TOOL_RESULT_CHARS
   return `${text.slice(0, MAX_IMPORTED_TOOL_RESULT_CHARS)}\n\n[${String(dropped)} more characters were not imported]`
+}
+
+/**
+ * How a prompt Copse itself sent through a coding agent begins (the session
+ * notes or the bridge identity, built in `buildAcpPrompt`). Such sessions are
+ * already Copse threads, so they are not offered for import.
+ */
+const COPSE_PROMPT_OPENINGS = [
+  'Session notes: this session persists across turns',
+  'Copse native bridge for this turn:',
+  'You are continuing an existing Copse chat.',
+]
+
+export function isCopsePrompt(text: string): boolean {
+  const trimmed = text.trimStart()
+  return COPSE_PROMPT_OPENINGS.some((opening) => trimmed.startsWith(opening))
 }

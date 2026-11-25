@@ -29,7 +29,7 @@ export interface ExternalSessionList {
 }
 
 export interface ExternalSessionImportResult {
-  /** Threads created by this import, newest first, with their transcripts. */
+  /** Threads created by this import, newest first, as metadata (`messagesLoaded: false`); opening one loads its transcript. */
   imported: Thread[]
   /** Sessions that were already threads, by key, and the thread they became. */
   alreadyImported: Array<{ key: string; threadId: string }>

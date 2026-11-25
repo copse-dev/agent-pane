@@ -14,7 +14,8 @@ import type { ExternalSessionImportDeps } from './external-session-import.ts'
 export function externalSessionImportDeps(): ExternalSessionImportDeps {
   return {
     projectRoot: getLocalProjectRoot,
-    loadThreadMetas: (projectId) => loadProjectThreadMetas(projectId),
+    // Archived threads count: a session archived after import is still imported.
+    loadThreadMetas: (projectId) => loadProjectThreadMetas(projectId, { includeArchived: true }),
     createThread,
     findAgent: async (agentId): ReturnType<ExternalSessionImportDeps['findAgent']> => {
       const agent = getAcpAgent(agentId)

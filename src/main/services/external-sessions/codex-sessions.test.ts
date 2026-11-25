@@ -5,12 +5,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { buildAcpPrompt } from '../acp/acp-agent-service.ts'
 import {
-  isCopsePrompt,
   listCodexSessionFiles,
   readCodexSession,
   readCodexSessionHeader,
 } from './codex-sessions.ts'
 import type { ExternalSessionFile } from './external-session-types.ts'
+import { isCopsePrompt } from './session-files.ts'
 
 let home: string
 const ROOT = '/Users/dev/code/my-app'

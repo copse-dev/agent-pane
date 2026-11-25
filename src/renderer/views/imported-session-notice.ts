@@ -19,10 +19,11 @@ export function importedSessionNotice(thread: Thread): HTMLElement | null {
     { class: 'imported-session-notice', role: 'note', 'data-source': imported.source },
     el('strong', {}, `Imported from ${source}.`),
     ` Earlier messages and tool calls ran in ${source}, outside Copse’s sandbox and approvals.`,
-    // Claude threads continue in their own copy of the session file. Codex has
-    // no per-thread home that keeps its sign-in, so it writes to the original.
-    ...(imported.source === 'codex'
-      ? [' Continuing here also adds to the original Codex session.']
+    // Claude threads continue in their own copy of the session file. A linked
+    // Codex thread has no per-thread home that keeps its sign-in, so it writes
+    // to the original.
+    ...(imported.sharesOriginal
+      ? [` Continuing here also adds to the original ${source} session.`]
       : []),
   )
 }

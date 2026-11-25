@@ -168,8 +168,10 @@ describe('importing Claude Code and Codex sessions', () => {
       key: session.key,
       importedAt: 1_000,
     })
+    assert.deepEqual(thread.messages, [], 'the renderer loads the transcript on open')
+    assert.equal(thread.messagesLoaded, false)
     assert.deepEqual(
-      thread.messages.map((message) => [message.role, message.content]),
+      h.threads[0]?.messages.map((message) => [message.role, message.content]),
       [
         ['user', 'Fix the flaky test'],
         ['assistant', 'Done.'],
@@ -236,8 +238,10 @@ describe('importing Claude Code and Codex sessions', () => {
     const [session] = (await listExternalSessions(h.deps, 'p1')).sessions
     assert.ok(session)
 
-    await importExternalSessions(h.deps, 'p1', [session.key])
+    const result = await importExternalSessions(h.deps, 'p1', [session.key])
 
+    // The thread says its turns add to the user's own session.
+    assert.equal(result.imported[0]?.importedSession?.sharesOriginal, true)
     const shared = h.bindings[0]?.sharedFile
     assert.ok(shared)
     assert.match(shared.path, /rollout-2026-11-02T09-00-00-codex-1\.jsonl$/)
@@ -253,6 +257,7 @@ describe('importing Claude Code and Codex sessions', () => {
     const result = await importExternalSessions(h.deps, 'p1', [session.key])
 
     assert.equal(result.imported[0]?.model, undefined)
+    assert.equal(result.imported[0]?.importedSession?.sharesOriginal, undefined)
     assert.equal(result.imported[0]?.gitBranch, 'add-flag')
     assert.deepEqual(h.bindings, [])
     assert.equal(existsSync(join(scratch, 'threads')), false)

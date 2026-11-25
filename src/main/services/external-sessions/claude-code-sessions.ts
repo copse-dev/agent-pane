@@ -6,6 +6,7 @@ import type { Message, ToolCall } from '@shared/types'
 import { isRecord } from '@shared/unknown-value.ts'
 import {
   capToolResult,
+  isCopsePrompt,
   oneLineTitle,
   parseTimestamp,
   readJsonlRecords,
@@ -85,6 +86,8 @@ export async function readClaudeCodeSessionHeader(
     summary: string | null
     named: string | null
     aiTitle: string | null
+    /** The session began with a prompt Copse sent: it is a Copse thread already. */
+    copse: boolean
   } = {
     cwd: null,
     gitBranch: null,
@@ -93,6 +96,7 @@ export async function readClaudeCodeSessionHeader(
     summary: null,
     named: null,
     aiTitle: null,
+    copse: false,
   }
   const noteTitle = (line: Record<string, unknown>): boolean => {
     if (line['type'] === 'custom-title') {
@@ -122,7 +126,10 @@ export async function readClaudeCodeSessionHeader(
       found.startedAt ??= parseTimestamp(line['timestamp'])
       if (found.title === null && line['type'] === 'user') {
         const prompt = userPrompt(line)
-        if (prompt?.text) found.title = titleFromPrompt(prompt.text)
+        if (prompt?.text) {
+          found.copse = isCopsePrompt(prompt.text)
+          found.title = titleFromPrompt(prompt.text)
+        }
       }
       // The CLI's titles come a few lines in; keep reading until one has.
       return found.cwd === null || (found.named === null && found.aiTitle === null)
@@ -134,7 +141,7 @@ export async function readClaudeCodeSessionHeader(
       noteTitle(line)
   }
   const { cwd, gitBranch, startedAt, title, summary, named, aiTitle } = found
-  if (cwd === null) return null
+  if (cwd === null || found.copse) return null
   const heading = named ?? aiTitle ?? summary ?? title
   if (heading === null) return null
   return {
@@ -149,18 +156,23 @@ export async function readClaudeCodeSessionHeader(
   }
 }
 
+/**
+ * A line of the session's link chain. Only main-conversation lines keep their
+ * record; the rest (attachments, sidechains, bookkeeping) are kept for their
+ * links alone, so a long session is not held in memory whole.
+ */
 interface ClaudeLine {
-  record: Record<string, unknown>
+  /** The `user` or `assistant` record, for a main-conversation line; otherwise null. */
+  record: Record<string, unknown> | null
   uuid: string | null
   parent: string | null
-  /** Position in the file. */
-  index: number
+  /** The main-conversation line written just before this one, if any. */
+  previousConversation: ClaudeLine | undefined
 }
 
-function isMainConversationLine(line: ClaudeLine): boolean {
+function isMainConversationRecord(record: Record<string, unknown>): boolean {
   return (
-    (line.record['type'] === 'user' || line.record['type'] === 'assistant') &&
-    line.record['isSidechain'] !== true
+    (record['type'] === 'user' || record['type'] === 'assistant') && record['isSidechain'] !== true
   )
 }
 
@@ -169,25 +181,24 @@ function isMainConversationLine(line: ClaudeLine): boolean {
  * from the last conversation line through `parentUuid`, crossing compaction
  * boundaries through `logicalParentUuid`.
  */
-function activeBranch(lines: ClaudeLine[]): Record<string, unknown>[] {
+function activeBranch(
+  lines: ClaudeLine[],
+  leaf: ClaudeLine | undefined,
+): Record<string, unknown>[] {
+  // Without links (very old files), file order is the conversation order.
+  if (!leaf?.uuid) return lines.flatMap((line) => (line.record ? [line.record] : []))
   const byUuid = new Map<string, ClaudeLine>()
   for (const line of lines) if (line.uuid) byUuid.set(line.uuid, line)
-  const leaf = lines.findLast(isMainConversationLine)
-  // Without links (very old files), file order is the conversation order.
-  if (!leaf?.uuid) return lines.map((line) => line.record)
   const branch: Record<string, unknown>[] = []
   const seen = new Set<string>()
   let current: ClaudeLine | undefined = leaf
   while (current && current.uuid && !seen.has(current.uuid)) {
     seen.add(current.uuid)
-    branch.push(current.record)
+    if (current.record) branch.push(current.record)
     if (!current.parent) break
-    const before: number = current.index
     // A parent the file does not hold (long live sessions have such gaps):
     // carry on from the conversation line written just before.
-    current =
-      byUuid.get(current.parent) ??
-      lines.findLast((line) => line.index < before && isMainConversationLine(line))
+    current = byUuid.get(current.parent) ?? current.previousConversation
   }
   return branch.reverse()
 }
@@ -363,27 +374,33 @@ export async function readClaudeCodeSession(
   // Code runs tools in parallel, each result hangs off its own call, so all but
   // the last are off the active branch.
   const results = new Map<string, { text: string; failed: boolean }>()
+  let lastConversation: ClaudeLine | undefined
   await readJsonlRecords(file.path, (record) => {
-    if (record['type'] === 'user' && record['isSidechain'] !== true)
+    const conversation = isMainConversationRecord(record)
+    if (conversation && record['type'] === 'user') {
       takeToolResults(record, results)
+      // The CLI's structured copy of each tool result, which Copse never reads.
+      delete record['toolUseResult']
+    }
     // Every linked line is part of the chain, not only conversation lines:
     // current Claude Code threads a turn through `attachment` records between
     // the prompt and the answer, and the walk back must cross them.
     const uuid = stringField(record, 'uuid')
-    if (uuid === null && record['type'] !== 'user' && record['type'] !== 'assistant') return
-    lines.push({
-      record,
+    if (uuid === null && !conversation) return
+    const line: ClaudeLine = {
+      record: conversation ? record : null,
       uuid,
       parent: stringField(record, 'parentUuid') ?? stringField(record, 'logicalParentUuid'),
-      index: lines.length,
-    })
+      previousConversation: lastConversation,
+    }
+    lines.push(line)
+    if (conversation) lastConversation = line
   })
 
   const messages: Message[] = []
   const toolCallsById = new Map<string, ToolCall>()
   let assistant: { message: Message; apiId: string | null } | null = null
-  for (const record of activeBranch(lines)) {
-    if (record['isSidechain'] === true) continue
+  for (const record of activeBranch(lines, lastConversation)) {
     const createdAt = parseTimestamp(record['timestamp']) ?? header.startedAt
     const message = record['message']
     if (!isRecord(message)) continue
@@ -418,7 +435,7 @@ export async function readClaudeCodeSession(
             : block['thinking']
         } else if (block['type'] === 'tool_use' && typeof block['id'] === 'string') {
           const name = typeof block['name'] === 'string' ? block['name'] : 'tool'
-          const kind = CLAUDE_TOOL_KINDS[name]
+          const kind = Object.hasOwn(CLAUDE_TOOL_KINDS, name) ? CLAUDE_TOOL_KINDS[name] : undefined
           const call: ToolCall = {
             id: block['id'],
             name,

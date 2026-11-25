@@ -208,7 +208,28 @@ async function copyClaudeSessionForThread(
   await copyFile(file.path, target)
 }
 
-export async function importExternalSessions(
+/** Each project's import in progress, so two at once cannot import a session twice. */
+const importsInFlight = new Map<string, Promise<unknown>>()
+
+export function importExternalSessions(
+  deps: ExternalSessionImportDeps,
+  projectId: string,
+  keys: readonly string[],
+): Promise<ExternalSessionImportResult> {
+  const previous = importsInFlight.get(projectId) ?? Promise.resolve()
+  const next = previous.then(
+    () => importSessions(deps, projectId, keys),
+    () => importSessions(deps, projectId, keys),
+  )
+  importsInFlight.set(projectId, next)
+  const clear = (): void => {
+    if (importsInFlight.get(projectId) === next) importsInFlight.delete(projectId)
+  }
+  next.then(clear, clear)
+  return next
+}
+
+async function importSessions(
   deps: ExternalSessionImportDeps,
   projectId: string,
   keys: readonly string[],
@@ -259,6 +280,8 @@ export async function importExternalSessions(
         agent ? acpModelValue(agent.id) : null,
         now(),
       )
+      const sharesOriginal = agent !== null && session.source === 'codex'
+      if (sharesOriginal && thread.importedSession) thread.importedSession.sharesOriginal = true
       await deps.createThread(projectId, thread)
       // Always seeded, agent or not: without it the thread's first turn would
       // rebuild the CLI's tool calls as the model's own.
@@ -289,7 +312,9 @@ export async function importExternalSessions(
         }
       }
       imported.set(key, thread.id)
-      result.imported.push(thread)
+      // The transcript stays in the store until the thread is opened, as for
+      // any thread the project lists: a long session is too big to send over.
+      result.imported.push({ ...thread, messages: [], messagesLoaded: false })
     } catch (error) {
       result.failed.push({ key, reason: errorMessage(error) })
     }

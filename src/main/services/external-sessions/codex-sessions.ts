@@ -3,10 +3,12 @@ import { readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Message, ToolCall } from '@shared/types'
-import { safeJsonParse } from '@shared/safe-json.ts'
+import { z } from 'zod'
+import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import {
   capToolResult,
+  isCopsePrompt,
   oneLineTitle,
   parseTimestamp,
   readJsonlRecords,
@@ -93,22 +95,6 @@ function isInjectedUserText(text: string): boolean {
   if (trimmed.startsWith('# AGENTS.md instructions')) return true
   const tag = /^<([a-z_][a-z0-9_ -]*)>/i.exec(trimmed)?.[1]
   return tag !== undefined && trimmed.endsWith(`</${tag}>`)
-}
-
-/**
- * How a prompt Copse itself sent through the Codex agent begins (the session
- * notes or the bridge identity, built in `buildAcpPrompt`). Such sessions are
- * already Copse threads, so they are not offered for import.
- */
-const COPSE_PROMPT_OPENINGS = [
-  'Session notes: this session persists across turns',
-  'Copse native bridge for this turn:',
-  'You are continuing an existing Copse chat.',
-]
-
-export function isCopsePrompt(text: string): boolean {
-  const trimmed = text.trimStart()
-  return COPSE_PROMPT_OPENINGS.some((opening) => trimmed.startsWith(opening))
 }
 
 /**
@@ -235,15 +221,24 @@ function outputPartsText(parts: unknown[]): string {
  * Function-call output: a string, the JSON `{ output, metadata: { exit_code } }`
  * form, or (newer Codex) an array of `{ type: 'input_text', text }` parts.
  */
+/** The JSON form of a shell call's output. */
+const execOutputSchema = z.object({
+  output: z.string(),
+  metadata: z.object({ exit_code: z.number().optional() }).loose().optional(),
+})
+const decodeExecOutput = decodeWithSchema(execOutputSchema)
+
+/** A function call's arguments: any JSON value, shown as the call's input. */
+const decodeAnyJson = decodeWithSchema(z.unknown())
+
 function callOutput(output: unknown): { text: string; failed: boolean } {
   const raw = isRecord(output) ? output['content'] : output
   if (Array.isArray(raw)) return { text: outputPartsText(raw), failed: false }
   if (typeof raw !== 'string') return { text: '', failed: false }
-  const parsed = safeJsonParse(raw)
-  if (isRecord(parsed) && typeof parsed['output'] === 'string') {
-    const metadata = isRecord(parsed['metadata']) ? parsed['metadata'] : null
-    const exit = metadata?.['exit_code']
-    return { text: parsed['output'], failed: typeof exit === 'number' && exit !== 0 }
+  const parsed = safeJsonParse(raw, decodeExecOutput)
+  if (parsed) {
+    const exit = parsed.metadata?.exit_code
+    return { text: parsed.output, failed: exit !== undefined && exit !== 0 }
   }
   return { text: raw, failed: false }
 }
@@ -310,7 +305,7 @@ export async function readCodexSession(
               : 'tool'
         const args =
           item['type'] === 'function_call' && typeof item['arguments'] === 'string'
-            ? (safeJsonParse(item['arguments']) ?? item['arguments'])
+            ? (safeJsonParse(item['arguments'], decodeAnyJson) ?? item['arguments'])
             : item['type'] === 'local_shell_call'
               ? item['action']
               : item['input']

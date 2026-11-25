@@ -344,6 +344,12 @@ export interface ImportedSessionLink {
    */
   key: string
   importedAt: number
+  /**
+   * The thread was linked to the user's own session file, which its turns then
+   * add to (Codex has no per-thread home that keeps its sign-in). Absent when
+   * the thread only holds a copy of the transcript, or of the file.
+   */
+  sharesOriginal?: true
 }
 
 export interface Thread {

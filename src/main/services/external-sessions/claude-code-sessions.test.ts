@@ -404,4 +404,14 @@ describe('Claude Code sessions', () => {
       null,
     )
   })
+
+  it('leaves out a session Copse itself ran, which is a thread already', async () => {
+    const path = writeSession(ROOT, 's1', [
+      user('u1', null, 'Session notes: this session persists across turns. Fix it'),
+    ])
+    assert.equal(
+      await readClaudeCodeSessionHeader({ source: 'claude-code', path, updatedAt: 1, bytes: 1 }),
+      null,
+    )
+  })
 })
