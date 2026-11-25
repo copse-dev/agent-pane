@@ -4,12 +4,15 @@ import { execFileSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import {
   access,
+  lstat,
   mkdir,
   mkdtemp,
   readFile,
   readdir,
   realpath,
   rm,
+  stat,
+  symlink,
   writeFile,
 } from 'node:fs/promises'
 import { readFileSync, readdirSync } from 'node:fs'
@@ -367,12 +370,19 @@ describe('copse-review pr', () => {
     const report = z
       .object({
         stage0: z.object({
+          repositoryRoot: z.string(),
           checks: z.array(
             z.object({ kind: z.string(), head: z.object({ output: z.string() }).nullable() }),
           ),
         }),
       })
       .parse(JSON.parse(await readFile(join(target, 'report.json'), 'utf8')))
+    // The report names the caller's clone, not the scratch repository the run removed.
+    assert.equal(report.stage0.repositoryRoot, clone)
+    assert.match(
+      await readFile(join(target, 'report.sarif'), 'utf8'),
+      new RegExp(`"file://${clone}/"`),
+    )
     const seen = report.stage0.checks.find((check) => check.kind === 'test')?.head?.output ?? ''
     assert.match(seen, /refs\/copse-review\/head/)
     assert.doesNotMatch(seen, /private-work|refs\/remotes\/|refs\/copse-review\/pr-/)
@@ -405,6 +415,91 @@ describe('copse-review pr', () => {
     ])
   })
 
+  it('publishes through an --out that links to another filesystem', async (t) => {
+    const elsewhere = '/dev/shm'
+    const device = await stat(elsewhere).then(
+      (info) => info.dev,
+      () => null,
+    )
+    if (device === null || device === (await stat(root)).dev) {
+      t.skip('no second filesystem to link --out to')
+      return
+    }
+    const target = await mkdtemp(join(elsewhere, 'review-out-'))
+    try {
+      const link = join(root, 'linked-out')
+      await symlink(target, link)
+      assert.equal(await review(['--out', link]), HEADLESS_EXIT.SUCCESS, err)
+      assert.ok((await lstat(link)).isSymbolicLink())
+      assert.deepEqual((await readdir(target)).sort(), [
+        'events.jsonl',
+        'report.json',
+        'report.sarif',
+        'report.txt',
+        'run.json',
+      ])
+    } finally {
+      await rm(target, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses an --out that is a file before reviewing anything', async () => {
+    const file = join(root, 'out-file')
+    await writeFile(file, 'mine\n')
+    assert.equal(await review(['--out', file]), HEADLESS_EXIT.USAGE)
+    assert.match(err, /--out .*out-file is not a directory/)
+    assert.doesNotMatch(err, /reviewing [0-9a-f]{12} against/)
+    assert.equal(await readFile(file, 'utf8'), 'mine\n')
+  })
+
+  it('clears what a killed run left inside the same --out, and nothing else there', async () => {
+    const out = join(root, 'killed-out')
+    const leftover = join(out, '.copse-review.partial-dead')
+    await mkdir(leftover, { recursive: true })
+    await writeFile(join(leftover, 'report.json'), '{}\n')
+    await writeFile(join(out, 'notes.txt'), 'mine\n')
+    assert.equal(await review(['--out', out]), HEADLESS_EXIT.SUCCESS, err)
+    await assert.rejects(access(leftover), /ENOENT/)
+    assert.equal(await readFile(join(out, 'notes.txt'), 'utf8'), 'mine\n')
+    assert.ok(await readFile(join(out, 'run.json'), 'utf8'))
+  })
+
+  it('reviews from a partial clone, fetching what it lacks of the reviewed history first', async () => {
+    origin.git('config', 'uploadpack.allowFilter', 'true')
+    origin.git('config', 'uploadpack.allowAnySHA1InWant', 'true')
+    const partial = join(root, 'partial')
+    execFileSync('git', ['clone', '-q', '--filter=blob:none', `file://${origin.root}`, partial], {
+      env: { ...process.env, ...GIT_ENV },
+    })
+    out = ''
+    err = ''
+    const target = join(root, 'partial-out')
+    const code = await localPullRequestMain(['7', '--no-model', '--out', target], {
+      ...io,
+      cwd: partial,
+    })
+    assert.equal(code, HEADLESS_EXIT.SUCCESS, err)
+    assert.match(
+      err,
+      /this partial clone lacks [1-9]\d* object\(s\) of the reviewed history; fetching them from origin/,
+    )
+    assert.ok(await readFile(join(target, 'report.json'), 'utf8'))
+  })
+
+  it('refuses an engine name it does not know without a stack trace', async () => {
+    const { containerEngines: _detected, ...detecting } = io
+    const refused = async (args: string[], env: LocalPrIo['env']): Promise<void> => {
+      out = ''
+      err = ''
+      const code = await localPullRequestMain(['7', '--no-model', ...args], { ...detecting, env })
+      assert.equal(code, HEADLESS_EXIT.USAGE, err)
+      assert.match(err, /bogus/)
+      assert.doesNotMatch(err, /\n\s+at /)
+    }
+    await refused(['--engine', 'bogus'], io.env)
+    await refused([], { ...io.env, COPSE_CONTAINER_ENGINE: 'bogus' })
+  })
+
   it('removes the cells and scratch a hard-killed earlier review left behind', async () => {
     // As SIGKILL leaves things: a journalled cell container still there (Apple
     // container has no --rm) and its scratch checkout.
@@ -422,16 +517,30 @@ describe('copse-review pr', () => {
     // `finally` would have removed.
     const seed = join(reviewCache, 'seed-dead')
     await mkdir(seed)
-    const staging = join(await repositoryDir(), 'pr-7', 'abc-dead.partial-dead')
+    const staging = join(await repositoryDir(), 'pr-7', 'abc-dead.copse-review.partial-dead')
     await mkdir(staging, { recursive: true })
+    // Its review repository, which only its own `finally` would have removed.
+    const repository = join(reviewCache, 'repo-dead')
+    await mkdir(repository)
+    // What stays: the filled stores and the saved reports.
+    const keptBefore = (await readdir(reviewCache)).filter(
+      (name) => name.includes('store') || name.includes('cache'),
+    )
+    assert.ok(keptBefore.length > 0)
+    const savedBefore = (await readdir(join(await repositoryDir(), 'pr-7'))).filter(
+      (name) => !name.includes('.partial-'),
+    )
 
     assert.equal(await review(['--fresh']), HEADLESS_EXIT.SUCCESS, err)
     assert.match(
       err,
-      /cleared what an earlier review left: 1 container\(s\), 1 scratch directory\(ies\), 2 half-made run directory\(ies\)/,
+      /cleared what an earlier review left: 1 container\(s\), 1 scratch directory\(ies\), 3 half-made run directory\(ies\)/,
     )
     await assert.rejects(access(seed), /ENOENT/)
     await assert.rejects(access(staging), /ENOENT/)
+    await assert.rejects(access(repository), /ENOENT/)
+    for (const name of keptBefore) await access(join(reviewCache, name))
+    for (const name of savedBefore) await access(join(await repositoryDir(), 'pr-7', name))
     await access(join(registry, 'copse-review-pr-dead-1.removed'))
     await assert.rejects(access(join(registry, 'copse-review-pr-dead-1.active')), /ENOENT/)
     assert.deepEqual(await readdir(join(reviewCache, 'scratch')), [])
@@ -669,10 +778,13 @@ describe('copse-review pr arguments', () => {
     assert.equal(parseEngineCapacity('not json'), null)
     const sized = { memory: '16g', cpus: 8, pids: 512 }
     const defaults = { memory: false, cpus: false }
-    assert.deepEqual(fitCellLimits(sized, defaults, colima), {
-      limits: { memory: '1g', cpus: 2, pids: 512 },
-      notes: [],
-    })
+    const fitted = fitCellLimits(sized, defaults, colima)
+    assert.deepEqual(fitted.limits, { memory: '1g', cpus: 2, pids: 512 })
+    // The run says what it lowered, not only run.json.
+    assert.deepEqual(fitted.notes, [
+      "the default --cell-memory 16g is lowered to 1g, three quarters of the engine VM's memory",
+      "the default --cell-cpus 8 is lowered to the engine VM's 2",
+    ])
     const asked = fitCellLimits(sized, { memory: true, cpus: true }, colima)
     assert.deepEqual(asked.limits, sized)
     assert.equal(asked.notes.length, 2)

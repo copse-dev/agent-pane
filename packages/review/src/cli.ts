@@ -192,6 +192,13 @@ export interface CliIo {
   readonly stderr: (text: string) => void
   readonly env: Readonly<Record<string, string | undefined>>
   readonly cwd: string
+  /**
+   * The repository the report names (its SARIF root, the review's thread),
+   * when `cwd` is a stand-in for it: `copse-review pr` reviews in a scratch
+   * repository holding only the reviewed history, removed when the run ends.
+   * Default: the root of the repository under `cwd`.
+   */
+  readonly repositoryRoot?: string
   /** A backend the caller built; `--backend` overrides it. */
   readonly backend?: IsolationBackend
   readonly signal?: AbortSignal
@@ -937,6 +944,7 @@ export async function main(argv: readonly string[], callerIo: CliIo): Promise<He
       }
       stage0 = importedStage0
     }
+    if (io.repositoryRoot !== undefined) stage0 = { ...stage0, repositoryRoot: io.repositoryRoot }
     const executed = stage0.execution.decision.execute
     const profile = reviewPermissionProfile(ground.decision.execute && ground.cell !== null)
     const shellDecision = resolveNonInteractiveDecision(capabilityDecision(profile, 'shell'), {

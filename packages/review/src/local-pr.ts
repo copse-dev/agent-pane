@@ -15,7 +15,17 @@
 import { execFileSync } from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
 import { appendFileSync, writeFileSync } from 'node:fs'
-import { access, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import {
+  access,
+  mkdir,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  rmdir,
+  stat,
+  writeFile,
+} from 'node:fs/promises'
 import { availableParallelism, homedir, totalmem } from 'node:os'
 import { basename, join } from 'node:path'
 import { z } from 'zod'
@@ -41,6 +51,7 @@ import { CLI_VERSION, main, type CliIo } from './cli.ts'
 import {
   CONTAINER_DIALECTS,
   CONTAINER_ENGINE_ENV,
+  CONTAINER_ENGINE_PREFERENCES,
   DEFAULT_CONTAINER_LIMITS,
   containerRemovalArgv,
   createContainerBackend,
@@ -51,6 +62,7 @@ import {
   type ContainerLimits,
 } from './container-backend.ts'
 import { envValue } from './provider-selection.ts'
+import { reachedNoVerdict } from './report-text.ts'
 import { acquireReviewLock } from './review-lock.ts'
 
 export const LOCAL_PR_USAGE = `usage: copse-review pr <number | pull request URL | ref> [options] [review options]
@@ -71,8 +83,10 @@ is, without fetching.
   --image <name>        use this already-built validation image instead of building one
   --cell-cpu <cpu>      arm64 | x64: the cell's Linux CPU (default this machine's)
   --cell-memory <size>  memory per cell command (default a quarter of this machine's,
-                        4g to 16g; Copse itself needs about 16g)
-  --cell-cpus <n>       CPUs per cell command (default half of this machine's, 2 to 8)
+                        4g to 16g, lowered to fit a Docker or Podman VM; Copse itself
+                        needs about 16g)
+  --cell-cpus <n>       CPUs per cell command (default half of this machine's, 2 to 8,
+                        lowered to fit a Docker or Podman VM)
   --out <dir>           where the report goes (default under ~/.copse/reviews/)
   --fresh               review again even when a saved report matches
   --help
@@ -204,6 +218,16 @@ export function parsePrArgs(
   if (!Number.isFinite(cpus) || cpus <= 0) {
     throw new Error(`--cell-cpus must be a positive number, not ${cpusText ?? ''}`)
   }
+  const engine = values.get('--engine')
+  const engineName = engine?.trim().toLowerCase()
+  if (
+    engineName !== undefined &&
+    !CONTAINER_ENGINE_PREFERENCES.some((name) => name === engineName)
+  ) {
+    throw new Error(
+      `--engine must be ${CONTAINER_ENGINE_PREFERENCES.join(', ')}, not ${engine ?? ''}`,
+    )
+  }
   // Both reach git; a leading dash would read as an option, not a name.
   for (const flag of ['--remote', '--base'] as const) {
     const value = values.get(flag)
@@ -214,7 +238,7 @@ export function parsePrArgs(
     remote: values.get('--remote') ?? 'origin',
     base: values.get('--base'),
     profile,
-    engine: values.get('--engine'),
+    engine,
     image: values.get('--image'),
     cpu,
     limits: { ...DEFAULT_CONTAINER_LIMITS, memory, cpus },
@@ -293,6 +317,74 @@ function tryGit(git: Git, args: readonly string[]): string | null {
   } catch {
     return null
   }
+}
+
+/** How many rounds a partial clone's fill may take: each missing tree can hide more objects. */
+const PARTIAL_CLONE_FILL_ROUNDS = 64
+
+/**
+ * Fetch what a partial clone (`git clone --filter=…`) lacks of the reviewed
+ * history. The review repository is filled from this clone by a fetch that
+ * cannot ask the clone's promisor remote for a missing object, so it aborts as
+ * if the clone were corrupt. Each missing object is fetched by id from the
+ * promisor remotes first; a missing tree can hide more, so this repeats until
+ * nothing is missing. A clone with no promisor remote is complete, and costs
+ * nothing here.
+ */
+function fillPartialClone(
+  git: Git,
+  repoRoot: string,
+  commits: readonly string[],
+  stderr: (text: string) => void,
+): void {
+  const promisors = (tryGit(git, ['config', '--get-regexp', '^remote\\..+\\.promisor$']) ?? '')
+    .split('\n')
+    .flatMap((line) => {
+      const match = /^remote\.(.+)\.promisor (?:true|yes|on|1)$/i.exec(line.trim())
+      return match?.[1] === undefined ? [] : [match[1]]
+    })
+  if (promisors.length === 0) return
+  const missing = (): string[] =>
+    git(['rev-list', '--objects', '--missing=print', '--no-object-names', ...commits])
+      .split('\n')
+      .flatMap((line) => (line.startsWith('?') ? [line.slice(1)] : []))
+  let lacking = missing()
+  if (lacking.length === 0) return
+  stderr(
+    `copse-review pr: this partial clone lacks ${String(lacking.length)} object(s) of the reviewed history; fetching them from ${promisors.join(', ')}\n`,
+  )
+  for (const remote of promisors) {
+    for (let round = 0; round < PARTIAL_CLONE_FILL_ROUNDS && lacking.length > 0; round++) {
+      try {
+        execFileSync(
+          'git',
+          [
+            '-c',
+            'core.hooksPath=/dev/null',
+            '-c',
+            'core.fsmonitor=false',
+            'fetch',
+            '--quiet',
+            '--no-tags',
+            '--no-write-fetch-head',
+            '--stdin',
+            '--end-of-options',
+            remote,
+          ],
+          { cwd: repoRoot, input: `${lacking.join('\n')}\n`, stdio: ['pipe', 'ignore', 'pipe'] },
+        )
+      } catch {
+        break
+      }
+      const before = lacking.join('\n')
+      lacking = missing()
+      if (lacking.join('\n') === before) break
+    }
+    if (lacking.length === 0) return
+  }
+  throw new Error(
+    `this partial clone still lacks ${String(lacking.length)} object(s) of the reviewed history, which ${promisors.join(', ')} did not supply; review from a full clone`,
+  )
 }
 
 function verifiedCommit(git: Git, ref: string): string | null {
@@ -552,8 +644,9 @@ function memoryBytes(size: string): number {
 
 /**
  * The cell's limits on this engine. A default sized from this machine is
- * lowered to fit a smaller engine VM (CPUs, and three quarters of its memory);
- * a limit the caller set is kept, and noted when the VM cannot give it.
+ * lowered to fit a smaller engine VM (CPUs, and three quarters of its memory),
+ * and noted; a limit the caller set is kept, and noted when the VM cannot give
+ * it.
  */
 export function fitCellLimits(
   limits: ContainerLimits,
@@ -569,14 +662,24 @@ export function fitCellLimits(
       notes.push(
         `--cell-memory ${memory} is more than the engine's VM can give (${String(vmGib)}g)`,
       )
-    } else memory = `${String(vmGib)}g`
+    } else {
+      notes.push(
+        `the default --cell-memory ${memory} is lowered to ${String(vmGib)}g, three quarters of the engine VM's memory`,
+      )
+      memory = `${String(vmGib)}g`
+    }
   }
   if (cpus > capacity.cpus) {
     if (given.cpus) {
       notes.push(
         `--cell-cpus ${String(cpus)} is more than the engine's VM has (${String(capacity.cpus)})`,
       )
-    } else cpus = capacity.cpus
+    } else {
+      notes.push(
+        `the default --cell-cpus ${String(cpus)} is lowered to the engine VM's ${String(capacity.cpus)}`,
+      )
+      cpus = capacity.cpus
+    }
   }
   return { limits: { ...limits, memory, cpus }, notes }
 }
@@ -668,11 +771,7 @@ type SettledReport = z.infer<typeof settledReportSchema>
 
 /** Whether Stage 0 had checks to run and none reached a verdict (all not run or undetermined). */
 export function nothingConcluded(report: SettledReport | null): boolean {
-  const checks = report?.stage0.checks ?? []
-  return (
-    checks.length > 0 &&
-    checks.every((check) => check.verdict === 'not-run' || check.verdict === 'undetermined')
-  )
+  return reachedNoVerdict(report?.stage0.checks ?? [])
 }
 
 /**
@@ -835,6 +934,13 @@ export async function localPullRequestMain(
     join(dataRoot, 'reviews', slug, change.label, `${change.headCommit.slice(0, 12)}-${key}`)
   const runPath = join(outDir, 'run.json')
   const textPath = join(outDir, 'report.txt')
+  // Only runs write the default directory; a caller's --out may hold other things.
+  const ownedOut = options.out === undefined
+  const outFound = await stat(outDir).catch(() => null)
+  if (outFound !== null && !outFound.isDirectory()) {
+    io.stderr(`copse-review pr: --out ${outDir} is not a directory\n`)
+    return HEADLESS_EXIT.USAGE
+  }
 
   /** Answer from the saved report when this exact question was answered cleanly before. */
   const answeredBefore = async (): Promise<boolean> => {
@@ -873,10 +979,25 @@ export async function localPullRequestMain(
   }
 
   // A machine with no engine fails here, before a queue, a store fill or a build.
-  if (!enginesFor(io, options).some(engineAnswers)) {
+  let engines: readonly ContainerEngineCandidate[]
+  try {
+    engines = enginesFor(io, options)
+  } catch (err) {
+    io.stderr(`copse-review pr: ${errorMessage(err)}\n`)
+    return HEADLESS_EXIT.USAGE
+  }
+  if (!engines.some(engineAnswers)) {
     io.stderr(
       'copse-review pr: no container engine answers; start Docker, Podman or Apple container (`container system start`)\n',
     )
+    return HEADLESS_EXIT.FAILURE
+  }
+  // The review repository is filled from this clone, so a partial clone first
+  // fetches what it lacks of the reviewed history.
+  try {
+    fillPartialClone(git, repoRoot, [change.headCommit, change.baseCommit], stderr)
+  } catch (err) {
+    io.stderr(`copse-review pr: ${errorMessage(err)}\n`)
     return HEADLESS_EXIT.FAILURE
   }
 
@@ -903,10 +1024,14 @@ export async function localPullRequestMain(
   const seed = join(cacheRoot, `seed-${randomBytes(4).toString('hex')}`)
   // The repository the review runs in; see where it is filled, below.
   const reviewed = join(cacheRoot, `repo-${randomBytes(4).toString('hex')}`)
-  // The run writes beside the saved report and replaces it only once it has
-  // finished: a cancelled or failed run leaves the last answer as it was, and
-  // never an empty or half-written report directory.
-  const staging = `${outDir}.partial-${randomBytes(4).toString('hex')}`
+  // The run writes apart from the saved report and replaces it only once it
+  // has finished: a cancelled or failed run leaves the last answer as it was,
+  // and never an empty or half-written report directory. The default
+  // directory is staged beside itself and swapped whole. A caller's --out is
+  // staged inside itself, so publishing only ever renames within it, wherever
+  // it is (a symlink to another volume, a mount point).
+  const stagingName = `${STAGING_PREFIX}${randomBytes(4).toString('hex')}`
+  const staging = ownedOut ? `${outDir}${stagingName}` : join(outDir, stagingName)
   // Cell containers this run may create, by name, until they are known gone.
   const journal = join(cacheRoot, 'containers.journal')
   const created = new Map<string, JournalEntry>()
@@ -968,6 +1093,7 @@ export async function localPullRequestMain(
       cacheRoot,
       reviewsRoot: join(dataRoot, 'reviews'),
       ownSeed: seed,
+      ...(ownedOut ? {} : { out: outDir }),
     })) {
       pending.set(entry.name, entry)
     }
@@ -1065,6 +1191,8 @@ export async function localPullRequestMain(
     const exitCode = await main(reviewArgsIn(staging), {
       ...io,
       cwd: reviewed,
+      // The report names the caller's clone, not this run's scratch repository.
+      repositoryRoot: repoRoot,
       backend,
       stdout: (chunk) => {
         text += chunk
@@ -1114,7 +1242,7 @@ export async function localPullRequestMain(
         .map((check) => check.kind) ?? []
     if (outOfMemory.length > 0) {
       io.stderr(
-        `copse-review pr: ${outOfMemory.join(', ')} ran out of memory in a ${options.limits.memory} cell; give it more with --cell-memory (Copse itself needs about 16g)\n`,
+        `copse-review pr: ${outOfMemory.join(', ')} ran out of memory in a ${limits.memory} cell; give it more with --cell-memory (Copse itself needs about 16g)\n`,
       )
     }
     const record: LocalPrRun = {
@@ -1140,7 +1268,7 @@ export async function localPullRequestMain(
     }
     await writeFile(join(staging, 'report.txt'), text)
     await writeFile(join(staging, 'run.json'), `${JSON.stringify(record, null, 2)}\n`)
-    await publishReport(staging, outDir)
+    await publishReport(staging, outDir, ownedOut)
     await writeFile(
       join(dataRoot, 'reviews', slug, `${change.label}.latest.json`),
       `${JSON.stringify(record, null, 2)}\n`,
@@ -1152,17 +1280,23 @@ export async function localPullRequestMain(
     io.stderr(`copse-review pr: ${errorMessage(err)}\n`)
     return HEADLESS_EXIT.FAILURE
   } finally {
-    await rm(staging, { recursive: true, force: true })
-    await rm(seed, { recursive: true, force: true })
-    await rm(reviewed, { recursive: true, force: true })
-    // The cell is destroyed by now; only what it could not remove stays listed.
-    if (journalling) {
-      await writeFile(
-        journal,
-        [...pending.values()].map((entry) => `${JSON.stringify(entry)}\n`).join(''),
-      )
+    // The lock goes whatever the cleanup meets; what it leaves, the next run sweeps.
+    try {
+      await rm(staging, { recursive: true, force: true })
+      // A caller's --out this run made to stage in, and never published to.
+      if (outFound === null && !ownedOut) await rmdir(outDir).catch(() => undefined)
+      await rm(seed, { recursive: true, force: true })
+      await rm(reviewed, { recursive: true, force: true })
+      // The cell is destroyed by now; only what it could not remove stays listed.
+      if (journalling) {
+        await writeFile(
+          journal,
+          [...pending.values()].map((entry) => `${JSON.stringify(entry)}\n`).join(''),
+        )
+      }
+    } finally {
+      await release()
     }
-    await release()
   }
 }
 
@@ -1177,6 +1311,12 @@ const decodeJournalEntry = decodeWithSchema(journalEntrySchema)
 /** How long the sweep waits on each container an earlier run left. */
 const SWEEP_REMOVAL_MS = 60_000
 
+/**
+ * What a run's staging directory is named after: `<dir>` + this beside the
+ * default directory, this inside a caller's --out.
+ */
+const STAGING_PREFIX = '.copse-review.partial-'
+
 /** Where a run keeps what a hard kill would leave behind. */
 interface SweepPaths {
   readonly journal: string
@@ -1187,6 +1327,8 @@ interface SweepPaths {
   readonly reviewsRoot: string
   /** This run's own seed, which may already be in use. */
   readonly ownSeed: string
+  /** A caller's --out, where a run stages inside the directory. */
+  readonly out?: string
 }
 
 /** The `.partial-*` run directories under `reviews/<repository>/<label>/`. */
@@ -1240,6 +1382,11 @@ async function sweepEarlierRun(io: LocalPrIo, paths: SweepPaths): Promise<Journa
       .map((name) => join(paths.cacheRoot, name))
       .filter((path) => path !== paths.ownSeed),
     ...(await unfinishedRunDirectories(paths.reviewsRoot)),
+    ...(paths.out === undefined
+      ? []
+      : (await readdir(paths.out).catch(() => []))
+          .filter((name) => name.startsWith(STAGING_PREFIX))
+          .map((name) => join(paths.out ?? '', name))),
   ]
   for (const path of halfMade) await rm(path, { recursive: true, force: true })
   if (entries.size > stuck.length || scratch.length > 0 || halfMade.length > 0) {
@@ -1256,12 +1403,26 @@ const RUN_FILES = ['report.json', 'report.sarif', 'events.jsonl', 'report.txt'] 
 
 /**
  * Move a finished run's files into `outDir`, replacing the run before it.
- * Only the run's own files are touched: `--out` may name a directory that
- * holds other things. `run.json` goes first and comes back last, so the
- * directory never answers a question from a half-replaced report.
+ * The default directory (`owned`) holds only a run, so the staged directory
+ * replaces it whole: a reader finds the old run or the new one, never a mix.
+ * A caller's --out may hold other things, so only the run's own files are
+ * touched there, renamed out of the staging directory inside it; `run.json`
+ * goes first and comes back last, so the directory never answers a question
+ * from a half-replaced report.
  */
-async function publishReport(staging: string, outDir: string): Promise<void> {
-  await mkdir(outDir, { recursive: true })
+async function publishReport(staging: string, outDir: string, owned: boolean): Promise<void> {
+  if (owned) {
+    const replaced = `${staging}-replaced`
+    // Under the review lock: nothing else moves the directory meanwhile.
+    const hadRun = await access(outDir).then(
+      () => true,
+      () => false,
+    )
+    if (hadRun) await rename(outDir, replaced)
+    await rename(staging, outDir)
+    if (hadRun) await rm(replaced, { recursive: true, force: true })
+    return
+  }
   await rm(join(outDir, 'run.json'), { force: true })
   for (const name of RUN_FILES) {
     const from = join(staging, name)

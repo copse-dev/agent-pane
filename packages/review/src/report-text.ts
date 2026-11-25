@@ -28,10 +28,10 @@ export interface Stage0RenderOptions {
  * out of memory). "No findings" would then read as clean to anyone who stops
  * at that line, or at the exit code, which says only that the reviewer looked.
  */
-function reachedNoVerdict(report: Stage0Report): boolean {
+export function reachedNoVerdict(checks: readonly { readonly verdict: string }[]): boolean {
   return (
-    report.checks.length > 0 &&
-    report.checks.every((check) => check.verdict === 'not-run' || check.verdict === 'undetermined')
+    checks.length > 0 &&
+    checks.every((check) => check.verdict === 'not-run' || check.verdict === 'undetermined')
   )
 }
 
@@ -61,7 +61,7 @@ export function renderStage0Report(
 
   if (report.findings.length === 0 && report.coverage.notChecked.length === 0) {
     lines.push(options.withinReview ? 'Stage 0: no regressions.' : 'Clean.')
-  } else if (report.findings.length === 0 && reachedNoVerdict(report)) {
+  } else if (report.findings.length === 0 && reachedNoVerdict(report.checks)) {
     lines.push(
       options.withinReview
         ? 'Stage 0: no check reached a verdict.'
@@ -165,7 +165,7 @@ export function renderReviewReport(report: ReviewReport): string {
   if (report.findings.length === 0) {
     lines.push(
       report.reviews.length === 0
-        ? reachedNoVerdict(report.stage0)
+        ? reachedNoVerdict(report.stage0.checks)
           ? 'No findings, but no Stage 0 check reached a verdict; this is not a clean result.'
           : 'No findings from Stage 0.'
         : incompleteReviews.length > 0

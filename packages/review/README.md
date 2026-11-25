@@ -312,7 +312,11 @@ validation image from `Dockerfile.cell` once per Dockerfile revision, or uses `-
 and runs the whole review with the change treated as **foreign**, whoever wrote it:
 Stage 0, every `run_command` and every reproducer execute in network-disabled containers
 (B3). A local model needs no key, so nothing secret is in reach of the change, and the
-diff never leaves the machine.
+diff never leaves the machine. The review runs in a repository of its own, holding only
+the head's and the base's history fetched from your clone, so the change sees none of
+your other branches, stashes, remotes or config; it is removed when the run ends. A
+partial clone (`git clone --filter=…`) first fetches what it lacks of that history from
+its promisor remote.
 
 Everything it keeps is under `~/.copse` (`COPSE_DIR` moves it):
 
@@ -325,7 +329,8 @@ Everything it keeps is under `~/.copse` (`COPSE_DIR` moves it):
   `pr-<n>.latest.json` beside them. The directory is keyed by the head, the merge-base,
   the engine asked for, the cell's limits, the review options (not the output-only
   `--quiet` or `--time-limit`) and the reviewer's own revision: asking again answers from
-  the saved report (`--fresh` reviews again).
+  the saved report (`--fresh` reviews again). `--out <dir>` puts the report elsewhere;
+  the run owns those five files there and leaves everything else in the directory alone.
 
 The profile follows the lockfile: `npm` (`package-lock.json`), `pnpm`, or `copse-pnpm` for
 Copse itself, whose preparation builds node-pty in the cell. `--cell-memory` and
@@ -333,8 +338,8 @@ Copse itself, whose preparation builds node-pty in the cell. `--cell-memory` and
 16g, and half its CPUs, 2 to 8). Copse itself needs about 16g and 8: at 4g its typecheck
 and lint run Node out of heap, and the run says so. `--cell-cpu x64` runs the cell as x64
 Linux (under Rosetta on a Mac; the store and image follow it). A run writes beside the
-saved report and replaces it only when it finishes, so a cancelled or failed run leaves
-the last answer untouched. A report is not reused as the answer when its preparation
+saved report (inside an `--out` directory) and replaces it only when it finishes, so a
+cancelled or failed run leaves the last answer untouched. A report is not reused as the answer when its preparation
 failed, a check did not run, or a check did not settle on that run (out of memory, a
 timeout, or two head test runs that disagreed). A run where no check reached a verdict
 says so: exit 0 with "no findings" then means the review ran, not that the change is
@@ -342,8 +347,9 @@ clean. The model routes are checked before the run waits for another review. A c
 the engine is too slow to remove does not cost its check's result; one still left when
 the review ends is named with the command that removes it. Each cell container is
 journalled before it is created, so the next run removes whatever a killed review left
-(Apple container has no `--rm`), along with its scratch checkouts, its store-fill seed and
-its half-made run directory.
+(Apple container has no `--rm`), along with its scratch checkouts, its store-fill seed, its
+review repository and its half-made report: under `reviews/` at once, inside an `--out`
+directory when the next run uses the same one.
 
 ### On a Mac Studio
 
