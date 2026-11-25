@@ -1,6 +1,6 @@
 import { $, browser, expect } from '@wdio/globals'
 import { mkdirSync } from 'node:fs'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 
 /**
@@ -22,7 +22,7 @@ describe('named agent profiles', () => {
     this.timeout(90_000)
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), PROFILES_PROJECT_ID, {
+    seedEmptyProject(seedStableWorkspace(), PROFILES_PROJECT_ID, {
       windowBounds: { width: 1280, height: 800 },
       model: 'claude-opus-5',
     })
