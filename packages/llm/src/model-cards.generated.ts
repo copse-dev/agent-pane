@@ -2,7 +2,7 @@
 // Vendor-published model cards / system cards, keyed by canonical model id.
 // Source of truth: scripts/data/model-cards.json.
 // Absent models mean "no sourced card yet", and the UI shows no link.
-// Last synced: 2026-09-30
+// Last synced: 2026-11-25
 
 /** Whether a link is a card about this model, or a vendor hub listing cards. */
 export type ModelCardKind = 'system-card' | 'model-card' | 'index'
@@ -121,6 +121,20 @@ export const MODEL_CARDS: Record<string, ModelCard> = {
     publisher: 'OpenAI',
     kind: 'system-card',
     asOf: '2026-08-04',
+  },
+  'gpt-5': {
+    url: 'https://openai.com/index/gpt-5-system-card',
+    title: 'Gpt-5 system card',
+    publisher: 'OpenAI',
+    kind: 'system-card',
+    asOf: '2026-11-25',
+  },
+  'gpt-5.5': {
+    url: 'https://openai.com/index/gpt-5-5-system-card',
+    title: 'Gpt-5-5 system card',
+    publisher: 'OpenAI',
+    kind: 'system-card',
+    asOf: '2026-11-25',
   },
   'gpt-6-1-sol': {
     url: 'https://deploymentsafety.openai.com/gpt-6-1-sol',
