@@ -580,7 +580,11 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
   )
 
   const api: ApiClient = {
-    remote: { publish: async () => {} },
+    remote: {
+      publish: async () => {},
+      watched: () => Promise.resolve([]),
+      onWatchedChanged: () => () => {},
+    },
     clientActions: {
       claim: () => Promise.resolve(false),
       publish: async () => {},
@@ -651,6 +655,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       registerName: () => resolvedVoid(),
       removeName: () => resolvedVoid(),
       recheckNameDns: () => resolvedVoid(),
+      setRelayEnabled: () => resolvedVoid(),
+      createShellPairing: () => resolvedVoid(),
+      clearShellPairing: () => resolvedVoid(),
       onChat: () => () => {},
       reply: async () => {},
     },

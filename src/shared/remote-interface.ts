@@ -116,6 +116,16 @@ export interface RemoteScope {
   threadId?: string
 }
 
+/**
+ * A thread a paired client has polled recently. The desktop publishes the
+ * transcripts of these threads only; every other thread goes out as metadata,
+ * which is all a client is ever sent for it (#4445).
+ */
+export interface RemoteWatchedThread {
+  projectId: string
+  threadId: string
+}
+
 const REMOTE_SCOPE_ID = /^[\w-]{1,128}$/
 
 /**

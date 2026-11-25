@@ -4,6 +4,9 @@ import type {
   MobileCompanionPairing,
 } from '../../../shared/types/mobile-companion.ts'
 
+/** How the phone reached this Mac when it asked to pair. */
+export type PairingVia = Required<Pick<MobileCompanionPairing, 'trustedName' | 'relayed'>>
+
 /** Display codes are not identities: replacements may reuse both code and label. */
 export class MobilePairing {
   private pending: {
@@ -19,8 +22,12 @@ export class MobilePairing {
     label: string,
     code: string,
     signal: AbortSignal,
-    trustedName = false,
+    via: PairingVia = { trustedName: false, relayed: false },
   ): Promise<MobileCompanionAccess | null> {
+    // A relayed request never displaces one from the local network, so a client the relay
+    // admits cannot keep a phone at the desk from pairing. Otherwise the newest request wins.
+    if (via.relayed && this.pending && this.pending.pairing.relayed !== true)
+      return Promise.resolve(null)
     this.pending?.resolve(null)
     this.pending = null
     if (signal.aborted) return Promise.resolve(null)
@@ -33,7 +40,10 @@ export class MobilePairing {
     }
     signal.addEventListener('abort', cancel, { once: true })
     return new Promise<MobileCompanionAccess | null>((resolve) => {
-      this.pending = { pairing: { id, label, code, trustedName }, resolve }
+      this.pending = {
+        pairing: { id, label, code, trustedName: via.trustedName, relayed: via.relayed },
+        resolve,
+      }
     }).finally(() => {
       signal.removeEventListener('abort', cancel)
     })

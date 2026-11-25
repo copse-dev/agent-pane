@@ -2929,6 +2929,18 @@
       "sha256": "89291d549316e3d1d63df970e0c832b5a7152ad679f8fb164ef598d52d17a237",
       "bytes": 336849
     },
+    "mobile-relay-connected.png": {
+      "sha256": "ef09789af5bbcf9be2103ac1d3dc84749bce4d11d293ba4c1c2843baef0093f6",
+      "bytes": 71256
+    },
+    "mobile-relay-pairing.png": {
+      "sha256": "4a546be3c6606773ddf88a0424305394221b63deff55a68d3125386598727363",
+      "bytes": 60182
+    },
+    "mobile-relay-shell-code.png": {
+      "sha256": "f269b1f2111b141975a65fcccfb7bb0287a84c387800a019c70a597d11d3b589",
+      "bytes": 100694
+    },
     "mobile-trusted-name-connection.png": {
       "sha256": "a53fd19c8aa34e01cb44fad0d1207972f24aeebd36c38e2e036b1644dbfd6c62",
       "bytes": 78424
@@ -2938,8 +2950,8 @@
       "bytes": 57882
     },
     "mobile-trusted-name-registered.png": {
-      "sha256": "713df5ba9d36eb94876a029815b03dba044da39020096708422bf64296aed9a3",
-      "bytes": 76245
+      "sha256": "10d9f70542b4149f37341804a70c82d1304a061f754f1fdf710629a35a8b5e4e",
+      "bytes": 120451
     },
     "mobile-trusted-name-unregistered.png": {
       "sha256": "77758ea48ea8e61018d38544c8341ee84eb89090d4f81814b7f4e6790754dff1",
@@ -3176,6 +3188,14 @@
     "paired-browser-approval-light.png": {
       "sha256": "758d2a08b3082248feeba4063f4f57c6ee0996dc2856632254e8b256d825bac1",
       "bytes": 154137
+    },
+    "paired-browser-companion-live.png": {
+      "sha256": "701d0a61eaf9675e35bbc56871acf0141b3211d05767399b43b07ce79dd21af9",
+      "bytes": 101218
+    },
+    "paired-browser-companion-saved-view.png": {
+      "sha256": "4f3009198224db23c6ad78467dad7d38c6907aabfe3e574cbc731581fdfe8b0f",
+      "bytes": 104991
     },
     "pane-header-band.png": {
       "sha256": "6b4e655680cd772c9c581df03cd6784646584a31e35a2362d7f16f2b4930f4c1",
@@ -3938,16 +3958,28 @@
       "bytes": 40891
     },
     "remote-folder-add-host-error.png": {
-      "sha256": "247c1c616da3ffc110597c2e21d2d59bb8985be9ee16bc01e03d0ae70d61060e",
-      "bytes": 95725
+      "sha256": "116c385eed91af11eeec61ac1ad6de76e0cc3c0f7341dba089c1d07b955fac70",
+      "bytes": 93375
     },
     "remote-folder-add-host.png": {
-      "sha256": "c7b32e3e958c324ab440442cdafe8530ba020e9b8c4da137f569dd2415737042",
-      "bytes": 86810
+      "sha256": "c13cf8df1b77fef13a92ff4019e98b21cbbc4a4e20b970394e93e07c47480ce8",
+      "bytes": 75490
     },
     "remote-folder-breadcrumbs.png": {
       "sha256": "7ee38570d991c086473ba27fb0fd8064729fad099cc7879bcfbe08cc2e7e74f5",
       "bytes": 49727
+    },
+    "remote-folder-browse-start-beside.png": {
+      "sha256": "a047dd4092153078b993ccdf0d025282e5f62a43904b95921d7365154745adf3",
+      "bytes": 51985
+    },
+    "remote-folder-browse-start-home.png": {
+      "sha256": "0cc7836e9a14c26987ec5061997c02f85309798a28a0deacf76ed45db92ae15d",
+      "bytes": 51938
+    },
+    "remote-folder-ssh-config-hosts.png": {
+      "sha256": "76e8d3dcccf0167db376718ee933bbcce276e01b50020fd013a9c6ceb53839af",
+      "bytes": 77392
     },
     "remote-watcher-install-approval.png": {
       "sha256": "4fbf339885c3410c5693b19b4ad008288391f04b9e95868dc05586552bc4ca29",
@@ -4646,8 +4678,8 @@
       "bytes": 90794
     },
     "settings-experimental.png": {
-      "sha256": "3e0071bf203bb284cfb73241053801c489d62cea73467e7369cda4c215d3efbe",
-      "bytes": 298315
+      "sha256": "200b556129b2edd0118ba393f7d8153b709212935f7b2a269d40e7c57fa06d41",
+      "bytes": 302604
     },
     "settings-explainers-browse-recovery.png": {
       "sha256": "22ecdbdcefbdd19400d0891461e709882952afa241a7dbd0cbcfff5b543d45b7",
@@ -4758,8 +4790,8 @@
       "bytes": 31593
     },
     "settings-mobile-companion.png": {
-      "sha256": "62d5eef8c414b26a54fee4d4d3a8f218d9082ea75997097f96e71d8d5348e0b2",
-      "bytes": 65001
+      "sha256": "1fe985284cafd7732a93b6ba7f6eee37399911b09a40abccd70e60fe55f9bcfd",
+      "bytes": 67208
     },
     "settings-model-parameters-glm-4-7-flash-page-2.png": {
       "sha256": "413dc2422d72fa85a811dcbc2dbcbcfc7b5ef75f09a33bcad0cb37d9ee3a37d9",
@@ -5042,8 +5074,8 @@
       "bytes": 59316
     },
     "settings-ssh-host-form.png": {
-      "sha256": "d57a5448d22834430a8cdb807254b00895e1f331615e570644ab10481f38b2cf",
-      "bytes": 65347
+      "sha256": "64c74d63f5b1494cde4fd53fcd4f62c73886c0c15addbbe5e19f6b20a91abd53",
+      "bytes": 45659
     },
     "settings-ssh-invalid-port.png": {
       "sha256": "1c49dd379e36c9b741242d81f8e04de1f9d13d4fea01d59bd6ceddf5f0033b3b",
@@ -5058,8 +5090,8 @@
       "bytes": 20359
     },
     "settings-ssh-workspace.png": {
-      "sha256": "8aff1dcaff6b21e49c86bc2e24650eea8fb60d0180e0b6195c7dd1ca8edcb99e",
-      "bytes": 171773
+      "sha256": "692b73269f4e4f8643a8a825aa9eae493b43036d12eb70334585c447ea553ef6",
+      "bytes": 174520
     },
     "settings-storage-maintenance-cleaned.png": {
       "sha256": "9d9a0463f1a34846857d9fe80309b9a67138c0f97caee7f604fe412db2d583d3",
@@ -5642,8 +5674,8 @@
       "bytes": 32761
     },
     "ssh-projects-pane-after-enable.png": {
-      "sha256": "ceafeb5d2fd48ea8f11fc46fbcf8950ea79bd34303216e8f6ec530f22a506d83",
-      "bytes": 311025
+      "sha256": "55edda2ae8d24f8068ddfb0d2dabc2c004e1df8329c16396acc5006f5891145e",
+      "bytes": 308646
     },
     "ssh-projects-pane.png": {
       "sha256": "05b50716622b8568a08d2f9e5231e2c9fac27462bb01710f8455db11fab20503",
@@ -6494,12 +6526,12 @@
       "bytes": 96548
     },
     "vnc-viewer-add-ssh-machine.png": {
-      "sha256": "0fc6ab17493a48950c0b46d731385817b42630f3b8da831acf096651839d83a5",
-      "bytes": 80423
+      "sha256": "02bc0f923d6df9bd49da00c58074d014617651505d4e3440494e95403062dd55",
+      "bytes": 85558
     },
     "vnc-viewer-annotate.png": {
-      "sha256": "603a34d55c6bf692c8ddb66b6ac9bae4c73f44486546dd103bf8ef7a99cfdf2d",
-      "bytes": 309111
+      "sha256": "f011af97034b08dcc73af60f7144142e13e1e0aa10c7f84ca98d41d2a34b8f22",
+      "bytes": 307463
     },
     "vnc-viewer-auth-failed.png": {
       "sha256": "20cfe23940d5d9a6038011e37c40d74bfa3ec8929c31dcce175ee08b7e295ba6",
@@ -6518,8 +6550,8 @@
       "bytes": 45329
     },
     "vnc-viewer-deduped-machines.png": {
-      "sha256": "1d257d15a7fb24a07e04c3f12c5c27ea05c148b7998e1c274791ea5b707aee84",
-      "bytes": 298154
+      "sha256": "fb559dcdd6094bdb583be496d17d5f5e632b615de7519f14743dc84b1fe8de73",
+      "bytes": 296616
     },
     "vnc-viewer-discovery-retry.png": {
       "sha256": "175e7bc6108691d8465ae3e562fee9632df7544e5ff2e2a48fccfb4d7b3b7d32",
@@ -6546,8 +6578,8 @@
       "bytes": 8980
     },
     "vnc-viewer-shared-screen.png": {
-      "sha256": "d2958085f8cd50e07b450d669bddcab03add6718ad65862e2462c9229f5bfb2e",
-      "bytes": 293649
+      "sha256": "77a390037fea03e6f7c379327d6aa60a1db76fb5948a4fefa2230d4000e6a8e5",
+      "bytes": 295703
     },
     "vnc-viewer-tabs.png": {
       "sha256": "837be62268a85be562c0b76e7dcaf2ec91c7f455f2bc829bc1467849d8a7bcac",
