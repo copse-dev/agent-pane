@@ -16,9 +16,9 @@ Today, after the continuation and the lease:
   continues it once from the saved history.
 
 The gap is the time between those two events. A quit at 6 pm with the next launch at 9 am
-means the work waits all night. Orca keeps agents running through a quit and an update
-relaunch with a background daemon. This plan gives Copse the same outcome without hosting
-external CLIs, by running Copse's own loop in a process that is not the app.
+means the work waits all night. This plan keeps the turn going through a quit and an
+update relaunch, without hosting external CLIs, by running Copse's own loop in a process
+that is not the app.
 
 ## What runs where
 
