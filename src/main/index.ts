@@ -1008,9 +1008,22 @@ app
     disposeTaskSupervisorEvents = taskSupervisor.subscribe((task) => {
       if (!win.isDestroyed()) win.webContents.send('supervisor:changed', task.projectId)
     })
-    void taskSupervisor.start().catch((error: unknown) => {
-      console.error('[task-supervisor] Startup reconciliation failed:', error)
-    })
+    void taskSupervisor
+      .start()
+      .catch((error: unknown) => {
+        console.error('[task-supervisor] Startup reconciliation failed:', error)
+      })
+      // Container runs the last session left to their host processes; after
+      // the supervisor has loaded, so each finds the task it settles.
+      .then(() => getContainerRunService().reattach())
+      .then((threads) => {
+        if (threads.length > 0) {
+          console.log(`[container-run] following ${String(threads.length)} run(s) left running`)
+        }
+      })
+      .catch((error: unknown) => {
+        console.error('[container-run] Could not follow runs left running:', error)
+      })
     setAcpToolCompletionHandler((completion, prompt) =>
       agentDispatcher.dispatchMachine({
         projectId: completion.owner.projectId,

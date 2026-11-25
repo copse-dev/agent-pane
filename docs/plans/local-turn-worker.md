@@ -226,6 +226,13 @@ start out of the app.
 - **C2, survive quit.** `stopAll` and supervisor shutdown leave host runs alone, and
   relaunch reattaches from `host.json`. Exit gate: quit mid-run, relaunch, and see the run
   finish once with its commits on the ref.
+  Status: built. `stopAll` lets go of host runs when `continueTurnsAfterQuit` is on (the
+  client's `detach`), and every other run stops as before. The supervisor's external-task
+  lifetime hooks keep the run's task running through shutdown (`survivesShutdown`) and
+  through the restart reconcile while its host is alive (`isAlive`). After the supervisor
+  loads, `reattach` follows each live `container-hosts/<runtime>.json` and settles the
+  run and its task as if this session had started it. Following back from the record of a
+  host that died mid-run is still to do.
 - **C3, settle without the app.** When no app is attached at the end, the host records the
   run in the thread's model history itself (`recordContainerRunTurn`, which the app runs from
   `onSettled` today). Without this step, the next message to the thread does not know what

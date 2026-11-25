@@ -19,7 +19,8 @@ import type { ThreadContainerRecord, ThreadContainerRequest } from './thread-con
 import type { ThreadContainerEngine } from './container-engine.ts'
 import { installInMemorySecretCipher } from '../storage/secret-cipher.test-support.ts'
 import { fakeRecord } from './container-run-record.test-support.ts'
-import type { ContainerRunHostRequest } from './run-host.ts'
+import type { ContainerRunHostRequest, RunHostFile } from './run-host.ts'
+import { RunHostDetached } from './run-host-client.ts'
 
 installInMemorySecretCipher()
 
@@ -1281,6 +1282,110 @@ describe('container task supervision', () => {
     assert.deepEqual((await store.loadAll()).tasks, [task])
     assert.equal(JSON.stringify(task).includes('private prompt'), false)
     assert.equal(JSON.stringify(task).includes('sk-ant-test'), false)
+  })
+
+  it('lets a host run carry on through quit, and settles it from the next launch', async (t) => {
+    const root = mkdtempSync(join(tmpdir(), 'container-supervisor-'))
+    t.after(() => {
+      rmSync(root, { recursive: true, force: true })
+    })
+    initRepo(root)
+    const store = new FileSupervisedTaskStore({ COPSE_WORKSPACE_DIR: join(root, 'tasks') })
+    const first = new TaskSupervisor({ store })
+    let stops = 0
+    let handedOver: ContainerRunHostRequest | null = null
+    const quitting = new ContainerRunService({
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
+      run: (): Promise<ThreadContainerRecord> => Promise.reject(new Error('runs through its host')),
+      stop: (): Promise<'removed'> => {
+        stops += 1
+        return Promise.resolve('removed')
+      },
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      continueAfterQuit: (): boolean => true,
+      // Like the real client: the run goes on until the app lets go of it.
+      runHost: (request, options): Promise<ThreadContainerRecord> => {
+        handedOver = request
+        options.onPhase?.('running')
+        return new Promise((_resolve, reject) => {
+          options.detach?.addEventListener('abort', () => {
+            reject(new RunHostDetached())
+          })
+        })
+      },
+    })
+    const disposeFirst = quitting.installSupervisor(first)
+    let settledBeforeQuit = 0
+    quitting.onSettled(() => (settledBeforeQuit += 1))
+    await quitting.start(supervisedRequest())
+    const running = await waitForTask(first, 'running')
+    await waitFor(quitting, THREAD, (p) => p.phase === 'running')
+
+    // Quit, in the order the app's shutdown runs it.
+    await quitting.stopAll()
+    await first.shutdown()
+    disposeFirst()
+    assert.equal(stops, 0, 'the container was left alone')
+    assert.equal(settledBeforeQuit, 0, 'nothing settled a run that is still going')
+    assert.equal((await store.get(PROJECT, running.taskId))?.state, 'running')
+    const request = handedOver as ContainerRunHostRequest | null
+    assert.ok(request)
+
+    // The next launch finds the host still running and follows it to the end.
+    const second = new TaskSupervisor({ store })
+    t.after(() => second.shutdown())
+    const host = {
+      pid: 4242,
+      socket: '/unused.sock',
+      runtimeId: request.runtimeId,
+      projectId: PROJECT,
+      display: request.display,
+    }
+    const relaunched = new ContainerRunService({
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
+      run: (): Promise<ThreadContainerRecord> => Promise.reject(new Error('not started here')),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      listHosts: (): Promise<RunHostFile[]> => Promise.resolve([host]),
+      followHost: (followed, options): Promise<ThreadContainerRecord> => {
+        assert.equal(followed.runtimeId, request.runtimeId)
+        options.onPhase?.('collecting')
+        return Promise.resolve(fakeRecord(THREAD))
+      },
+    })
+    t.after(relaunched.installSupervisor(second))
+    const settled: ContainerRunProgress[] = []
+    const heard = new Promise<void>((resolve) => {
+      relaunched.onSettled((_projectId, progress) => {
+        settled.push(progress)
+        resolve()
+      })
+    })
+    await second.start()
+    assert.equal(
+      second.get(PROJECT, running.taskId)?.state,
+      'running',
+      'a live host keeps its task',
+    )
+    assert.deepEqual(await relaunched.reattach(), [THREAD])
+    const completed = await waitForTask(second, 'completed')
+    assert.equal(completed.taskId, running.taskId)
+    const finished = await waitFor(relaunched, THREAD, (p) => p.phase === 'finished')
+    assert.equal(finished.prompt, 'private prompt')
+    assert.equal(finished.runtimeId, request.runtimeId)
+    // Listeners hear the run once its task is saved.
+    await heard
+    assert.equal(settled.length, 1)
   })
 
   it('does not clear a newer run stop controller while saving the previous outcome', async (t) => {

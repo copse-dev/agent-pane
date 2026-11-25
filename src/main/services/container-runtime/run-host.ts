@@ -1,9 +1,9 @@
-import { rm, writeFile, mkdir } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
 import { isChatGptPlanModel } from '@copse/llm/chatgpt-plan.ts'
-import type { ThreadContainerRecord } from '@shared/types/container-run.ts'
+import type { ContainerRunProgress, ThreadContainerRecord } from '@shared/types/container-run.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { localSocketPath, serveLocalLine } from '../local-socket.ts'
@@ -45,9 +45,19 @@ export type ContainerRunBase = Omit<
   | 'maxSteps'
 >
 
+/**
+ * What the app showed for the run when it started it, kept by the host so an
+ * app relaunched mid-run can show the same run again.
+ */
+export type ContainerRunHostDisplay = Omit<
+  ContainerRunProgress,
+  'runtimeId' | 'phase' | 'finishedAt' | 'log' | 'warnings' | 'record' | 'error'
+>
+
 export interface ContainerRunHostRequest {
   runtimeId: string
   projectId: string
+  display: ContainerRunHostDisplay
   /** The user's model selection, as the app resolved it. */
   model: string
   useAgentLogin: boolean
@@ -88,6 +98,9 @@ export const containerRunHostRequestSchema = z.object({
   projectId: z.string().min(1),
   model: z.string().min(1),
   useAgentLogin: z.boolean(),
+  display: z.custom<ContainerRunHostDisplay>(
+    (value) => isRecord(value) && typeof value['threadId'] === 'string',
+  ),
   base: z.custom<ContainerRunBase>(
     (value) =>
       isRecord(value) &&
@@ -135,6 +148,71 @@ export function runHostSocketPath(userDataPath: string, runtimeId: string): stri
 /** Where a live host says who it is, so a relaunched app can find it. */
 export function runHostFilePath(userDataPath: string, runtimeId: string): string {
   return join(userDataPath, 'container-hosts', `${runtimeId}.json`)
+}
+
+/** `container-hosts/<runtime>.json`: a live host, as a relaunched app finds it. */
+export interface RunHostFile {
+  pid: number
+  socket: string
+  runtimeId: string
+  projectId: string
+  display: ContainerRunHostDisplay
+}
+
+const runHostFileSchema = z.object({
+  pid: z.number().int().positive(),
+  socket: z.string().min(1),
+  runtimeId: z.string().regex(/^run-[\w-]+$/),
+  projectId: z.string().min(1),
+  display: z.custom<ContainerRunHostDisplay>(
+    (value) =>
+      isRecord(value) &&
+      typeof value['threadId'] === 'string' &&
+      typeof value['prompt'] === 'string',
+  ),
+})
+
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    // ESRCH: gone. EPERM: another user's process reusing the pid, never ours.
+    return false
+  }
+}
+
+/**
+ * Hosts in this profile still running a run, for a relaunched app to follow.
+ * A file whose process is gone is removed: that host ended without cleaning
+ * up, and its run settles from what its record says.
+ */
+export async function listLiveRunHosts(
+  userDataPath: string,
+  alive: (pid: number) => boolean = processAlive,
+): Promise<RunHostFile[]> {
+  const dir = join(userDataPath, 'container-hosts')
+  let names: string[]
+  try {
+    names = await readdir(dir)
+  } catch {
+    return []
+  }
+  const live: RunHostFile[] = []
+  for (const name of names) {
+    if (!name.endsWith('.json') || name.endsWith('.request.json')) continue
+    const path = join(dir, name)
+    let parsed: RunHostFile | null
+    try {
+      const result = runHostFileSchema.safeParse(JSON.parse(await readFile(path, 'utf8')))
+      parsed = result.success ? result.data : null
+    } catch {
+      parsed = null
+    }
+    if (parsed !== null && alive(parsed.pid)) live.push(parsed)
+    else await rm(path, { force: true })
+  }
+  return live
 }
 
 export interface RunHostDependencies {
@@ -188,18 +266,14 @@ export async function hostContainerRun(
     },
   )
   await mkdir(join(deps.hostFile, '..'), { recursive: true, mode: 0o700 })
-  await writeFile(
-    deps.hostFile,
-    JSON.stringify({
-      pid: process.pid,
-      socket: deps.socketPath,
-      runtimeId,
-      projectId: request.projectId,
-      threadId: base.threadId ?? null,
-      startedAt: Date.now(),
-    }),
-    { mode: 0o600 },
-  )
+  const hostFile: RunHostFile = {
+    pid: process.pid,
+    socket: deps.socketPath,
+    runtimeId,
+    projectId: request.projectId,
+    display: request.display,
+  }
+  await writeFile(deps.hostFile, JSON.stringify(hostFile), { mode: 0o600 })
 
   let outcome: RunHostOutcome
   try {

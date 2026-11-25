@@ -1037,6 +1037,46 @@ describe('TaskSupervisor', () => {
     assert.equal(supervisor.get(task.projectId, task.taskId)?.state, 'cancelled')
   })
 
+  it('leaves an external task whose process outlives the app running through shutdown and restart', async () => {
+    const store = new MemoryTaskStore()
+    const supervisor = new TaskSupervisor({
+      store,
+      clock: new FakeClock(100),
+      createId: (): string => 'external-task',
+    })
+    let cancels = 0
+    supervisor.registerExternalCanceller(
+      'container_run',
+      () => {
+        cancels += 1
+      },
+      { survivesShutdown: (task) => task.processHandleId === 'run-kept' },
+    )
+    const task = await supervisor.adoptRunning(
+      { ...input(), handler: 'container_run', maxAttempts: 1 },
+      'run-kept',
+    )
+    await supervisor.shutdown()
+    assert.equal(cancels, 0)
+    assert.equal(store.tasks.get(memoryKey(task.projectId, task.taskId))?.state, 'running')
+
+    // The next launch: the process is still running, so the task stays running.
+    const relaunched = new TaskSupervisor({ store, clock: new FakeClock(200) })
+    relaunched.registerExternalCanceller('container_run', () => undefined, {
+      isAlive: (candidate) => Promise.resolve(candidate.processHandleId === 'run-kept'),
+    })
+    await relaunched.start()
+    assert.equal(relaunched.get(task.projectId, task.taskId)?.state, 'running')
+
+    // A launch after the process died settles it as lost, as before.
+    const later = new TaskSupervisor({ store, clock: new FakeClock(300) })
+    later.registerExternalCanceller('container_run', () => undefined, {
+      isAlive: () => Promise.resolve(false),
+    })
+    await later.start()
+    assert.equal(later.get(task.projectId, task.taskId)?.state, 'failed')
+  })
+
   it('fails ready tasks whose attempt budget is exhausted without invoking the handler', async () => {
     const exhausted = persistedTask({ attempt: 2, maxAttempts: 2 })
     const store = new MemoryTaskStore([exhausted])

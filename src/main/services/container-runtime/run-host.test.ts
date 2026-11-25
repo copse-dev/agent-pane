@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, describe, it } from 'node:test'
@@ -9,11 +9,17 @@ import { fakeRecord } from './container-run-record.test-support.ts'
 import {
   canHostOutsideApp,
   hostContainerRun,
+  listLiveRunHosts,
   type ContainerRunHostRequest,
   type RunHostDependencies,
   type RunHostOutcome,
 } from './run-host.ts'
-import { runThroughHost, type RunHostClientDependencies } from './run-host-client.ts'
+import {
+  followHost,
+  RunHostDetached,
+  runThroughHost,
+  type RunHostClientDependencies,
+} from './run-host-client.ts'
 import type { RunThreadOptions, ThreadContainerRequest } from './thread-container.ts'
 
 const dirs: string[] = []
@@ -44,6 +50,16 @@ function hostRequest(overrides: Partial<ContainerRunHostRequest> = {}): Containe
   return {
     runtimeId: 'run-test-1',
     projectId: 'p1',
+    display: {
+      threadId: 't1',
+      startedAt: 1,
+      prompt: 'Fix it',
+      model: 'claude-sonnet-4-6',
+      egressAllowlist: EGRESS,
+      credential: 'host',
+      checkout: null,
+      continuedFrom: null,
+    },
     model: 'claude-sonnet-4-6',
     useAgentLogin: false,
     base: {
@@ -188,6 +204,81 @@ describe('container run host', () => {
       runThroughHost(hostRequest({ model: 'chatgpt-plan:client#gpt-5' }), {}, wired.client),
       /runs in the app/,
     )
+  })
+
+  it('lets go of a run without stopping it, and a relaunched app follows it to the end', async () => {
+    const dir = scratch()
+    let finishRun: (record: ReturnType<typeof fakeRecord>) => void = () => undefined
+    let stopped = false
+    const wired = inProcess(dir, {
+      resolve: () => Promise.resolve(plan()),
+      run: (_request, options?: RunThreadOptions) =>
+        new Promise((resolve) => {
+          options?.signal?.addEventListener('abort', () => {
+            stopped = true
+          })
+          options?.onLog?.('working')
+          options?.onPhase?.('running')
+          finishRun = resolve
+        }),
+    })
+    const detach = new AbortController()
+    const quitting = runThroughHost(
+      hostRequest(),
+      {
+        detach: detach.signal,
+        onPhase: () => {
+          detach.abort()
+        },
+      },
+      wired.client,
+    )
+    await assert.rejects(quitting, RunHostDetached)
+    assert.equal(stopped, false, 'letting go is not a stop')
+    assert.ok(existsSync(wired.hostFile), 'the host is still serving the run')
+
+    const lines: string[] = []
+    let caughtUp: () => void = () => undefined
+    const replayed = new Promise<void>((resolve) => {
+      caughtUp = resolve
+    })
+    const following = followHost(wired.client.socketPath('run-test-1'), {
+      onLog: (line) => {
+        lines.push(line)
+        caughtUp()
+      },
+    })
+    await replayed
+    finishRun(fakeRecord('t1'))
+    const record = await following
+    assert.equal(record.result?.finalText, 'Done.')
+    assert.deepEqual(lines, ['working'], 'the relaunched app gets the log so far')
+  })
+
+  it('lists live hosts and clears the files of hosts that died', async () => {
+    const dir = scratch()
+    const hosts = join(dir, 'container-hosts')
+    mkdirSync(hosts)
+    const entry = (runtimeId: string, pid: number): string =>
+      JSON.stringify({
+        pid,
+        socket: '/s.sock',
+        runtimeId,
+        projectId: 'p1',
+        display: hostRequest().display,
+      })
+    writeFileSync(join(hosts, 'run-live.json'), entry('run-live', 100))
+    writeFileSync(join(hosts, 'run-dead.json'), entry('run-dead', 200))
+    writeFileSync(join(hosts, 'run-junk.json'), '{')
+    writeFileSync(join(hosts, 'run-x.request.json'), '{}')
+    const live = await listLiveRunHosts(dir, (pid) => pid === 100)
+    assert.deepEqual(
+      live.map((host) => host.runtimeId),
+      ['run-live'],
+    )
+    assert.equal(existsSync(join(hosts, 'run-dead.json')), false)
+    assert.equal(existsSync(join(hosts, 'run-junk.json')), false)
+    assert.equal(existsSync(join(hosts, 'run-x.request.json')), true, 'a pending request is kept')
   })
 
   it('fails when the host exits before it listens', async () => {
