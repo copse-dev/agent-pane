@@ -29352,7 +29352,7 @@ async function addProject(store, api) {
   return true;
 }
 async function addRemoteProject(store, api) {
-  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-FVVUIKF4.js");
+  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-MLZT7WXA.js");
   const picked = await openRemoteFolderDialog(api, { projects: store.getState().projects });
   if (!picked) return false;
   await addProjectFromRemotePath(store, api, picked.hostId, picked.path);
