@@ -39,7 +39,7 @@ function sessionRow(
     session.relativeCwd ? session.relativeCwd : null,
     session.gitBranch ?? null,
     relativeDate(session.updatedAt),
-  ].filter((part): part is string => part !== null)
+  ].filter((part) => part !== null)
   const source = el(
     'span',
     { class: 'import-session-source', 'data-source': session.source },

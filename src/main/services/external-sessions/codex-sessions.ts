@@ -172,7 +172,7 @@ export async function readCodexSessionHeader(
 function commandLine(command: unknown): string | null {
   if (typeof command === 'string') return command
   if (!Array.isArray(command) || !command.every((part) => typeof part === 'string')) return null
-  const parts = command.filter((part): part is string => typeof part === 'string')
+  const parts = command.filter((part) => typeof part === 'string')
   if (parts.length === 3 && /(^|\/)(ba|z)?sh$/.test(parts[0] ?? '') && parts[1]?.startsWith('-'))
     return parts[2] ?? null
   return parts.join(' ')
