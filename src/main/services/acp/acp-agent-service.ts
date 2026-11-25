@@ -967,7 +967,7 @@ async function runAcpAgentTurn(
       options.onChunk({ type: 'text', text: acpSessionHandoverNotice(handover, agent.title) })
     }
     const sessionBridge =
-      !remote && entry.bridge !== null && entry.open.mcpCapabilities?.http === true
+      !remote && entry.bridge !== null && entry.open.bridgeServerName !== null
         ? entry.bridge
         : null
     offeredBridge = sessionBridge

@@ -272,6 +272,25 @@ describe('acpAgentSandboxOverlay', () => {
     assert.deepEqual(readonly.network, writable.network)
   })
 
+  it('lets the agent read the stdio bridge relay and its runtime, only with the bridge', () => {
+    const scriptPath = join(homedir(), 'src', 'copse', 'dist', 'main', 'acp-bridge-stdio-relay.js')
+    const relay = { scriptPath }
+    const offered = acpAgentSandboxOverlay(workspace, sandbox, {
+      allowLocalhost: true,
+      nativeToolRelay: relay,
+    })
+    const reads = offered.filesystem?.allowRead ?? []
+    assert.ok(reads.includes(scriptPath))
+    assert.ok(reads.includes(join(dirname(scriptPath), 'package.json')))
+    for (const path of electronRuntimeAllowReadPaths()) assert.ok(reads.includes(path), path)
+    // Read only: the relay adds nothing writable, and no loopback means no relay.
+    const plain = acpAgentSandboxOverlay(workspace, sandbox, { allowLocalhost: true })
+    assert.deepEqual(offered.filesystem?.allowWrite, plain.filesystem?.allowWrite)
+    const noBridge = acpAgentSandboxOverlay(workspace, sandbox, { nativeToolRelay: relay })
+    assert.ok(!(noBridge.filesystem?.allowRead ?? []).includes(scriptPath))
+    assert.ok(!(noBridge.filesystem?.allowRead ?? []).includes(dirname(scriptPath)))
+  })
+
   it('never re-opens the home tree on macOS: only an opted-in keychain and the declared dirs', () => {
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')
     assert.ok(platform)

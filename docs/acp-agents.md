@@ -46,8 +46,15 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
   shell/background commands, read-only worktree preflight, model-tier advice,
   GitHub/CI, staged-diff visibility, archive extraction, video stills, and
   web/browser) is offered as a per-session
-  localhost MCP server (the **native-tool bridge**, issue #602) when the agent
-  supports http MCP servers. Calls execute through the same `ToolRegistry` as
+  localhost MCP server (the **native-tool bridge**, issue #602). An agent that
+  supports http MCP servers mounts it directly; any other agent gets the same
+  server as a stdio MCP server, a small relay (`acp-bridge-stdio-relay.ts`)
+  that the agent spawns under Copse's own executable and that forwards each
+  message to the bridge with its bearer token. Every ACP agent must support
+  stdio MCP servers, so registry and custom agents get Copse's tools too. The
+  relay only talks to a loopback `http:` URL, and the URL and token travel in
+  its environment, never its arguments. A sandboxed agent may read the Copse
+  runtime and the relay script for this, nothing more. Calls execute through the same `ToolRegistry` as
   built-in model runs, so the normal path validation, diff queue, permission
   policy, sandbox escape, and approval dialogs apply. Disable with the
   `acpNativeBridgeEnabled` setting. Bridged calls arrive on their own async
