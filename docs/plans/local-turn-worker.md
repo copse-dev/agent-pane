@@ -154,3 +154,8 @@ waiting for it.
   binary or a utility process kept alive past quit instead.
 - **Following lags the stream.** A followed thread repaints from disk, so it shows finished
   messages, not tokens as they stream. Fine for a hand-off; not for dispatch via worker.
+- **OAuth refreshes the worker cannot save.** A sign-in that refreshes by rotating its
+  refresh token would leave the app holding a spent token, because the worker keeps store
+  writes in memory. ChatGPT plan models refresh this way, so the worker leaves those turns
+  for the next launch. MCP servers that sign in with OAuth have the same gap; a refresh in
+  the worker is lost and the app signs in again on next use.

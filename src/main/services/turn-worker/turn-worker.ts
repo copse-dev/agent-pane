@@ -5,6 +5,7 @@ import {
   readWriterLease,
   type WriterLeaseRecord,
 } from '@copse/thread-store/writer-lease.ts'
+import { parseChatGptPlanModel } from '@copse/llm/chatgpt-plan.ts'
 import type { StreamChunk } from '@shared/types'
 import { AgentDispatcher } from '../agent-dispatcher.ts'
 import { runWithApprovalHandler } from '../approval.ts'
@@ -79,6 +80,33 @@ async function waitForHandOff(
   }
 }
 
+function isChatGptPlanModel(model: string): boolean {
+  try {
+    return parseChatGptPlanModel(model) !== null
+  } catch {
+    // A ChatGPT plan value missing its account is still one.
+    return true
+  }
+}
+
+/**
+ * Why this thread's turn must wait for the app instead, or null when the worker
+ * can run it.
+ *
+ * A ChatGPT plan model signs in with OAuth. Refreshing that sign-in can rotate
+ * the refresh token, and the worker cannot save the new one (decision 4), so
+ * the app's saved token would stop working. The turn continues at the next
+ * launch instead, as it did before the worker.
+ */
+async function workerCannotRun(projectId: string, threadId: string): Promise<string | null> {
+  const thread = await getProjectThread(projectId, threadId)
+  const setting = getSetting<unknown>('model', undefined)
+  const model = thread?.model ?? (typeof setting === 'string' ? setting : undefined)
+  if (model !== undefined && isChatGptPlanModel(model))
+    return 'its model signs in with ChatGPT, whose tokens only the app can save'
+  return null
+}
+
 export async function runTurnWorker(
   request: TurnWorkerRequest,
   deps: TurnWorkerDependencies,
@@ -89,6 +117,12 @@ export async function runTurnWorker(
   if (holder !== null) {
     deps.log(`thread ${threadId} is still held by ${holder.host} pid ${String(holder.pid)}`)
     return { status: 'held', holder: { host: holder.host, pid: holder.pid } }
+  }
+
+  const reason = await workerCannotRun(projectId, threadId)
+  if (reason !== null) {
+    deps.log(`thread ${threadId} stays for the next launch: ${reason}`)
+    return { status: 'not-resumable' }
   }
 
   const transcripts = new TurnTranscriptWriter({
