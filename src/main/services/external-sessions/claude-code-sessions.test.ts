@@ -149,6 +149,38 @@ describe('Claude Code sessions', () => {
     ])
   })
 
+  it('follows a turn through the attachment lines current Claude Code links it with', async () => {
+    const attachment = (uuid: string, parentUuid: string): unknown => ({
+      ...base,
+      type: 'attachment',
+      uuid,
+      parentUuid,
+      timestamp: '2026-11-01T10:00:01.000Z',
+      attachment: { type: 'hook_additional_context', content: [] },
+    })
+    const path = writeSession(ROOT, 's1', [
+      user('u1', null, 'Remember the codeword PLUM-42'),
+      attachment('x1', 'u1'),
+      attachment('x2', 'x1'),
+      assistant('a1', 'x2', 'msg_1', [{ type: 'text', text: 'Noted.' }]),
+    ])
+
+    const session = await readClaudeCodeSession({
+      source: 'claude-code',
+      path,
+      updatedAt: 1,
+      bytes: 1,
+    })
+
+    assert.deepEqual(
+      session?.messages.map((message) => [message.role, message.content]),
+      [
+        ['user', 'Remember the codeword PLUM-42'],
+        ['assistant', 'Noted.'],
+      ],
+    )
+  })
+
   it('marks a failed tool call and keeps pasted images', async () => {
     const path = writeSession(ROOT, 's1', [
       user('u1', null, [

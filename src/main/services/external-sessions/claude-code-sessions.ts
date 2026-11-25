@@ -264,11 +264,14 @@ export async function readClaudeCodeSession(
   if (!header) return null
   const lines: ClaudeLine[] = []
   await readJsonlRecords(file.path, (record) => {
-    const type = record['type']
-    if (type !== 'user' && type !== 'assistant' && type !== 'system') return
+    // Every linked line is part of the chain, not only conversation lines:
+    // current Claude Code threads a turn through `attachment` records between
+    // the prompt and the answer, and the walk back must cross them.
+    const uuid = stringField(record, 'uuid')
+    if (uuid === null && record['type'] !== 'user' && record['type'] !== 'assistant') return
     lines.push({
       record,
-      uuid: stringField(record, 'uuid'),
+      uuid,
       parent: stringField(record, 'parentUuid') ?? stringField(record, 'logicalParentUuid'),
     })
   })
