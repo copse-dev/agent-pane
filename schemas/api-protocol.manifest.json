@@ -1375,6 +1375,13 @@
           1
         ]
       },
+      "machines:pair-over-ssh": {
+        "api": "machines.pairOverSsh",
+        "args": [
+          2,
+          2
+        ]
+      },
       "machines:remove": {
         "api": "machines.remove",
         "args": [

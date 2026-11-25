@@ -1,4 +1,7 @@
-import { syncMachineService } from '../services/machines/machine-service.ts'
+import {
+  forgetRemovedMachineSshHosts,
+  syncMachineService,
+} from '../services/machines/machine-service.ts'
 import { REMOTE_SYSTEM_ONE_MODELS_SETTING } from '@shared/machines.ts'
 import { getSettingsSnapshot, updateSettings } from '../services/storage/settings-transaction.ts'
 import { modelInvalidationService } from '../services/providers/model-invalidation.ts'
@@ -123,6 +126,8 @@ export function registerSettingsHandlers(win: BrowserWindow, registry: ToolRegis
   })
   async function syncChangedSettings(changedKeys: ReadonlySet<string>): Promise<void> {
     if (changedKeys.has(REMOTE_SYSTEM_ONE_MODELS_SETTING)) await syncMachineService()
+    // A removed SSH host must not leave a paired machine routed through its id.
+    if (changedKeys.has('sshWorkspaceHosts')) await forgetRemovedMachineSshHosts()
     if (changedKeys.has('alertOnInteraction')) refreshNeedsInputBadge()
     if ([...changedKeys].some((key) => SKILLS_RELOAD_KEYS.has(key))) {
       await initSkillsRegistry()

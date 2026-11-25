@@ -11,12 +11,19 @@ import {
 } from '@copse/llm/classifiers/index.ts'
 import { createKeyringCipher } from '../storage/keyring-cipher.ts'
 import { isSecretSettingKey } from '../storage/settings-writable.ts'
-import { MachineManager } from './machine-manager.ts'
+import { MachineManager, type MachineSshReach } from './machine-manager.ts'
+import { machineSshRoutesSchema, type MachineSshRoutes } from '@shared/machines.ts'
+import {
+  createServer as createTcpServer,
+  connect as connectTcp,
+  type Server as TcpServer,
+} from 'node:net'
 import { machineStoreSchema, type MachineStore, type MachineStoreData } from './machine-store.ts'
 import { decodeMachineInvitation, machineRequest } from './machine-transport.ts'
 
 function storage(): MachineStore {
   let value: MachineStoreData | null = null
+  let routes: MachineSshRoutes = {}
   let key: string | null = null
   const cipher = createKeyringCipher({
     read: () => key,
@@ -29,6 +36,10 @@ function storage(): MachineStore {
     load: () => (value ? machineStoreSchema.parse(structuredClone(value)) : null),
     save: async (next): Promise<void> => {
       value = machineStoreSchema.parse(structuredClone(next))
+    },
+    routes: (): MachineSshRoutes => structuredClone(routes),
+    saveRoutes: async (next): Promise<void> => {
+      routes = machineSshRoutesSchema.parse(structuredClone(next))
     },
     seal: (plain) => cipher.encryptString(plain).toString('base64'),
     open: (encrypted) => cipher.decryptString(Buffer.from(encrypted, 'base64')),
@@ -532,5 +543,280 @@ test('the experimental gate blocks networking and restores saved pairings withou
     assert.equal(host.snapshot().clients.length, 0)
   } finally {
     await Promise.all([host.close(), client.close()])
+  }
+})
+
+/**
+ * A stand-in for an SSH host's forward: a loopback TCP proxy to the machine's
+ * listener, opened and closed per request as the real reach does. It records
+ * every open so tests can see whether a check was allowed to connect. `saved`
+ * holds the saved SSH host ids; `dev` is labelled "Dev Server".
+ */
+function forwardingReach(
+  connected: { value: boolean },
+  saved: ReadonlySet<string> = new Set(['dev']),
+): MachineSshReach & { opens: Array<{ hostId: string; interactive: boolean }>; live: number } {
+  const opens: Array<{ hostId: string; interactive: boolean }> = []
+  const reach = {
+    opens,
+    live: 0,
+    async open(
+      hostId: string,
+      remotePort: number,
+      options: { interactive: boolean },
+    ): Promise<{ target: { host: '127.0.0.1'; port: number }; close: () => Promise<void> }> {
+      opens.push({ hostId, interactive: options.interactive })
+      if (!connected.value && !options.interactive) throw new Error('not connected')
+      connected.value = true
+      const proxy: TcpServer = createTcpServer((client) => {
+        const upstream = connectTcp(remotePort, '127.0.0.1')
+        client.pipe(upstream).pipe(client)
+        const end = (): void => {
+          client.destroy()
+          upstream.destroy()
+        }
+        client.on('error', end)
+        upstream.on('error', end)
+      })
+      await new Promise<void>((resolve) => proxy.listen(0, '127.0.0.1', resolve))
+      const address = proxy.address()
+      if (!address || typeof address === 'string') throw new Error('proxy did not bind')
+      reach.live += 1
+      return {
+        target: { host: '127.0.0.1' as const, port: address.port },
+        close: async (): Promise<void> => {
+          reach.live -= 1
+          proxy.close()
+          await Promise.resolve()
+        },
+      }
+    },
+    label: (hostId: string): string | null =>
+      hostId === 'dev' && saved.has(hostId) ? 'Dev Server' : null,
+  }
+  return reach
+}
+
+const LOCAL_PROFILE: ClassifierProfile = {
+  id: 'local',
+  label: 'Local model',
+  model: 'local-model',
+  timeoutMs: 5000,
+  connection: {
+    type: 'http',
+    protocol: 'systemone',
+    auth: 'none',
+    baseUrl: 'http://127.0.0.1:1/v1',
+  },
+}
+
+const ANSWER: ClassifierResult = {
+  profileId: 'local',
+  adapter: 'systemone',
+  requestedModel: 'local-model',
+  model: 'local-model',
+  answers: {},
+  elapsedMs: 1,
+}
+
+test('pairs and calls a machine through its SSH host, with the same pin, token and Host', async () => {
+  const host = new MachineManager(
+    storage(),
+    () => [LOCAL_PROFILE],
+    async () => ANSWER,
+    'Host',
+  )
+  const connected = { value: false }
+  const reach = forwardingReach(connected)
+  const clientStore = storage()
+  const client = new MachineManager(
+    clientStore,
+    () => [],
+    async () => {
+      throw new Error('No local model')
+    },
+    'Client',
+    reach,
+  )
+  try {
+    // The host shares on its own loopback only: nothing listens on the network.
+    await host.share({ enabled: true, address: '127.0.0.1', port: 0, profileIds: ['local'] })
+    const paired = await client.pair(host.invitation(), 'dev')
+    const peer = paired.machines[0]
+    assert.ok(peer)
+    assert.deepEqual(peer.viaSsh, { hostId: 'dev', label: 'Dev Server' })
+    assert.equal(peer.address, 'over SSH through Dev Server')
+    assert.deepEqual(clientStore.routes(), { [peer.id]: 'dev' })
+    assert.deepEqual(reach.opens, [{ hostId: 'dev', interactive: true }], 'pairing may connect')
+
+    const result = await client.call(
+      peer.id,
+      'local',
+      CLASSIFIER_TEST_REQUEST,
+      new AbortController().signal,
+      5000,
+    )
+    assert.deepEqual(result, ANSWER)
+    assert.equal(reach.live, 0, 'each forward is closed when its request ends')
+
+    await client.remove(peer.id)
+    assert.deepEqual(clientStore.routes(), {}, 'removing the machine forgets its route')
+  } finally {
+    await client.close()
+    await host.close()
+  }
+})
+
+test('a status check or a background call never opens an SSH connection, and says what would', async () => {
+  const host = new MachineManager(
+    storage(),
+    () => [LOCAL_PROFILE],
+    async () => ANSWER,
+    'Host',
+  )
+  const connected = { value: false }
+  const reach = forwardingReach(connected)
+  const client = new MachineManager(
+    storage(),
+    () => [],
+    async () => {
+      throw new Error('No local model')
+    },
+    'Client',
+    reach,
+  )
+  try {
+    await host.share({ enabled: true, address: '127.0.0.1', port: 0, profileIds: ['local'] })
+    const peer = (await client.pair(host.invitation(), 'dev')).machines[0]
+    assert.ok(peer)
+
+    // The SSH connection drops; the timer-driven check must not reopen it.
+    connected.value = false
+    await client.refresh()
+    const checked = client.snapshot().machines[0]
+    assert.ok(checked)
+    assert.equal(checked.status, 'reconnecting')
+    assert.equal(checked.detail, 'Connect to Dev Server over SSH to reach this machine.')
+    assert.deepEqual(reach.opens.at(-1), { hostId: 'dev', interactive: false })
+
+    // Screening and background calls are nobody's click: they must not reopen it either.
+    await assert.rejects(
+      client.call(peer.id, 'local', CLASSIFIER_TEST_REQUEST, new AbortController().signal, 5000),
+      /Connect to Dev Server over SSH to reach this machine\./,
+    )
+    assert.deepEqual(reach.opens.at(-1), { hostId: 'dev', interactive: false })
+    assert.equal(connected.value, false)
+
+    // Test classifier is a person's click, so it may connect again, and the machine comes back.
+    await client.call(
+      peer.id,
+      'local',
+      CLASSIFIER_TEST_REQUEST,
+      new AbortController().signal,
+      5000,
+      { interactive: true },
+    )
+    assert.deepEqual(reach.opens.at(-1), { hostId: 'dev', interactive: true })
+    await client.refresh()
+    assert.equal(client.snapshot().machines[0]?.status, 'connected')
+  } finally {
+    await client.close()
+    await host.close()
+  }
+})
+
+test('a removed SSH host leaves its machine unreachable, and a host saved later under its label does not take it over', async () => {
+  const host = new MachineManager(
+    storage(),
+    () => [LOCAL_PROFILE],
+    async () => ANSWER,
+    'Host',
+  )
+  const saved = new Set(['dev'])
+  const reach = forwardingReach({ value: true }, saved)
+  const clientStore = storage()
+  const client = new MachineManager(
+    clientStore,
+    () => [],
+    async () => {
+      throw new Error('No local model')
+    },
+    'Client',
+    reach,
+  )
+  let peerId = ''
+  const ask = (): Promise<unknown> =>
+    client.call(peerId, 'local', CLASSIFIER_TEST_REQUEST, new AbortController().signal, 5000, {
+      interactive: true,
+    })
+  try {
+    // The host shares on this process's loopback, so a call that skipped the
+    // route and dialled the loopback endpoint directly would reach it.
+    await host.share({ enabled: true, address: '127.0.0.1', port: 0, profileIds: ['local'] })
+    peerId = (await client.pair(host.invitation(), 'dev')).machines[0]?.id ?? ''
+    assert.ok(peerId)
+
+    saved.delete('dev')
+    await client.forgetRemovedSshHosts()
+    assert.deepEqual(clientStore.routes(), { [peerId]: null }, 'the route is marked, not dropped')
+    const removed = client.snapshot().machines[0]
+    assert.ok(removed)
+    assert.equal(removed.address, 'over SSH through a removed machine')
+    assert.equal(removed.viaSsh, undefined)
+    assert.equal(removed.status, 'unavailable')
+    assert.equal(removed.detail, 'Pair it again to reach it.')
+    const opens = reach.opens.length
+    await assert.rejects(ask(), /was removed\. Pair it again/)
+    await client.refresh()
+    assert.equal(client.snapshot().machines[0]?.status, 'unavailable')
+    assert.equal(reach.opens.length, opens, 'nothing is forwarded or dialled for a removed route')
+
+    // A host saved later under the same label gets the same id; it must not inherit the route.
+    saved.add('dev')
+    await client.forgetRemovedSshHosts()
+    assert.deepEqual(clientStore.routes(), { [peerId]: null })
+    await assert.rejects(ask(), /was removed/)
+    assert.equal(reach.opens.length, opens)
+
+    // Pairing again is the person choosing the route, and the machine comes back.
+    await client.pair(host.invitation(), 'dev')
+    assert.deepEqual(clientStore.routes(), { [peerId]: 'dev' })
+    assert.deepEqual(await ask(), ANSWER)
+  } finally {
+    await client.close()
+    await host.close()
+  }
+})
+
+test('refuses to pair a network-address invitation through SSH', async () => {
+  const host = new MachineManager(
+    storage(),
+    () => [LOCAL_PROFILE],
+    async () => ANSWER,
+    'Host',
+  )
+  const reach = forwardingReach({ value: true })
+  const client = new MachineManager(
+    storage(),
+    () => [],
+    async () => ANSWER,
+    'Client',
+    reach,
+  )
+  try {
+    await host.share({ enabled: true, address: '127.0.0.1', port: 0, profileIds: ['local'] })
+    const invitation = host.invitation()
+    const payload: unknown = JSON.parse(
+      Buffer.from(invitation.slice('copse-machine1-'.length), 'base64url').toString('utf8'),
+    )
+    assert.ok(payload && typeof payload === 'object')
+    const lan = `copse-machine1-${Buffer.from(
+      JSON.stringify({ ...payload, address: '192.168.1.20' }),
+    ).toString('base64url')}`
+    await assert.rejects(client.pair(lan, 'dev'), /shares on a network address/)
+    assert.deepEqual(reach.opens, [], 'nothing was forwarded')
+  } finally {
+    await client.close()
+    await host.close()
   }
 })

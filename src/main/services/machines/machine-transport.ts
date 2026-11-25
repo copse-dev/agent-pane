@@ -27,24 +27,43 @@ export class MachineConnectionError extends Error {
   }
 }
 
+/**
+ * Where to open the TCP connection when it is not the endpoint itself: the
+ * local end of an SSH forward to the machine's loopback listener. Everything
+ * the machine checks stays the endpoint's: the pinned certificate, the token
+ * and the `Host` header.
+ */
+export interface MachineConnectTarget {
+  host: '127.0.0.1'
+  port: number
+}
+
 /** Credentials and request data are sent only after verifying the paired certificate. */
 export function machineRequest(
   endpoint: z.infer<typeof machineEndpointSchema>,
   path: '/pair' | '/models',
   body: object,
-  options: { token?: string; signal?: AbortSignal; timeoutMs?: number } = {},
+  options: {
+    token?: string
+    signal?: AbortSignal
+    timeoutMs?: number
+    connectTo?: MachineConnectTarget
+  } = {},
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const req = request(
       {
-        hostname: endpoint.address,
-        port: endpoint.port,
+        hostname: options.connectTo?.host ?? endpoint.address,
+        port: options.connectTo?.port ?? endpoint.port,
         path,
         method: 'POST',
         rejectUnauthorized: false,
         agent: false,
         signal: options.signal,
         headers: {
+          // The listener accepts only its own `address:port` as Host, which a
+          // forwarded connection would otherwise replace with the local end.
+          Host: `${endpoint.address}:${String(endpoint.port)}`,
           'Content-Type': 'application/json',
           ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
         },
