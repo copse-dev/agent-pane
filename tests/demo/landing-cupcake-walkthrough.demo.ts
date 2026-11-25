@@ -100,7 +100,12 @@ describe('landing cupcake walkthrough', () => {
     await expect($('h1')).toHaveText(expect.stringContaining('Big feelings.'))
     await expect($('.signup')).toBeDisplayed()
     await expect($('.hero-art')).toBeDisplayed()
-    await $('.signup input[type="email"]').setValue('demo@example.com')
+    // Click the field before typing, as a user would. From Chrome 158 the driver
+    // reports the preview's field as not interactable until it has been clicked,
+    // even once it is scrolled into view.
+    const email = $('.signup input[type="email"]')
+    await email.click()
+    await email.setValue('demo@example.com')
     await $('.signup button[type="submit"]').click()
     await expect($('#form-note')).toHaveText("You're on the list — we'll save you the first swirl.")
     await expect($('.signup button[type="submit"]')).toHaveText(
