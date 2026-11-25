@@ -42,6 +42,19 @@ export const agentMarkup = `
               </p>
             </fieldset>
 
+            <fieldset data-testid="continue-after-quit-settings">
+              <legend>When Copse closes</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="continueTurnsAfterQuit" />
+                Keep running turns and container runs going after Copse closes
+              </label>
+              <p class="field-hint">
+                A thread that is mid-turn, or a container run, carries on in the background and is
+                here when you open Copse again. On by default. Turn off to stop them when Copse
+                closes.
+              </p>
+            </fieldset>
+
             <fieldset>
               <legend>Helpers</legend>
               <p class="settings-fieldset-desc">
@@ -163,6 +176,7 @@ export const agentFields: readonly SettingField[] = [
     save: true,
   },
   { name: 'localTodoItemsEnabled', kind: 'checkbox', default: true, save: true },
+  { name: 'continueTurnsAfterQuit', kind: 'checkbox', default: true, save: true },
   { name: 'postTurnReviewMinChangedLines', kind: 'number', default: 1, save: true },
   { name: 'bundledCursorSkillsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'skillExternalLinkWarnings', kind: 'checkbox', default: true, save: true },

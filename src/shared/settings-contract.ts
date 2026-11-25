@@ -86,6 +86,7 @@ export interface SettingsValues {
   openRouterFreeMode: boolean
   localSubagentsEnabled: boolean
   localTodoItemsEnabled: boolean
+  continueTurnsAfterQuit: boolean
   postTurnReviewMinChangedLines: number
   bundledCursorSkillsEnabled: boolean
   bundledSkillPluginOverrides: Record<string, boolean>

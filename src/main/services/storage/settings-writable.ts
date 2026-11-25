@@ -287,6 +287,9 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   openRouterFreeMode: z.boolean(),
   localSubagentsEnabled: z.boolean(),
   localTodoItemsEnabled: z.boolean(),
+  // On by default: a quit hands running turns and container runs to background
+  // processes (docs/plans/local-turn-worker.md). False stops them at quit.
+  continueTurnsAfterQuit: z.boolean(),
   // P5: the former top-level `postTurnReviewEnabled` boolean is retired —
   // the `copse.post-turn-review` first-party plugin toggle in Settings > Plugins
   // is the atomic master switch consulted by the trigger site in
