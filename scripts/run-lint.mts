@@ -1,67 +1,20 @@
 import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
+import { LINT_SHARDS, shardEslintArgs } from './lib/lint-shards.mts'
 
 /**
- * Type-aware ESLint retains each TypeScript program for the lifetime of one
- * invocation. Linting the whole repository at once therefore holds both the
- * node and renderer programs, plus every file's rule state, in one V8 heap.
- * Run bounded, sequential shards instead: each child exits and releases its
- * program before the next project is loaded.
- *
- * The final catch-all preserves `eslint .` coverage for standalone JS and any
- * future top-level source. Its ignore patterns exclude only files owned by an
- * earlier shard; repository-configured ignores still apply normally.
+ * `eslint .`, run as the bounded, sequential shards in `lib/lint-shards.mts`
+ * so that no single invocation holds every typed program at once. Together the
+ * shards lint exactly the files `eslint .` would (`lib/lint-shards.test.ts`).
  */
-const shards: readonly { label: string; args: readonly string[] }[] = [
-  { label: 'main services', args: ['src/main/services'] },
-  {
-    label: 'remaining node project',
-    args: [
-      '--ignore-pattern',
-      'src/main/services/**',
-      'src/main',
-      'src/preload',
-      'src/shared',
-      'scripts',
-      'packages',
-    ],
-  },
-  { label: 'renderer project', args: ['src/renderer', 'tests/setup-dom.ts'] },
-  {
-    label: 'e2e project',
-    args: ['tests/e2e', 'wdio.conf.ts', 'wdio.ci.conf.ts', 'wdio.eval.conf.ts'],
-  },
-  { label: 'demo project', args: ['tests/demo', 'wdio.demo.conf.ts'] },
-  {
-    label: 'standalone files',
-    args: [
-      '--ignore-pattern',
-      'src/**',
-      '--ignore-pattern',
-      'packages/**',
-      '--ignore-pattern',
-      'scripts/**',
-      '--ignore-pattern',
-      'tests/setup-dom.ts',
-      '--ignore-pattern',
-      'tests/e2e/**',
-      '--ignore-pattern',
-      'tests/demo/**',
-      '--ignore-pattern',
-      'wdio*.conf.ts',
-      '.',
-    ],
-  },
-]
-
+const root = resolve('.')
 const eslintCli = resolve('node_modules/eslint/bin/eslint.js')
 const forwardedArgs = process.argv.slice(2)
 
-for (const shard of shards) {
+for (const shard of LINT_SHARDS) {
   console.log(`[lint] ${shard.label}`)
-  const result = spawnSync(process.execPath, [eslintCli, ...forwardedArgs, ...shard.args], {
-    stdio: 'inherit',
-  })
+  const args = [eslintCli, ...forwardedArgs, ...shardEslintArgs(shard, root)]
+  const result = spawnSync(process.execPath, args, { stdio: 'inherit' })
   if (result.error) throw result.error
   if (result.status !== 0) process.exit(result.status ?? 1)
 }
