@@ -1,6 +1,16 @@
 import { initClientActions } from './services/clients/client-action-ipc.ts'
 import './disable-brotli-decoding.ts' // MUST be first — see the module
 import { stopAllForegroundShellProcesses } from './services/exec/foreground-shell-process.ts'
+import {
+  CONTINUE_TURNS_AFTER_QUIT_SETTING,
+  handOffTurns,
+  turnWorkerPath,
+  type HandOffTarget,
+} from './services/turn-worker/turn-worker-launch.ts'
+import {
+  ForeignTurnFollower,
+  defaultForeignTurnDependencies,
+} from './services/turn-worker/foreign-turns.ts'
 import { initMobileChat } from './services/mobile/mobile-chat.ts'
 import { initRemoteInterface } from './services/mobile/remote-interface.ts'
 import { appRuntimeReady } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
@@ -789,6 +799,16 @@ app
       },
     })
     interruptTurnTranscripts = (): Promise<void> => transcriptWriter.interruptForShutdown()
+    // Turns a worker took over when Copse last quit, still going now: shown as
+    // running and repainted from disk until the worker lets go of them.
+    const foreignTurns = new ForeignTurnFollower(
+      defaultForeignTurnDependencies((snapshot) => {
+        if (!win.isDestroyed()) win.webContents.send('agent:transcript-snapshot', snapshot)
+      }),
+    )
+    stopFollowingForeignTurns = (): void => {
+      foreignTurns.stop()
+    }
 
     // A background task's exit lands on the card that started it (#3956).
     setLateCommandPhaseRecorder((owner, toolCallId, phase) =>
@@ -860,6 +880,7 @@ app
     recordStartupPhase('register-handlers')
     perfMark('main:register-handlers')
     const agentDispatcher = new AgentDispatcher(agentHost, registry, undefined, transcriptWriter)
+    listActiveTurns = (): HandOffTarget[] => agentDispatcher.activeTurns()
     setAgentInitiatedTurnAuthority(agentDispatcher)
     setDiffAcceptanceHandler({
       waitForIdle: (owner) => agentDispatcher.waitForIdle(owner.projectId, owner.threadId),
@@ -1294,10 +1315,12 @@ app
 
     // Thread ids with a live in-process run, so a renderer that's just loaded a
     // project's threads can tell a genuinely still-running turn apart from a
-    // persisted `status: 'running'` left over from a crash (#1406).
-    ipcMain.handle('agent:running-thread-ids', (event) => {
+    // persisted `status: 'running'` left over from a crash (#1406). A turn a
+    // worker is still running for this profile counts as running here too.
+    ipcMain.handle('agent:running-thread-ids', async (event) => {
       assertMainFrameSender(event, win)
-      return listRunningThreadIds()
+      const foreign = await foreignTurns.discover()
+      return [...new Set([...listRunningThreadIds(), ...foreign])]
     })
 
     // Re-run just the post-turn review for a thread — the retry action on a
@@ -1525,8 +1548,16 @@ app
           win.webContents.send('mcp:status-changed', getMcpServerStatuses())
         }
         // Once the tools a cut-off turn may have been using are back, continue
-        // the turns the last quit, update relaunch or crash ended.
-        void resumeInterruptedTurns(defaultInterruptedTurnResumeDependencies(agentDispatcher))
+        // the turns the last quit, update relaunch or crash ended, except
+        // those a turn worker is still continuing.
+        void foreignTurns.discover().then(() => {
+          const resume = defaultInterruptedTurnResumeDependencies(agentDispatcher)
+          return resumeInterruptedTurns({
+            ...resume,
+            isRunning: (threadId) =>
+              resume.isRunning(threadId) || foreignTurns.isFollowing(threadId),
+          })
+        })
       })
     disposeTerminal = disposeTerminalHandlers
     disposeVnc = disposeVncHandlers
@@ -1563,8 +1594,38 @@ let disposeContainerRunSupervisor: (() => void) | undefined
 let disposeDarkFactorySensor: (() => void) | undefined
 let disposeTaskSupervisorEvents: (() => void) | undefined
 let interruptTurnTranscripts: (() => Promise<void>) | undefined
+let listActiveTurns: (() => HandOffTarget[]) | undefined
+let stopFollowingForeignTurns: (() => void) | undefined
+
+/**
+ * Start a turn worker for each turn this quit cut off, so it continues now
+ * rather than at the next launch (`docs/plans/local-turn-worker.md` W2). Runs
+ * last, once the transcripts and the write queue have drained, so the worker
+ * reads the history this process saved.
+ */
+function handOffInterruptedTurns(targets: readonly HandOffTarget[]): void {
+  if (
+    targets.length === 0 ||
+    getSetting<unknown>(CONTINUE_TURNS_AFTER_QUIT_SETTING, true) === false
+  )
+    return
+  handOffTurns(targets, {
+    execPath: process.execPath,
+    workerPath: turnWorkerPath(),
+    userDataPath: app.getPath('userData'),
+    appVersion: app.getVersion(),
+    packaged: app.isPackaged,
+    env: process.env,
+    log: (line) => {
+      console.log(line)
+    },
+  })
+}
 
 async function cleanupBeforeQuit(): Promise<void> {
+  // Read before anything below stops them.
+  const handOff = listActiveTurns?.() ?? []
+  stopFollowingForeignTurns?.()
   const transcriptDrain = interruptTurnTranscripts?.()
   setAgentInitiatedTurnAuthority(null)
   stopAllAgentRuns()
@@ -1614,6 +1675,7 @@ async function cleanupBeforeQuit(): Promise<void> {
   await shutdownStaticPreviewServers()
   await transcriptDrain
   await drainWriteQueue()
+  handOffInterruptedTurns(handOff)
   // Reap the detached gortex daemon too — left running it accumulates multi-GB
   // graphs across sessions and OOM-kills the app on a later launch.
   await Promise.allSettled([shutdownMcpServers(), shutdownProjectSandbox(), stopGortexDaemon()])

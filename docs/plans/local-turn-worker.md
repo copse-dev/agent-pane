@@ -26,7 +26,7 @@ external CLIs, by running Copse's own loop in a process that is not the app.
  Copse.app (Electron main + renderer)          copse turn worker (one per handed-off turn)
  ────────────────────────────────────          ──────────────────────────────────────────
   user sends ─► AgentDispatcher                 Electron binary, ELECTRON_RUN_AS_NODE=1
-                 │ takes writer.lease            running dist/main/turn-worker.cjs
+                 │ takes writer.lease            running dist/main/turn-worker.js
                  ▼                               │
   quit / update ─► turn stops, lease released    ├─ takes writer.lease (epoch +1)
                  │                               ├─ AgentDispatcher + TurnTranscriptWriter
@@ -73,16 +73,17 @@ without Electron.
    when the desktop returns (`deferred-approvals.md`).
 7. **Opt-out setting.** `continueTurnsAfterQuit` defaults to on. With it off, quit behaves as
    in the restart-continuation PR.
-8. **Never for an update that changes the store format.** The worker refuses to run when the
-   thread store's format version is newer than it understands. That cannot happen for the
-   old binary handed a turn at quit. It guards a relaunch that starts an older worker
-   against a newer store.
+8. **Never for an update that changes the store format.** The worker must not run against a
+   thread store whose format is newer than it understands. The worker is the quitting app's
+   own binary, so this only matters if a later change starts workers from another version.
+   _Not implemented yet:_ the store has no format version to compare, so the guard lands
+   with the first format change.
 
 ## Slices
 
 ### W1: worker entry, run one continuation headless
 
-- `src/main/services/turn-worker/turn-worker-entry.ts`, bundled to `dist/main/turn-worker.cjs`.
+- `src/main/services/turn-worker/turn-worker-entry.ts`, bundled to `dist/main/turn-worker.js`.
 - Arguments: profile directory, project id and thread id. It boots the profile read-only:
   the store backend, the keyring cipher and settings.
 - It runs the restart continuation for that one thread through `resumeInterruptedTurns`,
@@ -96,21 +97,25 @@ without Electron.
 
 ### W2: hand off on quit
 
-- In `cleanupBeforeQuit`, after `interruptForShutdown`, for each interrupted thread (not side
-  chats, automations or explicit-agent turns, matching `transcriptCanResume`), spawn the
-  worker detached (`detached: true`, `stdio` to the log, `unref()`).
-- Skip the hand-off when the quit is for an update install whose new version's store format
-  is newer (decision 8), or when the setting is off.
+- `cleanupBeforeQuit` reads the dispatcher's active turns (`activeTurns()`) before it stops
+  them, and once the transcripts and the write queue have drained it spawns one worker per
+  turn (`turn-worker-launch.ts`): detached, `stdio` to the log, `unref()`. Which of them
+  can continue is the worker's call, through the same `resumeInterruptedTurns` filter
+  (side chats, automations and explicit-agent turns are left alone).
+- Skipped when the setting is off. Decision 8 has nothing to compare yet.
 - _Exit gate:_ e2e. Quit mid-turn, assert a worker process holds the thread's lease and the
   continuation reaches the thread's files while no app is running.
 
 ### W3: reattach on launch
 
-- Main exposes `threadWriterHeldElsewhere(projectId, threadId)` (live lease, other owner).
-- The renderer's `resumePendingQueues` leaves such a thread `running` instead of stamping it
-  interrupted. It follows the thread directory (the existing file-watch path used for
-  external edits) and reloads the thread when the lease is released.
-- The boot continuation in main already skips it (decision 3).
+- `ForeignTurnFollower` (`foreign-turns.ts`) finds running threads whose live lease another
+  process holds. `agent:running-thread-ids` includes them, so the renderer's
+  `resumePendingQueues` leaves them `running` instead of stamping them interrupted.
+- Main repaints a followed thread from disk every two seconds through the existing
+  `agent:transcript-snapshot` channel, and once more after the lease is released, which
+  settles it.
+- The boot continuation skips followed threads, and the dispatcher would refuse them anyway
+  (decision 3).
 - _Exit gate:_ e2e. Relaunch while a worker runs, see the thread running with output
   arriving, then settling with no Retry card and no second continuation.
 
@@ -131,8 +136,9 @@ waiting for it.
 ## Risks
 
 - **Two writers on shared stores.** Covered by decision 4. A worker that writes
-  `config.json` would silently drop desktop changes, so the entry installs a read-only
-  store backend that throws on write. A test pins that.
+  `config.json` would silently drop desktop changes, so the entry installs a store backend
+  that reads the profile once and keeps writes in memory, logging each key it could not
+  keep. A test pins that the file is never written.
 - **Lease gaps on store writes.** O1 still lacks epoch checks at write sites. A worker that
   loses its lease (for example to a desktop forced to take over after expiry) can finish one
   in-flight write. Acceptable for W1–W3, because the desktop never takes over a live worker's
@@ -142,3 +148,9 @@ waiting for it.
 - **Platform launch.** macOS: the child of an app that quits survives if it is detached and
   in its own process group. Linux: same, with `setsid` semantics from `detached: true`.
   Windows is low priority and not covered by W2's exit gate.
+- **The `RunAsNode` fuse.** The worker runs the app binary with `ELECTRON_RUN_AS_NODE=1`.
+  A packaged build that flips that fuse off (computer use asks for it) breaks the worker and
+  the other Node workers that launch the same way. Such a build needs a separate Node
+  binary or a utility process kept alive past quit instead.
+- **Following lags the stream.** A followed thread repaints from disk, so it shows finished
+  messages, not tokens as they stream. Fine for a hand-off; not for dispatch via worker.

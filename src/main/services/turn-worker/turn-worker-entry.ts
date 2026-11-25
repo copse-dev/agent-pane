@@ -1,10 +1,10 @@
 /**
  * The process entry of the local turn worker (`docs/plans/local-turn-worker.md`).
- * Bundled by `scripts/main-bundles.mts` into `dist/main/turn-worker.cjs` and run
+ * Bundled by `scripts/main-bundles.mts` into `dist/main/turn-worker.js` and run
  * by the app with its own binary under `ELECTRON_RUN_AS_NODE=1`, detached, when
  * it quits with a turn in flight. Nothing here may import `electron`.
  *
- *   turn-worker.cjs --user-data <dir> --project <id> --thread <id>
+ *   turn-worker.js --user-data <dir> --project <id> --thread <id>
  *                   [--app-version <v>] [--packaged]
  *
  * It boots the profile the way the app's main process does, minus every window
