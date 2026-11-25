@@ -39,10 +39,13 @@ describe('withFileLock', () => {
     try {
       let inside = 0
       let most = 0
+      // Holding the lock across several event-loop turns is enough: were the
+      // lock broken, all four holders would be inside at once and interleave
+      // here. No wall-clock wait is needed to see that.
       const work = async (): Promise<void> => {
         inside++
         most = Math.max(most, inside)
-        await sleep(20)
+        for (let turn = 0; turn < 5; turn++) await sleep(0)
         inside--
       }
       const results = await Promise.all(
