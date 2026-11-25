@@ -9589,7 +9589,7 @@ dialog.settings-overlay::backdrop {
   padding: 0;
   margin-bottom: var(--spacing-md);
 }
-.settings-content fieldset:not(.settings-section > fieldset, .settings-section > .settings-mount > fieldset, .settings-search-results > fieldset, .machines-settings > fieldset, .usage-section-root > fieldset) > legend ~ * {
+.settings-content fieldset:not(.settings-section > fieldset, .settings-section > .settings-mount > fieldset, .settings-search-results > fieldset, .machines-settings > fieldset, .usage-section-root > fieldset) > :not(legend) {
   clear: both;
 }
 .settings-content fieldset label {
@@ -18021,6 +18021,25 @@ dialog.activity-panel-overlay {
 .mobile-companion-name-warning {
   color: var(--warning);
 }
+.mobile-companion-relay {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin: var(--spacing-sm) 0;
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--border);
+}
+.mobile-companion-relay > .mobile-companion-qr,
+.settings-content .mobile-companion-relay > .field-hint:not(:last-child) {
+  margin: 0;
+}
+.mobile-companion-relay .settings-action-row {
+  margin-bottom: 0;
+}
+#mobile-companion-shell-qr .mobile-companion-qr-image {
+  width: 176px;
+  height: 176px;
+}
 
 /* src/renderer/styles/global/memories.css */
 .memories-host {
@@ -18347,8 +18366,12 @@ dialog.activity-panel-overlay {
 .vnc-ssh-host-form[hidden] {
   display: none;
 }
-.vnc-ssh-host-form .vnc-field-label input {
+.vnc-ssh-host-form .vnc-field-label input,
+.vnc-ssh-host-form .vnc-field-label select {
   width: 100%;
+}
+.vnc-ssh-host-form .vnc-ssh-config-field[hidden] {
+  display: none;
 }
 .vnc-ssh-host-hint,
 .vnc-ssh-host-status {
