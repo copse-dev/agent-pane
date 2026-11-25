@@ -490,8 +490,12 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-7EK6HJZA.js";
+} from "./chunk-HZ7TARD7.js";
 import "./chunk-X6JZSFJR.js";
+import {
+  createSshWorkspaceConsent,
+  init_ssh_workspace_consent
+} from "./chunk-FWVGBPA5.js";
 import {
   StreamingMarkdownRenderer,
   appLinkDecorator,
@@ -893,24 +897,47 @@ function attachRemotePublisher(store2, api2) {
   let running = false;
   let disposed = false;
   let receivedState = false;
+  let receivedWatched = false;
+  let watched = /* @__PURE__ */ new Map();
   const views = /* @__PURE__ */ new Map();
+  const published = /* @__PURE__ */ new Map();
+  const streamedInto = /* @__PURE__ */ new Set();
   function capture() {
     const { activeProjectId, threads, backgroundThreads } = store2.getState();
     if (activeProjectId) views.set(activeProjectId, { projectId: activeProjectId, threads });
     for (const { projectId, thread } of backgroundThreads) {
       const existing = views.get(projectId)?.threads ?? [];
+      if (existing.includes(thread)) continue;
       views.set(projectId, {
         projectId,
         threads: [...existing.filter((item) => item.id !== thread.id), thread]
       });
     }
   }
+  function forClients(projectId, thread) {
+    if (thread.messages.length === 0 || watched.get(projectId)?.has(thread.id)) return thread;
+    return { ...thread, messages: [], messagesLoaded: false };
+  }
   function publish() {
     timer = null;
     if (!running || disposed) return;
-    for (const value of views.values()) {
-      const view = remoteViewSchema.safeParse(value);
-      if (view.success) void api2.remote.publish(view.data).catch(() => {
+    const streamed = new Set(streamedInto);
+    streamedInto.clear();
+    for (const { projectId, threads } of views.values()) {
+      const watchedIds = [...watched.get(projectId) ?? []];
+      const watching = watchedIds.sort().join("\0");
+      const last = published.get(projectId);
+      const unchanged = last?.threads === threads && last.watching === watching;
+      if (unchanged && !watchedIds.some((id) => streamed.has(id))) continue;
+      const view = remoteViewSchema.safeParse({
+        projectId,
+        threads: threads.map((thread) => forClients(projectId, thread))
+      });
+      if (!view.success) continue;
+      const from2 = { threads, watching };
+      published.set(projectId, from2);
+      void api2.remote.publish(view.data).catch(() => {
+        if (published.get(projectId) === from2) published.delete(projectId);
       });
     }
   }
@@ -919,12 +946,33 @@ function attachRemotePublisher(store2, api2) {
     capture();
     timer ??= setTimeout(publish, 150);
   }
+  function messageChanged(messageId) {
+    if (!running || disposed) return;
+    const threadId = locateMessage(store2, messageId)?.thread.id;
+    if (threadId !== void 0 && [...watched.values()].some((ids) => ids.has(threadId))) {
+      streamedInto.add(threadId);
+    }
+    schedule();
+  }
+  function setWatched(list) {
+    const next = /* @__PURE__ */ new Map();
+    for (const { projectId, threadId } of list) {
+      const ids = next.get(projectId) ?? /* @__PURE__ */ new Set();
+      ids.add(threadId);
+      next.set(projectId, ids);
+    }
+    watched = next;
+    schedule();
+  }
   function setAvailability(state) {
     running = state.enabled && state.running;
     if (running) schedule();
-    else if (timer !== null) {
-      clearTimeout(timer);
-      timer = null;
+    else {
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      published.clear();
     }
   }
   const off = [
@@ -932,18 +980,26 @@ function attachRemotePublisher(store2, api2) {
       receivedState = true;
       setAvailability(state);
     }),
+    api2.remote.onWatchedChanged((list) => {
+      receivedWatched = true;
+      setWatched(list);
+    }),
     store2.on("threads_changed", schedule),
     store2.on("thread_status_changed", schedule),
     store2.on("message_added", schedule),
-    store2.on("message_token", schedule),
-    store2.on("message_reasoning", schedule),
-    store2.on("message_done", schedule),
-    store2.on("tool_call_started", schedule),
-    store2.on("tool_call_updated", schedule),
+    store2.on("message_token", messageChanged),
+    store2.on("message_reasoning", messageChanged),
+    store2.on("message_done", messageChanged),
+    store2.on("tool_call_started", messageChanged),
+    store2.on("tool_call_updated", messageChanged),
     store2.on("todos_changed", schedule)
   ];
   void api2.mobile.getState().then((state) => {
     if (!disposed && !receivedState) setAvailability(state);
+  }).catch(() => {
+  });
+  void api2.remote.watched().then((list) => {
+    if (!disposed && !receivedWatched) setWatched(list);
   }).catch(() => {
   });
   return () => {
@@ -955,6 +1011,7 @@ function attachRemotePublisher(store2, api2) {
 var init_remote_publisher = __esm({
   "src/renderer/controller/remote-publisher.ts"() {
     init_remote_interface();
+    init_thread_helpers();
   }
 });
 
@@ -985,21 +1042,6 @@ var init_themes = __esm({
 // src/renderer/styles/global/popout.css
 var init_popout = __esm({
   "src/renderer/styles/global/popout.css"() {
-  }
-});
-
-// src/renderer/controller/ssh-workspace-ui.ts
-async function isSshWorkspaceEnabled(api2) {
-  try {
-    const settings = api2.settings;
-    if (!settings?.get) return false;
-    return await settings.get("sshWorkspaceEnabled") === true;
-  } catch {
-    return false;
-  }
-}
-var init_ssh_workspace_ui = __esm({
-  "src/renderer/controller/ssh-workspace-ui.ts"() {
   }
 });
 
@@ -1048,13 +1090,6 @@ function mountWelcome(root, store2, api2) {
       showErrorToast("Could not open remote folder", err);
     });
   });
-  const syncRemoteOpenVisibility = () => {
-    void isSshWorkspaceEnabled(api2).then((enabled) => {
-      openRemoteBtn.hidden = !enabled;
-    });
-  };
-  syncRemoteOpenVisibility();
-  store2.on("settings_changed", syncRemoteOpenVisibility);
   return () => {
     root.classList.remove("visible");
     card.remove();
@@ -1064,7 +1099,6 @@ var init_welcome = __esm({
   "src/renderer/views/welcome.ts"() {
     init_helpers();
     init_projects();
-    init_ssh_workspace_ui();
     init_toast();
   }
 });
@@ -7140,7 +7174,7 @@ function mountProjectsPane(root, store2, api2) {
     {
       class: "projects-add-btn",
       "aria-label": "Add project",
-      "data-tooltip": "New thread, new project or open a folder"
+      "data-tooltip": "New project, open a folder, or connect remotely"
     },
     plusIcon("ui-icon ui-icon-sm")
   );
@@ -7292,7 +7326,6 @@ function mountProjectsPane(root, store2, api2) {
     list,
     el("div", { class: "projects-settings-actions" }, settingsBtn)
   );
-  let sshWorkspaceEnabled = false;
   const SORT_LABELS = {
     activity: "Activity order",
     created: "Created",
@@ -7451,16 +7484,15 @@ function mountProjectsPane(root, store2, api2) {
           void addProject(store2, api2);
         }
       },
-      ...sshWorkspaceEnabled ? [
-        {
-          label: "Open remote project",
-          onSelect: () => {
-            void addRemoteProject(store2, api2).catch((err) => {
-              showErrorToast("Could not open remote folder", err);
-            });
-          }
+      {
+        // Always offered: with SSH workspaces off, the dialog asks to turn them on.
+        label: "Open remote project",
+        onSelect: () => {
+          void addRemoteProject(store2, api2).catch((err) => {
+            showErrorToast("Could not open remote folder", err);
+          });
         }
-      ] : [],
+      },
       {
         label: "New group",
         onSelect: () => {
@@ -7471,17 +7503,6 @@ function mountProjectsPane(root, store2, api2) {
       }
     ]);
   });
-  const syncRemoteOpenAvailability = () => {
-    void isSshWorkspaceEnabled(api2).then((enabled) => {
-      sshWorkspaceEnabled = enabled;
-      addBtn.setAttribute(
-        "data-tooltip",
-        enabled ? "New project, open a folder, or connect remotely" : "New project or open a folder"
-      );
-    });
-  };
-  syncRemoteOpenAvailability();
-  store2.on("settings_changed", syncRemoteOpenAvailability);
   const visibleThreadCounts = /* @__PURE__ */ new Map();
   const prBackfillRequested = /* @__PURE__ */ new Map();
   const prBackfillRetryAttempts = /* @__PURE__ */ new Map();
@@ -9351,7 +9372,6 @@ var init_projects_pane = __esm({
     init_thread_history_editor();
     init_automation_fold();
     init_automations();
-    init_ssh_workspace_ui();
     init_thread_naming();
     init_persistence();
     init_project_tree();
@@ -84149,6 +84169,8 @@ function createVncSshHostForm(api2, onSaved, onClose) {
   function close2() {
     root.hidden = true;
     status.textContent = "";
+    consent?.remove();
+    consent = null;
     onClose();
   }
   async function loadConfigHosts() {
@@ -84184,18 +84206,24 @@ function createVncSshHostForm(api2, onSaved, onClose) {
     configSelect.disabled = value;
     cancel.disabled = value;
   }
-  async function requireSshEnabled() {
+  let consent = null;
+  async function requireSshEnabled(retry) {
     if (await api2.settings.get("sshWorkspaceEnabled") === true) return true;
-    setInlineStatus(
-      status,
-      "error",
-      "Enable SSH workspaces in Settings before adding or importing an SSH machine."
-    );
+    if (!consent) {
+      const ask = createSshWorkspaceConsent(api2, {
+        onEnabled: () => {
+          ask.root.remove();
+          consent = null;
+          retry();
+        }
+      });
+      consent = ask.root;
+      status.after(consent);
+    }
     return false;
   }
   cancel.addEventListener("click", close2);
-  root.addEventListener("submit", (event) => {
-    event.preventDefault();
+  const submit = () => {
     void (async () => {
       busy(true);
       try {
@@ -84205,7 +84233,7 @@ function createVncSshHostForm(api2, onSaved, onClose) {
           setInlineStatus(status, "error", parsed.error);
           return;
         }
-        if (!await requireSshEnabled()) return;
+        if (!await requireSshEnabled(submit)) return;
         await api2.settings.set("sshWorkspaceHosts", upsertHost(existing, parsed.host));
         close2();
         await onSaved(parsed.host.id);
@@ -84215,14 +84243,18 @@ function createVncSshHostForm(api2, onSaved, onClose) {
         busy(false);
       }
     })();
+  };
+  root.addEventListener("submit", (event) => {
+    event.preventDefault();
+    submit();
   });
-  configSelect.addEventListener("change", () => {
+  const saveConfigHost = () => {
     const chosen = configHosts.find((host) => host.host === configSelect.value);
     if (!chosen) return;
     void (async () => {
       busy(true);
       try {
-        if (!await requireSshEnabled()) return;
+        if (!await requireSshEnabled(saveConfigHost)) return;
         const existing = parseSshWorkspaceHosts(await api2.settings.get("sshWorkspaceHosts"));
         const saved = saveSshConfigHost(existing, chosen);
         await api2.settings.set("sshWorkspaceHosts", saved.hosts);
@@ -84234,7 +84266,8 @@ function createVncSshHostForm(api2, onSaved, onClose) {
         busy(false);
       }
     })();
-  });
+  };
+  configSelect.addEventListener("change", saveConfigHost);
   return { root, open, close: close2 };
 }
 var init_vnc_ssh_host_form = __esm({
@@ -84244,6 +84277,7 @@ var init_vnc_ssh_host_form = __esm({
     init_ipc_error_message();
     init_ssh_host_helpers();
     init_ssh_host_fields();
+    init_ssh_workspace_consent();
   }
 });
 
