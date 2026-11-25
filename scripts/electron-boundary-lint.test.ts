@@ -77,8 +77,11 @@ function lintErrors(filePath: string, code: string): LintError[] {
 
 function assertRejectsDynamicElectron(filePath: string): void {
   const errors = lintErrors(filePath, DYNAMIC_ELECTRON)
-  assert.equal(errors.length, 1, JSON.stringify(errors, null, 2))
-  assert.equal(errors[0]?.ruleId, 'no-restricted-syntax')
+  assert.deepEqual(
+    errors.map((error) => error.ruleId),
+    ['no-restricted-syntax'],
+    JSON.stringify(errors, null, 2),
+  )
   assert.match(errors[0]?.message ?? '', /import\('electron'\)/)
 }
 
