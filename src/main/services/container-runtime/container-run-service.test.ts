@@ -482,6 +482,7 @@ describe('ContainerRunService', () => {
     assert.ok(snapshot?.log.some((line) => line.includes('stop requested by the user')))
     const done = await waitFor(service, THREAD, (p) => p.phase === 'failed')
     assert.equal(done.error, 'Stopped by you before the guest finished')
+    assert.equal(done.stoppedByUser, true, 'a stop reads as a stop, not a failure')
     assert.equal(service.isActive(THREAD), false)
     // Stopping a run that is not live is a no-op that reports the state.
     assert.equal((await service.stop(THREAD))?.phase, 'failed')

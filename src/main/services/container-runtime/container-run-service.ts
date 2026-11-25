@@ -369,6 +369,7 @@ export class ContainerRunService {
         finishedAt: Date.now(),
         error: stopped ? 'Stopped by you before the guest finished' : outcome.failure,
         warnings: outcome.warnings,
+        ...(stopped ? { stoppedByUser: true } : {}),
       })
     } catch (error) {
       if (error instanceof RunHostDetached) {
@@ -380,6 +381,7 @@ export class ContainerRunService {
         phase: 'failed',
         finishedAt: Date.now(),
         error: errorMessage(error),
+        ...(stoppedByUser() ? { stoppedByUser: true } : {}),
       })
     }
     this.hostedRuns.delete(run.threadId)

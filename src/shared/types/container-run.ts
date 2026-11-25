@@ -142,4 +142,6 @@ export interface ContainerRunProgress {
   error: string | null
   /** The earlier run this one continues from (its runtime id), or null for a fresh run. */
   continuedFrom: string | null
+  /** Set on a run that ended because the user stopped it, not because it failed. */
+  stoppedByUser?: boolean
 }
