@@ -45,7 +45,9 @@ export async function localPromptCommitSpans(
   )
   const existing = new Set<string>()
   for (const candidate of candidates) {
-    if (await commitShaExists(candidate, root)) existing.add(candidate)
+    // A Git that cannot run (missing binary, sandbox failure, timeout) proves
+    // nothing: keep the value redacted instead of failing the whole turn.
+    if (await commitShaExists(candidate, root).catch(() => false)) existing.add(candidate)
   }
   return occurrences
     .filter((occurrence) => existing.has(occurrence.value))
