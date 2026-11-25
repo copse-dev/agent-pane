@@ -11,6 +11,7 @@ import {
 } from './worktree-preparation-plan.ts'
 import {
   inspectWorktreePreparation,
+  readRustupDefaults,
   resolveInstalledRustToolchainBin,
   selectInstalledRustupToolchainName,
 } from './worktree-preparation.ts'
@@ -208,6 +209,27 @@ it(
     }
   },
 )
+
+it('reads the rustup default from the fallback settings when the user has set none', () => {
+  // Homebrew's rustup writes `default_toolchain = "stable"` only to
+  // $(brew --prefix)/etc/rustup/settings.toml, the fallback it is built to read.
+  assert.deepEqual(readRustupDefaults(null, 'default_toolchain = "stable"\n'), {
+    toolchain: 'stable',
+    host: undefined,
+  })
+  assert.deepEqual(
+    readRustupDefaults(
+      'version = "12"\ndefault_host_tuple = "aarch64-apple-darwin"\n',
+      'default_toolchain = "stable"\ndefault_host_triple = "x86_64-apple-darwin"\n',
+    ),
+    { toolchain: 'stable', host: 'aarch64-apple-darwin' },
+  )
+  assert.deepEqual(
+    readRustupDefaults('default_toolchain = "1.86.0"\n', 'default_toolchain = "stable"\n'),
+    { toolchain: '1.86.0', host: undefined },
+  )
+  assert.deepEqual(readRustupDefaults(null, null), { toolchain: undefined, host: undefined })
+})
 
 it('rejects untrusted toolchains and scrubs ambient Cargo and Rust controls', async () => {
   const toolchain = join(root, 'toolchain')
