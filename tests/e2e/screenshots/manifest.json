@@ -2933,6 +2933,18 @@
       "sha256": "77b1811d7993115cb9b8678f4849b6ad7ac3cfde31c0e95f9e0d88104deddb7e",
       "bytes": 11480
     },
+    "model-version-suppression-acp-gpt-after.png": {
+      "sha256": "6bf471b9b9d2609fab3bf970bf4cc1d4d9f955c60696620e9ce011e7a0301cba",
+      "bytes": 9907
+    },
+    "model-version-suppression-acp-scored-successor.png": {
+      "sha256": "7c1518dc510f17b706098fe82380cb685813680b9d4a902ac616e5525bc3ee61",
+      "bytes": 14331
+    },
+    "model-version-suppression-acp-sol-after.png": {
+      "sha256": "cb9ab785437dfe091a34474864350eaf65c287e15a5ecb609cae8fbc677a7fc4",
+      "bytes": 8341
+    },
     "model-version-suppression-picker.png": {
       "sha256": "725eb0133a7cb54d2ed4de089a26d5c05f6a7628d8884b2fd6031c6c5de39fa6",
       "bytes": 22321
