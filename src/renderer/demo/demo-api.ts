@@ -580,7 +580,11 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
   )
 
   const api: ApiClient = {
-    remote: { publish: async () => {} },
+    remote: {
+      publish: async () => {},
+      watched: () => Promise.resolve([]),
+      onWatchedChanged: () => () => {},
+    },
     clientActions: {
       claim: () => Promise.resolve(false),
       publish: async () => {},
