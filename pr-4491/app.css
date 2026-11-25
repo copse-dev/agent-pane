@@ -9367,6 +9367,29 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 .diff-approval-bar[hidden] {
   display: none;
 }
+.git-stage-bar {
+  flex-wrap: wrap;
+  gap: var(--spacing-xs) var(--spacing-sm);
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.git-stage-bar[hidden] {
+  display: none;
+}
+.git-stage-status {
+  flex: 1 1 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+.git-stage-status:empty {
+  display: none;
+}
+.git-stage-status[data-ok=false] {
+  color: var(--error);
+}
 
 /* src/renderer/styles/global/settings.css */
 .settings-overlay {

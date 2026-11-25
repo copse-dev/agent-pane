@@ -6944,6 +6944,8 @@ function createDemoApi(scenario2, options = {}) {
         currentBranch = branch;
         return resolvedVoid();
       },
+      setPathStaged: () => resolved({ ok: false, message: "The demo has no git checkout." }),
+      setLinesStaged: () => resolved({ ok: false, message: "The demo has no git checkout." }),
       listBranches: () => resolved([
         { name: currentBranch, lastCommitDate: DEMO_TIME },
         { name: "main", lastCommitDate: DEMO_TIME }
@@ -7524,7 +7526,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-QE33RX6U.js").then(async (main) => {
+    void import("./chunks/main-OLY2JHHV.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(

@@ -74313,7 +74313,25 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
   const dirWrap = el("div", { class: "git-dir-view" });
   dirWrap.hidden = true;
   const emptyState = el("div", { class: "panel-empty" }, "Select a changed file");
-  viewerRoot.append(conflictBanner, diffWrap, imageWrap, dirWrap, emptyState, approvalBar);
+  const stageStatus = el("span", { class: "git-stage-status", role: "status" });
+  const stageLinesBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact git-stage-lines-btn" },
+    "Stage selection"
+  );
+  const stageFileBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact git-stage-file-btn" },
+    "Stage file"
+  );
+  const stageBar = uiActions(stageStatus, stageLinesBtn, stageFileBtn, {
+    className: "git-stage-bar"
+  });
+  stageBar.hidden = true;
+  viewerRoot.append(conflictBanner, diffWrap, imageWrap, dirWrap, emptyState, approvalBar, stageBar);
+  let stageBusy = false;
+  let stageStatusPath = null;
+  let lastFocusedSide = "new";
   let diffEditor = null;
   let pendingSelect = null;
   let selectRequestId = 0;
@@ -74447,6 +74465,12 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
         monacoApi,
         scaledEditorFontSize(store2.getState().fontSize, store2.getState().uiScale)
       );
+      diffEditor.getOriginalEditor().onDidFocusEditorText(() => {
+        lastFocusedSide = "old";
+      });
+      diffEditor.getModifiedEditor().onDidFocusEditorText(() => {
+        lastFocusedSide = "new";
+      });
       registerMonacoSelectionToChatShortcut(diffEditor.getOriginalEditor(), monacoApi, () => {
         if (selection?.kind === "proposed") {
           return { path: selection.path, detail: "before" };
@@ -74574,6 +74598,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
   function renderList() {
     const queue = store2.getState().stagedDiffs;
     syncBulkActions(queue.length);
+    syncStageBar();
     const key = JSON.stringify([
       displayedOwnerKey,
       loaded,
@@ -74612,6 +74637,73 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
     if (committed) renderCommittedSection(committed);
     if (committedPending) listBody.append(paneLoadingRow("Checking committed changes\u2026"));
   }
+  function stageRow() {
+    if (selection?.kind !== "git") return null;
+    const { path, staged } = selection;
+    const rows = staged ? status?.staged : status?.unstaged;
+    return { path, staged, change: rows?.find((row2) => row2.path === path) };
+  }
+  function syncStageBar() {
+    const row2 = stageRow();
+    stageBar.hidden = row2 === null;
+    if (!row2) return;
+    if (stageStatusPath !== row2.path) {
+      stageStatusPath = null;
+      stageStatus.textContent = "";
+      stageStatus.removeAttribute("data-ok");
+    }
+    const isRow = row2.change !== void 0;
+    stageFileBtn.textContent = row2.staged ? "Unstage file" : "Stage file";
+    stageFileBtn.disabled = stageBusy || !isRow;
+    stageLinesBtn.textContent = row2.staged ? "Unstage selection" : "Stage selection";
+    const lineStageable = isRow && row2.change?.status !== "untracked" && !row2.change?.isDirectory && !diffWrap.hidden;
+    stageLinesBtn.disabled = stageBusy || !lineStageable;
+    stageLinesBtn.setAttribute(
+      "data-tooltip",
+      lineStageable ? `${row2.staged ? "Unstage" : "Stage"} the changes the selected lines touch` : "Untracked and binary files are staged whole"
+    );
+  }
+  function showStageStatus(path, text, ok) {
+    stageStatusPath = path;
+    stageStatus.textContent = text;
+    if (ok === null) stageStatus.removeAttribute("data-ok");
+    else stageStatus.setAttribute("data-ok", String(ok));
+  }
+  function diffLineSelection() {
+    if (!diffEditor || diffWrap.hidden) return null;
+    const editor = lastFocusedSide === "old" ? diffEditor.getOriginalEditor() : diffEditor.getModifiedEditor();
+    const range = editor.getSelection();
+    if (!range) return null;
+    let endLine = range.endLineNumber;
+    if (endLine > range.startLineNumber && range.endColumn === 1) endLine--;
+    return { side: lastFocusedSide, startLine: range.startLineNumber, endLine };
+  }
+  async function stageSelected(scope) {
+    const row2 = stageRow();
+    const owner = activeOwner();
+    if (stageBusy || !row2 || !owner) return;
+    const lines = scope === "lines" ? diffLineSelection() : null;
+    if (scope === "lines" && !lines) {
+      showStageStatus(row2.path, "Click or select lines in the diff first.", false);
+      return;
+    }
+    const stage = !row2.staged;
+    stageBusy = true;
+    showStageStatus(row2.path, stage ? "Staging\u2026" : "Unstaging\u2026", null);
+    syncStageBar();
+    let result;
+    try {
+      result = lines ? await api2.git.setLinesStaged(owner.projectId, owner.threadId, row2.path, stage, lines) : await api2.git.setPathStaged(owner.projectId, owner.threadId, row2.path, stage);
+    } catch (error) {
+      result = { ok: false, message: errorMessage(error) };
+    }
+    stageBusy = false;
+    showStageStatus(row2.path, result.message, result.ok);
+    syncStageBar();
+    if (result.ok) await refresh();
+  }
+  stageFileBtn.addEventListener("click", () => void stageSelected("file"));
+  stageLinesBtn.addEventListener("click", () => void stageSelected("lines"));
   function renderRestoreBanner() {
     const paths = sessionBackup?.paths ?? [];
     if (paths.length === 0) {
@@ -74761,6 +74853,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       imageWrap.hidden = true;
       dirWrap.hidden = true;
       emptyState.textContent = "Could not load diff";
+      syncStageBar();
       return;
     }
     if (diff.directoryFiles) {
@@ -74770,6 +74863,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       imageWrap.hidden = true;
       dirWrap.hidden = false;
       if (diffEditor) disposeDiffModels(diffEditor);
+      syncStageBar();
       return;
     }
     diffLoadQueue = diffLoadQueue.catch(() => void 0).then(async () => {
@@ -74796,6 +74890,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       );
     });
     await diffLoadQueue;
+    syncStageBar();
   }
   async function selectCommittedChange(path) {
     const requestId = ++selectRequestId;
@@ -74948,7 +75043,10 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       const stillExists = gitSel.staged ? status?.staged.some((c) => c.path === gitSel.path) : status?.unstaged.some(
         (c) => c.path === gitSel.path || c.isDirectory === true && gitSel.path.startsWith(`${c.path}/`)
       );
-      if (!stillExists) current = null;
+      const otherSide = gitSel.staged ? status?.unstaged : status?.staged;
+      if (!stillExists) {
+        current = otherSide?.some((c) => c.path === gitSel.path) ? { kind: "git", path: gitSel.path, staged: !gitSel.staged } : null;
+      }
     }
     if (current?.kind === "committed") {
       const committedSel = current;
@@ -75221,6 +75319,7 @@ var init_git_changes_pane = __esm({
     init_pane_popout_seed();
     init_array_utils();
     init_store();
+    init_errors2();
     init_toast();
     init_confirm_dialog();
     init_actions();
