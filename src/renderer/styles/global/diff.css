@@ -90,7 +90,6 @@
   box-sizing: border-box;
   padding: var(--spacing-sm);
   border: 1px solid var(--border);
-  border-left: 2px solid var(--accent);
   border-radius: var(--radius);
   background: var(--bg-elevated);
   color: var(--text-primary);
