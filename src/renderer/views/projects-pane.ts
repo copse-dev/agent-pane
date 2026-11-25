@@ -2492,6 +2492,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         switchProject(store, api, project.id)
       })
       const projectMenuEntries: ContextMenuEntry[] = [
+        {
+          label: 'Remove from sidebar',
+          onSelect: (): void => {
+            void removeProject(store, api, project.id)
+          },
+        },
         // Saved sessions live on this computer, so a remote project has none to offer.
         ...(project.missing || project.sshHost
           ? []
@@ -2517,12 +2523,6 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                 },
               },
             ]),
-        {
-          label: 'Remove from sidebar',
-          onSelect: (): void => {
-            void removeProject(store, api, project.id)
-          },
-        },
         ...groupMenuEntries(project, projectGroups),
       ]
       projectRow.addEventListener('contextmenu', (e) => {

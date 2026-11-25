@@ -135,7 +135,7 @@ describe('projects pane remove-from-sidebar (component)', () => {
     assert.equal(menu.getAttribute('role'), 'menu')
     assert.deepEqual(
       [...menu.querySelectorAll('.context-menu-item')].map((item) => item.textContent),
-      ['Import sessions…', 'Remove from sidebar', 'New group…'],
+      ['Remove from sidebar', 'Import sessions…', 'New group…'],
     )
   })
 
