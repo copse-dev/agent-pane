@@ -6,7 +6,10 @@ import {
   editedPathsFromPayload,
   hookOutput,
   isHookDialect,
+  lintSkipped,
   oxlintErrorLines,
+  oxlintFindings,
+  parseHookArgs,
   renderReport,
   siblingTestCandidates,
 } from './edited-file-check.mts'
@@ -151,17 +154,91 @@ describe('oxlintErrorLines', () => {
     assert.deepEqual(oxlintErrorLines(report([bare])), ['  0:0  Unused eslint-disable directive.'])
   })
 
-  it('reads past the notice oxlint prints when the only path is ignored', () => {
-    // Verbatim shape of oxlint 1.94's stdout for an ignored file under --type-aware.
-    const stdout =
-      'No files found to lint. Please check your paths and ignore patterns.\n' +
-      '{ "diagnostics": [],\n  "number_of_files": 0,\n  "number_of_rules": 142\n}\n'
-    assert.deepEqual(oxlintErrorLines(stdout), [])
+  it('keeps a diagnostic whose span oxlint could not place, at an unknown position', () => {
+    // oxlint writes `"line": null, "column": null` for such a label. Rejecting the
+    // whole report over it would drop every other finding with it.
+    const unplaced = {
+      ...diagnostic,
+      labels: [{ span: { offset: 0, length: 0, line: null, column: null } }],
+    }
+    const lines = oxlintErrorLines(report([unplaced, diagnostic])) ?? []
+    assert.equal(lines.length, 2)
+    assert.match(lines[0] ?? '', /^ {2}17:3 /)
+    assert.match(lines[1] ?? '', /^ {2}\?:\? /)
   })
 
   it('rejects output that is not an oxlint report', () => {
     assert.equal(oxlintErrorLines('No files found to lint.'), null)
     assert.equal(oxlintErrorLines(JSON.stringify({ diagnostics: [{ message: 1 }] })), null)
+  })
+})
+
+describe('oxlintFindings', () => {
+  const errorReport = JSON.stringify({
+    diagnostics: [
+      {
+        message: 'Unexpected any.',
+        code: 'typescript(no-explicit-any)',
+        severity: 'error',
+        labels: [{ span: { line: 3, column: 9 } }],
+      },
+    ],
+  })
+
+  it('is clean on exit 0, whatever stdout holds', () => {
+    assert.deepEqual(oxlintFindings('src/a.ts', { code: 0, stdout: 'anything', stderr: '' }), [])
+  })
+
+  it("turns exit 1 with a report into one finding with oxlint's fix command", () => {
+    const findings = oxlintFindings('src/a.ts', { code: 1, stdout: errorReport, stderr: '' })
+    assert.equal(findings.length, 1)
+    const [finding] = findings
+    assert.ok(finding)
+    assert.equal(finding.tool, 'oxlint')
+    assert.match(finding.detail, /3:9 {2}Unexpected any\. {2}typescript\(no-explicit-any\)/)
+    assert.equal(finding.fix, 'npx oxlint --type-aware src/a.ts')
+  })
+
+  it('reports a run that checked nothing as skipped, quoting what oxlint said', () => {
+    // A bad config: oxlint exits 1 with text on stdout and no JSON report.
+    const [badConfig] = oxlintFindings('src/a.ts', {
+      code: 1,
+      stdout: 'Failed to parse oxlint configuration file.',
+      stderr: '',
+    })
+    assert.match(badConfig?.detail ?? '', /skipped — oxlint exited 1: Failed to parse oxlint/)
+    // A crash: a code oxlint never uses for findings, the reason on stderr.
+    const [crash] = oxlintFindings('src/a.ts', { code: 101, stdout: '', stderr: 'panicked' })
+    assert.match(crash?.detail ?? '', /skipped — oxlint exited 101: panicked/)
+    // Killed by a signal: no exit code at all.
+    const [killed] = oxlintFindings('src/a.ts', { code: null, stdout: '', stderr: '' })
+    assert.match(killed?.detail ?? '', /skipped — oxlint was killed$/)
+  })
+})
+
+describe('parseHookArgs', () => {
+  it('reads the dialect, the flags and the paths', () => {
+    assert.deepEqual(parseHookArgs(['--dialect', 'copse', '--fix', '--no-lint', 'src/a.ts']), {
+      dialect: 'copse',
+      files: ['src/a.ts'],
+      fix: true,
+      lint: false,
+    })
+  })
+
+  it('lints and does not rewrite unless told otherwise', () => {
+    assert.deepEqual(parseHookArgs(['src/a.ts']), {
+      dialect: 'cli',
+      files: ['src/a.ts'],
+      fix: false,
+      lint: true,
+    })
+  })
+
+  it('ignores an unknown dialect or flag rather than refusing to run', () => {
+    const args = parseHookArgs(['--dialect', 'vim', '--verbose', 'src/a.ts'])
+    assert.equal(args.dialect, 'cli')
+    assert.deepEqual(args.files, ['src/a.ts'])
   })
 })
 
@@ -226,6 +303,16 @@ describe('renderReport', () => {
     const out = report('src/a.ts', [], ['oxfmt'])
     assert.match(out, /rewritten on disk by oxfmt/)
     assert.match(out, /Re-read it before your next edit/)
+  })
+
+  it('still reports a rewrite when the lint itself was skipped', () => {
+    // The format step runs first; a lint that could not run must not swallow its report.
+    const skipped = lintSkipped('oxlint is not installed in this checkout', 'pnpm install')
+    const out = report('src/a.ts', [skipped], ['oxfmt'])
+    assert.match(out, /rewritten on disk by oxfmt/)
+    assert.match(out, /Re-read it before your next edit/)
+    assert.match(out, /skipped — oxlint is not installed in this checkout/)
+    assert.match(out, /fix: pnpm install/)
   })
 
   it('leads with the rewrite when a repair and a finding coincide', () => {

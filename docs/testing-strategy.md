@@ -64,9 +64,18 @@ The loop, cheapest first:
 
 `.copse/hooks.json`, `.cursor/hooks.json` and `.claude/settings.json` wire
 `scripts/hook-file-check.mts` to the post-edit hook, so **every file you edit is
-already reformatted and lint-checked** before you read the tool result. Don't
-spend a turn running the formatter on a file you just touched — and if the hook said
-nothing at all, it is clean.
+reformatted, then lint-checked**. Don't spend a turn running the formatter on a
+file you just touched. What reaches you, and when, depends on the harness:
+
+- **Claude Code:** one hook formats and lints before you read the tool result.
+  Its report, a rewrite included, comes back with that result; silence means clean.
+- **Copse:** the awaited entry only formats (`--no-lint`), so the formatter lands
+  before you continue. Copse reads a hook's `queueMessage` only from an `async`
+  hook, so that entry's rewrite notice never reaches you: re-read a file before
+  an exact-match edit if formatting may have changed it. Lint findings come
+  from the `async` entry, as a queued message shortly after the edit.
+- **Cursor:** its `afterFileEdit` cannot return data to the agent; the report
+  goes to the hook log for the human.
 
 **Formatting is auto-applied; lint fixes are not.** Formatting is deterministic and
 semantically neutral, so fixing it costs an agent turn and buys nothing —
@@ -74,21 +83,30 @@ semantically neutral, so fixing it costs an agent turn and buys nothing —
 hooks precisely so a formatter lands before the agent proceeds. `oxlint --fix`
 is a different animal: it makes real code changes (`prefer-const`, import
 rewrites), so those are reported with the command to run rather than applied
-behind you. In Copse the awaited entry only formats (`--no-lint`); an `async`
-entry lints, because Copse reads a hook's `queueMessage` only from an async one.
+behind you.
 
-A rewrite is **always** reported, even when there is nothing else to say, because
-it makes your copy of the file stale — a later edit matching against remembered
-text would fail against content you never saw. Re-read the file when you see it.
+Where a report reaches you, a rewrite is **always** in it, even when there is
+nothing else to say, because it makes your copy of the file stale — a later edit
+matching against remembered text would fail against content you never saw.
+Re-read the file when you see it. A lint that could not run (oxlint not
+installed yet, a crash, a config it rejects) is reported too, as
+`[oxlint] skipped — …` with the fix, rather than left silent.
 
 Coverage is a fast subset by construction: oxfmt plus **oxlint**, type-aware
-rules included, with `.oxlintrc.json` (a port of `eslint.config.mjs`). Typed
-ESLint needs ~10s per file to build the TypeScript program; oxlint's tsgo-based
-pass does it in ~1–2s, so unsafe assertions, floating promises and `??` misses
-surface per edit. `tsc` still waits for `npm run check:local`, and **ESLint stays
-the lint gate**: the two rule sets are separate implementations, so a file the
-hook passes can still fail `npm run lint` (or the reverse). The hook says so in
-its own output; treat a silent hook as "no cheap problems", never as "verified".
+rules included, with `.oxlintrc.json` (a port of `eslint.config.mjs`, held to
+it by `scripts/oxlint-config-parity.test.ts`). Typed ESLint needs ~10s per file
+to build the TypeScript program; oxlint's tsgo-based pass does it in ~1–2s, so
+unsafe assertions, floating promises and `??` misses surface per edit. Each run
+still builds the whole program (~0.7–1 GB), so the hook allows one type-aware
+run per checkout at a time; a burst of edits — approving many staged diffs at
+once — lints them in turn. `tsc` still waits for `npm run check:local`, and
+**ESLint stays the lint gate**: the two rule sets are separate implementations,
+so a file the hook passes can still fail `npm run lint`, or the reverse. Two known
+false positives follow a code pattern rather than a file: `no-misused-promises` on
+`.finally(() => promise)` (which does wait for the promise), and, until oxlint
+1.95, `explicit-function-return-type` on an arrow function used as a default
+parameter value. The hook says so in its own output; treat a silent hook as "no
+cheap problems", never as "verified".
 
 ### While iterating: `npm test -- <filter>`
 

@@ -53,15 +53,18 @@ import { fileURLToPath } from 'node:url'
 import { formatSource, isUnformatted } from './lib/oxfmt.mts'
 import {
   type Finding,
-  type HookDialect,
+  type HookArgs,
+  type OxlintRun,
   checkPlanFor,
   editedPathsFromPayload,
   hookOutput,
-  isHookDialect,
-  oxlintErrorLines,
+  lintSkipped,
+  oxlintFindings,
+  parseHookArgs,
   renderReport,
   siblingTestCandidates,
 } from './lib/edited-file-check.mts'
+import { withFileLock } from './lib/file-lock.mts'
 import { isNonNull } from '@copse/std/nullish.ts'
 
 /**
@@ -83,25 +86,6 @@ async function readStdin(): Promise<string> {
   return Buffer.concat(chunks).toString('utf8')
 }
 
-type Args = { dialect: HookDialect; files: string[]; fix: boolean; lint: boolean }
-
-function parseArgs(argv: string[]): Args {
-  let dialect: HookDialect = 'cli'
-  let fix = false
-  let lint = true
-  const files: string[] = []
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i]
-    if (arg === '--dialect') {
-      const value = argv[++i]
-      if (value !== undefined && isHookDialect(value)) dialect = value
-    } else if (arg === '--fix') fix = true
-    else if (arg === '--no-lint') lint = false
-    else if (arg !== undefined && !arg.startsWith('-')) files.push(arg)
-  }
-  return { dialect, files, fix, lint }
-}
-
 /** Repo-relative and forward-slashed, for stable output and ignore matching. */
 function toRepoRelative(path: string): string {
   const abs = isAbsolute(path) ? path : resolve(ROOT, path)
@@ -114,13 +98,46 @@ function toRepoRelative(path: string): string {
  */
 const OXLINT_BIN = resolve(ROOT, 'node_modules/oxlint/bin/oxlint')
 
+/**
+ * This checkout's tsgolint, passed to oxlint explicitly. Left to itself, oxlint
+ * searches beyond this checkout's `node_modules` when tsgolint is missing here,
+ * so it could type-check with some other install's copy.
+ */
+const TSGOLINT_BIN = resolve(
+  ROOT,
+  'node_modules/.bin',
+  process.platform === 'win32' ? 'tsgolint.CMD' : 'tsgolint',
+)
+
+/**
+ * One type-aware run at a time per checkout. Each builds the whole TypeScript
+ * program (~0.7–1 GB), and Copse dispatches up to eight async hooks at once
+ * per thread — an "approve all" of staged diffs fires one per file. Later runs
+ * wait their turn; the wait is capped well inside the hooks' 60 s timeout, and
+ * a lock left by a run killed at its timeout is reclaimed (`file-lock.mts`).
+ */
+const LINT_LOCK = resolve(ROOT, '.tmp/hook-file-check-oxlint.lock')
+const LINT_LOCK_OPTIONS = { waitMs: 30_000, staleMs: 120_000 }
+
 /** Run oxlint on one repo-relative path, from the repo root so it finds `.oxlintrc.json`. */
-function runOxlint(rel: string): Promise<{ code: number | null; stdout: string; stderr: string }> {
+function runOxlint(rel: string): Promise<OxlintRun> {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(
       process.execPath,
-      [OXLINT_BIN, '--type-aware', '--quiet', '--format=json', rel],
-      { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] },
+      [
+        OXLINT_BIN,
+        '--type-aware',
+        '--quiet',
+        '--format=json',
+        // An ignored path is "nothing to say", not an error with a text notice.
+        '--no-error-on-unmatched-pattern',
+        rel,
+      ],
+      {
+        cwd: ROOT,
+        env: { ...process.env, OXLINT_TSGOLINT_PATH: TSGOLINT_BIN },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
     )
     const stdout: Buffer[] = []
     const stderr: Buffer[] = []
@@ -138,27 +155,31 @@ function runOxlint(rel: string): Promise<{ code: number | null; stdout: string; 
 }
 
 /**
- * oxlint, type-aware, on one file. Exit 0 is clean. Exit 1 means errors were
- * found *or* `.oxlintrc.json` ignores the path (see `oxlintErrorLines`), and
- * either way stdout holds a JSON report. Anything else, or exit 1 without a
- * report (a bad config), is a crash, thrown so `main` reports it and lets the
- * agent carry on.
- *
- * `abs` for every filesystem/tool call, `rel` for everything the agent reads.
+ * oxlint, type-aware, on one file. Every way the lint can fail to happen —
+ * oxlint or tsgolint not installed, the lock not freed in time, a crash — comes
+ * back as a finding, never a throw: the format step may already have rewritten
+ * the file, and its report must still reach the agent (see `oxlintFindings`).
  */
-async function lintFindings(abs: string, rel: string): Promise<Finding[]> {
-  if (!existsSync(OXLINT_BIN)) throw new Error('oxlint is not installed — run `pnpm install`')
-  const result = await runOxlint(rel)
-  if (result.code === 0) return []
-  const lines = result.code === 1 ? oxlintErrorLines(result.stdout) : null
-  if (lines === null) {
-    throw new Error(
-      // oxlint reports a bad config on stdout, a crash on stderr: show whichever said something.
-      `oxlint exited ${String(result.code)} on ${abs}: ${(result.stderr.trim() || result.stdout.trim()).slice(-500)}`,
-    )
+async function lintFindings(rel: string): Promise<Finding[]> {
+  if (!existsSync(OXLINT_BIN) || !existsSync(TSGOLINT_BIN)) {
+    return [lintSkipped('oxlint is not installed in this checkout', 'pnpm install')]
   }
-  if (lines.length === 0) return []
-  return [{ tool: 'oxlint', detail: lines.join('\n'), fix: `npx oxlint --type-aware ${rel}` }]
+  try {
+    const locked = await withFileLock(LINT_LOCK, () => runOxlint(rel), LINT_LOCK_OPTIONS)
+    if (!locked.ran) {
+      const waited = String(LINT_LOCK_OPTIONS.waitMs / 1000)
+      return [
+        lintSkipped(
+          `another type-aware lint in this checkout held the lock for ${waited} s`,
+          `npx oxlint --type-aware ${rel}`,
+        ),
+      ]
+    }
+    return oxlintFindings(rel, locked.value)
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err)
+    return [lintSkipped(`oxlint could not run: ${reason}`, `npx oxlint --type-aware ${rel}`)]
+  }
 }
 
 /**
@@ -203,7 +224,7 @@ async function formatFile(
 }
 
 /** Run the checks for one file and return its report, or null when it is clean. */
-async function checkFile(rawPath: string, args: Args): Promise<string | null> {
+async function checkFile(rawPath: string, args: HookArgs): Promise<string | null> {
   const rel = toRepoRelative(rawPath)
   // An edit outside the repo (or to a file since deleted) is not ours to check.
   if (rel.startsWith('..')) return null
@@ -217,7 +238,7 @@ async function checkFile(rawPath: string, args: Args): Promise<string | null> {
   const formatted = plan.format
     ? await formatFile(abs, rel, args.fix)
     : { findings: [], repaired: [] }
-  const lint = plan.lint && args.lint ? await lintFindings(abs, rel) : []
+  const lint = plan.lint && args.lint ? await lintFindings(rel) : []
   const findings = [...lint, ...formatted.findings]
 
   const testHint =
@@ -226,7 +247,7 @@ async function checkFile(rawPath: string, args: Args): Promise<string | null> {
 }
 
 async function main(): Promise<void> {
-  const args = parseArgs(process.argv.slice(2))
+  const args = parseHookArgs(process.argv.slice(2))
   let files = args.files
   if (files.length === 0) {
     const stdin = (await readStdin()).trim()
