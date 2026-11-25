@@ -510,6 +510,9 @@ class ContainerCell implements ExecutionCell {
             `Apple container did not create the review cell as asked (${shortfall}); refusing to run the change in it`,
           )
         }
+        // The read-back ignores the signal, like create; a cancel while it ran
+        // stops here, before the change starts.
+        command.signal?.throwIfAborted()
       }
       const remaining = command.timeoutMs - (Date.now() - started)
       if (command.timeoutMs > 0 && remaining <= 0) {

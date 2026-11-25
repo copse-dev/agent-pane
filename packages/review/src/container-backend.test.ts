@@ -627,6 +627,53 @@ describe('container backend', () => {
       }
     })
 
+    it('never starts the change when the run is cancelled during the read-back', async () => {
+      const controller = new AbortController()
+      const name = 'apple-cancelled'
+      // The cancel lands as the backend spawns the container's read-back:
+      // after create and its signal check, before start.
+      const cancelling = await createContainerBackend({
+        image: FAKE_IMAGE,
+        engine: await writeFakeContainerEngine(registry),
+        dialect: 'apple',
+        containerName: () => name,
+        spawn: (file, args, options) => {
+          if (args.at(-2) === 'inspect' && args.at(-1) === name) {
+            controller.abort(new Error('cancelled during the read-back'))
+          }
+          return spawn(file, args, options)
+        },
+      }).createCell({
+        checkouts: { base: join(scratch, 'base'), head: join(scratch, 'head') },
+        scratchDir: scratch,
+        readOnlyPaths: [],
+        env: cellEnvironment({ PATH: process.env['PATH'] }),
+      })
+      const marker = join(scratch, 'ran-after-cancel')
+      try {
+        await assert.rejects(
+          cancelling.run({
+            target: 'head',
+            argv: [
+              process.execPath,
+              '-e',
+              `require('fs').writeFileSync(${JSON.stringify(marker)}, 'ran')`,
+            ],
+            timeoutMs: 30_000,
+            maxOutputBytes: 1024,
+            signal: controller.signal,
+          }),
+          /cancelled during the read-back/,
+        )
+        assert.equal(controller.signal.aborted, true)
+        await assert.rejects(access(join(registry, `${name}.started`)), /ENOENT/)
+        await assert.rejects(access(marker), /ENOENT/)
+        await access(join(registry, `${name}.removed`))
+      } finally {
+        await cancelling.destroy()
+      }
+    })
+
     it('reads back each mount and its access mode', () => {
       const input: ContainerRunInput = {
         name: 'apple-cell',

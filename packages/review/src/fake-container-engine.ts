@@ -109,6 +109,7 @@ if (verb === 'inspect') {
 
 if (verb === 'start') {
   const name = rest[rest.length - 1]
+  fs.writeFileSync(path.join(registry, name + '.started'), '')
   if (!fs.existsSync(path.join(registry, name + '.active'))) process.exit(125)
   const data = JSON.parse(fs.readFileSync(path.join(registry, name + '.json'), 'utf8'))
   const { argv, cwd, env } = data
