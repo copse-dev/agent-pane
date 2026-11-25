@@ -159,6 +159,78 @@ instead of authenticating again. `turn-worker-ssh.test.ts` pins this with the e2
 - A resident daemon (`client-server-split.md` step 4) replaces per-turn workers.
 - A worker on another machine (`cross-device-harness-offload.md` O2).
 
+## Container runs
+
+A container run (`thread-in-container.md`) already keeps Copse's own loop off the desktop: the
+agent runs in the guest. What still ties the run to the app is its host side, all of which
+lives in the app's main process today (`runThreadInContainer` in `thread-container.ts`):
+
+- the guest's stdio link, from `docker start --attach --interactive`. It carries the egress
+  broker's framed connections and the one-time key hand-over (`egress-link.ts`, decision A17).
+- the egress broker that dials the allowlisted origins for the guest (`egress-broker.ts`).
+- host inference: the provider the guest's model calls are proxied to, built in the host so an
+  OAuth token never enters the guest (`host-inference.ts`).
+- the wait, the wall-clock deadline, carry-out (`git fetch` of the guest's bundle), teardown and
+  `record.json`.
+
+When the app quits, the stdio pipes close, so the guest loses its network and its model. The
+run cannot be re-attached later either: the link is a framed byte stream with no resync point.
+`ContainerRunService.stopAll` therefore stops every run on quit, and the next launch sweeps
+what is left.
+
+So, unlike a chat turn, a container run cannot be handed off at quit. Its host side has to
+start out of the app.
+
+### Decisions
+
+1. **A run host process per run, started with the run.** `ContainerRunService.drive` keeps
+   everything it does today up to the runner call: arming, provider choice, budgets, the
+   checkout, the supervisor task and the decision-log entry. It then starts
+   `dist/main/container-run-host.js` the same way the turn worker starts (the app binary under
+   `ELECTRON_RUN_AS_NODE`, detached, logging to `<profile>/logs/`). That process calls
+   `runThreadInContainer` and owns the stdio link until the run ends.
+2. **The host process resolves the provider itself.** `hostInference` is a factory, and the
+   key must not travel through argv, the environment or a file, so the app hands over only
+   serialisable inputs: model id, `useAgentLogin`, workspace, prompt, carry-in ref, budgets,
+   install choice, engine, runtime id and egress allowlist. The host boots the profile
+   read-only with the keyring cipher (as the turn worker does) and calls
+   `resolveContainerProvider` again. If the egress it gets differs from what the app armed, it
+   refuses to run. A provider whose sign-in can rotate a refresh token on refresh (ChatGPT
+   plan) would lose the new token in a read-only host, so such a run stays in the app as it
+   does today and stops on quit.
+3. **Progress travels over the run's socket.** Like the turn worker's (`turn-worker-socket.ts`):
+   the host streams phase and log lines and, at the end, the record, and takes `stop`.
+   `<run dir>/host.json` names the host's pid and socket, so a relaunched app finds live runs
+   without the supervisor.
+4. **Quit leaves host runs alone.** `stopAll` skips runs whose host process is alive. The
+   supervisor task is moved out of the shutdown cancel. Today shutdown cancels every running
+   external task with a process handle, which would force-remove the container. Instead the
+   task records that the run continues outside the app, and the relaunched app settles it
+   from the record.
+5. **Relaunch reattaches from `host.json`.** At start-up, after the orphan sweep (which already
+   skips running containers), the service lists run directories with a live host. It connects
+   to each one, and puts its progress back in `runs`, so the banner, the dialog and Stop work
+   as before. A host that died leaves `record.json`, or nothing; the run then settles as
+   failed with what the record says.
+
+### Slices
+
+- **C1, run host process.** The entry, the bundle entry, the socket, and `drive` delegating to
+  it. A run the app started finishes the same way, through the host. Exit gate: the container
+  run e2e passes with the host in between.
+  Status: built. `run-host.ts` is the host, `run-host-client.ts` the app's end,
+  `run-host-entry.ts` the bundle entry (`dist/main/container-run-host.js`), and the local
+  line is shared with the turn worker (`local-socket.ts`). The bundled host boots on a
+  fresh profile, resolves its provider and refuses changed egress; the container e2e
+  through it is still to run.
+- **C2, survive quit.** `stopAll` and supervisor shutdown leave host runs alone, and
+  relaunch reattaches from `host.json`. Exit gate: quit mid-run, relaunch, and see the run
+  finish once with its commits on the ref.
+- **C3, settle without the app.** When no app is attached at the end, the host records the
+  run in the thread's model history itself (`recordContainerRunTurn`, which the app runs from
+  `onSettled` today). Without this step, the next message to the thread does not know what
+  the run did until the app has seen it settle.
+
 ## Risks
 
 - **Two writers on shared stores.** Covered by decision 4. A worker that writes
