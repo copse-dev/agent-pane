@@ -8,7 +8,7 @@ import { knowledgeDate } from './knowledge-date.ts'
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { plusIcon, refreshIcon } from '../dom/icons.ts'
 import { paneLoadingRow } from '../dom/pane-loading.ts'
-import { selectRightPanelMode } from '../controller/panels.ts'
+import { selectRightPanelMode, rightPanelShows } from '../controller/panels.ts'
 import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 
 // A memory is one `Memory`-typed knowledge note. Derive the shape from the IPC
@@ -16,8 +16,7 @@ import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 type Memory = Awaited<ReturnType<ApiClient['memories']['list']>>[number]
 
 function memoriesModeActive(store: AppStore): boolean {
-  const { filesPaneOpen, rightPanelMode } = store.getState()
-  return filesPaneOpen && rightPanelMode === 'memories'
+  return rightPanelShows(store.getState(), 'memories')
 }
 
 function parseTags(raw: string): string[] {
