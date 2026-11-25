@@ -3285,6 +3285,58 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   margin: 0 0 6px;
   overflow-wrap: anywhere;
 }
+/* Settings → Machines "Your machines": SSH and paired rows share one list, so
+   they share one row rule and one status/capability line. */
+.machines-overview .ssh-host-list {
+  margin: 0;
+  gap: 0;
+}
+.machines-overview .ssh-host-row {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.machine-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 4px 0;
+  font-size: var(--font-size-sm);
+}
+.machine-summary-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+}
+.machine-summary-status::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.machine-summary-ok::before {
+  background: var(--success);
+}
+.machine-summary-warn::before {
+  background: var(--warning);
+}
+.machine-uses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.machine-use {
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
 .machine-client-row {
   display: flex;
   align-items: center;

@@ -2,7 +2,7 @@ import '../../../../tests/setup-dom.ts'
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import type { ApiClient } from '../../../preload/api.d.ts'
-import type { SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
+import type { SshConnectionState, SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
 import { createSshWorkspaceSection } from './ssh-workspace-section.ts'
 import { createFakeApi } from '../../fake-api.test-support.ts'
 
@@ -16,6 +16,8 @@ function mockApi(initial: {
   api: ApiClient
   sets: Array<{ key: string; value: unknown }>
   forgotten: string[]
+  /** Change the live SSH states, as the main process announces them. */
+  setStates: (next: SshConnectionState[]) => void
 } {
   const store = new Map<string, unknown>([
     ['sshWorkspaceEnabled', initial.enabled === true],
@@ -25,6 +27,8 @@ function mockApi(initial: {
   const sets: Array<{ key: string; value: unknown }> = []
   const credentialHostIds = new Set(initial.credentialHostIds ?? [])
   const forgotten: string[] = []
+  let states: SshConnectionState[] = []
+  let onChanged: ((next: SshConnectionState[]) => void) | undefined
   const api = ((): ApiClient => {
     const base = createFakeApi()
     return {
@@ -45,10 +49,25 @@ function mockApi(initial: {
           forgotten.push(hostId)
           credentialHostIds.delete(hostId)
         },
+        getStates: async (): Promise<SshConnectionState[]> => states,
+        onConnectionChanged: (handler: (next: SshConnectionState[]) => void): (() => void) => {
+          onChanged = handler
+          return (): void => {
+            onChanged = undefined
+          }
+        },
       },
     } satisfies ApiClient
   })()
-  return { api, sets, forgotten }
+  return {
+    api,
+    sets,
+    forgotten,
+    setStates: (next): void => {
+      states = next
+      onChanged?.(next)
+    },
+  }
 }
 
 describe('createSshWorkspaceSection', () => {
@@ -242,5 +261,63 @@ describe('createSshWorkspaceSection', () => {
       section.root.querySelector('.ssh-host-status')?.textContent,
       'Imported 2 alias(es) from SSH config.',
     )
+  })
+})
+
+describe('createSshWorkspaceSection in the shared Machines list', () => {
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('renders its rows, with status and capabilities, into the list it is given', async () => {
+    const { api } = mockApi({ hosts: [{ id: 'dev', label: 'Dev Server', host: 'dev.example' }] })
+    const overview = document.createElement('div')
+    const shared = document.createElement('div')
+    overview.append(shared)
+    const section = createSshWorkspaceSection(api, { hostList: shared })
+    document.body.append(overview, section.root)
+    await section.refresh()
+
+    assert.equal(shared.parentElement, overview, 'the shared list stays where it was put')
+    assert.equal(section.root.querySelector('.ssh-host-row'), null, 'no second list of its own')
+    const row = shared.querySelector('.ssh-host-row')
+    assert.ok(row)
+    assert.equal(row.querySelector('.machine-summary-status')?.textContent, 'Not connected')
+    assert.deepEqual(
+      [...row.querySelectorAll('.machine-use')].map((item) => item.textContent),
+      ['Files and shell'],
+    )
+    // Every action the row had before is still on it.
+    for (const action of ['.ssh-host-edit', '.ssh-host-delete']) {
+      assert.ok(row.querySelector(action), action)
+    }
+  })
+
+  it('follows the live connection without a refresh', async () => {
+    const { api, setStates } = mockApi({
+      hosts: [{ id: 'dev', label: 'Dev Server', host: 'dev.example' }],
+    })
+    const shared = document.createElement('div')
+    const section = createSshWorkspaceSection(api, { hostList: shared })
+    document.body.append(shared, section.root)
+    await section.refresh()
+    const status = (): string | null | undefined =>
+      shared.querySelector('.machine-summary-status')?.textContent
+    assert.equal(status(), 'Not connected')
+
+    // Pairing a machine over SSH, for one, connects the host while Settings is open.
+    setStates([{ hostId: 'dev', status: 'connected', label: 'Dev Server', target: 'dev.example' }])
+    // The fake API answers at once, so one macrotask yield lets the re-render finish.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(status(), 'Connected')
+  })
+
+  it('draws each row once when renders overlap', async () => {
+    const { api } = mockApi({ hosts: [{ id: 'dev', label: 'Dev Server', host: 'dev.example' }] })
+    const shared = document.createElement('div')
+    const section = createSshWorkspaceSection(api, { hostList: shared })
+    document.body.append(shared, section.root)
+    await Promise.all([section.refresh(), section.refresh()])
+    assert.equal(shared.querySelectorAll('.ssh-host-row').length, 1)
   })
 })

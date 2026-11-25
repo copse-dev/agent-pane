@@ -2,14 +2,26 @@ import type { ApiClient } from '../../../preload/api.d.ts'
 import type { MachinesState } from '@shared/machines.ts'
 import { el, clear } from '../../dom/helpers.ts'
 import { setInlineStatus } from '../../dom/inline-status.ts'
+import { describePairedMachine, machineSummaryElement } from './machine-capabilities.ts'
 
-export function createMachinesSection(api: Pick<ApiClient, 'machines' | 'classifiers'>): {
+export interface MachinesSectionOptions {
+  /**
+   * Where paired machines are listed. Settings passes the shared Machines list,
+   * so each machine appears once; without it the section lists them itself.
+   */
+  list?: HTMLElement
+}
+
+export function createMachinesSection(
+  api: Pick<ApiClient, 'machines' | 'classifiers'>,
+  options: MachinesSectionOptions = {},
+): {
   root: HTMLDivElement
   refresh: (signal?: AbortSignal) => Promise<void>
 } {
   const status = el('div', { class: 'machine-status', role: 'status' })
   const sharingFeedback = el('div', { class: 'machine-sharing-feedback', role: 'status' })
-  const list = el('div', { class: 'machine-list' })
+  const list = options.list ?? el('div', { class: 'machine-list' })
   const invitationInput = el('textarea', {
     name: 'machineInvitation',
     rows: '3',
@@ -101,7 +113,9 @@ export function createMachinesSection(api: Pick<ApiClient, 'machines' | 'classif
       { class: 'settings-fieldset-desc' },
       'Use System One models on another computer on the same network. Open Copse there, share a local model, and paste its invitation here. SSH is not required.',
     ),
-    list,
+    // A shared list stays where Settings put it, in "Your machines"; only a
+    // section listing machines on its own holds its list here.
+    ...(options.list ? [] : [list]),
     pairControls,
     status,
   )
@@ -180,7 +194,9 @@ export function createMachinesSection(api: Pick<ApiClient, 'machines' | 'classif
     if (rendered === key) return
     rendered = key
     clear(list)
-    if (!next.machines.length)
+    // In the shared list an empty line would only repeat the SSH one; on its
+    // own the section still says so.
+    if (!next.machines.length && !options.list)
       list.append(el('p', { class: 'field-hint' }, 'No paired machines yet.'))
     for (const machine of next.machines) {
       const choose = el('select', {
@@ -210,6 +226,7 @@ export function createMachinesSection(api: Pick<ApiClient, 'machines' | 'classif
         'div',
         { class: 'machine-row', 'data-machine-id': machine.id },
         el('h4', {}, machine.name),
+        machineSummaryElement(describePairedMachine(machine)),
         el(
           'p',
           { class: 'field-hint machine-connection-status' },
