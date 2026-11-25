@@ -30,6 +30,7 @@ import {
 import { syncConciseMessageClasses } from './concise-thread.ts'
 import { createDisclosureModel, type DisclosureModel } from './disclosure-model.ts'
 import { renderSignature } from './render-signature.ts'
+import { transcriptRowElement } from './transcript-row-element.ts'
 import { isThreadProposalCall, threadProposalCardSignature } from './thread-proposal-tool-card.ts'
 import { interruptionCause, type InterruptionCause } from './turn-interruption.ts'
 
@@ -516,8 +517,7 @@ export function createToolCardRefresher(host: ToolCardRefreshHost): ToolCardRefr
     // (see finalizeMessageEl), rather than hiding its tools in the meantime.
     const run =
       opts.run &&
-      (opts.run.anchorId === msgId ||
-        list.querySelector(`[data-message-id="${opts.run.anchorId}"]`) !== null)
+      (opts.run.anchorId === msgId || transcriptRowElement(list, opts.run.anchorId) !== null)
         ? opts.run
         : undefined
     const isRunMember = run !== undefined && run.anchorId !== msgId
@@ -669,7 +669,7 @@ export function createToolCardRefresher(host: ToolCardRefreshHost): ToolCardRefr
    */
   function renderRunAnchor(thread: Thread | undefined, run: ToolRun): void {
     const anchor = thread?.messages.find((m) => m.id === run.anchorId)
-    const anchorEl = list.querySelector<HTMLElement>(`[data-message-id="${run.anchorId}"]`)
+    const anchorEl = transcriptRowElement(list, run.anchorId)
     if (!anchor || !anchorEl) return
     renderToolCards(anchorEl, anchor.toolCalls, {
       ...messageToolCardOpts(anchor),
@@ -686,7 +686,7 @@ export function createToolCardRefresher(host: ToolCardRefreshHost): ToolCardRefr
   function releaseRunMembers(thread: Thread | undefined, run: ToolRun): void {
     for (const id of run.memberIds) {
       if (id === run.anchorId) continue
-      const memberEl = list.querySelector<HTMLElement>(`[data-message-id="${id}"]`)
+      const memberEl = transcriptRowElement(list, id)
       if (!memberEl?.querySelector(':scope > .tool-card-rollup')) continue
       const msg = thread?.messages.find((m) => m.id === id)
       if (!msg) continue
@@ -731,7 +731,7 @@ export function createToolCardRefresher(host: ToolCardRefreshHost): ToolCardRefr
     // above. Unless the message now anchors a run of its own (where the trail
     // lives on its step again), hand the trail back to its bubble.
     const msg = thread?.messages.find((m) => m.id === msgId)
-    const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${msgId}"]`)
+    const msgEl = transcriptRowElement(list, msgId)
     if (!msg || !msgEl || multiStepRunFor(thread, msgId)) return
     syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg), acpWorkspaceRoot(store))
     // A fresh build registers the trail with the disclosure model, which keeps
@@ -764,7 +764,7 @@ export function createToolCardRefresher(host: ToolCardRefreshHost): ToolCardRefr
   function refreshToolCards(msgId: string): void {
     const thread = store.getState().threads.find((t) => t.messages.some((m) => m.id === msgId))
     const msg = thread?.messages.find((m) => m.id === msgId)
-    const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${msgId}"]`)
+    const msgEl = transcriptRowElement(list, msgId)
     if (!msg || !msgEl) return
     host.keepReadingPosition(() => {
       const run = multiStepRunFor(thread, msgId)

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import '../../../tests/setup-dom.ts'
 import {
   fillRemotePathBreadcrumbs,
+  initialRemoteBrowsePath,
   parentRemotePath,
   remotePathSegments,
   remotePathShowsSeparatorAfter,
@@ -71,5 +72,39 @@ describe('fillRemotePathBreadcrumbs', () => {
     fillRemotePathBreadcrumbs(nav, '/srv/app', () => undefined)
     assert.equal(nav.textContent, '/srv/app')
     assert.equal(nav.querySelectorAll('.remote-folder-crumb-sep').length, 1)
+  })
+})
+
+describe('initialRemoteBrowsePath', () => {
+  const projects = [
+    { path: '/home/dev/projects/api', sshHost: 'dev' },
+    { path: '/Users/me/local-app' },
+    { path: '/srv/sites/blog', sshHost: 'web' },
+    { path: '/home/dev/scratch/tool', sshHost: 'dev' },
+  ]
+
+  it('opens beside the last project already opened from the host', () => {
+    assert.equal(initialRemoteBrowsePath(projects, 'dev', '/home/dev'), '/home/dev/scratch')
+    assert.equal(initialRemoteBrowsePath(projects, 'web', '/home/web'), '/srv/sites')
+  })
+
+  it("opens in the account's home on a host with no projects yet", () => {
+    assert.equal(initialRemoteBrowsePath(projects, 'build', '/home/ci'), '/home/ci')
+  })
+
+  it('falls back to the root when the home directory is unknown', () => {
+    assert.equal(initialRemoteBrowsePath(projects, 'build', undefined), '/')
+    assert.equal(initialRemoteBrowsePath([], 'build', 'relative/home'), '/')
+  })
+
+  it('never takes a local project for a remote one', () => {
+    assert.equal(
+      initialRemoteBrowsePath([{ path: '/Users/me/local-app' }], 'dev', '/home/dev'),
+      '/home/dev',
+    )
+  })
+
+  it('opens at the root beside a project that is itself at the top level', () => {
+    assert.equal(initialRemoteBrowsePath([{ path: '/app', sshHost: 'dev' }], 'dev', '/home'), '/')
   })
 })

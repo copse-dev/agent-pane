@@ -1,86 +1,87 @@
 import type { ApiClient } from '../../preload/api.d.ts'
+import type { SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
 import { el } from '../dom/helpers.ts'
 import { setInlineStatus } from '../dom/inline-status.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
 import {
-  importSshConfigHosts,
-  parseSshHostDraft,
   parseSshWorkspaceHosts,
-  slugifyHostId,
+  saveSshConfigHost,
+  unsavedSshConfigHosts,
   upsertHost,
 } from './setup/ssh-host-helpers.ts'
+import { createSshHostFields } from './setup/ssh-host-fields.ts'
 
 export function createVncSshHostForm(
   api: ApiClient,
   onSaved: (hostId: string) => Promise<void>,
   onClose: () => void,
 ): { root: HTMLElement; open(): void; close(): void } {
-  const id = el('input', { type: 'text', 'aria-label': 'SSH host id', placeholder: 'my-server' })
-  const label = el('input', {
-    type: 'text',
-    'aria-label': 'SSH host label',
-    placeholder: 'Production',
+  const hostFields = createSshHostFields({ labelClass: 'vnc-field-label' })
+  // `~/.ssh/config` hosts not saved yet. Choosing one saves it alone, in the
+  // alias-only form, so OpenSSH keeps applying its whole stanza.
+  const configSelect = el('select', {
+    class: 'vnc-ssh-config-host',
+    'aria-label': 'Host in ~/.ssh/config',
   })
-  const host = el('input', {
-    type: 'text',
-    'aria-label': 'SSH hostname',
-    placeholder: 'example.com or ~/.ssh/config alias',
-  })
-  const user = el('input', { type: 'text', 'aria-label': 'SSH user', placeholder: 'ubuntu' })
-  const port = el('input', {
-    type: 'text',
-    inputmode: 'numeric',
-    'aria-label': 'SSH port',
-    placeholder: '22',
-  })
-  const identityFile = el('input', {
-    type: 'text',
-    'aria-label': 'SSH identity file',
-    placeholder: '~/.ssh/id_ed25519',
-  })
+  const configField = el(
+    'label',
+    { class: 'vnc-field-label vnc-ssh-config-field', hidden: true },
+    'In ~/.ssh/config',
+    configSelect,
+  )
+  let configHosts: SshWorkspaceHost[] = []
   const status = el('p', { class: 'vnc-ssh-host-status', role: 'status' })
   const save = el('button', { type: 'submit', class: 'ui-btn ui-btn-primary' }, 'Save SSH machine')
   const cancel = el('button', { type: 'button', class: 'ui-btn ui-btn-secondary' }, 'Cancel')
-  const importButton = el(
-    'button',
-    { type: 'button', class: 'ui-btn ui-btn-ghost' },
-    'Import SSH config',
-  )
   const root = el(
     'form',
     { class: 'vnc-ssh-host-form', hidden: true, 'aria-label': 'Add SSH machine' },
     el('p', { class: 'vnc-ssh-host-hint' }, 'Use an SSH key to secure the desktop connection.'),
-    el('label', { class: 'vnc-field-label' }, 'Id', id),
-    el('label', { class: 'vnc-field-label' }, 'Label', label),
-    el('label', { class: 'vnc-field-label' }, 'Host', host),
-    el('label', { class: 'vnc-field-label' }, 'User', user),
-    el('label', { class: 'vnc-field-label' }, 'Port', port),
-    el('label', { class: 'vnc-field-label' }, 'Identity file', identityFile),
+    configField,
+    ...hostFields.fields,
     status,
-    el('div', { class: 'vnc-ssh-host-actions' }, importButton, cancel, save),
+    el('div', { class: 'vnc-ssh-host-actions' }, cancel, save),
   )
-  let idTouched = false
-  label.addEventListener('input', () => {
-    if (!idTouched) id.value = slugifyHostId(label.value)
-  })
-  id.addEventListener('input', () => {
-    idTouched = true
-  })
   function close(): void {
     root.hidden = true
     status.textContent = ''
     onClose()
   }
+  /**
+   * Offer `~/.ssh/config` hosts once SSH workspaces are on. Until then the file
+   * is not read, so the form never lists the user's aliases before they agree.
+   */
+  async function loadConfigHosts(): Promise<void> {
+    configHosts = []
+    try {
+      if ((await api.settings.get('sshWorkspaceEnabled')) === true) {
+        const [saved, aliases] = await Promise.all([
+          api.sshWorkspace.listHosts(),
+          api.sshWorkspace.listConfigAliases(),
+        ])
+        configHosts = unsavedSshConfigHosts(saved, aliases)
+      }
+    } catch {
+      configHosts = []
+    }
+    configSelect.replaceChildren(
+      el('option', { value: '', selected: true }, 'Choose a host'),
+      ...configHosts.map((host) => el('option', { value: host.host }, host.host)),
+    )
+    configField.hidden = configHosts.length === 0
+  }
   function open(): void {
     root.reset()
-    idTouched = false
+    hostFields.reset()
     status.textContent = ''
+    configField.hidden = true
     root.hidden = false
-    label.focus()
+    hostFields.focus()
+    void loadConfigHosts()
   }
   function busy(value: boolean): void {
     save.disabled = value
-    importButton.disabled = value
+    configSelect.disabled = value
     cancel.disabled = value
   }
   async function requireSshEnabled(): Promise<boolean> {
@@ -95,28 +96,16 @@ export function createVncSshHostForm(
   cancel.addEventListener('click', close)
   root.addEventListener('submit', (event) => {
     event.preventDefault()
-    const parsed = parseSshHostDraft({
-      id: id.value,
-      label: label.value,
-      host: host.value,
-      user: user.value,
-      port: port.value,
-      identityFile: identityFile.value,
-      forwardAgent: false,
-    })
-    if (!parsed.ok) {
-      setInlineStatus(status, 'error', parsed.error)
-      return
-    }
     void (async (): Promise<void> => {
       busy(true)
       try {
-        if (!(await requireSshEnabled())) return
         const existing = parseSshWorkspaceHosts(await api.settings.get('sshWorkspaceHosts'))
-        if (existing.some((item) => item.id === parsed.host.id)) {
-          setInlineStatus(status, 'error', 'A machine with this id already exists.')
+        const parsed = hostFields.parse(existing)
+        if (!parsed.ok) {
+          setInlineStatus(status, 'error', parsed.error)
           return
         }
+        if (!(await requireSshEnabled())) return
         await api.settings.set('sshWorkspaceHosts', upsertHost(existing, parsed.host))
         close()
         await onSaved(parsed.host.id)
@@ -127,25 +116,20 @@ export function createVncSshHostForm(
       }
     })()
   })
-  importButton.addEventListener('click', () => {
+  configSelect.addEventListener('change', () => {
+    const chosen = configHosts.find((host) => host.host === configSelect.value)
+    if (!chosen) return
     void (async (): Promise<void> => {
       busy(true)
       try {
         if (!(await requireSshEnabled())) return
-        const aliases = await api.sshWorkspace.listConfigAliases()
-        if (aliases.length === 0) {
-          setInlineStatus(status, 'error', 'No Host entries found in ~/.ssh/config.')
-          return
-        }
         const existing = parseSshWorkspaceHosts(await api.settings.get('sshWorkspaceHosts'))
-        const imported = importSshConfigHosts(existing, aliases)
-        await api.settings.set('sshWorkspaceHosts', imported.hosts)
-        if (imported.firstAliasHostId) {
-          close()
-          await onSaved(imported.firstAliasHostId)
-        }
+        const saved = saveSshConfigHost(existing, chosen)
+        await api.settings.set('sshWorkspaceHosts', saved.hosts)
+        close()
+        await onSaved(saved.hostId)
       } catch (error) {
-        setInlineStatus(status, 'error', ipcErrorMessage(error, 'Could not import SSH config.'))
+        setInlineStatus(status, 'error', ipcErrorMessage(error, 'Could not save the SSH machine.'))
       } finally {
         busy(false)
       }
