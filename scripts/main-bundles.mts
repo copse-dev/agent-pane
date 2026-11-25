@@ -94,6 +94,14 @@ export const STANDALONE_MAIN_BUNDLES: StandaloneMainBundle[] = [
     entry: 'src/main/services/turn-worker/turn-worker-entry.ts',
     outfile: 'dist/main/turn-worker.js',
   },
+  // The host side of one container run, in its own process so the run does not
+  // depend on the app staying open (docs/plans/local-turn-worker.md, "Container
+  // runs"). Started like the turn worker, and bundled free of electron for the
+  // same reason.
+  {
+    entry: 'src/main/services/container-runtime/run-host-entry.ts',
+    outfile: 'dist/main/container-run-host.js',
+  },
   // Runs the ACP model/mode probe under its OWN SandboxManager so a background
   // probe cannot widen the app's process-global network allowlist (see
   // docs/plans/sandbox-network-scope-isolation.md). Must bundle free of electron

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { WriterLeaseRecord } from '@copse/thread-store/writer-lease.ts'
-import { parseChatGptPlanModel } from '@copse/llm/chatgpt-plan.ts'
+import { isChatGptPlanModel } from '@copse/llm/chatgpt-plan.ts'
 import type { StreamChunk } from '@shared/types'
 import { AgentDispatcher } from '../agent-dispatcher.ts'
 import { abortAgent } from '../agent-service.ts'
@@ -101,15 +101,6 @@ export async function takeOverThread(
       return { status: 'held', holder: { host, pid } }
     }
     await delay(HAND_OFF_POLL_MS)
-  }
-}
-
-function isChatGptPlanModel(model: string): boolean {
-  try {
-    return parseChatGptPlanModel(model) !== null
-  } catch {
-    // A ChatGPT plan value missing its account is still one.
-    return true
   }
 }
 

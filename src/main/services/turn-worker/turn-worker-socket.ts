@@ -1,17 +1,17 @@
-import { createHash } from 'node:crypto'
-import { mkdirSync, rmSync } from 'node:fs'
-import { createConnection, createServer, type Server, type Socket } from 'node:net'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { z } from 'zod'
+import {
+  connectLocalLine,
+  localSocketPath,
+  serveLocalLine,
+  type LocalLineConnection,
+} from '../local-socket.ts'
 import type { StreamChunk, TranscriptSnapshot, TranscriptStamp } from '@shared/types'
 
 /**
  * The local line a turn worker serves while it runs a turn, so the app can
  * attach to it (`docs/plans/local-turn-worker.md` W4).
  *
- * One Unix socket (a named pipe on Windows) per worker, only reachable by this
- * user. Newline-delimited JSON. The app asks to `attach` and gets the turn's
+ * One local line per worker (`local-socket.ts`). The app asks to `attach` and gets the turn's
  * runtime snapshot, then every chunk as the worker's transcript writer stamps
  * it, the same order an in-process turn reaches the window. `stop` aborts the
  * turn as the Stop button does for a turn the app runs itself.
@@ -48,42 +48,12 @@ const workerToAppSchema = z.discriminatedUnion('t', [
   }),
 ])
 
-/** Unix socket paths are short (104 bytes on macOS); keep well inside that. */
-const MAX_SOCKET_PATH = 100
-
 export function turnWorkerSocketPath(
   userDataPath: string,
   threadId: string,
   platform: NodeJS.Platform = process.platform,
 ): string {
-  const id = createHash('sha256').update(`${userDataPath}\0${threadId}`).digest('hex').slice(0, 16)
-  if (platform === 'win32') return `\\\\.\\pipe\\copse-turn-${id}`
-  const inProfile = join(userDataPath, 'run', `turn-${id}.sock`)
-  return inProfile.length <= MAX_SOCKET_PATH ? inProfile : join(tmpdir(), `copse-turn-${id}.sock`)
-}
-
-function lines(socket: Socket, onLine: (line: string) => void): void {
-  let buffered = ''
-  socket.setEncoding('utf8')
-  socket.on('data', (data: string) => {
-    buffered += data
-    for (;;) {
-      const end = buffered.indexOf('\n')
-      if (end < 0) return
-      const line = buffered.slice(0, end)
-      buffered = buffered.slice(end + 1)
-      if (line.length > 0) onLine(line)
-    }
-  })
-}
-
-function decode<T>(schema: z.ZodType<T>, line: string): T | null {
-  try {
-    const parsed = schema.safeParse(JSON.parse(line))
-    return parsed.success ? parsed.data : null
-  } catch {
-    return null
-  }
+  return localSocketPath(userDataPath, 'turn', threadId, platform)
 }
 
 export interface TurnWorkerServer {
@@ -97,52 +67,23 @@ export async function serveTurnWorker(
   path: string,
   handlers: { onAttach: () => void; onStop: () => void },
 ): Promise<TurnWorkerServer> {
-  const clients = new Set<Socket>()
-  const server: Server = createServer((socket) => {
-    lines(socket, (line) => {
-      const message = decode(appToWorkerSchema, line)
-      if (message?.t === 'attach') {
+  const server = await serveLocalLine<AppToWorker, WorkerToApp>(
+    path,
+    appToWorkerSchema,
+    (message, client) => {
+      if (message.t === 'attach') {
         // Join before the reply, so the snapshot and the chunks after it arrive in order.
-        clients.add(socket)
+        client.join()
         handlers.onAttach()
-      } else if (message?.t === 'stop') {
+      } else {
         handlers.onStop()
       }
-    })
-    socket.on('close', () => clients.delete(socket))
-    socket.on('error', () => clients.delete(socket))
-  })
-  if (process.platform !== 'win32') {
-    mkdirSync(join(path, '..'), { recursive: true, mode: 0o700 })
-    // A socket left by a worker that died holds the path.
-    rmSync(path, { force: true })
-  }
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(path, () => {
-      server.off('error', reject)
-      resolve()
-    })
-  })
-  return {
-    broadcast: (message): void => {
-      const line = `${JSON.stringify(message)}\n`
-      for (const socket of clients) socket.write(line)
     },
-    close: (): Promise<void> =>
-      new Promise<void>((resolve) => {
-        for (const socket of clients) socket.end()
-        server.close(() => {
-          resolve()
-        })
-      }),
-  }
+  )
+  return { broadcast: server.broadcast, close: server.close }
 }
 
-export interface TurnWorkerConnection {
-  send: (message: AppToWorker) => void
-  close: () => void
-}
+export type TurnWorkerConnection = LocalLineConnection<AppToWorker>
 
 /**
  * Connect to a worker. Resolves `null` when nothing is listening; `onClose`
@@ -153,29 +94,5 @@ export function connectTurnWorker(
   onMessage: (message: WorkerToApp) => void,
   onClose: () => void,
 ): Promise<TurnWorkerConnection | null> {
-  return new Promise((resolve) => {
-    const socket = createConnection(path)
-    let open = false
-    socket.once('connect', () => {
-      open = true
-      lines(socket, (line) => {
-        const message = decode(workerToAppSchema, line)
-        if (message) onMessage(message)
-      })
-      resolve({
-        send: (message) => {
-          socket.write(`${JSON.stringify(message)}\n`)
-        },
-        close: () => {
-          socket.end()
-        },
-      })
-    })
-    socket.on('error', () => {
-      if (!open) resolve(null)
-    })
-    socket.once('close', () => {
-      if (open) onClose()
-    })
-  })
+  return connectLocalLine<WorkerToApp, AppToWorker>(path, workerToAppSchema, onMessage, onClose)
 }

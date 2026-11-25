@@ -11,7 +11,19 @@ import {
 } from '../thread-execution-context.ts'
 import { recordDecision } from '../security/decision-log-store.ts'
 import { resolveContainerProvider } from '../providers/container-provider.ts'
-import { DEPENDENCY_INSTALL_ORIGINS } from './guest-install.ts'
+import {
+  getElectronAppVersion,
+  getElectronUserDataPath,
+  isElectronAppPackaged,
+} from '../electron-app-runtime.ts'
+import {
+  armedEgress,
+  canHostOutsideApp,
+  withProvider,
+  type ContainerRunBase,
+  type ContainerRunHostRequest,
+} from './run-host.ts'
+import { runHostClientDependencies, runHostEntryPath, runThroughHost } from './run-host-client.ts'
 import {
   adoptCarryOut,
   assertThreadContainerEngine,
@@ -28,7 +40,7 @@ import {
   WORKER_IMAGE,
   workerBuildFingerprint,
   workerImageFingerprint,
-  type ThreadContainerRequest,
+  type RunThreadOptions,
 } from './thread-container.ts'
 import type { ThreadContainerRecord } from '@shared/types/container-run.ts'
 import type { ThreadContainerEngine } from './container-engine.ts'
@@ -52,6 +64,16 @@ const LOG_TAIL = 60
 
 interface RunDependencies {
   run: typeof runThreadInContainer
+  /**
+   * Run in a host process of its own (`run-host.ts`), so the run does not
+   * depend on the app's process. Null runs it here, through {@link run}.
+   */
+  runHost:
+    | ((
+        request: ContainerRunHostRequest,
+        options: RunThreadOptions,
+      ) => Promise<ThreadContainerRecord>)
+    | null
   /** Build the worker image on `engine` unless the one there is this build's. */
   ensureImage: (engine: ThreadContainerEngine) => Promise<void>
   /**
@@ -90,6 +112,8 @@ interface RunDependencies {
 
 const productionDependencies: RunDependencies = {
   run: runThreadInContainer,
+  // Only the app's own service starts host processes; see getContainerRunService.
+  runHost: null,
   stop: teardownRuntime,
   sweep: sweepOrphanedRuntimes,
   sweepWanted: () => getSetting<boolean>('containerRunsEnabled', false) || hasRecordedRuns(),
@@ -421,12 +445,7 @@ export class ContainerRunService {
               ? 'key'
               : 'none'
       // Only provider resolution and the explicit install choice admit origins.
-      egressAllowlist = [
-        ...new Set([
-          ...plan.egress,
-          ...(request.installDependencies === true ? DEPENDENCY_INSTALL_ORIGINS : []),
-        ]),
-      ]
+      egressAllowlist = armedEgress(plan, request.installDependencies === true)
       Object.assign(progress, { credential, egressAllowlist })
       // Check the host engine while the thread is reserved, then release the
       // reservation through the same failure path if the daemon is unavailable.
@@ -561,10 +580,6 @@ export class ContainerRunService {
   ): Promise<void> {
     const runtimeId = newRuntimeId()
     this.engines.set(runtimeId, engine)
-    // The key stays in memory: the runner hands it to the guest over the
-    // container's stdio link (decision A17). This process's environment, and
-    // so every terminal or tool it spawns meanwhile, never holds it.
-    const apiKey = plan.apiKey
     const log = (line: string): void => {
       this.update(progress, { log: [...progress.log, line].slice(-LOG_TAIL) })
     }
@@ -608,7 +623,7 @@ export class ContainerRunService {
         throw new Error('Stopped by you before the container started')
       }
       this.update(progress, { phase: 'starting' })
-      const runRequest: ThreadContainerRequest = {
+      const base: ContainerRunBase = {
         workspace,
         threadId: request.threadId,
         prompt: continuation
@@ -617,18 +632,13 @@ export class ContainerRunService {
         // An earlier run that made no commits left nothing to carry in;
         // the checkout is snapshotted afresh and the prompt is the continuity.
         ...(continuation?.ref ? { carryInRef: continuation.ref } : {}),
-        model: plan.model,
-        ...(plan.mode === 'host-inference'
-          ? { hostInference: plan.hostInference, contextWindow: plan.contextWindow }
-          : { acp: plan.harness }),
-        ...(apiKey ? { apiKey } : {}),
         budgets: request.budgets,
         ...(request.installDependencies === true ? { installDependencies: true } : {}),
         egressAllowlist: progress.egressAllowlist,
         image: WORKER_IMAGE,
         engine,
       }
-      const record = await this.deps.run(runRequest, {
+      const options: RunThreadOptions = {
         runtimeId,
         onLog: log,
         onPhase: (phase) => {
@@ -637,7 +647,24 @@ export class ContainerRunService {
           }
         },
         signal: stopSignal.signal,
-      })
+      }
+      // The key, if any, stays in memory either way: the runner hands it to the
+      // guest over the container's stdio link (decision A17), and a host process
+      // resolves its own. This process's environment, and so every terminal or
+      // tool it spawns meanwhile, never holds it.
+      const record =
+        this.deps.runHost !== null && canHostOutsideApp(request.model)
+          ? await this.deps.runHost(
+              {
+                runtimeId,
+                projectId: request.projectId,
+                model: request.model,
+                useAgentLogin: request.useAgentLogin === true,
+                base,
+              },
+              options,
+            )
+          : await this.deps.run(withProvider(base, plan), options)
       const outcome = judgeRun(record)
       // A run the user stopped is not a guest failure; say what happened.
       const stopped = stoppedByUser()
@@ -818,6 +845,20 @@ export function judgeRun(record: ThreadContainerRecord): {
 let service: ContainerRunService | null = null
 
 export function getContainerRunService(): ContainerRunService {
-  service ??= new ContainerRunService()
+  service ??= new ContainerRunService({
+    runHost: (request, options): Promise<ThreadContainerRecord> =>
+      runThroughHost(
+        request,
+        options,
+        runHostClientDependencies({
+          execPath: process.execPath,
+          entryPath: runHostEntryPath(),
+          userDataPath: getElectronUserDataPath(),
+          appVersion: getElectronAppVersion(),
+          packaged: isElectronAppPackaged(),
+          env: process.env,
+        }),
+      ),
+  })
   return service
 }

@@ -17,12 +17,7 @@
  * 2 the thread is still held by another process; 1 the worker could not start.
  */
 import { parseArgs } from 'node:util'
-import { createKeyringCipher } from '@copse/store-kit/keyring-cipher.ts'
-import { createOsKeyringStore } from '@copse/store-kit/os-keyring.ts'
-import { setSecretCipher } from '@copse/store-kit/secret-cipher.ts'
-import { setElectronAppRuntime } from '../electron-app-runtime.ts'
-import { setPersistentStoreFactory } from '../storage/persistent-store.ts'
-import { readOnlyProfileStoreFactory, readProfileStores } from './read-only-profile-store.ts'
+import { installReadOnlyProfile } from './worker-profile.ts'
 import { turnWorkerSocketPath } from './turn-worker-socket.ts'
 import type { TakenOverThread } from './turn-worker.ts'
 
@@ -51,17 +46,12 @@ async function main(): Promise<number> {
 
   // The profile has to be in place before any module that opens a store loads,
   // so everything past this point is imported dynamically.
-  setElectronAppRuntime({
+  await installReadOnlyProfile({
     userDataPath,
     version: values['app-version'] ?? 'turn-worker',
-    isPackaged: values.packaged,
+    packaged: values.packaged,
+    log,
   })
-  setPersistentStoreFactory(
-    readOnlyProfileStoreFactory(await readProfileStores(userDataPath), (store, key) => {
-      log(`kept a write to ${store}.json "${key}" in memory only`)
-    }),
-  )
-  setSecretCipher(createKeyringCipher(createOsKeyringStore()))
 
   // Take the thread before the slow boot below, so an app relaunched meanwhile
   // follows this worker instead of continuing the turn itself.

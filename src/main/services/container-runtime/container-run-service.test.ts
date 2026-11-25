@@ -18,6 +18,8 @@ import type { OrphanSweep } from './thread-container.ts'
 import type { ThreadContainerRecord, ThreadContainerRequest } from './thread-container.ts'
 import type { ThreadContainerEngine } from './container-engine.ts'
 import { installInMemorySecretCipher } from '../storage/secret-cipher.test-support.ts'
+import { fakeRecord } from './container-run-record.test-support.ts'
+import type { ContainerRunHostRequest } from './run-host.ts'
 
 installInMemorySecretCipher()
 
@@ -34,52 +36,6 @@ after(() => {
   else process.env['COPSE_DIR'] = originalProfile
   rmSync(profile, { recursive: true, force: true })
 })
-
-function fakeRecord(threadId: string): ThreadContainerRecord {
-  return {
-    runtimeId: 'run-fake',
-    threadId,
-    startedAt: 1,
-    finishedAt: 2,
-    image: 'copse-worker:test',
-    imageDigest: null,
-    attestation: {
-      runtimeId: 'run-fake',
-      image: 'copse-worker:test',
-      user: 1001,
-      readOnlyRootfs: true,
-      capDropAll: true,
-      noNewPrivileges: true,
-      pidsLimit: 512,
-      memoryLimit: '4g',
-      network: 'brokered',
-      egressAllowlist: ['inference.copse.internal:443'],
-      hostMounts: ['/run/copse'],
-    },
-    egress: [{ at: 1, origin: 'api.anthropic.com:443', event: 'connect' }],
-    result: {
-      threadId,
-      stopReason: 'completed',
-      usage: { inputTokens: 10, outputTokens: 5 },
-      harness: 'copse',
-      promptsAttempted: 0,
-      deferrals: [],
-      denials: [],
-      commits: ['abc agent: did it'],
-      containment: { declared: true, declineReason: null, projectSandbox: false },
-      toolNames: [],
-      finalText: 'Done.',
-    },
-    transcript: [],
-    carryIn: { sha: 'base', dirty: false },
-    carryOut: { expected: true, ref: 'refs/copse/runs/run-fake', error: null },
-    containerExit: 0,
-    credential: 'key',
-    teardown: 'removed',
-    cleanupError: null,
-    secretCanary: { present: false, detail: 'absent' },
-  }
-}
 
 /** A resolver that answers with one checkout, like the supervisor's injection. */
 function checkoutAt(
@@ -157,6 +113,49 @@ const noRecordOnDisk = (): null => null
 const noContinuationOnDisk = (): null => null
 
 describe('ContainerRunService', () => {
+  it('hands a run to its host process with plain data only', async () => {
+    const hosted: ContainerRunHostRequest[] = []
+    let inApp = 0
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      run: (request): Promise<ThreadContainerRecord> => {
+        inApp += 1
+        return Promise.resolve(fakeRecord(request.prompt))
+      },
+      runHost: (request, options): Promise<ThreadContainerRecord> => {
+        hosted.push(request)
+        options.onPhase?.('running')
+        return Promise.resolve(fakeRecord(request.base.prompt))
+      },
+    })
+    await service.start({
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'Fix the lint backlog',
+      model: 'claude-sonnet-4-6',
+      budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+    })
+    const finished = await waitFor(service, THREAD, (p) => p.phase === 'finished')
+    assert.equal(inApp, 0)
+    const request = hosted.at(0)
+    assert.ok(request)
+    assert.equal(request.model, 'claude-sonnet-4-6')
+    assert.equal(request.projectId, PROJECT)
+    assert.equal(request.runtimeId, finished.runtimeId)
+    assert.equal(request.base.workspace, root)
+    assert.deepEqual(request.base.egressAllowlist, ['inference.copse.internal:443'])
+    // Everything handed over survives a trip through JSON: no factory, no key.
+    assert.deepEqual(JSON.parse(JSON.stringify(request)), request)
+    assert.ok(!JSON.stringify(request).includes('sk-ant-test'))
+  })
+
   it('starts nothing while the experimental setting is off', async () => {
     await setSetting('containerRunsEnabled', false)
     let runs = 0
