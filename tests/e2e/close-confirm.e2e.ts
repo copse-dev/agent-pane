@@ -80,6 +80,9 @@ describe('close confirmation while a thread is working', function () {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
       windowBounds: { width: 1280, height: 800 },
+      // The warning that a close loses the turn. With the hand-off on the dialog
+      // says the turn keeps going instead (unit-tested in close-confirm.test.ts).
+      continueTurnsAfterQuit: false,
     })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
