@@ -612,6 +612,86 @@ describe('runStage0', () => {
     assert.deepEqual(long.findings, [])
   })
 
+  it('does not confirm a failure in a test that base never ran', async () => {
+    const output = (failures: { path?: string; name: string }[], notRun?: number): string =>
+      TEST_FAILURE_REPORT_PREFIX +
+      JSON.stringify({
+        tier: 'unit-component',
+        complete: true,
+        failed: failures.length,
+        failures: failures.map(({ path = 'src/sandbox.test.ts', name }) => ({ path, name })),
+        ...(notRun === undefined ? {} : { notRun }),
+      }) +
+      '\n'
+    // Base's suite failed in its `before` hook, so its two tests never ran;
+    // on head the hook passed and one of them failed. Head runs twice, base
+    // once: one flaky base hook was enough to report this as confirmed.
+    const baseSuiteFailed = { test: { exit: 1, stdout: output([{ name: 'sandbox' }], 2) } }
+    const hookFlaked = await run(
+      await scenario(
+        baseSuiteFailed,
+        { test: { exit: 1, stdout: output([{ name: 'sandbox > wraps the command' }]) } },
+        { kinds: ['test'] },
+      ),
+    )
+    assert.equal(hookFlaked.checks[0]?.verdict, 'undetermined')
+    assert.deepEqual(hookFlaked.findings, [])
+    assert.match(
+      hookFlaked.coverage.notChecked.map((note) => note.reason).join('\n'),
+      /1 test failure\(s\) on head are in a suite or file that failed on base before its tests ran; they were not compared/,
+    )
+    // A new failure elsewhere is still confirmed beside it.
+    const alongside = await run(
+      await scenario(
+        baseSuiteFailed,
+        {
+          test: {
+            exit: 1,
+            stdout: output([
+              { name: 'sandbox > wraps the command' },
+              { path: 'src/other.test.ts', name: 'a new regression' },
+            ]),
+          },
+        },
+        { kinds: ['test'] },
+      ),
+    )
+    assert.equal(alongside.checks[0]?.verdict, 'regressed')
+    assert.deepEqual(
+      alongside.findings.map((finding) => finding.anchor.path),
+      ['src/other.test.ts'],
+    )
+    assert.match(
+      alongside.coverage.notChecked.map((note) => note.reason).join('\n'),
+      /1 test failure\(s\) on head are in a suite or file that failed on base/,
+    )
+    // A file that failed as a whole on base (named by its path) covers every
+    // test in it, and a suite's name is only a prefix at a ` > ` boundary.
+    const fileFailed = await run(
+      await scenario(
+        { test: { exit: 1, stdout: output([{ name: 'src/sandbox.test.ts' }]) } },
+        {
+          test: {
+            exit: 1,
+            stdout: output([{ name: 'src/sandbox.test.ts > sandbox > wraps the command' }]),
+          },
+        },
+        { kinds: ['test'] },
+      ),
+    )
+    assert.equal(fileFailed.checks[0]?.verdict, 'undetermined')
+    assert.deepEqual(fileFailed.findings, [])
+    const similarName = await run(
+      await scenario(
+        baseSuiteFailed,
+        { test: { exit: 1, stdout: output([{ name: 'sandboxed > wraps the command' }]) } },
+        { kinds: ['test'] },
+      ),
+    )
+    assert.equal(similarName.checks[0]?.verdict, 'regressed')
+    assert.equal(similarName.findings.length, 1)
+  })
+
   it('still compares a failed test run whose failure list was incomplete against base', async () => {
     // A head that breaks a test file's import: its reporter finished but could
     // not list every failure. That is a failed check, not an unstartable one,

@@ -70,6 +70,23 @@ export function reportedIncompleteTestInventory(run: {
   )
 }
 
+/**
+ * Whether a failure sits inside a unit that failed in `base`: a suite whose
+ * `before` hook failed, or a whole file (named by its path), which cancels
+ * every test below it. Those tests never ran there, so `base` says nothing
+ * about them.
+ */
+export function underFailedBaseUnit(
+  base: TestFailureReport,
+  failure: TestFailureReport['failures'][number],
+): boolean {
+  return base.failures.some(
+    (unit) =>
+      unit.path === failure.path &&
+      (unit.name === unit.path || failure.name.startsWith(`${unit.name} > `)),
+  )
+}
+
 export function newTestFailures(
   base: TestFailureReport,
   head: TestFailureReport,

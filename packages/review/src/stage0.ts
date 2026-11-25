@@ -47,6 +47,7 @@ import {
 import { removeTree } from './remove-tree.ts'
 import {
   newTestFailures,
+  underFailedBaseUnit,
   parseTestFailureReport,
   reportedIncompleteTestInventory,
   TEST_FAILURE_REPORT_PREFIX,
@@ -771,15 +772,34 @@ export async function runStage0Checks(
         base.testFailures.failed > 0 &&
         head.testFailures.failed > 0
       ) {
-        const fresh = newTestFailures(base.testFailures, head.testFailures)
+        const baseFailures = base.testFailures
+        const unseen = newTestFailures(baseFailures, head.testFailures)
+        // A failure inside a suite that failed on base before its tests ran
+        // (its `before` hook) is absent from base's list because base never
+        // ran it, not because it passed there.
+        const uncompared = unseen.filter((failure) => underFailedBaseUnit(baseFailures, failure))
+        const fresh = unseen.filter((failure) => !uncompared.includes(failure))
+        const uncomparedReason =
+          uncompared.length > 0
+            ? `${String(uncompared.length)} test failure(s) on head are in a suite or file that failed on base before its tests ran; they were not compared`
+            : null
         const outcome: CheckOutcome = {
           kind,
-          verdict: fresh.length > 0 ? 'regressed' : 'failing-on-base',
+          verdict:
+            fresh.length > 0
+              ? 'regressed'
+              : uncomparedReason !== null
+                ? 'undetermined'
+                : 'failing-on-base',
           head,
           base,
-          reason: `${String(fresh.length)} new individual test failures; both aggregate checks failed`,
+          reason:
+            uncomparedReason !== null && fresh.length === 0
+              ? uncomparedReason
+              : `${String(fresh.length)} new individual test failures; both aggregate checks failed`,
         }
         checks.push(outcome)
+        if (uncomparedReason !== null) notChecked.push({ kind, reason: uncomparedReason })
         for (const failure of fresh) {
           const claim = `Test ${failure.name} fails on head and is absent from the complete base failure inventory`
           findings.push({

@@ -1789,6 +1789,11 @@ leaves it `undetermined` with that reason. A one-day interim rule that called su
 inconclusive skipped base and hid a real regression (a head that broke a test file's import), so it
 was withdrawn. To make the list complete in cells that lack a tool, tests cancelled by a failed
 enclosing suite are now accounted for by that suite's identity (see the inventory contract above).
+Those tests never ran on base, so their absence from its list proves nothing: a head failure inside
+a suite or file that failed on base (its name begins with that suite's name and `>`, or the file
+failed as a whole) is not compared. It is never a finding; it leaves the check `undetermined`
+unless another failure is new, and the coverage gap names how many were not compared. Base runs
+once and head twice, so a single flaky `before` hook on base would otherwise confirm a regression.
 
 GitHub conversation collection retains each prior Copse inline finding with its original commit,
 location, URL and latest three replies as one bounded historical entry. Conversation trimming drops
