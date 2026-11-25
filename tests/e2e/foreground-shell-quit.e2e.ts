@@ -57,6 +57,10 @@ describe('quit during an owned foreground command', function () {
     seedEmptyProject(root, 'e2e-foreground-shell-quit', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
+      // This spec covers the in-app path: quit cuts the turn off and the next
+      // launch continues it. With the hand-off on, a background worker would
+      // take the turn instead and the quit dialog would offer "Close".
+      continueTurnsAfterQuit: false,
     })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
