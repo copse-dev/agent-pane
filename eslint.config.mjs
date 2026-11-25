@@ -52,10 +52,6 @@ export default ts.config(
       '.claude/**',
       'eslint.config.mjs',
       'eslint.hook.config.mjs',
-      // One-line side-effect import of the preload for the Tauri ws-bridge
-      // bundle; in no tsconfig project (the preload typechecks under
-      // tsconfig.node.json, this entry is browser-side). See scripts/build-tauri.mts.
-      'src/sidecar/ws-bridge/entry.ts',
       'tests/fixtures/git-changes-repo/**',
       // Bench-task fixture repos: code for the agent under eval to fix, not project code.
       'benchmarks/fixtures/**',
@@ -104,6 +100,7 @@ export default ts.config(
       'wdio.conf.ts',
       'wdio.ci.conf.ts',
       'wdio.eval.conf.ts',
+      'wdio.quarantine.conf.ts',
     ],
     languageOptions: { parserOptions: { project: ['./tsconfig.e2e.json'] } },
   },
@@ -526,10 +523,6 @@ export default ts.config(
       'prototypes/**/*.js',
       'src/shared/demo-sites/**/*.js',
       'benchmarks/benchmark-explorer/**/*.js',
-      // The mobile companion's client: served to the paired phone as-is
-      // (src/mobile/index.html loads it with a plain <script> tag), same as
-      // the static sites above.
-      'src/mobile/*.js',
     ],
     extends: [ts.configs.disableTypeChecked],
     languageOptions: {
@@ -564,7 +557,8 @@ export default ts.config(
   },
   {
     // Mobile Companion's phone-served page: plain browser JS bundled by esbuild
-    // (scripts/mobile-build.mts), not part of the TS project graph.
+    // (scripts/mobile-build.mts), not part of the TS project graph. Its ES-module
+    // sources are bundled into one IIFE, so they are not static-site scripts.
     files: ['src/mobile/**/*.js'],
     extends: [ts.configs.disableTypeChecked],
     languageOptions: {
@@ -576,8 +570,12 @@ export default ts.config(
         localStorage: 'readonly',
         crypto: 'readonly',
         history: 'readonly',
+        location: 'readonly',
+        Image: 'readonly',
+        URLSearchParams: 'readonly',
         setTimeout: 'readonly',
         setInterval: 'readonly',
+        clearInterval: 'readonly',
         getComputedStyle: 'readonly',
         requestAnimationFrame: 'readonly',
         cancelAnimationFrame: 'readonly',

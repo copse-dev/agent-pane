@@ -8,13 +8,19 @@ import { Window } from 'happy-dom'
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
+/** `window.api.settings` as app.js would find it; the shim writes it with `Reflect.set`. */
+function exposedSettings(win: Window): unknown {
+  const api: unknown = Reflect.get(win, 'api')
+  return typeof api === 'object' && api !== null && 'settings' in api ? api.settings : undefined
+}
+
 describe('ws-bridge electron shim', () => {
   it('exposes api after import even when connect side effects throw', async () => {
     const token = 'a'.repeat(64)
     const win = new Window({
       url: `http://127.0.0.1/tauri.html?winId=1&wsPort=9&wsToken=${token}`,
     })
-    win.history.replaceState = () => {
+    win.history.replaceState = (): never => {
       throw new Error('replaceState boom')
     }
     Object.assign(globalThis, {
@@ -23,10 +29,9 @@ describe('ws-bridge electron shim', () => {
       history: win.history,
       location: win.location,
       // Throwing from construction — import must still succeed (startBridge owns connect).
-      WebSocket: class {
-        constructor() {
-          throw new Error('WS boom')
-        }
+      // A plain function is constructible, so `new WebSocket(…)` reaches this throw.
+      WebSocket: function ThrowingWebSocket(): never {
+        throw new Error('WS boom')
       },
       URL,
       URLSearchParams,
@@ -38,11 +43,11 @@ describe('ws-bridge electron shim', () => {
     mod.contextBridge.exposeInMainWorld('api', {
       settings: { get: async () => null },
     })
-    assert.equal(typeof (win as unknown as { api?: { settings: unknown } }).api?.settings, 'object')
+    assert.equal(typeof exposedSettings(win), 'object')
 
     // Must not throw — connect failures are logged, not fatal.
     mod.startBridge()
-    assert.equal(typeof (win as unknown as { api?: { settings: unknown } }).api?.settings, 'object')
+    assert.equal(typeof exposedSettings(win), 'object')
   })
 
   it('answers webUtils.getPathForFile with no path, as Electron does for a pathless file', async () => {
