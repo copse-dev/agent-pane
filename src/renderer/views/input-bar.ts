@@ -132,6 +132,7 @@ import { LOCAL_MODEL_SUFFIX } from '@shared/model-display.ts'
 import { contextFitAdvice } from '@shared/context-window-advice.ts'
 import { isLocalModel } from '@copse/llm/estimate-cost.ts'
 import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
+import { agentProfilesSchema, findAgentProfile, type AgentProfile } from '@shared/agent-profiles.ts'
 import { commitThreadModelSelection } from '../controller/model-selection.ts'
 import { mark as perfMark } from '../perf.ts'
 import type { GitPromptState } from '@shared/types/git.ts'
@@ -576,7 +577,27 @@ export function mountInputBar(
     )
   }
 
+  // Saved named profiles, refreshed whenever the picker loads. Kept so the
+  // trigger can name the chat's profile without waiting for a fetch.
+  let agentProfiles: readonly AgentProfile[] = []
+  async function loadAgentProfiles(): Promise<readonly AgentProfile[]> {
+    const raw = await api.settings.get('agentProfiles').catch(() => undefined)
+    const parsed = agentProfilesSchema.safeParse(raw ?? [])
+    agentProfiles = parsed.success ? parsed.data : []
+    return agentProfiles
+  }
+
+  function activeProfile(): AgentProfile | undefined {
+    return findAgentProfile(agentProfiles, getActiveThread(store)?.profileId)
+  }
+
   function footerModelDisplayLabel(current: string): string | undefined {
+    const profile = activeProfile()
+    const label = footerModelBaseLabel(current)
+    return profile ? `${profile.name} · ${label ?? modelDisplayLabel(current)}` : label
+  }
+
+  function footerModelBaseLabel(current: string): string | undefined {
     const resolved = footerResolvedModel(current)
     if (current === MATCH_PROMPT_MODEL_SELECTOR) {
       return resolved ? `Auto — ${modelDisplayLabel(resolved)}` : 'Match task'
@@ -641,6 +662,40 @@ export function mountInputBar(
     modelPicker.refresh()
   }
 
+  // A profile sets the chat's model and effort as the pickers would, and is
+  // remembered on the thread so main adds its instructions to every turn.
+  // Choosing "None" only drops the instructions; the model and effort stay.
+  function selectProfile(profileId: string | undefined): void {
+    const thread = getActiveThread(store)
+    if (!thread) return
+    const profile = findAgentProfile(agentProfiles, profileId)
+    if (profileId !== undefined && !profile) return
+    if (profile?.model && !isBestValueChatModel(profile.model)) {
+      commitThreadModelSelection(
+        store,
+        api,
+        thread.id,
+        'user',
+        thread.model ?? store.getState().settings?.model,
+        profile.model,
+      )
+    }
+    const threads = store.getState().threads.map((t) => {
+      if (t.id !== thread.id) return t
+      const { profileId: _previous, ...rest } = t
+      const next = { ...rest, ...(profile ? { profileId: profile.id } : {}), updatedAt: Date.now() }
+      if (!profile) return next
+      const { reasoning: _reasoning, ...withoutReasoning } = next
+      return profile.reasoning
+        ? { ...withoutReasoning, reasoning: profile.reasoning }
+        : withoutReasoning
+    })
+    store.setState({ threads })
+    store.emit('threads_changed')
+    updateFooter()
+    void runContextEstimate()
+  }
+
   const modelPicker = mountFooterModelPicker(modelHost, api, footerChatModel, selectChatModel, {
     formatCurrentLabel: footerModelDisplayLabel,
     getCurrentRoute: footerResolvedModel,
@@ -656,6 +711,18 @@ export function mountInputBar(
     getRecentModels: footerRecentModels,
     getReasoning: () => getActiveThread(store)?.reasoning,
     onSelectReasoning: selectReasoning,
+    loadProfiles: loadAgentProfiles,
+    getProfileId: () => getActiveThread(store)?.profileId,
+    onSelectProfile: selectProfile,
+  })
+  // Name the chat's profile on the trigger from the first paint.
+  void loadAgentProfiles().then(() => {
+    modelPicker.sync()
+  })
+  store.on('settings_changed', () => {
+    void loadAgentProfiles().then(() => {
+      modelPicker.sync()
+    })
   })
   // Re-sync the picker whenever the active thread changes (new thread,
   // thread switch, or thread deletion that shifts the active pointer), and when
