@@ -30,7 +30,7 @@ function thread(id: string, title: string, status: Thread['status'] = 'idle'): T
   }
 }
 
-type CloseConfirmHandler = (req: { id: string }) => void
+type CloseConfirmHandler = (req: { id: string; continuesAfterQuit?: boolean }) => void
 
 const responses: { id: string; confirmed: boolean }[] = []
 let emit: CloseConfirmHandler = (): void => {}
@@ -95,6 +95,23 @@ describe('close-confirm', () => {
     clickActiveConfirmDialogCancel()
     await flush()
     assert.deepEqual(responses, [{ id: 'close-2', confirmed: false }])
+  })
+
+  it('says the turn carries on when quitting hands it off', async () => {
+    const store = createStore({ threads: [thread('b', 'Fix login', 'running')] })
+    mountCloseConfirm(api, store)
+
+    emit({ id: 'close-5', continuesAfterQuit: true })
+    await flush()
+
+    const dialog = qsRequired<HTMLDialogElement>(document, '#confirm-dialog')
+    const detail = qsRequired(dialog, '.confirm-dialog-detail').textContent
+    assert.match(detail, /Fix login is mid-turn\. It keeps going in the background/)
+    assert.doesNotMatch(detail, /lost/)
+    assert.equal(qsRequired(dialog, '.confirm-dialog-confirm').textContent, 'Close')
+    clickActiveConfirmDialogConfirm()
+    await flush()
+    assert.deepEqual(responses, [{ id: 'close-5', confirmed: true }])
   })
 
   it('allows the close when the user confirms anyway', async () => {

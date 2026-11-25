@@ -9,6 +9,8 @@ import {
 } from '../ipc/ipc-guards.ts'
 import { createCloseGate } from './close-gate.ts'
 import { isWindowDetached } from '../windows/window-detach.ts'
+import { getSetting } from './storage/settings.ts'
+import { CONTINUE_TURNS_AFTER_QUIT_SETTING } from './turn-worker/turn-worker-launch.ts'
 
 /**
  * Guards closing the app while an agent is still working.
@@ -133,7 +135,11 @@ export function initCloseConfirm(win: BrowserWindow): void {
         return
       }
       const id = randomUUID()
-      win.webContents.send('app:close-confirm-request', { id })
+      // Whether a quit now hands the working turns off instead of stopping them,
+      // so the question can say what closing will do.
+      const continuesAfterQuit =
+        getSetting<unknown>(CONTINUE_TURNS_AFTER_QUIT_SETTING, true) !== false
+      win.webContents.send('app:close-confirm-request', { id, continuesAfterQuit })
       const timer = setTimeout(() => {
         settle(id, true)
       }, CLOSE_CONFIRM_TIMEOUT_MS)
