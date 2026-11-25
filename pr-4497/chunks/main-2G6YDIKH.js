@@ -9318,6 +9318,12 @@ function mountProjectsPane(root, store2, api2) {
         switchProject(store2, api2, project.id);
       });
       const projectMenuEntries = [
+        {
+          label: "Remove from sidebar",
+          onSelect: () => {
+            void removeProject(store2, api2, project.id);
+          }
+        },
         // Saved sessions live on this computer, so a remote project has none to offer.
         ...project.missing || project.sshHost ? [] : [
           {
@@ -9339,12 +9345,6 @@ function mountProjectsPane(root, store2, api2) {
             }
           }
         ],
-        {
-          label: "Remove from sidebar",
-          onSelect: () => {
-            void removeProject(store2, api2, project.id);
-          }
-        },
         ...groupMenuEntries(project, projectGroups)
       ];
       projectRow.addEventListener("contextmenu", (e) => {
