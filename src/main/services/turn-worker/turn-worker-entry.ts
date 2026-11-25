@@ -22,7 +22,7 @@ import { createOsKeyringStore } from '@copse/store-kit/os-keyring.ts'
 import { setSecretCipher } from '@copse/store-kit/secret-cipher.ts'
 import { setElectronAppRuntime } from '../electron-app-runtime.ts'
 import { setPersistentStoreFactory } from '../storage/persistent-store.ts'
-import { readOnlyProfileStoreFactory } from './read-only-profile-store.ts'
+import { readOnlyProfileStoreFactory, readProfileStores } from './read-only-profile-store.ts'
 
 function log(line: string): void {
   process.stderr.write(`[turn-worker ${new Date().toISOString()}] ${line}\n`)
@@ -55,7 +55,7 @@ async function main(): Promise<number> {
     isPackaged: values.packaged,
   })
   setPersistentStoreFactory(
-    readOnlyProfileStoreFactory(userDataPath, (store, key) => {
+    readOnlyProfileStoreFactory(await readProfileStores(userDataPath), (store, key) => {
       log(`kept a write to ${store}.json "${key}" in memory only`)
     }),
   )

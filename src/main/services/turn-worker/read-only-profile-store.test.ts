@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, describe, it } from 'node:test'
-import { readOnlyProfileStoreFactory } from './read-only-profile-store.ts'
+import { readOnlyProfileStoreFactory, readProfileStores } from './read-only-profile-store.ts'
 
 const dirs: string[] = []
 after(() => {
@@ -11,13 +11,15 @@ after(() => {
 })
 
 describe('readOnlyProfileStoreFactory', () => {
-  it('reads the profile and keeps every write in memory', () => {
+  it('reads the profile and keeps every write in memory', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'ro-store-'))
     dirs.push(dir)
     const original = JSON.stringify({ projects: [{ id: 'p1' }], model: 'a' })
     writeFileSync(join(dir, 'config.json'), original)
     const writes: string[] = []
-    const store = readOnlyProfileStoreFactory(dir, (name, key) => writes.push(`${name}:${key}`))({})
+    const store = readOnlyProfileStoreFactory(await readProfileStores(dir), (name, key) =>
+      writes.push(`${name}:${key}`),
+    )({})
     assert.deepEqual(store.get('projects'), [{ id: 'p1' }])
     store.set('model', 'b')
     store.set('model', 'c')
@@ -31,11 +33,11 @@ describe('readOnlyProfileStoreFactory', () => {
     assert.deepEqual(writes, ['config:model', 'config:extra', 'config:projects'])
   })
 
-  it('treats a missing or unreadable store as empty', () => {
+  it('treats a missing or unreadable store as empty', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'ro-store-'))
     dirs.push(dir)
     writeFileSync(join(dir, 'broken.json'), '{')
-    const factory = readOnlyProfileStoreFactory(dir)
+    const factory = readOnlyProfileStoreFactory(await readProfileStores(dir))
     assert.deepEqual(factory({ name: 'broken' }).listKeys(), [])
     assert.deepEqual(factory({ name: 'absent' }).listKeys(), [])
   })

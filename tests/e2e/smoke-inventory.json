@@ -212,6 +212,10 @@
       "smoke": null
     },
     {
+      "prefix": "src/main/services/turn-worker/",
+      "smoke": null
+    },
+    {
       "prefix": "src/main/services/video/",
       "smoke": null
     },
