@@ -1129,6 +1129,8 @@ app
         turnTreeId: request.turnTreeId,
         payload: parseAgentRunPayload(request.payload),
         display: request.display,
+        // The renderer read model, reasoning and execution mode from the chat.
+        payloadCarriesSelection: true,
       })
       if (result === 'completed') {
         await parkCompletedPullRequestWorktree(request.projectId, request.threadId).catch(

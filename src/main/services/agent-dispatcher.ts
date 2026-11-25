@@ -90,6 +90,14 @@ export interface MachineAgentDispatchRequest extends AgentDispatchRequest {
    * this wake would report, so it is recorded without a turn or budget charge.
    */
   alreadyObserved?: () => boolean
+  /**
+   * Set when the payload already carries the chat's live selection: the
+   * renderer's own machine run reads model, reasoning and execution mode from
+   * the chat, so a field it leaves out means the chat has none. Main sends such
+   * a payload as it is. A wake main starts on its own fills what it leaves out
+   * from the thread's saved metadata instead.
+   */
+  payloadCarriesSelection?: true
 }
 
 type MachineOperationRef = Pick<
@@ -634,11 +642,11 @@ export class AgentDispatcher {
       await this.dependencies.saveEpoch(request.projectId, request.threadId, nextEpoch)
       this.epochs.set(key, nextEpoch)
       // Read at dispatch time, like a renderer send: a model the user picked
-      // while this wake waited applies to it.
-      const selection = await this.dependencies.loadThreadSelection(
-        request.projectId,
-        request.threadId,
-      )
+      // while this wake waited applies to it. A renderer-built payload is the
+      // fresher source, so saved metadata never overrides what it left out.
+      const selection = request.payloadCarriesSelection
+        ? null
+        : await this.dependencies.loadThreadSelection(request.projectId, request.threadId)
       const hidden = request.display === 'hidden'
       const display = request.display === 'hidden' ? undefined : request.display
       host.emit(request.threadId, {

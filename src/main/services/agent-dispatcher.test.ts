@@ -139,14 +139,17 @@ describe('AgentDispatcher', () => {
     async function runOptions(
       payload: AgentDispatchRequest['payload'],
       selection: Awaited<ReturnType<AgentDispatcherDependencies['loadThreadSelection']>>,
+      extra: Partial<MachineAgentDispatchRequest> = {},
     ): Promise<Parameters<AgentDispatcherDependencies['run']>[5]> {
       const seen: Array<Parameters<AgentDispatcherDependencies['run']>[5]> = []
+      let reads = 0
       const dispatcher = new AgentDispatcher(
         host,
         registry,
         dependencies({
           loadEpoch: async () => ({ turnTreeId: 'tree-1', continuationUsed: 0 }),
           loadThreadSelection: async (projectId, threadId) => {
+            reads += 1
             assert.equal(projectId, 'project-1')
             assert.equal(threadId, 'thread-1')
             return selection
@@ -160,7 +163,8 @@ describe('AgentDispatcher', () => {
           },
         }),
       )
-      assert.equal(await dispatcher.dispatchMachine(machine(payload)), 'completed')
+      assert.equal(await dispatcher.dispatchMachine({ ...machine(payload), ...extra }), 'completed')
+      assert.equal(reads, extra.payloadCarriesSelection ? 0 : 1)
       assert.equal(seen.length, 1)
       const [options] = seen
       assert.ok(options)
@@ -191,6 +195,19 @@ describe('AgentDispatcher', () => {
       )
       assert.equal(options.model, 'claude-sonnet-4-6')
       assert.equal(options.reasoning, 'low')
+      assert.equal(options.executionMode, undefined)
+    })
+
+    it('never fills a renderer-built payload from saved metadata', async () => {
+      // The renderer left executionMode and reasoning out because the chat has
+      // none; a slower meta.json write must not put them back.
+      const options = await runOptions(
+        { ...wakePayload, model: 'claude-sonnet-4-6' },
+        { model: 'lmstudio:qwen3-coder', reasoning: 'high', executionMode: 'agent' },
+        { payloadCarriesSelection: true },
+      )
+      assert.equal(options.model, 'claude-sonnet-4-6')
+      assert.equal(options.reasoning, undefined)
       assert.equal(options.executionMode, undefined)
     })
 
