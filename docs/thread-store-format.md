@@ -94,6 +94,8 @@ Source files remain authoritative; deleting this cache is safe.
     acp-session.json                 # private external ACP session binding (optional)
     history-edit-transaction.json    # pending edit rollback journal (temporary, private)
     history-edit-undo.json           # previous transcript/history for one-step Undo (optional, private)
+    writer.lease                     # which process may advance this thread's turn (optional, private)
+    writer.lease.lock/               # momentary guard around lease updates (transient)
     messages/<messageId>.md          # OKF: verbatim message content (frontmatter + body)
     messages/<messageId>.reasoning.md  # OKF: thinking text (optional)
     messages/~rev-<sha256>.md        # an already-saved message's replacement prose; its reasoning,
@@ -245,6 +247,14 @@ Source files remain authoritative; deleting this cache is safe.
   the current transcript still matches that revision. A later transcript
   mutation makes the snapshot ineligible. Both history-edit sidecars are
   atomically written with owner-only permissions and must never be logged.
+- **`writer.lease`** names the process that holds the thread's writer lease
+  (`writer-lease.ts`): host, pid, a per-process owner id, a fencing epoch and a
+  heartbeat. A dispatcher takes it for each turn and removes it when the turn
+  ends, so it exists only while a turn runs or after a crash. A record whose
+  heartbeat is older than its time-to-live, or whose pid is gone on this host,
+  is free to take over. It records its thread id, so a copied directory never
+  looks owned. `writer.lease.lock/` is created with `mkdir` for the few
+  milliseconds a lease update takes. Neither is part of a thread folder export.
 
 **Ids in file names.** `<messageId>`, `<toolCallId>` and `<subagentId>` above are
 the id as written only when it is 1–128 characters of `[A-Za-z0-9_-]` (UUIDs and

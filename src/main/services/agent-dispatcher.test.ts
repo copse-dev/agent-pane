@@ -1920,4 +1920,91 @@ describe('AgentDispatcher', () => {
 
     assert.equal(ran, true)
   })
+
+  describe('writer lease', () => {
+    it('refuses a thread another Copse process is running, before marking it running', async () => {
+      const begun: string[] = []
+      let ran = false
+      const dispatcher = new AgentDispatcher(
+        host,
+        registry,
+        dependencies({
+          claimWriter: async () => ({
+            status: 'held',
+            holder: { host: 'laptop', pid: 4242, owner: 'laptop:4242:x' },
+          }),
+          run: async (_threadId, _content, messages) => {
+            ran = true
+            return { usage: { inputTokens: 0, outputTokens: 0 }, messages }
+          },
+        }),
+        {
+          begin: (_projectId, threadId): ReturnType<TurnTranscriptSink['begin']> => {
+            begun.push(threadId)
+            return { emit: (): void => {}, end: (): void => {} }
+          },
+        },
+      )
+      await assert.rejects(
+        dispatcher.dispatch(request()),
+        /another Copse process \(laptop, pid 4242\)/,
+      )
+      assert.equal(ran, false)
+      assert.deepEqual(begun, [], 'a thread owned elsewhere must not be marked running here')
+      assert.equal(dispatcher.isActive('project-1', 'thread-1'), false)
+    })
+
+    it('holds the lease for exactly the turn and keeps in-process exclusion synchronous', async () => {
+      const events: string[] = []
+      let finishTurn: () => void = () => undefined
+      const dispatcher = new AgentDispatcher(
+        host,
+        registry,
+        dependencies({
+          claimWriter: async (_projectId, threadId) => {
+            events.push(`claim ${threadId}`)
+            return {
+              status: 'claimed',
+              claim: {
+                lease: {
+                  v: 1,
+                  threadId,
+                  owner: 'me',
+                  host: 'here',
+                  pid: 1,
+                  epoch: 1,
+                  acquiredAt: 0,
+                  heartbeatAt: 0,
+                  ttlMs: 30_000,
+                },
+                release: async (): Promise<void> => {
+                  events.push('release')
+                },
+              },
+            }
+          },
+          run: async (_threadId, _content, messages) => {
+            events.push('run')
+            await new Promise<void>((resolve) => {
+              finishTurn = resolve
+            })
+            return { usage: { inputTokens: 0, outputTokens: 0 }, messages }
+          },
+        }),
+        {
+          begin: (): ReturnType<TurnTranscriptSink['begin']> => {
+            events.push('open transcript')
+            return { emit: (): void => {}, end: (): void => {} }
+          },
+        },
+      )
+      const first = dispatcher.dispatch(request())
+      // The slot is taken before the lease is, so a second send cannot slip in.
+      await assert.rejects(dispatcher.dispatch(request()), /already running/)
+      while (!events.includes('run')) await settle()
+      finishTurn()
+      await first
+      assert.deepEqual(events, ['claim thread-1', 'open transcript', 'run', 'release'])
+    })
+  })
 })

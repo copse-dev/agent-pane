@@ -21,7 +21,8 @@ import type { TodoItem } from '@shared/types/todo.ts'
 import type { TurnOutcome } from '@shared/types/turn-outcome.ts'
 import { AgentTurnBusyError } from '@shared/agent-turn-busy.ts'
 import type { AgentInitiatedTurnClaim } from './acp/agent-initiated-turn.ts'
-import { runAgent, type RunAgentOptions } from './agent-service.ts'
+import { abortAgent, runAgent, type RunAgentOptions } from './agent-service.ts'
+import { claimThreadWriter, type ThreadWriterClaimResult } from './thread-writer-lease.ts'
 import type { TurnTranscript } from './turn-transcript-writer.ts'
 import { contextLossNotice, contextWasLost } from './context-loss-notice.ts'
 import { recoverAgentHistory } from './history-recovery.ts'
@@ -135,6 +136,16 @@ export interface AgentDispatcherDependencies {
     options: RunAgentOptions,
   ) => ReturnType<typeof runAgent>
   isScheduledAutomationRun: (context: ThreadExecutionContext) => boolean
+  /**
+   * Take the thread's cross-process writer lease for one turn
+   * (`thread-writer-lease.ts`). Absent, only this process's own per-thread slot
+   * excludes other writers, which is enough for a host that owns its store.
+   */
+  claimWriter?: (
+    projectId: string,
+    threadId: string,
+    onLost: () => void,
+  ) => Promise<ThreadWriterClaimResult>
 }
 
 async function threadTranscriptLength(projectId: string, threadId: string): Promise<number> {
@@ -172,6 +183,7 @@ const defaultDependencies: AgentDispatcherDependencies = {
     getAutomationService().ownsRunThread(context.projectId, context.threadId, context.automation),
   transcriptLength: threadTranscriptLength,
   run: runAgent,
+  claimWriter: (projectId, threadId, onLost) => claimThreadWriter(projectId, threadId, { onLost }),
 }
 
 function dispatchKey(projectId: string, threadId: string): string {
@@ -669,7 +681,7 @@ export class AgentDispatcher {
       transcript ??= transcripts?.begin(request.projectId, request.threadId)
       return transcript
     }
-    if (openTranscript === 'at-dispatch') open()
+    if (openTranscript === 'at-dispatch' && !this.dependencies.claimWriter) open()
     const deliver = (threadId: string, chunk: StreamChunk): void => {
       const own = threadId === request.threadId ? open() : undefined
       if (own) own.emit(chunk)
@@ -690,7 +702,31 @@ export class AgentDispatcher {
         deliver(threadId, chunk)
       },
     }
-    const running = run(terminalDeferringHost)
+    const claimWriter = this.dependencies.claimWriter
+    const running = claimWriter
+      ? (async (): Promise<T> => {
+          // Another Copse process may own this thread. Nothing below, including
+          // opening the transcript, may write to it before the lease is ours.
+          const claimed = await claimWriter(request.projectId, request.threadId, () => {
+            console.error(
+              `[dispatch] lost the writer lease for thread ${request.threadId}; stopping its turn`,
+            )
+            abortAgent(request.threadId)
+          })
+          if (claimed.status === 'held') {
+            throw new AgentTurnBusyError(
+              request.threadId,
+              `${claimed.holder.host}, pid ${String(claimed.holder.pid)}`,
+            )
+          }
+          try {
+            if (openTranscript === 'at-dispatch') open()
+            return await run(terminalDeferringHost)
+          } finally {
+            await claimed.claim.release()
+          }
+        })()
+      : run(terminalDeferringHost)
     this.active.set(key, running)
     let committed = false
     try {
