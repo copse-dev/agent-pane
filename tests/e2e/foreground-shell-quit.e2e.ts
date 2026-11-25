@@ -5,14 +5,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { installMockScenario } from './helpers/mock-scenario.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { fixtureHostPids } from './helpers/foreground-fixture-processes.ts'
-import { parkPointer, saveAppScreenshot } from './helpers/screenshot.ts'
+import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { removeE2eTree } from './helpers/remove-tree.ts'
 import { waitForAgentIdle } from './helpers.ts'
-import { INTERRUPTED_TURN_CONTINUATION } from '../../src/shared/turn-recovery.ts'
 import type { MockScenario } from '../../packages/llm/src/mock-script.ts'
+
+const RESTART_RESUME_NOTE = 'Copse restarted during this turn. Continuing where it stopped.'
 
 let root = ''
 let owned: number[] = []
@@ -73,7 +73,7 @@ describe('quit during an owned foreground command', function () {
     if (root) removeE2eTree(root)
   })
 
-  it('drains the process group before quitting and keeps explicit restart recovery', async () => {
+  it('drains the process group before quitting and continues the turn once on relaunch', async () => {
     const prompt = 'Record a checkpoint, then run the bounded foreground check.'
     const interruptedScenario: MockScenario = {
       title: 'Bounded check interrupted by quit',
@@ -185,22 +185,15 @@ describe('quit during an owned foreground command', function () {
       false,
       'quit must interrupt the owning turn before a queued edit can run',
     )
-    await expect($('[data-turn-recovery-card]')).toBeDisplayed()
-    await parkPointer()
-    await saveAppScreenshot('foreground-shell-recovery-after-quit.png')
-    const recovered = await installMockScenario({
-      title: 'Recovered check',
-      turns: [
-        {
-          user: INTERRUPTED_TURN_CONTINUATION,
-          responses: [{ text: 'Continued from the existing checkpoint without replaying it.' }],
-        },
-      ],
+    // The cut-off turn continues by itself on relaunch, once, from the saved
+    // history (`interrupted-turn-resume.ts`); the killed command is not rerun.
+    // Its reply is the mock fallback (scenarios lived in the old process), which
+    // the screenshot guard refuses, so this state has no screenshot.
+    await expect($('.msg-user.msg-machine-origin')).toHaveText(RESTART_RESUME_NOTE, {
+      containing: true,
     })
-    await $('[data-turn-recovery-card]').$('button*=Retry this turn').click()
-    await recovered.waitForComplete()
-    await recovered.assertComplete()
     await waitForAgentIdle(15_000)
+    await expect($('[data-turn-recovery-card]')).not.toExist()
     assert.equal(readFileSync(join(root, 'checkpoint.txt'), 'utf8'), 'completed once\n')
     const retained = ['checkpoint.txt', 'pids.json', 'parent.txt', 'child.txt'].map((name) => ({
       name,
@@ -247,7 +240,7 @@ describe('quit during an owned foreground command', function () {
         preservedFiles: retained.map((file) => file.name),
       }),
     )
-    await parkPointer()
-    await saveAppScreenshot('foreground-shell-explicitly-recovered.png')
+    // No closing screenshot: the continued turn's reply is the mock fallback
+    // (see above), which the screenshot guard refuses.
   })
 })
