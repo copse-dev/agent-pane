@@ -91,4 +91,31 @@ describe('attachRendererCrashRecovery', () => {
     contents.emit('render-process-gone', {}, { reason: 'oom', exitCode: 137 })
     assert.equal(contents.reloads, 1)
   })
+
+  it('adds what the window was doing to the line for a crash, not for a clean exit', () => {
+    const logs: string[] = []
+    const contents = new FakeContents()
+    let context: string | null = 'lastLargeIpc=threads:create estimated<=612MB ago=1200ms'
+    attachRendererCrashRecovery(contents, {
+      log: (message) => {
+        logs.push(message)
+      },
+      now: () => 5_000,
+      context: () => context,
+    })
+
+    contents.emit('render-process-gone', {}, { reason: 'crashed', exitCode: 5 })
+    assert.equal(
+      logs[0],
+      '[renderer] process gone reason=crashed exitCode=5 ' +
+        'lastLargeIpc=threads:create estimated<=612MB ago=1200ms — reloading',
+    )
+
+    contents.emit('render-process-gone', {}, { reason: 'clean-exit', exitCode: 0 })
+    assert.equal(logs[1], '[renderer] process gone reason=clean-exit exitCode=0')
+
+    context = null
+    contents.emit('render-process-gone', {}, { reason: 'crashed', exitCode: 5 })
+    assert.equal(logs[2], '[renderer] process gone reason=crashed exitCode=5 — reloading')
+  })
 })

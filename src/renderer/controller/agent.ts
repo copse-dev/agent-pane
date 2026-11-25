@@ -37,7 +37,13 @@ import {
 import { takeSendNowAbort } from './send-now-aborts.ts'
 import { backgroundProjectOf, dropBackgroundThread } from './background-threads.ts'
 import { applyRuntimeOwnedChunk, isRuntimeOwnedMessage } from './runtime-transcript.ts'
-import type { Message, TranscriptAnnotation } from '@shared/types'
+import type {
+  Message,
+  StreamChunk,
+  Thread,
+  TranscriptAnnotation,
+  TranscriptStamp,
+} from '@shared/types'
 import { mark as perfMark } from '../perf.ts'
 
 export function startAgentController(store: AppStore, api: ApiClient): () => void {
@@ -284,13 +290,18 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
       )
     },
   )
+  // Attaching a thread makes main read it whole from disk and send it back, and
+  // each snapshot repaints the sidebar and transcript. Listing every thread in
+  // the project reloaded its entire history on each attach. Only a thread whose
+  // window copy can be behind main needs it; main adds any turn it is running,
+  // and a turn that starts later sends its own snapshot before its output.
   const attach = (): void => {
     const { activeProjectId, threads } = store.getState()
     if (!activeProjectId) return
     void api.agent
       .attachTranscripts(
         activeProjectId,
-        threads.map((thread) => thread.id),
+        threads.filter((thread) => mayBeBehindMain(store, thread)).map((thread) => thread.id),
       )
       .catch((error: unknown) => {
         console.error('[threads] could not attach transcripts:', error)
@@ -302,7 +313,8 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
   const unsub = api.agent.onChunk((threadId, chunk, stamp) => {
     // A new turn sends its snapshot before its first chunk. A reloaded window
     // ignores missed-prefix chunks until attachment restores that checkpoint.
-    if (stamp && !attached.has(threadId)) return
+    if (stamp && !attached.has(threadId) && !lateUpdateApplies(store, threadId, chunk, stamp))
+      return
     const st = get(threadId)
     const firstVisibleActivity =
       chunk.type === 'tool_call' ||
@@ -514,6 +526,48 @@ function maybeSummarizeToolRun(
       applySummary(store, api, threadId, run.anchorId, { runSummary: summary.trim() })
     }
   })()
+}
+
+/**
+ * Whether this window's copy of `thread` can be behind main, so attaching must
+ * reconcile it: the window believes it is running, holds queued or interrupted
+ * work, awaits a dispatch, or has its transcript loaded. An idle thread whose
+ * transcript was never read here is drawn from the same disk state main has.
+ */
+function mayBeBehindMain(store: AppStore, thread: Thread): boolean {
+  return (
+    thread.status === 'running' ||
+    thread.messagesLoaded !== false ||
+    thread.interruptedTurnAt !== undefined ||
+    (thread.pendingMessages?.length ?? 0) > 0 ||
+    hasPendingDispatch(store, thread.id)
+  )
+}
+
+/**
+ * Whether a stamped chunk for a thread this window has not attached can land
+ * anyway. Attach skips threads drawn from the same disk state main has, so a
+ * thread opened later is read from disk but never attached. Outside a turn,
+ * main writes and forwards one kind of update: a command's stage, such as a
+ * background command exiting after its turn ended. Once this window has read
+ * the thread whole and no turn is running in it, that update is as current as
+ * the copy it patches. Every other stamped chunk is turn output, which follows
+ * that turn's own snapshot, so it still waits for attachment.
+ */
+function lateUpdateApplies(
+  store: AppStore,
+  threadId: string,
+  chunk: StreamChunk,
+  stamp: TranscriptStamp,
+): boolean {
+  if (chunk.type !== 'tool_call_update' || chunk.commandPhase === undefined) return false
+  if (stamp.messageIds.length > 0) return false
+  const thread = getThreadById(store, threadId)
+  return (
+    thread?.messagesLoaded === true &&
+    thread.status !== 'running' &&
+    !hasPendingDispatch(store, threadId)
+  )
 }
 
 /** A seed read must not undo the window's queue placement or pending labels. */

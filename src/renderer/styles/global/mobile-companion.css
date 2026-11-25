@@ -113,3 +113,27 @@
 .mobile-companion-name-warning {
   color: var(--warning);
 }
+.mobile-companion-relay {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin: var(--spacing-sm) 0;
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--border);
+}
+/* One group: the column gap spaces it, not the margins meant between settings
+   rows. The status under the hint belongs to the same field, so the hint does
+   not carry the usual gap to a next field (settings.css). */
+.mobile-companion-relay > .mobile-companion-qr,
+.settings-content .mobile-companion-relay > .field-hint:not(:last-child) {
+  margin: 0;
+}
+.mobile-companion-relay .settings-action-row {
+  margin-bottom: 0;
+}
+/* The pairing link carries a signed grant, so its QR has several times the
+   modules of an address QR and needs the room to stay scannable. */
+#mobile-companion-shell-qr .mobile-companion-qr-image {
+  width: 176px;
+  height: 176px;
+}

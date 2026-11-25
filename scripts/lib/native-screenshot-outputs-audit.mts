@@ -83,8 +83,13 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/paired-browser-chat.e2e.ts': {
-    sourceSha256: 'b9e38f816bbea857c192bcd603bf2cf55bd5ce331d73102450535fd2973f0558',
-    filenames: ['paired-browser-approval-dark.png', 'paired-browser-approval-light.png'],
+    sourceSha256: '8f8c363a1ff461e644263bc5097fad85396c6f422f3e00009fc9da9257c24fe6',
+    filenames: [
+      'paired-browser-approval-dark.png',
+      'paired-browser-approval-light.png',
+      'paired-browser-companion-live.png',
+      'paired-browser-companion-saved-view.png',
+    ],
   },
   'tests/e2e/pane-loading.e2e.ts': {
     sourceSha256: '2189e7a8f25e6e8216028032d10db5e0da277b10ae9421b951b65296ea79ac5d',

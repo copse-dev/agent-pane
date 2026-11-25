@@ -518,7 +518,7 @@ dialog.settings-overlay::backdrop {
    background, that left "Server connection" straddling the card's top edge,
    half on the card and half off it. Floating it makes it an ordinary block in
    the content box, so the card's padding surrounds it like any other child;
-   everything after it clears. Flat groups (listed above) keep the rendered
+   every other child clears it. Flat groups (listed above) keep the rendered
    legend: they have no padding or fill for it to misplace. */
 .settings-content
   fieldset:not(
@@ -543,8 +543,12 @@ dialog.settings-overlay::backdrop {
     .machines-settings > fieldset,
     .usage-section-root > fieldset
   )
-  > legend
-  ~ * {
+  > :not(legend) {
+  /* Not `> legend ~ *`: with a sibling selector on a `*` subject, Chromium
+     restyled the whole transcript each time rows were inserted, though no row
+     is in a fieldset. The legend is the only float in a card, and clearing
+     only moves past earlier floats, so clearing every other child looks the
+     same. */
   clear: both;
 }
 /* A field and its own controls stay tight; the gap belongs *between* fields. */
