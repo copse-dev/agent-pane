@@ -781,10 +781,24 @@ function parseThreadMetaValue(value) {
   if (usage === null) return null;
   const prProductions = prProductionSchema.array().safeParse(value["prProductions"] ?? []);
   const commitProductions = commitProductionSchema.array().safeParse(value["commitProductions"] ?? []);
-  const { executionMode: _rawExecutionMode, cursorAgentIds: _rawCursorAgentIds, ...rest } = value;
+  const {
+    executionMode: _rawExecutionMode,
+    cursorAgentIds: _rawCursorAgentIds,
+    importedSession: _rawImportedSession,
+    ...rest
+  } = value;
   const cursorAgentIds = cursorAgentIdsSchema.safeParse(value["cursorAgentIds"]);
+  const importedSession = importedSessionSchema.safeParse(value["importedSession"]);
   return {
     ...rest,
+    ...importedSession.success ? {
+      importedSession: {
+        source: importedSession.data.source,
+        key: importedSession.data.key,
+        importedAt: importedSession.data.importedAt,
+        ...importedSession.data.sharesOriginal ? { sharesOriginal: true } : {}
+      }
+    } : {},
     ...value["executionMode"] === "agent" ? { executionMode: "agent" } : {},
     ...cursorAgentIds.success ? { cursorAgentIds: cursorAgentIds.data } : {},
     id: value["id"],
@@ -808,7 +822,7 @@ function parseThreadValue(value) {
     messages: messages.filter(isNonNull)
   };
 }
-var cursorAgentIdsSchema;
+var importedSessionSchema, cursorAgentIdsSchema;
 var init_thread_boundary = __esm({
   "packages/thread-store/src/thread-boundary.ts"() {
     init_zod();
@@ -817,6 +831,12 @@ var init_thread_boundary = __esm({
     init_model_usage();
     init_thread_pr_relations();
     init_remote_agent_link();
+    importedSessionSchema = external_exports.object({
+      source: external_exports.enum(["claude-code", "codex"]),
+      key: external_exports.string().min(1),
+      importedAt: external_exports.number().nonnegative(),
+      sharesOriginal: external_exports.literal(true).optional()
+    }).strict();
     cursorAgentIdsSchema = external_exports.array(external_exports.string().min(1).max(MAX_CURSOR_AGENT_ID_LENGTH)).max(MAX_CURSOR_AGENT_IDS);
   }
 });
@@ -3074,7 +3094,7 @@ function importedSessionNotice(thread) {
     { class: "imported-session-notice", role: "note", "data-source": imported.source },
     el("strong", {}, `Imported from ${source}.`),
     ` Earlier messages and tool calls ran in ${source}, outside Copse\u2019s sandbox and approvals.`,
-    ...imported.source === "codex" ? [" Continuing here also adds to the original Codex session."] : []
+    ...imported.sharesOriginal ? [` Continuing here also adds to the original ${source} session.`] : []
   );
 }
 var init_imported_session_notice = __esm({
