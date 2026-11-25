@@ -153,6 +153,7 @@ async function continueTurn(
     deps.log(`thread ${threadId} stays for the next launch: ${reason}`)
     return { status: 'not-resumable' }
   }
+  deps.log(`thread ${threadId}: continuing the turn`)
 
   let server: TurnWorkerServer | null = null
   const transcripts = new TurnTranscriptWriter({
@@ -222,7 +223,11 @@ async function continueTurn(
     )
     await transcripts.settled(threadId)
     const turn = resumed[0]
-    if (!turn) return { status: 'not-resumable' }
+    if (!turn) {
+      deps.log(`thread ${threadId}: nothing to continue`)
+      return { status: 'not-resumable' }
+    }
+    deps.log(`thread ${threadId}: turn ended (${turn.result})`)
     return { status: 'continued', result: turn.result }
   } finally {
     endDeferralMode(threadId)
