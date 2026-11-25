@@ -21,7 +21,10 @@ import {
   readIssueHasLabel,
   readLabelEvents,
   readOpenPullRequests,
+  readRecentPullRequestComments,
+  readViewerLogin,
   type LabelEventObservation,
+  type PullRequestCommentObservation,
   type PullRequestHead,
   type PullRequestObservation,
 } from './github-event-sources.ts'
@@ -73,7 +76,30 @@ function labeled(id: number, issue: number, label = 'needs-triage'): LabelEventO
   }
 }
 
+function comment(
+  id: number,
+  pullRequest: number,
+  author: string,
+  kind: PullRequestCommentObservation['kind'] = 'review',
+): PullRequestCommentObservation {
+  return {
+    id,
+    kind,
+    pullRequest,
+    author,
+    html_url: `https://github.com/owner/repo/pull/${String(pullRequest)}#discussion_r${String(id)}`,
+    created_at: `2026-10-01T10:00:${String(id % 60).padStart(2, '0')}Z`,
+  }
+}
+
+function mine(number: number, sha: string, draft = false): PullRequestObservation {
+  return { ...pull(number, sha, draft), author: 'me' }
+}
+
 interface World {
+  /** Workflow runs per head SHA, for CI over every open pull request. */
+  runs: Map<string, BranchCiRun[]>
+  comments: PullRequestCommentObservation[]
   service: BranchCiAutomationService
   threads: Map<string, Thread>
   supervisor: TaskSupervisor
@@ -102,6 +128,8 @@ async function world(
       return created
     },
     threads: new Map(),
+    runs: new Map(),
+    comments: [],
     supervisor,
     ci: { headSha: SHA_A, runs: [] },
     pulls: [],
@@ -127,6 +155,9 @@ async function world(
     },
     labelEvents: () => guard(state.events),
     issueHasLabel: (_definition, issue) => Promise.resolve(state.labelled.has(issue)),
+    runsForHead: (_definition, sha) => guard(state.runs.get(sha) ?? []),
+    pullRequestComments: () => guard(state.comments),
+    viewerLogin: () => Promise.resolve('me'),
     loadProjectThreadMetas: () => Promise.resolve([...state.threads.values()]),
     getProjectThread: (_projectId, threadId) =>
       Promise.resolve(state.threads.get(threadId) ?? null),
@@ -581,6 +612,265 @@ describe('problems and delivery recovery', () => {
     const rows = storageGet(STORAGE_KEY)
     assert.ok(
       Array.isArray(rows) && rows.some((row) => JSON.stringify(row) === JSON.stringify(future)),
+    )
+  })
+})
+
+describe('CI failed on a pull request', () => {
+  const trigger = {
+    kind: 'github-pr-ci-failed',
+    baseBranch: 'main',
+    authors: 'mine',
+  } as const
+
+  it('starts one fix per failing head on my pull requests and ignores the rest', async (t) => {
+    const w = await world(t)
+    w.pulls = [mine(1, SHA_A), pull(2, SHA_B)]
+    w.runs.set(SHA_A, [ciRun(10, 'CI', SHA_A)])
+    const definition = await w.service.upsert('project-a', {
+      ...base,
+      trigger,
+    })
+    assert.equal(
+      definition.trigger.kind === 'github-pr-ci-failed' && definition.trigger.viewer,
+      'me',
+    )
+    await w.service.poll()
+    assert.equal(w.threads.size, 0, 'failures that existed when saving are history')
+
+    w.pulls = [mine(1, SHA_C), pull(2, SHA_B), mine(3, SHA_A, true)]
+    w.heads.set(1, { state: 'open', draft: false, head: { sha: SHA_C, ref: 'feature-1' } })
+    // Someone else's pull request fails too; it is never polled.
+    w.runs.set(SHA_B, [ciRun(20, 'CI', SHA_B)])
+    w.runs.set(SHA_C, [ciRun(30, 'CI', SHA_C), ciRun(31, 'Lint', SHA_C)])
+    await w.service.poll()
+    await w.supervisor.waitForIdle()
+    assert.equal(w.threads.size, 1, 'two failed checks on one head start one task')
+    const prompt = [...w.threads.values()][0]?.draftPrompt ?? ''
+    assert.match(prompt, /Pull request CI facts \(external source data\)/)
+    assert.match(prompt, /"pullRequest": 1/)
+    assert.match(prompt, /"headBranch": "feature-1"/)
+    const history = await w.service.history('project-a', definition.id)
+    assert.equal(history.length, 2)
+    assert.match(
+      history.find((entry) => entry.outcome === 'started')?.summary ?? '',
+      /failed on #1/,
+    )
+    assert.match(
+      history.find((entry) => entry.outcome === 'held')?.reason ?? '',
+      /another failed check on this pull request head already started/,
+    )
+    w.settle()
+    await w.service.poll()
+    await w.supervisor.waitForIdle()
+    assert.equal(w.threads.size, 1, 'repeated polls stay quiet')
+  })
+
+  it('does not start once the pull request has new commits', async (t) => {
+    const w = await world(t)
+    await w.service.upsert('project-a', { ...base, trigger })
+    w.pulls = [mine(1, SHA_A)]
+    w.runs.set(SHA_A, [ciRun(10, 'CI', SHA_A)])
+    w.heads.set(1, {
+      state: 'open',
+      draft: false,
+      head: { sha: SHA_A, ref: 'feature-1' },
+    })
+    await w.service.poll()
+    await w.supervisor.waitForIdle()
+    const [created] = [...w.threads.values()]
+    assert.ok(created)
+    w.heads.set(1, { state: 'open', draft: false, head: { sha: SHA_B, ref: 'feature-1' } })
+    assert.match((await w.service.canStart('project-a', created.id)).reason ?? '', /newer commits/)
+  })
+
+  it('caps runs per pull request at three a day', async (t) => {
+    const w = await world(t)
+    const definition = await w.service.upsert('project-a', {
+      ...base,
+      maxLiveWorktrees: 'unlimited',
+      trigger,
+    })
+    const heads = ['1', '2', '3', '4'].map((digit) => digit.repeat(40))
+    for (const [index, sha] of heads.entries()) {
+      w.pulls = [mine(1, sha)]
+      w.heads.set(1, {
+        state: 'open',
+        draft: false,
+        head: { sha, ref: 'feature-1' },
+      })
+      w.runs.set(sha, [ciRun(100 + index, 'CI', sha)])
+      await w.service.poll()
+      await w.supervisor.waitForIdle()
+      w.settle()
+    }
+    assert.equal(w.threads.size, 3)
+    const waiting = (await w.service.history('project-a', definition.id)).find(
+      (entry) => entry.outcome === 'waiting',
+    )
+    assert.ok(waiting, 'the fourth fix waits for the daily limit instead of being dropped')
+  })
+})
+
+describe('review comments on a pull request', () => {
+  const trigger = {
+    kind: 'github-pr-review-comment',
+    baseBranch: 'main',
+    authors: 'mine',
+    commenters: 'others',
+  } as const
+
+  it('batches new comments from others into one task per pull request', async (t) => {
+    const w = await world(t)
+    w.pulls = [mine(1, SHA_A), pull(2, SHA_A)]
+    w.comments = [comment(50, 1, 'reviewer')]
+    const definition = await w.service.upsert('project-a', {
+      ...base,
+      trigger,
+    })
+    assert.deepEqual(definition.commentCursor, { review: 50, conversation: 0 })
+    await w.service.poll()
+    assert.equal(w.threads.size, 0, 'comments that existed when saving are history')
+
+    w.heads.set(1, {
+      state: 'open',
+      draft: false,
+      head: { sha: SHA_A, ref: 'feature-1' },
+    })
+    w.comments = [
+      comment(53, 2, 'reviewer'),
+      comment(52, 1, 'copilot[bot]', 'conversation'),
+      comment(51, 1, 'reviewer'),
+      comment(54, 1, 'me'),
+      comment(50, 1, 'reviewer'),
+    ]
+    await w.service.poll()
+    await w.supervisor.waitForIdle()
+    assert.equal(w.threads.size, 1)
+    const prompt = [...w.threads.values()][0]?.draftPrompt ?? ''
+    assert.match(prompt, /Pull request review comment facts \(external source data\)/)
+    assert.match(prompt, /"newComments": 2/)
+    assert.match(prompt, /"commenters": "reviewer, copilot\[bot\]"/)
+    assert.equal(
+      (await w.service.history('project-a', definition.id))[0]?.summary,
+      '2 new comments on #1 Change 1',
+    )
+    assert.deepEqual(
+      w.service.list('project-a').find((item) => item.id === definition.id)?.commentCursor,
+      { review: 54, conversation: 52 },
+    )
+
+    // My own reply (as a run would post it) does not start another task.
+    w.settle()
+    w.comments = [comment(55, 1, 'me'), ...w.comments]
+    await w.service.poll()
+    await w.supervisor.waitForIdle()
+    assert.equal(w.threads.size, 1)
+  })
+
+  it('lets newer comments supersede a delivery still waiting for a slot', async (t) => {
+    const w = await world(t)
+    const definition = await w.service.upsert('project-a', {
+      ...base,
+      trigger,
+    })
+    w.pulls = [mine(1, SHA_A), mine(2, SHA_A)]
+    w.heads.set(1, {
+      state: 'open',
+      draft: false,
+      head: { sha: SHA_A, ref: 'feature-1' },
+    })
+    w.heads.set(2, {
+      state: 'open',
+      draft: false,
+      head: { sha: SHA_A, ref: 'feature-2' },
+    })
+    w.comments = [comment(1, 1, 'reviewer'), comment(2, 2, 'reviewer')]
+    await w.service.poll()
+    await w.supervisor.waitForIdle()
+    assert.equal(w.threads.size, 1, 'one run at a time')
+    w.comments = [comment(3, 2, 'reviewer'), ...w.comments]
+    await w.service.poll()
+    await w.supervisor.waitForIdle()
+    const history = await w.service.history('project-a', definition.id)
+    assert.match(
+      history.find((entry) => entry.outcome === 'held')?.reason ?? '',
+      /Newer review comments on this pull request superseded/,
+    )
+
+    w.settle()
+    await w.service.poll()
+    await w.supervisor.waitForIdle()
+    assert.equal(w.threads.size, 2, 'the newest batch starts once the slot frees')
+    const second = [...w.threads.values()].at(-1)?.draftPrompt ?? ''
+    assert.match(second, /"pullRequest": 2/)
+    assert.match(second, /"newComments": 1/)
+  })
+
+  it('counts my own comments when asked to', async (t) => {
+    const w = await world(t)
+    await w.service.upsert('project-a', {
+      ...base,
+      trigger: { ...trigger, commenters: 'anyone' },
+    })
+    w.pulls = [mine(1, SHA_A)]
+    w.heads.set(1, {
+      state: 'open',
+      draft: false,
+      head: { sha: SHA_A, ref: 'feature-1' },
+    })
+    w.comments = [comment(9, 1, 'me')]
+    await w.service.poll()
+    await w.supervisor.waitForIdle()
+    assert.equal(w.threads.size, 1)
+  })
+})
+
+describe('pull request bot readers', () => {
+  it('reads review and conversation comments without their bodies', async () => {
+    const calls: string[][] = []
+    const comments = await readRecentPullRequestComments('/w', 'github.com/owner/repo', (args) => {
+      calls.push(args)
+      return Promise.resolve({
+        stdout: JSON.stringify(
+          args[1]?.startsWith('repos/owner/repo/pulls/')
+            ? [comment(5, 1, 'a')]
+            : [comment(6, 1, 'b', 'conversation')],
+        ),
+        stderr: '',
+        code: 0,
+      })
+    })
+    assert.deepEqual(
+      comments.map((item) => [item.id, item.kind]),
+      [
+        [5, 'review'],
+        [6, 'conversation'],
+      ],
+    )
+    assert.ok(calls.every((args) => !(args.at(-1) ?? '').includes('body')))
+  })
+
+  it('rejects an unexpected account name', async () => {
+    await assert.rejects(
+      readViewerLogin('/w', 'github.com/owner/repo', () =>
+        Promise.resolve({
+          stdout: JSON.stringify({ login: 'bad name' }),
+          stderr: '',
+          code: 0,
+        }),
+      ),
+      /invalid account data/,
+    )
+    assert.equal(
+      await readViewerLogin('/w', 'github.com/owner/repo', () =>
+        Promise.resolve({
+          stdout: JSON.stringify({ login: 'me' }),
+          stderr: '',
+          code: 0,
+        }),
+      ),
+      'me',
     )
   })
 })

@@ -161,3 +161,77 @@ export async function readIssueHasLabel(
   )
   return state.state === 'open' && state.labels.includes(label)
 }
+
+/** A GitHub login. Bot accounts carry a `[bot]` suffix in comment authors. */
+export const LOGIN_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:\[bot\])?$/
+
+/** The account `gh` is signed in as on the repository's host. */
+export async function readViewerLogin(
+  root: string,
+  repository: string,
+  gh: Gh = runGh,
+): Promise<string> {
+  const { host } = split(repository)
+  const viewer = await ghJson(
+    root,
+    gh,
+    ['api', 'user', '--hostname', host, '--jq', '{login}'],
+    z.object({ login: z.string().regex(LOGIN_PATTERN) }),
+    'account',
+  )
+  return viewer.login
+}
+
+export const pullRequestCommentSchema = z.object({
+  id: z.number().int().positive(),
+  /** `review`: an inline diff comment. `conversation`: a comment on the PR's conversation tab. */
+  kind: z.enum(['review', 'conversation']),
+  pullRequest: z.number().int().positive(),
+  author: text(128).nullable(),
+  html_url: z.url(),
+  created_at: text(64),
+})
+export type PullRequestCommentObservation = z.infer<typeof pullRequestCommentSchema>
+
+/**
+ * The repository's newest pull request comments, inline review comments and conversation
+ * comments together, as two repository-wide reads. Comment bodies are not read: a run reads
+ * the threads itself, so polling never copies untrusted text into Copse's own stores.
+ */
+export async function readRecentPullRequestComments(
+  root: string,
+  repository: string,
+  gh: Gh = runGh,
+): Promise<PullRequestCommentObservation[]> {
+  const { host, slug } = split(repository)
+  const list = z.array(pullRequestCommentSchema).max(100)
+  const review = await ghJson(
+    root,
+    gh,
+    [
+      'api',
+      `repos/${slug}/pulls/comments?sort=created&direction=desc&per_page=100`,
+      '--hostname',
+      host,
+      '--jq',
+      '[.[] | {id, kind: "review", pullRequest: (.pull_request_url | split("/") | last | tonumber), author: .user.login, html_url, created_at}]',
+    ],
+    list,
+    'pull request comment',
+  )
+  const conversation = await ghJson(
+    root,
+    gh,
+    [
+      'api',
+      `repos/${slug}/issues/comments?sort=created&direction=desc&per_page=100`,
+      '--hostname',
+      host,
+      '--jq',
+      '[.[] | select(.html_url | test("/pull/[0-9]+#")) | {id, kind: "conversation", pullRequest: (.issue_url | split("/") | last | tonumber), author: .user.login, html_url, created_at}]',
+    ],
+    list,
+    'pull request comment',
+  )
+  return [...review, ...conversation]
+}

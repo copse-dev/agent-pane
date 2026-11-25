@@ -140,8 +140,37 @@ export type EventAutomationTrigger =
       transition: PullRequestTransition
     }
   | { kind: 'github-issue-labeled'; repository: string; label: string }
+  | {
+      kind: 'github-pr-ci-failed'
+      repository: string
+      /** Open pull requests into this branch are watched; each PR's current head counts. */
+      baseBranch: string
+      /** Whose pull requests count. `mine`: only those `viewer` opened. */
+      authors: PullRequestAuthors
+      /** The GitHub account `gh` was signed in as when the trigger was saved. */
+      viewer: string
+      /** Workflow names that may trigger a run. Absent or empty means every workflow. */
+      checks?: string[] | undefined
+    }
+  | {
+      kind: 'github-pr-review-comment'
+      repository: string
+      baseBranch: string
+      authors: PullRequestAuthors
+      viewer: string
+      /** Whose comments count. `others`: all but `viewer`, so a run's own replies never re-trigger it. */
+      commenters: ReviewCommenters
+    }
 
 export type PullRequestTransition = 'ready-for-review' | 'new-commits'
+export type PullRequestAuthors = 'mine' | 'anyone'
+export type ReviewCommenters = 'others' | 'anyone'
+
+/** Triggers that watch every open pull request into a base branch, so limits apply per pull request. */
+export const MULTI_PULL_REQUEST_TRIGGERS = [
+  'github-pr-ci-failed',
+  'github-pr-review-comment',
+] as const
 
 export type EventAutomationTriggerInput =
   | {
@@ -152,6 +181,18 @@ export type EventAutomationTriggerInput =
     }
   | { kind: 'github-pr-changed'; baseBranch: string; transition: PullRequestTransition }
   | { kind: 'github-issue-labeled'; label: string }
+  | {
+      kind: 'github-pr-ci-failed'
+      baseBranch: string
+      authors: PullRequestAuthors
+      checks?: string[] | undefined
+    }
+  | {
+      kind: 'github-pr-review-comment'
+      baseBranch: string
+      authors: PullRequestAuthors
+      commenters: ReviewCommenters
+    }
 
 /** Versioned event workflow. Existing cron schedules keep their stored shape until migrated. */
 export interface BranchCiAutomation {
@@ -171,6 +212,11 @@ export interface BranchCiAutomation {
   seenDeliveries: string[]
   /** Pull requests last observed as drafts, so a later non-draft observation is a transition. */
   draftPullRequests?: number[] | undefined
+  /**
+   * Newest comment id already accounted for, per GitHub comment family (ids are increasing
+   * within each). Review-comment triggers only; comments at or below it are history.
+   */
+  commentCursor?: { review: number; conversation: number } | undefined
   lastRunAt?: number | undefined
   lastCreatedThreadId?: string | undefined
   /** Latest unresolved failure to start or poll, cleared by the next run that starts. */

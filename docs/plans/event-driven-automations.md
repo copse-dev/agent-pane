@@ -8,6 +8,39 @@ open and creates fresh tasks for newly completed failures on the branch's curren
 head. PR-scoped CI with workflow filters, pull-request and issue-label triggers, and
 delivery history were added on 2026-10-07 (see the status update below).
 
+## Status update (2026-11-25): pull request bots
+
+Two triggers watch **every open pull request into a base branch** instead of one branch or one
+PR number, so one automation can act as a fix bot for all of a user's PRs:
+
+| Trigger (`trigger.kind`)   | Filters                                                                                      | Delivery identity                               | Freshness rule before a run starts                                                    |
+| -------------------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `github-pr-ci-failed`      | base branch; authors `mine` (default) or `anyone`; optional workflow-name list (max 10)      | workflow run id + attempt                       | PR open, head SHA unchanged; not already started on this head by another failed check |
+| `github-pr-review-comment` | base branch; authors `mine` (default) or `anyone`; commenters `others` (default) or `anyone` | `rc:<pr>:r<newest review id>:c<newest conv id>` | PR open; no newer comment batch for the same PR                                       |
+
+- `mine`/`others` compare against `viewer`, the `gh` account resolved when the trigger is saved
+  (re-resolved on every enabled save). Limiting to the user's own PRs keeps a fix bot from pushing
+  to someone else's branch; ignoring the user's own comments is the self-retrigger protection,
+  since a run replies to review threads as that same account.
+- Review comments are read with two repository-wide calls (inline review comments and PR
+  conversation comments, newest 100 each) and consumed by a per-definition `commentCursor` of
+  the newest ids seen, not the 100-entry `seenDeliveries` list. Comment bodies are never read by
+  the poller: the run reads the threads itself, so untrusted text does not enter Copse's stores
+  or the first prompt. New comments are batched into one delivery per PR per poll; a newer batch
+  supersedes one still waiting for a slot. Reviews submitted with only a summary body (no inline
+  comment) are not observed: there is no repository-wide reviews endpoint.
+- CI over open PRs reads the open-PR list plus one workflow-runs call per watched head, capped at
+  the 20 most recently updated PRs. Several failed workflows on one head start one task.
+- Limits for both: at most three runs per PR and ten per automation per 24 hours (single-resource
+  triggers keep three per automation). The one-active-run rule and worktree cap still apply, so
+  runs for different PRs queue behind each other.
+- Because review deliveries are consumed by cursor rather than re-admitted, every poll of these
+  triggers reconciles the project's waiting deliveries.
+
+Still open for a hands-off fix bot: unattended approvals (a run that must `git push` still stops
+on an approval prompt), default enablement of `copse.automations`, webhooks, and observing
+summary-only reviews.
+
 ## Status update (2026-10-07)
 
 Slice B's remaining controls and slice C's first two adapters are implemented, all through the
