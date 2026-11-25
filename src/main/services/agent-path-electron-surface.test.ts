@@ -56,6 +56,14 @@ function staticImports(source: string): StaticImport[] {
   return imports
 }
 
+/**
+ * A runtime `import('electron')`. Deferring the import only moves the failure from load
+ * time to the first call, so a reachable file must not hold one either. `typeof
+ * import('electron')` is a type position and is erased. Other dynamic imports are not
+ * followed as graph edges: they are lazy on purpose, and this pins the eager graph.
+ */
+const DYNAMIC_ELECTRON_IMPORT = /(?<!typeof\s+)\bimport\(\s*['"]electron['"]\s*\)/
+
 function electronImportPaths(roots: string[]): string[] {
   const seen = new Set(roots)
   const queue = roots.map((file) => ({ file, path: [file] }))
@@ -71,7 +79,11 @@ function electronImportPaths(roots: string[]): string[] {
       continue
     }
     const imports = staticImports(source).filter((entry) => !entry.typeOnly)
-    if (imports.some((entry) => entry.specifier === 'electron')) found.push(path.join(' -> '))
+    if (
+      imports.some((entry) => entry.specifier === 'electron') ||
+      DYNAMIC_ELECTRON_IMPORT.test(source)
+    )
+      found.push(path.join(' -> '))
     for (const entry of imports) {
       const resolved = resolveImport(entry.specifier, file)
       if (resolved !== null && !seen.has(resolved)) {
