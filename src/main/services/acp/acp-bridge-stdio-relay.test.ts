@@ -40,11 +40,11 @@ describe('acpBridgeStdioServer', () => {
   it('passes the URL and token in the environment, not the arguments', () => {
     const server = acpBridgeStdioServer(
       { url: 'http://127.0.0.1:9/mcp', token: 'tok', serverName: 'copse-abc' },
-      { execPath: '/app/Copse', scriptPath: '/app/dist/main/acp-bridge-stdio-relay.js' },
+      { execPath: '/app/Copse', scriptPath: '/app/dist/main/acp-bridge-relay.js' },
     )
     assert.equal(server.name, 'copse-abc')
     assert.equal(server.command, '/app/Copse')
-    assert.deepEqual(server.args, ['/app/dist/main/acp-bridge-stdio-relay.js'])
+    assert.deepEqual(server.args, ['/app/dist/main/acp-bridge-relay.js'])
     assert.deepEqual(server.env, [
       { name: 'ELECTRON_RUN_AS_NODE', value: '1' },
       { name: ACP_BRIDGE_RELAY_URL_ENV, value: 'http://127.0.0.1:9/mcp' },
@@ -66,7 +66,7 @@ describe('stdio relay to the native-tool bridge', () => {
 
   before(async () => {
     dir = mkdtempSync(join(tmpdir(), 'copse-bridge-relay-'))
-    scriptPath = join(dir, 'acp-bridge-stdio-relay.js')
+    scriptPath = join(dir, 'acp-bridge-relay.js')
     await esbuild.build({
       entryPoints: [resolve('src/main/services/acp/acp-bridge-stdio-relay.ts')],
       outfile: scriptPath,

@@ -249,6 +249,10 @@ for (const ending of ['send-now', 'stop', 'run-timeout'] as const) {
         registry,
       })
       assert.ok(entry.bridge)
+      // Every agent is offered the bridge (over stdio when it lacks http MCP).
+      // This one mounts it at once, so the turn does not wait out the mount
+      // window, whose timer the run-timeout case has mocked.
+      t.mock.method(entry.bridge, 'whenToolsListed', () => Promise.resolve(true))
       const setTurnSignal = t.mock.method(entry.bridge, 'setTurnSignal')
       const pending = runWithThreadExecutionContext(context, () =>
         runWithActiveRunIdentity(threadId, () =>

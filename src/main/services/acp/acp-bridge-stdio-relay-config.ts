@@ -12,7 +12,7 @@ export const ACP_BRIDGE_RELAY_TOKEN_ENV = 'COPSE_BRIDGE_TOKEN'
 
 /** Where the bundled relay sits: next to the main bundle and the session host. */
 export function acpBridgeRelayScriptPath(dir: string = __dirname): string {
-  return join(dir, 'acp-bridge-stdio-relay.js')
+  return join(dir, 'acp-bridge-relay.js')
 }
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]'])

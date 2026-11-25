@@ -273,7 +273,7 @@ describe('acpAgentSandboxOverlay', () => {
   })
 
   it('lets the agent read the stdio bridge relay and its runtime, only with the bridge', () => {
-    const scriptPath = join(homedir(), 'src', 'copse', 'dist', 'main', 'acp-bridge-stdio-relay.js')
+    const scriptPath = join(homedir(), 'src', 'copse', 'dist', 'main', 'acp-bridge-relay.js')
     const relay = { scriptPath }
     const offered = acpAgentSandboxOverlay(workspace, sandbox, {
       allowLocalhost: true,

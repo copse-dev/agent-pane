@@ -106,7 +106,7 @@ export const STANDALONE_MAIN_BUNDLES: StandaloneMainBundle[] = [
   // that stops Node's package.json walk at its own directory.
   {
     entry: 'src/main/services/acp/acp-bridge-stdio-relay.ts',
-    outfile: 'dist/main/acp-bridge-stdio-relay.js',
+    outfile: 'dist/main/acp-bridge-relay.js',
     manifest: { type: 'commonjs' },
   },
   // Owns ASRT for one approved loopback-binding background task. ASRT's

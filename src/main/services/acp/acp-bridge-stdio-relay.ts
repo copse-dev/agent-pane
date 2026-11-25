@@ -1,5 +1,5 @@
 /**
- * Stdio relay for Copse's native-tool bridge (`dist/main/acp-bridge-stdio-relay.js`).
+ * Stdio relay for Copse's native-tool bridge (`dist/main/acp-bridge-relay.js`).
  *
  * The bridge is an authenticated localhost MCP server over streamable HTTP
  * (`acp-native-bridge.ts`). An ACP agent mounts it itself from `session/new`
