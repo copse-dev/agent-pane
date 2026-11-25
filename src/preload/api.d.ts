@@ -1681,6 +1681,22 @@ export interface ApiClient {
     rerunFailedRuns: (owner: string, repo: string, number: number) => Promise<PrActionResult>
     /** Approve the pull request. */
     approvePr: (owner: string, repo: string, number: number) => Promise<PrActionResult>
+    /** Reply to an inline review thread on the PR. Never retried automatically. */
+    replyToReviewThread: (
+      owner: string,
+      repo: string,
+      number: number,
+      threadId: string,
+      body: string,
+    ) => Promise<PrActionResult>
+    /** Resolve (`true`) or reopen (`false`) an inline review thread on the PR. */
+    setReviewThreadResolved: (
+      owner: string,
+      repo: string,
+      number: number,
+      threadId: string,
+      resolved: boolean,
+    ) => Promise<PrActionResult>
     /** Mark a draft pull request ready for review. */
     markPrReady: (owner: string, repo: string, number: number) => Promise<PrActionResult>
     /** Enable merge-when-ready (auto-merge) with the repo's preferred strategy. */

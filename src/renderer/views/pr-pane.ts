@@ -388,6 +388,8 @@ export function mountPrPane(
   // selected. Kept across the re-select an action triggers so its outcome stays
   // visible while the refreshed details load.
   let lastActionMessage: { text: string; ok: boolean } | null = null
+  /** Unsent review-thread replies by thread id, kept while the pane is open. */
+  const reviewReplyDrafts = new Map<string, string>()
 
   // Cross-repo "your PRs" are lazy: not queried until the section is expanded,
   // so the default view costs only the workspace + chat-linked lookups.
@@ -1268,16 +1270,47 @@ export function mountPrPane(
             () => startPrCheckFixThread(store, pr, check, headSha),
           )
         },
-        (threads) => {
-          if (!prDetails || !threads.length) return
-          const pr = prDetails
-          handToAgent(
-            () => prReviewThreadsFixDraft(pr, threads),
-            () => startPrReviewThreadsFixThread(store, pr, threads),
-          )
+        {
+          address: (threads) => {
+            if (!prDetails || !threads.length) return
+            const pr = prDetails
+            handToAgent(
+              () => prReviewThreadsFixDraft(pr, threads),
+              () => startPrReviewThreadsFixThread(store, pr, threads),
+            )
+          },
+          reply: (thread, body) =>
+            writeReviewThread((ref) =>
+              api.gh.replyToReviewThread(ref.owner, ref.repo, ref.number, thread.id, body),
+            ),
+          setResolved: (thread, resolved) =>
+            writeReviewThread((ref) =>
+              api.gh.setReviewThreadResolved(ref.owner, ref.repo, ref.number, thread.id, resolved),
+            ),
+          refresh: () => {
+            if (selectedPr) void refreshDetailsAfterAction(selectedPr)
+          },
+          drafts: reviewReplyDrafts,
         },
       )
     }
+  }
+
+  /**
+   * Run a review-thread write for the PR on screen. The thread view shows the
+   * outcome and asks for a refresh on success; nothing is retried.
+   */
+  function writeReviewThread(
+    write: (ref: PrRef) => Promise<PrActionResult>,
+  ): Promise<PrActionResult> {
+    const ref = selectedPr
+    if (!ref)
+      return Promise.resolve({
+        ok: false,
+        backend: 'cli',
+        message: 'No pull request is selected.',
+      })
+    return write(ref)
   }
 
   /**

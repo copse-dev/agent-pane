@@ -1947,6 +1947,21 @@ const api: ApiClient = {
       ipcRenderer.invoke('gh:mark-pr-ready', owner, repo, number),
     enableAutoMerge: (owner: string, repo: string, number: number) =>
       ipcRenderer.invoke('gh:enable-auto-merge', owner, repo, number),
+    replyToReviewThread: (
+      owner: string,
+      repo: string,
+      number: number,
+      threadId: string,
+      body: string,
+    ) => ipcRenderer.invoke('gh:reply-to-review-thread', owner, repo, number, threadId, body),
+    setReviewThreadResolved: (
+      owner: string,
+      repo: string,
+      number: number,
+      threadId: string,
+      resolved: boolean,
+    ) =>
+      ipcRenderer.invoke('gh:set-review-thread-resolved', owner, repo, number, threadId, resolved),
   },
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url),

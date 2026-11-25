@@ -1,7 +1,7 @@
 import '../../../tests/setup-dom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { GhPrActivity, GhPrReviewThread } from '@shared/types/git.ts'
+import type { GhPrActivity, GhPrReviewThread, PrActionResult } from '@shared/types/git.ts'
 import { renderPrActivity } from './pr-pane-activity.ts'
 
 const activity: GhPrActivity = {
@@ -177,14 +177,9 @@ describe('PR activity views', () => {
           thread('two'),
         ],
       }
-      renderPrActivity(
-        host,
-        'comments',
-        withThreads,
-        () => {},
-        undefined,
-        (threads) => addressed.push(threads.map((item) => item.id)),
-      )
+      renderPrActivity(host, 'comments', withThreads, () => {}, undefined, {
+        address: (threads) => addressed.push(threads.map((item) => item.id)),
+      })
       const open = [...host.querySelectorAll('.pr-review-threads > .pr-review-thread')]
       assert.deepEqual(
         open.map((item) => item.getAttribute('data-thread-id')),
@@ -216,15 +211,10 @@ describe('PR activity views', () => {
       const single = { ...activity, reviewThreads: [thread('one')] }
       renderPrActivity(host, 'comments', single, () => {})
       assert.equal(host.querySelector('.pr-review-thread-address'), null)
-      renderPrActivity(
-        host,
-        'comments',
-        single,
-        () => {},
-        undefined,
-        () => {},
-      )
+      renderPrActivity(host, 'comments', single, () => {}, undefined, { address: () => {} })
       assert.ok(host.querySelector('.pr-review-thread-address'))
+      assert.equal(host.querySelector('.pr-review-reply-input'), null)
+      assert.equal(host.querySelector('.pr-review-resolve-btn'), null)
       assert.equal(host.querySelector('.pr-review-thread-address-all'), null)
     })
 
@@ -246,6 +236,129 @@ describe('PR activity views', () => {
       assert.match(host.textContent, /first 100 code discussions/)
       host.querySelector<HTMLButtonElement>('.pr-review-thread-more button')?.click()
       assert.deepEqual(opened, ['https://github.com/long'])
+    })
+
+    it('posts a reply once, keeps the draft on failure, and clears it on success', async () => {
+      const host = document.createElement('div')
+      const drafts = new Map<string, string>([['one', 'Earlier draft']])
+      const posted: string[] = []
+      let next: PrActionResult = { ok: false, backend: 'mock', message: 'Not allowed' }
+      let release: () => void = () => {}
+      let refreshes = 0
+      const actions = {
+        drafts,
+        refresh: (): void => {
+          // The draft is already cleared when the caller re-renders.
+          assert.equal(drafts.has('one'), false)
+          refreshes++
+        },
+        reply: async (target: GhPrReviewThread, body: string): Promise<PrActionResult> => {
+          posted.push(`${target.id}:${body}`)
+          await new Promise<void>((resolve) => {
+            release = resolve
+          })
+          return next
+        },
+      }
+      renderPrActivity(
+        host,
+        'comments',
+        { ...activity, reviewThreads: [thread('one')] },
+        () => {},
+        undefined,
+        actions,
+      )
+      const input = host.querySelector<HTMLTextAreaElement>('.pr-review-reply-input')
+      const send = host.querySelector<HTMLButtonElement>('.pr-review-reply-btn')
+      const status = host.querySelector<HTMLElement>('.pr-review-thread-status')
+      assert.ok(input && send && status)
+      assert.equal(input.value, 'Earlier draft')
+      input.value = '  Fixed in the next push  '
+      input.dispatchEvent(new Event('input'))
+      assert.equal(drafts.get('one'), '  Fixed in the next push  ')
+      send.click()
+      send.click()
+      assert.deepEqual(posted, ['one:Fixed in the next push'])
+      assert.equal(send.disabled, true)
+      assert.equal(input.disabled, true)
+      assert.equal(status.textContent, 'Posting reply…')
+      release()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.equal(status.textContent, 'Not allowed')
+      assert.equal(status.getAttribute('data-ok'), 'false')
+      assert.equal(refreshes, 0)
+      assert.equal(send.disabled, false)
+      assert.equal(drafts.get('one'), '  Fixed in the next push  ')
+
+      next = { ok: true, backend: 'mock', message: 'Reply posted.' }
+      send.click()
+      release()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.equal(status.textContent, 'Reply posted.')
+      assert.equal(drafts.has('one'), false)
+      assert.equal(refreshes, 1)
+      // Stays busy until the caller re-renders with GitHub's state.
+      assert.equal(send.disabled, true)
+    })
+
+    it('does not send an empty reply and submits with Cmd or Ctrl+Enter', () => {
+      const host = document.createElement('div')
+      const posted: string[] = []
+      renderPrActivity(
+        host,
+        'comments',
+        { ...activity, reviewThreads: [thread('one')] },
+        () => {},
+        undefined,
+        {
+          reply: (_target, body) => {
+            posted.push(body)
+            return Promise.resolve({ ok: true, backend: 'mock', message: 'Reply posted.' })
+          },
+        },
+      )
+      const input = host.querySelector<HTMLTextAreaElement>('.pr-review-reply-input')
+      const send = host.querySelector<HTMLButtonElement>('.pr-review-reply-btn')
+      assert.ok(input && send)
+      assert.equal(send.disabled, true)
+      input.value = '   '
+      input.dispatchEvent(new Event('input'))
+      input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true }))
+      assert.deepEqual(posted, [])
+      input.value = 'Done'
+      input.dispatchEvent(new Event('input'))
+      input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', metaKey: true }))
+      assert.deepEqual(posted, ['Done'])
+    })
+
+    it('resolves open threads and only reopens resolved ones', () => {
+      const host = document.createElement('div')
+      const changes: string[] = []
+      renderPrActivity(
+        host,
+        'comments',
+        { ...activity, reviewThreads: [thread('one'), thread('done', { isResolved: true })] },
+        () => {},
+        undefined,
+        {
+          address: () => {},
+          reply: () => Promise.resolve({ ok: true, backend: 'mock', message: '' }),
+          setResolved: (target, resolved) => {
+            changes.push(`${target.id}:${String(resolved)}`)
+            return Promise.resolve({ ok: true, backend: 'mock', message: 'Done' })
+          },
+        },
+      )
+      const open = host.querySelector('.pr-review-threads > .pr-review-thread')
+      const done = host.querySelector('.pr-review-threads-resolved .pr-review-thread')
+      assert.ok(open && done)
+      assert.equal(open.querySelector('.pr-review-resolve-btn')?.textContent, 'Resolve')
+      assert.equal(done.querySelector('.pr-review-resolve-btn')?.textContent, 'Reopen')
+      assert.equal(done.querySelector('.pr-review-reply-input'), null)
+      assert.equal(done.querySelector('.pr-review-thread-address'), null)
+      open.querySelector<HTMLButtonElement>('.pr-review-resolve-btn')?.click()
+      done.querySelector<HTMLButtonElement>('.pr-review-resolve-btn')?.click()
+      assert.deepEqual(changes, ['one:true', 'done:false'])
     })
   })
 })

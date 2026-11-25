@@ -1,4 +1,10 @@
-import type { GhPrActivity, GhPrCheck, GhPrComment, GhPrReviewThread } from '@shared/types/git.ts'
+import type {
+  GhPrActivity,
+  GhPrCheck,
+  GhPrComment,
+  GhPrReviewThread,
+  PrActionResult,
+} from '@shared/types/git.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { clear, el } from '../dom/helpers.ts'
 import {
@@ -87,10 +93,138 @@ function renderComment(comment: GhPrComment): HTMLElement {
   return el('article', { class: 'pr-comment', 'data-comment-id': comment.id }, heading, body)
 }
 
+/** What the Comments view can do with inline review threads; each is optional. */
+export interface ReviewThreadActions {
+  /** Hand threads to the agent. */
+  address?: (threads: GhPrReviewThread[]) => void
+  /** Post a reply. */
+  reply?: (thread: GhPrReviewThread, body: string) => Promise<PrActionResult>
+  /** Resolve or reopen. */
+  setResolved?: (thread: GhPrReviewThread, resolved: boolean) => Promise<PrActionResult>
+  /** Reload the view after a successful write, once its draft is settled. */
+  refresh?: () => void
+  /** Unsent replies by thread id, kept by the caller across re-renders and failures. */
+  drafts?: Map<string, string>
+}
+
+function failureMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'The request failed.'
+}
+
+/**
+ * Reply box and Resolve/Reopen for one thread. Controls stay disabled while a
+ * write is in flight so a double click cannot post twice; a failure keeps the
+ * typed reply and says why.
+ */
+function renderThreadControls(
+  thread: GhPrReviewThread,
+  actions: ReviewThreadActions,
+): HTMLElement | null {
+  const { reply, setResolved, drafts } = actions
+  if (!reply && !setResolved) return null
+  const location = reviewThreadLocation(thread)
+  const footer = el('div', { class: 'pr-review-thread-footer' })
+  const status = el('p', { class: 'pr-review-thread-status', role: 'status', hidden: true })
+  const buttons: HTMLButtonElement[] = []
+  let input: HTMLTextAreaElement | null = null
+  let replyButton: HTMLButtonElement | null = null
+  const setBusy = (busy: boolean): void => {
+    for (const button of buttons) button.disabled = busy
+    if (input) input.disabled = busy
+    if (!busy && replyButton && input) replyButton.disabled = !input.value.trim()
+  }
+  const run = async (work: () => Promise<PrActionResult>, pending: string): Promise<void> => {
+    setBusy(true)
+    status.hidden = false
+    status.removeAttribute('data-ok')
+    status.textContent = pending
+    let result: { ok: boolean; message: string }
+    try {
+      result = await work()
+    } catch (error) {
+      result = { ok: false, message: failureMessage(error) }
+    }
+    // On success the caller re-renders with fresh data; leave this view busy
+    // until then so nothing can be sent twice.
+    if (result.ok) {
+      status.textContent = result.message
+      status.setAttribute('data-ok', 'true')
+      actions.refresh?.()
+      return
+    }
+    status.textContent = result.message
+    status.setAttribute('data-ok', 'false')
+    setBusy(false)
+  }
+  if (reply && !thread.isResolved) {
+    const box = el('textarea', {
+      class: 'pr-review-reply-input',
+      rows: '2',
+      placeholder: 'Reply…',
+      'aria-label': `Reply to review comment on ${location}`,
+    })
+    box.value = drafts?.get(thread.id) ?? ''
+    input = box
+    const send = el(
+      'button',
+      { type: 'button', class: 'ui-btn ui-btn-secondary ui-btn-compact pr-review-reply-btn' },
+      'Reply',
+    )
+    send.disabled = !box.value.trim()
+    replyButton = send
+    buttons.push(send)
+    const submit = (): void => {
+      const body = box.value.trim()
+      if (!body || send.disabled) return
+      void run(async () => {
+        const result = await reply(thread, body)
+        if (result.ok) drafts?.delete(thread.id)
+        return result
+      }, 'Posting reply…')
+    }
+    box.addEventListener('input', () => {
+      if (box.value) drafts?.set(thread.id, box.value)
+      else drafts?.delete(thread.id)
+      send.disabled = !box.value.trim()
+    })
+    box.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault()
+        submit()
+      }
+    })
+    send.addEventListener('click', submit)
+    footer.append(box)
+  }
+  const row = el('div', { class: 'pr-review-thread-actions' })
+  if (replyButton) row.append(replyButton)
+  if (setResolved) {
+    const toggle = el(
+      'button',
+      {
+        type: 'button',
+        class: 'ui-btn ui-btn-secondary ui-btn-compact pr-review-resolve-btn',
+        'aria-label': `${thread.isResolved ? 'Reopen' : 'Resolve'} review comment on ${location}`,
+      },
+      thread.isResolved ? 'Reopen' : 'Resolve',
+    )
+    buttons.push(toggle)
+    toggle.addEventListener('click', () => {
+      void run(
+        () => setResolved(thread, !thread.isResolved),
+        thread.isResolved ? 'Reopening…' : 'Resolving…',
+      )
+    })
+    row.append(toggle)
+  }
+  footer.append(row, status)
+  return footer
+}
+
 function renderReviewThread(
   thread: GhPrReviewThread,
   open: (url: string) => void,
-  addressThreads?: (threads: GhPrReviewThread[]) => void,
+  actions: ReviewThreadActions,
 ): HTMLElement {
   const location = reviewThreadLocation(thread)
   const header = el(
@@ -99,8 +233,9 @@ function renderReviewThread(
     el('code', { class: 'pr-review-thread-path', title: thread.path }, location),
   )
   if (thread.isOutdated) header.append(el('span', { class: 'pr-review-state' }, 'outdated'))
-  if (!thread.isResolved && addressThreads) {
-    const address = el(
+  const { address } = actions
+  if (!thread.isResolved && address) {
+    const button = el(
       'button',
       {
         type: 'button',
@@ -109,10 +244,10 @@ function renderReviewThread(
       },
       'Address',
     )
-    address.addEventListener('click', () => {
-      addressThreads([thread])
+    button.addEventListener('click', () => {
+      address([thread])
     })
-    header.append(address)
+    header.append(button)
   }
   const article = el(
     'article',
@@ -129,18 +264,21 @@ function renderReviewThread(
         externalButton('More replies on GitHub', last.url, open),
       ),
     )
+  const controls = renderThreadControls(thread, actions)
+  if (controls) article.append(controls)
   return article
 }
 
 /**
- * Inline code discussions, unresolved first. Each unresolved thread can be
- * handed to the agent; resolved ones stay collapsed for reference.
+ * Inline code discussions, unresolved first. Unresolved threads can be handed
+ * to the agent, replied to and resolved; resolved ones stay collapsed and can
+ * be reopened.
  */
 function renderReviewThreads(
   host: HTMLElement,
   activity: GhPrActivity,
   open: (url: string) => void,
-  addressThreads?: (threads: GhPrReviewThread[]) => void,
+  actions: ReviewThreadActions,
 ): void {
   const unresolved = activity.reviewThreads.filter((thread) => !thread.isResolved)
   const resolved = activity.reviewThreads.filter((thread) => thread.isResolved)
@@ -150,14 +288,15 @@ function renderReviewThreads(
     el('span', {}, 'Code discussions'),
     el('span', { class: 'pr-check-count' }, `${String(unresolved.length)} unresolved`),
   )
-  if (unresolved.length > 1 && addressThreads) {
+  const { address } = actions
+  if (unresolved.length > 1 && address) {
     const addressAll = el(
       'button',
       { type: 'button', class: 'pr-activity-link pr-review-thread-address-all' },
       `Address all ${String(unresolved.length)}`,
     )
     addressAll.addEventListener('click', () => {
-      addressThreads(unresolved)
+      address(unresolved)
     })
     heading.append(addressAll)
   }
@@ -172,7 +311,7 @@ function renderReviewThreads(
     )
   if (!activity.reviewThreads.length)
     section.append(el('p', { class: 'pr-activity-notice' }, 'No inline code discussions.'))
-  for (const thread of unresolved) section.append(renderReviewThread(thread, open, addressThreads))
+  for (const thread of unresolved) section.append(renderReviewThread(thread, open, actions))
   if (resolved.length) {
     const details = el(
       'details',
@@ -185,7 +324,14 @@ function renderReviewThreads(
         el('span', { class: 'pr-check-count' }, String(resolved.length)),
       ),
     )
-    for (const thread of resolved) details.append(renderReviewThread(thread, open))
+    // Resolved threads offer only Reopen: no reply box and no Address.
+    const reopenOnly: ReviewThreadActions = actions.setResolved
+      ? {
+          setResolved: actions.setResolved,
+          ...(actions.refresh ? { refresh: actions.refresh } : {}),
+        }
+      : {}
+    for (const thread of resolved) details.append(renderReviewThread(thread, open, reopenOnly))
     section.append(details)
   }
   host.append(section)
@@ -197,7 +343,7 @@ export function renderPrActivity(
   activity: GhPrActivity | undefined,
   open: (url: string) => void,
   fixCheck?: (check: GhPrCheck, headSha: string) => void,
-  addressThreads?: (threads: GhPrReviewThread[]) => void,
+  threadActions: ReviewThreadActions = {},
 ): void {
   clear(host)
   if (!activity || activity.error) {
@@ -212,7 +358,7 @@ export function renderPrActivity(
     return
   }
   if (section === 'comments') {
-    renderReviewThreads(host, activity, open, addressThreads)
+    renderReviewThreads(host, activity, open, threadActions)
     host.append(
       el('h4', { class: 'pr-check-group-heading pr-conversation-heading' }, 'Conversation'),
     )

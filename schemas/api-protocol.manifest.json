@@ -1039,6 +1039,13 @@
           1
         ]
       },
+      "gh:reply-to-review-thread": {
+        "api": "gh.replyToReviewThread",
+        "args": [
+          5,
+          5
+        ]
+      },
       "gh:rerun-failed-runs": {
         "api": "gh.rerunFailedRuns",
         "args": [
@@ -1058,6 +1065,13 @@
         "args": [
           2,
           2
+        ]
+      },
+      "gh:set-review-thread-resolved": {
+        "api": "gh.setReviewThreadResolved",
+        "args": [
+          5,
+          5
         ]
       },
       "gh:status": {

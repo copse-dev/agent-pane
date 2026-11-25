@@ -179,4 +179,37 @@ describe('PR comments and checks', () => {
       expect.stringContaining('No conversation comments'),
     )
   })
+
+  it('replies to and resolves an inline review thread from the panel', async function () {
+    this.timeout(120_000)
+    await openReviewPicker()
+    await $('.pr-list-title*=Add GitHub PR panel tab').click()
+    await expect(await $('.pr-viewer-title').getElement()).toHaveText('Add GitHub PR panel tab')
+    await $('.pr-detail-section[data-section="comments"]').click()
+    const thread = '.pr-review-thread[data-thread-id="PRRT_mock_failed_first"]'
+    await $(`${thread} .pr-review-reply-input`).waitForDisplayed({ timeout: 10_000 })
+    await expect(await $(`${thread} .pr-review-reply-btn`).getElement()).toBeDisabled()
+    await $(`${thread} .pr-review-reply-input`).setValue('Failed checks now sort first.')
+    await expect(await $(`${thread} .pr-review-reply-btn`).getElement()).toBeEnabled()
+    await $(thread).scrollIntoView({ block: 'start' })
+    await saveElementScreenshot('#pane-files', 'pr-review-thread-reply.png')
+
+    await $(`${thread} .pr-review-reply-btn`).click()
+    await browser.waitUntil(
+      async () =>
+        (await $$(`${thread} .pr-comment`).length) === 2 &&
+        (await $(`${thread} .pr-review-reply-input`).getValue()) === '',
+      { timeout: 10_000, timeoutMsg: 'reply did not appear in the thread' },
+    )
+    await expect(await $(`${thread} .pr-comment:last-of-type .pr-comment-body`)).toHaveText(
+      'Failed checks now sort first.',
+    )
+
+    await $(`${thread} .pr-review-resolve-btn`).click()
+    await $(`.pr-review-threads-resolved ${thread}`).waitForExist({ timeout: 10_000 })
+    await expect(await $('.pr-review-threads .pr-check-count').getElement()).toHaveText(
+      '1 unresolved',
+    )
+    await expect(await $('.pr-review-thread-address-all').getElement()).not.toBeExisting()
+  })
 })

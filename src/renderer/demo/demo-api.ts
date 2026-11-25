@@ -1803,6 +1803,10 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       rerunFailedRuns: () =>
         resolved({ ok: false, message: 'Unavailable in demo', backend: 'mock' }),
       approvePr: () => resolved({ ok: false, message: 'Unavailable in demo', backend: 'mock' }),
+      replyToReviewThread: () =>
+        resolved({ ok: false, message: 'Unavailable in demo', backend: 'mock' }),
+      setReviewThreadResolved: () =>
+        resolved({ ok: false, message: 'Unavailable in demo', backend: 'mock' }),
       markPrReady: () => resolved({ ok: false, message: 'Unavailable in demo', backend: 'mock' }),
       enableAutoMerge: () =>
         resolved({ ok: false, message: 'Unavailable in demo', backend: 'mock' }),
