@@ -3973,6 +3973,10 @@
       "sha256": "76e8d3dcccf0167db376718ee933bbcce276e01b50020fd013a9c6ceb53839af",
       "bytes": 77392
     },
+    "remote-folder-turn-on.png": {
+      "sha256": "52635564bd7bda2035e2caa8a114133e78b281c52f924ded5119b82932bee45a",
+      "bytes": 69712
+    },
     "remote-watcher-install-approval.png": {
       "sha256": "4fbf339885c3410c5693b19b4ad008288391f04b9e95868dc05586552bc4ca29",
       "bytes": 66318
@@ -6534,8 +6538,8 @@
       "bytes": 3276
     },
     "vnc-ssh-disabled-workspaces.png": {
-      "sha256": "44740958588e7e17e42cc555200137dd7106844d98cc90c7dba5c4966603abd7",
-      "bytes": 4929
+      "sha256": "34f52ea0c72a622f9cdf292a16d5c9bf9339e796a37163cd12081adcc156ad58",
+      "bytes": 24980
     },
     "vnc-viewer-add-device.png": {
       "sha256": "ad9325a371802eb898ed849aa352dbd152ba41ec56ea8eb91abf6c1d1addedfe",
@@ -6596,6 +6600,10 @@
     "vnc-viewer-shared-screen.png": {
       "sha256": "77a390037fea03e6f7c379327d6aa60a1db76fb5948a4fefa2230d4000e6a8e5",
       "bytes": 295703
+    },
+    "vnc-viewer-ssh-turn-on.png": {
+      "sha256": "3c293efb6073aa5dcb3415bed830725528d035221b1bba7cfa105da9426246b9",
+      "bytes": 117142
     },
     "vnc-viewer-tabs.png": {
       "sha256": "837be62268a85be562c0b76e7dcaf2ec91c7f455f2bc829bc1467849d8a7bcac",
