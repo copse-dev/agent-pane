@@ -1,4 +1,8 @@
 import {
+  createSshWorkspaceConsent,
+  init_ssh_workspace_consent
+} from "./chunk-FWVGBPA5.js";
+import {
   arrowLeftIcon,
   createSshHostFields,
   init_icons,
@@ -25,6 +29,21 @@ import {
 import {
   __esm
 } from "./chunk-WW3EXSJD.js";
+
+// src/renderer/controller/ssh-workspace-ui.ts
+async function isSshWorkspaceEnabled(api) {
+  try {
+    const settings = api.settings;
+    if (!settings?.get) return false;
+    return await settings.get("sshWorkspaceEnabled") === true;
+  } catch {
+    return false;
+  }
+}
+var init_ssh_workspace_ui = __esm({
+  "src/renderer/controller/ssh-workspace-ui.ts"() {
+  }
+});
 
 // src/renderer/views/remote-folder-path.ts
 function initialRemoteBrowsePath(projects, hostId, home) {
@@ -161,8 +180,9 @@ function openRemoteFolderDialog(api, options = {}) {
     el("div", { class: "remote-folder-toolbar" }, upBtn, breadcrumbs),
     list
   );
-  dialog.append(
-    el("h3", {}, "Open remote folder"),
+  const picker = el(
+    "div",
+    { class: "remote-folder-picker" },
     el("p", { class: "field-hint" }, "Choose an SSH host and folder on the remote machine."),
     el(
       "div",
@@ -175,6 +195,7 @@ function openRemoteFolderDialog(api, options = {}) {
     status,
     el("div", { class: "remote-folder-actions" }, cancelBtn, openBtn)
   );
+  dialog.append(el("h3", {}, "Open remote folder"), picker);
   let hosts = [];
   let configHosts = [];
   let currentHostId = "";
@@ -404,7 +425,24 @@ function openRemoteFolderDialog(api, options = {}) {
       if (!currentHostId) return;
       finish({ hostId: currentHostId, path: currentPath });
     });
-    void loadHosts();
+    void isSshWorkspaceEnabled(api).then((enabled) => {
+      if (enabled) {
+        void loadHosts();
+        return;
+      }
+      picker.hidden = true;
+      const consent = createSshWorkspaceConsent(api, {
+        onEnabled: async () => {
+          consent.root.remove();
+          picker.hidden = false;
+          await loadHosts();
+        },
+        onCancel: () => {
+          finish(null);
+        }
+      });
+      dialog.append(consent.root);
+    });
     dialog.showModal();
   });
 }
@@ -416,6 +454,8 @@ var init_remote_folder_dialog = __esm({
     init_toast();
     init_ssh_host_helpers();
     init_ssh_host_fields();
+    init_ssh_workspace_consent();
+    init_ssh_workspace_ui();
     init_remote_folder_path();
     init_icons();
     init_inline_status();
