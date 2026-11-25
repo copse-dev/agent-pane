@@ -909,6 +909,18 @@
       "sha256": "dd11fca438b379c03bd07a0b57906922574cae0e801df16f9ee64aa103be67be",
       "bytes": 318355
     },
+    "automation-pull-request-bots-ci-editor.png": {
+      "sha256": "ea53ef5ad3fdde668104a2c267733b37400f47df6ce6abeaa3bd59e0625adf5e",
+      "bytes": 249515
+    },
+    "automation-pull-request-bots-list.png": {
+      "sha256": "a2d6decd8207bf7af2a029380a886a9e3b1db781f1c997bf8920c022f2ec99a7",
+      "bytes": 281234
+    },
+    "automation-pull-request-bots-review-editor.png": {
+      "sha256": "d4918a9257dd78759ea2d21c504b4bcf2bbf46d816d3ecbd66df97ada3886a3c",
+      "bytes": 253164
+    },
     "automation-question-interactive-follow-up.png": {
       "sha256": "28efbfe47993dcbd042a614dbb92e1667ddeedf6d0d24bc0dbd887a672e152bf",
       "bytes": 32302
