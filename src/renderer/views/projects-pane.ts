@@ -1,4 +1,5 @@
 import { openAppRunDialog } from './app-run-dialog.ts'
+import { openImportSessionsDialog } from './import-sessions-dialog.ts'
 import { createArchivedThreads } from './archived-threads.ts'
 import { showThreadArchiveToast } from './thread-archive-toast.ts'
 import { withoutSideChats } from '@shared/threads/side-chat.ts'
@@ -2511,6 +2512,31 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         switchProject(store, api, project.id)
       })
       const projectMenuEntries: ContextMenuEntry[] = [
+        // Saved sessions live on this computer, so a remote project has none to offer.
+        ...(project.missing || project.sshHost
+          ? []
+          : [
+              {
+                label: 'Import sessions…',
+                onSelect: (): void => {
+                  const open = (): void => {
+                    if (store.getState().activeProjectId === project.id) {
+                      openImportSessionsDialog(store, api, {
+                        id: project.id,
+                        name: projectDisplayName(project),
+                      })
+                    }
+                  }
+                  if (store.getState().activeProjectId === project.id) {
+                    open()
+                    return
+                  }
+                  void switchProjectAndWait(store, api, project.id)
+                    .then(open)
+                    .catch(() => undefined)
+                },
+              },
+            ]),
         {
           label: 'Remove from sidebar',
           onSelect: (): void => {

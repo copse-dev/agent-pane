@@ -83,6 +83,22 @@ export interface AcquireAcpSessionOptions {
   createTransport?: AcpTransportFactory | undefined
   /** Cancels run-owned startup prompts while opening a fresh transport. */
   signal?: AbortSignal | undefined
+  /**
+   * The thread's durable link to an agent session that this run of Copse has
+   * not attached yet, such as a session imported from the agent's own CLI.
+   * Consulted only when the pool has no live or remembered session for the
+   * thread.
+   */
+  storedSession?: AcpStoredSession | undefined
+}
+
+/** A thread's saved link to an agent session, kept beside the thread. */
+export interface AcpStoredSession {
+  load: () => Promise<{ sessionId: string; cwd: string } | null>
+  /** The agent took the session back: keep the link, under the id it now uses. */
+  keep: (sessionId: string) => Promise<void>
+  /** The agent could not take it back: forget the link and go on from the transcript. */
+  drop: () => Promise<void>
 }
 
 const IDLE_MS = 10 * 60 * 1000
@@ -392,8 +408,25 @@ async function acquireAcpSessionUnlocked(
   // A different agent (or host) never inherits the session: that is a
   // conversation handed to someone else, which the transcript preamble covers.
   const candidate = carryOverCandidates.get(opts.threadId)
-  const carryOver = candidate?.lineage === lineage ? candidate : undefined
+  let carryOver: CarryOverCandidate | undefined =
+    candidate?.lineage === lineage ? candidate : undefined
   if (candidate && !carryOver) carryOverCandidates.delete(opts.threadId)
+  // Nothing in memory: the thread may still be linked to a session from before
+  // this run (an imported CLI session). A remote agent's sessions live on its
+  // host, which a local link cannot name.
+  let fromStoredSession = false
+  if (!candidate && opts.storedSession && spawnConfigSshTarget(opts.config) === null) {
+    const stored = await opts.storedSession.load().catch((err: unknown) => {
+      console.warn(
+        `[acp-pool] could not read thread ${opts.threadId}'s saved agent session: ${errorMessage(err)}`,
+      )
+      return null
+    })
+    if (stored) {
+      carryOver = { lineage, sessionId: stored.sessionId, cwd: stored.cwd, hasHistory: true }
+      fromStoredSession = true
+    }
+  }
 
   // Bridge before spawn: a sandboxed agent's seatbelt profile must include
   // loopback at spawn time when the bridge will be offered (#602). The abort
@@ -491,6 +524,16 @@ async function acquireAcpSessionUnlocked(
     throw err
   }
   carryOverCandidates.delete(opts.threadId)
+  if (fromStoredSession && opts.storedSession) {
+    const stored = opts.storedSession
+    await (open.resumed ? stored.keep(open.session.sessionId) : stored.drop()).catch(
+      (err: unknown) => {
+        console.warn(
+          `[acp-pool] could not update thread ${opts.threadId}'s saved agent session: ${errorMessage(err)}`,
+        )
+      },
+    )
+  }
 
   const unregisterProcess = registerAcpSessionProcess({
     threadId: opts.threadId,
