@@ -140,6 +140,7 @@ export const SandboxManager = {
   async reset() { config = null },
 }
 export function getApplySeccompBinaryPath() { return null }
+export function getJavaProxyAgentJarPath() { return null }
 `,
   )
   buildSync({
@@ -153,6 +154,7 @@ export function getApplySeccompBinaryPath() { return null }
       '@shared': resolve('src/shared'),
       '@anthropic-ai/sandbox-runtime': stub,
       '@anthropic-ai/sandbox-runtime/dist/sandbox/generate-seccomp-filter.js': stub,
+      '@anthropic-ai/sandbox-runtime/dist/sandbox/java-proxy-agent.js': stub,
     },
     external: [
       'electron',
