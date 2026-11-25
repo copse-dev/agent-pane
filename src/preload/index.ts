@@ -5,7 +5,7 @@ import type { RemoteArtifactImageRequest } from '@shared/remote-artifact-image.t
 import type { RemoteArtifactDownloadRequest } from '@shared/remote-artifact-download.ts'
 import type { ApiClient, FilePathBridge } from './api.d.ts'
 import type { ClassifierProfile } from '@copse/llm/classifiers/types.ts'
-import type { PrComposerCreateRequest } from '@shared/types/git.ts'
+import type { GitLineSelection, PrComposerCreateRequest } from '@shared/types/git.ts'
 import type { AppleSuggestionAnswer } from '@shared/types/apple-development.ts'
 import { exposePerfBridge, installPreloadPerfTracing } from './perf-bridge.ts'
 import { createWorkspaceNavigation } from './workspace-navigation.ts'
@@ -1891,6 +1891,15 @@ const api: ApiClient = {
       ipcRenderer.invoke('git:prompt-state', projectId, threadId),
     checkoutBranch: (projectId: string, threadId: string, branch: string) =>
       ipcRenderer.invoke('git:checkout-branch', projectId, threadId, branch),
+    setPathStaged: (projectId: string, threadId: string, path: string, staged: boolean) =>
+      ipcRenderer.invoke('git:set-path-staged', projectId, threadId, path, staged),
+    setLinesStaged: (
+      projectId: string,
+      threadId: string,
+      path: string,
+      staged: boolean,
+      selection: GitLineSelection,
+    ) => ipcRenderer.invoke('git:set-lines-staged', projectId, threadId, path, staged, selection),
     listBranches: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('git:list-branches', projectId, threadId),
     getDefaultBranch: (projectId: string, threadId: string) =>

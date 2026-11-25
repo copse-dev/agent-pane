@@ -15,6 +15,7 @@ export interface GitDiffModel {
 }
 
 export interface GitDiffCodeEditor extends MonacoShortcutSource {
+  onDidFocusEditorText(listener: () => void): { dispose(): void }
   revealLineInCenterIfOutsideViewport(line: number): void
   updateOptions(options: Monaco.editor.IEditorOptions): void
 }

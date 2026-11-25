@@ -39,6 +39,19 @@ export interface GitCommittedChanges {
   changes: GitChange[]
 }
 
+/** Lines picked in the Changes pane diff, numbered on one side of it (1-based, inclusive). */
+export interface GitLineSelection {
+  side: 'old' | 'new'
+  startLine: number
+  endLine: number
+}
+
+/** Outcome of staging or unstaging from the Changes pane; `message` is shown beside the diff. */
+export interface GitStageResult {
+  ok: boolean
+  message: string
+}
+
 export interface GitFileDiff {
   path: string
   before: string

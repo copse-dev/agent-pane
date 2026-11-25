@@ -91,6 +91,7 @@ function createFakeDiff(): FakeDiff {
     getSelection: () => null,
     getModel: () => null,
     onKeyDown: () => ({ dispose: (): void => {} }),
+    onDidFocusEditorText: () => ({ dispose: (): void => {} }),
     updateOptions: (): void => {},
   })
 
@@ -572,6 +573,7 @@ describe('createGitChangesDiffEditor keeps a single gutter in the inline view', 
       getSelection: () => null,
       getModel: () => null,
       onKeyDown: () => ({ dispose: (): void => {} }),
+      onDidFocusEditorText: () => ({ dispose: (): void => {} }),
       updateOptions: (options): void => {
         lineNumberModes.push(options.lineNumbers)
       },

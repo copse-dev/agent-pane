@@ -1193,6 +1193,20 @@
           2
         ]
       },
+      "git:set-lines-staged": {
+        "api": "git.setLinesStaged",
+        "args": [
+          5,
+          5
+        ]
+      },
+      "git:set-path-staged": {
+        "api": "git.setPathStaged",
+        "args": [
+          4,
+          4
+        ]
+      },
       "git:status": {
         "api": "git.status",
         "args": [

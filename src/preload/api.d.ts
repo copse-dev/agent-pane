@@ -84,6 +84,8 @@ import type {
   GitCommittedChanges,
   GitFileDiff,
   GitStatusResult,
+  GitLineSelection,
+  GitStageResult,
   ThreadChangeSummary,
   GitBranchStatus,
   ThreadWorktreeAttachment,
@@ -1628,6 +1630,24 @@ export interface ApiClient {
     /** HEAD commit + dirty state snapshot for a prompt about to be sent. */
     promptState: (projectId: string, threadId: string) => Promise<GitPromptState>
     checkoutBranch: (projectId: string, threadId: string, branch: string) => Promise<void>
+    /** Stage (`staged: true`) or unstage a Changes pane row. Only the index changes. */
+    setPathStaged: (
+      projectId: string,
+      threadId: string,
+      path: string,
+      staged: boolean,
+    ) => Promise<GitStageResult>
+    /**
+     * Stage the unstaged changes (or unstage the staged ones) that a line
+     * selection in the diff touches. Only the index changes.
+     */
+    setLinesStaged: (
+      projectId: string,
+      threadId: string,
+      path: string,
+      staged: boolean,
+      selection: GitLineSelection,
+    ) => Promise<GitStageResult>
     listBranches: (projectId: string, threadId: string) => Promise<GitBranchInfo[]>
     getDefaultBranch: (projectId: string, threadId: string) => Promise<string | null>
     /** The pre-session worktree backup taken this session, or null when none. */

@@ -36,6 +36,7 @@ function makeCodeEditorStub(): ContextPanelEditor {
   return {
     addCommand(): void {},
     onKeyDown: () => ({ dispose(): void {} }),
+    onDidFocusEditorText: () => ({ dispose(): void {} }),
     getSelection: () => null,
     getModel: () => model,
     setModel(next: ContextPanelModel | null): void {

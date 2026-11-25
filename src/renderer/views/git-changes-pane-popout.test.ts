@@ -29,6 +29,7 @@ interface Counters {
 function makeMonacoStub(counters: Counters): GitDiffMonaco {
   const noopEditor = {
     onKeyDown: (): { dispose(): void } => ({ dispose(): void {} }),
+    onDidFocusEditorText: (): { dispose(): void } => ({ dispose(): void {} }),
     getModel: (): null => null,
     getSelection: (): null => null,
     revealLineInCenterIfOutsideViewport: (): void => {},

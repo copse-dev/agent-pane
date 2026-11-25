@@ -190,6 +190,8 @@
       "git:restore-backup",
       "git:restore-worktree",
       "git:session-backup",
+      "git:set-lines-staged",
+      "git:set-path-staged",
       "git:status",
       "git:thread-change-summary",
       "git:working-file-diff",

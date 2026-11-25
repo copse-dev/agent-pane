@@ -13,9 +13,12 @@ import type {
   GitChangeStatus,
   GitCommittedChanges,
   GitFileDiff,
+  GitLineSelection,
+  GitStageResult,
   GitStatusResult,
   SessionBackup,
 } from '@shared/types/git.ts'
+import { errorMessage } from '@shared/errors.ts'
 import { showToast, showErrorToast } from './toast.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
 import { uiActions } from '../ui/actions.ts'
@@ -342,7 +345,29 @@ export function mountGitChangesPane(
   const dirWrap = el('div', { class: 'git-dir-view' })
   dirWrap.hidden = true
   const emptyState = el('div', { class: 'panel-empty' }, 'Select a changed file')
-  viewerRoot.append(conflictBanner, diffWrap, imageWrap, dirWrap, emptyState, approvalBar)
+  // Staging: move the selected row, or only the changes a line selection in the
+  // diff touches, between Unstaged and Staged. Only the index changes.
+  const stageStatus = el('span', { class: 'git-stage-status', role: 'status' })
+  const stageLinesBtn = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-secondary ui-btn-compact git-stage-lines-btn' },
+    'Stage selection',
+  )
+  const stageFileBtn = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-secondary ui-btn-compact git-stage-file-btn' },
+    'Stage file',
+  )
+  const stageBar = uiActions(stageStatus, stageLinesBtn, stageFileBtn, {
+    className: 'git-stage-bar',
+  })
+  stageBar.hidden = true
+  viewerRoot.append(conflictBanner, diffWrap, imageWrap, dirWrap, emptyState, approvalBar, stageBar)
+  let stageBusy = false
+  /** The path the stage status line speaks about; cleared when another file is picked. */
+  let stageStatusPath: string | null = null
+  /** The diff side the user last clicked into, which numbers a line selection. */
+  let lastFocusedSide: GitLineSelection['side'] = 'new'
 
   let diffEditor: GitDiffEditor | null = null
   let pendingSelect: ChangeSelection | null = null
@@ -518,6 +543,12 @@ export function mountGitChangesPane(
         monacoApi,
         scaledEditorFontSize(store.getState().fontSize, store.getState().uiScale),
       )
+      diffEditor.getOriginalEditor().onDidFocusEditorText(() => {
+        lastFocusedSide = 'old'
+      })
+      diffEditor.getModifiedEditor().onDidFocusEditorText(() => {
+        lastFocusedSide = 'new'
+      })
       registerMonacoSelectionToChatShortcut(diffEditor.getOriginalEditor(), monacoApi, () => {
         if (selection?.kind === 'proposed') {
           return { path: selection.path, detail: 'before' }
@@ -657,6 +688,7 @@ export function mountGitChangesPane(
   function renderList(): void {
     const queue = store.getState().stagedDiffs
     syncBulkActions(queue.length)
+    syncStageBar()
     // Compare the list's inputs by value: IPC returns fresh objects even when
     // nothing changed. Keep row identity, focus and the empty state intact.
     const key = JSON.stringify([
@@ -706,6 +738,90 @@ export function mountGitChangesPane(
     if (committed) renderCommittedSection(committed)
     if (committedPending) listBody.append(paneLoadingRow('Checking committed changes…'))
   }
+
+  /** The row the stage bar acts on: the selected Staged or Unstaged file. */
+  function stageRow(): { path: string; staged: boolean; change: GitChange | undefined } | null {
+    if (selection?.kind !== 'git') return null
+    const { path, staged } = selection
+    const rows = staged ? status?.staged : status?.unstaged
+    return { path, staged, change: rows?.find((row) => row.path === path) }
+  }
+
+  function syncStageBar(): void {
+    const row = stageRow()
+    stageBar.hidden = row === null
+    if (!row) return
+    if (stageStatusPath !== row.path) {
+      stageStatusPath = null
+      stageStatus.textContent = ''
+      stageStatus.removeAttribute('data-ok')
+    }
+    // A file inside a collapsed untracked directory has no row of its own.
+    const isRow = row.change !== undefined
+    stageFileBtn.textContent = row.staged ? 'Unstage file' : 'Stage file'
+    stageFileBtn.disabled = stageBusy || !isRow
+    stageLinesBtn.textContent = row.staged ? 'Unstage selection' : 'Stage selection'
+    // Untracked files have no index version to patch, so they are staged whole.
+    const lineStageable =
+      isRow && row.change?.status !== 'untracked' && !row.change?.isDirectory && !diffWrap.hidden
+    stageLinesBtn.disabled = stageBusy || !lineStageable
+    stageLinesBtn.setAttribute(
+      'data-tooltip',
+      lineStageable
+        ? `${row.staged ? 'Unstage' : 'Stage'} the changes the selected lines touch`
+        : 'Untracked and binary files are staged whole',
+    )
+  }
+
+  function showStageStatus(path: string, text: string, ok: boolean | null): void {
+    stageStatusPath = path
+    stageStatus.textContent = text
+    if (ok === null) stageStatus.removeAttribute('data-ok')
+    else stageStatus.setAttribute('data-ok', String(ok))
+  }
+
+  /** The lines selected in the diff, numbered on the side the user clicked into. */
+  function diffLineSelection(): GitLineSelection | null {
+    if (!diffEditor || diffWrap.hidden) return null
+    const editor =
+      lastFocusedSide === 'old' ? diffEditor.getOriginalEditor() : diffEditor.getModifiedEditor()
+    const range = editor.getSelection()
+    if (!range) return null
+    let endLine = range.endLineNumber
+    // A drag that stops at the start of the next line selects nothing on it.
+    if (endLine > range.startLineNumber && range.endColumn === 1) endLine--
+    return { side: lastFocusedSide, startLine: range.startLineNumber, endLine }
+  }
+
+  async function stageSelected(scope: 'file' | 'lines'): Promise<void> {
+    const row = stageRow()
+    const owner = activeOwner()
+    if (stageBusy || !row || !owner) return
+    const lines = scope === 'lines' ? diffLineSelection() : null
+    if (scope === 'lines' && !lines) {
+      showStageStatus(row.path, 'Click or select lines in the diff first.', false)
+      return
+    }
+    const stage = !row.staged
+    stageBusy = true
+    showStageStatus(row.path, stage ? 'Staging…' : 'Unstaging…', null)
+    syncStageBar()
+    let result: GitStageResult
+    try {
+      result = lines
+        ? await api.git.setLinesStaged(owner.projectId, owner.threadId, row.path, stage, lines)
+        : await api.git.setPathStaged(owner.projectId, owner.threadId, row.path, stage)
+    } catch (error) {
+      result = { ok: false, message: errorMessage(error) }
+    }
+    stageBusy = false
+    showStageStatus(row.path, result.message, result.ok)
+    syncStageBar()
+    if (result.ok) await refresh()
+  }
+
+  stageFileBtn.addEventListener('click', () => void stageSelected('file'))
+  stageLinesBtn.addEventListener('click', () => void stageSelected('lines'))
 
   function renderRestoreBanner(): void {
     const paths = sessionBackup?.paths ?? []
@@ -908,6 +1024,7 @@ export function mountGitChangesPane(
       imageWrap.hidden = true
       dirWrap.hidden = true
       emptyState.textContent = 'Could not load diff'
+      syncStageBar()
       return
     }
     if (diff.directoryFiles) {
@@ -917,6 +1034,7 @@ export function mountGitChangesPane(
       imageWrap.hidden = true
       dirWrap.hidden = false
       if (diffEditor) disposeDiffModels(diffEditor)
+      syncStageBar()
       return
     }
     diffLoadQueue = diffLoadQueue
@@ -954,6 +1072,7 @@ export function mountGitChangesPane(
         )
       })
     await diffLoadQueue
+    syncStageBar()
   }
 
   async function selectCommittedChange(path: string): Promise<void> {
@@ -1147,7 +1266,14 @@ export function mountGitChangesPane(
               c.path === gitSel.path ||
               (c.isDirectory === true && gitSel.path.startsWith(`${c.path}/`)),
           )
-      if (!stillExists) current = null
+      // Staged whole (or unstaged whole), the file is still the one being
+      // reviewed: follow it to the other section instead of jumping away.
+      const otherSide = gitSel.staged ? status?.unstaged : status?.staged
+      if (!stillExists) {
+        current = otherSide?.some((c) => c.path === gitSel.path)
+          ? { kind: 'git', path: gitSel.path, staged: !gitSel.staged }
+          : null
+      }
     }
     if (current?.kind === 'committed') {
       const committedSel = current
