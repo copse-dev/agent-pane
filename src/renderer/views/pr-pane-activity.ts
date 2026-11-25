@@ -1,4 +1,4 @@
-import type { GhPrActivity, GhPrCheck } from '@shared/types/git.ts'
+import type { GhPrActivity, GhPrCheck, GhPrComment, GhPrReviewThread } from '@shared/types/git.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { clear, el } from '../dom/helpers.ts'
 import {
@@ -10,6 +10,7 @@ import {
   circleIcon,
 } from '../dom/icons.ts'
 import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
+import { reviewThreadLocation } from './pr-pane-thread.ts'
 
 export type PrDetailSection = 'overview' | 'comments' | 'checks' | 'files'
 
@@ -44,12 +45,159 @@ function externalButton(
   return button
 }
 
+function renderComment(comment: GhPrComment): HTMLElement {
+  const date = new Date(comment.createdAt)
+  const time = el(
+    'time',
+    {
+      datetime: comment.createdAt,
+      title: Number.isNaN(date.getTime()) ? comment.createdAt : date.toLocaleString(),
+    },
+    Number.isNaN(date.getTime())
+      ? comment.createdAt
+      : `${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`,
+  )
+  const heading = el(
+    'div',
+    { class: 'pr-comment-meta' },
+    el(
+      'span',
+      { class: 'pr-comment-avatar', 'aria-hidden': 'true' },
+      comment.author.slice(0, 2).toUpperCase(),
+    ),
+    el(
+      'div',
+      { class: 'pr-comment-author' },
+      el('strong', {}, `@${comment.author}`),
+      el(
+        'span',
+        {
+          class: comment.reviewState
+            ? `pr-review-state pr-review-state-${comment.reviewState.toLowerCase()}`
+            : 'pr-comment-kind',
+        },
+        comment.reviewState ? readableState(comment.reviewState) : 'commented',
+      ),
+    ),
+    time,
+  )
+  const body = el('div', { class: 'message-text streaming-markdown pr-comment-body' })
+  body.innerHTML = renderMarkdown(comment.body)
+  attachCodeBlockCopyButtons(body)
+  return el('article', { class: 'pr-comment', 'data-comment-id': comment.id }, heading, body)
+}
+
+function renderReviewThread(
+  thread: GhPrReviewThread,
+  open: (url: string) => void,
+  addressThreads?: (threads: GhPrReviewThread[]) => void,
+): HTMLElement {
+  const location = reviewThreadLocation(thread)
+  const header = el(
+    'div',
+    { class: 'pr-review-thread-header' },
+    el('code', { class: 'pr-review-thread-path', title: thread.path }, location),
+  )
+  if (thread.isOutdated) header.append(el('span', { class: 'pr-review-state' }, 'outdated'))
+  if (!thread.isResolved && addressThreads) {
+    const address = el(
+      'button',
+      {
+        type: 'button',
+        class: 'pr-activity-link pr-review-thread-address',
+        'aria-label': `Address review comment on ${location}`,
+      },
+      'Address',
+    )
+    address.addEventListener('click', () => {
+      addressThreads([thread])
+    })
+    header.append(address)
+  }
+  const article = el(
+    'article',
+    { class: 'pr-review-thread', 'data-thread-id': thread.id },
+    header,
+    ...thread.comments.map((comment) => renderComment(comment)),
+  )
+  const last = thread.comments.at(-1)
+  if (thread.commentsTruncated && last)
+    article.append(
+      el(
+        'p',
+        { class: 'pr-activity-notice pr-review-thread-more' },
+        externalButton('More replies on GitHub', last.url, open),
+      ),
+    )
+  return article
+}
+
+/**
+ * Inline code discussions, unresolved first. Each unresolved thread can be
+ * handed to the agent; resolved ones stay collapsed for reference.
+ */
+function renderReviewThreads(
+  host: HTMLElement,
+  activity: GhPrActivity,
+  open: (url: string) => void,
+  addressThreads?: (threads: GhPrReviewThread[]) => void,
+): void {
+  const unresolved = activity.reviewThreads.filter((thread) => !thread.isResolved)
+  const resolved = activity.reviewThreads.filter((thread) => thread.isResolved)
+  const heading = el(
+    'h4',
+    { class: 'pr-check-group-heading' },
+    el('span', {}, 'Code discussions'),
+    el('span', { class: 'pr-check-count' }, `${String(unresolved.length)} unresolved`),
+  )
+  if (unresolved.length > 1 && addressThreads) {
+    const addressAll = el(
+      'button',
+      { type: 'button', class: 'pr-activity-link pr-review-thread-address-all' },
+      `Address all ${String(unresolved.length)}`,
+    )
+    addressAll.addEventListener('click', () => {
+      addressThreads(unresolved)
+    })
+    heading.append(addressAll)
+  }
+  const section = el('section', { class: 'pr-check-group pr-review-threads' }, heading)
+  if (activity.reviewThreadsTruncated)
+    section.append(
+      el(
+        'p',
+        { class: 'pr-activity-notice' },
+        'Showing the first 100 code discussions. Open on GitHub for the rest.',
+      ),
+    )
+  if (!activity.reviewThreads.length)
+    section.append(el('p', { class: 'pr-activity-notice' }, 'No inline code discussions.'))
+  for (const thread of unresolved) section.append(renderReviewThread(thread, open, addressThreads))
+  if (resolved.length) {
+    const details = el(
+      'details',
+      { class: 'pr-check-group pr-review-threads-resolved' },
+      el(
+        'summary',
+        { class: 'pr-check-group-heading' },
+        chevronRightIcon('ui-icon ui-icon-sm pr-check-chevron'),
+        el('span', {}, 'Resolved'),
+        el('span', { class: 'pr-check-count' }, String(resolved.length)),
+      ),
+    )
+    for (const thread of resolved) details.append(renderReviewThread(thread, open))
+    section.append(details)
+  }
+  host.append(section)
+}
+
 export function renderPrActivity(
   host: HTMLElement,
   section: 'comments' | 'checks',
   activity: GhPrActivity | undefined,
   open: (url: string) => void,
   fixCheck?: (check: GhPrCheck, headSha: string) => void,
+  addressThreads?: (threads: GhPrReviewThread[]) => void,
 ): void {
   clear(host)
   if (!activity || activity.error) {
@@ -64,12 +212,9 @@ export function renderPrActivity(
     return
   }
   if (section === 'comments') {
+    renderReviewThreads(host, activity, open, addressThreads)
     host.append(
-      el(
-        'p',
-        { class: 'pr-activity-notice' },
-        'Conversation comments and submitted reviews. Inline code discussions are available on GitHub.',
-      ),
+      el('h4', { class: 'pr-check-group-heading pr-conversation-heading' }, 'Conversation'),
     )
     if (activity.commentsTruncated)
       host.append(
@@ -81,49 +226,7 @@ export function renderPrActivity(
       )
     if (!activity.comments.length)
       host.append(el('p', {}, 'No conversation comments or submitted reviews yet.'))
-    for (const comment of activity.comments) {
-      const date = new Date(comment.createdAt)
-      const time = el(
-        'time',
-        {
-          datetime: comment.createdAt,
-          title: Number.isNaN(date.getTime()) ? comment.createdAt : date.toLocaleString(),
-        },
-        Number.isNaN(date.getTime())
-          ? comment.createdAt
-          : `${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`,
-      )
-      const heading = el(
-        'div',
-        { class: 'pr-comment-meta' },
-        el(
-          'span',
-          { class: 'pr-comment-avatar', 'aria-hidden': 'true' },
-          comment.author.slice(0, 2).toUpperCase(),
-        ),
-        el(
-          'div',
-          { class: 'pr-comment-author' },
-          el('strong', {}, `@${comment.author}`),
-          el(
-            'span',
-            {
-              class: comment.reviewState
-                ? `pr-review-state pr-review-state-${comment.reviewState.toLowerCase()}`
-                : 'pr-comment-kind',
-            },
-            comment.reviewState ? readableState(comment.reviewState) : 'commented',
-          ),
-        ),
-        time,
-      )
-      const body = el('div', { class: 'message-text streaming-markdown pr-comment-body' })
-      body.innerHTML = renderMarkdown(comment.body)
-      attachCodeBlockCopyButtons(body)
-      host.append(
-        el('article', { class: 'pr-comment', 'data-comment-id': comment.id }, heading, body),
-      )
-    }
+    for (const comment of activity.comments) host.append(renderComment(comment))
     return
   }
   host.append(

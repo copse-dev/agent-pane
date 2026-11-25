@@ -1,13 +1,15 @@
 import '../../../tests/setup-dom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { GhPrActivity } from '@shared/types/git.ts'
+import type { GhPrActivity, GhPrReviewThread } from '@shared/types/git.ts'
 import { renderPrActivity } from './pr-pane-activity.ts'
 
 const activity: GhPrActivity = {
   headSha: 'abc123456',
   commentsTruncated: false,
   checksTruncated: false,
+  reviewThreads: [],
+  reviewThreadsTruncated: false,
   comments: [
     {
       id: '1',
@@ -140,5 +142,110 @@ describe('PR activity views', () => {
     assert.match(host.textContent, /latest 50/)
     renderPrActivity(host, 'checks', { ...activity, checksTruncated: true }, () => {})
     assert.match(host.textContent, /first 100/)
+  })
+
+  describe('inline code discussions', () => {
+    function thread(id: string, overrides: Partial<GhPrReviewThread> = {}): GhPrReviewThread {
+      return {
+        id,
+        path: `src/${id}.ts`,
+        line: 7,
+        isResolved: false,
+        isOutdated: false,
+        commentsTruncated: false,
+        comments: [
+          {
+            id: `${id}-c`,
+            author: 'reviewer',
+            body: `Fix **${id}**`,
+            createdAt: '2026-09-09T11:00:00Z',
+            url: `https://github.com/${id}`,
+          },
+        ],
+        ...overrides,
+      }
+    }
+
+    it('lists unresolved threads before the conversation and hands them to the agent', () => {
+      const host = document.createElement('div')
+      const addressed: string[][] = []
+      const withThreads: GhPrActivity = {
+        ...activity,
+        reviewThreads: [
+          thread('one'),
+          thread('done', { isResolved: true, isOutdated: true, line: null }),
+          thread('two'),
+        ],
+      }
+      renderPrActivity(
+        host,
+        'comments',
+        withThreads,
+        () => {},
+        undefined,
+        (threads) => addressed.push(threads.map((item) => item.id)),
+      )
+      const open = [...host.querySelectorAll('.pr-review-threads > .pr-review-thread')]
+      assert.deepEqual(
+        open.map((item) => item.getAttribute('data-thread-id')),
+        ['one', 'two'],
+      )
+      const [first] = open
+      assert.ok(first)
+      assert.equal(first.querySelector('.pr-review-thread-path')?.textContent, 'src/one.ts:7')
+      assert.equal(first.querySelector('.pr-comment-body strong')?.textContent, 'one')
+      assert.match(host.textContent, /2 unresolved/)
+      const conversation = host.querySelector('.pr-conversation-heading')
+      assert.ok(conversation)
+      assert.ok(first.compareDocumentPosition(conversation) & Node.DOCUMENT_POSITION_FOLLOWING)
+
+      const resolved = host.querySelector('details.pr-review-threads-resolved')
+      assert.ok(resolved)
+      assert.equal(resolved.hasAttribute('open'), false)
+      assert.equal(resolved.querySelector('.pr-review-thread-path')?.textContent, 'src/done.ts')
+      assert.match(resolved.textContent, /outdated/)
+      assert.equal(resolved.querySelector('.pr-review-thread-address'), null)
+
+      host.querySelector<HTMLButtonElement>('.pr-review-thread-address')?.click()
+      host.querySelector<HTMLButtonElement>('.pr-review-thread-address-all')?.click()
+      assert.deepEqual(addressed, [['one'], ['one', 'two']])
+    })
+
+    it('offers no Address all for a single thread and no actions without a handler', () => {
+      const host = document.createElement('div')
+      const single = { ...activity, reviewThreads: [thread('one')] }
+      renderPrActivity(host, 'comments', single, () => {})
+      assert.equal(host.querySelector('.pr-review-thread-address'), null)
+      renderPrActivity(
+        host,
+        'comments',
+        single,
+        () => {},
+        undefined,
+        () => {},
+      )
+      assert.ok(host.querySelector('.pr-review-thread-address'))
+      assert.equal(host.querySelector('.pr-review-thread-address-all'), null)
+    })
+
+    it('labels empty, truncated thread lists and threads with more replies on GitHub', () => {
+      const host = document.createElement('div')
+      renderPrActivity(host, 'comments', activity, () => {})
+      assert.match(host.textContent, /No inline code discussions/)
+      const opened: string[] = []
+      renderPrActivity(
+        host,
+        'comments',
+        {
+          ...activity,
+          reviewThreadsTruncated: true,
+          reviewThreads: [thread('long', { commentsTruncated: true })],
+        },
+        (url) => opened.push(url),
+      )
+      assert.match(host.textContent, /first 100 code discussions/)
+      host.querySelector<HTMLButtonElement>('.pr-review-thread-more button')?.click()
+      assert.deepEqual(opened, ['https://github.com/long'])
+    })
   })
 })

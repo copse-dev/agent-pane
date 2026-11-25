@@ -37,7 +37,27 @@ describe('PR comments and checks', () => {
     await saveElementScreenshot('#pane-files', 'pr-activity-overview.png')
 
     await $('.pr-detail-section[data-section="comments"]').click()
-    await expect(await $$('.pr-comment').getElements()).toBeElementsArrayOfSize(3)
+    // Conversation comments sit directly in the activity view; thread comments
+    // are nested inside their code discussion.
+    await expect(await $$('.pr-activity > .pr-comment').getElements()).toBeElementsArrayOfSize(3)
+    await expect(
+      await $$('.pr-review-threads > .pr-review-thread').getElements(),
+    ).toBeElementsArrayOfSize(2)
+    await expect(await $('.pr-review-thread-path').getElement()).toHaveText(
+      'src/renderer/views/pr-pane.ts:214',
+    )
+    await expect(await $('.pr-review-thread-address-all').getElement()).toHaveText('Address all 2')
+    await expect(await $('.pr-review-threads-resolved').getElement()).toBeDisplayed()
+    await expect(
+      await $('.pr-review-threads-resolved .pr-review-thread').getElement(),
+    ).not.toBeDisplayed()
+    const threadsFit = await browser.execute(() =>
+      [...document.querySelectorAll<HTMLElement>('.pr-review-thread')].every(
+        (thread) => thread.scrollWidth <= thread.clientWidth + 1,
+      ),
+    )
+    expect(threadsFit).toBe(true)
+    await saveElementScreenshot('#pane-files', 'pr-activity-review-threads.png')
     await expect(await $('.pr-comment .pr-activity-link').getElement()).not.toBeExisting()
     await expect(await $('.pr-open-external-btn').getElement()).toBeDisplayed()
     await expect(await $('.pr-activity').getElement()).toHaveText(

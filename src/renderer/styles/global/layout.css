@@ -1955,6 +1955,47 @@ summary.pr-check-group-heading::-webkit-details-marker {
 .pr-check-group[open] .pr-check-chevron {
   transform: rotate(90deg);
 }
+.pr-review-thread {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-top: var(--spacing-sm);
+  overflow: hidden;
+}
+.pr-review-thread-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-xs) var(--spacing-sm);
+  padding: var(--spacing-xs) var(--spacing-md);
+  background: var(--bg-muted);
+  font-size: var(--font-size-xs);
+}
+.pr-review-thread-path {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.pr-review-thread-address {
+  margin-left: auto;
+}
+.pr-review-thread-address-all {
+  margin-left: var(--spacing-sm);
+  font-weight: 400;
+}
+/* Comments inside a thread share its border instead of drawing their own. */
+.pr-review-thread .pr-comment {
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0;
+  margin-top: 0;
+}
+.pr-review-thread-more {
+  padding: var(--spacing-xs) var(--spacing-md);
+  margin: 0;
+  border-top: 1px solid var(--border-subtle);
+}
+.pr-conversation-heading {
+  margin-top: var(--spacing-md);
+}
 .pr-check-count {
   margin-left: auto;
   color: var(--text-secondary);

@@ -38,7 +38,13 @@ import {
   prMatchesFilter,
   type PrRef,
 } from './pr-pane-list.ts'
-import { prCheckFixDraft, startPrCheckFixThread, startPrDiscussThread } from './pr-pane-thread.ts'
+import {
+  prCheckFixDraft,
+  prReviewThreadsFixDraft,
+  startPrCheckFixThread,
+  startPrDiscussThread,
+  startPrReviewThreadsFixThread,
+} from './pr-pane-thread.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
@@ -1213,7 +1219,7 @@ export function mountPrPane(
           ? prDetails.files.length
           : activity && !activity.error
             ? section.key === 'comments'
-              ? activity.comments.length
+              ? activity.comments.length + activity.reviewThreads.length
               : section.key === 'checks'
                 ? activity.checks.length
                 : undefined
@@ -1221,7 +1227,7 @@ export function mountPrPane(
       if (count !== undefined) {
         const truncated =
           section.key === 'comments'
-            ? activity?.commentsTruncated
+            ? (activity?.commentsTruncated ?? false) || (activity?.reviewThreadsTruncated ?? false)
             : section.key === 'checks'
               ? activity?.checksTruncated
               : false
@@ -1256,22 +1262,42 @@ export function mountPrPane(
         },
         (check, headSha) => {
           if (!prDetails) return
-          const key = prRelationKey(prDetails)
-          const producingThreadId = (prRelationships ?? threadLinks.get(key) ?? []).find((row) =>
-            row.kinds.includes('produced'),
-          )?.threadId
-          if (producingThreadId) {
-            switchThread(store, producingThreadId)
-            void getPromptAttachmentHandlers()?.sendMessage?.(
-              prCheckFixDraft(prDetails, check, headSha),
-            )
-            return
-          }
-          startPrCheckFixThread(store, prDetails, check, headSha)
-          getPromptAttachmentHandlers()?.focusComposer?.()
+          const pr = prDetails
+          handToAgent(
+            () => prCheckFixDraft(pr, check, headSha),
+            () => startPrCheckFixThread(store, pr, check, headSha),
+          )
+        },
+        (threads) => {
+          if (!prDetails || !threads.length) return
+          const pr = prDetails
+          handToAgent(
+            () => prReviewThreadsFixDraft(pr, threads),
+            () => startPrReviewThreadsFixThread(store, pr, threads),
+          )
         },
       )
     }
+  }
+
+  /**
+   * Send follow-up work to the thread that produced this PR, which already has
+   * its checkout and context; with no such thread, open a new one with the
+   * draft in the composer for the user to edit and send.
+   */
+  function handToAgent(draft: () => string, startThread: () => void): void {
+    if (!prDetails) return
+    const key = prRelationKey(prDetails)
+    const producingThreadId = (prRelationships ?? threadLinks.get(key) ?? []).find((row) =>
+      row.kinds.includes('produced'),
+    )?.threadId
+    if (producingThreadId) {
+      switchThread(store, producingThreadId)
+      void getPromptAttachmentHandlers()?.sendMessage?.(draft())
+      return
+    }
+    startThread()
+    getPromptAttachmentHandlers()?.focusComposer?.()
   }
 
   function renderFiles(): void {
