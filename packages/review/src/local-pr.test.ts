@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import {
   access,
+  chmod,
   lstat,
   mkdir,
   mkdtemp,
@@ -546,6 +547,19 @@ describe('copse-review pr', () => {
     assert.deepEqual(await readdir(join(reviewCache, 'scratch')), [])
     // This run's own cells were removed as it went, so nothing is left listed.
     assert.equal(await readFile(journal, 'utf8'), '')
+  })
+
+  it('clears a scratch checkout a killed cell left read-only', async (t) => {
+    if (process.getuid?.() === 0) {
+      t.skip('root ignores directory permissions')
+      return
+    }
+    const locked = join(copseDir, 'cache', 'review', 'scratch', 'review-dead', 'head', 'locked')
+    await mkdir(locked, { recursive: true })
+    await writeFile(join(locked, 'file'), '')
+    await chmod(locked, 0o500)
+    assert.equal(await review(['--fresh']), HEADLESS_EXIT.SUCCESS, err)
+    assert.deepEqual(await readdir(join(copseDir, 'cache', 'review', 'scratch')), [])
   })
 
   it('drops a cell container from the journal as soon as it is gone', async () => {

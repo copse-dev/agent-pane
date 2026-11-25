@@ -62,6 +62,7 @@ import {
   type ContainerLimits,
 } from './container-backend.ts'
 import { envValue } from './provider-selection.ts'
+import { removeTree } from './remove-tree.ts'
 import { reachedNoVerdict } from './report-text.ts'
 import { acquireReviewLock } from './review-lock.ts'
 
@@ -1375,7 +1376,8 @@ async function sweepEarlierRun(io: LocalPrIo, paths: SweepPaths): Promise<Journa
     )
   }
   const scratch = await readdir(scratchParent).catch(() => [])
-  for (const name of scratch) await rm(join(scratchParent, name), { recursive: true, force: true })
+  // A cell may have left a directory it made read-only in its checkout.
+  for (const name of scratch) await removeTree(join(scratchParent, name))
   const halfMade = [
     ...(await readdir(paths.cacheRoot).catch(() => []))
       .filter((name) => name.startsWith('seed-') || name.startsWith('repo-'))
