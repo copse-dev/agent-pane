@@ -51,7 +51,6 @@ export default ts.config(
       'bench-results/',
       '.claude/**',
       'eslint.config.mjs',
-      'eslint.hook.config.mjs',
       // One-line side-effect import of the preload for the Tauri ws-bridge
       // bundle; in no tsconfig project (the preload typechecks under
       // tsconfig.node.json, this entry is browser-side). See scripts/build-tauri.mts.

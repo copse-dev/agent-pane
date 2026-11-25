@@ -24,7 +24,6 @@
     "bench-results/",
     ".claude/**",
     "eslint.config.mjs",
-    "eslint.hook.config.mjs",
     "src/sidecar/ws-bridge/entry.ts",
     "tests/fixtures/git-changes-repo/**",
     "benchmarks/fixtures/**",

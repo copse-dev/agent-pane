@@ -9,9 +9,11 @@
  * Everything here is I/O-free and unit-tested; `hook-file-check.mts` supplies
  * stdin, the linters, and the filesystem.
  */
+import { z } from 'zod'
 import { memberOf } from '@copse/std/member-of.ts'
 import { isRecord } from '../../src/shared/unknown-value.mts'
 import { isDefined } from '@copse/std/nullish.ts'
+import { decodeWithSchema, safeJsonParse } from './safe-json.mts'
 
 /**
  * Which agent is running the hook. It decides only how a finding is *reported*,
@@ -38,12 +40,59 @@ export const isHookDialect: (value: string) => value is HookDialect = memberOf(H
 
 /** One tool's complaint about the edited file. */
 export type Finding = {
-  /** The tool that produced it, e.g. `eslint` / `prettier`. */
+  /** The tool that produced it, e.g. `oxlint` / `oxfmt`. */
   tool: string
   /** Human-readable detail, already formatted by that tool. */
   detail: string
   /** The command that reproduces (and for prettier, fixes) it. */
   fix: string
+}
+
+/**
+ * The part of `oxlint --format=json` the hook reads. oxlint is a separate
+ * binary, so its stdout is untrusted input: anything that does not match is
+ * rejected rather than half-read. `code` is absent on diagnostics that belong
+ * to no rule (an unused-directive report, say); a diagnostic with no label has
+ * no position.
+ */
+const oxlintReportSchema = z.object({
+  diagnostics: z.array(
+    z.object({
+      message: z.string(),
+      code: z.string().optional(),
+      severity: z.string(),
+      labels: z
+        .array(z.object({ span: z.object({ line: z.number(), column: z.number() }) }))
+        .optional(),
+    }),
+  ),
+})
+
+/**
+ * One line per error in an `oxlint --format=json` report, in the
+ * `line:column  message  rule` shape the hook prints, or null when `stdout` is
+ * not such a report. Warnings are dropped: the hook reports what would fail
+ * the gate, and every rule the repo enables is an error. Sorted by position,
+ * because oxlint groups its output by rule and an agent reads a file top down.
+ *
+ * When every path is ignored, oxlint prints a plain-text "No files found to
+ * lint" line *ahead of* the JSON (and exits 1 under `--type-aware`), so the
+ * report is read from the first line that opens an object.
+ */
+export function oxlintErrorLines(stdout: string): string[] | null {
+  const start = stdout.search(/^\{/m)
+  if (start === -1) return null
+  const report = safeJsonParse(stdout.slice(start), decodeWithSchema(oxlintReportSchema))
+  if (report === null) return null
+  return report.diagnostics
+    .filter((diagnostic) => diagnostic.severity === 'error')
+    .map((diagnostic) => {
+      const span = diagnostic.labels?.[0]?.span ?? { line: 0, column: 0 }
+      const text = `  ${String(span.line)}:${String(span.column)}  ${diagnostic.message}`
+      return { span, text: `${text}  ${diagnostic.code ?? ''}`.trimEnd() }
+    })
+    .sort((a, b) => a.span.line - b.span.line || a.span.column - b.span.column)
+    .map(({ text }) => text)
 }
 
 /** What the checker should run for a given file. */
@@ -145,9 +194,9 @@ export function renderReport(
     lines.push(`  fix: ${finding.fix}`)
     lines.push('')
   }
-  lines.push('This check is a fast subset: formatting and the type-unaware lint rules.')
+  lines.push('This check is a fast subset: formatting and oxlint, type-aware rules included.')
   lines.push(
-    '`npm run check:local` is the minimum gate — it adds typecheck and the type-aware rules.',
+    '`npm run check:local` is the minimum gate — it adds tsc and ESLint, which remains the lint gate.',
   )
   lines.push('Use `npm run check` when the AGENTS.md risk policy requires the complete suite.')
   if (testHint !== null) lines.push(`Covering unit test: npm test -- ${testHint}`)

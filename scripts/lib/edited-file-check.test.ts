@@ -6,6 +6,7 @@ import {
   editedPathsFromPayload,
   hookOutput,
   isHookDialect,
+  oxlintErrorLines,
   renderReport,
   siblingTestCandidates,
 } from './edited-file-check.mts'
@@ -105,11 +106,70 @@ describe('siblingTestCandidates', () => {
   })
 })
 
+describe('oxlintErrorLines', () => {
+  // Trimmed from real `oxlint --type-aware --format=json` output (oxlint 1.94).
+  const diagnostic = {
+    message: 'Promises must be awaited, end with a call to .catch, or end with a call to .then.',
+    code: 'typescript(no-floating-promises)',
+    severity: 'error',
+    url: 'https://oxc.rs/docs/guide/usage/linter/rules/typescript/no-floating-promises.html',
+    help: 'The promise must end with a call to .catch.',
+    filename: 'src/a.ts',
+    labels: [{ span: { offset: 486, length: 9, line: 17, column: 3 } }],
+  }
+  const report = (diagnostics: unknown[]): string =>
+    JSON.stringify({ diagnostics, number_of_files: 1, number_of_rules: 142 })
+
+  it('prints each error as position, message and rule', () => {
+    assert.deepEqual(oxlintErrorLines(report([diagnostic])), [
+      '  17:3  Promises must be awaited, end with a call to .catch, or end with a call to .then.  typescript(no-floating-promises)',
+    ])
+  })
+
+  it('orders errors by position, not by the rule oxlint grouped them under', () => {
+    const at = (line: number, column: number): unknown => ({
+      ...diagnostic,
+      labels: [{ span: { offset: 0, length: 1, line, column } }],
+    })
+    const lines = oxlintErrorLines(report([at(9, 1), at(2, 5), at(2, 1)])) ?? []
+    assert.deepEqual(
+      lines.map((line) => line.trim().split(' ')[0]),
+      ['2:1', '2:5', '9:1'],
+    )
+  })
+
+  it('is empty for a clean file', () => {
+    assert.deepEqual(oxlintErrorLines(report([])), [])
+  })
+
+  it('drops warnings, because the hook reports what would fail the gate', () => {
+    assert.deepEqual(oxlintErrorLines(report([{ ...diagnostic, severity: 'warning' }])), [])
+  })
+
+  it('keeps a diagnostic with no rule or position instead of dropping it', () => {
+    const bare = { message: 'Unused eslint-disable directive.', severity: 'error' }
+    assert.deepEqual(oxlintErrorLines(report([bare])), ['  0:0  Unused eslint-disable directive.'])
+  })
+
+  it('reads past the notice oxlint prints when the only path is ignored', () => {
+    // Verbatim shape of oxlint 1.94's stdout for an ignored file under --type-aware.
+    const stdout =
+      'No files found to lint. Please check your paths and ignore patterns.\n' +
+      '{ "diagnostics": [],\n  "number_of_files": 0,\n  "number_of_rules": 142\n}\n'
+    assert.deepEqual(oxlintErrorLines(stdout), [])
+  })
+
+  it('rejects output that is not an oxlint report', () => {
+    assert.equal(oxlintErrorLines('No files found to lint.'), null)
+    assert.equal(oxlintErrorLines(JSON.stringify({ diagnostics: [{ message: 1 }] })), null)
+  })
+})
+
 describe('renderReport', () => {
   const lintFinding: Finding = {
-    tool: 'eslint',
+    tool: 'oxlint',
     detail: '  1:7  no-unused-vars',
-    fix: 'npx eslint src/a.ts',
+    fix: 'npx oxlint --type-aware src/a.ts',
   }
   const formatFinding: Finding = {
     tool: 'oxfmt',
@@ -133,7 +193,7 @@ describe('renderReport', () => {
   it('names the file, the count, and each tool with its fix', () => {
     const out = report('src/a.ts', findings, [])
     assert.match(out, /src\/a\.ts: 2 issue\(s\)/)
-    assert.match(out, /\[eslint\]/)
+    assert.match(out, /\[oxlint\]/)
     assert.match(out, /fix: npx oxfmt --write src\/a\.ts/)
   })
 
@@ -141,6 +201,9 @@ describe('renderReport', () => {
     const out = report('src/a.ts', findings, [])
     assert.match(out, /fast subset/)
     assert.match(out, /npm run check:local.*minimum gate/)
+    // The hook lints with oxlint while ESLint stays the gate, so the footer must
+    // not let a silent hook read as "ESLint passed".
+    assert.match(out, /ESLint, which remains the lint gate/)
     assert.match(out, /npm run check.*complete suite/)
   })
 
@@ -167,7 +230,7 @@ describe('renderReport', () => {
 
   it('leads with the rewrite when a repair and a finding coincide', () => {
     const out = report('src/a.ts', [lintFinding], ['oxfmt'])
-    assert.ok(out.indexOf('rewritten on disk') < out.indexOf('[eslint]'))
+    assert.ok(out.indexOf('rewritten on disk') < out.indexOf('[oxlint]'))
   })
 })
 

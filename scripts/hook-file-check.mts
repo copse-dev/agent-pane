@@ -14,32 +14,42 @@
  *     (`after-file-edit.ts` awaits blocking hooks precisely so a formatter
  *     lands before the agent proceeds). A rewrite is always reported, because
  *     it makes the agent's copy stale.
- *   • **ESLint** on the edited file with the **type-aware rules switched off**
- *     (~2s). The repo lints with `strictTypeChecked` and a `project`, so a
- *     single-file typed lint pays ~10s to build the whole TypeScript program —
- *     per edit, that is a tax an agent will route around. Dropping type-aware
- *     rules keeps the fast, high-frequency findings (unused vars, undefined
- *     references, missing return types, `no-empty`) at hook latency.
- *   • **No `eslint --fix`.** Its fixes are real code changes (`prefer-const`,
+ *   • **oxlint** on the edited file, **type-aware rules included** (~1–2s),
+ *     with `.oxlintrc.json` — a port of `eslint.config.mjs`. Typed ESLint on
+ *     one file pays ~10s to build the whole TypeScript program, so this hook
+ *     used to run ESLint with the typed rules off; oxlint's tsgo-based
+ *     type-aware pass builds the same program fast enough to run per edit, so
+ *     unsafe assertions, floating promises and `??` misses surface here too.
+ *   • **No `oxlint --fix`.** Its fixes are real code changes (`prefer-const`,
  *     import rewrites), and silently rewriting the meaning of a line the agent
  *     just wrote is a different thing from re-indenting it.
- *   • **Not** `tsc`, and **not** the type-aware rules — both need the whole
- *     program, and neither can be scoped to one file honestly.
+ *   • **Not** `tsc` — its diagnostics need the whole program reported, not
+ *     scoped to one file.
  *
- * So this is a fast pre-filter, never a substitute for a pre-commit gate. The
- * report says so, because a hook that implies more coverage than it has is
- * worse than no hook.
+ * ESLint stays the lint gate (`npm run lint`). The two configs agree on every
+ * rule the repo enables except where `.oxlintrc.json` says otherwise, but the
+ * rule implementations are separate ports, so a finding here that ESLint would
+ * not raise — or the reverse — is possible. So this is a fast pre-filter, never
+ * a substitute for a pre-commit gate. The report says so, because a hook that
+ * implies more coverage than it has is worse than no hook.
  *
  * Usage:
  *   node scripts/hook-file-check.mts <file>            # check a path directly
  *   node scripts/hook-file-check.mts <file> --fix      # …and reformat it
+ *   node scripts/hook-file-check.mts <file> --no-lint  # format only (see below)
  *   node scripts/hook-file-check.mts --dialect copse   # read the payload on stdin
+ *
+ * `--no-lint` exists for Copse's *blocking* afterFileEdit entry: Copse awaits a
+ * blocking hook only for its side effect (the rewrite) and honours a
+ * `queueMessage` only from an `async` one, so linting there would make the
+ * agent wait for findings nobody reads. `.copse/hooks.json` pairs it with an
+ * async entry that does lint.
  */
+import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { ESLint } from 'eslint'
 import { formatSource, isUnformatted } from './lib/oxfmt.mts'
 import {
   type Finding,
@@ -48,6 +58,7 @@ import {
   editedPathsFromPayload,
   hookOutput,
   isHookDialect,
+  oxlintErrorLines,
   renderReport,
   siblingTestCandidates,
 } from './lib/edited-file-check.mts'
@@ -72,11 +83,12 @@ async function readStdin(): Promise<string> {
   return Buffer.concat(chunks).toString('utf8')
 }
 
-type Args = { dialect: HookDialect; files: string[]; fix: boolean }
+type Args = { dialect: HookDialect; files: string[]; fix: boolean; lint: boolean }
 
 function parseArgs(argv: string[]): Args {
   let dialect: HookDialect = 'cli'
   let fix = false
+  let lint = true
   const files: string[] = []
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
@@ -84,9 +96,10 @@ function parseArgs(argv: string[]): Args {
       const value = argv[++i]
       if (value !== undefined && isHookDialect(value)) dialect = value
     } else if (arg === '--fix') fix = true
+    else if (arg === '--no-lint') lint = false
     else if (arg !== undefined && !arg.startsWith('-')) files.push(arg)
   }
-  return { dialect, files, fix }
+  return { dialect, files, fix, lint }
 }
 
 /** Repo-relative and forward-slashed, for stable output and ignore matching. */
@@ -96,29 +109,56 @@ function toRepoRelative(path: string): string {
 }
 
 /**
- * ESLint pointed at `eslint.hook.config.mjs` — the project config with the
- * type-aware rules off, which is what drops a one-file lint from ~10s to ~2s.
- * That file documents the trade; the config lives on disk rather than being
- * composed here so ESLint loads and validates it exactly as it would any other,
- * and it can be run by hand: `npx eslint --config eslint.hook.config.mjs <file>`.
+ * oxlint's JS entry, run under this Node rather than through the
+ * `node_modules/.bin` shim, which is a `.cmd` file on Windows.
  */
-function createFastEslint(): ESLint {
-  return new ESLint({ cwd: ROOT, overrideConfigFile: resolve(ROOT, 'eslint.hook.config.mjs') })
+const OXLINT_BIN = resolve(ROOT, 'node_modules/oxlint/bin/oxlint')
+
+/** Run oxlint on one repo-relative path, from the repo root so it finds `.oxlintrc.json`. */
+function runOxlint(rel: string): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn(
+      process.execPath,
+      [OXLINT_BIN, '--type-aware', '--quiet', '--format=json', rel],
+      { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] },
+    )
+    const stdout: Buffer[] = []
+    const stderr: Buffer[] = []
+    child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk))
+    child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk))
+    child.on('error', reject)
+    child.on('close', (code) => {
+      resolvePromise({
+        code,
+        stdout: Buffer.concat(stdout).toString('utf8'),
+        stderr: Buffer.concat(stderr).toString('utf8'),
+      })
+    })
+  })
 }
 
-/** `abs` for every filesystem/tool call, `rel` for everything the agent reads. */
+/**
+ * oxlint, type-aware, on one file. Exit 0 is clean. Exit 1 means errors were
+ * found *or* `.oxlintrc.json` ignores the path (see `oxlintErrorLines`), and
+ * either way stdout holds a JSON report. Anything else, or exit 1 without a
+ * report (a bad config), is a crash, thrown so `main` reports it and lets the
+ * agent carry on.
+ *
+ * `abs` for every filesystem/tool call, `rel` for everything the agent reads.
+ */
 async function lintFindings(abs: string, rel: string): Promise<Finding[]> {
-  const eslint = createFastEslint()
-  if (await eslint.isPathIgnored(abs)) return []
-  const results = await eslint.lintFiles([abs])
-  const messages = results.flatMap((r) => r.messages).filter((m) => m.severity === 2)
-  if (messages.length === 0) return []
-  const detail = messages
-    .map((m) =>
-      `  ${String(m.line)}:${String(m.column)}  ${m.message}  ${m.ruleId ?? ''}`.trimEnd(),
+  if (!existsSync(OXLINT_BIN)) throw new Error('oxlint is not installed — run `pnpm install`')
+  const result = await runOxlint(rel)
+  if (result.code === 0) return []
+  const lines = result.code === 1 ? oxlintErrorLines(result.stdout) : null
+  if (lines === null) {
+    throw new Error(
+      // oxlint reports a bad config on stdout, a crash on stderr: show whichever said something.
+      `oxlint exited ${String(result.code)} on ${abs}: ${(result.stderr.trim() || result.stdout.trim()).slice(-500)}`,
     )
-    .join('\n')
-  return [{ tool: 'eslint', detail, fix: `npx eslint ${rel}` }]
+  }
+  if (lines.length === 0) return []
+  return [{ tool: 'oxlint', detail: lines.join('\n'), fix: `npx oxlint --type-aware ${rel}` }]
 }
 
 /**
@@ -127,7 +167,7 @@ async function lintFindings(abs: string, rel: string): Promise<Finding[]> {
  * and semantically neutral, so making the agent spend a turn running
  * `oxfmt --write` on its own edit buys nothing.
  *
- * ESLint deliberately has no equivalent. `eslint --fix` applies real code
+ * oxlint deliberately has no equivalent. `oxlint --fix` applies real code
  * changes (`prefer-const`, import rewrites), and rewriting the semantics of a
  * line the agent just wrote — without it seeing the change — is a different
  * thing from re-indenting it. Those stay reported, with the fix command.
@@ -163,7 +203,7 @@ async function formatFile(
 }
 
 /** Run the checks for one file and return its report, or null when it is clean. */
-async function checkFile(rawPath: string, fix: boolean): Promise<string | null> {
+async function checkFile(rawPath: string, args: Args): Promise<string | null> {
   const rel = toRepoRelative(rawPath)
   // An edit outside the repo (or to a file since deleted) is not ours to check.
   if (rel.startsWith('..')) return null
@@ -174,8 +214,10 @@ async function checkFile(rawPath: string, fix: boolean): Promise<string | null> 
 
   // Format first, serially: it can rewrite the file, and linting the pre-format
   // text would report columns that no longer exist by the time the agent reads.
-  const formatted = plan.format ? await formatFile(abs, rel, fix) : { findings: [], repaired: [] }
-  const lint = plan.lint ? await lintFindings(abs, rel) : []
+  const formatted = plan.format
+    ? await formatFile(abs, rel, args.fix)
+    : { findings: [], repaired: [] }
+  const lint = plan.lint && args.lint ? await lintFindings(abs, rel) : []
   const findings = [...lint, ...formatted.findings]
 
   const testHint =
@@ -198,7 +240,7 @@ async function main(): Promise<void> {
     }
   }
 
-  const reports = (await Promise.all(files.map((f) => checkFile(f, args.fix)))).filter(isNonNull)
+  const reports = (await Promise.all(files.map((f) => checkFile(f, args)))).filter(isNonNull)
   const { stdout, stderr, exitCode } = hookOutput(
     args.dialect,
     reports.length > 0 ? reports.join('\n\n') : null,

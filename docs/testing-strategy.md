@@ -68,23 +68,27 @@ already reformatted and lint-checked** before you read the tool result. Don't
 spend a turn running the formatter on a file you just touched — and if the hook said
 nothing at all, it is clean.
 
-**Formatting is auto-applied; ESLint is not.** Formatting is deterministic and
+**Formatting is auto-applied; lint fixes are not.** Formatting is deterministic and
 semantically neutral, so fixing it costs an agent turn and buys nothing —
 `afterFileEdit` is the formatter event, and `after-file-edit.ts` awaits blocking
-hooks precisely so a formatter lands before the agent proceeds. `eslint --fix`
+hooks precisely so a formatter lands before the agent proceeds. `oxlint --fix`
 is a different animal: it makes real code changes (`prefer-const`, import
 rewrites), so those are reported with the command to run rather than applied
-behind you.
+behind you. In Copse the awaited entry only formats (`--no-lint`); an `async`
+entry lints, because Copse reads a hook's `queueMessage` only from an async one.
 
 A rewrite is **always** reported, even when there is nothing else to say, because
 it makes your copy of the file stale — a later edit matching against remembered
 text would fail against content you never saw. Re-read the file when you see it.
 
-Coverage is a fast subset by construction: oxfmt plus the **type-unaware**
-ESLint rules (`eslint.hook.config.mjs`). Type-aware rules and `tsc` need the whole
-TypeScript program — ~10s for a single file — which is too slow to run per edit,
-so they stay in `npm run check:local` (and therefore `npm run check`). The hook says so in its own output; treat a
-silent hook as "no cheap problems", never as "verified".
+Coverage is a fast subset by construction: oxfmt plus **oxlint**, type-aware
+rules included, with `.oxlintrc.json` (a port of `eslint.config.mjs`). Typed
+ESLint needs ~10s per file to build the TypeScript program; oxlint's tsgo-based
+pass does it in ~1–2s, so unsafe assertions, floating promises and `??` misses
+surface per edit. `tsc` still waits for `npm run check:local`, and **ESLint stays
+the lint gate**: the two rule sets are separate implementations, so a file the
+hook passes can still fail `npm run lint` (or the reverse). The hook says so in
+its own output; treat a silent hook as "no cheap problems", never as "verified".
 
 ### While iterating: `npm test -- <filter>`
 
