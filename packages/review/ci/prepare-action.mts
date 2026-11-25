@@ -77,7 +77,11 @@ await primeDependencyCache({
   // and the cell are the same platform, so this fetches what it always did.
   platform: cellPlatform(),
   run: (file, args, options) => {
-    execFileSync(file, [...args], { cwd: options.cwd, stdio: 'inherit' })
+    execFileSync(file, [...args], {
+      cwd: options.cwd,
+      stdio: 'inherit',
+      ...(options.env === undefined ? {} : { env: { ...process.env, ...options.env } }),
+    })
   },
 })
 const image = `copse-review-cell:${process.env['GITHUB_RUN_ID'] ?? 'local'}`

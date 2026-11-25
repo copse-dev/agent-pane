@@ -259,9 +259,13 @@ export interface LocalPrIo extends CliIo {
   readonly containerEngines?: readonly ContainerEngineCandidate[]
 }
 
-function defaultRunHost(file: string, args: readonly string[], options: { cwd: string }): void {
+const defaultRunHost: HostCommandRunner = (file, args, options) => {
   // Children's stdout goes to stderr: stdout may carry the JSON report.
-  execFileSync(file, [...args], { cwd: options.cwd, stdio: ['ignore', 2, 2] })
+  execFileSync(file, [...args], {
+    cwd: options.cwd,
+    stdio: ['ignore', 2, 2],
+    ...(options.env === undefined ? {} : { env: { ...process.env, ...options.env } }),
+  })
 }
 
 /** Git in one repository, with hooks and fsmonitor off: nothing of the change runs here. */

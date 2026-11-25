@@ -60,7 +60,11 @@ export function imageArchitecture(cpu: CellCpu): 'arm64' | 'amd64' {
 export type HostCommandRunner = (
   file: string,
   args: readonly string[],
-  options: { readonly cwd: string },
+  options: {
+    readonly cwd: string
+    /** Variables set over the caller's own environment for this command. */
+    readonly env?: Readonly<Record<string, string>> | undefined
+  },
 ) => void
 
 export interface PrimeDependencyCacheInput {
@@ -138,11 +142,21 @@ export async function primeDependencyCache(input: PrimeDependencyCacheInput): Pr
   }
   await mkdir(input.cache, { recursive: true })
   const directories = input.profile === 'copse-pnpm' ? 'copse' : 'relative'
-  // As for npm: the caller's own ~/.npmrc (scoped registries, their tokens)
+  // As for npm: the caller's own config (scoped registries, their tokens)
   // never reaches the fetch, which takes only the pinned public registry.
+  // `pnpm fetch` refuses `--userconfig` and `--globalconfig` as unknown
+  // options, so the empty files arrive as npm's environment variables, and
+  // XDG_CONFIG_HOME moves pnpm's own global rc (~/.config/pnpm/rc, or
+  // ~/Library/Preferences/pnpm/rc on a Mac) to an empty directory.
   const userconfig = join(input.seed, 'empty.npmrc')
-  await mkdir(input.seed, { recursive: true })
+  const configHome = join(input.seed, 'empty-config')
+  await mkdir(configHome, { recursive: true })
   await writeFile(userconfig, '')
+  const callerConfigOut = {
+    npm_config_userconfig: userconfig,
+    npm_config_globalconfig: userconfig,
+    XDG_CONFIG_HOME: configHome,
+  }
   for (const revision of input.revisions) {
     // pnpm fetch reads only these validated lockfiles and patch blobs. It skips
     // local directory dependencies; their contents are installed only inside
@@ -180,12 +194,8 @@ export async function primeDependencyCache(input: PrimeDependencyCacheInput): Pr
         input.cache,
         '--registry',
         'https://registry.npmjs.org',
-        '--userconfig',
-        userconfig,
-        '--globalconfig',
-        userconfig,
       ],
-      { cwd: input.seed },
+      { cwd: input.seed, env: callerConfigOut },
     )
   }
 }

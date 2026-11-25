@@ -1,6 +1,8 @@
+import { execFileSync, spawnSync } from 'node:child_process'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { access, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { load as loadYaml } from 'js-yaml'
@@ -36,10 +38,32 @@ function pnpmLock(extra: Record<string, unknown> = {}): string {
   })
 }
 
+/** A lockfile with no packages: pnpm fetches nothing, so the test needs no network. */
+const EMPTY_PNPM_LOCK = `lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .: {}
+`
+
+/** The pnpm the reviewer pins, which Corepack already holds wherever its tests run. */
+const reviewerPackageManager = z
+  .object({ packageManager: z.string() })
+  .parse(
+    JSON.parse(readFileSync(join(import.meta.dirname, '../../../package.json'), 'utf8')),
+  ).packageManager
+
+const pnpmMissing = spawnSync('pnpm', ['--version'], { stdio: 'ignore' }).status !== 0
+
 interface Call {
   readonly file: string
   readonly args: readonly string[]
   readonly cwd: string
+  readonly env: Readonly<Record<string, string>> | undefined
 }
 
 async function withSeed(run: (root: string) => Promise<void>): Promise<void> {
@@ -76,7 +100,7 @@ describe('cell preparation', () => {
         platform: cellPlatform('arm64'),
         packageManager: 'pnpm@10.34.5',
         run: (file, args, options) => {
-          calls.push({ file, args, cwd: options.cwd })
+          calls.push({ file, args, cwd: options.cwd, env: options.env })
         },
       })
       assert.equal(calls.length, 2)
@@ -90,12 +114,19 @@ describe('cell preparation', () => {
           '--ignore-pnpmfile',
         ])
         assert.equal(call.args[call.args.indexOf('--store-dir') + 1], join(root, 'store'))
-        // The caller's own ~/.npmrc (and its tokens) never reaches the fetch.
-        for (const flag of ['--userconfig', '--globalconfig']) {
-          const config = call.args[call.args.indexOf(flag) + 1]
-          assert.ok(config !== undefined && call.args.includes(flag))
+        // The caller's own config (and its tokens) never reaches the fetch:
+        // empty npm config files, and an empty directory for pnpm's global rc.
+        // `pnpm fetch` refuses these as flags.
+        assert.ok(!call.args.includes('--userconfig') && !call.args.includes('--globalconfig'))
+        const env = call.env ?? {}
+        for (const key of ['npm_config_userconfig', 'npm_config_globalconfig']) {
+          const config = env[key]
+          assert.ok(config !== undefined, key)
           assert.equal(await readFile(config, 'utf8'), '')
         }
+        const configHome = env['XDG_CONFIG_HOME']
+        assert.ok(configHome !== undefined)
+        assert.deepEqual(await readdir(configHome), [])
       }
       const workspace = workspaceSchema.parse(
         loadYaml(await readFile(join(seed, 'pnpm-workspace.yaml'), 'utf8')),
@@ -116,6 +147,60 @@ describe('cell preparation', () => {
     })
   })
 
+  it(
+    'runs a fetch real pnpm accepts, and none of the caller’s config reaches it',
+    { skip: pnpmMissing ? 'pnpm is not on PATH' : false },
+    async () => {
+      await withSeed(async (root) => {
+        // The caller's config: a scoped registry in their npm config and in
+        // pnpm's own global rc.
+        const callerNpmrc = join(root, 'caller.npmrc')
+        const callerConfigHome = join(root, 'caller-config')
+        await writeFile(callerNpmrc, '@caller-npmrc:registry=http://127.0.0.1:9/\n')
+        await mkdir(join(callerConfigHome, 'pnpm'), { recursive: true })
+        await writeFile(
+          join(callerConfigHome, 'pnpm', 'rc'),
+          '@caller-rc:registry=http://127.0.0.1:9/\n',
+        )
+        const callerEnv = {
+          ...process.env,
+          npm_config_userconfig: callerNpmrc,
+          XDG_CONFIG_HOME: callerConfigHome,
+        }
+        const seed = join(root, 'seed')
+        const scopes = (env: NodeJS.ProcessEnv): string[] =>
+          ['@caller-npmrc:registry', '@caller-rc:registry'].map((key) =>
+            execFileSync('pnpm', ['config', 'get', key], {
+              cwd: seed,
+              env,
+              encoding: 'utf8',
+            }).trim(),
+          )
+        const fetchEnvs: NodeJS.ProcessEnv[] = []
+        await primeDependencyCache({
+          profile: 'pnpm',
+          revisions: ['head'],
+          show: () => EMPTY_PNPM_LOCK,
+          seed,
+          cache: join(root, 'store'),
+          platform: cellPlatform('arm64'),
+          packageManager: reviewerPackageManager,
+          run: (file, args, options) => {
+            const env = { ...callerEnv, ...options.env }
+            fetchEnvs.push(env)
+            // Throws on a non-zero exit, as for an option pnpm does not take.
+            execFileSync(file, [...args], { cwd: options.cwd, env, stdio: 'pipe' })
+          },
+        })
+        const [fetchEnv] = fetchEnvs
+        assert.ok(fetchEnv !== undefined && fetchEnvs.length === 1)
+        // The fixture is read where nothing overrides it, so the check below means something.
+        assert.deepEqual(scopes(callerEnv), ['http://127.0.0.1:9/', 'http://127.0.0.1:9/'])
+        assert.deepEqual(scopes(fetchEnv), ['undefined', 'undefined'])
+      })
+    },
+  )
+
   it('adds each npm registry tarball once across revisions with an empty config', async () => {
     await withSeed(async (root) => {
       const seed = join(root, 'seed')
@@ -132,7 +217,7 @@ describe('cell preparation', () => {
         cache: join(root, 'npm-cache'),
         platform: cellPlatform('x64'),
         run: (file, args, options) => {
-          calls.push({ file, args, cwd: options.cwd })
+          calls.push({ file, args, cwd: options.cwd, env: options.env })
         },
       })
       assert.deepEqual(
