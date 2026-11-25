@@ -11,12 +11,18 @@
  * launching Copse again loads a fresh renderer, which reads the transcript back
  * from disk.
  *
+ * Linux and Windows detach the same way while a turn runs: a close there used to
+ * quit, and quitting kills the turn. Those platforms have no Dock to come back
+ * through, so launching Copse again is the way back (`second-instance`), and a
+ * detached app with nothing left running quits on its own
+ * ({@link shouldQuitDetachedApp}) instead of lingering as an invisible process.
+ *
  * While Mobile Companion is enabled, closing on any platform retains the hidden
  * renderer: it still owns human submissions, the queue and remote read relays.
  * Explicit Quit still stops the app; a sleeping host cannot serve phones.
  *
- * Otherwise, elsewhere closing the last window still quits (after the usual confirmation);
- * those platforms have no equivalent of the Dock to come back through.
+ * With no turn running and no phone attached, closing the last window outside
+ * macOS still quits (after the usual confirmation).
  *
  * On attachment, main supplies transcript/reducer checkpoints and replays
  * pending approvals and questions with their original request ids.
@@ -35,10 +41,32 @@ export interface DetachDecisionInput {
 
 /** Whether a close of the primary window should detach it rather than close it. */
 export function shouldDetachOnClose(input: DetachDecisionInput): boolean {
+  return !input.quitting && (input.mobileCompanionEnabled === true || input.runningTurns > 0)
+}
+
+export interface DetachedIdleInput {
+  platform: NodeJS.Platform
+  /** The primary window is detached (hidden after a close mid-turn). */
+  detached: boolean
+  /** Turns running in this process right now. */
+  runningTurns: number
+  /** Mobile chat still needs the app running to serve the phone. */
+  mobileCompanionEnabled: boolean
+}
+
+/**
+ * Whether an app kept alive only to finish its turns should now quit.
+ *
+ * macOS keeps the app in the Dock by convention, so it never quits here. Elsewhere
+ * the detached app is invisible, so once its last turn ends, and no phone still
+ * needs it, it finishes the close the user asked for.
+ */
+export function shouldQuitDetachedApp(input: DetachedIdleInput): boolean {
   return (
-    !input.quitting &&
-    (input.mobileCompanionEnabled === true ||
-      (input.platform === 'darwin' && input.runningTurns > 0))
+    input.platform !== 'darwin' &&
+    input.detached &&
+    input.runningTurns === 0 &&
+    !input.mobileCompanionEnabled
   )
 }
 

@@ -5,15 +5,34 @@ import {
   isWindowDetached,
   reattachWindow,
   shouldDetachOnClose,
+  shouldQuitDetachedApp,
 } from './window-detach.ts'
 
-test('only a macOS close during a running turn detaches', () => {
-  assert.equal(shouldDetachOnClose({ platform: 'darwin', quitting: false, runningTurns: 1 }), true)
-  assert.equal(shouldDetachOnClose({ platform: 'darwin', quitting: false, runningTurns: 0 }), false)
-  // Quitting (Cmd+Q, the updater, an e2e teardown) still closes for real.
-  assert.equal(shouldDetachOnClose({ platform: 'darwin', quitting: true, runningTurns: 1 }), false)
-  assert.equal(shouldDetachOnClose({ platform: 'linux', quitting: false, runningTurns: 1 }), false)
-  assert.equal(shouldDetachOnClose({ platform: 'win32', quitting: false, runningTurns: 1 }), false)
+test('a close during a running turn detaches on every platform', () => {
+  for (const platform of ['darwin', 'linux', 'win32'] as const) {
+    assert.equal(shouldDetachOnClose({ platform, quitting: false, runningTurns: 1 }), true)
+    assert.equal(shouldDetachOnClose({ platform, quitting: false, runningTurns: 0 }), false)
+    // Quitting (Cmd+Q, the updater, an e2e teardown) still closes for real.
+    assert.equal(shouldDetachOnClose({ platform, quitting: true, runningTurns: 1 }), false)
+  }
+})
+
+test('outside macOS a detached app quits once nothing needs it', () => {
+  const idle = { detached: true, runningTurns: 0, mobileCompanionEnabled: false }
+  assert.equal(shouldQuitDetachedApp({ platform: 'linux', ...idle }), true)
+  assert.equal(shouldQuitDetachedApp({ platform: 'win32', ...idle }), true)
+  // The Dock keeps a macOS app reachable, so it stays.
+  assert.equal(shouldQuitDetachedApp({ platform: 'darwin', ...idle }), false)
+  assert.equal(shouldQuitDetachedApp({ platform: 'linux', ...idle, runningTurns: 1 }), false)
+  assert.equal(shouldQuitDetachedApp({ platform: 'linux', ...idle, detached: false }), false)
+  assert.equal(
+    shouldQuitDetachedApp({
+      platform: 'linux',
+      ...idle,
+      mobileCompanionEnabled: true,
+    }),
+    false,
+  )
 })
 
 function fakeWindow(): {

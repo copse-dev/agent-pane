@@ -57,6 +57,7 @@ import {
   isWindowDetached,
   reattachWindow,
   shouldDetachOnClose,
+  shouldQuitDetachedApp,
 } from './windows/window-detach.ts'
 import { isWorktreeDeferralPending } from '@shared/git/worktree-policy.ts'
 import type { LLMMessage, StreamChunk } from '@shared/types'
@@ -271,6 +272,10 @@ import { recordExecutionObservation } from './services/execution-runtime/audit-r
 import { getBranchCiAutomationService } from './services/automations/branch-ci-automation-service.ts'
 import { getTaskSupervisor } from './services/supervisor/task-supervisor.ts'
 import { installLongTaskWakeConsumer } from './services/supervisor/long-task-wake.ts'
+import {
+  defaultInterruptedTurnResumeDependencies,
+  resumeInterruptedTurns,
+} from './services/interrupted-turn-resume.ts'
 import { installDarkFactorySensor } from './services/supervisor/dark-factory-sensor.ts'
 import { installCiWatchConsumer } from './services/github/ci-watch-service.ts'
 import {
@@ -493,6 +498,43 @@ function bringBackMainWindow(win: BrowserWindow): void {
   reattachWindow(win, () => loadMainWindowRenderer(win), { show: showsNativeMainWindows() })
 }
 
+const DETACHED_IDLE_POLL_MS = 5_000
+let detachedIdleTimer: ReturnType<typeof setInterval> | undefined
+
+/**
+ * Outside macOS a window closed mid-turn is hidden with no Dock to return
+ * through. Once its turns end, finish the close the user asked for. Two idle
+ * samples in a row, so a machine wake that follows a turn's end straight away
+ * (a background-process completion, a long-task continuation) keeps the app.
+ */
+function quitDetachedAppWhenIdle(win: BrowserWindow): void {
+  if (process.platform === 'darwin' || detachedIdleTimer !== undefined) return
+  let idleSamples = 0
+  const stop = (): void => {
+    clearInterval(detachedIdleTimer)
+    detachedIdleTimer = undefined
+  }
+  detachedIdleTimer = setInterval(() => {
+    const detached = !win.isDestroyed() && isWindowDetached(win)
+    if (!detached) {
+      stop()
+      return
+    }
+    const idle = shouldQuitDetachedApp({
+      platform: process.platform,
+      detached,
+      runningTurns: listRunningThreadIds().length,
+      mobileCompanionEnabled: getMobileCompanionState().enabled,
+    })
+    idleSamples = idle ? idleSamples + 1 : 0
+    if (idleSamples < 2) return
+    stop()
+    console.log('[window] detached turns finished; quitting')
+    app.quit()
+  }, DETACHED_IDLE_POLL_MS)
+  detachedIdleTimer.unref()
+}
+
 /** `threads:annotate-message`: only the summary labels the window derives. */
 const transcriptAnnotationSchema = z
   .object({
@@ -667,7 +709,10 @@ app
         runningTurns: listRunningThreadIds().length,
         mobileCompanionEnabled: mobile,
       })
-      if (detach) detachWindow(win, { keepRenderer: mobile })
+      if (detach) {
+        detachWindow(win, { keepRenderer: mobile })
+        quitDetachedAppWhenIdle(win)
+      }
       return detach
     })
     // Probe for rg/git/gh and the search backends only now: these are ~9 process
@@ -1479,6 +1524,9 @@ app
         if (!win.isDestroyed()) {
           win.webContents.send('mcp:status-changed', getMcpServerStatuses())
         }
+        // Once the tools a cut-off turn may have been using are back, continue
+        // the turns the last quit, update relaunch or crash ended.
+        void resumeInterruptedTurns(defaultInterruptedTurnResumeDependencies(agentDispatcher))
       })
     disposeTerminal = disposeTerminalHandlers
     disposeVnc = disposeVncHandlers

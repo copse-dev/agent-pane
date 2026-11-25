@@ -122,6 +122,16 @@ The local attachment seam also covers reopening mid-answer and decisions raised
 before or during detachment. Main persists reducer-owned context snapshots, model
 resolution and failure metadata; renderer autosave does not write these changes back.
 
+Landed since (25 November 2026), toward the same outcome before a daemon exists:
+
+- Linux and Windows detach on close mid-turn like macOS. With no Dock, a second launch is the
+  way back, and the hidden app quits on its own once its turns end and no phone needs it
+  (`shouldQuitDetachedApp` in `src/main/windows/window-detach.ts`).
+- A quit, update relaunch or crash still ends running turns, but the next launch continues each
+  one once from its persisted history (`src/main/services/interrupted-turn-resume.ts`; budget
+  and once-per-interruption rules in hooks plan decision 5). The daemon below removes the
+  interruption itself; this keeps the outcome close to it meanwhile.
+
 Later slices, in order:
 
 1. Phone live reattach and the `threads:changed` / chunk fan-out of
