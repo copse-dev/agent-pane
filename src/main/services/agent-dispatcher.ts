@@ -16,7 +16,7 @@ import {
   type SpineMachineContinuationLine,
 } from '@shared/threads/spine-schema.ts'
 import { randomUUID } from 'node:crypto'
-import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
+import { isReasoningLevel, type ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
 import type { TurnOutcome } from '@shared/types/turn-outcome.ts'
 import { AgentTurnBusyError } from '@shared/agent-turn-busy.ts'
@@ -37,6 +37,7 @@ import {
   appendMachineContinuation,
   getLatestThreadPlan,
   getProjectThread,
+  getThreadMeta,
   loadAgentHistory,
   loadAgentTurnEpoch,
   saveAgentHistory,
@@ -96,6 +97,17 @@ type MachineOperationRef = Pick<
   'projectId' | 'threadId' | 'operationId' | 'turnTreeId'
 >
 
+/**
+ * The per-thread choices a renderer dispatch reads from the chat and puts in
+ * its payload. A turn main starts on its own has no renderer to ask, so it
+ * reads them from the thread's saved metadata instead.
+ */
+export interface ThreadTurnSelection {
+  model?: string
+  reasoning?: ReasoningLevel
+  executionMode?: 'agent'
+}
+
 export interface AgentDispatcherDependencies {
   loadPlan: (projectId: string, threadId: string) => Promise<StoredThreadPlan | null>
   loadHistory: (projectId: string, threadId: string) => Promise<LLMMessage[]>
@@ -126,6 +138,12 @@ export interface AgentDispatcherDependencies {
    * can see but the model cannot — see {@link contextWasLost}.
    */
   transcriptLength: (projectId: string, threadId: string) => Promise<number>
+  /**
+   * The thread's own model, reasoning dial and execution mode, for a machine
+   * turn whose payload does not name them. Null when there is no saved thread
+   * to read, which leaves the payload as it is.
+   */
+  loadThreadSelection: (projectId: string, threadId: string) => Promise<ThreadTurnSelection | null>
   run: (
     threadId: string,
     userContent: UserContent,
@@ -156,6 +174,48 @@ async function recoverHistoryFromTranscript(
   return recoverAgentHistory(thread.messages)
 }
 
+export async function loadThreadSelection(
+  projectId: string,
+  threadId: string,
+): Promise<ThreadTurnSelection | null> {
+  const meta = await getThreadMeta(projectId, threadId)
+  if (!meta) return null
+  // `meta.json` passes these two through unchecked; read them as the values
+  // the renderer would have sent, or not at all.
+  const model: unknown = meta.model
+  const reasoning: unknown = meta.reasoning
+  return {
+    ...(typeof model === 'string' && model.length > 0 ? { model } : {}),
+    ...(isReasoningLevel(reasoning) ? { reasoning } : {}),
+    ...(meta.executionMode === 'agent' ? { executionMode: 'agent' as const } : {}),
+  }
+}
+
+/**
+ * Fill what a machine payload leaves out from the thread's own selection. A
+ * payload that names a model, reasoning level or execution mode keeps it; only
+ * the gaps are filled, so a turn main starts runs on the same model the user
+ * picked for the chat rather than falling through to the global default.
+ */
+function withThreadSelection(
+  payload: AgentDispatchPayload,
+  selection: ThreadTurnSelection | null,
+): AgentDispatchPayload {
+  if (!selection) return payload
+  return {
+    ...payload,
+    ...(payload.model === undefined && selection.model !== undefined
+      ? { model: selection.model }
+      : {}),
+    ...(payload.reasoning === undefined && selection.reasoning !== undefined
+      ? { reasoning: selection.reasoning }
+      : {}),
+    ...(payload.executionMode === undefined && selection.executionMode === 'agent'
+      ? { executionMode: 'agent' as const }
+      : {}),
+  }
+}
+
 const defaultDependencies: AgentDispatcherDependencies = {
   loadPlan: getLatestThreadPlan,
   loadHistory: loadAgentHistory,
@@ -171,6 +231,7 @@ const defaultDependencies: AgentDispatcherDependencies = {
     context.automation !== undefined &&
     getAutomationService().ownsRunThread(context.projectId, context.threadId, context.automation),
   transcriptLength: threadTranscriptLength,
+  loadThreadSelection,
   run: runAgent,
 }
 
@@ -572,6 +633,12 @@ export class AgentDispatcher {
     try {
       await this.dependencies.saveEpoch(request.projectId, request.threadId, nextEpoch)
       this.epochs.set(key, nextEpoch)
+      // Read at dispatch time, like a renderer send: a model the user picked
+      // while this wake waited applies to it.
+      const selection = await this.dependencies.loadThreadSelection(
+        request.projectId,
+        request.threadId,
+      )
       const hidden = request.display === 'hidden'
       const display = request.display === 'hidden' ? undefined : request.display
       host.emit(request.threadId, {
@@ -589,7 +656,7 @@ export class AgentDispatcher {
         {
           ...request,
           payload: {
-            ...request.payload,
+            ...withThreadSelection(request.payload, selection),
             turnTreeId: request.turnTreeId,
             continuationBudgetUsed: nextEpoch.continuationUsed,
           },

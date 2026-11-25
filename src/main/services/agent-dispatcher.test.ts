@@ -11,6 +11,7 @@ import {
   type AgentDispatcherDependencies,
   type TurnTranscriptSink,
   type AgentDispatchRequest,
+  type MachineAgentDispatchRequest,
 } from './agent-dispatcher.ts'
 import type { ThreadExecutionContext } from './thread-execution-context.ts'
 import type { AgentTurnEpoch } from './thread-store.ts'
@@ -67,6 +68,7 @@ function dependencies(
     prepareExecutionContext: async () => context,
     isScheduledAutomationRun: () => false,
     transcriptLength: async () => 0,
+    loadThreadSelection: async () => null,
     run: async (_threadId, userContent, priorMessages) => ({
       usage: { inputTokens: 0, outputTokens: 0 },
       messages: [...priorMessages, { role: 'user', content: userContent }],
@@ -125,6 +127,79 @@ describe('AgentDispatcher', () => {
       origin: { kind: 'machine', operationId: 'accept-1' },
     })
     assert.deepEqual(saved[0], [{ role: 'user', content: 'The user accepted a.txt.' }])
+  })
+
+  describe('a machine turn runs on the thread’s own selection', () => {
+    const machine = (payload: AgentDispatchRequest['payload']): MachineAgentDispatchRequest => ({
+      ...request({ payload }),
+      operationId: 'wake-1',
+      turnTreeId: 'tree-1',
+    })
+
+    async function runOptions(
+      payload: AgentDispatchRequest['payload'],
+      selection: Awaited<ReturnType<AgentDispatcherDependencies['loadThreadSelection']>>,
+    ): Promise<Parameters<AgentDispatcherDependencies['run']>[5]> {
+      const seen: Array<Parameters<AgentDispatcherDependencies['run']>[5]> = []
+      const dispatcher = new AgentDispatcher(
+        host,
+        registry,
+        dependencies({
+          loadEpoch: async () => ({ turnTreeId: 'tree-1', continuationUsed: 0 }),
+          loadThreadSelection: async (projectId, threadId) => {
+            assert.equal(projectId, 'project-1')
+            assert.equal(threadId, 'thread-1')
+            return selection
+          },
+          run: async (_threadId, userContent, priorMessages, _host, _registry, options) => {
+            seen.push(options)
+            return {
+              usage: { inputTokens: 0, outputTokens: 0 },
+              messages: [...priorMessages, { role: 'user', content: userContent }],
+            }
+          },
+        }),
+      )
+      assert.equal(await dispatcher.dispatchMachine(machine(payload)), 'completed')
+      assert.equal(seen.length, 1)
+      const [options] = seen
+      assert.ok(options)
+      return options
+    }
+
+    const wakePayload = {
+      userContent: 'The background task finished.',
+      invokedSkills: [],
+      priorTodos: [],
+    }
+
+    it('fills the model, reasoning and execution mode a wake leaves out', async () => {
+      const options = await runOptions(wakePayload, {
+        model: 'lmstudio:qwen3-coder',
+        reasoning: 'high',
+        executionMode: 'agent',
+      })
+      assert.equal(options.model, 'lmstudio:qwen3-coder')
+      assert.equal(options.reasoning, 'high')
+      assert.equal(options.executionMode, 'agent')
+    })
+
+    it('keeps what the payload names', async () => {
+      const options = await runOptions(
+        { ...wakePayload, model: 'claude-sonnet-4-6', reasoning: 'low' },
+        { model: 'lmstudio:qwen3-coder', reasoning: 'high' },
+      )
+      assert.equal(options.model, 'claude-sonnet-4-6')
+      assert.equal(options.reasoning, 'low')
+      assert.equal(options.executionMode, undefined)
+    })
+
+    it('leaves the payload alone when there is no saved thread', async () => {
+      const options = await runOptions(wakePayload, null)
+      assert.equal(options.model, undefined)
+      assert.equal(options.reasoning, undefined)
+      assert.equal(options.executionMode, undefined)
+    })
   })
 
   it('defers approvals only during the first turn of a verified scheduled run', async () => {
