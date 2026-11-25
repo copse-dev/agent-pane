@@ -45,6 +45,11 @@ export interface PromptAttachmentHandlers {
   sendQuotedReply?: (content: string, reply: string) => Promise<boolean>
   /** Replace the composer text with `content` and submit it to the active thread; false means no handoff. */
   sendMessage?: (content: string) => Promise<boolean>
+  /**
+   * Append `content` to the composer as plain text and send it, with whatever
+   * the user had already typed, to the active thread; false means no handoff.
+   */
+  sendText?: (content: string) => Promise<boolean>
   /** Move keyboard focus to the chat composer after a selection attachment. */
   focusComposer?: () => void
 }

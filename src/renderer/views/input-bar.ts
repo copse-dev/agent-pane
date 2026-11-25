@@ -2836,6 +2836,16 @@ export function mountInputBar(
       await submit()
       return true
     },
+    sendText: async (content: string): Promise<boolean> => {
+      if (!getActiveThreadId() || imageDescriptionInProgress) return false
+      // After whatever the user already had in the composer, as plain text: a
+      // paste chip would reach the agent fenced as a code block.
+      const end = composer.value.length
+      composer.setSelectionRange(end, end)
+      composer.insertText(`${composer.value.trim() ? '\n\n' : ''}${content}`)
+      await submit()
+      return true
+    },
     attachImage: addImageChip,
     attachVideo: addVideoChip,
     attachArchive: addArchiveChip,
