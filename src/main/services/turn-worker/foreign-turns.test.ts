@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { WriterLeaseRecord } from '@copse/thread-store/writer-lease.ts'
 import { ForeignTurnFollower, type ForeignTurn } from './foreign-turns.ts'
+import type { TurnWorkerConnection, WorkerToApp } from './turn-worker-socket.ts'
 
 function lease(threadId: string, owner: string): WriterLeaseRecord {
   return {
@@ -58,14 +59,15 @@ describe('ForeignTurnFollower', () => {
     const { follower: f, repaints } = follower(leases, { p: ['t'] })
     try {
       await f.discover()
+      assert.equal(repaints.length, 1, 'discovering a turn paints it at once')
       await f.tick()
-      assert.equal(repaints.length, 1)
+      assert.equal(repaints.length, 2)
       assert.equal(f.isFollowing('t'), true)
 
       leases.delete('t')
       await f.tick()
       assert.deepEqual(repaints.at(-1), { projectId: 'p', threadId: 't' })
-      assert.equal(repaints.length, 2)
+      assert.equal(repaints.length, 3)
       assert.equal(f.isFollowing('t'), false)
       assert.deepEqual(f.threadIds(), [])
     } finally {
@@ -94,6 +96,114 @@ describe('ForeignTurnFollower', () => {
       await f.tick()
       assert.equal(errors.length, 1)
       assert.equal(f.isFollowing('t'), true)
+    } finally {
+      f.stop()
+    }
+  })
+})
+
+describe('ForeignTurnFollower attached to its worker', () => {
+  interface Line {
+    sent: string[]
+    closed: boolean
+    drop: () => void
+  }
+
+  function attachedFollower(
+    leases: Map<string, WriterLeaseRecord>,
+    answers: () => boolean,
+  ): {
+    follower: ForeignTurnFollower
+    repaints: ForeignTurn[]
+    delivered: WorkerToApp[]
+    lines: Line[]
+  } {
+    const repaints: ForeignTurn[] = []
+    const delivered: WorkerToApp[] = []
+    const lines: Line[] = []
+    const instance = new ForeignTurnFollower({
+      listProjectIds: (): string[] => ['p'],
+      listRunningThreadIds: (): Promise<string[]> => Promise.resolve(['t']),
+      readLease: (_projectId, threadId): Promise<WriterLeaseRecord | null> =>
+        Promise.resolve(leases.get(threadId) ?? null),
+      selfOwner: 'self',
+      repaint: (turn): Promise<void> => {
+        repaints.push(turn)
+        return Promise.resolve()
+      },
+      connect: (_turn, onMessage, onClose): Promise<TurnWorkerConnection | null> => {
+        if (!answers()) return Promise.resolve(null)
+        const line: Line = {
+          sent: [],
+          closed: false,
+          drop: (): void => {
+            onClose()
+          },
+        }
+        lines.push(line)
+        onMessage({ t: 'chunk', threadId: 't', chunk: { type: 'text', text: 'live' } })
+        return Promise.resolve({
+          send: (message): void => {
+            line.sent.push(message.t)
+          },
+          close: (): void => {
+            line.closed = true
+          },
+        })
+      },
+      deliver: (message): void => {
+        delivered.push(message)
+      },
+    })
+    return { follower: instance, repaints, delivered, lines }
+  }
+
+  it('streams from the worker instead of repainting, and stops through it', async () => {
+    const leases = new Map([['t', lease('t', 'worker')]])
+    const { follower: f, repaints, delivered, lines } = attachedFollower(leases, () => true)
+    try {
+      await f.discover()
+      assert.equal(f.isAttached('t'), true)
+      assert.deepEqual(lines.at(0)?.sent, ['attach'])
+      assert.equal(delivered.length, 1)
+      await f.tick()
+      assert.equal(repaints.length, 0)
+
+      assert.equal(f.requestStop('t'), true)
+      assert.deepEqual(lines.at(0)?.sent, ['attach', 'stop'])
+      f.reattach('p', ['t'])
+      assert.deepEqual(lines.at(0)?.sent, ['attach', 'stop', 'attach'])
+
+      leases.delete('t')
+      await f.tick()
+      assert.equal(lines.at(0)?.closed, true)
+      assert.equal(repaints.length, 1)
+      assert.equal(f.isFollowing('t'), false)
+    } finally {
+      f.stop()
+    }
+  })
+
+  it('repaints from disk while no worker answers, and reattaches when the line drops', async () => {
+    const leases = new Map([['t', lease('t', 'worker')]])
+    let answering = false
+    const { follower: f, repaints, lines } = attachedFollower(leases, () => answering)
+    try {
+      await f.discover()
+      assert.equal(f.isAttached('t'), false)
+      assert.equal(f.requestStop('t'), false)
+      assert.equal(repaints.length, 1)
+
+      answering = true
+      await f.tick()
+      assert.equal(f.isAttached('t'), true)
+      assert.equal(repaints.length, 1)
+
+      lines.at(0)?.drop()
+      assert.equal(f.isAttached('t'), false)
+      await f.tick()
+      assert.equal(lines.length, 2)
+      assert.equal(f.isAttached('t'), true)
     } finally {
       f.stop()
     }

@@ -1,21 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
-import {
-  currentWriterLeaseOwner,
-  readWriterLease,
-  type WriterLeaseRecord,
-} from '@copse/thread-store/writer-lease.ts'
+import type { WriterLeaseRecord } from '@copse/thread-store/writer-lease.ts'
 import type { StreamChunk } from '@shared/types'
 import { AgentDispatcher } from '../agent-dispatcher.ts'
+import { abortAgent } from '../agent-service.ts'
 import { runWithApprovalHandler } from '../approval.ts'
 import { beginDeferralMode, endDeferralMode } from '../security/deferral-mode.ts'
 import { getSetting } from '../storage/settings.ts'
-import {
-  appendMessage,
-  getProjectThread,
-  threadDirectoryPath,
-  updateMeta,
-} from '../thread-store.ts'
+import { appendMessage, getProjectThread, updateMeta } from '../thread-store.ts'
+import { claimThreadWriter } from '../thread-writer-lease.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
 import { TurnTranscriptWriter } from '../turn-transcript-writer.ts'
 import {
@@ -23,6 +16,7 @@ import {
   resumeInterruptedTurns,
   type ResumedTurn,
 } from '../interrupted-turn-resume.ts'
+import { serveTurnWorker, type TurnWorkerServer } from './turn-worker-socket.ts'
 
 /**
  * One handed-off turn, run outside the app (`docs/plans/local-turn-worker.md`).
@@ -36,6 +30,10 @@ import {
  * Nobody is watching, so anything the permission policy would ask about is
  * deferred for the user's review (`deferral-mode.ts`), and a prompt that still
  * reaches a handler is refused.
+ *
+ * While the turn runs, the worker serves it on `socketPath`
+ * (`turn-worker-socket.ts`): a relaunched app attaches there to stream the
+ * turn live and to stop it.
  */
 
 export interface TurnWorkerRequest {
@@ -50,7 +48,20 @@ export interface TurnWorkerDependencies {
   handOffWaitMs?: number
   /** Where the thread lives; the profile's store by default. */
   threadDir?: string
+  /** Where to serve the turn to an attaching app; not served when absent. */
+  socketPath?: string
+  /** The thread, already taken over with {@link takeOverThread}; taken here when absent. */
+  takenOver?: TakenOverThread
 }
+
+export interface TakenOverThread {
+  /** Give the thread back. Safe to call more than once. */
+  release: () => Promise<void>
+}
+
+export type TakeOverResult =
+  | { status: 'taken'; thread: TakenOverThread }
+  | { status: 'held'; holder: Pick<WriterLeaseRecord, 'host' | 'pid'> }
 
 export type TurnWorkerOutcome =
   | { status: 'continued'; result: ResumedTurn['result'] }
@@ -60,21 +71,34 @@ export type TurnWorkerOutcome =
 const HAND_OFF_POLL_MS = 100
 
 /**
- * Wait for the app that started this worker to release the thread. It stops its
- * turn before it exits, but releasing the lease is part of that stop, which may
- * still be finishing when this process is already running.
+ * Take the thread's writer lease from the app that started this worker. The app
+ * stops its turn before it exits, but releasing the lease is part of that stop,
+ * which may still be finishing when this process is already running, so wait
+ * up to `waitMs` for it.
+ *
+ * The worker holds the lease from here until it exits, including its own slow
+ * boot, so an app relaunched meanwhile sees the thread taken and follows it
+ * instead of continuing it too. The dispatcher's own claim for the turn renews
+ * this one (same owner), and its release at the end of the turn ends both.
  */
-async function waitForHandOff(
-  threadDir: string,
-  threadId: string,
-  waitMs: number,
-): Promise<WriterLeaseRecord | null> {
-  const self = currentWriterLeaseOwner().id
-  const deadline = Date.now() + waitMs
+export async function takeOverThread(
+  request: TurnWorkerRequest,
+  options: { waitMs?: number; threadDir?: string; log: (line: string) => void },
+): Promise<TakeOverResult> {
+  const deadline = Date.now() + (options.waitMs ?? 30_000)
   for (;;) {
-    const holder = await readWriterLease(threadDir, threadId)
-    if (holder === null || holder.owner === self) return null
-    if (Date.now() >= deadline) return holder
+    const result = await claimThreadWriter(request.projectId, request.threadId, {
+      onLost: () => {
+        options.log(`gave up the lease on thread ${request.threadId}`)
+      },
+      ...(options.threadDir !== undefined ? { threadDir: options.threadDir } : {}),
+    })
+    if (result.status === 'claimed') return { status: 'taken', thread: result.claim }
+    if (Date.now() >= deadline) {
+      const { host, pid } = result.holder
+      options.log(`thread ${request.threadId} is still held by ${host} pid ${String(pid)}`)
+      return { status: 'held', holder: { host, pid } }
+    }
     await delay(HAND_OFF_POLL_MS)
   }
 }
@@ -83,17 +107,43 @@ export async function runTurnWorker(
   request: TurnWorkerRequest,
   deps: TurnWorkerDependencies,
 ): Promise<TurnWorkerOutcome> {
-  const { projectId, threadId } = request
-  const threadDir = deps.threadDir ?? threadDirectoryPath(projectId, threadId)
-  const holder = await waitForHandOff(threadDir, threadId, deps.handOffWaitMs ?? 30_000)
-  if (holder !== null) {
-    deps.log(`thread ${threadId} is still held by ${holder.host} pid ${String(holder.pid)}`)
-    return { status: 'held', holder: { host: holder.host, pid: holder.pid } }
+  let thread = deps.takenOver
+  if (!thread) {
+    const result = await takeOverThread(request, {
+      log: deps.log,
+      ...(deps.handOffWaitMs !== undefined ? { waitMs: deps.handOffWaitMs } : {}),
+      ...(deps.threadDir !== undefined ? { threadDir: deps.threadDir } : {}),
+    })
+    if (result.status === 'held') return result
+    thread = result.thread
   }
+  try {
+    return await continueTurn(request, deps)
+  } finally {
+    await thread.release()
+  }
+}
 
+async function continueTurn(
+  request: TurnWorkerRequest,
+  deps: TurnWorkerDependencies,
+): Promise<TurnWorkerOutcome> {
+  const { projectId, threadId } = request
+
+  let server: TurnWorkerServer | null = null
   const transcripts = new TurnTranscriptWriter({
-    // No window is listening; the thread's files are the record.
-    forward: (): void => undefined,
+    // The thread's files are the record; an attached app also gets the stream.
+    forward: (chunkThreadId, chunk, stamp): void => {
+      server?.broadcast({
+        t: 'chunk',
+        threadId: chunkThreadId,
+        chunk,
+        ...(stamp ? { stamp } : {}),
+      })
+    },
+    snapshot: (snapshot): void => {
+      server?.broadcast({ t: 'snapshot', snapshot })
+    },
     loadThread: getProjectThread,
     appendMessage,
     updateMeta,
@@ -110,6 +160,23 @@ export async function runTurnWorker(
     emit: (_threadId: string, _chunk: StreamChunk): void => undefined,
   }
   const dispatcher = new AgentDispatcher(host, deps.registry, undefined, transcripts)
+
+  if (deps.socketPath !== undefined) {
+    try {
+      server = await serveTurnWorker(deps.socketPath, {
+        onAttach: () => {
+          void transcripts.attach(projectId, [threadId])
+        },
+        onStop: () => {
+          deps.log(`stop requested for thread ${threadId}`)
+          transcripts.noteUserAbort(threadId, 'stop')
+          abortAgent(threadId)
+        },
+      })
+    } catch (error) {
+      deps.log(`could not serve the turn for attaching: ${String(error)}`)
+    }
+  }
 
   const resume = defaultInterruptedTurnResumeDependencies(dispatcher)
   beginDeferralMode(threadId)
@@ -135,5 +202,6 @@ export async function runTurnWorker(
     return { status: 'continued', result: turn.result }
   } finally {
     endDeferralMode(threadId)
+    await server?.close()
   }
 }

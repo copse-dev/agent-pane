@@ -23,6 +23,8 @@ import { setSecretCipher } from '@copse/store-kit/secret-cipher.ts'
 import { setElectronAppRuntime } from '../electron-app-runtime.ts'
 import { setPersistentStoreFactory } from '../storage/persistent-store.ts'
 import { readOnlyProfileStoreFactory, readProfileStores } from './read-only-profile-store.ts'
+import { turnWorkerSocketPath } from './turn-worker-socket.ts'
+import type { TakenOverThread } from './turn-worker.ts'
 
 function log(line: string): void {
   process.stderr.write(`[turn-worker ${new Date().toISOString()}] ${line}\n`)
@@ -61,6 +63,25 @@ async function main(): Promise<number> {
   )
   setSecretCipher(createKeyringCipher(createOsKeyringStore()))
 
+  // Take the thread before the slow boot below, so an app relaunched meanwhile
+  // follows this worker instead of continuing the turn itself.
+  const { takeOverThread } = await import('./turn-worker.ts')
+  const takeOver = await takeOverThread({ projectId, threadId }, { log })
+  if (takeOver.status === 'held') return 2
+  const thread = takeOver.thread
+  try {
+    return await bootAndContinue(userDataPath, projectId, threadId, thread)
+  } finally {
+    await thread.release()
+  }
+}
+
+async function bootAndContinue(
+  userDataPath: string,
+  projectId: string,
+  threadId: string,
+  takenOver: TakenOverThread,
+): Promise<number> {
   const [
     { setExecutionAuditSink },
     { recordExecutionObservation },
@@ -100,7 +121,10 @@ async function main(): Promise<number> {
   await loadMcpServers(registry)
 
   try {
-    const outcome = await runTurnWorker({ projectId, threadId }, { registry, log })
+    const outcome = await runTurnWorker(
+      { projectId, threadId },
+      { registry, log, takenOver, socketPath: turnWorkerSocketPath(userDataPath, threadId) },
+    )
     log(`thread ${threadId}: ${JSON.stringify(outcome)}`)
     return outcome.status === 'held' ? 2 : 0
   } finally {

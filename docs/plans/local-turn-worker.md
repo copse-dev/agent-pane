@@ -119,11 +119,21 @@ without Electron.
 - _Exit gate:_ e2e. Relaunch while a worker runs, see the thread running with output
   arriving, then settling with no Retry card and no second continuation.
 
-### W4: stop from the desktop
+### W4: attach and stop from the desktop
 
-The Stop button on a worker-held thread signals the worker by its lease pid (same host only),
-and the worker aborts the turn. Without this, a handed-off turn can only be stopped by
-waiting for it.
+- The worker takes the thread's lease as soon as it starts, before its slow boot, so an app
+  relaunched meanwhile follows it instead of continuing the turn too.
+- While the turn runs, the worker serves it on a local socket (`turn-worker-socket.ts`): a
+  Unix socket under `<profile>/run/` (a named pipe on Windows), named by a hash of the profile
+  and thread, newline-delimited JSON. `attach` replies with the turn's runtime snapshot and
+  then streams every stamped chunk, the same order an in-process turn reaches the window.
+  `stop` aborts the turn as Stop does in-process.
+- The app's follower attaches to that socket and forwards into `agent:transcript-snapshot`
+  and `agent:chunk`, so a handed-off turn streams live. Without an answer there (an older
+  worker, or one still booting) it repaints from disk as in W3. A window reload re-sends
+  `attach`. Stop on a followed thread goes to the worker.
+- Not covered by e2e yet: a live attach needs a worker turn slow enough to outlast a
+  relaunch, and mock scenarios live in the app process.
 
 ### Later
 
@@ -152,5 +162,5 @@ waiting for it.
   A packaged build that flips that fuse off (computer use asks for it) breaks the worker and
   the other Node workers that launch the same way. Such a build needs a separate Node
   binary or a utility process kept alive past quit instead.
-- **Following lags the stream.** A followed thread repaints from disk, so it shows finished
-  messages, not tokens as they stream. Fine for a hand-off; not for dispatch via worker.
+- **Following without the socket lags the stream.** When the worker cannot be reached, a
+  followed thread repaints from disk and shows finished messages, not tokens as they stream.
