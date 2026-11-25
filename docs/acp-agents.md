@@ -13,10 +13,12 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
 
 > **The agent is a separate program — it is not bundled with Copse.** Copse ships
 > only `@agentclientprotocol/sdk` (the client/protocol half). The agent half (the
-> thing that wraps Claude/Gemini and speaks ACP) is installed by you, e.g.
-> `npm install -g @agentclientprotocol/claude-agent-acp` for Claude, then
-> authenticated with its own command (e.g. `claude auth login`). The Settings
-> panel shows the exact install and sign-in commands per agent.
+> thing that wraps Claude/Gemini and speaks ACP) is installed separately, e.g.
+> `npm install -g @agentclientprotocol/claude-agent-acp` for Claude. Copse can
+> install curated adapters with approval. The Claude adapter bundles the Claude
+> Code CLI it runs, so sign in with `claude-agent-acp --cli auth login`; a separate
+> `claude` install is unnecessary for Copse. Settings shows the install and
+> sign-in commands per agent.
 
 > Status: client role, second slice (issues #264, #605), with client terminals
 > (#623) — see [Client terminals](#client-terminals) and [Limitations](#limitations).
@@ -234,7 +236,7 @@ you've already added.
 
 - **Known agents** include Gemini CLI, Claude, Cursor, Codex and GitHub Copilot CLI.
   Select one to see whether it's installed, the **Install** command to get
-  it, the **Sign in** command to authenticate it (e.g. `claude auth login`), and
+  it, the **Sign in** command to authenticate it (e.g. `claude-agent-acp --cli auth login`), and
   an **Add to my agents** button.
 - Once added, selecting an agent's chip opens its editor — change its model /
   permission mode, enable/disable it, or **Remove** it.
@@ -291,13 +293,15 @@ does not establish a sandbox profile. See [registry discovery](acp-registry-disc
 External agents hold their own credentials, and those expire. When a turn fails
 because the agent could not authenticate, Copse now says so in the agent's own
 terms and offers to fix it: the chat message names the command that signs that
-agent in again (`claude auth login`, `cursor-agent login`, `codex login`, …), and a
+agent in again (`claude-agent-acp --cli auth login`, `cursor-agent login`, `codex login`, …), and a
 prompt offers to open a shell in the **Shells** pane already running it. Finish
 the sign-in there, then re-send your message — Copse cannot complete another
 program's login flow for you.
 
-Claude uses `claude auth login` for both first-time sign-in and expired-session
-recovery. The normal login flow chooses the account method; `--sso` is optional
+Claude uses `claude-agent-acp --cli auth login` for both first-time sign-in and
+expired-session recovery. This runs the adapter's bundled Claude Code CLI and
+stores the same account login as the standalone `claude` command. The normal
+login flow chooses the account method; `--sso` is optional
 when you need to force corporate SSO. `claude setup-token` is for headless or CI
 use: it prints a long-lived token without saving a login, so it is not the
 desktop sign-in command.
@@ -571,8 +575,17 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   the thread-scoped config directory Copse creates for it (read and write), the
   toolchains and git config contained commands get, and, when its preset sets
   `allowMacOsKeychain` (the Claude presets, which keep their macOS login
-  there), `~/Library/Keychains`. It never gets the rest of the home directory:
-  no `~/.ssh`, cloud credentials or other projects.
+  there), `~/Library/Keychains`. It can also read its own executable, as the
+  wrapper shell finds it on `PATH`, and, when that is a symlink, the file it
+  points to, one hop only, file by file and read-only: Cursor's installer puts
+  `cursor-agent` in `~/.local/bin`, and without that grant the agent could not
+  even start. Only regular files are granted, never a directory. A target the
+  agent can already read, such as Cursor's install tree in its home dirs, is
+  not granted again. Nothing is granted for a command found in the workspace,
+  its home dirs or its scratch paths: it is readable there already, and a
+  symlink the repository or the agent can write never chooses a grant. The
+  rest of the bin directory stays unreadable and unwritable. It never gets the
+  rest of the home directory: no `~/.ssh`, cloud credentials or other projects.
 - **A sandboxed Claude agent can read its Keychain login but not renew it.**
   The Keychain grant is read-only, and `security` writes the login keychain
   through a temporary file in that directory, so saving a renewed token fails
@@ -584,7 +597,7 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   message when the check's single, unretried request to Anthropic fails on the
   network, so Copse reports it as a sign-in Claude couldn't verify: usually
   expired (with the Keychain cause only for a sandboxed agent on macOS), or a
-  network failure worth one retry. It offers `claude auth login`, since signing
+  network failure worth one retry. It offers `claude-agent-acp --cli auth login`, since signing
   in from a terminal saves a fresh token, and the note it leaves for the next
   turn does not claim a re-run must fail.
 - **`gh` does not run in a sandboxed agent's own shell.** `~/.config/gh` holds

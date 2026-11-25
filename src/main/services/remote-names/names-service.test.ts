@@ -15,6 +15,13 @@ import type {
   DeviceStatusResponse,
   RegisterResponse,
 } from '@copse/remote-protocol/messages.ts'
+import { GRANT_LIFETIME_MS, verifyGrantSignature } from '@copse/remote-protocol/grant.ts'
+import {
+  importDevicePublicKey,
+  verifyText,
+  type DevicePublicKey,
+} from '@copse/remote-protocol/keys.ts'
+import { tunnelSigningText } from '@copse/remote-protocol/tunnel.ts'
 import type { SecretCipher } from '@copse/store-kit/secret-cipher.ts'
 import { der, derInteger } from '../mobile/der.ts'
 import { NamesApiError } from './names-client.ts'
@@ -152,7 +159,11 @@ afterEach(() => {
 function service(
   api: FakeApi,
   clock: { now: number },
-  overrides: { cipher?: SecretCipher | null; lookup?: (host: string) => Promise<string[]> } = {},
+  overrides: {
+    cipher?: SecretCipher | null
+    lookup?: (host: string) => Promise<string[]>
+    onRegister?: (publicKey: DevicePublicKey) => void
+  } = {},
 ): RemoteNames {
   const store = new NamesStore(
     () => (overrides.cipher === undefined ? cipher : overrides.cipher),
@@ -165,8 +176,9 @@ function service(
     now: (): number => clock.now,
     random: (): number => 0,
     onChange: (): void => undefined,
-    client: (): Client => ({
+    client: (_baseUrl, key): Client => ({
       register: async (invite): Promise<RegisterResponse> => {
+        overrides.onRegister?.(key.publicKey)
         api.calls.push(`register:${invite}`)
         return await api.register(invite)
       },
@@ -232,6 +244,59 @@ describe('RemoteNames', () => {
     assert.match(record, /"sealedKey"/)
     assert.doesNotMatch(record, /"d":/)
     assert.equal(statSync(join(directory, 'tls-key.pem')).mode & 0o777, 0o600)
+  })
+
+  it('signs relay challenges and pairing grants with the device key it registered', async () => {
+    const clock = { now: Date.now() }
+    const api = fakeApi(clock)
+    let registeredKey: DevicePublicKey | null = null
+    const names = service(api, clock, {
+      onRegister: (publicKey) => {
+        registeredKey = publicKey
+      },
+    })
+    assert.equal(names.relayTarget(), null)
+    await assert.rejects(names.shellGrant(), /active Copse name/)
+    names.setServerAddress('192.168.1.20')
+    await names.register('invite-1')
+    await settle(names)
+
+    assert.deepEqual(names.relayTarget(), { label, web: `web.${label}.u.copse.me` })
+    assert.equal(names.identity()?.web, `web.${label}.u.copse.me`)
+    // The same identity object while the certificate is unchanged, so TLS contexts are reused.
+    assert.equal(names.identity(), names.identity())
+    assert.ok(registeredKey)
+    const publicKey = await importDevicePublicKey(registeredKey)
+    assert.ok(publicKey)
+
+    const text = tunnelSigningText(label, 'c'.repeat(43), clock.now)
+    assert.equal(await verifyText(publicKey, text, await names.signTunnel(text)), true)
+
+    const grant = await names.shellGrant()
+    assert.equal(grant.label, label)
+    assert.equal(grant.expiresMs, clock.now + GRANT_LIFETIME_MS)
+    assert.equal(await verifyGrantSignature(publicKey, grant), true)
+  })
+
+  it('offers no relay target without a valid certificate', async () => {
+    const clock = { now: Date.now() }
+    const api = fakeApi(clock)
+    const names = service(api, clock)
+    await names.register('invite-1')
+    await settle(names)
+    assert.ok(names.relayTarget())
+    clock.now += 7 * DAY
+    assert.equal(names.relayTarget(), null)
+  })
+
+  it('keeps the relay choice beside the record and forgets it with the name', async () => {
+    const store = new NamesStore(() => cipher, directory)
+    assert.equal(await store.readRelayEnabled(), false)
+    store.writeRelayEnabled(true)
+    assert.equal(await store.readRelayEnabled(), true)
+    assert.equal(statSync(join(directory, 'relay.json')).mode & 0o777, 0o600)
+    store.clear()
+    assert.equal(await store.readRelayEnabled(), false)
   })
 
   it('resumes after a restart without re-sending an unchanged address', async () => {

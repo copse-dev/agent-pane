@@ -558,6 +558,21 @@ test('Context shows this thread’s saved read and send grants and revokes each 
           subject: 'https://denied.example:443',
           threadId: id,
         },
+        // Execution-audit lines record effects, not decisions: they must not
+        // push the denial out of the list or inflate its count.
+        ...['runtime-state', 'process-run', 'process-exit', 'process-run', 'process-exit'].map(
+          (kind, index): DecisionEvent => ({
+            v: 1,
+            type: 'decision',
+            id: `p${String(index)}`,
+            at: 2 + index,
+            kind,
+            actor: 'system',
+            verdict: 'observed',
+            subject: 'shell command (arguments omitted)',
+            threadId: id,
+          }),
+        ),
       ],
     },
     threadPrompts: {
@@ -597,6 +612,10 @@ test('Context shows this thread’s saved read and send grants and revokes each 
     viewer.querySelector('[data-context-section="decisions"]')?.textContent ?? '',
     /https:\/\/denied.example:443webdenied/,
   )
+  const decisionsText =
+    viewer.querySelector('[data-context-section="decisions"]')?.textContent ?? ''
+  assert.doesNotMatch(decisionsText, /observed|process-run/)
+  assert.match(decisionsText, /Showing the latest 1 of 1 recorded decisions/)
   const revokePort = viewer.querySelector<HTMLButtonElement>('[data-action="revoke-port-binding"]')
   assert.ok(revokePort)
   assert.match(revokePort.title, /Stop running tasks separately/)

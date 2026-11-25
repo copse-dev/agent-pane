@@ -1,20 +1,27 @@
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
+import { useLocalSshConfig, type LocalSshConfig } from './helpers/fake-ssh.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, seedSshWorkspaceSettings } from './helpers/seed-config.ts'
 import { assertErrorColor, assertKitButtonChrome } from './helpers/ui-kit-style.ts'
 
 describe('Open remote folder — add host inline', () => {
+  let sshConfig: LocalSshConfig
+
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
+    // The empty state below depends on there being no ~/.ssh/config hosts to
+    // offer, whatever the runner's own file holds.
+    sshConfig = useLocalSshConfig('')
     seedEmptyProject(process.cwd(), 'e2e-remote-folder-add-host')
     seedSshWorkspaceSettings({ hosts: false })
     await browser.reloadSession()
   })
 
   after(() => {
+    sshConfig.remove()
     resetUserData()
   })
 
@@ -37,7 +44,6 @@ describe('Open remote folder — add host inline', () => {
     const addForm = await dialog.$('.remote-folder-add-host-form').getElement()
     await expect(addForm).toBeDisplayed()
     await expect(dialog.$('.remote-folder-add-host-btn')).not.toBeDisplayed()
-    await expect(dialog.$('.remote-folder-import-config')).toBeDisplayed()
     await expect(dialog.$('.remote-folder-save-host')).toBeDisplayed()
     // The next-step hint leads the form it refers to, and the empty host
     // picker shows a placeholder instead of a blank box (#3065).
@@ -75,23 +81,28 @@ describe('Open remote folder — add host inline', () => {
         maxWidth: getComputedStyle(field).maxWidth,
       }))
     })
-    assert.equal(addHostFields.length, 6, 'all SSH host fields render')
-    for (const field of addHostFields) {
+    // The same fields as Settings and the Desktop pane: no id to invent, and
+    // agent forwarding is offered here too.
+    assert.deepEqual(
+      addHostFields.map((field) => field.name),
+      [
+        'sshHostLabel',
+        'sshHostHost',
+        'sshHostUser',
+        'sshHostPort',
+        'sshHostIdentity',
+        'sshHostForwardAgent',
+      ],
+    )
+    for (const field of addHostFields.filter((entry) => entry.type !== 'checkbox')) {
       assert.equal(field.type, 'text', `${field.name} uses text input semantics`)
       assert.equal(field.maxWidth, '360px', `${field.name} uses the shared SSH field width cap`)
     }
 
-    await dialog.$('input[name="remoteFolderHostLabel"]').setValue('Staging Box')
-    await dialog.$('input[name="remoteFolderHostHost"]').setValue('staging.example')
-    await dialog.$('input[name="remoteFolderHostUser"]').setValue('deploy')
+    await dialog.$('input[name="sshHostLabel"]').setValue('Staging Box')
+    await dialog.$('input[name="sshHostHost"]').setValue('staging.example')
+    await dialog.$('input[name="sshHostUser"]').setValue('deploy')
 
-    await browser.waitUntil(
-      async () => (await dialog.$('input[name="remoteFolderHostId"]').getValue()) === 'staging-box',
-      { timeout: 5_000, timeoutMsg: 'host id did not auto-slugify from the label' },
-    )
-
-    // Import is a quiet (ghost) kit button beside the outlined Cancel (#3078).
-    await expect(dialog.$('.remote-folder-import-config')).toHaveElementClass('ui-btn-ghost')
     await assertKitButtonChrome('#remote-folder-dialog .remote-folder-cancel-add', 'secondary')
     await assertKitButtonChrome('#remote-folder-dialog .remote-folder-save-host', 'primary')
     await assertKitButtonChrome('#remote-folder-dialog .remote-folder-cancel', 'secondary')
@@ -99,7 +110,7 @@ describe('Open remote folder — add host inline', () => {
     await saveElementScreenshot('#remote-folder-dialog', 'remote-folder-add-host.png')
 
     // A draft the parser rejects stays in the form and reports in the error hue.
-    await dialog.$('input[name="remoteFolderHostPort"]').setValue('22garbage')
+    await dialog.$('input[name="sshHostPort"]').setValue('22garbage')
     await dialog.$('.remote-folder-save-host').click()
     const errorStatus = dialog.$('.remote-folder-status [data-status-kind="error"]')
     await errorStatus.waitForExist({ timeout: 5_000 })

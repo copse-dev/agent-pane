@@ -56,14 +56,14 @@ describe('continuation budget exhaustion summary', () => {
     })
     await installMockScenario({
       title: 'Parser task',
+      // Empty replies spend the loop's 20-step allowance without a user-facing
+      // answer. Each one after the first answers the loop's empty-turn nudge.
       turns: [
-        {
-          user: 'Finish the parser task',
-          responses: Array.from({ length: 20 }, (_, index) => ({
-            text: ' ',
-            ...(index < 19 ? { continueTurn: true } : {}),
-          })),
-        },
+        { user: 'Finish the parser task', responses: [{ text: ' ' }] },
+        ...Array.from({ length: 19 }, () => ({
+          user: { includes: 'no visible answer and no tool call' },
+          responses: [{ text: ' ' }],
+        })),
         ...Array.from({ length: 3 }, () => ({
           user: { includes: 'update_todos' },
           responses: [{ text: 'The plan item remains open.' }],

@@ -10,7 +10,24 @@ import type { AppleSuggestionAnswer } from '@shared/types/apple-development.ts'
 import { exposePerfBridge, installPreloadPerfTracing } from './perf-bridge.ts'
 import { createWorkspaceNavigation } from './workspace-navigation.ts'
 import { installRemoteReadRelay } from './remote-interface.ts'
+import { createIpcSizeGuard } from './ipc-size-guard.ts'
+import type { IPC_LARGE_CALL_CHANNEL } from '@shared/ipc-size-limits.ts'
 import { errorMessage } from '@shared/errors.ts'
+
+// Innermost, so it checks what is actually sent at the moment of sending: an
+// oversized call is refused here instead of aborting the renderer (#4445).
+const sizeGuardedIpc = createIpcSizeGuard({
+  invoke: ipcRenderer.invoke.bind(ipcRenderer),
+  send: ipcRenderer.send.bind(ipcRenderer),
+  // The channel is a literal here on purpose. The servo bridge builds its
+  // allowlist from the literal channels in this directory and closes a
+  // connection that uses any other, so a computed name would cut it off.
+  report: (report) => {
+    ipcRenderer.send('diagnostics:ipc-large-call' satisfies typeof IPC_LARGE_CALL_CHANNEL, report)
+  },
+})
+ipcRenderer.invoke = sizeGuardedIpc.invoke
+ipcRenderer.send = sizeGuardedIpc.send
 
 // DEBUG BRANCH (`COPSE_PERF=1` only): patch `invoke` before the API object below
 // captures it, so every channel the renderer calls is timed. No-op otherwise.
@@ -25,6 +42,19 @@ installRemoteReadRelay()
 const api: ApiClient = {
   remote: {
     publish: (view) => ipcRenderer.invoke('remote:publish', view),
+    watched: () => ipcRenderer.invoke('remote:watched'),
+    onWatchedChanged: (handler) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        watched: import('@shared/remote-interface.ts').RemoteWatchedThread[],
+      ): void => {
+        handler(watched)
+      }
+      ipcRenderer.on('remote:watched-changed', listener)
+      return () => {
+        ipcRenderer.off('remote:watched-changed', listener)
+      }
+    },
   },
   clientActions: {
     claim: (id) => ipcRenderer.invoke('client-actions:claim', id),
@@ -97,6 +127,9 @@ const api: ApiClient = {
     registerName: (invite: string) => ipcRenderer.invoke('mobile:register-name', invite),
     removeName: () => ipcRenderer.invoke('mobile:remove-name'),
     recheckNameDns: () => ipcRenderer.invoke('mobile:recheck-name-dns'),
+    setRelayEnabled: (enabled: boolean) => ipcRenderer.invoke('mobile:set-relay-enabled', enabled),
+    createShellPairing: () => ipcRenderer.invoke('mobile:create-shell-pairing'),
+    clearShellPairing: () => ipcRenderer.invoke('mobile:clear-shell-pairing'),
     onChat: (handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void) => {
       const listener = (
         _event: Electron.IpcRendererEvent,
@@ -730,6 +763,15 @@ const api: ApiClient = {
     },
   },
   sshPrompt: {
+    onDismissed: (handler: (id: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, id: unknown): void => {
+        if (typeof id === 'string') handler(id)
+      }
+      ipcRenderer.on('ssh-prompt:dismissed', listener)
+      return (): void => {
+        ipcRenderer.off('ssh-prompt:dismissed', listener)
+      }
+    },
     respond: (id: string, value: string, remember = false) =>
       ipcRenderer.invoke('ssh-prompt:respond', id, value, remember),
     onRequest: (
@@ -939,6 +981,7 @@ const api: ApiClient = {
     ) => ipcRenderer.invoke('plans:change', projectId, threadId, change),
   },
   threads: {
+    actionState: () => ipcRenderer.invoke('threads:action-state'),
     archiveState: (projectId: string, view: 'review' | 'archived') =>
       ipcRenderer.invoke('threads:archive-state', projectId, view),
     archiveDecision: (
@@ -1376,9 +1419,6 @@ const api: ApiClient = {
     getThreadClassifierUse: (projectId, threadId) =>
       ipcRenderer.invoke('usage:get-thread-classifier-use', projectId, threadId),
     getPlanUsage: (force?: boolean) => ipcRenderer.invoke('usage:get-plan-usage', force),
-    getPlanWorthIt: () => ipcRenderer.invoke('usage:get-plan-worth-it'),
-    setClaudePlanMonthlyFee: (fee: number | null) =>
-      ipcRenderer.invoke('usage:set-claude-plan-monthly-fee', fee),
   },
   decisions: {
     list: (projectId?: string) => ipcRenderer.invoke('decisions:list', projectId),

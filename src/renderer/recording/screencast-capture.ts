@@ -1,4 +1,5 @@
 import type { RecordingCapture } from './surface-recorder.ts'
+import { withTimeout } from '@copse/std/with-timeout.ts'
 
 /** The Browser-pane recording calls the preload exposes (absent on demo/site hosts). */
 export interface ScreencastApi {
@@ -32,10 +33,7 @@ export async function openScreencastCapture(
   let requested = 0
   let drawn = 0
   let disposed = false
-  let resolveFirstFrame: (() => void) | null = null
-  const firstFrame = new Promise<void>((resolve) => {
-    resolveFirstFrame = resolve
-  })
+  const firstFrame: PromiseWithResolvers<void> = Promise.withResolvers()
 
   const stopFrames = api.onRecordingFrame((id, jpeg) => {
     if (id !== webContentsId || disposed) return
@@ -53,7 +51,7 @@ export async function openScreencastCapture(
         }
         context.drawImage(bitmap, 0, 0)
         bitmap.close()
-        resolveFirstFrame?.()
+        firstFrame.resolve()
       },
       () => {
         // A frame that fails to decode is skipped; the next paint replaces it.
@@ -74,17 +72,9 @@ export async function openScreencastCapture(
 
   try {
     await api.startRecording(webContentsId)
-    let timer = 0
-    const timedOut = new Promise<'timeout'>((resolve) => {
-      timer = window.setTimeout(() => {
-        resolve('timeout')
-      }, FIRST_FRAME_TIMEOUT_MS)
-    })
-    const outcome = await Promise.race([firstFrame, timedOut])
-    window.clearTimeout(timer)
-    if (outcome === 'timeout') {
+    await withTimeout(firstFrame.promise, FIRST_FRAME_TIMEOUT_MS, () => {
       throw new Error('The tab is not painting. Show the Browser pane and try again.')
-    }
+    })
   } catch (error) {
     dispose()
     throw error

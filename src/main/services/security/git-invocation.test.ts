@@ -210,6 +210,43 @@ describe('internal Git policy', () => {
     )
   })
 
+  it('admits check-attr only as the conversion-attribute read', () => {
+    const read = [
+      'check-attr',
+      '-z',
+      '--stdin',
+      'filter',
+      'text',
+      'crlf',
+      'eol',
+      'ident',
+      'working-tree-encoding',
+    ]
+    assert.deepEqual(withGitInvocationArgs(read).slice(-read.length), read)
+    for (const args of [
+      read.filter((arg) => arg !== 'crlf'),
+      ['check-attr', '-z', '--stdin', 'filter'],
+      ['check-attr', '-z', '--stdin', '--all'],
+      [...read, 'diff'],
+      ['check-attr', 'filter', '--', 'a.txt'],
+      ['check-attr'],
+    ]) {
+      assert.throws(() => withGitInvocationArgs(args), /Unsupported internal Git check-attr/)
+    }
+  })
+
+  it('admits no hash-object: the only-copy audit hashes files itself', () => {
+    for (const args of [
+      ['hash-object', '--stdin-paths'],
+      ['hash-object', '-w', 'file.txt'],
+    ]) {
+      assert.throws(
+        () => withGitInvocationArgs(args),
+        /Unsupported internal Git command: hash-object/,
+      )
+    }
+  })
+
   it('strips config/executable injection while retaining backup index and identity', () => {
     const env = internalGitEnv({
       GIT_CONFIG_COUNT: '1',

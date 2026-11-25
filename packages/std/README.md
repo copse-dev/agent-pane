@@ -29,6 +29,13 @@ package is the one home, and the copies are gone.
   lexical "is this path inside that directory" check (rejecting `..`, `../…` and
   cross-drive results while keeping names like `..cache` inside). Uses
   `node:path`, so main-process and package code import the subpath directly.
+- **`with-timeout.ts`** — `withTimeout(promise, ms, onTimeout)`, the one
+  promise-versus-timer race. `onTimeout` returns a fallback or sentinel, or
+  throws the caller's own error; the timer is cleared however the race settles.
+- **`keyed-serial-queue.ts`** — `createKeyedSerialQueue()`: per-key serial
+  execution in submission order, with a failed op not blocking later ones and
+  a `drain()` for shutdown. `@copse/thread-store`'s `runSerialized` is one
+  process-wide instance of it.
 
 ## Imports
 

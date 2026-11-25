@@ -21,6 +21,7 @@ import { runSerialized } from '../storage/write-queue.ts'
 import { currentThreadExecutionContext } from '../thread-execution-context-store.ts'
 import { getActiveRunThread } from '../thread-models.ts'
 import { appendSpineDecision } from '../thread-store.ts'
+import { currentExecutionPrincipal } from '../execution-runtime/principal.ts'
 
 function safeRead(path: string): string | null {
   try {
@@ -108,6 +109,38 @@ export function persistRecordedDecision(decision: RecordedDecision): void {
 }
 
 /**
+ * Record a result that a continuation must be able to read before dispatch.
+ * Honour a scoped host recorder rather than writing into desktop storage from
+ * an explicit/headless host. Such a recorder owns its own persistence.
+ */
+export async function recordDecisionAndWait(
+  input: RecordDecisionInput,
+): Promise<RecordedDecision | null> {
+  const captured: RecordedDecision[] = []
+  const hostRecorder = scopedRecorder.getStore()
+  runWithDecisionRecorder(
+    (decision) => {
+      captured.push(decision)
+    },
+    () => {
+      recordDecision(input)
+    },
+  )
+  const decision = captured[0]
+  if (!decision) return null
+  if (hostRecorder) hostRecorder(decision)
+  else {
+    await appendSpineDecision(
+      decision.projectId,
+      decision.threadId,
+      decision.line,
+      decision.detailContents,
+    )
+  }
+  return decision
+}
+
+/**
  * The running turn's project for a decision on `threadId`. A thread the caller
  * named borrows it only from its own turn. A decision that names no thread
  * belongs to the running turn whatever thread the run identity reports: an
@@ -139,7 +172,19 @@ export function recordDecision(input: RecordDecisionInput): void {
     const { projectId: _p, threadId: _t, detail, turnId, step, ...rest } = input
     const id = randomUUID()
     const at = Date.now()
-    const event = makeDecisionEvent({ ...rest, threadId }, id, at)
+    // Bind every in-turn decision to the turn's principal (execution-runtime-
+    // security R1), unless the caller named one or the line is about another thread.
+    const principal =
+      rest.principalId === undefined ? currentExecutionPrincipal({ projectId, threadId }) : null
+    const event = makeDecisionEvent(
+      {
+        ...rest,
+        threadId,
+        ...(principal ? { principalId: principal.id, principalKind: principal.kind } : {}),
+      },
+      id,
+      at,
+    )
 
     let detailContents: string | undefined
     let line: SpineDecisionLine = {

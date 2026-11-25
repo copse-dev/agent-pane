@@ -16,6 +16,13 @@ project-scoped reads over message/tool evidence and enabled OKF memories. They p
 conversation-read consent and do not index private provider/session files. See the
 [retrieval prototype](spikes/project-context-retrieval.md) for limits and remaining work.
 
+ACP tool results recovered after the caller detaches use a `decision` line with
+`kind: "bridge-result"`, `source: "acp-native-bridge"`, and the host-owned
+`bridgeExecutionId`. Its ordinary private decision detail blob contains
+`{ result: string }`; `classified` is the audit verdict, not an authorization.
+The blob is written before a continuation is requested. A stale or exhausted
+continuation leaves the saved result available for inspection.
+
 ## Location
 
 ```
@@ -76,6 +83,10 @@ Source files remain authoritative; deleting this cache is safe.
                                      #   Shells-tab PTYs (#2433); fish remains shell-managed
   <threadId>/
     meta.json                        # mutable thread metadata (everything except messages)
+                                     # crossThreadPromptCounts: counts per sender/user-turn scope,
+                                     # JSON-encoded [senderThreadId, senderTurnTreeId] keys
+                                     # (turn tree null for a sender run without one); absent means zero
+                                     # crossThreadPromptsUsed: legacy unscoped incoming count
     events.jsonl                     # append-only spine: message + hook/audit + plan lines
     agent-history.json               # provider-format LLM resume snapshot (issue #993)
     openai-agent-session.json        # private hosted session, pending input, terminal result + Git import checkpoint

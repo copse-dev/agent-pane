@@ -1,4 +1,6 @@
-import { describe, it } from 'node:test'
+import { describe, it, mock } from 'node:test'
+import fs from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
 import assert from 'node:assert/strict'
 import {
   accessSync,
@@ -10,8 +12,8 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { execFileSync } from 'node:child_process'
-import { homedir, tmpdir } from 'node:os'
-import { dirname, join, resolve, sep } from 'node:path'
+import os, { homedir, tmpdir } from 'node:os'
+import { delimiter, dirname, join, relative, resolve, sep } from 'node:path'
 import { wrapCommandWithSandboxMacOS } from '@anthropic-ai/sandbox-runtime/dist/sandbox/macos-sandbox-utils.js'
 import { removeTrailingGlobSuffix } from '@anthropic-ai/sandbox-runtime/dist/sandbox/sandbox-utils.js'
 import {
@@ -190,6 +192,59 @@ describe('acpAgentSandboxOverlay', () => {
     assert.deepEqual(fs.denyRead, base.filesystem?.denyRead)
     for (const path of base.filesystem?.allowWrite ?? []) {
       assert.ok(fs.allowWrite.includes(path))
+    }
+  })
+
+  it('grants the agent executable read-only, file by file, and nothing beside it', () => {
+    // A stand-in home layout. `bin` is under the home deny, like `~/.local/bin`;
+    // `share/cursor` is one of the agent's home dirs, like Cursor's install tree.
+    const root = realpathSync.native(mkdtempSync(join(homedir(), '.copse-exec-grant-test-')))
+    try {
+      const bin = join(root, 'bin')
+      const opt = join(root, 'opt')
+      const share = join(root, 'share', 'cursor')
+      const repo = join(root, 'workspace')
+      for (const dir of [bin, opt, share, join(repo, 'bin')]) mkdirSync(dir, { recursive: true })
+      const agent = join(opt, 'agent')
+      const installed = join(share, 'agent')
+      writeFileSync(agent, '')
+      writeFileSync(installed, '')
+      writeFileSync(join(bin, 'plain'), '')
+      writeFileSync(join(bin, 'other-tool'), '')
+      symlinkSync(agent, join(bin, 'linked'))
+      symlinkSync(installed, join(bin, 'cursor'))
+      symlinkSync(opt, join(bin, 'dir-link'))
+      symlinkSync(join(bin, 'linked'), join(bin, 'two-hop'))
+      symlinkSync(join(root, 'missing'), join(bin, 'dangling'))
+      // Links the repository or the agent can write.
+      symlinkSync(agent, join(repo, 'bin', 'agent'))
+      symlinkSync(agent, join(share, 'linked'))
+      const agentSandbox = { allowedDomains: [], homeDirs: [relative(homedir(), share)] }
+      const without = acpAgentSandboxOverlay(repo, agentSandbox).filesystem
+      const grants = (found: string): string[] => {
+        const fs = acpAgentSandboxOverlay(repo, agentSandbox, { executables: [found] }).filesystem
+        assert.deepEqual(fs?.allowWrite, without?.allowWrite, found)
+        return (fs?.allowRead ?? []).filter((path) => !(without?.allowRead ?? []).includes(path))
+      }
+
+      // A regular file, and a symlink with the file it points to.
+      assert.deepEqual(grants(join(bin, 'plain')), [join(bin, 'plain')])
+      assert.deepEqual(grants(join(bin, 'linked')), [join(bin, 'linked'), agent])
+      // A target the agent can read already is not granted again.
+      assert.deepEqual(grants(join(bin, 'cursor')), [join(bin, 'cursor')])
+      // Only regular files, one hop: never a directory, a further link or nothing.
+      assert.deepEqual(grants(join(bin, 'dir-link')), [])
+      assert.deepEqual(grants(join(bin, 'two-hop')), [])
+      assert.deepEqual(grants(join(bin, 'dangling')), [])
+      // A path the canonicalizer refuses (through a dangling link) loses its
+      // grant; the rest of the overlay is still built.
+      assert.deepEqual(grants(join(bin, 'dangling', 'agent')), [])
+      // A link the repository or the agent can write never picks a grant.
+      assert.deepEqual(grants(join(repo, 'bin', 'agent')), [])
+      assert.deepEqual(grants(join(share, 'linked')), [])
+      assert.deepEqual(grants('relative/agent'), [])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
     }
   })
 
@@ -844,17 +899,65 @@ describe('workspaceSandboxOverlay', () => {
     assert.equal(network.allowLocalBinding, false)
   })
 
-  it('re-allows node toolchain paths alongside the workspace', () => {
-    const overlay = workspaceSandboxOverlay('/tmp/project')
-    const allowRead = overlay.filesystem?.allowRead ?? []
-    assert.ok(allowRead.includes('/tmp/project'))
-    assert.ok(allowRead.some((p) => p.includes('/tmp/project/**')))
+  for (const location of ['denied home', 'outside home', 'workspace'] as const) {
+    it(`keeps a Node toolchain readable in ${location} without redundant exceptions`, (t) => {
+      const fixture = realpathSync(mkdtempSync(join(tmpdir(), 'copse-overlay-toolchain-')))
+      const home = join(fixture, 'home')
+      const workspace = join(home, 'project')
+      const nodeRoot =
+        location === 'denied home'
+          ? join(home, '.nvm', 'versions', 'node', 'v24')
+          : location === 'workspace'
+            ? join(workspace, 'node-install')
+            : join(fixture, 'outside-node')
+      const bin = join(nodeRoot, 'bin')
+      const node = join(bin, 'node')
+      const credential = join(home, '.ssh', 'id_ed25519')
+      mkdirSync(workspace, { recursive: true })
+      mkdirSync(bin, { recursive: true })
+      mkdirSync(join(nodeRoot, 'lib', 'node_modules'), { recursive: true })
+      mkdirSync(dirname(credential), { recursive: true })
+      writeFileSync(node, '#!/bin/sh\n', { mode: 0o755 })
+      writeFileSync(credential, 'synthetic credential\n', { mode: 0o600 })
+      const previousPath = process.env['PATH']
+      const mockHome = t.mock.method(os, 'homedir', () => home)
+      syncBuiltinESMExports()
+      process.env['PATH'] = `${bin}${delimiter}${previousPath ?? ''}`
+      try {
+        const toolchain = resolveNodeToolchainAllowRead(process.env)
+        assert.ok(toolchain.includes(node), 'the synthetic Node install was discovered')
+        const filesystem = workspaceSandboxOverlay(workspace).filesystem
+        assert.ok(filesystem)
+        const allowRead = filesystem.allowRead ?? []
+        assert.ok(allowRead.includes(workspace))
+        assert.ok(allowRead.includes(`${workspace}/**`))
+        assert.ok(filesystem.denyRead.includes(home))
+        const hasNodeException = allowRead.some(
+          (path) => path === nodeRoot || path.startsWith(`${nodeRoot}${sep}`),
+        )
+        assert.equal(hasNodeException, location === 'denied home')
 
-    const toolchain = resolveNodeToolchainAllowRead(process.env)
-    if (toolchain.length > 0) {
-      assert.ok(toolchain.every((p) => allowRead.includes(p)))
-    }
-  })
+        const profile = wrapCommandWithSandboxMacOS({
+          command: 'true',
+          needsNetworkRestriction: false,
+          readConfig: {
+            denyOnly: filesystem.denyRead,
+            allowWithinDeny: allowRead.map(removeTrailingGlobSuffix),
+          },
+          writeConfig: { allowOnly: ['/dev/null'], denyWithinAllow: [] },
+        })
+        assert.equal(lastReadRule(profile, node), 'allow')
+        assert.equal(lastReadRule(profile, join(home, 'unrelated.txt')), 'deny')
+        assert.equal(lastReadRule(profile, credential), 'deny')
+      } finally {
+        if (previousPath === undefined) delete process.env['PATH']
+        else process.env['PATH'] = previousPath
+        mockHome.mock.restore()
+        syncBuiltinESMExports()
+        rmSync(fixture, { recursive: true, force: true })
+      }
+    })
+  }
 
   it('denies home reads but re-allows git config files', () => {
     const overlay = workspaceSandboxOverlay('/Users/me/project')
@@ -1322,7 +1425,7 @@ describe('workspaceSandboxOverlay', () => {
     // so it must be re-allowed for read as well as write.
     const overlay = workspaceSandboxOverlay('/Users/me/project')
     const tmpDir = ensureWorkspaceTmpDir()
-    assert.ok(tmpDir.endsWith(join('.copse', 'workspace', 'tmp')))
+    assert.ok(tmpDir.endsWith(join('.copse', 'workspace', 'tmp', 'host')))
     const allowWrite = overlay.filesystem?.allowWrite ?? []
     const allowRead = overlay.filesystem?.allowRead ?? []
     assert.ok(allowWrite.includes(tmpDir))
@@ -1398,7 +1501,7 @@ describe('workspaceSandboxOverlay', () => {
     // eval cannot import this module — its graph reaches settings and node-pty —
     // so it resolves the path from `copse-paths.ts` instead. Pinned here so a
     // move cannot leave the eval passing runs the seatbelt would block.
-    assert.equal(workspaceTmpDir(), copseWorkspaceTmpDir())
+    assert.equal(dirname(workspaceTmpDir()), copseWorkspaceTmpDir())
   })
 
   it('falls back to resolve for a non-existent workspace root', () => {
@@ -1410,6 +1513,109 @@ describe('workspaceSandboxOverlay', () => {
 })
 
 describe('ensureWorkspaceTmpDir', () => {
+  it('never derives a scratch grant from a leaf swapped after its inspection', () => {
+    const fixture = realpathSync(mkdtempSync(join(tmpdir(), 'copse-scratch-race-')))
+    const store = join(fixture, 'store')
+    const outside = join(fixture, 'outside')
+    mkdirSync(outside)
+    const previous = process.env['COPSE_WORKSPACE_DIR']
+    process.env['COPSE_WORKSPACE_DIR'] = store
+    const scratch = runWithActiveRunIdentity('race-thread', ensureWorkspaceTmpDir)
+    const inspect = fs.lstatSync
+    let swapped = false
+    const inspection = mock.method(fs, 'lstatSync', (path: fs.PathLike) => {
+      const entry = inspect(path)
+      if (path === scratch && !swapped) {
+        swapped = true
+        fs.renameSync(scratch, `${scratch}-before-swap`)
+        symlinkSync(outside, scratch, 'dir')
+      }
+      return entry
+    })
+    syncBuiltinESMExports()
+    try {
+      const writes =
+        runWithActiveRunIdentity('race-thread', () => workspaceSandboxOverlay('/project'))
+          .filesystem?.allowWrite ?? []
+      assert.equal(swapped, true)
+      assert.ok(writes.includes(scratch))
+      assert.equal(
+        writes.some((path) => path === outside || path.startsWith(`${outside}/`)),
+        false,
+      )
+    } finally {
+      inspection.mock.restore()
+      syncBuiltinESMExports()
+      if (previous === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previous
+      rmSync(fixture, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps unscoped host scratch from granting every thread scratch', () => {
+    const fixture = realpathSync(mkdtempSync(join(tmpdir(), 'copse-host-scratch-')))
+    const previous = process.env['COPSE_WORKSPACE_DIR']
+    process.env['COPSE_WORKSPACE_DIR'] = fixture
+    try {
+      const thread = runWithActiveRunIdentity('private-thread', ensureWorkspaceTmpDir)
+      const host = ensureWorkspaceTmpDir()
+      const writes = workspaceSandboxOverlay('/project').filesystem?.allowWrite ?? []
+      assert.notEqual(host, join(fixture, 'tmp'))
+      assert.equal(
+        writes.some((entry) => {
+          const root = entry.replace(/\/\*\*$/, '')
+          return thread === root || thread.startsWith(`${root}/`)
+        }),
+        false,
+      )
+    } finally {
+      if (previous === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previous
+      rmSync(fixture, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses a redirected scratch root instead of granting its target', () => {
+    const fixture = realpathSync(mkdtempSync(join(tmpdir(), 'copse-redirected-scratch-')))
+    const workspace = join(fixture, 'store')
+    const outside = join(fixture, 'outside')
+    mkdirSync(workspace)
+    mkdirSync(outside)
+    symlinkSync(outside, join(workspace, 'tmp'), 'dir')
+    const previous = process.env['COPSE_WORKSPACE_DIR']
+    process.env['COPSE_WORKSPACE_DIR'] = workspace
+    try {
+      assert.throws(ensureWorkspaceTmpDir, /scratch must be a directory, not a symlink/)
+      assert.throws(() => workspaceSandboxOverlay('/project'), /scratch must be a directory/)
+    } finally {
+      if (previous === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previous
+      rmSync(fixture, { recursive: true, force: true })
+    }
+  })
+
+  it('gives concurrent threads distinct writable scratch roots', () => {
+    const workspace = realpathSync(mkdtempSync(join(tmpdir(), 'copse-thread-scratch-')))
+    const previous = process.env['COPSE_WORKSPACE_DIR']
+    process.env['COPSE_WORKSPACE_DIR'] = workspace
+    try {
+      const first = runWithActiveRunIdentity('scratch-a', ensureWorkspaceTmpDir)
+      const second = runWithActiveRunIdentity('scratch-b', ensureWorkspaceTmpDir)
+      assert.notEqual(first, second)
+      runWithActiveRunIdentity('scratch-a', () => {
+        assert.equal(ensureWorkspaceTmpDir(), first)
+        const writes = workspaceSandboxOverlay('/project').filesystem?.allowWrite ?? []
+        assert.ok(writes.includes(first))
+        assert.equal(writes.includes(second), false)
+        assert.equal(writes.includes(join(workspace, 'tmp')), false)
+      })
+    } finally {
+      if (previous === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previous
+      rmSync(workspace, { recursive: true, force: true })
+    }
+  })
+
   it('creates the workspace tmp dir and returns its path', () => {
     // Exercise the supported workspace override rather than creating app data
     // in the developer's real home (which may be read-only on a test runner).
@@ -1418,7 +1624,7 @@ describe('ensureWorkspaceTmpDir', () => {
     process.env['COPSE_WORKSPACE_DIR'] = workspace
     try {
       const dir = ensureWorkspaceTmpDir()
-      assert.equal(dir, join(workspace, 'tmp'))
+      assert.equal(dir, join(workspace, 'tmp', 'host'))
       assert.equal(dir, workspaceTmpDir())
       // Callers get the canonical path, so sandbox rules match what the OS reports.
       assert.equal(dir, realpathSync.native(workspaceTmpDir()))
