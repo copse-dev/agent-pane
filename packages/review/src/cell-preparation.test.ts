@@ -119,7 +119,12 @@ describe('cell preparation', () => {
         // `pnpm fetch` refuses these as flags.
         assert.ok(!call.args.includes('--userconfig') && !call.args.includes('--globalconfig'))
         const env = call.env ?? {}
-        for (const key of ['npm_config_userconfig', 'npm_config_globalconfig']) {
+        for (const key of [
+          'npm_config_userconfig',
+          'npm_config_globalconfig',
+          'NPM_CONFIG_USERCONFIG',
+          'NPM_CONFIG_GLOBALCONFIG',
+        ]) {
           const config = env[key]
           assert.ok(config !== undefined, key)
           assert.equal(await readFile(config, 'utf8'), '')
@@ -162,9 +167,16 @@ describe('cell preparation', () => {
           join(callerConfigHome, 'pnpm', 'rc'),
           '@caller-rc:registry=http://127.0.0.1:9/\n',
         )
-        const callerEnv = {
-          ...process.env,
+        // Under both spellings, as a caller may set either; this host's own
+        // values of them are dropped so the fixture is what pnpm reads.
+        const callerEnv: NodeJS.ProcessEnv = {
+          ...Object.fromEntries(
+            Object.entries(process.env).filter(
+              ([key]) => !/^npm_config_(user|global)config$/i.test(key),
+            ),
+          ),
           npm_config_userconfig: callerNpmrc,
+          NPM_CONFIG_USERCONFIG: callerNpmrc,
           XDG_CONFIG_HOME: callerConfigHome,
         }
         const seed = join(root, 'seed')

@@ -147,7 +147,10 @@ export async function primeDependencyCache(input: PrimeDependencyCacheInput): Pr
   // `pnpm fetch` refuses `--userconfig` and `--globalconfig` as unknown
   // options, so the empty files arrive as npm's environment variables, and
   // XDG_CONFIG_HOME moves pnpm's own global rc (~/.config/pnpm/rc, or
-  // ~/Library/Preferences/pnpm/rc on a Mac) to an empty directory.
+  // ~/Library/Preferences/pnpm/rc on a Mac) to an empty directory. Both
+  // spellings: the runner sets these over the caller's environment, and the
+  // pinned pnpm reads a caller's NPM_CONFIG_USERCONFIG ahead of the
+  // lower-case name.
   const userconfig = join(input.seed, 'empty.npmrc')
   const configHome = join(input.seed, 'empty-config')
   await mkdir(configHome, { recursive: true })
@@ -155,6 +158,8 @@ export async function primeDependencyCache(input: PrimeDependencyCacheInput): Pr
   const callerConfigOut = {
     npm_config_userconfig: userconfig,
     npm_config_globalconfig: userconfig,
+    NPM_CONFIG_USERCONFIG: userconfig,
+    NPM_CONFIG_GLOBALCONFIG: userconfig,
     XDG_CONFIG_HOME: configHome,
   }
   for (const revision of input.revisions) {
