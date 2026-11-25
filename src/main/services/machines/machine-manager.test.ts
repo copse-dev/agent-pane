@@ -549,11 +549,13 @@ test('the experimental gate blocks networking and restores saved pairings withou
 /**
  * A stand-in for an SSH host's forward: a loopback TCP proxy to the machine's
  * listener, opened and closed per request as the real reach does. It records
- * every open so tests can see whether a check was allowed to connect.
+ * every open so tests can see whether a check was allowed to connect. `saved`
+ * holds the saved SSH host ids; `dev` is labelled "Dev Server".
  */
-function forwardingReach(connected: {
-  value: boolean
-}): MachineSshReach & { opens: Array<{ hostId: string; interactive: boolean }>; live: number } {
+function forwardingReach(
+  connected: { value: boolean },
+  saved: ReadonlySet<string> = new Set(['dev']),
+): MachineSshReach & { opens: Array<{ hostId: string; interactive: boolean }>; live: number } {
   const opens: Array<{ hostId: string; interactive: boolean }> = []
   const reach = {
     opens,
@@ -589,7 +591,8 @@ function forwardingReach(connected: {
         },
       }
     },
-    label: (hostId: string): string | null => (hostId === 'dev' ? 'Dev Server' : null),
+    label: (hostId: string): string | null =>
+      hostId === 'dev' && saved.has(hostId) ? 'Dev Server' : null,
   }
   return reach
 }
@@ -716,6 +719,69 @@ test('a status check or a background call never opens an SSH connection, and say
     assert.deepEqual(reach.opens.at(-1), { hostId: 'dev', interactive: true })
     await client.refresh()
     assert.equal(client.snapshot().machines[0]?.status, 'connected')
+  } finally {
+    await client.close()
+    await host.close()
+  }
+})
+
+test('a removed SSH host leaves its machine unreachable, and a host saved later under its label does not take it over', async () => {
+  const host = new MachineManager(
+    storage(),
+    () => [LOCAL_PROFILE],
+    async () => ANSWER,
+    'Host',
+  )
+  const saved = new Set(['dev'])
+  const reach = forwardingReach({ value: true }, saved)
+  const clientStore = storage()
+  const client = new MachineManager(
+    clientStore,
+    () => [],
+    async () => {
+      throw new Error('No local model')
+    },
+    'Client',
+    reach,
+  )
+  let peerId = ''
+  const ask = (): Promise<unknown> =>
+    client.call(peerId, 'local', CLASSIFIER_TEST_REQUEST, new AbortController().signal, 5000, {
+      interactive: true,
+    })
+  try {
+    // The host shares on this process's loopback, so a call that skipped the
+    // route and dialled the loopback endpoint directly would reach it.
+    await host.share({ enabled: true, address: '127.0.0.1', port: 0, profileIds: ['local'] })
+    peerId = (await client.pair(host.invitation(), 'dev')).machines[0]?.id ?? ''
+    assert.ok(peerId)
+
+    saved.delete('dev')
+    await client.forgetRemovedSshHosts()
+    assert.deepEqual(clientStore.routes(), { [peerId]: null }, 'the route is marked, not dropped')
+    const removed = client.snapshot().machines[0]
+    assert.ok(removed)
+    assert.equal(removed.address, 'over SSH through a removed machine')
+    assert.equal(removed.viaSsh, undefined)
+    assert.equal(removed.status, 'unavailable')
+    assert.equal(removed.detail, 'Pair it again to reach it.')
+    const opens = reach.opens.length
+    await assert.rejects(ask(), /was removed\. Pair it again/)
+    await client.refresh()
+    assert.equal(client.snapshot().machines[0]?.status, 'unavailable')
+    assert.equal(reach.opens.length, opens, 'nothing is forwarded or dialled for a removed route')
+
+    // A host saved later under the same label gets the same id; it must not inherit the route.
+    saved.add('dev')
+    await client.forgetRemovedSshHosts()
+    assert.deepEqual(clientStore.routes(), { [peerId]: null })
+    await assert.rejects(ask(), /was removed/)
+    assert.equal(reach.opens.length, opens)
+
+    // Pairing again is the person choosing the route, and the machine comes back.
+    await client.pair(host.invitation(), 'dev')
+    assert.deepEqual(clientStore.routes(), { [peerId]: 'dev' })
+    assert.deepEqual(await ask(), ANSWER)
   } finally {
     await client.close()
     await host.close()

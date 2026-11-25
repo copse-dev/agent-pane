@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { connect, createServer, type Server } from 'node:net'
 import { delimiter, join, resolve } from 'node:path'
@@ -10,7 +11,8 @@ import {
   resetSshConnectionManagerForTests,
 } from '../ssh-workspace/connection-manager.ts'
 import { setSshControlDirForTests } from '../ssh-workspace/ssh-paths.ts'
-import { machineSshReach } from './machine-service.ts'
+import type { MachineSshRoutes } from '@shared/machines.ts'
+import { forgetRemovedMachineSshHosts, machineSshReach } from './machine-service.ts'
 
 /**
  * The SSH reach against the real connection manager and OpenSSH transport,
@@ -97,5 +99,26 @@ describe('machineSshReach', { skip: process.platform === 'win32' }, () => {
   it('names the saved host, and nothing for one that is gone', () => {
     assert.equal(machineSshReach.label('dev'), 'Dev Server')
     assert.equal(machineSshReach.label('gone'), null)
+  })
+})
+
+describe('forgetRemovedMachineSshHosts', () => {
+  it('marks only the routes whose saved SSH host is gone', async () => {
+    const previousHosts = getSetting<SshWorkspaceHost[]>('sshWorkspaceHosts', [])
+    const previousRoutes = getSetting<MachineSshRoutes>('machineSshRoutes', {})
+    const kept = randomUUID()
+    const orphaned = randomUUID()
+    try {
+      await setSetting('sshWorkspaceHosts', [HOST])
+      await setSetting('machineSshRoutes', { [kept]: 'dev', [orphaned]: 'gone' })
+      await forgetRemovedMachineSshHosts()
+      assert.deepEqual(getSetting<MachineSshRoutes>('machineSshRoutes', {}), {
+        [kept]: 'dev',
+        [orphaned]: null,
+      })
+    } finally {
+      await setSetting('machineSshRoutes', previousRoutes)
+      await setSetting('sshWorkspaceHosts', previousHosts)
+    }
   })
 })

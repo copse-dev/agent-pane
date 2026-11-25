@@ -50,6 +50,8 @@ export interface MachineSshReach {
 }
 
 const LOOPBACK = '127.0.0.1'
+const REMOVED_SSH_ROUTE =
+  'The SSH machine this was reached through was removed. Pair it again to reach it.'
 
 const describeSchema = z.strictObject({
   id: z.uuid(),
@@ -165,14 +167,17 @@ export class MachineManager {
   }
   /**
    * Run `send` against the machine, through its SSH host's forward when it has
-   * one. The forward lives only as long as the request.
+   * one. The forward lives only as long as the request. A route whose host was
+   * removed (`null`) reaches nothing: its loopback endpoint would otherwise be
+   * dialled on this computer.
    */
   private async viaRoute<T>(
-    viaSshHost: string | undefined,
+    viaSshHost: string | null | undefined,
     remotePort: number,
     interactive: boolean,
     send: (connectTo: MachineConnectTarget | undefined) => Promise<T>,
   ): Promise<T> {
+    if (viaSshHost === null) throw new MachineConnectionError(REMOVED_SSH_ROUTE)
     if (!viaSshHost) return send(undefined)
     if (!this.reach) throw new MachineConnectionError('SSH is not available in this Copse.')
     let opened: Awaited<ReturnType<MachineSshReach['open']>>
@@ -192,7 +197,8 @@ export class MachineManager {
       await opened.close().catch(() => undefined)
     }
   }
-  private route(machineId: string): string | undefined {
+  /** The SSH host a machine is reached through: undefined for none, null once it was removed. */
+  private route(machineId: string): string | null | undefined {
     return this.store.routes()[machineId]
   }
   private change<T>(action: () => Promise<T>): Promise<T> {
@@ -247,14 +253,23 @@ export class MachineManager {
       machines: this.data.machines.map((peer) => {
         const via = this.route(peer.id)
         const viaLabel = via ? (this.reach?.label(via) ?? via) : null
+        // The address already says the route's machine was removed.
+        const unreachable: Pick<PairedMachine, 'status' | 'detail'> | null =
+          via === null ? { status: 'unavailable', detail: 'Pair it again to reach it.' } : null
         return {
           id: peer.id,
           name: peer.name,
-          address: viaLabel ? `over SSH through ${viaLabel}` : peer.endpoint.address,
+          address:
+            via === null
+              ? 'over SSH through a removed machine'
+              : viaLabel
+                ? `over SSH through ${viaLabel}`
+                : peer.endpoint.address,
           ...(via && viaLabel ? { viaSsh: { hostId: via, label: viaLabel } } : {}),
           models: peer.models,
           ...(this.store.enabled()
-            ? (this.states.get(peer.id) ?? {
+            ? (unreachable ??
+              this.states.get(peer.id) ?? {
                 status: 'reconnecting',
                 detail: 'Checking connection…',
               })
@@ -444,6 +459,26 @@ export class MachineManager {
     // Only machines that are still paired keep a route.
     const paired = new Set(this.data.machines.map((peer) => peer.id))
     await this.store.saveRoutes(Object.fromEntries([...routes].filter(([id]) => paired.has(id))))
+  }
+  /**
+   * Mark every route whose saved SSH host is gone. A new host's id comes from
+   * its label, so a host saved later under the same label would otherwise take
+   * over the machine's traffic without the user choosing it. The machine stays
+   * paired, reads as reached through a removed machine, and is reachable again
+   * once it is paired again.
+   */
+  forgetRemovedSshHosts(): Promise<void> {
+    return this.change(async () => {
+      const reach = this.reach
+      if (!reach) return
+      const routes = Object.entries(this.store.routes())
+      const gone = (hostId: string | null): boolean =>
+        hostId !== null && reach.label(hostId) === null
+      if (!routes.some(([, hostId]) => gone(hostId))) return
+      await this.store.saveRoutes(
+        Object.fromEntries(routes.map(([id, hostId]) => [id, gone(hostId) ? null : hostId])),
+      )
+    })
   }
   remove(id: string): Promise<MachinesState> {
     return this.change(async () => {

@@ -96,7 +96,10 @@ describe('Settings → Machines pairs a machine over SSH', function () {
     writeSettings({
       remoteSystemOneModelsEnabled: true,
       sshWorkspaceEnabled: true,
-      sshWorkspaceHosts: [{ id: 'dev', label: 'Dev Server', host: 'dev.example', user: 'ubuntu' }],
+      // The id the host form gives a host labelled "Dev Server".
+      sshWorkspaceHosts: [
+        { id: 'dev-server', label: 'Dev Server', host: 'dev.example', user: 'ubuntu' },
+      ],
     })
     await browser.reloadSession()
   })
@@ -125,7 +128,7 @@ describe('Settings → Machines pairs a machine over SSH', function () {
         ).includes('SSH: Dev Server (dev.example)'),
       { timeout: 10_000, timeoutMsg: 'saved SSH machines are not offered as a route' },
     )
-    await via.selectByAttribute('value', 'dev')
+    await via.selectByAttribute('value', 'dev-server')
     // Captured before the invitation is pasted: its secret differs on every run.
     await saveElementScreenshot('.machine-pair-controls', 'settings-machines-pair-over-ssh.png')
     await $('[name="machineInvitation"]').setValue(invitation)
@@ -157,7 +160,7 @@ describe('Settings → Machines pairs a machine over SSH', function () {
     assert.deepEqual(chips, ['1 shared model', 'Over SSH through Dev Server'])
     const routes = await browser.execute(() => window.api.settings.get('machineSshRoutes'))
     assert.ok(routes && typeof routes === 'object')
-    assert.deepEqual(Object.values(routes), ['dev'])
+    assert.deepEqual(Object.values(routes), ['dev-server'])
 
     // The status check goes through the same forward, without prompting.
     await browser.waitUntil(
@@ -166,5 +169,58 @@ describe('Settings → Machines pairs a machine over SSH', function () {
     )
     await row.scrollIntoView({ block: 'center' })
     await saveElementScreenshot('.machines-overview', 'settings-machines-over-ssh.png')
+
+    // Removing the SSH machine leaves the paired machine unreachable, and says
+    // why, instead of naming a host that is gone.
+    const ssh = '.settings-section[data-section="ssh"]'
+    await browser.execute((section) => {
+      document
+        .querySelector<HTMLButtonElement>(
+          `${section} .machines-overview .ssh-host-row .ssh-host-delete`,
+        )
+        ?.click()
+    }, ssh)
+    await browser.waitUntil(
+      async () => (await row.$('.machine-summary-status').getText()) === 'Unavailable',
+      { timeout: 15_000, timeoutMsg: 'the machine still reads as reachable without its SSH host' },
+    )
+    await expect(row.$('.machine-connection-status')).toHaveText(
+      'over SSH through a removed machine · Pair it again to reach it.',
+    )
+    const usesAfterRemove = await browser.execute(() =>
+      [...document.querySelectorAll('.machines-overview .machine-row .machine-use')].map((item) =>
+        item.textContent.trim(),
+      ),
+    )
+    assert.deepEqual(usesAfterRemove, ['1 shared model'])
+    const marked = await browser.execute(() => window.api.settings.get('machineSshRoutes'))
+    assert.ok(marked && typeof marked === 'object')
+    assert.deepEqual(Object.values(marked), [null])
+    await row.scrollIntoView({ block: 'center' })
+    await saveElementScreenshot('.machines-overview', 'settings-machines-ssh-host-removed.png')
+
+    // A host saved again under the same label gets the same id, `dev-server`. It must
+    // not take over the machine's traffic without the user pairing through it.
+    const form = $(`${ssh} .ssh-host-form`)
+    await form.$('[aria-label="SSH host label"]').setValue('Dev Server')
+    await form.$('[aria-label="SSH hostname"]').setValue('dev.example')
+    await browser.execute((section) => {
+      document.querySelector<HTMLButtonElement>(`${section} .ssh-host-save`)?.click()
+    }, ssh)
+    await browser.waitUntil(
+      async () =>
+        (
+          await browser.execute(() =>
+            [...document.querySelectorAll('select[name="machinePairVia"] option')].map((option) =>
+              option.getAttribute('value'),
+            ),
+          )
+        ).includes('dev-server'),
+      { timeout: 15_000, timeoutMsg: 'the re-saved SSH host never reached the Machines list' },
+    )
+    const kept = await browser.execute(() => window.api.settings.get('machineSshRoutes'))
+    assert.ok(kept && typeof kept === 'object')
+    assert.deepEqual(Object.values(kept), [null], 'the re-saved host does not inherit the route')
+    await expect(row.$('.machine-summary-status')).toHaveText('Unavailable')
   })
 })

@@ -74,7 +74,18 @@ export async function syncMachineService(): Promise<void> {
   if (getSetting<boolean>(REMOTE_SYSTEM_ONE_MODELS_SETTING, false)) await machineManager().restore()
   else await manager?.close()
 }
+/**
+ * The saved SSH hosts changed: mark the paired-machine routes whose host is
+ * gone, so a host saved later under the same label never inherits them. Also
+ * run at start, for a host removed while Copse was closed. The isolated
+ * settings profile has no paired machines.
+ */
+export async function forgetRemovedMachineSshHosts(): Promise<void> {
+  if (getExplicitSettingsProfile()) return
+  await machineManager().forgetRemovedSshHosts()
+}
 export async function startMachineService(): Promise<void> {
+  await forgetRemovedMachineSshHosts()
   await syncMachineService()
   timer ??= setInterval(() => {
     void syncMachineService().catch(() => undefined)

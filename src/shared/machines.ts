@@ -31,8 +31,12 @@ export const machineSshHostIdSchema = z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}
  * Paired machines reached through a saved SSH host, by machine id. Kept apart
  * from `machineConnections`, whose strict schema an older build would reject,
  * resetting its pairings, if a new field appeared in it.
+ *
+ * `null` marks a route whose SSH host was removed. The machine stays paired but
+ * unreachable until it is paired again, and a host saved later under the same
+ * label, and so the same id, never takes over its traffic.
  */
-export const machineSshRoutesSchema = z.record(z.uuid(), machineSshHostIdSchema)
+export const machineSshRoutesSchema = z.record(z.uuid(), machineSshHostIdSchema.nullable())
 export type MachineSshRoutes = z.infer<typeof machineSshRoutesSchema>
 
 export interface PairedMachine {
