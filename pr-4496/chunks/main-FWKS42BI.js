@@ -15201,6 +15201,7 @@ function containerRunSummary(progress) {
   if (isLive(progress)) return null;
   const result = progress.record?.result ?? null;
   const ref = progress.record?.carryOut.ref ?? null;
+  if (progress.phase === "failed" && progress.stoppedByUser === true) return "Stopped by you";
   if (progress.phase === "failed") return `Failed: ${progress.error ?? "the run did not complete"}`;
   if (!result) return "Finished without a result";
   const commits = result.commits.length === 0 ? "no commits" : `${plural(result.commits.length, "commit")} ${ref ? `on ${ref}` : "made but not fetched"}`;
@@ -57163,6 +57164,9 @@ var init_container_acp_agents = __esm({
 });
 
 // src/renderer/views/container-run-control.ts
+function phaseLabel2(run4) {
+  return run4.phase === "failed" && run4.stoppedByUser === true ? "Stopped" : PHASE_LABEL[run4.phase];
+}
 function isLive2(progress) {
   return progress !== null && progress.phase !== "finished" && progress.phase !== "failed";
 }
@@ -57275,8 +57279,8 @@ function mountContainerRunControl(api2, context, onStateChanged) {
     const result = run4.record?.result;
     const fetched = run4.record?.carryOut.ref !== null && run4.record?.carryOut.ref !== void 0;
     const commits = result === void 0 || result === null ? "" : result.commits.length === 0 ? "no commits" : `${String(result.commits.length)} commit${result.commits.length === 1 ? "" : "s"} ${fetched ? "back" : "made but NOT fetched"}`;
-    const summary = run4.phase === "finished" && result ? `${commits}, ${String(result.deferrals.length)} waiting for review.` : run4.phase === "failed" ? run4.error ?? "The run did not complete." : `${run4.model} \xB7 limited to the egress allowlist.`;
-    text.textContent = `Container run: ${PHASE_LABEL[run4.phase].toLowerCase()}. ${summary}`;
+    const summary = run4.phase === "finished" && result ? `${commits}, ${String(result.deferrals.length)} waiting for review.` : run4.phase === "failed" && run4.stoppedByUser === true ? "Stopped by you." : run4.phase === "failed" ? run4.error ?? "The run did not complete." : `${run4.model} \xB7 limited to the egress allowlist.`;
+    text.textContent = `Container run: ${phaseLabel2(run4).toLowerCase()}. ${summary}`;
     onStateChanged();
   }
   function ensureDialog2() {
@@ -57569,7 +57573,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
     const result = run4.record?.result ?? null;
     const rows = [];
     const row2 = (label, value) => el("div", { class: "container-run-row" }, el("dt", {}, label), el("dd", {}, value));
-    rows.push(row2("Phase", PHASE_LABEL[run4.phase]));
+    rows.push(row2("Phase", phaseLabel2(run4)));
     if (run4.prompt) rows.push(row2("Task", run4.prompt));
     rows.push(row2("Model", run4.model));
     if (run4.checkout) {
@@ -57929,6 +57933,8 @@ function mountContainerRunControl(api2, context, onStateChanged) {
           `Container run finished: ${String(result.commits.length)} commit(s) back, ${String(result.deferrals.length)} waiting for review.`,
           { variant: "info", durationMs: 1e4 }
         );
+      } else if (progress.stoppedByUser === true) {
+        showToast("Container run stopped.", { variant: "info", durationMs: 6e3 });
       } else {
         showToast(`Container run failed: ${progress.error ?? "no result"}`, {
           variant: "error",
