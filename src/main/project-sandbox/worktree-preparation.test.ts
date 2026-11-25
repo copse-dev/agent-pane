@@ -20,6 +20,7 @@ import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import { baseSandboxConfig } from './config.ts'
 import { setProjectSandboxEnabled } from './enabled.ts'
 import { acquireSandboxNetworkScope } from './network-scope.ts'
+import { applySeccompBinaryPath } from './sandbox-binaries.ts'
 import { preparationCacheRoots, runWorktreePreparationProcess } from './worktree-preparation.ts'
 import {
   inspectWorktreePreparation,
@@ -106,6 +107,10 @@ it(
     }
     const launcher = wrapped?.split(' ')[0] ?? ''
     assert.ok(posix.isAbsolute(launcher) && basename(launcher) === 'bwrap', launcher)
+    // The direct wrap must run the helper Copse resolved (app.asar.unpacked in
+    // a package), not ASRT's module-relative copy.
+    const helper = applySeccompBinaryPath()
+    assert.ok(helper !== null && (wrapped ?? '').includes(helper), wrapped ?? 'no wrapped command')
   },
 )
 

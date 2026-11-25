@@ -65,6 +65,25 @@ export function linuxSandboxBinaryPaths(): {
   }
 }
 
+/**
+ * The same launcher paths shaped for a direct `wrapCommandWithSandboxLinux`
+ * call, which bypasses SandboxManager. That wrapper reads `seccompConfig`, not
+ * the config's `seccomp`, and a spread drops the wrong key without a type
+ * error. It sets no proxy sockets, so the JVM agent jar does not apply.
+ */
+export function linuxWrapperBinaryPaths(): {
+  bwrapPath?: string
+  socatPath?: string
+  seccompConfig?: { applyPath: string }
+} {
+  const { bwrapPath, socatPath, seccomp } = linuxSandboxBinaryPaths()
+  return {
+    ...(bwrapPath === undefined ? {} : { bwrapPath }),
+    ...(socatPath === undefined ? {} : { socatPath }),
+    ...(seccomp === undefined ? {} : { seccompConfig: seccomp }),
+  }
+}
+
 const ASAR_SEGMENT = '/app.asar/'
 const UNPACKED_ASAR_SEGMENT = '/app.asar.unpacked/'
 

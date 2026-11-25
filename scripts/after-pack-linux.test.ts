@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
@@ -34,6 +34,7 @@ const NATIVES = [
   'app.asar.unpacked/dist/resources/gortex/gortex',
   'app.asar.unpacked/node_modules/node-pty/build/Release/pty.node',
   'app.asar.unpacked/node_modules/@napi-rs/keyring-linux-x64-gnu/keyring.linux-x64-gnu.node',
+  'app.asar.unpacked/node_modules/@anthropic-ai/sandbox-runtime/vendor/seccomp/x64/apply-seccomp',
 ]
 
 describe('Linux after-pack native check', () => {
@@ -51,6 +52,7 @@ describe('Linux after-pack native check', () => {
     const path = join(resources, relative)
     mkdirSync(dirname(path), { recursive: true })
     writeFileSync(path, contents)
+    chmodSync(path, 0o755)
   }
 
   it('accepts a package whose natives all match the target architecture', () => {
@@ -72,5 +74,13 @@ describe('Linux after-pack native check', () => {
     assert.throws(() => {
       checkLinuxNatives(resources, 'x64')
     }, /gortex targets ELF machine 0xb7, not x64/)
+  })
+
+  it('fails when the seccomp helper lost its executable bit', () => {
+    for (const native of NATIVES) write(native, elf(X64))
+    chmodSync(join(resources, NATIVES[3] ?? ''), 0o644)
+    assert.throws(() => {
+      checkLinuxNatives(resources, 'x64')
+    }, /helper is not executable: .*apply-seccomp/)
   })
 })

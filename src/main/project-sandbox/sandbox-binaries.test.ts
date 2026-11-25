@@ -7,6 +7,7 @@ import { baseSandboxConfig } from './config.ts'
 import {
   applySeccompBinaryPath,
   javaProxyAgentJarPath,
+  linuxWrapperBinaryPaths,
   resolveSandboxBinary,
   unpackedAsarPath,
 } from './sandbox-binaries.ts'
@@ -99,6 +100,17 @@ describe('the configs Copse initializes ASRT with on Linux', () => {
         runtimeReadPaths: [],
       }),
   }
+
+  it('hands the direct Linux wrapper the helper under the key it reads', () => {
+    // wrapCommandWithSandboxLinux reads seccompConfig; a seccomp key in the
+    // spread would be dropped silently and ASRT would exec its own copy.
+    const paths: Record<string, unknown> = onLinux(linuxWrapperBinaryPaths)
+    assert.equal(Object.hasOwn(paths, 'seccomp'), false)
+    assert.equal(Object.hasOwn(paths, 'javaAgentJarPath'), false)
+    assert.deepEqual(paths['seccompConfig'], {
+      applyPath: onLinux(() => applySeccompBinaryPath()),
+    })
+  })
 
   for (const [name, build] of Object.entries(builders)) {
     it(`names bubblewrap and socat by absolute path in the ${name} config`, () => {

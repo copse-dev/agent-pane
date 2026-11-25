@@ -143,7 +143,7 @@ const ELF_MACHINE = { x64: 0x3e, arm64: 0xb7 }
  * instead when a native binary is missing or built for the wrong architecture.
  */
 function checkLinuxNatives(resources, arch) {
-  const { closeSync, openSync, readSync } = require('node:fs')
+  const { accessSync, closeSync, constants, openSync, readSync } = require('node:fs')
   const { join } = require('node:path')
   const unpacked = join(resources, 'app.asar.unpacked')
   const binaries = [
@@ -157,6 +157,21 @@ function checkLinuxNatives(resources, arch) {
       `keyring.linux-${arch}-gnu.node`,
     ),
   ]
+  // ASRT execs these by path inside bubblewrap, so they must also be executable.
+  const executables = [
+    join(unpacked, 'dist', 'resources', 'gortex', 'gortex'),
+    join(
+      unpacked,
+      'node_modules',
+      '@anthropic-ai',
+      'sandbox-runtime',
+      'vendor',
+      'seccomp',
+      arch,
+      'apply-seccomp',
+    ),
+  ]
+  binaries.push(executables[1])
   for (const binary of binaries) {
     const header = Buffer.alloc(20)
     let fd
@@ -176,6 +191,15 @@ function checkLinuxNatives(resources, arch) {
       throw new Error(
         `Packaged native binary ${binary} targets ELF machine 0x${machine.toString(16)}, not ${arch}`,
       )
+    }
+  }
+  for (const executable of executables) {
+    try {
+      accessSync(executable, constants.X_OK)
+    } catch (error) {
+      throw new Error(`Packaged ${arch} Linux helper is not executable: ${executable}`, {
+        cause: error,
+      })
     }
   }
 }

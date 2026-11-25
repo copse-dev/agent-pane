@@ -7,8 +7,8 @@ name: Linux package
 # agent can install the exact build.
 #
 # ADVISORY, not a required check, on purpose: Linux is not a supported release
-# target yet (#1382). It is deliberately not part of the `CI Passed` aggregate
-# (pinned by scripts/ci-workflow-invariants.test.ts) and nothing here publishes.
+# target yet (#1382). It is deliberately not part of the `CI Passed` aggregate,
+# and nothing here publishes.
 # Promote it once it has stayed green across a representative run of PRs and
 # nightlies.
 on:
