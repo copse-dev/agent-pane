@@ -16,7 +16,7 @@ interface CapturedChatCompletionRequest {
   reasoning_effort?: string
   chat_template_kwargs?: { enable_thinking?: boolean }
   max_tokens?: number
-  tool_choice?: { type: 'function'; function: { name: string } }
+  tool_choice?: { type: 'function'; function: { name: string } } | 'required'
   tools?: Array<{
     type: 'function'
     function: {
@@ -638,6 +638,66 @@ describe('OpenAIProvider request options', () => {
       type: 'function',
       function: { name: 'finish_review' },
     })
+  })
+
+  it('forces the named tool with required when the server refuses an object tool_choice', async () => {
+    // LM Studio's OpenAI-compatible endpoint accepts only string tool_choice values.
+    const provider = new OpenAIProvider('qwen/qwen3.6-35b-a3b', {
+      baseURL: 'http://localhost:1234/v1',
+      apiKey: 'local-key',
+    })
+    const requests: CapturedChatCompletionRequest[] = []
+    withFakeCreate(provider, (request) => {
+      requests.push(request)
+      if (typeof request.tool_choice === 'object') {
+        throw Object.assign(
+          new Error(
+            `400 "Invalid tool_choice type: 'object'. Supported string values: none, auto, required"`,
+          ),
+          { status: 400 },
+        )
+      }
+      return streamEvents([{ choices: [{ delta: {}, finish_reason: 'tool_calls' }] }])
+    })
+    const tools: LLMTool[] = [
+      { name: 'report_finding', description: 'Report', parameters: { type: 'object' } },
+      { name: 'finish_review', description: 'Finish', parameters: { type: 'object' } },
+    ]
+
+    await collect(provider, tools, { toolChoice: { name: 'finish_review' } })
+    // Remembered: the next forced call goes straight to the string form.
+    await collect(provider, tools, { toolChoice: { name: 'finish_review' } })
+    // An unforced call is untouched.
+    await collect(provider, tools)
+
+    assert.equal(requests.length, 4)
+    for (const sent of requests.slice(1, 3)) {
+      assert.equal(sent.tool_choice, 'required')
+      assert.deepEqual(
+        sent.tools?.map((t) => t.function.name),
+        ['finish_review'],
+      )
+    }
+    assert.equal(requests[3]?.tool_choice, undefined)
+    assert.deepEqual(
+      requests[3]?.tools?.map((t) => t.function.name),
+      ['report_finding', 'finish_review'],
+    )
+  })
+
+  it('surfaces a tool_choice rejection when no tool was forced', async () => {
+    const provider = new OpenAIProvider('qwen/qwen3.6-35b-a3b', {
+      baseURL: 'http://localhost:1234/v1',
+      apiKey: 'local-key',
+    })
+    let calls = 0
+    withFakeCreate(provider, () => {
+      calls += 1
+      throw Object.assign(new Error('Invalid tool_choice'), { status: 400 })
+    })
+
+    await assert.rejects(collect(provider), /Invalid tool_choice/)
+    assert.equal(calls, 1)
   })
 
   it('applies the reasoning-suppression body only to calls that ask for it', async () => {

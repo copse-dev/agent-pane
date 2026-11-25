@@ -177,6 +177,21 @@ export function isStrictSchemaRejectedError(err: unknown): boolean {
   return /invalid schema for function/i.test(err.message)
 }
 
+/**
+ * A 400 that refuses an object `tool_choice` (`{type: 'function', function: {name}}`).
+ * Some OpenAI-compatible servers accept only the string forms; LM Studio answers
+ * `Invalid tool_choice type: 'object'. Supported string values: none, auto, required`.
+ * The caller retries once with `'required'` over just the named tool, which
+ * forces the same call. Matched on the field name so an unrelated 400 keeps
+ * failing.
+ */
+export function isNamedToolChoiceRejectedError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false
+  const status = errorStatus(err)
+  if (status !== 400 && status !== 422) return false
+  return /tool_choice/i.test(err.message)
+}
+
 const OUTPUT_CEILING_FIELD =
   /max_tokens|max_completion_tokens|max_output_tokens|maximum output tokens/i
 
