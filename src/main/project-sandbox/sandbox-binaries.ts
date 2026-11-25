@@ -1,3 +1,4 @@
+import { getApplySeccompBinaryPath } from '@anthropic-ai/sandbox-runtime/dist/sandbox/generate-seccomp-filter.js'
 import { accessSync, constants, statSync } from 'node:fs'
 import { posix } from 'node:path'
 import { absolutePathEntries } from './sandbox-argv.ts'
@@ -46,7 +47,43 @@ export function resolveSandboxBinary(
  * wrapper's lookup searches only the absolute `PATH` entries that
  * `withSandboxShellPath` keeps.
  */
-export function linuxSandboxBinaryPaths(): { bwrapPath?: string; socatPath?: string } {
+export function linuxSandboxBinaryPaths(): {
+  bwrapPath?: string
+  socatPath?: string
+  seccomp?: { applyPath: string }
+} {
   if (process.platform !== 'linux') return {}
-  return { bwrapPath: resolveSandboxBinary('bwrap'), socatPath: resolveSandboxBinary('socat') }
+  const applyPath = applySeccompBinaryPath()
+  return {
+    bwrapPath: resolveSandboxBinary('bwrap'),
+    socatPath: resolveSandboxBinary('socat'),
+    ...(applyPath === null ? {} : { seccomp: { applyPath } }),
+  }
+}
+
+const ASAR_SEGMENT = '/app.asar/'
+const UNPACKED_ASAR_SEGMENT = '/app.asar.unpacked/'
+
+/**
+ * The on-disk spelling of a path that Electron's fs shim reports inside
+ * `app.asar`. Reads through the shim succeed, but bubblewrap execs the path
+ * itself, and a file inside an archive is "Not a directory" to the kernel.
+ * electron-builder's `asarUnpack` puts the real copy in `app.asar.unpacked`.
+ */
+export function unpackedAsarPath(path: string): string {
+  const at = path.lastIndexOf(ASAR_SEGMENT)
+  if (at === -1) return path
+  return `${path.slice(0, at)}${UNPACKED_ASAR_SEGMENT}${path.slice(at + ASAR_SEGMENT.length)}`
+}
+
+/**
+ * ASRT's apply-seccomp helper as an executable path, or null where ASRT has
+ * none (macOS, unsupported architectures). Left to itself, ASRT finds the
+ * helper next to its own module, which in a packaged Linux app is inside
+ * `app.asar`, so every sandboxed command fails with exit 126.
+ */
+export function applySeccompBinaryPath(
+  found: string | null = process.platform === 'linux' ? getApplySeccompBinaryPath() : null,
+): string | null {
+  return found === null ? null : unpackedAsarPath(found)
 }

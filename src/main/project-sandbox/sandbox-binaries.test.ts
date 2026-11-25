@@ -4,7 +4,11 @@ import { posix } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { downloaderSandboxConfig } from '../services/remote/artifact-image/host.ts'
 import { baseSandboxConfig } from './config.ts'
-import { resolveSandboxBinary } from './sandbox-binaries.ts'
+import {
+  applySeccompBinaryPath,
+  resolveSandboxBinary,
+  unpackedAsarPath,
+} from './sandbox-binaries.ts'
 
 describe('resolveSandboxBinary', () => {
   it('probes the system directories, then only the absolute PATH entries, in order', () => {
@@ -39,6 +43,29 @@ describe('resolveSandboxBinary', () => {
   })
 })
 
+describe('apply-seccomp in a packaged app', () => {
+  const packaged =
+    '/opt/Copse/resources/app.asar/node_modules/@anthropic-ai/sandbox-runtime/vendor/seccomp/x64/apply-seccomp'
+
+  it('execs the asarUnpack copy instead of the archive entry', () => {
+    assert.equal(
+      applySeccompBinaryPath(packaged),
+      '/opt/Copse/resources/app.asar.unpacked/node_modules/@anthropic-ai/sandbox-runtime/vendor/seccomp/x64/apply-seccomp',
+    )
+  })
+
+  it('leaves a development install and a missing helper alone', () => {
+    const dev = '/repo/node_modules/@anthropic-ai/sandbox-runtime/vendor/seccomp/x64/apply-seccomp'
+    assert.equal(applySeccompBinaryPath(dev), dev)
+    assert.equal(applySeccompBinaryPath(null), null)
+  })
+
+  it('rewrites only a whole app.asar path segment', () => {
+    assert.equal(unpackedAsarPath('/srv/my-app.asar/bin/x'), '/srv/my-app.asar/bin/x')
+    assert.equal(unpackedAsarPath('/a/app.asar.unpacked/bin/x'), '/a/app.asar.unpacked/bin/x')
+  })
+})
+
 describe('the configs Copse initializes ASRT with on Linux', () => {
   function onLinux<T>(run: () => T): T {
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')
@@ -68,6 +95,12 @@ describe('the configs Copse initializes ASRT with on Linux', () => {
       for (const path of [config.bwrapPath, config.socatPath]) {
         assert.ok(typeof path === 'string' && posix.isAbsolute(path), String(path))
       }
+    })
+
+    it(`names apply-seccomp explicitly in the ${name} config`, () => {
+      const applyPath = onLinux(build).seccomp?.applyPath
+      assert.ok(typeof applyPath === 'string' && posix.isAbsolute(applyPath), String(applyPath))
+      assert.ok(!applyPath.includes('/app.asar/'), applyPath)
     })
   }
 })

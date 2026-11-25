@@ -1,0 +1,117 @@
+name: Linux package
+
+# Builds the Linux AppImage, .deb and tar.gz on a hosted runner, installs the
+# .deb, and runs the packaged runtime smoke test (`--release-smoke-test`:
+# node-pty through the real bubblewrap sandbox, plus thread persistence)
+# against each artifact under Xvfb. The packages are uploaded so a person or an
+# agent can install the exact build.
+#
+# ADVISORY, not a required check, on purpose: Linux is not a supported release
+# target yet (#1382). It is deliberately not part of the `CI Passed` aggregate
+# (pinned by scripts/ci-workflow-invariants.test.ts) and nothing here publishes.
+# Promote it once it has stayed green across a representative run of PRs and
+# nightlies.
+on:
+  pull_request:
+    paths:
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'scripts/after-pack.cjs'
+      - 'scripts/build.mts'
+      - 'src/main/release-smoke.ts'
+      - 'src/main/project-sandbox/**'
+      - '.github/workflows/linux-package.yml'
+  schedule:
+    - cron: '41 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-package-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: Package and smoke-test (x64)
+    # Fork PRs get no secrets and no trust; the nightly and dispatch runs cover them after merge.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Install packaging and display tools
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb fakeroot
+          # Ubuntu 24.04's AppArmor userns restriction strips bwrap's loopback
+          # setup; clear it as the CI e2e jobs do so ASRT starts for real.
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+      - name: Build Linux packages
+        run: pnpm run dist:linux
+      - name: Install the .deb
+        run: |
+          set -euxo pipefail
+          shopt -s nullglob
+          debs=(release/*-linux-amd64.deb)
+          if [ "${#debs[@]}" -ne 1 ]; then
+            echo "Expected one amd64 .deb, found ${#debs[@]}"
+            exit 1
+          fi
+          # Pulls bubblewrap and socat in through the package's Depends.
+          sudo apt-get install -y "./${debs[0]}"
+          command -v bwrap
+          command -v socat
+          test -x /opt/Copse/copse
+          grep -q '^MimeType=x-scheme-handler/copse;$' /usr/share/applications/copse.desktop
+      - name: Smoke-test the packaged runtime
+        timeout-minutes: 10
+        env:
+          COPSE_DIR: ${{ runner.temp }}/copse-linux-smoke-profile
+          COPSE_WORKSPACE_DIR: ${{ runner.temp }}/copse-linux-smoke-workspace
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          appimages=(release/*-linux-x86_64.AppImage)
+          tarballs=(release/*-linux-x64.tar.gz)
+          if [ "${#appimages[@]}" -ne 1 ] || [ "${#tarballs[@]}" -ne 1 ]; then
+            echo "Expected one AppImage and one tar.gz"
+            exit 1
+          fi
+          mkdir -p "$COPSE_WORKSPACE_DIR"
+          workspace="$COPSE_WORKSPACE_DIR"
+          smoke() {
+            local label="$1"
+            shift
+            echo "Running packaged runtime smoke for the $label"
+            rm -rf "$COPSE_DIR"
+            (cd "$workspace" && xvfb-run -a "$@" --release-smoke-test 2>&1 | tee "$RUNNER_TEMP/smoke.log")
+            if grep -q 'ASRT init failed' "$RUNNER_TEMP/smoke.log"; then
+              echo "The $label ran without its bubblewrap sandbox"
+              exit 1
+            fi
+          }
+          smoke 'installed .deb' /opt/Copse/copse
+          smoke 'unpacked directory' "$PWD/release/linux-unpacked/copse"
+          chmod +x "${appimages[0]}"
+          # GitHub runners have no FUSE 2, so extract instead of mounting.
+          smoke 'AppImage' "$PWD/${appimages[0]}" --appimage-extract-and-run
+          "$PWD/release/linux-unpacked/resources/app.asar.unpacked/dist/resources/gortex/gortex" version
+      - name: Upload Linux packages
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: copse-linux-x64-${{ github.sha }}
+          path: |
+            release/*.AppImage
+            release/*.deb
+            release/*.tar.gz
+          if-no-files-found: ignore
+          retention-days: 14

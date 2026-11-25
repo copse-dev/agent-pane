@@ -5,6 +5,13 @@
  */
 module.exports = async function afterPack(context) {
   await checkLicenses(context)
+  if (context.electronPlatformName === 'linux') {
+    const { Arch } = await import('electron-builder')
+    const arch = context.arch === Arch.arm64 ? 'arm64' : context.arch === Arch.x64 ? 'x64' : null
+    if (!arch) throw new Error(`Unsupported Linux package architecture ${String(context.arch)}`)
+    checkLinuxNatives(require('node:path').join(context.appOutDir, 'resources'), arch)
+    return
+  }
   if (context.electronPlatformName !== 'darwin') return
 
   // `Arch` originates in builder-util, but that is only a transitive dependency:
@@ -124,3 +131,53 @@ async function checkLicenses(context) {
       : join(context.appOutDir, 'resources')
   assertPackagedLicenses(resources)
 }
+
+/** ELF `e_machine` values for the Linux architectures we package. */
+const ELF_MACHINE = { x64: 0x3e, arm64: 0xb7 }
+
+/**
+ * Linux packages skip electron-builder's native rebuild (`-c.npmRebuild=false`):
+ * every native addon is Node-API, and @electron/rebuild deletes node-pty's
+ * `build/` before fetching Electron headers, so a failed fetch leaves an app
+ * whose main process cannot load `pty.node` at startup. Fail the package
+ * instead when a native binary is missing or built for the wrong architecture.
+ */
+function checkLinuxNatives(resources, arch) {
+  const { closeSync, openSync, readSync } = require('node:fs')
+  const { join } = require('node:path')
+  const unpacked = join(resources, 'app.asar.unpacked')
+  const binaries = [
+    join(unpacked, 'dist', 'resources', 'gortex', 'gortex'),
+    join(unpacked, 'node_modules', 'node-pty', 'build', 'Release', 'pty.node'),
+    join(
+      unpacked,
+      'node_modules',
+      '@napi-rs',
+      `keyring-linux-${arch}-gnu`,
+      `keyring.linux-${arch}-gnu.node`,
+    ),
+  ]
+  for (const binary of binaries) {
+    const header = Buffer.alloc(20)
+    let fd
+    try {
+      fd = openSync(binary, 'r')
+      readSync(fd, header, 0, header.length, 0)
+    } catch (error) {
+      throw new Error(`Packaged ${arch} Linux app lacks ${binary}`, { cause: error })
+    } finally {
+      if (fd !== undefined) closeSync(fd)
+    }
+    if (header.readUInt32BE(0) !== 0x7f454c46) {
+      throw new Error(`Packaged native binary is not an ELF file: ${binary}`)
+    }
+    const machine = header.readUInt16LE(18)
+    if (machine !== ELF_MACHINE[arch]) {
+      throw new Error(
+        `Packaged native binary ${binary} targets ELF machine 0x${machine.toString(16)}, not ${arch}`,
+      )
+    }
+  }
+}
+
+module.exports.checkLinuxNatives = checkLinuxNatives
