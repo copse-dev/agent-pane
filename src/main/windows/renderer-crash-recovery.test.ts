@@ -58,6 +58,10 @@ describe('planRendererCrashRecovery', () => {
     const refused = planRendererCrashRecovery(CRASH, state, now + 10)
     assert.equal(refused.reload, false)
     assert.equal(refused.loop, true)
+    assert.deepEqual(refused.stoppedBy, {
+      crashes: RENDERER_RELOAD_MAX + 1,
+      windowMs: RENDERER_RELOAD_WINDOW_MS,
+    })
     assert.equal(refused.next.crashes.length, RENDERER_RELOAD_MAX + 1)
   })
 
@@ -85,6 +89,10 @@ describe('planRendererCrashRecovery', () => {
     const refused = planRendererCrashRecovery(CRASH, state, now)
     assert.equal(refused.reload, false)
     assert.equal(refused.loop, true)
+    assert.deepEqual(refused.stoppedBy, {
+      crashes: RENDERER_CRASH_LOOP_MAX + 1,
+      windowMs: RENDERER_CRASH_LOOP_WINDOW_MS,
+    })
   })
 
   it('forgets crashes older than the loop window', () => {
@@ -204,6 +212,19 @@ describe('attachRendererCrashRecovery', () => {
     // The history was cleared, so the next crash reloads again.
     contents.emit('render-process-gone', {}, CRASH)
     assert.equal(contents.reloads, RENDERER_CRASH_LOOP_MAX + 2)
+  })
+
+  it('names the 15-second cap in the log when a fast burst stops recovery', () => {
+    const logs: string[] = []
+    const contents = new FakeContents()
+    attachRendererCrashRecovery(contents, {
+      log: (message) => {
+        logs.push(message)
+      },
+      now: () => 1_000,
+    })
+    for (let i = 0; i <= RENDERER_RELOAD_MAX; i++) contents.emit('render-process-gone', {}, CRASH)
+    assert.match(logs.at(-1) ?? '', /not reloading: 3 crashes in 15 seconds$/)
   })
 
   it('keeps recovering when the record callback throws', () => {

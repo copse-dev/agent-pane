@@ -46,20 +46,35 @@ export function initialRendererReloadState(): RendererReloadState {
 /**
  * Decide whether to reload after a renderer death. `clean-exit` is a normal
  * window close and must not reload. `loop` is true when the crash is refused
- * because crashes keep repeating, which is when the user must be told.
+ * because crashes keep repeating, which is when the user must be told;
+ * `stoppedBy` then names the cap that refused it, for the log line.
  */
 export function planRendererCrashRecovery(
   details: RendererGoneDetails,
   state: RendererReloadState,
   now: number,
-): { reload: boolean; loop: boolean; next: RendererReloadState } {
+): {
+  reload: boolean
+  loop: boolean
+  stoppedBy: { crashes: number; windowMs: number } | null
+  next: RendererReloadState
+} {
   if (details.reason === 'clean-exit') {
-    return { reload: false, loop: false, next: state }
+    return { reload: false, loop: false, stoppedBy: null, next: state }
   }
   const crashes = [...state.crashes.filter((at) => now - at < RENDERER_CRASH_LOOP_WINDOW_MS), now]
   const burst = crashes.filter((at) => now - at < RENDERER_RELOAD_WINDOW_MS).length
-  const reload = burst <= RENDERER_RELOAD_MAX && crashes.length <= RENDERER_CRASH_LOOP_MAX
-  return { reload, loop: !reload, next: { crashes } }
+  const stoppedBy =
+    burst > RENDERER_RELOAD_MAX
+      ? { crashes: burst, windowMs: RENDERER_RELOAD_WINDOW_MS }
+      : crashes.length > RENDERER_CRASH_LOOP_MAX
+        ? { crashes: crashes.length, windowMs: RENDERER_CRASH_LOOP_WINDOW_MS }
+        : null
+  return { reload: stoppedBy === null, loop: stoppedBy !== null, stoppedBy, next: { crashes } }
+}
+
+function describeWindow(ms: number): string {
+  return ms >= 60_000 ? `${String(ms / 60_000)} minutes` : `${String(ms / 1000)} seconds`
 }
 
 export interface RendererCrashTarget {
@@ -90,7 +105,9 @@ export interface RendererCrashRecoveryOptions {
   /**
    * Called once when recovery stops because the crash keeps repeating. The
    * window is left down; `retry` clears the crash history and reloads it, for a
-   * user who chooses to try again.
+   * user who chooses to try again. "Once" holds because a renderer that stays
+   * down emits no further `render-process-gone` events until `retry` reloads
+   * it; a second trigger for this callback would break that.
    */
   onCrashLoop?: (retry: () => void) => void
 }
@@ -117,8 +134,8 @@ export function attachRendererCrashRecovery(
         (context ? ` ${context}` : '') +
         (decision.reload
           ? ' — reloading'
-          : decision.loop
-            ? ` — not reloading: ${String(state.crashes.length)} crashes in ${String(RENDERER_CRASH_LOOP_WINDOW_MS / 60_000)} minutes`
+          : decision.stoppedBy
+            ? ` — not reloading: ${String(decision.stoppedBy.crashes)} crashes in ${describeWindow(decision.stoppedBy.windowMs)}`
             : ''),
     )
     const destroyed = contents.isDestroyed()
