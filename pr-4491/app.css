@@ -12357,6 +12357,50 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .acp-add-menu .provider-panel-embedded > .provider-actions:first-child {
   display: none;
 }
+.agent-profile-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin: var(--spacing-sm) 0;
+}
+.agent-profile-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding: var(--spacing-sm) 0;
+}
+.agent-profile-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.agent-profile-row-actions {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: var(--spacing-md);
+}
+.agent-profile-form {
+  display: grid;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
+}
+.agent-profile-form[hidden] {
+  display: none;
+}
+.agent-profile-form-title {
+  margin: 0;
+  font-weight: 600;
+}
+.agent-profile-form .agent-profile-name {
+  width: 100%;
+  max-width: 360px;
+  min-height: var(--action-min-height);
+  padding-inline: var(--spacing-md);
+}
+.agent-profile-add {
+  justify-self: start;
+}
 
 /* src/renderer/styles/global/onboarding.css */
 .onboarding-overlay {
