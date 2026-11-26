@@ -111,6 +111,50 @@ With fnm, run `fnm install && fnm use` from the repository root instead.
 
 Confirm with `node -v` before debugging a tooling failure.
 
+### Claude Code cloud sessions
+
+Claude Code cloud containers run as root on Linux, default to Node 22, and lack the packages CI
+installs. `.claude/cloud-setup.sh` makes a fresh container ready: it links `/opt/node24/bin`
+into `~/.local/bin` (ahead of Node 22 on the image's `PATH`), activates the pinned pnpm,
+installs `bubblewrap`, `socat`, `openssh-client` and CI's Noto fonts with apt, then runs `pnpm install`,
+`check-prepared-worktree.mts` and `pnpm run build`. It is idempotent: about a minute cold and
+15 seconds again. Call it from the cloud environment's setup script, which runs from the
+directory holding the checkout:
+
+```bash
+[ -f agent-pane/.claude/cloud-setup.sh ] && (cd agent-pane && bash .claude/cloud-setup.sh)
+```
+
+or run `bash .claude/cloud-setup.sh` from the repository root in a session that started without it.
+
+As root, the project sandbox's bubblewrap invocation starts and then fails every command with
+`apply-seccomp: write /proc/self/uid_map: Operation not permitted`. `pnpm test` and the
+`run-e2e.mts` launchers therefore re-execute themselves as uid 1000 in a user namespace
+(`unshare -U --map-user=1000 --map-group=1000`) when they start as root on Linux, which maps that
+user back to root, so the checkout stays writable. Nothing else changes: CI runners and developer
+machines are not root and never re-execute. `COPSE_ROOT_USERNS=0` keeps a run as root. The e2e
+launchers stop before any spec when `bwrap` or `socat` is missing, naming the package, because
+approval specs would otherwise pass or fail on the "No project sandbox is available" copy. Unit
+runs carry on, and the sandbox tests skip or fail naming the missing dependency.
+
+Network limits that still apply:
+
+- `pnpm run test:e2e*` and `test:demo` first download the reference screenshots from the public
+  R2 bucket (`pub-7ec931b58a7b480ba1cd3e535dc12f3c.r2.dev`). An environment on the default
+  network allowlist refuses that host, and the launcher stops with `fetch failed`. Add the host to
+  the environment's allowed domains. Node's `fetch` reaches the egress proxy only with
+  `NODE_USE_ENV_PROXY=1` exported. To run specs for their assertions without the baselines,
+  start wdio directly:
+  `unshare -U --map-user=1000 --map-group=1000 -- xvfb-run --auto-servernum -- node_modules/.bin/wdio run wdio.ci.conf.ts --spec tests/e2e/<name>.e2e.ts`.
+- GitHub's GraphQL API and Actions artifact storage are unreachable: `gh api repos/...` and
+  `gh run view --log` work, `gh pr view` and `gh run download` do not.
+- Until #4409 is fixed, an IPv6-disabled container needs a `socat -4` shim for tests that use the
+  sandbox's network bridge.
+
+The image's global git config signs commits (`commit.gpgsign=true`) through a loopback signer.
+Leave it on for your own commits; tests that commit should isolate themselves from global git
+config rather than rely on it being off.
+
 ## Container engines on macOS
 
 Container-backed development scripts use a small engine boundary instead of assuming
