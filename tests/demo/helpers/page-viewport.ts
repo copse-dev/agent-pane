@@ -76,13 +76,20 @@ export async function installPageViewport(session: ViewportSession): Promise<voi
       }
       // An infobar can come or go as the window resizes, which moves the frame,
       // so measure again until the page lands on the size asked for.
+      let page: PageSize | undefined
       for (let attempt = 0; attempt < SETTLE_ATTEMPTS; attempt++) {
         const frame = await session.execute(readFrame)
         await origSetWindowSize.apply(this, [width + frame.width, height + frame.height])
-        const page = await session.execute(readPageSize)
+        page = await session.execute(readPageSize)
         if (page.width === width && page.height === height) return undefined
       }
-      return undefined
+      // A spec would otherwise measure or capture at the wrong size, the failure
+      // this helper exists to prevent, with nothing saying why.
+      throw new Error(
+        `setWindowSize(${String(width)}, ${String(height)}) left a ` +
+          `${String(page?.width)}x${String(page?.height)} page after ` +
+          `${String(SETTLE_ATTEMPTS)} attempts`,
+      )
     },
   )
   await session.setWindowSize(DEMO_PAGE_SIZE.width, DEMO_PAGE_SIZE.height)

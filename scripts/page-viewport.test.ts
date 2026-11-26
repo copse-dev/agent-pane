@@ -108,4 +108,18 @@ describe('demo page viewport', () => {
     await installPageViewport(session)
     assert.deepEqual(fake.resizes, [DEMO_PAGE_SIZE])
   })
+
+  it('fails the resize when the page never reaches the size asked for', async () => {
+    // A frame that grows with every resize never lets the page settle.
+    let growth = 0
+    const fake: FakeWindow = {
+      outer: { width: 1280, height: 800 },
+      frameFor: () => ({ width: 0, height: (growth += 10) }),
+      resizes: [],
+    }
+    await assert.rejects(
+      installPageViewport(fakeSession(fake)),
+      /setWindowSize\(1280, 800\) left a 1280x\d+ page after 3 attempts/,
+    )
+  })
 })
