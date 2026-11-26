@@ -171,6 +171,18 @@ the trees catch none. More, better-targeted data helps the text model a lot on s
 and only partly on real ones. Deterministic rules stay the floor; a data-fed text veto is a
 partial net on top.
 
+**Fine-tuned on an independent adversarial set.** A separate generator (one Claude source, two
+external models; 617 rows, must-ask commands each with a near-identical safe twin) found this
+change's harm gate letting about half its must-ask rows through, mostly where the risk sits in a
+project script, a launcher or config. Trained on the Claude rows and tested on the external models'
+(`adversarial_finetune.py`, pairs kept together): TF-IDF catches 37 of 40 gate misses at
+P(ask) ≥ 0.5 but flags 27 of 40 safe twins and would add 27 of the MacBook's 218 prompts (12%);
+the MLX encoder catches 19, adding 43; adding the script files' text does not help. With whole
+families held out, TF-IDF catches 93% (179 of 193) for about 11% more MacBook prompts. The models
+learn what adversarial commands look like more than what they do, so the price in prompts stays
+high. Containing those commands (opt-in contain-first Guarded YOLO) and protecting the config they
+persist through are the structural answers; a learned veto remains an optional extra.
+
 **Code mode** (Codex's orchestration cells) already removes the prompt per cell when Codex runs in
 the project sandbox. It does not change the prompts measured here: 99% of the Studio's shell
 prompts came from Codex sessions, and they are the concrete commands inside those cells, which
