@@ -1206,9 +1206,15 @@ Known credential-location overrides checked in both the host and child environme
 `XDG_CONFIG_HOME`, Cargo credential/config files under `CARGO_HOME`, and Copse stores resolved
 through `COPSE_DIR`, `COPSE_PANEL_USER_DATA` and `COPSE_WORKSPACE_DIR`. This is a bounded known-store
 policy, not arbitrary secret discovery; unclassified data inside an allowed cache remains readable.
-bubblewrap bind-mounts a granted file through its symlink, which turns fnm's `bin/npm` into a copy
-whose relative requires break, so on Linux the contained process finds these commands first through
-private symlinks in its scratch directory that point at the canonical executables.
+Neither sandbox can start fnm's own PATH symlinks. bubblewrap bind-mounts a granted file through
+its symlink, which turns fnm's `bin/npm` into a copy whose relative requires break. Seatbelt checks
+read access on every symlink the kernel follows, not only on its target, so `env node` (every npm
+and Corepack shebang) cannot start `bin/node` inside the denied installation although its canonical
+executable is granted; `execvp` then reports `env: node: No such file or directory`. On both
+platforms the contained process therefore finds these commands first through private symlinks in
+its scratch directory that point at the canonical executables. Only the confined command gets them
+on its PATH: contained steps can write scratch, and the unconfined wrapper shell looks up ASRT's
+bare `env` launcher on its own PATH before the sandbox applies.
 Runtime installation/version switching and Windows sandbox support remain separate capabilities.
 
 ## Guarded YOLO
