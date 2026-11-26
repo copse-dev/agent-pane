@@ -152,6 +152,46 @@ export function selectInstalledRustupToolchainName(
   return matches.length === 1 ? (matches[0] ?? null) : null
 }
 
+interface RustupDefaults {
+  readonly toolchain: string | undefined
+  readonly host: string | undefined
+}
+
+/**
+ * rustup's default toolchain and host, as rustup itself reads them: the user's
+ * `settings.toml` first, then the fallback settings file compiled into rustup
+ * for a key the user's file leaves unset. Homebrew's rustup keeps its
+ * `default_toolchain` only in that fallback file.
+ */
+export function readRustupDefaults(
+  userSettings: string | null,
+  fallbackSettings: string | null,
+): RustupDefaults {
+  const read = (key: RegExp): string | undefined => {
+    for (const settings of [userSettings, fallbackSettings]) {
+      const value = settings?.match(key)?.[1]
+      if (value) return value
+    }
+    return undefined
+  }
+  return {
+    toolchain: read(/^default_toolchain\s*=\s*["']([^"']+)["']/m),
+    // rustup 1.28 renamed `default_host_triple` to `default_host_tuple`.
+    host: read(/^default_host_(?:triple|tuple)\s*=\s*["']([^"']+)["']/m),
+  }
+}
+
+/**
+ * The fallback settings file the rustup behind a proxy reads. rustup's default
+ * is /etc/rustup; Homebrew builds rustup to read the one under its own prefix.
+ */
+function rustupFallbackSettingsPath(proxy: string): string {
+  const prefix = ['/opt/homebrew', '/usr/local'].find((candidate) =>
+    isPathWithin(candidate, proxy, { allowSelf: false }),
+  )
+  return join(prefix ?? '/', 'etc', 'rustup', 'settings.toml')
+}
+
 /** Select an already-installed Cargo toolchain without invoking rustup or allowing downloads. */
 export function resolveInstalledRustToolchainBin(
   root: string,
@@ -170,12 +210,16 @@ export function resolveInstalledRustToolchainBin(
   const projectRequest = toolchainText?.trim()
   if (selectedToolchainFile && !projectRequest) return null
   if (projectRequest && !/^[A-Za-z0-9._-]+$/.test(projectRequest)) return null
-  const resolveRustupToolchain = (requestedProject: string | undefined): string | null => {
+  const resolveRustupToolchain = (
+    requestedProject: string | undefined,
+    fallbackSettingsPath = join('/', 'etc', 'rustup', 'settings.toml'),
+  ): string | null => {
     try {
       const rustup = join(homedir(), '.rustup')
-      const settings = boundedFile(join(rustup, 'settings.toml'))
-      const defaultName = settings?.match(/^default_toolchain\s*=\s*["']([^"']+)["']/m)?.[1]
-      const defaultHost = settings?.match(/^default_host_triple\s*=\s*["']([^"']+)["']/m)?.[1]
+      const { toolchain: defaultName, host: defaultHost } = readRustupDefaults(
+        boundedFile(join(rustup, 'settings.toml')),
+        boundedFile(fallbackSettingsPath),
+      )
       const requested = requestedProject ?? defaultName
       if (!requested || !/^[A-Za-z0-9._-]+$/.test(requested)) return null
       const toolchains = join(rustup, 'toolchains')
@@ -218,7 +262,7 @@ export function resolveInstalledRustToolchainBin(
         basenameWithoutExtension(cargo) === 'rustup' ||
         statSync(rustup, { throwIfNoEntry: false })?.isFile()
       )
-        return resolveRustupToolchain(undefined)
+        return resolveRustupToolchain(undefined, rustupFallbackSettingsPath(cargo))
       const trustedRoot = ['/usr', '/usr/local', '/opt/homebrew'].find((prefix) =>
         isPathWithin(prefix, cargo, { allowSelf: false }),
       )
