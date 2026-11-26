@@ -6,7 +6,13 @@ import { searchIcon } from '../dom/icons.ts'
 import { openNewProjectThread } from '../controller/projects.ts'
 import { projectDisplayName, switchProject, switchProjectThread } from '../controller/projects.ts'
 import { createNewProject } from '../controller/projects.ts'
-import { openRightPanelWithWorkspace } from '../controller/panels.ts'
+import {
+  closeRightPanelSplit,
+  openRightPanelBesideWithWorkspace,
+  openRightPanelWithWorkspace,
+  rightPanelShows,
+  rightPanelSplitOf,
+} from '../controller/panels.ts'
 import { openSettingsDialog } from './settings-dialog.ts'
 import { openKeyboardShortcutsDialog } from './keyboard-shortcuts-dialog.ts'
 import { openActivityPanel } from './activity-panel.ts'
@@ -38,6 +44,15 @@ const PANEL_ITEMS: readonly { mode: RightPanelMode; label: string }[] = [
   { mode: 'terminal', label: 'Terminal' },
   { mode: 'changes', label: 'Review: Local changes' },
   { mode: 'prs', label: 'Review: Pull requests' },
+  { mode: 'browser', label: 'Browser' },
+]
+
+// Panes the palette can stack beneath the open one. Same always-available rule
+// as PANEL_ITEMS; pull requests and context never share the panel.
+const SPLIT_ITEMS: readonly { mode: RightPanelMode; label: string }[] = [
+  { mode: 'explorer', label: 'Explorer' },
+  { mode: 'terminal', label: 'Terminal' },
+  { mode: 'changes', label: 'Review' },
   { mode: 'browser', label: 'Browser' },
 ]
 
@@ -180,6 +195,28 @@ export function mountCommandPalette(store: AppStore, api: ApiClient): void {
           openFileSearchDialog()
         },
       })
+      const state = store.getState()
+      if (state.filesPaneOpen) {
+        for (const item of SPLIT_ITEMS) {
+          if (rightPanelShows(state, item.mode)) continue
+          commands.push({
+            kind: 'command',
+            label: `Split panel: open ${item.label} beside`,
+            run: () => {
+              openRightPanelBesideWithWorkspace(store, api, item.mode)
+            },
+          })
+        }
+      }
+      if (rightPanelSplitOf(state) !== null) {
+        commands.push({
+          kind: 'command',
+          label: 'Split panel: close bottom pane',
+          run: () => {
+            closeRightPanelSplit(store)
+          },
+        })
+      }
       commands.push({
         kind: 'command',
         label: 'Find in conversation',

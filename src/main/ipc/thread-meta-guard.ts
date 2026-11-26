@@ -14,6 +14,9 @@ import { expectArray, isRecord } from '@copse/std/unknown-value.ts'
  * branch are equally main-owned: renderer values must not steer a pending
  * automation back into the shared project checkout. Explicit native
  * restore/adopt/clear operations write directly.
+ *
+ * `importedSession` records which external session main imported a thread from;
+ * the renderer must not be able to claim or forge that provenance.
  */
 const MAIN_OWNED_THREAD_FIELDS: readonly string[] = [
   'remoteAgentLink',
@@ -23,6 +26,7 @@ const MAIN_OWNED_THREAD_FIELDS: readonly string[] = [
   'deferredWorktree',
   'gitBranch',
   'automation',
+  'importedSession',
 ]
 
 /** Strip display projection provenance that only main may grant after review. */

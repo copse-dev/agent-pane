@@ -34,14 +34,37 @@ const MAX_REPRODUCER_CHARS = 20_000
 export const VERDICT_OUTCOMES = ['refuted', 'stands', 'undetermined'] as const
 export type VerdictOutcome = (typeof VERDICT_OUTCOMES)[number]
 
-const verdictArgs = decodeWithSchema(
-  z.object({
-    status: z.enum(VERDICT_OUTCOMES),
-    /** For `refuted`: the lines that show the claim wrong. For `stands`: what confirmed it. */
-    reason: z.string().min(8).max(1_200),
-    reproducerAssessment: z.enum(['valid', 'invalid', 'undetermined']).optional(),
-  }),
-)
+/** The verdict's reason, in characters; the tool schema tells the model so. */
+const VERDICT_REASON_MIN = 8
+const VERDICT_REASON_MAX = 1_200
+
+const verdictSchema = z.object({
+  status: z.enum(VERDICT_OUTCOMES),
+  /** For `refuted`: the lines that show the claim wrong. For `stands`: what confirmed it. */
+  reason: z.string().min(VERDICT_REASON_MIN).max(VERDICT_REASON_MAX),
+  reproducerAssessment: z.enum(['valid', 'invalid', 'undetermined']).optional(),
+})
+const verdictArgs = decodeWithSchema(verdictSchema)
+
+/**
+ * What was wrong with a refused verdict, so the model can fix that and not
+ * guess: a reason over the limit says how long it was.
+ */
+function describeVerdictRefusal(args: unknown): string {
+  const parsed = verdictSchema.safeParse(args)
+  if (parsed.success) return ''
+  return parsed.error.issues
+    .slice(0, 4)
+    .map((issue) => {
+      const field = issue.path.join('.') || 'arguments'
+      const value: unknown =
+        typeof args === 'object' && args !== null ? Reflect.get(args, field) : undefined
+      return field === 'reason' && typeof value === 'string'
+        ? `reason is ${String(value.length)} characters; it must be ${String(VERDICT_REASON_MIN)}–${String(VERDICT_REASON_MAX)}`
+        : `${field}: ${issue.message}`
+    })
+    .join('; ')
+}
 export type ChallengeVerdict = NonNullable<ReturnType<typeof verdictArgs>>
 
 const reproducerArgs = decodeWithSchema(
@@ -84,6 +107,8 @@ function verdictTool(requireReproducerAssessment: boolean): LLMTool {
         status: { type: 'string', enum: [...VERDICT_OUTCOMES] },
         reason: {
           type: 'string',
+          minLength: VERDICT_REASON_MIN,
+          maxLength: VERDICT_REASON_MAX,
           description:
             'The lines or output that decide it. When auditing a reproducer, explain the exercised behavior on BOTH revisions, the assertion failure or claimed runtime error and its link to this claim.',
         },
@@ -241,7 +266,7 @@ export function createVerifierToolExecutor(host: VerifierToolHost): VerifierTool
         if (name === 'verdict') {
           const input = verdictArgs(args)
           if (input === null)
-            return 'Error: verdict needs { status: refuted|stands|undetermined, reason }'
+            return `Error: verdict needs { status: refuted|stands|undetermined, reason (${String(VERDICT_REASON_MIN)}–${String(VERDICT_REASON_MAX)} characters) }; ${describeVerdictRefusal(args)}`
           if (host.requireReproducerAssessment && input.reproducerAssessment === undefined)
             return 'Error: verdict requires reproducerAssessment: valid|invalid|undetermined and a reason auditing the test on both revisions'
           if (input.reproducerAssessment === 'valid' && input.status !== 'stands')

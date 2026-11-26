@@ -66,7 +66,7 @@ describe('machine turn attribution', function () {
     await expect($('.conversation-queued .message-text')).toHaveText(
       'Then prepare the handoff summary.',
     )
-    await expect($('.conversation-queued .message-queued-badge')).toHaveText('QUEUED')
+    await expect($('.conversation-queued .message-queued-badge')).toHaveText('Queued')
 
     await saveAppScreenshot('machine-turn-attribution.png')
     await scenario.release('inspection')

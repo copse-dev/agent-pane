@@ -1257,6 +1257,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           })),
         ),
       listOrphans: emptyArray,
+      listExternalSessions: () => resolved({ sessions: [], sourcesFound: [] }),
+      importExternalSessions: () => resolved({ imported: [], alreadyImported: [], failed: [] }),
     },
     openRouter: { models: emptyArray },
     models: {

@@ -59,6 +59,7 @@ import {
 import { resolveAcpAgentTurnEnv } from './acp-agent-config-dir.ts'
 import { probeAcpAgentIsolated } from './acp-probe-host.ts'
 import { acquireAcpSession, disposeAcpSession, type PooledAcpSession } from './acp-session-pool.ts'
+import { recordStoredSessionCheckpoint, threadAcpStoredSession } from './acp-stored-session.ts'
 import { createAgentInitiatedTurnLease } from './agent-initiated-turn.ts'
 import { requestUserAnswers } from '../ask-user.ts'
 import { runWithActiveRunIdentity } from '../active-run-identity.ts'
@@ -849,10 +850,11 @@ async function runAcpAgentTurn(
     offeredBridge && acpBridgeToolLoss(offeredBridge) === null
       ? (offeredBridge.listedToolNames() ?? [])
       : []
-  // Once per session: tell the thread its agent never connected to Copse's tools.
-  const noteBridgeUnavailable = (bridge: AcpNativeBridge): boolean => {
+  // Once per session: tell the thread its agent never connected to Copse's
+  // tools. `quiet` records it without the thread notice.
+  const noteBridgeUnavailable = (bridge: AcpNativeBridge, quiet = false): boolean => {
     if (!markAcpBridgeUnavailable(bridge)) return false
-    options.onChunk({ type: 'text', text: acpBridgeUnavailableNotice(agent.title) })
+    if (!quiet) options.onChunk({ type: 'text', text: acpBridgeUnavailableNotice(agent.title) })
     return true
   }
   const handlers: AcpClientHandlers = {
@@ -947,7 +949,17 @@ async function runAcpAgentTurn(
           },
           () =>
             acquireAcpSession({
-              ...(executionContext ? { projectId: executionContext.projectId } : {}),
+              ...(executionContext
+                ? {
+                    projectId: executionContext.projectId,
+                    storedSession: threadAcpStoredSession(
+                      executionContext.projectId,
+                      options.threadId,
+                      agent.id,
+                      { claudeConfigDir: env?.['CLAUDE_CONFIG_DIR'] },
+                    ),
+                  }
+                : {}),
               threadId: options.threadId,
               config: spawnConfig,
               registry: options.registry,
@@ -967,9 +979,7 @@ async function runAcpAgentTurn(
       options.onChunk({ type: 'text', text: acpSessionHandoverNotice(handover, agent.title) })
     }
     const sessionBridge =
-      !remote && entry.bridge !== null && entry.open.mcpCapabilities?.http === true
-        ? entry.bridge
-        : null
+      !remote && entry.bridge !== null && entry.open.bridgeServerName !== null ? entry.bridge : null
     offeredBridge = sessionBridge
     // An offer is not a mount (#4144): the agent has Copse's tools only once
     // it lists them. It normally does so while its session opens; give it the
@@ -1008,7 +1018,11 @@ async function runAcpAgentTurn(
       // mount: the prompt below is never sent, and the next turn decides.
       sessionBridge &&
       bridgeMount === 'unlisted' &&
-      noteBridgeUnavailable(sessionBridge)
+      // An agent without http MCP was offered the bridge over the stdio relay.
+      // One that silently ignores it reads as it did before that offer
+      // existed: no thread notice. Its own report of a failed relay start
+      // (`onBridgeStartupFailure`) still gets one, and so does an http offer.
+      noteBridgeUnavailable(sessionBridge, entry.open.mcpCapabilities?.http !== true)
     ) {
       console.warn(
         `[acp-bridge] thread ${options.threadId}'s agent never listed the native tools it was offered; they are unavailable this session`,
@@ -1099,10 +1113,22 @@ async function runAcpAgentTurn(
       // the last confirmed prefix on cancellation or a transport failure so a
       // retry conservatively includes context the agent may never have seen.
       if (outcome.stopReason !== 'cancelled') {
-        entry.transcriptCheckpoint = checkpointAcpTranscript(
-          options.priorMessages,
-          options.userPrompt,
-        )
+        const checkpoint = checkpointAcpTranscript(options.priorMessages, options.userPrompt)
+        entry.transcriptCheckpoint = checkpoint
+        // A saved session link keeps it too, so the first turn after a relaunch
+        // resumes without resending what the session already holds.
+        if (executionContext) {
+          void recordStoredSessionCheckpoint(
+            executionContext.projectId,
+            options.threadId,
+            agent.id,
+            checkpoint,
+          ).catch((err: unknown) => {
+            console.warn(
+              `[acp] could not save thread ${options.threadId}'s session checkpoint: ${acpErrorMessage(err)}`,
+            )
+          })
+        }
       }
       promptEnd.abort(
         new AcpTurnEnded(
@@ -1512,8 +1538,9 @@ async function respondToPermission(
   // and network or external mutations still prompt there. Delegate only on
   // adapter-authored provenance that agrees across the request and the
   // agent's earlier reports of the same call (#1446), and only when this
-  // session really mounted the bridge — a remote agent, or one without HTTP
-  // MCP, has nothing that would re-gate a call that merely claims to be ours.
+  // session was offered its own bridge, over http or the stdio relay. A remote
+  // agent gets neither, so nothing would re-gate a call that merely claims to
+  // be ours.
   // This session's bridge, narrowed to what is still offered now (a plugin can
   // be disabled mid-session).
   const stillOffered = new Set(bridgedNativeToolsOffered())
