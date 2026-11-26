@@ -1,6 +1,6 @@
 # Join each user-answered approval prompt to the conversation around it.
 import json, os, sys, re, collections
-ROOT = os.path.expanduser('~/.copse/workspace')
+ROOT = os.path.join(os.environ.get('COPSE_DIR') or os.path.expanduser('~/.copse'), 'workspace')
 FIXTURE = re.compile(r'^(headless-project-|gate-replay-project-|proj-|project-|copse-apple-smoke$|tmp$|_global$)')
 def base(n): return re.split(r'__|\.', n or '')[-1]
 def norm(tdir, c):

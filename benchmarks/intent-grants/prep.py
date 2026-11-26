@@ -4,13 +4,40 @@ import json, os, re, sys, hashlib, collections
 sys.path.insert(0, os.path.dirname(__file__))
 
 P = json.load(open('prompts.json'))
-_meta = {}
+ROOT = os.path.join(os.environ.get('COPSE_DIR') or os.path.expanduser('~/.copse'), 'workspace')
+if not os.path.isdir(ROOT): sys.exit(f'no thread store at {ROOT}; set COPSE_DIR')
+_meta, _users = {}, {}
 def meta(p):
     k = (p['project'], p['thread'])
     if k not in _meta:
-        try: _meta[k] = json.load(open(os.path.expanduser(f"~/.copse/workspace/{p['project']}/{p['thread']}/meta.json")))
+        try: _meta[k] = json.load(open(os.path.join(ROOT, p['project'], p['thread'], 'meta.json')))
         except Exception: _meta[k] = {}
     return _meta[k]
+
+def user_messages(p):
+    """The thread's user-role messages, oldest first, with their origin."""
+    k = (p['project'], p['thread'])
+    if k not in _users:
+        out = []
+        try:
+            for l in open(os.path.join(ROOT, p['project'], p['thread'], 'events.jsonl'), errors='replace'):
+                try: e = json.loads(l)
+                except Exception: continue
+                if e.get('type') == 'message' and e.get('role') == 'user':
+                    out.append((e.get('createdAt', 0), e.get('origin'), e.get('editedByUser') is True))
+        except OSError: pass
+        _users[k] = sorted(out, key=lambda x: x[0])
+    return _users[k]
+
+REVIEWER = re.compile(r'^Answer to your review question \u201c(.*)\u201d: (.*)$', re.S)
+def provenance(p):
+    """Only the user's own words grant. Messages another thread, a hook or a continuation wrote
+    are user-role too, so read the origin the way project-context.ts does."""
+    before = [u for u in user_messages(p) if u[0] <= p['at']]
+    if not before: return 'unknown'
+    _, origin, edited = before[-1]
+    if origin and not (isinstance(origin, dict) and origin.get('kind') == 'hook' and edited): return 'machine'
+    return 'reviewer' if REVIEWER.match(p['user'] or '') else 'user'
 
 def render(a):
     args = a.get('args') or {}
@@ -41,9 +68,9 @@ for p in sorted(P, key=lambda p: p['at']):
         'id': hashlib.sha256(f"{p['thread']}|{p['at']}".encode()).hexdigest()[:10],
         'source': 'real', 'turn': turn, 'thread': p['thread'], 'at': p['at'], 'kind': p['kind'], 'cause': p['cause'],
         'user': p['user'], 'assistant': p['assistant_prior'][-1500:], 'actions': [render(a) for a in p['actions']],
-        'ctx': ctx_of(m), 'expected': None,
+        'ctx': ctx_of(m), 'expected': None, 'provenance': provenance(p),
     })
 json.dump(cases, open('intent-real.json', 'w'), indent=0)
 print(len(cases), 'prompts;', sum(1 for c in cases if c['actions']), 'with a candidate action;',
       len({c['turn'] for c in cases}), 'user turns')
-print(collections.Counter(bool(c['ctx']['branch']) for c in cases), collections.Counter(c['ctx']['repo'] for c in cases).most_common(6))
+print(collections.Counter(c['provenance'] for c in cases), collections.Counter(bool(c['ctx']['branch']) for c in cases), collections.Counter(c['ctx']['repo'] for c in cases).most_common(6))

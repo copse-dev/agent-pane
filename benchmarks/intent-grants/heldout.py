@@ -1,5 +1,5 @@
 # Held-out checks the grant design was not tuned on:
-#  - prior-consent's 39 hand-written cases (written on 2026-10-30, before this work);
+#  - prior-consent's 38 hand-written cases (written on 2026-10-30, before this work);
 #  - real turns whose reply is replaced by a refusal or deferral (every prompt must ask).
 import json, os, random, hashlib
 HERE = os.path.dirname(__file__)

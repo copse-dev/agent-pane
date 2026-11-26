@@ -38,15 +38,26 @@ POLICIES = {
 IMPLIES = {'scoped+dev': {'pr.open': {'code.work'}, 'branch.push': {'code.work'}}}
 
 # --- user text ------------------------------------------------------------------------------
+QUOTES = str.maketrans({'\u2019': "'", '\u2018': "'", '\u02bc': "'", '\u201c': '"', '\u201d': '"'})
+
 def own_words(text):
-    """The user's own words: drop fenced code, quoted lines, pasted blocks and attachments."""
-    t = re.sub(r'```.*?(```|\Z)', ' ', text or '', flags=re.S)
+    """The user's own words: drop fenced code, quoted lines and spans, pasted blocks and attachments.
+    A fence closes only on a run of the same character at least as long as the one that opened it,
+    as Copse writes them (`fenceFor` makes the fence longer than any backtick run inside)."""
+    t = (text or '').translate(QUOTES)
+    t = re.sub(r'^[ \t]*(`{3,}|~{3,}).*?(^[ \t]*\1[`~]*[ \t]*$|\Z)', ' ', t, flags=re.S | re.M)
     t = re.sub(r'<pasted[^>]*>.*?(</pasted[^>]*>|\Z)', ' ', t, flags=re.S | re.I)
     t = '\n'.join(l for l in t.split('\n') if not l.lstrip().startswith('>'))
-    return t.replace('￼', ' ')
+    t = re.sub(r'"[^"\n]*"', ' ', t)  # quoted text is someone else's words
+    return t.replace('\ufffc', ' ')
 
 YES = re.compile(r"^\W*(y|yes|yep|yeah|yup|sure|ok|okay|go|go ahead|do it|please do|please|yes please|yes,? (do it|go ahead|please)|go for it|ship it|proceed|sounds good|let'?s do (it|that))\W*$", re.I)
-NEG = re.compile(r"\b(don'?t|do not|not yet|no need|without|hold off|never|stop|wait|instead of|skip|no,|rather than|avoid)\b|^\s*no\b", re.I)
+NEG = re.compile(r"n't\b|\b(not|no need|without|hold off|never|stop|wait|instead of|skip|no,|rather than|avoid|let'?s not|nor)\b|^\s*no\b", re.I)
+# a condition the agent cannot check is dropped by a grant, so a conditional request grants nothing
+CONDITIONAL = re.compile(r"\b(once|if|when|whenever|after|until|unless|as soon as|before|provided|assuming)\b", re.I)
+# a message that ends by asking for an opinion or a summary is a question about what precedes it
+ASKS_OPINION = re.compile(r"(what do you think|thoughts|wdyt|does (this|that) (look|seem)|is (this|that) (right|ok|safe)|can you (summari[sz]e|explain|review)|summari[sz]e|any ideas)\W*$", re.I)
+ADDRESSED = re.compile(r"\b(agents?|assistants?|ai|llms?|claude|copilot|bots?)\b[^.?!\n]{0,20}(reading this|must|should|:)", re.I)
 OPINION = re.compile(r"^\W*(should (we|i)|do (we|i|you) (need|want|think)|would|could (we|this)|is (it|there|this)|what|why|how|did (we|you)|does|are (we|you|there)|can (this|it|they|these))\b", re.I)
 PR = r"(?:(?:draft )?pr|p\.\s?r\.?|pull request|draft)s?"
 PATTERNS = [
@@ -71,36 +82,65 @@ PRNUM = re.compile(r"(?:#|\bpr\s*|\bpull request\s*|/pull/)(\d{2,6})\b", re.I)
 
 def last_question(a):
     s = (a or '').strip()[-500:]
-    qs = re.findall(r'[^.?!\n]*\?', s)
+    qs = [q for q in re.findall(r'[^.?!\n]*\?', s) if q.strip(' ?')]
     return qs[-1].strip() if qs else ''
 
 def _clauses(t):
+    """Clauses that may grant. A sentence holding a condition ("if CI passes, merge it") grants
+    nothing at all, because the comma would otherwise cut the condition off its request."""
     t = re.sub(r"\bp\.\s?r\b\.?", "PR", t, flags=re.I)
-    return [c for c in re.split(r"[.;!?,\n]+|\bbut\b|\bthen\b(?=\s*(?:don|do not|not))", t, flags=re.I) if c and c.strip()]
+    out = []
+    for sentence in re.split(r"[.;!?\n]+", t):
+        if CONDITIONAL.search(sentence): continue
+        out += [c for c in re.split(r",|\bbut\b|\bthen\b(?=\s*(?:don|do not|not))", sentence, flags=re.I) if c and c.strip()]
+    return out
 
 def pkg_name(s):
     """'@scope/name@^1.2' -> '@scope/name'; 'name@1' -> 'name'."""
     s = s.lower()
     return '@' + s[1:].split('@')[0] if s.startswith('@') else s.split('@')[0]
 
+VERSION_SPEC = re.compile(r'^(latest|next|beta|alpha|canary|rc|[\^~<>=]*\d[\w.+-]*(\s*(\|\||-|\s)\s*[\^~<>=]*\d[\w.+-]*)*|\*|x)$', re.I)
+def pkg_spec_ok(s):
+    """A registry package with at most a version, range or tag: refuses npm: aliases, URLs,
+    git and file sources wherever they appear in the spec."""
+    name = pkg_name(s)
+    if not re.match(r'^(@[a-z0-9][\w.-]*/)?[a-z0-9][\w.-]*$', name): return False
+    rest = s[len(name):]
+    return rest == '' or (rest.startswith('@') and bool(VERSION_SPEC.match(rest[1:])))
+
 def _norm_pkg(s):
     return re.sub(r'[^a-z0-9]', '', pkg_name(s).split('/')[-1])
 
-def extract_det(user, assistant='', ctx=None):
+REVIEWER_ANSWER = re.compile(r'^Answer to your review question \u201c(.*)\u201d: (.*)$', re.S)
+
+def extract_det(user, assistant='', ctx=None, provenance='user'):
     """Deterministic extractor. Grants come from the user's own words; a bare affirmative
-    adopts the assistant's final question, with no flags."""
+    adopts the assistant's final question, with no flags.
+    provenance: 'user' (typed by the user), 'reviewer' (an answer to a reviewer model's question,
+    which Copse writes as one user message) or anything else (another thread, a hook, a
+    continuation), which grants nothing."""
     ctx = ctx or {}
+    if provenance == 'reviewer':
+        m = REVIEWER_ANSWER.match(user or '')
+        if not m: return []
+        assistant, user = m.group(1).rstrip(), m.group(2)  # the question is the reviewer's text
+        if not assistant.endswith('?'): assistant += '?'
+    elif provenance != 'user': return []
     words = own_words(user)
     sources = [(words, True)]
     if YES.match(words.strip()):
         q = last_question(assistant)
         if q: sources = [(re.sub(r"^\W*(do you )?(want|would you like) me to|^\W*(should|shall|may|can) i\b", '', q, flags=re.I), False)]
+    assistant = (assistant or '').translate(QUOTES)
     q_prs = sorted({int(x) for x in PRNUM.findall(last_question(assistant))})
     grants = []
     if LEADING_NO.match(words): return grants  # "no, just tell me…" refuses the whole message
+    if ASKS_OPINION.search(words.strip()): return grants
     for text, is_user in sources:
         for cl in _clauses(text):
-            if NEG.search(cl) or (is_user and (OPINION.search(cl) or INFO.search(cl))) or UNBOUND.search(cl): continue
+            if NEG.search(cl) or ADDRESSED.search(cl) or UNBOUND.search(cl): continue
+            if is_user and (OPINION.search(cl) or INFO.search(cl)): continue
             for action, rx in PATTERNS:
               for m in (rx.finditer(cl) if action == 'dep.add' else [rx.search(cl)]):
                   if not m: continue
@@ -133,6 +173,44 @@ GIT_READ = {'status', 'log', 'diff', 'rev-parse', 'rev-list', 'show', 'branch', 
 SECRETISH = re.compile(r"(^|/)(\.env|\.npmrc|\.netrc|id_[a-z0-9]+|.*\.pem|.*\.key|credentials|\.ssh|\.aws|\.gnupg|keychain)", re.I)
 
 class Unparsed(Exception): pass
+
+def opts(args, flags=(), valued=(), short_valued=''):
+    """Parse options the way git and gh do: long options may carry '=value', short options may
+    be bundled ('-uq') and short value options may carry the value attached ('-Hmain').
+    Abbreviated long options (git accepts them) and anything not listed raise Unparsed.
+    Returns ([(flag, value)], positionals)."""
+    out, pos, i = [], [], 0
+    longs = [f for f in list(flags) + list(valued) if f.startswith('--')]
+    while i < len(args):
+        x = args[i]
+        if x == '--': pos += args[i + 1:]; break
+        if x.startswith('--'):
+            name, eq, val = x.partition('=')
+            hits = [f for f in longs if f == name]
+            if len(hits) != 1: raise Unparsed('option ' + x)
+            f = hits[0]
+            if f in valued:
+                if not eq:
+                    if i + 1 >= len(args): raise Unparsed('missing value ' + f)
+                    val = args[i + 1]; i += 1
+                out.append((f, val))
+            elif eq: raise Unparsed('value on flag ' + x)
+            else: out.append((f, None))
+        elif x.startswith('-') and len(x) > 1:
+            j = 1
+            while j < len(x):
+                f = '-' + x[j]
+                if f in valued or x[j] in short_valued:
+                    val = x[j + 1:]
+                    if not val:
+                        if i + 1 >= len(args): raise Unparsed('missing value ' + f)
+                        val = args[i + 1]; i += 1
+                    out.append((f, val)); break
+                if f not in flags: raise Unparsed('option ' + x)
+                out.append((f, None)); j += 1
+        else: pos.append(x)
+        i += 1
+    return out, pos
 
 def _safe_path(p):
     if p in ('/dev/null', '-'): return True
@@ -260,21 +338,38 @@ def _git(a, ctx):
         if sub == 'remote' and args and args[0] not in ('-v', 'show', 'get-url'): raise Unparsed('remote write')
         return [('any', 'git-read')]
     if sub == 'fetch':
-        rest = [x for x in args if x not in ('--prune', '--quiet', '-q', '--tags') or x == '--tags']
-        if '--tags' in args: raise Unparsed('fetch tags')
-        if rest and rest[0] != 'origin': raise Unparsed('fetch remote')
+        _, pos = opts(args, flags=('--prune', '-p', '--quiet', '-q', '--no-tags'), valued=('--depth',))
+        if pos and pos[0] != 'origin': raise Unparsed('fetch remote')
+        if any(':' in r or r.startswith('+') for r in pos[1:]): raise Unparsed('fetch refspec')
         return [('git-fetch', 'fetch')]
-    if sub in ('add', 'commit', 'stash', 'restore'):
-        if sub == 'add' and any(x in ('-f', '--force') for x in args): raise Unparsed('add -f')
-        if sub == 'add' and any(SECRETISH.search(x) for x in args): raise Unparsed('add secret')
-        if sub == 'commit' and any(x.startswith(('--author', '-S', '--gpg')) for x in args): pass
-        return [('git-local', sub)]
+    if sub == 'add':
+        _, pos = opts(args, flags=('-A', '--all', '-u', '--update', '-N', '--intent-to-add', '-v', '--verbose'))
+        if not all(_safe_path(p) or p == '.' for p in pos): raise Unparsed('add path')
+        return [('git-local', 'add')]
+    if sub == 'commit':
+        _, pos = opts(args, flags=('-a', '--all', '-q', '--quiet', '--amend', '--no-edit', '-s', '--signoff'),
+                      valued=('-m', '--message'))
+        if pos: raise Unparsed('commit paths')
+        return [('git-local', 'commit')]
+    if sub == 'stash':
+        action = args[0] if args and not args[0].startswith('-') else 'push'
+        rest = args[1:] if args and not args[0].startswith('-') else args
+        if action not in ('push', 'pop', 'list', 'show', 'apply'): raise Unparsed('stash ' + action)
+        _, pos = opts(rest, flags=('-u', '--include-untracked', '-q', '--quiet', '--index'), valued=('-m', '--message'))
+        if action == 'push' and pos: raise Unparsed('stash paths')
+        if action != 'push' and any(not re.match(r'^stash@\{\d+\}$', p) for p in pos): raise Unparsed('stash ref')
+        return [('git-local', 'stash ' + action)]
+    if sub == 'restore':
+        o, pos = opts(args, flags=('--staged', '-S', '-q', '--quiet'))
+        if not any(f in ('--staged', '-S') for f, _ in o): raise Unparsed('restore discards the work tree')
+        return [('git-local', 'restore --staged')]
     if sub in ('rebase', 'merge'):
-        if any(x in ('-i', '--interactive', '--exec', '-x') for x in args): raise Unparsed('rebase -i')
-        tgt = [x for x in args if not x.startswith('-')]
+        allowed = ('--no-edit', '--ff-only', '--no-ff', '--autostash', '--no-autostash', '-q', '--quiet', '--abort', '--continue')
+        _, tgt = opts(args, flags=allowed + (('--rebase-merges',) if sub == 'rebase' else ()))
         if sub == 'merge' and not all(re.match(r'^origin/[\w./-]+$', t) for t in tgt): raise Unparsed('merge target')
         if sub == 'rebase' and not all(re.match(r'^origin/[\w./-]+$', t) for t in tgt): raise Unparsed('rebase target')
-        if ctx.get('branch') in DEFAULT_BRANCHES or not ctx.get('branch'): raise Unparsed('rebase on default branch')
+        on = ctx.get('head') or ctx.get('branch')
+        if on in DEFAULT_BRANCHES or not on: raise Unparsed('rebase on default branch')
         return [('git-local', sub)]
     if sub == 'push': return _push(args, ctx)
     raise Unparsed('git ' + sub)
@@ -291,13 +386,16 @@ def _push(args, ctx):
     refs = pos[1:]
     if not refs: refs = ['HEAD']
     cur = ctx.get('branch')
+    head = ctx.get('head')  # what is checked out when the gate decides, not the thread's record
     targets = []
     for r in refs:
         if r.startswith('+'): force = True; r = r[1:]
         src, _, dst = r.partition(':')
         dst = dst or src
         if src not in ('HEAD', cur) and not (src == dst): raise Unparsed('push src ' + src)
-        if dst == 'HEAD': dst = cur
+        if dst == 'HEAD':
+            if not head: raise Unparsed('push HEAD with no known checkout')
+            dst = head
         dst = (dst or '').replace('refs/heads/', '')
         if not dst or dst in DEFAULT_BRANCHES or dst.startswith(('refs/tags', 'release')): raise Unparsed('push to default/tag ' + str(dst))
         targets.append(dst)
@@ -307,41 +405,42 @@ def _gh(a, ctx):
     if len(a) < 2:
         raise Unparsed('gh')
     group, sub, args = a[0], a[1], a[2:]
-    if any(x in ('--repo', '-R') or x.startswith('--repo=') for x in args):
-        i = next(i for i, x in enumerate(args) if x in ('--repo', '-R') or x.startswith('--repo='))
-        repo = args[i].split('=', 1)[1] if '=' in args[i] else (args[i + 1] if i + 1 < len(args) else '')
+    if any(x in ('--repo', '-R') or x.startswith(('--repo=', '--rep')) or (x.startswith('-R') and len(x) > 2) for x in args):
+        i = next(i for i, x in enumerate(args) if x in ('--repo', '-R') or x.startswith(('--repo=', '--rep')) or (x.startswith('-R') and len(x) > 2))
+        x = args[i]
+        repo = x.split('=', 1)[1] if '=' in x else x[2:] if x.startswith('-R') and len(x) > 2 else (args[i + 1] if i + 1 < len(args) else '')
         if repo.lower() != (ctx.get('repo') or '').lower(): raise Unparsed('gh --repo')
     nums = [int(x) for x in args if x.isdigit()]
     if group == 'pr' and sub in ('view', 'checks', 'list', 'diff', 'status'): return [('gh-read', 'pr ' + sub)]
     if group == 'run' and sub in ('view', 'list', 'watch'): return [('gh-read', 'run ' + sub)]
     if group == 'api':
-        rest = a[1:]
-        if any(x in ('-X', '--method', '-f', '-F', '--field', '--raw-field', '--input') for x in rest): raise Unparsed('gh api write')
+        # read-only only: any method, field, header or input option (in any spelling) is refused,
+        # and a field alone would switch gh to POST
+        _, pos = opts(a[1:], flags=('--paginate', '--include', '-i', '--silent', '--verbose', '--slurp'),
+                      valued=('--jq', '-q', '--template', '-t', '--cache'))
+        if len(pos) != 1 or pos[0] == 'graphql' or not re.match(r'^/?(repos|users|orgs|search|rate_limit)\b[\w./?=&%-]*$', pos[0]): raise Unparsed('gh api path')
         return [('gh-read', 'api')]
     if group == 'pr' and sub == 'create':
-        i = 0
-        while i < len(args):
-            x = args[i]
-            if x in ('--title', '-t', '--body', '-b', '--label', '-l', '--assignee', '--reviewer', '-r'): i += 2; continue
-            if x in ('--draft', '-d', '--fill', '--fill-first'): i += 1; continue
-            if x in ('--base', '-B'):
-                if args[i + 1] not in DEFAULT_BRANCHES and args[i + 1] != ctx.get('base'): raise Unparsed('pr base')
-                i += 2; continue
-            if x in ('--head', '-H'):
-                if args[i + 1].split(':')[-1] not in (ctx.get('branch'), ) and args[i + 1].split(':')[-1] not in ctx.get('named_branches', []): raise Unparsed('pr head')
-                i += 2; continue
-            if x in ('--body-file', '-F'):
-                if not _safe_path(args[i + 1]): raise Unparsed('body-file')
-                i += 2; continue
-            if x in ('--repo', '-R'): i += 2; continue
-            raise Unparsed('pr create flag ' + x)
+        o, pos = opts(args, flags=('--draft', '-d', '--fill', '-f', '--fill-first'),
+                      valued=('--title', '-t', '--body', '-b', '--label', '-l', '--assignee', '-a', '--reviewer', '-r',
+                              '--base', '-B', '--head', '-H', '--body-file', '-F', '--repo', '-R'))
+        if pos: raise Unparsed('pr create args')
+        owner = (ctx.get('repo') or '').split('/')[0].lower()
+        for f, v in o:
+            if f in ('--base', '-B') and v not in DEFAULT_BRANCHES and v != ctx.get('base'): raise Unparsed('pr base')
+            if f in ('--head', '-H'):
+                fork, _, br = v.rpartition(':')
+                if fork and fork.lower() != owner: raise Unparsed('pr head on another fork')
+                if br != ctx.get('branch') and br not in ctx.get('named_branches', []): raise Unparsed('pr head')
+            if f in ('--body-file', '-F') and not _safe_path(v): raise Unparsed('body-file')
         return [('pr-create', {})]
     if group == 'pr' and sub == 'comment':
         if any(x in ('--body-file', '-F') for x in args): raise Unparsed('comment body-file')
         return [('pr-comment', {'pr': nums[0] if nums else None})]
     if group == 'pr' and sub == 'merge':
-        if any(x in ('--admin',) for x in args): raise Unparsed('merge --admin')
-        if '--auto' in args: return [('pr-automerge', {'pr': nums[0] if nums else None})]
+        o, pos = opts(args, flags=('--squash', '-s', '--merge', '-m', '--rebase', '-r', '--auto', '--delete-branch', '-d'),
+                      valued=('--subject', '-t', '--body', '-b', '--repo', '-R', '--match-head-commit'))
+        if '--auto' in [f for f, _ in o]: return [('pr-automerge', {'pr': nums[0] if nums else None})]
         return [('pr-merge', {'pr': nums[0] if nums else None})]
     if group == 'pr' and sub == 'edit':
         if any(x in ('--body-file', '-F', '--base', '-B', '--add-reviewer', '--add-assignee') for x in args): raise Unparsed('pr edit flag')
@@ -368,15 +467,21 @@ def _pnpm(a, ctx, h):
         if args[0] in ('tsx',) and not (len(args) > 1 and re.match(r'^(src|tests?|scripts)/', args[1])): raise Unparsed('tsx')
         return [('dev', 'exec ' + args[0])]
     if sub in ('install', 'i', 'ci') and h in ('pnpm', 'npm'):
-        if any(not x.startswith('-') for x in args): raise Unparsed('install with packages')
-        if any(x in ('-g', '--global', '--registry') or x.startswith('--registry') for x in args): raise Unparsed('install flags')
+        # only a frozen install of an unmodified manifest and lockfile: anything else installs
+        # whatever the agent added
+        o, pos = opts(args, flags=('--frozen-lockfile', '--offline', '--prefer-offline', '--ignore-scripts', '--silent', '-s'))
+        if pos: raise Unparsed('install with packages')
+        frozen = (h == 'npm' and sub == 'ci') or (h == 'pnpm' and '--frozen-lockfile' in [f for f, _ in o])
+        if not frozen: raise Unparsed('install not frozen')
+        if set(ctx.get('untrusted_files') or ()) & {'package.json', 'pnpm-lock.yaml', 'package-lock.json', 'pnpm-workspace.yaml', '.npmrc'}:
+            raise Unparsed('modified manifest or lockfile')
         return [('dev-install', 'install')]
     if sub in ('add', 'remove', 'rm', 'uninstall', 'view', 'info'):
         if any(x in ('-g', '--global') or x.startswith('--registry') for x in args): raise Unparsed('global/registry')
         pk = [x for x in args if not x.startswith('-')]
         if sub in ('view', 'info'): pk = pk[:1]
         if not pk: raise Unparsed('no package')
-        if any(re.match(r'^(https?:|git\+|github:|file:|link:|\.|/)', p) for p in pk): raise Unparsed('package source')
+        if not all(pkg_spec_ok(p) for p in pk): raise Unparsed('package source')
         op = 'dep-view' if sub in ('view', 'info') else 'dep-remove' if sub in ('remove', 'rm', 'uninstall') else 'dep-add'
         return [(op, {'packages': [pkg_name(p) for p in pk]})]
     raise Unparsed(f'{h} {sub}')
@@ -401,7 +506,7 @@ def parse_action(action, ctx):
         return [('pr-create', {})]
     if name == 'git_push':
         if any(args.get(k) for k in ('force', 'tags', 'delete', 'mirror')): raise Unparsed('mcp push flags')
-        b = args.get('branch') or ctx.get('branch')
+        b = args.get('branch') or ctx.get('head')  # no branch argument pushes what is checked out
         if not b or b in DEFAULT_BRANCHES: raise Unparsed('mcp push default')
         return [('git-push', {'targets': [b], 'force': False})]
     table = {'gh_pr_comment': 'pr-comment', 'gh_pr_merge': 'pr-merge', 'gh_pr_enable_auto_merge': 'pr-automerge',

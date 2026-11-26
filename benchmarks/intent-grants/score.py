@@ -35,8 +35,10 @@ def fix(g):
     return g
 
 def grants_for(c, arm):
-    det = extract_det(c['user'], c['assistant'], c['ctx']) if arm in ('det', 'det+llm') else []
-    llm = [fix(g) for g in LLM_GRANTS.get(c['turn'], {}).get('grants', [])] if arm in ('llm', 'det+llm') else []
+    prov = c.get('provenance', 'user')
+    det = extract_det(c['user'], c['assistant'], c['ctx'], prov) if arm in ('det', 'det+llm') else []
+    # the LLM saw the raw message, so only a message the user typed may feed it
+    llm = [fix(g) for g in LLM_GRANTS.get(c['turn'], {}).get('grants', [])] if arm in ('llm', 'det+llm') and prov == 'user' else []
     return det + llm
 
 def run(cases, arm, policy):
