@@ -7,6 +7,7 @@ import {
   CLAUDE_RENEWAL_WINDOW_MS,
   claudeLoginRenewalTarget,
   claudeTokenNeedsRenewal,
+  renewClaudeLogin,
   renewClaudeLoginAfterRefusal,
   renewClaudeLoginIfDue,
   type ClaudeLoginRenewalDeps,
@@ -179,18 +180,24 @@ describe('renewClaudeLoginIfDue', () => {
 
   it('shares one run between turns that start together', async () => {
     let release: (ok: boolean) => void = () => {}
+    let markStarted: () => void = () => {}
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve
+    })
     let runs = 0
     const { deps: d } = deps({
       run: () => {
         runs += 1
+        markStarted()
         return new Promise((resolve) => {
           release = resolve
         })
       },
     })
-    const first = renewClaudeLoginIfDue(input(), d)
-    const second = renewClaudeLoginIfDue(input(), d)
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    const target = { binary: ADAPTER_BIN, args: CLAUDE_RENEWAL_CLI_ARGS }
+    const first = renewClaudeLogin(target, d)
+    const second = renewClaudeLogin(target, d)
+    await started
     release(true)
     assert.deepEqual(await Promise.all([first, second]), [true, true])
     assert.equal(runs, 1)
