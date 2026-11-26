@@ -86,6 +86,18 @@ describe('writer lease', () => {
     assert.equal((await readWriterLease(dir, 't1', b))?.owner, 'b')
   })
 
+  it('fails a renew it cannot check, rather than report a takeover', async () => {
+    const dir = await threadDir()
+    const clock = { at: 1_000 }
+    const env = fakeEnv('a', clock)
+    const held = await acquireWriterLease(dir, 't1', env, 30_000)
+    assert.ok(held.status === 'acquired')
+    // The directory can't be listed (here ENOTDIR; in the wild EMFILE or EACCES).
+    await rm(dir, { recursive: true, force: true })
+    await writeFile(dir, '')
+    await assert.rejects(renewWriterLease(dir, held.lease, env), { code: 'ENOTDIR' })
+  })
+
   it('stays alive while its holder renews it', async () => {
     const dir = await threadDir()
     const clock = { at: 1_000 }
