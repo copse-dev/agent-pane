@@ -110,6 +110,46 @@ export const remoteStateSchema = z.strictObject({
 })
 export type RemoteState = z.infer<typeof remoteStateSchema>
 
+/** The part of the live state one client is showing: a project, or one of its threads. */
+export interface RemoteScope {
+  projectId: string
+  threadId?: string
+}
+
+/**
+ * A thread a paired client has polled recently. The desktop publishes the
+ * transcripts of these threads only; every other thread goes out as metadata,
+ * which is all a client is ever sent for it (#4445).
+ */
+export interface RemoteWatchedThread {
+  projectId: string
+  threadId: string
+}
+
+const REMOTE_SCOPE_ID = /^[\w-]{1,128}$/
+
+/**
+ * Read a scope from a state request's query. `undefined` asks for everything,
+ * as before scopes existed; `null` is a malformed scope, which must be refused
+ * rather than widened to everything.
+ */
+export function remoteScopeFromQuery(query: URLSearchParams): RemoteScope | null | undefined {
+  const projectId = query.get('project')
+  const threadId = query.get('thread')
+  if (projectId === null) return threadId === null ? undefined : null
+  if (!REMOTE_SCOPE_ID.test(projectId)) return null
+  if (threadId === null) return { projectId }
+  return REMOTE_SCOPE_ID.test(threadId) ? { projectId, threadId } : null
+}
+
+/** The state request path for a scope, the inverse of {@link remoteScopeFromQuery}. */
+export function remoteStatePath(scope?: RemoteScope): string {
+  if (!scope) return '/api/remote/state'
+  const query = new URLSearchParams({ project: scope.projectId })
+  if (scope.threadId !== undefined) query.set('thread', scope.threadId)
+  return `/api/remote/state?${query.toString()}`
+}
+
 export const remoteReplySchema = z.discriminatedUnion('ok', [
   z.strictObject({ id: z.uuid(), ok: z.literal(true), value: z.unknown().optional() }),
   z.strictObject({ id: z.uuid(), ok: z.literal(false), error: z.string().max(2000) }),

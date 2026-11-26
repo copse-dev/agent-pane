@@ -1639,7 +1639,15 @@ export function mountBrowserPane(
     openExternalItem.addEventListener('click', () => {
       setMenuOpen(false)
       const url = currentHttpUrl(tab)
-      if (url && api?.shell) void api.shell.openExternal(url).catch(() => undefined)
+      if (url && api?.shell) {
+        void api.shell.openExternal(url).catch((error: unknown) => {
+          if (String(error).includes('Workspace previews open inside Copse')) {
+            showToast('Workspace previews can only open inside Copse.')
+            return
+          }
+          showErrorToast('Could not open in default browser', error)
+        })
+      }
     })
     inspectorItem.addEventListener('click', () => {
       setMenuOpen(false)

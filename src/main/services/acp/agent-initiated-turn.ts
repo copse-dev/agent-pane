@@ -1,4 +1,5 @@
 import { errorMessage } from '@shared/errors.ts'
+import { AcpTurnEnded, type AcpTurnEndReason } from './turn-end.ts'
 
 // Generic over the bound context: importing the real type (even type-only) would put
 // thread-execution-context's heavy graph in reach of the stdout-owning ACP workers, which
@@ -15,7 +16,17 @@ import { errorMessage } from '@shared/errors.ts'
  */
 
 export type AgentInitiatedTurnClaim =
-  | { status: 'granted'; release: () => Promise<void> }
+  | {
+      status: 'granted'
+      /**
+       * The turn tree of the task this turn resumes, present only when a real
+       * dispatch established the thread's epoch. Absent, the turn binds no tree,
+       * so it requests no wake and prompts other threads under the sender-thread
+       * fallback (hooks plan decision 5).
+       */
+      turnTreeId?: string
+      release: () => Promise<void>
+    }
   | { status: 'budget-exhausted' }
 
 export interface AgentInitiatedTurnAuthority {
@@ -33,7 +44,7 @@ export function setAgentInitiatedTurnAuthority(next: AgentInitiatedTurnAuthority
 }
 
 export interface AgentTurnBridge<TContext> {
-  setExecutionContext: (context: TContext | null) => void
+  setExecutionContext: (context: TContext | null, turnTreeId?: string) => void
   setTurnSignal: (signal: AbortSignal | null) => void
   setPendingExecutionContext: (pending: Promise<TContext | null> | null) => void
 }
@@ -57,7 +68,7 @@ export interface AgentInitiatedTurnLease {
   /** More agent output during its own turn: restarts the idle clock. */
   touch: () => void
   /** The self-started turn finished, a Copse turn took over, or the session closed. */
-  end: () => void
+  end: (reason?: AcpTurnEndReason) => void
   /** A self-started turn is in progress (between `begin` and `end`). */
   isActive: () => boolean
 }
@@ -78,7 +89,9 @@ export function createAgentInitiatedTurnLease<TContext>(
 
   const armIdle = (): void => {
     clearTimeout(idleTimer)
-    idleTimer = setTimeout(end, idleMs)
+    idleTimer = setTimeout(() => {
+      end('idle-timeout')
+    }, idleMs)
     idleTimer.unref()
   }
 
@@ -106,7 +119,7 @@ export function createAgentInitiatedTurnLease<TContext>(
     releaseBudget = claim.release
     const context = await deps.resolveContext(deps.projectId, deps.threadId)
     if (isEnded(turn)) return null
-    deps.bridge.setExecutionContext(context)
+    deps.bridge.setExecutionContext(context, claim.turnTreeId)
     bound = true
     releaseWriter = deps.beginWriter()
     return context
@@ -131,12 +144,12 @@ export function createAgentInitiatedTurnLease<TContext>(
     armIdle()
   }
 
-  function end(): void {
+  function end(reason: AcpTurnEndReason = 'completed'): void {
     clearTimeout(idleTimer)
     const turn = abort
     if (!turn) return
     abort = null
-    turn.abort()
+    turn.abort(new AcpTurnEnded(reason))
     deps.bridge.setPendingExecutionContext(null)
     if (bound) deps.bridge.setExecutionContext(null)
     deps.bridge.setTurnSignal(null)

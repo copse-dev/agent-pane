@@ -69,6 +69,11 @@ dialog.settings-overlay::backdrop {
   color: var(--text-secondary);
   line-height: var(--titlebar-height);
 }
+.settings-header .approval-settings-pending {
+  margin-left: auto;
+  margin-right: var(--spacing-sm);
+  -webkit-app-region: no-drag;
+}
 .settings-close-btn {
   -webkit-app-region: no-drag;
   display: inline-flex;
@@ -513,7 +518,7 @@ dialog.settings-overlay::backdrop {
    background, that left "Server connection" straddling the card's top edge,
    half on the card and half off it. Floating it makes it an ordinary block in
    the content box, so the card's padding surrounds it like any other child;
-   everything after it clears. Flat groups (listed above) keep the rendered
+   every other child clears it. Flat groups (listed above) keep the rendered
    legend: they have no padding or fill for it to misplace. */
 .settings-content
   fieldset:not(
@@ -538,8 +543,12 @@ dialog.settings-overlay::backdrop {
     .machines-settings > fieldset,
     .usage-section-root > fieldset
   )
-  > legend
-  ~ * {
+  > :not(legend) {
+  /* Not `> legend ~ *`: with a sibling selector on a `*` subject, Chromium
+     restyled the whole transcript each time rows were inserted, though no row
+     is in a fieldset. The legend is the only float in a card, and clearing
+     only moves past earlier floats, so clearing every other child looks the
+     same. */
   clear: both;
 }
 /* A field and its own controls stay tight; the gap belongs *between* fields. */
@@ -1129,7 +1138,6 @@ dialog.settings-overlay::backdrop {
   gap: calc(var(--spacing-xl) + var(--spacing-md));
 }
 .usage-plan-section,
-.usage-worth-section,
 .usage-ledger-section {
   display: flex;
   flex-direction: column;
@@ -1137,82 +1145,17 @@ dialog.settings-overlay::backdrop {
 }
 /* These blocks space their children with the flex gap; the group blurb's own
    bottom margin would stack on top of it. */
-.usage-plan-section > .settings-fieldset-desc,
-.usage-worth-section > .settings-fieldset-desc {
+.usage-plan-section > .settings-fieldset-desc {
   margin-bottom: 0;
 }
 /* <h4>, not <h3>: these title groups inside the Usage section, below its
    masthead, so they stay in the interface family (docs/ui-taste.md). */
 .usage-plan-heading,
-.usage-worth-heading,
 .usage-ledger-heading {
   margin: 0;
   font-size: var(--font-size-md);
   font-weight: 600;
   color: var(--text-primary);
-}
-.usage-worth-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-md) 0;
-}
-.usage-worth-verdict {
-  margin: 0;
-  font-size: var(--font-size-base);
-  font-weight: 600;
-  color: var(--text-primary);
-}
-.usage-worth-card[data-verdict='worth_it'] .usage-worth-verdict {
-  color: var(--success);
-}
-.usage-worth-card[data-verdict='not_worth_it'] .usage-worth-verdict {
-  color: var(--warning);
-}
-.usage-worth-card[data-verdict='borderline'] .usage-worth-verdict {
-  color: var(--text-secondary);
-}
-.usage-worth-reason {
-  margin: 0;
-}
-.usage-worth-fee-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--spacing-sm);
-}
-.usage-worth-fee-label {
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-}
-.usage-worth-fee-input {
-  width: 7rem;
-  padding: var(--spacing-xs) var(--spacing-sm);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-base);
-  color: var(--text-primary);
-  font-size: var(--font-size-sm);
-}
-.usage-worth-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-sm);
-}
-.usage-worth-inference-btn {
-  -webkit-app-region: no-drag;
-  align-self: flex-start;
-  background: transparent;
-  color: var(--accent);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: var(--spacing-xs) var(--spacing-md);
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  cursor: pointer;
-}
-.usage-worth-inference-btn:hover {
-  background: var(--bg-hover);
 }
 .usage-plan-providers {
   display: flex;

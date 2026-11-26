@@ -257,12 +257,12 @@ markers in `tests/e2e/**/*.e2e.ts`, without loading Electron or changing test se
 them with [`tests/e2e/exclusions.json`](../tests/e2e/exclusions.json). Unrecorded, changed, duplicate,
 or stale entries fail the check. Add/remove the relevant record in the same PR as an exclusion.
 
-Each entry records its category, reason, tracking issue, accountable role, review deadline, and
-compensating evidence or an explicit gap. Existing records are **an inventory, not release waivers**;
-their initial dates schedule triage and do not assert a maintainer accepted the missing coverage.
-Due reviews are warnings until the owner/expiry enforcement slice in
-[#2719](https://github.com/copse-dev/agent-pane/issues/2719) is decided. Critical runtime repairs
-remain owned by [#1680](https://github.com/copse-dev/agent-pane/issues/1680).
+Each entry records its category, reason, tracking issue, accountable role, inventory date, and
+compensating evidence or an explicit gap, plus category-specific fields (see
+[Quarantine and admission](#quarantine-and-admission)). Existing records are **an inventory, not
+release waivers**; their dates schedule triage and do not assert a maintainer accepted the missing
+coverage. Critical runtime repairs remain owned by
+[#1680](https://github.com/copse-dev/agent-pane/issues/1680).
 
 The static check recognizes literal/local-array config exclusions (including the existing inherited
 base config), CI skip helpers and their import aliases, Mocha `.skip`/`['skip']`, `this.skip()`,
@@ -274,6 +274,15 @@ extending the scanner and tests. Review semantic changes to existing conditions 
 marker count stays the same. Platform-only and live-service cases remain distinct from quarantine.
 
 ### Flake visibility
+
+Local native runs keep the ordinary driver logs in `e2e-failure-artifacts/wdio-logs`
+and the existing failure HTML/screenshots; they do not archive a new snapshot on every
+invocation. To retain separate raw attempt logs and a byte-verified snapshot for a local
+investigation, use `COPSE_E2E_ATTEMPT=1 pnpm run test:e2e --spec tests/e2e/<name>.e2e.ts`.
+Each explicit attempt gets a unique directory, including repeated attempt numbers, and
+survives later runs. Remove only your own retained investigation artifacts when finished.
+CI supplies numbered attempts and seals them after its outer watchdog returns, so partial
+and failed attempts remain available even when the inner runner is killed.
 
 CI reruns a failed e2e shard once (`wdio.ci.conf.ts` keeps `specFileRetries: 0`). A spec that
 fails attempt 1 and passes attempt 2 leaves the job green, so every such disagreement is reported
@@ -352,6 +361,91 @@ count. It is an AST scan of `*.test.ts` and `tests/e2e/**/*.ts`, not an ESLint r
 An attempt-count loop is not a deadline, so a pause inside one still counts. The scan is per file: a sleep helper imported from another module is not followed to its call sites, so an exported helper's own sleep is counted once at its definition instead. A port the product
 itself probes (a well-known local-server port) is still a shared-machine risk and stays in the
 baseline until the probe can be pointed elsewhere.
+
+### Quarantine and admission
+
+A **quarantine** is a short loan for a test that fails intermittently. The other three categories
+describe a test that cannot run in CI for a stable reason, so they have different rules:
+
+| Category           | Means                                                      | Deadline                                      | Extra fields                    |
+| ------------------ | ---------------------------------------------------------- | --------------------------------------------- | ------------------------------- |
+| `quarantine`       | Flaky: same code, different outcomes                       | `reviewBy` at most 14 days after `recordedOn` | `owner`, `reviewBy`, `renewal?` |
+| `platform`         | Needs an OS the CI shard does not run (macOS seatbelt, …)  | none                                          | `lastVerified`                  |
+| `external-service` | Needs a real model or service, deliberately kept out of CI | none                                          | `lastVerified`                  |
+| `environment`      | Cannot pass on the CI display/runner as configured         | none                                          | `lastVerified`                  |
+
+`pnpm run check:e2e-exclusions` (`scripts/check-e2e-exclusions.mts`, rules in
+`scripts/lib/e2e-exclusions.mts`) applies them:
+
+- **Quarantine.** `owner` is the accountable person's GitHub login. `null` records that nobody has
+  accepted it yet; a role name or "assignment pending" is not an owner. `reviewBy` is at most 14
+  days after `recordedOn`. One `renewal` (`renewedOn`, a new `reason` that differs from the
+  original, and its own `reviewBy` at most 14 days later) moves the deadline once. The only allowed
+  marker is the `wdio.ci.conf.ts` `exclude` list, never an in-spec skip, so the
+  [nightly quarantine run](#nightly-quarantine-run) still executes it and records its pass streak.
+- **What review enforces.** The check reads only the current record, never the base, so it cannot
+  tell a renewal from an edit. Moving `recordedOn` and `reviewBy` forward, rewriting the `renewal`
+  or changing the category extends or removes a deadline without any check failing. Review enforces the
+  14-day loan and the single renewal: a PR that changes an existing quarantine's dates, renewal or
+  category needs the same scrutiny as a new quarantine.
+- **Dates are UTC.** The check compares every date with today's UTC date, so record the UTC day.
+- **Platform, external service, environment.** These do not expire. `lastVerified` is the date and
+  a `github.com/copse-dev/agent-pane` link (CI run, artifact or PR comment) of the last real
+  on-device or real-service pass, or `null` when none is recorded. The check warns when it is
+  `null` or older than 90 days, the retention of CI evidence artifacts. A pass described in
+  `coverage` without a link stays `null`: record the link when the test next passes for real.
+- **Two modes.** By default (PR precheck and `check:local`) an expired or unowned quarantine is a
+  warning, so it does not block unrelated work. `--enforce` makes it fail. The nightly
+  [`e2e-quarantine-expiry.yml`](../.github/workflows/e2e-quarantine-expiry.yml) workflow runs
+  `npm run check:e2e-exclusions -- --enforce`. It is separate from CI, so an expired quarantine
+  turns that workflow red and leaves the nightly CI conclusion to mean that `main` regressed.
+  Malformed records, changed markers and broken date rules fail in both modes.
+- **Releases are not gated on quarantines.** Nothing checks quarantines when a release is tagged,
+  signed or published. Draft [#3512](https://github.com/copse-dev/agent-pane/pull/3512) proposed an
+  owner-reviewed release-waiver gate and was closed without landing it;
+  [#2719](https://github.com/copse-dev/agent-pane/issues/2719) still tracks defining and enforcing
+  release-waiver expiry after owner review.
+
+**When a test may be quarantined.** Only with evidence that it is flaky rather than broken: it
+failed and then passed on the same head SHA (including a shard retry, which
+[flake visibility](#flake-visibility) reports), or it failed on two or more unrelated PRs whose
+diffs cannot reach it. Link that evidence in `reason` or `coverage`. A test
+that fails every time is a bug or an `environment` record, not a quarantine. Never quarantine to
+land a PR whose diff could be the cause.
+
+**Who decides.** An agent may propose a quarantine in a PR, with the evidence above and
+`owner: null`; a human accepts it by naming themselves as `owner`. The check accepts any
+well-formed login, so review confirms that the named person made that change. Security and
+approval-path specs (`guarded-yolo`, shell approval, permission and sandbox journeys) need explicit
+maintainer sign-off to quarantine at all: [#1680](https://github.com/copse-dev/agent-pane/issues/1680) shows why. Those
+specs were quarantined as noise while they were the only runtime proof that the hard deny for
+catastrophic deletion still worked.
+
+**At expiry** the owner picks one outcome:
+
+- **Restore**: fix the cause and delete the record in the same PR as the `exclude` entry. Ten
+  consecutive passing nights in the nightly quarantine run are evidence for this, not the restore
+  itself.
+- **Replace**: move the behaviour to a lower tier (unit, component or browser geometry) that is
+  deterministic, then delete the spec and its record.
+- **Retire**: delete the spec and record, with the reason and any coverage given up stated in the
+  PR.
+
+Renewing is the exception, once, with a new reason (for example, a root cause found and a fix in
+review).
+
+**Becoming required.** A new, changed or restored spec joins the required e2e gate when it:
+
+1. passes burn-in: repeated first-attempt passes before it gates PRs (in progress in
+   [#4273](https://github.com/copse-dev/agent-pane/pull/4273));
+2. has no fixed sleeps standing in for a wait (`browser.pause`, `setTimeout` sleeps): wait for the
+   condition instead. The [flake-risk ratchet](#flake-risk-ratchet) allows a new file zero;
+3. uses isolated data: its own `COPSE_DIR` and seeded project, not the real checkout, and no fixed
+   ports shared with other workers. The flake-risk ratchet counts both;
+4. makes no external network requests: mock providers and services at the boundary (the outbound
+   network guard is in progress in [#4272](https://github.com/copse-dev/agent-pane/pull/4272)).
+
+Until burn-in and the network guard land, reviewers check items 1 and 4 by hand.
 
 ### Cost and tier selection
 
@@ -513,6 +607,25 @@ loops driven by an actual local model rather than the mock:
   agent evals (`tests/e2e/agent-eval-drive.e2e.ts`), reading `LM_STUDIO_API_KEY`
   / `LM_API_TOKEN` and talking to a local OpenAI-compatible endpoint
   (`createLMStudioProvider`, default `http://localhost:1234/v1`).
+  Set `COPSE_EVAL_BRANCH=<branch>` to choose that branch through the new-thread
+  picker before submitting; otherwise the product's default branch selection
+  applies. The driver confirms dirty-checkout warnings only in a `tempProject`
+  workspace. Any other scenario runs in your own checkout, so a branch request or a
+  dirty checkout fails the run there unless you set
+  `COPSE_EVAL_ALLOW_CURRENT_CHECKOUT=1`. The driver accepts
+  both single-file and bulk proposals through Changes, waits for acceptance wakes,
+  and fails if any proposals remain before judging workspace files. It stops at the
+  first turn whose `turnOutcome` is `failed` and reports that provider error, rather
+  than sending the next prompt. Failed runs preserve a window screenshot, visible
+  composer/error text, and the thread export under `tests/e2e/artifacts/` when
+  available. `requireTools` (driver and `analyze:thread`) needs a call that
+  completed with `done`; an attempted call satisfies only `requireAnyTools`. A
+  sandboxed shell cannot create `.git` (it is an ancestor of the protected
+  `.git/hooks`), so a scenario that needs a repository sets `workspace.initializeGit`,
+  and `commitSeedFiles` to start from the New project scaffold's initial commit;
+  git assertions then count only the commits made after that baseline. An eval
+  prompt must never ask a sandboxed agent to create `.git` (`git init`, "initialize
+  the repository"); `scripts/lib/eval-scenarios.test.ts` enforces this.
 - `npm run validate:local-agent` exercises the agent loop headlessly.
 - `npm run eval:doctrine -- --provider lmstudio --repeats 3 --sections tools`
   holds a fixed task/model/tool set constant and compares the full system prompt

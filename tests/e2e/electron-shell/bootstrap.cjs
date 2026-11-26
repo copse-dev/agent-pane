@@ -21,6 +21,16 @@ function applyEnvFile(filePath) {
 applyEnvFile(path.join(__dirname, '.eval-env.json'))
 applyEnvFile(path.join(__dirname, '.e2e-env.json'))
 
+// Trust a spec's stand-in service root (the relay spec's TLS relay) as if the
+// app had started with NODE_EXTRA_CA_CERTS. Node reads that variable only at
+// process start, before the env file above is applied, so add the root to the
+// default set here, at the TLS dependency boundary, never in product code.
+if (process.env.COPSE_E2E === '1' && process.env.COPSE_E2E_EXTRA_CA_CERTS) {
+  const tls = require('node:tls')
+  const extra = fs.readFileSync(process.env.COPSE_E2E_EXTRA_CA_CERTS, 'utf8')
+  tls.setDefaultCACertificates([...tls.getCACertificates('default'), extra])
+}
+
 // Inject a deterministic LAN interface only for the Mobile Companion settings capture.
 // This lives at the OS dependency boundary in the test launcher, never in product config.
 if (process.env.COPSE_E2E === '1' && process.env.COPSE_E2E_MOBILE_NETWORK === '1') {

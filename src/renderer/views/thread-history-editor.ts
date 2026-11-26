@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ThreadHistorySnapshot } from '@shared/threads/history-edit.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -137,7 +138,7 @@ export function openThreadHistoryEditor(
       )
       const textarea = el('textarea', {
         class: 'history-editor-message-input',
-        rows: String(Math.min(8, Math.max(2, draft.content.split('\n').length))),
+        rows: String(clamp(draft.content.split('\n').length, 2, 8)),
         spellcheck: 'true',
         'aria-label': `Edit ${draft.role} message`,
       })

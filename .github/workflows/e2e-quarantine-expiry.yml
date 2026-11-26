@@ -1,0 +1,28 @@
+name: E2E quarantine expiry (nightly)
+
+# Fails when a quarantined e2e spec (tests/e2e/exclusions.json category
+# `quarantine`) is past its review date or has no named owner. PR prechecks and
+# check:local only warn on these, so they cannot block unrelated work. See
+# docs/testing-strategy.md "Quarantine and admission" (#2719).
+#
+# A separate workflow on purpose: its red conclusion is the expiry signal, and
+# the nightly CI run's conclusion keeps meaning that main or its environment
+# regressed. Nothing depends on it.
+on:
+  schedule:
+    - cron: '13 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  enforce:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: npm run check:e2e-exclusions -- --enforce

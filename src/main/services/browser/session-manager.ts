@@ -1,4 +1,8 @@
-import { BROWSER_SESSION_PARTITION, browserSessionPartition } from '@shared/browser-session.ts'
+import {
+  BROWSER_AGENT_SESSION_PARTITION,
+  BROWSER_SESSION_PARTITION,
+  browserSessionPartition,
+} from '@shared/browser-session.ts'
 import { currentBrowserScope } from './browser-network-grants.ts'
 import { errorMessage } from '@shared/errors.ts'
 import type { BrowserWindow, BrowserWindowConstructorOptions, Session } from 'electron'
@@ -6,7 +10,11 @@ import { DOM_SNAPSHOT_SCRIPT, parsePageSnapshot, renderSnapshot } from './snapsh
 import { expectBoolean, expectRecord, expectString } from '@shared/unknown-value.ts'
 import type { CanvasArtefactIdentity } from '@shared/types/canvas.ts'
 import { CANVAS_TRANSPARENT_ROOT_PROBE, canvasGuestTextCss } from '@shared/canvas/guest-surface.ts'
+import { browserViewportSchema } from '@shared/browser-viewport.ts'
+import { previewCapabilityForUrl } from './static-preview-server.ts'
 import { fillBrowserForm, type BrowserFormField } from './browser-form.ts'
+import { withTimeout } from '@copse/std/with-timeout.ts'
+import { createKeyedSerialQueue } from '@copse/std/keyed-serial-queue.ts'
 
 const MAX_TABS = 8
 const DEFAULT_WIDTH = 1280
@@ -57,114 +65,25 @@ function previewLayoutScript(width: number): string {
 }
 
 /** Bound native IPC even when the renderer cannot run its own deadline. */
-async function waitForPreviewOperation(operation: Promise<unknown>): Promise<unknown> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  try {
-    return await Promise.race([
-      operation,
-      new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => {
-          reject(new Error('Preview capture timed out'))
-        }, 5000)
-      }),
-    ])
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
-/**
- * The latest preview capture queued on each tab. Two quick re-renders of one
- * artefact can capture the same tab at once, and each capture restores the
- * zoom it found, so interleaved captures would leave the tab at the preview
- * zoom. Captures of one tab therefore run one after another.
- */
-const previewCaptures = new WeakMap<PreviewContents, Promise<string | null>>()
-
-/** The parts of an agent tab's `WebContents` that a screenshot needs. */
-export interface TabFrameContents<Image extends { isEmpty(): boolean }> {
-  capturePage(): Promise<Image>
-  /** Offscreen tabs only paint when damaged; this asks for a fresh frame. */
-  invalidate(): void
-  /** An offscreen tab's `paint` event carries the whole frame as an image. */
-  once(event: 'paint', listener: (event: unknown, dirty: unknown, image: Image) => void): unknown
-  removeListener(
-    event: 'paint',
-    listener: (event: unknown, dirty: unknown, image: Image) => void,
-  ): unknown
-  isDestroyed(): boolean
-}
-
-/** How long a screenshot keeps recovering after its first copy fails. */
-const TAB_FRAME_RECOVERY_MS = 2000
-/** How long one recovery round waits for the tab's next painted frame. */
-const TAB_FRAME_PAINT_WAIT_MS = 500
-
-/** Copy the tab's frame once, returning the failure instead of throwing it. */
-async function copyTabFrame<Image extends { isEmpty(): boolean }>(
-  contents: TabFrameContents<Image>,
-  tabId: string,
-): Promise<Image | Error> {
-  try {
-    const image = await contents.capturePage()
-    return image.isEmpty() ? new Error(`browser screenshot of ${tabId} was empty`) : image
-  } catch (error) {
-    return error instanceof Error ? error : new Error(errorMessage(error))
-  }
-}
-
-/** Ask for a fresh frame and resolve with the image it paints, or null on timeout. */
-function nextPaintedImage<Image extends { isEmpty(): boolean }>(
-  contents: TabFrameContents<Image>,
-  timeoutMs: number,
-): Promise<Image | null> {
-  return new Promise((resolve) => {
-    const painted = (_event: unknown, _dirty: unknown, image: Image): void => {
-      clearTimeout(timer)
-      resolve(image)
-    }
-    const timer = setTimeout(() => {
-      contents.removeListener('paint', painted)
-      resolve(null)
-    }, timeoutMs)
-    contents.once('paint', painted)
-    contents.invalidate()
+async function waitForBrowserOperation(
+  operation: Promise<unknown>,
+  timeoutMessage = 'Preview capture timed out',
+): Promise<unknown> {
+  return withTimeout(operation, 5000, () => {
+    throw new Error(timeoutMessage)
   })
 }
 
 /**
- * Copy an agent tab's current frame. Right after a navigation or reload,
- * Chromium can fail the copy while the page's compositor surface is swapped:
- * `capturePage()` rejects with `UnknownVizError` or yields an empty image
- * (#4425). Waiting does not help reliably (a copy right after the load
- * finishes fails most often), but an offscreen tab still paints, and its
- * `paint` event carries the whole frame. So after a failed copy, for a bounded
- * time, ask for a fresh frame and take the painted image, or copy again if the
- * paint was empty. The last failure is still reported if nothing succeeds.
+ * Preview captures temporarily change zoom, while responsive checks change
+ * the viewport. Serialize captures and resizes on each tab so a screenshot
+ * cannot observe another operation's temporary layout. The queue keeps going
+ * after a failure, so one failed operation cannot stall the tab.
  */
-export async function captureTabFrame<Image extends { isEmpty(): boolean }>(
-  contents: TabFrameContents<Image>,
-  tabId: string,
-): Promise<Image> {
-  const first = await copyTabFrame(contents, tabId)
-  if (!(first instanceof Error)) return first
-  let failure = first
-  console.warn(
-    `[copse-panel] browser screenshot of ${tabId} could not copy the frame; recovering from a fresh paint:`,
-    failure.message,
-  )
-  const deadline = Date.now() + TAB_FRAME_RECOVERY_MS
-  while (Date.now() < deadline && !contents.isDestroyed()) {
-    const painted = await nextPaintedImage(
-      contents,
-      Math.min(TAB_FRAME_PAINT_WAIT_MS, deadline - Date.now()),
-    )
-    if (painted && !painted.isEmpty()) return painted
-    const copied = await copyTabFrame(contents, tabId)
-    if (!(copied instanceof Error)) return copied
-    failure = copied
-  }
-  throw failure
+const tabOperations = createKeyedSerialQueue<PreviewContents>()
+
+function queueTabOperation<T>(wc: PreviewContents, operation: () => Promise<T>): Promise<T> {
+  return tabOperations.run(wc, operation)
 }
 
 /**
@@ -176,16 +95,76 @@ export function capturePreviewDataUrl(
   wc: PreviewContents,
   decodeImage: (dataUrl: string) => PreviewImage,
   maxWidth = PREVIEW_WIDTH,
-  viewportWidth = DEFAULT_WIDTH,
+  getViewportWidth: () => number = () => DEFAULT_WIDTH,
 ): Promise<string | null> {
-  const previous = previewCaptures.get(wc) ?? Promise.resolve(null)
-  // `captureAtPreviewZoom` never rejects, so one failed capture cannot stall
-  // the queue behind it.
-  const capture = previous.then(() =>
-    captureAtPreviewZoom(wc, decodeImage, maxWidth, viewportWidth),
+  return queueTabOperation(wc, () =>
+    captureAtPreviewZoom(wc, decodeImage, maxWidth, getViewportWidth()),
   )
-  previewCaptures.set(wc, capture)
-  return capture
+}
+
+interface ViewportWindow {
+  setContentSize: BrowserWindow['setContentSize']
+  getContentSize: BrowserWindow['getContentSize']
+  webContents: PreviewContents
+}
+
+async function captureScreenshotDataUrl(
+  wc: PreviewContents,
+  timeoutMessage = 'Preview capture timed out',
+): Promise<string> {
+  const response = await waitForBrowserOperation(
+    wc.debugger.sendCommand('Page.captureScreenshot', {
+      format: 'png',
+      fromSurface: true,
+      captureBeyondViewport: false,
+    }),
+    timeoutMessage,
+  )
+  const data = expectString(expectRecord(response, 'browser screenshot')['data'], 'screenshot PNG')
+  return `data:image/png;base64,${data}`
+}
+
+/** Capture the current viewport with a fresh frame, including on hidden Linux tabs. */
+export function captureBrowserScreenshotDataUrl(
+  window: Pick<ViewportWindow, 'webContents' | 'getContentSize'>,
+): Promise<string> {
+  const wc = window.webContents
+  return queueTabOperation(wc, async () => {
+    let attachedHere = false
+    try {
+      if (!wc.debugger.isAttached()) {
+        wc.debugger.attach('1.3')
+        attachedHere = true
+      }
+      const [width, height] = window.getContentSize()
+      const viewport = browserViewportSchema.parse({ width, height })
+      const zoom = wc.getZoomFactor()
+      // A preceding preview restores zoom before its renderer has applied it.
+      // Wait for that layout without changing the screenshot's zoom or bounds.
+      await waitForBrowserOperation(
+        wc.executeJavaScript(
+          `(async () => {
+            const deadline = performance.now() + 5000;
+            while (Math.abs(window.innerWidth - ${String(viewport.width / zoom)}) > 1 || Math.abs(window.innerHeight - ${String(viewport.height / zoom)}) > 1) {
+              if (performance.now() >= deadline) throw new Error('Browser screenshot layout did not reach the renderer');
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+          })()`,
+          false,
+        ),
+        'Browser screenshot layout timed out',
+      )
+      return await captureScreenshotDataUrl(wc, 'Browser screenshot timed out')
+    } finally {
+      if (attachedHere) {
+        try {
+          wc.debugger.detach()
+        } catch {
+          /* The tab may have closed. */
+        }
+      }
+    }
+  })
 }
 
 async function captureAtPreviewZoom(
@@ -207,19 +186,11 @@ async function captureAtPreviewZoom(
     // immediate captures can therefore both copy the unzoomed frame (#3240).
     // Use the window's content size: a previous zoom restoration may itself
     // still be pending in the renderer, so its current innerWidth is not a base.
-    await waitForPreviewOperation(wc.executeJavaScript(previewLayoutScript(viewportWidth), false))
+    await waitForBrowserOperation(wc.executeJavaScript(previewLayoutScript(viewportWidth), false))
     // Page.captureScreenshot requests a fresh compositor frame. capturePage()
     // can return the same cached pre-zoom (or blank) surface twice, even after
     // the DOM reports the new viewport. This works in native and headless mode.
-    const response: unknown = await waitForPreviewOperation(
-      wc.debugger.sendCommand('Page.captureScreenshot', {
-        format: 'png',
-        fromSurface: true,
-        captureBeyondViewport: false,
-      }),
-    )
-    const data = expectString(expectRecord(response, 'preview screenshot')['data'], 'preview PNG')
-    const image = decodeImage(`data:image/png;base64,${data}`)
+    const image = decodeImage(await captureScreenshotDataUrl(wc))
     if (image.isEmpty()) return null
     const { width: imageWidth } = image.getSize()
     const scaled =
@@ -251,6 +222,8 @@ interface Tab {
 export interface BrowserSessionPlatform {
   createWindow(options: BrowserWindowConstructorOptions): BrowserWindow
   getAgentSession(scope?: string): Session
+  authorizePreview(partition: string, url: string): Promise<void>
+  hasPreview(partition: string, url: string): boolean
   showUrl(url: string, partition: string): void
   /** Promote an already-rendered canvas artefact tab to the front. */
   showArtefact(identity: CanvasArtefactIdentity): void
@@ -415,8 +388,25 @@ export class BrowserSessionManager {
     return { viewId: tab.id, title: wc.getTitle(), url: wc.getURL() }
   }
 
-  showUrl(url: string): void {
-    requirePlatform().showUrl(url, browserSessionPartition(BROWSER_SESSION_PARTITION, this.scope))
+  /** A trusted workspace preview is granted before its first network request. */
+  async preview(url: string): Promise<NavigateResult> {
+    if (!this.scope) throw new Error('Workspace preview requires a scoped browser task')
+    await requirePlatform().authorizePreview(
+      browserSessionPartition(BROWSER_AGENT_SESSION_PARTITION, this.scope),
+      url,
+    )
+    return this.navigate(url)
+  }
+
+  async showUrl(url: string): Promise<void> {
+    const agentPartition = browserSessionPartition(BROWSER_AGENT_SESSION_PARTITION, this.scope)
+    const visiblePartition = browserSessionPartition(BROWSER_SESSION_PARTITION, this.scope)
+    if (previewCapabilityForUrl(url)) {
+      if (!requirePlatform().hasPreview(agentPartition, url))
+        throw new Error('Workspace preview is not open in this browser task')
+      await requirePlatform().authorizePreview(visiblePartition, url)
+    }
+    requirePlatform().showUrl(url, visiblePartition)
   }
 
   showArtefact(identity: CanvasArtefactIdentity): void {
@@ -431,7 +421,9 @@ export class BrowserSessionManager {
 
   async screenshot(viewId?: string): Promise<BrowserScreenshot> {
     const tab = this.resolveTab(viewId)
-    const image = await captureTabFrame(tab.window.webContents, tab.id)
+    const { nativeImage } = await import('electron')
+    const image = nativeImage.createFromDataURL(await captureBrowserScreenshotDataUrl(tab.window))
+    if (image.isEmpty()) throw new Error(`browser screenshot of ${tab.id} was empty`)
     const { width, height } = image.getSize()
     return {
       png: image.toPNG(),
@@ -461,7 +453,7 @@ export class BrowserSessionManager {
       tab.window.webContents,
       (dataUrl) => nativeImage.createFromDataURL(dataUrl),
       maxWidth,
-      tab.window.getContentSize()[0],
+      () => tab.window.getContentSize()[0] ?? DEFAULT_WIDTH,
     )
   }
 

@@ -141,9 +141,19 @@ export class TurnTranscriptWriter {
     return Promise.all([...this.drains.values(), ...this.lateWrites.values()]).then(() => undefined)
   }
 
-  /** Snapshot and subsequent chunks use the same ordered IPC sender. */
+  /**
+   * Snapshot and subsequent chunks use the same ordered IPC sender.
+   *
+   * The window lists the threads whose copy may be behind main. Every turn
+   * main is running in the project is attached as well, so a window that does
+   * not yet know a turn is running still receives its checkpoint.
+   */
   async attach(projectId: string, threadIds: readonly string[]): Promise<void> {
-    for (const threadId of threadIds) {
+    const listed = new Set(threadIds)
+    const running = [...this.sessions.values()]
+      .filter((session) => session.projectId === projectId && !listed.has(session.threadId))
+      .map((session) => session.threadId)
+    for (const threadId of [...threadIds, ...running]) {
       // A turn may start or finish during a disk read. Retry until the read
       // and the active session agree, then send without another await.
       for (;;) {
@@ -195,6 +205,8 @@ export class TurnTranscriptWriter {
     if (this.shuttingDown) throw new Error('Copse is closing; the turn was not started.')
     this.revision += 1
     const store = createStore()
+    const drained: PromiseWithResolvers<void> = Promise.withResolvers()
+    const seeded: PromiseWithResolvers<void> = Promise.withResolvers()
     const session: Session = {
       projectId,
       threadId,
@@ -217,18 +229,12 @@ export class TurnTranscriptWriter {
       done: false,
       ended: false,
       unsubscribe: () => undefined,
-      drained: Promise.resolve(),
-      markDrained: () => undefined,
-      seeded: Promise.resolve(),
-      markSeeded: () => undefined,
+      drained: drained.promise,
+      markDrained: drained.resolve,
+      seeded: seeded.promise,
+      markSeeded: seeded.resolve,
       initialMeta: null,
     }
-    session.drained = new Promise<void>((resolve) => {
-      session.markDrained = resolve
-    })
-    session.seeded = new Promise<void>((resolve) => {
-      session.markSeeded = resolve
-    })
     session.unsubscribe = this.watch(session)
     const previous = this.settled(threadId)
     this.sessions.set(threadId, session)

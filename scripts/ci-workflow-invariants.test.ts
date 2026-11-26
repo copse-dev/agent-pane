@@ -252,13 +252,22 @@ describe('ci.yml workflow invariants', () => {
     }
     const checkRoutes = [...workflow.matchAll(/^ {2}([a-z][a-z0-9-]*):$/gm)]
       .flatMap((match) => (match[1] ? [match[1]] : []))
-      .filter((name) => jobBlock(name).includes('vars.SELF_HOSTED_CHECKS'))
+      .filter(
+        (name) =>
+          name !== 'verification-reuse' &&
+          name !== 'ci-passed' &&
+          jobBlock(name).includes('vars.SELF_HOSTED_CHECKS'),
+      )
     assert.ok(checkRoutes.includes('precheck') && checkRoutes.includes('build'))
     for (const name of checkRoutes) {
       for (const sameRepo of [false, true]) {
         assert.equal(route(name, 'merge_group', sameRepo), 'ubuntu-24.04', name)
       }
       assert.equal(route(name, 'push', true), 'copse-checks', `${name} retains trusted opt-in`)
+    }
+    for (const event of ['push', 'pull_request', 'merge_group']) {
+      assert.equal(route('verification-reuse', event, true), 'ubuntu-24.04')
+      assert.equal(route('ci-passed', event, true), 'ubuntu-24.04')
     }
     assert.equal(route('precheck', 'pull_request', false), 'ubuntu-24.04')
     assert.equal(route('precheck', 'pull_request', true), 'copse-checks')
@@ -485,13 +494,22 @@ describe('ci.yml workflow invariants', () => {
     assert.ok(promotionGate < oracle, 'promotion PRs must bypass oracle thinning')
   })
 
-  it('runs the cancellation gate on hosted capacity without checkout or network dependencies', () => {
+  it('rejects cancellation on hosted capacity before the final read-only native recheck', () => {
     const aggregate = jobBlock('ci-passed')
     assert.match(aggregate, /^ {4}if: \$\{\{ always\(\) \}\}$/m)
     assert.match(aggregate, /^ {4}runs-on: ubuntu-24\.04$/m)
     assert.match(aggregate, /^ {4}timeout-minutes: 5$/m)
-    assert.match(aggregate, /^ {4}permissions: \{\}$/m)
-    assert.doesNotMatch(aggregate, /SELF_HOSTED_CHECKS|uses:|api_get|curl |gh api|GH_TOKEN/)
+    assert.match(
+      aggregate,
+      /^ {4}permissions:\n {6}contents: read\n {6}actions: read\n {6}pull-requests: read$/m,
+    )
+    assert.doesNotMatch(
+      aggregate,
+      /^\s*(?:-\s*)?uses:|actions\/checkout|api_get|curl |gh api|GH_TOKEN|: write/m,
+    )
+    const finalRecheck = aggregate.indexOf('- name: Revalidate native evidence before success')
+    assert.ok(finalRecheck > aggregate.indexOf('- name: Check upstream job results'))
+    assert.doesNotMatch(aggregate.slice(0, finalRecheck), /uses:|github\.request/)
     assert.match(aggregate, /- name: Reject canceled workflow\n {8}if: \$\{\{ cancelled\(\) \}\}/)
   })
 
@@ -646,7 +664,7 @@ describe('ci.yml workflow invariants', () => {
     const aggregate = jobBlock('ci-passed')
     assert.match(
       aggregate,
-      /needs:\s+\[precheck, screenshot-baselines, check, review-cell, bench, build, e2e, screenshot-artifacts\]/,
+      /needs:\s+\[\s*verification-reuse,\s*precheck,\s*screenshot-baselines,\s*check,\s*review-cell,\s*bench,\s*build,\s*e2e,\s*screenshot-artifacts,?\s*\]/,
       'the aggregate must wait until immutable screenshot evidence is published',
     )
   })
@@ -1834,17 +1852,42 @@ describe('codeql.yml workflow invariants', () => {
   })
 })
 
-describe('sync-model-catalog.yml workflow invariants', () => {
-  const workflow = readFileSync(resolve('.github/workflows/sync-model-catalog.yml'), 'utf8')
+// `check` ends in the unit suite, whose project-sandbox tests fail on CI when
+// bubblewrap is missing rather than skip. sync-model-catalog.yml had the step;
+// sync-intellect.yml and sync-model-cards.yml did not, and their runs failed.
+describe('workflows that run the full check', () => {
+  const dir = resolve('.github/workflows')
+  const fullCheck = /^ +run: (?:npm|pnpm) run check$/m
+  const workflows = readdirSync(dir)
+    .filter((name) => name.endsWith('.yml'))
+    .map((name) => ({ name, text: readFileSync(join(dir, name), 'utf8') }))
+    .filter(({ text }) => fullCheck.test(text))
 
-  it('provisions the hosted Linux sandbox before full validation', () => {
-    const provision = workflow.indexOf('Install sandbox dependencies for validation')
-    const validate = workflow.indexOf('- name: Validate')
-    assert.ok(provision >= 0 && validate > provision)
-    assert.match(workflow, /apt-get install -y --no-install-recommends bubblewrap socat/)
-    assert.match(workflow, /apparmor_restrict_unprivileged_userns=0/)
-    assert.ok(workflow.includes('bwrap --unshare-all --dev-bind / / --die-with-parent true'))
+  it('finds every sync workflow that validates before opening its PR', () => {
+    assert.deepEqual(
+      workflows.map(({ name }) => name),
+      [
+        'sync-intellect.yml',
+        'sync-model-cards.yml',
+        'sync-model-catalog.yml',
+        'sync-streaming-markdown.yml',
+      ],
+    )
   })
+
+  for (const { name, text } of workflows) {
+    it(`${name} provisions the hosted Linux sandbox before full validation`, () => {
+      const provision = text.indexOf('- name: Install sandbox dependencies for validation')
+      const validate = fullCheck.exec(text)?.index ?? -1
+      assert.ok(provision >= 0, 'missing the sandbox provisioning step')
+      assert.ok(validate > provision, 'the sandbox must be provisioned before the check runs')
+      const step = text.slice(provision, validate)
+      assert.match(step, /if: runner\.environment == 'github-hosted' && runner\.os == 'Linux'/)
+      assert.match(step, /apt-get install -y --no-install-recommends bubblewrap socat/)
+      assert.match(step, /apparmor_restrict_unprivileged_userns=0/)
+      assert.ok(step.includes('bwrap --unshare-all --dev-bind / / --die-with-parent true'))
+    })
+  }
 })
 
 describe('acp-v2-watch.yml workflow invariants', () => {
@@ -2253,6 +2296,20 @@ describe('Copse Reviewer workflow invariants', () => {
       assert.ok(job.indexOf('docker build --pull') < job.indexOf('refs/pull/'))
       assert.ok(job.indexOf('pnpm fetch') < job.indexOf('COPSE_REVIEW_API_KEY:'))
     }
+  })
+
+  // The script runs in the runner's workspace, under a home the cell user
+  // cannot traverse. The nightly's clone, started there, failed for weeks with
+  // "Invalid path '/home/runner/work': Permission denied".
+  it('starts every review-cell command outside the runner home', () => {
+    const helper = /^as_cell\(\) \{\n([\s\S]*?)^\}$/m.exec(groundCellScript)?.[1]
+    assert.ok(helper, 'expected the as_cell helper')
+    const leave = helper.indexOf('cd / &&')
+    const run = helper.indexOf('sudo -u "$cell_user" -- env -i')
+    assert.ok(leave >= 0 && run > leave, 'as_cell must change to / before it runs the command')
+    // The helper is the only way a cell command starts; the one other use of
+    // the cell user is the check that it cannot read the workspace.
+    assert.equal(groundCellScript.match(/sudo -u "\$cell_user" (?!test -r)/g)?.length, 1)
   })
 
   it('builds the focused-validation image with only a test toolchain', () => {

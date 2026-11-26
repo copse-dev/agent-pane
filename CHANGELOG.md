@@ -9,6 +9,11 @@ released — rather than copying every published entry.
 ## Unreleased
 
 - Screen readers now announce the Settings dialog by name when it opens.
+- The annotation tools stay on one row in a narrow Browser or Desktop pane, where
+  they used to wrap over the page being marked up. Ink colour is now one button
+  on the strip, and in a tight pane the four shapes share a single button.
+- One oversized request from a window no longer crashes that window and reloads
+  it. The request fails on its own, and Copse's log names it.
 
 ## 0.1.0-beta.16
 

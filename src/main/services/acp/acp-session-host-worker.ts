@@ -13,7 +13,10 @@
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import { errorMessage } from '@shared/errors.ts'
 import type { AcpAgentSandboxConfig } from '@shared/types/acp.ts'
-import { isRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
+import { isRecord } from '@shared/unknown-value.ts'
+import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
+import { z } from 'zod'
+import { runWithActiveRunIdentity } from '../active-run-identity.ts'
 import { baseSandboxConfig } from '../../project-sandbox/config.ts'
 import { setProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
 import {
@@ -30,7 +33,20 @@ import {
 interface SessionHostRequest {
   config: AcpAgentSpawnConfig
   allowLocalhost: boolean
+  threadId?: string
 }
+
+const sessionHostEnvelopeSchema = z.object({
+  config: z.record(z.string(), z.unknown()),
+  allowLocalhost: z.unknown().optional(),
+  threadId: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(/^[A-Za-z0-9_-]+$/)
+    .optional()
+    .catch(undefined),
+})
 
 function send(message: AcpSessionHostMessage): void {
   if (process.send) process.send(message)
@@ -67,14 +83,9 @@ function readSandbox(value: unknown): AcpAgentSandboxConfig | undefined {
 }
 
 export function parseSessionHostRequest(raw: string): SessionHostRequest | null {
-  let parsed: unknown
-  try {
-    parsed = parseJsonUnknown(raw)
-  } catch {
-    return null
-  }
-  if (!isRecord(parsed) || !isRecord(parsed['config'])) return null
-  const input = parsed['config']
+  const parsed = safeJsonParse(raw, decodeWithSchema(sessionHostEnvelopeSchema))
+  if (parsed === null) return null
+  const input = parsed.config
   const command = input['command']
   const cwd = input['cwd']
   const sandbox = readSandbox(input['sandbox'])
@@ -95,7 +106,8 @@ export function parseSessionHostRequest(raw: string): SessionHostRequest | null 
       ...(typeof stateDir === 'string' && stateDir !== '' ? { stateDir } : {}),
       ...(chatReadRoots ? { chatReadRoots } : {}),
     },
-    allowLocalhost: parsed['allowLocalhost'] === true,
+    allowLocalhost: parsed.allowLocalhost === true,
+    ...(parsed.threadId !== undefined ? { threadId: parsed.threadId } : {}),
   }
 }
 
@@ -108,6 +120,9 @@ async function initHostSandbox(): Promise<void> {
     },
     false,
   )
+  if (!SandboxManager.isSandboxingEnabled()) {
+    throw new Error('Workspace protection did not start for the agent session')
+  }
   setProjectSandboxEnabled(true)
 }
 
@@ -142,14 +157,18 @@ async function main(): Promise<void> {
   try {
     // Keep the agent in the host's process group: disposing the host then kills
     // the complete host + sandbox wrapper + agent tree with one group signal.
-    child = await spawnAcpAgentProcess(request.config, {
-      detached: false,
-      allowLocalhost: request.allowLocalhost,
-      // The host-only request contains a duplicate JSON copy of the config
-      // (including explicitly configured credentials), and Electron-as-Node is
-      // an implementation detail. Neither may leak into the real agent.
-      baseEnv: agentBaseEnv(),
-    })
+    const spawnAgent = (): ReturnType<typeof spawnAcpAgentProcess> =>
+      spawnAcpAgentProcess(request.config, {
+        detached: false,
+        allowLocalhost: request.allowLocalhost,
+        // The host-only request contains a duplicate JSON copy of the config
+        // (including explicitly configured credentials), and Electron-as-Node is
+        // an implementation detail. Neither may leak into the real agent.
+        baseEnv: agentBaseEnv(),
+      })
+    child = await (request.threadId === undefined
+      ? spawnAgent()
+      : runWithActiveRunIdentity(request.threadId, spawnAgent))
   } catch (err) {
     send({ type: 'error', error: `Could not start the agent session: ${errorMessage(err)}` })
     await SandboxManager.reset().catch(() => {})

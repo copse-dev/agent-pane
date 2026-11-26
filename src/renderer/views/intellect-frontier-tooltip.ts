@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 import type { FrontierPoint, FrontierCostAxis } from '@copse/llm/pareto-frontier.ts'
 import { TRACKED_MODELS, cloudModelDisplayLabel } from '@copse/llm/model-catalog.ts'
 import {
@@ -210,28 +211,13 @@ export function pointTooltipContent(
       ),
       ttRow('tt-muted', `Off-plan you'd pay ${formatPrice(p.planDetail.apiPricePerMTok)} blended.`),
     )
-    if (p.planDetail.priorLimitHits) {
-      const { hit, total } = p.planDetail.priorLimitHits
-      root.append(
-        ttRow(
-          'tt-muted',
-          `Limit hit in ${String(hit)}/${String(total)} prior windows · still treating as included.`,
-        ),
-      )
-    }
   }
   // Plan window spent: it's plotted at its real price now, not as included.
   if (p.planLimitReached) {
-    const prior = p.planLimitReached.priorLimitHits
-    const priorNote = prior
-      ? ` Limit hit in ${String(prior.hit)}/${String(prior.total)} prior windows.`
-      : ''
     root.append(
       ttRow(
         'tt-muted',
-        prior
-          ? `${p.planLimitReached.label} usually exhausted · plotted at off-plan price.${priorNote}`
-          : `${p.planLimitReached.label} plan limit reached${formatReset(p.planLimitReached.resetsAt)} · plotted at its off-plan price.`,
+        `${p.planLimitReached.label} plan limit reached${formatReset(p.planLimitReached.resetsAt)} · plotted at its off-plan price.`,
       ),
     )
   }
@@ -307,13 +293,13 @@ export function positionFrontierTooltip(
   if (left + tipWidth > rect.width) {
     left = cursorX - tipWidth - TOOLTIP_OFFSET_PX
   }
-  left = Math.max(0, Math.min(left, Math.max(0, rect.width - tipWidth)))
+  left = clamp(left, 0, Math.max(0, rect.width - tipWidth))
 
   let top = cursorY + TOOLTIP_OFFSET_PX
   if (top + tipHeight > rect.height) {
     top = cursorY - tipHeight - TOOLTIP_OFFSET_PX
   }
-  top = Math.max(0, Math.min(top, Math.max(0, rect.height - tipHeight)))
+  top = clamp(top, 0, Math.max(0, rect.height - tipHeight))
 
   tip.style.left = `${String(left)}px`
   tip.style.top = `${String(top)}px`

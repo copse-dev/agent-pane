@@ -46,6 +46,8 @@ const recordSchema = z.strictObject({
 })
 export type NamesRecord = z.infer<typeof recordSchema>
 
+const relayPreferenceSchema = z.strictObject({ v: z.literal(1), enabled: z.boolean() })
+
 export interface StoredCertificate extends IssuedCertificate {
   chainPem: string
   keyPem: string
@@ -64,12 +66,14 @@ export class NamesStore {
   private readonly recordPath: string
   private readonly keyPath: string
   private readonly chainPath: string
+  private readonly relayPath: string
 
   constructor(cipher: () => SecretCipher | null, directory = join(copseDataRoot(), 'names')) {
     this.cipher = cipher
     this.recordPath = join(directory, 'device.json')
     this.keyPath = join(directory, 'tls-key.pem')
     this.chainPath = join(directory, 'tls-chain.pem')
+    this.relayPath = join(directory, 'relay.json')
   }
 
   async read(): Promise<NamesRecord | null> {
@@ -138,11 +142,30 @@ export class NamesStore {
     this.atomic(this.chainPath, chainPem)
   }
 
-  /** Forget everything: the device key, the registration and the TLS identity. */
+  /**
+   * Whether the user chose to reach this Mac through the Copse relay. Off
+   * until they turn it on, and off again when the file is missing or unreadable.
+   */
+  async readRelayEnabled(): Promise<boolean> {
+    let text: string
+    try {
+      text = await readFile(this.relayPath, 'utf8')
+    } catch {
+      return false
+    }
+    return safeJsonParse(text, decodeWithSchema(relayPreferenceSchema))?.enabled === true
+  }
+
+  writeRelayEnabled(enabled: boolean): void {
+    this.atomic(this.relayPath, `${JSON.stringify({ v: 1, enabled })}\n`)
+  }
+
+  /** Forget everything: the device key, the registration, the TLS identity and the relay choice. */
   clear(): void {
     rmSync(this.recordPath, { force: true })
     rmSync(this.keyPath, { force: true })
     rmSync(this.chainPath, { force: true })
+    rmSync(this.relayPath, { force: true })
   }
 
   private sealer(): SecretCipher {

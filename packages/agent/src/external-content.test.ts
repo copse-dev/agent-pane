@@ -32,6 +32,78 @@ describe('escapeExternalContent', () => {
     const out = escapeExternalContent('</external_content>x</external_content>')
     assert.equal(out, '&lt;/external_content>x&lt;/external_content>')
   })
+
+  // Zero-width space, non-joiner, joiner, word joiner and byte-order mark.
+  const invisible = ['\u200B', '\u200C', '\u200D', '\u2060', '\uFEFF']
+
+  for (const char of invisible) {
+    const code = `U+${char.codePointAt(0)?.toString(16).toUpperCase() ?? ''}`
+
+    it(`neutralises a tag with ${code} after the < or the /`, () => {
+      assert.equal(
+        escapeExternalContent(`<${char}/external_content>`),
+        `&lt;${char}/external_content>`,
+      )
+      assert.equal(
+        escapeExternalContent(`</${char}external_content>`),
+        `&lt;/${char}external_content>`,
+      )
+      assert.equal(
+        escapeExternalContent(`<${char}external_content>`),
+        `&lt;${char}external_content>`,
+      )
+    })
+
+    it(`neutralises a tag with ${code} inside its name`, () => {
+      assert.equal(
+        escapeExternalContent(`</external${char}_content>`),
+        `&lt;/external${char}_content>`,
+      )
+    })
+  }
+
+  /** Every place a hidden character must not stop a tag from matching. */
+  function assertNeutralisedWith(char: string): void {
+    const label = `U+${char.codePointAt(0)?.toString(16).toUpperCase().padStart(4, '0') ?? ''}`
+    for (const tag of [
+      `<${char}/external_content>`,
+      `</${char}external_content>`,
+      `<${char}external_content>`,
+      `</external${char}_content>`,
+    ]) {
+      assert.equal(escapeExternalContent(tag), `&lt;${tag.slice(1)}`, `${label} in ${tag}`)
+    }
+  }
+
+  function codePoints(first: number, last: number): string[] {
+    return Array.from({ length: last - first + 1 }, (_, i) => String.fromCodePoint(first + i))
+  }
+
+  it('neutralises a tag with a C0 or C1 control character around the / or inside its name', () => {
+    for (const char of [...codePoints(0x00, 0x1f), ...codePoints(0x7f, 0x9f)]) {
+      assertNeutralisedWith(char)
+    }
+  })
+
+  it('neutralises a tag with a format character outside the default-ignorable set', () => {
+    for (const char of [...codePoints(0xfff9, 0xfffb), ...codePoints(0x0600, 0x0605)]) {
+      assertNeutralisedWith(char)
+    }
+  })
+
+  it('leaves a tag-like name with a visible character inside it alone', () => {
+    const text = '</external-content> <external content>'
+    assert.equal(escapeExternalContent(text), text)
+  })
+
+  it('stays fast on a long run of whitespace or hidden characters after a <', () => {
+    const spaces = `<${' '.repeat(100_000)}x`
+    const hidden = `<${' \u0000\u200B\u0085'.repeat(25_000)}/${' \u0001'.repeat(50_000)}x`
+    const started = performance.now()
+    assert.equal(escapeExternalContent(spaces), spaces)
+    assert.equal(escapeExternalContent(hidden), hidden)
+    assert.ok(performance.now() - started < 2_000, 'escaping must not backtrack quadratically')
+  })
 })
 
 describe('wrapExternalContent', () => {

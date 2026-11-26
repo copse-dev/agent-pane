@@ -1,8 +1,11 @@
 import { createThreadResource } from '../thread-resource-fence.ts'
-import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import { randomUUID } from 'node:crypto'
 import type { ChildProcess } from 'node:child_process'
-import { isProjectSandboxEnabled, spawnBackgroundProcess } from '../../project-sandbox/index.ts'
+import {
+  isProjectSandboxEnabled,
+  sandboxViolationCountForBackgroundProcess,
+  spawnBackgroundProcess,
+} from '../../project-sandbox/index.ts'
 import { spawnRunsOnSshTarget } from '../../project-sandbox/spawn.ts'
 import { detectSandboxFailure } from '../security/sandbox-failure.ts'
 import { sandboxDenialRetryClassification } from '../security/sandbox-denial-signatures.ts'
@@ -95,16 +98,6 @@ export interface BackgroundProcessInfo {
 }
 
 const processes = new Map<string, BackgroundProcess>()
-
-/** Background attempts already carry their own ASRT attribution id. */
-function sandboxViolationCountForRun(violationId: string): number {
-  if (!isProjectSandboxEnabled()) return 0
-  try {
-    return SandboxManager.getSandboxViolationStore().getViolationsForCommand(violationId).length
-  } catch {
-    return 0
-  }
-}
 
 /**
  * Operation ids are quoted back to the model and surfaced in tool-call detail
@@ -403,7 +396,9 @@ export async function startBackgroundProcess(
       unsandboxed,
       violationId,
       violationCount: 0,
-      retryAllowed: opts.suppressSandboxRetry !== true,
+      // A read-only approval must never become an outside-sandbox retry after
+      // a contained task fails, even when the runner records a violation.
+      retryAllowed: opts.suppressSandboxRetry !== true && readGrantTargets === null,
       retryUsed: false,
       url: null,
       urlRemote: false,
@@ -458,7 +453,7 @@ export async function startBackgroundProcess(
       if (entry.violationId) {
         entry.violationCount = Math.max(
           entry.violationCount,
-          sandboxViolationCountForRun(entry.violationId),
+          sandboxViolationCountForBackgroundProcess(entry.proc, entry.violationId),
         )
       }
       // Cancelled/timed-out work has no complete result to attribute. Release
@@ -515,7 +510,7 @@ export function backgroundSandboxRetryReasons(
     return null
   entry.violationCount = Math.max(
     entry.violationCount,
-    sandboxViolationCountForRun(entry.violationId),
+    sandboxViolationCountForBackgroundProcess(entry.proc, entry.violationId),
   )
   const detection = detectSandboxFailure({
     exitCode: entry.exitCode,
