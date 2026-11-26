@@ -598,6 +598,28 @@ describe('TurnTranscriptWriter', () => {
     await turn.writer.settled(THREAD)
   })
 
+  it('attaches a running turn the window did not list, and no other project', async () => {
+    const snapshots: TranscriptSnapshot[] = []
+    const turn = harness(
+      () => [],
+      () => {},
+      (snapshot) => snapshots.push(snapshot),
+    )
+    const transcript = turn.writer.begin(PROJECT, THREAD)
+    // The window may not know yet that this turn is running, so it lists only
+    // the threads it holds stale; the running one is attached anyway.
+    await turn.writer.attach(PROJECT, [])
+    const forThread = snapshots.filter((snapshot) => snapshot.thread.id === THREAD)
+    assert.equal(forThread.at(-1)?.source, 'runtime')
+    const count = snapshots.length
+    await turn.writer.attach('project-2', [])
+    assert.equal(snapshots.length, count, 'a running turn is attached only to its own project')
+    transcript.end()
+    await turn.writer.settled(THREAD)
+    await turn.writer.attach(PROJECT, [])
+    assert.equal(snapshots.length, count, 'a finished turn is not attached unless listed')
+  })
+
   it('persists interruption removal after a hidden main-owned continuation', async () => {
     await updateMeta(PROJECT, THREAD, {
       status: 'idle',

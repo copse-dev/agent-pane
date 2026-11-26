@@ -344,6 +344,103 @@ test('a workspace switch from setState alone attaches the new project transcript
   ])
 })
 
+test('attaches only the threads whose window copy can be behind main', () => {
+  // A cold idle thread is drawn from the same disk state main holds. Attaching
+  // it made main read its whole transcript and push it back, for every thread
+  // in the project, on each attach.
+  const cold = (id: string): Thread => ({ ...thread(id), status: 'idle', messagesLoaded: false })
+  const { store, attachCalls } = setup(
+    [
+      cold('cold'),
+      { ...cold('running'), status: 'running' },
+      { ...cold('loaded'), messagesLoaded: true },
+      { ...cold('interrupted'), interruptedTurnAt: 5 },
+      {
+        ...cold('queued'),
+        pendingMessages: [
+          { messageId: 'held', createdAt: 1, payload: { content: 'Wait for review' } },
+        ],
+      },
+    ],
+    'loaded',
+  )
+  assert.deepEqual(attachCalls, [['project-1', ['running', 'loaded', 'interrupted', 'queued']]])
+
+  store.setState({
+    activeProjectId: 'project-2',
+    // A thread created in this window has no `messagesLoaded`: it is all here.
+    threads: [cold('p2-cold'), { ...thread('p2-new'), status: 'idle' }],
+    activeThreadId: 'p2-new',
+  })
+  assert.deepEqual(attachCalls.at(-1), ['project-2', ['p2-new']])
+})
+
+test('a late command update lands on a thread read from disk after attaching', () => {
+  // Attach lists only threads that can be behind main, so a thread opened from
+  // disk later is not attached. A background command can still exit after its
+  // turn ended; main writes that and forwards it stamped with no messages.
+  const { store, send, attachCalls } = setup([
+    { ...thread('t1'), status: 'idle', messagesLoaded: false },
+  ])
+  assert.deepEqual(attachCalls, [['project-1', []]])
+  const started = {
+    state: 'running' as const,
+    since: 1,
+    launched: true,
+    backgroundTaskId: 'task-1',
+  }
+  store.setState({
+    threads: [
+      {
+        ...requireThread(store, 't1'),
+        messagesLoaded: true,
+        messages: [
+          {
+            id: 'a1',
+            role: 'assistant',
+            content: '',
+            createdAt: 1,
+            toolCalls: [
+              {
+                id: 'bg',
+                name: 'run_background',
+                args: {},
+                status: 'done',
+                result: 'started',
+                commandPhase: started,
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  })
+  send(
+    {
+      type: 'tool_call_update',
+      toolCallId: 'bg',
+      commandPhase: { ...started, state: 'exited', since: 2, exitCode: 0 },
+    },
+    't1',
+    { messageIds: [] },
+  )
+  assert.equal(requireThread(store, 't1').messages[0]?.toolCalls[0]?.commandPhase?.state, 'exited')
+})
+
+test('turn output still waits for attachment on a thread read from disk', () => {
+  // Only a command's stage reaches an unattached thread. A turn's own chunks
+  // also name no messages when they patch one, but they follow that turn's
+  // snapshot, so one arriving first is a missed prefix and must not draw.
+  const { store, send } = setup([{ ...thread('t1'), status: 'idle', messagesLoaded: false }])
+  const prompt: Message = { id: 'u1', role: 'user', content: 'Hi', createdAt: 1, toolCalls: [] }
+  store.setState({
+    threads: [{ ...requireThread(store, 't1'), messagesLoaded: true, messages: [prompt] }],
+  })
+  send({ type: 'text', text: 'late' }, 't1', { messageIds: [] })
+  send({ type: 'tool_call_update', toolCallId: 'bg', status: 'done' }, 't1', { messageIds: [] })
+  assert.deepEqual(requireThread(store, 't1').messages, [prompt])
+})
+
 test('text chunks create one assistant message and accumulate tokens', () => {
   const { send, messages } = setup()
   send({ type: 'text', text: 'Hello' })

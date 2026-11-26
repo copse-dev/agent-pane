@@ -2,6 +2,34 @@
 export const UNSANDBOXED_ACCESS_WARNING =
   'This runs with your user account’s access to files and the network, beyond the project sandbox.'
 
+export function projectPortBindingApproval(
+  workspaceRoot: string,
+  command: string,
+): ApprovalDetails & {
+  title: string
+  allowRemember: boolean
+  rememberLabel: string
+  approveLabel: string
+  approveOnceLabel: string
+} {
+  return {
+    title: 'Allow this project to bind a local port?',
+    body: command || '(no command given)',
+    bodyAdvice:
+      'The agent wants to start a long-running background task that binds a ' +
+      'loopback port and stays alive across turns:\n\n' +
+      `Project: ${workspaceRoot}`,
+    bodyFooter:
+      'One-time approval covers this start. Remembered permission lets future tasks and chats in this project, ' +
+      'including its worktrees, bind on localhost until revoked. Other shell permissions still apply. ' +
+      'Revoke it in Context → Permissions → Project → Local port binding. Stop running tasks separately.',
+    allowRemember: true,
+    rememberLabel: `Always allow local port binding in this project: ${workspaceRoot}`,
+    approveLabel: 'Allow for this project',
+    approveOnceLabel: 'Allow once',
+  }
+}
+
 export function threadAccessApproval(access: 'read' | 'send' | 'orchestrate'): ApprovalDetails & {
   title: string
   approveLabel: string

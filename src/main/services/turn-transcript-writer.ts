@@ -147,9 +147,19 @@ export class TurnTranscriptWriter {
     return Promise.all([...this.drains.values(), ...this.lateWrites.values()]).then(() => undefined)
   }
 
-  /** Snapshot and subsequent chunks use the same ordered IPC sender. */
+  /**
+   * Snapshot and subsequent chunks use the same ordered IPC sender.
+   *
+   * The window lists the threads whose copy may be behind main. Every turn
+   * main is running in the project is attached as well, so a window that does
+   * not yet know a turn is running still receives its checkpoint.
+   */
   async attach(projectId: string, threadIds: readonly string[]): Promise<void> {
-    for (const threadId of threadIds) {
+    const listed = new Set(threadIds)
+    const running = [...this.sessions.values()]
+      .filter((session) => session.projectId === projectId && !listed.has(session.threadId))
+      .map((session) => session.threadId)
+    for (const threadId of [...threadIds, ...running]) {
       // A turn may start or finish during a disk read. Retry until the read
       // and the active session agree, then send without another await.
       for (;;) {

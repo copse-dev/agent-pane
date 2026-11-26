@@ -7,6 +7,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -133,6 +134,124 @@ describe('real worktree preparation containment', { skip: process.platform === '
     // kernel enforcement, not silently turn green without executing a sandbox.
     await SandboxManager.initialize(baseSandboxConfig(), undefined, false)
     setProjectSandboxEnabled(true)
+  })
+
+  it('starts npm, its npx child and Corepack through fnm symlinks while unrelated files remain denied', async () => {
+    const installation = join(parent, 'fnm/node-versions/v24.20.0/installation')
+    const multishell = join(parent, 'fnm_multishells/session')
+    const bin = join(installation, 'bin')
+    mkdirSync(bin, { recursive: true })
+    mkdirSync(dirname(multishell), { recursive: true })
+    symlinkSync(process.execPath, join(bin, 'node'))
+    symlinkSync(installation, multishell, 'dir')
+    const unrelated = join(installation, 'unrelated.txt')
+    write(unrelated, 'must stay private')
+    for (const [command, name, cli, version] of [
+      ['npm', 'npm', 'bin/npm-cli.js', '11.19.0'],
+      ['npx', 'npm', 'bin/npx-cli.js', '11.19.0'],
+      ['corepack', 'corepack', 'dist/corepack.js', '0.34.0'],
+    ]) {
+      assert.ok(command && name && cli && version)
+      const implementation = join(installation, 'lib/node_modules', name)
+      write(join(implementation, 'version.cjs'), `module.exports=${JSON.stringify(version)}`)
+      write(
+        join(implementation, cli),
+        `#!/usr/bin/env node
+const fs=require('node:fs'),assert=require('node:assert/strict');
+assert.throws(()=>fs.readFileSync(${JSON.stringify(unrelated)}),/EPERM|EACCES|ENOENT/);
+let wrote=false;
+try { fs.writeFileSync(${JSON.stringify(unrelated)},'escaped'); wrote=true }
+catch (error) { if (!['EPERM','EACCES','ENOENT','EROFS'].includes(error.code)) throw error }
+// Seatbelt must refuse the write. bwrap hides denied roots behind a disposable
+// tmpfs, so on Linux the write can land in that private layer instead; it must
+// still never reach the host file, which the test reads after both runs.
+if (wrote) {
+  assert.equal(process.platform,'linux','write outside the preparation grants succeeded');
+  assert.equal(fs.readFileSync(${JSON.stringify(unrelated)},'utf8'),'escaped');
+  // Leave the disposable layer clean so an npm-spawned npx checks the same denial.
+  fs.unlinkSync(${JSON.stringify(unrelated)});
+}
+if (process.argv.includes('--call-npx')) {
+  process.stdout.write(require('node:child_process').execFileSync('npx', ['--version'], {encoding:'utf8'}));
+} else console.log(require('../version.cjs'));
+`,
+        true,
+      )
+      symlinkSync(join('../lib/node_modules', name, cli), join(bin, command))
+    }
+    const fixtureEnv = { ...env, PATH: `${join(multishell, 'bin')}:/usr/bin:/bin` }
+    for (const [command, expected] of [
+      ['npm', '11.19.0'],
+      ['npx', '11.19.0'],
+      ['corepack', '0.34.0'],
+    ]) {
+      assert.ok(command && expected)
+      assert.equal(
+        await runWorktreePreparationProcess(command, ['--version'], {
+          root,
+          env: fixtureEnv,
+          mode: 'preflight',
+          offline: true,
+        }),
+        expected,
+      )
+    }
+    assert.equal(
+      await runWorktreePreparationProcess('npm', ['--call-npx'], {
+        root,
+        env: fixtureEnv,
+        mode: 'preflight',
+        offline: true,
+      }),
+      '11.19.0',
+    )
+    assert.equal(readFileSync(unrelated, 'utf8'), 'must stay private')
+  })
+
+  it('keeps the private toolchain links off the unconfined launcher lookup', async (t) => {
+    // In prepare mode the links sit in the worktree's stable scratch, which a
+    // step's leftover process can write. Plant a launcher there just before the
+    // outer wrapper shell starts, as such a process could.
+    const scratch = join(root, '.tmp', 'worktree-preparation')
+    const escaped = join(parent, 'unconfined-launcher')
+    const planted: string[] = []
+    const realSpawn = childProcess.spawn
+    t.mock.method(
+      childProcess,
+      'spawn',
+      (file: string, args: readonly string[], options: SpawnOptions): ChildProcess => {
+        if (file === '/bin/bash' && args[0] === '-c') {
+          for (const name of readdirSync(scratch)) {
+            if (!name.startsWith('node-toolchain-')) continue
+            const launcher = join(scratch, name, 'env')
+            write(
+              launcher,
+              `#!/bin/sh\nprintf escaped > ${JSON.stringify(escaped)}\nexec /usr/bin/env "$@"\n`,
+              true,
+            )
+            planted.push(launcher)
+          }
+        }
+        return realSpawn(file, args, options)
+      },
+    )
+    syncBuiltinESMExports()
+    try {
+      assert.equal(
+        await runWorktreePreparationProcess('node', ['-e', 'console.log("confined")'], {
+          root,
+          env: { ...env, PATH: `${dirname(process.execPath)}:/usr/bin:/bin` },
+          mode: 'prepare',
+          offline: true,
+        }),
+        'confined',
+      )
+    } finally {
+      t.mock.restoreAll()
+      syncBuiltinESMExports()
+    }
+    assert.equal(planted.length, 1)
+    assert.equal(existsSync(escaped), false)
   })
 
   it('uses disposable scratch for a read-only prepare and cleans it on success and failure', async () => {

@@ -14,7 +14,7 @@ import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountSettingsDialog, openSettingsDialog, closeSettingsDialog } from './settings-dialog.ts'
 import { mountApprovalDialog } from './approval-dialog.ts'
-import { resetAttention } from '../controller/attention.ts'
+import { isThreadAwaitingAttention, resetAttention } from '../controller/attention.ts'
 import { qsRequired } from '../dom/helpers.ts'
 import { createPendingApi } from '../fake-api.test-support.ts'
 
@@ -27,13 +27,19 @@ type ApprovalHandler = (req: {
   allowRemember?: boolean
   rememberLabel?: string
   showWhileSettingsOpen?: boolean
+  portBinding?: boolean
 }) => void
 
 // Recursive never-settling stub for the settings dialog's background loads, with
 // the two approval surfaces the approval dialog actually touches captured.
 function makeApi(): {
   api: ApiClient
-  emit: (req: { id: string; threadId?: string; showWhileSettingsOpen?: boolean }) => void
+  emit: (req: {
+    id: string
+    threadId?: string
+    showWhileSettingsOpen?: boolean
+    portBinding?: boolean
+  }) => void
 } {
   let handler: ApprovalHandler = () => {}
   const overrides = {
@@ -50,8 +56,16 @@ function makeApi(): {
       handler({
         id: req.id,
         threadId: req.threadId,
-        title: req.showWhileSettingsOpen ? 'Provider host' : 'Shell command',
-        body: req.showWhileSettingsOpen ? 'provider.example' : 'echo hello',
+        title: req.portBinding
+          ? 'Allow this project to bind a local port?'
+          : req.showWhileSettingsOpen
+            ? 'Provider host'
+            : 'Shell command',
+        body: req.portBinding
+          ? 'npm run dev'
+          : req.showWhileSettingsOpen
+            ? 'provider.example'
+            : 'echo hello',
         type: req.showWhileSettingsOpen ? 'web' : 'shell',
         ...(req.showWhileSettingsOpen ? { showWhileSettingsOpen: true } : {}),
       })
@@ -95,7 +109,12 @@ function shimDialog(dialog: HTMLDialogElement): { showCalls: number; showModalCa
 describe('approval dialog vs settings (issue #501)', () => {
   let approvalDialog: HTMLDialogElement
   let approvalSpy: { showCalls: number; showModalCalls: number }
-  let emit: (req: { id: string; showWhileSettingsOpen?: boolean }) => void
+  let emit: (req: {
+    id: string
+    threadId?: string
+    showWhileSettingsOpen?: boolean
+    portBinding?: boolean
+  }) => void
 
   beforeEach(() => {
     document.body.innerHTML = ''
@@ -105,7 +124,7 @@ describe('approval dialog vs settings (issue #501)', () => {
     resetAttention()
     const made = makeApi()
     emit = made.emit
-    const store = createStore()
+    const store = createStore({ activeThreadId: 'focused' })
     // Settings must mount first: the approval dialog subscribes to its close event.
     mountSettingsDialog(store, made.api)
     const settings = qsRequired<HTMLDialogElement>(document, '#settings-dialog')
@@ -135,6 +154,36 @@ describe('approval dialog vs settings (issue #501)', () => {
     assert.equal(document.activeElement, qsRequired(approvalDialog, '.approval-reject'))
     assert.equal(approvalDialog.parentElement?.id, 'pane-chat')
     assert.equal(qsRequired(document, '.approval-chat-scrim').hidden, false)
+  })
+
+  it('flags a focused request hidden by Settings and offers a working Review action', () => {
+    openSettingsDialog()
+    emit({ id: 'focused-port-binding', threadId: 'focused', portBinding: true })
+    assert.equal(approvalDialog.open, false)
+    assert.equal(isThreadAwaitingAttention('focused'), true)
+    const review = qsRequired<HTMLButtonElement>(document, '.approval-settings-pending')
+    assert.equal(review.hidden, false)
+    assert.equal(review.textContent, 'Review approval')
+    review.click()
+    assert.equal(approvalDialog.open, true)
+    assert.equal(review.hidden, true)
+    assert.equal(
+      qsRequired(approvalDialog, '.approval-heading').textContent,
+      'Allow this project to bind a local port?',
+    )
+    assert.equal(qsRequired(approvalDialog, '.approval-body').textContent, 'npm run dev')
+    assert.equal(isThreadAwaitingAttention('focused'), false)
+  })
+
+  it('withdraws an already visible prompt when Settings opens and restores it on Review', () => {
+    emit({ id: 'focused-port-binding', threadId: 'focused', portBinding: true })
+    assert.equal(approvalDialog.open, true)
+    openSettingsDialog()
+    assert.equal(approvalDialog.open, false)
+    const review = qsRequired<HTMLButtonElement>(document, '.approval-settings-pending')
+    assert.equal(review.hidden, false)
+    review.click()
+    assert.equal(approvalDialog.open, true)
   })
 
   it('defers an approval prompt while settings is open, flushing on close', () => {

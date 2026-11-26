@@ -166,8 +166,7 @@ describe('portrait panel controls row', () => {
     const labeled = [
       { label: 'Toggle right panel', text: 'Panel' },
       { label: 'Open terminal', text: 'Terminal' },
-      { label: 'Open changes', text: 'Changes' },
-      { label: 'Open pull requests', text: 'PRs' },
+      { label: 'Open review', text: 'Review' },
       { label: 'Open memories', text: 'Memories' },
       { label: 'Open roadmap', text: 'Roadmap' },
       { label: 'Open browser', text: 'Browser' },
@@ -328,7 +327,7 @@ describe('portrait panel controls row', () => {
     )
 
     // Opening Changes from the bottom row stacks it below chat and keeps the row.
-    await portraitBar.$('.titlebar-text-btn[aria-label="Open changes"]').click()
+    await portraitBar.$('.titlebar-text-btn[aria-label="Open review"]').click()
     await $('#pane-files').waitForDisplayed({ timeout: 10_000 })
     await browser.waitUntil(
       async () =>
@@ -337,7 +336,7 @@ describe('portrait panel controls row', () => {
         ),
       { timeout: 5_000, timeoutMsg: 'expected stacked right-panel layout after opening Changes' },
     )
-    await expect(portraitBar.$('.titlebar-text-btn[aria-label="Open changes"]')).toHaveElementClass(
+    await expect(portraitBar.$('.titlebar-text-btn[aria-label="Open review"]')).toHaveElementClass(
       'active',
     )
 

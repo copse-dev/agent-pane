@@ -150,8 +150,14 @@
   display: none;
 }
 
-.vnc-ssh-host-form .vnc-field-label input {
+.vnc-ssh-host-form .vnc-field-label input,
+.vnc-ssh-host-form .vnc-field-label select {
   width: 100%;
+}
+
+/* `.vnc-field-label` is a flex column, which would otherwise outrank `hidden`. */
+.vnc-ssh-host-form .vnc-ssh-config-field[hidden] {
+  display: none;
 }
 
 .vnc-ssh-host-hint,

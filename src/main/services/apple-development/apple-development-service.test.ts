@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
-import { afterEach, beforeEach, describe, it } from 'node:test'
+import { after, afterEach, before, beforeEach, describe, it } from 'node:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type {
   SupervisedTaskArchive,
   SupervisedTaskAuditEvent,
@@ -23,6 +26,17 @@ import {
 import { AppleDevelopmentService, type AppleInvocation } from './apple-development-service.ts'
 
 const STORE_KEY = 'plugin.copse.apple-development.state'
+const originalProfile = process.env['COPSE_DIR']
+let profile = ''
+before(() => {
+  profile = mkdtempSync(join(tmpdir(), 'copse-apple-profile-'))
+  process.env['COPSE_DIR'] = profile
+})
+after(() => {
+  if (originalProfile === undefined) delete process.env['COPSE_DIR']
+  else process.env['COPSE_DIR'] = originalProfile
+  rmSync(profile, { recursive: true, force: true })
+})
 
 class EmptyTaskStore implements SupervisedTaskStore {
   private readonly initialTasks: SupervisedTaskMeta[]
@@ -302,7 +316,8 @@ describe('AppleDevelopmentService enrollment', () => {
     assert.equal(authority['authority'], 'direct-user-action')
     assert.equal(typeof authority['authorityEpoch'], 'string')
     assert.equal(enqueued.meta.reapproveOnWake, true)
-    assert.equal((await service.operation(invocation, queued.id)).operation.status, 'succeeded')
+    const { operation } = await service.operation(invocation, queued.id)
+    assert.equal(operation.status, 'succeeded', operation.outcome?.reason ?? 'Operation failed')
     assert.equal(
       (await service.operation(invocation, queued.id)).operation.outcome?.appSessionId,
       'app-session-1',

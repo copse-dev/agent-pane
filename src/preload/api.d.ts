@@ -218,6 +218,11 @@ export interface ApiClient {
   remote: {
     /** Publish the desktop-owned live view to authenticated remote clients. */
     publish: (view: import('@shared/remote-interface.ts').RemoteView) => Promise<void>
+    /** The threads remote clients are showing; only these are published with transcripts. */
+    watched: () => Promise<import('@shared/remote-interface.ts').RemoteWatchedThread[]>
+    onWatchedChanged: (
+      handler: (watched: import('@shared/remote-interface.ts').RemoteWatchedThread[]) => void,
+    ) => () => void
   }
   chatGptPlan: import('@shared/types/chatgpt-plan.ts').ChatGptPlanClient
   mobile: {
@@ -245,6 +250,11 @@ export interface ApiClient {
     /** Delete this Mac's name from the names service and forget its device key. */
     removeName: () => Promise<void>
     recheckNameDns: () => Promise<void>
+    /** Choose whether phones paired at copse.me reach this Mac through the Copse relay. */
+    setRelayEnabled: (enabled: boolean) => Promise<void>
+    /** Show a one-time code that adds this Mac to a copse.me account; it arrives as state. */
+    createShellPairing: () => Promise<void>
+    clearShellPairing: () => Promise<void>
     onChat: (
       handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void,
     ) => () => void
@@ -731,6 +741,7 @@ export interface ApiClient {
     ) => Promise<import('@copse/thread-store/plan-schema.ts').StoredThreadPlan | null>
   }
   threads: {
+    actionState: () => Promise<import('@shared/threads/action-assessment.ts').ThreadActionState>
     archiveState: (
       projectId: string,
       view: 'review' | 'archived',

@@ -85,6 +85,7 @@ import {
   getMainWindowNavigation,
   getRestorableMainWindowRecords,
 } from './windows/create-main-window.ts'
+import { installLargeIpcCallChannel, largeIpcCalls } from './windows/renderer-large-ipc.ts'
 import { readBootTheme } from './windows/boot-theme.ts'
 import { setShellOutputSink } from './services/exec/shell-output-context.ts'
 import { setSecretCipher } from './services/storage/secret-cipher.ts'
@@ -285,6 +286,7 @@ import {
   backgroundCompletionPrompt,
   setBackgroundCompletionWakeHandler,
 } from './services/exec/background-completion-wake.ts'
+import { setAcpToolCompletionHandler } from './services/acp/tool-completion.ts'
 import { setLateCommandPhaseRecorder } from './services/exec/command-phase.ts'
 import { closeVideoDecoder, setVideoDecoderPlatform } from './services/video/video-decoder.ts'
 import {
@@ -716,6 +718,18 @@ app
     perfMark('main:window-create')
     const windows = getRestorableMainWindowRecords().map((record) => createMainWindow(record))
     const win = windows[0] ?? createMainWindow()
+    installLargeIpcCallChannel(
+      ipcMain,
+      (event) => {
+        try {
+          assertMainFrameSender(event, win)
+          return true
+        } catch {
+          return false
+        }
+      },
+      largeIpcCalls,
+    )
     if (app.isPackaged) app.setAsDefaultProtocolClient('copse')
     ipcMain.handle('deep-links:ready', (event) => {
       assertMainFrameSender(event, win)
@@ -1047,6 +1061,16 @@ app
     void taskSupervisor.start().catch((error: unknown) => {
       console.error('[task-supervisor] Startup reconciliation failed:', error)
     })
+    setAcpToolCompletionHandler((completion, prompt) =>
+      agentDispatcher.dispatchMachine({
+        projectId: completion.owner.projectId,
+        threadId: completion.owner.threadId,
+        operationId: completion.operationId,
+        turnTreeId: completion.turnTreeId,
+        ...(completion.alreadyObserved ? { alreadyObserved: completion.alreadyObserved } : {}),
+        payload: { userContent: prompt, invokedSkills: [], priorTodos: [] },
+      }),
+    )
     setBackgroundCompletionWakeHandler((completion) => {
       return agentDispatcher.dispatchMachine({
         projectId: completion.owner.projectId,
