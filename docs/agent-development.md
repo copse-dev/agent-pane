@@ -316,9 +316,9 @@ the session) before deleting a project the app is still writing.
 ## Focused validation
 
 The post-edit hook runs `scripts/hook-file-check.mts` through the Copse, Cursor, and Claude hook
-configs. It auto-applies oxfmt and reports type-unaware ESLint findings. A reported rewrite makes
-the agent's prior view stale, so re-read that file. Type-aware rules and `tsc` remain part of
-`npm run check:local` and the full `npm run check`.
+configs. It auto-applies oxfmt and reports oxlint findings, type-aware rules included. A reported
+rewrite makes the agent's prior view stale, so re-read that file. `tsc` and ESLint, which stays the
+lint gate, remain part of `npm run check:local` and the full `npm run check`.
 
 While iterating, use a path/base-name/glob filter or the test oracle:
 
