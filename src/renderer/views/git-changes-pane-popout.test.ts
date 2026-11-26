@@ -12,6 +12,7 @@ import { applyPopoutSeed, capturePopoutSeed } from '../popout/pane-popout-seed.t
 import { attachDiffState } from '../controller/diff-state.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import type { GitDiffEditor, GitDiffMonaco } from '../monaco/git-diff-viewer.ts'
+import { inertCommentSurface } from '../monaco/commentable-editor.test-support.ts'
 
 // #1704. A pane pop-out loads the same renderer with `?popout=changes` in a
 // second window. The main process pushed the diff queue to the main window only,
@@ -28,6 +29,7 @@ interface Counters {
 
 function makeMonacoStub(counters: Counters): GitDiffMonaco {
   const noopEditor = {
+    ...inertCommentSurface(),
     onKeyDown: (): { dispose(): void } => ({ dispose(): void {} }),
     onDidFocusEditorText: (): { dispose(): void } => ({ dispose(): void {} }),
     getModel: (): null => null,

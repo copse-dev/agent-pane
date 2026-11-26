@@ -133,6 +133,10 @@
       "smoke": null
     },
     {
+      "prefix": "src/main/services/external-sessions/",
+      "smoke": null
+    },
+    {
       "prefix": "src/main/services/git/",
       "smoke": null
     },

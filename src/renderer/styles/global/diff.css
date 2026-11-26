@@ -73,3 +73,92 @@
 .git-stage-status[data-ok='false'] {
   color: var(--error);
 }
+
+/* Line comments on a diff (monaco/diff-line-comments.ts). The "+" sits in the
+   glyph margin of the hovered line; a card under a line is a Monaco view zone. */
+.monaco-editor .diff-line-comment-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.monaco-editor .diff-line-comment-add::before {
+  content: '+';
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius);
+  background: var(--accent-fill);
+  color: var(--text-on-accent);
+  font-family: var(--font-family);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  line-height: 1;
+}
+.diff-line-comment-zone {
+  /* Monaco stacks its text layer over view zones; lift this one so the card's
+     controls take the pointer. The zone holds no text lines to cover. */
+  z-index: 1;
+  /* Monaco sizes the zone to the card's measured height. */
+  padding: var(--spacing-xs) var(--spacing-sm) var(--spacing-xs) 0;
+  box-sizing: border-box;
+}
+.diff-line-comment {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  /* The visible text width, set from the editor (fitToEditor); a zone itself
+     spans the whole scrollable width. */
+  width: min(40rem, var(--diff-line-comment-width, 40rem));
+  box-sizing: border-box;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+  white-space: normal;
+}
+.diff-line-comment-body {
+  /* The comment is content; its buttons are chrome (ui-taste: selection). */
+  user-select: text;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.diff-line-comment-input {
+  width: 100%;
+  min-height: calc(var(--spacing-xl) * 3);
+  box-sizing: border-box;
+  resize: vertical;
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+}
+.diff-line-comment-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-xs);
+}
+.diff-line-comments-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.diff-line-comments-bar[hidden] {
+  display: none;
+}
+.diff-line-comments-count {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}

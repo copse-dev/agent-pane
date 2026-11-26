@@ -8,6 +8,7 @@ import type { ActiveDiff } from '@shared/types/state.ts'
 import { mountGitChangesPane } from './git-changes-pane.ts'
 import type { GitDiffEditor, GitDiffMonaco } from '../monaco/git-diff-viewer.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import { inertCommentSurface } from '../monaco/commentable-editor.test-support.ts'
 
 // Regression: a proposed diff must render even when this pane never received the
 // `agent:show-diff` push carrying its content. The pane mounts a turn after the
@@ -38,6 +39,7 @@ function makeMonacoStub(
   diffDelayMs: (modifiedValue: string) => number = () => 0,
 ): GitDiffMonaco {
   const noopEditor = {
+    ...inertCommentSurface(),
     onKeyDown: (): { dispose(): void } => ({ dispose(): void {} }),
     onDidFocusEditorText: (): { dispose(): void } => ({ dispose(): void {} }),
     getModel: (): null => null,

@@ -2614,6 +2614,20 @@
           2
         ]
       },
+      "threads:import-external-sessions": {
+        "api": "threads.importExternalSessions",
+        "args": [
+          2,
+          2
+        ]
+      },
+      "threads:list-external-sessions": {
+        "api": "threads.listExternalSessions",
+        "args": [
+          1,
+          1
+        ]
+      },
       "threads:list-orphans": {
         "api": "threads.listOrphans",
         "args": [

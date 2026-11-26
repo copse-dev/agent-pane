@@ -39,11 +39,21 @@ import {
   type GitDiffMonaco,
 } from '../monaco/git-diff-viewer.ts'
 import { registerMonacoSelectionToChatShortcut } from '../monaco/selection-to-chat.ts'
+import {
+  attachDiffLineComments,
+  lineCommentBatchLabel,
+  LineCommentDrafts,
+  sendLineCommentBatch,
+  settleLineCommentBatch,
+  type PendingLineCommentBatch,
+} from '../monaco/diff-line-comments.ts'
+import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
+import { getThreadById } from '@shared/store/thread-helpers.ts'
 import { scaledEditorFontSize } from '@shared/ui-scale.ts'
 import { isImageDiff, renderImageDiff } from './git-image-diff.ts'
 import { materialFolderIconUrl } from '../icons/material-file-icons.ts'
 import { imageMimeType, isRasterImagePath } from '@shared/fs/image-path.ts'
-import { selectRightPanelMode } from '../controller/panels.ts'
+import { selectRightPanelMode, rightPanelShows } from '../controller/panels.ts'
 import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 import { afterPendingThreadPersistence } from '../controller/persistence.ts'
 
@@ -120,8 +130,7 @@ function isChangeSelection(seed: unknown): seed is ChangeSelection {
 }
 
 function changesModeActive(store: AppStore): boolean {
-  const { filesPaneOpen, rightPanelMode } = store.getState()
-  return filesPaneOpen && rightPanelMode === 'changes'
+  return rightPanelShows(store.getState(), 'changes')
 }
 
 function getFirstGitChange(status: GitStatusResult): { path: string; staged: boolean } | null {
@@ -339,6 +348,36 @@ export function mountGitChangesPane(
   // last visible lines (and the editor's right-edge chrome) in narrow panes (#1702).
   const approvalBar = uiActions(rejectBtn, acceptBtn, { className: 'diff-approval-bar' })
   approvalBar.hidden = true
+  // Line comments the user has left on this thread's diffs, waiting to go to the
+  // agent as one message. Only the main window has a composer to send them from.
+  const lineComments = new LineCommentDrafts()
+  const commentsCount = el('span', {
+    class: 'diff-line-comments-count',
+    role: 'status',
+  })
+  const discardCommentsBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'ui-btn ui-btn-ghost ui-btn-compact diff-line-comments-discard',
+    },
+    'Discard',
+  )
+  const sendCommentsBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'ui-btn ui-btn-primary ui-btn-compact diff-line-comments-send',
+    },
+    'Send to agent',
+  )
+  const commentsBar = el(
+    'div',
+    { class: 'diff-line-comments-bar' },
+    commentsCount,
+    uiActions(discardCommentsBtn, sendCommentsBtn),
+  )
+  commentsBar.hidden = true
   const imageWrap = el('div', { class: 'git-image-diff-wrap' })
   // File listing shown when the selected change is an untracked directory
   // (`git status` collapses those to one record, so there is no diff to show).
@@ -362,7 +401,16 @@ export function mountGitChangesPane(
     className: 'git-stage-bar',
   })
   stageBar.hidden = true
-  viewerRoot.append(conflictBanner, diffWrap, imageWrap, dirWrap, emptyState, approvalBar, stageBar)
+  viewerRoot.append(
+    conflictBanner,
+    diffWrap,
+    imageWrap,
+    dirWrap,
+    emptyState,
+    commentsBar,
+    approvalBar,
+    stageBar,
+  )
   let stageBusy = false
   /** The path the stage status line speaks about; cleared when another file is picked. */
   let stageStatusPath: string | null = null
@@ -370,6 +418,7 @@ export function mountGitChangesPane(
   let lastFocusedSide: GitLineSelection['side'] = 'new'
 
   let diffEditor: GitDiffEditor | null = null
+  let detachLineComments: (() => void) | null = null
   let pendingSelect: ChangeSelection | null = null
   let selectRequestId = 0
   let diffLoadQueue: Promise<void> = Promise.resolve()
@@ -567,9 +616,73 @@ export function mountGitChangesPane(
         }
         return null
       })
+      if (!isPopoutWindow) {
+        detachLineComments = attachDiffLineComments(diffEditor, lineComments, () => {
+          const owner = lineCommentOwner()
+          if (!owner || !selection || diffWrap.hidden) return null
+          const version =
+            selection.kind === 'git'
+              ? selection.staged
+                ? 'staged'
+                : 'working'
+              : selection.kind === 'committed'
+                ? 'committed'
+                : 'proposed'
+          return { owner: owner.key, path: selection.path, version }
+        })
+      }
     }
     return diffEditor
   }
+
+  function lineCommentOwner(): { key: string; threadId: string } | null {
+    const owner = activeOwner()
+    return owner ? { key: `${owner.projectId}/${owner.threadId}`, threadId: owner.threadId } : null
+  }
+
+  let pendingBatch: PendingLineCommentBatch | null = null
+
+  function syncCommentsBar(): void {
+    const owner = lineCommentOwner()
+    const count = owner ? lineComments.list(owner.key).length : 0
+    commentsBar.hidden = count === 0
+    const waiting = pendingBatch !== null && pendingBatch.owner === owner?.key
+    commentsCount.textContent =
+      count === 0 ? '' : `${lineCommentBatchLabel(count)}${waiting ? ' · in the composer' : ''}`
+  }
+
+  async function sendLineComments(): Promise<void> {
+    const owner = lineCommentOwner()
+    if (!owner) return
+    const send = getPromptAttachmentHandlers()?.sendText
+    if (!send) {
+      showToast('There is no message box to send these comments from. They are kept here.')
+      return
+    }
+    sendCommentsBtn.disabled = true
+    try {
+      pendingBatch = await sendLineCommentBatch(lineComments, owner, send)
+    } finally {
+      sendCommentsBtn.disabled = false
+      syncCommentsBar()
+    }
+  }
+
+  function onMessageAdded(threadId: string, messageId: string): void {
+    if (!pendingBatch) return
+    const message = getThreadById(store, threadId)?.messages.find((m) => m.id === messageId)
+    if (!settleLineCommentBatch(lineComments, pendingBatch, threadId, message)) return
+    pendingBatch = null
+    syncCommentsBar()
+  }
+
+  sendCommentsBtn.addEventListener('click', () => void sendLineComments())
+  discardCommentsBtn.addEventListener('click', () => {
+    const owner = lineCommentOwner()
+    if (!owner) return
+    if (pendingBatch?.owner === owner.key) pendingBatch = null
+    lineComments.clear(owner.key)
+  })
 
   function requireMonaco(): GitDiffMonaco {
     if (monaco === null) throw new Error('Monaco is unavailable while rendering a diff')
@@ -1479,6 +1592,9 @@ export function mountGitChangesPane(
   })
 
   const unsubs = [
+    lineComments.subscribe(syncCommentsBar),
+    store.select(() => lineCommentOwner()?.key ?? null, syncCommentsBar),
+    store.on('message_added', onMessageAdded),
     selectRightPanelMode(store, 'changes', (active) => {
       if (active) void refresh()
     }),
@@ -1591,6 +1707,8 @@ export function mountGitChangesPane(
     unsubs.forEach((u) => {
       u()
     })
+    detachLineComments?.()
+    detachLineComments = null
     diffEditor?.dispose()
     diffEditor = null
   }

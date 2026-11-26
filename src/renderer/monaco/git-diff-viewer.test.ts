@@ -12,6 +12,7 @@ import {
   type GitDiffMonaco,
   type GitDiffViewModel,
 } from './git-diff-viewer.ts'
+import { inertCommentSurface } from './commentable-editor.test-support.ts'
 
 before(() => {
   if (!('ResizeObserver' in globalThis)) {
@@ -85,6 +86,7 @@ function createFakeDiff(): FakeDiff {
   })
 
   const codeEditor = (): GitDiffCodeEditor => ({
+    ...inertCommentSurface(),
     revealLineInCenterIfOutsideViewport: (): void => {
       counts.reveal++
     },
@@ -569,6 +571,7 @@ describe('createGitChangesDiffEditor keeps a single gutter in the inline view', 
 
     const lineNumberModes: unknown[] = []
     const originalEditor: GitDiffCodeEditor = {
+      ...inertCommentSurface(),
       revealLineInCenterIfOutsideViewport: (): void => {},
       getSelection: () => null,
       getModel: () => null,
