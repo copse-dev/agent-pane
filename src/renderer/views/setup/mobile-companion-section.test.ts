@@ -5,6 +5,7 @@ import type { ApiClient } from '../../../preload/api.d.ts'
 import type {
   MobileCompanionAccess,
   MobileCompanionPublicName,
+  MobileCompanionRelay,
   MobileCompanionState,
 } from '../../../shared/types/mobile-companion.ts'
 import { createMobileCompanionSection } from './mobile-companion-section.ts'
@@ -29,6 +30,15 @@ const registered: MobileCompanionPublicName = {
   dns: 'ok',
 }
 
+const relayOff: MobileCompanionRelay = {
+  enabled: false,
+  status: 'off',
+  relay: 'relay.copse.dev',
+  hostname: 'web.abcdefgh2345.u.copse.me',
+  error: null,
+  retryAt: null,
+}
+
 function mockApi(initial: Partial<MobileCompanionState> = {}): {
   api: ApiClient
   state: MobileCompanionState
@@ -51,6 +61,9 @@ function mockApi(initial: Partial<MobileCompanionState> = {}): {
     registerName: string[]
     removeName: number
     recheckNameDns: number
+    relay: boolean[]
+    shellPairing: number
+    clearShellPairing: number
   }
   push: (patch: Partial<MobileCompanionState>) => void
 } {
@@ -89,6 +102,9 @@ function mockApi(initial: Partial<MobileCompanionState> = {}): {
     registerName: [] as string[],
     removeName: 0,
     recheckNameDns: 0,
+    relay: [] as boolean[],
+    shellPairing: 0,
+    clearShellPairing: 0,
   }
   let handler: ((next: MobileCompanionState) => void) | null = null
   const base = createFakeApi()
@@ -139,6 +155,15 @@ function mockApi(initial: Partial<MobileCompanionState> = {}): {
       },
       recheckNameDns: async () => {
         calls.recheckNameDns += 1
+      },
+      setRelayEnabled: async (enabled) => {
+        calls.relay.push(enabled)
+      },
+      createShellPairing: async () => {
+        calls.shellPairing += 1
+      },
+      clearShellPairing: async () => {
+        calls.clearShellPairing += 1
       },
     },
   }
@@ -631,5 +656,126 @@ describe('createMobileCompanionSection', () => {
     )
     assert.equal(select?.value, '192.168.0.191')
     assert.doesNotMatch(section.root.textContent, /virtual-machine or VPN network/)
+  })
+
+  it('offers the relay only once this Mac has a name, and off until chosen', async () => {
+    const unnamed = mockApi({ relay: relayOff })
+    const first = createMobileCompanionSection(unnamed.api)
+    document.body.append(first.root)
+    await first.refresh()
+    assert.equal(first.root.querySelector<HTMLElement>('.mobile-companion-relay')?.hidden, true)
+
+    document.body.innerHTML = ''
+    const { api, calls } = mockApi({ publicName: registered, relay: relayOff })
+    const section = createMobileCompanionSection(api)
+    document.body.append(section.root)
+    await section.refresh()
+    const block = section.root.querySelector<HTMLElement>('.mobile-companion-relay')
+    assert.ok(block)
+    assert.equal(block.hidden, false)
+    const toggle = block.querySelector<HTMLInputElement>('input[name="mobileCompanionRelay"]')
+    assert.ok(toggle)
+    assert.equal(toggle.checked, false)
+    // Pairing at copse.me waits for the relay to be chosen.
+    const add = Array.from(block.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Add this Mac at copse.me',
+    )
+    assert.equal(add?.parentElement?.hidden, true)
+    toggle.checked = true
+    toggle.dispatchEvent(new Event('change'))
+    assert.deepEqual(calls.relay, [true])
+  })
+
+  it('hides the relay block for a Mac that sends no relay state', async () => {
+    const { api } = mockApi({ publicName: registered })
+    const section = createMobileCompanionSection(api)
+    document.body.append(section.root)
+    await section.refresh()
+    assert.equal(section.root.querySelector<HTMLElement>('.mobile-companion-relay')?.hidden, true)
+  })
+
+  it('reports the tunnel and shows a one-time copse.me code', async () => {
+    const { api, calls, push } = mockApi({
+      enabled: true,
+      running: true,
+      publicName: registered,
+      relay: { ...relayOff, enabled: true, status: 'connected' },
+    })
+    const section = createMobileCompanionSection(api)
+    document.body.append(section.root)
+    await section.refresh()
+    const status = section.root.querySelector<HTMLElement>('.mobile-companion-relay-status')
+    assert.match(status?.textContent ?? '', /Connected to relay\.copse\.dev/)
+    assert.match(status?.textContent ?? '', /web\.abcdefgh2345\.u\.copse\.me/)
+    const add = Array.from(section.root.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Add this Mac at copse.me',
+    )
+    assert.ok(add)
+    add.click()
+    assert.equal(calls.shellPairing, 1)
+
+    push({
+      shellPairing: {
+        url: 'https://copse.me/add#g=abc',
+        qrSvg: '<svg data-qr="shell"></svg>',
+        expiresAt: Date.now() + 600_000,
+      },
+    })
+    const qr = section.root.querySelector<HTMLElement>('#mobile-companion-shell-qr')
+    assert.ok(qr)
+    assert.equal(qr.hidden, false)
+    assert.ok(qr.querySelector('svg[data-qr="shell"]'))
+    assert.match(qr.textContent, /works once and expires at/)
+    const done = Array.from(qr.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Done',
+    )
+    done?.click()
+    assert.equal(calls.clearShellPairing, 1)
+
+    // An expired code is never shown, even before main clears it.
+    push({
+      shellPairing: {
+        url: 'https://copse.me/add#g=abc',
+        qrSvg: '<svg data-qr="shell"></svg>',
+        expiresAt: Date.now() - 1,
+      },
+    })
+    assert.equal(
+      section.root.querySelector<HTMLElement>('#mobile-companion-shell-qr')?.hidden,
+      true,
+    )
+  })
+
+  it('explains a refused or waiting tunnel', async () => {
+    const { api, push } = mockApi({
+      publicName: registered,
+      relay: {
+        ...relayOff,
+        enabled: true,
+        status: 'retrying',
+        error: 'The relay refused this Mac.',
+        retryAt: Date.now() + 60_000,
+      },
+    })
+    const section = createMobileCompanionSection(api)
+    document.body.append(section.root)
+    await section.refresh()
+    const status = (): string =>
+      section.root.querySelector<HTMLElement>('.mobile-companion-relay-status')?.textContent ?? ''
+    assert.match(status(), /The relay refused this Mac\. Trying again at/)
+    push({ relay: { ...relayOff, enabled: true, status: 'waiting' } })
+    assert.match(status(), /while Mobile Companion is on/)
+  })
+
+  it('tells the desktop when a pairing phone came through copse.me', async () => {
+    const { api } = mockApi({
+      publicName: registered,
+      pairing: { id: 'p1', label: 'Away phone', code: '123456', trustedName: true, relayed: true },
+    })
+    const section = createMobileCompanionSection(api)
+    document.body.append(section.root)
+    await section.refresh()
+    const banner = section.root.querySelector<HTMLElement>('.mobile-companion-pairing-banner')
+    assert.match(banner?.textContent ?? '', /through the Copse relay \(copse\.me\)/)
   })
 })

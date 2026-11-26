@@ -86,11 +86,11 @@ describe('titlebar panel overflow', () => {
         expect(geometry.bottom).toBeLessThanOrEqual(720)
       }
       await saveAppScreenshot(`titlebar-overflow-${String(width)}.png`, { width, height: 720 })
-      if (hiddenLabels.includes('PRs')) {
+      if (hiddenLabels.includes('Review')) {
         if (!(await $('#titlebar .portrait-panel-overflow-menu').isDisplayed()))
           await overflow.click()
-        await $('#titlebar .portrait-panel-overflow-menu').$('button=PRs').click()
-        await expect($('#pr-list-host')).toBeDisplayed()
+        await $('#titlebar .portrait-panel-overflow-menu').$('button=Review').click()
+        await expect($('.review-header')).toBeDisplayed()
       }
     })
   }

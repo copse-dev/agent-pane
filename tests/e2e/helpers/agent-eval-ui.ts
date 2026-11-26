@@ -1,6 +1,6 @@
 import { $, browser } from '@wdio/globals'
 
-/** Accept through the current Changes UI; a single proposal has no bulk action. */
+/** Accept through local review; a single proposal has no bulk action. */
 export async function acceptEvalProposals(projectId: string): Promise<boolean> {
   const threadId = await browser.execute(
     () => document.querySelector<HTMLElement>('.chat-row.selected')?.dataset['threadId'],
@@ -12,10 +12,11 @@ export async function acceptEvalProposals(projectId: string): Promise<boolean> {
   )
   if (queuedCount === 0) return false
   if (!(await $('#git-changes-host').isDisplayed())) {
-    await $('.titlebar-btn[aria-label="Open changes"]').click()
+    await $('.titlebar-btn[aria-label="Open review"]').click()
   }
   if (queuedCount > 1) {
-    const acceptAll = $('#git-changes-host').$('button*=Accept all')
+    // The local list's header, with its bulk actions, sits in the shared review header.
+    const acceptAll = $('.review-header .git-changes-header').$('button*=Accept all')
     await acceptAll.waitForDisplayed({ timeout: 10_000 })
     await acceptAll.click()
   } else {

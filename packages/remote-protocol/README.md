@@ -30,8 +30,9 @@ schemas, so an accidental format change fails here before it fails against the s
   again.
 - **`messages.ts`**: bodies for `/v1/register`, `/v1/address`, `/v1/certificate` and
   `/v1/device`, plus the shell endpoints.
-- **`grant.ts`** and **`tunnel.ts`**: label grants and the relay handshake for phase 2. Nothing
-  in the app uses them yet.
+- **`grant.ts`** and **`tunnel.ts`**: label grants (the one-time `copse.me` pairing code) and the
+  relay tunnel handshake for phase 2, used by `src/main/services/remote-names/names-service.ts` and
+  `relay-tunnel.ts`.
 
 The app's client lives in `src/main/services/remote-names/`; see
 [`docs/remote-access.md`](../../docs/remote-access.md).

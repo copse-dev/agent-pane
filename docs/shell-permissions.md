@@ -1182,6 +1182,39 @@ Later project-sandbox shell commands receive read-only cache access and matching
 cache variables without changing their install policy. Offline preparation blocks network for every
 subprocess using kernel isolation with no proxy ports or sockets; other agents' network grants
 cannot widen this boundary. Missing runtime versions or offline inputs fail with remediation.
+Node preparation resolves PATH directory aliases and grants the canonical executable files and recognized
+npm/Corepack/package-manager implementation trees. When the command is a Volta, asdf, or mise shim
+in that manager's own shim directory, it also grants the manager's shim and install subtrees
+(Volta `bin` and `tools`; asdf `shims`, `installs`, `plugins`, `bin`, and `lib`; mise `shims`,
+`installs`, and `plugins`), read-only, since the shim runs an install it cannot otherwise reach. It
+does not grant a whole fnm registry, installation parent, manager data root, or home directory.
+Both the manager root and every subtree are checked after resolving aliases. A subtree that leaves
+the canonical manager root, resolves to that root itself, or names a credential store earns no
+recursive grant, including through its original alias. Relocate the whole manager data root rather
+than linking an individual install subtree outside it. Executable aliases into credential paths
+are not granted or linked into the preparation PATH.
+Toolchain file targets must be regular executables. Known Codex/Claude and configured
+Copse/XDG/Cargo credential stores, their aliases and ancestors are excluded. Grants name the
+checked canonical paths, omitting extra exceptions already covered by the workspace or cache.
+This is a point-in-time check: replacing a canonical path or its ancestors before ASRT constructs
+the profile still races; it does not pin filesystem identity atomically.
+Known credential-location overrides checked in both the host and child environment are
+`CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `CLAUDE_SECURESTORAGE_CONFIG_DIR`, `GH_CONFIG_DIR`,
+`DOCKER_CONFIG`, `GNUPGHOME`, `AWS_SHARED_CREDENTIALS_FILE`, `AWS_CONFIG_FILE`,
+`GOOGLE_APPLICATION_CREDENTIALS`, `CLOUDSDK_CONFIG`, `NPM_CONFIG_USERCONFIG`,
+`npm_config_userconfig`, `PIP_CONFIG_FILE`, each `KUBECONFIG` entry, XDG credential locations under
+`XDG_CONFIG_HOME`, Cargo credential/config files under `CARGO_HOME`, and Copse stores resolved
+through `COPSE_DIR`, `COPSE_PANEL_USER_DATA` and `COPSE_WORKSPACE_DIR`. This is a bounded known-store
+policy, not arbitrary secret discovery; unclassified data inside an allowed cache remains readable.
+Neither sandbox can start fnm's own PATH symlinks. bubblewrap bind-mounts a granted file through
+its symlink, which turns fnm's `bin/npm` into a copy whose relative requires break. Seatbelt checks
+read access on every symlink the kernel follows, not only on its target, so `env node` (every npm
+and Corepack shebang) cannot start `bin/node` inside the denied installation although its canonical
+executable is granted; `execvp` then reports `env: node: No such file or directory`. On both
+platforms the contained process therefore finds these commands first through private symlinks in
+its scratch directory that point at the canonical executables. Only the confined command gets them
+on its PATH: contained steps can write scratch, and the unconfined wrapper shell looks up ASRT's
+bare `env` launcher on its own PATH before the sandbox applies.
 Runtime installation/version switching and Windows sandbox support remain separate capabilities.
 
 ## Guarded YOLO
@@ -1579,6 +1612,38 @@ directory: Volta (`$VOLTA_HOME/bin`, default `~/.volta/bin`) adds `$VOLTA_HOME/t
 `$ASDF_DATA_DIR`, plus `~/.tool-versions` and `~/.asdfrc`. A manager root that is home or an ancestor
 of it adds nothing. Shims that resolve through their manager's whole directory (nodenv, `mise` in
 shim mode) get only the shim directory, so their `node` fails contained and offers to run outside.
+
+It also re-allows, read-only and only when the directory exists, the installed package-manager and
+interpreter caches: Corepack's cache (`$COREPACK_HOME`, else `${XDG_CACHE_HOME:-~/.cache}/node/corepack`,
+plus `~/Library/Caches/node/corepack` on macOS), `~/.bun/bin`, `~/.pyenv/versions`, and
+`~/.local/share/uv/python`. A Corepack-pinned pnpm or yarn, `bun test`, and a uv or pyenv `.venv`
+whose `bin/python` links into those installs therefore start contained instead of failing and
+offering to run outside. None of these roots is writable (a writable shim on `PATH` would run later
+outside the sandbox), and a root is dropped when it is or contains home, or contains or sits inside
+a credential path (`~/.npmrc`, `~/.yarnrc.yml`, `~/.config/pnpm/rc`, `~/.bunfig.toml`,
+`~/.config/uv`, `~/.pypirc`, `~/.config/pip`, `~/.netrc`), a shared sensitive-path policy credential
+store such as `~/.ssh` or `~/.config/gh`, or Codex/Claude profile data. Copse's user-data, LAN and
+conversation stores are protected at their configured locations; its managed Corepack cache stays
+eligible. Credential-store aliases are resolved too, so linking a credential directory into a cache
+does not make its canonical contents eligible. These checks also apply to cache-root aliases.
+Read grants use the checked canonical destination, so replacing the original alias cannot redirect
+a later ASRT normalization. Replacing the canonical path or an ancestor before profile construction
+still races; this check does not pin filesystem identity atomically.
+Known credential-location overrides checked in both the host and child environment are
+`CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `CLAUDE_SECURESTORAGE_CONFIG_DIR`, `GH_CONFIG_DIR`,
+`DOCKER_CONFIG`, `GNUPGHOME`, `AWS_SHARED_CREDENTIALS_FILE`, `AWS_CONFIG_FILE`,
+`GOOGLE_APPLICATION_CREDENTIALS`, `CLOUDSDK_CONFIG`, `NPM_CONFIG_USERCONFIG`,
+`npm_config_userconfig`, `PIP_CONFIG_FILE`, each `KUBECONFIG` entry, XDG credential locations under
+`XDG_CONFIG_HOME`, Cargo credential/config files under `CARGO_HOME`, and Copse stores resolved
+through `COPSE_DIR`, `COPSE_PANEL_USER_DATA` and `COPSE_WORKSPACE_DIR`. This is a bounded known-store
+policy, not arbitrary secret discovery; unclassified data inside an allowed cache remains readable.
+
+Everything inside an allowed root is readable, so a pyenv or conda prefix's own `pip.conf`, `pip.ini`, or `.condarc`
+can carry an index or channel token, and a contained command can read it. That is accepted, because
+the sandbox cannot deny a file pattern inside a read-only tree on both platforms (bubblewrap binds
+concrete paths). Keep such tokens in the user-level files above, which stay denied. Shells in a
+worktree with a valid preparation plan point `COREPACK_HOME` at Copse's Corepack cache only after
+preparation has stamped the worktree; before that, Copse's cache is empty, so they keep the user's.
 
 - `permission-policy.ts`: pure permission decisions, MCP decisions, outside-sandbox classification,
   and prompt-body formatting.

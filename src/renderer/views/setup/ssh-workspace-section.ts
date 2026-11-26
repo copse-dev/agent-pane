@@ -4,15 +4,12 @@ import type { SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
 import { el, clear } from '../../dom/helpers.ts'
 import { setInlineStatus } from '../../dom/inline-status.ts'
 import {
-  emptySshHostDraft,
   importSshConfigHosts,
-  parseSshHostDraft,
   parseSshWorkspaceHosts,
   removeHost,
-  slugifyHostId,
   upsertHost,
-  type SshHostDraft,
 } from './ssh-host-helpers.ts'
+import { createSshHostFields } from './ssh-host-fields.ts'
 
 export { slugifyHostId, upsertHost, removeHost } from './ssh-host-helpers.ts'
 
@@ -42,64 +39,12 @@ export function createSshWorkspaceSection(
     el('option', { value: 'strict' }, 'Strict: reject unknown host keys'),
   )
 
-  const draft: SshHostDraft = emptySshHostDraft()
-  let idTouched = false
-
-  // Every field names its type so it takes the Settings field recipe (width cap,
-  // target height), which is keyed on `input[type=…]`. Port stays `text` with a
-  // numeric keypad hint: `type="number"` would hand back '' for "22garbage" and
-  // the parser could no longer tell a typo from an empty field.
-  const idInput = el('input', { type: 'text', name: 'sshHostId', placeholder: 'my-server' })
-  const labelInput = el('input', { type: 'text', name: 'sshHostLabel', placeholder: 'Production' })
-  const hostInput = el('input', {
-    type: 'text',
-    name: 'sshHostHost',
-    placeholder: 'example.com or ~/.ssh/config alias',
-  })
-  const userInput = el('input', { type: 'text', name: 'sshHostUser', placeholder: 'ubuntu' })
-  const portInput = el('input', {
-    type: 'text',
-    name: 'sshHostPort',
-    placeholder: '22',
-    inputmode: 'numeric',
-  })
-  const identityInput = el('input', {
-    type: 'text',
-    name: 'sshHostIdentity',
-    placeholder: '~/.ssh/id_ed25519',
-  })
-  const draftInputs: Partial<Record<keyof SshHostDraft, HTMLInputElement>> = {
-    id: idInput,
-    label: labelInput,
-    host: hostInput,
-    user: userInput,
-    port: portInput,
-    identityFile: identityInput,
-  }
-  /** Mark exactly the fields a failed save was about; editing one clears its mark. */
-  function markInvalid(fields: readonly (keyof SshHostDraft)[]): void {
-    for (const [field, input] of Object.entries(draftInputs)) {
-      if (fields.some((name) => name === field)) input.setAttribute('aria-invalid', 'true')
-      else input.removeAttribute('aria-invalid')
-    }
-  }
-  for (const input of Object.values(draftInputs)) {
-    input.addEventListener('input', () => {
-      input.removeAttribute('aria-invalid')
-    })
-  }
-  const forwardInput = el('input', { type: 'checkbox', name: 'sshHostForwardAgent' })
+  const hostFields = createSshHostFields()
 
   const form = el(
     'div',
     { class: 'ssh-host-form' },
-    el('label', {}, 'Id ', idInput),
-    el('label', {}, 'Label ', labelInput),
-    el('label', {}, 'Host ', hostInput),
-    el('label', {}, 'User ', userInput),
-    el('label', {}, 'Port ', portInput),
-    el('label', {}, 'Identity file ', identityInput),
-    el('label', { class: 'checkbox-label' }, forwardInput, ' Forward SSH agent'),
+    ...hostFields.fields,
     el(
       'div',
       { class: 'provider-actions' },
@@ -115,37 +60,7 @@ export function createSshWorkspaceSection(
   }
 
   function clearDraft(): void {
-    Object.assign(draft, emptySshHostDraft())
-    markInvalid([])
-    idTouched = false
-    idInput.value = ''
-    labelInput.value = ''
-    hostInput.value = ''
-    userInput.value = ''
-    portInput.value = ''
-    identityInput.value = ''
-    forwardInput.checked = false
-    idInput.disabled = false
-  }
-
-  function fillDraft(host: SshWorkspaceHost): void {
-    markInvalid([])
-    draft.id = host.id
-    draft.label = host.label
-    draft.host = host.host
-    draft.user = host.user ?? ''
-    draft.port = host.port !== undefined ? String(host.port) : ''
-    draft.identityFile = host.identityFile ?? ''
-    draft.forwardAgent = host.forwardAgent === true
-    idTouched = true
-    idInput.value = host.id
-    labelInput.value = host.label
-    hostInput.value = host.host
-    userInput.value = draft.user
-    portInput.value = draft.port
-    identityInput.value = draft.identityFile
-    forwardInput.checked = draft.forwardAgent
-    idInput.disabled = true
+    hostFields.reset()
   }
 
   async function renderHosts(signal?: AbortSignal): Promise<void> {
@@ -202,7 +117,7 @@ export function createSshWorkspaceSection(
       actions.append(el('button', { type: 'button', class: 'ssh-host-delete' }, 'Remove'))
       row.append(summary, actions)
       row.querySelector('.ssh-host-edit')?.addEventListener('click', () => {
-        fillDraft(host)
+        hostFields.edit(host)
       })
       row.querySelector('.ssh-host-delete')?.addEventListener('click', () => {
         void api.sshWorkspace
@@ -213,42 +128,14 @@ export function createSshWorkspaceSection(
     }
   }
 
-  idInput.addEventListener('input', () => {
-    idTouched = true
-    draft.id = idInput.value
-  })
-  labelInput.addEventListener('input', () => {
-    draft.label = labelInput.value
-    if (!idTouched && !idInput.disabled) idInput.value = slugifyHostId(draft.label)
-    draft.id = idInput.value
-  })
-  hostInput.addEventListener('input', () => {
-    draft.host = hostInput.value
-  })
-  userInput.addEventListener('input', () => {
-    draft.user = userInput.value
-  })
-  portInput.addEventListener('input', () => {
-    draft.port = portInput.value
-  })
-  identityInput.addEventListener('input', () => {
-    draft.identityFile = identityInput.value
-  })
-  forwardInput.addEventListener('change', () => {
-    draft.forwardAgent = forwardInput.checked
-  })
-
   form.querySelector('.ssh-host-save')?.addEventListener('click', () => {
     void (async (): Promise<void> => {
-      const parsed = parseSshHostDraft(draft)
+      const existing = parseSshWorkspaceHosts(await api.settings.get('sshWorkspaceHosts'))
+      const parsed = hostFields.parse(existing)
       if (!parsed.ok) {
-        markInvalid(parsed.fields)
         setInlineStatus(status, 'error', parsed.error)
         return
       }
-      markInvalid([])
-      const raw = await api.settings.get('sshWorkspaceHosts')
-      const existing = parseSshWorkspaceHosts(raw)
       await persistHosts(upsertHost(existing, parsed.host))
       setInlineStatus(status, 'ok', `Saved host “${parsed.host.label}”.`)
       clearDraft()

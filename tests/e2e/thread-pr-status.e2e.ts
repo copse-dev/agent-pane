@@ -1,3 +1,4 @@
+import { openReviewPicker } from './helpers/review-pane.ts'
 import { mkdirSync } from 'node:fs'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
@@ -129,7 +130,7 @@ describe('thread GitHub PR status icon', () => {
       await $('.titlebar-panel-controls .titlebar-btn[aria-label="Toggle right panel"]').click()
       await pane.waitForDisplayed({ timeout: 10_000 })
     }
-    await $('[aria-label="Open pull requests"]').click()
+    await openReviewPicker()
     const merged = await $(
       '.pr-list-row[data-pr-section="linked"] .pr-list-status.is-merged',
     ).getElement()
@@ -175,10 +176,12 @@ describe('thread GitHub PR status icon', () => {
   it('shows a red conflict X in both panels when details establish conflicts', async function () {
     this.timeout(90_000)
     await $('.chat-row[data-thread-id="e2e-pr-conflict-thread"]').click()
+    await openReviewPicker()
     const linked = await $('.pr-list-row[data-pr-section="linked"]').getElement()
     await expect(linked.$('.pr-list-number')).toHaveText('#100')
     await linked.click()
     await expect($('.pr-viewer-title')).toHaveText('Resolve conflicting changes')
+    await openReviewPicker()
     const sidebar = await $('.chat-row.selected .chat-pr-status.has-conflicts').getElement()
     const row = await $(
       '.pr-list-row[data-pr-section="linked"] .pr-list-status.has-conflicts',

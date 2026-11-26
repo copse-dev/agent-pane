@@ -216,7 +216,7 @@ describe('Activity after an admitted machine continuation', function () {
     await $('.activity-panel-close').click()
 
     if (!(await $('#git-changes-host').isDisplayed())) {
-      await $('.titlebar-btn[aria-label="Open changes"]').click()
+      await $('.titlebar-btn[aria-label="Open review"]').click()
     }
     const accept = $('#git-diff-viewer-host .diff-accept-btn')
     await accept.waitForDisplayed({ timeout: 15_000 })
