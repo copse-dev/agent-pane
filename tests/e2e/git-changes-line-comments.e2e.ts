@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
+import { acceptProtectedPrompt } from './helpers/composer.ts'
 import { installMockScenario, expectAssistantReply } from './helpers/mock-scenario.ts'
 import { prepareE2eScreenshot, savePreparedAppScreenshot } from './helpers/screenshot.ts'
 import {
@@ -127,7 +128,22 @@ describe('Changes line comments', function () {
     await sendAnyway.waitForDisplayed({ timeout: 15_000 })
     await expect($('.diff-line-comments-count')).toHaveText('1 review comment · in the composer')
     await expect($('#git-diff-viewer-host .diff-line-comment-body')).toHaveText(COMMENT)
+    const mainHandle = await browser.getWindowHandle()
+    const handlesBefore = await browser.getWindowHandles()
     await sendAnyway.click()
+    // The batch is a human prompt, so it crosses the native protected review.
+    await browser.waitUntil(
+      async () =>
+        (await browser.getWindowHandles()).some((handle) => !handlesBefore.includes(handle)),
+      { timeout: 15_000, timeoutMsg: 'Expected the comment batch to open protected review' },
+    )
+    const reviewHandle = (await browser.getWindowHandles()).find(
+      (handle) => !handlesBefore.includes(handle),
+    )
+    if (!reviewHandle) throw new Error('The protected review window is missing')
+    await browser.switchToWindow(reviewHandle)
+    await expect($('#protected-prompt-text')).toHaveValue(BATCH)
+    await acceptProtectedPrompt(mainHandle, handlesBefore)
     await scenario.waitForComplete()
     await expectAssistantReply('Moved the value into config.')
     await expect($('.msg-user')).toHaveText(expect.stringContaining(COMMENT))
