@@ -31,6 +31,9 @@ export const CHECKOUT_NEUTRAL_TOOLS = new Set<string>([
   'update_todos',
   'suggest_model',
   'advisor',
+  // A code cell runs in its own container. The tools it calls go back through
+  // the registry one by one, and each gets this same check there.
+  'run_code',
 ])
 
 export interface DeferredCheckoutToolCall {

@@ -14,6 +14,7 @@ import {
   syncModelClassifierTools,
   syncOkfMemoryTools,
   syncOrchestrationStrategyTools,
+  syncCodeModeTools,
   syncWebSearchTools,
   syncReadTerminalTools,
   syncRoadmapPlanTools,
@@ -594,6 +595,7 @@ describe('experimental setting tool syncs', () => {
   afterEach(async () => {
     await setSetting('modelClassifierEnabled', false)
     await setSetting('orchestrationStrategyEnabled', false)
+    await setSetting('codeModeEnabled', false)
   })
 
   const cases = [
@@ -603,6 +605,7 @@ describe('experimental setting tool syncs', () => {
       tool: 'delegate_step',
       sync: syncOrchestrationStrategyTools,
     },
+    { setting: 'codeModeEnabled', tool: 'run_code', sync: syncCodeModeTools },
   ] as const
 
   for (const { setting, tool, sync } of cases) {
@@ -636,6 +639,7 @@ describe('ACP bridge exposure decisions', () => {
   afterEach(async () => {
     await setSetting('modelClassifierEnabled', false)
     await setSetting('orchestrationStrategyEnabled', false)
+    await setSetting('codeModeEnabled', false)
     deleteApiKey('openai')
     setGhAvailableForTest(null)
     setDefaultPluginRegistry(null)
@@ -645,6 +649,7 @@ describe('ACP bridge exposure decisions', () => {
     setDefaultPluginRegistry(createFirstPartyPluginRegistry())
     await setSetting('modelClassifierEnabled', true)
     await setSetting('orchestrationStrategyEnabled', true)
+    await setSetting('codeModeEnabled', true)
     setApiKey('openai', 'test-key')
     setGhAvailableForTest(true)
     const registry = createRegistry()
@@ -682,6 +687,9 @@ describe('ACP bridge exposure decisions', () => {
       // The bridge returns text/images and would drop this tool's
       // visualEvidence payload instead of publishing the durable artifact.
       'present_visual_evidence',
+      // A cell's tool calls re-enter this registry inside the native turn's
+      // async context (gate, hooks, thread root); a bridged call carries none.
+      'run_code',
     ])
     const undecided = registry
       .names()
@@ -706,6 +714,7 @@ describe('ACP bridge exposure decisions', () => {
     setDefaultPluginRegistry(plugins)
     await setSetting('modelClassifierEnabled', true)
     await setSetting('orchestrationStrategyEnabled', true)
+    await setSetting('codeModeEnabled', true)
     await setSetting('browserToolsEnabled', true)
     await setSetting('webSearchProvider', 'tavily')
     setApiKey('tavily', 'tavily-fixture')
@@ -759,6 +768,7 @@ describe('ACP bridge exposure decisions', () => {
       assert.deepEqual(rejected, [], 'every tool needs a top-level object input schema')
     } finally {
       await setSetting('browserToolsEnabled', BROWSER_TOOLS_DEFAULT_ENABLED)
+      await setSetting('codeModeEnabled', false)
       await setSetting('webSearchProvider', 'none')
       deleteApiKey('tavily')
       setSkillsForTest([])

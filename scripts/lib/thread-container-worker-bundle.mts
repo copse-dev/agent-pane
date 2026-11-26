@@ -62,3 +62,29 @@ export async function bundleHarborWorker(outfile: string): Promise<string> {
   }
   return await bundleWorkerEntry(HARBOR_WORKER_ENTRY, target)
 }
+
+/**
+ * Bundle code mode's guest runner exactly as `pnpm run build` does, for its
+ * integration test (`code-cell.integration.test.ts`), which builds an image
+ * without a built `dist/`. Entry and externals come from the shared list.
+ */
+export async function bundleCodeCellRunner(outfile: string): Promise<string> {
+  const bundle = STANDALONE_MAIN_BUNDLES.find((entry) =>
+    entry.outfile.endsWith('code-cell-runner.cjs'),
+  )
+  if (!bundle) throw new Error('the code-cell runner is not registered in main-bundles.mts')
+  await esbuild.build({
+    entryPoints: [resolve(bundle.entry)],
+    outfile,
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    sourcemap: false,
+    target: 'node22',
+    external: bundle.external ?? [],
+    alias: { '@shared': resolve('./src/shared') },
+    define: { __COPSE_TEST_SCENARIOS__: 'false' },
+    logLevel: 'warning',
+  })
+  return outfile
+}

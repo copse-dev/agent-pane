@@ -59,6 +59,7 @@ import {
   registerSkillTools,
   syncModelClassifierTools,
   syncOrchestrationStrategyTools,
+  syncCodeModeTools,
   syncImageGenerationTools,
   syncWebSearchTools,
   syncReadTerminalTools,
@@ -66,6 +67,10 @@ import {
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
 import { MODEL_CLASSIFIER_ENABLED_SETTING } from '../services/providers/model-classifier.ts'
 import { ORCHESTRATION_STRATEGY_ENABLED_SETTING } from '../services/orchestration-strategy.ts'
+import {
+  CODE_MODE_ENABLED_SETTING,
+  syncCodeCellPool,
+} from '../services/code-mode/code-mode-service.ts'
 import { applyAppIcon } from '../app-icon.ts'
 import {
   createMainWindow,
@@ -133,6 +138,14 @@ export function registerSettingsHandlers(win: BrowserWindow, registry: ToolRegis
     if (changedKeys.has(MODEL_CLASSIFIER_ENABLED_SETTING)) syncModelClassifierTools(registry)
     if (changedKeys.has(ORCHESTRATION_STRATEGY_ENABLED_SETTING))
       syncOrchestrationStrategyTools(registry)
+    if (changedKeys.has(CODE_MODE_ENABLED_SETTING)) {
+      syncCodeModeTools(registry)
+      // Warming a spare or removing every container is background work; the
+      // setting is saved either way.
+      void syncCodeCellPool().catch((error: unknown) => {
+        console.error('[code-mode] could not follow the setting:', error)
+      })
+    }
     if (changedKeys.has(DEVELOPER_MODE_SETTING)) {
       const win = getMainWindow()
       if (win)

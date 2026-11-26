@@ -469,6 +469,15 @@ export class ToolRegistry {
     return this.tools.has(name)
   }
 
+  /**
+   * Who authors a registered tool's results, or undefined for an unknown name.
+   * A caller that hands those results on under its own name (a code cell's
+   * output) reads this to keep an external result marked as external.
+   */
+  provenanceOf(name: string): ToolProvenance | undefined {
+    return this.tools.get(name)?.provenance
+  }
+
   names(): string[] {
     return Array.from(this.tools.keys())
   }

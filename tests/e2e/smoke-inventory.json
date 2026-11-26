@@ -101,6 +101,10 @@
       "smoke": null
     },
     {
+      "prefix": "src/main/services/code-mode/",
+      "smoke": null
+    },
+    {
       "prefix": "src/main/services/container-runtime/",
       "smoke": null
     },
