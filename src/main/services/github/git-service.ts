@@ -1128,6 +1128,17 @@ async function commitRefExists(ref: string, root: string): Promise<boolean> {
   return code === 0
 }
 
+/** True only when a full hexadecimal SHA resolves to a commit in this repository. */
+export async function commitShaExists(sha: string, root: string): Promise<boolean> {
+  if (!/^[a-f0-9]{40}$/i.test(sha)) return false
+  const { stdout, code } = await runGitRead(
+    ['rev-parse', '--verify', '--quiet', '--end-of-options', `${sha}^{commit}`],
+    root,
+    { env: { GIT_NO_REPLACE_OBJECTS: '1' } },
+  )
+  return code === 0 && stdout.trim().toLowerCase() === sha.toLowerCase()
+}
+
 /** True when `ancestor` is a real ancestor of (or equal to) `ref`. */
 async function isAncestor(ancestor: string, ref: string, root: string): Promise<boolean> {
   const { code } = await runGitRead(['merge-base', '--is-ancestor', ancestor, ref], root)
