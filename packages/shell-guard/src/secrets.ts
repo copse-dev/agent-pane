@@ -14,7 +14,7 @@ import { commandName } from './shell-argv.ts'
  * workspace. Templates (`.env.example`, `.env.sample`, …) and public keys hold none.
  */
 const SECRET_FILE =
-  /^(?:\.env(?:\.(?!(?:example|sample|template|dist|defaults?|schema)$)[\w.-]+)?|\.envrc|\.netrc|\.npmrc|\.pypirc|\.git-credentials|credentials(?:\.json)?|secrets?\.(?:json|ya?ml|toml|env)|id_(?:rsa|dsa|ecdsa|ed25519)|[\w.-]+\.(?:pem|key|p12|pfx|jks|keystore|ppk))$/i
+  /^(?:\.env(?:\.(?!(?:example|sample|template|dist|defaults?|schema)$)[\w.-]+)?|\.envrc|\.netrc|\.npmrc|\.pypirc|\.git-credentials|credentials(?:\.json)?|secrets?\.(?:json|ya?ml|toml|env)|id_(?:rsa|dsa|ecdsa|ed25519)(?![\w.-]*\.pub$)[\w.-]*|[\w.-]+\.(?:pem|key|p12|pfx|jks|keystore|ppk))$/i
 
 /** Values a flag or `@file` form wraps a path in: `--env-file=.env`, `-d @.env`. */
 function pathCandidates(token: string): string[] {

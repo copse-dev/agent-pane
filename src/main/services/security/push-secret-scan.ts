@@ -41,6 +41,10 @@ export async function outgoingPushSecretReason(
       'log',
       '--name-only',
       '--no-renames',
+      // Merges print nothing by default, so a file added in a merge
+      // resolution would go unseen. Against the first parent, a merge shows
+      // everything it brings in.
+      '--diff-merges=first-parent',
       '--format=',
       ...range,
     ])
@@ -50,7 +54,18 @@ export async function outgoingPushSecretReason(
     }
     const patch = await internalGitRaw(
       root,
-      ['log', '-p', '--no-color', '--no-renames', '--format=', ...range],
+      [
+        'log',
+        '-p',
+        // A token in a file git calls binary would otherwise read as
+        // "Binary files differ". Bounded by MAX_PATCH_BYTES either way.
+        '--text',
+        '--diff-merges=first-parent',
+        '--no-color',
+        '--no-renames',
+        '--format=',
+        ...range,
+      ],
       { maxBuffer: MAX_PATCH_BYTES },
     )
     const added = patch

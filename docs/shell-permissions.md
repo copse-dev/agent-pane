@@ -556,7 +556,9 @@ ref of the push's remotes has, and asks if one touches a secret file (the read t
 `.env*`, `.netrc`, keys, `*.pem`, credentials files) or adds a high-confidence token
 (`redactSecrets`' GitHub, cloud and provider key shapes, PEM private keys). More than 500 outgoing
 commits, or history git cannot read, asks too. Git runs through `internalGit`, so the checkout's
-config cannot choose a program, with external diff and textconv off.
+config cannot choose a program, with external diff and textconv off. Merges are diffed against
+their first parent, so a file added in a merge resolution is seen, and binary files are scanned as
+text.
 
 Every one of these hosts accepts writes from anyone holding a token, so the boundary is that only
 the recognised tool runs while the egress is open, not the host name. For GitHub the scoped command

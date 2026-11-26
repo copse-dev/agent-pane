@@ -95,6 +95,53 @@ describe('outgoingPushSecretReason', () => {
     }
   })
 
+  it('sees a token inside a file git treats as binary', async () => {
+    const root = repo()
+    try {
+      commit(root, 'logo.png', `\x89PNG\r\n\x1a\n\0\0ghp_${'a1B2'.repeat(9)}\0`)
+      assert.match((await outgoingPushSecretReason(root, ['origin'])) ?? '', /token-shaped/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('sees a secret added only in a merge resolution', async () => {
+    const root = repo()
+    const git = (...args: string[]): void => {
+      execFileSync(
+        'git',
+        [
+          '-c',
+          'user.name=T',
+          '-c',
+          'user.email=t@example.invalid',
+          '-c',
+          'commit.gpgsign=false',
+          ...args,
+        ],
+        { cwd: root, stdio: 'pipe' },
+      )
+    }
+    try {
+      git('checkout', '-q', '-b', 'side')
+      commit(root, 'side.ts', 'export const side = 1\n')
+      git('checkout', '-q', '-')
+      commit(root, 'main.ts', 'export const main = 1\n')
+      git('merge', '-q', '--no-commit', 'side')
+      writeFileSync(join(root, '.env.production'), 'API=1\n')
+      writeFileSync(join(root, 'cfg.ts'), `export const t = 'ghp_${'a1B2'.repeat(9)}'\n`)
+      git('add', '.env.production', 'cfg.ts')
+      git('commit', '-q', '-m', 'merge')
+      git('branch', '-D', 'side')
+      assert.match(
+        (await outgoingPushSecretReason(root, ['origin'])) ?? '',
+        /secret file: \.env\.production/,
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('asks when the history cannot be read', async () => {
     const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-push-scan-')))
     try {
