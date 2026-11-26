@@ -1,20 +1,24 @@
 import {
+  createSshWorkspaceConsent,
+  init_ssh_workspace_consent
+} from "./chunk-FWVGBPA5.js";
+import {
   arrowLeftIcon,
-  emptySshHostDraft,
-  importSshConfigHosts,
+  createSshHostFields,
   init_icons,
   init_inline_status,
   init_ipc_error_message,
+  init_ssh_host_fields,
   init_ssh_host_helpers,
   init_toast,
   ipcErrorMessage,
-  parseSshHostDraft,
   parseSshWorkspaceHosts,
+  saveSshConfigHost,
   setInlineStatus,
   showToast,
-  slugifyHostId,
+  unsavedSshConfigHosts,
   upsertHost
-} from "./chunk-KYBBGUKM.js";
+} from "./chunk-HIIVOQP4.js";
 import {
   clear,
   el,
@@ -26,7 +30,32 @@ import {
   __esm
 } from "./chunk-WW3EXSJD.js";
 
+// src/renderer/controller/ssh-workspace-ui.ts
+async function isSshWorkspaceEnabled(api) {
+  try {
+    const settings = api.settings;
+    if (!settings?.get) return false;
+    return await settings.get("sshWorkspaceEnabled") === true;
+  } catch {
+    return false;
+  }
+}
+var init_ssh_workspace_ui = __esm({
+  "src/renderer/controller/ssh-workspace-ui.ts"() {
+  }
+});
+
 // src/renderer/views/remote-folder-path.ts
+function initialRemoteBrowsePath(projects, hostId, home) {
+  for (let index = projects.length - 1; index >= 0; index -= 1) {
+    const project = projects[index];
+    if (project?.sshHost !== hostId) continue;
+    if (project.path.startsWith("/")) return parentRemotePath(project.path);
+    break;
+  }
+  if (home?.startsWith("/")) return home;
+  return "/";
+}
 function parentRemotePath(path) {
   if (path === "/" || path === "") return "/";
   const trimmed = path.replace(/\/+$/, "");
@@ -85,7 +114,8 @@ var init_remote_folder_path = __esm({
 });
 
 // src/renderer/views/remote-folder-dialog.ts
-function openRemoteFolderDialog(api) {
+function openRemoteFolderDialog(api, options = {}) {
+  const projects = options.projects ?? [];
   const dialog = ensureDialog();
   clear(dialog);
   const hostSelect = el("select", { class: "remote-folder-host", "aria-label": "SSH host" });
@@ -116,50 +146,7 @@ function openRemoteFolderDialog(api) {
     { type: "button", class: "ui-btn ui-btn-secondary remote-folder-cancel" },
     "Cancel"
   );
-  const draft = emptySshHostDraft();
-  const idInput = el("input", {
-    type: "text",
-    name: "remoteFolderHostId",
-    class: "remote-folder-host-id",
-    placeholder: "my-server",
-    "aria-label": "Host id"
-  });
-  const labelInput = el("input", {
-    type: "text",
-    name: "remoteFolderHostLabel",
-    class: "remote-folder-host-label",
-    placeholder: "Production",
-    "aria-label": "Host label"
-  });
-  const hostInput = el("input", {
-    type: "text",
-    name: "remoteFolderHostHost",
-    class: "remote-folder-host-host",
-    placeholder: "example.com or ~/.ssh/config alias",
-    "aria-label": "Hostname"
-  });
-  const userInput = el("input", {
-    type: "text",
-    name: "remoteFolderHostUser",
-    class: "remote-folder-host-user",
-    placeholder: "ubuntu",
-    "aria-label": "SSH user"
-  });
-  const portInput = el("input", {
-    type: "text",
-    name: "remoteFolderHostPort",
-    class: "remote-folder-host-port",
-    placeholder: "22",
-    inputmode: "numeric",
-    "aria-label": "SSH port"
-  });
-  const identityInput = el("input", {
-    type: "text",
-    name: "remoteFolderHostIdentity",
-    class: "remote-folder-host-identity",
-    placeholder: "~/.ssh/id_ed25519",
-    "aria-label": "Identity file"
-  });
+  const hostFields = createSshHostFields();
   const saveHostBtn = el(
     "button",
     { type: "button", class: "ui-btn ui-btn-primary remote-folder-save-host" },
@@ -170,11 +157,6 @@ function openRemoteFolderDialog(api) {
     { type: "button", class: "ui-btn ui-btn-secondary remote-folder-cancel-add" },
     "Cancel"
   );
-  const importBtn = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-ghost remote-folder-import-config" },
-    "Import from ~/.ssh/config"
-  );
   const addHostHint = el(
     "p",
     { class: "field-hint remote-folder-add-host-hint" },
@@ -184,16 +166,10 @@ function openRemoteFolderDialog(api) {
     "div",
     { class: "remote-folder-add-host-form ssh-host-form", hidden: true },
     addHostHint,
-    el("label", {}, "Id ", idInput),
-    el("label", {}, "Label ", labelInput),
-    el("label", {}, "Host ", hostInput),
-    el("label", {}, "User ", userInput),
-    el("label", {}, "Port ", portInput),
-    el("label", {}, "Identity file ", identityInput),
+    ...hostFields.fields,
     el(
       "div",
       { class: "remote-folder-add-host-actions provider-actions" },
-      importBtn,
       cancelAddBtn,
       saveHostBtn
     )
@@ -204,8 +180,9 @@ function openRemoteFolderDialog(api) {
     el("div", { class: "remote-folder-toolbar" }, upBtn, breadcrumbs),
     list
   );
-  dialog.append(
-    el("h3", {}, "Open remote folder"),
+  const picker = el(
+    "div",
+    { class: "remote-folder-picker" },
     el("p", { class: "field-hint" }, "Choose an SSH host and folder on the remote machine."),
     el(
       "div",
@@ -218,12 +195,13 @@ function openRemoteFolderDialog(api) {
     status,
     el("div", { class: "remote-folder-actions" }, cancelBtn, openBtn)
   );
+  dialog.append(el("h3", {}, "Open remote folder"), picker);
   let hosts = [];
+  let configHosts = [];
   let currentHostId = "";
   let currentPath = "/";
   let loading = false;
   let addingHost = false;
-  let idTouched = false;
   function setAddingHost(next) {
     addingHost = next;
     addHostForm.hidden = !next;
@@ -231,18 +209,10 @@ function openRemoteFolderDialog(api) {
     browsePanel.hidden = next;
     openBtn.hidden = next;
     if (next) {
-      Object.assign(draft, emptySshHostDraft());
-      idTouched = false;
-      idInput.value = "";
-      labelInput.value = "";
-      hostInput.value = "";
-      userInput.value = "";
-      portInput.value = "";
-      identityInput.value = "";
-      idInput.disabled = false;
-      addHostHint.textContent = hosts.length === 0 ? "No SSH hosts yet. Add one to browse and open a remote folder." : "Add an SSH host to browse and open a remote folder.";
+      hostFields.reset();
+      addHostHint.textContent = hosts.length > 0 ? "Add an SSH host to browse and open a remote folder." : configHosts.length > 0 ? "No SSH hosts saved yet. Choose one from ~/.ssh/config above, or add one here." : "No SSH hosts yet. Add one to browse and open a remote folder.";
       status.textContent = "";
-      labelInput.focus();
+      hostFields.focus();
     }
   }
   function fillHostSelect(selectedId) {
@@ -250,9 +220,26 @@ function openRemoteFolderDialog(api) {
     for (const host of hosts) {
       hostSelect.append(el("option", { value: host.id }, `${host.label} (${host.host})`));
     }
+    if (configHosts.length > 0) {
+      hostSelect.append(
+        el(
+          "optgroup",
+          { label: "In ~/.ssh/config" },
+          ...configHosts.map(
+            (host) => el("option", { value: `${SSH_CONFIG_OPTION}${host.host}` }, host.host)
+          )
+        )
+      );
+    }
     if (hosts.length === 0) {
-      hostSelect.append(el("option", { value: "", disabled: true, selected: true }, "No hosts yet"));
-      hostSelect.disabled = true;
+      hostSelect.prepend(
+        el(
+          "option",
+          { value: "", disabled: true, selected: true },
+          configHosts.length > 0 ? "Choose a host" : "No hosts yet"
+        )
+      );
+      hostSelect.disabled = configHosts.length === 0;
       currentHostId = "";
       return;
     }
@@ -286,54 +273,32 @@ function openRemoteFolderDialog(api) {
       setAddingHost(false);
       status.textContent = "";
     });
-    labelInput.addEventListener("input", () => {
-      draft.label = labelInput.value;
-      if (!idTouched && !idInput.disabled) {
-        idInput.value = slugifyHostId(draft.label);
-        draft.id = idInput.value;
-      }
-    });
-    idInput.addEventListener("input", () => {
-      idTouched = true;
-      draft.id = idInput.value;
-    });
-    hostInput.addEventListener("input", () => {
-      draft.host = hostInput.value;
-    });
-    userInput.addEventListener("input", () => {
-      draft.user = userInput.value;
-    });
-    portInput.addEventListener("input", () => {
-      draft.port = portInput.value;
-    });
-    identityInput.addEventListener("input", () => {
-      draft.identityFile = identityInput.value;
-    });
-    async function persistAndSelect(host) {
-      const raw = await api.settings.get("sshWorkspaceHosts");
-      const existing = parseSshWorkspaceHosts(raw);
-      await api.settings.set("sshWorkspaceHosts", upsertHost(existing, host));
-      hosts = await api.sshWorkspace.listHosts();
-      fillHostSelect(host.id);
+    async function reloadHosts() {
+      const [saved, aliases] = await Promise.all([
+        api.sshWorkspace.listHosts(),
+        api.sshWorkspace.listConfigAliases().catch(() => [])
+      ]);
+      hosts = saved;
+      configHosts = unsavedSshConfigHosts(saved, aliases);
+    }
+    async function persistAndSelect(hostId, label) {
+      await reloadHosts();
+      fillHostSelect(hostId);
       setAddingHost(false);
-      status.textContent = `Saved host \u201C${host.label}\u201D.`;
-      await browse("/");
+      status.textContent = `Saved host \u201C${label}\u201D.`;
+      await browseStart();
     }
     saveHostBtn.addEventListener("click", () => {
       void (async () => {
-        draft.label = labelInput.value;
-        draft.id = idInput.value;
-        draft.host = hostInput.value;
-        draft.user = userInput.value;
-        draft.port = portInput.value;
-        draft.identityFile = identityInput.value;
-        const parsed = parseSshHostDraft(draft);
-        if (!parsed.ok) {
-          setInlineStatus(status, "error", parsed.error);
-          return;
-        }
         try {
-          await persistAndSelect(parsed.host);
+          const existing = parseSshWorkspaceHosts(await api.settings.get("sshWorkspaceHosts"));
+          const parsed = hostFields.parse(existing);
+          if (!parsed.ok) {
+            setInlineStatus(status, "error", parsed.error);
+            return;
+          }
+          await api.settings.set("sshWorkspaceHosts", upsertHost(existing, parsed.host));
+          await persistAndSelect(parsed.host.id, parsed.host.label);
         } catch (err) {
           const message = ipcErrorMessage(err, "Could not save the host.");
           setInlineStatus(status, "error", message);
@@ -341,34 +306,24 @@ function openRemoteFolderDialog(api) {
         }
       })();
     });
-    importBtn.addEventListener("click", () => {
-      void (async () => {
-        try {
-          const aliases = await api.sshWorkspace.listConfigAliases();
-          if (aliases.length === 0) {
-            setInlineStatus(status, "error", "No Host entries found in ~/.ssh/config.");
-            return;
-          }
-          const raw = await api.settings.get("sshWorkspaceHosts");
-          const existing = parseSshWorkspaceHosts(raw);
-          const imported = importSshConfigHosts(existing, aliases);
-          await api.settings.set("sshWorkspaceHosts", imported.hosts);
-          hosts = await api.sshWorkspace.listHosts();
-          fillHostSelect(imported.firstAliasHostId);
-          setAddingHost(false);
-          status.textContent = imported.importedHostIds.length === 0 ? "All SSH config aliases are already imported." : `Imported ${String(imported.importedHostIds.length)} alias(es) from SSH config.`;
-          if (currentHostId) await browse("/");
-        } catch (err) {
-          const message = ipcErrorMessage(err, "Could not import from ~/.ssh/config.");
-          setInlineStatus(status, "error", message);
-          showToast(message, { variant: "error" });
-        }
-      })();
-    });
+    async function chooseConfigHost(alias) {
+      const chosen = configHosts.find((host) => host.host === alias);
+      if (!chosen) return;
+      try {
+        const existing = parseSshWorkspaceHosts(await api.settings.get("sshWorkspaceHosts"));
+        const saved = saveSshConfigHost(existing, chosen);
+        await api.settings.set("sshWorkspaceHosts", saved.hosts);
+        await persistAndSelect(saved.hostId, chosen.label);
+      } catch (err) {
+        const message = ipcErrorMessage(err, "Could not save the host.");
+        setInlineStatus(status, "error", message);
+        showToast(message, { variant: "error" });
+      }
+    }
     async function loadHosts() {
       status.textContent = "Loading hosts\u2026";
       try {
-        hosts = await api.sshWorkspace.listHosts();
+        await reloadHosts();
         fillHostSelect();
         if (hosts.length === 0) {
           openBtn.disabled = true;
@@ -377,10 +332,14 @@ function openRemoteFolderDialog(api) {
           return;
         }
         setAddingHost(false);
-        await browse("/");
+        await browseStart();
       } catch (err) {
         setInlineStatus(status, "error", ipcErrorMessage(err, "Could not load SSH hosts."));
       }
+    }
+    let listing = 0;
+    function browseStart() {
+      return browse(null);
     }
     function renderBreadcrumbs(path) {
       fillRemotePathBreadcrumbs(breadcrumbs, path, (next) => {
@@ -388,20 +347,35 @@ function openRemoteFolderDialog(api) {
       });
     }
     async function browse(path) {
-      if (!currentHostId || loading || addingHost) return;
+      const hostId = currentHostId;
+      if (!hostId || addingHost || loading && path !== null) return;
+      const run = ++listing;
       loading = true;
       openBtn.disabled = true;
       upBtn.disabled = true;
       status.textContent = "Connecting\u2026";
       clear(list);
+      let target = path ?? "/";
       try {
-        await api.sshWorkspace.connect(currentHostId);
-        currentPath = path;
+        const states = await api.sshWorkspace.connect(hostId);
+        if (run !== listing) return;
+        if (path === null) {
+          const home = states.find((state) => state.hostId === hostId)?.capabilities?.home;
+          target = initialRemoteBrowsePath(projects, hostId, home);
+        }
+        currentPath = target;
         renderBreadcrumbs(currentPath);
-        const entries = await api.sshWorkspace.listDirectory(
-          currentHostId,
-          currentPath
-        );
+        let entries;
+        try {
+          entries = await api.sshWorkspace.listDirectory(hostId, target);
+        } catch (err) {
+          if (path !== null || target === "/" || run !== listing) throw err;
+          target = "/";
+          currentPath = target;
+          renderBreadcrumbs(currentPath);
+          entries = await api.sshWorkspace.listDirectory(hostId, target);
+        }
+        if (run !== listing) return;
         status.textContent = entries.length === 0 ? "No subfolders here \u2014 open this folder or go up." : "";
         for (const entry of entries) {
           const row = el(
@@ -421,20 +395,28 @@ function openRemoteFolderDialog(api) {
         upBtn.disabled = currentPath === "/";
         openBtn.disabled = false;
       } catch (err) {
-        currentPath = path;
+        if (run !== listing) return;
+        currentPath = target;
         renderBreadcrumbs(currentPath);
         setInlineStatus(status, "error", ipcErrorMessage(err, "Could not reach the host."));
       } finally {
-        loading = false;
-        if (hosts.length > 0 && currentHostId) {
-          upBtn.disabled = currentPath === "/";
-          openBtn.disabled = false;
+        if (run === listing) {
+          loading = false;
+          if (hosts.length > 0 && currentHostId) {
+            upBtn.disabled = currentPath === "/";
+            openBtn.disabled = false;
+          }
         }
       }
     }
     hostSelect.addEventListener("change", () => {
-      currentHostId = hostSelect.value;
-      void browse("/");
+      const value = hostSelect.value;
+      if (value.startsWith(SSH_CONFIG_OPTION)) {
+        void chooseConfigHost(value.slice(SSH_CONFIG_OPTION.length));
+        return;
+      }
+      currentHostId = value;
+      void browseStart();
     });
     upBtn.addEventListener("click", () => {
       void browse(parentRemotePath(currentPath));
@@ -443,21 +425,42 @@ function openRemoteFolderDialog(api) {
       if (!currentHostId) return;
       finish({ hostId: currentHostId, path: currentPath });
     });
-    void loadHosts();
+    void isSshWorkspaceEnabled(api).then((enabled) => {
+      if (enabled) {
+        void loadHosts();
+        return;
+      }
+      picker.hidden = true;
+      const consent = createSshWorkspaceConsent(api, {
+        onEnabled: async () => {
+          consent.root.remove();
+          picker.hidden = false;
+          await loadHosts();
+        },
+        onCancel: () => {
+          finish(null);
+        }
+      });
+      dialog.append(consent.root);
+    });
     dialog.showModal();
   });
 }
-var ensureDialog;
+var SSH_CONFIG_OPTION, ensureDialog;
 var init_remote_folder_dialog = __esm({
   "src/renderer/views/remote-folder-dialog.ts"() {
     init_dialog_shell();
     init_helpers();
     init_toast();
     init_ssh_host_helpers();
+    init_ssh_host_fields();
+    init_ssh_workspace_consent();
+    init_ssh_workspace_ui();
     init_remote_folder_path();
     init_icons();
     init_inline_status();
     init_ipc_error_message();
+    SSH_CONFIG_OPTION = "ssh-config:";
     ensureDialog = lazyBodyDialog("remote-folder-dialog", "remote-folder-dialog");
   }
 });

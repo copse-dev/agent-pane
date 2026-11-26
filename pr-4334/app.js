@@ -36,7 +36,7 @@ import {
   sleep,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-SFSS65W6.js";
+} from "./chunks/chunk-OZQSQYNV.js";
 import "./chunks/chunk-X6JZSFJR.js";
 import {
   init_icons,
@@ -46,7 +46,7 @@ import {
   maximizeIcon,
   minimizeIcon,
   stringRecordOrEmpty
-} from "./chunks/chunk-KYBBGUKM.js";
+} from "./chunks/chunk-HIIVOQP4.js";
 import "./chunks/chunk-OB2CWITE.js";
 import {
   __commonJS,
@@ -1807,6 +1807,20 @@ var init_demo_bridged_tools = __esm({
 });
 
 // src/shared/approval-copy.ts
+function projectPortBindingApproval(workspaceRoot, command) {
+  return {
+    title: "Allow this project to bind a local port?",
+    body: command || "(no command given)",
+    bodyAdvice: `The agent wants to start a long-running background task that binds a loopback port and stays alive across turns:
+
+Project: ${workspaceRoot}`,
+    bodyFooter: "One-time approval covers this start. Remembered permission lets future tasks and chats in this project, including its worktrees, bind on localhost until revoked. Other shell permissions still apply. Revoke it in Context \u2192 Permissions \u2192 Project \u2192 Local port binding. Stop running tasks separately.",
+    allowRemember: true,
+    rememberLabel: `Always allow local port binding in this project: ${workspaceRoot}`,
+    approveLabel: "Allow for this project",
+    approveOnceLabel: "Allow once"
+  };
+}
 function threadAccessApproval(access) {
   if (access === "orchestrate")
     return {
@@ -5581,6 +5595,28 @@ var init_demo_scenarios = __esm({
           ...gitPushApproval("copse/friendly-action-names-213c32", sha)
         })
       ),
+      {
+        ...approvalRiskScenario("approval-project-preview", {
+          id: "preview-port",
+          type: "shell",
+          ...projectPortBindingApproval("/home/mira/harbor-board", "npm run dev")
+        }),
+        project: project(
+          "demo-approval-project-preview-project",
+          "Harbor Board",
+          "/home/mira/harbor-board"
+        )
+      },
+      approvalRiskScenario("approval-port-binding", {
+        id: "port-binding-pending",
+        threadId: "demo-approval-port-binding-thread",
+        title: "Allow this project to bind a local port?",
+        body: "npm run dev",
+        bodyAdvice: "The agent wants to start a long-running background task that binds a loopback port and stays alive across turns:\n\nProject: /workspace/copse",
+        type: "shell",
+        allowRemember: true,
+        rememberLabel: "Always allow local port binding in this project"
+      }),
       approvalRiskScenario("approval-automation-preparation", {
         id: "automation-preparation",
         title: "Prepare this worktree?",
@@ -5820,8 +5856,13 @@ function createDemoApi(scenario2, options = {}) {
     typeof scenarioModel === "string" ? scenarioModel : void 0
   );
   const api = {
-    remote: { publish: async () => {
-    } },
+    remote: {
+      publish: async () => {
+      },
+      watched: () => Promise.resolve([]),
+      onWatchedChanged: () => () => {
+      }
+    },
     clientActions: {
       claim: () => Promise.resolve(false),
       publish: async () => {
@@ -5891,6 +5932,9 @@ function createDemoApi(scenario2, options = {}) {
       registerName: () => resolvedVoid(),
       removeName: () => resolvedVoid(),
       recheckNameDns: () => resolvedVoid(),
+      setRelayEnabled: () => resolvedVoid(),
+      createShellPairing: () => resolvedVoid(),
+      clearShellPairing: () => resolvedVoid(),
       onChat: () => () => {
       },
       reply: async () => {
@@ -6295,6 +6339,14 @@ function createDemoApi(scenario2, options = {}) {
         thread.updatedAt = Date.now();
         return resolved(true);
       },
+      actionState: () => resolved({
+        entries: [],
+        assessed: 0,
+        total: 0,
+        pending: 0,
+        assessing: false,
+        budgetLimited: false
+      }),
       onAutoArchived: () => () => {
       },
       storageSize: () => resolved({ bytes: 24576, truncated: false }),
@@ -7481,7 +7533,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-LHTMFSXE.js").then(async (main) => {
+    void import("./chunks/main-BXKDYPQN.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(
