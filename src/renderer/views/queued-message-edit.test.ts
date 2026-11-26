@@ -12,9 +12,8 @@ import { createFakeApi } from '../fake-api.test-support.ts'
 // controller (updateQueuedMessageText/sendQueuedMessageNow) is unit-tested in
 // controller/message-queue.test.ts, but the inline EDIT *view* — startEditing /
 // buildQueuedEditor / saveEditing inside conversation.ts — is exercised nowhere
-// else, so this happy-dom port is its only coverage. The e2e badge text reads
-// "QUEUED"/"EDITING" only because of CSS text-transform: uppercase; the DOM
-// textContent is "Queued"/"Editing", which is what we assert here.
+// else, so this happy-dom port is its only coverage. The badge's textContent is
+// "Queued"/"Editing", which is what we assert here.
 
 function fakeApi(): ApiClient {
   return ((): ApiClient => {

@@ -18,7 +18,7 @@ import { basename, join } from 'node:path'
 import { redactSecrets } from '@copse/llm/redact-secrets.ts'
 import { materialiseCheckouts, type GitRunner, type MaterialisedCheckouts } from './checkouts.ts'
 import { readCheckoutFile } from './checkout-fs.ts'
-import { inconclusiveCheckReason } from './check-failure.ts'
+import { inconclusiveCheckReason, transientCheckFailure } from './check-failure.ts'
 import {
   findingId,
   type CheckoutTarget,
@@ -45,7 +45,15 @@ import {
   type UnsupportedProject,
 } from './project-commands.ts'
 import { removeTree } from './remove-tree.ts'
-import { newTestFailures, parseTestFailureReport, type TestFailureReport } from './test-failures.ts'
+import {
+  newTestFailures,
+  underFailedBaseUnit,
+  parseTestFailureReport,
+  reportedIncompleteTestInventory,
+  TEST_FAILURE_REPORT_PREFIX,
+  TEST_FAILURE_REPORT_UNAVAILABLE,
+  type TestFailureReport,
+} from './test-failures.ts'
 import { newDiagnostics, parseTscDiagnostics, type TscDiagnostic } from './tsc-diagnostics.ts'
 
 export const STAGE0_REPORT_VERSION = 1
@@ -141,6 +149,13 @@ export interface CheckOutcome {
   /** Second head test run, only after the first failed. Never replaces the first evidence. */
   readonly headConfirmation?: CheckRun
   readonly reason?: string
+  /**
+   * The verdict depends on this run, not on the code: a checker that ran out
+   * of memory or time or was killed, on either side, or two head test runs
+   * that disagreed. Running again may settle it. A checker that could not
+   * start, or a typecheck with no diagnostic, fails the same way again.
+   */
+  readonly transient?: true
 }
 
 export interface CoverageNote {
@@ -343,6 +358,11 @@ async function runTarget(
       argv: command.argv,
       timeoutMs: command.timeoutMs,
       maxOutputBytes: STAGE0_MAX_OUTPUT_BYTES,
+      // The failure inventory precedes the runner's detailed failure listing,
+      // which alone can exceed the cap on a host missing tools the tests use.
+      ...(command.kind === 'test'
+        ? { retainLinePrefixes: [TEST_FAILURE_REPORT_PREFIX, TEST_FAILURE_REPORT_UNAVAILABLE] }
+        : {}),
       signal,
     })
     const run: CheckRun = {
@@ -674,13 +694,27 @@ export async function runStage0Checks(
     const incompleteHead = inconclusiveCheckReason(head)
     if (incompleteHead !== null) {
       const reason = incompleteHead
-      checks.push({ kind, verdict: 'undetermined', head, base, reason })
+      checks.push({
+        kind,
+        verdict: 'undetermined',
+        head,
+        base,
+        reason,
+        ...(transientCheckFailure(head) ? { transient: true } : {}),
+      })
       notChecked.push({ kind, reason })
       continue
     }
     checked.push(kind)
     if (kind === 'test' && unstableTestReason !== null) {
-      checks.push({ kind, verdict: 'undetermined', head, base, reason: unstableTestReason })
+      checks.push({
+        kind,
+        verdict: 'undetermined',
+        head,
+        base,
+        reason: unstableTestReason,
+        transient: true,
+      })
       notChecked.push({ kind, reason: unstableTestReason })
       continue
     }
@@ -700,7 +734,14 @@ export async function runStage0Checks(
     }
     const incompleteBase = inconclusiveCheckReason(base)
     if (incompleteBase !== null) {
-      checks.push({ kind, verdict: 'undetermined', head, base, reason: incompleteBase })
+      checks.push({
+        kind,
+        verdict: 'undetermined',
+        head,
+        base,
+        reason: incompleteBase,
+        ...(transientCheckFailure(base) ? { transient: true } : {}),
+      })
       notChecked.push({ kind, reason: incompleteBase })
       continue
     }
@@ -731,15 +772,34 @@ export async function runStage0Checks(
         base.testFailures.failed > 0 &&
         head.testFailures.failed > 0
       ) {
-        const fresh = newTestFailures(base.testFailures, head.testFailures)
+        const baseFailures = base.testFailures
+        const unseen = newTestFailures(baseFailures, head.testFailures)
+        // A failure inside a suite that failed on base before its tests ran
+        // (its `before` hook) is absent from base's list because base never
+        // ran it, not because it passed there.
+        const uncompared = unseen.filter((failure) => underFailedBaseUnit(baseFailures, failure))
+        const fresh = unseen.filter((failure) => !uncompared.includes(failure))
+        const uncomparedReason =
+          uncompared.length > 0
+            ? `${String(uncompared.length)} test failure(s) on head are in a suite or file that failed on base before its tests ran; they were not compared`
+            : null
         const outcome: CheckOutcome = {
           kind,
-          verdict: fresh.length > 0 ? 'regressed' : 'failing-on-base',
+          verdict:
+            fresh.length > 0
+              ? 'regressed'
+              : uncomparedReason !== null
+                ? 'undetermined'
+                : 'failing-on-base',
           head,
           base,
-          reason: `${String(fresh.length)} new individual test failures; both aggregate checks failed`,
+          reason:
+            uncomparedReason !== null && fresh.length === 0
+              ? uncomparedReason
+              : `${String(fresh.length)} new individual test failures; both aggregate checks failed`,
         }
         checks.push(outcome)
+        if (uncomparedReason !== null) notChecked.push({ kind, reason: uncomparedReason })
         for (const failure of fresh) {
           const claim = `Test ${failure.name} fails on head and is absent from the complete base failure inventory`
           findings.push({
@@ -764,15 +824,28 @@ export async function runStage0Checks(
         }
         continue
       }
+      const incomplete = [head, base].filter(reportedIncompleteTestInventory)
       const reason =
-        'both aggregate checks failed; individual failure comparison is unavailable, so new regressions remain unverified'
+        incomplete.length > 0
+          ? `both test runs failed, and ${incomplete.map((run) => run.target).join(' and ')} reported an incomplete failure list (a cancelled test with no failed suite above it, or an ambiguous count), so new failures could not be compared test by test`
+          : 'both aggregate checks failed; individual failure comparison is unavailable, so new regressions remain unverified'
       checks.push({ kind, verdict: 'undetermined', head, base, reason })
       notChecked.push({ kind, reason })
       continue
     }
     const reason = `failed on head, but timed out on base after ${String(base.durationMs)} ms`
-    checks.push({ kind, verdict: 'undetermined', head, base, reason })
+    checks.push({ kind, verdict: 'undetermined', head, base, reason, transient: true })
     notChecked.push({ kind, reason })
+  }
+
+  // A suite that failed (a missing tool in its `before` hook) cancels its
+  // tests on both sides alike: they count as accounted for, never as compared.
+  const notRun = headRuns.runs.get('test')?.testFailures?.notRun ?? 0
+  if (notRun > 0 && checked.includes('test')) {
+    notChecked.push({
+      kind: 'test',
+      reason: `${String(notRun)} test(s) on head did not run, because a suite above them failed; they were not compared`,
+    })
   }
 
   return {
