@@ -5,6 +5,14 @@ import { chosenUpdateChannel } from '../../shared/update-channel-choice.ts'
 import { getSetting, setSetting } from './storage/settings.ts'
 import { RELEASES_URL, fetchUpdateChangelog } from './update-changelog.ts'
 import { notifyUpdateDevOnly, requestUpdatePrompt } from './update-prompt.ts'
+import { clearUpdateRelaunch, noteUpdateRelaunch, updateRelaunchNoted } from './last-run.ts'
+import { InstallQuit } from './install-quit.ts'
+import {
+  beginMainWindowQuit,
+  cancelMainWindowQuit,
+  isMainWindowQuitting,
+} from '../windows/create-main-window.ts'
+import { approveClose, isCloseApproved, revokeCloseApproval } from './close-confirm.ts'
 
 // Auto-update for the direct-download (Developer ID + notarized) macOS build.
 //
@@ -19,6 +27,13 @@ import { notifyUpdateDevOnly, requestUpdatePrompt } from './update-prompt.ts'
 // before the relaunch that installs it.
 
 let wired = false
+// "Restart now": the window must close rather than detach, without asking,
+// and the run ends as an update relaunch so the next launch continues it.
+const installQuit = new InstallQuit([
+  { isSet: isMainWindowQuitting, set: beginMainWindowQuit, clear: cancelMainWindowQuit },
+  { isSet: isCloseApproved, set: approveClose, clear: revokeCloseApproval },
+  { isSet: updateRelaunchNoted, set: noteUpdateRelaunch, clear: clearUpdateRelaunch },
+])
 // The policy of the check now running, so the prompt fetches matching notes.
 let activePolicy: AutoUpdatePolicy | null = null
 
@@ -93,6 +108,8 @@ export function initAutoUpdate(win: BrowserWindow): void {
   })
   autoUpdater.on('error', (err: Error): void => {
     console.warn('[auto-update] check failed:', err.message)
+    // A failed install leaves the app running: the next quit is the user's own.
+    installQuit.abandon()
   })
 
   // Background check on launch; failures surface via the 'error' handler above.
@@ -156,7 +173,14 @@ async function promptInstall(_win: BrowserWindow, version: string): Promise<void
   if (response === 0) {
     // Defer so the dialog closes before Squirrel relaunches the app.
     setImmediate((): void => {
-      autoUpdater.quitAndInstall()
+      // Not the user stopping their turns: the next launch continues them.
+      try {
+        installQuit.start(() => {
+          autoUpdater.quitAndInstall()
+        })
+      } catch (error) {
+        console.warn('[auto-update] install failed:', error)
+      }
     })
   }
 }

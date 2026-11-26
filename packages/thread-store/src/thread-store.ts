@@ -100,6 +100,7 @@ import {
   threadStoreEnvironment,
 } from './environment.ts'
 import { runSerialized } from './write-queue.ts'
+import { isWriterLeasePath } from './writer-lease.ts'
 import { isNonNull } from '@copse/std/nullish.ts'
 import { SqliteThreadIndex, THREAD_INDEX_FILE } from './sqlite-thread-index.ts'
 import {
@@ -3486,6 +3487,8 @@ export function readThreadDirectory(
     const paths = dirents
       .filter((dirent) => dirent.isFile())
       .map((dirent) => relative(dir, join(dirent.parentPath, dirent.name)).split(sep).join('/'))
+      // The writer lease names this machine's process; an export must not carry it.
+      .filter((path) => !isWriterLeasePath(path))
       .sort()
     const files: ThreadDirectoryFile[] = []
     let total = 0
