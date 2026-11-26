@@ -2383,15 +2383,18 @@ async function appendMessageUnqueued(
 
 /**
  * After a replacement line has committed, remove the prose and reasoning files
- * the replaced line referenced and the committed spine no longer does,
- * `messages/<id>.md` included. Without this every re-finalisation of a growing
- * message left one more full copy behind until a whole-thread save pruned it.
+ * and the nested subagent directories the replaced line referenced and the
+ * committed spine no longer does, `messages/<id>.md` and `subagents/<id>/`
+ * included. Without this every re-finalisation of a growing message left one
+ * more full copy behind until a whole-thread save pruned it.
  *
  * Only files directly in `messages/` are removed. Their OKF header carries the
  * message id, so no other message shares them; the check against every
- * committed line still keeps one a duplicate line refers to. Blob revisions
- * (rich blocks, images, attachment snapshots) can be shared between messages
- * and wait for the whole-thread prune.
+ * committed line still keeps one a duplicate line refers to. A subagent
+ * directory is removed whole, and only when it sits directly in `subagents/`;
+ * its name covers the subagent id, so the same check keeps one another line
+ * shares. Blob revisions (rich blocks, images, attachment snapshots) can be
+ * shared between messages and wait for the whole-thread prune.
  *
  * A failed removal only leaves an orphan for that prune, so it is logged and
  * never fails the write. A reader holding the replaced line cannot be broken:
@@ -2408,9 +2411,27 @@ async function removeSupersededProse(
   committed: SpineEntry[],
 ): Promise<void> {
   const live = new Set<string>()
+  const liveSubagents = new Set<string>()
   for (const entry of committed) {
     if (entry.line?.type !== 'message') continue
-    for (const ref of refsOfLine(entry.line).files) live.add(ref)
+    const refs = refsOfLine(entry.line)
+    for (const ref of refs.files) live.add(ref)
+    for (const ref of refs.subagentDirs) liveSubagents.add(ref)
+  }
+  for (const ref of refsOfLine(replaced).subagentDirs) {
+    if (liveSubagents.has(ref)) continue
+    const path = contentFilePath(dir, ref)
+    const parts = path === null ? [] : relative(resolvePath(dir), path).split(sep)
+    if (path === null || parts.length !== 2 || parts[0] !== 'subagents') continue
+    try {
+      assertStorePath(path)
+      await fsPromises.rm(path, { recursive: true, force: true })
+    } catch (error) {
+      console.warn(
+        `[thread-store] Could not remove superseded ${ref}; the next whole-thread save prunes it:`,
+        error,
+      )
+    }
   }
   for (const ref of [replaced.content.ref, replaced.reasoning?.ref]) {
     if (ref === undefined || live.has(ref)) continue
