@@ -36,9 +36,9 @@ import {
   sleep,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-HTKXF63B.js";
+} from "./chunks/chunk-Z54PSWYJ.js";
 import "./chunks/chunk-X6JZSFJR.js";
-import "./chunks/chunk-26CTP63G.js";
+import "./chunks/chunk-EPQ747CR.js";
 import {
   init_icons,
   init_unknown_value,
@@ -5965,6 +5965,7 @@ function createDemoApi(scenario2, options = {}) {
       isTrusted: () => resolved(true),
       setTrusted: emptyArray,
       trustFromApproval: () => resolved(true),
+      trustOfferDetails: () => resolved(null),
       unsandboxedProjectHooks: emptyArray,
       // The demo bundle is browser-targeted (no `node:path`), and demo paths are
       // display-only POSIX strings, so join by hand rather than importing path.
@@ -7533,7 +7534,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-WUDRE5QM.js").then(async (main) => {
+    void import("./chunks/main-P6EVZQ2W.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(

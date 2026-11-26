@@ -12,7 +12,7 @@ import {
   uiActions,
   uiField,
   workspaceTrustDetail
-} from "./chunk-26CTP63G.js";
+} from "./chunk-EPQ747CR.js";
 import {
   arrowLeftIcon,
   arrowRightIcon,
@@ -29026,12 +29026,15 @@ async function createNewProject(store, api) {
 async function offerProjectTrust(api, root) {
   try {
     if (await api.workspace.isTrusted()) return;
-    const { confirmProjectTrust } = await import("./workspace-trust-consent-D2OHNUQD.js");
-    const confirmed = await confirmProjectTrust(api, {
-      message: "Trust this project?",
+    const unsandboxedHooks = await api.workspace.unsandboxedProjectHooks().catch(() => []);
+    const { confirmProjectTrust } = await import("./workspace-trust-consent-IF5AN4PG.js");
+    const confirmed = await confirmProjectTrust({
+      projectName: basename(root),
+      unsandboxedHooks,
       lead: "Copse keeps new projects untrusted and asks before running their commands. Only trust a folder whose contents you wrote or have reviewed.",
-      confirmLabel: "Trust project",
-      cancelLabel: "Not now"
+      cancelLabel: "Not now",
+      // Nobody asked for this dialog, so Enter must not grant trust.
+      focusCancel: true
     });
     if (!confirmed || await api.workspace.get() !== root) return;
     await api.workspace.setTrusted(true);

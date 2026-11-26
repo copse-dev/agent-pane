@@ -315,7 +315,8 @@ function mountConfirmDialog() {
     });
     buttonsEl.replaceChildren(cancelBtn, confirmBtn);
     dialog.showModal();
-    confirmBtn.focus();
+    if (active.focusCancel) cancelBtn.focus();
+    else confirmBtn.focus();
   }
   dialog.addEventListener("cancel", (event) => {
     event.preventDefault();
@@ -351,14 +352,13 @@ function workspaceTrustDetail(unsandboxedHooks) {
     unsandboxedHooks.length > 0 ? `${String(unsandboxedHooks.length)} of those hooks declare "sandbox": false and run OUTSIDE the project sandbox: ${unsandboxedHooks.map((h) => `${h.event}: ${h.command}`).join("; ")}` : ""
   ].filter(Boolean).join(" ");
 }
-async function confirmProjectTrust(api, copy) {
-  const unsandboxed = await api.workspace.unsandboxedProjectHooks().catch(() => []);
-  const detail = [copy.lead ?? "", workspaceTrustDetail(unsandboxed)].filter(Boolean).join(" ");
+function confirmProjectTrust(request) {
   return showConfirmDialog({
-    message: copy.message,
-    detail,
-    confirmLabel: copy.confirmLabel,
-    ...copy.cancelLabel ? { cancelLabel: copy.cancelLabel } : {}
+    message: `Trust \u201C${request.projectName}\u201D?`,
+    detail: `${request.lead} ${workspaceTrustDetail(request.unsandboxedHooks)}`,
+    confirmLabel: "Trust project",
+    ...request.cancelLabel ? { cancelLabel: request.cancelLabel } : {},
+    ...request.focusCancel ? { focusCancel: true } : {}
   });
 }
 var init_workspace_trust_consent = __esm({

@@ -486,7 +486,7 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-HTKXF63B.js";
+} from "./chunk-Z54PSWYJ.js";
 import "./chunk-X6JZSFJR.js";
 import {
   init_actions,
@@ -501,7 +501,7 @@ import {
   uiField,
   uiPaneTab,
   uiPaneTabsShell
-} from "./chunk-26CTP63G.js";
+} from "./chunk-EPQ747CR.js";
 import {
   createSshWorkspaceConsent,
   init_ssh_workspace_consent
@@ -5287,11 +5287,13 @@ function mountApprovalDialog(api2, store2, options = {}) {
   async function trustFromPrompt() {
     const offer = sharedTrustOffer();
     if (offer === null || trustingFromPrompt) return;
-    const { confirmProjectTrust } = await import("./workspace-trust-consent-D2OHNUQD.js");
-    const confirmed = await confirmProjectTrust(api2, {
-      message: "Trust this project?",
-      lead: "Only trust a folder whose contents you wrote or have reviewed.",
-      confirmLabel: "Trust project"
+    const details = await api2.workspace.trustOfferDetails(offer.id).catch(() => null);
+    if (details === null) return;
+    const { confirmProjectTrust } = await import("./workspace-trust-consent-IF5AN4PG.js");
+    const confirmed = await confirmProjectTrust({
+      projectName: details.name,
+      unsandboxedHooks: details.unsandboxedHooks,
+      lead: "Only trust a folder whose contents you wrote or have reviewed."
     });
     if (!confirmed) return;
     trustingFromPrompt = true;
