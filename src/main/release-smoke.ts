@@ -11,6 +11,8 @@ const PTY_SMOKE_WRITE_DELAY_MS = 500
  * the final `onData` after `onExit` under CI load.
  */
 const PTY_SMOKE_EXIT_GRACE_MS = 500
+/** How much trailing PTY output a failed smoke test reports. */
+const PTY_SMOKE_OUTPUT_TAIL_CHARS = 500
 
 export type PtySmokeExitDecision =
   | { action: 'resolve' }
@@ -33,9 +35,12 @@ export function decidePtySmokeAfterExit(opts: {
 }): PtySmokeExitDecision {
   if (opts.output.includes(opts.marker)) return { action: 'resolve' }
   if (opts.exitCode !== 0) {
+    // The shell's own words (a sandbox wrapper error, a missing binary) are the
+    // only clue a release runner leaves, so carry the tail of them along.
+    const tail = opts.output.trim().slice(-PTY_SMOKE_OUTPUT_TAIL_CHARS)
     return {
       action: 'reject',
-      message: `Packaged PTY smoke test exited ${String(opts.exitCode)}`,
+      message: `Packaged PTY smoke test exited ${String(opts.exitCode)}${tail ? `: ${tail}` : ''}`,
     }
   }
   return { action: 'wait' }

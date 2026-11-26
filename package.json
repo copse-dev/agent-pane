@@ -5,6 +5,7 @@
   "license": "AGPL-3.0-only",
   "author": "Jonathan Kingston",
   "description": "Copse — AI coding assistant desktop app",
+  "desktopName": "copse.desktop",
   "main": "dist/main/index.js",
   "type": "commonjs",
   "scripts": {
@@ -129,6 +130,8 @@
     "sync:gortex-licenses": "node scripts/sync-gortex-licenses.mts",
     "prepare:gortex:mac": "node scripts/prepare-macos-gortex.mts",
     "pack:mac": "pnpm run build:release && pnpm run icons:mac && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir",
+    "pack:linux": "pnpm run build:release && electron-builder --linux dir -c.npmRebuild=false",
+    "dist:linux": "pnpm run build:release && electron-builder --linux -c.npmRebuild=false --publish never",
     "dist:mac": "pnpm run prepare:gortex:mac && pnpm run build:release && pnpm run generate:icon && electron-builder --mac -c.publish.channel=$(node scripts/release-channel.mts --channel) --publish never && node scripts/finalize-release-metadata.mts",
     "release:dry": "set -a; [ -f .env ] && . ./.env; set +a; pnpm run prepare:gortex:mac && pnpm run build:release && pnpm run generate:icon && electron-builder --mac -c.mac.notarize=true -c.publish.channel=$(node scripts/release-channel.mts --channel) --publish never && node scripts/finalize-release-metadata.mts",
     "check:local": "pnpm run check:e2e-syntax && pnpm run typecheck && pnpm run type-coverage && pnpm run lint && pnpm run format:check && pnpm run demo:site:check && pnpm run check:dead-code && pnpm run check:oracle && pnpm run check:e2e-exclusions && pnpm run check:a11y-baseline && pnpm run check:flake-risks",
@@ -237,6 +240,50 @@
           "type": "link",
           "path": "/Applications"
         }
+      ]
+    },
+    "linux": {
+      "icon": "assets/icons/rose/icon-512.png",
+      "executableName": "copse",
+      "category": "Development",
+      "synopsis": "AI coding assistant",
+      "artifactName": "${productName}-${version}-linux-${arch}.${ext}",
+      "maintainer": "Jonathan Kingston",
+      "syncDesktopName": true,
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "tar.gz",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "deb": {
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libuuid1",
+        "libsecret-1-0",
+        "bubblewrap",
+        "socat"
       ]
     }
   },
