@@ -1510,8 +1510,9 @@ async function respondToPermission(
   // and network or external mutations still prompt there. Delegate only on
   // adapter-authored provenance that agrees across the request and the
   // agent's earlier reports of the same call (#1446), and only when this
-  // session really mounted the bridge — a remote agent, or one without HTTP
-  // MCP, has nothing that would re-gate a call that merely claims to be ours.
+  // session was offered its own bridge, over http or the stdio relay. A remote
+  // agent gets neither, so nothing would re-gate a call that merely claims to
+  // be ours.
   // This session's bridge, narrowed to what is still offered now (a plugin can
   // be disabled mid-session).
   const stillOffered = new Set(bridgedNativeToolsOffered())
