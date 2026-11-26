@@ -161,6 +161,18 @@ def extract_det(user, assistant='', ctx=None, provenance='user'):
                   grants.append(g)
     return grants
 
+def veto_model_grants(grants, user, provenance='user'):
+    """A model's grants pass only the deterministic vetoes the extractor applies: provenance,
+    a leading refusal, a closing request for an opinion, and any refusal, condition or text
+    addressed to agents anywhere in the message. Force needs force wording in the user's words."""
+    if provenance != 'user': return []
+    words = own_words(user)
+    t = re.sub(r"\bp\.\s?r\b\.?", "PR", words, flags=re.I)
+    if LEADING_NO.match(words) or ASKS_OPINION.search(words.strip()): return []
+    if any(NEG.search(x) or CONDITIONAL.search(x) or ADDRESSED.search(x) for x in re.split(r"[.;!?\n]+", t)): return []
+    force = bool(FORCE.search(words))
+    return [dict(g, flags=[f for f in g.get('flags') or [] if f != 'force' or force]) for g in grants]
+
 # --- command parsing ------------------------------------------------------------------------
 TOOLCHAIN_DIR = re.compile(r"^(\$HOME|~|/Users/[^/]+)/(\.local/share/fnm/node-versions/v[\d.]+/installation/bin|\.nvm/versions/node/v[\d.]+/bin)/?$|^/opt/homebrew/(opt/[\w-]+/)?bin/?$|^\$PWD/\.toolchain/bin/?$")
 TOOL_PREFIX = re.compile(r"^((\$HOME|~|/Users/[^/]+)/(\.local/share/fnm/node-versions/v[\d.]+/installation/bin|\.nvm/versions/node/v[\d.]+/bin)|/opt/homebrew/bin|/usr/bin|/usr/local/bin)/")

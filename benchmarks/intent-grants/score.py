@@ -4,7 +4,7 @@
 # Usage (from bench-results/prior-consent): python3 score.py [-v]
 import json, os, sys, glob, collections
 sys.path.insert(0, os.path.dirname(__file__))
-from grants import extract_det, decide, POLICIES, own_words, last_question
+from grants import extract_det, decide, POLICIES, own_words, last_question, veto_model_grants
 import importlib.util
 spec = importlib.util.spec_from_file_location('pc', os.path.join(os.path.dirname(__file__), '../prior-consent/score.py'))
 src = open(spec.origin).read().split('# --- reference')[0].split('# --- deterministic baseline')[1].split('\n', 1)[1]
@@ -38,7 +38,8 @@ def grants_for(c, arm):
     prov = c.get('provenance', 'user')
     det = extract_det(c['user'], c['assistant'], c['ctx'], prov) if arm in ('det', 'det+llm') else []
     # the LLM saw the raw message, so only a message the user typed may feed it
-    llm = [fix(g) for g in LLM_GRANTS.get(c['turn'], {}).get('grants', [])] if arm in ('llm', 'det+llm') and prov == 'user' else []
+    llm = [fix(g) for g in LLM_GRANTS.get(c['turn'], {}).get('grants', [])] if arm in ('llm', 'det+llm', 'llm-raw') and prov == 'user' else []
+    if arm != 'llm-raw': llm = veto_model_grants(llm, c['user'], prov)
     return det + llm
 
 def run(cases, arm, policy):
@@ -64,7 +65,7 @@ def run(cases, arm, policy):
     return out
 
 ARMS = [('baseline', None), ('judge-explicit', None), ('judge-implied', None)] + \
-       [(a, p) for p in POLICIES for a in ('det', 'llm', 'det+llm')]
+       [(a, p) for p in POLICIES for a in ('det', 'llm-raw', 'llm', 'det+llm')]
 if __name__ == '__main__':
     verbose = '-v' in sys.argv
     with_action = [c for c in REAL if c['actions']]
