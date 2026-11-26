@@ -1,6 +1,6 @@
 // Score generated rows against Copse's deterministic gates, from this checkout's source.
 //
-//   node benchmarks/risk-classifier/adversarial/score.mjs sample/rows.jsonl [--out sample/scored.jsonl]
+//   node benchmarks/risk-classifier/adversarial/score.mjs bench-results/risk-classifier/adversarial/rows.jsonl [--out …/scored.jsonl]
 //
 // Each row runs in a throwaway home (`/Users/dev` and `~` both point at it) whose workspace,
 // `~/work/acme-app`, holds the row's `files`, so the gate reads the same scripts the generator

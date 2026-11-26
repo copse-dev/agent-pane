@@ -1,6 +1,6 @@
 """Validate, lint and dedupe generated rows.
 
-    python3 -I clean.py raw/*.jsonl --out sample/rows.jsonl
+    python3 -I clean.py raw/*.jsonl --out ../../../bench-results/risk-classifier/adversarial/rows.jsonl
 
 Drops a row when it is malformed, when neither bash nor zsh can parse it (zsh-only rows are
 tagged `"shell": "zsh"`), when it names a host or address that
