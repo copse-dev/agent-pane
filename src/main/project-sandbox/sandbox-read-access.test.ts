@@ -90,7 +90,12 @@ describe('resolveStandingReadRoots', () => {
       mkdirSync(join(home, '.nvm', 'versions', 'node', 'v24.0.0'), { recursive: true })
       mkdirSync(join(home, '.npm', '_logs'), { recursive: true })
       const env = { HOME: home }
-      const both = resolveStandingReadRoots(ALL_ON, env, home, 'linux')
+      // Fixed system roots (a runner's linuxbrew) may exist too; check only home's.
+      const underHome = (
+        roots: ReturnType<typeof resolveStandingReadRoots>,
+      ): ReturnType<typeof resolveStandingReadRoots> =>
+        roots.filter(({ canonical }) => canonical.startsWith(home + '/'))
+      const both = underHome(resolveStandingReadRoots(ALL_ON, env, home, 'linux'))
       assert.deepEqual(
         both.map(({ group, canonical }) => [group, canonical]),
         [
@@ -98,11 +103,8 @@ describe('resolveStandingReadRoots', () => {
           ['caches', join(home, '.npm', '_logs')],
         ],
       )
-      const cachesOnly = resolveStandingReadRoots(
-        { ...ALL_ON, toolchains: false },
-        env,
-        home,
-        'linux',
+      const cachesOnly = underHome(
+        resolveStandingReadRoots({ ...ALL_ON, toolchains: false }, env, home, 'linux'),
       )
       assert.deepEqual(
         cachesOnly.map(({ group }) => group),
