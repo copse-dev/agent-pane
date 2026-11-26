@@ -19,7 +19,7 @@ import {
 import { existsSync, realpathSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { relative, resolve } from 'node:path'
-import { getChatStoreRoot } from '../workspace.ts'
+import { getChatStoreRoot, getInternalWorkspaceRootRegistration } from '../workspace.ts'
 import { ensureThreadAccess, needsOtherThreadRead } from './thread-access.ts'
 import { currentAgentRoots, getAgentExecutionRoot, getAgentProjectRoot } from '../execution-root.ts'
 import {
@@ -1398,7 +1398,14 @@ export function scopedNetworkRunFor(
     ...harmHostReachContext(),
   })
   if (harm.action !== 'allow') return null
-  const assessment = planScopedNetwork(command, readRepoNetworkFacts(executionRoot, projectRoot))
+  const assessment = planScopedNetwork(
+    command,
+    readRepoNetworkFacts(
+      executionRoot,
+      projectRoot,
+      getInternalWorkspaceRootRegistration(executionRoot)?.gitDir ?? null,
+    ),
+  )
   if (assessment.action !== 'scope') return null
   // Where contained commands write. A program, or a PATH entry ahead of it,
   // inside one of these could be a stand-in planted to hold the scope's egress.

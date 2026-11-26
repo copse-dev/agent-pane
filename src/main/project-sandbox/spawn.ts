@@ -249,6 +249,9 @@ export async function spawnShellInProjectSandbox(
               deniedDomains: [],
               allowLocalBinding: false,
             },
+            ...(scopedNetwork.trustEvaluation && process.platform === 'darwin'
+              ? { enableWeakerNetworkIsolation: true as const }
+              : {}),
           }
           return {
             config: overlay,
@@ -282,6 +285,12 @@ export interface ScopedSpawnNetwork {
   env: Readonly<Record<string, string>>
   /** Point `GH_CONFIG_DIR` at a fresh directory inside the command's temp dir. */
   freshGhConfig: boolean
+  /**
+   * The program verifies TLS through macOS's trust service (Go's `gh`), which the
+   * default profile denies. Opens only that mach lookup; the allowlist still
+   * decides every connection the command itself makes.
+   */
+  trustEvaluation?: boolean
 }
 
 export interface SpawnBackgroundOptions {

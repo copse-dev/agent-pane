@@ -297,13 +297,15 @@ export function scopedNetworkEnv(
   const config: Array<[string, string]> = []
   if (plan.disableGitHooks) config.push(['core.hooksPath', '/dev/null'])
   const env: Record<string, string> = { GIT_TERMINAL_PROMPT: '0' }
+  // An empty helper resets the list collected from every config file. The
+  // user's helpers (osxkeychain, store) cannot reach their stores from inside
+  // the sandbox anyway; left in place they only fail noisily after each fetch.
+  config.push(['credential.helper', ''])
   if (plan.github && options.githubToken !== null) {
     env['GH_TOKEN'] = options.githubToken
     config.push(
       ['url.https://github.com/.insteadOf', 'git@github.com:'],
       ['url.https://github.com/.insteadOf', 'ssh://git@github.com/'],
-      // An empty helper resets the list collected from every config file.
-      ['credential.https://github.com.helper', ''],
       [
         'credential.https://github.com.helper',
         '!f() { test "$1" = get || exit 0; echo username=x-access-token; echo "password=$GH_TOKEN"; }; f',

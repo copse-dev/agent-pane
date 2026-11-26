@@ -141,7 +141,6 @@ describe('planScopedNetwork', () => {
       '[credential]\n\thelper = !./token.sh\n',
       '[remote "origin"]\n\tuploadpack = ./up.sh\n',
       '[filter "x"]\n\tsmudge = ./scripts/smudge.sh %f\n',
-      '[extensions]\n\tworktreeConfig = true\n',
     ]) {
       assert.match(none('git fetch origin', facts(extra)), /repository config/, extra)
       assert.match(none('gh pr status', facts(extra)), /repository config/, extra)
@@ -186,18 +185,22 @@ describe('scopedNetworkEnv', () => {
       env[`GIT_CONFIG_VALUE_${String(index)}`],
     ])
     assert.deepEqual(entries[0], ['core.hooksPath', '/dev/null'])
-    assert.ok(
-      entries.some(
-        ([key, value]) => key === 'credential.https://github.com.helper' && value === '',
-      ),
-    )
+    const helpers = entries.filter(([key]) => key?.startsWith('credential.'))
+    // Every configured helper is reset first; the only one added is scoped to
+    // github.com and answers from GH_TOKEN alone.
+    assert.deepEqual(helpers[0], ['credential.helper', ''])
+    assert.ok(helpers.slice(1).length > 0)
+    assert.ok(helpers.slice(1).every(([key]) => key === 'credential.https://github.com.helper'))
     assert.ok(entries.some(([key]) => key === 'url.https://github.com/.insteadOf'))
-    // No credential leaves github.com: every helper entry is scoped to it.
-    assert.ok(
-      entries
-        .filter(([key]) => key?.startsWith('credential.'))
-        .every(([key]) => key === 'credential.https://github.com.helper'),
-    )
+  })
+
+  it('resets credential helpers even without a token', () => {
+    const env = scopedNetworkEnv(plan('git push -u fork feature'), { githubToken: null })
+    const entries = Array.from({ length: Number(env['GIT_CONFIG_COUNT']) }, (_, index) => [
+      env[`GIT_CONFIG_KEY_${String(index)}`],
+      env[`GIT_CONFIG_VALUE_${String(index)}`],
+    ])
+    assert.deepEqual(entries, [['credential.helper', '']])
   })
 
   it('carries no token without one, or for a non-GitHub host', () => {

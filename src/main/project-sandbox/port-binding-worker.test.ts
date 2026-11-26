@@ -261,6 +261,8 @@ describe('port-binding background host', () => {
         assert.ok(filesystem.allowRead.includes(`${skill}/**`))
         assert.ok(filesystem.allowRead.includes(readTarget))
         assert.ok(filesystem.denyWrite.includes(join(registration.commonGitDir, 'config')))
+        // The linked worktree's own config layer is write-denied too.
+        assert.ok(filesystem.denyWrite.includes(join(registration.gitDir, 'config.worktree')))
         assert.deepEqual(mainConfig.network.allowedDomains, [])
         assert.equal(mainUpdates, 0)
         assert.deepEqual(activeSandboxNetworkScopeLabels(), [])
@@ -468,6 +470,18 @@ describe('port-binding host protocol', () => {
     }
     // Public hosts never travel with local binding.
     assert.equal(scoped(['github.com'], true), null)
+    // Trust evaluation (for Go's TLS on macOS) rides only with public hosts.
+    const withTrust = (network: unknown): unknown =>
+      parsePortBindingRequest(
+        JSON.stringify({
+          ...request,
+          overlay: { ...overlay, network, enableWeakerNetworkIsolation: true },
+        }),
+      )
+    assert.ok(
+      withTrust({ allowedDomains: ['github.com'], deniedDomains: [], allowLocalBinding: false }),
+    )
+    assert.equal(withTrust(overlay.network), null)
     assert.equal(parsePortBindingMessage({ type: 'violations', count: -1 }), null)
     assert.equal(parsePortBindingMessage({ type: 'network-denial', host: 4 }), null)
     assert.deepEqual(parsePortBindingRequest(JSON.stringify(request)), request)

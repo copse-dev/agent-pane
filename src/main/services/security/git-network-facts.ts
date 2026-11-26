@@ -1,6 +1,6 @@
 import { readFileSync, realpathSync, statSync } from 'node:fs'
 import { isAbsolute, join, resolve, sep } from 'node:path'
-import { resolveGitCommonDir } from './git-remotes.ts'
+import { resolveGitCommonDir, resolveGitDirs } from './git-remotes.ts'
 
 /**
  * What a per-command network scope needs to know about the repository a contained
@@ -125,15 +125,6 @@ function unsafeEntry(entry: ConfigEntry): string | null {
     // `git-credential-*` programs; a `!` snippet or a path runs anything.
     return value === '' || /^[A-Za-z0-9-]+$/.test(value) ? null : 'credential.helper runs a command'
   }
-  // A worktree's own `config.worktree` sits in its writable git dir, unlike the
-  // common config, so the facts cannot vouch for it once git honours it.
-  if (
-    section === 'extensions' &&
-    name === 'worktreeconfig' &&
-    !/^(?:false|0|no|off)$/i.test(value)
-  ) {
-    return 'per-worktree config is enabled'
-  }
   if (section === 'gpg' && name === 'program') return 'gpg program configured'
   if (section === 'protocol' && name === 'allow') return 'protocol allow-list changed'
   if (section === 'remote' && ['uploadpack', 'receivepack', 'vcs', 'proxy'].includes(name)) {
@@ -206,25 +197,57 @@ export function repoNetworkFactsFromConfig(
   return { remotes, unsafeConfig: [...unsafe], workspaceHooks }
 }
 
+/** Whether `extensions.worktreeConfig` is on in a config text. */
+function worktreeConfigEnabled(configText: string): boolean {
+  for (const entry of parseGitConfig(configText)) {
+    if (entry.key !== 'extensions.worktreeconfig') continue
+    return !/^(?:false|0|no|off)$/i.test(entry.value)
+  }
+  return false
+}
+
 /**
  * Facts for the repository a command at `executionRoot` would use, or null when that
  * is not the project's own protected repository: no `.git` at the execution root
  * (git would discover whatever repository a contained command planted above or
  * below it), or one whose common directory differs from the project's.
+ *
+ * With `extensions.worktreeConfig` on, git also reads the worktree's own
+ * `config.worktree`, which lives in its git dir. That layer is judged like the
+ * shared config, but only when contained commands cannot write it: the primary
+ * checkout's (inside the protected common dir), or a registered Copse worktree's,
+ * whose sandbox profile denies writes to it. `protectedWorktreeGitDir` names the
+ * latter; any other linked worktree's layer cannot be vouched for, so it refuses.
  */
 export function readRepoNetworkFacts(
   executionRoot: string,
   projectRoot: string | null,
+  protectedWorktreeGitDir: string | null = null,
 ): RepoNetworkFacts | null {
-  const commonDir = resolveGitCommonDir(executionRoot)
-  if (!commonDir) return null
+  const dirs = resolveGitDirs(executionRoot)
+  if (!dirs) return null
+  const { gitDir, commonDir } = dirs
   if (projectRoot !== null) {
     const projectCommon = resolveGitCommonDir(projectRoot)
     if (!projectCommon || canonical(projectCommon) !== canonical(commonDir)) return null
   }
-  const parts = [join(commonDir, 'config'), join(commonDir, 'config.worktree')]
-  const texts = parts.map(readSmallFile)
-  if (texts[0] === null) return null
+  const shared = readSmallFile(join(commonDir, 'config'))
+  if (shared === null) return null
+  const texts = [shared]
+  const linked = canonical(gitDir) !== canonical(commonDir)
+  let unprotectedLayer = false
+  if (worktreeConfigEnabled(shared)) {
+    if (!linked) {
+      texts.push(readSmallFile(join(commonDir, 'config.worktree')) ?? '')
+    } else if (
+      protectedWorktreeGitDir !== null &&
+      canonical(protectedWorktreeGitDir) === canonical(gitDir)
+    ) {
+      texts.push(readSmallFile(join(gitDir, 'config.worktree')) ?? '')
+    } else {
+      unprotectedLayer = true
+    }
+  }
   const roots = [
     ...new Set([
       executionRoot,
@@ -232,5 +255,11 @@ export function readRepoNetworkFacts(
       ...(projectRoot ? [projectRoot, canonical(projectRoot)] : []),
     ]),
   ]
-  return repoNetworkFactsFromConfig(texts.filter((text) => text !== null).join('\n'), roots)
+  const facts = repoNetworkFactsFromConfig(texts.join('\n'), roots)
+  return unprotectedLayer
+    ? {
+        ...facts,
+        unsafeConfig: [...facts.unsafeConfig, 'per-worktree config is not write-protected'],
+      }
+    : facts
 }

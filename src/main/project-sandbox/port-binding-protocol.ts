@@ -27,16 +27,28 @@ const scopedNetworkSchema = z.object({
   deniedDomains: z.array(z.string()),
   allowLocalBinding: z.literal(false),
 })
-const overlaySchema = z.object({
-  network: z.union([loopbackNetworkSchema, scopedNetworkSchema]),
-  filesystem: z.object({
-    denyRead: z.array(z.string()),
-    allowRead: z.array(z.string()),
-    allowWrite: z.array(z.string()),
-    denyWrite: z.array(z.string()),
-    allowGitConfig: z.boolean(),
-  }),
-})
+const overlaySchema = z
+  .object({
+    network: z.union([loopbackNetworkSchema, scopedNetworkSchema]),
+    /**
+     * macOS only: let the command reach trustd, which Go programs (`gh`) need to
+     * verify TLS certificates. Accepted only with a scoped public-host network,
+     * never with loopback binding.
+     */
+    enableWeakerNetworkIsolation: z.literal(true).optional(),
+    filesystem: z.object({
+      denyRead: z.array(z.string()),
+      allowRead: z.array(z.string()),
+      allowWrite: z.array(z.string()),
+      denyWrite: z.array(z.string()),
+      allowGitConfig: z.boolean(),
+    }),
+  })
+  .refine(
+    (overlay) =>
+      overlay.enableWeakerNetworkIsolation !== true || !overlay.network.allowLocalBinding,
+    { message: 'trust evaluation is only for a scoped public-host network' },
+  )
 
 const requestSchema = z.object({
   command: z.string().min(1),

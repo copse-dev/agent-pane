@@ -526,16 +526,22 @@ All of these must hold, or the command takes its ordinary path unchanged
 - no `cd`, and the execution root's own `.git` leads to the project's common git directory, whose
   `config` and `hooks/` contained commands cannot write. Repository config that names a program
   (`core.sshCommand`, `core.fsmonitor`, a `!` credential helper, filter or diff drivers, upload
-  packs), includes another file or enables per-worktree config refuses the scope. A `core.hooksPath`
-  inside the workspace refuses `push` and `pull`; `fetch`, `ls-remote` and `clone` run with hooks
-  off.
+  packs) or includes another file refuses the scope. With `extensions.worktreeConfig` on, the
+  worktree's own `config.worktree` is judged the same way, but only where contained commands cannot
+  write it: the primary checkout's, or a registered Copse worktree's, whose sandbox profile now
+  denies writes to that file. Any other linked worktree refuses. A `core.hooksPath` inside the
+  workspace refuses `push` and `pull`; `fetch`, `ls-remote` and `clone` run with hooks off.
 
 Every one of these hosts accepts writes from anyone holding a token, so the boundary is that only
 the recognised tool runs while the egress is open, not the host name. For GitHub the scoped command
 gets the user's token as `GH_TOKEN`, a git credential helper scoped to `https://github.com` that
 answers only from it, SSH-to-HTTPS rewrites for github.com remotes (the sandbox cannot read
-`~/.ssh`), and a fresh `GH_CONFIG_DIR` in its temp directory. Other hosts get no credentials, so a
-private remote elsewhere fails contained and offers the usual retry. A proxy denial inside the
+`~/.ssh`), and a fresh `GH_CONFIG_DIR` in its temp directory. Every configured credential helper is
+reset first, since none can reach its store from inside the sandbox. Other hosts get no
+credentials, so a private remote elsewhere fails contained and offers the usual retry. On macOS a
+`gh` plan also gets ASRT's `enableWeakerNetworkIsolation`, the single `com.apple.trustd.agent`
+lookup Go needs to verify TLS. trustd can fetch revocation data for certificates it is asked to
+evaluate, which is why it is limited to `gh` plans, whose programs are only the verified `git` and `gh` binaries. A proxy denial inside the
 scoped host counts as runner evidence for that retry.
 
 Lockfile installs are not a scoped shape yet: `.pnpmfile.cjs`, Yarn's `yarnPath` and plugins, and

@@ -32,14 +32,16 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>()
 
 /**
- * Resolve the directory holding the repository's shared `config`.
+ * Resolve a repository's own git dir and the directory holding its shared `config`.
  *
  * `.git` is a directory in an ordinary clone, and a file containing
  * `gitdir: <path>` in a linked worktree or submodule. A linked worktree's own
- * git dir holds per-worktree state; the remotes live in the *common* dir, named
- * by its `commondir` file.
+ * git dir holds per-worktree state (including `config.worktree`); the remotes
+ * live in the *common* dir, named by its `commondir` file.
  */
-export function resolveGitCommonDir(workspaceRoot: string): string | null {
+export function resolveGitDirs(
+  workspaceRoot: string,
+): { gitDir: string; commonDir: string } | null {
   const dotGit = join(workspaceRoot, '.git')
   let stat: ReturnType<typeof statSync>
   try {
@@ -47,7 +49,7 @@ export function resolveGitCommonDir(workspaceRoot: string): string | null {
   } catch {
     return null
   }
-  if (stat.isDirectory()) return dotGit
+  if (stat.isDirectory()) return { gitDir: dotGit, commonDir: dotGit }
   if (!stat.isFile()) return null
 
   let gitDir: string
@@ -63,11 +65,18 @@ export function resolveGitCommonDir(workspaceRoot: string): string | null {
 
   try {
     const commonDir = readFileSync(join(gitDir, 'commondir'), 'utf8').trim()
-    if (commonDir) return isAbsolute(commonDir) ? commonDir : resolve(gitDir, commonDir)
+    if (commonDir) {
+      return { gitDir, commonDir: isAbsolute(commonDir) ? commonDir : resolve(gitDir, commonDir) }
+    }
   } catch {
     // No `commondir` — this git dir is the common one.
   }
-  return gitDir
+  return { gitDir, commonDir: gitDir }
+}
+
+/** The directory holding the repository's shared `config` (see {@link resolveGitDirs}). */
+export function resolveGitCommonDir(workspaceRoot: string): string | null {
+  return resolveGitDirs(workspaceRoot)?.commonDir ?? null
 }
 
 /**

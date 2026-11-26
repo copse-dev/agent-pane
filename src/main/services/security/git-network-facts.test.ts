@@ -101,4 +101,38 @@ describe('readRepoNetworkFacts', () => {
       rmSync(fixture, { recursive: true, force: true })
     }
   })
+
+  it('judges per-worktree config only where contained commands cannot write it', () => {
+    const fixture = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-git-worktree-config-')))
+    try {
+      const repo = join(fixture, 'repo')
+      const worktree = join(fixture, 'thread')
+      mkdirSync(repo)
+      git(repo, ['init', '-q'])
+      git(repo, ['remote', 'add', 'origin', 'https://github.com/acme/app'])
+      git(repo, ['config', 'extensions.worktreeConfig', 'true'])
+      git(repo, ['commit', '--allow-empty', '-q', '-m', 'initial'])
+      git(repo, ['worktree', 'add', '-q', '-b', 'thread', worktree])
+      const gitDir = join(repo, '.git', 'worktrees', 'thread')
+
+      // The primary checkout's layer is inside the protected common dir.
+      assert.deepEqual(readRepoNetworkFacts(repo, repo)?.unsafeConfig, [])
+      // A linked worktree Copse did not register has a writable layer.
+      assert.deepEqual(readRepoNetworkFacts(worktree, repo)?.unsafeConfig, [
+        'per-worktree config is not write-protected',
+      ])
+      // A registered worktree's layer is write-denied, so it is read and judged.
+      assert.deepEqual(readRepoNetworkFacts(worktree, repo, gitDir)?.unsafeConfig, [])
+      writeFileSync(join(gitDir, 'config.worktree'), '[core]\n\tsshCommand = ./evil\n')
+      assert.deepEqual(readRepoNetworkFacts(worktree, repo, gitDir)?.unsafeConfig, [
+        'core.sshcommand names a program',
+      ])
+      // Another worktree's git dir does not vouch for this one.
+      assert.deepEqual(readRepoNetworkFacts(worktree, repo, join(fixture, 'other'))?.unsafeConfig, [
+        'per-worktree config is not write-protected',
+      ])
+    } finally {
+      rmSync(fixture, { recursive: true, force: true })
+    }
+  })
 })
