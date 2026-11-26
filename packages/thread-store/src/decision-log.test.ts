@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { parseSpineLine } from './spine-schema.ts'
+import { deriveRuntimeCapabilities } from './execution-runtime.ts'
 import {
   DECISION_LOG_CONFORMANCE,
   DECISION_LOG_MEDIA_TYPE,
@@ -122,6 +123,69 @@ describe('decision-log schema', () => {
       { ...valid, confidence: 1.1 },
       { ...valid, reasons: ['ok', 42] },
       { ...valid, threadId: 42 },
+    ]
+    for (const event of invalid) assert.equal(parseDecisionLine(JSON.stringify(event)), null)
+  })
+
+  it('round-trips execution principal, runtime and process fields', () => {
+    const capabilities = deriveRuntimeCapabilities({ kind: 'ssh', hostId: 'box' })
+    const event = makeDecisionEvent(
+      {
+        kind: 'process-exit',
+        actor: 'system',
+        verdict: 'observed',
+        subject: 'process exited',
+        principalId: 'automation:nightly@5',
+        principalKind: 'automation',
+        runtime: 'ssh:box',
+        processRunId: 'run-1',
+        exitCode: 2,
+        exitSignal: 'SIGTERM',
+        capabilities,
+      },
+      'id',
+      1,
+    )
+    const line = serializeDecisionLine(event)
+    assert.deepEqual(parseDecisionLine(line), event)
+    const spine = parseSpineLine(line)
+    assert.equal(spine?.type, 'decision')
+  })
+
+  it('still reads a line written before execution fields existed', () => {
+    const legacy = JSON.stringify({
+      v: 1,
+      type: 'decision',
+      id: 'old',
+      at: 1,
+      kind: 'shell',
+      actor: 'user',
+      verdict: 'approved',
+      subject: SHELL_DECISION_SUBJECT,
+    })
+    const parsed = parseDecisionLine(legacy)
+    assert.equal(parsed?.principalId, undefined)
+    assert.equal(parsed?.runtime, undefined)
+  })
+
+  it('rejects malformed execution fields', () => {
+    const valid = makeDecisionEvent(
+      { ...baseInput, principalId: 'human:local', principalKind: 'human', runtime: 'local/host' },
+      'id',
+      1,
+    )
+    const invalid: unknown[] = [
+      { ...valid, principalKind: 'robot' },
+      { ...valid, principalId: 7 },
+      { ...valid, exitCode: 1.5 },
+      { ...valid, capabilities: { filesystem: 'everywhere' } },
+      {
+        ...valid,
+        capabilities: {
+          ...deriveRuntimeCapabilities({ kind: 'ssh', hostId: 'h' }),
+          suspendResume: 'no',
+        },
+      },
     ]
     for (const event of invalid) assert.equal(parseDecisionLine(JSON.stringify(event)), null)
   })

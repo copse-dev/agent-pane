@@ -4,7 +4,7 @@ import { listRunningThreadIds } from '../agent-service.ts'
 import { pendingApprovalCountForThread, pendingApprovalRequestsForThread } from '../approval.ts'
 import { pendingAskUserCountForThread, pendingAskUserQuestionsForThread } from '../ask-user.ts'
 import { storageGet } from '../storage/storage.ts'
-import { loadProjectThreadMetas, loadThreadMessages } from '../thread-store.ts'
+import { loadProjectThreadMetas, loadThreadMessages, threadReadRevision } from '../thread-store.ts'
 import { inspectThreadCheckoutRoot } from '../thread-execution-context.ts'
 import { threadHasUncommittedChanges } from '../thread-dirty-status.ts'
 import { getProjectRoot } from '../workspace.ts'
@@ -12,6 +12,7 @@ import { mobileDecisions, type MobileDecision } from './mobile-decisions.ts'
 import { mobileMessageImages } from './mobile-message-images.ts'
 import { mobileTranscriptMessages, type MobileMessage } from './mobile-transcript.ts'
 import { MobileActivityChanges } from './mobile-activity-changes.ts'
+import { MobileThreadReads } from './mobile-thread-reads.ts'
 
 const projectSchema = z.array(
   z.object({
@@ -58,6 +59,20 @@ async function settledThreadHasChanges(
 }
 
 const activityChanges = new MobileActivityChanges(settledThreadHasChanges)
+const threadReads = new MobileThreadReads(threadReadRevision, loadThreadMessages)
+
+/**
+ * Whether a paired phone may address this thread: a known project and a
+ * thread that is not archived. Metadata only, so checking before an action
+ * never reads a transcript.
+ */
+export async function mobileThreadExists(projectId: string, threadId: string): Promise<boolean> {
+  if (!safeId.test(projectId) || !safeId.test(threadId)) return false
+  if (!mobileProjects().some((project) => project.id === projectId)) return false
+  return (await loadProjectThreadMetas(projectId)).some(
+    (item) => item.id === threadId && item.archivedAt === undefined,
+  )
+}
 
 export async function mobileActivity(
   changes: Pick<MobileActivityChanges, 'read'> = activityChanges,
@@ -143,7 +158,7 @@ export async function mobileThread(
     (item) => item.id === threadId && item.archivedAt === undefined,
   )
   if (!thread) return null
-  const messages = mobileTranscriptMessages(await loadThreadMessages(projectId, threadId))
+  const messages = mobileTranscriptMessages(await threadReads.read(projectId, threadId))
   const attention = [
     ...pendingApprovalRequestsForThread(threadId).map((request) => ({
       title: request.title,
@@ -179,12 +194,10 @@ export async function mobileThreadImage(
     index < 0
   )
     return null
-  if (!mobileProjects().some((project) => project.id === projectId)) return null
-  const thread = (await loadProjectThreadMetas(projectId)).find(
-    (item) => item.id === threadId && item.archivedAt === undefined,
-  )
-  if (!thread) return null
-  const message = (await loadThreadMessages(projectId, threadId)).find(
+  if (!(await mobileThreadExists(projectId, threadId))) return null
+  // A thread's images are requested one by one as they scroll into view; they
+  // share the transcript the open thread's poll already folded.
+  const message = (await threadReads.read(projectId, threadId)).find(
     (item) => item.id === messageId,
   )
   return message ? (mobileMessageImages(message)[index] ?? null) : null

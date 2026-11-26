@@ -308,12 +308,15 @@ async function spawnShell(
 ): Promise<TerminalSession> {
   const shell = defaultShell()
   const cwd = meta?.executionTarget === 'local' ? homedir() : sessionCwd(executionRoot)
+  const env = { ...envForRendererChildProcess(), ...terminalHistoryEnv(shell, meta?.projectId) }
   const ptyProcess = await spawnPtyInProjectSandbox(shell, {
     cols,
     rows,
     cwd,
     ...(meta?.executionTarget === 'local' ? { executionTarget: { kind: 'local' } } : {}),
-    env: { ...envForRendererChildProcess(), ...terminalHistoryEnv(shell, meta?.projectId) },
+    // Preserve human temp variables: agent-writable scratch must not become
+    // bookkeeping or executable input for this explicitly unsandboxed shell.
+    env,
     // User-initiated Shells tabs run outside the project seatbelt; agent shell
     // confinement stays on run_shell / run_background (#662, #812).
     unsandboxed: true,

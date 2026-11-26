@@ -230,6 +230,8 @@ describe('bounded foreground command yielding', function () {
 
   it('keeps the original process and defers dependent edits until its one completion wake', async () => {
     const scenario = await start('success')
+    const threadId = await $('.chat-row.selected').getAttribute('data-thread-id')
+    assert.ok(threadId)
     const pids = fixtureHostPids(root)
     assert.equal(pids.length, 2)
     assert.ok(pids.every(alive))
@@ -238,7 +240,19 @@ describe('bounded foreground command yielding', function () {
       'checkpoint saved; bounded check is running',
     )
     await parkPointer()
-    await saveAppScreenshot('foreground-shell-yield-running.png')
+    await saveAppScreenshot('foreground-shell-yield-running.png', undefined, async () => {
+      // Agent idle precedes the async follow-up response. Capture this thread's
+      // settled composer after framing, while its original command still runs.
+      await expect(
+        $(`.project-entry[data-project-id="${projectId}"] .chat-row.selected`),
+      ).toHaveAttribute('data-thread-id', threadId)
+      const changes = $('.follow-up-suggestions:not([hidden]) .follow-up-bubble[data-id="changes"]')
+      await expect(changes).toBeDisplayed()
+      await expect(changes.$('.follow-up-stat-add')).toHaveText('+4')
+      await expect(changes.$('.follow-up-stat-del')).toHaveText('-0')
+      await expect($('.prompt-input')).toHaveAttribute('data-placeholder', 'Send follow-up')
+      await expectPhase('running', /^Background task \S+$/)
+    })
     const wakeCount = (await $$('.msg-machine-origin').getElements()).length
     writeFileSync(join(root, 'release.txt'), '')
     await browser.waitUntil(

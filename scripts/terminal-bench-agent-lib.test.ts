@@ -223,6 +223,7 @@ describe('terminal benchmark bridge', () => {
     })
     assert.deepEqual(terminalBenchLoopOptions(profile, runtime, 'Write /app/out.txt'), {
       reasoningRunawayRecoveryStrategy: 'legacy-two-cut-v1',
+      emptyTurnRecoveryStrategy: 'replay-v1',
       maxSteps: 10,
       maxLlmCalls: 13,
       adaptiveExtensions: false,

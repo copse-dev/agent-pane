@@ -36,8 +36,8 @@ import {
 const PANEL_ITEMS: readonly { mode: RightPanelMode; label: string }[] = [
   { mode: 'explorer', label: 'Panel (Explorer)' },
   { mode: 'terminal', label: 'Terminal' },
-  { mode: 'changes', label: 'Changes' },
-  { mode: 'prs', label: 'Pull Requests' },
+  { mode: 'changes', label: 'Review: Local changes' },
+  { mode: 'prs', label: 'Review: Pull requests' },
   { mode: 'browser', label: 'Browser' },
 ]
 

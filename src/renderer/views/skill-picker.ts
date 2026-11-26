@@ -1,4 +1,4 @@
-import type { InvocableKind } from '@shared/invocation/parse-invocation.ts'
+import type { Invocable } from '@shared/invocation/parse-invocation.ts'
 import type { ComposerTextInput } from './composer-editor.ts'
 import { clear } from '../dom/helpers.ts'
 
@@ -22,10 +22,8 @@ export function findSkillTriggerIndex(value: string, cursor: number): number {
  * One `/name` row. Skills and subagents share the picker because they share the
  * namespace — `kind` is what tells them apart on screen.
  */
-export interface InvocableEntry {
-  name: string
+export interface InvocableEntry extends Invocable {
   description: string
-  kind: InvocableKind
 }
 
 export interface SkillPickerOptions {
@@ -71,7 +69,13 @@ export function initSkillPicker(opts: SkillPickerOptions): SkillPickerController
   function filterSkills(query: string, skills: readonly InvocableEntry[]): InvocableEntry[] {
     const q = query.toLowerCase()
     if (!q) return [...skills]
-    const matched = skills.filter(
+    // Keep the familiar bare-name list; a colon query completes the plugin alias.
+    const candidates = skills.map((skill) =>
+      q.includes(':') && skill.kind === 'skill' && skill.plugin
+        ? { ...skill, name: `${skill.plugin}:${skill.name}` }
+        : skill,
+    )
+    const matched = candidates.filter(
       (skill) =>
         skill.name.toLowerCase().includes(q) || skill.description.toLowerCase().includes(q),
     )

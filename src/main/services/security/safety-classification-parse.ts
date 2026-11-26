@@ -1,3 +1,4 @@
+import { clamp } from '@copse/std/clamp.ts'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { memberOf } from '@shared/member-of.ts'
 import { z } from 'zod'
@@ -30,7 +31,7 @@ export function parseScreeningReply<const V extends readonly string[]>(
   if (!memberOf(values)(value)) return null
   const confidence =
     typeof parsed.confidence === 'number' && Number.isFinite(parsed.confidence)
-      ? Math.min(1, Math.max(0, parsed.confidence))
+      ? clamp(parsed.confidence, 0, 1)
       : 0
   const reason = typeof parsed.reason === 'string' ? parsed.reason.trim() : ''
   if (!reason) return null

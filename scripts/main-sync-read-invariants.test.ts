@@ -56,10 +56,6 @@ const BASELINE: Readonly<Record<string, SyncReadBaselineEntry>> = {
     calls: 1,
     reason: 'Small serialized preference record; candidate for an async store migration.',
   },
-  'src/main/services/mobile/mobile-server.ts': {
-    calls: 1,
-    reason: 'Local mobile HTTP server loads a bounded packaged asset on request.',
-  },
   'src/main/services/providers/env-key-detection.ts': {
     calls: 1,
     reason: 'Provider setup probe synchronously samples small user-owned environment files.',

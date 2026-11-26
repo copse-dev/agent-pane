@@ -39,8 +39,13 @@ import {
   getDefaultBranch,
   getGitStatus,
   isInsideGitWorkTree,
+  isRebaseInProgress,
   localBranchExists,
 } from './github/git-service.ts'
+
+/** Shown in the composer, which keeps the prompt for Retry. */
+const SHARED_CHECKOUT_REBASING =
+  'This checkout is in the middle of a rebase. Finish or abort it (git rebase --continue or --abort), then send again.'
 
 export interface PrepareThreadCheckoutInput {
   projectId: string
@@ -164,6 +169,8 @@ export interface ThreadCheckoutTransactionDependencies {
   branchExists: (projectRoot: string, branch: string) => Promise<boolean>
   /** Switch the shared checkout, for a shared thread that picked a branch. */
   checkoutBranch: (branch: string, projectRoot: string) => Promise<void>
+  /** Whether a `git rebase` is stopped in the project checkout. */
+  rebaseInProgress: (projectRoot: string) => Promise<boolean>
   validate: (input: {
     projectId: string
     threadId: string
@@ -309,6 +316,7 @@ const defaultDependencies: ThreadCheckoutTransactionDependencies = {
   checkoutBehindDefaultBranch: projectCheckoutBehindDefaultBranch,
   branchExists: localBranchExists,
   checkoutBranch: checkoutGitBranch,
+  rebaseInProgress: isRebaseInProgress,
   validate: validateThreadWorktree,
   retire: retireThreadWorktree,
   serialize: runSerialized,
@@ -425,6 +433,17 @@ export function createThreadCheckoutTransaction(
           inspection.currentBranch !== input.baseBranch
             ? input.baseBranch
             : null
+        // A stopped rebase leaves the checkout on no branch. Starting there
+        // would put the agent's commits into the branch being rewritten at
+        // `git rebase --continue`, and Git refuses a switch anyway. Keep the
+        // prompt in the composer until the user finishes or aborts it.
+        if (
+          inspection.isGitRepository &&
+          inspection.currentBranch === null &&
+          (await dependencies.rebaseInProgress(project.path))
+        ) {
+          throw new Error(SHARED_CHECKOUT_REBASING)
+        }
         if (switched) await dependencies.checkoutBranch(switched, project.path)
         const branch = switched ?? inspection.currentBranch
         try {

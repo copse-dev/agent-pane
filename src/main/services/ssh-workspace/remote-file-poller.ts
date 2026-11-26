@@ -1,5 +1,5 @@
 import { posixQuote } from '../security/safe-install.ts'
-import { execOnSshHost } from './remote-fs-exec.ts'
+import { execOnConnectedSshHost } from './remote-fs-exec.ts'
 
 /**
  * Polling stand-in for a remote file watcher.
@@ -54,10 +54,17 @@ interface Entry extends RemotePollTarget {
   primed: boolean
 }
 
-type ExecFn = (hostId: string, remoteRoot: string, command: string) => Promise<{ stdout: string }>
+/** Resolves to `null` when the host is not connected, which skips it for this tick. */
+type ExecFn = (
+  hostId: string,
+  remoteRoot: string,
+  command: string,
+) => Promise<{ stdout: string } | null>
 
+// Polling runs on a timer, so it only ever uses a connection that is already
+// open. Reconnecting a lost host is left to the user or to a command they ran.
 const defaultExec: ExecFn = (hostId, remoteRoot, command) =>
-  execOnSshHost(hostId, remoteRoot, command)
+  execOnConnectedSshHost(hostId, remoteRoot, command)
 
 let execImpl: ExecFn = defaultExec
 const entries = new Map<string, Entry>()
@@ -123,8 +130,10 @@ async function pollHost(hostId: string, hostEntries: Entry[]): Promise<void> {
   const byPath = new Map(hostEntries.map((entry) => [entry.absPath, entry]))
 
   for (const paths of chunk([...byPath.keys()], STAT_CHUNK_SIZE)) {
-    const { stdout } = await execImpl(hostId, remoteRoot, buildStatCommand(paths))
-    const stats = parseStatOutput(stdout)
+    const result = await execImpl(hostId, remoteRoot, buildStatCommand(paths))
+    // Not connected: keep every baseline as it is and try again next tick.
+    if (!result) return
+    const stats = parseStatOutput(result.stdout)
     for (const path of paths) {
       const entry = byPath.get(path)
       // Dropped mid-tick by an `fs:unwatch`; its signature is no longer wanted.

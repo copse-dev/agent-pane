@@ -100,7 +100,13 @@ describe('landing cupcake walkthrough', () => {
     await expect($('h1')).toHaveText(expect.stringContaining('Big feelings.'))
     await expect($('.signup')).toBeDisplayed()
     await expect($('.hero-art')).toBeDisplayed()
-    await $('.signup input[type="email"]').setValue('demo@example.com')
+    // Click into the field first, as a person would. Chrome 158's chromedriver
+    // refuses Element Clear (the first half of setValue) on a field in the
+    // cross-origin preview frame that has not been interacted with, reporting
+    // "element not interactable"; a click scrolls it into view and focuses it.
+    const email = $('.signup input[type="email"]')
+    await email.click()
+    await email.setValue('demo@example.com')
     await $('.signup button[type="submit"]').click()
     await expect($('#form-note')).toHaveText("You're on the list — we'll save you the first swirl.")
     await expect($('.signup button[type="submit"]')).toHaveText(
@@ -235,7 +241,7 @@ describe('landing cupcake walkthrough', () => {
     )
     await expect($('#titlebar')).toBeDisplayed()
     await expect($('#pane-projects')).toBeDisplayed()
-    const changes = $('.titlebar-btn[aria-label="Open changes"]')
+    const changes = $('.titlebar-btn[aria-label="Open review"]')
     await changes.click()
     await expect(changes).toHaveElementClass('active')
     await $('.git-changes-section-proposed').waitForDisplayed({ timeout: 20_000 })

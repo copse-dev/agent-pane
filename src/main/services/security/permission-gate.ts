@@ -1,7 +1,11 @@
 import { projectAllowsPortBinding, rememberProjectPortBinding } from './project-port-grants.ts'
 import { planToolBlockReason } from '../thread-plan-context.ts'
 import { z } from 'zod'
-import { browserApprovalDetails, webApprovalDetails } from '@shared/approval-copy.ts'
+import {
+  browserApprovalDetails,
+  projectPortBindingApproval,
+  webApprovalDetails,
+} from '@shared/approval-copy.ts'
 import { assertPreparationPlan } from '../worktree-preparation.ts'
 import {
   containedPreparationPath,
@@ -71,7 +75,6 @@ import {
   fetchUrlFromArgs,
   shellCommandFromArgs,
   formatShellPromptParts,
-  formatPortBindingPromptParts,
   backgroundAllowsPortBinding,
   backgroundCommandFromArgs,
   formatExternalSandboxPromptParts,
@@ -116,7 +119,11 @@ import {
   formatReadOutsideProjectPromptParts,
   READ_OUTSIDE_PROJECT_TITLE,
 } from './read-outside-project.ts'
-import { grantReadOutsideProject, hasReadOutsideProjectGrant } from './read-outside-grant.ts'
+import {
+  grantReadOutsideProject,
+  hasReadOutsideProjectGrant,
+  safeCanonicalReadTarget,
+} from './read-outside-grant.ts'
 import { getMcpToolMeta, isMcpToolRemembered, rememberMcpTool } from '../mcp/mcp-registry.ts'
 import { CUSTOM_TOOL_PREFIX, customToolLabel } from '../mcp/custom-tools-config.ts'
 import {
@@ -397,9 +404,10 @@ function readsOnlyUserTemp(paths: readonly string[]): boolean {
  *
  * Returns null when the command is not that shape, so the caller falls through
  * to its normal prompt. Otherwise the thread's standing grant answers it, or the
- * user is asked with the narrower read-access wording — where the primary button
- * grants the named paths (and descendants of any directories) for the rest
- * of the thread; the secondary button approves just this command.
+ * user is asked with the narrower read-access wording. The collapsed card offers
+ * the named-path grant (and eligible descendants of approved directories) for the
+ * rest of this thread as its sole approval action. Expanding the details makes
+ * approval of just this command primary and keeps the grant action secondary.
  *
  * Every outcome lands in the durable decision log, naming the paths that were at
  * stake. The grant itself is held in memory (`read-outside-grant.ts`) and dies
@@ -422,6 +430,11 @@ async function resolveReadOutsideProject(
   if (spawnRunsOnSshTarget(workspaceRoot)) return null
   const analysis = analyzeReadOutsideProject(command, workspaceRoot)
   if (!analysis.eligible) return null
+  // The shell follows links before opening the path. Reject a narrow grant
+  // whose destination is a credential store or broad filesystem root, even
+  // when its harmless-looking token conceals that destination.
+  const canonicalTargets = analysis.resolvedTargets.map(safeCanonicalReadTarget)
+  if (canonicalTargets.some((target) => target === null)) return null
 
   // The one fact the durable log can carry about this command: the paths, never
   // the command line (see SHELL_DECISION_SUBJECT). Shared by the prompt's answer
@@ -462,7 +475,9 @@ async function resolveReadOutsideProject(
     {
       title: READ_OUTSIDE_PROJECT_TITLE,
       type: 'shell',
-      ...shellPromptToApprovalFields(formatReadOutsideProjectPromptParts(command, analysis)),
+      ...shellPromptToApprovalFields(
+        formatReadOutsideProjectPromptParts(command, analysis, canonicalTargets),
+      ),
       subject: SHELL_DECISION_SUBJECT,
       scope: 'external-read',
       cause: 'shell-read-outside-project',
@@ -1997,14 +2012,9 @@ async function checkBackgroundProcessPermission(
 
   const { approved, remember } = await requestApproval(
     {
-      title: 'Allow this project to bind a local port?',
       type: 'shell',
       cause: 'shell-port-binding',
-      ...shellPromptToApprovalFields(
-        formatPortBindingPromptParts(root, backgroundCommandFromArgs(args)),
-      ),
-      allowRemember: true,
-      rememberLabel: 'Always allow local port binding in this project',
+      ...projectPortBindingApproval(root, backgroundCommandFromArgs(args)),
     },
     signal,
   )
