@@ -2721,6 +2721,78 @@ summary.pr-check-group-heading::-webkit-details-marker {
 .pr-check-group[open] .pr-check-chevron {
   transform: rotate(90deg);
 }
+.pr-review-thread {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-top: var(--spacing-sm);
+  overflow: hidden;
+}
+.pr-review-thread-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-xs) var(--spacing-sm);
+  padding: var(--spacing-xs) var(--spacing-md);
+  background: var(--bg-muted);
+  font-size: var(--font-size-xs);
+}
+.pr-review-thread-path {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.pr-review-thread-address {
+  margin-left: auto;
+}
+.pr-review-thread-address-all {
+  margin-left: var(--spacing-sm);
+  font-weight: 400;
+}
+.pr-review-thread .pr-comment {
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0;
+  margin-top: 0;
+}
+.pr-review-thread-more {
+  padding: var(--spacing-xs) var(--spacing-md);
+  margin: 0;
+  border-top: 1px solid var(--border-subtle);
+}
+.pr-review-thread-footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-top: 1px solid var(--border-subtle);
+}
+.pr-review-reply-input {
+  width: 100%;
+  min-height: calc(48px * var(--ui-scale));
+  resize: vertical;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--font-size-sm);
+}
+.pr-review-thread-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-xs);
+}
+.pr-review-thread-status {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+.pr-review-thread-status[data-ok=false] {
+  color: var(--error);
+}
+.pr-conversation-heading {
+  margin-top: var(--spacing-md);
+}
 .pr-check-count {
   margin-left: auto;
   color: var(--text-secondary);
@@ -9357,6 +9429,29 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 }
 .diff-approval-bar[hidden] {
   display: none;
+}
+.git-stage-bar {
+  flex-wrap: wrap;
+  gap: var(--spacing-xs) var(--spacing-sm);
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.git-stage-bar[hidden] {
+  display: none;
+}
+.git-stage-status {
+  flex: 1 1 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+.git-stage-status:empty {
+  display: none;
+}
+.git-stage-status[data-ok=false] {
+  color: var(--error);
 }
 .monaco-editor .diff-line-comment-add {
   display: flex;
