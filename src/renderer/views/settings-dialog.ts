@@ -8,6 +8,7 @@ import { closeIcon } from '../dom/icons.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
 import { createClassifiersSection } from './setup/classifiers-section.ts'
 import { createMachinesSection } from './setup/machines-section.ts'
+import { createAgentProfilesSection } from './settings/agent-profiles-section.ts'
 import { createWebSearchSection } from './settings/web-search-section.ts'
 import { createSshWorkspaceSection } from './setup/ssh-workspace-section.ts'
 import { createToolPermissionsPanel } from './tool-permissions-panel.ts'
@@ -117,6 +118,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   qsRequired(overlay, '#settings-classifiers-host').append(classifiersSection.root)
   const webSearchSection = createWebSearchSection(api)
   qsRequired(overlay, '#settings-web-search-host').append(webSearchSection.root)
+  const agentProfilesSection = createAgentProfilesSection(api, {
+    // Saved at once, so the composer's model menu offers the change right away.
+    onChanged: (): void => {
+      store.emit('settings_changed')
+    },
+  })
+  qsRequired(overlay, '#settings-agent-profiles-host').append(agentProfilesSection.root)
 
   const machinesSection = createMachinesSection(api)
   qsRequired(overlay, '#settings-machines-host').append(machinesSection.root)
@@ -244,7 +252,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           await Promise.all([usageSection.refresh(signal), providersSection.refreshUsage(signal)])
         },
       },
-      agent: { refresh: (_values, signal): Promise<void> => providersSection.refreshAgent(signal) },
+      agent: {
+        refresh: async (_values, signal): Promise<void> => {
+          await Promise.all([
+            providersSection.refreshAgent(signal),
+            agentProfilesSection.refresh(signal),
+          ])
+        },
+      },
       permissions: {
         refresh: (_values, signal): Promise<void> => toolPermissionsPanel.refresh(signal),
       },

@@ -1049,8 +1049,9 @@ describe('acp-session-pool', () => {
     const log: AgentLog = { spawns: 0, promptSessions: [] }
     const fault: AcpAgentResourceFault = {
       code: 'EMFILE',
-      detail: 'Settings watcher error: EMFILE: too many open files, watch',
+      detail: "EMFILE: too many open files, open '/tmp/pool-test/package.json'",
       limitLabel: 'inherited open-file limit 10240 soft / 10240 hard',
+      observedAt: Date.now(),
     }
     // Only the first process is out of descriptors; its replacement is healthy.
     const createTransport = makeResumableTransportFactory(log, (spawn) =>
@@ -1092,8 +1093,9 @@ describe('acp-session-pool', () => {
     // start — the inherited-ceiling case, where no replacement is any better.
     const createTransport = makeResumableTransportFactory(log, () => ({
       code: 'EMFILE',
-      detail: 'EMFILE: too many open files, watch',
+      detail: 'EMFILE: too many open files, open',
       limitLabel: 'inherited open-file limit 256 soft / 256 hard',
+      observedAt: Date.now(),
     }))
 
     // A known-faulted process is never simply handed the next turn: the first
@@ -1109,8 +1111,8 @@ describe('acp-session-pool', () => {
     assert.equal(third.entry, second.entry)
     assert.equal(log.spawns, 2)
 
-    // …until one survives long enough that exhaustion reads as accumulation
-    // again, which a replacement really can clear.
+    // …until a process reports it only after running long enough that it
+    // reads as accumulation again, which a replacement really can clear.
     second.entry.openedAt = Date.now() - 10 * 60_000
     const fourth = await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
     assert.notEqual(fourth.entry, second.entry)
@@ -1122,8 +1124,9 @@ describe('acp-session-pool', () => {
     const log: AgentLog = { spawns: 0, promptSessions: [] }
     const createTransport = makeResumableTransportFactory(log, () => ({
       code: 'EMFILE',
-      detail: 'EMFILE: too many open files, watch',
+      detail: 'EMFILE: too many open files, open',
       limitLabel: 'inherited open-file limit 256 soft / 256 hard',
+      observedAt: Date.now(),
     }))
     await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
     await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
@@ -1137,6 +1140,79 @@ describe('acp-session-pool', () => {
     assert.equal(stuck.fault.code, 'EMFILE')
     assert.equal(stuck.fault.limitLabel, 'inherited open-file limit 256 soft / 256 hard')
     clearUnrepairableOpenFileFault()
+  })
+
+  it('stops respawning startup faults even when the turns are minutes apart', async () => {
+    clearUnrepairableOpenFileFault()
+    const log: AgentLog = { spawns: 0, promptSessions: [] }
+    const faults: AcpAgentResourceFault[] = []
+    // Every process runs out moments after it starts, which a replacement
+    // cannot fix. The age that tells this apart from a leak is the process's
+    // age at the fault, not at the user's next turn.
+    const createTransport = makeResumableTransportFactory(log, () => {
+      const fault: AcpAgentResourceFault = {
+        code: 'EMFILE',
+        detail: 'EMFILE: too many open files, open',
+        limitLabel: 'inherited open-file limit 256 soft / 256 hard',
+        observedAt: Date.now(),
+      }
+      faults.push(fault)
+      return fault
+    })
+    const waitTenMinutes = (entry: { openedAt: number }): void => {
+      entry.openedAt -= 10 * 60_000
+      for (const fault of faults) fault.observedAt -= 10 * 60_000
+    }
+
+    const first = await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
+    waitTenMinutes(first.entry)
+    const second = await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
+    assert.notEqual(second.entry, first.entry, 'one fresh process is still worth trying')
+    waitTenMinutes(second.entry)
+    const third = await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
+    assert.equal(third.entry, second.entry, 'the replacement faulted at startup too')
+    assert.equal(log.spawns, 2)
+    assert.ok(unrepairableOpenFileFault())
+    clearUnrepairableOpenFileFault()
+  })
+
+  it('does not replace a faulted process under an unfinished background tool', async () => {
+    const log: AgentLog = { spawns: 0, promptSessions: [] }
+    const fault: AcpAgentResourceFault = {
+      code: 'EMFILE',
+      detail: 'EMFILE: too many open files, open',
+      limitLabel: 'inherited open-file limit 10240 soft / 10240 hard',
+      observedAt: Date.now(),
+    }
+    const createTransport = makeResumableTransportFactory(log, (spawn) =>
+      spawn === 1 ? fault : null,
+    )
+    const first = await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
+    // A long-running process that leaked to its limit: worth replacing, but
+    // not while the helper it started last turn is still running in it.
+    first.entry.openedAt = Date.now() - 10 * 60_000
+    first.entry.open.updates.enqueue({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'helper',
+      title: 'Background helper',
+      status: 'in_progress',
+    })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+
+    const during = await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
+    assert.equal(during.entry, first.entry, 'replacing it now would kill the helper')
+    assert.equal(log.spawns, 1)
+
+    first.entry.open.updates.enqueue({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'helper',
+      status: 'completed',
+    })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    const after = await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
+    assert.notEqual(after.entry, first.entry)
+    assert.equal(log.spawns, 2)
+    assert.equal(after.fresh, false, 'the replacement resumes the same agent session')
   })
 
   it('a disposed session reports closed so acquire never reuses it', async () => {
