@@ -96,8 +96,7 @@ Source files remain authoritative; deleting this cache is safe.
                                      #   an imported Claude Code session's copy lives under projects/
     history-edit-transaction.json    # pending edit rollback journal (temporary, private)
     history-edit-undo.json           # previous transcript/history for one-step Undo (optional, private)
-    writer.lease                     # which process may advance this thread's turn (optional, private)
-    writer.lease.lock/               # momentary guard around lease updates (transient)
+    writer.lease.<epoch>             # which process may advance this thread's turn (optional, private)
     messages/<messageId>.md          # OKF: verbatim message content (frontmatter + body)
     messages/<messageId>.reasoning.md  # OKF: thinking text (optional)
     messages/~rev-<sha256>.md        # an already-saved message's replacement prose; its reasoning,
@@ -270,14 +269,15 @@ Source files remain authoritative; deleting this cache is safe.
   the current transcript still matches that revision. A later transcript
   mutation makes the snapshot ineligible. Both history-edit sidecars are
   atomically written with owner-only permissions and must never be logged.
-- **`writer.lease`** names the process that holds the thread's writer lease
-  (`writer-lease.ts`): host, pid, a per-process owner id, a fencing epoch and a
-  heartbeat. A dispatcher takes it for each turn and removes it when the turn
-  ends, so it exists only while a turn runs or after a crash. A record whose
-  heartbeat is older than its time-to-live, or whose pid is gone on this host,
-  is free to take over. It records its thread id, so a copied directory never
-  looks owned. `writer.lease.lock/` is created with `mkdir` for the few
-  milliseconds a lease update takes. Neither is part of a thread folder export.
+- **`writer.lease.<epoch>`** names the process that holds the thread's writer
+  lease (`writer-lease.ts`): host, pid, a per-process owner id, the fencing
+  epoch in its name and a heartbeat. The highest epoch is the lease. A
+  dispatcher takes it for each turn by creating the next epoch's file with an
+  exclusive hard link, and marks it released when the turn ends; older epochs
+  are removed, so one file remains. A record that is released, whose heartbeat
+  is older than its time-to-live, or whose pid is gone on this host, is free to
+  take over. It records its thread id, so a copied directory never looks owned.
+  It is not part of a thread folder export.
 
 **Ids in file names.** `<messageId>`, `<toolCallId>` and `<subagentId>` above are
 the id as written only when it is 1–128 characters of `[A-Za-z0-9_-]` (UUIDs and
