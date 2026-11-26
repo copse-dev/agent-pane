@@ -501,6 +501,46 @@ while one is active, Copse pauses auto-run and names the holder in an approval p
 starting a new network-capable command. Structurally read-only
 commands do not prompt because they cannot open a network connection.
 
+### Per-command network scope
+
+A few network commands have a destination Copse can name before they run: `git fetch`, `pull`,
+`ls-remote` and non-force `push` against a configured remote, `git clone` from github.com or a host
+a configured remote already uses, and the `gh` read commands. In standard mode such a command runs
+**inside** the project sandbox in its own ASRT host process (`port-binding-worker.ts`), whose
+allowlist is exactly that command's hosts: the remote URL's host (the push URL for a push), or
+`github.com`, `api.github.com` and `*.githubusercontent.com` for `gh`. Main's process-wide
+allowlist never changes, so no other contained command can use the egress, and the host exits with
+the command. This replaces the "Agent requests sandbox escape" and "Run outside sandbox?" prompts
+those commands used to raise, and an auto-approved escape for them.
+
+All of these must hold, or the command takes its ordinary path unchanged
+(`scopedNetworkRunFor` in `permission-gate.ts`, `network-scoped-shell.ts`):
+
+- standard mode, an active local sandbox, auto-run on and a trusted workspace;
+- the auto-approval classifier places every segment in a tier the user enabled. It accepts `git
+  pull` and `git clone` only for a network-scoped run, never for an escape;
+- the harm gate allows the command, so tag pushes and other release actions, `gh` writes, `gh
+  gist create` and `gh api` with a method, field or input file still ask;
+- `git` and `gh` are named bare and resolve on `PATH` outside the workspace and temp directories,
+  with no writable directory searched before them;
+- no `cd`, and the execution root's own `.git` leads to the project's common git directory, whose
+  `config` and `hooks/` contained commands cannot write. Repository config that names a program
+  (`core.sshCommand`, `core.fsmonitor`, a `!` credential helper, filter or diff drivers, upload
+  packs), includes another file or enables per-worktree config refuses the scope. A `core.hooksPath`
+  inside the workspace refuses `push` and `pull`; `fetch`, `ls-remote` and `clone` run with hooks
+  off.
+
+Every one of these hosts accepts writes from anyone holding a token, so the boundary is that only
+the recognised tool runs while the egress is open, not the host name. For GitHub the scoped command
+gets the user's token as `GH_TOKEN`, a git credential helper scoped to `https://github.com` that
+answers only from it, SSH-to-HTTPS rewrites for github.com remotes (the sandbox cannot read
+`~/.ssh`), and a fresh `GH_CONFIG_DIR` in its temp directory. Other hosts get no credentials, so a
+private remote elsewhere fails contained and offers the usual retry. A proxy denial inside the
+scoped host counts as runner evidence for that retry.
+
+Lockfile installs are not a scoped shape yet: `.pnpmfile.cjs`, Yarn's `yarnPath` and plugins, and
+source builds run repository code during the install, which would hold registry egress.
+
 ### Linked worktree recovery
 
 A contained command in a validated linked thread worktree may update that worktree's own Git

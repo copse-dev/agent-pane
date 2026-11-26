@@ -94,6 +94,14 @@ export interface AutoApprovalContext {
    * Same injected-resolver shape as {@link ShellHarmContext}.
    */
   canonicalizePath?: (path: string) => string
+  /**
+   * Set only by the per-command network scope (`network-scoped-shell.ts`), whose
+   * run stays inside the project sandbox with egress to the command's own hosts
+   * alone. It additionally admits `git pull` and `git clone`, which merge or
+   * check out remote content and so must never authorize a run OUTSIDE the
+   * sandbox; the escalation paths never set it.
+   */
+  networkContained?: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -190,7 +198,7 @@ function writesAFile(command: string): boolean {
  * check: `shell-quote` yields operator objects for `>` and `&`, which would make
  * {@link argvOf} refuse `git fetch origin main 2>&1`.
  */
-function stripClearedRedirects(segment: string): string {
+export function stripClearedRedirects(segment: string): string {
   return segment
     .replace(/(?:^|\s)&?\d?>{1,2}\s*\/dev\/null\b/g, ' ')
     .replace(/(?:^|\s)\d?>\s*&\s*\d/g, ' ')
@@ -202,7 +210,7 @@ function stripClearedRedirects(segment: string): string {
  * glob, an operator, or anything `shell-quote` does not resolve to a literal
  * string — an argument we cannot read is an argument we will not approve.
  */
-function argvOf(segment: string): string[] | null {
+export function argvOf(segment: string): string[] | null {
   let tokens: ReturnType<typeof parseShell>
   try {
     tokens = parseShell(segment)
@@ -221,7 +229,7 @@ function argvOf(segment: string): string[] | null {
  * not the harm gate's wider one that sees through `sudo`. A `sudo` prefix is
  * therefore an unrecognised head here and prompts, which is the intent.
  */
-function effectiveArgv(argv: readonly string[]): string[] | null {
+export function effectiveArgv(argv: readonly string[]): string[] | null {
   let index = 0
   while (index < argv.length) {
     const token = argv[index] ?? ''
@@ -444,6 +452,136 @@ const GIT_PUSH_FLAGS: ReadonlySet<string> = new Set([
 /** Flags on `fetch`/`ls-remote`/`push` whose value is a separate argument. */
 const GIT_NETWORK_VALUE_FLAGS: ReadonlySet<string> = new Set(['--depth', '--deepen'])
 
+/**
+ * Flags accepted on `git pull` when the run is network-contained. The merge and
+ * rebase it performs are local writes, kept inside the sandbox like any other
+ * contained command. `--rebase=interactive` (an editor) and every flag that
+ * names a strategy program or a file are absent.
+ */
+const GIT_PULL_FLAGS: ReadonlySet<string> = new Set([
+  '--ff-only',
+  '--ff',
+  '--no-ff',
+  '--rebase',
+  '-r',
+  '--no-rebase',
+  '--autostash',
+  '--no-autostash',
+  '--no-edit',
+  '--prune',
+  '-p',
+  '--tags',
+  '-t',
+  '--no-tags',
+  '--depth',
+  '--quiet',
+  '-q',
+  '--verbose',
+  '-v',
+  '--progress',
+  '--no-progress',
+])
+
+/**
+ * Flags accepted on `git clone` when the run is network-contained. Absent on
+ * purpose: `--template` (a directory of hooks), `--recurse-submodules` (URLs the
+ * cloned repository chooses), `--reference`/`--separate-git-dir` (paths outside
+ * the destination) and `--config`, which `GIT_EXECUTING_OPTIONS` refuses as `-c`.
+ */
+const GIT_CLONE_FLAGS: ReadonlySet<string> = new Set([
+  '--depth',
+  '--branch',
+  '-b',
+  '--single-branch',
+  '--no-single-branch',
+  '--no-tags',
+  '--filter',
+  '--quiet',
+  '-q',
+  '--verbose',
+  '-v',
+  '--progress',
+  '--no-progress',
+])
+const GIT_CLONE_VALUE_FLAGS: ReadonlySet<string> = new Set([
+  '--depth',
+  '--branch',
+  '-b',
+  '--filter',
+])
+
+/** `--filter` values that only skip objects; anything else prompts. */
+const GIT_CLONE_FILTERS: ReadonlySet<string> = new Set(['blob:none', 'tree:0'])
+
+/**
+ * A clone source naming a host over a network transport: `https://host/…`,
+ * `ssh://host/…` or scp-like `user@host:path`. Local paths, `file://` and
+ * remote helpers (`ext::`, `fd::`) are refused, since they read outside the
+ * workspace or run a program.
+ */
+export function isNetworkCloneSource(token: string): boolean {
+  if (token.includes('::')) return false
+  if (/^(?:https|ssh):\/\/[^\s/]+\/\S+$/i.test(token)) return true
+  return /^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:[^/\s][^\s]*$/.test(token)
+}
+
+function classifyContainedPull(
+  args: readonly string[],
+  configuredRemotes: ReadonlySet<string>,
+): { tier: AutoApprovalTier } | { reason: string } {
+  const partitioned = partitionArgs(args, GIT_PULL_FLAGS, GIT_NETWORK_VALUE_FLAGS)
+  if (!partitioned) return { reason: 'unrecognised or unsafe flag on git pull' }
+  for (const token of args) {
+    if (flagName(token) !== '--rebase' || !token.includes('=')) continue
+    const value = token.slice('--rebase='.length)
+    if (!['true', 'false', 'merges'].includes(value)) {
+      return { reason: 'git pull --rebase mode not recognised' }
+    }
+  }
+  const { positional } = partitioned
+  if (!positional.every(isPlainRefToken)) {
+    return { reason: 'git pull argument is not a plain ref or remote name' }
+  }
+  if (positional.length > 0 && !configuredRemotes.has(positional[0] ?? '')) {
+    return { reason: 'git pull does not name a configured remote' }
+  }
+  if (positional.length === 0 && configuredRemotes.size === 0) {
+    return { reason: 'git pull has no configured remote to fall back on' }
+  }
+  return { tier: 'read' }
+}
+
+function classifyContainedClone(
+  args: readonly string[],
+): { tier: AutoApprovalTier } | { reason: string } {
+  const positional: string[] = []
+  for (let index = 0; index < args.length; index++) {
+    const token = args[index] ?? ''
+    if (!isFlag(token)) {
+      positional.push(token)
+      continue
+    }
+    const name = flagName(token)
+    if (!GIT_CLONE_FLAGS.has(name)) return { reason: 'unrecognised or unsafe flag on git clone' }
+    if (!GIT_CLONE_VALUE_FLAGS.has(name)) continue
+    const value = token.includes('=') ? token.slice(name.length + 1) : args[++index]
+    if (value === undefined) return { reason: `git clone ${name} has no value` }
+    if (name === '--filter' && !GIT_CLONE_FILTERS.has(value)) {
+      return { reason: 'git clone --filter is not a plain object filter' }
+    }
+    if ((name === '--branch' || name === '-b') && !isPlainRefToken(value)) {
+      return { reason: 'git clone --branch is not a plain ref' }
+    }
+  }
+  const [source, destination, ...rest] = positional
+  if (source === undefined || rest.length > 0) return { reason: 'git clone needs one source' }
+  if (!isNetworkCloneSource(source)) return { reason: 'git clone source is not a network URL' }
+  if (destination !== undefined && !isWorkspaceRelativePath(destination)) {
+    return { reason: 'git clone destination leaves the workspace' }
+  }
+  return { tier: 'read' }
+}
+
 interface LocalWriteSpec {
   flags: ReadonlySet<string>
   /** Flags whose value is the next argument, so it is not read as a positional. */
@@ -495,7 +633,9 @@ function hasExecutingGitOption(argv: readonly string[]): boolean {
  * Split a git argv into `{ subcommand, args }`, or null when a global option
  * outside {@link GIT_ALLOWED_GLOBAL_OPTIONS} appears before the subcommand.
  */
-function splitGitArgv(argv: readonly string[]): { subcommand: string; args: string[] } | null {
+export function splitGitArgv(
+  argv: readonly string[],
+): { subcommand: string; args: string[] } | null {
   let index = 1
   while (index < argv.length) {
     const token = argv[index] ?? ''
@@ -681,6 +821,18 @@ function classifyGitSegment(
   const split = splitGitArgv(argv)
   if (!split) return { tier: null, reason: `unrecognised git global option: ${segment}` }
   const { subcommand, args } = split
+
+  if (context.networkContained === true && (subcommand === 'pull' || subcommand === 'clone')) {
+    const [release] = releaseActionReasons(argv)
+    if (release !== undefined) return { tier: null, reason: `${release}: ${segment}` }
+    const outcome =
+      subcommand === 'pull'
+        ? classifyContainedPull(args, context.configuredRemotes)
+        : classifyContainedClone(args)
+    return 'tier' in outcome
+      ? { tier: outcome.tier, reason: `git ${subcommand} with network contained to its host` }
+      : { tier: null, reason: `${outcome.reason}: ${segment}` }
+  }
 
   if (GIT_NETWORK_SUBCOMMANDS.has(subcommand)) {
     // Pushing a tag publishes a release (`git push origin v1.7.0`, `--tags`): the

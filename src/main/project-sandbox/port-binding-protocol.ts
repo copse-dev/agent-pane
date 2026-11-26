@@ -4,15 +4,31 @@ import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 
 export const PORT_BINDING_REQUEST_ENV = 'COPSE_PORT_BINDING_REQUEST'
 
+/**
+ * A public host a per-command network scope may open: a DNS name, optionally one
+ * leading `*.` wildcard label. Never loopback, an IP literal or a bare label, so a
+ * scoped command cannot reach a local service through this policy.
+ */
+export const SCOPED_NETWORK_DOMAIN =
+  /^(?:\*\.)?(?!localhost$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.[a-z][a-z0-9-]*[a-z0-9]$/
+
 // Main builds this exact workspace policy while it still has the validated
 // worktree registration and active thread's read-root ledger. The worker may
-// accept only a loopback network overlay across the process boundary.
+// accept only two network overlays across the process boundary: loopback with
+// binding (an approved dev server), or a short list of public hosts without
+// binding (one network-scoped command, `network-scoped-shell.ts`).
+const loopbackNetworkSchema = z.object({
+  allowedDomains: z.array(z.enum(['localhost', '127.0.0.1', '::1'])),
+  deniedDomains: z.array(z.string()),
+  allowLocalBinding: z.literal(true),
+})
+const scopedNetworkSchema = z.object({
+  allowedDomains: z.array(z.string().regex(SCOPED_NETWORK_DOMAIN)).min(1).max(8),
+  deniedDomains: z.array(z.string()),
+  allowLocalBinding: z.literal(false),
+})
 const overlaySchema = z.object({
-  network: z.object({
-    allowedDomains: z.array(z.enum(['localhost', '127.0.0.1', '::1'])),
-    deniedDomains: z.array(z.string()),
-    allowLocalBinding: z.literal(true),
-  }),
+  network: z.union([loopbackNetworkSchema, scopedNetworkSchema]),
   filesystem: z.object({
     denyRead: z.array(z.string()),
     allowRead: z.array(z.string()),
@@ -30,6 +46,8 @@ const requestSchema = z.object({
   env: z.record(z.string(), z.string()).optional(),
   overlay: overlaySchema,
   violationId: z.string().optional(),
+  /** A foreground command: give it EOF on stdin instead of a held-open pipe. */
+  closeStdin: z.boolean().optional(),
 })
 
 export type PortBindingRequest = z.infer<typeof requestSchema>

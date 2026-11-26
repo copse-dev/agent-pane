@@ -1,0 +1,236 @@
+import { readFileSync, realpathSync, statSync } from 'node:fs'
+import { isAbsolute, join, resolve, sep } from 'node:path'
+import { resolveGitCommonDir } from './git-remotes.ts'
+
+/**
+ * What a per-command network scope needs to know about the repository a contained
+ * `git` or `gh` command will run in (`network-scoped-shell.ts`): where each
+ * configured remote points, and whether the repository's own config could make git
+ * run a program while it holds that remote's egress.
+ *
+ * Read straight from the config files, for the reason `git-remotes.ts` gives:
+ * spawning git inside the permission gate is both a latency cost and a place
+ * repository config could execute.
+ *
+ * The facts are only worth anything because contained commands cannot write the
+ * common `config`, `config.worktree` or `hooks/` (`gitAdminDenyWrite` in
+ * `project-sandbox/config.ts`). A nested repository a contained command created
+ * has no such protection, so {@link readRepoNetworkFacts} refuses an execution
+ * root whose `.git` does not lead to the project's own common directory.
+ */
+
+const MAX_CONFIG_BYTES = 1024 * 1024
+
+export interface RemoteUrls {
+  url: string | null
+  pushUrl: string | null
+}
+
+export interface RepoNetworkFacts {
+  remotes: ReadonlyMap<string, RemoteUrls>
+  /**
+   * Repository config entries that name a program or pull in another file. Any one
+   * makes git able to run code the facts cannot vouch for, so the scope is refused.
+   */
+  unsafeConfig: readonly string[]
+  /** `core.hooksPath` is relative or inside the workspace, where contained commands write. */
+  workspaceHooks: boolean
+}
+
+interface ConfigEntry {
+  /** Lower-cased `section.subsection.key`, subsection case kept as git does. */
+  key: string
+  value: string
+}
+
+const SECTION = /^\s*\[\s*([A-Za-z0-9.-]+)(?:\s+"((?:[^"\\]|\\.)*)")?\s*\]\s*(.*)$/
+const ENTRY = /^\s*([A-Za-z][A-Za-z0-9-]*)\s*(?:=\s*(.*))?$/
+
+function unquote(raw: string): string {
+  let out = ''
+  let quoted = false
+  for (let index = 0; index < raw.length; index++) {
+    const ch = raw.charAt(index)
+    if (ch === '\\') {
+      const next = raw.charAt(++index)
+      out += next === 'n' ? '\n' : next === 't' ? '\t' : next
+      continue
+    }
+    if (ch === '"') {
+      quoted = !quoted
+      continue
+    }
+    if (!quoted && (ch === '#' || ch === ';')) break
+    out += ch
+  }
+  return out.trim()
+}
+
+/** A deliberately small git-config reader: sections, keys and values, no includes. */
+export function parseGitConfig(text: string): ConfigEntry[] {
+  const entries: ConfigEntry[] = []
+  let section: string | null = null
+  for (const rawLine of text.split(/\r?\n/)) {
+    let line = rawLine
+    const header = SECTION.exec(line)
+    if (header) {
+      const name = (header[1] ?? '').toLowerCase()
+      const sub = header[2]
+      // `[remote.origin]` is the deprecated spelling of `[remote "origin"]`.
+      section = sub !== undefined ? `${name}.${sub.replace(/\\(.)/g, '$1')}` : name
+      line = header[3] ?? ''
+      if (!line.trim()) continue
+    }
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith(';')) continue
+    if (section === null) continue
+    const entry = ENTRY.exec(trimmed)
+    if (!entry) continue
+    entries.push({
+      key: `${section}.${(entry[1] ?? '').toLowerCase()}`,
+      value: entry[2] === undefined ? 'true' : unquote(entry[2]),
+    })
+  }
+  return entries
+}
+
+/** Last segment of a dotted key, and the section it belongs to. */
+function splitKey(key: string): { section: string; name: string; sub: string | null } {
+  const first = key.indexOf('.')
+  const last = key.lastIndexOf('.')
+  const section = key.slice(0, first)
+  const name = key.slice(last + 1)
+  const sub = last > first ? key.slice(first + 1, last) : null
+  return { section, name, sub }
+}
+
+/** A command value git would run through the shell, or a path to a program. */
+const PLAIN_PROGRAM = /^[A-Za-z0-9_-][A-Za-z0-9._-]*(?:\s+[A-Za-z0-9 %._=/-]*)?$/
+
+function unsafeEntry(entry: ConfigEntry): string | null {
+  const { section, name, sub } = splitKey(entry.key)
+  const value = entry.value
+  if (section === 'include' || section === 'includeif') return 'includes another config file'
+  if (section === 'core') {
+    if (['sshcommand', 'askpass', 'gitproxy', 'editor', 'pager'].includes(name)) {
+      return `core.${name} names a program`
+    }
+    if (name === 'fsmonitor' && !/^(?:true|false|0|1|yes|no|on|off)$/i.test(value)) {
+      return 'core.fsmonitor names a program'
+    }
+    return null
+  }
+  if (section === 'credential' && name === 'helper') {
+    // Built-in helper names (`store`, `osxkeychain`) resolve to git's own
+    // `git-credential-*` programs; a `!` snippet or a path runs anything.
+    return value === '' || /^[A-Za-z0-9-]+$/.test(value) ? null : 'credential.helper runs a command'
+  }
+  // A worktree's own `config.worktree` sits in its writable git dir, unlike the
+  // common config, so the facts cannot vouch for it once git honours it.
+  if (
+    section === 'extensions' &&
+    name === 'worktreeconfig' &&
+    !/^(?:false|0|no|off)$/i.test(value)
+  ) {
+    return 'per-worktree config is enabled'
+  }
+  if (section === 'gpg' && name === 'program') return 'gpg program configured'
+  if (section === 'protocol' && name === 'allow') return 'protocol allow-list changed'
+  if (section === 'remote' && ['uploadpack', 'receivepack', 'vcs', 'proxy'].includes(name)) {
+    return `remote.${name} names a program or proxy`
+  }
+  if (section === 'filter' && ['clean', 'smudge', 'process'].includes(name)) {
+    return PLAIN_PROGRAM.test(value) && !value.includes('/')
+      ? null
+      : `filter.${sub ?? ''} runs a command`
+  }
+  if (section === 'diff' && ['command', 'textconv'].includes(name)) return 'diff driver configured'
+  if (section === 'merge' && name === 'driver') return 'merge driver configured'
+  if (section === 'sequence' && name === 'editor') return 'sequence.editor names a program'
+  return null
+}
+
+function isWithin(path: string, root: string): boolean {
+  return path === root || path.startsWith(root + sep)
+}
+
+function canonical(path: string): string {
+  try {
+    return realpathSync.native(path)
+  } catch {
+    return path
+  }
+}
+
+function readSmallFile(path: string): string | null {
+  try {
+    const stat = statSync(path)
+    if (!stat.isFile() || stat.size > MAX_CONFIG_BYTES) return null
+    return readFileSync(path, 'utf8')
+  } catch {
+    return null
+  }
+}
+
+/** Derive facts from already-read config text. Pure; exported for tests. */
+export function repoNetworkFactsFromConfig(
+  configText: string,
+  workspaceRoots: readonly string[],
+): RepoNetworkFacts {
+  const remotes = new Map<string, RemoteUrls>()
+  const unsafe = new Set<string>()
+  let workspaceHooks = false
+  for (const entry of parseGitConfig(configText)) {
+    const reason = unsafeEntry(entry)
+    if (reason) unsafe.add(reason)
+    const { section, name, sub } = splitKey(entry.key)
+    if (section === 'remote' && sub !== null && (name === 'url' || name === 'pushurl')) {
+      const current = remotes.get(sub) ?? { url: null, pushUrl: null }
+      // Like git, the first `url` is the fetch URL; the first `pushurl` wins too.
+      if (name === 'url' && current.url === null) current.url = entry.value
+      if (name === 'pushurl' && current.pushUrl === null) current.pushUrl = entry.value
+      remotes.set(sub, current)
+    }
+    if (section === 'core' && name === 'hookspath') {
+      const value = entry.value
+      if (
+        !isAbsolute(value) ||
+        workspaceRoots.some(
+          (root) => isWithin(resolve(value), root) || isWithin(canonical(value), root),
+        )
+      ) {
+        workspaceHooks = true
+      }
+    }
+  }
+  return { remotes, unsafeConfig: [...unsafe], workspaceHooks }
+}
+
+/**
+ * Facts for the repository a command at `executionRoot` would use, or null when that
+ * is not the project's own protected repository: no `.git` at the execution root
+ * (git would discover whatever repository a contained command planted above or
+ * below it), or one whose common directory differs from the project's.
+ */
+export function readRepoNetworkFacts(
+  executionRoot: string,
+  projectRoot: string | null,
+): RepoNetworkFacts | null {
+  const commonDir = resolveGitCommonDir(executionRoot)
+  if (!commonDir) return null
+  if (projectRoot !== null) {
+    const projectCommon = resolveGitCommonDir(projectRoot)
+    if (!projectCommon || canonical(projectCommon) !== canonical(commonDir)) return null
+  }
+  const parts = [join(commonDir, 'config'), join(commonDir, 'config.worktree')]
+  const texts = parts.map(readSmallFile)
+  if (texts[0] === null) return null
+  const roots = [
+    ...new Set([
+      executionRoot,
+      canonical(executionRoot),
+      ...(projectRoot ? [projectRoot, canonical(projectRoot)] : []),
+    ]),
+  ]
+  return repoNetworkFactsFromConfig(texts.filter((text) => text !== null).join('\n'), roots)
+}

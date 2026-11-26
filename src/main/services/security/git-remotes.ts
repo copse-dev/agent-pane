@@ -39,7 +39,7 @@ const cache = new Map<string, CacheEntry>()
  * git dir holds per-worktree state; the remotes live in the *common* dir, named
  * by its `commondir` file.
  */
-function resolveGitCommonDir(workspaceRoot: string): string | null {
+export function resolveGitCommonDir(workspaceRoot: string): string | null {
   const dotGit = join(workspaceRoot, '.git')
   let stat: ReturnType<typeof statSync>
   try {

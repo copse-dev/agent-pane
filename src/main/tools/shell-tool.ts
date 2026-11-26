@@ -3,7 +3,7 @@ import {
   type ShellRunResult,
   type ShellYieldOptions,
 } from '../services/exec/foreground-shell-process.ts'
-import { homedir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import { currentAgentRoots, getAgentExecutionRoot } from '../services/execution-root.ts'
@@ -40,9 +40,17 @@ import {
   recordApprovedDeniedOperation,
 } from '../services/security/denied-operations.ts'
 import {
+  consumeScopedNetworkApproval,
   promptExpectedSandboxBlock,
   promptUnsandboxedShell,
+  scopedNetworkRunFor,
 } from '../services/security/permission-gate.ts'
+import {
+  scopedNetworkEnv,
+  type ScopedNetworkPlan,
+} from '../services/security/network-scoped-shell.ts'
+import { resolveProgramOutsideRoots } from '../services/security/program-resolution.ts'
+import { resolveGitHubApiToken } from '../services/github/backend/github-token.ts'
 import {
   shellExpectedBlockEscalation,
   shellSandboxFailureShouldOfferUnsandboxedRetry,
@@ -281,6 +289,22 @@ async function maybeRetryUnsandboxed(
   return { result: retryResult, retryNote: signatureMatch ? SANDBOX_DENIAL_RETRY_NOTE : null }
 }
 
+/**
+ * Whether every program a network plan names resolves to the same file on the
+ * child's PATH as on main's, the PATH the plan was checked against.
+ */
+function scopedProgramsResolveAlike(
+  plan: ScopedNetworkPlan,
+  childPath: string | undefined,
+  cwd: string,
+): boolean {
+  const roots = [cwd, tmpdir(), '/tmp']
+  return plan.programs.every((program) => {
+    const main = resolveProgramOutsideRoots(program, process.env['PATH'] ?? '', roots)
+    return main !== null && main === resolveProgramOutsideRoots(program, childPath ?? '', roots)
+  })
+}
+
 function formatShellSuccess(result: ShellRunResult): string {
   const clean = stripTerminalControlSequences(result.output).trim()
   return clean || '(no output)'
@@ -302,6 +326,7 @@ export const runShellTool = defineTool({
     'Run a shell command for tests, builds, installs, and other tasks not covered by a dedicated tool — not for reading files or searching code (use read_file/search tools or explore). Commands run in the working directory named in your system prompt, which is also the only directory the sandbox lets them reach; do not `cd` to an absolute path you inferred, and prefer paths relative to that directory. In worktree mode it is the checkout for this thread rather than the main clone — the same files by a different path. Prefer dedicated tools over shell for GitHub/CI (`gh_pr_*`, `gh_run_*`, `get_ci_status`, `get_ci_failure_logs`) and for git status/diff/log/show/commit (`git_*`). Never drive `gh` or network `git fetch`/`push`/`pull` through run_shell when those tools exist. Do not use `git reset --hard` or `git clean -fd` for routine branch setup. ' +
     'Output is streamed to the conversation. ' +
     'Commands contained within the sandbox auto-run; network or outside-workspace access (e.g. gh, curl, git push) prompts for approval and runs outside the sandbox when the macOS project sandbox is active. ' +
+    'Exception: `git fetch`/`pull`/`ls-remote`/`push` to a configured remote and `gh` read commands, when auto-approved, run inside the sandbox with network to their own host only, with no prompt; expects_sandbox_block is not needed for them. ' +
     'If a sandbox-contained command fails because the sandbox blocks filesystem/process access (e.g. Playwright), the user may approve running it once outside the sandbox. ' +
     'A sandbox-contained failure recognized as one of a known set of sandbox denials (e.g. gh reading its own config, a package install unable to download from inside the sandbox) may be retried once with elevation, subject to the same approval as expects_sandbox_block; the result is prefixed with a one-line note when that happens, and the denial is remembered for that specific operation for the rest of this thread — a denied `git fetch` never implies `git push` or anything else is blocked too. ' +
     'If you already expect a command to need the network or files outside the workspace (e.g. gh, cloud CLIs), set expects_sandbox_block so the user is asked up front instead of after a failed sandboxed attempt. ' +
@@ -431,6 +456,25 @@ export const runShellTool = defineTool({
       })
     }
 
+    // Per-command network scope (`network-scoped-shell.ts`): a recognised network
+    // shape the gate allowed runs contained in its own sandbox host, reaching only
+    // its own hosts, instead of asking to leave the sandbox. Decided from the RAW
+    // command by the same function the gate used. If the gate approved this
+    // command only because it would be scoped, it must never run outside the
+    // sandbox, even should the plan no longer hold here.
+    const gateApprovedScope = consumeScopedNetworkApproval(command, cwd)
+    let networkPlan =
+      !isRemote &&
+      sandboxEnabled &&
+      !guardedYolo &&
+      !unattendedContainer &&
+      !readonlyCheckout &&
+      readGrantTargets === null &&
+      resolveToolPermission('run_shell')?.policy !== 'ask'
+        ? scopedNetworkRunFor(command, cwd)
+        : null
+    if (networkPlan || gateApprovedScope) outsideSandbox = false
+
     // A denial confirmed earlier THIS thread for the same operation (issue #1436
     // point 2) pulls the same escalation forward the agent's own
     // `expects_sandbox_block` hint would — so the second attempt at an
@@ -459,6 +503,8 @@ export const runShellTool = defineTool({
       suppressUnsandboxedRetry = true
     } else if (
       readGrantTargets === null &&
+      networkPlan === null &&
+      !gateApprovedScope &&
       !outsideSandbox &&
       (expects_sandbox_block === true || cachedAdvice !== null)
     ) {
@@ -505,6 +551,19 @@ export const runShellTool = defineTool({
     // can prompt for passphrases / host keys instead of failing in BatchMode.
     const gitSsh = leaseGitSshEnv(envForRendererChildProcess(env))
     const childEnv = worktreePreparationShellEnvironment(cwd, gitSsh.env)
+    // The plan resolved git/gh on main's PATH; the child's PATH must find the same.
+    if (networkPlan && !scopedProgramsResolveAlike(networkPlan, childEnv['PATH'], cwd)) {
+      networkPlan = null
+    }
+    const scopedNetwork = networkPlan
+      ? {
+          domains: networkPlan.domains,
+          env: scopedNetworkEnv(networkPlan, {
+            githubToken: networkPlan.github ? await resolveGitHubApiToken('github.com') : null,
+          }),
+          freshGhConfig: networkPlan.programs.includes('gh'),
+        }
+      : undefined
 
     // Bracket the run so any file this agent-triggered command changes (e.g. a
     // formatter rewriting a file Copse just edited) is adopted as Copse-owned —
@@ -551,6 +610,7 @@ export const runShellTool = defineTool({
         onDetach,
         readonlyCheckout,
         revalidateShellYield(yieldOptions, timeout_ms),
+        scopedNetwork,
       )
 
       if (result.backgroundId) return backgroundResult(result.backgroundId)

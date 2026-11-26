@@ -1,7 +1,8 @@
 /**
- * Own ASRT for one approved loopback-binding background task. ASRT's proxy
- * allowlist is process-global, so the task must not share the main process's
- * manager with unrelated, already-running contained commands.
+ * Own ASRT for one approved loopback-binding background task, or for one
+ * network-scoped command (`network-scoped-shell.ts`). ASRT's proxy allowlist is
+ * process-global, so either must not share the main process's manager with
+ * unrelated, already-running contained commands.
  *
  * The worker and its command stay in one process group. The parent's normal
  * background-task stop/timeout signal therefore reaches the complete tree.
@@ -69,7 +70,9 @@ async function main(): Promise<void> {
     {
       domains: network.allowedDomains,
       allowLocalBinding: network.allowLocalBinding,
-      label: `background task: ${request.command}`,
+      label: network.allowLocalBinding
+        ? `background task: ${request.command}`
+        : `network-scoped command: ${request.command}`,
     },
     { logChanges: false },
   )
@@ -103,7 +106,7 @@ async function main(): Promise<void> {
       ),
       // Keep stdin open for watchers such as esbuild that exit on EOF. The
       // worker never forwards user input; this pipe carries no data.
-      stdio: ['pipe', 'inherit', 'inherit'],
+      stdio: [request.closeStdin === true ? 'ignore' : 'pipe', 'inherit', 'inherit'],
       detached: false,
     })
     let exiting = false

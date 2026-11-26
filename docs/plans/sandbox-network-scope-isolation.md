@@ -323,6 +323,14 @@ All three isolated hosts (binding task, ACP probe, ACP session) require
 also checks this result; if false, it records an init failure and later commands
 follow the no-sandbox prompt path.
 
+### Phase 7 — Per-command network scope (implemented)
+
+The same standalone host now also runs one recognised network command (`git fetch origin main`,
+`gh run view`) contained, with an allowlist of only that command's hosts and no local binding.
+The host protocol accepts either the loopback-binding policy or one to eight public DNS names
+without binding, never both. The selection rules and their safety argument are in
+`docs/shell-permissions.md` ("Per-command network scope").
+
 **Per-thread network sandboxes are not recommended.** Every thread's shell policy
 is already deny-all and identical; threads differ in filesystem root, which
 `workspaceSandboxOverlay(cwd)` already handles correctly per spawn — and

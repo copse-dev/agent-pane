@@ -17,7 +17,7 @@ import {
   grantBrowserOrigin,
 } from '../browser/browser-network-grants.ts'
 import { existsSync, realpathSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { relative, resolve } from 'node:path'
 import { getChatStoreRoot } from '../workspace.ts'
 import { ensureThreadAccess, needsOtherThreadRead } from './thread-access.ts'
@@ -100,6 +100,9 @@ import {
   type ShellRoutingTool,
 } from './command-routing-config.ts'
 import { resolveAutoApproval } from './auto-approval-config.ts'
+import { planScopedNetwork, type ScopedNetworkPlan } from './network-scoped-shell.ts'
+import { readRepoNetworkFacts } from './git-network-facts.ts'
+import { resolveProgramOutsideRoots } from './program-resolution.ts'
 import {
   BROWSER_TOOLS,
   READ_ONLY_BROWSER_TOOLS,
@@ -1364,6 +1367,72 @@ function harmHostReachContext(): Pick<
 }
 
 /**
+ * Whether `command` may run contained with network scoped to its own hosts, and
+ * the plan when it may (`network-scoped-shell.ts`). Standard mode only: the
+ * harm gate must allow the command, and the auto-approval classifier must place
+ * it in a tier the user enabled, under the same trust and auto-run gates as any
+ * auto-approval. Shared by the permission gate and `run_shell`, so the approval
+ * and the run are decided from the same inputs.
+ */
+export function scopedNetworkRunFor(
+  command: string,
+  executionRoot: string | null = getAgentExecutionRoot(),
+): ScopedNetworkPlan | null {
+  if (executionRoot === null) return null
+  if (!commandRunsSandboxed(executionRoot)) return null
+  if (currentRunUsesGuardedYolo(getActiveRunThread())) return null
+  // gh honours GH_HOST over the repository; a non-github.com host is not GitHub's scope.
+  const ghHost = process.env['GH_HOST']
+  if (ghHost !== undefined && ghHost !== '' && ghHost !== 'github.com') return null
+  const projectRoot = getAgentProjectRoot()
+  const approval = resolveAutoApproval(command, { projectRoot, executionRoot }, true, {
+    networkContained: true,
+  })
+  if (approval.action !== 'auto-approve') return null
+  const harm = assessShellHarm(command, {
+    workspaceRoot: executionRoot,
+    homeDir: homedir(),
+    canonicalizePath: realpathSync.native,
+    readScript: readScriptForHarm,
+    isCompiledProgram,
+    ...harmHostReachContext(),
+  })
+  if (harm.action !== 'allow') return null
+  const assessment = planScopedNetwork(command, readRepoNetworkFacts(executionRoot, projectRoot))
+  if (assessment.action !== 'scope') return null
+  // Where contained commands write. A program, or a PATH entry ahead of it,
+  // inside one of these could be a stand-in planted to hold the scope's egress.
+  const writableRoots = [executionRoot, projectRoot, darwinUserTempDir(), tmpdir(), '/tmp'].filter(
+    (root): root is string => root !== null,
+  )
+  for (const program of assessment.plan.programs) {
+    if (resolveProgramOutsideRoots(program, process.env['PATH'] ?? '', writableRoots) === null) {
+      return null
+    }
+  }
+  return assessment.plan
+}
+
+/**
+ * Commands the gate let through only because they will run network-scoped, so
+ * `run_shell` can refuse to run one outside the sandbox should its own plan
+ * disagree. Exact command text and root; consumed once.
+ */
+const scopedNetworkApprovals = new Set<string>()
+
+function scopedNetworkApprovalKey(command: string, executionRoot: string | null): string {
+  return `${executionRoot ?? ''}\0${command}`
+}
+
+/** Whether the gate approved `command` on the strength of a network scope. Consumes it. */
+export function consumeScopedNetworkApproval(
+  command: string,
+  executionRoot: string | null,
+): boolean {
+  return scopedNetworkApprovals.delete(scopedNetworkApprovalKey(command, executionRoot))
+}
+
+/**
  * The contained-runtime gate: an unattended run on a container decides every
  * shell command by where its effect lands, not by whether a host sandbox would
  * have contained it. The harm gate still runs first — its hard denies (fork
@@ -1720,6 +1789,31 @@ export async function ensureShellCommandPermitted(
     )
     auditGuardedYolo(approved ? 'approved' : 'declined')
     return approved
+  }
+
+  // Per-command network scope. A recognised network shape the harm gate allows
+  // runs contained with egress to its own hosts only, instead of asking to leave
+  // the sandbox. Checked before the escape-granting classifier below so a shape
+  // both would accept stays contained.
+  if (!forceAsk && sandboxEnabled) {
+    const plan = scopedNetworkRunFor(command, workspaceRoot)
+    if (plan) {
+      if (scopedNetworkApprovals.size >= 64) {
+        const oldest = scopedNetworkApprovals.values().next().value
+        if (oldest !== undefined) scopedNetworkApprovals.delete(oldest)
+      }
+      scopedNetworkApprovals.add(scopedNetworkApprovalKey(command, workspaceRoot))
+      recordDecision({
+        kind: 'shell',
+        actor: 'classifier',
+        verdict: 'allowed',
+        subject: SHELL_DECISION_SUBJECT,
+        scope: 'sandbox',
+        reasons: [`network scoped to ${plan.domains.join(', ')}`, ...plan.reasons],
+        source: 'network-scope',
+      })
+      return true
+    }
   }
 
   // Auto-approval classifier. The policy has resolved to `prompt`, so this is the

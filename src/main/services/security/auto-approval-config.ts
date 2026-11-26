@@ -42,11 +42,14 @@ export { AUTO_APPROVAL_LEVEL_SETTING } from '@shared/auto-approval.ts'
  *   (where the command's paths are judged), resolved by the caller.
  * @param sandboxEnabled whether an OS sandbox is actually confining this session.
  *   Defaults to `false` (fail closed). Every tier prompts when it is not `true`.
+ * @param options.networkContained the command will run contained with egress to
+ *   its own hosts only (`network-scoped-shell.ts`), never outside the sandbox.
  */
 export function resolveAutoApproval(
   command: string,
   roots: AgentRoots,
   sandboxEnabled = false,
+  options: { networkContained?: boolean } = {},
 ): AutoApprovalDecision {
   if (!getSetting<boolean>('autoRunSandboxCommands', true)) {
     return { action: 'prompt', reasons: ['auto-run disabled'] }
@@ -68,6 +71,7 @@ export function resolveAutoApproval(
     // same common config, which `configuredGitRemotes` resolves.
     configuredRemotes: configuredGitRemotes(projectRoot),
     canonicalizePath: realpathSync.native,
+    ...(options.networkContained === true ? { networkContained: true } : {}),
   })
 }
 
