@@ -136,11 +136,11 @@
     {
       "spec": "tests/e2e/detached-turn-transcript.e2e.ts",
       "category": "platform",
-      "reason": "Closing the window during a turn detaches it only on macOS, where the Dock is the way back; on Linux and Windows closing the last window still quits, so the close-then-reopen flow does not exist there.",
+      "reason": "Closing the window during a turn detaches it on every platform, but on Linux and Windows a detached app quits on its own once its turns end (no Dock to return through), which races this spec's reopen-after-completion step.",
       "tracker": "https://github.com/copse-dev/agent-pane/issues/2312",
       "ownerRole": "Main runtime and client/server split maintainer (person assignment pending in #2719)",
       "recordedOn": "2026-10-16",
-      "coverage": "Main-owned transcript writing runs on every platform: turn-transcript-writer.test.ts drives the real AgentDispatcher and thread store with no window receiving chunks, and transcript-reducer.test.ts proves main and window reductions match. The macOS close, completion and reopen flow passed locally.",
+      "coverage": "Main-owned transcript writing runs on every platform: turn-transcript-writer.test.ts drives the real AgentDispatcher and thread store with no window receiving chunks, and transcript-reducer.test.ts proves main and window reductions match. window-detach.test.ts covers the per-platform detach and idle-quit decisions. The macOS close, completion and reopen flow passed locally.",
       "markers": ["this.skip"],
       "lastVerified": null
     },

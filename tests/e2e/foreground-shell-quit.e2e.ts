@@ -185,6 +185,8 @@ describe('quit during an owned foreground command', function () {
       false,
       'quit must interrupt the owning turn before a queued edit can run',
     )
+    // A quit the user chose (a signal here) stops the run: the next launch does
+    // not continue it by itself (`last-run.ts`), so the Retry card is the way on.
     await expect($('[data-turn-recovery-card]')).toBeDisplayed()
     await parkPointer()
     await saveAppScreenshot('foreground-shell-recovery-after-quit.png')
