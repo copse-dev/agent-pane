@@ -263,6 +263,11 @@ describe('internal Git policy', () => {
       SSH_ASKPASS: '/payload/askpass',
       SSH_ASKPASS_REQUIRE: 'force',
       GIT_DIR: '/other-repo',
+      GIT_COMMON_DIR: '/other-common-dir',
+      GIT_WORK_TREE: '/other-work-tree',
+      GIT_NAMESPACE: 'other-namespace',
+      GIT_OBJECT_DIRECTORY: '/other-objects',
+      GIT_ALTERNATE_OBJECT_DIRECTORIES: '/alternate-objects',
       GIT_INDEX_FILE: '/scratch/index',
       GIT_AUTHOR_NAME: 'Copse',
     })
@@ -278,6 +283,11 @@ describe('internal Git policy', () => {
     assert.equal(env['SSH_ASKPASS'], undefined)
     assert.equal(env['SSH_ASKPASS_REQUIRE'], undefined)
     assert.equal(env['GIT_DIR'], undefined)
+    assert.equal(env['GIT_COMMON_DIR'], undefined)
+    assert.equal(env['GIT_WORK_TREE'], undefined)
+    assert.equal(env['GIT_NAMESPACE'], undefined)
+    assert.equal(env['GIT_OBJECT_DIRECTORY'], undefined)
+    assert.equal(env['GIT_ALTERNATE_OBJECT_DIRECTORIES'], undefined)
     assert.equal(env['GIT_INDEX_FILE'], '/scratch/index')
     assert.equal(env['GIT_AUTHOR_NAME'], 'Copse')
     assert.equal(env['GIT_ALLOW_PROTOCOL'], '')

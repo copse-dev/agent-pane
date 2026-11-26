@@ -56,7 +56,7 @@ Record observable acceptance criteria before editing; hand off exact results and
 ([convention](docs/agent-development.md#task-brief-and-completion-evidence)). A related
 implementation alone does not close an owning issue. Use the lowest useful tier, starting with
 `pnpm test -- <name>` and `pnpm run oracle`, and read its confidence. The post-edit hook formats and
-runs type-unaware ESLint; re-read any file it rewrites.
+runs type-aware oxlint (ESLint stays the lint gate); re-read any file it rewrites.
 
 ### Before committing
 

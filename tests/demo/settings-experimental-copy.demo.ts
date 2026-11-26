@@ -268,8 +268,8 @@ describe('browser-hosted Concise threads setting', () => {
     await expect(fieldset.$('input[name="conciseThreadsEnabled"]')).toBeSelected()
     const hint = await fieldset.$('.field-hint').getText()
     assert.match(hint, /above 50 on the Artificial Analysis Intelligence Index/)
-    assert.match(hint, /keeps all assistant messages and screenshots visible/)
-    assert.match(hint, /Show steps button/)
+    assert.match(hint, /fold into Show steps on each finished turn/)
+    assert.match(hint, /messages and\s+screenshots stay visible/)
     assert.match(hint, /Turn off to always show the full thread/)
     assert.doesNotMatch(await fieldset.getText(), /experimental/i)
 
