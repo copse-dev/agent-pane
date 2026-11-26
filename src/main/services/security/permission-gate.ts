@@ -45,6 +45,7 @@ import { darwinUserTempDir } from '../../project-sandbox/config.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { spawnRunsOnSshTarget, spawnSshHostId } from '../../project-sandbox/spawn.ts'
 import { displayTarget, findConfiguredSshHost } from '../ssh-workspace/hosts.ts'
+import { getSshConnectionManager } from '../ssh-workspace/connection-manager.ts'
 import { sshPromptRuntime, type PromptRuntime } from './runtime-prompt.ts'
 import { isProjectSandboxPlatform, projectSandboxInitFailure } from '../../project-sandbox/state.ts'
 import {
@@ -513,7 +514,10 @@ function shellPromptRuntime(sandboxed: boolean): PromptRuntime {
       host && {
         label: host.label,
         address: displayTarget(host),
-        forwardAgent: host.forwardAgent === true,
+        // Forwarding set only in the user's ~/.ssh/config still hands the
+        // command their keys, so ask what the connection resolved too.
+        forwardAgent:
+          host.forwardAgent === true || getSshConnectionManager().forwardsAgent(hostId) === true,
       },
     )
   }

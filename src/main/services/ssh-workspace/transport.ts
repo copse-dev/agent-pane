@@ -27,6 +27,12 @@ export interface SshTransport {
    * Must be cheap and must never authenticate or prompt: it runs on a timer.
    */
   checkAlive(): Promise<boolean>
+  /**
+   * Whether this host's connection forwards the user's SSH agent, as OpenSSH
+   * resolves it from Copse's options and the user's own `~/.ssh/config`;
+   * `undefined` when that cannot be told. Must never connect or prompt.
+   */
+  resolveForwardAgent(): Promise<boolean | undefined>
   openForward(remotePort: number): Promise<{ localPort: number }>
   closeForward(localPort: number): Promise<void>
   /** Stream a remote file directly to local disk without the command-output cap. */

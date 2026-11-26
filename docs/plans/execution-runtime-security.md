@@ -328,8 +328,9 @@ observable from a test or a recorded thread spine. Unchecked items are open.
 - [x] **R1-9 Approval prompt shows the runtime.** Sandbox-escape prompts (up-front, expected
       block, retry after a block) list what approving changes, derived from the capability
       difference between `local/contained` and `local/host`. An ordinary shell prompt for an SSH
-      workspace names the host and its network, and the keys in the user's SSH agent when Copse
-      forwards it there. Visual evidence: `outside-sandbox-approval-copy.e2e.ts` →
+      workspace names the host and its network, and the keys in the user's SSH agent when the
+      connection forwards it there (Copse's setting or the user's `~/.ssh/config`, read with
+      `ssh -G`). Visual evidence: `outside-sandbox-approval-copy.e2e.ts` →
       `outside-sandbox-runtime-change-approval.png`.
 
 **R2 — brokered GitHub credentials for local execution**

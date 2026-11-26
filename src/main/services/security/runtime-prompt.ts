@@ -90,7 +90,10 @@ export type PromptRuntime =
       readonly kind: 'ssh'
       /** The host as the user knows it: its label and `user@address`. */
       readonly name: string
-      /** Whether Copse forwards the user's SSH agent to this host (its `forwardAgent`). */
+      /**
+       * Whether the connection forwards the user's SSH agent to this host: its
+       * `forwardAgent` setting, or `ForwardAgent` in the user's `~/.ssh/config`.
+       */
       readonly forwardsAgent: boolean
     }
 
@@ -99,6 +102,7 @@ export interface SshPromptHost {
   readonly label: string
   /** `user@hostname` as the host settings show it. */
   readonly address: string
+  /** Whether the connection forwards the user's SSH agent, from either source. */
   readonly forwardAgent: boolean
 }
 

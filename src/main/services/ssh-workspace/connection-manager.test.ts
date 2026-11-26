@@ -71,6 +71,27 @@ describe('SshConnectionManager', () => {
     })
   })
 
+  it("records agent forwarding that only the user's ~/.ssh/config turns on", async () => {
+    await withTestHost(async () => {
+      let forwardAgent: boolean | undefined = true
+      setSshTransportFactory(() => new FakeSshTransport([], { forwardAgent }))
+      const manager = new SshConnectionManager({ livenessIntervalMs: 0 })
+      assert.equal(manager.forwardsAgent('dev-box'), undefined)
+
+      await manager.connect('dev-box')
+      assert.equal(manager.forwardsAgent('dev-box'), true)
+
+      // Resolved per connection: a reconnect asks again.
+      forwardAgent = undefined
+      await manager.reconnect('dev-box')
+      assert.equal(manager.forwardsAgent('dev-box'), false)
+
+      await manager.disconnect('dev-box')
+      assert.equal(manager.forwardsAgent('dev-box'), undefined)
+      manager.dispose()
+    })
+  })
+
   it('surfaces connection errors and cleans up the transport', async () => {
     await withTestHost(async () => {
       let disconnectCalls = 0
@@ -84,6 +105,7 @@ describe('SshConnectionManager', () => {
           disconnectCalls += 1
           await Promise.resolve()
         },
+        resolveForwardAgent: async (): Promise<boolean | undefined> => undefined,
         openForward: async (): Promise<{ localPort: number }> => ({ localPort: 45_000 }),
         closeForward: async (): Promise<void> => {
           await Promise.resolve()

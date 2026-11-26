@@ -27,6 +27,11 @@ interface ManagedConnection {
   transport: SshTransport
   status: SshConnectionStatus
   capabilities?: SshCapabilityReport
+  /**
+   * Whether this connection forwards the user's SSH agent, from Copse's
+   * setting or the user's own `~/.ssh/config`. Resolved once per connection.
+   */
+  forwardsAgent?: boolean
   lastError?: string
   /** Quiet reconnects tried since the link was found gone. */
   quietAttempts: number
@@ -122,6 +127,14 @@ export class SshConnectionManager {
     this.syncLivenessTimer()
     const states = this.listStates()
     for (const listener of this.listeners) listener(states)
+  }
+
+  /**
+   * Whether the connection to this host forwards the user's SSH agent, as
+   * resolved when it connected; `undefined` before Copse has connected to it.
+   */
+  forwardsAgent(hostId: string): boolean | undefined {
+    return this.connections.get(hostId)?.forwardsAgent
   }
 
   getConnection(hostId: string): SshConnection | null {
@@ -292,7 +305,12 @@ export class SshConnectionManager {
       await transport.connect()
       managed.status = 'connected'
       delete managed.lastError
-      managed.capabilities = await probeSshCapabilities(transport)
+      const [capabilities, forwardsAgent] = await Promise.all([
+        probeSshCapabilities(transport),
+        resolveForwardsAgent(host, transport),
+      ])
+      managed.capabilities = capabilities
+      managed.forwardsAgent = forwardsAgent
       this.emit()
       return this.wrap(managed)
     } catch (err) {
@@ -320,6 +338,23 @@ export class SshConnectionManager {
   async reconnect(hostId: string): Promise<SshConnection> {
     await this.disconnect(hostId)
     return this.connect(hostId)
+  }
+}
+
+/**
+ * Copse's own `forwardAgent` setting, or else what OpenSSH resolves from the
+ * user's config. A failed lookup is not an error: the connection works, and
+ * the setting alone is what Copse knew before it asked.
+ */
+async function resolveForwardsAgent(
+  host: SshWorkspaceHost,
+  transport: SshTransport,
+): Promise<boolean> {
+  if (host.forwardAgent === true) return true
+  try {
+    return (await transport.resolveForwardAgent()) === true
+  } catch {
+    return false
   }
 }
 

@@ -15,6 +15,8 @@ interface FakeExecScript {
 interface FakeSshTransportHooks {
   onConnect?: (options: SshConnectOptions) => void
   onDisconnect?: () => void
+  /** What `resolveForwardAgent` answers, as `ssh -G` would for this host. */
+  forwardAgent?: boolean | undefined
 }
 
 /** In-memory SSH transport for unit tests. */
@@ -64,6 +66,10 @@ export class FakeSshTransport implements SshTransport {
     this.connected = false
     this.hooks.onDisconnect?.()
     await Promise.resolve()
+  }
+
+  async resolveForwardAgent(): Promise<boolean | undefined> {
+    return Promise.resolve(this.hooks.forwardAgent)
   }
 
   async openForward(remotePort: number): Promise<{ localPort: number }> {

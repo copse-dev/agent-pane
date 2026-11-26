@@ -22,6 +22,7 @@ import {
 } from '../exec/subprocess-output-cap.ts'
 import { terminateProcessTree } from '../exec/subprocess-kill.ts'
 import { allocateLoopbackPort, sshForwardControlArgs, type SshForwardSpec } from './ssh-forward.ts'
+import { forwardAgentFromSshG } from './ssh-effective-config.ts'
 
 // The multiplexed master is what stops every command re-authenticating. At 10
 // minutes any pause between agent turns (a review, a coffee) expired it and the
@@ -36,6 +37,8 @@ const SERVER_ALIVE_INTERVAL_SECONDS = 30
 const SERVER_ALIVE_COUNT_MAX = 3
 /** `ssh -O check` only asks the local control socket, so it answers at once or not at all. */
 const LIVENESS_CHECK_TIMEOUT_MS = 10_000
+/** `ssh -G` only evaluates configuration, but a `Match exec` in it may run a command. */
+const EFFECTIVE_CONFIG_TIMEOUT_MS = 10_000
 /** How long a reconnect nobody asked for may wait on an unreachable host. */
 const QUIET_CONNECT_TIMEOUT_S = '10'
 /** A media transfer is bounded by the caller's size check, but may outlast a normal command. */
@@ -396,6 +399,18 @@ export class OpenSshTransport implements SshTransport {
     // own (`ControlMaster=auto`), and only asking notices that.
     this.connected = await this.masterAnswers(LIVENESS_CHECK_TIMEOUT_MS)
     return this.connected
+  }
+
+  async resolveForwardAgent(): Promise<boolean | undefined> {
+    // The same options a command connects with, so `Match` blocks see the
+    // same user, port and destination. `-G` prints and exits: no connection.
+    const result = await runLocalSsh(
+      this.host.id,
+      ['-G', ...baseSshArgs(this.host, this.controlPath)],
+      { timeoutMs: EFFECTIVE_CONFIG_TIMEOUT_MS },
+    )
+    if (result.code !== 0) return undefined
+    return forwardAgentFromSshG(result.stdout)
   }
 
   /** Whether a control master answers on this host's socket. */

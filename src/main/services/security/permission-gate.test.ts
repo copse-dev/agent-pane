@@ -29,6 +29,12 @@ import {
 } from './tool-permissions.ts'
 import { setPermissionGateForTests } from '../tool-registry.ts'
 import {
+  getSshConnectionManager,
+  resetSshConnectionManagerForTests,
+  setSshTransportFactory,
+} from '../ssh-workspace/connection-manager.ts'
+import { FakeSshTransport } from '../ssh-workspace/fake-ssh-transport.ts'
+import {
   ensureShellCommandPermitted,
   ensureTerminalPermitted,
   ensureToolPermitted,
@@ -1803,6 +1809,31 @@ describe('ensureShellCommandPermitted — SSH workspace execution target', () =>
     assert.match(advice, /reach any network that host can\./)
     assert.match(advice, /SSH keys in your local agent, which Copse forwards to this host\./)
   })
+  it("names the forwarded agent when only the user's ~/.ssh/config forwards it", async () => {
+    setPermissionGateForTests(null)
+    await setSetting('safetyClassifierEnabled', false)
+    // The host's own Forward agent setting is off; `ssh -G` says it forwards.
+    const restore = await useSshProject()
+    resetSshConnectionManagerForTests()
+    setSshTransportFactory(() => new FakeSshTransport([], { forwardAgent: true }))
+    let advice = ''
+    setApprovalHandler((request) => {
+      advice = request.bodyAdvice ?? ''
+      return Promise.resolve({ approved: false, remember: false })
+    })
+    try {
+      await getSshConnectionManager().connect('dev')
+      await ensureShellCommandPermitted(AMBIGUOUS, { sandboxEnabled: true, autoRun: true })
+    } finally {
+      setApprovalHandler(null)
+      resetSshConnectionManagerForTests()
+      restore()
+      await setSetting('sshWorkspaceEnabled', false)
+      await setSetting('sshWorkspaceHosts', [])
+    }
+    assert.match(advice, /SSH keys in your local agent, which Copse forwards to this host\./)
+  })
+
   it("keeps a turn on its own project's target when the window switches projects", async () => {
     // A turn in a local project, with the user switching the window to an SSH
     // project between the gate's decision and the spawn. Both must still see
