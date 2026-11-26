@@ -130,6 +130,20 @@ async function claudeCliKeepsDefaultLogin(agent: AcpAgentConfig): Promise<boolea
 }
 
 /**
+ * Whether a local run of this agent gets a thread-scoped `CLAUDE_CONFIG_DIR`
+ * (see {@link scopedClaudeConfigEnv}), and so reads and writes its sessions in
+ * the thread's own directory rather than the user's `~/.claude`.
+ */
+export async function localClaudeConfigIsScoped(agent: AcpAgentConfig): Promise<boolean> {
+  // Claude is the only agent whose login is known to survive a scoped dir;
+  // another agent's config-dir var needs that answer before it is scoped.
+  if (resolveAcpConfigDirEnvVar(agent) !== 'CLAUDE_CONFIG_DIR') return false
+  // A dir chosen in Settings wins, with the CLI's own semantics — login included.
+  if (agent.env && Object.hasOwn(agent.env, 'CLAUDE_CONFIG_DIR')) return false
+  return claudeCliKeepsDefaultLogin(agent)
+}
+
+/**
  * Thread-scoped config for a local Claude agent, or `undefined` to leave it on
  * its own default (`~/.claude`).
  *
@@ -147,16 +161,11 @@ async function scopedClaudeConfigEnv(input: {
   sshTarget: AcpSshTarget | null
 }): Promise<Record<string, string> | undefined> {
   const { agent, projectId } = input
-  // Claude is the only agent whose login is known to survive a scoped dir;
-  // another agent's config-dir var needs that answer before it is scoped.
-  if (resolveAcpConfigDirEnvVar(agent) !== 'CLAUDE_CONFIG_DIR') return undefined
   // A path on this machine means nothing on an SSH host, and in `env` it would
   // also have the forwarding gate ask to send it there.
   if (input.sshTarget) return undefined
-  // A dir chosen in Settings wins, with the CLI's own semantics — login included.
-  if (agent.env && Object.hasOwn(agent.env, 'CLAUDE_CONFIG_DIR')) return undefined
   if (!projectId) return undefined
-  if (!(await claudeCliKeepsDefaultLogin(agent))) return undefined
+  if (!(await localClaudeConfigIsScoped(agent))) return undefined
   try {
     return {
       CLAUDE_CONFIG_DIR: await ensureAcpAgentConfigDir(projectId, input.threadId, agent.id),

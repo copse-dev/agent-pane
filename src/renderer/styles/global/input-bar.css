@@ -394,20 +394,20 @@
 .footer-indexing[data-state='skipped'] {
   color: var(--warning);
 }
+/* The badge recipe in docs/ui-taste.md: sentence case at normal tracking, so
+   "Queued", "Held" and "Editing" read as labels rather than shouted states. */
 .message-queued-badge {
   display: inline-block;
   margin-bottom: var(--spacing-xs);
   padding: 1px 6px;
-  border-radius: var(--radius);
-  font-size: var(--font-size-2xs);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  border-radius: var(--badge-radius);
+  font-size: var(--badge-font-size);
+  font-weight: var(--badge-font-weight);
   color: var(--text-muted);
   background: var(--bg-hover);
 }
 /* Dim the queued content, not the controls under it: at 0.85 on the whole body
-   the filled Release/Send now chip faded to 3.97:1 in dark, and the HELD badge
+   the filled Release/Send now chip faded to 3.97:1 in dark, and the Held badge
    with it. The badge and the action row stay at full strength. */
 .msg-queued:not(.msg-editing) .message-body > :not(.message-queued-badge, .message-queued-ui) {
   opacity: 0.85;

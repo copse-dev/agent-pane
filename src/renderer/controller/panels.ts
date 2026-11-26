@@ -11,9 +11,54 @@ export function syncFilesPaneDom(store: AppStore): void {
   if (pane) pane.hidden = !store.getState().filesPaneOpen
 }
 
-/** Whether `mode`'s pane is on screen: the right panel is open and showing it. */
-function rightPanelShows(state: AppState, mode: RightPanelMode): boolean {
-  return state.filesPaneOpen && state.rightPanelMode === mode
+/**
+ * Modes that can share the right panel with another. Context and pull requests
+ * lay the whole panel out themselves (no list column, their own header), so
+ * they only ever show alone.
+ */
+const SPLITTABLE_MODES: ReadonlySet<RightPanelMode> = new Set<RightPanelMode>([
+  'explorer',
+  'side-chat',
+  'terminal',
+  'changes',
+  'browser',
+  'memories',
+  'roadmap',
+  'vnc',
+])
+
+export function canSplitRightPanel(mode: RightPanelMode): boolean {
+  return SPLITTABLE_MODES.has(mode)
+}
+
+/**
+ * The panel's two slots after applying the split rules: the second pane must
+ * differ from the first and both must be splittable. Review always takes the
+ * first (top) slot, because its subject header spans the top of the panel.
+ */
+export function normalizeRightPanelSplit(
+  primary: RightPanelMode,
+  split: RightPanelMode | null,
+): { rightPanelMode: RightPanelMode; rightPanelSplitMode: RightPanelMode | null } {
+  if (split === null || split === primary || !canSplitRightPanel(primary)) {
+    return { rightPanelMode: primary, rightPanelSplitMode: null }
+  }
+  if (!canSplitRightPanel(split)) return { rightPanelMode: primary, rightPanelSplitMode: null }
+  if (split === 'changes') return { rightPanelMode: 'changes', rightPanelSplitMode: primary }
+  return { rightPanelMode: primary, rightPanelSplitMode: split }
+}
+
+/** The second pane on screen under the first, or null when the panel shows one pane. */
+export function rightPanelSplitOf(state: AppState): RightPanelMode | null {
+  if (!state.filesPaneOpen) return null
+  return normalizeRightPanelSplit(state.rightPanelMode, state.rightPanelSplitMode)
+    .rightPanelSplitMode
+}
+
+/** Whether `mode`'s pane is on screen: the right panel is open and showing it, alone or split. */
+export function rightPanelShows(state: AppState, mode: RightPanelMode): boolean {
+  if (!state.filesPaneOpen) return false
+  return state.rightPanelMode === mode || rightPanelSplitOf(state) === mode
 }
 
 /**
@@ -31,11 +76,16 @@ export function selectRightPanelMode(
 
 /**
  * Call `listener` after any `setState` that opens, closes or switches the right
- * panel. A closed panel selects as `null`, so switching mode while it is closed
- * is not a change. Not called on subscribe.
+ * panel, including opening or closing its split pane. A closed panel selects as
+ * `null`, so switching mode while it is closed is not a change. Not called on
+ * subscribe.
  */
 export function selectRightPanel(store: AppStore, listener: () => void): () => void {
-  return store.select((state) => (state.filesPaneOpen ? state.rightPanelMode : null), listener)
+  return store.select(
+    (state) =>
+      state.filesPaneOpen ? `${state.rightPanelMode}|${rightPanelSplitOf(state) ?? ''}` : null,
+    listener,
+  )
 }
 
 /**
@@ -75,20 +125,49 @@ export function toggleFilesPane(store: AppStore): void {
   const open = !store.getState().filesPaneOpen
   store.setState({
     filesPaneOpen: open,
-    ...(open ? { rightPanelMode: 'explorer' as const } : {}),
+    // Closing the whole panel closes both of its panes.
+    ...(open ? { rightPanelMode: 'explorer' as const } : { rightPanelSplitMode: null }),
   })
   if (!open) clearMaximizedOnClose(store)
   syncFilesPaneDom(store)
 }
 
 export function openRightPanel(store: AppStore, mode: RightPanelMode): void {
-  const { filesPaneOpen, rightPanelMode } = store.getState()
-  if (filesPaneOpen && rightPanelMode === mode) {
+  const state = store.getState()
+  // Already on screen, alone or as either half of a split: nothing to move.
+  if (rightPanelShows(state, mode)) {
     syncFilesPaneDom(store)
     return
   }
-  store.setState({ filesPaneOpen: true, rightPanelMode: mode })
+  const split = state.filesPaneOpen ? rightPanelSplitOf(state) : null
+  store.setState({ filesPaneOpen: true, ...normalizeRightPanelSplit(mode, split) })
   syncFilesPaneDom(store)
+}
+
+/**
+ * Show `mode` stacked with the pane already open, so two panes share the panel
+ * (a thread beside both its diff and its browser). A closed panel, or a pane
+ * that cannot share it, just opens `mode` alone.
+ */
+export function openRightPanelBeside(store: AppStore, mode: RightPanelMode): void {
+  const state = store.getState()
+  if (
+    !state.filesPaneOpen ||
+    !canSplitRightPanel(mode) ||
+    !canSplitRightPanel(state.rightPanelMode)
+  ) {
+    openRightPanel(store, mode)
+    return
+  }
+  if (rightPanelShows(state, mode)) return
+  store.setState(normalizeRightPanelSplit(state.rightPanelMode, mode))
+  syncFilesPaneDom(store)
+}
+
+/** Close the second pane, leaving the first filling the panel. */
+export function closeRightPanelSplit(store: AppStore): void {
+  if (store.getState().rightPanelSplitMode === null) return
+  store.setState({ rightPanelSplitMode: null })
 }
 
 /** Open the Changes panel and reveal the diff for a workspace-relative file path. */
@@ -134,15 +213,24 @@ export function showCanvasArtefact(store: AppStore, identity: CanvasArtefactIden
 }
 
 export function toggleRightPanel(store: AppStore, mode: RightPanelMode): void {
-  const { filesPaneOpen, rightPanelMode } = store.getState()
-  if (filesPaneOpen && rightPanelMode === mode) {
-    store.setState({ filesPaneOpen: false })
+  const state = store.getState()
+  const split = rightPanelSplitOf(state)
+  // Toggling one half of a split closes just that half; the other fills the panel.
+  if (split !== null && split === mode) {
+    store.setState({ rightPanelSplitMode: null })
+    return
+  }
+  if (split !== null && state.rightPanelMode === mode) {
+    store.setState({ rightPanelMode: split, rightPanelSplitMode: null })
+    return
+  }
+  if (state.filesPaneOpen && state.rightPanelMode === mode) {
+    store.setState({ filesPaneOpen: false, rightPanelSplitMode: null })
     clearMaximizedOnClose(store)
     syncFilesPaneDom(store)
     return
   }
-  store.setState({ filesPaneOpen: true, rightPanelMode: mode })
-  syncFilesPaneDom(store)
+  openRightPanel(store, mode)
 }
 
 export function ensureWorkspaceForPanel(api: ApiClient, store: AppStore): boolean {
@@ -158,6 +246,15 @@ export function openRightPanelWithWorkspace(
 ): void {
   if (!ensureWorkspaceForPanel(api, store)) return
   openRightPanel(store, mode)
+}
+
+export function openRightPanelBesideWithWorkspace(
+  store: AppStore,
+  api: ApiClient,
+  mode: RightPanelMode,
+): void {
+  if (!ensureWorkspaceForPanel(api, store)) return
+  openRightPanelBeside(store, mode)
 }
 
 export function toggleRightPanelWithWorkspace(

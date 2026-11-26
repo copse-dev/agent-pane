@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Writable } from 'node:stream'
 import { clearInterval, setInterval } from 'node:timers'
+import { mountStdioServers } from './acp-mount-stdio-servers.mjs'
 
 function readableFrom(source) {
   return new ReadableStream({
@@ -28,7 +29,8 @@ agent({ name: 'automation-background-fixture' })
     agentCapabilities: { loadSession: false },
   }))
   .onRequest('authenticate', () => ({}))
-  .onRequest('session/new', (ctx) => {
+  .onRequest('session/new', async (ctx) => {
+    await mountStdioServers(ctx.params.mcpServers, 'automation-background-acp')
     const sessionId = `background-session-${String(++nextSession)}`
     sessions.set(sessionId, ctx.params.cwd)
     return { sessionId }

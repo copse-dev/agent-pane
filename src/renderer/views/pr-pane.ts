@@ -38,7 +38,13 @@ import {
   prMatchesFilter,
   type PrRef,
 } from './pr-pane-list.ts'
-import { prCheckFixDraft, startPrCheckFixThread, startPrDiscussThread } from './pr-pane-thread.ts'
+import {
+  prCheckFixDraft,
+  prReviewThreadsFixDraft,
+  startPrCheckFixThread,
+  startPrDiscussThread,
+  startPrReviewThreadsFixThread,
+} from './pr-pane-thread.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
@@ -382,6 +388,8 @@ export function mountPrPane(
   // selected. Kept across the re-select an action triggers so its outcome stays
   // visible while the refreshed details load.
   let lastActionMessage: { text: string; ok: boolean } | null = null
+  /** Unsent review-thread replies by thread id, kept while the pane is open. */
+  const reviewReplyDrafts = new Map<string, string>()
 
   // Cross-repo "your PRs" are lazy: not queried until the section is expanded,
   // so the default view costs only the workspace + chat-linked lookups.
@@ -1213,7 +1221,7 @@ export function mountPrPane(
           ? prDetails.files.length
           : activity && !activity.error
             ? section.key === 'comments'
-              ? activity.comments.length
+              ? activity.comments.length + activity.reviewThreads.length
               : section.key === 'checks'
                 ? activity.checks.length
                 : undefined
@@ -1221,7 +1229,7 @@ export function mountPrPane(
       if (count !== undefined) {
         const truncated =
           section.key === 'comments'
-            ? activity?.commentsTruncated
+            ? (activity?.commentsTruncated ?? false) || (activity?.reviewThreadsTruncated ?? false)
             : section.key === 'checks'
               ? activity?.checksTruncated
               : false
@@ -1256,22 +1264,73 @@ export function mountPrPane(
         },
         (check, headSha) => {
           if (!prDetails) return
-          const key = prRelationKey(prDetails)
-          const producingThreadId = (prRelationships ?? threadLinks.get(key) ?? []).find((row) =>
-            row.kinds.includes('produced'),
-          )?.threadId
-          if (producingThreadId) {
-            switchThread(store, producingThreadId)
-            void getPromptAttachmentHandlers()?.sendMessage?.(
-              prCheckFixDraft(prDetails, check, headSha),
+          const pr = prDetails
+          handToAgent(
+            () => prCheckFixDraft(pr, check, headSha),
+            () => startPrCheckFixThread(store, pr, check, headSha),
+          )
+        },
+        {
+          address: (threads) => {
+            if (!prDetails || !threads.length) return
+            const pr = prDetails
+            handToAgent(
+              () => prReviewThreadsFixDraft(pr, threads),
+              () => startPrReviewThreadsFixThread(store, pr, threads),
             )
-            return
-          }
-          startPrCheckFixThread(store, prDetails, check, headSha)
-          getPromptAttachmentHandlers()?.focusComposer?.()
+          },
+          reply: (thread, body) =>
+            writeReviewThread((ref) =>
+              api.gh.replyToReviewThread(ref.owner, ref.repo, ref.number, thread.id, body),
+            ),
+          setResolved: (thread, resolved) =>
+            writeReviewThread((ref) =>
+              api.gh.setReviewThreadResolved(ref.owner, ref.repo, ref.number, thread.id, resolved),
+            ),
+          refresh: () => {
+            if (selectedPr) void refreshDetailsAfterAction(selectedPr)
+          },
+          drafts: reviewReplyDrafts,
         },
       )
     }
+  }
+
+  /**
+   * Run a review-thread write for the PR on screen. The thread view shows the
+   * outcome and asks for a refresh on success; nothing is retried.
+   */
+  function writeReviewThread(
+    write: (ref: PrRef) => Promise<PrActionResult>,
+  ): Promise<PrActionResult> {
+    const ref = selectedPr
+    if (!ref)
+      return Promise.resolve({
+        ok: false,
+        backend: 'cli',
+        message: 'No pull request is selected.',
+      })
+    return write(ref)
+  }
+
+  /**
+   * Send follow-up work to the thread that produced this PR, which already has
+   * its checkout and context; with no such thread, open a new one with the
+   * draft in the composer for the user to edit and send.
+   */
+  function handToAgent(draft: () => string, startThread: () => void): void {
+    if (!prDetails) return
+    const key = prRelationKey(prDetails)
+    const producingThreadId = (prRelationships ?? threadLinks.get(key) ?? []).find((row) =>
+      row.kinds.includes('produced'),
+    )?.threadId
+    if (producingThreadId) {
+      switchThread(store, producingThreadId)
+      void getPromptAttachmentHandlers()?.sendMessage?.(draft())
+      return
+    }
+    startThread()
+    getPromptAttachmentHandlers()?.focusComposer?.()
   }
 
   function renderFiles(): void {

@@ -46,6 +46,7 @@ export interface ContextPanelEditor extends MonacoShortcutSource {
   getValue(): string
   hasTextFocus(): boolean
   layout(): void
+  onDidFocusEditorText(listener: () => void): { dispose(): void }
   revealLineInCenter(line: number): void
   revealLineInCenterIfOutsideViewport(line: number): void
   setModel(model: ContextPanelModel | null): void

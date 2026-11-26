@@ -178,6 +178,18 @@ export function cachingGitHubBackend(inner: GitHubBackend): GitHubBackend {
       return result
     },
 
+    async replyToReviewThread(root, ref, threadId, body) {
+      const result = await inner.replyToReviewThread(root, ref, threadId, body)
+      invalidatePr()
+      return result
+    },
+
+    async setReviewThreadResolved(root, ref, threadId, resolved) {
+      const result = await inner.setReviewThreadResolved(root, ref, threadId, resolved)
+      invalidatePr()
+      return result
+    },
+
     async approvePr(root, ref) {
       const result: PrActionResult = await inner.approvePr(root, ref)
       if (result.ok) invalidateBranchPrCaches()

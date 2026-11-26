@@ -28,6 +28,7 @@ function stateWith(partial: Partial<AppState>): AppState {
     stagedDiffs: [],
     filesPaneOpen: false,
     rightPanelMode: 'explorer',
+    rightPanelSplitMode: null,
     rightPanelMaximized: false,
     projectsPaneOpen: true,
     layout: { ...DEFAULT_LAYOUT },
@@ -51,9 +52,19 @@ function stateWith(partial: Partial<AppState>): AppState {
 
 test('captureProjectViewState snapshots the panel slice of AppState', () => {
   const view = captureProjectViewState(
-    stateWith({ filesPaneOpen: true, rightPanelMode: 'terminal', panelTab: 'diff' }),
+    stateWith({
+      filesPaneOpen: true,
+      rightPanelMode: 'terminal',
+      rightPanelSplitMode: 'browser',
+      panelTab: 'diff',
+    }),
   )
-  assert.deepEqual(view, { filesPaneOpen: true, rightPanelMode: 'terminal', panelTab: 'diff' })
+  assert.deepEqual(view, {
+    filesPaneOpen: true,
+    rightPanelMode: 'terminal',
+    rightPanelSplitMode: 'browser',
+    panelTab: 'diff',
+  })
 })
 
 test('resolveProjectViewState returns the recorded state for a known project', () => {
@@ -61,11 +72,13 @@ test('resolveProjectViewState returns the recorded state for a known project', (
   recordProjectViewState(registry, 'p1', {
     filesPaneOpen: true,
     rightPanelMode: 'changes',
+    rightPanelSplitMode: null,
     panelTab: 'file',
   })
   assert.deepEqual(resolveProjectViewState(registry, 'p1'), {
     filesPaneOpen: true,
     rightPanelMode: 'changes',
+    rightPanelSplitMode: null,
     panelTab: 'file',
   })
 })
@@ -84,6 +97,7 @@ test('recordProjectViewState ignores a null project id', () => {
   recordProjectViewState(registry, null, {
     filesPaneOpen: true,
     rightPanelMode: 'terminal',
+    rightPanelSplitMode: null,
     panelTab: 'file',
   })
   assert.equal(registry.size, 0)
@@ -94,6 +108,7 @@ test('forgetProjectViewState drops a project so it resolves to the default again
   recordProjectViewState(registry, 'p1', {
     filesPaneOpen: true,
     rightPanelMode: 'terminal',
+    rightPanelSplitMode: null,
     panelTab: 'file',
   })
   forgetProjectViewState(registry, 'p1')
