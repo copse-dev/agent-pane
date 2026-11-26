@@ -98,6 +98,15 @@ export class RunRecorder {
     this.updating = true
   }
 
+  /** The update relaunch did not happen; the next quit is the user's own. */
+  clearUpdateRelaunch(): void {
+    this.updating = false
+  }
+
+  get updateRelaunchNoted(): boolean {
+    return this.updating
+  }
+
   /** Record how this run ends. Only the first call counts. */
   async end(): Promise<void> {
     if (this.ended) return
@@ -125,6 +134,15 @@ export function startRunRecorder(userDataPath: string, startedAt: number): RunRe
 /** The updater is about to relaunch the app to install an update. */
 export function noteUpdateRelaunch(): void {
   recorder?.noteUpdateRelaunch()
+}
+
+/** The update relaunch was abandoned. */
+export function clearUpdateRelaunch(): void {
+  recorder?.clearUpdateRelaunch()
+}
+
+export function updateRelaunchNoted(): boolean {
+  return recorder?.updateRelaunchNoted ?? false
 }
 
 /** Record that this run is ending in an orderly quit. */

@@ -60,6 +60,15 @@ export function approveClose(): void {
   gate.approve()
 }
 
+export function isCloseApproved(): boolean {
+  return gate.isApproved()
+}
+
+/** Ask again on the next close: the quit `approveClose` was for did not happen. */
+export function revokeCloseApproval(): void {
+  gate.revoke()
+}
+
 /**
  * Intercept the window's own close (traffic light, Alt+F4, Cmd+W) and re-issue
  * it once confirmed. `before-quit` covers the quit routes; this covers the ones
