@@ -84,6 +84,19 @@ export function gitPushApproval(
   }
 }
 
+/** The two-tier buttons and footer a fast-forward push of the thread's own branch adds. */
+export function gitPushChatGrantCopy(branch: string): {
+  approveLabel: string
+  approveOnceLabel: string
+  bodyFooter: string
+} {
+  return {
+    approveLabel: 'Allow for this chat',
+    approveOnceLabel: 'Push once',
+    bodyFooter: `Allow for this chat also pushes ${branch} to origin again in this chat without asking, fast-forward only, until Copse quits. Other branches and history rewrites still ask.`,
+  }
+}
+
 export interface ApprovalDetails {
   body: string
   bodyAdvice: string

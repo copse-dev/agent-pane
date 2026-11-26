@@ -3,6 +3,7 @@ import { planToolBlockReason } from '../thread-plan-context.ts'
 import { z } from 'zod'
 import {
   browserApprovalDetails,
+  gitPushChatGrantCopy,
   projectPortBindingApproval,
   webApprovalDetails,
 } from '@shared/approval-copy.ts'
@@ -124,6 +125,7 @@ import {
   hasReadOutsideProjectGrant,
   safeCanonicalReadTarget,
 } from './read-outside-grant.ts'
+import { chatPushTarget, grantChatPush, hasChatPushGrant } from './push-grant.ts'
 import {
   escalationGrantFooter,
   grantableEscalationKinds,
@@ -1224,6 +1226,26 @@ async function checkGithubWriteToolPermission(
   const workspaceRepositorySlug = needsWorkspaceRepository
     ? await getGithubRepoSlug(getAgentExecutionRoot())
     : null
+  // A fast-forward push of the thread's own branch can be allowed for the
+  // rest of the chat (see push-grant.ts). Never with an automation grant on
+  // offer, nor when the user set git_push to always ask.
+  const threadId = getActiveRunThread()
+  const pushTarget =
+    toolName === 'git_push' && automation === null && explicitPolicy !== 'ask' && threadId
+      ? await chatPushTarget(args, getAgentExecutionRoot())
+      : null
+  if (threadId && pushTarget && hasChatPushGrant(threadId, pushTarget)) {
+    recordDecision({
+      kind: 'mcp',
+      actor: 'user',
+      verdict: 'allowed',
+      subject: toolName,
+      cause: 'github-write',
+      reasons: [`push ${pushTarget.branch} to origin (fast-forward)`],
+      source: 'chat-push-grant',
+    })
+    return true
+  }
   const prompt = formatGithubWritePrompt(toolName, args, workspaceRepositorySlug)
   const { approved, remember } = await requestApproval(
     {
@@ -1234,14 +1256,16 @@ async function checkGithubWriteToolPermission(
               'Approval covers this action once. Remembering permits this GitHub action for other pull requests in this project in future runs of the named schedule.',
           }
         : {}),
+      ...(pushTarget ? gitPushChatGrantCopy(pushTarget.branch) : {}),
       type: 'mcp',
       cause: 'github-write',
-      allowRemember: automation !== null,
+      allowRemember: automation !== null || pushTarget !== null,
       ...(automation ? automationRememberOptions(automation, permission) : {}),
       subject: toolName,
     },
     signal,
   )
+  if (approved && remember && pushTarget && threadId) grantChatPush(threadId, pushTarget)
   if (approved && remember && automation) {
     await getAutomationService().grantPermission(
       automation.projectId,

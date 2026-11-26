@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { escalationGrantFooter } from '../../src/main/services/security/escalation-grant.ts'
+import { gitPushApproval, gitPushChatGrantCopy } from '../../src/shared/approval-copy.ts'
 import { E2E_SCREENSHOT_DIR, prepareE2eScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
@@ -60,5 +61,35 @@ describe('outside-sandbox prompt with a chat grant', function () {
 
     await prepareE2eScreenshot()
     await dialog.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'approval-escalation-chat-grant.png'))
+    await dialog.$('.approval-reject').click()
+    await expect(dialog).not.toBeDisplayed()
+  })
+
+  it('offers Push once and Allow for this chat on a push of the thread branch', async () => {
+    const branch = 'copse/restore-the-pink-hero-banner'
+    const request = {
+      id: 'push-chat-grant',
+      ...gitPushApproval(branch),
+      ...gitPushChatGrantCopy(branch),
+      type: 'mcp',
+      allowRemember: true,
+    }
+    await browser.execute(async (value) => {
+      const bridge = window.__copseE2e
+      if (!bridge) throw new Error('__copseE2e unavailable')
+      await bridge.emitApprovalRequests([value])
+    }, request)
+
+    const dialog = $('#approval-dialog')
+    await expect(dialog).toBeDisplayed()
+    await expect(dialog).toHaveText(expect.stringContaining('Push branch to origin?'))
+    const once = dialog.$('.approval-approve-once')
+    await expect(once).toHaveText('Push once')
+    await expect(once).toHaveElementClass('ui-btn-primary')
+    await expect(dialog.$('.approval-approve')).toHaveText('Allow for this chat')
+    await expect(dialog).toHaveText(expect.stringContaining('fast-forward only'))
+
+    await prepareE2eScreenshot()
+    await dialog.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'approval-push-chat-grant.png'))
   })
 })

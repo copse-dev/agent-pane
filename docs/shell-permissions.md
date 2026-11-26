@@ -1515,6 +1515,13 @@ the current thread. Later user turns use ordinary interactive approval.
 Resolving a queued request records the human decision; it does not prove that
 the original action ran.
 
+In an interactive chat, a fast-forward `git_push` of the branch checked out where the agent runs
+offers **Push once** and **Allow for this chat** (`push-grant.ts`), unless that branch is the
+repository's default branch, the default branch is unknown, the call carries
+`expected_remote_sha`, or the user set `git_push` to always ask. The grant covers pushes of that
+branch from that checkout in that thread until Copse quits, logged with
+`source: chat-push-grant`. Other branches and history rewrites still ask.
+
 PR maintenance also offers separate grants for `git_push`, `gh_pr_merge`, `gh_pr_comment`,
 and `gh_pr_resolve_review_thread`. Push publishes one branch to origin and only replaces
 rewritten history with an explicit full remote SHA lease, and refuses unsigned commits when
