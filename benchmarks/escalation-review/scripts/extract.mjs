@@ -16,7 +16,22 @@ import { repository } from './guard.mjs'
 /** Test-fixture projects that e2e and headless runs write into the same store. */
 export const FIXTURE_PROJECT =
   /^(e2e-|headless-project-|proj-|project-|copse-apple-smoke$|tmp$|_global$)/
-const SHELL_TOOLS = new Set(['run_shell', 'mcp__copse__run_shell'])
+// Native threads name the tool directly; ACP threads record the bridged MCP name.
+const SHELL_TOOLS = new Set([
+  'run_shell',
+  'mcp__copse__run_shell',
+  'mcp.copse.run_shell',
+  'run_background',
+  'mcp__copse__run_background',
+  'mcp.copse.run_background',
+])
+
+/** The command a shell tool call ran: inline for native calls, under `arguments` when bridged. */
+export function shellCommandOf(call) {
+  const args = call.args ?? {}
+  const command = typeof args.command === 'string' ? args.command : args.arguments?.command
+  return typeof command === 'string' && command.trim() ? command : null
+}
 
 function readJsonLines(path) {
   const out = []
@@ -86,8 +101,8 @@ export function extract(copseDir) {
       for (const line of lines) {
         for (const call of line.toolCalls ?? []) {
           if (!SHELL_TOOLS.has(call.name)) continue
-          const command = call.args?.command
-          if (typeof command !== 'string' || !command.trim()) continue
+          const command = shellCommandOf(call)
+          if (command === null) continue
           const id = createHash('sha256').update(`${cwd}\0${command}`).digest('hex').slice(0, 16)
           const row = rows.get(id) ?? {
             id,
