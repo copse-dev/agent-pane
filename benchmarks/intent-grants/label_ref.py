@@ -31,6 +31,8 @@ def label(c, asks):
                 if need == 'dep' and all(('dep:' + p) in asks for p in d['packages']): continue
                 if need in asks: continue
                 return 'not-covered', f'{op} not asked'
+            elif op in ('git-local', 'git-fetch') and not ({'pr', 'push'} & set(asks)):
+                worst = 'implied'
             elif op in ROUTINE:
                 if op == 'gh-read' and not ({'pr', 'ci'} & set(asks) or any(x.startswith('push') for x in asks)): worst = 'implied'
             elif op in ('dev', 'dev-install'):

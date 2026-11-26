@@ -48,7 +48,7 @@ def own_words(text):
 YES = re.compile(r"^\W*(y|yes|yep|yeah|yup|sure|ok|okay|go|go ahead|do it|please do|please|yes please|yes,? (do it|go ahead|please)|go for it|ship it|proceed|sounds good|let'?s do (it|that))\W*$", re.I)
 NEG = re.compile(r"\b(don'?t|do not|not yet|no need|without|hold off|never|stop|wait|instead of|skip|no,|rather than|avoid)\b|^\s*no\b", re.I)
 OPINION = re.compile(r"^\W*(should (we|i)|do (we|i|you) (need|want|think)|would|could (we|this)|is (it|there|this)|what|why|how|did (we|you)|does|are (we|you|there)|can (this|it|they|these))\b", re.I)
-PR = r"(?:pr|p\.\s?r\.?|pull request)s?"
+PR = r"(?:(?:draft )?pr|p\.\s?r\.?|pull request|draft)s?"
 PATTERNS = [
     ('pr.open',      re.compile(rf"\b(make|open|create|raise|file|put up|send|do|submit|need)\b[^.?!\n]{{0,25}}\b{PR}\b|\bvia an? {PR}\b|^\W*\*?\s*{PR}\W*(please)?\W*$|\b{PR} (please|it|this)\b", re.I)),
     ('branch.push',  re.compile(r"\bpush\b(?! ?back)|\bupdate (the|my|this|that) (pr|branch|pull request)\b|\b(extend|onto|on top of|target)\b[^.?!\n]*\b(?:copse|claude|feature|fix)/", re.I)),
@@ -102,23 +102,23 @@ def extract_det(user, assistant='', ctx=None):
         for cl in _clauses(text):
             if NEG.search(cl) or (is_user and (OPINION.search(cl) or INFO.search(cl))) or UNBOUND.search(cl): continue
             for action, rx in PATTERNS:
-                m = rx.search(cl)
-                if not m: continue
-                g = {'action': action, 'pr': None, 'branch': None, 'package': None, 'flags': []}
-                n = PRNUM.search(cl)
-                if n: g['pr'] = int(n.group(1))
-                elif is_user and q_prs and re.search(r"\b(it|this|that|the pr)\b", cl, re.I) and len(q_prs) == 1:
-                    g['pr'] = q_prs[0]  # "merge it" binds to the one PR the question named
-                b = BRANCH.search(cl)
-                if b: g['branch'] = b.group(1)
-                if action == 'dep.add':
-                    phrase = m.group(2)
-                    named = set(re.findall(r"`(@?[\w./-]+)`", cl)) | set(re.findall(r"(@[\w-]+/[\w.-]+)", cl))
-                    if phrase.lower() in {'it', 'this', 'that', 'the', 'a', 'tests', 'test', 'a test', 'support', 'them', 'those'} and not named: continue
-                    g['package'] = {'exact': {pkg_name(phrase.split()[0])} | {pkg_name(x) for x in named},
-                                    'loose': {_norm_pkg(phrase), _norm_pkg(phrase.split()[0])}}
-                if is_user and FORCE.search(cl): g['flags'].append('force')
-                grants.append(g)
+              for m in (rx.finditer(cl) if action == 'dep.add' else [rx.search(cl)]):
+                  if not m: continue
+                  g = {'action': action, 'pr': None, 'branch': None, 'package': None, 'flags': []}
+                  n = PRNUM.search(cl)
+                  if n: g['pr'] = int(n.group(1))
+                  elif is_user and q_prs and re.search(r"\b(it|this|that|the pr)\b", cl, re.I) and len(q_prs) == 1:
+                      g['pr'] = q_prs[0]  # "merge it" binds to the one PR the question named
+                  b = BRANCH.search(cl)
+                  if b: g['branch'] = b.group(1)
+                  if action == 'dep.add':
+                      phrase = m.group(2)
+                      named = set(re.findall(r"`(@?[\w./-]+)`", cl)) | set(re.findall(r"(@[\w-]+/[\w.-]+)", cl))
+                      if phrase.lower() in {'it', 'this', 'that', 'the', 'a', 'tests', 'test', 'a test', 'support', 'them', 'those'} and not named: continue
+                      g['package'] = {'exact': {pkg_name(phrase.split()[0])} | {pkg_name(x) for x in named},
+                                      'loose': {_norm_pkg(phrase), _norm_pkg(phrase.split()[0])}}
+                  if is_user and FORCE.search(cl): g['flags'].append('force')
+                  grants.append(g)
     return grants
 
 # --- command parsing ------------------------------------------------------------------------
