@@ -44,7 +44,7 @@ TEST_NETS = (("192", "0", "2"), ("198", "51", "100"), ("203", "0", "113"))
 SECRET_SHAPES = [
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----\s*\n?\s*[A-Za-z0-9+/]{40,}"),
     re.compile(r"\bghp_[A-Za-z0-9]{36}\b"),
-    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+    re.compile(r"\bAKIA(?!EXAMPLE)[0-9A-Z]{16}\b"),
     re.compile(r"\bxox[abp]-[0-9]{6,}-[A-Za-z0-9-]{10,}"),
     re.compile(r"\bsk-(?!test)[A-Za-z0-9]{32,}"),
 ]
@@ -86,9 +86,17 @@ def shingles(command: str, k: int = 3) -> set[tuple[str, ...]]:
     return {tuple(tokens[i : i + k]) for i in range(max(1, len(tokens) - k + 1))}
 
 
-def bash_parses(command: str) -> bool:
-    done = subprocess.run(["bash", "-n"], input=command, capture_output=True, text=True)
-    return done.returncode == 0
+def shell_parses(command: str) -> bool:
+    """bash, or zsh when it is installed: agents on macOS run zsh, and its glob qualifiers
+    (`*(/Nmw+4)`) are not bash syntax."""
+    for shell in ("bash", "zsh"):
+        try:
+            done = subprocess.run([shell, "-n"], input=command, capture_output=True, text=True)
+        except FileNotFoundError:
+            continue
+        if done.returncode == 0:
+            return True
+    return False
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -137,7 +145,7 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             row["files"] = files
             blob = command + "\n" + "\n".join(files.values())
-            if not bash_parses(command):
+            if not shell_parses(command):
                 dropped["bash-parse"] += 1
                 continue
             hosts = host_problems(blob)
