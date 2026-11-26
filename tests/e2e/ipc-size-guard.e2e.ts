@@ -13,7 +13,11 @@ describe('IPC size guard', () => {
       // Unguarded, serializing this call aborts the renderer process.
       const text = 'x'.repeat(402_653_185)
       try {
-        await window.api.agent.suggestCommandSummary(Array.from({ length: 5 }, () => text))
+        await window.api.agent.suggestCommandSummary(
+          Array.from({ length: 5 }, () => text),
+          'size-guard-project',
+          'size-guard-thread',
+        )
         return 'sent'
       } catch (error) {
         return error instanceof Error ? error.message : String(error)
