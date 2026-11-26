@@ -22,14 +22,20 @@ import {
 import type { ExecutionRuntime, RuntimeExecRequest } from '../services/execution-runtime/runtime.ts'
 import {
   beginContainedRun,
+  checkRunningContainedWorkspaces,
   direnvLoadedFiles,
   integrityNoteForCommand,
+  isWritableUnder,
   parseGitConfigBytes,
+  setWorkspaceIntegrityRestorer,
   setWorkspaceIntegritySink,
+  UnresolvedWorkspaceIntegrityError,
   withWorkspaceIntegrity,
   workspaceIntegrityOutcome,
   type IntegrityReport,
+  type WritePolicy,
 } from './workspace-integrity.ts'
+import { applyRestoreSteps } from './workspace-integrity-restore.ts'
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', args, {
@@ -49,13 +55,20 @@ beforeEach(() => {
   git(root, 'init', '-q', '-b', 'main')
 })
 
-afterEach(() => {
+afterEach(async () => {
   setWorkspaceIntegritySink(null)
+  setWorkspaceIntegrityRestorer(null)
+  // Settle any guard a test left unresolved, so the next test starts clean.
+  await checkRunningContainedWorkspaces(null)
   rmSync(base, { recursive: true, force: true })
 })
 
-async function contained(change: () => void): Promise<IntegrityReport> {
-  const lease = await beginContainedRun(root, null)
+async function contained(
+  change: () => void,
+  policy: WritePolicy | null = null,
+  cwd: string = root,
+): Promise<IntegrityReport> {
+  const lease = await beginContainedRun(cwd, null, policy)
   change()
   return lease.end()
 }
@@ -73,8 +86,7 @@ describe('workspace integrity: git config', () => {
     assert.equal(git(root, 'config', 'branch.main.remote').trim(), 'origin')
   })
 
-  it('reverts program-starting keys and reports them by name', async () => {
-    const before = readFileSync(join(root, '.git/config'))
+  it('reverts only the program-starting keys and reports them by name', async () => {
     const report = await contained(() => {
       git(root, 'config', 'branch.main.remote', 'origin')
       git(root, 'config', 'core.fsmonitor', './watch.sh')
@@ -88,7 +100,11 @@ describe('workspace integrity: git config', () => {
         restored: true,
       },
     ])
-    assert.deepEqual(readFileSync(join(root, '.git/config')), before)
+    // Upstream tracking written by the same command stays.
+    assert.equal(git(root, 'config', 'branch.main.remote').trim(), 'origin')
+    const config = readFileSync(join(root, '.git/config'), 'utf8')
+    assert.equal(config.includes('fsmonitor'), false)
+    assert.equal(config.includes('curl'), false)
   })
 
   it('reverts an include of a workspace file and a new submodule config', async () => {
@@ -211,6 +227,179 @@ describe('workspace integrity: agent configuration', () => {
     })
     assert.deepEqual(report.findings, [])
     assert.equal(readlinkSync(join(root, '.claude/settings.json')), join(base, 'dotfile.json'))
+  })
+})
+
+describe('workspace integrity: what is guarded', () => {
+  it('matches write rules the way ASRT reads them', () => {
+    const policy: WritePolicy = {
+      allowWrite: ['/w', '/w/**', '/c/objects/**'],
+      denyWrite: ['/w/.git/hooks', '**/.git/hooks/**', '**/.bashrc', '/c/config'],
+    }
+    assert.equal(isWritableUnder(policy, '/w/.git/config'), true)
+    assert.equal(isWritableUnder(policy, '/w/.git/hooks'), false)
+    assert.equal(isWritableUnder(policy, '/w/sub/.git/hooks/pre-commit'), false)
+    assert.equal(isWritableUnder(policy, '/w/a/.bashrc'), false)
+    assert.equal(isWritableUnder(policy, '/c/config'), false)
+    assert.equal(isWritableUnder(policy, '/c/objects/ab/cd'), true)
+    assert.equal(isWritableUnder(policy, '/other/file'), false)
+    assert.equal(isWritableUnder(null, '/other/file'), true)
+  })
+
+  it('leaves the primary checkout alone while a linked worktree runs a contained command', async () => {
+    writeFileSync(join(root, 'README.md'), 'x\n')
+    git(root, 'add', 'README.md')
+    git(root, '-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-qm', 'init')
+    const worktree = join(base, 'wt')
+    git(root, 'worktree', 'add', '-q', '-b', 'thread', worktree)
+    const gitDir = join(root, '.git/worktrees/wt')
+    const commonDir = join(root, '.git')
+    // The shape of the contained profile: the worktree and its own admin dir
+    // are writable; the shared config and hooks are not.
+    const policy: WritePolicy = {
+      allowWrite: [worktree, `${worktree}/**`, gitDir, `${gitDir}/**`],
+      denyWrite: [join(commonDir, 'config'), join(commonDir, 'hooks'), '**/.git/hooks/**'],
+    }
+    const report = await contained(
+      () => {
+        // The user's own work in the primary checkout, meanwhile.
+        git(root, 'config', 'alias.lg', 'log --oneline --graph')
+        git(root, 'config', 'user.email', 'me@example.com')
+        writeFileSync(join(root, '.git/hooks/pre-commit'), '#!/bin/sh\n')
+        // The contained command's own change in the worktree.
+        mkdirSync(join(worktree, '.claude'))
+        writeFileSync(join(worktree, '.claude/settings.json'), '{}\n')
+      },
+      policy,
+      worktree,
+    )
+    assert.deepEqual(
+      report.findings.map((finding) => [finding.path, finding.restored]),
+      [['.claude/settings.json', true]],
+    )
+    assert.equal(git(root, 'config', 'alias.lg').trim(), 'log --oneline --graph')
+    assert.equal(git(root, 'config', 'user.email').trim(), 'me@example.com')
+    assert.equal(existsSync(join(root, '.git/hooks/pre-commit')), true)
+  })
+
+  it('never follows a symlinked submodule directory out of the git directory', async () => {
+    const outside = join(base, 'outside')
+    mkdirSync(join(outside, 'hooks'), { recursive: true })
+    writeFileSync(join(outside, 'config'), '[core]\n\tfsmonitor = x\n')
+    writeFileSync(join(outside, 'hooks/pre-commit'), '#!/bin/sh\n')
+    const report = await contained(() => {
+      mkdirSync(join(root, '.git/modules'))
+      symlinkSync(outside, join(root, '.git/modules/evil'))
+    })
+    assert.deepEqual(report.findings, [])
+    assert.equal(readFileSync(join(outside, 'config'), 'utf8'), '[core]\n\tfsmonitor = x\n')
+    assert.equal(existsSync(join(outside, 'hooks/pre-commit')), true)
+  })
+
+  it('treats a new hooks directory holding only samples as no change', async () => {
+    const fresh = join(base, 'fresh')
+    mkdirSync(fresh)
+    const report = await contained(
+      () => {
+        git(fresh, 'init', '-q', '-b', 'main')
+      },
+      null,
+      fresh,
+    )
+    assert.deepEqual(report.findings, [])
+  })
+
+  it('lists every name in a guarded tree, so a new file cannot hide behind filler', async () => {
+    mkdirSync(join(root, '.codex'))
+    const report = await contained(() => {
+      for (let index = 0; index < 2100; index += 1) {
+        writeFileSync(join(root, `.codex/a${String(index).padStart(5, '0')}`), '')
+      }
+      writeFileSync(join(root, '.codex/zz-config.toml'), 'approval_policy = "never"\n')
+    })
+    assert.deepEqual(
+      report.findings.map((finding) => [finding.path, finding.restored]),
+      [['.codex', true]],
+    )
+    assert.equal(existsSync(join(root, '.codex/zz-config.toml')), false)
+  })
+})
+
+describe('workspace integrity: a revert that fails', () => {
+  it('keeps finding the change and refuses unsandboxed commands there until it is undone', async () => {
+    setWorkspaceIntegrityRestorer((_root, steps) => Promise.resolve(steps.map(() => false)))
+    const first = await contained(() => {
+      git(root, 'config', 'core.fsmonitor', './watch.sh')
+    })
+    assert.deepEqual(
+      first.findings.map((finding) => [finding.keys, finding.restored]),
+      [[['core.fsmonitor'], false]],
+    )
+    assert.match(integrityNoteForCommand(first), /will not run commands outside the sandbox/)
+    // Later checks find it again instead of taking it as the new baseline.
+    const [again] = await checkRunningContainedWorkspaces(null)
+    assert.deepEqual(
+      again?.findings.map((finding) => finding.restored),
+      [false],
+    )
+    const runtime = withWorkspaceIntegrity(
+      {
+        kind: 'local',
+        capabilities: () => deriveRuntimeCapabilities({ kind: 'local', containment: 'contained' }),
+        stop: () => Promise.resolve(),
+        exec: () => Promise.reject(new Error('must not launch')),
+      },
+      { isContained: () => false, owner: () => null },
+    )
+    await assert.rejects(
+      runtime.exec({
+        command: { kind: 'shell', commandLine: 'git status' },
+        cwd: root,
+        local: { sandbox: false, plan: () => ({ config: {} }) },
+      }),
+      UnresolvedWorkspaceIntegrityError,
+    )
+    // Once a revert works, the workspace is clean and the block lifts.
+    setWorkspaceIntegrityRestorer(null)
+    const [fixed] = await checkRunningContainedWorkspaces(null)
+    assert.deepEqual(
+      fixed?.findings.map((finding) => finding.restored),
+      [true],
+    )
+    assert.equal(readFileSync(join(root, '.git/config'), 'utf8').includes('fsmonitor'), false)
+    assert.deepEqual(await checkRunningContainedWorkspaces(null), [])
+  })
+})
+
+describe('applyRestoreSteps', () => {
+  it('refuses to act through a symlinked parent and skips what lies below a failed step', async () => {
+    const outside = join(base, 'outside')
+    mkdirSync(outside)
+    writeFileSync(join(outside, 'settings.json'), 'theirs\n')
+    symlinkSync(outside, join(root, '.claude'))
+    const results = await applyRestoreSteps([
+      { op: 'remove', anchor: root, path: join(root, '.claude/settings.json') },
+      {
+        op: 'write',
+        anchor: root,
+        path: join(root, '.claude/hooks.json'),
+        data: Buffer.from('x').toString('base64'),
+        mode: 0o644,
+      },
+      { op: 'mkdir', anchor: root, path: join(root, '.claude') },
+      {
+        op: 'write',
+        anchor: root,
+        path: join(root, '.claude/settings.json'),
+        data: Buffer.from('{}\n').toString('base64'),
+        mode: 0o644,
+      },
+    ])
+    assert.deepEqual(results, [false, false, true, true])
+    assert.equal(readFileSync(join(outside, 'settings.json'), 'utf8'), 'theirs\n')
+    assert.equal(existsSync(join(outside, 'hooks.json')), false)
+    assert.equal(lstatSync(join(root, '.claude')).isDirectory(), true)
+    assert.equal(readFileSync(join(root, '.claude/settings.json'), 'utf8'), '{}\n')
   })
 })
 

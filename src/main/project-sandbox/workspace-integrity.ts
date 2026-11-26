@@ -9,32 +9,39 @@
  * some of them, and on Linux bubblewrap can deny only paths that already exist.
  *
  * So the local runtime snapshots those files before each contained command
- * starts and compares them when it ends. A change to an agent or hook file is
+ * starts and compares them when it ends. Only paths the command's own write
+ * policy lets it write are guarded: a change anywhere else cannot be the
+ * command's, so it is never touched. A change to an agent or hook file is
  * reverted. A git config change is reverted only when it adds, changes or
- * removes an entry that can start a program or repoint a remote (`git-config-policy.ts`), so
- * upstream tracking, `git remote add` and `git lfs install` keep working. Each
- * revert is reported to the registered sink (the decision log) and to the
- * command's own result.
+ * removes an entry that can start a program or repoint a remote
+ * (`git-config-policy.ts`), and only those keys are put back, so upstream
+ * tracking, `git remote add`, `git lfs install` and anything else written
+ * alongside keep working. The revert itself runs under the same sandbox write
+ * policy (`workspace-integrity-restore.ts`). Each revert is reported to the
+ * registered sink (the decision log) and to the command's own result.
+ *
+ * A change that could not be reverted stays in the baseline as a difference:
+ * every later check tries again, and an unsandboxed agent command in that
+ * workspace is refused until it is undone.
  *
  * Overlapping contained commands in one workspace share one baseline, and an
  * unsandboxed launch first checks every workspace that still has a contained
  * command running, so a long-lived background task cannot leave a change in
- * place for an approved host command to pick up.
+ * place for an approved command Copse launches to pick up. Nothing watches the
+ * files while the task runs: the user's own tools (an IDE polling git, direnv
+ * on `cd`) can run a planted change before the check.
  */
 import { execFile } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import type { Stats } from 'node:fs'
 import {
-  chmod,
   lstat,
-  mkdir,
+  mkdtemp,
   readFile,
   readdir,
   readlink,
   realpath,
-  rename,
   rm,
-  symlink,
   writeFile,
 } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
@@ -52,6 +59,7 @@ import {
   parseGitConfigList,
   type GitConfigEntry,
 } from './git-config-policy.ts'
+import { applyRestoreSteps, type RestoreStep } from './workspace-integrity-restore.ts'
 import { repositoryPaths } from './worktree-config.ts'
 
 /**
@@ -75,6 +83,11 @@ export const GUARDED_AGENT_CONFIG_FILES = [
   '.mise.toml',
   'mise.local.toml',
   '.mise.local.toml',
+  '.config/mise.toml',
+  '.config/mise/config.toml',
+  '.config/mise/config.local.toml',
+  'mise/config.toml',
+  '.mise/config.toml',
 ] as const
 
 /**
@@ -82,12 +95,25 @@ export const GUARDED_AGENT_CONFIG_FILES = [
  * Instruction-only directories (rules, skills) are left to the agents: they
  * start no program by themselves, and agents are often asked to write them.
  */
-export const GUARDED_AGENT_CONFIG_DIRS = ['.claude/hooks', '.codex', '.cursor/hooks'] as const
+export const GUARDED_AGENT_CONFIG_DIRS = [
+  '.claude/hooks',
+  '.codex',
+  '.cursor/hooks',
+  '.config/mise/conf.d',
+  'mise/conf.d',
+  '.mise/conf.d',
+] as const
 
 /** Larger files are compared by metadata only and cannot be restored. */
 const MAX_RESTORABLE_BYTES = 1024 * 1024
-/** Entries recorded per guarded directory tree. */
-const MAX_TREE_ENTRIES = 2000
+/**
+ * Entries listed per guarded directory tree. Every name is listed, so a new
+ * file cannot hide behind filler; past this many the tree counts as changed
+ * and is rebuilt from the baseline.
+ */
+const MAX_TREE_ENTRIES = 20_000
+/** File bytes read per guarded tree; files past it are compared by metadata. */
+const MAX_TREE_BYTES = 16 * 1024 * 1024
 /** Submodule nesting followed under `.git/modules`. */
 const MAX_MODULE_DEPTH = 4
 
@@ -125,6 +151,17 @@ interface Snapshot {
   readonly root: string
   readonly targets: readonly Target[]
   readonly entries: ReadonlyMap<string, Entry>
+  /** Tree targets with more than {@link MAX_TREE_ENTRIES} entries. */
+  readonly overflowed: ReadonlySet<string>
+}
+
+/**
+ * The write rules a contained command ran under, as ASRT reads them: a plain
+ * path covers itself and everything below it, and `*`, `**` and `?` are globs.
+ */
+export interface WritePolicy {
+  readonly allowWrite: readonly string[]
+  readonly denyWrite: readonly string[]
 }
 
 export type IntegrityChange = 'added' | 'modified' | 'removed' | 'redirected'
@@ -157,6 +194,78 @@ export function setWorkspaceIntegritySink(sink: WorkspaceIntegritySink | null): 
   registeredSink = sink
 }
 
+/** Applies revert steps for one workspace; one result per step. */
+export type WorkspaceIntegrityRestorer = (
+  root: string,
+  steps: readonly RestoreStep[],
+) => Promise<boolean[]>
+
+const inProcessRestorer: WorkspaceIntegrityRestorer = (_root, steps) => applyRestoreSteps(steps)
+let restorer: WorkspaceIntegrityRestorer = inProcessRestorer
+
+/**
+ * Register how reverts are applied. The app registers the sandboxed fs worker,
+ * so a revert is confined like the command it undoes; `null` restores the
+ * in-process default.
+ */
+export function setWorkspaceIntegrityRestorer(next: WorkspaceIntegrityRestorer | null): void {
+  restorer = next ?? inProcessRestorer
+}
+
+// ---------------------------------------------------------------------------
+// Write policy
+
+function hasGlob(pattern: string): boolean {
+  return /[*?[]/.test(pattern)
+}
+
+function globToRegExp(pattern: string): RegExp {
+  let source = ''
+  for (let index = 0; index < pattern.length; index += 1) {
+    const char = pattern.charAt(index)
+    if (char === '*' && pattern.charAt(index + 1) === '*') {
+      index += 1
+      if (pattern.charAt(index + 1) === '/') {
+        index += 1
+        source += '(?:.*/)?'
+      } else {
+        source += '.*'
+      }
+    } else if (char === '*') {
+      source += '[^/]*'
+    } else if (char === '?') {
+      source += '[^/]'
+    } else {
+      source += char.replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    }
+  }
+  return new RegExp(`^${source}$`)
+}
+
+function policyMatches(pattern: string, path: string): boolean {
+  if (!hasGlob(pattern)) return isPathWithin(pattern, path)
+  return globToRegExp(pattern).test(path)
+}
+
+/** Whether a command under `policy` may write `path`. Without a policy, anything. */
+export function isWritableUnder(policy: WritePolicy | null, path: string): boolean {
+  if (!policy) return true
+  if (!policy.allowWrite.some((pattern) => policyMatches(pattern, path))) return false
+  return !policy.denyWrite.some((pattern) => policyMatches(pattern, path))
+}
+
+/**
+ * Whether the command could have changed `target`. A denied path that is
+ * missing still counts on Linux, where bubblewrap can deny only paths that
+ * exist (a contained `git init` creates `.git/hooks`).
+ */
+async function guardable(policy: WritePolicy | null, target: Target): Promise<boolean> {
+  if (isWritableUnder(policy, target.path)) return true
+  if (!policy || process.platform !== 'linux') return false
+  if (!policy.allowWrite.some((pattern) => policyMatches(pattern, target.path))) return false
+  return (await lstatOrNull(target.path)) === null
+}
+
 // ---------------------------------------------------------------------------
 // Reading state
 
@@ -183,7 +292,11 @@ async function lstatOrNull(path: string): Promise<Stats | null> {
   }
 }
 
-async function stateOf(path: string, stats: Stats | null): Promise<EntryState> {
+async function stateOf(
+  path: string,
+  stats: Stats | null,
+  budget?: { bytes: number },
+): Promise<EntryState> {
   if (!stats) return MISSING
   if (stats.isDirectory()) return { kind: 'dir' }
   if (stats.isSymbolicLink()) {
@@ -199,10 +312,15 @@ async function stateOf(path: string, stats: Stats | null): Promise<EntryState> {
   if (cached?.signature === signature) {
     return { kind: 'file', signature, mode: stats.mode & 0o7777, bytes: cached.bytes }
   }
+  if (budget && budget.bytes < stats.size) {
+    // Over the tree's byte budget: compared by metadata, not cached.
+    return { kind: 'file', signature, mode: stats.mode & 0o7777, bytes: null }
+  }
   let bytes: Buffer | null = null
   if (stats.size <= MAX_RESTORABLE_BYTES) {
     try {
       bytes = await readFile(path)
+      if (budget) budget.bytes -= bytes.length
     } catch {
       bytes = null
     }
@@ -262,6 +380,10 @@ function expandHome(path: string): string {
   return path
 }
 
+async function isRealDirectory(path: string): Promise<boolean> {
+  return (await lstatOrNull(path))?.isDirectory() === true
+}
+
 /** Config, hooks and nested submodule administration under one git directory. */
 async function gitAdminTargets(adminDir: string, depth: number): Promise<Target[]> {
   const targets: Target[] = [
@@ -270,6 +392,8 @@ async function gitAdminTargets(adminDir: string, depth: number): Promise<Target[
     { path: join(adminDir, 'hooks'), comparator: 'bytes', tree: true, ignoreSamples: true },
   ]
   for (const child of ['worktrees', 'modules']) {
+    // Never follow a symlink out of the administration directory.
+    if (!(await isRealDirectory(join(adminDir, child)))) continue
     let names: string[]
     try {
       names = await readdir(join(adminDir, child))
@@ -277,6 +401,7 @@ async function gitAdminTargets(adminDir: string, depth: number): Promise<Target[
       continue
     }
     for (const name of names.sort()) {
+      if (!(await isRealDirectory(join(adminDir, child, name)))) continue
       if (child === 'worktrees') {
         targets.push({
           path: join(adminDir, child, name, 'config.worktree'),
@@ -364,7 +489,18 @@ async function direnvTargets(root: string): Promise<Target[]> {
  * baseline's, so a newly configured `core.hooksPath` cannot make Copse treat
  * an existing tracked directory as new and delete it.
  */
-async function guardTargets(root: string, derive: boolean): Promise<Target[]> {
+async function guardTargets(
+  root: string,
+  derive: boolean,
+  policy: WritePolicy | null,
+): Promise<Target[]> {
+  const targets = await candidateTargets(root, derive)
+  const kept: Target[] = []
+  for (const target of targets) if (await guardable(policy, target)) kept.push(target)
+  return kept
+}
+
+async function candidateTargets(root: string, derive: boolean): Promise<Target[]> {
   const targets: Target[] = [
     ...GUARDED_AGENT_CONFIG_FILES.map((path): Target => ({
       path: join(root, path),
@@ -390,15 +526,14 @@ async function guardTargets(root: string, derive: boolean): Promise<Target[]> {
     // A linked worktree's pointer file: redirecting it swaps in another config.
     targets.push({ path: dotGit, comparator: 'bytes', tree: false })
   }
-  targets.push(...(await gitAdminTargets(repository.gitDir, 0)))
-  if (repository.commonDir !== repository.gitDir) {
-    targets.push(...(await gitAdminTargets(repository.commonDir, 0)))
-  }
+  // Canonical, like the sandbox's own write rules, so the policy check sees the
+  // path the kernel does.
+  const gitDir = await canonicalRoot(repository.gitDir)
+  const commonDir = await canonicalRoot(repository.commonDir)
+  targets.push(...(await gitAdminTargets(gitDir, 0)))
+  if (commonDir !== gitDir) targets.push(...(await gitAdminTargets(commonDir, 0)))
   if (!derive) return dedupeTargets(targets)
-  for (const config of [
-    join(repository.commonDir, 'config'),
-    join(repository.gitDir, 'config.worktree'),
-  ]) {
+  for (const config of [join(commonDir, 'config'), join(gitDir, 'config.worktree')]) {
     targets.push(...(await derivedGitTargets(config, repository.checkout, root)))
   }
   return dedupeTargets(targets)
@@ -434,11 +569,17 @@ function anchorFor(root: string, path: string): string {
   return index >= 0 ? path.slice(0, index) : dirname(path)
 }
 
+interface TreeBudget {
+  entries: number
+  bytes: number
+  overflowed: boolean
+}
+
 async function walkTree(
   dir: string,
   target: Target,
   entries: Map<string, Entry>,
-  budget: { remaining: number },
+  budget: TreeBudget,
 ): Promise<void> {
   let names: string[]
   try {
@@ -447,13 +588,21 @@ async function walkTree(
     return
   }
   for (const name of names.sort()) {
-    if (budget.remaining <= 0) return
     if (target.ignoreSamples === true && name.endsWith('.sample')) continue
+    if (budget.entries <= 0) {
+      budget.overflowed = true
+      return
+    }
+    budget.entries -= 1
     const path = join(dir, name)
     const stats = await lstatOrNull(path)
-    budget.remaining -= 1
-    entries.set(path, { state: await stateOf(path, stats), comparator: 'bytes', ancestor: false })
+    entries.set(path, {
+      state: await stateOf(path, stats, budget),
+      comparator: 'bytes',
+      ancestor: false,
+    })
     if (stats?.isDirectory()) await walkTree(path, target, entries, budget)
+    if (budget.overflowed) return
   }
 }
 
@@ -462,12 +611,17 @@ async function walkTree(
  * config; a check takes the baseline's targets plus any new git administration
  * (a new submodule), so what the command configured never widens the check.
  */
-async function takeSnapshot(root: string, baselineTargets?: readonly Target[]): Promise<Snapshot> {
+async function takeSnapshot(
+  root: string,
+  policy: WritePolicy | null,
+  baselineTargets?: readonly Target[],
+): Promise<Snapshot> {
   const targets = dedupeTargets([
-    ...(await guardTargets(root, baselineTargets === undefined)),
+    ...(await guardTargets(root, baselineTargets === undefined, policy)),
     ...(baselineTargets ?? []),
   ])
   const entries = new Map<string, Entry>()
+  const overflowed = new Set<string>()
   for (const target of targets) {
     for (const ancestor of ancestorsBetween(anchorFor(root, target.path), target.path)) {
       if (entries.has(ancestor)) continue
@@ -484,10 +638,16 @@ async function takeSnapshot(root: string, baselineTargets?: readonly Target[]): 
       ancestor: false,
     })
     if (target.tree && stats?.isDirectory()) {
-      await walkTree(target.path, target, entries, { remaining: MAX_TREE_ENTRIES })
+      const budget: TreeBudget = {
+        entries: MAX_TREE_ENTRIES,
+        bytes: MAX_TREE_BYTES,
+        overflowed: false,
+      }
+      await walkTree(target.path, target, entries, budget)
+      if (budget.overflowed) overflowed.add(target.path)
     }
   }
-  return { root, targets, entries }
+  return { root, targets, entries, overflowed }
 }
 
 // ---------------------------------------------------------------------------
@@ -509,6 +669,8 @@ interface Change {
   readonly after: Entry
   readonly change: IntegrityChange
   readonly keys?: readonly string[]
+  /** An overflowing tree: remove it and recreate the baseline's entries. */
+  readonly rebuild?: boolean
 }
 
 function changeKind(before: EntryState, after: EntryState): IntegrityChange {
@@ -525,7 +687,7 @@ async function gitConfigChange(
 ): Promise<readonly string[] | null> {
   const [a, b] = await Promise.all([gitConfigOf(path, before), gitConfigOf(path, after)])
   // Unreadable or rejected config on either side: treat as a change.
-  if (a === null || b === null) return ['(unparsed)']
+  if (a === null || b === null) return [UNPARSED]
   const added = addedRemoteNames(a, b)
   const left = executableGitConfigEntries(a, added)
   const right = executableGitConfigEntries(b, added)
@@ -533,10 +695,31 @@ async function gitConfigChange(
   return changedExecutableGitConfigKeys(a, b)
 }
 
+const UNPARSED = '(unparsed)'
+
+function isStrictlyWithin(parent: string, path: string): boolean {
+  return isPathWithin(parent, path, { allowSelf: false })
+}
+
 async function diffSnapshots(baseline: Snapshot, current: Snapshot): Promise<Change[]> {
+  const rebuilt = [...new Set([...baseline.overflowed, ...current.overflowed])]
   const paths = new Set([...baseline.entries.keys(), ...current.entries.keys()])
   const changes: Change[] = []
+  for (const path of rebuilt) {
+    const before = baseline.entries.get(path)
+    const after = current.entries.get(path)
+    const template = before ?? after
+    if (!template) continue
+    changes.push({
+      path,
+      before: before ?? { ...template, state: MISSING },
+      after: after ?? { ...template, state: MISSING },
+      change: 'modified',
+      rebuild: true,
+    })
+  }
   for (const path of paths) {
+    if (rebuilt.some((tree) => isPathWithin(tree, path))) continue
     const beforeEntry = baseline.entries.get(path)
     const afterEntry = current.entries.get(path)
     const template = beforeEntry ?? afterEntry
@@ -564,47 +747,89 @@ async function diffSnapshots(baseline: Snapshot, current: Snapshot): Promise<Cha
     }
     changes.push({ path, before, after, change: changeKind(before.state, after.state) })
   }
-  return changes
+  // A guarded directory that appeared empty (or with only `*.sample` hooks, as
+  // `git init` leaves them) configures nothing.
+  const trees = new Set(current.targets.filter((target) => target.tree).map((t) => t.path))
+  return changes.filter(
+    (change) =>
+      !(
+        trees.has(change.path) &&
+        change.rebuild !== true &&
+        change.before.state.kind === 'missing' &&
+        change.after.state.kind === 'dir' &&
+        !changes.some((other) => isStrictlyWithin(change.path, other.path))
+      ),
+  )
 }
 
 // ---------------------------------------------------------------------------
 // Restoring
 
-async function writeAtomically(path: string, bytes: Buffer, mode: number): Promise<void> {
-  await mkdir(dirname(path), { recursive: true })
-  const temp = join(dirname(path), `.${basename(path)}.copse-restore-${String(process.pid)}`)
-  await rm(temp, { force: true, recursive: true })
-  await writeFile(temp, bytes, { mode })
-  await chmod(temp, mode)
-  const existing = await lstatOrNull(path)
-  if (existing?.isDirectory()) await rm(path, { recursive: true, force: true })
-  // rename replaces a symlink itself, never the file it points at.
-  await rename(temp, path)
+function runGit(args: readonly string[]): Promise<boolean> {
+  return new Promise((resolvePromise) => {
+    execFile('git', [...args], { cwd: tmpdir(), env: gitEnv(), timeout: 10_000 }, (error) => {
+      // `--unset-all` of a key that is not there exits 5: nothing to undo.
+      resolvePromise(error === null || (typeof error.code === 'number' && error.code === 5))
+    })
+  })
 }
 
-async function restoreState(path: string, state: EntryState): Promise<boolean> {
+/**
+ * The current config with only the changed program-starting keys put back as
+ * the baseline had them, so whatever else was written alongside (by the
+ * command or by the user) stays. Edited by git itself in a private temp file.
+ * `null` when it cannot be done, and the whole baseline file is restored.
+ */
+async function revertGitConfigKeys(
+  before: readonly GitConfigEntry[],
+  currentBytes: Buffer,
+  keys: readonly string[],
+): Promise<Buffer | null> {
+  if (keys.includes(UNPARSED)) return null
+  const dir = await mkdtemp(join(tmpdir(), 'copse-integrity-'))
+  try {
+    const file = join(dir, 'config')
+    await writeFile(file, currentBytes, { mode: 0o600 })
+    for (const key of keys) {
+      if (!(await runGit(['config', '--file', file, '--unset-all', key]))) return null
+      for (const entry of before) {
+        if (entry.key !== key) continue
+        if (!(await runGit(['config', '--file', file, '--add', key, entry.value ?? 'true']))) {
+          return null
+        }
+      }
+    }
+    const bytes = await readFile(file)
+    // Only trust the edit when git now reads the same programs as before.
+    const after = await parseGitConfigBytes(bytes)
+    if (after === null) return null
+    const added = addedRemoteNames(before, after)
+    const same =
+      JSON.stringify(executableGitConfigEntries(before, added)) ===
+      JSON.stringify(executableGitConfigEntries(after, added))
+    return same ? bytes : null
+  } catch {
+    return null
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+}
+
+/** The step that puts `path` back to `state`; `null` when it cannot be. */
+function stepFor(anchor: string, path: string, state: EntryState): RestoreStep | null {
   switch (state.kind) {
     case 'missing':
-      await rm(path, { recursive: true, force: true })
-      return true
-    case 'dir': {
-      const existing = await lstatOrNull(path)
-      if (existing?.isDirectory()) return true
-      if (existing) await rm(path, { recursive: true, force: true })
-      await mkdir(path, { recursive: true })
-      return true
-    }
+      return { op: 'remove', anchor, path }
+    case 'dir':
+      return { op: 'mkdir', anchor, path }
     case 'symlink':
-      await rm(path, { recursive: true, force: true })
-      await mkdir(dirname(path), { recursive: true })
-      await symlink(state.target, path)
-      return true
+      return { op: 'symlink', anchor, path, target: state.target }
     case 'file':
-      if (state.bytes === null) return false
-      await writeAtomically(path, state.bytes, state.mode)
-      return true
+      return state.bytes === null
+        ? null
+        : { op: 'write', anchor, path, data: state.bytes.toString('base64'), mode: state.mode }
     case 'other':
-      return false
+      return null
   }
 }
 
@@ -617,43 +842,116 @@ function isRepositoryMarker(path: string): boolean {
   return basename(path) === '.git'
 }
 
-async function restoreChanges(changes: readonly Change[]): Promise<Map<string, boolean>> {
+interface PlannedStep {
+  readonly step: RestoreStep
+  /** The changes this step's success counts toward. */
+  readonly change: string
+}
+
+async function stepsForLeaf(
+  root: string,
+  change: Change,
+  baseline: Snapshot,
+): Promise<PlannedStep[] | null> {
+  const anchor = anchorFor(root, change.path)
+  if (change.rebuild === true) {
+    // Remove the tree, then recreate what the baseline recorded, shallowest first.
+    if (baseline.overflowed.has(change.path)) return null
+    const steps: PlannedStep[] = [
+      { step: { op: 'remove', anchor, path: change.path }, change: change.path },
+    ]
+    const recorded = [...baseline.entries.entries()]
+      .filter(([path]) => isPathWithin(change.path, path))
+      .sort(([a], [b]) => depth(a) - depth(b))
+    for (const [path, entry] of recorded) {
+      if (entry.state.kind === 'missing') continue
+      const step = stepFor(anchor, path, entry.state)
+      if (!step) return null
+      steps.push({ step, change: change.path })
+    }
+    return steps
+  }
+  const { before, after } = change
+  if (
+    change.keys &&
+    before.state.kind === 'file' &&
+    after.state.kind === 'file' &&
+    before.state.bytes !== null &&
+    after.state.bytes !== null
+  ) {
+    const entries = await gitConfigOf(change.path, before.state)
+    const merged = entries
+      ? await revertGitConfigKeys(entries, after.state.bytes, change.keys)
+      : null
+    if (merged) {
+      return [
+        {
+          step: {
+            op: 'write',
+            anchor,
+            path: change.path,
+            data: merged.toString('base64'),
+            mode: after.state.mode,
+          },
+          change: change.path,
+        },
+      ]
+    }
+  }
+  const step = stepFor(anchor, change.path, before.state)
+  return step ? [{ step, change: change.path }] : null
+}
+
+async function restoreChanges(
+  root: string,
+  changes: readonly Change[],
+  baseline: Snapshot,
+): Promise<Map<string, boolean>> {
   const restored = new Map<string, boolean>()
+  const planned: PlannedStep[] = []
   const abandoned: string[] = []
   const ordered = [...changes].sort((a, b) => depth(a.path) - depth(b.path))
-  // Ancestors first, so later writes cannot follow a planted symlink.
+  // Ancestors first, so later steps never act through a planted symlink.
   for (const change of ordered.filter((item) => item.before.ancestor || item.after.ancestor)) {
-    try {
-      if (isRepositoryMarker(change.path) && change.before.state.kind === 'dir') {
-        // Remove the replacement (a gitdir pointer to another config) but do
-        // not invent an empty `.git`: git would then search parent directories.
-        await rm(change.path, { recursive: true, force: true })
-        abandoned.push(change.path)
-        restored.set(change.path, false)
-        continue
-      }
-      restored.set(change.path, await restoreState(change.path, change.before.state))
-    } catch {
+    const anchor = anchorFor(root, change.path)
+    if (isRepositoryMarker(change.path) && change.before.state.kind === 'dir') {
+      // Remove the replacement (a gitdir pointer to another config) but do
+      // not invent an empty `.git`: git would then search parent directories.
+      planned.push({ step: { op: 'remove', anchor, path: change.path }, change: change.path })
+      abandoned.push(change.path)
       restored.set(change.path, false)
+      continue
     }
+    const step = stepFor(anchor, change.path, change.before.state)
+    if (step) planned.push({ step, change: change.path })
+    else restored.set(change.path, false)
   }
   const leaves = ordered.filter((item) => !item.before.ancestor && !item.after.ancestor)
   // Removals deepest first, then restores shallowest first.
   const removals = leaves
-    .filter((item) => item.before.state.kind === 'missing')
+    .filter((item) => item.before.state.kind === 'missing' && item.rebuild !== true)
     .sort((a, b) => depth(b.path) - depth(a.path))
-  const restores = leaves.filter((item) => item.before.state.kind !== 'missing')
+  const restores = leaves.filter(
+    (item) => item.before.state.kind !== 'missing' || item.rebuild === true,
+  )
   for (const change of [...removals, ...restores]) {
-    if (abandoned.some((dir) => isPathWithin(dir, change.path, { allowSelf: false }))) {
+    if (abandoned.some((dir) => isStrictlyWithin(dir, change.path))) {
       restored.set(change.path, false)
       continue
     }
-    try {
-      restored.set(change.path, await restoreState(change.path, change.before.state))
-    } catch {
-      restored.set(change.path, false)
-    }
+    const steps = await stepsForLeaf(root, change, baseline)
+    if (steps) planned.push(...steps)
+    else restored.set(change.path, false)
   }
+  const results = await restorer(
+    root,
+    planned.map((item) => item.step),
+  ).catch(() => planned.map(() => false))
+  planned.forEach((item, index) => {
+    const ok = results[index] === true
+    restored.set(item.change, (restored.get(item.change) ?? true) && ok)
+  })
+  // A change none of whose steps ran (an unrestorable state) is already false.
   return restored
 }
 
@@ -670,9 +968,8 @@ function findingsFor(
   const groups = new Map<string, { change: IntegrityChange; keys: string[]; restored: boolean }>()
   for (const change of changes) {
     const owner =
-      snapshot.targets.find(
-        (target) => target.tree && isPathWithin(target.path, change.path, { allowSelf: false }),
-      )?.path ?? change.path
+      snapshot.targets.find((target) => target.tree && isStrictlyWithin(target.path, change.path))
+        ?.path ?? change.path
     const group = groups.get(owner)
     const ok = restored.get(change.path) === true
     if (!group) {
@@ -703,7 +1000,10 @@ function findingsFor(
 
 interface Guard {
   baseline: Snapshot
+  readonly policy: WritePolicy | null
   leases: number
+  /** Findings the last check could not revert; the guard lives until they are gone. */
+  unresolved: readonly IntegrityFinding[]
 }
 
 const guards = new Map<string, Guard>()
@@ -731,17 +1031,55 @@ async function canonicalRoot(cwd: string): Promise<string> {
   }
 }
 
+/**
+ * The next baseline: the workspace as it is now, except that every change
+ * that was not reverted keeps its old baseline state, so the next check finds
+ * it again instead of accepting it.
+ */
+function keepUnrestored(
+  fresh: Snapshot,
+  baseline: Snapshot,
+  unrestored: readonly string[],
+): Snapshot {
+  if (unrestored.length === 0) return fresh
+  const entries = new Map(fresh.entries)
+  for (const path of unrestored) {
+    for (const key of [...entries.keys()]) {
+      if (isPathWithin(path, key) && !baseline.entries.has(key)) entries.delete(key)
+    }
+    for (const [key, entry] of baseline.entries) {
+      if (isPathWithin(path, key)) entries.set(key, entry)
+    }
+  }
+  const overflowed = new Set(
+    [...fresh.overflowed].filter((tree) => !unrestored.some((path) => isPathWithin(path, tree))),
+  )
+  for (const tree of baseline.overflowed) overflowed.add(tree)
+  return { ...fresh, entries, overflowed }
+}
+
 /** Compare against the baseline, revert what must not stay, and take a new baseline. */
 async function checkGuard(root: string, guard: Guard): Promise<IntegrityReport> {
-  const current = await takeSnapshot(root, guard.baseline.targets)
+  const current = await takeSnapshot(root, guard.policy, guard.baseline.targets)
   const changes = await diffSnapshots(guard.baseline, current)
   if (changes.length === 0) {
     guard.baseline = current
+    guard.unresolved = []
     return { workspace: root, findings: [] }
   }
-  const restored = await restoreChanges(changes)
+  const restored = await restoreChanges(root, changes, guard.baseline)
   const findings = findingsFor(guard.baseline, changes, restored)
-  guard.baseline = await takeSnapshot(root)
+  const unrestored = changes
+    .filter((change) => restored.get(change.path) !== true)
+    .map((change) => change.path)
+  // While something is unresolved, keep the baseline's targets: a config that
+  // could not be reverted must not decide what is guarded.
+  const fresh =
+    unrestored.length === 0
+      ? await takeSnapshot(root, guard.policy)
+      : await takeSnapshot(root, guard.policy, guard.baseline.targets)
+  guard.baseline = keepUnrestored(fresh, guard.baseline, unrestored)
+  guard.unresolved = findings.filter((finding) => !finding.restored)
   return { workspace: root, findings }
 }
 
@@ -758,15 +1096,26 @@ function report(result: IntegrityReport, owner: IntegrityOwner | null): void {
   }
 }
 
+function releaseLease(root: string, guard: Guard): void {
+  guard.leases -= 1
+  if (guard.leases <= 0 && guard.unresolved.length === 0 && guards.get(root) === guard) {
+    guards.delete(root)
+  }
+}
+
 export interface IntegrityLease {
   /** Check the workspace now that the command has ended. Idempotent. */
   readonly end: () => Promise<IntegrityReport>
 }
 
-/** Start guarding `cwd` for one contained command. */
+/**
+ * Start guarding `cwd` for one contained command. `policy` is the write policy
+ * the command runs under; only paths it allows are guarded.
+ */
 export async function beginContainedRun(
   cwd: string,
   owner: IntegrityOwner | null,
+  policy: WritePolicy | null = null,
 ): Promise<IntegrityLease> {
   const root = await canonicalRoot(cwd)
   await serialized(root, async () => {
@@ -775,7 +1124,12 @@ export async function beginContainedRun(
       existing.leases += 1
       return
     }
-    guards.set(root, { baseline: await takeSnapshot(root), leases: 1 })
+    guards.set(root, {
+      baseline: await takeSnapshot(root, policy),
+      policy,
+      leases: 1,
+      unresolved: [],
+    })
   })
   let ended: Promise<IntegrityReport> | null = null
   return {
@@ -786,8 +1140,7 @@ export async function beginContainedRun(
         try {
           return await checkGuard(root, guard)
         } finally {
-          guard.leases -= 1
-          if (guard.leases <= 0) guards.delete(root)
+          releaseLease(root, guard)
         }
       }).then(
         (result) => {
@@ -805,9 +1158,10 @@ export async function beginContainedRun(
 }
 
 /**
- * Check every workspace that still has a contained command running. Called
- * before an unsandboxed launch, which could otherwise run a program a
- * still-running contained task just configured.
+ * Check every workspace that still has a contained command running, or a
+ * change that could not be reverted. Called before an unsandboxed launch,
+ * which could otherwise run a program a still-running contained task just
+ * configured.
  */
 export async function checkRunningContainedWorkspaces(
   owner: IntegrityOwner | null,
@@ -817,7 +1171,10 @@ export async function checkRunningContainedWorkspaces(
     try {
       const result = await serialized(root, async () => {
         const guard = guards.get(root)
-        return guard ? checkGuard(root, guard) : { workspace: root, findings: [] }
+        if (!guard) return { workspace: root, findings: [] }
+        const checked = await checkGuard(root, guard)
+        if (guard.leases <= 0 && guard.unresolved.length === 0) guards.delete(root)
+        return checked
       })
       report(result, owner)
       results.push(result)
@@ -832,7 +1189,7 @@ export async function checkRunningContainedWorkspaces(
 export function describeIntegrityFindings(findings: readonly IntegrityFinding[]): string[] {
   return findings.map((finding) => {
     const keys = finding.keys && finding.keys.length > 0 ? ` (${finding.keys.join(', ')})` : ''
-    const outcome = finding.restored ? 'reverted' : 'could not be fully reverted'
+    const outcome = finding.restored ? 'reverted' : 'could not be reverted'
     return `${finding.path}: ${finding.change}${keys}, ${outcome}`
   })
 }
@@ -840,12 +1197,40 @@ export function describeIntegrityFindings(findings: readonly IntegrityFinding[])
 /** The note appended to a contained command's output when something was reverted. */
 export function integrityNoteForCommand(result: IntegrityReport | null): string {
   if (!result || result.findings.length === 0) return ''
+  const unresolved = result.findings.some((finding) => !finding.restored)
   return [
     '',
     '[Copse] This sandboxed command changed files that configure programs run outside the sandbox. Copse undid those changes:',
     ...describeIntegrityFindings(result.findings).map((line) => `- ${line}`),
+    ...(unresolved
+      ? [
+          'Copse will not run commands outside the sandbox in this workspace until the changes it could not revert are undone. Tell the user which files are affected.',
+        ]
+      : []),
     'If this change is intended, ask the user to make it or to approve running the command outside the sandbox.',
   ].join('\n')
+}
+
+/** Thrown instead of an unsandboxed launch in a workspace with an unreverted change. */
+export class UnresolvedWorkspaceIntegrityError extends Error {
+  readonly report: IntegrityReport
+
+  constructor(result: IntegrityReport) {
+    const lines = describeIntegrityFindings(result.findings.filter((finding) => !finding.restored))
+    super(
+      [
+        `Copse did not run this command outside the sandbox: a sandboxed command in ${result.workspace} changed configuration that runs outside the sandbox, and Copse could not undo it:`,
+        ...lines.map((line) => `- ${line}`),
+        'Undo or review these changes, then try again.',
+      ].join('\n'),
+    )
+    this.name = 'UnresolvedWorkspaceIntegrityError'
+    this.report = result
+  }
+}
+
+function overlaps(a: string, b: string): boolean {
+  return isPathWithin(a, b) || isPathWithin(b, a)
 }
 
 // ---------------------------------------------------------------------------
@@ -862,6 +1247,8 @@ export interface WorkspaceIntegrityDependencies {
   /** Whether this request will run inside the OS sandbox. */
   readonly isContained: (request: RuntimeExecRequest) => boolean
   readonly owner: () => IntegrityOwner | null
+  /** The write policy a contained request runs under; `null` guards everything. */
+  readonly writePolicy?: (request: RuntimeExecRequest) => WritePolicy | null
 }
 
 /** Wrap the local runtime so every contained execution is snapshot and checked. */
@@ -876,10 +1263,20 @@ export function withWorkspaceIntegrity(
     exec: async (request): Promise<RuntimeExecution> => {
       const owner = dependencies.owner()
       if (!dependencies.isContained(request)) {
-        await checkRunningContainedWorkspaces(owner)
+        const reports = await checkRunningContainedWorkspaces(owner)
+        const cwd = await canonicalRoot(request.cwd)
+        const blocking = reports.find(
+          (result) =>
+            result.findings.some((finding) => !finding.restored) && overlaps(result.workspace, cwd),
+        )
+        if (blocking) throw new UnresolvedWorkspaceIntegrityError(blocking)
         return runtime.exec(request)
       }
-      const lease = await beginContainedRun(request.cwd, owner)
+      const lease = await beginContainedRun(
+        request.cwd,
+        owner,
+        dependencies.writePolicy?.(request) ?? null,
+      )
       let execution: RuntimeExecution
       try {
         execution = await runtime.exec(request)

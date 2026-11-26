@@ -14,7 +14,8 @@ import {
 import { getActiveWorkspaceFs } from '../services/workspace-fs/get-workspace-fs.ts'
 import { readWorkspaceImage } from '../services/workspace-fs/image-content.ts'
 import { runCommand } from '../services/exec/command-runner.ts'
-import { fsWorkerOneShotSandboxOverlay } from './config.ts'
+import { fsWorkerOneShotSandboxOverlay, fsWorkerSandboxOverlay } from './config.ts'
+import type { RestoreStep } from './workspace-integrity-restore.ts'
 import { isProjectSandboxEnabled } from './spawn.ts'
 import {
   requestViaServer,
@@ -281,4 +282,41 @@ export async function gatewayListDir(
       ? [{ name: entry['name'], isDir: entry['isDir'] }]
       : [],
   )
+}
+
+/**
+ * Run workspace integrity revert steps in a one-shot fs worker under the
+ * workspace's own write policy, so a revert can never reach further than the
+ * contained command whose change it undoes. Fails closed: when the sandbox is
+ * unavailable or the worker fails, every step counts as not applied.
+ */
+export async function sandboxedRestore(
+  root: string,
+  steps: readonly RestoreStep[],
+): Promise<boolean[]> {
+  if (steps.length === 0) return []
+  const failedAll = steps.map(() => false)
+  try {
+    const workerPath = sandboxFsWorkerPath()
+    // As for writeFile: a writable Linux worker creates deny mount points.
+    shutdownSandboxFsServer()
+    const { stdout, code } = await runCommand(process.execPath, [workerPath], {
+      cwd: root,
+      env: { ELECTRON_RUN_AS_NODE: '1' },
+      stdin: Buffer.from(JSON.stringify({ op: 'restore', path: root, steps })),
+      requireSandbox: true,
+      stdoutMaxBytes: 64 * 1024 + steps.length * 8,
+      sandboxConfig: fsWorkerSandboxOverlay(root, workerPath),
+    })
+    if (code !== 0) return failedAll
+    const value = parseJsonUnknown(stdout.trim())
+    if (!isRecord(value) || value['ok'] !== true || !Array.isArray(value['results'])) {
+      return failedAll
+    }
+    const results = value['results']
+    return steps.map((_, index) => results[index] === true)
+  } catch (error) {
+    console.warn('[workspace-integrity] sandboxed revert failed', { root, error })
+    return failedAll
+  }
 }

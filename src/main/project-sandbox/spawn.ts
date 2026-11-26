@@ -76,6 +76,13 @@ const localRuntime = createLocalExecutionRuntime()
 const auditedLocalRuntime = withExecutionAudit(
   withWorkspaceIntegrity(localRuntime, {
     isContained: (request) => request.local?.sandbox === true && isProjectSandboxEnabled(),
+    // The command's own write rules decide what can be its change.
+    writePolicy: (request) => {
+      const filesystem = request.local?.plan().config.filesystem
+      return filesystem
+        ? { allowWrite: filesystem.allowWrite, denyWrite: filesystem.denyWrite }
+        : null
+    },
     owner: () => {
       const context = currentThreadExecutionContext()
       return context ? { projectId: context.projectId, threadId: context.threadId } : null

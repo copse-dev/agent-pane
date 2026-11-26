@@ -76,18 +76,10 @@ describe('workspace integrity around a real contained command', () => {
     const config = await readFile(join(repo, '.git/config'), 'utf-8')
     assert.equal(config.includes('fsmonitor'), false)
     assert.equal(await readFile(join(repo, '.claude/settings.json'), 'utf-8'), '{}\n')
-    // Reverting restores the whole config, so the upstream written in the same
-    // command goes with it; a command that only tracks upstream keeps it.
-    const tracking = await spawnShellInProjectSandbox('git config branch.main.remote origin', {
-      cwd: repo,
-      stdio: 'ignore',
-    })
-    await new Promise((resolve) => tracking.once('close', resolve))
-    afterSandboxedCommand()
-    assert.deepEqual((await workspaceIntegrityOutcome(tracking))?.findings, [])
+    // Only the program-starting key is put back: the upstream stays.
     assert.equal(git(repo, ['config', 'branch.main.remote']).trim(), 'origin')
 
-    // Repointing an existing remote is reverted; adding a new one is kept.
+    // Repointing an existing remote is reverted; a remote added alongside stays.
     const repoint = await spawnShellInProjectSandbox(
       'git remote set-url origin https://attacker.example/repo.git && git remote add fork https://github.com/me/repo.git',
       { cwd: repo, stdio: 'ignore' },
@@ -102,16 +94,6 @@ describe('workspace integrity around a real contained command', () => {
       git(repo, ['config', 'remote.origin.url']).trim(),
       'https://github.com/example/repo.git',
     )
-    const fork = await spawnShellInProjectSandbox(
-      'git remote add fork https://github.com/me/repo.git',
-      {
-        cwd: repo,
-        stdio: 'ignore',
-      },
-    )
-    await new Promise((resolve) => fork.once('close', resolve))
-    afterSandboxedCommand()
-    assert.deepEqual((await workspaceIntegrityOutcome(fork))?.findings, [])
     assert.equal(git(repo, ['config', 'remote.fork.url']).trim(), 'https://github.com/me/repo.git')
   })
 })
