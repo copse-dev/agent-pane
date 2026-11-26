@@ -1,7 +1,9 @@
 // ESLint is the lint gate. `.oxlintrc.json` is a port of this file that the
 // post-edit hook (scripts/hook-file-check.mts) runs on every edit, so a change
-// here — a rule, an option, a selector, an ignore — belongs there too, in the
-// same commit. scripts/oxlint-config-parity.test.ts fails until it is.
+// here belongs there too, in the same commit. scripts/oxlint-config-parity.test.ts
+// fails until it is, for a change to: which blocks exist and their `files` /
+// `ignores`; any rule's severity or options (selectors included); globals; or the
+// global ignores. It cannot compare `sourceType`, which oxlint has no setting for.
 import js from '@eslint/js'
 import ts from 'typescript-eslint'
 

@@ -5,25 +5,34 @@
  * time per thread.
  *
  * `open(path, 'wx')` is the atomic step: exactly one process creates the file,
- * and it writes its pid there. A waiter that finds the holder's pid dead (a
- * hook killed at its timeout), or the file older than `staleMs` (a pid since
- * reused by an unrelated process), removes it and tries again. Two waiters that
- * reclaim the same stale lock in the same instant can both get through; that
- * costs one extra concurrent run, never a wrong answer, so it is accepted
- * rather than closed with a heavier protocol.
+ * and it writes a random token there. While the work runs, the holder touches
+ * the file every `heartbeatMs`; a waiter treats a file untouched for `staleMs`
+ * as abandoned (a hook killed at its timeout) and removes it. Liveness is the
+ * heartbeat, never a pid: Copse runs hooks in a sandbox that, on Linux, gives
+ * each one its own PID namespace, where a pid read from the file names some
+ * other process — or none — in the waiter's.
+ *
+ * Release removes the file only while it still holds this holder's token, so a
+ * holder whose lock was reclaimed (it stalled past `staleMs`) cannot delete the
+ * reclaimer's. Two waiters that reclaim the same stale lock in the same instant
+ * can both get through; that costs one extra concurrent run, never a wrong
+ * answer, so it is accepted rather than closed with a heavier protocol.
  *
  * Waiting is bounded: past `waitMs` the caller gets `{ ran: false }` and
  * decides what to report, instead of blocking past its own hook timeout.
  */
-import { mkdir, open, readFile, rm, stat } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { mkdir, open, readFile, rm, stat, utimes } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 export type FileLockOptions = {
   /** Give up after waiting this long for another holder. */
   waitMs: number
-  /** Treat a lock file older than this as abandoned, whoever holds it. */
+  /** Treat a lock file untouched for this long as abandoned. */
   staleMs: number
+  /** How often the holder touches the lock file. Must be well under `staleMs`. */
+  heartbeatMs: number
   /** How often a waiter looks again. */
   pollMs?: number
 }
@@ -34,43 +43,35 @@ function errorCode(err: unknown): unknown {
   return err instanceof Error && 'code' in err ? err.code : undefined
 }
 
-/** True if a process with this pid exists, whether or not we may signal it. */
-function isAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (err) {
-    return errorCode(err) === 'EPERM'
-  }
+/**
+ * Whether a failed create means "someone holds it". Windows reports `EPERM`,
+ * not `EEXIST`, for a name whose delete is still pending.
+ */
+function isHeld(err: unknown): boolean {
+  const code = errorCode(err)
+  return code === 'EEXIST' || (process.platform === 'win32' && code === 'EPERM')
 }
 
-async function tryAcquire(path: string): Promise<boolean> {
+async function tryAcquire(path: string, token: string): Promise<boolean> {
   let handle
   try {
     handle = await open(path, 'wx')
   } catch (err) {
-    if (errorCode(err) === 'EEXIST') return false
+    if (isHeld(err)) return false
     throw err
   }
   try {
-    await handle.writeFile(String(process.pid))
+    await handle.writeFile(token)
   } finally {
     await handle.close()
   }
   return true
 }
 
-/**
- * Whether the current lock file is abandoned. A file with no pid yet is a
- * holder between its create and its write, so only its age can make it stale.
- * A file that vanished meanwhile is not stale: the next acquire will take it.
- */
+/** Whether the current lock file has gone unrefreshed for `staleMs`. A vanished file is not stale. */
 async function isStale(path: string, staleMs: number): Promise<boolean> {
   try {
-    const [text, info] = await Promise.all([readFile(path, 'utf8'), stat(path)])
-    if (Date.now() - info.mtimeMs > staleMs) return true
-    const pid = Number.parseInt(text, 10)
-    return Number.isInteger(pid) && pid > 0 && !isAlive(pid)
+    return Date.now() - (await stat(path)).mtimeMs > staleMs
   } catch (err) {
     if (errorCode(err) === 'ENOENT') return false
     throw err
@@ -78,11 +79,24 @@ async function isStale(path: string, staleMs: number): Promise<boolean> {
 }
 
 /** Remove the lock only while it is still ours, so a reclaimer's lock survives. */
-async function release(path: string): Promise<void> {
+async function release(path: string, token: string): Promise<void> {
   try {
-    if ((await readFile(path, 'utf8')) === String(process.pid)) await rm(path, { force: true })
+    if ((await readFile(path, 'utf8')) === token) await rm(path, { force: true })
   } catch (err) {
     if (errorCode(err) !== 'ENOENT') throw err
+  }
+}
+
+/** Keep the lock fresh while `fn` runs. A failed touch is retried on the next beat. */
+function heartbeat(path: string, everyMs: number): () => void {
+  const timer = setInterval(() => {
+    const now = new Date()
+    utimes(path, now, now).catch(() => undefined)
+  }, everyMs)
+  // The work the lock guards keeps the process alive; the heartbeat must not.
+  timer.unref()
+  return () => {
+    clearInterval(timer)
   }
 }
 
@@ -93,13 +107,16 @@ export async function withFileLock<T>(
   options: FileLockOptions,
 ): Promise<FileLockResult<T>> {
   await mkdir(dirname(path), { recursive: true })
+  const token = randomUUID()
   const deadline = Date.now() + options.waitMs
   for (;;) {
-    if (await tryAcquire(path)) {
+    if (await tryAcquire(path, token)) {
+      const stop = heartbeat(path, options.heartbeatMs)
       try {
         return { ran: true, value: await fn() }
       } finally {
-        await release(path)
+        stop()
+        await release(path, token)
       }
     }
     if (await isStale(path, options.staleMs)) {

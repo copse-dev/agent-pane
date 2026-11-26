@@ -214,7 +214,7 @@
       "error",
       {
         "selector": "BinaryExpression[operator='in'][left.type!='Literal']",
-        "message": "A dynamic key with `in` also matches inherited members (toString, constructor, __proto__, and five more). Use Object.hasOwn(record, key) — or keyOf(record) from @copse/std when you want a type predicate. A literal key (`'kind' in value`) is fine and is not restricted."
+        "message": "A dynamic key with `in` also matches inherited members (toString, constructor, __proto__, and five more). Use Object.hasOwn(record, key) \u2014 or keyOf(record) from @copse/std when you want a type predicate. A literal key (`'kind' in value`) is fine and is not restricted."
       }
     ],
     "typescript/no-unnecessary-condition": "error"
@@ -267,7 +267,7 @@
               {
                 "name": "electron",
                 "allowTypeImports": true,
-                "message": "Importing Electron here couples the agent path to the desktop runtime. Inject the capability from an Electron entry point instead (see the handler seams in approval.ts / ask-user.ts), or `import type` if you only need its types. If this file genuinely IS a desktop entry point, add it to the allow-list in eslint.config.mjs — deliberately, and visibly in review."
+                "message": "Importing Electron here couples the agent path to the desktop runtime. Inject the capability from an Electron entry point instead (see the handler seams in approval.ts / ask-user.ts), or `import type` if you only need its types. If this file genuinely IS a desktop entry point, add it to the allow-list in eslint.config.mjs \u2014 deliberately, and visibly in review."
               }
             ]
           }
@@ -284,7 +284,7 @@
               {
                 "name": "electron",
                 "allowTypeImports": true,
-                "message": "Importing Electron here couples the agent path to the desktop runtime. Inject the capability from an Electron entry point instead (see the handler seams in approval.ts / ask-user.ts), or `import type` if you only need its types. If this file genuinely IS a desktop entry point, add it to the allow-list in eslint.config.mjs — deliberately, and visibly in review."
+                "message": "Importing Electron here couples the agent path to the desktop runtime. Inject the capability from an Electron entry point instead (see the handler seams in approval.ts / ask-user.ts), or `import type` if you only need its types. If this file genuinely IS a desktop entry point, add it to the allow-list in eslint.config.mjs \u2014 deliberately, and visibly in review."
               },
               {
                 "name": "node:fs",
@@ -303,7 +303,7 @@
           "error",
           {
             "selector": "BinaryExpression[operator='in'][left.type!='Literal']",
-            "message": "A dynamic key with `in` also matches inherited members (toString, constructor, __proto__, and five more). Use Object.hasOwn(record, key) — or keyOf(record) from @copse/std when you want a type predicate. A literal key (`'kind' in value`) is fine and is not restricted."
+            "message": "A dynamic key with `in` also matches inherited members (toString, constructor, __proto__, and five more). Use Object.hasOwn(record, key) \u2014 or keyOf(record) from @copse/std when you want a type predicate. A literal key (`'kind' in value`) is fine and is not restricted."
           },
           {
             "selector": "CallExpression[callee.type='MemberExpression'][callee.property.name='readFileSync']",
@@ -314,6 +314,7 @@
     },
     {
       "files": ["src/renderer/**/*.ts", "src/renderer/**/*.mts"],
+      "excludeFiles": ["src/renderer/**/*.test.ts"],
       "rules": {
         "no-restricted-globals": [
           "error",
@@ -333,7 +334,7 @@
               {
                 "name": "electron",
                 "allowTypeImports": true,
-                "message": "Importing Electron here couples the agent path to the desktop runtime. Inject the capability from an Electron entry point instead (see the handler seams in approval.ts / ask-user.ts), or `import type` if you only need its types. If this file genuinely IS a desktop entry point, add it to the allow-list in eslint.config.mjs — deliberately, and visibly in review."
+                "message": "Importing Electron here couples the agent path to the desktop runtime. Inject the capability from an Electron entry point instead (see the handler seams in approval.ts / ask-user.ts), or `import type` if you only need its types. If this file genuinely IS a desktop entry point, add it to the allow-list in eslint.config.mjs \u2014 deliberately, and visibly in review."
               }
             ],
             "patterns": [
@@ -349,32 +350,13 @@
           "error",
           {
             "selector": "BinaryExpression[operator='in'][left.type!='Literal']",
-            "message": "A dynamic key with `in` also matches inherited members (toString, constructor, __proto__, and five more). Use Object.hasOwn(record, key) — or keyOf(record) from @copse/std when you want a type predicate. A literal key (`'kind' in value`) is fine and is not restricted."
+            "message": "A dynamic key with `in` also matches inherited members (toString, constructor, __proto__, and five more). Use Object.hasOwn(record, key) \u2014 or keyOf(record) from @copse/std when you want a type predicate. A literal key (`'kind' in value`) is fine and is not restricted."
           },
           {
             "selector": "CallExpression[callee.type='MemberExpression'][callee.object.name=/^(window|globalThis)$/][callee.property.name=/^(confirm|alert)$/]",
             "message": "Native window.confirm()/window.alert() render as a blocking OS dialog, not the in-app UI. Use showConfirmDialog from ./confirm-dialog.ts instead."
           }
         ]
-      }
-    },
-    {
-      "files": ["src/renderer/**/*.test.ts"],
-      "rules": {
-        "no-restricted-imports": [
-          "error",
-          {
-            "paths": [
-              {
-                "name": "electron",
-                "allowTypeImports": true,
-                "message": "Importing Electron here couples the agent path to the desktop runtime. Inject the capability from an Electron entry point instead (see the handler seams in approval.ts / ask-user.ts), or `import type` if you only need its types. If this file genuinely IS a desktop entry point, add it to the allow-list in eslint.config.mjs — deliberately, and visibly in review."
-              }
-            ]
-          }
-        ],
-        "no-restricted-globals": "off",
-        "copse/restricted-syntax": "off"
       }
     },
     {

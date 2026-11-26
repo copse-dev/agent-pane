@@ -74,8 +74,9 @@ file you just touched. What reaches you, and when, depends on the harness:
   hook, so that entry's rewrite notice never reaches you: re-read a file before
   an exact-match edit if formatting may have changed it. Lint findings come
   from the `async` entry, as a queued message shortly after the edit.
-- **Cursor:** its `afterFileEdit` cannot return data to the agent; the report
-  goes to the hook log for the human.
+- **Cursor:** the hook only formats (`--no-lint`). Cursor's `afterFileEdit`
+  cannot return data to the agent, and Copse also discovers `.cursor/hooks.json`
+  and runs its hooks as blocking, where a lint would only make the agent wait.
 
 **Formatting is auto-applied; lint fixes are not.** Formatting is deterministic and
 semantically neutral, so fixing it costs an agent turn and buys nothing —

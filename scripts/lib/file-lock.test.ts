@@ -1,8 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdtemp, rm, utimes, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
@@ -13,14 +12,15 @@ async function scratchLock(): Promise<{ path: string; done: () => Promise<void> 
   return { path: join(dir, 'nested', 'run.lock'), done: () => rm(dir, { recursive: true }) }
 }
 
-/** A pid that certainly belonged to a process and certainly no longer does. */
-function deadPid(): number {
-  const child = spawnSync(process.execPath, ['-e', ''])
-  assert.ok(child.pid > 0)
-  return child.pid
+/** A lock file some other holder left, last touched `ageMs` ago. */
+async function foreignLock(path: string, ageMs: number): Promise<void> {
+  await withFileLock(path, () => Promise.resolve(), FAST) // creates the directory
+  await writeFile(path, 'someone-else')
+  const touched = new Date(Date.now() - ageMs)
+  await utimes(path, touched, touched)
 }
 
-const FAST = { waitMs: 2_000, staleMs: 60_000, pollMs: 5 }
+const FAST = { waitMs: 2_000, staleMs: 60_000, heartbeatMs: 1_000, pollMs: 5 }
 
 describe('withFileLock', () => {
   it('runs the work, returns its value, and leaves no lock behind', async () => {
@@ -71,11 +71,10 @@ describe('withFileLock', () => {
     }
   })
 
-  it('takes over a lock whose holder has died', async () => {
+  it('takes over a lock whose holder stopped refreshing it', async () => {
     const lock = await scratchLock()
     try {
-      await withFileLock(lock.path, () => Promise.resolve(), FAST) // creates the directory
-      await writeFile(lock.path, String(deadPid()))
+      await foreignLock(lock.path, 3_600_000)
       const result = await withFileLock(lock.path, () => Promise.resolve('mine'), FAST)
       assert.deepEqual(result, { ran: true, value: 'mine' })
     } finally {
@@ -83,25 +82,10 @@ describe('withFileLock', () => {
     }
   })
 
-  it('takes over a lock older than staleMs even if its pid looks alive', async () => {
+  it('gives up after waitMs on a fresh lock, without running or touching it', async () => {
     const lock = await scratchLock()
     try {
-      await withFileLock(lock.path, () => Promise.resolve(), FAST)
-      await writeFile(lock.path, String(process.pid))
-      const anHourAgo = new Date(Date.now() - 3_600_000)
-      await utimes(lock.path, anHourAgo, anHourAgo)
-      const result = await withFileLock(lock.path, () => Promise.resolve('mine'), FAST)
-      assert.deepEqual(result, { ran: true, value: 'mine' })
-    } finally {
-      await lock.done()
-    }
-  })
-
-  it('gives up after waitMs on a live holder, without running or touching its lock', async () => {
-    const lock = await scratchLock()
-    try {
-      await withFileLock(lock.path, () => Promise.resolve(), FAST)
-      await writeFile(lock.path, String(process.pid))
+      await foreignLock(lock.path, 0)
       let ran = false
       const result = await withFileLock(
         lock.path,
@@ -109,11 +93,47 @@ describe('withFileLock', () => {
           ran = true
           return Promise.resolve()
         },
-        { waitMs: 50, staleMs: 60_000, pollMs: 5 },
+        { ...FAST, waitMs: 50 },
       )
       assert.deepEqual(result, { ran: false })
       assert.equal(ran, false)
-      assert.equal(existsSync(lock.path), true)
+      assert.equal(await readFile(lock.path, 'utf8'), 'someone-else')
+    } finally {
+      await lock.done()
+    }
+  })
+
+  it("leaves a reclaimer's lock in place when it releases", async () => {
+    const lock = await scratchLock()
+    try {
+      // The holder stalls past staleMs; another process reclaims the lock and
+      // writes its own token. The stalled holder's release must not delete it.
+      await withFileLock(lock.path, () => writeFile(lock.path, 'the-reclaimer'), FAST)
+      assert.equal(await readFile(lock.path, 'utf8'), 'the-reclaimer')
+    } finally {
+      await lock.done()
+    }
+  })
+
+  it('keeps a long-held lock fresh, so waiters do not reclaim it', async () => {
+    const lock = await scratchLock()
+    try {
+      const result = await withFileLock(
+        lock.path,
+        async () => {
+          // Age the file as if the holder had gone quiet, then wait for the
+          // next beat to bring it back — an event, not a timed pause.
+          const ancient = new Date(Date.now() - 3_600_000)
+          await utimes(lock.path, ancient, ancient)
+          for (let turn = 0; turn < 5_000; turn++) {
+            if (Date.now() - (await stat(lock.path)).mtimeMs < 60_000) return 'refreshed'
+            await sleep(0)
+          }
+          return 'never refreshed'
+        },
+        { ...FAST, heartbeatMs: 5 },
+      )
+      assert.deepEqual(result, { ran: true, value: 'refreshed' })
     } finally {
       await lock.done()
     }

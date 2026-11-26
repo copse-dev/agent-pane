@@ -39,11 +39,15 @@
  *   node scripts/hook-file-check.mts <file> --no-lint  # format only (see below)
  *   node scripts/hook-file-check.mts --dialect copse   # read the payload on stdin
  *
- * `--no-lint` exists for Copse's *blocking* afterFileEdit entry: Copse awaits a
- * blocking hook only for its side effect (the rewrite) and honours a
- * `queueMessage` only from an `async` one, so linting there would make the
- * agent wait for findings nobody reads. `.copse/hooks.json` pairs it with an
- * async entry that does lint.
+ * `--no-lint` is for the entries whose lint output no agent reads, so linting
+ * there only makes the agent wait:
+ *
+ *   • Copse's *blocking* afterFileEdit entry. Copse awaits a blocking hook only
+ *     for its side effect (the rewrite) and honours a `queueMessage` only from
+ *     an `async` one; `.copse/hooks.json` pairs it with an async entry that lints.
+ *   • `.cursor/hooks.json`. Cursor's afterFileEdit cannot return data to the
+ *     agent, and Copse also discovers that file and runs its hooks as blocking —
+ *     where a typed lint would queue behind the async entry's lock.
  */
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -113,11 +117,13 @@ const TSGOLINT_BIN = resolve(
  * One type-aware run at a time per checkout. Each builds the whole TypeScript
  * program (~0.7–1 GB), and Copse dispatches up to eight async hooks at once
  * per thread — an "approve all" of staged diffs fires one per file. Later runs
- * wait their turn; the wait is capped well inside the hooks' 60 s timeout, and
- * a lock left by a run killed at its timeout is reclaimed (`file-lock.mts`).
+ * wait their turn; the wait is capped well inside the hooks' 60 s timeout. The
+ * holder refreshes the lock every 2 s, so one killed at its timeout — or by
+ * Copse quitting mid-lint — is reclaimed 10 s later, in any PID namespace
+ * (`file-lock.mts`).
  */
 const LINT_LOCK = resolve(ROOT, '.tmp/hook-file-check-oxlint.lock')
-const LINT_LOCK_OPTIONS = { waitMs: 30_000, staleMs: 120_000 }
+const LINT_LOCK_OPTIONS = { waitMs: 30_000, staleMs: 10_000, heartbeatMs: 2_000 }
 
 /** Run oxlint on one repo-relative path, from the repo root so it finds `.oxlintrc.json`. */
 function runOxlint(rel: string): Promise<OxlintRun> {
@@ -169,9 +175,11 @@ async function lintFindings(rel: string): Promise<Finding[]> {
     if (!locked.ran) {
       const waited = String(LINT_LOCK_OPTIONS.waitMs / 1000)
       return [
+        // Not "run oxlint now": an agent that does so for each queued skip in a
+        // burst would start the unlocked runs side by side the lock prevents.
         lintSkipped(
-          `another type-aware lint in this checkout held the lock for ${waited} s`,
-          `npx oxlint --type-aware ${rel}`,
+          `other type-aware lints in this checkout held the lock for ${waited} s`,
+          `your next edit to this file lints it; or, once the burst is over, npx oxlint --type-aware ${rel}`,
         ),
       ]
     }

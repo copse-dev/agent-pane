@@ -3,29 +3,43 @@ import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { isDeepStrictEqual } from 'node:util'
 import { ESLint } from 'eslint'
 import picomatch from 'picomatch'
 import { z } from 'zod'
+import { isRecord } from '../src/shared/unknown-value.mts'
 import { decodeWithSchema, safeJsonParse } from './lib/safe-json.mts'
 
 /**
  * `.oxlintrc.json` is a hand-kept port of `eslint.config.mjs`. ESLint is the
  * lint gate, but the post-edit hook runs oxlint on every edit, so if the two
  * drift apart agents are shown findings the gate will not raise — or miss ones
- * it will. This pins them together, file by file: for one real file under each
- * block of `eslint.config.mjs`, the rules oxlint enables must be the rules
- * ESLint enables, with the same restricted selectors and imports, and the two
- * global ignore lists must match.
+ * it will. This pins them together at two levels:
+ *
+ * - **Structure.** Every block of `eslint.config.mjs` that sets rules or
+ *   globals has an oxlint override with the same `files` (and `ignores` as
+ *   `excludeFiles`), and the other way round; every such block is exercised by
+ *   a sample below; the global ignore lists match; and `.oxlintrc.json` has no
+ *   setting this test does not read (`extends`, an enabled category, another
+ *   plugin).
+ * - **Semantics, per sample file.** The rules each config enables, with their
+ *   severities and options — each rule's own defaults applied as ESLint applies
+ *   them — and, wherever `no-undef` is on, the globals.
  *
  * ESLint's side is its own resolved config (`calculateConfigForFile`). oxlint
  * prints no per-file config, so its side applies `.oxlintrc.json` the way
- * oxlint documents: base `rules`, then every override whose `files` glob
- * matches the path (relative to the config file), in order, later winning.
+ * oxlint documents: base `rules`/`globals`, then every override whose `files`
+ * match the path and whose `excludeFiles` do not, in order, later winning.
+ *
+ * Not comparable: `sourceType`. oxlint has no such setting and parses a `.js`
+ * file as a module, so ESLint's `sourceType: 'script'` blocks get module
+ * (strict) parsing there; the sloppy-mode-only checks this loses are listed in
+ * ESLINT_ONLY.
  *
  * When this fails, change both configs in the same commit.
  */
 
-/** One real file under each block of `eslint.config.mjs`. */
+/** One real file under each block of `eslint.config.mjs` (the coverage test enforces it). */
 const SAMPLES = [
   'src/main/services/active-run-identity.ts', // agent path: Electron banned
   'src/main/services/plan-usage-bridge.ts', // plus readFileSync banned
@@ -59,8 +73,8 @@ const SAMPLES = [
  */
 const ESLINT_ONLY = new Map([
   ['no-useless-assignment', "oxlint's implementation is nursery and misfires on loop counters"],
-  ['no-octal', 'parse error in TypeScript (TS1121); oxlint has no rule for the JS overrides'],
-  ['no-dupe-args', 'a parse error in strict mode, which every linted file is'],
+  ['no-octal', 'a parse error in TypeScript (TS1121) and in modules; oxlint has no rule'],
+  ['no-dupe-args', 'a parse error in TypeScript and in modules; oxlint has no rule'],
 ])
 
 /**
@@ -86,94 +100,253 @@ function oxlintName(eslintRule: string): string {
 const ruleEntrySchema = z.union([z.string(), z.number(), z.array(z.unknown())])
 type RuleEntry = z.infer<typeof ruleEntrySchema>
 const rulesSchema = z.record(z.string(), ruleEntrySchema)
+const globalsSchema = z.record(z.string(), z.unknown())
 
-/** Whether an ESLint or oxlint rule entry switches the rule on, and its options. */
-function readEntry(entry: RuleEntry): { on: boolean; options: unknown[] } {
-  const [severity, ...options] = Array.isArray(entry) ? entry : [entry]
-  return { on: !(severity === 0 || severity === 'off' || severity === 'allow'), options }
+/** `error` / `warn` / `off`, from either tool's spelling (ESLint numbers, oxlint deny/allow). */
+function severityOf(value: unknown): 'error' | 'warn' | 'off' {
+  if (value === 2 || value === 'error' || value === 'deny') return 'error'
+  if (value === 1 || value === 'warn') return 'warn'
+  assert.ok(
+    value === 0 || value === 'off' || value === 'allow',
+    `unknown severity ${String(value)}`,
+  )
+  return 'off'
 }
 
-/** Enabled rules by oxlint name, each with its options. */
-type Enabled = Map<string, unknown[]>
+type Rule = { severity: 'error' | 'warn'; options: unknown[] }
 
-function enabledOf(rules: Record<string, RuleEntry>, rename: (rule: string) => string): Enabled {
-  const enabled: Enabled = new Map()
+function enabledOf(
+  rules: Record<string, RuleEntry>,
+  rename: (rule: string) => string,
+): Map<string, Rule & { source: string }> {
+  const enabled = new Map<string, Rule & { source: string }>()
   for (const [rule, entry] of Object.entries(rules)) {
-    const { on, options } = readEntry(entry)
+    const [severity, ...options] = Array.isArray(entry) ? entry : [entry]
+    const level = severityOf(severity)
     // Two ESLint ids can share an oxlint name (`no-unused-vars` and its
     // typescript-eslint twin); keep whichever is on.
-    if (on) enabled.set(rename(rule), options)
+    if (level !== 'off') enabled.set(rename(rule), { severity: level, options, source: rule })
   }
   return enabled
 }
 
-const oxlintConfigSchema = z.object({
-  ignorePatterns: z.array(z.string()),
-  rules: rulesSchema,
-  overrides: z.array(z.object({ files: z.array(z.string()), rules: rulesSchema.optional() })),
-})
-const oxlint = safeJsonParse(
-  readFileSync(resolve('.oxlintrc.json'), 'utf8'),
-  decodeWithSchema(oxlintConfigSchema),
-)
-
-function oxlintEnabled(file: string): Enabled {
-  assert.ok(oxlint !== null, '.oxlintrc.json no longer has the shape this test reads')
-  let rules = { ...oxlint.rules }
-  for (const override of oxlint.overrides) {
-    if (override.files.some((glob) => picomatch.isMatch(file, glob, { dot: true }))) {
-      rules = { ...rules, ...override.rules }
-    }
+/** `readonly` / `writable` / `off`, from flat config's several spellings. */
+function normalizeGlobals(globals: Record<string, unknown>): Record<string, string> {
+  const spelled = (value: unknown): string => {
+    if (value === true || value === 'writable' || value === 'writeable') return 'writable'
+    if (value === false || value === 'readonly' || value === 'readable') return 'readonly'
+    return String(value)
   }
-  return enabledOf(rules, (rule) => rule)
+  return Object.fromEntries(
+    Object.entries(globals).map(([name, value]): [string, string] => [name, spelled(value)]),
+  )
 }
+
+/** ESLint's `deepMergeArrays`: defaults under options, plain objects merged key by key. */
+function withDefaults(defaults: readonly unknown[], options: readonly unknown[]): unknown[] {
+  const merge = (base: unknown, over: unknown): unknown => {
+    if (!isRecord(base) || !isRecord(over)) return over === undefined ? base : over
+    const merged: Record<string, unknown> = { ...base }
+    for (const [key, value] of Object.entries(over)) merged[key] = merge(base[key], value)
+    return merged
+  }
+  return Array.from({ length: Math.max(defaults.length, options.length) }, (_, i) =>
+    merge(defaults[i], options[i]),
+  )
+}
+
+// --- oxlint's side -----------------------------------------------------------
+
+const overrideSchema = z
+  .object({
+    files: z.array(z.string()),
+    excludeFiles: z.array(z.string()).optional(),
+    rules: rulesSchema.optional(),
+    globals: globalsSchema.optional(),
+  })
+  .strict()
+// `.strict()`: a key this test does not read (`extends`, `settings`, a per-override
+// plugin) fails the parse, so it cannot change what oxlint runs unnoticed.
+const oxlintConfigSchema = z
+  .object({
+    $schema: z.string().optional(),
+    plugins: z.array(z.string()),
+    jsPlugins: z.array(z.string()),
+    categories: z.record(z.string(), z.string()),
+    options: z.object({ typeAware: z.boolean() }).strict(),
+    env: z.record(z.string(), z.boolean()),
+    globals: globalsSchema.optional(),
+    ignorePatterns: z.array(z.string()),
+    rules: rulesSchema,
+    overrides: z.array(overrideSchema),
+  })
+  .strict()
+
+function readOxlintConfig(): z.infer<typeof oxlintConfigSchema> {
+  const config = safeJsonParse(
+    readFileSync(resolve('.oxlintrc.json'), 'utf8'),
+    decodeWithSchema(oxlintConfigSchema),
+  )
+  assert.ok(config !== null, '.oxlintrc.json has a setting this test does not read, or bad JSON')
+  return config
+}
+const oxlint = readOxlintConfig()
+
+const matches = (file: string, globs: readonly string[] | undefined): boolean =>
+  (globs ?? []).some((glob) => picomatch.isMatch(file, glob, { dot: true }))
+
+function oxlintResolved(file: string): {
+  rules: Map<string, Rule & { source: string }>
+  globals: Record<string, unknown>
+} {
+  let rules = { ...oxlint.rules }
+  let globals = { ...oxlint.globals }
+  for (const override of oxlint.overrides) {
+    if (!matches(file, override.files) || matches(file, override.excludeFiles)) continue
+    rules = { ...rules, ...override.rules }
+    globals = { ...globals, ...override.globals }
+  }
+  return { rules: enabledOf(rules, (rule) => rule), globals }
+}
+
+// --- ESLint's side -----------------------------------------------------------
 
 const eslint = new ESLint()
-const eslintConfigSchema = z.object({ rules: rulesSchema })
+const resolvedSchema = z
+  .object({
+    rules: rulesSchema,
+    plugins: z.record(z.string(), z.unknown()),
+    languageOptions: z.object({ globals: globalsSchema.optional() }).loose().optional(),
+  })
+  .loose()
 
-async function eslintEnabled(file: string): Promise<Enabled> {
-  const config = eslintConfigSchema.parse(await eslint.calculateConfigForFile(file))
-  const enabled = enabledOf(config.rules, oxlintName)
-  for (const rule of ESLINT_ONLY.keys()) enabled.delete(rule)
-  return enabled
+/** The `meta.defaultOptions` ESLint merges under a rule's configured options. */
+function defaultOptions(plugins: Record<string, unknown>, eslintRule: string): unknown[] {
+  const typed = /^@typescript-eslint\/(.+)$/.exec(eslintRule)?.[1]
+  const plugin = plugins[typed === undefined ? '@' : '@typescript-eslint']
+  const rules: unknown = isRecord(plugin) ? plugin['rules'] : undefined
+  const id = typed ?? eslintRule
+  const rule: unknown =
+    rules instanceof Map ? rules.get(id) : isRecord(rules) ? rules[id] : undefined
+  const parsed = z
+    .object({ meta: z.object({ defaultOptions: z.array(z.unknown()).optional() }).optional() })
+    .safeParse(rule)
+  return parsed.success ? (parsed.data.meta?.defaultOptions ?? []) : []
 }
 
-/** The restricted selectors, order-free: ESLint and oxlint list them per block. */
-function selectors(options: unknown[] | undefined): string[] {
-  return (options ?? [])
-    .map((option) => z.object({ selector: z.string() }).parse(option).selector)
-    .sort()
+async function eslintResolved(file: string): Promise<{
+  rules: Map<string, Rule & { source: string }>
+  globals: Record<string, unknown>
+  defaults: (eslintRule: string) => unknown[]
+}> {
+  const resolved: unknown = await eslint.calculateConfigForFile(file)
+  const config = resolvedSchema.parse(resolved)
+  const rules = enabledOf(config.rules, oxlintName)
+  for (const rule of ESLINT_ONLY.keys()) rules.delete(rule)
+  return {
+    rules,
+    globals: config.languageOptions?.globals ?? {},
+    defaults: (eslintRule) => defaultOptions(config.plugins, eslintRule),
+  }
 }
+
+/** The blocks of `eslint.config.mjs` that set rules or globals, as `files` + `ignores`. */
+async function eslintBlocks(): Promise<{ files: string[]; ignores?: string[] }[]> {
+  const module: unknown = await import(pathToFileURL(resolve('eslint.config.mjs')).href)
+  const configs = z.object({ default: z.array(z.unknown()) }).parse(module).default
+  const blockSchema = z
+    .object({
+      files: z.array(z.string()),
+      ignores: z.array(z.string()).optional(),
+      rules: z.record(z.string(), z.unknown()).optional(),
+      languageOptions: z.object({ globals: globalsSchema.optional() }).loose().optional(),
+    })
+    .loose()
+  const blocks = new Map<string, { files: string[]; ignores?: string[] }>()
+  for (const config of configs) {
+    const parsed = blockSchema.safeParse(config)
+    if (!parsed.success) continue
+    const { files, ignores, rules, languageOptions } = parsed.data
+    // A block that only sets parser options (each TS project's tsconfig) has
+    // nothing to port: oxlint finds the tsconfig itself.
+    if (
+      Object.keys(rules ?? {}).length === 0 &&
+      Object.keys(languageOptions?.globals ?? {}).length === 0
+    )
+      continue
+    // `extends` expands one block into several objects with the same files.
+    blocks.set(
+      JSON.stringify([files, ignores ?? []]),
+      ignores === undefined ? { files } : { files, ignores },
+    )
+  }
+  return [...blocks.values()]
+}
+
+// --- the tests ---------------------------------------------------------------
 
 describe('.oxlintrc.json mirrors eslint.config.mjs', () => {
-  it('reads every sample file this test is pinned to', () => {
+  it('turns on nothing beyond its explicit rules', () => {
+    assert.deepEqual(oxlint.plugins, ['typescript'])
+    assert.deepEqual(oxlint.env, { builtin: true })
+    for (const [category, level] of Object.entries(oxlint.categories)) {
+      assert.equal(severityOf(level), 'off', `category ${category} is enabled`)
+    }
+  })
+
+  it('has one override per ESLint block, with the same files and ignores', async () => {
+    const key = (files: readonly string[], excluded: readonly string[] | undefined): string =>
+      JSON.stringify([files, excluded ?? []])
+    const fromEslint = (await eslintBlocks()).map((block) => key(block.files, block.ignores)).sort()
+    const fromOxlint = oxlint.overrides
+      .map((override) => key(override.files, override.excludeFiles))
+      .sort()
+    assert.deepEqual(fromOxlint, fromEslint)
+  })
+
+  it('samples a file under every ESLint block', async () => {
     for (const file of SAMPLES) assert.ok(existsSync(resolve(file)), `${file} moved: pick another`)
+    for (const block of await eslintBlocks()) {
+      assert.ok(
+        SAMPLES.some((file) => matches(file, block.files) && !matches(file, block.ignores)),
+        `no sample under the ESLint block for ${JSON.stringify(block.files)}: add one to SAMPLES`,
+      )
+    }
   })
 
   for (const file of SAMPLES) {
-    it(`enables the same rules for ${file}`, async () => {
-      const fromEslint = await eslintEnabled(file)
-      const fromOxlint = oxlintEnabled(file)
+    it(`agrees on every rule, severity, option and global for ${file}`, async () => {
+      const fromEslint = await eslintResolved(file)
+      const fromOxlint = oxlintResolved(file)
       assert.deepEqual(
-        [...fromOxlint.keys()].sort(),
-        [...fromEslint.keys()].sort(),
-        `the two configs enable different rules for ${file}`,
+        [...fromOxlint.rules.keys()].sort(),
+        [...fromEslint.rules.keys()].sort(),
+        'the two configs enable different rules',
       )
-      assert.deepEqual(
-        selectors(fromOxlint.get('copse/restricted-syntax')),
-        selectors(fromEslint.get('copse/restricted-syntax')),
-        `no-restricted-syntax selectors differ for ${file}`,
-      )
-      assert.deepEqual(
-        fromOxlint.get('no-restricted-imports'),
-        fromEslint.get('no-restricted-imports'),
-        `no-restricted-imports options differ for ${file}`,
-      )
+      for (const [rule, expected] of fromEslint.rules) {
+        const actual = fromOxlint.rules.get(rule)
+        assert.ok(actual !== undefined)
+        assert.equal(actual.severity, expected.severity, `${rule}: severity differs`)
+        const defaults = fromEslint.defaults(expected.source)
+        assert.ok(
+          isDeepStrictEqual(
+            withDefaults(defaults, actual.options),
+            withDefaults(defaults, expected.options),
+          ),
+          `${rule}: options differ\n  eslint: ${JSON.stringify(expected.options)}\n  oxlint: ${JSON.stringify(actual.options)}`,
+        )
+      }
+      if (fromEslint.rules.has('no-undef')) {
+        assert.deepEqual(
+          normalizeGlobals(fromOxlint.globals),
+          normalizeGlobals(fromEslint.globals),
+          'globals differ',
+        )
+      }
     })
   }
 
   it('ignores the same paths', async () => {
-    assert.ok(oxlint !== null)
     const module: unknown = await import(pathToFileURL(resolve('eslint.config.mjs')).href)
     const configs = z.object({ default: z.array(z.unknown()) }).parse(module).default
     // A config object holding only `ignores` is a global ignore in flat config.
