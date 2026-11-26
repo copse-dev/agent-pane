@@ -7,6 +7,15 @@ import { repairLegacyAcpTotalInputTokens } from '@copse/llm/model-usage.ts'
 import { prProductionSchema, commitProductionSchema } from './thread-pr-relations.ts'
 import { MAX_CURSOR_AGENT_IDS, MAX_CURSOR_AGENT_ID_LENGTH } from './remote-agent-link.ts'
 
+const importedSessionSchema = z
+  .object({
+    source: z.enum(['claude-code', 'codex']),
+    key: z.string().min(1),
+    importedAt: z.number().nonnegative(),
+    sharesOriginal: z.literal(true).optional(),
+  })
+  .strict()
+
 const cursorAgentIdsSchema = z
   .array(z.string().min(1).max(MAX_CURSOR_AGENT_ID_LENGTH))
   .max(MAX_CURSOR_AGENT_IDS)
@@ -111,10 +120,28 @@ export function parseThreadMetaValue(value: unknown): ThreadMeta | null {
   const commitProductions = commitProductionSchema
     .array()
     .safeParse(value['commitProductions'] ?? [])
-  const { executionMode: _rawExecutionMode, cursorAgentIds: _rawCursorAgentIds, ...rest } = value
+  const {
+    executionMode: _rawExecutionMode,
+    cursorAgentIds: _rawCursorAgentIds,
+    importedSession: _rawImportedSession,
+    ...rest
+  } = value
   const cursorAgentIds = cursorAgentIdsSchema.safeParse(value['cursorAgentIds'])
+  // A malformed link is dropped: the thread then reads as an ordinary one,
+  // and the session can be imported again.
+  const importedSession = importedSessionSchema.safeParse(value['importedSession'])
   return {
     ...rest,
+    ...(importedSession.success
+      ? {
+          importedSession: {
+            source: importedSession.data.source,
+            key: importedSession.data.key,
+            importedAt: importedSession.data.importedAt,
+            ...(importedSession.data.sharesOriginal ? { sharesOriginal: true as const } : {}),
+          },
+        }
+      : {}),
     ...(value['executionMode'] === 'agent' ? { executionMode: 'agent' as const } : {}),
     ...(cursorAgentIds.success ? { cursorAgentIds: cursorAgentIds.data } : {}),
     id: value['id'],

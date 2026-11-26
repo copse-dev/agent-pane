@@ -601,6 +601,8 @@ describe('pr pane filter (issue #2482)', () => {
                   headSha: 'abc1234',
                   commentsTruncated: false,
                   checksTruncated: false,
+                  reviewThreads: [],
+                  reviewThreadsTruncated: false,
                 },
               }
             : null,

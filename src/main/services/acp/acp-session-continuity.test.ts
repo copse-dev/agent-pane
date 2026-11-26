@@ -24,6 +24,7 @@ import {
   acquireAcpSession,
   disposeAllAcpSessions,
   reapIdleAcpSessions,
+  type AcpStoredSession,
 } from './acp-session-pool.ts'
 
 /**
@@ -428,5 +429,111 @@ describe('ACP session continuity across a new agent process', () => {
     } finally {
       await open.dispose()
     }
+  })
+
+  describe('a session saved beside the thread (an imported CLI session)', () => {
+    function storedSession(
+      sessionId: string,
+      cwd: string,
+      transcriptCheckpoint?: { messageCount: number; prefixHash: string },
+    ): { link: AcpStoredSession; calls: { kept: string[]; dropped: number } } {
+      const calls: { kept: string[]; dropped: number } = { kept: [], dropped: 0 }
+      const link: AcpStoredSession = {
+        load: () =>
+          Promise.resolve({
+            sessionId,
+            cwd,
+            ...(transcriptCheckpoint ? { transcriptCheckpoint } : {}),
+          }),
+        keep: (id) => {
+          calls.kept.push(id)
+          return Promise.resolve()
+        },
+        drop: () => {
+          calls.dropped++
+          return Promise.resolve()
+        },
+      }
+      return { link, calls }
+    }
+
+    it('resumes the saved session when Copse has none of its own for the thread', async () => {
+      const fake = fakeAgent('global', { load: true, resume: true })
+      // The session the user started outside Copse, before this run.
+      await prompt(fake, WRITABLE, 'started in the CLI')
+      await disposeAllAcpSessions()
+      const stored = storedSession('s1', WORKTREE)
+
+      const acquired = await acquireAcpSession({
+        threadId: 'thread',
+        config: WRITABLE,
+        createTransport: fake.createTransport,
+        storedSession: stored.link,
+      })
+
+      assert.equal(acquired.fresh, false, 'the agent remembers it; no transcript replay')
+      assert.equal(acquired.handover, null)
+      assert.equal(acquired.entry.open.restoredBy, 'resume')
+      assert.deepEqual(stored.calls.kept, ['s1'])
+      assert.equal(stored.calls.dropped, 0)
+    })
+
+    it('carries the saved history checkpoint, so the resumed turn sends none of it again', async () => {
+      const fake = fakeAgent('global', { load: true, resume: true })
+      await prompt(fake, WRITABLE, 'started in the CLI')
+      await disposeAllAcpSessions()
+      const checkpoint = { messageCount: 2, prefixHash: 'imported' }
+      const stored = storedSession('s1', WORKTREE, checkpoint)
+
+      const acquired = await acquireAcpSession({
+        threadId: 'thread',
+        config: WRITABLE,
+        createTransport: fake.createTransport,
+        storedSession: stored.link,
+      })
+
+      assert.deepEqual(acquired.entry.transcriptCheckpoint, checkpoint)
+    })
+
+    it('forgets a saved session the agent no longer has, and says what was lost', async () => {
+      const fake = fakeAgent('global', { load: true, resume: true })
+      const stored = storedSession('gone', WORKTREE)
+
+      const acquired = await acquireAcpSession({
+        threadId: 'thread',
+        config: WRITABLE,
+        createTransport: fake.createTransport,
+        storedSession: stored.link,
+      })
+
+      assert.equal(acquired.fresh, true, 'starts from the Copse transcript instead')
+      assert.equal(acquired.handover?.reason, 'rejected')
+      assert.equal(stored.calls.dropped, 1)
+      assert.deepEqual(stored.calls.kept, [])
+    })
+
+    it('ignores the saved session while the pool remembers the live one', async () => {
+      const fake = fakeAgent('global', { load: true, resume: true })
+      await prompt(fake, WRITABLE, 'first')
+      await reapIdleAcpSessions(Date.now() + 60 * 60 * 1000)
+      let loads = 0
+      const acquired = await acquireAcpSession({
+        threadId: 'thread',
+        config: WRITABLE,
+        createTransport: fake.createTransport,
+        storedSession: {
+          load: () => {
+            loads++
+            return Promise.resolve({ sessionId: 'other', cwd: WORKTREE })
+          },
+          keep: () => Promise.resolve(),
+          drop: () => Promise.resolve(),
+        },
+      })
+
+      assert.equal(loads, 0)
+      assert.equal(acquired.entry.open.restoredBy, 'resume')
+      assert.equal(acquired.entry.open.session.sessionId, 's1')
+    })
   })
 })

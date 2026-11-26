@@ -108,7 +108,7 @@ describe('build.mts bundle invariants', () => {
   it('publishes the checked-in demo sites in static builds', () => {
     assert.match(
       build,
-      /cpSync\('src\/shared\/demo-sites', `\$\{rendererOutDir\}\/sites`, \{ recursive: true \}\)/,
+      /await cp\('src\/shared\/demo-sites', `\$\{rendererOutDir\}\/sites`, \{ recursive: true \}\)/,
     )
   })
 
