@@ -1,11 +1,17 @@
 import {
   currentWriterLeaseOwner,
   readWriterLease,
+  writerLeaseWasAbandoned,
   type WriterLeaseRecord,
 } from '@copse/thread-store/writer-lease.ts'
 import type { TranscriptSnapshot } from '@shared/types/stream.ts'
 import { listProfileProjectIds } from '../interrupted-turn-resume.ts'
-import { getProjectThread, loadProjectThreadMetas, threadDirectoryPath } from '../thread-store.ts'
+import {
+  getProjectThread,
+  loadProjectThreadMetas,
+  threadDirectoryPath,
+  updateMeta,
+} from '../thread-store.ts'
 import {
   connectTurnWorker,
   turnWorkerSocketPath,
@@ -49,6 +55,13 @@ export interface ForeignTurnDependencies {
   ) => Promise<TurnWorkerConnection | null>
   /** Hand the window what the worker streamed. */
   deliver?: (message: WorkerToApp) => void
+  /** Whether the thread's lease was left unreleased by a holder that died. */
+  leaseAbandoned: (projectId: string, threadId: string) => Promise<boolean>
+  /**
+   * Settle a thread whose holder died mid-turn: still `running` on disk, it is
+   * marked interrupted so the window offers Continue instead of spinning.
+   */
+  settleAbandoned: (turn: ForeignTurn) => Promise<void>
   /** How often to check a followed thread. */
   intervalMs?: number
   onError?: (error: unknown) => void
@@ -152,8 +165,13 @@ export class ForeignTurnFollower {
         if (lease === null || lease.owner === this.deps.selfOwner) {
           turn.connection?.close()
           turn.connection = null
+          const followed = { projectId: turn.projectId, threadId: turn.threadId }
+          // A holder that released its lease wrote its own ending. One that died
+          // left the thread `running`, and nothing else will settle it.
+          if (lease === null && (await this.deps.leaseAbandoned(turn.projectId, turn.threadId)))
+            await this.deps.settleAbandoned(followed)
           // Read the lease first: a repaint after the release is the settled thread.
-          await this.deps.repaint({ projectId: turn.projectId, threadId: turn.threadId })
+          await this.deps.repaint(followed)
           this.following.delete(turn.threadId)
           continue
         }
@@ -210,6 +228,13 @@ export function defaultForeignTurnDependencies(
     readLease: (projectId, threadId) =>
       readWriterLease(threadDirectoryPath(projectId, threadId), threadId),
     selfOwner: currentWriterLeaseOwner().id,
+    leaseAbandoned: (projectId, threadId) =>
+      writerLeaseWasAbandoned(threadDirectoryPath(projectId, threadId), threadId),
+    settleAbandoned: async ({ projectId, threadId }): Promise<void> => {
+      const meta = (await loadProjectThreadMetas(projectId)).find((m) => m.id === threadId)
+      if (meta?.status !== 'running') return
+      await updateMeta(projectId, threadId, { status: 'idle', interruptedTurnAt: Date.now() })
+    },
     repaint: async ({ projectId, threadId }): Promise<void> => {
       const thread = await getProjectThread(projectId, threadId)
       if (thread)

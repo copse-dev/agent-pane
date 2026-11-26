@@ -346,6 +346,17 @@ describe('ACP native bridge mount (#4144)', () => {
     assert.doesNotMatch(second.prompt, /Prefer the tools of Copse's MCP server/)
   })
 
+  it('says nothing in the thread when an agent without http MCP ignores the stdio offer', async () => {
+    await useFixtureAgent(['--ignore-mcp'])
+    const first = await turn('ignores-stdio', registryWithOneBridgedTool())
+    assert.doesNotMatch(first.shown.replace(/prompt:[\s\S]*/, ''), UNAVAILABLE)
+    assert.ok(
+      UNAVAILABLE_NOTE.test(first.prompt),
+      'the agent is still told the tools are not there',
+    )
+    assert.doesNotMatch(first.prompt, /Prefer the tools of Copse's MCP server/)
+  })
+
   it('keeps claiming the tools for an agent that lists them', async () => {
     await useFixtureAgent(['--mcp-http', '--list-mcp-tools'])
     const { shown, prompt } = await turn('lists', registryWithOneBridgedTool())

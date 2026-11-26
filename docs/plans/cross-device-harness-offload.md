@@ -174,9 +174,11 @@ mechanism — "the per-thread writer lease from `acp-session-continuity.md` so d
 never both advance a turn" — so O1 and T2 should be one piece of work, not two.
 
 Landed for turns (25 November 2026). `packages/thread-store/src/writer-lease.ts` keeps a
-`writer.lease` record in the thread directory: owner (host, pid, per-process id), an epoch
-that rises on every acquisition, and a heartbeat with a 30 s time-to-live. Read-modify-writes
-of the record are serialised across processes by an atomic `mkdir` guard. A holder whose pid
+`writer.lease.<epoch>` record in the thread directory: owner (host, pid, per-process id), an
+epoch that rises on every acquisition and is never reused, and a heartbeat with a 30 s
+time-to-live. A takeover creates the next epoch's record with an exclusive hard link, so of
+several contenders exactly one wins and there is no lock to leave behind; a release marks the
+record released instead of deleting it. A holder whose pid
 is gone on the same host frees the lease at once, so a relaunch after a crash does not wait
 out the expiry; a holder on another host is only taken over after it. The dispatcher
 (`agent-dispatcher.ts`, through `thread-writer-lease.ts`) takes the lease inside its
@@ -185,14 +187,18 @@ stops the turn if a renewal finds the lease taken over, and refuses a thread ano
 holds with `AgentTurnBusyError`. Headless runs that keep their history in memory do not take
 it.
 
-Still open: the epoch is not yet checked at the store's write sites, so a holder that lost
-the lease could finish one write already in flight before its turn stops; and writes outside
-a turn (renderer saves, history edits) do not take the lease. The worker needs both before it
+A turn that loses its lease is fenced: the dispatcher stops the run, skips its history
+checkpoints and final commit, and its transcript writes nothing more, not even a closing
+status, so the new holder's writes are the only ones after the takeover. A loss found before
+the run starts means it never starts. Still open: the epoch is not yet checked at the store's
+write sites, so a write already issued when the loss is noticed can still land; and writes
+outside a turn (renderer saves, history edits) do not take the lease. The worker needs both before it
 writes a thread the desktop can also see. The multi-process race and kill-takeover tests are
 in `writer-lease.test.ts`.
 
 _Exit gate:_ two processes race for one thread and exactly one advances it. Killing the owner
-lets the other take over only after expiry. No duplicate provider turn, commit, or spine
+lets another process on the same host take over at once (its pid is gone), and one on another
+host only after expiry. No duplicate provider turn, commit, or spine
 append under a partition.
 
 ### O2 — attach, detach, reattach

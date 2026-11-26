@@ -37,7 +37,7 @@ shell's hand-offs (Phase 4).
   the one place that is true — a secret-free CI runner created for one job — and only ever
   chosen by an explicit `--backend ephemeral-runner`.
 - **`container-backend.ts`** — the strength a foreign diff needs (B3): every cell command
-  in its own throwaway Docker or Podman container from a pinned image, never pulled, with
+  in its own throwaway Docker, Podman or Apple container from a pinned image, never pulled, with
   the thread-in-container runtime's hardening (read-only root, all capabilities dropped,
   no new privileges, pid / memory / cpu limits, an exec-able private `/tmp`) and no network
   interface. Checkouts and scratch are bind-mounted read-write at their host paths, the
@@ -46,7 +46,14 @@ shell's hand-offs (Phase 4).
   so cancelling during creation cannot start a command after cleanup. `<engine> rm --force`
   ends a timed-out command with everything it forked. `containerCreateArgs` is
   pure and pinned by a test; `detectContainerBackend` says why there is no backend rather
-  than guessing.
+  than guessing. Apple container (Apple silicon, macOS 26+) speaks its own dialect
+  (`appleCreateArgs`, after the thread-in-container runtime's mapping): `--volume` mounts,
+  `RLIMIT_NPROC` for the pid limit, `delete --force`, and no-new-privileges from
+  `setpriv --no-new-privs`, which `Dockerfile.cell` guarantees by failing without it and
+  stripping every setuid bit. `COPSE_CONTAINER_ENGINE` (`auto` / `docker` / `apple`)
+  picks the engine, as it does for the app's own containers; `auto` tries Docker, Podman,
+  then Apple container. Choose Podman with `--engine podman`, not the variable: the app
+  does not accept `podman` there.
 - **`checkouts.ts`** — materialises the merge-base and head as detached worktrees under
   the review's scratch directory, with the working tree's uncommitted changes overlaid on
   head. Git runs on the host with hooks disabled; nothing from a checkout is executed
@@ -61,6 +68,14 @@ shell's hand-offs (Phase 4).
   trusted caller can override only preparation with `--trusted-prepare`, so default-branch
   CI policy can repair native dependencies even when the pull-request head predates that
   repository profile; only that trusted script file is added to the cell's read-only mounts.
+- **`dependency-policy.ts`** / **`cell-preparation.ts`** — the trusted host's half of a
+  cell, shared by the Actions shell (`ci/prepare-action.mts`) and the local shell: the
+  lockfile checks (registry tarballs only; patch paths under `patches/`; directory
+  dependencies only where the profile admits them), the dependency store filled by
+  `pnpm fetch` / `npm cache add` in a seed directory with no repository config, and the
+  image build. The store is filled for the **cell's** platform: the seed's
+  `supportedArchitectures` makes `pnpm fetch` on a Mac fetch the Linux builds of
+  platform packages (esbuild, rollup, …) the Linux cell installs offline.
 - **`stage0.ts`** — runs the checks on head, then on base for whatever failed on head,
   and turns the delta into findings: a `tsc` regression becomes one finding per new
   diagnostic anchored at its line; a build or test regression becomes one finding
@@ -159,6 +174,16 @@ shell's hand-offs (Phase 4).
   slower rather than to "Review stopped early".
   Parallel pass durations overlap and must not be summed; tool time includes
   waiting for the shared execution lane.
+- **`local-model-probe.ts`** — before Stage 0, asks a local server about each model a
+  review will use: LM Studio's native catalogue gives the loaded context, vision and
+  quantisation. A model loaded with too little context for `--budget-chars` fails the
+  run in seconds with the `lms load … --context-length` that fixes it; a text-only model
+  neither runs the `visual` lens nor is offered `view_image`; what the server said is
+  recorded under the report's `models`. Servers without the catalogue (Ollama,
+  llama.cpp, mlx-lm) are noted as unchecked rather than guessed at.
+- **`local-pr.ts`** / **`review-lock.ts`** — `copse-review pr`: one pull request reviewed
+  on this machine as CI would, with no forge integration (see below), one review at a
+  time per machine.
 - **`report-text.ts`** — the terminal projection. "Clean." is a complete answer only when
   every configured reviewer completed its attestation.
 - **`stage0-report.ts`** — the Stage 0 report as a decoder, for the file the CI shell's
@@ -224,7 +249,30 @@ pnpm run review --help
 container answers. Findings are the output, never the exit code; the exit codes are the
 headless contract's: `0` the reviewer looked, `1` the model turn failed or the review
 could not be posted, `2` bad usage or an undetectable project, `3` execution was refused
-for want of consent or isolation, `130` cancelled.
+for want of consent or isolation, `130` cancelled. So `0` with no findings is not by itself
+clean: when no Stage 0 check reached a verdict (a failed install, checkers out of memory),
+the text report says it is not a clean result, and `report.json` has every check's verdict.
+
+Local models get their own route options. `--challenger-provider` and
+`--challenger-base-url` put the challenger on a second server (another LM Studio, an
+mlx-lm or llama.cpp server, or a hosted model) while `--provider` / `--base-url` serve
+the reviewers; `--reasoning` and `--challenger-reasoning` set each role's effort. When
+every route is a local server, reviewers run one at a time (`--concurrency` overrides).
+`--min-context` sets the context a local model must be loaded with (default: what
+`--budget-chars` needs; `0` skips the check), and `--time-limit <minutes>` bounds the
+whole run. Each turn of a local model knows the context it is loaded with and keeps its
+history within three quarters of it, dropping its oldest investigation steps (never the
+review request), so the server never receives a request it would silently cut from the
+middle. The window is for trimming only: unlike the app's chat agent, a review turn is never
+told to stop exploring or given a forced tool-free turn as it fills, because each role's step
+budget is its own. A forced closure (`finish_review`, the challenger's `verdict`) is sent as
+`tool_choice: "required"` with only that tool offered, which LM Studio accepts with
+reasoning on. Some models take only reasoning on or off: LM Studio then reads `low`,
+`medium` and `high` as on, and says so only in its own log. `--preflight` runs these
+checks and exits without reviewing. A model that is missing or loaded too small fails
+there, and so does a visual-only review by a model that cannot see. The same model id on
+two servers (LM Link) is checked on each. `--events <file>` gets each event as it
+happens, so a review can be followed from disk.
 
 ## Reviewing a contributor's branch
 
@@ -239,6 +287,107 @@ pnpm run review --foreign --head refs/remotes/pr/123 --backend container --image
 container run in Copse — and, finding none, the pipeline reviews read-only (the reviewers
 and the challenger over the checkouts, no `run_command`) and says so with exit `3`.
 `--allow-unisolated` is not consent for a foreign diff.
+
+## Reviewing a pull request on this machine (`copse-review pr`)
+
+`copse-review pr` does on one machine what the CI shell spreads over two jobs, with no
+forge API and no Copse service. Run it from a clone of the repository under review:
+
+```bash
+copse-review pr 123 --provider lmstudio --model qwen/qwen3-coder-30b
+copse-review pr https://github.com/owner/repo/pull/123 --model qwen/qwen3-coder-30b \
+  --challenger glm-4.6 --challenger-base-url http://127.0.0.1:8080/v1 \
+  --challenger-provider openai-compatible
+copse-review pr feature/branch --base main --no-model          # a ref, as it is; Stage 0 only
+copse-review pr --help
+```
+
+(In this repository, `pnpm run review pr 123 …`; elsewhere,
+`node <copse>/packages/review/bin/copse-review.mjs pr 123 …`.)
+
+It fetches `refs/pull/<n>/head` and the base branch (the remote's default, or `--base`)
+into `refs/copse-review/pr-<n>/`, leaving your branches and remote-tracking refs alone;
+fills the dependency store for the Linux cell from the two lockfiles; builds the
+validation image from `Dockerfile.cell` once per Dockerfile revision, or uses `--image`;
+and runs the whole review with the change treated as **foreign**, whoever wrote it:
+Stage 0, every `run_command` and every reproducer execute in network-disabled containers
+(B3). A local model needs no key, so nothing secret is in reach of the change, and the
+diff never leaves the machine. The review runs in a repository of its own, holding only
+the head's and the base's history fetched from your clone, so the change sees none of
+your other branches, stashes, remotes or config; it is removed when the run ends. A
+partial clone (`git clone --filter=…`) first fetches what it lacks of that history from
+its promisor remote.
+
+Everything it keeps is under `~/.copse` (`COPSE_DIR` moves it):
+
+- `cache/review/` — the Linux dependency stores (`pnpm-store-linux-<cpu>-glibc`,
+  `npm-cache`), reused across reviews and skipped when the lockfiles are unchanged; the
+  scratch checkouts; and `review.lock`, so a second review waits for the first (it shares
+  the GPU, the CPUs and the store). A lock whose holder died is taken over.
+- `reviews/<owner-repo>/pr-<n>/<head>-<settings>/` — `report.json`, `report.sarif`,
+  `events.jsonl`, `report.txt` and `run.json` (inputs, engine, image, exit code), plus
+  `pr-<n>.latest.json` beside them. The directory is keyed by the head, the merge-base,
+  the engine asked for, the cell's limits, the review options (not the output-only
+  `--quiet` or `--time-limit`) and the reviewer's own revision: asking again answers from
+  the saved report (`--fresh` reviews again). `--out <dir>` puts the report elsewhere;
+  the run owns those five files there and leaves everything else in the directory alone.
+
+The profile follows the lockfile: `npm` (`package-lock.json`), `pnpm`, or `copse-pnpm` for
+Copse itself, whose preparation builds node-pty in the cell. `--cell-memory` and
+`--cell-cpus` size each cell command (default a quarter of the machine's memory, 4g to
+16g, and half its CPUs, 2 to 8). Copse itself needs about 16g and 8: at 4g its typecheck
+and lint run Node out of heap, and the run says so. `--cell-cpu x64` runs the cell as x64
+Linux (under Rosetta on a Mac; the store and image follow it). A run writes beside the
+saved report (inside an `--out` directory) and replaces it only when it finishes, so a
+cancelled or failed run leaves the last answer untouched. A report is not reused as the answer when its preparation
+failed, a check did not run, or a check did not settle on that run (out of memory, a
+timeout, or two head test runs that disagreed). A run where no check reached a verdict
+says so: exit 0 with "no findings" then means the review ran, not that the change is
+clean. The model routes are checked before the run waits for another review. A container
+the engine is too slow to remove does not cost its check's result; one still left when
+the review ends is named with the command that removes it. Each cell container is
+journalled before it is created, so the next run removes whatever a killed review left
+(Apple container has no `--rm`), along with its scratch checkouts, its store-fill seed, its
+review repository and its half-made report: under `reviews/` at once, inside an `--out`
+directory when the next run uses the same one.
+
+### On a Mac Studio
+
+1. **A container engine.** OrbStack or Docker Desktop take the Docker dialect unchanged;
+   Apple container (`container system start`, macOS 26+) is chosen when no Docker or
+   Podman answers, or with `--engine apple` / `COPSE_CONTAINER_ENGINE=apple`. Prove the
+   engine once with the conformance test:
+   `COPSE_REVIEW_CONTAINER_E2E=1 COPSE_REVIEW_IMAGE=<tag> pnpm test -- packages/review/src/hostile-fixture.test.ts`
+   (with `COPSE_REVIEW_DEPENDENCY_STORE` naming any store directory holding `v10/`).
+   With colima, three things are needed. `Dockerfile.cell` needs BuildKit, so install
+   `docker-buildx`: Homebrew's Docker CLI has none and fails with "the --mount option
+   requires BuildKit". The cells bind-mount `/var/folders/...` paths as they are, so share
+   that path with the VM. And raise the VM's open-file limit: virtiofs holds a descriptor
+   per file looked up, and copying the dependency store has hit `ENFILE`. A Docker or Podman VM also caps the cell: a default
+   cell is fitted to the VM's CPUs and three quarters of its memory, and colima's default VM
+   (2 CPUs) is far smaller than Copse needs, so start it larger (`colima start --cpu 8
+   --memory 24`).
+2. **The model server.** LM Studio headless: `lms server start`, then
+   `lms load <model> --context-length 65536` for each model (a review at the default
+   `--budget-chars` needs about 49k tokens; the pre-flight says what is missing, and a
+   large change reviews more comfortably at 131072). Load the
+   reviewer and challenger together only if both fit in memory; otherwise the server
+   swaps them between Stage 2 and Stage 4.
+3. **The reviewer.** A checkout of this repository with `pnpm install` done, on Node 24.
+4. **The repository under review** should hold its own objects. A clone made with
+   `--shared` or `--reference` keeps objects behind an alternates path the cells do not
+   mount. Git inside a cell then fails on the side whose commit lives there, and an
+   asymmetric failure reads as a regression. `git repack -a -d` and removing
+   `.git/objects/info/alternates` makes a clone self-contained.
+
+On a Mac Studio, Apple container and colima (the Docker dialect) both pass the
+conformance test. In Apple container cells at 16g and 8 CPUs, Copse's own build,
+typecheck and lint pass, and its test suite is compared with base test by test. A cell
+lacks some tools Copse's tests use (`bwrap`, `ssh`, `lsof`), so those tests fail on both
+sides. A new test that needs one fails on head only and is reported as new. Whether a
+local reviewer and challenger carry the review (the plan's Q11) is still to be settled:
+measure it with `pnpm run bench:review --provider lmstudio --model <m>` before trusting
+the output.
 
 ## In CI
 
@@ -270,7 +419,10 @@ and the reviewed `packages/extract-zip` directory dependency, and copies patch b
 validated paths. `pnpm fetch` runs in caller-owned scratch with manifests and hooks absent.
 It skips local dependencies. The cell installs offline with lifecycle scripts disabled,
 copies the immutable seed into a checkout-private writable store, then runs only the
-reviewed node-pty build through `scripts/prepare-review-stage0.mts`.
+reviewed node-pty build through `scripts/prepare-review-stage0.mts`. Electron's binary is
+never downloaded, so that script gives the cell a placeholder executable at the path
+Electron's loader returns: test files that import `electron` load and run, and anything
+that launches it fails with a message saying the cell has none.
 
 The protected `copse-findings` job rechecks the owner/caller/rerun context before entering
 `copse-review-models`, keeps its workflow token read-only, and calls the same findings
@@ -378,4 +530,6 @@ bound, a recall floor and no duplicates on a sufficiently large labelled corpus.
 
 Forgejo focused-validation-cell parity, a model-profile regression baseline, and a mapped
 corpus of real pull requests large enough to test B8. See the plan's §Phases, §What Phase 4
-delivered and §What Phase 5 delivered.
+delivered and §What Phase 5 delivered. For the local shell: a measured local reviewer and
+challenger pair (Q11), and a run of `copse-review pr` and the conformance test on Apple
+hardware under both Docker-dialect engines and Apple container (§Local pull-request shell).

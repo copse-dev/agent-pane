@@ -2,6 +2,7 @@ import type {
   GhCliStatus,
   GhIssueSummary,
   GhPrChecksState,
+  GhPrComment,
   GhPrDetails,
   GhPrFileDiff,
   GhPrSummary,
@@ -30,6 +31,10 @@ interface MockPrState {
   reviewDecision?: string
   isDraft: boolean
   failedRuns: number
+  /** Review threads whose resolution the mock has changed, by thread id. */
+  threadResolved: Map<string, boolean>
+  /** Replies posted through the mock, by thread id, oldest first. */
+  threadReplies: Map<string, GhPrComment[]>
 }
 
 // Fixture issues for the roadmap "import from issues" flow.
@@ -101,6 +106,8 @@ function initialState(ref: PrRef): MockPrState {
     autoMergeEnabled: false,
     isDraft: actionsFixtureEnabled() && ref.number === MOCK_GH_PR_NUMBER,
     failedRuns: ref.number === MOCK_GH_WORKSPACE_PR_NUMBER ? 1 : 0,
+    threadResolved: new Map(),
+    threadReplies: new Map(),
   }
 }
 
@@ -209,6 +216,15 @@ export const mockGitHubBackend: GitHubBackend = {
       autoMergeEnabled: state.autoMergeEnabled,
     }
     if (state.reviewDecision) details.reviewDecision = state.reviewDecision
+    if (base.activity)
+      details.activity = {
+        ...base.activity,
+        reviewThreads: base.activity.reviewThreads.map((thread) => ({
+          ...thread,
+          isResolved: state.threadResolved.get(thread.id) ?? thread.isResolved,
+          comments: [...thread.comments, ...(state.threadReplies.get(thread.id) ?? [])],
+        })),
+      }
     return Promise.resolve(details)
   },
 
@@ -250,6 +266,49 @@ export const mockGitHubBackend: GitHubBackend = {
       backend: 'mock',
       rerunCount: count,
       message: `Re-ran ${String(count)} failed run${count === 1 ? '' : 's'} on the PR branch.`,
+    })
+  },
+
+  replyToReviewThread(
+    _root: string | null,
+    ref: PrRef,
+    threadId: string,
+    body: string,
+  ): Promise<PrActionResult> {
+    const thread = mockGetGhPrDetails(ref)?.activity?.reviewThreads.find((t) => t.id === threadId)
+    if (!thread)
+      return Promise.resolve({
+        ok: false,
+        backend: 'mock',
+        message: `That review thread is not on PR #${String(ref.number)}.`,
+      })
+    const state = ensureState(ref)
+    const replies = state.threadReplies.get(threadId) ?? []
+    const id = `${threadId}-reply-${String(replies.length + 1)}`
+    const url = `${thread.comments[0]?.url ?? ''}-${id}`
+    replies.push({ id, body, author: 'mock-user', createdAt: '2026-09-09T10:00:00Z', url })
+    state.threadReplies.set(threadId, replies)
+    return Promise.resolve({ ok: true, backend: 'mock', message: 'Reply posted.' })
+  },
+
+  setReviewThreadResolved(
+    _root: string | null,
+    ref: PrRef,
+    threadId: string,
+    resolved: boolean,
+  ): Promise<PrActionResult> {
+    const exists = mockGetGhPrDetails(ref)?.activity?.reviewThreads.some((t) => t.id === threadId)
+    if (!exists)
+      return Promise.resolve({
+        ok: false,
+        backend: 'mock',
+        message: `That review thread is not on PR #${String(ref.number)}.`,
+      })
+    ensureState(ref).threadResolved.set(threadId, resolved)
+    return Promise.resolve({
+      ok: true,
+      backend: 'mock',
+      message: resolved ? 'Thread resolved.' : 'Thread reopened.',
     })
   },
 

@@ -401,13 +401,25 @@ export function buildHeadlessTurnEvents(params: {
   return events
 }
 
-/** Collapse runs of consecutive `text` (or `reasoning`) chunks into one. */
+/** Whether the loop wrote this text itself (a run limit, a give-up), not the model. */
+function writtenByLoop(chunk: AgentStreamChunk): boolean {
+  return 'author' in chunk
+}
+
+/**
+ * Collapse runs of consecutive `text` (or `reasoning`) chunks into one, keeping
+ * the loop's own notices apart from the model's text.
+ */
 function coalesceStreamText(chunks: AgentStreamChunk[]): AgentStreamChunk[] {
   const out: AgentStreamChunk[] = []
   for (const chunk of chunks) {
     const prev = out[out.length - 1]
-    if ((chunk.type === 'text' || chunk.type === 'reasoning') && prev?.type === chunk.type) {
-      out[out.length - 1] = { type: chunk.type, text: prev.text + chunk.text }
+    if (
+      (chunk.type === 'text' || chunk.type === 'reasoning') &&
+      prev?.type === chunk.type &&
+      writtenByLoop(prev) === writtenByLoop(chunk)
+    ) {
+      out[out.length - 1] = { ...prev, text: prev.text + chunk.text }
       continue
     }
     out.push(chunk)

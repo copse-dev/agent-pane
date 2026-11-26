@@ -431,6 +431,7 @@ describe('githubApiBackend', () => {
                     headRefOid: 'abc1234',
                     comments: { nodes: [], pageInfo: { hasPreviousPage: false } },
                     reviews: { nodes: [], pageInfo: { hasPreviousPage: false } },
+                    reviewThreads: { nodes: [], pageInfo: { hasNextPage: false } },
                     commits: { nodes: [{ commit: { statusCheckRollup: null } }] },
                   },
                 },

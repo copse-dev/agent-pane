@@ -3,9 +3,12 @@ import { setTimeout as delay } from 'node:timers/promises'
 import type { WriterLeaseRecord } from '@copse/thread-store/writer-lease.ts'
 import { parseChatGptPlanModel } from '@copse/llm/chatgpt-plan.ts'
 import type { StreamChunk } from '@shared/types'
+import { isAcpModel } from '@shared/acp.ts'
+import { isRemoteAgentModel } from '@shared/remote-agent.ts'
 import { AgentDispatcher } from '../agent-dispatcher.ts'
 import { abortAgent } from '../agent-service.ts'
 import { runWithApprovalHandler } from '../approval.ts'
+import { runWithStagedDiffResolver } from '../diff-queue.ts'
 import { beginDeferralMode, endDeferralMode } from '../security/deferral-mode.ts'
 import { getSetting } from '../storage/settings.ts'
 import { appendMessage, getProjectThread, updateMeta } from '../thread-store.ts'
@@ -122,12 +125,18 @@ function isChatGptPlanModel(model: string): boolean {
  * the app's saved token would stop working. The turn continues at the next
  * launch instead, as it did before the worker.
  */
-async function workerCannotRun(projectId: string, threadId: string): Promise<string | null> {
+export async function workerCannotRun(projectId: string, threadId: string): Promise<string | null> {
   const thread = await getProjectThread(projectId, threadId)
   const setting = getSetting<unknown>('model', undefined)
   const model = thread?.model ?? (typeof setting === 'string' ? setting : undefined)
-  if (model !== undefined && isChatGptPlanModel(model))
+  if (model === undefined) return null
+  if (isChatGptPlanModel(model))
     return 'its model signs in with ChatGPT, whose tokens only the app can save'
+  // The worker runs Copse's own loop and hosts no external agent CLI
+  // (local-turn-worker.md): it could not stop one, or the processes it starts,
+  // once it exits. The next launch continues these, as the hand-off record says.
+  if (isAcpModel(model)) return 'it runs on an external coding agent, which only the app hosts'
+  if (isRemoteAgentModel(model)) return 'it runs on a remote agent, which only the app connects to'
   return null
 }
 
@@ -218,20 +227,27 @@ async function continueTurn(
     const resumed = await runWithApprovalHandler(
       () => Promise.resolve({ approved: false, remember: false }),
       () =>
-        resumeInterruptedTurns({
-          ...resume,
-          listProjectIds: () => [projectId],
-          loadThreadMetas: async (id) =>
-            (await resume.loadThreadMetas(id)).filter((meta) => meta.id === threadId),
-          // This process runs nothing else; the app's own slots are not ours to see.
-          isRunning: () => false,
-          // The app handed this thread over as it quit, so it is the run this
-          // worker exists to continue, whatever the profile's last-run record says.
-          previousRun: () => Promise.resolve({ startedAt: 0 }),
-          onError: (error): void => {
-            deps.log(`could not continue the turn: ${String(error)}`)
-          },
-        }),
+        // A staged edit would wait for a diff panel that no window shows, and
+        // vanish with this process. Refuse it, so the model is told nothing was
+        // written instead of that the user will review it.
+        runWithStagedDiffResolver(
+          () => Promise.resolve(false),
+          () =>
+            resumeInterruptedTurns({
+              ...resume,
+              listProjectIds: () => [projectId],
+              loadThreadMetas: async (id) =>
+                (await resume.loadThreadMetas(id)).filter((meta) => meta.id === threadId),
+              // This process runs nothing else; the app's own slots are not ours to see.
+              isRunning: () => false,
+              // The app handed this thread over as it quit, so it is the run this
+              // worker exists to continue, whatever the profile's last-run record says.
+              previousRun: () => Promise.resolve({ startedAt: 0 }),
+              onError: (error): void => {
+                deps.log(`could not continue the turn: ${String(error)}`)
+              },
+            }),
+        ),
     )
     await transcripts.settled(threadId)
     const turn = resumed[0]

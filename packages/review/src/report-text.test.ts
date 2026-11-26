@@ -72,4 +72,38 @@ describe('terminal report', () => {
     assert.doesNotMatch(text, /^Clean\.$/m)
     assert.match(text, /\nNo findings\.$/)
   })
+
+  it('does not let "no findings" stand alone when no check reached a verdict', () => {
+    // A failed install (build not run) and a test checker out of memory.
+    const unsettled: Stage0Report = {
+      ...cleanStage0,
+      checks: [
+        { kind: 'build', verdict: 'not-run', head: null, base: null },
+        { kind: 'test', verdict: 'undetermined', head: null, base: null },
+      ],
+      coverage: {
+        checked: [],
+        notChecked: [
+          { kind: 'build', reason: 'dependencies could not be prepared on head' },
+          { kind: 'test', reason: 'the checker exhausted its memory on head' },
+        ],
+      },
+    }
+    assert.match(
+      renderStage0Report(unsettled),
+      /\nNo findings, but no check reached a verdict; this is not a clean result\.\n/,
+    )
+    const stage0Only = renderReviewReport({ ...review([]), stage0: unsettled })
+    assert.match(stage0Only, /^Stage 0: no check reached a verdict\.$/m)
+    assert.match(
+      stage0Only,
+      /\nNo findings, but no Stage 0 check reached a verdict; this is not a clean result\.$/,
+    )
+    // One check with a verdict is an answer for that check: plain "No findings".
+    const partly: Stage0Report = {
+      ...unsettled,
+      checks: [...unsettled.checks, { kind: 'lint', verdict: 'clean', head: null, base: null }],
+    }
+    assert.match(renderStage0Report(partly), /\nNo findings\.\n/)
+  })
 })

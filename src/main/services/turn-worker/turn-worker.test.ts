@@ -74,9 +74,6 @@ function app(): WriterLeaseEnvironment {
     owner: { id: 'quitting-app', host: hostname(), pid: process.ppid },
     now: Date.now,
     isAlive: () => true,
-    sleep: async (): Promise<void> => {
-      await Promise.resolve()
-    },
   }
 }
 
@@ -135,6 +132,19 @@ describe('runTurnWorker', () => {
     assert.deepEqual(outcome, { status: 'not-resumable' })
     assert.equal(
       (await loadProjectThreadMetas('p1')).find((meta) => meta.id === 't5')?.status,
+      'running',
+    )
+  })
+
+  it('leaves an external coding agent turn for the next launch', async () => {
+    await saveProjectThread('p1', cutOff('t6', { model: 'acp:claude-acp' }))
+    const outcome = await runTurnWorker(
+      { projectId: 'p1', threadId: 't6' },
+      { registry: new ToolRegistry(), log: silent },
+    )
+    assert.deepEqual(outcome, { status: 'not-resumable' })
+    assert.equal(
+      (await loadProjectThreadMetas('p1')).find((meta) => meta.id === 't6')?.status,
       'running',
     )
   })
