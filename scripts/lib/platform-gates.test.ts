@@ -78,11 +78,19 @@ describe('unit-platform-early-return', () => {
       "    t.skip('unreachable')",
       '  }',
       '})',
+      "it('e', (t) => {",
+      "  if (process.platform !== 'darwin') {",
+      '    if (process.env.SKIP) return',
+      "    t.skip('mac')",
+      '    return',
+      '  }',
+      '})',
     ].join('\n')
     assert.deepEqual(rules(text), [
       'unit-platform-early-return:4',
       'unit-platform-early-return:13',
       'unit-platform-early-return:19',
+      'unit-platform-early-return:25',
     ])
     assert.deepEqual(scan(text).inventory, { darwin: 1 })
   })

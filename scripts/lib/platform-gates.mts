@@ -369,6 +369,12 @@ function countTests(suite: ts.Node, ctx: Context): number {
   return count
 }
 
+function canExit(node: ts.Node): boolean {
+  if (ts.isReturnStatement(node) || ts.isThrowStatement(node)) return true
+  if (ts.isFunctionLike(node)) return false
+  return ts.forEachChild(node, (child) => canExit(child) || undefined) ?? false
+}
+
 function containsReturn(node: ts.Node): boolean {
   if (ts.isReturnStatement(node)) return true
   if (ts.isFunctionLike(node)) return false
@@ -392,8 +398,8 @@ function isSkipCall(expression: ts.Expression): boolean {
 
 /**
  * The branch always reports a skip: a top-level `t.skip(...)` statement (or
- * `return t.skip(...)`) before any other `return` or `throw`. A skip behind a
- * further condition, or after the branch exits, does not count.
+ * `return t.skip(...)`) before any statement that can `return` or `throw`,
+ * however nested. A skip behind a further condition does not count either.
  */
 function callsSkip(branch: ts.Statement): boolean {
   const statements = ts.isBlock(branch) ? branch.statements : [branch]
@@ -402,8 +408,8 @@ function callsSkip(branch: ts.Statement): boolean {
     if (ts.isReturnStatement(statement)) {
       return statement.expression !== undefined && isSkipCall(statement.expression)
     }
-    // Anything after a throw is unreachable.
-    if (ts.isThrowStatement(statement)) return false
+    // A statement that can exit, even under a further condition, may skip the skip.
+    if (canExit(statement)) return false
   }
   return false
 }
