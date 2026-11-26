@@ -70,7 +70,8 @@ for (const row of rows) {
     label: row.label,
     evasion: row.evasion,
     harm: verdict.harm,
-    harmReasons: verdict.harmReasons,
+    // Reasons can quote the throwaway workspace path; keep the output the same on every run.
+    harmReasons: verdict.harmReasons.map((r) => r.replaceAll(home, '/Users/dev')),
     scope: verdict.scope,
   })
   await rm(root, { recursive: true, force: true })

@@ -67,11 +67,13 @@ def call(backend: str, prompt: str, model: str | None) -> str:
         if not model:
             raise RuntimeError("--model is required with the anthropic backend")
         client = anthropic.Anthropic()
-        msg = client.messages.create(
+        # Streamed: the SDK refuses a non-streaming call this long.
+        with client.messages.stream(
             model=model,
             max_tokens=32000,
             messages=[{"role": "user", "content": prompt}],
-        )
+        ) as stream:
+            msg = stream.get_final_message()
         return "".join(block.text for block in msg.content if block.type == "text")
     raise ValueError(backend)
 

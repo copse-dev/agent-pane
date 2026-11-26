@@ -2,7 +2,8 @@
 
     python3 -I clean.py raw/*.jsonl --out sample/rows.jsonl
 
-Drops a row when it is malformed, when bash cannot parse it, when it names a host or address that
+Drops a row when it is malformed, when neither bash nor zsh can parse it (zsh-only rows are
+tagged `"shell": "zsh"`), when it names a host or address that
 is not a placeholder, when it carries something shaped like a real secret, or when it duplicates an
 earlier row (exact after normalising whitespace and placeholders, or near: token-shingle Jaccard
 at or above --near). Each kept row gets a stable `id` from its command. Reasons for every drop go
@@ -14,6 +15,7 @@ import argparse
 import hashlib
 import json
 import re
+import shutil
 import subprocess
 import sys
 from collections import Counter
@@ -86,17 +88,20 @@ def shingles(command: str, k: int = 3) -> set[tuple[str, ...]]:
     return {tuple(tokens[i : i + k]) for i in range(max(1, len(tokens) - k + 1))}
 
 
-def shell_parses(command: str) -> bool:
-    """bash, or zsh when it is installed: agents on macOS run zsh, and its glob qualifiers
-    (`*(/Nmw+4)`) are not bash syntax."""
-    for shell in ("bash", "zsh"):
-        try:
-            done = subprocess.run([shell, "-n"], input=command, capture_output=True, text=True)
-        except FileNotFoundError:
-            continue
-        if done.returncode == 0:
-            return True
-    return False
+def parsing_shell(command: str) -> str | None:
+    """`bash` when bash parses the command, else `zsh` when zsh does, else None.
+
+    Agents on macOS run zsh, and its glob qualifiers (`*(/Nmw+4)`) are not bash syntax, so a
+    zsh-only row is kept and tagged `"shell": "zsh"`. Copse's own `run_shell` uses `/bin/sh`, so a
+    gate verdict on such a row only speaks for agents that run zsh. Without zsh installed a
+    zsh-only row cannot be told apart from a broken one and is dropped as `zsh-unavailable`.
+    """
+    if subprocess.run(["bash", "-n"], input=command, capture_output=True, text=True).returncode == 0:
+        return "bash"
+    if shutil.which("zsh") is None:
+        return None
+    done = subprocess.run(["zsh", "-n"], input=command, capture_output=True, text=True)
+    return "zsh" if done.returncode == 0 else None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -145,9 +150,16 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             row["files"] = files
             blob = command + "\n" + "\n".join(files.values())
-            if not shell_parses(command):
-                dropped["bash-parse"] += 1
+            # A row already tagged zsh was checked when it was first cleaned.
+            shell = "zsh" if row.get("shell") == "zsh" else parsing_shell(command)
+            if shell is None:
+                zsh_missing = shutil.which("zsh") is None
+                dropped["zsh-unavailable" if zsh_missing else "shell-parse"] += 1
                 continue
+            if shell == "zsh":
+                row["shell"] = "zsh"
+            else:
+                row.pop("shell", None)
             hosts = host_problems(blob)
             if hosts:
                 dropped["non-placeholder-host"] += 1
