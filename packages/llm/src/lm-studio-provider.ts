@@ -21,12 +21,19 @@ import {
 import { TOOL_CALL_MALFORMED_STOP_REASON } from './provider-stop-reason.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
 import { toolCallIdOrSynthesized } from './tool-call-id.ts'
-import type { LLMMessage, LLMProvider, LLMTool, ProviderStreamChunk } from './wire-types.ts'
+import type {
+  LLMMessage,
+  LLMProvider,
+  LLMStreamOptions,
+  LLMTool,
+  ProviderStreamChunk,
+} from './wire-types.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
 
 type RespondOptions = Pick<
   LLMRespondOpts,
   | 'rawTools'
+  | 'toolChoice'
   | 'signal'
   | 'onPredictionFragment'
   | 'onPromptProcessingProgress'
@@ -193,12 +200,19 @@ export class LMStudioProvider implements LLMProvider {
     messages: LLMMessage[],
     tools: LLMTool[],
     signal?: AbortSignal,
+    options?: LLMStreamOptions,
   ): AsyncIterable<ProviderStreamChunk> {
     const self = this
     const sendable = withoutProviderState(messages)
+    // The SDK's tool choice has no named form (`none | auto | required`), so a
+    // call-scoped forced tool is sent as `required` over just that tool, which
+    // forces the same call.
+    const forced = options?.toolChoice
+    const forcedOnly = forced ? tools.filter((t) => t.name === forced.name) : []
+    const sent = forcedOnly.length ? forcedOnly : tools
     return yieldStreamWithRetry(
       async function* () {
-        yield* self.streamOnce(sendable, tools, signal)
+        yield* self.streamOnce(sendable, sent, signal, forced !== undefined)
       },
       { ...(signal ? { signal } : {}) },
     )
@@ -207,7 +221,8 @@ export class LMStudioProvider implements LLMProvider {
   private async *streamOnce(
     messages: ConversationMessage[],
     tools: LLMTool[],
-    signal?: AbortSignal,
+    signal: AbortSignal | undefined,
+    requireTool: boolean,
   ): AsyncIterable<ProviderStreamChunk> {
     // Own the prediction's abort controller here so the consumer walking away
     // cancels it, not just the producer's own error paths.
@@ -215,7 +230,7 @@ export class LMStudioProvider implements LLMProvider {
     const queue = new AsyncChunkQueue<ProviderStreamChunk>(() => {
       cancel.abort(new Error('Prediction cancelled: the consumer stopped reading the stream.'))
     })
-    void this.produce(messages, tools, signal, queue, cancel)
+    void this.produce(messages, tools, signal, requireTool, queue, cancel)
     yield* queue
   }
 
@@ -247,6 +262,7 @@ export class LMStudioProvider implements LLMProvider {
     messages: ConversationMessage[],
     tools: LLMTool[],
     signal: AbortSignal | undefined,
+    requireTool: boolean,
     queue: AsyncChunkQueue<ProviderStreamChunk>,
     cancel: AbortController,
   ): Promise<void> {
@@ -265,6 +281,9 @@ export class LMStudioProvider implements LLMProvider {
       const prediction = model.respond(chat, {
         ...this.predictionConfig(),
         rawTools: rawTools.length ? { type: 'toolArray', tools: rawTools } : { type: 'none' },
+        ...(requireTool && rawTools.length
+          ? { toolChoice: { type: 'generic', mode: 'required' } }
+          : {}),
         signal: signal ? AbortSignal.any([signal, cancel.signal]) : cancel.signal,
         onPromptProcessingProgress: (progress) => {
           queue.push({ type: 'prompt_progress', fraction: clampProgress(progress) })

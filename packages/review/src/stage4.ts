@@ -422,6 +422,18 @@ export async function verifyFindings(options: Stage4Options): Promise<Stage4Resu
           ...(turn.hostingProviders.length ? { hostingProviders: turn.hostingProviders } : {}),
         })
       } else {
+        // The stage records are not persisted with the thread's review report;
+        // the finding is. Keep why the challenge could not settle it there, so a
+        // failed challenger (refused request, no verdict) is diagnosable later
+        // instead of reading as a finding nobody examined.
+        if (verdict === null && turn.error !== undefined) {
+          current = withVerdict(current, {
+            verdict: {
+              status: current.verdict.status,
+              reason: `${current.verdict.reason} — challenge by ${challenger.id} did not finish: ${turn.error}`,
+            },
+          })
+        }
         counts.undetermined++
         records.push({
           findingId: current.id,

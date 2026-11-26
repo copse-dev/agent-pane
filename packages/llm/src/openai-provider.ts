@@ -13,6 +13,7 @@ import type {
 import { withAppAttribution } from './app-attribution.ts'
 import {
   isImageUnsupportedError,
+  isNamedToolChoiceRejectedError,
   isOutputCeilingRejectedError,
   isStrictSchemaRejectedError,
   yieldStreamWithRetry,
@@ -129,6 +130,13 @@ export class OpenAIProvider implements LLMProvider {
   private readonly cacheDiagnostics: PromptCacheDiagnostics
   private readonly openRouterCache: boolean
   private strictTools: boolean
+  /**
+   * Whether the endpoint takes an object `tool_choice` naming one function.
+   * Cleared the first time it refuses one (LM Studio accepts only
+   * `none | auto | required`); from then on a forced tool is sent as
+   * `'required'` over just that tool, which forces the same call.
+   */
+  private namedToolChoice = true
   private readonly extraBody: Record<string, unknown> | undefined
   private readonly reasoningSuppressionBody: Record<string, unknown> | undefined
   private readonly promptCacheKey: string | undefined
@@ -182,7 +190,7 @@ export class OpenAIProvider implements LLMProvider {
             : undefined
           return { mapped, restore: strictSet?.restoreArgs }
         }
-        // Two request-changing retries, each taken at most once. Deliberately
+        // Request-changing retries, each taken at most once. Deliberately
         // not part of `isRetryableStreamError`: those are blind replays, and
         // these send something different.
         //
@@ -193,6 +201,9 @@ export class OpenAIProvider implements LLMProvider {
         //  - A published output ceiling the endpoint won't accept: drop it and
         //    let the server's own default stand. Nothing the user chose is lost;
         //    the ceiling was ours to offer, not theirs to set.
+        //  - An object `tool_choice` the endpoint won't parse: force the same
+        //    call with `'required'` over only the named tool (see
+        //    `namedToolChoice`).
         let outbound = sendable
         let ceiling = self.maxOutputTokens
         let droppedImages = false
@@ -200,8 +211,14 @@ export class OpenAIProvider implements LLMProvider {
         let stream
         let reportCache: ReturnType<PromptCacheDiagnostics['begin']> | undefined
         let mappedTools = buildTools()
+        const forced = options?.toolChoice
         for (;;) {
           try {
+            const viaRequired = forced !== undefined && !self.namedToolChoice
+            const forcedOnly = viaRequired
+              ? mappedTools.mapped?.filter((t) => t.function.name === forced.name)
+              : undefined
+            const sentTools = forcedOnly?.length ? forcedOnly : mappedTools.mapped
             const request = {
               model,
               stream: true as const,
@@ -209,7 +226,7 @@ export class OpenAIProvider implements LLMProvider {
                 ? markOpenRouterCacheBreakpoints(toOpenAIMessages(outbound))
                 : toOpenAIMessages(outbound),
               ...(self.includeUsage ? { stream_options: { include_usage: true } } : {}),
-              ...(mappedTools.mapped ? { tools: mappedTools.mapped } : {}),
+              ...(sentTools ? { tools: sentTools } : {}),
               ...(self.promptCacheKey ? { prompt_cache_key: self.promptCacheKey } : {}),
               ...serviceTierBody(self.serviceTier),
               ...(ceiling === undefined ? {} : { max_tokens: ceiling }),
@@ -219,14 +236,16 @@ export class OpenAIProvider implements LLMProvider {
               ...self.tuned,
               ...(self.extraBody ?? {}),
               ...(options?.suppressReasoning ? (self.reasoningSuppressionBody ?? {}) : {}),
-              ...(options?.toolChoice
-                ? {
-                    tool_choice: {
-                      type: 'function' as const,
-                      function: { name: options.toolChoice.name },
-                    },
-                  }
-                : {}),
+              ...(forced === undefined
+                ? {}
+                : viaRequired
+                  ? { tool_choice: 'required' as const }
+                  : {
+                      tool_choice: {
+                        type: 'function' as const,
+                        function: { name: forced.name },
+                      },
+                    }),
             }
             const leading = request.messages[0]
             reportCache = self.cacheDiagnostics.begin(
@@ -243,6 +262,10 @@ export class OpenAIProvider implements LLMProvider {
               strictOn = false
               self.strictTools = false
               mappedTools = buildTools()
+              continue
+            }
+            if (forced && self.namedToolChoice && isNamedToolChoiceRejectedError(err)) {
+              self.namedToolChoice = false
               continue
             }
             if (!droppedImages && isImageUnsupportedError(err)) {
