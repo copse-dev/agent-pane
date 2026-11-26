@@ -8,6 +8,7 @@ import { after, describe, it } from 'node:test'
 import {
   acquireWriterLease,
   readWriterLease,
+  writerLeaseWasAbandoned,
   releaseWriterLease,
   renewWriterLease,
   WRITER_LEASE_FILE,
@@ -177,6 +178,21 @@ describe('writer lease', () => {
       assert.equal(winners.length, 1, `trial ${String(trial)}`)
       assert.equal(winners[0]?.lease.epoch, 2)
     }
+  })
+
+  it('tells a lease its holder died with apart from one it released', async () => {
+    const dir = await threadDir()
+    const clock = { at: 1_000 }
+    const observer = fakeEnv('app', clock, { pid: 300, alive: (pid) => pid !== 100 })
+    const died = await acquireWriterLease(dir, 't1', fakeEnv('worker', clock, { pid: 100 }), 30_000)
+    assert.ok(died.status === 'acquired')
+    assert.equal(await writerLeaseWasAbandoned(dir, 't1', observer), true)
+    const next = fakeEnv('next', clock, { pid: 200, alive: (pid) => pid !== 100 })
+    const held = await acquireWriterLease(dir, 't1', next, 30_000)
+    assert.ok(held.status === 'acquired')
+    assert.equal(await writerLeaseWasAbandoned(dir, 't1', observer), false)
+    await releaseWriterLease(dir, held.lease, next)
+    assert.equal(await writerLeaseWasAbandoned(dir, 't1', observer), false)
   })
 
   it('keeps only the newest epoch on disk', async () => {

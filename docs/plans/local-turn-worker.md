@@ -16,9 +16,8 @@ Today, after the continuation and the lease:
   continues it once from the saved history.
 
 The gap is the time between those two events. A quit at 6 pm with the next launch at 9 am
-means the work waits all night. This plan keeps the turn going through a quit and an
-update relaunch, without hosting external CLIs, by running Copse's own loop in a process
-that is not the app.
+means the work waits all night. This plan keeps the turn going through a quit, without
+hosting external CLIs, by running Copse's own loop in a process that is not the app.
 
 ## What runs where
 
@@ -85,7 +84,10 @@ without Electron.
    thread store whose format is newer than it understands. The worker is the quitting app's
    own binary, so this only matters if a later change starts workers from another version.
    _Not implemented yet:_ the store has no format version to compare, so the guard lands
-   with the first format change.
+   with the first format change. Until then a quit that installs an update (a downloaded
+   update installs on any quit, and "Restart now") starts no worker at all: the updater
+   replaces the binary a worker would run from, and the relaunched version continues the
+   turns itself.
 
 ## Slices
 

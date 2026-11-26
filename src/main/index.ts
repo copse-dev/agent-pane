@@ -97,7 +97,7 @@ import {
   resumeMobileCompanion,
   stopMobileCompanion,
 } from './services/mobile/mobile-companion-service.ts'
-import { initAutoUpdate } from './services/auto-update.ts'
+import { initAutoUpdate, quitInstallsUpdate } from './services/auto-update.ts'
 import { initUpdatePrompt } from './services/update-prompt.ts'
 import {
   approveClose,
@@ -1634,7 +1634,11 @@ let stopFollowingForeignTurns: (() => void) | undefined
  * reads the history this process saved.
  */
 function handOffInterruptedTurns(targets: readonly HandOffTarget[]): void {
-  if (targets.length === 0 || !quitHandsOff) return
+  // A quit that installs an update leaves the turns to the next launch, which
+  // runs the new version: a worker of this version must not run them while the
+  // updater replaces the binary under it. The `hand-off` record still lets
+  // that launch continue them.
+  if (targets.length === 0 || !quitHandsOff || quitInstallsUpdate()) return
   handOffTurns(targets, {
     execPath: process.execPath,
     workerPath: turnWorkerPath(),

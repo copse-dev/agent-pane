@@ -29,6 +29,10 @@ function log(line: string): void {
 }
 
 async function main(): Promise<number> {
+  // The launcher sets this so the app binary runs as Node. Commands the turn
+  // runs must not inherit it, or any Electron program they start runs as plain
+  // Node. The worker's own Node children set it for themselves.
+  delete process.env['ELECTRON_RUN_AS_NODE']
   const { values } = parseArgs({
     options: {
       'user-data': { type: 'string' },
@@ -61,6 +65,15 @@ async function main(): Promise<number> {
   )
   setSecretCipher(createKeyringCipher(createOsKeyringStore()))
 
+  // Decide before starting the sandbox and MCP servers, which a thread left for
+  // the next launch would start for nothing.
+  const { runTurnWorker, workerCannotRun } = await import('./turn-worker.ts')
+  const reason = await workerCannotRun(projectId, threadId)
+  if (reason !== null) {
+    log(`thread ${threadId} stays for the next launch: ${reason}`)
+    return 0
+  }
+
   const [
     { setExecutionAuditSink },
     { recordExecutionObservation },
@@ -72,7 +85,11 @@ async function main(): Promise<number> {
     { initAgentsRegistry },
     { loadCustomTools },
     { loadMcpServers, shutdownMcpServers },
-    { runTurnWorker },
+    { stopAllForegroundShellProcesses },
+    { cancelAllSupervisedBackgroundProcesses },
+    { getTaskSupervisor },
+    { disposeAllAcpSessions },
+    { stopAllBackgroundProcesses },
   ] = await Promise.all([
     import('../execution-runtime/audit.ts'),
     import('../execution-runtime/audit-recorder.ts'),
@@ -84,7 +101,11 @@ async function main(): Promise<number> {
     import('../agents/agents-registry.ts'),
     import('../mcp/custom-tools-registry.ts'),
     import('../mcp/mcp-registry.ts'),
-    import('./turn-worker.ts'),
+    import('../exec/foreground-shell-process.ts'),
+    import('../exec/supervised-background-process.ts'),
+    import('../supervisor/task-supervisor.ts'),
+    import('../acp/acp-session-pool.ts'),
+    import('../exec/background-process.ts'),
   ])
 
   setExecutionAuditSink(recordExecutionObservation)
@@ -104,9 +125,21 @@ async function main(): Promise<number> {
     log(`thread ${threadId}: ${JSON.stringify(outcome)}`)
     return outcome.status === 'held' ? 2 : 0
   } finally {
-    await shutdownMcpServers().catch((error: unknown) => {
-      log(`could not stop MCP servers: ${String(error)}`)
-    })
+    // The same teardown as the app's quit: nothing the turn started may outlive
+    // the worker, since no window lists it and nothing else would stop it.
+    const stop = async (what: string, step: () => Promise<void> | void): Promise<void> => {
+      try {
+        await step()
+      } catch (error) {
+        log(`could not stop ${what}: ${String(error)}`)
+      }
+    }
+    await stop('foreground commands', stopAllForegroundShellProcesses)
+    await stop('supervised background commands', cancelAllSupervisedBackgroundProcesses)
+    await stop('supervised tasks', () => getTaskSupervisor().shutdown())
+    await stop('agent sessions', disposeAllAcpSessions)
+    await stop('background commands', stopAllBackgroundProcesses)
+    await stop('MCP servers', shutdownMcpServers)
     await shutdownProjectSandbox()
   }
 }
