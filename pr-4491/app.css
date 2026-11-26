@@ -18091,6 +18091,38 @@ dialog.activity-panel-overlay {
 .ssh-import-config {
   margin: var(--spacing-sm) 0;
 }
+.ssh-consent {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
+}
+.ssh-consent p {
+  margin: 0;
+}
+.ssh-consent-title {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.ssh-consent-body {
+  color: var(--text-secondary);
+  line-height: var(--line-height-base);
+}
+.ssh-consent-status:empty {
+  display: none;
+}
+.ssh-consent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-sm);
+}
+.ssh-consent-actions > button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 
 /* src/renderer/styles/global/mobile-companion.css */
 .mobile-companion-connection {
