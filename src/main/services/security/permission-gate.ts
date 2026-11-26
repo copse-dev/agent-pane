@@ -95,6 +95,7 @@ import {
 import { detectPackageInstall } from './safe-install.ts'
 import {
   addTrustedShellCommand,
+  guardedYoloContainsShellCommand,
   offerableTrustedCommand,
   routeShellCommand,
   type ShellRoutingTool,
@@ -1656,8 +1657,18 @@ export async function ensureShellCommandPermitted(
     ...(opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {}),
   })
 
+  // Guarded YOLO's opt-in contain-first setting: Copse's own runners start an
+  // external, untrusted command inside the project sandbox and ask before any
+  // retry outside it (`guardedYoloContainsFirst`). An ACP agent's command runs
+  // in the agent's own process (`opts.sandboxEnabled` is the agent's), so the
+  // runner this decision would describe is not Copse's and nothing changes there.
+  const containFirst =
+    guardedYolo &&
+    sandboxEnabled &&
+    opts.sandboxEnabled === undefined &&
+    guardedYoloContainsShellCommand(command, currentAgentRoots(), routingTool, runThread)
   const outsideSandbox =
-    shellRequiresOutsideSandbox(command, workspaceRoot, sandboxEnabled) ||
+    (!containFirst && shellRequiresOutsideSandbox(command, workspaceRoot, sandboxEnabled)) ||
     (guardedYolo &&
       sandboxEnabled &&
       routeShellCommand(command, currentAgentRoots(), routingTool).outcome === 'allow')
@@ -1683,7 +1694,8 @@ export async function ensureShellCommandPermitted(
   // Guarded YOLO's second opinion (tier-screening.ts). A classifier connection
   // chosen for safety screening may turn an unsandboxed allow into the harm
   // gate's one-time confirmation; it can never allow what the gate did not.
-  // A contained command needs no second opinion: the sandbox bounds it.
+  // A contained command needs no second opinion: the sandbox bounds it. That
+  // includes a command contain-first keeps inside: leaving later always asks.
   if (guardedYolo && effectiveAction === 'allow' && (!sandboxEnabled || outsideSandbox)) {
     const tierReason = await guardedYoloTierReason(
       command,

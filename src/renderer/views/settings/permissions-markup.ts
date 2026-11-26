@@ -146,6 +146,23 @@ export const permissionsMarkup = `
             </fieldset>
 
             <fieldset>
+              <legend>Guarded YOLO</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="guardedYoloContainFirst" />
+                Keep commands in the project sandbox until you approve leaving
+              </label>
+              <p class="field-hint">
+                Off by default. Guarded YOLO runs any command its safety check passes, including
+                ones that go outside the project folder or onto the network, without asking. Turn
+                this on to run those inside the project sandbox first: a command the check wrongly
+                passed cannot reach the rest of your computer or the network unless you say so.
+                The cost is more prompts. When the sandbox blocks a command, Copse asks before
+                running it outside, so work that genuinely needs the network or other folders asks
+                each time. Commands on your trusted list still run outside without asking.
+              </p>
+            </fieldset>
+
+            <fieldset>
               <legend>File edits</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="acpAutoApproveEditsWithBackup" />
@@ -298,6 +315,7 @@ export const permissionsFields: readonly SettingField[] = [
   { name: 'acpAutoApproveNativeBridgeTools', kind: 'checkbox', default: true, save: true },
   { name: 'worktreeAutoApproveEdits', kind: 'checkbox', default: true, save: true },
   { name: 'backgroundDefaultBranchFetch', kind: 'checkbox', default: true, save: true },
+  { name: 'guardedYoloContainFirst', kind: 'checkbox', default: false, save: true },
   { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
   { name: 'autoRunSandboxCommands', kind: 'checkbox', default: true, save: false },
   { name: 'webAllowUserApproval', kind: 'checkbox', default: true, save: false },

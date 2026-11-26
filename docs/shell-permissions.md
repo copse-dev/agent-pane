@@ -1391,6 +1391,33 @@ While active:
   a prompt: a missing, slow or failing connection leaves the harm gate's allow standing. A command
   that stays inside the project sandbox is not asked. Every confirmation ends "Approve this command
   once?", because an ask-once prompt need not be destructive.
+- **Contain first (opt-in, off by default).** Settings → Permissions → Guarded YOLO → "Keep commands
+  in the project sandbox until you approve leaving" (`guardedYoloContainFirst`) trades
+  prompts for containment. With it on, and only while the project sandbox is running, a network or
+  outside-workspace command that is not on the trusted-command list starts inside the project
+  sandbox whatever the harm gate decided (`guardedYoloContainsShellCommand` in
+  `command-routing-config.ts`). The gate, `run_shell`, `run_background` and todo checks make that
+  call on the same raw command, so the audit says "project sandbox" for the same runs that get one,
+  and the second opinion above is skipped for them because there is no escape to screen. Leaving
+  the sandbox then always asks, and only after a block the sandbox reported:
+  - `run_shell` offers its reactive retry on runner evidence (a recorded violation or wrapper
+    failure) or a known denial signature, and Guarded YOLO's runner-evidence auto-approval is off,
+    so the retry asks. A command contain-first moved inside is offered that retry even when the
+    static verdict alone would not offer it (a network-only command would otherwise have run
+    outside, so a contained network block is real).
+  - The agent's `expects_sandbox_block` hint is ignored: it neither moves a command outside unasked
+    nor asks up front. A denial this thread already approved (`denial-cache`) still asks up front,
+    as it does without the setting.
+  - `run_background` starts the command contained; `retry_of` after a reported block asks, as it
+    always does. A todo check has no retry, so a blocked check fails.
+  - A command whose harm-gate confirmation the user approves also starts contained, and asks again
+    if the sandbox blocks it.
+
+  Trusted commands keep their unsandboxed routing, and ACP agents, which run commands in their own
+  process, are unchanged. The trade-off is stated in the setting's description: a command the harm
+  gate wrongly allowed cannot reach the rest of the machine or the network unasked, but work that
+  genuinely needs the network or other folders asks each time it runs.
+
 - A shell builtin that assigns variables for later commands (currently `printf -v`) requires the
   one-time harm confirmation; changing `PATH` can otherwise replace the command being authorized.
 

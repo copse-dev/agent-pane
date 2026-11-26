@@ -94,6 +94,43 @@ export function shellRunsOutsideSandbox(
   return shellRequiresOutsideSandbox(command, roots.executionRoot, isProjectSandboxEnabled())
 }
 
+/** Opt-in: Guarded YOLO runs external commands in the project sandbox first. Off by default. */
+export const GUARDED_YOLO_CONTAIN_FIRST_SETTING = 'guardedYoloContainFirst'
+
+/**
+ * Whether this thread's Guarded YOLO keeps every command in the project sandbox
+ * until a person approves leaving it: the opt-in setting is on, the thread is in
+ * Guarded YOLO, and there is a project sandbox to contain it.
+ *
+ * With it on, a command the harm gate lets through that would otherwise run
+ * outside the sandbox runs inside it instead, and only a block the sandbox
+ * actually reported (runner violation, or a known denial signature) can lead to
+ * running it outside, always through a prompt. The agent's own
+ * `expects_sandbox_block` hint no longer moves a command outside unasked.
+ */
+export function guardedYoloContainsFirst(threadId: string | null): boolean {
+  if (threadId === null || !isGuardedYoloActive(threadId)) return false
+  if (!isProjectSandboxEnabled()) return false
+  return getSetting<boolean>(GUARDED_YOLO_CONTAIN_FIRST_SETTING, false)
+}
+
+/**
+ * Whether contain-first moves THIS command's first attempt into the sandbox:
+ * {@link guardedYoloContainsFirst} holds and the command is not one the user put
+ * on the trusted-command list. A trusted command keeps its unsandboxed routing;
+ * the user listed it precisely so it runs outside with no prompt. Callers apply
+ * this only to a command `shellRunsOutsideSandbox` routed outside.
+ */
+export function guardedYoloContainsShellCommand(
+  command: string,
+  roots: AgentRoots,
+  toolName: ShellRoutingTool,
+  threadId: string | null,
+): boolean {
+  if (!guardedYoloContainsFirst(threadId)) return false
+  return routeShellCommand(command, roots, toolName).outcome !== 'allow'
+}
+
 /**
  * The paths a command's seatbelt may be widened to so an approved
  * read-outside-the-project command runs CONTAINED instead of unsandboxed, or

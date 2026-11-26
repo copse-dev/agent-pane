@@ -4,7 +4,11 @@ import type { TodoCheck } from '@shared/types/todo.ts'
 import { runCommand } from './exec/command-runner.ts'
 import { currentAgentRoots, getAgentExecutionRoot } from './execution-root.ts'
 import { ensureShellCommandPermitted } from './security/permission-gate.ts'
-import { shellRunsOutsideSandbox } from './security/command-routing-config.ts'
+import {
+  guardedYoloContainsShellCommand,
+  shellRunsOutsideSandbox,
+} from './security/command-routing-config.ts'
+import { getActiveRunThread } from './active-run-identity.ts'
 import { resolvePathWithinRoot } from './workspace.ts'
 
 export interface TodoCheckResult {
@@ -65,7 +69,13 @@ export async function verifyTodoCheck(
       const parts = check.command.trim().split(/\s+/)
       const [cmd, ...args] = parts
       if (!cmd) return { passed: false, detail: 'empty shell command' }
-      const unsandboxed = shellRunsOutsideSandbox(check.command, currentAgentRoots())
+      const roots = currentAgentRoots()
+      // Same routing as run_shell, including Guarded YOLO's contain-first
+      // setting, so this run matches what the gate above judged. A check has
+      // no retry: a command the sandbox blocks simply fails the check.
+      const unsandboxed =
+        shellRunsOutsideSandbox(check.command, roots) &&
+        !guardedYoloContainsShellCommand(check.command, roots, 'run_shell', getActiveRunThread())
       const r = await runCommand(cmd, args, {
         cwd: root,
         signal,
