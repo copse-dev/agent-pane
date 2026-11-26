@@ -616,6 +616,36 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   `CLAUDE_CODE_OAUTH_TOKEN` for the agent stops it recurring. Outside Copse's
   sandbox the same message usually means a locked Keychain, so there it
   suggests `security unlock-keychain` first.
+
+  **Copse renews the token outside the sandbox** so these turns don't die
+  (`claude-login-renewal.ts`). It never exchanges the refresh token itself
+  (#3215): it runs the agent's own bundled CLI once, unsandboxed, as
+  `claude-agent-acp --cli -p "Reply with OK." --model haiku --tools ""
+  --strict-mcp-config --setting-sources "" --no-session-persistence`, in an
+  empty directory with a throwaway `CLAUDE_CONFIG_DIR` and an empty
+  `CLAUDE_SECURESTORAGE_CONFIG_DIR`. That keeps the default login, its lock and
+  its Keychain item while loading none of the user's settings, hooks, tools or
+  MCP servers. Claude renews the expired token before the request, under its
+  own lock, and saves it to the Keychain, where the sandboxed agent reads it.
+  The cost is one Haiku reply (about $0.001 at list price). `--bare` is not
+  usable because it skips Keychain reads. It runs at two points:
+
+  - **Before a sandboxed Claude turn**, when the Keychain token is inside
+    Claude's own five-minute renewal window. Outside that window Claude would
+    not renew, and the check costs one `security find-generic-password` read.
+  - **After a turn fails with `store_refused`**, since a token can expire
+    mid-turn. When that renewal succeeds, the thread shows "Claude's sign-in
+    was renewed" and asks the user to re-send, with no sign-in offer.
+
+  It applies only on macOS, to a local sandboxed agent with the Keychain grant
+  whose env sets no credential, config dir or CLI of its own
+  (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`,
+  `CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_EXECUTABLE`), and only to the
+  `@agentclientprotocol/claude-agent-acp` adapter, which forwards `--cli`. It
+  never runs an adapter whose binary or package sits where the sandboxed agent
+  can write (its workspace, project root, state and thread dirs, home dirs or
+  temp dirs), since running a file the agent could replace outside the sandbox
+  would be an escape.
 - **`gh` does not run in a sandboxed agent's own shell.** `~/.config/gh` holds
   the user's GitHub token, so it stays unreadable, and `gh` fails on its config
   before it reaches the network (`failed to read configuration: open

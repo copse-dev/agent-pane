@@ -27,6 +27,12 @@ export interface ClassifyAgentErrorContext {
    * only here. Read only to tell an expired sign-in from a missing one.
    */
   acpFinalMessage?: string
+  /**
+   * After Claude refused to renew a token it could not save (`store_refused`),
+   * Copse had Claude renew it outside the sandbox and that run succeeded
+   * (`claude-login-renewal.ts`), so re-sending is the whole fix.
+   */
+  acpLoginRenewed?: boolean
 }
 
 interface JsonRpcError {
@@ -393,7 +399,12 @@ function acpAgentDisplayName(agentId?: string): string {
  * {@link NESTED_SANDBOX_APPLY_RE}): not transient, not credentials, and not
  * fixable from inside the turn.
  */
-export type AcpTurnInterruption = AcpAuthFailureKind | 'nested_sandbox' | 'aborted' | 'error'
+export type AcpTurnInterruption =
+  | AcpAuthFailureKind
+  | 'login_renewed'
+  | 'nested_sandbox'
+  | 'aborted'
+  | 'error'
 
 /**
  * The note appended to a failed turn's persisted assistant message.
@@ -417,6 +428,8 @@ export function acpTurnInterruptionMarker(outcome: AcpTurnInterruption, agentId?
       return `[This turn failed: ${agentName} is not authenticated. Re-running it will fail the same way until the user signs in.]`
     case 'unverified':
       return `[This turn failed: ${agentName} couldn’t verify its sign-in when it started. Usually the sign-in has expired, but a network failure looks the same, so re-running it may work; if it fails this way again, the user needs to sign in again.]`
+    case 'login_renewed':
+      return `[This turn failed: ${agentName}’s access token expired and it couldn’t save a renewed one from inside Copse’s sandbox. Copse has since had ${agentName} renew it outside the sandbox, so re-running the turn should work.]`
     case 'store_refused':
       return `[This turn failed: ${agentName}’s access token expired and it couldn’t save a renewed one, so it would not renew it. Re-running it will fail the same way until the token is renewed outside Copse’s sandbox: the user signing in again from a terminal, or using ${agentName} outside Copse.]`
     case 'nested_sandbox':
@@ -439,9 +452,13 @@ export function acpTurnInterruptionFor(
     readonly aborted: boolean
     readonly authFailure: AcpAuthFailureKind | null
     readonly acpAgentId?: string
+    /** See {@link ClassifyAgentErrorContext.acpLoginRenewed}. */
+    readonly loginRenewed?: boolean
   },
 ): AcpTurnInterruption {
   if (outcome.aborted) return 'aborted'
+  if (outcome.authFailure === 'store_refused' && outcome.loginRenewed === true)
+    return 'login_renewed'
   if (outcome.authFailure) return outcome.authFailure
   if (isAcpNestedSandboxFailure(err, outcome.acpAgentId)) return 'nested_sandbox'
   return 'error'
@@ -658,6 +675,18 @@ function formatAcpAuthError(
   // (often an unhelpful `-32603 Internal error`) below the fold. An unverified
   // sign-in is usually an expired one, so it gets the same fix, plus a note
   // that says what else it can be.
+  if (kind === 'store_refused' && ctx?.acpLoginRenewed === true) {
+    return [
+      `> [!NOTE]\n> **${agentName}’s sign-in was renewed**\n>\n> This turn stopped because ` +
+        `${agentName}’s access token expired, and ${agentName} can’t save a renewed one from ` +
+        `inside Copse’s sandbox. Copse had ${agentName} renew it outside the sandbox, so ` +
+        're-send your message to continue.',
+      acpTechnicalDetails(rpc),
+    ]
+      .filter(isNonEmptyString)
+      .join('\n\n')
+  }
+
   if (kind === 'store_refused') {
     return [
       acpAuthNotice(agentName, kind),

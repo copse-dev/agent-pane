@@ -222,6 +222,36 @@ describe('classifyAgentError', () => {
     assert.match(marker, /fail the same way until the token is renewed outside Copse’s sandbox/)
   })
 
+  // Copse had Claude renew the token outside the sandbox after the refusal, so
+  // the fix is only to re-send: no terminal, no sign-in steps.
+  it('says re-send once Copse has had Claude renew the token outside the sandbox', () => {
+    const err = storeRefusedFailure(true)
+    const ctx = { acpAgentId: 'claude-acp', acpSandboxed: true, acpLoginRenewed: true }
+    const out = withPlatform('darwin', () => classifyAgentError(err, ctx))
+    assert.match(out, /^> \[!NOTE\]\n> \*\*Claude’s sign-in was renewed\*\*/)
+    assert.match(out, /renew it outside the sandbox, so re-send your message to continue/)
+    assert.doesNotMatch(out, /claude-agent-acp --cli auth login|\*\*To continue\*\*/)
+    assert.match(out, /Technical details[\s\S]*can't save to the Keychain/)
+    const interruption = acpTurnInterruptionFor(err, {
+      aborted: false,
+      authFailure: classifyAcpAuthFailure(err, ctx),
+      acpAgentId: 'claude-acp',
+      loginRenewed: true,
+    })
+    assert.equal(interruption, 'login_renewed')
+    assert.match(acpTurnInterruptionMarker(interruption, 'claude-acp'), /should work/)
+    // A renewal only answers this failure, never another credentials one.
+    assert.equal(
+      acpTurnInterruptionFor(err, {
+        aborted: false,
+        authFailure: 'expired',
+        acpAgentId: 'claude-acp',
+        loginRenewed: true,
+      }),
+      'expired',
+    )
+  })
+
   it('reads the other wordings of a refused Keychain save the same way', () => {
     for (const text of [
       "Could not refresh your login: can't save to the Keychain · If locked, run security unlock-keychain",
@@ -846,6 +876,7 @@ describe('acpTurnInterruptionMarker', () => {
       'required',
       'unverified',
       'store_refused',
+      'login_renewed',
       'aborted',
       'error',
     ] as const) {

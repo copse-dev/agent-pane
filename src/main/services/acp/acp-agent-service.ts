@@ -154,6 +154,7 @@ import {
   runWithThreadExecutionContext,
 } from '../thread-execution-context.ts'
 import { ensureWritableThreadCheckout } from '../deferred-worktree.ts'
+import { renewClaudeLoginIfDue, type ClaudeLoginRenewalInput } from './claude-login-renewal.ts'
 import { acpAgentCanDeferCheckout } from './acp-deferred-checkout.ts'
 import { EMPTY_ACP_TURN_PROSE, nextAcpTurnProse, type AcpTurnProse } from './acp-turn-prose.ts'
 import {
@@ -353,16 +354,27 @@ export class AcpTurnFailure extends Error {
    * read-only macOS Keychain (#4147).
    */
   readonly sandboxed: boolean
+  /**
+   * What a renewal of a sandboxed Claude agent's login outside the sandbox
+   * needs (`claude-login-renewal.ts`), or `null` when the turn did not run
+   * sandboxed on this machine. Read only when the failure is Claude refusing
+   * to renew a token it could not save to the Keychain.
+   */
+  readonly loginRenewal: ClaudeLoginRenewalInput | null
 
   constructor(
     cause: unknown,
     partial: AcpTurnPartial,
-    options: { readonly sandboxed?: boolean } = {},
+    options: {
+      readonly sandboxed?: boolean
+      readonly loginRenewal?: ClaudeLoginRenewalInput | null
+    } = {},
   ) {
     super(acpErrorMessage(cause), { cause })
     this.name = 'AcpTurnFailure'
     this.partial = partial
     this.sandboxed = options.sandboxed === true
+    this.loginRenewal = options.loginRenewal ?? null
   }
 }
 
@@ -757,6 +769,31 @@ async function runAcpAgentTurn(
     }),
   )
   const stateDir = grantableAcpStateDir(resolveAcpConfigDirEnvVar(agent), env, agent.env)
+  // A sandboxed Claude agent can read its Keychain login but not save a renewed
+  // one, so Claude Code refuses to renew it there. When the token is about to
+  // be refused, have Claude renew it outside the sandbox before the turn starts
+  // (`claude-login-renewal.ts`). Every path the agent can write is excluded from
+  // what may run unsandboxed.
+  const chatStoreRootForRenewal = sandbox ? getChatStoreRootSync() : null
+  const loginRenewal: ClaudeLoginRenewalInput | null =
+    sandbox && localSandbox && !remote
+      ? {
+          agent,
+          sandbox,
+          localSandboxed: true,
+          writableRoots: [
+            cwd,
+            ...(projectRoot ? [projectRoot] : []),
+            ...(stateDir ? [stateDir] : []),
+            ...(chatStoreRootForRenewal ? [chatStoreRootForRenewal] : []),
+          ],
+        }
+      : null
+  if (loginRenewal) {
+    await perfSpan('ttft:acp-claude-login-renewal', () =>
+      renewClaudeLoginIfDue(loginRenewal).catch(() => false),
+    )
+  }
   // The transcripts a sandboxed agent may read natively, resolved here while
   // this turn's run and execution context exist. The agent is spawned by a
   // session-host worker with no run of its own, so the answer travels in the
@@ -1177,7 +1214,7 @@ async function runAcpAgentTurn(
       },
       // The seatbelt the spawn actually applied: `sandboxed` also counts an
       // unattended container, which has no macOS Keychain to keep read-only.
-      { sandboxed: localSandbox && !remote },
+      { sandboxed: localSandbox && !remote, loginRenewal },
     )
   } finally {
     releaseAgentWriter()
