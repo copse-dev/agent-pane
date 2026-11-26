@@ -104,6 +104,26 @@ describe('internal Git policy', () => {
     }
   })
 
+  it('admits apply only to the index, with the patch on stdin', () => {
+    for (const args of [
+      ['apply', '--cached', '--unidiff-zero', '--whitespace=nowarn', '-'],
+      ['apply', '--cached', '--unidiff-zero', '--whitespace=nowarn', '--reverse', '-'],
+    ]) {
+      assert.deepEqual(withGitInvocationArgs(args).slice(-args.length), args)
+    }
+    for (const args of [
+      // Without --cached the patch would write working-tree files.
+      ['apply', '--unidiff-zero', '--whitespace=nowarn', '-'],
+      ['apply', '--index', '--unidiff-zero', '--whitespace=nowarn', '-'],
+      ['apply', '--cached', '--unidiff-zero', '--whitespace=nowarn', 'patch.diff'],
+      ['apply', '--cached', '--unidiff-zero', '--whitespace=nowarn', '-', 'extra.diff'],
+      ['apply', '--cached', '--unidiff-zero', '--whitespace=fix', '-'],
+      ['apply', '--cached', '--unidiff-zero', '--whitespace=nowarn', '--directory=x', '-'],
+    ]) {
+      assert.throws(() => withGitInvocationArgs(args), /Unsupported internal Git apply/)
+    }
+  })
+
   it('admits grep only in the LFS-scan shapes the hosted transfer uses', () => {
     const sha = 'a'.repeat(40)
     for (const args of [
@@ -263,6 +283,11 @@ describe('internal Git policy', () => {
       SSH_ASKPASS: '/payload/askpass',
       SSH_ASKPASS_REQUIRE: 'force',
       GIT_DIR: '/other-repo',
+      GIT_COMMON_DIR: '/other-common-dir',
+      GIT_WORK_TREE: '/other-work-tree',
+      GIT_NAMESPACE: 'other-namespace',
+      GIT_OBJECT_DIRECTORY: '/other-objects',
+      GIT_ALTERNATE_OBJECT_DIRECTORIES: '/alternate-objects',
       GIT_INDEX_FILE: '/scratch/index',
       GIT_AUTHOR_NAME: 'Copse',
     })
@@ -278,6 +303,11 @@ describe('internal Git policy', () => {
     assert.equal(env['SSH_ASKPASS'], undefined)
     assert.equal(env['SSH_ASKPASS_REQUIRE'], undefined)
     assert.equal(env['GIT_DIR'], undefined)
+    assert.equal(env['GIT_COMMON_DIR'], undefined)
+    assert.equal(env['GIT_WORK_TREE'], undefined)
+    assert.equal(env['GIT_NAMESPACE'], undefined)
+    assert.equal(env['GIT_OBJECT_DIRECTORY'], undefined)
+    assert.equal(env['GIT_ALTERNATE_OBJECT_DIRECTORIES'], undefined)
     assert.equal(env['GIT_INDEX_FILE'], '/scratch/index')
     assert.equal(env['GIT_AUTHOR_NAME'], 'Copse')
     assert.equal(env['GIT_ALLOW_PROTOCOL'], '')

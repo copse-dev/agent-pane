@@ -122,6 +122,9 @@ async function bundleTests(testFiles: string[], outputDir: string): Promise<void
       // Keep oxfmt external — it resolves its native binding at runtime and
       // scripts/lib/oxfmt.mts spawns its CLI from node_modules/.bin.
       'oxfmt',
+      // ESLint loads eslint.config.mjs and its plugins from disk at runtime; the
+      // oxlint config parity test needs that real loader, not a bundled copy.
+      'eslint',
       // Its napi loader (@electron-internal/extract-zip) finds the prebuilt .node
       // next to its own JS; bundled, it looks beside the test chunk (demo-chrome).
       'extract-zip',

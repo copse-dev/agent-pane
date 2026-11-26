@@ -29,6 +29,11 @@ import {
 } from '../pr-file-content.ts'
 import { isNonNull } from '@shared/nullish.ts'
 import { PR_ACTIVITY_QUERY, parsePrActivity, unavailablePrActivity } from './pr-activity.ts'
+import {
+  replyToReviewThread,
+  setReviewThreadResolved,
+  type ReviewThreadGraphql,
+} from './pr-review-thread-actions.ts'
 
 interface GhPrViewJson {
   state?: string | undefined
@@ -199,6 +204,22 @@ function gh(
   opts: Omit<Parameters<typeof runGh>[1], 'cwd'> = {},
 ): ReturnType<typeof runGh> {
   return runGh(args, { ...opts, cwd: root })
+}
+
+/** One `gh api graphql` request; `-f` keeps every variable a literal string. */
+function ghGraphql(root: string | null): ReviewThreadGraphql {
+  return async (query, variables) => {
+    const args = ['api', 'graphql', '-f', `query=${query}`]
+    for (const [name, value] of Object.entries(variables)) args.push('-f', `${name}=${value}`)
+    const { stdout, stderr, code } = await gh(root, args)
+    const response = safeJsonParse(
+      stdout,
+      decodeWithSchema(z.object({ data: z.unknown().optional(), errors: z.unknown().optional() })),
+    )
+    if (code !== 0 || response?.errors)
+      return { data: null, errorMessage: formatGhError(stderr, code || 1) }
+    return { data: response?.data ?? null }
+  }
 }
 
 function prRefToArgs(ref: PrRef): string[] {
@@ -749,6 +770,14 @@ export const ghCliBackend: GitHubBackend = {
       number: ref.number,
       message: `Opened PR #${String(ref.number)}: ${ref.url}`,
     }
+  },
+
+  replyToReviewThread(root, ref, threadId, body) {
+    return replyToReviewThread(ghGraphql(root), 'cli', ref, threadId, body)
+  },
+
+  setReviewThreadResolved(root, ref, threadId, resolved) {
+    return setReviewThreadResolved(ghGraphql(root), 'cli', ref, threadId, resolved)
   },
 
   async approvePr(root: string | null, ref: PrRef): Promise<PrActionResult> {

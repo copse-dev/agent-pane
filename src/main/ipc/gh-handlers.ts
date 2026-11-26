@@ -3,7 +3,13 @@ import { z } from 'zod'
 import { prRefSchema } from '@shared/git/thread-pr-relations.ts'
 import { defineHandler, defineSenderHandler } from './define-handler.ts'
 import { defineSenderRootHandler, senderProjectId } from './sender-project-root.ts'
-import { ghCreatePrForThreadArgs, ghPrFileDiffArgs, ghPrRefArgs } from './gh-handler-args.ts'
+import {
+  ghCreatePrForThreadArgs,
+  ghPrFileDiffArgs,
+  ghPrRefArgs,
+  ghReviewThreadReplyArgs,
+  ghReviewThreadResolveArgs,
+} from './gh-handler-args.ts'
 import { assertMainFrameSender, parseIpcArgs } from './ipc-guards.ts'
 import {
   getGhCliStatus,
@@ -21,6 +27,8 @@ import {
 } from '../services/github/backend/github-list-watch.ts'
 import {
   approvePr,
+  replyToPrReviewThread,
+  setPrReviewThreadResolved,
   enablePrAutoMerge,
   markPrReady,
   rerunFailedPrRuns,
@@ -187,6 +195,22 @@ export function registerGhHandlers(win: BrowserWindow): void {
     'gh:mark-pr-ready',
     ghPrRefArgs,
     (root, owner, repo, number) => markPrReady(root, { owner, repo, number }),
+    { errors: 'per-argument' },
+  )
+  defineSenderRootHandler(
+    win,
+    'gh:reply-to-review-thread',
+    ghReviewThreadReplyArgs,
+    (root, owner, repo, number, threadId, body) =>
+      replyToPrReviewThread(root, { owner, repo, number }, threadId, body),
+    { errors: 'per-argument' },
+  )
+  defineSenderRootHandler(
+    win,
+    'gh:set-review-thread-resolved',
+    ghReviewThreadResolveArgs,
+    (root, owner, repo, number, threadId, resolved) =>
+      setPrReviewThreadResolved(root, { owner, repo, number }, threadId, resolved),
     { errors: 'per-argument' },
   )
   defineSenderRootHandler(
