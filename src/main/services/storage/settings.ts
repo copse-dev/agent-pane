@@ -5,6 +5,7 @@ import { registerSecretSweep, requestSecretSweep } from './secret-migration.ts'
 import { resolveLmStudioApiKey } from '@shared/lm-studio-api-key.ts'
 import { BUILTIN_EXTRA_PROVIDERS } from '@copse/llm/extra-providers.ts'
 import { lazyPersistentStore } from './persistent-store.ts'
+import { isKeyringCipherBlob } from './keyring-cipher.ts'
 import { SETTINGS_WRITE_QUEUE, runSerialized, runSerializedUpdate } from './write-queue.ts'
 import { getSettingSchema } from './settings-schema.ts'
 import {
@@ -106,6 +107,23 @@ export function getApiKey(provider: KeyProvider): string | null {
   } catch {
     return null
   }
+}
+
+/**
+ * Whether a process without Electron can open every stored API key: each is
+ * plain or sealed by the keyring cipher. A key only `safeStorage` sealed (the
+ * OS keyring was unavailable, so it was never migrated) opens only in the app,
+ * so work that needs it must not leave the app.
+ */
+export function storedKeysOpenOutsideApp(): boolean {
+  return cached
+    .listKeys()
+    .filter((key) => key.startsWith('apiKey.'))
+    .every((key) => {
+      const raw = cached.get(key)
+      if (!isStoredKey(raw) || raw.plain === true) return true
+      return isKeyringCipherBlob(Buffer.from(raw.enc, 'base64'))
+    })
 }
 
 /**

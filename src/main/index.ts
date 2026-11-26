@@ -2,7 +2,7 @@ import { initClientActions } from './services/clients/client-action-ipc.ts'
 import './disable-brotli-decoding.ts' // MUST be first — see the module
 import { stopAllForegroundShellProcesses } from './services/exec/foreground-shell-process.ts'
 import {
-  CONTINUE_TURNS_AFTER_QUIT_SETTING,
+  continuesTurnsAfterQuit,
   handOffTurns,
   turnWorkerPath,
   type HandOffTarget,
@@ -97,7 +97,7 @@ import {
   resumeMobileCompanion,
   stopMobileCompanion,
 } from './services/mobile/mobile-companion-service.ts'
-import { initAutoUpdate } from './services/auto-update.ts'
+import { initAutoUpdate, quitInstallsUpdate } from './services/auto-update.ts'
 import { initUpdatePrompt } from './services/update-prompt.ts'
 import {
   approveClose,
@@ -328,6 +328,18 @@ setSecretCipher(
 )
 const taskSupervisor = getTaskSupervisor()
 
+/** This quit came from a signal or a fault, with nobody to confirm it. */
+let unattendedQuit = false
+/** This quit hands its turns to workers (set once the quit goes ahead). */
+let quitHandsOff = false
+
+/** Quit without asking: a signal or a fault has nobody to answer the prompt. */
+function quitUnattended(): void {
+  unattendedQuit = true
+  approveClose()
+  app.quit()
+}
+
 // Own stdout/stderr's `error` events before anything can provoke one. A closed
 // terminal makes every later write fail with EIO; unowned, that failure becomes
 // an uncaught exception, which the handler below logs, which writes again —
@@ -340,8 +352,7 @@ const taskSupervisor = getTaskSupervisor()
 // the crash this guard now prevents.
 installStdioGuard({
   onSinkLost: () => {
-    approveClose()
-    app.quit()
+    quitUnattended()
   },
 })
 
@@ -351,8 +362,7 @@ installStdioGuard({
 installProcessFaultHandlers({
   isLogSinkAlive,
   onUncaughtException: () => {
-    approveClose()
-    app.quit()
+    quitUnattended()
   },
 })
 
@@ -1646,11 +1656,11 @@ let stopFollowingForeignTurns: (() => void) | undefined
  * reads the history this process saved.
  */
 function handOffInterruptedTurns(targets: readonly HandOffTarget[]): void {
-  if (
-    targets.length === 0 ||
-    getSetting<unknown>(CONTINUE_TURNS_AFTER_QUIT_SETTING, true) === false
-  )
-    return
+  // A quit that installs an update leaves the turns to the next launch, which
+  // runs the new version: a worker of this version must not run them while the
+  // updater replaces the binary under it. The `hand-off` record still lets
+  // that launch continue them.
+  if (targets.length === 0 || !quitHandsOff || quitInstallsUpdate()) return
   handOffTurns(targets, {
     execPath: process.execPath,
     workerPath: turnWorkerPath(),
@@ -1729,11 +1739,12 @@ app.on('before-quit', (event) => {
   // kills the in-flight turns the user is being warned about, so a prompt after
   // it would come too late to save them. Re-issues the quit once confirmed.
   if (deferQuitForCloseConfirmation(event)) return
-  // The quit is going ahead. With the hand-off off the user chose to stop its
-  // turns, so the next launch does not continue them (unless the updater asked).
-  const runEnded = recordRunEnd(
-    getSetting<unknown>(CONTINUE_TURNS_AFTER_QUIT_SETTING, true) !== false,
-  )
+  // The quit is going ahead. Only a quit the user confirmed hands its turns to
+  // workers, and only with the setting on; otherwise the user chose to stop
+  // them, so the next launch does not continue them (unless the updater asked).
+  // A signal or a fault has nobody at the keyboard, so it stops them too.
+  quitHandsOff = !unattendedQuit && continuesTurnsAfterQuit(getSetting)
+  const runEnded = recordRunEnd(quitHandsOff)
   beginMainWindowQuit()
   destroyAllTerminalSessions()
   stopAllBackgroundProcesses()
@@ -1781,8 +1792,7 @@ function quitFromSignal(signal: NodeJS.Signals): void {
   // load-bearing for SIGHUP in particular: the same hangup that delivers the
   // signal also kills the renderer, so the prompt would go to a window that can
   // never answer and the quit would stall for the full confirmation timeout.
-  approveClose()
-  app.quit()
+  quitUnattended()
 }
 
 /**

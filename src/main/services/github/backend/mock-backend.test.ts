@@ -54,6 +54,31 @@ describe('mockGitHubBackend', () => {
     assert.equal(details?.reviewDecision, 'APPROVED')
   })
 
+  it('shows replies and resolution changes on the PR details, only for its own threads', async () => {
+    const threadId = 'PRRT_mock_failed_first'
+    assert.equal(
+      (await mockGitHubBackend.replyToReviewThread(null, REF, threadId, 'Sorted now.')).ok,
+      true,
+    )
+    assert.equal(
+      (await mockGitHubBackend.setReviewThreadResolved(null, REF, threadId, true)).ok,
+      true,
+    )
+    const thread = (await mockGitHubBackend.getPrDetails(null, REF))?.activity?.reviewThreads.find(
+      (item) => item.id === threadId,
+    )
+    assert.ok(thread)
+    assert.equal(thread.isResolved, true)
+    assert.equal(thread.comments.at(-1)?.body, 'Sorted now.')
+    const elsewhere = await mockGitHubBackend.replyToReviewThread(
+      null,
+      WORKSPACE_REF,
+      threadId,
+      'x',
+    )
+    assert.equal(elsewhere.ok, false)
+  })
+
   it('enables auto-merge idempotently', async () => {
     const first = await mockGitHubBackend.enableAutoMerge(null, REF)
     assert.equal(first.strategy, 'squash')

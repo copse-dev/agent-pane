@@ -16,9 +16,8 @@ Today, after the continuation and the lease:
   continues it once from the saved history.
 
 The gap is the time between those two events. A quit at 6 pm with the next launch at 9 am
-means the work waits all night. This plan keeps the turn going through a quit and an
-update relaunch, without hosting external CLIs, by running Copse's own loop in a process
-that is not the app.
+means the work waits all night. This plan keeps the turn going through a quit, without
+hosting external CLIs, by running Copse's own loop in a process that is not the app.
 
 ## What runs where
 
@@ -51,9 +50,16 @@ without Electron.
    lease and attach contract.
 2. **Hand-off happens at a turn boundary.** A live provider stream cannot move between
    processes. On quit the desktop stops the turn as it does today. The worker then runs the
-   same restart continuation a relaunch would have run (`INTERRUPTED_TURN_CONTINUATION`,
+   same restart continuation a relaunch runs after a crash (`INTERRUPTED_TURN_CONTINUATION`,
    budget-charged, once per interruption). So the worker reuses semantics that are already
-   reviewed, rather than inventing a second resume path.
+   reviewed, rather than inventing a second resume path. A quit that hands off is recorded
+   as `hand-off` in `last-run.json` (hooks plan decision 5), so a turn no worker took, because
+   the worker declined it or never started, is continued by the next launch instead. Only a
+   quit the user confirmed hands off: a signal (Ctrl+C on `make run`, SIGTERM) or a fault quit
+   has nobody to confirm it, so it stops the run and is recorded as `quit`.
+   The worker runs only Copse's own loop. A thread on an external coding agent (ACP) or a
+   remote agent is left for the next launch, because the worker could not stop that agent or
+   the processes it starts once it exits.
 3. **The writer lease is the only ownership signal.** The desktop releases the lease when its
    turn stops, and the worker takes it before writing. A desktop that relaunches while the
    worker runs finds the lease live, so its own boot continuation gets `AgentTurnBusyError`
@@ -71,13 +77,17 @@ without Electron.
    policy would ask about is deferred with the existing deferral mode (`deferral-mode.ts`,
    used by scheduled automation runs), not approved. The deferred items surface on the thread
    when the desktop returns (`deferred-approvals.md`).
-7. **Opt-out setting.** `continueTurnsAfterQuit` defaults to on. With it off, quit behaves as
-   in the restart-continuation PR.
+7. **Opt-out setting.** `continueTurnsAfterQuit` turns the hand-off on. It defaults to off
+   until Settings offers the switch and Stop reaches a worker's turn, and then to on. With it
+   off, quit behaves as in the restart-continuation PR.
 8. **Never for an update that changes the store format.** The worker must not run against a
    thread store whose format is newer than it understands. The worker is the quitting app's
    own binary, so this only matters if a later change starts workers from another version.
    _Not implemented yet:_ the store has no format version to compare, so the guard lands
-   with the first format change.
+   with the first format change. Until then a quit that installs an update (a downloaded
+   update installs on any quit, and "Restart now") starts no worker at all: the updater
+   replaces the binary a worker would run from, and the relaunched version continues the
+   turns itself.
 
 ## Slices
 
@@ -121,17 +131,26 @@ without Electron.
 
 ### W4: attach and stop from the desktop
 
-- The worker takes the thread's lease as soon as it starts, before its slow boot, so an app
-  relaunched meanwhile follows it instead of continuing the turn too.
-- While the turn runs, the worker serves it on a local socket (`turn-worker-socket.ts`): a
+- The worker first checks, from the read-only profile and the thread files, that it would
+  continue the thread at all (the resume rules and the model checks above). Only then does it
+  take the thread's lease, before its slow boot, so an app relaunched meanwhile follows it
+  instead of continuing the turn too; a thread the worker declines is never held.
+- The turn runs under that same claim, and the worker gives the lease back only after the
+  turn's last write has landed and its socket has closed, so nothing else starts on the
+  thread under that write.
+- From the takeover until it exits, the worker serves the thread on a local socket (`turn-worker-socket.ts`): a
   Unix socket under `<profile>/run/` (a named pipe on Windows), named by a hash of the profile
   and thread, newline-delimited JSON. `attach` replies with the turn's runtime snapshot and
   then streams every stamped chunk, the same order an in-process turn reaches the window.
-  `stop` aborts the turn as Stop does in-process.
+  `stop` aborts the turn as Stop does in-process. A stop that arrives during the boot is
+  kept: the continuation then never starts, and the thread is settled interrupted, so the
+  window offers Continue.
 - The app's follower attaches to that socket and forwards into `agent:transcript-snapshot`
   and `agent:chunk`, so a handed-off turn streams live. Without an answer there (an older
-  worker, or one still booting) it repaints from disk as in W3. A window reload re-sends
-  `attach`. Stop on a followed thread goes to the worker.
+  worker, or one just starting) it repaints from disk as in W3. A window reload re-sends
+  `attach`. Stop on a followed thread goes to the worker; pressed before the worker answers,
+  it is sent as soon as it does. A thread whose worker died without releasing its lease is
+  settled interrupted rather than left spinning.
 - Not covered by e2e yet: a live attach needs a worker turn slow enough to outlast a
   relaunch, and mock scenarios live in the app process.
 
@@ -145,11 +164,15 @@ instead of authenticating again. `turn-worker-ssh.test.ts` pins this with the e2
 `ssh`: a cut-off turn on an SSH project lists the remote directory from the worker.
 
 - **Password and passphrase prompts fail closed.** The askpass bridge lives in the app, and
-  the worker serves none, so a host that needs a typed secret fails the turn's first remote
-  command instead of waiting on a dialog nobody can see. Key, agent and a still-live master
-  all work.
+  the worker serves none. The worker also drops the user's own `SSH_ASKPASS` and sets
+  `SSH_ASKPASS_REQUIRE=never` before anything connects (`worker-environment.ts`), so a host
+  that needs a typed secret fails the turn's first remote command instead of opening a system
+  password dialog nobody expects. Key, agent and a still-live master all work.
 - **The master outlives the worker,** as it outlives the app today (`ControlPersist`, four
   hours), so the relaunched app picks it up without a new handshake.
+- **Remote commands do not.** Before it exits the worker runs the app's quit teardown, which
+  kills the remote process groups of the background commands it started while the master is
+  still up, so nothing it started keeps running on the host unseen.
 
 ### Later
 
@@ -197,17 +220,23 @@ start out of the app.
    `resolveContainerProvider` again. If the egress it gets differs from what the app armed, it
    refuses to run. A provider whose sign-in can rotate a refresh token on refresh (ChatGPT
    plan) would lose the new token in a read-only host, so such a run stays in the app as it
-   does today and stops on quit.
+   does today and stops on quit. So does a run on a profile whose stored keys only
+   `safeStorage` can open (no OS keyring, so they were never moved to the keyring cipher):
+   the host could not open them. The rest of the app's environment still reaches the host,
+   as it reached the engine CLI before, so a key that exists only there travels with it.
 3. **Progress travels over the run's socket.** Like the turn worker's (`turn-worker-socket.ts`):
    the host streams phase and log lines and, at the end, the record, and takes `stop`.
-   `<run dir>/host.json` names the host's pid and socket, so a relaunched app finds live runs
-   without the supervisor.
+   `<profile>/container-hosts/<runtime id>.json` names the host's pid and socket, so a
+   relaunched app finds live runs without the supervisor. The host is started in its own
+   process group; when the app loses it without a result (it died, or never listened), the
+   app ends that group and cleans up what the runner would have: the container and the
+   staged copy of the user's sign-in.
 4. **Quit leaves host runs alone.** `stopAll` skips runs whose host process is alive. The
    supervisor task is moved out of the shutdown cancel. Today shutdown cancels every running
    external task with a process handle, which would force-remove the container. Instead the
    task records that the run continues outside the app, and the relaunched app settles it
    from the record.
-5. **Relaunch reattaches from `host.json`.** At start-up, after the orphan sweep (which already
+5. **Relaunch reattaches from the host file.** At start-up, after the orphan sweep (which already
    skips running containers), the service lists run directories with a live host. It connects
    to each one, and puts its progress back in `runs`, so the banner, the dialog and Stop work
    as before. A host that died leaves `record.json`, or nothing; the run then settles as
@@ -222,9 +251,13 @@ start out of the app.
   `run-host-entry.ts` the bundle entry (`dist/main/container-run-host.js`), and the local
   line is shared with the turn worker (`local-socket.ts`). The bundled host boots on a
   fresh profile, resolves its provider and refuses changed egress; the container e2e
-  through it is still to run.
+  through it is still to run. Until C2, the host treats an app that leaves before the run
+  ends (its line closes), or one that never attaches within the app's 30 s connect
+  deadline, as a stop: nothing could see or stop the run otherwise, and decision A8 of
+  `thread-in-container.md` (an orphaned run winds itself down) keeps holding for the app.
 - **C2, survive quit.** `stopAll` and supervisor shutdown leave host runs alone, and
-  relaunch reattaches from `host.json`. Exit gate: quit mid-run, relaunch, and see the run
+  relaunch reattaches from the host file. C2 drops C1's stop-when-the-app-leaves rule.
+  Exit gate: quit mid-run, relaunch, and see the run
   finish once with its commits on the ref.
   Status: built. `stopAll` lets go of host runs when `continueTurnsAfterQuit` is on (the
   client's `detach`), and every other run stops as before. The supervisor's external-task

@@ -20,9 +20,19 @@ import type { RunThreadOptions } from './thread-container.ts'
  */
 
 export interface RunHostChild {
-  pid?: number | undefined
+  /** End the host and everything it started (its process group). */
+  kill: () => void
   /** Settles when the process exits. */
   exited: Promise<void>
+}
+
+/**
+ * The app lost the host without the host reporting how the run ended. A host
+ * this session started has been told to end; what its runner would have
+ * cleaned up is the caller's to remove.
+ */
+export class RunHostLostError extends Error {
+  override readonly name = 'RunHostLostError'
 }
 
 export interface RunHostClientDependencies {
@@ -58,12 +68,17 @@ export async function runThroughHost(
   void child.exited.then(() => {
     host.exited = true
   })
-  return followHost(deps.socketPath(request.runtimeId), options, {
-    ...(deps.connect ? { connect: deps.connect } : {}),
-    // A host that has just started may not be listening yet.
-    waitMs: deps.connectTimeoutMs ?? 30_000,
-    gone: () => host.exited,
-  })
+  try {
+    return await followHost(deps.socketPath(request.runtimeId), options, {
+      ...(deps.connect ? { connect: deps.connect } : {}),
+      // A host that has just started may not be listening yet.
+      waitMs: deps.connectTimeoutMs ?? 30_000,
+      gone: () => host.exited,
+    })
+  } catch (error) {
+    if (error instanceof RunHostLostError) child.kill()
+    throw error
+  }
 }
 
 /**
@@ -116,7 +131,7 @@ export async function followHost(
     }
   }
   const onClose = (): void => {
-    finish(new Error('The run host stopped before the run finished'))
+    finish(new RunHostLostError('The run host stopped before the run finished'))
   }
 
   const deadline = Date.now() + (deps.waitMs ?? 0)
@@ -124,11 +139,14 @@ export async function followHost(
   for (;;) {
     live = await connect(path, runHostToAppSchema, onMessage, onClose)
     if (live !== null) break
-    if (deps.gone?.() === true) throw new Error('The run host exited before it started')
+    if (deps.gone?.() === true) throw new RunHostLostError('The run host exited before it started')
     if (Date.now() >= deadline) {
-      throw new Error(
+      throw new RunHostLostError(
         deps.waitMs ? 'The run host did not start in time' : 'The run host is not running',
       )
+    }
+    if (options.signal?.aborted === true) {
+      throw new RunHostLostError('Stopped by you before the run host started')
     }
     await delay(100)
   }
@@ -210,7 +228,16 @@ export function runHostClientDependencies(launch: RunHostLaunchOptions): RunHost
           })
         })
         child.unref()
-        return { pid: child.pid, exited }
+        const kill = (): void => {
+          try {
+            if (process.platform !== 'win32' && child.pid !== undefined) {
+              process.kill(-child.pid, 'SIGTERM')
+            } else child.kill()
+          } catch {
+            // Already gone.
+          }
+        }
+        return { kill, exited }
       } finally {
         await log.close()
       }

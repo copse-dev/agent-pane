@@ -12,6 +12,7 @@ import type { ContainerRunProgress } from '@shared/types/container-run.ts'
 import type { ThreadExecutionContext } from '../thread-execution-context.ts'
 import { deleteApiKey, setApiKey, setSetting } from '../storage/settings.ts'
 import { storageSet } from '../storage/storage.ts'
+import { RunHostLostError } from './run-host-client.ts'
 import { ContainerRunService, judgeRun } from './container-run-service.ts'
 import type { loadRunForContinuation } from './thread-container.ts'
 import type { OrphanSweep } from './thread-container.ts'
@@ -126,6 +127,7 @@ describe('ContainerRunService', () => {
       ensureImage: (): Promise<void> => Promise.resolve(),
       assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      keysOpenOutsideApp: (): boolean => true,
       run: (request): Promise<ThreadContainerRecord> => {
         inApp += 1
         return Promise.resolve(fakeRecord(request.prompt))
@@ -155,6 +157,72 @@ describe('ContainerRunService', () => {
     // Everything handed over survives a trip through JSON: no factory, no key.
     assert.deepEqual(JSON.parse(JSON.stringify(request)), request)
     assert.ok(!JSON.stringify(request).includes('sk-ant-test'))
+  })
+
+  it('keeps a run in the app when a stored key only the app can open', async () => {
+    let hosted = 0
+    let inApp = 0
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      keysOpenOutsideApp: (): boolean => false,
+      run: (request): Promise<ThreadContainerRecord> => {
+        inApp += 1
+        return Promise.resolve(fakeRecord(request.prompt))
+      },
+      runHost: (request): Promise<ThreadContainerRecord> => {
+        hosted += 1
+        return Promise.resolve(fakeRecord(request.base.prompt))
+      },
+    })
+    await service.start({
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'Fix the lint backlog',
+      model: 'claude-sonnet-4-6',
+      budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+    })
+    await waitFor(service, THREAD, (p) => p.phase === 'finished')
+    assert.equal(hosted, 0)
+    assert.equal(inApp, 1)
+  })
+
+  it('cleans up after a run host it lost', async () => {
+    const released: string[] = []
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      releaseLost: (runtimeId): Promise<'removed'> => {
+        released.push(runtimeId)
+        return Promise.resolve('removed')
+      },
+      keysOpenOutsideApp: (): boolean => true,
+      run: (): Promise<ThreadContainerRecord> => Promise.reject(new Error('not in the app')),
+      runHost: (): Promise<ThreadContainerRecord> =>
+        Promise.reject(new RunHostLostError('The run host stopped before the run finished')),
+    })
+    await service.start({
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'Fix the lint backlog',
+      model: 'claude-sonnet-4-6',
+      budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+    })
+    const settled = await waitFor(service, THREAD, (p) => p.phase === 'failed')
+    assert.equal(released.length, 1)
+    assert.equal(released[0], settled.runtimeId)
   })
 
   it('starts nothing while the experimental setting is off', async () => {
@@ -1310,6 +1378,7 @@ describe('container task supervision', () => {
       loadContinuation: noContinuationOnDisk,
       continueAfterQuit: (): boolean => true,
       // Like the real client: the run goes on until the app lets go of it.
+      keysOpenOutsideApp: (): boolean => true,
       runHost: (request, options): Promise<ThreadContainerRecord> => {
         handedOver = request
         options.onPhase?.('running')

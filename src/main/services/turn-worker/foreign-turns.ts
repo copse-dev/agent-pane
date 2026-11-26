@@ -1,11 +1,17 @@
 import {
   currentWriterLeaseOwner,
   readWriterLease,
+  writerLeaseWasAbandoned,
   type WriterLeaseRecord,
 } from '@copse/thread-store/writer-lease.ts'
 import type { TranscriptSnapshot } from '@shared/types/stream.ts'
 import { listProfileProjectIds } from '../interrupted-turn-resume.ts'
-import { getProjectThread, loadProjectThreadMetas, threadDirectoryPath } from '../thread-store.ts'
+import {
+  getProjectThread,
+  loadProjectThreadMetas,
+  threadDirectoryPath,
+  updateMeta,
+} from '../thread-store.ts'
 import {
   connectTurnWorker,
   turnWorkerSocketPath,
@@ -49,6 +55,13 @@ export interface ForeignTurnDependencies {
   ) => Promise<TurnWorkerConnection | null>
   /** Hand the window what the worker streamed. */
   deliver?: (message: WorkerToApp) => void
+  /** Whether the thread's lease was left unreleased by a holder that died. */
+  leaseAbandoned: (projectId: string, threadId: string) => Promise<boolean>
+  /**
+   * Settle a thread whose holder died mid-turn: still `running` on disk, it is
+   * marked interrupted so the window offers Continue instead of spinning.
+   */
+  settleAbandoned: (turn: ForeignTurn) => Promise<void>
   /** How often to check a followed thread. */
   intervalMs?: number
   onError?: (error: unknown) => void
@@ -56,6 +69,8 @@ export interface ForeignTurnDependencies {
 
 interface Followed extends ForeignTurn {
   connection: TurnWorkerConnection | null
+  /** Stop was pressed before the worker answered; sent as soon as it does. */
+  stopPending: boolean
 }
 
 export class ForeignTurnFollower {
@@ -103,7 +118,7 @@ export class ForeignTurnFollower {
           return null
         })
         if (lease === null || lease.owner === this.deps.selfOwner) continue
-        this.following.set(threadId, { projectId, threadId, connection: null })
+        this.following.set(threadId, { projectId, threadId, connection: null, stopPending: false })
         added = true
       }
     }
@@ -113,11 +128,16 @@ export class ForeignTurnFollower {
     return this.threadIds()
   }
 
-  /** Ask the worker running `threadId` to stop. False when none can be asked. */
+  /**
+   * Ask the worker running `threadId` to stop. A worker that does not answer
+   * yet (it is still starting) gets the stop as soon as it does. False when the
+   * thread is not followed.
+   */
   requestStop(threadId: string): boolean {
-    const connection = this.following.get(threadId)?.connection
-    if (!connection) return false
-    connection.send({ t: 'stop' })
+    const turn = this.following.get(threadId)
+    if (!turn) return false
+    if (turn.connection) turn.connection.send({ t: 'stop' })
+    else turn.stopPending = true
     return true
   }
 
@@ -152,8 +172,13 @@ export class ForeignTurnFollower {
         if (lease === null || lease.owner === this.deps.selfOwner) {
           turn.connection?.close()
           turn.connection = null
+          const followed = { projectId: turn.projectId, threadId: turn.threadId }
+          // A holder that released its lease wrote its own ending. One that died
+          // left the thread `running`, and nothing else will settle it.
+          if (lease === null && (await this.deps.leaseAbandoned(turn.projectId, turn.threadId)))
+            await this.deps.settleAbandoned(followed)
           // Read the lease first: a repaint after the release is the settled thread.
-          await this.deps.repaint({ projectId: turn.projectId, threadId: turn.threadId })
+          await this.deps.repaint(followed)
           this.following.delete(turn.threadId)
           continue
         }
@@ -172,7 +197,13 @@ export class ForeignTurnFollower {
     const connection = await this.deps.connect(
       turn,
       (message) => {
-        this.deps.deliver?.(message)
+        // Only the followed thread's own stream reaches the window.
+        const forTurn =
+          message.t === 'chunk'
+            ? message.threadId === turn.threadId
+            : message.snapshot.projectId === turn.projectId &&
+              message.snapshot.thread.id === turn.threadId
+        if (forTurn) this.deps.deliver?.(message)
       },
       () => {
         if (turn.connection === connection) turn.connection = null
@@ -181,6 +212,10 @@ export class ForeignTurnFollower {
     if (connection === null) return
     turn.connection = connection
     connection.send({ t: 'attach' })
+    if (turn.stopPending) {
+      turn.stopPending = false
+      connection.send({ t: 'stop' })
+    }
   }
 
   stop(): void {
@@ -210,6 +245,13 @@ export function defaultForeignTurnDependencies(
     readLease: (projectId, threadId) =>
       readWriterLease(threadDirectoryPath(projectId, threadId), threadId),
     selfOwner: currentWriterLeaseOwner().id,
+    leaseAbandoned: (projectId, threadId) =>
+      writerLeaseWasAbandoned(threadDirectoryPath(projectId, threadId), threadId),
+    settleAbandoned: async ({ projectId, threadId }): Promise<void> => {
+      const meta = (await loadProjectThreadMetas(projectId)).find((m) => m.id === threadId)
+      if (meta?.status !== 'running') return
+      await updateMeta(projectId, threadId, { status: 'idle', interruptedTurnAt: Date.now() })
+    },
     repaint: async ({ projectId, threadId }): Promise<void> => {
       const thread = await getProjectThread(projectId, threadId)
       if (thread)

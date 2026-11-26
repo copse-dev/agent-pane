@@ -16,6 +16,7 @@
  */
 import { readFile, rm } from 'node:fs/promises'
 import { parseArgs } from 'node:util'
+import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { installReadOnlyProfile } from '../turn-worker/worker-profile.ts'
 import { containerRunHostRequestSchema, runHostFilePath, runHostSocketPath } from './run-host.ts'
 
@@ -41,7 +42,11 @@ async function main(): Promise<number> {
   }
   const raw = await readFile(requestFile, 'utf8')
   await rm(requestFile, { force: true })
-  const request = containerRunHostRequestSchema.parse(JSON.parse(raw))
+  const request = safeJsonParse(raw, decodeWithSchema(containerRunHostRequestSchema))
+  if (request === null) {
+    log('the request file is not a run request')
+    return 1
+  }
 
   // The profile has to be in place before any module that opens a store loads,
   // so everything past this point is imported dynamically.

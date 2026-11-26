@@ -4,7 +4,7 @@ import type { ContainerRunProgress, ContainerRunRequest } from '@shared/types/co
 import { isRecord } from '@shared/unknown-value.ts'
 import { internalGit } from '../security/internal-git-exec.ts'
 import { storageGet } from '../storage/storage.ts'
-import { getSetting } from '../storage/settings.ts'
+import { getSetting, storedKeysOpenOutsideApp } from '../storage/settings.ts'
 import {
   resolveThreadExecutionContext,
   type ThreadExecutionContext,
@@ -28,6 +28,7 @@ import {
 } from './run-host.ts'
 import {
   followHost,
+  RunHostLostError,
   runHostClientDependencies,
   runHostEntryPath,
   RunHostDetached,
@@ -45,6 +46,7 @@ import {
   newRuntimeId,
   runThreadInContainer,
   sweepOrphanedRuntimes,
+  teardownLostRuntime,
   teardownRuntime,
   type OrphanSweep,
   type CarryOutAdoption,
@@ -90,6 +92,11 @@ interface RunDependencies {
   listHosts: () => Promise<RunHostFile[]>
   /** Whether quitting leaves host runs going (the turn hand-off setting). */
   continueAfterQuit: () => boolean
+  /**
+   * Whether the host process can open the stored keys itself. A key only
+   * `safeStorage` sealed opens only in the app, so such a run stays here.
+   */
+  keysOpenOutsideApp: () => boolean
   /** Build the worker image on `engine` unless the one there is this build's. */
   ensureImage: (engine: ThreadContainerEngine) => Promise<void>
   /**
@@ -105,6 +112,8 @@ interface RunDependencies {
    * up is asked.
    */
   stop: typeof teardownRuntime
+  /** Clean up a run whose host process the app lost; see {@link teardownLostRuntime}. */
+  releaseLost: typeof teardownLostRuntime
   /**
    * The checkout this thread actually works in. Injected like the supervisor's
    * so a test can describe a worktree without building one.
@@ -133,7 +142,9 @@ const productionDependencies: RunDependencies = {
   followHost: (host, options) => followHost(host.socket, options),
   listHosts: () => Promise.resolve([]),
   continueAfterQuit: () => getSetting<unknown>(CONTINUE_TURNS_AFTER_QUIT_SETTING, true) !== false,
+  keysOpenOutsideApp: storedKeysOpenOutsideApp,
   stop: teardownRuntime,
+  releaseLost: teardownLostRuntime,
   sweep: sweepOrphanedRuntimes,
   sweepWanted: () => getSetting<boolean>('containerRunsEnabled', false) || hasRecordedRuns(),
   adopt: adoptCarryOut,
@@ -376,6 +387,14 @@ export class ContainerRunService {
         if (this.stopSignals.get(run.threadId) === stopSignal) this.stopSignals.delete(run.threadId)
         this.hostedRuns.delete(run.threadId)
         return
+      }
+      if (error instanceof RunHostLostError) {
+        // The host ended without its runner cleaning up after itself.
+        await this.deps
+          .releaseLost(run.runtimeId, this.engines.get(run.runtimeId))
+          .catch((cause: unknown) => {
+            console.error('[container-run] Could not clean up after a lost run host:', cause)
+          })
       }
       this.update(progress, {
         phase: 'failed',
@@ -853,7 +872,11 @@ export class ContainerRunService {
       // guest over the container's stdio link (decision A17), and a host process
       // resolves its own. This process's environment, and so every terminal or
       // tool it spawns meanwhile, never holds it.
-      if (this.deps.runHost !== null && canHostOutsideApp(request.model)) {
+      if (
+        this.deps.runHost !== null &&
+        canHostOutsideApp(request.model) &&
+        this.deps.keysOpenOutsideApp()
+      ) {
         const detach = new AbortController()
         this.hostedRuns.set(request.threadId, detach)
         return await this.deps.runHost(

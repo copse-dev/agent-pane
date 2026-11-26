@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { LLMMessage } from '@shared/types'
-import { setLastMeasuredInputTokens } from '@copse/agent/trim-history.ts'
+import { setLastInputMeasurement } from '@copse/agent/trim-history.ts'
 import {
   contextPressureChunk,
   prepareAgentHistory,
@@ -35,13 +35,16 @@ describe('prepareAgentHistory', () => {
         { role: 'tool', toolResults: [{ toolCallId: `tc${String(i)}`, result: 'ok' }] },
       ]).flat(),
     ]
-    setLastMeasuredInputTokens(1_000_000)
+    // Anchored in this very history, so only the explicit opt-out ignores it.
+    const tail = messages.at(-1)
+    assert.ok(tail)
+    setLastInputMeasurement({ tokens: 1_000_000, through: tail })
     try {
       const prepared = prepareAgentHistory(messages, 128_000, 0)
       assert.equal(prepared.wasTrimmed, false)
       assert.equal(prepared.trimmed.length, messages.length)
     } finally {
-      setLastMeasuredInputTokens(null)
+      setLastInputMeasurement(null)
     }
   })
 })
