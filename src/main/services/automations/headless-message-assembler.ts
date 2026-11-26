@@ -161,6 +161,11 @@ export function createHeadlessAutomationRun(
           } else if (chunk.channel === 'thought') {
             appendReasoning(store, bubbleAfterTools(), chunk.content.text)
           } else {
+            // Match the shared reducer: only a repeated ACP message id continues
+            // text across a tool event.
+            if (chunk.messageId !== undefined && chunk.messageId === previousId) {
+              toolSinceText = false
+            }
             appendText(chunk.content.text)
           }
           rememberAcpOwner(chunk.channel, chunk.messageId)
