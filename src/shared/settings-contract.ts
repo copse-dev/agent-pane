@@ -163,6 +163,7 @@ export interface SettingsValues {
   deferredWorktreesEnabled: boolean
   containerRunsEnabled: boolean
   planModeEnabled: boolean
+  githubCredentialBrokerEnabled: boolean
   advisorModel: string
   orchestrationStrategyEnabled: boolean
   orchestrationWorkerModel: string

@@ -105,6 +105,10 @@
       "smoke": null
     },
     {
+      "prefix": "src/main/services/credential-broker/",
+      "smoke": null
+    },
+    {
       "prefix": "src/main/services/isolated-desktop/",
       "smoke": null
     },

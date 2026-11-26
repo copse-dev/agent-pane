@@ -39,6 +39,8 @@ const fakeSandboxWrap: Parameters<typeof createLocalExecutionRuntime>[0] = {
   isSandboxEnabled: () => true,
   isSpawnableWorkingDirectory: () => Promise.resolve(true),
   releaseSandboxLease: () => {},
+  brokerGitHub: () => Promise.resolve(null),
+  platform: process.platform,
 }
 
 const adapters: AdapterCase[] = [
