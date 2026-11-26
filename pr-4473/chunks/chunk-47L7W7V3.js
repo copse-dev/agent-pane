@@ -27824,6 +27824,8 @@ function refreshAgentRunPayload(store, threadId, { reviewContext: _stale, execut
     // The composer's reasoning dial, read at dispatch time for the same reason:
     // turning it up while a message sits queued should apply to that message.
     ...thread?.reasoning !== void 0 ? { reasoning: thread.reasoning } : {},
+    // The thread's named profile, so main adds its current instructions.
+    ...thread?.profileId !== void 0 ? { profileId: thread.profileId } : {},
     // C3: thread the turn-tree epoch + the machine turns already spent so the
     // main-process continuation ledger keys and seeds the same counter this
     // renderer enforces at drain time (decision 5 / 16). Read at dispatch time so
@@ -31555,944 +31557,483 @@ var init_machines_section = __esm({
   }
 });
 
-// src/shared/web-search.ts
-function resolveWebSearchProvider(value) {
-  return value === "tavily" || value === "parallel" ? value : "none";
+// packages/llm/src/model-parameters.ts
+function isEmptyModelParameters(params) {
+  return params.reasoning === void 0 && params.verbosity === void 0 && params.maxOutputTokens === void 0 && SAMPLING_FIELDS.every((field) => params[field] === void 0);
 }
-var WEB_SEARCH_PROVIDERS, WEB_SEARCH_LABELS;
-var init_web_search = __esm({
-  "src/shared/web-search.ts"() {
-    WEB_SEARCH_PROVIDERS = ["none", "tavily", "parallel"];
-    WEB_SEARCH_LABELS = {
-      none: "Not configured",
-      tavily: "Tavily",
-      parallel: "Parallel"
+function matchesFamily(modelId, prefixes) {
+  return prefixes.some((prefix) => modelId.startsWith(prefix));
+}
+function matchesOpenAiFamily(modelId, prefixes) {
+  return prefixes.some((prefix) => hasModelIdPrefix(modelId, prefix));
+}
+function claudeSupport(modelId) {
+  const withoutOff = (ladder) => matchesFamily(modelId, CLAUDE_THINKING_ALWAYS_ON) ? ladder.filter((level) => level !== "off") : ladder;
+  if (matchesFamily(modelId, CLAUDE_EFFORT_NO_SAMPLING)) {
+    return {
+      reasoning: withoutOff(FULL_EFFORT_LADDER),
+      reasoningWire: "anthropic-effort",
+      sampling: [],
+      outputCap: false,
+      verbosity: [],
+      temperatureMax: 1
     };
   }
-});
-
-// src/renderer/views/setup/api-keys-section.ts
-function keyStatusClass(ok) {
-  if (ok === true) return "key-status ok";
-  if (ok === false) return "key-status err";
-  return "key-status";
-}
-function createApiKeysSection(api, opts = {}) {
-  const legend = opts.legend ?? "API Keys";
-  const providers = opts.providers ?? ["anthropic", "openai", "openrouter", "cursor"];
-  const validateOnInput = opts.validateOnInput ?? true;
-  const fields = providers.map((provider) => {
-    const config2 = API_KEY_PROVIDER_CONFIGS[provider];
-    const input2 = el("input", {
-      type: "password",
-      name: config2.name,
-      placeholder: config2.placeholder,
-      autocomplete: "off"
-    });
-    const status = el("span", { class: "key-status", "data-key": provider });
-    const atRest = el("span", { class: "key-status", "data-at-rest": provider });
-    const label = el(
-      "label",
-      {},
-      config2.label,
-      input2,
-      status,
-      atRest,
-      el("span", { class: "field-hint" }, config2.hint)
-    );
-    return { ...config2, input: input2, status, atRest, label };
-  });
-  const plaintextNote = el(
-    "p",
-    { class: "field-hint", "data-at-rest-note": "", hidden: true },
-    "One or more keys are stored unencrypted because the OS secure storage is unavailable. Install and unlock a system keyring to encrypt them at rest."
-  );
-  const fieldset = el(
-    "fieldset",
-    {},
-    el("legend", {}, legend),
-    ...fields.map((field) => field.label),
-    plaintextNote
-  );
-  let generation = 0;
-  const validationTimers = /* @__PURE__ */ new Map();
-  async function validateField(provider, input2, statusEl) {
-    const mine = generation;
-    const value = input2.value.trim();
-    if (!value) {
-      statusEl.replaceChildren();
-      statusEl.className = "key-status";
-      return;
-    }
-    setInlineStatus(statusEl, "pending", "Checking\u2026");
-    statusEl.className = "key-status";
-    const result = await api.settings.validateKey(provider, value);
-    if (mine !== generation || input2.value.trim() !== value) return;
-    if (result.ok) {
-      setInlineStatus(statusEl, "ok", "Valid key");
-      statusEl.className = keyStatusClass(true);
-    } else {
-      setInlineStatus(statusEl, "error", result.error ?? "Invalid key");
-      statusEl.className = keyStatusClass(false);
-    }
-  }
-  function bindValidation(provider, input2, statusEl) {
-    if (!validateOnInput) return;
-    input2.addEventListener("input", () => {
-      const existing = validationTimers.get(provider);
-      if (existing) clearTimeout(existing);
-      validationTimers.set(
-        provider,
-        setTimeout(() => {
-          void validateField(provider, input2, statusEl);
-        }, 500)
-      );
-    });
-  }
-  for (const field of fields) {
-    bindValidation(field.provider, field.input, field.status);
-  }
-  async function refreshKeyStatus(signal) {
-    const mine = generation;
-    if (signal?.aborted) return;
-    let anyPlaintext = false;
-    for (const field of fields) {
-      const saved = await api.settings.getKey(field.provider);
-      if (mine !== generation || signal?.aborted) return;
-      if (!field.input.value.trim()) {
-        setInlineStatus(field.status, saved ? "filled" : "idle", saved ? "saved" : "not set");
-        field.status.className = "key-status";
-      }
-      const encrypted = saved ? await api.settings.getKeyEncrypted(field.provider) : null;
-      if (mine !== generation || signal?.aborted) return;
-      if (encrypted === true) {
-        setInlineStatus(field.atRest, "ok", "Encrypted by OS keychain");
-        field.atRest.className = "key-status";
-      } else if (encrypted === false) {
-        anyPlaintext = true;
-        setInlineStatus(field.atRest, "warn", "Stored unencrypted");
-        field.atRest.className = "key-status";
-      } else {
-        field.atRest.replaceChildren();
-        field.atRest.className = "key-status";
-      }
-    }
-    plaintextNote.hidden = !anyPlaintext;
-  }
-  async function confirmPlaintextStorage(provider) {
-    const label = API_KEY_PROVIDER_CONFIGS[provider].label;
-    return showConfirmDialog({
-      message: `No OS keyring is available to encrypt your ${label} at rest. Install and unlock a system keyring to store it encrypted.`,
-      detail: "Store it unencrypted on this machine anyway?",
-      confirmLabel: "Store anyway"
-    });
-  }
-  async function saveKeys() {
-    let savedAny = false;
-    const failures = [];
-    for (const field of fields) {
-      const key = field.input.value.trim();
-      if (!key) {
-        field.input.value = "";
-        continue;
-      }
-      let result = await api.settings.setKey(field.provider, key);
-      if (!result.ok && result.reason === "plaintext-consent-required" && await confirmPlaintextStorage(field.provider)) {
-        result = await api.settings.setKey(field.provider, key, { allowPlaintext: true });
-      }
-      if (result.ok) {
-        field.input.value = "";
-        savedAny = true;
-      } else {
-        const message = result.reason === "plaintext-storage-disabled" ? `Not saved: ${PLAINTEXT_STORAGE_DISABLED_REASON}` : "Not saved: unencrypted storage declined";
-        failures.push(message);
-        setInlineStatusMarkdown(field.status, "error", message);
-        field.status.className = keyStatusClass(false);
-      }
-    }
-    if (savedAny) await refreshKeyStatus();
-    return failures.length === 0;
-  }
-  return {
-    root: fieldset,
-    refreshKeyStatus,
-    saveKeys,
-    reset: () => {
-      generation += 1;
-      for (const timer of validationTimers.values()) clearTimeout(timer);
-      validationTimers.clear();
-      for (const field of fields) {
-        field.input.value = "";
-        field.status.replaceChildren();
-      }
-    }
-  };
-}
-var PLAINTEXT_STORAGE_DISABLED_REASON, API_KEY_PROVIDER_CONFIGS;
-var init_api_keys_section = __esm({
-  "src/renderer/views/setup/api-keys-section.ts"() {
-    init_helpers();
-    init_inline_status();
-    init_confirm_dialog();
-    PLAINTEXT_STORAGE_DISABLED_REASON = "secure storage is unavailable and plaintext secret storage is disabled. Start Copse with `COPSE_ALLOW_PLAINTEXT_SECRETS=1` to opt in.";
-    API_KEY_PROVIDER_CONFIGS = {
-      tavily: {
-        provider: "tavily",
-        name: "tavilyKey",
-        label: "Tavily API key",
-        placeholder: "tvly-\u2026",
-        hint: "Basic search uses one API credit per request. Generated answers are disabled."
-      },
-      anthropic: {
-        provider: "anthropic",
-        name: "anthropicKey",
-        label: "Anthropic API key",
-        placeholder: "sk-ant-\u2026",
-        hint: "Checked with a free request, so no tokens are charged."
-      },
-      openai: {
-        provider: "openai",
-        name: "openaiKey",
-        label: "OpenAI API key",
-        placeholder: "sk-\u2026",
-        hint: "Checked with a free request, so no tokens are charged."
-      },
-      cursor: {
-        provider: "cursor",
-        name: "cursorKey",
-        label: "Cursor API key",
-        placeholder: "cur_\u2026",
-        hint: "For runs on Cursor\u2019s machines. Checked with a free request."
-      },
-      openrouter: {
-        provider: "openrouter",
-        name: "openrouterKey",
-        label: "OpenRouter API key",
-        placeholder: "sk-or-\u2026",
-        hint: "One key for Claude, GPT, Gemini, Llama, and more. Checked with a free request."
-      },
-      github: {
-        provider: "github",
-        name: "githubKey",
-        label: "GitHub token",
-        placeholder: "github_pat_\u2026 or ghp_\u2026",
-        hint: "Lets the Claude cloud agent clone your repository, push branches, and open pull requests. Use a fine-grained token with repository access."
-      },
-      "artificial-analysis": {
-        provider: "artificial-analysis",
-        name: "artificialAnalysisKey",
-        label: "Artificial Analysis API key",
-        placeholder: "aa-\u2026",
-        hint: "Optional: live Intelligence Index data for the model value map, including models beyond the curated list. Free key from artificialanalysis.ai (their terms require the attribution shown on the map)."
-      },
-      parallel: {
-        provider: "parallel",
-        name: "parallelKey",
-        label: "Parallel API key",
-        placeholder: "Parallel API key",
-        hint: "Used only for the direct Search API. Requests may be billable; ZDR depends on your Parallel account agreement."
-      }
+  if (matchesFamily(modelId, CLAUDE_EFFORT_WITH_SAMPLING)) {
+    return {
+      reasoning: CAPPED_EFFORT_LADDER,
+      reasoningWire: "anthropic-effort",
+      sampling: ANTHROPIC_SAMPLING,
+      outputCap: false,
+      verbosity: [],
+      temperatureMax: 1
     };
   }
-});
-
-// src/renderer/views/settings/web-search-section.ts
-function createWebSearchSection(api) {
-  const provider = el("select", { name: "webSearchProvider" });
-  for (const value of WEB_SEARCH_PROVIDERS) {
-    provider.append(el("option", { value }, WEB_SEARCH_LABELS[value]));
-  }
-  const tavily = createApiKeysSection(api, {
-    legend: "Tavily account",
-    providers: ["tavily"],
-    validateOnInput: false
-  });
-  const parallel = createApiKeysSection(api, {
-    legend: "Parallel account",
-    providers: ["parallel"],
-    validateOnInput: false
-  });
-  const note = el(
-    "p",
-    { class: "field-hint" },
-    "Queries and returned excerpts are included in the conversation. Provider retention and usage terms apply. Saving credentials does not run a search."
-  );
-  const root = el(
-    "fieldset",
-    {},
-    el("legend", {}, "Search provider"),
-    el("label", {}, "Default provider", provider),
-    tavily.root,
-    parallel.root,
-    note
-  );
-  const sync = () => {
-    tavily.root.hidden = provider.value !== "tavily";
-    parallel.root.hidden = provider.value !== "parallel";
-  };
-  provider.addEventListener("change", sync);
-  provider.value = "none";
-  sync();
   return {
-    root,
-    refresh: async (snapshot, signal) => {
-      if (signal.aborted) return;
-      provider.value = resolveWebSearchProvider(snapshot.webSearchProvider);
-      sync();
-      await Promise.all([tavily.refreshKeyStatus(signal), parallel.refreshKeyStatus(signal)]);
-    },
-    collect: (dirty) => dirty.has("webSearchProvider") ? { webSearchProvider: resolveWebSearchProvider(provider.value) } : {},
-    saveKeys: async () => {
-      if (provider.value === "tavily") return tavily.saveKeys();
-      if (provider.value === "parallel") return parallel.saveKeys();
-      return true;
-    },
-    reset: () => {
-      tavily.reset();
-      parallel.reset();
-    }
+    reasoning: BUDGET_LADDER,
+    reasoningWire: "anthropic-budget",
+    sampling: ANTHROPIC_SAMPLING,
+    outputCap: false,
+    verbosity: [],
+    temperatureMax: 1
   };
 }
-var init_web_search_section = __esm({
-  "src/renderer/views/settings/web-search-section.ts"() {
-    init_web_search();
-    init_helpers();
-    init_api_keys_section();
+function openAiVerbosity(modelId) {
+  if (!matchesFamily(modelId, OPENAI_VERBOSITY_PREFIXES)) return [];
+  if (OPENAI_VERBOSITY_EXCLUDED.some((marker) => modelId.includes(marker))) return [];
+  return VERBOSITY_LEVELS;
+}
+function openAiSupport(modelId) {
+  if (matchesOpenAiFamily(modelId, OPENAI_GPT6_PREFIXES)) {
+    return {
+      reasoning: OPENAI_GPT6_LADDER,
+      reasoningWire: "openai-effort",
+      sampling: [],
+      outputCap: false,
+      verbosity: openAiVerbosity(modelId),
+      temperatureMax: 2
+    };
   }
-});
-
-// src/renderer/views/setup/ssh-workspace-section.ts
-function createSshWorkspaceSection(api, opts = {}) {
-  const hostList = el("div", { class: "ssh-host-list" });
-  const status = el("span", { class: "ssh-host-status" });
-  const enabledInput = el("input", { type: "checkbox", name: "sshWorkspaceEnabled" });
-  const strictSelect = el("select", { name: "sshStrictHostKeys" });
-  strictSelect.append(
-    el("option", { value: "accept-new" }, "Accept new host keys (recommended)"),
-    el("option", { value: "strict" }, "Strict: reject unknown host keys")
-  );
-  const hostFields = createSshHostFields();
-  const form = el(
-    "div",
-    { class: "ssh-host-form" },
-    ...hostFields.fields,
-    el(
-      "div",
-      { class: "provider-actions" },
-      el("button", { type: "button", class: "ui-btn ui-btn-primary ssh-host-save" }, "Save host"),
-      el("button", { type: "button", class: "ui-btn ui-btn-secondary ssh-host-clear" }, "Clear")
-    )
-  );
-  async function persistHosts(next) {
-    await api.settings.set("sshWorkspaceHosts", next);
-    await renderHosts();
-    opts.onChanged?.();
+  if (matchesOpenAiFamily(modelId, OPENAI_REASONING_PREFIXES)) {
+    return {
+      reasoning: OPENAI_LADDER,
+      reasoningWire: "openai-effort",
+      sampling: [],
+      outputCap: false,
+      verbosity: openAiVerbosity(modelId),
+      temperatureMax: 2
+    };
   }
-  function clearDraft() {
-    hostFields.reset();
+  return {
+    reasoning: [],
+    reasoningWire: "none",
+    sampling: OPENAI_SAMPLING,
+    outputCap: false,
+    verbosity: openAiVerbosity(modelId),
+    temperatureMax: 2
+  };
+}
+function modelParameterSupport(model) {
+  const selection2 = parseModelSelection(model);
+  if (selection2.namespace === "chatgpt-plan") {
+    return { ...openAiSupport(selection2.modelId), sampling: [], outputCap: false };
   }
-  async function renderHosts(signal) {
-    if (signal?.aborted) return;
-    clear(hostList);
-    const [rawHosts, credentialHostIds] = await Promise.all([
-      api.settings.get("sshWorkspaceHosts"),
-      api.sshWorkspace.listCredentialHostIds()
+  if (AGENT_NAMESPACES.has(selection2.namespace)) {
+    return {
+      ...NO_PARAMETERS,
+      unavailableReason: "This selection runs the whole turn in its own agent, which owns these settings."
+    };
+  }
+  if (selection2.namespace === "auto") {
+    return {
+      ...NO_PARAMETERS,
+      unavailableReason: "This is a rule that picks a model per chat. Parameters follow the model it picks, so pin one to tune it."
+    };
+  }
+  if (selection2.namespace === "cloud") {
+    const provider = firstPartyProviderOf(selection2);
+    if (provider === "anthropic") return claudeSupport(selection2.modelId);
+    if (provider === "openai") return openAiSupport(selection2.modelId);
+    return {
+      reasoning: [],
+      reasoningWire: "none",
+      sampling: UNIVERSAL_SAMPLING,
+      outputCap: false,
+      verbosity: [],
+      temperatureMax: 2
+    };
+  }
+  return {
+    reasoning: OPENAI_COMPATIBLE_LADDER,
+    reasoningWire: selection2.namespace === "openrouter" ? "openrouter" : "openai-effort",
+    sampling: OPENAI_COMPATIBLE_SAMPLING,
+    outputCap: selection2.namespace === "openrouter" || selection2.namespace === "lmstudio",
+    // Not OpenAI's endpoint, so never OpenAI's field: local servers and
+    // aggregators reject or silently drop unknown body fields.
+    verbosity: [],
+    temperatureMax: 2,
+    upstreamDecides: true
+  };
+}
+function roundToStep(value) {
+  return Math.round(value * 100) / 100;
+}
+function sanitizeSampling(field, value, temperatureMax) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return void 0;
+  const bounds = SAMPLING_BOUNDS[field];
+  const max = field === "temperature" ? temperatureMax : bounds.max;
+  const clamped = clamp(value, bounds.min, max);
+  return bounds.integer ? Math.round(clamped) : roundToStep(clamped);
+}
+function sanitizeModelParameters(params, model, support = modelParameterSupport(model)) {
+  const sanitized = {};
+  if (params.reasoning !== void 0 && support.reasoning.includes(params.reasoning)) {
+    sanitized.reasoning = params.reasoning;
+  }
+  if (params.verbosity !== void 0 && support.verbosity.includes(params.verbosity)) {
+    sanitized.verbosity = params.verbosity;
+  }
+  if (support.outputCap && typeof params.maxOutputTokens === "number" && Number.isFinite(params.maxOutputTokens)) {
+    sanitized.maxOutputTokens = Math.round(clamp(params.maxOutputTokens, 256, 1e6));
+  }
+  for (const field of support.sampling) {
+    const value = sanitizeSampling(field, params[field], support.temperatureMax);
+    if (value !== void 0) sanitized[field] = value;
+  }
+  return sanitized;
+}
+function findRecommendation(model) {
+  const selection2 = parseModelSelection(model);
+  if (AGENT_NAMESPACES.has(selection2.namespace) || selection2.namespace === "auto") return void 0;
+  const id = selection2.modelId.toLowerCase();
+  return RECOMMENDATIONS.find((entry) => id.includes(entry.match));
+}
+function recommendedModelParameters(model) {
+  const match = findRecommendation(model);
+  if (!match) return null;
+  const params = sanitizeModelParameters(match.params, model);
+  if (isEmptyModelParameters(params)) return null;
+  return {
+    label: match.label,
+    source: match.source,
+    ...match.sourceLabel ? { sourceLabel: match.sourceLabel } : {},
+    params,
+    ...match.outputCeiling ? { outputCeiling: match.outputCeiling } : {}
+  };
+}
+function decodeNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : void 0;
+}
+function decodeModelParameters(value) {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+  const record2 = { ...value };
+  const params = {};
+  if (isReasoningLevel(record2["reasoning"])) params.reasoning = record2["reasoning"];
+  if (isVerbosityLevel(record2["verbosity"])) params.verbosity = record2["verbosity"];
+  const maxOutputTokens = decodeNumber(record2["maxOutputTokens"]);
+  if (maxOutputTokens !== void 0) params.maxOutputTokens = maxOutputTokens;
+  for (const field of SAMPLING_FIELDS) {
+    const value2 = decodeNumber(record2[field]);
+    if (value2 !== void 0) params[field] = value2;
+  }
+  return params;
+}
+function decodeModelParametersMap(value) {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+  const out = {};
+  for (const [model, entry] of Object.entries(value)) {
+    if (!model) continue;
+    const params = decodeModelParameters(entry);
+    if (!isEmptyModelParameters(params)) out[model] = params;
+  }
+  return out;
+}
+var REASONING_LEVELS, isReasoningLevel, VERBOSITY_LEVELS, isVerbosityLevel, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_COMPATIBLE_SAMPLING, OPENAI_SAMPLING, ANTHROPIC_SAMPLING, UNIVERSAL_SAMPLING, AGENT_NAMESPACES, CLAUDE_EFFORT_NO_SAMPLING, CLAUDE_EFFORT_WITH_SAMPLING, CLAUDE_THINKING_ALWAYS_ON, OPENAI_REASONING_PREFIXES, OPENAI_GPT6_PREFIXES, FULL_EFFORT_LADDER, CAPPED_EFFORT_LADDER, BUDGET_LADDER, OPENAI_LADDER, OPENAI_GPT6_LADDER, OPENAI_COMPATIBLE_LADDER, OPENAI_VERBOSITY_PREFIXES, OPENAI_VERBOSITY_EXCLUDED, SAMPLING_BOUNDS, RECOMMENDATIONS;
+var init_model_parameters = __esm({
+  "packages/llm/src/model-parameters.ts"() {
+    init_clamp();
+    init_model_catalog();
+    init_model_families();
+    init_model_selection();
+    init_member_of();
+    REASONING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+    isReasoningLevel = memberOf(REASONING_LEVELS);
+    VERBOSITY_LEVELS = ["low", "medium", "high"];
+    isVerbosityLevel = memberOf(VERBOSITY_LEVELS);
+    SAMPLING_FIELDS = [
+      "temperature",
+      "topP",
+      "topK",
+      "minP",
+      "presencePenalty",
+      "repetitionPenalty"
+    ];
+    NO_PARAMETERS = {
+      reasoning: [],
+      reasoningWire: "none",
+      sampling: [],
+      outputCap: false,
+      verbosity: [],
+      temperatureMax: 1
+    };
+    OPENAI_COMPATIBLE_SAMPLING = SAMPLING_FIELDS;
+    OPENAI_SAMPLING = ["temperature", "topP", "presencePenalty"];
+    ANTHROPIC_SAMPLING = ["temperature", "topP", "topK"];
+    UNIVERSAL_SAMPLING = ["temperature", "topP"];
+    AGENT_NAMESPACES = /* @__PURE__ */ new Set([
+      "acp",
+      "remote-agent",
+      "plugin-model"
     ]);
-    if (signal?.aborted) return;
-    const list = parseSshWorkspaceHosts(rawHosts);
-    const credentialHosts = new Set(credentialHostIds);
-    if (list.length === 0) {
-      hostList.append(el("p", { class: "field-hint" }, "No SSH hosts configured yet."));
-      return;
-    }
-    for (const host of list) {
-      const row = el("div", { class: "ssh-host-row" });
-      const target = host.user ? `${host.user}@${host.host}` : host.host;
-      const hasSavedAuthentication = credentialHosts.has(host.id);
-      const summary = el(
-        "div",
-        { class: "ssh-host-summary" },
-        el("div", {}, el("strong", {}, host.label), `: ${target}`),
-        el(
-          "div",
-          {
-            class: hasSavedAuthentication ? "ssh-host-auth ssh-host-auth-saved" : "ssh-host-auth"
-          },
-          hasSavedAuthentication ? "Authentication encrypted by OS keychain" : "Authentication will be requested when you connect"
-        )
-      );
-      const actions = el(
-        "div",
-        { class: "ssh-host-row-actions" },
-        el("button", { type: "button", class: "ssh-host-edit" }, "Edit")
-      );
-      if (hasSavedAuthentication) {
-        const forget = el(
-          "button",
-          { type: "button", class: "ssh-host-forget-auth" },
-          "Forget authentication"
-        );
-        forget.addEventListener("click", () => {
-          void api.sshWorkspace.forgetCredentials(host.id).then(() => {
-            setInlineStatus(status, "ok", `Forgot authentication for \u201C${host.label}\u201D.`);
-            return renderHosts();
-          });
-        });
-        actions.append(forget);
+    CLAUDE_EFFORT_NO_SAMPLING = [
+      "claude-opus-5",
+      "claude-opus-4-8",
+      "claude-opus-4-7",
+      "claude-sonnet-5",
+      "claude-fable-5",
+      "claude-mythos-5",
+      "claude-mythos-preview"
+    ];
+    CLAUDE_EFFORT_WITH_SAMPLING = [
+      "claude-opus-4-6",
+      "claude-sonnet-4-6",
+      "claude-opus-4-5"
+    ];
+    CLAUDE_THINKING_ALWAYS_ON = [
+      "claude-opus-5-5",
+      "claude-sonnet-5-5",
+      "claude-fable-5",
+      "claude-mythos-5",
+      "claude-mythos-preview"
+    ];
+    OPENAI_REASONING_PREFIXES = ["gpt-5", "o1", "o3", "o4"];
+    OPENAI_GPT6_PREFIXES = ["gpt-6-astra", "gpt-6.1-sol"];
+    FULL_EFFORT_LADDER = [
+      "off",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ];
+    CAPPED_EFFORT_LADDER = ["off", "low", "medium", "high", "max"];
+    BUDGET_LADDER = ["off", "low", "medium", "high"];
+    OPENAI_LADDER = ["minimal", "low", "medium", "high"];
+    OPENAI_GPT6_LADDER = ["low", "medium", "high", "xhigh", "max"];
+    OPENAI_COMPATIBLE_LADDER = [
+      "off",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ];
+    OPENAI_VERBOSITY_PREFIXES = ["gpt-5", "gpt-6"];
+    OPENAI_VERBOSITY_EXCLUDED = ["codex", "-chat", "search"];
+    SAMPLING_BOUNDS = {
+      temperature: { min: 0, max: 2 },
+      topP: { min: 0, max: 1, neutral: 1 },
+      // Upper bound is generous rather than principled: servers differ, and 0
+      // (llama.cpp) or -1 (vLLM) both mean "consider everything".
+      topK: { min: 0, max: 500, integer: true, neutral: 0 },
+      minP: { min: 0, max: 1, neutral: 0 },
+      presencePenalty: { min: -2, max: 2, neutral: 0 },
+      // 1 is the identity here, not 0 — the value divides the logits of tokens
+      // already seen, so 0 would be a hard ban rather than no penalty.
+      repetitionPenalty: { min: 0, max: 2, neutral: 1 }
+    };
+    RECOMMENDATIONS = [
+      {
+        match: "glm-4.7-flash",
+        label: "Z.ai\u2019s coding-agent recipe",
+        source: "https://huggingface.co/zai-org/GLM-4.7-Flash#evaluation-parameters",
+        // The model card's Terminal Bench / SWE Bench settings, checked 2026-10-01.
+        // Its general-task recipe uses different sampling and a larger ceiling;
+        // Copse's coding tool loop uses the coding benchmark profile. The card does
+        // not specify a reasoning-effort value or repetition penalty for this set.
+        params: { temperature: 0.7, topP: 1, maxOutputTokens: 16384 }
+      },
+      {
+        match: "glm-5.3-flash",
+        label: "Copse\u2019s experimental balanced agent profile",
+        source: "https://github.com/copse-dev/agent-pane/blob/main/docs/spikes/glm-5-3-flash-terminal-bench-profile.md",
+        sourceLabel: "paired Terminal-Bench record",
+        // Two provenances, and they disagree, so the row states which half is whose.
+        //
+        // Sampling is Z.ai's published recipe verbatim — its Recommended Settings
+        // say temperature 1 and top_p 0.95 (https://docs.z.ai/guides/llm/glm-5.3-flash).
+        // Copse's paired runs never varied sampling, so nothing in our record argues
+        // with the vendor here, and sending the pair pins it against an aggregator's
+        // own default drifting underneath us.
+        //
+        // Reasoning and the cap are ours, and `medium` is a deliberate departure from
+        // the same page's `reasoning_effort: max`. The counterbalanced Terminal-Bench
+        // 2.1 screen scored medium-plus-cap 4/6 against 2/6 for a max-effort uncapped
+        // baseline, on the shell-agent loop Copse actually runs. Z.ai recommends `max`
+        // for the model in general; we keep `medium` for this scenario on our own
+        // evidence. Like every recipe it applies by default (a user-set field replaces
+        // its value), but the row stays labelled experimental because that evidence is
+        // one benchmark on one host.
+        params: { reasoning: "medium", maxOutputTokens: 16384, temperature: 1, topP: 0.95 }
+      },
+      {
+        match: "deepseek-v4-flash",
+        label: "DeepSeek\u2019s agentic recipe",
+        source: "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731",
+        // The model card's agentic profile: max reasoning effort, temperature 1.0,
+        // and the tighter top_p it specifies for agentic scenarios (0.95) rather
+        // than the 1.0 it recommends otherwise. Copse runs a tool loop, so the
+        // agentic column is the applicable one.
+        params: { reasoning: "max", temperature: 1, topP: 0.95 },
+        // "For the `high` and `max` reasoning effort levels, we recommend a maximum
+        // output length of 384K tokens" — the deep levels spend the output budget on
+        // reasoning, so the card's own recipe needs the room it asks for.
+        outputCeiling: { tokens: 384e3, fromReasoning: "high" }
+      },
+      {
+        match: "qwen3.6-35b-a3b",
+        label: "Qwen\u2019s thinking-mode recipe",
+        source: "https://huggingface.co/Qwen/Qwen3.6-35B-A3B",
+        // The card publishes three sets, split by mode and task rather than by
+        // "agentic": thinking/general, thinking/precise-coding (temperature 0.6,
+        // presence_penalty 0), and instruct/non-thinking. This is the first.
+        //
+        // Choosing between the coding set and the general one is the only judgement
+        // in this row, and the card settles it: its own agentic evals — SWE-Bench on
+        // a "bash + file-edit tools" scaffold, Terminal-Bench 2.0 under an agent
+        // harness — ran temp=1.0, top_p=0.95, top_k=20, which is the general set.
+        // The coding set is for single-shot generation (its example is WebDev), not
+        // for a tool loop. Copse is the former shape.
+        //
+        // No `reasoning`: the model thinks by default and exposes no effort ladder,
+        // so the recipe is about sampling only. Sending an effort would be us
+        // inventing a control the card never names.
+        params: {
+          temperature: 1,
+          topP: 0.95,
+          topK: 20,
+          minP: 0,
+          presencePenalty: 1.5,
+          repetitionPenalty: 1
+        },
+        // "We recommend using an output length of 32,768 tokens for most queries.
+        // For benchmarking on highly complex problems … 81,920 tokens." Neither is
+        // conditioned on a depth — the model always thinks — so this applies on
+        // every turn.
+        //
+        // The larger of the two, because the card's own agent harness used it:
+        // Terminal-Bench 2.0 ran `max_tokens=80K`. 32,768 is the figure for "most
+        // queries", and a tool loop editing real files is not the average query;
+        // sending the smaller number would turn advice about *sufficient* space into
+        // a cap that truncates.
+        outputCeiling: { tokens: 81920 }
       }
-      actions.append(el("button", { type: "button", class: "ssh-host-delete" }, "Remove"));
-      row.append(summary, actions);
-      row.querySelector(".ssh-host-edit")?.addEventListener("click", () => {
-        hostFields.edit(host);
-      });
-      row.querySelector(".ssh-host-delete")?.addEventListener("click", () => {
-        void api.sshWorkspace.forgetCredentials(host.id).then(() => persistHosts(removeHost(list, host.id)));
-      });
-      hostList.append(row);
-    }
-  }
-  form.querySelector(".ssh-host-save")?.addEventListener("click", () => {
-    void (async () => {
-      const existing = parseSshWorkspaceHosts(await api.settings.get("sshWorkspaceHosts"));
-      const parsed2 = hostFields.parse(existing);
-      if (!parsed2.ok) {
-        setInlineStatus(status, "error", parsed2.error);
-        return;
-      }
-      await persistHosts(upsertHost(existing, parsed2.host));
-      setInlineStatus(status, "ok", `Saved host \u201C${parsed2.host.label}\u201D.`);
-      clearDraft();
-    })();
-  });
-  form.querySelector(".ssh-host-clear")?.addEventListener("click", () => {
-    clearDraft();
-    status.replaceChildren();
-  });
-  enabledInput.addEventListener("change", () => {
-    if (opts.deferOrdinaryWrites) return;
-    void api.settings.set("sshWorkspaceEnabled", enabledInput.checked).then(() => {
-      opts.onChanged?.();
-    });
-  });
-  strictSelect.addEventListener("change", () => {
-    if (opts.deferOrdinaryWrites) return;
-    void api.settings.set("sshStrictHostKeys", strictSelect.value).then(() => {
-      opts.onChanged?.();
-    });
-  });
-  function load(snapshot) {
-    enabledInput.checked = snapshot.sshWorkspaceEnabled === true;
-    strictSelect.value = snapshot.sshStrictHostKeys === "strict" ? "strict" : "accept-new";
-  }
-  async function refresh(signal) {
-    if (signal?.aborted) return;
-    if (!opts.deferOrdinaryWrites) {
-      const enabled = await api.settings.get("sshWorkspaceEnabled");
-      const strict = await api.settings.get("sshStrictHostKeys");
-      if (signal?.aborted) return;
-      enabledInput.checked = enabled === true;
-      strictSelect.value = strict === "strict" ? "strict" : "accept-new";
-    }
-    await renderHosts(signal);
-  }
-  const importBtn = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-secondary ssh-import-config" },
-    "Import from ~/.ssh/config"
-  );
-  importBtn.addEventListener("click", () => {
-    void (async () => {
-      const aliases = await api.sshWorkspace.listConfigAliases();
-      if (aliases.length === 0) {
-        setInlineStatus(status, "error", "No Host entries found in ~/.ssh/config.");
-        return;
-      }
-      const raw = await api.settings.get("sshWorkspaceHosts");
-      const existing = parseSshWorkspaceHosts(raw);
-      const imported = importSshConfigHosts(existing, aliases);
-      await persistHosts(imported.hosts);
-      if (imported.importedHostIds.length === 0) {
-        setInlineStatus(status, "ok", "All SSH config aliases are already imported.");
-        return;
-      }
-      setInlineStatus(
-        status,
-        "ok",
-        `Imported ${String(imported.importedHostIds.length)} alias(es) from SSH config.`
-      );
-    })();
-  });
-  const root = el(
-    "fieldset",
-    {},
-    el("legend", {}, "SSH workspaces"),
-    el(
-      "p",
-      { class: "settings-fieldset-desc" },
-      "Run shell, git, search, and file tools on a remote Linux host over SSH. Enable the feature below, add hosts here or in the ",
-      el("strong", {}, "Open remote folder"),
-      " dialog, then open a remote project from the projects panel.",
-      " Passwords and key passphrases can be encrypted with the OS keychain and managed per host."
-    ),
-    el("label", { class: "checkbox-label" }, enabledInput, " Enable SSH workspaces (experimental)"),
-    el("label", {}, "Host key policy ", strictSelect),
-    hostList,
-    importBtn,
-    form,
-    status
-  );
-  return {
-    root,
-    refresh,
-    load,
-    collect: (data, dirty) => ({
-      ...dirty.has("sshWorkspaceEnabled") ? { sshWorkspaceEnabled: data.has("sshWorkspaceEnabled") } : {},
-      ...dirty.has("sshStrictHostKeys") ? { sshStrictHostKeys: strictSelect.value === "strict" ? "strict" : "accept-new" } : {}
-    })
-  };
-}
-var init_ssh_workspace_section = __esm({
-  "src/renderer/views/setup/ssh-workspace-section.ts"() {
-    init_helpers();
-    init_inline_status();
-    init_ssh_host_helpers();
-    init_ssh_host_fields();
-    init_ssh_host_helpers();
+    ];
   }
 });
 
-// src/renderer/views/tool-permissions-panel.ts
-function cloneCatalog(catalog) {
-  return structuredClone(catalog);
+// src/shared/agent-profiles.ts
+function findAgentProfile(profiles, id) {
+  if (id === void 0) return void 0;
+  return profiles?.find((profile) => profile.id === id);
 }
-function groupMatches(group, query) {
-  if (!query) return true;
-  return [group.name, group.origin, group.originDetail, group.status].filter((value) => typeof value === "string").join(" ").toLowerCase().includes(query);
-}
-function matchingTools(group, query) {
-  if (groupMatches(group, query)) return group.tools;
-  return group.tools.filter(
-    (tool) => [tool.name, tool.executionName, tool.description].join(" ").toLowerCase().includes(query)
-  );
-}
-function groupPolicy(tools) {
-  const first = tools[0]?.policy;
-  if (!first || tools.some((tool) => tool.policy !== first)) return "mixed";
-  return first;
-}
-function withPolicy(catalog, toolIds, policy) {
-  return {
-    ...catalog,
-    groups: catalog.groups.map((group) => ({
-      ...group,
-      tools: group.tools.map(
-        (tool) => toolIds.has(tool.id) ? { ...tool, policy, overridden: true } : tool
-      )
-    }))
-  };
-}
-function withDefaults(catalog, toolIds) {
-  return {
-    ...catalog,
-    groups: catalog.groups.map((group) => ({
-      ...group,
-      tools: group.tools.map(
-        (tool) => toolIds.has(tool.id) ? { ...tool, policy: tool.defaultPolicy, overridden: false } : tool
-      )
-    }))
-  };
-}
-function createToolPermissionsPanel(api) {
-  const root = document.createElement("div");
-  root.className = "tool-permissions-panel";
-  const toolbar = document.createElement("div");
-  toolbar.className = "tool-permissions-toolbar";
-  const search = document.createElement("input");
-  search.type = "search";
-  search.className = "tool-permissions-search";
-  search.placeholder = "Search tools or servers\u2026";
-  search.autocomplete = "off";
-  search.spellcheck = false;
-  search.setAttribute("aria-label", "Search tool permissions");
-  const resetAll = document.createElement("button");
-  resetAll.type = "button";
-  resetAll.className = "ui-btn ui-btn-secondary tool-permissions-reset-all";
-  resetAll.textContent = "Reset all to defaults";
-  const status = document.createElement("span");
-  status.className = "tool-permissions-status";
-  status.setAttribute("role", "status");
-  status.setAttribute("aria-live", "polite");
-  toolbar.append(search, resetAll, status);
-  const groups = document.createElement("div");
-  groups.className = "tool-permissions-groups";
-  const empty = document.createElement("p");
-  empty.className = "tool-permissions-empty";
-  empty.hidden = true;
-  root.append(toolbar, groups, empty);
-  let catalog = null;
-  let loading = false;
-  let refreshGeneration = 0;
-  let pendingToolIds = /* @__PURE__ */ new Set();
-  let policyFocus = null;
-  const groupOpenState = /* @__PURE__ */ new Map();
-  const expandedDescriptions = /* @__PURE__ */ new Set();
-  root.addEventListener("focusin", (event) => {
-    const target = event.target;
-    if (!(target instanceof HTMLElement)) return;
-    const policy = target.dataset["policy"];
-    const toolId = target.closest(".tool-permission-row")?.dataset["toolId"];
-    policyFocus = target.classList.contains("tool-permission-choice") && toolId !== void 0 && isToolPermissionPolicy(policy) ? { toolId, policy } : null;
-  });
-  function allToolIds() {
-    return catalog?.groups.flatMap((group) => group.tools.map((tool) => tool.id)) ?? [];
+function newAgentProfileId(name, existing) {
+  const slug2 = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "profile";
+  const taken = new Set(existing.map((profile) => profile.id));
+  for (; ; ) {
+    const id = `${slug2}-${Math.random().toString(36).slice(2, 8).padEnd(6, "0")}`;
+    if (!taken.has(id)) return id;
   }
-  function setBusy(busy) {
-    root.dataset["pending"] = String(busy);
-    search.disabled = loading;
-    resetAll.disabled = busy || loading || !catalog?.groups.some((group) => group.tools.length > 0);
-  }
-  async function mutate(toolIds, optimistic, request) {
-    if (!catalog || toolIds.length === 0 || pendingToolIds.size > 0) return;
-    const before = cloneCatalog(catalog);
-    pendingToolIds = new Set(toolIds);
-    catalog = optimistic(catalog, pendingToolIds);
-    status.textContent = "Saving\u2026";
-    render();
-    try {
-      catalog = await request();
-      status.textContent = "Saved";
-    } catch (error62) {
-      catalog = before;
-      status.textContent = "Could not save: " + errorMessage(error62);
-      status.classList.add("is-error");
-    } finally {
-      pendingToolIds.clear();
-      render();
-    }
-  }
-  function selectPolicy(tool, policy) {
-    if (tool.overridden && tool.policy === policy || tool.disabledPolicies?.includes(policy)) {
-      return;
-    }
-    status.classList.remove("is-error");
-    void mutate(
-      [tool.id],
-      (current, ids) => withPolicy(current, ids, policy),
-      () => api.set({ toolIds: [tool.id], policy })
-    );
-  }
-  function policyControl(tool) {
-    const control = document.createElement("div");
-    control.className = "tool-permission-policy";
-    control.setAttribute("role", "radiogroup");
-    control.setAttribute("aria-label", "Permission for " + tool.name);
-    const buttons = [];
-    for (const policy of TOOL_PERMISSION_POLICIES) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "tool-permission-choice tool-permission-" + policy;
-      button.dataset["policy"] = policy;
-      button.setAttribute("role", "radio");
-      button.setAttribute("aria-checked", String(tool.policy === policy));
-      button.setAttribute("aria-label", POLICY_LABELS[policy] + " for " + tool.name);
-      button.title = POLICY_LABELS[policy];
-      button.tabIndex = (tool.overridden ? tool.policy : tool.defaultPolicy) === policy ? 0 : -1;
-      button.disabled = pendingToolIds.size > 0 || tool.disabledPolicies?.includes(policy) === true;
-      if (tool.disabledPolicies?.includes(policy) && tool.disabledReason) {
-        button.title = tool.disabledReason;
-        button.setAttribute("aria-description", tool.disabledReason);
-      }
-      button.append(POLICY_ICON[policy]("ui-icon ui-icon-sm"));
-      button.addEventListener("click", () => {
-        selectPolicy(tool, policy);
-      });
-      buttons.push(button);
-      control.append(button);
-    }
-    control.addEventListener("keydown", (event) => {
-      const current = buttons.findIndex((button) => button === document.activeElement);
-      if (current < 0) return;
-      let direction = 0;
-      let targetIndex = current;
-      if (event.key === "ArrowRight" || event.key === "ArrowDown") direction = 1;
-      else if (event.key === "ArrowLeft" || event.key === "ArrowUp") direction = -1;
-      else if (event.key === "Home") targetIndex = 0;
-      else if (event.key === "End") targetIndex = buttons.length - 1;
-      else return;
-      event.preventDefault();
-      if (direction !== 0) {
-        for (let offset = 1; offset <= buttons.length; offset += 1) {
-          const candidate = (current + direction * offset + buttons.length) % buttons.length;
-          if (!buttons[candidate]?.disabled) {
-            targetIndex = candidate;
-            break;
-          }
-        }
-      }
-      if (buttons[targetIndex]?.disabled) {
-        const enabledIndex = buttons.findIndex((button) => !button.disabled);
-        if (enabledIndex < 0) return;
-        targetIndex = enabledIndex;
-      }
-      buttons[targetIndex]?.focus();
-      buttons[targetIndex]?.click();
+}
+var AGENT_PROFILES_SETTING, AGENT_PROFILE_NAME_MAX, AGENT_PROFILE_INSTRUCTIONS_MAX, AGENT_PROFILES_MAX, agentProfileSchema, agentProfilesSchema;
+var init_agent_profiles = __esm({
+  "src/shared/agent-profiles.ts"() {
+    init_model_parameters();
+    init_zod();
+    AGENT_PROFILES_SETTING = "agentProfiles";
+    AGENT_PROFILE_NAME_MAX = 64;
+    AGENT_PROFILE_INSTRUCTIONS_MAX = 8192;
+    AGENT_PROFILES_MAX = 50;
+    agentProfileSchema = external_exports.object({
+      id: external_exports.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/),
+      name: external_exports.string().trim().min(1).max(AGENT_PROFILE_NAME_MAX),
+      model: external_exports.string().min(1).max(512).optional(),
+      reasoning: external_exports.enum(REASONING_LEVELS).optional(),
+      instructions: external_exports.string().max(AGENT_PROFILE_INSTRUCTIONS_MAX).optional()
     });
-    return control;
-  }
-  function toolRow(tool) {
-    const row = document.createElement("div");
-    row.className = "tool-permission-row";
-    row.dataset["toolId"] = tool.id;
-    row.dataset["policy"] = tool.policy;
-    row.dataset["overridden"] = String(tool.overridden);
-    if (pendingToolIds.has(tool.id)) row.dataset["pending"] = "true";
-    const copy = document.createElement("div");
-    copy.className = "tool-permission-copy";
-    const title = document.createElement("div");
-    title.className = "tool-permission-name";
-    title.append(tool.name);
-    const inherited = document.createElement("span");
-    inherited.className = "tool-permission-inherited";
-    inherited.textContent = "Default";
-    inherited.title = "Inherited default: " + POLICY_LABELS[tool.defaultPolicy];
-    inherited.setAttribute(
-      "aria-label",
-      "Using inherited default: " + POLICY_LABELS[tool.defaultPolicy]
-    );
-    inherited.hidden = tool.overridden;
-    title.append(inherited);
-    copy.append(title);
-    if (tool.description) {
-      const description = document.createElement("div");
-      description.className = "tool-permission-description";
-      description.id = "tool-description-" + tool.id;
-      description.innerHTML = renderMarkdown(tool.description, {
-        htmlPolicy: "escape-all",
-        sanitizerBackend: {
-          sanitize: (html, config2) => dompurifyBackend.sanitize(html, {
-            ...config2,
-            allowedTags: config2.allowedTags.filter((tag) => tag !== "img")
-          })
-        }
-      });
-      const expandable = tool.description.length > 240 || tool.description.includes("\n");
-      const expanded = expandedDescriptions.has(tool.id);
-      description.classList.toggle("is-collapsed", expandable && !expanded);
-      copy.append(description);
-      if (expandable) {
-        const toggle = document.createElement("button");
-        toggle.type = "button";
-        toggle.className = "tool-permission-description-toggle";
-        toggle.setAttribute("aria-controls", description.id);
-        const updateToggle = () => {
-          const open2 = expandedDescriptions.has(tool.id);
-          toggle.textContent = open2 ? "Show less" : "Show full description";
-          toggle.setAttribute("aria-expanded", String(open2));
-          toggle.setAttribute("aria-label", toggle.textContent + " for " + tool.name);
-          description.classList.toggle("is-collapsed", !open2);
-        };
-        updateToggle();
-        toggle.addEventListener("click", () => {
-          if (expandedDescriptions.has(tool.id)) expandedDescriptions.delete(tool.id);
-          else expandedDescriptions.add(tool.id);
-          updateToggle();
-        });
-        copy.append(toggle);
-      }
-    }
-    const actions = document.createElement("div");
-    actions.className = "tool-permission-actions";
-    actions.append(policyControl(tool));
-    const reset = document.createElement("button");
-    reset.type = "button";
-    reset.className = "tool-permission-reset";
-    reset.textContent = "Use default";
-    reset.setAttribute("aria-label", "Use default permission for " + tool.name);
-    reset.title = "Default: " + POLICY_LABELS[tool.defaultPolicy];
-    reset.hidden = !tool.overridden;
-    reset.disabled = pendingToolIds.size > 0;
-    reset.addEventListener("click", () => {
-      status.classList.remove("is-error");
-      void mutate(
-        [tool.id],
-        (current, ids) => withDefaults(current, ids),
-        () => api.reset({ toolIds: [tool.id] })
-      );
+    agentProfilesSchema = external_exports.array(agentProfileSchema).max(AGENT_PROFILES_MAX).refine((profiles) => new Set(profiles.map((profile) => profile.id)).size === profiles.length, {
+      message: "profile ids must be unique"
     });
-    actions.append(reset);
-    row.append(copy, actions);
-    return row;
   }
-  function groupSelect(group) {
-    const select = document.createElement("select");
-    select.className = "tool-permission-group-select";
-    select.setAttribute("aria-label", "Set all permissions in " + group.name);
-    const current = groupPolicy(group.tools);
-    const mixed = document.createElement("option");
-    mixed.value = "mixed";
-    mixed.textContent = "Mixed";
-    mixed.disabled = true;
-    select.append(mixed);
-    for (const policy of TOOL_PERMISSION_POLICIES) {
-      const option = document.createElement("option");
-      option.value = policy;
-      option.textContent = "Set all to " + POLICY_LABELS[policy].toLowerCase();
-      option.disabled = group.tools.some((tool) => tool.disabledPolicies?.includes(policy) === true);
-      select.append(option);
-    }
-    select.value = current;
-    select.disabled = pendingToolIds.size > 0 || group.tools.length === 0;
-    select.addEventListener("click", (event) => {
-      event.stopPropagation();
-    });
-    select.addEventListener("change", () => {
-      const policy = select.value;
-      if (!isToolPermissionPolicy(policy)) return;
-      const toolIds = group.tools.map((tool) => tool.id);
-      status.classList.remove("is-error");
-      void mutate(
-        toolIds,
-        (catalogBefore, ids) => withPolicy(catalogBefore, ids, policy),
-        () => api.set({ toolIds, policy })
-      );
-    });
-    return select;
-  }
-  function groupView(group, visibleTools) {
-    const details = document.createElement("details");
-    details.className = "tool-permission-group";
-    details.dataset["groupId"] = group.id;
-    details.open = groupOpenState.get(group.id) ?? true;
-    details.addEventListener("toggle", () => {
-      groupOpenState.set(group.id, details.open);
-    });
-    const summary = document.createElement("summary");
-    summary.className = "tool-permission-group-summary";
-    const disclosure = chevronDownIcon("ui-icon tool-permission-group-chevron");
-    const heading = document.createElement("span");
-    heading.className = "tool-permission-group-name";
-    heading.textContent = group.name;
-    const count = document.createElement("span");
-    count.className = "tool-permission-count";
-    count.textContent = String(group.tools.length);
-    count.setAttribute("aria-label", String(group.tools.length) + " tools");
-    summary.append(disclosure, heading, count);
-    if (group.origin) {
-      const origin = document.createElement("span");
-      origin.className = "tool-permission-group-origin";
-      origin.textContent = group.origin;
-      origin.title = group.originDetail ?? group.origin;
-      summary.append(origin);
-    }
-    if (group.status) {
-      const connection = document.createElement("span");
-      connection.className = "tool-permission-group-status";
-      connection.dataset["status"] = group.status;
-      connection.textContent = group.status;
-      summary.append(connection);
-    }
-    summary.append(groupSelect(group));
-    const list = document.createElement("div");
-    list.className = "tool-permission-list";
-    for (const tool of visibleTools) list.append(toolRow(tool));
-    if (visibleTools.length === 0) {
-      const noTools = document.createElement("p");
-      noTools.className = "tool-permission-group-empty";
-      noTools.textContent = "This server has not reported any tools.";
-      list.append(noTools);
-    }
-    details.append(summary, list);
-    return details;
-  }
-  function render() {
-    for (const detail of groups.querySelectorAll(".tool-permission-group")) {
-      const id = detail.dataset["groupId"];
-      if (id) groupOpenState.set(id, detail.open);
-    }
-    groups.innerHTML = "";
-    const query = search.value.trim().toLowerCase();
-    let visibleGroupCount = 0;
-    for (const group of catalog?.groups ?? []) {
-      const visibleTools = matchingTools(group, query);
-      if (visibleTools.length === 0 && !groupMatches(group, query)) continue;
-      visibleGroupCount += 1;
-      groups.append(groupView(group, visibleTools));
-    }
-    empty.hidden = visibleGroupCount > 0;
-    empty.textContent = query ? "No tools or servers match \u201C" + search.value.trim() + "\u201D." : "No tools are available yet.";
-    resetAll.hidden = !catalog?.groups.some((group) => group.tools.some((tool) => tool.overridden));
-    setBusy(pendingToolIds.size > 0);
-    if (policyFocus && pendingToolIds.size === 0) {
-      const focusedRow = [...groups.querySelectorAll(".tool-permission-row")].find(
-        (row) => row.dataset["toolId"] === policyFocus?.toolId
-      );
-      const focusedChoice = [
-        ...focusedRow?.querySelectorAll(".tool-permission-choice") ?? []
-      ].find((choice) => choice.dataset["policy"] === policyFocus?.policy);
-      focusedChoice?.focus({ preventScroll: true });
-    }
-  }
-  async function refresh(signal) {
-    if (signal?.aborted) return;
-    const request = ++refreshGeneration;
-    loading = true;
-    status.classList.remove("is-error");
-    status.textContent = "Loading\u2026";
-    setBusy(false);
-    try {
-      const loaded = await api.list();
-      if (signal?.aborted || request !== refreshGeneration) return;
-      catalog = loaded;
-      status.textContent = "";
-    } catch (error62) {
-      if (signal?.aborted || request !== refreshGeneration) return;
-      status.textContent = "Could not load tool permissions: " + errorMessage(error62);
-      status.classList.add("is-error");
-    } finally {
-      if (request === refreshGeneration) {
-        loading = false;
-        if (!signal?.aborted) render();
-      }
-    }
-  }
-  search.addEventListener("input", render);
-  resetAll.addEventListener("click", () => {
-    const toolIds = allToolIds();
-    status.classList.remove("is-error");
-    void mutate(
-      toolIds,
-      (current, ids) => withDefaults(current, ids),
-      () => api.reset({ toolIds })
-    );
-  });
-  render();
-  return {
-    root,
-    refresh,
-    focusSearch: () => {
-      search.focus();
-    }
-  };
-}
-var isToolPermissionPolicy, POLICY_LABELS, POLICY_ICON;
-var init_tool_permissions_panel = __esm({
-  "src/renderer/views/tool-permissions-panel.ts"() {
-    init_dist();
-    init_sanitize_dompurify();
-    init_errors4();
-    init_member_of2();
-    init_tool_permissions();
-    init_icons();
-    isToolPermissionPolicy = memberOf(TOOL_PERMISSION_POLICIES);
-    POLICY_LABELS = {
-      allow: "Always allow",
-      ask: "Always ask",
-      block: "Blocked"
+});
+
+// src/shared/openai-cloud-agent.ts
+var DEFAULT_OPENAI_AGENT_MODEL, OPENAI_AGENT_GROUP, OPENAI_AGENT_RETENTION_NOTICE;
+var init_openai_cloud_agent = __esm({
+  "src/shared/openai-cloud-agent.ts"() {
+    DEFAULT_OPENAI_AGENT_MODEL = "gpt-6.1-sol";
+    OPENAI_AGENT_GROUP = "OpenAI Cloud Agent (prototype)";
+    OPENAI_AGENT_RETENTION_NOTICE = {
+      label: "No ZDR",
+      detail: "OpenAI-hosted Agents API sessions retain session data and are not eligible for zero data retention (ZDR)."
     };
-    POLICY_ICON = {
-      allow: checkIcon,
-      ask: shieldIcon,
-      block: banIcon
+  }
+});
+
+// src/shared/acp-retention.ts
+var ACP_RETENTION_NOTICE;
+var init_acp_retention = __esm({
+  "src/shared/acp-retention.ts"() {
+    ACP_RETENTION_NOTICE = {
+      label: "ZDR not verified",
+      detail: "Zero data retention has not been verified for this agent route. The agent\u2019s signed-in account and upstream model provider determine retention and training. Running the agent on this device does not mean its model runs locally. Review the agent\u2019s data policy and account controls before sharing sensitive content."
+    };
+  }
+});
+
+// packages/llm/src/chatgpt-plan.ts
+function chatGptPlanModelValue(clientId, model) {
+  return `${CHATGPT_PLAN_MODEL_PREFIX}${clientId}#${model}`;
+}
+function parseChatGptPlanModel(value) {
+  const selection2 = parseModelSelection(value);
+  if (selection2.namespace !== "chatgpt-plan") return null;
+  if (!selection2.agent || !selection2.id) throw new Error("Choose a ChatGPT account and model.");
+  return { clientId: selection2.agent, model: selection2.id };
+}
+var init_chatgpt_plan = __esm({
+  "packages/llm/src/chatgpt-plan.ts"() {
+    init_model_selection();
+    init_reserved_prefixes();
+  }
+});
+
+// packages/llm/src/local-model-benchmarks.generated.ts
+var LOCAL_MODEL_BENCHMARKS;
+var init_local_model_benchmarks_generated = __esm({
+  "packages/llm/src/local-model-benchmarks.generated.ts"() {
+    LOCAL_MODEL_BENCHMARKS = {
+      "qwen/qwen2.5-coder-32b": {
+        "aider-edit": {
+          value: 72.9,
+          source: "Aider edit leaderboard (ollama/qwen2.5-coder:32b)",
+          asOf: "2024-11-28",
+          measuredBitsPerWeight: 4.5
+        },
+        "aider-polyglot": {
+          value: 16.4,
+          source: "Aider polyglot leaderboard (Qwen2.5-Coder-32B-Instruct)",
+          asOf: "2024-12-26",
+          measuredBitsPerWeight: 16
+        },
+        "humaneval-plus": {
+          value: 87.2,
+          source: "EvalPlus HumanEval+ leaderboard (Qwen2.5-Coder-32B-Instruct)",
+          asOf: "2026-07-07",
+          measuredBitsPerWeight: 16
+        }
+      }
     };
   }
 });
@@ -43093,135 +42634,6 @@ var init_model_intellect = __esm({
   }
 });
 
-// packages/llm/src/pareto-frontier.ts
-function blendedRate(inputPerMTok, outputPerMTok) {
-  return 0.8 * inputPerMTok + 0.2 * outputPerMTok;
-}
-function blendedPricePerMTok(info) {
-  return blendedRate(info.inputPricePerMTok, info.outputPricePerMTok);
-}
-function costOnAxis(c2, axis) {
-  if (axis === "blended") return c2.costPerMTok;
-  if (c2.local || c2.plan) return 0;
-  if (typeof c2.costPerTask === "number" && Number.isFinite(c2.costPerTask) && c2.costPerTask > 0) {
-    return c2.costPerTask;
-  }
-  return null;
-}
-function projectOntoCostAxis(candidates, axis) {
-  if (axis === "blended") {
-    return { plotted: [...candidates], missingAxisCost: [] };
-  }
-  const plotted = [];
-  const missingAxisCost = [];
-  for (const c2 of candidates) {
-    const cost = costOnAxis(c2, axis);
-    if (cost === null) {
-      missingAxisCost.push(c2);
-      continue;
-    }
-    const priorBlended = c2.blendedCostPerMTok ?? (c2.planDetail !== void 0 ? c2.planDetail.apiPricePerMTok : c2.costPerMTok);
-    const next = {
-      ...c2,
-      costPerMTok: cost
-    };
-    if (cost !== priorBlended || c2.plan || c2.local) {
-      next.blendedCostPerMTok = priorBlended;
-    }
-    plotted.push(next);
-  }
-  return { plotted, missingAxisCost };
-}
-function computeParetoFrontier(candidates) {
-  const sorted = [...candidates].sort(
-    (a4, b2) => a4.costPerMTok - b2.costPerMTok || b2.intellect - a4.intellect || a4.id.localeCompare(b2.id)
-  );
-  const out = [];
-  let best = null;
-  for (const c2 of sorted) {
-    if (best && c2.intellect <= best.intellect) {
-      out.push({ ...c2, onFrontier: false, dominatedBy: best.id });
-      continue;
-    }
-    const point = { ...c2, onFrontier: true };
-    out.push(point);
-    best = point;
-  }
-  return out;
-}
-function groupByModelIdentity(candidates) {
-  const groups = /* @__PURE__ */ new Map();
-  for (const c2 of candidates) {
-    const key = resolveIntellectModelId(c2.id) ?? c2.id;
-    const list = groups.get(key) ?? [];
-    list.push(c2);
-    groups.set(key, list);
-  }
-  const out = [];
-  for (const list of groups.values()) {
-    const sorted = [...list].sort(
-      (a4, b2) => a4.costPerMTok - b2.costPerMTok || Number(b2.planAccess !== void 0) - Number(a4.planAccess !== void 0) || a4.id.localeCompare(b2.id)
-    );
-    const best = sorted[0];
-    if (!best) continue;
-    const others = sorted.slice(1).map((c2) => ({ id: c2.id, costPerMTok: c2.costPerMTok }));
-    out.push(others.length > 0 ? { ...best, prices: others } : best);
-  }
-  return out;
-}
-function frontierForKnownModels(extra = [], adjust, keepRoute) {
-  const cloud = [];
-  for (const id of TRACKED_MODELS) {
-    const info = getModelInfo(id);
-    const score = getIntellectScore(id);
-    if (!info || !score) continue;
-    cloud.push({
-      id,
-      intellect: score.value,
-      intellectEstimated: score.estimated === true,
-      costPerMTok: blendedPricePerMTok(info)
-    });
-  }
-  const candidates = keepRoute ? [...cloud, ...extra].filter(keepRoute) : [...cloud, ...extra];
-  const adjusted = adjust ? candidates.map(adjust) : candidates;
-  return computeParetoFrontier(groupByModelIdentity(adjusted));
-}
-var init_pareto_frontier = __esm({
-  "packages/llm/src/pareto-frontier.ts"() {
-    init_model_catalog();
-    init_model_intellect();
-  }
-});
-
-// packages/llm/src/local-model-benchmarks.generated.ts
-var LOCAL_MODEL_BENCHMARKS;
-var init_local_model_benchmarks_generated = __esm({
-  "packages/llm/src/local-model-benchmarks.generated.ts"() {
-    LOCAL_MODEL_BENCHMARKS = {
-      "qwen/qwen2.5-coder-32b": {
-        "aider-edit": {
-          value: 72.9,
-          source: "Aider edit leaderboard (ollama/qwen2.5-coder:32b)",
-          asOf: "2024-11-28",
-          measuredBitsPerWeight: 4.5
-        },
-        "aider-polyglot": {
-          value: 16.4,
-          source: "Aider polyglot leaderboard (Qwen2.5-Coder-32B-Instruct)",
-          asOf: "2024-12-26",
-          measuredBitsPerWeight: 16
-        },
-        "humaneval-plus": {
-          value: 87.2,
-          source: "EvalPlus HumanEval+ leaderboard (Qwen2.5-Coder-32B-Instruct)",
-          asOf: "2026-07-07",
-          measuredBitsPerWeight: 16
-        }
-      }
-    };
-  }
-});
-
 // packages/llm/src/quant-penalty.ts
 function baseDrop(bitsPerWeight) {
   if (!(bitsPerWeight > 0)) return MAX_DROP;
@@ -43413,172 +42825,6 @@ var init_local_model_catalog = __esm({
   }
 });
 
-// packages/llm/src/frontier-candidates.ts
-function localFrontierCandidates(localModelIds) {
-  const out = [];
-  for (const id of localModelIds) {
-    const cap = getLocalModelCapability(id);
-    if (!cap) continue;
-    const score = localBenchmarkScore(cap, "aa-intelligence");
-    if (!score) continue;
-    out.push({
-      id,
-      intellect: score.value,
-      intellectEstimated: score.estimated === true,
-      costPerMTok: 0,
-      local: true,
-      quant: cap.quant
-    });
-  }
-  return out;
-}
-function extraProviderFrontierCandidates(providers) {
-  const out = [];
-  for (const provider of providers) {
-    for (const m2 of provider.models) {
-      if (typeof m2.inputPricePerMTok !== "number") continue;
-      const score = getIntellectScore(m2.id);
-      if (!score) continue;
-      out.push({
-        id: `${provider.id}:${m2.id}`,
-        intellect: score.value,
-        intellectEstimated: score.estimated === true,
-        costPerMTok: blendedRate(m2.inputPricePerMTok, m2.outputPricePerMTok ?? m2.inputPricePerMTok)
-      });
-    }
-  }
-  return out;
-}
-function openRouterFrontierCandidates(models) {
-  const out = [];
-  for (const model of models) {
-    const input2 = model.inputPricePerMTok;
-    const output2 = model.outputPricePerMTok;
-    if (input2 === null || output2 === null || input2 < 0 || output2 < 0) continue;
-    const id = `openrouter:${model.id}`;
-    const score = getIntellectScore(id);
-    if (!score) continue;
-    out.push({
-      id,
-      intellect: score.value,
-      intellectEstimated: score.estimated === true,
-      costPerMTok: blendedRate(input2, output2)
-    });
-  }
-  return out;
-}
-var init_frontier_candidates = __esm({
-  "packages/llm/src/frontier-candidates.ts"() {
-    init_pareto_frontier();
-    init_model_intellect();
-    init_local_model_catalog();
-  }
-});
-
-// packages/llm/src/live-intellect.ts
-function canonicalAnchors() {
-  const out = /* @__PURE__ */ new Map();
-  for (const [modelId, entries] of Object.entries(MODEL_INTELLECT_RAW)) {
-    const canonical = entries.find((m2) => m2.indexVersion === CANONICAL_INTELLECT_VERSION);
-    if (canonical) out.set(modelId, canonical.value);
-  }
-  return out;
-}
-function normalizeIndexVersion(version2) {
-  if (version2 === void 0) return void 0;
-  const s2 = String(version2).trim();
-  if (s2.length === 0) return void 0;
-  return s2.startsWith("v") ? s2 : `v${s2}`;
-}
-function verifyLiveCohort(liveModels, reportedVersion) {
-  const anchors = canonicalAnchors();
-  let anchorsChecked = 0;
-  let maxDrift = 0;
-  const mismatches = [];
-  for (const live of liveModels) {
-    const modelId = resolveIntellectModelId(live.id);
-    if (modelId === null) continue;
-    const canonical = anchors.get(modelId);
-    if (canonical === void 0) continue;
-    anchorsChecked += 1;
-    const drift = Math.abs(live.intellect - canonical);
-    maxDrift = Math.max(maxDrift, drift);
-    if (drift > LIVE_ANCHOR_TOLERANCE) mismatches.push({ modelId, canonical, live: live.intellect });
-  }
-  const version2 = normalizeIndexVersion(reportedVersion);
-  const versionMismatch = version2 !== void 0 && version2 !== CANONICAL_INTELLECT_VERSION;
-  const agreeingAnchors = anchorsChecked - mismatches.length;
-  const mismatchesAreAMinority = mismatches.length <= Math.floor(anchorsChecked * MAX_MISMATCH_FRACTION);
-  return {
-    verified: !versionMismatch && agreeingAnchors >= MIN_LIVE_ANCHORS && mismatchesAreAMinority,
-    anchorsChecked,
-    agreeingAnchors,
-    maxDrift,
-    mismatches,
-    ...version2 !== void 0 ? { reportedVersion: version2 } : {},
-    ...versionMismatch ? { versionMismatch: true } : {}
-  };
-}
-function liveBlendedPrice(live) {
-  const input2 = live.inputPricePerMTok;
-  if (typeof input2 !== "number" || !(input2 > 0)) return null;
-  const output2 = live.outputPricePerMTok;
-  return blendedRate(input2, typeof output2 === "number" && output2 > 0 ? output2 : input2);
-}
-function liveIntellectCandidates(liveModels, reportedVersion) {
-  const verification = verifyLiveCohort(liveModels, reportedVersion);
-  if (!verification.verified) {
-    return { candidates: [], hintOnly: [], pricedCurated: [], verification };
-  }
-  const candidates = [];
-  const hintOnly = [];
-  const pricedCurated = [];
-  const curatedSeen = /* @__PURE__ */ new Set();
-  for (const live of liveModels) {
-    const price = liveBlendedPrice(live);
-    const resolved2 = resolveIntellectModelId(live.id);
-    if (resolved2 !== null) {
-      if (price === null || curatedSeen.has(resolved2)) continue;
-      const curated = getIntellectScore(resolved2);
-      if (!curated) continue;
-      curatedSeen.add(resolved2);
-      pricedCurated.push({
-        id: resolved2,
-        intellect: curated.value,
-        intellectEstimated: curated.estimated === true,
-        costPerMTok: price,
-        ...typeof live.costPerTask === "number" ? { costPerTask: live.costPerTask } : {}
-      });
-      continue;
-    }
-    if (price !== null) {
-      candidates.push({
-        id: live.id,
-        intellect: live.intellect,
-        intellectEstimated: true,
-        costPerMTok: price,
-        // Uncurated = the user can't route to it without setting up a provider.
-        discovery: true,
-        ...typeof live.costPerTask === "number" ? { costPerTask: live.costPerTask } : {}
-      });
-    } else {
-      hintOnly.push({ id: live.id, intellect: live.intellect });
-    }
-  }
-  return { candidates, hintOnly, pricedCurated, verification };
-}
-var LIVE_ANCHOR_TOLERANCE, MIN_LIVE_ANCHORS, MAX_MISMATCH_FRACTION;
-var init_live_intellect = __esm({
-  "packages/llm/src/live-intellect.ts"() {
-    init_model_intellect_generated();
-    init_model_intellect();
-    init_pareto_frontier();
-    LIVE_ANCHOR_TOLERANCE = 1;
-    MIN_LIVE_ANCHORS = 2;
-    MAX_MISMATCH_FRACTION = 0.25;
-  }
-});
-
 // packages/llm/src/composite-intellect.ts
 function compositeIntellect(model) {
   if (model.benchmarks["aa-intelligence"]) return null;
@@ -43625,6 +42871,153 @@ var init_composite_intellect = __esm({
       "multipl-e": 0.5
     };
     MIN_COMPOSITE_AXES = 3;
+  }
+});
+
+// packages/llm/src/pareto-frontier.ts
+function blendedRate(inputPerMTok, outputPerMTok) {
+  return 0.8 * inputPerMTok + 0.2 * outputPerMTok;
+}
+function blendedPricePerMTok(info) {
+  return blendedRate(info.inputPricePerMTok, info.outputPricePerMTok);
+}
+function costOnAxis(c2, axis) {
+  if (axis === "blended") return c2.costPerMTok;
+  if (c2.local || c2.plan) return 0;
+  if (typeof c2.costPerTask === "number" && Number.isFinite(c2.costPerTask) && c2.costPerTask > 0) {
+    return c2.costPerTask;
+  }
+  return null;
+}
+function projectOntoCostAxis(candidates, axis) {
+  if (axis === "blended") {
+    return { plotted: [...candidates], missingAxisCost: [] };
+  }
+  const plotted = [];
+  const missingAxisCost = [];
+  for (const c2 of candidates) {
+    const cost = costOnAxis(c2, axis);
+    if (cost === null) {
+      missingAxisCost.push(c2);
+      continue;
+    }
+    const priorBlended = c2.blendedCostPerMTok ?? (c2.planDetail !== void 0 ? c2.planDetail.apiPricePerMTok : c2.costPerMTok);
+    const next = {
+      ...c2,
+      costPerMTok: cost
+    };
+    if (cost !== priorBlended || c2.plan || c2.local) {
+      next.blendedCostPerMTok = priorBlended;
+    }
+    plotted.push(next);
+  }
+  return { plotted, missingAxisCost };
+}
+function computeParetoFrontier(candidates) {
+  const sorted = [...candidates].sort(
+    (a4, b2) => a4.costPerMTok - b2.costPerMTok || b2.intellect - a4.intellect || a4.id.localeCompare(b2.id)
+  );
+  const out = [];
+  let best = null;
+  for (const c2 of sorted) {
+    if (best && c2.intellect <= best.intellect) {
+      out.push({ ...c2, onFrontier: false, dominatedBy: best.id });
+      continue;
+    }
+    const point = { ...c2, onFrontier: true };
+    out.push(point);
+    best = point;
+  }
+  return out;
+}
+function groupByModelIdentity(candidates) {
+  const groups = /* @__PURE__ */ new Map();
+  for (const c2 of candidates) {
+    const key = resolveIntellectModelId(c2.id) ?? c2.id;
+    const list = groups.get(key) ?? [];
+    list.push(c2);
+    groups.set(key, list);
+  }
+  const out = [];
+  for (const list of groups.values()) {
+    const sorted = [...list].sort(
+      (a4, b2) => a4.costPerMTok - b2.costPerMTok || Number(b2.planAccess !== void 0) - Number(a4.planAccess !== void 0) || a4.id.localeCompare(b2.id)
+    );
+    const best = sorted[0];
+    if (!best) continue;
+    const others = sorted.slice(1).map((c2) => ({ id: c2.id, costPerMTok: c2.costPerMTok }));
+    out.push(others.length > 0 ? { ...best, prices: others } : best);
+  }
+  return out;
+}
+function frontierForKnownModels(extra = [], adjust, keepRoute) {
+  const cloud = [];
+  for (const id of TRACKED_MODELS) {
+    const info = getModelInfo(id);
+    const score = getIntellectScore(id);
+    if (!info || !score) continue;
+    cloud.push({
+      id,
+      intellect: score.value,
+      intellectEstimated: score.estimated === true,
+      costPerMTok: blendedPricePerMTok(info)
+    });
+  }
+  const candidates = keepRoute ? [...cloud, ...extra].filter(keepRoute) : [...cloud, ...extra];
+  const adjusted = adjust ? candidates.map(adjust) : candidates;
+  return computeParetoFrontier(groupByModelIdentity(adjusted));
+}
+var init_pareto_frontier = __esm({
+  "packages/llm/src/pareto-frontier.ts"() {
+    init_model_catalog();
+    init_model_intellect();
+  }
+});
+
+// packages/llm/src/intellect-hints.ts
+function isOnCloudFrontier(id) {
+  cloudFrontierIds ??= new Set(
+    frontierForKnownModels().filter((p2) => p2.onFrontier).map((p2) => p2.id)
+  );
+  return cloudFrontierIds.has(id);
+}
+function formatPrice(perMTok) {
+  const rounded = Number.isInteger(perMTok) ? String(perMTok) : perMTok.toFixed(2);
+  return `$${rounded}/MTok`;
+}
+function cloudModelIntellectHint(id) {
+  const score = getIntellectScore(id);
+  const info = getModelInfo(id);
+  const parts = [];
+  if (score) parts.push(`intellect ${score.estimated ? "~" : ""}${String(score.value)}`);
+  if (info) parts.push(formatPrice(blendedPricePerMTok(info)));
+  if (score && info && isOnCloudFrontier(id)) parts.push("frontier");
+  return parts.length > 0 ? parts.join(" \xB7 ") : null;
+}
+function modelIntellectHint(idOrLabel) {
+  const score = getIntellectScore(idOrLabel);
+  if (!score) return null;
+  return `intellect ${score.estimated ? "~" : ""}${String(score.value)}`;
+}
+function localModelIntellectHint(id) {
+  const cap = getLocalModelCapability(id);
+  if (!cap) return null;
+  const score = localBenchmarkScore(cap, "aa-intelligence");
+  if (score) return `intellect ${score.estimated ? "~" : ""}${String(score.value)}`;
+  const composite = compositeIntellect(cap);
+  if (composite)
+    return `composite ${String(composite.value)} (${String(composite.axes.length)} axes)`;
+  return null;
+}
+var cloudFrontierIds;
+var init_intellect_hints = __esm({
+  "packages/llm/src/intellect-hints.ts"() {
+    init_composite_intellect();
+    init_local_model_catalog();
+    init_model_catalog();
+    init_model_intellect();
+    init_pareto_frontier();
+    cloudFrontierIds = null;
   }
 });
 
@@ -44183,6 +43576,57 @@ var init_provider_metadata2 = __esm({
   }
 });
 
+// packages/llm/src/extra-providers.ts
+function isLocalBaseUrl(baseUrl) {
+  try {
+    let host = new URL(baseUrl).hostname.toLowerCase();
+    const bracketed = /^\[(.*)\]$/.exec(host);
+    if (bracketed) host = bracketed[1] ?? host;
+    return host === "localhost" || host.endsWith(".localhost") || // Entire 127.0.0.0/8 loopback range.
+    /^127(?:\.\d{1,3}){3}$/.test(host) || host === "0.0.0.0" || host === "::1" || host === "::";
+  } catch {
+    return false;
+  }
+}
+function extraProviderDisplayLabel(model, _providers = []) {
+  return extraProviderModelId(model);
+}
+function extraProviderSlugFromModel(model) {
+  const selection2 = parseModelSelection(model);
+  return selection2.namespace === "extra-provider" ? selection2.slug : null;
+}
+function extraProviderModelId(model) {
+  const selection2 = parseModelSelection(model);
+  return selection2.namespace === "extra-provider" ? selection2.id : model;
+}
+function toExtraProviderModel(slug2, modelId) {
+  return `${slug2}:${modelId}`;
+}
+var DEFAULT_EXTRA_PROVIDER_CONTEXT, BUILTIN_EXTRA_PROVIDERS, BUILTIN_EXTRA_PROVIDER_SLUGS, BUILTIN_BY_SLUG;
+var init_extra_providers = __esm({
+  "packages/llm/src/extra-providers.ts"() {
+    init_unknown_value();
+    init_credential_url();
+    init_provider_metadata2();
+    init_model_selection();
+    init_pareto_frontier();
+    DEFAULT_EXTRA_PROVIDER_CONTEXT = 128e3;
+    BUILTIN_EXTRA_PROVIDERS = PROVIDER_PRESETS.map((preset) => ({
+      ...preset,
+      prefix: `${preset.id}:`,
+      builtin: true,
+      local: isLocalBaseUrl(preset.baseUrl),
+      // One default for presets and user customs alike — the catalog only records
+      // a fallback when it genuinely differs (see provider-metadata.ts).
+      fallbackContextWindow: preset.fallbackContextWindow ?? DEFAULT_EXTRA_PROVIDER_CONTEXT
+    }));
+    BUILTIN_EXTRA_PROVIDER_SLUGS = BUILTIN_EXTRA_PROVIDERS.map(
+      (p2) => p2.id
+    );
+    BUILTIN_BY_SLUG = new Map(BUILTIN_EXTRA_PROVIDERS.map((p2) => [p2.id, p2]));
+  }
+});
+
 // packages/llm/src/data-policies.ts
 function hostFromBaseUrl(baseUrl) {
   if (!baseUrl) return null;
@@ -44323,119 +43767,96 @@ var init_data_policies = __esm({
   }
 });
 
-// src/shared/plan-inclusion.ts
-function claudeModelFamily(modelId) {
-  const id = modelId.toLowerCase();
-  if (id.includes("fable")) return "fable";
-  if (id.includes("opus")) return "opus";
-  if (id.includes("sonnet")) return "sonnet";
-  if (id.includes("haiku")) return "haiku";
-  return null;
-}
-function claudeGoverningWindowIds(modelId) {
-  const family = claudeModelFamily(modelId);
-  const ids = [];
-  if (family) ids.push(`seven_day_${family}`);
-  ids.push("seven_day", "five_hour");
-  return ids;
-}
-function governingWindowIds(provider, modelId) {
-  switch (provider) {
-    case "claude":
-      return modelId ? claudeGoverningWindowIds(modelId) : ["seven_day", "five_hour"];
-    case "cursor":
-      return ["total", "auto"];
-    case "codex":
-      return ["primary", "secondary"];
-    case "huggingface":
-      return ["inference_providers"];
-  }
-}
-function providerWindows(snapshot, provider) {
-  const result = snapshot.providers.find((r2) => r2.provider === provider);
-  return result && result.status === "ok" ? result.usage.windows : null;
-}
-function resolvePlanInclusion(provider, modelId, snapshot) {
-  const windows = providerWindows(snapshot, provider);
-  if (!windows || windows.length === 0) return null;
-  const availability = modelId ? providerModelAvailability(snapshot, provider, modelId) : void 0;
-  const govern = new Set(governingWindowIds(provider, modelId));
-  let applicable = windows.filter((w3) => govern.has(w3.id));
-  if (availability === true) {
-    const pool = windows.filter((w3) => w3.id.startsWith("chatpass_"));
-    if (pool.length > 0) applicable = pool;
-  } else if (availability === false && applicable.length === 0) {
-    applicable = windows.slice(0, 1);
-  }
-  if (applicable.length === 0) return null;
-  const binding = applicable.reduce(
-    (tightest, w3) => w3.usedPercent > tightest.usedPercent ? w3 : tightest
-  );
-  return {
-    provider,
-    windowId: binding.id,
-    windowLabel: binding.label,
-    usedPercent: binding.usedPercent,
-    resetsAt: binding.resetsAt,
-    exhausted: availability === false || availability !== true && binding.usedPercent >= 100
-  };
-}
-function providerModelAvailability(snapshot, provider, modelId) {
-  const result = snapshot.providers.find((r2) => r2.provider === provider);
-  if (!result || result.status !== "ok") return void 0;
-  return result.usage.modelAvailability?.[modelId.toLowerCase()];
-}
-function applyPlanCoverage(candidate, snapshot, options = {}) {
-  const mode = options.mode ?? "plan";
-  if (mode === "inference" || !snapshot) return candidate;
-  const access = candidate.planAccess;
-  if (!access) return candidate;
-  const inclusion = resolvePlanInclusion(access.provider, access.modelId, snapshot);
-  if (!inclusion) return candidate;
-  if (inclusion.exhausted) {
-    return {
-      ...candidate,
-      planLimitReached: {
-        label: inclusion.windowLabel,
-        resetsAt: inclusion.resetsAt
-      }
-    };
-  }
-  return {
-    ...candidate,
-    costPerMTok: 0,
-    plan: inclusion.windowLabel,
-    planDetail: {
-      usedPercent: inclusion.usedPercent,
-      resetsAt: inclusion.resetsAt,
-      apiPricePerMTok: candidate.costPerMTok
-    }
-  };
-}
-var init_plan_inclusion = __esm({
-  "src/shared/plan-inclusion.ts"() {
+// src/shared/managed-agents.ts
+var DEFAULT_MANAGED_AGENT_MODEL;
+var init_managed_agents = __esm({
+  "src/shared/managed-agents.ts"() {
+    DEFAULT_MANAGED_AGENT_MODEL = "claude-opus-4-8";
   }
 });
 
-// packages/llm/src/agent-model-identity.ts
-function resolveAgentModelIdentity(...forms) {
-  const named = forms.filter(isNonEmptyString);
-  for (const form of named) {
-    const id = resolveIntellectModelId(form);
-    if (id !== null && getIntellectScore(id)) return id;
+// packages/thread-store/src/remote-agent-provider.ts
+var REMOTE_AGENT_PROVIDER_OPENAI, REMOTE_AGENT_PROVIDER_CURSOR, REMOTE_AGENT_PROVIDER_ANTHROPIC, REMOTE_AGENT_PROVIDERS, isRemoteAgentProvider;
+var init_remote_agent_provider = __esm({
+  "packages/thread-store/src/remote-agent-provider.ts"() {
+    init_member_of();
+    REMOTE_AGENT_PROVIDER_OPENAI = "openai";
+    REMOTE_AGENT_PROVIDER_CURSOR = "cursor";
+    REMOTE_AGENT_PROVIDER_ANTHROPIC = "anthropic";
+    REMOTE_AGENT_PROVIDERS = [
+      REMOTE_AGENT_PROVIDER_OPENAI,
+      REMOTE_AGENT_PROVIDER_CURSOR,
+      REMOTE_AGENT_PROVIDER_ANTHROPIC
+    ];
+    isRemoteAgentProvider = memberOf(REMOTE_AGENT_PROVIDERS);
   }
-  for (const form of named) {
-    const labelled2 = claudeModelIdFromLabel(form);
-    const id = labelled2 === null ? null : resolveIntellectModelId(labelled2);
-    if (id !== null && getIntellectScore(id)) return id;
-  }
-  return null;
+});
+
+// src/shared/remote-agent.ts
+function remoteAgentModelValue(provider, model) {
+  return model ? `${REMOTE_AGENT_MODEL_PREFIX}${provider}${REMOTE_AGENT_MODEL_SEP}${model}` : `${REMOTE_AGENT_MODEL_PREFIX}${provider}`;
 }
-var init_agent_model_identity = __esm({
-  "packages/llm/src/agent-model-identity.ts"() {
-    init_model_intellect();
-    init_model_label();
-    init_nullish();
+function parseRemoteAgentModelSelection(model) {
+  const selection2 = parseModelSelection(model);
+  if (selection2.namespace !== "remote-agent") return null;
+  const provider = selection2.agent;
+  if (!isRemoteAgentProvider(provider)) return null;
+  return selection2.id ? { provider, model: selection2.id } : { provider };
+}
+function parseRemoteAgentModel(model) {
+  return parseRemoteAgentModelSelection(model)?.provider ?? null;
+}
+function remoteAgentGroupLabel(provider) {
+  return REMOTE_AGENT_MODELS.find((option) => option.provider === provider)?.label ?? provider;
+}
+function remoteAgentDisplayLabel(model, catalog = []) {
+  const selection2 = parseRemoteAgentModelSelection(model);
+  if (!selection2) return model;
+  const title = remoteAgentGroupLabel(selection2.provider);
+  if (!selection2.model) return title;
+  const catalogLabel = catalog.find((entry) => entry.id === selection2.model)?.label;
+  return `${title} \u2014 ${catalogLabel ?? cloudModelDisplayLabel(selection2.model)}`;
+}
+var DEFAULT_CURSOR_AGENT_BASE_URL, CURSOR_AGENTS_WEB_URL, REMOTE_AGENT_MODEL_SEP, REMOTE_AGENT_MODELS, MANAGED_AGENT_PICKER_MODELS, MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT;
+var init_remote_agent = __esm({
+  "src/shared/remote-agent.ts"() {
+    init_reserved_prefixes();
+    init_reserved_prefixes();
+    init_model_selection();
+    init_model_catalog();
+    init_managed_agents();
+    init_unknown_value3();
+    init_remote_agent_provider();
+    init_remote_agent_provider();
+    DEFAULT_CURSOR_AGENT_BASE_URL = "https://api.cursor.com";
+    CURSOR_AGENTS_WEB_URL = "https://cursor.com/agents";
+    REMOTE_AGENT_MODEL_SEP = AGENT_MODEL_SEP;
+    REMOTE_AGENT_MODELS = [
+      {
+        provider: REMOTE_AGENT_PROVIDER_OPENAI,
+        value: "remote-agent:openai",
+        label: "OpenAI Cloud Agent"
+      },
+      {
+        provider: REMOTE_AGENT_PROVIDER_CURSOR,
+        value: `${REMOTE_AGENT_MODEL_PREFIX}${REMOTE_AGENT_PROVIDER_CURSOR}`,
+        label: "Cursor Cloud Agent"
+      },
+      {
+        provider: REMOTE_AGENT_PROVIDER_ANTHROPIC,
+        value: `${REMOTE_AGENT_MODEL_PREFIX}${REMOTE_AGENT_PROVIDER_ANTHROPIC}`,
+        label: "Claude Cloud Agent"
+      }
+    ];
+    MANAGED_AGENT_PICKER_MODELS = TRACKED_MODELS.filter(
+      (id) => inferCloudModelProvider(id) === "anthropic"
+    );
+    MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT = (() => {
+      if (MANAGED_AGENT_PICKER_MODELS.includes(DEFAULT_MANAGED_AGENT_MODEL)) {
+        return MANAGED_AGENT_PICKER_MODELS;
+      }
+      return [DEFAULT_MANAGED_AGENT_MODEL, ...MANAGED_AGENT_PICKER_MODELS];
+    })();
   }
 });
 
@@ -44958,6 +44379,3190 @@ var init_acp = __esm({
   }
 });
 
+// src/shared/plugin-model.ts
+function pluginModelValue(pluginId, routeId) {
+  return `${PLUGIN_MODEL_PREFIX}${encodeURIComponent(pluginId)}:${encodeURIComponent(routeId)}`;
+}
+function parsePluginModelSelection(value) {
+  const selection2 = parseModelSelection(value);
+  if (selection2.namespace !== "plugin-model") return null;
+  if (!selection2.agent || !selection2.id) return null;
+  try {
+    const pluginId = decodeURIComponent(selection2.agent);
+    const routeId = decodeURIComponent(selection2.id);
+    return pluginId && routeId ? { pluginId, routeId } : null;
+  } catch {
+    return null;
+  }
+}
+var init_plugin_model = __esm({
+  "src/shared/plugin-model.ts"() {
+    init_reserved_prefixes();
+    init_reserved_prefixes();
+    init_model_selection();
+  }
+});
+
+// packages/llm/src/agent-model-identity.ts
+function resolveAgentModelIdentity(...forms) {
+  const named = forms.filter(isNonEmptyString);
+  for (const form of named) {
+    const id = resolveIntellectModelId(form);
+    if (id !== null && getIntellectScore(id)) return id;
+  }
+  for (const form of named) {
+    const labelled2 = claudeModelIdFromLabel(form);
+    const id = labelled2 === null ? null : resolveIntellectModelId(labelled2);
+    if (id !== null && getIntellectScore(id)) return id;
+  }
+  return null;
+}
+var init_agent_model_identity = __esm({
+  "packages/llm/src/agent-model-identity.ts"() {
+    init_model_intellect();
+    init_model_label();
+    init_nullish();
+  }
+});
+
+// src/shared/model-display.ts
+function displayModelLabel(model, context) {
+  if (isBestValueChatModel(model)) return BEST_VALUE_CHAT_MODEL_LABEL;
+  const dynamic = dynamicModelLabel(model);
+  if (dynamic) return dynamic;
+  const selection2 = parseModelSelection(model);
+  switch (selection2.namespace) {
+    case "lmstudio":
+      return `${modelDisplayName(selection2.id)}${LOCAL_MODEL_SUFFIX}`;
+    case "acp":
+      return acpModelDisplayLabel(model, context?.acpAgents ?? []);
+    case "chatgpt-plan":
+      return `${cloudModelDisplayLabel(selection2.id)} \xB7 ChatGPT plan`;
+    case "remote-agent":
+      return remoteAgentDisplayLabel(model, context?.remoteCatalog ?? []);
+    case "plugin-model":
+      return pluginLabel(model);
+    case "openrouter":
+      return openRouterDisplayLabel(model);
+    case "extra-provider":
+      return modelDisplayName(extraProviderDisplayLabel(model));
+    default:
+      return cloudModelDisplayLabel(model);
+  }
+}
+function pluginLabel(model) {
+  const plugin = parsePluginModelSelection(model);
+  return plugin ? plugin.routeId : model;
+}
+var LOCAL_MODEL_SUFFIX;
+var init_model_display = __esm({
+  "src/shared/model-display.ts"() {
+    init_model_catalog();
+    init_extra_providers();
+    init_openrouter();
+    init_dynamic_model();
+    init_model_label();
+    init_model_selection();
+    init_acp();
+    init_remote_agent();
+    init_plugin_model();
+    init_lm_studio_defaults();
+    LOCAL_MODEL_SUFFIX = " \xB7 local";
+  }
+});
+
+// packages/llm/src/model-maker-block.ts
+function parseBlockedModelMakers(value) {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry) => isModelMaker(entry));
+}
+function makerFromName(name) {
+  const normalized = name.toLowerCase();
+  if (normalized === "anthropic" || normalized.startsWith("claude-")) return "anthropic";
+  if (normalized === "openai" || normalized.startsWith("gpt-") || /^o[1-9](?:-|$)/.test(normalized))
+    return "openai";
+  if (normalized === "google" || normalized === "gemini" || normalized.startsWith("gemini-") || normalized.startsWith("gemma-"))
+    return "google";
+  if (normalized === "deepseek" || normalized.startsWith("deepseek-")) return "deepseek";
+  if (normalized === "mistralai" || MISTRAL_MODEL_FAMILIES.some(
+    (family) => normalized === family || normalized.startsWith(`${family}-`)
+  ))
+    return "mistral";
+  if (normalized === "x-ai" || normalized === "xai" || normalized === "spacexai" || normalized === "grok" || normalized.startsWith("grok-"))
+    return "xai";
+  return null;
+}
+function makerFromAgent(agent) {
+  const normalized = agent.toLowerCase();
+  if (normalized.startsWith("claude")) return "anthropic";
+  if (normalized.startsWith("codex")) return "openai";
+  if (normalized.startsWith("gemini")) return "google";
+  if (normalized.startsWith("mistral")) return "mistral";
+  if (normalized.startsWith("grok")) return "xai";
+  return null;
+}
+function modelMakerForSelection(value) {
+  const selection2 = parseModelSelection(value);
+  if (selection2.namespace === "auto" || selection2.namespace === "plugin-model") return null;
+  if (selection2.namespace === "remote-agent" && !selection2.id) {
+    return selection2.agent === "anthropic" ? "anthropic" : selection2.agent === "openai" ? "openai" : null;
+  }
+  if (selection2.namespace === "acp" && !selection2.id) return makerFromAgent(selection2.agent);
+  const id = selection2.id.toLowerCase();
+  const parts = id.split("/");
+  const first = parts[0] ?? "";
+  const last = parts.at(-1) ?? "";
+  const fromModel = makerFromName(first) ?? makerFromName(last);
+  if (fromModel) return fromModel;
+  if (selection2.namespace === "acp") return makerFromAgent(selection2.agent);
+  return makerFromName(selection2.slug);
+}
+function blockedModelMaker(selection2, blocked) {
+  const maker = modelMakerForSelection(selection2);
+  return maker && blocked.includes(maker) ? maker : null;
+}
+var MODEL_MAKER_IDS, MODEL_MAKERS, isModelMaker, MISTRAL_MODEL_FAMILIES;
+var init_model_maker_block = __esm({
+  "packages/llm/src/model-maker-block.ts"() {
+    init_model_selection();
+    init_member_of();
+    MODEL_MAKER_IDS = [
+      "anthropic",
+      "openai",
+      "google",
+      "deepseek",
+      "mistral",
+      "xai"
+    ];
+    MODEL_MAKERS = [
+      { id: "anthropic", label: "Anthropic" },
+      { id: "openai", label: "OpenAI" },
+      { id: "google", label: "Google" },
+      { id: "deepseek", label: "DeepSeek" },
+      { id: "mistral", label: "Mistral" },
+      { id: "xai", label: "xAI" }
+    ];
+    isModelMaker = memberOf(MODEL_MAKER_IDS);
+    MISTRAL_MODEL_FAMILIES = [
+      "mistral",
+      "mixtral",
+      "codestral",
+      "devstral",
+      "magistral",
+      "ministral",
+      "pixtral"
+    ];
+  }
+});
+
+// packages/llm/src/model-version-suppression.ts
+function parseModelLineage(id) {
+  const claude = CLAUDE_ID.exec(id);
+  if (claude) {
+    const family = claude[1];
+    const version2 = claude[2];
+    if (family === void 0 || version2 === void 0) return null;
+    return { lineage: `claude-${family}`, version: version2.split("-").map(Number) };
+  }
+  const gpt = GPT_ID.exec(id);
+  if (gpt) {
+    const major = gpt[1];
+    if (major === void 0) return null;
+    const minor = gpt[2];
+    const tier = gpt[3];
+    return {
+      lineage: tier === void 0 ? "gpt" : `gpt-${tier}`,
+      version: minor === void 0 ? [Number(major)] : [Number(major), Number(minor)]
+    };
+  }
+  return null;
+}
+function releaseSpelling(id) {
+  const gpt = GPT_ID.exec(id);
+  const major = gpt?.[1];
+  const minor = gpt?.[2];
+  if (major === void 0 || minor === void 0) return id;
+  const tier = gpt?.[3];
+  return `gpt-${major}.${minor}${tier === void 0 ? "" : `-${tier}`}`;
+}
+function compareVersions(a4, b2) {
+  for (let i2 = 0; i2 < Math.max(a4.length, b2.length); i2++) {
+    const difference = (a4[i2] ?? 0) - (b2[i2] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+}
+function supersedingModel(model, offered) {
+  const own2 = parseModelLineage(model);
+  if (own2 === null) return null;
+  let best = null;
+  for (const candidate of offered) {
+    if (candidate === model) continue;
+    const parsed2 = parseModelLineage(candidate);
+    if (parsed2 === null || parsed2.lineage !== own2.lineage) continue;
+    if (compareVersions(parsed2.version, own2.version) <= 0) continue;
+    if (best === null || compareVersions(parsed2.version, best.version) > 0) {
+      best = { id: candidate, version: parsed2.version };
+    }
+  }
+  return best?.id ?? null;
+}
+var CLAUDE_ID, GPT_ID;
+var init_model_version_suppression = __esm({
+  "packages/llm/src/model-version-suppression.ts"() {
+    CLAUDE_ID = /^claude-(opus|sonnet|haiku|fable)-(\d{1,2}(?:-\d{1,2})?)$/;
+    GPT_ID = /^gpt-(\d{1,2})(?:[.-](\d{1,2}))?(?:-([a-z][a-z0-9]*))?$/;
+  }
+});
+
+// src/shared/plan-inclusion.ts
+function claudeModelFamily(modelId) {
+  const id = modelId.toLowerCase();
+  if (id.includes("fable")) return "fable";
+  if (id.includes("opus")) return "opus";
+  if (id.includes("sonnet")) return "sonnet";
+  if (id.includes("haiku")) return "haiku";
+  return null;
+}
+function claudeGoverningWindowIds(modelId) {
+  const family = claudeModelFamily(modelId);
+  const ids = [];
+  if (family) ids.push(`seven_day_${family}`);
+  ids.push("seven_day", "five_hour");
+  return ids;
+}
+function governingWindowIds(provider, modelId) {
+  switch (provider) {
+    case "claude":
+      return modelId ? claudeGoverningWindowIds(modelId) : ["seven_day", "five_hour"];
+    case "cursor":
+      return ["total", "auto"];
+    case "codex":
+      return ["primary", "secondary"];
+    case "huggingface":
+      return ["inference_providers"];
+  }
+}
+function providerWindows(snapshot, provider) {
+  const result = snapshot.providers.find((r2) => r2.provider === provider);
+  return result && result.status === "ok" ? result.usage.windows : null;
+}
+function resolvePlanInclusion(provider, modelId, snapshot) {
+  const windows = providerWindows(snapshot, provider);
+  if (!windows || windows.length === 0) return null;
+  const availability = modelId ? providerModelAvailability(snapshot, provider, modelId) : void 0;
+  const govern = new Set(governingWindowIds(provider, modelId));
+  let applicable = windows.filter((w3) => govern.has(w3.id));
+  if (availability === true) {
+    const pool = windows.filter((w3) => w3.id.startsWith("chatpass_"));
+    if (pool.length > 0) applicable = pool;
+  } else if (availability === false && applicable.length === 0) {
+    applicable = windows.slice(0, 1);
+  }
+  if (applicable.length === 0) return null;
+  const binding = applicable.reduce(
+    (tightest, w3) => w3.usedPercent > tightest.usedPercent ? w3 : tightest
+  );
+  return {
+    provider,
+    windowId: binding.id,
+    windowLabel: binding.label,
+    usedPercent: binding.usedPercent,
+    resetsAt: binding.resetsAt,
+    exhausted: availability === false || availability !== true && binding.usedPercent >= 100
+  };
+}
+function providerModelAvailability(snapshot, provider, modelId) {
+  const result = snapshot.providers.find((r2) => r2.provider === provider);
+  if (!result || result.status !== "ok") return void 0;
+  return result.usage.modelAvailability?.[modelId.toLowerCase()];
+}
+function applyPlanCoverage(candidate, snapshot, options = {}) {
+  const mode = options.mode ?? "plan";
+  if (mode === "inference" || !snapshot) return candidate;
+  const access = candidate.planAccess;
+  if (!access) return candidate;
+  const inclusion = resolvePlanInclusion(access.provider, access.modelId, snapshot);
+  if (!inclusion) return candidate;
+  if (inclusion.exhausted) {
+    return {
+      ...candidate,
+      planLimitReached: {
+        label: inclusion.windowLabel,
+        resetsAt: inclusion.resetsAt
+      }
+    };
+  }
+  return {
+    ...candidate,
+    costPerMTok: 0,
+    plan: inclusion.windowLabel,
+    planDetail: {
+      usedPercent: inclusion.usedPercent,
+      resetsAt: inclusion.resetsAt,
+      apiPricePerMTok: candidate.costPerMTok
+    }
+  };
+}
+var init_plan_inclusion = __esm({
+  "src/shared/plan-inclusion.ts"() {
+  }
+});
+
+// src/renderer/views/model-coverage.ts
+function modelCoverage(value, context) {
+  if (!value || value.startsWith("auto:")) return void 0;
+  if (value.startsWith("lmstudio:")) return "local";
+  if (parseChatGptPlanModel(value)) return "plan";
+  const providerId = extraProviderSlugFromModel(value);
+  if (context.extraProviders.some((provider2) => provider2.id === providerId && provider2.local)) {
+    return "local";
+  }
+  const selection2 = parseAcpModelSelection(value);
+  if (!selection2 || !context.planUsage) return "paid";
+  const agent = context.agents.find(
+    (candidate) => candidate.enabled && canonicalAcpAgentId(candidate.id) === canonicalAcpAgentId(selection2.id)
+  );
+  if (!agent) return "paid";
+  const provider = acpPlanProvider(agent);
+  if (!provider) return "paid";
+  const authOverrides = provider === "claude" ? ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL"] : ["CODEX_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL"];
+  if (authOverrides.some((key) => agent.env?.[key]?.trim())) return "paid";
+  const model = selection2.model ?? agent.model;
+  const choice = agent.availableModels?.find((candidate) => candidate.value === model);
+  const identity = resolveAgentModelIdentity(
+    model,
+    acpModelVersionName(choice?.description),
+    choice?.label
+  );
+  const inclusion = resolvePlanInclusion(provider, identity ?? model, context.planUsage);
+  return inclusion && !inclusion.exhausted ? "plan" : "paid";
+}
+var init_model_coverage = __esm({
+  "src/renderer/views/model-coverage.ts"() {
+    init_extra_providers();
+    init_agent_model_identity();
+    init_chatgpt_plan();
+    init_acp();
+    init_acp_known_agents();
+    init_plan_inclusion();
+  }
+});
+
+// src/renderer/views/model-options.ts
+function modelDisplayLabel(model) {
+  return displayModelLabel(model);
+}
+function successorDisplayLabel(lineageId) {
+  return cloudModelDisplayLabel(releaseSpelling(lineageId));
+}
+async function pluginModelOptions(api, includeAgentModels, current) {
+  if (!includeAgentModels) return [];
+  try {
+    const result = await api.plugins?.list();
+    if (!result) return [];
+    const currentSelection = parsePluginModelSelection(current);
+    return result.plugins.flatMap(
+      (plugin) => plugin.contributions.modelRoutes.flatMap((route) => {
+        const selectedWhileDisabled = !plugin.enabled && currentSelection?.pluginId === plugin.id && currentSelection.routeId === route.id;
+        if (!plugin.enabled && !selectedWhileDisabled) return [];
+        return [
+          {
+            value: pluginModelValue(plugin.id, route.id),
+            label: `${route.label}${selectedWhileDisabled ? " (plugin disabled)" : ""}`,
+            group: route.group ?? `${plugin.name}: personal plugin`,
+            ...route.supportsImages !== void 0 ? { supportsImages: route.supportsImages } : {},
+            ...selectedWhileDisabled ? { disabled: true } : {}
+          }
+        ];
+      })
+    );
+  } catch {
+    return [];
+  }
+}
+function acpAgentOptions(agents) {
+  const options = [];
+  for (const agent of agents.filter((agent2) => agent2.enabled)) {
+    const group = acpGroupLabel(agent.title);
+    const models = agent.availableModels ?? [];
+    if (models.length > 0) {
+      for (const model of models) {
+        const label = acpModelChoiceLabel(model, ": ");
+        const versioned = acpModelVersionName(model.description);
+        const lineageId = resolveAgentModelIdentity(model.value, versioned, model.label, label) ?? model.value;
+        const hint = modelIntellectHint(lineageId);
+        options.push({
+          retention: ACP_RETENTION_NOTICE,
+          value: acpModelValue(agent.id, model.value),
+          label: hint ? `${label}: ${hint}` : label,
+          shortLabel: label,
+          group,
+          // Scoped to this agent: a different agent's newer release never hides
+          // a model only this agent can actually run.
+          ...lineageId ? { lineageId, lineageScope: `acp:${agent.id}` } : {}
+        });
+      }
+    } else {
+      options.push({
+        value: acpModelValue(agent.id),
+        label: agent.title,
+        group,
+        retention: ACP_RETENTION_NOTICE
+      });
+    }
+  }
+  return options;
+}
+function isSameAcpSelection(left, right) {
+  const leftSelection = parseAcpModelSelection(left);
+  const rightSelection = parseAcpModelSelection(right);
+  return leftSelection !== null && rightSelection !== null && canonicalAcpAgentId(leftSelection.id) === canonicalAcpAgentId(rightSelection.id) && leftSelection.model === rightSelection.model;
+}
+async function openRouterOptions(api, available, current) {
+  if (!available) return [];
+  let group = OPENROUTER_GROUP;
+  try {
+    const zdrOnly = await api.settings.get("openRouterZdrOnly") !== false;
+    const allowTraining = await api.settings.get("openRouterAllowTraining") === true;
+    const note = pickerPrivacyNote(openRouterDataPolicy(zdrOnly, allowTraining));
+    group = note ? `${OPENROUTER_GROUP}: ${note}` : `${OPENROUTER_GROUP} (ZDR routing)`;
+  } catch {
+  }
+  let liveModels = [];
+  try {
+    liveModels = await api.openRouter.models();
+  } catch {
+  }
+  let customId = "";
+  try {
+    const value = await api.settings.get("openRouterModel");
+    customId = typeof value === "string" ? value.trim() : "";
+  } catch {
+  }
+  const seen = /* @__PURE__ */ new Set();
+  const entries = [];
+  const add = (id, label, supportsImages, free = false) => {
+    const value = toOpenRouterModel(id);
+    if (!id || seen.has(value)) return;
+    seen.add(value);
+    const cloudId = resolveIntellectModelId(id);
+    const hint = cloudId ? cloudModelIntellectHint(cloudId) : modelIntellectHint(id);
+    entries.push({
+      value,
+      label: hint ? `${label}: ${hint}` : label,
+      shortLabel: label,
+      group,
+      ...supportsImages !== void 0 ? { supportsImages } : {},
+      ...free ? { coverage: "free" } : {}
+    });
+  };
+  for (const model of liveModels)
+    add(
+      model.id,
+      modelDisplayName(model.name || model.id),
+      model.supportsImages,
+      model.inputPricePerMTok === 0 && model.outputPricePerMTok === 0
+    );
+  if (customId) add(customId, `${customId} (custom)`);
+  if (isOpenRouterModel(current)) add(openRouterModelId(current), modelDisplayLabel(current));
+  if (entries.length === 0) {
+    let freeOnly = false;
+    try {
+      freeOnly = await api.settings.get("openRouterFreeMode") === true;
+    } catch {
+    }
+    return [
+      {
+        value: "",
+        label: freeOnly ? "No free tool-capable models found" : "No tool-capable models found",
+        group,
+        disabled: true
+      }
+    ];
+  }
+  return entries;
+}
+function extraProviderOptions(provider, available, current) {
+  if (!available) return [];
+  const note = provider.local ? null : pickerPrivacyNote(dataPolicyForProvider(provider));
+  const group = note ? `${provider.label}: ${note}` : provider.label;
+  const seen = /* @__PURE__ */ new Set();
+  const entries = [];
+  const add = (id, label) => {
+    const value = toExtraProviderModel(provider.id, id);
+    if (!id || seen.has(value)) return;
+    seen.add(value);
+    const hint = modelIntellectHint(id);
+    const supportsImages = provider.id === "gemini" ? true : provider.id === "deepseek" || provider.id === "mistral" && KNOWN_TEXT_ONLY_MISTRAL_MODELS.some((known) => known === id) ? false : void 0;
+    entries.push({
+      value,
+      label: hint ? `${label}: ${hint}` : label,
+      shortLabel: label,
+      group,
+      ...supportsImages !== void 0 ? { supportsImages } : {}
+    });
+  };
+  for (const model of provider.models) add(model.id, modelDisplayName(model.id));
+  if (extraProviderSlugFromModel(current) === provider.id) {
+    add(extraProviderModelId(current), modelDisplayLabel(current));
+  }
+  return entries;
+}
+async function remoteAgentOptions(api, isAvailable, current, preferAcpForClaude = false) {
+  const options = [];
+  if (isAvailable("openai")) {
+    const models = CLOUD_MODELS.filter(([, , provider]) => provider === "openai");
+    models.sort(
+      ([a4], [b2]) => Number(b2 === DEFAULT_OPENAI_AGENT_MODEL) - Number(a4 === DEFAULT_OPENAI_AGENT_MODEL)
+    );
+    for (const [id, label] of models) {
+      options.push({
+        value: remoteAgentModelValue("openai", id),
+        label,
+        group: OPENAI_AGENT_GROUP,
+        retention: OPENAI_AGENT_RETENTION_NOTICE,
+        supportsImages: true,
+        lineageId: id,
+        lineageScope: "remote-agent:openai"
+      });
+    }
+    const selected = parseRemoteAgentModelSelection(current);
+    if (selected?.provider === "openai" && !options.some((option) => option.value === current)) {
+      options.push({
+        value: current,
+        label: selected.model ?? "Default",
+        group: OPENAI_AGENT_GROUP,
+        retention: OPENAI_AGENT_RETENTION_NOTICE,
+        supportsImages: false
+      });
+    }
+  }
+  if (isAvailable(REMOTE_AGENT_PROVIDER_CURSOR)) {
+    const group = remoteAgentGroupLabel(REMOTE_AGENT_PROVIDER_CURSOR);
+    let liveModels = [];
+    try {
+      liveModels = await api.remoteAgent.models();
+    } catch {
+    }
+    const seen = /* @__PURE__ */ new Set();
+    const add = (value, label, lineageId) => {
+      if (seen.has(value)) return;
+      seen.add(value);
+      options.push({
+        value,
+        label,
+        group,
+        // Scoped to Cursor: an unrelated agent/provider's newer release never
+        // hides a model only Cursor's catalog actually offers.
+        ...lineageId ? { lineageId, lineageScope: `remote-agent:${REMOTE_AGENT_PROVIDER_CURSOR}` } : {}
+      });
+    };
+    add(remoteAgentModelValue(REMOTE_AGENT_PROVIDER_CURSOR), "Default");
+    for (const model of liveModels) {
+      const vendorLabel = model.label || model.id;
+      const label = canonicalModelLabel(vendorLabel);
+      const lineageId = resolveAgentModelIdentity(model.id, vendorLabel, label) ?? model.id;
+      const hint = modelIntellectHint(lineageId);
+      add(
+        remoteAgentModelValue(REMOTE_AGENT_PROVIDER_CURSOR, model.id),
+        hint ? `${label}: ${hint}` : label,
+        lineageId
+      );
+    }
+    const currentSelection = parseRemoteAgentModelSelection(current);
+    if (currentSelection?.provider === REMOTE_AGENT_PROVIDER_CURSOR && currentSelection.model && !seen.has(current)) {
+      add(current, canonicalModelLabel(currentSelection.model));
+    }
+  }
+  if (isAvailable(REMOTE_AGENT_PROVIDER_ANTHROPIC)) {
+    const baseGroup = remoteAgentGroupLabel(REMOTE_AGENT_PROVIDER_ANTHROPIC);
+    const group = preferAcpForClaude ? `${baseGroup} (billed to your API key)` : baseGroup;
+    const seen = /* @__PURE__ */ new Set();
+    const add = (value, label, lineageId) => {
+      if (seen.has(value)) return;
+      seen.add(value);
+      options.push({
+        value,
+        label,
+        group,
+        // Scoped to the managed Anthropic agent, separately from the direct-key
+        // "Cloud models" group: the two are different billing routes, each with
+        // its own availability.
+        ...lineageId ? { lineageId, lineageScope: `remote-agent:${REMOTE_AGENT_PROVIDER_ANTHROPIC}` } : {}
+      });
+    };
+    for (const id of MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT) {
+      const label = cloudModelDisplayLabel(id);
+      const hint = modelIntellectHint(id);
+      add(
+        remoteAgentModelValue(REMOTE_AGENT_PROVIDER_ANTHROPIC, id),
+        hint ? `${label}: ${hint}` : label,
+        id
+      );
+    }
+    const currentSelection = parseRemoteAgentModelSelection(current);
+    if (currentSelection?.provider === REMOTE_AGENT_PROVIDER_ANTHROPIC && currentSelection.model && !seen.has(current)) {
+      add(current, canonicalModelLabel(currentSelection.model));
+    }
+    if (current === remoteAgentModelValue(REMOTE_AGENT_PROVIDER_ANTHROPIC) && !seen.has(current)) {
+      add(current, remoteAgentGroupLabel(REMOTE_AGENT_PROVIDER_ANTHROPIC));
+    }
+  }
+  return options;
+}
+async function fetchModelOptions(api, current, opts = {}) {
+  const options = [];
+  if (opts.includeAgentModels !== false) {
+    options.push({
+      value: MATCH_PROMPT_MODEL_SELECTOR,
+      label: "Match task: Chooses a suitable model from your prompt",
+      group: "Automatic"
+    });
+  }
+  if (opts.includeBestValue === true) {
+    options.push({
+      value: BEST_VALUE_CHAT_MODEL,
+      label: `${BEST_VALUE_CHAT_MODEL_LABEL}: auto from plan / price frontier`,
+      group: "Automatic"
+    });
+    for (const choice of dynamicModelChoices()) {
+      if (choice.value === BEST_VALUE_CHAT_MODEL) continue;
+      if (choice.group !== "Automatic") continue;
+      options.push({
+        value: choice.value,
+        label: `${choice.label}: ${choice.description}`,
+        group: choice.group
+      });
+    }
+  }
+  const isSshWorkspace = opts.sshWorkspace === true;
+  const acpOverSsh = isSshWorkspace && await api.settings.get("acpOverSshEnabled") === true;
+  const sshWorkspace = isSshWorkspace && !acpOverSsh;
+  const includeAgentModels = opts.includeAgentModels !== false;
+  const planUsage = includeAgentModels ? api.usage?.getPlanUsage().catch(() => null) ?? Promise.resolve(null) : Promise.resolve(null);
+  let available = {};
+  try {
+    available = await api.settings.availableProviders();
+  } catch {
+  }
+  const isAvailable = (provider) => available[provider] ?? false;
+  const cloudGroup = "Cloud models";
+  try {
+    const catalog = await api.chatGptPlan?.models();
+    if (catalog?.clientId) {
+      for (const model of catalog.models) {
+        options.push({
+          value: chatGptPlanModelValue(catalog.clientId, model.slug),
+          label: `${model.displayName} \xB7 ChatGPT plan`,
+          group: "ChatGPT plan"
+        });
+      }
+    }
+  } catch {
+  }
+  for (const [value, label, provider] of CLOUD_MODELS) {
+    if (!isAvailable(provider)) continue;
+    if (value === "gpt-6-astra" && !isAvailable("openai:gpt-6-astra")) continue;
+    const hint = cloudModelIntellectHint(value);
+    options.push({
+      value,
+      label: hint ? `${label}: ${hint}` : label,
+      shortLabel: label,
+      group: cloudGroup,
+      supportsImages: true
+    });
+  }
+  options.push(...await openRouterOptions(api, isAvailable("openrouter"), current));
+  let extraProviders = [];
+  try {
+    extraProviders = await api.settings.extraProviders();
+  } catch {
+  }
+  for (const provider of extraProviders) {
+    options.push(...extraProviderOptions(provider, isAvailable(provider.id), current));
+  }
+  let acpAgents = [];
+  if (includeAgentModels && !sshWorkspace) {
+    try {
+      acpAgents = parseAcpAgentConfigs(await api.settings.get("registeredAcpAgents"));
+    } catch {
+    }
+  }
+  const preferAcpForClaude = enabledClaudeAcpAgent(acpAgents) !== void 0;
+  if (includeAgentModels) {
+    const remote = await remoteAgentOptions(api, isAvailable, current, preferAcpForClaude);
+    const acp = acpAgentOptions(acpAgents).map(
+      (option) => isSameAcpSelection(option.value, current) ? { ...option, value: current } : option
+    );
+    options.push(...preferAcpForClaude ? [...acp, ...remote] : [...remote, ...acp]);
+    options.push(...await pluginModelOptions(api, includeAgentModels, current));
+  }
+  const lmGroup = "Local models";
+  let models;
+  let localCatalogueKnown;
+  try {
+    const modelInfo = api.lmStudio.modelInfo ? await api.lmStudio.modelInfo() : [];
+    models = modelInfo.length > 0 ? modelInfo : (await api.lmStudio.models()).map((id) => ({ id }));
+    localCatalogueKnown = models.length > 0;
+  } catch {
+    models = [];
+    localCatalogueKnown = false;
+  }
+  for (const model of models) {
+    const { id } = model;
+    if (model.embedding === true) continue;
+    const hint = [localModelRoleHint(id), localModelIntellectHint(id)].filter(isNonNull).join(" \xB7 ");
+    const label = getLocalModelCapability(id)?.label ?? modelDisplayName(id);
+    options.push({
+      value: `lmstudio:${id}`,
+      label: hint ? `${label}: ${hint}` : label,
+      shortLabel: label,
+      group: lmGroup,
+      ...model.supportsImages !== void 0 ? { supportsImages: model.supportsImages } : {}
+    });
+  }
+  if (current && !options.some((o2) => o2.value === current)) {
+    if (current.startsWith("lmstudio:")) {
+      options.push({
+        value: current,
+        label: `${modelDisplayLabel(current)} ${localCatalogueKnown ? "(not available)" : "(offline)"}`,
+        group: lmGroup
+      });
+    } else if (includeAgentModels && current.startsWith(REMOTE_AGENT_MODEL_PREFIX)) {
+      const selection2 = parseRemoteAgentModelSelection(current);
+      options.push({
+        value: current,
+        label: `${modelDisplayLabel(current)} (no valid key)`,
+        group: selection2?.provider === "openai" ? OPENAI_AGENT_GROUP : selection2 ? remoteAgentGroupLabel(selection2.provider) : "Remote agents",
+        ...selection2?.provider === "openai" ? { retention: OPENAI_AGENT_RETENTION_NOTICE } : {}
+      });
+    } else if (includeAgentModels && current.startsWith(ACP_MODEL_PREFIX)) {
+      const selection2 = parseAcpModelSelection(current);
+      const agentId = selection2?.id ?? current.slice(ACP_MODEL_PREFIX.length);
+      const configuredAgent = acpAgents.find((agent) => agent.id === agentId);
+      const configuredButUnlisted = configuredAgent?.enabled === true;
+      const staleModel = selection2?.model ? canonicalModelLabel(selection2.model) : "agent default";
+      const stale = {
+        retention: ACP_RETENTION_NOTICE,
+        value: current,
+        label: sshWorkspace ? `${modelDisplayLabel(current)} (unavailable on SSH)` : configuredButUnlisted ? `${configuredAgent.title}: ${staleModel} (not currently advertised)` : configuredAgent ? `${configuredAgent.title} (disabled)` : `${modelDisplayLabel(current)} (not configured)`,
+        group: configuredAgent ? acpGroupLabel(configuredAgent.title) : ACP_GROUP
+      };
+      if (sshWorkspace) stale.disabled = true;
+      options.push(stale);
+    } else if (parseChatGptPlanModel(current)) {
+      options.push({
+        value: current,
+        label: `${modelDisplayLabel(current)} (reconnect or select its account)`,
+        group: "ChatGPT plan",
+        disabled: true
+      });
+    } else if (includeAgentModels && current.startsWith(PLUGIN_MODEL_PREFIX)) {
+      options.push({
+        value: current,
+        label: `${modelDisplayLabel(current)} (plugin disabled)`,
+        group: "Personal plugins",
+        disabled: true
+      });
+    } else {
+      const dynamicLabel = dynamicModelLabel(current);
+      options.push({
+        value: current,
+        label: dynamicLabel ?? `${modelDisplayLabel(current)} (no key)`
+      });
+    }
+  }
+  let blockedMakers = parseBlockedModelMakers(null);
+  try {
+    blockedMakers = parseBlockedModelMakers(await api.settings.get("blockedModelMakers"));
+  } catch {
+  }
+  const unblockedOptions = options.flatMap((option) => {
+    const maker = blockedModelMaker(option.value, blockedMakers);
+    if (!maker) return [option];
+    if (option.value !== current) return [];
+    return [{ ...option, label: `${option.label} (blocked in Settings)`, disabled: true }];
+  });
+  const lineageIdsByScope = /* @__PURE__ */ new Map();
+  for (const option of unblockedOptions) {
+    const scope = option.lineageScope ?? "";
+    const id = option.lineageId ?? option.value;
+    const bucket = lineageIdsByScope.get(scope);
+    if (bucket) bucket.push(id);
+    else lineageIdsByScope.set(scope, [id]);
+  }
+  const visibleOptions = unblockedOptions.flatMap((option) => {
+    const id = option.lineageId ?? option.value;
+    const offered = lineageIdsByScope.get(option.lineageScope ?? "") ?? [];
+    const successor = supersedingModel(id, offered);
+    if (successor === null) return [option];
+    if (option.value !== current) return [];
+    return [
+      {
+        ...option,
+        label: `${option.label} (superseded by ${successorDisplayLabel(successor)})`,
+        disabled: true,
+        // A row already disabled for another reason cannot run, so it keeps
+        // the unavailable treatment rather than reading as the running model.
+        ...option.disabled === true ? {} : { superseded: true }
+      }
+    ];
+  });
+  const concreteCount = visibleOptions.filter(
+    (o2) => !isBestValueChatModel(o2.value) && o2.value !== "" && !o2.value.startsWith(AUTO_MODEL_PREFIX)
+  ).length;
+  if (concreteCount === 0) {
+    visibleOptions.push({
+      value: "",
+      label: "No models available: add a provider or API key in Settings",
+      disabled: true
+    });
+  }
+  const coverageContext = { agents: acpAgents, extraProviders, planUsage: await planUsage };
+  return visibleOptions.map((option) => {
+    const coverage = option.coverage ?? modelCoverage(option.value, coverageContext);
+    return coverage ? { ...option, coverage } : option;
+  });
+}
+function autoModelOption(label) {
+  return { value: "", label };
+}
+async function fetchSmallTasksModelOptions(api, current) {
+  return [
+    autoModelOption("(auto: prefer local, fall back to chat model)"),
+    ...await fetchModelOptions(api, current)
+  ];
+}
+async function fetchRoleModelOptions(api, current, autoLabel = "(auto: prefer on-device)") {
+  return [
+    autoModelOption(autoLabel),
+    // A role may hold a *rule* rather than an id — the instruct/safety role
+    // defaults to one, and onboarding writes one for research. Offer the rules
+    // alongside the concrete models, or the stored value matches no option and
+    // renders through the pinned-id fallback as "auto:best-local (no key)".
+    // Role selectors are excluded: pointing a role at a role is circular.
+    ...automaticModelChoices(),
+    ...await fetchModelOptions(api, current, { includeAgentModels: false })
+  ];
+}
+function automaticModelChoices() {
+  return dynamicModelChoices().filter((choice) => choice.group !== "By role").map((choice) => ({
+    value: choice.value,
+    label: `${choice.label}: ${choice.description}`,
+    group: choice.group
+  }));
+}
+function localModelOptions(models, autoLabel = "(auto: first loaded model)", current = "") {
+  const options = [autoModelOption(autoLabel), ...models.map((id) => ({ value: id, label: id }))];
+  const pinned = current.trim();
+  if (pinned && !options.some((option) => option.value === pinned)) {
+    const rule = dynamicModelLabel(pinned);
+    options.push({ value: pinned, label: rule ?? `${pinned} (not available)` });
+  }
+  return options;
+}
+function dynamicModelOptions(current, autoLabel) {
+  const options = dynamicModelChoices().map((choice) => ({
+    value: choice.value,
+    label: `${choice.label}: ${choice.description}`,
+    group: choice.group
+  }));
+  if (autoLabel !== void 0) options.unshift(autoModelOption(autoLabel));
+  const pinned = current.trim();
+  if (pinned && !options.some((option) => option.value === pinned)) {
+    options.unshift({
+      value: pinned,
+      label: `${modelDisplayLabel(pinned)} (pinned)`,
+      group: PINNED_GROUP
+    });
+  }
+  return options;
+}
+function fetchDynamicModelOptions(current, autoLabel) {
+  return Promise.resolve(dynamicModelOptions(current, autoLabel));
+}
+var ACP_GROUP, OPENROUTER_GROUP, KNOWN_TEXT_ONLY_MISTRAL_MODELS, PINNED_GROUP;
+var init_model_options = __esm({
+  "src/renderer/views/model-options.ts"() {
+    init_openai_cloud_agent();
+    init_acp_retention();
+    init_chatgpt_plan();
+    init_model_catalog();
+    init_local_model_catalog();
+    init_intellect_hints();
+    init_model_intellect();
+    init_openrouter();
+    init_extra_providers();
+    init_data_policies();
+    init_remote_agent();
+    init_acp();
+    init_acp_known_agents();
+    init_plugin_model();
+    init_lm_studio_defaults();
+    init_dynamic_model();
+    init_model_label();
+    init_agent_model_identity();
+    init_model_display();
+    init_nullish2();
+    init_model_maker_block();
+    init_model_version_suppression();
+    init_model_coverage();
+    ACP_GROUP = "Agents on this device";
+    OPENROUTER_GROUP = "OpenRouter";
+    KNOWN_TEXT_ONLY_MISTRAL_MODELS = [
+      "mistral-small-latest",
+      "open-mistral-nemo",
+      "mistral-large-latest"
+    ];
+    PINNED_GROUP = "Currently pinned";
+  }
+});
+
+// src/renderer/dom/context-menu.ts
+function contextMenuClosedByPressOn(anchor2) {
+  const press = outsidePress;
+  outsidePress = null;
+  return press !== null && press.target !== null && anchor2.contains(press.target) && Date.now() - press.at < 1e3;
+}
+function showContextMenu(clientX, clientY, items, withinDialog) {
+  dismissOpenContextMenu?.();
+  if (items.every((entry) => isHeading(entry) || isSeparator(entry))) return;
+  const buttons = items.map((entry) => {
+    if (isSeparator(entry)) return el("div", { class: "context-menu-separator", role: "separator" });
+    if (isHeading(entry)) {
+      return el("div", { class: "context-menu-heading", role: "presentation" }, entry.heading);
+    }
+    const item = entry;
+    const btn = el(
+      "button",
+      {
+        type: "button",
+        class: "context-menu-item",
+        role: item.checked === void 0 ? "menuitem" : item.toggle === true ? "menuitemcheckbox" : "menuitemradio",
+        ...item.checked === void 0 ? {} : { "aria-checked": String(item.checked) }
+      },
+      el("span", { class: "context-menu-item-label" }, item.label),
+      ...item.detail === void 0 ? [] : [el("span", { class: "context-menu-item-detail" }, item.detail)],
+      ...item.toggle === true && item.checked !== void 0 ? [
+        el(
+          "span",
+          {
+            class: item.checked ? "context-menu-switch is-on" : "context-menu-switch",
+            "aria-hidden": "true"
+          },
+          el("i")
+        )
+      ] : item.checked === true ? [checkIcon("ui-icon ui-icon-sm context-menu-item-check")] : []
+    );
+    if (item.checked === true) btn.classList.add("is-checked");
+    if (item.disabled) btn.disabled = true;
+    let selected = false;
+    const select = () => {
+      if (selected || item.disabled) return;
+      selected = true;
+      dismiss();
+      item.onSelect();
+    };
+    btn.addEventListener("mousedown", (e2) => {
+      if (item.disabled) return;
+      e2.preventDefault();
+      e2.stopPropagation();
+      select();
+    });
+    btn.addEventListener("click", (e2) => {
+      e2.stopPropagation();
+      select();
+    });
+    return btn;
+  });
+  const menu = el("div", { class: "context-menu", role: "menu" }, ...buttons);
+  menu.style.left = `${String(clientX)}px`;
+  menu.style.top = `${String(clientY)}px`;
+  const dismiss = () => {
+    menu.remove();
+    document.removeEventListener("pointerdown", onPointerDown, true);
+    document.removeEventListener("keydown", onKeyDown, true);
+    window.removeEventListener("blur", dismiss);
+    if (dismissOpenContextMenu === dismiss) dismissOpenContextMenu = null;
+  };
+  const onPointerDown = (e2) => {
+    const target = e2.target instanceof Node ? e2.target : null;
+    if (menu.contains(target)) return;
+    outsidePress = { target, at: Date.now() };
+    dismiss();
+  };
+  const onKeyDown = (e2) => {
+    if (e2.key !== "Escape") return;
+    e2.preventDefault();
+    e2.stopPropagation();
+    dismiss();
+  };
+  const dialog2 = withinDialog?.closest("dialog");
+  (dialog2 ?? document.body).append(menu);
+  dismissOpenContextMenu = dismiss;
+  document.addEventListener("pointerdown", onPointerDown, true);
+  document.addEventListener("keydown", onKeyDown, true);
+  window.addEventListener("blur", dismiss);
+  const rect = menu.getBoundingClientRect();
+  const pad = 4;
+  let left = clientX;
+  let top = clientY;
+  if (left + rect.width > window.innerWidth - pad) left = window.innerWidth - rect.width - pad;
+  if (top + rect.height > window.innerHeight - pad) top = window.innerHeight - rect.height - pad;
+  if (left < pad) left = pad;
+  if (top < pad) top = pad;
+  menu.style.left = `${String(left)}px`;
+  menu.style.top = `${String(top)}px`;
+}
+function dismissContextMenu() {
+  dismissOpenContextMenu?.();
+}
+var isHeading, isSeparator, dismissOpenContextMenu, outsidePress;
+var init_context_menu = __esm({
+  "src/renderer/dom/context-menu.ts"() {
+    init_helpers();
+    init_icons();
+    isHeading = (entry) => "heading" in entry;
+    isSeparator = (entry) => "separator" in entry;
+    dismissOpenContextMenu = null;
+    outsidePress = null;
+  }
+});
+
+// src/renderer/views/model-picker.ts
+function isTypeToFilterKey(e2) {
+  if (e2.ctrlKey || e2.metaKey || e2.altKey) return false;
+  if (e2.key.length !== 1) return false;
+  if (e2.key === " ") return false;
+  const code = e2.key.codePointAt(0);
+  return code !== void 0 && code >= 32;
+}
+function fieldMenuSurfacePlacement(menu, surface, trigger, gap) {
+  if (menu.top >= surface.top - 1 && menu.bottom <= surface.bottom + 1) return "natural";
+  return trigger.top - gap - menu.height >= surface.top ? "flipped" : "contained";
+}
+function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = {}) {
+  const variant = pickerOpts.variant ?? "compact";
+  const recentMode = pickerOpts.getRecentValues !== void 0;
+  const wrap = el("div", {
+    class: [
+      "model-picker",
+      `model-picker-${variant}`,
+      recentMode ? "model-picker-recent-mode" : void 0,
+      pickerOpts.className
+    ].filter(isNonEmptyString).join(" ")
+  });
+  wrap.style.setProperty("--model-picker-anchor", `--model-picker-${String(++pickerAnchorId)}`);
+  const triggerAttrs = {
+    type: "button",
+    class: "model-picker-trigger",
+    "aria-haspopup": "listbox",
+    "aria-expanded": "false"
+  };
+  if (pickerOpts.ariaLabel) triggerAttrs["aria-label"] = pickerOpts.ariaLabel;
+  const trigger = el("button", triggerAttrs);
+  const labelEl = el("span", { class: "model-picker-label" });
+  const chevron = el(
+    "span",
+    { class: "model-picker-chevron", "aria-hidden": "true" },
+    chevronDownIcon("ui-icon ui-icon-sm ui-picker-chevron")
+  );
+  const triggerCost = el(
+    "span",
+    {
+      class: "model-picker-cost",
+      hidden: "",
+      "aria-label": "Potential usage charge",
+      title: "Potential usage charge"
+    },
+    "$"
+  );
+  trigger.append(labelEl, triggerCost, chevron);
+  const menu = el("div", {
+    class: "model-picker-menu",
+    hidden: "",
+    "aria-label": "Choose model"
+  });
+  const recentHeader = el(
+    "div",
+    {
+      class: "model-picker-view-title",
+      hidden: recentMode ? void 0 : ""
+    },
+    "Recent"
+  );
+  const allHeader = el("div", { class: "model-picker-all-header", hidden: "" });
+  const backButton = el(
+    "button",
+    {
+      type: "button",
+      class: "model-picker-back",
+      "aria-label": "Back to recent models"
+    },
+    arrowLeftIcon("ui-icon ui-icon-sm")
+  );
+  allHeader.append(backButton, el("span", { class: "model-picker-view-title" }, "All models"));
+  const coverageFilters = el("div", {
+    class: "model-picker-coverage-filters",
+    role: "group",
+    "aria-label": "Filter models by coverage",
+    hidden: ""
+  });
+  const coverageButtons = COVERAGE_FILTERS.map(({ value, label }) => {
+    const count = el("span", { class: "model-picker-coverage-count", "aria-hidden": "true" });
+    const button = el(
+      "button",
+      {
+        type: "button",
+        class: "model-picker-coverage-filter",
+        "data-coverage": value,
+        "aria-label": `${label} models`,
+        "aria-pressed": String(value === "all")
+      },
+      label,
+      count
+    );
+    button.addEventListener("click", () => {
+      coverageFilter = value;
+      activeValue = null;
+      list.scrollTop = 0;
+      renderMenu(cachedOptions);
+    });
+    coverageFilters.append(button);
+    return { value, button, count };
+  });
+  const filter = el("input", {
+    type: "search",
+    class: "model-picker-filter",
+    placeholder: "Filter models...",
+    "aria-label": "Filter models",
+    autocomplete: "off",
+    hidden: recentMode ? "" : void 0
+  });
+  const list = el("div", {
+    class: "model-picker-list",
+    role: "listbox",
+    "aria-label": recentMode ? "Recent models" : "All models"
+  });
+  const browseButton = el(
+    "button",
+    {
+      type: "button",
+      class: "model-picker-browse",
+      "aria-label": "Browse all models",
+      hidden: recentMode ? void 0 : ""
+    },
+    el("span", {}, "All models"),
+    chevronRightIcon("ui-icon ui-icon-sm")
+  );
+  const groupsSection = el("div", { class: "model-picker-groups", hidden: "" });
+  const groupHeader = el("div", { class: "model-picker-all-header", hidden: "" });
+  const groupBack = el(
+    "button",
+    { type: "button", class: "model-picker-back", "aria-label": "Back to models" },
+    arrowLeftIcon("ui-icon ui-icon-sm")
+  );
+  const groupTitle = el("span", { class: "model-picker-view-title" });
+  groupHeader.append(groupBack, groupTitle);
+  menu.append(
+    recentHeader,
+    allHeader,
+    groupHeader,
+    coverageFilters,
+    filter,
+    list,
+    groupsSection,
+    browseButton
+  );
+  wrap.append(trigger, menu);
+  root.append(wrap);
+  const homeView = recentMode ? "recent" : "all";
+  let open2 = false;
+  let view = homeView;
+  let coverageFilter = "all";
+  const cleanups = [];
+  let cachedOptions = [];
+  let valueGroups = [];
+  let activeGroupId = null;
+  let activeValue = null;
+  let refreshGeneration = 0;
+  let loadState = "loading";
+  function activeGroup() {
+    return valueGroups.find((group) => group.id === activeGroupId);
+  }
+  function currentRoute() {
+    const current = getCurrent();
+    return pickerOpts.getCurrentRoute?.(current) ?? current;
+  }
+  function focusActiveOption() {
+    list.querySelector(".model-picker-option.is-active")?.focus({ preventScroll: true });
+  }
+  function setView(next, focus = true) {
+    view = next === "group" ? "group" : recentMode ? next : "all";
+    if (view !== "group") activeGroupId = null;
+    recentHeader.hidden = view !== "recent";
+    allHeader.hidden = !recentMode || view !== "all";
+    groupHeader.hidden = view !== "group";
+    filter.hidden = view !== "all";
+    browseButton.hidden = !recentMode || view !== "recent";
+    groupsSection.hidden = view !== homeView || valueGroups.length === 0;
+    const group = activeGroup();
+    if (group) groupTitle.textContent = group.label;
+    list.setAttribute(
+      "aria-label",
+      view === "group" ? group?.label ?? "Options" : view === "recent" ? "Recent models" : "All models"
+    );
+    if (view !== "all") filter.value = "";
+    renderMenu(cachedOptions);
+    if (!focus) return;
+    if (view === "all") filter.focus();
+    else focusActiveOption();
+  }
+  function openGroup(groupId) {
+    activeGroupId = groupId;
+    activeValue = activeGroup()?.currentValue ?? null;
+    setView("group");
+  }
+  function placeFieldMenuInsideSurface() {
+    menu.classList.remove("is-surface-flipped", "is-surface-contained");
+    if (!open2 || variant !== "field") return;
+    const surface = menu.offsetParent;
+    if (!(surface instanceof HTMLElement)) return;
+    const menuRect = menu.getBoundingClientRect();
+    const surfaceRect = surface.getBoundingClientRect();
+    const triggerRect = trigger.getBoundingClientRect();
+    const gap = Number.parseFloat(getComputedStyle(menu).getPropertyValue("--spacing-xs")) || 4;
+    const placement = fieldMenuSurfacePlacement(menuRect, surfaceRect, triggerRect, gap);
+    if (placement === "flipped") {
+      menu.classList.add("is-surface-flipped");
+    } else if (placement === "contained") {
+      menu.classList.add("is-surface-contained");
+    }
+  }
+  function setOpen(next) {
+    open2 = next;
+    trigger.setAttribute("aria-expanded", String(next));
+    if (next) {
+      coverageFilter = "all";
+      menu.removeAttribute("hidden");
+      setView(homeView);
+      if (loadState === "error") void refresh();
+    } else {
+      menu.setAttribute("hidden", "");
+      menu.classList.remove("is-surface-flipped", "is-surface-contained");
+      filter.value = "";
+      setView(homeView, false);
+      pickerOpts.onClose?.();
+    }
+  }
+  function matchingOptions(options) {
+    const query = filter.value.trim().toLocaleLowerCase();
+    return options.filter(
+      (opt) => (coverageFilter === "all" || opt.coverage === coverageFilter) && (!query || `${opt.label} ${opt.value} ${opt.group ?? ""}`.toLocaleLowerCase().includes(query))
+    );
+  }
+  function visibleOptions(options) {
+    if (view === "all") return matchingOptions(options);
+    const requested = [currentRoute(), ...pickerOpts.getRecentValues?.() ?? []];
+    const seen = /* @__PURE__ */ new Set();
+    const recent = [];
+    for (const value of requested) {
+      if (!value || seen.has(value)) continue;
+      seen.add(value);
+      const option = options.find((candidate) => candidate.value === value);
+      if (option) recent.push(option);
+      if (recent.length === RECENT_MODEL_LIMIT) break;
+    }
+    return recent;
+  }
+  function scrollActiveOptionIntoView() {
+    const active2 = list.querySelector(".model-picker-option.is-active");
+    if (!active2) return;
+    const activeBounds = active2.getBoundingClientRect();
+    const listBounds = list.getBoundingClientRect();
+    if (activeBounds.top < listBounds.top) {
+      list.scrollTop += activeBounds.top - listBounds.top;
+    } else if (activeBounds.bottom > listBounds.bottom) {
+      list.scrollTop += activeBounds.bottom - listBounds.bottom;
+    }
+  }
+  function renderGroupChoices(group) {
+    clear(list);
+    activeValue ??= group.currentValue;
+    for (const choice of group.choices) {
+      const selected = choice.value === group.currentValue;
+      const item = el(
+        "button",
+        {
+          type: "button",
+          class: "model-picker-option",
+          role: "option",
+          "data-value": choice.value,
+          "aria-selected": choice.value === activeValue ? "true" : "false",
+          "aria-current": selected ? "true" : void 0,
+          ...choice.description ? { title: choice.description } : {}
+        },
+        el("span", { class: "model-picker-option-label" }, choice.label),
+        ...selected ? [checkIcon("ui-icon ui-icon-sm model-picker-option-check")] : []
+      );
+      if (selected) item.classList.add("is-selected");
+      if (choice.value === activeValue) item.classList.add("is-active");
+      item.addEventListener("click", () => {
+        selectGroupValue(choice.value);
+      });
+      list.append(item);
+    }
+    scrollActiveOptionIntoView();
+  }
+  function renderGroups() {
+    clear(groupsSection);
+    groupsSection.hidden = view !== homeView || valueGroups.length === 0;
+    for (const group of valueGroups) {
+      const current = group.choices.find((choice) => choice.value === group.currentValue);
+      const row = el(
+        "button",
+        {
+          type: "button",
+          class: "model-picker-group-row",
+          "aria-haspopup": "listbox",
+          "aria-label": `${group.label}: ${current?.label ?? "default"}`
+        },
+        el("span", { class: "model-picker-group-row-label" }, group.label),
+        el("span", { class: "model-picker-group-row-value" }, current?.label ?? "Default"),
+        chevronRightIcon("ui-icon ui-icon-sm")
+      );
+      row.addEventListener("click", () => {
+        openGroup(group.id);
+      });
+      groupsSection.append(row);
+    }
+  }
+  function selectGroupValue(value) {
+    const group = activeGroup();
+    if (!group) return;
+    group.currentValue = value;
+    pickerOpts.onSelectGroupValue?.(group.id, value);
+    renderGroups();
+    setOpen(false);
+  }
+  function renderMenu(options) {
+    const hasCoverage = options.some((option) => option.coverage !== void 0);
+    coverageFilters.hidden = view !== "all" || !hasCoverage;
+    menu.classList.toggle("has-coverage-filters", !coverageFilters.hidden);
+    for (const { value, button, count } of coverageButtons) {
+      button.setAttribute("aria-pressed", String(coverageFilter === value));
+      count.textContent = String(
+        options.filter((option) => option.value && (value === "all" || option.coverage === value)).length
+      );
+    }
+    const group = activeGroup();
+    if (view === "group" && group) {
+      renderGroupChoices(group);
+      return;
+    }
+    clear(list);
+    renderGroups();
+    if (options.length === 0 && loadState !== "ready") {
+      list.append(
+        el(
+          "div",
+          {
+            class: `model-picker-status is-${loadState}`,
+            role: "status",
+            "aria-live": "polite"
+          },
+          loadState === "loading" ? "Loading models\u2026" : "Models unavailable. Close and reopen to retry."
+        )
+      );
+      return;
+    }
+    const current = currentRoute();
+    const matches = visibleOptions(options);
+    const active2 = matches.find((opt) => opt.value === activeValue && !opt.disabled) ?? matches.find((opt) => opt.value === current && !opt.disabled) ?? matches.find((opt) => !opt.disabled);
+    activeValue = active2?.value ?? null;
+    let lastGroup;
+    for (const opt of matches) {
+      if (opt.group !== lastGroup) {
+        lastGroup = opt.group;
+        if (view === "all" && opt.group) {
+          list.append(el("div", { class: "model-picker-group-label" }, opt.group));
+        }
+      }
+      const selected = opt.value === current;
+      const item = el(
+        "button",
+        {
+          type: "button",
+          class: "model-picker-option",
+          role: "option",
+          "data-value": opt.value,
+          "aria-selected": opt.value === activeValue ? "true" : "false",
+          "aria-current": selected ? "true" : void 0,
+          disabled: opt.disabled ? true : void 0,
+          // The label ellipsizes at the menu's width cap; the tooltip keeps the
+          // whole of it reachable.
+          title: opt.label
+        },
+        el("span", { class: "model-picker-option-label" }, opt.label),
+        ...opt.retention ? [
+          el(
+            "span",
+            {
+              class: "model-picker-retention",
+              title: opt.retention.detail,
+              "aria-label": opt.retention.label,
+              role: "img"
+            },
+            historyIcon()
+          )
+        ] : [],
+        ...opt.coverage ? [
+          el(
+            "span",
+            {
+              class: opt.coverage === "paid" ? "model-picker-cost" : "model-picker-coverage-label",
+              ...opt.coverage === "paid" ? { "aria-label": "Potential usage charge", title: "Potential usage charge" } : {}
+            },
+            opt.coverage === "paid" ? "$" : opt.coverage === "local" ? "Local" : opt.coverage === "free" ? "Free" : "Plan"
+          )
+        ] : [],
+        ...recentMode || hasCoverage ? [
+          el(
+            "span",
+            { class: "model-picker-option-check-slot", "aria-hidden": "true" },
+            ...selected ? [checkIcon("ui-icon ui-icon-sm model-picker-option-check")] : []
+          )
+        ] : []
+      );
+      if (selected) item.classList.add("is-selected");
+      if (opt.superseded) item.classList.add("is-superseded");
+      if (opt.value === activeValue) item.classList.add("is-active");
+      item.addEventListener("click", () => {
+        selectOption(opt.value);
+      });
+      list.append(item);
+    }
+    if (matches.length === 0) {
+      list.append(
+        el(
+          "div",
+          { class: "model-picker-empty" },
+          view === "all" ? "No matching models" : "No recent models available"
+        )
+      );
+    }
+    scrollActiveOptionIntoView();
+    placeFieldMenuInsideSurface();
+  }
+  function selectOption(value) {
+    if (value === null) return;
+    const option = cachedOptions.find((opt) => opt.value === value);
+    if (!option || option.disabled) return;
+    activeValue = option.value;
+    onSelect(option.value);
+    updateTrigger(cachedOptions);
+    setOpen(false);
+  }
+  function moveActive(direction) {
+    const group = activeGroup();
+    const values = view === "group" && group ? group.choices.map((choice) => choice.value) : visibleOptions(cachedOptions).filter((opt) => !opt.disabled).map((opt) => opt.value);
+    if (values.length === 0) return;
+    const index = values.findIndex((value) => value === activeValue);
+    const nextIndex = clamp(index + direction, 0, values.length - 1);
+    activeValue = values[nextIndex] ?? null;
+    renderMenu(cachedOptions);
+    if (view !== "all") focusActiveOption();
+  }
+  function updateTrigger(options) {
+    const current = getCurrent();
+    const route = currentRoute();
+    const match = options.find((opt) => opt.value === route);
+    const label = (current ? pickerOpts.formatCurrentLabel?.(current) : void 0) ?? match?.label ?? (current ? modelDisplayLabel(current) : "Select model");
+    labelEl.textContent = label;
+    labelEl.title = current;
+    triggerCost.hidden = match?.coverage !== "paid";
+  }
+  async function refresh(signal) {
+    if (signal?.aborted) return;
+    const generation = ++refreshGeneration;
+    if (cachedOptions.length === 0) {
+      loadState = "loading";
+      renderMenu(cachedOptions);
+    }
+    try {
+      const options = await loadOptions(getCurrent());
+      if (generation !== refreshGeneration || signal?.aborted) return;
+      cachedOptions = options;
+      loadState = "ready";
+    } catch {
+      if (generation !== refreshGeneration || signal?.aborted) return;
+      cachedOptions = [];
+      loadState = "error";
+    }
+    if (pickerOpts.loadValueGroups) {
+      const groups = await pickerOpts.loadValueGroups(getCurrent()).catch(() => []);
+      if (generation !== refreshGeneration || signal?.aborted) return;
+      valueGroups = [...groups];
+      if (!activeGroup()) activeGroupId = null;
+    }
+    pickerOpts.onOptionsLoaded?.(cachedOptions);
+    renderMenu(cachedOptions);
+    updateTrigger(cachedOptions);
+    if (open2 && view === "recent" && !menu.contains(document.activeElement)) focusActiveOption();
+  }
+  function sync() {
+    renderMenu(cachedOptions);
+    updateTrigger(cachedOptions);
+  }
+  trigger.addEventListener("click", () => {
+    setOpen(!open2);
+  });
+  trigger.addEventListener("contextmenu", (e2) => {
+    if (valueGroups.length === 0) return;
+    e2.preventDefault();
+    e2.stopPropagation();
+    const entries = [];
+    for (const group of valueGroups) {
+      entries.push({ heading: group.label });
+      for (const choice of group.choices) {
+        entries.push({
+          label: choice.label,
+          checked: choice.value === group.currentValue,
+          onSelect: () => {
+            group.currentValue = choice.value;
+            pickerOpts.onSelectGroupValue?.(group.id, choice.value);
+            renderGroups();
+          }
+        });
+      }
+    }
+    showContextMenu(e2.clientX, e2.clientY, entries);
+  });
+  browseButton.addEventListener("click", () => {
+    setView("all");
+  });
+  backButton.addEventListener("click", () => {
+    setView("recent");
+  });
+  groupBack.addEventListener("click", () => {
+    activeValue = null;
+    setView(homeView);
+  });
+  filter.addEventListener("input", () => {
+    renderMenu(cachedOptions);
+  });
+  function enterAppliesHighlight(target) {
+    if (target === filter || target === menu || target === list) return true;
+    if (!(target instanceof HTMLElement)) return false;
+    if (target.matches(".model-picker-option")) return true;
+    return !menu.contains(target);
+  }
+  function handleOpenMenuKeydown(e2) {
+    if (!open2 || e2.isComposing) return false;
+    if (e2.key === "ArrowDown") {
+      e2.preventDefault();
+      e2.stopPropagation();
+      moveActive(1);
+      return true;
+    }
+    if (e2.key === "ArrowUp") {
+      e2.preventDefault();
+      e2.stopPropagation();
+      moveActive(-1);
+      return true;
+    }
+    if (e2.key === "Enter" && enterAppliesHighlight(e2.target)) {
+      e2.preventDefault();
+      e2.stopPropagation();
+      if (view === "group") {
+        if (activeValue !== null) selectGroupValue(activeValue);
+      } else selectOption(activeValue);
+      return true;
+    }
+    if (e2.key === "Escape") {
+      e2.preventDefault();
+      e2.stopPropagation();
+      if (view === "group") {
+        activeValue = null;
+        setView(homeView);
+      } else if (view === "all" && recentMode) setView("recent");
+      else {
+        setOpen(false);
+        if (!recentMode) trigger.focus();
+      }
+      return true;
+    }
+    if (e2.key === "ArrowLeft" && view === "group") {
+      e2.preventDefault();
+      e2.stopPropagation();
+      activeValue = null;
+      setView(homeView);
+      return true;
+    }
+    if (e2.key === "ArrowRight" && view === "recent" && recentMode) {
+      e2.preventDefault();
+      e2.stopPropagation();
+      setView("all");
+      return true;
+    }
+    if (e2.key === "ArrowLeft" && view === "all" && recentMode) {
+      e2.preventDefault();
+      e2.stopPropagation();
+      setView("recent");
+      return true;
+    }
+    if (recentMode && view === "recent" && isTypeToFilterKey(e2) && e2.target !== filter) {
+      e2.preventDefault();
+      e2.stopPropagation();
+      filter.value = e2.key;
+      setView("all");
+      return true;
+    }
+    if (view === "all" && isTypeToFilterKey(e2) && e2.target !== filter) {
+      e2.preventDefault();
+      e2.stopPropagation();
+      filter.value += e2.key;
+      filter.focus();
+      renderMenu(cachedOptions);
+      return true;
+    }
+    return false;
+  }
+  menu.addEventListener("keydown", (e2) => {
+    handleOpenMenuKeydown(e2);
+  });
+  cleanups.push(
+    on(document, "click", (e2) => {
+      if (!open2) return;
+      if (!(e2.target instanceof Node) || !wrap.contains(e2.target)) setOpen(false);
+    }),
+    on(
+      document,
+      "keydown",
+      (e2) => {
+        const isOpenShortcut = pickerOpts.enableShortcut === true && (e2.ctrlKey || e2.metaKey) && e2.shiftKey && !e2.altKey && (e2.key === "m" || e2.key === "M");
+        if (isOpenShortcut && !document.querySelector("dialog[open]")) {
+          e2.preventDefault();
+          setOpen(true);
+          return;
+        }
+        if (!open2) return;
+        if (e2.target instanceof Node && menu.contains(e2.target)) return;
+        handleOpenMenuKeydown(e2);
+      },
+      { capture: true }
+    )
+  );
+  const removalObserver = new MutationObserver(() => {
+    if (document.contains(wrap)) return;
+    removalObserver.disconnect();
+    destroy();
+  });
+  removalObserver.observe(document.documentElement, { childList: true, subtree: true });
+  cleanups.push(() => {
+    removalObserver.disconnect();
+  });
+  let destroyed = false;
+  function destroy() {
+    if (destroyed) return;
+    destroyed = true;
+    refreshGeneration++;
+    cleanups.forEach((cleanup) => {
+      cleanup();
+    });
+    wrap.remove();
+  }
+  updateTrigger(cachedOptions);
+  if (pickerOpts.loadOnMount !== false) void refresh();
+  return {
+    root: wrap,
+    refresh,
+    sync,
+    openMenu: () => {
+      if (!open2) setOpen(true);
+    },
+    destroy
+  };
+}
+function nativeOption(item) {
+  const option = document.createElement("option");
+  option.value = item.value;
+  option.textContent = item.label;
+  option.disabled = item.disabled === true;
+  return option;
+}
+function mountModelSelectPicker(select, pickerOpts) {
+  let current = select.value;
+  if (!select.id) {
+    select.id = `model-picker-select-${String(++fieldPickerId)}`;
+  }
+  const wrappingLabel = select.parentElement instanceof HTMLLabelElement ? select.parentElement : null;
+  const associatedLabels = [...document.querySelectorAll("label")].filter(
+    (label) => label.htmlFor === select.id
+  );
+  if (wrappingLabel && !associatedLabels.includes(wrappingLabel)) {
+    associatedLabels.push(wrappingLabel);
+  }
+  const host = el("div", {
+    class: "model-picker-field-host",
+    "data-model-picker-for": select.name || select.id
+  });
+  select.after(host);
+  select.hidden = true;
+  select.classList.add("model-picker-native");
+  select.setAttribute("aria-hidden", "true");
+  select.tabIndex = -1;
+  function syncNativeOptions(options) {
+    clear(select);
+    let lastGroup;
+    let group = null;
+    for (const item of options) {
+      if (item.group !== lastGroup) {
+        lastGroup = item.group;
+        if (item.group) {
+          group = document.createElement("optgroup");
+          group.label = item.group;
+          select.append(group);
+        } else {
+          group = null;
+        }
+      }
+      const option = nativeOption(item);
+      if (group) group.append(option);
+      else select.append(option);
+    }
+    select.value = current;
+  }
+  const { onOptionsLoaded: _ignoredOnOptionsLoaded, ...forwardedOpts } = pickerOpts;
+  const picker = mountModelPicker(
+    host,
+    () => current,
+    (value) => {
+      current = value;
+      select.value = value;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    },
+    (value) => pickerOpts.loadOptions(value),
+    {
+      ...forwardedOpts,
+      variant: "field",
+      ariaLabel: pickerOpts.ariaLabel ?? (select.name || select.id),
+      // Sync the hidden select only after the winning refresh generation so a
+      // stale in-flight load cannot clobber a newer option list / value.
+      onOptionsLoaded: syncNativeOptions
+    }
+  );
+  const trigger = picker.root.querySelector(".model-picker-trigger");
+  if (trigger && associatedLabels.length > 0) {
+    trigger.id = `${select.id}-model-picker-${String(++fieldPickerId)}`;
+    associatedLabels.forEach((label) => {
+      label.htmlFor = trigger.id;
+    });
+  }
+  const onNativeChange = () => {
+    current = select.value;
+    picker.sync();
+  };
+  select.addEventListener("change", onNativeChange);
+  return {
+    ...picker,
+    refresh: async (nextCurrent, signal) => {
+      if (signal?.aborted) return;
+      if (nextCurrent !== void 0) current = nextCurrent;
+      await picker.refresh(signal);
+    },
+    destroy: () => {
+      select.removeEventListener("change", onNativeChange);
+      picker.destroy();
+      host.remove();
+      select.hidden = false;
+      select.classList.remove("model-picker-native");
+      select.removeAttribute("aria-hidden");
+      select.removeAttribute("tabindex");
+      associatedLabels.forEach((label) => {
+        label.htmlFor = select.id;
+      });
+    }
+  };
+}
+var RECENT_MODEL_LIMIT, COVERAGE_FILTERS, pickerAnchorId, fieldPickerId;
+var init_model_picker = __esm({
+  "src/renderer/views/model-picker.ts"() {
+    init_clamp();
+    init_context_menu();
+    init_helpers();
+    init_icons();
+    init_model_options();
+    init_nullish2();
+    RECENT_MODEL_LIMIT = 5;
+    COVERAGE_FILTERS = [
+      { value: "all", label: "All" },
+      { value: "local", label: "Local" },
+      { value: "plan", label: "Plan" },
+      { value: "paid", label: "Paid" }
+    ];
+    pickerAnchorId = 0;
+    fieldPickerId = 0;
+  }
+});
+
+// src/renderer/views/settings/agent-profiles-section.ts
+function createAgentProfilesSection(api, opts = {}) {
+  let profiles = [];
+  let editingId = null;
+  let formModel = "";
+  const list = el("div", { class: "agent-profile-list" });
+  const status = el("p", { class: "field-hint agent-profile-status", role: "status" });
+  status.hidden = true;
+  const nameInput = el("input", {
+    type: "text",
+    class: "agent-profile-name",
+    maxlength: String(AGENT_PROFILE_NAME_MAX),
+    placeholder: "Reviewer",
+    "aria-label": "Profile name"
+  });
+  const modelSelect = el("select", { class: "agent-profile-model", "aria-label": "Profile model" });
+  modelSelect.append(el("option", { value: "" }, KEEP_MODEL_LABEL));
+  const effortSelect = el(
+    "select",
+    { class: "agent-profile-effort", "aria-label": "Profile effort" },
+    el("option", { value: "" }, "The model\u2019s own level"),
+    ...REASONING_LEVELS.map((level) => el("option", { value: level }, EFFORT_LABELS[level]))
+  );
+  const instructionsInput = el("textarea", {
+    class: "agent-profile-instructions",
+    rows: "5",
+    maxlength: String(AGENT_PROFILE_INSTRUCTIONS_MAX),
+    placeholder: "Review the diff for correctness first. Do not edit files unless asked.",
+    "aria-label": "Profile instructions"
+  });
+  const saveButton = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-primary agent-profile-save" },
+    "Save profile"
+  );
+  const cancelButton = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary agent-profile-cancel" },
+    "Cancel"
+  );
+  const formTitle = el("p", { class: "agent-profile-form-title" });
+  const form = el(
+    "div",
+    { class: "agent-profile-form" },
+    formTitle,
+    el("label", {}, "Name", nameInput),
+    el("label", {}, "Model", modelSelect),
+    el("label", {}, "Effort", effortSelect),
+    el(
+      "label",
+      {},
+      "Instructions",
+      instructionsInput,
+      el(
+        "span",
+        { class: "field-hint" },
+        "Added to every turn of a Copse managed chat using this profile, after your custom instructions. Agent managed chats, cloud agents and plugin models don\u2019t receive them."
+      )
+    ),
+    el("div", { class: "provider-actions" }, saveButton, cancelButton)
+  );
+  form.hidden = true;
+  const addButton = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary agent-profile-add" },
+    "Add profile"
+  );
+  const root = el(
+    "fieldset",
+    { class: "agent-profiles" },
+    el("legend", {}, "Profiles"),
+    el(
+      "p",
+      { class: "settings-fieldset-desc" },
+      "Save a model, effort and instructions under a name, such as a reviewer or a bug hunter, then switch a chat to it from the model menu in the composer."
+    ),
+    list,
+    addButton,
+    form,
+    status
+  );
+  let modelPicker = null;
+  function ensureModelPicker() {
+    modelPicker ??= mountModelSelectPicker(modelSelect, {
+      loadOptions: async (current) => [
+        { value: "", label: KEEP_MODEL_LABEL },
+        ...await fetchModelOptions(api, current)
+      ],
+      ariaLabel: "Profile model",
+      loadOnMount: false
+    });
+    return modelPicker;
+  }
+  function setStatus(text) {
+    status.textContent = text;
+    status.hidden = text === "";
+  }
+  function summary(profile) {
+    const parts = [
+      profile.model ? modelDisplayLabel(profile.model) : KEEP_MODEL_LABEL,
+      ...profile.reasoning ? [`${EFFORT_LABELS[profile.reasoning]} effort`] : [],
+      profile.instructions?.trim() ? "with instructions" : "no instructions"
+    ];
+    return parts.join(" \xB7 ");
+  }
+  function renderList() {
+    clear(list);
+    if (profiles.length === 0) {
+      list.append(el("p", { class: "field-hint" }, "No profiles yet."));
+    }
+    for (const profile of profiles) {
+      const edit = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact agent-profile-edit" },
+        "Edit"
+      );
+      const remove = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact agent-profile-delete" },
+        "Remove"
+      );
+      edit.addEventListener("click", () => {
+        openForm(profile);
+      });
+      remove.addEventListener("click", () => {
+        void persist(profiles.filter((candidate) => candidate.id !== profile.id));
+      });
+      list.append(
+        el(
+          "div",
+          { class: "agent-profile-row", "data-profile-id": profile.id },
+          el(
+            "div",
+            { class: "agent-profile-summary" },
+            el("strong", {}, profile.name),
+            el("div", { class: "field-hint" }, summary(profile))
+          ),
+          el("div", { class: "agent-profile-row-actions" }, edit, remove)
+        )
+      );
+    }
+    addButton.disabled = profiles.length >= AGENT_PROFILES_MAX;
+  }
+  function openForm(profile) {
+    editingId = profile?.id ?? null;
+    formTitle.textContent = profile ? `Edit ${profile.name}` : "New profile";
+    nameInput.value = profile?.name ?? "";
+    formModel = profile?.model ?? "";
+    modelSelect.value = formModel;
+    effortSelect.value = profile?.reasoning ?? "";
+    instructionsInput.value = profile?.instructions ?? "";
+    form.hidden = false;
+    addButton.hidden = true;
+    setStatus("");
+    void ensureModelPicker().refresh(formModel);
+    nameInput.focus();
+  }
+  function closeForm() {
+    editingId = null;
+    form.hidden = true;
+    addButton.hidden = false;
+  }
+  async function persist(next) {
+    const parsed2 = agentProfilesSchema.safeParse(next);
+    if (!parsed2.success) {
+      setStatus("That profile could not be saved. Check its name and instructions.");
+      return false;
+    }
+    try {
+      await api.settings.set(AGENT_PROFILES_SETTING, parsed2.data);
+    } catch {
+      setStatus("Could not save profiles. Please try again.");
+      return false;
+    }
+    profiles = parsed2.data;
+    renderList();
+    opts.onChanged?.();
+    return true;
+  }
+  addButton.addEventListener("click", () => {
+    openForm(null);
+  });
+  nameInput.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    saveButton.click();
+  });
+  cancelButton.addEventListener("click", closeForm);
+  modelSelect.addEventListener("change", () => {
+    formModel = modelSelect.value;
+  });
+  saveButton.addEventListener("click", () => {
+    const name = nameInput.value.trim();
+    if (!name) {
+      setStatus("Give the profile a name.");
+      nameInput.focus();
+      return;
+    }
+    const instructions = instructionsInput.value.trim();
+    const model = formModel;
+    const effort = effortSelect.value;
+    const id = editingId ?? newAgentProfileId(name, profiles);
+    const profile = {
+      id,
+      name,
+      ...model ? { model } : {},
+      ...isReasoningLevel(effort) ? { reasoning: effort } : {},
+      ...instructions ? { instructions } : {}
+    };
+    const next = editingId ? profiles.map((candidate) => candidate.id === editingId ? profile : candidate) : [...profiles, profile];
+    void persist(next).then((saved) => {
+      if (saved) closeForm();
+    });
+  });
+  return {
+    root,
+    refresh: async (signal) => {
+      const raw = await api.settings.get(AGENT_PROFILES_SETTING).catch(() => void 0);
+      if (signal?.aborted) return;
+      const parsed2 = agentProfilesSchema.safeParse(raw ?? []);
+      profiles = parsed2.success ? parsed2.data : [];
+      closeForm();
+      setStatus("");
+      renderList();
+    }
+  };
+}
+var EFFORT_LABELS, KEEP_MODEL_LABEL;
+var init_agent_profiles_section = __esm({
+  "src/renderer/views/settings/agent-profiles-section.ts"() {
+    init_model_parameters();
+    init_agent_profiles();
+    init_helpers();
+    init_model_options();
+    init_model_picker();
+    EFFORT_LABELS = {
+      off: "No thinking",
+      minimal: "Minimal",
+      low: "Low",
+      medium: "Medium",
+      high: "High",
+      xhigh: "Extra high",
+      max: "Max"
+    };
+    KEEP_MODEL_LABEL = "Keep the chat\u2019s model";
+  }
+});
+
+// src/shared/web-search.ts
+function resolveWebSearchProvider(value) {
+  return value === "tavily" || value === "parallel" ? value : "none";
+}
+var WEB_SEARCH_PROVIDERS, WEB_SEARCH_LABELS;
+var init_web_search = __esm({
+  "src/shared/web-search.ts"() {
+    WEB_SEARCH_PROVIDERS = ["none", "tavily", "parallel"];
+    WEB_SEARCH_LABELS = {
+      none: "Not configured",
+      tavily: "Tavily",
+      parallel: "Parallel"
+    };
+  }
+});
+
+// src/renderer/views/setup/api-keys-section.ts
+function keyStatusClass(ok) {
+  if (ok === true) return "key-status ok";
+  if (ok === false) return "key-status err";
+  return "key-status";
+}
+function createApiKeysSection(api, opts = {}) {
+  const legend = opts.legend ?? "API Keys";
+  const providers = opts.providers ?? ["anthropic", "openai", "openrouter", "cursor"];
+  const validateOnInput = opts.validateOnInput ?? true;
+  const fields = providers.map((provider) => {
+    const config2 = API_KEY_PROVIDER_CONFIGS[provider];
+    const input2 = el("input", {
+      type: "password",
+      name: config2.name,
+      placeholder: config2.placeholder,
+      autocomplete: "off"
+    });
+    const status = el("span", { class: "key-status", "data-key": provider });
+    const atRest = el("span", { class: "key-status", "data-at-rest": provider });
+    const label = el(
+      "label",
+      {},
+      config2.label,
+      input2,
+      status,
+      atRest,
+      el("span", { class: "field-hint" }, config2.hint)
+    );
+    return { ...config2, input: input2, status, atRest, label };
+  });
+  const plaintextNote = el(
+    "p",
+    { class: "field-hint", "data-at-rest-note": "", hidden: true },
+    "One or more keys are stored unencrypted because the OS secure storage is unavailable. Install and unlock a system keyring to encrypt them at rest."
+  );
+  const fieldset = el(
+    "fieldset",
+    {},
+    el("legend", {}, legend),
+    ...fields.map((field) => field.label),
+    plaintextNote
+  );
+  let generation = 0;
+  const validationTimers = /* @__PURE__ */ new Map();
+  async function validateField(provider, input2, statusEl) {
+    const mine = generation;
+    const value = input2.value.trim();
+    if (!value) {
+      statusEl.replaceChildren();
+      statusEl.className = "key-status";
+      return;
+    }
+    setInlineStatus(statusEl, "pending", "Checking\u2026");
+    statusEl.className = "key-status";
+    const result = await api.settings.validateKey(provider, value);
+    if (mine !== generation || input2.value.trim() !== value) return;
+    if (result.ok) {
+      setInlineStatus(statusEl, "ok", "Valid key");
+      statusEl.className = keyStatusClass(true);
+    } else {
+      setInlineStatus(statusEl, "error", result.error ?? "Invalid key");
+      statusEl.className = keyStatusClass(false);
+    }
+  }
+  function bindValidation(provider, input2, statusEl) {
+    if (!validateOnInput) return;
+    input2.addEventListener("input", () => {
+      const existing = validationTimers.get(provider);
+      if (existing) clearTimeout(existing);
+      validationTimers.set(
+        provider,
+        setTimeout(() => {
+          void validateField(provider, input2, statusEl);
+        }, 500)
+      );
+    });
+  }
+  for (const field of fields) {
+    bindValidation(field.provider, field.input, field.status);
+  }
+  async function refreshKeyStatus(signal) {
+    const mine = generation;
+    if (signal?.aborted) return;
+    let anyPlaintext = false;
+    for (const field of fields) {
+      const saved = await api.settings.getKey(field.provider);
+      if (mine !== generation || signal?.aborted) return;
+      if (!field.input.value.trim()) {
+        setInlineStatus(field.status, saved ? "filled" : "idle", saved ? "saved" : "not set");
+        field.status.className = "key-status";
+      }
+      const encrypted = saved ? await api.settings.getKeyEncrypted(field.provider) : null;
+      if (mine !== generation || signal?.aborted) return;
+      if (encrypted === true) {
+        setInlineStatus(field.atRest, "ok", "Encrypted by OS keychain");
+        field.atRest.className = "key-status";
+      } else if (encrypted === false) {
+        anyPlaintext = true;
+        setInlineStatus(field.atRest, "warn", "Stored unencrypted");
+        field.atRest.className = "key-status";
+      } else {
+        field.atRest.replaceChildren();
+        field.atRest.className = "key-status";
+      }
+    }
+    plaintextNote.hidden = !anyPlaintext;
+  }
+  async function confirmPlaintextStorage(provider) {
+    const label = API_KEY_PROVIDER_CONFIGS[provider].label;
+    return showConfirmDialog({
+      message: `No OS keyring is available to encrypt your ${label} at rest. Install and unlock a system keyring to store it encrypted.`,
+      detail: "Store it unencrypted on this machine anyway?",
+      confirmLabel: "Store anyway"
+    });
+  }
+  async function saveKeys() {
+    let savedAny = false;
+    const failures = [];
+    for (const field of fields) {
+      const key = field.input.value.trim();
+      if (!key) {
+        field.input.value = "";
+        continue;
+      }
+      let result = await api.settings.setKey(field.provider, key);
+      if (!result.ok && result.reason === "plaintext-consent-required" && await confirmPlaintextStorage(field.provider)) {
+        result = await api.settings.setKey(field.provider, key, { allowPlaintext: true });
+      }
+      if (result.ok) {
+        field.input.value = "";
+        savedAny = true;
+      } else {
+        const message = result.reason === "plaintext-storage-disabled" ? `Not saved: ${PLAINTEXT_STORAGE_DISABLED_REASON}` : "Not saved: unencrypted storage declined";
+        failures.push(message);
+        setInlineStatusMarkdown(field.status, "error", message);
+        field.status.className = keyStatusClass(false);
+      }
+    }
+    if (savedAny) await refreshKeyStatus();
+    return failures.length === 0;
+  }
+  return {
+    root: fieldset,
+    refreshKeyStatus,
+    saveKeys,
+    reset: () => {
+      generation += 1;
+      for (const timer of validationTimers.values()) clearTimeout(timer);
+      validationTimers.clear();
+      for (const field of fields) {
+        field.input.value = "";
+        field.status.replaceChildren();
+      }
+    }
+  };
+}
+var PLAINTEXT_STORAGE_DISABLED_REASON, API_KEY_PROVIDER_CONFIGS;
+var init_api_keys_section = __esm({
+  "src/renderer/views/setup/api-keys-section.ts"() {
+    init_helpers();
+    init_inline_status();
+    init_confirm_dialog();
+    PLAINTEXT_STORAGE_DISABLED_REASON = "secure storage is unavailable and plaintext secret storage is disabled. Start Copse with `COPSE_ALLOW_PLAINTEXT_SECRETS=1` to opt in.";
+    API_KEY_PROVIDER_CONFIGS = {
+      tavily: {
+        provider: "tavily",
+        name: "tavilyKey",
+        label: "Tavily API key",
+        placeholder: "tvly-\u2026",
+        hint: "Basic search uses one API credit per request. Generated answers are disabled."
+      },
+      anthropic: {
+        provider: "anthropic",
+        name: "anthropicKey",
+        label: "Anthropic API key",
+        placeholder: "sk-ant-\u2026",
+        hint: "Checked with a free request, so no tokens are charged."
+      },
+      openai: {
+        provider: "openai",
+        name: "openaiKey",
+        label: "OpenAI API key",
+        placeholder: "sk-\u2026",
+        hint: "Checked with a free request, so no tokens are charged."
+      },
+      cursor: {
+        provider: "cursor",
+        name: "cursorKey",
+        label: "Cursor API key",
+        placeholder: "cur_\u2026",
+        hint: "For runs on Cursor\u2019s machines. Checked with a free request."
+      },
+      openrouter: {
+        provider: "openrouter",
+        name: "openrouterKey",
+        label: "OpenRouter API key",
+        placeholder: "sk-or-\u2026",
+        hint: "One key for Claude, GPT, Gemini, Llama, and more. Checked with a free request."
+      },
+      github: {
+        provider: "github",
+        name: "githubKey",
+        label: "GitHub token",
+        placeholder: "github_pat_\u2026 or ghp_\u2026",
+        hint: "Lets the Claude cloud agent clone your repository, push branches, and open pull requests. Use a fine-grained token with repository access."
+      },
+      "artificial-analysis": {
+        provider: "artificial-analysis",
+        name: "artificialAnalysisKey",
+        label: "Artificial Analysis API key",
+        placeholder: "aa-\u2026",
+        hint: "Optional: live Intelligence Index data for the model value map, including models beyond the curated list. Free key from artificialanalysis.ai (their terms require the attribution shown on the map)."
+      },
+      parallel: {
+        provider: "parallel",
+        name: "parallelKey",
+        label: "Parallel API key",
+        placeholder: "Parallel API key",
+        hint: "Used only for the direct Search API. Requests may be billable; ZDR depends on your Parallel account agreement."
+      }
+    };
+  }
+});
+
+// src/renderer/views/settings/web-search-section.ts
+function createWebSearchSection(api) {
+  const provider = el("select", { name: "webSearchProvider" });
+  for (const value of WEB_SEARCH_PROVIDERS) {
+    provider.append(el("option", { value }, WEB_SEARCH_LABELS[value]));
+  }
+  const tavily = createApiKeysSection(api, {
+    legend: "Tavily account",
+    providers: ["tavily"],
+    validateOnInput: false
+  });
+  const parallel = createApiKeysSection(api, {
+    legend: "Parallel account",
+    providers: ["parallel"],
+    validateOnInput: false
+  });
+  const note = el(
+    "p",
+    { class: "field-hint" },
+    "Queries and returned excerpts are included in the conversation. Provider retention and usage terms apply. Saving credentials does not run a search."
+  );
+  const root = el(
+    "fieldset",
+    {},
+    el("legend", {}, "Search provider"),
+    el("label", {}, "Default provider", provider),
+    tavily.root,
+    parallel.root,
+    note
+  );
+  const sync = () => {
+    tavily.root.hidden = provider.value !== "tavily";
+    parallel.root.hidden = provider.value !== "parallel";
+  };
+  provider.addEventListener("change", sync);
+  provider.value = "none";
+  sync();
+  return {
+    root,
+    refresh: async (snapshot, signal) => {
+      if (signal.aborted) return;
+      provider.value = resolveWebSearchProvider(snapshot.webSearchProvider);
+      sync();
+      await Promise.all([tavily.refreshKeyStatus(signal), parallel.refreshKeyStatus(signal)]);
+    },
+    collect: (dirty) => dirty.has("webSearchProvider") ? { webSearchProvider: resolveWebSearchProvider(provider.value) } : {},
+    saveKeys: async () => {
+      if (provider.value === "tavily") return tavily.saveKeys();
+      if (provider.value === "parallel") return parallel.saveKeys();
+      return true;
+    },
+    reset: () => {
+      tavily.reset();
+      parallel.reset();
+    }
+  };
+}
+var init_web_search_section = __esm({
+  "src/renderer/views/settings/web-search-section.ts"() {
+    init_web_search();
+    init_helpers();
+    init_api_keys_section();
+  }
+});
+
+// src/renderer/views/setup/ssh-workspace-section.ts
+function createSshWorkspaceSection(api, opts = {}) {
+  const hostList = el("div", { class: "ssh-host-list" });
+  const status = el("span", { class: "ssh-host-status" });
+  const enabledInput = el("input", { type: "checkbox", name: "sshWorkspaceEnabled" });
+  const strictSelect = el("select", { name: "sshStrictHostKeys" });
+  strictSelect.append(
+    el("option", { value: "accept-new" }, "Accept new host keys (recommended)"),
+    el("option", { value: "strict" }, "Strict: reject unknown host keys")
+  );
+  const hostFields = createSshHostFields();
+  const form = el(
+    "div",
+    { class: "ssh-host-form" },
+    ...hostFields.fields,
+    el(
+      "div",
+      { class: "provider-actions" },
+      el("button", { type: "button", class: "ui-btn ui-btn-primary ssh-host-save" }, "Save host"),
+      el("button", { type: "button", class: "ui-btn ui-btn-secondary ssh-host-clear" }, "Clear")
+    )
+  );
+  async function persistHosts(next) {
+    await api.settings.set("sshWorkspaceHosts", next);
+    await renderHosts();
+    opts.onChanged?.();
+  }
+  function clearDraft() {
+    hostFields.reset();
+  }
+  async function renderHosts(signal) {
+    if (signal?.aborted) return;
+    clear(hostList);
+    const [rawHosts, credentialHostIds] = await Promise.all([
+      api.settings.get("sshWorkspaceHosts"),
+      api.sshWorkspace.listCredentialHostIds()
+    ]);
+    if (signal?.aborted) return;
+    const list = parseSshWorkspaceHosts(rawHosts);
+    const credentialHosts = new Set(credentialHostIds);
+    if (list.length === 0) {
+      hostList.append(el("p", { class: "field-hint" }, "No SSH hosts configured yet."));
+      return;
+    }
+    for (const host of list) {
+      const row = el("div", { class: "ssh-host-row" });
+      const target = host.user ? `${host.user}@${host.host}` : host.host;
+      const hasSavedAuthentication = credentialHosts.has(host.id);
+      const summary = el(
+        "div",
+        { class: "ssh-host-summary" },
+        el("div", {}, el("strong", {}, host.label), `: ${target}`),
+        el(
+          "div",
+          {
+            class: hasSavedAuthentication ? "ssh-host-auth ssh-host-auth-saved" : "ssh-host-auth"
+          },
+          hasSavedAuthentication ? "Authentication encrypted by OS keychain" : "Authentication will be requested when you connect"
+        )
+      );
+      const actions = el(
+        "div",
+        { class: "ssh-host-row-actions" },
+        el("button", { type: "button", class: "ssh-host-edit" }, "Edit")
+      );
+      if (hasSavedAuthentication) {
+        const forget = el(
+          "button",
+          { type: "button", class: "ssh-host-forget-auth" },
+          "Forget authentication"
+        );
+        forget.addEventListener("click", () => {
+          void api.sshWorkspace.forgetCredentials(host.id).then(() => {
+            setInlineStatus(status, "ok", `Forgot authentication for \u201C${host.label}\u201D.`);
+            return renderHosts();
+          });
+        });
+        actions.append(forget);
+      }
+      actions.append(el("button", { type: "button", class: "ssh-host-delete" }, "Remove"));
+      row.append(summary, actions);
+      row.querySelector(".ssh-host-edit")?.addEventListener("click", () => {
+        hostFields.edit(host);
+      });
+      row.querySelector(".ssh-host-delete")?.addEventListener("click", () => {
+        void api.sshWorkspace.forgetCredentials(host.id).then(() => persistHosts(removeHost(list, host.id)));
+      });
+      hostList.append(row);
+    }
+  }
+  form.querySelector(".ssh-host-save")?.addEventListener("click", () => {
+    void (async () => {
+      const existing = parseSshWorkspaceHosts(await api.settings.get("sshWorkspaceHosts"));
+      const parsed2 = hostFields.parse(existing);
+      if (!parsed2.ok) {
+        setInlineStatus(status, "error", parsed2.error);
+        return;
+      }
+      await persistHosts(upsertHost(existing, parsed2.host));
+      setInlineStatus(status, "ok", `Saved host \u201C${parsed2.host.label}\u201D.`);
+      clearDraft();
+    })();
+  });
+  form.querySelector(".ssh-host-clear")?.addEventListener("click", () => {
+    clearDraft();
+    status.replaceChildren();
+  });
+  enabledInput.addEventListener("change", () => {
+    if (opts.deferOrdinaryWrites) return;
+    void api.settings.set("sshWorkspaceEnabled", enabledInput.checked).then(() => {
+      opts.onChanged?.();
+    });
+  });
+  strictSelect.addEventListener("change", () => {
+    if (opts.deferOrdinaryWrites) return;
+    void api.settings.set("sshStrictHostKeys", strictSelect.value).then(() => {
+      opts.onChanged?.();
+    });
+  });
+  function load(snapshot) {
+    enabledInput.checked = snapshot.sshWorkspaceEnabled === true;
+    strictSelect.value = snapshot.sshStrictHostKeys === "strict" ? "strict" : "accept-new";
+  }
+  async function refresh(signal) {
+    if (signal?.aborted) return;
+    if (!opts.deferOrdinaryWrites) {
+      const enabled = await api.settings.get("sshWorkspaceEnabled");
+      const strict = await api.settings.get("sshStrictHostKeys");
+      if (signal?.aborted) return;
+      enabledInput.checked = enabled === true;
+      strictSelect.value = strict === "strict" ? "strict" : "accept-new";
+    }
+    await renderHosts(signal);
+  }
+  const importBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary ssh-import-config" },
+    "Import from ~/.ssh/config"
+  );
+  importBtn.addEventListener("click", () => {
+    void (async () => {
+      const aliases = await api.sshWorkspace.listConfigAliases();
+      if (aliases.length === 0) {
+        setInlineStatus(status, "error", "No Host entries found in ~/.ssh/config.");
+        return;
+      }
+      const raw = await api.settings.get("sshWorkspaceHosts");
+      const existing = parseSshWorkspaceHosts(raw);
+      const imported = importSshConfigHosts(existing, aliases);
+      await persistHosts(imported.hosts);
+      if (imported.importedHostIds.length === 0) {
+        setInlineStatus(status, "ok", "All SSH config aliases are already imported.");
+        return;
+      }
+      setInlineStatus(
+        status,
+        "ok",
+        `Imported ${String(imported.importedHostIds.length)} alias(es) from SSH config.`
+      );
+    })();
+  });
+  const root = el(
+    "fieldset",
+    {},
+    el("legend", {}, "SSH workspaces"),
+    el(
+      "p",
+      { class: "settings-fieldset-desc" },
+      "Run shell, git, search, and file tools on a remote Linux host over SSH. Enable the feature below, add hosts here or in the ",
+      el("strong", {}, "Open remote folder"),
+      " dialog, then open a remote project from the projects panel.",
+      " Passwords and key passphrases can be encrypted with the OS keychain and managed per host."
+    ),
+    el("label", { class: "checkbox-label" }, enabledInput, " Enable SSH workspaces (experimental)"),
+    el("label", {}, "Host key policy ", strictSelect),
+    hostList,
+    importBtn,
+    form,
+    status
+  );
+  return {
+    root,
+    refresh,
+    load,
+    collect: (data, dirty) => ({
+      ...dirty.has("sshWorkspaceEnabled") ? { sshWorkspaceEnabled: data.has("sshWorkspaceEnabled") } : {},
+      ...dirty.has("sshStrictHostKeys") ? { sshStrictHostKeys: strictSelect.value === "strict" ? "strict" : "accept-new" } : {}
+    })
+  };
+}
+var init_ssh_workspace_section = __esm({
+  "src/renderer/views/setup/ssh-workspace-section.ts"() {
+    init_helpers();
+    init_inline_status();
+    init_ssh_host_helpers();
+    init_ssh_host_fields();
+    init_ssh_host_helpers();
+  }
+});
+
+// src/renderer/views/tool-permissions-panel.ts
+function cloneCatalog(catalog) {
+  return structuredClone(catalog);
+}
+function groupMatches(group, query) {
+  if (!query) return true;
+  return [group.name, group.origin, group.originDetail, group.status].filter((value) => typeof value === "string").join(" ").toLowerCase().includes(query);
+}
+function matchingTools(group, query) {
+  if (groupMatches(group, query)) return group.tools;
+  return group.tools.filter(
+    (tool) => [tool.name, tool.executionName, tool.description].join(" ").toLowerCase().includes(query)
+  );
+}
+function groupPolicy(tools) {
+  const first = tools[0]?.policy;
+  if (!first || tools.some((tool) => tool.policy !== first)) return "mixed";
+  return first;
+}
+function withPolicy(catalog, toolIds, policy) {
+  return {
+    ...catalog,
+    groups: catalog.groups.map((group) => ({
+      ...group,
+      tools: group.tools.map(
+        (tool) => toolIds.has(tool.id) ? { ...tool, policy, overridden: true } : tool
+      )
+    }))
+  };
+}
+function withDefaults(catalog, toolIds) {
+  return {
+    ...catalog,
+    groups: catalog.groups.map((group) => ({
+      ...group,
+      tools: group.tools.map(
+        (tool) => toolIds.has(tool.id) ? { ...tool, policy: tool.defaultPolicy, overridden: false } : tool
+      )
+    }))
+  };
+}
+function createToolPermissionsPanel(api) {
+  const root = document.createElement("div");
+  root.className = "tool-permissions-panel";
+  const toolbar = document.createElement("div");
+  toolbar.className = "tool-permissions-toolbar";
+  const search = document.createElement("input");
+  search.type = "search";
+  search.className = "tool-permissions-search";
+  search.placeholder = "Search tools or servers\u2026";
+  search.autocomplete = "off";
+  search.spellcheck = false;
+  search.setAttribute("aria-label", "Search tool permissions");
+  const resetAll = document.createElement("button");
+  resetAll.type = "button";
+  resetAll.className = "ui-btn ui-btn-secondary tool-permissions-reset-all";
+  resetAll.textContent = "Reset all to defaults";
+  const status = document.createElement("span");
+  status.className = "tool-permissions-status";
+  status.setAttribute("role", "status");
+  status.setAttribute("aria-live", "polite");
+  toolbar.append(search, resetAll, status);
+  const groups = document.createElement("div");
+  groups.className = "tool-permissions-groups";
+  const empty = document.createElement("p");
+  empty.className = "tool-permissions-empty";
+  empty.hidden = true;
+  root.append(toolbar, groups, empty);
+  let catalog = null;
+  let loading = false;
+  let refreshGeneration = 0;
+  let pendingToolIds = /* @__PURE__ */ new Set();
+  let policyFocus = null;
+  const groupOpenState = /* @__PURE__ */ new Map();
+  const expandedDescriptions = /* @__PURE__ */ new Set();
+  root.addEventListener("focusin", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const policy = target.dataset["policy"];
+    const toolId = target.closest(".tool-permission-row")?.dataset["toolId"];
+    policyFocus = target.classList.contains("tool-permission-choice") && toolId !== void 0 && isToolPermissionPolicy(policy) ? { toolId, policy } : null;
+  });
+  function allToolIds() {
+    return catalog?.groups.flatMap((group) => group.tools.map((tool) => tool.id)) ?? [];
+  }
+  function setBusy(busy) {
+    root.dataset["pending"] = String(busy);
+    search.disabled = loading;
+    resetAll.disabled = busy || loading || !catalog?.groups.some((group) => group.tools.length > 0);
+  }
+  async function mutate(toolIds, optimistic, request) {
+    if (!catalog || toolIds.length === 0 || pendingToolIds.size > 0) return;
+    const before = cloneCatalog(catalog);
+    pendingToolIds = new Set(toolIds);
+    catalog = optimistic(catalog, pendingToolIds);
+    status.textContent = "Saving\u2026";
+    render();
+    try {
+      catalog = await request();
+      status.textContent = "Saved";
+    } catch (error62) {
+      catalog = before;
+      status.textContent = "Could not save: " + errorMessage(error62);
+      status.classList.add("is-error");
+    } finally {
+      pendingToolIds.clear();
+      render();
+    }
+  }
+  function selectPolicy(tool, policy) {
+    if (tool.overridden && tool.policy === policy || tool.disabledPolicies?.includes(policy)) {
+      return;
+    }
+    status.classList.remove("is-error");
+    void mutate(
+      [tool.id],
+      (current, ids) => withPolicy(current, ids, policy),
+      () => api.set({ toolIds: [tool.id], policy })
+    );
+  }
+  function policyControl(tool) {
+    const control = document.createElement("div");
+    control.className = "tool-permission-policy";
+    control.setAttribute("role", "radiogroup");
+    control.setAttribute("aria-label", "Permission for " + tool.name);
+    const buttons = [];
+    for (const policy of TOOL_PERMISSION_POLICIES) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "tool-permission-choice tool-permission-" + policy;
+      button.dataset["policy"] = policy;
+      button.setAttribute("role", "radio");
+      button.setAttribute("aria-checked", String(tool.policy === policy));
+      button.setAttribute("aria-label", POLICY_LABELS[policy] + " for " + tool.name);
+      button.title = POLICY_LABELS[policy];
+      button.tabIndex = (tool.overridden ? tool.policy : tool.defaultPolicy) === policy ? 0 : -1;
+      button.disabled = pendingToolIds.size > 0 || tool.disabledPolicies?.includes(policy) === true;
+      if (tool.disabledPolicies?.includes(policy) && tool.disabledReason) {
+        button.title = tool.disabledReason;
+        button.setAttribute("aria-description", tool.disabledReason);
+      }
+      button.append(POLICY_ICON[policy]("ui-icon ui-icon-sm"));
+      button.addEventListener("click", () => {
+        selectPolicy(tool, policy);
+      });
+      buttons.push(button);
+      control.append(button);
+    }
+    control.addEventListener("keydown", (event) => {
+      const current = buttons.findIndex((button) => button === document.activeElement);
+      if (current < 0) return;
+      let direction = 0;
+      let targetIndex = current;
+      if (event.key === "ArrowRight" || event.key === "ArrowDown") direction = 1;
+      else if (event.key === "ArrowLeft" || event.key === "ArrowUp") direction = -1;
+      else if (event.key === "Home") targetIndex = 0;
+      else if (event.key === "End") targetIndex = buttons.length - 1;
+      else return;
+      event.preventDefault();
+      if (direction !== 0) {
+        for (let offset = 1; offset <= buttons.length; offset += 1) {
+          const candidate = (current + direction * offset + buttons.length) % buttons.length;
+          if (!buttons[candidate]?.disabled) {
+            targetIndex = candidate;
+            break;
+          }
+        }
+      }
+      if (buttons[targetIndex]?.disabled) {
+        const enabledIndex = buttons.findIndex((button) => !button.disabled);
+        if (enabledIndex < 0) return;
+        targetIndex = enabledIndex;
+      }
+      buttons[targetIndex]?.focus();
+      buttons[targetIndex]?.click();
+    });
+    return control;
+  }
+  function toolRow(tool) {
+    const row = document.createElement("div");
+    row.className = "tool-permission-row";
+    row.dataset["toolId"] = tool.id;
+    row.dataset["policy"] = tool.policy;
+    row.dataset["overridden"] = String(tool.overridden);
+    if (pendingToolIds.has(tool.id)) row.dataset["pending"] = "true";
+    const copy = document.createElement("div");
+    copy.className = "tool-permission-copy";
+    const title = document.createElement("div");
+    title.className = "tool-permission-name";
+    title.append(tool.name);
+    const inherited = document.createElement("span");
+    inherited.className = "tool-permission-inherited";
+    inherited.textContent = "Default";
+    inherited.title = "Inherited default: " + POLICY_LABELS[tool.defaultPolicy];
+    inherited.setAttribute(
+      "aria-label",
+      "Using inherited default: " + POLICY_LABELS[tool.defaultPolicy]
+    );
+    inherited.hidden = tool.overridden;
+    title.append(inherited);
+    copy.append(title);
+    if (tool.description) {
+      const description = document.createElement("div");
+      description.className = "tool-permission-description";
+      description.id = "tool-description-" + tool.id;
+      description.innerHTML = renderMarkdown(tool.description, {
+        htmlPolicy: "escape-all",
+        sanitizerBackend: {
+          sanitize: (html, config2) => dompurifyBackend.sanitize(html, {
+            ...config2,
+            allowedTags: config2.allowedTags.filter((tag) => tag !== "img")
+          })
+        }
+      });
+      const expandable = tool.description.length > 240 || tool.description.includes("\n");
+      const expanded = expandedDescriptions.has(tool.id);
+      description.classList.toggle("is-collapsed", expandable && !expanded);
+      copy.append(description);
+      if (expandable) {
+        const toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "tool-permission-description-toggle";
+        toggle.setAttribute("aria-controls", description.id);
+        const updateToggle = () => {
+          const open2 = expandedDescriptions.has(tool.id);
+          toggle.textContent = open2 ? "Show less" : "Show full description";
+          toggle.setAttribute("aria-expanded", String(open2));
+          toggle.setAttribute("aria-label", toggle.textContent + " for " + tool.name);
+          description.classList.toggle("is-collapsed", !open2);
+        };
+        updateToggle();
+        toggle.addEventListener("click", () => {
+          if (expandedDescriptions.has(tool.id)) expandedDescriptions.delete(tool.id);
+          else expandedDescriptions.add(tool.id);
+          updateToggle();
+        });
+        copy.append(toggle);
+      }
+    }
+    const actions = document.createElement("div");
+    actions.className = "tool-permission-actions";
+    actions.append(policyControl(tool));
+    const reset = document.createElement("button");
+    reset.type = "button";
+    reset.className = "tool-permission-reset";
+    reset.textContent = "Use default";
+    reset.setAttribute("aria-label", "Use default permission for " + tool.name);
+    reset.title = "Default: " + POLICY_LABELS[tool.defaultPolicy];
+    reset.hidden = !tool.overridden;
+    reset.disabled = pendingToolIds.size > 0;
+    reset.addEventListener("click", () => {
+      status.classList.remove("is-error");
+      void mutate(
+        [tool.id],
+        (current, ids) => withDefaults(current, ids),
+        () => api.reset({ toolIds: [tool.id] })
+      );
+    });
+    actions.append(reset);
+    row.append(copy, actions);
+    return row;
+  }
+  function groupSelect(group) {
+    const select = document.createElement("select");
+    select.className = "tool-permission-group-select";
+    select.setAttribute("aria-label", "Set all permissions in " + group.name);
+    const current = groupPolicy(group.tools);
+    const mixed = document.createElement("option");
+    mixed.value = "mixed";
+    mixed.textContent = "Mixed";
+    mixed.disabled = true;
+    select.append(mixed);
+    for (const policy of TOOL_PERMISSION_POLICIES) {
+      const option = document.createElement("option");
+      option.value = policy;
+      option.textContent = "Set all to " + POLICY_LABELS[policy].toLowerCase();
+      option.disabled = group.tools.some((tool) => tool.disabledPolicies?.includes(policy) === true);
+      select.append(option);
+    }
+    select.value = current;
+    select.disabled = pendingToolIds.size > 0 || group.tools.length === 0;
+    select.addEventListener("click", (event) => {
+      event.stopPropagation();
+    });
+    select.addEventListener("change", () => {
+      const policy = select.value;
+      if (!isToolPermissionPolicy(policy)) return;
+      const toolIds = group.tools.map((tool) => tool.id);
+      status.classList.remove("is-error");
+      void mutate(
+        toolIds,
+        (catalogBefore, ids) => withPolicy(catalogBefore, ids, policy),
+        () => api.set({ toolIds, policy })
+      );
+    });
+    return select;
+  }
+  function groupView(group, visibleTools) {
+    const details = document.createElement("details");
+    details.className = "tool-permission-group";
+    details.dataset["groupId"] = group.id;
+    details.open = groupOpenState.get(group.id) ?? true;
+    details.addEventListener("toggle", () => {
+      groupOpenState.set(group.id, details.open);
+    });
+    const summary = document.createElement("summary");
+    summary.className = "tool-permission-group-summary";
+    const disclosure = chevronDownIcon("ui-icon tool-permission-group-chevron");
+    const heading = document.createElement("span");
+    heading.className = "tool-permission-group-name";
+    heading.textContent = group.name;
+    const count = document.createElement("span");
+    count.className = "tool-permission-count";
+    count.textContent = String(group.tools.length);
+    count.setAttribute("aria-label", String(group.tools.length) + " tools");
+    summary.append(disclosure, heading, count);
+    if (group.origin) {
+      const origin = document.createElement("span");
+      origin.className = "tool-permission-group-origin";
+      origin.textContent = group.origin;
+      origin.title = group.originDetail ?? group.origin;
+      summary.append(origin);
+    }
+    if (group.status) {
+      const connection = document.createElement("span");
+      connection.className = "tool-permission-group-status";
+      connection.dataset["status"] = group.status;
+      connection.textContent = group.status;
+      summary.append(connection);
+    }
+    summary.append(groupSelect(group));
+    const list = document.createElement("div");
+    list.className = "tool-permission-list";
+    for (const tool of visibleTools) list.append(toolRow(tool));
+    if (visibleTools.length === 0) {
+      const noTools = document.createElement("p");
+      noTools.className = "tool-permission-group-empty";
+      noTools.textContent = "This server has not reported any tools.";
+      list.append(noTools);
+    }
+    details.append(summary, list);
+    return details;
+  }
+  function render() {
+    for (const detail of groups.querySelectorAll(".tool-permission-group")) {
+      const id = detail.dataset["groupId"];
+      if (id) groupOpenState.set(id, detail.open);
+    }
+    groups.innerHTML = "";
+    const query = search.value.trim().toLowerCase();
+    let visibleGroupCount = 0;
+    for (const group of catalog?.groups ?? []) {
+      const visibleTools = matchingTools(group, query);
+      if (visibleTools.length === 0 && !groupMatches(group, query)) continue;
+      visibleGroupCount += 1;
+      groups.append(groupView(group, visibleTools));
+    }
+    empty.hidden = visibleGroupCount > 0;
+    empty.textContent = query ? "No tools or servers match \u201C" + search.value.trim() + "\u201D." : "No tools are available yet.";
+    resetAll.hidden = !catalog?.groups.some((group) => group.tools.some((tool) => tool.overridden));
+    setBusy(pendingToolIds.size > 0);
+    if (policyFocus && pendingToolIds.size === 0) {
+      const focusedRow = [...groups.querySelectorAll(".tool-permission-row")].find(
+        (row) => row.dataset["toolId"] === policyFocus?.toolId
+      );
+      const focusedChoice = [
+        ...focusedRow?.querySelectorAll(".tool-permission-choice") ?? []
+      ].find((choice) => choice.dataset["policy"] === policyFocus?.policy);
+      focusedChoice?.focus({ preventScroll: true });
+    }
+  }
+  async function refresh(signal) {
+    if (signal?.aborted) return;
+    const request = ++refreshGeneration;
+    loading = true;
+    status.classList.remove("is-error");
+    status.textContent = "Loading\u2026";
+    setBusy(false);
+    try {
+      const loaded = await api.list();
+      if (signal?.aborted || request !== refreshGeneration) return;
+      catalog = loaded;
+      status.textContent = "";
+    } catch (error62) {
+      if (signal?.aborted || request !== refreshGeneration) return;
+      status.textContent = "Could not load tool permissions: " + errorMessage(error62);
+      status.classList.add("is-error");
+    } finally {
+      if (request === refreshGeneration) {
+        loading = false;
+        if (!signal?.aborted) render();
+      }
+    }
+  }
+  search.addEventListener("input", render);
+  resetAll.addEventListener("click", () => {
+    const toolIds = allToolIds();
+    status.classList.remove("is-error");
+    void mutate(
+      toolIds,
+      (current, ids) => withDefaults(current, ids),
+      () => api.reset({ toolIds })
+    );
+  });
+  render();
+  return {
+    root,
+    refresh,
+    focusSearch: () => {
+      search.focus();
+    }
+  };
+}
+var isToolPermissionPolicy, POLICY_LABELS, POLICY_ICON;
+var init_tool_permissions_panel = __esm({
+  "src/renderer/views/tool-permissions-panel.ts"() {
+    init_dist();
+    init_sanitize_dompurify();
+    init_errors4();
+    init_member_of2();
+    init_tool_permissions();
+    init_icons();
+    isToolPermissionPolicy = memberOf(TOOL_PERMISSION_POLICIES);
+    POLICY_LABELS = {
+      allow: "Always allow",
+      ask: "Always ask",
+      block: "Blocked"
+    };
+    POLICY_ICON = {
+      allow: checkIcon,
+      ask: shieldIcon,
+      block: banIcon
+    };
+  }
+});
+
+// packages/llm/src/frontier-candidates.ts
+function localFrontierCandidates(localModelIds) {
+  const out = [];
+  for (const id of localModelIds) {
+    const cap = getLocalModelCapability(id);
+    if (!cap) continue;
+    const score = localBenchmarkScore(cap, "aa-intelligence");
+    if (!score) continue;
+    out.push({
+      id,
+      intellect: score.value,
+      intellectEstimated: score.estimated === true,
+      costPerMTok: 0,
+      local: true,
+      quant: cap.quant
+    });
+  }
+  return out;
+}
+function extraProviderFrontierCandidates(providers) {
+  const out = [];
+  for (const provider of providers) {
+    for (const m2 of provider.models) {
+      if (typeof m2.inputPricePerMTok !== "number") continue;
+      const score = getIntellectScore(m2.id);
+      if (!score) continue;
+      out.push({
+        id: `${provider.id}:${m2.id}`,
+        intellect: score.value,
+        intellectEstimated: score.estimated === true,
+        costPerMTok: blendedRate(m2.inputPricePerMTok, m2.outputPricePerMTok ?? m2.inputPricePerMTok)
+      });
+    }
+  }
+  return out;
+}
+function openRouterFrontierCandidates(models) {
+  const out = [];
+  for (const model of models) {
+    const input2 = model.inputPricePerMTok;
+    const output2 = model.outputPricePerMTok;
+    if (input2 === null || output2 === null || input2 < 0 || output2 < 0) continue;
+    const id = `openrouter:${model.id}`;
+    const score = getIntellectScore(id);
+    if (!score) continue;
+    out.push({
+      id,
+      intellect: score.value,
+      intellectEstimated: score.estimated === true,
+      costPerMTok: blendedRate(input2, output2)
+    });
+  }
+  return out;
+}
+var init_frontier_candidates = __esm({
+  "packages/llm/src/frontier-candidates.ts"() {
+    init_pareto_frontier();
+    init_model_intellect();
+    init_local_model_catalog();
+  }
+});
+
+// packages/llm/src/live-intellect.ts
+function canonicalAnchors() {
+  const out = /* @__PURE__ */ new Map();
+  for (const [modelId, entries] of Object.entries(MODEL_INTELLECT_RAW)) {
+    const canonical = entries.find((m2) => m2.indexVersion === CANONICAL_INTELLECT_VERSION);
+    if (canonical) out.set(modelId, canonical.value);
+  }
+  return out;
+}
+function normalizeIndexVersion(version2) {
+  if (version2 === void 0) return void 0;
+  const s2 = String(version2).trim();
+  if (s2.length === 0) return void 0;
+  return s2.startsWith("v") ? s2 : `v${s2}`;
+}
+function verifyLiveCohort(liveModels, reportedVersion) {
+  const anchors = canonicalAnchors();
+  let anchorsChecked = 0;
+  let maxDrift = 0;
+  const mismatches = [];
+  for (const live of liveModels) {
+    const modelId = resolveIntellectModelId(live.id);
+    if (modelId === null) continue;
+    const canonical = anchors.get(modelId);
+    if (canonical === void 0) continue;
+    anchorsChecked += 1;
+    const drift = Math.abs(live.intellect - canonical);
+    maxDrift = Math.max(maxDrift, drift);
+    if (drift > LIVE_ANCHOR_TOLERANCE) mismatches.push({ modelId, canonical, live: live.intellect });
+  }
+  const version2 = normalizeIndexVersion(reportedVersion);
+  const versionMismatch = version2 !== void 0 && version2 !== CANONICAL_INTELLECT_VERSION;
+  const agreeingAnchors = anchorsChecked - mismatches.length;
+  const mismatchesAreAMinority = mismatches.length <= Math.floor(anchorsChecked * MAX_MISMATCH_FRACTION);
+  return {
+    verified: !versionMismatch && agreeingAnchors >= MIN_LIVE_ANCHORS && mismatchesAreAMinority,
+    anchorsChecked,
+    agreeingAnchors,
+    maxDrift,
+    mismatches,
+    ...version2 !== void 0 ? { reportedVersion: version2 } : {},
+    ...versionMismatch ? { versionMismatch: true } : {}
+  };
+}
+function liveBlendedPrice(live) {
+  const input2 = live.inputPricePerMTok;
+  if (typeof input2 !== "number" || !(input2 > 0)) return null;
+  const output2 = live.outputPricePerMTok;
+  return blendedRate(input2, typeof output2 === "number" && output2 > 0 ? output2 : input2);
+}
+function liveIntellectCandidates(liveModels, reportedVersion) {
+  const verification = verifyLiveCohort(liveModels, reportedVersion);
+  if (!verification.verified) {
+    return { candidates: [], hintOnly: [], pricedCurated: [], verification };
+  }
+  const candidates = [];
+  const hintOnly = [];
+  const pricedCurated = [];
+  const curatedSeen = /* @__PURE__ */ new Set();
+  for (const live of liveModels) {
+    const price = liveBlendedPrice(live);
+    const resolved2 = resolveIntellectModelId(live.id);
+    if (resolved2 !== null) {
+      if (price === null || curatedSeen.has(resolved2)) continue;
+      const curated = getIntellectScore(resolved2);
+      if (!curated) continue;
+      curatedSeen.add(resolved2);
+      pricedCurated.push({
+        id: resolved2,
+        intellect: curated.value,
+        intellectEstimated: curated.estimated === true,
+        costPerMTok: price,
+        ...typeof live.costPerTask === "number" ? { costPerTask: live.costPerTask } : {}
+      });
+      continue;
+    }
+    if (price !== null) {
+      candidates.push({
+        id: live.id,
+        intellect: live.intellect,
+        intellectEstimated: true,
+        costPerMTok: price,
+        // Uncurated = the user can't route to it without setting up a provider.
+        discovery: true,
+        ...typeof live.costPerTask === "number" ? { costPerTask: live.costPerTask } : {}
+      });
+    } else {
+      hintOnly.push({ id: live.id, intellect: live.intellect });
+    }
+  }
+  return { candidates, hintOnly, pricedCurated, verification };
+}
+var LIVE_ANCHOR_TOLERANCE, MIN_LIVE_ANCHORS, MAX_MISMATCH_FRACTION;
+var init_live_intellect = __esm({
+  "packages/llm/src/live-intellect.ts"() {
+    init_model_intellect_generated();
+    init_model_intellect();
+    init_pareto_frontier();
+    LIVE_ANCHOR_TOLERANCE = 1;
+    MIN_LIVE_ANCHORS = 2;
+    MAX_MISMATCH_FRACTION = 0.25;
+  }
+});
+
 // src/shared/plan-frontier-candidates.ts
 function planAcpFrontierCandidates(agents, pricedRoutes = []) {
   const livePrices = /* @__PURE__ */ new Map();
@@ -45089,7 +47694,7 @@ var init_model_cards = __esm({
 });
 
 // src/renderer/views/intellect-frontier-tooltip.ts
-function displayModelLabel(id) {
+function displayModelLabel2(id) {
   const resolved2 = resolveIntellectModelId(id);
   if (resolved2 !== null && TRACKED_MODELS.some((tracked) => tracked === resolved2)) {
     return cloudModelDisplayLabel(resolved2);
@@ -45155,7 +47760,7 @@ function scoreScaleCopy(scale) {
 }
 function pointTooltipContent(p2, costAxis = "blended") {
   const root = el("div", { class: "frontier-tooltip-content" });
-  const label = displayModelLabel(p2.id);
+  const label = displayModelLabel2(p2.id);
   root.append(ttRow("tt-title", el("strong", {}, label)));
   if (label !== p2.id) root.append(ttRow("tt-muted", p2.id));
   root.append(ttRow("tt-section", "Score"));
@@ -45198,14 +47803,14 @@ function pointTooltipContent(p2, costAxis = "blended") {
   ) : p2.local ? el("span", {}, "free (runs on-device)") : costAxis === "perTask" ? el("span", {}, `${formatTaskPrice(p2.costPerMTok)} AA Intelligence Index task (plotted)`) : el(
     "span",
     {},
-    `${formatPrice(p2.costPerMTok)} blended (80% in / 20% out)`,
+    `${formatPrice2(p2.costPerMTok)} blended (80% in / 20% out)`,
     ...p2.prices?.length ? [" \xB7 best offer, plotted"] : []
   );
   root.append(ttRow("tt-line", priceLine));
   if (costAxis === "perTask") {
     if (!p2.local && !p2.plan) {
       root.append(
-        ttRow("tt-muted", `${formatPrice(blended)} blended list price (80% in / 20% out).`)
+        ttRow("tt-muted", `${formatPrice2(blended)} blended list price (80% in / 20% out).`)
       );
     }
   } else if (typeof p2.costPerTask === "number") {
@@ -45218,7 +47823,7 @@ function pointTooltipContent(p2, costAxis = "blended") {
   }
   for (const offer of p2.prices ?? []) {
     root.append(
-      ttRow("tt-muted", `${displayModelLabel(offer.id)}: ${formatPrice(offer.costPerMTok)}`)
+      ttRow("tt-muted", `${displayModelLabel2(offer.id)}: ${formatPrice2(offer.costPerMTok)}`)
     );
   }
   if (p2.plan && p2.planDetail) {
@@ -45227,7 +47832,7 @@ function pointTooltipContent(p2, costAxis = "blended") {
         "tt-muted",
         `${String(Math.round(p2.planDetail.usedPercent))}% of this plan window used${formatReset(p2.planDetail.resetsAt)}.`
       ),
-      ttRow("tt-muted", `Off-plan you'd pay ${formatPrice(p2.planDetail.apiPricePerMTok)} blended.`)
+      ttRow("tt-muted", `Off-plan you'd pay ${formatPrice2(p2.planDetail.apiPricePerMTok)} blended.`)
     );
   }
   if (p2.planLimitReached) {
@@ -45246,15 +47851,15 @@ function pointTooltipContent(p2, costAxis = "blended") {
   root.append(
     ttRow(
       "tt-status",
-      p2.discovery ? p2.onFrontier ? "Not configured \xB7 setting up a provider would put this ON your value frontier." : "Not configured \xB7 available via Artificial Analysis if you set up a provider." : p2.onFrontier ? "On the value frontier" : `Dominated by ${displayModelLabel(p2.dominatedBy ?? "?")}`
+      p2.discovery ? p2.onFrontier ? "Not configured \xB7 setting up a provider would put this ON your value frontier." : "Not configured \xB7 available via Artificial Analysis if you set up a provider." : p2.onFrontier ? "On the value frontier" : `Dominated by ${displayModelLabel2(p2.dominatedBy ?? "?")}`
     )
   );
   return root;
 }
 function unpricedTooltipContent(u2) {
   const root = el("div", { class: "frontier-tooltip-content" });
-  root.append(ttRow("tt-title", el("strong", {}, displayModelLabel(u2.id))));
-  if (displayModelLabel(u2.id) !== u2.id) root.append(ttRow("tt-muted", u2.id));
+  root.append(ttRow("tt-title", el("strong", {}, displayModelLabel2(u2.id))));
+  if (displayModelLabel2(u2.id) !== u2.id) root.append(ttRow("tt-muted", u2.id));
   root.append(ttRow("tt-section", "Score"));
   const explanation = explainIntellectScore(u2.id);
   root.append(ttRow("tt-line", el("strong", {}, `${u2.estimated ? "~" : ""}${String(u2.intellect)}`)));
@@ -45267,10 +47872,10 @@ function unpricedTooltipContent(u2) {
 }
 function unscoredTooltipContent(u2) {
   const root = el("div", { class: "frontier-tooltip-content" });
-  root.append(ttRow("tt-title", el("strong", {}, displayModelLabel(u2.id))));
-  if (displayModelLabel(u2.id) !== u2.id) root.append(ttRow("tt-muted", u2.id));
+  root.append(ttRow("tt-title", el("strong", {}, displayModelLabel2(u2.id))));
+  if (displayModelLabel2(u2.id) !== u2.id) root.append(ttRow("tt-muted", u2.id));
   root.append(ttRow("tt-section", "Price"));
-  root.append(ttRow("tt-line", `${formatPrice(u2.costPerMTok)} blended (80% in / 20% out)`));
+  root.append(ttRow("tt-line", `${formatPrice2(u2.costPerMTok)} blended (80% in / 20% out)`));
   appendCardSection(root, u2.id);
   root.append(ttRow("tt-status", "No sourced intellect measurement yet \xB7 position on price only."));
   return root;
@@ -45403,7 +48008,7 @@ function wireTooltip(target, tooltip, build, modelId) {
   };
   target.setAttribute("tabindex", "0");
   target.setAttribute("role", "button");
-  target.setAttribute("aria-label", `Details for ${displayModelLabel(modelId ?? "model")}`);
+  target.setAttribute("aria-label", `Details for ${displayModelLabel2(modelId ?? "model")}`);
   target.addEventListener("mouseenter", (evt) => {
     tooltip.show(build(), evt, target);
     fillCard();
@@ -45450,7 +48055,7 @@ function tooltipFor(point, costAxis = "blended") {
   );
   return lines.join("\n");
 }
-var formatPrice, formatTaskPrice, TOOLTIP_OFFSET_PX, TOOLTIP_HIDE_GRACE_MS, modelCardApi;
+var formatPrice2, formatTaskPrice, TOOLTIP_OFFSET_PX, TOOLTIP_HIDE_GRACE_MS, modelCardApi;
 var init_intellect_frontier_tooltip = __esm({
   "src/renderer/views/intellect-frontier-tooltip.ts"() {
     init_clamp();
@@ -45459,7 +48064,7 @@ var init_intellect_frontier_tooltip = __esm({
     init_model_card_cache();
     init_model_cards();
     init_helpers();
-    formatPrice = (v3) => `$${String(Number(v3.toFixed(2)))}/MTok`;
+    formatPrice2 = (v3) => `$${String(Number(v3.toFixed(2)))}/MTok`;
     formatTaskPrice = (v3) => `$${String(Number(v3.toFixed(2)))}/task`;
     TOOLTIP_OFFSET_PX = 12;
     TOOLTIP_HIDE_GRACE_MS = 220;
@@ -45619,7 +48224,7 @@ function renderFrontierSvg(points, size = {}, gutters = {}, tooltip, costAxis = 
         });
         continue;
       }
-      const text = displayModelLabel(u2.id);
+      const text = displayModelLabel2(u2.id);
       const x0 = x3(u2.costPerMTok) - 6;
       const x1 = x3(u2.costPerMTok) + 8 + approxLabelWidth(text);
       let row = rowEnds.findIndex((end) => end < x0);
@@ -45774,7 +48379,7 @@ function renderFrontierSvg(points, size = {}, gutters = {}, tooltip, costAxis = 
   }));
   for (const p2 of labelledPoints) {
     const suffix = p2.plan ? " \xB7 plan" : p2.local ? " \xB7 free" : "";
-    const text = `${displayModelLabel(p2.id)}${p2.quant ? ` @${p2.quant}` : ""}${p2.intellectEstimated ? " (~)" : ""}${suffix}`;
+    const text = `${displayModelLabel2(p2.id)}${p2.quant ? ` @${p2.quant}` : ""}${p2.intellectEstimated ? " (~)" : ""}${suffix}`;
     const w3 = approxLabelWidth(text);
     const px = pointX(p2);
     let x0;
@@ -46037,7 +48642,7 @@ No price data yet \xB7 position on intellect only.`
             fill: "var(--text-secondary)",
             class: "gutter-unpriced-label"
           },
-          `${displayModelLabel(u2.id)} \xB7 ${u2.estimated ? "~" : ""}${String(u2.intellect)}`
+          `${displayModelLabel2(u2.id)} \xB7 ${u2.estimated ? "~" : ""}${String(u2.intellect)}`
         )
       );
     }
@@ -46141,7 +48746,7 @@ function renderBandedModelList(rows) {
     );
     const chips = list.map((r2) => {
       const price = r2.costPerMTok === void 0 ? "" : ` \xB7 $${String(Number(r2.costPerMTok.toFixed(2)))}`;
-      return `${displayModelLabel(r2.id)} (${r2.estimated ? "~" : ""}${String(r2.intellect)}${price})`;
+      return `${displayModelLabel2(r2.id)} (${r2.estimated ? "~" : ""}${String(r2.intellect)}${price})`;
     }).join(" \xB7 ");
     table.append(
       el(
@@ -46167,7 +48772,7 @@ function renderProviderGroupedList(rows) {
   const table = el("div", { class: "frontier-banded" });
   for (const provider of [...groups.keys()].sort()) {
     const list = (groups.get(provider) ?? []).sort((a4, b2) => a4.costPerMTok - b2.costPerMTok);
-    const chips = list.map((r2) => `${displayModelLabel(r2.id)} ($${String(Number(r2.costPerMTok.toFixed(2)))})`).join(" \xB7 ");
+    const chips = list.map((r2) => `${displayModelLabel2(r2.id)} ($${String(Number(r2.costPerMTok.toFixed(2)))})`).join(" \xB7 ");
     table.append(
       el(
         "div",
@@ -46765,7 +49370,7 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
               "p",
               {},
               `${stale.map(
-                (m2) => `${displayModelLabel(m2.modelId)} (map ${String(m2.canonical)}, live ${String(m2.live)})`
+                (m2) => `${displayModelLabel2(m2.modelId)} (map ${String(m2.canonical)}, live ${String(m2.live)})`
               ).join("; ")}.`
             )
           )
@@ -46790,7 +49395,7 @@ function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadL
             "p",
             {},
             `Measurements that differ: ${v3.mismatches.map(
-              (m2) => `${displayModelLabel(m2.modelId)} (map ${String(m2.canonical)}, live ${String(m2.live)})`
+              (m2) => `${displayModelLabel2(m2.modelId)} (map ${String(m2.canonical)}, live ${String(m2.live)})`
             ).join("; ")}.`
           )
         );
@@ -47142,1062 +49747,6 @@ var init_intellect_frontier_panel = __esm({
   }
 });
 
-// src/shared/openai-cloud-agent.ts
-var DEFAULT_OPENAI_AGENT_MODEL, OPENAI_AGENT_GROUP, OPENAI_AGENT_RETENTION_NOTICE;
-var init_openai_cloud_agent = __esm({
-  "src/shared/openai-cloud-agent.ts"() {
-    DEFAULT_OPENAI_AGENT_MODEL = "gpt-6.1-sol";
-    OPENAI_AGENT_GROUP = "OpenAI Cloud Agent (prototype)";
-    OPENAI_AGENT_RETENTION_NOTICE = {
-      label: "No ZDR",
-      detail: "OpenAI-hosted Agents API sessions retain session data and are not eligible for zero data retention (ZDR)."
-    };
-  }
-});
-
-// src/shared/acp-retention.ts
-var ACP_RETENTION_NOTICE;
-var init_acp_retention = __esm({
-  "src/shared/acp-retention.ts"() {
-    ACP_RETENTION_NOTICE = {
-      label: "ZDR not verified",
-      detail: "Zero data retention has not been verified for this agent route. The agent\u2019s signed-in account and upstream model provider determine retention and training. Running the agent on this device does not mean its model runs locally. Review the agent\u2019s data policy and account controls before sharing sensitive content."
-    };
-  }
-});
-
-// packages/llm/src/chatgpt-plan.ts
-function chatGptPlanModelValue(clientId, model) {
-  return `${CHATGPT_PLAN_MODEL_PREFIX}${clientId}#${model}`;
-}
-function parseChatGptPlanModel(value) {
-  const selection2 = parseModelSelection(value);
-  if (selection2.namespace !== "chatgpt-plan") return null;
-  if (!selection2.agent || !selection2.id) throw new Error("Choose a ChatGPT account and model.");
-  return { clientId: selection2.agent, model: selection2.id };
-}
-var init_chatgpt_plan = __esm({
-  "packages/llm/src/chatgpt-plan.ts"() {
-    init_model_selection();
-    init_reserved_prefixes();
-  }
-});
-
-// packages/llm/src/intellect-hints.ts
-function isOnCloudFrontier(id) {
-  cloudFrontierIds ??= new Set(
-    frontierForKnownModels().filter((p2) => p2.onFrontier).map((p2) => p2.id)
-  );
-  return cloudFrontierIds.has(id);
-}
-function formatPrice2(perMTok) {
-  const rounded = Number.isInteger(perMTok) ? String(perMTok) : perMTok.toFixed(2);
-  return `$${rounded}/MTok`;
-}
-function cloudModelIntellectHint(id) {
-  const score = getIntellectScore(id);
-  const info = getModelInfo(id);
-  const parts = [];
-  if (score) parts.push(`intellect ${score.estimated ? "~" : ""}${String(score.value)}`);
-  if (info) parts.push(formatPrice2(blendedPricePerMTok(info)));
-  if (score && info && isOnCloudFrontier(id)) parts.push("frontier");
-  return parts.length > 0 ? parts.join(" \xB7 ") : null;
-}
-function modelIntellectHint(idOrLabel) {
-  const score = getIntellectScore(idOrLabel);
-  if (!score) return null;
-  return `intellect ${score.estimated ? "~" : ""}${String(score.value)}`;
-}
-function localModelIntellectHint(id) {
-  const cap = getLocalModelCapability(id);
-  if (!cap) return null;
-  const score = localBenchmarkScore(cap, "aa-intelligence");
-  if (score) return `intellect ${score.estimated ? "~" : ""}${String(score.value)}`;
-  const composite = compositeIntellect(cap);
-  if (composite)
-    return `composite ${String(composite.value)} (${String(composite.axes.length)} axes)`;
-  return null;
-}
-var cloudFrontierIds;
-var init_intellect_hints = __esm({
-  "packages/llm/src/intellect-hints.ts"() {
-    init_composite_intellect();
-    init_local_model_catalog();
-    init_model_catalog();
-    init_model_intellect();
-    init_pareto_frontier();
-    cloudFrontierIds = null;
-  }
-});
-
-// packages/llm/src/extra-providers.ts
-function isLocalBaseUrl(baseUrl) {
-  try {
-    let host = new URL(baseUrl).hostname.toLowerCase();
-    const bracketed = /^\[(.*)\]$/.exec(host);
-    if (bracketed) host = bracketed[1] ?? host;
-    return host === "localhost" || host.endsWith(".localhost") || // Entire 127.0.0.0/8 loopback range.
-    /^127(?:\.\d{1,3}){3}$/.test(host) || host === "0.0.0.0" || host === "::1" || host === "::";
-  } catch {
-    return false;
-  }
-}
-function extraProviderDisplayLabel(model, _providers = []) {
-  return extraProviderModelId(model);
-}
-function extraProviderSlugFromModel(model) {
-  const selection2 = parseModelSelection(model);
-  return selection2.namespace === "extra-provider" ? selection2.slug : null;
-}
-function extraProviderModelId(model) {
-  const selection2 = parseModelSelection(model);
-  return selection2.namespace === "extra-provider" ? selection2.id : model;
-}
-function toExtraProviderModel(slug2, modelId) {
-  return `${slug2}:${modelId}`;
-}
-var DEFAULT_EXTRA_PROVIDER_CONTEXT, BUILTIN_EXTRA_PROVIDERS, BUILTIN_EXTRA_PROVIDER_SLUGS, BUILTIN_BY_SLUG;
-var init_extra_providers = __esm({
-  "packages/llm/src/extra-providers.ts"() {
-    init_unknown_value();
-    init_credential_url();
-    init_provider_metadata2();
-    init_model_selection();
-    init_pareto_frontier();
-    DEFAULT_EXTRA_PROVIDER_CONTEXT = 128e3;
-    BUILTIN_EXTRA_PROVIDERS = PROVIDER_PRESETS.map((preset) => ({
-      ...preset,
-      prefix: `${preset.id}:`,
-      builtin: true,
-      local: isLocalBaseUrl(preset.baseUrl),
-      // One default for presets and user customs alike — the catalog only records
-      // a fallback when it genuinely differs (see provider-metadata.ts).
-      fallbackContextWindow: preset.fallbackContextWindow ?? DEFAULT_EXTRA_PROVIDER_CONTEXT
-    }));
-    BUILTIN_EXTRA_PROVIDER_SLUGS = BUILTIN_EXTRA_PROVIDERS.map(
-      (p2) => p2.id
-    );
-    BUILTIN_BY_SLUG = new Map(BUILTIN_EXTRA_PROVIDERS.map((p2) => [p2.id, p2]));
-  }
-});
-
-// src/shared/managed-agents.ts
-var DEFAULT_MANAGED_AGENT_MODEL;
-var init_managed_agents = __esm({
-  "src/shared/managed-agents.ts"() {
-    DEFAULT_MANAGED_AGENT_MODEL = "claude-opus-4-8";
-  }
-});
-
-// packages/thread-store/src/remote-agent-provider.ts
-var REMOTE_AGENT_PROVIDER_OPENAI, REMOTE_AGENT_PROVIDER_CURSOR, REMOTE_AGENT_PROVIDER_ANTHROPIC, REMOTE_AGENT_PROVIDERS, isRemoteAgentProvider;
-var init_remote_agent_provider = __esm({
-  "packages/thread-store/src/remote-agent-provider.ts"() {
-    init_member_of();
-    REMOTE_AGENT_PROVIDER_OPENAI = "openai";
-    REMOTE_AGENT_PROVIDER_CURSOR = "cursor";
-    REMOTE_AGENT_PROVIDER_ANTHROPIC = "anthropic";
-    REMOTE_AGENT_PROVIDERS = [
-      REMOTE_AGENT_PROVIDER_OPENAI,
-      REMOTE_AGENT_PROVIDER_CURSOR,
-      REMOTE_AGENT_PROVIDER_ANTHROPIC
-    ];
-    isRemoteAgentProvider = memberOf(REMOTE_AGENT_PROVIDERS);
-  }
-});
-
-// src/shared/remote-agent.ts
-function remoteAgentModelValue(provider, model) {
-  return model ? `${REMOTE_AGENT_MODEL_PREFIX}${provider}${REMOTE_AGENT_MODEL_SEP}${model}` : `${REMOTE_AGENT_MODEL_PREFIX}${provider}`;
-}
-function parseRemoteAgentModelSelection(model) {
-  const selection2 = parseModelSelection(model);
-  if (selection2.namespace !== "remote-agent") return null;
-  const provider = selection2.agent;
-  if (!isRemoteAgentProvider(provider)) return null;
-  return selection2.id ? { provider, model: selection2.id } : { provider };
-}
-function parseRemoteAgentModel(model) {
-  return parseRemoteAgentModelSelection(model)?.provider ?? null;
-}
-function remoteAgentGroupLabel(provider) {
-  return REMOTE_AGENT_MODELS.find((option) => option.provider === provider)?.label ?? provider;
-}
-function remoteAgentDisplayLabel(model, catalog = []) {
-  const selection2 = parseRemoteAgentModelSelection(model);
-  if (!selection2) return model;
-  const title = remoteAgentGroupLabel(selection2.provider);
-  if (!selection2.model) return title;
-  const catalogLabel = catalog.find((entry) => entry.id === selection2.model)?.label;
-  return `${title} \u2014 ${catalogLabel ?? cloudModelDisplayLabel(selection2.model)}`;
-}
-var DEFAULT_CURSOR_AGENT_BASE_URL, CURSOR_AGENTS_WEB_URL, REMOTE_AGENT_MODEL_SEP, REMOTE_AGENT_MODELS, MANAGED_AGENT_PICKER_MODELS, MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT;
-var init_remote_agent = __esm({
-  "src/shared/remote-agent.ts"() {
-    init_reserved_prefixes();
-    init_reserved_prefixes();
-    init_model_selection();
-    init_model_catalog();
-    init_managed_agents();
-    init_unknown_value3();
-    init_remote_agent_provider();
-    init_remote_agent_provider();
-    DEFAULT_CURSOR_AGENT_BASE_URL = "https://api.cursor.com";
-    CURSOR_AGENTS_WEB_URL = "https://cursor.com/agents";
-    REMOTE_AGENT_MODEL_SEP = AGENT_MODEL_SEP;
-    REMOTE_AGENT_MODELS = [
-      {
-        provider: REMOTE_AGENT_PROVIDER_OPENAI,
-        value: "remote-agent:openai",
-        label: "OpenAI Cloud Agent"
-      },
-      {
-        provider: REMOTE_AGENT_PROVIDER_CURSOR,
-        value: `${REMOTE_AGENT_MODEL_PREFIX}${REMOTE_AGENT_PROVIDER_CURSOR}`,
-        label: "Cursor Cloud Agent"
-      },
-      {
-        provider: REMOTE_AGENT_PROVIDER_ANTHROPIC,
-        value: `${REMOTE_AGENT_MODEL_PREFIX}${REMOTE_AGENT_PROVIDER_ANTHROPIC}`,
-        label: "Claude Cloud Agent"
-      }
-    ];
-    MANAGED_AGENT_PICKER_MODELS = TRACKED_MODELS.filter(
-      (id) => inferCloudModelProvider(id) === "anthropic"
-    );
-    MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT = (() => {
-      if (MANAGED_AGENT_PICKER_MODELS.includes(DEFAULT_MANAGED_AGENT_MODEL)) {
-        return MANAGED_AGENT_PICKER_MODELS;
-      }
-      return [DEFAULT_MANAGED_AGENT_MODEL, ...MANAGED_AGENT_PICKER_MODELS];
-    })();
-  }
-});
-
-// src/shared/plugin-model.ts
-function pluginModelValue(pluginId, routeId) {
-  return `${PLUGIN_MODEL_PREFIX}${encodeURIComponent(pluginId)}:${encodeURIComponent(routeId)}`;
-}
-function parsePluginModelSelection(value) {
-  const selection2 = parseModelSelection(value);
-  if (selection2.namespace !== "plugin-model") return null;
-  if (!selection2.agent || !selection2.id) return null;
-  try {
-    const pluginId = decodeURIComponent(selection2.agent);
-    const routeId = decodeURIComponent(selection2.id);
-    return pluginId && routeId ? { pluginId, routeId } : null;
-  } catch {
-    return null;
-  }
-}
-var init_plugin_model = __esm({
-  "src/shared/plugin-model.ts"() {
-    init_reserved_prefixes();
-    init_reserved_prefixes();
-    init_model_selection();
-  }
-});
-
-// src/shared/model-display.ts
-function displayModelLabel2(model, context) {
-  if (isBestValueChatModel(model)) return BEST_VALUE_CHAT_MODEL_LABEL;
-  const dynamic = dynamicModelLabel(model);
-  if (dynamic) return dynamic;
-  const selection2 = parseModelSelection(model);
-  switch (selection2.namespace) {
-    case "lmstudio":
-      return `${modelDisplayName(selection2.id)}${LOCAL_MODEL_SUFFIX}`;
-    case "acp":
-      return acpModelDisplayLabel(model, context?.acpAgents ?? []);
-    case "chatgpt-plan":
-      return `${cloudModelDisplayLabel(selection2.id)} \xB7 ChatGPT plan`;
-    case "remote-agent":
-      return remoteAgentDisplayLabel(model, context?.remoteCatalog ?? []);
-    case "plugin-model":
-      return pluginLabel(model);
-    case "openrouter":
-      return openRouterDisplayLabel(model);
-    case "extra-provider":
-      return modelDisplayName(extraProviderDisplayLabel(model));
-    default:
-      return cloudModelDisplayLabel(model);
-  }
-}
-function pluginLabel(model) {
-  const plugin = parsePluginModelSelection(model);
-  return plugin ? plugin.routeId : model;
-}
-var LOCAL_MODEL_SUFFIX;
-var init_model_display = __esm({
-  "src/shared/model-display.ts"() {
-    init_model_catalog();
-    init_extra_providers();
-    init_openrouter();
-    init_dynamic_model();
-    init_model_label();
-    init_model_selection();
-    init_acp();
-    init_remote_agent();
-    init_plugin_model();
-    init_lm_studio_defaults();
-    LOCAL_MODEL_SUFFIX = " \xB7 local";
-  }
-});
-
-// packages/llm/src/model-maker-block.ts
-function parseBlockedModelMakers(value) {
-  if (!Array.isArray(value)) return [];
-  return value.filter((entry) => isModelMaker(entry));
-}
-function makerFromName(name) {
-  const normalized = name.toLowerCase();
-  if (normalized === "anthropic" || normalized.startsWith("claude-")) return "anthropic";
-  if (normalized === "openai" || normalized.startsWith("gpt-") || /^o[1-9](?:-|$)/.test(normalized))
-    return "openai";
-  if (normalized === "google" || normalized === "gemini" || normalized.startsWith("gemini-") || normalized.startsWith("gemma-"))
-    return "google";
-  if (normalized === "deepseek" || normalized.startsWith("deepseek-")) return "deepseek";
-  if (normalized === "mistralai" || MISTRAL_MODEL_FAMILIES.some(
-    (family) => normalized === family || normalized.startsWith(`${family}-`)
-  ))
-    return "mistral";
-  if (normalized === "x-ai" || normalized === "xai" || normalized === "spacexai" || normalized === "grok" || normalized.startsWith("grok-"))
-    return "xai";
-  return null;
-}
-function makerFromAgent(agent) {
-  const normalized = agent.toLowerCase();
-  if (normalized.startsWith("claude")) return "anthropic";
-  if (normalized.startsWith("codex")) return "openai";
-  if (normalized.startsWith("gemini")) return "google";
-  if (normalized.startsWith("mistral")) return "mistral";
-  if (normalized.startsWith("grok")) return "xai";
-  return null;
-}
-function modelMakerForSelection(value) {
-  const selection2 = parseModelSelection(value);
-  if (selection2.namespace === "auto" || selection2.namespace === "plugin-model") return null;
-  if (selection2.namespace === "remote-agent" && !selection2.id) {
-    return selection2.agent === "anthropic" ? "anthropic" : selection2.agent === "openai" ? "openai" : null;
-  }
-  if (selection2.namespace === "acp" && !selection2.id) return makerFromAgent(selection2.agent);
-  const id = selection2.id.toLowerCase();
-  const parts = id.split("/");
-  const first = parts[0] ?? "";
-  const last = parts.at(-1) ?? "";
-  const fromModel = makerFromName(first) ?? makerFromName(last);
-  if (fromModel) return fromModel;
-  if (selection2.namespace === "acp") return makerFromAgent(selection2.agent);
-  return makerFromName(selection2.slug);
-}
-function blockedModelMaker(selection2, blocked) {
-  const maker = modelMakerForSelection(selection2);
-  return maker && blocked.includes(maker) ? maker : null;
-}
-var MODEL_MAKER_IDS, MODEL_MAKERS, isModelMaker, MISTRAL_MODEL_FAMILIES;
-var init_model_maker_block = __esm({
-  "packages/llm/src/model-maker-block.ts"() {
-    init_model_selection();
-    init_member_of();
-    MODEL_MAKER_IDS = [
-      "anthropic",
-      "openai",
-      "google",
-      "deepseek",
-      "mistral",
-      "xai"
-    ];
-    MODEL_MAKERS = [
-      { id: "anthropic", label: "Anthropic" },
-      { id: "openai", label: "OpenAI" },
-      { id: "google", label: "Google" },
-      { id: "deepseek", label: "DeepSeek" },
-      { id: "mistral", label: "Mistral" },
-      { id: "xai", label: "xAI" }
-    ];
-    isModelMaker = memberOf(MODEL_MAKER_IDS);
-    MISTRAL_MODEL_FAMILIES = [
-      "mistral",
-      "mixtral",
-      "codestral",
-      "devstral",
-      "magistral",
-      "ministral",
-      "pixtral"
-    ];
-  }
-});
-
-// packages/llm/src/model-version-suppression.ts
-function parseModelLineage(id) {
-  const claude = CLAUDE_ID.exec(id);
-  if (claude) {
-    const family = claude[1];
-    const version2 = claude[2];
-    if (family === void 0 || version2 === void 0) return null;
-    return { lineage: `claude-${family}`, version: version2.split("-").map(Number) };
-  }
-  const gpt = GPT_ID.exec(id);
-  if (gpt) {
-    const major = gpt[1];
-    if (major === void 0) return null;
-    const minor = gpt[2];
-    const tier = gpt[3];
-    return {
-      lineage: tier === void 0 ? "gpt" : `gpt-${tier}`,
-      version: minor === void 0 ? [Number(major)] : [Number(major), Number(minor)]
-    };
-  }
-  return null;
-}
-function releaseSpelling(id) {
-  const gpt = GPT_ID.exec(id);
-  const major = gpt?.[1];
-  const minor = gpt?.[2];
-  if (major === void 0 || minor === void 0) return id;
-  const tier = gpt?.[3];
-  return `gpt-${major}.${minor}${tier === void 0 ? "" : `-${tier}`}`;
-}
-function compareVersions(a4, b2) {
-  for (let i2 = 0; i2 < Math.max(a4.length, b2.length); i2++) {
-    const difference = (a4[i2] ?? 0) - (b2[i2] ?? 0);
-    if (difference !== 0) return difference;
-  }
-  return 0;
-}
-function supersedingModel(model, offered) {
-  const own2 = parseModelLineage(model);
-  if (own2 === null) return null;
-  let best = null;
-  for (const candidate of offered) {
-    if (candidate === model) continue;
-    const parsed2 = parseModelLineage(candidate);
-    if (parsed2 === null || parsed2.lineage !== own2.lineage) continue;
-    if (compareVersions(parsed2.version, own2.version) <= 0) continue;
-    if (best === null || compareVersions(parsed2.version, best.version) > 0) {
-      best = { id: candidate, version: parsed2.version };
-    }
-  }
-  return best?.id ?? null;
-}
-var CLAUDE_ID, GPT_ID;
-var init_model_version_suppression = __esm({
-  "packages/llm/src/model-version-suppression.ts"() {
-    CLAUDE_ID = /^claude-(opus|sonnet|haiku|fable)-(\d{1,2}(?:-\d{1,2})?)$/;
-    GPT_ID = /^gpt-(\d{1,2})(?:[.-](\d{1,2}))?(?:-([a-z][a-z0-9]*))?$/;
-  }
-});
-
-// src/renderer/views/model-coverage.ts
-function modelCoverage(value, context) {
-  if (!value || value.startsWith("auto:")) return void 0;
-  if (value.startsWith("lmstudio:")) return "local";
-  if (parseChatGptPlanModel(value)) return "plan";
-  const providerId = extraProviderSlugFromModel(value);
-  if (context.extraProviders.some((provider2) => provider2.id === providerId && provider2.local)) {
-    return "local";
-  }
-  const selection2 = parseAcpModelSelection(value);
-  if (!selection2 || !context.planUsage) return "paid";
-  const agent = context.agents.find(
-    (candidate) => candidate.enabled && canonicalAcpAgentId(candidate.id) === canonicalAcpAgentId(selection2.id)
-  );
-  if (!agent) return "paid";
-  const provider = acpPlanProvider(agent);
-  if (!provider) return "paid";
-  const authOverrides = provider === "claude" ? ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL"] : ["CODEX_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL"];
-  if (authOverrides.some((key) => agent.env?.[key]?.trim())) return "paid";
-  const model = selection2.model ?? agent.model;
-  const choice = agent.availableModels?.find((candidate) => candidate.value === model);
-  const identity = resolveAgentModelIdentity(
-    model,
-    acpModelVersionName(choice?.description),
-    choice?.label
-  );
-  const inclusion = resolvePlanInclusion(provider, identity ?? model, context.planUsage);
-  return inclusion && !inclusion.exhausted ? "plan" : "paid";
-}
-var init_model_coverage = __esm({
-  "src/renderer/views/model-coverage.ts"() {
-    init_extra_providers();
-    init_agent_model_identity();
-    init_chatgpt_plan();
-    init_acp();
-    init_acp_known_agents();
-    init_plan_inclusion();
-  }
-});
-
-// src/renderer/views/model-options.ts
-function modelDisplayLabel(model) {
-  return displayModelLabel2(model);
-}
-function successorDisplayLabel(lineageId) {
-  return cloudModelDisplayLabel(releaseSpelling(lineageId));
-}
-async function pluginModelOptions(api, includeAgentModels, current) {
-  if (!includeAgentModels) return [];
-  try {
-    const result = await api.plugins?.list();
-    if (!result) return [];
-    const currentSelection = parsePluginModelSelection(current);
-    return result.plugins.flatMap(
-      (plugin) => plugin.contributions.modelRoutes.flatMap((route) => {
-        const selectedWhileDisabled = !plugin.enabled && currentSelection?.pluginId === plugin.id && currentSelection.routeId === route.id;
-        if (!plugin.enabled && !selectedWhileDisabled) return [];
-        return [
-          {
-            value: pluginModelValue(plugin.id, route.id),
-            label: `${route.label}${selectedWhileDisabled ? " (plugin disabled)" : ""}`,
-            group: route.group ?? `${plugin.name}: personal plugin`,
-            ...route.supportsImages !== void 0 ? { supportsImages: route.supportsImages } : {},
-            ...selectedWhileDisabled ? { disabled: true } : {}
-          }
-        ];
-      })
-    );
-  } catch {
-    return [];
-  }
-}
-function acpAgentOptions(agents) {
-  const options = [];
-  for (const agent of agents.filter((agent2) => agent2.enabled)) {
-    const group = acpGroupLabel(agent.title);
-    const models = agent.availableModels ?? [];
-    if (models.length > 0) {
-      for (const model of models) {
-        const label = acpModelChoiceLabel(model, ": ");
-        const versioned = acpModelVersionName(model.description);
-        const lineageId = resolveAgentModelIdentity(model.value, versioned, model.label, label) ?? model.value;
-        const hint = modelIntellectHint(lineageId);
-        options.push({
-          retention: ACP_RETENTION_NOTICE,
-          value: acpModelValue(agent.id, model.value),
-          label: hint ? `${label}: ${hint}` : label,
-          shortLabel: label,
-          group,
-          // Scoped to this agent: a different agent's newer release never hides
-          // a model only this agent can actually run.
-          ...lineageId ? { lineageId, lineageScope: `acp:${agent.id}` } : {}
-        });
-      }
-    } else {
-      options.push({
-        value: acpModelValue(agent.id),
-        label: agent.title,
-        group,
-        retention: ACP_RETENTION_NOTICE
-      });
-    }
-  }
-  return options;
-}
-function isSameAcpSelection(left, right) {
-  const leftSelection = parseAcpModelSelection(left);
-  const rightSelection = parseAcpModelSelection(right);
-  return leftSelection !== null && rightSelection !== null && canonicalAcpAgentId(leftSelection.id) === canonicalAcpAgentId(rightSelection.id) && leftSelection.model === rightSelection.model;
-}
-async function openRouterOptions(api, available, current) {
-  if (!available) return [];
-  let group = OPENROUTER_GROUP;
-  try {
-    const zdrOnly = await api.settings.get("openRouterZdrOnly") !== false;
-    const allowTraining = await api.settings.get("openRouterAllowTraining") === true;
-    const note = pickerPrivacyNote(openRouterDataPolicy(zdrOnly, allowTraining));
-    group = note ? `${OPENROUTER_GROUP}: ${note}` : `${OPENROUTER_GROUP} (ZDR routing)`;
-  } catch {
-  }
-  let liveModels = [];
-  try {
-    liveModels = await api.openRouter.models();
-  } catch {
-  }
-  let customId = "";
-  try {
-    const value = await api.settings.get("openRouterModel");
-    customId = typeof value === "string" ? value.trim() : "";
-  } catch {
-  }
-  const seen = /* @__PURE__ */ new Set();
-  const entries = [];
-  const add = (id, label, supportsImages, free = false) => {
-    const value = toOpenRouterModel(id);
-    if (!id || seen.has(value)) return;
-    seen.add(value);
-    const cloudId = resolveIntellectModelId(id);
-    const hint = cloudId ? cloudModelIntellectHint(cloudId) : modelIntellectHint(id);
-    entries.push({
-      value,
-      label: hint ? `${label}: ${hint}` : label,
-      shortLabel: label,
-      group,
-      ...supportsImages !== void 0 ? { supportsImages } : {},
-      ...free ? { coverage: "free" } : {}
-    });
-  };
-  for (const model of liveModels)
-    add(
-      model.id,
-      modelDisplayName(model.name || model.id),
-      model.supportsImages,
-      model.inputPricePerMTok === 0 && model.outputPricePerMTok === 0
-    );
-  if (customId) add(customId, `${customId} (custom)`);
-  if (isOpenRouterModel(current)) add(openRouterModelId(current), modelDisplayLabel(current));
-  if (entries.length === 0) {
-    let freeOnly = false;
-    try {
-      freeOnly = await api.settings.get("openRouterFreeMode") === true;
-    } catch {
-    }
-    return [
-      {
-        value: "",
-        label: freeOnly ? "No free tool-capable models found" : "No tool-capable models found",
-        group,
-        disabled: true
-      }
-    ];
-  }
-  return entries;
-}
-function extraProviderOptions(provider, available, current) {
-  if (!available) return [];
-  const note = provider.local ? null : pickerPrivacyNote(dataPolicyForProvider(provider));
-  const group = note ? `${provider.label}: ${note}` : provider.label;
-  const seen = /* @__PURE__ */ new Set();
-  const entries = [];
-  const add = (id, label) => {
-    const value = toExtraProviderModel(provider.id, id);
-    if (!id || seen.has(value)) return;
-    seen.add(value);
-    const hint = modelIntellectHint(id);
-    const supportsImages = provider.id === "gemini" ? true : provider.id === "deepseek" || provider.id === "mistral" && KNOWN_TEXT_ONLY_MISTRAL_MODELS.some((known) => known === id) ? false : void 0;
-    entries.push({
-      value,
-      label: hint ? `${label}: ${hint}` : label,
-      shortLabel: label,
-      group,
-      ...supportsImages !== void 0 ? { supportsImages } : {}
-    });
-  };
-  for (const model of provider.models) add(model.id, modelDisplayName(model.id));
-  if (extraProviderSlugFromModel(current) === provider.id) {
-    add(extraProviderModelId(current), modelDisplayLabel(current));
-  }
-  return entries;
-}
-async function remoteAgentOptions(api, isAvailable, current, preferAcpForClaude = false) {
-  const options = [];
-  if (isAvailable("openai")) {
-    const models = CLOUD_MODELS.filter(([, , provider]) => provider === "openai");
-    models.sort(
-      ([a4], [b2]) => Number(b2 === DEFAULT_OPENAI_AGENT_MODEL) - Number(a4 === DEFAULT_OPENAI_AGENT_MODEL)
-    );
-    for (const [id, label] of models) {
-      options.push({
-        value: remoteAgentModelValue("openai", id),
-        label,
-        group: OPENAI_AGENT_GROUP,
-        retention: OPENAI_AGENT_RETENTION_NOTICE,
-        supportsImages: true,
-        lineageId: id,
-        lineageScope: "remote-agent:openai"
-      });
-    }
-    const selected = parseRemoteAgentModelSelection(current);
-    if (selected?.provider === "openai" && !options.some((option) => option.value === current)) {
-      options.push({
-        value: current,
-        label: selected.model ?? "Default",
-        group: OPENAI_AGENT_GROUP,
-        retention: OPENAI_AGENT_RETENTION_NOTICE,
-        supportsImages: false
-      });
-    }
-  }
-  if (isAvailable(REMOTE_AGENT_PROVIDER_CURSOR)) {
-    const group = remoteAgentGroupLabel(REMOTE_AGENT_PROVIDER_CURSOR);
-    let liveModels = [];
-    try {
-      liveModels = await api.remoteAgent.models();
-    } catch {
-    }
-    const seen = /* @__PURE__ */ new Set();
-    const add = (value, label, lineageId) => {
-      if (seen.has(value)) return;
-      seen.add(value);
-      options.push({
-        value,
-        label,
-        group,
-        // Scoped to Cursor: an unrelated agent/provider's newer release never
-        // hides a model only Cursor's catalog actually offers.
-        ...lineageId ? { lineageId, lineageScope: `remote-agent:${REMOTE_AGENT_PROVIDER_CURSOR}` } : {}
-      });
-    };
-    add(remoteAgentModelValue(REMOTE_AGENT_PROVIDER_CURSOR), "Default");
-    for (const model of liveModels) {
-      const vendorLabel = model.label || model.id;
-      const label = canonicalModelLabel(vendorLabel);
-      const lineageId = resolveAgentModelIdentity(model.id, vendorLabel, label) ?? model.id;
-      const hint = modelIntellectHint(lineageId);
-      add(
-        remoteAgentModelValue(REMOTE_AGENT_PROVIDER_CURSOR, model.id),
-        hint ? `${label}: ${hint}` : label,
-        lineageId
-      );
-    }
-    const currentSelection = parseRemoteAgentModelSelection(current);
-    if (currentSelection?.provider === REMOTE_AGENT_PROVIDER_CURSOR && currentSelection.model && !seen.has(current)) {
-      add(current, canonicalModelLabel(currentSelection.model));
-    }
-  }
-  if (isAvailable(REMOTE_AGENT_PROVIDER_ANTHROPIC)) {
-    const baseGroup = remoteAgentGroupLabel(REMOTE_AGENT_PROVIDER_ANTHROPIC);
-    const group = preferAcpForClaude ? `${baseGroup} (billed to your API key)` : baseGroup;
-    const seen = /* @__PURE__ */ new Set();
-    const add = (value, label, lineageId) => {
-      if (seen.has(value)) return;
-      seen.add(value);
-      options.push({
-        value,
-        label,
-        group,
-        // Scoped to the managed Anthropic agent, separately from the direct-key
-        // "Cloud models" group: the two are different billing routes, each with
-        // its own availability.
-        ...lineageId ? { lineageId, lineageScope: `remote-agent:${REMOTE_AGENT_PROVIDER_ANTHROPIC}` } : {}
-      });
-    };
-    for (const id of MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT) {
-      const label = cloudModelDisplayLabel(id);
-      const hint = modelIntellectHint(id);
-      add(
-        remoteAgentModelValue(REMOTE_AGENT_PROVIDER_ANTHROPIC, id),
-        hint ? `${label}: ${hint}` : label,
-        id
-      );
-    }
-    const currentSelection = parseRemoteAgentModelSelection(current);
-    if (currentSelection?.provider === REMOTE_AGENT_PROVIDER_ANTHROPIC && currentSelection.model && !seen.has(current)) {
-      add(current, canonicalModelLabel(currentSelection.model));
-    }
-    if (current === remoteAgentModelValue(REMOTE_AGENT_PROVIDER_ANTHROPIC) && !seen.has(current)) {
-      add(current, remoteAgentGroupLabel(REMOTE_AGENT_PROVIDER_ANTHROPIC));
-    }
-  }
-  return options;
-}
-async function fetchModelOptions(api, current, opts = {}) {
-  const options = [];
-  if (opts.includeAgentModels !== false) {
-    options.push({
-      value: MATCH_PROMPT_MODEL_SELECTOR,
-      label: "Match task: Chooses a suitable model from your prompt",
-      group: "Automatic"
-    });
-  }
-  if (opts.includeBestValue === true) {
-    options.push({
-      value: BEST_VALUE_CHAT_MODEL,
-      label: `${BEST_VALUE_CHAT_MODEL_LABEL}: auto from plan / price frontier`,
-      group: "Automatic"
-    });
-    for (const choice of dynamicModelChoices()) {
-      if (choice.value === BEST_VALUE_CHAT_MODEL) continue;
-      if (choice.group !== "Automatic") continue;
-      options.push({
-        value: choice.value,
-        label: `${choice.label}: ${choice.description}`,
-        group: choice.group
-      });
-    }
-  }
-  const isSshWorkspace = opts.sshWorkspace === true;
-  const acpOverSsh = isSshWorkspace && await api.settings.get("acpOverSshEnabled") === true;
-  const sshWorkspace = isSshWorkspace && !acpOverSsh;
-  const includeAgentModels = opts.includeAgentModels !== false;
-  const planUsage = includeAgentModels ? api.usage?.getPlanUsage().catch(() => null) ?? Promise.resolve(null) : Promise.resolve(null);
-  let available = {};
-  try {
-    available = await api.settings.availableProviders();
-  } catch {
-  }
-  const isAvailable = (provider) => available[provider] ?? false;
-  const cloudGroup = "Cloud models";
-  try {
-    const catalog = await api.chatGptPlan?.models();
-    if (catalog?.clientId) {
-      for (const model of catalog.models) {
-        options.push({
-          value: chatGptPlanModelValue(catalog.clientId, model.slug),
-          label: `${model.displayName} \xB7 ChatGPT plan`,
-          group: "ChatGPT plan"
-        });
-      }
-    }
-  } catch {
-  }
-  for (const [value, label, provider] of CLOUD_MODELS) {
-    if (!isAvailable(provider)) continue;
-    if (value === "gpt-6-astra" && !isAvailable("openai:gpt-6-astra")) continue;
-    const hint = cloudModelIntellectHint(value);
-    options.push({
-      value,
-      label: hint ? `${label}: ${hint}` : label,
-      shortLabel: label,
-      group: cloudGroup,
-      supportsImages: true
-    });
-  }
-  options.push(...await openRouterOptions(api, isAvailable("openrouter"), current));
-  let extraProviders = [];
-  try {
-    extraProviders = await api.settings.extraProviders();
-  } catch {
-  }
-  for (const provider of extraProviders) {
-    options.push(...extraProviderOptions(provider, isAvailable(provider.id), current));
-  }
-  let acpAgents = [];
-  if (includeAgentModels && !sshWorkspace) {
-    try {
-      acpAgents = parseAcpAgentConfigs(await api.settings.get("registeredAcpAgents"));
-    } catch {
-    }
-  }
-  const preferAcpForClaude = enabledClaudeAcpAgent(acpAgents) !== void 0;
-  if (includeAgentModels) {
-    const remote = await remoteAgentOptions(api, isAvailable, current, preferAcpForClaude);
-    const acp = acpAgentOptions(acpAgents).map(
-      (option) => isSameAcpSelection(option.value, current) ? { ...option, value: current } : option
-    );
-    options.push(...preferAcpForClaude ? [...acp, ...remote] : [...remote, ...acp]);
-    options.push(...await pluginModelOptions(api, includeAgentModels, current));
-  }
-  const lmGroup = "Local models";
-  let models;
-  let localCatalogueKnown;
-  try {
-    const modelInfo = api.lmStudio.modelInfo ? await api.lmStudio.modelInfo() : [];
-    models = modelInfo.length > 0 ? modelInfo : (await api.lmStudio.models()).map((id) => ({ id }));
-    localCatalogueKnown = models.length > 0;
-  } catch {
-    models = [];
-    localCatalogueKnown = false;
-  }
-  for (const model of models) {
-    const { id } = model;
-    if (model.embedding === true) continue;
-    const hint = [localModelRoleHint(id), localModelIntellectHint(id)].filter(isNonNull).join(" \xB7 ");
-    const label = getLocalModelCapability(id)?.label ?? modelDisplayName(id);
-    options.push({
-      value: `lmstudio:${id}`,
-      label: hint ? `${label}: ${hint}` : label,
-      shortLabel: label,
-      group: lmGroup,
-      ...model.supportsImages !== void 0 ? { supportsImages: model.supportsImages } : {}
-    });
-  }
-  if (current && !options.some((o2) => o2.value === current)) {
-    if (current.startsWith("lmstudio:")) {
-      options.push({
-        value: current,
-        label: `${modelDisplayLabel(current)} ${localCatalogueKnown ? "(not available)" : "(offline)"}`,
-        group: lmGroup
-      });
-    } else if (includeAgentModels && current.startsWith(REMOTE_AGENT_MODEL_PREFIX)) {
-      const selection2 = parseRemoteAgentModelSelection(current);
-      options.push({
-        value: current,
-        label: `${modelDisplayLabel(current)} (no valid key)`,
-        group: selection2?.provider === "openai" ? OPENAI_AGENT_GROUP : selection2 ? remoteAgentGroupLabel(selection2.provider) : "Remote agents",
-        ...selection2?.provider === "openai" ? { retention: OPENAI_AGENT_RETENTION_NOTICE } : {}
-      });
-    } else if (includeAgentModels && current.startsWith(ACP_MODEL_PREFIX)) {
-      const selection2 = parseAcpModelSelection(current);
-      const agentId = selection2?.id ?? current.slice(ACP_MODEL_PREFIX.length);
-      const configuredAgent = acpAgents.find((agent) => agent.id === agentId);
-      const configuredButUnlisted = configuredAgent?.enabled === true;
-      const staleModel = selection2?.model ? canonicalModelLabel(selection2.model) : "agent default";
-      const stale = {
-        retention: ACP_RETENTION_NOTICE,
-        value: current,
-        label: sshWorkspace ? `${modelDisplayLabel(current)} (unavailable on SSH)` : configuredButUnlisted ? `${configuredAgent.title}: ${staleModel} (not currently advertised)` : configuredAgent ? `${configuredAgent.title} (disabled)` : `${modelDisplayLabel(current)} (not configured)`,
-        group: configuredAgent ? acpGroupLabel(configuredAgent.title) : ACP_GROUP
-      };
-      if (sshWorkspace) stale.disabled = true;
-      options.push(stale);
-    } else if (parseChatGptPlanModel(current)) {
-      options.push({
-        value: current,
-        label: `${modelDisplayLabel(current)} (reconnect or select its account)`,
-        group: "ChatGPT plan",
-        disabled: true
-      });
-    } else if (includeAgentModels && current.startsWith(PLUGIN_MODEL_PREFIX)) {
-      options.push({
-        value: current,
-        label: `${modelDisplayLabel(current)} (plugin disabled)`,
-        group: "Personal plugins",
-        disabled: true
-      });
-    } else {
-      const dynamicLabel = dynamicModelLabel(current);
-      options.push({
-        value: current,
-        label: dynamicLabel ?? `${modelDisplayLabel(current)} (no key)`
-      });
-    }
-  }
-  let blockedMakers = parseBlockedModelMakers(null);
-  try {
-    blockedMakers = parseBlockedModelMakers(await api.settings.get("blockedModelMakers"));
-  } catch {
-  }
-  const unblockedOptions = options.flatMap((option) => {
-    const maker = blockedModelMaker(option.value, blockedMakers);
-    if (!maker) return [option];
-    if (option.value !== current) return [];
-    return [{ ...option, label: `${option.label} (blocked in Settings)`, disabled: true }];
-  });
-  const lineageIdsByScope = /* @__PURE__ */ new Map();
-  for (const option of unblockedOptions) {
-    const scope = option.lineageScope ?? "";
-    const id = option.lineageId ?? option.value;
-    const bucket = lineageIdsByScope.get(scope);
-    if (bucket) bucket.push(id);
-    else lineageIdsByScope.set(scope, [id]);
-  }
-  const visibleOptions = unblockedOptions.flatMap((option) => {
-    const id = option.lineageId ?? option.value;
-    const offered = lineageIdsByScope.get(option.lineageScope ?? "") ?? [];
-    const successor = supersedingModel(id, offered);
-    if (successor === null) return [option];
-    if (option.value !== current) return [];
-    return [
-      {
-        ...option,
-        label: `${option.label} (superseded by ${successorDisplayLabel(successor)})`,
-        disabled: true,
-        // A row already disabled for another reason cannot run, so it keeps
-        // the unavailable treatment rather than reading as the running model.
-        ...option.disabled === true ? {} : { superseded: true }
-      }
-    ];
-  });
-  const concreteCount = visibleOptions.filter(
-    (o2) => !isBestValueChatModel(o2.value) && o2.value !== "" && !o2.value.startsWith(AUTO_MODEL_PREFIX)
-  ).length;
-  if (concreteCount === 0) {
-    visibleOptions.push({
-      value: "",
-      label: "No models available: add a provider or API key in Settings",
-      disabled: true
-    });
-  }
-  const coverageContext = { agents: acpAgents, extraProviders, planUsage: await planUsage };
-  return visibleOptions.map((option) => {
-    const coverage = option.coverage ?? modelCoverage(option.value, coverageContext);
-    return coverage ? { ...option, coverage } : option;
-  });
-}
-function autoModelOption(label) {
-  return { value: "", label };
-}
-async function fetchSmallTasksModelOptions(api, current) {
-  return [
-    autoModelOption("(auto: prefer local, fall back to chat model)"),
-    ...await fetchModelOptions(api, current)
-  ];
-}
-async function fetchRoleModelOptions(api, current, autoLabel = "(auto: prefer on-device)") {
-  return [
-    autoModelOption(autoLabel),
-    // A role may hold a *rule* rather than an id — the instruct/safety role
-    // defaults to one, and onboarding writes one for research. Offer the rules
-    // alongside the concrete models, or the stored value matches no option and
-    // renders through the pinned-id fallback as "auto:best-local (no key)".
-    // Role selectors are excluded: pointing a role at a role is circular.
-    ...automaticModelChoices(),
-    ...await fetchModelOptions(api, current, { includeAgentModels: false })
-  ];
-}
-function automaticModelChoices() {
-  return dynamicModelChoices().filter((choice) => choice.group !== "By role").map((choice) => ({
-    value: choice.value,
-    label: `${choice.label}: ${choice.description}`,
-    group: choice.group
-  }));
-}
-function localModelOptions(models, autoLabel = "(auto: first loaded model)", current = "") {
-  const options = [autoModelOption(autoLabel), ...models.map((id) => ({ value: id, label: id }))];
-  const pinned = current.trim();
-  if (pinned && !options.some((option) => option.value === pinned)) {
-    const rule = dynamicModelLabel(pinned);
-    options.push({ value: pinned, label: rule ?? `${pinned} (not available)` });
-  }
-  return options;
-}
-function dynamicModelOptions(current, autoLabel) {
-  const options = dynamicModelChoices().map((choice) => ({
-    value: choice.value,
-    label: `${choice.label}: ${choice.description}`,
-    group: choice.group
-  }));
-  if (autoLabel !== void 0) options.unshift(autoModelOption(autoLabel));
-  const pinned = current.trim();
-  if (pinned && !options.some((option) => option.value === pinned)) {
-    options.unshift({
-      value: pinned,
-      label: `${modelDisplayLabel(pinned)} (pinned)`,
-      group: PINNED_GROUP
-    });
-  }
-  return options;
-}
-function fetchDynamicModelOptions(current, autoLabel) {
-  return Promise.resolve(dynamicModelOptions(current, autoLabel));
-}
-var ACP_GROUP, OPENROUTER_GROUP, KNOWN_TEXT_ONLY_MISTRAL_MODELS, PINNED_GROUP;
-var init_model_options = __esm({
-  "src/renderer/views/model-options.ts"() {
-    init_openai_cloud_agent();
-    init_acp_retention();
-    init_chatgpt_plan();
-    init_model_catalog();
-    init_local_model_catalog();
-    init_intellect_hints();
-    init_model_intellect();
-    init_openrouter();
-    init_extra_providers();
-    init_data_policies();
-    init_remote_agent();
-    init_acp();
-    init_acp_known_agents();
-    init_plugin_model();
-    init_lm_studio_defaults();
-    init_dynamic_model();
-    init_model_label();
-    init_agent_model_identity();
-    init_model_display();
-    init_nullish2();
-    init_model_maker_block();
-    init_model_version_suppression();
-    init_model_coverage();
-    ACP_GROUP = "Agents on this device";
-    OPENROUTER_GROUP = "OpenRouter";
-    KNOWN_TEXT_ONLY_MISTRAL_MODELS = [
-      "mistral-small-latest",
-      "open-mistral-nemo",
-      "mistral-large-latest"
-    ];
-    PINNED_GROUP = "Currently pinned";
-  }
-});
-
 // src/renderer/views/setup/usage-section.ts
 function isAbortTimeoutMessage(message) {
   return /aborted due to timeout|operation was aborted|aborterror|timeout/i.test(message);
@@ -48437,7 +49986,7 @@ function renderModelTable(host, title, rows, emptyText, accounts = []) {
     const tr = document.createElement("tr");
     const approx = row.estimatedTokens ? "~" : "";
     const model = escapeHtml(
-      row.model.startsWith(CHATGPT_PLAN_MODEL_PREFIX) ? displayModelLabel2(row.model) : row.model
+      row.model.startsWith(CHATGPT_PLAN_MODEL_PREFIX) ? displayModelLabel(row.model) : row.model
     );
     const modelLabel = row.estimatedTokens ? `${model} <span class="usage-estimated" title="Estimated locally, because the agent did not report usage">(est.)</span>` : model;
     const plan = parseModelSelection(row.model);
@@ -49732,1270 +51281,6 @@ function renderSimpleFields(root, fields) {
 }
 var init_fields = __esm({
   "src/renderer/views/settings/fields.ts"() {
-  }
-});
-
-// src/renderer/dom/context-menu.ts
-function contextMenuClosedByPressOn(anchor2) {
-  const press = outsidePress;
-  outsidePress = null;
-  return press !== null && press.target !== null && anchor2.contains(press.target) && Date.now() - press.at < 1e3;
-}
-function showContextMenu(clientX, clientY, items, withinDialog) {
-  dismissOpenContextMenu?.();
-  if (items.every((entry) => isHeading(entry) || isSeparator(entry))) return;
-  const buttons = items.map((entry) => {
-    if (isSeparator(entry)) return el("div", { class: "context-menu-separator", role: "separator" });
-    if (isHeading(entry)) {
-      return el("div", { class: "context-menu-heading", role: "presentation" }, entry.heading);
-    }
-    const item = entry;
-    const btn = el(
-      "button",
-      {
-        type: "button",
-        class: "context-menu-item",
-        role: item.checked === void 0 ? "menuitem" : item.toggle === true ? "menuitemcheckbox" : "menuitemradio",
-        ...item.checked === void 0 ? {} : { "aria-checked": String(item.checked) }
-      },
-      el("span", { class: "context-menu-item-label" }, item.label),
-      ...item.detail === void 0 ? [] : [el("span", { class: "context-menu-item-detail" }, item.detail)],
-      ...item.toggle === true && item.checked !== void 0 ? [
-        el(
-          "span",
-          {
-            class: item.checked ? "context-menu-switch is-on" : "context-menu-switch",
-            "aria-hidden": "true"
-          },
-          el("i")
-        )
-      ] : item.checked === true ? [checkIcon("ui-icon ui-icon-sm context-menu-item-check")] : []
-    );
-    if (item.checked === true) btn.classList.add("is-checked");
-    if (item.disabled) btn.disabled = true;
-    let selected = false;
-    const select = () => {
-      if (selected || item.disabled) return;
-      selected = true;
-      dismiss();
-      item.onSelect();
-    };
-    btn.addEventListener("mousedown", (e2) => {
-      if (item.disabled) return;
-      e2.preventDefault();
-      e2.stopPropagation();
-      select();
-    });
-    btn.addEventListener("click", (e2) => {
-      e2.stopPropagation();
-      select();
-    });
-    return btn;
-  });
-  const menu = el("div", { class: "context-menu", role: "menu" }, ...buttons);
-  menu.style.left = `${String(clientX)}px`;
-  menu.style.top = `${String(clientY)}px`;
-  const dismiss = () => {
-    menu.remove();
-    document.removeEventListener("pointerdown", onPointerDown, true);
-    document.removeEventListener("keydown", onKeyDown, true);
-    window.removeEventListener("blur", dismiss);
-    if (dismissOpenContextMenu === dismiss) dismissOpenContextMenu = null;
-  };
-  const onPointerDown = (e2) => {
-    const target = e2.target instanceof Node ? e2.target : null;
-    if (menu.contains(target)) return;
-    outsidePress = { target, at: Date.now() };
-    dismiss();
-  };
-  const onKeyDown = (e2) => {
-    if (e2.key !== "Escape") return;
-    e2.preventDefault();
-    e2.stopPropagation();
-    dismiss();
-  };
-  const dialog2 = withinDialog?.closest("dialog");
-  (dialog2 ?? document.body).append(menu);
-  dismissOpenContextMenu = dismiss;
-  document.addEventListener("pointerdown", onPointerDown, true);
-  document.addEventListener("keydown", onKeyDown, true);
-  window.addEventListener("blur", dismiss);
-  const rect = menu.getBoundingClientRect();
-  const pad = 4;
-  let left = clientX;
-  let top = clientY;
-  if (left + rect.width > window.innerWidth - pad) left = window.innerWidth - rect.width - pad;
-  if (top + rect.height > window.innerHeight - pad) top = window.innerHeight - rect.height - pad;
-  if (left < pad) left = pad;
-  if (top < pad) top = pad;
-  menu.style.left = `${String(left)}px`;
-  menu.style.top = `${String(top)}px`;
-}
-function dismissContextMenu() {
-  dismissOpenContextMenu?.();
-}
-var isHeading, isSeparator, dismissOpenContextMenu, outsidePress;
-var init_context_menu = __esm({
-  "src/renderer/dom/context-menu.ts"() {
-    init_helpers();
-    init_icons();
-    isHeading = (entry) => "heading" in entry;
-    isSeparator = (entry) => "separator" in entry;
-    dismissOpenContextMenu = null;
-    outsidePress = null;
-  }
-});
-
-// src/renderer/views/model-picker.ts
-function isTypeToFilterKey(e2) {
-  if (e2.ctrlKey || e2.metaKey || e2.altKey) return false;
-  if (e2.key.length !== 1) return false;
-  if (e2.key === " ") return false;
-  const code = e2.key.codePointAt(0);
-  return code !== void 0 && code >= 32;
-}
-function fieldMenuSurfacePlacement(menu, surface, trigger, gap) {
-  if (menu.top >= surface.top - 1 && menu.bottom <= surface.bottom + 1) return "natural";
-  return trigger.top - gap - menu.height >= surface.top ? "flipped" : "contained";
-}
-function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = {}) {
-  const variant = pickerOpts.variant ?? "compact";
-  const recentMode = pickerOpts.getRecentValues !== void 0;
-  const wrap = el("div", {
-    class: [
-      "model-picker",
-      `model-picker-${variant}`,
-      recentMode ? "model-picker-recent-mode" : void 0,
-      pickerOpts.className
-    ].filter(isNonEmptyString).join(" ")
-  });
-  wrap.style.setProperty("--model-picker-anchor", `--model-picker-${String(++pickerAnchorId)}`);
-  const triggerAttrs = {
-    type: "button",
-    class: "model-picker-trigger",
-    "aria-haspopup": "listbox",
-    "aria-expanded": "false"
-  };
-  if (pickerOpts.ariaLabel) triggerAttrs["aria-label"] = pickerOpts.ariaLabel;
-  const trigger = el("button", triggerAttrs);
-  const labelEl = el("span", { class: "model-picker-label" });
-  const chevron = el(
-    "span",
-    { class: "model-picker-chevron", "aria-hidden": "true" },
-    chevronDownIcon("ui-icon ui-icon-sm ui-picker-chevron")
-  );
-  const triggerCost = el(
-    "span",
-    {
-      class: "model-picker-cost",
-      hidden: "",
-      "aria-label": "Potential usage charge",
-      title: "Potential usage charge"
-    },
-    "$"
-  );
-  trigger.append(labelEl, triggerCost, chevron);
-  const menu = el("div", {
-    class: "model-picker-menu",
-    hidden: "",
-    "aria-label": "Choose model"
-  });
-  const recentHeader = el(
-    "div",
-    {
-      class: "model-picker-view-title",
-      hidden: recentMode ? void 0 : ""
-    },
-    "Recent"
-  );
-  const allHeader = el("div", { class: "model-picker-all-header", hidden: "" });
-  const backButton = el(
-    "button",
-    {
-      type: "button",
-      class: "model-picker-back",
-      "aria-label": "Back to recent models"
-    },
-    arrowLeftIcon("ui-icon ui-icon-sm")
-  );
-  allHeader.append(backButton, el("span", { class: "model-picker-view-title" }, "All models"));
-  const coverageFilters = el("div", {
-    class: "model-picker-coverage-filters",
-    role: "group",
-    "aria-label": "Filter models by coverage",
-    hidden: ""
-  });
-  const coverageButtons = COVERAGE_FILTERS.map(({ value, label }) => {
-    const count = el("span", { class: "model-picker-coverage-count", "aria-hidden": "true" });
-    const button = el(
-      "button",
-      {
-        type: "button",
-        class: "model-picker-coverage-filter",
-        "data-coverage": value,
-        "aria-label": `${label} models`,
-        "aria-pressed": String(value === "all")
-      },
-      label,
-      count
-    );
-    button.addEventListener("click", () => {
-      coverageFilter = value;
-      activeValue = null;
-      list.scrollTop = 0;
-      renderMenu(cachedOptions);
-    });
-    coverageFilters.append(button);
-    return { value, button, count };
-  });
-  const filter = el("input", {
-    type: "search",
-    class: "model-picker-filter",
-    placeholder: "Filter models...",
-    "aria-label": "Filter models",
-    autocomplete: "off",
-    hidden: recentMode ? "" : void 0
-  });
-  const list = el("div", {
-    class: "model-picker-list",
-    role: "listbox",
-    "aria-label": recentMode ? "Recent models" : "All models"
-  });
-  const browseButton = el(
-    "button",
-    {
-      type: "button",
-      class: "model-picker-browse",
-      "aria-label": "Browse all models",
-      hidden: recentMode ? void 0 : ""
-    },
-    el("span", {}, "All models"),
-    chevronRightIcon("ui-icon ui-icon-sm")
-  );
-  const groupsSection = el("div", { class: "model-picker-groups", hidden: "" });
-  const groupHeader = el("div", { class: "model-picker-all-header", hidden: "" });
-  const groupBack = el(
-    "button",
-    { type: "button", class: "model-picker-back", "aria-label": "Back to models" },
-    arrowLeftIcon("ui-icon ui-icon-sm")
-  );
-  const groupTitle = el("span", { class: "model-picker-view-title" });
-  groupHeader.append(groupBack, groupTitle);
-  menu.append(
-    recentHeader,
-    allHeader,
-    groupHeader,
-    coverageFilters,
-    filter,
-    list,
-    groupsSection,
-    browseButton
-  );
-  wrap.append(trigger, menu);
-  root.append(wrap);
-  const homeView = recentMode ? "recent" : "all";
-  let open2 = false;
-  let view = homeView;
-  let coverageFilter = "all";
-  const cleanups = [];
-  let cachedOptions = [];
-  let valueGroups = [];
-  let activeGroupId = null;
-  let activeValue = null;
-  let refreshGeneration = 0;
-  let loadState = "loading";
-  function activeGroup() {
-    return valueGroups.find((group) => group.id === activeGroupId);
-  }
-  function currentRoute() {
-    const current = getCurrent();
-    return pickerOpts.getCurrentRoute?.(current) ?? current;
-  }
-  function focusActiveOption() {
-    list.querySelector(".model-picker-option.is-active")?.focus({ preventScroll: true });
-  }
-  function setView(next, focus = true) {
-    view = next === "group" ? "group" : recentMode ? next : "all";
-    if (view !== "group") activeGroupId = null;
-    recentHeader.hidden = view !== "recent";
-    allHeader.hidden = !recentMode || view !== "all";
-    groupHeader.hidden = view !== "group";
-    filter.hidden = view !== "all";
-    browseButton.hidden = !recentMode || view !== "recent";
-    groupsSection.hidden = view !== homeView || valueGroups.length === 0;
-    const group = activeGroup();
-    if (group) groupTitle.textContent = group.label;
-    list.setAttribute(
-      "aria-label",
-      view === "group" ? group?.label ?? "Options" : view === "recent" ? "Recent models" : "All models"
-    );
-    if (view !== "all") filter.value = "";
-    renderMenu(cachedOptions);
-    if (!focus) return;
-    if (view === "all") filter.focus();
-    else focusActiveOption();
-  }
-  function openGroup(groupId) {
-    activeGroupId = groupId;
-    activeValue = activeGroup()?.currentValue ?? null;
-    setView("group");
-  }
-  function placeFieldMenuInsideSurface() {
-    menu.classList.remove("is-surface-flipped", "is-surface-contained");
-    if (!open2 || variant !== "field") return;
-    const surface = menu.offsetParent;
-    if (!(surface instanceof HTMLElement)) return;
-    const menuRect = menu.getBoundingClientRect();
-    const surfaceRect = surface.getBoundingClientRect();
-    const triggerRect = trigger.getBoundingClientRect();
-    const gap = Number.parseFloat(getComputedStyle(menu).getPropertyValue("--spacing-xs")) || 4;
-    const placement = fieldMenuSurfacePlacement(menuRect, surfaceRect, triggerRect, gap);
-    if (placement === "flipped") {
-      menu.classList.add("is-surface-flipped");
-    } else if (placement === "contained") {
-      menu.classList.add("is-surface-contained");
-    }
-  }
-  function setOpen(next) {
-    open2 = next;
-    trigger.setAttribute("aria-expanded", String(next));
-    if (next) {
-      coverageFilter = "all";
-      menu.removeAttribute("hidden");
-      setView(homeView);
-      if (loadState === "error") void refresh();
-    } else {
-      menu.setAttribute("hidden", "");
-      menu.classList.remove("is-surface-flipped", "is-surface-contained");
-      filter.value = "";
-      setView(homeView, false);
-      pickerOpts.onClose?.();
-    }
-  }
-  function matchingOptions(options) {
-    const query = filter.value.trim().toLocaleLowerCase();
-    return options.filter(
-      (opt) => (coverageFilter === "all" || opt.coverage === coverageFilter) && (!query || `${opt.label} ${opt.value} ${opt.group ?? ""}`.toLocaleLowerCase().includes(query))
-    );
-  }
-  function visibleOptions(options) {
-    if (view === "all") return matchingOptions(options);
-    const requested = [currentRoute(), ...pickerOpts.getRecentValues?.() ?? []];
-    const seen = /* @__PURE__ */ new Set();
-    const recent = [];
-    for (const value of requested) {
-      if (!value || seen.has(value)) continue;
-      seen.add(value);
-      const option = options.find((candidate) => candidate.value === value);
-      if (option) recent.push(option);
-      if (recent.length === RECENT_MODEL_LIMIT) break;
-    }
-    return recent;
-  }
-  function scrollActiveOptionIntoView() {
-    const active2 = list.querySelector(".model-picker-option.is-active");
-    if (!active2) return;
-    const activeBounds = active2.getBoundingClientRect();
-    const listBounds = list.getBoundingClientRect();
-    if (activeBounds.top < listBounds.top) {
-      list.scrollTop += activeBounds.top - listBounds.top;
-    } else if (activeBounds.bottom > listBounds.bottom) {
-      list.scrollTop += activeBounds.bottom - listBounds.bottom;
-    }
-  }
-  function renderGroupChoices(group) {
-    clear(list);
-    activeValue ??= group.currentValue;
-    for (const choice of group.choices) {
-      const selected = choice.value === group.currentValue;
-      const item = el(
-        "button",
-        {
-          type: "button",
-          class: "model-picker-option",
-          role: "option",
-          "data-value": choice.value,
-          "aria-selected": choice.value === activeValue ? "true" : "false",
-          "aria-current": selected ? "true" : void 0,
-          ...choice.description ? { title: choice.description } : {}
-        },
-        el("span", { class: "model-picker-option-label" }, choice.label),
-        ...selected ? [checkIcon("ui-icon ui-icon-sm model-picker-option-check")] : []
-      );
-      if (selected) item.classList.add("is-selected");
-      if (choice.value === activeValue) item.classList.add("is-active");
-      item.addEventListener("click", () => {
-        selectGroupValue(choice.value);
-      });
-      list.append(item);
-    }
-    scrollActiveOptionIntoView();
-  }
-  function renderGroups() {
-    clear(groupsSection);
-    groupsSection.hidden = view !== homeView || valueGroups.length === 0;
-    for (const group of valueGroups) {
-      const current = group.choices.find((choice) => choice.value === group.currentValue);
-      const row = el(
-        "button",
-        {
-          type: "button",
-          class: "model-picker-group-row",
-          "aria-haspopup": "listbox",
-          "aria-label": `${group.label}: ${current?.label ?? "default"}`
-        },
-        el("span", { class: "model-picker-group-row-label" }, group.label),
-        el("span", { class: "model-picker-group-row-value" }, current?.label ?? "Default"),
-        chevronRightIcon("ui-icon ui-icon-sm")
-      );
-      row.addEventListener("click", () => {
-        openGroup(group.id);
-      });
-      groupsSection.append(row);
-    }
-  }
-  function selectGroupValue(value) {
-    const group = activeGroup();
-    if (!group) return;
-    group.currentValue = value;
-    pickerOpts.onSelectGroupValue?.(group.id, value);
-    renderGroups();
-    setOpen(false);
-  }
-  function renderMenu(options) {
-    const hasCoverage = options.some((option) => option.coverage !== void 0);
-    coverageFilters.hidden = view !== "all" || !hasCoverage;
-    menu.classList.toggle("has-coverage-filters", !coverageFilters.hidden);
-    for (const { value, button, count } of coverageButtons) {
-      button.setAttribute("aria-pressed", String(coverageFilter === value));
-      count.textContent = String(
-        options.filter((option) => option.value && (value === "all" || option.coverage === value)).length
-      );
-    }
-    const group = activeGroup();
-    if (view === "group" && group) {
-      renderGroupChoices(group);
-      return;
-    }
-    clear(list);
-    renderGroups();
-    if (options.length === 0 && loadState !== "ready") {
-      list.append(
-        el(
-          "div",
-          {
-            class: `model-picker-status is-${loadState}`,
-            role: "status",
-            "aria-live": "polite"
-          },
-          loadState === "loading" ? "Loading models\u2026" : "Models unavailable. Close and reopen to retry."
-        )
-      );
-      return;
-    }
-    const current = currentRoute();
-    const matches = visibleOptions(options);
-    const active2 = matches.find((opt) => opt.value === activeValue && !opt.disabled) ?? matches.find((opt) => opt.value === current && !opt.disabled) ?? matches.find((opt) => !opt.disabled);
-    activeValue = active2?.value ?? null;
-    let lastGroup;
-    for (const opt of matches) {
-      if (opt.group !== lastGroup) {
-        lastGroup = opt.group;
-        if (view === "all" && opt.group) {
-          list.append(el("div", { class: "model-picker-group-label" }, opt.group));
-        }
-      }
-      const selected = opt.value === current;
-      const item = el(
-        "button",
-        {
-          type: "button",
-          class: "model-picker-option",
-          role: "option",
-          "data-value": opt.value,
-          "aria-selected": opt.value === activeValue ? "true" : "false",
-          "aria-current": selected ? "true" : void 0,
-          disabled: opt.disabled ? true : void 0,
-          // The label ellipsizes at the menu's width cap; the tooltip keeps the
-          // whole of it reachable.
-          title: opt.label
-        },
-        el("span", { class: "model-picker-option-label" }, opt.label),
-        ...opt.retention ? [
-          el(
-            "span",
-            {
-              class: "model-picker-retention",
-              title: opt.retention.detail,
-              "aria-label": opt.retention.label,
-              role: "img"
-            },
-            historyIcon()
-          )
-        ] : [],
-        ...opt.coverage ? [
-          el(
-            "span",
-            {
-              class: opt.coverage === "paid" ? "model-picker-cost" : "model-picker-coverage-label",
-              ...opt.coverage === "paid" ? { "aria-label": "Potential usage charge", title: "Potential usage charge" } : {}
-            },
-            opt.coverage === "paid" ? "$" : opt.coverage === "local" ? "Local" : opt.coverage === "free" ? "Free" : "Plan"
-          )
-        ] : [],
-        ...recentMode || hasCoverage ? [
-          el(
-            "span",
-            { class: "model-picker-option-check-slot", "aria-hidden": "true" },
-            ...selected ? [checkIcon("ui-icon ui-icon-sm model-picker-option-check")] : []
-          )
-        ] : []
-      );
-      if (selected) item.classList.add("is-selected");
-      if (opt.superseded) item.classList.add("is-superseded");
-      if (opt.value === activeValue) item.classList.add("is-active");
-      item.addEventListener("click", () => {
-        selectOption(opt.value);
-      });
-      list.append(item);
-    }
-    if (matches.length === 0) {
-      list.append(
-        el(
-          "div",
-          { class: "model-picker-empty" },
-          view === "all" ? "No matching models" : "No recent models available"
-        )
-      );
-    }
-    scrollActiveOptionIntoView();
-    placeFieldMenuInsideSurface();
-  }
-  function selectOption(value) {
-    if (value === null) return;
-    const option = cachedOptions.find((opt) => opt.value === value);
-    if (!option || option.disabled) return;
-    activeValue = option.value;
-    onSelect(option.value);
-    updateTrigger(cachedOptions);
-    setOpen(false);
-  }
-  function moveActive(direction) {
-    const group = activeGroup();
-    const values = view === "group" && group ? group.choices.map((choice) => choice.value) : visibleOptions(cachedOptions).filter((opt) => !opt.disabled).map((opt) => opt.value);
-    if (values.length === 0) return;
-    const index = values.findIndex((value) => value === activeValue);
-    const nextIndex = clamp(index + direction, 0, values.length - 1);
-    activeValue = values[nextIndex] ?? null;
-    renderMenu(cachedOptions);
-    if (view !== "all") focusActiveOption();
-  }
-  function updateTrigger(options) {
-    const current = getCurrent();
-    const route = currentRoute();
-    const match = options.find((opt) => opt.value === route);
-    const label = (current ? pickerOpts.formatCurrentLabel?.(current) : void 0) ?? match?.label ?? (current ? modelDisplayLabel(current) : "Select model");
-    labelEl.textContent = label;
-    labelEl.title = current;
-    triggerCost.hidden = match?.coverage !== "paid";
-  }
-  async function refresh(signal) {
-    if (signal?.aborted) return;
-    const generation = ++refreshGeneration;
-    if (cachedOptions.length === 0) {
-      loadState = "loading";
-      renderMenu(cachedOptions);
-    }
-    try {
-      const options = await loadOptions(getCurrent());
-      if (generation !== refreshGeneration || signal?.aborted) return;
-      cachedOptions = options;
-      loadState = "ready";
-    } catch {
-      if (generation !== refreshGeneration || signal?.aborted) return;
-      cachedOptions = [];
-      loadState = "error";
-    }
-    if (pickerOpts.loadValueGroups) {
-      const groups = await pickerOpts.loadValueGroups(getCurrent()).catch(() => []);
-      if (generation !== refreshGeneration || signal?.aborted) return;
-      valueGroups = [...groups];
-      if (!activeGroup()) activeGroupId = null;
-    }
-    pickerOpts.onOptionsLoaded?.(cachedOptions);
-    renderMenu(cachedOptions);
-    updateTrigger(cachedOptions);
-    if (open2 && view === "recent" && !menu.contains(document.activeElement)) focusActiveOption();
-  }
-  function sync() {
-    renderMenu(cachedOptions);
-    updateTrigger(cachedOptions);
-  }
-  trigger.addEventListener("click", () => {
-    setOpen(!open2);
-  });
-  trigger.addEventListener("contextmenu", (e2) => {
-    if (valueGroups.length === 0) return;
-    e2.preventDefault();
-    e2.stopPropagation();
-    const entries = [];
-    for (const group of valueGroups) {
-      entries.push({ heading: group.label });
-      for (const choice of group.choices) {
-        entries.push({
-          label: choice.label,
-          checked: choice.value === group.currentValue,
-          onSelect: () => {
-            group.currentValue = choice.value;
-            pickerOpts.onSelectGroupValue?.(group.id, choice.value);
-            renderGroups();
-          }
-        });
-      }
-    }
-    showContextMenu(e2.clientX, e2.clientY, entries);
-  });
-  browseButton.addEventListener("click", () => {
-    setView("all");
-  });
-  backButton.addEventListener("click", () => {
-    setView("recent");
-  });
-  groupBack.addEventListener("click", () => {
-    activeValue = null;
-    setView(homeView);
-  });
-  filter.addEventListener("input", () => {
-    renderMenu(cachedOptions);
-  });
-  function enterAppliesHighlight(target) {
-    if (target === filter || target === menu || target === list) return true;
-    if (!(target instanceof HTMLElement)) return false;
-    if (target.matches(".model-picker-option")) return true;
-    return !menu.contains(target);
-  }
-  function handleOpenMenuKeydown(e2) {
-    if (!open2 || e2.isComposing) return false;
-    if (e2.key === "ArrowDown") {
-      e2.preventDefault();
-      e2.stopPropagation();
-      moveActive(1);
-      return true;
-    }
-    if (e2.key === "ArrowUp") {
-      e2.preventDefault();
-      e2.stopPropagation();
-      moveActive(-1);
-      return true;
-    }
-    if (e2.key === "Enter" && enterAppliesHighlight(e2.target)) {
-      e2.preventDefault();
-      e2.stopPropagation();
-      if (view === "group") {
-        if (activeValue !== null) selectGroupValue(activeValue);
-      } else selectOption(activeValue);
-      return true;
-    }
-    if (e2.key === "Escape") {
-      e2.preventDefault();
-      e2.stopPropagation();
-      if (view === "group") {
-        activeValue = null;
-        setView(homeView);
-      } else if (view === "all" && recentMode) setView("recent");
-      else {
-        setOpen(false);
-        if (!recentMode) trigger.focus();
-      }
-      return true;
-    }
-    if (e2.key === "ArrowLeft" && view === "group") {
-      e2.preventDefault();
-      e2.stopPropagation();
-      activeValue = null;
-      setView(homeView);
-      return true;
-    }
-    if (e2.key === "ArrowRight" && view === "recent" && recentMode) {
-      e2.preventDefault();
-      e2.stopPropagation();
-      setView("all");
-      return true;
-    }
-    if (e2.key === "ArrowLeft" && view === "all" && recentMode) {
-      e2.preventDefault();
-      e2.stopPropagation();
-      setView("recent");
-      return true;
-    }
-    if (recentMode && view === "recent" && isTypeToFilterKey(e2) && e2.target !== filter) {
-      e2.preventDefault();
-      e2.stopPropagation();
-      filter.value = e2.key;
-      setView("all");
-      return true;
-    }
-    if (view === "all" && isTypeToFilterKey(e2) && e2.target !== filter) {
-      e2.preventDefault();
-      e2.stopPropagation();
-      filter.value += e2.key;
-      filter.focus();
-      renderMenu(cachedOptions);
-      return true;
-    }
-    return false;
-  }
-  menu.addEventListener("keydown", (e2) => {
-    handleOpenMenuKeydown(e2);
-  });
-  cleanups.push(
-    on(document, "click", (e2) => {
-      if (!open2) return;
-      if (!(e2.target instanceof Node) || !wrap.contains(e2.target)) setOpen(false);
-    }),
-    on(
-      document,
-      "keydown",
-      (e2) => {
-        const isOpenShortcut = pickerOpts.enableShortcut === true && (e2.ctrlKey || e2.metaKey) && e2.shiftKey && !e2.altKey && (e2.key === "m" || e2.key === "M");
-        if (isOpenShortcut && !document.querySelector("dialog[open]")) {
-          e2.preventDefault();
-          setOpen(true);
-          return;
-        }
-        if (!open2) return;
-        if (e2.target instanceof Node && menu.contains(e2.target)) return;
-        handleOpenMenuKeydown(e2);
-      },
-      { capture: true }
-    )
-  );
-  const removalObserver = new MutationObserver(() => {
-    if (document.contains(wrap)) return;
-    removalObserver.disconnect();
-    destroy();
-  });
-  removalObserver.observe(document.documentElement, { childList: true, subtree: true });
-  cleanups.push(() => {
-    removalObserver.disconnect();
-  });
-  let destroyed = false;
-  function destroy() {
-    if (destroyed) return;
-    destroyed = true;
-    refreshGeneration++;
-    cleanups.forEach((cleanup) => {
-      cleanup();
-    });
-    wrap.remove();
-  }
-  updateTrigger(cachedOptions);
-  if (pickerOpts.loadOnMount !== false) void refresh();
-  return {
-    root: wrap,
-    refresh,
-    sync,
-    openMenu: () => {
-      if (!open2) setOpen(true);
-    },
-    destroy
-  };
-}
-function nativeOption(item) {
-  const option = document.createElement("option");
-  option.value = item.value;
-  option.textContent = item.label;
-  option.disabled = item.disabled === true;
-  return option;
-}
-function mountModelSelectPicker(select, pickerOpts) {
-  let current = select.value;
-  if (!select.id) {
-    select.id = `model-picker-select-${String(++fieldPickerId)}`;
-  }
-  const wrappingLabel = select.parentElement instanceof HTMLLabelElement ? select.parentElement : null;
-  const associatedLabels = [...document.querySelectorAll("label")].filter(
-    (label) => label.htmlFor === select.id
-  );
-  if (wrappingLabel && !associatedLabels.includes(wrappingLabel)) {
-    associatedLabels.push(wrappingLabel);
-  }
-  const host = el("div", {
-    class: "model-picker-field-host",
-    "data-model-picker-for": select.name || select.id
-  });
-  select.after(host);
-  select.hidden = true;
-  select.classList.add("model-picker-native");
-  select.setAttribute("aria-hidden", "true");
-  select.tabIndex = -1;
-  function syncNativeOptions(options) {
-    clear(select);
-    let lastGroup;
-    let group = null;
-    for (const item of options) {
-      if (item.group !== lastGroup) {
-        lastGroup = item.group;
-        if (item.group) {
-          group = document.createElement("optgroup");
-          group.label = item.group;
-          select.append(group);
-        } else {
-          group = null;
-        }
-      }
-      const option = nativeOption(item);
-      if (group) group.append(option);
-      else select.append(option);
-    }
-    select.value = current;
-  }
-  const { onOptionsLoaded: _ignoredOnOptionsLoaded, ...forwardedOpts } = pickerOpts;
-  const picker = mountModelPicker(
-    host,
-    () => current,
-    (value) => {
-      current = value;
-      select.value = value;
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    },
-    (value) => pickerOpts.loadOptions(value),
-    {
-      ...forwardedOpts,
-      variant: "field",
-      ariaLabel: pickerOpts.ariaLabel ?? (select.name || select.id),
-      // Sync the hidden select only after the winning refresh generation so a
-      // stale in-flight load cannot clobber a newer option list / value.
-      onOptionsLoaded: syncNativeOptions
-    }
-  );
-  const trigger = picker.root.querySelector(".model-picker-trigger");
-  if (trigger && associatedLabels.length > 0) {
-    trigger.id = `${select.id}-model-picker-${String(++fieldPickerId)}`;
-    associatedLabels.forEach((label) => {
-      label.htmlFor = trigger.id;
-    });
-  }
-  const onNativeChange = () => {
-    current = select.value;
-    picker.sync();
-  };
-  select.addEventListener("change", onNativeChange);
-  return {
-    ...picker,
-    refresh: async (nextCurrent, signal) => {
-      if (signal?.aborted) return;
-      if (nextCurrent !== void 0) current = nextCurrent;
-      await picker.refresh(signal);
-    },
-    destroy: () => {
-      select.removeEventListener("change", onNativeChange);
-      picker.destroy();
-      host.remove();
-      select.hidden = false;
-      select.classList.remove("model-picker-native");
-      select.removeAttribute("aria-hidden");
-      select.removeAttribute("tabindex");
-      associatedLabels.forEach((label) => {
-        label.htmlFor = select.id;
-      });
-    }
-  };
-}
-var RECENT_MODEL_LIMIT, COVERAGE_FILTERS, pickerAnchorId, fieldPickerId;
-var init_model_picker = __esm({
-  "src/renderer/views/model-picker.ts"() {
-    init_clamp();
-    init_context_menu();
-    init_helpers();
-    init_icons();
-    init_model_options();
-    init_nullish2();
-    RECENT_MODEL_LIMIT = 5;
-    COVERAGE_FILTERS = [
-      { value: "all", label: "All" },
-      { value: "local", label: "Local" },
-      { value: "plan", label: "Plan" },
-      { value: "paid", label: "Paid" }
-    ];
-    pickerAnchorId = 0;
-    fieldPickerId = 0;
-  }
-});
-
-// packages/llm/src/model-parameters.ts
-function isEmptyModelParameters(params) {
-  return params.reasoning === void 0 && params.verbosity === void 0 && params.maxOutputTokens === void 0 && SAMPLING_FIELDS.every((field) => params[field] === void 0);
-}
-function matchesFamily(modelId, prefixes) {
-  return prefixes.some((prefix) => modelId.startsWith(prefix));
-}
-function matchesOpenAiFamily(modelId, prefixes) {
-  return prefixes.some((prefix) => hasModelIdPrefix(modelId, prefix));
-}
-function claudeSupport(modelId) {
-  const withoutOff = (ladder) => matchesFamily(modelId, CLAUDE_THINKING_ALWAYS_ON) ? ladder.filter((level) => level !== "off") : ladder;
-  if (matchesFamily(modelId, CLAUDE_EFFORT_NO_SAMPLING)) {
-    return {
-      reasoning: withoutOff(FULL_EFFORT_LADDER),
-      reasoningWire: "anthropic-effort",
-      sampling: [],
-      outputCap: false,
-      verbosity: [],
-      temperatureMax: 1
-    };
-  }
-  if (matchesFamily(modelId, CLAUDE_EFFORT_WITH_SAMPLING)) {
-    return {
-      reasoning: CAPPED_EFFORT_LADDER,
-      reasoningWire: "anthropic-effort",
-      sampling: ANTHROPIC_SAMPLING,
-      outputCap: false,
-      verbosity: [],
-      temperatureMax: 1
-    };
-  }
-  return {
-    reasoning: BUDGET_LADDER,
-    reasoningWire: "anthropic-budget",
-    sampling: ANTHROPIC_SAMPLING,
-    outputCap: false,
-    verbosity: [],
-    temperatureMax: 1
-  };
-}
-function openAiVerbosity(modelId) {
-  if (!matchesFamily(modelId, OPENAI_VERBOSITY_PREFIXES)) return [];
-  if (OPENAI_VERBOSITY_EXCLUDED.some((marker) => modelId.includes(marker))) return [];
-  return VERBOSITY_LEVELS;
-}
-function openAiSupport(modelId) {
-  if (matchesOpenAiFamily(modelId, OPENAI_GPT6_PREFIXES)) {
-    return {
-      reasoning: OPENAI_GPT6_LADDER,
-      reasoningWire: "openai-effort",
-      sampling: [],
-      outputCap: false,
-      verbosity: openAiVerbosity(modelId),
-      temperatureMax: 2
-    };
-  }
-  if (matchesOpenAiFamily(modelId, OPENAI_REASONING_PREFIXES)) {
-    return {
-      reasoning: OPENAI_LADDER,
-      reasoningWire: "openai-effort",
-      sampling: [],
-      outputCap: false,
-      verbosity: openAiVerbosity(modelId),
-      temperatureMax: 2
-    };
-  }
-  return {
-    reasoning: [],
-    reasoningWire: "none",
-    sampling: OPENAI_SAMPLING,
-    outputCap: false,
-    verbosity: openAiVerbosity(modelId),
-    temperatureMax: 2
-  };
-}
-function modelParameterSupport(model) {
-  const selection2 = parseModelSelection(model);
-  if (selection2.namespace === "chatgpt-plan") {
-    return { ...openAiSupport(selection2.modelId), sampling: [], outputCap: false };
-  }
-  if (AGENT_NAMESPACES.has(selection2.namespace)) {
-    return {
-      ...NO_PARAMETERS,
-      unavailableReason: "This selection runs the whole turn in its own agent, which owns these settings."
-    };
-  }
-  if (selection2.namespace === "auto") {
-    return {
-      ...NO_PARAMETERS,
-      unavailableReason: "This is a rule that picks a model per chat. Parameters follow the model it picks, so pin one to tune it."
-    };
-  }
-  if (selection2.namespace === "cloud") {
-    const provider = firstPartyProviderOf(selection2);
-    if (provider === "anthropic") return claudeSupport(selection2.modelId);
-    if (provider === "openai") return openAiSupport(selection2.modelId);
-    return {
-      reasoning: [],
-      reasoningWire: "none",
-      sampling: UNIVERSAL_SAMPLING,
-      outputCap: false,
-      verbosity: [],
-      temperatureMax: 2
-    };
-  }
-  return {
-    reasoning: OPENAI_COMPATIBLE_LADDER,
-    reasoningWire: selection2.namespace === "openrouter" ? "openrouter" : "openai-effort",
-    sampling: OPENAI_COMPATIBLE_SAMPLING,
-    outputCap: selection2.namespace === "openrouter" || selection2.namespace === "lmstudio",
-    // Not OpenAI's endpoint, so never OpenAI's field: local servers and
-    // aggregators reject or silently drop unknown body fields.
-    verbosity: [],
-    temperatureMax: 2,
-    upstreamDecides: true
-  };
-}
-function roundToStep(value) {
-  return Math.round(value * 100) / 100;
-}
-function sanitizeSampling(field, value, temperatureMax) {
-  if (typeof value !== "number" || !Number.isFinite(value)) return void 0;
-  const bounds = SAMPLING_BOUNDS[field];
-  const max = field === "temperature" ? temperatureMax : bounds.max;
-  const clamped = clamp(value, bounds.min, max);
-  return bounds.integer ? Math.round(clamped) : roundToStep(clamped);
-}
-function sanitizeModelParameters(params, model, support = modelParameterSupport(model)) {
-  const sanitized = {};
-  if (params.reasoning !== void 0 && support.reasoning.includes(params.reasoning)) {
-    sanitized.reasoning = params.reasoning;
-  }
-  if (params.verbosity !== void 0 && support.verbosity.includes(params.verbosity)) {
-    sanitized.verbosity = params.verbosity;
-  }
-  if (support.outputCap && typeof params.maxOutputTokens === "number" && Number.isFinite(params.maxOutputTokens)) {
-    sanitized.maxOutputTokens = Math.round(clamp(params.maxOutputTokens, 256, 1e6));
-  }
-  for (const field of support.sampling) {
-    const value = sanitizeSampling(field, params[field], support.temperatureMax);
-    if (value !== void 0) sanitized[field] = value;
-  }
-  return sanitized;
-}
-function findRecommendation(model) {
-  const selection2 = parseModelSelection(model);
-  if (AGENT_NAMESPACES.has(selection2.namespace) || selection2.namespace === "auto") return void 0;
-  const id = selection2.modelId.toLowerCase();
-  return RECOMMENDATIONS.find((entry) => id.includes(entry.match));
-}
-function recommendedModelParameters(model) {
-  const match = findRecommendation(model);
-  if (!match) return null;
-  const params = sanitizeModelParameters(match.params, model);
-  if (isEmptyModelParameters(params)) return null;
-  return {
-    label: match.label,
-    source: match.source,
-    ...match.sourceLabel ? { sourceLabel: match.sourceLabel } : {},
-    params,
-    ...match.outputCeiling ? { outputCeiling: match.outputCeiling } : {}
-  };
-}
-function decodeNumber(value) {
-  return typeof value === "number" && Number.isFinite(value) ? value : void 0;
-}
-function decodeModelParameters(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
-  const record2 = { ...value };
-  const params = {};
-  if (isReasoningLevel(record2["reasoning"])) params.reasoning = record2["reasoning"];
-  if (isVerbosityLevel(record2["verbosity"])) params.verbosity = record2["verbosity"];
-  const maxOutputTokens = decodeNumber(record2["maxOutputTokens"]);
-  if (maxOutputTokens !== void 0) params.maxOutputTokens = maxOutputTokens;
-  for (const field of SAMPLING_FIELDS) {
-    const value2 = decodeNumber(record2[field]);
-    if (value2 !== void 0) params[field] = value2;
-  }
-  return params;
-}
-function decodeModelParametersMap(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
-  const out = {};
-  for (const [model, entry] of Object.entries(value)) {
-    if (!model) continue;
-    const params = decodeModelParameters(entry);
-    if (!isEmptyModelParameters(params)) out[model] = params;
-  }
-  return out;
-}
-var REASONING_LEVELS, isReasoningLevel, VERBOSITY_LEVELS, isVerbosityLevel, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_COMPATIBLE_SAMPLING, OPENAI_SAMPLING, ANTHROPIC_SAMPLING, UNIVERSAL_SAMPLING, AGENT_NAMESPACES, CLAUDE_EFFORT_NO_SAMPLING, CLAUDE_EFFORT_WITH_SAMPLING, CLAUDE_THINKING_ALWAYS_ON, OPENAI_REASONING_PREFIXES, OPENAI_GPT6_PREFIXES, FULL_EFFORT_LADDER, CAPPED_EFFORT_LADDER, BUDGET_LADDER, OPENAI_LADDER, OPENAI_GPT6_LADDER, OPENAI_COMPATIBLE_LADDER, OPENAI_VERBOSITY_PREFIXES, OPENAI_VERBOSITY_EXCLUDED, SAMPLING_BOUNDS, RECOMMENDATIONS;
-var init_model_parameters = __esm({
-  "packages/llm/src/model-parameters.ts"() {
-    init_clamp();
-    init_model_catalog();
-    init_model_families();
-    init_model_selection();
-    init_member_of();
-    REASONING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
-    isReasoningLevel = memberOf(REASONING_LEVELS);
-    VERBOSITY_LEVELS = ["low", "medium", "high"];
-    isVerbosityLevel = memberOf(VERBOSITY_LEVELS);
-    SAMPLING_FIELDS = [
-      "temperature",
-      "topP",
-      "topK",
-      "minP",
-      "presencePenalty",
-      "repetitionPenalty"
-    ];
-    NO_PARAMETERS = {
-      reasoning: [],
-      reasoningWire: "none",
-      sampling: [],
-      outputCap: false,
-      verbosity: [],
-      temperatureMax: 1
-    };
-    OPENAI_COMPATIBLE_SAMPLING = SAMPLING_FIELDS;
-    OPENAI_SAMPLING = ["temperature", "topP", "presencePenalty"];
-    ANTHROPIC_SAMPLING = ["temperature", "topP", "topK"];
-    UNIVERSAL_SAMPLING = ["temperature", "topP"];
-    AGENT_NAMESPACES = /* @__PURE__ */ new Set([
-      "acp",
-      "remote-agent",
-      "plugin-model"
-    ]);
-    CLAUDE_EFFORT_NO_SAMPLING = [
-      "claude-opus-5",
-      "claude-opus-4-8",
-      "claude-opus-4-7",
-      "claude-sonnet-5",
-      "claude-fable-5",
-      "claude-mythos-5",
-      "claude-mythos-preview"
-    ];
-    CLAUDE_EFFORT_WITH_SAMPLING = [
-      "claude-opus-4-6",
-      "claude-sonnet-4-6",
-      "claude-opus-4-5"
-    ];
-    CLAUDE_THINKING_ALWAYS_ON = [
-      "claude-opus-5-5",
-      "claude-sonnet-5-5",
-      "claude-fable-5",
-      "claude-mythos-5",
-      "claude-mythos-preview"
-    ];
-    OPENAI_REASONING_PREFIXES = ["gpt-5", "o1", "o3", "o4"];
-    OPENAI_GPT6_PREFIXES = ["gpt-6-astra", "gpt-6.1-sol"];
-    FULL_EFFORT_LADDER = [
-      "off",
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max"
-    ];
-    CAPPED_EFFORT_LADDER = ["off", "low", "medium", "high", "max"];
-    BUDGET_LADDER = ["off", "low", "medium", "high"];
-    OPENAI_LADDER = ["minimal", "low", "medium", "high"];
-    OPENAI_GPT6_LADDER = ["low", "medium", "high", "xhigh", "max"];
-    OPENAI_COMPATIBLE_LADDER = [
-      "off",
-      "minimal",
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max"
-    ];
-    OPENAI_VERBOSITY_PREFIXES = ["gpt-5", "gpt-6"];
-    OPENAI_VERBOSITY_EXCLUDED = ["codex", "-chat", "search"];
-    SAMPLING_BOUNDS = {
-      temperature: { min: 0, max: 2 },
-      topP: { min: 0, max: 1, neutral: 1 },
-      // Upper bound is generous rather than principled: servers differ, and 0
-      // (llama.cpp) or -1 (vLLM) both mean "consider everything".
-      topK: { min: 0, max: 500, integer: true, neutral: 0 },
-      minP: { min: 0, max: 1, neutral: 0 },
-      presencePenalty: { min: -2, max: 2, neutral: 0 },
-      // 1 is the identity here, not 0 — the value divides the logits of tokens
-      // already seen, so 0 would be a hard ban rather than no penalty.
-      repetitionPenalty: { min: 0, max: 2, neutral: 1 }
-    };
-    RECOMMENDATIONS = [
-      {
-        match: "glm-4.7-flash",
-        label: "Z.ai\u2019s coding-agent recipe",
-        source: "https://huggingface.co/zai-org/GLM-4.7-Flash#evaluation-parameters",
-        // The model card's Terminal Bench / SWE Bench settings, checked 2026-10-01.
-        // Its general-task recipe uses different sampling and a larger ceiling;
-        // Copse's coding tool loop uses the coding benchmark profile. The card does
-        // not specify a reasoning-effort value or repetition penalty for this set.
-        params: { temperature: 0.7, topP: 1, maxOutputTokens: 16384 }
-      },
-      {
-        match: "glm-5.3-flash",
-        label: "Copse\u2019s experimental balanced agent profile",
-        source: "https://github.com/copse-dev/agent-pane/blob/main/docs/spikes/glm-5-3-flash-terminal-bench-profile.md",
-        sourceLabel: "paired Terminal-Bench record",
-        // Two provenances, and they disagree, so the row states which half is whose.
-        //
-        // Sampling is Z.ai's published recipe verbatim — its Recommended Settings
-        // say temperature 1 and top_p 0.95 (https://docs.z.ai/guides/llm/glm-5.3-flash).
-        // Copse's paired runs never varied sampling, so nothing in our record argues
-        // with the vendor here, and sending the pair pins it against an aggregator's
-        // own default drifting underneath us.
-        //
-        // Reasoning and the cap are ours, and `medium` is a deliberate departure from
-        // the same page's `reasoning_effort: max`. The counterbalanced Terminal-Bench
-        // 2.1 screen scored medium-plus-cap 4/6 against 2/6 for a max-effort uncapped
-        // baseline, on the shell-agent loop Copse actually runs. Z.ai recommends `max`
-        // for the model in general; we keep `medium` for this scenario on our own
-        // evidence. Like every recipe it applies by default (a user-set field replaces
-        // its value), but the row stays labelled experimental because that evidence is
-        // one benchmark on one host.
-        params: { reasoning: "medium", maxOutputTokens: 16384, temperature: 1, topP: 0.95 }
-      },
-      {
-        match: "deepseek-v4-flash",
-        label: "DeepSeek\u2019s agentic recipe",
-        source: "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731",
-        // The model card's agentic profile: max reasoning effort, temperature 1.0,
-        // and the tighter top_p it specifies for agentic scenarios (0.95) rather
-        // than the 1.0 it recommends otherwise. Copse runs a tool loop, so the
-        // agentic column is the applicable one.
-        params: { reasoning: "max", temperature: 1, topP: 0.95 },
-        // "For the `high` and `max` reasoning effort levels, we recommend a maximum
-        // output length of 384K tokens" — the deep levels spend the output budget on
-        // reasoning, so the card's own recipe needs the room it asks for.
-        outputCeiling: { tokens: 384e3, fromReasoning: "high" }
-      },
-      {
-        match: "qwen3.6-35b-a3b",
-        label: "Qwen\u2019s thinking-mode recipe",
-        source: "https://huggingface.co/Qwen/Qwen3.6-35B-A3B",
-        // The card publishes three sets, split by mode and task rather than by
-        // "agentic": thinking/general, thinking/precise-coding (temperature 0.6,
-        // presence_penalty 0), and instruct/non-thinking. This is the first.
-        //
-        // Choosing between the coding set and the general one is the only judgement
-        // in this row, and the card settles it: its own agentic evals — SWE-Bench on
-        // a "bash + file-edit tools" scaffold, Terminal-Bench 2.0 under an agent
-        // harness — ran temp=1.0, top_p=0.95, top_k=20, which is the general set.
-        // The coding set is for single-shot generation (its example is WebDev), not
-        // for a tool loop. Copse is the former shape.
-        //
-        // No `reasoning`: the model thinks by default and exposes no effort ladder,
-        // so the recipe is about sampling only. Sending an effort would be us
-        // inventing a control the card never names.
-        params: {
-          temperature: 1,
-          topP: 0.95,
-          topK: 20,
-          minP: 0,
-          presencePenalty: 1.5,
-          repetitionPenalty: 1
-        },
-        // "We recommend using an output length of 32,768 tokens for most queries.
-        // For benchmarking on highly complex problems … 81,920 tokens." Neither is
-        // conditioned on a depth — the model always thinks — so this applies on
-        // every turn.
-        //
-        // The larger of the two, because the card's own agent harness used it:
-        // Terminal-Bench 2.0 ran `max_tokens=80K`. 32,768 is the figure for "most
-        // queries", and a tool loop editing real files is not the average query;
-        // sending the smaller number would turn advice about *sufficient* space into
-        // a cap that truncates.
-        outputCeiling: { tokens: 81920 }
-      }
-    ];
   }
 });
 
@@ -70224,6 +70509,8 @@ var init_agent_markup = __esm({
               </p>
             </fieldset>
 
+            <div id="settings-agent-profiles-host" class="settings-mount"></div>
+
             <fieldset>
               <legend>Helpers</legend>
               <p class="settings-fieldset-desc">
@@ -71700,6 +71987,13 @@ function mountSettingsDialog(store, api) {
   qsRequired(overlay, "#settings-classifiers-host").append(classifiersSection.root);
   const webSearchSection = createWebSearchSection(api);
   qsRequired(overlay, "#settings-web-search-host").append(webSearchSection.root);
+  const agentProfilesSection = createAgentProfilesSection(api, {
+    // Saved at once, so the composer's model menu offers the change right away.
+    onChanged: () => {
+      store.emit("settings_changed");
+    }
+  });
+  qsRequired(overlay, "#settings-agent-profiles-host").append(agentProfilesSection.root);
   const machinesSection = createMachinesSection(api);
   qsRequired(overlay, "#settings-machines-host").append(machinesSection.root);
   let machineRefreshTimer;
@@ -71820,7 +72114,14 @@ function mountSettingsDialog(store, api) {
           await Promise.all([usageSection.refresh(signal), providersSection.refreshUsage(signal)]);
         }
       },
-      agent: { refresh: (_values, signal) => providersSection.refreshAgent(signal) },
+      agent: {
+        refresh: async (_values, signal) => {
+          await Promise.all([
+            providersSection.refreshAgent(signal),
+            agentProfilesSection.refresh(signal)
+          ]);
+        }
+      },
       permissions: {
         refresh: (_values, signal) => toolPermissionsPanel.refresh(signal)
       },
@@ -72066,6 +72367,7 @@ var init_settings_dialog = __esm({
     init_ipc_error_message();
     init_classifiers_section();
     init_machines_section();
+    init_agent_profiles_section();
     init_web_search_section();
     init_ssh_workspace_section();
     init_tool_permissions_panel();
@@ -74848,14 +75150,18 @@ export {
   init_errors4 as init_errors2,
   clamp,
   init_clamp,
-  formatUsd,
-  formatTokenCount,
-  init_format_usage_summary,
   LMSTUDIO_MODEL_PREFIX,
   CHATGPT_PLAN_MODEL_PREFIX,
   init_reserved_prefixes,
   firstPartyProviderOf,
   init_model_families,
+  isReasoningLevel,
+  SAMPLING_FIELDS,
+  modelParameterSupport,
+  init_model_parameters,
+  agentProfilesSchema,
+  findAgentProfile,
+  init_agent_profiles,
   getIntellectScore,
   init_model_intellect,
   getLocalModelCapability,
@@ -74863,6 +75169,11 @@ export {
   init_local_model_catalog,
   compositeIntellect,
   init_composite_intellect,
+  DEFAULT_CURSOR_AGENT_BASE_URL,
+  parseRemoteAgentModelSelection,
+  parseRemoteAgentModel,
+  remoteAgentGroupLabel,
+  init_remote_agent,
   canonicalAcpAgentId,
   findAcpCatalogEntry,
   KNOWN_ACP_AGENTS,
@@ -74873,11 +75184,6 @@ export {
   parseAcpModelSelection,
   isAcpModel,
   init_acp,
-  DEFAULT_CURSOR_AGENT_BASE_URL,
-  parseRemoteAgentModelSelection,
-  parseRemoteAgentModel,
-  remoteAgentGroupLabel,
-  init_remote_agent,
   MATCH_PROMPT_MODEL_SELECTOR,
   BEST_INTELLECT_MODEL_SELECTOR,
   BEST_LOCAL_MODEL_SELECTOR,
@@ -74891,7 +75197,7 @@ export {
   isBestValueChatModel,
   init_lm_studio_defaults,
   LOCAL_MODEL_SUFFIX,
-  displayModelLabel2 as displayModelLabel,
+  displayModelLabel,
   init_model_display,
   modelDisplayLabel,
   fetchModelOptions,
@@ -74903,10 +75209,9 @@ export {
   mountModelPicker,
   mountModelSelectPicker,
   init_model_picker,
-  isReasoningLevel,
-  SAMPLING_FIELDS,
-  modelParameterSupport,
-  init_model_parameters,
+  formatUsd,
+  formatTokenCount,
+  init_format_usage_summary,
   init_model_capabilities,
   at,
   init_array_utils2 as init_array_utils,
