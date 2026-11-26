@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -96,6 +96,22 @@ describe('writer lease', () => {
     await rm(dir, { recursive: true, force: true })
     await writeFile(dir, '')
     await assert.rejects(renewWriterLease(dir, held.lease, env), { code: 'ENOTDIR' })
+  })
+
+  it('neither takes over nor gives up a lease it cannot read', async () => {
+    const dir = await threadDir()
+    const clock = { at: 1_000 }
+    const env = fakeEnv('a', clock)
+    const held = await acquireWriterLease(dir, 't1', env, 30_000)
+    assert.ok(held.status === 'acquired')
+    // The record can't be read (here EISDIR; in the wild EMFILE or EIO).
+    const record = join(dir, `${WRITER_LEASE_FILE}.${String(held.lease.epoch)}`)
+    await rm(record)
+    await mkdir(record)
+    await assert.rejects(renewWriterLease(dir, held.lease, env), { code: 'EISDIR' })
+    await assert.rejects(acquireWriterLease(dir, 't1', fakeEnv('b', clock, { pid: 200 }), 30_000), {
+      code: 'EISDIR',
+    })
   })
 
   it('stays alive while its holder renews it', async () => {

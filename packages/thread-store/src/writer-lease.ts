@@ -148,8 +148,11 @@ async function readEpoch(
   let raw: string
   try {
     raw = await readFile(epochPath(threadDir, epoch), 'utf8')
-  } catch {
-    return null
+  } catch (error) {
+    // Gone: a racing prune removed it. Anything else (EMFILE, EIO) says
+    // nothing about the holder, so it must not read as a free lease.
+    if (errorCode(error) === 'ENOENT') return null
+    throw error
   }
   const record = safeJsonParse(raw, decodeWithSchema(leaseRecordSchema))
   // A lease copied in with the directory belongs to the thread it came from.
