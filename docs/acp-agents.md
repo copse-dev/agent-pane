@@ -600,6 +600,22 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   network failure worth one retry. It offers `claude-agent-acp --cli auth login`, since signing
   in from a terminal saves a fresh token, and the note it leaves for the next
   turn does not claim a re-run must fail.
+
+  Claude Code 2.1.33x no longer renews and keeps the expired token: before it
+  spends the refresh token it proves the Keychain takes a write, and when the
+  sandbox refuses it, the turn fails mid-run with `-32603` "Failed to refresh
+  OAuth token: can't save to the Keychain…" (`apiError:
+  oauth_refresh_store_refused`, `errorKind: invalid_request`). Its plaintext
+  fallback cannot help, since switching to it means deleting the Keychain item.
+  The refresh token is never sent, so the sign-in stays valid, but every turn
+  fails until something outside the sandbox renews the token. Copse reports
+  this as its own failure (`store_refused`): it says the sign-in is still
+  valid, offers `claude-agent-acp --cli auth login` from a terminal, notes that
+  using Claude outside Copse renews the token too (the agent re-reads the
+  Keychain within 30 seconds), and that a `claude setup-token` token set as
+  `CLAUDE_CODE_OAUTH_TOKEN` for the agent stops it recurring. Outside Copse's
+  sandbox the same message usually means a locked Keychain, so there it
+  suggests `security unlock-keychain` first.
 - **`gh` does not run in a sandboxed agent's own shell.** `~/.config/gh` holds
   the user's GitHub token, so it stays unreadable, and `gh` fails on its config
   before it reaches the network (`failed to read configuration: open

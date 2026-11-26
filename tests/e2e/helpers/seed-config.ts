@@ -3305,6 +3305,31 @@ export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
     'Details: Claude Code process exited with code 1. stderr: Unable to verify organization for the current authentication token.',
     '```',
   ].join('\n')
+  // Claude Code 2.1.330 would not renew an expired access token because the
+  // sandbox's read-only Keychain refused the save. Text is `classifyAgentError`'s
+  // output on macOS for a seatbelted agent.
+  const claudeStoreRefusedContent = [
+    '> [!WARNING]',
+    '> **Claude couldn’t renew its sign-in**',
+    '>',
+    '> This turn couldn’t run because Claude’s access token expired and Claude couldn’t save a renewed one.',
+    '',
+    'Copse’s sandbox lets Claude read the macOS Keychain but not write to it. Your sign-in itself is still valid.',
+    '',
+    '**To continue**',
+    '',
+    '1. Run `claude-agent-acp --cli auth login` in a terminal. Signing in outside Copse’s sandbox saves a fresh token.',
+    '2. Finish signing in, then re-send your message.',
+    '',
+    '> Using Claude outside Copse renews the token too. To stop this recurring, run `claude setup-token` and set its token as `CLAUDE_CODE_OAUTH_TOKEN` for Claude in Settings → General → Coding agents.',
+    '',
+    '**Technical details**',
+    '',
+    '```text',
+    "ACP error -32603 (Internal error): Failed to refresh OAuth token: can't save to the Keychain. If locked, run `security unlock-keychain`. If sandboxed, use `claude setup-token`. Otherwise, retry, then `claude auth login`",
+    'Details: {"errorKind":"invalid_request"}',
+    '```',
+  ].join('\n')
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
@@ -3372,10 +3397,24 @@ export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
             toolCalls: [],
             createdAt: now + 7,
           },
+          {
+            id: 'msg-user-claude-store-refused',
+            role: 'user',
+            content: 'Keep going with Claude.',
+            toolCalls: [],
+            createdAt: now + 8,
+          },
+          {
+            id: 'msg-assistant-claude-store-refused',
+            role: 'assistant',
+            content: claudeStoreRefusedContent,
+            toolCalls: [],
+            createdAt: now + 9,
+          },
         ],
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: now,
-        updatedAt: now + 7,
+        updatedAt: now + 9,
       },
     ],
   })

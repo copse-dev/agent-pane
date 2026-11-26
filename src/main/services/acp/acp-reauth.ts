@@ -44,6 +44,11 @@ function offerCause(agentName: string, kind: AcpAuthFailureKind): string {
       )
     case 'required':
       return `${agentName} is not signed in, so this turn could not run.`
+    case 'store_refused':
+      return (
+        `${agentName}’s access token expired and it couldn’t save a renewed one to the ` +
+        'macOS Keychain, so this turn could not run. Signing in from a terminal saves a fresh one.'
+      )
   }
 }
 

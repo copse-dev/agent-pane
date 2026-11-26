@@ -215,8 +215,12 @@ export function turnErrorDetail(err: unknown): TurnErrorDetail {
  * words do not say whether the credential went bad or the check never reached
  * the server": usually an expiry, but a network failure reads the same, so a
  * re-run can help and the copy must not promise that it won't.
+ * `store_refused` is "the sign-in is still good, but its access token expired
+ * and the agent would not renew it because it could not save the renewed one"
+ * (see {@link CLAUDE_REFRESH_STORE_REFUSED_RE}): every turn fails the same way
+ * until something outside the agent's confinement renews the token.
  */
-export type AcpAuthFailureKind = 'required' | 'expired' | 'unverified'
+export type AcpAuthFailureKind = 'required' | 'expired' | 'unverified' | 'store_refused'
 
 /**
  * A credential that was working and no longer is, however the agent words it.
@@ -253,6 +257,27 @@ const EXPIRED_AUTH_RE =
  * `expired`, unless the same text also carries an explicit expiry.
  */
 const CLAUDE_ORG_VERIFY_RE = /unable to verify organization for the current authentication token/i
+
+/**
+ * Claude Code would not renew its expired access token because it could not
+ * save the renewed one. Before it spends the refresh token, Claude 2.1.33x
+ * proves that its credential store takes a write; when the macOS Keychain
+ * refuses it, Claude fails the request with `apiError:
+ * "oauth_refresh_store_refused"` ("Failed to refresh OAuth token: can't save to
+ * the Keychain. If locked, run `security unlock-keychain`. If sandboxed, use
+ * `claude setup-token`…", `errorKind: invalid_request`). Its interactive copy
+ * reads "Could not refresh your login: can't save to the Keychain", and its
+ * error class "can't save to the macOS Keychain".
+ *
+ * Inside Copse's macOS sandbox this is not a locked Keychain: the Keychain
+ * grant is read-only, so `security add-generic-password` exits 161 with EPERM.
+ * The plaintext fallback does not rescue it either, since Claude then has to
+ * delete the Keychain item and that is a write too. The refresh token is never
+ * sent, so the sign-in itself stays valid: renewing the token anywhere outside
+ * the sandbox, or signing in again, fixes it.
+ */
+const CLAUDE_REFRESH_STORE_REFUSED_RE =
+  /oauth_refresh_store_refused|can(?:'|’|no)t save to the (?:macOS )?Keychain/i
 
 /** Auth failures that are not specifically an expiry (never signed in, key refused). */
 const AUTH_FAILURE_RE =
@@ -321,6 +346,10 @@ export function classifyAcpAuthFailure(
   // signed-in and only a fresh login fixes it (openai/codex#47456).
   if (/workspace routing discovery unauthorized/i.test(text)) return 'expired'
 
+  // First: the refusal can arrive beside expiry or "failed to authenticate"
+  // wording, and only this reading names a fix that works (renew outside the
+  // sandbox) and says the sign-in itself is still good.
+  if (CLAUDE_REFRESH_STORE_REFUSED_RE.test(text)) return 'store_refused'
   // Expiry wins over the generic signals: an expired token also reports
   // "Failed to authenticate", and only the expiry reading names the right fix.
   if (EXPIRED_AUTH_RE.test(text)) return 'expired'
@@ -388,6 +417,8 @@ export function acpTurnInterruptionMarker(outcome: AcpTurnInterruption, agentId?
       return `[This turn failed: ${agentName} is not authenticated. Re-running it will fail the same way until the user signs in.]`
     case 'unverified':
       return `[This turn failed: ${agentName} couldn’t verify its sign-in when it started. Usually the sign-in has expired, but a network failure looks the same, so re-running it may work; if it fails this way again, the user needs to sign in again.]`
+    case 'store_refused':
+      return `[This turn failed: ${agentName}’s access token expired and it couldn’t save a renewed one, so it would not renew it. Re-running it will fail the same way until the token is renewed outside Copse’s sandbox: the user signing in again from a terminal, or using ${agentName} outside Copse.]`
     case 'nested_sandbox':
       return `[This turn failed: one of ${agentName}’s helpers tried to apply a second OS sandbox inside the one Copse runs it under, which macOS does not allow. Do not retry it — the same turn will fail the same way. Tell the user what failed.]`
     case 'error':
@@ -502,6 +533,13 @@ function acpAuthNoticeWords(
         title: `${agentName} couldn’t verify its sign-in`,
         explanation: `This turn couldn’t run because ${agentName} couldn’t confirm its saved sign-in.`,
       }
+    case 'store_refused':
+      return {
+        title: `${agentName} couldn’t renew its sign-in`,
+        explanation:
+          `This turn couldn’t run because ${agentName}’s access token expired and ${agentName} ` +
+          'couldn’t save a renewed one.',
+      }
     case 'required':
       return {
         title: `${agentName} needs authentication`,
@@ -566,6 +604,44 @@ function acpOrgCheckCauseNote(
   )
 }
 
+/**
+ * Why the Keychain refused the renewed token, and how to stop it recurring.
+ * Copse's sandbox keeps the Keychain read-only (see
+ * {@link CLAUDE_REFRESH_STORE_REFUSED_RE}), so a sandboxed agent on macOS hits
+ * this every time its access token expires and nothing outside Copse has
+ * renewed it. Anywhere else the likely cause is a locked Keychain.
+ */
+function acpStoreRefusedSteps(
+  agentName: string,
+  reauth: string | null,
+  sandboxed: boolean,
+): string {
+  const login = reauth ? `\`${reauth}\`` : 'the agent’s login command'
+  if (sandboxed && process.platform === 'darwin') {
+    return [
+      `Copse’s sandbox lets ${agentName} read the macOS Keychain but not write to it. ` +
+        'Your sign-in itself is still valid.',
+      '',
+      '**To continue**',
+      '',
+      `1. Run ${login} in a terminal. Signing in outside Copse’s sandbox saves a fresh token.`,
+      '2. Finish signing in, then re-send your message.',
+      '',
+      `> Using ${agentName} outside Copse renews the token too. To stop this recurring, run ` +
+        '`claude setup-token` and set its token as `CLAUDE_CODE_OAUTH_TOKEN` for ' +
+        `${agentName} in Settings → General → Coding agents.`,
+    ].join('\n')
+  }
+  return [
+    '**To continue**',
+    '',
+    '1. Run `security unlock-keychain` in a terminal: a locked Keychain is the usual cause.',
+    '2. Re-send your message.',
+    '',
+    `> If it fails again, run ${login} in a terminal to sign in again.`,
+  ].join('\n')
+}
+
 function formatAcpAuthError(
   rpc: JsonRpcError | null,
   kind: AcpAuthFailureKind,
@@ -582,6 +658,16 @@ function formatAcpAuthError(
   // (often an unhelpful `-32603 Internal error`) below the fold. An unverified
   // sign-in is usually an expired one, so it gets the same fix, plus a note
   // that says what else it can be.
+  if (kind === 'store_refused') {
+    return [
+      acpAuthNotice(agentName, kind),
+      acpStoreRefusedSteps(agentName, acpReauthCommand(known), ctx?.acpSandboxed === true),
+      acpTechnicalDetails(rpc),
+    ]
+      .filter(isNonEmptyString)
+      .join('\n\n')
+  }
+
   if (kind === 'expired' || kind === 'unverified') {
     const reauth = acpReauthCommand(known)
     return [
