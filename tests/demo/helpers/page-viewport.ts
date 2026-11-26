@@ -54,10 +54,6 @@ function readFrame(): PageSize {
   }
 }
 
-function isDimension(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value)
-}
-
 /**
  * Make `setWindowSize(width, height)` size the page to `width` x `height` and
  * `getWindowSize()` report the page size, then size the page to
@@ -71,7 +67,7 @@ export async function installPageViewport(session: ViewportSession): Promise<voi
     'setWindowSize',
     async function setPageSize(this: unknown, origSetWindowSize, ...args) {
       const [width, height] = args
-      if (!isDimension(width) || !isDimension(height)) {
+      if (typeof width !== 'number' || typeof height !== 'number') {
         return await origSetWindowSize.apply(this, args)
       }
       // An infobar can come or go as the window resizes, which moves the frame,
