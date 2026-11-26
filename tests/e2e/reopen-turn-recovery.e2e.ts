@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
@@ -19,7 +20,7 @@ const RESTART_RESUME_NOTE = 'Copse restarted during this turn. Continuing where 
 const SEEDED_PROJECT_ID = 'e2e-reopen-recovery-seeded'
 const SEEDED_THREAD_ID = 'e2e-reopen-recovery-seeded-thread'
 
-describe('a turn interrupted by closing Copse', function () {
+describe('a turn interrupted by a crash', function () {
   this.timeout(120_000)
 
   before(async () => {
@@ -36,7 +37,7 @@ describe('a turn interrupted by closing Copse', function () {
     resetUserData()
   })
 
-  it('continues by itself after a live turn is interrupted and reopened', async () => {
+  it('continues by itself after the app crashed mid-turn and relaunched', async () => {
     const threadId = await $('.chat-row.selected').getAttribute('data-thread-id')
     expect(threadId).toBeTruthy()
     const scenarioId = randomUUID()
@@ -85,6 +86,16 @@ describe('a turn interrupted by closing Copse', function () {
       { timeout: 10_000, timeoutMsg: 'running thread status was not persisted before restart' },
     )
 
+    // A crash, not a quit: a quit the user chose stops the run and leaves the
+    // Retry card (foreground-shell-quit covers that), while a crash or an update
+    // relaunch continues it (`last-run.ts`).
+    const mainPid = await browser.execute(
+      async () =>
+        (await window.api.processManager.snapshot()).processes.find((row) => row.type === 'App')
+          ?.pid ?? null,
+    )
+    assert.ok(mainPid !== null && mainPid > 1)
+    process.kill(mainPid, 'SIGKILL')
     await browser.reloadSession()
     // The cut-off turn continues by itself (`interrupted-turn-resume.ts`): one
     // machine note follows the prompt, the thread settles, and no Retry card is

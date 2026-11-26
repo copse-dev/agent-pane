@@ -198,13 +198,18 @@ revisiting this document, not silently diverging in an implementation PR.
    This does not introduce automatic recovery after app restart.
    Turns themselves are the one thing that does resume after a restart (amended 25 November
    2026). A quit, update relaunch or crash ends the process that runs a turn and leaves its
-   thread `running` on disk with no outcome. On the next launch, once tools and MCP servers are
+   thread `running` on disk with no outcome. Only an update relaunch or a crash is continued: a
+   quit the user chose (the menu, a confirmed close, a signal) stops the run, as the close dialog
+   says, so it is a refusal under this decision and its threads keep the manual Continue card.
+   `last-run.ts` records how each run ended, and only threads the previous run started are
+   continued, so a thread cut off further back is never picked up. On the next launch, once tools and MCP servers are
    back, `interrupted-turn-resume.ts` dispatches one `dispatchMachine` continuation per such
    thread with the fixed `INTERRUPTED_TURN_CONTINUATION` prompt the manual Continue button
    sends, on the thread's persisted turn tree, so the stale-epoch and budget checks above apply
    and a resume costs one unit. It resumes once per interruption: a thread whose newest prompt is
    already a restart continuation (`restart-resume:` operation id on its machine origin) is left
-   for the human, so a turn that crashes the app cannot relaunch itself in a loop. Archived
+   for the human, so a turn that crashes the app cannot relaunch itself in a loop. Each continuation
+   carries the thread's own model, reasoning level and execution mode. Archived
    threads, side chats, scheduled automations (their own run recovery), threads with queued
    follow-ups (the window's drain continues them) and `/name` invocations are never resumed.
    No tool call is replayed; the prompt tells the agent to inspect state first.
