@@ -1,3 +1,4 @@
+import { openReviewPr, openReviewPicker, closeReviewPicker } from './helpers/review-pane.ts'
 import { $, browser, expect } from '@wdio/globals'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { isDisplayFace, readHeadingStyle } from './helpers/heading-style.ts'
@@ -87,55 +88,62 @@ async function expectSelectionKeepsTabsInPlace(
   expect(new Set(after.map((tab) => tab.weight)).size).toBe(1)
 }
 
-const PR_HEADER = '#pr-list-host .pane-header'
-
-/** The PR list header's box, wrap and row alignment, rounded to whole pixels. */
-async function prHeaderLayout(): Promise<{
-  width: number
+/** The review header's band, rounded to whole pixels: its height against the shared
+ * band height (its min-height), overflow, and the vertical centre of each control. */
+async function reviewHeaderBand(): Promise<{
   height: number
-  wrap: string
+  band: number
   overflows: boolean
-  titleTruncated: boolean
-  titleCentre: number
+  labelTruncated: boolean
+  pickerCentre: number
   controlCentres: number[]
 }> {
-  const layout = await browser.execute((target) => {
-    const node = document.querySelector<HTMLElement>(target)
-    const title = node?.querySelector<HTMLElement>(':scope > .pane-header-title')
-    if (!node || !title) return null
+  const layout = await browser.execute(() => {
+    const node = document.querySelector<HTMLElement>('.review-header')
+    const picker = node?.querySelector<HTMLElement>('.review-subject-picker')
+    const label = picker?.querySelector<HTMLElement>('.review-subject-label')
+    if (!node || !picker || !label) return null
     const centre = (child: Element): number => {
       const box = child.getBoundingClientRect()
       return Math.round(box.top + box.height / 2)
     }
-    const box = node.getBoundingClientRect()
+    const controls = [
+      ...node.querySelectorAll<HTMLElement>(':scope > .review-tools:not([hidden]) > *'),
+    ].filter((child) => child.getClientRects().length > 0)
     return {
-      width: Math.round(box.width),
-      height: Math.round(box.height),
-      wrap: getComputedStyle(node).flexWrap,
+      height: Math.round(node.getBoundingClientRect().height),
+      band: Math.round(parseFloat(getComputedStyle(node).minHeight)),
       overflows: node.scrollWidth > node.clientWidth,
-      titleTruncated: title.scrollWidth > title.clientWidth,
-      titleCentre: centre(title),
-      controlCentres: [...node.children].filter((child) => child !== title).map(centre),
+      labelTruncated: label.scrollWidth > label.clientWidth,
+      pickerCentre: centre(picker),
+      controlCentres: controls.map(centre),
     }
-  }, PR_HEADER)
-  if (!layout) throw new Error('Missing PR pane header')
+  })
+  if (!layout) throw new Error('Missing review header')
   return layout
 }
 
-/** Drag the list column's resizer, as a user would, until the PR header is `width` wide. */
-async function dragListColumnTo(width: number): Promise<void> {
-  const current = await $(PR_HEADER).getSize('width')
-  await browser
-    .action('pointer', { parameters: { pointerType: 'mouse' } })
-    .move({ origin: await $('#resizer-tree').getElement() })
-    .down({ button: 0 })
-    .move({ origin: 'pointer', x: width - current, y: 0, duration: 200 })
-    .up({ button: 0 })
-    .perform()
-  await browser.waitUntil(async () => (await $(PR_HEADER).getSize('width')) === width, {
-    timeout: 5_000,
-    timeoutMsg: `expected the PR list column to narrow to ${String(width)}px`,
-  })
+function expectOneBand(band: Awaited<ReturnType<typeof reviewHeaderBand>>): void {
+  expect(band.height).toBe(band.band)
+  expect(band.overflows).toBe(false)
+  expect(band.labelTruncated).toBe(false)
+  expect(band.controlCentres.length).toBeGreaterThan(0)
+  for (const controlCentre of band.controlCentres) {
+    expect(Math.abs(controlCentre - band.pickerCentre)).toBeLessThanOrEqual(1)
+  }
+}
+
+/**
+ * Shows the fixture PR as the review subject unless it is already on screen, so
+ * each test that reads the PR viewer also passes when it runs alone.
+ */
+async function showFixturePr(): Promise<void> {
+  if (!(await $('#pane-files').isDisplayed())) {
+    await $('[aria-label="Toggle right panel"]').click()
+  }
+  if (!(await $('#pr-viewer-host .pr-viewer-title').isDisplayed())) await openReviewPr()
+  await expect($('.pr-viewer-title')).toHaveText('Add GitHub PR panel tab')
+  await $('.pr-detail-section[data-section="comments"]').waitForDisplayed({ timeout: 20_000 })
 }
 
 describe('UI consistency: PR pane, model picker and flat tabs', () => {
@@ -174,12 +182,7 @@ describe('UI consistency: PR pane, model picker and flat tabs', () => {
 
   it('sets PR body and comment prose in the reading face and its headings in the interface face', async function () {
     this.timeout(60_000)
-    if (!(await $('#pane-files').isDisplayed())) {
-      await $('[aria-label="Toggle right panel"]').click()
-    }
-    await $('[aria-label="Open pull requests"]').click()
-    await $('.pr-detail-section[data-section="comments"]').waitForDisplayed({ timeout: 20_000 })
-    await expect($('.pr-viewer-title')).toHaveText('Add GitHub PR panel tab')
+    await showFixturePr()
     await expect($('.pr-viewer-description h2')).toHaveText('Summary')
 
     const body = await fontFamilies('.pr-viewer-description')
@@ -205,6 +208,7 @@ describe('UI consistency: PR pane, model picker and flat tabs', () => {
 
   it('keeps every flat tab in place and at one weight when another is selected', async function () {
     this.timeout(60_000)
+    await showFixturePr()
     await expectSelectionKeepsTabsInPlace(
       '.pr-detail-section',
       () => $('.pr-detail-section[data-section="comments"]').click(),
@@ -261,40 +265,34 @@ describe('UI consistency: PR pane, model picker and flat tabs', () => {
     await browser.keys('Escape')
   })
 
-  it('keeps a narrow PR pane header to one band, truncating its title', async function () {
+  it('keeps the combined review header and subject picker inside a narrow pane', async function () {
     this.timeout(60_000)
-    const band = await prHeaderLayout()
-    expect(band.width).toBe(200)
-    expect(band.titleTruncated).toBe(false)
-
-    // 170px is just short of the ~174px the title and its three icons need side
-    // by side: when every `.pane-header` wrapped, the refresh icon dropped onto
-    // a second row here, and under nowrap alone the title wrapped instead.
-    await dragListColumnTo(170)
-    const narrow = await prHeaderLayout()
-    expect(narrow.height).toBe(band.height)
-    expect(narrow.wrap).toBe('nowrap')
-    expect(narrow.overflows).toBe(false)
-    expect(narrow.titleTruncated).toBe(true)
-    expect(narrow.controlCentres).toHaveLength(3)
-    for (const controlCentre of narrow.controlCentres) {
-      expect(controlCentre).toBe(narrow.titleCentre)
-    }
-    // Changes keeps its opt-in second row for the owner label and bulk actions.
-    const changesWrap = await browser.execute(() => {
-      const node = document.querySelector('.git-changes-header')
-      return node ? getComputedStyle(node).flexWrap : null
+    await showFixturePr()
+    await browser.execute(() => {
+      const pane = document.getElementById('pane-files')
+      if (pane) pane.style.width = '340px'
     })
-    expect(changesWrap).toBe('wrap')
-    await saveElementScreenshot('#pane-files', 'ui-consistency-pr-header-narrow.png')
+    // Both subjects keep the header to the shared one-row band at 340px.
+    await expect($('.review-subject-label')).toHaveText('Pull request')
+    expectOneBand(await reviewHeaderBand())
+    await openReviewPicker()
+    await $('.review-local-choice').click()
+    await expect($('.review-subject-label')).toHaveText('Local changes')
+    expectOneBand(await reviewHeaderBand())
 
-    // The resizer stops at the list's 120px minimum.
-    await dragListColumnTo(120)
-    const narrowest = await prHeaderLayout()
-    expect(narrowest.height).toBe(band.height)
-    expect(narrowest.overflows).toBe(false)
-    for (const controlCentre of narrowest.controlCentres) {
-      expect(controlCentre).toBe(narrowest.titleCentre)
-    }
+    await $('.review-subject-picker').click()
+    const fits = await browser.execute(() => {
+      const header = document.querySelector('.review-header')
+      const choices = document.querySelector('.review-subject-choices')?.getBoundingClientRect()
+      return (
+        !!header &&
+        header.scrollWidth <= header.clientWidth &&
+        !!choices &&
+        choices.right <= window.innerWidth
+      )
+    })
+    expect(fits).toBe(true)
+    await saveElementScreenshot('#pane-files', 'ui-consistency-pr-header-narrow.png')
+    await closeReviewPicker()
   })
 })

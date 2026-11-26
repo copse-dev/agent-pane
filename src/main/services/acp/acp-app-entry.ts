@@ -79,7 +79,8 @@ export function createAcpTurnRunner(deps: AcpTurnRunnerDeps): AcpTurnRunner {
         bodyMarkdown: req.bodyMarkdown,
         bodyAdvice: req.bodyAdvice,
         bodyFooter: req.bodyFooter,
-        approveLabel: req.approveLabel,
+        // ACP currently answers once and cannot persist Copse's scoped grant.
+        approveLabel: req.approveOnceLabel ?? req.approveLabel,
       }),
       remember: false,
     }))

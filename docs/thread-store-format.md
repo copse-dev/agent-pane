@@ -16,6 +16,13 @@ project-scoped reads over message/tool evidence and enabled OKF memories. They p
 conversation-read consent and do not index private provider/session files. See the
 [retrieval prototype](spikes/project-context-retrieval.md) for limits and remaining work.
 
+ACP tool results recovered after the caller detaches use a `decision` line with
+`kind: "bridge-result"`, `source: "acp-native-bridge"`, and the host-owned
+`bridgeExecutionId`. Its ordinary private decision detail blob contains
+`{ result: string }`; `classified` is the audit verdict, not an authorization.
+The blob is written before a continuation is requested. A stale or exhausted
+continuation leaves the saved result available for inspection.
+
 ## Location
 
 Native human steering records metadata-only `accepted`, `applied`, and `held`

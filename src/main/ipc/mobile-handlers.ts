@@ -8,6 +8,8 @@ import {
   mobilePairingArgsSchema,
 } from './mobile-companion-args.ts'
 import {
+  clearMobileShellPairing,
+  createMobileShellPairing,
   disableMobileCompanion,
   enableMobileCompanion,
   getMobileCompanionState,
@@ -17,6 +19,7 @@ import {
   respondToMobilePairing,
   revokeMobileDevice,
   setMobileDeviceAccess,
+  setMobileRelayEnabled,
 } from '../services/mobile/mobile-companion-service.ts'
 
 const mobileAddressSchema = z.string().regex(/^(?:\d{1,3}\.){3}\d{1,3}$/)
@@ -100,6 +103,19 @@ export function registerMobileHandlers(win: BrowserWindow): void {
   ipcMain.handle('mobile:recheck-name-dns', async (event) => {
     assertMainFrameSender(event, win)
     await recheckMobilePublicNameDns()
+  })
+  ipcMain.handle('mobile:set-relay-enabled', (event, rawEnabled: unknown) => {
+    assertMainFrameSender(event, win)
+    const enabled = parseIpcArgs(z.boolean(), [rawEnabled])
+    setMobileRelayEnabled(enabled)
+  })
+  ipcMain.handle('mobile:create-shell-pairing', async (event) => {
+    assertMainFrameSender(event, win)
+    await createMobileShellPairing()
+  })
+  ipcMain.handle('mobile:clear-shell-pairing', (event) => {
+    assertMainFrameSender(event, win)
+    clearMobileShellPairing()
   })
   ipcMain.handle('mobile:reveal-certificate', (event) => {
     assertMainFrameSender(event, win)

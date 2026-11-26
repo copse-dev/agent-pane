@@ -79,7 +79,7 @@ describe('agent eval maintenance interactions', function () {
       if (paths.length === 1) {
         await expect($('.git-changes-bulk-actions')).not.toBeDisplayed()
       }
-      await $('.titlebar-btn[aria-label="Open changes"]').click()
+      await $('.titlebar-btn[aria-label="Open review"]').click()
       await expect($('#git-changes-host')).not.toBeDisplayed()
       assert.equal(await acceptEvalProposals(PROJECT_ID), true)
       await scenario.waitForComplete()

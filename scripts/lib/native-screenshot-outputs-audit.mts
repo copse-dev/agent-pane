@@ -41,11 +41,11 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     filenames: ['footer-branch-picker-compact-220.png', 'footer-branch-picker-compact-320.png'],
   },
   'tests/e2e/git-changes-thread-retention.e2e.ts': {
-    sourceSha256: '242dbcc494236a37f2452dfd721e6314d41a91bf1680e5a8d990ad3e0806b6e6',
+    sourceSha256: '07a051b7cbe250d79e34650ac7d89306775918fc92d5820180ac2cb035c6f01c',
     filenames: ['git-changes-thread-retention.png'],
   },
   'tests/e2e/light-contrast-controls.e2e.ts': {
-    sourceSha256: '4724592cdddfed9f191a482b71a9be7e4336ff16e6749f6c494b3cb51a1e268b',
+    sourceSha256: '08cafe06a857e461d698ce2d3a5ae07f4d0b8fa25a8345a7ad397121fd686993',
     filenames: [
       'light-contrast-changes-badge-dark.png',
       'light-contrast-changes-badge-light.png',
@@ -83,25 +83,28 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/paired-browser-chat.e2e.ts': {
-    sourceSha256: '09b7894af8fab4f9bd84daa0960b81785d5288e0e8d636b2afaebcac5bbad3ca',
+    sourceSha256: 'd0db24985d6ce031c57350f62c813f535c6c53307036c4296c9ab0d0f15e28d2',
     filenames: [
       'paired-browser-approval-dark.png',
       'paired-browser-approval-light.png',
+      'paired-browser-companion-live.png',
+      'paired-browser-companion-saved-view.png',
       'paired-browser-plan-comments.png',
       'paired-browser-plan-review.png',
     ],
   },
   'tests/e2e/pane-loading.e2e.ts': {
-    sourceSha256: 'a4a2f58f9e9e8414b419dea33171f14aa0ae084874dcfb12beeeefd0a3f123f9',
+    sourceSha256: '2189e7a8f25e6e8216028032d10db5e0da277b10ae9421b951b65296ea79ac5d',
     filenames: [
       'pane-loading-changes.png',
       'pane-loading-memories.png',
       'pane-loading-pull-requests.png',
+      'pane-loading-review-picker.png',
       'pane-loading-roadmap.png',
     ],
   },
   'tests/e2e/pane-popout.e2e.ts': {
-    sourceSha256: 'ba67a5755045e4cb287caf6b99ec736641758ceeb0ebf0ea55870200d4caff23',
+    sourceSha256: '13623cc1a63b30f090ba91eb25cb2b04a4d3dbaf2af9b285fe1d4493741def1e',
     filenames: [
       'pane-popout-browser.png',
       'pane-popout-changes.png',
@@ -111,7 +114,7 @@ export const AUDITED_NATIVE_OUTPUTS: Readonly<
     ],
   },
   'tests/e2e/pr-provenance.e2e.ts': {
-    sourceSha256: 'bd40ca6d2e5af5f3b5caa8ab826973ef3b36342debedd0db2d0f9ad69b9585b3',
+    sourceSha256: 'ef6ecd28d715d5bc5be6fe2a3ff3d98189178422983e6878f16a49510a140a9a',
     filenames: ['pr-native-provenance-offline-restart.png', 'pr-native-provenance.png'],
   },
   'tests/e2e/queued-held.e2e.ts': {
