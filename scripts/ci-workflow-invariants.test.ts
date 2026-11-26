@@ -1100,6 +1100,31 @@ describe('ci.yml workflow invariants', () => {
       `every ci.yml job needs timeout-minutes; missing on: ${uncapped.join(', ')}`,
     )
   })
+
+  it('runs every check:local gate in precheck', () => {
+    // docs/type-safety.md promises CI runs the check:local gates. type-coverage,
+    // demo:site:check and check:e2e-syntax were members that no PR job ran
+    // (#4387), so a member added later without a precheck step fails here.
+    const scripts = z
+      .object({ scripts: z.record(z.string(), z.string()) })
+      .parse(JSON.parse(readFileSync(resolve('package.json'), 'utf8'))).scripts
+    const checkLocal = scripts['check:local']
+    assert.ok(checkLocal, 'expected a check:local script')
+    const members = checkLocal.split('&&').map((part) => {
+      const name = part.trim().match(/^pnpm run (\S+)$/)?.[1]
+      assert.ok(name, `check:local member is not \`pnpm run <name>\`: ${part.trim()}`)
+      return name
+    })
+    const precheck = jobBlock('precheck')
+    const missing = members.filter((name) => {
+      if (precheck.includes(`npm run ${name}\n`)) return false
+      // Some gates take CI-only arguments (`--base`), so precheck calls their
+      // script directly: accept the script's own `node scripts/<file>` command.
+      const direct = scripts[name]?.match(/^node scripts\/\S+\.mts$/)?.[0]
+      return direct === undefined || !precheck.includes(direct)
+    })
+    assert.deepEqual(missing, [], `check:local gates no precheck step runs: ${missing.join(', ')}`)
+  })
 })
 
 describe('publish-screenshot-candidates.yml workflow invariants', () => {
