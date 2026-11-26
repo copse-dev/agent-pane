@@ -405,11 +405,16 @@ export function createToolPermissionsPanel(
     const heading = document.createElement('span')
     heading.className = 'tool-permission-group-name'
     heading.textContent = group.name
+    // The bare number is for the eye. A plain span cannot carry an accessible
+    // name, so a screen reader hears the visually hidden "4 tools" instead.
     const count = document.createElement('span')
     count.className = 'tool-permission-count'
     count.textContent = String(group.tools.length)
-    count.setAttribute('aria-label', String(group.tools.length) + ' tools')
-    summary.append(disclosure, heading, count)
+    count.setAttribute('aria-hidden', 'true')
+    const spokenCount = document.createElement('span')
+    spokenCount.className = 'tool-permission-count-sr'
+    spokenCount.textContent = `${String(group.tools.length)} tool${group.tools.length === 1 ? '' : 's'}`
+    summary.append(disclosure, heading, count, spokenCount)
 
     if (group.origin) {
       const origin = document.createElement('span')
