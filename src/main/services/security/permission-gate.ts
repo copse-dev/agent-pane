@@ -18,7 +18,7 @@ import {
   currentBrowserScope,
   grantBrowserOrigin,
 } from '../browser/browser-network-grants.ts'
-import { existsSync, realpathSync } from 'node:fs'
+import { realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { relative, resolve } from 'node:path'
 import { getChatStoreRoot } from '../workspace.ts'
@@ -100,6 +100,7 @@ import {
   offerableTrustedCommand,
   routeShellCommand,
   type ShellRoutingTool,
+  safeTempWriteTargets,
 } from './command-routing-config.ts'
 import { resolveAutoApproval } from './auto-approval-config.ts'
 import {
@@ -128,7 +129,6 @@ import {
 } from './read-outside-grant.ts'
 import { chatPushTarget, grantChatPush, hasChatPushGrant } from './push-grant.ts'
 import { grantTempWrites, hasTempWriteGrant } from './temp-write-grant.ts'
-import { tempWriteTargets } from '@copse/shell-guard/temp-write-targets.ts'
 import { getMcpToolMeta, isMcpToolRemembered, rememberMcpTool } from '../mcp/mcp-registry.ts'
 import { CUSTOM_TOOL_PREFIX, customToolLabel } from '../mcp/custom-tools-config.ts'
 import {
@@ -141,7 +141,7 @@ import { getReadonlyToolBlockReason } from '@shared/tools/readonly-tools.ts'
 import { SHELL_DECISION_SUBJECT } from '@shared/threads/decision-log.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { LOOPBACK_BIND_PERMISSION } from '@copse/agent/plugins/background-tasks-plugin.ts'
-import { assessShellHarm, type ShellHarmContext } from './shell-harm.ts'
+import { assessShellHarm } from './shell-harm.ts'
 import {
   guardedYoloTierReason,
   shadowTierScreening,
@@ -149,18 +149,7 @@ import {
   tierScreeningClassifier,
 } from './tier-screening.ts'
 import { isCompiledProgram, readScriptForHarm } from '@copse/shell-guard/script-files.ts'
-import {
-  TRUSTED_SSH_HOSTS_SETTING,
-  sanitizeTrustedSshHosts,
-} from '@copse/shell-guard/trusted-ssh-hosts.ts'
-import {
-  sanitizeTrustedPackageRegistries,
-  TRUSTED_PACKAGE_REGISTRIES_SETTING,
-} from '@copse/shell-guard/trusted-package-registries.ts'
-import {
-  PRODUCTION_TARGETS_SETTING,
-  sanitizeProductionTargets,
-} from '@copse/shell-guard/production-targets.ts'
+import { harmHostReachContext } from './shell-harm-context.ts'
 import { currentRunUsesGuardedYolo } from './guarded-yolo.ts'
 import { recordPermissionDecision } from './permission-audit.ts'
 import { resolveToolPermission } from './tool-permissions.ts'
@@ -517,7 +506,7 @@ async function resolveTempWrite(
   signal?: AbortSignal,
 ): Promise<boolean | null> {
   if (spawnRunsOnSshTarget(workspaceRoot)) return null
-  const targets = tempWriteTargets(command, workspaceRoot)
+  const targets = safeTempWriteTargets(command, workspaceRoot)
   if (targets === null) return null
   const reasons = [`writes inside the sandbox to: ${targets.join(', ')}`]
   const threadId = getActiveRunThread()
@@ -1414,23 +1403,6 @@ function sandboxCommandNormallyAllowed(command: string, workspaceRoot: string): 
       classification: null,
     }).action === 'allow'
   )
-}
-
-/** The user's trusted SSH hosts and a filesystem probe, for the harm gate's host-reach rules. */
-function harmHostReachContext(): Pick<
-  ShellHarmContext,
-  'trustedSshHosts' | 'trustedPackageRegistries' | 'productionTargets' | 'pathExists'
-> {
-  return {
-    trustedSshHosts: sanitizeTrustedSshHosts(getSetting<unknown>(TRUSTED_SSH_HOSTS_SETTING, [])),
-    trustedPackageRegistries: sanitizeTrustedPackageRegistries(
-      getSetting<unknown>(TRUSTED_PACKAGE_REGISTRIES_SETTING, []),
-    ),
-    productionTargets: sanitizeProductionTargets(
-      getSetting<unknown>(PRODUCTION_TARGETS_SETTING, []),
-    ),
-    pathExists: existsSync,
-  }
 }
 
 /**

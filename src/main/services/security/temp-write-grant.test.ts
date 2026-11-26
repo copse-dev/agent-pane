@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { clearTempWriteGrants, grantTempWrites, hasTempWriteGrant } from './temp-write-grant.ts'
@@ -30,6 +30,9 @@ describe('Let this command write to /tmp?', () => {
     setPermissionGateForTests(null)
     clearTempWriteGrants()
     const root = mkdtempSync(join(tmpdir(), 'copse-temp-write-'))
+    // The harm gate reads a script before letting it run; give it a plain one.
+    mkdirSync(join(root, 'src'))
+    writeFileSync(join(root, 'src', 'server.js'), "console.log('listening')\n")
     const store = mkdtempSync(join(tmpdir(), 'copse-temp-write-store-'))
     const previousStore = process.env['COPSE_WORKSPACE_DIR']
     process.env['COPSE_WORKSPACE_DIR'] = store
