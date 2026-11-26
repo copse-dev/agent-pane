@@ -1020,8 +1020,15 @@ sandboxed command may read without asking. Every group is read-only: nothing her
 `allowWrite` entry or network access. Two consumers agree on the same roots, exactly as they do for
 an invoked skill's directory: the seatbelt overlay (`workspaceSandboxOverlay`) adds each root under
 home to `allowRead`, and the shell-scope classifier (`shell-guard-environment.ts`) lists every root
-as a contained read root, so a structurally read-only command naming one starts inside the sandbox
-instead of asking. A write naming one still prompts.
+as a standing read root (`ShellScopeEnvironment.standingReadRoots`). Unlike the chat store and skill
+roots, which count only for structurally read-only commands, a path under a standing root is
+contained whatever role it plays: the program being run
+(`~/.local/share/fnm/node-versions/v24/installation/bin/node --version`), a value assigned to a
+variable (`DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift --version`), or an operand
+of any command (`plutil -p /Applications/Xcode.app/Contents/Info.plist`). It never counts as a
+redirect target, nor anywhere on a line that runs a file-writing command (`cp`, `mv`, `rm`, `touch`,
+`mkdir`, `ln`, `tee`, `rsync`, `tar`, `sed -i`, …): the sandbox would refuse that write, so the line
+keeps its outside-path reason and asks first. A credential path inside a root never counts.
 
 | Group (setting)                                                   | Default | What it covers                                                                                                                                                                                                                                                                      |
 | ----------------------------------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

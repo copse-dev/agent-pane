@@ -41,10 +41,13 @@ configureShellScopeEnvironment({
         return root ? threadChatReadRoots(root) : []
       }),
     )
+    return [...roots, ...activeThreadReadRootPaths()]
+  },
+  standingReadRoots: () => {
     const policy = sandboxReadAccessPolicy()
     const standing = currentStandingReadRoots().flatMap((root) => [root.path, root.canonical])
     const approved = policy.approvedFolders ? projectReadFolders(currentReadGrantProjectRoot()) : []
-    return [...roots, ...activeThreadReadRootPaths(), ...standing, ...approved]
+    return [...standing, ...approved]
   },
   sanctionedScratchMatcher: () => {
     const agentScratch = agentScratchMatcher()

@@ -14,6 +14,7 @@ import {
   isInertReadArgv,
   isStructurallyReadOnlyShellCommand,
   parsedShellSegments,
+  shellRedirects,
   shellSegmentsQuoteAware,
   unwrapWrappers,
   wrapperChain,
@@ -57,6 +58,16 @@ export interface ShellScopeEnvironment {
    */
   containedReadRoots?: () => readonly string[]
   /**
+   * Absolute roots every sandboxed process may read (installed toolchains,
+   * package caches, folders the person approved), but none may write. A path
+   * under one is contained whatever role it plays: the program being run, a
+   * value assigned to a variable (`DEVELOPER_DIR=/Applications/Xcode.app/…`),
+   * or an operand of any command (`plutil … /Applications/Xcode.app/…/Info.plist`).
+   * It never counts when it is a redirect target or an operand of a command
+   * that writes files, and a credential path inside one never counts at all.
+   */
+  standingReadRoots?: () => readonly string[]
+  /**
    * Predicate over absolute paths for scratch directories the host sanctions
    * (masked out before the outside-path rules run), or null when there are none.
    */
@@ -67,6 +78,7 @@ export interface ShellScopeEnvironment {
 
 const DEFAULT_ENVIRONMENT: Required<ShellScopeEnvironment> = {
   containedReadRoots: () => [],
+  standingReadRoots: () => [],
   sanctionedScratchMatcher: () => null,
   isContainedSymlink: () => false,
 }
@@ -990,6 +1002,64 @@ function containedReadRoots(command: string): string[] {
   return environment.containedReadRoots().map((root) => resolve(root))
 }
 
+/**
+ * Heads that create, change or remove files named by their operands. A
+ * standing read root named on such a line keeps its outside-path reason: the
+ * sandbox would refuse the write, so calling it contained would only trade
+ * the prompt for an EPERM and a retry offer.
+ */
+const FILE_WRITING_HEADS: ReadonlySet<string> = new Set([
+  'cp',
+  'mv',
+  'rm',
+  'rmdir',
+  'touch',
+  'mkdir',
+  'ln',
+  'tee',
+  'install',
+  'rsync',
+  'chmod',
+  'chown',
+  'chgrp',
+  'chflags',
+  'truncate',
+  'dd',
+  'shred',
+  'unlink',
+  'ditto',
+  'patch',
+  'tar',
+  'unzip',
+  'xattr',
+])
+
+/**
+ * The standing read roots that apply to `command`: none when a segment runs a
+ * file-writing head or `sed -i`, or when the line cannot be parsed. Redirect
+ * targets are excluded per token by {@link maskContainedReadPaths}.
+ */
+function standingReadRoots(command: string): string[] {
+  const roots = environment.standingReadRoots()
+  if (roots.length === 0) return []
+  const segments = parsedShellSegments(command)
+  if (segments === null) return []
+  for (const segment of segments) {
+    const words = [...segment.argv]
+    while (words.length > 0 && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0] ?? '')) words.shift()
+    const argv = unwrapWrappers(words)
+    const head = commandName(argv[0])
+    if (head === '') continue
+    if (FILE_WRITING_HEADS.has(head)) return []
+    if (
+      head === 'sed' &&
+      argv.some((arg) => /^-[a-zA-Z]*i/.test(arg) || arg.startsWith('--in-place'))
+    )
+      return []
+  }
+  return roots.map((root) => resolve(root))
+}
+
 function isInsideRoot(absPath: string, root: string): boolean {
   return absPath === root || absPath.startsWith(root + sep)
 }
@@ -1077,10 +1147,12 @@ function maskContainedSymlink(command: string, workspaceRoot: string | null): st
  * their private `/tmp` tree. Only structurally read-only commands receive roots,
  * so writes keep the original path and still prompt.
  */
-function maskContainedReadPaths(command: string, readRoots: readonly string[]): string {
-  if (readRoots.length === 0) return command
+function maskContainedReadPaths(
+  command: string,
+  isContainedRead: (absPath: string) => boolean,
+): string {
   return command.replace(ABSOLUTE_PATH_TOKENS, (match, lead: string, path: string) =>
-    isContainedReadPath(resolve(path), readRoots) ? `${lead}contained-read` : match,
+    isContainedRead(resolve(path)) ? `${lead}contained-read` : match,
   )
 }
 
@@ -1292,14 +1364,28 @@ function referencesOutsideWorkspace(
   // Read against the raw text: masking only removes already-sanctioned paths,
   // and the read-only shape of the command is unchanged by it.
   const readRoots = containedReadRoots(rawCommand)
-  const isContainedRead = (absPath: string): boolean => isContainedReadPath(absPath, readRoots)
+  // Standing roots apply to any role a path plays except a write: a redirect
+  // target, or any operand of a file-writing head (see standingReadRoots).
+  const standingRoots = standingReadRoots(rawCommand)
+  const redirectTargets = new Set(
+    standingRoots.length === 0
+      ? []
+      : shellRedirects(rawCommand).map(({ target }) =>
+          target === '~' || target.startsWith('~/')
+            ? resolve(home, `.${target.slice(1)}`)
+            : resolve(target),
+        ),
+  )
+  const isContainedRead = (absPath: string): boolean =>
+    isContainedReadPath(absPath, readRoots) ||
+    (!redirectTargets.has(absPath) && isContainedReadPath(absPath, standingRoots))
   const command = maskPathAssignments(
     maskInertOperandPaths(
       maskContainedReadPaths(
         maskSystemExecutableHeads(
           maskAgentScratchPaths(maskContainedSymlink(rawCommand, workspaceRoot)),
         ),
-        readRoots,
+        isContainedRead,
       ),
     ),
   )
