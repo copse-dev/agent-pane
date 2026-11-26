@@ -22,9 +22,10 @@ import { screenshotChangesInRange } from './screenshot-git.mts'
  *
  * A shot is OWNED by the branch when either:
  *   • the oracle maps this diff to a spec that renders it (`affected`), or
- *   • a non-bot author committed it on this branch since the merge-base
- *     (`branchOwned`) — a hand-committed reference shot is deliberate work,
- *     whatever the oracle thinks.
+ *   • someone outside CI_SCREENSHOT_AUTHORS committed it on this branch since
+ *     the merge-base (`branchOwned`) — a hand-committed reference shot is
+ *     deliberate work, whatever the oracle thinks. A shot accepted from the
+ *     review comment is not: its later re-renders must reach review again.
  *
  * Scope is DISABLED (everything owned, i.e. the pre-existing behaviour) when the
  * base ref is unavailable — a local run or a shallow clone — so a missing
@@ -45,7 +46,7 @@ export interface ScreenshotScope {
   enabled: boolean
   /** Basenames the diff's selected specs legitimately (re)render. */
   affected: Set<string>
-  /** Basenames a non-bot author committed on this branch since the merge-base. */
+  /** Basenames committed by hand (not by CI) on this branch since the merge-base. */
   branchOwned: Set<string>
 }
 
@@ -80,7 +81,8 @@ export function ownsScreenshot(scope: ScreenshotScope, path: string): boolean {
 }
 
 /**
- * Reference shots a non-bot author committed on this branch since `mergeBase`.
+ * Reference shots committed by hand (see CI_SCREENSHOT_AUTHORS) on this branch
+ * since `mergeBase`.
  * Two git calls per branch commit rather than one parse of interleaved
  * `--format`/`--name-only` output: the commit count on a branch is small and the
  * separate walks are unambiguous.

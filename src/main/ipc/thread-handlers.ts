@@ -75,6 +75,7 @@ import {
 import { confirmNativeAction } from '../services/native-human-confirmation.ts'
 import { getAutomationService } from '../services/automations/automation-service.ts'
 import { lookupThreadBacklinks } from '../services/thread-store.ts'
+import type { ThreadActionAssessor } from '../services/thread-action-assessment.ts'
 import type { ThreadAutoArchive } from '../services/thread-auto-archive.ts'
 import type { ThreadAutoArchived } from '@shared/threads/auto-archive.ts'
 import type { ThreadArchivingRuntime } from '../services/thread-archiving.ts'
@@ -90,6 +91,7 @@ function assertMobilePromptTargetAvailable(projectId: string, threadId: string):
 
 /** What the thread handlers share with the rest of `registerAllHandlers`. */
 export interface ThreadHandlerDeps {
+  actionAssessor: ThreadActionAssessor
   autoArchive: ThreadAutoArchive
   notifyAutoArchive: (event: ThreadAutoArchived) => void
   threadArchivingRuntime: ThreadArchivingRuntime
@@ -100,6 +102,7 @@ export interface ThreadHandlerDeps {
 export function registerThreadHandlers(
   win: BrowserWindow,
   {
+    actionAssessor,
     autoArchive,
     notifyAutoArchive,
     threadArchivingRuntime,
@@ -107,6 +110,10 @@ export function registerThreadHandlers(
     threadHistoryEditRuntime,
   }: ThreadHandlerDeps,
 ): void {
+  ipcMain.handle('threads:action-state', (event) => {
+    assertMainFrameSender(event, win)
+    return actionAssessor.snapshot()
+  })
   ipcMain.handle('threads:storage-size', (event, projectId: unknown, threadId: unknown) => {
     assertMainFrameSender(event, win)
     const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])

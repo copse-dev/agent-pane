@@ -1536,6 +1536,20 @@
           4
         ]
       },
+      "mobile:clear-shell-pairing": {
+        "api": "mobile.clearShellPairing",
+        "args": [
+          0,
+          0
+        ]
+      },
+      "mobile:create-shell-pairing": {
+        "api": "mobile.createShellPairing",
+        "args": [
+          0,
+          0
+        ]
+      },
       "mobile:disable": {
         "api": "mobile.disable",
         "args": [
@@ -1611,6 +1625,13 @@
         "args": [
           2,
           3
+        ]
+      },
+      "mobile:set-relay-enabled": {
+        "api": "mobile.setRelayEnabled",
+        "args": [
+          1,
+          1
         ]
       },
       "model-cards:resolve": {
@@ -1828,6 +1849,13 @@
         "args": [
           1,
           1
+        ]
+      },
+      "remote:watched": {
+        "api": "remote.watched",
+        "args": [
+          0,
+          0
         ]
       },
       "review:dismiss-finding": {
@@ -2444,6 +2472,13 @@
         "args": [
           2,
           2
+        ]
+      },
+      "threads:action-state": {
+        "api": "threads.actionState",
+        "args": [
+          0,
+          0
         ]
       },
       "threads:annotate-message": {
@@ -3250,6 +3285,13 @@
       },
       "popout:switch-mode": {
         "api": "panes.onSwitchMode",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "remote:watched-changed": {
+        "api": "remote.onWatchedChanged",
         "args": [
           1,
           1

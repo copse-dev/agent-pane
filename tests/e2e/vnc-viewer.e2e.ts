@@ -969,19 +969,37 @@ describe('VNC viewer', function () {
     })
     await saveElementScreenshot('#pane-files', 'vnc-viewer-add-ssh-machine.png')
     await $(`${retryControls} [aria-label="SSH host label"]`).setValue('Build Mac')
-    assert.equal(await $(`${retryControls} [aria-label="SSH host id"]`).getValue(), 'build-mac')
+    // Nobody invents an id: it comes from the label (asserted on save below).
+    assert.equal(await $(`${retryControls} [aria-label="SSH host id"]`).isExisting(), false)
     await $(`${retryControls} [aria-label="SSH hostname"]`).setValue('localhost')
     await $(`${retryControls} [aria-label="SSH user"]`).setValue('builder')
     await $(`${retryControls} [aria-label="SSH identity file"]`).setValue('~/.ssh/id_ed25519')
     await $(`${retryControls} .vnc-ssh-host-form button[type="submit"]`).click()
-    await browser.waitUntil(async () =>
-      (await $(`${retryControls} .vnc-ssh-host-status`).getText()).includes(
-        'Enable SSH workspaces in Settings',
-      ),
-    )
+    // SSH workspaces are off: the form asks to turn them on, in place, rather
+    // than sending the user to Settings. Turning them on carries the save on.
+    const turnOn = $(`${retryControls} .vnc-ssh-host-form .ssh-consent-turn-on`)
+    await turnOn.waitForDisplayed({ timeout: 10_000 })
     assert.equal(await sshForm.isDisplayed(), true)
-    await browser.execute(async () => window.api.settings.set('sshWorkspaceEnabled', true))
-    await $(`${retryControls} .vnc-ssh-host-form button[type="submit"]`).click()
+    assert.equal(
+      await browser.execute(async () => window.api.settings.get('sshWorkspaceEnabled')),
+      false,
+    )
+    await turnOn.scrollIntoView({ block: 'end' })
+    // The question wraps inside the narrow rail rather than widening the form.
+    const fits = await browser.execute(() => {
+      const form = document.querySelector('.vnc-controls-panel:not([hidden]) .vnc-ssh-host-form')
+      const ask = form?.querySelector('.ssh-consent')
+      if (!form || !ask) return null
+      const outer = form.getBoundingClientRect()
+      const inner = ask.getBoundingClientRect()
+      return {
+        inside: inner.right <= outer.right + 0.5,
+        scrolls: form.scrollWidth > form.clientWidth,
+      }
+    })
+    assert.deepEqual(fits, { inside: true, scrolls: false })
+    await saveElementScreenshot('#pane-files', 'vnc-viewer-ssh-turn-on.png')
+    await turnOn.click()
     await $(
       `${retryControls} .vnc-device-header[data-machine="ssh:build-mac"][aria-expanded="true"]`,
     ).waitForDisplayed({ timeout: 20_000 })

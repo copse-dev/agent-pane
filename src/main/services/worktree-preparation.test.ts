@@ -259,6 +259,27 @@ describe('project detection and declared setup', () => {
   })
 })
 
+it('keeps the user Corepack cache in shells until preparation has stamped the worktree', () => {
+  project('pnpm@10.0.0', 'pnpm-lock.yaml')
+  const env = { COPSE_DIR: '/profile', COREPACK_HOME: '/user/corepack' }
+  const unprepared = worktreePreparationShellEnvironment(root, env)
+  assert.equal(unprepared['COREPACK_HOME'], '/user/corepack')
+  assert.equal(unprepared['npm_config_store_dir'], '/profile/cache/pnpm-store')
+  assert.ok(
+    !Object.hasOwn(
+      worktreePreparationShellEnvironment(root, { COPSE_DIR: '/profile' }),
+      'COREPACK_HOME',
+    ),
+  )
+  write(PREPARATION_STAMP, 'broken')
+  assert.equal(worktreePreparationShellEnvironment(root, env)['COREPACK_HOME'], '/user/corepack')
+  write(PREPARATION_STAMP, 'a'.repeat(64))
+  assert.equal(
+    worktreePreparationShellEnvironment(root, env)['COREPACK_HOME'],
+    '/profile/cache/corepack',
+  )
+})
+
 it('shares package caches with later shells without changing their install policy', () => {
   project('npm@11.12.0', 'package-lock.json')
   const shell = worktreePreparationShellEnvironment(root, {

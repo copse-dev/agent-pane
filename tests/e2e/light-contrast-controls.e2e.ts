@@ -147,7 +147,7 @@ describe('light-contrast controls: roadmap Save button + Changes badge (issue #2
     await expectAssistantReply('The proposed contrast proof is ready.')
     await scenario.assertComplete()
 
-    const changesBadge = $('.titlebar-btn[aria-label="Open changes"] .titlebar-btn-badge')
+    const changesBadge = $('.titlebar-btn[aria-label="Open review"] .titlebar-btn-badge')
     await changesBadge.waitForDisplayed({ timeout: 30_000 })
     assert.equal(
       await changesBadge.getText(),
@@ -176,7 +176,7 @@ describe('light-contrast controls: roadmap Save button + Changes badge (issue #2
       )
       if (currentTheme !== theme) await switchTheme(theme)
       await saveElementScreenshot(
-        '.titlebar-btn[aria-label="Open changes"] .titlebar-btn-badge',
+        '.titlebar-btn[aria-label="Open review"] .titlebar-btn-badge',
         `light-contrast-changes-badge-${theme}.png`,
       )
       // Keep the Save evidence inside the full app frame. Switching through
@@ -185,7 +185,7 @@ describe('light-contrast controls: roadmap Save button + Changes badge (issue #2
       await saveAppScreenshot(`light-contrast-save-button-${theme}.png`)
       const badge = await browser.execute(
         controlContrast,
-        '.titlebar-btn[aria-label="Open changes"] .titlebar-btn-badge',
+        '.titlebar-btn[aria-label="Open review"] .titlebar-btn-badge',
       )
       const saveBtn = await browser.execute(controlContrast, '.roadmap-save-btn')
       assert.ok(badge !== null, `Changes badge must exist in ${theme}`)

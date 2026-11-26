@@ -67,7 +67,15 @@ export interface RendererCrashTarget {
 
 export function attachRendererCrashRecovery(
   contents: RendererCrashTarget,
-  options: { log?: (message: string) => void; now?: () => number } = {},
+  options: {
+    log?: (message: string) => void
+    now?: () => number
+    /**
+     * What the window was doing when it died, for the log line. The exit code
+     * alone does not say which call an out-of-memory abort was serializing.
+     */
+    context?: () => string | null
+  } = {},
 ): void {
   const log =
     options.log ??
@@ -79,8 +87,10 @@ export function attachRendererCrashRecovery(
   contents.on('render-process-gone', (_event, details) => {
     const decision = planRendererCrashRecovery(details, state, now())
     state = decision.next
+    const context = details.reason === 'clean-exit' ? null : (options.context?.() ?? null)
     log(
       `[renderer] process gone reason=${details.reason} exitCode=${String(details.exitCode)}` +
+        (context ? ` ${context}` : '') +
         (decision.reload ? ' — reloading' : ''),
     )
     if (!decision.reload || contents.isDestroyed()) return

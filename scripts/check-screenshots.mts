@@ -122,12 +122,12 @@ function main(): void {
 
   console.error(
     `\n✗ screenshot gate: ${String(gate.missing.length)} reference screenshot(s) look stale.\n\n` +
-      '  This change is mapped (by the test oracle) to screenshot-producing e2e\n' +
-      '  spec(s), but these committed reference hashes were not refreshed in the diff:\n',
+      '  This change is mapped (by the test oracle) to screenshot-producing e2e or\n' +
+      '  demo spec(s), but these committed reference hashes were not refreshed in the diff:\n',
   )
   for (const p of gate.missing) console.error(`      tests/e2e/screenshots/${p}`)
   console.error(
-    '\n  On CI the e2e gate re-renders these shots into an immutable candidate\n' +
+    '\n  On CI the e2e and demo tiers re-render these shots into an immutable candidate\n' +
       '  artifact; same-repository PRs also get a view-only compare link. Review\n' +
       '  them, then accept the intended hashes (the PR comment gives an acceptance\n' +
       '  command). Add the `update-screenshots` label when you need the complete\n' +

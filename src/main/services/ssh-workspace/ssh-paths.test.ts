@@ -9,7 +9,9 @@ import fs, {
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
 import { join } from 'node:path'
+import { shortSocketDirectory } from '../../../../tests/helpers/short-socket-directory.ts'
 import {
   CONTROL_SOCKET_PATH_BUDGET,
   controlDirProblem,
@@ -24,40 +26,56 @@ describe('controlSocketPath', () => {
     setSshControlDirForTests(null)
   })
 
-  it('uses a short hashed filename so long host ids stay under the Unix socket budget', () => {
+  it('uses a short hashed filename so long host ids stay under the Unix socket budget', (t) => {
     // This test is about the filename budget. macOS TMPDIR normally lives
     // under /var/folders and can itself exceed the entire stable socket-path
     // budget; production deliberately uses /tmp for that reason.
-    const dir = mkdtempSync('/tmp/copse-cm-')
-    try {
-      setSshControlDirForTests(dir)
-      const hostId = 'remote-dev-testing-016'
-      const path = controlSocketPath(hostId)
-      assert.equal(controlSocketFileName(hostId).length, '0123456789abcdef.sock'.length)
-      assert.ok(
-        Buffer.byteLength(path, 'utf8') <= CONTROL_SOCKET_PATH_BUDGET,
-        `path length ${String(Buffer.byteLength(path, 'utf8'))} exceeds budget ${String(CONTROL_SOCKET_PATH_BUDGET)}: ${path}`,
-      )
-      // Even with OpenSSH's bind-time suffix, stay within sun_path.
-      const withSuffix = `${path}.fUyzwh1gIvt57SO8`
-      assert.ok(
-        Buffer.byteLength(withSuffix, 'utf8') <= UNIX_DOMAIN_SOCKET_PATH_MAX,
-        `path+suffix length ${String(Buffer.byteLength(withSuffix, 'utf8'))} exceeds ${String(UNIX_DOMAIN_SOCKET_PATH_MAX)}`,
-      )
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
+    const dir = shortSocketDirectory(t)
+    setSshControlDirForTests(dir)
+    const hostId = 'remote-dev-testing-016'
+    const path = controlSocketPath(hostId)
+    assert.equal(controlSocketFileName(hostId).length, '0123456789abcdef.sock'.length)
+    assert.ok(
+      Buffer.byteLength(path, 'utf8') <= CONTROL_SOCKET_PATH_BUDGET,
+      `path length ${String(Buffer.byteLength(path, 'utf8'))} exceeds budget ${String(CONTROL_SOCKET_PATH_BUDGET)}: ${path}`,
+    )
+    // Even with OpenSSH's bind-time suffix, stay within sun_path.
+    const withSuffix = `${path}.fUyzwh1gIvt57SO8`
+    assert.ok(
+      Buffer.byteLength(withSuffix, 'utf8') <= UNIX_DOMAIN_SOCKET_PATH_MAX,
+      `path+suffix length ${String(Buffer.byteLength(withSuffix, 'utf8'))} exceeds ${String(UNIX_DOMAIN_SOCKET_PATH_MAX)}`,
+    )
   })
 
-  it('stays under budget for the macOS Application Support path that used to break', () => {
+  it('stays under budget for the macOS Application Support path that used to break', (t) => {
     // Simulate the old layout length; the new helper must not place sockets there.
     const legacy = `/Users/alexandra-morgan/Library/Application Support/copse-panel/ssh/remote-dev-testing-016.sock`
     assert.ok(Buffer.byteLength(legacy, 'utf8') > CONTROL_SOCKET_PATH_BUDGET)
 
-    const path = controlSocketPath('remote-dev-testing-016')
-    assert.doesNotMatch(path, /Application Support/)
-    assert.ok(Buffer.byteLength(path, 'utf8') <= CONTROL_SOCKET_PATH_BUDGET)
-    assert.ok(Buffer.byteLength(`${path}.fUyzwh1gIvt57SO8`, 'utf8') <= UNIX_DOMAIN_SOCKET_PATH_MAX)
+    // Verify the production default path without creating its shared directory.
+    // The directory check that follows then sees a private directory of this user.
+    const mkdir = t.mock.method(fs, 'mkdirSync', () => undefined)
+    const uid = typeof process.getuid === 'function' ? process.getuid() : 0
+    const lstat = t.mock.method(fs, 'lstatSync', () => ({
+      isSymbolicLink: (): boolean => false,
+      isDirectory: (): boolean => true,
+      uid,
+      mode: 0o40700,
+    }))
+    syncBuiltinESMExports()
+    try {
+      const path = controlSocketPath('remote-dev-testing-016')
+      assert.equal(mkdir.mock.callCount(), 1)
+      assert.doesNotMatch(path, /Application Support/)
+      assert.ok(Buffer.byteLength(path, 'utf8') <= CONTROL_SOCKET_PATH_BUDGET)
+      assert.ok(
+        Buffer.byteLength(`${path}.fUyzwh1gIvt57SO8`, 'utf8') <= UNIX_DOMAIN_SOCKET_PATH_MAX,
+      )
+    } finally {
+      mkdir.mock.restore()
+      lstat.mock.restore()
+      syncBuiltinESMExports()
+    }
   })
 })
 
