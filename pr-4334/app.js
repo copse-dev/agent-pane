@@ -6958,6 +6958,8 @@ function createDemoApi(scenario2, options = {}) {
         currentBranch = branch;
         return resolvedVoid();
       },
+      setPathStaged: () => resolved({ ok: false, message: "The demo has no git checkout." }),
+      setLinesStaged: () => resolved({ ok: false, message: "The demo has no git checkout." }),
       listBranches: () => resolved([
         { name: currentBranch, lastCommitDate: DEMO_TIME },
         { name: "main", lastCommitDate: DEMO_TIME }
@@ -6992,6 +6994,8 @@ function createDemoApi(scenario2, options = {}) {
       createPrForThread: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" }),
       rerunFailedRuns: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" }),
       approvePr: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" }),
+      replyToReviewThread: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" }),
+      setReviewThreadResolved: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" }),
       markPrReady: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" }),
       enableAutoMerge: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" })
     },
@@ -7536,7 +7540,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-LIJZU6PW.js").then(async (main) => {
+    void import("./chunks/main-QJCDXHUJ.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(
