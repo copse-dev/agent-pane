@@ -47286,8 +47286,11 @@ function createToolPermissionsPanel(api) {
     const count = document.createElement("span");
     count.className = "tool-permission-count";
     count.textContent = String(group.tools.length);
-    count.setAttribute("aria-label", String(group.tools.length) + " tools");
-    summary.append(disclosure, heading, count);
+    count.setAttribute("aria-hidden", "true");
+    const spokenCount = document.createElement("span");
+    spokenCount.className = "tool-permission-count-sr";
+    spokenCount.textContent = `${String(group.tools.length)} tool${group.tools.length === 1 ? "" : "s"}`;
+    summary.append(disclosure, heading, count, spokenCount);
     if (group.origin) {
       const origin = document.createElement("span");
       origin.className = "tool-permission-group-origin";
@@ -70576,7 +70579,7 @@ var init_agent_markup = __esm({
                 <textarea
                   name="customInstructions"
                   rows="4"
-                  placeholder="Always-on guidance added to every conversation (e.g. preferred style, conventions)."
+                  placeholder="e.g. Prefer small commits. Use British spelling."
                 ></textarea>
                 <span class="field-hint">
                   Added to every conversation, in every project. A project
@@ -71046,13 +71049,10 @@ var init_mcp_markup = __esm({
           <section class="settings-section" data-section="mcp">
             <h3>MCP servers</h3>
             <p class="settings-section-desc">
-              Model Context Protocol servers expose external tools to the agent. This section is
-              the whole picture of what Copse talks to over MCP, servers you configured, servers
-              the open project asks for, and servers your plugins bring with them. Each row says
-              where it came from. Add your own with <strong>Add server</strong>; Copse keeps them in
-              its own config. It also reads <code>.cursor/mcp.json</code> and
-              <code>.mcp.json</code> (project) and <code>~/.cursor/mcp.json</code> (global), which
-              you edit yourself. Plugins are installed and turned on under Customise.
+              Servers that give the agent external tools: the ones you add, the ones the open
+              project asks for, and the ones your plugins bring. Copse also reads
+              <code>.cursor/mcp.json</code> and <code>.mcp.json</code> in the project and
+              <code>~/.cursor/mcp.json</code>, which you edit yourself.
             </p>
 
             <fieldset>
@@ -71367,12 +71367,10 @@ var init_appearance_markup = __esm({
                 Hide tool details and reasoning from highly capable models
               </label>
               <p class="field-hint" id="concise-threads-hint">
-                For models scoring above 50 on the Artificial Analysis Intelligence Index, the
-                thread keeps all assistant messages and screenshots visible. Tool calls, reasoning,
-                and the tool errors the model recovers from stay hidden, and every finished turn
-                has a Show steps button to open it in full; while a model works, you see what it
-                is doing now. Turn off to always show the full thread. Other models always show the
-                full thread.
+                For models scoring above 50 on the Artificial Analysis Intelligence Index, tool
+                calls and reasoning fold into Show steps on each finished turn, and messages and
+                screenshots stay visible. Turn off to always show the full thread, as other models
+                do.
               </p>
             </fieldset>
 
