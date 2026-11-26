@@ -137,6 +137,10 @@ export interface AppState {
   stagedDiffs: StagedDiffEntry[] // multi-file queue (see spec 10)
   filesPaneOpen: boolean // right pane (explorer + file viewer) visibility
   rightPanelMode: RightPanelMode // explorer tree vs terminal column in right pane
+  // A second pane stacked under `rightPanelMode` in the same panel (e.g. Review
+  // over Browser), or null for a single pane. Never equal to `rightPanelMode`,
+  // and only ever a mode `canSplitRightPanel` accepts.
+  rightPanelSplitMode: RightPanelMode | null
   // The open pane fills the window over chat. Session-only (never persisted):
   // a window that reopened with chat already covered would read as broken.
   rightPanelMaximized: boolean

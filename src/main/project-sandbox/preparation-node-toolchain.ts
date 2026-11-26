@@ -192,25 +192,34 @@ export function preparationNodeToolchainReadPaths(
 }
 
 /**
- * Put symlinks to the canonical toolchain executables first on PATH.
+ * Link the canonical toolchain executables into `directory` and return a PATH
+ * that finds them first, or null when PATH holds no Node toolchain command.
  *
- * bubblewrap re-exposes a granted file by bind-mounting it, and the bind
- * follows its source symlink: fnm's `bin/npm -> ../lib/node_modules/npm/bin/npm-cli.js`
- * becomes a plain copy of the CLI at `bin/npm`. Node then resolves the CLI's
- * relative requires from `bin/`, so npm and Corepack cannot start. Granting
- * the whole `bin` directory would keep its symlinks but also expose every
- * other program beside them. `directory` must sit inside a writable grant
- * (bound as a directory, so these symlinks survive) and belong to one
- * contained process.
+ * Neither sandbox can start fnm's PATH spellings directly:
+ * - bubblewrap re-exposes a granted file by bind-mounting it, and the bind
+ *   follows its source symlink: fnm's `bin/npm -> ../lib/node_modules/npm/bin/npm-cli.js`
+ *   becomes a plain copy of the CLI at `bin/npm`. Node then resolves the CLI's
+ *   relative requires from `bin/`, so npm and Corepack cannot start.
+ * - Seatbelt checks read access on every symlink the kernel follows, not only
+ *   on its target. `bin/node` sits in the denied installation, so `env node`
+ *   (every npm and Corepack shebang) cannot start it although its canonical
+ *   executable is granted.
+ * Granting the whole `bin` directory would keep its symlinks reachable but also
+ * expose every other program beside them. `directory` must sit inside a
+ * writable grant (bound as a directory, so these symlinks survive) and belong
+ * to one contained process.
+ *
+ * The returned PATH is for the confined command only. The contained process can
+ * write `directory`, so the unconfined wrapper must never look anything up there.
  */
 export function linkPreparationNodeToolchain(
   env: NodeJS.ProcessEnv,
   directory: string,
-): NodeJS.ProcessEnv {
+): string | null {
   const resolved = resolveNodeToolchain(env)
-  if (resolved.length === 0) return env
+  if (resolved.length === 0) return null
   for (const { command, executable } of resolved) {
     symlinkSync(executable, join(directory, command))
   }
-  return { ...env, PATH: `${directory}${delimiter}${env['PATH'] ?? ''}` }
+  return `${directory}${delimiter}${env['PATH'] ?? ''}`
 }

@@ -1,5 +1,9 @@
 import { isDirectExecution } from './lib/direct-execution.mts'
-import { cpSync, copyFileSync, existsSync } from 'node:fs'
+import { copyFileSync, existsSync } from 'node:fs'
+// Trees are copied with the async `cp`: Node's native recursive `cpSync` fails
+// with EACCES on Apple container's virtiofs shares, where Copse Reviewer's
+// cells build a checkout.
+import { cp } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
 const ESM_WORKER_HOST_SRC = resolve('src/renderer/monaco/esm-worker-host.js')
@@ -17,8 +21,8 @@ const WORKER_ALIASES: ReadonlyArray<[dest: string, src: string]> = [
  * as ESM; workers dynamically import `vs/...` modules and must not load AMD `min/vs`
  * workers (those call `define()` and fail with "define is not defined").
  */
-export function copyMonacoWorkers(rendererOutDir: string): void {
-  populateMonacoRoot(resolve(rendererOutDir, 'monaco'))
+export async function copyMonacoWorkers(rendererOutDir: string): Promise<void> {
+  await populateMonacoRoot(resolve(rendererOutDir, 'monaco'))
 }
 
 /**
@@ -30,11 +34,11 @@ export function copyMonacoWorkers(rendererOutDir: string): void {
  * point at, instead of committing 34MB per preview per push into the
  * `demo-previews` branch.
  */
-export function populateMonacoRoot(monacoDest: string): void {
+export async function populateMonacoRoot(monacoDest: string): Promise<void> {
   const vsDest = resolve(monacoDest, 'vs')
-  cpSync(resolve('node_modules/monaco-editor/esm/vs'), vsDest, { recursive: true })
+  await cp(resolve('node_modules/monaco-editor/esm/vs'), vsDest, { recursive: true })
   // Language workers import from `../../../external/...` (sibling of `vs/`, not inside it).
-  cpSync(resolve('node_modules/monaco-editor/esm/external'), resolve(monacoDest, 'external'), {
+  await cp(resolve('node_modules/monaco-editor/esm/external'), resolve(monacoDest, 'external'), {
     recursive: true,
   })
 
@@ -95,7 +99,17 @@ export function pointHtmlAtMonacoBase(html: string, baseUrl: string): string {
 
 // `node scripts/copy-monaco-workers.mts <dir>` populates <dir> as a Monaco root.
 // Used by the demo-preview workflow to publish the shared vendor copy.
+// A promise chain, not top-level await: this module is imported by bundled
+// tests, where top-level await would make every importer's init async.
 if (isDirectExecution(import.meta.url, 'copy-monaco-workers') && process.argv[2] !== undefined) {
-  populateMonacoRoot(resolve(process.argv[2]))
-  console.log(`[monaco] populated ${process.argv[2]}`)
+  const root = process.argv[2]
+  populateMonacoRoot(resolve(root)).then(
+    () => {
+      console.log(`[monaco] populated ${root}`)
+    },
+    (err: unknown) => {
+      console.error(err)
+      process.exitCode = 1
+    },
+  )
 }

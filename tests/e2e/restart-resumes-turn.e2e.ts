@@ -8,6 +8,7 @@ import {
   e2eWorkspaceDir,
   resetUserData,
   seedStableWorkspace,
+  seedLastRun,
   writeSeedConfig,
   writeSettings,
 } from './helpers/seed-config.ts'
@@ -84,6 +85,9 @@ describe('a turn cut off by the last exit', function () {
       ],
     })
     writeSettings({ model: 'claude-sonnet-4-6', subagentsEnabled: false })
+    // The run that left the thread running crashed after it started, so this
+    // launch continues it (`last-run.ts`); a quit the user chose would not.
+    seedLastRun({ startedAt: now - 60_000 })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
   })

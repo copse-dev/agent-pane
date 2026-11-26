@@ -21,7 +21,7 @@ const electronPath = expectString(require('electron'))
 rmSync('dist/.copse-build-fingerprint', { force: true })
 
 // Copy static renderer assets once at start
-copyMonacoWorkers('dist/renderer')
+await copyMonacoWorkers('dist/renderer')
 cpSync('node_modules/vscode-material-icons/generated/icons', 'dist/renderer/material-icons', {
   recursive: true,
 })

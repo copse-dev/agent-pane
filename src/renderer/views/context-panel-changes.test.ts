@@ -11,8 +11,9 @@ import {
   type ContextPanelModel,
   type ContextPanelMonaco,
 } from './context-panel.ts'
-import type { GitDiffEditor } from '../monaco/git-diff-viewer.ts'
+import type { GitDiffCodeEditor, GitDiffEditor } from '../monaco/git-diff-viewer.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import { inertCommentSurface } from '../monaco/commentable-editor.test-support.ts'
 
 // The file viewer's "Changes" view (uncommitted HEAD → working-tree diff for
 // the open file). These tests cover the toolbar/visibility logic in happy-dom;
@@ -31,11 +32,13 @@ function makeModel(value: string): ContextPanelModel {
   }
 }
 
-function makeCodeEditorStub(): ContextPanelEditor {
+function makeCodeEditorStub(): ContextPanelEditor & GitDiffCodeEditor {
   let model: ContextPanelModel | null = null
   return {
+    ...inertCommentSurface(),
     addCommand(): void {},
     onKeyDown: () => ({ dispose(): void {} }),
+    onDidFocusEditorText: () => ({ dispose(): void {} }),
     getSelection: () => null,
     getModel: () => model,
     setModel(next: ContextPanelModel | null): void {

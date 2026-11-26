@@ -116,7 +116,10 @@ import {
   SIMULATOR_DESKTOP_SHOW_CHANNEL,
 } from './services/simulator-desktop/simulator-desktop-panel.ts'
 import { initAskUser } from './services/ask-user.ts'
-import { createElectronUserAlertSender } from './services/user-alerts-electron.ts'
+import {
+  createElectronUserAlertSender,
+  setDetachedWindowReviver,
+} from './services/user-alerts-electron.ts'
 import { setTerminalCommandLauncher } from './services/exec/terminal-launch.ts'
 import { initSshPrompt } from './services/ssh-workspace/ssh-prompt.ts'
 import { initSshAskpassServer } from './services/ssh-workspace/askpass.ts'
@@ -276,6 +279,7 @@ import {
   defaultInterruptedTurnResumeDependencies,
   resumeInterruptedTurns,
 } from './services/interrupted-turn-resume.ts'
+import { recordRunEnd, startRunRecorder } from './services/last-run.ts'
 import { installDarkFactorySensor } from './services/supervisor/dark-factory-sensor.ts'
 import { installCiWatchConsumer } from './services/github/ci-watch-service.ts'
 import {
@@ -504,8 +508,10 @@ let detachedIdleTimer: ReturnType<typeof setInterval> | undefined
 /**
  * Outside macOS a window closed mid-turn is hidden with no Dock to return
  * through. Once its turns end, finish the close the user asked for. Two idle
- * samples in a row, so a machine wake that follows a turn's end straight away
- * (a background-process completion, a long-task continuation) keeps the app.
+ * samples in a row, five seconds apart, so a machine wake that starts within
+ * that time keeps the app. A background process still running after that is
+ * stopped by the quit, as any quit stops it. Another open window keeps the app
+ * up: the user is still working in it.
  */
 function quitDetachedAppWhenIdle(win: BrowserWindow): void {
   if (process.platform === 'darwin' || detachedIdleTimer !== undefined) return
@@ -525,6 +531,9 @@ function quitDetachedAppWhenIdle(win: BrowserWindow): void {
       detached,
       runningTurns: listRunningThreadIds().length,
       mobileCompanionEnabled: getMobileCompanionState().enabled,
+      otherWindowsOpen: BrowserWindow.getAllWindows().some(
+        (other) => other !== win && !other.isDestroyed() && other.isVisible(),
+      ),
     })
     idleSamples = idle ? idleSamples + 1 : 0
     if (idleSamples < 2) return
@@ -549,6 +558,15 @@ const releaseSmokeTest = process.argv.includes('--release-smoke-test')
 // the single-instance lock (each client spawns its own) or open a window.
 const acpMode = process.argv.includes('--acp')
 const threadDeepLinks = new ThreadDeepLinks(getMainWindow, findThreadOwners)
+// A notification for a window closed mid-turn reloads it rather than showing a
+// blank page (outside macOS there is no Dock click to do that instead).
+setDetachedWindowReviver((target, threadId) => {
+  const win = getMainWindow()
+  if (!win || target !== win || win.isDestroyed() || !isWindowDetached(win)) return false
+  bringBackMainWindow(win)
+  if (threadId !== undefined) threadDeepLinks.open({ threadId, projectId: null })
+  return true
+})
 setPluginClientThreadOpener((projectId, threadId) => {
   const win = getMainWindow()
   if (!win || win.isDestroyed()) return false
@@ -561,6 +579,8 @@ const gotSingleInstanceLock =
 if (!gotSingleInstanceLock) {
   app.quit()
 } else if (!agentEval && !acpMode && !releaseSmokeTest) {
+  // How this run ends decides which cut-off turns the next launch continues.
+  startRunRecorder(app.getPath('userData'), Date.now() - process.uptime() * 1_000)
   for (const arg of process.argv) threadDeepLinks.accept(arg)
   app.on('open-url', (event, url) => {
     event.preventDefault()
@@ -1625,6 +1645,9 @@ app.on('before-quit', (event) => {
   // kills the in-flight turns the user is being warned about, so a prompt after
   // it would come too late to save them. Re-issues the quit once confirmed.
   if (deferQuitForCloseConfirmation(event)) return
+  // The quit is going ahead: the user chose it, so its turns are not continued
+  // on the next launch (unless the updater asked for it).
+  const runEnded = recordRunEnd()
   beginMainWindowQuit()
   destroyAllTerminalSessions()
   stopAllBackgroundProcesses()
@@ -1635,16 +1658,23 @@ app.on('before-quit', (event) => {
   event.preventDefault()
   if (quitCleanupStarted) return
   quitCleanupStarted = true
-  void runWithDeadline(cleanupBeforeQuit, QUIT_CLEANUP_DEADLINE_MS, {
-    onError: (err) => {
-      console.error('[shutdown] Cleanup failed:', err)
+  void runWithDeadline(
+    async () => {
+      await runEnded
+      await cleanupBeforeQuit()
     },
-    onTimeout: () => {
-      console.error(
-        `[shutdown] Cleanup exceeded ${String(QUIT_CLEANUP_DEADLINE_MS)}ms; exiting anyway`,
-      )
+    QUIT_CLEANUP_DEADLINE_MS,
+    {
+      onError: (err) => {
+        console.error('[shutdown] Cleanup failed:', err)
+      },
+      onTimeout: () => {
+        console.error(
+          `[shutdown] Cleanup exceeded ${String(QUIT_CLEANUP_DEADLINE_MS)}ms; exiting anyway`,
+        )
+      },
     },
-  }).then((outcome) => {
+  ).then((outcome) => {
     quitCleanupFinished = true
     // A cleanup that blew its deadline is still pending, so `app.quit()` would
     // hand control back to a teardown that has already proved it will not
