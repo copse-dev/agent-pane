@@ -87,19 +87,19 @@ pending command.
 
 ## Results, 2026-11-26 (after review round 1)
 
-| Approach | Prompts skipped (of 854) | Real false skips | Adversarial false skips (191) | Held-out false skips (109) | Must-ask sweep (1,272) |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| prior-consent keyword baseline | 0 | 0 | 10 | 1 | n/a |
-| Qwen 3.6 35B-A3B free-form judge, explicit (sample of 81) | ~5.8% | 1 | 35 of the first 126 | 9 | n/a |
-| Qwen free-form judge, explicit+implied (sample of 81) | ~28% | 14 | 40 of the first 126 | 11 | n/a |
-| P1, deterministic extraction | 58 (6.8%) | 0 | 0 | 0 | 0 |
-| P1, Qwen extraction, no vetoes | 54 (6.3%) | 0 | 6 | 0 | 0 |
-| P1, Qwen extraction with the deterministic vetoes | 51 (6.0%) | 0 | 0 | 0 | 0 |
-| P1, deterministic ∪ vetoed Qwen | 58 (6.8%) | 0 | 0 | 0 | 0 |
-| P2, deterministic extraction | 167 (19.6%) | 0 | 0 | 0 | 0 |
-| P2, Qwen extraction, no vetoes | 173 (20.3%) | 0 | 6 | 0 | 0 |
-| P2, Qwen extraction with the deterministic vetoes | 159 (18.6%) | 0 | 0 | 0 | 0 |
-| P2, deterministic ∪ vetoed Qwen | 179 (21.0%) | 0 | 0 | 0 | 0 |
+| Approach                                                  | Prompts skipped (of 854) | Real false skips | Adversarial false skips (191) | Held-out false skips (109) | Must-ask sweep (1,272) |
+| --------------------------------------------------------- | -----------------------: | ---------------: | ----------------------------: | -------------------------: | ---------------------: |
+| prior-consent keyword baseline                            |                        0 |                0 |                            10 |                          1 |                    n/a |
+| Qwen 3.6 35B-A3B free-form judge, explicit (sample of 81) |                    ~5.8% |                1 |           35 of the first 126 |                          9 |                    n/a |
+| Qwen free-form judge, explicit+implied (sample of 81)     |                     ~28% |               14 |           40 of the first 126 |                         11 |                    n/a |
+| P1, deterministic extraction                              |                58 (6.8%) |                0 |                             0 |                          0 |                      0 |
+| P1, Qwen extraction, no vetoes                            |                54 (6.3%) |                0 |                             6 |                          0 |                      0 |
+| P1, Qwen extraction with the deterministic vetoes         |                51 (6.0%) |                0 |                             0 |                          0 |                      0 |
+| P1, deterministic ∪ vetoed Qwen                           |                58 (6.8%) |                0 |                             0 |                          0 |                      0 |
+| P2, deterministic extraction                              |              167 (19.6%) |                0 |                             0 |                          0 |                      0 |
+| P2, Qwen extraction, no vetoes                            |              173 (20.3%) |                0 |                             6 |                          0 |                      0 |
+| P2, Qwen extraction with the deterministic vetoes         |              159 (18.6%) |                0 |                             0 |                          0 |                      0 |
+| P2, deterministic ∪ vetoed Qwen                           |              179 (21.0%) |                0 |                             0 |                          0 |                      0 |
 
 Before review round 1 the deterministic arms skipped 62 (P1) and 180 (P2) prompts. The fixes
 cost 4 and 13: refspec-less and `HEAD` pushes now ask because the real history does not record
