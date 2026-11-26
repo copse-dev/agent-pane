@@ -1,8 +1,6 @@
 import * as esbuild from 'esbuild'
 import { execSync, spawnSync } from 'node:child_process'
 import {
-  accessSync,
-  cpSync,
   copyFileSync,
   mkdirSync,
   readdirSync,
@@ -11,6 +9,10 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
+// Directory trees are copied with the async `cp`: Node's native recursive
+// `cpSync` fails with EACCES on Apple container's virtiofs shares, where
+// Copse Reviewer's cells build a checkout, while `cp` copies the same tree.
+import { cp } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { copyMonacoWorkers, pointHtmlAtMonacoBase } from './copy-monaco-workers.mts'
@@ -20,6 +22,7 @@ import {
   generateApiProtocol,
   serializeApiProtocol,
 } from './lib/api-protocol.mts'
+import { copyOptionalBinaries } from './lib/copy-optional-binaries.mts'
 import { markTreeNoindex } from './lib/noindex.mts'
 import { STANDALONE_MAIN_BUNDLES } from './main-bundles.mts'
 import { MAIN_EXTERNALS, MAIN_LOG_OVERRIDE } from './main-externals.mts'
@@ -345,7 +348,7 @@ copyFileSync('assets/brand-mark.svg', `${rendererOutDir}/brand-mark.svg`)
 copyFileSync('assets/cursor-mark.svg', `${rendererOutDir}/cursor-mark.svg`)
 // Official sign-in asset: https://developers.openai.com/assets/siwc/chatgpt-logo-white.svg
 copyFileSync('assets/chatgpt-logo-white.svg', `${rendererOutDir}/chatgpt-logo-white.svg`)
-cpSync('src/renderer/icon-previews', `${rendererOutDir}/icon-previews`, { recursive: true })
+await cp('src/renderer/icon-previews', `${rendererOutDir}/icon-previews`, { recursive: true })
 
 // Monaco's ESM `vs/` tree is ~34MB of small files, and it is identical for every
 // build pinned to the same monaco-editor version. The shipped app carries its
@@ -358,13 +361,13 @@ cpSync('src/renderer/icon-previews', `${rendererOutDir}/icon-previews`, { recurs
 // packaging byte-identical.
 const monacoBaseUrl = isDemo ? (process.env['MONACO_BASE_URL'] ?? '').trim() : ''
 if (monacoBaseUrl === '') {
-  copyMonacoWorkers(rendererOutDir)
+  await copyMonacoWorkers(rendererOutDir)
 } else {
   console.log(`[build] Monaco served from ${monacoBaseUrl} — not copying the vs/ tree`)
   const indexPath = `${rendererOutDir}/index.html`
   writeFileSync(indexPath, pointHtmlAtMonacoBase(readFileSync(indexPath, 'utf8'), monacoBaseUrl))
 }
-cpSync('node_modules/vscode-material-icons/generated/icons', `${rendererOutDir}/material-icons`, {
+await cp('node_modules/vscode-material-icons/generated/icons', `${rendererOutDir}/material-icons`, {
   recursive: true,
 })
 
@@ -373,7 +376,7 @@ if (isDemo) {
   // Browser panel reads these rather than requiring a model (or reconstructing
   // a site during each static build), and the directory is independently usable
   // as a plain website at /sites/cupcakes/.
-  cpSync('src/shared/demo-sites', `${rendererOutDir}/sites`, { recursive: true })
+  await cp('src/shared/demo-sites', `${rendererOutDir}/sites`, { recursive: true })
   await writeDemoScenarioManifest(`${rendererOutDir}/scenarios.json`)
   // The demo is published under copse.dev/demo/ — as /demo/main/, /demo/release/
   // and a /demo/pr-<n>/ per open PR — so keep every page of it out of search
@@ -403,11 +406,11 @@ if (isDemo) {
   process.exit(0)
 }
 
-cpSync('assets', 'dist/assets', { recursive: true })
-cpSync('src/main/services/simulator-desktop/native', 'dist/resources/apple-simulator', {
+await cp('assets', 'dist/assets', { recursive: true })
+await cp('src/main/services/simulator-desktop/native', 'dist/resources/apple-simulator', {
   recursive: true,
 })
-cpSync('src/main/services/desktop-control/native', 'dist/resources/desktop-control', {
+await cp('src/main/services/desktop-control/native', 'dist/resources/desktop-control', {
   recursive: true,
 })
 buildProcessMemoryHelper()
@@ -423,32 +426,25 @@ writeFileSync(
 )
 console.log(`[build] wrote ${API_PROTOCOL_SCHEMA_BUILD_PATH}`)
 
-const bundledGortex = resolve('vendor/gortex', bundledGortexName)
-try {
-  accessSync(bundledGortex)
-  // Dereference so a worktree symlink into ~/.copse/cache/gortex becomes a
-  // real binary inside the packaged app (symlinks would escape the bundle).
-  cpSync('vendor/gortex', 'dist/resources/gortex', { recursive: true, dereference: true })
-} catch {
-  // Optional — postinstall may be skipped on unsupported platforms.
-}
+// Optional — postinstall may be skipped on unsupported platforms.
+await copyOptionalBinaries(
+  'vendor/gortex',
+  resolve('vendor/gortex', bundledGortexName),
+  'dist/resources/gortex',
+)
 
-cpSync(BUNDLED_CURSOR_SKILLS_VENDOR_DIR, 'dist/resources/bundled-cursor-skills', {
+await cp(BUNDLED_CURSOR_SKILLS_VENDOR_DIR, 'dist/resources/bundled-cursor-skills', {
   recursive: true,
 })
 
-try {
-  accessSync(resolve('vendor/remote-watcher'))
-  // Static per-target binaries uploaded to SSH workspace hosts (see
-  // native/remote-watcher). Dereference for the same worktree-symlink reason
-  // as gortex above.
-  cpSync('vendor/remote-watcher', 'dist/resources/remote-watcher', {
-    recursive: true,
-    dereference: true,
-  })
-} catch {
-  // Optional — without it SSH workspaces fall back to remote file polling.
-}
+// Static per-target binaries uploaded to SSH workspace hosts (see
+// native/remote-watcher). Optional — without them SSH workspaces fall back to
+// remote file polling.
+await copyOptionalBinaries(
+  'vendor/remote-watcher',
+  resolve('vendor/remote-watcher'),
+  'dist/resources/remote-watcher',
+)
 
 // Last of the shipped inputs: the licence report reads every bundle's metafile
 // and fails the build if any shipped component lacks its licence text.

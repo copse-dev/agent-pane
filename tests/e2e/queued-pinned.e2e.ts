@@ -79,7 +79,7 @@ describe('queued chats stay pinned to the bottom', function () {
 
     const queuedItems = await $$('.conversation-queued .msg-queued').getElements()
     expect(queuedItems).toHaveLength(2)
-    await expect($('.conversation-queued .message-queued-badge')).toHaveText('QUEUED')
+    await expect($('.conversation-queued .message-queued-badge')).toHaveText('Queued')
 
     // Scroll the message list to the top — the pinned queue panel must remain visible.
     await browser.execute(() => {

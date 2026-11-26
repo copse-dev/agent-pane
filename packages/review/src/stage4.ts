@@ -34,6 +34,8 @@ const CHALLENGE_MAX_STEPS = 16
 export interface VerifierRole {
   readonly model: string
   readonly provider: LLMProvider
+  /** The model's context window; see `TurnOptions.contextTokens`. */
+  readonly contextTokens?: number | undefined
 }
 
 export interface Stage4Options extends ReviewerToolHost {
@@ -242,6 +244,7 @@ export async function verifyFindings(options: Stage4Options): Promise<Stage4Resu
       const turn = await runTurn({
         provider: options.reproducer.provider,
         model: options.reproducer.model,
+        contextTokens: options.reproducer.contextTokens,
         systemPrompt: REPRODUCER_SYSTEM,
         userPrompt: [
           describeFinding(current, options.context),
@@ -296,6 +299,7 @@ export async function verifyFindings(options: Stage4Options): Promise<Stage4Resu
       const turn = await runTurn({
         provider: options.challenger.provider,
         model: options.challenger.model,
+        contextTokens: options.challenger.contextTokens,
         systemPrompt: CHALLENGER_SYSTEM,
         userPrompt: [
           describeFinding(current, options.context),
