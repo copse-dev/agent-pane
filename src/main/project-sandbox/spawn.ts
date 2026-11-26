@@ -14,6 +14,7 @@ import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import {
   portBindingSandboxOverlay,
   readAllowedSandboxOverlay,
+  withLoopbackPorts,
   withoutCheckoutWrites,
   workspaceSandboxOverlay,
 } from './config.ts'
@@ -200,6 +201,13 @@ export async function spawnShellInProjectSandbox(
      * contained way to honour that request, so it fails instead.
      */
     readonlyCheckout?: boolean
+    /**
+     * Loopback ports this contained command may connect to (never bind): the
+     * thread's own sandboxed dev servers, from `threadLoopbackPorts`. Connect
+     * rules live in this spawn's own seatbelt profile, so unlike a proxy
+     * allow-list they cannot leak to any other running command.
+     */
+    loopbackPorts?: readonly number[]
     executionTarget?: ExecutionTarget
   } & Pick<SpawnOptions, 'stdio'>,
 ): Promise<ChildProcess> {
@@ -226,9 +234,10 @@ export async function spawnShellInProjectSandbox(
           readGrantTargets.length > 0
             ? readAllowedSandboxOverlay(opts.cwd, readGrantTargets)
             : workspaceSandboxOverlay(opts.cwd)
-        return {
-          config: opts.readonlyCheckout ? withoutCheckoutWrites(baseConfig, opts.cwd) : baseConfig,
-        }
+        const config = opts.readonlyCheckout
+          ? withoutCheckoutWrites(baseConfig, opts.cwd)
+          : baseConfig
+        return { config: withLoopbackPorts(config, opts.loopbackPorts ?? []) }
       },
     },
   })

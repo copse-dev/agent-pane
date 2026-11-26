@@ -11,8 +11,21 @@ index 185a9bd6a092041c24190a9216d2aa88ef910dd4..7e3226fedbdfd6997be425178c12574e
          ];
          // Duplicate deny entries must be collapsed: a duplicate
          // --ro-bind /dev/null <dest> hits a char device on the second pass and
+diff --git a/dist/sandbox/macos-sandbox-utils.d.ts b/dist/sandbox/macos-sandbox-utils.d.ts
+index 93b1106305aa7ffb37f04867cd343f94ff411350..d48cac67c75e6cfae233a08ea1536425237ae14d 100644
+--- a/dist/sandbox/macos-sandbox-utils.d.ts
++++ b/dist/sandbox/macos-sandbox-utils.d.ts
+@@ -23,6 +23,8 @@ export interface MacOSSandboxParams {
+     allowUnixSockets?: string[];
+     allowAllUnixSockets?: boolean;
+     allowLocalBinding?: boolean;
++    /** PATCH (copse-dev/agent-pane): connect-only loopback ports. */
++    allowLoopbackPorts?: number[];
+     allowMachLookup?: string[];
+     readConfig: FsReadRestrictionConfig | undefined;
+     writeConfig: FsWriteRestrictionConfig | undefined;
 diff --git a/dist/sandbox/macos-sandbox-utils.js b/dist/sandbox/macos-sandbox-utils.js
-index e6d9fb687115a70c6d1dd538e01945c68e324810..d4ffc48ec0c0eb6f4236e7d5dcd3422ff3206cd6 100644
+index e6d9fb687115a70c6d1dd538e01945c68e324810..d697e6b7f3978d48c5d00c3ebdcbb086e79addee 100644
 --- a/dist/sandbox/macos-sandbox-utils.js
 +++ b/dist/sandbox/macos-sandbox-utils.js
 @@ -433,7 +433,7 @@ function generateWriteRules(config, logTag, allowGitConfig = false) {
@@ -24,11 +37,90 @@ index e6d9fb687115a70c6d1dd538e01945c68e324810..d4ffc48ec0c0eb6f4236e7d5dcd3422f
      ];
      const denyFilters = new Set();
      for (const pathPattern of denyPaths) {
+@@ -447,7 +447,7 @@ function generateWriteRules(config, logTag, allowGitConfig = false) {
+ /**
+  * Generate complete sandbox profile
+  */
+-function generateSandboxProfile({ readConfig, writeConfig, httpProxyPort, socksProxyPort, needsNetworkRestriction, allowUnixSockets, allowAllUnixSockets, allowLocalBinding, allowMachLookup, allowPty, allowGitConfig = false, enableWeakerNetworkIsolation = false, allowAppleEvents = false, logTag, }) {
++function generateSandboxProfile({ readConfig, writeConfig, httpProxyPort, socksProxyPort, needsNetworkRestriction, allowUnixSockets, allowAllUnixSockets, allowLocalBinding, allowLoopbackPorts, allowMachLookup, allowPty, allowGitConfig = false, enableWeakerNetworkIsolation = false, allowAppleEvents = false, logTag, }) {
+     const profile = [
+         '(version 1)',
+         `(deny default (with message "${logTag}"))`,
+@@ -650,6 +650,16 @@ function generateSandboxProfile({ readConfig, writeConfig, httpProxyPort, socksP
+             profile.push('(allow network-inbound (local ip "*:*"))');
+             profile.push('(allow network-outbound (remote ip "localhost:*"))');
+         }
++        // PATCH (copse-dev/agent-pane): connect-only access to named loopback
++        // ports, for a contained command that talks to a dev server the host
++        // already let another process bind. No bind, no inbound, no other port.
++        if (!allowLocalBinding && Array.isArray(allowLoopbackPorts)) {
++            for (const port of allowLoopbackPorts) {
++                if (Number.isInteger(port) && port > 0 && port < 65536) {
++                    profile.push(`(allow network-outbound (remote ip "localhost:${port}"))`);
++                }
++            }
++        }
+         // Unix domain sockets for local IPC (SSH agent, Docker, Gradle, etc.)
+         // Three separate operations must be allowed:
+         // 1. system-socket: socket(AF_UNIX, ...) syscall — creates the socket fd (no path context)
+@@ -740,7 +750,7 @@ function escapePath(pathStr) {
+  * Wrap command with macOS sandbox
+  */
+ export function wrapCommandWithSandboxMacOS(params) {
+-    const { command, commandId, needsNetworkRestriction, httpProxyPort, socksProxyPort, proxyAuthToken, caCertPath, javaAgentJarPath, allowUnixSockets, allowAllUnixSockets, allowLocalBinding, allowMachLookup, readConfig: readConfigIn, writeConfig, unsetEnvVars, setEnvVars, maskedFileBinds, allowPty, allowGitConfig = false, gitSafeDirectories, enableWeakerNetworkIsolation = false, allowAppleEvents = false, binShell, } = params;
++    const { command, commandId, needsNetworkRestriction, httpProxyPort, socksProxyPort, proxyAuthToken, caCertPath, javaAgentJarPath, allowUnixSockets, allowAllUnixSockets, allowLocalBinding, allowLoopbackPorts, allowMachLookup, readConfig: readConfigIn, writeConfig, unsetEnvVars, setEnvVars, maskedFileBinds, allowPty, allowGitConfig = false, gitSafeDirectories, enableWeakerNetworkIsolation = false, allowAppleEvents = false, binShell, } = params;
+     // SBPL cannot redirect a read to different bytes, so whole-file masking
+     // degrades to read-deny on macOS: the sandboxed process gets EPERM
+     // instead of the sentinel. The DYLD interposer (a later step) lifts
+@@ -788,6 +798,7 @@ export function wrapCommandWithSandboxMacOS(params) {
+         allowUnixSockets,
+         allowAllUnixSockets,
+         allowLocalBinding,
++        allowLoopbackPorts,
+         allowMachLookup,
+         allowPty,
+         allowGitConfig,
+@@ -817,6 +828,7 @@ export function wrapCommandWithSandboxMacOS(params) {
+     // dropped so the deny holds.
+     const loopbackReachable = needsNetworkRestriction &&
+         (allowLocalBinding ||
++            (Array.isArray(allowLoopbackPorts) && allowLoopbackPorts.length > 0) ||
+             httpProxyPort !== undefined ||
+             socksProxyPort !== undefined);
+     const javaToolOptions = buildJavaToolOptions({
+diff --git a/dist/sandbox/sandbox-config.d.ts b/dist/sandbox/sandbox-config.d.ts
+index 3f3ed8efb9f3cbd965d2d35f21faa04130ca1aeb..53d4da876af27a3d9cfcf32d88869270545702ea 100644
+--- a/dist/sandbox/sandbox-config.d.ts
++++ b/dist/sandbox/sandbox-config.d.ts
+@@ -1666,7 +1666,11 @@ export declare const SandboxRuntimeConfigSchema: z.ZodEffects<z.ZodObject<{
+ }>;
+ export type MitmProxyConfig = z.infer<typeof MitmProxyConfigSchema>;
+ export type ParentProxyConfig = z.infer<typeof ParentProxyConfigSchema>;
+-export type NetworkConfig = z.infer<typeof NetworkConfigSchema>;
++/** PATCH (copse-dev/agent-pane): `allowLoopbackPorts` is a per-spawn (customConfig)
++ * macOS option: connect-only seatbelt access to these loopback ports. */
++export type NetworkConfig = z.infer<typeof NetworkConfigSchema> & {
++    allowLoopbackPorts?: number[];
++};
+ export type FilesystemConfig = z.infer<typeof FilesystemConfigSchema>;
+ export type CredentialMode = z.infer<typeof credentialModeSchema>;
+ export type CredentialFileConfig = z.infer<typeof CredentialFileConfigSchema>;
+@@ -1680,6 +1684,8 @@ export type GitConfig = z.infer<typeof GitConfigSchema>;
+ export type SeccompConfig = z.infer<typeof SeccompConfigSchema>;
+ export type SrtWinConfig = z.infer<typeof SrtWinConfigSchema>;
+ export type WindowsConfig = z.infer<typeof WindowsConfigSchema>;
+-export type SandboxRuntimeConfig = z.infer<typeof SandboxRuntimeConfigSchema>;
++export type SandboxRuntimeConfig = Omit<z.infer<typeof SandboxRuntimeConfigSchema>, 'network'> & {
++    network: NetworkConfig;
++};
+ export {};
+ //# sourceMappingURL=sandbox-config.d.ts.map
+\ No newline at end of file
 diff --git a/dist/sandbox/sandbox-manager.js b/dist/sandbox/sandbox-manager.js
-index 3a2d9c8abd01fefff36edea0cd76e9c31a3ed411..7e422b7a159da0ae00902cefcd5d38ac501c223c 100644
+index 3a2d9c8abd01fefff36edea0cd76e9c31a3ed411..a8d71112a9e394aad92ad0a0677758d54f97f5db 100644
 --- a/dist/sandbox/sandbox-manager.js
 +++ b/dist/sandbox/sandbox-manager.js
-@@ -1293,7 +1293,7 @@ async function wrapWithSandbox(command, binShell, customConfig, abortSignal, opt
+@@ -1293,15 +1293,16 @@ async function wrapWithSandbox(command, binShell, customConfig, abortSignal, opt
                  unsetEnvVars: credentialRestrictions.unsetEnvVars,
                  setEnvVars: credentialRestrictions.setEnvVars,
                  maskedFileBinds: credentialRestrictions.maskedFileBinds,
@@ -36,8 +128,9 @@ index 3a2d9c8abd01fefff36edea0cd76e9c31a3ed411..7e422b7a159da0ae00902cefcd5d38ac
 +                allowUnixSockets: customConfig?.network?.allowUnixSockets ?? getAllowUnixSockets(),
                  allowAllUnixSockets: getAllowAllUnixSockets(),
                  allowLocalBinding: getAllowLocalBinding(),
++                allowLoopbackPorts: customConfig?.network?.allowLoopbackPorts,
                  allowMachLookup: getAllowMachLookup(),
-@@ -1301,7 +1301,7 @@ async function wrapWithSandbox(command, binShell, customConfig, abortSignal, opt
+                 ignoreViolations: getIgnoreViolations(),
                  allowPty,
                  allowGitConfig: getAllowGitConfig(),
                  gitSafeDirectories,

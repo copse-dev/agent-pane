@@ -497,6 +497,25 @@ export function containedSandboxNetworkConfig(): NonNullable<SandboxRuntimeConfi
  * `customConfig`. On Linux it names bubblewrap and socat by absolute path
  * ({@link linuxSandboxBinaryPaths}).
  */
+/**
+ * Let one contained spawn connect to named loopback ports, and nothing else on
+ * the network. The patched runtime turns `allowLoopbackPorts` into connect-only
+ * seatbelt rules for exactly these ports (no bind, no inbound, no other port)
+ * on macOS; elsewhere the field is ignored and the command stays offline, so a
+ * blocked request escalates as before. Ports outside 1–65535 are dropped.
+ */
+export function withLoopbackPorts(
+  config: Partial<SandboxRuntimeConfig>,
+  ports: readonly number[],
+): Partial<SandboxRuntimeConfig> {
+  const valid = [...new Set(ports)].filter(
+    (port) => Number.isInteger(port) && port > 0 && port < 65536,
+  )
+  if (valid.length === 0) return config
+  const network = config.network ?? containedSandboxNetworkConfig()
+  return { ...config, network: { ...network, allowLoopbackPorts: valid } }
+}
+
 export function baseSandboxConfig(): SandboxRuntimeConfig {
   return {
     network: containedSandboxNetworkConfig(),

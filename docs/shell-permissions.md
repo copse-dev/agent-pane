@@ -490,6 +490,25 @@ while one is active, Copse pauses auto-run and names the holder in an approval p
 starting a new network-capable command. Structurally read-only
 commands do not prompt because they cannot open a network connection.
 
+### Reaching the thread's own dev server
+
+A contained `run_shell` command may connect to a loopback port when, at spawn, a listener on that
+port descends from one of the same thread's running background tasks that runs inside the project
+sandbox (`threadLoopbackPorts`). Ownership comes from the host's port table and process ancestry,
+never from a URL the task printed, and a task approved to run outside the sandbox lends no port,
+since it may hold a tunnel to anywhere. On macOS the patched ASRT turns each port into a
+connect-only seatbelt rule (`allowLoopbackPorts`) in that spawn's own profile: no bind, no inbound,
+no other port, and no change to the process-wide proxy allow-list, so no other running command
+gains access. Other platforms ignore the field and stay offline.
+
+The classifier pairs with this. A `curl`/`wget` whose every URL is `http(s)` to `localhost`,
+`127.x.x.x` or `[::1]` reports `loopback request (curl/wget)`, which is ambiguous rather than a
+hard network download, so it runs contained first. A URL held in a variable counts only when a
+literal assignment on its own line sets it. A request to a port the thread does not own is blocked
+by the sandbox and offered as the usual outside-sandbox retry; without an OS sandbox it prompts as
+before. Substitution, wrappers (`xargs curl`, `timeout 5 curl`), userinfo, `file:` and any
+non-loopback URL keep the up-front prompt.
+
 ### Linked worktree recovery
 
 A contained command in a validated linked thread worktree may update that worktree's own Git

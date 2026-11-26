@@ -2,6 +2,7 @@ import { homedir } from 'node:os'
 import { resolve, sep } from 'node:path'
 import { parse as parseShell } from 'shell-quote'
 import { inertOperandIndexes } from './inert-operands.ts'
+import { requestsOnlyLoopback } from './loopback-requests.ts'
 import {
   CODE_INTERPRETERS,
   INLINE_CODE_FLAGS,
@@ -666,6 +667,13 @@ function tokenBasedExternalReasons(command: string): {
 const REASON_NAMED_AS_TEXT: ScopeReason =
   'names a network or code-running command only as an argument, never as the command run'
 
+/**
+ * Every `curl`/`wget` targets loopback ({@link requestsOnlyLoopback}). Ambiguous:
+ * a sandboxed platform tries it contained, where only the thread's own
+ * dev-server ports are reachable, and an unsandboxed one still asks.
+ */
+const REASON_LOOPBACK_REQUEST: ScopeReason = 'loopback request (curl/wget)'
+
 // `pnpm exec` runs an installed command, like `pnpm run`; it neither installs
 // packages nor invokes the shell's `exec` builtin. Global options may sit between
 // the two (`pnpm -s exec tsc`). Rewrite only this command head, leaving the
@@ -903,6 +911,13 @@ function collectExternalReasons(command: string): { reasons: ScopeReason[]; hasH
           continue
         }
       }
+      // A request only to this machine's loopback runs contained first: the
+      // seatbelt admits the thread's own dev-server port and blocks the rest,
+      // which then escalates like any other ambiguous command.
+      if (reason === 'network download (curl/wget)' && requestsOnlyLoopback(shellCommand)) {
+        if (!reasons.includes(REASON_LOOPBACK_REQUEST)) reasons.push(REASON_LOOPBACK_REQUEST)
+        continue
+      }
       reasons.push(reason)
       if (!ambiguous) hasHard = true
     }
@@ -1081,6 +1096,9 @@ const TEXT_TO_ACTION_HEADS: ReadonlySet<string> = new Set([
   ...CODE_INTERPRETERS,
 ])
 
+/** Every http(s) URL in a word, through to the end of the URL. */
+const HTTP_URLS = /\bhttps?:\/\/[^\s'"]*/gi
+
 /** Text no expansion can change: no variable, substitution or brace expansion. */
 const UNEXPANDED_TEXT = /^[^$`{}]*$/
 
@@ -1182,7 +1200,10 @@ function maskInertOperandPaths(command: string): string {
     const patterns = inertOperandIndexes(argv)
     argv.forEach((word, index) => {
       if (index > 0 && (printsText || patterns.has(index))) inert.push(word)
-      else live.push(word)
+      // The path of an http(s) URL names a resource on that server, not a file
+      // here, so `echo "== /api/rides"; curl http://localhost:3000/api/rides`
+      // leaves the echoed text inert. `file:` URLs and every other word count.
+      else live.push(word.replace(HTTP_URLS, ''))
     })
     return true
   }
@@ -1615,6 +1636,8 @@ export function isReplayableOpaqueLocalExecution(analysis: ShellScopeAnalysis): 
 const SCOPE_REASON_TEXT = {
   // Network reach
   'network download (curl/wget)': 'Downloads from the internet (curl/wget)',
+  'loopback request (curl/wget)':
+    'Sends a request to a server on this machine (curl/wget); allowed only to this thread’s own dev server',
   'network download (fetch)': 'Downloads from the internet (fetch)',
   'remote shell/copy (ssh/scp/rsync)': 'Connects to another machine (ssh/scp/rsync)',
   'network utility (socat/ftp/lftp)': 'Opens a network connection (socat/ftp/lftp)',

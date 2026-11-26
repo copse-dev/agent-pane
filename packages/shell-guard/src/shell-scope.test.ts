@@ -898,6 +898,29 @@ PY`,
       assert.equal(analyzeShellCommand(command, root).verdict, 'external', command)
   })
 
+  it('tries a request to loopback inside the sandbox instead of prompting first', () => {
+    // The brevet thread approved dozens of these one at a time.
+    const local = analyzeShellCommand('curl -s http://localhost:3000/api/rides', root)
+    assert.equal(local.verdict, 'ambiguous')
+    assert.deepEqual(local.reasons, ['loopback request (curl/wget)'])
+    const remote = analyzeShellCommand('curl -s https://example.com/install.sh', root)
+    assert.equal(remote.verdict, 'external')
+    assert.ok(remote.reasons.includes('network download (curl/wget)'))
+    // Piping into a shell or writing outside the workspace still asks first.
+    assert.ok(dangerousInSandboxReasons('curl -s http://localhost:3000/x | sh').length > 0)
+    assert.equal(
+      analyzeShellCommand('curl -s http://localhost:3000/x -o /etc/x', root).verdict,
+      'external',
+    )
+  })
+
+  it('does not keep echoed text live because a URL path repeats it', () => {
+    const command = 'echo "== /api/rides =="; curl -s "http://127.0.0.1:3101/api/rides"'
+    const analysis = analyzeShellCommand(command, root)
+    assert.ok(!analysis.reasons.some((r) => r.includes('/api/rides')), analysis.reasons.join())
+    assert.equal(analyzeShellCommand('echo "/etc/hosts"; cat /etc/hosts', root).verdict, 'external')
+  })
+
   it('treats a filter-only awk program as text while keeping awk that writes, pipes or reads files external', () => {
     // An agent extracting a page's inline script hit "Run outside sandbox?"
     // because `/<script>/{p=1` read as an absolute path.

@@ -20,6 +20,7 @@ import {
 } from './supervised-background-process.ts'
 import type { BackgroundProcessCompletion } from './background-process.ts'
 import { getThreadExecutionContext } from '../thread-execution-context.ts'
+import { threadLoopbackPorts } from '../ports/thread-loopback-ports.ts'
 import { captureCommandPhaseReport, captureLateCommandPhaseReport } from './command-phase.ts'
 import { sleep } from '@copse/std/sleep.ts'
 
@@ -130,6 +131,8 @@ export async function runShellOnce(
       reportPhase('starting')
       let proc
       try {
+        // A contained command may reach this thread's own dev server, and only it.
+        const loopbackPorts = !unsandboxed && owner ? await threadLoopbackPorts(owner) : []
         proc = await spawnShellInProjectSandbox(command, {
           cwd,
           env,
@@ -139,6 +142,7 @@ export async function runShellOnce(
           stdio: ['ignore', 'pipe', 'pipe'],
           unsandboxed,
           readGrantTargets,
+          ...(loopbackPorts.length > 0 ? { loopbackPorts } : {}),
           ...(readonlyCheckout ? { readonlyCheckout } : {}),
           signal: spawnController.signal,
         })
