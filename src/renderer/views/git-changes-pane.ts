@@ -40,7 +40,7 @@ import { scaledEditorFontSize } from '@shared/ui-scale.ts'
 import { isImageDiff, renderImageDiff } from './git-image-diff.ts'
 import { materialFolderIconUrl } from '../icons/material-file-icons.ts'
 import { imageMimeType, isRasterImagePath } from '@shared/fs/image-path.ts'
-import { selectRightPanelMode } from '../controller/panels.ts'
+import { selectRightPanelMode, rightPanelShows } from '../controller/panels.ts'
 import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 import { afterPendingThreadPersistence } from '../controller/persistence.ts'
 
@@ -117,8 +117,7 @@ function isChangeSelection(seed: unknown): seed is ChangeSelection {
 }
 
 function changesModeActive(store: AppStore): boolean {
-  const { filesPaneOpen, rightPanelMode } = store.getState()
-  return filesPaneOpen && rightPanelMode === 'changes'
+  return rightPanelShows(store.getState(), 'changes')
 }
 
 function getFirstGitChange(status: GitStatusResult): { path: string; staged: boolean } | null {
