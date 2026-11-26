@@ -213,13 +213,74 @@ function sedScriptIndexes(argv: readonly string[]): ReadonlySet<number> {
   return scripts
 }
 
+const AWK_HEADS: ReadonlySet<string> = new Set(['awk', 'gawk', 'mawk', 'nawk'])
+
+/**
+ * A regex literal where awk reads one: at the start of the program or after an
+ * operator, never after an operand (`a / b / c` is division). A slash, newline
+ * or unescaped `]` cannot end the scan early: `[/]` is a bracket expression.
+ */
+const AWK_REGEX_LITERAL = /(^|[\s{}();,!~&|?:])\/(?:\\.|\[(?:\\.|[^\]\n])*\]|[^/\\\n[])*\//g
+const AWK_STRING_LITERAL = /"(?:\\.|[^"\\\n])*"/g
+
+/**
+ * Whatever in an awk program can open a file, run a command or change a
+ * variable a later file operand reads: output redirection and pipes (`print >`,
+ * `| "cmd"`), `getline`, `system`, `close`, `fflush`, gawk's `@include` and
+ * `@load` directives, and assignment to `ARGV`/`ARGC`, which re-points the
+ * input files.
+ */
+const AWK_PROGRAM_ACTIVE = /[<>|@]|\b(?:getline|system|close|fflush|ARGV|ARGC)\b/
+
+/**
+ * Whether an awk program only filters its input. Regex and string literals are
+ * removed first, so `/<\/script>/` is a pattern, not a redirect; what is left
+ * must name none of {@link AWK_PROGRAM_ACTIVE}. Fails closed: an unrecognised
+ * literal stays in the text, and any `<`, `>` or `|` left there refuses.
+ */
+function isFilterOnlyAwkProgram(program: string): boolean {
+  const code = program
+    .replace(AWK_STRING_LITERAL, '""')
+    .replace(AWK_REGEX_LITERAL, (_match, lead: string) => `${lead}//`)
+  return !AWK_PROGRAM_ACTIVE.test(code)
+}
+
+/**
+ * The program operand of an awk that only filters, so
+ * `awk '/^import/' src/a.ts` reads `src/a.ts`, not a file called `/^import/`.
+ * Allow-list, failing closed: `-F` and `-v` (whose values stay live) are the
+ * only flags understood, `-f` (program from a file) and every other flag find
+ * nothing, and a program that can write, pipe or read beyond its operands is
+ * never inert.
+ */
+function awkProgramIndexes(argv: readonly string[]): ReadonlySet<number> {
+  for (let i = 1; i < argv.length; i++) {
+    const arg = argv[i] ?? ''
+    if (arg === '--') {
+      const program = argv[i + 1]
+      return program !== undefined && isFilterOnlyAwkProgram(program) ? new Set([i + 1]) : NONE
+    }
+    if (!arg.startsWith('-') || arg === '-') {
+      return isFilterOnlyAwkProgram(arg) ? new Set([i]) : NONE
+    }
+    if (arg === '-F' || arg === '-v') {
+      i++
+      continue
+    }
+    if (arg.startsWith('-F') || arg.startsWith('-v')) continue
+    return NONE
+  }
+  return NONE
+}
+
 /**
  * Indexes into `argv` of the words its program treats purely as a search
  * pattern or a filter script. Empty when the head is not a recognised search
- * tool or read-only `sed`, or any flag is not understood.
+ * tool, read-only `sed` or filter-only awk, or any flag is not understood.
  */
 export function inertOperandIndexes(argv: readonly string[]): ReadonlySet<number> {
   if (commandName(argv[0]) === 'sed') return sedScriptIndexes(argv)
+  if (AWK_HEADS.has(commandName(argv[0]))) return awkProgramIndexes(argv)
   const flags = SEARCH_TOOLS.get(commandName(argv[0]))
   if (!flags) return NONE
   const explicitPatterns = new Set<number>()

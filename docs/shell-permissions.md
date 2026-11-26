@@ -1402,10 +1402,15 @@ Text that names no file is not a path. The pattern of a `grep`/`rg` search and t
 `grep -v "//"` is not a read of the filesystem root and `echo "/tmp/x"` does not leave the
 workspace. Recognition is an allow-list (`inert-operands.ts`): one unknown search flag, any
 substitution, or a head that turns text into commands or paths (`xargs`, a shell, an interpreter)
-disables it, and a masked path that appears in any other word stays visible. A `sed` script is
+disables it, and a masked path that appears in any other word stays visible. `node --check FILE`
+(or `-c`) only parses its file, so it does not disable masking; any other `node` run does. A `sed` script is
 masked only when the whole `sed` is a read-only filter (no `-i`, script file, or `r`/`w`/`e`
 command), so `sed -n '/^\/api\//p' a.ts` reads `a.ts`; an escaped path is kept when any other word
-holds it with or without its escapes. `awk` scripts are not masked: they can read and write files.
+holds it with or without its escapes. An `awk` program is masked only when it is a filter: no
+`-f` program file, no flag other than `-F`/`-v`, and, outside its regex and string literals, no
+`<`, `>`, `|`, `@` directive, `getline`, `system`, `close`, `fflush`, `ARGV` or `ARGC`. So
+`awk '/<script>/{p=1;next}/<\/script>/{p=0}p' page.html` reads `page.html`, while
+`awk '{ print > "/etc/x" }' a` still leaves the workspace.
 A `../` in a pattern (`rg "from '../lib'" src`) is text only when no other word holds `..` and the
 command has no `$` expansion, so `rg '../x' ../other` still leaves the workspace. A program name in
 a pattern (`rg 'close|open' src`) is not that program running: it is ambiguous and runs contained.

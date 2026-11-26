@@ -1128,6 +1128,22 @@ function unescapeShellText(text: string): string {
 }
 
 /**
+ * `node --check FILE` (or `-c`) parses one file and exits without running it,
+ * so it turns no text into an action. Agents end extract-and-verify lines with
+ * it (`awk '/<script>/…' page.html > "$f" && node --check "$f"`), and treating
+ * it as an interpreter switched inert-text masking off for the whole line. Any
+ * other flag or operand count is an ordinary interpreter run.
+ */
+function isNodeSyntaxCheck(argv: readonly string[]): boolean {
+  return (
+    argv.length === 3 &&
+    commandName(argv[0]) === 'node' &&
+    (argv[1] === '--check' || argv[1] === '-c') &&
+    !(argv[2] ?? '-').startsWith('-')
+  )
+}
+
+/**
  * Blank out absolute paths that appear only as text a program never opens: the
  * pattern of a `grep`/`rg` search ({@link inertOperandIndexes}) and the operands
  * of `echo`/`printf` whose output reaches the terminal rather than another
@@ -1141,7 +1157,8 @@ function unescapeShellText(text: string): string {
  * its escapes. A `../` in inert text is masked only when no live word holds `..`
  * at all, so `rg '../x' ../other` still climbs. Substitution, backticks,
  * process substitution, and any head that turns text into commands or paths
- * (`xargs`, a shell, an interpreter) disable masking for the whole line.
+ * (`xargs`, a shell, an interpreter other than a `node --check` syntax check)
+ * disable masking for the whole line.
  */
 function maskInertOperandPaths(command: string): string {
   if (/`|\$\(|[<>]\(/.test(command)) return command
@@ -1160,7 +1177,7 @@ function maskInertOperandPaths(command: string): string {
     words = []
     if (argv.length === 0) return true
     const head = commandName(argv[0])
-    if (TEXT_TO_ACTION_HEADS.has(head)) return false
+    if (TEXT_TO_ACTION_HEADS.has(head) && !isNodeSyntaxCheck(argv)) return false
     const printsText = (head === 'echo' || head === 'printf') && !pipedOnward
     const patterns = inertOperandIndexes(argv)
     argv.forEach((word, index) => {
