@@ -200,6 +200,9 @@ FEATURE_PATTERNS = {
 }
 
 
+USE_VERDICTS = True
+
+
 def structured_features(row: dict) -> list[float]:
     import re
 
@@ -207,6 +210,8 @@ def structured_features(row: dict) -> list[float]:
     feats = [1.0 if re.search(p, text) else 0.0 for p in FEATURE_PATTERNS.values()]
     segments = [s for s in re.split(r"&&|\|\||;|\n|\|", text) if s.strip()]
     feats += [len(segments), min(len(text), 4000) / 100.0]
+    if not USE_VERDICTS:
+        return feats
     feats += [1.0 if row.get("harm") == v else 0.0 for v in ("allow", "prompt", "deny")]
     feats += [1.0 if row.get("scope") == v else 0.0 for v in ("sandbox", "ambiguous", "external")]
     feats += [1.0 if row.get("auto") == v else 0.0 for v in ("read", "local-write", "remote-write")]
@@ -293,10 +298,13 @@ def main(argv=None):
     ap.add_argument("--max-len", type=int, default=160)
     ap.add_argument("--hf-sample", type=int, default=12000)
     ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--no-verdicts", action="store_true", help="tree model sees command shape only, not the gate's verdicts")
     ap.add_argument("--save", action="store_true", help="write the trained gbdt model to --out")
     ap.add_argument("--device", default="cpu", help="cpu, or mps for the Apple GPU (host runs only)")
     ap.add_argument("--out", type=Path, required=True)
     args = ap.parse_args(argv)
+    global USE_VERDICTS
+    USE_VERDICTS = not args.no_verdicts
     args.out.mkdir(parents=True, exist_ok=True)
     rng = random.Random(args.seed)
 
