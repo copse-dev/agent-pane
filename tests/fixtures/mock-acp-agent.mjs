@@ -74,8 +74,7 @@ import {
   RequestError,
 } from '@agentclientprotocol/sdk/unstable'
 import { Writable } from 'node:stream'
-import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { mountStdioServers } from './acp-mount-stdio-servers.mjs'
 import { copyFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 
@@ -136,31 +135,6 @@ async function listTools(servers) {
   }
 }
 
-/** Start each stdio server as an agent's MCP client does, list its tools, and stop it. */
-async function mountStdioServers(servers) {
-  for (const server of servers) {
-    const client = new Client({ name: 'mock-acp-agent', version: '0' })
-    try {
-      await client.connect(
-        new StdioClientTransport({
-          command: server.command,
-          args: server.args ?? [],
-          env: {
-            ...process.env,
-            ...Object.fromEntries((server.env ?? []).map(({ name, value }) => [name, value])),
-          },
-          stderr: 'ignore',
-        }),
-      )
-      await client.listTools()
-    } catch {
-      // An agent whose MCP server fails keeps going without its tools.
-    } finally {
-      await client.close().catch(() => {})
-    }
-  }
-}
-
 let nextSessionId = 0
 /** The http MCP servers each session was offered, by session id. */
 const offeredServers = new Map()
@@ -187,7 +161,7 @@ agent({ name: 'mock-acp-agent' })
     sessionCwds.set(sessionId, ctx.params.cwd)
     if (flags.has('--list-mcp-tools')) await listTools(servers)
     if (!flags.has('--mcp-http')) {
-      await mountStdioServers((ctx.params.mcpServers ?? []).filter((server) => !server.type))
+      await mountStdioServers(ctx.params.mcpServers, 'mock-acp-agent')
     }
     return { sessionId }
   })
