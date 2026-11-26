@@ -160,4 +160,45 @@ describe('provider selection', () => {
     assert.ok(otherRequest !== null && typeof otherRequest === 'object')
     assert.equal(Reflect.get(otherRequest, 'max_tokens'), undefined)
   })
+
+  it('names the local server behind a local route and sends its reasoning effort', async (t) => {
+    const requests: unknown[] = []
+    t.mock.method(globalThis, 'fetch', async (_input: unknown, init?: RequestInit) => {
+      if (typeof init?.body !== 'string') throw new Error('expected a JSON request body')
+      requests.push(JSON.parse(init.body))
+      return new Response(
+        'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+        { headers: { 'Content-Type': 'text/event-stream' } },
+      )
+    })
+    const local = selectProvider(
+      {
+        kind: 'openai-compatible',
+        model: 'glm-local',
+        baseUrl: 'http://127.0.0.1:8080/v1',
+        params: { reasoning: 'high' },
+      },
+      { COPSE_REVIEW_API_KEY: 'local-key' },
+    )
+    assert.deepEqual(local.endpoint, {
+      kind: 'openai-compatible',
+      baseUrl: 'http://127.0.0.1:8080/v1',
+      apiKey: 'local-key',
+    })
+    assert.deepEqual(local.params, { reasoning: 'high' })
+    for await (const _ of local.provider.stream([{ role: 'user', content: 'hi' }], [])) {
+      // Drain one request through the real transport.
+    }
+    assert.equal(requests.length, 1)
+    const body = requests[0]
+    assert.ok(body !== null && typeof body === 'object')
+    assert.equal(Reflect.get(body, 'reasoning_effort'), 'high')
+    const studio = selectProvider({ kind: 'lmstudio', model: 'qwen' }, {})
+    assert.equal(studio.endpoint?.baseUrl, 'http://localhost:1234/v1')
+    const hosted = selectProvider(
+      { kind: 'anthropic', model: 'claude-sonnet-5' },
+      { ANTHROPIC_API_KEY: 'sk-ant-test-key-value' },
+    )
+    assert.equal(hosted.endpoint, undefined)
+  })
 })

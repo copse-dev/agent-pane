@@ -1,6 +1,6 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { openPullRequest } from './panels.ts'
+import { openPullRequest, rightPanelSplitOf } from './panels.ts'
 
 /**
  * Follow a freshly opened pull request from the Changes panel to the PRs panel.
@@ -17,6 +17,9 @@ import { openPullRequest } from './panels.ts'
  *     is something the user chose independently of the PR, so none is replaced.
  *   - Open only. A closed panel is a deliberate choice too; a background PR is
  *     not reason enough to reopen it over chat.
+ *   - Unsplit only. In a split, the bottom pane is one the user chose to keep
+ *     beside the diff, and PRs can't share the panel, so following would throw
+ *     that pane away. The sidebar PR chip is the notification instead.
  *   - The active thread only. A background thread opening a PR must not yank the
  *     panel away from the work in front of the user; its PR chip in the sidebar
  *     is the notification it gets.
@@ -26,6 +29,7 @@ export function attachPrPanelFollow(store: AppStore, api: ApiClient): () => void
     const { activeProjectId, activeThreadId, filesPaneOpen, rightPanelMode } = store.getState()
     if (projectId !== activeProjectId || threadId !== activeThreadId) return
     if (!filesPaneOpen || rightPanelMode !== 'changes') return
+    if (rightPanelSplitOf(store.getState()) !== null) return
     openPullRequest(store, ref)
   })
 }

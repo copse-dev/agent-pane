@@ -38,6 +38,47 @@ describe('checker failure classification', () => {
     }
   })
 
+  it('does not call a test run that reported its own failures one that could not start', () => {
+    const missingTool = 'Error: spawn bwrap ENOENT\n    at ChildProcess._handle.onexit'
+    assert.equal(
+      inconclusiveCheckFailure({ ...failed, kind: 'test', output: missingTool })?.kind,
+      'setup',
+    )
+    assert.equal(
+      inconclusiveCheckFailure({
+        ...failed,
+        kind: 'test',
+        output: missingTool,
+        testFailures: {
+          tier: 'unit-component',
+          complete: true,
+          failed: 1,
+          failures: [{ path: 'src/sandbox.test.ts', name: 'wraps the command' }],
+        },
+      }),
+      null,
+    )
+    // A runner that could not be found at all is still setup, report or not.
+    assert.equal(
+      inconclusiveCheckFailure({ ...failed, kind: 'test', exitCode: 127 })?.kind,
+      'setup',
+    )
+  })
+
+  it('treats a test run that reported an incomplete inventory as a failed check, not an unstartable one', () => {
+    // Inconclusive here would skip base entirely and hide a real regression.
+    assert.equal(
+      inconclusiveCheckFailure({
+        ...failed,
+        kind: 'test',
+        output:
+          'Error: spawn ps ENOENT\n' +
+          'Copse test failure inventory unavailable: incomplete, cancelled, or ambiguous test results.\n',
+      }),
+      null,
+    )
+  })
+
   it('preserves normal failures and successful runs with nonfatal warmup warnings', () => {
     assert.equal(inconclusiveCheckFailure(failed), null)
     assert.equal(
