@@ -150,14 +150,10 @@ describe('host-process backend', () => {
     })
     const rejected = assert.rejects(running, /cancel review/)
     try {
+      // Wait for the content, not the file: the child creates the marker and
+      // writes it in two steps, and a read between them sees ''.
       for (let i = 0; i < 500; i++) {
-        if (
-          await access(marker).then(
-            () => true,
-            () => false,
-          )
-        )
-          break
+        if ((await readFile(marker, 'utf8').catch(() => '')) === 'ready') break
         await delay(10)
       }
       assert.equal(await readFile(marker, 'utf8'), 'ready')

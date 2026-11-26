@@ -1,11 +1,13 @@
 import { build } from 'esbuild'
 import { cpSync, rmSync, mkdirSync, writeFileSync } from 'node:fs'
+// The directory is copied with the async `cp`; see the note in build.mts.
+import { cp } from 'node:fs/promises'
 import { join } from 'node:path'
 import { writeMermaidFrameHtml } from './write-mermaid-frame.mts'
 
 /** Reuse the desktop foundations without exposing a general-purpose asset server. */
 export async function buildMobileAssets(outputDir = 'dist/mobile'): Promise<void> {
-  cpSync('src/mobile', outputDir, { recursive: true })
+  await cp('src/mobile', outputDir, { recursive: true })
   const remoteDir = join(outputDir, 'remote')
   mkdirSync(remoteDir, { recursive: true })
   cpSync('src/renderer/remote/index.html', join(remoteDir, 'index.html'))

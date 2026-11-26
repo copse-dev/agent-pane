@@ -66,6 +66,13 @@ export interface CellCommand {
   readonly timeoutMs: number
   /** Cap on the retained interleaved stdout+stderr; overflow is dropped from the front. */
   readonly maxOutputBytes: number
+  /**
+   * Lines that start with one of these are kept even when the cap drops them
+   * from the front, and put back ahead of the retained tail: a structured
+   * verdict (the test runner's failure inventory, or its notice that there is
+   * none) printed before a long tail of details.
+   */
+  readonly retainLinePrefixes?: readonly string[] | undefined
   /** Cancels this command, including its process group. */
   readonly signal?: AbortSignal | undefined
 }

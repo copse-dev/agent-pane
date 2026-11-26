@@ -131,10 +131,11 @@ copse-ui-field,
   padding-bottom: var(--spacing-xs);
 }
 
+/* Stacked fields are separated by their own bottom margin, not a rule above
+   each one. */
 copse-ui-field + copse-ui-field,
 .ui-field + .ui-field {
   padding-top: var(--spacing-sm);
-  border-top: 1px solid var(--border-subtle);
 }
 
 copse-ui-field:last-child,

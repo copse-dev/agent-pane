@@ -10,7 +10,7 @@ import {
   EXTENSION_GRANT_LLM_CALLS,
   MAX_EXTENSION_GRANTS,
 } from './agent-loop-limits.ts'
-import { getLastMeasuredInputTokens, setLastMeasuredInputTokens } from './trim-history.ts'
+import { getLastInputMeasurement, setLastInputMeasurement } from './trim-history.ts'
 import {
   MALFORMED_TOOL_CALL_NUDGE,
   REASONING_RUNAWAY_FORCE_ANSWER_NUDGE,
@@ -1112,6 +1112,63 @@ describe('runAgentLoop', () => {
     )
   })
 
+  it('lets a host trim to a context window without the pressure nudges', async () => {
+    const pressureHooks = new Set(['loop-nudge', 'stuck-finalize-nudge'])
+    const run = async (
+      conversationPressureNudges?: boolean,
+    ): Promise<{ toolCalls: number; trims: number; nudges: string[] }> => {
+      let toolCalls = 0
+      let trims = 0
+      const applied: import('./run-agent-loop.ts').AppliedNudgeRecord[] = []
+      const provider: LLMProvider = {
+        async *stream(messages, tools): AsyncGenerator<ProviderStreamChunk> {
+          const isTextFinalize = messages.some(
+            (message) =>
+              message.role === 'user' &&
+              typeof message.content === 'string' &&
+              message.content.includes('Do not call any tools.'),
+          )
+          if (tools.length === 0 || isTextFinalize) {
+            yield { type: 'text', text: 'Final.' }
+            yield { type: 'done' }
+            return
+          }
+          toolCalls++
+          yield {
+            type: 'tool_call',
+            toolCall: { id: `tool-${String(toolCalls)}`, name: 'run_shell', args: {} },
+          }
+          yield { type: 'done' }
+        },
+      }
+      await runAgentLoop({
+        provider,
+        messages: [{ role: 'user', content: 'go' }],
+        tools: [{ name: 'run_shell', description: 'run', parameters: { type: 'object' } }],
+        maxSteps: 15,
+        maxContextTokens: 1_000,
+        ...(conversationPressureNudges === undefined ? {} : { conversationPressureNudges }),
+        recordAppliedNudge: (record) => applied.push(record),
+        onHistoryTrimmed: () => {
+          trims++
+        },
+        onChunk: () => {},
+        executeTool: async () => 'x'.repeat(2_000),
+      })
+      return {
+        toolCalls,
+        trims,
+        nudges: applied.map((record) => record.hookId).filter((id) => pressureHooks.has(id)),
+      }
+    }
+    // By default the same run is nudged: the opt-out is what keeps it quiet.
+    assert.notDeepEqual((await run()).nudges, [])
+    const quiet = await run(false)
+    assert.deepEqual(quiet.nudges, [])
+    assert.equal(quiet.toolCalls, 15)
+    assert.ok(quiet.trims > 0, 'history is still trimmed to the window')
+  })
+
   describe('reasoning-runaway recovery ladder', () => {
     const SHELL_TOOL = { name: 'run_shell', description: 'run', parameters: { type: 'object' } }
     const flood = (): ProviderStreamChunk[] => {
@@ -1594,6 +1651,9 @@ src/renderer/views/projects-pane.ts
       executeTool: async () => 'ok',
     })
     assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('model-request limit')))
+    // The notice is the loop's own text, so a host can tell it from the model's.
+    const notice = chunks.find((c) => c.type === 'text' && c.text.includes('model-request limit'))
+    assert.ok(notice && 'author' in notice)
     assert.deepEqual(chunks.at(-1), { type: 'done', stopReason: 'max_steps' })
   })
 
@@ -2631,7 +2691,7 @@ src/renderer/views/projects-pane.ts
 
   it('restores measured input tokens after a tool runs a nested loop (#112)', async () => {
     // A tool (e.g. an explore subagent or local todo worker) can run a nested
-    // agent loop that overwrites the shared `lastMeasuredInputTokens` global with
+    // agent loop that overwrites the shared `lastInputMeasurement` global with
     // its own stream sizes. The parent loop must restore its own measurement so
     // the next turn's trim/escalation sizing is not skewed by the subagent.
     let measuredAtSecondStream: number | null = -1
@@ -2644,7 +2704,7 @@ src/renderer/views/projects-pane.ts
           yield { type: 'done' }
         } else {
           // Sampled after the top-of-loop sizing for the second turn ran.
-          measuredAtSecondStream = getLastMeasuredInputTokens()
+          measuredAtSecondStream = getLastInputMeasurement()?.tokens ?? null
           yield { type: 'text', text: 'final' }
           yield { type: 'usage', model: 'm', inputTokens: 2000, outputTokens: 10 }
           yield { type: 'done' }
@@ -2660,11 +2720,52 @@ src/renderer/views/projects-pane.ts
       onChunk: () => {},
       executeTool: async () => {
         // Simulate a nested loop clobbering the shared global.
-        setLastMeasuredInputTokens(5)
+        setLastInputMeasurement({ tokens: 5, through: { role: 'user', content: 'nested' } })
         return 'tool done'
       },
     })
     assert.equal(measuredAtSecondStream, 1000)
+  })
+
+  it('counts the tool results added since the last measured request before trimming', async () => {
+    // Each request is measured under budget, but the round of tool results added
+    // after it is not part of that measurement. Sizing the next request by the
+    // previous measurement alone sends that round over the budget untrimmed.
+    const measured = [2_000, 12_000, 30_000]
+    const sent: string[][] = []
+    let call = 0
+    const provider: LLMProvider = {
+      async *stream(messages) {
+        sent.push(
+          messages.flatMap((m) =>
+            m.role === 'tool' ? m.toolResults.map((r) => r.toolCallId) : [],
+          ),
+        )
+        const n = call++
+        const inputTokens = measured[n]
+        if (inputTokens === undefined) {
+          yield { type: 'text', text: 'done' }
+          yield { type: 'done' }
+          return
+        }
+        const id = `tc${String(n + 1)}`
+        yield { type: 'tool_call', toolCall: { id, name: 'read_file', args: { path: id } } }
+        yield { type: 'usage', model: 'm', inputTokens, outputTokens: 10 }
+        yield { type: 'done' }
+      },
+    }
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [],
+      // A 38,976-token conversation budget: 30,000 measured plus a 10,000-token
+      // result does not fit, 30,000 alone does.
+      maxContextTokens: 40_000,
+      usageModel: 'm',
+      onChunk: () => {},
+      executeTool: async () => 'r'.repeat(40_000),
+    })
+    assert.deepEqual(sent, [[], ['tc1'], ['tc1', 'tc2'], ['tc2', 'tc3']])
   })
 })
 
