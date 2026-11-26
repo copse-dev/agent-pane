@@ -29,7 +29,9 @@ function run(argv: readonly string[], env: NodeJS.ProcessEnv): Promise<number | 
   return new Promise((resolve, reject) => {
     const child = spawn(file, args, { env, stdio: 'ignore' })
     child.once('error', reject)
-    child.once('exit', (code) => resolve(code))
+    child.once('exit', (code) => {
+      resolve(code)
+    })
   })
 }
 
