@@ -37,7 +37,27 @@ describe('PR comments and checks', () => {
     await saveElementScreenshot('#pane-files', 'pr-activity-overview.png')
 
     await $('.pr-detail-section[data-section="comments"]').click()
-    await expect(await $$('.pr-comment').getElements()).toBeElementsArrayOfSize(3)
+    // Conversation comments sit directly in the activity view; thread comments
+    // are nested inside their code discussion.
+    await expect(await $$('.pr-activity > .pr-comment').getElements()).toBeElementsArrayOfSize(3)
+    await expect(
+      await $$('.pr-review-threads > .pr-review-thread').getElements(),
+    ).toBeElementsArrayOfSize(2)
+    await expect(await $('.pr-review-thread-path').getElement()).toHaveText(
+      'src/renderer/views/pr-pane.ts:214',
+    )
+    await expect(await $('.pr-review-thread-address-all').getElement()).toHaveText('Address all 2')
+    await expect(await $('.pr-review-threads-resolved').getElement()).toBeDisplayed()
+    await expect(
+      await $('.pr-review-threads-resolved .pr-review-thread').getElement(),
+    ).not.toBeDisplayed()
+    const threadsFit = await browser.execute(() =>
+      [...document.querySelectorAll<HTMLElement>('.pr-review-thread')].every(
+        (thread) => thread.scrollWidth <= thread.clientWidth + 1,
+      ),
+    )
+    expect(threadsFit).toBe(true)
+    await saveElementScreenshot('#pane-files', 'pr-activity-review-threads.png')
     await expect(await $('.pr-comment .pr-activity-link').getElement()).not.toBeExisting()
     await expect(await $('.pr-open-external-btn').getElement()).toBeDisplayed()
     await expect(await $('.pr-activity').getElement()).toHaveText(
@@ -158,5 +178,38 @@ describe('PR comments and checks', () => {
     await expect(await $('.pr-activity').getElement()).toHaveText(
       expect.stringContaining('No conversation comments'),
     )
+  })
+
+  it('replies to and resolves an inline review thread from the panel', async function () {
+    this.timeout(120_000)
+    await openReviewPicker()
+    await $('.pr-list-title*=Add GitHub PR panel tab').click()
+    await expect(await $('.pr-viewer-title').getElement()).toHaveText('Add GitHub PR panel tab')
+    await $('.pr-detail-section[data-section="comments"]').click()
+    const thread = '.pr-review-thread[data-thread-id="PRRT_mock_failed_first"]'
+    await $(`${thread} .pr-review-reply-input`).waitForDisplayed({ timeout: 10_000 })
+    await expect(await $(`${thread} .pr-review-reply-btn`).getElement()).toBeDisabled()
+    await $(`${thread} .pr-review-reply-input`).setValue('Failed checks now sort first.')
+    await expect(await $(`${thread} .pr-review-reply-btn`).getElement()).toBeEnabled()
+    await $(thread).scrollIntoView({ block: 'start' })
+    await saveElementScreenshot('#pane-files', 'pr-review-thread-reply.png')
+
+    await $(`${thread} .pr-review-reply-btn`).click()
+    await browser.waitUntil(
+      async () =>
+        (await $$(`${thread} .pr-comment`).length) === 2 &&
+        (await $(`${thread} .pr-review-reply-input`).getValue()) === '',
+      { timeout: 10_000, timeoutMsg: 'reply did not appear in the thread' },
+    )
+    await expect(await $(`${thread} .pr-comment:last-of-type .pr-comment-body`)).toHaveText(
+      'Failed checks now sort first.',
+    )
+
+    await $(`${thread} .pr-review-resolve-btn`).click()
+    await $(`.pr-review-threads-resolved ${thread}`).waitForExist({ timeout: 10_000 })
+    await expect(await $('.pr-review-threads .pr-check-count').getElement()).toHaveText(
+      '1 unresolved',
+    )
+    await expect(await $('.pr-review-thread-address-all').getElement()).not.toBeExisting()
   })
 })

@@ -235,6 +235,27 @@ Known environment behavior:
   while true; do DISPLAY=:1 xdotool key F15; sleep 0.5; done
   ```
 
+## Linux packages
+
+Linux is not a supported release target yet (#1382), but the app packages and runs there, which is
+how a cloud container can run a real build:
+
+- `pnpm run pack:linux` writes `release/linux-unpacked/copse`; `pnpm run dist:linux` also writes an
+  x64 AppImage, `.deb` and `tar.gz`. Neither publishes. The advisory `linux-package.yml` workflow
+  builds the same three, installs the `.deb` and uploads them.
+- Both skip electron-builder's native rebuild (`-c.npmRebuild=false`). Every native addon is
+  Node-API, and the rebuild deletes node-pty's `build/` before fetching Electron headers, so an
+  offline or proxied fetch leaves an app that cannot load `pty.node`. If that already happened,
+  `pnpm rebuild node-pty` restores it; `scripts/after-pack.cjs` refuses to package without it.
+- `copse --release-smoke-test` checks a PTY and thread persistence without opening a window. Run
+  it under `xvfb-run -a`, with `--no-sandbox` when running as root, and with `COPSE_DIR` set to a
+  scratch profile. The `.deb` depends on `bubblewrap` and `socat`, so an installed package runs
+  project commands inside the Linux sandbox; a container that forbids nested user namespaces
+  reports `apply-seccomp: write /proc/self/uid_map: Operation not permitted` for packaged and
+  development builds alike.
+- The main window has no minimize, maximize or close controls on Linux yet, and auto-update is
+  macOS-only; upgrade by installing a newer package.
+
 ## Launching Copse from a Copse agent session
 
 Do not run `make run`, `pnpm start`, `pnpm run dev`, or `open` from an agent shell to see a branch
