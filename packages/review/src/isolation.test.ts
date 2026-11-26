@@ -125,6 +125,18 @@ describe('droppedHostSecrets', () => {
     npm_package_config_token: 'overridden-from-the-npmrc',
     npm_lifecycle_script: 'copse-review pr --flag-holding-a-credential',
     LC_DEPLOY: 'smuggled-over-ssh-sendenv',
+    // What a macOS shell with Homebrew and nvm exports.
+    HOMEBREW_PREFIX: '/opt/homebrew',
+    HOMEBREW_CELLAR: '/opt/homebrew/Cellar',
+    HOMEBREW_REPOSITORY: '/opt/homebrew',
+    NVM_DIR: `${home}/.nvm`,
+    NVM_BIN: `${home}/.nvm/versions/node/v24.22.1/bin`,
+    NVM_INC: `${home}/.nvm/versions/node/v24.22.1/include/node`,
+    COMMAND_MODE: 'unix2003',
+    __CF_USER_TEXT_ENCODING: '0x1F5:0x0:0x0',
+    __CFBundleIdentifier: 'com.apple.Terminal',
+    // Redacted by name: the value need not look like a GitHub token.
+    HOMEBREW_GITHUB_API_TOKEN: 'homebrew-credential-in-the-shell',
   }
 
   it('exempts session, locale and script metadata but not their credential-bearing neighbours', () => {
@@ -137,13 +149,17 @@ describe('droppedHostSecrets', () => {
         host.npm_package_config_token,
         host.npm_lifecycle_script,
         host.LC_DEPLOY,
+        host.HOMEBREW_GITHUB_API_TOKEN,
       ].sort(),
     )
     assert.equal(Object.hasOwn(cellEnvironment(host), 'HOME'), false, 'HOME still stays out')
   })
 
   it('keeps host paths readable in scrubbed output while redacting credentials', () => {
-    const failure = `Error at file://${repo}/packages/review/ci/prepare-npm-checkout.mts:22`
+    const failure = [
+      `Error at file://${repo}/packages/review/ci/prepare-npm-checkout.mts:22`,
+      `    at ${host.NVM_BIN}/node and /opt/homebrew/bin/git`,
+    ].join('\n')
     const output = `${failure}\nGITHUB_TOKEN=${host.GITHUB_TOKEN}\nFOO_KEY=${host.FOO_KEY}`
     const scrubbed = redactSecrets(output, droppedHostSecrets(host))
     assert.ok(scrubbed.startsWith(failure), scrubbed)

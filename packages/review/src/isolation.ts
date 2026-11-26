@@ -200,12 +200,12 @@ export function cellEnvironment(
 
 /**
  * Dropped host variables that say where and as whom the review runs, not what
- * it may reach: the login session, the locale, and what npm or pnpm exports to
- * the script that launched it. Their values are host paths, a user name, a
- * locale or a package name, all of which turn up in ordinary command output;
- * treating them as secrets turned every host path in a report into
- * `[REDACTED_SECRET]/…`. They are still kept out of the cell; this list only
- * stops the redactor from hiding them.
+ * it may reach: the login session, the locale, what npm or pnpm exports to
+ * the script that launched it, and the install paths a macOS shell exports.
+ * Their values are host paths, a user name, a locale or a package name, all of
+ * which turn up in ordinary command output; treating them as secrets turned
+ * every host path in a report into `[REDACTED_SECRET]/…`. They are still kept
+ * out of the cell; this list only stops the redactor from hiding them.
  *
  * Exact names, never a prefix. Neighbouring names do carry credentials:
  * `npm_config_*` is `.npmrc` (registry tokens included), `.npmrc` can override
@@ -247,6 +247,18 @@ const NON_SECRET_HOST_VARIABLES: ReadonlySet<string> = new Set([
   'npm_package_json',
   'npm_package_name',
   'npm_package_version',
+  // What a macOS login exports: Homebrew's and nvm's install paths (from
+  // `brew shellenv` and `nvm.sh`), and the session's own markers. Homebrew's
+  // credential, `HOMEBREW_GITHUB_API_TOKEN`, is not named here.
+  'HOMEBREW_PREFIX',
+  'HOMEBREW_CELLAR',
+  'HOMEBREW_REPOSITORY',
+  'NVM_DIR',
+  'NVM_BIN',
+  'NVM_INC',
+  'COMMAND_MODE',
+  '__CF_USER_TEXT_ENCODING',
+  '__CFBundleIdentifier',
 ])
 
 /**
