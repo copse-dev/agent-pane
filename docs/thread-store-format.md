@@ -121,6 +121,7 @@ Source files remain authoritative; deleting this cache is safe.
       comments.json                  # inline comments on revisions
       approval.json                  # present after approve (revision + profile + hash)
     subagents/<subagentId>/          # nested subagent session, same structure recursively
+    subagents/~rev-<sha256>/         # an already-saved message's replacement subagent session
 ```
 
 - **`tasks/<taskId>/`** holds operational supervisor records for delayed / long-lived
@@ -440,14 +441,23 @@ written first under `~rev-<sha256>` names, so a failed spine write leaves the
 previous line resolving against intact files. Once the new line has committed,
 the writer removes the replaced line's prose and reasoning files in `messages/`
 (the original `<messageId>.md` / `.reasoning.md` or an earlier revision) that no
-committed line references. A failed removal is logged and leaves an orphan; it
+committed line references, and likewise each replaced subagent directory directly
+in `subagents/`. A failed removal is logged and leaves an orphan; it
 never fails the write. Superseded blob revisions (`blobs/~rev-<sha256>…`) can be
 shared by two messages, so they stay until the next whole-thread save prunes
 unreferenced files (a history edit or its undo, for example) or the thread is
 deleted. A transcript read outside the store's write queue that took the previous
-spine folds the committed one again rather than skip the thread. A nested
-subagent transcript under `subagents/<subagentId>/` is still rewritten in place
-([#4438](https://github.com/copse-dev/agent-pane/issues/4438)).
+spine folds the committed one again rather than skip the thread.
+
+A nested subagent transcript is replaced as a whole
+([#4438](https://github.com/copse-dev/agent-pane/issues/4438)). Its prose, blobs
+and own `events.jsonl` are written to a fresh `subagents/~rev-<sha256>/`
+directory, where the digest covers the subagent id and every nested file's path
+and contents; the parent's spine `subagent.ref` then switches to it in the same
+commit, and its `id` is always present because the directory name no longer
+spells it. A running subagent's partial transcript changes on every settled tool
+call, so a failed write part-way through leaves the previous directory intact.
+An unchanged transcript hashes to the same directory and reuses it.
 
 ## Machine-continuation line schema (`type: "machine_continuation"`)
 
