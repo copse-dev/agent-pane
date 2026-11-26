@@ -362,6 +362,13 @@ export interface ContextBreakdown {
  */
 export type AgentStreamChunk =
   | ProviderStreamChunk
+  /**
+   * Text the loop wrote itself, not the model: its run-limit, give-up, refusal,
+   * context-overflow and open-plan notices. It renders and is saved like the
+   * model's text; a host that reports what the model said (a headless review's
+   * summary) leaves it out.
+   */
+  | { type: 'text'; text: string; author: 'loop' }
   /** Explicit assistant-owned visual proof produced by a tool call. */
   | {
       type: 'visual_evidence'

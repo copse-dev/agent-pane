@@ -299,6 +299,9 @@ export function internalGitEnv(
         'GIT_DIR',
         'GIT_COMMON_DIR',
         'GIT_WORK_TREE',
+        'GIT_NAMESPACE',
+        'GIT_OBJECT_DIRECTORY',
+        'GIT_ALTERNATE_OBJECT_DIRECTORIES',
       ].includes(key)
     ) {
       // Spawn merges this overlay over its inherited base. An explicit unset

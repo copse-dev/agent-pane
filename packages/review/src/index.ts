@@ -28,8 +28,14 @@ export * from './sarif.ts'
 // The CLI, the provider door it opens, and the CI shell's two hand-offs: the
 // Stage 0 report between jobs, and the review onto the pull request.
 export * from './provider-selection.ts'
+export * from './local-model-probe.ts'
 export * from './scripted-provider.ts'
 export * from './cli.ts'
+// The local pull-request shell, and the cell preparation it shares with CI.
+export * from './local-pr.ts'
+export * from './cell-preparation.ts'
+export * from './dependency-policy.ts'
+export * from './review-lock.ts'
 export * from './stage0-report.ts'
 export * from './forge-review.ts'
 
