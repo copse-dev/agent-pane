@@ -123,6 +123,11 @@ the Docker CLI. `COPSE_CONTAINER_ENGINE` accepts `auto`, `apple`, or `docker`:
   running service (`container system start`). It never silently falls back.
 - `docker` requires a reachable Docker daemon and preserves the previous commands.
 
+Copse Reviewer's validation cells (`copse-review pr`, `--backend container`) read the same
+variable; `auto` there tries Docker, Podman, then Apple container. Choose Podman for the reviewer
+with `copse-review pr --engine podman`, not with the variable, which the app rejects as `podman`. See
+[`packages/review/README.md`](../packages/review/README.md#reviewing-a-pull-request-on-this-machine-copse-review-pr).
+
 The autonomy regression is portable across those engines:
 
 ```bash
@@ -185,6 +190,27 @@ Known environment behavior:
   ```bash
   while true; do DISPLAY=:1 xdotool key F15; sleep 0.5; done
   ```
+
+## Linux packages
+
+Linux is not a supported release target yet (#1382), but the app packages and runs there, which is
+how a cloud container can run a real build:
+
+- `pnpm run pack:linux` writes `release/linux-unpacked/copse`; `pnpm run dist:linux` also writes an
+  x64 AppImage, `.deb` and `tar.gz`. Neither publishes. The advisory `linux-package.yml` workflow
+  builds the same three, installs the `.deb` and uploads them.
+- Both skip electron-builder's native rebuild (`-c.npmRebuild=false`). Every native addon is
+  Node-API, and the rebuild deletes node-pty's `build/` before fetching Electron headers, so an
+  offline or proxied fetch leaves an app that cannot load `pty.node`. If that already happened,
+  `pnpm rebuild node-pty` restores it; `scripts/after-pack.cjs` refuses to package without it.
+- `copse --release-smoke-test` checks a PTY and thread persistence without opening a window. Run
+  it under `xvfb-run -a`, with `--no-sandbox` when running as root, and with `COPSE_DIR` set to a
+  scratch profile. The `.deb` depends on `bubblewrap` and `socat`, so an installed package runs
+  project commands inside the Linux sandbox; a container that forbids nested user namespaces
+  reports `apply-seccomp: write /proc/self/uid_map: Operation not permitted` for packaged and
+  development builds alike.
+- The main window has no minimize, maximize or close controls on Linux yet, and auto-update is
+  macOS-only; upgrade by installing a newer package.
 
 ## Launching Copse from a Copse agent session
 

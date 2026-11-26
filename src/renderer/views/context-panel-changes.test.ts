@@ -38,6 +38,7 @@ function makeCodeEditorStub(): ContextPanelEditor & GitDiffCodeEditor {
     ...inertCommentSurface(),
     addCommand(): void {},
     onKeyDown: () => ({ dispose(): void {} }),
+    onDidFocusEditorText: () => ({ dispose(): void {} }),
     getSelection: () => null,
     getModel: () => model,
     setModel(next: ContextPanelModel | null): void {

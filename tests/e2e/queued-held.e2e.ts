@@ -99,7 +99,7 @@ async function waitForHeldCaptureGeometry(): Promise<void> {
 
 // C2 held-state visual eval (decisions 5 & 16). A hook-originated queued message
 // that was held (`autoDispatch: false`) renders in the pinned queue panel with a
-// distinct "HELD" badge and a "Release" action instead of the plain queued
+// distinct "Held" badge and a "Release" action instead of the plain queued
 // "Send now" — the drain loop skips it, so only an explicit human release submits
 // it. Drain-skip + release semantics are unit-tested in
 // controller/message-queue.test.ts; the DOM shape in views/queued-held.test.ts.
@@ -183,7 +183,7 @@ describe('held cross-thread prompt', function () {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     const held = $('.conversation-queued .msg-queued.msg-held')
     await held.waitForDisplayed({ timeout: 10_000 })
-    await expect($('.msg-held .message-queued-badge')).toHaveText('HELD')
+    await expect($('.msg-held .message-queued-badge')).toHaveText('Held')
     await expect($('.msg-held .queued-release')).toBeDisplayed()
     await expect($('.msg-held .queued-send-now')).not.toBeExisting()
     await expect($('body')).toHaveText(expect.stringContaining(note))
@@ -220,7 +220,7 @@ describe('held hook message in the queue', function () {
     const heldItem = await $('.conversation-queued .msg-queued.msg-held').getElement()
     await heldItem.waitForExist({ timeout: 10_000 })
 
-    await expect($('.msg-held .message-queued-badge')).toHaveText('HELD')
+    await expect($('.msg-held .message-queued-badge')).toHaveText('Held')
     await expect($('.msg-held .queued-release')).toBeExisting()
     // A held item is released, not "Send now"-ed like a plain queued message.
     await expect($('.msg-held .queued-send-now')).not.toBeExisting()
@@ -307,7 +307,7 @@ describe('held hook message in the queue', function () {
     await saveElementScreenshot(ROW_SELECTOR, 'queued-held-actions-row.png')
   })
 
-  it('keeps the HELD badge and Release labels readable in both themes, hovered too', async function () {
+  it('keeps the Held badge and Release labels readable in both themes, hovered too', async function () {
     resetUserData()
     seedHeldQueueFixture(seedHeldQueueWorkspace())
     await browser.reloadSession()
@@ -431,14 +431,14 @@ describe('held hook message in the queue', function () {
     try {
       await $(`.project-entry[data-project-id="${projectId}"] .project-row`).click()
       await scenario.waitForHold('auth-review')
-      await expect($(hookSelector).$('.message-queued-badge')).toHaveText('QUEUED')
+      await expect($(hookSelector).$('.message-queued-badge')).toHaveText('Queued')
       await setComposerValue(humanPrompt)
       await submitComposer()
       const humanSelector = '.conversation-queued .msg-queued:not(.msg-hook-origin)'
       await expect($(humanSelector).$('.message-text')).toHaveText(humanPrompt)
       await $(humanSelector).$('.queued-send-now').click()
       await expectAssistantReply(reply)
-      await expect($(hookSelector).$('.message-queued-badge')).toHaveText('HELD')
+      await expect($(hookSelector).$('.message-queued-badge')).toHaveText('Held')
       await expect($(hookSelector).$('.message-text')).toHaveText(hookPrompt)
       await expect($(hookSelector).$('.queued-release')).toBeDisplayed()
       await expect($(hookSelector).$('.queued-send-now')).not.toBeExisting()
