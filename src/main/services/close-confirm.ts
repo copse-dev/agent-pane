@@ -40,6 +40,21 @@ const CLOSE_CONFIRM_TIMEOUT_MS = 2 * 60_000
 
 let requestConfirm: (() => Promise<boolean>) | null = null
 
+// Whether a quit now would hand every working turn to a worker. Until the app
+// wires it, only the setting is known.
+let quitHandsEveryTurnOff: () => Promise<boolean> = () =>
+  Promise.resolve(continuesTurnsAfterQuit(getSetting))
+
+/**
+ * How the question learns whether closing keeps the working turns going: the
+ * setting, and whether a worker can run each of them (`workerCannotRun`). A
+ * turn the worker turns down waits for the next launch, so the dialog must not
+ * promise it keeps going.
+ */
+export function setQuitHandOffCheck(check: () => Promise<boolean>): void {
+  quitHandsEveryTurnOff = check
+}
+
 // Before the renderer is wired up there is nobody to object, so the gate asks a
 // question that answers itself.
 const gate = createCloseGate({
@@ -147,10 +162,6 @@ export function initCloseConfirm(win: BrowserWindow): void {
         return
       }
       const id = randomUUID()
-      // Whether a quit now hands the working turns off instead of stopping them,
-      // so the question can say what closing will do.
-      const continuesAfterQuit = continuesTurnsAfterQuit(getSetting)
-      win.webContents.send('app:close-confirm-request', { id, continuesAfterQuit })
       const timer = setTimeout(() => {
         settle(id, true)
       }, CLOSE_CONFIRM_TIMEOUT_MS)
@@ -159,5 +170,14 @@ export function initCloseConfirm(win: BrowserWindow): void {
         clearTimeout(timer)
         resolve(confirmed)
       })
+      // Whether a quit now hands the working turns off instead of stopping them,
+      // so the question can say what closing will do. A check that fails says
+      // the cautious thing: closing stops them.
+      void quitHandsEveryTurnOff()
+        .catch(() => false)
+        .then((continuesAfterQuit) => {
+          if (!pending.has(id) || win.isDestroyed()) return
+          win.webContents.send('app:close-confirm-request', { id, continuesAfterQuit })
+        })
     })
 }

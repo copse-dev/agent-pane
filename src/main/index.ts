@@ -3,6 +3,7 @@ import './disable-brotli-decoding.ts' // MUST be first — see the module
 import { stopAllForegroundShellProcesses } from './services/exec/foreground-shell-process.ts'
 import {
   continuesTurnsAfterQuit,
+  everyTurnHandsOff,
   handOffTurns,
   turnWorkerPath,
   type HandOffTarget,
@@ -103,6 +104,7 @@ import {
   approveClose,
   deferQuitForCloseConfirmation,
   guardWindowClose,
+  setQuitHandOffCheck,
   initCloseConfirm,
 } from './services/close-confirm.ts'
 import { checkToolAvailability } from './services/tool-availability.ts'
@@ -911,6 +913,17 @@ app
     perfMark('main:register-handlers')
     const agentDispatcher = new AgentDispatcher(agentHost, registry, undefined, transcriptWriter)
     listActiveTurns = (): HandOffTarget[] => agentDispatcher.activeTurns()
+    // The close dialog may only say turns keep going when a worker takes every
+    // one: a quit that hands off, with no update to install, and no turn the
+    // worker turns down (it waits for the next launch instead).
+    setQuitHandOffCheck(async () => {
+      const { workerCannotRun } = await import('./services/turn-worker/turn-worker.ts')
+      return everyTurnHandsOff(
+        agentDispatcher.activeTurns(),
+        continuesTurnsAfterQuit(getSetting) && !quitInstallsUpdate(),
+        workerCannotRun,
+      )
+    })
     setAgentInitiatedTurnAuthority(agentDispatcher)
     setDiffAcceptanceHandler({
       waitForIdle: (owner) => agentDispatcher.waitForIdle(owner.projectId, owner.threadId),
