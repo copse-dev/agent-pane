@@ -34,7 +34,7 @@ async function waitForWorkspace(): Promise<void> {
 }
 
 async function openChangesPanel(): Promise<void> {
-  await $('.titlebar-btn[aria-label="Open changes"]').waitForExist({ timeout: 30_000 })
+  await $('.titlebar-btn[aria-label="Open review"]').waitForExist({ timeout: 30_000 })
   // The titlebar button no-ops until the seeded workspace has loaded (it routes
   // to add-project when workspaceRoot isn't set yet), and that load is slower on
   // some runners — so a single click can land before the workspace is ready and
@@ -44,7 +44,7 @@ async function openChangesPanel(): Promise<void> {
     async () => {
       // Opening the panel can rebuild the titlebar. Reacquire the button on
       // every retry so WebDriver never reuses an element from the old frame.
-      const changesBtn = await $('.titlebar-btn[aria-label="Open changes"]').getElement()
+      const changesBtn = await $('.titlebar-btn[aria-label="Open review"]').getElement()
       if (((await changesBtn.getAttribute('class')) ?? '').includes('active')) return true
       await changesBtn.click()
       return false
@@ -55,7 +55,9 @@ async function openChangesPanel(): Promise<void> {
   // The event-driven refresh on panel activation can race the seeded git
   // fixture; force a refresh explicitly so the change rows are populated.
   await (
-    await $('#git-changes-host .git-changes-refresh-btn[aria-label="Refresh changes"]').getElement()
+    await $(
+      '.review-header .git-changes-header .git-changes-refresh-btn[aria-label="Refresh changes"]',
+    ).getElement()
   ).click()
   await browser.waitUntil(async () => (await $$('.git-change-row').getElements()).length >= 3, {
     timeout: 30_000,

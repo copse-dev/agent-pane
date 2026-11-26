@@ -1,3 +1,23 @@
+/**
+ * Where the folder browser opens on a host: beside the last project already
+ * opened from it (projects are listed in the order they were added, unless the
+ * user has dragged them), else in the account's home directory, else at `/`.
+ */
+export function initialRemoteBrowsePath(
+  projects: ReadonlyArray<{ path: string; sshHost?: string }>,
+  hostId: string,
+  home: string | undefined,
+): string {
+  for (let index = projects.length - 1; index >= 0; index -= 1) {
+    const project = projects[index]
+    if (project?.sshHost !== hostId) continue
+    if (project.path.startsWith('/')) return parentRemotePath(project.path)
+    break
+  }
+  if (home?.startsWith('/')) return home
+  return '/'
+}
+
 /** Parent directory of a remote POSIX path (`/` is its own parent). */
 export function parentRemotePath(path: string): string {
   if (path === '/' || path === '') return '/'

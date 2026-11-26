@@ -29,7 +29,12 @@ import {
 } from './tests/e2e/helpers/context-estimate-settled.ts'
 import { driverVerboseOptions } from './tests/e2e/helpers/driver-verbose.ts'
 import { shouldUseChromiumHeadless } from './tests/e2e/helpers/display-mode.mts'
-import { E2E_GIT_BRANCH, E2E_NAMES_API_URL, E2E_SHELL } from './tests/e2e/helpers/e2e-env.ts'
+import {
+  E2E_GIT_BRANCH,
+  E2E_NAMES_API_URL,
+  E2E_RELAY,
+  E2E_SHELL,
+} from './tests/e2e/helpers/e2e-env.ts'
 import { installE2eProfileCleanup } from './tests/e2e/helpers/profile-cleanup.ts'
 import { makeE2eScratchDir } from './tests/e2e/helpers/scratch-dir.ts'
 import {
@@ -255,6 +260,9 @@ export const config: WebdriverIO.Config = {
       // Every e2e app talks to a loopback names API (tests/e2e/helpers/fake-names-api.ts,
       // started by the spec that needs it) and never to the live api.copse.dev.
       COPSE_NAMES_API_URL: E2E_NAMES_API_URL,
+      // Likewise a relay name that never resolves, never relay.copse.dev; the relay
+      // spec points it at tests/helpers/fake-relay.ts.
+      COPSE_RELAY: E2E_RELAY,
       COPSE_PANEL_MOCK_GH: '1',
       // Deterministic Claude/Codex plan bars in Settings → Usage (no real OAuth).
       COPSE_PLAN_USAGE_MOCK: nonEmptyStringOr(process.env['COPSE_PLAN_USAGE_MOCK']?.trim(), '1'),

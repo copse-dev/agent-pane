@@ -3,7 +3,12 @@ import assert from 'node:assert/strict'
 import { IncomingMessage } from 'node:http'
 import { Socket } from 'node:net'
 import type { NetworkInterfaceInfo } from 'node:os'
-import { MOBILE_READ_DISPATCH, mobileLanAddresses, mobileRequestAllowed } from './mobile-server.ts'
+import {
+  MOBILE_READ_DISPATCH,
+  mobileLanAddresses,
+  mobileRequestAllowed,
+  relayedRequestAllowed,
+} from './mobile-server.ts'
 
 function request(
   peer: string,
@@ -131,5 +136,33 @@ describe('mobile request boundary', () => {
       mobileRequestAllowed(request('192.168.1.55', authority, `https://${name}`, 'POST'), served),
       false,
     )
+  })
+})
+
+describe('relayed request boundary', () => {
+  const web = 'web.abcdefgh2345.u.copse.me'
+  // A relayed stream has no meaningful socket peer: the relay supplies the
+  // client address separately, and it is public by design.
+  it('accepts exactly the web name, with no port, from any peer', () => {
+    assert.equal(relayedRequestAllowed(request('203.0.113.9', web), web), true)
+    assert.equal(
+      relayedRequestAllowed(request('203.0.113.9', web, `https://${web}`, 'POST'), web),
+      true,
+    )
+  })
+  it('refuses the LAN names, other labels, the port form and IP hosts', () => {
+    for (const host of [
+      'lan.abcdefgh2345.u.copse.me',
+      'lan.abcdefgh2345.u.copse.me:42773',
+      'web.zzzzzzzzzzzz.u.copse.me',
+      `${web}:443`,
+      '192.168.1.41:42773',
+    ])
+      assert.equal(relayedRequestAllowed(request('203.0.113.9', host), web), false, host)
+  })
+  it('binds Origin to the web name and requires it on writes', () => {
+    for (const origin of ['https://copse.me', 'https://lan.abcdefgh2345.u.copse.me', 'null'])
+      assert.equal(relayedRequestAllowed(request('203.0.113.9', web, origin), web), false, origin)
+    assert.equal(relayedRequestAllowed(request('203.0.113.9', web, undefined, 'POST'), web), false)
   })
 })

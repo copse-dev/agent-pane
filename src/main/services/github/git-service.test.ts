@@ -25,6 +25,7 @@ import {
   invalidateGitWorkTreeProbe,
   isInsideGitWorkTree,
   parseAheadBehind,
+  isPlainBranchName,
   parseOriginHeadSymbolicRef,
   parsePorcelainV1,
   resetDefaultBranchCache,
@@ -1188,7 +1189,54 @@ describe('parseOriginHeadSymbolicRef', () => {
   })
 
   it('returns null for unrelated refs', () => {
+    assert.equal(parseOriginHeadSymbolicRef('refs/remotes/origin/'), null)
     assert.equal(parseOriginHeadSymbolicRef('refs/heads/main'), null)
+  })
+
+  it('returns null for a target Git would not accept as a branch name', () => {
+    assert.equal(parseOriginHeadSymbolicRef('refs/remotes/origin/-dash'), null)
+    assert.equal(parseOriginHeadSymbolicRef('refs/remotes/origin/a..b'), null)
+  })
+})
+
+describe('isPlainBranchName', () => {
+  it('accepts ordinary branch names', () => {
+    for (const name of ['main', 'master', 'release/1.2', 'feature/a-b_c', 'v1.0', 'dépôt']) {
+      assert.equal(isPlainBranchName(name), true, name)
+    }
+  })
+
+  it('refuses names Git would not take as a branch, and HEAD or a bare @', () => {
+    for (const name of [
+      '',
+      '@',
+      'HEAD',
+      '-dash',
+      '--dashes',
+      '/lead',
+      'trail/',
+      'trail.',
+      'a..b',
+      'a//b',
+      'a@{1}',
+      'a b',
+      'tab\there',
+      'nl\nhere',
+      'del\u007f',
+      'a~1',
+      'a^',
+      'a:b',
+      'a?',
+      'a*',
+      'a[b',
+      'a\\b',
+      '.hidden',
+      'dir/.hidden',
+      'name.lock',
+      'dir/name.lock/leaf',
+    ]) {
+      assert.equal(isPlainBranchName(name), false, JSON.stringify(name))
+    }
   })
 })
 
@@ -1242,6 +1290,20 @@ describe('getDefaultBranch', { skip: !gitOk && 'git not installed' }, () => {
     restore = setWorkspaceRootForTest(repo)
 
     assert.equal(await getDefaultBranch(repo), 'develop')
+  })
+
+  it('skips an origin/HEAD that names something Git would not take as a branch', async () => {
+    repo = await mkdtemp(join(tmpdir(), 'copse-git-default-branch-origin-head-dash-'))
+    git('init', '-q', '-b', 'main')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    git('commit', '--allow-empty', '-m', 'init')
+    git('remote', 'add', 'origin', 'https://example.com/repo.git')
+    git('update-ref', 'refs/remotes/origin/-dash', 'HEAD')
+    git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/-dash')
+    restore = setWorkspaceRootForTest(repo)
+
+    assert.equal(await getDefaultBranch(repo), 'main')
   })
 
   it('uses init.defaultBranch from git config when origin is absent', async () => {

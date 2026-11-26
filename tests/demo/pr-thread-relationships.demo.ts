@@ -1,3 +1,4 @@
+import { openReviewPr, openReviewPicker, closeReviewPicker } from '../e2e/helpers/review-pane.ts'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 
@@ -15,7 +16,7 @@ describe('PR producing and related threads', () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     const pane = $('#pane-files')
     if (!(await pane.isDisplayed())) await $('[aria-label="Toggle right panel"]').click()
-    await $('[aria-label="Open pull requests"]').click()
+    await openReviewPr()
     await $('.pr-thread-relationships').waitForDisplayed({ timeout: 20_000 })
   })
 
@@ -24,7 +25,9 @@ describe('PR producing and related threads', () => {
     await expect($$('.pr-thread-link[data-relationship="produced"]')).toBeElementsArrayOfSize(1)
     await expect($$('.pr-thread-link[data-relationship="related"]')).toBeElementsArrayOfSize(2)
     await expect($('.pr-thread-link[data-thread-id="pr-producer"]')).toHaveText('Implement widget')
+    await openReviewPicker()
     await expect($('.pr-list-relationship')).toHaveText('Produced')
+    await closeReviewPicker()
     await expect($('.pr-thread-toggle')).toHaveText('2 related')
     await expect($('.pr-thread-link[data-thread-id="pr-reviewer"]')).not.toBeDisplayed()
     await saveElementScreenshot('#pane-files', 'pr-producing-and-related-threads.png')
@@ -37,6 +40,7 @@ describe('PR producing and related threads', () => {
     await expect($('.chat-row.selected .chat-title')).toHaveText('Review widget')
     await expect($$('.pr-list-row[data-pr-section="linked"]')).toBeElementsArrayOfSize(2)
     await saveElementScreenshot('#pane-files', 'thread-multiple-related-prs.png')
+    await openReviewPicker()
     await $('.pr-list-row[data-pr-section="linked"]').click()
     await showRelated()
     await $('.pr-thread-link[data-thread-id="pr-mentioned"]').click()
@@ -46,6 +50,7 @@ describe('PR producing and related threads', () => {
   it('a mention-only PR cannot claim a producing thread', async () => {
     await showRelated()
     await $('.pr-thread-link[data-thread-id="pr-reviewer"]').click()
+    await openReviewPicker()
     const rows = await $$('.pr-list-row[data-pr-section="linked"]').getElements()
     const second = rows[1]
     if (!second) throw new Error('Missing second related PR')
@@ -60,6 +65,7 @@ describe('PR producing and related threads', () => {
   // header) precisely so that hiding them on other tabs cannot move the tab
   // bar: regression coverage for that header-reflow bug.
   it('keeps the header in place when relationships hide on other tabs', async () => {
+    await openReviewPicker()
     const rows = await $$('.pr-list-row[data-pr-section="linked"]')
     const first = rows[0]
     if (!first) throw new Error('Missing "Add widget support" row')

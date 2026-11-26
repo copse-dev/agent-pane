@@ -110,6 +110,13 @@ describe('Settings form recipes', () => {
       /\.usage-section-root > fieldset/,
       'the flat-group list and the card-legend exclusion must agree',
     )
+    const legendSelector = cardLegend.selectors.find((selector) => selector.endsWith('> legend'))
+    assert.ok(legendSelector, 'the card legend rule must name the card’s own legend')
+    assert.match(
+      bodiesFor(settings, legendSelector.replace(/> legend$/, '> :not(legend)')),
+      /clear:\s*both/,
+      'the rest of the card must start below its floated title',
+    )
     assert.match(bodiesFor(settings, '.usage-section-root > fieldset'), /background:\s*none/)
     assert.match(
       bodiesFor(settings, '.usage-section-root > fieldset > legend'),
