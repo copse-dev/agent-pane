@@ -262,6 +262,9 @@ export class TurnTranscriptWriter {
             this.deps
               .updateMeta(projectId, threadId, {
                 status: 'running',
+                // The next launch continues only turns from the run before it
+                // (`interrupted-turn-resume.ts`), told apart by this time.
+                updatedAt: Date.now(),
                 ...transcriptMetaPatch(session.initialMeta, transcriptMeta(runningThread)),
               })
               .catch((error: unknown) => {
