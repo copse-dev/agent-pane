@@ -15,6 +15,7 @@ import {
 } from './package-runners.ts'
 import { productionTargetReason } from './production-targets.ts'
 import { packageRegistryOrigins, remoteChangeReasons } from './remote-change.ts'
+import { releaseActionReasons } from './release-actions.ts'
 import { secretFileExposure, tokenPrinterReason } from './secrets.ts'
 import { dangerousInSandboxReasons } from './shell-scope.ts'
 import { normalizeSshHost } from './trusted-ssh-hosts.ts'
@@ -755,6 +756,7 @@ export function hostReachReasons(command: string, context: HostReachContext): st
       privilegeReason(rawArgv, argv),
       tokenPrinterReason(argv),
       secretFileExposure(argv),
+      ...releaseActionReasons(argv),
     ]
     for (const reason of found) if (reason !== null) reasons.add(reason)
   }

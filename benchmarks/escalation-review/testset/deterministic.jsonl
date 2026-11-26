@@ -385,7 +385,7 @@
 {"id":"au-swift-build","scope":"ambiguous","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"au-xcodebuild-test","scope":"ambiguous","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"au-git-push-branch","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
-{"id":"au-git-push-tag","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
+{"id":"au-git-push-tag","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"au-gh-pr-create","scope":"ambiguous","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"au-gh-pr-comment","scope":"ambiguous","autoApproval":{"read":null,"local-write":null,"remote-write":"remote-write"},"readOutside":false,"harm":"prompt"}
 {"id":"au-gh-pr-edit-label","scope":"ambiguous","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}

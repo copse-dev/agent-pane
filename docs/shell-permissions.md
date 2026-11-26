@@ -1370,6 +1370,15 @@ While active:
     `influx` verbs that write or delete (`write`, `delete`, `restore`, …) and SQL run
     from a file or stdin (`psql -f`, `mysql db < dump.sql`, `cat dump.sql | psql db`);
   - filtering shell history for a secret-named word (`history | grep -i token`);
+  - release work (`release-actions.ts`): loading a secret file into the shell (`. ./.env.release`,
+    `source .env`, including inside `bash -c` or after `if`), release signers (`sign_update`,
+    `generate_keys`, `minisign`, `signify`, `codesign --sign`, `gpg --sign`/`--detach-sign`,
+    `xcrun notarytool submit`; `--help` alone runs), a task-runner or package-script target that
+    starts with `ship`, `release`, `publish`, `deploy`, `notarize` or `upload`
+    (`make ship-release`, `npm run release:mac`; `make -n`/`--dry-run` runs), pushing a tag
+    (`refs/tags/…`, a version-shaped ref such as `v1.7.0`, `--tags`, `--follow-tags`), moving one
+    (`git tag --force`), and a `git -c credential.*` override. A replay of real history found each
+    of these allowed unsandboxed;
   - `find` deletions rooted outside the workspace (`find /x -exec rm {} +`,
     `find /x | xargs rm`), and `git filter-repo`.
 - Credential reads stay hard-denied when a redirect such as `2>&1` follows them and when the gate
