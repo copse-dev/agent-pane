@@ -160,10 +160,28 @@ describe('parsePorcelainV1', () => {
     assert.deepEqual(result.unstaged, [{ path: 'after.ts', status: 'modified' }])
   })
 
-  it('does not mis-align when a rename record is missing its paired token (#130)', () => {
-    const raw = 'R  new.ts\0 M after.ts\0'
+  it('does not invent entries when a trailing rename record is missing its paired token (#130)', () => {
+    // Truncated output: the source token never arrived. The record itself is
+    // still reported and nothing is read past the end.
+    for (const raw of ['R  new.ts\0', 'R  new.ts', ' M before.ts\0R  new.ts\0']) {
+      const result = parsePorcelainV1(raw)
+      assert.deepEqual(result.staged, [{ path: 'new.ts', status: 'renamed' }])
+      assert.deepEqual(
+        result.unstaged,
+        raw.startsWith(' M') ? [{ path: 'before.ts', status: 'modified' }] : [],
+      )
+    }
+  })
+
+  it('treats the token after a rename as its source even when it is shaped like a status record', () => {
+    // `git mv "AD copy.md" ad-copy.md` and `git mv "M other.md" renamed.md`:
+    // git always emits the bare source, so its first three characters are data.
+    const raw = 'R  ad-copy.md\0AD copy.md\0R  renamed.md\0M  other.md\0 M after.ts\0'
     const result = parsePorcelainV1(raw)
-    assert.deepEqual(result.staged, [{ path: 'new.ts', status: 'renamed' }])
+    assert.deepEqual(result.staged, [
+      { path: 'ad-copy.md', status: 'renamed' },
+      { path: 'renamed.md', status: 'renamed' },
+    ])
     assert.deepEqual(result.unstaged, [{ path: 'after.ts', status: 'modified' }])
   })
 
@@ -231,6 +249,37 @@ describe('parseNameStatusZ', () => {
 })
 
 const gitOk = spawnSync('git', ['--version']).status === 0
+
+describe(
+  'parsePorcelainV1 against real git output',
+  { skip: !gitOk && 'git not installed' },
+  () => {
+    it('reports one rename when the source name is shaped like a status record', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'copse-porcelain-rename-'))
+      try {
+        const git = (...args: string[]): string => {
+          const result = spawnSync(
+            'git',
+            ['-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', ...args],
+            { cwd: dir, encoding: 'utf8' },
+          )
+          assert.equal(result.status, 0, result.stderr)
+          return result.stdout
+        }
+        git('init', '-q')
+        await writeFile(join(dir, 'AD copy.md'), 'some advert copy that is long enough to match\n')
+        git('add', '.')
+        git('commit', '-q', '-m', 'init')
+        git('mv', 'AD copy.md', 'ad-copy.md')
+        const result = parsePorcelainV1(git('status', '--porcelain=v1', '-z'))
+        assert.deepEqual(result.staged, [{ path: 'ad-copy.md', status: 'renamed' }])
+        assert.deepEqual(result.unstaged, [])
+      } finally {
+        await rm(dir, { recursive: true, force: true })
+      }
+    })
+  },
+)
 
 describe('unsignedCommitsToPublish', { skip: !gitOk && 'git not installed' }, () => {
   it('lists only unpublished commits without a signature, and only when signing is required', async () => {

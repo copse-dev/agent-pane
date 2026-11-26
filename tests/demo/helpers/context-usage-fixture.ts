@@ -38,17 +38,24 @@ const toolCalls =
 const messages: Message[] = [
   { id: 'assistant', role: 'assistant', content: '', toolCalls, createdAt: 1 },
 ]
+// `million`: a thread just under a million tokens, whose total rounds up to
+// 1.0M and must not read `1000.0k`.
+const totals =
+  mode === 'million'
+    ? { inputTokens: 990_000, outputTokens: 9_960 }
+    : { inputTokens: 900, outputTokens: 90 }
 const usage = buildFooterUsageTooltip(
-  { inputTokens: 900, outputTokens: 90, estimated: false },
+  { ...totals, estimated: false },
   {
     model: 'claude-sonnet-4-6',
     messages,
-    measuredUsage: { inputTokens: 1000, outputTokens: 100 },
+    measuredUsage: mode === 'million' ? totals : { inputTokens: 1000, outputTokens: 100 },
   },
 )
+const usageOnly = mode === 'usage-only' || mode === 'million'
 const wheel = createContextWheel()
 wheel.update(
-  mode === 'usage-only'
+  usageOnly
     ? null
     : {
         contextWindow: 200_000,
@@ -59,10 +66,7 @@ wheel.update(
       },
   false,
   {
-    breakdown:
-      mode === 'usage-only'
-        ? null
-        : composeContextBreakdown({ system: 1800, history: 5000 }, 200_000),
+    breakdown: usageOnly ? null : composeContextBreakdown({ system: 1800, history: 5000 }, 200_000),
     breakdownRing: false,
     usage,
   },

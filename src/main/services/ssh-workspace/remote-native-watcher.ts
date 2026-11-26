@@ -302,6 +302,10 @@ async function startSession(
   }
 
   const proc = await deps.spawn(hostId, remoteRoot, buildRunCommand())
+  // A command written after the ssh client has gone fails asynchronously with
+  // EPIPE on the stream, where sendCommand's try/catch cannot see it. The `close`
+  // handler already reports the loss, so the stream error must not go uncaught.
+  proc.stdin?.on('error', () => undefined)
   const session: Session = {
     hostId,
     remoteRoot,

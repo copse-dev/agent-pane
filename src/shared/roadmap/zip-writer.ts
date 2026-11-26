@@ -56,7 +56,13 @@ export class ZipBuilder {
 
   /** Add a file. `path` must be a forward-slash relative path, unique within the archive. */
   addFile(path: string, data: Uint8Array): void {
-    if (path.length === 0 || path.startsWith('/') || path.includes('\\') || path.includes('..')) {
+    // `..` is unsafe as a whole segment only: `notes..txt` is an ordinary file name.
+    if (
+      path.length === 0 ||
+      path.startsWith('/') ||
+      path.includes('\\') ||
+      path.split('/').includes('..')
+    ) {
       throw new Error(`Unsafe zip entry path: ${JSON.stringify(path)}`)
     }
     if (this.seenPaths.has(path)) {

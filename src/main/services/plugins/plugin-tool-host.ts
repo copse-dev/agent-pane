@@ -216,6 +216,11 @@ export class PluginToolHost {
 
   registrations: PluginToolRegistrations = { tools: [], models: [] }
 
+  /** False once the worker has exited, failed or been stopped. */
+  get running(): boolean {
+    return this.alive
+  }
+
   private attach(): void {
     const stdout = this.proc.stdout
     if (!stdout) return

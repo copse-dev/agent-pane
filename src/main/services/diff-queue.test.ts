@@ -295,6 +295,29 @@ describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
     )
     assert.deepEqual(result, { status: 'written' })
   })
+
+  ownedIt('does not report a delete as done when the file could not be read', async () => {
+    // Only a missing file means the deletion already happened. A failed read
+    // (permissions, a dropped SSH connection) leaves the file where it is.
+    await writeFile(join(tempRoot, 'kept.txt'), 'still here\n', 'utf-8')
+    mock.method(localWorkspaceFs, 'readFile', async () => {
+      throw Object.assign(new Error('read failed'), { code: 'EIO' })
+    })
+    const result = await applyDiffEntry(
+      {
+        path: 'kept.txt',
+        before: 'still here\n',
+        after: '',
+        language: 'plaintext',
+        op: 'delete',
+      },
+      tempRoot,
+      tempRoot,
+    )
+    assert.equal(result.status, 'error')
+    mock.restoreAll()
+    assert.equal(await readFile(join(tempRoot, 'kept.txt'), 'utf-8'), 'still here\n')
+  })
 })
 
 describe('applyOrStageDiff direct-apply policy', () => {

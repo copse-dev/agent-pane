@@ -1,7 +1,8 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { at } from '@shared/array-utils.ts'
+import { writeFileAtomicSync } from '@copse/std/write-file-atomic.ts'
 import { copseDataRoot } from './copse-paths.ts'
 import {
   currentProjectStoreScope,
@@ -93,23 +94,28 @@ export function loadLongTasks(): LongTask[] {
 
 /** Load long tasks for an explicitly named project. */
 export function loadLongTasksForScope(scope: ProjectStoreScope): LongTask[] {
+  return readLongTaskFile(scope).tasks
+}
+
+/** `unreadable` is true when a file exists but does not hold a valid task list. */
+function readLongTaskFile(scope: ProjectStoreScope): { tasks: LongTask[]; unreadable: boolean } {
   let raw: string
   try {
     raw = readFileSync(longTaskFile(scope), 'utf8')
   } catch {
-    return []
+    return { tasks: [], unreadable: false }
   }
   try {
-    return longTaskFileSchema.parse(JSON.parse(raw)).tasks
+    return { tasks: longTaskFileSchema.parse(JSON.parse(raw)).tasks, unreadable: false }
   } catch {
-    return []
+    return { tasks: [], unreadable: true }
   }
 }
 
 function writeLongTasks(tasks: LongTask[], scope: ProjectStoreScope): void {
-  const file = longTaskFile(scope)
-  mkdirSync(join(file, '..'), { recursive: true })
-  writeFileSync(file, `${JSON.stringify({ tasks }, null, 2)}\n`)
+  // Atomic, so a crash mid-write cannot leave a truncated file that then reads
+  // as "no tasks".
+  writeFileAtomicSync(longTaskFile(scope), `${JSON.stringify({ tasks }, null, 2)}\n`)
 }
 
 function nextId(existing: LongTask[]): string {
@@ -145,7 +151,13 @@ export function createLongTask(
   input: CreateLongTaskInput,
   scope: ProjectStoreScope = currentProjectStoreScope(),
 ): LongTask {
-  const tasks = loadLongTasksForScope(scope)
+  const { tasks, unreadable } = readLongTaskFile(scope)
+  if (unreadable) {
+    // An unreadable file loads as no tasks, and writing that back would erase
+    // every checklist in it. Keep it beside the new file so it can be recovered.
+    const file = longTaskFile(scope)
+    renameSync(file, `${file}.unreadable-${String(Date.now())}`)
+  }
   const now = new Date().toISOString()
   const task: LongTask = {
     id: nextId(tasks),

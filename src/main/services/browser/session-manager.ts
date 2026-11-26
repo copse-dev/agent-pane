@@ -6,7 +6,12 @@ import {
 import { currentBrowserScope } from './browser-network-grants.ts'
 import { errorMessage } from '@shared/errors.ts'
 import type { BrowserWindow, BrowserWindowConstructorOptions, Session } from 'electron'
-import { DOM_SNAPSHOT_SCRIPT, parsePageSnapshot, renderSnapshot } from './snapshot-format.ts'
+import {
+  DOM_SNAPSHOT_SCRIPT,
+  parsePageSnapshot,
+  refSelectorSource,
+  renderSnapshot,
+} from './snapshot-format.ts'
 import { expectBoolean, expectRecord, expectString } from '@shared/unknown-value.ts'
 import type { CanvasArtefactIdentity } from '@shared/types/canvas.ts'
 import { CANVAS_TRANSPARENT_ROOT_PROBE, canvasGuestTextCss } from '@shared/canvas/guest-surface.ts'
@@ -462,7 +467,7 @@ export class BrowserSessionManager {
     const ok = expectBoolean(
       await tab.window.webContents.executeJavaScript(
         `(() => {
-        const el = document.querySelector('[data-copse-ref=${JSON.stringify(ref)}]');
+        const el = document.querySelector(${refSelectorSource(ref)});
         if (!el) return false;
         el.scrollIntoView({ block: 'center' });
         el.click();
@@ -480,7 +485,7 @@ export class BrowserSessionManager {
     const ok = expectBoolean(
       await tab.window.webContents.executeJavaScript(
         `(() => {
-        const el = document.querySelector('[data-copse-ref=${JSON.stringify(ref)}]');
+        const el = document.querySelector(${refSelectorSource(ref)});
         if (!el) return false;
         el.focus();
         const setter = Object.getOwnPropertyDescriptor(el.__proto__, 'value');

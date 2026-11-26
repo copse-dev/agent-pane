@@ -208,6 +208,12 @@ async function spawnWorker(root: string): Promise<Worker> {
   proc.stdout.on('data', (chunk: string) => {
     onData(w, chunk)
   })
+  // A write to a worker that is gone before its `exit` is delivered fails with
+  // EPIPE. The write callback rejects that request, but the stream also emits
+  // `error`, and an unheard one is an uncaught exception in the main process.
+  proc.stdin.on('error', (err) => {
+    failWorker(w, new SandboxFsServerUnavailable(err.message))
+  })
   proc.on('exit', () => {
     failWorker(w, new SandboxFsServerUnavailable('worker exited'))
   })

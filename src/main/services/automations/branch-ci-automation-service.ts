@@ -415,6 +415,8 @@ interface Scan {
   candidates: Candidate[]
   /** Observed identities that can never become work; recorded so they are not re-evaluated. */
   ignored: string[]
+  /** Every delivery identity the source listed this time, already seen or not. */
+  listed: string[]
   /** Pull requests last observed as drafts, when the trigger tracks them. */
   draftPullRequests?: number[]
 }
@@ -754,11 +756,12 @@ export function createBranchCiAutomationService(
     const clock = deps.now()
     if (trigger.kind === 'github-ci-failed') {
       const snapshot = await deps.snapshot(definition)
-      const scanResult: Scan = { candidates: [], ignored: [] }
+      const scanResult: Scan = { candidates: [], ignored: [], listed: [] }
       for (const run of snapshot.runs) {
         if (run.status !== 'completed') continue
         if (trigger.pullRequest === undefined && run.head_branch !== trigger.branch) continue
         const id = deliveryId(run)
+        scanResult.listed.push(id)
         if (definition.seenDeliveries.includes(id)) continue
         if (run.head_sha === snapshot.headSha && failed(run)) {
           scanResult.candidates.push({
@@ -787,7 +790,7 @@ export function createBranchCiAutomationService(
     if (trigger.kind === 'github-pr-changed') {
       const observed = await readPullRequests(definition)
       const wasDraft = new Set(definition.draftPullRequests ?? [])
-      const result: Scan = { candidates: [], ignored: [], draftPullRequests: [] }
+      const result: Scan = { candidates: [], ignored: [], listed: [], draftPullRequests: [] }
       for (const pr of observed) {
         if (pr.draft) {
           result.draftPullRequests?.push(pr.number)
@@ -795,6 +798,7 @@ export function createBranchCiAutomationService(
         }
         if (trigger.transition === 'ready-for-review' && !wasDraft.has(pr.number)) continue
         const id = pullRequestDeliveryId(pr, trigger.transition)
+        result.listed.push(id)
         if (definition.seenDeliveries.includes(id)) continue
         result.candidates.push({
           id,
@@ -816,9 +820,10 @@ export function createBranchCiAutomationService(
       return result
     }
     const events = await readLabels(definition)
-    const result: Scan = { candidates: [], ignored: [] }
+    const result: Scan = { candidates: [], ignored: [], listed: [] }
     for (const event of events) {
       const id = `evt:${String(event.id)}`
+      result.listed.push(id)
       if (definition.seenDeliveries.includes(id)) continue
       if (event.label !== trigger.label || event.issue.state !== 'open') {
         result.ignored.push(id)
@@ -846,11 +851,20 @@ export function createBranchCiAutomationService(
     definition: BranchCiAutomation,
     ids: readonly string[],
     draftPullRequests: number[] | undefined,
+    listed: readonly string[],
   ): Promise<void> {
+    const stillListed = new Set(listed)
     await updateDefinitions((all) => {
       return all.map((item) => {
         if (item.id !== definition.id || item.revision !== definition.revision) return item
-        const seen = [...new Set([...item.seenDeliveries, ...ids])].slice(-100)
+        // Over the cap, forget what the source no longer lists first. An identity
+        // it still lists would otherwise come back as a new event on the next
+        // poll, including one baselined as history when the automation was saved.
+        const merged = [...new Set([...item.seenDeliveries, ...ids])]
+        const seen = [
+          ...merged.filter((id) => !stillListed.has(id)),
+          ...merged.filter((id) => stillListed.has(id)),
+        ].slice(-100)
         return {
           ...item,
           seenDeliveries: seen,
@@ -920,7 +934,8 @@ export function createBranchCiAutomationService(
       result.draftPullRequests === undefined
         ? undefined
         : [...new Set([...result.draftPullRequests, ...pendingReady])]
-    if (settled.length > 0 || drafts !== undefined) await markSeen(definition, settled, drafts)
+    if (settled.length > 0 || drafts !== undefined)
+      await markSeen(definition, settled, drafts, result.listed)
   }
 
   async function poll(): Promise<void> {

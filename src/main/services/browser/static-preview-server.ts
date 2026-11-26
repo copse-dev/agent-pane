@@ -84,6 +84,13 @@ export interface StaticPreviewServer {
 }
 
 const servers = new Map<string, PreviewServerEntry>()
+/**
+ * Listeners still starting, by canonical root. Two callers that ask for the same
+ * root before the first listener is bound must share it: a second listener would
+ * replace the first in `servers`, and the first caller's URL would then stop
+ * being recognised as a restricted preview origin.
+ */
+const startingServers = new Map<string, Promise<PreviewServerEntry>>()
 
 /** Exact loopback origin eligible for an authenticated preview request. */
 function previewEntryForRequest(url: string): PreviewServerEntry | null {
@@ -337,9 +344,20 @@ export async function getStaticPreviewServer(root: string): Promise<StaticPrevie
     existing.roots.add(resolve(root))
     return { root: existing.root, url: existing.url }
   }
-  const created = await createPreviewServer(canonicalRoot)
+  let starting = startingServers.get(canonicalRoot)
+  if (!starting) {
+    starting = createPreviewServer(canonicalRoot).then((entry) => {
+      servers.set(canonicalRoot, entry)
+      return entry
+    })
+    startingServers.set(canonicalRoot, starting)
+    const clear = (): void => {
+      startingServers.delete(canonicalRoot)
+    }
+    void starting.then(clear, clear)
+  }
+  const created = await starting
   created.roots.add(resolve(root))
-  servers.set(canonicalRoot, created)
   return { root: created.root, url: created.url }
 }
 

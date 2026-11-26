@@ -45,6 +45,29 @@ describe('sanitizeMcpInputSchema', () => {
     assert.deepEqual(out['properties'], { child: {} })
   })
 
+  it('bounds the depth of an enum entry like any other node', () => {
+    let deep: unknown = 'leaf'
+    for (let i = 0; i < 40; i++) deep = { next: deep }
+    const out = sanitizeMcpInputSchema({
+      type: 'object',
+      properties: { k: { enum: ['a', 1, null, deep] } },
+    })
+    const entries = expectArray(expectRecord(expectRecord(out['properties'])['k'])['enum'])
+    assert.deepEqual(entries.slice(0, 3), ['a', 1, null])
+    let depth = 0
+    for (let node = entries[3]; typeof node === 'object' && node !== null; depth++) {
+      node = Object.hasOwn(node, 'next') ? expectRecord(node)['next'] : undefined
+    }
+    assert.ok(depth <= 8, `enum entry kept ${String(depth)} levels`)
+  })
+
+  it('replaces a properties value that is not an object map', () => {
+    assert.deepEqual(
+      sanitizeMcpInputSchema({ type: 'object', properties: ['a'] })['properties'],
+      {},
+    )
+  })
+
   it('caps oversized enum arrays (#107)', () => {
     const big = Array.from({ length: 500 }, (_, i) => i)
     const out = sanitizeMcpInputSchema({

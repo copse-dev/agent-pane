@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createServer } from 'node:http'
+import { Server as HttpsServer } from 'node:https'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import {
@@ -532,5 +533,44 @@ test('the experimental gate blocks networking and restores saved pairings withou
     assert.equal(host.snapshot().clients.length, 0)
   } finally {
     await Promise.all([host.close(), client.close()])
+  }
+})
+
+test('a sharing listener survives repeated server errors after it starts listening', async (t) => {
+  // Capture the HTTPS server the manager starts: an accept failure (EMFILE when
+  // the process runs out of descriptors) is emitted on it as 'error', and with
+  // no listener EventEmitter rethrows that as an uncaught exception.
+  const listen = t.mock.method(HttpsServer.prototype, 'listen')
+  t.mock.method(console, 'warn', () => undefined)
+  const profile: ClassifierProfile = {
+    id: 'local',
+    label: 'Local model',
+    model: 'local-model',
+    timeoutMs: 5000,
+    connection: {
+      type: 'http',
+      protocol: 'systemone',
+      auth: 'none',
+      baseUrl: 'http://127.0.0.1:1/v1',
+    },
+  }
+  const host = new MachineManager(
+    storage(),
+    () => [profile],
+    async () => {
+      throw new Error('Unexpected call')
+    },
+    'Host',
+  )
+  try {
+    await host.share({ enabled: true, address: '127.0.0.1', port: 0, profileIds: [profile.id] })
+    const server: unknown = listen.mock.calls[0]?.this
+    assert.ok(server instanceof HttpsServer)
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      server.emit('error', Object.assign(new Error('accept EMFILE'), { code: 'EMFILE' }))
+    }
+    assert.equal(host.snapshot().sharing.listening, true)
+  } finally {
+    await host.close()
   }
 })

@@ -45,6 +45,26 @@ export function createRecentKeySet(max: number): RecentKeySet {
 const pathologicalGlobs = createRecentKeySet(MAX_REMEMBERED_GLOB_LISTS)
 
 /**
+ * Whether picomatch accepts the glob. It throws for one longer than 65,536
+ * characters, and the throw came out of the adapter's discovery filter, so one
+ * oversized `glob` in any hooks.json dropped every dialect's `afterFileEdit`
+ * hooks on every edit. A glob that cannot be compiled names no path: it matches
+ * nothing, like a `matcher` that is not a valid regex, and the hook's other
+ * globs still apply.
+ */
+function globCompiles(glob: string): boolean {
+  try {
+    picomatch(glob, { dot: true })
+    return true
+  } catch (error) {
+    console.warn(
+      `[hooks] afterFileEdit glob ${JSON.stringify(glob.slice(0, 80))} is not usable and matches nothing: ${error instanceof Error ? error.message : String(error)}`,
+    )
+    return false
+  }
+}
+
+/**
  * Whether an `afterFileEdit` hook's globs cover the edited path. No globs means
  * every edit (Cursor's default). Otherwise the absolute path is matched, plus,
  * when it is under the workspace, its workspace-relative form (so `**` and
@@ -69,8 +89,9 @@ export function afterFileEditGlobMatches(
     const rel = relativeWithin(workspaceRoot, filePath)
     if (rel) candidates.push(rel.replace(/\\/g, '/'))
   }
-  const exact = globs.map((glob) => picomatch(glob, { dot: true }))
-  const byBasename = globs.map((glob) => picomatch(glob, { dot: true, basename: true }))
+  const compilable = globs.filter(globCompiles)
+  const exact = compilable.map((glob) => picomatch(glob, { dot: true }))
+  const byBasename = compilable.map((glob) => picomatch(glob, { dot: true, basename: true }))
   const tester = {
     test: (candidate: string): boolean =>
       exact.some((isMatch) => isMatch(candidate)) ||

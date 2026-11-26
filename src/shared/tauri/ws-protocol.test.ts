@@ -72,6 +72,22 @@ describe('Tauri WebSocket protocol', () => {
     assert.deepEqual(decodeServerFrame(encodeFrame(event)), event)
   })
 
+  it('carries a Node Buffer as bytes rather than its toJSON expansion', () => {
+    const decoded = decodeServerFrame(
+      encodeFrame({
+        t: 'event',
+        channel: 'browser:recording-frame',
+        args: [3, Buffer.from([0, 127, 128, 255]), { nested: [Buffer.from([1])] }],
+      }),
+    )
+
+    assert.deepEqual(decoded, {
+      t: 'event',
+      channel: 'browser:recording-frame',
+      args: [3, new Uint8Array([0, 127, 128, 255]), { nested: [new Uint8Array([1])] }],
+    })
+  })
+
   it('keeps base64 conversion byte-exact across padding lengths', () => {
     for (const bytes of [
       new Uint8Array([]),

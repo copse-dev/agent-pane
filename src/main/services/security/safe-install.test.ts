@@ -72,6 +72,38 @@ describe('detectPackageInstall', () => {
     assert.equal(detectPackageInstall('echo hi; pip install requests').isInstall, true)
   })
 
+  it('detects an install on its own line or after a background job', () => {
+    for (const cmd of [
+      'cd web\nnpm install',
+      'git pull\r\npip install requests',
+      'pnpm dev &\nnpm install left-pad',
+      'sleep 1 & cargo install ripgrep',
+    ]) {
+      assert.equal(detectPackageInstall(cmd).isInstall, true, cmd)
+    }
+    assert.equal(detectPackageInstall('npm test 2>&1\ngit status').isInstall, false)
+  })
+
+  it('detects an install inside a group, a compound command or a wrapper', () => {
+    for (const cmd of [
+      '(npm install left-pad)',
+      '{ npm install left-pad; }',
+      '(cd web && npm ci)',
+      'if [ -f package.json ]; then npm install; fi',
+      'for d in a b; do (cd $d && pnpm install); done',
+      '! npm install left-pad',
+      'time npm install',
+      'command npm install',
+      'env CI=1 npm install',
+      'nohup pip install requests',
+    ]) {
+      assert.equal(detectPackageInstall(cmd).isInstall, true, cmd)
+    }
+    for (const cmd of ['(npm test)', 'time npm run build', 'env | grep npm', 'echo then']) {
+      assert.equal(detectPackageInstall(cmd).isInstall, false, cmd)
+    }
+  })
+
   it('sees through leading env assignments and sudo', () => {
     assert.equal(detectPackageInstall('CI=1 npm install').isInstall, true)
     assert.equal(detectPackageInstall('sudo npm install -g typescript').jsManager, true)

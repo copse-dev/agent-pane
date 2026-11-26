@@ -376,6 +376,33 @@ describe('issue labelled', () => {
     assert.ok(history.every((entry) => entry.outcome === 'started'))
   })
 
+  it('keeps a baselined event seen while GitHub still lists it, however many arrive after it', async (t) => {
+    const w = await world(t)
+    // Newest first, as GitHub lists them: sixty labellings that predate the automation.
+    const history = Array.from({ length: 60 }, (_, index) => labeled(1060 - index, 60 - index))
+    for (const event of history) w.labelled.add(event.issue.number)
+    w.events = history
+    await w.service.upsert('project-a', {
+      ...base,
+      trigger: { kind: 'github-issue-labeled', label: 'needs-triage' },
+    })
+
+    // Forty-one later labellings on issues that were closed again: nothing to
+    // run, but each is remembered. The page still lists most of the history.
+    const closed = Array.from({ length: 41 }, (_, index) => {
+      const event = labeled(2000 + index, 500 + index)
+      event.issue.state = 'closed'
+      return event
+    })
+    w.events = [...closed.toReversed(), ...history].slice(0, 100)
+    await w.service.poll()
+    await w.supervisor.waitForIdle()
+    await w.service.poll()
+    await w.supervisor.waitForIdle()
+
+    assert.equal(w.threads.size, 0, 'a labelling from before the automation is not an event')
+  })
+
   it('does not start when the label was removed before the run began', async (t) => {
     const w = await world(t)
     await w.service.upsert('project-a', {

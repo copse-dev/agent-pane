@@ -200,3 +200,14 @@ export const DOM_SNAPSHOT_SCRIPT = `(() => {
   if (document.body) walk(document.body, 0);
   return { title: document.title, url: location.href, nodes, truncated };
 })()`
+
+/**
+ * JavaScript source for a string literal holding the CSS selector of the
+ * element a snapshot tagged `ref`. Interpolate it bare, as
+ * `document.querySelector(${refSelectorSource(ref)})`: quoting the selector by
+ * hand around a JSON-encoded ref lets a ref containing that quote end the
+ * string, and the rest of the ref then runs as script in the page.
+ */
+export function refSelectorSource(ref: string): string {
+  return JSON.stringify(`[data-copse-ref=${JSON.stringify(ref)}]`)
+}

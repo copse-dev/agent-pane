@@ -259,6 +259,42 @@ describe('markdown browser links', () => {
     assert.deepEqual(requested, [href])
   })
 
+  it('opens an artifact-shaped link with a malformed agent escape as an ordinary link', async () => {
+    // `%zz` survives URL parsing but is not decodable, so this is not an artifact route.
+    const href = 'https://lookalike.example/v1/agents/%zz/artifacts/download?path=artifacts%2Fa.png'
+    const root = document.createElement('div')
+    root.innerHTML = `<a href="${href}">Open</a>`
+    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
+    const requested: string[] = []
+    store.on('browser_url_requested', (url) => requested.push(url))
+    let downloads = 0
+    const unbind = bindBrowserLinkClicks(root, store, {
+      remoteAgent: {
+        downloadArtifact: async () => {
+          downloads++
+        },
+      },
+    })
+
+    qsRequired(root, 'a').dispatchEvent(
+      new window.MouseEvent('click', { bubbles: true, cancelable: true }),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    unbind()
+    assert.equal(downloads, 0)
+    assert.deepEqual(requested, [href])
+  })
+
+  it('renders a message whose image has a malformed artifact agent escape', () => {
+    const html = renderMarkdown(
+      'Before\n\n<img alt="shot" src="https://api.cursor.com/v1/agents/%zz/artifacts/download?path=artifacts%2Fa.png">\n\nAfter',
+    )
+    assert.match(html, /Before/)
+    assert.match(html, /After/)
+    assert.doesNotMatch(html, /remote-artifact-image/)
+  })
+
   it('downloads artifacts from a configured remote agent base URL', async () => {
     const href =
       'https://agents.internal.example/v1/agents/bc-1/artifacts/download?path=artifacts%2Fa.png'

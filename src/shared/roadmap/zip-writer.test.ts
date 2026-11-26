@@ -71,7 +71,22 @@ describe('ZipBuilder', () => {
       zip.addFile('back\\slash.txt', new Uint8Array())
     })
     assert.throws(() => {
+      zip.addFile('nested/../escape.txt', new Uint8Array())
+    })
+    assert.throws(() => {
+      zip.addFile('nested/..', new Uint8Array())
+    })
+    assert.throws(() => {
       zip.addFile('ok.txt', new Uint8Array())
     })
+  })
+
+  it('accepts consecutive dots inside a file name', () => {
+    const zip = new ZipBuilder()
+    zip.addFile('attachments/item-1/att-1-notes..txt', new Uint8Array([1]))
+    assert.deepEqual(
+      readZip(zip.build()).map((entry) => entry.path),
+      ['attachments/item-1/att-1-notes..txt'],
+    )
   })
 })

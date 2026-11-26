@@ -225,10 +225,12 @@ async function ignoredEntriesFor(repoRoot: string): Promise<string[]> {
   try {
     const { stdout } = await runCommand(
       'git',
-      ['ls-files', '--others', '--ignored', '--directory', '--exclude-standard'],
+      // `-z`: without it git C-quotes any path holding non-ASCII bytes, a quote
+      // or a backslash, and the quoted form no longer ends in `/`.
+      ['ls-files', '--others', '--ignored', '--directory', '--exclude-standard', '-z'],
       { cwd: repoRoot, ...GIT_CMD_OPTS },
     )
-    return stdout.split('\n')
+    return stdout.split('\0')
   } catch {
     return []
   }

@@ -27,6 +27,11 @@ describe('sanitizeStoredFileName', () => {
     assert.equal(stored, `${'a'.repeat(76)}.zip`)
   })
 
+  it('caps the name even when everything after the last dot is longer than the cap', () => {
+    const stored = sanitizeStoredFileName(`v1.${'a'.repeat(200)}`, 'video')
+    assert.equal(stored, `v1.${'a'.repeat(77)}`)
+  })
+
   it('falls back when nothing safe is left', () => {
     assert.equal(sanitizeStoredFileName('', 'archive.zip'), 'archive.zip')
     assert.equal(sanitizeStoredFileName('...', 'video'), 'video')

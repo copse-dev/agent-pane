@@ -31,6 +31,7 @@ type ResponseBody =
   | { ok: false; error: string }
 
 const REQUEST_ENV = 'COPSE_SANDBOX_FS_REQUEST'
+const REQUEST_STDIN_ENV = 'COPSE_SANDBOX_FS_REQUEST_STDIN'
 const SERVER_ENV = 'COPSE_SANDBOX_FS_SERVER'
 
 function parseRequest(value: unknown): Request | null {
@@ -92,8 +93,27 @@ function errorBody(err: unknown): ResponseBody {
   return { ok: false, error: errorMessage(err) }
 }
 
-function oneShot(): void {
-  const raw = process.argv[2] ?? process.env[REQUEST_ENV]
+function readStdin(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let text = ''
+    process.stdin.setEncoding('utf-8')
+    process.stdin.on('data', (chunk: string) => {
+      text += chunk
+    })
+    process.stdin.on('end', () => {
+      resolve(text)
+    })
+    process.stdin.on('error', reject)
+  })
+}
+
+async function oneShot(): Promise<void> {
+  // A request too large for one argv/env string (a few-hundred-KB file write is
+  // already past Linux's 128 KiB per-string limit) arrives on stdin instead.
+  const raw =
+    process.argv[2] ??
+    process.env[REQUEST_ENV] ??
+    (process.env[REQUEST_STDIN_ENV] ? await readStdin() : undefined)
   if (!raw) {
     process.stdout.write(JSON.stringify({ ok: false, error: 'missing request argument' }))
     process.exit(1)
@@ -176,5 +196,8 @@ function server(): void {
 if (process.env[SERVER_ENV]) {
   server()
 } else {
-  oneShot()
+  oneShot().catch((err: unknown) => {
+    process.stdout.write(JSON.stringify(errorBody(err)))
+    process.exit(1)
+  })
 }

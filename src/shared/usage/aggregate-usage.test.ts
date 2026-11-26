@@ -9,7 +9,7 @@ import {
   parseUsageEvents,
   pruneUsageEvents,
 } from './aggregate-usage.ts'
-import { formatPeriodHeadline } from './format-usage-summary.ts'
+import { formatPeriodHeadline, formatTokenCount } from './format-usage-summary.ts'
 import type { Thread } from '@shared/types'
 import type { UsageEvent } from './usage-event.ts'
 
@@ -409,5 +409,19 @@ describe('aggregate usage', () => {
     const pruned = pruneUsageEvents(events, NOW)
     assert.equal(pruned.length, 1)
     assert.equal(pruned[0]?.inputTokens, 2)
+  })
+})
+
+describe('formatTokenCount', () => {
+  it('scales to thousands and millions', () => {
+    assert.equal(formatTokenCount(999), '999')
+    assert.equal(formatTokenCount(1_500), '1.5k')
+    assert.equal(formatTokenCount(999_949), '999.9k')
+    assert.equal(formatTokenCount(2_340_000), '2.3M')
+  })
+
+  it('moves to millions once the thousands figure would round up to 1000', () => {
+    assert.equal(formatTokenCount(999_950), '1.0M')
+    assert.equal(formatTokenCount(999_999), '1.0M')
   })
 })

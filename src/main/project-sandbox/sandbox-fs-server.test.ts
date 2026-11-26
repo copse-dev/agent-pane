@@ -326,4 +326,44 @@ describe('sandbox-fs-server', () => {
       await rm(dir, { recursive: true, force: true })
     }
   })
+  // A worker that is gone but whose `exit` has not been delivered yet fails the
+  // stdin write with EPIPE. Node hands that to the write callback and also emits
+  // `error` on the stream, which with no listener is an uncaught exception in
+  // the main process.
+  it('rejects, without an unhandled stream error, when the worker stopped reading stdin', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'copse-sbfs-epipe-'))
+    const uncaught: unknown[] = []
+    const onUncaught = (err: unknown): void => {
+      uncaught.push(err)
+    }
+    process.on('uncaughtException', onUncaught)
+    let worker: ChildProcess | undefined
+    setWorkerSpawnerForTest(() => {
+      // Closes its stdin, says so, and stays alive: the pipe has no reader.
+      const child = spawn('sh', ['-c', 'exec 0<&-; echo closed; exec sleep 30'], {
+        stdio: 'pipe',
+      })
+      worker = child
+      return new Promise<ChildProcess>((resolve) => {
+        child.stdout.once('data', () => {
+          resolve(child)
+        })
+      })
+    })
+    try {
+      const result = await requestViaServer({ op: 'statDir', path: dir }, dir).catch(
+        (err: unknown) => err,
+      )
+      // The stream's `error` follows the write callback within a few turns of
+      // the event loop; give it those turns rather than a wall-clock pause.
+      for (let turn = 0; turn < 10; turn++) await new Promise((resolve) => setImmediate(resolve))
+      assert.ok(result instanceof SandboxFsServerUnavailable, String(result))
+      assert.deepEqual(uncaught, [])
+      assert.equal(isSandboxFsServerLive(), false, 'a worker that cannot be written to is retired')
+    } finally {
+      process.off('uncaughtException', onUncaught)
+      worker?.kill('SIGKILL')
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
 })

@@ -1,4 +1,6 @@
 import { collapseWhitespace } from '@copse/std/one-line-text.ts'
+import { clipEnd, clipStart } from './clip-text.ts'
+
 /**
  * Per-step soft reasoning budget.
  *
@@ -59,12 +61,12 @@ export function excerptReasoningForCarryForward(reasoning: string, carryChars: n
   const collapsed = collapseWhitespace(reasoning)
   if (collapsed.length <= carryChars) return collapsed
   const marker = ' [...] '
-  if (carryChars <= marker.length) return collapsed.slice(-carryChars)
+  if (carryChars <= marker.length) return clipEnd(collapsed, carryChars)
   const room = carryChars - marker.length
   const headChars = Math.floor(room / 3)
   const tailChars = room - headChars
-  const head = collapsed.slice(0, headChars).trimEnd()
-  const tail = collapsed.slice(collapsed.length - tailChars).trimStart()
+  const head = clipStart(collapsed, headChars).trimEnd()
+  const tail = clipEnd(collapsed, tailChars).trimStart()
   return `${head}${marker}${tail}`
 }
 

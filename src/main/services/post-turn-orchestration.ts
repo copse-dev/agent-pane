@@ -122,6 +122,10 @@ async function executeReviewTool(
 /** Deterministic parent continuation when todos are still open before review. */
 export async function runPreReviewTodoGate(opts: RunParentContinuationOptions): Promise<void> {
   for (let attempt = 0; attempt < MAX_PRE_REVIEW_TODO_ATTEMPTS; attempt++) {
+    // Stop stops agent work (decision 3). A loop that absorbed the abort returns
+    // normally, so without this the gate would spend a grant, announce a machine
+    // bubble and leave its nudge in history as a user message nobody answered.
+    if (opts.signal.aborted) return
     if (!hasOpenTodos(opts.getOpenTodos())) return
     // Each pre-review attempt is a machine-initiated new turn (decision 5):
     // consume one grant so the local cap tightens inside the shared budget. When
@@ -131,7 +135,6 @@ export async function runPreReviewTodoGate(opts: RunParentContinuationOptions): 
       ...opts,
       userNudge: OPEN_TODOS_PRE_REVIEW_NUDGE,
     })
-    if (opts.signal.aborted) return
   }
 }
 
@@ -377,7 +380,26 @@ export async function runPostTurnReviewCycle(opts: RunPostTurnReviewCycleOptions
   }
 
   const maxCycles = resolveMaxReviewCycles(opts.maxCycles)
+  // Read through a call: the signal changes across the awaits below, which a
+  // property read narrowed by the check at the top of the loop would hide.
+  const runCancelled = (): boolean => opts.signal.aborted
   for (let cycle = 0; cycle < maxCycles; cycle++) {
+    // Stop stops agent work (decision 3). The agent loop absorbs an abort and
+    // returns normally, so this can be reached with the run already cancelled.
+    // A review started then makes no model call, and the subagent's placeholder
+    // summary would be published — and fired at `postTurnReview` hooks — as a
+    // clean verdict. A re-review after a cancelled remediation turn is dropped
+    // without a chunk, leaving the verdict that asked for it on the card.
+    if (runCancelled()) {
+      if (cycle === 0) {
+        opts.emitChunk({
+          type: 'post_turn_review',
+          status: 'skipped',
+          summary: 'Review cancelled.',
+        })
+      }
+      return
+    }
     opts.emitChunk({ type: 'post_turn_review', status: 'running', summary: '' })
     try {
       const review = await opts.runReviewOnce(opts.getTodos())
@@ -418,7 +440,7 @@ export async function runPostTurnReviewCycle(opts: RunPostTurnReviewCycleOptions
       }
 
       const lastCycle = cycle >= maxCycles - 1
-      if (opts.signal.aborted) {
+      if (runCancelled()) {
         stopFollowUp('Follow-up turn not started: the run was cancelled.')
         break
       }
@@ -452,7 +474,7 @@ export async function runPostTurnReviewCycle(opts: RunPostTurnReviewCycleOptions
         break
       }
     } catch (err) {
-      const detail = opts.signal.aborted ? 'Review cancelled.' : classifyAgentError(err)
+      const detail = runCancelled() ? 'Review cancelled.' : classifyAgentError(err)
       opts.emitChunk({ type: 'post_turn_review', status: 'error', summary: detail })
       break
     }

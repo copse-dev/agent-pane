@@ -22,6 +22,8 @@ import {
   gatewayWriteFile,
   SANDBOX_FS_WORKER_STDOUT_MAX_BYTES,
   gatewayListDir,
+  oneShotRequestTransport,
+  SANDBOX_FS_INLINE_REQUEST_MAX_BYTES,
   setSandboxFsGatewayEnabledForTest,
   setSandboxFsOneShotInvokerForTest,
 } from './sandbox-fs-client.ts'
@@ -251,6 +253,37 @@ describe('sandbox-fs-client', () => {
       restore()
     } finally {
       await rm(dir, { recursive: true, force: true })
+    }
+  })
+  it('keeps a small one-shot request inline: env under a sandbox wrap, argv otherwise', () => {
+    const request = JSON.stringify({ op: 'readdir', path: '/work space/src' })
+    assert.deepEqual(oneShotRequestTransport(request, true), {
+      args: [],
+      env: { COPSE_SANDBOX_FS_REQUEST: request },
+    })
+    assert.deepEqual(oneShotRequestTransport(request, false), { args: [request], env: {} })
+  })
+
+  // `fs:write-file` accepts 16 MiB, but one env string is capped by the kernel
+  // (128 KiB on Linux, 1 MiB for the whole block on macOS): saving a large file
+  // through the sandboxed worker failed with `spawn E2BIG`.
+  it('sends a one-shot request too large for an env string over stdin', async () => {
+    const content = 'é'.repeat(SANDBOX_FS_INLINE_REQUEST_MAX_BYTES)
+    const request = JSON.stringify({ op: 'writeFile', path: '/w/big.json', content })
+    const inline = await runCommand(process.execPath, ['-e', '0'], {
+      env: { COPSE_SANDBOX_FS_REQUEST: 'x'.repeat(2 * 1024 * 1024) },
+      unsandboxed: true,
+    }).then(
+      () => 'spawned',
+      (err: unknown) => String(err),
+    )
+    assert.match(inline, /E2BIG/, 'the platform refuses a multi-megabyte env string')
+
+    for (const sandboxed of [true, false]) {
+      const transport = oneShotRequestTransport(request, sandboxed)
+      assert.deepEqual(transport.args, [])
+      assert.deepEqual(transport.env, { COPSE_SANDBOX_FS_REQUEST_STDIN: '1' })
+      assert.equal(transport.stdin?.toString('utf-8'), request)
     }
   })
 })

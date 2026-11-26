@@ -154,11 +154,29 @@ function requestUserAnswersUnpaused(
   })
 }
 
-export function initAskUser(
-  win: BrowserWindow,
-  ipcMain: IpcMain,
+/** The parts of a window the question lifecycle uses, so it runs without Electron. */
+export interface AskUserWindow {
+  isDestroyed: () => boolean
+  /** Deliver to the renderer. Only called while the window is alive. */
+  send: (channel: 'agent:ask-user-request' | 'agent:ask-user-cancelled', payload: object) => void
+  onClosed: (listener: () => void) => void
+}
+
+/**
+ * Register the window-backed question handler and tie its pending questions to
+ * `window`'s lifetime. `respond` settles one with the renderer's answers;
+ * `replay` re-sends every question still open.
+ *
+ * Electron throws on touching a destroyed window, and this boot-time window can
+ * be closed while the app (another main window, a running turn) lives on. So
+ * nothing is sent to a destroyed window: an unguarded send used to throw out of
+ * the close listener on the first pending question, before its promise
+ * resolved, leaving that turn and every later question hanging.
+ */
+export function attachAskUserToWindow(
+  window: AskUserWindow,
   alertUser: UserAlertSender,
-): (target: object) => void {
+): { respond: (id: string, answers: string[]) => void; replay: () => void } {
   const pending = new Map<string, (result: AskUserResult) => void>()
   const replay = new Map<
     string,
@@ -177,53 +195,82 @@ export function initAskUser(
     resolve(result)
   }
 
+  // If the window goes away, resolve everything still pending with blank answers
+  // so the agent loop unblocks instead of hanging on a dead renderer.
+  window.onClosed(() => {
+    for (const id of [...pending.keys()]) settle(id, { answers: [] })
+  })
+
+  const windowHandler = createWindowAskUserHandler({
+    send: (channel, payload) => {
+      if (!window.isDestroyed()) window.send(channel, payload)
+    },
+    register: (id, resolve, context) => {
+      pending.set(id, resolve)
+      replay.set(id, context)
+      if (context.threadId)
+        pendingQuestionThreads.set(id, {
+          threadId: context.threadId,
+          questions: context.questions,
+        })
+    },
+    settle,
+    alertUser,
+  })
+  setAskUserHandler((req, signal) => {
+    // Nobody can see a question in a destroyed window: answer as the close
+    // listener would have, rather than waiting out the 30-minute timeout.
+    if (window.isDestroyed()) return Promise.resolve({ answers: [] })
+    return windowHandler(req, signal)
+  })
+
+  return {
+    respond: (id, answers): void => {
+      settle(id, { answers })
+    },
+    replay: (): void => {
+      if (window.isDestroyed()) return
+      for (const [id, context] of replay) {
+        window.send('agent:ask-user-request', { id, ...context })
+      }
+    },
+  }
+}
+
+export function initAskUser(
+  win: BrowserWindow,
+  ipcMain: IpcMain,
+  alertUser: UserAlertSender,
+): (target: object) => void {
+  const questions = attachAskUserToWindow(
+    {
+      isDestroyed: () => win.isDestroyed(),
+      send: (channel, payload) => {
+        win.webContents.send(channel, payload)
+      },
+      onClosed: (listener) => {
+        win.on('closed', listener)
+      },
+    },
+    alertUser,
+  )
+
   ipcMain.handle('ask:respond', (event, ...rawArgs) => {
     try {
       // Only the window's main frame may answer — an embedded/compromised frame
       // can't satisfy a pending question on the agent's behalf.
       assertMainFrameSender(event, win)
       const [id, answers] = parseIpcArgs(askRespondSchema, rawArgs)
-      settle(id, { answers })
+      questions.respond(id, answers)
     } catch (err) {
       if (err instanceof IpcValidationError) return
       throw err
     }
   })
 
-  // If the window goes away, resolve everything still pending with blank answers
-  // so the agent loop unblocks instead of hanging on a dead renderer.
-  win.on('closed', () => {
-    for (const [id, resolve] of pending) {
-      pending.delete(id)
-      replay.delete(id)
-      pendingQuestionThreads.delete(id)
-      resolve({ answers: [] })
-    }
-  })
-
-  setAskUserHandler(
-    createWindowAskUserHandler({
-      send: (channel, payload) => {
-        win.webContents.send(channel, payload)
-      },
-      register: (id, resolve, context) => {
-        pending.set(id, resolve)
-        replay.set(id, context)
-        if (context.threadId)
-          pendingQuestionThreads.set(id, {
-            threadId: context.threadId,
-            questions: context.questions,
-          })
-      },
-      settle,
-      alertUser,
-    }),
-  )
   return (target): void => {
-    if (target !== win.webContents) return
-    for (const [id, context] of replay) {
-      win.webContents.send('agent:ask-user-request', { id, ...context })
-    }
+    if (win.isDestroyed() || target !== win.webContents) return
+    questions.replay()
   }
 }
 

@@ -100,6 +100,7 @@ import {
   type ShellRoutingTool,
 } from './command-routing-config.ts'
 import { resolveAutoApproval } from './auto-approval-config.ts'
+import { operandLeavesWorkspace } from './auto-approval.ts'
 import {
   BROWSER_TOOLS,
   READ_ONLY_BROWSER_TOOLS,
@@ -1319,6 +1320,13 @@ function activeShellReplayLeaseIdentity(
 
 function outputTransformAllowed(segment: string, workspaceRoot: string): boolean {
   if (!isReadOnlySimpleCommand(segment)) return false
+  // "Allowed in the sandbox" rests on the OS refusing a read of `~`, `/` or
+  // `..`, which the scope analyzer scores as contained. A companion of an
+  // outside-sandbox lease runs with no such refusal, so those operands ask.
+  const namesOutside = shellSegments(segment).some((argv) =>
+    argv.slice(1).some((token) => operandLeavesWorkspace(token, workspaceRoot)),
+  )
+  if (namesOutside) return false
   return sandboxCommandNormallyAllowed(segment, workspaceRoot)
 }
 
@@ -1794,12 +1802,15 @@ export async function ensureShellCommandPermitted(
   // the full reason list so extra risks (curl, custom registry, …) stay visible.
   // In the sandbox a runner alone is allowed, so a lone destructive reason
   // (`rm -f x && npx wdio`) is the real cause and must not be relabelled.
+  // With auto-run off (or Always ask) every command carries the same single
+  // "auto-run is disabled" reason, which says nothing about the command, so
+  // count the command's own signals instead: a script that also downloads,
+  // redirects the registry or reaches a host is not relabelled as an install.
   const install = detectPackageInstall(command)
-  if (
-    install.isInstall &&
-    effectiveReasons.length === 1 &&
-    dangerousInSandboxReasons(command).length === 0
-  ) {
+  const installIsSoleSignal = autoRun
+    ? effectiveReasons.length === 1
+    : analyzeShellCommand(command, workspaceRoot).reasons.length <= 1
+  if (install.isInstall && installIsSoleSignal && dangerousInSandboxReasons(command).length === 0) {
     const safeInstall = getSetting<boolean>('safeInstallEnabled', true)
     const { approved } = await requestApproval(
       install.isEphemeralRunner

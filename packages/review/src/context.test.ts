@@ -65,6 +65,50 @@ describe('splitDiff', () => {
     assert.ok(files[0]?.text.startsWith('diff --git a/src/a.ts'))
   })
 
+  it('reads a path that itself holds " b/" and a rename between two such paths', () => {
+    const diff = [
+      'diff --git a/docs/plan b/notes.md b/docs/plan b/notes.md',
+      'index 1111111..2222222 100644',
+      '--- a/docs/plan b/notes.md',
+      '+++ b/docs/plan b/notes.md',
+      '@@ -1 +1 @@',
+      '-old',
+      '+new',
+      'diff --git a/plan b/old.md b/plan b/new.md',
+      'similarity index 100%',
+      'rename from plan b/old.md',
+      'rename to plan b/new.md',
+      '',
+    ].join('\n')
+    assert.deepEqual(
+      splitDiff(diff).map((file) => [file.path, file.status, file.oldPath]),
+      [
+        ['docs/plan b/notes.md', 'modified', undefined],
+        ['plan b/new.md', 'renamed', 'plan b/old.md'],
+      ],
+    )
+  })
+
+  it('counts changed lines whose own text starts with -- or ++', () => {
+    const diff = [
+      'diff --git a/db/schema.sql b/db/schema.sql',
+      'index 1111111..2222222 100644',
+      '--- a/db/schema.sql',
+      '+++ b/db/schema.sql',
+      '@@ -1,3 +1,3 @@',
+      '--- drop the legacy table',
+      '-DROP TABLE legacy;',
+      '+++ keep the legacy table',
+      '+SELECT 1;',
+      ' COMMIT;',
+      '',
+    ].join('\n')
+    assert.deepEqual(
+      splitDiff(diff).map((file) => [file.additions, file.deletions]),
+      [[2, 2]],
+    )
+  })
+
   it('decodes C-quoted paths, including octal UTF-8 and escapes', () => {
     const quoted = [
       'diff --git "a/caf\\303\\251.ts" "b/caf\\303\\251.ts"',

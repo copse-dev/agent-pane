@@ -1,7 +1,7 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type {
@@ -15,6 +15,8 @@ import { runBackgroundTool } from '../../tools/background-process-tool.ts'
 import { runShellTool } from '../../tools/shell-tool.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import { setApprovalHandler, type ApprovalRequest } from '../approval.ts'
+import { runWithAgentRunReadonly } from '../agent-run-readonly.ts'
+import { clearDiffQueueForTest, setStagedDiffResolver } from '../diff-queue.ts'
 import { runWithDecisionRecorder, type RecordedDecision } from '../security/decision-log-store.ts'
 import type { AcpPermissionRequestContext } from './acp-client.ts'
 import { setSetting } from '../storage/settings.ts'
@@ -28,6 +30,7 @@ import { setGitAvailableForTest } from '../tool-availability.ts'
 import {
   AcpTurnFailure,
   acpTurnSpawnConfig,
+  bridgedWriteAuditKey,
   buildAcpPrompt,
   buildAcpPromptContent,
   grantableAcpStateDir,
@@ -47,6 +50,7 @@ import {
   shouldAutoApproveSandboxedCodexCodeMode,
   runWithAcpRetry,
   sliceLines,
+  writeTextFileForTest,
 } from './acp-agent-service.ts'
 import { acpSandboxGithubSteer } from './acp-network-denial-steer.ts'
 import { resolveAcpPermissionMode } from './acp-agent-registry.ts'
@@ -1899,5 +1903,135 @@ describe('grantableAcpStateDir', () => {
     assert.equal(grantableAcpStateDir(undefined, scoped, undefined), undefined)
     assert.equal(grantableAcpStateDir('CLAUDE_CONFIG_DIR', undefined, undefined), undefined)
     assert.equal(grantableAcpStateDir('CLAUDE_CONFIG_DIR', { FOO: '1' }, { FOO: '1' }), undefined)
+  })
+})
+
+describe('fs/write_text_file through the diff queue', () => {
+  let root = ''
+  let restoreWorkspace: (() => void) | undefined
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'copse-acp-write-'))
+    restoreWorkspace = setWorkspaceRootForTest(root)
+  })
+
+  afterEach(() => {
+    setStagedDiffResolver(null)
+    clearDiffQueueForTest()
+    restoreWorkspace?.()
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  const inThread = <T>(fn: () => Promise<T>): Promise<T> =>
+    runWithThreadExecutionContext(
+      {
+        projectId: 'test-project',
+        threadId: 'test-thread',
+        projectRoot: root,
+        root,
+        checkoutMode: 'shared',
+        branch: null,
+      },
+      fn,
+    )
+
+  // A write the turn's Stop never reaches must still answer: bound the wait so
+  // a regression fails instead of hanging the suite.
+  const settled = <T>(write: Promise<T>): Promise<T | 'hung'> =>
+    Promise.race([
+      write,
+      new Promise<'hung'>((resolve) => {
+        setTimeout(() => {
+          resolve('hung')
+        }, 500).unref()
+      }),
+    ])
+
+  it('answers a write a headless host decided while it was being staged', async () => {
+    writeFileSync(join(root, 'a.txt'), 'old\n')
+    setStagedDiffResolver(() => Promise.resolve(true))
+    const queueWrites = new Set<string>()
+
+    const result = await inThread(() =>
+      settled(
+        writeTextFileForTest(
+          { sessionId: 's1', path: join(root, 'a.txt'), content: 'new\n' },
+          new AbortController().signal,
+          queueWrites,
+          root,
+        ),
+      ),
+    )
+
+    assert.deepEqual(result, {})
+    assert.equal(readFileSync(join(root, 'a.txt'), 'utf-8'), 'new\n')
+    assert.deepEqual([...queueWrites], ['a.txt'])
+  })
+
+  it('reports a rejection a headless host decided while the write was being staged', async () => {
+    writeFileSync(join(root, 'a.txt'), 'old\n')
+    setStagedDiffResolver(() => Promise.resolve(false))
+
+    await assert.rejects(
+      inThread(() =>
+        settled(
+          writeTextFileForTest(
+            { sessionId: 's1', path: join(root, 'a.txt'), content: 'new\n' },
+            new AbortController().signal,
+            new Set(),
+            root,
+          ),
+        ),
+      ),
+      /rejected by the user/,
+    )
+    assert.equal(readFileSync(join(root, 'a.txt'), 'utf-8'), 'old\n')
+  })
+
+  it('refuses a write the diff queue would not stage instead of waiting on it', async () => {
+    writeFileSync(join(root, 'a.txt'), 'old\n')
+
+    await assert.rejects(
+      inThread(() =>
+        runWithAgentRunReadonly(true, () =>
+          settled(
+            writeTextFileForTest(
+              { sessionId: 's1', path: join(root, 'a.txt'), content: 'new\n' },
+              new AbortController().signal,
+              new Set(),
+              root,
+            ),
+          ),
+        ),
+      ),
+      /read-only/i,
+    )
+    assert.equal(readFileSync(join(root, 'a.txt'), 'utf-8'), 'old\n')
+  })
+})
+
+describe('bridgedWriteAuditKey', () => {
+  const cwd = join(tmpdir(), 'copse-worktree')
+  const projectRoot = join(tmpdir(), 'copse-project')
+
+  it('keys a bridged edit by the workspace-relative path the audit compares', () => {
+    assert.equal(bridgedWriteAuditKey('src/a.ts', cwd, projectRoot), 'src/a.ts')
+    assert.equal(bridgedWriteAuditKey('./src/a.ts', cwd, projectRoot), 'src/a.ts')
+    // The write tools accept an absolute path into the turn's root, and agents
+    // used to their own absolute-path tools send one.
+    assert.equal(bridgedWriteAuditKey(join(cwd, 'src', 'a.ts'), cwd, projectRoot), 'src/a.ts')
+    assert.equal(bridgedWriteAuditKey('src/lib/../a.ts', cwd, projectRoot), 'src/a.ts')
+  })
+
+  it('keys a path into the aliased project checkout by the same file in the worktree', () => {
+    assert.equal(
+      bridgedWriteAuditKey(join(projectRoot, 'src', 'a.ts'), cwd, projectRoot),
+      'src/a.ts',
+    )
+  })
+
+  it('leaves a path outside both roots as written', () => {
+    const outside = join(tmpdir(), 'elsewhere', 'a.ts')
+    assert.equal(bridgedWriteAuditKey(outside, cwd, null), outside.replace(/\\/g, '/'))
   })
 })

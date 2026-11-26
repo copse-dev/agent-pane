@@ -145,6 +145,108 @@ describe('SshConnectionManager', () => {
       assert.equal(connectCalls, 1)
     })
   })
+  /** A transport whose `connect()` stays pending until the test releases it. */
+  class GatedTransport extends FakeSshTransport {
+    private release: () => void = () => undefined
+    private readonly gate = new Promise<void>((resolve) => {
+      this.release = resolve
+    })
+    disconnects = 0
+
+    override async connect(): Promise<void> {
+      await this.gate
+      await super.connect()
+    }
+
+    override async disconnect(): Promise<void> {
+      this.disconnects += 1
+      await super.disconnect()
+    }
+
+    open(): void {
+      this.release()
+    }
+  }
+
+  it('does not leave a live transport behind when disconnected mid-connect', async () => {
+    await withTestHost(async () => {
+      const transports: GatedTransport[] = []
+      setSshTransportFactory(() => {
+        const transport = new GatedTransport()
+        transports.push(transport)
+        return transport
+      })
+
+      const manager = new SshConnectionManager()
+      const connecting = manager.connect('dev-box')
+      const outcome = connecting.then(
+        () => 'connected',
+        (err: unknown) => (err instanceof Error ? err.message : String(err)),
+      )
+      // connect() first waits for any liveness check in flight, so the
+      // transport appears a few turns of the event loop later.
+      for (let turn = 0; turn < 50 && transports.length < 1; turn += 1) {
+        await new Promise((resolve) => setImmediate(resolve))
+      }
+      const first = transports[0]
+      assert.ok(first)
+
+      // The user disconnects (or forgets credentials) before the handshake ends.
+      await manager.disconnect('dev-box')
+      assert.equal(manager.listStates().length, 0)
+
+      first.open()
+      assert.match(await outcome, /closed while connecting/)
+      // The handshake that finished late must not survive as an untracked master.
+      assert.equal(first.isConnected(), false)
+      assert.equal(manager.listStates().length, 0)
+      assert.equal(manager.getConnection('dev-box'), null)
+    })
+  })
+
+  it('reconnect during a pending connect yields a tracked connection', async () => {
+    await withTestHost(async () => {
+      const transports: GatedTransport[] = []
+      setSshTransportFactory(() => {
+        const transport = new GatedTransport()
+        transports.push(transport)
+        return transport
+      })
+
+      const manager = new SshConnectionManager()
+      const stale = manager.connect('dev-box').then(
+        () => 'connected',
+        () => 'rejected',
+      )
+      const reconnecting = manager.reconnect('dev-box')
+      // Let reconnect's disconnect finish and its own connect start.
+      for (let turn = 0; turn < 50 && transports.length < 2; turn += 1) {
+        await new Promise((resolve) => setImmediate(resolve))
+      }
+      const [first, second] = transports
+      assert.ok(first && second)
+
+      first.open()
+      assert.equal(await stale, 'rejected')
+      // The stale attempt settling must not unregister the newer one, so a
+      // further connect still joins it rather than starting a third handshake.
+      const joined = manager.connect('dev-box')
+      assert.equal(transports.length, 2)
+      // The superseded attempt shares the host's control socket with the new
+      // one, so it must not tear that socket down after losing the race.
+      const disconnectsBeforeNewConnect = first.disconnects
+      second.open()
+      const conn = await reconnecting
+      assert.equal(conn.transport, second)
+      assert.equal((await joined).transport, second)
+      assert.equal(first.disconnects, disconnectsBeforeNewConnect)
+
+      const states = manager.listStates()
+      assert.equal(states.length, 1)
+      assert.equal(states[0]?.status, 'connected')
+      assert.ok(manager.getConnection('dev-box'))
+    })
+  })
 
   describe('liveness', () => {
     const PROBE_SCRIPTS = [

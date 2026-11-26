@@ -25,7 +25,13 @@ function artifactImageSource(rawSrc: string): { path: string; agentId?: string }
   const match = url.pathname.match(/^\/v1\/agents\/([^/]+)\/artifacts\/download$/)
   const path = url.searchParams.get('path')
   if (!match?.[1] || !path?.startsWith('artifacts/')) return null
-  return { agentId: decodeURIComponent(match[1]), path }
+  try {
+    return { agentId: decodeURIComponent(match[1]), path }
+  } catch {
+    // `%zz` parses as a URL but does not decode. Throwing here would abort the
+    // whole message render; an undecodable agent is simply not an artifact.
+    return null
+  }
 }
 
 function remoteArtifactImageRenderer({ attrs }: RawImageTag): string | null {

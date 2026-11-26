@@ -2,6 +2,7 @@ import type { WebContents } from 'electron'
 import { shell } from 'electron'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { join } from 'node:path'
+import { isPathWithin } from '@copse/std/path-containment.ts'
 import { isStaticPreviewUrl } from '../services/browser/static-preview-server.ts'
 
 const lockedDown = new WeakSet<WebContents>()
@@ -61,9 +62,10 @@ export function isAllowedRendererNavigation(url: string): boolean {
     return false
   }
   if (parsed.protocol !== 'file:') return false
-  const target = fileURLToPath(parsed)
-  const root = rendererRootDir()
-  return target === root || target.startsWith(`${root}/`)
+  // Compared as paths, not with a `/` prefix: `fileURLToPath` and `join` both
+  // use the platform separator, so on Windows no file under the root ever
+  // started with `${root}/` and every in-app navigation was refused.
+  return isPathWithin(rendererRootDir(), fileURLToPath(parsed))
 }
 
 export function isAllowedDiagramNavigation(url: string): boolean {

@@ -757,6 +757,7 @@ async function connectServer(
   }
   let authProvider: OAuthClientProvider | undefined
   let stderrOutput = (): string => ''
+  let tracked: ActiveServer | undefined
   try {
     // Inside the try: a config that names an unusable URL is this server's
     // error, not a rejection that stops every other server's status.
@@ -777,7 +778,8 @@ async function connectServer(
       await client.close().catch(() => {})
       return { ...base, state: 'error', error: 'superseded by a newer reload' }
     }
-    activeServers.push({ config: cfg, client })
+    tracked = { config: cfg, client }
+    activeServers.push(tracked)
 
     const toolNames = await registerClientTools(registry, client, {
       serverName: cfg.name,
@@ -798,6 +800,17 @@ async function connectServer(
       ...signedIn,
     }
   } catch (err) {
+    // Connected but unusable (listing its tools failed): the server is reported
+    // as an error, so close it now rather than leave the client — and a stdio
+    // server's process — running until the next reload. A teardown that already
+    // swept it from the live set has closed it itself.
+    if (tracked !== undefined) {
+      const index = activeServers.indexOf(tracked)
+      if (index !== -1) {
+        activeServers.splice(index, 1)
+        await tracked.client.close().catch(() => {})
+      }
+    }
     if (isSignInRequired(cfg, err)) {
       console.log(`[MCP] "${cfg.name}" needs sign-in`)
       return { ...base, state: 'error', error: 'Sign-in required', auth: 'required' }

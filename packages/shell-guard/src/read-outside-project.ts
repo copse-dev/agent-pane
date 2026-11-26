@@ -22,7 +22,9 @@ import { inertOperandIndexes } from './inert-operands.ts'
 import {
   READ_ONLY_GIT_SUBCOMMANDS,
   READ_ONLY_SHELL_BASENAMES,
+  hasGitReadEscapeHatch,
   isReadOnlySedCommand,
+  readOnlyCommandWritesOrExecutes,
 } from './shell-argv.ts'
 
 /**
@@ -311,7 +313,14 @@ function headBlocker(rawArgv: readonly string[], argv: readonly string[]): strin
     return `runs \`git ${argv[1] ?? ''}\`, which is not a plain read`
   }
   const writing = WRITING_FLAGS.get(head)
-  if (writing && argv.slice(1).some((arg) => writing.test(arg))) {
+  // The read tier's own escape hatches count too: it knows the bundled, attached
+  // and abbreviated spellings (`sort -uo out`, `--compress-prog=x`, `git grep
+  // -O./tool`) and `uniq`'s output operand, which the table above does not.
+  if (
+    (writing && argv.slice(1).some((arg) => writing.test(arg))) ||
+    readOnlyCommandWritesOrExecutes(head, argv.slice(1)) ||
+    (head === 'git' && hasGitReadEscapeHatch(argv[1] ?? '', argv.slice(2)))
+  ) {
     return `\`${head}\` is asked to write or execute, not just read`
   }
   return null

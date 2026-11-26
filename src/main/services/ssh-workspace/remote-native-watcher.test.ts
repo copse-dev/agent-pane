@@ -492,6 +492,29 @@ describe('remote native watcher session', () => {
     assert.equal(proc.killed, true)
   })
 
+  it('survives a stdin write error when the ssh client has already gone', async () => {
+    // A command written after ssh exits fails with EPIPE on the stdin stream.
+    // The close event reports the loss; the stream error must not go uncaught.
+    const localHash = createHash('sha256').update(Buffer.from('fake-watcher-binary')).digest('hex')
+    const { procs } = setup({ remoteHashes: [localHash] })
+    const fellBack: string[] = []
+    await tryWatchNative(
+      'k1',
+      TARGET,
+      () => undefined,
+      (key) => fellBack.push(key),
+    )
+    await settle()
+    const proc = procs[0]
+    assert.ok(proc)
+    assert.ok(proc.stdin.listenerCount('error') > 0, 'stdin needs an error listener')
+    proc.stdin.destroy(Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }))
+    await settle()
+    proc.emitClose()
+    await settle()
+    assert.deepEqual(fellBack, ['k1'])
+  })
+
   it('closes stdin on shutdown — the EOF exit contract', async () => {
     const localHash = createHash('sha256').update(Buffer.from('fake-watcher-binary')).digest('hex')
     const { procs } = setup({ remoteHashes: [localHash] })

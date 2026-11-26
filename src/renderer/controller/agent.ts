@@ -446,6 +446,9 @@ function maybeSummarizeCommands(
     } catch {
       summary = null
     }
+    // A message only gains commands, so a later request for it covers more than
+    // this one did. Drop a reply that arrives after that request went out.
+    if (st.summaryMsgId === msgId && st.summaryCount !== commands.length) return
     if (summary?.trim()) {
       applySummary(store, api, threadId, msgId, { commandSummary: summary.trim() })
     }
@@ -480,6 +483,8 @@ function maybeSummarizeToolTurn(
     } catch {
       summary = null
     }
+    // Same ordering guard as the command summary above.
+    if (st.toolSummaryMsgId === msgId && st.toolSummaryCount !== regular.length) return
     if (summary?.trim()) {
       applySummary(store, api, threadId, msgId, { toolSummary: summary.trim() })
     }

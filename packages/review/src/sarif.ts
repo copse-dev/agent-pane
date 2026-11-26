@@ -50,6 +50,11 @@ function region(finding: Finding): Record<string, unknown> | undefined {
   }
 }
 
+/** A filesystem path as the path of a URI: `/` kept, everything a URI reserves encoded. */
+function uriPath(path: string): string {
+  return path.split('/').map(encodeURIComponent).join('/')
+}
+
 export function toSarif(findings: readonly Finding[], options: SarifOptions): SarifLog {
   const results = findings.map((finding) => {
     const physicalLocation: Record<string, unknown> = {
@@ -95,7 +100,9 @@ export function toSarif(findings: readonly Finding[], options: SarifOptions): Sa
           ? {}
           : {
               originalUriBaseIds: {
-                SRCROOT: { uri: `file://${options.repositoryRoot.replace(/\/?$/, '/')}` },
+                // A URI, not a path: a space or `#` in the checkout's location
+                // must be percent-encoded for the base to resolve at all.
+                SRCROOT: { uri: `file://${uriPath(options.repositoryRoot).replace(/\/?$/, '/')}` },
               },
             }),
         ...(options.headCommit === undefined || options.headCommit === null

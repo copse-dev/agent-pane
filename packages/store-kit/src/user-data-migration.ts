@@ -117,12 +117,28 @@ export function resolveUserDataDir(
       return { dir: target, outcome: 'moved' }
     } catch (error) {
       if (!isCrossDeviceError(error)) throw error
-      // COPSE_DIR pointed at another volume. Copy, then park the legacy
-      // directory rather than deleting it — cpSync is not transactional, so a
-      // partial copy must stay recoverable.
-      cpSync(legacyDir, target, { recursive: true })
-      rmSync(`${legacyDir}.migrated`, { recursive: true, force: true })
-      renameSync(legacyDir, `${legacyDir}.migrated`)
+      // COPSE_DIR pointed at another volume. cpSync is not transactional, so
+      // copy into a sibling and rename it into place: a copy that fails or is
+      // interrupted must never leave a partial profile at the target, where
+      // the next launch would take it for the migrated one.
+      const staging = `${target}.migrating`
+      rmSync(staging, { recursive: true, force: true })
+      try {
+        cpSync(legacyDir, staging, { recursive: true })
+        renameSync(staging, target)
+      } catch (copyError) {
+        rmSync(staging, { recursive: true, force: true })
+        throw copyError
+      }
+      // Park the legacy directory rather than deleting it. The target is
+      // already complete, so failing to park must not send this launch back
+      // to a profile the next launch would ignore.
+      try {
+        rmSync(`${legacyDir}.migrated`, { recursive: true, force: true })
+        renameSync(legacyDir, `${legacyDir}.migrated`)
+      } catch {
+        // Left in place; later launches report `target-in-use`.
+      }
       return { dir: target, outcome: 'copied' }
     }
   } catch (error) {

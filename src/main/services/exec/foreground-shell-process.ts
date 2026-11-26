@@ -1,6 +1,7 @@
 import { errorMessage } from '@shared/errors.ts'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { constants } from 'node:os'
+import { StringDecoder } from 'node:string_decoder'
 import {
   afterSandboxedCommand,
   isProjectSandboxEnabled,
@@ -188,14 +189,24 @@ export async function runShellOnce(
       let releaseDetached: (() => Promise<void>) | undefined
       let cancelKill: (() => void) | undefined
       let yieldTimer: ReturnType<typeof setTimeout> | undefined
-      const stream = (data: Buffer): void => {
-        const text = data.toString()
+      const emitOutput = (text: string): void => {
+        if (!text) return
         observer?.output(text)
         const toStream = outputAcc.append(text)
         if (toStream) mirrorShellOutput(toStream)
       }
-      proc.stdout?.on('data', stream)
-      proc.stderr?.on('data', stream)
+      // One decoder per stream: a multibyte character split across two pipe
+      // reads must not be decoded as two U+FFFD.
+      const stdoutDecoder = new StringDecoder('utf8')
+      const stderrDecoder = new StringDecoder('utf8')
+      const streamStdout = (data: Buffer): void => {
+        emitOutput(stdoutDecoder.write(data))
+      }
+      const streamStderr = (data: Buffer): void => {
+        emitOutput(stderrDecoder.write(data))
+      }
+      proc.stdout?.on('data', streamStdout)
+      proc.stderr?.on('data', streamStderr)
 
       const detach = AsyncLocalStorage.bind((): void => {
         if (settled || detached || !owner) return
@@ -218,8 +229,8 @@ export async function runShellOnce(
           cancelKill = terminateProcessTree(proc)
           reject(error instanceof Error ? error : new Error(String(error)))
         }
-        proc.stdout?.removeListener('data', stream)
-        proc.stderr?.removeListener('data', stream)
+        proc.stdout?.removeListener('data', streamStdout)
+        proc.stderr?.removeListener('data', streamStderr)
         try {
           releaseDetached = onDetach?.()
         } catch (error) {
@@ -358,7 +369,12 @@ export async function runShellOnce(
       proc.on('close', (code, closeSignal) => {
         // Reported even after a timeout settled the promise: the observer's
         // terminal is still waiting for the process to actually exit.
-        if (!detached) observer?.exit({ exitCode: code, signal: closeSignal })
+        if (!detached) {
+          // Bytes of a character the command never completed.
+          emitOutput(stdoutDecoder.end())
+          emitOutput(stderrDecoder.end())
+          observer?.exit({ exitCode: code, signal: closeSignal })
+        }
         cleanup()
         const violationCount = sandboxViolationCount()
         finish()

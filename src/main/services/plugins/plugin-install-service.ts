@@ -67,7 +67,8 @@ const legacyManifestSchema = z
     repository: z.string().optional(),
     license: z.string().optional(),
     keywords: z.array(z.string()).optional(),
-    mcpServers: z.string().optional(),
+    // Claude Code accepts a path to an MCP config or the servers themselves.
+    mcpServers: z.union([z.string(), z.record(z.string(), z.unknown())]).optional(),
   })
   .loose()
 
@@ -354,20 +355,26 @@ async function adaptLegacyMcp(
   warnings: string[],
 ): Promise<void> {
   if ((await pathKind(join(root, 'mcp.json'))) !== null) return
-  const declared = manifest?.mcpServers?.trim()
-  const source = declared ? resolve(root, declared) : join(root, '.mcp.json')
-  if (!isPathWithin(root, source)) {
-    throw new Error('Legacy MCP path escapes the plugin package.')
-  }
-  const text = await fsp.readFile(source, 'utf8').catch(() => null)
-  if (text === null) return
-  const parsed = safeJsonParse(text, decodeWithSchema(legacyMcpSchema))
-  if (parsed === null) {
-    warnings.push('Ignored a malformed legacy MCP configuration.')
-    return
+  let declaredServers: Record<string, unknown>
+  if (typeof manifest?.mcpServers === 'object') {
+    declaredServers = manifest.mcpServers
+  } else {
+    const declared = manifest?.mcpServers?.trim()
+    const source = declared ? resolve(root, declared) : join(root, '.mcp.json')
+    if (!isPathWithin(root, source)) {
+      throw new Error('Legacy MCP path escapes the plugin package.')
+    }
+    const text = await fsp.readFile(source, 'utf8').catch(() => null)
+    if (text === null) return
+    const parsed = safeJsonParse(text, decodeWithSchema(legacyMcpSchema))
+    if (parsed === null) {
+      warnings.push('Ignored a malformed legacy MCP configuration.')
+      return
+    }
+    declaredServers = parsed.mcpServers
   }
   const servers: [string, unknown][] = []
-  for (const [name, server] of Object.entries(parsed.mcpServers)) {
+  for (const [name, server] of Object.entries(declaredServers)) {
     const translated = translateLegacyMcpEntry(server)
     if (translated === null) {
       warnings.push(
@@ -498,6 +505,24 @@ async function sameManagedTarget(
 ): Promise<boolean> {
   const expected = await fsp.realpath(payloadPath(root, record.contentHash)).catch(() => null)
   return expected !== null && resolve(resolved) === resolve(expected)
+}
+
+/** Delete each of `contentHashes` that no install record still pins. */
+async function removeUnreferencedPayloads(
+  root: string,
+  contentHashes: readonly string[],
+): Promise<void> {
+  const referenced = new Set(
+    (await readRecords(root)).flatMap((candidate) => [
+      candidate.contentHash,
+      ...(candidate.previousPin ? [candidate.previousPin.contentHash] : []),
+    ]),
+  )
+  for (const contentHash of contentHashes) {
+    if (!referenced.has(contentHash)) {
+      await fsp.rm(payloadPath(root, contentHash), { recursive: true, force: true })
+    }
+  }
 }
 
 function findExistingInstall(
@@ -662,6 +687,13 @@ export function createPluginInstallService(
         await writeRecord(root, record)
         await fsp.rm(backup, { force: true })
         await fsp.rm(join(stagingRoot(root), token), { recursive: true, force: true })
+        // The record keeps one rollback pin. The pin it just replaced is out of
+        // reach of rollback and uninstall alike, so its payload goes now.
+        if (previous?.previousPin) {
+          await removeUnreferencedPayloads(root, [previous.previousPin.contentHash]).catch(
+            () => undefined,
+          )
+        }
         return { record }
       } catch (error) {
         await fsp.rm(nextLink, { force: true })
@@ -688,21 +720,10 @@ export function createPluginInstallService(
     await fsp.rm(recordPath(root, pluginId), { force: true })
     if (deleteData) await fsp.rm(join(root, '.data', pluginId), { recursive: true, force: true })
 
-    const remaining = await readRecords(root)
-    const referenced = new Set(
-      remaining.flatMap((candidate) => [
-        candidate.contentHash,
-        ...(candidate.previousPin ? [candidate.previousPin.contentHash] : []),
-      ]),
-    )
-    for (const contentHash of [
+    await removeUnreferencedPayloads(root, [
       record.contentHash,
       ...(record.previousPin ? [record.previousPin.contentHash] : []),
-    ]) {
-      if (!referenced.has(contentHash)) {
-        await fsp.rm(payloadPath(root, contentHash), { recursive: true, force: true })
-      }
-    }
+    ])
     return { pluginId, dataDeleted: deleteData }
   }
 

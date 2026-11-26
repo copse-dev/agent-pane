@@ -37,6 +37,12 @@ describe('workspaceRelativePath', () => {
       null,
       'POSIX paths stay case-sensitive',
     )
+    assert.equal(
+      workspaceRelativePath(String.raw`c:\src\a.ts`, 'C:\\'),
+      'src/a.ts',
+      'a drive root folds case like any other drive path',
+    )
+    assert.equal(workspaceRelativePath('c:/', 'C:/'), '')
   })
 })
 

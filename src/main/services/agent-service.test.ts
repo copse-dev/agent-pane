@@ -2131,6 +2131,69 @@ describe('runAgent AgentHost decoupling', () => {
     assert.ok(budget?.type === 'continuation_budget')
     assert.equal(budget.used, 1, 'only the wake itself spent the turn tree budget')
   })
+
+  // The loop leaves quietly when Stop lands between provider events or while a
+  // tool is being cancelled: nothing throws, and its `done` carries no reason.
+  it('records a Stop the loop absorbed without throwing as a user cancellation', async () => {
+    const threadId = `thread-quiet-stop-${randomUUID()}`
+    const received: StreamChunk[] = []
+    const provider: LLMProvider = {
+      stream: async function* (_messages, _tools, signal) {
+        yield { type: 'text' as const, text: 'Working on it.' }
+        const stopped = Promise.withResolvers<undefined>()
+        signal?.addEventListener(
+          'abort',
+          () => {
+            stopped.resolve(undefined)
+          },
+          { once: true },
+        )
+        agentService.abortAgent(threadId)
+        await stopped.promise
+      },
+    }
+
+    const result = await runWithThreadExecutionContext(
+      {
+        projectId: 'project-1',
+        threadId,
+        projectRoot: '/workspace',
+        root: '/workspace',
+        checkoutMode: 'shared',
+        branch: null,
+      },
+      () =>
+        runWithActiveRunIdentity(threadId, () =>
+          agentService.runAgent(
+            threadId,
+            'start, then get stopped',
+            [],
+            { emit: (_threadId, chunk) => received.push(chunk) },
+            new ToolRegistry(),
+            {
+              model: 'claude-sonnet-4-6',
+              provider,
+              contextWindow: 100_000,
+              priorTodos: [{ id: 'next', content: 'Migrate the module', status: 'pending' }],
+            },
+          ),
+        ),
+    )
+
+    const terminal = received.find((chunk) => chunk.type === 'turn_outcome')
+    assert.ok(terminal?.type === 'turn_outcome')
+    assert.equal(terminal.outcome.status, 'cancelled')
+    assert.equal(terminal.outcome.stopReason, 'cancelled')
+    assert.equal(terminal.outcome.source, 'user')
+    assert.equal(result.turnOutcome?.status, 'cancelled')
+    // The open plan must not buy a pre-review continuation turn after Stop.
+    assert.equal(
+      received.some((chunk) => chunk.type === 'machine_turn_start'),
+      false,
+    )
+    assert.deepEqual(result.messages, [{ role: 'user', content: 'start, then get stopped' }])
+    assert.ok(received.at(-1)?.type === 'done')
+  })
 })
 
 describe('standalone review admission', () => {

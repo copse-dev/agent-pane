@@ -493,6 +493,7 @@ describe('automatic checkout changes preserve pooled ACP work', () => {
   async function createdPullRequestThread(
     projectId: string,
     state: CreatedPullRequestState,
+    command = 'gh pr create --title "Created pull request"',
   ): Promise<{
     threadId: string
     worktree: ThreadWorktree
@@ -562,7 +563,7 @@ describe('automatic checkout changes preserve pooled ACP work', () => {
         branch: worktree.branch,
       },
       () => {
-        recordCreatedPullRequest('gh pr create --title "Created pull request"', `${url}\n`)
+        recordCreatedPullRequest(command, `${url}\n`)
       },
     )
     return { threadId, worktree, url, disposed: () => disposed, isClosed: entry.open.isClosed }
@@ -600,6 +601,20 @@ describe('automatic checkout changes preserve pooled ACP work', () => {
       assert.equal(created.isClosed(), true)
     })
   }
+
+  it('records a PR created on a later line of a multi-line command', async () => {
+    const projectId = 'created-pr-multi-line'
+    const created = await createdPullRequestThread(
+      projectId,
+      { status: 'idle', draftPrompt: '' },
+      'git push -u origin HEAD\n  gh pr create --fill',
+    )
+
+    await parkCompletedPullRequestWorktree(projectId, created.threadId)
+    const retired = await getThreadMeta(projectId, created.threadId)
+    assert.equal(retired?.worktree?.pullRequestUrl, created.url)
+    assert.ok(retired.worktree.retiredAt)
+  })
 
   it('parks an ordinary chat whose follow-up is still an unsent draft', async () => {
     const projectId = 'created-pr-ordinary-draft'

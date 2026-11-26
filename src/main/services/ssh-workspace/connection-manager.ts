@@ -250,7 +250,9 @@ export class SshConnectionManager {
     try {
       return await promise
     } finally {
-      this.connectPromises.delete(hostId)
+      // `disconnect()` may have dropped this attempt and a newer one may have
+      // taken its place; never unregister someone else's attempt.
+      if (this.connectPromises.get(hostId) === promise) this.connectPromises.delete(hostId)
     }
   }
 
@@ -288,21 +290,39 @@ export class SshConnectionManager {
     this.connections.set(hostId, managed)
     this.emit()
 
+    // `disconnect()` removes the entry while this attempt is still awaiting the
+    // handshake. Finishing it then would report "connected" for a host the
+    // manager no longer lists, and leave its ControlMaster running untracked.
+    const isCurrent = (): boolean => this.connections.get(hostId) === managed
+    // The control socket is shared per host: once a newer attempt owns the
+    // entry, tearing the transport down here would close that attempt's master.
+    const releaseTransport = async (): Promise<void> => {
+      if (isCurrent() || !this.connections.has(hostId)) {
+        await disconnectTransportBestEffort(transport)
+      }
+    }
+
     try {
       await transport.connect()
-      managed.status = 'connected'
-      delete managed.lastError
-      managed.capabilities = await probeSshCapabilities(transport)
-      this.emit()
-      return this.wrap(managed)
+      if (isCurrent()) {
+        managed.status = 'connected'
+        delete managed.lastError
+        managed.capabilities = await probeSshCapabilities(transport)
+      }
     } catch (err) {
       const message = errorMessage(err)
       managed.status = 'error'
       managed.lastError = message
-      await disconnectTransportBestEffort(transport)
+      await releaseTransport()
       this.emit()
       throw err instanceof Error ? err : new Error(message)
     }
+    if (!isCurrent()) {
+      await releaseTransport()
+      throw new Error(`SSH connection to ${host.label} was closed while connecting`)
+    }
+    this.emit()
+    return this.wrap(managed)
   }
 
   async disconnect(hostId: string): Promise<void> {
@@ -312,7 +332,14 @@ export class SshConnectionManager {
     try {
       await entry.transport.disconnect()
     } finally {
-      this.connections.delete(hostId)
+      // Only drop what this call saw: a connect that started during the await
+      // above owns a newer entry.
+      if (this.connections.get(hostId) === entry) {
+        this.connections.delete(hostId)
+        // Drop an attempt still in flight for the removed entry so a following
+        // connect starts fresh instead of joining one that can no longer succeed.
+        if (entry.status === 'connecting') this.connectPromises.delete(hostId)
+      }
       this.emit()
     }
   }

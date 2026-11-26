@@ -209,14 +209,19 @@ export async function buildSystemPromptWithMetadata(
     ...(threadId ? { threadId } : {}),
   })
   const catalog = buildSkillsCatalogWithMetadata(opts.availableToolNames, 'native')
+  const workspaceRoot = roots.executionRoot ?? '(none)'
+  const repositoryContext = await buildRepositoryContext()
+  // Function replacers: a path or branch name may contain `$`, and a replacement
+  // *string* would read `$$`, `$&`, `` $` `` and `$'` as patterns — naming a
+  // directory that does not exist, or pasting the prompt into itself.
   const prompt =
     basePrompt
-      .replace('{SKILLS_TOOLS_LINE}', skillsToolsLine)
+      .replace('{SKILLS_TOOLS_LINE}', () => skillsToolsLine)
       // Must be the agent execution root, not the renderer workspace root: the
       // sandbox read grant and run_shell's cwd are the worktree root, so naming
       // the main repo here makes the agent `cd` outside the grant and hit EPERM.
-      .replace('{WORKSPACE_ROOT}', roots.executionRoot ?? '(none)')
-      .replace('{REPO_CONTEXT}', await buildRepositoryContext()) +
+      .replace('{WORKSPACE_ROOT}', () => workspaceRoot)
+      .replace('{REPO_CONTEXT}', () => repositoryContext) +
     worktreePreparationBlock(opts.availableToolNames) +
     (opus5 ? OPUS_5_RESPONSE_LENGTH_BLOCK : '') +
     // Workspace-authored instructions sit here — above every Copse-authored

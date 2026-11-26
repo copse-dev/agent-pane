@@ -32,6 +32,15 @@ describe('capInjectContext (10k cap + spillover)', () => {
     assert.equal(capped.text + capped.overflow, raw)
   })
 
+  it('moves a character the cap would split into the overflow whole', () => {
+    // A lone surrogate in the injected block makes the provider reject the turn.
+    const raw = 'ab\u{1F600}cd'
+    const capped = capInjectContext(raw, 3)
+    assert.equal(capped.text, 'ab')
+    assert.equal(capped.overflow, '\u{1F600}cd')
+    assert.equal(capped.text + capped.overflow, raw)
+  })
+
   it('honours a custom cap', () => {
     const capped = capInjectContext('hello world', 5)
     assert.equal(capped.text, 'hello')

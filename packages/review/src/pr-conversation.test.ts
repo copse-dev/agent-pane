@@ -437,6 +437,55 @@ describe('readPullRequestConversation', () => {
     assert.ok(headersSeen.every((headers) => headers['Authorization'] === 'token fj'))
   })
 
+  it('keeps a Forgejo request for changes with no text, and reads a removed line from original_position', async () => {
+    const { fetch } = fakeForge({
+      '/api/v1/repos/acme/app/pulls/7': {
+        body: {
+          title: 'T',
+          body: null,
+          user: { login: 'alice' },
+          created_at: '2026-09-01T00:00:00Z',
+        },
+      },
+      '/api/v1/repos/acme/app/issues/7/comments': { body: [] },
+      '/api/v1/repos/acme/app/pulls/7/reviews': {
+        body: [
+          {
+            id: 9,
+            body: '',
+            state: 'REQUEST_CHANGES',
+            user: { login: 'bob' },
+            submitted_at: '2026-09-02T00:00:00Z',
+          },
+        ],
+      },
+      '/api/v1/repos/acme/app/pulls/7/reviews/9/comments': {
+        body: [
+          {
+            body: 'This line was load-bearing.',
+            user: { login: 'bob' },
+            created_at: '2026-09-02T00:00:01Z',
+            path: 'src/a.css',
+            position: 0,
+            original_position: 12,
+          },
+        ],
+      },
+    })
+    const conversation = await readPullRequestConversation(
+      { ...GITHUB, forge: 'forgejo', apiBase: 'https://code.example.org' },
+      { fetch },
+    )
+    assert.deepEqual(
+      conversation.entries.map((entry) => [entry.kind, entry.state, entry.line]),
+      [
+        ['description', undefined, undefined],
+        ['review', 'REQUEST_CHANGES', undefined],
+        ['review-comment', undefined, 12],
+      ],
+    )
+  })
+
   it('drops Copse Reviewer’s summary block from the description, and nothing the author wrote', async () => {
     const summary = renderSummaryBlock(
       { risk: 'low', riskReason: 'Only moves a button.', overview: ['Moves the save button.'] },

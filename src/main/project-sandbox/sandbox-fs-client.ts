@@ -61,6 +61,42 @@ export function sandboxFsWorkerPath(): string {
 /** Passed via spawn env when the worker is launched through a shell / ASRT wrap (paths may contain spaces). */
 export const SANDBOX_FS_REQUEST_ENV = 'COPSE_SANDBOX_FS_REQUEST'
 
+/** Tells the one-shot worker to read its request from stdin. */
+const SANDBOX_FS_REQUEST_STDIN_ENV = 'COPSE_SANDBOX_FS_REQUEST_STDIN'
+
+/**
+ * Largest request handed to the one-shot worker as a single argv/env string.
+ * The kernel caps one such string (128 KiB on Linux) and the whole argv + env
+ * block (1 MiB on macOS), and `spawn` fails with E2BIG past either — while
+ * `fs:write-file` accepts a 16 MiB file. Anything larger goes over stdin.
+ */
+export const SANDBOX_FS_INLINE_REQUEST_MAX_BYTES = 64 * 1024
+
+interface OneShotRequestTransport {
+  args: string[]
+  env: Record<string, string>
+  stdin?: Buffer
+}
+
+/** How one request reaches the one-shot worker: argv, an env var, or stdin. */
+export function oneShotRequestTransport(
+  requestJson: string,
+  sandboxed: boolean,
+): OneShotRequestTransport {
+  if (Buffer.byteLength(requestJson, 'utf-8') > SANDBOX_FS_INLINE_REQUEST_MAX_BYTES) {
+    return {
+      args: [],
+      env: { [SANDBOX_FS_REQUEST_STDIN_ENV]: '1' },
+      stdin: Buffer.from(requestJson, 'utf-8'),
+    }
+  }
+  // Through a shell / ASRT wrap the request rides in the environment, where a
+  // path with spaces needs no quoting.
+  return sandboxed
+    ? { args: [], env: { [SANDBOX_FS_REQUEST_ENV]: requestJson } }
+    : { args: [requestJson], env: {} }
+}
+
 type OneShotInvoker = (
   request: Record<string, unknown>,
   requestedRoot?: string,
@@ -158,16 +194,15 @@ async function invokeWorkerOneShot(
   const workerPath = sandboxFsWorkerPath()
   const requestJson = JSON.stringify(request)
   const sandboxed = useSandboxFsGateway()
+  const transport = oneShotRequestTransport(requestJson, sandboxed)
   const { stdout, stderr, code } = await runCommand(
     process.execPath,
-    sandboxed ? [workerPath] : [workerPath, requestJson],
+    [workerPath, ...transport.args],
     {
       cwd: root,
       // Electron must run as Node inside seatbelt; otherwise MachPort rendezvous FATALs with empty stdout.
-      env: {
-        ELECTRON_RUN_AS_NODE: '1',
-        ...(sandboxed ? { [SANDBOX_FS_REQUEST_ENV]: requestJson } : {}),
-      },
+      env: { ELECTRON_RUN_AS_NODE: '1', ...transport.env },
+      ...(transport.stdin ? { stdin: transport.stdin } : {}),
       stdoutMaxBytes: SANDBOX_FS_WORKER_STDOUT_MAX_BYTES,
       sandboxConfig: fsWorkerOneShotSandboxOverlay(
         root,

@@ -213,6 +213,8 @@ revisiting this document, not silently diverging in an implementation PR.
    the primary loop's stale `max_steps`; an unfinished continuation retains it.
    Unrelated review remediation cannot establish that an unplanned primary task finished.
    A deadline stop does not start fresh automatic post-turn work.
+   Nor does a run the user stopped, including when the loop absorbed the abort and
+   returned normally: no pre-review continuation and no post-turn review start.
    A `max_steps` outcome does not suppress the deterministic exhausted-continuation
    summary for an open plan. That summary neither grants another turn nor changes
    the failed outcome; cancellation and independent errors still suppress it.

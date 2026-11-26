@@ -428,6 +428,41 @@ describe('VncService', () => {
     )
   })
 
+  it('reports the unanswered VNC port even when releasing its SSH tunnel also fails', async () => {
+    const probe = createServer()
+    const unusedPort = await listen(probe)
+    await new Promise<void>((resolve) =>
+      probe.close(() => {
+        resolve()
+      }),
+    )
+    // The session dropped with the forward: tearing it down fails too.
+    class BrokenCloseTransport extends ForwardingFakeTransport {
+      override async closeForward(localPort: number): Promise<void> {
+        await super.closeForward(localPort)
+        throw new Error('ssh control socket is gone')
+      }
+    }
+    const transport = new BrokenCloseTransport(unusedPort)
+    await transport.connect()
+    const host: SshWorkspaceHost = { id: 'build-box', label: 'Build box', host: 'build.example' }
+    const service = new VncService({
+      connect: (): Promise<SshConnection> =>
+        Promise.resolve({
+          host,
+          transport,
+          execArgv: (argv, options) => transport.execArgv(argv, options),
+          execShell: (command, options) => transport.execShell(command, options),
+        }),
+    })
+
+    await assert.rejects(
+      () => service.open({ kind: 'ssh', hostId: host.id, remotePort: 5901 }, owner()),
+      /The SSH tunnel opened, but no VNC server answered on remote port 5901/,
+    )
+    assert.deepEqual(transport.closeCalls, [unusedPort])
+  })
+
   it('explains how to enable Screen Sharing when a LAN Mac refuses VNC', async () => {
     const probe = createServer()
     const unusedPort = await listen(probe)

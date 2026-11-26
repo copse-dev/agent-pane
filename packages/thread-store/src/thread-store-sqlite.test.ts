@@ -28,6 +28,8 @@ import {
   lookupCommitThreadProductions,
   recordThreadPrProduction,
   recordThreadCommitProduction,
+  recoverThreadHistoryMutation,
+  stageThreadHistoryMutation,
   getThreadMeta,
   saveProjectThread,
   saveProjectThreads,
@@ -332,6 +334,21 @@ describe('persistent SQLite thread projection', () => {
     closeThreadStoreIndexes()
     assert.deepEqual(await lookupPrThreadRelationships('p', pr), [])
     assert.deepEqual(await loadProjectThreadMetas('p'), [])
+  })
+
+  it('drops cached metadata when an abandoned history edit is rolled back', async () => {
+    const original = thread('t', { title: 'before' })
+    await saveProjectThread('p', original)
+    await stageThreadHistoryMutation('p', 't', {
+      thread: original,
+      agentHistory: [],
+      hadAgentHistory: false,
+    })
+    await saveProjectThread('p', thread('t', { title: 'edited' }))
+    assert.equal((await loadProjectThreadMetas('p'))[0]?.title, 'edited')
+    await recoverThreadHistoryMutation('p', 't')
+    assert.equal((await getThreadMeta('p', 't'))?.title, 'before')
+    assert.equal((await loadProjectThreadMetas('p'))[0]?.title, 'before')
   })
 
   it('repairs a real process death after a native source write and before projection commit', async () => {

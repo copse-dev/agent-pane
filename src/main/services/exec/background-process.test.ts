@@ -107,6 +107,11 @@ describe('detectServerUrl', () => {
     )
   })
 
+  it('keeps the scheme of a dev server that announces https', () => {
+    assert.equal(detectServerUrl('  ➜  Local:   https://localhost:5173/'), 'https://localhost:5173')
+    assert.equal(detectServerUrl('Listening on HTTPS://127.0.0.1:8443'), 'https://localhost:8443')
+  })
+
   it('falls back to a bare "port NNNN" phrase', () => {
     assert.equal(detectServerUrl('Server listening on port 4321'), 'http://localhost:4321')
   })
@@ -146,6 +151,18 @@ describe('background process manager', () => {
       false,
     )
     assert.equal(stopBackgroundProcess(info.id, OWNER), false)
+  })
+
+  it('keeps a multibyte character whose bytes arrive in separate chunks', async () => {
+    // U+4E2D is e4 b8 ad; the pause puts the last byte in a later pipe read.
+    const info = await startBackgroundProcess({
+      command: "printf '\\344\\270'; sleep 0.3; printf '\\255\\n'",
+      cwd: process.cwd(),
+      waitMs: 4000,
+      owner: OWNER,
+    })
+    assert.equal(info.running, false)
+    assert.equal(getBackgroundProcessLogs(info.id, OWNER), '\u4e2d\n')
   })
 
   it('adopts an early background formatter even when the command later fails', async () => {

@@ -209,6 +209,32 @@ describe('runHeadlessAgent', () => {
     }
   })
 
+  // The host's stop can land while the profile is still bootstrapping, before
+  // any turn exists to interrupt. It must still stop the run.
+  it('does not start the turn when the caller aborted before it was admitted', async () => {
+    const workspace = await mkdtemp(join(tmpdir(), 'copse-headless-host-'))
+    const provider = new TrivialTaskProvider()
+    const controller = new AbortController()
+    controller.abort()
+
+    try {
+      const result = await runHeadlessAgent(
+        smokeProfile(workspace),
+        {
+          prompt: 'Inspect the workspace and answer.',
+          threadId: 'headless-aborted-before-start',
+          signal: controller.signal,
+        },
+        { provider, contextWindow: 32_000 },
+      )
+
+      assert.equal(provider.seen.length, 0, 'no provider request for a stopped run')
+      assert.deepEqual(result.chunks, [{ type: 'done', stopReason: 'cancelled' }])
+    } finally {
+      await rm(workspace, { recursive: true, force: true })
+    }
+  })
+
   it('registers the reviewed guest tools and offers no desktop services', async () => {
     const workspace = await mkdtemp(join(tmpdir(), 'copse-headless-guest-tools-'))
     const provider = new TrivialTaskProvider()

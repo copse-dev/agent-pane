@@ -92,6 +92,50 @@ describe('readZipDirectory', () => {
   })
 })
 
+/** Rewrite the uncompressed size the first central-directory record declares. */
+function declareUncompressedSize(bytes: Uint8Array, size: number): Uint8Array {
+  const copy = Buffer.from(bytes)
+  const central = copy.readUInt32LE(copy.length - 22 + 16)
+  copy.writeUInt32LE(size, central + 24)
+  return new Uint8Array(copy)
+}
+
+describe('readZipEntry declared sizes', () => {
+  it('refuses a deflated entry that expands past its declared size', async () => {
+    // A caller budgets against `uncompressedSize` before reading, so an entry
+    // that understates it must not be inflated in full first.
+    const bytes = declareUncompressedSize(await archive({ 'bomb.txt': 'a'.repeat(1 << 20) }), 16)
+    const entry = at(readZipDirectory(bytes), 0)
+    assert.equal(entry.uncompressedSize, 16)
+    await assert.rejects(readZipEntry(bytes, entry), /bomb\.txt does not match its declared size/)
+  })
+
+  it('refuses an entry shorter than its declared size', async () => {
+    const bytes = declareUncompressedSize(await archive({ 'a.txt': 'a'.repeat(4096) }), 8192)
+    await assert.rejects(
+      readZipEntry(bytes, at(readZipDirectory(bytes), 0)),
+      /a\.txt does not match its declared size/,
+    )
+  })
+
+  it('refuses a stored entry whose declared size differs from its body', async () => {
+    const raw = new Uint8Array(Array.from({ length: 8 }, (_value, i) => (i * 97) % 251))
+    const bytes = declareUncompressedSize(
+      await createZipArchive([{ path: 'blob.bin', data: raw, modifiedAt: MODIFIED }]),
+      4,
+    )
+    await assert.rejects(
+      readZipEntry(bytes, at(readZipDirectory(bytes), 0)),
+      /blob\.bin does not match its declared size/,
+    )
+  })
+
+  it('still reads an empty entry', async () => {
+    const bytes = await archive({ 'empty.txt': '' })
+    assert.equal((await readZipEntry(bytes, at(readZipDirectory(bytes), 0))).length, 0)
+  })
+})
+
 describe('isUnsafeEntryPath', () => {
   it('accepts ordinary relative entry names', () => {
     for (const path of ['a.txt', 'nested/a.txt', 'a..b/c.txt', 'dots.../x', '.hidden']) {

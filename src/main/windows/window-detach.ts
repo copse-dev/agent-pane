@@ -75,6 +75,14 @@ export function isWindowDetached(win: object): boolean {
 }
 
 /**
+ * Whether the window is detached with its page torn down. A detach that keeps
+ * the renderer (Mobile Companion) leaves everything that page owns in use.
+ */
+export function isWindowRendererUnloaded(win: object): boolean {
+  return detachedWindows.get(win)?.keepRenderer === false
+}
+
+/**
  * Bring a window back to the user: reload its renderer first if it was
  * detached, then show it. `loadRenderer` is the window's ordinary boot load.
  */

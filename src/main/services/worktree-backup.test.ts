@@ -1,4 +1,4 @@
-import { describe, beforeEach, afterEach } from 'node:test'
+import { describe, beforeEach, afterEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, rm, readFile, readdir } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
@@ -78,6 +78,25 @@ describe('createWorktreeBackup', () => {
   ownedIt('returns null when git is unavailable', async () => {
     setGitAvailableForTest(false)
     assert.equal(await createWorktreeBackup('x', root), null)
+  })
+
+  ownedIt('gives two snapshots taken in the same millisecond distinct refs', async () => {
+    // A thread-seed snapshot and a session backup can land on the same clock
+    // tick in one repository. Sharing a ref would let the seed's cleanup delete
+    // the session's restore point.
+    const now = mock.method(Date, 'now', () => 1_700_000_000_000)
+    try {
+      await writeFile(join(root, 'tracked.txt'), 'first\n', 'utf-8')
+      const first = await createWorktreeBackup('first', root)
+      await writeFile(join(root, 'tracked.txt'), 'second\n', 'utf-8')
+      const second = await createWorktreeBackup('second', root)
+      assert.ok(first && second)
+      assert.notEqual(first, second)
+      assert.equal(git(root, ['show', `${first}:tracked.txt`]), 'first\n')
+      assert.equal(git(root, ['show', `${second}:tracked.txt`]), 'second\n')
+    } finally {
+      now.mock.restore()
+    }
   })
 
   ownedIt('reports Git failure without leaking stderr or leaving scratch', async () => {

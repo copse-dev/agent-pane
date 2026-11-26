@@ -4,6 +4,7 @@ import { abortedTurnEndReason, AcpTurnEnded } from './turn-end.ts'
 import { normalizeStopReason } from '@copse/agent/headless-contract.ts'
 import { AGENT_EXECUTION_GUIDANCE } from '../agent-execution-guidance.ts'
 import * as fsp from 'node:fs/promises'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type {
   ContentBlock,
@@ -111,6 +112,7 @@ import { withRemoteAcpSetupProgress } from './acp-remote-setup-progress.ts'
 import {
   awaitStagedDiffDecision,
   captureWorktreeBaseline,
+  getStagedDiffEntry,
   listWorktreeChangesSince,
   listWorktreeGitContentStates,
   stageDiff,
@@ -1048,7 +1050,9 @@ async function runAcpAgentTurn(
     const promptEnd = new AbortController()
     const parentSignal = options.bridgeTurnSignal ?? options.signal
     entry.bridge?.setTurnSignal(AbortSignal.any([parentSignal, promptEnd.signal]))
-    entry.bridge?.setWorkspaceWriteObserver((path) => queueWrites.add(auditKey(path)))
+    entry.bridge?.setWorkspaceWriteObserver((path) =>
+      queueWrites.add(bridgedWriteAuditKey(path, cwd, projectRoot)),
+    )
     entry.open.handlers.current = handlers
     // Issue #831: only attach image content blocks when the agent advertised
     // `promptCapabilities.image`. Agents without it keep the prior text-only
@@ -1774,6 +1778,27 @@ function auditKey(relPath: string): string {
 }
 
 /**
+ * {@link auditKey} for the path argument of a bridged Copse edit. The write
+ * tools take the path as the agent wrote it: absolute (into the turn's root,
+ * or into the project checkout a worktree turn aliases), or relative with
+ * `..` segments. The audit compares workspace-relative paths, so an edit kept
+ * under its raw spelling would be reported as one that bypassed approval.
+ */
+export function bridgedWriteAuditKey(
+  path: string,
+  cwd: string,
+  projectRoot: string | null,
+): string {
+  const target = resolve(cwd, path)
+  for (const root of [cwd, projectRoot]) {
+    if (!root) continue
+    const rel = relative(root, target)
+    if (rel && !rel.startsWith('..') && !isAbsolute(rel)) return auditKey(rel)
+  }
+  return auditKey(path)
+}
+
+/**
  * Name the network destinations the sandbox blocked during this turn — ASRT's
  * own 403 body doesn't say which host, which made allowlist gaps guesswork
  * (e.g. an agent's OAuth endpoint missing from `sandbox.allowedDomains`).
@@ -1823,8 +1848,21 @@ async function writeViaDiffQueue(
     // treatment of absent files.
   }
 
-  await stageDiff(relPath, before, req.content, detectLanguage(relPath))
-  const status = await raceDecisionAgainstAbort(relPath, signal)
+  // The queue keys an entry, and so its decision, by a `/`-separated path.
+  const queuedPath = relPath.split(sep).join('/')
+  // Wait before staging: a headless host decides the entry while it is staged,
+  // and a decision nobody was waiting for is never delivered again.
+  const decision = raceDecisionAgainstAbort(queuedPath, signal)
+  const outcome = await stageDiff(relPath, before, req.content, detectLanguage(relPath))
+  // Nothing staged and nothing decided: the queue refused the write (a
+  // read-only run, a deferred checkout). No decision will ever come, so answer
+  // with its reason now. `decision` is listed first, so one that is already
+  // settled wins over the stand-in.
+  const status =
+    getStagedDiffEntry(queuedPath) === null
+      ? await Promise.race([decision, Promise.resolve(null)])
+      : await decision
+  if (status === null) throw new Error(outcome)
 
   if (status === 'approved' || status === 'applied_directly') {
     queueWrites.add(auditKey(relPath))
@@ -2178,4 +2216,14 @@ export function respondToPermissionForTest(
   context?: AcpPermissionRequestContext,
 ): Promise<RequestPermissionResponse> {
   return respondToPermission(agent, req, root, projectRoot, signal, context)
+}
+
+/** @internal Test seam for the `fs/write_text_file` diff-queue wiring. */
+export function writeTextFileForTest(
+  req: WriteTextFileRequest,
+  signal: AbortSignal,
+  queueWrites: Set<string>,
+  root: string,
+): Promise<WriteTextFileResponse> {
+  return writeViaDiffQueue(req, signal, queueWrites, root)
 }

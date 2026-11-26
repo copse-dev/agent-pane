@@ -25,7 +25,12 @@ function remoteArtifactFromHref(
   const match = url.pathname.match(/^\/v1\/agents\/([^/]+)\/artifacts\/download$/)
   const path = url.searchParams.get('path')
   if (!match?.[1] || !path) return null
-  return { agentId: decodeURIComponent(match[1]), path, origin: url.origin }
+  try {
+    return { agentId: decodeURIComponent(match[1]), path, origin: url.origin }
+  } catch {
+    // An undecodable agent segment is not an artifact route: open it as a link.
+    return null
+  }
 }
 
 function originOf(url: string): string | null {

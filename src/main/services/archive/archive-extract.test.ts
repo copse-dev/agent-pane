@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createZipArchive, type ZipEntry } from '../storage/zip-archive.ts'
 import {
+  MAX_ARCHIVE_ENTRIES,
   MAX_COMPRESSION_RATIO,
   MAX_EXTRACTED_BYTES,
   extractArchiveForThread,
@@ -150,6 +151,35 @@ describe('extractArchiveForThread', () => {
     // The decisive check: nothing landed beside the thread directory.
     assert.equal(existsSync(join(root, 'p1', 'escape.txt')), false)
     assert.equal(existsSync(join(root, 'escape.txt')), false)
+  })
+
+  it('repeats what was skipped when it reuses an extraction', async () => {
+    const bytes = await hostileZip(['../escape.txt', 'safe.txt'])
+    const first = await extract(bytes)
+    const second = await extract(bytes)
+
+    assert.equal(second.reused, true)
+    assert.deepEqual(first.skipped, [
+      { path: '../escape.txt', reason: 'path escapes the archive root' },
+    ])
+    assert.deepEqual(second.skipped, first.skipped)
+  })
+
+  it('still reports a capped extraction as partial when it reuses it', async () => {
+    const entries: ZipEntry[] = Array.from({ length: MAX_ARCHIVE_ENTRIES + 1 }, (_, index) => ({
+      path: `f${String(index)}`,
+      data: new Uint8Array(),
+      modifiedAt: MODIFIED,
+    }))
+    const bytes = await createZipArchive(entries)
+    const first = await extract(bytes)
+    assert.equal(first.truncated, true)
+    assert.equal(first.files.length, MAX_ARCHIVE_ENTRIES)
+
+    const second = await extract(bytes)
+    assert.equal(second.reused, true)
+    assert.equal(second.files.length, MAX_ARCHIVE_ENTRIES)
+    assert.equal(second.truncated, true)
   })
 
   it('stops before a zip bomb lands and leaves nothing behind', async () => {

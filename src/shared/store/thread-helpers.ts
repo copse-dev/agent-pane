@@ -305,22 +305,40 @@ export function switchThread(store: AppStore, id: string): void {
   store.emit('threads_changed')
 }
 
+/**
+ * A thread the sidebar lists. Archived threads stay in the store until the next
+ * load, and side chats live beside their parent; neither is somewhere thread
+ * navigation should land.
+ */
+function isListedThread(thread: Thread): boolean {
+  return !isThreadArchived(thread) && thread.sideChat === undefined
+}
+
+/** The nearest listed thread `step` away from the active one, wrapping around the list. */
+function cycleThreadId(store: AppStore, step: 1 | -1): string | null {
+  const { threads, activeThreadId } = store.getState()
+  const count = threads.length
+  if (count < 2) return null
+  const idx = threads.findIndex((t) => t.id === activeThreadId)
+  // With no active thread, forward starts at the first thread and backward at the last.
+  const origin = idx >= 0 ? idx : step === 1 ? -1 : 0
+  for (let offset = 1; offset <= count; offset += 1) {
+    const candidate = threads[(((origin + step * offset) % count) + count) % count]
+    if (candidate && candidate.id !== activeThreadId && isListedThread(candidate)) {
+      return candidate.id
+    }
+  }
+  return null
+}
+
 /** The next thread in the list, wrapping from the last back to the first. */
 export function nextThreadId(store: AppStore): string | null {
-  const { threads, activeThreadId } = store.getState()
-  if (threads.length < 2) return null
-  const idx = threads.findIndex((t) => t.id === activeThreadId)
-  const target = idx < 0 || idx >= threads.length - 1 ? threads[0] : threads[idx + 1]
-  return target ? target.id : null
+  return cycleThreadId(store, 1)
 }
 
 /** The previous thread in the list, wrapping from the first back to the last. */
 export function prevThreadId(store: AppStore): string | null {
-  const { threads, activeThreadId } = store.getState()
-  if (threads.length < 2) return null
-  const idx = threads.findIndex((t) => t.id === activeThreadId)
-  const target = idx <= 0 ? threads[threads.length - 1] : threads[idx - 1]
-  return target ? target.id : null
+  return cycleThreadId(store, -1)
 }
 
 /** Mark a background agent completion unread. The selected thread is already being viewed. */
@@ -362,13 +380,20 @@ export function deleteThread(store: AppStore, id: string): void {
   const index = threads.findIndex((t) => t.id === id)
   const parentId = threads.find((t) => t.id === id)?.sideChat?.parentThreadId
   // Land on a thread the sidebar shows; a deleted side chat hands focus to its parent.
-  const listed = remaining.filter((t) => t.sideChat === undefined)
-  const pool = listed.length > 0 ? listed : remaining
+  // Archived threads stay in the store but are not listed either, so they are a
+  // last resort only.
+  const topLevel = remaining.filter((t) => t.sideChat === undefined)
+  const listed = topLevel.filter((t) => !isThreadArchived(t))
+  const pool = listed.length > 0 ? listed : topLevel.length > 0 ? topLevel : remaining
+  // The deleted thread's place among the candidates, so focus moves to the
+  // thread that followed it rather than skipping past one that was filtered out.
+  const earlier = new Set(threads.slice(0, Math.max(index, 0)).map((t) => t.id))
+  const position = pool.filter((t) => earlier.has(t.id)).length
   const newActive = !activeDoomed
     ? activeThreadId
     : parentId !== undefined && remaining.some((t) => t.id === parentId)
       ? parentId
-      : (pool[Math.min(index, pool.length - 1)]?.id ?? null)
+      : (pool[Math.min(position, pool.length - 1)]?.id ?? null)
   store.setState({
     threads: remaining,
     activeThreadId: newActive,
@@ -428,12 +453,17 @@ export function archiveThread(
     activeThreadId !== null && updated.some((t) => t.id === activeThreadId && isThreadArchived(t))
   const index = threads.findIndex((t) => t.id === id)
   const parentId = target.sideChat?.parentThreadId
+  // The archived thread's place among the visible ones, so focus moves to the
+  // thread that followed it: earlier archived threads and side chats stay in
+  // the store and would otherwise push the landing spot past it.
+  const earlier = new Set(threads.slice(0, Math.max(index, 0)).map((t) => t.id))
+  const position = visible.filter((t) => earlier.has(t.id)).length
   // An archived side chat hands focus back to the thread it branched from.
   const newActive = !activeArchived
     ? activeThreadId
     : parentId !== undefined && visible.some((t) => t.id === parentId)
       ? parentId
-      : (visible[Math.min(index, visible.length - 1)]?.id ?? at(visible, 0).id)
+      : (visible[Math.min(position, visible.length - 1)]?.id ?? at(visible, 0).id)
   store.setState({
     threads: updated,
     activeThreadId: newActive,

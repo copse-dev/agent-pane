@@ -125,6 +125,7 @@ const forgejoReviewCommentsSchema = z.array(
     created_at: z.string(),
     path: z.string(),
     position: z.number().nullable().optional(),
+    original_position: z.number().nullable().optional(),
   }),
 )
 
@@ -190,6 +191,10 @@ async function getPages<T>(
     if (items.length < size) break
   }
   return all
+}
+
+function positiveLine(line: number | null | undefined): number | undefined {
+  return line != null && line > 0 ? line : undefined
 }
 
 interface RawEntry {
@@ -274,8 +279,16 @@ async function readRawEntries(
   for (const review of reviews) {
     if (ownReviews.has(review.id)) continue
     // An approval with no text still says something; an empty comment does not.
+    // GitHub spells a request for changes `CHANGES_REQUESTED`, Forgejo and Gitea
+    // `REQUEST_CHANGES`; with only the first, a Forgejo reviewer who requested
+    // changes through inline comments alone left no review entry at all.
     const body = review.body ?? ''
-    if (body.trim() === '' && review.state !== 'APPROVED' && review.state !== 'CHANGES_REQUESTED')
+    if (
+      body.trim() === '' &&
+      review.state !== 'APPROVED' &&
+      review.state !== 'CHANGES_REQUESTED' &&
+      review.state !== 'REQUEST_CHANGES'
+    )
       continue
     entries.push({
       kind: 'review',
@@ -338,7 +351,9 @@ async function readRawEntries(
           createdAt: comment.created_at,
           body: comment.body ?? '',
           path: comment.path,
-          line: comment.position ?? undefined,
+          // Forgejo reports a comment on a removed line as `position: 0` with
+          // the old line in `original_position`; 0 is not a line.
+          line: positiveLine(comment.position) ?? positiveLine(comment.original_position),
         })
       }
     }

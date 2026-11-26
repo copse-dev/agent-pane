@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import { runInNewContext } from 'node:vm'
 import {
   PluginBrowserPanelService,
   type PluginBrowserPanelDependencies,
@@ -166,5 +167,44 @@ describe('selected-plugin browser panel bridge', () => {
       ]),
       /canonical base64/i,
     )
+  })
+
+  it('never lets a ref leave the selector and run as script in the page', async () => {
+    // The worker has click/type/upload, not script execution: a ref that closes
+    // the quoted selector would hand it the signed-in page (and its network).
+    const hostile = `x'); globalThis.injected = true; ('`
+    const acts: Array<(service: PluginBrowserPanelService, tabId: string) => Promise<void>> = [
+      (service, tabId): Promise<void> => service.click(owner, tabId, hostile),
+      (service, tabId): Promise<void> => service.type(owner, tabId, hostile, 'text'),
+      (service, tabId): Promise<void> =>
+        service.upload(owner, tabId, hostile, [
+          { name: 'a.png', mimeType: 'image/png', dataBase64: 'eA==' },
+        ]),
+    ]
+    for (const act of acts) {
+      const { service, contents } = harness()
+      const tab = await service.open(owner, 'https://example.test/')
+      const page = contents.get(1)
+      assert.ok(page)
+      const selectors: string[] = []
+      const sandbox: Record<string, unknown> = {
+        document: {
+          querySelector: (selector: string): null => {
+            selectors.push(selector)
+            return null
+          },
+        },
+        // `null instanceof` anything is false: the stub only has to exist.
+        HTMLInputElement: Object,
+      }
+      page.executeJavaScript = (code): Promise<unknown> =>
+        Promise.resolve(runInNewContext(code, sandbox))
+
+      await assert.rejects(act(service, tab.tabId), /take a new snapshot/)
+
+      assert.equal(sandbox['injected'], undefined)
+      assert.equal(selectors.length, 1)
+      assert.ok(selectors[0]?.startsWith('[data-copse-ref="x\''))
+    }
   })
 })

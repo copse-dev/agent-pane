@@ -177,6 +177,40 @@ describe('remote ACP transport shutdown', () => {
     await setSetting('sshWorkspaceHosts', [])
   })
 
+  it('keeps a multibyte character that shares a read with the PGID marker line', async () => {
+    // U+4E2D is e4 b8 ad: two bytes arrive with the marker line, the last later.
+    writeFileSync(
+      join(binDir, 'ssh'),
+      `#!/bin/sh\nprintf '${REMOTE_PGID_PREFIX}4242\\n{"jsonrpc":"2.0","method":"\\344\\270'\nsleep 0.3\nprintf '\\255"}\\n'\nexec cat >/dev/null\n`,
+    )
+    const ssh = new FakeSshTransport([
+      { when: /^uname -s$/, stdout: 'Linux\n' },
+      { when: /^uname -m$/, stdout: 'x86_64\n' },
+      { when: /printf %s "\$SHELL"/, stdout: '/bin/bash' },
+      { when: /command -v git$/, stdout: '/usr/bin/git\n' },
+      { when: /command -v rg$/, stdout: '/usr/bin/rg\n' },
+      { when: /^kill -TERM -- -4242 /, stdout: '' },
+    ])
+    setSshTransportFactory(() => ssh)
+    const connection = await getSshConnectionManager().connect('dev')
+    const shell = resolveRemoteLoginShell(connection.capabilities?.shell)
+    await resolveCachedRemoteAgentPath('dev', shell, 'fake-agent', () =>
+      Promise.resolve('/usr/bin'),
+    )
+    const transport = await spawnRemoteAcpTransport(
+      { command: 'fake-agent', cwd: REMOTE_ROOT },
+      { hostId: 'dev', remoteRoot: REMOTE_ROOT },
+    )
+    try {
+      const reader = transport.stream.readable.getReader()
+      const first = await reader.read()
+      reader.releaseLock()
+      assert.deepEqual(first.value, { jsonrpc: '2.0', method: '\u4e2d' })
+    } finally {
+      await transport.dispose()
+    }
+  })
+
   it('keeps the remote process group until a kill reaches it, then consumes it', async () => {
     const ssh = new FakeSshTransport([
       { when: /^uname -s$/, stdout: 'Linux\n' },

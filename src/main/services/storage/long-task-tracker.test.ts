@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { at } from '@shared/array-utils.ts'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import {
   createLongTask,
@@ -42,6 +42,28 @@ describe('long-task-tracker', () => {
     assert.equal(task.steps.length, 2)
     assert.equal(at(task.steps, 0).id, 's1')
     assert.equal(at(task.steps, 0).done, false)
+  })
+
+  it('keeps an unreadable task file aside instead of overwriting it', () => {
+    createLongTask({ title: 'Earlier', goal: 'g', steps: ['a'] })
+    const file = readdirSync(root, { recursive: true, encoding: 'utf8' })
+      .map((entry) => join(root, entry))
+      .find((entry) => entry.endsWith('tasks.json'))
+    assert.ok(file)
+    // A write cut short by a crash: the checklist is still mostly there.
+    const damaged = readFileSync(file, 'utf8').slice(0, -3)
+    writeFileSync(file, damaged)
+    assert.deepEqual(loadLongTasks(), [])
+
+    const task = createLongTask({ title: 'Later', goal: 'g', steps: ['b'] })
+    assert.deepEqual(
+      loadLongTasks().map((entry) => entry.title),
+      ['Later'],
+    )
+    assert.equal(task.id, 't1')
+    const kept = readdirSync(dirname(file)).filter((name) => name !== 'tasks.json')
+    assert.equal(kept.length, 1)
+    assert.equal(readFileSync(join(dirname(file), at(kept, 0)), 'utf8'), damaged)
   })
 
   it('reports progress and the next step', () => {

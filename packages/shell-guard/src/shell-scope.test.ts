@@ -1524,4 +1524,41 @@ describe('analyzeShellCommand — system executable heads and quoted separators'
     assert.equal(verdict("echo 'a;b' && bin/tool"), 'ambiguous')
     assert.equal(verdict('echo "$(echo \'x\'; ./evil)"'), 'external')
   })
+
+  it('does not read the lines after an echo as more text for it to print', () => {
+    // A newline is argument whitespace to the lexer, so every outside path on a
+    // later line looked like an `echo` operand and was masked.
+    for (const command of [
+      'echo done\ncat /etc/passwd',
+      'echo start\ncp build/tool /usr/local/bin/tool',
+      'printf hi\nrm /var/log/app.log',
+    ]) {
+      assert.equal(verdict(command), 'external', command)
+    }
+    assert.equal(verdict('echo /etc/passwd\necho done'), 'sandbox')
+  })
+
+  it('classifies a long run of `git -c` in linear time', () => {
+    // Two readings of each `-c -c` pair made this backtrack exponentially: 30
+    // repeats took half a second and 50 never returned.
+    const started = performance.now()
+    assert.equal(verdict(`git ${'-c '.repeat(400)}status`), 'sandbox')
+    assert.ok(performance.now() - started < 1000)
+    assert.equal(verdict('git -c protocol.ext.allow=always -c a=b clone x'), 'external')
+    assert.equal(verdict('git --no-pager -c a=b push'), 'external')
+  })
+})
+
+describe('dangerousInSandboxReasons — abbreviated rm options', () => {
+  it('reads a prefix of --recursive or --force as the option GNU rm takes it for', () => {
+    for (const command of ['rm --rec build', 'rm --force --recurs build', 'rm --forc *.log']) {
+      assert.deepEqual(
+        dangerousInSandboxReasons(command),
+        ['recursive/forced delete (rm -rf)'],
+        command,
+      )
+    }
+    assert.deepEqual(dangerousInSandboxReasons('rm --force e2e/demo-failure.png'), [])
+    assert.deepEqual(dangerousInSandboxReasons('npm rm --registry=https://r.example pkg'), [])
+  })
 })

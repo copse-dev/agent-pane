@@ -65,6 +65,40 @@ describe('file tools', () => {
     assert.doesNotMatch(result, /^\uFEFF/)
   })
 
+  // Xcode `.strings` tables, `.reg` exports and Windows PowerShell redirects are
+  // UTF-16. Decoded as UTF-8 they came back as U+FFFD and NUL-interleaved text.
+  for (const [label, bytes] of [
+    ['UTF-16 LE with a BOM', Buffer.from('\ufeff"key" = "välue";\r\nsecond\r\n', 'utf16le')],
+    ['UTF-16 LE without a BOM', Buffer.from('"key" = "value";\nsecond\n', 'utf16le')],
+    ['UTF-16 BE with a BOM', Buffer.from('\ufeff"key" = "välue";\nsecond\n', 'utf16le').swap16()],
+  ] as const) {
+    it(`read_file decodes ${label}`, async () => {
+      await writeFile(join(tempRoot, 'Localizable.strings'), bytes)
+      const result = await runTool(
+        registry,
+        'read_file',
+        { path: 'Localizable.strings' },
+        new AbortController().signal,
+      )
+      assert.match(result, /^"key" = "v[aä]lue";\nsecond/)
+      assert.doesNotMatch(result, /[\u0000\ufffd\ufeff]/)
+    })
+  }
+
+  it('read_file still reports a NUL-bearing non-text file as binary', async () => {
+    await writeFile(
+      join(tempRoot, 'blob.bin'),
+      Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0, 0, 0, 1, 2, 3, 0xff, 0xd8]),
+    )
+    const result = await runTool(
+      registry,
+      'read_file',
+      { path: 'blob.bin' },
+      new AbortController().signal,
+    )
+    assert.equal(result, '[Binary file — cannot display as text]')
+  })
+
   it('read_file returns a friendly error without leaking errno or absolute path (#123)', async () => {
     const result = await runTool(
       registry,

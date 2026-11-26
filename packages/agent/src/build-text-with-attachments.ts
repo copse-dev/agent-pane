@@ -1,3 +1,5 @@
+import { clipEnd, clipStart } from './clip-text.ts'
+
 export interface FileAttachment {
   path: string
   content: string
@@ -103,7 +105,7 @@ export function textBlockLabel(content: string): string {
       .split('\n')
       .find((line) => line.trim() !== '')
       ?.trim() ?? 'Pasted text'
-  return firstLine.length > 48 ? `${firstLine.slice(0, 45)}…` : firstLine
+  return firstLine.length > 48 ? `${clipStart(firstLine, 45)}…` : firstLine
 }
 
 function countNewlines(s: string): number {
@@ -137,8 +139,8 @@ export function truncateAttachmentContent(
 
   const headBudget = Math.floor(maxChars * HEAD_FRACTION)
   const tailBudget = maxChars - headBudget
-  const head = trimToLastLine(content.slice(0, headBudget))
-  const tail = trimToFirstLine(content.slice(content.length - tailBudget))
+  const head = trimToLastLine(clipStart(content, headBudget))
+  const tail = trimToFirstLine(clipEnd(content, tailBudget))
 
   const omittedChars = content.length - head.length - tail.length
   const omittedLines = Math.max(

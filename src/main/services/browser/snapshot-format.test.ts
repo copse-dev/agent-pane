@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { renderSnapshot, type PageSnapshot } from './snapshot-format.ts'
+import { runInNewContext } from 'node:vm'
+import { refSelectorSource, renderSnapshot, type PageSnapshot } from './snapshot-format.ts'
 
 describe('renderSnapshot', () => {
   it('renders a header and indented accessibility outline with refs', () => {
@@ -56,5 +57,30 @@ describe('renderSnapshot', () => {
     assert.ok(out.length > 120)
     assert.ok(out.length <= 64 * 1_024)
     assert.match(out, /snapshot truncated/)
+  })
+})
+
+describe('refSelectorSource', () => {
+  const selectorFor = (ref: string): { selector: unknown; injected: unknown } => {
+    const sandbox: Record<string, unknown> = {}
+    const selector: unknown = runInNewContext(`(${refSelectorSource(ref)})`, sandbox)
+    return { selector, injected: sandbox['injected'] }
+  }
+
+  it('selects the element a snapshot tagged with the ref', () => {
+    assert.equal(selectorFor('e7').selector, '[data-copse-ref="e7"]')
+  })
+
+  it('keeps a ref with quotes inside the selector string', () => {
+    for (const ref of [
+      `x'); globalThis.injected = true; ('`,
+      `x"); globalThis.injected = true; ("`,
+      'x\\',
+      'line\nbreak\u2028',
+    ]) {
+      const { selector, injected } = selectorFor(ref)
+      assert.equal(injected, undefined)
+      assert.equal(selector, `[data-copse-ref=${JSON.stringify(ref)}]`)
+    }
   })
 })

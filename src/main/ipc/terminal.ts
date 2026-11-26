@@ -4,6 +4,7 @@ import { runWithRendererPromptTarget } from '../services/renderer-prompt-target.
 import { ensureTerminalPermitted } from '../services/security/permission-gate.ts'
 import { resolveThreadTerminalExecutionContext } from '../services/thread-execution-context.ts'
 import { getProjectRoot } from '../services/workspace.ts'
+import { isWindowRendererUnloaded } from '../windows/window-detach.ts'
 import { z } from 'zod'
 import { homedir } from 'node:os'
 import {
@@ -92,6 +93,24 @@ function trackOwnerTeardown(sender: WebContents): void {
   })
 }
 
+/**
+ * Whether a window's `close` event ends the shells its renderer owns.
+ *
+ * `close` is a request, not a fact, and `guardWindowClose` (registered before
+ * this module's listener) cancels it in three cases: while the renderer is
+ * asked whether a running agent may be interrupted, when the user answers no,
+ * and when the window is detached instead of closed. Tearing shells down on
+ * every `close` killed the user's Shells tabs under a window that then stayed
+ * open. A cancelled close ends them only when the detach unloaded the page that
+ * showed them; the close re-issued after a confirmation arrives un-cancelled.
+ */
+export function windowCloseEndsShells(close: {
+  prevented: boolean
+  rendererUnloaded: boolean
+}): boolean {
+  return !close.prevented || close.rendererUnloaded
+}
+
 export function initTerminal(win: BrowserWindow): () => void {
   ipcMain.handle('terminal:create', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
@@ -168,8 +187,17 @@ export function initTerminal(win: BrowserWindow): () => void {
     setActiveTerminalSession(id, event.sender.id)
   })
 
-  const onWindowClose = (): void => {
-    destroyAllTerminalSessions()
+  // Cached: Electron throws on reading `webContents` once the window is destroyed.
+  const ownerId = win.webContents.id
+  const onWindowClose = (event: { defaultPrevented: boolean }): void => {
+    const endsShells = windowCloseEndsShells({
+      prevented: event.defaultPrevented,
+      rendererUnloaded: isWindowRendererUnloaded(win),
+    })
+    // Only this window's shells: another main window, or a pane pop-out, owns
+    // its own and releases them when it goes away (`trackOwnerTeardown`). Quit
+    // tears every session down separately.
+    if (endsShells) destroyTerminalSessionsForOwner(ownerId)
   }
   win.on('close', onWindowClose)
 

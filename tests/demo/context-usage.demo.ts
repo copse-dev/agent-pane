@@ -35,6 +35,19 @@ describe('context label and subagent usage states', () => {
     await saveElementScreenshot('#app', 'context-usage-only.png')
   })
 
+  it('reads a total just under a million tokens as 1.0M', async () => {
+    await browser.url('/context-usage-fixture.html?mode=million')
+    const wheel = await $('.context-wheel')
+    await wheel.waitForDisplayed()
+    assert.equal(await wheel.getAttribute('aria-label'), 'Usage · 1.0M tokens')
+    await wheel.moveTo()
+    const popover = await $('.context-wheel-popover')
+    await expect(popover).toBeDisplayed()
+    await expect(popover.$('.footer-usage-popover-header')).toHaveText('Usage · 1.0M tokens')
+    assert.ok(!(await popover.getText()).includes('1000.0k'))
+    await saveElementScreenshot('#app', 'context-usage-million.png')
+  })
+
   for (const [mode, summary, runCount] of [
     ['running', '1 run · 1 running', 1],
     ['done', '1 run · no usage reported', 1],

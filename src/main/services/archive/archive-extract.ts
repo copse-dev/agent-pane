@@ -3,7 +3,12 @@ import { existsSync, mkdirSync, renameSync, rmSync, statSync } from 'node:fs'
 import { readdir, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, sep } from 'node:path'
 import { formatByteSize } from '@shared/file-bytes.ts'
-import { isUnsafeEntryPath, readZipDirectory, readZipEntry } from '../storage/zip-reader.ts'
+import {
+  isUnsafeEntryPath,
+  readZipDirectory,
+  readZipEntry,
+  type ZipEntryInfo,
+} from '../storage/zip-reader.ts'
 import { threadArchivesDir } from '../thread-store.ts'
 import { runSerialized } from '../storage/write-queue.ts'
 
@@ -129,18 +134,58 @@ export async function extractArchiveForThread(
   return runSerialized(root, () => extractArchiveInto(input, root))
 }
 
+interface ExtractionPlan {
+  /** Entries to write, in archive order. */
+  write: ZipEntryInfo[]
+  skipped: SkippedEntry[]
+  truncated: boolean
+}
+
+/**
+ * Decide what an archive's directory allows onto disk. It depends on the
+ * directory alone (an entry's declared size is checked against its data when it
+ * is read), so a call that reuses an earlier extraction reaches the same answer
+ * and can still say what was skipped or cut off.
+ */
+function planExtraction(entries: readonly ZipEntryInfo[]): ExtractionPlan {
+  const plan: ExtractionPlan = { write: [], skipped: [], truncated: false }
+  let totalBytes = 0
+  for (const entry of entries) {
+    if (plan.write.length >= MAX_ARCHIVE_ENTRIES) {
+      plan.truncated = true
+      break
+    }
+    if (entry.isDirectory) continue
+    if (entry.isSymlink) {
+      plan.skipped.push({ path: entry.path, reason: 'symlink' })
+      continue
+    }
+    if (isUnsafeEntryPath(entry.path)) {
+      plan.skipped.push({ path: entry.path, reason: 'path escapes the archive root' })
+      continue
+    }
+    if (totalBytes + entry.uncompressedSize > MAX_EXTRACTED_BYTES) {
+      plan.truncated = true
+      break
+    }
+    totalBytes += entry.uncompressedSize
+    plan.write.push(entry)
+  }
+  return plan
+}
+
 async function extractArchiveInto(
   input: ExtractArchiveInput,
   root: string,
 ): Promise<ExtractedArchive> {
   if (existsSync(root)) {
-    return { root, files: await listExtracted(root), skipped: [], truncated: false, reused: true }
+    // Same name and content hash, so the same directory and the same plan.
+    const { skipped, truncated } = planExtraction(readZipDirectory(input.bytes))
+    return { root, files: await listExtracted(root), skipped, truncated, reused: true }
   }
 
-  const entries = readZipDirectory(input.bytes)
+  const { write, skipped, truncated } = planExtraction(readZipDirectory(input.bytes))
   const files: ExtractedFile[] = []
-  const skipped: SkippedEntry[] = []
-  let truncated = false
   let totalBytes = 0
 
   // Unpack into a sibling and rename, so a crash or a cap tripping mid-way
@@ -149,25 +194,8 @@ async function extractArchiveInto(
   rmSync(staging, { recursive: true, force: true })
   mkdirSync(staging, { recursive: true })
   try {
-    for (const entry of entries) {
+    for (const entry of write) {
       if (input.signal?.aborted === true) throw new Error('Extraction cancelled.')
-      if (files.length >= MAX_ARCHIVE_ENTRIES) {
-        truncated = true
-        break
-      }
-      if (entry.isDirectory) continue
-      if (entry.isSymlink) {
-        skipped.push({ path: entry.path, reason: 'symlink' })
-        continue
-      }
-      if (isUnsafeEntryPath(entry.path)) {
-        skipped.push({ path: entry.path, reason: 'path escapes the archive root' })
-        continue
-      }
-      if (totalBytes + entry.uncompressedSize > MAX_EXTRACTED_BYTES) {
-        truncated = true
-        break
-      }
       const data = await readZipEntry(input.bytes, entry)
       totalBytes += data.length
       if (totalBytes > input.bytes.length * MAX_COMPRESSION_RATIO) {

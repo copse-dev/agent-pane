@@ -67,3 +67,16 @@ describe('extractParentGoal', () => {
     assert.equal(extractParentGoal([], long).length, WORKING_BRIEF_MAX_LEN)
   })
 })
+
+describe('working brief cap and surrogate pairs', () => {
+  it('never ends the brief on half of a surrogate pair', () => {
+    // The cap lands between the two code units of U+1F600. The lone surrogate
+    // reached subagent prompts through the parent goal and failed the request.
+    const prompt = `${'a'.repeat(WORKING_BRIEF_MAX_LEN - 1)}\u{1F600} tail`
+    const expected = 'a'.repeat(WORKING_BRIEF_MAX_LEN - 1)
+    assert.equal(workingBriefFromUserContent(prompt), expected)
+    assert.equal(workingBriefFromUserContent([{ type: 'text', text: prompt }]), expected)
+    assert.equal(extractParentGoal([], prompt), expected)
+    assert.equal(extractParentGoal([{ role: 'user', content: prompt }], 'unused'), expected)
+  })
+})

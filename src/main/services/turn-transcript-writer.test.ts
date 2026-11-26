@@ -416,6 +416,43 @@ describe('TurnTranscriptWriter', () => {
     )
   })
 
+  it('keeps every label when summaries for one message arrive together after the turn', async () => {
+    const turn = harness(recordedTurn)
+    await dispatch(turn)
+
+    await Promise.all([
+      turn.writer.annotate(PROJECT, THREAD, 'msg-1', { commandSummary: 'Read the plan' }),
+      turn.writer.annotate(PROJECT, THREAD, 'msg-1', { toolSummary: 'Read one file' }),
+      turn.writer.annotate(PROJECT, THREAD, 'msg-1', { runSummary: 'Summarised the plan' }),
+    ])
+
+    const message = (await stored()).messages.at(1)
+    assert.equal(message?.commandSummary, 'Read the plan')
+    assert.equal(message.toolSummary, 'Read one file')
+    assert.equal(message.runSummary, 'Summarised the plan')
+  })
+
+  it('keeps a label and a task ending that land on one message together', async () => {
+    const turn = harness(recordedTurn)
+    await dispatch(turn)
+
+    const phase: CommandPhase = {
+      state: 'exited',
+      since: 50,
+      launched: true,
+      exitCode: 0,
+      backgroundTaskId: 'bg-1',
+    }
+    await Promise.all([
+      turn.writer.updateCommandPhase(PROJECT, THREAD, 'call-read', phase),
+      turn.writer.annotate(PROJECT, THREAD, 'msg-1', { commandSummary: 'Read the plan' }),
+    ])
+
+    const message = (await stored()).messages.at(1)
+    assert.equal(message?.commandSummary, 'Read the plan')
+    assert.deepEqual(message.toolCalls.find((call) => call.id === 'call-read')?.commandPhase, phase)
+  })
+
   it('ignores an ending for a tool call the thread does not hold', async () => {
     const deliveries: Delivery[] = []
     const turn = harness(recordedTurn, (delivery) => deliveries.push(delivery))

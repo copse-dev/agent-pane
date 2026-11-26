@@ -17,6 +17,7 @@ import {
   isStrictSchemaRejectedError,
   yieldStreamWithRetry,
 } from './stream-retry.ts'
+import { safeJsonParse } from '@copse/std/safe-json.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
 import { normalizeOpenAIToolSchema } from './normalize-tool-schema.ts'
 import { prepareStrictTools, type StrictToolSet } from './strict-tool-schema.ts'
@@ -259,7 +260,9 @@ export class OpenAIProvider implements LLMProvider {
           }
         }
 
-        const toolCallBuilders = new Map<number, { id: string; name: string; argsJson: string }>()
+        const toolCallBuilders = new Map<number, ToolCallBuilder>()
+        // Wire `index` → builder slot, for a server that reuses one index.
+        const reusedIndexSlots = new Map<number, number>()
         let finishReason: string | undefined
         let streamUsage: ModelUsage | null = null
         let responseServiceTier: ServiceTier | undefined
@@ -296,7 +299,12 @@ export class OpenAIProvider implements LLMProvider {
               }
               self.lastUsage = streamUsage
             }
-            const delta = event.choices[0]?.delta
+            // A usage-only or bookkeeping frame may carry no `choices` at all:
+            // the SDK types the field as always present, compatible servers
+            // (and proxies in front of them) do not always send it.
+            const choices: unknown = event.choices
+            const choice = Array.isArray(choices) ? event.choices[0] : undefined
+            const delta = choice?.delta
             if (!delta) continue
 
             // Reasoning ("thinking") tokens. Not part of the OpenAI schema, but
@@ -311,7 +319,7 @@ export class OpenAIProvider implements LLMProvider {
 
             if (delta.tool_calls) {
               for (const tc of delta.tool_calls) {
-                const idx = toolCallSlot(toolCallBuilders, tc)
+                const idx = toolCallSlot(toolCallBuilders, reusedIndexSlots, tc)
                 let builder = toolCallBuilders.get(idx)
                 if (!builder) {
                   builder = {
@@ -327,12 +335,13 @@ export class OpenAIProvider implements LLMProvider {
               }
             }
 
-            const reason = event.choices[0]?.finish_reason
+            const reason = choice.finish_reason
             if (reason) finishReason = reason
 
             if (reason === 'tool_calls') {
               yield* yieldAssembledToolCalls(toolCallBuilders, mappedTools.restore)
               toolCallBuilders.clear()
+              reusedIndexSlots.clear()
             }
           }
           // Some OpenAI-compatible servers finish with `stop` while still streaming tool deltas.
@@ -379,20 +388,50 @@ export class OpenAIProvider implements LLMProvider {
  * `undefined` then merged parallel calls into one builder with concatenated
  * argument JSON. Without an index, a new `id` opens a new slot, a known `id`
  * reuses its slot, and an id-less fragment continues the latest call.
+ *
+ * Others send an index that does not identify the call: Gemini's
+ * OpenAI-compatible endpoint streams every parallel call as `index: 0`. A
+ * delta that {@link opensNewToolCall} on an occupied slot is moved to a fresh
+ * one, and `reusedIndexSlots` sends that index's later fragments after it.
  */
 function toolCallSlot(
-  builders: ReadonlyMap<number, { id: string }>,
-  tc: { index?: number; id?: string },
+  builders: ReadonlyMap<number, ToolCallBuilder>,
+  reusedIndexSlots: Map<number, number>,
+  tc: ToolCallDelta,
 ): number {
-  const index: unknown = tc.index
-  if (typeof index === 'number') return index
   const slots = [...builders.keys()]
   const latest = slots.length > 0 ? Math.max(...slots) : -1
-  if (!tc.id) return Math.max(latest, 0)
+  const index: unknown = tc.index
+  if (typeof index === 'number') {
+    const slot = reusedIndexSlots.get(index) ?? index
+    const open = builders.get(slot)
+    if (!open || !opensNewToolCall(open, tc)) return slot
+    reusedIndexSlots.set(index, latest + 1)
+    return latest + 1
+  }
+  if (!tc.id) {
+    const open = builders.get(latest)
+    return open && opensNewToolCall(open, tc) ? latest + 1 : Math.max(latest, 0)
+  }
   for (const [slot, builder] of builders) {
     if (builder.id === tc.id) return slot
   }
   return latest + 1
+}
+
+type ToolCallDelta = { index?: number; id?: string; function?: { name?: string } }
+
+/**
+ * Whether `tc` begins a different call from the one `open` is assembling. Two
+ * distinct ids always do. When an id is missing on either side, a delta that
+ * names a function does so only once the open call already holds a complete
+ * JSON object: nothing can validly extend that, whereas a server that merely
+ * repeats the name on each fragment is still mid-object.
+ */
+function opensNewToolCall(open: ToolCallBuilder, tc: ToolCallDelta): boolean {
+  if (tc.id && open.id) return tc.id !== open.id
+  if (!tc.function?.name || !open.name) return false
+  return open.argsJson.trimStart().startsWith('{') && safeJsonParse(open.argsJson) !== null
 }
 
 /**

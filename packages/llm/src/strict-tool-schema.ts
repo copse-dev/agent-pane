@@ -356,6 +356,19 @@ function fitsObjectBranch(value: JsonObject, branch: unknown): boolean {
 }
 
 /**
+ * The item schema an array value is checked against. A nullable or mixed union
+ * (`anyOf: [array, null]`) keeps it on its array branch; with more than one array
+ * branch the item schema is ambiguous, so the items are left as the model sent them.
+ */
+function arrayItemsSchema(schema: JsonObject): unknown {
+  if (schema['items'] !== undefined) return schema['items']
+  const arrays = unionBranches(schema)
+    .filter(isRecord)
+    .filter((branch) => branch['items'] !== undefined)
+  return arrays.length === 1 ? arrays[0]?.['items'] : undefined
+}
+
+/**
  * Undo the optional → required-nullable rewrite on the model's arguments.
  *
  * Walks `value` alongside the ORIGINAL schema and drops each `null` the model
@@ -367,8 +380,10 @@ function fitsObjectBranch(value: JsonObject, branch: unknown): boolean {
  */
 export function restoreAbsentOptionals(value: unknown, schema: unknown): unknown {
   if (!isRecord(schema)) return value
-  if (Array.isArray(value))
-    return value.map((item) => restoreAbsentOptionals(item, schema['items']))
+  if (Array.isArray(value)) {
+    const items = arrayItemsSchema(schema)
+    return value.map((item) => restoreAbsentOptionals(item, items))
+  }
   if (!isRecord(value)) return value
 
   const branches = unionBranches(schema)

@@ -1,8 +1,10 @@
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
+import { StringDecoder } from 'node:string_decoder'
 import { errorMessage } from '@shared/errors.ts'
 import { isRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 import type { AcpAgentProbe } from '@shared/types/acp.ts'
+import { parseAcpConfigOptions } from '@shared/acp.ts'
 import { detachForGroupKill, withSandboxShellPath } from '../../project-sandbox/sandbox-argv.ts'
 import { withoutSandboxWrapTmpPin } from '../../project-sandbox/tmp-env.ts'
 import { terminateProcessTree } from '../exec/subprocess-kill.ts'
@@ -97,7 +99,14 @@ export function parseProbeWorkerOutput(stdout: string): AcpAgentProbe | null {
     if (!isRecord(parsed)) continue
     if (parsed['ok'] === true && isRecord(parsed['probe'])) {
       const probe = parsed['probe']
-      return { models: readModelSelector(probe['models']), modes: readModeSelector(probe['modes']) }
+      // The reasoning-level and other selectors the composer picker caches. The
+      // in-process probe returns them, so the isolated one must not drop them.
+      const configOptions = parseAcpConfigOptions(probe['configOptions'])
+      return {
+        models: readModelSelector(probe['models']),
+        modes: readModeSelector(probe['modes']),
+        ...(configOptions.length > 0 ? { configOptions } : {}),
+      }
     }
     if (parsed['ok'] === false) {
       const message =
@@ -149,8 +158,11 @@ function runProbeWorker(
       })
     }, timeoutMs + HOST_TIMEOUT_GRACE_MS)
 
+    // The result is one JSON line that can span several pipe chunks; decode
+    // across them so a model label's multibyte character is not split.
+    const stdoutDecoder = new StringDecoder('utf8')
     child.stdout.on('data', (chunk: Buffer) => {
-      if (stdout.length < WORKER_STDOUT_MAX_BYTES) stdout += chunk.toString()
+      if (stdout.length < WORKER_STDOUT_MAX_BYTES) stdout += stdoutDecoder.write(chunk)
     })
     child.stderr.on('data', (chunk: Buffer) => {
       const remaining = WORKER_STDERR_MAX_BYTES - stderrBytes

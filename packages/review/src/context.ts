@@ -145,6 +145,15 @@ const HEADER_SIDE = (prefix: string): string =>
   `(?:"${prefix}/((?:[^"\\\\]|\\\\.)*)"|${prefix}/(.+?))`
 const DIFF_HEADER = new RegExp(`^diff --git ${HEADER_SIDE('a')} ${HEADER_SIDE('b')}$`)
 
+/** The name in an unquoted `diff --git a/NAME b/NAME` header, or null when the sides differ. */
+function sameNameOnBothSides(header: string): string | null {
+  const rest = header.slice('diff --git '.length)
+  const length = (rest.length - 'a/'.length - ' b/'.length) / 2
+  if (!rest.startsWith('a/') || !Number.isInteger(length) || length < 1) return null
+  const name = rest.slice(2, 2 + length)
+  return rest.slice(2 + length) === ` b/${name}` ? name : null
+}
+
 /** Split a unified diff into per-file entries. Pure; tolerant of what it does not recognise. */
 export function splitDiff(diff: string): RawFileDiff[] {
   const files: RawFileDiff[] = []
@@ -154,8 +163,26 @@ export function splitDiff(diff: string): RawFileDiff[] {
     const names = DIFF_HEADER.exec(header)
     const quotedOld = names?.[1]
     const quotedNew = names?.[3]
-    const oldName = quotedOld === undefined ? (names?.[2] ?? '') : unquote(`"${quotedOld}"`)
-    const newName = quotedNew === undefined ? (names?.[4] ?? oldName) : unquote(`"${quotedNew}"`)
+    // An unquoted name may itself hold ` b/` (`docs/plan b/x.md`), which the
+    // header alone cannot split. Unrenamed, both sides are the same name; a
+    // rename states each side on its own line.
+    const same = sameNameOnBothSides(header)
+    const renamedFrom = /^rename from (.+)$/m.exec(block)?.[1]
+    const renamedTo = /^rename to (.+)$/m.exec(block)?.[1]
+    const oldName =
+      same ??
+      (renamedFrom !== undefined
+        ? unquote(renamedFrom)
+        : quotedOld === undefined
+          ? (names?.[2] ?? '')
+          : unquote(`"${quotedOld}"`))
+    const newName =
+      same ??
+      (renamedTo !== undefined
+        ? unquote(renamedTo)
+        : quotedNew === undefined
+          ? (names?.[4] ?? oldName)
+          : unquote(`"${quotedNew}"`))
     let status: FileDiffStatus = 'modified'
     if (/^new file mode/m.test(block)) status = 'added'
     else if (/^deleted file mode/m.test(block)) status = 'deleted'
@@ -165,9 +192,14 @@ export function splitDiff(diff: string): RawFileDiff[] {
     }
     let additions = 0
     let deletions = 0
+    // `--- a/x` and `+++ b/x` are headers only before the first hunk. Inside one,
+    // `--- ` is a removed `-- ` line (a SQL comment, a markdown rule) and counts.
+    let inHunk = false
     for (const line of block.split('\n')) {
-      if (line.startsWith('+') && !line.startsWith('+++')) additions++
-      else if (line.startsWith('-') && !line.startsWith('---')) deletions++
+      if (line.startsWith('@@')) inHunk = true
+      else if (!inHunk && /^(?:---|\+\+\+) /.test(line)) continue
+      else if (line.startsWith('+')) additions++
+      else if (line.startsWith('-')) deletions++
     }
     const path = status === 'deleted' ? oldName : newName
     files.push({

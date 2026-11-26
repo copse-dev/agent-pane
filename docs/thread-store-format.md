@@ -91,6 +91,7 @@ Source files remain authoritative; deleting this cache is safe.
     agent-history.json               # provider-format LLM resume snapshot (issue #993)
     openai-agent-session.json        # private hosted session, pending input, terminal result + Git import checkpoint
     blobs/openai-git/                # bounded source/return Git bundles and result manifest
+    blobs/openai-artifacts/          # downloaded hosted-agent artifacts that message links point at
     acp-session.json                 # private external ACP session binding (optional)
     history-edit-transaction.json    # pending edit rollback journal (temporary, private)
     history-edit-undo.json           # previous transcript/history for one-step Undo (optional, private)

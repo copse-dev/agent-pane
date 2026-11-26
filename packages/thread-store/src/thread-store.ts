@@ -14,6 +14,7 @@ import {
   closeSync,
 } from 'node:fs'
 import { promises as fsPromises } from 'node:fs'
+import type { FileHandle } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve as resolvePath, sep } from 'node:path'
 import type { LLMMessage } from '@copse/llm/wire-types.ts'
 import type {
@@ -158,10 +159,18 @@ const REASONING_CHECKPOINTS_FILE = 'reasoning-checkpoints.jsonl'
 const CONTENT_DIRS = ['messages', 'blobs', 'subagents']
 /**
  * Subdirectories of `blobs/` written outside the spine: user-attached media
- * ({@link threadMediaDir}) and extracted archives ({@link threadArchivesDir}).
+ * ({@link threadMediaDir}), extracted archives ({@link threadArchivesDir}) and
+ * the hosted OpenAI agent's transfer and artifact files.
  * Their files are never spine refs, so {@link pruneStaleFiles} leaves them alone.
  */
-const UNREFERENCED_BLOB_PREFIXES = ['blobs/media/', 'blobs/archives/']
+const UNREFERENCED_BLOB_PREFIXES = [
+  'blobs/media/',
+  'blobs/archives/',
+  // Hosted OpenAI agent sidecars: the Git transfer checkpoint a pending import
+  // resumes from, and downloaded artifacts that message links point at.
+  'blobs/openai-git/',
+  'blobs/openai-artifacts/',
+]
 /** Directories a spine ref may point into (plan artifacts are refs but never pruned). */
 const REF_DIRS = [...CONTENT_DIRS, 'plans']
 
@@ -301,18 +310,45 @@ async function appendJsonlLine(path: string, line: string): Promise<void> {
     constants.O_RDWR | constants.O_CREAT | constants.O_APPEND | constants.O_NOFOLLOW,
   )
   try {
-    const { size } = await handle.stat()
-    let prefix = ''
-    if (size > 0) {
-      const lastByte = Buffer.allocUnsafe(1)
-      const { bytesRead } = await handle.read(lastByte, 0, 1, size - 1)
-      if (bytesRead === 1 && lastByte[0] !== 0x0a) prefix = '\n'
-    }
+    const prefix = await finalNewlineRepair(handle)
     await handle.appendFile(`${prefix}${line}\n`, 'utf8')
   } finally {
     await handle.close()
   }
 }
+
+/** `'\n'` when the open file is non-empty and does not end in a newline, else `''`. */
+async function finalNewlineRepair(handle: FileHandle): Promise<string> {
+  const { size } = await handle.stat()
+  if (size === 0) return ''
+  const lastByte = Buffer.allocUnsafe(1)
+  const { bytesRead } = await handle.read(lastByte, 0, 1, size - 1)
+  return bytesRead === 1 && lastByte[0] !== 0x0a ? '\n' : ''
+}
+
+/**
+ * {@link finalNewlineRepair} for a path that may not exist yet. An append that
+ * rejected part-way (a full disk) leaves a torn final line behind; the next
+ * record must start on its own line or it is glued to that fragment and lost.
+ */
+async function finalNewlineRepairAt(path: string): Promise<string> {
+  assertStorePath(path)
+  let handle: FileHandle
+  try {
+    handle = await fsPromises.open(path, constants.O_RDONLY | constants.O_NOFOLLOW)
+  } catch (error) {
+    if (isMissingFileError(error)) return ''
+    throw error
+  }
+  try {
+    return await finalNewlineRepair(handle)
+  } finally {
+    await handle.close()
+  }
+}
+
+const isMissingFileError = (error: unknown): boolean =>
+  isRecord(error) && error['code'] === 'ENOENT'
 
 /** Atomic replace so a crash never leaves a half-written sidecar. */
 function atomicWriteFile(path: string, data: string, mode?: number): void {
@@ -462,10 +498,12 @@ async function knownMessageIdsFor(dir: string): Promise<Set<string>> {
   const cached = knownMessageIdsByDir.get(dir)
   if (cached) return cached
   const eventsPath = join(dir, EVENTS_FILE)
-  const raw = (await readOrNull(eventsPath)) ?? ''
+  // Strict: only a missing spine is an empty one. Seeding "no ids" from a read
+  // that failed would append a re-finalized message as a duplicate line.
+  const raw = (await readOrNull(eventsPath, true)) ?? ''
   if (raw !== '' && !raw.endsWith('\n')) {
     // Normalize a legacy file with no trailing newline before switching to
-    // true appends below, which assume one is already there.
+    // true appends (which still check the final byte: see `finalNewlineRepairAt`).
     await atomicWriteFileAsync(eventsPath, `${raw}\n`)
   }
   const ids = new Set<string>()
@@ -503,10 +541,14 @@ function writeThread(projectId: string, thread: Thread): void {
     contents: file.contents,
   }))
   for (const target of targets) writeFileEnsuringDir(target.path, target.contents)
-  const existingRaw = safeRead(join(dir, EVENTS_FILE)) ?? ''
+  // Only a missing file is an empty spine or absent metadata. Treating a read
+  // that failed for any other reason (EMFILE, EACCES, EIO) as empty would drop
+  // every preserved line, prune the blobs they reference, and discard the
+  // main-owned production evidence below — so such a save fails instead.
+  const existingRaw = readStoreFileIfPresent(join(dir, EVENTS_FILE)) ?? ''
+  const previous = parseMeta(readStoreFileIfPresent(join(dir, META_FILE)))
   const { body, preservedRefs } = rebuildSpinePreservingNonMessageLines(existingRaw, spine)
   atomicWriteFile(join(dir, EVENTS_FILE), body)
-  const previous = readMeta(dir)
   atomicWriteFile(
     join(dir, META_FILE),
     `${JSON.stringify({
@@ -554,10 +596,10 @@ function parseMeta(raw: string | null): ThreadMeta | null {
 }
 
 /**
- * How many file reads are in flight at once while prefetching a thread (and how
- * many threads load concurrently in {@link readProjectThreads}). Enough to keep
- * the disk busy and overlap latency; low enough that a project with thousands of
- * message files cannot exhaust file descriptors.
+ * How many file reads are open at once across the store ({@link withReadSlot}),
+ * and how many threads load concurrently in {@link readProjectThreads}. Enough
+ * to keep the disk busy and overlap latency; low enough that a project with
+ * thousands of message files cannot exhaust file descriptors.
  */
 const READ_CONCURRENCY = 32
 
@@ -582,17 +624,41 @@ async function mapConcurrent<T, R>(
   return results
 }
 
+/**
+ * Open file reads across the whole store, not per caller. The fan-outs nest (a
+ * project load runs {@link READ_CONCURRENCY} threads, each prefetching that many
+ * files), so a per-call bound alone multiplies to over a thousand descriptors,
+ * and a read that fails with EMFILE silently skips its thread.
+ */
+let openReads = 0
+const readWaiters: Array<() => void> = []
+
+async function withReadSlot<T>(read: () => Promise<T>): Promise<T> {
+  if (openReads < READ_CONCURRENCY) openReads += 1
+  else await new Promise<void>((resolve) => readWaiters.push(resolve))
+  try {
+    return await read()
+  } finally {
+    // Hand the slot straight to the next waiter, or release it.
+    const next = readWaiters.shift()
+    if (next) next()
+    else openReads -= 1
+  }
+}
+
 async function readOrNull(path: string, strict = false): Promise<string | null> {
   try {
     assertStorePath(path)
-    const handle = await fsPromises.open(path, constants.O_RDONLY | constants.O_NOFOLLOW)
-    try {
-      return await handle.readFile('utf8')
-    } finally {
-      await handle.close()
-    }
+    return await withReadSlot(async () => {
+      const handle = await fsPromises.open(path, constants.O_RDONLY | constants.O_NOFOLLOW)
+      try {
+        return await handle.readFile('utf8')
+      } finally {
+        await handle.close()
+      }
+    })
   } catch (error) {
-    if (strict && !(isRecord(error) && error['code'] === 'ENOENT')) throw error
+    if (strict && !isMissingFileError(error)) throw error
     return null
   }
 }
@@ -755,6 +821,23 @@ function safeRead(path: string): string | null {
   }
 }
 
+/** Read a store file a writer is about to replace: null only when it does not exist. */
+function readStoreFileIfPresent(path: string): string | null {
+  assertStorePath(path)
+  let fd: number
+  try {
+    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW)
+  } catch (error) {
+    if (isMissingFileError(error)) return null
+    throw error
+  }
+  try {
+    return readFileSync(fd, 'utf8')
+  } finally {
+    closeSync(fd)
+  }
+}
+
 function listThreadIds(projectId: string): string[] {
   const dir = projectDir(projectId)
   if (!existsSync(dir)) return []
@@ -910,7 +993,10 @@ async function mergePrRefsIntoMeta(
       projectId,
       threadId,
       extractGithubPrUrls(message.content),
-      extractThreadLinks(message.content),
+      // A thread never links to itself (see `collectThreadLinks`).
+      extractThreadLinks(message.content).filter(
+        (link) => !(link.kind === 'thread' && link.target === threadId),
+      ),
     )
   } catch {
     // Diagnostic metadata; never worth failing the write it rides along with.
@@ -1729,13 +1815,15 @@ export function lookupThreadBacklinks(
   kind: ThreadLink['kind'],
   target: string,
 ): Promise<ThreadBacklink[]> {
-  return runSerialized(queueKey(projectId), () =>
-    withThreadIndex(
+  return runSerialized(queueKey(projectId), async () => {
+    const rows = await withThreadIndex(
       projectId,
       (index) => index.backlinks(kind, target),
       async () => backlinksFor(await readProjectThreadMetas(projectId), kind, target),
-    ),
-  )
+    )
+    // A self-mention recorded before appends filtered it is not a backlink.
+    return kind === 'thread' ? rows.filter((row) => row.threadId !== target) : rows
+  })
 }
 
 /** Direct source reader for diagnostics/rebuilds; deliberately bypasses the projection. */
@@ -2261,6 +2349,10 @@ export function saveProjectThreads(projectId: string, threads: Thread[]): Promis
     for (const threadId of listThreadIds(projectId)) {
       if (!keepIds.has(threadId)) {
         const dir = threadDir(projectId, threadId)
+        // The project directory also holds reserved non-thread directories
+        // (`tasks/`, `task-history/`, `event-inbox/`); only a thread has a
+        // `meta.json` directly inside it.
+        if (!existsSync(join(dir, META_FILE))) continue
         markIndexSourceWrite(join(dir, META_FILE))
         rmSync(dir, { recursive: true, force: true })
         invalidateKnownMessageIds(dir)
@@ -2335,6 +2427,12 @@ async function appendMessageUnqueued(
   // in-memory run owner before beginning the visible commit.
   if (canCommit && !canCommit()) return false
   const raw = serializeSpineLine(line)
+  const eventsPath = join(dir, EVENTS_FILE)
+  // The id cache only says the spine ended in a newline when it was seeded. An
+  // append that rejected part-way since then leaves a torn tail, so inspect the
+  // final byte rather than assume. Done before the last ownership checks so no
+  // read separates them from the write.
+  const repair = knownIds.has(message.id) ? '' : await finalNewlineRepairAt(eventsPath)
   // `knownMessageIdsFor` can await a disk read. Recheck immediately before the
   // user-visible spine commit so a local dispatch accepted in that interval
   // keeps sole ownership of the thread.
@@ -2348,16 +2446,18 @@ async function appendMessageUnqueued(
     if (!canCommit()) return false
   }
   if (!knownIds.has(message.id)) {
-    assertStorePath(join(dir, EVENTS_FILE))
-    markIndexSourceWrite(join(dir, EVENTS_FILE))
-    await fsPromises.appendFile(join(dir, EVENTS_FILE), `${raw}\n`, {
+    assertStorePath(eventsPath)
+    markIndexSourceWrite(eventsPath)
+    await fsPromises.appendFile(eventsPath, `${repair}${raw}\n`, {
       flag: constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND | constants.O_NOFOLLOW,
     })
     // Do not teach the cache about an id until the append is durable enough
     // for Node to resolve it. A rejected append must take this path again.
     knownIds.add(message.id)
   } else {
-    const entries = parseSpineEntries((await readOrNull(join(dir, EVENTS_FILE))) ?? '')
+    // Strict: this branch rewrites the whole spine from what it reads, so a
+    // read that failed must not stand in for an empty file.
+    const entries = parseSpineEntries((await readOrNull(eventsPath, true)) ?? '')
     // Replacing an existing spine line has one more await before its write.
     // Preserve a dispatch that became active while that file was read.
     if (canCommit && !canCommit()) return false
@@ -2371,7 +2471,7 @@ async function appendMessageUnqueued(
     const previous = existingIndex >= 0 ? entries[existingIndex]?.line : undefined
     if (existingIndex >= 0) entries[existingIndex] = { raw, line }
     else entries.push({ raw, line })
-    await atomicWriteFileAsync(join(dir, EVENTS_FILE), serializeSpineEntries(entries))
+    await atomicWriteFileAsync(eventsPath, serializeSpineEntries(entries))
     if (previous?.type === 'message') await removeSupersededProse(dir, previous, entries)
   }
   // The sidebar's PR chip is derived from links in message text, which a
@@ -2863,7 +2963,13 @@ function recoverPendingHistoryEdit(projectId: string, threadId: string, force = 
   if (rollback === null || rollback.thread.id !== threadId) {
     throw new Error(`Thread history recovery data for "${threadId}" is invalid`)
   }
-  writeThread(projectId, rollback.thread)
+  try {
+    writeThread(projectId, rollback.thread)
+  } finally {
+    // Reads reach this outside `runStoreWrite`, so drop the snapshots here: they
+    // describe the abandoned replacement, not the metadata just restored.
+    invalidateProjectMetaCache(projectId)
+  }
   upsertCatalogEntry(projectId, rollback.thread)
   if (rollback.hadAgentHistory) {
     writeAgentHistorySnapshot(projectId, threadId, rollback.agentHistory)

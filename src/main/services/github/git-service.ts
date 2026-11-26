@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import * as fsp from 'node:fs/promises'
 import { constants as fsConstants } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -219,19 +220,6 @@ function mapStatus(code: string): GitChangeStatus {
   }
 }
 
-const STATUS_CODES = new Set([' ', 'M', 'A', 'D', 'R', 'C', 'U', 'T', '?', '!'])
-
-/**
- * Heuristic: does this `-z` token look like a fresh "XY <path>" status record
- * rather than the bare source-path token that follows a rename/copy? Used to
- * keep `-z` parsing aligned when a rename record is missing its source token.
- */
-function looksLikeStatusRecord(token: string): boolean {
-  const [x, y, sep] = token
-  if (token.length < 3 || sep !== ' ' || x === undefined || y === undefined) return false
-  return STATUS_CODES.has(x) && STATUS_CODES.has(y)
-}
-
 /** Parse `git status --porcelain=v1 -z` into staged and unstaged file lists. */
 export function parsePorcelainV1(raw: string): GitStatusResult {
   const staged: GitChange[] = []
@@ -274,20 +262,19 @@ export function parsePorcelainV1(raw: string): GitStatusResult {
     if (x === 'R' || x === 'C' || y === 'R' || y === 'C') {
       // `-z` rename/copy records span two NUL-delimited tokens:
       //   "XY <path>\0<origPath>\0". The destination path is on the record
-      //   line; the following token is the original path. A malformed or
-      //   truncated record can be missing that source token. Blindly advancing
-      //   by 2 would then swallow the next real status record and mis-align the
-      //   rest of the parse (#130). Only consume the paired token when it does
-      //   not itself look like a status record; otherwise advance by one.
-      const next = entries[i + 1]
-      const pairedIsSource = next !== undefined && !looksLikeStatusRecord(next)
+      //   line; the following token is the original path, which git always
+      //   emits and which carries no status prefix. Consume it unconditionally:
+      //   a source such as `AD copy.md` or `M notes.txt` is shaped like a status
+      //   record, and guessing from its shape turns the source of a rename into
+      //   phantom entries. On truncated output the missing token is simply
+      //   absent and the loop ends.
       if (x !== ' ' && x !== '?') {
         staged.push({ path: pathPart, status: x === 'R' ? 'renamed' : 'added' })
       }
       if (y !== ' ' && y !== '?') {
         unstaged.push({ path: pathPart, status: y === 'R' ? 'renamed' : mapStatus(y) })
       }
-      i += pairedIsSource ? 2 : 1
+      i += 2
       continue
     }
 
@@ -695,7 +682,11 @@ export async function createWorktreeBackup(
       indexPath: tempIndex.path,
       ...(options.snapshotHead ? { head: options.snapshotHead } : {}),
     })
-    const ref = `refs/copse/backups/${String(Date.now())}`
+    // The timestamp orders refs for pruning; the suffix keeps two snapshots
+    // taken in the same millisecond (a thread seed and a session backup in one
+    // repository) from sharing a ref, where one's cleanup would delete the
+    // other's restore point.
+    const ref = `refs/copse/backups/${String(Date.now())}-${randomUUID().slice(0, 8)}`
     let updateRef: Awaited<ReturnType<typeof runGit>>
     try {
       updateRef = await runGit(['update-ref', ref, snapshot.sha], root, sandboxOptions)

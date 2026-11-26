@@ -288,7 +288,16 @@ export class MachineManager {
     try {
       await new Promise<void>((resolve, reject) => {
         server.once('error', reject)
-        server.listen(config.port, config.address, resolve)
+        server.listen(config.port, config.address, () => {
+          server.off('error', reject)
+          resolve()
+        })
+      })
+      // A listening server still emits 'error' when accepting fails (EMFILE);
+      // without a listener that is an uncaught exception in the main process.
+      // The server keeps listening, so the failed connection is all that is lost.
+      server.on('error', (error) => {
+        console.warn('[copse-panel] machine sharing listener error:', error.message)
       })
       this.assertEnabled()
       const address = server.address()

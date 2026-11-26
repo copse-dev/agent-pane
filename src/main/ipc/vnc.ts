@@ -1,5 +1,6 @@
 import { ipcMain, type BrowserWindow, type WebContents } from 'electron'
 import { z } from 'zod'
+import { errorMessage } from '@shared/errors.ts'
 import { getSetting } from '../services/storage/settings.ts'
 import { listConfiguredSshHosts } from '../services/ssh-workspace/hosts.ts'
 import {
@@ -23,6 +24,7 @@ import {
   vncDiscoveryHostSchema,
   vncTargetSchema,
 } from './ipc-guards.ts'
+import { releaseWhenSenderDestroyed } from './sender-teardown.ts'
 
 const vncConnectionIdSchema = z.uuid()
 const vncUsernameSchema = z.string().trim().min(1).max(256)
@@ -50,8 +52,33 @@ function parseClientBytes(raw: unknown): Uint8Array {
   return bytes
 }
 
+/**
+ * Keep a fire-and-forget VNC event from throwing out of `ipcMain.on`.
+ *
+ * `vnc:start` and `vnc:send` are one-way: there is no caller to reject to, so a
+ * throw in their listener is an uncaught exception in the main process, which
+ * Electron reports with its "A JavaScript error occurred in the main process"
+ * dialog. And the listeners do throw in ordinary use: input the viewer sent just
+ * before it learned the server had hung up reaches a connection that is already
+ * closed. The viewer hears about the close on `vnc:status`; the stray event is
+ * dropped.
+ */
+export function containVncEventErrors<E, A extends unknown[]>(
+  channel: string,
+  listener: (event: E, ...args: A) => void,
+): (event: E, ...args: A) => void {
+  return (event, ...args) => {
+    try {
+      listener(event, ...args)
+    } catch (error) {
+      console.warn(`[copse-panel] dropped ${channel}: ${errorMessage(error)}`)
+    }
+  }
+}
+
 export function initVnc(win: BrowserWindow): () => Promise<void> {
   const service = getVncService()
+  const ownerTeardownHooked = new WeakSet<WebContents>()
 
   ipcMain.handle('vnc:open', async (event, rawTarget: unknown) => {
     assertMainFrameSender(event, win)
@@ -62,9 +89,10 @@ export function initVnc(win: BrowserWindow): () => Promise<void> {
     if (target.kind === 'ssh' && !getSetting<boolean>('sshWorkspaceEnabled', false)) {
       throw new Error('Enable SSH workspaces in Settings before opening a remote desktop')
     }
-    const connection = await service.open(target, ownerFor(event.sender))
+    // Read before the await: a window that closes meanwhile is destroyed.
     const ownerId = event.sender.id
-    event.sender.once('destroyed', () => {
+    const connection = await service.open(target, ownerFor(event.sender))
+    releaseWhenSenderDestroyed(event.sender, ownerTeardownHooked, () => {
       void service.closeOwner(ownerId)
     })
     return connection
@@ -195,8 +223,10 @@ export function initVnc(win: BrowserWindow): () => Promise<void> {
     const id = parseIpcArgs(vncConnectionIdSchema, [rawId])
     service.send(id, event.sender.id, parseClientBytes(rawBytes))
   }
-  ipcMain.on('vnc:start', onStart)
-  ipcMain.on('vnc:send', onSend)
+  const guardedStart = containVncEventErrors('vnc:start', onStart)
+  const guardedSend = containVncEventErrors('vnc:send', onSend)
+  ipcMain.on('vnc:start', guardedStart)
+  ipcMain.on('vnc:send', guardedSend)
 
   return async () => {
     ipcMain.removeHandler('vnc:open')
@@ -213,8 +243,8 @@ export function initVnc(win: BrowserWindow): () => Promise<void> {
     ipcMain.removeHandler('vnc:forget-password')
     ipcMain.removeHandler('vnc:forget-credentials')
     ipcMain.removeHandler('vnc:close')
-    ipcMain.off('vnc:start', onStart)
-    ipcMain.off('vnc:send', onSend)
+    ipcMain.off('vnc:start', guardedStart)
+    ipcMain.off('vnc:send', guardedSend)
     await service.closeAll()
   }
 }
