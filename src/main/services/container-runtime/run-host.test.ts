@@ -9,11 +9,20 @@ import { fakeRecord } from './container-run-record.test-support.ts'
 import {
   canHostOutsideApp,
   hostContainerRun,
+  runHostToAppSchema,
+  type AppToRunHost,
   type ContainerRunHostRequest,
   type RunHostDependencies,
   type RunHostOutcome,
+  type RunHostToApp,
 } from './run-host.ts'
-import { runThroughHost, type RunHostClientDependencies } from './run-host-client.ts'
+import { connectLocalLine } from '../local-socket.ts'
+import {
+  RunHostLostError,
+  runThroughHost,
+  type RunHostChild,
+  type RunHostClientDependencies,
+} from './run-host-client.ts'
 import type { RunThreadOptions, ThreadContainerRequest } from './thread-container.ts'
 
 const dirs: string[] = []
@@ -82,7 +91,7 @@ function inProcess(
         pending = request
         return Promise.resolve('request.json')
       },
-      launch: (): Promise<{ exited: Promise<void> }> => {
+      launch: (): Promise<RunHostChild> => {
         const request = pending
         assert.ok(request)
         const run = hostContainerRun(request, {
@@ -93,7 +102,7 @@ function inProcess(
           lingerMs: 1_000,
         })
         void run.then(resolveOutcome)
-        return Promise.resolve({ exited: run.then(() => undefined) })
+        return Promise.resolve({ kill: (): void => undefined, exited: run.then(() => undefined) })
       },
       socketPath: (): string => socketPath,
     },
@@ -190,18 +199,64 @@ describe('container run host', () => {
     )
   })
 
-  it('fails when the host exits before it listens', async () => {
+  it('ends a host it lost, and says so', async () => {
+    let kills = 0
     await assert.rejects(
       runThroughHost(
         hostRequest(),
         {},
         {
           writeRequest: () => Promise.resolve('request.json'),
-          launch: () => Promise.resolve({ exited: Promise.resolve() }),
+          launch: () =>
+            Promise.resolve({
+              kill: (): void => {
+                kills += 1
+              },
+              exited: Promise.resolve(),
+            }),
           socketPath: () => join(scratch(), 'nobody.sock'),
         },
       ),
-      /exited before it started/,
+      (error: unknown) =>
+        error instanceof RunHostLostError && /exited before it started/.test(error.message),
     )
+    assert.equal(kills, 1)
+  })
+
+  it("stops the run when the app's line closes before the run ends", async () => {
+    const dir = scratch()
+    const socketPath = join(dir, 'host.sock')
+    let running: () => void = () => undefined
+    const started = new Promise<void>((resolve) => {
+      running = resolve
+    })
+    const outcome = hostContainerRun(hostRequest(), {
+      resolve: () => Promise.resolve(plan()),
+      run: (_request, options?: RunThreadOptions) =>
+        new Promise((_resolve, reject) => {
+          options?.signal?.addEventListener('abort', () => {
+            reject(new Error('stopped'))
+          })
+          running()
+        }),
+      socketPath,
+      hostFile: join(dir, 'hosts', 'run.json'),
+      log: (): void => undefined,
+      lingerMs: 0,
+    })
+    let app = null
+    while (app === null) {
+      app = await connectLocalLine<RunHostToApp, AppToRunHost>(
+        socketPath,
+        runHostToAppSchema,
+        () => undefined,
+        () => undefined,
+      )
+    }
+    app.send({ t: 'attach' })
+    await started
+    // As an app crash or force quit would.
+    app.close()
+    assert.deepEqual(await outcome, { status: 'failed', error: 'stopped' })
   })
 })

@@ -4,6 +4,7 @@ import { createConnection, createServer, type Server, type Socket } from 'node:n
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { z } from 'zod'
+import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 
 /**
  * A local line between two Copse processes of one profile: the app and a
@@ -49,12 +50,7 @@ function readLines(socket: Socket, onLine: (line: string) => void): void {
 }
 
 function decode<T>(schema: z.ZodType<T>, line: string): T | null {
-  try {
-    const parsed = schema.safeParse(JSON.parse(line))
-    return parsed.success ? parsed.data : null
-  } catch {
-    return null
-  }
+  return safeJsonParse(line, decodeWithSchema(schema))
 }
 
 /** One connected peer, as the serving process sees it. */
@@ -77,12 +73,17 @@ export async function serveLocalLine<In, Out>(
   path: string,
   inbound: z.ZodType<In>,
   onMessage: (message: In, client: LocalLineClient<Out>) => void,
+  /** A joined peer's line closed. */
+  onLeave?: () => void,
 ): Promise<LocalLineServer<Out>> {
   const clients = new Set<Socket>()
+  // Every connection, joined or not: `server.close` waits for all of them.
+  const sockets = new Set<Socket>()
   const write = (socket: Socket, message: Out): void => {
     socket.write(`${JSON.stringify(message)}\n`)
   }
   const server: Server = createServer((socket) => {
+    sockets.add(socket)
     const client: LocalLineClient<Out> = {
       join: () => clients.add(socket),
       send: (message) => {
@@ -93,8 +94,12 @@ export async function serveLocalLine<In, Out>(
       const message = decode(inbound, line)
       if (message !== null) onMessage(message, client)
     })
-    socket.on('close', () => clients.delete(socket))
-    socket.on('error', () => clients.delete(socket))
+    const leave = (): void => {
+      sockets.delete(socket)
+      if (clients.delete(socket)) onLeave?.()
+    }
+    socket.on('close', leave)
+    socket.on('error', leave)
   })
   if (process.platform !== 'win32') {
     mkdirSync(join(path, '..'), { recursive: true, mode: 0o700 })
@@ -116,6 +121,8 @@ export async function serveLocalLine<In, Out>(
     close: (): Promise<void> =>
       new Promise<void>((resolve) => {
         for (const socket of clients) socket.end()
+        // One that never joined gets nothing more; it must not hold the server open.
+        for (const socket of sockets) if (!clients.has(socket)) socket.destroy()
         server.close(() => {
           resolve()
         })

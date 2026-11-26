@@ -220,17 +220,23 @@ start out of the app.
    `resolveContainerProvider` again. If the egress it gets differs from what the app armed, it
    refuses to run. A provider whose sign-in can rotate a refresh token on refresh (ChatGPT
    plan) would lose the new token in a read-only host, so such a run stays in the app as it
-   does today and stops on quit.
+   does today and stops on quit. So does a run on a profile whose stored keys only
+   `safeStorage` can open (no OS keyring, so they were never moved to the keyring cipher):
+   the host could not open them. The rest of the app's environment still reaches the host,
+   as it reached the engine CLI before, so a key that exists only there travels with it.
 3. **Progress travels over the run's socket.** Like the turn worker's (`turn-worker-socket.ts`):
    the host streams phase and log lines and, at the end, the record, and takes `stop`.
-   `<run dir>/host.json` names the host's pid and socket, so a relaunched app finds live runs
-   without the supervisor.
+   `<profile>/container-hosts/<runtime id>.json` names the host's pid and socket, so a
+   relaunched app finds live runs without the supervisor. The host is started in its own
+   process group; when the app loses it without a result (it died, or never listened), the
+   app ends that group and cleans up what the runner would have: the container and the
+   staged copy of the user's sign-in.
 4. **Quit leaves host runs alone.** `stopAll` skips runs whose host process is alive. The
    supervisor task is moved out of the shutdown cancel. Today shutdown cancels every running
    external task with a process handle, which would force-remove the container. Instead the
    task records that the run continues outside the app, and the relaunched app settles it
    from the record.
-5. **Relaunch reattaches from `host.json`.** At start-up, after the orphan sweep (which already
+5. **Relaunch reattaches from the host file.** At start-up, after the orphan sweep (which already
    skips running containers), the service lists run directories with a live host. It connects
    to each one, and puts its progress back in `runs`, so the banner, the dialog and Stop work
    as before. A host that died leaves `record.json`, or nothing; the run then settles as
@@ -245,9 +251,13 @@ start out of the app.
   `run-host-entry.ts` the bundle entry (`dist/main/container-run-host.js`), and the local
   line is shared with the turn worker (`local-socket.ts`). The bundled host boots on a
   fresh profile, resolves its provider and refuses changed egress; the container e2e
-  through it is still to run.
+  through it is still to run. Until C2, the host treats an app that leaves before the run
+  ends (its line closes), or one that never attaches within the app's 30 s connect
+  deadline, as a stop: nothing could see or stop the run otherwise, and decision A8 of
+  `thread-in-container.md` (an orphaned run winds itself down) keeps holding for the app.
 - **C2, survive quit.** `stopAll` and supervisor shutdown leave host runs alone, and
-  relaunch reattaches from `host.json`. Exit gate: quit mid-run, relaunch, and see the run
+  relaunch reattaches from the host file. C2 drops C1's stop-when-the-app-leaves rule.
+  Exit gate: quit mid-run, relaunch, and see the run
   finish once with its commits on the ref.
 - **C3, settle without the app.** When no app is attached at the end, the host records the
   run in the thread's model history itself (`recordContainerRunTurn`, which the app runs from

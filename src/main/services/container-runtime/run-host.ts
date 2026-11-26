@@ -153,6 +153,12 @@ export type RunHostOutcome =
 
 const LOG_TAIL = 60
 
+/**
+ * How long a started host waits for the app to attach: the app's own connect
+ * deadline (`run-host-client.ts`). An app that never arrives is gone.
+ */
+const APP_ATTACH_TIMEOUT_MS = 30_000
+
 function sameOrigins(a: readonly string[], b: readonly string[]): boolean {
   const left = new Set(a)
   const right = new Set(b)
@@ -186,7 +192,21 @@ export async function hostContainerRun(
       client.send({ t: 'state', phase, log })
       if (final !== null) client.send(final)
     },
+    () => {
+      // The app can't attach to a run again yet, so a run whose app left (a
+      // crash, a force quit) has nobody to see or stop it. Stop it, as the
+      // guest stops when its own host goes (decision A8).
+      if (final !== null || server.joined() > 0) return
+      deps.log(`${runtimeId}: the app left; stopping`)
+      stop.abort()
+    },
   )
+  const attachTimer = setTimeout(() => {
+    if (app.attached) return
+    deps.log(`${runtimeId}: no app attached; stopping`)
+    stop.abort()
+  }, APP_ATTACH_TIMEOUT_MS)
+  attachTimer.unref()
   await mkdir(join(deps.hostFile, '..'), { recursive: true, mode: 0o700 })
   await writeFile(
     deps.hostFile,
@@ -203,6 +223,7 @@ export async function hostContainerRun(
 
   let outcome: RunHostOutcome
   try {
+    if (stop.signal.aborted) throw new Error('Stopped before the run started')
     if (!canHostOutsideApp(request.model)) {
       throw new Error('A run on a ChatGPT plan model runs in the app')
     }
@@ -227,13 +248,19 @@ export async function hostContainerRun(
       },
       signal: stop.signal,
     } satisfies RunThreadOptions)
+    clearTimeout(attachTimer)
     outcome = { status: 'done', record }
     final = { t: 'done', record }
   } catch (error) {
     outcome = { status: 'failed', error: errorMessage(error) }
     final = { t: 'failed', error: outcome.error }
   }
-  deps.log(`${runtimeId}: ${outcome.status}`)
+  clearTimeout(attachTimer)
+  deps.log(
+    outcome.status === 'failed'
+      ? `${runtimeId}: failed: ${outcome.error}`
+      : `${runtimeId}: ${outcome.status}`,
+  )
   server.broadcast(final)
 
   // Serve the result until the app has read it: it may still be connecting when

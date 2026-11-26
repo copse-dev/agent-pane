@@ -20,9 +20,19 @@ import type { RunThreadOptions } from './thread-container.ts'
  */
 
 export interface RunHostChild {
-  pid?: number | undefined
+  /** End the host and everything it started (its process group). */
+  kill: () => void
   /** Settles when the process exits. */
   exited: Promise<void>
+}
+
+/**
+ * The app lost the host without the host reporting how the run ended. The
+ * host has been told to end; what its runner would have cleaned up is the
+ * caller's to remove.
+ */
+export class RunHostLostError extends Error {
+  override readonly name = 'RunHostLostError'
 }
 
 export interface RunHostClientDependencies {
@@ -42,6 +52,21 @@ export async function runThroughHost(
 ): Promise<ThreadContainerRecord> {
   const connect = deps.connect ?? connectLocalLine<RunHostToApp, AppToRunHost>
   const child = await deps.launch(await deps.writeRequest(request), request.runtimeId)
+  try {
+    return await followHost(request, options, deps, connect, child)
+  } catch (error) {
+    if (error instanceof RunHostLostError) child.kill()
+    throw error
+  }
+}
+
+async function followHost(
+  request: ContainerRunHostRequest,
+  options: RunThreadOptions,
+  deps: RunHostClientDependencies,
+  connect: typeof connectLocalLine<RunHostToApp, AppToRunHost>,
+  child: RunHostChild,
+): Promise<ThreadContainerRecord> {
   const host = { exited: false }
   void child.exited.then(() => {
     host.exited = true
@@ -80,7 +105,7 @@ export async function runThroughHost(
     }
   }
   const onClose = (): void => {
-    finish(new Error('The run host stopped before the run finished'))
+    finish(new RunHostLostError('The run host stopped before the run finished'))
   }
 
   const path = deps.socketPath(request.runtimeId)
@@ -89,8 +114,11 @@ export async function runThroughHost(
   for (;;) {
     live = await connect(path, runHostToAppSchema, onMessage, onClose)
     if (live !== null) break
-    if (host.exited) throw new Error('The run host exited before it started')
-    if (Date.now() >= deadline) throw new Error('The run host did not start in time')
+    if (host.exited) throw new RunHostLostError('The run host exited before it started')
+    if (Date.now() >= deadline) throw new RunHostLostError('The run host did not start in time')
+    if (options.signal?.aborted === true) {
+      throw new RunHostLostError('Stopped by you before the run host started')
+    }
     await delay(100)
   }
   connection = live
@@ -152,7 +180,9 @@ export function runHostClientDependencies(launch: RunHostLaunchOptions): RunHost
           {
             env: { ...launch.env, ELECTRON_RUN_AS_NODE: '1' },
             stdio: ['ignore', log.fd, log.fd],
-            // Its own process group, so the app's exit does not take the run with it.
+            // Its own process group, so its children end with it on `kill`. Until
+            // the app can attach to a run again, the host stops a run whose app
+            // leaves (`run-host.ts`).
             detached: true,
           },
         )
@@ -165,7 +195,16 @@ export function runHostClientDependencies(launch: RunHostLaunchOptions): RunHost
           })
         })
         child.unref()
-        return { pid: child.pid, exited }
+        const kill = (): void => {
+          try {
+            if (process.platform !== 'win32' && child.pid !== undefined) {
+              process.kill(-child.pid, 'SIGTERM')
+            } else child.kill()
+          } catch {
+            // Already gone.
+          }
+        }
+        return { kill, exited }
       } finally {
         await log.close()
       }
