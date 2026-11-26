@@ -1,7 +1,15 @@
 import { it } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { initProjectSandbox, isProjectSandboxEnabled, shutdownProjectSandbox } from './index.ts'
@@ -27,7 +35,9 @@ function onPath(name: string): string | null {
 /** A pnpm version already in Corepack's default cache, so the run needs no download. */
 function cachedPnpm(): string | null {
   const dir = join(homedir(), '.cache', 'node', 'corepack', 'v1', 'pnpm')
-  return existsSync(dir) ? (readdirSync(dir).find((name) => /^\d+\.\d+\.\d+$/.test(name)) ?? null) : null
+  return existsSync(dir)
+    ? (readdirSync(dir).find((name) => /^\d+\.\d+\.\d+$/.test(name)) ?? null)
+    : null
 }
 
 /** An installed fnm Node version under fnm's default data directory. */
@@ -75,7 +85,7 @@ it('starts Corepack and fnm exec commands contained through the real shell gate 
       `  fs.writeFileSync(${JSON.stringify(outside)}, 'escape')`,
       "  console.log('escaped')",
       '} catch (error) {',
-      "  console.log(`contained ${error.code}`)",
+      '  console.log(`contained ${error.code}`)',
       '}',
     ].join('\n'),
   )

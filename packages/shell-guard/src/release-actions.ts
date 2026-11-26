@@ -56,7 +56,8 @@ const GIT_VALUE_OPTIONS = new Set([
  * A ref git reads as a tag, or a version-shaped name (`v1`, `v1.7.0`, `1.2`, `v2.0.0-rc.1`):
  * pushing one usually publishes a release. `tags/x` is git's shorthand for `refs/tags/x`.
  */
-const VERSION_REF = /^(?:refs\/tags\/.+|tags\/.+|v\d+(?:\.\d+){0,2}(?:[-+.][\w.]+)?|\d+\.\d+(?:\.\d+)?(?:[-+.][\w.]+)?)$/
+const VERSION_REF =
+  /^(?:refs\/tags\/.+|tags\/.+|v\d+(?:\.\d+){0,2}(?:[-+.][\w.]+)?|\d+\.\d+(?:\.\d+)?(?:[-+.][\w.]+)?)$/
 
 /** Whether `arg` is an option git would expand to `long`: git accepts any unique prefix. */
 function abbreviates(arg: string, long: string, shortest: number): boolean {
@@ -207,7 +208,12 @@ function gitReleaseReasons(argv: readonly string[]): string[] {
       /^(?:--get(?:-all|-regexp|-urlmatch)?|--list|-l|--show-origin|--name-only)$/.test(arg),
     )
     const key = rest.find((arg) => !arg.startsWith('-'))
-    if (!reads && key !== undefined && PROGRAM_CONFIG_KEY.test(key) && !/^credential\./i.test(key)) {
+    if (
+      !reads &&
+      key !== undefined &&
+      PROGRAM_CONFIG_KEY.test(key) &&
+      !/^credential\./i.test(key)
+    ) {
       reasons.push(`sets a git config key that runs a program (${key})`)
     }
   }
@@ -282,7 +288,10 @@ export function releaseActionReasons(segment: readonly string[]): string[] {
     const names = secretFilesIn(['', ...sources])
     if (names.length > 0) reasons.push(`copies a secret file (${names.join(', ')})`)
   }
-  if (head === 'ssh-add' && (argv.length === 1 || !argv.slice(1).every((arg) => /^-[lL]+$/.test(arg)))) {
+  if (
+    head === 'ssh-add' &&
+    (argv.length === 1 || !argv.slice(1).every((arg) => /^-[lL]+$/.test(arg)))
+  ) {
     reasons.push("changes the SSH agent's identities (ssh-add)")
   }
   const entryPoint = releaseEntryPoint(head, argv)

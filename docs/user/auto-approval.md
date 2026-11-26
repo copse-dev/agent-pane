@@ -28,7 +28,7 @@ and Guarded YOLO are separate controls described below.
 | Off                            | Nothing extra. Every external command still asks.                                                                                                           |
 | Reads (default)                | Local reads (`ls`, `grep`, `git status` / `log` / `diff`) and network _reads_ against a remote already in `.git/config` (`git fetch origin`, `gh pr view`). |
 | Reads + local commits          | Also `git add`, `git commit`, `git checkout -b`, `git stash`. These run repository git hooks.                                                               |
-| Reads + local commits + pushes | Also `git push` (no force, no tags) and `gh pr create` against this project’s repo.                                                                                  |
+| Reads + local commits + pushes | Also `git push` (no force, no tags) and `gh pr create` against this project’s repo.                                                                         |
 
 A URL never qualifies. The remote must be a _name_ this checkout already has.
 

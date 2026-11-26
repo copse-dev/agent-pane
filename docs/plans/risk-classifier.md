@@ -209,13 +209,13 @@ flowchart TD
   L -- no --> P
 ```
 
-| Layer               | Exists                                                                                   | Change                                                                                                                                                  |
-| ------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Must-ask rules      | Harm gate (`shell-harm.ts`, `host-reach.ts`, `remote-change.ts`, `secrets.ts`)           | **This change:** `release-actions.ts`. Next: grow from each new replay; every rule adds a prompt only.                                                  |
-| Containment first   | Scope verdicts, ambiguous tier, toolchain read grants                                    | **This change:** Corepack and `fnm exec` contained. Next: `eval "$(fnm env)"`, absolute toolchain paths and `DEVELOPER_DIR`.                             |
-| Deterministic tiers | `auto-approval.ts` (`read` default; trust required)                                      | Next: offer trust when a person adds a project, so the tiers run at all.                                                                                |
-| Learned veto        | Classifier connections (`ask_classifier`, Guarded YOLO tier second opinion, tier-shadow) | Keep as a veto on top of the harm gate, not an approver; train on public data plus each machine's own labelled prompts.                                 |
-| Prompt              | Approval dialog                                                                          | One question per escalation; say which rule or verdict asked.                                                                                           |
+| Layer               | Exists                                                                                   | Change                                                                                                                       |
+| ------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Must-ask rules      | Harm gate (`shell-harm.ts`, `host-reach.ts`, `remote-change.ts`, `secrets.ts`)           | **This change:** `release-actions.ts`. Next: grow from each new replay; every rule adds a prompt only.                       |
+| Containment first   | Scope verdicts, ambiguous tier, toolchain read grants                                    | **This change:** Corepack and `fnm exec` contained. Next: `eval "$(fnm env)"`, absolute toolchain paths and `DEVELOPER_DIR`. |
+| Deterministic tiers | `auto-approval.ts` (`read` default; trust required)                                      | Next: offer trust when a person adds a project, so the tiers run at all.                                                     |
+| Learned veto        | Classifier connections (`ask_classifier`, Guarded YOLO tier second opinion, tier-shadow) | Keep as a veto on top of the harm gate, not an approver; train on public data plus each machine's own labelled prompts.      |
+| Prompt              | Approval dialog                                                                          | One question per escalation; say which rule or verdict asked.                                                                |
 
 A model never authorises alone: it is consulted only after the harm gate allows, and the gate's
 `ask` is final.

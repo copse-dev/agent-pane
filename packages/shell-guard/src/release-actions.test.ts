@@ -88,7 +88,11 @@ describe('releaseActionReasons', () => {
       'git push origin --delete old',
       'git push origin +main',
     ]) {
-      assert.deepEqual(reasons(command), ['rewrites or deletes refs on the remote (git push)'], command)
+      assert.deepEqual(
+        reasons(command),
+        ['rewrites or deletes refs on the remote (git push)'],
+        command,
+      )
     }
     assert.deepEqual(reasons('git push origin HEAD:copse/branch'), [])
     assert.deepEqual(reasons('git push origin feature/tag-names'), [])

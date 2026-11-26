@@ -25,7 +25,9 @@ const input = args.find((arg, index) => !arg.startsWith('--') && !args[index - 1
 const main = flag('--main')
 const out = flag('--out')
 if (!input || !main || !out) {
-  console.error('Usage: join_verdicts.mjs <rows.jsonl> --main <checkout of main> --out <joined.jsonl>')
+  console.error(
+    'Usage: join_verdicts.mjs <rows.jsonl> --main <checkout of main> --out <joined.jsonl>',
+  )
   process.exit(2)
 }
 
