@@ -35,6 +35,8 @@ const REPO_ROOT = process.cwd()
 const TEST_OUTPUT_DIR = process.env['COPSE_TEST_OUTPUT_DIR'] ?? join(REPO_ROOT, 'dist-test')
 const SANDBOX_RUNTIME_HELPER_MODULE =
   '@anthropic-ai/sandbox-runtime/dist/sandbox/generate-seccomp-filter.js'
+const SANDBOX_RUNTIME_JAVA_AGENT_MODULE =
+  '@anthropic-ai/sandbox-runtime/dist/sandbox/java-proxy-agent.js'
 
 function makeBundleDir(prefix: string): string {
   const base = join(TEST_OUTPUT_DIR, 'acp-session-host-fixtures')
@@ -56,6 +58,7 @@ function bundleWorker(outDir: string, sandboxRuntimeAlias?: string): string {
       ...(sandboxRuntimeAlias
         ? {
             [SANDBOX_RUNTIME_HELPER_MODULE]: sandboxRuntimeAlias,
+            [SANDBOX_RUNTIME_JAVA_AGENT_MODULE]: sandboxRuntimeAlias,
             '@anthropic-ai/sandbox-runtime': sandboxRuntimeAlias,
           }
         : {}),
@@ -97,6 +100,7 @@ export const SandboxManager = {
   async reset() { config = null },
 }
 export function getApplySeccompBinaryPath() { return null }
+export function getJavaProxyAgentJarPath() { return null }
 `
 
 const RELAY_AGENT =
