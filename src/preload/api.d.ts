@@ -865,6 +865,15 @@ export interface ApiClient {
     ) => Promise<import('@shared/types').ThreadCatalogHit[]>
     /** Store dirs with threads but no project entry — orphans to re-attach (#997). */
     listOrphans: () => Promise<import('@shared/types').OrphanProjectStore[]>
+    /** Saved Claude Code and Codex CLI sessions that ran in this project's folder. */
+    listExternalSessions: (
+      projectId: string,
+    ) => Promise<import('@shared/types').ExternalSessionList>
+    /** Import those sessions (by key) as threads; returns the threads it created. */
+    importExternalSessions: (
+      projectId: string,
+      keys: string[],
+    ) => Promise<import('@shared/types').ExternalSessionImportResult>
   }
   archive: {
     /**

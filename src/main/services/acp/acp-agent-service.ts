@@ -59,6 +59,7 @@ import {
 import { resolveAcpAgentTurnEnv } from './acp-agent-config-dir.ts'
 import { probeAcpAgentIsolated } from './acp-probe-host.ts'
 import { acquireAcpSession, disposeAcpSession, type PooledAcpSession } from './acp-session-pool.ts'
+import { recordStoredSessionCheckpoint, threadAcpStoredSession } from './acp-stored-session.ts'
 import { createAgentInitiatedTurnLease } from './agent-initiated-turn.ts'
 import { requestUserAnswers } from '../ask-user.ts'
 import { runWithActiveRunIdentity } from '../active-run-identity.ts'
@@ -948,7 +949,17 @@ async function runAcpAgentTurn(
           },
           () =>
             acquireAcpSession({
-              ...(executionContext ? { projectId: executionContext.projectId } : {}),
+              ...(executionContext
+                ? {
+                    projectId: executionContext.projectId,
+                    storedSession: threadAcpStoredSession(
+                      executionContext.projectId,
+                      options.threadId,
+                      agent.id,
+                      { claudeConfigDir: env?.['CLAUDE_CONFIG_DIR'] },
+                    ),
+                  }
+                : {}),
               threadId: options.threadId,
               config: spawnConfig,
               registry: options.registry,
@@ -1102,10 +1113,22 @@ async function runAcpAgentTurn(
       // the last confirmed prefix on cancellation or a transport failure so a
       // retry conservatively includes context the agent may never have seen.
       if (outcome.stopReason !== 'cancelled') {
-        entry.transcriptCheckpoint = checkpointAcpTranscript(
-          options.priorMessages,
-          options.userPrompt,
-        )
+        const checkpoint = checkpointAcpTranscript(options.priorMessages, options.userPrompt)
+        entry.transcriptCheckpoint = checkpoint
+        // A saved session link keeps it too, so the first turn after a relaunch
+        // resumes without resending what the session already holds.
+        if (executionContext) {
+          void recordStoredSessionCheckpoint(
+            executionContext.projectId,
+            options.threadId,
+            agent.id,
+            checkpoint,
+          ).catch((err: unknown) => {
+            console.warn(
+              `[acp] could not save thread ${options.threadId}'s session checkpoint: ${acpErrorMessage(err)}`,
+            )
+          })
+        }
       }
       promptEnd.abort(
         new AcpTurnEnded(

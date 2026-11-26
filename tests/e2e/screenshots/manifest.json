@@ -906,8 +906,8 @@
       "bytes": 250570
     },
     "automation-project-menu.png": {
-      "sha256": "b1f5eab62ef5c78407fc7039ff2c3a1ba82af1e2fd93b9b1369a8c7b7a63cc0f",
-      "bytes": 331603
+      "sha256": "fc14bbfb1e72423e7259a3f5e058b575491a44fd82b6bfc1c3d0646654567a9d",
+      "bytes": 334531
     },
     "automation-question-interactive-follow-up.png": {
       "sha256": "28efbfe47993dcbd042a614dbb92e1667ddeedf6d0d24bc0dbd887a672e152bf",
@@ -2481,9 +2481,21 @@
       "sha256": "2f32b156a8cc966f567479224fb891f91b70b123fe0c84e531357541d9d68535",
       "bytes": 308001
     },
+    "import-sessions-already-imported.png": {
+      "sha256": "3046a4bd2255f5a85df4cc9ddbe894f0b85b5aa879d537353161c17db25d65c9",
+      "bytes": 327540
+    },
+    "import-sessions-dialog.png": {
+      "sha256": "b94635d519a6406312dd79a33b8d8026eb1433ad2ccbaf6263fb0d2bd7b5a969",
+      "bytes": 255463
+    },
     "imported-cursor-agent-refresh.png": {
       "sha256": "187f22837e71974c457145fbf36e55fb7998f1e4da7069d65c29d8d98e8cf040",
       "bytes": 358124
+    },
+    "imported-session-thread.png": {
+      "sha256": "c92784d40eddbad470396cbe46819ac17cbd897b98c3c86ba5a3a5447c6ca48e",
+      "bytes": 358098
     },
     "inline-canvas-annotation.png": {
       "sha256": "d7cad0c96bf19e1a89cbe784abc599f2ce498877f9a7cbaa7046512cf9c35d49",
@@ -3682,8 +3694,8 @@
       "bytes": 293922
     },
     "project-remove-sidebar-menu.png": {
-      "sha256": "3e76c6123ba7c06ab14ec73faab196c3fed8baf1944a4e56d62d2821da966614",
-      "bytes": 316278
+      "sha256": "0c75be7001ccf651bdbfc2b550dea2099ec7c009e9bf2d19ac4b2507d7a20536",
+      "bytes": 321229
     },
     "project-switch-a-restored.png": {
       "sha256": "021f53abf51d23bd0f563850474c5b5688900d2a656228b9617c9510aa528d8f",

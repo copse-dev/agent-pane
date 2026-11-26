@@ -332,6 +332,26 @@ export interface ThreadLink {
   target: string
 }
 
+/** A coding tool whose saved sessions Copse can import as threads. */
+export type ExternalSessionSource = 'claude-code' | 'codex'
+
+/** Provenance of a thread imported from {@link ExternalSessionSource}. */
+export interface ImportedSessionLink {
+  source: ExternalSessionSource
+  /**
+   * One-way key of the source session, so the same session is not imported
+   * twice. Never the raw session id, which stays in the private ACP binding.
+   */
+  key: string
+  importedAt: number
+  /**
+   * The thread was linked to the user's own session file, which its turns then
+   * add to (Codex has no per-thread home that keeps its sign-in). Absent when
+   * the thread only holds a copy of the transcript, or of the file.
+   */
+  sharesOriginal?: true
+}
+
 export interface Thread {
   id: string
   title: string
@@ -435,6 +455,12 @@ export interface Thread {
   remoteAgentLink?: RemoteAgentLink
   /** Recent Cursor agent IDs launched for this thread, recorded only by main. */
   cursorAgentIds?: string[]
+  /**
+   * Set when this thread was imported from another coding tool's saved session
+   * (a Claude Code or Codex CLI transcript). Recorded only by main. The earlier
+   * messages and tool calls ran outside Copse, without its sandbox or approvals.
+   */
+  importedSession?: ImportedSessionLink
   /** Prompts submitted while the agent is running; drained FIFO when idle. */
   pendingMessages?: QueuedUserMessage[]
   /**
