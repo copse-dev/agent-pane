@@ -131,17 +131,26 @@ without Electron.
 
 ### W4: attach and stop from the desktop
 
-- The worker takes the thread's lease as soon as it starts, before its slow boot, so an app
-  relaunched meanwhile follows it instead of continuing the turn too.
-- While the turn runs, the worker serves it on a local socket (`turn-worker-socket.ts`): a
+- The worker first checks, from the read-only profile and the thread files, that it would
+  continue the thread at all (the resume rules and the model checks above). Only then does it
+  take the thread's lease, before its slow boot, so an app relaunched meanwhile follows it
+  instead of continuing the turn too; a thread the worker declines is never held.
+- The turn runs under that same claim, and the worker gives the lease back only after the
+  turn's last write has landed and its socket has closed, so nothing else starts on the
+  thread under that write.
+- From the takeover until it exits, the worker serves the thread on a local socket (`turn-worker-socket.ts`): a
   Unix socket under `<profile>/run/` (a named pipe on Windows), named by a hash of the profile
   and thread, newline-delimited JSON. `attach` replies with the turn's runtime snapshot and
   then streams every stamped chunk, the same order an in-process turn reaches the window.
-  `stop` aborts the turn as Stop does in-process.
+  `stop` aborts the turn as Stop does in-process. A stop that arrives during the boot is
+  kept: the continuation then never starts, and the thread is settled interrupted, so the
+  window offers Continue.
 - The app's follower attaches to that socket and forwards into `agent:transcript-snapshot`
   and `agent:chunk`, so a handed-off turn streams live. Without an answer there (an older
-  worker, or one still booting) it repaints from disk as in W3. A window reload re-sends
-  `attach`. Stop on a followed thread goes to the worker.
+  worker, or one just starting) it repaints from disk as in W3. A window reload re-sends
+  `attach`. Stop on a followed thread goes to the worker; pressed before the worker answers,
+  it is sent as soon as it does. A thread whose worker died without releasing its lease is
+  settled interrupted rather than left spinning.
 - Not covered by e2e yet: a live attach needs a worker turn slow enough to outlast a
   relaunch, and mock scenarios live in the app process.
 

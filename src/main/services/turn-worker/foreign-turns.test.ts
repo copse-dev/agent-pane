@@ -95,10 +95,11 @@ describe('ForeignTurnFollower', () => {
     } = follower(leases, { p: ['died', 'finished'] }, new Set(['died']))
     try {
       await f.discover()
+      const before = repaints.length
       leases.clear()
       await f.tick()
       assert.deepEqual(settled, [{ projectId: 'p', threadId: 'died' }])
-      assert.equal(repaints.length, 2)
+      assert.equal(repaints.length - before, 2)
       assert.deepEqual(f.threadIds(), [])
     } finally {
       f.stop()
@@ -225,13 +226,16 @@ describe('ForeignTurnFollower attached to its worker', () => {
     try {
       await f.discover()
       assert.equal(f.isAttached('t'), false)
-      assert.equal(f.requestStop('t'), false)
+      // Pressed while the worker is still starting: kept until it answers.
+      assert.equal(f.requestStop('t'), true)
+      assert.equal(f.requestStop('unfollowed'), false)
       assert.equal(repaints.length, 1)
 
       answering = true
       await f.tick()
       assert.equal(f.isAttached('t'), true)
       assert.equal(repaints.length, 1)
+      assert.deepEqual(lines.at(0)?.sent, ['attach', 'stop'])
 
       lines.at(0)?.drop()
       assert.equal(f.isAttached('t'), false)

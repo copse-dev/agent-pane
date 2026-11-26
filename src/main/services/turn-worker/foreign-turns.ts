@@ -69,6 +69,8 @@ export interface ForeignTurnDependencies {
 
 interface Followed extends ForeignTurn {
   connection: TurnWorkerConnection | null
+  /** Stop was pressed before the worker answered; sent as soon as it does. */
+  stopPending: boolean
 }
 
 export class ForeignTurnFollower {
@@ -116,7 +118,7 @@ export class ForeignTurnFollower {
           return null
         })
         if (lease === null || lease.owner === this.deps.selfOwner) continue
-        this.following.set(threadId, { projectId, threadId, connection: null })
+        this.following.set(threadId, { projectId, threadId, connection: null, stopPending: false })
         added = true
       }
     }
@@ -126,11 +128,16 @@ export class ForeignTurnFollower {
     return this.threadIds()
   }
 
-  /** Ask the worker running `threadId` to stop. False when none can be asked. */
+  /**
+   * Ask the worker running `threadId` to stop. A worker that does not answer
+   * yet (it is still starting) gets the stop as soon as it does. False when the
+   * thread is not followed.
+   */
   requestStop(threadId: string): boolean {
-    const connection = this.following.get(threadId)?.connection
-    if (!connection) return false
-    connection.send({ t: 'stop' })
+    const turn = this.following.get(threadId)
+    if (!turn) return false
+    if (turn.connection) turn.connection.send({ t: 'stop' })
+    else turn.stopPending = true
     return true
   }
 
@@ -190,7 +197,13 @@ export class ForeignTurnFollower {
     const connection = await this.deps.connect(
       turn,
       (message) => {
-        this.deps.deliver?.(message)
+        // Only the followed thread's own stream reaches the window.
+        const forTurn =
+          message.t === 'chunk'
+            ? message.threadId === turn.threadId
+            : message.snapshot.projectId === turn.projectId &&
+              message.snapshot.thread.id === turn.threadId
+        if (forTurn) this.deps.deliver?.(message)
       },
       () => {
         if (turn.connection === connection) turn.connection = null
@@ -199,6 +212,10 @@ export class ForeignTurnFollower {
     if (connection === null) return
     turn.connection = connection
     connection.send({ t: 'attach' })
+    if (turn.stopPending) {
+      turn.stopPending = false
+      connection.send({ t: 'stop' })
+    }
   }
 
   stop(): void {

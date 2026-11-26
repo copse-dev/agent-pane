@@ -24,7 +24,7 @@ import { setElectronAppRuntime } from '../electron-app-runtime.ts'
 import { setPersistentStoreFactory } from '../storage/persistent-store.ts'
 import { readOnlyProfileStoreFactory, readProfileStores } from './read-only-profile-store.ts'
 import { turnWorkerSocketPath } from './turn-worker-socket.ts'
-import type { TakenOverThread } from './turn-worker.ts'
+import type { TakenOverThread, TurnControl } from './turn-worker.ts'
 
 function log(line: string): void {
   process.stderr.write(`[turn-worker ${new Date().toISOString()}] ${line}\n`)
@@ -67,32 +67,36 @@ async function main(): Promise<number> {
   )
   setSecretCipher(createKeyringCipher(createOsKeyringStore()))
 
-  // Decide before taking the thread or starting the sandbox and MCP servers,
-  // which a thread left for the next launch would start for nothing.
-  const { takeOverThread, workerCannotRun } = await import('./turn-worker.ts')
-  const reason = await workerCannotRun(projectId, threadId)
+  // Decide before taking the thread or starting the sandbox and MCP servers: a
+  // thread left for the next launch must never be held while the worker boots,
+  // or an app relaunched meanwhile would follow it instead of continuing it.
+  const { openTurnControl, takeOverThread, whyNotContinue } = await import('./turn-worker.ts')
+  const reason = await whyNotContinue(projectId, threadId)
   if (reason !== null) {
     log(`thread ${threadId} stays for the next launch: ${reason}`)
     return 0
   }
 
   // Take the thread before the slow boot below, so an app relaunched meanwhile
-  // follows this worker instead of continuing the turn itself.
+  // follows this worker instead of continuing the turn itself, and serve it at
+  // once, so a Stop pressed during the boot reaches this worker.
   const takeOver = await takeOverThread({ projectId, threadId }, { log })
   if (takeOver.status === 'held') return 2
   const thread = takeOver.thread
+  const control = await openTurnControl(turnWorkerSocketPath(userDataPath, threadId), log)
   try {
-    return await bootAndContinue(userDataPath, projectId, threadId, thread)
+    return await bootAndContinue(projectId, threadId, thread, control)
   } finally {
+    await control.close()
     await thread.release()
   }
 }
 
 async function bootAndContinue(
-  userDataPath: string,
   projectId: string,
   threadId: string,
   takenOver: TakenOverThread,
+  control: TurnControl,
 ): Promise<number> {
   const [
     { setExecutionAuditSink },
@@ -145,7 +149,7 @@ async function bootAndContinue(
   try {
     const outcome = await runTurnWorker(
       { projectId, threadId },
-      { registry, log, takenOver, socketPath: turnWorkerSocketPath(userDataPath, threadId) },
+      { registry, log, takenOver, control },
     )
     log(`thread ${threadId}: ${JSON.stringify(outcome)}`)
     return outcome.status === 'held' ? 2 : 0
