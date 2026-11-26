@@ -254,17 +254,58 @@ interface Registration {
   /** The `skip` option, when it reads the host platform. */
   gate?: ts.Expression
   body?: ts.FunctionLikeDeclaration
+  /** For a platform-selected alias (`const d = isMac ? describe : describe.skip`), where it registers live tests and where it registers nothing. */
+  alias?: { runs: Set<HostPlatform>; unregistered: Set<HostPlatform> }
+}
+
+interface Callee {
+  kind: 'test' | 'suite'
+  /** False for `.skip`/`.todo`: the tests are registered but reported skipped. */
+  live: boolean
+}
+
+/** `it`, `describe`, `it.only`, `describe.skip`, ... */
+function directCallee(expression: ts.Expression): Callee | undefined {
+  let callee = strip(expression)
+  let live = true
+  if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression)) {
+    live = callee.name.text !== 'skip' && callee.name.text !== 'todo'
+    callee = callee.expression
+  }
+  if (!ts.isIdentifier(callee)) return undefined
+  if (TEST_NAMES.has(callee.text)) return { kind: 'test', live }
+  if (SUITE_NAMES.has(callee.text)) return { kind: 'suite', live }
+  return undefined
 }
 
 function registrationKind(call: ts.CallExpression): 'test' | 'suite' | undefined {
-  let callee = strip(call.expression)
-  // `it.only`, `describe.skip`, ...
-  if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression))
-    callee = callee.expression
+  return directCallee(call.expression)?.kind
+}
+
+/** A local `const` that selects a registration function by host platform. */
+function platformAlias(
+  call: ts.CallExpression,
+  ctx: Context,
+): (Callee & { runs: Set<HostPlatform>; unregistered: Set<HostPlatform> }) | undefined {
+  const callee = strip(call.expression)
   if (!ts.isIdentifier(callee)) return undefined
-  if (TEST_NAMES.has(callee.text)) return 'test'
-  if (SUITE_NAMES.has(callee.text)) return 'suite'
-  return undefined
+  const init = ctx.constants.get(callee.text)
+  const selector = init ? strip(init) : undefined
+  if (!selector || !ts.isConditionalExpression(selector)) return undefined
+  if (!readsPlatform(selector.condition, ctx)) return undefined
+  const whenTrue = directCallee(selector.whenTrue)
+  const whenFalse = directCallee(selector.whenFalse)
+  const kind = whenTrue?.kind ?? whenFalse?.kind
+  if (!kind) return undefined
+  const runs = new Set<HostPlatform>()
+  const unregistered = new Set<HostPlatform>()
+  for (const platform of HOST_PLATFORMS) {
+    const decided = truthy(evaluate(selector.condition, platform, ctx))
+    const chosen = decided === undefined ? undefined : decided ? whenTrue : whenFalse
+    if (decided === undefined || chosen?.live) runs.add(platform)
+    if (decided !== undefined && !chosen) unregistered.add(platform)
+  }
+  return { kind, live: true, runs, unregistered }
 }
 
 function optionsObject(
@@ -299,7 +340,8 @@ function skipOption(call: ts.CallExpression, ctx: Context): ts.Expression | unde
 
 function registration(node: ts.Node, ctx: Context): Registration | undefined {
   if (!ts.isCallExpression(node)) return undefined
-  const kind = registrationKind(node)
+  const alias = registrationKind(node) ? undefined : platformAlias(node, ctx)
+  const kind = registrationKind(node) ?? alias?.kind
   if (!kind) return undefined
   const skip = skipOption(node, ctx)
   let body: ts.ArrowFunction | ts.FunctionExpression | undefined
@@ -314,6 +356,7 @@ function registration(node: ts.Node, ctx: Context): Registration | undefined {
     call: node,
     ...(skip && readsPlatform(skip, ctx) ? { gate: skip } : {}),
     ...(body ? { body } : {}),
+    ...(alias ? { alias: { runs: alias.runs, unregistered: alias.unregistered } } : {}),
   }
 }
 
@@ -517,6 +560,22 @@ export function scanPlatformGates(file: ts.SourceFile): PlatformGateScan {
       return
     }
     let here: ReadonlySet<HostPlatform> = allowed
+    if (found.alias) {
+      here = intersect(here, found.alias.runs)
+      const hidden = HOST_PLATFORMS.filter(
+        (platform) =>
+          platform !== 'win32' && allowed.has(platform) && found.alias?.unregistered.has(platform),
+      )
+      const tests = countTests(found.call, ctx)
+      if (hidden.length > 0 && tests > 0) {
+        const callee = found.call.expression.getText(file)
+        sites.push({
+          rule: 'unit-platform-suite-skip',
+          node: found.call,
+          text: `${callee}(...) registers nothing on ${hidden.join(' and ')}, hiding ${String(tests)} test${tests === 1 ? '' : 's'} instead of reporting a skip`,
+        })
+      }
+    }
     if (found.gate) {
       const own = runsOn(found.gate, ctx)
       here = intersect(allowed, own)

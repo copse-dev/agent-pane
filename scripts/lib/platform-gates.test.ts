@@ -153,6 +153,28 @@ describe('conditionally registered tests', () => {
     assert.deepEqual(scan(text).inventory, { darwin: 1 })
   })
 
+  it('follows a platform-selected registration alias', () => {
+    const text = [
+      header,
+      "const isMac = process.platform === 'darwin'",
+      'const describeMac = isMac ? describe : describe.skip',
+      'const itMac = isMac ? it : () => {}',
+      "describeMac('mac', () => { it('a', () => {}) })",
+      "itMac('b', () => {})",
+    ].join('\n')
+    const findings = scanFlakeRisks(unit, text)
+    // describe.skip still reports the tests skipped on Linux; a no-op registers nothing.
+    assert.deepEqual(
+      findings.map((finding) => `${finding.rule}:${String(finding.line)}`),
+      ['unit-platform-suite-skip:7'],
+    )
+    assert.match(
+      findings[0]?.text ?? '',
+      /itMac\(\.\.\.\) registers nothing on linux, hiding 1 test/,
+    )
+    assert.deepEqual(scan(text).inventory, { darwin: 2 })
+  })
+
   it('ignores a Windows-only conditional registration and one that does not read the platform', () => {
     const text = [
       header,
