@@ -13,9 +13,12 @@ import type {
   GitChangeStatus,
   GitCommittedChanges,
   GitFileDiff,
+  GitLineSelection,
+  GitStageResult,
   GitStatusResult,
   SessionBackup,
 } from '@shared/types/git.ts'
+import { errorMessage } from '@shared/errors.ts'
 import { showToast, showErrorToast } from './toast.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
 import { uiActions } from '../ui/actions.ts'
@@ -36,11 +39,21 @@ import {
   type GitDiffMonaco,
 } from '../monaco/git-diff-viewer.ts'
 import { registerMonacoSelectionToChatShortcut } from '../monaco/selection-to-chat.ts'
+import {
+  attachDiffLineComments,
+  lineCommentBatchLabel,
+  LineCommentDrafts,
+  sendLineCommentBatch,
+  settleLineCommentBatch,
+  type PendingLineCommentBatch,
+} from '../monaco/diff-line-comments.ts'
+import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
+import { getThreadById } from '@shared/store/thread-helpers.ts'
 import { scaledEditorFontSize } from '@shared/ui-scale.ts'
 import { isImageDiff, renderImageDiff } from './git-image-diff.ts'
 import { materialFolderIconUrl } from '../icons/material-file-icons.ts'
 import { imageMimeType, isRasterImagePath } from '@shared/fs/image-path.ts'
-import { selectRightPanelMode } from '../controller/panels.ts'
+import { selectRightPanelMode, rightPanelShows } from '../controller/panels.ts'
 import { selectActiveWorkspace } from '../controller/active-workspace.ts'
 import { afterPendingThreadPersistence } from '../controller/persistence.ts'
 
@@ -117,8 +130,7 @@ function isChangeSelection(seed: unknown): seed is ChangeSelection {
 }
 
 function changesModeActive(store: AppStore): boolean {
-  const { filesPaneOpen, rightPanelMode } = store.getState()
-  return filesPaneOpen && rightPanelMode === 'changes'
+  return rightPanelShows(store.getState(), 'changes')
 }
 
 function getFirstGitChange(status: GitStatusResult): { path: string; staged: boolean } | null {
@@ -336,15 +348,77 @@ export function mountGitChangesPane(
   // last visible lines (and the editor's right-edge chrome) in narrow panes (#1702).
   const approvalBar = uiActions(rejectBtn, acceptBtn, { className: 'diff-approval-bar' })
   approvalBar.hidden = true
+  // Line comments the user has left on this thread's diffs, waiting to go to the
+  // agent as one message. Only the main window has a composer to send them from.
+  const lineComments = new LineCommentDrafts()
+  const commentsCount = el('span', {
+    class: 'diff-line-comments-count',
+    role: 'status',
+  })
+  const discardCommentsBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'ui-btn ui-btn-ghost ui-btn-compact diff-line-comments-discard',
+    },
+    'Discard',
+  )
+  const sendCommentsBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'ui-btn ui-btn-primary ui-btn-compact diff-line-comments-send',
+    },
+    'Send to agent',
+  )
+  const commentsBar = el(
+    'div',
+    { class: 'diff-line-comments-bar' },
+    commentsCount,
+    uiActions(discardCommentsBtn, sendCommentsBtn),
+  )
+  commentsBar.hidden = true
   const imageWrap = el('div', { class: 'git-image-diff-wrap' })
   // File listing shown when the selected change is an untracked directory
   // (`git status` collapses those to one record, so there is no diff to show).
   const dirWrap = el('div', { class: 'git-dir-view' })
   dirWrap.hidden = true
   const emptyState = el('div', { class: 'panel-empty' }, 'Select a changed file')
-  viewerRoot.append(conflictBanner, diffWrap, imageWrap, dirWrap, emptyState, approvalBar)
+  // Staging: move the selected row, or only the changes a line selection in the
+  // diff touches, between Unstaged and Staged. Only the index changes.
+  const stageStatus = el('span', { class: 'git-stage-status', role: 'status' })
+  const stageLinesBtn = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-secondary ui-btn-compact git-stage-lines-btn' },
+    'Stage selection',
+  )
+  const stageFileBtn = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-secondary ui-btn-compact git-stage-file-btn' },
+    'Stage file',
+  )
+  const stageBar = uiActions(stageStatus, stageLinesBtn, stageFileBtn, {
+    className: 'git-stage-bar',
+  })
+  stageBar.hidden = true
+  viewerRoot.append(
+    conflictBanner,
+    diffWrap,
+    imageWrap,
+    dirWrap,
+    emptyState,
+    commentsBar,
+    approvalBar,
+    stageBar,
+  )
+  let stageBusy = false
+  /** The path the stage status line speaks about; cleared when another file is picked. */
+  let stageStatusPath: string | null = null
+  /** The diff side the user last clicked into, which numbers a line selection. */
+  let lastFocusedSide: GitLineSelection['side'] = 'new'
 
   let diffEditor: GitDiffEditor | null = null
+  let detachLineComments: (() => void) | null = null
   let pendingSelect: ChangeSelection | null = null
   let selectRequestId = 0
   let diffLoadQueue: Promise<void> = Promise.resolve()
@@ -518,6 +592,12 @@ export function mountGitChangesPane(
         monacoApi,
         scaledEditorFontSize(store.getState().fontSize, store.getState().uiScale),
       )
+      diffEditor.getOriginalEditor().onDidFocusEditorText(() => {
+        lastFocusedSide = 'old'
+      })
+      diffEditor.getModifiedEditor().onDidFocusEditorText(() => {
+        lastFocusedSide = 'new'
+      })
       registerMonacoSelectionToChatShortcut(diffEditor.getOriginalEditor(), monacoApi, () => {
         if (selection?.kind === 'proposed') {
           return { path: selection.path, detail: 'before' }
@@ -536,9 +616,73 @@ export function mountGitChangesPane(
         }
         return null
       })
+      if (!isPopoutWindow) {
+        detachLineComments = attachDiffLineComments(diffEditor, lineComments, () => {
+          const owner = lineCommentOwner()
+          if (!owner || !selection || diffWrap.hidden) return null
+          const version =
+            selection.kind === 'git'
+              ? selection.staged
+                ? 'staged'
+                : 'working'
+              : selection.kind === 'committed'
+                ? 'committed'
+                : 'proposed'
+          return { owner: owner.key, path: selection.path, version }
+        })
+      }
     }
     return diffEditor
   }
+
+  function lineCommentOwner(): { key: string; threadId: string } | null {
+    const owner = activeOwner()
+    return owner ? { key: `${owner.projectId}/${owner.threadId}`, threadId: owner.threadId } : null
+  }
+
+  let pendingBatch: PendingLineCommentBatch | null = null
+
+  function syncCommentsBar(): void {
+    const owner = lineCommentOwner()
+    const count = owner ? lineComments.list(owner.key).length : 0
+    commentsBar.hidden = count === 0
+    const waiting = pendingBatch !== null && pendingBatch.owner === owner?.key
+    commentsCount.textContent =
+      count === 0 ? '' : `${lineCommentBatchLabel(count)}${waiting ? ' · in the composer' : ''}`
+  }
+
+  async function sendLineComments(): Promise<void> {
+    const owner = lineCommentOwner()
+    if (!owner) return
+    const send = getPromptAttachmentHandlers()?.sendText
+    if (!send) {
+      showToast('There is no message box to send these comments from. They are kept here.')
+      return
+    }
+    sendCommentsBtn.disabled = true
+    try {
+      pendingBatch = await sendLineCommentBatch(lineComments, owner, send)
+    } finally {
+      sendCommentsBtn.disabled = false
+      syncCommentsBar()
+    }
+  }
+
+  function onMessageAdded(threadId: string, messageId: string): void {
+    if (!pendingBatch) return
+    const message = getThreadById(store, threadId)?.messages.find((m) => m.id === messageId)
+    if (!settleLineCommentBatch(lineComments, pendingBatch, threadId, message)) return
+    pendingBatch = null
+    syncCommentsBar()
+  }
+
+  sendCommentsBtn.addEventListener('click', () => void sendLineComments())
+  discardCommentsBtn.addEventListener('click', () => {
+    const owner = lineCommentOwner()
+    if (!owner) return
+    if (pendingBatch?.owner === owner.key) pendingBatch = null
+    lineComments.clear(owner.key)
+  })
 
   function requireMonaco(): GitDiffMonaco {
     if (monaco === null) throw new Error('Monaco is unavailable while rendering a diff')
@@ -657,6 +801,7 @@ export function mountGitChangesPane(
   function renderList(): void {
     const queue = store.getState().stagedDiffs
     syncBulkActions(queue.length)
+    syncStageBar()
     // Compare the list's inputs by value: IPC returns fresh objects even when
     // nothing changed. Keep row identity, focus and the empty state intact.
     const key = JSON.stringify([
@@ -706,6 +851,90 @@ export function mountGitChangesPane(
     if (committed) renderCommittedSection(committed)
     if (committedPending) listBody.append(paneLoadingRow('Checking committed changes…'))
   }
+
+  /** The row the stage bar acts on: the selected Staged or Unstaged file. */
+  function stageRow(): { path: string; staged: boolean; change: GitChange | undefined } | null {
+    if (selection?.kind !== 'git') return null
+    const { path, staged } = selection
+    const rows = staged ? status?.staged : status?.unstaged
+    return { path, staged, change: rows?.find((row) => row.path === path) }
+  }
+
+  function syncStageBar(): void {
+    const row = stageRow()
+    stageBar.hidden = row === null
+    if (!row) return
+    if (stageStatusPath !== row.path) {
+      stageStatusPath = null
+      stageStatus.textContent = ''
+      stageStatus.removeAttribute('data-ok')
+    }
+    // A file inside a collapsed untracked directory has no row of its own.
+    const isRow = row.change !== undefined
+    stageFileBtn.textContent = row.staged ? 'Unstage file' : 'Stage file'
+    stageFileBtn.disabled = stageBusy || !isRow
+    stageLinesBtn.textContent = row.staged ? 'Unstage selection' : 'Stage selection'
+    // Untracked files have no index version to patch, so they are staged whole.
+    const lineStageable =
+      isRow && row.change?.status !== 'untracked' && !row.change?.isDirectory && !diffWrap.hidden
+    stageLinesBtn.disabled = stageBusy || !lineStageable
+    stageLinesBtn.setAttribute(
+      'data-tooltip',
+      lineStageable
+        ? `${row.staged ? 'Unstage' : 'Stage'} the changes the selected lines touch`
+        : 'Untracked and binary files are staged whole',
+    )
+  }
+
+  function showStageStatus(path: string, text: string, ok: boolean | null): void {
+    stageStatusPath = path
+    stageStatus.textContent = text
+    if (ok === null) stageStatus.removeAttribute('data-ok')
+    else stageStatus.setAttribute('data-ok', String(ok))
+  }
+
+  /** The lines selected in the diff, numbered on the side the user clicked into. */
+  function diffLineSelection(): GitLineSelection | null {
+    if (!diffEditor || diffWrap.hidden) return null
+    const editor =
+      lastFocusedSide === 'old' ? diffEditor.getOriginalEditor() : diffEditor.getModifiedEditor()
+    const range = editor.getSelection()
+    if (!range) return null
+    let endLine = range.endLineNumber
+    // A drag that stops at the start of the next line selects nothing on it.
+    if (endLine > range.startLineNumber && range.endColumn === 1) endLine--
+    return { side: lastFocusedSide, startLine: range.startLineNumber, endLine }
+  }
+
+  async function stageSelected(scope: 'file' | 'lines'): Promise<void> {
+    const row = stageRow()
+    const owner = activeOwner()
+    if (stageBusy || !row || !owner) return
+    const lines = scope === 'lines' ? diffLineSelection() : null
+    if (scope === 'lines' && !lines) {
+      showStageStatus(row.path, 'Click or select lines in the diff first.', false)
+      return
+    }
+    const stage = !row.staged
+    stageBusy = true
+    showStageStatus(row.path, stage ? 'Staging…' : 'Unstaging…', null)
+    syncStageBar()
+    let result: GitStageResult
+    try {
+      result = lines
+        ? await api.git.setLinesStaged(owner.projectId, owner.threadId, row.path, stage, lines)
+        : await api.git.setPathStaged(owner.projectId, owner.threadId, row.path, stage)
+    } catch (error) {
+      result = { ok: false, message: errorMessage(error) }
+    }
+    stageBusy = false
+    showStageStatus(row.path, result.message, result.ok)
+    syncStageBar()
+    if (result.ok) await refresh()
+  }
+
+  stageFileBtn.addEventListener('click', () => void stageSelected('file'))
+  stageLinesBtn.addEventListener('click', () => void stageSelected('lines'))
 
   function renderRestoreBanner(): void {
     const paths = sessionBackup?.paths ?? []
@@ -908,6 +1137,7 @@ export function mountGitChangesPane(
       imageWrap.hidden = true
       dirWrap.hidden = true
       emptyState.textContent = 'Could not load diff'
+      syncStageBar()
       return
     }
     if (diff.directoryFiles) {
@@ -917,6 +1147,7 @@ export function mountGitChangesPane(
       imageWrap.hidden = true
       dirWrap.hidden = false
       if (diffEditor) disposeDiffModels(diffEditor)
+      syncStageBar()
       return
     }
     diffLoadQueue = diffLoadQueue
@@ -954,6 +1185,7 @@ export function mountGitChangesPane(
         )
       })
     await diffLoadQueue
+    syncStageBar()
   }
 
   async function selectCommittedChange(path: string): Promise<void> {
@@ -1147,7 +1379,14 @@ export function mountGitChangesPane(
               c.path === gitSel.path ||
               (c.isDirectory === true && gitSel.path.startsWith(`${c.path}/`)),
           )
-      if (!stillExists) current = null
+      // Staged whole (or unstaged whole), the file is still the one being
+      // reviewed: follow it to the other section instead of jumping away.
+      const otherSide = gitSel.staged ? status?.unstaged : status?.staged
+      if (!stillExists) {
+        current = otherSide?.some((c) => c.path === gitSel.path)
+          ? { kind: 'git', path: gitSel.path, staged: !gitSel.staged }
+          : null
+      }
     }
     if (current?.kind === 'committed') {
       const committedSel = current
@@ -1353,6 +1592,9 @@ export function mountGitChangesPane(
   })
 
   const unsubs = [
+    lineComments.subscribe(syncCommentsBar),
+    store.select(() => lineCommentOwner()?.key ?? null, syncCommentsBar),
+    store.on('message_added', onMessageAdded),
     selectRightPanelMode(store, 'changes', (active) => {
       if (active) void refresh()
     }),
@@ -1465,6 +1707,8 @@ export function mountGitChangesPane(
     unsubs.forEach((u) => {
       u()
     })
+    detachLineComments?.()
+    detachLineComments = null
     diffEditor?.dispose()
     diffEditor = null
   }

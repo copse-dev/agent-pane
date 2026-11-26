@@ -16,7 +16,7 @@ interface CapturedChatCompletionRequest {
   reasoning_effort?: string
   chat_template_kwargs?: { enable_thinking?: boolean }
   max_tokens?: number
-  tool_choice?: { type: 'function'; function: { name: string } }
+  tool_choice?: { type: 'function'; function: { name: string } } | 'required'
   tools?: Array<{
     type: 'function'
     function: {
@@ -638,6 +638,40 @@ describe('OpenAIProvider request options', () => {
       type: 'function',
       function: { name: 'finish_review' },
     })
+  })
+
+  it('forces a named tool by offering only it as required where the server needs that form', async () => {
+    const provider = new OpenAIProvider('qwen-local', {
+      baseURL: 'http://localhost:1234/v1',
+      apiKey: 'test-key',
+      forcedToolChoice: 'only-tool',
+    })
+    const requests: CapturedChatCompletionRequest[] = []
+    withFakeCreate(provider, (request) => {
+      requests.push(request)
+      return streamEvents([{ choices: [{ delta: {}, finish_reason: 'tool_calls' }] }])
+    })
+    const tools: LLMTool[] = [
+      { name: 'report_finding', description: 'Report', parameters: { type: 'object' } },
+      { name: 'finish_review', description: 'Finish', parameters: { type: 'object' } },
+    ]
+
+    await collect(provider, tools, { toolChoice: { name: 'finish_review' } })
+    await collect(provider, tools)
+
+    const [forcedCall, freeCall] = requests
+    assert.ok(forcedCall && freeCall)
+    assert.equal(forcedCall.tool_choice, 'required')
+    assert.deepEqual(
+      forcedCall.tools?.map((tool) => tool.function.name),
+      ['finish_review'],
+    )
+    // Calls without a forced choice still offer every tool and choose freely.
+    assert.equal(freeCall.tool_choice, undefined)
+    assert.deepEqual(
+      freeCall.tools?.map((tool) => tool.function.name),
+      ['report_finding', 'finish_review'],
+    )
   })
 
   it('applies the reasoning-suppression body only to calls that ask for it', async () => {

@@ -334,6 +334,26 @@ describe('bench:review over the committed corpus', () => {
     ])
   })
 
+  it('records a challenger on its own server as its own identity', () => {
+    const profile = modelProfile({
+      provider: 'lmstudio',
+      models: ['qwen-reviewer'],
+      baseUrl: 'http://127.0.0.1:1234/v1',
+      challenger: 'glm-challenger',
+      challengerProvider: 'openai-compatible',
+      challengerBaseUrl: 'http://127.0.0.1:8080/v1',
+      env: {},
+    })
+    assert.deepEqual(profile.reviewerIdentities, [
+      { model: 'qwen-reviewer', provider: 'lmstudio', endpoint: 'http://127.0.0.1:1234/v1' },
+    ])
+    assert.deepEqual(profile.challengerIdentity, {
+      model: 'glm-challenger',
+      provider: 'openai-compatible',
+      endpoint: 'http://127.0.0.1:8080/v1',
+    })
+  })
+
   it('separates the absolute 85% target from the regression ratchet', () => {
     const realConfiguration: BenchSummary['configuration'] = {
       ...summary.configuration,

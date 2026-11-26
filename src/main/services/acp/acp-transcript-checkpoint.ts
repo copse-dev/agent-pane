@@ -20,6 +20,11 @@ export function checkpointAcpTranscript(
   return { messageCount: delivered.length, prefixHash: transcriptHash(delivered) }
 }
 
+/** A checkpoint for history the agent already holds in full, such as an imported session's. */
+export function checkpointAcpHistory(delivered: readonly LLMMessage[]): AcpTranscriptCheckpoint {
+  return { messageCount: delivered.length, prefixHash: transcriptHash(delivered) }
+}
+
 /** Catch up another provider's turns without resending this agent's own answers. */
 export function unseenAcpTranscript(
   priorMessages: LLMMessage[],

@@ -23,6 +23,14 @@ describe('parseAgentRunPayload', () => {
     })
   })
 
+  it('carries the thread’s named profile id, ignoring a blank or non-string one', () => {
+    const parse = (profileId: unknown): ReturnType<typeof parseAgentRunPayload> =>
+      parseAgentRunPayload(JSON.stringify({ content: 'go', profileId }))
+    assert.equal(parse('reviewer').profileId, 'reviewer')
+    assert.equal(Object.hasOwn(parse(''), 'profileId'), false)
+    assert.equal(Object.hasOwn(parse(7), 'profileId'), false)
+  })
+
   it('accepts only an explicit scheduled-run marker', () => {
     const scheduled = parseAgentRunPayload(
       JSON.stringify({ content: 'review', automationRun: true }),
