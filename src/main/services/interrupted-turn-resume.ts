@@ -6,6 +6,7 @@ import { explicitAgentForMessage } from '@shared/threads/explicit-agent.ts'
 import { INTERRUPTED_TURN_CONTINUATION } from '@shared/turn-recovery.ts'
 import type { MachineAgentDispatchRequest } from './agent-dispatcher.ts'
 import { listRunningThreadIds } from './agent-service.ts'
+import { previousRun, previousRunAllowsResume, type LastRunRecord } from './last-run.ts'
 import { storageGet } from './storage/storage.ts'
 import { loadAgentTurnEpoch, loadProjectThreadMetas, loadThreadMessages } from './thread-store.ts'
 
@@ -20,6 +21,17 @@ import { loadAgentTurnEpoch, loadProjectThreadMetas, loadThreadMessages } from '
  * button sends. It goes through `dispatchMachine`, so it is charged to the
  * thread's turn tree like any other machine-initiated turn and is refused when
  * the tree is stale or its continuation budget is spent (hooks plan decision 5).
+ *
+ * It continues only what the previous run of this profile left running, and only
+ * when that run crashed or was relaunched by the updater (`last-run.ts`). A quit
+ * the user chose stops the run, as the close dialog says; those threads keep the
+ * usual "Continue" card. A thread last touched before the previous run started
+ * was cut off longer ago, and is left alone too.
+ *
+ * Each continuation runs on the thread's own model, reasoning level and
+ * execution mode, as the "Continue" button would send them
+ * (`refreshAgentRunPayload`); otherwise a thread on an ACP or remote agent would
+ * be continued by the Settings default.
  *
  * It resumes once per interruption. A thread whose newest prompt is already a
  * restart continuation was cut off again while resuming, so it is left for the
@@ -45,6 +57,10 @@ type ResumeThreadMeta = Pick<
   | 'pendingMessages'
   | 'todos'
   | 'workingBrief'
+  | 'updatedAt'
+  | 'model'
+  | 'reasoning'
+  | 'executionMode'
 >
 
 /**
@@ -106,6 +122,8 @@ export interface InterruptedTurnResumeDependencies {
   createId: () => string
   /** When this process started, to tell this launch's interruption stamps from older ones. */
   bootedAt: number
+  /** How the previous run ended; nothing is continued without one. */
+  previousRun: () => Promise<LastRunRecord | null>
   onError: (error: unknown) => void
 }
 
@@ -124,6 +142,8 @@ export async function resumeInterruptedTurns(
   deps: InterruptedTurnResumeDependencies,
 ): Promise<ResumedTurn[]> {
   const dispatches: Promise<ResumedTurn>[] = []
+  const previous = await deps.previousRun()
+  if (previous === null || !previousRunAllowsResume(previous)) return []
   for (const projectId of deps.listProjectIds()) {
     let threads: readonly ResumeThreadMeta[]
     try {
@@ -134,6 +154,8 @@ export async function resumeInterruptedTurns(
     }
     for (const thread of threads) {
       if (!wasInterruptedByExit(thread, deps.bootedAt) || deps.isRunning(thread.id)) continue
+      // Cut off before the previous run started: not that run's turn.
+      if (thread.updatedAt < previous.startedAt) continue
       try {
         if (!transcriptCanResume(await deps.loadMessages(projectId, thread.id))) continue
         const turnTreeId = (await deps.loadTurnTreeId(projectId, thread.id)) ?? thread.id
@@ -153,6 +175,9 @@ export async function resumeInterruptedTurns(
                 invokedSkills: [],
                 priorTodos: thread.todos ?? [],
                 ...(thread.workingBrief !== undefined ? { workingBrief: thread.workingBrief } : {}),
+                ...(thread.model !== undefined ? { model: thread.model } : {}),
+                ...(thread.reasoning !== undefined ? { reasoning: thread.reasoning } : {}),
+                ...(thread.executionMode === 'agent' ? { executionMode: 'agent' as const } : {}),
               },
             })
             .then(
@@ -193,6 +218,7 @@ export function defaultInterruptedTurnResumeDependencies(dispatcher: {
     dispatchMachine: (request) => dispatcher.dispatchMachine(request),
     createId: randomUUID,
     bootedAt: Date.now() - process.uptime() * 1_000,
+    previousRun,
     onError: (error): void => {
       console.error('[resume] could not continue an interrupted turn:', error)
     },

@@ -2201,6 +2201,14 @@
       "sha256": "3a34568048e0bbaed9b3a2a946179202278a94c4ff2683135691b09be0006565",
       "bytes": 274265
     },
+    "foreground-shell-explicitly-recovered.png": {
+      "sha256": "cb56638083bb83d0af6e7e4c41732e48a6b246508693cf432f2ed90878eb8597",
+      "bytes": 278852
+    },
+    "foreground-shell-recovery-after-quit.png": {
+      "sha256": "0986853938524932c065608d1d8cd4e2ce1e3c905a1f85fb0fe20ff0a1168f06",
+      "bytes": 361095
+    },
     "foreground-shell-yield-cancelled.png": {
       "sha256": "85f79dbf99730579c6f78d23f2b46659ed2abf76f50189e8fbece65e8b5929a1",
       "bytes": 355280
