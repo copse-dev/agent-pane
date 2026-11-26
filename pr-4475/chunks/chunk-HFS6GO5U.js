@@ -12,7 +12,7 @@ import {
   chevronRightIcon,
   circleIcon,
   closeIcon,
-  emptySshHostDraft,
+  createSshHostFields,
   eraserIcon,
   escapeHtml,
   expectNumber,
@@ -25,6 +25,7 @@ import {
   init_inline_status,
   init_ipc_error_message,
   init_nullish,
+  init_ssh_host_fields,
   init_ssh_host_helpers,
   init_toast,
   init_unknown_value,
@@ -41,7 +42,6 @@ import {
   optionalNumber,
   optionalString,
   optionalStringArray,
-  parseSshHostDraft,
   parseSshWorkspaceHosts,
   penLineIcon,
   plusIcon,
@@ -56,7 +56,6 @@ import {
   showErrorToast,
   showToast,
   slashIcon,
-  slugifyHostId,
   squareIcon,
   stringRecordOrEmpty,
   trashIcon,
@@ -64,7 +63,7 @@ import {
   unwrapIpcErrorText,
   upsertHost,
   warningIcon
-} from "./chunk-KYBBGUKM.js";
+} from "./chunk-HIIVOQP4.js";
 import {
   clear,
   createOverlayDialog,
@@ -21389,7 +21388,12 @@ var init_state = __esm({
     init_member_of2();
     RIGHT_PANEL_POSITIONS = ["auto", "side", "bottom"];
     isRightPanelPosition = memberOf(RIGHT_PANEL_POSITIONS);
-    THREAD_SORT_MODES = ["activity", "created", "title"];
+    THREAD_SORT_MODES = [
+      "activity",
+      "created",
+      "title",
+      "action"
+    ];
     isThreadSortMode = memberOf(THREAD_SORT_MODES);
     THREAD_GROUP_MODES = ["project", "status", "none"];
     isThreadGroupMode = memberOf(THREAD_GROUP_MODES);
@@ -21864,6 +21868,12 @@ var init_machine_dispatch = __esm({
   }
 });
 
+// src/shared/types/external-sessions.ts
+var init_external_sessions = __esm({
+  "src/shared/types/external-sessions.ts"() {
+  }
+});
+
 // src/shared/types/index.ts
 var init_types = __esm({
   "src/shared/types/index.ts"() {
@@ -21886,6 +21896,7 @@ var init_types = __esm({
     init_automations();
     init_apple_development();
     init_machine_dispatch();
+    init_external_sessions();
   }
 });
 
@@ -21910,6 +21921,7 @@ function createStore(initial) {
     stagedDiffs: [],
     filesPaneOpen: false,
     rightPanelMode: "explorer",
+    rightPanelSplitMode: null,
     rightPanelMaximized: false,
     projectsPaneOpen: true,
     layout: { ...DEFAULT_LAYOUT },
@@ -27384,6 +27396,7 @@ var init_tool_display = __esm({
       explore: { running: "Exploring files", done: "Explored files" },
       read_explored: { running: "Quoting explored lines", done: "Quoted explored lines" },
       read_file: { running: "Reading file", done: "Read file" },
+      read_thread: { running: "Reading conversation", done: "Read conversation" },
       search_project_context: {
         running: "Searching project history",
         done: "Searched project history"
@@ -27684,10 +27697,11 @@ var init_agent_activity = __esm({
 function canContinue(used, cap = DEFAULT_CONTINUATION_BUDGET) {
   return used < cap;
 }
-var DEFAULT_CONTINUATION_BUDGET;
+var DEFAULT_CONTINUATION_BUDGET, DEFAULT_CROSS_THREAD_PROMPT_BUDGET;
 var init_continuation_budget = __esm({
   "packages/agent/src/hooks/continuation-budget.ts"() {
     DEFAULT_CONTINUATION_BUDGET = 5;
+    DEFAULT_CROSS_THREAD_PROMPT_BUDGET = 5;
   }
 });
 
@@ -27754,8 +27768,14 @@ function isHeldMessage(item) {
 function isMachineContinuation(item) {
   return item.origin !== void 0;
 }
+function isCrossThreadPrompt(item) {
+  return item.origin?.kind === "machine" && item.origin.operationId.startsWith("thread:");
+}
+function crossThreadBudgetHeldNote() {
+  return `Cross-thread prompt allowance reached \u2014 ${String(DEFAULT_CROSS_THREAD_PROMPT_BUDGET)} prompts from this sender's user turn have run here. This prompt is held; release it to continue, or send a new instruction in the sender thread for a fresh allowance.`;
+}
 function continuationBudgetHeldNote() {
-  return `Auto-continuation budget reached \u2014 ${String(DEFAULT_CONTINUATION_BUDGET)} machine-initiated follow-ups have run in this turn. The next hook follow-up is held; release it to continue (that starts a fresh turn with a reset budget).`;
+  return `Auto-continuation budget reached \u2014 ${String(DEFAULT_CONTINUATION_BUDGET)} machine-initiated follow-ups have run in this turn. The next automatic follow-up is held; release it to continue (that starts a fresh turn with a reset budget).`;
 }
 function isStaleEpoch(thread, epoch) {
   return thread.currentEpoch !== void 0 && thread.currentEpoch !== epoch;
@@ -27774,7 +27794,8 @@ function startRootTurnTree(store, threadId) {
   patchThreadAnywhere(store, threadId, (t2) => ({
     ...t2,
     currentEpoch: epoch,
-    continuationUsed: 0
+    continuationUsed: 0,
+    crossThreadPromptsUsed: 0
   }));
   return epoch;
 }
@@ -27811,6 +27832,8 @@ function refreshAgentRunPayload(store, threadId, { reviewContext: _stale, execut
     // The composer's reasoning dial, read at dispatch time for the same reason:
     // turning it up while a message sits queued should apply to that message.
     ...thread?.reasoning !== void 0 ? { reasoning: thread.reasoning } : {},
+    // The thread's named profile, so main adds its current instructions.
+    ...thread?.profileId !== void 0 ? { profileId: thread.profileId } : {},
     // C3: thread the turn-tree epoch + the machine turns already spent so the
     // main-process continuation ledger keys and seeds the same counter this
     // renderer enforces at drain time (decision 5 / 16). Read at dispatch time so
@@ -27900,6 +27923,22 @@ function requeueBusyMessage(store, api, threadId, item) {
     const pending = t2.pendingMessages ?? [];
     if (pending.some((entry) => entry.messageId === item.messageId)) return t2;
     const requeued = { ...t2, pendingMessages: [item, ...pending], updatedAt: Date.now() };
+    if (isCrossThreadPrompt(item)) {
+      if (item.origin?.kind === "machine" && item.origin.crossThreadScope !== void 0) {
+        const scope = item.origin.crossThreadScope;
+        return {
+          ...requeued,
+          crossThreadPromptCounts: {
+            ...t2.crossThreadPromptCounts,
+            [scope]: Math.max(0, (t2.crossThreadPromptCounts?.[scope] ?? 0) - 1)
+          }
+        };
+      }
+      return {
+        ...requeued,
+        crossThreadPromptsUsed: Math.max(0, (t2.crossThreadPromptsUsed ?? 0) - 1)
+      };
+    }
     return isMachineContinuation(item) && (t2.continuationUsed ?? 0) > 0 ? { ...requeued, continuationUsed: (t2.continuationUsed ?? 0) - 1 } : requeued;
   });
   store.emit("message_queued", threadId, item.messageId);
@@ -27938,11 +27977,26 @@ function drainMessageQueue(store, api, threadId) {
   const pending = thread.pendingMessages ?? [];
   if (pending.length === 0) return;
   let used = thread.continuationUsed ?? 0;
+  let crossThreadUsed = thread.crossThreadPromptsUsed ?? 0;
+  const crossThreadCounts = { ...thread.crossThreadPromptCounts };
   let next;
   const heldByBudget = [];
+  const heldByCrossThreadBudget = [];
   const heldByEpoch = [];
   for (const item of pending) {
     if (isHeldMessage(item)) continue;
+    if (isCrossThreadPrompt(item)) {
+      const scope = item.origin?.kind === "machine" ? item.origin.crossThreadScope : void 0;
+      const count = scope === void 0 ? crossThreadUsed : crossThreadCounts[scope] ?? 0;
+      if (!canContinue(count, DEFAULT_CROSS_THREAD_PROMPT_BUDGET)) {
+        heldByCrossThreadBudget.push(item.messageId);
+        continue;
+      }
+      if (scope === void 0) crossThreadUsed += 1;
+      else crossThreadCounts[scope] = count + 1;
+      next = item;
+      break;
+    }
     if (isMachineContinuation(item)) {
       if (item.epoch !== void 0 && isStaleEpoch(thread, item.epoch)) {
         heldByEpoch.push(item.messageId);
@@ -27959,10 +28013,11 @@ function drainMessageQueue(store, api, threadId) {
     next = item;
     break;
   }
-  if (!next && heldByBudget.length === 0 && heldByEpoch.length === 0) return;
+  if (!next && heldByBudget.length === 0 && heldByCrossThreadBudget.length === 0 && heldByEpoch.length === 0)
+    return;
   if (next && !isMachineContinuation(next)) startHumanTurnTree(store, threadId);
   const rest = pending.filter((item) => item !== next);
-  const held = /* @__PURE__ */ new Set([...heldByBudget, ...heldByEpoch]);
+  const held = /* @__PURE__ */ new Set([...heldByBudget, ...heldByCrossThreadBudget, ...heldByEpoch]);
   patchThreadAnywhere(store, threadId, (t2) => {
     const { pendingMessages: _removed, ...restThread } = t2;
     const messages = movePendingUserMessagesToEnd(t2.messages, pending);
@@ -27970,9 +28025,17 @@ function drainMessageQueue(store, api, threadId) {
       (item) => held.has(item.messageId) ? { ...item, autoDispatch: false } : item
     );
     const base = nextPending.length > 0 ? { ...restThread, messages, pendingMessages: nextPending, updatedAt: Date.now() } : { ...restThread, messages, updatedAt: Date.now() };
+    if (next && isCrossThreadPrompt(next))
+      return {
+        ...base,
+        crossThreadPromptsUsed: crossThreadUsed,
+        crossThreadPromptCounts: crossThreadCounts
+      };
     return next && isMachineContinuation(next) ? { ...base, continuationUsed: used } : base;
   });
   if (heldByBudget.length > 0) addMessage(store, threadId, "error", continuationBudgetHeldNote());
+  if (heldByCrossThreadBudget.length > 0)
+    addMessage(store, threadId, "error", crossThreadBudgetHeldNote());
   store.emit("threads_changed");
   if (next) dispatchAgentRun(store, api, threadId, next.payload, next);
 }
@@ -28155,6 +28218,13 @@ function releaseHeldMessage(store, api, threadId, messageId) {
       currentEpoch: epoch,
       // A human release starts a fresh turn tree with a reset budget (decision 5).
       continuationUsed: 0,
+      crossThreadPromptsUsed: 0,
+      ...item.origin?.kind === "machine" && item.origin.crossThreadScope !== void 0 ? {
+        crossThreadPromptCounts: {
+          ...t2.crossThreadPromptCounts,
+          [item.origin.crossThreadScope]: 0
+        }
+      } : {},
       pendingMessages: (t2.pendingMessages ?? []).map((p2) => {
         if (p2.messageId !== messageId) return p2;
         const { autoDispatch: _released, ...rest } = p2;
@@ -28191,6 +28261,7 @@ function captureProjectViewState(state) {
   return {
     filesPaneOpen: state.filesPaneOpen,
     rightPanelMode: state.rightPanelMode,
+    rightPanelSplitMode: state.rightPanelSplitMode,
     panelTab: state.panelTab
   };
 }
@@ -28210,6 +28281,7 @@ var init_project_view_state = __esm({
     DEFAULT_PROJECT_VIEW_STATE = {
       filesPaneOpen: false,
       rightPanelMode: "explorer",
+      rightPanelSplitMode: null,
       panelTab: "file"
     };
   }
@@ -28864,6 +28936,7 @@ function applyProjectSelection(store, api, id, path, loaded, revision, pendingTh
     panelTab: view.panelTab,
     filesPaneOpen: view.filesPaneOpen,
     rightPanelMode: view.rightPanelMode,
+    rightPanelSplitMode: view.rightPanelSplitMode,
     // Opening succeeded — lift any prior "folder missing" quarantine (#997).
     projects: projectsWithMissingCleared(store.getState().projects, id)
   });
@@ -29285,8 +29358,8 @@ async function addProject(store, api) {
   return true;
 }
 async function addRemoteProject(store, api) {
-  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-CCTQT7EL.js");
-  const picked = await openRemoteFolderDialog(api);
+  const { openRemoteFolderDialog } = await import("./remote-folder-dialog-MLZT7WXA.js");
+  const picked = await openRemoteFolderDialog(api, { projects: store.getState().projects });
   if (!picked) return false;
   await addProjectFromRemotePath(store, api, picked.hostId, picked.path);
   return true;
@@ -31495,1045 +31568,483 @@ var init_machines_section = __esm({
   }
 });
 
-// src/shared/web-search.ts
-function resolveWebSearchProvider(value) {
-  return value === "tavily" || value === "parallel" ? value : "none";
+// packages/llm/src/model-parameters.ts
+function isEmptyModelParameters(params) {
+  return params.reasoning === void 0 && params.verbosity === void 0 && params.maxOutputTokens === void 0 && SAMPLING_FIELDS.every((field) => params[field] === void 0);
 }
-var WEB_SEARCH_PROVIDERS, WEB_SEARCH_LABELS;
-var init_web_search = __esm({
-  "src/shared/web-search.ts"() {
-    WEB_SEARCH_PROVIDERS = ["none", "tavily", "parallel"];
-    WEB_SEARCH_LABELS = {
-      none: "Not configured",
-      tavily: "Tavily",
-      parallel: "Parallel"
+function matchesFamily(modelId, prefixes) {
+  return prefixes.some((prefix) => modelId.startsWith(prefix));
+}
+function matchesOpenAiFamily(modelId, prefixes) {
+  return prefixes.some((prefix) => hasModelIdPrefix(modelId, prefix));
+}
+function claudeSupport(modelId) {
+  const withoutOff = (ladder) => matchesFamily(modelId, CLAUDE_THINKING_ALWAYS_ON) ? ladder.filter((level) => level !== "off") : ladder;
+  if (matchesFamily(modelId, CLAUDE_EFFORT_NO_SAMPLING)) {
+    return {
+      reasoning: withoutOff(FULL_EFFORT_LADDER),
+      reasoningWire: "anthropic-effort",
+      sampling: [],
+      outputCap: false,
+      verbosity: [],
+      temperatureMax: 1
     };
   }
-});
-
-// src/renderer/views/setup/api-keys-section.ts
-function keyStatusClass(ok) {
-  if (ok === true) return "key-status ok";
-  if (ok === false) return "key-status err";
-  return "key-status";
-}
-function createApiKeysSection(api, opts = {}) {
-  const legend = opts.legend ?? "API Keys";
-  const providers = opts.providers ?? ["anthropic", "openai", "openrouter", "cursor"];
-  const validateOnInput = opts.validateOnInput ?? true;
-  const fields = providers.map((provider) => {
-    const config2 = API_KEY_PROVIDER_CONFIGS[provider];
-    const input2 = el("input", {
-      type: "password",
-      name: config2.name,
-      placeholder: config2.placeholder,
-      autocomplete: "off"
-    });
-    const status = el("span", { class: "key-status", "data-key": provider });
-    const atRest = el("span", { class: "key-status", "data-at-rest": provider });
-    const label = el(
-      "label",
-      {},
-      config2.label,
-      input2,
-      status,
-      atRest,
-      el("span", { class: "field-hint" }, config2.hint)
-    );
-    return { ...config2, input: input2, status, atRest, label };
-  });
-  const plaintextNote = el(
-    "p",
-    { class: "field-hint", "data-at-rest-note": "", hidden: true },
-    "One or more keys are stored unencrypted because the OS secure storage is unavailable. Install and unlock a system keyring to encrypt them at rest."
-  );
-  const fieldset = el(
-    "fieldset",
-    {},
-    el("legend", {}, legend),
-    ...fields.map((field) => field.label),
-    plaintextNote
-  );
-  let generation = 0;
-  const validationTimers = /* @__PURE__ */ new Map();
-  async function validateField(provider, input2, statusEl) {
-    const mine = generation;
-    const value = input2.value.trim();
-    if (!value) {
-      statusEl.replaceChildren();
-      statusEl.className = "key-status";
-      return;
-    }
-    setInlineStatus(statusEl, "pending", "Checking\u2026");
-    statusEl.className = "key-status";
-    const result = await api.settings.validateKey(provider, value);
-    if (mine !== generation || input2.value.trim() !== value) return;
-    if (result.ok) {
-      setInlineStatus(statusEl, "ok", "Valid key");
-      statusEl.className = keyStatusClass(true);
-    } else {
-      setInlineStatus(statusEl, "error", result.error ?? "Invalid key");
-      statusEl.className = keyStatusClass(false);
-    }
-  }
-  function bindValidation(provider, input2, statusEl) {
-    if (!validateOnInput) return;
-    input2.addEventListener("input", () => {
-      const existing = validationTimers.get(provider);
-      if (existing) clearTimeout(existing);
-      validationTimers.set(
-        provider,
-        setTimeout(() => {
-          void validateField(provider, input2, statusEl);
-        }, 500)
-      );
-    });
-  }
-  for (const field of fields) {
-    bindValidation(field.provider, field.input, field.status);
-  }
-  async function refreshKeyStatus(signal) {
-    const mine = generation;
-    if (signal?.aborted) return;
-    let anyPlaintext = false;
-    for (const field of fields) {
-      const saved = await api.settings.getKey(field.provider);
-      if (mine !== generation || signal?.aborted) return;
-      if (!field.input.value.trim()) {
-        setInlineStatus(field.status, saved ? "filled" : "idle", saved ? "saved" : "not set");
-        field.status.className = "key-status";
-      }
-      const encrypted = saved ? await api.settings.getKeyEncrypted(field.provider) : null;
-      if (mine !== generation || signal?.aborted) return;
-      if (encrypted === true) {
-        setInlineStatus(field.atRest, "ok", "Encrypted by OS keychain");
-        field.atRest.className = "key-status";
-      } else if (encrypted === false) {
-        anyPlaintext = true;
-        setInlineStatus(field.atRest, "warn", "Stored unencrypted");
-        field.atRest.className = "key-status";
-      } else {
-        field.atRest.replaceChildren();
-        field.atRest.className = "key-status";
-      }
-    }
-    plaintextNote.hidden = !anyPlaintext;
-  }
-  async function confirmPlaintextStorage(provider) {
-    const label = API_KEY_PROVIDER_CONFIGS[provider].label;
-    return showConfirmDialog({
-      message: `No OS keyring is available to encrypt your ${label} at rest. Install and unlock a system keyring to store it encrypted.`,
-      detail: "Store it unencrypted on this machine anyway?",
-      confirmLabel: "Store anyway"
-    });
-  }
-  async function saveKeys() {
-    let savedAny = false;
-    const failures = [];
-    for (const field of fields) {
-      const key = field.input.value.trim();
-      if (!key) {
-        field.input.value = "";
-        continue;
-      }
-      let result = await api.settings.setKey(field.provider, key);
-      if (!result.ok && result.reason === "plaintext-consent-required" && await confirmPlaintextStorage(field.provider)) {
-        result = await api.settings.setKey(field.provider, key, { allowPlaintext: true });
-      }
-      if (result.ok) {
-        field.input.value = "";
-        savedAny = true;
-      } else {
-        const message = result.reason === "plaintext-storage-disabled" ? `Not saved: ${PLAINTEXT_STORAGE_DISABLED_REASON}` : "Not saved: unencrypted storage declined";
-        failures.push(message);
-        setInlineStatusMarkdown(field.status, "error", message);
-        field.status.className = keyStatusClass(false);
-      }
-    }
-    if (savedAny) await refreshKeyStatus();
-    return failures.length === 0;
-  }
-  return {
-    root: fieldset,
-    refreshKeyStatus,
-    saveKeys,
-    reset: () => {
-      generation += 1;
-      for (const timer of validationTimers.values()) clearTimeout(timer);
-      validationTimers.clear();
-      for (const field of fields) {
-        field.input.value = "";
-        field.status.replaceChildren();
-      }
-    }
-  };
-}
-var PLAINTEXT_STORAGE_DISABLED_REASON, API_KEY_PROVIDER_CONFIGS;
-var init_api_keys_section = __esm({
-  "src/renderer/views/setup/api-keys-section.ts"() {
-    init_helpers();
-    init_inline_status();
-    init_confirm_dialog();
-    PLAINTEXT_STORAGE_DISABLED_REASON = "secure storage is unavailable and plaintext secret storage is disabled. Start Copse with `COPSE_ALLOW_PLAINTEXT_SECRETS=1` to opt in.";
-    API_KEY_PROVIDER_CONFIGS = {
-      tavily: {
-        provider: "tavily",
-        name: "tavilyKey",
-        label: "Tavily API key",
-        placeholder: "tvly-\u2026",
-        hint: "Basic search uses one API credit per request. Generated answers are disabled."
-      },
-      anthropic: {
-        provider: "anthropic",
-        name: "anthropicKey",
-        label: "Anthropic API key",
-        placeholder: "sk-ant-\u2026",
-        hint: "Checked with a free request, so no tokens are charged."
-      },
-      openai: {
-        provider: "openai",
-        name: "openaiKey",
-        label: "OpenAI API key",
-        placeholder: "sk-\u2026",
-        hint: "Checked with a free request, so no tokens are charged."
-      },
-      cursor: {
-        provider: "cursor",
-        name: "cursorKey",
-        label: "Cursor API key",
-        placeholder: "cur_\u2026",
-        hint: "For runs on Cursor\u2019s machines. Checked with a free request."
-      },
-      openrouter: {
-        provider: "openrouter",
-        name: "openrouterKey",
-        label: "OpenRouter API key",
-        placeholder: "sk-or-\u2026",
-        hint: "One key for Claude, GPT, Gemini, Llama, and more. Checked with a free request."
-      },
-      github: {
-        provider: "github",
-        name: "githubKey",
-        label: "GitHub token",
-        placeholder: "github_pat_\u2026 or ghp_\u2026",
-        hint: "Lets the Claude cloud agent clone your repository, push branches, and open pull requests. Use a fine-grained token with repository access."
-      },
-      "artificial-analysis": {
-        provider: "artificial-analysis",
-        name: "artificialAnalysisKey",
-        label: "Artificial Analysis API key",
-        placeholder: "aa-\u2026",
-        hint: "Optional: live Intelligence Index data for the model value map, including models beyond the curated list. Free key from artificialanalysis.ai (their terms require the attribution shown on the map)."
-      },
-      parallel: {
-        provider: "parallel",
-        name: "parallelKey",
-        label: "Parallel API key",
-        placeholder: "Parallel API key",
-        hint: "Used only for the direct Search API. Requests may be billable; ZDR depends on your Parallel account agreement."
-      }
+  if (matchesFamily(modelId, CLAUDE_EFFORT_WITH_SAMPLING)) {
+    return {
+      reasoning: CAPPED_EFFORT_LADDER,
+      reasoningWire: "anthropic-effort",
+      sampling: ANTHROPIC_SAMPLING,
+      outputCap: false,
+      verbosity: [],
+      temperatureMax: 1
     };
   }
-});
-
-// src/renderer/views/settings/web-search-section.ts
-function createWebSearchSection(api) {
-  const provider = el("select", { name: "webSearchProvider" });
-  for (const value of WEB_SEARCH_PROVIDERS) {
-    provider.append(el("option", { value }, WEB_SEARCH_LABELS[value]));
-  }
-  const tavily = createApiKeysSection(api, {
-    legend: "Tavily account",
-    providers: ["tavily"],
-    validateOnInput: false
-  });
-  const parallel = createApiKeysSection(api, {
-    legend: "Parallel account",
-    providers: ["parallel"],
-    validateOnInput: false
-  });
-  const note = el(
-    "p",
-    { class: "field-hint" },
-    "Queries and returned excerpts are included in the conversation. Provider retention and usage terms apply. Saving credentials does not run a search."
-  );
-  const root = el(
-    "fieldset",
-    {},
-    el("legend", {}, "Search provider"),
-    el("label", {}, "Default provider", provider),
-    tavily.root,
-    parallel.root,
-    note
-  );
-  const sync = () => {
-    tavily.root.hidden = provider.value !== "tavily";
-    parallel.root.hidden = provider.value !== "parallel";
-  };
-  provider.addEventListener("change", sync);
-  provider.value = "none";
-  sync();
   return {
-    root,
-    refresh: async (snapshot, signal) => {
-      if (signal.aborted) return;
-      provider.value = resolveWebSearchProvider(snapshot.webSearchProvider);
-      sync();
-      await Promise.all([tavily.refreshKeyStatus(signal), parallel.refreshKeyStatus(signal)]);
-    },
-    collect: (dirty) => dirty.has("webSearchProvider") ? { webSearchProvider: resolveWebSearchProvider(provider.value) } : {},
-    saveKeys: async () => {
-      if (provider.value === "tavily") return tavily.saveKeys();
-      if (provider.value === "parallel") return parallel.saveKeys();
-      return true;
-    },
-    reset: () => {
-      tavily.reset();
-      parallel.reset();
-    }
+    reasoning: BUDGET_LADDER,
+    reasoningWire: "anthropic-budget",
+    sampling: ANTHROPIC_SAMPLING,
+    outputCap: false,
+    verbosity: [],
+    temperatureMax: 1
   };
 }
-var init_web_search_section = __esm({
-  "src/renderer/views/settings/web-search-section.ts"() {
-    init_web_search();
-    init_helpers();
-    init_api_keys_section();
+function openAiVerbosity(modelId) {
+  if (!matchesFamily(modelId, OPENAI_VERBOSITY_PREFIXES)) return [];
+  if (OPENAI_VERBOSITY_EXCLUDED.some((marker) => modelId.includes(marker))) return [];
+  return VERBOSITY_LEVELS;
+}
+function openAiSupport(modelId) {
+  if (matchesOpenAiFamily(modelId, OPENAI_GPT6_PREFIXES)) {
+    return {
+      reasoning: OPENAI_GPT6_LADDER,
+      reasoningWire: "openai-effort",
+      sampling: [],
+      outputCap: false,
+      verbosity: openAiVerbosity(modelId),
+      temperatureMax: 2
+    };
   }
-});
-
-// src/renderer/views/setup/ssh-workspace-section.ts
-function createSshWorkspaceSection(api, opts = {}) {
-  const hostList = el("div", { class: "ssh-host-list" });
-  const status = el("span", { class: "ssh-host-status" });
-  const enabledInput = el("input", { type: "checkbox", name: "sshWorkspaceEnabled" });
-  const strictSelect = el("select", { name: "sshStrictHostKeys" });
-  strictSelect.append(
-    el("option", { value: "accept-new" }, "Accept new host keys (recommended)"),
-    el("option", { value: "strict" }, "Strict: reject unknown host keys")
-  );
-  const draft = emptySshHostDraft();
-  let idTouched = false;
-  const idInput = el("input", { type: "text", name: "sshHostId", placeholder: "my-server" });
-  const labelInput = el("input", { type: "text", name: "sshHostLabel", placeholder: "Production" });
-  const hostInput = el("input", {
-    type: "text",
-    name: "sshHostHost",
-    placeholder: "example.com or ~/.ssh/config alias"
-  });
-  const userInput = el("input", { type: "text", name: "sshHostUser", placeholder: "ubuntu" });
-  const portInput = el("input", {
-    type: "text",
-    name: "sshHostPort",
-    placeholder: "22",
-    inputmode: "numeric"
-  });
-  const identityInput = el("input", {
-    type: "text",
-    name: "sshHostIdentity",
-    placeholder: "~/.ssh/id_ed25519"
-  });
-  const draftInputs = {
-    id: idInput,
-    label: labelInput,
-    host: hostInput,
-    user: userInput,
-    port: portInput,
-    identityFile: identityInput
+  if (matchesOpenAiFamily(modelId, OPENAI_REASONING_PREFIXES)) {
+    return {
+      reasoning: OPENAI_LADDER,
+      reasoningWire: "openai-effort",
+      sampling: [],
+      outputCap: false,
+      verbosity: openAiVerbosity(modelId),
+      temperatureMax: 2
+    };
+  }
+  return {
+    reasoning: [],
+    reasoningWire: "none",
+    sampling: OPENAI_SAMPLING,
+    outputCap: false,
+    verbosity: openAiVerbosity(modelId),
+    temperatureMax: 2
   };
-  function markInvalid(fields) {
-    for (const [field, input2] of Object.entries(draftInputs)) {
-      if (fields.some((name) => name === field)) input2.setAttribute("aria-invalid", "true");
-      else input2.removeAttribute("aria-invalid");
-    }
+}
+function modelParameterSupport(model) {
+  const selection2 = parseModelSelection(model);
+  if (selection2.namespace === "chatgpt-plan") {
+    return { ...openAiSupport(selection2.modelId), sampling: [], outputCap: false };
   }
-  for (const input2 of Object.values(draftInputs)) {
-    input2.addEventListener("input", () => {
-      input2.removeAttribute("aria-invalid");
-    });
+  if (AGENT_NAMESPACES.has(selection2.namespace)) {
+    return {
+      ...NO_PARAMETERS,
+      unavailableReason: "This selection runs the whole turn in its own agent, which owns these settings."
+    };
   }
-  const forwardInput = el("input", { type: "checkbox", name: "sshHostForwardAgent" });
-  const form = el(
-    "div",
-    { class: "ssh-host-form" },
-    el("label", {}, "Id ", idInput),
-    el("label", {}, "Label ", labelInput),
-    el("label", {}, "Host ", hostInput),
-    el("label", {}, "User ", userInput),
-    el("label", {}, "Port ", portInput),
-    el("label", {}, "Identity file ", identityInput),
-    el("label", { class: "checkbox-label" }, forwardInput, " Forward SSH agent"),
-    el(
-      "div",
-      { class: "provider-actions" },
-      el("button", { type: "button", class: "ui-btn ui-btn-primary ssh-host-save" }, "Save host"),
-      el("button", { type: "button", class: "ui-btn ui-btn-secondary ssh-host-clear" }, "Clear")
-    )
-  );
-  async function persistHosts(next) {
-    await api.settings.set("sshWorkspaceHosts", next);
-    await renderHosts();
-    opts.onChanged?.();
+  if (selection2.namespace === "auto") {
+    return {
+      ...NO_PARAMETERS,
+      unavailableReason: "This is a rule that picks a model per chat. Parameters follow the model it picks, so pin one to tune it."
+    };
   }
-  function clearDraft() {
-    Object.assign(draft, emptySshHostDraft());
-    markInvalid([]);
-    idTouched = false;
-    idInput.value = "";
-    labelInput.value = "";
-    hostInput.value = "";
-    userInput.value = "";
-    portInput.value = "";
-    identityInput.value = "";
-    forwardInput.checked = false;
-    idInput.disabled = false;
+  if (selection2.namespace === "cloud") {
+    const provider = firstPartyProviderOf(selection2);
+    if (provider === "anthropic") return claudeSupport(selection2.modelId);
+    if (provider === "openai") return openAiSupport(selection2.modelId);
+    return {
+      reasoning: [],
+      reasoningWire: "none",
+      sampling: UNIVERSAL_SAMPLING,
+      outputCap: false,
+      verbosity: [],
+      temperatureMax: 2
+    };
   }
-  function fillDraft(host) {
-    markInvalid([]);
-    draft.id = host.id;
-    draft.label = host.label;
-    draft.host = host.host;
-    draft.user = host.user ?? "";
-    draft.port = host.port !== void 0 ? String(host.port) : "";
-    draft.identityFile = host.identityFile ?? "";
-    draft.forwardAgent = host.forwardAgent === true;
-    idTouched = true;
-    idInput.value = host.id;
-    labelInput.value = host.label;
-    hostInput.value = host.host;
-    userInput.value = draft.user;
-    portInput.value = draft.port;
-    identityInput.value = draft.identityFile;
-    forwardInput.checked = draft.forwardAgent;
-    idInput.disabled = true;
+  return {
+    reasoning: OPENAI_COMPATIBLE_LADDER,
+    reasoningWire: selection2.namespace === "openrouter" ? "openrouter" : "openai-effort",
+    sampling: OPENAI_COMPATIBLE_SAMPLING,
+    outputCap: selection2.namespace === "openrouter" || selection2.namespace === "lmstudio",
+    // Not OpenAI's endpoint, so never OpenAI's field: local servers and
+    // aggregators reject or silently drop unknown body fields.
+    verbosity: [],
+    temperatureMax: 2,
+    upstreamDecides: true
+  };
+}
+function roundToStep(value) {
+  return Math.round(value * 100) / 100;
+}
+function sanitizeSampling(field, value, temperatureMax) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return void 0;
+  const bounds = SAMPLING_BOUNDS[field];
+  const max = field === "temperature" ? temperatureMax : bounds.max;
+  const clamped = clamp(value, bounds.min, max);
+  return bounds.integer ? Math.round(clamped) : roundToStep(clamped);
+}
+function sanitizeModelParameters(params, model, support = modelParameterSupport(model)) {
+  const sanitized = {};
+  if (params.reasoning !== void 0 && support.reasoning.includes(params.reasoning)) {
+    sanitized.reasoning = params.reasoning;
   }
-  async function renderHosts(signal) {
-    if (signal?.aborted) return;
-    clear(hostList);
-    const [rawHosts, credentialHostIds] = await Promise.all([
-      api.settings.get("sshWorkspaceHosts"),
-      api.sshWorkspace.listCredentialHostIds()
+  if (params.verbosity !== void 0 && support.verbosity.includes(params.verbosity)) {
+    sanitized.verbosity = params.verbosity;
+  }
+  if (support.outputCap && typeof params.maxOutputTokens === "number" && Number.isFinite(params.maxOutputTokens)) {
+    sanitized.maxOutputTokens = Math.round(clamp(params.maxOutputTokens, 256, 1e6));
+  }
+  for (const field of support.sampling) {
+    const value = sanitizeSampling(field, params[field], support.temperatureMax);
+    if (value !== void 0) sanitized[field] = value;
+  }
+  return sanitized;
+}
+function findRecommendation(model) {
+  const selection2 = parseModelSelection(model);
+  if (AGENT_NAMESPACES.has(selection2.namespace) || selection2.namespace === "auto") return void 0;
+  const id = selection2.modelId.toLowerCase();
+  return RECOMMENDATIONS.find((entry) => id.includes(entry.match));
+}
+function recommendedModelParameters(model) {
+  const match = findRecommendation(model);
+  if (!match) return null;
+  const params = sanitizeModelParameters(match.params, model);
+  if (isEmptyModelParameters(params)) return null;
+  return {
+    label: match.label,
+    source: match.source,
+    ...match.sourceLabel ? { sourceLabel: match.sourceLabel } : {},
+    params,
+    ...match.outputCeiling ? { outputCeiling: match.outputCeiling } : {}
+  };
+}
+function decodeNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : void 0;
+}
+function decodeModelParameters(value) {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+  const record2 = { ...value };
+  const params = {};
+  if (isReasoningLevel(record2["reasoning"])) params.reasoning = record2["reasoning"];
+  if (isVerbosityLevel(record2["verbosity"])) params.verbosity = record2["verbosity"];
+  const maxOutputTokens = decodeNumber(record2["maxOutputTokens"]);
+  if (maxOutputTokens !== void 0) params.maxOutputTokens = maxOutputTokens;
+  for (const field of SAMPLING_FIELDS) {
+    const value2 = decodeNumber(record2[field]);
+    if (value2 !== void 0) params[field] = value2;
+  }
+  return params;
+}
+function decodeModelParametersMap(value) {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+  const out = {};
+  for (const [model, entry] of Object.entries(value)) {
+    if (!model) continue;
+    const params = decodeModelParameters(entry);
+    if (!isEmptyModelParameters(params)) out[model] = params;
+  }
+  return out;
+}
+var REASONING_LEVELS, isReasoningLevel, VERBOSITY_LEVELS, isVerbosityLevel, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_COMPATIBLE_SAMPLING, OPENAI_SAMPLING, ANTHROPIC_SAMPLING, UNIVERSAL_SAMPLING, AGENT_NAMESPACES, CLAUDE_EFFORT_NO_SAMPLING, CLAUDE_EFFORT_WITH_SAMPLING, CLAUDE_THINKING_ALWAYS_ON, OPENAI_REASONING_PREFIXES, OPENAI_GPT6_PREFIXES, FULL_EFFORT_LADDER, CAPPED_EFFORT_LADDER, BUDGET_LADDER, OPENAI_LADDER, OPENAI_GPT6_LADDER, OPENAI_COMPATIBLE_LADDER, OPENAI_VERBOSITY_PREFIXES, OPENAI_VERBOSITY_EXCLUDED, SAMPLING_BOUNDS, RECOMMENDATIONS;
+var init_model_parameters = __esm({
+  "packages/llm/src/model-parameters.ts"() {
+    init_clamp();
+    init_model_catalog();
+    init_model_families();
+    init_model_selection();
+    init_member_of();
+    REASONING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+    isReasoningLevel = memberOf(REASONING_LEVELS);
+    VERBOSITY_LEVELS = ["low", "medium", "high"];
+    isVerbosityLevel = memberOf(VERBOSITY_LEVELS);
+    SAMPLING_FIELDS = [
+      "temperature",
+      "topP",
+      "topK",
+      "minP",
+      "presencePenalty",
+      "repetitionPenalty"
+    ];
+    NO_PARAMETERS = {
+      reasoning: [],
+      reasoningWire: "none",
+      sampling: [],
+      outputCap: false,
+      verbosity: [],
+      temperatureMax: 1
+    };
+    OPENAI_COMPATIBLE_SAMPLING = SAMPLING_FIELDS;
+    OPENAI_SAMPLING = ["temperature", "topP", "presencePenalty"];
+    ANTHROPIC_SAMPLING = ["temperature", "topP", "topK"];
+    UNIVERSAL_SAMPLING = ["temperature", "topP"];
+    AGENT_NAMESPACES = /* @__PURE__ */ new Set([
+      "acp",
+      "remote-agent",
+      "plugin-model"
     ]);
-    if (signal?.aborted) return;
-    const list = parseSshWorkspaceHosts(rawHosts);
-    const credentialHosts = new Set(credentialHostIds);
-    if (list.length === 0) {
-      hostList.append(el("p", { class: "field-hint" }, "No SSH hosts configured yet."));
-      return;
-    }
-    for (const host of list) {
-      const row = el("div", { class: "ssh-host-row" });
-      const target = host.user ? `${host.user}@${host.host}` : host.host;
-      const hasSavedAuthentication = credentialHosts.has(host.id);
-      const summary = el(
-        "div",
-        { class: "ssh-host-summary" },
-        el("div", {}, el("strong", {}, host.label), `: ${target}`),
-        el(
-          "div",
-          {
-            class: hasSavedAuthentication ? "ssh-host-auth ssh-host-auth-saved" : "ssh-host-auth"
-          },
-          hasSavedAuthentication ? "Authentication encrypted by OS keychain" : "Authentication will be requested when you connect"
-        )
-      );
-      const actions = el(
-        "div",
-        { class: "ssh-host-row-actions" },
-        el("button", { type: "button", class: "ssh-host-edit" }, "Edit")
-      );
-      if (hasSavedAuthentication) {
-        const forget = el(
-          "button",
-          { type: "button", class: "ssh-host-forget-auth" },
-          "Forget authentication"
-        );
-        forget.addEventListener("click", () => {
-          void api.sshWorkspace.forgetCredentials(host.id).then(() => {
-            setInlineStatus(status, "ok", `Forgot authentication for \u201C${host.label}\u201D.`);
-            return renderHosts();
-          });
-        });
-        actions.append(forget);
+    CLAUDE_EFFORT_NO_SAMPLING = [
+      "claude-opus-5",
+      "claude-opus-4-8",
+      "claude-opus-4-7",
+      "claude-sonnet-5",
+      "claude-fable-5",
+      "claude-mythos-5",
+      "claude-mythos-preview"
+    ];
+    CLAUDE_EFFORT_WITH_SAMPLING = [
+      "claude-opus-4-6",
+      "claude-sonnet-4-6",
+      "claude-opus-4-5"
+    ];
+    CLAUDE_THINKING_ALWAYS_ON = [
+      "claude-opus-5-5",
+      "claude-sonnet-5-5",
+      "claude-fable-5",
+      "claude-mythos-5",
+      "claude-mythos-preview"
+    ];
+    OPENAI_REASONING_PREFIXES = ["gpt-5", "o1", "o3", "o4"];
+    OPENAI_GPT6_PREFIXES = ["gpt-6-astra", "gpt-6.1-sol"];
+    FULL_EFFORT_LADDER = [
+      "off",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ];
+    CAPPED_EFFORT_LADDER = ["off", "low", "medium", "high", "max"];
+    BUDGET_LADDER = ["off", "low", "medium", "high"];
+    OPENAI_LADDER = ["minimal", "low", "medium", "high"];
+    OPENAI_GPT6_LADDER = ["low", "medium", "high", "xhigh", "max"];
+    OPENAI_COMPATIBLE_LADDER = [
+      "off",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ];
+    OPENAI_VERBOSITY_PREFIXES = ["gpt-5", "gpt-6"];
+    OPENAI_VERBOSITY_EXCLUDED = ["codex", "-chat", "search"];
+    SAMPLING_BOUNDS = {
+      temperature: { min: 0, max: 2 },
+      topP: { min: 0, max: 1, neutral: 1 },
+      // Upper bound is generous rather than principled: servers differ, and 0
+      // (llama.cpp) or -1 (vLLM) both mean "consider everything".
+      topK: { min: 0, max: 500, integer: true, neutral: 0 },
+      minP: { min: 0, max: 1, neutral: 0 },
+      presencePenalty: { min: -2, max: 2, neutral: 0 },
+      // 1 is the identity here, not 0 — the value divides the logits of tokens
+      // already seen, so 0 would be a hard ban rather than no penalty.
+      repetitionPenalty: { min: 0, max: 2, neutral: 1 }
+    };
+    RECOMMENDATIONS = [
+      {
+        match: "glm-4.7-flash",
+        label: "Z.ai\u2019s coding-agent recipe",
+        source: "https://huggingface.co/zai-org/GLM-4.7-Flash#evaluation-parameters",
+        // The model card's Terminal Bench / SWE Bench settings, checked 2026-10-01.
+        // Its general-task recipe uses different sampling and a larger ceiling;
+        // Copse's coding tool loop uses the coding benchmark profile. The card does
+        // not specify a reasoning-effort value or repetition penalty for this set.
+        params: { temperature: 0.7, topP: 1, maxOutputTokens: 16384 }
+      },
+      {
+        match: "glm-5.3-flash",
+        label: "Copse\u2019s experimental balanced agent profile",
+        source: "https://github.com/copse-dev/agent-pane/blob/main/docs/spikes/glm-5-3-flash-terminal-bench-profile.md",
+        sourceLabel: "paired Terminal-Bench record",
+        // Two provenances, and they disagree, so the row states which half is whose.
+        //
+        // Sampling is Z.ai's published recipe verbatim — its Recommended Settings
+        // say temperature 1 and top_p 0.95 (https://docs.z.ai/guides/llm/glm-5.3-flash).
+        // Copse's paired runs never varied sampling, so nothing in our record argues
+        // with the vendor here, and sending the pair pins it against an aggregator's
+        // own default drifting underneath us.
+        //
+        // Reasoning and the cap are ours, and `medium` is a deliberate departure from
+        // the same page's `reasoning_effort: max`. The counterbalanced Terminal-Bench
+        // 2.1 screen scored medium-plus-cap 4/6 against 2/6 for a max-effort uncapped
+        // baseline, on the shell-agent loop Copse actually runs. Z.ai recommends `max`
+        // for the model in general; we keep `medium` for this scenario on our own
+        // evidence. Like every recipe it applies by default (a user-set field replaces
+        // its value), but the row stays labelled experimental because that evidence is
+        // one benchmark on one host.
+        params: { reasoning: "medium", maxOutputTokens: 16384, temperature: 1, topP: 0.95 }
+      },
+      {
+        match: "deepseek-v4-flash",
+        label: "DeepSeek\u2019s agentic recipe",
+        source: "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731",
+        // The model card's agentic profile: max reasoning effort, temperature 1.0,
+        // and the tighter top_p it specifies for agentic scenarios (0.95) rather
+        // than the 1.0 it recommends otherwise. Copse runs a tool loop, so the
+        // agentic column is the applicable one.
+        params: { reasoning: "max", temperature: 1, topP: 0.95 },
+        // "For the `high` and `max` reasoning effort levels, we recommend a maximum
+        // output length of 384K tokens" — the deep levels spend the output budget on
+        // reasoning, so the card's own recipe needs the room it asks for.
+        outputCeiling: { tokens: 384e3, fromReasoning: "high" }
+      },
+      {
+        match: "qwen3.6-35b-a3b",
+        label: "Qwen\u2019s thinking-mode recipe",
+        source: "https://huggingface.co/Qwen/Qwen3.6-35B-A3B",
+        // The card publishes three sets, split by mode and task rather than by
+        // "agentic": thinking/general, thinking/precise-coding (temperature 0.6,
+        // presence_penalty 0), and instruct/non-thinking. This is the first.
+        //
+        // Choosing between the coding set and the general one is the only judgement
+        // in this row, and the card settles it: its own agentic evals — SWE-Bench on
+        // a "bash + file-edit tools" scaffold, Terminal-Bench 2.0 under an agent
+        // harness — ran temp=1.0, top_p=0.95, top_k=20, which is the general set.
+        // The coding set is for single-shot generation (its example is WebDev), not
+        // for a tool loop. Copse is the former shape.
+        //
+        // No `reasoning`: the model thinks by default and exposes no effort ladder,
+        // so the recipe is about sampling only. Sending an effort would be us
+        // inventing a control the card never names.
+        params: {
+          temperature: 1,
+          topP: 0.95,
+          topK: 20,
+          minP: 0,
+          presencePenalty: 1.5,
+          repetitionPenalty: 1
+        },
+        // "We recommend using an output length of 32,768 tokens for most queries.
+        // For benchmarking on highly complex problems … 81,920 tokens." Neither is
+        // conditioned on a depth — the model always thinks — so this applies on
+        // every turn.
+        //
+        // The larger of the two, because the card's own agent harness used it:
+        // Terminal-Bench 2.0 ran `max_tokens=80K`. 32,768 is the figure for "most
+        // queries", and a tool loop editing real files is not the average query;
+        // sending the smaller number would turn advice about *sufficient* space into
+        // a cap that truncates.
+        outputCeiling: { tokens: 81920 }
       }
-      actions.append(el("button", { type: "button", class: "ssh-host-delete" }, "Remove"));
-      row.append(summary, actions);
-      row.querySelector(".ssh-host-edit")?.addEventListener("click", () => {
-        fillDraft(host);
-      });
-      row.querySelector(".ssh-host-delete")?.addEventListener("click", () => {
-        void api.sshWorkspace.forgetCredentials(host.id).then(() => persistHosts(removeHost(list, host.id)));
-      });
-      hostList.append(row);
-    }
-  }
-  idInput.addEventListener("input", () => {
-    idTouched = true;
-    draft.id = idInput.value;
-  });
-  labelInput.addEventListener("input", () => {
-    draft.label = labelInput.value;
-    if (!idTouched && !idInput.disabled) idInput.value = slugifyHostId(draft.label);
-    draft.id = idInput.value;
-  });
-  hostInput.addEventListener("input", () => {
-    draft.host = hostInput.value;
-  });
-  userInput.addEventListener("input", () => {
-    draft.user = userInput.value;
-  });
-  portInput.addEventListener("input", () => {
-    draft.port = portInput.value;
-  });
-  identityInput.addEventListener("input", () => {
-    draft.identityFile = identityInput.value;
-  });
-  forwardInput.addEventListener("change", () => {
-    draft.forwardAgent = forwardInput.checked;
-  });
-  form.querySelector(".ssh-host-save")?.addEventListener("click", () => {
-    void (async () => {
-      const parsed2 = parseSshHostDraft(draft);
-      if (!parsed2.ok) {
-        markInvalid(parsed2.fields);
-        setInlineStatus(status, "error", parsed2.error);
-        return;
-      }
-      markInvalid([]);
-      const raw = await api.settings.get("sshWorkspaceHosts");
-      const existing = parseSshWorkspaceHosts(raw);
-      await persistHosts(upsertHost(existing, parsed2.host));
-      setInlineStatus(status, "ok", `Saved host \u201C${parsed2.host.label}\u201D.`);
-      clearDraft();
-    })();
-  });
-  form.querySelector(".ssh-host-clear")?.addEventListener("click", () => {
-    clearDraft();
-    status.replaceChildren();
-  });
-  enabledInput.addEventListener("change", () => {
-    if (opts.deferOrdinaryWrites) return;
-    void api.settings.set("sshWorkspaceEnabled", enabledInput.checked).then(() => {
-      opts.onChanged?.();
-    });
-  });
-  strictSelect.addEventListener("change", () => {
-    if (opts.deferOrdinaryWrites) return;
-    void api.settings.set("sshStrictHostKeys", strictSelect.value).then(() => {
-      opts.onChanged?.();
-    });
-  });
-  function load(snapshot) {
-    enabledInput.checked = snapshot.sshWorkspaceEnabled === true;
-    strictSelect.value = snapshot.sshStrictHostKeys === "strict" ? "strict" : "accept-new";
-  }
-  async function refresh(signal) {
-    if (signal?.aborted) return;
-    if (!opts.deferOrdinaryWrites) {
-      const enabled = await api.settings.get("sshWorkspaceEnabled");
-      const strict = await api.settings.get("sshStrictHostKeys");
-      if (signal?.aborted) return;
-      enabledInput.checked = enabled === true;
-      strictSelect.value = strict === "strict" ? "strict" : "accept-new";
-    }
-    await renderHosts(signal);
-  }
-  const importBtn = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-secondary ssh-import-config" },
-    "Import from ~/.ssh/config"
-  );
-  importBtn.addEventListener("click", () => {
-    void (async () => {
-      const aliases = await api.sshWorkspace.listConfigAliases();
-      if (aliases.length === 0) {
-        setInlineStatus(status, "error", "No Host entries found in ~/.ssh/config.");
-        return;
-      }
-      const raw = await api.settings.get("sshWorkspaceHosts");
-      const existing = parseSshWorkspaceHosts(raw);
-      const imported = importSshConfigHosts(existing, aliases);
-      await persistHosts(imported.hosts);
-      if (imported.importedHostIds.length === 0) {
-        setInlineStatus(status, "ok", "All SSH config aliases are already imported.");
-        return;
-      }
-      setInlineStatus(
-        status,
-        "ok",
-        `Imported ${String(imported.importedHostIds.length)} alias(es) from SSH config.`
-      );
-    })();
-  });
-  const root = el(
-    "fieldset",
-    {},
-    el("legend", {}, "SSH workspaces"),
-    el(
-      "p",
-      { class: "settings-fieldset-desc" },
-      "Run shell, git, search, and file tools on a remote Linux host over SSH. Enable the feature below, add hosts here or in the ",
-      el("strong", {}, "Open remote folder"),
-      " dialog, then open a remote project from the projects panel.",
-      " Passwords and key passphrases can be encrypted with the OS keychain and managed per host."
-    ),
-    el("label", { class: "checkbox-label" }, enabledInput, " Enable SSH workspaces (experimental)"),
-    el("label", {}, "Host key policy ", strictSelect),
-    hostList,
-    importBtn,
-    form,
-    status
-  );
-  return {
-    root,
-    refresh,
-    load,
-    collect: (data, dirty) => ({
-      ...dirty.has("sshWorkspaceEnabled") ? { sshWorkspaceEnabled: data.has("sshWorkspaceEnabled") } : {},
-      ...dirty.has("sshStrictHostKeys") ? { sshStrictHostKeys: strictSelect.value === "strict" ? "strict" : "accept-new" } : {}
-    })
-  };
-}
-var init_ssh_workspace_section = __esm({
-  "src/renderer/views/setup/ssh-workspace-section.ts"() {
-    init_helpers();
-    init_inline_status();
-    init_ssh_host_helpers();
-    init_ssh_host_helpers();
+    ];
   }
 });
 
-// src/renderer/views/tool-permissions-panel.ts
-function cloneCatalog(catalog) {
-  return structuredClone(catalog);
+// src/shared/agent-profiles.ts
+function findAgentProfile(profiles, id) {
+  if (id === void 0) return void 0;
+  return profiles?.find((profile) => profile.id === id);
 }
-function groupMatches(group, query) {
-  if (!query) return true;
-  return [group.name, group.origin, group.originDetail, group.status].filter((value) => typeof value === "string").join(" ").toLowerCase().includes(query);
-}
-function matchingTools(group, query) {
-  if (groupMatches(group, query)) return group.tools;
-  return group.tools.filter(
-    (tool) => [tool.name, tool.executionName, tool.description].join(" ").toLowerCase().includes(query)
-  );
-}
-function groupPolicy(tools) {
-  const first = tools[0]?.policy;
-  if (!first || tools.some((tool) => tool.policy !== first)) return "mixed";
-  return first;
-}
-function withPolicy(catalog, toolIds, policy) {
-  return {
-    ...catalog,
-    groups: catalog.groups.map((group) => ({
-      ...group,
-      tools: group.tools.map(
-        (tool) => toolIds.has(tool.id) ? { ...tool, policy, overridden: true } : tool
-      )
-    }))
-  };
-}
-function withDefaults(catalog, toolIds) {
-  return {
-    ...catalog,
-    groups: catalog.groups.map((group) => ({
-      ...group,
-      tools: group.tools.map(
-        (tool) => toolIds.has(tool.id) ? { ...tool, policy: tool.defaultPolicy, overridden: false } : tool
-      )
-    }))
-  };
-}
-function createToolPermissionsPanel(api) {
-  const root = document.createElement("div");
-  root.className = "tool-permissions-panel";
-  const toolbar = document.createElement("div");
-  toolbar.className = "tool-permissions-toolbar";
-  const search = document.createElement("input");
-  search.type = "search";
-  search.className = "tool-permissions-search";
-  search.placeholder = "Search tools or servers\u2026";
-  search.autocomplete = "off";
-  search.spellcheck = false;
-  search.setAttribute("aria-label", "Search tool permissions");
-  const resetAll = document.createElement("button");
-  resetAll.type = "button";
-  resetAll.className = "ui-btn ui-btn-secondary tool-permissions-reset-all";
-  resetAll.textContent = "Reset all to defaults";
-  const status = document.createElement("span");
-  status.className = "tool-permissions-status";
-  status.setAttribute("role", "status");
-  status.setAttribute("aria-live", "polite");
-  toolbar.append(search, resetAll, status);
-  const groups = document.createElement("div");
-  groups.className = "tool-permissions-groups";
-  const empty = document.createElement("p");
-  empty.className = "tool-permissions-empty";
-  empty.hidden = true;
-  root.append(toolbar, groups, empty);
-  let catalog = null;
-  let loading = false;
-  let refreshGeneration = 0;
-  let pendingToolIds = /* @__PURE__ */ new Set();
-  let policyFocus = null;
-  const groupOpenState = /* @__PURE__ */ new Map();
-  const expandedDescriptions = /* @__PURE__ */ new Set();
-  root.addEventListener("focusin", (event) => {
-    const target = event.target;
-    if (!(target instanceof HTMLElement)) return;
-    const policy = target.dataset["policy"];
-    const toolId = target.closest(".tool-permission-row")?.dataset["toolId"];
-    policyFocus = target.classList.contains("tool-permission-choice") && toolId !== void 0 && isToolPermissionPolicy(policy) ? { toolId, policy } : null;
-  });
-  function allToolIds() {
-    return catalog?.groups.flatMap((group) => group.tools.map((tool) => tool.id)) ?? [];
+function newAgentProfileId(name, existing) {
+  const slug2 = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "profile";
+  const taken = new Set(existing.map((profile) => profile.id));
+  for (; ; ) {
+    const id = `${slug2}-${Math.random().toString(36).slice(2, 8).padEnd(6, "0")}`;
+    if (!taken.has(id)) return id;
   }
-  function setBusy(busy) {
-    root.dataset["pending"] = String(busy);
-    search.disabled = loading;
-    resetAll.disabled = busy || loading || !catalog?.groups.some((group) => group.tools.length > 0);
-  }
-  async function mutate(toolIds, optimistic, request) {
-    if (!catalog || toolIds.length === 0 || pendingToolIds.size > 0) return;
-    const before = cloneCatalog(catalog);
-    pendingToolIds = new Set(toolIds);
-    catalog = optimistic(catalog, pendingToolIds);
-    status.textContent = "Saving\u2026";
-    render();
-    try {
-      catalog = await request();
-      status.textContent = "Saved";
-    } catch (error62) {
-      catalog = before;
-      status.textContent = "Could not save: " + errorMessage(error62);
-      status.classList.add("is-error");
-    } finally {
-      pendingToolIds.clear();
-      render();
-    }
-  }
-  function selectPolicy(tool, policy) {
-    if (tool.overridden && tool.policy === policy || tool.disabledPolicies?.includes(policy)) {
-      return;
-    }
-    status.classList.remove("is-error");
-    void mutate(
-      [tool.id],
-      (current, ids) => withPolicy(current, ids, policy),
-      () => api.set({ toolIds: [tool.id], policy })
-    );
-  }
-  function policyControl(tool) {
-    const control = document.createElement("div");
-    control.className = "tool-permission-policy";
-    control.setAttribute("role", "radiogroup");
-    control.setAttribute("aria-label", "Permission for " + tool.name);
-    const buttons = [];
-    for (const policy of TOOL_PERMISSION_POLICIES) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "tool-permission-choice tool-permission-" + policy;
-      button.dataset["policy"] = policy;
-      button.setAttribute("role", "radio");
-      button.setAttribute("aria-checked", String(tool.policy === policy));
-      button.setAttribute("aria-label", POLICY_LABELS[policy] + " for " + tool.name);
-      button.title = POLICY_LABELS[policy];
-      button.tabIndex = (tool.overridden ? tool.policy : tool.defaultPolicy) === policy ? 0 : -1;
-      button.disabled = pendingToolIds.size > 0 || tool.disabledPolicies?.includes(policy) === true;
-      if (tool.disabledPolicies?.includes(policy) && tool.disabledReason) {
-        button.title = tool.disabledReason;
-        button.setAttribute("aria-description", tool.disabledReason);
-      }
-      button.append(POLICY_ICON[policy]("ui-icon ui-icon-sm"));
-      button.addEventListener("click", () => {
-        selectPolicy(tool, policy);
-      });
-      buttons.push(button);
-      control.append(button);
-    }
-    control.addEventListener("keydown", (event) => {
-      const current = buttons.findIndex((button) => button === document.activeElement);
-      if (current < 0) return;
-      let direction = 0;
-      let targetIndex = current;
-      if (event.key === "ArrowRight" || event.key === "ArrowDown") direction = 1;
-      else if (event.key === "ArrowLeft" || event.key === "ArrowUp") direction = -1;
-      else if (event.key === "Home") targetIndex = 0;
-      else if (event.key === "End") targetIndex = buttons.length - 1;
-      else return;
-      event.preventDefault();
-      if (direction !== 0) {
-        for (let offset = 1; offset <= buttons.length; offset += 1) {
-          const candidate = (current + direction * offset + buttons.length) % buttons.length;
-          if (!buttons[candidate]?.disabled) {
-            targetIndex = candidate;
-            break;
-          }
-        }
-      }
-      if (buttons[targetIndex]?.disabled) {
-        const enabledIndex = buttons.findIndex((button) => !button.disabled);
-        if (enabledIndex < 0) return;
-        targetIndex = enabledIndex;
-      }
-      buttons[targetIndex]?.focus();
-      buttons[targetIndex]?.click();
+}
+var AGENT_PROFILES_SETTING, AGENT_PROFILE_NAME_MAX, AGENT_PROFILE_INSTRUCTIONS_MAX, AGENT_PROFILES_MAX, agentProfileSchema, agentProfilesSchema;
+var init_agent_profiles = __esm({
+  "src/shared/agent-profiles.ts"() {
+    init_model_parameters();
+    init_zod();
+    AGENT_PROFILES_SETTING = "agentProfiles";
+    AGENT_PROFILE_NAME_MAX = 64;
+    AGENT_PROFILE_INSTRUCTIONS_MAX = 8192;
+    AGENT_PROFILES_MAX = 50;
+    agentProfileSchema = external_exports.object({
+      id: external_exports.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/),
+      name: external_exports.string().trim().min(1).max(AGENT_PROFILE_NAME_MAX),
+      model: external_exports.string().min(1).max(512).optional(),
+      reasoning: external_exports.enum(REASONING_LEVELS).optional(),
+      instructions: external_exports.string().max(AGENT_PROFILE_INSTRUCTIONS_MAX).optional()
     });
-    return control;
-  }
-  function toolRow(tool) {
-    const row = document.createElement("div");
-    row.className = "tool-permission-row";
-    row.dataset["toolId"] = tool.id;
-    row.dataset["policy"] = tool.policy;
-    row.dataset["overridden"] = String(tool.overridden);
-    if (pendingToolIds.has(tool.id)) row.dataset["pending"] = "true";
-    const copy = document.createElement("div");
-    copy.className = "tool-permission-copy";
-    const title = document.createElement("div");
-    title.className = "tool-permission-name";
-    title.append(tool.name);
-    const inherited = document.createElement("span");
-    inherited.className = "tool-permission-inherited";
-    inherited.textContent = "Default";
-    inherited.title = "Inherited default: " + POLICY_LABELS[tool.defaultPolicy];
-    inherited.setAttribute(
-      "aria-label",
-      "Using inherited default: " + POLICY_LABELS[tool.defaultPolicy]
-    );
-    inherited.hidden = tool.overridden;
-    title.append(inherited);
-    copy.append(title);
-    if (tool.description) {
-      const description = document.createElement("div");
-      description.className = "tool-permission-description";
-      description.id = "tool-description-" + tool.id;
-      description.innerHTML = renderMarkdown(tool.description, {
-        htmlPolicy: "escape-all",
-        sanitizerBackend: {
-          sanitize: (html, config2) => dompurifyBackend.sanitize(html, {
-            ...config2,
-            allowedTags: config2.allowedTags.filter((tag) => tag !== "img")
-          })
-        }
-      });
-      const expandable = tool.description.length > 240 || tool.description.includes("\n");
-      const expanded = expandedDescriptions.has(tool.id);
-      description.classList.toggle("is-collapsed", expandable && !expanded);
-      copy.append(description);
-      if (expandable) {
-        const toggle = document.createElement("button");
-        toggle.type = "button";
-        toggle.className = "tool-permission-description-toggle";
-        toggle.setAttribute("aria-controls", description.id);
-        const updateToggle = () => {
-          const open2 = expandedDescriptions.has(tool.id);
-          toggle.textContent = open2 ? "Show less" : "Show full description";
-          toggle.setAttribute("aria-expanded", String(open2));
-          toggle.setAttribute("aria-label", toggle.textContent + " for " + tool.name);
-          description.classList.toggle("is-collapsed", !open2);
-        };
-        updateToggle();
-        toggle.addEventListener("click", () => {
-          if (expandedDescriptions.has(tool.id)) expandedDescriptions.delete(tool.id);
-          else expandedDescriptions.add(tool.id);
-          updateToggle();
-        });
-        copy.append(toggle);
-      }
-    }
-    const actions = document.createElement("div");
-    actions.className = "tool-permission-actions";
-    actions.append(policyControl(tool));
-    const reset = document.createElement("button");
-    reset.type = "button";
-    reset.className = "tool-permission-reset";
-    reset.textContent = "Use default";
-    reset.setAttribute("aria-label", "Use default permission for " + tool.name);
-    reset.title = "Default: " + POLICY_LABELS[tool.defaultPolicy];
-    reset.hidden = !tool.overridden;
-    reset.disabled = pendingToolIds.size > 0;
-    reset.addEventListener("click", () => {
-      status.classList.remove("is-error");
-      void mutate(
-        [tool.id],
-        (current, ids) => withDefaults(current, ids),
-        () => api.reset({ toolIds: [tool.id] })
-      );
+    agentProfilesSchema = external_exports.array(agentProfileSchema).max(AGENT_PROFILES_MAX).refine((profiles) => new Set(profiles.map((profile) => profile.id)).size === profiles.length, {
+      message: "profile ids must be unique"
     });
-    actions.append(reset);
-    row.append(copy, actions);
-    return row;
   }
-  function groupSelect(group) {
-    const select = document.createElement("select");
-    select.className = "tool-permission-group-select";
-    select.setAttribute("aria-label", "Set all permissions in " + group.name);
-    const current = groupPolicy(group.tools);
-    const mixed = document.createElement("option");
-    mixed.value = "mixed";
-    mixed.textContent = "Mixed";
-    mixed.disabled = true;
-    select.append(mixed);
-    for (const policy of TOOL_PERMISSION_POLICIES) {
-      const option = document.createElement("option");
-      option.value = policy;
-      option.textContent = "Set all to " + POLICY_LABELS[policy].toLowerCase();
-      option.disabled = group.tools.some((tool) => tool.disabledPolicies?.includes(policy) === true);
-      select.append(option);
-    }
-    select.value = current;
-    select.disabled = pendingToolIds.size > 0 || group.tools.length === 0;
-    select.addEventListener("click", (event) => {
-      event.stopPropagation();
-    });
-    select.addEventListener("change", () => {
-      const policy = select.value;
-      if (!isToolPermissionPolicy(policy)) return;
-      const toolIds = group.tools.map((tool) => tool.id);
-      status.classList.remove("is-error");
-      void mutate(
-        toolIds,
-        (catalogBefore, ids) => withPolicy(catalogBefore, ids, policy),
-        () => api.set({ toolIds, policy })
-      );
-    });
-    return select;
-  }
-  function groupView(group, visibleTools) {
-    const details = document.createElement("details");
-    details.className = "tool-permission-group";
-    details.dataset["groupId"] = group.id;
-    details.open = groupOpenState.get(group.id) ?? true;
-    details.addEventListener("toggle", () => {
-      groupOpenState.set(group.id, details.open);
-    });
-    const summary = document.createElement("summary");
-    summary.className = "tool-permission-group-summary";
-    const disclosure = chevronDownIcon("ui-icon tool-permission-group-chevron");
-    const heading = document.createElement("span");
-    heading.className = "tool-permission-group-name";
-    heading.textContent = group.name;
-    const count = document.createElement("span");
-    count.className = "tool-permission-count";
-    count.textContent = String(group.tools.length);
-    count.setAttribute("aria-label", String(group.tools.length) + " tools");
-    summary.append(disclosure, heading, count);
-    if (group.origin) {
-      const origin = document.createElement("span");
-      origin.className = "tool-permission-group-origin";
-      origin.textContent = group.origin;
-      origin.title = group.originDetail ?? group.origin;
-      summary.append(origin);
-    }
-    if (group.status) {
-      const connection = document.createElement("span");
-      connection.className = "tool-permission-group-status";
-      connection.dataset["status"] = group.status;
-      connection.textContent = group.status;
-      summary.append(connection);
-    }
-    summary.append(groupSelect(group));
-    const list = document.createElement("div");
-    list.className = "tool-permission-list";
-    for (const tool of visibleTools) list.append(toolRow(tool));
-    if (visibleTools.length === 0) {
-      const noTools = document.createElement("p");
-      noTools.className = "tool-permission-group-empty";
-      noTools.textContent = "This server has not reported any tools.";
-      list.append(noTools);
-    }
-    details.append(summary, list);
-    return details;
-  }
-  function render() {
-    for (const detail of groups.querySelectorAll(".tool-permission-group")) {
-      const id = detail.dataset["groupId"];
-      if (id) groupOpenState.set(id, detail.open);
-    }
-    groups.innerHTML = "";
-    const query = search.value.trim().toLowerCase();
-    let visibleGroupCount = 0;
-    for (const group of catalog?.groups ?? []) {
-      const visibleTools = matchingTools(group, query);
-      if (visibleTools.length === 0 && !groupMatches(group, query)) continue;
-      visibleGroupCount += 1;
-      groups.append(groupView(group, visibleTools));
-    }
-    empty.hidden = visibleGroupCount > 0;
-    empty.textContent = query ? "No tools or servers match \u201C" + search.value.trim() + "\u201D." : "No tools are available yet.";
-    resetAll.hidden = !catalog?.groups.some((group) => group.tools.some((tool) => tool.overridden));
-    setBusy(pendingToolIds.size > 0);
-    if (policyFocus && pendingToolIds.size === 0) {
-      const focusedRow = [...groups.querySelectorAll(".tool-permission-row")].find(
-        (row) => row.dataset["toolId"] === policyFocus?.toolId
-      );
-      const focusedChoice = [
-        ...focusedRow?.querySelectorAll(".tool-permission-choice") ?? []
-      ].find((choice) => choice.dataset["policy"] === policyFocus?.policy);
-      focusedChoice?.focus({ preventScroll: true });
-    }
-  }
-  async function refresh(signal) {
-    if (signal?.aborted) return;
-    const request = ++refreshGeneration;
-    loading = true;
-    status.classList.remove("is-error");
-    status.textContent = "Loading\u2026";
-    setBusy(false);
-    try {
-      const loaded = await api.list();
-      if (signal?.aborted || request !== refreshGeneration) return;
-      catalog = loaded;
-      status.textContent = "";
-    } catch (error62) {
-      if (signal?.aborted || request !== refreshGeneration) return;
-      status.textContent = "Could not load tool permissions: " + errorMessage(error62);
-      status.classList.add("is-error");
-    } finally {
-      if (request === refreshGeneration) {
-        loading = false;
-        if (!signal?.aborted) render();
-      }
-    }
-  }
-  search.addEventListener("input", render);
-  resetAll.addEventListener("click", () => {
-    const toolIds = allToolIds();
-    status.classList.remove("is-error");
-    void mutate(
-      toolIds,
-      (current, ids) => withDefaults(current, ids),
-      () => api.reset({ toolIds })
-    );
-  });
-  render();
-  return {
-    root,
-    refresh,
-    focusSearch: () => {
-      search.focus();
-    }
-  };
-}
-var isToolPermissionPolicy, POLICY_LABELS, POLICY_ICON;
-var init_tool_permissions_panel = __esm({
-  "src/renderer/views/tool-permissions-panel.ts"() {
-    init_dist();
-    init_sanitize_dompurify();
-    init_errors4();
-    init_member_of2();
-    init_tool_permissions();
-    init_icons();
-    isToolPermissionPolicy = memberOf(TOOL_PERMISSION_POLICIES);
-    POLICY_LABELS = {
-      allow: "Always allow",
-      ask: "Always ask",
-      block: "Blocked"
+});
+
+// src/shared/openai-cloud-agent.ts
+var DEFAULT_OPENAI_AGENT_MODEL, OPENAI_AGENT_GROUP, OPENAI_AGENT_RETENTION_NOTICE;
+var init_openai_cloud_agent = __esm({
+  "src/shared/openai-cloud-agent.ts"() {
+    DEFAULT_OPENAI_AGENT_MODEL = "gpt-6.1-sol";
+    OPENAI_AGENT_GROUP = "OpenAI Cloud Agent (prototype)";
+    OPENAI_AGENT_RETENTION_NOTICE = {
+      label: "No ZDR",
+      detail: "OpenAI-hosted Agents API sessions retain session data and are not eligible for zero data retention (ZDR)."
     };
-    POLICY_ICON = {
-      allow: checkIcon,
-      ask: shieldIcon,
-      block: banIcon
+  }
+});
+
+// src/shared/acp-retention.ts
+var ACP_RETENTION_NOTICE;
+var init_acp_retention = __esm({
+  "src/shared/acp-retention.ts"() {
+    ACP_RETENTION_NOTICE = {
+      label: "ZDR not verified",
+      detail: "Zero data retention has not been verified for this agent route. The agent\u2019s signed-in account and upstream model provider determine retention and training. Running the agent on this device does not mean its model runs locally. Review the agent\u2019s data policy and account controls before sharing sensitive content."
+    };
+  }
+});
+
+// packages/llm/src/chatgpt-plan.ts
+function chatGptPlanModelValue(clientId, model) {
+  return `${CHATGPT_PLAN_MODEL_PREFIX}${clientId}#${model}`;
+}
+function parseChatGptPlanModel(value) {
+  const selection2 = parseModelSelection(value);
+  if (selection2.namespace !== "chatgpt-plan") return null;
+  if (!selection2.agent || !selection2.id) throw new Error("Choose a ChatGPT account and model.");
+  return { clientId: selection2.agent, model: selection2.id };
+}
+var init_chatgpt_plan = __esm({
+  "packages/llm/src/chatgpt-plan.ts"() {
+    init_model_selection();
+    init_reserved_prefixes();
+  }
+});
+
+// packages/llm/src/local-model-benchmarks.generated.ts
+var LOCAL_MODEL_BENCHMARKS;
+var init_local_model_benchmarks_generated = __esm({
+  "packages/llm/src/local-model-benchmarks.generated.ts"() {
+    LOCAL_MODEL_BENCHMARKS = {
+      "qwen/qwen2.5-coder-32b": {
+        "aider-edit": {
+          value: 72.9,
+          source: "Aider edit leaderboard (ollama/qwen2.5-coder:32b)",
+          asOf: "2024-11-28",
+          measuredBitsPerWeight: 4.5
+        },
+        "aider-polyglot": {
+          value: 16.4,
+          source: "Aider polyglot leaderboard (Qwen2.5-Coder-32B-Instruct)",
+          asOf: "2024-12-26",
+          measuredBitsPerWeight: 16
+        },
+        "humaneval-plus": {
+          value: 87.2,
+          source: "EvalPlus HumanEval+ leaderboard (Qwen2.5-Coder-32B-Instruct)",
+          asOf: "2026-07-07",
+          measuredBitsPerWeight: 16
+        }
+      }
     };
   }
 });
@@ -43134,135 +42645,6 @@ var init_model_intellect = __esm({
   }
 });
 
-// packages/llm/src/pareto-frontier.ts
-function blendedRate(inputPerMTok, outputPerMTok) {
-  return 0.8 * inputPerMTok + 0.2 * outputPerMTok;
-}
-function blendedPricePerMTok(info) {
-  return blendedRate(info.inputPricePerMTok, info.outputPricePerMTok);
-}
-function costOnAxis(c2, axis) {
-  if (axis === "blended") return c2.costPerMTok;
-  if (c2.local || c2.plan) return 0;
-  if (typeof c2.costPerTask === "number" && Number.isFinite(c2.costPerTask) && c2.costPerTask > 0) {
-    return c2.costPerTask;
-  }
-  return null;
-}
-function projectOntoCostAxis(candidates, axis) {
-  if (axis === "blended") {
-    return { plotted: [...candidates], missingAxisCost: [] };
-  }
-  const plotted = [];
-  const missingAxisCost = [];
-  for (const c2 of candidates) {
-    const cost = costOnAxis(c2, axis);
-    if (cost === null) {
-      missingAxisCost.push(c2);
-      continue;
-    }
-    const priorBlended = c2.blendedCostPerMTok ?? (c2.planDetail !== void 0 ? c2.planDetail.apiPricePerMTok : c2.costPerMTok);
-    const next = {
-      ...c2,
-      costPerMTok: cost
-    };
-    if (cost !== priorBlended || c2.plan || c2.local) {
-      next.blendedCostPerMTok = priorBlended;
-    }
-    plotted.push(next);
-  }
-  return { plotted, missingAxisCost };
-}
-function computeParetoFrontier(candidates) {
-  const sorted = [...candidates].sort(
-    (a4, b2) => a4.costPerMTok - b2.costPerMTok || b2.intellect - a4.intellect || a4.id.localeCompare(b2.id)
-  );
-  const out = [];
-  let best = null;
-  for (const c2 of sorted) {
-    if (best && c2.intellect <= best.intellect) {
-      out.push({ ...c2, onFrontier: false, dominatedBy: best.id });
-      continue;
-    }
-    const point = { ...c2, onFrontier: true };
-    out.push(point);
-    best = point;
-  }
-  return out;
-}
-function groupByModelIdentity(candidates) {
-  const groups = /* @__PURE__ */ new Map();
-  for (const c2 of candidates) {
-    const key = resolveIntellectModelId(c2.id) ?? c2.id;
-    const list = groups.get(key) ?? [];
-    list.push(c2);
-    groups.set(key, list);
-  }
-  const out = [];
-  for (const list of groups.values()) {
-    const sorted = [...list].sort(
-      (a4, b2) => a4.costPerMTok - b2.costPerMTok || Number(b2.planAccess !== void 0) - Number(a4.planAccess !== void 0) || a4.id.localeCompare(b2.id)
-    );
-    const best = sorted[0];
-    if (!best) continue;
-    const others = sorted.slice(1).map((c2) => ({ id: c2.id, costPerMTok: c2.costPerMTok }));
-    out.push(others.length > 0 ? { ...best, prices: others } : best);
-  }
-  return out;
-}
-function frontierForKnownModels(extra = [], adjust, keepRoute) {
-  const cloud = [];
-  for (const id of TRACKED_MODELS) {
-    const info = getModelInfo(id);
-    const score = getIntellectScore(id);
-    if (!info || !score) continue;
-    cloud.push({
-      id,
-      intellect: score.value,
-      intellectEstimated: score.estimated === true,
-      costPerMTok: blendedPricePerMTok(info)
-    });
-  }
-  const candidates = keepRoute ? [...cloud, ...extra].filter(keepRoute) : [...cloud, ...extra];
-  const adjusted = adjust ? candidates.map(adjust) : candidates;
-  return computeParetoFrontier(groupByModelIdentity(adjusted));
-}
-var init_pareto_frontier = __esm({
-  "packages/llm/src/pareto-frontier.ts"() {
-    init_model_catalog();
-    init_model_intellect();
-  }
-});
-
-// packages/llm/src/local-model-benchmarks.generated.ts
-var LOCAL_MODEL_BENCHMARKS;
-var init_local_model_benchmarks_generated = __esm({
-  "packages/llm/src/local-model-benchmarks.generated.ts"() {
-    LOCAL_MODEL_BENCHMARKS = {
-      "qwen/qwen2.5-coder-32b": {
-        "aider-edit": {
-          value: 72.9,
-          source: "Aider edit leaderboard (ollama/qwen2.5-coder:32b)",
-          asOf: "2024-11-28",
-          measuredBitsPerWeight: 4.5
-        },
-        "aider-polyglot": {
-          value: 16.4,
-          source: "Aider polyglot leaderboard (Qwen2.5-Coder-32B-Instruct)",
-          asOf: "2024-12-26",
-          measuredBitsPerWeight: 16
-        },
-        "humaneval-plus": {
-          value: 87.2,
-          source: "EvalPlus HumanEval+ leaderboard (Qwen2.5-Coder-32B-Instruct)",
-          asOf: "2026-07-07",
-          measuredBitsPerWeight: 16
-        }
-      }
-    };
-  }
-});
-
 // packages/llm/src/quant-penalty.ts
 function baseDrop(bitsPerWeight) {
   if (!(bitsPerWeight > 0)) return MAX_DROP;
@@ -43454,172 +42836,6 @@ var init_local_model_catalog = __esm({
   }
 });
 
-// packages/llm/src/frontier-candidates.ts
-function localFrontierCandidates(localModelIds) {
-  const out = [];
-  for (const id of localModelIds) {
-    const cap = getLocalModelCapability(id);
-    if (!cap) continue;
-    const score = localBenchmarkScore(cap, "aa-intelligence");
-    if (!score) continue;
-    out.push({
-      id,
-      intellect: score.value,
-      intellectEstimated: score.estimated === true,
-      costPerMTok: 0,
-      local: true,
-      quant: cap.quant
-    });
-  }
-  return out;
-}
-function extraProviderFrontierCandidates(providers) {
-  const out = [];
-  for (const provider of providers) {
-    for (const m2 of provider.models) {
-      if (typeof m2.inputPricePerMTok !== "number") continue;
-      const score = getIntellectScore(m2.id);
-      if (!score) continue;
-      out.push({
-        id: `${provider.id}:${m2.id}`,
-        intellect: score.value,
-        intellectEstimated: score.estimated === true,
-        costPerMTok: blendedRate(m2.inputPricePerMTok, m2.outputPricePerMTok ?? m2.inputPricePerMTok)
-      });
-    }
-  }
-  return out;
-}
-function openRouterFrontierCandidates(models) {
-  const out = [];
-  for (const model of models) {
-    const input2 = model.inputPricePerMTok;
-    const output2 = model.outputPricePerMTok;
-    if (input2 === null || output2 === null || input2 < 0 || output2 < 0) continue;
-    const id = `openrouter:${model.id}`;
-    const score = getIntellectScore(id);
-    if (!score) continue;
-    out.push({
-      id,
-      intellect: score.value,
-      intellectEstimated: score.estimated === true,
-      costPerMTok: blendedRate(input2, output2)
-    });
-  }
-  return out;
-}
-var init_frontier_candidates = __esm({
-  "packages/llm/src/frontier-candidates.ts"() {
-    init_pareto_frontier();
-    init_model_intellect();
-    init_local_model_catalog();
-  }
-});
-
-// packages/llm/src/live-intellect.ts
-function canonicalAnchors() {
-  const out = /* @__PURE__ */ new Map();
-  for (const [modelId, entries] of Object.entries(MODEL_INTELLECT_RAW)) {
-    const canonical = entries.find((m2) => m2.indexVersion === CANONICAL_INTELLECT_VERSION);
-    if (canonical) out.set(modelId, canonical.value);
-  }
-  return out;
-}
-function normalizeIndexVersion(version2) {
-  if (version2 === void 0) return void 0;
-  const s2 = String(version2).trim();
-  if (s2.length === 0) return void 0;
-  return s2.startsWith("v") ? s2 : `v${s2}`;
-}
-function verifyLiveCohort(liveModels, reportedVersion) {
-  const anchors = canonicalAnchors();
-  let anchorsChecked = 0;
-  let maxDrift = 0;
-  const mismatches = [];
-  for (const live of liveModels) {
-    const modelId = resolveIntellectModelId(live.id);
-    if (modelId === null) continue;
-    const canonical = anchors.get(modelId);
-    if (canonical === void 0) continue;
-    anchorsChecked += 1;
-    const drift = Math.abs(live.intellect - canonical);
-    maxDrift = Math.max(maxDrift, drift);
-    if (drift > LIVE_ANCHOR_TOLERANCE) mismatches.push({ modelId, canonical, live: live.intellect });
-  }
-  const version2 = normalizeIndexVersion(reportedVersion);
-  const versionMismatch = version2 !== void 0 && version2 !== CANONICAL_INTELLECT_VERSION;
-  const agreeingAnchors = anchorsChecked - mismatches.length;
-  const mismatchesAreAMinority = mismatches.length <= Math.floor(anchorsChecked * MAX_MISMATCH_FRACTION);
-  return {
-    verified: !versionMismatch && agreeingAnchors >= MIN_LIVE_ANCHORS && mismatchesAreAMinority,
-    anchorsChecked,
-    agreeingAnchors,
-    maxDrift,
-    mismatches,
-    ...version2 !== void 0 ? { reportedVersion: version2 } : {},
-    ...versionMismatch ? { versionMismatch: true } : {}
-  };
-}
-function liveBlendedPrice(live) {
-  const input2 = live.inputPricePerMTok;
-  if (typeof input2 !== "number" || !(input2 > 0)) return null;
-  const output2 = live.outputPricePerMTok;
-  return blendedRate(input2, typeof output2 === "number" && output2 > 0 ? output2 : input2);
-}
-function liveIntellectCandidates(liveModels, reportedVersion) {
-  const verification = verifyLiveCohort(liveModels, reportedVersion);
-  if (!verification.verified) {
-    return { candidates: [], hintOnly: [], pricedCurated: [], verification };
-  }
-  const candidates = [];
-  const hintOnly = [];
-  const pricedCurated = [];
-  const curatedSeen = /* @__PURE__ */ new Set();
-  for (const live of liveModels) {
-    const price = liveBlendedPrice(live);
-    const resolved2 = resolveIntellectModelId(live.id);
-    if (resolved2 !== null) {
-      if (price === null || curatedSeen.has(resolved2)) continue;
-      const curated = getIntellectScore(resolved2);
-      if (!curated) continue;
-      curatedSeen.add(resolved2);
-      pricedCurated.push({
-        id: resolved2,
-        intellect: curated.value,
-        intellectEstimated: curated.estimated === true,
-        costPerMTok: price,
-        ...typeof live.costPerTask === "number" ? { costPerTask: live.costPerTask } : {}
-      });
-      continue;
-    }
-    if (price !== null) {
-      candidates.push({
-        id: live.id,
-        intellect: live.intellect,
-        intellectEstimated: true,
-        costPerMTok: price,
-        // Uncurated = the user can't route to it without setting up a provider.
-        discovery: true,
-        ...typeof live.costPerTask === "number" ? { costPerTask: live.costPerTask } : {}
-      });
-    } else {
-      hintOnly.push({ id: live.id, intellect: live.intellect });
-    }
-  }
-  return { candidates, hintOnly, pricedCurated, verification };
-}
-var LIVE_ANCHOR_TOLERANCE, MIN_LIVE_ANCHORS, MAX_MISMATCH_FRACTION;
-var init_live_intellect = __esm({
-  "packages/llm/src/live-intellect.ts"() {
-    init_model_intellect_generated();
-    init_model_intellect();
-    init_pareto_frontier();
-    LIVE_ANCHOR_TOLERANCE = 1;
-    MIN_LIVE_ANCHORS = 2;
-    MAX_MISMATCH_FRACTION = 0.25;
-  }
-});
-
 // packages/llm/src/composite-intellect.ts
 function compositeIntellect(model) {
   if (model.benchmarks["aa-intelligence"]) return null;
@@ -43666,6 +42882,153 @@ var init_composite_intellect = __esm({
       "multipl-e": 0.5
     };
     MIN_COMPOSITE_AXES = 3;
+  }
+});
+
+// packages/llm/src/pareto-frontier.ts
+function blendedRate(inputPerMTok, outputPerMTok) {
+  return 0.8 * inputPerMTok + 0.2 * outputPerMTok;
+}
+function blendedPricePerMTok(info) {
+  return blendedRate(info.inputPricePerMTok, info.outputPricePerMTok);
+}
+function costOnAxis(c2, axis) {
+  if (axis === "blended") return c2.costPerMTok;
+  if (c2.local || c2.plan) return 0;
+  if (typeof c2.costPerTask === "number" && Number.isFinite(c2.costPerTask) && c2.costPerTask > 0) {
+    return c2.costPerTask;
+  }
+  return null;
+}
+function projectOntoCostAxis(candidates, axis) {
+  if (axis === "blended") {
+    return { plotted: [...candidates], missingAxisCost: [] };
+  }
+  const plotted = [];
+  const missingAxisCost = [];
+  for (const c2 of candidates) {
+    const cost = costOnAxis(c2, axis);
+    if (cost === null) {
+      missingAxisCost.push(c2);
+      continue;
+    }
+    const priorBlended = c2.blendedCostPerMTok ?? (c2.planDetail !== void 0 ? c2.planDetail.apiPricePerMTok : c2.costPerMTok);
+    const next = {
+      ...c2,
+      costPerMTok: cost
+    };
+    if (cost !== priorBlended || c2.plan || c2.local) {
+      next.blendedCostPerMTok = priorBlended;
+    }
+    plotted.push(next);
+  }
+  return { plotted, missingAxisCost };
+}
+function computeParetoFrontier(candidates) {
+  const sorted = [...candidates].sort(
+    (a4, b2) => a4.costPerMTok - b2.costPerMTok || b2.intellect - a4.intellect || a4.id.localeCompare(b2.id)
+  );
+  const out = [];
+  let best = null;
+  for (const c2 of sorted) {
+    if (best && c2.intellect <= best.intellect) {
+      out.push({ ...c2, onFrontier: false, dominatedBy: best.id });
+      continue;
+    }
+    const point = { ...c2, onFrontier: true };
+    out.push(point);
+    best = point;
+  }
+  return out;
+}
+function groupByModelIdentity(candidates) {
+  const groups = /* @__PURE__ */ new Map();
+  for (const c2 of candidates) {
+    const key = resolveIntellectModelId(c2.id) ?? c2.id;
+    const list = groups.get(key) ?? [];
+    list.push(c2);
+    groups.set(key, list);
+  }
+  const out = [];
+  for (const list of groups.values()) {
+    const sorted = [...list].sort(
+      (a4, b2) => a4.costPerMTok - b2.costPerMTok || Number(b2.planAccess !== void 0) - Number(a4.planAccess !== void 0) || a4.id.localeCompare(b2.id)
+    );
+    const best = sorted[0];
+    if (!best) continue;
+    const others = sorted.slice(1).map((c2) => ({ id: c2.id, costPerMTok: c2.costPerMTok }));
+    out.push(others.length > 0 ? { ...best, prices: others } : best);
+  }
+  return out;
+}
+function frontierForKnownModels(extra = [], adjust, keepRoute) {
+  const cloud = [];
+  for (const id of TRACKED_MODELS) {
+    const info = getModelInfo(id);
+    const score = getIntellectScore(id);
+    if (!info || !score) continue;
+    cloud.push({
+      id,
+      intellect: score.value,
+      intellectEstimated: score.estimated === true,
+      costPerMTok: blendedPricePerMTok(info)
+    });
+  }
+  const candidates = keepRoute ? [...cloud, ...extra].filter(keepRoute) : [...cloud, ...extra];
+  const adjusted = adjust ? candidates.map(adjust) : candidates;
+  return computeParetoFrontier(groupByModelIdentity(adjusted));
+}
+var init_pareto_frontier = __esm({
+  "packages/llm/src/pareto-frontier.ts"() {
+    init_model_catalog();
+    init_model_intellect();
+  }
+});
+
+// packages/llm/src/intellect-hints.ts
+function isOnCloudFrontier(id) {
+  cloudFrontierIds ??= new Set(
+    frontierForKnownModels().filter((p2) => p2.onFrontier).map((p2) => p2.id)
+  );
+  return cloudFrontierIds.has(id);
+}
+function formatPrice(perMTok) {
+  const rounded = Number.isInteger(perMTok) ? String(perMTok) : perMTok.toFixed(2);
+  return `$${rounded}/MTok`;
+}
+function cloudModelIntellectHint(id) {
+  const score = getIntellectScore(id);
+  const info = getModelInfo(id);
+  const parts = [];
+  if (score) parts.push(`intellect ${score.estimated ? "~" : ""}${String(score.value)}`);
+  if (info) parts.push(formatPrice(blendedPricePerMTok(info)));
+  if (score && info && isOnCloudFrontier(id)) parts.push("frontier");
+  return parts.length > 0 ? parts.join(" \xB7 ") : null;
+}
+function modelIntellectHint(idOrLabel) {
+  const score = getIntellectScore(idOrLabel);
+  if (!score) return null;
+  return `intellect ${score.estimated ? "~" : ""}${String(score.value)}`;
+}
+function localModelIntellectHint(id) {
+  const cap = getLocalModelCapability(id);
+  if (!cap) return null;
+  const score = localBenchmarkScore(cap, "aa-intelligence");
+  if (score) return `intellect ${score.estimated ? "~" : ""}${String(score.value)}`;
+  const composite = compositeIntellect(cap);
+  if (composite)
+    return `composite ${String(composite.value)} (${String(composite.axes.length)} axes)`;
+  return null;
+}
+var cloudFrontierIds;
+var init_intellect_hints = __esm({
+  "packages/llm/src/intellect-hints.ts"() {
+    init_composite_intellect();
+    init_local_model_catalog();
+    init_model_catalog();
+    init_model_intellect();
+    init_pareto_frontier();
+    cloudFrontierIds = null;
   }
 });
 
@@ -44224,6 +43587,57 @@ var init_provider_metadata2 = __esm({
   }
 });
 
+// packages/llm/src/extra-providers.ts
+function isLocalBaseUrl(baseUrl) {
+  try {
+    let host = new URL(baseUrl).hostname.toLowerCase();
+    const bracketed = /^\[(.*)\]$/.exec(host);
+    if (bracketed) host = bracketed[1] ?? host;
+    return host === "localhost" || host.endsWith(".localhost") || // Entire 127.0.0.0/8 loopback range.
+    /^127(?:\.\d{1,3}){3}$/.test(host) || host === "0.0.0.0" || host === "::1" || host === "::";
+  } catch {
+    return false;
+  }
+}
+function extraProviderDisplayLabel(model, _providers = []) {
+  return extraProviderModelId(model);
+}
+function extraProviderSlugFromModel(model) {
+  const selection2 = parseModelSelection(model);
+  return selection2.namespace === "extra-provider" ? selection2.slug : null;
+}
+function extraProviderModelId(model) {
+  const selection2 = parseModelSelection(model);
+  return selection2.namespace === "extra-provider" ? selection2.id : model;
+}
+function toExtraProviderModel(slug2, modelId) {
+  return `${slug2}:${modelId}`;
+}
+var DEFAULT_EXTRA_PROVIDER_CONTEXT, BUILTIN_EXTRA_PROVIDERS, BUILTIN_EXTRA_PROVIDER_SLUGS, BUILTIN_BY_SLUG;
+var init_extra_providers = __esm({
+  "packages/llm/src/extra-providers.ts"() {
+    init_unknown_value();
+    init_credential_url();
+    init_provider_metadata2();
+    init_model_selection();
+    init_pareto_frontier();
+    DEFAULT_EXTRA_PROVIDER_CONTEXT = 128e3;
+    BUILTIN_EXTRA_PROVIDERS = PROVIDER_PRESETS.map((preset) => ({
+      ...preset,
+      prefix: `${preset.id}:`,
+      builtin: true,
+      local: isLocalBaseUrl(preset.baseUrl),
+      // One default for presets and user customs alike — the catalog only records
+      // a fallback when it genuinely differs (see provider-metadata.ts).
+      fallbackContextWindow: preset.fallbackContextWindow ?? DEFAULT_EXTRA_PROVIDER_CONTEXT
+    }));
+    BUILTIN_EXTRA_PROVIDER_SLUGS = BUILTIN_EXTRA_PROVIDERS.map(
+      (p2) => p2.id
+    );
+    BUILTIN_BY_SLUG = new Map(BUILTIN_EXTRA_PROVIDERS.map((p2) => [p2.id, p2]));
+  }
+});
+
 // packages/llm/src/data-policies.ts
 function hostFromBaseUrl(baseUrl) {
   if (!baseUrl) return null;
@@ -44364,126 +43778,96 @@ var init_data_policies = __esm({
   }
 });
 
-// src/shared/plan-inclusion.ts
-function claudeModelFamily(modelId) {
-  const id = modelId.toLowerCase();
-  if (id.includes("fable")) return "fable";
-  if (id.includes("opus")) return "opus";
-  if (id.includes("sonnet")) return "sonnet";
-  if (id.includes("haiku")) return "haiku";
-  return null;
-}
-function claudeGoverningWindowIds(modelId) {
-  const family = claudeModelFamily(modelId);
-  const ids = [];
-  if (family) ids.push(`seven_day_${family}`);
-  ids.push("seven_day", "five_hour");
-  return ids;
-}
-function governingWindowIds(provider, modelId) {
-  switch (provider) {
-    case "claude":
-      return modelId ? claudeGoverningWindowIds(modelId) : ["seven_day", "five_hour"];
-    case "cursor":
-      return ["total", "auto"];
-    case "codex":
-      return ["primary", "secondary"];
-    case "huggingface":
-      return ["inference_providers"];
-  }
-}
-function providerWindows(snapshot, provider) {
-  const result = snapshot.providers.find((r2) => r2.provider === provider);
-  return result && result.status === "ok" ? result.usage.windows : null;
-}
-function resolvePlanInclusion(provider, modelId, snapshot) {
-  const windows = providerWindows(snapshot, provider);
-  if (!windows || windows.length === 0) return null;
-  const availability = modelId ? providerModelAvailability(snapshot, provider, modelId) : void 0;
-  const govern = new Set(governingWindowIds(provider, modelId));
-  let applicable = windows.filter((w3) => govern.has(w3.id));
-  if (availability === true) {
-    const pool = windows.filter((w3) => w3.id.startsWith("chatpass_"));
-    if (pool.length > 0) applicable = pool;
-  } else if (availability === false && applicable.length === 0) {
-    applicable = windows.slice(0, 1);
-  }
-  if (applicable.length === 0) return null;
-  const binding = applicable.reduce(
-    (tightest, w3) => w3.usedPercent > tightest.usedPercent ? w3 : tightest
-  );
-  return {
-    provider,
-    windowId: binding.id,
-    windowLabel: binding.label,
-    usedPercent: binding.usedPercent,
-    resetsAt: binding.resetsAt,
-    exhausted: availability === false || availability !== true && binding.usedPercent >= 100
-  };
-}
-function providerModelAvailability(snapshot, provider, modelId) {
-  const result = snapshot.providers.find((r2) => r2.provider === provider);
-  if (!result || result.status !== "ok") return void 0;
-  return result.usage.modelAvailability?.[modelId.toLowerCase()];
-}
-function applyPlanCoverage(candidate, snapshot, options = {}) {
-  const mode = options.mode ?? "plan";
-  if (mode === "inference" || !snapshot) return candidate;
-  const access = candidate.planAccess;
-  if (!access) return candidate;
-  const inclusion = resolvePlanInclusion(access.provider, access.modelId, snapshot);
-  if (!inclusion) return candidate;
-  const exhaustion = options.windowExhaustion?.get(inclusion.windowId);
-  const expectedExhausted = mode === "expected" && exhaustion !== void 0 && exhaustion.total > 0 && exhaustion.hit / exhaustion.total >= EXPECTED_PLAN_EXHAUSTION_THRESHOLD;
-  const priorLimitHits = mode === "expected" && exhaustion && exhaustion.total > 0 ? { hit: exhaustion.hit, total: exhaustion.total } : void 0;
-  if (inclusion.exhausted || expectedExhausted) {
-    return {
-      ...candidate,
-      planLimitReached: {
-        label: inclusion.windowLabel,
-        resetsAt: inclusion.resetsAt,
-        ...priorLimitHits ? { priorLimitHits } : {}
-      }
-    };
-  }
-  return {
-    ...candidate,
-    costPerMTok: 0,
-    plan: inclusion.windowLabel,
-    planDetail: {
-      usedPercent: inclusion.usedPercent,
-      resetsAt: inclusion.resetsAt,
-      apiPricePerMTok: candidate.costPerMTok,
-      ...priorLimitHits ? { priorLimitHits } : {}
-    }
-  };
-}
-var EXPECTED_PLAN_EXHAUSTION_THRESHOLD;
-var init_plan_inclusion = __esm({
-  "src/shared/plan-inclusion.ts"() {
-    EXPECTED_PLAN_EXHAUSTION_THRESHOLD = 0.5;
+// src/shared/managed-agents.ts
+var DEFAULT_MANAGED_AGENT_MODEL;
+var init_managed_agents = __esm({
+  "src/shared/managed-agents.ts"() {
+    DEFAULT_MANAGED_AGENT_MODEL = "claude-opus-4-8";
   }
 });
 
-// packages/llm/src/agent-model-identity.ts
-function resolveAgentModelIdentity(...forms) {
-  const named = forms.filter(isNonEmptyString);
-  for (const form of named) {
-    const id = resolveIntellectModelId(form);
-    if (id !== null && getIntellectScore(id)) return id;
+// packages/thread-store/src/remote-agent-provider.ts
+var REMOTE_AGENT_PROVIDER_OPENAI, REMOTE_AGENT_PROVIDER_CURSOR, REMOTE_AGENT_PROVIDER_ANTHROPIC, REMOTE_AGENT_PROVIDERS, isRemoteAgentProvider;
+var init_remote_agent_provider = __esm({
+  "packages/thread-store/src/remote-agent-provider.ts"() {
+    init_member_of();
+    REMOTE_AGENT_PROVIDER_OPENAI = "openai";
+    REMOTE_AGENT_PROVIDER_CURSOR = "cursor";
+    REMOTE_AGENT_PROVIDER_ANTHROPIC = "anthropic";
+    REMOTE_AGENT_PROVIDERS = [
+      REMOTE_AGENT_PROVIDER_OPENAI,
+      REMOTE_AGENT_PROVIDER_CURSOR,
+      REMOTE_AGENT_PROVIDER_ANTHROPIC
+    ];
+    isRemoteAgentProvider = memberOf(REMOTE_AGENT_PROVIDERS);
   }
-  for (const form of named) {
-    const labelled2 = claudeModelIdFromLabel(form);
-    const id = labelled2 === null ? null : resolveIntellectModelId(labelled2);
-    if (id !== null && getIntellectScore(id)) return id;
-  }
-  return null;
+});
+
+// src/shared/remote-agent.ts
+function remoteAgentModelValue(provider, model) {
+  return model ? `${REMOTE_AGENT_MODEL_PREFIX}${provider}${REMOTE_AGENT_MODEL_SEP}${model}` : `${REMOTE_AGENT_MODEL_PREFIX}${provider}`;
 }
-var init_agent_model_identity = __esm({
-  "packages/llm/src/agent-model-identity.ts"() {
-    init_model_intellect();
-    init_model_label();
-    init_nullish();
+function parseRemoteAgentModelSelection(model) {
+  const selection2 = parseModelSelection(model);
+  if (selection2.namespace !== "remote-agent") return null;
+  const provider = selection2.agent;
+  if (!isRemoteAgentProvider(provider)) return null;
+  return selection2.id ? { provider, model: selection2.id } : { provider };
+}
+function parseRemoteAgentModel(model) {
+  return parseRemoteAgentModelSelection(model)?.provider ?? null;
+}
+function remoteAgentGroupLabel(provider) {
+  return REMOTE_AGENT_MODELS.find((option) => option.provider === provider)?.label ?? provider;
+}
+function remoteAgentDisplayLabel(model, catalog = []) {
+  const selection2 = parseRemoteAgentModelSelection(model);
+  if (!selection2) return model;
+  const title = remoteAgentGroupLabel(selection2.provider);
+  if (!selection2.model) return title;
+  const catalogLabel = catalog.find((entry) => entry.id === selection2.model)?.label;
+  return `${title} \u2014 ${catalogLabel ?? cloudModelDisplayLabel(selection2.model)}`;
+}
+var DEFAULT_CURSOR_AGENT_BASE_URL, CURSOR_AGENTS_WEB_URL, REMOTE_AGENT_MODEL_SEP, REMOTE_AGENT_MODELS, MANAGED_AGENT_PICKER_MODELS, MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT;
+var init_remote_agent = __esm({
+  "src/shared/remote-agent.ts"() {
+    init_reserved_prefixes();
+    init_reserved_prefixes();
+    init_model_selection();
+    init_model_catalog();
+    init_managed_agents();
+    init_unknown_value3();
+    init_remote_agent_provider();
+    init_remote_agent_provider();
+    DEFAULT_CURSOR_AGENT_BASE_URL = "https://api.cursor.com";
+    CURSOR_AGENTS_WEB_URL = "https://cursor.com/agents";
+    REMOTE_AGENT_MODEL_SEP = AGENT_MODEL_SEP;
+    REMOTE_AGENT_MODELS = [
+      {
+        provider: REMOTE_AGENT_PROVIDER_OPENAI,
+        value: "remote-agent:openai",
+        label: "OpenAI Cloud Agent"
+      },
+      {
+        provider: REMOTE_AGENT_PROVIDER_CURSOR,
+        value: `${REMOTE_AGENT_MODEL_PREFIX}${REMOTE_AGENT_PROVIDER_CURSOR}`,
+        label: "Cursor Cloud Agent"
+      },
+      {
+        provider: REMOTE_AGENT_PROVIDER_ANTHROPIC,
+        value: `${REMOTE_AGENT_MODEL_PREFIX}${REMOTE_AGENT_PROVIDER_ANTHROPIC}`,
+        label: "Claude Cloud Agent"
+      }
+    ];
+    MANAGED_AGENT_PICKER_MODELS = TRACKED_MODELS.filter(
+      (id) => inferCloudModelProvider(id) === "anthropic"
+    );
+    MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT = (() => {
+      if (MANAGED_AGENT_PICKER_MODELS.includes(DEFAULT_MANAGED_AGENT_MODEL)) {
+        return MANAGED_AGENT_PICKER_MODELS;
+      }
+      return [DEFAULT_MANAGED_AGENT_MODEL, ...MANAGED_AGENT_PICKER_MODELS];
+    })();
   }
 });
 
@@ -44656,13 +44040,13 @@ var init_acp_known_agents = __esm({
           scratchPaths: ["/tmp/claude-${uid}", "/tmp/claude-*", "/tmp/claude"]
         },
         sandboxedPermissionMode: "acceptEdits",
-        // setup-token only prints a token; it does not save the login this
-        // desktop setup needs. Use the dedicated login command and leave the
-        // account method to the login flow rather than forcing SSO or Console.
-        setup: "claude auth login",
-        reauth: "claude auth login",
+        // The adapter delegates --cli to the Claude Code binary bundled with its
+        // Agent SDK. Sign-in must use that same binary: a fresh machine can have
+        // the adapter without a separate `claude` executable on PATH.
+        setup: "claude-agent-acp --cli auth login",
+        reauth: "claude-agent-acp --cli auth login",
         docsUrl: "https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp",
-        note: "Runs Claude Code. Sign in with `claude auth login` (or `ANTHROPIC_API_KEY`)."
+        note: "Runs Claude Code. Sign in with `claude-agent-acp --cli auth login` (or `ANTHROPIC_API_KEY`)."
       },
       {
         id: "cursor",
@@ -45006,2461 +44390,6 @@ var init_acp = __esm({
   }
 });
 
-// src/shared/plan-frontier-candidates.ts
-function planAcpFrontierCandidates(agents, pricedRoutes = []) {
-  const livePrices = /* @__PURE__ */ new Map();
-  for (const route of pricedRoutes) {
-    if (route.local || route.plan !== void 0 || route.planAccess !== void 0) continue;
-    if (!Number.isFinite(route.costPerMTok) || route.costPerMTok < 0) continue;
-    const identity = resolveIntellectModelId(route.id);
-    if (!identity) continue;
-    const previous = livePrices.get(identity);
-    if (previous === void 0 || route.costPerMTok < previous) {
-      livePrices.set(identity, route.costPerMTok);
-    }
-  }
-  const candidates = [];
-  for (const agent of agents) {
-    if (!agent.enabled) continue;
-    const provider = acpPlanProvider(agent);
-    if (!provider) continue;
-    const advertised = agent.availableModels ?? [];
-    const selected = agent.model;
-    const selectedChoice = selected ? advertised.find((choice) => choice.value === selected) : void 0;
-    const choices = /* @__PURE__ */ new Map();
-    if (selected) choices.set(selected, selectedChoice ?? { value: selected, label: selected });
-    for (const choice of advertised) choices.set(choice.value, choice);
-    for (const choice of choices.values()) {
-      const resolved2 = resolveAgentModelIdentity(
-        choice.value,
-        acpModelVersionName(choice.description),
-        choice.label,
-        acpModelChoiceLabel(choice)
-      );
-      if (!resolved2) continue;
-      const score = getIntellectScore(resolved2);
-      const info = getModelInfo(resolved2) ?? Object.entries(MODEL_CATALOG).find(([id]) => resolveIntellectModelId(id) === resolved2)?.[1];
-      const price = info ? blendedPricePerMTok(info) : livePrices.get(resolved2);
-      if (!score || price === void 0) continue;
-      candidates.push({
-        id: acpModelValue(agent.id, choice.value),
-        intellect: score.value,
-        intellectEstimated: score.estimated === true,
-        costPerMTok: price,
-        planAccess: { provider, modelId: resolved2 }
-      });
-    }
-  }
-  return candidates;
-}
-var init_plan_frontier_candidates = __esm({
-  "src/shared/plan-frontier-candidates.ts"() {
-    init_pareto_frontier();
-    init_model_catalog();
-    init_model_intellect();
-    init_agent_model_identity();
-    init_acp();
-  }
-});
-
-// src/renderer/views/model-card-cache.ts
-function resolvedModelCard(id) {
-  return resolved.get(id) ?? null;
-}
-async function requestModelCards(ids, api) {
-  if (!api) return false;
-  const requested = [...new Set(ids)].filter((id) => !resolved.has(id));
-  const waiting = requested.flatMap((id) => {
-    const pending = inFlight.get(id);
-    return pending ? [pending] : [];
-  });
-  const missing = requested.filter((id) => !inFlight.has(id));
-  if (missing.length > 0) {
-    const batch = (async () => {
-      try {
-        const answers = await api.resolve(missing);
-        const landed = /* @__PURE__ */ new Set();
-        for (const id of missing) {
-          if (!Object.prototype.hasOwnProperty.call(answers, id)) continue;
-          resolved.set(id, answers[id] ?? null);
-          landed.add(id);
-        }
-        return landed;
-      } catch {
-        return /* @__PURE__ */ new Set();
-      }
-    })();
-    for (const id of missing) {
-      const pending = batch.then((landed) => landed.has(id));
-      inFlight.set(id, pending);
-      waiting.push(pending);
-      void pending.then(() => {
-        if (inFlight.get(id) === pending) inFlight.delete(id);
-      });
-    }
-  }
-  if (waiting.length === 0) return false;
-  return (await Promise.all(waiting)).some(Boolean);
-}
-var resolved, inFlight;
-var init_model_card_cache = __esm({
-  "src/renderer/views/model-card-cache.ts"() {
-    resolved = /* @__PURE__ */ new Map();
-    inFlight = /* @__PURE__ */ new Map();
-  }
-});
-
-// packages/llm/src/model-cards.generated.ts
-var init_model_cards_generated = __esm({
-  "packages/llm/src/model-cards.generated.ts"() {
-  }
-});
-
-// packages/llm/src/model-cards.ts
-function huggingFaceCardUrl(id) {
-  if (!id.startsWith(HF_ROUTER_PREFIX)) return null;
-  const rest = id.slice(HF_ROUTER_PREFIX.length);
-  const lastColon = rest.lastIndexOf(":");
-  const repo = lastColon > 0 ? rest.slice(0, lastColon) : rest;
-  if (!HF_REPO_PATH.test(repo)) return null;
-  return `https://huggingface.co/${repo}`;
-}
-var HF_ROUTER_PREFIX, HF_REPO_PATH;
-var init_model_cards = __esm({
-  "packages/llm/src/model-cards.ts"() {
-    init_model_id_forms();
-    init_model_intellect();
-    init_model_cards_generated();
-    HF_ROUTER_PREFIX = "huggingface:";
-    HF_REPO_PATH = /^[A-Za-z0-9][\w.-]*\/[A-Za-z0-9][\w.-]*$/;
-  }
-});
-
-// src/renderer/views/intellect-frontier-tooltip.ts
-function displayModelLabel(id) {
-  const resolved2 = resolveIntellectModelId(id);
-  if (resolved2 !== null && TRACKED_MODELS.some((tracked) => tracked === resolved2)) {
-    return cloudModelDisplayLabel(resolved2);
-  }
-  let s2 = resolved2 ?? id;
-  const sep = s2.indexOf(":");
-  if (sep > 0 && !s2.slice(0, sep).includes("/")) s2 = s2.slice(sep + 1);
-  const slash = s2.lastIndexOf("/");
-  if (slash >= 0) s2 = s2.slice(slash + 1);
-  return cloudModelDisplayLabel(s2 || id);
-}
-function ttRow(cls, ...children) {
-  return el("div", { class: cls }, ...children);
-}
-function appendCardSection(root, id, routes = []) {
-  const card = resolvedModelCard(id);
-  const huggingFace = [id, ...routes].map(huggingFaceCardUrl).find((url2) => url2 !== null);
-  if (!card && !huggingFace) return;
-  root.append(ttRow("tt-section", "Model links"));
-  const appendLink = (url2, label, className) => {
-    root.append(
-      ttRow(
-        "tt-line",
-        el(
-          "a",
-          {
-            class: className,
-            href: url2,
-            target: "_blank",
-            rel: "noopener noreferrer"
-          },
-          label
-        )
-      )
-    );
-  };
-  if (card) appendLink(card.url, card.title, "tt-card-link");
-  if (huggingFace && huggingFace !== card?.url)
-    appendLink(huggingFace, "Hugging Face", "tt-card-link tt-huggingface-link");
-  if (card?.kind === "index") {
-    root.append(
-      ttRow("tt-muted", `${card.publisher} publishes this model's card behind their card index.`)
-    );
-  }
-}
-function formatReset(resetsAt) {
-  if (!resetsAt) return "";
-  const d2 = new Date(resetsAt);
-  if (Number.isNaN(d2.getTime())) return "";
-  return `, resets ${d2.toLocaleDateString(void 0, { weekday: "short" })}`;
-}
-function derivationStepCopy(step) {
-  const detail = step.detail.replaceAll("\u2014", "\xB7");
-  if (step.step === "measured") return `Measured ${detail}`;
-  if (detail.toLowerCase().startsWith(step.step.toLowerCase())) {
-    return detail.charAt(0).toUpperCase() + detail.slice(1);
-  }
-  const label = step.step.charAt(0).toUpperCase() + step.step.slice(1);
-  return `${label}: ${detail}`;
-}
-function scoreScaleCopy(scale) {
-  return scale.replace(" (canonical)", "").replaceAll("\u2014", "\xB7");
-}
-function pointTooltipContent(p2, costAxis = "blended") {
-  const root = el("div", { class: "frontier-tooltip-content" });
-  const label = displayModelLabel(p2.id);
-  root.append(ttRow("tt-title", el("strong", {}, label)));
-  if (label !== p2.id) root.append(ttRow("tt-muted", p2.id));
-  root.append(ttRow("tt-section", "Score"));
-  const explanation = explainIntellectScore(p2.id);
-  if (explanation) {
-    root.append(
-      ttRow(
-        "tt-line",
-        el("strong", {}, `${p2.intellectEstimated ? "~" : ""}${String(p2.intellect)}`),
-        ` \xB7 ${scoreScaleCopy(explanation.scale)}`
-      )
-    );
-    for (const step of explanation.steps) {
-      root.append(ttRow("tt-muted", derivationStepCopy(step)));
-    }
-  } else {
-    root.append(
-      ttRow(
-        "tt-line",
-        el("strong", {}, `~${String(p2.intellect)}`),
-        " \xB7 live Artificial Analysis value (not yet curated)"
-      )
-    );
-  }
-  if (p2.quant && p2.intellectEstimated) {
-    root.append(
-      ttRow(
-        "tt-muted",
-        `Adjusted down for ${p2.quant} quantisation \xB7 an estimate, not a measurement.`
-      )
-    );
-  }
-  root.append(ttRow("tt-section", p2.prices?.length ? "Prices" : "Price"));
-  const blended = p2.blendedCostPerMTok ?? (p2.planDetail !== void 0 ? p2.planDetail.apiPricePerMTok : p2.costPerMTok);
-  const priceLine = p2.plan ? el(
-    "span",
-    {},
-    el("strong", {}, "included in your plan"),
-    costAxis === "perTask" ? ` (${p2.plan}) \xB7 ~$0 marginal task cost` : ` (${p2.plan}) \xB7 ~$0 marginal token cost`
-  ) : p2.local ? el("span", {}, "free (runs on-device)") : costAxis === "perTask" ? el("span", {}, `${formatTaskPrice(p2.costPerMTok)} AA Intelligence Index task (plotted)`) : el(
-    "span",
-    {},
-    `${formatPrice(p2.costPerMTok)} blended (80% in / 20% out)`,
-    ...p2.prices?.length ? [" \xB7 best offer, plotted"] : []
-  );
-  root.append(ttRow("tt-line", priceLine));
-  if (costAxis === "perTask") {
-    if (!p2.local && !p2.plan) {
-      root.append(
-        ttRow("tt-muted", `${formatPrice(blended)} blended list price (80% in / 20% out).`)
-      );
-    }
-  } else if (typeof p2.costPerTask === "number") {
-    root.append(
-      ttRow(
-        "tt-muted",
-        `Artificial Analysis cost per Intelligence Index task: ${formatTaskPrice(p2.costPerTask)} (reflects verbosity, not just token price).`
-      )
-    );
-  }
-  for (const offer of p2.prices ?? []) {
-    root.append(
-      ttRow("tt-muted", `${displayModelLabel(offer.id)}: ${formatPrice(offer.costPerMTok)}`)
-    );
-  }
-  if (p2.plan && p2.planDetail) {
-    root.append(
-      ttRow(
-        "tt-muted",
-        `${String(Math.round(p2.planDetail.usedPercent))}% of this plan window used${formatReset(p2.planDetail.resetsAt)}.`
-      ),
-      ttRow("tt-muted", `Off-plan you'd pay ${formatPrice(p2.planDetail.apiPricePerMTok)} blended.`)
-    );
-    if (p2.planDetail.priorLimitHits) {
-      const { hit, total } = p2.planDetail.priorLimitHits;
-      root.append(
-        ttRow(
-          "tt-muted",
-          `Limit hit in ${String(hit)}/${String(total)} prior windows \xB7 still treating as included.`
-        )
-      );
-    }
-  }
-  if (p2.planLimitReached) {
-    const prior = p2.planLimitReached.priorLimitHits;
-    const priorNote = prior ? ` Limit hit in ${String(prior.hit)}/${String(prior.total)} prior windows.` : "";
-    root.append(
-      ttRow(
-        "tt-muted",
-        prior ? `${p2.planLimitReached.label} usually exhausted \xB7 plotted at off-plan price.${priorNote}` : `${p2.planLimitReached.label} plan limit reached${formatReset(p2.planLimitReached.resetsAt)} \xB7 plotted at its off-plan price.`
-      )
-    );
-  }
-  appendCardSection(
-    root,
-    p2.id,
-    p2.prices?.map((offer) => offer.id)
-  );
-  root.append(
-    ttRow(
-      "tt-status",
-      p2.discovery ? p2.onFrontier ? "Not configured \xB7 setting up a provider would put this ON your value frontier." : "Not configured \xB7 available via Artificial Analysis if you set up a provider." : p2.onFrontier ? "On the value frontier" : `Dominated by ${displayModelLabel(p2.dominatedBy ?? "?")}`
-    )
-  );
-  return root;
-}
-function unpricedTooltipContent(u2) {
-  const root = el("div", { class: "frontier-tooltip-content" });
-  root.append(ttRow("tt-title", el("strong", {}, displayModelLabel(u2.id))));
-  if (displayModelLabel(u2.id) !== u2.id) root.append(ttRow("tt-muted", u2.id));
-  root.append(ttRow("tt-section", "Score"));
-  const explanation = explainIntellectScore(u2.id);
-  root.append(ttRow("tt-line", el("strong", {}, `${u2.estimated ? "~" : ""}${String(u2.intellect)}`)));
-  for (const step of explanation?.steps ?? []) {
-    root.append(ttRow("tt-muted", derivationStepCopy(step)));
-  }
-  appendCardSection(root, u2.id);
-  root.append(ttRow("tt-status", "No price data yet \xB7 position on intellect only."));
-  return root;
-}
-function unscoredTooltipContent(u2) {
-  const root = el("div", { class: "frontier-tooltip-content" });
-  root.append(ttRow("tt-title", el("strong", {}, displayModelLabel(u2.id))));
-  if (displayModelLabel(u2.id) !== u2.id) root.append(ttRow("tt-muted", u2.id));
-  root.append(ttRow("tt-section", "Price"));
-  root.append(ttRow("tt-line", `${formatPrice(u2.costPerMTok)} blended (80% in / 20% out)`));
-  appendCardSection(root, u2.id);
-  root.append(ttRow("tt-status", "No sourced intellect measurement yet \xB7 position on price only."));
-  return root;
-}
-function positionFrontierTooltip(tip, container, evt) {
-  const rect = container.getBoundingClientRect();
-  const tipWidth = tip.offsetWidth;
-  const tipHeight = tip.offsetHeight;
-  const cursorX = evt.clientX - rect.left;
-  const cursorY = evt.clientY - rect.top;
-  let left = cursorX + TOOLTIP_OFFSET_PX;
-  if (left + tipWidth > rect.width) {
-    left = cursorX - tipWidth - TOOLTIP_OFFSET_PX;
-  }
-  left = clamp(left, 0, Math.max(0, rect.width - tipWidth));
-  let top = cursorY + TOOLTIP_OFFSET_PX;
-  if (top + tipHeight > rect.height) {
-    top = cursorY - tipHeight - TOOLTIP_OFFSET_PX;
-  }
-  top = clamp(top, 0, Math.max(0, rect.height - tipHeight));
-  tip.style.left = `${String(left)}px`;
-  tip.style.top = `${String(top)}px`;
-}
-function createTooltipLayer(container) {
-  const tip = el("div", { class: "frontier-tooltip", hidden: true });
-  container.append(tip);
-  let hideTimer;
-  let currentTarget;
-  let pinnedTarget;
-  let position;
-  const doc = container.ownerDocument;
-  const cancelHide = () => {
-    if (hideTimer !== void 0) clearTimeout(hideTimer);
-    hideTimer = void 0;
-  };
-  const hideNow = () => {
-    cancelHide();
-    tip.hidden = true;
-    currentTarget = void 0;
-    position = void 0;
-  };
-  const dismiss = () => {
-    pinnedTarget = void 0;
-    delete tip.dataset["pinned"];
-    doc.removeEventListener("click", onOutsideClick);
-    doc.removeEventListener("keydown", onEscape);
-    hideNow();
-  };
-  const onOutsideClick = (evt) => {
-    const target = evt.target;
-    if (target instanceof Node && (tip.contains(target) || pinnedTarget?.contains(target))) return;
-    dismiss();
-  };
-  const onEscape = (evt) => {
-    if (evt.key === "Escape") dismiss();
-  };
-  const replaceContent = (content) => {
-    tip.replaceChildren(content);
-    if (pinnedTarget) {
-      const close = el(
-        "button",
-        {
-          type: "button",
-          class: "frontier-tooltip-close",
-          "aria-label": "Close model details"
-        },
-        "\xD7"
-      );
-      close.addEventListener("click", dismiss);
-      tip.append(close);
-    }
-  };
-  tip.addEventListener("mouseenter", cancelHide);
-  tip.addEventListener("mouseleave", () => {
-    if (!pinnedTarget) hideNow();
-  });
-  return {
-    show(content, evt, target) {
-      if (pinnedTarget) return;
-      cancelHide();
-      currentTarget = target;
-      position = evt;
-      replaceContent(content);
-      tip.hidden = false;
-      positionFrontierTooltip(tip, container, evt);
-    },
-    pin(content, evt, target) {
-      if (pinnedTarget === target) {
-        dismiss();
-        return;
-      }
-      cancelHide();
-      pinnedTarget = target;
-      currentTarget = target;
-      position = evt;
-      tip.dataset["pinned"] = "true";
-      replaceContent(content);
-      tip.hidden = false;
-      positionFrontierTooltip(tip, container, evt);
-      doc.addEventListener("click", onOutsideClick);
-      doc.addEventListener("keydown", onEscape);
-    },
-    update(content, target) {
-      if (!tip.hidden && currentTarget === target) {
-        replaceContent(content);
-        if (position) positionFrontierTooltip(tip, container, position);
-      }
-    },
-    hide() {
-      if (pinnedTarget) return;
-      cancelHide();
-      hideTimer = setTimeout(hideNow, TOOLTIP_HIDE_GRACE_MS);
-    },
-    dismiss
-  };
-}
-function setModelCardApi(api) {
-  modelCardApi = api;
-}
-function requestFrontierModelCards(ids) {
-  return requestModelCards(ids, modelCardApi);
-}
-function wireTooltip(target, tooltip, build, modelId) {
-  if (!tooltip) return;
-  const fillCard = () => {
-    if (modelId === void 0) return;
-    void requestFrontierModelCards([modelId]).then((landed) => {
-      if (landed) tooltip.update(build(), target);
-    });
-  };
-  target.setAttribute("tabindex", "0");
-  target.setAttribute("role", "button");
-  target.setAttribute("aria-label", `Details for ${displayModelLabel(modelId ?? "model")}`);
-  target.addEventListener("mouseenter", (evt) => {
-    tooltip.show(build(), evt, target);
-    fillCard();
-  });
-  target.addEventListener("mousemove", (evt) => {
-    tooltip.show(build(), evt, target);
-  });
-  target.addEventListener("mouseleave", () => {
-    tooltip.hide();
-  });
-  target.addEventListener("click", (evt) => {
-    tooltip.pin(build(), evt, target);
-    fillCard();
-  });
-  target.addEventListener("keydown", (evt) => {
-    if (evt.key !== "Enter" && evt.key !== " ") return;
-    evt.preventDefault();
-    const rect = target.getBoundingClientRect();
-    tooltip.pin(
-      build(),
-      new MouseEvent("click", {
-        clientX: rect.left + rect.width / 2,
-        clientY: rect.top + rect.height / 2
-      }),
-      target
-    );
-    fillCard();
-  });
-}
-function tooltipFor(point, costAxis = "blended") {
-  const lines = [point.id];
-  const explanation = explainIntellectScore(point.id);
-  if (explanation) {
-    lines.push(`intellect ${String(explanation.value)} \xB7 ${scoreScaleCopy(explanation.scale)}`);
-    for (const step of explanation.steps) lines.push(derivationStepCopy(step));
-  } else {
-    lines.push(`intellect ${point.intellectEstimated ? "~" : ""}${String(point.intellect)}`);
-  }
-  lines.push(
-    point.local ? "cost: free (runs on-device)" : point.plan ? `cost: included in plan (${point.plan})` : costAxis === "perTask" ? `cost: $${String(point.costPerMTok)}/task AA Intelligence Index` : `cost: $${String(point.costPerMTok)}/MTok blended (80% input / 20% output)`
-  );
-  lines.push(
-    point.onFrontier ? "On the value frontier" : `Dominated by ${point.dominatedBy ?? "?"}`
-  );
-  return lines.join("\n");
-}
-var formatPrice, formatTaskPrice, TOOLTIP_OFFSET_PX, TOOLTIP_HIDE_GRACE_MS, modelCardApi;
-var init_intellect_frontier_tooltip = __esm({
-  "src/renderer/views/intellect-frontier-tooltip.ts"() {
-    init_clamp();
-    init_model_catalog();
-    init_model_intellect();
-    init_model_card_cache();
-    init_model_cards();
-    init_helpers();
-    formatPrice = (v3) => `$${String(Number(v3.toFixed(2)))}/MTok`;
-    formatTaskPrice = (v3) => `$${String(Number(v3.toFixed(2)))}/task`;
-    TOOLTIP_OFFSET_PX = 12;
-    TOOLTIP_HIDE_GRACE_MS = 220;
-  }
-});
-
-// src/renderer/views/intellect-frontier-chart.ts
-function approxLabelWidth(text) {
-  return 10 + text.length * 5.2;
-}
-function svgEl(tag, attrs, ...children) {
-  const node2 = document.createElementNS(SVG_NS, tag);
-  for (const [k2, v3] of Object.entries(attrs)) node2.setAttribute(k2, v3);
-  node2.append(...children);
-  return node2;
-}
-function renderCompositeStrip(models) {
-  const height = 46 + models.length * 14;
-  const axisY = height - 18;
-  const left = 40;
-  const right = 16;
-  const plotW = WIDTH - left - right;
-  const x3 = (value) => left + value / 100 * plotW;
-  const svg = svgEl("svg", {
-    viewBox: `0 0 ${String(WIDTH)} ${String(height)}`,
-    role: "img",
-    "aria-label": "Local models on the copse-intellect composite scale",
-    style: "width:100%;height:auto;display:block"
-  });
-  svg.append(
-    svgEl("line", {
-      x1: String(left),
-      x2: String(left + plotW),
-      y1: String(axisY),
-      y2: String(axisY),
-      stroke: "var(--border)",
-      "stroke-width": "1"
-    })
-  );
-  for (const t2 of [0, 25, 50, 75, 100]) {
-    svg.append(
-      svgEl(
-        "text",
-        {
-          x: String(x3(t2)),
-          y: String(axisY + 12),
-          "text-anchor": "middle",
-          "font-size": "9",
-          fill: "var(--text-muted)"
-        },
-        String(t2)
-      )
-    );
-  }
-  models.forEach((m2, i2) => {
-    const cy = axisY - 12 - i2 * 14;
-    const cx2 = String(x3(m2.composite.value));
-    const dot = svgEl("circle", {
-      cx: cx2,
-      cy: String(cy),
-      r: "5",
-      fill: "var(--bg-base)",
-      stroke: "var(--border-strong)",
-      "stroke-width": "2",
-      class: "composite-point"
-    });
-    dot.append(
-      svgEl(
-        "title",
-        {},
-        `${m2.id}
-score ${String(m2.composite.value)} \xB7 separate scale (not comparable with the main chart)
-${m2.composite.basis}
-cost: free (runs on-device)`
-      )
-    );
-    svg.append(
-      dot,
-      svgEl(
-        "text",
-        {
-          x: String(x3(m2.composite.value) + 9),
-          y: String(cy + 3),
-          "font-size": "9",
-          fill: "var(--text-secondary)",
-          class: "composite-label"
-        },
-        `${m2.id} \xB7 ${String(m2.composite.value)}`
-      )
-    );
-  });
-  return svg;
-}
-function ticks(max, count) {
-  const step = Math.max(1, Math.ceil(max / count));
-  const out = [];
-  for (let v3 = 0; v3 <= max; v3 += step) out.push(v3);
-  return out;
-}
-function renderFrontierSvg(points, size = {}, gutters = {}, tooltip, costAxis = "blended", labelMode = "summary") {
-  const unpriced = gutters.unpriced ?? [];
-  const unscored = costAxis === "blended" ? gutters.unscored ?? [] : [];
-  const gutterW = unpriced.length > 0 ? UNPRICED_GUTTER_W : 0;
-  const baseHeight = size.height ?? HEIGHT;
-  const width = (size.width ?? WIDTH) + gutterW;
-  const plotW = width - gutterW - MARGIN.left - MARGIN.right;
-  const plotH = baseHeight - MARGIN.top - MARGIN.bottom;
-  const plotLeft = gutterW + MARGIN.left;
-  const allCosts = [...points.map((p2) => p2.costPerMTok), ...unscored.map((u2) => u2.costPerMTok)];
-  const allIntellects = [...points.map((p2) => p2.intellect), ...unpriced.map((u2) => u2.intellect)];
-  const maxCost = Math.max(1, ...allCosts) * 1.08;
-  const maxIntellect = Math.max(10, ...allIntellects) + 5;
-  const minIntellect = Math.max(0, Math.min(...allIntellects) - 8);
-  const x3 = (cost) => plotLeft + cost / maxCost * plotW;
-  const y3 = (intellect) => MARGIN.top + plotH - (intellect - minIntellect) / (maxIntellect - minIntellect) * plotH;
-  const displayX = new Map(points.map((p2) => [p2.id, x3(p2.costPerMTok)]));
-  const byRawX = points.filter((point) => !point.onFrontier).sort((a4, b2) => x3(a4.costPerMTok) - x3(b2.costPerMTok) || y3(a4.intellect) - y3(b2.intellect));
-  for (let start = 0; start < byRawX.length; ) {
-    const first = byRawX[start];
-    if (!first) break;
-    const columnX = x3(first.costPerMTok);
-    let end = start + 1;
-    while (end < byRawX.length) {
-      const candidate = byRawX[end];
-      if (!candidate || x3(candidate.costPerMTok) - columnX > POINT_SPLAY_COLUMN_PX) break;
-      end++;
-    }
-    const column = byRawX.slice(start, end);
-    if (column.length >= 3) {
-      column.sort((a4, b2) => y3(a4.intellect) - y3(b2.intellect));
-      const nearLeft = columnX - POINT_SPLAY_MAX_PX < plotLeft;
-      column.forEach((point, index) => {
-        const centered = (index - (column.length - 1) / 2) * POINT_SPLAY_STEP_PX;
-        const fanPhase = index % 6;
-        const fanStep = fanPhase <= 3 ? fanPhase : 6 - fanPhase;
-        const offset = nearLeft ? fanStep * POINT_SPLAY_STEP_PX : clamp(centered, -POINT_SPLAY_MAX_PX, POINT_SPLAY_MAX_PX);
-        displayX.set(
-          point.id,
-          Math.max(plotLeft, Math.min(plotLeft + plotW, x3(point.costPerMTok) + offset))
-        );
-      });
-    }
-    start = end;
-  }
-  const pointX = (point) => displayX.get(point.id) ?? x3(point.costPerMTok);
-  const dense = unscored.length > UNSCORED_ROW_LIMIT;
-  const unscoredRows = [];
-  {
-    const rowEnds = [];
-    for (const u2 of [...unscored].sort((a4, b2) => a4.costPerMTok - b2.costPerMTok)) {
-      if (dense) {
-        unscoredRows.push({
-          id: u2.id,
-          costPerMTok: u2.costPerMTok,
-          row: 0,
-          text: ""
-        });
-        continue;
-      }
-      const text = displayModelLabel(u2.id);
-      const x0 = x3(u2.costPerMTok) - 6;
-      const x1 = x3(u2.costPerMTok) + 8 + approxLabelWidth(text);
-      let row = rowEnds.findIndex((end) => end < x0);
-      if (row === -1) {
-        row = rowEnds.length;
-        rowEnds.push(x1);
-      } else {
-        rowEnds[row] = x1;
-      }
-      unscoredRows.push({ id: u2.id, costPerMTok: u2.costPerMTok, row, text });
-    }
-  }
-  const unscoredRowCount = unscoredRows.reduce((m2, u2) => Math.max(m2, u2.row + 1), 0);
-  const bottomGutterH = unscoredRowCount > 0 ? 12 + unscoredRowCount * 12 : 0;
-  const height = baseHeight + bottomGutterH;
-  const xAxisLabel = costAxis === "perTask" ? "AA cost per intelligence index task ($) \xB7 local/plan models plot at $0" : "Blended price, $/MTok (80% in / 20% out) \xB7 local models plot at $0";
-  const ariaLabel = costAxis === "perTask" ? "Model intellect versus AA cost per intelligence index task, with the Pareto frontier" : "Model intellect versus blended price, with the Pareto frontier";
-  const svg = svgEl("svg", {
-    viewBox: `0 0 ${String(width)} ${String(height)}`,
-    role: "img",
-    "aria-label": ariaLabel,
-    "data-cost-axis": costAxis,
-    "data-label-mode": labelMode,
-    style: "width:100%;height:auto;display:block"
-  });
-  for (const t2 of ticks(maxIntellect, 4)) {
-    if (t2 < minIntellect) continue;
-    svg.append(
-      svgEl("line", {
-        x1: String(plotLeft),
-        x2: String(plotLeft + plotW),
-        y1: String(y3(t2)),
-        y2: String(y3(t2)),
-        stroke: "var(--border-subtle)",
-        "stroke-width": "1"
-      }),
-      svgEl(
-        "text",
-        {
-          x: String(plotLeft - 6),
-          y: String(y3(t2) + 3),
-          "text-anchor": "end",
-          "font-size": "9",
-          fill: "var(--text-muted)"
-        },
-        String(t2)
-      )
-    );
-  }
-  svg.append(
-    svgEl("line", {
-      x1: String(plotLeft),
-      x2: String(plotLeft + plotW),
-      y1: String(MARGIN.top + plotH),
-      y2: String(MARGIN.top + plotH),
-      stroke: "var(--border)",
-      "stroke-width": "1"
-    })
-  );
-  for (const t2 of ticks(maxCost, 5)) {
-    svg.append(
-      svgEl(
-        "text",
-        {
-          x: String(x3(t2)),
-          y: String(MARGIN.top + plotH + 14),
-          "text-anchor": "middle",
-          "font-size": "9",
-          fill: "var(--text-muted)"
-        },
-        `$${String(t2)}`
-      )
-    );
-  }
-  svg.append(
-    svgEl(
-      "text",
-      {
-        x: String(plotLeft + plotW / 2),
-        y: String(height - 4),
-        "text-anchor": "middle",
-        "font-size": "9",
-        fill: "var(--text-secondary)",
-        class: "frontier-x-axis-label"
-      },
-      xAxisLabel
-    ),
-    svgEl(
-      "text",
-      {
-        x: String(gutterW + 10),
-        y: String(MARGIN.top + plotH / 2),
-        transform: `rotate(-90 ${String(gutterW + 10)} ${String(MARGIN.top + plotH / 2)})`,
-        "text-anchor": "middle",
-        "font-size": "9",
-        fill: "var(--text-secondary)"
-      },
-      "Intellect"
-    )
-  );
-  const frontier = points.filter((p2) => p2.onFrontier);
-  if (frontier.length > 1) {
-    svg.append(
-      svgEl("polyline", {
-        points: frontier.map((p2) => `${String(x3(p2.costPerMTok))},${String(y3(p2.intellect))}`).join(" "),
-        fill: "none",
-        stroke: "var(--accent)",
-        "stroke-width": "2",
-        "stroke-opacity": "0.45",
-        class: "frontier-line"
-      })
-    );
-  }
-  const frontierByX = [...frontier].sort((a4, b2) => x3(a4.costPerMTok) - x3(b2.costPerMTok));
-  const frontierYRange = (xa, xb) => {
-    let min = Infinity;
-    let max = -Infinity;
-    for (let i2 = 0; i2 + 1 < frontierByX.length; i2++) {
-      const a4 = frontierByX[i2];
-      const b2 = frontierByX[i2 + 1];
-      if (!a4 || !b2) continue;
-      const ax = x3(a4.costPerMTok);
-      const bx = x3(b2.costPerMTok);
-      const lo = Math.max(xa, ax);
-      const hi = Math.min(xb, bx);
-      if (lo > hi) continue;
-      const ay = y3(a4.intellect);
-      const by = y3(b2.intellect);
-      const span = bx - ax || 1;
-      const y0 = ay + (by - ay) * (lo - ax) / span;
-      const y1 = ay + (by - ay) * (hi - ax) / span;
-      min = Math.min(min, y0, y1);
-      max = Math.max(max, y0, y1);
-    }
-    return min === Infinity ? null : { min, max };
-  };
-  const frontierMidpointId = frontierByX[Math.floor((frontierByX.length - 1) / 2)]?.id;
-  const labelledPoints = [...points].sort(
-    (a4, b2) => (labelMode === "summary" ? Number(b2.id === frontierMidpointId) - Number(a4.id === frontierMidpointId) : 0) || Number(b2.onFrontier) - Number(a4.onFrontier) || (a4.onFrontier ? y3(b2.intellect) - y3(a4.intellect) : y3(a4.intellect) - y3(b2.intellect))
-  );
-  const plotBottom = MARGIN.top + plotH;
-  const rightEdge = width - 2;
-  const labelText = /* @__PURE__ */ new Map();
-  const labelY = /* @__PURE__ */ new Map();
-  const labelX = /* @__PURE__ */ new Map();
-  const labelAnchor = /* @__PURE__ */ new Map();
-  const labelLeader = /* @__PURE__ */ new Map();
-  const placed = points.map((p2) => ({
-    x0: pointX(p2) - 7,
-    x1: pointX(p2) + 7,
-    py: y3(p2.intellect) + 3
-  }));
-  for (const p2 of labelledPoints) {
-    const suffix = p2.plan ? " \xB7 plan" : p2.local ? " \xB7 free" : "";
-    const text = `${displayModelLabel(p2.id)}${p2.quant ? ` @${p2.quant}` : ""}${p2.intellectEstimated ? " (~)" : ""}${suffix}`;
-    const w3 = approxLabelWidth(text);
-    const px = pointX(p2);
-    let x0;
-    let x1;
-    let tx;
-    let anchor2;
-    if (px + 8 + w3 <= rightEdge) {
-      x0 = px + 8;
-      x1 = px + 8 + w3;
-      tx = px + 8;
-      anchor2 = "start";
-    } else if (px - 8 - w3 >= plotLeft) {
-      x0 = px - 8 - w3;
-      x1 = px - 8;
-      tx = px - 8;
-      anchor2 = "end";
-    } else {
-      continue;
-    }
-    const naturalY = y3(p2.intellect) + 3;
-    let py = naturalY;
-    const prefersUp = p2.onFrontier;
-    let lineRange = null;
-    if (prefersUp && labelMode === "all") {
-      const range = frontierYRange(x0, x1);
-      lineRange = range;
-      if (range && py - 8 < range.max + LABEL_LINE_GAP && py + 2 > range.min - LABEL_LINE_GAP) {
-        py = range.min - LABEL_LINE_GAP;
-      }
-    }
-    const nudgeClear = (start, direction) => {
-      let nextY = start;
-      let moved = true;
-      while (moved) {
-        moved = false;
-        for (const prev of placed) {
-          if (Math.abs(nextY - prev.py) >= 10 || x0 >= prev.x1 || x1 <= prev.x0) continue;
-          const next = prev.py + direction * 10;
-          if (direction < 0 ? next < nextY : next > nextY) {
-            nextY = next;
-            moved = true;
-          }
-        }
-      }
-      return nextY;
-    };
-    if (labelMode === "summary") {
-      const blocked = placed.some(
-        (prev) => Math.abs(naturalY - prev.py) < 10 && x0 < prev.x1 && x1 > prev.x0
-      );
-      if (blocked) continue;
-      py = naturalY;
-    } else {
-      py = nudgeClear(py, prefersUp ? -1 : 1);
-    }
-    if (labelMode === "all" && prefersUp && py - 8 < MARGIN.top) {
-      const belowLine = (lineRange?.max ?? y3(p2.intellect)) + LABEL_LINE_GAP + 9;
-      py = nudgeClear(Math.max(y3(p2.intellect) + 12, belowLine), 1);
-    }
-    if (py > plotBottom) {
-      continue;
-    }
-    const shift = Math.abs(py - naturalY);
-    if (labelMode === "all" && shift > 6) {
-      labelLeader.set(p2.id, {
-        x1: px,
-        y1: y3(p2.intellect),
-        x2: anchor2 === "start" ? tx - 2 : tx + 2,
-        y2: py - 3
-      });
-    }
-    placed.push({ x0, x1, py });
-    labelText.set(p2.id, text);
-    labelY.set(p2.id, py);
-    labelX.set(p2.id, tx);
-    labelAnchor.set(p2.id, anchor2);
-  }
-  for (const p2 of points) {
-    const displayedCx = pointX(p2);
-    const cx2 = String(displayedCx);
-    const cy = String(y3(p2.intellect));
-    const emphasis = p2.onFrontier ? "var(--accent)" : "var(--border-strong)";
-    const cls = [
-      "frontier-point",
-      p2.intellectEstimated ? "estimated" : "",
-      p2.discovery ? "discovery" : "",
-      p2.plan ? "plan" : ""
-    ].filter(Boolean).join(" ");
-    const dot = p2.intellectEstimated ? svgEl("circle", {
-      cx: cx2,
-      cy,
-      r: "5",
-      fill: "var(--bg-base)",
-      stroke: emphasis,
-      "stroke-width": "2",
-      ...p2.discovery ? { "stroke-dasharray": "2 2", opacity: "0.7" } : {},
-      class: cls,
-      "data-model-id": p2.id
-    }) : svgEl("circle", {
-      cx: cx2,
-      cy,
-      r: "5",
-      fill: emphasis,
-      ...p2.discovery ? { opacity: "0.55" } : {},
-      class: cls,
-      "data-model-id": p2.id
-    });
-    if (p2.plan) {
-      svg.append(
-        svgEl("circle", {
-          cx: cx2,
-          cy,
-          r: "8",
-          fill: "none",
-          stroke: "var(--accent)",
-          "stroke-width": "1",
-          "stroke-dasharray": "1 2",
-          class: "frontier-plan-badge"
-        })
-      );
-    }
-    const nearestDistance = points.reduce((nearest, other) => {
-      if (other === p2) return nearest;
-      return Math.min(
-        nearest,
-        Math.hypot(pointX(other) - displayedCx, y3(other.intellect) - y3(p2.intellect))
-      );
-    }, Infinity);
-    const hitRadius = clamp(nearestDistance / 2 - 0.5, 5, 11);
-    const hit = svgEl("circle", {
-      cx: cx2,
-      cy,
-      r: String(hitRadius),
-      fill: "none",
-      "pointer-events": "all",
-      class: "frontier-hit",
-      "data-model-id": p2.id
-    });
-    const restingRadius = dot.getAttribute("r") ?? "5";
-    hit.addEventListener("mouseenter", () => {
-      dot.setAttribute("r", "6.5");
-    });
-    hit.addEventListener("mouseleave", () => {
-      dot.setAttribute("r", restingRadius);
-    });
-    if (tooltip) wireTooltip(hit, tooltip, () => pointTooltipContent(p2, costAxis), p2.id);
-    else hit.append(svgEl("title", {}, tooltipFor(p2, costAxis)));
-    const text = labelText.get(p2.id);
-    if (text !== void 0) {
-      const leader = labelLeader.get(p2.id);
-      if (leader) {
-        svg.append(
-          svgEl("line", {
-            x1: String(leader.x1),
-            y1: String(leader.y1),
-            x2: String(leader.x2),
-            y2: String(leader.y2),
-            stroke: "var(--border-strong)",
-            "stroke-width": "0.75",
-            "stroke-opacity": "0.65",
-            class: "frontier-label-leader",
-            "data-model-id": p2.id
-          })
-        );
-      }
-      svg.append(
-        svgEl(
-          "text",
-          {
-            x: String(labelX.get(p2.id) ?? pointX(p2) + 8),
-            y: String(labelY.get(p2.id) ?? y3(p2.intellect) + 3),
-            "text-anchor": labelAnchor.get(p2.id) ?? "start",
-            "font-size": "9",
-            fill: "var(--text-secondary)",
-            ...labelMode === "summary" ? {
-              stroke: "var(--bg-base)",
-              "stroke-width": "3",
-              "paint-order": "stroke"
-            } : {},
-            class: "frontier-label"
-          },
-          text
-        )
-      );
-    }
-    svg.append(dot, hit);
-  }
-  if (unpriced.length > 0) {
-    const sepX = gutterW - 4;
-    const dotX = gutterW - 14;
-    svg.append(
-      svgEl("line", {
-        x1: String(sepX),
-        x2: String(sepX),
-        y1: String(MARGIN.top),
-        y2: String(MARGIN.top + plotH),
-        stroke: "var(--border-subtle)",
-        "stroke-width": "1",
-        "stroke-dasharray": "3 3"
-      }),
-      svgEl(
-        "text",
-        {
-          x: String(dotX + 2),
-          y: String(MARGIN.top + plotH + 14),
-          "text-anchor": "end",
-          "font-size": "9",
-          fill: "var(--text-muted)"
-        },
-        "no price yet"
-      )
-    );
-    const sortedUnpriced = [...unpriced].sort((a4, b2) => b2.intellect - a4.intellect);
-    const shownUnpriced = sortedUnpriced.slice(0, UNPRICED_GUTTER_LIMIT);
-    let prevY = -Infinity;
-    for (const u2 of shownUnpriced) {
-      const dotY = y3(u2.intellect);
-      const labelYPos = Math.max(dotY + 3, prevY + 11);
-      prevY = labelYPos;
-      const dot = u2.estimated ? svgEl("circle", {
-        cx: String(dotX),
-        cy: String(dotY),
-        r: "5",
-        fill: "var(--bg-base)",
-        stroke: "var(--accent)",
-        "stroke-width": "2",
-        class: "gutter-unpriced estimated"
-      }) : svgEl("circle", {
-        cx: String(dotX),
-        cy: String(dotY),
-        r: "5",
-        fill: "var(--accent)",
-        class: "gutter-unpriced"
-      });
-      if (tooltip) {
-        wireTooltip(dot, tooltip, () => unpricedTooltipContent(u2), u2.id);
-      } else {
-        const explanation = explainIntellectScore(u2.id);
-        dot.append(
-          svgEl(
-            "title",
-            {},
-            explanation ? `${u2.id}
-${explanation.steps.map((s2) => `${s2.step}: ${s2.detail}`).join("\n")}
-No price data yet \xB7 position on intellect only.` : `${u2.id}
-intellect ${u2.estimated ? "~" : ""}${String(u2.intellect)} (live Artificial Analysis)
-No price data yet \xB7 position on intellect only.`
-          )
-        );
-      }
-      svg.append(
-        dot,
-        svgEl(
-          "text",
-          {
-            x: String(dotX - 9),
-            y: String(labelYPos),
-            "text-anchor": "end",
-            "font-size": "9",
-            fill: "var(--text-secondary)",
-            class: "gutter-unpriced-label"
-          },
-          `${displayModelLabel(u2.id)} \xB7 ${u2.estimated ? "~" : ""}${String(u2.intellect)}`
-        )
-      );
-    }
-    if (sortedUnpriced.length > shownUnpriced.length) {
-      svg.append(
-        svgEl(
-          "text",
-          {
-            x: String(dotX + 2),
-            y: String(MARGIN.top + plotH - 4),
-            "text-anchor": "end",
-            "font-size": "9",
-            fill: "var(--text-muted)",
-            class: "gutter-unpriced-more"
-          },
-          `+${String(sortedUnpriced.length - shownUnpriced.length)} in the list below`
-        )
-      );
-    }
-  }
-  if (unscoredRows.length > 0) {
-    svg.append(
-      dense ? svgEl(
-        "text",
-        {
-          x: String(MARGIN.left + plotW),
-          y: String(baseHeight - 2),
-          "text-anchor": "end",
-          "font-size": "9",
-          fill: "var(--text-muted)",
-          class: "gutter-unscored-caption"
-        },
-        `no score yet \xB7 ${String(unscoredRows.length)} models`
-      ) : svgEl(
-        "text",
-        {
-          x: "4",
-          y: String(baseHeight - 2),
-          "font-size": "9",
-          fill: "var(--text-muted)",
-          class: "gutter-unscored-caption"
-        },
-        "no score yet"
-      )
-    );
-    for (const u2 of unscoredRows) {
-      const rowY = baseHeight - 6 + u2.row * 12;
-      const dot = svgEl("circle", {
-        cx: String(x3(u2.costPerMTok)),
-        cy: String(rowY),
-        r: dense ? "3" : "4",
-        fill: "var(--border-strong)",
-        ...dense ? { "fill-opacity": "0.6" } : {},
-        class: dense ? "gutter-unscored dense" : "gutter-unscored"
-      });
-      if (tooltip) {
-        wireTooltip(dot, tooltip, () => unscoredTooltipContent(u2), u2.id);
-      } else {
-        dot.append(
-          svgEl(
-            "title",
-            {},
-            `${u2.id}
-$${String(u2.costPerMTok)}/MTok blended (80% input / 20% output)
-No sourced intellect measurement yet \xB7 position on price only.`
-          )
-        );
-      }
-      svg.append(dot);
-      if (!dense && u2.text) {
-        svg.append(
-          svgEl(
-            "text",
-            {
-              x: String(x3(u2.costPerMTok) + 7),
-              y: String(rowY + 3),
-              "font-size": "9",
-              fill: "var(--text-secondary)",
-              class: "gutter-unscored-label"
-            },
-            u2.text
-          )
-        );
-      }
-    }
-  }
-  return svg;
-}
-function renderBandedModelList(rows) {
-  const bands = /* @__PURE__ */ new Map();
-  for (const r2 of rows) {
-    const band = Math.floor(r2.intellect / 10) * 10;
-    const list = bands.get(band) ?? [];
-    list.push(r2);
-    bands.set(band, list);
-  }
-  const table = el("div", { class: "frontier-banded" });
-  for (const band of [...bands.keys()].sort((a4, b2) => b2 - a4)) {
-    const list = (bands.get(band) ?? []).sort(
-      (a4, b2) => b2.intellect - a4.intellect || (a4.costPerMTok ?? 0) - (b2.costPerMTok ?? 0)
-    );
-    const chips = list.map((r2) => {
-      const price = r2.costPerMTok === void 0 ? "" : ` \xB7 $${String(Number(r2.costPerMTok.toFixed(2)))}`;
-      return `${displayModelLabel(r2.id)} (${r2.estimated ? "~" : ""}${String(r2.intellect)}${price})`;
-    }).join(" \xB7 ");
-    table.append(
-      el(
-        "div",
-        { class: "frontier-band-row" },
-        el("span", { class: "frontier-band-key" }, `${String(band)}\u2013${String(band + 9)}`),
-        el("span", { class: "frontier-band-count" }, String(list.length)),
-        el("span", { class: "frontier-band-models" }, chips)
-      )
-    );
-  }
-  return table;
-}
-function renderProviderGroupedList(rows) {
-  const groups = /* @__PURE__ */ new Map();
-  for (const r2 of rows) {
-    const sep = r2.id.indexOf(":");
-    const provider = sep > 0 && !r2.id.slice(0, sep).includes("/") ? r2.id.slice(0, sep) : "cloud";
-    const list = groups.get(provider) ?? [];
-    list.push(r2);
-    groups.set(provider, list);
-  }
-  const table = el("div", { class: "frontier-banded" });
-  for (const provider of [...groups.keys()].sort()) {
-    const list = (groups.get(provider) ?? []).sort((a4, b2) => a4.costPerMTok - b2.costPerMTok);
-    const chips = list.map((r2) => `${displayModelLabel(r2.id)} ($${String(Number(r2.costPerMTok.toFixed(2)))})`).join(" \xB7 ");
-    table.append(
-      el(
-        "div",
-        { class: "frontier-band-row" },
-        el("span", { class: "frontier-band-key" }, provider),
-        el("span", { class: "frontier-band-count" }, String(list.length)),
-        el("span", { class: "frontier-band-models" }, chips)
-      )
-    );
-  }
-  return table;
-}
-function renderFrontierKey() {
-  const entries = [
-    ["frontier", "Best value at its level"],
-    ["dominated", "Another model gives more for the money"],
-    ["estimated", "Score is an estimate"],
-    ["discovery", "Available once you set it up"],
-    ["plan", "Included in your plan"]
-  ];
-  return el(
-    "ul",
-    { class: "field-hint frontier-key" },
-    ...entries.map(
-      ([mark2, label]) => el(
-        "li",
-        { class: "frontier-key-item" },
-        el("span", { class: "frontier-key-swatch", "data-mark": mark2 }),
-        label
-      )
-    )
-  );
-}
-function renderChart(points, gutters, tooltip, size = {}, costAxis = "blended", labelMode = "summary") {
-  try {
-    return points.length > 0 ? renderFrontierSvg(points, size, gutters, tooltip, costAxis, labelMode) : el("p", { class: "field-hint" }, "No models with a sourced intellect score yet.");
-  } catch (err) {
-    return el("p", { class: "field-hint" }, `The value map failed to render: ${errorMessage(err)}`);
-  }
-}
-var SVG_NS, WIDTH, HEIGHT, MARGIN, LABEL_LINE_GAP, POINT_SPLAY_COLUMN_PX, POINT_SPLAY_STEP_PX, POINT_SPLAY_MAX_PX, UNPRICED_GUTTER_W, UNSCORED_ROW_LIMIT, UNPRICED_GUTTER_LIMIT;
-var init_intellect_frontier_chart = __esm({
-  "src/renderer/views/intellect-frontier-chart.ts"() {
-    init_clamp();
-    init_model_intellect();
-    init_helpers();
-    init_intellect_frontier_tooltip();
-    init_errors4();
-    SVG_NS = "http://www.w3.org/2000/svg";
-    WIDTH = 460;
-    HEIGHT = 290;
-    MARGIN = { top: 14, right: 20, bottom: 34, left: 40 };
-    LABEL_LINE_GAP = 3;
-    POINT_SPLAY_COLUMN_PX = 7;
-    POINT_SPLAY_STEP_PX = 6;
-    POINT_SPLAY_MAX_PX = 18;
-    UNPRICED_GUTTER_W = 150;
-    UNSCORED_ROW_LIMIT = 8;
-    UNPRICED_GUTTER_LIMIT = 8;
-  }
-});
-
-// src/renderer/views/intellect-frontier-panel.ts
-function isSeverelyDominated(point, points) {
-  return !point.onFrontier && point.costPerMTok > 0 && points.some(
-    (other) => other.id !== point.id && other.intellect >= point.intellect && other.costPerMTok > 0 && point.costPerMTok >= other.costPerMTok * SEVERE_DOMINATION_PRICE_RATIO
-  );
-}
-function compositeScoredLocalModels(localModelIds) {
-  const out = [];
-  for (const id of localModelIds) {
-    const cap = getLocalModelCapability(id);
-    if (!cap || cap.benchmarks["aa-intelligence"]) continue;
-    const composite = compositeIntellect(cap);
-    if (composite) out.push({ id, composite });
-  }
-  return out;
-}
-function asFrontierCandidate(p2) {
-  const { onFrontier: _onFrontier, dominatedBy: _dominatedBy, ...candidate } = p2;
-  return candidate;
-}
-function unpricedCanonicalModels(plottedIds, liveHintOnly) {
-  const out = [];
-  for (const id of listIntellectScoredModelIds()) {
-    if (plottedIds.has(id)) continue;
-    const score = getIntellectScore(id);
-    if (!score) continue;
-    out.push({
-      id,
-      intellect: score.value,
-      estimated: score.estimated === true
-    });
-  }
-  for (const live of liveHintOnly) {
-    out.push({ id: live.id, intellect: live.intellect, estimated: true });
-  }
-  return out.sort((a4, b2) => b2.intellect - a4.intellect || a4.id.localeCompare(b2.id));
-}
-function unscoredPricedModels(extraProviders) {
-  const out = [];
-  for (const id of TRACKED_MODELS) {
-    const info = getModelInfo(id);
-    if (!info || getIntellectScore(id)) continue;
-    out.push({ id, costPerMTok: blendedPricePerMTok(info) });
-  }
-  for (const provider of extraProviders) {
-    for (const m2 of provider.models) {
-      if (typeof m2.inputPricePerMTok !== "number" || getIntellectScore(m2.id)) continue;
-      out.push({
-        id: `${provider.id}:${m2.id}`,
-        costPerMTok: blendedRate(m2.inputPricePerMTok, m2.outputPricePerMTok ?? m2.inputPricePerMTok)
-      });
-    }
-  }
-  return out.sort((a4, b2) => a4.costPerMTok - b2.costPerMTok || a4.id.localeCompare(b2.id));
-}
-function buildSeverelyDominatedList(points) {
-  if (points.length === 0) return [];
-  return [
-    el(
-      "details",
-      { class: "frontier-severely-dominated" },
-      el(
-        "summary",
-        {},
-        `${String(points.length)} ${points.length === 1 ? "model costs" : "models cost"} at least 4\xD7 more than an equally capable priced model`
-      ),
-      renderBandedModelList(
-        points.map((p2) => ({
-          id: p2.id,
-          intellect: p2.intellect,
-          estimated: p2.intellectEstimated,
-          costPerMTok: p2.costPerMTok
-        }))
-      )
-    )
-  ];
-}
-function buildAuxLists(unpricedList, unscoredList) {
-  const out = [];
-  if (unpricedList.length > 0) {
-    out.push(
-      el(
-        "details",
-        { class: "field-hint frontier-unpriced-list" },
-        el(
-          "summary",
-          {},
-          `${String(unpricedList.length)} scored model${unpricedList.length === 1 ? "" : "s"} with no price data yet`
-        ),
-        renderBandedModelList(
-          unpricedList.map((u2) => ({
-            id: u2.id,
-            intellect: u2.intellect,
-            estimated: u2.estimated
-          }))
-        )
-      )
-    );
-  }
-  if (unscoredList.length > UNSCORED_ROW_LIMIT) {
-    out.push(
-      el(
-        "details",
-        { class: "field-hint frontier-unscored-list" },
-        el(
-          "summary",
-          {},
-          `${String(unscoredList.length)} priced models without an intellect score`
-        ),
-        renderProviderGroupedList([...unscoredList])
-      )
-    );
-  }
-  return out;
-}
-function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadLiveModels, loadPlanUsage, loadOpenRouter, loadRoutableModelSelections, loadAcpAgents) {
-  const chartHost = el("div", { class: "frontier-chart" });
-  const liveNotes = el("div", { class: "field-hint frontier-live-notes" });
-  const compositeHost = el("div", { class: "frontier-composite-strip" });
-  let lastPoints = [];
-  let lastGutters = {};
-  let state = null;
-  let discover = false;
-  let showUnpriced = false;
-  let zdrOnly = false;
-  let noTrainingOnly = false;
-  let costAxis = "blended";
-  let planCoverageMode = "plan";
-  let windowExhaustion = /* @__PURE__ */ new Map();
-  let historyAvailable = false;
-  let expandPlanCoverageGroup = null;
-  let lastUnpriced = [];
-  let lastUnscored = [];
-  let lastSeverelyDominated = [];
-  let expandChartHost = null;
-  let expandTooltip = null;
-  let expandDiscoverBtn = null;
-  let expandUnpricedBtn = null;
-  let expandZdrBtn = null;
-  let expandNoTrainingBtn = null;
-  let expandCostAxisGroup = null;
-  function toggleDiscover() {
-    discover = !discover;
-    render();
-  }
-  function toggleUnpriced() {
-    showUnpriced = !showUnpriced;
-    render();
-  }
-  function toggleZdrOnly() {
-    zdrOnly = !zdrOnly;
-    render();
-  }
-  function toggleNoTrainingOnly() {
-    noTrainingOnly = !noTrainingOnly;
-    render();
-  }
-  function setCostAxis(next) {
-    if (costAxis === next) return;
-    costAxis = next;
-    render();
-  }
-  function setPlanCoverageMode(next) {
-    if (planCoverageMode === next) return;
-    planCoverageMode = next;
-    render();
-  }
-  function setWindowExhaustion(rates) {
-    windowExhaustion = rates;
-    render();
-  }
-  function syncZdrBtn(btn) {
-    if (!btn) return;
-    btn.textContent = "ZDR only";
-    btn.classList.toggle("active", zdrOnly);
-    btn.setAttribute("aria-pressed", zdrOnly ? "true" : "false");
-    btn.title = "Show only models on zero-data-retention paths (local, Fireworks, Together, OpenRouter ZDR routing, HF partner tags). Matches the Settings privacy badge \xB7 not enterprise-contract ZDR.";
-  }
-  function syncNoTrainingBtn(btn) {
-    if (!btn) return;
-    btn.textContent = "No training";
-    btn.classList.toggle("active", noTrainingOnly);
-    btn.setAttribute("aria-pressed", noTrainingOnly ? "true" : "false");
-    btn.title = "Show only routes known not to train on prompts. Includes local, ZDR, and retained-but-no-training providers; unknown policies are hidden.";
-  }
-  function makeCostAxisGroup() {
-    const group = el("span", {
-      class: "frontier-cost-axis",
-      role: "group",
-      "aria-label": "Cost axis"
-    });
-    const blendedBtn = el(
-      "button",
-      {
-        type: "button",
-        class: "frontier-btn frontier-cost-axis-btn",
-        "data-cost-axis": "blended"
-      },
-      "$/MTok"
-    );
-    const taskBtn = el(
-      "button",
-      {
-        type: "button",
-        class: "frontier-btn frontier-cost-axis-btn",
-        "data-cost-axis": "perTask",
-        hidden: true,
-        disabled: true
-      },
-      "$/task"
-    );
-    blendedBtn.addEventListener("click", () => {
-      setCostAxis("blended");
-    });
-    taskBtn.addEventListener("click", () => {
-      setCostAxis("perTask");
-    });
-    group.append(blendedBtn, taskBtn);
-    return group;
-  }
-  function makePlanCoverageGroup() {
-    const group = el("span", {
-      class: "frontier-cost-axis frontier-plan-coverage",
-      role: "group",
-      "aria-label": "Plan cost basis"
-    });
-    const modes = [
-      {
-        mode: "plan",
-        label: "Plan",
-        title: "Re-price subscription-included models at $0 while their window has headroom"
-      },
-      {
-        mode: "inference",
-        label: "Inference",
-        title: "Ignore the plan \xB7 plot every cloud model at catalog API $/MTok"
-      },
-      {
-        mode: "expected",
-        label: "Expected",
-        title: "Use prior window history: if a binding window usually hits its limit, plot at API price"
-      }
-    ];
-    for (const { mode, label, title } of modes) {
-      const btn = el(
-        "button",
-        {
-          type: "button",
-          class: "frontier-btn frontier-cost-axis-btn",
-          "data-plan-coverage": mode,
-          hidden: mode === "expected",
-          title
-        },
-        label
-      );
-      btn.addEventListener("click", () => {
-        setPlanCoverageMode(mode);
-      });
-      group.append(btn);
-    }
-    return group;
-  }
-  function syncPlanCoverageGroup(group) {
-    if (!group) return;
-    for (const btn of group.querySelectorAll("[data-plan-coverage]")) {
-      const mode = btn.dataset["planCoverage"];
-      btn.hidden = mode === "expected" && !historyAvailable;
-      const active2 = mode === planCoverageMode;
-      btn.classList.toggle("active", active2);
-      btn.setAttribute("aria-pressed", active2 ? "true" : "false");
-    }
-  }
-  function makeDiscoverButton() {
-    const button = el(
-      "button",
-      {
-        type: "button",
-        class: "frontier-btn frontier-discover"
-      },
-      el(
-        "span",
-        { class: "frontier-discover-label", "data-discover-label": "inactive" },
-        "Discover models"
-      ),
-      el(
-        "span",
-        {
-          class: "frontier-discover-label",
-          "data-discover-label": "active",
-          "aria-hidden": "true"
-        },
-        "Hide discoverable"
-      )
-    );
-    button.addEventListener("click", toggleDiscover);
-    return button;
-  }
-  const discoverBtn = makeDiscoverButton();
-  const unpricedBtn = el("button", {
-    type: "button",
-    class: "frontier-btn frontier-unpriced-toggle"
-  });
-  unpricedBtn.addEventListener("click", toggleUnpriced);
-  const zdrBtn = el("button", {
-    type: "button",
-    class: "frontier-btn frontier-zdr-toggle"
-  });
-  zdrBtn.addEventListener("click", toggleZdrOnly);
-  const noTrainingBtn = el("button", {
-    type: "button",
-    class: "frontier-btn frontier-no-training-toggle"
-  });
-  noTrainingBtn.addEventListener("click", toggleNoTrainingOnly);
-  const costAxisGroup = makeCostAxisGroup();
-  const planCoverageGroup = makePlanCoverageGroup();
-  const expandBtn = el(
-    "button",
-    { type: "button", class: "frontier-btn frontier-expand" },
-    "Expand"
-  );
-  expandBtn.addEventListener("click", () => {
-    if (lastPoints.length === 0) return;
-    const dialog2 = el("dialog", { class: "frontier-expand-dialog" });
-    const close = el("button", { type: "button", class: "frontier-btn" }, "Close");
-    expandDiscoverBtn = makeDiscoverButton();
-    expandUnpricedBtn = el("button", {
-      type: "button",
-      class: "frontier-btn frontier-unpriced-toggle"
-    });
-    expandUnpricedBtn.addEventListener("click", toggleUnpriced);
-    expandZdrBtn = el("button", {
-      type: "button",
-      class: "frontier-btn frontier-zdr-toggle"
-    });
-    expandZdrBtn.addEventListener("click", toggleZdrOnly);
-    expandNoTrainingBtn = el("button", {
-      type: "button",
-      class: "frontier-btn frontier-no-training-toggle"
-    });
-    expandNoTrainingBtn.addEventListener("click", toggleNoTrainingOnly);
-    expandCostAxisGroup = makeCostAxisGroup();
-    expandPlanCoverageGroup = makePlanCoverageGroup();
-    const bigChart = el("div", {
-      class: "frontier-chart frontier-expand-chart"
-    });
-    expandChartHost = bigChart;
-    expandTooltip = createTooltipLayer(dialog2);
-    const closeDialog = () => {
-      expandChartHost = null;
-      expandTooltip?.dismiss();
-      expandTooltip = null;
-      expandDiscoverBtn = null;
-      expandUnpricedBtn = null;
-      expandZdrBtn = null;
-      expandNoTrainingBtn = null;
-      expandCostAxisGroup = null;
-      expandPlanCoverageGroup = null;
-      dialog2.remove();
-    };
-    close.addEventListener("click", closeDialog);
-    dialog2.addEventListener("cancel", closeDialog);
-    dialog2.append(
-      el(
-        "div",
-        { class: "frontier-expand-controls" },
-        expandCostAxisGroup,
-        expandPlanCoverageGroup,
-        expandZdrBtn,
-        expandNoTrainingBtn,
-        expandDiscoverBtn,
-        expandUnpricedBtn,
-        close
-      ),
-      bigChart
-    );
-    fieldset.append(dialog2);
-    render();
-    if (typeof dialog2.showModal === "function") dialog2.showModal();
-    else dialog2.setAttribute("open", "");
-  });
-  const fieldset = el(
-    "fieldset",
-    { class: "frontier-fieldset" },
-    el("legend", {}, "Model value map"),
-    el(
-      "p",
-      { class: "settings-fieldset-desc" },
-      "Compare model scores and prices. Models on the line offer the best value at their level. Hover for details, or click a model to keep its details open."
-    ),
-    el(
-      "div",
-      { class: "frontier-controls" },
-      el("span", { class: "frontier-control-group" }, costAxisGroup),
-      el("span", { class: "frontier-control-group" }, planCoverageGroup),
-      el("span", { class: "frontier-control-group" }, zdrBtn, noTrainingBtn),
-      el("span", { class: "frontier-control-group" }, discoverBtn, unpricedBtn, expandBtn)
-    ),
-    chartHost,
-    renderFrontierKey(),
-    liveNotes,
-    compositeHost
-  );
-  const panelTooltip = createTooltipLayer(fieldset);
-  async function refresh(signal) {
-    if (signal?.aborted) return;
-    signal?.addEventListener(
-      "abort",
-      () => {
-        panelTooltip.dismiss();
-        expandTooltip?.dismiss();
-      },
-      { once: true }
-    );
-    let localIds;
-    if (signal?.aborted) return;
-    try {
-      localIds = await loadLocalModels();
-    } catch {
-      localIds = [];
-    }
-    let extraProviders;
-    if (signal?.aborted) return;
-    try {
-      extraProviders = await loadExtraProviders?.() ?? [];
-    } catch {
-      extraProviders = [];
-    }
-    let liveFetch;
-    if (signal?.aborted) return;
-    try {
-      liveFetch = await loadLiveModels?.() ?? { ok: true, models: [] };
-    } catch {
-      liveFetch = { ok: true, models: [] };
-    }
-    let planUsage;
-    if (signal?.aborted) return;
-    try {
-      planUsage = await loadPlanUsage?.() ?? null;
-    } catch {
-      planUsage = null;
-    }
-    let openRouter;
-    if (signal?.aborted) return;
-    try {
-      openRouter = await loadOpenRouter?.() ?? {
-        models: [],
-        zdrOnly: true,
-        allowTraining: false
-      };
-    } catch {
-      openRouter = { models: [], zdrOnly: true, allowTraining: false };
-    }
-    let routableSelections = null;
-    if (loadRoutableModelSelections) {
-      if (signal?.aborted) return;
-      try {
-        routableSelections = await loadRoutableModelSelections();
-      } catch {
-        routableSelections = [];
-      }
-    }
-    let acpAgents = [];
-    if (signal?.aborted) return;
-    try {
-      acpAgents = await loadAcpAgents?.() ?? [];
-    } catch {
-    }
-    if (signal?.aborted) return;
-    const live = liveIntellectCandidates(liveFetch.models, liveFetch.indexVersion);
-    state = {
-      localIds,
-      extraProviders,
-      live,
-      liveFetch,
-      planUsage,
-      openRouter,
-      routableSelections,
-      acpAgents
-    };
-    if (signal?.aborted) return;
-    render();
-  }
-  function paintExpanded() {
-    if (!expandChartHost) return;
-    expandChartHost.replaceChildren(
-      renderChart(
-        lastPoints,
-        lastGutters,
-        expandTooltip ?? void 0,
-        {
-          width: 1200,
-          height: 680
-        },
-        costAxis,
-        "all"
-      ),
-      ...buildAuxLists(lastUnpriced, lastUnscored),
-      ...buildSeverelyDominatedList(lastSeverelyDominated)
-    );
-  }
-  function syncCostAxisGroup(group, taskCostAvailable) {
-    if (!group) return;
-    group.querySelectorAll("button.frontier-cost-axis-btn").forEach((btn) => {
-      const axis = btn.dataset["costAxis"] === "perTask" ? "perTask" : "blended";
-      btn.classList.toggle("active", axis === costAxis);
-      btn.setAttribute("aria-pressed", axis === costAxis ? "true" : "false");
-      if (axis === "perTask") {
-        btn.hidden = !taskCostAvailable;
-        btn.disabled = !taskCostAvailable;
-        btn.title = taskCostAvailable ? "Plot Artificial Analysis cost per Intelligence Index task" : "Needs Artificial Analysis live data with cost-per-task";
-      } else {
-        btn.disabled = false;
-        btn.title = "Plot blended $/MTok (80% input / 20% output)";
-      }
-    });
-  }
-  function render() {
-    if (!state) return;
-    const {
-      localIds,
-      extraProviders,
-      live,
-      liveFetch,
-      planUsage,
-      openRouter,
-      routableSelections,
-      acpAgents
-    } = state;
-    const liveNoteParts = [];
-    if (liveFetch.models.length > 0 && live.verification.verified) {
-      const stale = live.verification.mismatches;
-      liveNoteParts.push(
-        `Live scores from Artificial Analysis, checked against ${String(live.verification.agreeingAnchors)} reviewed measurements. ${INTELLECT_ATTRIBUTION}.`
-      );
-      if (stale.length > 0) {
-        liveNoteParts.push(
-          el(
-            "details",
-            { class: "frontier-stale-anchors" },
-            el(
-              "summary",
-              {},
-              `${String(stale.length)} reviewed measurement${stale.length === 1 ? "" : "s"} differ${stale.length === 1 ? "s" : ""} from the live source`
-            ),
-            el(
-              "p",
-              {},
-              `${stale.map(
-                (m2) => `${displayModelLabel(m2.modelId)} (map ${String(m2.canonical)}, live ${String(m2.live)})`
-              ).join("; ")}.`
-            )
-          )
-        );
-      }
-    } else if (liveFetch.models.length > 0) {
-      const v3 = live.verification;
-      const detail = [
-        v3.versionMismatch ? el(
-          "p",
-          {},
-          `Live scores use benchmark version ${v3.reportedVersion ?? "?"}, which differs from this chart. Showing reviewed measurements keeps the comparison consistent.`
-        ) : el(
-          "p",
-          {},
-          "The feed disagrees with the reviewed scores this map is anchored to, which usually means Artificial Analysis renormalised its index or measures a different model configuration."
-        )
-      ];
-      if (v3.mismatches.length > 0) {
-        detail.push(
-          el(
-            "p",
-            {},
-            `Measurements that differ: ${v3.mismatches.map(
-              (m2) => `${displayModelLabel(m2.modelId)} (map ${String(m2.canonical)}, live ${String(m2.live)})`
-            ).join("; ")}.`
-          )
-        );
-      }
-      liveNoteParts.push(
-        el(
-          "details",
-          {},
-          el("summary", {}, "Some live model scores cannot be compared with this chart"),
-          ...detail
-        )
-      );
-    } else if (liveFetch.error) {
-      liveNoteParts.push(`Live Artificial Analysis data unavailable: ${liveFetch.error}`);
-    }
-    const pricedRoutes = [
-      ...extraProviderFrontierCandidates(extraProviders),
-      ...openRouterFrontierCandidates(openRouter.models)
-    ];
-    const baseCandidates = [
-      ...localFrontierCandidates(localIds),
-      ...pricedRoutes,
-      ...planAcpFrontierCandidates(acpAgents, pricedRoutes)
-    ];
-    const exactRoutes = routableSelections === null ? null : new Set(routableSelections);
-    const delegatedModelIds = /* @__PURE__ */ new Set();
-    const routableModelIds = /* @__PURE__ */ new Set();
-    for (const selection2 of routableSelections ?? []) {
-      const resolved2 = resolveIntellectModelId(selection2);
-      if (resolved2 !== null) routableModelIds.add(resolved2);
-      const namespace = parseModelSelection(selection2).namespace;
-      if (namespace !== "acp" && namespace !== "remote-agent" && namespace !== "plugin-model") {
-        continue;
-      }
-      if (resolved2 !== null) delegatedModelIds.add(resolved2);
-    }
-    const modelIdentityHasRoute = (id) => {
-      if (exactRoutes === null) return true;
-      const resolved2 = resolveIntellectModelId(id) ?? id;
-      return routableModelIds.has(resolved2);
-    };
-    const isTrackedCloudCandidate = (candidate) => TRACKED_MODELS.some((id) => id === candidate.id);
-    const candidateHasRoute = (candidate) => {
-      if (exactRoutes === null) return true;
-      if (exactRoutes.has(candidate.id)) return true;
-      if (candidate.local === true && exactRoutes.has(`lmstudio:${candidate.id}`)) return true;
-      if (!isTrackedCloudCandidate(candidate)) return false;
-      const resolved2 = resolveIntellectModelId(candidate.id) ?? candidate.id;
-      return delegatedModelIds.has(resolved2);
-    };
-    const routableBaseCandidates = baseCandidates.filter(candidateHasRoute);
-    const coveredResolved = new Set(
-      routableBaseCandidates.map((c2) => resolveIntellectModelId(c2.id) ?? c2.id)
-    );
-    const livePricedCurated = live.pricedCurated.filter(
-      (c2) => !coveredResolved.has(c2.id) && getModelInfo(c2.id) === null
-    );
-    const liveDiscoverableCandidates = [
-      ...live.candidates,
-      ...livePricedCurated.map((candidate) => ({
-        ...candidate,
-        discovery: true
-      }))
-    ];
-    const trackedDiscoverableCandidates = [];
-    if (exactRoutes !== null) {
-      for (const id of TRACKED_MODELS) {
-        const info = getModelInfo(id);
-        const score = getIntellectScore(id);
-        if (!info || !score) continue;
-        const candidate = {
-          id,
-          intellect: score.value,
-          intellectEstimated: score.estimated === true,
-          costPerMTok: blendedPricePerMTok(info),
-          discovery: true
-        };
-        if (!candidateHasRoute(candidate)) trackedDiscoverableCandidates.push(candidate);
-      }
-    }
-    const discoverableCandidates = [...liveDiscoverableCandidates, ...trackedDiscoverableCandidates];
-    const applyDiscover = (btn) => {
-      if (!btn) return;
-      btn.hidden = discoverableCandidates.length === 0;
-      for (const label of btn.querySelectorAll("[data-discover-label]")) {
-        const labelIsActive = label.dataset["discoverLabel"] === "active";
-        label.setAttribute("aria-hidden", labelIsActive === discover ? "false" : "true");
-      }
-      btn.classList.toggle("active", discover);
-      btn.setAttribute("aria-pressed", discover ? "true" : "false");
-    };
-    applyDiscover(discoverBtn);
-    applyDiscover(expandDiscoverBtn);
-    const discoveryCandidates = discover ? liveDiscoverableCandidates : [];
-    const costPerTaskById = /* @__PURE__ */ new Map();
-    for (const m2 of liveFetch.models) {
-      if (typeof m2.costPerTask !== "number" || !(m2.costPerTask > 0)) continue;
-      const key = resolveIntellectModelId(m2.id) ?? m2.id;
-      if (!costPerTaskById.has(key)) costPerTaskById.set(key, m2.costPerTask);
-    }
-    const enrichTaskCost = (c2) => {
-      if (typeof c2.costPerTask === "number" && c2.costPerTask > 0) return c2;
-      const key = resolveIntellectModelId(c2.id) ?? c2.id;
-      const task = costPerTaskById.get(key);
-      return typeof task === "number" ? { ...c2, costPerTask: task } : c2;
-    };
-    const allRouteCandidates = [...baseCandidates, ...discoveryCandidates];
-    const trackedCandidateIsDiscovery = (candidate) => exactRoutes !== null && isTrackedCloudCandidate(candidate) && !candidateHasRoute(candidate);
-    const candidateIsIncluded = (candidate) => candidateHasRoute(candidate) || candidate.discovery === true || discover && trackedCandidateIsDiscovery(candidate);
-    historyAvailable = allRouteCandidates.some((candidate) => {
-      if (!planUsage || !candidate.planAccess || candidate.discovery || !candidateIsIncluded(candidate))
-        return false;
-      const inclusion = resolvePlanInclusion(
-        candidate.planAccess.provider,
-        candidate.planAccess.modelId,
-        planUsage
-      );
-      return inclusion !== null && (windowExhaustion.get(inclusion.windowId)?.total ?? 0) > 0;
-    });
-    const adjustCandidate = (candidate) => {
-      const surfaced = trackedCandidateIsDiscovery(candidate) ? { ...candidate, discovery: true } : candidate;
-      const enriched = enrichTaskCost(surfaced);
-      return enriched.discovery === true ? enriched : applyPlanCoverage(enriched, planUsage, {
-        mode: planCoverageMode,
-        windowExhaustion
-      });
-    };
-    const routePolicy = {
-      providers: extraProviders,
-      openRouterZdrOnly: openRouter.zdrOnly,
-      openRouterAllowTraining: openRouter.allowTraining
-    };
-    const routeAllowed = (candidate) => {
-      const local = candidate.local === true;
-      if (zdrOnly && !isZeroRetentionModelPath(candidate.id, {
-        ...routePolicy,
-        ...local ? { local: true } : {}
-      })) {
-        return false;
-      }
-      return !noTrainingOnly || isNoTrainingModelPath(candidate.id, {
-        ...routePolicy,
-        ...local ? { local: true } : {}
-      });
-    };
-    if (planCoverageMode === "expected" && !historyAvailable) planCoverageMode = "plan";
-    const unfilteredBlendedPoints = frontierForKnownModels(
-      allRouteCandidates,
-      adjustCandidate,
-      candidateIsIncluded
-    );
-    const privacyBlendedPoints = zdrOnly || noTrainingOnly ? frontierForKnownModels(
-      allRouteCandidates,
-      adjustCandidate,
-      (candidate) => candidateIsIncluded(candidate) && routeAllowed(candidate)
-    ) : unfilteredBlendedPoints;
-    const hiddenByZdr = zdrOnly ? unfilteredBlendedPoints.length - frontierForKnownModels(
-      allRouteCandidates,
-      adjustCandidate,
-      (candidate) => candidateIsIncluded(candidate) && isZeroRetentionModelPath(candidate.id, {
-        ...routePolicy,
-        ...candidate.local === true ? { local: true } : {}
-      })
-    ).length : 0;
-    const hiddenByNoTraining = noTrainingOnly ? unfilteredBlendedPoints.length - frontierForKnownModels(
-      allRouteCandidates,
-      adjustCandidate,
-      (candidate) => candidateIsIncluded(candidate) && isNoTrainingModelPath(candidate.id, {
-        ...routePolicy,
-        ...candidate.local === true ? { local: true } : {}
-      })
-    ).length : 0;
-    const blendedPoints = privacyBlendedPoints;
-    const taskCostAvailable = blendedPoints.some(
-      (p2) => typeof p2.costPerTask === "number" && p2.costPerTask > 0
-    );
-    if (costAxis === "perTask" && !taskCostAvailable) costAxis = "blended";
-    syncCostAxisGroup(costAxisGroup, taskCostAvailable);
-    syncCostAxisGroup(expandCostAxisGroup, taskCostAvailable);
-    syncPlanCoverageGroup(planCoverageGroup);
-    syncPlanCoverageGroup(expandPlanCoverageGroup);
-    let allPoints;
-    let missingTaskCost = 0;
-    if (costAxis === "perTask") {
-      const { plotted, missingAxisCost } = projectOntoCostAxis(
-        blendedPoints.map(asFrontierCandidate),
-        "perTask"
-      );
-      allPoints = computeParetoFrontier(plotted);
-      missingTaskCost = missingAxisCost.length;
-    } else {
-      allPoints = blendedPoints;
-    }
-    syncZdrBtn(zdrBtn);
-    syncZdrBtn(expandZdrBtn);
-    syncNoTrainingBtn(noTrainingBtn);
-    syncNoTrainingBtn(expandNoTrainingBtn);
-    const dominatedLive = allPoints.filter((p2) => p2.discovery === true && !p2.onFrontier);
-    const routedPoints = allPoints.filter((p2) => p2.discovery !== true);
-    const severelyDominated = routedPoints.filter((p2) => isSeverelyDominated(p2, routedPoints));
-    lastSeverelyDominated = severelyDominated;
-    const points = allPoints.filter(
-      (p2) => (p2.discovery !== true || p2.onFrontier) && !severelyDominated.includes(p2)
-    );
-    const pricedIds = new Set(
-      [...blendedPoints, ...discoverableCandidates].map(
-        (p2) => resolveIntellectModelId(p2.id) ?? p2.id
-      )
-    );
-    const unpricedModels = unpricedCanonicalModels(pricedIds, live.hintOnly).filter((u2) => {
-      if (!modelIdentityHasRoute(u2.id)) return false;
-      if (zdrOnly && !isZeroRetentionModelPath(u2.id, routePolicy)) return false;
-      return !noTrainingOnly || isNoTrainingModelPath(u2.id, routePolicy);
-    });
-    lastPoints = points;
-    void requestFrontierModelCards(points.slice(0, MAX_CARD_PREFETCH).map((p2) => p2.id));
-    const applyUnpriced = (btn) => {
-      if (!btn) return;
-      btn.hidden = unpricedModels.length === 0;
-      btn.textContent = showUnpriced ? "Hide unpriced" : "Show unpriced";
-      btn.classList.toggle("active", showUnpriced);
-    };
-    applyUnpriced(unpricedBtn);
-    applyUnpriced(expandUnpricedBtn);
-    const unscoredAll = unscoredPricedModels(extraProviders);
-    const filteredUnscored = unscoredAll.filter((model) => {
-      if (!candidateHasRoute({
-        id: model.id,
-        intellect: 0,
-        costPerMTok: model.costPerMTok
-      })) {
-        return false;
-      }
-      if (zdrOnly && !isZeroRetentionModelPath(model.id, routePolicy)) return false;
-      return !noTrainingOnly || isNoTrainingModelPath(model.id, routePolicy);
-    });
-    lastGutters = {
-      ...showUnpriced ? { unpriced: unpricedModels } : {},
-      unscored: filteredUnscored
-    };
-    if (!discover && discoverableCandidates.length > 0) {
-      const modelCount = discoverableCandidates.length;
-      liveNoteParts.push(
-        el(
-          "span",
-          {},
-          `${String(modelCount)} more priced and scored model${modelCount === 1 ? " is" : "s are"} not currently available in your model picker \xB7 press \u201CDiscover models\u201D to overlay where they'd sit on your frontier. `
-        )
-      );
-    }
-    if (costAxis === "perTask" && missingTaskCost > 0) {
-      liveNoteParts.push(
-        el(
-          "span",
-          {},
-          `${String(missingTaskCost)} model${missingTaskCost === 1 ? "" : "s"} lack AA task-cost data and are hidden on this axis. `
-        )
-      );
-    }
-    if (zdrOnly && hiddenByZdr > 0) {
-      liveNoteParts.push(
-        el(
-          "span",
-          {},
-          `ZDR only: hiding ${String(hiddenByZdr)} model${hiddenByZdr === 1 ? "" : "s"} on retained-by-default paths (Anthropic/OpenAI API, \u2026). `
-        )
-      );
-    }
-    if (noTrainingOnly && hiddenByNoTraining > 0) {
-      liveNoteParts.push(
-        el(
-          "span",
-          {},
-          `No training: hiding ${String(hiddenByNoTraining)} model${hiddenByNoTraining === 1 ? "" : "s"} on training or unknown-policy routes. `
-        )
-      );
-    }
-    if (zdrOnly && points.length === 0) {
-      liveNoteParts.push(
-        el(
-          "span",
-          {},
-          "No zero-retention models on this map yet \xB7 add a Fireworks/Together provider, an HF model pinned to a ZDR partner, a local model, or OpenRouter under default ZDR routing. "
-        )
-      );
-    }
-    if (discover && dominatedLive.length > 0) {
-      liveNoteParts.push(
-        el(
-          "details",
-          { class: "frontier-dominated-live" },
-          el(
-            "summary",
-            {},
-            `${String(dominatedLive.length)} discoverable ${dominatedLive.length === 1 ? "model is" : "models are"} dominated (not worth setting up \xB7 better value already on your frontier)`
-          ),
-          renderBandedModelList(
-            dominatedLive.map((p2) => ({
-              id: p2.id,
-              intellect: p2.intellect,
-              estimated: p2.intellectEstimated,
-              costPerMTok: p2.costPerMTok
-            }))
-          )
-        )
-      );
-    }
-    liveNoteParts.push(...buildSeverelyDominatedList(severelyDominated));
-    const unscoredList = lastGutters.unscored ?? [];
-    const unpricedList = unpricedModels;
-    lastUnpriced = unpricedList;
-    lastUnscored = unscoredList;
-    panelTooltip.dismiss();
-    expandTooltip?.dismiss();
-    chartHost.replaceChildren(
-      renderChart(points, lastGutters, panelTooltip, {}, costAxis),
-      ...buildAuxLists(unpricedList, unscoredList)
-    );
-    paintExpanded();
-    liveNotes.replaceChildren(
-      ...liveNoteParts.map((t2) => typeof t2 === "string" ? el("span", {}, `${t2} `) : t2)
-    );
-    const compositeModels = compositeScoredLocalModels(localIds);
-    compositeHost.replaceChildren(
-      ...compositeModels.length > 0 ? [
-        el(
-          "p",
-          { class: "field-hint" },
-          "Local model scores use a separate scale and cannot be compared directly with the chart above:"
-        ),
-        renderCompositeStrip(compositeModels)
-      ] : []
-    );
-  }
-  return {
-    root: fieldset,
-    refresh,
-    setPlanCoverageMode,
-    getPlanCoverageMode: () => planCoverageMode,
-    setWindowExhaustion
-  };
-}
-var MAX_CARD_PREFETCH, SEVERE_DOMINATION_PRICE_RATIO;
-var init_intellect_frontier_panel = __esm({
-  "src/renderer/views/intellect-frontier-panel.ts"() {
-    init_pareto_frontier();
-    init_frontier_candidates();
-    init_model_catalog();
-    init_model_selection();
-    init_model_intellect();
-    init_live_intellect();
-    init_composite_intellect();
-    init_local_model_catalog();
-    init_data_policies();
-    init_plan_inclusion();
-    init_plan_frontier_candidates();
-    init_helpers();
-    init_intellect_frontier_chart();
-    init_intellect_frontier_tooltip();
-    init_intellect_frontier_chart();
-    init_intellect_frontier_tooltip();
-    MAX_CARD_PREFETCH = 128;
-    SEVERE_DOMINATION_PRICE_RATIO = 4;
-  }
-});
-
-// src/shared/openai-cloud-agent.ts
-var DEFAULT_OPENAI_AGENT_MODEL, OPENAI_AGENT_GROUP, OPENAI_AGENT_RETENTION_NOTICE;
-var init_openai_cloud_agent = __esm({
-  "src/shared/openai-cloud-agent.ts"() {
-    DEFAULT_OPENAI_AGENT_MODEL = "gpt-6.1-sol";
-    OPENAI_AGENT_GROUP = "OpenAI Cloud Agent (prototype)";
-    OPENAI_AGENT_RETENTION_NOTICE = {
-      label: "No ZDR",
-      detail: "OpenAI-hosted Agents API sessions retain session data and are not eligible for zero data retention (ZDR)."
-    };
-  }
-});
-
-// src/shared/acp-retention.ts
-var ACP_RETENTION_NOTICE;
-var init_acp_retention = __esm({
-  "src/shared/acp-retention.ts"() {
-    ACP_RETENTION_NOTICE = {
-      label: "ZDR not verified",
-      detail: "Zero data retention has not been verified for this agent route. The agent\u2019s signed-in account and upstream model provider determine retention and training. Running the agent on this device does not mean its model runs locally. Review the agent\u2019s data policy and account controls before sharing sensitive content."
-    };
-  }
-});
-
-// packages/llm/src/chatgpt-plan.ts
-function chatGptPlanModelValue(clientId, model) {
-  return `${CHATGPT_PLAN_MODEL_PREFIX}${clientId}#${model}`;
-}
-function parseChatGptPlanModel(value) {
-  const selection2 = parseModelSelection(value);
-  if (selection2.namespace !== "chatgpt-plan") return null;
-  if (!selection2.agent || !selection2.id) throw new Error("Choose a ChatGPT account and model.");
-  return { clientId: selection2.agent, model: selection2.id };
-}
-var init_chatgpt_plan = __esm({
-  "packages/llm/src/chatgpt-plan.ts"() {
-    init_model_selection();
-    init_reserved_prefixes();
-  }
-});
-
-// packages/llm/src/intellect-hints.ts
-function isOnCloudFrontier(id) {
-  cloudFrontierIds ??= new Set(
-    frontierForKnownModels().filter((p2) => p2.onFrontier).map((p2) => p2.id)
-  );
-  return cloudFrontierIds.has(id);
-}
-function formatPrice2(perMTok) {
-  const rounded = Number.isInteger(perMTok) ? String(perMTok) : perMTok.toFixed(2);
-  return `$${rounded}/MTok`;
-}
-function cloudModelIntellectHint(id) {
-  const score = getIntellectScore(id);
-  const info = getModelInfo(id);
-  const parts = [];
-  if (score) parts.push(`intellect ${score.estimated ? "~" : ""}${String(score.value)}`);
-  if (info) parts.push(formatPrice2(blendedPricePerMTok(info)));
-  if (score && info && isOnCloudFrontier(id)) parts.push("frontier");
-  return parts.length > 0 ? parts.join(" \xB7 ") : null;
-}
-function modelIntellectHint(idOrLabel) {
-  const score = getIntellectScore(idOrLabel);
-  if (!score) return null;
-  return `intellect ${score.estimated ? "~" : ""}${String(score.value)}`;
-}
-function localModelIntellectHint(id) {
-  const cap = getLocalModelCapability(id);
-  if (!cap) return null;
-  const score = localBenchmarkScore(cap, "aa-intelligence");
-  if (score) return `intellect ${score.estimated ? "~" : ""}${String(score.value)}`;
-  const composite = compositeIntellect(cap);
-  if (composite)
-    return `composite ${String(composite.value)} (${String(composite.axes.length)} axes)`;
-  return null;
-}
-var cloudFrontierIds;
-var init_intellect_hints = __esm({
-  "packages/llm/src/intellect-hints.ts"() {
-    init_composite_intellect();
-    init_local_model_catalog();
-    init_model_catalog();
-    init_model_intellect();
-    init_pareto_frontier();
-    cloudFrontierIds = null;
-  }
-});
-
-// packages/llm/src/extra-providers.ts
-function isLocalBaseUrl(baseUrl) {
-  try {
-    let host = new URL(baseUrl).hostname.toLowerCase();
-    const bracketed = /^\[(.*)\]$/.exec(host);
-    if (bracketed) host = bracketed[1] ?? host;
-    return host === "localhost" || host.endsWith(".localhost") || // Entire 127.0.0.0/8 loopback range.
-    /^127(?:\.\d{1,3}){3}$/.test(host) || host === "0.0.0.0" || host === "::1" || host === "::";
-  } catch {
-    return false;
-  }
-}
-function extraProviderDisplayLabel(model, _providers = []) {
-  return extraProviderModelId(model);
-}
-function extraProviderSlugFromModel(model) {
-  const selection2 = parseModelSelection(model);
-  return selection2.namespace === "extra-provider" ? selection2.slug : null;
-}
-function extraProviderModelId(model) {
-  const selection2 = parseModelSelection(model);
-  return selection2.namespace === "extra-provider" ? selection2.id : model;
-}
-function toExtraProviderModel(slug2, modelId) {
-  return `${slug2}:${modelId}`;
-}
-var DEFAULT_EXTRA_PROVIDER_CONTEXT, BUILTIN_EXTRA_PROVIDERS, BUILTIN_EXTRA_PROVIDER_SLUGS, BUILTIN_BY_SLUG;
-var init_extra_providers = __esm({
-  "packages/llm/src/extra-providers.ts"() {
-    init_unknown_value();
-    init_credential_url();
-    init_provider_metadata2();
-    init_model_selection();
-    init_pareto_frontier();
-    DEFAULT_EXTRA_PROVIDER_CONTEXT = 128e3;
-    BUILTIN_EXTRA_PROVIDERS = PROVIDER_PRESETS.map((preset) => ({
-      ...preset,
-      prefix: `${preset.id}:`,
-      builtin: true,
-      local: isLocalBaseUrl(preset.baseUrl),
-      // One default for presets and user customs alike — the catalog only records
-      // a fallback when it genuinely differs (see provider-metadata.ts).
-      fallbackContextWindow: preset.fallbackContextWindow ?? DEFAULT_EXTRA_PROVIDER_CONTEXT
-    }));
-    BUILTIN_EXTRA_PROVIDER_SLUGS = BUILTIN_EXTRA_PROVIDERS.map(
-      (p2) => p2.id
-    );
-    BUILTIN_BY_SLUG = new Map(BUILTIN_EXTRA_PROVIDERS.map((p2) => [p2.id, p2]));
-  }
-});
-
-// src/shared/managed-agents.ts
-var DEFAULT_MANAGED_AGENT_MODEL;
-var init_managed_agents = __esm({
-  "src/shared/managed-agents.ts"() {
-    DEFAULT_MANAGED_AGENT_MODEL = "claude-opus-4-8";
-  }
-});
-
-// packages/thread-store/src/remote-agent-provider.ts
-var REMOTE_AGENT_PROVIDER_OPENAI, REMOTE_AGENT_PROVIDER_CURSOR, REMOTE_AGENT_PROVIDER_ANTHROPIC, REMOTE_AGENT_PROVIDERS, isRemoteAgentProvider;
-var init_remote_agent_provider = __esm({
-  "packages/thread-store/src/remote-agent-provider.ts"() {
-    init_member_of();
-    REMOTE_AGENT_PROVIDER_OPENAI = "openai";
-    REMOTE_AGENT_PROVIDER_CURSOR = "cursor";
-    REMOTE_AGENT_PROVIDER_ANTHROPIC = "anthropic";
-    REMOTE_AGENT_PROVIDERS = [
-      REMOTE_AGENT_PROVIDER_OPENAI,
-      REMOTE_AGENT_PROVIDER_CURSOR,
-      REMOTE_AGENT_PROVIDER_ANTHROPIC
-    ];
-    isRemoteAgentProvider = memberOf(REMOTE_AGENT_PROVIDERS);
-  }
-});
-
-// src/shared/remote-agent.ts
-function remoteAgentModelValue(provider, model) {
-  return model ? `${REMOTE_AGENT_MODEL_PREFIX}${provider}${REMOTE_AGENT_MODEL_SEP}${model}` : `${REMOTE_AGENT_MODEL_PREFIX}${provider}`;
-}
-function parseRemoteAgentModelSelection(model) {
-  const selection2 = parseModelSelection(model);
-  if (selection2.namespace !== "remote-agent") return null;
-  const provider = selection2.agent;
-  if (!isRemoteAgentProvider(provider)) return null;
-  return selection2.id ? { provider, model: selection2.id } : { provider };
-}
-function parseRemoteAgentModel(model) {
-  return parseRemoteAgentModelSelection(model)?.provider ?? null;
-}
-function remoteAgentGroupLabel(provider) {
-  return REMOTE_AGENT_MODELS.find((option) => option.provider === provider)?.label ?? provider;
-}
-function remoteAgentDisplayLabel(model, catalog = []) {
-  const selection2 = parseRemoteAgentModelSelection(model);
-  if (!selection2) return model;
-  const title = remoteAgentGroupLabel(selection2.provider);
-  if (!selection2.model) return title;
-  const catalogLabel = catalog.find((entry) => entry.id === selection2.model)?.label;
-  return `${title} \u2014 ${catalogLabel ?? cloudModelDisplayLabel(selection2.model)}`;
-}
-var DEFAULT_CURSOR_AGENT_BASE_URL, CURSOR_AGENTS_WEB_URL, REMOTE_AGENT_MODEL_SEP, REMOTE_AGENT_MODELS, MANAGED_AGENT_PICKER_MODELS, MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT;
-var init_remote_agent = __esm({
-  "src/shared/remote-agent.ts"() {
-    init_reserved_prefixes();
-    init_reserved_prefixes();
-    init_model_selection();
-    init_model_catalog();
-    init_managed_agents();
-    init_unknown_value3();
-    init_remote_agent_provider();
-    init_remote_agent_provider();
-    DEFAULT_CURSOR_AGENT_BASE_URL = "https://api.cursor.com";
-    CURSOR_AGENTS_WEB_URL = "https://cursor.com/agents";
-    REMOTE_AGENT_MODEL_SEP = AGENT_MODEL_SEP;
-    REMOTE_AGENT_MODELS = [
-      {
-        provider: REMOTE_AGENT_PROVIDER_OPENAI,
-        value: "remote-agent:openai",
-        label: "OpenAI Cloud Agent"
-      },
-      {
-        provider: REMOTE_AGENT_PROVIDER_CURSOR,
-        value: `${REMOTE_AGENT_MODEL_PREFIX}${REMOTE_AGENT_PROVIDER_CURSOR}`,
-        label: "Cursor Cloud Agent"
-      },
-      {
-        provider: REMOTE_AGENT_PROVIDER_ANTHROPIC,
-        value: `${REMOTE_AGENT_MODEL_PREFIX}${REMOTE_AGENT_PROVIDER_ANTHROPIC}`,
-        label: "Claude Cloud Agent"
-      }
-    ];
-    MANAGED_AGENT_PICKER_MODELS = TRACKED_MODELS.filter(
-      (id) => inferCloudModelProvider(id) === "anthropic"
-    );
-    MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT = (() => {
-      if (MANAGED_AGENT_PICKER_MODELS.includes(DEFAULT_MANAGED_AGENT_MODEL)) {
-        return MANAGED_AGENT_PICKER_MODELS;
-      }
-      return [DEFAULT_MANAGED_AGENT_MODEL, ...MANAGED_AGENT_PICKER_MODELS];
-    })();
-  }
-});
-
 // src/shared/plugin-model.ts
 function pluginModelValue(pluginId, routeId) {
   return `${PLUGIN_MODEL_PREFIX}${encodeURIComponent(pluginId)}:${encodeURIComponent(routeId)}`;
@@ -47485,8 +44414,30 @@ var init_plugin_model = __esm({
   }
 });
 
+// packages/llm/src/agent-model-identity.ts
+function resolveAgentModelIdentity(...forms) {
+  const named = forms.filter(isNonEmptyString);
+  for (const form of named) {
+    const id = resolveIntellectModelId(form);
+    if (id !== null && getIntellectScore(id)) return id;
+  }
+  for (const form of named) {
+    const labelled2 = claudeModelIdFromLabel(form);
+    const id = labelled2 === null ? null : resolveIntellectModelId(labelled2);
+    if (id !== null && getIntellectScore(id)) return id;
+  }
+  return null;
+}
+var init_agent_model_identity = __esm({
+  "packages/llm/src/agent-model-identity.ts"() {
+    init_model_intellect();
+    init_model_label();
+    init_nullish();
+  }
+});
+
 // src/shared/model-display.ts
-function displayModelLabel2(model, context) {
+function displayModelLabel(model, context) {
   if (isBestValueChatModel(model)) return BEST_VALUE_CHAT_MODEL_LABEL;
   const dynamic = dynamicModelLabel(model);
   if (dynamic) return dynamic;
@@ -47666,6 +44617,100 @@ var init_model_version_suppression = __esm({
   }
 });
 
+// src/shared/plan-inclusion.ts
+function claudeModelFamily(modelId) {
+  const id = modelId.toLowerCase();
+  if (id.includes("fable")) return "fable";
+  if (id.includes("opus")) return "opus";
+  if (id.includes("sonnet")) return "sonnet";
+  if (id.includes("haiku")) return "haiku";
+  return null;
+}
+function claudeGoverningWindowIds(modelId) {
+  const family = claudeModelFamily(modelId);
+  const ids = [];
+  if (family) ids.push(`seven_day_${family}`);
+  ids.push("seven_day", "five_hour");
+  return ids;
+}
+function governingWindowIds(provider, modelId) {
+  switch (provider) {
+    case "claude":
+      return modelId ? claudeGoverningWindowIds(modelId) : ["seven_day", "five_hour"];
+    case "cursor":
+      return ["total", "auto"];
+    case "codex":
+      return ["primary", "secondary"];
+    case "huggingface":
+      return ["inference_providers"];
+  }
+}
+function providerWindows(snapshot, provider) {
+  const result = snapshot.providers.find((r2) => r2.provider === provider);
+  return result && result.status === "ok" ? result.usage.windows : null;
+}
+function resolvePlanInclusion(provider, modelId, snapshot) {
+  const windows = providerWindows(snapshot, provider);
+  if (!windows || windows.length === 0) return null;
+  const availability = modelId ? providerModelAvailability(snapshot, provider, modelId) : void 0;
+  const govern = new Set(governingWindowIds(provider, modelId));
+  let applicable = windows.filter((w3) => govern.has(w3.id));
+  if (availability === true) {
+    const pool = windows.filter((w3) => w3.id.startsWith("chatpass_"));
+    if (pool.length > 0) applicable = pool;
+  } else if (availability === false && applicable.length === 0) {
+    applicable = windows.slice(0, 1);
+  }
+  if (applicable.length === 0) return null;
+  const binding = applicable.reduce(
+    (tightest, w3) => w3.usedPercent > tightest.usedPercent ? w3 : tightest
+  );
+  return {
+    provider,
+    windowId: binding.id,
+    windowLabel: binding.label,
+    usedPercent: binding.usedPercent,
+    resetsAt: binding.resetsAt,
+    exhausted: availability === false || availability !== true && binding.usedPercent >= 100
+  };
+}
+function providerModelAvailability(snapshot, provider, modelId) {
+  const result = snapshot.providers.find((r2) => r2.provider === provider);
+  if (!result || result.status !== "ok") return void 0;
+  return result.usage.modelAvailability?.[modelId.toLowerCase()];
+}
+function applyPlanCoverage(candidate, snapshot, options = {}) {
+  const mode = options.mode ?? "plan";
+  if (mode === "inference" || !snapshot) return candidate;
+  const access = candidate.planAccess;
+  if (!access) return candidate;
+  const inclusion = resolvePlanInclusion(access.provider, access.modelId, snapshot);
+  if (!inclusion) return candidate;
+  if (inclusion.exhausted) {
+    return {
+      ...candidate,
+      planLimitReached: {
+        label: inclusion.windowLabel,
+        resetsAt: inclusion.resetsAt
+      }
+    };
+  }
+  return {
+    ...candidate,
+    costPerMTok: 0,
+    plan: inclusion.windowLabel,
+    planDetail: {
+      usedPercent: inclusion.usedPercent,
+      resetsAt: inclusion.resetsAt,
+      apiPricePerMTok: candidate.costPerMTok
+    }
+  };
+}
+var init_plan_inclusion = __esm({
+  "src/shared/plan-inclusion.ts"() {
+  }
+});
+
 // src/renderer/views/model-coverage.ts
 function modelCoverage(value, context) {
   if (!value || value.startsWith("auto:")) return void 0;
@@ -47708,7 +44753,7 @@ var init_model_coverage = __esm({
 
 // src/renderer/views/model-options.ts
 function modelDisplayLabel(model) {
-  return displayModelLabel2(model);
+  return displayModelLabel(model);
 }
 async function pluginModelOptions(api, includeAgentModels, current) {
   if (!includeAgentModels) return [];
@@ -48270,1577 +45315,6 @@ var init_model_options = __esm({
       "mistral-large-latest"
     ];
     PINNED_GROUP = "Currently pinned";
-  }
-});
-
-// src/renderer/views/setup/usage-section.ts
-function isAbortTimeoutMessage(message) {
-  return /aborted due to timeout|operation was aborted|aborterror|timeout/i.test(message);
-}
-function claudeReasonNeedsLogin(reason) {
-  return /claude (?:auth login|\/login)|user:profile|rejected|access token has expired/i.test(
-    reason
-  );
-}
-function createPlanSignInHandler(store, provider, onRequestClose) {
-  if (!store) return null;
-  return () => {
-    onRequestClose?.();
-    store.emit(
-      "request_terminal_command",
-      provider === "claude" ? "claude auth login" : "codex login",
-      { executionTarget: "local" }
-    );
-  };
-}
-function planSignInProvider(result) {
-  if (result.status !== "unavailable") return null;
-  if (result.provider === "claude" && claudeReasonNeedsLogin(result.reason)) return "claude";
-  if (result.provider === "codex" && /codex login|credentials were rejected/i.test(result.reason)) {
-    return "codex";
-  }
-  return null;
-}
-function formatReset2(resetsAt) {
-  if (!resetsAt) return "reset unknown";
-  const ms = Date.parse(resetsAt);
-  if (!Number.isFinite(ms)) return "reset unknown";
-  const delta = ms - Date.now();
-  if (delta <= 0) return "resetting soon";
-  const hours = Math.round(delta / (60 * 60 * 1e3));
-  if (hours < 48) return `resets in ${String(hours)}h`;
-  const days = Math.round(hours / 24);
-  return `resets in ${String(days)}d`;
-}
-function formatCreditCents(cents) {
-  return "$" + (cents / 100).toFixed(2);
-}
-function formatCreditAmount(n2) {
-  return Number.isInteger(n2) ? String(n2) : n2.toFixed(1);
-}
-function formatUsdAmount(n2) {
-  return "$" + (Number.isInteger(n2) ? String(n2) : n2.toFixed(2));
-}
-function formatPlanWindowStats(window2) {
-  const used = Math.round(window2.usedPercent);
-  const severity = typeof window2.severity === "string" && window2.severity.trim() ? window2.severity.trim().toLowerCase() : null;
-  const parts = [];
-  if (window2.unit === "credits" && typeof window2.usedCredits === "number" && typeof window2.limitCredits === "number") {
-    parts.push(
-      `${formatCreditAmount(window2.usedCredits)} / ${formatCreditAmount(window2.limitCredits)} credits`
-    );
-  } else if (window2.unit === "usd" && typeof window2.usedDollars === "number" && typeof window2.limitDollars === "number") {
-    parts.push(`${formatUsdAmount(window2.usedDollars)} / ${formatUsdAmount(window2.limitDollars)}`);
-  }
-  parts.push(`${String(used)}% used`);
-  parts.push(formatReset2(window2.resetsAt));
-  if (severity && severity !== "normal") parts.push(severity);
-  return parts.join(" \xB7 ");
-}
-function renderPlanProvider(host, result, onSignIn) {
-  const card = document.createElement("div");
-  card.className = "usage-plan-provider";
-  card.dataset["provider"] = result.provider;
-  card.dataset["status"] = result.status;
-  const title = document.createElement("h4");
-  title.className = "usage-plan-provider-title";
-  title.textContent = PROVIDER_LABELS[result.provider] ?? result.provider;
-  card.append(title);
-  if (result.status === "unavailable") {
-    const hint = document.createElement("p");
-    hint.className = "usage-plan-status field-hint";
-    setInlineMarkdown(hint, result.reason);
-    card.append(hint);
-    const signInProvider = planSignInProvider(result);
-    const onProviderSignIn = signInProvider ? onSignIn?.[signInProvider] : void 0;
-    if (signInProvider && onProviderSignIn) {
-      const signIn = document.createElement("button");
-      signIn.type = "button";
-      signIn.className = "ui-btn ui-btn-primary usage-plan-signin-btn";
-      signIn.textContent = signInProvider === "claude" ? "Sign in to Claude" : "Sign in to Codex";
-      signIn.title = `Open a terminal and run ${signInProvider === "claude" ? "claude auth login" : "codex login"}`;
-      signIn.addEventListener("click", () => {
-        onProviderSignIn();
-      });
-      card.append(signIn);
-    }
-    host.append(card);
-    return;
-  }
-  if (result.status === "error") {
-    const hint = document.createElement("p");
-    hint.className = "usage-plan-status usage-plan-status-error field-hint";
-    const label = PROVIDER_LABELS[result.provider] ?? result.provider;
-    if (isAbortTimeoutMessage(result.message)) {
-      hint.textContent = `Timed out while checking ${label} plan usage.`;
-    } else {
-      setInlineMarkdown(hint, `Couldn\u2019t load ${label} plan usage: ${result.message}`);
-    }
-    card.append(hint);
-    host.append(card);
-    return;
-  }
-  if (result.usage.plan) {
-    const plan = document.createElement("p");
-    plan.className = "usage-plan-name field-hint";
-    plan.textContent = result.usage.plan;
-    card.append(plan);
-  }
-  if (result.usage.creditGrant) {
-    const credit = result.usage.creditGrant;
-    const usedPercent = clamp(credit.usedCents / credit.totalCents * 100, 0, 100);
-    const row = document.createElement("div");
-    row.className = "usage-credit-grant";
-    row.innerHTML = `
-      <div class="usage-plan-window-meta">
-        <span class="usage-plan-window-label">Credits</span>
-        <span class="usage-plan-window-stats">${escapeHtml(formatCreditCents(credit.remainingCents))} remaining of ${escapeHtml(formatCreditCents(credit.totalCents))}</span>
-      </div>
-      <div class="usage-plan-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${String(Math.round(usedPercent))}" aria-label="Cursor credits ${escapeHtml(formatCreditCents(credit.usedCents))} used of ${escapeHtml(formatCreditCents(credit.totalCents))}">
-        <div class="usage-plan-bar-fill" style="width: ${String(usedPercent)}%"></div>
-      </div>
-    `;
-    card.append(row);
-  }
-  for (const window2 of result.usage.windows) {
-    const row = document.createElement("div");
-    row.className = "usage-plan-window";
-    const used = Math.round(window2.usedPercent);
-    const severity = typeof window2.severity === "string" && window2.severity.trim() ? window2.severity.trim().toLowerCase() : null;
-    if (severity) row.dataset["severity"] = severity;
-    if (window2.unit) row.dataset["unit"] = window2.unit;
-    const stats = formatPlanWindowStats(window2);
-    row.innerHTML = `
-      <div class="usage-plan-window-meta">
-        <span class="usage-plan-window-label">${escapeHtml(window2.label)}</span>
-        <span class="usage-plan-window-stats">${escapeHtml(stats)}</span>
-      </div>
-      <div class="usage-plan-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${String(used)}" aria-label="${escapeHtml(window2.label)} ${escapeHtml(stats)}">
-        <div class="usage-plan-bar-fill" style="width: ${String(Math.min(100, used))}%"></div>
-      </div>
-    `;
-    card.append(row);
-  }
-  host.append(card);
-}
-function renderPlanSection(host, snapshot, error62, onSignIn) {
-  host.replaceChildren();
-  const heading = document.createElement("h4");
-  heading.className = "usage-plan-heading";
-  heading.textContent = "Subscription plan limits";
-  host.append(heading);
-  const intro = document.createElement("p");
-  intro.className = "settings-fieldset-desc";
-  intro.textContent = "Live plan windows for the plans you have set up in Settings \u2192 General. If a plan cannot be read, the local ledger below still tracks this app\u2019s usage.";
-  host.append(intro);
-  if (error62) {
-    const err = document.createElement("p");
-    err.className = "usage-plan-status usage-plan-status-error field-hint";
-    err.textContent = error62;
-    host.append(err);
-    return;
-  }
-  if (!snapshot) {
-    const loading = document.createElement("p");
-    loading.className = "field-hint";
-    loading.textContent = "Loading plan usage\u2026";
-    host.append(loading);
-    return;
-  }
-  if (snapshot.error) {
-    const err = document.createElement("p");
-    err.className = "usage-plan-status usage-plan-status-error field-hint";
-    err.textContent = `Couldn\u2019t load subscription plan usage: ${snapshot.error}`;
-    host.append(err);
-    return;
-  }
-  const list = document.createElement("div");
-  list.className = "usage-plan-providers";
-  for (const provider of snapshot.providers) {
-    renderPlanProvider(list, provider, onSignIn);
-  }
-  host.append(list);
-}
-function renderPlanWorthItSection(host, payload, error62, opts) {
-  host.replaceChildren();
-  const heading = document.createElement("h4");
-  heading.className = "usage-worth-heading";
-  heading.textContent = "Is your plan worth it?";
-  host.append(heading);
-  const intro = document.createElement("p");
-  intro.className = "settings-fieldset-desc";
-  intro.textContent = "Compares your Claude subscription\u2019s account-wide weekly API-equivalent burn (from plan windows, including other apps and devices) to paying catalog inference rates. Copse\u2019s local ledger is not used here.";
-  host.append(intro);
-  if (error62) {
-    const err = document.createElement("p");
-    err.className = "usage-plan-status usage-plan-status-error field-hint";
-    err.textContent = error62;
-    host.append(err);
-    return;
-  }
-  if (!payload) {
-    const loading = document.createElement("p");
-    loading.className = "field-hint";
-    loading.textContent = "Loading plan worth-it\u2026";
-    host.append(loading);
-    return;
-  }
-  const { worthIt } = payload;
-  const card = document.createElement("div");
-  card.className = "usage-worth-card";
-  card.dataset["verdict"] = worthIt.verdict;
-  const verdict = document.createElement("p");
-  verdict.className = "usage-worth-verdict";
-  verdict.textContent = VERDICT_LABELS[worthIt.verdict];
-  card.append(verdict);
-  const reason = document.createElement("p");
-  reason.className = "usage-worth-reason field-hint";
-  reason.textContent = worthIt.reason.replaceAll("\u2014", "\xB7");
-  card.append(reason);
-  const feeRow = document.createElement("div");
-  feeRow.className = "usage-worth-fee-row";
-  const feeLabel = document.createElement("label");
-  feeLabel.className = "usage-worth-fee-label";
-  feeLabel.htmlFor = "usage-worth-fee-input";
-  feeLabel.textContent = "Claude plan monthly fee (USD)";
-  const feeInput = document.createElement("input");
-  feeInput.id = "usage-worth-fee-input";
-  feeInput.type = "number";
-  feeInput.min = "1";
-  feeInput.max = "10000";
-  feeInput.step = "1";
-  feeInput.className = "usage-worth-fee-input";
-  feeInput.placeholder = worthIt.feeHint ? String(worthIt.feeHint.monthlyFeeUsd) : "e.g. 100";
-  if (worthIt.monthlyFeeUsd !== null) {
-    feeInput.value = String(worthIt.monthlyFeeUsd);
-  }
-  if (worthIt.feeHint && worthIt.monthlyFeeUsd === worthIt.feeHint.monthlyFeeUsd) {
-    feeInput.title = `Hinted from weekly limit (${worthIt.feeHint.label})`;
-  }
-  feeInput.disabled = opts.busy === true;
-  feeInput.addEventListener("change", () => {
-    const raw = feeInput.value.trim();
-    if (!raw) {
-      opts.onFeeChange(null);
-      return;
-    }
-    const n2 = Number(raw);
-    opts.onFeeChange(Number.isFinite(n2) && n2 > 0 ? n2 : null);
-  });
-  feeRow.append(feeLabel, feeInput);
-  card.append(feeRow);
-  if (worthIt.feeHint && worthIt.monthlyFeeUsd === null) {
-    const hint = document.createElement("p");
-    hint.className = "field-hint";
-    hint.textContent = `Suggested from weekly limit: ${worthIt.feeHint.label} (~$${String(worthIt.feeHint.monthlyFeeUsd)}/mo).`;
-    card.append(hint);
-  }
-  const actions = document.createElement("div");
-  actions.className = "usage-worth-actions";
-  const inferenceBtn = document.createElement("button");
-  inferenceBtn.type = "button";
-  inferenceBtn.className = "usage-worth-inference-btn";
-  inferenceBtn.textContent = "Show inference prices on value map";
-  inferenceBtn.title = "Plot the cancel-the-plan frontier (catalog API $/MTok)";
-  inferenceBtn.addEventListener("click", () => {
-    opts.onShowInference();
-  });
-  actions.append(inferenceBtn);
-  card.append(actions);
-  host.append(card);
-}
-function renderModelTable(host, title, rows, emptyText, accounts = []) {
-  const section = document.createElement("div");
-  section.className = "usage-model-group";
-  const heading = document.createElement("h4");
-  heading.textContent = title;
-  section.append(heading);
-  if (rows.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "usage-empty";
-    empty.textContent = emptyText;
-    section.append(empty);
-    host.append(section);
-    return;
-  }
-  const table = document.createElement("table");
-  table.className = "usage-table";
-  table.innerHTML = `
-    <colgroup>
-      <col class="usage-col-model" />
-      <col class="usage-col-num" />
-      <col class="usage-col-num" />
-      <col class="usage-col-num" />
-      <col class="usage-col-num" />
-      <col class="usage-col-num" />
-    </colgroup>
-    <thead>
-      <tr>
-        <th scope="col">Model</th>
-        <th scope="col">Input</th>
-        <th scope="col">Output</th>
-        <th scope="col">Cache read</th>
-        <th scope="col">Cache write</th>
-        <th scope="col">Est. cost</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  `;
-  const tbody = table.querySelector("tbody");
-  if (!tbody) throw new Error("usage table is missing its tbody");
-  const registrations = [
-    ...new Set(
-      rows.flatMap((row) => {
-        const plan = parseModelSelection(row.model);
-        return plan.namespace === "chatgpt-plan" && plan.agent ? [plan.agent] : [];
-      })
-    )
-  ];
-  for (const row of rows) {
-    const tr = document.createElement("tr");
-    const approx = row.estimatedTokens ? "~" : "";
-    const model = escapeHtml(
-      row.model.startsWith(CHATGPT_PLAN_MODEL_PREFIX) ? displayModelLabel2(row.model) : row.model
-    );
-    const modelLabel = row.estimatedTokens ? `${model} <span class="usage-estimated" title="Estimated locally, because the agent did not report usage">(est.)</span>` : model;
-    const plan = parseModelSelection(row.model);
-    const accountIndex = plan.namespace === "chatgpt-plan" ? accounts.findIndex((account) => account.clientId === plan.agent) : -1;
-    const accountLabel = plan.namespace === "chatgpt-plan" && plan.agent && registrations.length > 1 ? accountIndex >= 0 ? `Connection ${String(accountIndex + 1)}` : `Saved connection ${String(registrations.indexOf(plan.agent) + 1)}` : "";
-    const costLabel = row.isLocal ? "free (local)" : !row.pricingKnown ? "unpriced" : `${row.estimatedCostUsd === 0 ? "free" : formatUsd(row.estimatedCostUsd)}${row.tierPricingFallback ? ' <span class="usage-estimated" title="This service tier has no published catalog rate; shown at the standard rate.">(standard rate)</span>' : ""}`;
-    tr.innerHTML = `
-      <td><code>${modelLabel}</code>${accountLabel ? `<br><span class="field-hint">${accountLabel}</span>` : ""}</td>
-      <td>${approx}${formatTokenCount(row.inputTokens)}</td>
-      <td>${approx}${formatTokenCount(row.outputTokens)}</td>
-      <td>${row.cacheReadTokens ? formatTokenCount(row.cacheReadTokens) : "-"}</td>
-      <td>${row.cacheCreationTokens ? formatTokenCount(row.cacheCreationTokens) : "-"}</td>
-      <td>${costLabel}</td>
-    `;
-    tbody.append(tr);
-  }
-  section.append(table);
-  host.append(section);
-}
-function renderClassifierTable(host, rows, allTime) {
-  const section = document.createElement("div");
-  section.className = "usage-model-group usage-classifier-group";
-  const heading = document.createElement("h4");
-  heading.textContent = "Classifiers";
-  section.append(heading);
-  if (allTime || !rows || rows.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "usage-empty";
-    empty.textContent = allTime ? "Classifier calls are listed for the day, month and 90-day windows only." : "No classifier usage in this period.";
-    section.append(empty);
-    host.append(section);
-    return;
-  }
-  const table = document.createElement("table");
-  table.className = "usage-table usage-classifier-table";
-  const columns = document.createElement("colgroup");
-  for (const className of [
-    "usage-col-model",
-    "usage-col-model",
-    "usage-col-num",
-    "usage-col-num",
-    "usage-col-num"
-  ]) {
-    const col = document.createElement("col");
-    col.className = className;
-    columns.append(col);
-  }
-  const head = document.createElement("thead");
-  const headRow = document.createElement("tr");
-  for (const label of ["Classifier", "Model", "Calls", "Input", "Output"]) {
-    const th = document.createElement("th");
-    th.scope = "col";
-    th.textContent = label;
-    headRow.append(th);
-  }
-  head.append(headRow);
-  const body = document.createElement("tbody");
-  for (const row of rows) {
-    const tr = document.createElement("tr");
-    tr.dataset["provider"] = row.provider;
-    const provider = document.createElement("td");
-    provider.textContent = row.provider;
-    const model = document.createElement("td");
-    const code = document.createElement("code");
-    code.textContent = row.model;
-    model.append(code);
-    const cells = [row.calls, row.inputTokens, row.outputTokens].map((value) => {
-      const td = document.createElement("td");
-      td.textContent = formatTokenCount(value);
-      return td;
-    });
-    tr.append(provider, model, ...cells);
-    body.append(tr);
-  }
-  table.append(columns, head, body);
-  section.append(table);
-  host.append(section);
-}
-function renderPeriodSummary(host, summary, period, meta3, accounts, api) {
-  host.replaceChildren();
-  const headline = document.createElement("p");
-  headline.className = "usage-headline";
-  headline.textContent = formatPeriodHeadline(summary);
-  host.append(headline);
-  const tokens = document.createElement("p");
-  tokens.className = "usage-token-total field-hint";
-  tokens.textContent = `${formatTokenCount(summary.totalInputTokens)} input \xB7 ${formatTokenCount(summary.totalOutputTokens)} output tokens`;
-  host.append(tokens);
-  if (period !== "allTime") {
-    const note = document.createElement("p");
-    note.className = "field-hint";
-    const trackedSince = meta3.trackingStartedAt !== null ? new Date(meta3.trackingStartedAt).toLocaleString() : "not yet";
-    note.textContent = `Ledger: ${String(meta3.ledgerEventCount)} event(s) tracked (since ${trackedSince}). Time windows include cloud and local models recorded on each agent turn. All-time totals come from saved threads and may include older usage.`;
-    host.append(note);
-  }
-  if (summary.cloudModels.some((row) => row.model.startsWith(CHATGPT_PLAN_MODEL_PREFIX))) {
-    const usage = document.createElement("button");
-    usage.type = "button";
-    usage.className = "ui-btn ui-btn-primary";
-    usage.textContent = "Manage ChatGPT usage";
-    usage.addEventListener("click", () => {
-      void api.shell.openExternal("https://chatgpt.com/settings/usage");
-    });
-    host.append(usage);
-  }
-  renderModelTable(
-    host,
-    "Cloud models",
-    summary.cloudModels,
-    "No cloud model usage in this period.",
-    accounts
-  );
-  renderModelTable(
-    host,
-    "Local models (free)",
-    summary.localModels,
-    "No local model usage in this period."
-  );
-  renderClassifierTable(host, summary.classifiers, period === "allTime");
-}
-function createUsageSection(api, store, onRequestClose) {
-  let pendingSignInProvider = null;
-  const onSignIn = (provider) => {
-    const handler = createPlanSignInHandler(store, provider, onRequestClose);
-    if (!handler) return void 0;
-    return () => {
-      pendingSignInProvider = provider;
-      handler();
-    };
-  };
-  const handleSignIn = {
-    claude: onSignIn("claude"),
-    codex: onSignIn("codex")
-  };
-  const root = document.createElement("div");
-  root.className = "usage-section-root";
-  root.innerHTML = `
-    <div class="usage-plan-section" id="usage-plan-section"></div>
-    <div class="usage-worth-section" id="usage-worth-section"></div>
-    <div class="usage-ledger-section">
-      <h4 class="usage-ledger-heading">Local usage ledger</h4>
-      <div class="usage-period-tabs" role="tablist" aria-label="Usage period">
-        <button type="button" class="usage-period-btn active" data-period="day" role="tab" aria-selected="true">Day</button>
-        <button type="button" class="usage-period-btn" data-period="month" role="tab" aria-selected="false">Month</button>
-        <button type="button" class="usage-period-btn" data-period="period90d" role="tab" aria-selected="false">90 days</button>
-        <button type="button" class="usage-period-btn" data-period="allTime" role="tab" aria-selected="false">All time</button>
-      </div>
-      <div class="usage-period-label" id="usage-period-label">${PERIOD_LABELS.day}</div>
-      <div class="usage-period-body" id="usage-period-body"></div>
-    </div>
-  `;
-  const loadOpenRouter = async () => {
-    let available = false;
-    let zdrOnly = true;
-    let allowTraining = false;
-    try {
-      available = (await api.settings.availableProviders())["openrouter"] === true;
-    } catch {
-    }
-    try {
-      zdrOnly = await api.settings.get("openRouterZdrOnly") !== false;
-      allowTraining = await api.settings.get("openRouterAllowTraining") === true;
-    } catch {
-    }
-    let models = [];
-    if (available) {
-      try {
-        models = await api.openRouter.models();
-      } catch {
-      }
-    }
-    return { models, zdrOnly, allowTraining };
-  };
-  setModelCardApi(api.modelCards);
-  const frontierPanel = createIntellectFrontierPanel(
-    () => api.lmStudio.models(),
-    () => api.settings.extraProviders(),
-    () => api.intellect.liveModels(),
-    () => api.usage.getPlanUsage(),
-    loadOpenRouter,
-    async () => (await fetchModelOptions(api, "")).filter((option) => option.value !== "" && option.disabled !== true).map((option) => option.value),
-    async () => parseAcpAgentConfigs(await api.settings.get("registeredAcpAgents"))
-  );
-  root.append(frontierPanel.root);
-  const planEl = qsRequired(root, "#usage-plan-section");
-  const worthEl = qsRequired(root, "#usage-worth-section");
-  const bodyEl2 = qsRequired(root, "#usage-period-body");
-  const labelEl = qsRequired(root, "#usage-period-label");
-  const tabBtns = root.querySelectorAll(".usage-period-btn");
-  let activePeriod = "day";
-  let cachedAccounts = [];
-  let cachedSummary = null;
-  let cachedPlanSnapshot = null;
-  let ledgerRefreshTimer;
-  let feeBusy = false;
-  async function persistPlanFee(fee) {
-    feeBusy = true;
-    try {
-      const next = await api.usage.setClaudePlanMonthlyFee(fee);
-      applyWorthItPayload(next);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to save Claude plan monthly fee.";
-      renderPlanWorthItSection(worthEl, null, message, {
-        onFeeChange: () => void 0,
-        onShowInference: () => void 0
-      });
-    } finally {
-      feeBusy = false;
-    }
-  }
-  function applyWorthItPayload(payload) {
-    const rates = new Map(
-      payload.windowExhaustion.map((row) => [row.windowId, { hit: row.hit, total: row.total }])
-    );
-    frontierPanel.setWindowExhaustion(rates);
-    renderPlanWorthItSection(worthEl, payload, null, {
-      busy: feeBusy,
-      onFeeChange: (fee) => {
-        void persistPlanFee(fee);
-      },
-      onShowInference: () => {
-        frontierPanel.setPlanCoverageMode("inference");
-        frontierPanel.root.scrollIntoView({
-          block: "nearest",
-          behavior: "smooth"
-        });
-      }
-    });
-  }
-  function showPeriod(period) {
-    activePeriod = period;
-    tabBtns.forEach((btn) => {
-      const selected = btn.dataset["period"] === period;
-      btn.classList.toggle("active", selected);
-      btn.setAttribute("aria-selected", selected ? "true" : "false");
-    });
-    labelEl.textContent = PERIOD_LABELS[period];
-    if (cachedSummary) {
-      renderPeriodSummary(
-        bodyEl2,
-        cachedSummary[period],
-        period,
-        {
-          ledgerEventCount: cachedSummary.ledgerEventCount,
-          trackingStartedAt: cachedSummary.trackingStartedAt
-        },
-        cachedAccounts,
-        api
-      );
-    }
-  }
-  tabBtns.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const period = btn.dataset["period"];
-      if (period === "day" || period === "month" || period === "period90d" || period === "allTime") {
-        showPeriod(period);
-      }
-    });
-  });
-  let currentSignal;
-  async function refreshPlan(signal = currentSignal) {
-    if (!cachedPlanSnapshot) {
-      renderPlanSection(planEl, null, null, handleSignIn);
-    }
-    try {
-      const snapshot = await api.usage.getPlanUsage(pendingSignInProvider !== null);
-      if (signal?.aborted) return;
-      cachedPlanSnapshot = snapshot;
-      renderPlanSection(planEl, snapshot, null, handleSignIn);
-      if (pendingSignInProvider && snapshot.providers.some(
-        (provider) => provider.provider === pendingSignInProvider && provider.status === "ok"
-      )) {
-        pendingSignInProvider = null;
-      }
-    } catch (err) {
-      if (signal?.aborted) return;
-      const message = err instanceof Error ? err.message : "Failed to load subscription plan usage.";
-      renderPlanSection(planEl, null, message, handleSignIn);
-    }
-  }
-  async function refreshWorthIt(signal = currentSignal) {
-    renderPlanWorthItSection(worthEl, null, null, {
-      onFeeChange: () => void 0,
-      onShowInference: () => void 0
-    });
-    try {
-      const payload = await api.usage.getPlanWorthIt();
-      if (signal?.aborted) return;
-      applyWorthItPayload(payload);
-    } catch (err) {
-      if (signal?.aborted) return;
-      const message = err instanceof Error ? err.message : "Failed to load plan worth-it.";
-      frontierPanel.setWindowExhaustion(/* @__PURE__ */ new Map());
-      renderPlanWorthItSection(worthEl, null, message, {
-        onFeeChange: () => void 0,
-        onShowInference: () => void 0
-      });
-    }
-  }
-  async function refreshLedger(signal = currentSignal) {
-    try {
-      const summary = await api.usage.getSummary();
-      if (signal?.aborted) return;
-      cachedSummary = summary;
-      showPeriod(activePeriod);
-    } catch (err) {
-      if (signal?.aborted) return;
-      bodyEl2.textContent = err instanceof Error ? `Failed to load usage: ${err.message}` : "Failed to load usage.";
-    }
-  }
-  function scheduleLedgerRefresh() {
-    if (ledgerRefreshTimer !== void 0) clearTimeout(ledgerRefreshTimer);
-    ledgerRefreshTimer = setTimeout(() => {
-      ledgerRefreshTimer = void 0;
-      void refreshLedger();
-    }, LEDGER_REFRESH_DEBOUNCE_MS);
-  }
-  async function refresh(signal) {
-    currentSignal = signal;
-    if (signal?.aborted) return;
-    try {
-      const accounts = (await api.chatGptPlan.status()).accounts;
-      if (signal?.aborted) return;
-      cachedAccounts = accounts;
-    } catch {
-      if (signal?.aborted) return;
-      cachedAccounts = [];
-    }
-    if (!cachedSummary) {
-      bodyEl2.textContent = "Loading usage\u2026";
-    }
-    const planThenWorth = refreshPlan(signal).then(() => {
-      if (!signal?.aborted) return refreshWorthIt(signal);
-      return void 0;
-    });
-    const frontierPromise = frontierPanel.refresh(signal);
-    try {
-      const summary = await api.usage.getSummary();
-      if (signal?.aborted) return;
-      cachedSummary = summary;
-      showPeriod(activePeriod);
-    } catch (err) {
-      if (signal?.aborted) return;
-      bodyEl2.textContent = err instanceof Error ? `Failed to load usage: ${err.message}` : "Failed to load usage.";
-    }
-    await planThenWorth;
-    await frontierPromise;
-  }
-  const unsubUsage = store?.on("usage_updated", () => {
-    if (!currentSignal?.aborted && root.closest("dialog")?.open !== false && root.closest(".settings-section")?.classList.contains("active")) {
-      scheduleLedgerRefresh();
-    }
-  });
-  return {
-    root,
-    refresh,
-    detach: () => {
-      unsubUsage?.();
-      if (ledgerRefreshTimer !== void 0) clearTimeout(ledgerRefreshTimer);
-    }
-  };
-}
-var PERIOD_LABELS, PROVIDER_LABELS, LEDGER_REFRESH_DEBOUNCE_MS, VERDICT_LABELS;
-var init_usage_section = __esm({
-  "src/renderer/views/setup/usage-section.ts"() {
-    init_clamp();
-    init_format_usage_summary();
-    init_helpers();
-    init_inline_markdown();
-    init_dist();
-    init_intellect_frontier_panel();
-    init_model_options();
-    init_acp();
-    init_model_display();
-    init_model_selection();
-    init_reserved_prefixes();
-    PERIOD_LABELS = {
-      day: "Last 24 hours",
-      month: "Last 30 days",
-      period90d: "Last 90 days",
-      allTime: "All time"
-    };
-    PROVIDER_LABELS = {
-      claude: "Claude",
-      codex: "Codex",
-      huggingface: "Hugging Face",
-      cursor: "Cursor"
-    };
-    LEDGER_REFRESH_DEBOUNCE_MS = 400;
-    VERDICT_LABELS = {
-      worth_it: "Worth it vs inference",
-      borderline: "Close to break-even",
-      not_worth_it: "Inference may be cheaper",
-      insufficient_history: "Need more history",
-      needs_fee: "Enter your plan fee"
-    };
-  }
-});
-
-// src/shared/release-channel.mts
-function getReleaseChannel(version2) {
-  if (stableVersion.test(version2)) return "stable";
-  if (betaVersion.test(version2)) return "beta";
-  throw new Error(
-    `Unsupported release version ${JSON.stringify(version2)}; expected X.Y.Z or X.Y.Z-beta.N`
-  );
-}
-var RELEASE_CHANNELS, numericIdentifier, stableVersion, betaVersion;
-var init_release_channel = __esm({
-  "src/shared/release-channel.mts"() {
-    RELEASE_CHANNELS = ["stable", "beta"];
-    numericIdentifier = "(?:0|[1-9]\\d*)";
-    stableVersion = new RegExp(
-      `^${numericIdentifier}\\.${numericIdentifier}\\.${numericIdentifier}$`
-    );
-    betaVersion = new RegExp(
-      `^${numericIdentifier}\\.${numericIdentifier}\\.${numericIdentifier}-beta\\.${numericIdentifier}$`
-    );
-  }
-});
-
-// src/shared/update-channel-choice.ts
-function chosenUpdateChannel(saved, installedVersion) {
-  if (typeof saved === "string" && isReleaseChannel(saved)) {
-    return { channel: saved, remember: false };
-  }
-  return { channel: getReleaseChannel(installedVersion), remember: true };
-}
-var isReleaseChannel;
-var init_update_channel_choice = __esm({
-  "src/shared/update-channel-choice.ts"() {
-    init_member_of2();
-    init_release_channel();
-    isReleaseChannel = memberOf(RELEASE_CHANNELS);
-  }
-});
-
-// src/renderer/views/setup/about-section.ts
-function describeInclusion(component) {
-  if (component.partOf) return `Compiled into ${component.partOf}`;
-  const labels = component.shippedAs.map((as) => SHIPPED_AS_LABEL[as]);
-  const text = labels.join(", ");
-  return text.charAt(0).toUpperCase() + text.slice(1);
-}
-function licenseBody(component, texts) {
-  const meta3 = el("p", { class: "about-license-meta" }, describeInclusion(component));
-  if (component.source) {
-    meta3.append(
-      " \xB7 ",
-      el("a", { href: component.source, target: "_blank", rel: "noopener noreferrer" }, "Source")
-    );
-  }
-  const body = el("div", { class: "about-license-body" }, meta3);
-  if (component.note) body.append(el("p", { class: "about-license-note" }, component.note));
-  for (const file2 of component.files) {
-    body.append(
-      el("div", { class: "about-license-file-name" }, file2.name),
-      el("pre", { class: "about-license-text" }, (texts[file2.text] ?? "").trim())
-    );
-  }
-  return body;
-}
-function componentRow(component, texts) {
-  const summary = el(
-    "summary",
-    { class: "about-license-summary" },
-    el("span", { class: "about-license-name" }, component.name),
-    el("span", { class: "about-license-version" }, component.version),
-    el("span", { class: "about-license-id" }, component.license)
-  );
-  const details = el("details", { class: "about-license" }, summary);
-  details.addEventListener(
-    "toggle",
-    () => {
-      if (details.open && !details.querySelector(".about-license-body")) {
-        details.append(licenseBody(component, texts));
-      }
-    },
-    { passive: true }
-  );
-  return el(
-    "li",
-    { "data-search": `${component.name} ${component.license}`.toLowerCase() },
-    details
-  );
-}
-function createAboutSection(api) {
-  const versionEl = el("span", { class: "about-version" }, "\u2026");
-  const openButton = (label, kind) => {
-    const button = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, label);
-    button.dataset["licenseFile"] = kind;
-    button.addEventListener("click", () => {
-      void api.about.openLicenseFile(kind).catch((err) => {
-        statusEl.textContent = errorMessage(err);
-      });
-    });
-    return button;
-  };
-  const copse = el(
-    "fieldset",
-    { class: "about-copse" },
-    el("legend", {}, "Copse"),
-    el(
-      "p",
-      { class: "settings-fieldset-desc" },
-      "Version ",
-      versionEl,
-      ". Copse is free software, licensed under the GNU Affero General Public License, version 3."
-    ),
-    uiActions(openButton("View licence", "copse"), { align: "start" })
-  );
-  const channelSelect = el(
-    "select",
-    { name: "updateChannel" },
-    el("option", { value: "beta" }, "Beta"),
-    el("option", { value: "stable" }, "Stable")
-  );
-  const channelStatus = el("p", {
-    class: "about-update-status",
-    role: "status",
-    "aria-live": "polite"
-  });
-  const updates = el(
-    "fieldset",
-    { class: "about-updates" },
-    el("legend", {}, "Updates"),
-    el(
-      "label",
-      { class: "about-update-channel" },
-      "Update channel",
-      channelSelect,
-      el(
-        "span",
-        { class: "field-hint" },
-        "Beta gets new features first; switch to Stable and Copse keeps installing betas until the next stable release, then installs only stable releases."
-      )
-    ),
-    channelStatus
-  );
-  let savedChannel = "beta";
-  let installedChannel = "beta";
-  channelSelect.addEventListener("change", () => {
-    const value = channelSelect.value;
-    if (!isReleaseChannel(value)) return;
-    channelSelect.disabled = true;
-    void api.settings.set("updateChannel", value).then(
-      () => {
-        savedChannel = value;
-        setInlineStatus(
-          channelStatus,
-          "ok",
-          value === "beta" ? "Copse now updates to beta releases." : installedChannel === "stable" ? "Copse now updates to stable releases only." : "Copse keeps updating to betas until the next stable release."
-        );
-      },
-      (err) => {
-        channelSelect.value = savedChannel;
-        setInlineStatus(channelStatus, "error", errorMessage(err));
-      }
-    ).finally(() => {
-      channelSelect.disabled = false;
-    });
-  });
-  const showChannel = async (version2) => {
-    let channel = "beta";
-    try {
-      installedChannel = getReleaseChannel(version2);
-      channel = chosenUpdateChannel(await api.settings.get("updateChannel"), version2).channel;
-    } catch {
-    }
-    savedChannel = channel;
-    channelSelect.value = channel;
-  };
-  const countEl = el("span", {}, "the open-source components");
-  const statusEl = el("p", { class: "field-hint about-licenses-status", "aria-live": "polite" });
-  const thirdParty = el(
-    "fieldset",
-    { class: "about-third-party" },
-    el("legend", {}, "Open-source licences"),
-    el(
-      "p",
-      { class: "settings-fieldset-desc" },
-      "Copse is built with ",
-      countEl,
-      " listed below, each used under its own licence. Select one to read its licence. The Chromium and Node.js components inside the Electron runtime are listed separately."
-    ),
-    uiActions(
-      openButton("Open all licences", "third-party"),
-      openButton("Chromium and Node.js notices", "chromium"),
-      { align: "start" }
-    )
-  );
-  const filter = el("input", {
-    type: "search",
-    class: "about-licenses-filter",
-    placeholder: "Filter by name or licence",
-    "aria-label": "Filter open-source components",
-    autocomplete: "off",
-    spellcheck: "false"
-  });
-  const list = el("ul", { class: "about-licenses-list", "aria-label": "Open-source components" });
-  const listHost = el("div", { class: "about-licenses", hidden: true }, filter, statusEl, list);
-  let total = 0;
-  const applyFilter = () => {
-    const query = filter.value.trim().toLowerCase();
-    let shown = 0;
-    for (const row of Array.from(list.children)) {
-      if (!(row instanceof HTMLElement)) continue;
-      const match = query === "" || (row.dataset["search"] ?? "").includes(query);
-      row.hidden = !match;
-      if (match) shown++;
-    }
-    statusEl.textContent = query === "" ? `${String(total)} components` : `${String(shown)} of ${String(total)} components`;
-  };
-  filter.addEventListener("input", applyFilter);
-  filter.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") event.preventDefault();
-  });
-  const render = (report) => {
-    total = report.components.length;
-    countEl.textContent = `the ${String(total)} open-source components`;
-    list.replaceChildren(...report.components.map((c2) => componentRow(c2, report.texts)));
-    listHost.hidden = false;
-    applyFilter();
-  };
-  let loaded = null;
-  const refresh = (signal) => {
-    if (signal?.aborted) return Promise.resolve();
-    loaded ??= api.about.getInfo().then(
-      (info) => {
-        if (signal?.aborted) {
-          loaded = null;
-          return;
-        }
-        versionEl.textContent = info.version;
-        void showChannel(info.version);
-        if (info.report) {
-          render(info.report);
-        } else {
-          statusEl.textContent = "Licence information is unavailable for this installation.";
-          listHost.hidden = false;
-        }
-      },
-      (err) => {
-        if (signal?.aborted) {
-          loaded = null;
-          return;
-        }
-        loaded = null;
-        statusEl.textContent = errorMessage(err);
-        listHost.hidden = false;
-      }
-    );
-    return loaded;
-  };
-  const root = el("div", { class: "about-section" }, copse, updates, thirdParty, listHost);
-  return { root, refresh };
-}
-var SHIPPED_AS_LABEL;
-var init_about_section = __esm({
-  "src/renderer/views/setup/about-section.ts"() {
-    init_errors4();
-    init_update_channel_choice();
-    init_release_channel();
-    init_helpers();
-    init_inline_status();
-    init_ui();
-    SHIPPED_AS_LABEL = {
-      bundled: "compiled into Copse",
-      copied: "files copied into Copse",
-      node_modules: "packaged as a module",
-      vendored: "included with Copse"
-    };
-  }
-});
-
-// src/renderer/views/setup/mobile-companion-section.ts
-function createMobileCompanionSection(api) {
-  const status = el("span", { class: "mobile-companion-status" });
-  const enabledInput = el("input", { type: "checkbox", name: "mobileCompanionEnabled" });
-  const addressSelect = el("select", { name: "mobileCompanionAddress" });
-  const addressHint = el("p", { class: "field-hint" });
-  const connectionInfo = el("div", { class: "mobile-companion-connection" });
-  const qrImage = el("div", { class: "mobile-companion-qr-image", "aria-hidden": "true" });
-  const qrUrl = el("code", { class: "mobile-companion-qr-url" });
-  const qrHost = el(
-    "div",
-    { id: "mobile-companion-qr", class: "mobile-companion-qr", hidden: true },
-    qrImage,
-    el(
-      "div",
-      { class: "mobile-companion-qr-text" },
-      el("p", { class: "field-hint" }, "Scan with your phone's camera to open Copse."),
-      qrUrl
-    )
-  );
-  const localQrImage = el("div", { class: "mobile-companion-qr-image", "aria-hidden": "true" });
-  const localQrUrl = el("code", { class: "mobile-companion-qr-url" });
-  const localQrHost = el(
-    "div",
-    { id: "mobile-companion-local-qr", class: "mobile-companion-qr", hidden: true },
-    localQrImage,
-    el(
-      "div",
-      { class: "mobile-companion-qr-text" },
-      el("p", { class: "field-hint" }, "The local address works without DNS."),
-      localQrUrl
-    )
-  );
-  const pairingHost = el("div", { class: "mobile-companion-pairing" });
-  const deviceList = el("div", { class: "mobile-companion-device-list" });
-  const inviteInput = el("input", {
-    type: "text",
-    name: "mobileCompanionInvite",
-    autocomplete: "off",
-    spellcheck: "false",
-    maxlength: "64",
-    placeholder: "Invite code",
-    "aria-label": "Invite code"
-  });
-  const registerBtn = el("button", { type: "button", class: "ui-btn ui-btn-primary" }, "Get a name");
-  const inviteRow = el("div", { class: "mobile-companion-invite" }, inviteInput, registerBtn);
-  const nameIntro = el(
-    "p",
-    { class: "field-hint" },
-    "Get a name like lan.\u2026u.copse.me with a publicly trusted certificate, so a phone connects with nothing to install. The Copse names service only sees certificate requests and this Mac\u2019s private network address; the key that controls the name stays in this Mac\u2019s keychain."
-  );
-  const nameSummary = el("div", { class: "mobile-companion-name-summary" });
-  const dnsNote = el("div", { class: "mobile-companion-name-dns" });
-  const recheckBtn = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact" },
-    "Check again"
-  );
-  const removeNameBtn = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-secondary" },
-    "Remove name"
-  );
-  const nameStatus = el("span", { class: "mobile-companion-name-status" });
-  const nameCard = el(
-    "fieldset",
-    { class: "mobile-companion-name" },
-    el("legend", {}, "Trusted address"),
-    nameIntro,
-    inviteRow,
-    nameSummary,
-    dnsNote,
-    el("div", { class: "settings-action-row" }, removeNameBtn),
-    nameStatus
-  );
-  let lastPairingKey = null;
-  let lastDevicesKey = null;
-  let lastState = null;
-  let qrChoice = null;
-  function renderAddresses(state) {
-    const previous = addressSelect.value;
-    clear(addressSelect);
-    for (const candidate of state.addresses) {
-      addressSelect.append(
-        el(
-          "option",
-          { value: candidate.address },
-          `${candidate.interfaceName} \u2014 ${candidate.address}${candidate.virtual ? " (virtual or VPN)" : ""}`
-        )
-      );
-    }
-    const shown = state.address ?? previous;
-    if (state.addresses.some((candidate) => candidate.address === shown))
-      addressSelect.value = shown;
-    const disabled = state.addresses.length === 0 || state.enabled;
-    if (disabled) addressSelect.setAttribute("disabled", "");
-    else addressSelect.removeAttribute("disabled");
-    const selected = state.addresses.find((candidate) => candidate.address === addressSelect.value);
-    addressHint.classList.toggle("mobile-companion-name-warning", selected?.virtual === true);
-    addressHint.textContent = state.addresses.length === 0 ? "Connect this Mac to a private Wi-Fi or wired network first." : selected?.virtual ? `${selected.interfaceName} is a virtual-machine or VPN network; a phone on your Wi-Fi usually cannot reach it.${state.enabled ? " Turn Mobile Companion off to pick another." : ""}` : "Pick the interface your phone is on \u2014 usually Wi-Fi. Turn Mobile Companion off to change it.";
-  }
-  function renderConnection(state) {
-    clear(connectionInfo);
-    if (!state.enabled) {
-      qrHost.hidden = true;
-      return;
-    }
-    if (!state.running || !state.url) {
-      qrHost.hidden = true;
-      connectionInfo.append(
-        el(
-          "p",
-          { class: "field-hint" },
-          "Enabled, but its local server is not running yet. Copse retries automatically while it is open."
-        )
-      );
-      return;
-    }
-    const trustedName = state.localUrl !== null;
-    connectionInfo.append(el("p", {}, "Open ", el("strong", {}, state.url), " on your phone."));
-    connectionInfo.append(
-      trustedName && state.localUrl ? el(
-        "p",
-        { class: "field-hint" },
-        "Its certificate is publicly trusted, so there is nothing to install. If this network\u2019s DNS cannot answer for the name, open ",
-        el("strong", {}, state.localUrl),
-        " instead; that address needs the Copse Local Root on the phone, which can only vouch for private-network addresses, never a website."
-      ) : el(
-        "p",
-        { class: "field-hint" },
-        "Transfer the trust certificate directly to your phone and install it there for a verified connection \u2014 it can only vouch for private-network addresses, never a website. Remove it from the phone\u2019s certificate settings when you no longer need it."
-      )
-    );
-    if (state.rootCertificatePath) {
-      const revealBtn = el(
-        "button",
-        { type: "button", class: "ui-btn ui-btn-secondary" },
-        "Reveal certificate\u2026"
-      );
-      revealBtn.addEventListener("click", () => {
-        void api.mobile.revealCertificate();
-      });
-      connectionInfo.append(revealBtn);
-    }
-    connectionInfo.append(qrHost, localQrHost);
-    const dnsBlocked = state.publicName.dns === "unresolved" || state.publicName.dns === "mismatch";
-    const showLocal = state.localUrl !== null && (qrChoice === "local" || qrChoice === null && dnsBlocked);
-    if (state.qrSvg && !showLocal) {
-      qrImage.innerHTML = state.qrSvg;
-      qrUrl.textContent = state.url;
-      qrHost.hidden = false;
-    } else {
-      qrHost.hidden = true;
-    }
-    if (state.localQrSvg && state.localUrl && showLocal) {
-      localQrImage.innerHTML = state.localQrSvg;
-      localQrUrl.textContent = state.localUrl;
-      localQrHost.hidden = false;
-    } else {
-      localQrHost.hidden = true;
-    }
-    if (state.localUrl) {
-      const swapBtn = el(
-        "button",
-        { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact" },
-        showLocal ? "Show the trusted-name QR" : "Show the local-address QR"
-      );
-      swapBtn.addEventListener("click", () => {
-        qrChoice = showLocal ? "name" : "local";
-        if (lastState) renderConnection(lastState);
-      });
-      connectionInfo.append(el("div", { class: "settings-action-row" }, swapBtn));
-    }
-  }
-  function renderPublicName(state) {
-    const name = state.publicName;
-    const registered2 = name.state !== "unregistered";
-    inviteRow.hidden = registered2;
-    nameIntro.hidden = registered2;
-    registerBtn.toggleAttribute("disabled", name.busy !== null);
-    registerBtn.textContent = name.busy === "registering" ? "Getting a name\u2026" : "Get a name";
-    removeNameBtn.parentElement?.toggleAttribute("hidden", !registered2);
-    removeNameBtn.toggleAttribute("disabled", name.busy !== null);
-    removeNameBtn.textContent = name.busy === "removing" ? "Removing\u2026" : "Remove name";
-    clear(nameSummary);
-    clear(dnsNote);
-    if (registered2 && name.hostname) {
-      nameSummary.append(el("p", {}, el("strong", {}, name.hostname)));
-      const certificate = name.certificate;
-      nameSummary.append(
-        el(
-          "p",
-          { class: "field-hint" },
-          certificate && certificate.notAfter > Date.now() ? `Certificate valid until ${formatTime(certificate.notAfter)}${certificate.renewAt ? ` \xB7 renews from ${formatTime(certificate.renewAt)}` : ""}. Copse renews it while open.` : "Waiting for a certificate. Copse keeps trying while it is open."
-        )
-      );
-      if (name.state === "dormant")
-        nameSummary.append(
-          el(
-            "p",
-            { class: "field-hint mobile-companion-name-warning" },
-            "This name went dormant after 30 days without a renewal and does not resolve. Copse renews it again while open."
-          )
-        );
-      if (name.state === "retired")
-        nameSummary.append(
-          el(
-            "p",
-            { class: "field-hint mobile-companion-name-warning" },
-            "The names service retired this name. Remove it, then register again with a new invite."
-          )
-        );
-      const bound = state.addresses.find((candidate) => candidate.address === state.address);
-      if (state.running && bound?.virtual)
-        nameSummary.append(
-          el(
-            "p",
-            { class: "field-hint mobile-companion-name-warning" },
-            `${name.hostname} points at ${bound.address} on ${bound.interfaceName}, a virtual-machine or VPN network that phones on your Wi-Fi cannot reach. Turn Mobile Companion off, pick your Wi-Fi network and turn it on again.`
-          )
-        );
-      if (state.running) renderDns(name.hostname, name.dns);
-    }
-    if (name.lastError) setInlineStatus(nameStatus, "error", name.lastError);
-    else nameStatus.replaceChildren();
-  }
-  function renderDns(hostname3, dns) {
-    if (dns === "ok" || dns === "unknown") return;
-    if (dns === "checking") {
-      dnsNote.append(el("p", { class: "field-hint" }, `Checking that ${hostname3} resolves here\u2026`));
-      return;
-    }
-    dnsNote.append(
-      el(
-        "p",
-        { class: "field-hint mobile-companion-name-warning" },
-        dns === "unresolved" ? `This network\u2019s DNS does not answer for ${hostname3}. Many routers drop public names that point at private addresses (DNS-rebind protection in dnsmasq, Pi-hole or OpenWrt), and a phone here will not reach the name either. Allow u.copse.me in the router\u2019s rebind settings, or use the local address.` : `This network\u2019s DNS answers ${hostname3} with a different address. Right after a network change that clears within a minute; if it stays, use the local address.`
-      ),
-      el("div", { class: "settings-action-row" }, recheckBtn)
-    );
-  }
-  function pairingKey(state) {
-    return state.pairing?.id ?? null;
-  }
-  function renderPairing(state) {
-    const key = pairingKey(state);
-    if (key === lastPairingKey) return;
-    lastPairingKey = key;
-    clear(pairingHost);
-    const pairing = state.pairing;
-    if (!pairing) return;
-    const trustInput = el("input", { type: "checkbox" });
-    const controlBtn = el(
-      "button",
-      { type: "button", class: "ui-btn ui-btn-primary", disabled: !pairing.trustedName },
-      "Allow control"
-    );
-    const readBtn = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, "Read only");
-    const denyBtn = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, "Deny");
-    trustInput.addEventListener("change", () => {
-      controlBtn.toggleAttribute("disabled", !trustInput.checked);
-    });
-    readBtn.addEventListener("click", () => {
-      void api.mobile.respondPairing("read", pairing.code, pairing.id);
-    });
-    controlBtn.addEventListener("click", () => {
-      if (pairing.trustedName) void api.mobile.respondPairing("control", pairing.code, pairing.id);
-      else if (trustInput.checked)
-        void api.mobile.respondPairing("control", pairing.code, pairing.id, trustInput.checked);
-    });
-    denyBtn.addEventListener("click", () => {
-      void api.mobile.respondPairing("deny", pairing.code, pairing.id);
-    });
-    pairingHost.append(
-      el(
-        "div",
-        { class: "mobile-companion-pairing-banner" },
-        el("p", {}, "Does this code appear on ", el("strong", {}, pairing.label), "?"),
-        el("p", { class: "mobile-companion-pairing-code" }, pairing.code),
-        el(
-          "p",
-          { class: "field-hint" },
-          "Read only shares thread names, saved messages, and activity. Allow control also lets this phone send messages, start chats, stop runs, answer questions, and approve individual requests. Only pair a phone you hold.",
-          pairing.trustedName ? " This phone connected over this Mac\u2019s trusted name, and its browser verified the certificate." : " Confirm below that the Copse Local Root is installed and trusted on this phone before allowing control."
-        ),
-        ...pairing.trustedName ? [] : [
-          el(
-            "label",
-            { class: "checkbox-label" },
-            trustInput,
-            " The Copse Local Root is installed and trusted on this phone"
-          )
-        ],
-        el("div", { class: "settings-action-row" }, denyBtn, readBtn, controlBtn)
-      )
-    );
-  }
-  function deviceRow(device) {
-    const row = el("div", { class: "mobile-companion-device-row" });
-    const summary = el(
-      "div",
-      { class: "mobile-companion-device-summary" },
-      el("strong", {}, device.label),
-      ` \u2014 ${device.access === "control" ? "Chat and run control" : "Read only"}`
-    );
-    const actions = el("div", { class: "mobile-companion-device-actions" });
-    if (device.access === "control") {
-      const toReadBtn = el("button", { type: "button" }, "Make read only");
-      toReadBtn.addEventListener("click", () => {
-        void api.mobile.setDeviceAccess(device.id, "read");
-      });
-      actions.append(toReadBtn);
-    } else {
-      const trustInput = el("input", { type: "checkbox" });
-      const toControlBtn = el("button", { type: "button", disabled: true }, "Allow control");
-      trustInput.addEventListener("change", () => {
-        toControlBtn.toggleAttribute("disabled", !trustInput.checked);
-      });
-      toControlBtn.addEventListener("click", () => {
-        if (trustInput.checked)
-          void api.mobile.setDeviceAccess(device.id, "control", trustInput.checked);
-      });
-      actions.append(
-        el(
-          "label",
-          { class: "checkbox-label mobile-companion-trust-label" },
-          trustInput,
-          " The Copse Local Root is installed and trusted on this phone"
-        ),
-        toControlBtn
-      );
-    }
-    const revokeBtn = el(
-      "button",
-      { type: "button", class: "mobile-companion-device-revoke" },
-      "Revoke"
-    );
-    revokeBtn.addEventListener("click", () => {
-      void api.mobile.revokeDevice(device.id);
-    });
-    actions.append(revokeBtn);
-    row.append(summary, actions);
-    return row;
-  }
-  function renderDevices(state) {
-    const key = JSON.stringify(state.devices);
-    if (key === lastDevicesKey) return;
-    lastDevicesKey = key;
-    clear(deviceList);
-    if (state.devices.length === 0) {
-      deviceList.append(el("p", { class: "field-hint" }, "No phones are paired."));
-      return;
-    }
-    deviceList.append(
-      el(
-        "p",
-        { class: "field-hint" },
-        "Revoking access takes effect immediately. If you installed the Copse Local Root on that phone, remove it in the phone\u2019s certificate settings too."
-      )
-    );
-    for (const device of state.devices) deviceList.append(deviceRow(device));
-  }
-  function applyState(state) {
-    lastState = state;
-    enabledInput.checked = state.enabled;
-    renderAddresses(state);
-    renderConnection(state);
-    renderPublicName(state);
-    renderPairing(state);
-    renderDevices(state);
-    if (state.lastError) setInlineStatus(status, "error", state.lastError);
-    else status.replaceChildren();
-  }
-  addressSelect.addEventListener("change", () => {
-    if (lastState) renderAddresses(lastState);
-  });
-  enabledInput.addEventListener("change", () => {
-    void (async () => {
-      if (enabledInput.checked) {
-        const address = addressSelect.value;
-        if (!address) {
-          enabledInput.checked = false;
-          return;
-        }
-        await api.mobile.enable(address);
-      } else {
-        await api.mobile.disable();
-      }
-      await refresh();
-    })();
-  });
-  registerBtn.addEventListener("click", () => {
-    const invite = inviteInput.value.trim();
-    if (!invite) {
-      inviteInput.setAttribute("aria-invalid", "true");
-      inviteInput.focus();
-      return;
-    }
-    inviteInput.removeAttribute("aria-invalid");
-    void api.mobile.registerName(invite).then(() => {
-      if (lastState?.publicName.state !== "unregistered") inviteInput.value = "";
-    }).catch((error62) => {
-      setInlineStatus(nameStatus, "error", ipcErrorMessage(error62, "Could not get a name."));
-    });
-  });
-  inviteInput.addEventListener("input", () => {
-    inviteInput.removeAttribute("aria-invalid");
-  });
-  removeNameBtn.addEventListener("click", () => {
-    void api.mobile.removeName().catch((error62) => {
-      setInlineStatus(nameStatus, "error", ipcErrorMessage(error62, "Could not remove the name."));
-    });
-  });
-  recheckBtn.addEventListener("click", () => {
-    void api.mobile.recheckNameDns();
-  });
-  async function refresh() {
-    const state = await api.mobile.getState();
-    applyState(state);
-  }
-  api.mobile.onStateChanged((state) => {
-    applyState(state);
-  });
-  const root = el(
-    "fieldset",
-    { class: "mobile-companion" },
-    el("legend", {}, "Mobile Companion"),
-    el(
-      "p",
-      { class: "field-hint" },
-      "Open your Copse threads from a phone on the same local network. Choose the network interface your phone uses, pair phones, or turn sharing off. Copse must stay open and this computer must stay awake."
-    ),
-    el("label", { class: "checkbox-label" }, enabledInput, " Enable Mobile Companion"),
-    el("label", {}, "Network ", addressSelect),
-    addressHint,
-    connectionInfo,
-    nameCard,
-    pairingHost,
-    deviceList,
-    status
-  );
-  return { root, refresh };
-}
-function formatTime(ms) {
-  return new Date(ms).toLocaleString(void 0, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit"
-  });
-}
-var init_mobile_companion_section = __esm({
-  "src/renderer/views/setup/mobile-companion-section.ts"() {
-    init_helpers();
-    init_inline_status();
-    init_ipc_error_message();
-  }
-});
-
-// src/renderer/views/settings/fields.ts
-function loadSimpleFields(root, fields, snapshot) {
-  for (const field of fields) {
-    const input2 = root.querySelector(`[name="${field.name}"]`);
-    if (!(input2 instanceof HTMLInputElement || input2 instanceof HTMLTextAreaElement)) {
-      throw new Error(`Settings dialog template is missing ${JSON.stringify(field.name)}`);
-    }
-    const saved = snapshot[field.name];
-    if (field.kind === "checkbox") {
-      if (!(input2 instanceof HTMLInputElement)) {
-        throw new Error(`Settings field ${JSON.stringify(field.name)} must be an input`);
-      }
-      input2.checked = typeof saved === "boolean" ? saved : field.default;
-    } else {
-      input2.value = typeof saved === "string" || typeof saved === "number" ? String(saved) : String(field.default);
-    }
-  }
-}
-function parseNonNegativeInt(value, fallback) {
-  const n2 = Number.parseInt(value, 10);
-  return Number.isFinite(n2) && n2 >= 0 ? n2 : fallback;
-}
-function wireSafetySliders(form) {
-  const externalDeny = form.elements.namedItem("safetyExternalDenyThreshold");
-  if (!(externalDeny instanceof HTMLInputElement)) {
-    throw new Error('Settings dialog template is missing "safetyExternalDenyThreshold"');
-  }
-  const bind = (input2) => {
-    const output2 = form.querySelector(`output[for="${input2.name}"]`);
-    if (!output2) return;
-    const sync = () => {
-      output2.textContent = Number(input2.value).toFixed(2);
-    };
-    input2.addEventListener("input", sync);
-    sync();
-  };
-  bind(externalDeny);
-}
-function collectSimpleFields(fields, data, dirtyFieldNames) {
-  const values = {};
-  for (const field of fields) {
-    if (!field.save || !dirtyFieldNames.has(field.name)) continue;
-    if (field.kind === "checkbox") values[field.name] = data.get(field.name) === "on";
-    else if (field.kind === "number")
-      values[field.name] = parseNonNegativeInt(formDataString(data, field.name), field.default);
-    else {
-      const value = formDataString(data, field.name);
-      values[field.name] = field.name === "customInstructions" ? value.trim() : value;
-    }
-  }
-  return values;
-}
-function formDataString(data, key) {
-  const value = data.get(key);
-  return typeof value === "string" ? value : "";
-}
-function inputControl(form, name) {
-  const control = form.elements.namedItem(name);
-  if (!(control instanceof HTMLInputElement)) {
-    throw new Error(`Settings dialog template is missing input ${JSON.stringify(name)}`);
-  }
-  return control;
-}
-function selectControl(form, name) {
-  const control = form.elements.namedItem(name);
-  if (!(control instanceof HTMLSelectElement)) {
-    throw new Error(`Settings dialog template is missing select ${JSON.stringify(name)}`);
-  }
-  return control;
-}
-function textareaControl(form, name) {
-  const control = form.elements.namedItem(name);
-  if (!(control instanceof HTMLTextAreaElement)) {
-    throw new Error(`Settings dialog template is missing textarea ${JSON.stringify(name)}`);
-  }
-  return control;
-}
-function parseWebAllowedOrigins(value) {
-  const text = typeof value === "string" ? value : "";
-  return text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-}
-function parseApprovedProviderHosts(value) {
-  const text = typeof value === "string" ? value : "";
-  return text.split(/\r?\n/).map((line) => line.trim().toLowerCase().replace(/\.$/, "")).filter(Boolean);
-}
-function renderSimpleFields(root, fields) {
-  for (const field of fields) {
-    if (!field.save) continue;
-    const template = root.querySelector(`[name="${field.name}"]`);
-    if (!(template instanceof HTMLInputElement || template instanceof HTMLTextAreaElement)) {
-      throw new Error(`Missing Settings control ${field.name}`);
-    }
-    const input2 = template instanceof HTMLTextAreaElement && field.kind === "text" ? document.createElement("textarea") : document.createElement("input");
-    for (const attr of template.attributes) input2.setAttribute(attr.name, attr.value);
-    if (input2 instanceof HTMLInputElement) {
-      input2.type = field.kind === "checkbox" ? "checkbox" : field.kind === "number" ? "number" : "text";
-      if (field.kind === "number") {
-        input2.min = "0";
-        input2.step = "1";
-      }
-    }
-    template.replaceWith(input2);
-  }
-}
-var init_fields = __esm({
-  "src/renderer/views/settings/fields.ts"() {
   }
 });
 
@@ -50732,379 +46206,5083 @@ var init_model_picker = __esm({
   }
 });
 
-// packages/llm/src/model-parameters.ts
-function isEmptyModelParameters(params) {
-  return params.reasoning === void 0 && params.verbosity === void 0 && params.maxOutputTokens === void 0 && SAMPLING_FIELDS.every((field) => params[field] === void 0);
-}
-function matchesFamily(modelId, prefixes) {
-  return prefixes.some((prefix) => modelId.startsWith(prefix));
-}
-function matchesOpenAiFamily(modelId, prefixes) {
-  return prefixes.some((prefix) => hasModelIdPrefix(modelId, prefix));
-}
-function claudeSupport(modelId) {
-  const withoutOff = (ladder) => matchesFamily(modelId, CLAUDE_THINKING_ALWAYS_ON) ? ladder.filter((level) => level !== "off") : ladder;
-  if (matchesFamily(modelId, CLAUDE_EFFORT_NO_SAMPLING)) {
-    return {
-      reasoning: withoutOff(FULL_EFFORT_LADDER),
-      reasoningWire: "anthropic-effort",
-      sampling: [],
-      outputCap: false,
-      verbosity: [],
-      temperatureMax: 1
-    };
+// src/renderer/views/settings/agent-profiles-section.ts
+function createAgentProfilesSection(api, opts = {}) {
+  let profiles = [];
+  let editingId = null;
+  let formModel = "";
+  const list = el("div", { class: "agent-profile-list" });
+  const status = el("p", { class: "field-hint agent-profile-status", role: "status" });
+  status.hidden = true;
+  const nameInput = el("input", {
+    type: "text",
+    class: "agent-profile-name",
+    maxlength: String(AGENT_PROFILE_NAME_MAX),
+    placeholder: "Reviewer",
+    "aria-label": "Profile name"
+  });
+  const modelSelect = el("select", { class: "agent-profile-model", "aria-label": "Profile model" });
+  modelSelect.append(el("option", { value: "" }, KEEP_MODEL_LABEL));
+  const effortSelect = el(
+    "select",
+    { class: "agent-profile-effort", "aria-label": "Profile effort" },
+    el("option", { value: "" }, "The model\u2019s own level"),
+    ...REASONING_LEVELS.map((level) => el("option", { value: level }, EFFORT_LABELS[level]))
+  );
+  const instructionsInput = el("textarea", {
+    class: "agent-profile-instructions",
+    rows: "5",
+    maxlength: String(AGENT_PROFILE_INSTRUCTIONS_MAX),
+    placeholder: "Review the diff for correctness first. Do not edit files unless asked.",
+    "aria-label": "Profile instructions"
+  });
+  const saveButton = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-primary agent-profile-save" },
+    "Save profile"
+  );
+  const cancelButton = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary agent-profile-cancel" },
+    "Cancel"
+  );
+  const formTitle = el("p", { class: "agent-profile-form-title" });
+  const form = el(
+    "div",
+    { class: "agent-profile-form" },
+    formTitle,
+    el("label", {}, "Name", nameInput),
+    el("label", {}, "Model", modelSelect),
+    el("label", {}, "Effort", effortSelect),
+    el(
+      "label",
+      {},
+      "Instructions",
+      instructionsInput,
+      el(
+        "span",
+        { class: "field-hint" },
+        "Added to every turn of a Copse managed chat using this profile, after your custom instructions. Agent managed chats, cloud agents and plugin models don\u2019t receive them."
+      )
+    ),
+    el("div", { class: "provider-actions" }, saveButton, cancelButton)
+  );
+  form.hidden = true;
+  const addButton = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary agent-profile-add" },
+    "Add profile"
+  );
+  const root = el(
+    "fieldset",
+    { class: "agent-profiles" },
+    el("legend", {}, "Profiles"),
+    el(
+      "p",
+      { class: "settings-fieldset-desc" },
+      "Save a model, effort and instructions under a name, such as a reviewer or a bug hunter, then switch a chat to it from the model menu in the composer."
+    ),
+    list,
+    addButton,
+    form,
+    status
+  );
+  let modelPicker = null;
+  function ensureModelPicker() {
+    modelPicker ??= mountModelSelectPicker(modelSelect, {
+      loadOptions: async (current) => [
+        { value: "", label: KEEP_MODEL_LABEL },
+        ...await fetchModelOptions(api, current)
+      ],
+      ariaLabel: "Profile model",
+      loadOnMount: false
+    });
+    return modelPicker;
   }
-  if (matchesFamily(modelId, CLAUDE_EFFORT_WITH_SAMPLING)) {
-    return {
-      reasoning: CAPPED_EFFORT_LADDER,
-      reasoningWire: "anthropic-effort",
-      sampling: ANTHROPIC_SAMPLING,
-      outputCap: false,
-      verbosity: [],
-      temperatureMax: 1
-    };
+  function setStatus(text) {
+    status.textContent = text;
+    status.hidden = text === "";
   }
+  function summary(profile) {
+    const parts = [
+      profile.model ? modelDisplayLabel(profile.model) : KEEP_MODEL_LABEL,
+      ...profile.reasoning ? [`${EFFORT_LABELS[profile.reasoning]} effort`] : [],
+      profile.instructions?.trim() ? "with instructions" : "no instructions"
+    ];
+    return parts.join(" \xB7 ");
+  }
+  function renderList() {
+    clear(list);
+    if (profiles.length === 0) {
+      list.append(el("p", { class: "field-hint" }, "No profiles yet."));
+    }
+    for (const profile of profiles) {
+      const edit = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact agent-profile-edit" },
+        "Edit"
+      );
+      const remove = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact agent-profile-delete" },
+        "Remove"
+      );
+      edit.addEventListener("click", () => {
+        openForm(profile);
+      });
+      remove.addEventListener("click", () => {
+        void persist(profiles.filter((candidate) => candidate.id !== profile.id));
+      });
+      list.append(
+        el(
+          "div",
+          { class: "agent-profile-row", "data-profile-id": profile.id },
+          el(
+            "div",
+            { class: "agent-profile-summary" },
+            el("strong", {}, profile.name),
+            el("div", { class: "field-hint" }, summary(profile))
+          ),
+          el("div", { class: "agent-profile-row-actions" }, edit, remove)
+        )
+      );
+    }
+    addButton.disabled = profiles.length >= AGENT_PROFILES_MAX;
+  }
+  function openForm(profile) {
+    editingId = profile?.id ?? null;
+    formTitle.textContent = profile ? `Edit ${profile.name}` : "New profile";
+    nameInput.value = profile?.name ?? "";
+    formModel = profile?.model ?? "";
+    modelSelect.value = formModel;
+    effortSelect.value = profile?.reasoning ?? "";
+    instructionsInput.value = profile?.instructions ?? "";
+    form.hidden = false;
+    addButton.hidden = true;
+    setStatus("");
+    void ensureModelPicker().refresh(formModel);
+    nameInput.focus();
+  }
+  function closeForm() {
+    editingId = null;
+    form.hidden = true;
+    addButton.hidden = false;
+  }
+  async function persist(next) {
+    const parsed2 = agentProfilesSchema.safeParse(next);
+    if (!parsed2.success) {
+      setStatus("That profile could not be saved. Check its name and instructions.");
+      return false;
+    }
+    try {
+      await api.settings.set(AGENT_PROFILES_SETTING, parsed2.data);
+    } catch {
+      setStatus("Could not save profiles. Please try again.");
+      return false;
+    }
+    profiles = parsed2.data;
+    renderList();
+    opts.onChanged?.();
+    return true;
+  }
+  addButton.addEventListener("click", () => {
+    openForm(null);
+  });
+  nameInput.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    saveButton.click();
+  });
+  cancelButton.addEventListener("click", closeForm);
+  modelSelect.addEventListener("change", () => {
+    formModel = modelSelect.value;
+  });
+  saveButton.addEventListener("click", () => {
+    const name = nameInput.value.trim();
+    if (!name) {
+      setStatus("Give the profile a name.");
+      nameInput.focus();
+      return;
+    }
+    const instructions = instructionsInput.value.trim();
+    const model = formModel;
+    const effort = effortSelect.value;
+    const id = editingId ?? newAgentProfileId(name, profiles);
+    const profile = {
+      id,
+      name,
+      ...model ? { model } : {},
+      ...isReasoningLevel(effort) ? { reasoning: effort } : {},
+      ...instructions ? { instructions } : {}
+    };
+    const next = editingId ? profiles.map((candidate) => candidate.id === editingId ? profile : candidate) : [...profiles, profile];
+    void persist(next).then((saved) => {
+      if (saved) closeForm();
+    });
+  });
   return {
-    reasoning: BUDGET_LADDER,
-    reasoningWire: "anthropic-budget",
-    sampling: ANTHROPIC_SAMPLING,
-    outputCap: false,
-    verbosity: [],
-    temperatureMax: 1
+    root,
+    refresh: async (signal) => {
+      const raw = await api.settings.get(AGENT_PROFILES_SETTING).catch(() => void 0);
+      if (signal?.aborted) return;
+      const parsed2 = agentProfilesSchema.safeParse(raw ?? []);
+      profiles = parsed2.success ? parsed2.data : [];
+      closeForm();
+      setStatus("");
+      renderList();
+    }
   };
 }
-function openAiVerbosity(modelId) {
-  if (!matchesFamily(modelId, OPENAI_VERBOSITY_PREFIXES)) return [];
-  if (OPENAI_VERBOSITY_EXCLUDED.some((marker) => modelId.includes(marker))) return [];
-  return VERBOSITY_LEVELS;
+var EFFORT_LABELS, KEEP_MODEL_LABEL;
+var init_agent_profiles_section = __esm({
+  "src/renderer/views/settings/agent-profiles-section.ts"() {
+    init_model_parameters();
+    init_agent_profiles();
+    init_helpers();
+    init_model_options();
+    init_model_picker();
+    EFFORT_LABELS = {
+      off: "No thinking",
+      minimal: "Minimal",
+      low: "Low",
+      medium: "Medium",
+      high: "High",
+      xhigh: "Extra high",
+      max: "Max"
+    };
+    KEEP_MODEL_LABEL = "Keep the chat\u2019s model";
+  }
+});
+
+// src/shared/web-search.ts
+function resolveWebSearchProvider(value) {
+  return value === "tavily" || value === "parallel" ? value : "none";
 }
-function openAiSupport(modelId) {
-  if (matchesOpenAiFamily(modelId, OPENAI_GPT6_PREFIXES)) {
-    return {
-      reasoning: OPENAI_GPT6_LADDER,
-      reasoningWire: "openai-effort",
-      sampling: [],
-      outputCap: false,
-      verbosity: openAiVerbosity(modelId),
-      temperatureMax: 2
+var WEB_SEARCH_PROVIDERS, WEB_SEARCH_LABELS;
+var init_web_search = __esm({
+  "src/shared/web-search.ts"() {
+    WEB_SEARCH_PROVIDERS = ["none", "tavily", "parallel"];
+    WEB_SEARCH_LABELS = {
+      none: "Not configured",
+      tavily: "Tavily",
+      parallel: "Parallel"
     };
   }
-  if (matchesOpenAiFamily(modelId, OPENAI_REASONING_PREFIXES)) {
-    return {
-      reasoning: OPENAI_LADDER,
-      reasoningWire: "openai-effort",
-      sampling: [],
-      outputCap: false,
-      verbosity: openAiVerbosity(modelId),
-      temperatureMax: 2
-    };
+});
+
+// src/renderer/views/setup/api-keys-section.ts
+function keyStatusClass(ok) {
+  if (ok === true) return "key-status ok";
+  if (ok === false) return "key-status err";
+  return "key-status";
+}
+function createApiKeysSection(api, opts = {}) {
+  const legend = opts.legend ?? "API Keys";
+  const providers = opts.providers ?? ["anthropic", "openai", "openrouter", "cursor"];
+  const validateOnInput = opts.validateOnInput ?? true;
+  const fields = providers.map((provider) => {
+    const config2 = API_KEY_PROVIDER_CONFIGS[provider];
+    const input2 = el("input", {
+      type: "password",
+      name: config2.name,
+      placeholder: config2.placeholder,
+      autocomplete: "off"
+    });
+    const status = el("span", { class: "key-status", "data-key": provider });
+    const atRest = el("span", { class: "key-status", "data-at-rest": provider });
+    const label = el(
+      "label",
+      {},
+      config2.label,
+      input2,
+      status,
+      atRest,
+      el("span", { class: "field-hint" }, config2.hint)
+    );
+    return { ...config2, input: input2, status, atRest, label };
+  });
+  const plaintextNote = el(
+    "p",
+    { class: "field-hint", "data-at-rest-note": "", hidden: true },
+    "One or more keys are stored unencrypted because the OS secure storage is unavailable. Install and unlock a system keyring to encrypt them at rest."
+  );
+  const fieldset = el(
+    "fieldset",
+    {},
+    el("legend", {}, legend),
+    ...fields.map((field) => field.label),
+    plaintextNote
+  );
+  let generation = 0;
+  const validationTimers = /* @__PURE__ */ new Map();
+  async function validateField(provider, input2, statusEl) {
+    const mine = generation;
+    const value = input2.value.trim();
+    if (!value) {
+      statusEl.replaceChildren();
+      statusEl.className = "key-status";
+      return;
+    }
+    setInlineStatus(statusEl, "pending", "Checking\u2026");
+    statusEl.className = "key-status";
+    const result = await api.settings.validateKey(provider, value);
+    if (mine !== generation || input2.value.trim() !== value) return;
+    if (result.ok) {
+      setInlineStatus(statusEl, "ok", "Valid key");
+      statusEl.className = keyStatusClass(true);
+    } else {
+      setInlineStatus(statusEl, "error", result.error ?? "Invalid key");
+      statusEl.className = keyStatusClass(false);
+    }
+  }
+  function bindValidation(provider, input2, statusEl) {
+    if (!validateOnInput) return;
+    input2.addEventListener("input", () => {
+      const existing = validationTimers.get(provider);
+      if (existing) clearTimeout(existing);
+      validationTimers.set(
+        provider,
+        setTimeout(() => {
+          void validateField(provider, input2, statusEl);
+        }, 500)
+      );
+    });
+  }
+  for (const field of fields) {
+    bindValidation(field.provider, field.input, field.status);
+  }
+  async function refreshKeyStatus(signal) {
+    const mine = generation;
+    if (signal?.aborted) return;
+    let anyPlaintext = false;
+    for (const field of fields) {
+      const saved = await api.settings.getKey(field.provider);
+      if (mine !== generation || signal?.aborted) return;
+      if (!field.input.value.trim()) {
+        setInlineStatus(field.status, saved ? "filled" : "idle", saved ? "saved" : "not set");
+        field.status.className = "key-status";
+      }
+      const encrypted = saved ? await api.settings.getKeyEncrypted(field.provider) : null;
+      if (mine !== generation || signal?.aborted) return;
+      if (encrypted === true) {
+        setInlineStatus(field.atRest, "ok", "Encrypted by OS keychain");
+        field.atRest.className = "key-status";
+      } else if (encrypted === false) {
+        anyPlaintext = true;
+        setInlineStatus(field.atRest, "warn", "Stored unencrypted");
+        field.atRest.className = "key-status";
+      } else {
+        field.atRest.replaceChildren();
+        field.atRest.className = "key-status";
+      }
+    }
+    plaintextNote.hidden = !anyPlaintext;
+  }
+  async function confirmPlaintextStorage(provider) {
+    const label = API_KEY_PROVIDER_CONFIGS[provider].label;
+    return showConfirmDialog({
+      message: `No OS keyring is available to encrypt your ${label} at rest. Install and unlock a system keyring to store it encrypted.`,
+      detail: "Store it unencrypted on this machine anyway?",
+      confirmLabel: "Store anyway"
+    });
+  }
+  async function saveKeys() {
+    let savedAny = false;
+    const failures = [];
+    for (const field of fields) {
+      const key = field.input.value.trim();
+      if (!key) {
+        field.input.value = "";
+        continue;
+      }
+      let result = await api.settings.setKey(field.provider, key);
+      if (!result.ok && result.reason === "plaintext-consent-required" && await confirmPlaintextStorage(field.provider)) {
+        result = await api.settings.setKey(field.provider, key, { allowPlaintext: true });
+      }
+      if (result.ok) {
+        field.input.value = "";
+        savedAny = true;
+      } else {
+        const message = result.reason === "plaintext-storage-disabled" ? `Not saved: ${PLAINTEXT_STORAGE_DISABLED_REASON}` : "Not saved: unencrypted storage declined";
+        failures.push(message);
+        setInlineStatusMarkdown(field.status, "error", message);
+        field.status.className = keyStatusClass(false);
+      }
+    }
+    if (savedAny) await refreshKeyStatus();
+    return failures.length === 0;
   }
   return {
-    reasoning: [],
-    reasoningWire: "none",
-    sampling: OPENAI_SAMPLING,
-    outputCap: false,
-    verbosity: openAiVerbosity(modelId),
-    temperatureMax: 2
+    root: fieldset,
+    refreshKeyStatus,
+    saveKeys,
+    reset: () => {
+      generation += 1;
+      for (const timer of validationTimers.values()) clearTimeout(timer);
+      validationTimers.clear();
+      for (const field of fields) {
+        field.input.value = "";
+        field.status.replaceChildren();
+      }
+    }
   };
 }
-function modelParameterSupport(model) {
-  const selection2 = parseModelSelection(model);
-  if (selection2.namespace === "chatgpt-plan") {
-    return { ...openAiSupport(selection2.modelId), sampling: [], outputCap: false };
-  }
-  if (AGENT_NAMESPACES.has(selection2.namespace)) {
-    return {
-      ...NO_PARAMETERS,
-      unavailableReason: "This selection runs the whole turn in its own agent, which owns these settings."
+var PLAINTEXT_STORAGE_DISABLED_REASON, API_KEY_PROVIDER_CONFIGS;
+var init_api_keys_section = __esm({
+  "src/renderer/views/setup/api-keys-section.ts"() {
+    init_helpers();
+    init_inline_status();
+    init_confirm_dialog();
+    PLAINTEXT_STORAGE_DISABLED_REASON = "secure storage is unavailable and plaintext secret storage is disabled. Start Copse with `COPSE_ALLOW_PLAINTEXT_SECRETS=1` to opt in.";
+    API_KEY_PROVIDER_CONFIGS = {
+      tavily: {
+        provider: "tavily",
+        name: "tavilyKey",
+        label: "Tavily API key",
+        placeholder: "tvly-\u2026",
+        hint: "Basic search uses one API credit per request. Generated answers are disabled."
+      },
+      anthropic: {
+        provider: "anthropic",
+        name: "anthropicKey",
+        label: "Anthropic API key",
+        placeholder: "sk-ant-\u2026",
+        hint: "Checked with a free request, so no tokens are charged."
+      },
+      openai: {
+        provider: "openai",
+        name: "openaiKey",
+        label: "OpenAI API key",
+        placeholder: "sk-\u2026",
+        hint: "Checked with a free request, so no tokens are charged."
+      },
+      cursor: {
+        provider: "cursor",
+        name: "cursorKey",
+        label: "Cursor API key",
+        placeholder: "cur_\u2026",
+        hint: "For runs on Cursor\u2019s machines. Checked with a free request."
+      },
+      openrouter: {
+        provider: "openrouter",
+        name: "openrouterKey",
+        label: "OpenRouter API key",
+        placeholder: "sk-or-\u2026",
+        hint: "One key for Claude, GPT, Gemini, Llama, and more. Checked with a free request."
+      },
+      github: {
+        provider: "github",
+        name: "githubKey",
+        label: "GitHub token",
+        placeholder: "github_pat_\u2026 or ghp_\u2026",
+        hint: "Lets the Claude cloud agent clone your repository, push branches, and open pull requests. Use a fine-grained token with repository access."
+      },
+      "artificial-analysis": {
+        provider: "artificial-analysis",
+        name: "artificialAnalysisKey",
+        label: "Artificial Analysis API key",
+        placeholder: "aa-\u2026",
+        hint: "Optional: live Intelligence Index data for the model value map, including models beyond the curated list. Free key from artificialanalysis.ai (their terms require the attribution shown on the map)."
+      },
+      parallel: {
+        provider: "parallel",
+        name: "parallelKey",
+        label: "Parallel API key",
+        placeholder: "Parallel API key",
+        hint: "Used only for the direct Search API. Requests may be billable; ZDR depends on your Parallel account agreement."
+      }
     };
   }
-  if (selection2.namespace === "auto") {
-    return {
-      ...NO_PARAMETERS,
-      unavailableReason: "This is a rule that picks a model per chat. Parameters follow the model it picks, so pin one to tune it."
-    };
+});
+
+// src/renderer/views/settings/web-search-section.ts
+function createWebSearchSection(api) {
+  const provider = el("select", { name: "webSearchProvider" });
+  for (const value of WEB_SEARCH_PROVIDERS) {
+    provider.append(el("option", { value }, WEB_SEARCH_LABELS[value]));
   }
-  if (selection2.namespace === "cloud") {
-    const provider = firstPartyProviderOf(selection2);
-    if (provider === "anthropic") return claudeSupport(selection2.modelId);
-    if (provider === "openai") return openAiSupport(selection2.modelId);
-    return {
-      reasoning: [],
-      reasoningWire: "none",
-      sampling: UNIVERSAL_SAMPLING,
-      outputCap: false,
-      verbosity: [],
-      temperatureMax: 2
-    };
-  }
+  const tavily = createApiKeysSection(api, {
+    legend: "Tavily account",
+    providers: ["tavily"],
+    validateOnInput: false
+  });
+  const parallel = createApiKeysSection(api, {
+    legend: "Parallel account",
+    providers: ["parallel"],
+    validateOnInput: false
+  });
+  const note = el(
+    "p",
+    { class: "field-hint" },
+    "Queries and returned excerpts are included in the conversation. Provider retention and usage terms apply. Saving credentials does not run a search."
+  );
+  const root = el(
+    "fieldset",
+    {},
+    el("legend", {}, "Search provider"),
+    el("label", {}, "Default provider", provider),
+    tavily.root,
+    parallel.root,
+    note
+  );
+  const sync = () => {
+    tavily.root.hidden = provider.value !== "tavily";
+    parallel.root.hidden = provider.value !== "parallel";
+  };
+  provider.addEventListener("change", sync);
+  provider.value = "none";
+  sync();
   return {
-    reasoning: OPENAI_COMPATIBLE_LADDER,
-    reasoningWire: selection2.namespace === "openrouter" ? "openrouter" : "openai-effort",
-    sampling: OPENAI_COMPATIBLE_SAMPLING,
-    outputCap: selection2.namespace === "openrouter" || selection2.namespace === "lmstudio",
-    // Not OpenAI's endpoint, so never OpenAI's field: local servers and
-    // aggregators reject or silently drop unknown body fields.
-    verbosity: [],
-    temperatureMax: 2,
-    upstreamDecides: true
+    root,
+    refresh: async (snapshot, signal) => {
+      if (signal.aborted) return;
+      provider.value = resolveWebSearchProvider(snapshot.webSearchProvider);
+      sync();
+      await Promise.all([tavily.refreshKeyStatus(signal), parallel.refreshKeyStatus(signal)]);
+    },
+    collect: (dirty) => dirty.has("webSearchProvider") ? { webSearchProvider: resolveWebSearchProvider(provider.value) } : {},
+    saveKeys: async () => {
+      if (provider.value === "tavily") return tavily.saveKeys();
+      if (provider.value === "parallel") return parallel.saveKeys();
+      return true;
+    },
+    reset: () => {
+      tavily.reset();
+      parallel.reset();
+    }
   };
 }
-function roundToStep(value) {
-  return Math.round(value * 100) / 100;
-}
-function sanitizeSampling(field, value, temperatureMax) {
-  if (typeof value !== "number" || !Number.isFinite(value)) return void 0;
-  const bounds = SAMPLING_BOUNDS[field];
-  const max = field === "temperature" ? temperatureMax : bounds.max;
-  const clamped = clamp(value, bounds.min, max);
-  return bounds.integer ? Math.round(clamped) : roundToStep(clamped);
-}
-function sanitizeModelParameters(params, model, support = modelParameterSupport(model)) {
-  const sanitized = {};
-  if (params.reasoning !== void 0 && support.reasoning.includes(params.reasoning)) {
-    sanitized.reasoning = params.reasoning;
+var init_web_search_section = __esm({
+  "src/renderer/views/settings/web-search-section.ts"() {
+    init_web_search();
+    init_helpers();
+    init_api_keys_section();
   }
-  if (params.verbosity !== void 0 && support.verbosity.includes(params.verbosity)) {
-    sanitized.verbosity = params.verbosity;
+});
+
+// src/renderer/views/setup/ssh-workspace-section.ts
+function createSshWorkspaceSection(api, opts = {}) {
+  const hostList = el("div", { class: "ssh-host-list" });
+  const status = el("span", { class: "ssh-host-status" });
+  const enabledInput = el("input", { type: "checkbox", name: "sshWorkspaceEnabled" });
+  const strictSelect = el("select", { name: "sshStrictHostKeys" });
+  strictSelect.append(
+    el("option", { value: "accept-new" }, "Accept new host keys (recommended)"),
+    el("option", { value: "strict" }, "Strict: reject unknown host keys")
+  );
+  const hostFields = createSshHostFields();
+  const form = el(
+    "div",
+    { class: "ssh-host-form" },
+    ...hostFields.fields,
+    el(
+      "div",
+      { class: "provider-actions" },
+      el("button", { type: "button", class: "ui-btn ui-btn-primary ssh-host-save" }, "Save host"),
+      el("button", { type: "button", class: "ui-btn ui-btn-secondary ssh-host-clear" }, "Clear")
+    )
+  );
+  async function persistHosts(next) {
+    await api.settings.set("sshWorkspaceHosts", next);
+    await renderHosts();
+    opts.onChanged?.();
   }
-  if (support.outputCap && typeof params.maxOutputTokens === "number" && Number.isFinite(params.maxOutputTokens)) {
-    sanitized.maxOutputTokens = Math.round(clamp(params.maxOutputTokens, 256, 1e6));
+  function clearDraft() {
+    hostFields.reset();
   }
-  for (const field of support.sampling) {
-    const value = sanitizeSampling(field, params[field], support.temperatureMax);
-    if (value !== void 0) sanitized[field] = value;
+  async function renderHosts(signal) {
+    if (signal?.aborted) return;
+    clear(hostList);
+    const [rawHosts, credentialHostIds] = await Promise.all([
+      api.settings.get("sshWorkspaceHosts"),
+      api.sshWorkspace.listCredentialHostIds()
+    ]);
+    if (signal?.aborted) return;
+    const list = parseSshWorkspaceHosts(rawHosts);
+    const credentialHosts = new Set(credentialHostIds);
+    if (list.length === 0) {
+      hostList.append(el("p", { class: "field-hint" }, "No SSH hosts configured yet."));
+      return;
+    }
+    for (const host of list) {
+      const row = el("div", { class: "ssh-host-row" });
+      const target = host.user ? `${host.user}@${host.host}` : host.host;
+      const hasSavedAuthentication = credentialHosts.has(host.id);
+      const summary = el(
+        "div",
+        { class: "ssh-host-summary" },
+        el("div", {}, el("strong", {}, host.label), `: ${target}`),
+        el(
+          "div",
+          {
+            class: hasSavedAuthentication ? "ssh-host-auth ssh-host-auth-saved" : "ssh-host-auth"
+          },
+          hasSavedAuthentication ? "Authentication encrypted by OS keychain" : "Authentication will be requested when you connect"
+        )
+      );
+      const actions = el(
+        "div",
+        { class: "ssh-host-row-actions" },
+        el("button", { type: "button", class: "ssh-host-edit" }, "Edit")
+      );
+      if (hasSavedAuthentication) {
+        const forget = el(
+          "button",
+          { type: "button", class: "ssh-host-forget-auth" },
+          "Forget authentication"
+        );
+        forget.addEventListener("click", () => {
+          void api.sshWorkspace.forgetCredentials(host.id).then(() => {
+            setInlineStatus(status, "ok", `Forgot authentication for \u201C${host.label}\u201D.`);
+            return renderHosts();
+          });
+        });
+        actions.append(forget);
+      }
+      actions.append(el("button", { type: "button", class: "ssh-host-delete" }, "Remove"));
+      row.append(summary, actions);
+      row.querySelector(".ssh-host-edit")?.addEventListener("click", () => {
+        hostFields.edit(host);
+      });
+      row.querySelector(".ssh-host-delete")?.addEventListener("click", () => {
+        void api.sshWorkspace.forgetCredentials(host.id).then(() => persistHosts(removeHost(list, host.id)));
+      });
+      hostList.append(row);
+    }
   }
-  return sanitized;
-}
-function findRecommendation(model) {
-  const selection2 = parseModelSelection(model);
-  if (AGENT_NAMESPACES.has(selection2.namespace) || selection2.namespace === "auto") return void 0;
-  const id = selection2.modelId.toLowerCase();
-  return RECOMMENDATIONS.find((entry) => id.includes(entry.match));
-}
-function recommendedModelParameters(model) {
-  const match = findRecommendation(model);
-  if (!match) return null;
-  const params = sanitizeModelParameters(match.params, model);
-  if (isEmptyModelParameters(params)) return null;
+  form.querySelector(".ssh-host-save")?.addEventListener("click", () => {
+    void (async () => {
+      const existing = parseSshWorkspaceHosts(await api.settings.get("sshWorkspaceHosts"));
+      const parsed2 = hostFields.parse(existing);
+      if (!parsed2.ok) {
+        setInlineStatus(status, "error", parsed2.error);
+        return;
+      }
+      await persistHosts(upsertHost(existing, parsed2.host));
+      setInlineStatus(status, "ok", `Saved host \u201C${parsed2.host.label}\u201D.`);
+      clearDraft();
+    })();
+  });
+  form.querySelector(".ssh-host-clear")?.addEventListener("click", () => {
+    clearDraft();
+    status.replaceChildren();
+  });
+  enabledInput.addEventListener("change", () => {
+    if (opts.deferOrdinaryWrites) return;
+    void api.settings.set("sshWorkspaceEnabled", enabledInput.checked).then(() => {
+      opts.onChanged?.();
+    });
+  });
+  strictSelect.addEventListener("change", () => {
+    if (opts.deferOrdinaryWrites) return;
+    void api.settings.set("sshStrictHostKeys", strictSelect.value).then(() => {
+      opts.onChanged?.();
+    });
+  });
+  function load(snapshot) {
+    enabledInput.checked = snapshot.sshWorkspaceEnabled === true;
+    strictSelect.value = snapshot.sshStrictHostKeys === "strict" ? "strict" : "accept-new";
+  }
+  async function refresh(signal) {
+    if (signal?.aborted) return;
+    if (!opts.deferOrdinaryWrites) {
+      const enabled = await api.settings.get("sshWorkspaceEnabled");
+      const strict = await api.settings.get("sshStrictHostKeys");
+      if (signal?.aborted) return;
+      enabledInput.checked = enabled === true;
+      strictSelect.value = strict === "strict" ? "strict" : "accept-new";
+    }
+    await renderHosts(signal);
+  }
+  const importBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary ssh-import-config" },
+    "Import from ~/.ssh/config"
+  );
+  importBtn.addEventListener("click", () => {
+    void (async () => {
+      const aliases = await api.sshWorkspace.listConfigAliases();
+      if (aliases.length === 0) {
+        setInlineStatus(status, "error", "No Host entries found in ~/.ssh/config.");
+        return;
+      }
+      const raw = await api.settings.get("sshWorkspaceHosts");
+      const existing = parseSshWorkspaceHosts(raw);
+      const imported = importSshConfigHosts(existing, aliases);
+      await persistHosts(imported.hosts);
+      if (imported.importedHostIds.length === 0) {
+        setInlineStatus(status, "ok", "All SSH config aliases are already imported.");
+        return;
+      }
+      setInlineStatus(
+        status,
+        "ok",
+        `Imported ${String(imported.importedHostIds.length)} alias(es) from SSH config.`
+      );
+    })();
+  });
+  const root = el(
+    "fieldset",
+    {},
+    el("legend", {}, "SSH workspaces"),
+    el(
+      "p",
+      { class: "settings-fieldset-desc" },
+      "Run shell, git, search, and file tools on a remote Linux host over SSH. Enable the feature below, add hosts here or in the ",
+      el("strong", {}, "Open remote folder"),
+      " dialog, then open a remote project from the projects panel.",
+      " Passwords and key passphrases can be encrypted with the OS keychain and managed per host."
+    ),
+    el("label", { class: "checkbox-label" }, enabledInput, " Enable SSH workspaces (experimental)"),
+    el("label", {}, "Host key policy ", strictSelect),
+    hostList,
+    importBtn,
+    form,
+    status
+  );
   return {
-    label: match.label,
-    source: match.source,
-    ...match.sourceLabel ? { sourceLabel: match.sourceLabel } : {},
-    params,
-    ...match.outputCeiling ? { outputCeiling: match.outputCeiling } : {}
+    root,
+    refresh,
+    load,
+    collect: (data, dirty) => ({
+      ...dirty.has("sshWorkspaceEnabled") ? { sshWorkspaceEnabled: data.has("sshWorkspaceEnabled") } : {},
+      ...dirty.has("sshStrictHostKeys") ? { sshStrictHostKeys: strictSelect.value === "strict" ? "strict" : "accept-new" } : {}
+    })
   };
 }
-function decodeNumber(value) {
-  return typeof value === "number" && Number.isFinite(value) ? value : void 0;
-}
-function decodeModelParameters(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
-  const record2 = { ...value };
-  const params = {};
-  if (isReasoningLevel(record2["reasoning"])) params.reasoning = record2["reasoning"];
-  if (isVerbosityLevel(record2["verbosity"])) params.verbosity = record2["verbosity"];
-  const maxOutputTokens = decodeNumber(record2["maxOutputTokens"]);
-  if (maxOutputTokens !== void 0) params.maxOutputTokens = maxOutputTokens;
-  for (const field of SAMPLING_FIELDS) {
-    const value2 = decodeNumber(record2[field]);
-    if (value2 !== void 0) params[field] = value2;
+var init_ssh_workspace_section = __esm({
+  "src/renderer/views/setup/ssh-workspace-section.ts"() {
+    init_helpers();
+    init_inline_status();
+    init_ssh_host_helpers();
+    init_ssh_host_fields();
+    init_ssh_host_helpers();
   }
-  return params;
+});
+
+// src/renderer/views/tool-permissions-panel.ts
+function cloneCatalog(catalog) {
+  return structuredClone(catalog);
 }
-function decodeModelParametersMap(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
-  const out = {};
-  for (const [model, entry] of Object.entries(value)) {
-    if (!model) continue;
-    const params = decodeModelParameters(entry);
-    if (!isEmptyModelParameters(params)) out[model] = params;
+function groupMatches(group, query) {
+  if (!query) return true;
+  return [group.name, group.origin, group.originDetail, group.status].filter((value) => typeof value === "string").join(" ").toLowerCase().includes(query);
+}
+function matchingTools(group, query) {
+  if (groupMatches(group, query)) return group.tools;
+  return group.tools.filter(
+    (tool) => [tool.name, tool.executionName, tool.description].join(" ").toLowerCase().includes(query)
+  );
+}
+function groupPolicy(tools) {
+  const first = tools[0]?.policy;
+  if (!first || tools.some((tool) => tool.policy !== first)) return "mixed";
+  return first;
+}
+function withPolicy(catalog, toolIds, policy) {
+  return {
+    ...catalog,
+    groups: catalog.groups.map((group) => ({
+      ...group,
+      tools: group.tools.map(
+        (tool) => toolIds.has(tool.id) ? { ...tool, policy, overridden: true } : tool
+      )
+    }))
+  };
+}
+function withDefaults(catalog, toolIds) {
+  return {
+    ...catalog,
+    groups: catalog.groups.map((group) => ({
+      ...group,
+      tools: group.tools.map(
+        (tool) => toolIds.has(tool.id) ? { ...tool, policy: tool.defaultPolicy, overridden: false } : tool
+      )
+    }))
+  };
+}
+function createToolPermissionsPanel(api) {
+  const root = document.createElement("div");
+  root.className = "tool-permissions-panel";
+  const toolbar = document.createElement("div");
+  toolbar.className = "tool-permissions-toolbar";
+  const search = document.createElement("input");
+  search.type = "search";
+  search.className = "tool-permissions-search";
+  search.placeholder = "Search tools or servers\u2026";
+  search.autocomplete = "off";
+  search.spellcheck = false;
+  search.setAttribute("aria-label", "Search tool permissions");
+  const resetAll = document.createElement("button");
+  resetAll.type = "button";
+  resetAll.className = "ui-btn ui-btn-secondary tool-permissions-reset-all";
+  resetAll.textContent = "Reset all to defaults";
+  const status = document.createElement("span");
+  status.className = "tool-permissions-status";
+  status.setAttribute("role", "status");
+  status.setAttribute("aria-live", "polite");
+  toolbar.append(search, resetAll, status);
+  const groups = document.createElement("div");
+  groups.className = "tool-permissions-groups";
+  const empty = document.createElement("p");
+  empty.className = "tool-permissions-empty";
+  empty.hidden = true;
+  root.append(toolbar, groups, empty);
+  let catalog = null;
+  let loading = false;
+  let refreshGeneration = 0;
+  let pendingToolIds = /* @__PURE__ */ new Set();
+  let policyFocus = null;
+  const groupOpenState = /* @__PURE__ */ new Map();
+  const expandedDescriptions = /* @__PURE__ */ new Set();
+  root.addEventListener("focusin", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const policy = target.dataset["policy"];
+    const toolId = target.closest(".tool-permission-row")?.dataset["toolId"];
+    policyFocus = target.classList.contains("tool-permission-choice") && toolId !== void 0 && isToolPermissionPolicy(policy) ? { toolId, policy } : null;
+  });
+  function allToolIds() {
+    return catalog?.groups.flatMap((group) => group.tools.map((tool) => tool.id)) ?? [];
+  }
+  function setBusy(busy) {
+    root.dataset["pending"] = String(busy);
+    search.disabled = loading;
+    resetAll.disabled = busy || loading || !catalog?.groups.some((group) => group.tools.length > 0);
+  }
+  async function mutate(toolIds, optimistic, request) {
+    if (!catalog || toolIds.length === 0 || pendingToolIds.size > 0) return;
+    const before = cloneCatalog(catalog);
+    pendingToolIds = new Set(toolIds);
+    catalog = optimistic(catalog, pendingToolIds);
+    status.textContent = "Saving\u2026";
+    render();
+    try {
+      catalog = await request();
+      status.textContent = "Saved";
+    } catch (error62) {
+      catalog = before;
+      status.textContent = "Could not save: " + errorMessage(error62);
+      status.classList.add("is-error");
+    } finally {
+      pendingToolIds.clear();
+      render();
+    }
+  }
+  function selectPolicy(tool, policy) {
+    if (tool.overridden && tool.policy === policy || tool.disabledPolicies?.includes(policy)) {
+      return;
+    }
+    status.classList.remove("is-error");
+    void mutate(
+      [tool.id],
+      (current, ids) => withPolicy(current, ids, policy),
+      () => api.set({ toolIds: [tool.id], policy })
+    );
+  }
+  function policyControl(tool) {
+    const control = document.createElement("div");
+    control.className = "tool-permission-policy";
+    control.setAttribute("role", "radiogroup");
+    control.setAttribute("aria-label", "Permission for " + tool.name);
+    const buttons = [];
+    for (const policy of TOOL_PERMISSION_POLICIES) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "tool-permission-choice tool-permission-" + policy;
+      button.dataset["policy"] = policy;
+      button.setAttribute("role", "radio");
+      button.setAttribute("aria-checked", String(tool.policy === policy));
+      button.setAttribute("aria-label", POLICY_LABELS[policy] + " for " + tool.name);
+      button.title = POLICY_LABELS[policy];
+      button.tabIndex = (tool.overridden ? tool.policy : tool.defaultPolicy) === policy ? 0 : -1;
+      button.disabled = pendingToolIds.size > 0 || tool.disabledPolicies?.includes(policy) === true;
+      if (tool.disabledPolicies?.includes(policy) && tool.disabledReason) {
+        button.title = tool.disabledReason;
+        button.setAttribute("aria-description", tool.disabledReason);
+      }
+      button.append(POLICY_ICON[policy]("ui-icon ui-icon-sm"));
+      button.addEventListener("click", () => {
+        selectPolicy(tool, policy);
+      });
+      buttons.push(button);
+      control.append(button);
+    }
+    control.addEventListener("keydown", (event) => {
+      const current = buttons.findIndex((button) => button === document.activeElement);
+      if (current < 0) return;
+      let direction = 0;
+      let targetIndex = current;
+      if (event.key === "ArrowRight" || event.key === "ArrowDown") direction = 1;
+      else if (event.key === "ArrowLeft" || event.key === "ArrowUp") direction = -1;
+      else if (event.key === "Home") targetIndex = 0;
+      else if (event.key === "End") targetIndex = buttons.length - 1;
+      else return;
+      event.preventDefault();
+      if (direction !== 0) {
+        for (let offset = 1; offset <= buttons.length; offset += 1) {
+          const candidate = (current + direction * offset + buttons.length) % buttons.length;
+          if (!buttons[candidate]?.disabled) {
+            targetIndex = candidate;
+            break;
+          }
+        }
+      }
+      if (buttons[targetIndex]?.disabled) {
+        const enabledIndex = buttons.findIndex((button) => !button.disabled);
+        if (enabledIndex < 0) return;
+        targetIndex = enabledIndex;
+      }
+      buttons[targetIndex]?.focus();
+      buttons[targetIndex]?.click();
+    });
+    return control;
+  }
+  function toolRow(tool) {
+    const row = document.createElement("div");
+    row.className = "tool-permission-row";
+    row.dataset["toolId"] = tool.id;
+    row.dataset["policy"] = tool.policy;
+    row.dataset["overridden"] = String(tool.overridden);
+    if (pendingToolIds.has(tool.id)) row.dataset["pending"] = "true";
+    const copy = document.createElement("div");
+    copy.className = "tool-permission-copy";
+    const title = document.createElement("div");
+    title.className = "tool-permission-name";
+    title.append(tool.name);
+    const inherited = document.createElement("span");
+    inherited.className = "tool-permission-inherited";
+    inherited.textContent = "Default";
+    inherited.title = "Inherited default: " + POLICY_LABELS[tool.defaultPolicy];
+    inherited.setAttribute(
+      "aria-label",
+      "Using inherited default: " + POLICY_LABELS[tool.defaultPolicy]
+    );
+    inherited.hidden = tool.overridden;
+    title.append(inherited);
+    copy.append(title);
+    if (tool.description) {
+      const description = document.createElement("div");
+      description.className = "tool-permission-description";
+      description.id = "tool-description-" + tool.id;
+      description.innerHTML = renderMarkdown(tool.description, {
+        htmlPolicy: "escape-all",
+        sanitizerBackend: {
+          sanitize: (html, config2) => dompurifyBackend.sanitize(html, {
+            ...config2,
+            allowedTags: config2.allowedTags.filter((tag) => tag !== "img")
+          })
+        }
+      });
+      const expandable = tool.description.length > 240 || tool.description.includes("\n");
+      const expanded = expandedDescriptions.has(tool.id);
+      description.classList.toggle("is-collapsed", expandable && !expanded);
+      copy.append(description);
+      if (expandable) {
+        const toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "tool-permission-description-toggle";
+        toggle.setAttribute("aria-controls", description.id);
+        const updateToggle = () => {
+          const open2 = expandedDescriptions.has(tool.id);
+          toggle.textContent = open2 ? "Show less" : "Show full description";
+          toggle.setAttribute("aria-expanded", String(open2));
+          toggle.setAttribute("aria-label", toggle.textContent + " for " + tool.name);
+          description.classList.toggle("is-collapsed", !open2);
+        };
+        updateToggle();
+        toggle.addEventListener("click", () => {
+          if (expandedDescriptions.has(tool.id)) expandedDescriptions.delete(tool.id);
+          else expandedDescriptions.add(tool.id);
+          updateToggle();
+        });
+        copy.append(toggle);
+      }
+    }
+    const actions = document.createElement("div");
+    actions.className = "tool-permission-actions";
+    actions.append(policyControl(tool));
+    const reset = document.createElement("button");
+    reset.type = "button";
+    reset.className = "tool-permission-reset";
+    reset.textContent = "Use default";
+    reset.setAttribute("aria-label", "Use default permission for " + tool.name);
+    reset.title = "Default: " + POLICY_LABELS[tool.defaultPolicy];
+    reset.hidden = !tool.overridden;
+    reset.disabled = pendingToolIds.size > 0;
+    reset.addEventListener("click", () => {
+      status.classList.remove("is-error");
+      void mutate(
+        [tool.id],
+        (current, ids) => withDefaults(current, ids),
+        () => api.reset({ toolIds: [tool.id] })
+      );
+    });
+    actions.append(reset);
+    row.append(copy, actions);
+    return row;
+  }
+  function groupSelect(group) {
+    const select = document.createElement("select");
+    select.className = "tool-permission-group-select";
+    select.setAttribute("aria-label", "Set all permissions in " + group.name);
+    const current = groupPolicy(group.tools);
+    const mixed = document.createElement("option");
+    mixed.value = "mixed";
+    mixed.textContent = "Mixed";
+    mixed.disabled = true;
+    select.append(mixed);
+    for (const policy of TOOL_PERMISSION_POLICIES) {
+      const option = document.createElement("option");
+      option.value = policy;
+      option.textContent = "Set all to " + POLICY_LABELS[policy].toLowerCase();
+      option.disabled = group.tools.some((tool) => tool.disabledPolicies?.includes(policy) === true);
+      select.append(option);
+    }
+    select.value = current;
+    select.disabled = pendingToolIds.size > 0 || group.tools.length === 0;
+    select.addEventListener("click", (event) => {
+      event.stopPropagation();
+    });
+    select.addEventListener("change", () => {
+      const policy = select.value;
+      if (!isToolPermissionPolicy(policy)) return;
+      const toolIds = group.tools.map((tool) => tool.id);
+      status.classList.remove("is-error");
+      void mutate(
+        toolIds,
+        (catalogBefore, ids) => withPolicy(catalogBefore, ids, policy),
+        () => api.set({ toolIds, policy })
+      );
+    });
+    return select;
+  }
+  function groupView(group, visibleTools) {
+    const details = document.createElement("details");
+    details.className = "tool-permission-group";
+    details.dataset["groupId"] = group.id;
+    details.open = groupOpenState.get(group.id) ?? true;
+    details.addEventListener("toggle", () => {
+      groupOpenState.set(group.id, details.open);
+    });
+    const summary = document.createElement("summary");
+    summary.className = "tool-permission-group-summary";
+    const disclosure = chevronDownIcon("ui-icon tool-permission-group-chevron");
+    const heading = document.createElement("span");
+    heading.className = "tool-permission-group-name";
+    heading.textContent = group.name;
+    const count = document.createElement("span");
+    count.className = "tool-permission-count";
+    count.textContent = String(group.tools.length);
+    count.setAttribute("aria-hidden", "true");
+    const spokenCount = document.createElement("span");
+    spokenCount.className = "tool-permission-count-sr";
+    spokenCount.textContent = `${String(group.tools.length)} tool${group.tools.length === 1 ? "" : "s"}`;
+    summary.append(disclosure, heading, count, spokenCount);
+    if (group.origin) {
+      const origin = document.createElement("span");
+      origin.className = "tool-permission-group-origin";
+      origin.textContent = group.origin;
+      origin.title = group.originDetail ?? group.origin;
+      summary.append(origin);
+    }
+    if (group.status) {
+      const connection = document.createElement("span");
+      connection.className = "tool-permission-group-status";
+      connection.dataset["status"] = group.status;
+      connection.textContent = group.status;
+      summary.append(connection);
+    }
+    summary.append(groupSelect(group));
+    const list = document.createElement("div");
+    list.className = "tool-permission-list";
+    for (const tool of visibleTools) list.append(toolRow(tool));
+    if (visibleTools.length === 0) {
+      const noTools = document.createElement("p");
+      noTools.className = "tool-permission-group-empty";
+      noTools.textContent = "This server has not reported any tools.";
+      list.append(noTools);
+    }
+    details.append(summary, list);
+    return details;
+  }
+  function render() {
+    for (const detail of groups.querySelectorAll(".tool-permission-group")) {
+      const id = detail.dataset["groupId"];
+      if (id) groupOpenState.set(id, detail.open);
+    }
+    groups.innerHTML = "";
+    const query = search.value.trim().toLowerCase();
+    let visibleGroupCount = 0;
+    for (const group of catalog?.groups ?? []) {
+      const visibleTools = matchingTools(group, query);
+      if (visibleTools.length === 0 && !groupMatches(group, query)) continue;
+      visibleGroupCount += 1;
+      groups.append(groupView(group, visibleTools));
+    }
+    empty.hidden = visibleGroupCount > 0;
+    empty.textContent = query ? "No tools or servers match \u201C" + search.value.trim() + "\u201D." : "No tools are available yet.";
+    resetAll.hidden = !catalog?.groups.some((group) => group.tools.some((tool) => tool.overridden));
+    setBusy(pendingToolIds.size > 0);
+    if (policyFocus && pendingToolIds.size === 0) {
+      const focusedRow = [...groups.querySelectorAll(".tool-permission-row")].find(
+        (row) => row.dataset["toolId"] === policyFocus?.toolId
+      );
+      const focusedChoice = [
+        ...focusedRow?.querySelectorAll(".tool-permission-choice") ?? []
+      ].find((choice) => choice.dataset["policy"] === policyFocus?.policy);
+      focusedChoice?.focus({ preventScroll: true });
+    }
+  }
+  async function refresh(signal) {
+    if (signal?.aborted) return;
+    const request = ++refreshGeneration;
+    loading = true;
+    status.classList.remove("is-error");
+    status.textContent = "Loading\u2026";
+    setBusy(false);
+    try {
+      const loaded = await api.list();
+      if (signal?.aborted || request !== refreshGeneration) return;
+      catalog = loaded;
+      status.textContent = "";
+    } catch (error62) {
+      if (signal?.aborted || request !== refreshGeneration) return;
+      status.textContent = "Could not load tool permissions: " + errorMessage(error62);
+      status.classList.add("is-error");
+    } finally {
+      if (request === refreshGeneration) {
+        loading = false;
+        if (!signal?.aborted) render();
+      }
+    }
+  }
+  search.addEventListener("input", render);
+  resetAll.addEventListener("click", () => {
+    const toolIds = allToolIds();
+    status.classList.remove("is-error");
+    void mutate(
+      toolIds,
+      (current, ids) => withDefaults(current, ids),
+      () => api.reset({ toolIds })
+    );
+  });
+  render();
+  return {
+    root,
+    refresh,
+    focusSearch: () => {
+      search.focus();
+    }
+  };
+}
+var isToolPermissionPolicy, POLICY_LABELS, POLICY_ICON;
+var init_tool_permissions_panel = __esm({
+  "src/renderer/views/tool-permissions-panel.ts"() {
+    init_dist();
+    init_sanitize_dompurify();
+    init_errors4();
+    init_member_of2();
+    init_tool_permissions();
+    init_icons();
+    isToolPermissionPolicy = memberOf(TOOL_PERMISSION_POLICIES);
+    POLICY_LABELS = {
+      allow: "Always allow",
+      ask: "Always ask",
+      block: "Blocked"
+    };
+    POLICY_ICON = {
+      allow: checkIcon,
+      ask: shieldIcon,
+      block: banIcon
+    };
+  }
+});
+
+// packages/llm/src/frontier-candidates.ts
+function localFrontierCandidates(localModelIds) {
+  const out = [];
+  for (const id of localModelIds) {
+    const cap = getLocalModelCapability(id);
+    if (!cap) continue;
+    const score = localBenchmarkScore(cap, "aa-intelligence");
+    if (!score) continue;
+    out.push({
+      id,
+      intellect: score.value,
+      intellectEstimated: score.estimated === true,
+      costPerMTok: 0,
+      local: true,
+      quant: cap.quant
+    });
   }
   return out;
 }
-var REASONING_LEVELS, isReasoningLevel, VERBOSITY_LEVELS, isVerbosityLevel, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_COMPATIBLE_SAMPLING, OPENAI_SAMPLING, ANTHROPIC_SAMPLING, UNIVERSAL_SAMPLING, AGENT_NAMESPACES, CLAUDE_EFFORT_NO_SAMPLING, CLAUDE_EFFORT_WITH_SAMPLING, CLAUDE_THINKING_ALWAYS_ON, OPENAI_REASONING_PREFIXES, OPENAI_GPT6_PREFIXES, FULL_EFFORT_LADDER, CAPPED_EFFORT_LADDER, BUDGET_LADDER, OPENAI_LADDER, OPENAI_GPT6_LADDER, OPENAI_COMPATIBLE_LADDER, OPENAI_VERBOSITY_PREFIXES, OPENAI_VERBOSITY_EXCLUDED, SAMPLING_BOUNDS, RECOMMENDATIONS;
-var init_model_parameters = __esm({
-  "packages/llm/src/model-parameters.ts"() {
+function extraProviderFrontierCandidates(providers) {
+  const out = [];
+  for (const provider of providers) {
+    for (const m2 of provider.models) {
+      if (typeof m2.inputPricePerMTok !== "number") continue;
+      const score = getIntellectScore(m2.id);
+      if (!score) continue;
+      out.push({
+        id: `${provider.id}:${m2.id}`,
+        intellect: score.value,
+        intellectEstimated: score.estimated === true,
+        costPerMTok: blendedRate(m2.inputPricePerMTok, m2.outputPricePerMTok ?? m2.inputPricePerMTok)
+      });
+    }
+  }
+  return out;
+}
+function openRouterFrontierCandidates(models) {
+  const out = [];
+  for (const model of models) {
+    const input2 = model.inputPricePerMTok;
+    const output2 = model.outputPricePerMTok;
+    if (input2 === null || output2 === null || input2 < 0 || output2 < 0) continue;
+    const id = `openrouter:${model.id}`;
+    const score = getIntellectScore(id);
+    if (!score) continue;
+    out.push({
+      id,
+      intellect: score.value,
+      intellectEstimated: score.estimated === true,
+      costPerMTok: blendedRate(input2, output2)
+    });
+  }
+  return out;
+}
+var init_frontier_candidates = __esm({
+  "packages/llm/src/frontier-candidates.ts"() {
+    init_pareto_frontier();
+    init_model_intellect();
+    init_local_model_catalog();
+  }
+});
+
+// packages/llm/src/live-intellect.ts
+function canonicalAnchors() {
+  const out = /* @__PURE__ */ new Map();
+  for (const [modelId, entries] of Object.entries(MODEL_INTELLECT_RAW)) {
+    const canonical = entries.find((m2) => m2.indexVersion === CANONICAL_INTELLECT_VERSION);
+    if (canonical) out.set(modelId, canonical.value);
+  }
+  return out;
+}
+function normalizeIndexVersion(version2) {
+  if (version2 === void 0) return void 0;
+  const s2 = String(version2).trim();
+  if (s2.length === 0) return void 0;
+  return s2.startsWith("v") ? s2 : `v${s2}`;
+}
+function verifyLiveCohort(liveModels, reportedVersion) {
+  const anchors = canonicalAnchors();
+  let anchorsChecked = 0;
+  let maxDrift = 0;
+  const mismatches = [];
+  for (const live of liveModels) {
+    const modelId = resolveIntellectModelId(live.id);
+    if (modelId === null) continue;
+    const canonical = anchors.get(modelId);
+    if (canonical === void 0) continue;
+    anchorsChecked += 1;
+    const drift = Math.abs(live.intellect - canonical);
+    maxDrift = Math.max(maxDrift, drift);
+    if (drift > LIVE_ANCHOR_TOLERANCE) mismatches.push({ modelId, canonical, live: live.intellect });
+  }
+  const version2 = normalizeIndexVersion(reportedVersion);
+  const versionMismatch = version2 !== void 0 && version2 !== CANONICAL_INTELLECT_VERSION;
+  const agreeingAnchors = anchorsChecked - mismatches.length;
+  const mismatchesAreAMinority = mismatches.length <= Math.floor(anchorsChecked * MAX_MISMATCH_FRACTION);
+  return {
+    verified: !versionMismatch && agreeingAnchors >= MIN_LIVE_ANCHORS && mismatchesAreAMinority,
+    anchorsChecked,
+    agreeingAnchors,
+    maxDrift,
+    mismatches,
+    ...version2 !== void 0 ? { reportedVersion: version2 } : {},
+    ...versionMismatch ? { versionMismatch: true } : {}
+  };
+}
+function liveBlendedPrice(live) {
+  const input2 = live.inputPricePerMTok;
+  if (typeof input2 !== "number" || !(input2 > 0)) return null;
+  const output2 = live.outputPricePerMTok;
+  return blendedRate(input2, typeof output2 === "number" && output2 > 0 ? output2 : input2);
+}
+function liveIntellectCandidates(liveModels, reportedVersion) {
+  const verification = verifyLiveCohort(liveModels, reportedVersion);
+  if (!verification.verified) {
+    return { candidates: [], hintOnly: [], pricedCurated: [], verification };
+  }
+  const candidates = [];
+  const hintOnly = [];
+  const pricedCurated = [];
+  const curatedSeen = /* @__PURE__ */ new Set();
+  for (const live of liveModels) {
+    const price = liveBlendedPrice(live);
+    const resolved2 = resolveIntellectModelId(live.id);
+    if (resolved2 !== null) {
+      if (price === null || curatedSeen.has(resolved2)) continue;
+      const curated = getIntellectScore(resolved2);
+      if (!curated) continue;
+      curatedSeen.add(resolved2);
+      pricedCurated.push({
+        id: resolved2,
+        intellect: curated.value,
+        intellectEstimated: curated.estimated === true,
+        costPerMTok: price,
+        ...typeof live.costPerTask === "number" ? { costPerTask: live.costPerTask } : {}
+      });
+      continue;
+    }
+    if (price !== null) {
+      candidates.push({
+        id: live.id,
+        intellect: live.intellect,
+        intellectEstimated: true,
+        costPerMTok: price,
+        // Uncurated = the user can't route to it without setting up a provider.
+        discovery: true,
+        ...typeof live.costPerTask === "number" ? { costPerTask: live.costPerTask } : {}
+      });
+    } else {
+      hintOnly.push({ id: live.id, intellect: live.intellect });
+    }
+  }
+  return { candidates, hintOnly, pricedCurated, verification };
+}
+var LIVE_ANCHOR_TOLERANCE, MIN_LIVE_ANCHORS, MAX_MISMATCH_FRACTION;
+var init_live_intellect = __esm({
+  "packages/llm/src/live-intellect.ts"() {
+    init_model_intellect_generated();
+    init_model_intellect();
+    init_pareto_frontier();
+    LIVE_ANCHOR_TOLERANCE = 1;
+    MIN_LIVE_ANCHORS = 2;
+    MAX_MISMATCH_FRACTION = 0.25;
+  }
+});
+
+// src/shared/plan-frontier-candidates.ts
+function planAcpFrontierCandidates(agents, pricedRoutes = []) {
+  const livePrices = /* @__PURE__ */ new Map();
+  for (const route of pricedRoutes) {
+    if (route.local || route.plan !== void 0 || route.planAccess !== void 0) continue;
+    if (!Number.isFinite(route.costPerMTok) || route.costPerMTok < 0) continue;
+    const identity = resolveIntellectModelId(route.id);
+    if (!identity) continue;
+    const previous = livePrices.get(identity);
+    if (previous === void 0 || route.costPerMTok < previous) {
+      livePrices.set(identity, route.costPerMTok);
+    }
+  }
+  const candidates = [];
+  for (const agent of agents) {
+    if (!agent.enabled) continue;
+    const provider = acpPlanProvider(agent);
+    if (!provider) continue;
+    const advertised = agent.availableModels ?? [];
+    const selected = agent.model;
+    const selectedChoice = selected ? advertised.find((choice) => choice.value === selected) : void 0;
+    const choices = /* @__PURE__ */ new Map();
+    if (selected) choices.set(selected, selectedChoice ?? { value: selected, label: selected });
+    for (const choice of advertised) choices.set(choice.value, choice);
+    for (const choice of choices.values()) {
+      const resolved2 = resolveAgentModelIdentity(
+        choice.value,
+        acpModelVersionName(choice.description),
+        choice.label,
+        acpModelChoiceLabel(choice)
+      );
+      if (!resolved2) continue;
+      const score = getIntellectScore(resolved2);
+      const info = getModelInfo(resolved2) ?? Object.entries(MODEL_CATALOG).find(([id]) => resolveIntellectModelId(id) === resolved2)?.[1];
+      const price = info ? blendedPricePerMTok(info) : livePrices.get(resolved2);
+      if (!score || price === void 0) continue;
+      candidates.push({
+        id: acpModelValue(agent.id, choice.value),
+        intellect: score.value,
+        intellectEstimated: score.estimated === true,
+        costPerMTok: price,
+        planAccess: { provider, modelId: resolved2 }
+      });
+    }
+  }
+  return candidates;
+}
+var init_plan_frontier_candidates = __esm({
+  "src/shared/plan-frontier-candidates.ts"() {
+    init_pareto_frontier();
+    init_model_catalog();
+    init_model_intellect();
+    init_agent_model_identity();
+    init_acp();
+  }
+});
+
+// src/renderer/views/model-card-cache.ts
+function resolvedModelCard(id) {
+  return resolved.get(id) ?? null;
+}
+async function requestModelCards(ids, api) {
+  if (!api) return false;
+  const requested = [...new Set(ids)].filter((id) => !resolved.has(id));
+  const waiting = requested.flatMap((id) => {
+    const pending = inFlight.get(id);
+    return pending ? [pending] : [];
+  });
+  const missing = requested.filter((id) => !inFlight.has(id));
+  if (missing.length > 0) {
+    const batch = (async () => {
+      try {
+        const answers = await api.resolve(missing);
+        const landed = /* @__PURE__ */ new Set();
+        for (const id of missing) {
+          if (!Object.prototype.hasOwnProperty.call(answers, id)) continue;
+          resolved.set(id, answers[id] ?? null);
+          landed.add(id);
+        }
+        return landed;
+      } catch {
+        return /* @__PURE__ */ new Set();
+      }
+    })();
+    for (const id of missing) {
+      const pending = batch.then((landed) => landed.has(id));
+      inFlight.set(id, pending);
+      waiting.push(pending);
+      void pending.then(() => {
+        if (inFlight.get(id) === pending) inFlight.delete(id);
+      });
+    }
+  }
+  if (waiting.length === 0) return false;
+  return (await Promise.all(waiting)).some(Boolean);
+}
+var resolved, inFlight;
+var init_model_card_cache = __esm({
+  "src/renderer/views/model-card-cache.ts"() {
+    resolved = /* @__PURE__ */ new Map();
+    inFlight = /* @__PURE__ */ new Map();
+  }
+});
+
+// packages/llm/src/model-cards.generated.ts
+var init_model_cards_generated = __esm({
+  "packages/llm/src/model-cards.generated.ts"() {
+  }
+});
+
+// packages/llm/src/model-cards.ts
+function huggingFaceCardUrl(id) {
+  if (!id.startsWith(HF_ROUTER_PREFIX)) return null;
+  const rest = id.slice(HF_ROUTER_PREFIX.length);
+  const lastColon = rest.lastIndexOf(":");
+  const repo = lastColon > 0 ? rest.slice(0, lastColon) : rest;
+  if (!HF_REPO_PATH.test(repo)) return null;
+  return `https://huggingface.co/${repo}`;
+}
+var HF_ROUTER_PREFIX, HF_REPO_PATH;
+var init_model_cards = __esm({
+  "packages/llm/src/model-cards.ts"() {
+    init_model_id_forms();
+    init_model_intellect();
+    init_model_cards_generated();
+    HF_ROUTER_PREFIX = "huggingface:";
+    HF_REPO_PATH = /^[A-Za-z0-9][\w.-]*\/[A-Za-z0-9][\w.-]*$/;
+  }
+});
+
+// src/renderer/views/intellect-frontier-tooltip.ts
+function displayModelLabel2(id) {
+  const resolved2 = resolveIntellectModelId(id);
+  if (resolved2 !== null && TRACKED_MODELS.some((tracked) => tracked === resolved2)) {
+    return cloudModelDisplayLabel(resolved2);
+  }
+  let s2 = resolved2 ?? id;
+  const sep = s2.indexOf(":");
+  if (sep > 0 && !s2.slice(0, sep).includes("/")) s2 = s2.slice(sep + 1);
+  const slash = s2.lastIndexOf("/");
+  if (slash >= 0) s2 = s2.slice(slash + 1);
+  return cloudModelDisplayLabel(s2 || id);
+}
+function ttRow(cls, ...children) {
+  return el("div", { class: cls }, ...children);
+}
+function appendCardSection(root, id, routes = []) {
+  const card = resolvedModelCard(id);
+  const huggingFace = [id, ...routes].map(huggingFaceCardUrl).find((url2) => url2 !== null);
+  if (!card && !huggingFace) return;
+  root.append(ttRow("tt-section", "Model links"));
+  const appendLink = (url2, label, className) => {
+    root.append(
+      ttRow(
+        "tt-line",
+        el(
+          "a",
+          {
+            class: className,
+            href: url2,
+            target: "_blank",
+            rel: "noopener noreferrer"
+          },
+          label
+        )
+      )
+    );
+  };
+  if (card) appendLink(card.url, card.title, "tt-card-link");
+  if (huggingFace && huggingFace !== card?.url)
+    appendLink(huggingFace, "Hugging Face", "tt-card-link tt-huggingface-link");
+  if (card?.kind === "index") {
+    root.append(
+      ttRow("tt-muted", `${card.publisher} publishes this model's card behind their card index.`)
+    );
+  }
+}
+function formatReset(resetsAt) {
+  if (!resetsAt) return "";
+  const d2 = new Date(resetsAt);
+  if (Number.isNaN(d2.getTime())) return "";
+  return `, resets ${d2.toLocaleDateString(void 0, { weekday: "short" })}`;
+}
+function derivationStepCopy(step) {
+  const detail = step.detail.replaceAll("\u2014", "\xB7");
+  if (step.step === "measured") return `Measured ${detail}`;
+  if (detail.toLowerCase().startsWith(step.step.toLowerCase())) {
+    return detail.charAt(0).toUpperCase() + detail.slice(1);
+  }
+  const label = step.step.charAt(0).toUpperCase() + step.step.slice(1);
+  return `${label}: ${detail}`;
+}
+function scoreScaleCopy(scale) {
+  return scale.replace(" (canonical)", "").replaceAll("\u2014", "\xB7");
+}
+function pointTooltipContent(p2, costAxis = "blended") {
+  const root = el("div", { class: "frontier-tooltip-content" });
+  const label = displayModelLabel2(p2.id);
+  root.append(ttRow("tt-title", el("strong", {}, label)));
+  if (label !== p2.id) root.append(ttRow("tt-muted", p2.id));
+  root.append(ttRow("tt-section", "Score"));
+  const explanation = explainIntellectScore(p2.id);
+  if (explanation) {
+    root.append(
+      ttRow(
+        "tt-line",
+        el("strong", {}, `${p2.intellectEstimated ? "~" : ""}${String(p2.intellect)}`),
+        ` \xB7 ${scoreScaleCopy(explanation.scale)}`
+      )
+    );
+    for (const step of explanation.steps) {
+      root.append(ttRow("tt-muted", derivationStepCopy(step)));
+    }
+  } else {
+    root.append(
+      ttRow(
+        "tt-line",
+        el("strong", {}, `~${String(p2.intellect)}`),
+        " \xB7 live Artificial Analysis value (not yet curated)"
+      )
+    );
+  }
+  if (p2.quant && p2.intellectEstimated) {
+    root.append(
+      ttRow(
+        "tt-muted",
+        `Adjusted down for ${p2.quant} quantisation \xB7 an estimate, not a measurement.`
+      )
+    );
+  }
+  root.append(ttRow("tt-section", p2.prices?.length ? "Prices" : "Price"));
+  const blended = p2.blendedCostPerMTok ?? (p2.planDetail !== void 0 ? p2.planDetail.apiPricePerMTok : p2.costPerMTok);
+  const priceLine = p2.plan ? el(
+    "span",
+    {},
+    el("strong", {}, "included in your plan"),
+    costAxis === "perTask" ? ` (${p2.plan}) \xB7 ~$0 marginal task cost` : ` (${p2.plan}) \xB7 ~$0 marginal token cost`
+  ) : p2.local ? el("span", {}, "free (runs on-device)") : costAxis === "perTask" ? el("span", {}, `${formatTaskPrice(p2.costPerMTok)} AA Intelligence Index task (plotted)`) : el(
+    "span",
+    {},
+    `${formatPrice2(p2.costPerMTok)} blended (80% in / 20% out)`,
+    ...p2.prices?.length ? [" \xB7 best offer, plotted"] : []
+  );
+  root.append(ttRow("tt-line", priceLine));
+  if (costAxis === "perTask") {
+    if (!p2.local && !p2.plan) {
+      root.append(
+        ttRow("tt-muted", `${formatPrice2(blended)} blended list price (80% in / 20% out).`)
+      );
+    }
+  } else if (typeof p2.costPerTask === "number") {
+    root.append(
+      ttRow(
+        "tt-muted",
+        `Artificial Analysis cost per Intelligence Index task: ${formatTaskPrice(p2.costPerTask)} (reflects verbosity, not just token price).`
+      )
+    );
+  }
+  for (const offer of p2.prices ?? []) {
+    root.append(
+      ttRow("tt-muted", `${displayModelLabel2(offer.id)}: ${formatPrice2(offer.costPerMTok)}`)
+    );
+  }
+  if (p2.plan && p2.planDetail) {
+    root.append(
+      ttRow(
+        "tt-muted",
+        `${String(Math.round(p2.planDetail.usedPercent))}% of this plan window used${formatReset(p2.planDetail.resetsAt)}.`
+      ),
+      ttRow("tt-muted", `Off-plan you'd pay ${formatPrice2(p2.planDetail.apiPricePerMTok)} blended.`)
+    );
+  }
+  if (p2.planLimitReached) {
+    root.append(
+      ttRow(
+        "tt-muted",
+        `${p2.planLimitReached.label} plan limit reached${formatReset(p2.planLimitReached.resetsAt)} \xB7 plotted at its off-plan price.`
+      )
+    );
+  }
+  appendCardSection(
+    root,
+    p2.id,
+    p2.prices?.map((offer) => offer.id)
+  );
+  root.append(
+    ttRow(
+      "tt-status",
+      p2.discovery ? p2.onFrontier ? "Not configured \xB7 setting up a provider would put this ON your value frontier." : "Not configured \xB7 available via Artificial Analysis if you set up a provider." : p2.onFrontier ? "On the value frontier" : `Dominated by ${displayModelLabel2(p2.dominatedBy ?? "?")}`
+    )
+  );
+  return root;
+}
+function unpricedTooltipContent(u2) {
+  const root = el("div", { class: "frontier-tooltip-content" });
+  root.append(ttRow("tt-title", el("strong", {}, displayModelLabel2(u2.id))));
+  if (displayModelLabel2(u2.id) !== u2.id) root.append(ttRow("tt-muted", u2.id));
+  root.append(ttRow("tt-section", "Score"));
+  const explanation = explainIntellectScore(u2.id);
+  root.append(ttRow("tt-line", el("strong", {}, `${u2.estimated ? "~" : ""}${String(u2.intellect)}`)));
+  for (const step of explanation?.steps ?? []) {
+    root.append(ttRow("tt-muted", derivationStepCopy(step)));
+  }
+  appendCardSection(root, u2.id);
+  root.append(ttRow("tt-status", "No price data yet \xB7 position on intellect only."));
+  return root;
+}
+function unscoredTooltipContent(u2) {
+  const root = el("div", { class: "frontier-tooltip-content" });
+  root.append(ttRow("tt-title", el("strong", {}, displayModelLabel2(u2.id))));
+  if (displayModelLabel2(u2.id) !== u2.id) root.append(ttRow("tt-muted", u2.id));
+  root.append(ttRow("tt-section", "Price"));
+  root.append(ttRow("tt-line", `${formatPrice2(u2.costPerMTok)} blended (80% in / 20% out)`));
+  appendCardSection(root, u2.id);
+  root.append(ttRow("tt-status", "No sourced intellect measurement yet \xB7 position on price only."));
+  return root;
+}
+function positionFrontierTooltip(tip, container, evt) {
+  const rect = container.getBoundingClientRect();
+  const tipWidth = tip.offsetWidth;
+  const tipHeight = tip.offsetHeight;
+  const cursorX = evt.clientX - rect.left;
+  const cursorY = evt.clientY - rect.top;
+  let left = cursorX + TOOLTIP_OFFSET_PX;
+  if (left + tipWidth > rect.width) {
+    left = cursorX - tipWidth - TOOLTIP_OFFSET_PX;
+  }
+  left = clamp(left, 0, Math.max(0, rect.width - tipWidth));
+  let top = cursorY + TOOLTIP_OFFSET_PX;
+  if (top + tipHeight > rect.height) {
+    top = cursorY - tipHeight - TOOLTIP_OFFSET_PX;
+  }
+  top = clamp(top, 0, Math.max(0, rect.height - tipHeight));
+  tip.style.left = `${String(left)}px`;
+  tip.style.top = `${String(top)}px`;
+}
+function createTooltipLayer(container) {
+  const tip = el("div", { class: "frontier-tooltip", hidden: true });
+  container.append(tip);
+  let hideTimer;
+  let currentTarget;
+  let pinnedTarget;
+  let position;
+  const doc = container.ownerDocument;
+  const cancelHide = () => {
+    if (hideTimer !== void 0) clearTimeout(hideTimer);
+    hideTimer = void 0;
+  };
+  const hideNow = () => {
+    cancelHide();
+    tip.hidden = true;
+    currentTarget = void 0;
+    position = void 0;
+  };
+  const dismiss = () => {
+    pinnedTarget = void 0;
+    delete tip.dataset["pinned"];
+    doc.removeEventListener("click", onOutsideClick);
+    doc.removeEventListener("keydown", onEscape);
+    hideNow();
+  };
+  const onOutsideClick = (evt) => {
+    const target = evt.target;
+    if (target instanceof Node && (tip.contains(target) || pinnedTarget?.contains(target))) return;
+    dismiss();
+  };
+  const onEscape = (evt) => {
+    if (evt.key === "Escape") dismiss();
+  };
+  const replaceContent = (content) => {
+    tip.replaceChildren(content);
+    if (pinnedTarget) {
+      const close = el(
+        "button",
+        {
+          type: "button",
+          class: "frontier-tooltip-close",
+          "aria-label": "Close model details"
+        },
+        "\xD7"
+      );
+      close.addEventListener("click", dismiss);
+      tip.append(close);
+    }
+  };
+  tip.addEventListener("mouseenter", cancelHide);
+  tip.addEventListener("mouseleave", () => {
+    if (!pinnedTarget) hideNow();
+  });
+  return {
+    show(content, evt, target) {
+      if (pinnedTarget) return;
+      cancelHide();
+      currentTarget = target;
+      position = evt;
+      replaceContent(content);
+      tip.hidden = false;
+      positionFrontierTooltip(tip, container, evt);
+    },
+    pin(content, evt, target) {
+      if (pinnedTarget === target) {
+        dismiss();
+        return;
+      }
+      cancelHide();
+      pinnedTarget = target;
+      currentTarget = target;
+      position = evt;
+      tip.dataset["pinned"] = "true";
+      replaceContent(content);
+      tip.hidden = false;
+      positionFrontierTooltip(tip, container, evt);
+      doc.addEventListener("click", onOutsideClick);
+      doc.addEventListener("keydown", onEscape);
+    },
+    update(content, target) {
+      if (!tip.hidden && currentTarget === target) {
+        replaceContent(content);
+        if (position) positionFrontierTooltip(tip, container, position);
+      }
+    },
+    hide() {
+      if (pinnedTarget) return;
+      cancelHide();
+      hideTimer = setTimeout(hideNow, TOOLTIP_HIDE_GRACE_MS);
+    },
+    dismiss
+  };
+}
+function setModelCardApi(api) {
+  modelCardApi = api;
+}
+function requestFrontierModelCards(ids) {
+  return requestModelCards(ids, modelCardApi);
+}
+function wireTooltip(target, tooltip, build, modelId) {
+  if (!tooltip) return;
+  const fillCard = () => {
+    if (modelId === void 0) return;
+    void requestFrontierModelCards([modelId]).then((landed) => {
+      if (landed) tooltip.update(build(), target);
+    });
+  };
+  target.setAttribute("tabindex", "0");
+  target.setAttribute("role", "button");
+  target.setAttribute("aria-label", `Details for ${displayModelLabel2(modelId ?? "model")}`);
+  target.addEventListener("mouseenter", (evt) => {
+    tooltip.show(build(), evt, target);
+    fillCard();
+  });
+  target.addEventListener("mousemove", (evt) => {
+    tooltip.show(build(), evt, target);
+  });
+  target.addEventListener("mouseleave", () => {
+    tooltip.hide();
+  });
+  target.addEventListener("click", (evt) => {
+    tooltip.pin(build(), evt, target);
+    fillCard();
+  });
+  target.addEventListener("keydown", (evt) => {
+    if (evt.key !== "Enter" && evt.key !== " ") return;
+    evt.preventDefault();
+    const rect = target.getBoundingClientRect();
+    tooltip.pin(
+      build(),
+      new MouseEvent("click", {
+        clientX: rect.left + rect.width / 2,
+        clientY: rect.top + rect.height / 2
+      }),
+      target
+    );
+    fillCard();
+  });
+}
+function tooltipFor(point, costAxis = "blended") {
+  const lines = [point.id];
+  const explanation = explainIntellectScore(point.id);
+  if (explanation) {
+    lines.push(`intellect ${String(explanation.value)} \xB7 ${scoreScaleCopy(explanation.scale)}`);
+    for (const step of explanation.steps) lines.push(derivationStepCopy(step));
+  } else {
+    lines.push(`intellect ${point.intellectEstimated ? "~" : ""}${String(point.intellect)}`);
+  }
+  lines.push(
+    point.local ? "cost: free (runs on-device)" : point.plan ? `cost: included in plan (${point.plan})` : costAxis === "perTask" ? `cost: $${String(point.costPerMTok)}/task AA Intelligence Index` : `cost: $${String(point.costPerMTok)}/MTok blended (80% input / 20% output)`
+  );
+  lines.push(
+    point.onFrontier ? "On the value frontier" : `Dominated by ${point.dominatedBy ?? "?"}`
+  );
+  return lines.join("\n");
+}
+var formatPrice2, formatTaskPrice, TOOLTIP_OFFSET_PX, TOOLTIP_HIDE_GRACE_MS, modelCardApi;
+var init_intellect_frontier_tooltip = __esm({
+  "src/renderer/views/intellect-frontier-tooltip.ts"() {
     init_clamp();
     init_model_catalog();
-    init_model_families();
-    init_model_selection();
-    init_member_of();
-    REASONING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
-    isReasoningLevel = memberOf(REASONING_LEVELS);
-    VERBOSITY_LEVELS = ["low", "medium", "high"];
-    isVerbosityLevel = memberOf(VERBOSITY_LEVELS);
-    SAMPLING_FIELDS = [
-      "temperature",
-      "topP",
-      "topK",
-      "minP",
-      "presencePenalty",
-      "repetitionPenalty"
-    ];
-    NO_PARAMETERS = {
-      reasoning: [],
-      reasoningWire: "none",
-      sampling: [],
-      outputCap: false,
-      verbosity: [],
-      temperatureMax: 1
-    };
-    OPENAI_COMPATIBLE_SAMPLING = SAMPLING_FIELDS;
-    OPENAI_SAMPLING = ["temperature", "topP", "presencePenalty"];
-    ANTHROPIC_SAMPLING = ["temperature", "topP", "topK"];
-    UNIVERSAL_SAMPLING = ["temperature", "topP"];
-    AGENT_NAMESPACES = /* @__PURE__ */ new Set([
-      "acp",
-      "remote-agent",
-      "plugin-model"
-    ]);
-    CLAUDE_EFFORT_NO_SAMPLING = [
-      "claude-opus-5",
-      "claude-opus-4-8",
-      "claude-opus-4-7",
-      "claude-sonnet-5",
-      "claude-fable-5",
-      "claude-mythos-5",
-      "claude-mythos-preview"
-    ];
-    CLAUDE_EFFORT_WITH_SAMPLING = [
-      "claude-opus-4-6",
-      "claude-sonnet-4-6",
-      "claude-opus-4-5"
-    ];
-    CLAUDE_THINKING_ALWAYS_ON = [
-      "claude-opus-5-5",
-      "claude-sonnet-5-5",
-      "claude-fable-5",
-      "claude-mythos-5",
-      "claude-mythos-preview"
-    ];
-    OPENAI_REASONING_PREFIXES = ["gpt-5", "o1", "o3", "o4"];
-    OPENAI_GPT6_PREFIXES = ["gpt-6-astra", "gpt-6.1-sol"];
-    FULL_EFFORT_LADDER = [
-      "off",
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max"
-    ];
-    CAPPED_EFFORT_LADDER = ["off", "low", "medium", "high", "max"];
-    BUDGET_LADDER = ["off", "low", "medium", "high"];
-    OPENAI_LADDER = ["minimal", "low", "medium", "high"];
-    OPENAI_GPT6_LADDER = ["low", "medium", "high", "xhigh", "max"];
-    OPENAI_COMPATIBLE_LADDER = [
-      "off",
-      "minimal",
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max"
-    ];
-    OPENAI_VERBOSITY_PREFIXES = ["gpt-5", "gpt-6"];
-    OPENAI_VERBOSITY_EXCLUDED = ["codex", "-chat", "search"];
-    SAMPLING_BOUNDS = {
-      temperature: { min: 0, max: 2 },
-      topP: { min: 0, max: 1, neutral: 1 },
-      // Upper bound is generous rather than principled: servers differ, and 0
-      // (llama.cpp) or -1 (vLLM) both mean "consider everything".
-      topK: { min: 0, max: 500, integer: true, neutral: 0 },
-      minP: { min: 0, max: 1, neutral: 0 },
-      presencePenalty: { min: -2, max: 2, neutral: 0 },
-      // 1 is the identity here, not 0 — the value divides the logits of tokens
-      // already seen, so 0 would be a hard ban rather than no penalty.
-      repetitionPenalty: { min: 0, max: 2, neutral: 1 }
-    };
-    RECOMMENDATIONS = [
-      {
-        match: "glm-4.7-flash",
-        label: "Z.ai\u2019s coding-agent recipe",
-        source: "https://huggingface.co/zai-org/GLM-4.7-Flash#evaluation-parameters",
-        // The model card's Terminal Bench / SWE Bench settings, checked 2026-10-01.
-        // Its general-task recipe uses different sampling and a larger ceiling;
-        // Copse's coding tool loop uses the coding benchmark profile. The card does
-        // not specify a reasoning-effort value or repetition penalty for this set.
-        params: { temperature: 0.7, topP: 1, maxOutputTokens: 16384 }
-      },
-      {
-        match: "glm-5.3-flash",
-        label: "Copse\u2019s experimental balanced agent profile",
-        source: "https://github.com/copse-dev/agent-pane/blob/main/docs/spikes/glm-5-3-flash-terminal-bench-profile.md",
-        sourceLabel: "paired Terminal-Bench record",
-        // Two provenances, and they disagree, so the row states which half is whose.
-        //
-        // Sampling is Z.ai's published recipe verbatim — its Recommended Settings
-        // say temperature 1 and top_p 0.95 (https://docs.z.ai/guides/llm/glm-5.3-flash).
-        // Copse's paired runs never varied sampling, so nothing in our record argues
-        // with the vendor here, and sending the pair pins it against an aggregator's
-        // own default drifting underneath us.
-        //
-        // Reasoning and the cap are ours, and `medium` is a deliberate departure from
-        // the same page's `reasoning_effort: max`. The counterbalanced Terminal-Bench
-        // 2.1 screen scored medium-plus-cap 4/6 against 2/6 for a max-effort uncapped
-        // baseline, on the shell-agent loop Copse actually runs. Z.ai recommends `max`
-        // for the model in general; we keep `medium` for this scenario on our own
-        // evidence. Like every recipe it applies by default (a user-set field replaces
-        // its value), but the row stays labelled experimental because that evidence is
-        // one benchmark on one host.
-        params: { reasoning: "medium", maxOutputTokens: 16384, temperature: 1, topP: 0.95 }
-      },
-      {
-        match: "deepseek-v4-flash",
-        label: "DeepSeek\u2019s agentic recipe",
-        source: "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731",
-        // The model card's agentic profile: max reasoning effort, temperature 1.0,
-        // and the tighter top_p it specifies for agentic scenarios (0.95) rather
-        // than the 1.0 it recommends otherwise. Copse runs a tool loop, so the
-        // agentic column is the applicable one.
-        params: { reasoning: "max", temperature: 1, topP: 0.95 },
-        // "For the `high` and `max` reasoning effort levels, we recommend a maximum
-        // output length of 384K tokens" — the deep levels spend the output budget on
-        // reasoning, so the card's own recipe needs the room it asks for.
-        outputCeiling: { tokens: 384e3, fromReasoning: "high" }
-      },
-      {
-        match: "qwen3.6-35b-a3b",
-        label: "Qwen\u2019s thinking-mode recipe",
-        source: "https://huggingface.co/Qwen/Qwen3.6-35B-A3B",
-        // The card publishes three sets, split by mode and task rather than by
-        // "agentic": thinking/general, thinking/precise-coding (temperature 0.6,
-        // presence_penalty 0), and instruct/non-thinking. This is the first.
-        //
-        // Choosing between the coding set and the general one is the only judgement
-        // in this row, and the card settles it: its own agentic evals — SWE-Bench on
-        // a "bash + file-edit tools" scaffold, Terminal-Bench 2.0 under an agent
-        // harness — ran temp=1.0, top_p=0.95, top_k=20, which is the general set.
-        // The coding set is for single-shot generation (its example is WebDev), not
-        // for a tool loop. Copse is the former shape.
-        //
-        // No `reasoning`: the model thinks by default and exposes no effort ladder,
-        // so the recipe is about sampling only. Sending an effort would be us
-        // inventing a control the card never names.
-        params: {
-          temperature: 1,
-          topP: 0.95,
-          topK: 20,
-          minP: 0,
-          presencePenalty: 1.5,
-          repetitionPenalty: 1
+    init_model_intellect();
+    init_model_card_cache();
+    init_model_cards();
+    init_helpers();
+    formatPrice2 = (v3) => `$${String(Number(v3.toFixed(2)))}/MTok`;
+    formatTaskPrice = (v3) => `$${String(Number(v3.toFixed(2)))}/task`;
+    TOOLTIP_OFFSET_PX = 12;
+    TOOLTIP_HIDE_GRACE_MS = 220;
+  }
+});
+
+// src/renderer/views/intellect-frontier-chart.ts
+function approxLabelWidth(text) {
+  return 10 + text.length * 5.2;
+}
+function svgEl(tag, attrs, ...children) {
+  const node2 = document.createElementNS(SVG_NS, tag);
+  for (const [k2, v3] of Object.entries(attrs)) node2.setAttribute(k2, v3);
+  node2.append(...children);
+  return node2;
+}
+function renderCompositeStrip(models) {
+  const height = 46 + models.length * 14;
+  const axisY = height - 18;
+  const left = 40;
+  const right = 16;
+  const plotW = WIDTH - left - right;
+  const x3 = (value) => left + value / 100 * plotW;
+  const svg = svgEl("svg", {
+    viewBox: `0 0 ${String(WIDTH)} ${String(height)}`,
+    role: "img",
+    "aria-label": "Local models on the copse-intellect composite scale",
+    style: "width:100%;height:auto;display:block"
+  });
+  svg.append(
+    svgEl("line", {
+      x1: String(left),
+      x2: String(left + plotW),
+      y1: String(axisY),
+      y2: String(axisY),
+      stroke: "var(--border)",
+      "stroke-width": "1"
+    })
+  );
+  for (const t2 of [0, 25, 50, 75, 100]) {
+    svg.append(
+      svgEl(
+        "text",
+        {
+          x: String(x3(t2)),
+          y: String(axisY + 12),
+          "text-anchor": "middle",
+          "font-size": "9",
+          fill: "var(--text-muted)"
         },
-        // "We recommend using an output length of 32,768 tokens for most queries.
-        // For benchmarking on highly complex problems … 81,920 tokens." Neither is
-        // conditioned on a depth — the model always thinks — so this applies on
-        // every turn.
-        //
-        // The larger of the two, because the card's own agent harness used it:
-        // Terminal-Bench 2.0 ran `max_tokens=80K`. 32,768 is the figure for "most
-        // queries", and a tool loop editing real files is not the average query;
-        // sending the smaller number would turn advice about *sufficient* space into
-        // a cap that truncates.
-        outputCeiling: { tokens: 81920 }
+        String(t2)
+      )
+    );
+  }
+  models.forEach((m2, i2) => {
+    const cy = axisY - 12 - i2 * 14;
+    const cx2 = String(x3(m2.composite.value));
+    const dot = svgEl("circle", {
+      cx: cx2,
+      cy: String(cy),
+      r: "5",
+      fill: "var(--bg-base)",
+      stroke: "var(--border-strong)",
+      "stroke-width": "2",
+      class: "composite-point"
+    });
+    dot.append(
+      svgEl(
+        "title",
+        {},
+        `${m2.id}
+score ${String(m2.composite.value)} \xB7 separate scale (not comparable with the main chart)
+${m2.composite.basis}
+cost: free (runs on-device)`
+      )
+    );
+    svg.append(
+      dot,
+      svgEl(
+        "text",
+        {
+          x: String(x3(m2.composite.value) + 9),
+          y: String(cy + 3),
+          "font-size": "9",
+          fill: "var(--text-secondary)",
+          class: "composite-label"
+        },
+        `${m2.id} \xB7 ${String(m2.composite.value)}`
+      )
+    );
+  });
+  return svg;
+}
+function ticks(max, count) {
+  const step = Math.max(1, Math.ceil(max / count));
+  const out = [];
+  for (let v3 = 0; v3 <= max; v3 += step) out.push(v3);
+  return out;
+}
+function renderFrontierSvg(points, size = {}, gutters = {}, tooltip, costAxis = "blended", labelMode = "summary") {
+  const unpriced = gutters.unpriced ?? [];
+  const unscored = costAxis === "blended" ? gutters.unscored ?? [] : [];
+  const gutterW = unpriced.length > 0 ? UNPRICED_GUTTER_W : 0;
+  const baseHeight = size.height ?? HEIGHT;
+  const width = (size.width ?? WIDTH) + gutterW;
+  const plotW = width - gutterW - MARGIN.left - MARGIN.right;
+  const plotH = baseHeight - MARGIN.top - MARGIN.bottom;
+  const plotLeft = gutterW + MARGIN.left;
+  const allCosts = [...points.map((p2) => p2.costPerMTok), ...unscored.map((u2) => u2.costPerMTok)];
+  const allIntellects = [...points.map((p2) => p2.intellect), ...unpriced.map((u2) => u2.intellect)];
+  const maxCost = Math.max(1, ...allCosts) * 1.08;
+  const maxIntellect = Math.max(10, ...allIntellects) + 5;
+  const minIntellect = Math.max(0, Math.min(...allIntellects) - 8);
+  const x3 = (cost) => plotLeft + cost / maxCost * plotW;
+  const y3 = (intellect) => MARGIN.top + plotH - (intellect - minIntellect) / (maxIntellect - minIntellect) * plotH;
+  const displayX = new Map(points.map((p2) => [p2.id, x3(p2.costPerMTok)]));
+  const byRawX = points.filter((point) => !point.onFrontier).sort((a4, b2) => x3(a4.costPerMTok) - x3(b2.costPerMTok) || y3(a4.intellect) - y3(b2.intellect));
+  for (let start = 0; start < byRawX.length; ) {
+    const first = byRawX[start];
+    if (!first) break;
+    const columnX = x3(first.costPerMTok);
+    let end = start + 1;
+    while (end < byRawX.length) {
+      const candidate = byRawX[end];
+      if (!candidate || x3(candidate.costPerMTok) - columnX > POINT_SPLAY_COLUMN_PX) break;
+      end++;
+    }
+    const column = byRawX.slice(start, end);
+    if (column.length >= 3) {
+      column.sort((a4, b2) => y3(a4.intellect) - y3(b2.intellect));
+      const nearLeft = columnX - POINT_SPLAY_MAX_PX < plotLeft;
+      column.forEach((point, index) => {
+        const centered = (index - (column.length - 1) / 2) * POINT_SPLAY_STEP_PX;
+        const fanPhase = index % 6;
+        const fanStep = fanPhase <= 3 ? fanPhase : 6 - fanPhase;
+        const offset = nearLeft ? fanStep * POINT_SPLAY_STEP_PX : clamp(centered, -POINT_SPLAY_MAX_PX, POINT_SPLAY_MAX_PX);
+        displayX.set(
+          point.id,
+          Math.max(plotLeft, Math.min(plotLeft + plotW, x3(point.costPerMTok) + offset))
+        );
+      });
+    }
+    start = end;
+  }
+  const pointX = (point) => displayX.get(point.id) ?? x3(point.costPerMTok);
+  const dense = unscored.length > UNSCORED_ROW_LIMIT;
+  const unscoredRows = [];
+  {
+    const rowEnds = [];
+    for (const u2 of [...unscored].sort((a4, b2) => a4.costPerMTok - b2.costPerMTok)) {
+      if (dense) {
+        unscoredRows.push({
+          id: u2.id,
+          costPerMTok: u2.costPerMTok,
+          row: 0,
+          text: ""
+        });
+        continue;
+      }
+      const text = displayModelLabel2(u2.id);
+      const x0 = x3(u2.costPerMTok) - 6;
+      const x1 = x3(u2.costPerMTok) + 8 + approxLabelWidth(text);
+      let row = rowEnds.findIndex((end) => end < x0);
+      if (row === -1) {
+        row = rowEnds.length;
+        rowEnds.push(x1);
+      } else {
+        rowEnds[row] = x1;
+      }
+      unscoredRows.push({ id: u2.id, costPerMTok: u2.costPerMTok, row, text });
+    }
+  }
+  const unscoredRowCount = unscoredRows.reduce((m2, u2) => Math.max(m2, u2.row + 1), 0);
+  const bottomGutterH = unscoredRowCount > 0 ? 12 + unscoredRowCount * 12 : 0;
+  const height = baseHeight + bottomGutterH;
+  const xAxisLabel = costAxis === "perTask" ? "AA cost per intelligence index task ($) \xB7 local/plan models plot at $0" : "Blended price, $/MTok (80% in / 20% out) \xB7 local models plot at $0";
+  const ariaLabel = costAxis === "perTask" ? "Model intellect versus AA cost per intelligence index task, with the Pareto frontier" : "Model intellect versus blended price, with the Pareto frontier";
+  const svg = svgEl("svg", {
+    viewBox: `0 0 ${String(width)} ${String(height)}`,
+    role: "img",
+    "aria-label": ariaLabel,
+    "data-cost-axis": costAxis,
+    "data-label-mode": labelMode,
+    style: "width:100%;height:auto;display:block"
+  });
+  for (const t2 of ticks(maxIntellect, 4)) {
+    if (t2 < minIntellect) continue;
+    svg.append(
+      svgEl("line", {
+        x1: String(plotLeft),
+        x2: String(plotLeft + plotW),
+        y1: String(y3(t2)),
+        y2: String(y3(t2)),
+        stroke: "var(--border-subtle)",
+        "stroke-width": "1"
+      }),
+      svgEl(
+        "text",
+        {
+          x: String(plotLeft - 6),
+          y: String(y3(t2) + 3),
+          "text-anchor": "end",
+          "font-size": "9",
+          fill: "var(--text-muted)"
+        },
+        String(t2)
+      )
+    );
+  }
+  svg.append(
+    svgEl("line", {
+      x1: String(plotLeft),
+      x2: String(plotLeft + plotW),
+      y1: String(MARGIN.top + plotH),
+      y2: String(MARGIN.top + plotH),
+      stroke: "var(--border)",
+      "stroke-width": "1"
+    })
+  );
+  for (const t2 of ticks(maxCost, 5)) {
+    svg.append(
+      svgEl(
+        "text",
+        {
+          x: String(x3(t2)),
+          y: String(MARGIN.top + plotH + 14),
+          "text-anchor": "middle",
+          "font-size": "9",
+          fill: "var(--text-muted)"
+        },
+        `$${String(t2)}`
+      )
+    );
+  }
+  svg.append(
+    svgEl(
+      "text",
+      {
+        x: String(plotLeft + plotW / 2),
+        y: String(height - 4),
+        "text-anchor": "middle",
+        "font-size": "9",
+        fill: "var(--text-secondary)",
+        class: "frontier-x-axis-label"
+      },
+      xAxisLabel
+    ),
+    svgEl(
+      "text",
+      {
+        x: String(gutterW + 10),
+        y: String(MARGIN.top + plotH / 2),
+        transform: `rotate(-90 ${String(gutterW + 10)} ${String(MARGIN.top + plotH / 2)})`,
+        "text-anchor": "middle",
+        "font-size": "9",
+        fill: "var(--text-secondary)"
+      },
+      "Intellect"
+    )
+  );
+  const frontier = points.filter((p2) => p2.onFrontier);
+  if (frontier.length > 1) {
+    svg.append(
+      svgEl("polyline", {
+        points: frontier.map((p2) => `${String(x3(p2.costPerMTok))},${String(y3(p2.intellect))}`).join(" "),
+        fill: "none",
+        stroke: "var(--accent)",
+        "stroke-width": "2",
+        "stroke-opacity": "0.45",
+        class: "frontier-line"
+      })
+    );
+  }
+  const frontierByX = [...frontier].sort((a4, b2) => x3(a4.costPerMTok) - x3(b2.costPerMTok));
+  const frontierYRange = (xa, xb) => {
+    let min = Infinity;
+    let max = -Infinity;
+    for (let i2 = 0; i2 + 1 < frontierByX.length; i2++) {
+      const a4 = frontierByX[i2];
+      const b2 = frontierByX[i2 + 1];
+      if (!a4 || !b2) continue;
+      const ax = x3(a4.costPerMTok);
+      const bx = x3(b2.costPerMTok);
+      const lo = Math.max(xa, ax);
+      const hi = Math.min(xb, bx);
+      if (lo > hi) continue;
+      const ay = y3(a4.intellect);
+      const by = y3(b2.intellect);
+      const span = bx - ax || 1;
+      const y0 = ay + (by - ay) * (lo - ax) / span;
+      const y1 = ay + (by - ay) * (hi - ax) / span;
+      min = Math.min(min, y0, y1);
+      max = Math.max(max, y0, y1);
+    }
+    return min === Infinity ? null : { min, max };
+  };
+  const frontierMidpointId = frontierByX[Math.floor((frontierByX.length - 1) / 2)]?.id;
+  const labelledPoints = [...points].sort(
+    (a4, b2) => (labelMode === "summary" ? Number(b2.id === frontierMidpointId) - Number(a4.id === frontierMidpointId) : 0) || Number(b2.onFrontier) - Number(a4.onFrontier) || (a4.onFrontier ? y3(b2.intellect) - y3(a4.intellect) : y3(a4.intellect) - y3(b2.intellect))
+  );
+  const plotBottom = MARGIN.top + plotH;
+  const rightEdge = width - 2;
+  const labelText = /* @__PURE__ */ new Map();
+  const labelY = /* @__PURE__ */ new Map();
+  const labelX = /* @__PURE__ */ new Map();
+  const labelAnchor = /* @__PURE__ */ new Map();
+  const labelLeader = /* @__PURE__ */ new Map();
+  const placed = points.map((p2) => ({
+    x0: pointX(p2) - 7,
+    x1: pointX(p2) + 7,
+    py: y3(p2.intellect) + 3
+  }));
+  for (const p2 of labelledPoints) {
+    const suffix = p2.plan ? " \xB7 plan" : p2.local ? " \xB7 free" : "";
+    const text = `${displayModelLabel2(p2.id)}${p2.quant ? ` @${p2.quant}` : ""}${p2.intellectEstimated ? " (~)" : ""}${suffix}`;
+    const w3 = approxLabelWidth(text);
+    const px = pointX(p2);
+    let x0;
+    let x1;
+    let tx;
+    let anchor2;
+    if (px + 8 + w3 <= rightEdge) {
+      x0 = px + 8;
+      x1 = px + 8 + w3;
+      tx = px + 8;
+      anchor2 = "start";
+    } else if (px - 8 - w3 >= plotLeft) {
+      x0 = px - 8 - w3;
+      x1 = px - 8;
+      tx = px - 8;
+      anchor2 = "end";
+    } else {
+      continue;
+    }
+    const naturalY = y3(p2.intellect) + 3;
+    let py = naturalY;
+    const prefersUp = p2.onFrontier;
+    let lineRange = null;
+    if (prefersUp && labelMode === "all") {
+      const range = frontierYRange(x0, x1);
+      lineRange = range;
+      if (range && py - 8 < range.max + LABEL_LINE_GAP && py + 2 > range.min - LABEL_LINE_GAP) {
+        py = range.min - LABEL_LINE_GAP;
+      }
+    }
+    const nudgeClear = (start, direction) => {
+      let nextY = start;
+      let moved = true;
+      while (moved) {
+        moved = false;
+        for (const prev of placed) {
+          if (Math.abs(nextY - prev.py) >= 10 || x0 >= prev.x1 || x1 <= prev.x0) continue;
+          const next = prev.py + direction * 10;
+          if (direction < 0 ? next < nextY : next > nextY) {
+            nextY = next;
+            moved = true;
+          }
+        }
+      }
+      return nextY;
+    };
+    if (labelMode === "summary") {
+      const blocked = placed.some(
+        (prev) => Math.abs(naturalY - prev.py) < 10 && x0 < prev.x1 && x1 > prev.x0
+      );
+      if (blocked) continue;
+      py = naturalY;
+    } else {
+      py = nudgeClear(py, prefersUp ? -1 : 1);
+    }
+    if (labelMode === "all" && prefersUp && py - 8 < MARGIN.top) {
+      const belowLine = (lineRange?.max ?? y3(p2.intellect)) + LABEL_LINE_GAP + 9;
+      py = nudgeClear(Math.max(y3(p2.intellect) + 12, belowLine), 1);
+    }
+    if (py > plotBottom) {
+      continue;
+    }
+    const shift = Math.abs(py - naturalY);
+    if (labelMode === "all" && shift > 6) {
+      labelLeader.set(p2.id, {
+        x1: px,
+        y1: y3(p2.intellect),
+        x2: anchor2 === "start" ? tx - 2 : tx + 2,
+        y2: py - 3
+      });
+    }
+    placed.push({ x0, x1, py });
+    labelText.set(p2.id, text);
+    labelY.set(p2.id, py);
+    labelX.set(p2.id, tx);
+    labelAnchor.set(p2.id, anchor2);
+  }
+  for (const p2 of points) {
+    const displayedCx = pointX(p2);
+    const cx2 = String(displayedCx);
+    const cy = String(y3(p2.intellect));
+    const emphasis = p2.onFrontier ? "var(--accent)" : "var(--border-strong)";
+    const cls = [
+      "frontier-point",
+      p2.intellectEstimated ? "estimated" : "",
+      p2.discovery ? "discovery" : "",
+      p2.plan ? "plan" : ""
+    ].filter(Boolean).join(" ");
+    const dot = p2.intellectEstimated ? svgEl("circle", {
+      cx: cx2,
+      cy,
+      r: "5",
+      fill: "var(--bg-base)",
+      stroke: emphasis,
+      "stroke-width": "2",
+      ...p2.discovery ? { "stroke-dasharray": "2 2", opacity: "0.7" } : {},
+      class: cls,
+      "data-model-id": p2.id
+    }) : svgEl("circle", {
+      cx: cx2,
+      cy,
+      r: "5",
+      fill: emphasis,
+      ...p2.discovery ? { opacity: "0.55" } : {},
+      class: cls,
+      "data-model-id": p2.id
+    });
+    if (p2.plan) {
+      svg.append(
+        svgEl("circle", {
+          cx: cx2,
+          cy,
+          r: "8",
+          fill: "none",
+          stroke: "var(--accent)",
+          "stroke-width": "1",
+          "stroke-dasharray": "1 2",
+          class: "frontier-plan-badge"
+        })
+      );
+    }
+    const nearestDistance = points.reduce((nearest, other) => {
+      if (other === p2) return nearest;
+      return Math.min(
+        nearest,
+        Math.hypot(pointX(other) - displayedCx, y3(other.intellect) - y3(p2.intellect))
+      );
+    }, Infinity);
+    const hitRadius = clamp(nearestDistance / 2 - 0.5, 5, 11);
+    const hit = svgEl("circle", {
+      cx: cx2,
+      cy,
+      r: String(hitRadius),
+      fill: "none",
+      "pointer-events": "all",
+      class: "frontier-hit",
+      "data-model-id": p2.id
+    });
+    const restingRadius = dot.getAttribute("r") ?? "5";
+    hit.addEventListener("mouseenter", () => {
+      dot.setAttribute("r", "6.5");
+    });
+    hit.addEventListener("mouseleave", () => {
+      dot.setAttribute("r", restingRadius);
+    });
+    if (tooltip) wireTooltip(hit, tooltip, () => pointTooltipContent(p2, costAxis), p2.id);
+    else hit.append(svgEl("title", {}, tooltipFor(p2, costAxis)));
+    const text = labelText.get(p2.id);
+    if (text !== void 0) {
+      const leader = labelLeader.get(p2.id);
+      if (leader) {
+        svg.append(
+          svgEl("line", {
+            x1: String(leader.x1),
+            y1: String(leader.y1),
+            x2: String(leader.x2),
+            y2: String(leader.y2),
+            stroke: "var(--border-strong)",
+            "stroke-width": "0.75",
+            "stroke-opacity": "0.65",
+            class: "frontier-label-leader",
+            "data-model-id": p2.id
+          })
+        );
+      }
+      svg.append(
+        svgEl(
+          "text",
+          {
+            x: String(labelX.get(p2.id) ?? pointX(p2) + 8),
+            y: String(labelY.get(p2.id) ?? y3(p2.intellect) + 3),
+            "text-anchor": labelAnchor.get(p2.id) ?? "start",
+            "font-size": "9",
+            fill: "var(--text-secondary)",
+            ...labelMode === "summary" ? {
+              stroke: "var(--bg-base)",
+              "stroke-width": "3",
+              "paint-order": "stroke"
+            } : {},
+            class: "frontier-label"
+          },
+          text
+        )
+      );
+    }
+    svg.append(dot, hit);
+  }
+  if (unpriced.length > 0) {
+    const sepX = gutterW - 4;
+    const dotX = gutterW - 14;
+    svg.append(
+      svgEl("line", {
+        x1: String(sepX),
+        x2: String(sepX),
+        y1: String(MARGIN.top),
+        y2: String(MARGIN.top + plotH),
+        stroke: "var(--border-subtle)",
+        "stroke-width": "1",
+        "stroke-dasharray": "3 3"
+      }),
+      svgEl(
+        "text",
+        {
+          x: String(dotX + 2),
+          y: String(MARGIN.top + plotH + 14),
+          "text-anchor": "end",
+          "font-size": "9",
+          fill: "var(--text-muted)"
+        },
+        "no price yet"
+      )
+    );
+    const sortedUnpriced = [...unpriced].sort((a4, b2) => b2.intellect - a4.intellect);
+    const shownUnpriced = sortedUnpriced.slice(0, UNPRICED_GUTTER_LIMIT);
+    let prevY = -Infinity;
+    for (const u2 of shownUnpriced) {
+      const dotY = y3(u2.intellect);
+      const labelYPos = Math.max(dotY + 3, prevY + 11);
+      prevY = labelYPos;
+      const dot = u2.estimated ? svgEl("circle", {
+        cx: String(dotX),
+        cy: String(dotY),
+        r: "5",
+        fill: "var(--bg-base)",
+        stroke: "var(--accent)",
+        "stroke-width": "2",
+        class: "gutter-unpriced estimated"
+      }) : svgEl("circle", {
+        cx: String(dotX),
+        cy: String(dotY),
+        r: "5",
+        fill: "var(--accent)",
+        class: "gutter-unpriced"
+      });
+      if (tooltip) {
+        wireTooltip(dot, tooltip, () => unpricedTooltipContent(u2), u2.id);
+      } else {
+        const explanation = explainIntellectScore(u2.id);
+        dot.append(
+          svgEl(
+            "title",
+            {},
+            explanation ? `${u2.id}
+${explanation.steps.map((s2) => `${s2.step}: ${s2.detail}`).join("\n")}
+No price data yet \xB7 position on intellect only.` : `${u2.id}
+intellect ${u2.estimated ? "~" : ""}${String(u2.intellect)} (live Artificial Analysis)
+No price data yet \xB7 position on intellect only.`
+          )
+        );
+      }
+      svg.append(
+        dot,
+        svgEl(
+          "text",
+          {
+            x: String(dotX - 9),
+            y: String(labelYPos),
+            "text-anchor": "end",
+            "font-size": "9",
+            fill: "var(--text-secondary)",
+            class: "gutter-unpriced-label"
+          },
+          `${displayModelLabel2(u2.id)} \xB7 ${u2.estimated ? "~" : ""}${String(u2.intellect)}`
+        )
+      );
+    }
+    if (sortedUnpriced.length > shownUnpriced.length) {
+      svg.append(
+        svgEl(
+          "text",
+          {
+            x: String(dotX + 2),
+            y: String(MARGIN.top + plotH - 4),
+            "text-anchor": "end",
+            "font-size": "9",
+            fill: "var(--text-muted)",
+            class: "gutter-unpriced-more"
+          },
+          `+${String(sortedUnpriced.length - shownUnpriced.length)} in the list below`
+        )
+      );
+    }
+  }
+  if (unscoredRows.length > 0) {
+    svg.append(
+      dense ? svgEl(
+        "text",
+        {
+          x: String(MARGIN.left + plotW),
+          y: String(baseHeight - 2),
+          "text-anchor": "end",
+          "font-size": "9",
+          fill: "var(--text-muted)",
+          class: "gutter-unscored-caption"
+        },
+        `no score yet \xB7 ${String(unscoredRows.length)} models`
+      ) : svgEl(
+        "text",
+        {
+          x: "4",
+          y: String(baseHeight - 2),
+          "font-size": "9",
+          fill: "var(--text-muted)",
+          class: "gutter-unscored-caption"
+        },
+        "no score yet"
+      )
+    );
+    for (const u2 of unscoredRows) {
+      const rowY = baseHeight - 6 + u2.row * 12;
+      const dot = svgEl("circle", {
+        cx: String(x3(u2.costPerMTok)),
+        cy: String(rowY),
+        r: dense ? "3" : "4",
+        fill: "var(--border-strong)",
+        ...dense ? { "fill-opacity": "0.6" } : {},
+        class: dense ? "gutter-unscored dense" : "gutter-unscored"
+      });
+      if (tooltip) {
+        wireTooltip(dot, tooltip, () => unscoredTooltipContent(u2), u2.id);
+      } else {
+        dot.append(
+          svgEl(
+            "title",
+            {},
+            `${u2.id}
+$${String(u2.costPerMTok)}/MTok blended (80% input / 20% output)
+No sourced intellect measurement yet \xB7 position on price only.`
+          )
+        );
+      }
+      svg.append(dot);
+      if (!dense && u2.text) {
+        svg.append(
+          svgEl(
+            "text",
+            {
+              x: String(x3(u2.costPerMTok) + 7),
+              y: String(rowY + 3),
+              "font-size": "9",
+              fill: "var(--text-secondary)",
+              class: "gutter-unscored-label"
+            },
+            u2.text
+          )
+        );
+      }
+    }
+  }
+  return svg;
+}
+function renderBandedModelList(rows) {
+  const bands = /* @__PURE__ */ new Map();
+  for (const r2 of rows) {
+    const band = Math.floor(r2.intellect / 10) * 10;
+    const list = bands.get(band) ?? [];
+    list.push(r2);
+    bands.set(band, list);
+  }
+  const table = el("div", { class: "frontier-banded" });
+  for (const band of [...bands.keys()].sort((a4, b2) => b2 - a4)) {
+    const list = (bands.get(band) ?? []).sort(
+      (a4, b2) => b2.intellect - a4.intellect || (a4.costPerMTok ?? 0) - (b2.costPerMTok ?? 0)
+    );
+    const chips = list.map((r2) => {
+      const price = r2.costPerMTok === void 0 ? "" : ` \xB7 $${String(Number(r2.costPerMTok.toFixed(2)))}`;
+      return `${displayModelLabel2(r2.id)} (${r2.estimated ? "~" : ""}${String(r2.intellect)}${price})`;
+    }).join(" \xB7 ");
+    table.append(
+      el(
+        "div",
+        { class: "frontier-band-row" },
+        el("span", { class: "frontier-band-key" }, `${String(band)}\u2013${String(band + 9)}`),
+        el("span", { class: "frontier-band-count" }, String(list.length)),
+        el("span", { class: "frontier-band-models" }, chips)
+      )
+    );
+  }
+  return table;
+}
+function renderProviderGroupedList(rows) {
+  const groups = /* @__PURE__ */ new Map();
+  for (const r2 of rows) {
+    const sep = r2.id.indexOf(":");
+    const provider = sep > 0 && !r2.id.slice(0, sep).includes("/") ? r2.id.slice(0, sep) : "cloud";
+    const list = groups.get(provider) ?? [];
+    list.push(r2);
+    groups.set(provider, list);
+  }
+  const table = el("div", { class: "frontier-banded" });
+  for (const provider of [...groups.keys()].sort()) {
+    const list = (groups.get(provider) ?? []).sort((a4, b2) => a4.costPerMTok - b2.costPerMTok);
+    const chips = list.map((r2) => `${displayModelLabel2(r2.id)} ($${String(Number(r2.costPerMTok.toFixed(2)))})`).join(" \xB7 ");
+    table.append(
+      el(
+        "div",
+        { class: "frontier-band-row" },
+        el("span", { class: "frontier-band-key" }, provider),
+        el("span", { class: "frontier-band-count" }, String(list.length)),
+        el("span", { class: "frontier-band-models" }, chips)
+      )
+    );
+  }
+  return table;
+}
+function renderFrontierKey() {
+  const entries = [
+    ["frontier", "Best value at its level"],
+    ["dominated", "Another model gives more for the money"],
+    ["estimated", "Score is an estimate"],
+    ["discovery", "Available once you set it up"],
+    ["plan", "Included in your plan"]
+  ];
+  return el(
+    "ul",
+    { class: "field-hint frontier-key" },
+    ...entries.map(
+      ([mark2, label]) => el(
+        "li",
+        { class: "frontier-key-item" },
+        el("span", { class: "frontier-key-swatch", "data-mark": mark2 }),
+        label
+      )
+    )
+  );
+}
+function renderChart(points, gutters, tooltip, size = {}, costAxis = "blended", labelMode = "summary") {
+  try {
+    return points.length > 0 ? renderFrontierSvg(points, size, gutters, tooltip, costAxis, labelMode) : el("p", { class: "field-hint" }, "No models with a sourced intellect score yet.");
+  } catch (err) {
+    return el("p", { class: "field-hint" }, `The value map failed to render: ${errorMessage(err)}`);
+  }
+}
+var SVG_NS, WIDTH, HEIGHT, MARGIN, LABEL_LINE_GAP, POINT_SPLAY_COLUMN_PX, POINT_SPLAY_STEP_PX, POINT_SPLAY_MAX_PX, UNPRICED_GUTTER_W, UNSCORED_ROW_LIMIT, UNPRICED_GUTTER_LIMIT;
+var init_intellect_frontier_chart = __esm({
+  "src/renderer/views/intellect-frontier-chart.ts"() {
+    init_clamp();
+    init_model_intellect();
+    init_helpers();
+    init_intellect_frontier_tooltip();
+    init_errors4();
+    SVG_NS = "http://www.w3.org/2000/svg";
+    WIDTH = 460;
+    HEIGHT = 290;
+    MARGIN = { top: 14, right: 20, bottom: 34, left: 40 };
+    LABEL_LINE_GAP = 3;
+    POINT_SPLAY_COLUMN_PX = 7;
+    POINT_SPLAY_STEP_PX = 6;
+    POINT_SPLAY_MAX_PX = 18;
+    UNPRICED_GUTTER_W = 150;
+    UNSCORED_ROW_LIMIT = 8;
+    UNPRICED_GUTTER_LIMIT = 8;
+  }
+});
+
+// src/renderer/views/intellect-frontier-panel.ts
+function isSeverelyDominated(point, points) {
+  return !point.onFrontier && point.costPerMTok > 0 && points.some(
+    (other) => other.id !== point.id && other.intellect >= point.intellect && other.costPerMTok > 0 && point.costPerMTok >= other.costPerMTok * SEVERE_DOMINATION_PRICE_RATIO
+  );
+}
+function compositeScoredLocalModels(localModelIds) {
+  const out = [];
+  for (const id of localModelIds) {
+    const cap = getLocalModelCapability(id);
+    if (!cap || cap.benchmarks["aa-intelligence"]) continue;
+    const composite = compositeIntellect(cap);
+    if (composite) out.push({ id, composite });
+  }
+  return out;
+}
+function asFrontierCandidate(p2) {
+  const { onFrontier: _onFrontier, dominatedBy: _dominatedBy, ...candidate } = p2;
+  return candidate;
+}
+function unpricedCanonicalModels(plottedIds, liveHintOnly) {
+  const out = [];
+  for (const id of listIntellectScoredModelIds()) {
+    if (plottedIds.has(id)) continue;
+    const score = getIntellectScore(id);
+    if (!score) continue;
+    out.push({
+      id,
+      intellect: score.value,
+      estimated: score.estimated === true
+    });
+  }
+  for (const live of liveHintOnly) {
+    out.push({ id: live.id, intellect: live.intellect, estimated: true });
+  }
+  return out.sort((a4, b2) => b2.intellect - a4.intellect || a4.id.localeCompare(b2.id));
+}
+function unscoredPricedModels(extraProviders) {
+  const out = [];
+  for (const id of TRACKED_MODELS) {
+    const info = getModelInfo(id);
+    if (!info || getIntellectScore(id)) continue;
+    out.push({ id, costPerMTok: blendedPricePerMTok(info) });
+  }
+  for (const provider of extraProviders) {
+    for (const m2 of provider.models) {
+      if (typeof m2.inputPricePerMTok !== "number" || getIntellectScore(m2.id)) continue;
+      out.push({
+        id: `${provider.id}:${m2.id}`,
+        costPerMTok: blendedRate(m2.inputPricePerMTok, m2.outputPricePerMTok ?? m2.inputPricePerMTok)
+      });
+    }
+  }
+  return out.sort((a4, b2) => a4.costPerMTok - b2.costPerMTok || a4.id.localeCompare(b2.id));
+}
+function buildSeverelyDominatedList(points) {
+  if (points.length === 0) return [];
+  return [
+    el(
+      "details",
+      { class: "frontier-severely-dominated" },
+      el(
+        "summary",
+        {},
+        `${String(points.length)} ${points.length === 1 ? "model costs" : "models cost"} at least 4\xD7 more than an equally capable priced model`
+      ),
+      renderBandedModelList(
+        points.map((p2) => ({
+          id: p2.id,
+          intellect: p2.intellect,
+          estimated: p2.intellectEstimated,
+          costPerMTok: p2.costPerMTok
+        }))
+      )
+    )
+  ];
+}
+function buildAuxLists(unpricedList, unscoredList) {
+  const out = [];
+  if (unpricedList.length > 0) {
+    out.push(
+      el(
+        "details",
+        { class: "field-hint frontier-unpriced-list" },
+        el(
+          "summary",
+          {},
+          `${String(unpricedList.length)} scored model${unpricedList.length === 1 ? "" : "s"} with no price data yet`
+        ),
+        renderBandedModelList(
+          unpricedList.map((u2) => ({
+            id: u2.id,
+            intellect: u2.intellect,
+            estimated: u2.estimated
+          }))
+        )
+      )
+    );
+  }
+  if (unscoredList.length > UNSCORED_ROW_LIMIT) {
+    out.push(
+      el(
+        "details",
+        { class: "field-hint frontier-unscored-list" },
+        el(
+          "summary",
+          {},
+          `${String(unscoredList.length)} priced models without an intellect score`
+        ),
+        renderProviderGroupedList([...unscoredList])
+      )
+    );
+  }
+  return out;
+}
+function createIntellectFrontierPanel(loadLocalModels, loadExtraProviders, loadLiveModels, loadPlanUsage, loadOpenRouter, loadRoutableModelSelections, loadAcpAgents) {
+  const chartHost = el("div", { class: "frontier-chart" });
+  const liveNotes = el("div", { class: "field-hint frontier-live-notes" });
+  const compositeHost = el("div", { class: "frontier-composite-strip" });
+  let lastPoints = [];
+  let lastGutters = {};
+  let state = null;
+  let discover = false;
+  let showUnpriced = false;
+  let zdrOnly = false;
+  let noTrainingOnly = false;
+  let costAxis = "blended";
+  let planCoverageMode = "plan";
+  let expandPlanCoverageGroup = null;
+  let lastUnpriced = [];
+  let lastUnscored = [];
+  let lastSeverelyDominated = [];
+  let expandChartHost = null;
+  let expandTooltip = null;
+  let expandDiscoverBtn = null;
+  let expandUnpricedBtn = null;
+  let expandZdrBtn = null;
+  let expandNoTrainingBtn = null;
+  let expandCostAxisGroup = null;
+  function toggleDiscover() {
+    discover = !discover;
+    render();
+  }
+  function toggleUnpriced() {
+    showUnpriced = !showUnpriced;
+    render();
+  }
+  function toggleZdrOnly() {
+    zdrOnly = !zdrOnly;
+    render();
+  }
+  function toggleNoTrainingOnly() {
+    noTrainingOnly = !noTrainingOnly;
+    render();
+  }
+  function setCostAxis(next) {
+    if (costAxis === next) return;
+    costAxis = next;
+    render();
+  }
+  function setPlanCoverageMode(next) {
+    if (planCoverageMode === next) return;
+    planCoverageMode = next;
+    render();
+  }
+  function syncZdrBtn(btn) {
+    if (!btn) return;
+    btn.textContent = "ZDR only";
+    btn.classList.toggle("active", zdrOnly);
+    btn.setAttribute("aria-pressed", zdrOnly ? "true" : "false");
+    btn.title = "Show only models on zero-data-retention paths (local, Fireworks, Together, OpenRouter ZDR routing, HF partner tags). Matches the Settings privacy badge \xB7 not enterprise-contract ZDR.";
+  }
+  function syncNoTrainingBtn(btn) {
+    if (!btn) return;
+    btn.textContent = "No training";
+    btn.classList.toggle("active", noTrainingOnly);
+    btn.setAttribute("aria-pressed", noTrainingOnly ? "true" : "false");
+    btn.title = "Show only routes known not to train on prompts. Includes local, ZDR, and retained-but-no-training providers; unknown policies are hidden.";
+  }
+  function makeCostAxisGroup() {
+    const group = el("span", {
+      class: "frontier-cost-axis",
+      role: "group",
+      "aria-label": "Cost axis"
+    });
+    const blendedBtn = el(
+      "button",
+      {
+        type: "button",
+        class: "frontier-btn frontier-cost-axis-btn",
+        "data-cost-axis": "blended"
+      },
+      "$/MTok"
+    );
+    const taskBtn = el(
+      "button",
+      {
+        type: "button",
+        class: "frontier-btn frontier-cost-axis-btn",
+        "data-cost-axis": "perTask",
+        hidden: true,
+        disabled: true
+      },
+      "$/task"
+    );
+    blendedBtn.addEventListener("click", () => {
+      setCostAxis("blended");
+    });
+    taskBtn.addEventListener("click", () => {
+      setCostAxis("perTask");
+    });
+    group.append(blendedBtn, taskBtn);
+    return group;
+  }
+  function makePlanCoverageGroup() {
+    const group = el("span", {
+      class: "frontier-cost-axis frontier-plan-coverage",
+      role: "group",
+      "aria-label": "Plan cost basis"
+    });
+    const modes = [
+      {
+        mode: "plan",
+        label: "Plan",
+        title: "Re-price subscription-included models at $0 while their window has headroom"
+      },
+      {
+        mode: "inference",
+        label: "Inference",
+        title: "Ignore the plan \xB7 plot every cloud model at catalog API $/MTok"
       }
     ];
+    for (const { mode, label, title } of modes) {
+      const btn = el(
+        "button",
+        {
+          type: "button",
+          class: "frontier-btn frontier-cost-axis-btn",
+          "data-plan-coverage": mode,
+          title
+        },
+        label
+      );
+      btn.addEventListener("click", () => {
+        setPlanCoverageMode(mode);
+      });
+      group.append(btn);
+    }
+    return group;
+  }
+  function syncPlanCoverageGroup(group) {
+    if (!group) return;
+    for (const btn of group.querySelectorAll("[data-plan-coverage]")) {
+      const mode = btn.dataset["planCoverage"];
+      const active2 = mode === planCoverageMode;
+      btn.classList.toggle("active", active2);
+      btn.setAttribute("aria-pressed", active2 ? "true" : "false");
+    }
+  }
+  function makeDiscoverButton() {
+    const button = el(
+      "button",
+      {
+        type: "button",
+        class: "frontier-btn frontier-discover"
+      },
+      el(
+        "span",
+        { class: "frontier-discover-label", "data-discover-label": "inactive" },
+        "Discover models"
+      ),
+      el(
+        "span",
+        {
+          class: "frontier-discover-label",
+          "data-discover-label": "active",
+          "aria-hidden": "true"
+        },
+        "Hide discoverable"
+      )
+    );
+    button.addEventListener("click", toggleDiscover);
+    return button;
+  }
+  const discoverBtn = makeDiscoverButton();
+  const unpricedBtn = el("button", {
+    type: "button",
+    class: "frontier-btn frontier-unpriced-toggle"
+  });
+  unpricedBtn.addEventListener("click", toggleUnpriced);
+  const zdrBtn = el("button", {
+    type: "button",
+    class: "frontier-btn frontier-zdr-toggle"
+  });
+  zdrBtn.addEventListener("click", toggleZdrOnly);
+  const noTrainingBtn = el("button", {
+    type: "button",
+    class: "frontier-btn frontier-no-training-toggle"
+  });
+  noTrainingBtn.addEventListener("click", toggleNoTrainingOnly);
+  const costAxisGroup = makeCostAxisGroup();
+  const planCoverageGroup = makePlanCoverageGroup();
+  const expandBtn = el(
+    "button",
+    { type: "button", class: "frontier-btn frontier-expand" },
+    "Expand"
+  );
+  expandBtn.addEventListener("click", () => {
+    if (lastPoints.length === 0) return;
+    const dialog2 = el("dialog", { class: "frontier-expand-dialog" });
+    const close = el("button", { type: "button", class: "frontier-btn" }, "Close");
+    expandDiscoverBtn = makeDiscoverButton();
+    expandUnpricedBtn = el("button", {
+      type: "button",
+      class: "frontier-btn frontier-unpriced-toggle"
+    });
+    expandUnpricedBtn.addEventListener("click", toggleUnpriced);
+    expandZdrBtn = el("button", {
+      type: "button",
+      class: "frontier-btn frontier-zdr-toggle"
+    });
+    expandZdrBtn.addEventListener("click", toggleZdrOnly);
+    expandNoTrainingBtn = el("button", {
+      type: "button",
+      class: "frontier-btn frontier-no-training-toggle"
+    });
+    expandNoTrainingBtn.addEventListener("click", toggleNoTrainingOnly);
+    expandCostAxisGroup = makeCostAxisGroup();
+    expandPlanCoverageGroup = makePlanCoverageGroup();
+    const bigChart = el("div", {
+      class: "frontier-chart frontier-expand-chart"
+    });
+    expandChartHost = bigChart;
+    expandTooltip = createTooltipLayer(dialog2);
+    const closeDialog = () => {
+      expandChartHost = null;
+      expandTooltip?.dismiss();
+      expandTooltip = null;
+      expandDiscoverBtn = null;
+      expandUnpricedBtn = null;
+      expandZdrBtn = null;
+      expandNoTrainingBtn = null;
+      expandCostAxisGroup = null;
+      expandPlanCoverageGroup = null;
+      dialog2.remove();
+    };
+    close.addEventListener("click", closeDialog);
+    dialog2.addEventListener("cancel", closeDialog);
+    dialog2.append(
+      el(
+        "div",
+        { class: "frontier-expand-controls" },
+        expandCostAxisGroup,
+        expandPlanCoverageGroup,
+        expandZdrBtn,
+        expandNoTrainingBtn,
+        expandDiscoverBtn,
+        expandUnpricedBtn,
+        close
+      ),
+      bigChart
+    );
+    fieldset.append(dialog2);
+    render();
+    if (typeof dialog2.showModal === "function") dialog2.showModal();
+    else dialog2.setAttribute("open", "");
+  });
+  const fieldset = el(
+    "fieldset",
+    { class: "frontier-fieldset" },
+    el("legend", {}, "Model value map"),
+    el(
+      "p",
+      { class: "settings-fieldset-desc" },
+      "Compare model scores and prices. Models on the line offer the best value at their level. Hover for details, or click a model to keep its details open."
+    ),
+    el(
+      "div",
+      { class: "frontier-controls" },
+      el("span", { class: "frontier-control-group" }, costAxisGroup),
+      el("span", { class: "frontier-control-group" }, planCoverageGroup),
+      el("span", { class: "frontier-control-group" }, zdrBtn, noTrainingBtn),
+      el("span", { class: "frontier-control-group" }, discoverBtn, unpricedBtn, expandBtn)
+    ),
+    chartHost,
+    renderFrontierKey(),
+    liveNotes,
+    compositeHost
+  );
+  const panelTooltip = createTooltipLayer(fieldset);
+  async function refresh(signal) {
+    if (signal?.aborted) return;
+    signal?.addEventListener(
+      "abort",
+      () => {
+        panelTooltip.dismiss();
+        expandTooltip?.dismiss();
+      },
+      { once: true }
+    );
+    let localIds;
+    if (signal?.aborted) return;
+    try {
+      localIds = await loadLocalModels();
+    } catch {
+      localIds = [];
+    }
+    let extraProviders;
+    if (signal?.aborted) return;
+    try {
+      extraProviders = await loadExtraProviders?.() ?? [];
+    } catch {
+      extraProviders = [];
+    }
+    let liveFetch;
+    if (signal?.aborted) return;
+    try {
+      liveFetch = await loadLiveModels?.() ?? { ok: true, models: [] };
+    } catch {
+      liveFetch = { ok: true, models: [] };
+    }
+    let planUsage;
+    if (signal?.aborted) return;
+    try {
+      planUsage = await loadPlanUsage?.() ?? null;
+    } catch {
+      planUsage = null;
+    }
+    let openRouter;
+    if (signal?.aborted) return;
+    try {
+      openRouter = await loadOpenRouter?.() ?? {
+        models: [],
+        zdrOnly: true,
+        allowTraining: false
+      };
+    } catch {
+      openRouter = { models: [], zdrOnly: true, allowTraining: false };
+    }
+    let routableSelections = null;
+    if (loadRoutableModelSelections) {
+      if (signal?.aborted) return;
+      try {
+        routableSelections = await loadRoutableModelSelections();
+      } catch {
+        routableSelections = [];
+      }
+    }
+    let acpAgents = [];
+    if (signal?.aborted) return;
+    try {
+      acpAgents = await loadAcpAgents?.() ?? [];
+    } catch {
+    }
+    if (signal?.aborted) return;
+    const live = liveIntellectCandidates(liveFetch.models, liveFetch.indexVersion);
+    state = {
+      localIds,
+      extraProviders,
+      live,
+      liveFetch,
+      planUsage,
+      openRouter,
+      routableSelections,
+      acpAgents
+    };
+    if (signal?.aborted) return;
+    render();
+  }
+  function paintExpanded() {
+    if (!expandChartHost) return;
+    expandChartHost.replaceChildren(
+      renderChart(
+        lastPoints,
+        lastGutters,
+        expandTooltip ?? void 0,
+        {
+          width: 1200,
+          height: 680
+        },
+        costAxis,
+        "all"
+      ),
+      ...buildAuxLists(lastUnpriced, lastUnscored),
+      ...buildSeverelyDominatedList(lastSeverelyDominated)
+    );
+  }
+  function syncCostAxisGroup(group, taskCostAvailable) {
+    if (!group) return;
+    group.querySelectorAll("button.frontier-cost-axis-btn").forEach((btn) => {
+      const axis = btn.dataset["costAxis"] === "perTask" ? "perTask" : "blended";
+      btn.classList.toggle("active", axis === costAxis);
+      btn.setAttribute("aria-pressed", axis === costAxis ? "true" : "false");
+      if (axis === "perTask") {
+        btn.hidden = !taskCostAvailable;
+        btn.disabled = !taskCostAvailable;
+        btn.title = taskCostAvailable ? "Plot Artificial Analysis cost per Intelligence Index task" : "Needs Artificial Analysis live data with cost-per-task";
+      } else {
+        btn.disabled = false;
+        btn.title = "Plot blended $/MTok (80% input / 20% output)";
+      }
+    });
+  }
+  function render() {
+    if (!state) return;
+    const {
+      localIds,
+      extraProviders,
+      live,
+      liveFetch,
+      planUsage,
+      openRouter,
+      routableSelections,
+      acpAgents
+    } = state;
+    const liveNoteParts = [];
+    if (liveFetch.models.length > 0 && live.verification.verified) {
+      const stale = live.verification.mismatches;
+      liveNoteParts.push(
+        `Live scores from Artificial Analysis, checked against ${String(live.verification.agreeingAnchors)} reviewed measurements. ${INTELLECT_ATTRIBUTION}.`
+      );
+      if (stale.length > 0) {
+        liveNoteParts.push(
+          el(
+            "details",
+            { class: "frontier-stale-anchors" },
+            el(
+              "summary",
+              {},
+              `${String(stale.length)} reviewed measurement${stale.length === 1 ? "" : "s"} differ${stale.length === 1 ? "s" : ""} from the live source`
+            ),
+            el(
+              "p",
+              {},
+              `${stale.map(
+                (m2) => `${displayModelLabel2(m2.modelId)} (map ${String(m2.canonical)}, live ${String(m2.live)})`
+              ).join("; ")}.`
+            )
+          )
+        );
+      }
+    } else if (liveFetch.models.length > 0) {
+      const v3 = live.verification;
+      const detail = [
+        v3.versionMismatch ? el(
+          "p",
+          {},
+          `Live scores use benchmark version ${v3.reportedVersion ?? "?"}, which differs from this chart. Showing reviewed measurements keeps the comparison consistent.`
+        ) : el(
+          "p",
+          {},
+          "The feed disagrees with the reviewed scores this map is anchored to, which usually means Artificial Analysis renormalised its index or measures a different model configuration."
+        )
+      ];
+      if (v3.mismatches.length > 0) {
+        detail.push(
+          el(
+            "p",
+            {},
+            `Measurements that differ: ${v3.mismatches.map(
+              (m2) => `${displayModelLabel2(m2.modelId)} (map ${String(m2.canonical)}, live ${String(m2.live)})`
+            ).join("; ")}.`
+          )
+        );
+      }
+      liveNoteParts.push(
+        el(
+          "details",
+          {},
+          el("summary", {}, "Some live model scores cannot be compared with this chart"),
+          ...detail
+        )
+      );
+    } else if (liveFetch.error) {
+      liveNoteParts.push(`Live Artificial Analysis data unavailable: ${liveFetch.error}`);
+    }
+    const pricedRoutes = [
+      ...extraProviderFrontierCandidates(extraProviders),
+      ...openRouterFrontierCandidates(openRouter.models)
+    ];
+    const baseCandidates = [
+      ...localFrontierCandidates(localIds),
+      ...pricedRoutes,
+      ...planAcpFrontierCandidates(acpAgents, pricedRoutes)
+    ];
+    const exactRoutes = routableSelections === null ? null : new Set(routableSelections);
+    const delegatedModelIds = /* @__PURE__ */ new Set();
+    const routableModelIds = /* @__PURE__ */ new Set();
+    for (const selection2 of routableSelections ?? []) {
+      const resolved2 = resolveIntellectModelId(selection2);
+      if (resolved2 !== null) routableModelIds.add(resolved2);
+      const namespace = parseModelSelection(selection2).namespace;
+      if (namespace !== "acp" && namespace !== "remote-agent" && namespace !== "plugin-model") {
+        continue;
+      }
+      if (resolved2 !== null) delegatedModelIds.add(resolved2);
+    }
+    const modelIdentityHasRoute = (id) => {
+      if (exactRoutes === null) return true;
+      const resolved2 = resolveIntellectModelId(id) ?? id;
+      return routableModelIds.has(resolved2);
+    };
+    const isTrackedCloudCandidate = (candidate) => TRACKED_MODELS.some((id) => id === candidate.id);
+    const candidateHasRoute = (candidate) => {
+      if (exactRoutes === null) return true;
+      if (exactRoutes.has(candidate.id)) return true;
+      if (candidate.local === true && exactRoutes.has(`lmstudio:${candidate.id}`)) return true;
+      if (!isTrackedCloudCandidate(candidate)) return false;
+      const resolved2 = resolveIntellectModelId(candidate.id) ?? candidate.id;
+      return delegatedModelIds.has(resolved2);
+    };
+    const routableBaseCandidates = baseCandidates.filter(candidateHasRoute);
+    const coveredResolved = new Set(
+      routableBaseCandidates.map((c2) => resolveIntellectModelId(c2.id) ?? c2.id)
+    );
+    const livePricedCurated = live.pricedCurated.filter(
+      (c2) => !coveredResolved.has(c2.id) && getModelInfo(c2.id) === null
+    );
+    const liveDiscoverableCandidates = [
+      ...live.candidates,
+      ...livePricedCurated.map((candidate) => ({
+        ...candidate,
+        discovery: true
+      }))
+    ];
+    const trackedDiscoverableCandidates = [];
+    if (exactRoutes !== null) {
+      for (const id of TRACKED_MODELS) {
+        const info = getModelInfo(id);
+        const score = getIntellectScore(id);
+        if (!info || !score) continue;
+        const candidate = {
+          id,
+          intellect: score.value,
+          intellectEstimated: score.estimated === true,
+          costPerMTok: blendedPricePerMTok(info),
+          discovery: true
+        };
+        if (!candidateHasRoute(candidate)) trackedDiscoverableCandidates.push(candidate);
+      }
+    }
+    const discoverableCandidates = [...liveDiscoverableCandidates, ...trackedDiscoverableCandidates];
+    const applyDiscover = (btn) => {
+      if (!btn) return;
+      btn.hidden = discoverableCandidates.length === 0;
+      for (const label of btn.querySelectorAll("[data-discover-label]")) {
+        const labelIsActive = label.dataset["discoverLabel"] === "active";
+        label.setAttribute("aria-hidden", labelIsActive === discover ? "false" : "true");
+      }
+      btn.classList.toggle("active", discover);
+      btn.setAttribute("aria-pressed", discover ? "true" : "false");
+    };
+    applyDiscover(discoverBtn);
+    applyDiscover(expandDiscoverBtn);
+    const discoveryCandidates = discover ? liveDiscoverableCandidates : [];
+    const costPerTaskById = /* @__PURE__ */ new Map();
+    for (const m2 of liveFetch.models) {
+      if (typeof m2.costPerTask !== "number" || !(m2.costPerTask > 0)) continue;
+      const key = resolveIntellectModelId(m2.id) ?? m2.id;
+      if (!costPerTaskById.has(key)) costPerTaskById.set(key, m2.costPerTask);
+    }
+    const enrichTaskCost = (c2) => {
+      if (typeof c2.costPerTask === "number" && c2.costPerTask > 0) return c2;
+      const key = resolveIntellectModelId(c2.id) ?? c2.id;
+      const task = costPerTaskById.get(key);
+      return typeof task === "number" ? { ...c2, costPerTask: task } : c2;
+    };
+    const allRouteCandidates = [...baseCandidates, ...discoveryCandidates];
+    const trackedCandidateIsDiscovery = (candidate) => exactRoutes !== null && isTrackedCloudCandidate(candidate) && !candidateHasRoute(candidate);
+    const candidateIsIncluded = (candidate) => candidateHasRoute(candidate) || candidate.discovery === true || discover && trackedCandidateIsDiscovery(candidate);
+    const adjustCandidate = (candidate) => {
+      const surfaced = trackedCandidateIsDiscovery(candidate) ? { ...candidate, discovery: true } : candidate;
+      const enriched = enrichTaskCost(surfaced);
+      return enriched.discovery === true ? enriched : applyPlanCoverage(enriched, planUsage, {
+        mode: planCoverageMode
+      });
+    };
+    const routePolicy = {
+      providers: extraProviders,
+      openRouterZdrOnly: openRouter.zdrOnly,
+      openRouterAllowTraining: openRouter.allowTraining
+    };
+    const routeAllowed = (candidate) => {
+      const local = candidate.local === true;
+      if (zdrOnly && !isZeroRetentionModelPath(candidate.id, {
+        ...routePolicy,
+        ...local ? { local: true } : {}
+      })) {
+        return false;
+      }
+      return !noTrainingOnly || isNoTrainingModelPath(candidate.id, {
+        ...routePolicy,
+        ...local ? { local: true } : {}
+      });
+    };
+    const unfilteredBlendedPoints = frontierForKnownModels(
+      allRouteCandidates,
+      adjustCandidate,
+      candidateIsIncluded
+    );
+    const privacyBlendedPoints = zdrOnly || noTrainingOnly ? frontierForKnownModels(
+      allRouteCandidates,
+      adjustCandidate,
+      (candidate) => candidateIsIncluded(candidate) && routeAllowed(candidate)
+    ) : unfilteredBlendedPoints;
+    const hiddenByZdr = zdrOnly ? unfilteredBlendedPoints.length - frontierForKnownModels(
+      allRouteCandidates,
+      adjustCandidate,
+      (candidate) => candidateIsIncluded(candidate) && isZeroRetentionModelPath(candidate.id, {
+        ...routePolicy,
+        ...candidate.local === true ? { local: true } : {}
+      })
+    ).length : 0;
+    const hiddenByNoTraining = noTrainingOnly ? unfilteredBlendedPoints.length - frontierForKnownModels(
+      allRouteCandidates,
+      adjustCandidate,
+      (candidate) => candidateIsIncluded(candidate) && isNoTrainingModelPath(candidate.id, {
+        ...routePolicy,
+        ...candidate.local === true ? { local: true } : {}
+      })
+    ).length : 0;
+    const blendedPoints = privacyBlendedPoints;
+    const taskCostAvailable = blendedPoints.some(
+      (p2) => typeof p2.costPerTask === "number" && p2.costPerTask > 0
+    );
+    if (costAxis === "perTask" && !taskCostAvailable) costAxis = "blended";
+    syncCostAxisGroup(costAxisGroup, taskCostAvailable);
+    syncCostAxisGroup(expandCostAxisGroup, taskCostAvailable);
+    syncPlanCoverageGroup(planCoverageGroup);
+    syncPlanCoverageGroup(expandPlanCoverageGroup);
+    let allPoints;
+    let missingTaskCost = 0;
+    if (costAxis === "perTask") {
+      const { plotted, missingAxisCost } = projectOntoCostAxis(
+        blendedPoints.map(asFrontierCandidate),
+        "perTask"
+      );
+      allPoints = computeParetoFrontier(plotted);
+      missingTaskCost = missingAxisCost.length;
+    } else {
+      allPoints = blendedPoints;
+    }
+    syncZdrBtn(zdrBtn);
+    syncZdrBtn(expandZdrBtn);
+    syncNoTrainingBtn(noTrainingBtn);
+    syncNoTrainingBtn(expandNoTrainingBtn);
+    const dominatedLive = allPoints.filter((p2) => p2.discovery === true && !p2.onFrontier);
+    const routedPoints = allPoints.filter((p2) => p2.discovery !== true);
+    const severelyDominated = routedPoints.filter((p2) => isSeverelyDominated(p2, routedPoints));
+    lastSeverelyDominated = severelyDominated;
+    const points = allPoints.filter(
+      (p2) => (p2.discovery !== true || p2.onFrontier) && !severelyDominated.includes(p2)
+    );
+    const pricedIds = new Set(
+      [...blendedPoints, ...discoverableCandidates].map(
+        (p2) => resolveIntellectModelId(p2.id) ?? p2.id
+      )
+    );
+    const unpricedModels = unpricedCanonicalModels(pricedIds, live.hintOnly).filter((u2) => {
+      if (!modelIdentityHasRoute(u2.id)) return false;
+      if (zdrOnly && !isZeroRetentionModelPath(u2.id, routePolicy)) return false;
+      return !noTrainingOnly || isNoTrainingModelPath(u2.id, routePolicy);
+    });
+    lastPoints = points;
+    void requestFrontierModelCards(points.slice(0, MAX_CARD_PREFETCH).map((p2) => p2.id));
+    const applyUnpriced = (btn) => {
+      if (!btn) return;
+      btn.hidden = unpricedModels.length === 0;
+      btn.textContent = showUnpriced ? "Hide unpriced" : "Show unpriced";
+      btn.classList.toggle("active", showUnpriced);
+    };
+    applyUnpriced(unpricedBtn);
+    applyUnpriced(expandUnpricedBtn);
+    const unscoredAll = unscoredPricedModels(extraProviders);
+    const filteredUnscored = unscoredAll.filter((model) => {
+      if (!candidateHasRoute({
+        id: model.id,
+        intellect: 0,
+        costPerMTok: model.costPerMTok
+      })) {
+        return false;
+      }
+      if (zdrOnly && !isZeroRetentionModelPath(model.id, routePolicy)) return false;
+      return !noTrainingOnly || isNoTrainingModelPath(model.id, routePolicy);
+    });
+    lastGutters = {
+      ...showUnpriced ? { unpriced: unpricedModels } : {},
+      unscored: filteredUnscored
+    };
+    if (!discover && discoverableCandidates.length > 0) {
+      const modelCount = discoverableCandidates.length;
+      liveNoteParts.push(
+        el(
+          "span",
+          {},
+          `${String(modelCount)} more priced and scored model${modelCount === 1 ? " is" : "s are"} not currently available in your model picker \xB7 press \u201CDiscover models\u201D to overlay where they'd sit on your frontier. `
+        )
+      );
+    }
+    if (costAxis === "perTask" && missingTaskCost > 0) {
+      liveNoteParts.push(
+        el(
+          "span",
+          {},
+          `${String(missingTaskCost)} model${missingTaskCost === 1 ? "" : "s"} lack AA task-cost data and are hidden on this axis. `
+        )
+      );
+    }
+    if (zdrOnly && hiddenByZdr > 0) {
+      liveNoteParts.push(
+        el(
+          "span",
+          {},
+          `ZDR only: hiding ${String(hiddenByZdr)} model${hiddenByZdr === 1 ? "" : "s"} on retained-by-default paths (Anthropic/OpenAI API, \u2026). `
+        )
+      );
+    }
+    if (noTrainingOnly && hiddenByNoTraining > 0) {
+      liveNoteParts.push(
+        el(
+          "span",
+          {},
+          `No training: hiding ${String(hiddenByNoTraining)} model${hiddenByNoTraining === 1 ? "" : "s"} on training or unknown-policy routes. `
+        )
+      );
+    }
+    if (zdrOnly && points.length === 0) {
+      liveNoteParts.push(
+        el(
+          "span",
+          {},
+          "No zero-retention models on this map yet \xB7 add a Fireworks/Together provider, an HF model pinned to a ZDR partner, a local model, or OpenRouter under default ZDR routing. "
+        )
+      );
+    }
+    if (discover && dominatedLive.length > 0) {
+      liveNoteParts.push(
+        el(
+          "details",
+          { class: "frontier-dominated-live" },
+          el(
+            "summary",
+            {},
+            `${String(dominatedLive.length)} discoverable ${dominatedLive.length === 1 ? "model is" : "models are"} dominated (not worth setting up \xB7 better value already on your frontier)`
+          ),
+          renderBandedModelList(
+            dominatedLive.map((p2) => ({
+              id: p2.id,
+              intellect: p2.intellect,
+              estimated: p2.intellectEstimated,
+              costPerMTok: p2.costPerMTok
+            }))
+          )
+        )
+      );
+    }
+    liveNoteParts.push(...buildSeverelyDominatedList(severelyDominated));
+    const unscoredList = lastGutters.unscored ?? [];
+    const unpricedList = unpricedModels;
+    lastUnpriced = unpricedList;
+    lastUnscored = unscoredList;
+    panelTooltip.dismiss();
+    expandTooltip?.dismiss();
+    chartHost.replaceChildren(
+      renderChart(points, lastGutters, panelTooltip, {}, costAxis),
+      ...buildAuxLists(unpricedList, unscoredList)
+    );
+    paintExpanded();
+    liveNotes.replaceChildren(
+      ...liveNoteParts.map((t2) => typeof t2 === "string" ? el("span", {}, `${t2} `) : t2)
+    );
+    const compositeModels = compositeScoredLocalModels(localIds);
+    compositeHost.replaceChildren(
+      ...compositeModels.length > 0 ? [
+        el(
+          "p",
+          { class: "field-hint" },
+          "Local model scores use a separate scale and cannot be compared directly with the chart above:"
+        ),
+        renderCompositeStrip(compositeModels)
+      ] : []
+    );
+  }
+  return {
+    root: fieldset,
+    refresh
+  };
+}
+var MAX_CARD_PREFETCH, SEVERE_DOMINATION_PRICE_RATIO;
+var init_intellect_frontier_panel = __esm({
+  "src/renderer/views/intellect-frontier-panel.ts"() {
+    init_pareto_frontier();
+    init_frontier_candidates();
+    init_model_catalog();
+    init_model_selection();
+    init_model_intellect();
+    init_live_intellect();
+    init_composite_intellect();
+    init_local_model_catalog();
+    init_data_policies();
+    init_plan_inclusion();
+    init_plan_frontier_candidates();
+    init_helpers();
+    init_intellect_frontier_chart();
+    init_intellect_frontier_tooltip();
+    init_intellect_frontier_chart();
+    init_intellect_frontier_tooltip();
+    MAX_CARD_PREFETCH = 128;
+    SEVERE_DOMINATION_PRICE_RATIO = 4;
+  }
+});
+
+// src/renderer/views/setup/usage-section.ts
+function isAbortTimeoutMessage(message) {
+  return /aborted due to timeout|operation was aborted|aborterror|timeout/i.test(message);
+}
+function claudeReasonNeedsLogin(reason) {
+  return /claude (?:auth login|\/login)|user:profile|rejected|access token has expired/i.test(
+    reason
+  );
+}
+function createPlanSignInHandler(store, provider, onRequestClose) {
+  if (!store) return null;
+  return () => {
+    onRequestClose?.();
+    store.emit(
+      "request_terminal_command",
+      provider === "claude" ? "claude auth login" : "codex login",
+      { executionTarget: "local" }
+    );
+  };
+}
+function planSignInProvider(result) {
+  if (result.status !== "unavailable") return null;
+  if (result.provider === "claude" && claudeReasonNeedsLogin(result.reason)) return "claude";
+  if (result.provider === "codex" && /codex login|credentials were rejected/i.test(result.reason)) {
+    return "codex";
+  }
+  return null;
+}
+function formatReset2(resetsAt) {
+  if (!resetsAt) return "reset unknown";
+  const ms = Date.parse(resetsAt);
+  if (!Number.isFinite(ms)) return "reset unknown";
+  const delta = ms - Date.now();
+  if (delta <= 0) return "resetting soon";
+  const hours = Math.round(delta / (60 * 60 * 1e3));
+  if (hours < 48) return `resets in ${String(hours)}h`;
+  const days = Math.round(hours / 24);
+  return `resets in ${String(days)}d`;
+}
+function formatCreditCents(cents) {
+  return "$" + (cents / 100).toFixed(2);
+}
+function formatCreditAmount(n2) {
+  return Number.isInteger(n2) ? String(n2) : n2.toFixed(1);
+}
+function formatUsdAmount(n2) {
+  return "$" + (Number.isInteger(n2) ? String(n2) : n2.toFixed(2));
+}
+function formatPlanWindowStats(window2) {
+  const used = Math.round(window2.usedPercent);
+  const severity = typeof window2.severity === "string" && window2.severity.trim() ? window2.severity.trim().toLowerCase() : null;
+  const parts = [];
+  if (window2.unit === "credits" && typeof window2.usedCredits === "number" && typeof window2.limitCredits === "number") {
+    parts.push(
+      `${formatCreditAmount(window2.usedCredits)} / ${formatCreditAmount(window2.limitCredits)} credits`
+    );
+  } else if (window2.unit === "usd" && typeof window2.usedDollars === "number" && typeof window2.limitDollars === "number") {
+    parts.push(`${formatUsdAmount(window2.usedDollars)} / ${formatUsdAmount(window2.limitDollars)}`);
+  }
+  parts.push(`${String(used)}% used`);
+  parts.push(formatReset2(window2.resetsAt));
+  if (severity && severity !== "normal") parts.push(severity);
+  return parts.join(" \xB7 ");
+}
+function renderPlanProvider(host, result, onSignIn) {
+  const card = document.createElement("div");
+  card.className = "usage-plan-provider";
+  card.dataset["provider"] = result.provider;
+  card.dataset["status"] = result.status;
+  const title = document.createElement("h4");
+  title.className = "usage-plan-provider-title";
+  title.textContent = PROVIDER_LABELS[result.provider] ?? result.provider;
+  card.append(title);
+  if (result.status === "unavailable") {
+    const hint = document.createElement("p");
+    hint.className = "usage-plan-status field-hint";
+    setInlineMarkdown(hint, result.reason);
+    card.append(hint);
+    const signInProvider = planSignInProvider(result);
+    const onProviderSignIn = signInProvider ? onSignIn?.[signInProvider] : void 0;
+    if (signInProvider && onProviderSignIn) {
+      const signIn = document.createElement("button");
+      signIn.type = "button";
+      signIn.className = "ui-btn ui-btn-primary usage-plan-signin-btn";
+      signIn.textContent = signInProvider === "claude" ? "Sign in to Claude" : "Sign in to Codex";
+      signIn.title = `Open a terminal and run ${signInProvider === "claude" ? "claude auth login" : "codex login"}`;
+      signIn.addEventListener("click", () => {
+        onProviderSignIn();
+      });
+      card.append(signIn);
+    }
+    host.append(card);
+    return;
+  }
+  if (result.status === "error") {
+    const hint = document.createElement("p");
+    hint.className = "usage-plan-status usage-plan-status-error field-hint";
+    const label = PROVIDER_LABELS[result.provider] ?? result.provider;
+    if (isAbortTimeoutMessage(result.message)) {
+      hint.textContent = `Timed out while checking ${label} plan usage.`;
+    } else {
+      setInlineMarkdown(hint, `Couldn\u2019t load ${label} plan usage: ${result.message}`);
+    }
+    card.append(hint);
+    host.append(card);
+    return;
+  }
+  if (result.usage.plan) {
+    const plan = document.createElement("p");
+    plan.className = "usage-plan-name field-hint";
+    plan.textContent = result.usage.plan;
+    card.append(plan);
+  }
+  if (result.usage.creditGrant) {
+    const credit = result.usage.creditGrant;
+    const usedPercent = clamp(credit.usedCents / credit.totalCents * 100, 0, 100);
+    const row = document.createElement("div");
+    row.className = "usage-credit-grant";
+    row.innerHTML = `
+      <div class="usage-plan-window-meta">
+        <span class="usage-plan-window-label">Credits</span>
+        <span class="usage-plan-window-stats">${escapeHtml(formatCreditCents(credit.remainingCents))} remaining of ${escapeHtml(formatCreditCents(credit.totalCents))}</span>
+      </div>
+      <div class="usage-plan-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${String(Math.round(usedPercent))}" aria-label="Cursor credits ${escapeHtml(formatCreditCents(credit.usedCents))} used of ${escapeHtml(formatCreditCents(credit.totalCents))}">
+        <div class="usage-plan-bar-fill" style="width: ${String(usedPercent)}%"></div>
+      </div>
+    `;
+    card.append(row);
+  }
+  for (const window2 of result.usage.windows) {
+    const row = document.createElement("div");
+    row.className = "usage-plan-window";
+    const used = Math.round(window2.usedPercent);
+    const severity = typeof window2.severity === "string" && window2.severity.trim() ? window2.severity.trim().toLowerCase() : null;
+    if (severity) row.dataset["severity"] = severity;
+    if (window2.unit) row.dataset["unit"] = window2.unit;
+    const stats = formatPlanWindowStats(window2);
+    row.innerHTML = `
+      <div class="usage-plan-window-meta">
+        <span class="usage-plan-window-label">${escapeHtml(window2.label)}</span>
+        <span class="usage-plan-window-stats">${escapeHtml(stats)}</span>
+      </div>
+      <div class="usage-plan-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${String(used)}" aria-label="${escapeHtml(window2.label)} ${escapeHtml(stats)}">
+        <div class="usage-plan-bar-fill" style="width: ${String(Math.min(100, used))}%"></div>
+      </div>
+    `;
+    card.append(row);
+  }
+  host.append(card);
+}
+function renderPlanSection(host, snapshot, error62, onSignIn) {
+  host.replaceChildren();
+  const heading = document.createElement("h4");
+  heading.className = "usage-plan-heading";
+  heading.textContent = "Subscription plan limits";
+  host.append(heading);
+  const intro = document.createElement("p");
+  intro.className = "settings-fieldset-desc";
+  intro.textContent = "Live plan windows for the plans you have set up in Settings \u2192 General. If a plan cannot be read, the local ledger below still tracks this app\u2019s usage.";
+  host.append(intro);
+  if (error62) {
+    const err = document.createElement("p");
+    err.className = "usage-plan-status usage-plan-status-error field-hint";
+    err.textContent = error62;
+    host.append(err);
+    return;
+  }
+  if (!snapshot) {
+    const loading = document.createElement("p");
+    loading.className = "field-hint";
+    loading.textContent = "Loading plan usage\u2026";
+    host.append(loading);
+    return;
+  }
+  if (snapshot.error) {
+    const err = document.createElement("p");
+    err.className = "usage-plan-status usage-plan-status-error field-hint";
+    err.textContent = `Couldn\u2019t load subscription plan usage: ${snapshot.error}`;
+    host.append(err);
+    return;
+  }
+  const list = document.createElement("div");
+  list.className = "usage-plan-providers";
+  for (const provider of snapshot.providers) {
+    renderPlanProvider(list, provider, onSignIn);
+  }
+  host.append(list);
+}
+function renderModelTable(host, title, rows, emptyText, accounts = []) {
+  const section = document.createElement("div");
+  section.className = "usage-model-group";
+  const heading = document.createElement("h4");
+  heading.textContent = title;
+  section.append(heading);
+  if (rows.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "usage-empty";
+    empty.textContent = emptyText;
+    section.append(empty);
+    host.append(section);
+    return;
+  }
+  const table = document.createElement("table");
+  table.className = "usage-table";
+  table.innerHTML = `
+    <colgroup>
+      <col class="usage-col-model" />
+      <col class="usage-col-num" />
+      <col class="usage-col-num" />
+      <col class="usage-col-num" />
+      <col class="usage-col-num" />
+      <col class="usage-col-num" />
+    </colgroup>
+    <thead>
+      <tr>
+        <th scope="col">Model</th>
+        <th scope="col">Input</th>
+        <th scope="col">Output</th>
+        <th scope="col">Cache read</th>
+        <th scope="col">Cache write</th>
+        <th scope="col">Est. cost</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  `;
+  const tbody = table.querySelector("tbody");
+  if (!tbody) throw new Error("usage table is missing its tbody");
+  const registrations = [
+    ...new Set(
+      rows.flatMap((row) => {
+        const plan = parseModelSelection(row.model);
+        return plan.namespace === "chatgpt-plan" && plan.agent ? [plan.agent] : [];
+      })
+    )
+  ];
+  for (const row of rows) {
+    const tr = document.createElement("tr");
+    const approx = row.estimatedTokens ? "~" : "";
+    const model = escapeHtml(
+      row.model.startsWith(CHATGPT_PLAN_MODEL_PREFIX) ? displayModelLabel(row.model) : row.model
+    );
+    const modelLabel = row.estimatedTokens ? `${model} <span class="usage-estimated" title="Estimated locally, because the agent did not report usage">(est.)</span>` : model;
+    const plan = parseModelSelection(row.model);
+    const accountIndex = plan.namespace === "chatgpt-plan" ? accounts.findIndex((account) => account.clientId === plan.agent) : -1;
+    const accountLabel = plan.namespace === "chatgpt-plan" && plan.agent && registrations.length > 1 ? accountIndex >= 0 ? `Connection ${String(accountIndex + 1)}` : `Saved connection ${String(registrations.indexOf(plan.agent) + 1)}` : "";
+    const costLabel = row.isLocal ? "free (local)" : !row.pricingKnown ? "unpriced" : `${row.estimatedCostUsd === 0 ? "free" : formatUsd(row.estimatedCostUsd)}${row.tierPricingFallback ? ' <span class="usage-estimated" title="This service tier has no published catalog rate; shown at the standard rate.">(standard rate)</span>' : ""}`;
+    tr.innerHTML = `
+      <td><code>${modelLabel}</code>${accountLabel ? `<br><span class="field-hint">${accountLabel}</span>` : ""}</td>
+      <td>${approx}${formatTokenCount(row.inputTokens)}</td>
+      <td>${approx}${formatTokenCount(row.outputTokens)}</td>
+      <td>${row.cacheReadTokens ? formatTokenCount(row.cacheReadTokens) : "-"}</td>
+      <td>${row.cacheCreationTokens ? formatTokenCount(row.cacheCreationTokens) : "-"}</td>
+      <td>${costLabel}</td>
+    `;
+    tbody.append(tr);
+  }
+  section.append(table);
+  host.append(section);
+}
+function renderClassifierTable(host, rows, allTime) {
+  const section = document.createElement("div");
+  section.className = "usage-model-group usage-classifier-group";
+  const heading = document.createElement("h4");
+  heading.textContent = "Classifiers";
+  section.append(heading);
+  if (allTime || !rows || rows.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "usage-empty";
+    empty.textContent = allTime ? "Classifier calls are listed for the day, month and 90-day windows only." : "No classifier usage in this period.";
+    section.append(empty);
+    host.append(section);
+    return;
+  }
+  const table = document.createElement("table");
+  table.className = "usage-table usage-classifier-table";
+  const columns = document.createElement("colgroup");
+  for (const className of [
+    "usage-col-model",
+    "usage-col-model",
+    "usage-col-num",
+    "usage-col-num",
+    "usage-col-num"
+  ]) {
+    const col = document.createElement("col");
+    col.className = className;
+    columns.append(col);
+  }
+  const head = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  for (const label of ["Classifier", "Model", "Calls", "Input", "Output"]) {
+    const th = document.createElement("th");
+    th.scope = "col";
+    th.textContent = label;
+    headRow.append(th);
+  }
+  head.append(headRow);
+  const body = document.createElement("tbody");
+  for (const row of rows) {
+    const tr = document.createElement("tr");
+    tr.dataset["provider"] = row.provider;
+    const provider = document.createElement("td");
+    provider.textContent = row.provider;
+    const model = document.createElement("td");
+    const code = document.createElement("code");
+    code.textContent = row.model;
+    model.append(code);
+    const cells = [row.calls, row.inputTokens, row.outputTokens].map((value) => {
+      const td = document.createElement("td");
+      td.textContent = formatTokenCount(value);
+      return td;
+    });
+    tr.append(provider, model, ...cells);
+    body.append(tr);
+  }
+  table.append(columns, head, body);
+  section.append(table);
+  host.append(section);
+}
+function renderPeriodSummary(host, summary, period, meta3, accounts, api) {
+  host.replaceChildren();
+  const headline = document.createElement("p");
+  headline.className = "usage-headline";
+  headline.textContent = formatPeriodHeadline(summary);
+  host.append(headline);
+  const tokens = document.createElement("p");
+  tokens.className = "usage-token-total field-hint";
+  tokens.textContent = `${formatTokenCount(summary.totalInputTokens)} input \xB7 ${formatTokenCount(summary.totalOutputTokens)} output tokens`;
+  host.append(tokens);
+  if (period !== "allTime") {
+    const note = document.createElement("p");
+    note.className = "field-hint";
+    const trackedSince = meta3.trackingStartedAt !== null ? new Date(meta3.trackingStartedAt).toLocaleString() : "not yet";
+    note.textContent = `Ledger: ${String(meta3.ledgerEventCount)} event(s) tracked (since ${trackedSince}). Time windows include cloud and local models recorded on each agent turn. All-time totals come from saved threads and may include older usage.`;
+    host.append(note);
+  }
+  if (summary.cloudModels.some((row) => row.model.startsWith(CHATGPT_PLAN_MODEL_PREFIX))) {
+    const usage = document.createElement("button");
+    usage.type = "button";
+    usage.className = "ui-btn ui-btn-primary";
+    usage.textContent = "Manage ChatGPT usage";
+    usage.addEventListener("click", () => {
+      void api.shell.openExternal("https://chatgpt.com/settings/usage");
+    });
+    host.append(usage);
+  }
+  renderModelTable(
+    host,
+    "Cloud models",
+    summary.cloudModels,
+    "No cloud model usage in this period.",
+    accounts
+  );
+  renderModelTable(
+    host,
+    "Local models (free)",
+    summary.localModels,
+    "No local model usage in this period."
+  );
+  renderClassifierTable(host, summary.classifiers, period === "allTime");
+}
+function createUsageSection(api, store, onRequestClose) {
+  let pendingSignInProvider = null;
+  const onSignIn = (provider) => {
+    const handler = createPlanSignInHandler(store, provider, onRequestClose);
+    if (!handler) return void 0;
+    return () => {
+      pendingSignInProvider = provider;
+      handler();
+    };
+  };
+  const handleSignIn = {
+    claude: onSignIn("claude"),
+    codex: onSignIn("codex")
+  };
+  const root = document.createElement("div");
+  root.className = "usage-section-root";
+  root.innerHTML = `
+    <div class="usage-plan-section" id="usage-plan-section"></div>
+    <div class="usage-ledger-section">
+      <h4 class="usage-ledger-heading">Local usage ledger</h4>
+      <div class="usage-period-tabs" role="tablist" aria-label="Usage period">
+        <button type="button" class="usage-period-btn active" data-period="day" role="tab" aria-selected="true">Day</button>
+        <button type="button" class="usage-period-btn" data-period="month" role="tab" aria-selected="false">Month</button>
+        <button type="button" class="usage-period-btn" data-period="period90d" role="tab" aria-selected="false">90 days</button>
+        <button type="button" class="usage-period-btn" data-period="allTime" role="tab" aria-selected="false">All time</button>
+      </div>
+      <div class="usage-period-label" id="usage-period-label">${PERIOD_LABELS.day}</div>
+      <div class="usage-period-body" id="usage-period-body"></div>
+    </div>
+  `;
+  const loadOpenRouter = async () => {
+    let available = false;
+    let zdrOnly = true;
+    let allowTraining = false;
+    try {
+      available = (await api.settings.availableProviders())["openrouter"] === true;
+    } catch {
+    }
+    try {
+      zdrOnly = await api.settings.get("openRouterZdrOnly") !== false;
+      allowTraining = await api.settings.get("openRouterAllowTraining") === true;
+    } catch {
+    }
+    let models = [];
+    if (available) {
+      try {
+        models = await api.openRouter.models();
+      } catch {
+      }
+    }
+    return { models, zdrOnly, allowTraining };
+  };
+  setModelCardApi(api.modelCards);
+  const frontierPanel = createIntellectFrontierPanel(
+    () => api.lmStudio.models(),
+    () => api.settings.extraProviders(),
+    () => api.intellect.liveModels(),
+    () => api.usage.getPlanUsage(),
+    loadOpenRouter,
+    async () => (await fetchModelOptions(api, "")).filter((option) => option.value !== "" && option.disabled !== true).map((option) => option.value),
+    async () => parseAcpAgentConfigs(await api.settings.get("registeredAcpAgents"))
+  );
+  root.append(frontierPanel.root);
+  const planEl = qsRequired(root, "#usage-plan-section");
+  const bodyEl2 = qsRequired(root, "#usage-period-body");
+  const labelEl = qsRequired(root, "#usage-period-label");
+  const tabBtns = root.querySelectorAll(".usage-period-btn");
+  let activePeriod = "day";
+  let cachedAccounts = [];
+  let cachedSummary = null;
+  let cachedPlanSnapshot = null;
+  let ledgerRefreshTimer;
+  function showPeriod(period) {
+    activePeriod = period;
+    tabBtns.forEach((btn) => {
+      const selected = btn.dataset["period"] === period;
+      btn.classList.toggle("active", selected);
+      btn.setAttribute("aria-selected", selected ? "true" : "false");
+    });
+    labelEl.textContent = PERIOD_LABELS[period];
+    if (cachedSummary) {
+      renderPeriodSummary(
+        bodyEl2,
+        cachedSummary[period],
+        period,
+        {
+          ledgerEventCount: cachedSummary.ledgerEventCount,
+          trackingStartedAt: cachedSummary.trackingStartedAt
+        },
+        cachedAccounts,
+        api
+      );
+    }
+  }
+  tabBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const period = btn.dataset["period"];
+      if (period === "day" || period === "month" || period === "period90d" || period === "allTime") {
+        showPeriod(period);
+      }
+    });
+  });
+  let currentSignal;
+  async function refreshPlan(signal = currentSignal) {
+    if (!cachedPlanSnapshot) {
+      renderPlanSection(planEl, null, null, handleSignIn);
+    }
+    try {
+      const snapshot = await api.usage.getPlanUsage(pendingSignInProvider !== null);
+      if (signal?.aborted) return;
+      cachedPlanSnapshot = snapshot;
+      renderPlanSection(planEl, snapshot, null, handleSignIn);
+      if (pendingSignInProvider && snapshot.providers.some(
+        (provider) => provider.provider === pendingSignInProvider && provider.status === "ok"
+      )) {
+        pendingSignInProvider = null;
+      }
+    } catch (err) {
+      if (signal?.aborted) return;
+      const message = err instanceof Error ? err.message : "Failed to load subscription plan usage.";
+      renderPlanSection(planEl, null, message, handleSignIn);
+    }
+  }
+  async function refreshLedger(signal = currentSignal) {
+    try {
+      const summary = await api.usage.getSummary();
+      if (signal?.aborted) return;
+      cachedSummary = summary;
+      showPeriod(activePeriod);
+    } catch (err) {
+      if (signal?.aborted) return;
+      bodyEl2.textContent = err instanceof Error ? `Failed to load usage: ${err.message}` : "Failed to load usage.";
+    }
+  }
+  function scheduleLedgerRefresh() {
+    if (ledgerRefreshTimer !== void 0) clearTimeout(ledgerRefreshTimer);
+    ledgerRefreshTimer = setTimeout(() => {
+      ledgerRefreshTimer = void 0;
+      void refreshLedger();
+    }, LEDGER_REFRESH_DEBOUNCE_MS);
+  }
+  async function refresh(signal) {
+    currentSignal = signal;
+    if (signal?.aborted) return;
+    try {
+      const accounts = (await api.chatGptPlan.status()).accounts;
+      if (signal?.aborted) return;
+      cachedAccounts = accounts;
+    } catch {
+      if (signal?.aborted) return;
+      cachedAccounts = [];
+    }
+    if (!cachedSummary) {
+      bodyEl2.textContent = "Loading usage\u2026";
+    }
+    const planPromise = refreshPlan(signal);
+    const frontierPromise = frontierPanel.refresh(signal);
+    try {
+      const summary = await api.usage.getSummary();
+      if (signal?.aborted) return;
+      cachedSummary = summary;
+      showPeriod(activePeriod);
+    } catch (err) {
+      if (signal?.aborted) return;
+      bodyEl2.textContent = err instanceof Error ? `Failed to load usage: ${err.message}` : "Failed to load usage.";
+    }
+    await planPromise;
+    await frontierPromise;
+  }
+  const unsubUsage = store?.on("usage_updated", () => {
+    if (!currentSignal?.aborted && root.closest("dialog")?.open !== false && root.closest(".settings-section")?.classList.contains("active")) {
+      scheduleLedgerRefresh();
+    }
+  });
+  return {
+    root,
+    refresh,
+    detach: () => {
+      unsubUsage?.();
+      if (ledgerRefreshTimer !== void 0) clearTimeout(ledgerRefreshTimer);
+    }
+  };
+}
+var PERIOD_LABELS, PROVIDER_LABELS, LEDGER_REFRESH_DEBOUNCE_MS;
+var init_usage_section = __esm({
+  "src/renderer/views/setup/usage-section.ts"() {
+    init_clamp();
+    init_format_usage_summary();
+    init_helpers();
+    init_inline_markdown();
+    init_dist();
+    init_intellect_frontier_panel();
+    init_model_options();
+    init_acp();
+    init_model_display();
+    init_model_selection();
+    init_reserved_prefixes();
+    PERIOD_LABELS = {
+      day: "Last 24 hours",
+      month: "Last 30 days",
+      period90d: "Last 90 days",
+      allTime: "All time"
+    };
+    PROVIDER_LABELS = {
+      claude: "Claude",
+      codex: "Codex",
+      huggingface: "Hugging Face",
+      cursor: "Cursor"
+    };
+    LEDGER_REFRESH_DEBOUNCE_MS = 400;
+  }
+});
+
+// src/shared/release-channel.mts
+function getReleaseChannel(version2) {
+  if (stableVersion.test(version2)) return "stable";
+  if (betaVersion.test(version2)) return "beta";
+  throw new Error(
+    `Unsupported release version ${JSON.stringify(version2)}; expected X.Y.Z or X.Y.Z-beta.N`
+  );
+}
+var RELEASE_CHANNELS, numericIdentifier, stableVersion, betaVersion;
+var init_release_channel = __esm({
+  "src/shared/release-channel.mts"() {
+    RELEASE_CHANNELS = ["stable", "beta"];
+    numericIdentifier = "(?:0|[1-9]\\d*)";
+    stableVersion = new RegExp(
+      `^${numericIdentifier}\\.${numericIdentifier}\\.${numericIdentifier}$`
+    );
+    betaVersion = new RegExp(
+      `^${numericIdentifier}\\.${numericIdentifier}\\.${numericIdentifier}-beta\\.${numericIdentifier}$`
+    );
+  }
+});
+
+// src/shared/update-channel-choice.ts
+function chosenUpdateChannel(saved, installedVersion) {
+  if (typeof saved === "string" && isReleaseChannel(saved)) {
+    return { channel: saved, remember: false };
+  }
+  return { channel: getReleaseChannel(installedVersion), remember: true };
+}
+var isReleaseChannel;
+var init_update_channel_choice = __esm({
+  "src/shared/update-channel-choice.ts"() {
+    init_member_of2();
+    init_release_channel();
+    isReleaseChannel = memberOf(RELEASE_CHANNELS);
+  }
+});
+
+// src/renderer/views/setup/about-section.ts
+function describeInclusion(component) {
+  if (component.partOf) return `Compiled into ${component.partOf}`;
+  const labels = component.shippedAs.map((as) => SHIPPED_AS_LABEL[as]);
+  const text = labels.join(", ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+function licenseBody(component, texts) {
+  const meta3 = el("p", { class: "about-license-meta" }, describeInclusion(component));
+  if (component.source) {
+    meta3.append(
+      " \xB7 ",
+      el("a", { href: component.source, target: "_blank", rel: "noopener noreferrer" }, "Source")
+    );
+  }
+  const body = el("div", { class: "about-license-body" }, meta3);
+  if (component.note) body.append(el("p", { class: "about-license-note" }, component.note));
+  for (const file2 of component.files) {
+    body.append(
+      el("div", { class: "about-license-file-name" }, file2.name),
+      el("pre", { class: "about-license-text" }, (texts[file2.text] ?? "").trim())
+    );
+  }
+  return body;
+}
+function componentRow(component, texts) {
+  const summary = el(
+    "summary",
+    { class: "about-license-summary" },
+    el("span", { class: "about-license-name" }, component.name),
+    el("span", { class: "about-license-version" }, component.version),
+    el("span", { class: "about-license-id" }, component.license)
+  );
+  const details = el("details", { class: "about-license" }, summary);
+  details.addEventListener(
+    "toggle",
+    () => {
+      if (details.open && !details.querySelector(".about-license-body")) {
+        details.append(licenseBody(component, texts));
+      }
+    },
+    { passive: true }
+  );
+  return el(
+    "li",
+    { "data-search": `${component.name} ${component.license}`.toLowerCase() },
+    details
+  );
+}
+function createAboutSection(api) {
+  const versionEl = el("span", { class: "about-version" }, "\u2026");
+  const openButton = (label, kind) => {
+    const button = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, label);
+    button.dataset["licenseFile"] = kind;
+    button.addEventListener("click", () => {
+      void api.about.openLicenseFile(kind).catch((err) => {
+        statusEl.textContent = errorMessage(err);
+      });
+    });
+    return button;
+  };
+  const copse = el(
+    "fieldset",
+    { class: "about-copse" },
+    el("legend", {}, "Copse"),
+    el(
+      "p",
+      { class: "settings-fieldset-desc" },
+      "Version ",
+      versionEl,
+      ". Copse is free software, licensed under the GNU Affero General Public License, version 3."
+    ),
+    uiActions(openButton("View licence", "copse"), { align: "start" })
+  );
+  const channelSelect = el(
+    "select",
+    { name: "updateChannel" },
+    el("option", { value: "beta" }, "Beta"),
+    el("option", { value: "stable" }, "Stable")
+  );
+  const channelStatus = el("p", {
+    class: "about-update-status",
+    role: "status",
+    "aria-live": "polite"
+  });
+  const updates = el(
+    "fieldset",
+    { class: "about-updates" },
+    el("legend", {}, "Updates"),
+    el(
+      "label",
+      { class: "about-update-channel" },
+      "Update channel",
+      channelSelect,
+      el(
+        "span",
+        { class: "field-hint" },
+        "Beta gets new features first; switch to Stable and Copse keeps installing betas until the next stable release, then installs only stable releases."
+      )
+    ),
+    channelStatus
+  );
+  let savedChannel = "beta";
+  let installedChannel = "beta";
+  channelSelect.addEventListener("change", () => {
+    const value = channelSelect.value;
+    if (!isReleaseChannel(value)) return;
+    channelSelect.disabled = true;
+    void api.settings.set("updateChannel", value).then(
+      () => {
+        savedChannel = value;
+        setInlineStatus(
+          channelStatus,
+          "ok",
+          value === "beta" ? "Copse now updates to beta releases." : installedChannel === "stable" ? "Copse now updates to stable releases only." : "Copse keeps updating to betas until the next stable release."
+        );
+      },
+      (err) => {
+        channelSelect.value = savedChannel;
+        setInlineStatus(channelStatus, "error", errorMessage(err));
+      }
+    ).finally(() => {
+      channelSelect.disabled = false;
+    });
+  });
+  const showChannel = async (version2) => {
+    let channel = "beta";
+    try {
+      installedChannel = getReleaseChannel(version2);
+      channel = chosenUpdateChannel(await api.settings.get("updateChannel"), version2).channel;
+    } catch {
+    }
+    savedChannel = channel;
+    channelSelect.value = channel;
+  };
+  const countEl = el("span", {}, "the open-source components");
+  const statusEl = el("p", { class: "field-hint about-licenses-status", "aria-live": "polite" });
+  const thirdParty = el(
+    "fieldset",
+    { class: "about-third-party" },
+    el("legend", {}, "Open-source licences"),
+    el(
+      "p",
+      { class: "settings-fieldset-desc" },
+      "Copse is built with ",
+      countEl,
+      " listed below, each used under its own licence. Select one to read its licence. The Chromium and Node.js components inside the Electron runtime are listed separately."
+    ),
+    uiActions(
+      openButton("Open all licences", "third-party"),
+      openButton("Chromium and Node.js notices", "chromium"),
+      { align: "start" }
+    )
+  );
+  const filter = el("input", {
+    type: "search",
+    class: "about-licenses-filter",
+    placeholder: "Filter by name or licence",
+    "aria-label": "Filter open-source components",
+    autocomplete: "off",
+    spellcheck: "false"
+  });
+  const list = el("ul", { class: "about-licenses-list", "aria-label": "Open-source components" });
+  const listHost = el("div", { class: "about-licenses", hidden: true }, filter, statusEl, list);
+  let total = 0;
+  const applyFilter = () => {
+    const query = filter.value.trim().toLowerCase();
+    let shown = 0;
+    for (const row of Array.from(list.children)) {
+      if (!(row instanceof HTMLElement)) continue;
+      const match = query === "" || (row.dataset["search"] ?? "").includes(query);
+      row.hidden = !match;
+      if (match) shown++;
+    }
+    statusEl.textContent = query === "" ? `${String(total)} components` : `${String(shown)} of ${String(total)} components`;
+  };
+  filter.addEventListener("input", applyFilter);
+  filter.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") event.preventDefault();
+  });
+  const render = (report) => {
+    total = report.components.length;
+    countEl.textContent = `the ${String(total)} open-source components`;
+    list.replaceChildren(...report.components.map((c2) => componentRow(c2, report.texts)));
+    listHost.hidden = false;
+    applyFilter();
+  };
+  let loaded = null;
+  const refresh = (signal) => {
+    if (signal?.aborted) return Promise.resolve();
+    loaded ??= api.about.getInfo().then(
+      (info) => {
+        if (signal?.aborted) {
+          loaded = null;
+          return;
+        }
+        versionEl.textContent = info.version;
+        void showChannel(info.version);
+        if (info.report) {
+          render(info.report);
+        } else {
+          statusEl.textContent = "Licence information is unavailable for this installation.";
+          listHost.hidden = false;
+        }
+      },
+      (err) => {
+        if (signal?.aborted) {
+          loaded = null;
+          return;
+        }
+        loaded = null;
+        statusEl.textContent = errorMessage(err);
+        listHost.hidden = false;
+      }
+    );
+    return loaded;
+  };
+  const root = el("div", { class: "about-section" }, copse, updates, thirdParty, listHost);
+  return { root, refresh };
+}
+var SHIPPED_AS_LABEL;
+var init_about_section = __esm({
+  "src/renderer/views/setup/about-section.ts"() {
+    init_errors4();
+    init_update_channel_choice();
+    init_release_channel();
+    init_helpers();
+    init_inline_status();
+    init_ui();
+    SHIPPED_AS_LABEL = {
+      bundled: "compiled into Copse",
+      copied: "files copied into Copse",
+      node_modules: "packaged as a module",
+      vendored: "included with Copse"
+    };
+  }
+});
+
+// src/renderer/views/setup/mobile-companion-section.ts
+function createMobileCompanionSection(api) {
+  const status = el("span", { class: "mobile-companion-status" });
+  const enabledInput = el("input", { type: "checkbox", name: "mobileCompanionEnabled" });
+  const addressSelect = el("select", { name: "mobileCompanionAddress" });
+  const addressHint = el("p", { class: "field-hint" });
+  const connectionInfo = el("div", { class: "mobile-companion-connection" });
+  const qrImage = el("div", { class: "mobile-companion-qr-image", "aria-hidden": "true" });
+  const qrUrl = el("code", { class: "mobile-companion-qr-url" });
+  const qrHost = el(
+    "div",
+    { id: "mobile-companion-qr", class: "mobile-companion-qr", hidden: true },
+    qrImage,
+    el(
+      "div",
+      { class: "mobile-companion-qr-text" },
+      el("p", { class: "field-hint" }, "Scan with your phone's camera to open Copse."),
+      qrUrl
+    )
+  );
+  const localQrImage = el("div", { class: "mobile-companion-qr-image", "aria-hidden": "true" });
+  const localQrUrl = el("code", { class: "mobile-companion-qr-url" });
+  const localQrHost = el(
+    "div",
+    { id: "mobile-companion-local-qr", class: "mobile-companion-qr", hidden: true },
+    localQrImage,
+    el(
+      "div",
+      { class: "mobile-companion-qr-text" },
+      el("p", { class: "field-hint" }, "The local address works without DNS."),
+      localQrUrl
+    )
+  );
+  const pairingHost = el("div", { class: "mobile-companion-pairing" });
+  const deviceList = el("div", { class: "mobile-companion-device-list" });
+  const inviteInput = el("input", {
+    type: "text",
+    name: "mobileCompanionInvite",
+    autocomplete: "off",
+    spellcheck: "false",
+    maxlength: "64",
+    placeholder: "Invite code",
+    "aria-label": "Invite code"
+  });
+  const registerBtn = el("button", { type: "button", class: "ui-btn ui-btn-primary" }, "Get a name");
+  const inviteRow = el("div", { class: "mobile-companion-invite" }, inviteInput, registerBtn);
+  const nameIntro = el(
+    "p",
+    { class: "field-hint" },
+    "Get a name like lan.\u2026u.copse.me with a publicly trusted certificate, so a phone connects with nothing to install. The Copse names service only sees certificate requests and this Mac\u2019s private network address; the key that controls the name stays in this Mac\u2019s keychain."
+  );
+  const nameSummary = el("div", { class: "mobile-companion-name-summary" });
+  const dnsNote = el("div", { class: "mobile-companion-name-dns" });
+  const recheckBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact" },
+    "Check again"
+  );
+  const removeNameBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary" },
+    "Remove name"
+  );
+  const nameStatus = el("span", { class: "mobile-companion-name-status" });
+  const relayInput = el("input", { type: "checkbox", name: "mobileCompanionRelay" });
+  const relayStatus = el("div", { class: "mobile-companion-relay-status" });
+  const shellPairBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary" },
+    "Add this Mac at copse.me"
+  );
+  const shellPairRow = el("div", { class: "settings-action-row" }, shellPairBtn);
+  const shellQrImage = el("div", { class: "mobile-companion-qr-image", "aria-hidden": "true" });
+  const shellQrHint = el("p", { class: "field-hint" });
+  const shellDoneBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact" },
+    "Done"
+  );
+  const shellQr = el(
+    "div",
+    { id: "mobile-companion-shell-qr", class: "mobile-companion-qr", hidden: true },
+    shellQrImage,
+    el(
+      "div",
+      { class: "mobile-companion-qr-text" },
+      shellQrHint,
+      el("div", { class: "settings-action-row" }, shellDoneBtn)
+    )
+  );
+  const relayBlock = el(
+    "div",
+    { class: "mobile-companion-relay", hidden: true },
+    el(
+      "label",
+      { class: "checkbox-label" },
+      relayInput,
+      " Reach this Mac from anywhere through copse.me"
+    ),
+    el(
+      "p",
+      { class: "field-hint" },
+      "Phones you add at copse.me connect through the Copse relay when they are away from this network. The relay passes the encrypted connection straight to this Mac and cannot read it; it sees when, and from which address, a phone connects. Each phone still pairs with this Mac, and you approve it here."
+    ),
+    relayStatus,
+    shellPairRow,
+    shellQr
+  );
+  const nameCard = el(
+    "fieldset",
+    { class: "mobile-companion-name" },
+    el("legend", {}, "Trusted address"),
+    nameIntro,
+    inviteRow,
+    nameSummary,
+    dnsNote,
+    relayBlock,
+    el("div", { class: "settings-action-row" }, removeNameBtn),
+    nameStatus
+  );
+  let lastPairingKey = null;
+  let lastDevicesKey = null;
+  let lastState = null;
+  let qrChoice = null;
+  function renderAddresses(state) {
+    const previous = addressSelect.value;
+    clear(addressSelect);
+    for (const candidate of state.addresses) {
+      addressSelect.append(
+        el(
+          "option",
+          { value: candidate.address },
+          `${candidate.interfaceName} \u2014 ${candidate.address}${candidate.virtual ? " (virtual or VPN)" : ""}`
+        )
+      );
+    }
+    const shown = state.address ?? previous;
+    if (state.addresses.some((candidate) => candidate.address === shown))
+      addressSelect.value = shown;
+    const disabled = state.addresses.length === 0 || state.enabled;
+    if (disabled) addressSelect.setAttribute("disabled", "");
+    else addressSelect.removeAttribute("disabled");
+    const selected = state.addresses.find((candidate) => candidate.address === addressSelect.value);
+    addressHint.classList.toggle("mobile-companion-name-warning", selected?.virtual === true);
+    addressHint.textContent = state.addresses.length === 0 ? "Connect this Mac to a private Wi-Fi or wired network first." : selected?.virtual ? `${selected.interfaceName} is a virtual-machine or VPN network; a phone on your Wi-Fi usually cannot reach it.${state.enabled ? " Turn Mobile Companion off to pick another." : ""}` : "Pick the interface your phone is on \u2014 usually Wi-Fi. Turn Mobile Companion off to change it.";
+  }
+  function renderConnection(state) {
+    clear(connectionInfo);
+    if (!state.enabled) {
+      qrHost.hidden = true;
+      return;
+    }
+    if (!state.running || !state.url) {
+      qrHost.hidden = true;
+      connectionInfo.append(
+        el(
+          "p",
+          { class: "field-hint" },
+          "Enabled, but its local server is not running yet. Copse retries automatically while it is open."
+        )
+      );
+      return;
+    }
+    const trustedName = state.localUrl !== null;
+    connectionInfo.append(el("p", {}, "Open ", el("strong", {}, state.url), " on your phone."));
+    connectionInfo.append(
+      trustedName && state.localUrl ? el(
+        "p",
+        { class: "field-hint" },
+        "Its certificate is publicly trusted, so there is nothing to install. If this network\u2019s DNS cannot answer for the name, open ",
+        el("strong", {}, state.localUrl),
+        " instead; that address needs the Copse Local Root on the phone, which can only vouch for private-network addresses, never a website."
+      ) : el(
+        "p",
+        { class: "field-hint" },
+        "Transfer the trust certificate directly to your phone and install it there for a verified connection \u2014 it can only vouch for private-network addresses, never a website. Remove it from the phone\u2019s certificate settings when you no longer need it."
+      )
+    );
+    if (state.rootCertificatePath) {
+      const revealBtn = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary" },
+        "Reveal certificate\u2026"
+      );
+      revealBtn.addEventListener("click", () => {
+        void api.mobile.revealCertificate();
+      });
+      connectionInfo.append(revealBtn);
+    }
+    connectionInfo.append(qrHost, localQrHost);
+    const dnsBlocked = state.publicName.dns === "unresolved" || state.publicName.dns === "mismatch";
+    const showLocal = state.localUrl !== null && (qrChoice === "local" || qrChoice === null && dnsBlocked);
+    if (state.qrSvg && !showLocal) {
+      qrImage.innerHTML = state.qrSvg;
+      qrUrl.textContent = state.url;
+      qrHost.hidden = false;
+    } else {
+      qrHost.hidden = true;
+    }
+    if (state.localQrSvg && state.localUrl && showLocal) {
+      localQrImage.innerHTML = state.localQrSvg;
+      localQrUrl.textContent = state.localUrl;
+      localQrHost.hidden = false;
+    } else {
+      localQrHost.hidden = true;
+    }
+    if (state.localUrl) {
+      const swapBtn = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact" },
+        showLocal ? "Show the trusted-name QR" : "Show the local-address QR"
+      );
+      swapBtn.addEventListener("click", () => {
+        qrChoice = showLocal ? "name" : "local";
+        if (lastState) renderConnection(lastState);
+      });
+      connectionInfo.append(el("div", { class: "settings-action-row" }, swapBtn));
+    }
+  }
+  function renderPublicName(state) {
+    const name = state.publicName;
+    const registered2 = name.state !== "unregistered";
+    inviteRow.hidden = registered2;
+    nameIntro.hidden = registered2;
+    registerBtn.toggleAttribute("disabled", name.busy !== null);
+    registerBtn.textContent = name.busy === "registering" ? "Getting a name\u2026" : "Get a name";
+    removeNameBtn.parentElement?.toggleAttribute("hidden", !registered2);
+    removeNameBtn.toggleAttribute("disabled", name.busy !== null);
+    removeNameBtn.textContent = name.busy === "removing" ? "Removing\u2026" : "Remove name";
+    clear(nameSummary);
+    clear(dnsNote);
+    if (registered2 && name.hostname) {
+      nameSummary.append(el("p", {}, el("strong", {}, name.hostname)));
+      const certificate = name.certificate;
+      nameSummary.append(
+        el(
+          "p",
+          { class: "field-hint" },
+          certificate && certificate.notAfter > Date.now() ? `Certificate valid until ${formatTime(certificate.notAfter)}${certificate.renewAt ? ` \xB7 renews from ${formatTime(certificate.renewAt)}` : ""}. Copse renews it while open.` : "Waiting for a certificate. Copse keeps trying while it is open."
+        )
+      );
+      if (name.state === "dormant")
+        nameSummary.append(
+          el(
+            "p",
+            { class: "field-hint mobile-companion-name-warning" },
+            "This name went dormant after 30 days without a renewal and does not resolve. Copse renews it again while open."
+          )
+        );
+      if (name.state === "retired")
+        nameSummary.append(
+          el(
+            "p",
+            { class: "field-hint mobile-companion-name-warning" },
+            "The names service retired this name. Remove it, then register again with a new invite."
+          )
+        );
+      const bound = state.addresses.find((candidate) => candidate.address === state.address);
+      if (state.running && bound?.virtual)
+        nameSummary.append(
+          el(
+            "p",
+            { class: "field-hint mobile-companion-name-warning" },
+            `${name.hostname} points at ${bound.address} on ${bound.interfaceName}, a virtual-machine or VPN network that phones on your Wi-Fi cannot reach. Turn Mobile Companion off, pick your Wi-Fi network and turn it on again.`
+          )
+        );
+      if (state.running) renderDns(name.hostname, name.dns);
+    }
+    if (name.lastError) setInlineStatus(nameStatus, "error", name.lastError);
+    else nameStatus.replaceChildren();
+  }
+  function renderRelay(state) {
+    const relay = state.relay;
+    if (!relay || state.publicName.state === "unregistered") {
+      relayBlock.hidden = true;
+      return;
+    }
+    relayBlock.hidden = false;
+    relayInput.checked = relay.enabled;
+    shellPairRow.hidden = !relay.enabled;
+    shellPairBtn.toggleAttribute("disabled", state.publicName.state !== "active");
+    renderRelayStatus(state, relay);
+    const pairing = relay.enabled ? state.shellPairing ?? null : null;
+    if (pairing?.qrSvg && pairing.expiresAt > Date.now()) {
+      shellQrImage.innerHTML = pairing.qrSvg;
+      shellQrHint.textContent = `Scan with your phone\u2019s camera, sign in at copse.me with a passkey and add this Mac. Then pair the phone in the page that opens. The code works once and expires at ${formatClock(pairing.expiresAt)}; Done only hides it.`;
+      shellQr.hidden = false;
+      shellPairBtn.textContent = "Show a new code";
+    } else {
+      shellQr.hidden = true;
+      shellPairBtn.textContent = "Add this Mac at copse.me";
+    }
+  }
+  function renderRelayStatus(state, relay) {
+    switch (relay.status) {
+      case "off":
+        relayStatus.replaceChildren();
+        return;
+      case "connected":
+        setInlineStatus(
+          relayStatus,
+          "ok",
+          `Connected to ${relay.relay}. Phones added at copse.me reach this Mac as ${relay.hostname ?? "its web name"}.`
+        );
+        return;
+      case "connecting":
+        setInlineStatus(relayStatus, "pending", `Connecting to ${relay.relay}\u2026`);
+        return;
+      case "retrying":
+        setInlineStatus(
+          relayStatus,
+          "warn",
+          `${relay.error ?? "The relay connection dropped."} Trying again${relay.retryAt ? ` at ${formatClock(relay.retryAt)}` : ""}.`
+        );
+        return;
+      case "waiting":
+        setInlineStatus(
+          relayStatus,
+          "idle",
+          relay.error ?? (!state.running ? "Connects to the relay while Mobile Companion is on." : state.publicName.state !== "active" ? "Connects to the relay once this name is active again." : "Connects to the relay once this name has a certificate.")
+        );
+        return;
+    }
+  }
+  function renderDns(hostname3, dns) {
+    if (dns === "ok" || dns === "unknown") return;
+    if (dns === "checking") {
+      dnsNote.append(el("p", { class: "field-hint" }, `Checking that ${hostname3} resolves here\u2026`));
+      return;
+    }
+    dnsNote.append(
+      el(
+        "p",
+        { class: "field-hint mobile-companion-name-warning" },
+        dns === "unresolved" ? `This network\u2019s DNS does not answer for ${hostname3}. Many routers drop public names that point at private addresses (DNS-rebind protection in dnsmasq, Pi-hole or OpenWrt), and a phone here will not reach the name either. Allow u.copse.me in the router\u2019s rebind settings, or use the local address.` : `This network\u2019s DNS answers ${hostname3} with a different address. Right after a network change that clears within a minute; if it stays, use the local address.`
+      ),
+      el("div", { class: "settings-action-row" }, recheckBtn)
+    );
+  }
+  function pairingKey(state) {
+    return state.pairing?.id ?? null;
+  }
+  function renderPairing(state) {
+    const key = pairingKey(state);
+    if (key === lastPairingKey) return;
+    lastPairingKey = key;
+    clear(pairingHost);
+    const pairing = state.pairing;
+    if (!pairing) return;
+    const trustInput = el("input", { type: "checkbox" });
+    const controlBtn = el(
+      "button",
+      { type: "button", class: "ui-btn ui-btn-primary", disabled: !pairing.trustedName },
+      "Allow control"
+    );
+    const readBtn = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, "Read only");
+    const denyBtn = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, "Deny");
+    trustInput.addEventListener("change", () => {
+      controlBtn.toggleAttribute("disabled", !trustInput.checked);
+    });
+    readBtn.addEventListener("click", () => {
+      void api.mobile.respondPairing("read", pairing.code, pairing.id);
+    });
+    controlBtn.addEventListener("click", () => {
+      if (pairing.trustedName) void api.mobile.respondPairing("control", pairing.code, pairing.id);
+      else if (trustInput.checked)
+        void api.mobile.respondPairing("control", pairing.code, pairing.id, trustInput.checked);
+    });
+    denyBtn.addEventListener("click", () => {
+      void api.mobile.respondPairing("deny", pairing.code, pairing.id);
+    });
+    pairingHost.append(
+      el(
+        "div",
+        { class: "mobile-companion-pairing-banner" },
+        el("p", {}, "Does this code appear on ", el("strong", {}, pairing.label), "?"),
+        el("p", { class: "mobile-companion-pairing-code" }, pairing.code),
+        el(
+          "p",
+          { class: "field-hint" },
+          "Read only shares thread names, saved messages, and activity. Allow control also lets this phone send messages, start chats, stop runs, answer questions, and approve individual requests. Only pair a phone you hold.",
+          pairing.relayed ? " This phone connected through the Copse relay (copse.me), and its browser verified this Mac\u2019s certificate." : pairing.trustedName ? " This phone connected over this Mac\u2019s trusted name, and its browser verified the certificate." : " Confirm below that the Copse Local Root is installed and trusted on this phone before allowing control."
+        ),
+        ...pairing.trustedName ? [] : [
+          el(
+            "label",
+            { class: "checkbox-label" },
+            trustInput,
+            " The Copse Local Root is installed and trusted on this phone"
+          )
+        ],
+        el("div", { class: "settings-action-row" }, denyBtn, readBtn, controlBtn)
+      )
+    );
+  }
+  function deviceRow(device) {
+    const row = el("div", { class: "mobile-companion-device-row" });
+    const summary = el(
+      "div",
+      { class: "mobile-companion-device-summary" },
+      el("strong", {}, device.label),
+      ` \u2014 ${device.access === "control" ? "Chat and run control" : "Read only"}`
+    );
+    const actions = el("div", { class: "mobile-companion-device-actions" });
+    if (device.access === "control") {
+      const toReadBtn = el("button", { type: "button" }, "Make read only");
+      toReadBtn.addEventListener("click", () => {
+        void api.mobile.setDeviceAccess(device.id, "read");
+      });
+      actions.append(toReadBtn);
+    } else {
+      const trustInput = el("input", { type: "checkbox" });
+      const toControlBtn = el("button", { type: "button", disabled: true }, "Allow control");
+      trustInput.addEventListener("change", () => {
+        toControlBtn.toggleAttribute("disabled", !trustInput.checked);
+      });
+      toControlBtn.addEventListener("click", () => {
+        if (trustInput.checked)
+          void api.mobile.setDeviceAccess(device.id, "control", trustInput.checked);
+      });
+      actions.append(
+        el(
+          "label",
+          { class: "checkbox-label mobile-companion-trust-label" },
+          trustInput,
+          " The Copse Local Root is installed and trusted on this phone"
+        ),
+        toControlBtn
+      );
+    }
+    const revokeBtn = el(
+      "button",
+      { type: "button", class: "mobile-companion-device-revoke" },
+      "Revoke"
+    );
+    revokeBtn.addEventListener("click", () => {
+      void api.mobile.revokeDevice(device.id);
+    });
+    actions.append(revokeBtn);
+    row.append(summary, actions);
+    return row;
+  }
+  function renderDevices(state) {
+    const key = JSON.stringify(state.devices);
+    if (key === lastDevicesKey) return;
+    lastDevicesKey = key;
+    clear(deviceList);
+    if (state.devices.length === 0) {
+      deviceList.append(el("p", { class: "field-hint" }, "No phones are paired."));
+      return;
+    }
+    deviceList.append(
+      el(
+        "p",
+        { class: "field-hint" },
+        "Revoking access takes effect immediately. If you installed the Copse Local Root on that phone, remove it in the phone\u2019s certificate settings too."
+      )
+    );
+    for (const device of state.devices) deviceList.append(deviceRow(device));
+  }
+  function applyState(state) {
+    lastState = state;
+    enabledInput.checked = state.enabled;
+    renderAddresses(state);
+    renderConnection(state);
+    renderPublicName(state);
+    renderRelay(state);
+    renderPairing(state);
+    renderDevices(state);
+    if (state.lastError) setInlineStatus(status, "error", state.lastError);
+    else status.replaceChildren();
+  }
+  addressSelect.addEventListener("change", () => {
+    if (lastState) renderAddresses(lastState);
+  });
+  enabledInput.addEventListener("change", () => {
+    void (async () => {
+      if (enabledInput.checked) {
+        const address = addressSelect.value;
+        if (!address) {
+          enabledInput.checked = false;
+          return;
+        }
+        await api.mobile.enable(address);
+      } else {
+        await api.mobile.disable();
+      }
+      await refresh();
+    })();
+  });
+  registerBtn.addEventListener("click", () => {
+    const invite = inviteInput.value.trim();
+    if (!invite) {
+      inviteInput.setAttribute("aria-invalid", "true");
+      inviteInput.focus();
+      return;
+    }
+    inviteInput.removeAttribute("aria-invalid");
+    void api.mobile.registerName(invite).then(() => {
+      if (lastState?.publicName.state !== "unregistered") inviteInput.value = "";
+    }).catch((error62) => {
+      setInlineStatus(nameStatus, "error", ipcErrorMessage(error62, "Could not get a name."));
+    });
+  });
+  inviteInput.addEventListener("input", () => {
+    inviteInput.removeAttribute("aria-invalid");
+  });
+  removeNameBtn.addEventListener("click", () => {
+    void api.mobile.removeName().catch((error62) => {
+      setInlineStatus(nameStatus, "error", ipcErrorMessage(error62, "Could not remove the name."));
+    });
+  });
+  recheckBtn.addEventListener("click", () => {
+    void api.mobile.recheckNameDns();
+  });
+  relayInput.addEventListener("change", () => {
+    void api.mobile.setRelayEnabled(relayInput.checked).catch((error62) => {
+      if (lastState) renderRelay(lastState);
+      setInlineStatus(
+        relayStatus,
+        "error",
+        ipcErrorMessage(error62, "Could not change the relay setting.")
+      );
+    });
+  });
+  shellPairBtn.addEventListener("click", () => {
+    void api.mobile.createShellPairing().catch((error62) => {
+      setInlineStatus(relayStatus, "error", ipcErrorMessage(error62, "Could not make a code."));
+    });
+  });
+  shellDoneBtn.addEventListener("click", () => {
+    void api.mobile.clearShellPairing();
+  });
+  async function refresh() {
+    const state = await api.mobile.getState();
+    applyState(state);
+  }
+  api.mobile.onStateChanged((state) => {
+    applyState(state);
+  });
+  const root = el(
+    "fieldset",
+    { class: "mobile-companion" },
+    el("legend", {}, "Mobile Companion"),
+    el(
+      "p",
+      { class: "field-hint" },
+      "Open your Copse threads from a phone on the same local network, or from anywhere through copse.me once this Mac has a trusted address. Choose the network interface your phone uses, pair phones, or turn sharing off. Copse must stay open and this computer must stay awake."
+    ),
+    el("label", { class: "checkbox-label" }, enabledInput, " Enable Mobile Companion"),
+    el("label", {}, "Network ", addressSelect),
+    addressHint,
+    connectionInfo,
+    nameCard,
+    pairingHost,
+    deviceList,
+    status
+  );
+  return { root, refresh };
+}
+function formatClock(ms) {
+  return new Date(ms).toLocaleTimeString(void 0, { hour: "numeric", minute: "2-digit" });
+}
+function formatTime(ms) {
+  return new Date(ms).toLocaleString(void 0, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+var init_mobile_companion_section = __esm({
+  "src/renderer/views/setup/mobile-companion-section.ts"() {
+    init_helpers();
+    init_inline_status();
+    init_ipc_error_message();
+  }
+});
+
+// src/renderer/views/settings/fields.ts
+function loadSimpleFields(root, fields, snapshot) {
+  for (const field of fields) {
+    const input2 = root.querySelector(`[name="${field.name}"]`);
+    if (!(input2 instanceof HTMLInputElement || input2 instanceof HTMLTextAreaElement)) {
+      throw new Error(`Settings dialog template is missing ${JSON.stringify(field.name)}`);
+    }
+    const saved = snapshot[field.name];
+    if (field.kind === "checkbox") {
+      if (!(input2 instanceof HTMLInputElement)) {
+        throw new Error(`Settings field ${JSON.stringify(field.name)} must be an input`);
+      }
+      input2.checked = typeof saved === "boolean" ? saved : field.default;
+    } else {
+      input2.value = typeof saved === "string" || typeof saved === "number" ? String(saved) : String(field.default);
+    }
+  }
+}
+function parseNonNegativeInt(value, fallback) {
+  const n2 = Number.parseInt(value, 10);
+  return Number.isFinite(n2) && n2 >= 0 ? n2 : fallback;
+}
+function wireSafetySliders(form) {
+  const externalDeny = form.elements.namedItem("safetyExternalDenyThreshold");
+  if (!(externalDeny instanceof HTMLInputElement)) {
+    throw new Error('Settings dialog template is missing "safetyExternalDenyThreshold"');
+  }
+  const bind = (input2) => {
+    const output2 = form.querySelector(`output[for="${input2.name}"]`);
+    if (!output2) return;
+    const sync = () => {
+      output2.textContent = Number(input2.value).toFixed(2);
+    };
+    input2.addEventListener("input", sync);
+    sync();
+  };
+  bind(externalDeny);
+}
+function collectSimpleFields(fields, data, dirtyFieldNames) {
+  const values = {};
+  for (const field of fields) {
+    if (!field.save || !dirtyFieldNames.has(field.name)) continue;
+    if (field.kind === "checkbox") values[field.name] = data.get(field.name) === "on";
+    else if (field.kind === "number")
+      values[field.name] = parseNonNegativeInt(formDataString(data, field.name), field.default);
+    else {
+      const value = formDataString(data, field.name);
+      values[field.name] = field.name === "customInstructions" ? value.trim() : value;
+    }
+  }
+  return values;
+}
+function formDataString(data, key) {
+  const value = data.get(key);
+  return typeof value === "string" ? value : "";
+}
+function inputControl(form, name) {
+  const control = form.elements.namedItem(name);
+  if (!(control instanceof HTMLInputElement)) {
+    throw new Error(`Settings dialog template is missing input ${JSON.stringify(name)}`);
+  }
+  return control;
+}
+function selectControl(form, name) {
+  const control = form.elements.namedItem(name);
+  if (!(control instanceof HTMLSelectElement)) {
+    throw new Error(`Settings dialog template is missing select ${JSON.stringify(name)}`);
+  }
+  return control;
+}
+function textareaControl(form, name) {
+  const control = form.elements.namedItem(name);
+  if (!(control instanceof HTMLTextAreaElement)) {
+    throw new Error(`Settings dialog template is missing textarea ${JSON.stringify(name)}`);
+  }
+  return control;
+}
+function parseWebAllowedOrigins(value) {
+  const text = typeof value === "string" ? value : "";
+  return text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+}
+function parseApprovedProviderHosts(value) {
+  const text = typeof value === "string" ? value : "";
+  return text.split(/\r?\n/).map((line) => line.trim().toLowerCase().replace(/\.$/, "")).filter(Boolean);
+}
+function renderSimpleFields(root, fields) {
+  for (const field of fields) {
+    if (!field.save) continue;
+    const template = root.querySelector(`[name="${field.name}"]`);
+    if (!(template instanceof HTMLInputElement || template instanceof HTMLTextAreaElement)) {
+      throw new Error(`Missing Settings control ${field.name}`);
+    }
+    const input2 = template instanceof HTMLTextAreaElement && field.kind === "text" ? document.createElement("textarea") : document.createElement("input");
+    for (const attr of template.attributes) input2.setAttribute(attr.name, attr.value);
+    if (input2 instanceof HTMLInputElement) {
+      input2.type = field.kind === "checkbox" ? "checkbox" : field.kind === "number" ? "number" : "text";
+      if (field.kind === "number") {
+        input2.min = "0";
+        input2.step = "1";
+      }
+    }
+    template.replaceWith(input2);
+  }
+}
+var init_fields = __esm({
+  "src/renderer/views/settings/fields.ts"() {
   }
 });
 
@@ -66814,11 +66992,13 @@ function mountBranchCiEditor(options) {
   const rows = el("div", { class: "automation-list" });
   section.append(sectionHeading, rows);
   const fields = [];
-  function field(kind, node2) {
-    node2.dataset["triggerField"] = kind;
-    fields.push({ kind, node: node2 });
+  function field(kinds, node2) {
+    const list = typeof kinds === "string" ? [kinds] : kinds;
+    node2.dataset["triggerField"] = list.join(" ");
+    fields.push({ kinds: list, node: node2 });
     return node2;
   }
+  const PULL_REQUEST_KINDS = ["github-pr-ci-failed", "github-pr-review-comment"];
   const form = el("form", { class: "automation-form automation-ci-form", hidden: true });
   const title = el("h4", { class: "automation-form-title" }, "New automation");
   const when = el(
@@ -66826,6 +67006,8 @@ function mountBranchCiEditor(options) {
     { class: "automation-input automation-when-select" },
     el("option", { value: "schedule" }, "On a schedule"),
     el("option", { value: "github-ci-failed" }, "When CI fails on a branch"),
+    el("option", { value: "github-pr-ci-failed" }, "When CI fails on a pull request"),
+    el("option", { value: "github-pr-review-comment" }, "When a pull request gets review comments"),
     el("option", { value: "github-pr-changed" }, "When a pull request changes"),
     el("option", { value: "github-issue-labeled" }, "When an issue gets a label")
   );
@@ -66874,6 +67056,23 @@ function mountBranchCiEditor(options) {
     { class: "automation-input automation-pr-transition" },
     el("option", { value: "ready-for-review" }, "A draft becomes ready for review"),
     el("option", { value: "new-commits" }, "A ready pull request gets new commits")
+  );
+  const authors = el(
+    "select",
+    { class: "automation-input automation-pr-authors" },
+    el("option", { value: "mine" }, "Only pull requests I opened"),
+    el("option", { value: "anyone" }, "Pull requests by anyone")
+  );
+  const commenters = el(
+    "select",
+    { class: "automation-input automation-pr-commenters" },
+    el(
+      "option",
+      { value: "collaborators" },
+      "Collaborators and organization members, not bots or me"
+    ),
+    el("option", { value: "others" }, "Anyone but me, including bots and strangers"),
+    el("option", { value: "anyone" }, "Anyone, including me, bots and strangers")
   );
   const label = el("input", {
     type: "text",
@@ -66938,12 +67137,17 @@ function mountBranchCiEditor(options) {
       el("label", { class: "automation-label" }, "Pull request (optional)", pullRequest)
     ),
     field(
-      "github-ci-failed",
+      ["github-pr-changed", ...PULL_REQUEST_KINDS],
+      el("label", { class: "automation-label" }, "Base branch", baseBranch)
+    ),
+    field(PULL_REQUEST_KINDS, el("label", { class: "automation-label" }, "Watch", authors)),
+    field(
+      ["github-ci-failed", "github-pr-ci-failed"],
       el("label", { class: "automation-label" }, "Only these workflows (optional)", checks)
     ),
     field(
-      "github-pr-changed",
-      el("label", { class: "automation-label" }, "Base branch", baseBranch)
+      "github-pr-review-comment",
+      el("label", { class: "automation-label" }, "Comments from", commenters)
     ),
     field(
       "github-pr-changed",
@@ -66965,7 +67169,15 @@ function mountBranchCiEditor(options) {
     loadOnMount: false
   });
   function currentKind() {
-    return when.value === "github-pr-changed" || when.value === "github-issue-labeled" ? when.value : "github-ci-failed";
+    switch (when.value) {
+      case "github-pr-changed":
+      case "github-issue-labeled":
+      case "github-pr-ci-failed":
+      case "github-pr-review-comment":
+        return when.value;
+      default:
+        return "github-ci-failed";
+    }
   }
   function splitChecks() {
     return checks.value.split(",").map((item) => item.trim()).filter((item) => item.length > 0);
@@ -66980,7 +67192,22 @@ function mountBranchCiEditor(options) {
       };
     }
     if (kind === "github-issue-labeled") return { kind, label: label.value.trim() };
+    const who = authors.value === "anyone" ? "anyone" : "mine";
+    if (kind === "github-pr-review-comment")
+      return {
+        kind,
+        baseBranch: baseBranch.value.trim(),
+        authors: who,
+        commenters: commenters.value === "anyone" || commenters.value === "others" ? commenters.value : "collaborators"
+      };
     const selected = splitChecks();
+    if (kind === "github-pr-ci-failed")
+      return {
+        kind,
+        baseBranch: baseBranch.value.trim(),
+        authors: who,
+        ...selected.length > 0 ? { checks: selected } : {}
+      };
     const number4 = Number.parseInt(pullRequest.value, 10);
     return {
       kind,
@@ -66991,7 +67218,22 @@ function mountBranchCiEditor(options) {
   function updateSummary() {
     const kind = currentKind();
     branch.required = kind === "github-ci-failed" && pullRequest.value.trim() === "";
-    for (const item of fields) item.node.hidden = item.kind !== kind;
+    for (const item of fields) item.node.hidden = !item.kinds.includes(kind);
+    baseBranch.required = kind !== "github-ci-failed" && kind !== "github-issue-labeled";
+    if (kind === "github-pr-ci-failed" || kind === "github-pr-review-comment") {
+      const base = baseBranch.value.trim() || "the base branch";
+      const whose = authors.value === "anyone" ? "a pull request" : "one of my pull requests";
+      const strangers = authors.value === "anyone" ? " Warning: this includes pull requests from forks, so a run checks out and runs code written by people outside the repository." : "";
+      if (kind === "github-pr-review-comment") {
+        const from = commenters.value === "anyone" ? "Warning: anyone who can comment, including bots and strangers, can start a run that acts as you, and replies a run posts can start another run." : commenters.value === "others" ? "Warning: anyone who can comment, including bots and strangers, can start a run that acts as you. My own comments are ignored." : "Only comments from the repository owner, its collaborators and organization members count; bots and my own comments, including replies a run posts as me, are ignored.";
+        summary.textContent = `When ${whose} into ${base} gets new review or conversation comments, address them. New comments are batched into one task per pull request; at most three runs per pull request and ten in total per 24 hours. ${from}${strangers}`;
+        return;
+      }
+      const selected2 = splitChecks();
+      const only2 = selected2.length > 0 ? ` (only ${selected2.join(", ")})` : "";
+      summary.textContent = `When CI fails${only2} on the current head of ${whose} into ${base}, fix it. One task per pull request head; at most three runs per pull request and ten in total per 24 hours.${strangers}`;
+      return;
+    }
     if (kind === "github-pr-changed") {
       const base = baseBranch.value.trim() || "the base branch";
       summary.textContent = transition.value === "new-commits" ? `When a ready pull request into ${base} gets new commits, review them. One task per pull request head; at most three runs per 24 hours.` : `When a draft pull request into ${base} becomes ready for review, review it. One task per pull request head; at most three runs per 24 hours.`;
@@ -67010,7 +67252,8 @@ function mountBranchCiEditor(options) {
   for (const input2 of [branch, pullRequest, checks, baseBranch, label]) {
     input2.addEventListener("input", updateSummary);
   }
-  transition.addEventListener("change", updateSummary);
+  for (const select of [transition, authors, commenters])
+    select.addEventListener("change", updateSummary);
   function close() {
     editingId = null;
     form.hidden = true;
@@ -67029,8 +67272,10 @@ function mountBranchCiEditor(options) {
     name.value = definition?.name ?? draft?.name ?? "";
     branch.value = trigger?.kind === "github-ci-failed" ? trigger.branch : "";
     pullRequest.value = trigger?.kind === "github-ci-failed" && trigger.pullRequest !== void 0 ? String(trigger.pullRequest) : "";
-    checks.value = trigger?.kind === "github-ci-failed" ? (trigger.checks ?? []).join(", ") : "";
-    baseBranch.value = trigger?.kind === "github-pr-changed" ? trigger.baseBranch : "";
+    checks.value = trigger?.kind === "github-ci-failed" || trigger?.kind === "github-pr-ci-failed" ? (trigger.checks ?? []).join(", ") : "";
+    baseBranch.value = trigger?.kind === "github-pr-changed" || trigger?.kind === "github-pr-ci-failed" || trigger?.kind === "github-pr-review-comment" ? trigger.baseBranch : "";
+    authors.value = trigger?.kind === "github-pr-ci-failed" || trigger?.kind === "github-pr-review-comment" ? trigger.authors : "mine";
+    commenters.value = trigger?.kind === "github-pr-review-comment" ? trigger.commenters : "collaborators";
     transition.value = trigger?.kind === "github-pr-changed" ? trigger.transition : "ready-for-review";
     label.value = trigger?.kind === "github-issue-labeled" ? trigger.label : "";
     prompt.value = definition?.prompt ?? draft?.prompt ?? "";
@@ -67054,6 +67299,13 @@ function mountBranchCiEditor(options) {
     await modelPicker.refresh(selected);
   }
   function triggerLabel(trigger) {
+    if (trigger.kind === "github-pr-ci-failed" || trigger.kind === "github-pr-review-comment") {
+      const whose = trigger.authors === "mine" ? `PRs by ${trigger.viewer}` : "all PRs";
+      if (trigger.kind === "github-pr-review-comment")
+        return `PR review comments \xB7 ${trigger.repository} \xB7 ${whose} into ${trigger.baseBranch}`;
+      const only2 = trigger.checks && trigger.checks.length > 0 ? ` \xB7 ${trigger.checks.join(", ")}` : "";
+      return `Failed PR CI \xB7 ${trigger.repository} \xB7 ${whose} into ${trigger.baseBranch}${only2}`;
+    }
     if (trigger.kind === "github-pr-changed") {
       return `${trigger.transition === "new-commits" ? "PR new commits" : "PR ready for review"} \xB7 ${trigger.repository} \xB7 ${trigger.baseBranch}`;
     }
@@ -70315,7 +70567,7 @@ var init_agent_markup = __esm({
                 <textarea
                   name="customInstructions"
                   rows="4"
-                  placeholder="Always-on guidance added to every conversation (e.g. preferred style, conventions)."
+                  placeholder="e.g. Prefer small commits. Use British spelling."
                 ></textarea>
                 <span class="field-hint">
                   Added to every conversation, in every project. A project
@@ -70332,6 +70584,8 @@ var init_agent_markup = __esm({
                 secrets when it adds an API call.
               </p>
             </fieldset>
+
+            <div id="settings-agent-profiles-host" class="settings-mount"></div>
 
             <fieldset>
               <legend>Helpers</legend>
@@ -70783,13 +71037,10 @@ var init_mcp_markup = __esm({
           <section class="settings-section" data-section="mcp">
             <h3>MCP servers</h3>
             <p class="settings-section-desc">
-              Model Context Protocol servers expose external tools to the agent. This section is
-              the whole picture of what Copse talks to over MCP, servers you configured, servers
-              the open project asks for, and servers your plugins bring with them. Each row says
-              where it came from. Add your own with <strong>Add server</strong>; Copse keeps them in
-              its own config. It also reads <code>.cursor/mcp.json</code> and
-              <code>.mcp.json</code> (project) and <code>~/.cursor/mcp.json</code> (global), which
-              you edit yourself. Plugins are installed and turned on under Customise.
+              Servers that give the agent external tools: the ones you add, the ones the open
+              project asks for, and the ones your plugins bring. Copse also reads
+              <code>.cursor/mcp.json</code> and <code>.mcp.json</code> in the project and
+              <code>~/.cursor/mcp.json</code>, which you edit yourself.
             </p>
 
             <fieldset>
@@ -71104,12 +71355,10 @@ var init_appearance_markup = __esm({
                 Hide tool details and reasoning from highly capable models
               </label>
               <p class="field-hint" id="concise-threads-hint">
-                For models scoring above 50 on the Artificial Analysis Intelligence Index, the
-                thread keeps all assistant messages and screenshots visible. Tool calls, reasoning,
-                and the tool errors the model recovers from stay hidden, and every finished turn
-                has a Show steps button to open it in full; while a model works, you see what it
-                is doing now. Turn off to always show the full thread. Other models always show the
-                full thread.
+                For models scoring above 50 on the Artificial Analysis Intelligence Index, tool
+                calls and reasoning fold into Show steps on each finished turn, and messages and
+                screenshots stay visible. Turn off to always show the full thread, as other models
+                do.
               </p>
             </fieldset>
 
@@ -71809,6 +72058,13 @@ function mountSettingsDialog(store, api) {
   qsRequired(overlay, "#settings-classifiers-host").append(classifiersSection.root);
   const webSearchSection = createWebSearchSection(api);
   qsRequired(overlay, "#settings-web-search-host").append(webSearchSection.root);
+  const agentProfilesSection = createAgentProfilesSection(api, {
+    // Saved at once, so the composer's model menu offers the change right away.
+    onChanged: () => {
+      store.emit("settings_changed");
+    }
+  });
+  qsRequired(overlay, "#settings-agent-profiles-host").append(agentProfilesSection.root);
   const machinesSection = createMachinesSection(api);
   qsRequired(overlay, "#settings-machines-host").append(machinesSection.root);
   let machineRefreshTimer;
@@ -71929,7 +72185,14 @@ function mountSettingsDialog(store, api) {
           await Promise.all([usageSection.refresh(signal), providersSection.refreshUsage(signal)]);
         }
       },
-      agent: { refresh: (_values, signal) => providersSection.refreshAgent(signal) },
+      agent: {
+        refresh: async (_values, signal) => {
+          await Promise.all([
+            providersSection.refreshAgent(signal),
+            agentProfilesSection.refresh(signal)
+          ]);
+        }
+      },
       permissions: {
         refresh: (_values, signal) => toolPermissionsPanel.refresh(signal)
       },
@@ -72175,6 +72438,7 @@ var init_settings_dialog = __esm({
     init_ipc_error_message();
     init_classifiers_section();
     init_machines_section();
+    init_agent_profiles_section();
     init_web_search_section();
     init_ssh_workspace_section();
     init_tool_permissions_panel();
@@ -72237,14 +72501,33 @@ function syncFilesPaneDom(store) {
   const pane = document.getElementById("pane-files");
   if (pane) pane.hidden = !store.getState().filesPaneOpen;
 }
+function canSplitRightPanel(mode) {
+  return SPLITTABLE_MODES.has(mode);
+}
+function normalizeRightPanelSplit(primary, split) {
+  if (split === null || split === primary || !canSplitRightPanel(primary)) {
+    return { rightPanelMode: primary, rightPanelSplitMode: null };
+  }
+  if (!canSplitRightPanel(split)) return { rightPanelMode: primary, rightPanelSplitMode: null };
+  if (split === "changes") return { rightPanelMode: "changes", rightPanelSplitMode: primary };
+  return { rightPanelMode: primary, rightPanelSplitMode: split };
+}
+function rightPanelSplitOf(state) {
+  if (!state.filesPaneOpen) return null;
+  return normalizeRightPanelSplit(state.rightPanelMode, state.rightPanelSplitMode).rightPanelSplitMode;
+}
 function rightPanelShows(state, mode) {
-  return state.filesPaneOpen && state.rightPanelMode === mode;
+  if (!state.filesPaneOpen) return false;
+  return state.rightPanelMode === mode || rightPanelSplitOf(state) === mode;
 }
 function selectRightPanelMode(store, mode, listener) {
   return store.select((state) => rightPanelShows(state, mode), listener);
 }
 function selectRightPanel(store, listener) {
-  return store.select((state) => state.filesPaneOpen ? state.rightPanelMode : null, listener);
+  return store.select(
+    (state) => state.filesPaneOpen ? `${state.rightPanelMode}|${rightPanelSplitOf(state) ?? ""}` : null,
+    listener
+  );
 }
 function setRightPanelMaximized(store, maximized) {
   if (store.getState().rightPanelMaximized === maximized) return;
@@ -72268,19 +72551,35 @@ function toggleFilesPane(store) {
   const open2 = !store.getState().filesPaneOpen;
   store.setState({
     filesPaneOpen: open2,
-    ...open2 ? { rightPanelMode: "explorer" } : {}
+    // Closing the whole panel closes both of its panes.
+    ...open2 ? { rightPanelMode: "explorer" } : { rightPanelSplitMode: null }
   });
   if (!open2) clearMaximizedOnClose(store);
   syncFilesPaneDom(store);
 }
 function openRightPanel(store, mode) {
-  const { filesPaneOpen, rightPanelMode } = store.getState();
-  if (filesPaneOpen && rightPanelMode === mode) {
+  const state = store.getState();
+  if (rightPanelShows(state, mode)) {
     syncFilesPaneDom(store);
     return;
   }
-  store.setState({ filesPaneOpen: true, rightPanelMode: mode });
+  const split = state.filesPaneOpen ? rightPanelSplitOf(state) : null;
+  store.setState({ filesPaneOpen: true, ...normalizeRightPanelSplit(mode, split) });
   syncFilesPaneDom(store);
+}
+function openRightPanelBeside(store, mode) {
+  const state = store.getState();
+  if (!state.filesPaneOpen || !canSplitRightPanel(mode) || !canSplitRightPanel(state.rightPanelMode)) {
+    openRightPanel(store, mode);
+    return;
+  }
+  if (rightPanelShows(state, mode)) return;
+  store.setState(normalizeRightPanelSplit(state.rightPanelMode, mode));
+  syncFilesPaneDom(store);
+}
+function closeRightPanelSplit(store) {
+  if (store.getState().rightPanelSplitMode === null) return;
+  store.setState({ rightPanelSplitMode: null });
 }
 function navigateToChange(store, path) {
   store.emit("git_change_navigate", path);
@@ -72305,15 +72604,23 @@ function showCanvasArtefact(store, identity) {
   store.emit("canvas_artefact_show_requested", identity);
 }
 function toggleRightPanel(store, mode) {
-  const { filesPaneOpen, rightPanelMode } = store.getState();
-  if (filesPaneOpen && rightPanelMode === mode) {
-    store.setState({ filesPaneOpen: false });
+  const state = store.getState();
+  const split = rightPanelSplitOf(state);
+  if (split !== null && split === mode) {
+    store.setState({ rightPanelSplitMode: null });
+    return;
+  }
+  if (split !== null && state.rightPanelMode === mode) {
+    store.setState({ rightPanelMode: split, rightPanelSplitMode: null });
+    return;
+  }
+  if (state.filesPaneOpen && state.rightPanelMode === mode) {
+    store.setState({ filesPaneOpen: false, rightPanelSplitMode: null });
     clearMaximizedOnClose(store);
     syncFilesPaneDom(store);
     return;
   }
-  store.setState({ filesPaneOpen: true, rightPanelMode: mode });
-  syncFilesPaneDom(store);
+  openRightPanel(store, mode);
 }
 function ensureWorkspaceForPanel(api, store) {
   if (store.getState().workspaceRoot) return true;
@@ -72323,6 +72630,10 @@ function ensureWorkspaceForPanel(api, store) {
 function openRightPanelWithWorkspace(store, api, mode) {
   if (!ensureWorkspaceForPanel(api, store)) return;
   openRightPanel(store, mode);
+}
+function openRightPanelBesideWithWorkspace(store, api, mode) {
+  if (!ensureWorkspaceForPanel(api, store)) return;
+  openRightPanelBeside(store, mode);
 }
 function toggleRightPanelWithWorkspace(store, api, mode) {
   if (!ensureWorkspaceForPanel(api, store)) return;
@@ -72335,9 +72646,20 @@ function toggleFilesPaneWithWorkspace(store, api) {
   }
   toggleFilesPane(store);
 }
+var SPLITTABLE_MODES;
 var init_panels = __esm({
   "src/renderer/controller/panels.ts"() {
     init_projects();
+    SPLITTABLE_MODES = /* @__PURE__ */ new Set([
+      "explorer",
+      "side-chat",
+      "terminal",
+      "changes",
+      "browser",
+      "memories",
+      "roadmap",
+      "vnc"
+    ]);
   }
 });
 
@@ -72646,55 +72968,6 @@ function sameProjectThreadBesidesDraft(a4, b2) {
 }
 var init_active_thread_owner = __esm({
   "src/renderer/controller/active-thread-owner.ts"() {
-  }
-});
-
-// src/shared/fs/image-path.ts
-function extensionOf(path) {
-  const name = path.split(/[\\/]/).pop()?.toLowerCase() ?? "";
-  const dot = name.lastIndexOf(".");
-  return dot < 0 ? null : name.slice(dot + 1);
-}
-function imageMimeType(path) {
-  const ext = extensionOf(path);
-  return ext === null ? null : IMAGE_MIME_BY_EXT.get(ext) ?? null;
-}
-function isImagePath(path) {
-  return imageMimeType(path) !== null;
-}
-function isRasterImagePath(path) {
-  const mime = imageMimeType(path);
-  return mime !== null && mime !== "image/svg+xml";
-}
-function isUnrenderableImageMime(mime) {
-  return UNRENDERABLE_IMAGE_MIME.has(mime.toLowerCase());
-}
-function isUnrenderableImagePath(path) {
-  const ext = extensionOf(path);
-  return ext !== null && UNRENDERABLE_IMAGE_EXT.has(ext);
-}
-var IMAGE_MIME_BY_EXT, UNRENDERABLE_IMAGE_MIME, UNRENDERABLE_IMAGE_EXT;
-var init_image_path = __esm({
-  "src/shared/fs/image-path.ts"() {
-    IMAGE_MIME_BY_EXT = /* @__PURE__ */ new Map([
-      ["avif", "image/avif"],
-      ["bmp", "image/bmp"],
-      ["gif", "image/gif"],
-      ["ico", "image/x-icon"],
-      ["jpeg", "image/jpeg"],
-      ["jpg", "image/jpeg"],
-      ["png", "image/png"],
-      ["svg", "image/svg+xml"],
-      ["webp", "image/webp"]
-    ]);
-    UNRENDERABLE_IMAGE_MIME = /* @__PURE__ */ new Set([
-      "image/heic",
-      "image/heic-sequence",
-      "image/heif",
-      "image/heif-sequence",
-      "image/tiff"
-    ]);
-    UNRENDERABLE_IMAGE_EXT = /* @__PURE__ */ new Set(["heic", "heif", "tif", "tiff"]);
   }
 });
 
@@ -74780,6 +75053,55 @@ var init_image_expand = __esm({
   }
 });
 
+// src/shared/fs/image-path.ts
+function extensionOf(path) {
+  const name = path.split(/[\\/]/).pop()?.toLowerCase() ?? "";
+  const dot = name.lastIndexOf(".");
+  return dot < 0 ? null : name.slice(dot + 1);
+}
+function imageMimeType(path) {
+  const ext = extensionOf(path);
+  return ext === null ? null : IMAGE_MIME_BY_EXT.get(ext) ?? null;
+}
+function isImagePath(path) {
+  return imageMimeType(path) !== null;
+}
+function isRasterImagePath(path) {
+  const mime = imageMimeType(path);
+  return mime !== null && mime !== "image/svg+xml";
+}
+function isUnrenderableImageMime(mime) {
+  return UNRENDERABLE_IMAGE_MIME.has(mime.toLowerCase());
+}
+function isUnrenderableImagePath(path) {
+  const ext = extensionOf(path);
+  return ext !== null && UNRENDERABLE_IMAGE_EXT.has(ext);
+}
+var IMAGE_MIME_BY_EXT, UNRENDERABLE_IMAGE_MIME, UNRENDERABLE_IMAGE_EXT;
+var init_image_path = __esm({
+  "src/shared/fs/image-path.ts"() {
+    IMAGE_MIME_BY_EXT = /* @__PURE__ */ new Map([
+      ["avif", "image/avif"],
+      ["bmp", "image/bmp"],
+      ["gif", "image/gif"],
+      ["ico", "image/x-icon"],
+      ["jpeg", "image/jpeg"],
+      ["jpg", "image/jpeg"],
+      ["png", "image/png"],
+      ["svg", "image/svg+xml"],
+      ["webp", "image/webp"]
+    ]);
+    UNRENDERABLE_IMAGE_MIME = /* @__PURE__ */ new Set([
+      "image/heic",
+      "image/heic-sequence",
+      "image/heif",
+      "image/heif-sequence",
+      "image/tiff"
+    ]);
+    UNRENDERABLE_IMAGE_EXT = /* @__PURE__ */ new Set(["heic", "heif", "tif", "tiff"]);
+  }
+});
+
 // src/renderer/controller/files.ts
 function detectLanguage(filePath) {
   const lower = filePath.split("/").pop()?.toLowerCase() ?? "";
@@ -74957,14 +75279,18 @@ export {
   init_errors4 as init_errors2,
   clamp,
   init_clamp,
-  formatUsd,
-  formatTokenCount,
-  init_format_usage_summary,
   LMSTUDIO_MODEL_PREFIX,
   CHATGPT_PLAN_MODEL_PREFIX,
   init_reserved_prefixes,
   firstPartyProviderOf,
   init_model_families,
+  isReasoningLevel,
+  SAMPLING_FIELDS,
+  modelParameterSupport,
+  init_model_parameters,
+  agentProfilesSchema,
+  findAgentProfile,
+  init_agent_profiles,
   getIntellectScore,
   init_model_intellect,
   getLocalModelCapability,
@@ -74972,6 +75298,11 @@ export {
   init_local_model_catalog,
   compositeIntellect,
   init_composite_intellect,
+  DEFAULT_CURSOR_AGENT_BASE_URL,
+  parseRemoteAgentModelSelection,
+  parseRemoteAgentModel,
+  remoteAgentGroupLabel,
+  init_remote_agent,
   canonicalAcpAgentId,
   findAcpCatalogEntry,
   KNOWN_ACP_AGENTS,
@@ -74982,11 +75313,6 @@ export {
   parseAcpModelSelection,
   isAcpModel,
   init_acp,
-  DEFAULT_CURSOR_AGENT_BASE_URL,
-  parseRemoteAgentModelSelection,
-  parseRemoteAgentModel,
-  remoteAgentGroupLabel,
-  init_remote_agent,
   MATCH_PROMPT_MODEL_SELECTOR,
   BEST_INTELLECT_MODEL_SELECTOR,
   BEST_LOCAL_MODEL_SELECTOR,
@@ -75000,7 +75326,7 @@ export {
   isBestValueChatModel,
   init_lm_studio_defaults,
   LOCAL_MODEL_SUFFIX,
-  displayModelLabel2 as displayModelLabel,
+  displayModelLabel,
   init_model_display,
   modelDisplayLabel,
   fetchModelOptions,
@@ -75012,10 +75338,9 @@ export {
   mountModelPicker,
   mountModelSelectPicker,
   init_model_picker,
-  isReasoningLevel,
-  SAMPLING_FIELDS,
-  modelParameterSupport,
-  init_model_parameters,
+  formatUsd,
+  formatTokenCount,
+  init_format_usage_summary,
   init_model_capabilities,
   at,
   init_array_utils2 as init_array_utils,
@@ -75401,6 +75726,9 @@ export {
   sameProjectThreadBesidesDraft,
   init_active_thread_owner,
   syncFilesPaneDom,
+  normalizeRightPanelSplit,
+  rightPanelSplitOf,
+  rightPanelShows,
   selectRightPanelMode,
   selectRightPanel,
   toggleRightPanelMaximized,
@@ -75408,6 +75736,7 @@ export {
   toggleProjectsPane,
   toggleFilesPane,
   openRightPanel,
+  closeRightPanelSplit,
   navigateToChange,
   navigateToRoadmapItem,
   openBrowserUrl,
@@ -75415,6 +75744,7 @@ export {
   openCanvasArtefact,
   showCanvasArtefact,
   openRightPanelWithWorkspace,
+  openRightPanelBesideWithWorkspace,
   toggleRightPanelWithWorkspace,
   toggleFilesPaneWithWorkspace,
   init_panels,
