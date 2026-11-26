@@ -16,6 +16,17 @@ export const SCREENSHOT_CACHE = '.cache/screenshots/sha256'
 const manifests = new Map<string, ScreenshotManifest | null>()
 const empty: ScreenshotManifest = { version: 1, screenshots: {} }
 
+// What a commit records never changes, so these are cached per checkout, keyed
+// by full object name. Every screenshot commit touches the manifest, so a flap
+// history walk visits every manifest commit for every candidate. Asking Git
+// about each (path, commit) pair cost two spawns per pair, and on #4359 the
+// filter's 431 history walks outran the screenshot-artifacts job. A symbolic
+// ref such as HEAD is still resolved again on every call.
+const commits = new Map<string, string>()
+const trackedFiles = new Map<string, ReadonlySet<string>>()
+const histories = new Map<string, string[]>()
+const OBJECT_NAME = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
+
 export function screenshotGit(args: string[], cwd = process.cwd()): string {
   try {
     return execFileSync('git', args, {
@@ -29,8 +40,46 @@ export function screenshotGit(args: string[], cwd = process.cwd()): string {
   }
 }
 
-export function manifestAtRef(ref: string, cwd = process.cwd()): ScreenshotManifest | null {
+/** The commit `ref` names, or '' when it names none. */
+function resolveCommit(ref: string, cwd: string): string {
+  const fixed = OBJECT_NAME.test(ref)
+  const known = fixed ? commits.get(`${cwd}:${ref}`) : undefined
+  if (known !== undefined) return known
   const sha = screenshotGit(['rev-parse', '--verify', `${ref}^{commit}`], cwd)
+  if (sha) {
+    commits.set(`${cwd}:${sha}`, sha)
+    if (fixed) commits.set(`${cwd}:${ref}`, sha)
+  }
+  return sha
+}
+
+/**
+ * Whether `ref`'s tree has an entry at `path`, as `git ls-tree ref -- path`
+ * answers: a PNG tracked in Git from before the R2 manifest. For a screenshot
+ * in a commit, one listing of the screenshot directory per commit answers
+ * every path; anything else still asks Git about the one path.
+ */
+function trackedAtRef(path: string, ref: string, commit: string, cwd: string): boolean {
+  const name = path.startsWith(`${SCREENSHOT_DIRECTORY}/`)
+    ? path.slice(SCREENSHOT_DIRECTORY.length + 1)
+    : ''
+  if (!commit || !name || name.includes('/'))
+    return Boolean(screenshotGit(['ls-tree', ref, '--', path], cwd))
+  const key = `${cwd}:${commit}`
+  let tracked = trackedFiles.get(key)
+  if (!tracked) {
+    tracked = new Set(
+      screenshotGit(['ls-tree', '-z', '--name-only', commit, '--', `${SCREENSHOT_DIRECTORY}/`], cwd)
+        .split('\0')
+        .filter(Boolean),
+    )
+    trackedFiles.set(key, tracked)
+  }
+  return tracked.has(path)
+}
+
+export function manifestAtRef(ref: string, cwd = process.cwd()): ScreenshotManifest | null {
+  const sha = resolveCommit(ref, cwd)
   if (!sha) return null
   const key = `${cwd}:${sha}`
   if (manifests.has(key)) return manifests.get(key) ?? null
@@ -52,14 +101,15 @@ export function cachedScreenshot(entry: ScreenshotEntry, cwd = process.cwd()): B
 }
 
 export function screenshotAtRef(path: string, ref: string, cwd = process.cwd()): Buffer | null {
-  if (screenshotGit(['ls-tree', ref, '--', path], cwd)) {
+  const commit = resolveCommit(ref, cwd)
+  if (trackedAtRef(path, ref, commit, cwd)) {
     return execFileSync('git', ['show', `${ref}:${path}`], {
       cwd,
       maxBuffer: 64 * 1024 * 1024,
       stdio: ['ignore', 'pipe', 'ignore'],
     })
   }
-  const manifest = manifestAtRef(ref, cwd)
+  const manifest = commit ? manifestAtRef(commit, cwd) : null
   if (manifest) {
     const entry = manifest.screenshots[path.slice(SCREENSHOT_DIRECTORY.length + 1)]
     if (!entry) return null
@@ -94,18 +144,37 @@ export function manifestChangedPaths(
   return changedManifestNames(a, b).map((name) => `${SCREENSHOT_DIRECTORY}/${name}`)
 }
 
+/**
+ * Authors of the screenshot commits CI writes to a PR branch: Actions' own
+ * commits, and the "accept N reviewed screenshot(s)" commit that
+ * screenshot-review-selection.yml writes as the copse-release-bot App when a
+ * reviewer ticks shots in the review comment. A shot one of them committed was
+ * not hand-committed on the branch. Counting the acceptance commit as
+ * deliberate work held every later re-render of an accepted shot as contested,
+ * so the reviewer never saw it again (#4178, #4171).
+ */
+export const CI_SCREENSHOT_AUTHORS: ReadonlySet<string> = new Set([
+  'github-actions[bot]',
+  'copse-release-bot[bot]',
+])
+
+/**
+ * Screenshots the commits in `range` change. With `excludeCi`, commits by
+ * {@link CI_SCREENSHOT_AUTHORS} are skipped, leaving what someone committed by
+ * hand.
+ */
 export function screenshotChangesInRange(
   range: string,
   cwd = process.cwd(),
-  excludeBot = false,
+  excludeCi = false,
 ): Set<string> {
   const changed = new Set<string>()
   for (const line of screenshotGit(
     ['log', '--format=%H%x09%P%x09%an', range, '--', SCREENSHOT_DIRECTORY],
     cwd,
   ).split('\n')) {
-    const [sha, parentList = '', author] = line.split('\t')
-    if (!sha || (excludeBot && author === 'github-actions[bot]')) continue
+    const [sha, parentList = '', author = ''] = line.split('\t')
+    if (!sha || (excludeCi && CI_SCREENSHOT_AUTHORS.has(author))) continue
     // A merge changes only what differs from every parent. Diffing a merge of
     // main against its first parent alone would credit the branch with each
     // reference main changed, and the filter would then hold those back.
@@ -127,6 +196,28 @@ export function screenshotChangesInRange(
   return changed
 }
 
+/**
+ * Commits that touch `path` or the manifest, newest first, from `refs`
+ * (resolved to `tips`). Hydration and the flap check walk the same shot from
+ * the same tips in one filter run, so the walk is kept per resolved tip set.
+ * A ref that resolves to nothing is passed through, and `git log` rejects it
+ * as it always did.
+ */
+function historyCommits(path: string, refs: string[], tips: string[], cwd: string): string[] {
+  const resolved = tips.length > 0 && tips.every(Boolean)
+  const key = `${cwd}:${tips.join(' ')}:${path}`
+  const known = resolved ? histories.get(key) : undefined
+  if (known) return known
+  const shas = screenshotGit(
+    ['log', '--format=%H', ...(resolved ? tips : refs), '--', path, SCREENSHOT_MANIFEST],
+    cwd,
+  )
+    .split('\n')
+    .filter(Boolean)
+  if (resolved) histories.set(key, shas)
+  return shas
+}
+
 export function screenshotHistory(
   path: string,
   refs: string[],
@@ -136,17 +227,16 @@ export function screenshotHistory(
   if (lookback <= 0) return []
   const result: { sha: string; entry: ScreenshotEntry | null }[] = []
   const seen = new Set<string>()
-  for (const ref of refs) {
-    const entry = manifestAtRef(ref, cwd)?.screenshots[path.slice(SCREENSHOT_DIRECTORY.length + 1)]
+  const tips = refs.map((ref) => resolveCommit(ref, cwd))
+  for (const [index, ref] of refs.entries()) {
+    const tip = tips[index]
+    const entry = tip
+      ? manifestAtRef(tip, cwd)?.screenshots[path.slice(SCREENSHOT_DIRECTORY.length + 1)]
+      : undefined
     if (ref === 'HEAD' && entry) seen.add(entry.sha256)
   }
-  for (const sha of screenshotGit(
-    ['log', '--format=%H', ...refs, '--', path, SCREENSHOT_MANIFEST],
-    cwd,
-  )
-    .split('\n')
-    .filter(Boolean)) {
-    const legacyPath = Boolean(screenshotGit(['ls-tree', sha, '--', path], cwd))
+  for (const sha of historyCommits(path, refs, tips, cwd)) {
+    const legacyPath = trackedAtRef(path, sha, resolveCommit(sha, cwd), cwd)
     const manifest = legacyPath ? null : manifestAtRef(sha, cwd)
     const entry = manifest?.screenshots[path.slice(SCREENSHOT_DIRECTORY.length + 1)] ?? null
     // Old PNGs are read from Git; hash them so duplicate states are excluded.

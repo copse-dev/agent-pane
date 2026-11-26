@@ -1,3 +1,7 @@
+import { clamp } from '@copse/std/clamp.ts'
+import { createGrant } from '@copse/remote-protocol/grant.ts'
+import { signText } from '@copse/remote-protocol/keys.ts'
+import type { LabelGrant } from '@copse/remote-protocol/messages.ts'
 import { createPrivateKey, X509Certificate } from 'node:crypto'
 import type { MobileCompanionPublicName } from '../../../shared/types/mobile-companion.ts'
 import { NamesApiError, type NamesClient, type NamesDeviceKey } from './names-client.ts'
@@ -10,9 +14,12 @@ type Client = Pick<NamesClient, 'register' | 'setAddress' | 'certificate' | 'sta
 type Registration = NonNullable<NamesRecord['registration']>
 type TimerSlot = 'order' | 'address' | 'dns'
 
-/** What the mobile server presents for the trusted name. */
+/** What the mobile server presents for the trusted names. */
 export interface PublicIdentity {
+  /** `lan.<label>.u.copse.me`, served directly on the local network. */
   hostname: string
+  /** `web.<label>.u.copse.me`, reached through the Copse relay. */
+  web: string
   key: string
   cert: string
 }
@@ -49,6 +56,7 @@ export class RemoteNames {
   private record: NamesRecord | null = null
   private key: NamesDeviceKey | null = null
   private certificate: StoredCertificate | null = null
+  private identityCache: { certificate: StoredCertificate; identity: PublicIdentity } | null = null
   private renewAt: number | null = null
   private serverAddress: string | null = null
   private remoteState: 'active' | 'dormant' | 'retired' = 'active'
@@ -102,10 +110,56 @@ export class RemoteNames {
 
   /** The certificate to present for the trusted name, while it is valid. */
   identity(): PublicIdentity | null {
-    const hostname = this.record?.registration?.lan
+    const registration = this.record?.registration
     const certificate = this.certificate
-    if (!hostname || !certificate || certificate.notAfterMs <= this.now()) return null
-    return { hostname, key: certificate.keyPem, cert: certificate.chainPem }
+    if (!registration || !certificate || certificate.notAfterMs <= this.now()) return null
+    // Cached per certificate: the TLS layers reuse a secure context while the identity is the same object.
+    if (this.identityCache?.certificate !== certificate)
+      this.identityCache = {
+        certificate,
+        identity: {
+          hostname: registration.lan,
+          web: registration.web,
+          key: certificate.keyPem,
+          cert: certificate.chainPem,
+        },
+      }
+    return this.identityCache.identity
+  }
+
+  /**
+   * The label the relay tunnel authenticates for, while the name is active and
+   * has a valid certificate to complete relayed browsers' TLS with.
+   */
+  relayTarget(): { label: string; web: string } | null {
+    const registration = this.record?.registration
+    if (!registration || this.remoteState !== 'active' || !this.identity()) return null
+    return { label: registration.label, web: registration.web }
+  }
+
+  /** `web.<label>.u.copse.me`, the name the relay serves, once registered. */
+  webHostname(): string | null {
+    return this.record?.registration?.web ?? null
+  }
+
+  /** Sign relay tunnel challenge text with this Mac's device key. */
+  async signTunnel(text: string): Promise<string> {
+    const record = this.record
+    if (!record?.registration) throw new Error('This Mac has no Copse name.')
+    this.key ??= await this.options.store.openKey(record.sealedKey)
+    return signText(this.key.privateKey, text)
+  }
+
+  /**
+   * A one-time grant, signed by the device key, that lets one copse.me account
+   * add this Mac (copse-web-access plan, decision 8). Valid for ten minutes.
+   */
+  async shellGrant(): Promise<LabelGrant> {
+    const record = this.record
+    if (!record?.registration || this.remoteState !== 'active')
+      throw new Error('Get an active Copse name for this Mac first.')
+    this.key ??= await this.options.store.openKey(record.sealedKey)
+    return createGrant(this.key.privateKey, record.registration.label, this.now())
   }
 
   register(invite: string): Promise<void> {
@@ -351,7 +405,7 @@ export class RemoteNames {
         if (this.now() < at) this.arm(slot, at, work)
         else void this.serial(work)
       },
-      Math.max(0, Math.min(at - this.now(), MAX_TIMER_MS)),
+      clamp(at - this.now(), 0, MAX_TIMER_MS),
     )
     timer.unref()
     this.timers.set(slot, timer)

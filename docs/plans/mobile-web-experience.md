@@ -2,6 +2,73 @@
 
 Tracking: [#659](https://github.com/copse-dev/agent-pane/issues/659)
 
+## The live state carries only watched transcripts (2026-11-21, #4445)
+
+The desktop published the transcript of every thread it had loaded, inline images included,
+and sent the whole project again on each streamed token, whether or not a phone was connected.
+With a few large transcripts open, one `remote:publish` call passed 1 GB, and the renderer
+aborted while serializing it, so the window reloaded.
+
+Main now records the threads clients poll through the scoped state read. A poll keeps a thread
+watched for 15 s, and at most 8 threads are watched; when all 8 have been polled in the last 5
+s, a newly polled chat stays on its saved view rather than displacing one. Main hands the list
+to every app window (`remote:watched`, `remote:watched-changed`). The desktop publishes
+transcripts for watched threads only, and every other thread as a row in the `messagesLoaded:
+false` shape clients already fill from the saved transcript. It also re-sends a project only
+when that project changed, which includes text and tool calls streamed into a watched thread:
+the store writes those into the message in place, so the publisher marks the watched thread
+rather than relying on a new threads array. With no phone watching, a 962-thread project with
+eight large transcripts loaded publishes 0.2 MB instead of about 640 MB.
+
+The cost: a chat a phone has just opened shows its saved view for one poll, until its live
+view is published.
+
+## Performance (2026-11-20)
+
+Measured before changing anything, then after, against the same build:
+
+| What                                       | Before                    | After                                      |
+| ------------------------------------------ | ------------------------- | ------------------------------------------ |
+| Companion page, first visit                | 2.9 MB, 1.5 s             | 1.0 MB, 0.64 s                             |
+| Companion page, repeat visit               | 2.5 MB, 1.2 s             | 3 KB, 0.26 s                               |
+| Shared chat page (`/remote/`), first visit | 6.3 MB, 3.0 s             | 1.5 MB, 1.1 s                              |
+| Shared chat page, repeat visit             | 6.0 MB, 2.7 s             | 2 KB, 0.39 s                               |
+| Thread poll, 300-message thread, unchanged | 68 ms of main-process I/O | 0.3 ms, then a bodiless `304`              |
+| Each transcript image                      | 71 ms (a full fold each)  | 0.2 ms                                     |
+| Live state poll (desktop with 2 projects)  | 8.5 MB re-serialized      | the open chat only (1 MB), once per change |
+
+Page loads are headless Chromium at 390 px with 4× CPU throttling and 20 Mbit/s Wi-Fi, over
+loopback HTTP; a real phone adds TLS and radio latency. Server timings are the unit-level
+read paths on a seeded store. Neither replaces the physical-phone gate above.
+
+What changed, and the decisions behind it:
+
+- **Compression.** Brotli (quality 5 for bundles, made once on first request; 4 for JSON) or
+  gzip, by `Accept-Encoding`, on the Node thread pool. Bundles shrink 4–6×.
+- **The page's own bundles may be cached; nothing else may.** `index.html` stays `no-store` and
+  pins `app.js`/`app.css` (and `/remote/`'s `chat.js`/`chat.css`) by content hash: `?v=<hash>`
+  plus Subresource Integrity. Only a request under that exact hash is answered
+  `immutable`. A stale or substituted cached copy fails the integrity check and is not run.
+  This narrows the Security section's "`Cache-Control: no-store`" rule rather than dropping
+  it: API answers, the page and the Mermaid frame are never stored. Chromium keeps no cache
+  for a page loaded over a certificate warning, so the click-through tier still downloads the
+  bundles on each visit, compressed.
+- **Unchanged polls are `304`s.** Activity, thread and live-state reads carry a weak validator;
+  the page keeps the last answer per read in memory (never browser storage) and skips
+  re-rendering on identity.
+- **Main stops re-folding the open thread.** `threadReadRevision` (project write serial plus
+  the thread's `meta.json`/spine size and mtime) keys a two-entry transcript cache that empties
+  after a minute without reads. Images share it. Action checks use metadata only.
+- **The live state is scoped.** `/api/remote/state?project=…&thread=…` returns the open chat's
+  transcript and its siblings as metadata. The unscoped read still works.
+- **Activity rows are kept, not rebuilt,** so a poll no longer replaces the button under a
+  finger. A running chat's live view is polled every second; the saved view stays at 2.5 s.
+
+Not done here: minifying the phone bundles (a further ~30% of compressed bytes) needs a
+production-only build step with source maps decided for the packaged app; the fonts are still
+inlined into `app.css` as base64 (~400 KB compressed). Server-Sent Events remain the L1 plan;
+`304`s make the remaining polling cheap enough that they are not urgent.
+
 ## Paired-browser acceptance (2026-11-06)
 
 The [capability matrix](../remote-client-capabilities.md) and its checked wire inventory
@@ -659,7 +726,17 @@ Non-negotiable controls, all fail-closed, on every request and every SSE connect
   `Content-Security-Policy: … frame-ancestors 'none'`, `X-Frame-Options: DENY`,
   `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control:
   no-store`. Without these, an attacker page frames the decision screen and overlays a
-  transparent button on Approve — one tap approves a shell command.
+  transparent button on Approve — one tap approves a shell command. _Amended 2026-11-20:_
+  the page's own script and stylesheet, requested under the hash the page pins with
+  Subresource Integrity, are the one `immutable` exception (see Performance above).
+  _Amended November 2026 (decision):_ while the user has chosen to reach this Mac through the
+  Copse relay, responses under its trusted names (`lan.`/`web.<label>.u.copse.me`) send
+  `frame-ancestors https://copse.me` instead, without `X-Frame-Options`, so the copse.me shell
+  can frame the phone client ([remote-access.md](../remote-access.md#framing-and-what-crosses-into-the-shell)).
+  The diagram frame admits its own origin and the shell. Everything else, the bare-IP origin, and
+  every response with the relay off, keep this rule. This trusts one first-party origin not to
+  do exactly the overlay above; [threat-model.md](../threat-model.md) scenario 12 records the
+  risk.
 - **401 before reading any body** (the one thing the ACP bridge gets exactly right), a
   hard body-size cap, `server.maxConnections`, header and idle timeouts, and a temporary
   per-peer cooldown after repeated failed auth attempts. The listener stays enabled.
@@ -790,8 +867,12 @@ by hand, on a device the app cannot reach.
   ACME/DNS service as breaking "no Copse-hosted backend". The Copse names service now runs the
   `u.copse.me` zone and ACME issuance for a per-Mac name
   ([remote-access.md](../remote-access.md)); it sees CSRs and private LAN addresses, never
-  thread data, and the Mac's keys never leave it. A Copse relay for reaching the Mac from
-  outside its network is phase 2 of that work and remains outside this plan.
+  thread data, and the Mac's keys never leave it. _Amended November 2026:_ phase 2 of that work,
+  a Copse relay that passes TLS through to the Mac from outside its network, is built on the Mac
+  side and off by default ([remote-access.md](../remote-access.md#from-anywhere-the-relay-and-copseme)).
+  It serves this plan's phone client, allow-list, device tokens and desktop-approved pairing
+  unchanged. The relayed path replaces the private-peer check with an exact `web.` name, and the
+  relay choice relaxes the header rule for the copse.me shell (Security, amended above).
 - mDNS/Bonjour advertisement. It broadcasts a live control plane to every network the
   laptop ever joins, and `.local` names are spoofable by any peer — which the app's own
   outbound policy already refuses for exactly this reason.

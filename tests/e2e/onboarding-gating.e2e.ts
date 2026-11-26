@@ -76,11 +76,9 @@ describe('onboarding gating', () => {
         ),
       { timeout: 10_000, timeoutMsg: 'New Project dialog did not close' },
     )
-  })
 
-  it('never shows again on a completed profile', async function () {
-    this.timeout(90_000)
-    // Same profile, fresh app process — the completed flag written by skip gates it.
+    // The dismissal must survive a real shutdown and relaunch, not just reach
+    // settings.json in this session.
     await browser.reloadSession()
     await $('.welcome-new-btn').waitForDisplayed({ timeout: 30_000 })
     expect(
@@ -88,5 +86,30 @@ describe('onboarding gating', () => {
         () => document.querySelector<HTMLDialogElement>('#onboarding-dialog')?.open ?? false,
       ),
     ).toBe(false)
+    // The renderer mounts the welcome screen before it reads the flag that
+    // gates onboarding and exposes no "gating finished" signal, so a closed
+    // dialog alone can be sampled too early. The relaunched app must also
+    // report the gate's input itself.
+    expect(await browser.execute(() => window.api.settings.get('onboardingCompleted'))).toBe(true)
+  })
+
+  it('never shows again on a completed profile', async function () {
+    this.timeout(90_000)
+    // A profile whose settings hold only the flag the skip test above shows a
+    // dismissal persists. Seeded here so this test does not depend on that
+    // test having run first; a fresh app process must boot past onboarding.
+    seedOnboardingFixture({ onboardingCompleted: true })
+    await browser.reloadSession()
+    await $('.welcome-new-btn').waitForDisplayed({ timeout: 30_000 })
+    expect(
+      await browser.execute(
+        () => document.querySelector<HTMLDialogElement>('#onboarding-dialog')?.open ?? false,
+      ),
+    ).toBe(false)
+    // The renderer mounts the welcome screen before it reads the flag that
+    // gates onboarding and exposes no "gating finished" signal, so a closed
+    // dialog alone can be sampled too early. The relaunched app must also
+    // report the gate's input itself.
+    expect(await browser.execute(() => window.api.settings.get('onboardingCompleted'))).toBe(true)
   })
 })

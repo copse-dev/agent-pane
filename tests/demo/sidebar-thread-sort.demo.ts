@@ -108,6 +108,7 @@ describe('sidebar thread sort', () => {
       'Activity order',
       'Created',
       'Thread name',
+      'Needs action',
       'Reverse order',
       'Compact rows',
     ])

@@ -21,8 +21,9 @@ describe('SSH settings section', function () {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-settings-ssh')
-    // Start disabled to prove Cancel discards the ordinary enabled draft,
-    // while Save adds the remote action to the project menu.
+    // Start disabled to prove Cancel discards the ordinary enabled draft, while
+    // Save turns it on. The remote action is in the project menu either way:
+    // with SSH workspaces off it asks to turn them on (remote-folder-turn-on).
     seedSshWorkspaceSettings({ enabled: false })
     await browser.reloadSession()
   })
@@ -35,9 +36,12 @@ describe('SSH settings section', function () {
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
 
     const addProjectButton = $('.projects-add-btn')
-    await expect(addProjectButton).toHaveAttribute('data-tooltip', 'New project or open a folder')
+    await expect(addProjectButton).toHaveAttribute(
+      'data-tooltip',
+      'New project, open a folder, or connect remotely',
+    )
     await addProjectButton.click()
-    await expect($('.context-menu-item*=Open remote project')).not.toBeExisting()
+    await expect($('.context-menu-item*=Open remote project')).toBeDisplayed()
     await browser.keys('Escape')
 
     await $('[aria-label="Settings"]').click()
@@ -125,7 +129,7 @@ describe('SSH settings section', function () {
       port.parentElement?.append(probe)
       const errorColor = getComputedStyle(probe).color
       probe.remove()
-      const widths = ['sshHostId', 'sshHostLabel', 'sshHostHost', 'sshHostUser', 'sshHostPort']
+      const widths = ['sshHostLabel', 'sshHostHost', 'sshHostUser', 'sshHostPort']
         .map((name) => section?.querySelector<HTMLInputElement>(`input[name="${name}"]`))
         .map((input) => input?.getBoundingClientRect().width ?? 0)
       return {
@@ -156,6 +160,22 @@ describe('SSH settings section', function () {
     await expect(sshSection.$('.ssh-host-save')).toHaveElementClass('ui-btn-primary')
     await expect(sshSection.$('.ssh-host-clear')).toHaveElementClass('ui-btn-secondary')
     await saveElementScreenshot('#settings-dialog', 'settings-ssh-invalid-port.png')
+
+    // A host that ssh would read as an option is refused on the host field
+    // before anything is saved.
+    await portInput.setValue('2222')
+    await hostInput.setValue('-oFoo=bar')
+    await browser.execute(() => {
+      document.querySelector<HTMLButtonElement>('.ssh-host-save')?.click()
+    })
+    await expect(sshSection.$('.ssh-host-status')).toHaveText(
+      'Host cannot start with “-”; ssh would read it as an option.',
+    )
+    await expect(sshSection.$$('.ssh-host-row')).toBeElementsArrayOfSize(1)
+    await expect(hostInput).toHaveAttribute('aria-invalid', 'true')
+    await expect(portInput).not.toHaveAttribute('aria-invalid')
+    await assertErrorColor('.ssh-host-status .ui-inline-status')
+    await saveElementScreenshot('#settings-dialog', 'settings-ssh-option-host.png')
     await browser.execute(() => {
       document.querySelector<HTMLButtonElement>('.ssh-host-clear')?.click()
     })
@@ -167,10 +187,6 @@ describe('SSH settings section', function () {
 
     // Cancel discards ordinary preferences while dedicated host edits persist.
     await $('#settings-cancel').click()
-    await expect(addProjectButton).toHaveAttribute('data-tooltip', 'New project or open a folder')
-    await addProjectButton.click()
-    await expect($('.context-menu-item*=Open remote project')).not.toBeExisting()
-    await browser.keys('Escape')
     await $('[aria-label="Settings"]').click()
     await $('.settings-nav-btn[data-section="ssh"]').click()
     const savedToggle = $('.settings-section[data-section="ssh"] input[name="sshWorkspaceEnabled"]')

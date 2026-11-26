@@ -31,6 +31,12 @@ export interface MobileCompanionPairing {
    * verified the connection itself and control needs no local-root step.
    */
   trustedName: boolean
+  /**
+   * The phone reached this Mac through the Copse relay. That says nothing about
+   * where the phone is: the copse.me shell also falls back to the relay on the
+   * Mac's own network. Absent from a Mac that predates the relay.
+   */
+  relayed?: boolean
 }
 
 /**
@@ -55,6 +61,39 @@ export interface MobileCompanionPublicName {
   lastError: string | null
 }
 
+/**
+ * Reaching this Mac from outside its network: `web.<label>.u.copse.me`
+ * through the Copse relay, with phones paired at copse.me. The relay passes
+ * the encrypted connection through; this Mac completes TLS itself. See
+ * docs/remote-access.md.
+ */
+export interface MobileCompanionRelay {
+  /** The user chose to be reachable through the relay. Off until they turn it on. */
+  enabled: boolean
+  /**
+   * `off` when not chosen; `waiting` when chosen but not possible yet (Mobile
+   * Companion is off, or the name is not active with a valid certificate);
+   * otherwise the tunnel's own state.
+   */
+  status: 'off' | 'waiting' | 'connecting' | 'connected' | 'retrying'
+  /** The relay this Mac connects to (`COPSE_RELAY`, normally `relay.copse.dev`). */
+  relay: string
+  /** `web.<label>.u.copse.me`, once registered. */
+  hostname: string | null
+  /** Why the last attempt ended, while retrying. */
+  error: string | null
+  retryAt: number | null
+}
+
+/** A one-time code that adds this Mac to one copse.me account, shown as a QR. */
+export interface MobileCompanionShellPairing {
+  /** `https://copse.me/add#g=…`; the grant stays in the fragment, out of server logs. */
+  url: string
+  /** An SVG document encoding `url`; `null` until generated. */
+  qrSvg: string | null
+  expiresAt: number
+}
+
 export interface MobileCompanionState {
   enabled: boolean
   running: boolean
@@ -70,6 +109,9 @@ export interface MobileCompanionState {
   /** An SVG document encoding `localUrl`. */
   localQrSvg: string | null
   publicName: MobileCompanionPublicName
+  /** Absent from a Mac that predates the relay. */
+  relay?: MobileCompanionRelay
+  shellPairing?: MobileCompanionShellPairing | null
   rootCertificatePath: string | null
   /** The address the running server is bound to. */
   address: string | null

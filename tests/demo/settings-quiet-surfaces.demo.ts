@@ -63,14 +63,7 @@ describe('Settings surfaces without frames', () => {
     await saveElementScreenshot('.automation-list', 'settings-automation-rows.png')
   })
 
-  it('sets the Usage value card and Apple development on the page', async () => {
-    await openSection('usage')
-    const card = $('.usage-worth-card')
-    await card.waitForDisplayed()
-    await card.scrollIntoView({ block: 'center' })
-    assert.deepEqual(await frameOf('.usage-worth-card'), UNFRAMED)
-    await saveElementScreenshot('.usage-worth-card', 'settings-usage-worth-unframed.png')
-
+  it('sets Apple development on the page', async () => {
     await openSection('experimental')
     await $('details.plugin-settings-fold:has(.apple-development-panel) > summary').click()
     const inSettings = '.plugin-settings-fold .apple-development-panel'

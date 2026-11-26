@@ -2,7 +2,9 @@ import { renderMessageContent } from './message-content.js'
 import { installHighlighterBackend } from '../renderer/markdown/highlighter-backend.ts'
 import { installComposerFocus } from './composer-focus.js'
 import { RemoteChatClient } from '../renderer/remote/client.ts'
+import { ConditionalReads, conditionalGet } from '../renderer/remote/conditional-reads.ts'
 import { mobileTranscriptMessages } from '../main/services/mobile/mobile-transcript.ts'
+import { shellStatus, shellStatusTarget } from '../shared/copse-shell-status.ts'
 
 const pair = document.getElementById('pair')
 const activity = document.getElementById('activity')
@@ -25,6 +27,13 @@ applyTheme()
 systemTheme.addEventListener('change', applyTheme)
 
 let token = localStorage.getItem('copse-mobile-token')
+// Framed by the copse.me shell under a trusted name: tell it this Mac answered,
+// and how many threads need attention or are running. Nothing else crosses.
+const shellOrigin = shellStatusTarget(location.hostname, window.parent !== window)
+
+function reportToShell(rows) {
+  if (shellOrigin) window.parent.postMessage(shellStatus(rows), shellOrigin)
+}
 let selected = null
 let sessionId = null
 let access = 'read'
@@ -37,8 +46,14 @@ let inlineDecisionSignature = ''
 let selectedDecisionRow = null
 let inlineDecisionRequest = 0
 let lastActivityRows = []
+// The answers last applied. The Mac answers an unchanged poll with a 304 and
+// `api` then returns the same object again, so identity means "nothing to do".
+let appliedActivity = null
+let appliedThread = null
+let appliedLive = null
 let messageSignature = ''
 let projectSignature = ''
+const reads = new ConditionalReads()
 const drafts = new Map()
 const pendingActions = new Map()
 const composer = document.getElementById('composer')
@@ -120,6 +135,21 @@ messageInput.addEventListener('keydown', (event) => {
   }
 })
 
+/**
+ * The live view is gone, so the saved view takes over, and at once rather than
+ * at its next turn: what it draws depends on the state reset here, and it would
+ * otherwise skip an answer it has already applied.
+ */
+function leaveLiveView(status) {
+  const takeover = Boolean(liveMessages) || remoteConnectionStatus !== status
+  appliedLive = null
+  liveMessages = null
+  remoteConnectionStatus = status
+  if (!takeover) return
+  appliedThread = null
+  void refreshThread()
+}
+
 async function refreshRemoteThread() {
   const row = selected
   if (!token || !row || access !== 'control' || remoteRefresh) return
@@ -129,8 +159,7 @@ async function refreshRemoteThread() {
     const live = await remote.thread(row.projectId, row.threadId)
     if (selected !== row) return
     if (!live) {
-      liveMessages = null
-      remoteConnectionStatus = null
+      leaveLiveView(null)
       connection.textContent = 'Saved view'
       connection.dataset.connected = 'false'
       nextPrompt.hidden = true
@@ -138,6 +167,10 @@ async function refreshRemoteThread() {
     }
     connection.textContent = '● Connected'
     connection.dataset.connected = 'true'
+    // Unchanged since the last poll: leave the plan, the tool cards (and
+    // whichever of them is open) and the transcript exactly as they are.
+    if (live === appliedLive) return
+    appliedLive = live
     renderRemoteDetails(live)
     const list = mobileTranscriptMessages(live.messages)
     liveMessages = { row, list }
@@ -161,11 +194,10 @@ async function refreshRemoteThread() {
     nextPrompt.disabled = Boolean(messageInput.value.trim())
   } catch {
     if (selected === row) {
-      liveMessages = null
+      leaveLiveView('Live connection unavailable · Retrying. Your draft is kept.')
       connection.textContent = 'Reconnecting…'
       connection.dataset.connected = 'false'
       nextPrompt.hidden = true
-      remoteConnectionStatus = 'Live connection unavailable · Retrying. Your draft is kept.'
       document.getElementById('thread-status').textContent = remoteConnectionStatus
     }
   } finally {
@@ -269,15 +301,29 @@ function fail(message) {
   error.hidden = !message
 }
 
+/**
+ * A read the Mac reports unchanged resolves to the same object as the read
+ * before it. Callers compare by identity to skip work, and never modify an answer.
+ */
 async function api(path, options = {}) {
-  const response = await fetch(path, {
-    cache: 'no-store',
-    ...options,
-    headers: { ...(options.headers || {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-  })
+  const send = (conditional) =>
+    fetch(path, {
+      cache: 'no-store',
+      ...options,
+      headers: {
+        ...(options.headers || {}),
+        ...conditional,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    })
+  const read = !options.method || options.method === 'GET'
+  const result = read ? await conditionalGet(reads, path, send) : { response: await send({}) }
+  if ('unchanged' in result) return result.unchanged
+  const { response } = result
   if (response.status === 401) {
     token = null
     selected = null
+    reads.clear()
     localStorage.removeItem('copse-mobile-token')
     show(pair)
     throw new Error('Pair this phone again from the desktop.')
@@ -288,6 +334,7 @@ async function api(path, options = {}) {
     failure.status = response.status
     throw failure
   }
+  if (read) reads.remember(path, response.headers.get('ETag'), data)
   return data
 }
 
@@ -306,50 +353,100 @@ function element(tag, className, content) {
   return node
 }
 
-function renderGroup(label, key, rows) {
-  const section = element('section', 'group')
-  const heading = element('div', 'group-heading')
-  heading.append(element('span', '', label), element('span', 'group-count', String(rows.length)))
-  section.append(heading)
-  if (rows.length === 0)
-    section.append(
-      element(
-        'div',
-        'empty',
-        key === 'needs-you'
-          ? 'No decisions waiting for you.'
-          : key === 'working'
-            ? 'No threads running right now.'
-            : key === 'has-changes'
-              ? 'Nothing waiting to be committed or discarded.'
-              : 'Completed threads will appear here.',
-      ),
-    )
-  for (const row of rows) {
+const EMPTY_GROUP = {
+  'needs-you': 'No decisions waiting for you.',
+  working: 'No threads running right now.',
+  'has-changes': 'Nothing waiting to be committed or discarded.',
+  recent: 'Completed threads will appear here.',
+}
+const groupSections = new Map()
+const activityRows = new Map()
+
+function setText(node, text) {
+  if (node.textContent !== text) node.textContent = text
+}
+
+/**
+ * Make `parent`'s children exactly `desired`, moving only what is out of place.
+ * A node already where it belongs is not touched at all.
+ */
+function syncChildren(parent, desired) {
+  let cursor = parent.firstChild
+  for (const node of desired) {
+    if (node === cursor) cursor = cursor.nextSibling
+    else parent.insertBefore(node, cursor)
+  }
+  while (cursor) {
+    const next = cursor.nextSibling
+    cursor.remove()
+    cursor = next
+  }
+}
+
+/**
+ * One row per thread, kept for as long as the thread is listed. Rebuilding the
+ * list on every poll replaced the button under a finger mid-tap, which dropped
+ * the tap; a kept row only has its changed text patched.
+ */
+function activityRow(row, group, isSelected) {
+  const id = `${row.projectId}\n${row.threadId}`
+  let entry = activityRows.get(id)
+  if (!entry) {
     const button = element('button', 'row')
     button.type = 'button'
+    const top = element('span', 'row-top')
+    const state = element('span', '')
+    const time = element('span', 'time')
+    top.append(state, time)
+    const title = element('span', 'row-title')
+    const detail = element('span', 'row-detail')
+    button.append(top, title, detail)
+    const created = { button, state, time, title, detail, row, group }
+    // A decision answers in place; anything else still opens the full thread.
+    button.addEventListener('click', () =>
+      created.group === 'needs-you' ? void selectDecision(created.row) : openThread(created.row),
+    )
+    activityRows.set(id, created)
+    entry = created
+  }
+  entry.row = row
+  entry.group = group
+  const stateClass = `state ${row.state}`
+  if (entry.state.className !== stateClass) entry.state.className = stateClass
+  setText(entry.state, row.state.replaceAll('-', ' '))
+  setText(entry.time, age(row.lastSavedAt))
+  setText(entry.title, row.title)
+  setText(entry.detail, `${row.detail} · ${row.projectName}`)
+  entry.button.classList.toggle('selected', isSelected)
+  return entry
+}
+
+function renderGroup(label, key, rows, listed) {
+  let group = groupSections.get(key)
+  if (!group) {
+    const section = element('section', 'group')
+    const heading = element('div', 'group-heading')
+    const count = element('span', 'group-count')
+    heading.append(element('span', '', label), count)
+    group = { section, heading, count, empty: element('div', 'empty', EMPTY_GROUP[key]) }
+    groupSections.set(key, group)
+  }
+  setText(group.count, String(rows.length))
+  const children = [group.heading]
+  if (rows.length === 0) children.push(group.empty)
+  for (const row of rows) {
     const isSelected =
       key === 'needs-you' &&
       selectedDecisionRow?.projectId === row.projectId &&
       selectedDecisionRow?.threadId === row.threadId
-    if (isSelected) button.classList.add('selected')
-    const top = element('span', 'row-top')
-    const state = element('span', `state ${row.state}`, row.state.replaceAll('-', ' '))
-    top.append(state, element('span', 'time', age(row.lastSavedAt)))
-    button.append(
-      top,
-      element('span', 'row-title', row.title),
-      element('span', 'row-detail', `${row.detail} · ${row.projectName}`),
-    )
-    // A decision answers in place; anything else still opens the full thread.
-    button.addEventListener('click', () =>
-      key === 'needs-you' ? void selectDecision(row) : openThread(row),
-    )
-    section.append(button)
+    const entry = activityRow(row, key, isSelected)
+    listed.add(entry)
+    children.push(entry.button)
     // Expand the card directly under the tapped row, not after the whole list.
-    if (isSelected) section.append(inlineDecision)
+    if (isSelected) children.push(inlineDecision)
   }
-  return section
+  syncChildren(group.section, children)
+  return group.section
 }
 
 /** Who wrote a message, in words a reader uses: "You" and "Agent", not "USER". */
@@ -360,28 +457,27 @@ function roleLabel(role) {
 }
 
 function renderGroups(rows) {
-  groups.replaceChildren(
+  const listed = new Set()
+  const sections = [
+    ['Needs you', 'needs-you'],
+    ['Working', 'working'],
+    ['Has changes', 'has-changes'],
+    ['Recent', 'recent'],
+  ].map(([label, key]) =>
     renderGroup(
-      'Needs you',
-      'needs-you',
-      rows.filter((row) => row.group === 'needs-you'),
-    ),
-    renderGroup(
-      'Working',
-      'working',
-      rows.filter((row) => row.group === 'working'),
-    ),
-    renderGroup(
-      'Has changes',
-      'has-changes',
-      rows.filter((row) => row.group === 'has-changes'),
-    ),
-    renderGroup(
-      'Recent',
-      'recent',
-      rows.filter((row) => row.group === 'recent'),
+      label,
+      key,
+      rows.filter((row) => row.group === key),
+      listed,
     ),
   )
+  syncChildren(groups, sections)
+  for (const [id, entry] of activityRows) if (!listed.has(entry)) activityRows.delete(id)
+}
+
+/** Move the rows' "5m ago" on without redrawing a list that did not change. */
+function refreshAges() {
+  for (const entry of activityRows.values()) setText(entry.time, age(entry.row.lastSavedAt))
 }
 
 async function refresh() {
@@ -394,6 +490,16 @@ async function refresh() {
   try {
     const data = await api('/api/activity')
     if (selected) return
+    const freshness = (at) =>
+      `Updated ${age(at)} · ${access === 'control' ? 'Chat and run control' : 'Read only · enable control on your Mac'}`
+    if (data === appliedActivity) {
+      // The Mac confirmed the list it sent before is still current.
+      refreshAges()
+      document.getElementById('freshness').textContent = freshness(Date.now())
+      show(activity)
+      return
+    }
+    appliedActivity = data
     access = data.access
     sessionId = data.sessionId
     document.getElementById('new-chat').hidden = access !== 'control'
@@ -415,10 +521,12 @@ async function refresh() {
     }
     lastActivityRows = data.rows
     renderGroups(data.rows)
-    document.getElementById('freshness').textContent =
-      `Updated ${age(data.refreshedAt)} · ${access === 'control' ? 'Chat and run control' : 'Read only · enable control on your Mac'}`
+    reportToShell(data.rows)
+    document.getElementById('freshness').textContent = freshness(data.refreshedAt)
     show(activity)
   } catch (cause) {
+    // Whatever was half-drawn is drawn again by the next poll, changed or not.
+    appliedActivity = null
     fail(cause.message)
   } finally {
     refreshing = false
@@ -758,6 +866,9 @@ async function refreshThread() {
       `/api/thread/${encodeURIComponent(row.projectId)}/${encodeURIComponent(row.threadId)}`,
     )
     if (selected !== row) return
+    // Unchanged since it was last applied to this open thread.
+    if (data === appliedThread) return
+    appliedThread = data
     access = data.access
     sessionId = data.sessionId
     const sharedLink = document.getElementById('shared-chat-link')
@@ -765,6 +876,7 @@ async function refreshThread() {
     sharedLink.href =
       '/remote/?' + new URLSearchParams({ project: row.projectId, thread: row.threadId })
     runId = data.runId
+    schedulePoll()
     const composerWasHidden = composer.hidden
     composer.hidden = access !== 'control'
     if (composerWasHidden && !composer.hidden) focusComposer(messageInput)
@@ -788,19 +900,21 @@ async function refreshThread() {
       if (promptArrived)
         document.getElementById('attention').scrollIntoView({ block: 'end', behavior: 'smooth' })
     }
-    if (liveMessages?.row === row) data.messages = liveMessages.list
+    const list = liveMessages?.row === row ? liveMessages.list : data.messages
     // A run ending changes how the last reply renders even when no text changed.
-    const signature = JSON.stringify([runId, data.messages])
+    const signature = JSON.stringify([runId, list])
     if (signature === messageSignature) return revealPrompt()
     messageSignature = signature
     // Code is highlighted as on the desktop; a highlighter that fails to load
     // leaves plain code rather than blocking the transcript.
     await highlighterReady
     if (selected !== row) return
-    renderMessages(data.messages)
+    renderMessages(list)
     if (document.activeElement === messageInput) revealComposer()
     revealPrompt()
   } catch (cause) {
+    // Whatever was half-drawn is drawn again by the next poll, changed or not.
+    appliedThread = null
     fail(cause.message)
   }
 }
@@ -825,9 +939,12 @@ async function openThread(row, addHistory = true) {
     .replaceChildren(element('p', 'hint', 'Connect to see this chat’s plan.'))
   document.getElementById('remote-tools').replaceChildren()
   liveMessages = null
+  appliedThread = null
+  appliedLive = null
   nextPrompt.hidden = true
   threadImage.clear()
   runId = null
+  schedulePoll()
   decisionSignature = ''
   messageSignature = ''
   composer.hidden = true
@@ -957,6 +1074,7 @@ document.getElementById('new-chat-form').addEventListener('submit', async (event
 function openActivity() {
   if (selected) drafts.set(selected.threadId, messageInput.value)
   selected = null
+  schedulePoll()
   actionStatus.textContent = ''
   fail('')
   show(token ? activity : pair)
@@ -1013,18 +1131,48 @@ document.getElementById('pair-button').addEventListener('click', async () => {
   }
 })
 
-if (!history.state?.mobileView) history.replaceState({ mobileView: 'activity' }, '')
-show(token ? activity : pair)
-if (token && history.state?.mobileView === 'thread' && history.state.row)
-  void openThread(history.state.row, false)
-else if (token) void refresh()
-setInterval(() => {
+// The saved view is folded from disk on the Mac, so it keeps its own pace. The
+// live view is already in the desktop's memory and an unchanged answer costs a
+// 304, so a run that is streaming is followed more closely.
+const POLL_MS = 2500
+const LIVE_POLL_MS = 1000
+let pollTimer = 0
+let pollDelay = 0
+let savedPolledAt = 0
+
+function poll() {
   if (!token || document.hidden) return
   if (selected) {
-    void refreshThread()
+    const now = Date.now()
+    if (pollDelay === POLL_MS || now - savedPolledAt >= POLL_MS - 100) {
+      savedPolledAt = now
+      void refreshThread()
+    }
     void refreshRemoteThread()
   } else {
     void refresh()
     if (selectedDecisionRow) void refreshInlineDecision()
   }
-}, 2500)
+}
+
+function schedulePoll() {
+  const delay = selected && runId && access === 'control' ? LIVE_POLL_MS : POLL_MS
+  if (delay === pollDelay) return
+  pollDelay = delay
+  clearInterval(pollTimer)
+  pollTimer = setInterval(poll, delay)
+}
+
+schedulePoll()
+// A phone coming back to the page is shown the present, not a view up to a
+// whole poll old.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) poll()
+})
+
+reportToShell([])
+if (!history.state?.mobileView) history.replaceState({ mobileView: 'activity' }, '')
+show(token ? activity : pair)
+if (token && history.state?.mobileView === 'thread' && history.state.row)
+  void openThread(history.state.row, false)
+else if (token) void refresh()

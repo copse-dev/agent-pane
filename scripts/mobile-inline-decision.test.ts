@@ -68,10 +68,12 @@ async function harness(): Promise<{
     ): Promise<{
       ok: boolean
       status: number
+      headers: Headers
       json(): Promise<unknown>
     }> => ({
       ok: true,
       status: 200,
+      headers: new window.Headers(),
       json: () =>
         path === '/api/activity'
           ? Promise.resolve({ access: 'control', sessionId: 's', projects: [], rows: [row] })

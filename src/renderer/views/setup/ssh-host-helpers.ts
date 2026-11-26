@@ -1,5 +1,6 @@
 import type { SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
 import { recordArrayOrEmpty } from '@shared/unknown-value.ts'
+import { sshDestinationProblem } from '@shared/ssh-destination.ts'
 
 export const SSH_HOST_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/
 
@@ -67,7 +68,7 @@ export interface ImportSshHostsResult {
   firstAliasHostId: string | undefined
 }
 
-function nextAvailableHostId(baseId: string, usedIds: ReadonlySet<string>): string {
+export function nextAvailableHostId(baseId: string, usedIds: ReadonlySet<string>): string {
   if (!usedIds.has(baseId)) return baseId
   for (let suffixNumber = 2; ; suffixNumber += 1) {
     const suffix = `-${String(suffixNumber)}`
@@ -106,6 +107,30 @@ export function importSshConfigHosts(
   return { hosts, importedHostIds, firstAliasHostId }
 }
 
+/**
+ * `~/.ssh/config` hosts that are not saved yet, to offer beside the saved ones.
+ * An alias counts as saved when a saved host already targets it.
+ */
+export function unsavedSshConfigHosts(
+  saved: readonly SshWorkspaceHost[],
+  aliases: readonly SshWorkspaceHost[],
+): SshWorkspaceHost[] {
+  const targets = new Set(saved.map((host) => host.host.toLowerCase()))
+  return aliases.filter((alias) => !targets.has(alias.host.toLowerCase()))
+}
+
+/**
+ * Save one `~/.ssh/config` alias, alone and in the alias-only form OpenSSH needs
+ * to apply its whole stanza, and return the saved hosts and the alias's id.
+ */
+export function saveSshConfigHost(
+  saved: readonly SshWorkspaceHost[],
+  alias: SshWorkspaceHost,
+): { hosts: SshWorkspaceHost[]; hostId: string } {
+  const imported = importSshConfigHosts(saved, [alias])
+  return { hosts: imported.hosts, hostId: imported.firstAliasHostId ?? alias.id }
+}
+
 export function removeHost(list: SshWorkspaceHost[], id: string): SshWorkspaceHost[] {
   return list.filter((h) => h.id !== id)
 }
@@ -127,6 +152,8 @@ export function parseSshHostDraft(draft: SshHostDraft): ParseSshHostDraftResult 
     if (!draft.host.trim()) fields.push('host')
     return { ok: false, error: 'Label and host are required.', fields }
   }
+  const destination = sshDestinationProblem(draft.host, draft.user.trim())
+  if (destination) return { ok: false, error: destination.message, fields: [destination.field] }
   const host: SshWorkspaceHost = {
     id,
     label: draft.label.trim(),

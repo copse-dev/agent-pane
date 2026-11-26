@@ -31,9 +31,11 @@ We design for that.
 - **The names device key** — the P-256 key in `~/.copse/names/device.json`, sealed by the
   keyring cipher, is the only credential for this Mac's label with the Copse names service
   ([remote-access.md](remote-access.md)). Whoever holds it can point `lan.<label>.u.copse.me` at
-  any private address and order certificates for `*.<label>.u.copse.me`. The TLS key for the
-  current certificate (`~/.copse/names/tls-key.pem`, 0600) can impersonate that name until the
-  certificate expires, about six days after issue.
+  any private address and order certificates for `*.<label>.u.copse.me`. It also authenticates the
+  label's relay tunnel, so its holder can take that tunnel over (the relay keeps the newest one).
+  The TLS key for the current certificate (`~/.copse/names/tls-key.pem`, 0600) can impersonate
+  that name, on the LAN and through the relay, until the certificate expires, about six days after
+  issue.
 
 ## Adversary model
 
@@ -66,6 +68,7 @@ human approval** before it can reach the host or the network, and should leave a
 | Session vs. runtime        | Durable thread and execution metadata   | Replaceable process, container, VM, or provider session |
 | This device vs. LAN peers  | Desktop approval and local thread store | Other devices on the selected private network           |
 | This Mac vs. names service | Device and TLS keys; checks on replies  | `api.copse.dev` records, DNS answers and issuance       |
+| This Mac vs. relay, shell  | Device and TLS keys; tokens; approval   | `relay.copse.dev` streams and client IPs; `copse.me`    |
 
 LAN model serving is not part of the ordinary custom-provider trust grant. Literal private and
 link-local IP addresses, single-label names, and mDNS hostnames remain denied before the
@@ -125,7 +128,9 @@ project-defined MCP servers are gated behind workspace trust, the
     _Backstop:_ Mobile Companion is off by default; when enabled it binds one chosen
     private IPv4 address and requires exact Host and Origin checks: `Host` must be that
     `ip:port` literal or, once registered, this Mac's own `lan.<label>.u.copse.me:port`, and
-    `Origin` must match the authority the request named. Desktop-approved
+    `Origin` must match the authority the request named. A request that arrived through the
+    Copse relay skips the private-peer check and must name exactly `web.<label>.u.copse.me`
+    (scenario 12). Desktop-approved
     pairing grants reads; a separate per-device control grant permits bounded chat,
     question, approve-once/deny, and exact-run Stop actions. Existing pairings stay
     read-only until upgraded. Every write rechecks access and project/thread ownership;
@@ -146,6 +151,17 @@ project-defined MCP servers are gated behind workspace trust, the
     so pairing there grants control on the desktop approval alone; the local-root
     acknowledgement applies only to pairings over the LAN IP, and the main process,
     not the renderer, decides which applies.
+    Every response is `no-store` except the page's own script and stylesheet, and only
+    when requested under the content hash that the never-stored page pins with Subresource
+    Integrity; a cached copy that is not those bytes is refused by the browser, and these
+    bundles carry no thread data. Polled reads are compressed and answered `304` when
+    unchanged. The bearer is never compressed: it travels only in a request header that a
+    cross-site page cannot make the phone send, and the pairing answer, the one body that
+    carries it, is sent uncompressed. A compressed thread or live-state answer can still
+    hold a secret a tool printed beside attacker-influenced text, such as a fetched page.
+    Using compression as a BREACH oracle against it would need a fresh guess placed into
+    the polled answer for each request, and every guess costs the attacker an agent turn.
+    A LAN observer can still see the size of each encrypted answer, compressed or not.
 11. **Names service compromise or error.** The Copse names service (`api.copse.dev`), or
     someone who controls it, issues a certificate for `*.<label>.u.copse.me` with a key it
     holds and points `lan.<label>.u.copse.me` at another private address, then waits on the
@@ -160,6 +176,32 @@ project-defined MCP servers are gated behind workspace trust, the
     checks to five minutes, and the service URL is not renderer-writable, so a captured request
     cannot be redirected and replayed later. A failure of the service stops renewal and
     resolution; the LAN-IP address and its local root keep working.
+12. **Relay or shell compromise, or a stranger through the relay.** The Copse relay
+    (`relay.copse.dev`), or someone who controls it, drops or stalls the tunnel, reports false
+    client addresses, hands connections from strangers to the Mac, or replays a browser's bytes; the
+    `copse.me` shell shows a fake interface around, or instead of, the framed Mac, or overlays the
+    framed page to trick taps on Approve (clickjacking); a phone paired on one route acts on the
+    other; or a stranger who learned `web.<label>.u.copse.me` tries to use it. _Backstop:_ the relay
+    is off until the user turns it on, and needs an active name with a valid certificate. Browsers'
+    TLS ends on the Mac with a key the relay and the names service never see, so the relay sees
+    ciphertext and connection metadata, and a replay fails the handshake; reading or altering
+    relayed traffic also needs a mis-issued certificate (scenario 11), which Certificate
+    Transparency records. The Mac accepts only `CONNECT` streams for its own
+    `web.<label>.u.copse.me:443`, at most 32 per tunnel and 16 open connections, and every route
+    past pairing needs a device token; pairing needs the desktop's approval, and the banner says the
+    phone came through the relay. Relayed pairing has its own slot and never displaces a pending
+    request from the local network. A false client address only skews the failed-token limit, which
+    remembers at most 1,024 addresses. The relay's own gate (an address a paired `copse.me` account
+    refreshed) keeps most strangers from the page at all, but the Mac does not rely on it. The shell
+    holds no device token: tokens live in the framed origin's storage, the page never reads messages
+    from the shell, and it posts the shell only a state and two counts. Only `https://copse.me` may
+    frame a trusted name, and only while the relay is chosen; the bare-IP origin may not be framed
+    at all. **Accepted gap:** framing relaxes the LAN plan's clickjacking rule (`frame-ancestors
+    'none'`) for one first-party origin, so a compromised shell could overlay the framed page and
+    trick taps on Approve or Stop, as well as phish with a fake page. Nothing in the framed page
+    detects that today. A device token is also accepted on every route: once the relay is on, phones
+    paired on the local network can act through it, and Settings does not show which route a phone
+    paired on; revoking a phone cuts it off on all.
 
 ## Internal Git execution
 
@@ -191,7 +233,10 @@ downloaded cannot start a run: carry-in reports that and asks for `git backfill`
 full clone. Adoption's
 `cherry-pick` is admitted only as `--no-edit` with full SHAs (no merge strategy
 program), so the checkout's hooks and signer do not run and adopted commits are
-unsigned. It is app plumbing, not the gated `git_commit` profile. Guest-side Git
+unsigned. It is app plumbing, not the gated `git_commit` profile. The hosted
+transfer's LFS scan admits `grep` only as `-I`, `-l` and `-E`, a pattern, a full SHA
+and `--` pathspecs, so no abbreviated or bundled spelling of `-O` names a pager
+program and textconv stays off. Guest-side Git
 (`worker-main.ts`, the hosted workers) runs on repositories the guest created, beside
 an agent that can already run any program there, so it keeps its own wrappers.
 
@@ -234,6 +279,33 @@ fetch, which leaves the ref unchanged on macOS. Turning the setting off skips al
 background fetches on every platform, including the contained fallback; it cannot
 contact origin or request authentication. Failures are logged once per distinct
 error and again on recovery.
+
+Opportunistic startup, hourly and allocation refreshes use a cache-only Copse
+askpass lease. It reads already remembered answers with the existing host scope
+and rejected-secret invalidation, but never opens a credential or trust dialog or
+waits for one already pending. Terminal prompts and the configured `core.askPass`
+fallback are disabled. SSH uses `BatchMode=yes` when the unscoped session cache
+is empty or the trusted bridge is unavailable. With remembered session answers,
+the trusted cache-only helper is allowed with `NumberOfPasswordPrompts=1`.
+This is one prompt attempt per password or keyboard-interactive method, not one
+total authentication attempt; keyboard-interactive can request several answers.
+A warm cache is not proof of an answer for this destination, so a missing or
+stale answer can still be submitted without UI. A failed unattended Git command
+or expired askpass lease conservatively retires only the current generations of
+session answers actually served to it. Nonzero Git can follow successful
+authentication, so this can also evict a good answer; it is not proof that the
+server rejected the credential. Without the bridge, all askpass fallbacks are
+disabled.
+The configured host-key policy, SSH agent and credential helpers remain available.
+Git Credential Manager receives its
+[documented noninteractive setting](https://github.com/git-ecosystem/git-credential-manager/blob/main/docs/environment.md#gcm_interactive).
+Trusted third-party helpers, SSH `ProxyCommand` programs, agent confirmations,
+security keys and OS keychain access can implement their own interaction; this
+policy does not sandbox them or promise to control their UI or latency. Missing
+credentials fail the refresh and retain the cached tip. Background failure
+warnings redact scheme URL userinfo, which can itself contain a token, before
+deduplication and truncation.
+Explicit foreground `git_fetch` and push operations retain normal authentication.
 
 Internal Git execution explicitly unsets inherited Git configuration, executable and
 SSH injection variables in the final spawn environment. These removals survive the
@@ -411,11 +483,13 @@ The target runtime, egress, credential, lifecycle, and checkpoint architecture i
 - **OS sandbox (macOS and Linux).** Sandbox-contained commands auto-run inside
   the ASRT profile (seatbelt on macOS, bubblewrap on Linux); external commands
   prompt and run outside only when approved.
-- **Global network-scope guard.** When a sandboxed ACP agent or a loopback
-  background task temporarily widens ASRT's process-global network allowlist,
-  all shell commands, background starts, and newly opened integrated terminals
-  require explicit approval until the final scope releases. This prevents
-  unrelated auto-run work inheriting temporary network egress.
+- **Isolated network scopes.** Sandboxed ACP sessions and probes, and approved
+  loopback-binding background tasks, each use a dedicated ASRT host process.
+  Their temporary allowlists cannot reach already-running contained commands
+  in main. A host that cannot initialize protection fails before spawning its
+  agent or command. The overlap gate still pauses auto-run for any scope held
+  directly by main, so a future main-process holder cannot silently lend its
+  network permission to another command.
 - **Integrated terminal is user-directed.** Shells tabs the user opens run outside
   the project seatbelt (full host access by design). Agent shell confinement stays
   on `run_shell` / `run_background`. Where no OS sandbox is available, or when an
@@ -462,9 +536,12 @@ enforced, ordered by how much they widen the blast radius:
   network and out-of-workspace access, but an approved external command or retry runs
   fully outside that profile. The intended fix is scoped egress/operation grants,
   retaining unrelated filesystem and process controls.
-- **Network mediation is not per execution.** ASRT's allow-list is process-global.
-  Copse forces overlapping commands to prompt while a scope is widened, preventing
-  silent inheritance, but cannot attribute the allow-list itself to one child.
+- **Network mediation is per ASRT host, not per connection owner.** ASRT's
+  allowlist remains process-global inside each host. Current ACP sessions,
+  probes and loopback background tasks get separate hosts; the main-process
+  overlap gate covers any direct scope there. A future path that launches two
+  unrelated workloads in one host would again need isolation or a stricter
+  per-connection broker.
 - **Tool credentials can reach child processes.** Model-provider keys are scrubbed,
   while credentials such as GitHub, package-registry, and cloud tokens may remain for
   tools that need them. The target is brokered use without exposing the raw value to

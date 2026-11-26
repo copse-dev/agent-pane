@@ -1,20 +1,22 @@
 import { execFileSync } from 'node:child_process'
-import { accessSync, lstatSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import { accessSync, lstatSync, readdirSync, readlinkSync, realpathSync, statSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
+import { hasParentTraversalSegment } from '@copse/shell-guard/read-outside-project.ts'
 import { isPathWithin, relativeWithin } from '@copse/std/path-containment.ts'
 import { getApplySeccompBinaryPath } from '@anthropic-ai/sandbox-runtime/dist/sandbox/generate-seccomp-filter.js'
 import { expandScratchPath } from '@shared/acp-scratch-paths.ts'
 import type { AcpAgentSandboxConfig } from '@shared/types/acp.ts'
 import { getSetting } from '../services/storage/settings.ts'
-import {
-  copseManagedPreparationCacheDirs,
-  copseWorkspaceTmpDir,
-} from '../services/storage/copse-paths.ts'
+import { copseManagedPreparationCacheDirs } from '../services/storage/copse-paths.ts'
 import { sanctionedAgentScratchEntries } from './agent-scratch-roots.ts'
+import { linuxSandboxBinaryPaths } from './sandbox-binaries.ts'
 import { canonicalizePathCached } from './canonical-path-cache.ts'
+import { createToolchainReadGuard, toolchainReadExceptions } from './toolchain-read-guard.ts'
+import { ensureWorkspaceTmpDir } from './workspace-tmp.ts'
+export { ensureWorkspaceTmpDir, workspaceTmpDir } from './workspace-tmp.ts'
 import { DANGEROUS_CONFIG_DIR_NAMES, DANGEROUS_CONFIG_FILENAMES } from './mandatory-write-deny.ts'
 import {
   getChatStoreRootSync,
@@ -395,44 +397,6 @@ export function uncoveredSiblingDenyPaths(
 }
 
 /**
- * A workspace-owned scratch directory the sandbox permits writes to, used to
- * redirect $TMPDIR away from the system temp dir.
- *
- * Commands that write to the OS temp dir (`/tmp`, `$TMPDIR`, `/var/folders/...`)
- * get blocked by the workspace-scoped seatbelt, whose only writable roots are the
- * project and this dir (issue #481). Routing temp writes here keeps them on the
- * allow-list without widening it to all of `/tmp`. Lives under `~/.copse/` next
- * to the memories store rather than inside the repo so scratch files never dirty
- * the user's working tree.
- */
-export function workspaceTmpDir(): string {
-  return copseWorkspaceTmpDir()
-}
-
-/**
- * Create {@link workspaceTmpDir} if missing and return its canonical path.
- *
- * `$COPSE_DIR` may itself be a symlink. macOS seatbelt checks the symlink vnode
- * while resolving a path through it, before the more-specific allow for the
- * target can apply; that traversal fails under the broad home read-deny. Giving
- * `$TMPDIR` the canonical spelling avoids crossing the link at all and makes the
- * path the child uses identical to the path seatbelt evaluates.
- *
- * Best-effort: if creation or canonicalization fails (for example, a read-only
- * home), the resolved configured path is returned so callers retain the prior
- * fallback behaviour.
- */
-export function ensureWorkspaceTmpDir(): string {
-  const dir = workspaceTmpDir()
-  try {
-    mkdirSync(dir, { recursive: true })
-  } catch {
-    // Best-effort: a missing dir only means the redirect is a no-op this run.
-  }
-  return canonicalizePathCached(dir)
-}
-
-/**
  * macOS per-user temp directory (`confstr(_CS_DARWIN_USER_TEMP_DIR)`).
  *
  * Several Apple host tools (`sips`, parts of ImageIO, `qlmanage`) stage through
@@ -528,7 +492,11 @@ export function containedSandboxNetworkConfig(): NonNullable<SandboxRuntimeConfi
   }
 }
 
-/** Base ASRT config; workspace-specific paths are passed per spawn via `customConfig`. */
+/**
+ * Base ASRT config; workspace-specific paths are passed per spawn via
+ * `customConfig`. On Linux it names bubblewrap and socat by absolute path
+ * ({@link linuxSandboxBinaryPaths}).
+ */
 export function baseSandboxConfig(): SandboxRuntimeConfig {
   return {
     network: containedSandboxNetworkConfig(),
@@ -538,6 +506,7 @@ export function baseSandboxConfig(): SandboxRuntimeConfig {
       denyWrite: [],
       allowGitConfig: true,
     },
+    ...linuxSandboxBinaryPaths(),
   }
 }
 
@@ -760,6 +729,64 @@ export function resolveRustToolchainAllowRead(
   if (rustupHome) {
     add(join(rustupHome, 'toolchains'), true)
     add(join(rustupHome, 'settings.toml'), false)
+  }
+  return allow
+}
+
+/**
+ * Interpreter installs under home that a project's `.venv/bin/python` symlinks
+ * into, or that put `bun` on PATH. Worktree preparation reads the same roots.
+ */
+export const HOME_INTERPRETER_TOOLCHAIN_DIRS = [
+  '.bun/bin',
+  '.pyenv/versions',
+  '.local/share/uv/python',
+] as const
+
+/**
+ * Corepack's package-manager cache, resolved the way Corepack does: `$COREPACK_HOME`,
+ * else `${XDG_CACHE_HOME:-~/.cache}/node/corepack`. macOS also gets
+ * `~/Library/Caches/node/corepack`, where some installs keep it.
+ */
+function corepackCacheCandidates(env: NodeJS.ProcessEnv, home: string): string[] {
+  const absolute = (value: string | undefined): string | null =>
+    value !== undefined && isAbsolute(value) ? value : null
+  const explicit = env['COREPACK_HOME']
+  if (explicit !== undefined && explicit !== '') {
+    const path = absolute(explicit)
+    return path ? [path] : []
+  }
+  const cacheHome = absolute(env['XDG_CACHE_HOME']) ?? join(home, '.cache')
+  return [
+    join(cacheHome, 'node', 'corepack'),
+    ...(process.platform === 'darwin' ? [join(home, 'Library', 'Caches', 'node', 'corepack')] : []),
+  ]
+}
+
+/**
+ * Resolve the user's installed package-manager and interpreter caches so contained
+ * commands can start them: Corepack's cache (pinned pnpm/yarn), `~/.bun/bin`, and
+ * the pyenv and uv Python installs a `.venv` links into.
+ *
+ * Read-only: a writable shim directory on PATH would let a contained command
+ * plant code that later runs unsandboxed. Only existing directories are added,
+ * and a root is dropped when it, or its canonical target, is home, an ancestor of
+ * home, or contains or sits inside a credential path such as `~/.npmrc`,
+ * `~/.config/uv`, or `~/.pypirc`.
+ */
+export function resolveInterpreterToolchainAllowRead(
+  env: NodeJS.ProcessEnv = process.env,
+  home: string = homedir(),
+): string[] {
+  const readTarget = createToolchainReadGuard(env, home)
+  const allow: string[] = []
+  for (const path of [
+    ...corepackCacheCandidates(env, home),
+    ...HOME_INTERPRETER_TOOLCHAIN_DIRS.map((dir) => join(home, dir)),
+  ]) {
+    const canonical = readTarget(path, true)
+    if (canonical === null || allow.includes(canonical)) continue
+    allow.push(canonical, `${canonical}/**`)
   }
   return allow
 }
@@ -1088,6 +1115,15 @@ export function acpAgentSandboxOverlay(
      * the store's read-only mounts off them.
      */
     stateDirs?: readonly string[]
+    /**
+     * The agent's own executable, as an absolute path where the sandboxed
+     * shell finds it on PATH. Granted read-only, file by file, with the file
+     * one symlink hop away (see {@link executableReadPaths}): an installer
+     * such as Cursor's puts the command in `~/.local/bin`, under the home deny,
+     * so the agent could not even start. Its directory stays unreadable, and
+     * nothing in it becomes writable.
+     */
+    executables?: readonly string[]
   },
 ): Partial<SandboxRuntimeConfig> {
   const overlay = acpAgentSandboxOverlayWithCheckoutWrites(workspaceRoot, sandbox, opts)
@@ -1098,7 +1134,12 @@ function acpAgentSandboxOverlayWithCheckoutWrites(
   workspaceRoot: string,
   sandbox: AcpAgentSandboxConfig,
   opts:
-    | { allowLocalhost?: boolean; chatReadRoots?: readonly string[]; stateDirs?: readonly string[] }
+    | {
+        allowLocalhost?: boolean
+        chatReadRoots?: readonly string[]
+        stateDirs?: readonly string[]
+        executables?: readonly string[]
+      }
     | undefined,
 ): Partial<SandboxRuntimeConfig> {
   const stateDirs = grantableStateDirs(opts?.stateDirs ?? [])
@@ -1128,11 +1169,31 @@ function acpAgentSandboxOverlayWithCheckoutWrites(
     sandbox.allowMacOsKeychain === true && process.platform === 'darwin'
       ? [join(home, 'Library', 'Keychains'), join(home, 'Library', 'Keychains', '**')]
       : []
-  const homeReadPaths = [...keychainReadPaths, ...configuredHomePaths]
   const scratchPaths = [
     ...(sandbox.scratchPaths ?? []).flatMap(expandScratchPath),
     ...stateDirs,
   ].flatMap((abs) => [abs, `${abs}/**`])
+  // Where the agent or the repository can write, and so can already read.
+  const writableRoots = [
+    workspaceRoot,
+    ...fs.allowWrite,
+    ...configuredHomePaths,
+    ...scratchPaths,
+  ].map(patternRoot)
+  // Exact files, never their directories, and only absolute paths.
+  const executables = (opts?.executables ?? [])
+    .filter((path) => isAbsolute(path))
+    .flatMap((path) => {
+      try {
+        return executableReadPaths(path, writableRoots)
+      } catch {
+        // A path the read-target canonicalizer refuses (unresolvable, or a
+        // dangling link) loses its grant rather than aborting the sandbox:
+        // the spawn then fails naming the command, as with no grant.
+        return []
+      }
+    })
+  const homeReadPaths = [...keychainReadPaths, ...configuredHomePaths, ...executables]
   const localDomains = opts?.allowLocalhost ? ['localhost', '127.0.0.1', '::1'] : []
   return {
     ...base,
@@ -1152,6 +1213,53 @@ function acpAgentSandboxOverlayWithCheckoutWrites(
   }
 }
 
+/** The directory a sandbox path pattern covers: everything before its first glob segment. */
+function patternRoot(pattern: string): string {
+  const glob = pattern.search(/[*?[\]{}]/)
+  if (glob === -1) return pattern
+  const prefix = pattern.slice(0, glob)
+  return prefix.endsWith(sep) ? prefix.slice(0, -1) || sep : dirname(prefix)
+}
+
+/**
+ * The read grants for an agent executable at `found`: that file, and when it is
+ * a symlink, the file one hop away. Only regular files are granted. ASRT
+ * renders an `allowRead` entry as `(subpath …)` on macOS and a read bind on
+ * Linux, so a directory here would open its whole tree.
+ *
+ * A link under `writableRoots` (the workspace, the agent's home dirs, its
+ * scratch paths) is never followed: the repository or the agent could point
+ * it anywhere. The executable is readable there already, so nothing is granted
+ * at all. One hop, not `realpath`, for the same reason: a further link may sit
+ * where the agent can write. A target that is already readable, because it is
+ * under `writableRoots` (Cursor's install tree is one of its home dirs), is
+ * not granted again.
+ */
+function executableReadPaths(found: string, writableRoots: readonly string[]): string[] {
+  const writable = (path: string): boolean => writableRoots.some((root) => isPathWithin(root, path))
+  const linkDir = canonicalizeReadTarget(dirname(found))
+  if (writable(found) || writable(join(linkDir, basename(found)))) return []
+  const kind = (path: string): 'file' | 'link' | 'other' => {
+    try {
+      const stats = lstatSync(path)
+      return stats.isFile() ? 'file' : stats.isSymbolicLink() ? 'link' : 'other'
+    } catch {
+      return 'other'
+    }
+  }
+  const foundKind = kind(found)
+  if (foundKind === 'file') return [found]
+  if (foundKind !== 'link') return []
+  let target: string
+  try {
+    target = resolve(linkDir, readlinkSync(found))
+  } catch {
+    return []
+  }
+  if (kind(target) !== 'file') return []
+  return writable(target) || writable(canonicalizeReadTarget(target)) ? [found] : [found, target]
+}
+
 /**
  * The agent state dirs an ACP overlay may grant: each spelled the way the
  * kernel sees it, so a symlinked `COPSE_DIR` still matches the chat store's
@@ -1163,8 +1271,17 @@ function grantableStateDirs(stateDirs: readonly string[]): string[] {
   const chatStoreRoot = stateDirs.length > 0 ? getChatStoreRootSync() : undefined
   if (!chatStoreRoot) return []
   return stateDirs.flatMap((dir) => {
-    const canonical = canonicalizeReadTarget(dir)
-    return canonical !== chatStoreRoot && isPathWithin(chatStoreRoot, canonical) ? [canonical] : []
+    try {
+      const canonical = canonicalizeReadTarget(dir)
+      return canonical !== chatStoreRoot && isPathWithin(chatStoreRoot, canonical)
+        ? [canonical]
+        : []
+    } catch {
+      // The agent id contributes to this path but is not fully validated.
+      // A malformed or dangling state-dir alias must lose its carve-out rather
+      // than aborting the entire agent sandbox.
+      return []
+    }
   })
 }
 
@@ -1206,17 +1323,51 @@ export function portBindingSandboxOverlay(workspaceRoot: string): Partial<Sandbo
  * is canonicalized instead and the leaf re-joined.
  */
 function canonicalizeReadTarget(target: string): string {
+  if (hasParentTraversalSegment(target)) {
+    throw new Error('Read target contains a parent path segment; retry with its canonical path.')
+  }
   const resolved = resolve(target)
-  try {
-    return realpathSync.native(resolved)
-  } catch {
-    // Leaf missing: canonicalize the deepest existing ancestor instead.
+  let existing = resolved
+  const missing: string[] = []
+  for (;;) {
+    try {
+      return resolve(realpathSync.native(existing), ...missing)
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        !Object.hasOwn(error, 'code') ||
+        Reflect.get(error, 'code') !== 'ENOENT'
+      )
+        throw new Error(`Cannot resolve read target: ${target}`, { cause: error })
+      try {
+        if (lstatSync(existing).isSymbolicLink()) {
+          throw new Error(`Read target traverses a dangling symlink: ${target}`, { cause: error })
+        }
+      } catch (linkError) {
+        if (
+          !(linkError instanceof Error) ||
+          !Object.hasOwn(linkError, 'code') ||
+          Reflect.get(linkError, 'code') !== 'ENOENT'
+        )
+          throw linkError
+      }
+      const parent = dirname(existing)
+      if (parent === existing)
+        throw new Error(`Cannot resolve read target: ${target}`, { cause: error })
+      missing.unshift(basename(existing))
+      existing = parent
+    }
   }
-  try {
-    return join(realpathSync.native(dirname(resolved)), basename(resolved))
-  } catch {
-    return resolved
+}
+
+/** macOS's fixed /var, /tmp and /etc aliases are not user-controlled links. */
+function canonicalSystemAlias(target: string): string {
+  if (process.platform !== 'darwin') return target
+  for (const alias of ['/var', '/tmp', '/etc']) {
+    if (target !== alias && !target.startsWith(`${alias}${sep}`)) continue
+    return resolve(realpathSync.native(alias), relative(alias, target))
   }
+  return target
 }
 
 function isDirectoryPath(path: string): boolean {
@@ -1266,6 +1417,12 @@ export function readAllowedSandboxOverlay(
     // guessing a base here could widen a path the analysis never approved.
     if (!isAbsolute(target)) continue
     const canonical = canonicalizeReadTarget(target)
+    // The prompt names the path the agent supplied, not a link's destination.
+    // Reject a target that acquires a different read authority through a link,
+    // including one planted between permission and this per-spawn overlay.
+    if (canonical !== canonicalSystemAlias(resolve(target))) {
+      throw new Error('Read target traverses a symlink; retry with its canonical path.')
+    }
     grantedRead.push(canonical)
     if (isDirectoryPath(canonical)) grantedRead.push(`${canonical}/**`)
   }
@@ -1304,7 +1461,11 @@ export function workspaceSandboxOverlay(
 ): Partial<SandboxRuntimeConfig> {
   const root = canonicalizeWorkspaceRoot(workspaceRoot)
   const internalRoot = getInternalWorkspaceRootRegistration(root)
-  const toolchainRead = [...resolveNodeToolchainAllowRead(), ...resolveRustToolchainAllowRead()]
+  const toolchainRead = [
+    ...resolveNodeToolchainAllowRead(),
+    ...resolveRustToolchainAllowRead(),
+    ...resolveInterpreterToolchainAllowRead(),
+  ]
   const sandboxRuntimeRead = sandboxRuntimeHelperAllowReadPaths()
   // Prepared worktrees link dependencies and native runtimes into these fixed,
   // Copse-owned caches. Routine tests/builds need only read them; preparation is
@@ -1452,6 +1613,27 @@ export function workspaceSandboxOverlay(
           : []),
       ]
     : []
+  const existingRead = [
+    root,
+    `${root}/**`,
+    tmpDir,
+    `${tmpDir}/**`,
+    ...sandboxRuntimeRead,
+    ...preparationCacheRead,
+    ...gitConfigReadPaths(),
+    ...chatStoreRead,
+    ...worktreeDiscoveryRead,
+    ...gitAdminRead,
+    ...primaryCheckoutRead,
+    ...agentScratch,
+    ...threadReadRootAllowEntries(),
+  ]
+  const deniedRead = [
+    homedir(),
+    ...gitCredentialDenyReadPaths(),
+    ...siblingDeny,
+    ...nestedCheckoutDeny,
+  ]
   return {
     // Auto-run, sandbox-contained commands get NO network (see
     // containedSandboxNetworkConfig); only user-approved commands run with
@@ -1460,23 +1642,10 @@ export function workspaceSandboxOverlay(
     filesystem: {
       // Deny home reads, re-allow only this project plus the user's git config
       // files (ASRT deny-then-allow; a more-specific allow overrides the deny).
-      denyRead: [homedir(), ...gitCredentialDenyReadPaths(), ...siblingDeny, ...nestedCheckoutDeny],
+      denyRead: deniedRead,
       allowRead: [
-        root,
-        `${root}/**`,
-        tmpDir,
-        `${tmpDir}/**`,
-        ...toolchainRead,
-        ...sandboxRuntimeRead,
-        ...preparationCacheRead,
-        ...gitConfigReadPaths(),
-        ...chatStoreRead,
-        ...worktreeDiscoveryRead,
-        ...gitAdminRead,
-        ...primaryCheckoutRead,
-        ...agentScratch,
-        // Read-only roots the active thread earned (invoked skill directories).
-        ...threadReadRootAllowEntries(),
+        ...existingRead,
+        ...toolchainReadExceptions(toolchainRead, deniedRead, existingRead),
       ],
       allowWrite: [
         root,

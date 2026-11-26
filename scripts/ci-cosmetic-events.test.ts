@@ -28,6 +28,7 @@ const meaningfulLabels = [
   'bench-doctrine',
   'eval-tool-preference',
   'bench-agent-eval',
+  'e2e-burn-in-large',
 ]
 
 type EventContext = {
@@ -41,6 +42,21 @@ type EventContext = {
     changes?: Record<string, unknown>
     label: { name: string }
     pull_request: { number: number; head: { repo: { full_name: string } } }
+  }
+}
+
+// A push or a scheduled run carries no pull request, so
+// `github.event.pull_request.number` reads as null and the group uses the ref.
+type BranchContext = Omit<EventContext, 'event'> & { event: Record<string, never> }
+
+function branchEvent(event_name: 'push' | 'schedule', ref: string): BranchContext {
+  return {
+    event_name,
+    run_id: 123,
+    ref,
+    repository: 'copse-dev/agent-pane',
+    base_ref: '',
+    event: {},
   }
 }
 
@@ -66,7 +82,7 @@ function context(action: string, changes?: Record<string, unknown>, label = ''):
 // operators, null comparisons, format, toJSON and fromJSON. Actions reads a
 // property of a missing object as null; optional chaining reads it as
 // undefined, which `==`/`!=` treat alike and toJSON maps to `null`.
-function evaluate(expression: string, github: EventContext): unknown {
+function evaluate(expression: string, github: EventContext | BranchContext): unknown {
   const source = (
     expression.trim().startsWith('${{') ? expression.trim().slice(3, -2) : expression
   ).replace(/\bgithub(?:\.[\w-]+)+/g, (path) => path.replaceAll('.', '?.'))
@@ -90,7 +106,7 @@ function binding(name: string): z.infer<typeof jobSchema> {
   assert.ok(job, name)
   return job
 }
-function admitted(github: EventContext): {
+function admitted(github: EventContext | BranchContext): {
   precheck: unknown
   autoformat: unknown
   aggregate: unknown
@@ -137,7 +153,13 @@ describe('cosmetic CI event routing', () => {
       return (typeof dependencies === 'string' ? [dependencies] : (dependencies ?? [])).some(rooted)
     }
     for (const [name, job] of Object.entries(workflow.jobs)) {
-      if (name === 'precheck' || name === 'autoformat' || name === 'ci-passed') continue
+      if (
+        name === 'verification-reuse' ||
+        name === 'precheck' ||
+        name === 'autoformat' ||
+        name === 'ci-passed'
+      )
+        continue
       assert.ok(rooted(name), `${name} must inherit the precheck admission boundary`)
       if (name === 'full-release-validation') {
         assert.ok(job.if)
@@ -159,6 +181,19 @@ describe('cosmetic CI event routing', () => {
         assert.ok(job.if?.includes("needs.precheck.result == 'success'"))
         continue
       }
+      if (name === 'e2e-burn-in-result') {
+        // The stable burn-in context: evaluates on every event, and its own
+        // step fails a cancelled run or a failed precheck.
+        assert.equal(job.if, '${{ always() }}')
+        continue
+      }
+      if (name === 'e2e-burn-in') {
+        // Runs its over-cap refusal without a build, so it admits itself on
+        // precheck success and needs a successful build for any real run.
+        assert.ok(job.if?.includes("needs.precheck.result == 'success'"))
+        assert.ok(job.if?.includes("needs.build.result == 'success'"))
+        continue
+      }
       if (/always\(|cancelled\(/.test(job.if ?? '')) {
         assert.equal(
           name,
@@ -171,7 +206,7 @@ describe('cosmetic CI event routing', () => {
     }
   })
 
-  it('has no metadata shortcut in the required aggregate or precheck', () => {
+  it('keeps fresh precheck and units on metadata events; reuse has its own verification boundary', () => {
     const aggregate = binding('ci-passed')
     assert.equal(binding('precheck').if, undefined)
     assert.ok(aggregate.steps?.some((step) => step.env?.['PRECHECK_RESULT']))
@@ -222,7 +257,7 @@ describe('cosmetic CI event routing', () => {
       context('future-action'),
       ...meaningfulLabels.map((name) => context('labeled', {}, name)),
       ...['opened', 'synchronize', 'reopened', 'ready_for_review'].map((action) => context(action)),
-      ...['push', 'schedule', 'merge_group'].map((event_name) => ({
+      ...['push', 'merge_group'].map((event_name) => ({
         ...context('edited'),
         event_name,
       })),
@@ -233,8 +268,28 @@ describe('cosmetic CI event routing', () => {
       assert.equal(route.aggregate, true)
       assert.equal(route.name, 'CI Passed')
       assert.equal(route.group, 'ci-42')
-      assert.equal(route.cancels, github.event_name !== 'schedule')
+      assert.equal(route.cancels, true)
     }
+  })
+
+  // A push cancels whatever its group holds: the run in progress, and any run
+  // waiting behind it. The nightly is main's full-suite run, so a merge during
+  // its window must not reach it.
+  it('keeps the nightly out of the group that a push to its branch cancels', () => {
+    for (const ref of ['refs/heads/main', 'refs/heads/release']) {
+      const push = admitted(branchEvent('push', ref))
+      const nightly = admitted(branchEvent('schedule', ref))
+      assert.equal(push.group, `ci-${ref}`)
+      assert.equal(push.cancels, true)
+      assert.equal(nightly.group, `ci-nightly-${ref}`)
+      assert.notEqual(nightly.group, push.group)
+      // A second nightly waits for the first instead of cancelling it.
+      assert.equal(nightly.cancels, false)
+      assert.equal(nightly.precheck, true)
+      assert.equal(nightly.autoformat, false)
+      assert.equal(nightly.aggregate, true)
+    }
+    assert.equal(admitted(branchEvent('schedule', 'refs/heads/main')).name, 'CI Passed')
   })
 
   it('preserves the distinct fork and trunk contexts, including metadata', () => {

@@ -1,3 +1,4 @@
+import { collapseWhitespace } from '@copse/std/one-line-text.ts'
 import { z } from 'zod'
 import type { BrowserImageShare, BrowserTextShare } from '@shared/types/browser-share.ts'
 import {
@@ -58,7 +59,7 @@ const PAGE_TEXT_SCRIPT = `(() => {
 })()`
 
 function cleanLabelPart(value: string): string {
-  return value.replace(/\s+/g, ' ').trim().slice(0, 80)
+  return collapseWhitespace(value).slice(0, 80)
 }
 
 function pageIdentity(title: string, url: string): string {

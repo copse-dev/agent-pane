@@ -208,16 +208,22 @@ export function resolveInstalledRustToolchainBin(
     try {
       const cargo = realpathSync(candidate)
       if (!statSync(cargo).isFile()) continue
-      if (basenameWithoutExtension(cargo) !== 'rustup') {
-        const trustedRoot = ['/usr', '/usr/local', '/opt/homebrew'].find((prefix) =>
-          isPathWithin(prefix, cargo, { allowSelf: false }),
-        )
-        if (!trustedRoot) continue
-        const bin = dirname(cargo)
-        if (containedToolchainFile(dirname(bin), join(bin, 'rustc'))) return bin
-        continue
-      }
-      return resolveRustupToolchain(undefined)
+      const bin = dirname(cargo)
+      // rustup installs `rustup` beside its proxies however they are packaged:
+      // rustup-init links them to the rustup binary, and Homebrew writes shell
+      // scripts named `cargo` and `rustc` that exec it. A toolchain's own bin
+      // never holds rustup, so either way resolve the toolchain it would select.
+      const rustup = join(bin, process.platform === 'win32' ? 'rustup.exe' : 'rustup')
+      if (
+        basenameWithoutExtension(cargo) === 'rustup' ||
+        statSync(rustup, { throwIfNoEntry: false })?.isFile()
+      )
+        return resolveRustupToolchain(undefined)
+      const trustedRoot = ['/usr', '/usr/local', '/opt/homebrew'].find((prefix) =>
+        isPathWithin(prefix, cargo, { allowSelf: false }),
+      )
+      if (!trustedRoot) continue
+      if (containedToolchainFile(dirname(bin), join(bin, 'rustc'))) return bin
     } catch {
       /* Try another PATH entry. */
     }
@@ -239,6 +245,13 @@ export function worktreePreparationShellEnvironment(
     const plan = readWorktreePreparationPlan(root)
     if (plan.problems.length !== 0) return env
     const result = preparationCacheEnvironment(env)
+    // Only preparation fills Copse's Corepack cache. Until it has stamped this
+    // worktree, keep the user's own cache, which the sandbox re-allows read-only,
+    // so a pinned pnpm/yarn starts without trying to download.
+    if (!/^[a-f0-9]{64}$/.test(readStamp(root) ?? '')) {
+      if (env['COREPACK_HOME'] === undefined) delete result['COREPACK_HOME']
+      else result['COREPACK_HOME'] = env['COREPACK_HOME']
+    }
     return plan.ecosystem === 'cargo'
       ? { ...result, CARGO_HOME: join(copseCacheDir(env), 'cargo') }
       : result

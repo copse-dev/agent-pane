@@ -3,11 +3,19 @@
  *
  * A pooled agent process (`acp-session-pool.ts`) serves every turn of a thread
  * until the thread goes idle, so an adapter that leaks handles keeps leaking
- * for as long as Copse keeps the process warm. Claude Code's settings watchers
- * are the usual canary:
+ * for as long as Copse keeps the process warm.
+ *
+ * One line that reads like exhaustion is not:
  *
  *   Settings watcher error for ~/.claude/settings.json:
  *   Error: EMFILE: too many open files, watch
+ *
+ * That is libuv's report that macOS refused it an FSEvents stream (libuv maps a
+ * failed `FSEventStreamStart` to `UV_EMFILE`). Under the ASRT seatbelt profile,
+ * which does not allow `mach-lookup` of `com.apple.FSEvents`, every directory
+ * watch fails this way the moment it starts, while the process can still open
+ * files. Replacing the process cannot help, so
+ * {@link detectRefusedFileWatch} reports it apart from a fault.
  *
  * The process does not exit when this happens — it keeps answering prompts,
  * minus whatever it can no longer open (settings reloads, file reads, MCP
@@ -34,6 +42,12 @@ export interface AcpResourceFault {
  */
 export interface AcpAgentResourceFault extends AcpResourceFault {
   limitLabel: string
+  /**
+   * When Copse saw the fault (epoch ms). The pool compares it with the
+   * process's start to tell a fault at startup (an inherited ceiling) from
+   * one reached by accumulation (a leak).
+   */
+  observedAt: number
 }
 
 const DETAIL_LIMIT = 200
@@ -45,15 +59,37 @@ const DETAIL_LIMIT = 200
  */
 const OUT_OF_DESCRIPTORS = /too many open files/i
 
+/**
+ * Node's message for an `fs.watch` error delivered after the watch started: no
+ * path follows the syscall name. A watch that cannot open its target fails
+ * synchronously instead and names the path (`…, watch '/repo'`), and that one
+ * is real exhaustion. The asynchronous form comes from macOS FSEvents refusing
+ * the stream (see the module comment).
+ */
+const REFUSED_WATCH = /too many open files, watch\s*$/i
+
+function clampDetail(line: string): string {
+  const trimmed = line.trim()
+  return trimmed.length > DETAIL_LIMIT ? `${trimmed.slice(0, DETAIL_LIMIT)}…` : trimmed
+}
+
 /** Find the first descriptor-exhaustion line in captured agent stderr. */
 export function detectAcpResourceFault(stderr: string): AcpResourceFault | null {
   for (const line of stderr.split('\n')) {
-    if (!OUT_OF_DESCRIPTORS.test(line)) continue
-    const trimmed = line.trim()
-    return {
-      code: /\bENFILE\b/.test(trimmed) ? 'ENFILE' : 'EMFILE',
-      detail: trimmed.length > DETAIL_LIMIT ? `${trimmed.slice(0, DETAIL_LIMIT)}…` : trimmed,
-    }
+    if (!OUT_OF_DESCRIPTORS.test(line) || REFUSED_WATCH.test(line)) continue
+    const trimmed = clampDetail(line)
+    return { code: /\bENFILE\b/.test(trimmed) ? 'ENFILE' : 'EMFILE', detail: trimmed }
+  }
+  return null
+}
+
+/**
+ * Find the first line where the agent's file watching was refused rather than
+ * out of descriptors, clamped for the log.
+ */
+export function detectRefusedFileWatch(stderr: string): string | null {
+  for (const line of stderr.split('\n')) {
+    if (REFUSED_WATCH.test(line)) return clampDetail(line)
   }
   return null
 }
@@ -70,6 +106,8 @@ export interface StderrFaultWatcher {
   push: (chunk: string) => AcpAgentResourceFault | null
   /** The fault this agent has reported, if any. */
   current: () => AcpAgentResourceFault | null
+  /** The first refused file watch this agent reported, if any ({@link detectRefusedFileWatch}). */
+  refusedWatch: () => string | null
 }
 
 /**
@@ -82,21 +120,28 @@ type LimitLabel = string | (() => string)
 export function createStderrFaultWatcher(limitLabel: LimitLabel): StderrFaultWatcher {
   let window = ''
   let fault: AcpAgentResourceFault | null = null
+  let refused: string | null = null
   return {
     push: (chunk: string): AcpAgentResourceFault | null => {
       if (fault) return null
       window = (window + chunk).slice(-STDERR_WINDOW)
-      const found = detectAcpResourceFault(window)
+      // Whole lines only: a line cut off after "too many open files" may still
+      // end in ", watch", which is a refused watch and not a fault.
+      const lines = window.slice(0, window.lastIndexOf('\n') + 1)
+      refused ??= detectRefusedFileWatch(lines)
+      const found = detectAcpResourceFault(lines)
       if (!found) return null
       fault = {
         ...found,
         limitLabel: typeof limitLabel === 'function' ? limitLabel() : limitLabel,
+        observedAt: Date.now(),
       }
       // The window has served its purpose; the first fault is the one reported.
       window = ''
       return fault
     },
     current: () => fault,
+    refusedWatch: () => refused,
   }
 }
 
@@ -130,6 +175,7 @@ export function watchAgentStderr(
   options: AgentStderrWatchOptions,
 ): StderrFaultWatcher {
   const watcher = createStderrFaultWatcher(options.limitLabel)
+  let refusalLogged = false
   stderr?.on('data', (chunk: Buffer) => {
     const text = chunk.toString()
     options.onText?.(text)
@@ -137,6 +183,11 @@ export function watchAgentStderr(
     if (line) console.warn(`[${options.prefix}] ${line}`)
     const fault = watcher.push(text)
     if (fault) console.warn(formatAcpResourceFault(options.command, fault))
+    const refused = watcher.refusedWatch()
+    if (refused && !refusalLogged) {
+      refusalLogged = true
+      console.warn(formatRefusedFileWatch(options.command, refused))
+    }
   })
   return watcher
 }
@@ -211,6 +262,19 @@ export function formatAcpResourceFault(command: string, fault: AcpAgentResourceF
   return (
     `[acp:${command}] ${scope} (${fault.code}, ${fault.limitLabel}) — ` +
     `the process can no longer open files: ${fault.detail}`
+  )
+}
+
+/**
+ * One log line for a refused file watch. It says what the agent loses and why
+ * Copse keeps the process, so the line is not read as the exhaustion it looks
+ * like.
+ */
+export function formatRefusedFileWatch(command: string, detail: string): string {
+  return (
+    `[acp:${command}] the agent cannot watch files (${detail}): macOS refused it an FSEvents ` +
+    `stream, which Copse's sandbox profile does not allow. This is not a descriptor shortage, ` +
+    `so the process is kept; it picks up edits to its settings files only when it next starts a session`
   )
 }
 

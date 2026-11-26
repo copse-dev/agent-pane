@@ -34,10 +34,20 @@ function renderedNotice(): string {
 async function send(reply: string): Promise<void> {
   await setComposerValue(`say:${reply}`)
   await submitComposer()
-  await browser.waitUntil(async () => (await $('.messages-list').getText()).includes(reply), {
-    timeout: 30_000,
-    timeoutMsg: `the fixture agent did not answer "${reply}"`,
-  })
+  // Wait on the agent's own reply. The whole list already contains `reply`
+  // as soon as the user's `say:` prompt renders, which let this pass before
+  // the answer had finished streaming.
+  await browser.waitUntil(
+    async () =>
+      browser.execute((expected) => {
+        const replies = document.querySelectorAll<HTMLElement>('.msg-assistant .message-text')
+        return replies[replies.length - 1]?.textContent.includes(expected) ?? false
+      }, reply),
+    {
+      timeout: 30_000,
+      timeoutMsg: `the fixture agent did not answer "${reply}"`,
+    },
+  )
   await waitForAgentIdle(15_000)
 }
 

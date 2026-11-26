@@ -1,5 +1,7 @@
 import { execFile } from 'node:child_process'
-import { basename } from 'node:path'
+import { constants } from 'node:fs'
+import { access, stat } from 'node:fs/promises'
+import { basename, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import {
   KNOWN_ACP_AGENTS,
@@ -56,6 +58,34 @@ export async function resolveOnPath(
   } catch {
     return null
   }
+}
+
+/**
+ * The file a POSIX shell would run for `command` with `path` as its PATH from
+ * `cwd`, found by reading the filesystem only. Nothing on that PATH is
+ * executed, so an entry the workspace controls (a planted `which`, say) cannot
+ * run in Copse. As in a shell, an empty or relative entry resolves from `cwd`,
+ * and a command containing a slash is a path from `cwd`, not searched for.
+ * Null when no candidate is an executable regular file.
+ */
+export async function findExecutableOnPath(
+  command: string,
+  path: string,
+  cwd: string,
+): Promise<string | null> {
+  const candidates = command.includes('/')
+    ? [resolve(cwd, command)]
+    : path.split(':').map((entry) => resolve(cwd, entry || '.', command))
+  for (const candidate of candidates) {
+    try {
+      if (!(await stat(candidate)).isFile()) continue
+      await access(candidate, constants.X_OK)
+      return candidate
+    } catch {
+      // Absent, unreadable or not executable here: try the next entry.
+    }
+  }
+  return null
 }
 
 /**
