@@ -430,6 +430,9 @@ export default ts.config(
     },
     rules: {
       '@typescript-eslint/explicit-function-return-type': 'off',
+      // A helper shared between fixtures (acp-mount-stdio-servers.mjs) exports
+      // functions, and an .mjs file cannot annotate them.
+      '@typescript-eslint/explicit-module-boundary-types': 'off',
     },
   },
   {

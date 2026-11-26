@@ -366,6 +366,30 @@ const acpSessionBindingSchema = z
     agentConfigGeneration: z.number().int().nonnegative(),
     createdBy: z.enum(['copse', 'external']),
     lastAttachedAt: z.number().int().nonnegative(),
+    /**
+     * How much of the thread's provider history the linked session already
+     * holds, so a turn that resumes it sends only what came after.
+     */
+    transcriptCheckpoint: z
+      .object({
+        messageCount: z.number().int().nonnegative(),
+        prefixHash: z.string().min(1),
+      })
+      .strict()
+      .optional(),
+    /**
+     * A session file the agent shares with its own CLI (a Codex rollout in
+     * `~/.codex`), and when it was last written as of a Copse turn. Another
+     * write after that means the session went on outside Copse, so the thread's
+     * transcript no longer matches what resuming it would bring back.
+     */
+    sharedSessionFile: z
+      .object({
+        path: z.string().min(1),
+        modifiedAt: z.number().nonnegative(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
 

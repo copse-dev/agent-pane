@@ -92,6 +92,8 @@ Source files remain authoritative; deleting this cache is safe.
     openai-agent-session.json        # private hosted session, pending input, terminal result + Git import checkpoint
     blobs/openai-git/                # bounded source/return Git bundles and result manifest
     acp-session.json                 # private external ACP session binding (optional)
+    acp-agent-config/<agentId>/      # the agent's thread-scoped config dir (CLAUDE_CONFIG_DIR);
+                                     #   an imported Claude Code session's copy lives under projects/
     history-edit-transaction.json    # pending edit rollback journal (temporary, private)
     history-edit-undo.json           # previous transcript/history for one-step Undo (optional, private)
     messages/<messageId>.md          # OKF: verbatim message content (frontmatter + body)
@@ -233,7 +235,27 @@ Source files remain authoritative; deleting this cache is safe.
   resume safely after a restart. The file is atomically replaced with owner-only
   permissions and is not part of `meta.json`, `events.jsonl`, logs, telemetry,
   or transcript exports. Corrupt, incomplete, and future-version bindings fail
-  closed instead of guessing a replacement session.
+  closed instead of guessing a replacement session. Optional
+  `transcriptCheckpoint` (`{ messageCount, prefixHash }`) records how much of
+  `agent-history.json` the session already holds, so the turn that resumes it
+  after a restart sends only what came after. `createdBy: "external"` marks a
+  binding to a session the user started in a CLI and imported (see
+  `importedSession` below). An imported Claude Code binding is only taken by a
+  turn whose `CLAUDE_CONFIG_DIR` is the thread's own `acp-agent-config/` dir,
+  where the import copied the session file, so the user's original is never
+  written. An imported Codex binding resumes the user's own rollout and
+  carries `sharedSessionFile` (`{ path, modifiedAt }`): when the CLI wrote to
+  that file after Copse last did, the binding is cleared and the thread starts
+  from its own transcript rather than resume turns it never showed.
+- **`importedSession`** (in `meta.json`, optional) marks a thread imported from
+  a Claude Code or Codex CLI session: `{ source: "claude-code" | "codex", key,
+  importedAt, sharesOriginal? }`. `key` is a one-way hash of the source and
+  session id, so a session is not imported twice; the raw id stays in
+  `acp-session.json`. `sharesOriginal: true` says the thread's turns add to the
+  user's original session file (a linked Codex import). An import also seeds
+  `agent-history.json` with a text-only, labelled record of the CLI's turns, so
+  no provider reads the CLI's tool calls as calls it made. A malformed value is
+  dropped on read.
 - **`history-edit-transaction.json`** is a versioned rollback journal written
   before a same-thread history reconstruction replaces `events.jsonl` and
   `agent-history.json`. It contains the prior folded thread, the prior provider

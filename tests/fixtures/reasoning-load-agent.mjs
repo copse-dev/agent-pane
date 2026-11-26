@@ -5,6 +5,7 @@ import { Readable, Writable } from 'node:stream'
 import { setTimeout as delay } from 'node:timers/promises'
 import { writeFile } from 'node:fs/promises'
 import { performance } from 'node:perf_hooks'
+import { mountStdioServers } from './acp-mount-stdio-servers.mjs'
 
 const output = process.argv[2]
 let cancelled = false
@@ -15,7 +16,10 @@ agent({ name: 'reasoning-load-fixture' })
     agentCapabilities: { loadSession: false },
   }))
   .onRequest('authenticate', () => ({}))
-  .onRequest('session/new', () => ({ sessionId: 'reasoning-load-session' }))
+  .onRequest('session/new', async (ctx) => {
+    await mountStdioServers(ctx.params.mcpServers, 'reasoning-load-fixture')
+    return { sessionId: 'reasoning-load-session' }
+  })
   .onRequest('session/prompt', async (ctx) => {
     cancelled = false
     const update = (value) =>

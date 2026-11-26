@@ -48,6 +48,18 @@ const zEventTriggerInput = z.discriminatedUnion('kind', [
     kind: z.literal('github-issue-labeled'),
     label: z.string().trim().min(1).max(50),
   }),
+  z.strictObject({
+    kind: z.literal('github-pr-ci-failed'),
+    baseBranch: z.string().trim().min(1).max(200),
+    authors: z.enum(['mine', 'anyone']),
+    checks: z.array(z.string().trim().min(1).max(200)).max(10).optional(),
+  }),
+  z.strictObject({
+    kind: z.literal('github-pr-review-comment'),
+    baseBranch: z.string().trim().min(1).max(200),
+    authors: z.enum(['mine', 'anyone']),
+    commenters: z.enum(['collaborators', 'others', 'anyone']),
+  }),
 ])
 
 const zAutomationFailureReport = z.strictObject({
