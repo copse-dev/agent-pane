@@ -1078,10 +1078,12 @@ account can open), network (only hosts the sandbox already allows → any host) 
 execution audit records (`runtime-prompt.ts`), so the prompt cannot promise a property the
 runtime does not report. An ordinary shell prompt for an SSH workspace opens by naming the host
 (its label and `user@address`) and saying Copse adds no sandbox there: the command can read and
-change anything the remote account can and reach any network that host can. When the host's
-settings forward the SSH agent, the prompt adds that the command can also use the keys in the
-user's local agent. Forwarding turned on only in the user's own `~/.ssh/config` is not detected,
-so the prompt does not mention it.
+change anything the remote account can and reach any network that host can. When the
+connection forwards the SSH agent, the prompt adds that the command can also use the keys in the
+user's local agent. That covers the host's own Forward agent setting and `ForwardAgent` set only
+in the user's `~/.ssh/config`: on connect, Copse asks `ssh -G` (which prints the effective
+options without connecting) and caches the answer for that connection. Before Copse has connected
+to the host, only the host setting is known.
 Commands with no available sandbox say so even when the immediate reason is that auto-run is off.
 Contained prompts still warn that project files can change. The execution policy is unchanged.
 
