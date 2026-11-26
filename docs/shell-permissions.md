@@ -1636,11 +1636,15 @@ path that already exists. So every agent command that runs contained (`run_shell
   git's own parser (`git config --file - --no-includes --null --list`), and a change is reverted only
   when an entry that can start a program was added, changed or removed. That is an allowlist
   ([`git-config-policy.ts`](../src/main/project-sandbox/git-config-policy.ts)): upstream tracking,
-  `remote.*`, `submodule.*` (built-in update modes only), `user.name`/`user.email`, the exact
-  `git lfs install` filter and inert sections such as `branch`, `color` and `gc` stay; everything else,
-  including `core.fsmonitor`, `core.hooksPath`, `core.sshCommand`, `core.pager`, `core.worktree`,
-  `alias.*`, filter/diff/merge drivers, credential helpers, `include*`, `url.*.insteadOf` and keys git
-  adds in future, is reverted. A reverted config is restored whole, so an inert key written by the
+  remote refspecs, the URLs of a remote the command adds (`git remote add`), `submodule.*` (built-in
+  update modes only), `user.name`/`user.email`, the exact `git lfs install` filter and inert sections
+  such as `branch`, `color` and `gc` stay; everything else, including `core.fsmonitor`,
+  `core.hooksPath`, `core.sshCommand`, `core.pager`, `core.worktree`, `alias.*`, filter/diff/merge
+  drivers, credential helpers, `include*` and keys git adds in future, is reverted. So is any change
+  to where an existing remote points: `remote.<name>.url` and `pushurl` of a remote that was already
+  configured (set, removed or renamed), `remote.pushDefault`, and `url.*.insteadOf` /
+  `pushInsteadOf`, because scoped network access derives the allowed host from the remote URL and a
+  later approved `git push origin` would otherwise send the workspace to the new host. A reverted config is restored whole, so an inert key written by the
   same command is lost with it. A `.git` directory replaced by a gitdir pointer is removed, not
   recreated empty, because git would then search parent directories.
 - **How it is reported.** The command's result gets a note naming each path and git key and telling

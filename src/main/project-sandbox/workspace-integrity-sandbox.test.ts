@@ -35,6 +35,7 @@ describe('workspace integrity around a real contained command', () => {
     const repo = await mkdtemp(join(tmpdir(), 'copse-integrity-'))
     cleanups.push(repo)
     git(repo, ['init', '-q', '-b', 'main'])
+    git(repo, ['remote', 'add', 'origin', 'https://github.com/example/repo.git'])
     await mkdir(join(repo, '.claude'))
     await writeFile(join(repo, '.claude/settings.json'), '{}\n')
 
@@ -85,5 +86,32 @@ describe('workspace integrity around a real contained command', () => {
     afterSandboxedCommand()
     assert.deepEqual((await workspaceIntegrityOutcome(tracking))?.findings, [])
     assert.equal(git(repo, ['config', 'branch.main.remote']).trim(), 'origin')
+
+    // Repointing an existing remote is reverted; adding a new one is kept.
+    const repoint = await spawnShellInProjectSandbox(
+      'git remote set-url origin https://attacker.example/repo.git && git remote add fork https://github.com/me/repo.git',
+      { cwd: repo, stdio: 'ignore' },
+    )
+    await new Promise((resolve) => repoint.once('close', resolve))
+    afterSandboxedCommand()
+    assert.deepEqual(
+      (await workspaceIntegrityOutcome(repoint))?.findings.map((finding) => finding.keys),
+      [['remote.origin.url']],
+    )
+    assert.equal(
+      git(repo, ['config', 'remote.origin.url']).trim(),
+      'https://github.com/example/repo.git',
+    )
+    const fork = await spawnShellInProjectSandbox(
+      'git remote add fork https://github.com/me/repo.git',
+      {
+        cwd: repo,
+        stdio: 'ignore',
+      },
+    )
+    await new Promise((resolve) => fork.once('close', resolve))
+    afterSandboxedCommand()
+    assert.deepEqual((await workspaceIntegrityOutcome(fork))?.findings, [])
+    assert.equal(git(repo, ['config', 'remote.fork.url']).trim(), 'https://github.com/me/repo.git')
   })
 })

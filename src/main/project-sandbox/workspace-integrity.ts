@@ -11,7 +11,7 @@
  * So the local runtime snapshots those files before each contained command
  * starts and compares them when it ends. A change to an agent or hook file is
  * reverted. A git config change is reverted only when it adds, changes or
- * removes an entry that can start a program (`git-config-policy.ts`), so
+ * removes an entry that can start a program or repoint a remote (`git-config-policy.ts`), so
  * upstream tracking, `git remote add` and `git lfs install` keep working. Each
  * revert is reported to the registered sink (the decision log) and to the
  * command's own result.
@@ -46,6 +46,7 @@ import type {
   RuntimeExecution,
 } from '../services/execution-runtime/runtime.ts'
 import {
+  addedRemoteNames,
   changedExecutableGitConfigKeys,
   executableGitConfigEntries,
   parseGitConfigList,
@@ -132,7 +133,7 @@ export interface IntegrityFinding {
   /** Relative to the workspace when inside it, else absolute. */
   readonly path: string
   readonly change: IntegrityChange
-  /** For git config: the keys whose program-starting entries changed. */
+  /** For git config: the keys whose program-starting or remote-URL entries changed. */
   readonly keys?: readonly string[]
   readonly restored: boolean
 }
@@ -525,8 +526,9 @@ async function gitConfigChange(
   const [a, b] = await Promise.all([gitConfigOf(path, before), gitConfigOf(path, after)])
   // Unreadable or rejected config on either side: treat as a change.
   if (a === null || b === null) return ['(unparsed)']
-  const left = executableGitConfigEntries(a)
-  const right = executableGitConfigEntries(b)
+  const added = addedRemoteNames(a, b)
+  const left = executableGitConfigEntries(a, added)
+  const right = executableGitConfigEntries(b, added)
   if (JSON.stringify(left) === JSON.stringify(right)) return null
   return changedExecutableGitConfigKeys(a, b)
 }

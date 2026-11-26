@@ -131,10 +131,14 @@ const INERT_SECTIONS = new Set([
   'worktree',
 ])
 
-/** `remote.<name>.<key>` keys that only name refs and URLs. */
+/**
+ * `remote.<name>.<key>` keys that only name refs. `url` and `pushurl` are left
+ * out: scoped network access derives the allowed host from a remote's URL, so
+ * repointing an existing remote would let a later approved `git push origin`
+ * send the workspace to another host. A remote the command adds is allowed, see
+ * `addedRemoteNames`.
+ */
 const INERT_REMOTE_KEYS = new Set([
-  'url',
-  'pushurl',
   'fetch',
   'push',
   'tagopt',
@@ -175,7 +179,11 @@ export interface GitConfigEntry {
   readonly value: string | null
 }
 
-function splitKey(key: string): { section: string; subsection: string | null; name: string } {
+function splitKey(key: string): {
+  section: string
+  subsection: string | null
+  name: string
+} {
   const first = key.indexOf('.')
   const last = key.lastIndexOf('.')
   if (first < 0) return { section: key, subsection: null, name: '' }
@@ -186,7 +194,10 @@ function splitKey(key: string): { section: string; subsection: string | null; na
   }
 }
 
-/** Whether git never runs a program because of this entry, whoever runs git later. */
+/**
+ * Whether git never runs a program, or sends the repository somewhere new,
+ * because of this entry, whoever runs git later.
+ */
 export function isInertGitConfigEntry(entry: GitConfigEntry): boolean {
   const { section, subsection, name } = splitKey(entry.key)
   if (INERT_SECTIONS.has(section)) return true
@@ -211,6 +222,40 @@ export function isInertGitConfigEntry(entry: GitConfigEntry): boolean {
   }
 }
 
+/** `url` and `pushurl` of a remote: where git sends and fetches the repository. */
+function remoteDestination(entry: GitConfigEntry): string | null {
+  const { section, subsection, name } = splitKey(entry.key)
+  if (section !== 'remote' || subsection === null) return null
+  return name === 'url' || name === 'pushurl' ? subsection : null
+}
+
+/**
+ * Remotes named in `after` that `before` does not name at all. Their URLs are
+ * allowed, so `git remote add` keeps working inside the sandbox; changing,
+ * removing or renaming an existing remote's URL is not.
+ */
+export function addedRemoteNames(
+  before: readonly GitConfigEntry[],
+  after: readonly GitConfigEntry[],
+): Set<string> {
+  const remotes = (entries: readonly GitConfigEntry[]): Set<string> => {
+    const names = new Set<string>()
+    for (const entry of entries) {
+      const { section, subsection } = splitKey(entry.key)
+      if (section === 'remote' && subsection !== null) names.add(subsection)
+    }
+    return names
+  }
+  const existing = remotes(before)
+  return new Set([...remotes(after)].filter((name) => !existing.has(name)))
+}
+
+function isGuardedEntry(entry: GitConfigEntry, addedRemotes: ReadonlySet<string>): boolean {
+  if (isInertGitConfigEntry(entry)) return false
+  const remote = remoteDestination(entry)
+  return remote === null || !addedRemotes.has(remote)
+}
+
 /** Parse `git config --null --list` output. */
 export function parseGitConfigList(stdout: string): GitConfigEntry[] {
   const entries: GitConfigEntry[] = []
@@ -227,12 +272,16 @@ export function parseGitConfigList(stdout: string): GitConfigEntry[] {
 }
 
 /**
- * The entries of `config` that could run a program, as a sorted multiset of
- * `key=value` strings: two configs with equal results start the same programs.
+ * The entries of `config` that could run a program or redirect a remote, as a
+ * sorted multiset of `key=value` strings: two configs with equal results start
+ * the same programs and reach the same hosts. URLs of `addedRemotes` are left out.
  */
-export function executableGitConfigEntries(entries: readonly GitConfigEntry[]): string[] {
+export function executableGitConfigEntries(
+  entries: readonly GitConfigEntry[],
+  addedRemotes: ReadonlySet<string> = new Set(),
+): string[] {
   return entries
-    .filter((entry) => !isInertGitConfigEntry(entry))
+    .filter((entry) => isGuardedEntry(entry, addedRemotes))
     .map((entry) => (entry.value === null ? entry.key : `${entry.key}=${entry.value}`))
     .sort()
 }
@@ -242,10 +291,11 @@ export function changedExecutableGitConfigKeys(
   before: readonly GitConfigEntry[],
   after: readonly GitConfigEntry[],
 ): string[] {
+  const added = addedRemoteNames(before, after)
   const values = (entries: readonly GitConfigEntry[]): Map<string, string[]> => {
     const map = new Map<string, string[]>()
     for (const entry of entries) {
-      if (isInertGitConfigEntry(entry)) continue
+      if (!isGuardedEntry(entry, added)) continue
       const list = map.get(entry.key) ?? []
       list.push(entry.value ?? '')
       map.set(entry.key, list)
