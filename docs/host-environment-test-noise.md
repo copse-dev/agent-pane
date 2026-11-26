@@ -27,6 +27,11 @@ Main-process and `scripts/` suites only; renderer/settings tests are unaffected.
   example path from `process.cwd()`; a `pnpm install` in the worktree clears these.
 - **SSH commit-signing tests** — fail with `could not create temporary file` when the host signing
   key/agent isn't set up the way the fixture expects.
+- **Root Linux containers** (`apply-seccomp: write /proc/self/uid_map: Operation not permitted`)
+  — every real-sandbox test under `src/main/project-sandbox/` when run as root with `bwrap`
+  installed. `pnpm test` re-executes as an ordinary user to avoid it; seeing it means the run was
+  forced to stay root (`COPSE_ROOT_USERNS=0`) or `unshare -U` is unavailable. See
+  [Claude Code cloud sessions](agent-development.md#claude-code-cloud-sessions).
 - **GNU-only `stat -c`** — `screenshot-publication.test.ts` fails on macOS
   (`stat: illegal option -- c`).
 
