@@ -15,6 +15,7 @@
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process'
 import { delimiter, join } from 'node:path'
 import { accessSync, constants } from 'node:fs'
+import { constants as osConstants } from 'node:os'
 
 /** Set inside the namespace so the child does not re-execute again. `0` opts out. */
 export const ROOT_USERNS_ENV = 'COPSE_ROOT_USERNS'
@@ -76,7 +77,8 @@ export function planRootUserns(
       kind: 'blocked',
       reason:
         'running as root, where the project sandbox cannot apply its seccomp filter, and ' +
-        '`unshare -U` cannot create a user namespace to run as an ordinary user. ' +
+        '`unshare -U --map-user=1000 --map-group=1000` failed: either user namespaces are ' +
+        'unavailable or this util-linux `unshare` predates --map-user. ' +
         'Run as a non-root user instead.',
     }
   }
@@ -107,9 +109,18 @@ function currentRootUsernsHost(): RootUsernsHost {
   }
 }
 
-function exitLike(result: SpawnSyncReturns<Buffer>): never {
+/**
+ * Exit the way the child did. Re-raising its signal does not end this process
+ * when Node ignores or handles that signal (SIGPIPE by default), so exit with
+ * the shell's 128 + signal status after it; returning would run the launcher a
+ * second time, as root.
+ */
+export function exitLike(result: SpawnSyncReturns<Buffer>): never {
   if (result.error) throw result.error
-  if (result.signal) process.kill(process.pid, result.signal)
+  if (result.signal) {
+    process.kill(process.pid, result.signal)
+    process.exit(128 + osConstants.signals[result.signal])
+  }
   process.exit(result.status ?? 1)
 }
 

@@ -1,5 +1,8 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import {
   planRootUserns,
   ROOT_USERNS_ENV,
@@ -76,5 +79,26 @@ describe('planRootUserns', () => {
   it('lets unit runs carry on as root when the sandbox cannot work', () => {
     assert.deepEqual(planRootUserns(host({ hasBinary: () => false }), unit), { kind: 'run-here' })
     assert.deepEqual(planRootUserns(host({ canUnshare: () => false }), unit), { kind: 'run-here' })
+  })
+})
+
+describe('exitLike', () => {
+  it('exits on a child signal that Node ignores instead of falling through', () => {
+    // Node ignores SIGPIPE, so re-raising it alone would return and run the
+    // launcher a second time in the parent.
+    const module = pathToFileURL(resolve('scripts/lib/root-container-userns.mts')).href
+    const child = spawnSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `const { exitLike } = await import(${JSON.stringify(module)})
+         exitLike({ signal: 'SIGPIPE', status: null, pid: 0, output: [], stdout: null, stderr: null })
+         console.log('fell through')`,
+      ],
+      { encoding: 'utf8' },
+    )
+    assert.equal(child.stdout, '')
+    assert.equal(child.status, 141)
   })
 })
