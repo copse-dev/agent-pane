@@ -33,20 +33,6 @@ const MARKETING_MOUNT = '/marketing'
 const MARKETING_DEMO_MOUNT = `${MARKETING_MOUNT}/demo/main`
 let server: Server | undefined
 
-/**
- * The Chrome for Testing build the browser tier renders with. Without a pin,
- * WebdriverIO downloads whatever is the current stable channel, so a Chrome
- * release changes every PR's demo run at once: on 2026-11-25, 157 -> 158
- * failed `landing-cupcake-walkthrough` on every open PR (#4506), and a new
- * release can move browser reference screenshots that no PR touched.
- *
- * Bump it in its own PR: pick a version from
- * https://googlechromelabs.github.io/chrome-for-testing/known-good-versions.json,
- * let CI render it, fix any spec it breaks, and accept the screenshot
- * candidates it produces in that PR.
- */
-const DEMO_CHROME_VERSION = '158.0.8127.36'
-
 const contentTypes: Readonly<Record<string, string>> = {
   '.css': 'text/css; charset=utf-8',
   '.html': 'text/html; charset=utf-8',
@@ -371,8 +357,6 @@ export const config: WebdriverIO.Config = {
   capabilities: [
     {
       browserName: 'chrome',
-      // A local Chromium override brings its own version.
-      ...(process.env['COPSE_DEMO_CHROME_BINARY'] ? {} : { browserVersion: DEMO_CHROME_VERSION }),
       'wdio:enforceWebDriverClassic': true,
       'goog:chromeOptions': {
         args: [
