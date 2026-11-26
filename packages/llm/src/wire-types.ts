@@ -292,10 +292,11 @@ export interface LLMStreamOptions {
   readonly compactAtTokens?: number | undefined
   /**
    * Ask the provider to minimise or skip hidden reasoning for this one call. A
-   * best-effort hint: providers with no wire control for it (Anthropic budgets,
-   * LM Studio's native SDK) ignore it, so callers must still bound the stream
-   * themselves. The agent loop sets it on the last-chance reasoning-runaway
-   * recovery turn.
+   * best-effort hint: providers with no wire control for it (Anthropic budgets)
+   * ignore it, so callers must still bound the stream themselves. LM Studio's
+   * native SDK has none either, so it sends such a call through LM Studio's
+   * OpenAI-compatible endpoint. The agent loop sets it on the last-chance
+   * reasoning-runaway recovery turn.
    */
   readonly suppressReasoning?: boolean | undefined
 }

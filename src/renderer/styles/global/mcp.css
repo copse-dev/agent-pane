@@ -4,10 +4,10 @@
   gap: var(--spacing-sm);
   font-size: var(--font-size-sm);
 }
+/* A server row sits on the page like a plugin row, not in its own box: the
+   list's gap separates one server from the next. */
 .mcp-server-row {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: var(--spacing-sm);
+  padding: 0;
 }
 .mcp-server-header {
   display: flex;
@@ -68,17 +68,17 @@
   color: var(--warning, #d29922);
 }
 
+/* A declared row (`.mcp-declared-row`) sits on the page like the server rows
+   above it, with no frame of its own. Nothing on it is actionable (no toggle,
+   no connection), and its status reads "not running" rather than greying the
+   row out: it is not switched off, it is not started. A bare `border-style`
+   here would draw a medium border in the text colour now that server rows have
+   no border to restyle. */
 .mcp-declared-list {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
   font-size: var(--font-size-sm);
-}
-/* Nothing on a declared row is actionable — no toggle, no connection. Dashed,
-   like the read-only plugin rows, rather than greyed: it is not switched off,
-   it is not started. */
-.mcp-declared-row {
-  border-style: dashed;
 }
 .mcp-trust-banner {
   display: flex;

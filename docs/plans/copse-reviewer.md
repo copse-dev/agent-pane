@@ -1,6 +1,8 @@
 # Copse Reviewer
 
-Status: **Active — Phases 0 to 5 landed; B8's Martian-offline target is unmeasured.**
+Status: **Active — Phases 0 to 5 landed; B8's Martian-offline target is unmeasured.** The local
+pull-request shell (`copse-review pr`, local models, every change in a container) landed
+2026-11-22; see §Local pull-request shell.
 `@copse/review` is a workspace package on
 `main` with the finding schema, Stage 0 (the base-versus-head build and test delta), the
 `IsolationBackend` contract with the host-process, OS-sandbox and container backends, the
@@ -619,8 +621,12 @@ states that boundary explicitly and treats an unspecified test command's tier as
 Two red exit codes cannot establish that failures are pre-existing. Stage 0 compares complete
 individual failure inventories for Node tests. Copse opts in through `review.config.json` and
 `run-tests --review-report`: a compact reporter emits the full failing file/name set only after
-Node's final summary, with no cancelled tests, consistent counts and unique identities. It excludes
-parent-suite failures, and normalizes per-run bundle roots and ignores source line movement.
+Node's final summary, with consistent counts and unique identities. It excludes parent suites that
+failed only because a child did, and normalizes per-run bundle roots and ignores source line
+movement. A suite that fails on its own (a `before` hook that throws because a tool is missing, a
+`describe` body that throws) is one identity, and the tests it cancelled are accounted for by it.
+A test that outruns its timeout is one failure, though Node's summary counts it as cancelled; any
+other cancelled test leaves the inventory unavailable.
 Stage 0 reads the inventory as untrusted data, preserves it in the report and mints one finding
 per new failing identity. It never says a new test passed on base, only that it was absent from the
 base failure inventory. Missing/ambiguous inventories or other doubly-failing check kinds remain
@@ -1026,15 +1032,16 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   tests that intentionally classify machine-global `/tmp` paths therefore see the same path
   semantics in a review cell as they do in normal CI, instead of producing baseline-only false
   failures.
-- **Known limit: the dependency store across platforms.** The cell resolves the offline
-  install from the host's pnpm store, which holds the host platform's packages. The GitHub
-  ground jobs prime that store from the exact contributor lockfile and patch data with
-  `pnpm fetch` in the secret-free job; manifests and lifecycle scripts still run only in
-  the isolated cell. On a Linux host (CI, a Linux desktop) the host and guest platforms
-  match. On macOS the Linux guest finds no Linux binaries for native packages and the
-  prepare step fails, which Stage 0 reports as "not checked" rather than pretending.
-  Pointing the cell at the runtime's shared store volume, populated by an installing
-  container run, is the follow-up there.
+- **Known limit: the dependency store across platforms — resolved 2026-11-22.** The cell
+  resolves the offline install from a host-filled store. The GitHub ground jobs prime it
+  from the exact contributor lockfile and patch data with `pnpm fetch` in the secret-free
+  job; manifests and lifecycle scripts still run only in the isolated cell. A Mac's store
+  held darwin builds of platform packages, so a Linux cell's prepare step failed and Stage 0
+  reported "not checked". The seed workspace now declares the cell's platform
+  (`supportedArchitectures`: linux, the cell's CPU, glibc), so `pnpm fetch` on any host fills
+  the store for the cell (`packages/review/src/cell-preparation.ts`, shared by the Actions
+  shell and `copse-review pr`). On GitHub's Linux runners that is the platform it always
+  fetched. See §Local pull-request shell.
 
 Not in Phase 4: Forgejo focused-validation parity, `bench:review` (Phase 5), and a foreign-diff
 gesture in the app (the app reviews the thread's own tree; a "review this pull request"
@@ -1136,6 +1143,91 @@ Not in Phase 5: a mapped Martian-offline or equivalent real-PR corpus, and the o
   see above. `bench:review`, an exact-configuration regression ratchet, and a separate
   absolute target gate. Arguably belongs at Phase 2; listed last only because it needs a
   corpus that Phases 1–2 generate.
+- **Local pull-request shell.** ✅ Landed 2026-11-22; Apple-hardware proof and the Q11
+  measurement remain. See §Local pull-request shell.
+
+## Local pull-request shell
+
+_Added 2026-11-22._ `copse-review pr <number | URL | ref>` reviews one pull request on the
+machine it runs on, with no forge API and no Copse service, so that an agent or a hook can
+ask for a review and read the answer from disk. The target is a Mac Studio running local
+models; nothing in it is Mac-only.
+
+- **Every change is foreign.** The shell always passes `--foreign` and brings its own
+  container backend: Stage 0, `run_command` and reproducers execute in network-disabled
+  containers whoever wrote the change. B3 is unchanged; the decision here is only that the
+  local shell never uses the own-tree exemption, so one path is exercised and measured.
+  The review runs in a scratch repository that holds only the head and base commits' history,
+  fetched from the caller's clone. The cells mount that repository's git directory, never the
+  clone's, so the change cannot read the caller's other branches, stashes, reflogs or config.
+  Apple container cells are read back with `container inspect` before anything runs in them;
+  a wall that does not read back fails the cell closed.
+- **One machine does both CI jobs.** CI splits grounding from findings to keep the model
+  key from contributor code. A local model has no key, so the shell runs the CLI's ordinary
+  single pass and the diff never leaves the machine. With a hosted challenger
+  (`--challenger-provider`) the usual redaction applies to what leaves.
+- **Host preparation is CI's, factored out.** Fetch into a private ref namespace
+  (`refs/copse-review/pr-<n>/{head,base}`), validate both lockfiles
+  (`dependency-policy.ts`), fill the store for the cell's platform, and build
+  `Dockerfile.cell` once per Dockerfile digest and cell CPU (`--image` names a prebuilt one).
+  `ci/prepare-action.mts` calls the same functions, so the two shells cannot drift on what
+  the host fetches. The portable `pnpm` profile admits relative directory dependencies;
+  `copse-pnpm` keeps its one reviewed exception.
+- **Engines.** Docker and Podman (Docker dialect), and Apple container in its own dialect,
+  following the thread-in-container runtime's measured mapping. Apple container has no
+  no-new-privileges flag, so every command runs under `setpriv --no-new-privs`;
+  `Dockerfile.cell` fails to build without `setpriv` and strips every setuid and setgid bit.
+  `COPSE_CONTAINER_ENGINE` (`auto` / `docker` / `podman` / `apple`) chooses.
+- **Local models.** A pre-flight reads LM Studio's native catalogue before Stage 0: a model
+  loaded with less context than `--budget-chars` needs fails the run in seconds with the
+  `lms load … --context-length` that fixes it; a text-only model neither runs `visual` nor is
+  offered `view_image`; what the server reported is recorded under the report's `models`.
+  Reviewers and challenger take separate routes (`--challenger-provider`,
+  `--challenger-base-url`) and reasoning efforts; when every route is local, reviewers run one
+  at a time. `bench:review` takes the same challenger routes, so a local pair is measured
+  under its exact identity. Each local model's turns keep their history within three quarters
+  of its loaded context (the agent loop trims against the previous request's size, so the
+  rest is headroom for one step's results), and the pre-flight's required context counts
+  that share. The window only trims: review turns pass `conversationPressureNudges: false`,
+  so the chat agent's pressure nudges ("Exploration is over", the forced tool-free turn) never
+  cut a role's own step budget short (`docs/plans/hooks-and-feature-packs.md`, Known
+  implementation traps). `copse-review pr` runs the pre-flight (`--preflight`) before waiting for the
+  machine. Model details are keyed by server and id, because LM Link lists one id per device.
+- **Answers are kept and reused.** Reports land under
+  `~/.copse/reviews/<repo>/pr-<n>/<head>-<settings>/` keyed by head, merge-base, options and
+  the reviewer's own revision; asking again answers from the saved report. One review runs at
+  a time per machine (`cache/review/review.lock`), and a lock whose holder died is taken
+  over. `--time-limit` bounds a run.
+- **Only a settled answer is reused.** _Amended 2026-11-23, after testing on a Mac Studio._ A
+  run writes beside the saved report and replaces it only when it finishes. A cancelled run,
+  one its own `--time-limit` cut short, or one that stopped without a report leaves the last
+  answer as it was. A report is reused only when its preparation passed, every check ran,
+  and no check is `transient`. Stage 0 marks a check transient when its verdict depends on
+  the run, not the code: a checker that ran out of memory or time or was killed, or two head
+  test runs that disagreed. A checker that could not start, or a typecheck with no
+  diagnostic, fails the same way again, so it is reused. The key includes the engine asked for and the
+  cell's limits, but not output-only options. A cell defaults to a quarter of the machine's
+  memory (4g to 16g) and half its CPUs (2 to 8); Copse needs about 16g.
+- **Nothing outlives a killed run.** Cell containers are journalled, with their engine,
+  before they are created. With the machine's lock held, a run removes what an earlier,
+  killed run left, containers and scratch alike. A container the engine will not remove in
+  time costs no result: it is retried when the cell ends, then named with its removal
+  command.
+
+Evidence at landing, on Linux x64 with Docker 29: the hostile-fixture conformance suite against
+the real engine (with `setpriv` and the setuid strip in the image); and `copse-review pr` over a
+real pnpm project whose `refs/pull/3/head` breaks a test, with the store filled by real `pnpm fetch`,
+Stage 0 offline in containers confirming the regression, a scripted reviewer's `run_command`
+brokered into a cell, and the second ask answered from the saved report. `pnpm fetch` with the
+seed's `supportedArchitectures` fetched `@esbuild/linux-arm64` on an x64 host, and only the host's
+build without it.
+
+Not yet shown: the Apple container dialect on Apple hardware (unit-tested against the fake
+engine only); bind-mount ownership and speed under macOS file sharing; Copse's own `copse-pnpm`
+profile end to end on a Mac; and, deciding whether the shell is worth running, Q11 — whether
+a local model carries the reviewer lens. Agents and hooks that start reviews are later work
+and fall under [`hooks-and-feature-packs.md`](hooks-and-feature-packs.md), whose decision 5
+budgets any machine turn a review starts.
 
 ## Non-goals
 
@@ -1683,6 +1775,28 @@ resource exhaustion cannot be caused by code: a model can investigate and establ
 causal finding. Imported legacy reports receive the same downgrade and lose the corresponding
 automatic Stage 0 findings; independently raised model findings are retained. No report-version bump
 is needed: the signal is optional for older reports.
+
+_Amended 2026-11-22:_ "unavailable command/setup" means the checker itself did not start. A test
+run that printed its own complete failure inventory (`COPSE_TEST_FAILURES_V1`) did start, so a
+missing tool in one of its tests (`spawn bwrap ENOENT` from a sandbox test, `spawn ps ENOENT` in a
+slim cell) no longer marks the whole suite inconclusive. Base runs, and the two inventories are
+compared test by test as for any stable failure; a failure present on both sides is not a finding.
+Exit 126/127 and pnpm's missing-script errors without an inventory remain setup failures. Found
+reviewing Copse itself in an Apple container cell, where the suite ran for eight minutes and was
+reported as "could not start".
+
+_Amended 2026-11-23:_ the same holds for a test run whose reporter finished and printed that its
+inventory was unavailable. It started, so it is a failed check without a list, never inconclusive:
+head is confirmed, base runs, a passing base confirms the regression, and a base that fails too
+leaves it `undetermined` with that reason. A one-day interim rule that called such runs
+inconclusive skipped base and hid a real regression (a head that broke a test file's import), so it
+was withdrawn. To make the list complete in cells that lack a tool, tests cancelled by a failed
+enclosing suite are now accounted for by that suite's identity (see the inventory contract above).
+Those tests never ran on base, so their absence from its list proves nothing: a head failure inside
+a suite or file that failed on base (its name begins with that suite's name and `>`, or the file
+failed as a whole) is not compared. It is never a finding; it leaves the check `undetermined`
+unless another failure is new, and the coverage gap names how many were not compared. Base runs
+once and head twice, so a single flaky `before` hook on base would otherwise confirm a regression.
 
 GitHub conversation collection retains each prior Copse inline finding with its original commit,
 location, URL and latest three replies as one bounded historical entry. Conversation trimming drops

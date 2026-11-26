@@ -3,6 +3,7 @@ import type { ApiClient } from '../preload/api.d.ts'
 import type { RightPanelMode } from '@shared/types/state.ts'
 import { openNewProjectThread } from './controller/projects.ts'
 import {
+  openRightPanelBesideWithWorkspace,
   openRightPanelWithWorkspace,
   toggleFilesPaneWithWorkspace,
   toggleProjectsPane,
@@ -71,11 +72,28 @@ export function matchActivityPanelShortcut(e: KeyboardShortcutEvent): boolean {
   return e.key === 'a' || e.key === 'A'
 }
 
-export type PanelShortcutAction = 'toggleSidebar' | 'togglePanel' | { openPanel: RightPanelMode }
+export type PanelShortcutAction =
+  | 'toggleSidebar'
+  | 'togglePanel'
+  | { openPanel: RightPanelMode }
+  | { openPanelBeside: RightPanelMode }
+
+/**
+ * The panel chords plus Alt/Option open the pane beside the open one (a split
+ * panel). Matched on `code`: Option+Shift+letter types a symbol on macOS.
+ */
+function matchPanelBesideShortcut(e: KeyboardShortcutEvent): PanelShortcutAction | null {
+  if (e.shiftKey && e.code === 'KeyE') return { openPanelBeside: 'explorer' }
+  if (e.shiftKey && e.code === 'KeyG') return { openPanelBeside: 'changes' }
+  if (e.shiftKey && e.code === 'KeyB') return { openPanelBeside: 'browser' }
+  if (!e.shiftKey && e.code === 'Backquote') return { openPanelBeside: 'terminal' }
+  return null
+}
 
 export function matchPanelShortcut(e: KeyboardShortcutEvent): PanelShortcutAction | null {
   const meta = e.ctrlKey || e.metaKey
-  if (!meta || e.altKey) return null
+  if (!meta) return null
+  if (e.altKey) return matchPanelBesideShortcut(e)
 
   if (!e.shiftKey && (e.key === 'b' || e.key === 'B')) return 'toggleSidebar'
   if (!e.shiftKey && (e.key === 'j' || e.key === 'J')) return 'togglePanel'
@@ -98,6 +116,10 @@ export function handlePanelShortcut(
   }
   if (action === 'togglePanel') {
     toggleFilesPaneWithWorkspace(store, api)
+    return
+  }
+  if ('openPanelBeside' in action) {
+    openRightPanelBesideWithWorkspace(store, api, action.openPanelBeside)
     return
   }
   openRightPanelWithWorkspace(store, api, action.openPanel)

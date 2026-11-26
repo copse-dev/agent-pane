@@ -13,7 +13,7 @@ import { ScriptedProvider, type ScriptedStep } from './scripted-provider.ts'
 import { verifyFindings, type Stage4Options } from './stage4.ts'
 import { createTestRepo, toolText, type TestRepo } from './test-repo.ts'
 import { openReviewGround, prepareVerificationBase, runStage0Checks } from './stage0.ts'
-import { createVerifierToolExecutor, REPRODUCER_DIR } from './verifier-tools.ts'
+import { challengerTools, createVerifierToolExecutor, REPRODUCER_DIR } from './verifier-tools.ts'
 
 function candidate(id: string, klass: Finding['class'], line: number): Finding {
   return {
@@ -370,6 +370,29 @@ describe('verifyFindings', () => {
       assert.match(toolText(result), /test filename must start/)
       await assert.rejects(access(join(checkouts.head, path)))
     }
+  })
+
+  it('says how long a refused verdict reason was, and tells the model the limit up front', async () => {
+    // A Mac Studio challenger wrote five 1,381–1,811-character reasons, each
+    // refused without saying why, and ran out of steps.
+    const executor = createVerifierToolExecutor(options([], {}))
+    const signal = new AbortController().signal
+    const long = await executor.execute(
+      'verdict',
+      { status: 'stands', reason: 'x'.repeat(1_811) },
+      signal,
+      'long',
+    )
+    assert.match(toolText(long), /reason is 1811 characters; it must be 8–1200/)
+    const fits = await executor.execute(
+      'verdict',
+      { status: 'stands', reason: 'The changed assertion fails on head.' },
+      signal,
+      'fits',
+    )
+    assert.match(toolText(fits), /Verdict recorded/)
+    const verdict = challengerTools().find((tool) => tool.name === 'verdict')
+    assert.match(JSON.stringify(verdict?.parameters), /"minLength":8,"maxLength":1200/)
   })
 
   it('confirms an audited behavioral differential and keeps the artefact', async () => {

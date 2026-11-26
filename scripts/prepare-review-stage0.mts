@@ -4,10 +4,14 @@
  * Keep arbitrary dependency lifecycle scripts disabled. Linux does not ship in
  * node-pty's npm prebuilds, however, so explicitly run only that dependency's
  * reviewed native build after pnpm has materialised the offline install.
+ *
+ * Electron's binary is never downloaded here (no scripts, no network). Its
+ * loader still has to resolve, though, because main-process unit tests
+ * `require('electron')` for a path; see `placeholderElectron` below.
  */
 import { spawnSync } from 'node:child_process'
 import { existsSync, constants } from 'node:fs'
-import { appendFile, cp, mkdtemp } from 'node:fs/promises'
+import { appendFile, chmod, cp, mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { dirname, join, relative } from 'node:path'
 
 interface Step {
@@ -53,3 +57,33 @@ for (const step of steps) {
     throw new Error(`Stage 0 ${step.label} failed (${result.signal ?? String(result.status)})`)
   }
 }
+
+/**
+ * Electron's `index.js` returns `dist/<path.txt>`, and otherwise tries to
+ * download the binary, which throws in a network-disabled cell and so fails
+ * every test file that imports it before a single test runs; a run like that
+ * has no failure list to compare. Unit tests only need the path, so give the
+ * cell a placeholder executable there: the files load and their tests run, and
+ * anything that does launch Electron fails by name with this message.
+ */
+async function placeholderElectron(): Promise<void> {
+  const electron = join('node_modules', 'electron')
+  if (process.platform !== 'linux') return
+  if (!existsSync(join(electron, 'package.json')) || existsSync(join(electron, 'path.txt'))) return
+  console.log('==> Stage 0 placeholder Electron executable…')
+  await mkdir(join(electron, 'dist'), { recursive: true })
+  const executable = join(electron, 'dist', 'electron')
+  await writeFile(
+    executable,
+    [
+      '#!/bin/sh',
+      "echo 'Electron is not installed in this review cell (dependency scripts are off and it has no network), so nothing here can launch it.' >&2",
+      'exit 1',
+      '',
+    ].join('\n'),
+  )
+  await chmod(executable, 0o755)
+  await writeFile(join(electron, 'path.txt'), 'electron')
+}
+
+await placeholderElectron()
