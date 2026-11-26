@@ -52,21 +52,24 @@ export interface DetachedIdleInput {
   runningTurns: number
   /** Mobile chat still needs the app running to serve the phone. */
   mobileCompanionEnabled: boolean
+  /** Another window, such as one from New Window, is still open and visible. */
+  otherWindowsOpen: boolean
 }
 
 /**
  * Whether an app kept alive only to finish its turns should now quit.
  *
  * macOS keeps the app in the Dock by convention, so it never quits here. Elsewhere
- * the detached app is invisible, so once its last turn ends, and no phone still
- * needs it, it finishes the close the user asked for.
+ * the detached app is invisible, so once its last turn ends, and no phone or
+ * other open window still needs it, it finishes the close the user asked for.
  */
 export function shouldQuitDetachedApp(input: DetachedIdleInput): boolean {
   return (
     input.platform !== 'darwin' &&
     input.detached &&
     input.runningTurns === 0 &&
-    !input.mobileCompanionEnabled
+    !input.mobileCompanionEnabled &&
+    !input.otherWindowsOpen
   )
 }
 

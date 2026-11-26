@@ -225,6 +225,9 @@ async function continueTurn(
             (await resume.loadThreadMetas(id)).filter((meta) => meta.id === threadId),
           // This process runs nothing else; the app's own slots are not ours to see.
           isRunning: () => false,
+          // The app handed this thread over as it quit, so it is the run this
+          // worker exists to continue, whatever the profile's last-run record says.
+          previousRun: () => Promise.resolve({ startedAt: 0 }),
           onError: (error): void => {
             deps.log(`could not continue the turn: ${String(error)}`)
           },

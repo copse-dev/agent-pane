@@ -11,6 +11,7 @@ import {
 } from '@shared/store/thread-helpers.ts'
 import { INTERRUPTED_TURN_CONTINUATION } from '@shared/turn-recovery.ts'
 import type { MachineAgentDispatchRequest } from './agent-dispatcher.ts'
+import type { LastRunRecord } from './last-run.ts'
 import {
   RESTART_RESUME_DISPLAY,
   RESTART_RESUME_OPERATION_PREFIX,
@@ -21,6 +22,8 @@ import {
 } from './interrupted-turn-resume.ts'
 
 const BOOTED_AT = 1_000_000
+/** The previous run started before the threads below were last touched. */
+const PREVIOUS_START = BOOTED_AT - 50_000
 
 function completed(): TurnOutcome {
   return {
@@ -57,7 +60,7 @@ function transcript(
 type Meta = Parameters<typeof wasInterruptedByExit>[0]
 
 function meta(overrides: Partial<Meta> = {}): Meta {
-  return { id: 'thread-1', status: 'running', ...overrides }
+  return { id: 'thread-1', status: 'running', updatedAt: PREVIOUS_START + 10, ...overrides }
 }
 
 describe('wasInterruptedByExit', () => {
@@ -155,7 +158,11 @@ describe('transcriptCanResume', () => {
 function harness(
   threads: Record<string, readonly Meta[]>,
   messages: Record<string, readonly Message[]>,
-  options: { running?: string[]; result?: MachineDispatchResult } = {},
+  options: {
+    running?: string[]
+    result?: MachineDispatchResult
+    previous?: LastRunRecord | null
+  } = {},
 ): {
   deps: InterruptedTurnResumeDependencies
   dispatched: MachineAgentDispatchRequest[]
@@ -180,6 +187,8 @@ function harness(
       },
       createId: () => `op-${String((next += 1))}`,
       bootedAt: BOOTED_AT,
+      previousRun: async () =>
+        options.previous === undefined ? { startedAt: PREVIOUS_START } : options.previous,
       onError: (error) => errors.push(error),
     },
   }
@@ -217,6 +226,70 @@ describe('resumeInterruptedTurns', () => {
       },
     })
     assert.equal(dispatched[1]?.payload.workingBrief, 'Ship the fix')
+  })
+
+  it("continues on the thread's own model, reasoning and execution mode", async () => {
+    const { deps, dispatched } = harness(
+      {
+        p: [
+          meta({
+            id: 'acp',
+            model: 'acp:codex-acp',
+            reasoning: 'high',
+            executionMode: 'agent',
+          }),
+        ],
+      },
+      { acp: cutOff },
+    )
+    await resumeInterruptedTurns(deps)
+    const [request] = dispatched
+    assert.ok(request)
+    assert.equal(request.payload.model, 'acp:codex-acp')
+    assert.equal(request.payload.reasoning, 'high')
+    assert.equal(request.payload.executionMode, 'agent')
+  })
+
+  it('continues nothing after a quit the user chose', async () => {
+    const { deps, dispatched } = harness(
+      { p: [meta({ id: 't' })] },
+      { t: cutOff },
+      { previous: { startedAt: PREVIOUS_START, ended: 'quit' } },
+    )
+    assert.deepEqual(await resumeInterruptedTurns(deps), [])
+    assert.deepEqual(dispatched, [])
+  })
+
+  it('continues after an update relaunch, as after a crash', async () => {
+    const { deps, dispatched } = harness(
+      { p: [meta({ id: 't' })] },
+      { t: cutOff },
+      { previous: { startedAt: PREVIOUS_START, ended: 'update' } },
+    )
+    await resumeInterruptedTurns(deps)
+    assert.equal(dispatched.length, 1)
+  })
+
+  it('continues nothing when no previous run was recorded', async () => {
+    const { deps, dispatched } = harness(
+      { p: [meta({ id: 't' })] },
+      { t: cutOff },
+      { previous: null },
+    )
+    await resumeInterruptedTurns(deps)
+    assert.deepEqual(dispatched, [])
+  })
+
+  it('leaves a thread cut off before the previous run started', async () => {
+    const { deps, dispatched } = harness(
+      { p: [meta({ id: 'stale', updatedAt: PREVIOUS_START - 1 }), meta({ id: 'recent' })] },
+      { stale: cutOff, recent: cutOff },
+    )
+    await resumeInterruptedTurns(deps)
+    assert.deepEqual(
+      dispatched.map((request) => request.threadId),
+      ['recent'],
+    )
   })
 
   it('uses the thread id as the turn tree of a thread that predates epochs', async () => {
