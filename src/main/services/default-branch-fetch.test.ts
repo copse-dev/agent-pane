@@ -9,6 +9,7 @@ import {
   fetchThroughScratchRepository,
   isNetworkRemoteUrl,
   originBranchRef,
+  type ProjectGit,
 } from './default-branch-fetch.ts'
 import { runWorktreeGit } from './worktree-manager.ts'
 
@@ -30,6 +31,19 @@ async function commit(repo: string, file: string, message: string): Promise<void
   await writeFile(join(repo, file), `${message}\n`)
   git(repo, ['add', '.'])
   git(repo, ['commit', '-q', '-m', message])
+}
+
+function objectCount(repo: string): number {
+  const stats = new Map(
+    git(repo, ['count-objects', '-v'])
+      .trim()
+      .split('\n')
+      .map((line) => {
+        const [key = '', value = ''] = line.split(': ')
+        return [key, Number(value)] as const
+      }),
+  )
+  return (stats.get('count') ?? 0) + (stats.get('in-pack') ?? 0)
 }
 
 describe('isNetworkRemoteUrl', () => {
@@ -125,6 +139,39 @@ describe('fetchThroughScratchRepository', () => {
 
     assert.equal(result.code, 0, result.stderr)
     assert.equal(git(project, ['rev-parse', 'refs/remotes/origin/main']).trim(), remoteTip)
+  })
+
+  it('fetches only new objects into a shallow project that never fetched the branch', async () => {
+    // A CI checkout: one commit, deep history upstream, no origin/<branch>.
+    const { temp, project: seeded, remote } = await fixture()
+    for (let index = 0; index < 40; index++) {
+      await commit(seeded, `file-${String(index)}.txt`, `c${String(index)}`)
+    }
+    git(seeded, ['push', '-q', 'origin', 'main'])
+    const project = join(temp, 'shallow')
+    git(temp, ['clone', '-q', '--depth=1', `file://${remote}`, project])
+    git(project, ['update-ref', '-d', 'refs/remotes/origin/main'])
+    const remoteTip = await advanceRemote(temp, remote)
+    const scratch = join(temp, 'scratch.git')
+    // What the network step downloaded, counted before the scratch is removed.
+    let downloaded: number | undefined
+    const projectGit: ProjectGit = (cwd, args, ...rest) => {
+      if (args[0] === 'fetch') downloaded = objectCount(scratch)
+      return runWorktreeGit(cwd, args, ...rest)
+    }
+
+    const result = await fetchThroughScratchRepository({
+      projectRoot: project,
+      url: `file://${remote}`,
+      refs: [originBranchRef('main')],
+      scratch,
+      projectGit,
+    })
+
+    assert.equal(result.code, 0, result.stderr)
+    assert.equal(git(project, ['rev-parse', 'refs/remotes/origin/main']).trim(), remoteTip)
+    // One commit, its tree and one blob; the full history is over 120 objects.
+    assert.ok(downloaded !== undefined && downloaded <= 5, `downloaded ${String(downloaded)}`)
   })
 
   it('reports an unreachable remote and still removes the scratch', async () => {

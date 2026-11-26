@@ -1,5 +1,5 @@
 import { sha256Hex } from '@copse/std/sha256.ts'
-import { mkdir, realpath, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { runCommand, type CommandResult } from './exec/command-runner.ts'
 import { copseCacheDir } from './storage/copse-paths.ts'
@@ -54,6 +54,43 @@ function failed(message: string): CommandResult {
   return { stdout: '', stderr: message, code: 1, stdoutTruncated: false }
 }
 
+/**
+ * Host-side scratch fetches run unsandboxed in their own process group, so the
+ * app exiting does not end them: an orphaned `git fetch` (with its
+ * `git-remote-https` and `index-pack`) used to run on for tens of seconds,
+ * skip its scratch cleanup, and keep any inherited sockets open (#4407).
+ * Quit cleanup aborts them through this controller.
+ */
+const scratchFetchAbort = new AbortController()
+const scratchFetchesInFlight = new Set<Promise<unknown>>()
+
+/** How long quit cleanup waits for aborted fetches to exit and remove their scratch. */
+export const SCRATCH_FETCH_ABORT_WAIT_MS = 5_000
+
+/**
+ * Kill every in-flight host-side scratch fetch and refuse new ones; for quit
+ * cleanup. Resolves once they have removed their scratch repositories, or
+ * after `waitMs`.
+ */
+export async function abortScratchFetchesForQuit(
+  waitMs = SCRATCH_FETCH_ABORT_WAIT_MS,
+): Promise<void> {
+  scratchFetchAbort.abort()
+  if (scratchFetchesInFlight.size === 0) return
+  let timer: NodeJS.Timeout | undefined
+  await Promise.race([
+    Promise.allSettled([...scratchFetchesInFlight]),
+    new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, waitMs)
+      timer.unref()
+    }),
+  ])
+  clearTimeout(timer)
+}
+
+/** Scratch-only ref holding the project's HEAD, offered as a negotiation tip. */
+const SCRATCH_SEED_HEAD_REF = 'refs/copse-seed/HEAD'
+
 /** One ref to fetch: `source` on the remote, written to `destination` here. */
 export interface ScratchFetchRef {
   source: string
@@ -71,7 +108,7 @@ export function originBranchRef(branch: string): ScratchFetchRef {
  * validated names; this never derives a refspec from Git configuration.
  * Resolves with the first failing command's result, or the final copy's.
  */
-export async function fetchThroughScratchRepository(input: {
+export function fetchThroughScratchRepository(input: {
   projectRoot: string
   url: string
   refs: readonly ScratchFetchRef[]
@@ -79,16 +116,32 @@ export async function fetchThroughScratchRepository(input: {
   projectGit: ProjectGit
   gitAuth?: GitAuthMode
 }): Promise<CommandResult> {
+  if (scratchFetchAbort.signal.aborted) return Promise.resolve(failed('Copse is quitting'))
+  const run = fetchThroughScratchRepositoryOnce(input, scratchFetchAbort.signal)
+  scratchFetchesInFlight.add(run)
+  void run.then(
+    () => scratchFetchesInFlight.delete(run),
+    () => scratchFetchesInFlight.delete(run),
+  )
+  return run
+}
+
+async function fetchThroughScratchRepositoryOnce(
+  input: Parameters<typeof fetchThroughScratchRepository>[0],
+  signal: AbortSignal,
+): Promise<CommandResult> {
   const { projectRoot, url, refs, scratch, projectGit, gitAuth = 'interactive' } = input
   if (refs.length === 0) return failed('No refs to fetch')
-  const [commonDir, ...seeds] = await Promise.all([
+  const [commonDir, head, ...seeds] = await Promise.all([
     projectGit(projectRoot, ['rev-parse', '--git-common-dir']),
+    projectGit(projectRoot, ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}']),
     ...refs.map(({ destination }) =>
       projectGit(projectRoot, ['rev-parse', '--verify', '--quiet', `${destination}^{commit}`]),
     ),
   ])
   if (commonDir.code !== 0) return commonDir
-  const objects = join(resolve(projectRoot, commonDir.stdout.trim()), 'objects')
+  const gitDir = resolve(projectRoot, commonDir.stdout.trim())
+  const objects = join(gitDir, 'objects')
   // `alternates` is one path per line.
   if (objects.includes('\n')) return failed('Project object directory path is not supported')
 
@@ -101,6 +154,7 @@ export async function fetchThroughScratchRepository(input: {
         cwd: scratch,
         unsandboxed: true,
         timeout_ms: 60_000,
+        signal,
         // Enforce the network boundary after global URL rewrites, too. The
         // sandboxed local copy below still needs its ordinary file transport.
         gitConfig: args[0] === 'fetch' && isNetworkRemoteUrl(url) ? 'internal-network' : 'internal',
@@ -109,15 +163,31 @@ export async function fetchThroughScratchRepository(input: {
     const init = await host(['init', '--bare', '--quiet', '--template=', scratch])
     if (init.code !== 0) return init
     await writeFile(join(scratch, 'objects', 'info', 'alternates'), `${objects}\n`)
-    // The project's last fetched tips give the negotiation a starting point, so
-    // only commits since then are downloaded.
+    // The project's last fetched tips, and its HEAD, give the negotiation a
+    // starting point, so only commits since then are downloaded. Internal Git
+    // sets `core.alternateRefsCommand=`, which keeps the alternate's own refs
+    // out of the negotiation; without a seeded tip the fetch would announce
+    // no objects at all and download the remote's whole history (#4407). HEAD
+    // matters when the project has never fetched `<destination>`, as in a CI
+    // checkout of one commit.
+    const seedUpdates: [ref: string, commit: string][] = []
     for (const [index, { destination }] of refs.entries()) {
       const seed = seeds[index]
       const seedCommit = seed?.code === 0 ? seed.stdout.trim() : ''
-      if (!seedCommit) continue
-      const update = await host(['update-ref', destination, seedCommit])
+      if (seedCommit) seedUpdates.push([destination, seedCommit])
+    }
+    const headCommit = head.code === 0 ? head.stdout.trim() : ''
+    if (headCommit) seedUpdates.push([SCRATCH_SEED_HEAD_REF, headCommit])
+    for (const [ref, commit] of seedUpdates) {
+      const update = await host(['update-ref', ref, commit])
       if (update.code !== 0) return update
     }
+    // A shallow project lacks its seeds' ancestors. Sharing its shallow
+    // boundary tells the remote so, instead of a thin pack whose delta bases
+    // the scratch cannot resolve.
+    await copyFile(join(gitDir, 'shallow'), join(scratch, 'shallow')).catch((error: unknown) => {
+      if (!(error instanceof Error && Reflect.get(error, 'code') === 'ENOENT')) throw error
+    })
     const fetched = await host([
       'fetch',
       '--quiet',
@@ -147,7 +217,8 @@ export async function fetchThroughScratchRepository(input: {
       [scratch],
     )
   } finally {
-    await rm(scratch, { recursive: true, force: true })
+    // An aborted fetch can still be writing for a moment while its group exits.
+    await rm(scratch, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   }
 }
 
