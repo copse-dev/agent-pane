@@ -178,6 +178,11 @@ describe('remote URLs recorded outside the sandbox', () => {
       assert.equal(planScopedNetwork('git fetch', readRepoNetworkFacts(repo, repo)).action, 'none')
       // A remote added later is not recorded on sight, even on github.com.
       git(repo, ['remote', 'set-url', 'origin', 'https://github.com/acme/app'])
+      git(repo, ['remote', 'add', 'x', 'https://evil.example/r.git'])
+      assert.equal(
+        planScopedNetwork('git push x HEAD', readRepoNetworkFacts(repo, repo)).action,
+        'none',
+      )
       git(repo, ['remote', 'add', 'drop', 'https://github.com/me/public'])
       assert.equal(
         planScopedNetwork('git push drop HEAD', readRepoNetworkFacts(repo, repo)).action,
