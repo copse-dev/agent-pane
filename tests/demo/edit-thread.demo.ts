@@ -140,7 +140,11 @@ describe('edit thread prototype', () => {
     await saveElementScreenshot('#app', 'edit-thread-review-light.png')
     await $('#cancel').click()
     await browser.setWindowSize(390, 844)
-    await prepareE2eScreenshot()
+    // Frame the app to the whole phone-sized page. The default 1280x800 frame
+    // would clip it to 800 px tall while the fixed toast still sits on the
+    // 844 px page, so the toast would be measured against a footer it is not
+    // placed above.
+    await prepareE2eScreenshot({ width: 390, height: 844 })
     await noOverflow()
     await $('#review').click()
     await expect($('#history-preview')).toBeDisplayed()
