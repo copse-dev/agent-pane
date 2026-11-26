@@ -75385,10 +75385,20 @@ function prCheckFixDraft(pr, check, headSha) {
 function reviewThreadLocation(thread) {
   return thread.line === null ? thread.path : `${thread.path}:${String(thread.line)}`;
 }
+function markdownCodeSpan(text) {
+  const flat = Array.from(text, (char) => {
+    const code2 = char.charCodeAt(0);
+    return code2 < 32 || code2 === 127 || code2 === 8232 || code2 === 8233 ? " " : char;
+  }).join("");
+  const longestRun = Math.max(0, ...(flat.match(/`+/g) ?? []).map((run4) => run4.length));
+  const fence = "`".repeat(longestRun + 1);
+  const pad = flat.startsWith("`") || flat.endsWith("`") || flat.startsWith(" ") ? " " : "";
+  return `${fence}${pad}${flat}${pad}${fence}`;
+}
 function prReviewThreadsFixDraft(pr, threads) {
   const list = threads.map((thread) => {
     const author = thread.comments[0]?.author;
-    return `- ${reviewThreadLocation(thread)}${author ? ` (from @${author})` : ""}, thread id \`${thread.id}\``;
+    return `- ${markdownCodeSpan(reviewThreadLocation(thread))}${author ? ` (from @${author})` : ""}, thread id ${markdownCodeSpan(thread.id)}`;
   }).join("\n");
   const subject = threads.length === 1 ? "the review comment" : `the ${String(threads.length)} review comments`;
   return `Address ${subject} on [#${String(pr.number)} \u2014 ${pr.title}](${pr.url}):
