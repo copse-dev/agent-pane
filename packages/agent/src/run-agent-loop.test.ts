@@ -12,6 +12,7 @@ import {
 } from './agent-loop-limits.ts'
 import { getLastMeasuredInputTokens, setLastMeasuredInputTokens } from './trim-history.ts'
 import {
+  CONTEXT_OVERFLOW_USER_MESSAGE,
   MALFORMED_TOOL_CALL_NUDGE,
   REASONING_RUNAWAY_FORCE_ANSWER_NUDGE,
   REASONING_RUNAWAY_EXHAUSTED_STOP_REASON,
@@ -1162,7 +1163,10 @@ describe('runAgentLoop', () => {
       assert.deepEqual(chunks.at(-1), { type: 'done' })
       assert.ok(
         chunks.some(
-          (chunk) => chunk.type === 'text' && chunk.text === REASONING_RUNAWAY_GIVEUP_MESSAGE,
+          (chunk) =>
+            chunk.type === 'text' &&
+            chunk.loopNotice === 'reasoning_runaway' &&
+            chunk.text === REASONING_RUNAWAY_GIVEUP_MESSAGE,
         ),
       )
     })
@@ -1593,7 +1597,14 @@ src/renderer/views/projects-pane.ts
       onChunk: (c) => chunks.push(c),
       executeTool: async () => 'ok',
     })
-    assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('model-request limit')))
+    assert.ok(
+      chunks.some(
+        (c) =>
+          c.type === 'text' &&
+          c.loopNotice === 'model_request_limit' &&
+          c.text.includes('model-request limit'),
+      ),
+    )
     assert.deepEqual(chunks.at(-1), { type: 'done', stopReason: 'max_steps' })
   })
 
@@ -1607,7 +1618,12 @@ src/renderer/views/projects-pane.ts
       executeTool: async (_name, _args, _signal, _toolCallId) => '',
     })
     assert.ok(
-      chunks.some((c) => c.type === 'text' && c.text.includes('step limit before finishing')),
+      chunks.some(
+        (c) =>
+          c.type === 'text' &&
+          c.loopNotice === 'step_limit' &&
+          c.text.includes('step limit before finishing'),
+      ),
     )
   })
 
@@ -1693,7 +1709,30 @@ src/renderer/views/projects-pane.ts
       onChunk: (c) => chunks.push(c),
       executeTool: async (_name, _args, _signal, _toolCallId) => '',
     })
-    assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('declined')))
+    assert.ok(
+      chunks.some(
+        (c) => c.type === 'text' && c.loopNotice === 'refusal' && c.text.includes('declined'),
+      ),
+    )
+  })
+
+  it('marks the context-overflow notice as loop-authored when it cannot trim', async () => {
+    const chunks: AgentStreamChunk[] = []
+    await runAgentLoop({
+      provider: mockProvider([[{ type: 'done', stopReason: 'model_context_window_exceeded' }]]),
+      messages: [{ role: 'user', content: 'hello' }],
+      tools: [],
+      onChunk: (c) => chunks.push(c),
+      executeTool: async () => '',
+    })
+    assert.ok(
+      chunks.some(
+        (c) =>
+          c.type === 'text' &&
+          c.loopNotice === 'context_overflow' &&
+          c.text === CONTEXT_OVERFLOW_USER_MESSAGE,
+      ),
+    )
   })
 
   it('continues after max_tokens truncation with partial text', async () => {
@@ -1893,7 +1932,12 @@ src/renderer/views/projects-pane.ts
       executeTool: async () => '',
     })
     assert.ok(
-      chunks.some((c) => c.type === 'text' && c.text.includes('task plan still has open items')),
+      chunks.some(
+        (c) =>
+          c.type === 'text' &&
+          c.loopNotice === 'open_todos' &&
+          c.text.includes('task plan still has open items'),
+      ),
     )
   })
 
@@ -2559,7 +2603,10 @@ src/renderer/views/projects-pane.ts
     assert.deepEqual(chunks.at(-1), { type: 'done', stopReason: 'timeout' })
     assert.ok(
       chunks.some(
-        (chunk) => chunk.type === 'text' && chunk.text.includes('time limit before finishing'),
+        (chunk) =>
+          chunk.type === 'text' &&
+          chunk.loopNotice === 'time_limit' &&
+          chunk.text.includes('time limit before finishing'),
       ),
     )
     assert.ok(

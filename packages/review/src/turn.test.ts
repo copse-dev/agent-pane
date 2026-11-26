@@ -2,7 +2,7 @@ import { it } from 'node:test'
 import assert from 'node:assert/strict'
 import { setTimeout } from 'node:timers/promises'
 import type { LLMProvider, ProviderStreamChunk } from '@copse/llm/wire-types.ts'
-import { ScriptedProvider } from './scripted-provider.ts'
+import { ScriptedProvider, type ScriptedStep } from './scripted-provider.ts'
 import { runTurn } from './turn.ts'
 
 it('separates tool wall time from model waits in a real review turn', async () => {
@@ -58,5 +58,47 @@ it("tells every role today's date, so a past timestamp is not read as a future o
   assert.match(
     typeof system.content === 'string' ? system.content : '',
     /^Review the change\.\n\nToday's date is 2026-09-25 \(UTC\)\. Dates and timestamps before it are in the past/,
+  )
+})
+
+it('records a step-limit stop as the summary, never the loop continuation prompt', async () => {
+  const probe = {
+    name: 'probe',
+    description: 'Probe',
+    parameters: { type: 'object', properties: {} },
+  }
+  // A reviewer that only ever investigates: it never writes a closing message
+  // and never satisfies its completion invariant, even under protocol repair.
+  const steps: ScriptedStep[] = Array.from({ length: 20 }, (): ScriptedStep => ({
+    type: 'tool_call',
+    name: 'probe',
+    args: {},
+  }))
+  const result = await runTurn({
+    provider: new ScriptedProvider(steps),
+    model: 'step-limit-fixture',
+    systemPrompt: 'Review the change.',
+    userPrompt: 'Review.',
+    tools: [probe],
+    execute: () => Promise.resolve('checked'),
+    threadId: 'step-limit',
+    turnId: 'step-limit-1',
+    maxSteps: 3,
+    completionError: () => 'reviewer stopped without calling the required finish_review tool',
+    completionRepair: {
+      tools: [probe],
+      maxSteps: 3,
+      prompt: () => 'Call finish_review now.',
+    },
+  })
+  assert.equal(result.outcome, 'failed')
+  assert.match(result.error ?? '', /finish_review/)
+  assert.equal(result.summary, 'Stopped at its step limit before finishing.')
+  // The live event stream still carries the loop's notice; only the summary,
+  // which stands for the reviewer's own account, leaves it out.
+  assert.ok(
+    result.events.some(
+      (event) => event.type === 'message' && event.text.includes('step limit before finishing'),
+    ),
   )
 })

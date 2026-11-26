@@ -15,7 +15,7 @@ import { PRODUCT_REASONING_CHECKPOINT_POLICY } from '@copse/agent/reasoning-chec
 import type { ReasoningCheckpointPolicy } from '@copse/agent/reasoning-circle-detector.ts'
 import { runAgentLoop } from '@copse/agent/run-agent-loop.ts'
 import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
-import type { AgentStreamChunk } from '@copse/agent/wire-types.ts'
+import type { AgentLoopNotice, AgentStreamChunk } from '@copse/agent/wire-types.ts'
 import { hasLastUsage } from '@copse/llm/provider-usage.ts'
 import type { LLMMessage, LLMProvider, LLMStreamOptions, LLMTool } from '@copse/llm/wire-types.ts'
 import { errorMessage } from '@copse/std/errors.ts'
@@ -44,6 +44,22 @@ const REVIEW_CLOSURE_REASONING_POLICY: Readonly<ReasoningCheckpointPolicy> = {
   maxInitialTokens: PRODUCT_REASONING_CHECKPOINT_POLICY.intervalTokens,
   maxRecoveryTokens: PRODUCT_REASONING_CHECKPOINT_POLICY.intervalTokens,
   maxTrailingReasoningTokens: PRODUCT_REASONING_CHECKPOINT_POLICY.intervalTokens,
+}
+
+/**
+ * What a summary says where the loop, not the model, wrote the closing text.
+ * The loop's own notices address a person continuing a chat ("Continue from
+ * the current state…"); a review summary states what happened instead.
+ */
+const LOOP_NOTICE_SUMMARY: Readonly<Record<AgentLoopNotice, string>> = {
+  step_limit: 'Stopped at its step limit before finishing.',
+  model_request_limit: 'Stopped at its model-request limit before finishing.',
+  time_limit: 'Stopped at its time limit before finishing.',
+  incomplete_run: 'Stopped without a final answer.',
+  refusal: 'The model declined the request.',
+  context_overflow: 'Stopped when the conversation exceeded the model context window.',
+  reasoning_runaway: 'Stopped after repeating its reasoning without an answer.',
+  open_todos: 'Stopped with plan items still open.',
 }
 
 export interface TurnUsage {
@@ -113,7 +129,11 @@ export interface TurnResult {
   readonly events: readonly HeadlessEvent[]
   readonly outcome: HeadlessOutcome
   readonly stopReason: HeadlessStopReason
-  /** The model's closing plain-text message. */
+  /**
+   * The model's closing plain-text message. When the loop ended the turn itself
+   * (at its step limit, say), a one-line statement of why follows it; the loop's
+   * own chat-facing notice never appears here.
+   */
   readonly summary: string
   readonly usage: TurnUsage
   readonly toolCalls: number
@@ -160,7 +180,14 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
     }
     pending = null
   }
+  // The model's own closing text, and the last notice the loop wrote in its
+  // place. Both reset when a tool round or a fresh loop starts a new answer.
   let summary = ''
+  let loopNotice: AgentLoopNotice | undefined
+  const closingSummary = (): string =>
+    [summary.trim(), loopNotice === undefined ? '' : LOOP_NOTICE_SUMMARY[loopNotice]]
+      .filter((part) => part !== '')
+      .join('\n')
   let toolCalls = 0
   let usageChunks = 0
   const hostingProviders = new Set<string>()
@@ -203,7 +230,10 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
         if (chunk.type === 'text' || chunk.type === 'reasoning') {
           if (pending !== null && pending.type !== chunk.type) flushPending()
           pending = { type: chunk.type, text: (pending?.text ?? '') + chunk.text }
-          if (chunk.type === 'text') summary += chunk.text
+          if (chunk.type === 'text') {
+            if (chunk.loopNotice === undefined) summary += chunk.text
+            else loopNotice = chunk.loopNotice
+          }
           return
         }
         flushPending()
@@ -211,6 +241,7 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
           toolCalls += 1
           // A fresh answer follows a tool round; the closing summary is the last text.
           summary = ''
+          loopNotice = undefined
         }
         if (chunk.type === 'usage') {
           if (chunk.hostingProvider !== undefined) hostingProviders.add(chunk.hostingProvider)
@@ -270,6 +301,7 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
   ) {
     messages.push({ role: 'user', content: options.investigationReserve.prompt() })
     summary = ''
+    loopNotice = undefined
     doneStopReason = undefined
     try {
       await runLoop(options.tools, reserve, { maxLlmCalls: reserve })
@@ -282,12 +314,13 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
   if (!(options.signal?.aborted ?? false) && error === undefined && options.completionRepair) {
     const incomplete = readCompletionError()
     if (incomplete !== undefined) {
-      repairDraftSummary = summary.trim()
+      repairDraftSummary = closingSummary()
       messages.push({
         role: 'user',
         content: options.completionRepair.prompt(repairDraftSummary, incomplete),
       })
       summary = ''
+      loopNotice = undefined
       doneStopReason = undefined
       try {
         await runLoop(options.completionRepair.tools, options.completionRepair.maxSteps, {
@@ -311,7 +344,8 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
   }
   // A failed repair must not overwrite the useful draft analysis that prompted
   // it with a generic second refusal or exhausted-script message.
-  if (error !== undefined && repairDraftSummary !== undefined) summary = repairDraftSummary
+  const finalSummary =
+    error !== undefined && repairDraftSummary !== undefined ? repairDraftSummary : closingSummary()
   const outcome: HeadlessOutcome = cancelled
     ? 'cancelled'
     : error !== undefined
@@ -328,7 +362,7 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
   const usage: TurnUsage = estimated
     ? {
         inputTokens: Math.round(JSON.stringify(messages).length / CHARS_PER_TOKEN),
-        outputTokens: Math.round(summary.length / CHARS_PER_TOKEN),
+        outputTokens: Math.round(finalSummary.length / CHARS_PER_TOKEN),
         estimated,
       }
     : { inputTokens, outputTokens, estimated }
@@ -340,7 +374,7 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
     events,
     outcome,
     stopReason,
-    summary: summary.trim(),
+    summary: finalSummary,
     usage,
     hostingProviders: [...hostingProviders].sort(),
     toolCalls,

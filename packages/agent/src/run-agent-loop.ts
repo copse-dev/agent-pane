@@ -10,7 +10,7 @@ import type {
 } from '@copse/llm/wire-types.ts'
 import type { CompactionIdentity } from '@copse/llm/provider-state.ts'
 import type { ServiceTier } from '@copse/llm/service-tier.ts'
-import type { AgentStreamChunk, ToolExecuteResult } from './wire-types.ts'
+import type { AgentLoopNotice, AgentStreamChunk, ToolExecuteResult } from './wire-types.ts'
 import { normalizeToolExecuteResult } from './wire-types.ts'
 import {
   trimMessagesInPlace,
@@ -322,10 +322,22 @@ const FINALIZE_NUDGE_ID = 'finalize-nudge'
 const INCOMPLETE_RUN_MESSAGE =
   'The agent stopped before producing a final answer. Try a shorter question, reduce tool use, or switch models.'
 
-function runLimitMessage(reason: RunLimitStopReason, stoppedAtStepLimit: boolean): string {
-  const limit = reason === 'timeout' ? 'time' : stoppedAtStepLimit ? 'step' : 'model-request'
+type RunLimitNotice = Extract<AgentLoopNotice, 'step_limit' | 'model_request_limit' | 'time_limit'>
+
+function runLimitNotice(reason: RunLimitStopReason, stoppedAtStepLimit: boolean): RunLimitNotice {
+  if (reason === 'timeout') return 'time_limit'
+  return stoppedAtStepLimit ? 'step_limit' : 'model_request_limit'
+}
+
+const RUN_LIMIT_NAME: Readonly<Record<RunLimitNotice, string>> = {
+  step_limit: 'step',
+  model_request_limit: 'model-request',
+  time_limit: 'time',
+}
+
+function runLimitMessage(notice: RunLimitNotice): string {
   return (
-    `This run reached its ${limit} limit before finishing. Completed work is saved. ` +
+    `This run reached its ${RUN_LIMIT_NAME[notice]} limit before finishing. Completed work is saved. ` +
     'Continue from the current state without repeating completed actions.'
   )
 }
@@ -662,7 +674,7 @@ async function streamTextOnlyTurn(
   const trimmed = assistantText.trim()
   if (isRefusalStopReason(stopReason)) {
     const text = trimmed || REFUSAL_USER_MESSAGE
-    if (!trimmed) onChunk({ type: 'text', text })
+    if (!trimmed) onChunk({ type: 'text', text, loopNotice: 'refusal' })
     messages.push({ role: 'assistant', content: text })
     emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
     return { answerText: text, pendingToolCalls: [], retryAfterTruncation: false }
@@ -1170,7 +1182,7 @@ function handleContextOverflowInLoop(
   onHistoryTrimmed?: () => void,
 ): boolean {
   if (!maxContextTokens) {
-    onChunk({ type: 'text', text: CONTEXT_OVERFLOW_USER_MESSAGE })
+    onChunk({ type: 'text', text: CONTEXT_OVERFLOW_USER_MESSAGE, loopNotice: 'context_overflow' })
     messages.push({ role: 'assistant', content: CONTEXT_OVERFLOW_USER_MESSAGE })
     return true
   }
@@ -1184,7 +1196,7 @@ function handleContextOverflowInLoop(
     onHistoryTrimmed?.()
     return false
   }
-  onChunk({ type: 'text', text: CONTEXT_OVERFLOW_USER_MESSAGE })
+  onChunk({ type: 'text', text: CONTEXT_OVERFLOW_USER_MESSAGE, loopNotice: 'context_overflow' })
   messages.push({ role: 'assistant', content: CONTEXT_OVERFLOW_USER_MESSAGE })
   return true
 }
@@ -2119,7 +2131,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       }
     } else if (isRefusalStopReason(stopReason)) {
       const text = assistantText.trim() ? historyAssistantText : REFUSAL_USER_MESSAGE
-      if (!assistantText.trim()) onChunk({ type: 'text', text })
+      if (!assistantText.trim()) onChunk({ type: 'text', text, loopNotice: 'refusal' })
       if (text) messages.push({ role: 'assistant', content: text })
       finishedWithAnswer = true
       break
@@ -2173,7 +2185,11 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
           if (
             reasoningRunawayStreak >= (legacyRunawayRecovery ? 2 : MAX_REASONING_RUNAWAY_STREAK)
           ) {
-            onChunk({ type: 'text', text: REASONING_RUNAWAY_GIVEUP_MESSAGE })
+            onChunk({
+              type: 'text',
+              text: REASONING_RUNAWAY_GIVEUP_MESSAGE,
+              loopNotice: 'reasoning_runaway',
+            })
             messages.push({ role: 'assistant', content: REASONING_RUNAWAY_GIVEUP_MESSAGE })
             finishedWithAnswer = true
             reasoningRunawayExhausted = !legacyRunawayRecovery
@@ -2308,7 +2324,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     if (openTodosReader && hasOpenTodos(openTodos)) {
       const closed = await closeOpenTodosBeforeFinalize(stepCtx, openTodosReader)
       if (!closed && !signal?.aborted) {
-        onChunk({ type: 'text', text: OPEN_TODOS_STILL_OPEN_MESSAGE })
+        onChunk({ type: 'text', text: OPEN_TODOS_STILL_OPEN_MESSAGE, loopNotice: 'open_todos' })
         messages.push({ role: 'assistant', content: OPEN_TODOS_STILL_OPEN_MESSAGE })
       }
     }
@@ -2372,7 +2388,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         )
       }
       if (!finalResult.answerText.trim() && !stoppedAtStepLimit) {
-        onChunk({ type: 'text', text: INCOMPLETE_RUN_MESSAGE })
+        onChunk({ type: 'text', text: INCOMPLETE_RUN_MESSAGE, loopNotice: 'incomplete_run' })
         messages.push({ role: 'assistant', content: INCOMPLETE_RUN_MESSAGE })
       } else if (finalResult.answerText.trim()) {
         finishedWithAnswer = true
@@ -2398,8 +2414,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     ? REASONING_RUNAWAY_EXHAUSTED_STOP_REASON
     : terminalRunLimitStopReason
   if (terminalRunLimitStopReason !== null && !finishedWithAnswer) {
-    const message = runLimitMessage(terminalRunLimitStopReason, stoppedAtStepLimit)
-    onChunk({ type: 'text', text: message })
+    const loopNotice = runLimitNotice(terminalRunLimitStopReason, stoppedAtStepLimit)
+    const message = runLimitMessage(loopNotice)
+    onChunk({ type: 'text', text: message, loopNotice })
     messages.push({ role: 'assistant', content: message })
   }
 
