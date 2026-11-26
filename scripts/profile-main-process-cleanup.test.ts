@@ -140,6 +140,19 @@ function mockProfilerHost(
 }
 
 describe('profileProcess activation cleanup', { skip: process.platform === 'win32' }, () => {
+  it('leaves the target untouched when the initial requested-port probe times out', async (context) => {
+    const host = mockProfilerHost(context, [])
+    const timeout = new DOMException('Initial inspector probe timed out', 'TimeoutError')
+    context.mock.method(globalThis, 'fetch', () => Promise.reject(timeout))
+    await assert.rejects(profileProcess(HOST_PID, REQUESTED_PORT, 1), {
+      name: timeout.name,
+      message: timeout.message,
+    })
+    assert.deepEqual(host.signals, [])
+    assert.deepEqual(host.methods, [])
+    assert.deepEqual(host.closedInspectors, [])
+  })
+
   it('confirms closure after a transient socket reset instead of reporting the inspector unconfirmed', async (context) => {
     const host = mockProfilerHost(context, [listenerSnapshot(), listenerSnapshot([OPENED_PORT])])
     const fetchBoundary = globalThis.fetch

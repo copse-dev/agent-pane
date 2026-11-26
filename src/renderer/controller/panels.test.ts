@@ -2,14 +2,22 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import {
+  closeRightPanelSplit,
   navigateToRoadmapItem,
+  openRightPanelBeside,
   openBrowserUrl,
   openRightPanel,
   selectRightPanel,
   selectRightPanelMode,
+  rightPanelShows,
   toggleFilesPane,
   toggleRightPanel,
 } from './panels.ts'
+
+function panes(store: ReturnType<typeof createStore>): [string, string | null] | null {
+  const { filesPaneOpen, rightPanelMode, rightPanelSplitMode } = store.getState()
+  return filesPaneOpen ? [rightPanelMode, rightPanelSplitMode] : null
+}
 
 describe('panels controller', () => {
   it('toggleFilesPane opens explorer and closes without changing mode', () => {
@@ -131,5 +139,111 @@ describe('panels controller', () => {
     assert.equal(store.getState().filesPaneOpen, true)
     assert.equal(store.getState().rightPanelMode, 'changes')
     assert.equal(panelChanges, 1)
+  })
+
+  describe('split panel', () => {
+    it('openRightPanelBeside stacks a second pane under the open one', () => {
+      const store = createStore({ filesPaneOpen: true, rightPanelMode: 'terminal' })
+      const browser: boolean[] = []
+      const terminal: boolean[] = []
+      selectRightPanelMode(store, 'browser', (active) => browser.push(active))
+      selectRightPanelMode(store, 'terminal', (active) => terminal.push(active))
+
+      openRightPanelBeside(store, 'browser')
+      assert.deepEqual(panes(store), ['terminal', 'browser'])
+      assert.ok(rightPanelShows(store.getState(), 'browser'))
+      assert.ok(rightPanelShows(store.getState(), 'terminal'))
+      // The open pane stays on screen; only the new one is a change.
+      assert.deepEqual(browser, [true])
+      assert.deepEqual(terminal, [])
+    })
+
+    it('Review always takes the top slot', () => {
+      const store = createStore({ filesPaneOpen: true, rightPanelMode: 'browser' })
+      openRightPanelBeside(store, 'changes')
+      assert.deepEqual(panes(store), ['changes', 'browser'])
+    })
+
+    it('opens alone when the panel is closed or the pane cannot share it', () => {
+      const closed = createStore({ filesPaneOpen: false, rightPanelMode: 'terminal' })
+      openRightPanelBeside(closed, 'browser')
+      assert.deepEqual(panes(closed), ['browser', null])
+
+      const context = createStore({ filesPaneOpen: true, rightPanelMode: 'context' })
+      openRightPanelBeside(context, 'browser')
+      assert.deepEqual(panes(context), ['browser', null])
+
+      const prs = createStore({ filesPaneOpen: true, rightPanelMode: 'terminal' })
+      openRightPanelBeside(prs, 'prs')
+      assert.deepEqual(panes(prs), ['prs', null])
+    })
+
+    it('toggling either half closes just that half', () => {
+      const store = createStore({
+        filesPaneOpen: true,
+        rightPanelMode: 'changes',
+        rightPanelSplitMode: 'browser',
+      })
+      toggleRightPanel(store, 'browser')
+      assert.deepEqual(panes(store), ['changes', null])
+
+      openRightPanelBeside(store, 'browser')
+      toggleRightPanel(store, 'changes')
+      // The bottom pane moves up and fills the panel.
+      assert.deepEqual(panes(store), ['browser', null])
+    })
+
+    it('opening a pane already in the split does not move it', () => {
+      const store = createStore({
+        filesPaneOpen: true,
+        rightPanelMode: 'changes',
+        rightPanelSplitMode: 'browser',
+      })
+      let panelChanges = 0
+      selectRightPanel(store, () => (panelChanges += 1))
+      openRightPanel(store, 'browser')
+      openBrowserUrl(store, 'https://example.com/')
+      assert.deepEqual(panes(store), ['changes', 'browser'])
+      assert.equal(panelChanges, 0)
+    })
+
+    it('replacing the top pane keeps the bottom one; a pane that cannot share drops it', () => {
+      const store = createStore({
+        filesPaneOpen: true,
+        rightPanelMode: 'changes',
+        rightPanelSplitMode: 'browser',
+      })
+      openRightPanel(store, 'terminal')
+      assert.deepEqual(panes(store), ['terminal', 'browser'])
+
+      openRightPanel(store, 'context')
+      assert.equal(store.getState().rightPanelMode, 'context')
+      assert.equal(rightPanelShows(store.getState(), 'browser'), false)
+    })
+
+    it('closing the whole panel closes both panes', () => {
+      const store = createStore({
+        filesPaneOpen: true,
+        rightPanelMode: 'terminal',
+        rightPanelSplitMode: 'browser',
+      })
+      toggleFilesPane(store)
+      assert.equal(panes(store), null)
+      toggleFilesPane(store)
+      assert.deepEqual(panes(store), ['explorer', null])
+    })
+
+    it('closeRightPanelSplit leaves the top pane filling the panel', () => {
+      const store = createStore({
+        filesPaneOpen: true,
+        rightPanelMode: 'explorer',
+        rightPanelSplitMode: 'terminal',
+      })
+      let panelChanges = 0
+      selectRightPanel(store, () => (panelChanges += 1))
+      closeRightPanelSplit(store)
+      assert.deepEqual(panes(store), ['explorer', null])
+      assert.equal(panelChanges, 1)
+    })
   })
 })

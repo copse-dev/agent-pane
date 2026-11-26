@@ -126,6 +126,9 @@ async function bundleTests(testFiles: string[], outputDir: string): Promise<void
       // Keep oxfmt external — it resolves its native binding at runtime and
       // scripts/lib/oxfmt.mts spawns its CLI from node_modules/.bin.
       'oxfmt',
+      // ESLint loads eslint.config.mjs and its plugins from disk at runtime; the
+      // oxlint config parity test needs that real loader, not a bundled copy.
+      'eslint',
     ],
     alias: {
       '@shared': resolve('./src/shared'),

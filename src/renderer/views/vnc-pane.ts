@@ -24,7 +24,7 @@ import { showConfirmDialog } from './confirm-dialog.ts'
 import { dedupeNearbyVncServers, parseVncEndpoint, preferredVncUsername } from './vnc-machines.ts'
 import { showToast } from './toast.ts'
 import { createSimulatorDesktopView, type SimulatorDesktopView } from './simulator-desktop-view.ts'
-import { openRightPanel, selectRightPanelMode } from '../controller/panels.ts'
+import { openRightPanel, selectRightPanelMode, rightPanelShows } from '../controller/panels.ts'
 import { DESKTOP_VIEWER_OFF_DETAIL, DESKTOP_VIEWER_OFF_TITLE } from '@shared/desktop-viewer.ts'
 import { createSurfaceRecorder } from '../recording/surface-recorder.ts'
 import { createVncSshHostForm } from './vnc-ssh-host-form.ts'
@@ -34,8 +34,7 @@ import { errorMessage } from '@shared/errors.ts'
 const CHOOSE_MACHINE_TEXT = 'Choose a device, enter an address, or select a saved SSH machine.'
 
 function vncModeActive(store: AppStore): boolean {
-  const { filesPaneOpen, rightPanelMode } = store.getState()
-  return filesPaneOpen && rightPanelMode === 'vnc'
+  return rightPanelShows(store.getState(), 'vnc')
 }
 
 const MANUAL_MACHINE = 'network:manual'

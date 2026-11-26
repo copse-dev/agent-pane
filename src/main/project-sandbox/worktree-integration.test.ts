@@ -42,6 +42,7 @@ import { copseWorkspaceDir } from '../services/storage/copse-paths.ts'
 import {
   acpAgentSandboxOverlay,
   gitBackupSandboxOverlay,
+  ensureWorkspaceTmpDir,
   readAllowedSandboxOverlay,
   workspaceTmpDir,
 } from './config.ts'
@@ -586,7 +587,11 @@ describe('linked-worktree sandbox integration', () => {
       return
     }
     const overlay = gitBackupSandboxOverlay(root)
-    const scratch = await mkdtemp(join(workspaceTmpDir(), 'copse-backup-probe-'))
+    // The overlay grants the canonical scratch spelling. Probe through that
+    // spelling too: a symlinked profile (`~/.copse` -> another volume) leaves
+    // the uncanonicalized path outside the macOS grant, and real commands only
+    // ever see the canonical one.
+    const scratch = await mkdtemp(join(ensureWorkspaceTmpDir(), 'copse-backup-probe-'))
     cleanups.push(scratch)
     const scratchWrite = await runSandboxed(
       process.execPath,

@@ -5,7 +5,13 @@ import { setTooltip } from '../dom/tooltip.ts'
 import { sameItems, type AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { RightPanelMode } from '@shared/types/state.ts'
-import { selectRightPanel, toggleRightPanelWithWorkspace } from '../controller/panels.ts'
+import {
+  openRightPanelBesideWithWorkspace,
+  rightPanelShows,
+  selectRightPanel,
+  toggleRightPanelWithWorkspace,
+} from '../controller/panels.ts'
+import type { AppState } from '@shared/types/state.ts'
 import { sideChatsOf } from '@shared/threads/side-chat.ts'
 import { countPortraitPanelOverflow } from './portrait-panel-bar-overflow.ts'
 import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
@@ -186,6 +192,11 @@ const PANEL_CONTROL_DEFS: readonly PanelControlDef[] = [
   },
 ]
 
+/** Whether a control's pane is on screen, in either half of a split. Review covers both subjects. */
+function controlShows(state: AppState, def: PanelControlDef): boolean {
+  return rightPanelShows(state, def.mode) || (def.id === 'changes' && rightPanelShows(state, 'prs'))
+}
+
 /** Display name for a panel mode — the pop-out titlebar names its detached pane. */
 export function panelModeLabel(mode: RightPanelMode): string {
   if (mode === 'prs') return 'Review'
@@ -268,10 +279,12 @@ export function mountPanelModeControls(
       ...children,
     )
     if (isGated(def)) btn.setAttribute('data-experimental-hidden', '')
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (event) => {
       const mode =
         def.id === 'changes' && store.getState().rightPanelMode === 'prs' ? 'prs' : def.mode
-      toggleRightPanelWithWorkspace(store, api, mode)
+      // Option/Alt-click stacks the pane under the open one instead of replacing it.
+      if (event.altKey) openRightPanelBesideWithWorkspace(store, api, def.mode)
+      else toggleRightPanelWithWorkspace(store, api, mode)
       syncPanelBtns()
     })
     buttons.set(def.id, btn)
@@ -329,7 +342,7 @@ export function mountPanelModeControls(
     }
 
     function renderOverflowMenu(overflowed: HTMLButtonElement[]): void {
-      const { filesPaneOpen, rightPanelMode } = store.getState()
+      const state = store.getState()
       overflowMenu.replaceChildren(
         ...overflowed.map((btn) => {
           const id = btn.dataset['panelControl']
@@ -340,13 +353,7 @@ export function mountPanelModeControls(
             def ? def.icon() : '',
             def?.label ?? btn.getAttribute('aria-label') ?? 'Panel',
           )
-          if (
-            def &&
-            filesPaneOpen &&
-            (rightPanelMode === def.mode || (def.id === 'changes' && rightPanelMode === 'prs'))
-          ) {
-            item.classList.add('is-active')
-          }
+          if (def && controlShows(state, def)) item.classList.add('is-active')
           item.addEventListener('click', () => {
             btn.click()
             setOverflowOpen(false)
@@ -463,15 +470,11 @@ export function mountPanelModeControls(
   }
 
   function syncPanelBtns(): void {
-    const { filesPaneOpen, rightPanelMode } = store.getState()
+    const state = store.getState()
     for (const def of PANEL_CONTROL_DEFS) {
       const btn = buttons.get(def.id)
       if (!btn) continue
-      btn.classList.toggle(
-        'active',
-        filesPaneOpen &&
-          (rightPanelMode === def.mode || (def.id === 'changes' && rightPanelMode === 'prs')),
-      )
+      btn.classList.toggle('active', controlShows(state, def))
     }
     syncOverflow?.()
   }
@@ -551,7 +554,8 @@ export function mountPanelModeControls(
    */
   function syncSideChatBadge(): void {
     if (!sideChatBadge) return
-    const { threads, activeThreadId, filesPaneOpen, rightPanelMode } = store.getState()
+    const state = store.getState()
+    const { threads, activeThreadId } = state
     const active = threads.find((thread) => thread.id === activeThreadId)
     const mainId = active?.sideChat?.parentThreadId ?? active?.id
     const rows = mainId === undefined ? [] : sideChatsOf(threads, mainId)
@@ -561,7 +565,7 @@ export function mountPanelModeControls(
     sideChatBadge.textContent = String(rows.length)
     btn?.classList.toggle('has-pending', unread > 0)
     if (btn) {
-      applyGate(btn, rows.length > 0 || (filesPaneOpen && rightPanelMode === 'side-chat'))
+      applyGate(btn, rows.length > 0 || rightPanelShows(state, 'side-chat'))
       setTooltip(
         btn,
         rows.length === 0

@@ -46,8 +46,15 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
   shell/background commands, read-only worktree preflight, model-tier advice,
   GitHub/CI, staged-diff visibility, archive extraction, video stills, and
   web/browser) is offered as a per-session
-  localhost MCP server (the **native-tool bridge**, issue #602) when the agent
-  supports http MCP servers. Calls execute through the same `ToolRegistry` as
+  localhost MCP server (the **native-tool bridge**, issue #602). An agent that
+  supports http MCP servers mounts it directly; any other agent gets the same
+  server as a stdio MCP server, a small relay (`acp-bridge-stdio-relay.ts`)
+  that the agent spawns under Copse's own executable and that forwards each
+  message to the bridge with its bearer token. Every ACP agent must support
+  stdio MCP servers, so registry and custom agents get Copse's tools too. The
+  relay only talks to a loopback `http:` URL, and the URL and token travel in
+  its environment, never its arguments. A sandboxed agent may read the Copse
+  runtime and the relay script for this, nothing more. Calls execute through the same `ToolRegistry` as
   built-in model runs, so the normal path validation, diff queue, permission
   policy, sandbox escape, and approval dialogs apply. Disable with the
   `acpNativeBridgeEnabled` setting. Bridged calls arrive on their own async
@@ -138,7 +145,8 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
 
   Every claim on the request and on the agent's earlier reports of the same
   `toolCallId` must agree, and the tool must be one this session's own bridge
-  serves: a local agent with HTTP MCP whose bridge started. Titles match only
+  serves: a local agent whose bridge started, mounted over http or through the
+  stdio relay. Titles match only
   the literal observed shapes, so shell text such as `copse=;. ./run_shell`
   claims nothing. Each delegation is recorded as an `acp` `allowed` decision.
   The bridge's `bridge-request` record repeats its `toolCallId` when the call
@@ -549,10 +557,8 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   history preamble.
 - **Text only on input.** Image attachments are dropped before the prompt is
   sent (the agent receives the text blocks).
-- **Native-tool bridge is http-only.** Agents that support only stdio MCP
-  servers don't get Copse's bridged tools this turn — a stdio shim is a
-  possible follow-up (#602). Todo/plan tools remain private. Copse-managed local
-  executors supporting HTTP MCP receive Copse's filtered skill catalog and
+- **Todo/plan tools remain private.** Copse-managed local executors that
+  mounted the bridge (over http or the stdio relay) receive Copse's filtered skill catalog and
   `read_skill` through the authenticated bridge. Each run has a fresh activation
   allowance (four model-selected skills, 128 KiB of instructions/supporting text),
   shared across transport retries and automatic checkout continuations. A fresh
@@ -563,7 +569,7 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   requirements still leaves workflow/model compatibility untested. Explicit skill
   instructions spend the same byte budget. Plugin enablement, trust framing, cancellation and skill-root containment
   still apply; model selection adds no filesystem or shell grants. When the bridge
-  is disabled, unavailable, remote, or the executor cannot negotiate HTTP MCP,
+  is disabled, unavailable, remote, or the executor never mounted it,
   invoked skills' SKILL.md instructions are still inlined with a notice that their
   supporting files and model-selected skills are unavailable; no catalog is sent.
   Agent-managed runs omit the automatic Copse catalog.
