@@ -56,13 +56,20 @@ function staticImports(source: string): StaticImport[] {
   return imports
 }
 
+/** `electron`, or one of the `electron/<subpath>` modules Electron declares (`electron/main`). */
+function isElectronSpecifier(specifier: string): boolean {
+  return specifier === 'electron' || specifier.startsWith('electron/')
+}
+
 /**
- * A runtime `import('electron')`. Deferring the import only moves the failure from load
- * time to the first call, so a reachable file must not hold one either. `typeof
- * import('electron')` is a type position and is erased. Other dynamic imports are not
- * followed as graph edges: they are lazy on purpose, and this pins the eager graph.
+ * A runtime `import('electron')`, or a subpath, quoted or as a placeholder-free template.
+ * Deferring the import only moves the failure from load time to the first call, so a
+ * reachable file must not hold one either. `typeof import('electron')` is a type position
+ * and is erased. Other dynamic imports are not followed as graph edges: they are lazy on
+ * purpose, and this pins the eager graph.
  */
-const DYNAMIC_ELECTRON_IMPORT = /(?<!typeof\s+)\bimport\(\s*['"]electron['"]\s*\)/
+const DYNAMIC_ELECTRON_IMPORT =
+  /(?<!typeof\s+)\bimport\(\s*(['"`])electron(?:\/[^'"`$]*)?\1\s*\)/
 
 function electronImportPaths(roots: string[]): string[] {
   const seen = new Set(roots)
@@ -80,7 +87,7 @@ function electronImportPaths(roots: string[]): string[] {
     }
     const imports = staticImports(source).filter((entry) => !entry.typeOnly)
     if (
-      imports.some((entry) => entry.specifier === 'electron') ||
+      imports.some((entry) => isElectronSpecifier(entry.specifier)) ||
       DYNAMIC_ELECTRON_IMPORT.test(source)
     )
       found.push(path.join(' -> '))

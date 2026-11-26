@@ -6,14 +6,16 @@ import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 
 /**
- * Pins the Electron boundary in `eslint.config.mjs` against dynamic imports.
+ * Pins the Electron boundary in `eslint.config.mjs` against the forms that slipped past it.
  *
  * `no-restricted-imports` only inspects static `import`/`export … from` declarations, so
- * `await import('electron')` slipped past it in three agent-path files. The config now
- * also bans that `ImportExpression` through `no-restricted-syntax`, whose array options
- * ESLint replaces wholesale per block. Each case below lints a virtual file at a path
- * owned by one of those blocks, so a block that forgets to repeat the selector (or that
- * drops `NO_DYNAMIC_IN` while lifting it) fails here rather than silently.
+ * `await import('electron')` slipped past it in three agent-path files, and its exact
+ * `paths` entry also let `electron/main` and the other declared subpaths through. The
+ * config now adds an `electron/*` pattern and bans the dynamic forms through
+ * `no-restricted-syntax`. ESLint replaces both rules' options wholesale per block, so each
+ * case below lints a virtual file at a path owned by one block. A block that forgets to
+ * repeat either addition (or that drops `NO_DYNAMIC_IN` while lifting them) fails here
+ * rather than silently.
  *
  * Linted through `eslint.hook.config.mjs` — the project config with the type-aware rules
  * off — because those rules need each file in a tsconfig project and these paths do not
@@ -22,13 +24,21 @@ import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 
 const ESLINT_CLI = resolve('node_modules/eslint/bin/eslint.js')
 
-const DYNAMIC_ELECTRON = [
-  'export async function openExternal(url: string): Promise<void> {',
-  "  const { shell } = await import('electron')",
-  '  await shell.openExternal(url)',
+/** One of each runtime form: a static subpath, then a bare, a subpath and a template import. */
+const ELECTRON_IMPORTS = [
+  "import { app } from 'electron/main'",
+  'export async function load(): Promise<unknown[]> {',
+  "  return [app, await import('electron'), await import('electron/common'), await import(`electron`)]",
   '}',
   '',
 ].join('\n')
+
+const REJECTED_RULES = [
+  '@typescript-eslint/no-restricted-imports',
+  'no-restricted-syntax',
+  'no-restricted-syntax',
+  'no-restricted-syntax',
+]
 
 const DYNAMIC_IN = [
   'export function has(record: Record<string, number>, key: string): boolean {',
@@ -75,18 +85,18 @@ function lintErrors(filePath: string, code: string): LintError[] {
     .map(({ ruleId, message }) => ({ ruleId, message }))
 }
 
-function assertRejectsDynamicElectron(filePath: string): void {
-  const errors = lintErrors(filePath, DYNAMIC_ELECTRON)
+function assertRejectsElectronImports(filePath: string): void {
+  const errors = lintErrors(filePath, ELECTRON_IMPORTS)
   assert.deepEqual(
     errors.map((error) => error.ruleId),
-    ['no-restricted-syntax'],
+    REJECTED_RULES,
     JSON.stringify(errors, null, 2),
   )
-  assert.match(errors[0]?.message ?? '', /import\('electron'\)/)
+  for (const error of errors) assert.match(error.message, /Electron/)
 }
 
-describe('Electron boundary lint: dynamic imports', () => {
-  // One path per config block that sets `no-restricted-syntax` for shipped or tested code.
+describe('Electron boundary lint: subpaths and dynamic imports', () => {
+  // One path per config block that restates either rule for shipped or tested code.
   for (const filePath of [
     'src/main/services/agent-path-fixture.ts',
     'packages/agent/src/agent-path-fixture.ts',
@@ -95,8 +105,8 @@ describe('Electron boundary lint: dynamic imports', () => {
     // The static ban covers tests outside the surface, so the dynamic one must too.
     'src/main/services/agent-path-fixture.test.ts',
   ]) {
-    it(`rejects a runtime import('electron') in ${filePath}`, () => {
-      assertRejectsDynamicElectron(filePath)
+    it(`rejects every runtime Electron import form in ${filePath}`, () => {
+      assertRejectsElectronImports(filePath)
     })
   }
 
@@ -104,8 +114,8 @@ describe('Electron boundary lint: dynamic imports', () => {
     'src/main/ipc/surface-fixture.ts',
     'src/main/ipc/surface-fixture.test.ts',
   ]) {
-    it(`allows it on the Electron surface (${filePath})`, () => {
-      assert.deepEqual(lintErrors(filePath, DYNAMIC_ELECTRON), [])
+    it(`allows them on the Electron surface (${filePath})`, () => {
+      assert.deepEqual(lintErrors(filePath, ELECTRON_IMPORTS), [])
     })
   }
 
@@ -127,8 +137,17 @@ describe('Electron boundary lint: dynamic imports', () => {
     assert.match(errors[0]?.message ?? '', /Object\.hasOwn/)
   })
 
-  it('still allows Electron types through `typeof import`, which TypeScript erases', () => {
-    const code = ["export type ElectronShell = typeof import('electron')['shell']", ''].join('\n')
+  it('still allows Electron types, which TypeScript erases, and the separate electron-* packages', () => {
+    const code = [
+      "import type { App } from 'electron/main'",
+      "export { autoUpdater } from 'electron-updater'",
+      'export type MainApp = App',
+      "export type ElectronShell = typeof import('electron')['shell']",
+      'export async function loadStore(): Promise<unknown> {',
+      "  return await import('electron-store')",
+      '}',
+      '',
+    ].join('\n')
     assert.deepEqual(lintErrors('src/main/services/agent-path-fixture.ts', code), [])
   })
 })

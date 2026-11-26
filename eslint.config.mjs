@@ -16,6 +16,17 @@ const NO_ELECTRON = {
     'eslint.config.mjs — deliberately, and visibly in review.',
 }
 
+// Electron also answers to `electron/main`, `electron/common`, `electron/renderer` and
+// `electron/utility` (declared in electron.d.ts). They resolve only inside the app, so
+// they are the same runtime dependency, but a `paths` entry matches the bare name
+// exactly. Repeated beside NO_ELECTRON wherever a block restates the rule. The glob does
+// not match `electron-updater` or `electron-store`, which are separate packages.
+const NO_ELECTRON_SUBPATHS = {
+  group: ['electron/*'],
+  allowTypeImports: true,
+  message: NO_ELECTRON.message,
+}
+
 // Hoisted for the same reason as NO_ELECTRON above: ESLint replaces a rule's array
 // options wholesale rather than merging them, so every block below that sets
 // `no-restricted-syntax` must repeat this selector or it would silently reopen the
@@ -36,8 +47,19 @@ const NO_DYNAMIC_IN = {
 // constraint: every block that sets that rule for a file under the boundary repeats
 // both. `typeof import('electron')` parses as a TSImportType, not an ImportExpression,
 // so type positions stay allowed, matching `allowTypeImports`.
+//
+// It matches `electron` and `electron/<subpath>`, written as a string or as a template
+// literal with no placeholders. esquery ends a regex at its first `/`, hence `\u002F`.
+// What a syntax rule cannot see: a computed specifier (`import(spec)`, or the
+// `new Function` loader in `custom-tools-registry.ts`) and
+// `createRequire(import.meta.url)('electron')`. This catches the honest mistake, not
+// every route to Electron.
+const ELECTRON_SPECIFIER = '/^electron(\\u002F|$)/'
 const NO_DYNAMIC_ELECTRON = {
-  selector: "ImportExpression[source.value='electron']",
+  selector:
+    `ImportExpression:matches([source.value=${ELECTRON_SPECIFIER}], ` +
+    `[source.type='TemplateLiteral'][source.expressions.length=0]` +
+    `[source.quasis.0.value.cooked=${ELECTRON_SPECIFIER}])`,
   message:
     "A runtime `import('electron')` is still an Electron import: deferring it only " +
     'moves the failure from load time to first call. ' +
@@ -243,6 +265,7 @@ export default ts.config(
         'error',
         {
           paths: [NO_ELECTRON],
+          patterns: [NO_ELECTRON_SUBPATHS],
         },
       ],
       'no-restricted-syntax': ['error', NO_DYNAMIC_IN, NO_DYNAMIC_ELECTRON],
@@ -274,6 +297,7 @@ export default ts.config(
                 'Settings plan-usage discovery runs on the main thread; use node:fs/promises readFile instead.',
             },
           ],
+          patterns: [NO_ELECTRON_SUBPATHS],
         },
       ],
       'no-restricted-syntax': [
@@ -296,9 +320,9 @@ export default ts.config(
     // A `node:fs` import here fails at runtime rather than at build, so the current
     // guarantee is "nobody has tried yet".
     //
-    // Repeating NO_ELECTRON is required, not redundant: ESLint replaces a rule's options
-    // rather than merging them, so omitting it here would turn the Electron boundary off
-    // across the whole renderer.
+    // Repeating NO_ELECTRON and NO_ELECTRON_SUBPATHS is required, not redundant: ESLint
+    // replaces a rule's options rather than merging them, so omitting them here would turn
+    // the Electron boundary off across the whole renderer.
     //
     // The three direction rules that cannot be expressed as specifier globs
     // (renderer -> main, shared -> main/renderer, packages -> src) live in
@@ -321,6 +345,7 @@ export default ts.config(
         {
           paths: [NO_ELECTRON],
           patterns: [
+            NO_ELECTRON_SUBPATHS,
             {
               group: ['node:*'],
               allowTypeImports: true,
