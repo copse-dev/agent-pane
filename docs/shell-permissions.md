@@ -467,7 +467,13 @@ part of their original command's arguments.
 Other package-manager `exec` commands (`npm exec`, `yarn exec`, `bun exec`) are ambiguous: they
 run a project command, but npm may fetch a missing executable. They start inside an active sandbox
 and ask before an outside retry only if that sandbox blocks them. Local `pnpm exec` follows the
-contained `pnpm run` treatment described above. Explicit package installs remain hard-external. The
+contained `pnpm run` treatment described above. A command run through Corepack
+(`corepack pnpm test`, `corepack pnpm@10.34.5 run build`) is ambiguous for the same reason: the
+sandbox re-allows Corepack's cache read-only, so a pinned package manager that is already downloaded
+starts contained, and one Corepack would download is blocked and asks before an outside retry.
+Corepack's own `enable`, `disable`, `install`, `prepare`, `use`, `up`, `pack` and `cache` commands
+write shims or package managers outside the workspace and stay hard-external. Explicit package
+installs remain hard-external. The
 shell `exec` builtin in command position, `find -exec`, and container `exec` remain hard-external as
 dynamic execution.
 

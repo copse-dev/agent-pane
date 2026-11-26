@@ -204,9 +204,21 @@ const EXTERNAL_PATTERNS: Array<{
     reason: 'ephemeral package runner (npx/dlx/bunx/uvx/pipx — may fetch & run unpinned code)',
     ambiguous: true,
   },
+  // Corepack runs the package manager a project pins. The project sandbox re-allows
+  // Corepack's cache read-only (`resolveInterpreterToolchainAllowRead`), so a pinned
+  // pnpm or yarn that is already downloaded starts contained, and one that is not is
+  // blocked from the network and escalates like `npx`. Hard-external here made
+  // `corepack pnpm test` prompt while `pnpm test` ran contained. Corepack's own
+  // commands that install shims or package managers globally stay hard-external.
   {
-    re: /\bcorepack\b/i,
+    re: /\bcorepack\s+(?:enable|disable|install|prepare|use|up|pack|cache)\b/i,
     reason: 'corepack (downloads package-manager binaries)',
+    commandWord: true,
+  },
+  {
+    re: /\bcorepack\b(?!\s+(?:enable|disable|install|prepare|use|up|pack|cache)\b)/i,
+    reason: 'corepack (downloads package-manager binaries)',
+    ambiguous: true,
     commandWord: true,
   },
   {
