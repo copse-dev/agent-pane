@@ -5,6 +5,7 @@
 #
 #   benchmarks/risk-classifier/host-train.sh <run-name> [train.py args...]
 #   benchmarks/risk-classifier/host-train.sh --probe      # prove the sandbox holds and the GPU works
+#   benchmarks/risk-classifier/host-train.sh --export-veto [--split dev]   # export_veto.py, sandboxed
 #
 # Set up the venv once, outside the sandbox (it needs the network):
 #   uv venv --python 3.12 bench-results/risk-classifier/host-venv
@@ -24,7 +25,11 @@ python_store=$(cd "$(dirname "$(readlink -f "$python")")/../.." && pwd -P)
 
 name=${1:?usage: host-train.sh <run-name>|--probe [train.py args...]}
 shift
-case $name in --probe) out="$base/out/probe" ;; *) out="$base/out/$name" ;; esac
+case $name in
+--probe) out="$base/out/probe" ;;
+--export-veto) out="$base/out/export-veto" ;;
+*) out="$base/out/$name" ;;
+esac
 mkdir -p "$out"
 profile="$out/sandbox.sb"
 # Metal compiles kernels through per-user library and module caches and MPSGraph keeps its own;
@@ -61,6 +66,12 @@ print(("ok    " if mps else "FAIL  ") + "Apple GPU (MPS) usable inside the sandb
 raise SystemExit(0 if all(results) and mps else 1)
 PY
   run "$out/probe.py"
+  exit
+fi
+
+if [ "$name" = "--export-veto" ]; then
+  run "$repo/benchmarks/risk-classifier/export_veto.py" --repo "$repo" --out "$out/ask-veto-model.json" \
+    --private "$base/data/private-labelled.jsonl" "$@"
   exit
 fi
 

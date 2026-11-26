@@ -69,6 +69,9 @@ training set. `report.json` holds every policy at every threshold and approval m
   Use `--models encoder-mlx` for the GPU: PyTorch's MPS backend cannot compile kernels under the
   sandbox, MLX's kernels are precompiled. Dependencies: `requirements-host.txt` (hash-pinned).
 - `mlx_encoder.py` is the MLX port of the encoder; `gbdt` in `train.py` is gradient-boosted trees
-  over the product's verdicts and command-shape flags.
+  over the product's verdicts and command-shape flags. On real rows its harm feature is `harm_main`,
+  the gate before this study's rules, so it cannot learn the answer from those rules.
+- `export_veto.py` exports a tree model as JSON with a parity fixture for a TypeScript port
+  (`host-train.sh --export-veto`). Nothing ships it: on the Studio's gate misses it stops none.
 - `harness.test.py` checks the rules and the policy logic without any data:
   `python3 -I benchmarks/risk-classifier/harness.test.py`.
