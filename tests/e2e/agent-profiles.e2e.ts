@@ -2,6 +2,7 @@ import { $, browser, expect } from '@wdio/globals'
 import { mkdirSync } from 'node:fs'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import type { AgentProfile } from '../../src/shared/agent-profiles.ts'
 
 /**
  * Named agent profiles (#1573): save one in Settings > Agent, then switch a
@@ -17,17 +18,23 @@ function groupRow(picker: WebdriverIO.Element, n: number): ReturnType<WebdriverI
   return picker.$(`.model-picker-group-row:nth-child(${String(n)} of .model-picker-group-row)`)
 }
 
-describe('named agent profiles', () => {
+/** A fresh window on an empty project, optionally with saved profiles. */
+async function openSeededProject(agentProfiles?: AgentProfile[]): Promise<void> {
+  mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
+  resetUserData()
+  seedEmptyProject(seedStableWorkspace(), PROFILES_PROJECT_ID, {
+    windowBounds: { width: 1280, height: 800 },
+    model: 'claude-opus-5',
+    ...(agentProfiles ? { agentProfiles } : {}),
+  })
+  await browser.reloadSession()
+  await $('.prompt-input').waitForExist({ timeout: 30_000 })
+}
+
+describe('named agent profiles in Settings', () => {
   before(async function () {
     this.timeout(90_000)
-    mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
-    resetUserData()
-    seedEmptyProject(seedStableWorkspace(), PROFILES_PROJECT_ID, {
-      windowBounds: { width: 1280, height: 800 },
-      model: 'claude-opus-5',
-    })
-    await browser.reloadSession()
-    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await openSeededProject()
   })
 
   after(() => {
@@ -61,6 +68,25 @@ describe('named agent profiles', () => {
     await saveElementScreenshot('.agent-profiles', 'settings-agent-profiles.png')
     await $('#settings-close').click()
     await $('#settings-dialog[open]').waitForExist({ reverse: true, timeout: 10_000 })
+  })
+})
+
+describe('named agent profiles in the model menu', () => {
+  // Seeded rather than created through Settings, so this case also runs alone.
+  before(async function () {
+    this.timeout(90_000)
+    await openSeededProject([
+      {
+        id: 'reviewer',
+        name: 'Reviewer',
+        reasoning: 'high',
+        instructions: 'Review the diff for correctness first. Do not edit files unless asked.',
+      },
+    ])
+  })
+
+  after(() => {
+    resetUserData()
   })
 
   it('switches the chat to the profile from the model menu', async function () {
