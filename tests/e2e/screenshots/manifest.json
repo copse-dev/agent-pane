@@ -2073,6 +2073,10 @@
       "sha256": "c57c8ca53f2b5ed5a86f2456b36a858bd7efdc35695f860034da7d6e05586888",
       "bytes": 99605
     },
+    "footer-agent-profile-acp-trigger.png": {
+      "sha256": "3384d574e61197e874685ca6da51539f9789fe54f14dc12fedabbb6185029ebf",
+      "bytes": 5341
+    },
     "footer-branch-bisect-in-progress.png": {
       "sha256": "8f71b9bb53be4011b2121979a052dce3c1416d157e0f5347a0e8c98c53f8e580",
       "bytes": 35775
@@ -2172,6 +2176,10 @@
     "footer-model-label-resolved.png": {
       "sha256": "5f04290764199f458c648f838df69ebc713c6bf3b85f7910fa255c584939e825",
       "bytes": 281743
+    },
+    "footer-model-menu-agent-profile.png": {
+      "sha256": "2123fcdf8d9b976aa4bf75282c31bb9041640b575626f4e1c2d7e61a6551ab1e",
+      "bytes": 20419
     },
     "footer-model-trigger-anchored.png": {
       "sha256": "53bccbb2079b68af9178104419e75f57128cb21a1a8ec975dcd9a6227f40f267",
@@ -3570,8 +3578,8 @@
       "bytes": 70333
     },
     "pr-panel-settings-gh-cli.png": {
-      "sha256": "c96042fc9aa89b1dfedb7e23622e405dd56aafc2cbbc775d2e47d22817abd78e",
-      "bytes": 275848
+      "sha256": "0946de0792707982eb2e1586eb51d2ec5effe91bd00d6635bc123994910de972",
+      "bytes": 275997
     },
     "pr-panel-status-icons.png": {
       "sha256": "0d7aff40ad0dda357a72070342c8b1d39700e21fbbd622b917f20b74daa5ac0a",
@@ -4348,6 +4356,10 @@
     "settings-advisor-model.png": {
       "sha256": "d92deb337d70cde615302b44ad5e25bb0f7322574471a22c0bc09f2534d974d1",
       "bytes": 43456
+    },
+    "settings-agent-profiles.png": {
+      "sha256": "0bda7e64c475ba3ddcc3b79c4cfe8908dfaf2899ebafa785f03e32f7b74e8ed4",
+      "bytes": 42935
     },
     "settings-agents-md-plugin.png": {
       "sha256": "5597f51b10b1bdb3bae824e83381a614690859ab707fdfb99d4747865ab16815",

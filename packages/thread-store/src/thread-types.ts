@@ -514,6 +514,13 @@ export interface Thread {
    */
   reasoning?: ReasoningLevel
   /**
+   * Named agent profile this chat was started from or switched to
+   * (`src/shared/agent-profiles.ts`). Its instructions join every turn; its
+   * model and effort were copied onto {@link model} and {@link reasoning} when
+   * it was chosen. A deleted profile leaves the id behind with no effect.
+   */
+  profileId?: string
+  /**
    * Answers to the {@link ThreadProposal}s the agent offered in this thread —
    * one row per proposal, keyed by the offering tool call's id (see
    * `thread-proposal.ts`). Absent means every offer in the transcript is still
