@@ -39,7 +39,14 @@ export function denialHostLabels(denied: readonly DeniedDestination[]): string[]
   ]
 }
 
-const GITHUB_DENIAL_HOSTS = new Set(['github.com', 'api.github.com', 'githubusercontent.com'])
+const GITHUB_DENIAL_HOSTS = new Set([
+  'github.com',
+  'api.github.com',
+  'githubusercontent.com',
+  // GitHub's hosted MCP server (`api.githubcopilot.com/mcp/`), which a GitHub
+  // plugin of the agent's own may call from inside the sandbox (#4148).
+  'githubcopilot.com',
+])
 
 /**
  * True for GitHub destinations, where the bridged `gh_*` and CI tools are a real
@@ -57,7 +64,8 @@ export function isGithubDenialHost(hostOrLabel: string): boolean {
   return (
     GITHUB_DENIAL_HOSTS.has(hostname) ||
     hostname.endsWith('.github.com') ||
-    hostname.endsWith('.githubusercontent.com')
+    hostname.endsWith('.githubusercontent.com') ||
+    hostname.endsWith('.githubcopilot.com')
   )
 }
 
@@ -131,6 +139,20 @@ const GH_OWN_SHELL_DENIAL =
   "for access to ~/.config/gh. Adding GitHub to this agent's sandbox.allowedDomains " +
   'does not fix it either.'
 
+/**
+ * A GitHub MCP server or plugin from the agent's own config, such as Claude
+ * Code's `plugin:github-connector:github`, runs as a child of the agent, so it
+ * is sandboxed too (#4148). A stdio server that reads gh's login dies on the
+ * same denial before it answers, which the agent reports as `CONNECTION_CLOSED`;
+ * a hosted one is refused by the network allowlist. Claude Code then skips the
+ * server by name for 15 minutes. Copse deliberately leaves that cache entry
+ * alone: the next start would fail the same way.
+ */
+const GITHUB_OWN_MCP_SERVER_DENIAL =
+  'A GitHub MCP server or plugin of your own (for example plugin:github-connector:github) ' +
+  'also runs inside this sandbox, so it fails to connect, often as CONNECTION_CLOSED. ' +
+  'Do not wait for it to retry; use the route above.'
+
 const GITHUB_NO_DIRECT_EGRESS =
   'Do not call github.com or api.github.com from this process, for example with curl, ' +
   "unless the user has added it to this agent's sandbox.allowedDomains."
@@ -158,7 +180,7 @@ export function acpSandboxGithubSteer(
 ): string {
   if (opts.contained) return GITHUB_UNREACHABLE_IN_CONTAINER
   const route = githubRoute(bridgeToolNames)
-  return `${route} ${GH_OWN_SHELL_DENIAL} ${GITHUB_NO_DIRECT_EGRESS}`
+  return `${route} ${GH_OWN_SHELL_DENIAL} ${GITHUB_OWN_MCP_SERVER_DENIAL} ${GITHUB_NO_DIRECT_EGRESS}`
 }
 
 /**
