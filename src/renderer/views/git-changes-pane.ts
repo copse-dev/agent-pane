@@ -38,11 +38,14 @@ import {
 import { registerMonacoSelectionToChatShortcut } from '../monaco/selection-to-chat.ts'
 import {
   attachDiffLineComments,
-  formatLineCommentBatch,
   lineCommentBatchLabel,
   LineCommentDrafts,
+  sendLineCommentBatch,
+  settleLineCommentBatch,
+  type PendingLineCommentBatch,
 } from '../monaco/diff-line-comments.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
+import { getThreadById } from '@shared/store/thread-helpers.ts'
 import { scaledEditorFontSize } from '@shared/ui-scale.ts'
 import { isImageDiff, renderImageDiff } from './git-image-diff.ts'
 import { materialFolderIconUrl } from '../icons/material-file-icons.ts'
@@ -586,51 +589,68 @@ export function mountGitChangesPane(
         detachLineComments = attachDiffLineComments(diffEditor, lineComments, () => {
           const owner = lineCommentOwner()
           if (!owner || !selection || diffWrap.hidden) return null
-          return { owner, path: selection.path }
+          const version =
+            selection.kind === 'git'
+              ? selection.staged
+                ? 'staged'
+                : 'working'
+              : selection.kind === 'committed'
+                ? 'committed'
+                : 'proposed'
+          return { owner: owner.key, path: selection.path, version }
         })
       }
     }
     return diffEditor
   }
 
-  function lineCommentOwner(): string | null {
+  function lineCommentOwner(): { key: string; threadId: string } | null {
     const owner = activeOwner()
-    return owner ? `${owner.projectId}/${owner.threadId}` : null
+    return owner ? { key: `${owner.projectId}/${owner.threadId}`, threadId: owner.threadId } : null
   }
+
+  let pendingBatch: PendingLineCommentBatch | null = null
 
   function syncCommentsBar(): void {
     const owner = lineCommentOwner()
-    const count = owner ? lineComments.list(owner).length : 0
+    const count = owner ? lineComments.list(owner.key).length : 0
     commentsBar.hidden = count === 0
-    commentsCount.textContent = count === 0 ? '' : lineCommentBatchLabel(count)
+    const waiting = pendingBatch !== null && pendingBatch.owner === owner?.key
+    commentsCount.textContent =
+      count === 0 ? '' : `${lineCommentBatchLabel(count)}${waiting ? ' · in the composer' : ''}`
   }
 
   async function sendLineComments(): Promise<void> {
     const owner = lineCommentOwner()
-    const comments = owner ? lineComments.list(owner) : []
-    if (!owner || comments.length === 0) return
+    if (!owner) return
     const send = getPromptAttachmentHandlers()?.sendText
+    if (!send) {
+      showToast('There is no message box to send these comments from. They are kept here.')
+      return
+    }
     sendCommentsBtn.disabled = true
     try {
-      const sent = await send?.(formatLineCommentBatch(comments))
-      if (!sent) {
-        showToast('Open a thread to send these comments. They are kept until you send them.')
-        return
-      }
-      // Only what went out: a comment added while sending waits for the next batch.
-      const sentIds = new Set(comments.map((comment) => comment.id))
-      for (const comment of lineComments.list(owner)) {
-        if (sentIds.has(comment.id)) lineComments.remove(owner, comment.id)
-      }
+      pendingBatch = await sendLineCommentBatch(lineComments, owner, send)
     } finally {
       sendCommentsBtn.disabled = false
+      syncCommentsBar()
     }
+  }
+
+  function onMessageAdded(threadId: string, messageId: string): void {
+    if (!pendingBatch) return
+    const message = getThreadById(store, threadId)?.messages.find((m) => m.id === messageId)
+    if (!settleLineCommentBatch(lineComments, pendingBatch, threadId, message)) return
+    pendingBatch = null
+    syncCommentsBar()
   }
 
   sendCommentsBtn.addEventListener('click', () => void sendLineComments())
   discardCommentsBtn.addEventListener('click', () => {
     const owner = lineCommentOwner()
-    if (owner) lineComments.clear(owner)
+    if (!owner) return
+    if (pendingBatch?.owner === owner.key) pendingBatch = null
+    lineComments.clear(owner.key)
   })
 
   function requireMonaco(): GitDiffMonaco {
@@ -1447,7 +1467,8 @@ export function mountGitChangesPane(
 
   const unsubs = [
     lineComments.subscribe(syncCommentsBar),
-    store.select(lineCommentOwner, syncCommentsBar),
+    store.select(() => lineCommentOwner()?.key ?? null, syncCommentsBar),
+    store.on('message_added', onMessageAdded),
     selectRightPanelMode(store, 'changes', (active) => {
       if (active) void refresh()
     }),

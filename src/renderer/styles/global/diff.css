@@ -97,9 +97,10 @@
   font-size: var(--font-size-sm);
   line-height: 1.4;
   white-space: normal;
-  user-select: text;
 }
 .diff-line-comment-body {
+  /* The comment is content; its buttons are chrome (ui-taste: selection). */
+  user-select: text;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

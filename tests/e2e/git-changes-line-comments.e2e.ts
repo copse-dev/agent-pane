@@ -16,7 +16,7 @@ const COMMENT = 'Read this from config instead of hard-coding it.'
 const BATCH = [
   'I left a review comment on your changes. Please address it:',
   '',
-  '1. `staged.ts` line 30:',
+  '1. `staged.ts` line 30 (staged version):',
   '   ```',
   `   ${CHANGED_LINE}`,
   '   ```',
@@ -121,8 +121,13 @@ describe('Changes line comments', function () {
     })
     await $('.diff-line-comments-send').click()
     // The fixture checkout is dirty, so the composer's guard asks first; the
-    // batch waits in the composer until the user answers.
-    await $('button=Send anyway').click()
+    // batch waits in the composer until the user answers, and the comments
+    // stay until it is actually sent.
+    const sendAnyway = $('button=Send anyway')
+    await sendAnyway.waitForDisplayed({ timeout: 15_000 })
+    await expect($('.diff-line-comments-count')).toHaveText('1 review comment · in the composer')
+    await expect($('#git-diff-viewer-host .diff-line-comment-body')).toHaveText(COMMENT)
+    await sendAnyway.click()
     await scenario.waitForComplete()
     await expectAssistantReply('Moved the value into config.')
     await expect($('.msg-user')).toHaveText(expect.stringContaining(COMMENT))

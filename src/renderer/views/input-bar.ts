@@ -2131,12 +2131,14 @@ export function mountInputBar(
     void submit()
   })
 
-  async function submit(sendNow = false): Promise<void> {
+  /** Whether the prompt was recorded (sent, or queued behind a running turn). */
+  async function submit(sendNow = false): Promise<boolean> {
     const id = getActiveThreadId()
-    if (!id || imageDescriptionInProgress || !beginThreadSubmission(store, id)) return
+    if (!id || imageDescriptionInProgress || !beginThreadSubmission(store, id)) return false
     updateState()
+    let recorded = false
     try {
-      await performSubmit(id, sendNow)
+      recorded = await performSubmit(id, sendNow)
     } catch (error) {
       console.error('Could not send prompt', { threadId: id, error })
       checkoutErrors.set(id, error instanceof Error ? error.message : 'Could not send message')
@@ -2145,9 +2147,10 @@ export function mountInputBar(
       updateState()
       updateCheckoutControl()
     }
+    return recorded
   }
 
-  async function performSubmit(id: string, sendNow: boolean): Promise<void> {
+  async function performSubmit(id: string, sendNow: boolean): Promise<boolean> {
     perfMark('ttft:composer-submit')
     followUps.clearSuggestions()
     nextStepHint.clear()
@@ -2196,20 +2199,20 @@ export function mountInputBar(
         )
         if (target) sendQueuedMessageNow(store, api, id, target.messageId)
       }
-      return
+      return false
     }
     const projectId = store.getState().activeProjectId
     const thread = getThreadById(store, id)
-    if (!projectId || !thread) return
+    if (!projectId || !thread) return false
     const choice = checkoutChoice(id)
     const model = thread.model ?? store.getState().settings?.model
     // A follow-up to the container (A14): a continuation run, not a turn of
     // the thread's own agent. Prose only — the guest gets no attachments.
     if (!targetSelect.hidden && targetSelect.value === 'container') {
-      if (!rawText) return
+      if (!rawText) return false
       const started = await containerRun.followUp(rawText)
       if (started) updateState()
-      return
+      return started
     }
     const requiresCheckoutPreparation = thread.messages.length === 0 && !thread.worktreeChoice
     // The footer refresh is supplementary and may still be loading. Capture this
@@ -2225,7 +2228,7 @@ export function mountInputBar(
       const incompatibility = await incompatibleImageModel()
       if (incompatibility) {
         if (getActiveThreadId() === id) await refreshImageCompatibilityWarning()
-        return
+        return false
       }
     }
     // A genuinely new thread has no branch contract to validate yet. Its
@@ -2261,7 +2264,7 @@ export function mountInputBar(
       threadGitBranchMismatch(threadBranch, currentBranch, { isolatedWorktree })
     ) {
       if (getActiveThreadId() === id) showBranchMismatch(threadBranch)
-      return
+      return false
     }
     if (getActiveThreadId() === id) hideBranchMismatch()
 
@@ -2293,9 +2296,9 @@ export function mountInputBar(
             activeComposerThreadId !== id ||
             store.getState().activeProjectId !== projectId
           )
-            return
+            return false
           showDirtyWarning(id)
-          return
+          return false
         }
       }
     }
@@ -2337,7 +2340,7 @@ export function mountInputBar(
     // it as prose would silently do the wrong work.
     if (invocation && invocation.kind === null) {
       showToast(`Unknown skill or agent: /${invocation.name}`, { variant: 'error' })
-      return
+      return false
     }
 
     // Warn up front when the invoked skill points the agent at external hosts.
@@ -2411,7 +2414,7 @@ export function mountInputBar(
           // becomes the worktree's base, or the shared checkout's branch.
           baseBranch,
         )
-        if (!getThreadById(store, id)) return
+        if (!getThreadById(store, id)) return false
         preparedPromptState = prepared.promptState
         applyPreparedThreadCheckout(store, id, prepared)
       } catch (error) {
@@ -2419,7 +2422,7 @@ export function mountInputBar(
         // renamed branch); drop the cache so Retry re-reads it.
         await api.agent.resetDefaultBranchCache().catch(() => undefined)
         checkoutErrors.set(id, checkoutErrorMessage(error))
-        return
+        return false
       } finally {
         checkoutPreparations.delete(id)
         updateCheckoutControl()
@@ -2439,7 +2442,7 @@ export function mountInputBar(
         : await api.git.promptState(projectId, id))
 
     // Deletion cancels a pending send; navigation does not.
-    if (!getThreadById(store, id)) return
+    if (!getThreadById(store, id)) return false
     const priorTodos = thread.todos ?? []
     const workingBrief = nextWorkingBrief(thread.workingBrief, fullContent)
     if (workingBrief && workingBrief !== thread.workingBrief) {
@@ -2561,6 +2564,7 @@ export function mountInputBar(
       draftAttachmentsByThread.delete(id)
       setThreadDraftPrompt(store, id, '')
     }
+    return true
   }
 
   function addChip(file: { path: string; content: string }): void {
@@ -2839,12 +2843,13 @@ export function mountInputBar(
     sendText: async (content: string): Promise<boolean> => {
       if (!getActiveThreadId() || imageDescriptionInProgress) return false
       // After whatever the user already had in the composer, as plain text: a
-      // paste chip would reach the agent fenced as a code block.
+      // paste chip would reach the agent fenced as a code block. When the send
+      // stops short (a checkout prompt, a branch mismatch) the text stays in the
+      // composer for the user to finish, and false says nothing went out yet.
       const end = composer.value.length
       composer.setSelectionRange(end, end)
       composer.insertText(`${composer.value.trim() ? '\n\n' : ''}${content}`)
-      await submit()
-      return true
+      return submit()
     },
     attachImage: addImageChip,
     attachVideo: addVideoChip,

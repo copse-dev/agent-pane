@@ -1,6 +1,6 @@
 import type * as Monaco from 'monaco-editor'
 import { el } from '../dom/helpers.ts'
-import type { GitDiffCodeEditor, GitDiffEditor } from './git-diff-viewer.ts'
+import type { GitDiffEditor } from './git-diff-viewer.ts'
 
 /**
  * Review comments left on lines of a diff, collected and sent to the agent as
@@ -8,22 +8,31 @@ import type { GitDiffCodeEditor, GitDiffEditor } from './git-diff-viewer.ts'
  * not one interruption per remark.
  *
  * Comments are drafts held in this window's memory, keyed by the thread whose
- * changes they review; sending or discarding clears them. They anchor to a line
- * number plus that line's text, so a comment follows its line when the agent
- * edits around it before the batch goes out.
+ * changes they review; sending or discarding clears them. They sit on lines of
+ * the new side of the diff (the removed side is not on screen in the docked
+ * pane's inline layout), and anchor to a line number plus that line's text and
+ * its neighbours, so a comment follows its line when the agent edits around it
+ * before the batch goes out.
  */
 
-/** `before` comments sit on the original file (a removed line); `after` on the new one. */
-export type LineCommentSide = 'before' | 'after'
+/** Which version of the file the diff on screen shows as its new side. */
+export type LineCommentVersion = 'working' | 'staged' | 'committed' | 'proposed'
 
-export interface LineComment {
+/** Where a comment sits: a line, and enough of its text to find it again. */
+export interface LineAnchor {
+  /** 1-based line in the new side of the diff. */
+  readonly line: number
+  /** The line's text when the comment was written; quoted to the agent. */
+  readonly lineText: string
+  /** The lines just above and below, which tell repeated lines (`}`, blanks) apart. */
+  readonly above: string | undefined
+  readonly below: string | undefined
+}
+
+export interface LineComment extends LineAnchor {
   readonly id: string
   readonly path: string
-  readonly side: LineCommentSide
-  /** 1-based line in the file on `side`. */
-  readonly line: number
-  /** The line's text when the comment was written; quoted to the agent and used to re-anchor. */
-  readonly lineText: string
+  readonly version: LineCommentVersion
   readonly body: string
 }
 
@@ -83,9 +92,19 @@ export class LineCommentDrafts {
   }
 }
 
+function longestBacktickRun(text: string): number {
+  return Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length))
+}
+
 function codeFence(text: string): string {
-  const longestRun = Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length))
-  return '`'.repeat(Math.max(3, longestRun + 1))
+  return '`'.repeat(Math.max(3, longestBacktickRun(text) + 1))
+}
+
+/** `text` as an inline code span that a backtick inside it cannot close early. */
+function inlineCode(text: string): string {
+  const ticks = '`'.repeat(longestBacktickRun(text) + 1)
+  const pad = text.startsWith('`') || text.endsWith('`') ? ' ' : ''
+  return `${ticks}${pad}${text}${pad}${ticks}`
 }
 
 function indent(text: string, prefix: string): string {
@@ -95,7 +114,24 @@ function indent(text: string, prefix: string): string {
     .join('\n')
 }
 
-/** Label for the composer chip and transcript that carries a batch. */
+/**
+ * Longest stretch of a line quoted to the agent. A comment on one line of a
+ * minified bundle should not paste the whole bundle into the user message.
+ */
+export const MAX_QUOTED_LINE = 240
+
+function quotedLine(text: string): string {
+  return text.length > MAX_QUOTED_LINE ? `${text.slice(0, MAX_QUOTED_LINE)}…` : text
+}
+
+const VERSION_NOTE: Record<LineCommentVersion, string> = {
+  working: '',
+  staged: ' (staged version)',
+  committed: ' (as committed)',
+  proposed: ' (in your proposed edit)',
+}
+
+/** Label for the bar that counts what is waiting to be sent. */
 export function lineCommentBatchLabel(count: number): string {
   return count === 1 ? '1 review comment' : `${String(count)} review comments`
 }
@@ -106,18 +142,13 @@ export function lineCommentBatchLabel(count: number): string {
  */
 export function formatLineCommentBatch(comments: readonly LineComment[]): string {
   const ordered = [...comments].sort(
-    (a, b) =>
-      a.path.localeCompare(b.path) ||
-      (a.side === b.side ? 0 : a.side === 'before' ? -1 : 1) ||
-      a.line - b.line,
+    (a, b) => a.path.localeCompare(b.path) || a.version.localeCompare(b.version) || a.line - b.line,
   )
   const items = ordered.map((comment, index) => {
-    const where =
-      comment.side === 'before'
-        ? `\`${comment.path}\` line ${String(comment.line)} (removed by your change)`
-        : `\`${comment.path}\` line ${String(comment.line)}`
-    const fence = codeFence(comment.lineText)
-    const quoted = `${fence}\n${comment.lineText}\n${fence}`
+    const where = `${inlineCode(comment.path)} line ${String(comment.line)}${VERSION_NOTE[comment.version]}`
+    const text = quotedLine(comment.lineText)
+    const fence = codeFence(text)
+    const quoted = `${fence}\n${text}\n${fence}`
     return `${String(index + 1)}. ${where}:\n${indent(quoted, '   ')}\n${indent(comment.body.trim(), '   ')}`
   })
   const heading =
@@ -128,26 +159,105 @@ export function formatLineCommentBatch(comments: readonly LineComment[]): string
 }
 
 /**
- * Where a comment's line is now: its recorded line if that still holds the
- * text it was written on, otherwise the nearest line with that text, otherwise
- * the recorded line clamped into the file.
+ * A batch handed to the composer whose send stopped short of the thread (a
+ * checkout prompt, a branch mismatch): it waits there for the user, and its
+ * comments stay until a user message carrying it is recorded.
  */
-export function reanchorLine(lines: readonly string[], line: number, lineText: string): number {
-  if (lines.length === 0) return 1
-  if (lines[line - 1] === lineText) return line
-  for (let distance = 1; distance < lines.length; distance++) {
-    if (lines[line - 1 - distance] === lineText) return line - distance
-    if (lines[line - 1 + distance] === lineText) return line + distance
+export interface PendingLineCommentBatch {
+  readonly owner: string
+  readonly threadId: string
+  readonly text: string
+  readonly ids: readonly string[]
+}
+
+function removeComments(drafts: LineCommentDrafts, owner: string, ids: readonly string[]): void {
+  const sent = new Set(ids)
+  // Only what went out: a comment added since waits for the next batch.
+  for (const comment of drafts.list(owner)) {
+    if (sent.has(comment.id)) drafts.remove(owner, comment.id)
   }
-  return Math.min(Math.max(1, line), lines.length)
 }
 
 /**
- * Monaco's `MouseTargetType.GUTTER_GLYPH_MARGIN`. The enum is a runtime value
- * of the lazily loaded Monaco bundle, which this module only sees as types.
- * The e2e spec clicks the real glyph margin, so a renumbering fails there.
+ * Send every comment `owner` has as one message. Returns null once the message
+ * is recorded (and those comments are gone), or the batch still waiting in the
+ * composer, whose comments stay until {@link settleLineCommentBatch} sees it land.
+ */
+export async function sendLineCommentBatch(
+  drafts: LineCommentDrafts,
+  owner: { readonly key: string; readonly threadId: string },
+  send: (text: string) => Promise<boolean>,
+): Promise<PendingLineCommentBatch | null> {
+  const comments = drafts.list(owner.key)
+  if (comments.length === 0) return null
+  const batch: PendingLineCommentBatch = {
+    owner: owner.key,
+    threadId: owner.threadId,
+    text: formatLineCommentBatch(comments),
+    ids: comments.map((comment) => comment.id),
+  }
+  if (!(await send(batch.text))) return batch
+  removeComments(drafts, batch.owner, batch.ids)
+  return null
+}
+
+/** Clear a waiting batch's comments if `message` is the user message that carried it. */
+export function settleLineCommentBatch(
+  drafts: LineCommentDrafts,
+  batch: PendingLineCommentBatch,
+  threadId: string,
+  message: { readonly role: string; readonly content: string } | undefined,
+): boolean {
+  if (threadId !== batch.threadId || message?.role !== 'user') return false
+  if (!message.content.includes(batch.text)) return false
+  removeComments(drafts, batch.owner, batch.ids)
+  return true
+}
+
+/** The anchor for `line` in `lines`. */
+export function anchorAt(lines: readonly string[], line: number): LineAnchor {
+  return {
+    line,
+    lineText: lines[line - 1] ?? '',
+    above: lines[line - 2],
+    below: lines[line],
+  }
+}
+
+/**
+ * Where an anchored line is now. Of the lines holding its text, the one whose
+ * neighbours still match best wins, the nearest breaking a tie; with no line
+ * holding the text, the recorded line clamped into the file.
+ */
+export function reanchorLine(lines: readonly string[], anchor: LineAnchor): number {
+  if (lines.length === 0) return 1
+  let best: { line: number; score: number; distance: number } | null = null
+  for (let index = 0; index < lines.length; index++) {
+    if (lines[index] !== anchor.lineText) continue
+    const score =
+      (lines[index - 1] === anchor.above ? 1 : 0) + (lines[index + 1] === anchor.below ? 1 : 0)
+    const distance = Math.abs(index + 1 - anchor.line)
+    if (!best || score > best.score || (score === best.score && distance < best.distance)) {
+      best = { line: index + 1, score, distance }
+    }
+  }
+  return best?.line ?? Math.min(Math.max(1, anchor.line), lines.length)
+}
+
+/**
+ * Monaco's `MouseTargetType` values this module reads. The enum is a runtime
+ * value of the lazily loaded Monaco bundle, which this module only sees as
+ * types. The e2e spec clicks the real glyph margin, so a renumbering fails there.
  */
 export const GLYPH_MARGIN_TARGET = 2
+/** Targets on a line of the file itself: gutter, line number, text. Not a view zone. */
+const LINE_TARGETS: ReadonlySet<number> = new Set([
+  GLYPH_MARGIN_TARGET,
+  3, // GUTTER_LINE_NUMBERS
+  4, // GUTTER_LINE_DECORATIONS
+  6, // CONTENT_TEXT
+  7, // CONTENT_EMPTY
+])
 
 interface MouseTarget {
   readonly type: number
@@ -166,10 +276,8 @@ interface ViewZoneAccessor {
 }
 
 /** The parts of a Monaco code editor that line comments draw on. */
-interface CommentSurface {
-  onMouseMove(listener: (event: { target: MouseTarget }) => void): {
-    dispose(): void
-  }
+export interface CommentableCodeEditor {
+  onMouseMove(listener: (event: { target: MouseTarget }) => void): { dispose(): void }
   onMouseLeave(listener: () => void): { dispose(): void }
   onMouseDown(
     listener: (event: { target: MouseTarget; event: { preventDefault(): void } }) => void,
@@ -179,48 +287,24 @@ interface CommentSurface {
   updateOptions(options: Monaco.editor.IEditorOptions): void
 }
 
-/**
- * Optional on {@link GitDiffCodeEditor} because the narrow test doubles of the
- * diff editor omit them; Monaco's code editor always has every one.
- */
-export interface CommentableCodeEditor {
-  onMouseMove?: CommentSurface['onMouseMove']
-  onMouseLeave?: CommentSurface['onMouseLeave']
-  onMouseDown?: CommentSurface['onMouseDown']
-  createDecorationsCollection?: CommentSurface['createDecorationsCollection']
-  changeViewZones?: CommentSurface['changeViewZones']
-}
-
-function commentSurface(editor: GitDiffCodeEditor): CommentSurface | null {
-  const { onMouseMove, onMouseLeave, onMouseDown, createDecorationsCollection, changeViewZones } =
-    editor
-  if (!onMouseMove || !onMouseLeave || !onMouseDown) return null
-  if (!createDecorationsCollection || !changeViewZones) return null
-  return {
-    onMouseMove: (listener) => onMouseMove.call(editor, listener),
-    onMouseLeave: (listener) => onMouseLeave.call(editor, listener),
-    onMouseDown: (listener) => onMouseDown.call(editor, listener),
-    createDecorationsCollection: () => createDecorationsCollection.call(editor),
-    changeViewZones: (callback): void => {
-      changeViewZones.call(editor, callback)
-    },
-    updateOptions: (options): void => {
-      editor.updateOptions(options)
-    },
-  }
-}
-
 /** What the diff on screen is, or null while no commentable file diff is shown. */
 export interface LineCommentContext {
   readonly owner: string
   readonly path: string
+  readonly version: LineCommentVersion
 }
 
-interface Draft {
-  readonly side: LineCommentSide
-  readonly line: number
+function contextKey(context: LineCommentContext): string {
+  return JSON.stringify([context.owner, context.version, context.path])
+}
+
+/** An open comment box. It lives until saved or cancelled, whatever is on screen meanwhile. */
+interface OpenDraft {
+  anchor: LineAnchor
   /** Set while editing a saved comment rather than writing a new one. */
   readonly editingId?: string
+  node: HTMLElement | null
+  focusPending: boolean
 }
 
 /** Events inside a comment card stay in the card instead of reaching Monaco. */
@@ -239,18 +323,6 @@ const ISOLATED_EVENTS = [
   'paste',
 ] as const
 
-/**
- * A zone spans the editor's whole scrollable width, which for a long line is
- * far wider than the pane; size cards to the visible text area instead.
- */
-function fitToEditor(zoneNode: HTMLElement): void {
-  const editor = zoneNode.closest<HTMLElement>('.monaco-editor')
-  const margin = editor?.querySelector<HTMLElement>('.margin')
-  if (!editor || !margin) return
-  const width = Math.max(0, editor.clientWidth - margin.offsetWidth - SCROLLBAR_ALLOWANCE)
-  editor.style.setProperty('--diff-line-comment-width', `${String(width)}px`)
-}
-
 /** Room left for the editor's vertical scrollbar beside a card. */
 const SCROLLBAR_ALLOWANCE = 16
 
@@ -263,80 +335,75 @@ function isolate(node: HTMLElement): void {
 }
 
 /**
- * Let the user comment on lines of `diffEditor`: a "+" appears in the gutter
- * of the hovered line, a click opens a comment box under it, and saved
- * comments stay drawn under their lines. Returns a function that removes it.
+ * Let the user comment on lines of `diffEditor`'s new side: a "+" appears in
+ * the gutter of the hovered line, a click opens a comment box under it, and
+ * saved comments stay drawn under their lines. Returns a function that removes it.
  */
 export function attachDiffLineComments(
   diffEditor: GitDiffEditor,
   drafts: LineCommentDrafts,
   getContext: () => LineCommentContext | null,
 ): () => void {
-  const sides = [
-    { side: 'before' as const, editor: diffEditor.getOriginalEditor() },
-    { side: 'after' as const, editor: diffEditor.getModifiedEditor() },
-  ].flatMap(({ side, editor }) => {
-    const surface = commentSurface(editor)
-    return surface ? [{ side, surface, hover: surface.createDecorationsCollection() }] : []
-  })
-  if (sides.length === 0) return () => {}
-
-  let draft: Draft | null = null
-  let draftContext: LineCommentContext | null = null
-  // Built once per open draft, so a re-render (a diff refresh, another comment
-  // saved) keeps what the user has typed and where their caret is.
-  let draftNode: HTMLElement | null = null
-  let focusDraft = false
-  const zoneIds = new Map<LineCommentSide, string[]>()
+  const editor = diffEditor.getModifiedEditor()
+  const hover = editor.createDecorationsCollection()
+  let hoverLine: number | null = null
+  // One per file view, so a half-written comment survives a look at another file.
+  const openDrafts = new Map<string, OpenDraft>()
+  let zoneIds: string[] = []
   const resizeObservers: ResizeObserver[] = []
   const disposables: Array<{ dispose(): void }> = []
+  let fitObserver: ResizeObserver | null = null
 
-  function linesFor(side: LineCommentSide): readonly string[] {
-    const models = diffEditor.getModel()
-    if (!models) return []
-    return (side === 'before' ? models.original : models.modified).getValue().split('\n')
+  function currentLines(): readonly string[] {
+    return diffEditor.getModel()?.modified.getValue().split('\n') ?? []
   }
 
-  function openDraft(side: LineCommentSide, line: number, editingId?: string): void {
-    const context = getContext()
-    if (!context) return
-    draft = editingId ? { side, line, editingId } : { side, line }
-    draftContext = context
-    draftNode = draftCard(context, draft)
-    focusDraft = true
+  /**
+   * A zone spans the editor's whole scrollable width, which for a long line is
+   * far wider than the pane; size cards to the visible text area, re-measured
+   * when the editor resizes rather than on every render.
+   */
+  function watchWidth(zoneNode: HTMLElement): void {
+    if (fitObserver) return
+    const root = zoneNode.closest<HTMLElement>('.monaco-editor')
+    const margin = root?.querySelector<HTMLElement>('.margin')
+    if (!root || !margin) return
+    const fit = (): void => {
+      const width = Math.max(0, root.clientWidth - margin.offsetWidth - SCROLLBAR_ALLOWANCE)
+      root.style.setProperty('--diff-line-comment-width', `${String(width)}px`)
+    }
+    fitObserver = new ResizeObserver(fit)
+    fitObserver.observe(root)
+    fit()
+  }
+
+  function openDraft(context: LineCommentContext, anchor: LineAnchor, editingId?: string): void {
+    const draft: OpenDraft = editingId
+      ? { anchor, editingId, node: null, focusPending: true }
+      : { anchor, node: null, focusPending: true }
+    draft.node = draftCard(context, draft)
+    openDrafts.set(contextKey(context), draft)
     render()
   }
 
-  function dropDraft(): void {
-    draft = null
-    draftContext = null
-    draftNode = null
-  }
-
-  function closeDraft(): void {
-    dropDraft()
+  function closeDraft(context: LineCommentContext): void {
+    openDrafts.delete(contextKey(context))
     render()
   }
 
   function commentCard(context: LineCommentContext, comment: LineComment): HTMLElement {
     const edit = el(
       'button',
-      {
-        type: 'button',
-        class: 'ui-btn ui-btn-ghost ui-btn-compact diff-line-comment-edit',
-      },
+      { type: 'button', class: 'ui-btn ui-btn-ghost ui-btn-compact diff-line-comment-edit' },
       'Edit',
     )
     const remove = el(
       'button',
-      {
-        type: 'button',
-        class: 'ui-btn ui-btn-ghost ui-btn-compact diff-line-comment-delete',
-      },
+      { type: 'button', class: 'ui-btn ui-btn-ghost ui-btn-compact diff-line-comment-delete' },
       'Delete',
     )
     edit.addEventListener('click', () => {
-      openDraft(comment.side, comment.line, comment.id)
+      openDraft(context, comment, comment.id)
     })
     remove.addEventListener('click', () => {
       drafts.remove(context.owner, comment.id)
@@ -349,31 +416,25 @@ export function attachDiffLineComments(
     )
   }
 
-  function draftCard(context: LineCommentContext, open: Draft): HTMLElement {
-    const existing = open.editingId
-      ? drafts.list(context.owner).find((comment) => comment.id === open.editingId)
+  function draftCard(context: LineCommentContext, draft: OpenDraft): HTMLElement {
+    const existing = draft.editingId
+      ? drafts.list(context.owner).find((comment) => comment.id === draft.editingId)
       : undefined
     const input = el('textarea', {
       class: 'diff-line-comment-input',
       rows: '3',
       placeholder: 'Comment for the agent',
-      'aria-label': `Comment on line ${String(open.line)}`,
+      'aria-label': `Comment on line ${String(draft.anchor.line)}`,
     })
     input.value = existing?.body ?? ''
     const cancel = el(
       'button',
-      {
-        type: 'button',
-        class: 'ui-btn ui-btn-secondary ui-btn-compact diff-line-comment-cancel',
-      },
+      { type: 'button', class: 'ui-btn ui-btn-secondary ui-btn-compact diff-line-comment-cancel' },
       'Cancel',
     )
     const save = el(
       'button',
-      {
-        type: 'button',
-        class: 'ui-btn ui-btn-primary ui-btn-compact diff-line-comment-save',
-      },
+      { type: 'button', class: 'ui-btn ui-btn-primary ui-btn-compact diff-line-comment-save' },
       existing ? 'Save' : 'Add comment',
     )
     const syncSave = (): void => {
@@ -383,30 +444,34 @@ export function attachDiffLineComments(
     const commit = (): void => {
       const body = input.value.trim()
       if (!body) return
+      // The anchor was taken when the box opened and has followed its line
+      // since, so an edit by the agent in between cannot move the comment.
+      const { line } = draft.anchor
+      openDrafts.delete(contextKey(context))
       if (existing) {
-        drafts.update(context.owner, existing.id, { body })
+        drafts.update(context.owner, existing.id, { body, line })
       } else {
         drafts.add(context.owner, {
+          ...draft.anchor,
           path: context.path,
-          side: open.side,
-          line: open.line,
-          lineText: linesFor(open.side)[open.line - 1] ?? '',
+          version: context.version,
           body,
         })
       }
-      closeDraft()
     }
     input.addEventListener('input', syncSave)
     input.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') {
         event.preventDefault()
-        closeDraft()
+        closeDraft(context)
       } else if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
         event.preventDefault()
         commit()
       }
     })
-    cancel.addEventListener('click', closeDraft)
+    cancel.addEventListener('click', () => {
+      closeDraft(context)
+    })
     save.addEventListener('click', commit)
     return el(
       'div',
@@ -418,22 +483,15 @@ export function attachDiffLineComments(
 
   function clearZones(): void {
     for (const observer of resizeObservers.splice(0)) observer.disconnect()
-    for (const { side, surface } of sides) {
-      const ids = zoneIds.get(side) ?? []
-      if (ids.length === 0) continue
-      surface.changeViewZones((accessor) => {
-        for (const id of ids) accessor.removeZone(id)
-      })
-      zoneIds.set(side, [])
-    }
+    if (zoneIds.length === 0) return
+    const ids = zoneIds
+    zoneIds = []
+    editor.changeViewZones((accessor) => {
+      for (const id of ids) accessor.removeZone(id)
+    })
   }
 
-  function addZone(
-    surface: CommentSurface,
-    side: LineCommentSide,
-    line: number,
-    card: HTMLElement,
-  ): void {
+  function addZone(line: number, card: HTMLElement, draft?: OpenDraft): void {
     const domNode = el('div', { class: 'diff-line-comment-zone' }, card)
     isolate(domNode)
     const zone: Monaco.editor.IViewZone = {
@@ -441,121 +499,119 @@ export function attachDiffLineComments(
       heightInPx: 72,
       domNode,
       suppressMouseDown: true,
+      // A line inside a collapsed unchanged region still shows its comment.
+      showInHiddenAreas: true,
       // Monaco shows the zone on its next render, after this call; a
       // just-opened draft takes focus once it can.
       onDomNodeTop: () => {
-        fitToEditor(domNode)
-        if (card !== draftNode || !focusDraft) return
+        watchWidth(domNode)
+        if (!draft?.focusPending) return
         requestAnimationFrame(() => {
           const input = card.querySelector('textarea')
-          if (!focusDraft || card !== draftNode || !input) return
+          if (!draft.focusPending || !input) return
           // No scroll: the box is already under the clicked line, and scrolling
           // a wide diff sideways to its caret would hide the line numbers.
           input.focus({ preventScroll: true })
-          focusDraft = document.activeElement !== input
+          draft.focusPending = document.activeElement !== input
         })
       },
     }
-    let id = ''
-    surface.changeViewZones((accessor) => {
-      id = accessor.addZone(zone)
-    })
-    zoneIds.set(side, [...(zoneIds.get(side) ?? []), id])
-    // The zone's height is the card's: measured once it is in the DOM, and again
-    // whenever it reflows (a wrapping comment, a growing textarea).
-    const observer = new ResizeObserver(() => {
-      const height = Math.ceil(domNode.scrollHeight)
-      if (height <= 0 || height === zone.heightInPx) return
-      zone.heightInPx = height
-      surface.changeViewZones((accessor) => {
-        accessor.layoutZone(id)
+    editor.changeViewZones((accessor) => {
+      const id = accessor.addZone(zone)
+      zoneIds.push(id)
+      // The zone's height is the card's: measured once it is in the DOM, and
+      // again whenever it reflows (a wrapping comment, a growing textarea).
+      const observer = new ResizeObserver(() => {
+        const height = Math.ceil(domNode.scrollHeight)
+        if (height <= 0 || height === zone.heightInPx) return
+        zone.heightInPx = height
+        editor.changeViewZones((layout) => {
+          layout.layoutZone(id)
+        })
       })
+      observer.observe(card)
+      resizeObservers.push(observer)
     })
-    observer.observe(card)
-    resizeObservers.push(observer)
   }
 
   function render(): void {
-    // Moving the draft into its new zone blurs it; give the caret back after.
-    const draftFocused = draftNode?.contains(document.activeElement) === true
+    // Moving a draft into its new zone blurs it; give the caret back after.
+    const focused = [...openDrafts.values()].find(
+      (draft) => draft.node?.contains(document.activeElement) === true,
+    )
     clearZones()
     renderZones()
-    if (draftFocused) draftNode?.querySelector('textarea')?.focus()
+    if (focused?.node?.isConnected) focused.node.querySelector('textarea')?.focus()
   }
 
   function renderZones(): void {
     const context = getContext()
-    if (
-      draft &&
-      (!context || context.owner !== draftContext?.owner || context.path !== draftContext.path)
-    ) {
-      dropDraft()
-    }
     if (!context) return
-    for (const { side, surface } of sides) {
-      const lines = linesFor(side)
-      for (const comment of drafts.list(context.owner)) {
-        if (comment.path !== context.path || comment.side !== side) continue
-        if (draft?.editingId === comment.id) continue
-        const line = reanchorLine(lines, comment.line, comment.lineText)
-        if (line !== comment.line) {
-          // Keep the stored line current; the update re-renders.
-          drafts.update(context.owner, comment.id, { line })
-          return
-        }
-        addZone(surface, side, line, commentCard(context, comment))
+    const lines = currentLines()
+    if (lines.length === 0) return
+    const draft = openDrafts.get(contextKey(context))
+    for (const comment of drafts.list(context.owner)) {
+      if (comment.path !== context.path || comment.version !== context.version) continue
+      if (draft?.editingId === comment.id) continue
+      const line = reanchorLine(lines, comment)
+      if (line !== comment.line) {
+        // Keep the stored line current; the update re-renders.
+        drafts.update(context.owner, comment.id, { line })
+        return
       }
-      if (draft?.side === side && draftNode) addZone(surface, side, draft.line, draftNode)
+      addZone(line, commentCard(context, comment))
+    }
+    if (draft?.node) {
+      draft.anchor = { ...draft.anchor, line: reanchorLine(lines, draft.anchor) }
+      addZone(draft.anchor.line, draft.node, draft)
     }
   }
 
-  for (const { side, surface, hover } of sides) {
-    surface.updateOptions({ glyphMargin: true })
-    disposables.push(
-      surface.onMouseMove(({ target }) => {
-        const line = target.position?.lineNumber
-        if (line === undefined || !getContext()) {
-          hover.clear()
-          return
-        }
-        hover.set([
-          {
-            range: {
-              startLineNumber: line,
-              startColumn: 1,
-              endLineNumber: line,
-              endColumn: 1,
-            },
-            options: {
-              glyphMarginClassName: 'diff-line-comment-add',
-              glyphMarginHoverMessage: { value: 'Comment on this line' },
-            },
-          },
-        ])
-      }),
-      surface.onMouseLeave(() => {
-        hover.clear()
-      }),
-      surface.onMouseDown(({ target, event }) => {
-        if (target.type !== GLYPH_MARGIN_TARGET || !target.position) return
-        event.preventDefault()
-        openDraft(side, target.position.lineNumber)
-      }),
-    )
+  function setHover(line: number | null): void {
+    if (line === hoverLine) return
+    hoverLine = line
+    if (line === null) {
+      hover.clear()
+      return
+    }
+    hover.set([
+      {
+        range: { startLineNumber: line, startColumn: 1, endLineNumber: line, endColumn: 1 },
+        options: {
+          glyphMarginClassName: 'diff-line-comment-add',
+          glyphMarginHoverMessage: { value: 'Comment on this line' },
+        },
+      },
+    ])
   }
 
+  editor.updateOptions({ glyphMargin: true })
+  disposables.push(
+    editor.onMouseMove(({ target }) => {
+      const onLine = LINE_TARGETS.has(target.type) && getContext() !== null
+      setHover(onLine ? (target.position?.lineNumber ?? null) : null)
+    }),
+    editor.onMouseLeave(() => {
+      setHover(null)
+    }),
+    editor.onMouseDown(({ target, event }) => {
+      const context = getContext()
+      if (target.type !== GLYPH_MARGIN_TARGET || !target.position || !context) return
+      event.preventDefault()
+      openDraft(context, anchorAt(currentLines(), target.position.lineNumber))
+    }),
+    // A new file, or new text for this one, moves the comments drawn.
+    diffEditor.onDidUpdateDiff(render),
+  )
   const unsubscribe = drafts.subscribe(render)
-  // A new file, or new text for this one, moves or drops the comments drawn.
-  disposables.push(diffEditor.onDidUpdateDiff(render))
   render()
 
   return () => {
     unsubscribe()
     clearZones()
-    for (const { hover, surface } of sides) {
-      hover.clear()
-      surface.updateOptions({ glyphMargin: false })
-    }
+    setHover(null)
+    fitObserver?.disconnect()
+    editor.updateOptions({ glyphMargin: false })
     for (const disposable of disposables) disposable.dispose()
   }
 }
