@@ -16,6 +16,7 @@ import {
   wantedTranscriptRows,
 } from './transcript-rows.ts'
 import { createThreadArchiveReview } from './thread-archive-review.ts'
+import { importedSessionNotice } from './imported-session-notice.ts'
 import { createAgentAvatar, createAgentAvatarMotion } from '../dom/agent-avatar.ts'
 import {
   agentRouteModel,
@@ -2637,6 +2638,7 @@ export function mountConversation(
   showAcpTransportNoiseDisclosure = (): boolean => store.getState().developerMode
   const scrollArea = el('div', { class: 'conversation-scroll' })
   const todoHost = el('div', { class: 'conversation-todos-host' })
+  const importedHost = el('div', { class: 'conversation-imported-host' })
   const desktop = options.host !== 'remote'
   const archiveReview = desktop ? createThreadArchiveReview(store, api) : null
   const appleDevelopmentHost = desktop
@@ -2680,7 +2682,7 @@ export function mountConversation(
   if (appleSuggestions) scrollArea.append(appleSuggestions.element)
   if (environmentSetupOffer) scrollArea.append(environmentSetupOffer.element)
   if (appleDevelopmentHost) scrollArea.append(appleDevelopmentHost)
-  scrollArea.append(todoHost, list, ...(archiveReview ? [archiveReview.element] : []))
+  scrollArea.append(importedHost, todoHost, list, ...(archiveReview ? [archiveReview.element] : []))
 
   // The concise turns the user opened to debug, by their prompts' ids. UI-only:
   // never persisted, and only those turns render in full (as with the setting
@@ -4129,6 +4131,12 @@ export function mountConversation(
     avatarMotion.setActive(header?.querySelector<HTMLImageElement>('.agent-avatar') ?? null)
   }
 
+  function syncImportedNotice(thread: Thread | null): void {
+    const notice = thread ? importedSessionNotice(thread) : null
+    if (notice) importedHost.replaceChildren(notice)
+    else importedHost.replaceChildren()
+  }
+
   function syncTodoPanel(): void {
     // P4: the plan panel is a level-2 declarative plugin contribution from
     // `copse.todos`. Historical rendering resolves from `thread.todos` (the
@@ -4398,6 +4406,7 @@ export function mountConversation(
    * and never again for the same rebuild (backfill only appends further up).
    */
   function finishThreadChrome(thread: Thread | null): void {
+    syncImportedNotice(thread)
     syncTodoPanel()
     appleDevelopmentHost?.dispatchEvent(new Event('apple-development-refresh'))
     // Inline review cards are rendered per message by appendMessageEl above.
