@@ -70879,9 +70879,13 @@ var init_permissions_markup = __esm({
                 ones that go outside the project folder or onto the network, without asking. Turn
                 this on to run those inside the project sandbox first: a command the check wrongly
                 passed cannot reach the rest of your computer or the network unless you say so.
-                The cost is more prompts. When the sandbox blocks a command, Copse asks before
-                running it outside, so work that genuinely needs the network or other folders asks
-                each time. Commands on your trusted list still run outside without asking.
+                The cost is more prompts. When the sandbox blocks a command, Copse asks you before
+                running it outside, even for commands the low-risk setting above would allow, so
+                work that genuinely needs the network or other folders asks each time. Without the
+                project sandbox (on Windows, or if it fails to start), those commands ask before
+                they run instead. Commands on your trusted list still run outside without asking,
+                and coding agents you add from outside Copse run their own commands, so this does
+                not change them.
               </p>
             </fieldset>
 
