@@ -49,7 +49,7 @@ docker build -t copse-risk:dev benchmarks/risk-classifier
 docker run --rm --network none -v "$PWD":/repo:ro -v "$PWD/bench-results/risk-classifier/data":/data:ro \
   -v "$PWD/bench-results/risk-classifier/out/run":/out -v "$PWD/bench-results/risk-classifier/hf-cache":/root/.cache/huggingface \
   -e HF_HUB_OFFLINE=1 copse-risk:dev /work/train.py --repo /repo --hf /data/hf \
-  --private /data/private-labelled.jsonl --out /out --models tfidf,encoder
+  --private /data/private-labelled.jsonl --heldout-machines laptop --out /out --models tfidf,encoder
 ```
 
 The Hugging Face datasets and the encoder checkpoint are fetched once, in a step that mounts no
@@ -67,7 +67,8 @@ training set. `report.json` holds every policy at every threshold and approval m
 - `host-train.sh` trains on this Mac instead of the VM, inside Copse's sandbox profile plus Apple
   GPU access (`sandbox-profile.mjs`); `--probe` proves network, home and outside writes are blocked.
   Use `--models encoder-mlx` for the GPU: PyTorch's MPS backend cannot compile kernels under the
-  sandbox, MLX's kernels are precompiled. Dependencies: `requirements-host.txt` (hash-pinned).
+  sandbox, MLX's kernels are precompiled. Dependencies: `requirements-host.txt` (hash-pinned). The
+  container's `Dockerfile` pins versions but not hashes or the base image digest.
 - `mlx_encoder.py` is the MLX port of the encoder; `gbdt` in `train.py` is gradient-boosted trees
   over the product's verdicts and command-shape flags. On real rows its harm feature is `harm_main`,
   the gate before this study's rules, so it cannot learn the answer from those rules.
@@ -75,5 +76,11 @@ training set. `report.json` holds every policy at every threshold and approval m
   (`host-train.sh --export-veto`). Nothing ships it: on the Studio's gate misses it stops none.
 - `redteam_gen.py` writes the synthetic must-ask red-team set (public, placeholder paths) and
   `family_holdout.py` trains with one family held out (`host-train.sh --family-holdout`).
+- `join_verdicts.mjs` adds the gates' verdicts to generated rows: `harm` and `scope` from this
+  checkout, `harm_main` from a checkout of main. Run it on `redteam_gen.py`'s output and on the
+  adversarial generator's rows before `--family-holdout` and `--adversarial`:
+  `node benchmarks/risk-classifier/join_verdicts.mjs rows.jsonl --main ../main --out bench-results/risk-classifier/data/redteam.jsonl`.
+- `adversarial_finetune.py` fine-tunes on the adversarial set with sources or families held out
+  (`host-train.sh --adversarial`).
 - `harness.test.py` checks the rules and the policy logic without any data:
   `python3 -I benchmarks/risk-classifier/harness.test.py`.

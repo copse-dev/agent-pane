@@ -1,6 +1,6 @@
 # Fewer permission prompts: measured on real history
 
-Status: **Measured; first two fixes in this change.** Harness:
+Status: **Measured; must-ask release rules and Corepack and `fnm exec` containment in this change.** Harness:
 [`benchmarks/risk-classifier`](../../benchmarks/risk-classifier/README.md). Related:
 [`auto-approval-classifier.md`](auto-approval-classifier.md),
 [`command-sandboxing-routing.md`](command-sandboxing-routing.md),
@@ -171,14 +171,17 @@ the trees catch none. More, better-targeted data helps the text model a lot on s
 and only partly on real ones. Deterministic rules stay the floor; a data-fed text veto is a
 partial net on top.
 
-**Fine-tuned on an independent adversarial set.** A separate generator (one Claude source, two
-external models; 617 rows, must-ask commands each with a near-identical safe twin) found this
-change's harm gate letting about half its must-ask rows through, mostly where the risk sits in a
-project script, a launcher or config. Trained on the Claude rows and tested on the external models'
-(`adversarial_finetune.py`, pairs kept together): TF-IDF catches 37 of 40 gate misses at
-P(ask) ≥ 0.5 but flags 27 of 40 safe twins and would add 27 of the MacBook's 218 prompts (12%);
-the MLX encoder catches 19, adding 43; adding the script files' text does not help. With whole
-families held out, TF-IDF catches 93% (179 of 193) for about 11% more MacBook prompts. The models
+**Fine-tuned on an independent adversarial set.** A separate generator (#4531: one Claude source,
+two external models; 617 rows, most must-ask commands paired with a safe twin that differs in the
+detail that matters) found this change's harm gate letting about half its must-ask rows through
+(209 of 404), mostly where the risk sits in a project script, a launcher or config. The rows list
+commands that get past the gate, so they stay out of the repository; `join_verdicts.mjs` adds the
+gates' verdicts to a regenerated set. On the sample at 9527fccf1, trained on the Claude rows and
+tested on the external models' (`adversarial_finetune.py`, pairs kept together): TF-IDF catches 40
+of 44 gate misses at P(ask) ≥ 0.5 but flags 28 of 40 safe twins and would add 27 of the MacBook's
+218 prompts (12%); the MLX encoder catches 18, adding 41; adding the script files' text does not
+help (36, adding 31). With whole families held out, TF-IDF catches 92% (186 of 203) for about 11%
+more MacBook prompts. The models
 learn what adversarial commands look like more than what they do, so the price in prompts stays
 high. Containing those commands (opt-in contain-first Guarded YOLO) and protecting the config they
 persist through are the structural answers; a learned veto remains an optional extra.
@@ -209,7 +212,7 @@ flowchart TD
 | Layer               | Exists                                                                                   | Change                                                                                                                                                  |
 | ------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Must-ask rules      | Harm gate (`shell-harm.ts`, `host-reach.ts`, `remote-change.ts`, `secrets.ts`)           | **This change:** `release-actions.ts`. Next: grow from each new replay; every rule adds a prompt only.                                                  |
-| Containment first   | Scope verdicts, ambiguous tier, toolchain read grants                                    | **This change:** Corepack ambiguous. Next: `fnm env`/`fnm exec` (192 Studio prompts still external), absolute toolchain paths and `DEVELOPER_DIR` (35). |
+| Containment first   | Scope verdicts, ambiguous tier, toolchain read grants                                    | **This change:** Corepack and `fnm exec` contained. Next: `eval "$(fnm env)"`, absolute toolchain paths and `DEVELOPER_DIR`.                             |
 | Deterministic tiers | `auto-approval.ts` (`read` default; trust required)                                      | Next: offer trust when a person adds a project, so the tiers run at all.                                                                                |
 | Learned veto        | Classifier connections (`ask_classifier`, Guarded YOLO tier second opinion, tier-shadow) | Keep as a veto on top of the harm gate, not an approver; train on public data plus each machine's own labelled prompts.                                 |
 | Prompt              | Approval dialog                                                                          | One question per escalation; say which rule or verdict asked.                                                                                           |
@@ -234,14 +237,15 @@ caches. PyTorch's MPS backend still fails there: it compiles some kernels at run
 `sandbox-exec`. MLX ships precompiled kernels and trains on the GPU inside the sandbox, so the
 encoder has an MLX port (`mlx_encoder.py`, same model and losses, AUC within noise of PyTorch). A
 probe in the script checks that HTTPS, raw TCP, `~/.ssh`, `~/.copse` and writes outside the output
-fail from inside the run. Dependencies are hash-pinned and no newer than two weeks.
+fail from inside the run. The host's dependencies are hash-pinned and no newer than two weeks; the container's Dockerfile
+pins versions only.
 
 ## Next steps, by expected effect
 
-1. Containment for `fnm env`/`fnm exec` and absolute toolchain paths: 227 Studio prompts (34%)
-   still go external after the Corepack fix. `fnm env` writes a multishell link under
-   `~/.local/state`, so it needs either that write grant or Copse putting the project's Node on
-   `PATH` so agents stop bootstrapping it. Verify each shape starts in the macOS sandbox.
+1. Containment for `eval "$(fnm env)"` and absolute toolchain paths: 140 Studio prompts (21%)
+   still go external after the Corepack and `fnm exec` fixes. `fnm env` writes a multishell link
+   under `~/.local/state`, so it needs either that write grant or Copse putting the project's Node
+   on `PATH` so agents stop bootstrapping it. Verify each shape starts in the macOS sandbox.
 2. A trust offer on project add, so the deterministic tiers run (9% Studio).
 3. Re-run this replay on every machine monthly; each new `ask` family becomes a rule and a
    regression case, each false positive a containment or tier fix.
