@@ -390,7 +390,12 @@ function isSkipCall(expression: ts.Expression): boolean {
  * since the branch can still return without it.
  */
 function callsSkip(branch: ts.Statement): boolean {
-  const statements = ts.isBlock(branch) ? branch.statements : [branch]
+  const all = ts.isBlock(branch) ? [...branch.statements] : [branch]
+  // A skip after the branch's first return is unreachable.
+  const firstReturn = all.findIndex(
+    (statement) => ts.isReturnStatement(statement) && !statement.expression,
+  )
+  const statements = firstReturn === -1 ? all : all.slice(0, firstReturn)
   return statements.some(
     (statement) =>
       (ts.isExpressionStatement(statement) && isSkipCall(statement.expression)) ||
