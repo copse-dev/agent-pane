@@ -21,8 +21,9 @@ describe('SSH settings section', function () {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-settings-ssh')
-    // Start disabled to prove Cancel discards the ordinary enabled draft,
-    // while Save adds the remote action to the project menu.
+    // Start disabled to prove Cancel discards the ordinary enabled draft, while
+    // Save turns it on. The remote action is in the project menu either way:
+    // with SSH workspaces off it asks to turn them on (remote-folder-turn-on).
     seedSshWorkspaceSettings({ enabled: false })
     await browser.reloadSession()
   })
@@ -35,9 +36,12 @@ describe('SSH settings section', function () {
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
 
     const addProjectButton = $('.projects-add-btn')
-    await expect(addProjectButton).toHaveAttribute('data-tooltip', 'New project or open a folder')
+    await expect(addProjectButton).toHaveAttribute(
+      'data-tooltip',
+      'New project, open a folder, or connect remotely',
+    )
     await addProjectButton.click()
-    await expect($('.context-menu-item*=Open remote project')).not.toBeExisting()
+    await expect($('.context-menu-item*=Open remote project')).toBeDisplayed()
     await browser.keys('Escape')
 
     await $('[aria-label="Settings"]').click()
@@ -183,10 +187,6 @@ describe('SSH settings section', function () {
 
     // Cancel discards ordinary preferences while dedicated host edits persist.
     await $('#settings-cancel').click()
-    await expect(addProjectButton).toHaveAttribute('data-tooltip', 'New project or open a folder')
-    await addProjectButton.click()
-    await expect($('.context-menu-item*=Open remote project')).not.toBeExisting()
-    await browser.keys('Escape')
     await $('[aria-label="Settings"]').click()
     await $('.settings-nav-btn[data-section="ssh"]').click()
     const savedToggle = $('.settings-section[data-section="ssh"] input[name="sshWorkspaceEnabled"]')
