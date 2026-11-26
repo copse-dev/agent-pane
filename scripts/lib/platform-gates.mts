@@ -9,8 +9,10 @@ import ts from 'typescript'
  *
  * - an early `return` behind a host-platform `if` in a test body, which
  *   passes instead of reporting a skip;
- * - a `describe` skipped on a darwin or linux condition, whose tests are
- *   never registered on that host, so the run reports `skipped 0`.
+ * - a `describe` skipped on a darwin or linux condition, or tests registered
+ *   inside a platform `if`/`?:`/`&&` (or after a suite-level platform
+ *   `return`): they are never registered on that host, so the run reports
+ *   `skipped 0`.
  *
  * The preferred per-test `{ skip: cond && 'reason' }` is not ratcheted: it is
  * reported as a skip and counted in the printed inventory instead.
@@ -315,9 +317,9 @@ function registration(node: ts.Node, ctx: Context): Registration | undefined {
   }
 }
 
-/** Tests registered inside `suite`, counted once per call site. */
+/** Tests registered at or inside `suite`, counted once per call site. */
 function countTests(suite: ts.Node, ctx: Context): number {
-  let count = 0
+  let count = registration(suite, ctx)?.kind === 'test' ? 1 : 0
   forEachDescendant(suite, (node) => {
     if (registration(node, ctx)?.kind === 'test') count++
   })
@@ -392,9 +394,110 @@ export function scanPlatformGates(file: ts.SourceFile): PlatformGateScan {
   const ctx = context(file)
   const sites: PlatformGateSite[] = []
   const inventory: PlatformInventory = {}
+  /** Tests under `region` that a platform condition leaves unregistered on darwin or linux. */
+  const conditional = (
+    region: ts.Node,
+    condition: ts.Expression,
+    narrowed: ReadonlySet<HostPlatform>,
+    allowed: ReadonlySet<HostPlatform>,
+  ): void => {
+    const hidden = HOST_PLATFORMS.filter(
+      (platform) => platform !== 'win32' && allowed.has(platform) && !narrowed.has(platform),
+    )
+    if (hidden.length === 0) return
+    const tests = countTests(region, ctx)
+    if (tests === 0) return
+    const snippet = condition.getText(file).replace(/\s+/g, ' ')
+    const label = snippet.length > 60 ? `${snippet.slice(0, 57)}...` : snippet
+    sites.push({
+      rule: 'unit-platform-suite-skip',
+      node: condition,
+      text: `registering under (${label}) hides ${String(tests)} test${tests === 1 ? '' : 's'} on ${hidden.join(' and ')} instead of reporting a skip`,
+    })
+  }
+  /** Platforms where `condition` is not decided false (or, with `negate`, not decided true). */
+  const whereTrue = (condition: ts.Expression, negate: boolean): Set<HostPlatform> =>
+    new Set(
+      HOST_PLATFORMS.filter(
+        (platform) => truthy(evaluate(condition, platform, ctx)) !== (negate ? true : false),
+      ),
+    )
+  const branch = (
+    region: ts.Node | undefined,
+    condition: ts.Expression,
+    negate: boolean,
+    allowed: ReadonlySet<HostPlatform>,
+  ): void => {
+    if (!region) return
+    const narrowed = intersect(allowed, whereTrue(condition, negate))
+    conditional(region, condition, narrowed, allowed)
+    visit(region, narrowed)
+  }
   const visit = (node: ts.Node, allowed: ReadonlySet<HostPlatform>): void => {
     const found = registration(node, ctx)
     if (!found) {
+      // `if (<platform>) { it(...) }`, `<platform> ? it(...) : ...` and `<platform> && it(...)`.
+      if (ts.isIfStatement(node) && readsPlatform(node.expression, ctx)) {
+        visit(node.expression, allowed)
+        branch(node.thenStatement, node.expression, false, allowed)
+        branch(node.elseStatement, node.expression, true, allowed)
+        return
+      }
+      if (ts.isConditionalExpression(node) && readsPlatform(node.condition, ctx)) {
+        visit(node.condition, allowed)
+        branch(node.whenTrue, node.condition, false, allowed)
+        branch(node.whenFalse, node.condition, true, allowed)
+        return
+      }
+      if (
+        ts.isBinaryExpression(node) &&
+        (node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ||
+          node.operatorToken.kind === ts.SyntaxKind.BarBarToken) &&
+        readsPlatform(node.left, ctx)
+      ) {
+        visit(node.left, allowed)
+        branch(
+          node.right,
+          node.left,
+          node.operatorToken.kind === ts.SyntaxKind.BarBarToken,
+          allowed,
+        )
+        return
+      }
+      // `if (<platform>) return` in a suite or module: later siblings register only where it is false.
+      if (ts.isBlock(node) || ts.isSourceFile(node)) {
+        let here = allowed
+        for (const statement of node.statements) {
+          visit(statement, here)
+          if (
+            ts.isIfStatement(statement) &&
+            !statement.elseStatement &&
+            readsPlatform(statement.expression, ctx) &&
+            containsReturn(statement.thenStatement) &&
+            countTests(statement.thenStatement, ctx) === 0
+          ) {
+            const rest = node.statements.slice(node.statements.indexOf(statement) + 1)
+            const narrowed = intersect(here, whereTrue(statement.expression, true))
+            const hidden = rest.reduce((sum, next) => sum + countTests(next, ctx), 0)
+            if (hidden > 0) {
+              const tests = HOST_PLATFORMS.filter(
+                (platform) => platform !== 'win32' && here.has(platform) && !narrowed.has(platform),
+              )
+              if (tests.length > 0) {
+                const snippet = statement.expression.getText(file).replace(/\s+/g, ' ')
+                const label = snippet.length > 60 ? `${snippet.slice(0, 57)}...` : snippet
+                sites.push({
+                  rule: 'unit-platform-suite-skip',
+                  node: statement.expression,
+                  text: `returning on (${label}) hides ${String(hidden)} later test${hidden === 1 ? '' : 's'} on ${tests.join(' and ')} instead of reporting a skip`,
+                })
+              }
+            }
+            here = narrowed
+          }
+        }
+        return
+      }
       ts.forEachChild(node, (child) => {
         visit(child, allowed)
       })

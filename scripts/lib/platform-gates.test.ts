@@ -97,6 +97,55 @@ describe('unit-platform-suite-skip', () => {
   })
 })
 
+describe('conditionally registered tests', () => {
+  it('flags tests registered only inside a platform if, ternary or && and counts them', () => {
+    const text = [
+      header,
+      "describe('mac', () => {",
+      "  if (process.platform === 'darwin') {",
+      "    it('a', () => {})",
+      "    it('b', () => {})",
+      '  }',
+      "  process.platform === 'darwin' && it('c', () => {})",
+      "  process.platform !== 'linux' ? it('d', () => {}) : undefined",
+      '})',
+    ].join('\n')
+    const findings = scanFlakeRisks(unit, text)
+    assert.deepEqual(
+      findings.map((finding) => `${finding.rule}:${String(finding.line)}`),
+      ['unit-platform-suite-skip:4', 'unit-platform-suite-skip:8', 'unit-platform-suite-skip:9'],
+    )
+    assert.match(findings[0]?.text ?? '', /hides 2 tests on linux/)
+    assert.deepEqual(scan(text).inventory, { darwin: 3 })
+  })
+
+  it('flags a suite-level platform return that hides the tests after it', () => {
+    const text = [
+      header,
+      "describe('mac', () => {",
+      "  if (process.platform !== 'darwin') return",
+      "  it('a', () => {})",
+      '})',
+    ].join('\n')
+    const findings = scanFlakeRisks(unit, text)
+    assert.deepEqual(
+      findings.map((finding) => finding.rule),
+      ['unit-platform-suite-skip'],
+    )
+    assert.match(findings[0]?.text ?? '', /hides 1 later test on linux/)
+    assert.deepEqual(scan(text).inventory, { darwin: 1 })
+  })
+
+  it('ignores a Windows-only conditional registration and one that does not read the platform', () => {
+    const text = [
+      header,
+      "if (process.platform !== 'win32') it('posix', () => {})",
+      "if (hasDocker) it('docker', () => {})",
+    ].join('\n')
+    assert.deepEqual(rules(text), [])
+  })
+})
+
 describe('platform inventory', () => {
   it('counts per-test darwin, Linux and Windows gates, including a reason string', () => {
     const { inventory, sites } = scan(
