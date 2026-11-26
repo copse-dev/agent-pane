@@ -40,6 +40,13 @@ const CLOSE_CONFIRM_TIMEOUT_MS = 2 * 60_000
 
 let requestConfirm: (() => Promise<boolean>) | null = null
 
+let containerRunThreads: () => string[] = () => []
+
+/** Where the question finds the threads with a container run going. */
+export function setCloseConfirmContainerRuns(list: () => string[]): void {
+  containerRunThreads = list
+}
+
 // Before the renderer is wired up there is nobody to object, so the gate asks a
 // question that answers itself.
 const gate = createCloseGate({
@@ -150,7 +157,11 @@ export function initCloseConfirm(win: BrowserWindow): void {
       // Whether a quit now hands the working turns off instead of stopping them,
       // so the question can say what closing will do.
       const continuesAfterQuit = continuesTurnsAfterQuit(getSetting)
-      win.webContents.send('app:close-confirm-request', { id, continuesAfterQuit })
+      win.webContents.send('app:close-confirm-request', {
+        id,
+        continuesAfterQuit,
+        containerRunThreads: containerRunThreads(),
+      })
       const timer = setTimeout(() => {
         settle(id, true)
       }, CLOSE_CONFIRM_TIMEOUT_MS)

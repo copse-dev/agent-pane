@@ -30,28 +30,63 @@ export function summariseWorkingThreads(titles: string[]): string {
   return `${listed.slice(0, -1).join(', ')} and ${listed[listed.length - 1] ?? ''}`
 }
 
+/** Titles of the threads main says have a container run going. */
+export function containerRunTitles(store: AppStore, threadIds: readonly string[]): string[] {
+  const threads = store.getState().threads
+  return threadIds.map((id) => threadLabel(threads.find((thread) => thread.id === id)?.title ?? ''))
+}
+
+/**
+ * What closing does to container runs: they carry on outside Copse with the
+ * hand-off on, and stop with it off.
+ */
+function containerRunSentence(titles: string[], continuesAfterQuit: boolean): string {
+  const one = titles.length === 1
+  const going = `${summariseWorkingThreads(titles)} ${one ? 'has a container run' : 'have container runs'} going.`
+  return continuesAfterQuit
+    ? `${going} ${one ? 'It keeps' : 'They keep'} going outside Copse, and you can stop ${one ? 'it' : 'them'} from Copse when you open it again.`
+    : `${going} Closing stops ${one ? 'it' : 'them'}.`
+}
+
 /**
  * Decide whether the app may close, prompting only when a thread is still
- * working. Closing tears the agent's session down mid-turn with no resume, so
- * this is the one chance the user gets to keep it alive.
+ * working or a container run is going. Closing tears the agent's session down
+ * mid-turn with no resume, so this is the one chance the user gets to keep it
+ * alive.
  */
 export async function confirmClose(
   store: AppStore,
-  options: { continuesAfterQuit?: boolean } = {},
+  options: { continuesAfterQuit?: boolean; containerRunThreads?: readonly string[] } = {},
 ): Promise<boolean> {
   const titles = workingThreadTitles(store)
-  if (titles.length === 0) return true
+  const runs = containerRunTitles(store, options.containerRunThreads ?? [])
+  const continues = options.continuesAfterQuit === true
+  if (titles.length === 0 && runs.length === 0) return true
+
+  if (titles.length === 0) {
+    const one = runs.length === 1
+    return await showConfirmDialog({
+      message: one
+        ? 'Close Copse while a container run is going?'
+        : `Close Copse while ${String(runs.length)} container runs are going?`,
+      detail: containerRunSentence(runs, continues),
+      ...(continues
+        ? { confirmLabel: 'Close', cancelLabel: 'Keep Copse open' }
+        : { confirmLabel: 'Close anyway', cancelLabel: 'Keep Copse open', danger: true }),
+    })
+  }
 
   const one = titles.length === 1
   const working = `${summariseWorkingThreads(titles)} ${one ? 'is' : 'are'} mid-turn.`
+  const containers = runs.length > 0 ? ` ${containerRunSentence(runs, continues)}` : ''
   // With the hand-off on, the turns carry on in the background and are back
   // when Copse opens again (docs/plans/local-turn-worker.md).
-  if (options.continuesAfterQuit === true) {
+  if (continues) {
     return await showConfirmDialog({
       message: one
         ? 'Close Copse while the agent is still working?'
         : `Close Copse while ${String(titles.length)} threads are still working?`,
-      detail: `${working} ${one ? 'It keeps' : 'They keep'} going in the background after Copse closes, and ${one ? 'is' : 'are'} here when you open it again.`,
+      detail: `${working} ${one ? 'It keeps' : 'They keep'} going in the background after Copse closes, and ${one ? 'is' : 'are'} here when you open it again.${containers}`,
       confirmLabel: 'Close',
       cancelLabel: 'Keep Copse open',
     })
@@ -60,7 +95,7 @@ export async function confirmClose(
     message: one
       ? 'Close Copse while the agent is still working?'
       : `Close Copse while ${String(titles.length)} threads are still working?`,
-    detail: `${working} Closing stops the run — anything the agent has not already written to your files is lost.`,
+    detail: `${working} Closing stops the run — anything the agent has not already written to your files is lost.${containers}`,
     confirmLabel: 'Close anyway',
     cancelLabel: one ? 'Keep working' : 'Keep them working',
     danger: true,
@@ -77,6 +112,7 @@ export function mountCloseConfirm(api: ApiClient, store: AppStore): () => void {
       ...(req.continuesAfterQuit !== undefined
         ? { continuesAfterQuit: req.continuesAfterQuit }
         : {}),
+      ...(req.containerRunThreads ? { containerRunThreads: req.containerRunThreads } : {}),
     }).then((confirmed) => api.closeConfirm.respond(req.id, confirmed))
   })
 }

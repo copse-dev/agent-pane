@@ -21,9 +21,11 @@ import {
   canHostOutsideApp,
   withProvider,
   type ContainerRunBase,
-  listLiveRunHosts,
+  forgetRunHost,
+  listRunHosts,
   type ContainerRunHostDisplay,
   type ContainerRunHostRequest,
+  type ListedRunHost,
   type RunHostFile,
 } from './run-host.ts'
 import {
@@ -35,7 +37,7 @@ import {
   runThroughHost,
   type FollowHostOptions,
 } from './run-host-client.ts'
-import { CONTINUE_TURNS_AFTER_QUIT_SETTING } from '../turn-worker/turn-worker-launch.ts'
+import { continuesTurnsAfterQuit } from '../turn-worker/turn-worker-launch.ts'
 import {
   adoptCarryOut,
   assertThreadContainerEngine,
@@ -88,8 +90,10 @@ interface RunDependencies {
     | null
   /** Follow a host the last app session left running (`host.json`). */
   followHost: (host: RunHostFile, options: FollowHostOptions) => Promise<ThreadContainerRecord>
-  /** Hosts in this profile still running a run. */
-  listHosts: () => Promise<RunHostFile[]>
+  /** The host files in this profile, live or not; see {@link listRunHosts}. */
+  listHosts: () => Promise<ListedRunHost[]>
+  /** Remove a host file once its run is settled. */
+  forgetHost: (host: RunHostFile) => Promise<void>
   /** Whether quitting leaves host runs going (the turn hand-off setting). */
   continueAfterQuit: () => boolean
   /**
@@ -141,7 +145,8 @@ const productionDependencies: RunDependencies = {
   runHost: null,
   followHost: (host, options) => followHost(host.socket, options),
   listHosts: () => Promise.resolve([]),
-  continueAfterQuit: () => getSetting<unknown>(CONTINUE_TURNS_AFTER_QUIT_SETTING, true) !== false,
+  forgetHost: () => Promise.resolve(),
+  continueAfterQuit: () => continuesTurnsAfterQuit(getSetting),
   keysOpenOutsideApp: storedKeysOpenOutsideApp,
   stop: teardownRuntime,
   releaseLost: teardownLostRuntime,
@@ -224,7 +229,7 @@ export class ContainerRunService {
   private readonly hostedRuns = new Map<string, AbortController>()
   /** Runtimes this session let go of at quit; their supervisor tasks stay running. */
   private readonly detachedRuntimes = new Set<string>()
-  private liveHosts: Promise<RunHostFile[]> | null = null
+  private liveHosts: Promise<ListedRunHost[]> | null = null
   private supervisor: TaskSupervisor | null = null
   private readonly deps: RunDependencies
   private readonly imagePreparations = new Map<ThreadContainerEngine, Promise<void>>()
@@ -266,17 +271,21 @@ export class ContainerRunService {
    * Called before the supervisor shuts down, while its cancellers are still
    * installed. A run with a host process of its own carries on when the user
    * lets turns continue after quit: the app lets go of it, and its supervisor
-   * task stays running for the next launch to settle. Every other run stops.
+   * task stays running for the next launch to settle. Every other run stops,
+   * and so does every run when `letGo` is false: a quit nobody chose (a
+   * signal, a fault) or one that installs an update.
    */
-  async stopAll(): Promise<void> {
-    const keepHosted = this.deps.continueAfterQuit()
+  async stopAll(letGo: boolean = this.deps.continueAfterQuit()): Promise<void> {
+    const keepHosted = letGo
     await Promise.all(
       [...this.runs.keys()]
         .filter((id) => this.isActive(id))
         .map((id) => {
           const detach = this.hostedRuns.get(id)
           const runtimeId = this.runs.get(id)?.runtimeId ?? null
-          if (keepHosted && detach && runtimeId !== null) {
+          // A run the user already asked to stop is stopped, not let go.
+          const stopping = this.stopSignals.get(id)?.signal.aborted === true
+          if (keepHosted && detach && runtimeId !== null && !stopping) {
             this.detachedRuntimes.add(runtimeId)
             detach.abort()
             return Promise.resolve(this.get(id))
@@ -286,8 +295,8 @@ export class ContainerRunService {
     )
   }
 
-  /** Live hosts, read once per session: start-up asks from more than one place. */
-  private hosts(): Promise<RunHostFile[]> {
+  /** Host files, read once per session: start-up asks from more than one place. */
+  private hosts(): Promise<ListedRunHost[]> {
     this.liveHosts ??= this.deps.listHosts().catch(() => [])
     return this.liveHosts
   }
@@ -295,7 +304,9 @@ export class ContainerRunService {
   /**
    * Called once at start-up: follow every run a host is still running for this
    * profile, so the banner, the dialog and Stop work as if this session had
-   * started it. Returns the threads now followed.
+   * started it. A run whose host ended while Copse was closed settles from
+   * what the host left in its file; one whose host was killed settles as
+   * failed and is cleaned up. Returns the threads now followed or settled.
    */
   async reattach(): Promise<string[]> {
     const followed: string[] = []
@@ -330,10 +341,26 @@ export class ContainerRunService {
         { projectId: host.projectId, threadId, runtimeId: host.runtimeId, taskId },
         progress,
         stopSignal,
-        () => this.deps.followHost(host, this.runOptions(progress, stopSignal, detach.signal)),
-      )
+        () => this.endOf(host, this.runOptions(progress, stopSignal, detach.signal)),
+      ).then(() => {
+        // A run let go of again at this session's quit keeps its file.
+        if (!this.detachedRuntimes.has(host.runtimeId)) return this.deps.forgetHost(host)
+        return undefined
+      })
     }
     return followed
+  }
+
+  private endOf(host: ListedRunHost, options: FollowHostOptions): Promise<ThreadContainerRecord> {
+    switch (host.state) {
+      case 'live':
+        return this.deps.followHost(host, options)
+      case 'ended':
+        if (host.ended?.t === 'done') return Promise.resolve(host.ended.record)
+        return Promise.reject(new Error(host.ended?.error ?? 'Container run failed'))
+      case 'lost':
+        return Promise.reject(new RunHostLostError('The run host stopped before the run finished'))
+    }
   }
 
   private runOptions(
@@ -484,6 +511,11 @@ export class ContainerRunService {
     return () => {
       this.settledListeners.delete(listener)
     }
+  }
+
+  /** The threads with a container run going. */
+  activeThreadIds(): string[] {
+    return [...this.runs.keys()].filter((id) => this.isActive(id))
   }
 
   isActive(threadId: string): boolean {
@@ -1045,7 +1077,8 @@ export function getContainerRunService(): ContainerRunService {
           env: process.env,
         }),
       ),
-    listHosts: (): Promise<RunHostFile[]> => listLiveRunHosts(getElectronUserDataPath()),
+    listHosts: (): Promise<ListedRunHost[]> => listRunHosts(getElectronUserDataPath()),
+    forgetHost: (host): Promise<void> => forgetRunHost(getElectronUserDataPath(), host.runtimeId),
   })
   return service
 }

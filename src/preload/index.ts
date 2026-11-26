@@ -847,10 +847,16 @@ const api: ApiClient = {
   closeConfirm: {
     respond: (id: string, confirmed: boolean) =>
       ipcRenderer.invoke('close-confirm:respond', id, confirmed),
-    onRequest: (handler: (req: { id: string; continuesAfterQuit?: boolean }) => void) => {
+    onRequest: (
+      handler: (req: {
+        id: string
+        continuesAfterQuit?: boolean
+        containerRunThreads?: string[]
+      }) => void,
+    ) => {
       const listener = (
         _e: Electron.IpcRendererEvent,
-        req: { id: string; continuesAfterQuit?: boolean },
+        req: { id: string; continuesAfterQuit?: boolean; containerRunThreads?: string[] },
       ): void => {
         handler(req)
       }

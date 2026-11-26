@@ -2,7 +2,7 @@ import type { ContainerRunRequest } from '@shared/types/container-run.ts'
 import type { SupervisedTaskMeta } from '@shared/supervisor/task-schema.ts'
 import { TaskSupervisor } from '../supervisor/task-supervisor.ts'
 import { FileSupervisedTaskStore } from '../supervisor/task-store.ts'
-import { after, before, describe, it, beforeEach } from 'node:test'
+import { after, before, describe, it, beforeEach, type TestContext } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -20,7 +20,7 @@ import type { ThreadContainerRecord, ThreadContainerRequest } from './thread-con
 import type { ThreadContainerEngine } from './container-engine.ts'
 import { installInMemorySecretCipher } from '../storage/secret-cipher.test-support.ts'
 import { fakeRecord } from './container-run-record.test-support.ts'
-import type { ContainerRunHostRequest, RunHostFile } from './run-host.ts'
+import type { ContainerRunHostRequest, ListedRunHost } from './run-host.ts'
 import { RunHostDetached } from './run-host-client.ts'
 
 installInMemorySecretCipher()
@@ -1330,6 +1330,67 @@ function waitFor(
   })
 }
 
+/** Start a hosted run on a supervised service and quit with the hand-off on. */
+async function quitWithHostedRun(t: TestContext): Promise<{
+  root: string
+  store: FileSupervisedTaskStore
+  taskId: string
+  request: ContainerRunHostRequest
+}> {
+  const root = mkdtempSync(join(tmpdir(), 'container-supervisor-'))
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+  initRepo(root)
+  const store = new FileSupervisedTaskStore({ COPSE_WORKSPACE_DIR: join(root, 'tasks') })
+  const first = new TaskSupervisor({ store })
+  let stops = 0
+  let handedOver: ContainerRunHostRequest | null = null
+  const quitting = new ContainerRunService({
+    resolveContext: checkoutAt(root),
+    ensureImage: (): Promise<void> => Promise.resolve(),
+    assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
+    run: (): Promise<ThreadContainerRecord> => Promise.reject(new Error('runs through its host')),
+    stop: (): Promise<'removed'> => {
+      stops += 1
+      return Promise.resolve('removed')
+    },
+    sweep: noSweep,
+    adopt: adoptSpy().adopt,
+    loadCarryOut: noRecordOnDisk,
+    loadContinuation: noContinuationOnDisk,
+    continueAfterQuit: (): boolean => true,
+    keysOpenOutsideApp: (): boolean => true,
+    // Like the real client: the run goes on until the app lets go of it.
+    runHost: (request, options): Promise<ThreadContainerRecord> => {
+      handedOver = request
+      options.onPhase?.('running')
+      return new Promise((_resolve, reject) => {
+        options.detach?.addEventListener('abort', () => {
+          reject(new RunHostDetached())
+        })
+      })
+    },
+  })
+  const disposeFirst = quitting.installSupervisor(first)
+  let settledBeforeQuit = 0
+  quitting.onSettled(() => (settledBeforeQuit += 1))
+  await quitting.start(supervisedRequest())
+  const running = await waitForTask(first, 'running')
+  await waitFor(quitting, THREAD, (p) => p.phase === 'running')
+
+  // Quit, in the order the app's shutdown runs it.
+  await quitting.stopAll()
+  await first.shutdown()
+  disposeFirst()
+  assert.equal(stops, 0, 'the container was left alone')
+  assert.equal(settledBeforeQuit, 0, 'nothing settled a run that is still going')
+  assert.equal((await store.get(PROJECT, running.taskId))?.state, 'running')
+  const request = handedOver as ContainerRunHostRequest | null
+  assert.ok(request)
+  return { root, store, taskId: running.taskId, request }
+}
+
 describe('container task supervision', () => {
   it('persists completion and its result reference without storing the prompt or key', async (t) => {
     const root = mkdtempSync(join(tmpdir(), 'container-supervisor-'))
@@ -1354,68 +1415,23 @@ describe('container task supervision', () => {
   })
 
   it('lets a host run carry on through quit, and settles it from the next launch', async (t) => {
-    const root = mkdtempSync(join(tmpdir(), 'container-supervisor-'))
-    t.after(() => {
-      rmSync(root, { recursive: true, force: true })
-    })
-    initRepo(root)
-    const store = new FileSupervisedTaskStore({ COPSE_WORKSPACE_DIR: join(root, 'tasks') })
-    const first = new TaskSupervisor({ store })
-    let stops = 0
-    let handedOver: ContainerRunHostRequest | null = null
-    const quitting = new ContainerRunService({
-      resolveContext: checkoutAt(root),
-      ensureImage: (): Promise<void> => Promise.resolve(),
-      assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
-      run: (): Promise<ThreadContainerRecord> => Promise.reject(new Error('runs through its host')),
-      stop: (): Promise<'removed'> => {
-        stops += 1
-        return Promise.resolve('removed')
-      },
-      sweep: noSweep,
-      adopt: adoptSpy().adopt,
-      loadCarryOut: noRecordOnDisk,
-      loadContinuation: noContinuationOnDisk,
-      continueAfterQuit: (): boolean => true,
-      // Like the real client: the run goes on until the app lets go of it.
-      keysOpenOutsideApp: (): boolean => true,
-      runHost: (request, options): Promise<ThreadContainerRecord> => {
-        handedOver = request
-        options.onPhase?.('running')
-        return new Promise((_resolve, reject) => {
-          options.detach?.addEventListener('abort', () => {
-            reject(new RunHostDetached())
-          })
-        })
-      },
-    })
-    const disposeFirst = quitting.installSupervisor(first)
-    let settledBeforeQuit = 0
-    quitting.onSettled(() => (settledBeforeQuit += 1))
-    await quitting.start(supervisedRequest())
-    const running = await waitForTask(first, 'running')
-    await waitFor(quitting, THREAD, (p) => p.phase === 'running')
-
-    // Quit, in the order the app's shutdown runs it.
-    await quitting.stopAll()
-    await first.shutdown()
-    disposeFirst()
-    assert.equal(stops, 0, 'the container was left alone')
-    assert.equal(settledBeforeQuit, 0, 'nothing settled a run that is still going')
-    assert.equal((await store.get(PROJECT, running.taskId))?.state, 'running')
-    const request = handedOver as ContainerRunHostRequest | null
-    assert.ok(request)
-
+    const { root, store, taskId, request } = await quitWithHostedRun(t)
+    const running = { taskId }
     // The next launch finds the host still running and follows it to the end.
     const second = new TaskSupervisor({ store })
     t.after(() => second.shutdown())
-    const host = {
+    const host: ListedRunHost = {
       pid: 4242,
       socket: '/unused.sock',
       runtimeId: request.runtimeId,
       projectId: PROJECT,
       display: request.display,
+      state: 'live',
     }
+    let forgot: (runtimeId: string) => void = () => undefined
+    const forgotten = new Promise<string>((resolve) => {
+      forgot = resolve
+    })
     const relaunched = new ContainerRunService({
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
@@ -1426,7 +1442,11 @@ describe('container task supervision', () => {
       adopt: adoptSpy().adopt,
       loadCarryOut: noRecordOnDisk,
       loadContinuation: noContinuationOnDisk,
-      listHosts: (): Promise<RunHostFile[]> => Promise.resolve([host]),
+      listHosts: (): Promise<ListedRunHost[]> => Promise.resolve([host]),
+      forgetHost: (gone): Promise<void> => {
+        forgot(gone.runtimeId)
+        return Promise.resolve()
+      },
       followHost: (followed, options): Promise<ThreadContainerRecord> => {
         assert.equal(followed.runtimeId, request.runtimeId)
         options.onPhase?.('collecting')
@@ -1456,6 +1476,111 @@ describe('container task supervision', () => {
     // Listeners hear the run once its task is saved.
     await heard
     assert.equal(settled.length, 1)
+    assert.equal(await forgotten, request.runtimeId, 'a settled run forgets its host file')
+  })
+
+  for (const ending of ['ended', 'lost'] as const) {
+    it(`settles a run whose host ${ending === 'ended' ? 'finished' : 'was killed'} while Copse was closed`, async (t) => {
+      const { root, store, taskId, request } = await quitWithHostedRun(t)
+      const second = new TaskSupervisor({ store })
+      t.after(() => second.shutdown())
+      const host: ListedRunHost = {
+        pid: 4242,
+        socket: '/unused.sock',
+        runtimeId: request.runtimeId,
+        projectId: PROJECT,
+        display: request.display,
+        state: ending,
+        ...(ending === 'ended'
+          ? { ended: { t: 'done' as const, record: fakeRecord(THREAD) } }
+          : {}),
+      }
+      const released: string[] = []
+      let forgot: (runtimeId: string) => void = () => undefined
+      const forgotten = new Promise<string>((resolve) => {
+        forgot = resolve
+      })
+      const relaunched = new ContainerRunService({
+        resolveContext: checkoutAt(root),
+        ensureImage: (): Promise<void> => Promise.resolve(),
+        assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
+        run: (): Promise<ThreadContainerRecord> => Promise.reject(new Error('not started here')),
+        stop: (): Promise<'removed'> => Promise.resolve('removed'),
+        releaseLost: (runtimeId): Promise<'removed'> => {
+          released.push(runtimeId)
+          return Promise.resolve('removed')
+        },
+        sweep: noSweep,
+        adopt: adoptSpy().adopt,
+        loadCarryOut: noRecordOnDisk,
+        loadContinuation: noContinuationOnDisk,
+        listHosts: (): Promise<ListedRunHost[]> => Promise.resolve([host]),
+        forgetHost: (gone): Promise<void> => {
+          forgot(gone.runtimeId)
+          return Promise.resolve()
+        },
+        followHost: (): Promise<ThreadContainerRecord> =>
+          Promise.reject(new Error('nothing to follow')),
+      })
+      t.after(relaunched.installSupervisor(second))
+      let heard = 0
+      relaunched.onSettled(() => (heard += 1))
+      await second.start()
+      assert.equal(second.get(PROJECT, taskId)?.state, 'running', 'the host file keeps its task')
+      assert.deepEqual(await relaunched.reattach(), [THREAD])
+      const settled = await waitForTask(second, ending === 'ended' ? 'completed' : 'failed')
+      assert.equal(settled.taskId, taskId)
+      const progress = await waitFor(relaunched, THREAD, (p) =>
+        ending === 'ended' ? p.phase === 'finished' : p.phase === 'failed',
+      )
+      assert.equal(progress.runtimeId, request.runtimeId)
+      assert.equal(await forgotten, request.runtimeId)
+      assert.equal(heard, 1, 'the thread hears how the run ended')
+      assert.deepEqual(released, ending === 'lost' ? [request.runtimeId] : [])
+    })
+  }
+
+  it('stops hosted runs on a quit that may not let them go', async (t) => {
+    const root = mkdtempSync(join(tmpdir(), 'container-supervisor-'))
+    t.after(() => {
+      rmSync(root, { recursive: true, force: true })
+    })
+    initRepo(root)
+    let stops = 0
+    const service = new ContainerRunService({
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      assertEngine: (): Promise<ThreadContainerEngine> => Promise.resolve('docker'),
+      run: (): Promise<ThreadContainerRecord> => Promise.reject(new Error('runs through its host')),
+      stop: (): Promise<'removed'> => {
+        stops += 1
+        return Promise.resolve('removed')
+      },
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      continueAfterQuit: (): boolean => true,
+      keysOpenOutsideApp: (): boolean => true,
+      runHost: (_request, options): Promise<ThreadContainerRecord> => {
+        options.onPhase?.('running')
+        return new Promise((_resolve, reject) => {
+          options.signal?.addEventListener('abort', () => {
+            reject(new Error('stopped'))
+          })
+          options.detach?.addEventListener('abort', () => {
+            reject(new RunHostDetached())
+          })
+        })
+      },
+    })
+    await service.start(supervisedRequest())
+    await waitFor(service, THREAD, (p) => p.phase === 'running')
+    // A signal, a fault or an update install: the app passes false.
+    await service.stopAll(false)
+    const stopped = await waitFor(service, THREAD, (p) => p.phase === 'failed')
+    assert.equal(stopped.stoppedByUser, true)
+    assert.equal(stops, 1)
   })
 
   it('does not clear a newer run stop controller while saving the previous outcome', async (t) => {

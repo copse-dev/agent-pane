@@ -103,6 +103,7 @@ import {
   approveClose,
   deferQuitForCloseConfirmation,
   guardWindowClose,
+  setCloseConfirmContainerRuns,
   initCloseConfirm,
 } from './services/close-confirm.ts'
 import { checkToolAvailability } from './services/tool-availability.ts'
@@ -329,6 +330,14 @@ setSecretCipher(
 const taskSupervisor = getTaskSupervisor()
 
 /** This quit came from a signal or a fault, with nobody to confirm it. */
+/**
+ * Agent turns and container runs still going: either keeps a closed window
+ * detached instead of quitting.
+ */
+function workInFlight(): number {
+  return listRunningThreadIds().length + getContainerRunService().activeThreadIds().length
+}
+
 let unattendedQuit = false
 /** This quit hands its turns to workers (set once the quit goes ahead). */
 let quitHandsOff = false
@@ -549,7 +558,7 @@ function quitDetachedAppWhenIdle(win: BrowserWindow): void {
     const idle = shouldQuitDetachedApp({
       platform: process.platform,
       detached,
-      runningTurns: listRunningThreadIds().length,
+      runningTurns: workInFlight(),
       mobileCompanionEnabled: getMobileCompanionState().enabled,
       otherWindowsOpen: BrowserWindow.getAllWindows().some(
         (other) => other !== win && !other.isDestroyed() && other.isVisible(),
@@ -741,12 +750,13 @@ app
     void resumeMobileCompanion()
     initUpdatePrompt(win)
     initCloseConfirm(win)
+    setCloseConfirmContainerRuns(() => getContainerRunService().activeThreadIds())
     guardWindowClose(win, () => {
       const mobile = getMobileCompanionState().enabled
       const detach = shouldDetachOnClose({
         platform: process.platform,
         quitting: isMainWindowQuitting(),
-        runningTurns: listRunningThreadIds().length,
+        runningTurns: workInFlight(),
         mobileCompanionEnabled: mobile,
       })
       if (detach) {
@@ -1698,7 +1708,9 @@ async function cleanupBeforeQuit(): Promise<void> {
   disposeDarkFactorySensor = undefined
   disposeTaskSupervisorEvents?.()
   disposeTaskSupervisorEvents = undefined
-  await getContainerRunService().stopAll()
+  // Container runs go on outside the app under the same rule as turns, and an
+  // update quit stops them: the new version may not speak the old host's line.
+  await getContainerRunService().stopAll(quitHandsOff && !quitInstallsUpdate())
   await cancelAllSupervisedBackgroundProcesses()
   await taskSupervisor.shutdown()
   disposeContainerRunSupervisor?.()
