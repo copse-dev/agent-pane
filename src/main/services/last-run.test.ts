@@ -35,6 +35,10 @@ describe('RunRecorder', () => {
     updating.noteUpdateRelaunch()
     await updating.end()
     assert.deepEqual(await readLastRun(update), { startedAt: 6, ended: 'update' })
+
+    const handOff = recordPath()
+    await new RunRecorder(handOff, 7).end(true)
+    assert.deepEqual(await readLastRun(handOff), { startedAt: 7, ended: 'hand-off' })
   })
 
   it('treats a missing or unreadable record as no previous run', async () => {
@@ -49,6 +53,8 @@ describe('previousRunAllowsResume', () => {
   it('continues after a crash or an update, not after a quit or with no record', () => {
     assert.equal(previousRunAllowsResume({ startedAt: 1 }), true)
     assert.equal(previousRunAllowsResume({ startedAt: 1, ended: 'update' }), true)
+    // A turn no background worker took up is continued as the dialog promised.
+    assert.equal(previousRunAllowsResume({ startedAt: 1, ended: 'hand-off' }), true)
     assert.equal(previousRunAllowsResume({ startedAt: 1, ended: 'quit' }), false)
     assert.equal(previousRunAllowsResume(null), false)
   })

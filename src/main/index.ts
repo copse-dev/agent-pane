@@ -1707,9 +1707,11 @@ app.on('before-quit', (event) => {
   // kills the in-flight turns the user is being warned about, so a prompt after
   // it would come too late to save them. Re-issues the quit once confirmed.
   if (deferQuitForCloseConfirmation(event)) return
-  // The quit is going ahead: the user chose it, so its turns are not continued
-  // on the next launch (unless the updater asked for it).
-  const runEnded = recordRunEnd()
+  // The quit is going ahead. With the hand-off off the user chose to stop its
+  // turns, so the next launch does not continue them (unless the updater asked).
+  const runEnded = recordRunEnd(
+    getSetting<unknown>(CONTINUE_TURNS_AFTER_QUIT_SETTING, true) !== false,
+  )
   beginMainWindowQuit()
   destroyAllTerminalSessions()
   stopAllBackgroundProcesses()
