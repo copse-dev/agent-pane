@@ -1,6 +1,6 @@
 import { el, clear } from '../dom/helpers.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
-import { openBrowserUrl, selectRightPanelMode } from '../controller/panels.ts'
+import { openBrowserUrl, selectRightPanelMode, rightPanelShows } from '../controller/panels.ts'
 import { showErrorToast, showToast } from './toast.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -19,8 +19,7 @@ type PortRow = PortScanResult['rows'][number]
 const POLL_MS = 5_000
 
 function terminalModeActive(store: AppStore): boolean {
-  const { filesPaneOpen, rightPanelMode } = store.getState()
-  return filesPaneOpen && rightPanelMode === 'terminal'
+  return rightPanelShows(store.getState(), 'terminal')
 }
 
 /** Stable identity for a row across refreshes, so selection survives a re-scan. */
