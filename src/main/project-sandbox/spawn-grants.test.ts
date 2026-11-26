@@ -134,7 +134,8 @@ describe('withTempWrites', () => {
     },
   )
 
-  it('refuses a named /tmp path that is a symlink', () => {
+  // The check walks the canonical /private/tmp spelling, which exists only on macOS.
+  it('refuses a named /tmp path that is a symlink', { skip: process.platform !== 'darwin' }, () => {
     const link = `/tmp/copse-temp-link-${String(process.pid)}-${String(Date.now())}`
     symlinkSync('/etc/hosts', link)
     try {
