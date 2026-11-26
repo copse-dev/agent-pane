@@ -39,6 +39,19 @@ export interface GitCommittedChanges {
   changes: GitChange[]
 }
 
+/** Lines picked in the Changes pane diff, numbered on one side of it (1-based, inclusive). */
+export interface GitLineSelection {
+  side: 'old' | 'new'
+  startLine: number
+  endLine: number
+}
+
+/** Outcome of staging or unstaging from the Changes pane; `message` is shown beside the diff. */
+export interface GitStageResult {
+  ok: boolean
+  message: string
+}
+
 export interface GitFileDiff {
   path: string
   before: string
@@ -236,9 +249,27 @@ export interface GhPrCheck {
   url: string | null
 }
 
+/** An inline code discussion on a PR diff (a GitHub review thread). */
+export interface GhPrReviewThread {
+  /** GraphQL node id, which `gh_pr_resolve_review_thread` takes. */
+  id: string
+  path: string
+  /** Line on the current diff; null when the thread is outdated by later pushes. */
+  line: number | null
+  isResolved: boolean
+  isOutdated: boolean
+  /** Oldest first: the opening comment, then its replies. */
+  comments: GhPrComment[]
+  /** More replies exist than were loaded. */
+  commentsTruncated: boolean
+}
+
 export interface GhPrActivity {
   comments: GhPrComment[]
   checks: GhPrCheck[]
+  /** Inline review threads in GitHub's order (oldest first). */
+  reviewThreads: GhPrReviewThread[]
+  reviewThreadsTruncated: boolean
   headSha: string
   commentsTruncated: boolean
   checksTruncated: boolean

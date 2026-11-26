@@ -73,6 +73,20 @@ export interface AlertClickWindow {
   webContents: { send(channel: string, ...args: unknown[]): void }
 }
 
+/**
+ * Brings back a window that was detached when closed mid-turn
+ * (`windows/window-detach.ts`), and opens `threadId` once its page has loaded
+ * again. Returns false for a window that is not detached. Set by the app at
+ * boot; showing a detached window alone would show its blank page.
+ */
+type DetachedWindowReviver = (win: object, threadId: string | undefined) => boolean
+
+let reviveDetachedWindow: DetachedWindowReviver = () => false
+
+export function setDetachedWindowReviver(reviver: DetachedWindowReviver): void {
+  reviveDetachedWindow = reviver
+}
+
 /** The one project whose store holds `threadId`, or null when none or several do. */
 async function findThreadProjectId(threadId: string): Promise<string | null> {
   const owners = await findThreadOwners(threadId)
@@ -102,6 +116,7 @@ export async function openUserAlertTarget<TWindow extends AlertClickWindow>(
 ): Promise<TWindow | null> {
   const target = owner.isDestroyed() ? fallback() : owner
   if (!target || target.isDestroyed()) return null
+  if (reviveDetachedWindow(target, threadId)) return target
   if (target.isMinimized()) target.restore()
   if (!target.isVisible()) target.show()
   target.focus()
