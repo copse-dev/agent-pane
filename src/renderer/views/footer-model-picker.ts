@@ -1,7 +1,7 @@
 import { CHATGPT_PLAN_MODEL_PREFIX } from '@copse/llm/reserved-prefixes.ts'
 import { el } from '../dom/helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { fetchModelOptions } from './model-options.ts'
+import { fetchModelOptions, modelDisplayLabel } from './model-options.ts'
 import { mountModelPicker } from './model-picker.ts'
 import {
   loadAcpOptionGroups,
@@ -14,6 +14,12 @@ import {
   reasoningValueGroup,
 } from './footer-reasoning-group.ts'
 import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
+import type { AgentProfile } from '@shared/agent-profiles.ts'
+import {
+  PROFILE_GROUP_ID,
+  profileIdFromGroupValue,
+  profileValueGroup,
+} from './footer-profile-group.ts'
 
 export interface FooterModelPickerOptions {
   /** When true, ACP agents are omitted (SSH workspaces). */
@@ -32,6 +38,12 @@ export interface FooterModelPickerOptions {
   getReasoning?: () => ReasoningLevel | undefined
   /** Applies an effort pick; `undefined` clears the chat's override. */
   onSelectReasoning?: (level: ReasoningLevel | undefined) => void
+  /** Saved named profiles, read each time the menu loads. Omit to hide the row. */
+  loadProfiles?: () => Promise<readonly AgentProfile[]>
+  /** This chat's profile id, if any. */
+  getProfileId?: () => string | undefined
+  /** Applies a profile pick; `undefined` clears the chat's profile. */
+  onSelectProfile?: (profileId: string | undefined) => void
 }
 
 // Composer adapter for the app-wide picker. The trigger stays compact while the
@@ -96,19 +108,23 @@ export function mountFooterModelPicker(
       // effort). Both hang off whichever value is selected, so they reload with
       // the model list.
       loadValueGroups: async (current) => {
-        const loaded = await loadAcpOptionGroups(
-          api,
-          current,
-          pickerOpts.isAgentManaged?.() === true,
-        )
+        const [loaded, profiles] = await Promise.all([
+          loadAcpOptionGroups(api, current, pickerOpts.isAgentManaged?.() === true),
+          pickerOpts.loadProfiles?.() ?? Promise.resolve([]),
+        ])
         optionAgentId = loaded?.agentId ?? null
         optionGroups = loaded?.groups ?? []
+        const profile = profileValueGroup(profiles, pickerOpts.getProfileId?.(), modelDisplayLabel)
         const reasoning = pickerOpts.getReasoning
           ? reasoningValueGroup(current, pickerOpts.getReasoning())
           : null
-        return reasoning ? [reasoning, ...optionGroups] : optionGroups
+        return [...(profile ? [profile] : []), ...(reasoning ? [reasoning] : []), ...optionGroups]
       },
       onSelectGroupValue: (groupId, value) => {
+        if (groupId === PROFILE_GROUP_ID) {
+          pickerOpts.onSelectProfile?.(profileIdFromGroupValue(value))
+          return
+        }
         if (groupId === REASONING_GROUP_ID) {
           pickerOpts.onSelectReasoning?.(reasoningLevelFromGroupValue(value))
           return

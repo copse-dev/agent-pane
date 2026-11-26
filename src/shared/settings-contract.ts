@@ -1,4 +1,5 @@
 import type { ClassifierProfile } from '@copse/llm/classifiers/types.ts'
+import type { AgentProfile } from './agent-profiles.ts'
 import type { MachineSharing, SharedMachineModel } from './machines.ts'
 import type { ReleaseChannel } from './release-channel.mts'
 import type { ThreadSortMode } from './types/state.ts'
@@ -170,6 +171,7 @@ export interface SettingsValues {
   shareTerminalHistoryEnabled: boolean
   developerMode: boolean
   customInstructions: string
+  agentProfiles: AgentProfile[]
   onboardingCompleted: boolean
   envKeyAutoDetectEnabled: boolean
   sshStrictHostKeys: 'accept-new' | 'strict'

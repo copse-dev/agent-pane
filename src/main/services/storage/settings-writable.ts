@@ -14,6 +14,7 @@ import { RELEASE_CHANNELS } from '@shared/release-channel.mts'
 import { GIT_ATTRIBUTION_SETTING } from '@shared/git/commit-attribution.ts'
 import { GIT_THREAD_LINK_SETTING } from '@shared/git/thread-link.ts'
 import { WEB_SEARCH_PROVIDERS } from '@shared/web-search.ts'
+import { agentProfilesSchema } from '@shared/agent-profiles.ts'
 
 // Empty string means "use the provider default"; any non-empty value must be a
 // safe base URL since it carries the Cursor API key as an Authorization header.
@@ -438,6 +439,8 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // plugin's `devtools-shortcut` capability (Settings > Plugins), so the former
   // `devtoolsShortcutEnabled` top-level boolean is retired.
   customInstructions: z.string().max(8192),
+  // Named agent profiles a thread can start from (#1573; agent-profiles.ts).
+  agentProfiles: agentProfilesSchema,
   onboardingCompleted: z.boolean(),
   // Opt-in consent for scanning the shell environment / start-up files for
   // provider API keys (default off; see env-key-detection.ts).

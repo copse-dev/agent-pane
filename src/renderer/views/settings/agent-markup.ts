@@ -55,6 +55,8 @@ export const agentMarkup = `
               </p>
             </fieldset>
 
+            <div id="settings-agent-profiles-host" class="settings-mount"></div>
+
             <fieldset>
               <legend>Helpers</legend>
               <p class="settings-fieldset-desc">
