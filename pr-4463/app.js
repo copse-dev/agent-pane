@@ -36,7 +36,7 @@ import {
   sleep,
   useAnnouncementCatalog,
   workingBriefFromUserContent
-} from "./chunks/chunk-A4NIIRJU.js";
+} from "./chunks/chunk-TMHEHY7K.js";
 import "./chunks/chunk-X6JZSFJR.js";
 import {
   init_icons,
@@ -46,7 +46,7 @@ import {
   maximizeIcon,
   minimizeIcon,
   stringRecordOrEmpty
-} from "./chunks/chunk-KYBBGUKM.js";
+} from "./chunks/chunk-HIIVOQP4.js";
 import "./chunks/chunk-OB2CWITE.js";
 import {
   __commonJS,
@@ -115,6 +115,7 @@ function parseAgentRunPayload(rawPrompt) {
         ...typeof parsed["workingBrief"] === "string" ? { workingBrief: parsed["workingBrief"] } : {},
         ...typeof parsed["model"] === "string" && parsed["model"] ? { model: parsed["model"] } : {},
         ...isReasoningLevel(parsed["reasoning"]) ? { reasoning: parsed["reasoning"] } : {},
+        ...typeof parsed["profileId"] === "string" && parsed["profileId"] ? { profileId: parsed["profileId"] } : {},
         ...typeof parsed["turnTreeId"] === "string" && parsed["turnTreeId"] ? { turnTreeId: parsed["turnTreeId"] } : {},
         ...typeof parsed["continuationBudgetUsed"] === "number" && Number.isFinite(parsed["continuationBudgetUsed"]) ? { continuationBudgetUsed: parsed["continuationBudgetUsed"] } : {},
         ...reviewContext !== void 0 ? { reviewContext } : {}
@@ -203,7 +204,7 @@ async function playTrace(trace, emit, options = {}) {
     if (chunk.type === "text" || chunk.type === "reasoning") {
       for (const slice of sliceForStreaming(chunk.text, sliceChars)) {
         if (aborted()) return;
-        emit({ type: chunk.type, text: slice });
+        emit({ ...chunk, text: slice });
         await pause(slice.length / charsPerSecond * 1e3);
       }
       continue;
@@ -5856,8 +5857,13 @@ function createDemoApi(scenario2, options = {}) {
     typeof scenarioModel === "string" ? scenarioModel : void 0
   );
   const api = {
-    remote: { publish: async () => {
-    } },
+    remote: {
+      publish: async () => {
+      },
+      watched: () => Promise.resolve([]),
+      onWatchedChanged: () => () => {
+      }
+    },
     clientActions: {
       claim: () => Promise.resolve(false),
       publish: async () => {
@@ -5926,6 +5932,9 @@ function createDemoApi(scenario2, options = {}) {
       registerName: () => resolvedVoid(),
       removeName: () => resolvedVoid(),
       recheckNameDns: () => resolvedVoid(),
+      setRelayEnabled: () => resolvedVoid(),
+      createShellPairing: () => resolvedVoid(),
+      clearShellPairing: () => resolvedVoid(),
       onChat: () => () => {
       },
       reply: async () => {
@@ -6450,7 +6459,9 @@ function createDemoApi(scenario2, options = {}) {
           prRefs: []
         }))
       ),
-      listOrphans: emptyArray
+      listOrphans: emptyArray,
+      listExternalSessions: () => resolved({ sessions: [], sourcesFound: [] }),
+      importExternalSessions: () => resolved({ imported: [], alreadyImported: [], failed: [] })
     },
     openRouter: { models: emptyArray },
     models: {
@@ -6936,6 +6947,8 @@ function createDemoApi(scenario2, options = {}) {
         currentBranch = branch;
         return resolvedVoid();
       },
+      setPathStaged: () => resolved({ ok: false, message: "The demo has no git checkout." }),
+      setLinesStaged: () => resolved({ ok: false, message: "The demo has no git checkout." }),
       listBranches: () => resolved([
         { name: currentBranch, lastCommitDate: DEMO_TIME },
         { name: "main", lastCommitDate: DEMO_TIME }
@@ -6970,6 +6983,8 @@ function createDemoApi(scenario2, options = {}) {
       createPrForThread: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" }),
       rerunFailedRuns: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" }),
       approvePr: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" }),
+      replyToReviewThread: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" }),
+      setReviewThreadResolved: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" }),
       markPrReady: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" }),
       enableAutoMerge: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" })
     },
@@ -7514,7 +7529,7 @@ var require_main = __commonJS({
     if (scenario2.staticSite) document.documentElement.dataset["demoStaticSite"] = scenario2.staticSite;
     if (autoplay) document.documentElement.dataset["demoAutoplay"] = "on";
     if (embedded) document.documentElement.dataset["demoEmbedded"] = "on";
-    void import("./chunks/main-AV2W4M44.js").then(async (main) => {
+    void import("./chunks/main-CELLRBWU.js").then(async (main) => {
       await main.rendererReady;
       if (scenario2.id.startsWith("product-announcements")) {
         await mountProductAnnouncements(
