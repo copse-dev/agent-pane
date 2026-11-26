@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 
 const FIELDSET =
   '.settings-section[data-section="permissions"] fieldset:has(input[name="guardedYoloContainFirst"])'
@@ -16,7 +16,7 @@ async function openPermissions(): Promise<void> {
 describe('Guarded YOLO contain-first setting', () => {
   before(async () => {
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-settings-guarded-yolo-contain-first')
+    seedEmptyProject(seedStableWorkspace(), 'e2e-settings-guarded-yolo-contain-first')
     await browser.reloadSession()
   })
 
