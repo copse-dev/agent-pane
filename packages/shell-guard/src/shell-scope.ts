@@ -1,7 +1,10 @@
 import { homedir } from 'node:os'
 import { resolve, sep } from 'node:path'
 import { parse as parseShell } from 'shell-quote'
+import { classifyGhSegment } from './gh-argv.ts'
 import { inertOperandIndexes } from './inert-operands.ts'
+import { gitWords, releaseActionReasons, releaseCommandReasons } from './release-actions.ts'
+import { sensitiveTargetReason } from './sensitive-paths.ts'
 import {
   CODE_INTERPRETERS,
   INLINE_CODE_FLAGS,
@@ -12,7 +15,9 @@ import {
   inlineLeadingLiteralAssignments,
   isInertReadArgv,
   isStructurallyReadOnlyShellCommand,
+  READ_ONLY_GIT_SUBCOMMANDS,
   parsedShellSegments,
+  shellRedirects,
   shellSegmentsQuoteAware,
   unwrapWrappers,
   wrapperChain,
@@ -56,6 +61,16 @@ export interface ShellScopeEnvironment {
    */
   containedReadRoots?: () => readonly string[]
   /**
+   * Absolute roots every sandboxed process may read (installed toolchains,
+   * package caches, folders the person approved), but none may write. A path
+   * under one is contained whatever role it plays: the program being run, a
+   * value assigned to a variable (`DEVELOPER_DIR=/Applications/Xcode.app/…`),
+   * or an operand of any command (`plutil … /Applications/Xcode.app/…/Info.plist`).
+   * It never counts when it is a redirect target or an operand of a command
+   * that writes files, and a credential path inside one never counts at all.
+   */
+  standingReadRoots?: () => readonly string[]
+  /**
    * Predicate over absolute paths for scratch directories the host sanctions
    * (masked out before the outside-path rules run), or null when there are none.
    */
@@ -66,6 +81,7 @@ export interface ShellScopeEnvironment {
 
 const DEFAULT_ENVIRONMENT: Required<ShellScopeEnvironment> = {
   containedReadRoots: () => [],
+  standingReadRoots: () => [],
   sanctionedScratchMatcher: () => null,
   isContainedSymlink: () => false,
 }
@@ -991,8 +1007,102 @@ function containedReadRoots(command: string): string[] {
   return environment.containedReadRoots().map((root) => resolve(root))
 }
 
+/**
+ * Heads that create, change or remove files named by their operands. A
+ * standing read root named on such a line keeps its outside-path reason: the
+ * sandbox would refuse the write, so calling it contained would only trade
+ * the prompt for an EPERM and a retry offer.
+ */
+const FILE_WRITING_HEADS: ReadonlySet<string> = new Set([
+  'cp',
+  'mv',
+  'rm',
+  'rmdir',
+  'touch',
+  'mkdir',
+  'ln',
+  'tee',
+  'install',
+  'rsync',
+  'chmod',
+  'chown',
+  'chgrp',
+  'chflags',
+  'truncate',
+  'dd',
+  'shred',
+  'unlink',
+  'ditto',
+  'patch',
+  'tar',
+  'unzip',
+  'xattr',
+])
+
+/**
+ * Whether one unwrapped segment keeps a standing root's outside-path reason:
+ * it writes files (a file-writing head, `sed -i`, a git subcommand that is not
+ * a read), publishes (`gh` other than a read), or is release work a person must
+ * see up front (signing, a release entry point, a tag push). For these the
+ * sandbox would only block the step and offer a retry outside, so the person
+ * would meet a must-ask command one step late.
+ */
+function keepsOutsideReason(argv: readonly string[]): boolean {
+  const head = commandName(argv[0])
+  if (head === '') return false
+  if (FILE_WRITING_HEADS.has(head)) return true
+  if (
+    head === 'sed' &&
+    argv.some((arg) => /^-[a-zA-Z]*i/.test(arg) || arg.startsWith('--in-place'))
+  )
+    return true
+  if (head === 'git') {
+    const [subcommand = ''] = gitWords(argv).words
+    if (!READ_ONLY_GIT_SUBCOMMANDS.has(subcommand)) return true
+  }
+  if (head === 'gh' && classifyGhSegment(argv) !== 'read') return true
+  return releaseActionReasons(argv).length > 0
+}
+
+/**
+ * The standing read roots that apply to `command`: none when a segment
+ * {@link keepsOutsideReason}, when the line carries release or
+ * dangerous-in-sandbox reasons, or when it cannot be parsed. Redirect targets
+ * are excluded per token by {@link maskContainedReadPaths}.
+ */
+let standingReadRootsSuspended = false
+
+function standingReadRoots(command: string): string[] {
+  if (standingReadRootsSuspended) return []
+  const roots = environment.standingReadRoots()
+  if (roots.length === 0) return []
+  const segments = parsedShellSegments(command)
+  if (segments === null) return []
+  if (releaseCommandReasons(command).length > 0) return []
+  if (dangerousInSandboxReasons(command).length > 0) return []
+  for (const segment of segments) {
+    const words = [...segment.argv]
+    while (words.length > 0 && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0] ?? '')) words.shift()
+    if (keepsOutsideReason(unwrapWrappers(words))) return []
+  }
+  return roots.map((root) => resolve(root))
+}
+
 function isInsideRoot(absPath: string, root: string): boolean {
   return absPath === root || absPath.startsWith(root + sep)
+}
+
+/**
+ * Whether a read of `absPath` is contained by one of `roots`. A credential path
+ * never is, even inside a root: the sandbox denies `.env` files, keys and
+ * credential folders inside an approved folder, so calling such a read
+ * contained would only trade a prompt for an EPERM and a retry offer.
+ */
+function isContainedReadPath(absPath: string, roots: readonly string[]): boolean {
+  return (
+    roots.some((root) => isInsideRoot(absPath, root)) &&
+    sensitiveTargetReason(absPath, absPath) === null
+  )
 }
 
 /** An absolute path token, with the shell separator that introduced it. */
@@ -1065,10 +1175,12 @@ function maskContainedSymlink(command: string, workspaceRoot: string | null): st
  * their private `/tmp` tree. Only structurally read-only commands receive roots,
  * so writes keep the original path and still prompt.
  */
-function maskContainedReadPaths(command: string, readRoots: readonly string[]): string {
-  if (readRoots.length === 0) return command
+function maskContainedReadPaths(
+  command: string,
+  isContainedRead: (absPath: string) => boolean,
+): string {
   return command.replace(ABSOLUTE_PATH_TOKENS, (match, lead: string, path: string) =>
-    readRoots.some((root) => isInsideRoot(resolve(path), root)) ? `${lead}contained-read` : match,
+    isContainedRead(resolve(path)) ? `${lead}contained-read` : match,
   )
 }
 
@@ -1280,15 +1392,28 @@ function referencesOutsideWorkspace(
   // Read against the raw text: masking only removes already-sanctioned paths,
   // and the read-only shape of the command is unchanged by it.
   const readRoots = containedReadRoots(rawCommand)
+  // Standing roots apply to any role a path plays except a write: a redirect
+  // target, or any operand of a file-writing head (see standingReadRoots).
+  const standingRoots = standingReadRoots(rawCommand)
+  const redirectTargets = new Set(
+    standingRoots.length === 0
+      ? []
+      : shellRedirects(rawCommand).map(({ target }) =>
+          target === '~' || target.startsWith('~/')
+            ? resolve(home, `.${target.slice(1)}`)
+            : resolve(target),
+        ),
+  )
   const isContainedRead = (absPath: string): boolean =>
-    readRoots.some((root) => isInsideRoot(absPath, root))
+    isContainedReadPath(absPath, readRoots) ||
+    (!redirectTargets.has(absPath) && isContainedReadPath(absPath, standingRoots))
   const command = maskPathAssignments(
     maskInertOperandPaths(
       maskContainedReadPaths(
         maskSystemExecutableHeads(
           maskAgentScratchPaths(maskContainedSymlink(rawCommand, workspaceRoot)),
         ),
-        readRoots,
+        isContainedRead,
       ),
     ),
   )
@@ -1489,6 +1614,22 @@ export function dangerousInSandboxReasons(command: string): string[] {
   }
   if (pipesIntoInterpreter(command)) reasons.push(REASON_PIPE_TO_INTERPRETER)
   return reasons
+}
+
+/**
+ * Whether `command` stays out of the `external` verdict only because a path in
+ * it sits under a standing read root (toolchains, caches, approved folders).
+ * Such a run was contained on the strength of a read-only grant, so a sandbox
+ * block in it must never earn an unprompted outside retry.
+ */
+export function reliesOnStandingReadRoots(command: string, workspaceRoot: string | null): boolean {
+  if (analyzeShellCommand(command, workspaceRoot).verdict === 'external') return false
+  standingReadRootsSuspended = true
+  try {
+    return analyzeShellCommand(command, workspaceRoot).verdict === 'external'
+  } finally {
+    standingReadRootsSuspended = false
+  }
 }
 
 export function analyzeShellCommand(

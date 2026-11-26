@@ -1436,6 +1436,19 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         return resolvedVoid()
       },
       setSecurity: resolvedVoid,
+      revokeSandboxReadFolder: (projectRoot: string, folder: string) => {
+        const key = 'sandboxReadProjectFolders'
+        const current = settings.get(key)
+        if (current && typeof current === 'object' && !Array.isArray(current)) {
+          const entries = Object.entries(current).flatMap(([root, folders]) => {
+            if (!Array.isArray(folders)) return []
+            const kept = root === projectRoot ? folders.filter((path) => path !== folder) : folders
+            return kept.length > 0 ? [[root, kept] as const] : []
+          })
+          settings.set(key, Object.fromEntries(entries))
+        }
+        return resolvedVoid()
+      },
       // The demo stands in for a configured install: the provider behind the
       // scenario's model reads as available, so the footer names the model that
       // answered instead of labelling it "(no key)".

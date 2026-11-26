@@ -9,6 +9,7 @@ import {
   webAllowedOriginsSchema,
 } from './settings-writable.ts'
 import { TOOL_PERMISSION_POLICIES } from '@shared/types/tool-permissions.ts'
+import { MAX_SANDBOX_READ_FOLDERS_PER_PROJECT } from '@shared/sandbox-read-access.ts'
 
 // A provider base URL carries the provider's API key as an Authorization header,
 // so it must be a safe credential URL (https:, or http: only for loopback) and
@@ -122,6 +123,14 @@ export const MAIN_ONLY_SETTING_SCHEMAS = {
   safetyModel: z.string().max(256),
   reviewModel: z.string().max(256),
   autoRunSandboxCommands: z.boolean(),
+  // Folders outside a project its sandboxed commands may read, keyed by project
+  // root (Settings → Permissions → Sandbox read access). Main-only: a folder is
+  // added by answering a read prompt, never by the renderer, which may only
+  // remove one through `settings:revoke-sandbox-read-folder`.
+  sandboxReadProjectFolders: z.record(
+    z.string().min(1).max(4096),
+    z.array(z.string().min(1).max(4096)).max(MAX_SANDBOX_READ_FOLDERS_PER_PROJECT),
+  ),
   // Highest tier the deterministic auto-approval classifier may grant without a
   // prompt (see src/main/services/security/auto-approval.ts).
   shellAutoApprovalLevel: autoApprovalLevelSchema,

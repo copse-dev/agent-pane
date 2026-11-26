@@ -1,4 +1,9 @@
 import { projectAllowsPortBinding, rememberProjectPortBinding } from './project-port-grants.ts'
+import {
+  projectReadFolderOffer,
+  projectReadFoldersCover,
+  rememberProjectReadFolders,
+} from './project-read-grants.ts'
 import { planToolBlockReason } from '../thread-plan-context.ts'
 import { z } from 'zod'
 import {
@@ -458,6 +463,27 @@ async function resolveReadOutsideProject(
   }
 
   const threadId = getActiveRunThread()
+  const projectRoot = getAgentProjectRoot()
+  const canonical = canonicalTargets.filter((target) => target !== null)
+  // Folders this project approved (Settings → Permissions → Sandbox read
+  // access). Usually the classifier already ran such a read contained; this
+  // covers the shapes it does not call read-only but this proof accepts.
+  if (
+    canonical.length === canonicalTargets.length &&
+    projectReadFoldersCover(projectRoot, analysis.resolvedTargets, canonical)
+  ) {
+    recordDecision({
+      kind: 'shell',
+      actor: 'user',
+      verdict: 'allowed',
+      subject: SHELL_DECISION_SUBJECT,
+      scope: 'external-read',
+      reasons,
+      source: 'project-read-grant',
+    })
+    return true
+  }
+
   if (hasReadOutsideProjectGrant(threadId, analysis.resolvedTargets)) {
     recordDecision({
       kind: 'shell',
@@ -471,12 +497,23 @@ async function resolveReadOutsideProject(
     return true
   }
 
-  const { approved, remember } = await requestApproval(
+  // The primary action grants this chat, as before. When every target is a
+  // folder the project may keep, an unticked box offers the standing project
+  // grant as an explicit secondary choice (the replay-lease tick box, carrying
+  // the folder list as its subject so a batch never shares one tick across
+  // different folders). A handler with no thread can hold neither grant.
+  const projectOffer = threadId ? projectReadFolderOffer(projectRoot, canonical) : null
+  const response = await requestApproval(
     {
       title: READ_OUTSIDE_PROJECT_TITLE,
       type: 'shell',
       ...shellPromptToApprovalFields(
-        formatReadOutsideProjectPromptParts(command, analysis, canonicalTargets),
+        formatReadOutsideProjectPromptParts(
+          command,
+          analysis,
+          canonicalTargets,
+          projectOffer ? 'project' : 'thread',
+        ),
       ),
       subject: SHELL_DECISION_SUBJECT,
       scope: 'external-read',
@@ -490,12 +527,41 @@ async function resolveReadOutsideProject(
       collapseDetails: true,
       approveLabel: 'Allow reads for this chat',
       approveOnceLabel: 'Approve this command',
+      ...(projectOffer
+        ? {
+            allowTurnTreeLease: true,
+            turnTreeLeaseLabel: `Keep ${projectOffer.length === 1 ? 'this folder' : 'these folders'} readable in every chat in this project`,
+            turnTreeLeaseDefault: false,
+            turnTreeLeaseSubject: `project-read:${projectOffer.join('\n')}`,
+          }
+        : {}),
     },
     signal,
   )
-  // A handler with no thread (headless/ACP) can hold no grant, so its approval
-  // covers this command only.
-  if (approved && remember && threadId) {
+  const { approved, remember } = response
+  const keepForProject =
+    approved && response.grantScope === 'turn-tree' && projectOffer !== null && projectRoot !== null
+  if (keepForProject) {
+    // Only the project grant: it already covers this thread, and unlike a chat
+    // grant it stops the moment it is removed in Settings or locked down.
+    const added = await rememberProjectReadFolders(projectRoot, projectOffer)
+    // The answer above already logged its verdict; this line names the
+    // standing grant itself, so the log shows what outlives the thread.
+    if (added.length > 0) {
+      recordDecision({
+        kind: 'shell',
+        actor: 'user',
+        verdict: 'allowed',
+        subject: SHELL_DECISION_SUBJECT,
+        scope: 'external-read',
+        remembered: true,
+        reasons: [`project read access granted: ${added.join(', ')}`],
+        source: 'project-read-grant',
+      })
+    }
+  } else if (approved && remember && threadId) {
+    // A handler with no thread (headless/ACP) can hold no grant, so its approval
+    // covers this command only.
     grantReadOutsideProject(threadId, analysis.resolvedTargets)
   }
   return approved
@@ -605,21 +671,15 @@ async function promptGuardedYoloHarm(
 }
 
 /**
- * Prompt when a sandboxed command failed and may succeed unsandboxed.
- *
- * `readGrantApplied` says the failed run had already been given the read-access
- * relaxation for the paths it names. That command has now been contained with
- * exactly what the read grant promised and still hit the sandbox, so the grant
- * has been spent: it must not also auto-answer the full-escape question. Falling
- * through to "Run outside sandbox?" puts the escalation back in front of the
- * user, where a read grant silently approving writes and network never belonged.
+ * Prompt when a sandboxed command failed and may succeed unsandboxed. A read
+ * grant never answers it: the sandbox already gave the command everything a
+ * read grant promised, so whatever it hit is beyond that grant.
  */
 export async function promptUnsandboxedShell(
   command: string,
   reasons: string[],
   signal?: AbortSignal,
   opts: {
-    readGrantApplied?: boolean
     requireInteractiveApproval?: boolean
     /**
      * Authorize exactly this one outside execution: offer no trusted-command
@@ -643,13 +703,10 @@ export async function promptUnsandboxedShell(
   const leaseIdentity =
     forceAsk || oneShot ? null : expectedBlockLeaseIdentity(command, getAgentExecutionRoot())
   if (leaseIdentity && consumeShellReplayLease(leaseIdentity, command)) return true
-  // A command that failed inside the sandbox because it reads a file in the
-  // user's home directory is the same read-access question as the up-front gate,
-  // so a thread that already granted that scope should not be asked again.
-  if (!forceAsk && !oneShot && opts.readGrantApplied !== true) {
-    const readOutside = await resolveReadOutsideProject(command, getAgentExecutionRoot(), signal)
-    if (readOutside !== null) return readOutside
-  }
+  // No read grant (a chat's, or a folder this project approved) answers this
+  // question. The retry runs outside the sandbox, where the credential denies
+  // a read grant keeps are gone and writes and network are open; a read
+  // approval never covered that, so the escape always reaches the user.
   return requestEscalationApproval(
     'Run outside sandbox?',
     formatUnsandboxedPromptParts(command, reasons),

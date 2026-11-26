@@ -326,6 +326,7 @@
       "settings:scan-env-keys",
       "settings:set",
       "settings:set-key",
+      "settings:revoke-sandbox-read-folder",
       "settings:set-security",
       "settings:update",
       "settings:validate-key",

@@ -1117,6 +1117,8 @@ export interface ApiClient {
       // bundles that don't render the picker don't reset the user's choice.
       shellAutoApprovalLevel?: AutoApprovalLevel
     }) => Promise<void>
+    /** Remove one folder a project approved for sandboxed reads. */
+    revokeSandboxReadFolder: (projectRoot: string, folder: string) => Promise<void>
     getKey: (provider: string) => Promise<boolean>
     /**
      * At-rest encryption state for a stored key: `true` = OS-encrypted, `false` =

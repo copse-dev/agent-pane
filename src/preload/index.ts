@@ -1378,6 +1378,8 @@ const api: ApiClient = {
       // bundles that don't render the picker don't reset the user's choice.
       shellAutoApprovalLevel?: AutoApprovalLevel
     }) => ipcRenderer.invoke('settings:set-security', prefs),
+    revokeSandboxReadFolder: (projectRoot: string, folder: string) =>
+      ipcRenderer.invoke('settings:revoke-sandbox-read-folder', projectRoot, folder),
     getKey: (provider: string) => ipcRenderer.invoke('settings:get-key', provider),
     getKeyEncrypted: (provider: string) =>
       ipcRenderer.invoke('settings:get-key-encrypted', provider),

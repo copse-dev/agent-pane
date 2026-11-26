@@ -6,6 +6,17 @@ import {
 } from '@shared/terminal/terminal-history.ts'
 
 import { AUTO_APPROVAL_LEVELS, AUTO_APPROVAL_LEVEL_LABELS } from '@shared/auto-approval.ts'
+import {
+  SANDBOX_READ_APPROVED_FOLDERS_DEFAULT,
+  SANDBOX_READ_APPROVED_FOLDERS_SETTING,
+  SANDBOX_READ_CACHES_DEFAULT,
+  SANDBOX_READ_CACHES_SETTING,
+  SANDBOX_READ_FIXED_DENIALS,
+  SANDBOX_READ_TOOLCHAINS_DEFAULT,
+  SANDBOX_READ_TOOLCHAINS_SETTING,
+  SANDBOX_READ_WORKSPACE_ONLY_DEFAULT,
+  SANDBOX_READ_WORKSPACE_ONLY_SETTING,
+} from '@shared/sandbox-read-access.ts'
 export const permissionsMarkup = `
           <section class="settings-section" data-section="permissions">
             <h3>Permissions</h3>
@@ -143,6 +154,58 @@ export const permissionsMarkup = `
                   asks first, reads included. Matches whole names only.
                 </span>
               </label>
+            </fieldset>
+
+            <fieldset id="sandbox-read-access-fieldset">
+              <legend>Sandbox read access</legend>
+              <p class="settings-fieldset-desc">
+                Folders outside the project that sandboxed commands can read without asking.
+                They can never write to them, and they still have no network.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="${SANDBOX_READ_TOOLCHAINS_SETTING}" data-sandbox-read-group />
+                Toolchains and SDKs
+              </label>
+              <p class="field-hint">
+                Xcode and its Command Line Tools, Homebrew, and the Node, Rust, Python and Ruby
+                versions installed by nvm, fnm, Volta, asdf, mise, rustup, pyenv, uv and rbenv.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="${SANDBOX_READ_CACHES_SETTING}" data-sandbox-read-group />
+                Package caches and build logs
+              </label>
+              <p class="field-hint">
+                Downloaded packages and logs from npm, pnpm, Yarn, pip, uv, Cargo, Go, Gradle, Maven
+                and CocoaPods.
+              </p>
+              <label class="checkbox-label">
+                <input
+                  type="checkbox"
+                  name="${SANDBOX_READ_APPROVED_FOLDERS_SETTING}"
+                  data-sandbox-read-group
+                />
+                Folders you approved for a project
+              </label>
+              <p class="field-hint">
+                When the agent asks to read a folder such as a sibling checkout, you can tick the box
+                to keep it readable in every chat in that project. Off: approvals last for one chat.
+              </p>
+              <div id="sandbox-read-folders-host" class="sandbox-read-folders"></div>
+              <label class="checkbox-label">
+                <input type="checkbox" name="${SANDBOX_READ_WORKSPACE_ONLY_SETTING}" />
+                Workspace only
+              </label>
+              <p class="field-hint">
+                Turns off every group above, so a command that reads outside the project asks
+                first, except where a chat already approved that read for itself. System folders
+                such as <code>/usr</code> stay readable, as before.
+              </p>
+              <div class="sandbox-read-fixed">
+                <span class="field-hint">Always unreadable to sandboxed commands, whatever these settings say:</span>
+                <ul class="sandbox-read-fixed-list">
+                  ${SANDBOX_READ_FIXED_DENIALS.map((denial) => `<li>${denial}</li>`).join('')}
+                </ul>
+              </div>
             </fieldset>
 
             <fieldset>
@@ -298,6 +361,30 @@ export const permissionsFields: readonly SettingField[] = [
   { name: 'acpAutoApproveNativeBridgeTools', kind: 'checkbox', default: true, save: true },
   { name: 'worktreeAutoApproveEdits', kind: 'checkbox', default: true, save: true },
   { name: 'backgroundDefaultBranchFetch', kind: 'checkbox', default: true, save: true },
+  {
+    name: SANDBOX_READ_TOOLCHAINS_SETTING,
+    kind: 'checkbox',
+    default: SANDBOX_READ_TOOLCHAINS_DEFAULT,
+    save: true,
+  },
+  {
+    name: SANDBOX_READ_CACHES_SETTING,
+    kind: 'checkbox',
+    default: SANDBOX_READ_CACHES_DEFAULT,
+    save: true,
+  },
+  {
+    name: SANDBOX_READ_APPROVED_FOLDERS_SETTING,
+    kind: 'checkbox',
+    default: SANDBOX_READ_APPROVED_FOLDERS_DEFAULT,
+    save: true,
+  },
+  {
+    name: SANDBOX_READ_WORKSPACE_ONLY_SETTING,
+    kind: 'checkbox',
+    default: SANDBOX_READ_WORKSPACE_ONLY_DEFAULT,
+    save: true,
+  },
   { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
   { name: 'autoRunSandboxCommands', kind: 'checkbox', default: true, save: false },
   { name: 'webAllowUserApproval', kind: 'checkbox', default: true, save: false },

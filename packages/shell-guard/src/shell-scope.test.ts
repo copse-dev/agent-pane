@@ -594,6 +594,75 @@ describe('analyzeShellCommand', () => {
     }
   })
 
+  it('never treats a credential inside a contained read root as contained', () => {
+    configureShellScopeEnvironment({
+      containedReadRoots: () => ['/Users/dev/code/sibling', '/opt/homebrew'],
+    })
+    try {
+      assert.equal(
+        analyzeShellCommand('cat /Users/dev/code/sibling/README.md', root).verdict,
+        'sandbox',
+      )
+      assert.equal(analyzeShellCommand('ls /opt/homebrew/Cellar', root).verdict, 'sandbox')
+      for (const secret of [
+        '/Users/dev/code/sibling/.env',
+        '/Users/dev/code/sibling/.env.local',
+        '/Users/dev/code/sibling/certs/server.pem',
+        '/Users/dev/code/sibling/.ssh/id_ed25519',
+        '/Users/dev/code/sibling/.npmrc',
+      ]) {
+        assert.equal(analyzeShellCommand(`cat ${secret}`, root).verdict, 'external', secret)
+      }
+    } finally {
+      configureShellScopeEnvironment()
+    }
+  })
+
+  it('starts a command contained when a standing read root is run, assigned or an operand', () => {
+    const home = homedir()
+    const fnm = `${home}/.local/share/fnm/node-versions`
+    configureShellScopeEnvironment({
+      standingReadRoots: () => ['/Applications/Xcode.app', fnm, '/Users/dev/code/sibling'],
+    })
+    try {
+      for (const command of [
+        `~/.local/share/fnm/node-versions/v24.20.0/installation/bin/node --version`,
+        `${fnm}/v24.20.0/installation/bin/node --version`,
+        'DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift --version',
+        'plutil -extract CFBundleIdentifier raw /Applications/Xcode.app/Contents/Info.plist',
+        'ls /Users/dev/code/sibling/src',
+        'git -C /Users/dev/code/sibling log --oneline -5',
+      ]) {
+        // `ambiguous` also starts inside the sandbox; only `external` prompts first.
+        assert.notEqual(analyzeShellCommand(command, root).verdict, 'external', command)
+      }
+      for (const command of [
+        // Writes: a redirect target or any operand of a file-writing command.
+        'echo x > /Applications/Xcode.app/Contents/x',
+        'cp README.md /Users/dev/code/sibling/README.md',
+        'rm /Users/dev/code/sibling/a.txt',
+        "sed -i '' s/a/b/ /Users/dev/code/sibling/a.txt",
+        // Git writes and release work keep asking up front rather than after a
+        // sandbox block (the replay's must-ask shapes with approved siblings).
+        'git -C /Users/dev/code/sibling add appcast.xml',
+        "git -C /Users/dev/code/sibling commit -m 'Release 1.7.0'",
+        'git -C /Users/dev/code/sibling push origin main',
+        'export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer && make ship-release VERSION=1.7.0',
+        '/Users/dev/code/sibling/bin/sign_update /Users/dev/code/sibling/build/App.zip',
+        'gh release create v1.7.0 /Users/dev/code/sibling/build/App.zip',
+        'cat /Users/dev/code/sibling/build/App.zip | gh release upload v1.7.0 -',
+        // A credential inside a root, whatever the role.
+        'plutil -p /Users/dev/code/sibling/.env',
+        // A path outside every root.
+        '/opt/other/bin/tool --version',
+      ]) {
+        assert.equal(analyzeShellCommand(command, root).verdict, 'external', command)
+      }
+    } finally {
+      configureShellScopeEnvironment()
+    }
+  })
+
   it('allows workspace-relative paths', () => {
     const r = analyzeShellCommand('cat src/index.ts', root)
     assert.equal(r.verdict, 'sandbox')

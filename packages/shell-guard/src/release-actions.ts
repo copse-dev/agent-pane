@@ -138,7 +138,7 @@ function signingReason(head: string, argv: readonly string[]): string | null {
 }
 
 /** Git's subcommand and its operands, with global options and their values removed. */
-function gitWords(argv: readonly string[]): { config: string[]; words: string[] } {
+export function gitWords(argv: readonly string[]): { config: string[]; words: string[] } {
   const config: string[] = []
   let i = 1
   for (; i < argv.length; i += 1) {
