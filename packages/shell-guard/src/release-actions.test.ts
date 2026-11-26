@@ -55,6 +55,11 @@ describe('releaseActionReasons', () => {
     assert.deepEqual(reasons('codesign --verify --deep App.app'), [])
     assert.equal(reasons('gpg --detach-sign dist.tar.gz').length, 1)
     assert.equal(reasons('xcrun notarytool submit App.zip').length, 1)
+    assert.equal(reasons('codesign -fs Developer App.app').length, 1)
+    assert.deepEqual(reasons('codesign --sign - App.app'), [])
+    assert.deepEqual(reasons('codesign -fs - App.app'), [])
+    assert.equal(reasons('gpg -ab dist.tar.gz').length, 1)
+    assert.deepEqual(reasons('gpg --verify dist.tar.gz.asc'), [])
   })
 
   it('asks when a tag is published or moved', () => {
@@ -67,7 +72,31 @@ describe('releaseActionReasons', () => {
     assert.deepEqual(reasons('git tag -f -a v1.7.0 -m x'), [
       'moves an existing tag (git tag --force)',
     ])
+    for (const command of [
+      'git push origin tag stable',
+      'git push origin tags/stable',
+      'git push origin HEAD:tags/stable',
+      'git push --tag origin',
+      'git push --follow-t origin main',
+      'git push origin v1',
+    ]) {
+      assert.equal(reasons(command).length, 1, command)
+    }
+    for (const command of [
+      'git push --mirror origin',
+      'git push --prune origin main',
+      'git push origin --delete old',
+      'git push origin +main',
+    ]) {
+      assert.deepEqual(
+        reasons(command),
+        ['rewrites or deletes refs on the remote (git push)'],
+        command,
+      )
+    }
     assert.deepEqual(reasons('git push origin HEAD:copse/branch'), [])
+    assert.deepEqual(reasons('git push origin feature/tag-names'), [])
+    assert.deepEqual(reasons('git push --tag-option origin'), [])
     assert.deepEqual(reasons('git tag -a v1.7.0 -m x'), [])
   })
 
@@ -76,6 +105,13 @@ describe('releaseActionReasons', () => {
       "overrides git's credentials or SSH command for this command",
     ])
     assert.deepEqual(reasons('git -c user.name=x commit -m y'), [])
+    assert.equal(reasons('git --config-env=core.sshCommand=CMD push').length, 1)
+    assert.equal(reasons('git -c include.path=/tmp/x fetch').length, 1)
+    assert.deepEqual(reasons('git config core.sshCommand ssh-wrapper'), [
+      'sets a git config key that runs a program (core.sshCommand)',
+    ])
+    assert.deepEqual(reasons('git config --get core.sshCommand'), [])
+    assert.deepEqual(reasons('git config user.email a@b'), [])
   })
 })
 
@@ -90,6 +126,10 @@ describe('releaseCommandReasons and secret copies', () => {
     assert.equal(reasons('tar czf out.tgz .env').length, 1)
     assert.deepEqual(reasons('cp .env.example .env'), [])
     assert.equal(reasons('ssh-add -D').length, 1)
+    assert.equal(reasons('ssh-add').length, 1)
+    assert.equal(reasons('cp -t /tmp .env').length, 1)
+    assert.equal(reasons('cp --target-directory=/tmp .env').length, 1)
+    assert.equal(releaseCommandReasons('GIT_CONFIG_COUNT=1 git push').length, 1)
     assert.deepEqual(reasons('ssh-add -l'), [])
     assert.equal(reasons('git -c core.sshCommand=ssh push').length, 1)
   })

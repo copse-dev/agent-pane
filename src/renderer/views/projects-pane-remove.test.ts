@@ -405,6 +405,12 @@ describe('projects pane remove-from-sidebar (component)', () => {
           sampleTitles: ['Old notes'],
           updatedAt: 50,
         },
+        {
+          id: 'other-store',
+          threadCount: 2,
+          sampleTitles: ['Other notes'],
+          updatedAt: 40,
+        },
       ]),
     )
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -421,7 +427,8 @@ describe('projects pane remove-from-sidebar (component)', () => {
     })
     // Removing all children briefly empties the scroll container in Chromium,
     // which clamps scrollTop to zero. Simulate that browser behavior on the
-    // current children so this test fails if render() stops restoring the offset.
+    // current children so this test fails if render() removes rows that did not
+    // change instead of updating the list in place.
     for (const child of Array.from(list.children)) {
       const remove = child.remove.bind(child)
       child.remove = (): void => {
@@ -430,9 +437,17 @@ describe('projects pane remove-from-sidebar (component)', () => {
       }
     }
 
+    const projectEntry = list.querySelector('.project-entry')
+    const otherOrphan = list.querySelector('[data-orphan-id="other-store"]')
+    assert.ok(projectEntry)
+    assert.ok(otherOrphan)
+
     document.querySelector<HTMLButtonElement>('.orphan-dismiss-btn')?.click()
     await new Promise((resolve) => setTimeout(resolve, 0))
 
+    assert.equal(list.querySelector('[data-orphan-id="stale-store"]'), null)
+    assert.equal(list.querySelector('.project-entry'), projectEntry)
+    assert.equal(list.querySelector('[data-orphan-id="other-store"]'), otherOrphan)
     assert.equal(list.scrollTop, 160)
   })
 

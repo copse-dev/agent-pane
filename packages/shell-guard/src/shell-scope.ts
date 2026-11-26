@@ -224,15 +224,17 @@ const EXTERNAL_PATTERNS: Array<{
   // Corepack's cache read-only (`resolveInterpreterToolchainAllowRead`), so a pinned
   // pnpm or yarn that is already downloaded starts contained, and one that is not is
   // blocked from the network and escalates like `npx`. Hard-external here made
-  // `corepack pnpm test` prompt while `pnpm test` ran contained. Corepack's own
-  // commands that install shims or package managers globally stay hard-external.
+  // `corepack pnpm test` prompt while `pnpm test` ran contained. Only a package
+  // manager named directly after `corepack` (or its version or help) is ambiguous; Corepack's own commands
+  // (enable, install, prepare…), however spelled or preceded by options, stay
+  // hard-external.
   {
-    re: /\bcorepack\s+(?:enable|disable|install|prepare|use|up|pack|cache)\b/i,
+    re: /\bcorepack[ \t]+(?!(?:(?:pnpm|pnpx|yarn|yarnpkg|npm|npx)(?:@[\w.+-]*)?|-v|--version|-h|--help)(?:\s|$))[^\s;&|)]/i,
     reason: 'corepack (downloads package-manager binaries)',
     commandWord: true,
   },
   {
-    re: /\bcorepack\b(?!\s+(?:enable|disable|install|prepare|use|up|pack|cache)\b)/i,
+    re: /\bcorepack\b/i,
     reason: 'corepack (downloads package-manager binaries)',
     ambiguous: true,
     commandWord: true,

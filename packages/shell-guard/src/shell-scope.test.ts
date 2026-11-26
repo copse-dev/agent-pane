@@ -748,11 +748,15 @@ describe('analyzeShellCommand', () => {
       'corepack pnpm test -- shell-scope',
       'corepack pnpm@10.34.5 run build',
       'corepack yarn lint',
+      'corepack --version',
+      'command -v pnpm && command -v corepack',
     ]) {
       assert.equal(analyzeShellCommand(command, root).verdict, 'ambiguous', command)
     }
     for (const command of [
       'corepack enable',
+      'corepack "enable"',
+      'corepack --install-directory ./bin enable',
       'corepack install -g pnpm@10',
       'corepack prepare pnpm@10 --activate',
       'corepack pnpm install',

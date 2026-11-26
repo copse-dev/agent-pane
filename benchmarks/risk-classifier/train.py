@@ -292,7 +292,7 @@ def main(argv=None):
     ap.add_argument("--repo", type=Path, required=True)
     ap.add_argument("--hf", type=Path, required=True)
     ap.add_argument("--private", type=Path)
-    ap.add_argument("--heldout-machines", default="KingstonSlicedMax,test-mac-box")
+    ap.add_argument("--heldout-machines", required=True, help="comma-separated --machine names from extract.py to score, never train on")
     ap.add_argument("--train-private", action="store_true", help="also train on private machines not held out")
     ap.add_argument("--models", default="tfidf")
     ap.add_argument("--encoder", default="huggingface/CodeBERTa-small-v1")

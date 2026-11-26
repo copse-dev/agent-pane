@@ -83,6 +83,11 @@ export function beginMainWindowQuit(): void {
   quitting = true
 }
 
+/** A quit that was begun ahead of time (the updater's) did not happen. */
+export function cancelMainWindowQuit(): void {
+  quitting = false
+}
+
 /** Whether window closes are part of quitting rather than a user closing a window. */
 export function isMainWindowQuitting(): boolean {
   return quitting

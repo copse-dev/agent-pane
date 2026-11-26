@@ -64,6 +64,11 @@ export interface TurnTranscript {
   emit(chunk: StreamChunk): void
   /** The turn released its slot. Writes anything still unwritten, then detaches. */
   end(): void
+  /**
+   * Another process took the thread's writer lease over: write nothing more for
+   * this turn, not even its closing status. Chunks after this are dropped.
+   */
+  fence(): void
 }
 
 interface Session {
@@ -84,6 +89,8 @@ interface Session {
   writes: Set<Promise<void>>
   done: boolean
   ended: boolean
+  /** The writer lease was lost; this session no longer writes the thread. */
+  fenced: boolean
   unsubscribe: () => void
   /** Resolves once the session has ended and every write it issued settled. */
   drained: Promise<void>
@@ -228,6 +235,7 @@ export class TurnTranscriptWriter {
       writes: new Set(),
       done: false,
       ended: false,
+      fenced: false,
       unsubscribe: () => undefined,
       drained: drained.promise,
       markDrained: drained.resolve,
@@ -244,6 +252,7 @@ export class TurnTranscriptWriter {
     void previous
       .then(() => this.deps.loadThread(projectId, threadId))
       .then((thread) => {
+        if (session.fenced) return
         if (thread) {
           // This is an admitted turn, including ordinary human retries. Clear
           // recovery metadata before its authoritative runtime snapshot so an
@@ -262,6 +271,9 @@ export class TurnTranscriptWriter {
             this.deps
               .updateMeta(projectId, threadId, {
                 status: 'running',
+                // The next launch continues only turns from the run before it
+                // (`interrupted-turn-resume.ts`), told apart by this time.
+                updatedAt: Date.now(),
                 ...transcriptMetaPatch(session.initialMeta, transcriptMeta(runningThread)),
               })
               .catch((error: unknown) => {
@@ -292,6 +304,10 @@ export class TurnTranscriptWriter {
       end: (): void => {
         session.ended = true
         if (!session.pending) this.finish(session)
+      },
+      fence: (): void => {
+        session.fenced = true
+        session.unsubscribe()
       },
     }
   }
@@ -380,6 +396,7 @@ export class TurnTranscriptWriter {
   }
 
   private process(session: Session, chunk: StreamChunk): void {
+    if (session.fenced) return
     if (session.passthrough || session.done) {
       this.deps.forward(session.threadId, chunk)
       return
@@ -527,7 +544,7 @@ export class TurnTranscriptWriter {
   private finish(session: Session): void {
     this.revision += 1
     // A turn that failed before `done` still keeps what it produced.
-    if (!session.done && !session.passthrough) {
+    if (!session.done && !session.passthrough && !session.fenced) {
       this.flushTouched(session)
       if (!this.shuttingDown) setThreadStatus(session.store, session.threadId, 'idle')
       this.persistMeta(session)
