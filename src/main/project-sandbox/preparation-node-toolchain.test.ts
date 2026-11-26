@@ -96,8 +96,7 @@ it(
       writeFileSync(cli, '#!/usr/bin/env node\n')
       chmodSync(cli, 0o755)
       symlinkSync('../lib/node_modules/npm/bin/npx-cli.js', join(bin, 'npx'))
-      const linked = linkPreparationNodeToolchain({ PATH: bin }, links)
-      assert.equal(linked['PATH'], `${links}:${bin}`)
+      assert.equal(linkPreparationNodeToolchain({ PATH: bin }, links), `${links}:${bin}`)
       assert.equal(readlinkSync(join(links, 'npx')), cli)
       const allow = preparationNodeToolchainReadPaths({ PATH: bin })
       assert.ok(allow.includes(cli))
@@ -133,15 +132,13 @@ it(
       writeFileSync(join(shadowed, 'npm'), '')
       chmodSync(join(shadowed, 'npm'), 0o755)
       const path = `${bin}:${shadowed}`
-      const linked = linkPreparationNodeToolchain({ PATH: path }, links)
-      assert.equal(linked['PATH'], `${links}:${path}`)
+      assert.equal(linkPreparationNodeToolchain({ PATH: path }, links), `${links}:${path}`)
       assert.deepEqual(readdirSync(links).sort(), ['node', 'npm'])
       assert.equal(readlinkSync(join(links, 'node')), join(bin, 'node'))
       assert.equal(readlinkSync(join(links, 'npm')), cli)
       const empty = join(root, 'empty')
       mkdirSync(empty)
-      const env = { PATH: join(root, 'missing') }
-      assert.equal(linkPreparationNodeToolchain(env, empty), env)
+      assert.equal(linkPreparationNodeToolchain({ PATH: join(root, 'missing') }, empty), null)
       assert.deepEqual(readdirSync(empty), [])
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -187,7 +184,7 @@ it(
       symlinkSync(target, join(bin, 'npx'))
       const env = { PATH: bin }
       assert.deepEqual(preparationNodeToolchainReadPaths(env, home), [])
-      assert.equal(linkPreparationNodeToolchain(env, links), env)
+      assert.equal(linkPreparationNodeToolchain(env, links), null)
       assert.deepEqual(readdirSync(links), [])
     } finally {
       rmSync(home, { recursive: true, force: true })
