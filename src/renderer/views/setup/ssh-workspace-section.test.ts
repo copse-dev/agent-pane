@@ -132,7 +132,9 @@ describe('createSshWorkspaceSection', () => {
       assert.ok(node, name)
       return node
     }
-    for (const name of ['sshHostId', 'sshHostLabel', 'sshHostHost', 'sshHostUser', 'sshHostPort']) {
+    // Nobody types a host id any more: it comes from the label.
+    assert.equal(section.root.querySelector('input[name="sshHostId"]'), null)
+    for (const name of ['sshHostLabel', 'sshHostHost', 'sshHostUser', 'sshHostPort']) {
       assert.equal(input(name).getAttribute('type'), 'text', `${name} names its type`)
     }
     const type = (name: string, value: string): void => {
@@ -150,6 +152,40 @@ describe('createSshWorkspaceSection', () => {
     assert.equal(input('sshHostHost').hasAttribute('aria-invalid'), false)
     type('sshHostPort', '2222')
     assert.equal(input('sshHostPort').hasAttribute('aria-invalid'), false)
+  })
+
+  it('gives a new host a unique id from its label, and keeps an edited host its own', async () => {
+    const existing = { id: 'studio-mac', label: 'Studio Mac', host: 'old.local' }
+    const { api, sets } = mockApi({ hosts: [existing] })
+    const section = createSshWorkspaceSection(api)
+    document.body.append(section.root)
+    await section.refresh()
+    const input = (name: string): HTMLInputElement => {
+      const node = section.root.querySelector<HTMLInputElement>(`input[name="${name}"]`)
+      assert.ok(node, name)
+      return node
+    }
+    const save = async (): Promise<void> => {
+      section.root.querySelector<HTMLButtonElement>('.ssh-host-save')?.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+
+    input('sshHostLabel').value = 'Studio Mac'
+    input('sshHostHost').value = 'studio.local'
+    input('sshHostForwardAgent').checked = true
+    await save()
+    assert.deepEqual(sets.at(-1)?.value, [
+      existing,
+      { id: 'studio-mac-2', label: 'Studio Mac', host: 'studio.local', forwardAgent: true },
+    ])
+
+    section.root.querySelector<HTMLButtonElement>('.ssh-host-edit')?.click()
+    assert.equal(input('sshHostHost').value, 'old.local')
+    input('sshHostLabel').value = 'Renamed'
+    await save()
+    const hosts = sets.at(-1)?.value
+    assert.ok(Array.isArray(hosts))
+    assert.deepEqual(hosts[0], { id: 'studio-mac', label: 'Renamed', host: 'old.local' })
   })
 
   it('shows and deletes OS-keychain authentication without removing the host', async () => {

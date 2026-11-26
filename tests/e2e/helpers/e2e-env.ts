@@ -40,6 +40,16 @@ export const E2E_SHELL = join(process.cwd(), 'tests/e2e/fixtures/e2e-bash-shell.
 export const E2E_NAMES_API_PORT = 42781
 export const E2E_NAMES_API_URL = `http://127.0.0.1:${String(E2E_NAMES_API_PORT)}`
 
+/**
+ * The relay every e2e app tunnels to (`COPSE_RELAY`): a `.invalid` name, which
+ * never resolves, so a run can never reach the live relay.copse.dev. A spec
+ * that needs one starts `tests/helpers/fake-relay.ts` on a free port, points
+ * `COPSE_RELAY` at `localhost:<port>` (the relay routes on the TLS server name,
+ * and an IP literal is never sent as one) and trusts its root through
+ * `COPSE_E2E_EXTRA_CA_CERTS`, applied by `electron-shell/bootstrap.cjs`.
+ */
+export const E2E_RELAY = 'relay.copse.invalid'
+
 /** Patch electron-shell env before `browser.reloadSession()` (see bootstrap.cjs). */
 export function writeE2eEnv(overrides: Record<string, string | undefined>): void {
   const env: Record<string, string> = {

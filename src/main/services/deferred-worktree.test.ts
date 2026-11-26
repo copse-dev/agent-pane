@@ -97,6 +97,7 @@ function fixture(
     checkoutBranch: async (branch) => {
       checkouts.push(branch)
     },
+    rebaseInProgress: async () => false,
     validate: async ({ worktree }) => ({ branch: worktree.branch }),
     retire: async () => undefined,
     serialize: async (_key, task) => task(),

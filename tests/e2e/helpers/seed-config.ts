@@ -19,6 +19,7 @@ import { safeJsonParse } from '@copse/std/safe-json.ts'
 import { parseMessageValue } from '../../../packages/thread-store/src/thread-boundary.ts'
 import { PRODUCT_ANNOUNCEMENTS } from '../../../src/renderer/product-announcements.ts'
 import { USAGE_EVENTS_DIR, type UsageEvent } from '../../../src/shared/usage/usage-event.ts'
+import { THREAD_ACTION_LEDGER_FILE } from '../../../src/shared/threads/action-assessment.ts'
 import {
   supervisedTaskMetaSchema,
   type SupervisedTaskMeta,
@@ -270,7 +271,16 @@ export function resetUserData(): void {
   rmSync(CONFIG_PATH, { force: true })
   rmSync(SETTINGS_PATH, { force: true })
   removeE2eTree(USAGE_EVENTS_PATH)
+  rmSync(THREAD_ACTION_LEDGER_PATH, { force: true })
   writeSettings({})
+}
+
+/** The Needs action assessment ledger, which has its own file beside config.json. */
+const THREAD_ACTION_LEDGER_PATH = join(USER_DATA, THREAD_ACTION_LEDGER_FILE)
+
+export function seedThreadActionLedger(ledger: Record<string, unknown>): void {
+  mkdirSync(USER_DATA, { recursive: true })
+  writeFileSync(THREAD_ACTION_LEDGER_PATH, JSON.stringify(ledger), 'utf8')
 }
 
 /** The usage ledger directory under userData; see `USAGE_EVENTS_DIR`. */

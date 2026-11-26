@@ -117,10 +117,17 @@ async function waitFor(condition: () => Promise<boolean>, timeoutMs: number): Pr
   return false
 }
 
-async function runProfiler(args: string[]): Promise<{ code: number | null; stderr: string }> {
+async function runProfiler(
+  args: string[],
+  preload?: string,
+): Promise<{ code: number | null; stderr: string }> {
   const child = spawn(
     process.execPath,
-    [join(process.cwd(), 'scripts/profile-main-process.mts'), ...args],
+    [
+      ...(preload ? ['--import', preload] : []),
+      join(process.cwd(), 'scripts/profile-main-process.mts'),
+      ...args,
+    ],
     {
       stdio: ['ignore', 'ignore', 'pipe'],
       signal: AbortSignal.timeout(15_000),
@@ -283,20 +290,41 @@ describe('profileInspector', { timeout: 30_000 }, () => {
         await reservation.dispose()
         assert.ok(target.child.pid)
         assert.notEqual(new URL(target.url).port, requestedPort)
+        // Releasing a port does not keep another test from reusing it. Model
+        // only the closed requested endpoint here; the target's inspector,
+        // PID check, SIGUSR1 activation and cleanup still use real processes.
+        const preload = join(dir, 'closed-requested-port.mjs')
+        await writeFile(
+          preload,
+          `const originalFetch = globalThis.fetch
+globalThis.fetch = (input, init) => {
+  const url = input instanceof Request ? input.url : String(input)
+  if (url === ${JSON.stringify(`http://127.0.0.1:${requestedPort}/json/list`)}) {
+    return Promise.reject(new TypeError('fetch failed', {
+      cause: Object.assign(new Error('connection refused'), { code: 'ECONNREFUSED' }),
+    }))
+  }
+  return originalFetch(input, init)
+}
+`,
+        )
         // --inspect=...:0 assigned a non-default debugPort. Closing it leaves
         // that configured port in place for the following SIGUSR1 to reopen.
         await profileInspector(target.url, 10, target.child.pid)
         assert.ok(await waitFor(async () => !(await inspectorIsListening(target.url)), 5000))
-        const result = await runProfiler([
-          '--pid',
-          String(target.child.pid),
-          '--port',
-          requestedPort,
-          '--seconds',
-          '0.01',
-          '--out',
-          output,
-        ])
+        const result = await runProfiler(
+          [
+            '--pid',
+            String(target.child.pid),
+            '--port',
+            requestedPort,
+            '--seconds',
+            '0.01',
+            '--out',
+            output,
+          ],
+          preload,
+        )
         const evidence = (): string =>
           [
             `Profiler exit code: ${String(result.code)}`,

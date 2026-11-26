@@ -2,9 +2,30 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   browserApprovalDetails,
+  projectPortBindingApproval,
   providerApprovalDetails,
   webApprovalDetails,
 } from './approval-copy.ts'
+
+it('keeps project port-binding scope and risk copy shared with its one-time action', () => {
+  const prompt = projectPortBindingApproval('/projects/harbor-board', 'npm run dev')
+  assert.equal(prompt.body, 'npm run dev')
+  assert.equal(prompt.approveOnceLabel, 'Allow once')
+  assert.equal(prompt.approveLabel, 'Allow for this project')
+  assert.equal(prompt.allowRemember, true)
+  assert.equal(
+    prompt.rememberLabel,
+    'Always allow local port binding in this project: /projects/harbor-board',
+  )
+  assert.match(prompt.bodyAdvice, /Project: \/projects\/harbor-board/)
+  assert.match(prompt.bodyFooter, /One-time approval covers this start/)
+  assert.match(prompt.bodyFooter, /future tasks and chats in this project/)
+  assert.match(prompt.bodyFooter, /including its worktrees, bind on localhost until revoked/)
+  assert.match(prompt.bodyFooter, /Other shell permissions still apply/)
+  assert.match(prompt.bodyFooter, /Context → Permissions → Project → Local port binding/)
+  assert.match(prompt.bodyFooter, /Stop running tasks separately/)
+  assert.equal(projectPortBindingApproval('/projects/harbor-board', '').body, '(no command given)')
+})
 
 describe('URL approval details', () => {
   const url = 'https://example.com/docs?topic=approval'

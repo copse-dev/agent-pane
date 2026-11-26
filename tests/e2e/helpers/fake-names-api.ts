@@ -1,10 +1,4 @@
-import {
-  createPublicKey,
-  generateKeyPairSync,
-  randomBytes,
-  sign,
-  type KeyObject,
-} from 'node:crypto'
+import { createPublicKey, type KeyObject } from 'node:crypto'
 import { createServer, type IncomingMessage, type Server } from 'node:http'
 import { fromBase64Url } from '@copse/remote-protocol/encoding.ts'
 import {
@@ -20,7 +14,7 @@ import {
 } from '@copse/remote-protocol/messages.ts'
 import { canonicalRequest } from '@copse/remote-protocol/signing.ts'
 import { decodeWithSchema, safeJsonParse } from '../../../packages/std/src/safe-json.ts'
-import { der, derInteger } from '../../../src/main/services/mobile/der.ts'
+import { createTestCa, issueTestCertificate } from '../../helpers/test-certificates.ts'
 
 /**
  * A stand-in for the Copse names API on loopback HTTP, for the trusted-name
@@ -29,29 +23,6 @@ import { der, derInteger } from '../../../src/main/services/mobile/der.ts'
  * the spec proves the app's signing, not just its UI. Certificates come from a
  * throwaway CA whose root the spec trusts explicitly.
  */
-
-const sequence = (...parts: Buffer[]): Buffer => der(0x30, ...parts)
-const oid = (...bytes: number[]): Buffer => der(0x06, Buffer.from(bytes))
-const ecdsa = sequence(oid(0x2a, 0x86, 0x48, 0xce, 0x3d, 0x04, 0x03, 0x02))
-const cn = (value: string): Buffer =>
-  sequence(der(0x31, sequence(oid(0x55, 0x04, 0x03), der(0x0c, Buffer.from(value)))))
-const utcTime = (ms: number): Buffer =>
-  der(
-    0x17,
-    Buffer.from(
-      new Date(ms)
-        .toISOString()
-        .replace(/[-:T]/g, '')
-        .replace(/\.\d{3}Z$/, 'Z')
-        .slice(2),
-    ),
-  )
-const extension = (id: Buffer, value: Buffer, critical = false): Buffer =>
-  sequence(id, ...(critical ? [der(0x01, Buffer.from([0xff]))] : []), der(0x04, value))
-
-function pem(body: Buffer): string {
-  return `-----BEGIN CERTIFICATE-----\n${body.toString('base64').replace(/.{1,64}/g, '$&\n')}-----END CERTIFICATE-----\n`
-}
 
 function tlv(bytes: Buffer, offset: number): { value: Buffer; end: number; raw: Buffer } {
   let length = bytes[offset + 1] ?? 0
@@ -73,29 +44,6 @@ function csrPublicKey(csr: Buffer): KeyObject {
   return createPublicKey({ key: tlv(info, offset).raw, format: 'der', type: 'spki' })
 }
 
-function certificate(input: {
-  issuer: string
-  issuerKey: KeyObject
-  subject: Buffer
-  publicKey: KeyObject
-  notBefore: number
-  notAfter: number
-  extensions: Buffer[]
-}): string {
-  const tbs = sequence(
-    der(0xa0, derInteger(Buffer.from([2]))),
-    derInteger(Buffer.concat([Buffer.from([1]), randomBytes(8)])),
-    ecdsa,
-    cn(input.issuer),
-    sequence(utcTime(input.notBefore), utcTime(input.notAfter)),
-    input.subject,
-    input.publicKey.export({ type: 'spki', format: 'der' }),
-    der(0xa3, sequence(...input.extensions)),
-  )
-  const signature = sign('sha256', tbs, { key: input.issuerKey, dsaEncoding: 'der' })
-  return pem(sequence(tbs, ecdsa, der(0x03, Buffer.from([0]), signature)))
-}
-
 export interface FakeNamesApi {
   url: string
   /** PEM of the CA that signs issued certificates; trust it to verify the Mac. */
@@ -106,6 +54,8 @@ export interface FakeNamesApi {
   /** Requests refused for a bad signature, timestamp or nonce. */
   refused: string[]
   addresses: string[]
+  /** The registered device's public key: what the relay and grant redemption verify against. */
+  deviceKey: () => CryptoKey | null
   close: () => Promise<void>
 }
 
@@ -121,20 +71,8 @@ export async function startFakeNamesApi(options: {
   label?: string
 }): Promise<FakeNamesApi> {
   const label = options.label ?? 'abcdefgh2345'
-  const ca = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
-  const now = Date.now()
-  const caPem = certificate({
-    issuer: 'Copse e2e names CA',
-    issuerKey: ca.privateKey,
-    subject: cn('Copse e2e names CA'),
-    publicKey: ca.publicKey,
-    notBefore: now - 3_600_000,
-    notAfter: now + 30 * 86_400_000,
-    extensions: [
-      extension(oid(0x55, 0x1d, 0x13), sequence(der(0x01, Buffer.from([0xff]))), true),
-      extension(oid(0x55, 0x1d, 0x0f), der(0x03, Buffer.from([1, 0x06])), true),
-    ],
-  })
+  const ca = createTestCa('Copse e2e names CA')
+  const caPem = ca.pem
   const devices = new Map<string, { publicKey: CryptoKey; registered: boolean }>()
   const nonces = new Set<string>()
   const state: FakeNamesApi = {
@@ -144,6 +82,7 @@ export async function startFakeNamesApi(options: {
     verified: [],
     refused: [],
     addresses: [],
+    deviceKey: () => [...devices.values()].find((device) => device.registered)?.publicKey ?? null,
     close: () => Promise.resolve(),
   }
 
@@ -237,20 +176,11 @@ export async function startFakeNamesApi(options: {
         const issuedAt = Date.now()
         const notAfter = issuedAt + 6 * 86_400_000
         const name = `*.${label}.u.copse.me`
-        const leaf = certificate({
-          issuer: 'Copse e2e names CA',
-          issuerKey: ca.privateKey,
-          subject: sequence(),
+        const leaf = issueTestCertificate(ca, {
           publicKey: csrPublicKey(Buffer.from(csr)),
+          dnsNames: [name],
           notBefore: issuedAt - 60_000,
           notAfter,
-          extensions: [
-            extension(oid(0x55, 0x1d, 0x11), sequence(der(0x82, Buffer.from(name))), true),
-            extension(
-              oid(0x55, 0x1d, 0x25),
-              sequence(oid(0x2b, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x01)),
-            ),
-          ],
         })
         reply(200, {
           chain: `${leaf}${caPem}`,
