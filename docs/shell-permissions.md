@@ -41,7 +41,7 @@ the [auto-approval guide](user/auto-approval.md) explains the user-facing contro
 | Web/browser grants               | Named origins; temporary scoped or persistent remembered grants. Hard URL/network denials and preview CSP remain enforced.                                                                                                                                                                                                                                                                               |
 | MCP/custom grants                | Exact tools; MCP identity includes origin, source, server and name. Custom requiresApproval tools cannot remember consent. Neither grant establishes a project OS sandbox for the handler/server.                                                                                                                                                                                                        |
 | Automation grants                | Exact schedule-owned MCP tools, eligible project-repository GitHub actions, or reviewed preparation plans. No ambient shell, file, web-origin, ACP, sensitive-reveal or model-spend authority.                                                                                                                                                                                                           |
-| Guarded YOLO                     | Session-only, thread-scoped; routine shell scope prompts waived subject to the harm gate. Keeps containment where applicable, permits external routing and retains hard denials/one-time confirmations.                                                                                                                                                                                                  |
+| Guarded YOLO                     | Session-only, thread-scoped; routine shell scope prompts waived subject to the harm gate. Keeps containment where applicable, permits external routing (unless the opt-in contain-first setting is on) and retains hard denials/one-time confirmations.                                                                                                                                                  |
 | Environment setup                | Suggests values for the auto-approval level, trusted commands, web origins, trusted SSH hosts and trusted package registries from prompts a person approved in the active project. Applies only what the user ticks, through the same settings; adds no grant path. See [Environment setup](#environment-setup).                                                                                         |
 | Deferral mode                    | Session-only, thread-scoped; approval requests queue instead of blocking. Changes prompt handling, not authorization.                                                                                                                                                                                                                                                                                    |
 | Unattended container             | Explicitly armed run on an attested disposable guest. Contained shell effects allow, outward effects defer or deny, host escapes deny; budgets required. Experimental, off by default, mutually exclusive with Guarded YOLO.                                                                                                                                                                             |
@@ -1391,6 +1391,41 @@ While active:
   a prompt: a missing, slow or failing connection leaves the harm gate's allow standing. A command
   that stays inside the project sandbox is not asked. Every confirmation ends "Approve this command
   once?", because an ask-once prompt need not be destructive.
+- **Contain first (opt-in, off by default).** Settings → Permissions → Guarded YOLO → "Keep commands
+  in the project sandbox until you approve leaving" (`guardedYoloContainFirst`) trades prompts for
+  containment. With it on and the project sandbox running, a network or outside-workspace command
+  that is not on the trusted-command list starts inside the project sandbox whatever the harm gate
+  decided (`guardedYoloContainsShellCommand` in `command-routing-config.ts`). The gate, `run_shell`,
+  `run_background` and todo checks make that call on the same raw command, so the audit says
+  "project sandbox" for the same runs that get one, and the second opinion above is skipped for
+  them because there is no escape to screen. Leaving the sandbox then always reaches a person, and
+  only after a block the sandbox reported:
+  - `run_shell` offers its reactive retry on runner evidence (a recorded violation or wrapper
+    failure) or a known denial signature. Guarded YOLO's runner-evidence auto-approval is off, and
+    the retry prompt is interactive (`requireInteractiveApproval`): the auto-approval level, a
+    turn-tree replay lease and a standing read grant cannot answer it. A command contain-first
+    moved inside is offered that retry even when the static verdict alone would not offer it (a
+    network-only command would otherwise have run outside, so a contained network block is real).
+  - In `run_shell`, the agent's `expects_sandbox_block` hint is ignored: it neither moves a command
+    outside unasked nor asks up front. A denial this thread already approved (`denial-cache`) still
+    asks up front, interactively. `run_background`'s hint keeps its existing interactive up-front
+    prompt.
+  - `run_background` starts the command contained; `retry_of` after a reported block asks, as it
+    always does. A todo check has no retry, so a blocked check fails.
+  - A command whose harm-gate confirmation the user approves also starts contained, and asks again
+    if the sandbox blocks it.
+
+  With the setting on and **no** project sandbox (Windows, or a sandbox that failed to start), the
+  gate fails safe instead of acting as if the setting were off: a Guarded YOLO allow of a command
+  whose scope verdict is `external` or `ambiguous` becomes the harm gate's one-time confirmation,
+  as standard mode asks for such commands without a sandbox. A remote (SSH) workspace, where the
+  local sandbox never applies, is unchanged.
+
+  Trusted commands keep their unsandboxed routing, and ACP agents, which run commands in their own
+  process, are unchanged; the setting's description says both. The trade-off is stated there too: a
+  command the harm gate wrongly allowed cannot reach the rest of the machine or the network unasked,
+  but work that genuinely needs the network or other folders asks each time it runs.
+
 - A shell builtin that assigns variables for later commands (currently `printf -v`) requires the
   one-time harm confirmation; changing `PATH` can otherwise replace the command being authorized.
 

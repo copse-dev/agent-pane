@@ -17,6 +17,8 @@ import {
   sandboxViolationCountForCommand,
 } from '../project-sandbox/index.ts'
 import {
+  guardedYoloContainsFirst,
+  guardedYoloContainsShellCommand,
   shellReadGrantTargets,
   shellRunsOutsideSandbox,
 } from '../services/security/command-routing-config.ts'
@@ -177,6 +179,17 @@ interface UnsandboxedRetryResult {
 
 interface UnsandboxedRetryOptions {
   readonly guardedYolo: boolean
+  /**
+   * Guarded YOLO's contain-first setting is on for this thread: a retry outside
+   * the sandbox always asks, whatever the evidence.
+   */
+  readonly containFirst: boolean
+  /**
+   * Contain-first moved this command, which would otherwise have run outside,
+   * into the sandbox. Any block the sandbox reports is then a real one worth
+   * asking about, whatever the static verdict says about the command.
+   */
+  readonly containedByContainFirst: boolean
   readonly unattendedContainer: boolean
   readonly readGrantApplied: boolean
   readonly outsideRootPath: string | null
@@ -211,7 +224,10 @@ async function maybeRetryUnsandboxed(
 ): Promise<UnsandboxedRetryResult | 'declined' | null> {
   const { rawCommand, executedCommand } = commandText
   if (!isProjectSandboxEnabled()) return null
-  if (!shellSandboxFailureShouldOfferUnsandboxedRetry(rawCommand, cwd, options.ranOutsideSandbox)) {
+  if (
+    !options.containedByContainFirst &&
+    !shellSandboxFailureShouldOfferUnsandboxedRetry(rawCommand, cwd, options.ranOutsideSandbox)
+  ) {
     if (options.outsideRootPath !== null && !options.ranOutsideSandbox) {
       recordRetryWithheld(RETRY_WITHHELD_REASONS.notEligible)
     }
@@ -247,10 +263,16 @@ async function maybeRetryUnsandboxed(
   }
   const evidence = runnerDetection.likely ? 'runner' : 'signature'
   const approved =
-    sandboxRetryMaySkipApproval(evidence, options.guardedYolo, options.unattendedContainer) ||
+    sandboxRetryMaySkipApproval(
+      evidence,
+      options.guardedYolo && !options.containFirst,
+      options.unattendedContainer,
+    ) ||
     (await promptUnsandboxedShell(rawCommand, detection.reasons, signal, {
       readGrantApplied: options.readGrantApplied,
-      requireInteractiveApproval: evidence === 'signature',
+      // Contain-first promises a person answers every escape, so the
+      // auto-approval level, a replay lease and a standing read grant do not.
+      requireInteractiveApproval: evidence === 'signature' || options.containFirst,
     }))
   if (signatureMatch) {
     // The output signature is forgeable. It becomes useful cache evidence only
@@ -393,6 +415,8 @@ export const runShellTool = defineTool({
     const unattendedContainer = currentRunIsUnattendedContainer(threadId)
     const agentRoots = currentAgentRoots()
     let outsideSandbox = shellRunsOutsideSandbox(command, agentRoots)
+    // Guarded YOLO's opt-in contain-first setting (`guardedYoloContainsFirst`).
+    const containFirst = guardedYoloContainsFirst(threadId)
 
     // Advisory only, and derived from the RAW model-authored command — the same
     // input the routing decision above reads, never the command's own output
@@ -431,6 +455,16 @@ export const runShellTool = defineTool({
       })
     }
 
+    // Contain-first: an external command the user did not list as trusted
+    // starts inside the sandbox. The permission gate made the same call on the
+    // same RAW command, so its "runs inside" audit and this run agree. Only a
+    // block the sandbox reports below can take it outside, and that asks.
+    const containedByContainFirst =
+      outsideSandbox &&
+      !isRemote &&
+      guardedYoloContainsShellCommand(command, agentRoots, 'run_shell', threadId)
+    if (containedByContainFirst) outsideSandbox = false
+
     // A denial confirmed earlier THIS thread for the same operation (issue #1436
     // point 2) pulls the same escalation forward the agent's own
     // `expects_sandbox_block` hint would — so the second attempt at an
@@ -460,7 +494,11 @@ export const runShellTool = defineTool({
     } else if (
       readGrantTargets === null &&
       !outsideSandbox &&
-      (expects_sandbox_block === true || cachedAdvice !== null)
+      // Contain-first asks only after a block the sandbox reports, so the
+      // agent's own hint does not pull an escape (or a prompt) forward. A
+      // denial remembered earlier in the thread was already approved by a
+      // person, and still asks again before it is reused.
+      ((expects_sandbox_block === true && !containFirst) || cachedAdvice !== null)
     ) {
       const escalation = shellExpectedBlockEscalation(command, cwd, sandboxEnabled)
       if (escalation.eligible) {
@@ -476,6 +514,8 @@ export const runShellTool = defineTool({
           (await promptExpectedSandboxBlock(command, reasons, signal, {
             source: cachedAdvice === null ? 'agent' : 'prior-denial',
             executionRoot: cwd,
+            // No replay lease answers it either under contain-first.
+            ...(containFirst ? { requireInteractiveApproval: true } : {}),
           }))
         ) {
           outsideSandbox = true
@@ -581,6 +621,8 @@ export const runShellTool = defineTool({
           childEnv,
           {
             guardedYolo,
+            containFirst,
+            containedByContainFirst,
             unattendedContainer,
             readGrantApplied: readGrantTargets !== null,
             outsideRootPath: cdTarget,

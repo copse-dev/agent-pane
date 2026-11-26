@@ -23,6 +23,7 @@ import {
   type ThreadExecutionOwner,
 } from '../thread-execution-context.ts'
 import {
+  guardedYoloContainsShellCommand,
   shellReadGrantTargets,
   shellRunsOutsideSandbox,
 } from '../security/command-routing-config.ts'
@@ -356,6 +357,16 @@ export async function startBackgroundProcess(
       ? shellReadGrantTargets(command, roots, cwd, 'run_background')
       : null
   if (readGrantTargets) unsandboxed = false
+  // Guarded YOLO's contain-first setting starts an untrusted external command
+  // inside the sandbox, as run_shell does. Leaving it takes `retry_of` after a
+  // reported block, which always asks.
+  if (
+    unsandboxed &&
+    opts.unsandboxed !== true &&
+    !spawnRunsOnSshTarget(cwd) &&
+    guardedYoloContainsShellCommand(command, roots, 'run_background', owner.threadId)
+  )
+    unsandboxed = false
   const prepared = prepareShellCommand(command, cwd, packageFirewallLauncher)
   if ('refused' in prepared) throw new Error(prepared.refused)
 

@@ -11,7 +11,10 @@ import { spawnBackgroundProcess } from '../../project-sandbox/spawn.ts'
 import { setApprovalHandler, type ApprovalRequest } from '../approval.ts'
 import { runWithActiveRunIdentity } from '../active-run-identity.ts'
 import { ensureToolPermitted } from '../security/permission-gate.ts'
-import { TRUSTED_COMMANDS_SETTING } from '../security/command-routing-config.ts'
+import {
+  GUARDED_YOLO_CONTAIN_FIRST_SETTING,
+  TRUSTED_COMMANDS_SETTING,
+} from '../security/command-routing-config.ts'
 import { runWithDecisionRecorder, type RecordedDecision } from '../security/decision-log-store.ts'
 import {
   activateGuardedYoloForRun,
@@ -288,6 +291,31 @@ describe('background commands honour shell approval routing', () => {
       'external',
       'an unsandboxed start is not audited as contained',
     )
+  })
+
+  it('starts a Guarded YOLO outside write contained, and audits it so, with contain-first on', async () => {
+    const target = join(fixture, 'contain-first-output.txt')
+    await setSetting(GUARDED_YOLO_CONTAIN_FIRST_SETTING, true)
+    armGuardedYolo(OWNER.threadId)
+    assert.equal(activateGuardedYoloForRun(OWNER.threadId), true)
+    const recorded: RecordedDecision[] = []
+    try {
+      const info = await runWithDecisionRecorder(
+        (decision) => recorded.push(decision),
+        () => start(`printf outside > '${target}'`),
+      )
+      assert.ok(info)
+      assert.equal(info.unsandboxed, false)
+      assert.equal(prompts.length, 0)
+      assert.equal(overlays.length, 1)
+    } finally {
+      disableGuardedYolo(OWNER.threadId)
+      await setSetting(GUARDED_YOLO_CONTAIN_FIRST_SETTING, false)
+    }
+    await assert.rejects(readFile(target, 'utf8'))
+    const audits = recorded.filter((decision) => decision.line.cause === 'shell-guarded-yolo-harm')
+    assert.equal(audits.length, 1)
+    assert.equal(audits[0]?.line.scope, 'sandbox')
   })
 
   it('keeps the contained boundary shown by Always ask even for a trusted binary', async () => {

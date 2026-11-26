@@ -95,6 +95,8 @@ import {
 import { detectPackageInstall } from './safe-install.ts'
 import {
   addTrustedShellCommand,
+  guardedYoloContainFirstRequested,
+  guardedYoloContainsShellCommand,
   offerableTrustedCommand,
   routeShellCommand,
   type ShellRoutingTool,
@@ -1484,6 +1486,10 @@ function refuseCheckoutDetachingCommand(
   throw new Error(`Command blocked: ${reason}. ${found.advice}`)
 }
 
+/** Why contain-first asks when there is no project sandbox to keep a command in. */
+export const CONTAIN_FIRST_NO_SANDBOX_REASON =
+  'Keep commands in the project sandbox is on, but the project sandbox is not running, so this command could reach outside the project'
+
 /** Gate a raw shell command string through the same approval flow as run_shell. */
 export async function ensureShellCommandPermitted(
   command: string,
@@ -1656,8 +1662,18 @@ export async function ensureShellCommandPermitted(
     ...(opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {}),
   })
 
+  // Guarded YOLO's opt-in contain-first setting: Copse's own runners start an
+  // external, untrusted command inside the project sandbox and ask before any
+  // retry outside it (`guardedYoloContainsFirst`). An ACP agent's command runs
+  // in the agent's own process (`opts.sandboxEnabled` is the agent's), so the
+  // runner this decision would describe is not Copse's and nothing changes there.
+  const containFirst =
+    guardedYolo &&
+    sandboxEnabled &&
+    opts.sandboxEnabled === undefined &&
+    guardedYoloContainsShellCommand(command, currentAgentRoots(), routingTool, runThread)
   const outsideSandbox =
-    shellRequiresOutsideSandbox(command, workspaceRoot, sandboxEnabled) ||
+    (!containFirst && shellRequiresOutsideSandbox(command, workspaceRoot, sandboxEnabled)) ||
     (guardedYolo &&
       sandboxEnabled &&
       routeShellCommand(command, currentAgentRoots(), routingTool).outcome === 'allow')
@@ -1680,10 +1696,34 @@ export async function ensureShellCommandPermitted(
     })
   }
 
+  // Contain-first with no project sandbox to contain in (Windows, or a sandbox
+  // that failed to start): fail safe rather than silently behave as if the
+  // setting were off. A command that could reach outside the project gets the
+  // harm gate's one-time confirmation, as every such command does in standard
+  // mode without a sandbox. Trusted commands, a remote (SSH) workspace, where
+  // the local sandbox never applies, and an ACP agent's own commands are left
+  // as they are, matching where contain-first applies with a sandbox.
+  if (
+    guardedYolo &&
+    effectiveAction === 'allow' &&
+    !sandboxEnabled &&
+    opts.sandboxEnabled === undefined &&
+    !spawnRunsOnSshTarget(workspaceRoot) &&
+    guardedYoloContainFirstRequested(runThread) &&
+    routeShellCommand(command, currentAgentRoots(), routingTool).outcome !== 'allow' &&
+    analyzeShellCommand(command, workspaceRoot).verdict !== 'sandbox'
+  ) {
+    const reasons = [CONTAIN_FIRST_NO_SANDBOX_REASON]
+    const approved = await promptGuardedYoloHarm(command, reasons, false, opts.signal)
+    auditGuardedYolo(approved ? 'approved' : 'declined', reasons)
+    return approved
+  }
+
   // Guarded YOLO's second opinion (tier-screening.ts). A classifier connection
   // chosen for safety screening may turn an unsandboxed allow into the harm
   // gate's one-time confirmation; it can never allow what the gate did not.
-  // A contained command needs no second opinion: the sandbox bounds it.
+  // A contained command needs no second opinion: the sandbox bounds it. That
+  // includes a command contain-first keeps inside: leaving later always asks.
   if (guardedYolo && effectiveAction === 'allow' && (!sandboxEnabled || outsideSandbox)) {
     const tierReason = await guardedYoloTierReason(
       command,

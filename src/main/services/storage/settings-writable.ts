@@ -388,6 +388,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // (see default-branch-fetch.ts). Default on. Off skips background fetches,
   // including the contained fallback, on every platform.
   backgroundDefaultBranchFetch: z.boolean(),
+  // Guarded YOLO only, opt-in and off by default: an external command the harm
+  // gate allows runs inside the project sandbox first, and leaving the sandbox
+  // always asks (`guardedYoloContainsFirst` in command-routing-config.ts).
+  guardedYoloContainFirst: z.boolean(),
   // Experimental features, opt-in and off by default. See the experimental
   // section in Settings.
   //

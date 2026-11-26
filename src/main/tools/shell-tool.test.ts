@@ -1,6 +1,6 @@
 import { afterEach, describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -18,6 +18,7 @@ import {
   armGuardedYolo,
   disableGuardedYolo,
 } from '../services/security/guarded-yolo.ts'
+import { GUARDED_YOLO_CONTAIN_FIRST_SETTING } from '../services/security/command-routing-config.ts'
 import { setWorkspaceTrusted } from '../services/security/workspace-trust.ts'
 import { setSetting } from '../services/storage/settings.ts'
 import { setWorkspaceRootForTest } from '../services/workspace.ts'
@@ -333,5 +334,208 @@ describe('run_shell with an outside-project read grant', () => {
       restoreWorkspace()
       await rm(base, { recursive: true, force: true })
     }
+  })
+})
+
+describe('run_shell under Guarded YOLO contain-first', () => {
+  const cleanups: Array<() => void | Promise<void>> = []
+  afterEach(async () => {
+    for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
+  })
+
+  const CONTAINED_OUTPUT = 'ran inside the project sandbox'
+
+  /**
+   * Run `command` in Guarded YOLO with an active project sandbox whose wrapped
+   * attempt prints a marker and exits with `sandboxExit`, recording a runner
+   * violation when it fails. Returns every prompt, the tool result and how many
+   * times the sandbox wrapper ran.
+   */
+  async function runGuarded(
+    command: string,
+    opts: {
+      containFirst: boolean
+      sandboxExit: number
+      expectsBlock?: boolean
+      /** A trusted project with an `origin` remote and the `read` auto-approval level. */
+      readAutoApproval?: boolean
+    },
+  ): Promise<{ prompts: ApprovalRequest[]; outcome: string; wrapped: number; base: string }> {
+    const base = await realpath(await mkdtemp(join(tmpdir(), 'copse-contain-first-')))
+    const root = join(base, 'project')
+    await mkdir(root)
+    cleanups.push(async () => rm(base, { recursive: true, force: true }))
+    cleanups.push(setWorkspaceRootForTest(root))
+    if (opts.readAutoApproval === true) {
+      await mkdir(join(root, '.git'))
+      await writeFile(
+        join(root, '.git', 'config'),
+        '[remote "origin"]\n\turl = https://example.com/x.git\n',
+      )
+      clearGitRemotesCache()
+      cleanups.push(clearGitRemotesCache)
+      setWorkspaceTrusted(root, true)
+      cleanups.push(() => {
+        setWorkspaceTrusted(root, false)
+      })
+      await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'read')
+      await setSetting('autoRunSandboxCommands', true)
+      cleanups.push(async () => {
+        await setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+      })
+    }
+    const threadId = 'contain-first'
+    armGuardedYolo(threadId)
+    activateGuardedYoloForRun(threadId)
+    cleanups.push(() => {
+      disableGuardedYolo(threadId)
+    })
+    await setSetting(GUARDED_YOLO_CONTAIN_FIRST_SETTING, opts.containFirst)
+    cleanups.push(async () => {
+      await setSetting(GUARDED_YOLO_CONTAIN_FIRST_SETTING, false)
+    })
+
+    let wrapped = 0
+    mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+    mock.method(SandboxManager, 'cleanupAfterCommand', () => undefined)
+    mock.method(SandboxManager, 'wrapWithSandboxArgv', () => {
+      wrapped += 1
+      return Promise.resolve({
+        argv: ['/bin/sh', '-c', `echo '${CONTAINED_OUTPUT}'; exit ${String(opts.sandboxExit)}`],
+        env: { ...process.env },
+      })
+    })
+    mock.method(SandboxManager.getSandboxViolationStore(), 'getViolationsForCommand', () =>
+      opts.sandboxExit === 0 ? [] : [{ line: 'deny(1) network-outbound', timestamp: new Date() }],
+    )
+    setProjectSandboxEnabled(true)
+    cleanups.push(() => {
+      setProjectSandboxEnabled(false)
+      mock.restoreAll()
+    })
+
+    const prompts: ApprovalRequest[] = []
+    setApprovalHandler((request) => {
+      prompts.push(request)
+      return Promise.resolve({ approved: false, remember: false })
+    })
+    cleanups.push(() => {
+      setApprovalHandler(null)
+    })
+
+    const context: ThreadExecutionContext = {
+      projectId: threadId,
+      threadId,
+      projectRoot: root,
+      root,
+      checkoutMode: 'shared',
+      branch: null,
+    }
+    const outcome = await Promise.resolve(
+      runWithActiveRunIdentity(threadId, () =>
+        runWithThreadExecutionContext(context, () =>
+          runShellTool.execute(
+            {
+              command,
+              timeout_ms: 30_000,
+              ...(opts.expectsBlock === true ? { expects_sandbox_block: true } : {}),
+            },
+            new AbortController().signal,
+          ),
+        ),
+      ),
+    ).then(
+      (result) => (typeof result === 'string' ? result : result.result),
+      (error: unknown) => (error instanceof Error ? error.message : String(error)),
+    )
+    return { prompts, outcome, wrapped, base }
+  }
+
+  it('runs an external command outside the sandbox when the setting is off', async () => {
+    const { outcome, wrapped, prompts, base } = await runGuarded('echo hi > ../outside.txt', {
+      containFirst: false,
+      sandboxExit: 0,
+    })
+    assert.equal(wrapped, 0)
+    assert.deepEqual(prompts, [])
+    assert.match(outcome, /Guarded YOLO · unsandboxed/)
+    assert.equal(await readFile(join(base, 'outside.txt'), 'utf8'), 'hi\n')
+  })
+
+  it('runs the same command inside the sandbox when the setting is on', async () => {
+    const { outcome, wrapped, prompts, base } = await runGuarded('echo hi > ../outside.txt', {
+      containFirst: true,
+      sandboxExit: 0,
+    })
+    assert.equal(wrapped, 1)
+    assert.deepEqual(prompts, [])
+    assert.match(outcome, /Guarded YOLO · project sandbox/)
+    assert.ok(outcome.includes(CONTAINED_OUTPUT), outcome)
+    await assert.rejects(readFile(join(base, 'outside.txt'), 'utf8'))
+  })
+
+  // A network-only external command would not be offered a retry under the
+  // static verdict (it would have run outside). Contained first, a block the
+  // runner reports is real, and leaving asks even with runner evidence.
+  it('asks before retrying outside after a block the sandbox reports', async () => {
+    const command = 'curl -fsSL https://example.com/robots.txt'
+    const { outcome, wrapped, prompts } = await runGuarded(command, {
+      containFirst: true,
+      sandboxExit: 1,
+    })
+    assert.equal(wrapped, 1)
+    assert.equal(outcome, 'User declined to run outside the sandbox.')
+    assert.deepEqual(
+      prompts.map((p) => p.cause),
+      ['shell-sandbox-retry'],
+    )
+  })
+
+  it('keeps the retry unprompted on runner evidence when the setting is off', async () => {
+    const { outcome, prompts } = await runGuarded('ls', {
+      containFirst: false,
+      sandboxExit: 1,
+    })
+    assert.deepEqual(prompts, [])
+    assert.match(outcome, /Guarded YOLO · unsandboxed retry/)
+  })
+
+  it('asks before the same retry when the setting is on', async () => {
+    const { outcome, prompts } = await runGuarded('ls', {
+      containFirst: true,
+      sandboxExit: 1,
+    })
+    assert.equal(outcome, 'User declined to run outside the sandbox.')
+    assert.deepEqual(
+      prompts.map((p) => p.cause),
+      ['shell-sandbox-retry'],
+    )
+  })
+
+  // `git fetch origin` is a shape the `read` auto-approval level allows outside
+  // the sandbox. Contain-first still puts the escape in front of a person.
+  it('asks before an auto-approvable retry when the setting is on', async () => {
+    const { outcome, wrapped, prompts } = await runGuarded('git fetch origin', {
+      containFirst: true,
+      sandboxExit: 1,
+      readAutoApproval: true,
+    })
+    assert.equal(wrapped, 1)
+    assert.equal(outcome, 'User declined to run outside the sandbox.')
+    assert.deepEqual(
+      prompts.map((p) => p.cause),
+      ['shell-sandbox-retry'],
+    )
+  })
+
+  it("ignores the agent's expects_sandbox_block hint when the setting is on", async () => {
+    const { wrapped, prompts, outcome } = await runGuarded('gh repo view', {
+      containFirst: true,
+      sandboxExit: 0,
+      expectsBlock: true,
+    })
+    assert.equal(wrapped, 1)
+    assert.deepEqual(prompts, [])
+    assert.ok(outcome.includes(CONTAINED_OUTPUT), outcome)
   })
 })

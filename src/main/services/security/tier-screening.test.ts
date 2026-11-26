@@ -27,7 +27,10 @@ import { guardedYoloTierReason, shadowTierScreening } from './tier-screening.ts'
 import { getThreadClassifierUse } from './classifier-use-report.ts'
 import { CLASSIFIER_CALL_KIND } from '@shared/usage/classifier-use.ts'
 import { setProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
-import { TRUSTED_COMMANDS_SETTING } from './command-routing-config.ts'
+import {
+  GUARDED_YOLO_CONTAIN_FIRST_SETTING,
+  TRUSTED_COMMANDS_SETTING,
+} from './command-routing-config.ts'
 import { copseToolPermissionId } from './tool-permissions.ts'
 import { setWorkspaceTrusted } from './workspace-trust.ts'
 import { armGuardedYolo, disableGuardedYolo } from './guarded-yolo.ts'
@@ -495,6 +498,72 @@ describe('tier screening through the safety-screening classifier', () => {
       await setSetting(TRUSTED_COMMANDS_SETTING, [])
       setWorkspaceTrusted(home, false)
       setProjectSandboxEnabled(false)
+    }
+  })
+
+  // Contain-first keeps the external command inside the project sandbox, so
+  // there is no escape for a second opinion to screen. Leaving it later asks.
+  it('skips the second opinion when contain-first keeps the command contained', async () => {
+    await chooseKev()
+    const seen = answering(distribution(0.9))
+    mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+    setProjectSandboxEnabled(true)
+    await setSetting(GUARDED_YOLO_CONTAIN_FIRST_SETTING, true)
+    try {
+      const allowed = await underGuardedYolo(() =>
+        ensureToolPermitted({ toolName: 'run_shell', args: { command: EXTERNAL_READ } }),
+      )
+      assert.equal(allowed, true)
+      assert.equal(seen.calls, 0)
+      assert.equal(prompts, 0)
+    } finally {
+      await setSetting(GUARDED_YOLO_CONTAIN_FIRST_SETTING, false)
+      setProjectSandboxEnabled(false)
+    }
+  })
+
+  it('still screens a trusted escape with contain-first on', async () => {
+    await chooseKev()
+    const seen = answering(distribution(0.9))
+    mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+    setProjectSandboxEnabled(true)
+    setWorkspaceTrusted(home, true)
+    await setSetting(TRUSTED_COMMANDS_SETTING, ['printf'])
+    await setSetting(GUARDED_YOLO_CONTAIN_FIRST_SETTING, true)
+    try {
+      const allowed = await underGuardedYolo(() =>
+        ensureToolPermitted({ toolName: 'run_shell', args: { command: 'printf trusted' } }),
+      )
+      assert.equal(allowed, true, 'the user approved the prompt')
+      assert.equal(seen.calls, 1)
+      assert.equal(prompts, 1)
+    } finally {
+      await setSetting(GUARDED_YOLO_CONTAIN_FIRST_SETTING, false)
+      await setSetting(TRUSTED_COMMANDS_SETTING, [])
+      setWorkspaceTrusted(home, false)
+      setProjectSandboxEnabled(false)
+    }
+  })
+
+  // With no project sandbox there is nothing to contain in. Contain-first then
+  // fails safe: a command that could reach outside the project asks once.
+  it('asks before an outside command when contain-first is on without a sandbox', async () => {
+    const seen = answering(distribution(0.1))
+    await setSetting(GUARDED_YOLO_CONTAIN_FIRST_SETTING, true)
+    try {
+      const allowed = await underGuardedYolo(() =>
+        ensureToolPermitted({ toolName: 'run_shell', args: { command: EXTERNAL_READ } }),
+      )
+      assert.equal(allowed, true, 'the user approved the prompt')
+      assert.equal(prompts, 1)
+      assert.equal(seen.calls, 0)
+      const local = await underGuardedYolo(() =>
+        ensureToolPermitted({ toolName: 'run_shell', args: { command: 'ls' } }),
+      )
+      assert.equal(local, true)
+      assert.equal(prompts, 1, 'a command that stays in the project does not ask')
+    } finally {
+      await setSetting(GUARDED_YOLO_CONTAIN_FIRST_SETTING, false)
     }
   })
 
