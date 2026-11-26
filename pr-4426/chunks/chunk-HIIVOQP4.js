@@ -1,7 +1,7 @@
 import {
   el,
   init_helpers
-} from "./chunk-EMIRHVRH.js";
+} from "./chunk-OB2CWITE.js";
 import {
   __esm
 } from "./chunk-WW3EXSJD.js";
@@ -8707,6 +8707,43 @@ var init_unknown_value3 = __esm({
   }
 });
 
+// src/shared/ssh-destination.ts
+function hasAsciiControlCharacter(value) {
+  return ASCII_CONTROL_RE.test(value);
+}
+function readsAsSshOption(value) {
+  return value.startsWith("-");
+}
+function sshDestinationProblem(host, user) {
+  const target = host.trim();
+  const hostname = target.slice(target.lastIndexOf("@") + 1);
+  if (!hostname) return { field: "host", message: "Host is required." };
+  if (/\s/.test(target) || hasAsciiControlCharacter(target)) {
+    return { field: "host", message: "Host cannot contain spaces or control characters." };
+  }
+  if (readsAsSshOption(target) || readsAsSshOption(hostname)) {
+    return { field: "host", message: "Host cannot start with \u201C-\u201D; ssh would read it as an option." };
+  }
+  if (user) {
+    if (readsAsSshOption(user)) {
+      return {
+        field: "user",
+        message: "User cannot start with \u201C-\u201D; ssh would read it as an option."
+      };
+    }
+    if (hasAsciiControlCharacter(user)) {
+      return { field: "user", message: "User cannot contain control characters." };
+    }
+  }
+  return null;
+}
+var ASCII_CONTROL_RE;
+var init_ssh_destination = __esm({
+  "src/shared/ssh-destination.ts"() {
+    ASCII_CONTROL_RE = /[\u0000-\u001f\u007f]/;
+  }
+});
+
 // src/renderer/views/setup/ssh-host-helpers.ts
 function parseSshWorkspaceHosts(value) {
   return recordArrayOrEmpty(value).flatMap((entry) => {
@@ -8775,6 +8812,14 @@ function importSshConfigHosts(existing, aliases) {
   }
   return { hosts, importedHostIds, firstAliasHostId };
 }
+function unsavedSshConfigHosts(saved, aliases) {
+  const targets = new Set(saved.map((host) => host.host.toLowerCase()));
+  return aliases.filter((alias) => !targets.has(alias.host.toLowerCase()));
+}
+function saveSshConfigHost(saved, alias) {
+  const imported = importSshConfigHosts(saved, [alias]);
+  return { hosts: imported.hosts, hostId: imported.firstAliasHostId ?? alias.id };
+}
 function removeHost(list, id) {
   return list.filter((h) => h.id !== id);
 }
@@ -8789,6 +8834,8 @@ function parseSshHostDraft(draft) {
     if (!draft.host.trim()) fields.push("host");
     return { ok: false, error: "Label and host are required.", fields };
   }
+  const destination = sshDestinationProblem(draft.host, draft.user.trim());
+  if (destination) return { ok: false, error: destination.message, fields: [destination.field] };
   const host = {
     id,
     label: draft.label.trim(),
@@ -8811,7 +8858,129 @@ var SSH_HOST_ID_RE;
 var init_ssh_host_helpers = __esm({
   "src/renderer/views/setup/ssh-host-helpers.ts"() {
     init_unknown_value3();
+    init_ssh_destination();
     SSH_HOST_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+  }
+});
+
+// src/renderer/views/setup/ssh-host-fields.ts
+function createSshHostFields(options = {}) {
+  const label = el("input", {
+    type: "text",
+    name: "sshHostLabel",
+    "aria-label": "SSH host label",
+    placeholder: "Production"
+  });
+  const host = el("input", {
+    type: "text",
+    name: "sshHostHost",
+    "aria-label": "SSH hostname",
+    placeholder: "example.com or ~/.ssh/config alias"
+  });
+  const user = el("input", {
+    type: "text",
+    name: "sshHostUser",
+    "aria-label": "SSH user",
+    placeholder: "ubuntu"
+  });
+  const port = el("input", {
+    type: "text",
+    name: "sshHostPort",
+    "aria-label": "SSH port",
+    placeholder: "22",
+    inputmode: "numeric"
+  });
+  const identityFile = el("input", {
+    type: "text",
+    name: "sshHostIdentity",
+    "aria-label": "SSH identity file",
+    placeholder: "~/.ssh/id_ed25519"
+  });
+  const forwardAgent = el("input", { type: "checkbox", name: "sshHostForwardAgent" });
+  const inputs = {
+    label,
+    host,
+    user,
+    port,
+    identityFile
+  };
+  for (const input of Object.values(inputs)) {
+    input.addEventListener("input", () => {
+      input.removeAttribute("aria-invalid");
+    });
+  }
+  const labelAttrs = options.labelClass ? { class: options.labelClass } : {};
+  const fields = [
+    el("label", labelAttrs, "Label ", label),
+    el("label", labelAttrs, "Host ", host),
+    el("label", labelAttrs, "User ", user),
+    el("label", labelAttrs, "Port ", port),
+    el("label", labelAttrs, "Identity file ", identityFile),
+    el("label", { class: "checkbox-label" }, forwardAgent, " Forward SSH agent")
+  ];
+  let editing = null;
+  function markInvalid(names) {
+    for (const [field, input] of Object.entries(inputs)) {
+      if (names.some((name) => name === field)) input.setAttribute("aria-invalid", "true");
+      else input.removeAttribute("aria-invalid");
+    }
+  }
+  function fill(draft) {
+    label.value = draft.label;
+    host.value = draft.host;
+    user.value = draft.user;
+    port.value = draft.port;
+    identityFile.value = draft.identityFile;
+    forwardAgent.checked = draft.forwardAgent;
+  }
+  return {
+    fields,
+    reset() {
+      editing = null;
+      markInvalid([]);
+      fill(emptySshHostDraft());
+    },
+    edit(saved) {
+      editing = saved.id;
+      markInvalid([]);
+      fill({
+        id: saved.id,
+        label: saved.label,
+        host: saved.host,
+        user: saved.user ?? "",
+        port: saved.port === void 0 ? "" : String(saved.port),
+        identityFile: saved.identityFile ?? "",
+        forwardAgent: saved.forwardAgent === true
+      });
+    },
+    editingId: () => editing,
+    parse(existing) {
+      const used = new Set(
+        existing.filter((entry) => entry.id !== editing).map((entry) => entry.id)
+      );
+      const id = editing ?? nextAvailableHostId(slugifyHostId(label.value || host.value), used);
+      const parsed = parseSshHostDraft({
+        id,
+        label: label.value,
+        host: host.value,
+        user: user.value,
+        port: port.value,
+        identityFile: identityFile.value,
+        forwardAgent: forwardAgent.checked
+      });
+      markInvalid(parsed.ok ? [] : parsed.fields);
+      return parsed;
+    },
+    markInvalid,
+    focus() {
+      label.focus();
+    }
+  };
+}
+var init_ssh_host_fields = __esm({
+  "src/renderer/views/setup/ssh-host-fields.ts"() {
+    init_helpers();
+    init_ssh_host_helpers();
   }
 });
 
@@ -9021,13 +9190,14 @@ export {
   init_unknown_value2,
   init_unknown_value3,
   parseSshWorkspaceHosts,
-  emptySshHostDraft,
-  slugifyHostId,
   upsertHost,
   importSshConfigHosts,
+  unsavedSshConfigHosts,
+  saveSshConfigHost,
   removeHost,
-  parseSshHostDraft,
   init_ssh_host_helpers,
+  createSshHostFields,
+  init_ssh_host_fields,
   showToast,
   showErrorToast,
   init_toast

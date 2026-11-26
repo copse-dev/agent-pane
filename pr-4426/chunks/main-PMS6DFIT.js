@@ -88,9 +88,11 @@ import {
   bumpUiScale,
   canOpenWorkspaceFileInBrowser,
   canonicalAcpAgentId,
+  clamp,
   classifyAutomationFailureMessage,
   clearThreadProposalDecisionFor,
   closeSettingsDialog,
+  collapseWhitespace,
   collectThreadLinks,
   collectThreadPrRefs,
   commitProductionSchema,
@@ -105,7 +107,6 @@ import {
   createCustomProvidersSection,
   createLmStudioSection,
   createNewProject,
-  createOverlayDialog,
   createPasteKeyForm,
   createStore,
   createThread,
@@ -122,6 +123,7 @@ import {
   displayModelLabel,
   drainMessageQueue,
   dropBackgroundThread,
+  ellipsize,
   endThreadSubmission,
   enqueueHookMessage,
   enqueueUserMessage,
@@ -196,6 +198,7 @@ import {
   init_automations_plugin,
   init_background_threads,
   init_chatgpt_plan_section,
+  init_clamp,
   init_composite_intellect,
   init_confirm_dialog,
   init_context_menu,
@@ -203,7 +206,6 @@ import {
   init_copse_tool_call,
   init_custom_providers_section,
   init_developer_mode,
-  init_dialog_shell,
   init_dynamic_model,
   init_environment_setup,
   init_errors,
@@ -234,6 +236,7 @@ import {
   init_model_picker,
   init_model_usage,
   init_nullish as init_nullish2,
+  init_one_line_text,
   init_pane_tabs,
   init_panels,
   init_paste_key_form,
@@ -282,7 +285,6 @@ import {
   invalidateProjectThreadLoads,
   isAcpDelegateToolCall,
   isAcpModel,
-  isAnyDialogOpen,
   isApprovalStalled,
   isAutomationFailureCode,
   isAutomationPendingStart,
@@ -488,8 +490,12 @@ import {
   upsertAgent,
   watchSystemTheme,
   withoutSideChats
-} from "./chunk-Q3CMJDLN.js";
+} from "./chunk-HZ7TARD7.js";
 import "./chunk-X6JZSFJR.js";
+import {
+  createSshWorkspaceConsent,
+  init_ssh_workspace_consent
+} from "./chunk-FWVGBPA5.js";
 import {
   StreamingMarkdownRenderer,
   appLinkDecorator,
@@ -505,6 +511,7 @@ import {
   clockIcon,
   closeIcon,
   cornerDownLeftIcon,
+  createSshHostFields,
   downloadIcon,
   escapeHtml,
   expectString,
@@ -516,7 +523,6 @@ import {
   gitMergeIcon,
   gitPullRequestIcon,
   imageIcon,
-  importSshConfigHosts,
   init_dist,
   init_icons,
   init_inline_links,
@@ -525,6 +531,7 @@ import {
   init_ipc_error_message,
   init_nullish,
   init_outline_icon,
+  init_ssh_host_fields,
   init_ssh_host_helpers,
   init_toast,
   init_unknown_value,
@@ -546,7 +553,6 @@ import {
   moreVerticalIcon,
   nonEmptyStringOr,
   outlineIcon,
-  parseSshHostDraft,
   parseSshWorkspaceHosts,
   penLineIcon,
   playIcon,
@@ -555,6 +561,7 @@ import {
   refreshIcon,
   renderMarkdown,
   runningStatusIcon,
+  saveSshConfigHost,
   searchIcon,
   setDefaultConfig,
   setInlineMarkdown,
@@ -562,25 +569,29 @@ import {
   shieldIcon,
   showErrorToast,
   showToast,
-  slugifyHostId,
   sparkleIcon,
   spinnerIcon,
   undoIcon,
+  unsavedSshConfigHosts,
   unwrapIpcErrorText,
   uploadIcon,
   upsertHost,
   warningIcon,
   workspaceLinkTargetFromHref,
   zapIcon
-} from "./chunk-CK4AOU5N.js";
+} from "./chunk-HIIVOQP4.js";
 import {
   clear,
+  createOverlayDialog,
   el,
+  init_dialog_shell,
   init_helpers,
+  isAnyDialogOpen,
+  lazyBodyDialog,
   on,
   qs,
   qsRequired
-} from "./chunk-EMIRHVRH.js";
+} from "./chunk-OB2CWITE.js";
 import {
   __esm
 } from "./chunk-WW3EXSJD.js";
@@ -886,24 +897,47 @@ function attachRemotePublisher(store2, api2) {
   let running = false;
   let disposed = false;
   let receivedState = false;
+  let receivedWatched = false;
+  let watched = /* @__PURE__ */ new Map();
   const views = /* @__PURE__ */ new Map();
+  const published = /* @__PURE__ */ new Map();
+  const streamedInto = /* @__PURE__ */ new Set();
   function capture() {
     const { activeProjectId, threads, backgroundThreads } = store2.getState();
     if (activeProjectId) views.set(activeProjectId, { projectId: activeProjectId, threads });
     for (const { projectId, thread } of backgroundThreads) {
       const existing = views.get(projectId)?.threads ?? [];
+      if (existing.includes(thread)) continue;
       views.set(projectId, {
         projectId,
         threads: [...existing.filter((item) => item.id !== thread.id), thread]
       });
     }
   }
+  function forClients(projectId, thread) {
+    if (thread.messages.length === 0 || watched.get(projectId)?.has(thread.id)) return thread;
+    return { ...thread, messages: [], messagesLoaded: false };
+  }
   function publish() {
     timer = null;
     if (!running || disposed) return;
-    for (const value of views.values()) {
-      const view = remoteViewSchema.safeParse(value);
-      if (view.success) void api2.remote.publish(view.data).catch(() => {
+    const streamed = new Set(streamedInto);
+    streamedInto.clear();
+    for (const { projectId, threads } of views.values()) {
+      const watchedIds = [...watched.get(projectId) ?? []];
+      const watching = watchedIds.sort().join("\0");
+      const last = published.get(projectId);
+      const unchanged = last?.threads === threads && last.watching === watching;
+      if (unchanged && !watchedIds.some((id) => streamed.has(id))) continue;
+      const view = remoteViewSchema.safeParse({
+        projectId,
+        threads: threads.map((thread) => forClients(projectId, thread))
+      });
+      if (!view.success) continue;
+      const from2 = { threads, watching };
+      published.set(projectId, from2);
+      void api2.remote.publish(view.data).catch(() => {
+        if (published.get(projectId) === from2) published.delete(projectId);
       });
     }
   }
@@ -912,12 +946,33 @@ function attachRemotePublisher(store2, api2) {
     capture();
     timer ??= setTimeout(publish, 150);
   }
+  function messageChanged(messageId) {
+    if (!running || disposed) return;
+    const threadId = locateMessage(store2, messageId)?.thread.id;
+    if (threadId !== void 0 && [...watched.values()].some((ids) => ids.has(threadId))) {
+      streamedInto.add(threadId);
+    }
+    schedule();
+  }
+  function setWatched(list) {
+    const next = /* @__PURE__ */ new Map();
+    for (const { projectId, threadId } of list) {
+      const ids = next.get(projectId) ?? /* @__PURE__ */ new Set();
+      ids.add(threadId);
+      next.set(projectId, ids);
+    }
+    watched = next;
+    schedule();
+  }
   function setAvailability(state) {
     running = state.enabled && state.running;
     if (running) schedule();
-    else if (timer !== null) {
-      clearTimeout(timer);
-      timer = null;
+    else {
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      published.clear();
     }
   }
   const off = [
@@ -925,18 +980,26 @@ function attachRemotePublisher(store2, api2) {
       receivedState = true;
       setAvailability(state);
     }),
+    api2.remote.onWatchedChanged((list) => {
+      receivedWatched = true;
+      setWatched(list);
+    }),
     store2.on("threads_changed", schedule),
     store2.on("thread_status_changed", schedule),
     store2.on("message_added", schedule),
-    store2.on("message_token", schedule),
-    store2.on("message_reasoning", schedule),
-    store2.on("message_done", schedule),
-    store2.on("tool_call_started", schedule),
-    store2.on("tool_call_updated", schedule),
+    store2.on("message_token", messageChanged),
+    store2.on("message_reasoning", messageChanged),
+    store2.on("message_done", messageChanged),
+    store2.on("tool_call_started", messageChanged),
+    store2.on("tool_call_updated", messageChanged),
     store2.on("todos_changed", schedule)
   ];
   void api2.mobile.getState().then((state) => {
     if (!disposed && !receivedState) setAvailability(state);
+  }).catch(() => {
+  });
+  void api2.remote.watched().then((list) => {
+    if (!disposed && !receivedWatched) setWatched(list);
   }).catch(() => {
   });
   return () => {
@@ -948,6 +1011,7 @@ function attachRemotePublisher(store2, api2) {
 var init_remote_publisher = __esm({
   "src/renderer/controller/remote-publisher.ts"() {
     init_remote_interface();
+    init_thread_helpers();
   }
 });
 
@@ -978,21 +1042,6 @@ var init_themes = __esm({
 // src/renderer/styles/global/popout.css
 var init_popout = __esm({
   "src/renderer/styles/global/popout.css"() {
-  }
-});
-
-// src/renderer/controller/ssh-workspace-ui.ts
-async function isSshWorkspaceEnabled(api2) {
-  try {
-    const settings = api2.settings;
-    if (!settings?.get) return false;
-    return await settings.get("sshWorkspaceEnabled") === true;
-  } catch {
-    return false;
-  }
-}
-var init_ssh_workspace_ui = __esm({
-  "src/renderer/controller/ssh-workspace-ui.ts"() {
   }
 });
 
@@ -1041,13 +1090,6 @@ function mountWelcome(root, store2, api2) {
       showErrorToast("Could not open remote folder", err);
     });
   });
-  const syncRemoteOpenVisibility = () => {
-    void isSshWorkspaceEnabled(api2).then((enabled) => {
-      openRemoteBtn.hidden = !enabled;
-    });
-  };
-  syncRemoteOpenVisibility();
-  store2.on("settings_changed", syncRemoteOpenVisibility);
   return () => {
     root.classList.remove("visible");
     card.remove();
@@ -1057,7 +1099,6 @@ var init_welcome = __esm({
   "src/renderer/views/welcome.ts"() {
     init_helpers();
     init_projects();
-    init_ssh_workspace_ui();
     init_toast();
   }
 });
@@ -1637,7 +1678,7 @@ function fits(placement, input) {
       return anchor.left + anchor.width + gap + tip.width <= viewport.width - pad;
   }
 }
-function clamp(value, min, max) {
+function clamp2(value, min, max) {
   if (max < min) return min;
   return Math.min(Math.max(value, min), max);
 }
@@ -1662,8 +1703,8 @@ function computeTooltipPosition(input) {
     left = placement === "left" ? anchor.left - gap - tip.width : anchor.left + anchor.width + gap;
   }
   return {
-    left: clamp(left, pad, viewport.width - tip.width - pad),
-    top: clamp(top, pad, viewport.height - tip.height - pad),
+    left: clamp2(left, pad, viewport.width - tip.width - pad),
+    top: clamp2(top, pad, viewport.height - tip.height - pad),
     placement
   };
 }
@@ -2157,18 +2198,6 @@ function browserIcon() {
 function desktopIcon() {
   return outlineIcon("desktop", ["M2 3h20v14H2V3Z", "M8 21h8", "M12 17v4"], "titlebar-btn-icon");
 }
-function prsIcon() {
-  return outlineIcon(
-    "prs",
-    [
-      "M9 6a3 3 0 1 0-6 0 3 3 0 0 0 6 0Z",
-      "M6 9v12",
-      "M21 18a3 3 0 1 0-6 0 3 3 0 0 0 6 0Z",
-      "M13 6h3a2 2 0 0 1 2 2v7"
-    ],
-    "titlebar-btn-icon"
-  );
-}
 function memoriesIcon() {
   return outlineIcon(
     "memories",
@@ -2187,6 +2216,7 @@ function roadmapIcon() {
   );
 }
 function panelModeLabel(mode) {
+  if (mode === "prs") return "Review";
   return PANEL_CONTROL_DEFS.find((def) => def.mode === mode)?.label ?? "Panel";
 }
 function mountPanelModeControls(store2, api2, opts = {}) {
@@ -2234,7 +2264,8 @@ function mountPanelModeControls(store2, api2, opts = {}) {
     );
     if (isGated(def)) btn.setAttribute("data-experimental-hidden", "");
     btn.addEventListener("click", () => {
-      toggleRightPanelWithWorkspace(store2, api2, def.mode);
+      const mode = def.id === "changes" && store2.getState().rightPanelMode === "prs" ? "prs" : def.mode;
+      toggleRightPanelWithWorkspace(store2, api2, mode);
       syncPanelBtns();
     });
     buttons.set(def.id, btn);
@@ -2262,7 +2293,7 @@ function mountPanelModeControls(store2, api2, opts = {}) {
             def ? def.icon() : "",
             def?.label ?? btn.getAttribute("aria-label") ?? "Panel"
           );
-          if (def && filesPaneOpen && rightPanelMode === def.mode) {
+          if (def && filesPaneOpen && (rightPanelMode === def.mode || def.id === "changes" && rightPanelMode === "prs")) {
             item.classList.add("is-active");
           }
           item.addEventListener("click", () => {
@@ -2398,7 +2429,10 @@ function mountPanelModeControls(store2, api2, opts = {}) {
     for (const def of PANEL_CONTROL_DEFS) {
       const btn = buttons.get(def.id);
       if (!btn) continue;
-      btn.classList.toggle("active", filesPaneOpen && rightPanelMode === def.mode);
+      btn.classList.toggle(
+        "active",
+        filesPaneOpen && (rightPanelMode === def.mode || def.id === "changes" && rightPanelMode === "prs")
+      );
     }
     syncOverflow?.();
   }
@@ -2449,7 +2483,7 @@ function mountPanelModeControls(store2, api2, opts = {}) {
     if (changesBtn) {
       setTooltip(
         changesBtn,
-        pending > 0 ? `Open changes \u2014 ${String(pending)} pending ${pending === 1 ? "diff" : "diffs"}` : "Open changes"
+        pending > 0 ? `Open review \u2014 ${String(pending)} pending ${pending === 1 ? "diff" : "diffs"}` : "Open review"
       );
     }
     syncOverflow?.();
@@ -2556,16 +2590,9 @@ var init_panel_mode_controls = __esm({
       {
         id: "changes",
         mode: "changes",
-        ariaLabel: "Open changes",
-        label: "Changes",
+        ariaLabel: "Open review",
+        label: "Review",
         icon: changesIcon
-      },
-      {
-        id: "prs",
-        mode: "prs",
-        ariaLabel: "Open pull requests",
-        label: "PRs",
-        icon: prsIcon
       },
       {
         id: "memories",
@@ -2762,7 +2789,7 @@ var init_keyboard_shortcuts_dialog = __esm({
           { label: "Toggle panel", keys: ["Mod", "J"] },
           { label: "Explorer", keys: ["Mod", "Shift", "E"] },
           { label: "Terminal", keys: ["Mod", "`"] },
-          { label: "Changes", keys: ["Mod", "Shift", "G"] },
+          { label: "Review", keys: ["Mod", "Shift", "G"] },
           { label: "Browser", keys: ["Mod", "Shift", "B"] },
           { label: "Focus browser address bar", keys: ["Mod", "L"] },
           // Same physical key as above: while the browser page itself has focus,
@@ -3388,7 +3415,7 @@ function forkThreadTitle(title) {
   return truncateTitle(`${base2}${FORK_SUFFIX}`);
 }
 function truncateTitle(title) {
-  return title.length <= MAX_TITLE_LENGTH ? title : `${title.slice(0, MAX_TITLE_LENGTH - 1)}\u2026`;
+  return ellipsize(title, MAX_TITLE_LENGTH);
 }
 function buildForkedThread(source, options = {}) {
   const excluded = options.excludeMessageIds ?? /* @__PURE__ */ new Set();
@@ -3461,6 +3488,7 @@ function copyMessage(message2) {
 var randomUUID, MAX_TITLE_LENGTH, FORK_SUFFIX;
 var init_fork_thread = __esm({
   "packages/thread-store/src/fork-thread.ts"() {
+    init_one_line_text();
     init_thread_pr_status();
     init_thread_links();
     randomUUID = () => globalThis.crypto.randomUUID();
@@ -3698,8 +3726,7 @@ var init_thread_filter = __esm({
 
 // src/renderer/controller/activity-model.ts
 function truncateText(text, max = WANT_MAX_CHARS) {
-  const flat = text.replace(/\s+/g, " ").trim();
-  return flat.length <= max ? flat : `${flat.slice(0, max - 1).trimEnd()}\u2026`;
+  return ellipsize(collapseWhitespace(text), max, { trimEnd: true });
 }
 function threadName(thread) {
   const title = thread?.title.trim();
@@ -3995,6 +4022,7 @@ function formatAgeLong(elapsedMs) {
 var RECENT_ROW_LIMIT, RECENT_WINDOW_MS, FUTURE_SKEW_MS, SCHEDULE_FOLD_AT, WANT_MAX_CHARS, UNTITLED_THREAD, GROUP_LABELS, MINUTE, HOUR, DAY;
 var init_activity_model = __esm({
   "src/renderer/controller/activity-model.ts"() {
+    init_one_line_text();
     init_types();
     init_automation_failure();
     init_projects();
@@ -4017,9 +4045,11 @@ var init_activity_model = __esm({
 });
 
 // src/renderer/controller/thread-order.ts
-function orderSidebarThreads(threads, mode, reverse) {
+function orderSidebarThreads(threads, mode, reverse, actionRank = () => 0) {
   const ordered = [...threads];
-  if (mode === "created") {
+  if (mode === "action") {
+    ordered.sort((a, b2) => actionRank(a) - actionRank(b2));
+  } else if (mode === "created") {
     ordered.sort((a, b2) => (b2.createdAt ?? 0) - (a.createdAt ?? 0));
   } else if (mode === "title") {
     const name = (thread) => thread.title || "New Thread";
@@ -4027,12 +4057,14 @@ function orderSidebarThreads(threads, mode, reverse) {
   }
   return reverse ? ordered.reverse() : ordered;
 }
-function orderSidebarRows(rows, mode, reverse) {
+function orderSidebarRows(rows, mode, reverse, actionRank = () => 0) {
   const created = (row2) => row2.thread.createdAt ?? 0;
   const activity = (row2) => sidebarLastPromptAt(row2.thread) ?? created(row2);
   const name = (row2) => row2.thread.title || "New Thread";
   const ordered = [...rows];
-  if (mode === "created") {
+  if (mode === "action") {
+    ordered.sort((a, b2) => actionRank(a.thread) - actionRank(b2.thread) || activity(b2) - activity(a));
+  } else if (mode === "created") {
     ordered.sort((a, b2) => created(b2) - created(a));
   } else if (mode === "title") {
     ordered.sort((a, b2) => name(a).localeCompare(name(b2), void 0, { sensitivity: "base" }));
@@ -4058,6 +4090,27 @@ var init_thread_order = __esm({
       ["working", "Working"],
       ["recent", "Recent"]
     ];
+  }
+});
+
+// src/shared/threads/action-assessment.ts
+function emptyThreadActionState() {
+  return { entries: [], assessed: 0, total: 0, pending: 0, assessing: false, budgetLimited: false };
+}
+var threadActionVerdictSchema, threadActionAssessmentSchema;
+var init_action_assessment = __esm({
+  "src/shared/threads/action-assessment.ts"() {
+    init_zod();
+    threadActionVerdictSchema = external_exports.object({
+      status: external_exports.enum(["needs-action", "waiting", "complete", "uncertain"]),
+      reason: external_exports.string().trim().min(1).max(240),
+      evidence: external_exports.array(external_exports.string().max(120)).max(6)
+    });
+    threadActionAssessmentSchema = threadActionVerdictSchema.extend({
+      revision: external_exports.string().max(128),
+      assessedAt: external_exports.number(),
+      source: external_exports.enum(["judge", "rules", "interrupted"])
+    });
   }
 });
 
@@ -4466,6 +4519,16 @@ function mountApprovalDialog(api2, store2, options = {}) {
   );
   const chatPane = document.getElementById("pane-chat") ?? document.body;
   chatPane.append(chatScrim, dialog);
+  const settingsPending = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary approval-settings-pending", hidden: "" },
+    "Review approval"
+  );
+  const settingsDialog = document.getElementById("settings-dialog");
+  settingsDialog?.querySelector(".settings-header")?.insertBefore(settingsPending, settingsDialog.querySelector("#settings-close"));
+  settingsPending.addEventListener("click", () => {
+    closeSettingsDialog();
+  });
   const rememberInput = qsRequired(rememberLabel, ".approval-remember-input");
   const turnTreeLeaseInput = qsRequired(
     turnTreeLeaseLabel,
@@ -4516,8 +4579,15 @@ function mountApprovalDialog(api2, store2, options = {}) {
   function syncAttention() {
     const activeThreadId = store2.getState().activeThreadId;
     const hidden = isWindowHidden();
-    const waiting = queue.map((req) => req.threadId ? attentionThreadId(store2, req.threadId) : void 0).filter((id) => !!id && (hidden || id !== activeThreadId));
+    const waiting = queue.map((req) => req.threadId ? attentionThreadId(store2, req.threadId) : void 0).filter(
+      (id) => !!id && (hidden || isSettingsDialogOpen() || id !== activeThreadId)
+    );
     setAttentionThreads(store2, "approval", waiting);
+    const hiddenBySettings = queue.filter(
+      (req) => !req.showWhileSettingsOpen && (!req.threadId || attentionThreadId(store2, req.threadId) === activeThreadId || activeThreadId !== null && proposingThreadId(store2, req.threadId) === activeThreadId)
+    ).length;
+    settingsPending.hidden = !isSettingsDialogOpen() || hiddenBySettings === 0;
+    settingsPending.textContent = hiddenBySettings === 1 ? "Review approval" : `Review ${String(hiddenBySettings)} approvals`;
     for (const listener of [...changeListeners]) listener();
   }
   function drainShowableIntoBatch() {
@@ -4647,6 +4717,10 @@ function mountApprovalDialog(api2, store2, options = {}) {
     const showOnce = onceLabel !== "" && (!collapseDetails || detailsExpanded);
     approveOnceButton.hidden = !showOnce;
     if (showOnce) approveOnceButton.textContent = onceLabel;
+    approveOnceButton.classList.toggle("ui-btn-primary", showOnce);
+    approveOnceButton.classList.toggle("ui-btn-secondary", !showOnce);
+    approveButton.classList.toggle("ui-btn-primary", !showOnce);
+    approveButton.classList.toggle("ui-btn-secondary", showOnce);
     const grant = onceLabel !== "" ? null : rememberGrant();
     rememberLabel.hidden = grant === null;
     if (grant === null) rememberInput.checked = false;
@@ -4874,6 +4948,10 @@ function mountApprovalDialog(api2, store2, options = {}) {
       withdrawUnshowable();
       syncAttention();
     } else show2();
+  });
+  settingsDialog?.addEventListener("settings-open", () => {
+    withdrawUnshowable();
+    syncAttention();
   });
   onSettingsDialogClose(() => {
     show2();
@@ -6224,7 +6302,7 @@ function openThreadHistoryEditor(store2, api2, options) {
       );
       const textarea = el("textarea", {
         class: "history-editor-message-input",
-        rows: String(Math.min(8, Math.max(2, draft.content.split("\n").length))),
+        rows: String(clamp(draft.content.split("\n").length, 2, 8)),
         spellcheck: "true",
         "aria-label": `Edit ${draft.role} message`
       });
@@ -6391,6 +6469,7 @@ function openThreadHistoryEditor(store2, api2, options) {
 }
 var init_thread_history_editor = __esm({
   "src/renderer/views/thread-history-editor.ts"() {
+    init_clamp();
     init_helpers();
     init_icons();
     init_persistence();
@@ -7095,7 +7174,7 @@ function mountProjectsPane(root, store2, api2) {
     {
       class: "projects-add-btn",
       "aria-label": "Add project",
-      "data-tooltip": "New thread, new project or open a folder"
+      "data-tooltip": "New project, open a folder, or connect remotely"
     },
     plusIcon("ui-icon ui-icon-sm")
   );
@@ -7185,6 +7264,39 @@ function mountProjectsPane(root, store2, api2) {
     chevronDownIcon("ui-icon ui-icon-sm ui-picker-chevron")
   );
   const filtersRow = el("div", { class: "projects-filters" }, projectFilterBtn, sortBtn);
+  const actionProgress = el("p", { class: "thread-action-progress", role: "status" });
+  let actionState = emptyThreadActionState();
+  let actionDisposed = false;
+  let actionLoading = false;
+  function assessmentFor(projectId, thread) {
+    if (thread.status === "running") return void 0;
+    const assessment = actionState.entries.find(
+      (entry) => entry.projectId === projectId && entry.threadId === thread.id
+    )?.assessment;
+    if (!assessment || (thread.lastPromptAt ?? 0) > assessment.assessedAt || (thread.lastSettledAt ?? 0) > assessment.assessedAt)
+      return void 0;
+    return assessment;
+  }
+  function actionRank(projectId, thread) {
+    if (isThreadAwaitingAttention(thread.id)) return 0;
+    const status = assessmentFor(projectId, thread)?.status;
+    return status === "needs-action" ? 1 : status === void 0 || status === "uncertain" ? 2 : status === "waiting" ? 3 : 4;
+  }
+  const actionsDisposed = () => actionDisposed;
+  async function refreshActions() {
+    if (actionLoading || actionsDisposed() || store2.getState().sidebarThreadSort !== "action")
+      return;
+    actionLoading = true;
+    try {
+      const next = await api2.threads.actionState();
+      if (actionsDisposed() || JSON.stringify(next) === JSON.stringify(actionState)) return;
+      actionState = next;
+      render2(true);
+    } catch {
+    } finally {
+      actionLoading = false;
+    }
+  }
   searchInput.addEventListener("input", () => {
     threadFilter = filterText(searchInput.value.trim());
     filteredProjectId = store2.getState().activeProjectId;
@@ -7210,14 +7322,15 @@ function mountProjectsPane(root, store2, api2) {
   root.append(
     header,
     filtersRow,
+    actionProgress,
     list,
     el("div", { class: "projects-settings-actions" }, settingsBtn)
   );
-  let sshWorkspaceEnabled = false;
   const SORT_LABELS = {
     activity: "Activity order",
     created: "Created",
-    title: "Thread name"
+    title: "Thread name",
+    action: "Needs action"
   };
   const GROUP_LABELS2 = {
     project: "Project",
@@ -7371,16 +7484,15 @@ function mountProjectsPane(root, store2, api2) {
           void addProject(store2, api2);
         }
       },
-      ...sshWorkspaceEnabled ? [
-        {
-          label: "Open remote project",
-          onSelect: () => {
-            void addRemoteProject(store2, api2).catch((err) => {
-              showErrorToast("Could not open remote folder", err);
-            });
-          }
+      {
+        // Always offered: with SSH workspaces off, the dialog asks to turn them on.
+        label: "Open remote project",
+        onSelect: () => {
+          void addRemoteProject(store2, api2).catch((err) => {
+            showErrorToast("Could not open remote folder", err);
+          });
         }
-      ] : [],
+      },
       {
         label: "New group",
         onSelect: () => {
@@ -7391,17 +7503,6 @@ function mountProjectsPane(root, store2, api2) {
       }
     ]);
   });
-  const syncRemoteOpenAvailability = () => {
-    void isSshWorkspaceEnabled(api2).then((enabled) => {
-      sshWorkspaceEnabled = enabled;
-      addBtn.setAttribute(
-        "data-tooltip",
-        enabled ? "New project, open a folder, or connect remotely" : "New project or open a folder"
-      );
-    });
-  };
-  syncRemoteOpenAvailability();
-  store2.on("settings_changed", syncRemoteOpenAvailability);
   const visibleThreadCounts = /* @__PURE__ */ new Map();
   const prBackfillRequested = /* @__PURE__ */ new Map();
   const prBackfillRetryAttempts = /* @__PURE__ */ new Map();
@@ -8087,6 +8188,9 @@ function mountProjectsPane(root, store2, api2) {
       return false;
     };
     syncFilterControls();
+    actionProgress.hidden = store2.getState().sidebarThreadSort !== "action";
+    actionProgress.textContent = actionState.total === 0 ? "Copse checks whether threads need action. Older threads are checked gradually." : actionState.pending > 0 ? `Checking older threads \xB7 ${String(actionState.assessed)} of ${String(actionState.total)} assessed${actionState.unavailable ? " \xB7 waiting for a model" : actionState.budgetLimited ? " \xB7 continuing later" : ""}` : `All ${String(actionState.total)} threads assessed`;
+    actionProgress.title = "Assessments only help sort threads. Unchanged conversations are not assessed again; uncertain results wait for new evidence.";
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } = store2.getState();
     const visibleProjects = store2.getState().sidebarProjectFilterId === null ? projects : projects.filter((project) => project.id === store2.getState().sidebarProjectFilterId);
     const expandedId = expandedProjectId ?? activeProjectId;
@@ -8309,6 +8413,21 @@ function mountProjectsPane(root, store2, api2) {
       if (isThreadAwaitingAttention(thread.id)) {
         chatRow.classList.add("needs-attention");
         chatRow.append(attentionBell("This thread needs your attention"));
+      }
+      if (store2.getState().sidebarThreadSort === "action") {
+        const assessment = assessmentFor(project.id, thread);
+        const label = isThreadAwaitingAttention(thread.id) ? "Needs you" : assessment?.status === "needs-action" ? "Needs action" : assessment?.status === "waiting" ? "Waiting" : assessment?.status === "complete" ? "Complete" : assessment ? "Uncertain" : thread.status === "running" ? "Working" : "Not assessed";
+        chatRow.append(
+          el(
+            "span",
+            {
+              class: "thread-action-status",
+              title: assessment?.reason ?? label,
+              "aria-label": assessment ? `${label}: ${assessment.reason}` : label
+            },
+            label
+          )
+        );
       }
       const prRollup = rollupForThread(thread);
       if (prRollup) {
@@ -8819,7 +8938,8 @@ function mountProjectsPane(root, store2, api2) {
         ),
         // A filter's matches stay newest first; the chosen order is for the browse list.
         isFiltering ? "activity" : store2.getState().sidebarThreadSort,
-        !isFiltering && store2.getState().sidebarThreadSortReverse
+        !isFiltering && store2.getState().sidebarThreadSortReverse,
+        (thread) => actionRank(project.id, thread)
       );
       const visibleLimit = visibleThreadCounts.get(project.id) ?? SIDEBAR_THREADS_PAGE_SIZE;
       const activeId = project.id === activeProjectId ? activeThreadId : null;
@@ -8921,7 +9041,13 @@ function mountProjectsPane(root, store2, api2) {
         }
       }
       const { sidebarThreadSort, sidebarThreadSortReverse } = store2.getState();
-      const ordered = orderSidebarRows(rows, sidebarThreadSort, sidebarThreadSortReverse);
+      const actionOwners = new Map(rows.map((row2) => [row2.thread, row2.projectId]));
+      const ordered = orderSidebarRows(
+        rows,
+        sidebarThreadSort,
+        sidebarThreadSortReverse,
+        (thread) => actionRank(actionOwners.get(thread) ?? "", thread)
+      );
       const sections = mode === "status" ? groupRowsByStatus(ordered, isThreadAwaitingAttention) : [{ id: "all", label: "", rows: ordered }];
       const withThreads = new Set(ordered.map((row2) => row2.projectId));
       const emptyProjectRows = needsCleanupOnly ? [] : Array.from(owners.values()).filter((project) => !withThreads.has(project.id)).map((project) => {
@@ -9122,6 +9248,12 @@ function mountProjectsPane(root, store2, api2) {
         render2();
       }
     ),
+    store2.select(
+      (s) => s.sidebarThreadSort,
+      (sort) => {
+        if (sort === "action") void refreshActions();
+      }
+    ),
     // Streaming and hydration must not restart the disk scan. Resident human
     // requests are matched in render(), so new prompts still appear immediately.
     store2.on("threads_changed", () => {
@@ -9157,7 +9289,26 @@ function mountProjectsPane(root, store2, api2) {
   ];
   render2();
   refreshOrphans();
+  void refreshActions();
+  const actionRefreshTimer = setInterval(() => {
+    if (!root.isConnected) {
+      clearInterval(actionRefreshTimer);
+      return;
+    }
+    void refreshActions();
+  }, 15e3);
+  const nodeActionTimer = actionRefreshTimer;
+  if (typeof nodeActionTimer === "object" && nodeActionTimer !== null && "unref" in nodeActionTimer) {
+    const { unref } = nodeActionTimer;
+    if (typeof unref === "function") Reflect.apply(unref, nodeActionTimer, []);
+  }
+  const unsubActionRefresh = store2.on("thread_status_changed", () => {
+    void refreshActions();
+  });
   return () => {
+    actionDisposed = true;
+    clearInterval(actionRefreshTimer);
+    unsubActionRefresh();
     archivedThreads.hide();
     contentFilter.cancel();
     for (const timer of prBackfillRetryTimers) clearTimeout(timer);
@@ -9215,12 +9366,12 @@ var init_projects_pane = __esm({
     init_thread_order();
     init_state();
     init_sidebar_thread();
+    init_action_assessment();
     init_attention();
     init_activity_panel();
     init_thread_history_editor();
     init_automation_fold();
     init_automations();
-    init_ssh_workspace_ui();
     init_thread_naming();
     init_persistence();
     init_project_tree();
@@ -11422,9 +11573,6 @@ var init_mermaid_frame = __esm({
 });
 
 // src/renderer/markdown/mermaid-expand.ts
-function clamp2(n, min, max) {
-  return Math.min(max, Math.max(min, n));
-}
 function applyTransform() {
   if (!stageEl) return;
   stageEl.style.transform = `translate(${String(translateX)}px, ${String(translateY)}px) scale(${String(scale)})`;
@@ -11453,7 +11601,7 @@ function fitToViewport() {
   }
   const inset = 8;
   const fitScale = Math.min((vw - inset * 2) / contentW, (vh - inset * 2) / contentH);
-  scale = clamp2(fitScale, MIN_SCALE, MAX_SCALE);
+  scale = clamp(fitScale, MIN_SCALE, MAX_SCALE);
   translateX = (vw - contentW * scale) / 2;
   translateY = (vh - contentH * scale) / 2;
   stageEl.style.transform = "";
@@ -11464,7 +11612,7 @@ function zoomAt(clientX, clientY, factor) {
   const rect = viewportEl.getBoundingClientRect();
   const mx = clientX - rect.left;
   const my = clientY - rect.top;
-  const nextScale = clamp2(scale * factor, MIN_SCALE, MAX_SCALE);
+  const nextScale = clamp(scale * factor, MIN_SCALE, MAX_SCALE);
   const contentX = (mx - translateX) / scale;
   const contentY = (my - translateY) / scale;
   scale = nextScale;
@@ -11620,6 +11768,7 @@ function attachMermaidExpand(root, recreate = recreateMermaidFrame) {
 var MIN_SCALE, MAX_SCALE, ZOOM_STEP, expandDialog, viewportEl, stageEl, zoomLabelEl, expandedFrame, scale, translateX, translateY;
 var init_mermaid_expand = __esm({
   "src/renderer/markdown/mermaid-expand.ts"() {
+    init_clamp();
     init_helpers();
     init_icons();
     init_mermaid_frame();
@@ -11699,7 +11848,7 @@ var init_mermaid = __esm({
 // src/renderer/markdown/table-copy.ts
 function tableToTsv(table) {
   return Array.from(table.querySelectorAll("tr")).map(
-    (row2) => Array.from(row2.querySelectorAll("th, td")).map((cell) => cell.textContent.replace(/\s+/g, " ").trim()).join("	")
+    (row2) => Array.from(row2.querySelectorAll("th, td")).map((cell) => collapseWhitespace(cell.textContent)).join("	")
   ).join("\n");
 }
 function attachTableCopyButtons(root) {
@@ -11736,6 +11885,7 @@ function attachTableCopyButtons(root) {
 var COPY_LABEL2, COPIED_LABEL2, FEEDBACK_MS2;
 var init_table_copy = __esm({
   "src/renderer/markdown/table-copy.ts"() {
+    init_one_line_text();
     init_helpers();
     COPY_LABEL2 = "Copy";
     COPIED_LABEL2 = "Copied";
@@ -11855,6 +12005,104 @@ var init_user_prompt_fold = __esm({
   }
 });
 
+// src/renderer/markdown/user-prompt-fold-markdown.ts
+function standaloneFences(source) {
+  const fences = [];
+  let open;
+  let offset = 0;
+  for (const line of source.split("\n")) {
+    const next = Math.min(source.length, offset + line.length + 1);
+    if (open) {
+      const closing = /^ {0,3}(`{3,}|~{3,})[\t ]*\r?$/.exec(line)?.[1];
+      if (closing && closing[0] === open.marker[0] && closing.length >= open.marker.length) {
+        fences.push({ ...open, bodyEnd: offset, end: next });
+        open = void 0;
+      }
+    } else {
+      if (/^ {0,3}(?:>|[-+*][\t ]|\d+[.)][\t ])/.test(line) && /`{3,}|~{3,}/.test(line)) return null;
+      const match = /^ {0,3}(`{3,}|~{3,})([^\r\n]*)\r?$/.exec(line);
+      const marker = match?.[1];
+      const info = match?.[2] ?? "";
+      if (marker && !(marker.startsWith("`") && info.includes("`"))) {
+        open = { start: offset, bodyStart: next, opening: line.replace(/\r$/, ""), marker };
+      }
+    }
+    offset = next;
+  }
+  if (open) fences.push({ ...open, bodyEnd: source.length, end: source.length });
+  return fences;
+}
+function piecesInRange(source, fences, start, end) {
+  const pieces = [];
+  let cursor = start;
+  for (const fence of fences) {
+    if (fence.start >= end || fence.end <= start) continue;
+    if (cursor < fence.start) {
+      pieces.push({ kind: "markdown", source: source.slice(cursor, fence.start) });
+    }
+    const from2 = Math.max(start, fence.bodyStart);
+    const to = Math.min(end, fence.bodyEnd);
+    const emptyBlock = fence.bodyStart === fence.bodyEnd && fence.start >= start;
+    if (fence.start >= start && fence.end <= end) {
+      pieces.push({ kind: "code", source: source.slice(fence.start, fence.end) });
+    } else if (from2 < to || emptyBlock) {
+      const body = source.slice(from2, Math.max(from2, to));
+      const indent = /^ */.exec(fence.opening)?.[0] ?? "";
+      pieces.push({
+        kind: "code",
+        // Balanced wrappers are presentation only. They never enter message
+        // storage, resend payloads or the generic arithmetic fold parts.
+        source: `${fence.opening}
+${body}${body.length > 0 && !body.endsWith("\n") ? "\n" : ""}${indent}${fence.marker}${fence.end <= end && source[fence.end - 1] === "\n" ? "\n" : ""}`
+      });
+    }
+    cursor = Math.min(end, fence.end);
+  }
+  if (cursor < end) pieces.push({ kind: "markdown", source: source.slice(cursor, end) });
+  return pieces;
+}
+function userPromptFoldMarkdownPieces(source, parts, isRootFence) {
+  const fences = standaloneFences(source);
+  if (!fences || fences.length === 0) return null;
+  const hardLines = `${parts.head}
+${parts.middle}
+${parts.tail}`;
+  const separator = source === hardLines || source === `${hardLines}
+` ? 1 : 0;
+  if (!separator && source !== parts.head + parts.middle + parts.tail) return null;
+  const headEnd = parts.head.length + separator;
+  const middleEnd = headEnd + parts.middle.length + separator;
+  const spanning = fences.filter(
+    (fence) => fence.start < headEnd && fence.end > headEnd || fence.start < middleEnd && fence.end > middleEnd
+  );
+  if (spanning.length === 0) return null;
+  for (const fence of spanning) {
+    if (!fence.opening.startsWith(" ")) continue;
+    const indent = /^ */.exec(fence.opening)?.[0] ?? "";
+    const code2 = "copse-fold-context-probe";
+    const context = `${source.slice(0, fence.start)}${indent}${fence.marker}
+${indent}${code2}
+${indent}${fence.marker}
+`;
+    if (!isRootFence(context, `${code2}
+`)) {
+      return { kind: "full", pieces: piecesInRange(source, fences, 0, source.length) };
+    }
+  }
+  return {
+    kind: "fold",
+    pieces: {
+      head: piecesInRange(source, fences, 0, headEnd),
+      middle: piecesInRange(source, fences, headEnd, middleEnd),
+      tail: piecesInRange(source, fences, middleEnd, source.length)
+    }
+  };
+}
+var init_user_prompt_fold_markdown = __esm({
+  "src/renderer/markdown/user-prompt-fold-markdown.ts"() {
+  }
+});
+
 // src/renderer/markdown/message-markdown.ts
 function paintStreamingMarkdown(el2, display, host) {
   let renderer = streamingRenderers.get(el2);
@@ -11938,14 +12186,37 @@ function paintUserMarkdown(el2, content, renderOptions) {
   });
   attachCodeBlockCopyButtons(el2);
 }
+function isRootFenceContext(source, code2) {
+  const context = document.createElement("div");
+  context.innerHTML = renderMarkdown(source, { htmlPolicy: "escape-all", codeHighlighter: null });
+  const matches3 = [...context.querySelectorAll("pre > code")].filter(
+    (candidate) => candidate.textContent === code2
+  );
+  return matches3.length === 1 && matches3[0]?.parentElement?.parentElement === context;
+}
+function paintUserPromptPieces(el2, pieces, renderOptions) {
+  const markdown = pieces.map((piece) => piece.kind === "code" ? piece.source : userPromptMarkdown(piece.source)).join("");
+  el2.innerHTML = renderMarkdown(markdown, { ...renderOptions, htmlPolicy: "escape-all" });
+  attachCodeBlockCopyButtons(el2);
+}
 function renderUserPromptMarkdown(el2, content, renderOptions) {
   const parts = splitUserPromptForFold(content);
   if (!parts) {
     paintUserMarkdown(el2, content, renderOptions);
     return;
   }
-  fillUserPromptFold(el2, parts, (region, text) => {
-    paintUserMarkdown(region, text, renderOptions);
+  const pieces = userPromptFoldMarkdownPieces(content, parts, isRootFenceContext);
+  if (pieces?.kind === "full") {
+    el2.classList.remove("msg-user-fold", "is-expanded");
+    paintUserPromptPieces(el2, pieces.pieces, renderOptions);
+    return;
+  }
+  fillUserPromptFold(el2, parts, (region, text, name) => {
+    if (!pieces) {
+      paintUserMarkdown(region, text, renderOptions);
+      return;
+    }
+    paintUserPromptPieces(region, pieces.pieces[name], renderOptions);
   });
 }
 var STREAM_PAINT_EVENT, STREAM_SETTLED_EVENT, streamingRenderers, streamSmoothers;
@@ -11957,6 +12228,7 @@ var init_message_markdown = __esm({
     init_mermaid();
     init_table_copy();
     init_user_prompt_fold();
+    init_user_prompt_fold_markdown();
     STREAM_PAINT_EVENT = "copse:stream-paint";
     STREAM_SETTLED_EVENT = "copse:stream-settled";
     streamingRenderers = /* @__PURE__ */ new WeakMap();
@@ -13386,6 +13658,24 @@ var init_disclosure_model = __esm({
   }
 });
 
+// src/renderer/views/transcript-row-element.ts
+function transcriptRowElement(list, key) {
+  let head = list.firstElementChild;
+  let tail = list.lastElementChild;
+  while (head && tail) {
+    if (head.getAttribute("data-message-id") === key && head instanceof HTMLElement) return head;
+    if (tail.getAttribute("data-message-id") === key && tail instanceof HTMLElement) return tail;
+    if (head === tail || head.nextElementSibling === tail) return null;
+    head = head.nextElementSibling;
+    tail = tail.previousElementSibling;
+  }
+  return null;
+}
+var init_transcript_row_element = __esm({
+  "src/renderer/views/transcript-row-element.ts"() {
+  }
+});
+
 // src/renderer/views/tool-card-refresh.ts
 function markUserInterruptedCalls(thread) {
   if (!thread || markedTranscripts.has(thread.messages)) return;
@@ -13624,7 +13914,7 @@ function createToolCardRefresher(host) {
     if (messageKey && activeThread?.status === "running" && toolCalls.some((tool) => !tool.subagent)) {
       liveRollupMessages.add(messageKey);
     }
-    const run4 = opts.run && (opts.run.anchorId === msgId || list.querySelector(`[data-message-id="${opts.run.anchorId}"]`) !== null) ? opts.run : void 0;
+    const run4 = opts.run && (opts.run.anchorId === msgId || transcriptRowElement(list, opts.run.anchorId) !== null) ? opts.run : void 0;
     const isRunMember = run4 !== void 0 && run4.anchorId !== msgId;
     msgEl.classList.toggle("msg-tool-run-member", isRunMember);
     const message2 = activeThread?.messages.find((m2) => m2.id === msgId);
@@ -13713,7 +14003,7 @@ function createToolCardRefresher(host) {
   }
   function renderRunAnchor(thread, run4) {
     const anchor = thread?.messages.find((m2) => m2.id === run4.anchorId);
-    const anchorEl = list.querySelector(`[data-message-id="${run4.anchorId}"]`);
+    const anchorEl = transcriptRowElement(list, run4.anchorId);
     if (!anchor || !anchorEl) return;
     renderToolCards(anchorEl, anchor.toolCalls, {
       ...messageToolCardOpts(anchor),
@@ -13724,7 +14014,7 @@ function createToolCardRefresher(host) {
   function releaseRunMembers(thread, run4) {
     for (const id of run4.memberIds) {
       if (id === run4.anchorId) continue;
-      const memberEl = list.querySelector(`[data-message-id="${id}"]`);
+      const memberEl = transcriptRowElement(list, id);
       if (!memberEl?.querySelector(":scope > .tool-card-rollup")) continue;
       const msg = thread?.messages.find((m2) => m2.id === id);
       if (!msg) continue;
@@ -13756,7 +14046,7 @@ function createToolCardRefresher(host) {
     });
     refreshToolCards(msgId);
     const msg = thread?.messages.find((m2) => m2.id === msgId);
-    const msgEl = list.querySelector(`[data-message-id="${msgId}"]`);
+    const msgEl = transcriptRowElement(list, msgId);
     if (!msg || !msgEl || multiStepRunFor(thread, msgId)) return;
     syncReasoningEl2(msgEl, msg, isReasoningDisclosureLive(thread, msg), acpWorkspaceRoot(store2));
     registerReasoningDisclosures(msgEl);
@@ -13778,7 +14068,7 @@ function createToolCardRefresher(host) {
   function refreshToolCards(msgId) {
     const thread = store2.getState().threads.find((t) => t.messages.some((m2) => m2.id === msgId));
     const msg = thread?.messages.find((m2) => m2.id === msgId);
-    const msgEl = list.querySelector(`[data-message-id="${msgId}"]`);
+    const msgEl = transcriptRowElement(list, msgId);
     if (!msg || !msgEl) return;
     host.keepReadingPosition(() => {
       const run4 = multiStepRunFor(thread, msgId);
@@ -13827,6 +14117,7 @@ var init_tool_card_refresh = __esm({
     init_concise_thread();
     init_disclosure_model();
     init_render_signature();
+    init_transcript_row_element();
     init_thread_proposal_tool_card();
     init_turn_interruption();
     userInterruptedCalls = /* @__PURE__ */ new WeakMap();
@@ -13889,8 +14180,18 @@ function rowCardSelector(key) {
 function isRowCardOf(node, key) {
   return ROW_CARD_ATTRIBUTES.some((attribute) => node.getAttribute(attribute) === key);
 }
-function transcriptRowElement(list, key) {
-  return list.querySelector(`:scope > [data-message-id="${CSS.escape(key)}"]`);
+function rowCardElement(row2, attribute, key) {
+  for (let next = row2.nextElementSibling; next && isRowCardOf(next, key); next = next.nextElementSibling) {
+    if (next instanceof HTMLElement && next.getAttribute(attribute) === key) return next;
+  }
+  return null;
+}
+function rowParts(row2, key) {
+  const parts = [row2];
+  for (let next = row2.nextElementSibling; next && isRowCardOf(next, key); next = next.nextElementSibling) {
+    parts.push(next);
+  }
+  return parts;
 }
 function removeTranscriptRow(list, key) {
   const element = transcriptRowElement(list, key);
@@ -14026,6 +14327,7 @@ var init_transcript_rows = __esm({
     init_render_signature();
     init_thread_proposal_tool_card();
     init_tool_card_refresh();
+    init_transcript_row_element();
     ROW_CARD_ATTRIBUTES = [
       "data-review-for",
       "data-review-report-for",
@@ -15454,7 +15756,13 @@ function bindBrowserLinkClicks(root, store2, api2) {
   root.classList.add("browser-links-scope");
   const openPlainLink = (href) => {
     if (!store2.getState().openLinksInBuiltInBrowser && api2?.shell) {
-      void api2.shell.openExternal(href);
+      void api2.shell.openExternal(href).catch((error) => {
+        if (String(error).includes("Workspace previews open inside Copse")) {
+          openBrowserUrl(store2, href);
+          return;
+        }
+        showErrorToast("Could not open link", error);
+      });
       return;
     }
     openBrowserUrl(store2, href);
@@ -17101,6 +17409,7 @@ var init_turn_start_hooks = __esm({
 // packages/agent/src/read-file-limits.ts
 var init_read_file_limits = __esm({
   "packages/agent/src/read-file-limits.ts"() {
+    init_clamp();
   }
 });
 
@@ -17111,6 +17420,7 @@ function hasOpenTodos(todos) {
 var DUPLICATE_GUARDED_TOOL_NAMES, MAX_TODO_CLOSEOUT_ATTEMPTS, OPEN_TODOS_FINALIZE_NUDGE, OPEN_TODOS_FINALIZE_NUDGE_STRICT, WORKSPACE_READ_ONLY_TOOL_NAMES;
 var init_agent_loop_guards = __esm({
   "packages/agent/src/agent-loop-guards.ts"() {
+    init_one_line_text();
     init_read_file_limits();
     init_unknown_value();
     DUPLICATE_GUARDED_TOOL_NAMES = /* @__PURE__ */ new Set([
@@ -18899,7 +19209,7 @@ function findMatchOffsets(haystack, needle) {
   return Array.from(haystack.matchAll(pattern), (match) => match.index);
 }
 function normalizeSearchText(text) {
-  return text.replace(/\s+/g, " ").trim();
+  return collapseWhitespace(text);
 }
 function buildSearchIndex(segments) {
   const capacity = segments.reduce((n, segment) => n + segment.text.length + 1, 0);
@@ -19165,6 +19475,7 @@ function mountConversationSearch(root) {
 var BASE_HIGHLIGHT, CURRENT_HIGHLIGHT, highlightsSupported, WHITESPACE_CHAR, SEARCH_BLOCK_SELECTOR, openImpl, closeImpl, isOpenImpl;
 var init_conversation_search = __esm({
   "src/renderer/views/conversation-search.ts"() {
+    init_one_line_text();
     init_helpers();
     init_transcript_scroll();
     init_icons();
@@ -19965,9 +20276,9 @@ function createSubagentMessageEl(content, streaming, api2) {
   return textEl;
 }
 function timelineShowsText(session, text) {
-  const target = text.replace(/\s+/g, " ").trim();
+  const target = collapseWhitespace(text);
   if (!target) return false;
-  return session.messages.some((m2) => m2.content.replace(/\s+/g, " ").trim() === target);
+  return session.messages.some((m2) => collapseWhitespace(m2.content) === target);
 }
 function textAfterTimelinePrefix(session, result) {
   for (const m2 of session.messages) {
@@ -21785,12 +22096,10 @@ function mountConversation(root, store2, api2, options = {}) {
     if (msg.role === "user") body.append(buildUserActions(threadId, msgId));
     return msgEl;
   }
-  function finalizeMessageEl(threadId, msgId) {
+  function finalizeMessageEl(threadId, msgId, msgEl) {
     const thread = getThreadById(store2, threadId);
     const msg = thread?.messages.find((m2) => m2.id === msgId);
-    const msgEl = list.querySelector(`[data-message-id="${msgId}"]`);
-    if (!msg || !msgEl) return;
-    hydrateRemoteArtifactImages(list, api2, artifactImageScope(threadId));
+    if (!msg) return;
     const run4 = multiStepRunFor(thread, msgId);
     renderToolCards(msgEl, msg.toolCalls, {
       ...messageToolCardOpts(msg),
@@ -21799,11 +22108,15 @@ function mountConversation(root, store2, api2, options = {}) {
     syncMessageCanvasPreviews(msgEl, msg, store2.getState().activeProjectId, threadId, api2);
     syncMessageVisualEvidence(msgEl, msg);
     if (run4) syncRunLayout(thread, run4, msgId);
-    if (msg.review) renderMessageReview(threadId, msgId);
-    if (msg.reviewReport) renderMessageReviewReport(threadId, msgId);
-    renderMessageHookCards(threadId, msgId);
-    renderMessageTurnRecovery(threadId, msgId);
-    attachSideChatChip(threadId, msgId);
+    if (msg.review) renderMessageReview(threadId, msgId, msgEl);
+    if (msg.reviewReport) renderMessageReviewReport(threadId, msgId, msgEl);
+    renderMessageHookCards(threadId, msgId, msgEl);
+    renderMessageTurnRecovery(threadId, msgId, msgEl);
+    attachSideChatChip(threadId, msgId, msgEl);
+    const scope = artifactImageScope(threadId);
+    for (const part of rowParts(msgEl, msgId)) {
+      if (part instanceof HTMLElement) hydrateRemoteArtifactImages(part, api2, scope);
+    }
   }
   function appendMessageEl(threadId, msgId, batched = false) {
     if (threadId !== store2.getState().activeThreadId) return;
@@ -21820,7 +22133,7 @@ function mountConversation(root, store2, api2, options = {}) {
     if (trailingCard) {
       list.insertBefore(msgEl, activityBar.isConnected ? activityBar : trailingCard);
     } else list.insertBefore(msgEl, activityBar.isConnected ? activityBar : null);
-    finalizeMessageEl(threadId, msgId);
+    finalizeMessageEl(threadId, msgId, msgEl);
     if (batched) return;
     if (msg.role === "user") refreshStickyImagePrompt();
     syncModelLabels();
@@ -21834,7 +22147,7 @@ function mountConversation(root, store2, api2, options = {}) {
     if (!msgEl) return;
     const tail = activityBar.isConnected ? activityBar : firstTrailingCard();
     list.insertBefore(msgEl, before ?? tail);
-    finalizeMessageEl(threadId, msgId);
+    finalizeMessageEl(threadId, msgId, msgEl);
   }
   function markRowPatched(msgId, redraws = []) {
     const message2 = locateMessage(store2, msgId)?.message;
@@ -21850,7 +22163,7 @@ function mountConversation(root, store2, api2, options = {}) {
     const msgEl = buildMessageEl(threadId, msgId);
     if (!msgEl) return;
     list.insertBefore(msgEl, before);
-    finalizeMessageEl(threadId, msgId);
+    finalizeMessageEl(threadId, msgId, msgEl);
   }
   function attachReplyActions(body, threadId, msgId) {
     const sideChat = buildSideChatAction(threadId, msgId);
@@ -21903,8 +22216,7 @@ function mountConversation(root, store2, api2, options = {}) {
       (row2) => row2.anchorMessageId === msgId
     );
   }
-  function attachSideChatChip(threadId, msgId) {
-    const msgEl = list.querySelector(`[data-message-id="${msgId}"]`);
+  function attachSideChatChip(threadId, msgId, msgEl = transcriptRowElement(list, msgId)) {
     if (!msgEl) return;
     for (const child of Array.from(msgEl.children)) {
       if (child.classList.contains("msg-side-chat-chip")) child.remove();
@@ -22220,12 +22532,12 @@ function mountConversation(root, store2, api2, options = {}) {
       if ((msg.hookCards ?? []).length > 0) renderMessageHookCards(thread.id, msg.id);
     }
   }
-  function renderMessageHookCards(threadId, messageId) {
+  function renderMessageHookCards(threadId, messageId, drawn) {
     if (threadId !== store2.getState().activeThreadId) return;
-    list.querySelector(`[data-hook-cards-for="${messageId}"]`)?.remove();
+    const msgEl = drawn ?? transcriptRowElement(list, messageId);
+    if (msgEl) rowCardElement(msgEl, "data-hook-cards-for", messageId)?.remove();
     if (!store2.getState().developerMode) return;
     const msg = getActiveThread(store2)?.messages.find((m2) => m2.id === messageId);
-    const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
     const cards = msg?.hookCards ?? [];
     if (!msgEl || cards.length === 0) return;
     const load = (runId) => {
@@ -22235,11 +22547,11 @@ function mountConversation(root, store2, api2, options = {}) {
     };
     msgEl.after(createHookCardHost(messageId, cards, load));
   }
-  function renderMessageReview(threadId, messageId) {
+  function renderMessageReview(threadId, messageId, drawn) {
     if (threadId !== store2.getState().activeThreadId) return;
-    list.querySelector(`[data-review-card][data-review-for="${messageId}"]`)?.remove();
+    const msgEl = drawn ?? transcriptRowElement(list, messageId);
+    if (msgEl) rowCardElement(msgEl, "data-review-for", messageId)?.remove();
     const msg = getActiveThread(store2)?.messages.find((m2) => m2.id === messageId);
-    const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
     if (!msg?.review || !msgEl) return;
     const card = createReviewCardEl(msg.review, api2, () => {
       retryReview(store2, api2, threadId, messageId);
@@ -22248,11 +22560,11 @@ function mountConversation(root, store2, api2, options = {}) {
     card.setAttribute("data-review-for", messageId);
     msgEl.after(card);
   }
-  function renderMessageReviewReport(threadId, messageId) {
+  function renderMessageReviewReport(threadId, messageId, drawn) {
     if (threadId !== store2.getState().activeThreadId) return;
-    list.querySelector(`[data-review-report-card][data-review-report-for="${messageId}"]`)?.remove();
+    const msgEl = drawn ?? transcriptRowElement(list, messageId);
+    if (msgEl) rowCardElement(msgEl, "data-review-report-for", messageId)?.remove();
     const msg = getActiveThread(store2)?.messages.find((message2) => message2.id === messageId);
-    const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
     if (!msg?.reviewReport || !msgEl) return;
     const card = createReviewFindingsCardEl(msg.reviewReport, {
       onRetry: () => {
@@ -22270,16 +22582,16 @@ function mountConversation(root, store2, api2, options = {}) {
     });
     card.setAttribute("data-review-report-card", "");
     card.setAttribute("data-review-report-for", messageId);
-    const postTurnCard = list.querySelector(`[data-review-card][data-review-for="${messageId}"]`);
+    const postTurnCard = rowCardElement(msgEl, "data-review-for", messageId);
     (postTurnCard ?? msgEl).after(card);
   }
-  function renderMessageTurnRecovery(threadId, messageId) {
+  function renderMessageTurnRecovery(threadId, messageId, drawn) {
     if (threadId !== store2.getState().activeThreadId) return;
-    list.querySelector(`[data-turn-recovery-for="${messageId}"]`)?.remove();
+    const msgEl = drawn ?? transcriptRowElement(list, messageId);
+    if (msgEl) rowCardElement(msgEl, "data-turn-recovery-for", messageId)?.remove();
     const state = store2.getState();
     const projectId = state.activeProjectId;
     const thread = state.threads.find((candidate) => candidate.id === threadId);
-    const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
     const msg = thread?.messages.find((candidate) => candidate.id === messageId);
     if (msgEl && msg) syncConciseMessageClasses(msgEl, msg, conciseEnabledFor(thread, messageId));
     scheduleConciseTurnFooterSync();
@@ -22695,7 +23007,7 @@ function mountConversation(root, store2, api2, options = {}) {
     store2.on("message_token", (mid) => {
       const thread = getActiveThread(store2);
       const msg = thread?.messages.find((m2) => m2.id === mid);
-      const msgEl = list.querySelector(`[data-message-id="${mid}"]`);
+      const msgEl = transcriptRowElement(list, mid);
       const textEl = msgEl?.querySelector(".message-text");
       if (textEl && msg?.role === "assistant") {
         setAssistantMarkdown(textEl, msg.content, true, api2);
@@ -22971,6 +23283,7 @@ function attachCopyButton(body, msgId, store2) {
 var PATCH_OP_LABEL, lazyToolCardBodies, toolResultContentSignatures, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolGroupItemSignatures, acpDiffLineSigns, acpDiffLineNames, emptyReasoningBlocks, reasoningRenders, INITIAL_RENDER_WINDOW, REOPENABLE_REASONING, BACKFILL_CHUNK_SIZE, UNSIGNED_ROW;
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
+    init_one_line_text();
     init_helpers();
     init_transcript_rows();
     init_thread_archive_review();
@@ -51258,7 +51571,7 @@ function preprocessTablePipes(src) {
     return escapeTableCellPipes(line);
   }).join("\n");
 }
-function collapseWhitespace(s) {
+function collapseWhitespace2(s) {
   return (s || "").replaceAll("", " ").replace(/\s+/g, " ").trim();
 }
 function replaceCellLineSeparator(value, cellLineSeparator) {
@@ -51277,7 +51590,7 @@ function renderTableToMarkdown(node, h2, options = {}) {
       let raw = "";
       if (cellNode.content && Array.isArray(cellNode.content) && cellNode.content.length > 1) raw = cellNode.content.map((child) => replaceCellLineSeparator(h2.renderChildren(child), options.cellLineSeparator)).join("\n");
       else raw = replaceCellLineSeparator(cellNode.content ? h2.renderChildren(cellNode.content) : "", options.cellLineSeparator);
-      const text = escapePipesInCellText(collapseWhitespace(raw.replace(/[ \t]*\r?\n[ \t]*/g, "<br>")));
+      const text = escapePipesInCellText(collapseWhitespace2(raw.replace(/[ \t]*\r?\n[ \t]*/g, "<br>")));
       const isHeader = cellNode.type === "tableHeader";
       const align = normalizeTableCellAlignFromAttributes(cellNode.attrs);
       cells.push({
@@ -52899,6 +53212,7 @@ var init_thread_branch = __esm({
 var READ_TERMINAL_ENABLED_SETTING, READ_TERMINAL_ENABLED_DEFAULT, READ_TERMINAL_DEFAULT_LINES;
 var init_read_terminal = __esm({
   "src/shared/terminal/read-terminal.ts"() {
+    init_clamp();
     READ_TERMINAL_ENABLED_SETTING = "readTerminalEnabled";
     READ_TERMINAL_ENABLED_DEFAULT = true;
     READ_TERMINAL_DEFAULT_LINES = 200;
@@ -53272,6 +53586,7 @@ var init_remote_composer = __esm({
 var MIN_SAMPLE_INTERVAL_SECONDS;
 var init_decode_contract = __esm({
   "src/shared/video/decode-contract.ts"() {
+    init_clamp();
     MIN_SAMPLE_INTERVAL_SECONDS = 1 / 30;
   }
 });
@@ -53706,7 +54021,10 @@ function initSkillPicker(opts) {
   function filterSkills(query, skills) {
     const q2 = query.toLowerCase();
     if (!q2) return [...skills];
-    const matched = skills.filter(
+    const candidates = skills.map(
+      (skill) => q2.includes(":") && skill.kind === "skill" && skill.plugin ? { ...skill, name: `${skill.plugin}:${skill.name}` } : skill
+    );
+    const matched = candidates.filter(
       (skill) => skill.name.toLowerCase().includes(q2) || skill.description.toLowerCase().includes(q2)
     );
     return matched.sort((a, b2) => {
@@ -53985,13 +54303,13 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 function invocationTokenPattern(name) {
-  return `\\/${escapeRegExp(name)}(?![a-z0-9-])`;
+  return `\\/${escapeRegExp(name)}(?![a-z0-9:/_-]|\\.[a-z0-9_-])`;
 }
 function inlineInvocationPattern(name) {
   return new RegExp(`(^|\\s)${invocationTokenPattern(name)}`);
 }
 function stripInvocationToken(text, name) {
-  return text.replace(inlineInvocationPattern(name), "$1").replace(/\s+/g, " ").trim();
+  return collapseWhitespace(text.replace(inlineInvocationPattern(name), "$1"));
 }
 function parseLeadingInvocation(text) {
   const trimmed2 = text.trim();
@@ -54002,25 +54320,35 @@ function parseLeadingInvocation(text) {
   return { name, remainder: (match[2] ?? "").trim() };
 }
 function resolveInvocation(text, invocables) {
-  const kindOf = (name) => invocables.find((entry) => entry.name === name)?.kind ?? null;
+  const candidates = invocables.flatMap((entry) => [
+    { token: entry.name, entry },
+    ...entry.kind === "skill" && entry.plugin ? [{ token: `${entry.plugin}:${entry.name}`, entry }] : []
+  ]);
   const leading = parseLeadingInvocation(text);
-  if (leading) return { ...leading, kind: kindOf(leading.name) };
+  if (leading) {
+    const match = candidates.find(({ token }) => token === leading.name);
+    return {
+      name: match?.entry.name ?? leading.name,
+      remainder: leading.remainder,
+      kind: match?.entry.kind ?? null
+    };
+  }
   const trimmed2 = text.trim();
   if (!trimmed2 || invocables.length === 0) return null;
-  const sorted = [...invocables].sort((a, b2) => b2.name.length - a.name.length);
-  for (const { name, kind } of sorted) {
-    if (!inlineInvocationPattern(name).test(trimmed2)) continue;
-    return { name, kind, remainder: stripInvocationToken(trimmed2, name) };
+  const sorted = candidates.sort((a, b2) => b2.token.length - a.token.length);
+  for (const { token, entry } of sorted) {
+    if (!inlineInvocationPattern(token).test(trimmed2)) continue;
+    return { name: entry.name, kind: entry.kind, remainder: stripInvocationToken(trimmed2, token) };
   }
   return null;
 }
-function mergeInvocables(skillNames, agentNames) {
+function mergeInvocables(skills, agentNames) {
   const seen = /* @__PURE__ */ new Set();
   const merged = [];
-  for (const name of skillNames) {
+  for (const { name, plugin } of skills) {
     if (seen.has(name)) continue;
     seen.add(name);
-    merged.push({ name, kind: "skill" });
+    merged.push({ name, kind: "skill", ...plugin ? { plugin } : {} });
   }
   for (const name of agentNames) {
     if (seen.has(name)) continue;
@@ -54032,7 +54360,8 @@ function mergeInvocables(skillNames, agentNames) {
 var LEADING_INVOCATION_RE;
 var init_parse_invocation = __esm({
   "src/shared/invocation/parse-invocation.ts"() {
-    LEADING_INVOCATION_RE = /^\/([a-z0-9][a-z0-9-]*)\b(?:\s+(.*))?$/s;
+    init_one_line_text();
+    LEADING_INVOCATION_RE = /^\/((?:[a-z0-9][a-z0-9._-]*:)?[a-z0-9][a-z0-9-]*)(?:\s+(.*))?$/s;
   }
 });
 
@@ -54383,7 +54712,11 @@ function mountFooterBranchStatus(host, store2, api2) {
     const picked = baseBranchByThread.get(thread.id);
     if (picked) return picked;
     if (thread.id !== store2.getState().activeThreadId) return void 0;
+    if (projectCheckoutDetached()) return void 0;
     return defaultBranch && branches.some((branch) => branch.name === defaultBranch) ? defaultBranch : void 0;
+  }
+  function projectCheckoutDetached() {
+    return isPickerMode() && status?.detached === true;
   }
   function activeBaseBranch() {
     const thread = getActiveThread2();
@@ -54433,9 +54766,10 @@ function mountFooterBranchStatus(host, store2, api2) {
     const displayBranch = getDisplayBranch();
     const pickerMode = isPickerMode();
     const pr = getVisiblePr();
+    const startsDetached = !displayBranch && projectCheckoutDetached();
     deferredNote.hidden = !readsCheckout();
-    trigger.hidden = !displayBranch;
-    if (!displayBranch) {
+    trigger.hidden = !displayBranch && !startsDetached;
+    if (!displayBranch && !startsDetached) {
       wrap2.hidden = !readsCheckout();
       branchToCopy = null;
       setOpen(false);
@@ -54458,7 +54792,14 @@ function mountFooterBranchStatus(host, store2, api2) {
       trigger.removeAttribute("aria-expanded");
       setOpen(false);
     }
-    if (pr) {
+    if (!displayBranch) {
+      label.textContent = DETACHED_HEAD_LABEL;
+      trigger.title = DETACHED_START_TITLE;
+      trigger.classList.remove("is-link");
+      trigger.classList.remove("is-copyable");
+      branchToCopy = null;
+      trigger.setAttribute("aria-label", DETACHED_START_TITLE);
+    } else if (pr) {
       label.textContent = `PR #${String(pr.number)}`;
       trigger.title = mismatch ? `${mismatchMessage} (${pr.title})` : pr.title;
       trigger.classList.add("is-link");
@@ -54625,15 +54966,15 @@ function mountFooterBranchStatus(host, store2, api2) {
     const ordered = orderBranchesWithDefaultFirst(branches, defaultBranch);
     const query = filterInput.value.trim().toLocaleLowerCase();
     const matches3 = query ? ordered.filter((branch) => branch.name.toLocaleLowerCase().includes(query)) : ordered;
-    return { pr, matches: matches3 };
+    return { pr, head: !query && projectCheckoutDetached(), matches: matches3 };
   }
   function rowCount() {
-    const { pr, matches: matches3 } = filteredRows();
-    return (pr ? 1 : 0) + matches3.length;
+    const { pr, head, matches: matches3 } = filteredRows();
+    return (pr ? 1 : 0) + (head ? 1 : 0) + matches3.length;
   }
   function clampActiveIndex() {
     const count = rowCount();
-    activeIndex = count === 0 ? 0 : Math.max(0, Math.min(count - 1, activeIndex));
+    activeIndex = count === 0 ? 0 : clamp(activeIndex, 0, count - 1);
   }
   function scrollActiveRowIntoView() {
     const active2 = list.querySelector(".branch-picker-option.is-active");
@@ -54655,21 +54996,35 @@ function mountFooterBranchStatus(host, store2, api2) {
     renderTrigger();
     renderMenu();
   }
+  function selectDetachedHead() {
+    setOpen(false);
+    trigger.focus();
+    const thread = getActiveThread2();
+    if (!thread) return;
+    baseBranchByThread.delete(thread.id);
+    renderTrigger();
+    renderMenu();
+  }
   function activateRow(index) {
-    const { pr, matches: matches3 } = filteredRows();
+    const { pr, head, matches: matches3 } = filteredRows();
     if (pr && index === 0) {
       setOpen(false);
       trigger.focus();
       openBrowserUrl(store2, pr.url);
       return;
     }
-    const branch = matches3[pr ? index - 1 : index];
+    const headIndex = pr ? 1 : 0;
+    if (head && index === headIndex) {
+      selectDetachedHead();
+      return;
+    }
+    const branch = matches3[index - headIndex - (head ? 1 : 0)];
     if (branch) selectBranch(branch.name);
   }
   function moveActive(direction) {
     const count = rowCount();
     if (count === 0) return;
-    activeIndex = Math.max(0, Math.min(count - 1, activeIndex + direction));
+    activeIndex = clamp(activeIndex + direction, 0, count - 1);
     renderMenu();
   }
   function renderMenu() {
@@ -54677,7 +55032,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     filterInput.removeAttribute("aria-activedescendant");
     if (!isPickerMode()) return;
     const selected = activeBaseBranch() ?? status?.currentBranch ?? null;
-    const { pr, matches: matches3 } = filteredRows();
+    const { pr, head, matches: matches3 } = filteredRows();
     clampActiveIndex();
     let rowIndex = 0;
     if (pr) {
@@ -54700,6 +55055,27 @@ function mountFooterBranchStatus(host, store2, api2) {
         openBrowserUrl(store2, pr.url);
       });
       list.append(prItem);
+      rowIndex++;
+    }
+    if (head) {
+      const headItem = el(
+        "button",
+        {
+          type: "button",
+          class: "branch-picker-option branch-picker-detached-head",
+          id: `${listId}-option-${String(rowIndex)}`,
+          role: "option",
+          tabindex: "-1",
+          title: DETACHED_START_TITLE,
+          "aria-selected": rowIndex === activeIndex ? "true" : "false"
+        },
+        el("span", { class: "branch-picker-option-label" }, DETACHED_HEAD_LABEL),
+        el("span", { class: "branch-picker-default-badge" }, "current")
+      );
+      if (selected === null) headItem.classList.add("is-selected");
+      if (rowIndex === activeIndex) headItem.classList.add("is-active");
+      headItem.addEventListener("click", selectDetachedHead);
+      list.append(headItem);
       rowIndex++;
     }
     for (const branch of matches3) {
@@ -54971,10 +55347,13 @@ function mountFooterBranchStatus(host, store2, api2) {
       if (!thread || !isBlankThread(thread)) return void 0;
       const picked = baseBranchByThread.get(threadId);
       if (picked) return picked;
-      const [listed, defaultName] = await Promise.all([
+      const loaded = threadId === store2.getState().activeThreadId && status !== null ? status : null;
+      const [listed, defaultName, head] = await Promise.all([
         api2.git.listBranches(projectId, threadId),
-        api2.git.getDefaultBranch(projectId, threadId)
+        api2.git.getDefaultBranch(projectId, threadId),
+        loaded ?? api2.git.branchStatus(projectId, threadId)
       ]);
+      if (head.detached === true) return void 0;
       return defaultName && listed.some((branch) => branch.name === defaultName) ? defaultName : void 0;
     },
     destroy: () => {
@@ -54989,9 +55368,10 @@ function mountFooterBranchStatus(host, store2, api2) {
     }
   };
 }
-var COPIED_BRANCH_TOAST, COPY_FEEDBACK_MS, DEFERRED_NOTE_TEXT, DEFERRED_NOTE_TITLE, nextPickerId;
+var COPIED_BRANCH_TOAST, COPY_FEEDBACK_MS, DEFERRED_NOTE_TEXT, DEFERRED_NOTE_TITLE, nextPickerId, DETACHED_HEAD_LABEL, DETACHED_START_TITLE;
 var init_footer_branch_status = __esm({
   "src/renderer/views/footer-branch-status.ts"() {
+    init_clamp();
     init_helpers();
     init_icons();
     init_thread_branch();
@@ -55006,6 +55386,8 @@ var init_footer_branch_status = __esm({
     DEFERRED_NOTE_TEXT = "Reading your checkout";
     DEFERRED_NOTE_TITLE = "This thread is reading your checkout and can\u2019t change it. It gets its own worktree once it asks to make changes; until then, anything that tries to write here is refused.";
     nextPickerId = 0;
+    DETACHED_HEAD_LABEL = "Detached HEAD";
+    DETACHED_START_TITLE = "Start this thread from the checked-out commit (detached HEAD). Pick a branch to switch the checkout to it instead.";
   }
 });
 
@@ -55335,7 +55717,7 @@ function createContextWheel() {
     fill.classList.toggle("is-warn", ratio >= CONTEXT_WARN_RATIO && ratio < CONTEXT_DANGER_RATIO);
   }
   function renderSnapshot(snapshot, running, options) {
-    const ratio = Math.min(1, Math.max(0, snapshot.fillRatio));
+    const ratio = clamp(snapshot.fillRatio, 0, 1);
     const visible = running || ratio > 0.01 || currentUsage !== null;
     root.hidden = !visible;
     if (!visible) return;
@@ -55405,6 +55787,7 @@ function createContextWheel() {
 var RADIUS, CIRCUMFERENCE, SVG_NS3, CONTEXT_WARN_RATIO, CONTEXT_DANGER_RATIO, SEGMENT_COLORS;
 var init_context_wheel = __esm({
   "src/renderer/views/context-wheel.ts"() {
+    init_clamp();
     init_footer_usage_popover();
     RADIUS = 6;
     CIRCUMFERENCE = 2 * Math.PI * RADIUS;
@@ -55919,6 +56302,7 @@ function buildChangesSuggestion(stats) {
 var DETERMINISTIC_FOLLOW_UP_IDS;
 var init_presets = __esm({
   "src/shared/follow-ups/presets.ts"() {
+    init_one_line_text();
     DETERMINISTIC_FOLLOW_UP_IDS = {
       changes: "changes",
       createPr: "create-pr",
@@ -55969,12 +56353,6 @@ var init_changes_stat = __esm({
 });
 
 // src/renderer/views/create-pr-dialog.ts
-function ensureDialog() {
-  if (dialogEl2) return dialogEl2;
-  dialogEl2 = el("dialog", { id: "create-pr-dialog", class: "create-pr-dialog" });
-  document.body.append(dialogEl2);
-  return dialogEl2;
-}
 function openCreatePrDialog(opts) {
   const dialog = ensureDialog();
   clear(dialog);
@@ -56128,11 +56506,12 @@ function openCreatePrDialog(opts) {
     titleInput.select();
   });
 }
-var dialogEl2;
+var ensureDialog;
 var init_create_pr_dialog = __esm({
   "src/renderer/views/create-pr-dialog.ts"() {
+    init_dialog_shell();
     init_helpers();
-    dialogEl2 = null;
+    ensureDialog = lazyBodyDialog("create-pr-dialog", "create-pr-dialog");
   }
 });
 
@@ -56191,9 +56570,11 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
   });
   let offered = [];
   const fetchTokens = /* @__PURE__ */ new Map();
+  const inFlightFetches = /* @__PURE__ */ new Map();
   const nextFetchToken = (threadId) => {
     const token = (fetchTokens.get(threadId) ?? 0) + 1;
     fetchTokens.set(threadId, token);
+    inFlightFetches.delete(threadId);
     return token;
   };
   const changesRefreshTokens = /* @__PURE__ */ new Map();
@@ -56206,6 +56587,14 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
   let displayedThreadId = null;
   const suggestionsByThread = /* @__PURE__ */ new Map();
   const consumedTurnKeys = /* @__PURE__ */ new Map();
+  function servingCache(threadId, turnKey) {
+    const cached = suggestionsByThread.get(threadId);
+    if (cached?.turnKey !== turnKey) return null;
+    return cached.settled || !turnSettled(threadId) ? cached : null;
+  }
+  function turnSettled(threadId) {
+    return store2.getState().threads.find((thread) => thread.id === threadId)?.status !== "running";
+  }
   function consumeSuggestions(threadId) {
     const exchange = lastExchange(store2, threadId);
     if (exchange) consumedTurnKeys.set(threadId, exchange.turnKey);
@@ -56301,8 +56690,8 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
     const consumedTurnKey = consumedTurnKeys.get(threadId);
     if (consumedTurnKey === exchange.turnKey) return;
     if (consumedTurnKey) consumedTurnKeys.delete(threadId);
-    const cached = suggestionsByThread.get(threadId);
-    if (cached?.turnKey === exchange.turnKey) {
+    const cached = servingCache(threadId, exchange.turnKey);
+    if (cached) {
       if (store2.getState().activeThreadId === threadId) {
         renderSuggestions(threadId, cached.suggestions);
       }
@@ -56310,7 +56699,11 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
     }
     const { activeProjectId } = store2.getState();
     if (!activeProjectId) return;
+    const settled = turnSettled(threadId);
+    const fetchKey = `${exchange.turnKey}\0${settled ? "settled" : "live"}`;
+    if (inFlightFetches.get(threadId)?.key === fetchKey) return;
     const token = nextFetchToken(threadId);
+    inFlightFetches.set(threadId, { key: fetchKey, token });
     try {
       const suggestions = await api2.agent.suggestFollowUps(
         activeProjectId,
@@ -56318,7 +56711,7 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
         JSON.stringify(exchange.context)
       );
       if (token !== fetchTokens.get(threadId)) return;
-      suggestionsByThread.set(threadId, { turnKey: exchange.turnKey, suggestions });
+      suggestionsByThread.set(threadId, { turnKey: exchange.turnKey, suggestions, settled });
       if (store2.getState().activeThreadId === threadId) {
         renderSuggestions(threadId, suggestions);
         void refreshChangesStat();
@@ -56327,6 +56720,8 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
       if (token !== fetchTokens.get(threadId)) return;
       suggestionsByThread.delete(threadId);
       if (store2.getState().activeThreadId === threadId) clearSuggestions();
+    } finally {
+      if (inFlightFetches.get(threadId)?.token === token) inFlightFetches.delete(threadId);
     }
   }
   async function refreshChangesStat() {
@@ -56346,7 +56741,7 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
     if (suggestionsByThread.get(activeId) !== cached) return;
     const next = reconcileChangesSuggestion(cached.suggestions, stats);
     if (next === cached.suggestions) return;
-    suggestionsByThread.set(activeId, { turnKey: cached.turnKey, suggestions: next });
+    suggestionsByThread.set(activeId, { ...cached, suggestions: next });
     if (store2.getState().activeThreadId === activeId) renderSuggestions(activeId, next);
   }
   function scheduleChangesRefresh() {
@@ -56371,8 +56766,8 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
       return;
     }
     if (consumedTurnKey) consumedTurnKeys.delete(activeId);
-    const cached = suggestionsByThread.get(activeId);
-    if (cached?.turnKey === exchange.turnKey) {
+    const cached = servingCache(activeId, exchange.turnKey);
+    if (cached) {
       renderSuggestions(activeId, cached.suggestions);
       return;
     }
@@ -56382,11 +56777,9 @@ function mountFollowUpSuggestions(store2, api2, onSelect, onChanged = () => {
     store2.on("thread_status_changed", (tid, status) => {
       if (status === "running") {
         suggestionsByThread.delete(tid);
+        nextFetchToken(tid);
         nextChangesRefreshToken(tid);
-        if (tid === store2.getState().activeThreadId) {
-          nextFetchToken(tid);
-          clearSuggestions();
-        }
+        if (tid === store2.getState().activeThreadId) clearSuggestions();
         return;
       }
       if (status === "idle") void maybeFetchSuggestions(tid);
@@ -58921,7 +59314,7 @@ ${description}
   }
   function currentInvocables() {
     return mergeInvocables(
-      (skillsCache ?? []).map((skill) => skill.name),
+      skillsCache ?? [],
       (agentsCache ?? []).map((agent2) => agent2.name)
     );
   }
@@ -59289,7 +59682,7 @@ ${description}
     const invocation = resolveInvocation(
       rawText,
       mergeInvocables(
-        skills.map((skill) => skill.name),
+        skills,
         agents.map((agent2) => agent2.name)
       )
     );
@@ -59860,6 +60253,7 @@ ${reply}`);
       return [
         ...skills.map((skill) => ({
           name: skill.name,
+          ...skill.plugin ? { plugin: skill.plugin } : {},
           description: skill.description,
           kind: "skill"
         })),
@@ -70991,6 +71385,33 @@ var init_selection_to_chat = __esm({
   }
 });
 
+// packages/std/src/with-timeout.ts
+function withTimeout(promise, ms, onTimeout) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      try {
+        resolve(onTimeout());
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error(String(error), { cause: error }));
+      }
+    }, ms);
+    const settled = Promise.resolve(promise);
+    settled.then(resolve, reject);
+    settled.then(
+      () => {
+        clearTimeout(timer);
+      },
+      () => {
+        clearTimeout(timer);
+      }
+    );
+  });
+}
+var init_with_timeout = __esm({
+  "packages/std/src/with-timeout.ts"() {
+  }
+});
+
 // src/renderer/monaco/diff-scroll.ts
 function nextAnimationFrame() {
   return new Promise(
@@ -71013,19 +71434,11 @@ function waitForDidUpdateDiff(diffEditor, timeoutMs) {
   });
 }
 async function waitForViewModelDiff(viewModel, timeoutMs) {
-  let timeoutId;
-  try {
-    await Promise.race([
-      viewModel.waitForDiff().catch(() => void 0),
-      new Promise((resolve) => {
-        timeoutId = setTimeout(() => {
-          resolve();
-        }, timeoutMs);
-      })
-    ]);
-  } finally {
-    if (timeoutId !== void 0) clearTimeout(timeoutId);
-  }
+  await withTimeout(
+    viewModel.waitForDiff().catch(() => void 0),
+    timeoutMs,
+    () => void 0
+  );
 }
 async function refreshGitChangesDiffCollapse(diffEditor) {
   diffEditor.updateOptions({
@@ -71066,6 +71479,7 @@ function revealFirstDiffChange(diffEditor) {
 var HIDE_UNCHANGED_REGIONS, GIT_CHANGES_DIFF_EDITOR_OPTIONS;
 var init_diff_scroll = __esm({
   "src/renderer/monaco/diff-scroll.ts"() {
+    init_with_timeout();
     HIDE_UNCHANGED_REGIONS = {
       enabled: true,
       contextLineCount: 3,
@@ -71100,7 +71514,7 @@ var init_diff_scroll = __esm({
 
 // src/renderer/dom/editor-theme.ts
 function hexByte(value) {
-  return Math.round(Math.min(255, Math.max(0, value))).toString(16).padStart(2, "0");
+  return Math.round(clamp(value, 0, 255)).toString(16).padStart(2, "0");
 }
 function isOpaque(alpha2) {
   if (alpha2 === void 0) return true;
@@ -71237,6 +71651,7 @@ function installMonacoEditorTheme(monaco) {
 var EDITOR_THEME_TOKEN_PROPERTIES, FALLBACK_EDITOR_THEME_TOKENS, COPSE_MONACO_THEME, HEX_PATTERN, FUNCTION_PATTERN, INACTIVE_SELECTION_WEIGHT, EDITOR_THEME_TOKEN_FIELDS;
 var init_editor_theme = __esm({
   "src/renderer/dom/editor-theme.ts"() {
+    init_clamp();
     EDITOR_THEME_TOKEN_PROPERTIES = {
       background: "--bg-base",
       elevated: "--bg-elevated",
@@ -71782,7 +72197,7 @@ function mountRightPanelLayout(store2) {
     const isBrowser = mode === "browser";
     const isVnc = mode === "vnc";
     const sidebar = document.getElementById("right-sidebar");
-    if (sidebar) sidebar.hidden = isContext;
+    if (sidebar) sidebar.hidden = isContext || isPrs;
     const treeHost = document.getElementById("file-tree-host");
     const contextHost = document.getElementById("context-host");
     const sideChatHost = document.getElementById("side-chat-host");
@@ -71824,7 +72239,7 @@ function mountRightPanelLayout(store2) {
     if (roadmapViewer) roadmapViewer.hidden = !isRoadmap;
     if (browserViewer) browserViewer.hidden = !isBrowser;
     if (vncViewer) vncViewer.hidden = !isVnc;
-    if (treeResizer) treeResizer.hidden = isContext || !store2.getState().filesPaneOpen;
+    if (treeResizer) treeResizer.hidden = isContext || isPrs || !store2.getState().filesPaneOpen;
   }
   function syncMaximized() {
     const maximized = isRightPanelMaximized(store2);
@@ -72140,6 +72555,58 @@ var init_create_after_persist = __esm({
   }
 });
 
+// src/renderer/terminal/create-events.ts
+var MAX_SESSIONS, MAX_OUTPUT, TerminalCreateEvents;
+var init_create_events = __esm({
+  "src/renderer/terminal/create-events.ts"() {
+    MAX_SESSIONS = 16;
+    MAX_OUTPUT = 64 * 1024;
+    TerminalCreateEvents = class {
+      pending = 0;
+      sessions = /* @__PURE__ */ new Map();
+      begin() {
+        this.pending += 1;
+        let finished = false;
+        return () => {
+          if (finished) return;
+          finished = true;
+          this.pending -= 1;
+          if (this.pending === 0) this.clear();
+        };
+      }
+      output(sessionId, data) {
+        if (this.pending === 0) return;
+        const events = this.get(sessionId);
+        if (events.exitCode === null) events.output = (events.output + data).slice(-MAX_OUTPUT);
+      }
+      exit(sessionId, code2) {
+        if (this.pending === 0) return;
+        this.get(sessionId).exitCode ??= code2;
+      }
+      take(sessionId) {
+        const events = this.sessions.get(sessionId);
+        this.sessions.delete(sessionId);
+        return events;
+      }
+      clear() {
+        this.sessions.clear();
+      }
+      get(sessionId) {
+        let events = this.sessions.get(sessionId);
+        if (!events) {
+          if (this.sessions.size === MAX_SESSIONS) {
+            const oldest = this.sessions.keys().next().value;
+            if (oldest !== void 0) this.sessions.delete(oldest);
+          }
+          events = { output: "", exitCode: null };
+          this.sessions.set(sessionId, events);
+        }
+        return events;
+      }
+    };
+  }
+});
+
 // src/renderer/terminal/start-failure-message.ts
 function terminalStartFailureMessage(err) {
   const detail = unwrapIpcErrorText(errorMessage(err));
@@ -72240,25 +72707,30 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
   listRoot.append(section2);
   viewerRoot.append(body);
   const tabs = /* @__PURE__ */ new Map();
+  const createEvents = new TerminalCreateEvents();
+  let disposed = false;
   let activeTabId = null;
   let tabCounter = 0;
   let lastThreadId = store2.getState().activeThreadId;
+  function isTabOpen(tab) {
+    return !disposed && tabs.get(tab.id) === tab;
+  }
+  function writeOutput(tab, data) {
+    tab.term.write(data);
+    tab.fileLinks.refresh();
+    if (tab.commandRan) scheduleAutoName(tab);
+  }
   const unsubOutput = api2.terminal.onOutput((id, data) => {
-    for (const tab of tabs.values()) {
-      if (tab.sessionId === id) {
-        tab.term.write(data);
-        tab.fileLinks.refresh();
-        if (tab.commandRan) scheduleAutoName(tab);
-      }
-    }
+    const tab = [...tabs.values()].find((candidate) => candidate.sessionId === id);
+    if (tab) writeOutput(tab, data);
+    else createEvents.output(id, data);
   });
   const unsubRunCommand = api2.terminal.onRunCommand((command2) => {
     void runCommandInNewShell(command2);
   });
-  const unsubExit = api2.terminal.onExit((id, code2) => {
-    const tab = [...tabs.values()].find((t) => t.sessionId === id);
-    if (!tab) return;
+  function finishSession(tab, code2) {
     tab.sessionId = null;
+    tab.pendingInput.length = 0;
     tab.term.write("", () => {
       finishCodeBlockRun(tab, code2);
     });
@@ -72266,6 +72738,11 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
       code2 === -1 ? "\r\n\x1B[90m[Terminal stopped]\x1B[0m" : `\r
 \x1B[90m[Process exited with code ${String(code2)}]\x1B[0m`
     );
+  }
+  const unsubExit = api2.terminal.onExit((id, code2) => {
+    const tab = [...tabs.values()].find((candidate) => candidate.sessionId === id);
+    if (tab) finishSession(tab, code2);
+    else createEvents.exit(id, code2);
   });
   async function createXterm() {
     const { Terminal, FitAddon } = await loadXterm();
@@ -72406,13 +72883,13 @@ ${output}` : "Terminal output: (none)"
   async function flushPendingInput(tab) {
     if (!tab.sessionId) return;
     let chunk = tab.pendingInput.shift();
-    while (chunk !== void 0) {
+    while (chunk !== void 0 && tab.sessionId && isTabOpen(tab)) {
       await api2.terminal.write(tab.sessionId, chunk);
       chunk = tab.pendingInput.shift();
     }
   }
   async function ensureSession(tab) {
-    if (tab.sessionId || tab.creating) return;
+    if (!isTabOpen(tab) || tab.sessionId || tab.creating) return;
     if (tab.awaitingConnect) {
       openTerminalSurface(tab);
       fitTab(tab);
@@ -72425,6 +72902,7 @@ ${output}` : "Terminal output: (none)"
       return;
     }
     tab.creating = true;
+    const finishCreate = createEvents.begin();
     try {
       if (!tab.codeBlockRun) {
         openTerminalSurface(tab);
@@ -72441,16 +72919,26 @@ ${output}` : "Terminal output: (none)"
           ...tab.executionTarget ? { executionTarget: tab.executionTarget } : {}
         }
       );
+      const early = createEvents.take(created.sessionId);
+      finishCreate();
+      if (!isTabOpen(tab)) {
+        await api2.terminal.destroy(created.sessionId);
+        return;
+      }
       tab.sessionId = created.sessionId;
+      if (early?.output) writeOutput(tab, early.output);
+      if (early && early.exitCode !== null) finishSession(tab, early.exitCode);
       const worktreePath = currentWorktreePath(tab.scopeId);
       tab.checkoutPath = created.checkoutMode === "worktree" ? worktreePath : null;
       tab.checkoutBadge.hidden = true;
       publishActive(tab);
       await flushPendingInput(tab);
-      if (created.checkoutMode === "shared" && worktreePath) {
+      if (isTabOpen(tab) && tab.sessionId && created.checkoutMode === "shared" && worktreePath) {
         await preserveSharedShell(tab, worktreePath);
       }
     } catch (err) {
+      if (!isTabOpen(tab)) return;
+      tab.pendingInput.length = 0;
       console.error("[terminals] could not start a shell:", err);
       tab.term.writeln(
         `\x1B[31mFailed to start terminal: ${terminalStartFailureMessage(err)}\x1B[0m`,
@@ -72460,6 +72948,7 @@ ${output}` : "Terminal output: (none)"
       );
     } finally {
       tab.creating = false;
+      finishCreate();
     }
   }
   async function destroySession(tab) {
@@ -72469,7 +72958,7 @@ ${output}` : "Terminal output: (none)"
     await api2.terminal.destroy(old);
   }
   function fitTab(tab) {
-    if (!terminalModeActive(store2) || !tab.panel.classList.contains("is-active") || !tab.termOpened)
+    if (!isTabOpen(tab) || !terminalModeActive(store2) || !tab.panel.classList.contains("is-active") || !tab.termOpened)
       return;
     try {
       tab.fitAddon.fit();
@@ -72480,6 +72969,7 @@ ${output}` : "Terminal output: (none)"
     }
   }
   function focusTab(tab, opts) {
+    if (!isTabOpen(tab)) return;
     openTerminalSurface(tab);
     fitTab(tab);
     if (opts?.grabFocus ?? true) tab.term.focus();
@@ -72637,6 +73127,11 @@ ${output}` : "Terminal output: (none)"
       else creatingTabs.delete(scopeId);
     }
     const { term, fitAddon } = xterm;
+    if (disposed) {
+      term.dispose();
+      fitAddon.dispose();
+      return id;
+    }
     const fileLinks = installTerminalFileLinks(term, store2, api2);
     const remoteHost = remoteTerminalHostLabel(
       store2.getState().projects,
@@ -72736,13 +73231,13 @@ ${output}` : "Terminal output: (none)"
   async function removeTab(tabId) {
     const tab = tabs.get(tabId);
     if (!tab) return;
+    tabs.delete(tabId);
     if (tab.nameTimer != null) clearTimeout(tab.nameTimer);
     tab.fileLinks.dispose();
     await destroySession(tab);
     finishCodeBlockRun(tab, null);
     tab.term.dispose();
     tab.tabSwitch.remove();
-    tabs.delete(tabId);
     if (activeTabId !== tabId) return;
     const remaining = visibleTabs();
     const lastRemaining = remaining[remaining.length - 1];
@@ -72779,7 +73274,7 @@ ${output}` : "Terminal output: (none)"
     if (tab) fitTab(tab);
   });
   function showActiveTab() {
-    if (!terminalModeActive(store2)) return;
+    if (disposed || !terminalModeActive(store2)) return;
     const tab = activeTabId ? tabs.get(activeTabId) : null;
     if (!tab) return;
     resizeObserver.observe(tab.container);
@@ -72836,7 +73331,7 @@ ${output}` : "Terminal output: (none)"
     const command2 = request.command.trim();
     if (!command2) return;
     const oneLine = command2.split(/\s+/).join(" ");
-    const summary = oneLine.length > 48 ? `${oneLine.slice(0, 47)}\u2026` : oneLine;
+    const summary = ellipsize(oneLine, 48);
     const initialInput = `${command2.replace(/\r\n?|\n/g, "\r")}\rexit\r`;
     const label = `Run \xB7 ${summary}`;
     let tabId;
@@ -72937,6 +73432,11 @@ ${output}` : "Terminal output: (none)"
     }
   );
   return () => {
+    if (disposed) return;
+    disposed = true;
+    createEvents.clear();
+    const closedTabs = [...tabs.values()];
+    tabs.clear();
     unregisterCatalog();
     unsubs.forEach((u3) => {
       u3();
@@ -72946,19 +73446,20 @@ ${output}` : "Terminal output: (none)"
     unsubExit();
     unsubRunCommand();
     void (async () => {
-      for (const tab of tabs.values()) {
+      for (const tab of closedTabs) {
         if (tab.nameTimer != null) clearTimeout(tab.nameTimer);
         tab.fileLinks.dispose();
         await destroySession(tab);
+        finishCodeBlockRun(tab, null);
         tab.term.dispose();
       }
-      tabs.clear();
     })();
   };
 }
 var xtermModules;
 var init_terminals_pane = __esm({
   "src/renderer/views/terminals-pane.ts"() {
+    init_one_line_text();
     init_xterm();
     init_helpers();
     init_icons();
@@ -72978,6 +73479,7 @@ var init_terminals_pane = __esm({
     init_read_terminal();
     init_ui_scale();
     init_create_after_persist();
+    init_create_events();
     init_start_failure_message();
     init_tab_scope();
     init_remote_connect();
@@ -75299,6 +75801,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   let selectRequestId = 0;
   let diffLoadQueue = Promise.resolve();
   let pendingOpen = null;
+  let pickedFromList = false;
   let lastActionMessage = null;
   let otherExpanded = false;
   let otherLoaded = false;
@@ -75418,7 +75921,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     emptyState.textContent = ghStatus?.installed ? "GitHub CLI is not authenticated" : "GitHub CLI is not available";
   }
   function renderPrRow(pr, section2) {
-    const isSelected = selectedPr?.owner === pr.owner && selectedPr.repo === pr.repo && selectedPr.number === pr.number;
+    const isSelected = store2.getState().rightPanelMode === "prs" && selectedPr?.owner === pr.owner && selectedPr.repo === pr.repo && selectedPr.number === pr.number;
     const ci = el("span", {});
     const state = knownChecks(pr);
     const displayedState = state ?? (ghStatus && !ghStatus.authenticated ? "unavailable" : "loading");
@@ -75474,7 +75977,15 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
         checksLabel
       )
     );
-    row2.addEventListener("click", () => void selectPr(pr));
+    row2.addEventListener("click", () => {
+      const fromLocalReview = !prsModeActive(store2);
+      if (fromLocalReview) pickedFromList = true;
+      if (prDetails && githubPrKey(prDetails) === githubPrKey(pr)) {
+        if (fromLocalReview) void refreshDetailsAfterAction(pr);
+        return;
+      }
+      void selectPr(pr);
+    });
     if (!state) ensureCheck(pr);
     return row2;
   }
@@ -76215,7 +76726,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   }
   async function refresh(opts = {}) {
     const reason = opts.reason ?? "event";
-    if (refreshInFlight && reason === "poll") return;
+    if (refreshInFlight && (reason === "poll" || reason === "list")) return;
     refreshInFlight = true;
     try {
       await refreshBody(reason);
@@ -76273,7 +76784,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     }
     prList = mergePrLists(linkedRefs, [workspacePrs, myPrs]);
     renderList();
-    if (reason === "poll") return;
+    if (reason === "poll" || reason === "list") return;
     const openTarget = pendingOpen;
     pendingOpen = null;
     if (openTarget) {
@@ -76298,9 +76809,9 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   });
   filterInput.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
+    if (!filterQuery && !filterInput.value) return;
     e.preventDefault();
     e.stopPropagation();
-    if (!filterQuery && !filterInput.value) return;
     filterQuery = "";
     filterInput.value = "";
     renderList();
@@ -76316,10 +76827,18 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   const unbindActivityWorkspaceLinks = bindWorkspaceLinkClicks(activityHost, store2, api2);
   const unbindActivityBrowserLinks = bindBrowserLinkClicks(activityHost, store2, api2);
   const stopObservingLayout = observeDiffHostLayout(viewerRoot, () => diffEditor);
+  let wasPrSubject = prsModeActive(store2);
   const unsubs = [
-    selectRightPanelMode(store2, "prs", (active2) => {
+    selectRightPanel(store2, () => {
+      const active2 = prsModeActive(store2);
+      if (active2 === wasPrSubject) return;
+      wasPrSubject = active2;
+      const picked = pickedFromList;
+      pickedFromList = false;
       syncWatch();
-      if (active2) void refresh();
+      if (!active2) renderList();
+      else if (picked && !pendingOpen) renderList();
+      else void refresh();
     }),
     selectActiveWorkspace(store2, () => {
       threadRelationshipRequest++;
@@ -76391,7 +76910,11 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       if (next.selectedFile) selectedFile = next.selectedFile;
     }
   });
-  return () => {
+  function loadList() {
+    if (disposed || prsModeActive(store2)) return;
+    void refresh({ reason: "list" });
+  }
+  const destroy = () => {
     disposed = true;
     document.removeEventListener("pointerdown", dismissActions);
     titleGen++;
@@ -76414,6 +76937,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     diffEditor?.dispose();
     diffEditor = null;
   };
+  return Object.assign(destroy, { loadList });
 }
 var STATUS_LABEL2, AGENT_PROVIDER_LABEL, threadPrKeys, transcriptPrKeys, PR_PANE_INACTIVE;
 var init_pr_pane = __esm({
@@ -76463,6 +76987,170 @@ var init_pr_pane = __esm({
     threadPrKeys = /* @__PURE__ */ new WeakMap();
     transcriptPrKeys = /* @__PURE__ */ new WeakMap();
     PR_PANE_INACTIVE = "";
+  }
+});
+
+// src/renderer/views/review-pane.ts
+function mountReviewPane(root, store2, api2, monaco) {
+  const localList = qsRequired(root, "#git-changes-host");
+  const localViewer = qsRequired(root, "#git-diff-viewer-host");
+  const prList = qsRequired(root, "#pr-list-host");
+  const prViewer = qsRequired(root, "#pr-viewer-host");
+  const destroyLocal = mountGitChangesPane(localList, localViewer, store2, api2, monaco);
+  const prPane = mountPrPane(prList, prViewer, store2, api2, monaco);
+  const label = el("span", { class: "review-subject-label pane-header-title" });
+  const pickerHint = el(
+    "span",
+    { id: "review-subject-picker-hint", hidden: true },
+    "Choose local changes or a pull request to review"
+  );
+  const picker = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost ui-btn-compact review-subject-picker",
+      // The native invoker: clicking it again closes the popover instead of the
+      // light dismiss closing it on pointerup and the click reopening it.
+      popovertarget: "review-subject-choices",
+      "aria-describedby": "review-subject-picker-hint",
+      "aria-expanded": "false",
+      "aria-controls": "review-subject-choices",
+      "aria-haspopup": "dialog"
+    },
+    label,
+    chevronDownIcon("ui-icon ui-icon-sm"),
+    pickerHint
+  );
+  const localChoice = el(
+    "button",
+    { type: "button", class: "review-local-choice" },
+    "Local changes"
+  );
+  const choices = el("div", {
+    id: "review-subject-choices",
+    class: "review-subject-choices",
+    popover: "auto",
+    role: "dialog",
+    "aria-label": "Changes and pull requests"
+  });
+  const prListParent = prList.parentElement;
+  const prListNext = prList.nextSibling;
+  choices.append(localChoice, prList);
+  const localTools = qsRequired(localList, ".pane-header");
+  const prTools = qsRequired(prList, ".pane-header");
+  localTools.classList.add("review-tools");
+  prTools.classList.add("review-tools");
+  const header = el("div", { class: "review-header" }, picker, localTools, prTools);
+  const filesHeading = el("div", { class: "review-files-heading" }, "Files changed");
+  localList.prepend(filesHeading);
+  const title = el("h4", { class: "review-local-title" });
+  const location = el("div", { class: "pr-viewer-subtitle" });
+  const localMeta = el("div", { class: "review-local-meta" }, title, location);
+  localViewer.prepend(localMeta);
+  root.prepend(header, choices);
+  function closeChoices() {
+    if (choices.matches(":popover-open")) choices.hidePopover();
+  }
+  choices.addEventListener("beforetoggle", (event) => {
+    if (event.newState !== "open") return;
+    const rect = picker.getBoundingClientRect();
+    const width = Math.min(360, root.clientWidth - 16, window.innerWidth - 16);
+    choices.style.width = `${String(width)}px`;
+    choices.style.top = `${String(rect.bottom)}px`;
+    choices.style.left = `${String(Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)))}px`;
+    choices.style.maxHeight = `${String(Math.max(100, window.innerHeight - rect.bottom - 8))}px`;
+    prPane.loadList();
+  });
+  choices.addEventListener("toggle", () => {
+    const open = choices.matches(":popover-open");
+    picker.setAttribute("aria-expanded", String(open));
+    if (!open) return;
+    const current = store2.getState().rightPanelMode === "prs" ? prList.querySelector(".pr-list-row.is-selected") : null;
+    (current ?? localChoice).focus();
+  });
+  choices.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || event.defaultPrevented) return;
+    event.preventDefault();
+    event.stopPropagation();
+    closeChoices();
+    picker.focus();
+  });
+  localChoice.addEventListener("click", () => {
+    openRightPanel(store2, "changes");
+    closeChoices();
+    picker.focus();
+  });
+  const onPrChoice = (event) => {
+    if (!(event.target instanceof Element) || !event.target.closest(".pr-list-row")) return;
+    openRightPanel(store2, "prs");
+    closeChoices();
+    picker.focus();
+  };
+  prList.addEventListener("click", onPrChoice);
+  function sync() {
+    const { filesPaneOpen, rightPanelMode } = store2.getState();
+    const local = rightPanelMode === "changes";
+    const reviewing = local || rightPanelMode === "prs";
+    header.hidden = !reviewing;
+    root.classList.toggle("is-review-pane", reviewing);
+    localTools.hidden = !local;
+    prTools.hidden = local;
+    label.textContent = local ? "Local changes" : "Pull request";
+    localChoice.setAttribute("aria-current", String(local));
+    prList.hidden = false;
+    if (!filesPaneOpen || !reviewing) closeChoices();
+  }
+  function syncLocalSubject() {
+    const thread = getActiveThread(store2);
+    title.textContent = thread?.title.trim() ? thread.title : "Local changes";
+    const branch = thread?.worktree?.branch ?? thread?.gitBranch;
+    location.textContent = branch ? `${branch} \xB7 Only on this machine` : "Only on this machine";
+  }
+  syncLocalSubject();
+  sync();
+  const unsub = selectRightPanel(store2, sync);
+  const unsubSubject = store2.select(
+    (state) => {
+      const thread = getActiveThread(store2);
+      return [
+        state.activeProjectId,
+        state.activeThreadId,
+        thread?.title,
+        thread?.worktree?.branch,
+        thread?.gitBranch
+      ];
+    },
+    syncLocalSubject,
+    sameItems
+  );
+  return () => {
+    unsub();
+    unsubSubject();
+    prPane();
+    destroyLocal();
+    prList.removeEventListener("click", onPrChoice);
+    localTools.classList.remove("review-tools");
+    prTools.classList.remove("review-tools");
+    localList.prepend(localTools);
+    prList.prepend(prTools);
+    prListParent?.insertBefore(prList, prListNext);
+    closeChoices();
+    header.remove();
+    choices.remove();
+    filesHeading.remove();
+    localMeta.remove();
+    root.classList.remove("is-review-pane");
+  };
+}
+var init_review_pane = __esm({
+  "src/renderer/views/review-pane.ts"() {
+    init_helpers();
+    init_store();
+    init_thread_helpers();
+    init_icons();
+    init_panels();
+    init_git_changes_pane();
+    init_pr_pane();
   }
 });
 
@@ -76793,7 +77481,7 @@ var init_memories_pane = __esm({
 // src/renderer/views/thread-context-model.ts
 function firstLine(text) {
   const line = text.trim().split("\n", 1)[0] ?? "";
-  return line.length <= 90 ? line : `${line.slice(0, 89)}\u2026`;
+  return ellipsize(line, 90);
 }
 function prLabel(ref) {
   return `${ref.owner}/${ref.repo}#${String(ref.number)}`;
@@ -76910,6 +77598,7 @@ function deriveThreadContext(input) {
 }
 var init_thread_context_model = __esm({
   "src/renderer/views/thread-context-model.ts"() {
+    init_one_line_text();
     init_reviewer_input();
     init_github_pr_url2();
     init_side_chat();
@@ -77444,7 +78133,8 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
       result.append(emptyNote(accessStatus));
       return result;
     }
-    const recent = accessGrants.decisions.slice(-4).reverse();
+    const decisions = accessGrants.decisions.filter((decision) => decision.verdict !== "observed");
+    const recent = decisions.slice(-4).reverse();
     if (!recent.length) {
       result.append(emptyNote("No recorded decisions for this thread."));
       return result;
@@ -77462,7 +78152,7 @@ function mountThreadContextPane(listRoot, viewerRoot, store2, api2, liveQuestion
       el(
         "p",
         { class: "thread-context-note" },
-        `Showing the latest ${String(recent.length)} of ${String(accessGrants.decisions.length)} recorded decisions. Current access is shown above.`
+        `Showing the latest ${String(recent.length)} of ${String(decisions.length)} recorded decisions. Current access is shown above.`
       )
     );
     return result;
@@ -78597,10 +79287,7 @@ function assignCurrentWeights(root) {
 }
 function resizePair(before, after, beforeStart, afterStart, delta) {
   const total2 = beforeStart + afterStart;
-  const beforeSize = Math.min(
-    total2 - minimumHeight(after),
-    Math.max(minimumHeight(before), beforeStart + delta)
-  );
+  const beforeSize = clamp(beforeStart + delta, minimumHeight(before), total2 - minimumHeight(after));
   before.style.flexGrow = String(beforeSize);
   after.style.flexGrow = String(total2 - beforeSize);
 }
@@ -78699,6 +79386,7 @@ function mountTerminalRailResizers(root) {
 var SECTION_SELECTOR, SHELLS_MIN_RATIO;
 var init_terminal_rail_resizer = __esm({
   "src/renderer/views/terminal-rail-resizer.ts"() {
+    init_clamp();
     init_helpers();
     SECTION_SELECTOR = ":scope > .terminal-rail-section";
     SHELLS_MIN_RATIO = 1 / 3;
@@ -78828,7 +79516,7 @@ var init_roadmap_attempts = __esm({
 // src/renderer/views/roadmap-plan.ts
 function roadmapPlanDraft(item) {
   const parsed = parsePlanDocument(item.body);
-  const title = item.title.replace(/\s+/g, " ").trim().slice(0, 200) || "Implementation plan";
+  const title = collapseWhitespace(item.title).slice(0, 200) || "Implementation plan";
   if (REQUIRED_PLAN_SECTIONS.every((section2) => parsed.sections.get(section2)?.trim()) && parsed.criteria.length > 0)
     return { title, body: item.body };
   const quote = (text) => text.split("\n").map((line) => `> ${line}`).join("\n");
@@ -78856,6 +79544,7 @@ ${quote(context)}
 }
 var init_roadmap_plan = __esm({
   "src/renderer/views/roadmap-plan.ts"() {
+    init_one_line_text();
     init_plan_schema();
   }
 });
@@ -81563,10 +82252,7 @@ async function openScreencastCapture(api2, webContentsId, onEnded) {
   let requested = 0;
   let drawn = 0;
   let disposed = false;
-  let resolveFirstFrame = null;
-  const firstFrame = new Promise((resolve) => {
-    resolveFirstFrame = resolve;
-  });
+  const firstFrame = Promise.withResolvers();
   const stopFrames = api2.onRecordingFrame((id, jpeg) => {
     if (id !== webContentsId || disposed) return;
     const sequence = ++requested;
@@ -81583,7 +82269,7 @@ async function openScreencastCapture(api2, webContentsId, onEnded) {
         }
         context.drawImage(bitmap, 0, 0);
         bitmap.close();
-        resolveFirstFrame?.();
+        firstFrame.resolve();
       },
       () => {
       }
@@ -81602,17 +82288,9 @@ async function openScreencastCapture(api2, webContentsId, onEnded) {
   };
   try {
     await api2.startRecording(webContentsId);
-    let timer = 0;
-    const timedOut = new Promise((resolve) => {
-      timer = window.setTimeout(() => {
-        resolve("timeout");
-      }, FIRST_FRAME_TIMEOUT_MS);
-    });
-    const outcome = await Promise.race([firstFrame, timedOut]);
-    window.clearTimeout(timer);
-    if (outcome === "timeout") {
+    await withTimeout(firstFrame.promise, FIRST_FRAME_TIMEOUT_MS, () => {
       throw new Error("The tab is not painting. Show the Browser pane and try again.");
-    }
+    });
   } catch (error) {
     dispose();
     throw error;
@@ -81622,6 +82300,7 @@ async function openScreencastCapture(api2, webContentsId, onEnded) {
 var FIRST_FRAME_TIMEOUT_MS;
 var init_screencast_capture = __esm({
   "src/renderer/recording/screencast-capture.ts"() {
+    init_with_timeout();
     FIRST_FRAME_TIMEOUT_MS = 3e3;
   }
 });
@@ -82742,7 +83421,15 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     openExternalItem.addEventListener("click", () => {
       setMenuOpen(false);
       const url = currentHttpUrl(tab);
-      if (url && api2?.shell) void api2.shell.openExternal(url).catch(() => void 0);
+      if (url && api2?.shell) {
+        void api2.shell.openExternal(url).catch((error) => {
+          if (String(error).includes("Workspace previews open inside Copse")) {
+            showToast("Workspace previews can only open inside Copse.");
+            return;
+          }
+          showErrorToast("Could not open in default browser", error);
+        });
+      }
     });
     inspectorItem.addEventListener("click", () => {
       setMenuOpen(false);
@@ -83332,8 +84019,8 @@ function createSimulatorDesktopView(options) {
   const point = (event) => {
     const bounds = canvas.getBoundingClientRect();
     return {
-      x: Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width)),
-      y: Math.min(1, Math.max(0, (event.clientY - bounds.top) / bounds.height))
+      x: clamp((event.clientX - bounds.left) / bounds.width, 0, 1),
+      y: clamp((event.clientY - bounds.top) / bounds.height, 0, 1)
     };
   };
   const onPointerDown = (event) => {
@@ -83438,6 +84125,7 @@ function createSimulatorDesktopView(options) {
 }
 var init_simulator_desktop_view = __esm({
   "src/renderer/views/simulator-desktop-view.ts"() {
+    init_clamp();
     init_helpers();
   }
 });
@@ -83454,108 +84142,98 @@ var init_desktop_viewer = __esm({
 
 // src/renderer/views/vnc-ssh-host-form.ts
 function createVncSshHostForm(api2, onSaved, onClose) {
-  const id = el("input", { type: "text", "aria-label": "SSH host id", placeholder: "my-server" });
-  const label = el("input", {
-    type: "text",
-    "aria-label": "SSH host label",
-    placeholder: "Production"
+  const hostFields = createSshHostFields({ labelClass: "vnc-field-label" });
+  const configSelect = el("select", {
+    class: "vnc-ssh-config-host",
+    "aria-label": "Host in ~/.ssh/config"
   });
-  const host = el("input", {
-    type: "text",
-    "aria-label": "SSH hostname",
-    placeholder: "example.com or ~/.ssh/config alias"
-  });
-  const user = el("input", { type: "text", "aria-label": "SSH user", placeholder: "ubuntu" });
-  const port = el("input", {
-    type: "text",
-    inputmode: "numeric",
-    "aria-label": "SSH port",
-    placeholder: "22"
-  });
-  const identityFile = el("input", {
-    type: "text",
-    "aria-label": "SSH identity file",
-    placeholder: "~/.ssh/id_ed25519"
-  });
+  const configField = el(
+    "label",
+    { class: "vnc-field-label vnc-ssh-config-field", hidden: true },
+    "In ~/.ssh/config",
+    configSelect
+  );
+  let configHosts = [];
   const status = el("p", { class: "vnc-ssh-host-status", role: "status" });
   const save = el("button", { type: "submit", class: "ui-btn ui-btn-primary" }, "Save SSH machine");
   const cancel = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, "Cancel");
-  const importButton = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-ghost" },
-    "Import SSH config"
-  );
   const root = el(
     "form",
     { class: "vnc-ssh-host-form", hidden: true, "aria-label": "Add SSH machine" },
     el("p", { class: "vnc-ssh-host-hint" }, "Use an SSH key to secure the desktop connection."),
-    el("label", { class: "vnc-field-label" }, "Id", id),
-    el("label", { class: "vnc-field-label" }, "Label", label),
-    el("label", { class: "vnc-field-label" }, "Host", host),
-    el("label", { class: "vnc-field-label" }, "User", user),
-    el("label", { class: "vnc-field-label" }, "Port", port),
-    el("label", { class: "vnc-field-label" }, "Identity file", identityFile),
+    configField,
+    ...hostFields.fields,
     status,
-    el("div", { class: "vnc-ssh-host-actions" }, importButton, cancel, save)
+    el("div", { class: "vnc-ssh-host-actions" }, cancel, save)
   );
-  let idTouched = false;
-  label.addEventListener("input", () => {
-    if (!idTouched) id.value = slugifyHostId(label.value);
-  });
-  id.addEventListener("input", () => {
-    idTouched = true;
-  });
   function close2() {
     root.hidden = true;
     status.textContent = "";
+    consent?.remove();
+    consent = null;
     onClose();
+  }
+  async function loadConfigHosts() {
+    configHosts = [];
+    try {
+      if (await api2.settings.get("sshWorkspaceEnabled") === true) {
+        const [saved, aliases] = await Promise.all([
+          api2.sshWorkspace.listHosts(),
+          api2.sshWorkspace.listConfigAliases()
+        ]);
+        configHosts = unsavedSshConfigHosts(saved, aliases);
+      }
+    } catch {
+      configHosts = [];
+    }
+    configSelect.replaceChildren(
+      el("option", { value: "", selected: true }, "Choose a host"),
+      ...configHosts.map((host) => el("option", { value: host.host }, host.host))
+    );
+    configField.hidden = configHosts.length === 0;
   }
   function open() {
     root.reset();
-    idTouched = false;
+    hostFields.reset();
     status.textContent = "";
+    configField.hidden = true;
     root.hidden = false;
-    label.focus();
+    hostFields.focus();
+    void loadConfigHosts();
   }
   function busy(value) {
     save.disabled = value;
-    importButton.disabled = value;
+    configSelect.disabled = value;
     cancel.disabled = value;
   }
-  async function requireSshEnabled() {
+  let consent = null;
+  async function requireSshEnabled(retry) {
     if (await api2.settings.get("sshWorkspaceEnabled") === true) return true;
-    setInlineStatus(
-      status,
-      "error",
-      "Enable SSH workspaces in Settings before adding or importing an SSH machine."
-    );
+    if (!consent) {
+      const ask = createSshWorkspaceConsent(api2, {
+        onEnabled: () => {
+          ask.root.remove();
+          consent = null;
+          retry();
+        }
+      });
+      consent = ask.root;
+      status.after(consent);
+    }
     return false;
   }
   cancel.addEventListener("click", close2);
-  root.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const parsed = parseSshHostDraft({
-      id: id.value,
-      label: label.value,
-      host: host.value,
-      user: user.value,
-      port: port.value,
-      identityFile: identityFile.value,
-      forwardAgent: false
-    });
-    if (!parsed.ok) {
-      setInlineStatus(status, "error", parsed.error);
-      return;
-    }
+  const submit = () => {
     void (async () => {
       busy(true);
       try {
-        if (!await requireSshEnabled()) return;
         const existing = parseSshWorkspaceHosts(await api2.settings.get("sshWorkspaceHosts"));
-        if (existing.some((item) => item.id === parsed.host.id)) {
-          setInlineStatus(status, "error", "A machine with this id already exists.");
+        const parsed = hostFields.parse(existing);
+        if (!parsed.ok) {
+          setInlineStatus(status, "error", parsed.error);
           return;
         }
+        if (!await requireSshEnabled(submit)) return;
         await api2.settings.set("sshWorkspaceHosts", upsertHost(existing, parsed.host));
         close2();
         await onSaved(parsed.host.id);
@@ -83565,31 +84243,31 @@ function createVncSshHostForm(api2, onSaved, onClose) {
         busy(false);
       }
     })();
+  };
+  root.addEventListener("submit", (event) => {
+    event.preventDefault();
+    submit();
   });
-  importButton.addEventListener("click", () => {
+  const saveConfigHost = () => {
+    const chosen = configHosts.find((host) => host.host === configSelect.value);
+    if (!chosen) return;
     void (async () => {
       busy(true);
       try {
-        if (!await requireSshEnabled()) return;
-        const aliases = await api2.sshWorkspace.listConfigAliases();
-        if (aliases.length === 0) {
-          setInlineStatus(status, "error", "No Host entries found in ~/.ssh/config.");
-          return;
-        }
+        if (!await requireSshEnabled(saveConfigHost)) return;
         const existing = parseSshWorkspaceHosts(await api2.settings.get("sshWorkspaceHosts"));
-        const imported = importSshConfigHosts(existing, aliases);
-        await api2.settings.set("sshWorkspaceHosts", imported.hosts);
-        if (imported.firstAliasHostId) {
-          close2();
-          await onSaved(imported.firstAliasHostId);
-        }
+        const saved = saveSshConfigHost(existing, chosen);
+        await api2.settings.set("sshWorkspaceHosts", saved.hosts);
+        close2();
+        await onSaved(saved.hostId);
       } catch (error) {
-        setInlineStatus(status, "error", ipcErrorMessage(error, "Could not import SSH config."));
+        setInlineStatus(status, "error", ipcErrorMessage(error, "Could not save the SSH machine."));
       } finally {
         busy(false);
       }
     })();
-  });
+  };
+  configSelect.addEventListener("change", saveConfigHost);
   return { root, open, close: close2 };
 }
 var init_vnc_ssh_host_form = __esm({
@@ -83598,6 +84276,8 @@ var init_vnc_ssh_host_form = __esm({
     init_inline_status();
     init_ipc_error_message();
     init_ssh_host_helpers();
+    init_ssh_host_fields();
+    init_ssh_workspace_consent();
   }
 });
 
@@ -86338,17 +87018,28 @@ function activeSshHostId(store2) {
   const project = projects.find((p) => p.id === activeProjectId);
   return project?.sshHost ?? null;
 }
-function capabilityWarnings(state) {
+function capabilityWarnings(state, options = { watching: true }) {
   const caps = state.capabilities;
   if (!caps) return [];
   const warnings = [];
   if (!caps.git) warnings.push("git not found \u2014 git pane and backups will not work remotely");
   if (!caps.rg) warnings.push("ripgrep (rg) not found \u2014 search will use grep fallback");
-  warnings.push(
-    "external file edits may not appear immediately \u2014 remote file watching is not yet supported"
-  );
+  if (!options.watching) {
+    warnings.push(
+      "edits made outside Copse will not appear in open files \u2014 remote file watching is turned off"
+    );
+  }
   warnings.push(...caps.warnings);
   return warnings;
+}
+function disconnectedMessage(hostId, state) {
+  if (state?.status === "error" && state.lastError) {
+    return `SSH connection to ${state.target} failed: ${state.lastError}`;
+  }
+  if (state?.status === "disconnected") {
+    return `SSH connection to ${state.target} was lost. It reconnects on your next command.`;
+  }
+  return `SSH connection to ${state?.target ?? hostId} is disconnected.`;
 }
 function mountSshStatusBanner(store2, api2) {
   let hostEl = null;
@@ -86358,7 +87049,7 @@ function mountSshStatusBanner(store2, api2) {
   }
   function renderDisconnected(hostId, state) {
     remove();
-    const message2 = state?.status === "error" && state.lastError ? `SSH connection to ${state.target} failed: ${state.lastError}` : `SSH connection to ${state?.target ?? hostId} is disconnected.`;
+    const message2 = disconnectedMessage(hostId, state);
     const reconnectBtn = el("button", { type: "button", class: "ssh-status-action" }, "Reconnect");
     reconnectBtn.addEventListener("click", () => {
       void api2.sshWorkspace.reconnect(hostId).catch(() => void 0);
@@ -86377,8 +87068,8 @@ function mountSshStatusBanner(store2, api2) {
     if (titlebar?.parentElement) titlebar.after(hostEl);
     else (document.getElementById("app") ?? document.body).prepend(hostEl);
   }
-  function renderWarnings(state) {
-    const warnings = capabilityWarnings(state);
+  function renderWarnings(state, watching) {
+    const warnings = capabilityWarnings(state, { watching });
     if (warnings.length === 0) {
       remove();
       return;
@@ -86394,7 +87085,10 @@ function mountSshStatusBanner(store2, api2) {
     else (document.getElementById("app") ?? document.body).prepend(hostEl);
   }
   function sync(states) {
-    void api2.settings.get("sshWorkspaceEnabled").then((enabled) => {
+    void Promise.all([
+      api2.settings.get("sshWorkspaceEnabled"),
+      api2.settings.get("sshWatcherMode")
+    ]).then(([enabled, watcherMode]) => {
       if (enabled !== true) {
         remove();
         return;
@@ -86409,7 +87103,7 @@ function mountSshStatusBanner(store2, api2) {
         renderDisconnected(hostId, state);
         return;
       }
-      renderWarnings(state);
+      renderWarnings(state, watcherMode !== "off");
     });
   }
   const unsubs = [
@@ -86876,6 +87570,16 @@ function mountSshPromptDialog(api2) {
   confirmReject.addEventListener("click", () => {
     finish("");
   });
+  api2.sshPrompt.onDismissed((id) => {
+    const queued = queue.findIndex((request) => request.id === id);
+    if (queued !== -1) queue.splice(queued, 1);
+    if (active2?.id !== id) return;
+    active2 = null;
+    secretInput.value = "";
+    dialog.close();
+    active2 = queue.shift() ?? null;
+    renderActive();
+  });
   api2.sshPrompt.onRequest((req) => {
     if (active2) queue.push(req);
     else {
@@ -87075,10 +87779,10 @@ function openFileSearchDialog() {
   openImpl2?.();
 }
 function closeFileSearchDialog() {
-  if (dialogEl3?.open) dialogEl3.close();
+  if (dialogEl2?.open) dialogEl2.close();
 }
 function isFileSearchDialogOpen() {
-  return !!dialogEl3?.open;
+  return !!dialogEl2?.open;
 }
 function mountFileSearchDialog(store2, api2) {
   const dialog = document.createElement("dialog");
@@ -87098,7 +87802,7 @@ function mountFileSearchDialog(store2, api2) {
   const shell2 = el("div", { class: "file-search-shell" }, input, list, empty2);
   dialog.append(shell2);
   document.body.append(dialog);
-  dialogEl3 = dialog;
+  dialogEl2 = dialog;
   let results = [];
   let selectedIdx = 0;
   let roadmapItems = [];
@@ -87250,7 +87954,7 @@ function mountFileSearchDialog(store2, api2) {
     void runQuery("");
   };
 }
-var ROADMAP_RESULT_LIMIT, ROADMAP_ICON_PATHS, dialogEl3, openImpl2;
+var ROADMAP_RESULT_LIMIT, ROADMAP_ICON_PATHS, dialogEl2, openImpl2;
 var init_file_search_dialog = __esm({
   "src/renderer/views/file-search-dialog.ts"() {
     init_helpers();
@@ -87261,7 +87965,7 @@ var init_file_search_dialog = __esm({
     init_roadmap_plans_plugin();
     ROADMAP_RESULT_LIMIT = 8;
     ROADMAP_ICON_PATHS = ["M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4Z", "M8 2v16", "M16 6v16"];
-    dialogEl3 = null;
+    dialogEl2 = null;
     openImpl2 = null;
   }
 });
@@ -87290,10 +87994,10 @@ function openCommandPalette() {
   openImpl3?.();
 }
 function closeCommandPalette() {
-  if (dialogEl4?.open) dialogEl4.close();
+  if (dialogEl3?.open) dialogEl3.close();
 }
 function isCommandPaletteOpen() {
-  return !!dialogEl4?.open;
+  return !!dialogEl3?.open;
 }
 function mountCommandPalette(store2, api2) {
   const dialog = document.createElement("dialog");
@@ -87313,7 +88017,7 @@ function mountCommandPalette(store2, api2) {
   const shell2 = el("div", { class: "command-palette-shell" }, input, list, empty2);
   dialog.append(shell2);
   document.body.append(dialog);
-  dialogEl4 = dialog;
+  dialogEl3 = dialog;
   let entries = [];
   let selectedIdx = 0;
   let threadHits = [];
@@ -87538,7 +88242,7 @@ function mountCommandPalette(store2, api2) {
     void loadThreads2();
   };
 }
-var PANEL_ITEMS, THREAD_LIMIT, PROJECT_LIMIT, dialogEl4, openImpl3;
+var PANEL_ITEMS, THREAD_LIMIT, PROJECT_LIMIT, dialogEl3, openImpl3;
 var init_command_palette = __esm({
   "src/renderer/views/command-palette.ts"() {
     init_helpers();
@@ -87556,13 +88260,13 @@ var init_command_palette = __esm({
     PANEL_ITEMS = [
       { mode: "explorer", label: "Panel (Explorer)" },
       { mode: "terminal", label: "Terminal" },
-      { mode: "changes", label: "Changes" },
-      { mode: "prs", label: "Pull Requests" },
+      { mode: "changes", label: "Review: Local changes" },
+      { mode: "prs", label: "Review: Pull requests" },
       { mode: "browser", label: "Browser" }
     ];
     THREAD_LIMIT = 25;
     PROJECT_LIMIT = 25;
-    dialogEl4 = null;
+    dialogEl3 = null;
     openImpl3 = null;
   }
 });
@@ -88254,10 +88958,18 @@ async function acceptThreadPrompt(store2, api2, command2) {
     current = getThreadById(store2, threadId);
     if (!current || current.archivedAt !== void 0 || Date.now() >= command2.expiresAt)
       return { ok: false, error: "The destination conversation is unavailable." };
+    const peerTurnTreeId = command2.authorizingAccess ? void 0 : command2.sourceTurnTreeId;
+    const peerScope = command2.authorizingAccess ? void 0 : command2.crossThreadScope;
     const origin = {
       kind: "machine",
-      operationId: `${command2.authorizingAccess ? "subthread" : "thread"}:${command2.sourceThreadId}`
+      operationId: `${command2.authorizingAccess ? "subthread" : "thread"}:${command2.sourceThreadId}`,
+      ...peerScope === void 0 ? {} : { crossThreadScope: peerScope }
     };
+    if (current.currentEpoch === void 0 && peerTurnTreeId !== void 0)
+      patchThreadAnywhere(store2, threadId, (thread) => ({
+        ...thread,
+        currentEpoch: peerTurnTreeId
+      }));
     if (current.status === "error")
       patchThreadAnywhere(store2, threadId, (thread) => ({ ...thread, status: "idle" }));
     const messageId = addMessage(store2, threadId, "user", command2.text, void 0, void 0, {
@@ -88277,6 +88989,8 @@ async function acceptThreadPrompt(store2, api2, command2) {
         await api2.threads.updateMeta(command2.projectId, threadId, {
           pendingMessages: accepted.pendingMessages ?? [],
           continuationUsed: accepted.continuationUsed ?? 0,
+          crossThreadPromptsUsed: accepted.crossThreadPromptsUsed ?? 0,
+          crossThreadPromptCounts: accepted.crossThreadPromptCounts ?? {},
           ...accepted.currentEpoch !== void 0 ? { currentEpoch: accepted.currentEpoch } : {},
           updatedAt: accepted.updatedAt
         });
@@ -89295,6 +90009,8 @@ function startAgentController(store2, api2) {
           title: finished.title,
           pendingMessages: finished.pendingMessages ?? [],
           continuationUsed: finished.continuationUsed ?? 0,
+          crossThreadPromptsUsed: finished.crossThreadPromptsUsed ?? 0,
+          crossThreadPromptCounts: finished.crossThreadPromptCounts ?? {},
           ...finished.currentEpoch !== void 0 ? { currentEpoch: finished.currentEpoch } : {},
           ...finished.todos !== void 0 ? { todos: finished.todos } : {}
         }).catch((err) => {
@@ -89355,7 +90071,7 @@ function startAgentController(store2, api2) {
     if (!activeProjectId) return;
     void api2.agent.attachTranscripts(
       activeProjectId,
-      threads.map((thread) => thread.id)
+      threads.filter((thread) => mayBeBehindMain(store2, thread)).map((thread) => thread.id)
     ).catch((error) => {
       console.error("[threads] could not attach transcripts:", error);
     });
@@ -89363,7 +90079,8 @@ function startAgentController(store2, api2) {
   const unsubWorkspace = selectActiveWorkspace(store2, attach);
   attach();
   const unsub = api2.agent.onChunk((threadId, chunk, stamp) => {
-    if (stamp && !attached.has(threadId)) return;
+    if (stamp && !attached.has(threadId) && !lateUpdateApplies(store2, threadId, chunk, stamp))
+      return;
     const st = get2(threadId);
     const firstVisibleActivity = chunk.type === "tool_call" || chunk.type === "acp_content" || chunk.type === "acp_content_replace" || chunk.type === "text" && chunk.text.trim() !== "" || chunk.type === "reasoning" && chunk.text.trim() !== "";
     if (firstVisibleActivity && !st.firstActivityTraced) {
@@ -89493,6 +90210,15 @@ function maybeSummarizeToolRun(store2, api2, threadId, msgId, st) {
       applySummary(store2, api2, threadId, run4.anchorId, { runSummary: summary.trim() });
     }
   })();
+}
+function mayBeBehindMain(store2, thread) {
+  return thread.status === "running" || thread.messagesLoaded !== false || thread.interruptedTurnAt !== void 0 || (thread.pendingMessages?.length ?? 0) > 0 || hasPendingDispatch(store2, thread.id);
+}
+function lateUpdateApplies(store2, threadId, chunk, stamp) {
+  if (chunk.type !== "tool_call_update" || chunk.commandPhase === void 0) return false;
+  if (stamp.messageIds.length > 0) return false;
+  const thread = getThreadById(store2, threadId);
+  return thread?.messagesLoaded === true && thread.status !== "running" && !hasPendingDispatch(store2, threadId);
 }
 function mergeRuntimeMessages(current, incoming) {
   const messages = [...current];
@@ -89972,10 +90698,7 @@ async function run3(store2) {
   let firstTokenSeen = false;
   let paintSampling = false;
   const paints = [];
-  let resolveDone = () => void 0;
-  const donePromise = new Promise((resolve) => {
-    resolveDone = resolve;
-  });
+  const { promise: donePromise, resolve: resolveDone } = Promise.withResolvers();
   const endTotal = begin("autopilot:total");
   let endFirstActivity = () => void 0;
   let endFirstToken = () => void 0;
@@ -90605,28 +91328,23 @@ function loadMonaco() {
 }
 function ensureMonacoEditorWorker() {
   if (typeof Worker === "undefined") return Promise.resolve();
-  let timeoutId;
-  return Promise.race([
+  return withTimeout(
     // This warmed instance is the one EditorWorkerService's first diff request
     // takes over (see EDITOR_WORKER_SERVICE_LABEL for the coupling contract).
     monacoWorkers.warm(EDITOR_WORKER_SERVICE_LABEL).then(
       () => void 0,
       () => void 0
     ),
-    new Promise((resolve) => {
-      timeoutId = setTimeout(() => {
-        resolve();
-      }, 2e3);
-    })
-  ]).finally(() => {
-    if (timeoutId !== void 0) clearTimeout(timeoutId);
-  });
+    2e3,
+    () => void 0
+  );
 }
 var MONACO_BASE_META, WARM_WORKER_TTL_MS, monacoWorkers, EDITOR_WORKER_SERVICE_LABEL, bundlePromise, monacoPromise;
 var init_setup = __esm({
   "src/renderer/monaco/setup.ts"() {
     init_worker_handout();
     init_editor_theme();
+    init_with_timeout();
     MONACO_BASE_META = "copse-monaco-base";
     WARM_WORKER_TTL_MS = 45e3;
     monacoWorkers = createWorkerHandout(createMonacoWorkerOnce, {
@@ -90705,12 +91423,9 @@ var init_portrait_right_panel_layout = __esm({
 });
 
 // src/renderer/views/pane-resizer.ts
-function clamp3(n, min, max) {
-  return Math.min(max, Math.max(min, n));
-}
 function clampNumber(val, fallback, min, max) {
   if (typeof val !== "number" || !Number.isFinite(val)) return fallback;
-  return clamp3(val, min, max);
+  return clamp(val, min, max);
 }
 function parseSavedLayout(raw) {
   if (!isRecord(raw)) return { ...DEFAULT_LAYOUT };
@@ -90760,7 +91475,7 @@ function maxStackedFilesHeight(body) {
 function defaultStackedFilesHeight(body) {
   if (body.clientHeight <= 0) return DEFAULT_LAYOUT.filesPaneHeight;
   const target = Math.round(body.clientHeight * LAYOUT_LIMITS.filesStacked.defaultRatio);
-  return clamp3(target, LAYOUT_LIMITS.filesStacked.min, maxStackedFilesHeight(body));
+  return clamp(target, LAYOUT_LIMITS.filesStacked.min, maxStackedFilesHeight(body));
 }
 function mountResizeHandle(handle, opts) {
   handle.addEventListener("pointerdown", (e) => {
@@ -90773,7 +91488,7 @@ function mountResizeHandle(handle, opts) {
     const initial = opts.startSize();
     const cursor = opts.cursor();
     const onMove = (ev) => {
-      const size = clamp3(
+      const size = clamp(
         opts.deltaToSize(initial, ev.clientX - startX, ev.clientY - startY),
         opts.min(),
         opts.max()
@@ -90887,6 +91602,7 @@ function mountPaneResizers(body, store2, api2) {
 }
 var init_pane_resizer = __esm({
   "src/renderer/views/pane-resizer.ts"() {
+    init_clamp();
     init_layout();
     init_portrait_right_panel_layout();
     init_unknown_value2();
@@ -91414,20 +92130,7 @@ function mountFullLayout() {
     api
   );
   void monacoReady.then((monaco) => {
-    mountGitChangesPane(
-      requireElement("git-changes-host"),
-      requireElement("git-diff-viewer-host"),
-      store,
-      api,
-      monaco
-    );
-    mountPrPane(
-      requireElement("pr-list-host"),
-      requireElement("pr-viewer-host"),
-      store,
-      api,
-      monaco
-    );
+    mountReviewPane(requireElement("pane-files"), store, api, monaco);
     mountContextPanel(requireElement("file-viewer"), store, api, monaco);
   });
   const body = document.getElementById("body");
@@ -91575,8 +92278,7 @@ var init_main = __esm({
     init_terminals_pane();
     init_agent_tasks();
     init_supervised_tasks();
-    init_git_changes_pane();
-    init_pr_pane();
+    init_review_pane();
     init_memories_pane();
     init_thread_context_panel();
     init_side_chat_panel();
