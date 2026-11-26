@@ -1775,6 +1775,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         currentBranch = branch
         return resolvedVoid()
       },
+      setPathStaged: () => resolved({ ok: false, message: 'The demo has no git checkout.' }),
+      setLinesStaged: () => resolved({ ok: false, message: 'The demo has no git checkout.' }),
       listBranches: () =>
         resolved([
           { name: currentBranch, lastCommitDate: DEMO_TIME },
@@ -1815,6 +1817,10 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       rerunFailedRuns: () =>
         resolved({ ok: false, message: 'Unavailable in demo', backend: 'mock' }),
       approvePr: () => resolved({ ok: false, message: 'Unavailable in demo', backend: 'mock' }),
+      replyToReviewThread: () =>
+        resolved({ ok: false, message: 'Unavailable in demo', backend: 'mock' }),
+      setReviewThreadResolved: () =>
+        resolved({ ok: false, message: 'Unavailable in demo', backend: 'mock' }),
       markPrReady: () => resolved({ ok: false, message: 'Unavailable in demo', backend: 'mock' }),
       enableAutoMerge: () =>
         resolved({ ok: false, message: 'Unavailable in demo', backend: 'mock' }),

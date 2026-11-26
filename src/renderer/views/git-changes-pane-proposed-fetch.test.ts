@@ -41,6 +41,7 @@ function makeMonacoStub(
   const noopEditor = {
     ...inertCommentSurface(),
     onKeyDown: (): { dispose(): void } => ({ dispose(): void {} }),
+    onDidFocusEditorText: (): { dispose(): void } => ({ dispose(): void {} }),
     getModel: (): null => null,
     getSelection: (): null => null,
     updateOptions: (): void => {},
