@@ -387,13 +387,20 @@ function returnsUnconditionally(statement: ts.Statement): boolean {
   return ts.isBlock(statement) && statement.statements.some((child) => ts.isReturnStatement(child))
 }
 
-function isSkipCall(expression: ts.Expression): boolean {
+/** The test callback's context parameter (`t` in `(t) => …`), if it has one. */
+function contextName(body: ts.FunctionLikeDeclaration): string | undefined {
+  const [first] = body.parameters
+  return first && ts.isIdentifier(first.name) ? first.name.text : undefined
+}
+
+/** `<context>.skip(...)` on the test's own context, not any object with a `skip` method. */
+function isSkipCall(expression: ts.Expression, context: string | undefined): boolean {
   const node = strip(expression)
-  return (
-    ts.isCallExpression(node) &&
-    ts.isPropertyAccessExpression(node.expression) &&
-    node.expression.name.text === 'skip'
-  )
+  if (context === undefined || !ts.isCallExpression(node)) return false
+  const callee = node.expression
+  if (!ts.isPropertyAccessExpression(callee) || callee.name.text !== 'skip') return false
+  const receiver = strip(callee.expression)
+  return ts.isIdentifier(receiver) && receiver.text === context
 }
 
 /**
@@ -401,12 +408,13 @@ function isSkipCall(expression: ts.Expression): boolean {
  * `return t.skip(...)`) before any statement that can `return` or `throw`,
  * however nested. A skip behind a further condition does not count either.
  */
-function callsSkip(branch: ts.Statement): boolean {
+function callsSkip(branch: ts.Statement, context: string | undefined): boolean {
   const statements = ts.isBlock(branch) ? branch.statements : [branch]
   for (const statement of statements) {
-    if (ts.isExpressionStatement(statement) && isSkipCall(statement.expression)) return true
+    if (ts.isExpressionStatement(statement) && isSkipCall(statement.expression, context))
+      return true
     if (ts.isReturnStatement(statement)) {
-      return statement.expression !== undefined && isSkipCall(statement.expression)
+      return statement.expression !== undefined && isSkipCall(statement.expression, context)
     }
     // A statement that can exit, even under a further condition, may skip the skip.
     if (canExit(statement)) return false
@@ -417,13 +425,15 @@ function callsSkip(branch: ts.Statement): boolean {
 /** `if (<host platform>) { … return }` in a test body without a `t.skip()`. */
 function earlyReturns(body: ts.FunctionLikeDeclaration, ctx: Context): ts.IfStatement[] {
   const found: ts.IfStatement[] = []
+  const context = contextName(body)
   const visit = (node: ts.Node): void => {
     if (ts.isFunctionLike(node)) return
     if (ts.isIfStatement(node) && readsPlatform(node.expression, ctx)) {
       const branches = node.elseStatement
         ? [node.thenStatement, node.elseStatement]
         : [node.thenStatement]
-      if (branches.some((branch) => containsReturn(branch) && !callsSkip(branch))) found.push(node)
+      if (branches.some((branch) => containsReturn(branch) && !callsSkip(branch, context)))
+        found.push(node)
     }
     ts.forEachChild(node, visit)
   }
@@ -440,7 +450,7 @@ function skipGuards(body: ts.FunctionLikeDeclaration, ctx: Context): ts.Expressi
   return body.body.statements.flatMap((statement) =>
     ts.isIfStatement(statement) &&
     readsPlatform(statement.expression, ctx) &&
-    callsSkip(statement.thenStatement) &&
+    callsSkip(statement.thenStatement, contextName(body)) &&
     containsReturn(statement.thenStatement)
       ? [statement.expression]
       : [],

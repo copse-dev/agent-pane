@@ -85,12 +85,19 @@ describe('unit-platform-early-return', () => {
       '    return',
       '  }',
       '})',
+      "it('f', (t) => {",
+      "  if (process.platform !== 'darwin') {",
+      "    other.skip('not the test context')",
+      '    return',
+      '  }',
+      '})',
     ].join('\n')
     assert.deepEqual(rules(text), [
       'unit-platform-early-return:4',
       'unit-platform-early-return:13',
       'unit-platform-early-return:19',
       'unit-platform-early-return:25',
+      'unit-platform-early-return:32',
     ])
     assert.deepEqual(scan(text).inventory, { darwin: 1 })
   })
