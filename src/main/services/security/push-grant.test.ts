@@ -99,9 +99,11 @@ describe('Allow for this chat on a push prompt', () => {
         )
       assert.equal(await push('chat', { branch: 'feature' }), true)
       assert.equal(requests.length, 1)
-      assert.equal(requests[0]?.approveLabel, 'Allow for this chat')
-      assert.equal(requests[0]?.approveOnceLabel, 'Push once')
-      assert.match(requests[0]?.bodyFooter ?? '', /pushes feature to origin again/)
+      const [first] = requests
+      assert.ok(first)
+      assert.equal(first.approveLabel, 'Allow for this chat')
+      assert.equal(first.approveOnceLabel, 'Push once')
+      assert.match(first.bodyFooter ?? '', /pushes feature to origin again/)
 
       assert.equal(await push('chat', { branch: 'feature' }), true)
       assert.equal(requests.length, 1, 'the chat grant answers the second push')

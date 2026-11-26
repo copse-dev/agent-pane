@@ -68,11 +68,13 @@ describe('Let this command write to /tmp?', () => {
       })
       assert.equal(await shell('chat', 'node src/server.js > /tmp/server.log 2>&1'), true)
       assert.equal(requests.length, 1)
-      assert.equal(requests[0]?.title, 'Let this command write to /tmp?')
-      assert.equal(requests[0]?.cause, 'shell-temp-write')
-      assert.equal(requests[0]?.scope, 'sandbox')
-      assert.equal(requests[0]?.approveOnceLabel, 'Allow once')
-      assert.match(requests[0]?.bodyAdvice ?? '', /\/tmp\/server\.log/)
+      const [first] = requests
+      assert.ok(first)
+      assert.equal(first.title, 'Let this command write to /tmp?')
+      assert.equal(first.cause, 'shell-temp-write')
+      assert.equal(first.scope, 'sandbox')
+      assert.equal(first.approveOnceLabel, 'Allow once')
+      assert.match(first.bodyAdvice ?? '', /\/tmp\/server\.log/)
 
       assert.equal(await shell('chat', 'echo hi > /tmp/other.txt'), true)
       assert.equal(requests.length, 1, 'the chat grant answers a different /tmp path')
