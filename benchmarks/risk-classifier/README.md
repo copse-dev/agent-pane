@@ -64,5 +64,11 @@ training set. `report.json` holds every policy at every threshold and approval m
   rules live in [`packages/shell-guard/src/release-actions.ts`](../../packages/shell-guard/src/release-actions.ts).
 - `train.py` trains the models and replays every policy.
 - `extract.py` reads a Copse store.
+- `host-train.sh` trains on this Mac instead of the VM, inside Copse's sandbox profile plus Apple
+  GPU access (`sandbox-profile.mjs`); `--probe` proves network, home and outside writes are blocked.
+  Use `--models encoder-mlx` for the GPU: PyTorch's MPS backend cannot compile kernels under the
+  sandbox, MLX's kernels are precompiled. Dependencies: `requirements-host.txt` (hash-pinned).
+- `mlx_encoder.py` is the MLX port of the encoder; `gbdt` in `train.py` is gradient-boosted trees
+  over the product's verdicts and command-shape flags.
 - `harness.test.py` checks the rules and the policy logic without any data:
   `python3 -I benchmarks/risk-classifier/harness.test.py`.

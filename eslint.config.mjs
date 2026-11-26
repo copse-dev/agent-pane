@@ -449,7 +449,11 @@ export default ts.config(
   {
     // Reproducible research runners are native Node ESM, not TypeScript app code.
     // Keep ordinary JS linting; typed adapter libraries use the scoped project above.
-    files: ['benchmarks/shell-scope/scripts/**/*.mjs', 'benchmarks/escalation-review/**/*.mjs'],
+    files: [
+      'benchmarks/shell-scope/scripts/**/*.mjs',
+      'benchmarks/escalation-review/**/*.mjs',
+      'benchmarks/risk-classifier/**/*.mjs',
+    ],
     extends: [ts.configs.disableTypeChecked],
     languageOptions: {
       sourceType: 'module',

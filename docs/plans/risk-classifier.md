@@ -25,7 +25,8 @@ number of commands labelled `ask` that run unasked. The second must stay zero.
 ## Data
 
 Three machines' Copse stores, read where they lay (nothing uploaded; training ran in a Colima VM
-with `--network none`):
+with `--network none`, and on the host under Copse's sandbox profile; see
+[Where training runs](#where-training-runs)):
 
 | Machine    | Shell calls |  Prompted | Of all tool calls | Answers                       |
 | ---------- | ----------: | --------: | ----------------: | ----------------------------- |
@@ -70,14 +71,16 @@ deterministic `read`/`local-write`/`remote-write` tiers, which require trust, ne
 Share of prompts removed / commands labelled `ask` approved. "Harm gate" is the Guarded YOLO gate
 (`assessShellHarm`) as an approver; "main" is before this change.
 
-| Approver                                                                  | Studio (577) | MacBook (362) | Mac mini (21) |
-| ------------------------------------------------------------------------- | ------------ | ------------- | ------------- |
-| Harm gate, main                                                           | 80% / **8**  | 47% / 0       | 76% / 0       |
-| Harm gate, this change                                                    | 79% / 0      | 47% / 0       | 76% / 0       |
-| TF-IDF veto (public data only), P(ask) < 0.1 + harm gate, main            | 34% / 0      | 5% / 0        | 14% / 0       |
-| TF-IDF veto, P(ask) < 0.5 + harm gate, main                               | 69% / 4      | 37% / 0       | 67% / 0       |
-| CodeBERTa encoder veto (public data only), P(ask) < 0.1 + harm gate, main | 37% / 0      | 9% / 0        | 29% / 0       |
-| CodeBERTa encoder veto, P(ask) < 0.5 + harm gate, main                    | 64% / 0      | 26% / 0       | 67% / 0       |
+| Approver                                                                       | Studio (577) | MacBook (362) | Mac mini (21) |
+| ------------------------------------------------------------------------------ | ------------ | ------------- | ------------- |
+| Harm gate, main                                                                | 80% / **8**  | 47% / 0       | 76% / 0       |
+| Harm gate, this change                                                         | 79% / 0      | 47% / 0       | 76% / 0       |
+| TF-IDF veto (public data only), P(ask) < 0.1 + harm gate, main                 | 34% / 0      | 5% / 0        | 14% / 0       |
+| TF-IDF veto, P(ask) < 0.5 + harm gate, main                                    | 69% / 4      | 37% / 0       | 67% / 0       |
+| CodeBERTa encoder veto (public data only), P(ask) < 0.1 + harm gate, main      | 37% / 0      | 9% / 0        | 29% / 0       |
+| CodeBERTa encoder veto, P(ask) < 0.5 + harm gate, main                         | 64% / 0      | 26% / 0       | 67% / 0       |
+| Gradient-boosted trees veto (public data only), P(ask) < 0.1 + harm gate, main | 79% / 0      | 47% / 0       | 76% / 0       |
+| Gradient-boosted trees veto, P(ask) < 0.5 + harm gate, main                    | 79% / 1      | 47% / 0       | 76% / 0       |
 
 Caveats. The release-work rules were written from the Studio's misses, so their Studio row is
 in-sample; the MacBook and mini rows are the held-out test, and the models in this table never saw
@@ -116,7 +119,16 @@ nobody wrote a rule for.
    0.71 to 0.79). So a small fine-tuned model earns its place as a second opinion behind the harm
    gate, cheap enough to run locally on every escalation; a bigger model, or more of your own
    labels, is worth it only once it beats that on a machine it has not seen.
-5. **Prompts are friction today, not judgement.** Every answer on three machines was an approval.
+5. **Standard ML on structured signals beats both text models.** Gradient-boosted trees over the
+   product's own verdicts (harm, scope, tier) and a few dozen command-shape flags (network, delete,
+   secret, publish, privilege, interpreter, toolchain, …) separate `ask` far better: AUC 0.93
+   Studio, **0.90 MacBook** (against 0.70 for the encoder and TF-IDF there), 0.98 public. Trained
+   in 22 seconds on public data only, as a veto at P(ask) < 0.1 it stops all 8 release-work misses
+   while removing as many prompts as the harm gate alone (79% Studio, 47% MacBook). The caveat: the
+   shape flags were written after reading the Studio's misses, so the MacBook figure is the fair one.
+   This is the model worth productising: small, explainable per feature, and fast enough to run on
+   every escalation with no GPU.
+6. **Prompts are friction today, not judgement.** Every answer on three machines was an approval.
    A prompt that is always approved trains the person to approve without reading, which is the
    failure the must-ask rules exist to prevent.
 
@@ -149,6 +161,25 @@ flowchart TD
 A model never authorises alone: it is consulted only after the harm gate allows, and the gate's
 `ask` is final.
 
+## Where training runs
+
+| Where                                        | Encoder, 2 epochs | Isolation                                                                          |
+| -------------------------------------------- | ----------------: | ---------------------------------------------------------------------------------- |
+| Colima VM (12 vCPU, `--network none`)        |          12.5 min | Linux VM; only mounted folders visible                                             |
+| Host, Copse sandbox profile, CPU (PyTorch)   |          10.1 min | no network, home unreadable but the checkout and Python, writes only to the output |
+| Host, Copse sandbox profile, Apple GPU (MLX) |           2.6 min | the same, plus the GPU                                                             |
+
+The VM protects against the training process, not its output: the weights are the same wherever
+they are trained, and a checkpoint trained on private labels stays private either way. On the
+host, `host-train.sh` builds the profile from ASRT, which hides the GPU (it allows no GPU IOKit user
+client), and adds only the GPU's user clients, Metal's compiler service and the per-user Metal
+caches. PyTorch's MPS backend still fails there: it compiles some kernels at runtime in Apple's
+`MTLCompilerService`, which applies its own policy and will not write its cache for a client under
+`sandbox-exec`. MLX ships precompiled kernels and trains on the GPU inside the sandbox, so the
+encoder has an MLX port (`mlx_encoder.py`, same model and losses, AUC within noise of PyTorch). A
+probe in the script checks that HTTPS, raw TCP, `~/.ssh`, `~/.copse` and writes outside the output
+fail from inside the run. Dependencies are hash-pinned and no newer than two weeks.
+
 ## Next steps, by expected effect
 
 1. Containment for `fnm env`/`fnm exec` and absolute toolchain paths: 227 Studio prompts (34%)
@@ -160,3 +191,5 @@ A model never authorises alone: it is consulted only after the harm gate allows,
    regression case, each false positive a containment or tier fix.
 4. Score the existing classifier connections (Winnow-12B, Kev) on the same held-out sets before
    building another model.
+5. Port the gradient-boosted veto into the product behind the harm gate (it needs only the verdicts
+   the gate already computes), and re-measure on the next month's real prompts.

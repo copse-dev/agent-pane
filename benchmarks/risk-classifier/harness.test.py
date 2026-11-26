@@ -12,7 +12,7 @@ sys.path.insert(0, str(HERE))
 
 from data import normalise  # noqa: E402
 from rules import must_ask  # noqa: E402
-from train import decide, score  # noqa: E402
+from train import decide, score, structured_features  # noqa: E402
 
 REGRESSION = HERE.parent / "escalation-review" / "regression" / "cases.jsonl"
 
@@ -72,6 +72,14 @@ class PolicyTest(unittest.TestCase):
         rows = [self.row, {**self.row, "tier": "ask", "weight": 1}]
         result = score(rows, [self.confident, self.confident], "outside-read", 0.05, False)
         self.assertEqual((result["prompts"], result["removed"], result["ask_approved"]), (3, 3, 1))
+
+
+class FeaturesTest(unittest.TestCase):
+    def test_structured_features_read_verdicts_and_shape(self):
+        risky = structured_features({"text": "make ship-release && cat .env", "harm": "allow", "scope": "external"})
+        plain = structured_features({"text": "git status", "harm": "allow", "scope": "sandbox"})
+        self.assertEqual(len(risky), len(plain))
+        self.assertNotEqual(risky, plain)
 
 
 class NormaliseTest(unittest.TestCase):
