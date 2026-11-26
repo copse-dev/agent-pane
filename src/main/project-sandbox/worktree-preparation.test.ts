@@ -21,7 +21,7 @@ import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import { baseSandboxConfig } from './config.ts'
 import { setProjectSandboxEnabled } from './enabled.ts'
 import { acquireSandboxNetworkScope } from './network-scope.ts'
-import { applySeccompBinaryPath } from './sandbox-binaries.ts'
+import { sandboxHelperLocator } from './sandbox-binaries.ts'
 import { preparationCacheRoots, runWorktreePreparationProcess } from './worktree-preparation.ts'
 import {
   inspectWorktreePreparation,
@@ -92,6 +92,12 @@ it(
     )
     syncBuiltinESMExports()
     t.mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+    // In a dev install Copse's helper path and ASRT's own lookup name the same
+    // file, so hand Copse a distinct one (as app.asar.unpacked is in a package)
+    // and require the wrapped command to use it.
+    const helper = join(parent, 'unpacked-apply-seccomp')
+    writeFileSync(helper, '')
+    t.mock.method(sandboxHelperLocator, 'applySeccompPath', () => helper)
     mkdirSync(root, { recursive: true })
     setProjectSandboxEnabled(true)
     try {
@@ -108,10 +114,11 @@ it(
     }
     const launcher = wrapped?.split(' ')[0] ?? ''
     assert.ok(posix.isAbsolute(launcher) && basename(launcher) === 'bwrap', launcher)
-    // The direct wrap must run the helper Copse resolved (app.asar.unpacked in
-    // a package), not ASRT's module-relative copy.
-    const helper = applySeccompBinaryPath()
-    assert.ok(helper !== null && (wrapped ?? '').includes(helper), wrapped ?? 'no wrapped command')
+    // The direct wrap must exec the helper Copse resolved, not ASRT's own copy.
+    // The read grants name the helper too, so check the exec position: the
+    // payload bubblewrap runs starts with it.
+    const payload = (wrapped ?? '').split(' -- /bin/bash -c ')[1] ?? ''
+    assert.ok(payload.startsWith(`'${helper} `), wrapped ?? 'no wrapped command')
   },
 )
 

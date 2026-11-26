@@ -37,11 +37,15 @@ const NATIVES = [
   'app.asar.unpacked/node_modules/@anthropic-ai/sandbox-runtime/vendor/seccomp/x64/apply-seccomp',
 ]
 
+const JAR =
+  'app.asar.unpacked/node_modules/@anthropic-ai/sandbox-runtime/vendor/java-proxy-agent/srt-proxy-agent.jar'
+
 describe('Linux after-pack native check', () => {
   let resources: string
 
   beforeEach(() => {
     resources = mkdtempSync(join(tmpdir(), 'copse-after-pack-linux-'))
+    write(JAR, Buffer.from('PK'))
   })
 
   afterEach(() => {
@@ -82,5 +86,13 @@ describe('Linux after-pack native check', () => {
     assert.throws(() => {
       checkLinuxNatives(resources, 'x64')
     }, /helper is not executable: .*apply-seccomp/)
+  })
+
+  it('fails when the JVM proxy agent jar was left inside app.asar', () => {
+    for (const native of NATIVES) write(native, elf(X64))
+    rmSync(join(resources, JAR))
+    assert.throws(() => {
+      checkLinuxNatives(resources, 'x64')
+    }, /lacks .*srt-proxy-agent\.jar/)
   })
 })

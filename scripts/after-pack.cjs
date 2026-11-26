@@ -1,5 +1,7 @@
 /**
- * Keep each macOS package architecture-pure before signing. Local builds may
+ * On Linux, fail a package whose native binaries or sandbox helpers are
+ * missing or built for another architecture (`checkLinuxNatives`). On macOS,
+ * keep each package architecture-pure before signing. Local builds may
  * still cross-pack both architectures from a universal gortex, while release
  * CI supplies one target-specific gortex to each matrix job.
  */
@@ -143,11 +145,20 @@ const ELF_MACHINE = { x64: 0x3e, arm64: 0xb7 }
  * instead when a native binary is missing or built for the wrong architecture.
  */
 function checkLinuxNatives(resources, arch) {
-  const { accessSync, closeSync, constants, openSync, readSync } = require('node:fs')
+  const { accessSync, closeSync, constants, existsSync, openSync, readSync } = require('node:fs')
   const { join } = require('node:path')
   const unpacked = join(resources, 'app.asar.unpacked')
+  const sandboxRuntime = join(
+    unpacked,
+    'node_modules',
+    '@anthropic-ai',
+    'sandbox-runtime',
+    'vendor',
+  )
+  const gortex = join(unpacked, 'dist', 'resources', 'gortex', 'gortex')
+  const applySeccomp = join(sandboxRuntime, 'seccomp', arch, 'apply-seccomp')
   const binaries = [
-    join(unpacked, 'dist', 'resources', 'gortex', 'gortex'),
+    gortex,
     join(unpacked, 'node_modules', 'node-pty', 'build', 'Release', 'pty.node'),
     join(
       unpacked,
@@ -156,22 +167,13 @@ function checkLinuxNatives(resources, arch) {
       `keyring-linux-${arch}-gnu`,
       `keyring.linux-${arch}-gnu.node`,
     ),
+    applySeccomp,
   ]
-  // ASRT execs these by path inside bubblewrap, so they must also be executable.
-  const executables = [
-    join(unpacked, 'dist', 'resources', 'gortex', 'gortex'),
-    join(
-      unpacked,
-      'node_modules',
-      '@anthropic-ai',
-      'sandbox-runtime',
-      'vendor',
-      'seccomp',
-      arch,
-      'apply-seccomp',
-    ),
-  ]
-  binaries.push(executables[1])
+  // ASRT execs the helper by path inside bubblewrap, so it must be executable.
+  const executables = [gortex, applySeccomp]
+  // ASRT binds the JVM agent jar into every sandbox; a copy left inside
+  // app.asar makes bubblewrap fail before the command starts.
+  const files = [join(sandboxRuntime, 'java-proxy-agent', 'srt-proxy-agent.jar')]
   for (const binary of binaries) {
     const header = Buffer.alloc(20)
     let fd
@@ -201,6 +203,9 @@ function checkLinuxNatives(resources, arch) {
         cause: error,
       })
     }
+  }
+  for (const file of files) {
+    if (!existsSync(file)) throw new Error(`Packaged ${arch} Linux app lacks ${file}`)
   }
 }
 

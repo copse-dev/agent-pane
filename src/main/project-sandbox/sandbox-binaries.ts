@@ -55,8 +55,8 @@ export function linuxSandboxBinaryPaths(): {
   javaAgentJarPath?: string
 } {
   if (process.platform !== 'linux') return {}
-  const applyPath = applySeccompBinaryPath()
-  const javaAgentJarPath = javaProxyAgentJarPath()
+  const applyPath = sandboxHelperLocator.applySeccompPath()
+  const javaAgentJarPath = sandboxHelperLocator.javaAgentJarPath()
   return {
     bwrapPath: resolveSandboxBinary('bwrap'),
     socatPath: resolveSandboxBinary('socat'),
@@ -82,6 +82,16 @@ export function linuxWrapperBinaryPaths(): {
     ...(socatPath === undefined ? {} : { socatPath }),
     ...(seccomp === undefined ? {} : { seccompConfig: seccomp }),
   }
+}
+
+/**
+ * Where `linuxSandboxBinaryPaths` finds ASRT's helpers. An object so a test
+ * can substitute a path that differs from ASRT's own module-relative lookup,
+ * which in a dev install is the same file.
+ */
+export const sandboxHelperLocator = {
+  applySeccompPath: (): string | null => applySeccompBinaryPath(),
+  javaAgentJarPath: (): string | null => javaProxyAgentJarPath(),
 }
 
 const ASAR_SEGMENT = '/app.asar/'
