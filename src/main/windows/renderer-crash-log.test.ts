@@ -38,33 +38,34 @@ describe('renderer crash log', () => {
     assert.equal(rendererCrashLogPath({ COPSE_DIR: '/p' }), join('/p', 'user-data', CRASH_LOG_FILE))
   })
 
-  it('appends records and reads back those since a time, oldest first', () => {
-    appendRendererCrash(crash(1_000), path)
-    appendRendererCrash(crash(2_000), path)
-    appendRendererCrash(crash(3_000), path)
-    assert.deepEqual(readRendererCrashes(2_000, path), [crash(2_000), crash(3_000)])
+  it('appends records and reads back those since a time, oldest first', async () => {
+    // Not awaited one by one: appends queue, so concurrent crashes keep their order.
+    void appendRendererCrash(crash(1_000), path)
+    void appendRendererCrash(crash(2_000), path)
+    await appendRendererCrash(crash(3_000), path)
+    assert.deepEqual(await readRendererCrashes(2_000, path), [crash(2_000), crash(3_000)])
   })
 
-  it('keeps only the newest records', () => {
-    for (let i = 1; i <= CRASH_LOG_MAX_ENTRIES + 5; i++) appendRendererCrash(crash(i), path)
-    const records = readRendererCrashes(0, path)
+  it('keeps only the newest records', async () => {
+    for (let i = 1; i <= CRASH_LOG_MAX_ENTRIES + 5; i++) await appendRendererCrash(crash(i), path)
+    const records = await readRendererCrashes(0, path)
     assert.equal(records.length, CRASH_LOG_MAX_ENTRIES)
     assert.equal(records[0]?.at, 6)
     assert.equal(records.at(-1)?.at, CRASH_LOG_MAX_ENTRIES + 5)
   })
 
-  it('reads a missing file as no crashes and skips lines it cannot parse', () => {
-    assert.deepEqual(readRendererCrashes(0, path), [])
-    appendRendererCrash(crash(1_000), path)
+  it('reads a missing file as no crashes and skips lines it cannot parse', async () => {
+    assert.deepEqual(await readRendererCrashes(0, path), [])
+    await appendRendererCrash(crash(1_000), path)
     writeFileSync(path, `${readFileSync(path, 'utf8')}not json\n{"at":"x"}\n`)
-    assert.deepEqual(readRendererCrashes(0, path), [crash(1_000)])
+    assert.deepEqual(await readRendererCrashes(0, path), [crash(1_000)])
   })
 
-  it('never throws when the record cannot be written', () => {
+  it('never rejects when the record cannot be written', async () => {
     const warn = mock.method(console, 'warn', () => undefined)
     try {
       // A directory where the file should be.
-      appendRendererCrash(crash(1_000), dir)
+      await appendRendererCrash(crash(1_000), dir)
     } finally {
       warn.mock.restore()
     }

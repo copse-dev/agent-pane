@@ -8,9 +8,12 @@
  *
  * The file is JSON Lines and keeps only the newest {@link CRASH_LOG_MAX_ENTRIES}
  * records. Writes are best-effort: a diagnostic must never break recovery.
+ * They are asynchronous (main-process reads are async-only, see
+ * `docs/main-process-sync-reads.md`) and run one at a time, so trimming never
+ * races a second append.
  */
 
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { promises as fsPromises } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
@@ -44,34 +47,43 @@ function parseLines(raw: string): RendererCrashRecord[] {
   })
 }
 
-/** Append one record, trimming the file to the newest entries. Never throws. */
+let writes: Promise<void> = Promise.resolve()
+
+/** Append one record, trimming the file to the newest entries. Never rejects. */
 export function appendRendererCrash(
   record: RendererCrashRecord,
   path: string = rendererCrashLogPath(),
-): void {
-  try {
-    mkdirSync(dirname(path), { recursive: true })
-    appendFileSync(path, `${JSON.stringify(record)}\n`, { mode: 0o600 })
-    const records = parseLines(readFileSync(path, 'utf8'))
-    if (records.length > CRASH_LOG_MAX_ENTRIES) {
-      const kept = records.slice(-CRASH_LOG_MAX_ENTRIES)
-      writeFileSync(path, kept.map((entry) => `${JSON.stringify(entry)}\n`).join(''), {
-        mode: 0o600,
-      })
+): Promise<void> {
+  writes = writes.then(async () => {
+    try {
+      await fsPromises.mkdir(dirname(path), { recursive: true })
+      await fsPromises.appendFile(path, `${JSON.stringify(record)}\n`, { mode: 0o600 })
+      const records = parseLines(await fsPromises.readFile(path, 'utf8'))
+      if (records.length > CRASH_LOG_MAX_ENTRIES) {
+        const kept = records.slice(-CRASH_LOG_MAX_ENTRIES)
+        await fsPromises.writeFile(
+          path,
+          kept.map((entry) => `${JSON.stringify(entry)}\n`).join(''),
+          {
+            mode: 0o600,
+          },
+        )
+      }
+    } catch (error) {
+      console.warn('[renderer] could not record the crash:', error)
     }
-  } catch (error) {
-    console.warn('[renderer] could not record the crash:', error)
-  }
+  })
+  return writes
 }
 
 /** Records at or after `since`, oldest first. A missing or unreadable file reads as none. */
-export function readRendererCrashes(
+export async function readRendererCrashes(
   since: number,
   path: string = rendererCrashLogPath(),
-): RendererCrashRecord[] {
+): Promise<RendererCrashRecord[]> {
   let raw: string
   try {
-    raw = readFileSync(path, 'utf8')
+    raw = await fsPromises.readFile(path, 'utf8')
   } catch {
     return []
   }

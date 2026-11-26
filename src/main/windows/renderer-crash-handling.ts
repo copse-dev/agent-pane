@@ -20,7 +20,7 @@ export function attachAppRendererCrashHandling(
   attachRendererCrashRecovery(win.webContents, {
     context: () => largeIpcCalls.describeRecent(webContentsId),
     record: (record) => {
-      appendRendererCrash({ ...record, window: windowKind })
+      void appendRendererCrash({ ...record, window: windowKind })
     },
     onCrashLoop: (retry) => {
       if (win.isDestroyed()) return

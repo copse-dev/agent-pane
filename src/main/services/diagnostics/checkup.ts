@@ -215,7 +215,7 @@ export async function runCheckup(roots: AgentRoots): Promise<CheckupReport> {
     agentOpenFiles: agentOpenFilesSnapshot(),
     rendererCrashes: {
       path: rendererCrashLogPath(),
-      recent: readRendererCrashes(Date.now() - RENDERER_CRASH_REPORT_WINDOW_MS),
+      recent: await readRendererCrashes(Date.now() - RENDERER_CRASH_REPORT_WINDOW_MS),
     },
   }
 
