@@ -5,6 +5,7 @@ import { chosenUpdateChannel } from '../../shared/update-channel-choice.ts'
 import { getSetting, setSetting } from './storage/settings.ts'
 import { RELEASES_URL, fetchUpdateChangelog } from './update-changelog.ts'
 import { notifyUpdateDevOnly, requestUpdatePrompt } from './update-prompt.ts'
+import { noteUpdateRelaunch } from './last-run.ts'
 
 // Auto-update for the direct-download (Developer ID + notarized) macOS build.
 //
@@ -156,6 +157,8 @@ async function promptInstall(_win: BrowserWindow, version: string): Promise<void
   if (response === 0) {
     // Defer so the dialog closes before Squirrel relaunches the app.
     setImmediate((): void => {
+      // Not the user stopping their turns: the next launch continues them.
+      noteUpdateRelaunch()
       autoUpdater.quitAndInstall()
     })
   }

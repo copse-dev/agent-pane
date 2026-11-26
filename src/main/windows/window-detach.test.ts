@@ -18,7 +18,12 @@ test('a close during a running turn detaches on every platform', () => {
 })
 
 test('outside macOS a detached app quits once nothing needs it', () => {
-  const idle = { detached: true, runningTurns: 0, mobileCompanionEnabled: false }
+  const idle = {
+    detached: true,
+    runningTurns: 0,
+    mobileCompanionEnabled: false,
+    otherWindowsOpen: false,
+  }
   assert.equal(shouldQuitDetachedApp({ platform: 'linux', ...idle }), true)
   assert.equal(shouldQuitDetachedApp({ platform: 'win32', ...idle }), true)
   // The Dock keeps a macOS app reachable, so it stays.
@@ -33,6 +38,8 @@ test('outside macOS a detached app quits once nothing needs it', () => {
     }),
     false,
   )
+  // The user is still working in a window from New Window.
+  assert.equal(shouldQuitDetachedApp({ platform: 'linux', ...idle, otherWindowsOpen: true }), false)
 })
 
 function fakeWindow(): {
