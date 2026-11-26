@@ -159,6 +159,20 @@ describe('conditionally registered tests', () => {
     assert.deepEqual(scan(text).inventory, { darwin: 1 })
   })
 
+  it('ignores a suite-level return that only runs under another condition', () => {
+    const text = [
+      header,
+      "describe('suite', () => {",
+      "  if (process.platform !== 'darwin') {",
+      '    if (process.env.SKIP_SUITE) return',
+      '  }',
+      "  it('a', () => {})",
+      '})',
+    ].join('\n')
+    assert.deepEqual(scanFlakeRisks(unit, text), [])
+    assert.deepEqual(scan(text).inventory, {})
+  })
+
   it('follows a platform-selected registration alias', () => {
     const text = [
       header,

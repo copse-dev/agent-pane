@@ -375,6 +375,12 @@ function containsReturn(node: ts.Node): boolean {
   return ts.forEachChild(node, (child) => containsReturn(child) || undefined) ?? false
 }
 
+/** `return` or a block with a top-level `return`: exits whenever the branch runs. */
+function returnsUnconditionally(statement: ts.Statement): boolean {
+  if (ts.isReturnStatement(statement)) return true
+  return ts.isBlock(statement) && statement.statements.some((child) => ts.isReturnStatement(child))
+}
+
 function isSkipCall(expression: ts.Expression): boolean {
   const node = strip(expression)
   return (
@@ -534,7 +540,7 @@ export function scanPlatformGates(file: ts.SourceFile): PlatformGateScan {
             ts.isIfStatement(statement) &&
             !statement.elseStatement &&
             readsPlatform(statement.expression, ctx) &&
-            containsReturn(statement.thenStatement) &&
+            returnsUnconditionally(statement.thenStatement) &&
             countTests(statement.thenStatement, ctx) === 0
           ) {
             const rest = node.statements.slice(node.statements.indexOf(statement) + 1)
