@@ -490,6 +490,18 @@ while one is active, Copse pauses auto-run and names the holder in an approval p
 starting a new network-capable command. Structurally read-only
 commands do not prompt because they cannot open a network connection.
 
+### Allow for this chat
+
+A "Run outside sandbox?" prompt whose every reason is one of a few local kinds (`/tmp` paths, a
+loopback request, an inline or heredoc script, a project script or file) offers **Run once**, the
+primary answer, and **Allow for this chat** (`escalation-grant.ts`). The grant names those reason
+kinds, never a command, for that thread until Copse quits. A later escalation in the thread is
+answered without a prompt only when all of its reasons are granted kinds and the Guarded YOLO harm
+gate allows the command, so credential reads and the rest of that list still ask. Network
+downloads, installs, pushes, substitution, and `~/`, `../` or other outside paths are never
+grantable. Where a trusted command is offered, that broader remember choice replaces this one. The
+decision log records the approval and each covered command (`source: escalation-grant`).
+
 ### Reaching the thread's own dev server
 
 A contained `run_shell` command may connect to a loopback port when, at spawn, a listener on that

@@ -124,6 +124,12 @@ import {
   hasReadOutsideProjectGrant,
   safeCanonicalReadTarget,
 } from './read-outside-grant.ts'
+import {
+  escalationGrantFooter,
+  grantableEscalationKinds,
+  grantEscalationKinds,
+  hasEscalationGrant,
+} from './escalation-grant.ts'
 import { getMcpToolMeta, isMcpToolRemembered, rememberMcpTool } from '../mcp/mcp-registry.ts'
 import { CUSTOM_TOOL_PREFIX, customToolLabel } from '../mcp/custom-tools-config.ts'
 import {
@@ -342,6 +348,20 @@ function shellApprovalAuditContext(): NonNullable<ApprovalRequest['shellContext'
  *   command bounded opaque local execution, so a lease falls back to the exact
  *   command line when no single constituent can be isolated.
  */
+/** Whether the Guarded YOLO harm gate would let `command` run outside the sandbox. */
+function escalationHarmAllows(command: string): boolean {
+  return (
+    assessShellHarm(command, {
+      workspaceRoot: getAgentExecutionRoot(),
+      homeDir: homedir(),
+      canonicalizePath: realpathSync.native,
+      readScript: readScriptForHarm,
+      isCompiledProgram,
+      ...harmHostReachContext(),
+    }).action === 'allow'
+  )
+}
+
 async function requestEscalationApproval(
   title: string,
   parts: ShellPromptParts,
@@ -352,23 +372,55 @@ async function requestEscalationApproval(
   opts: { offerTrustedCommand?: boolean } = {},
 ): Promise<boolean> {
   if (signal?.aborted) return false
+  const threadId = getActiveRunThread()
+  // A chat grant covers this escalation only when every reason is a granted
+  // kind and the harm gate would let it run; see escalation-grant.ts.
+  const grantKinds =
+    threadId && escalationHarmAllows(parts.command) ? grantableEscalationKinds(reasons) : null
+  if (threadId && grantKinds && hasEscalationGrant(threadId, grantKinds)) {
+    recordDecision({
+      kind: 'shell',
+      actor: 'user',
+      verdict: 'allowed',
+      subject: SHELL_DECISION_SUBJECT,
+      scope: 'external',
+      reasons,
+      source: 'escalation-grant',
+    })
+    return true
+  }
   const trustable =
     opts.offerTrustedCommand === false
       ? null
       : offerableTrustedCommand(parts.command, getAgentProjectRoot())
+  // One remember choice per prompt: a trusted command, where offered, is the
+  // broader and longer-lived one, so the chat grant steps aside for it.
+  const chatGrant = trustable === null && grantKinds !== null ? grantKinds : null
   const response = await requestApproval(
     {
       title,
-      approveLabel: 'Run command',
+      approveLabel: chatGrant ? 'Allow for this chat' : 'Run command',
       type: 'shell',
-      ...shellPromptToApprovalFields(parts),
+      ...shellPromptToApprovalFields(
+        chatGrant
+          ? {
+              ...parts,
+              bodyFooter: [parts.bodyFooter, escalationGrantFooter(chatGrant)]
+                .filter(Boolean)
+                .join('\n'),
+            }
+          : parts,
+      ),
       subject: SHELL_DECISION_SUBJECT,
       scope: 'external',
       cause,
       reasons,
       shellContext: shellApprovalAuditContext(),
-      allowRemember: trustable !== null,
+      allowRemember: trustable !== null || chatGrant !== null,
       ...(trustable ? { rememberLabel: `Always allow \`${trustable}\` in trusted projects` } : {}),
+      // Two buttons: the narrower "Run once" is primary, and the chat grant is
+      // the explicit second answer (see approval-dialog's two-tier prompt).
+      ...(chatGrant ? { approveOnceLabel: 'Run once' } : {}),
       ...(leaseIdentity
         ? {
             allowTurnTreeLease: true,
@@ -383,6 +435,7 @@ async function requestEscalationApproval(
   if (signal?.aborted) return false
   const { approved, remember, grantScope } = response
   if (approved && remember && trustable) await addTrustedShellCommand(trustable)
+  if (approved && remember && chatGrant && threadId) grantEscalationKinds(threadId, chatGrant)
   if (!signal?.aborted && approved && grantScope === 'turn-tree' && leaseIdentity) {
     issueShellReplayLease(leaseIdentity, parts.command, response, true)
   }
