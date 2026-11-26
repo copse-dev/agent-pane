@@ -4,7 +4,7 @@
  * The video decoder already treats `render-process-gone` as a tool error. The
  * main and pop-out windows had no handler, so an OOM or renderer crash left a
  * frozen chrome until the user quit. Reload once or twice; a crash loop must
- * not spin forever.
+ * not spin forever, whether its crashes arrive seconds or minutes apart.
  */
 
 export type RendererGoneReason =
@@ -23,37 +23,43 @@ export interface RendererGoneDetails {
 }
 
 export interface RendererReloadState {
-  lastReloadAt: number
-  recentCrashes: number
+  /** When each recent crash happened, oldest first, within the loop window. */
+  crashes: number[]
 }
 
 /** Crashes inside this window count toward the reload cap. */
 export const RENDERER_RELOAD_WINDOW_MS = 15_000
 /** Allow this many recoveries in the window; the next crash stays dead. */
 export const RENDERER_RELOAD_MAX = 2
+/**
+ * A crash loop can also be slow: #4445 saw the same abort every 40 seconds,
+ * which the 15-second cap never caught, so the window reloaded indefinitely.
+ * Allow this many recoveries in the longer window, then stop.
+ */
+export const RENDERER_CRASH_LOOP_WINDOW_MS = 10 * 60_000
+export const RENDERER_CRASH_LOOP_MAX = 3
 
 export function initialRendererReloadState(): RendererReloadState {
-  return { lastReloadAt: 0, recentCrashes: 0 }
+  return { crashes: [] }
 }
 
 /**
  * Decide whether to reload after a renderer death. `clean-exit` is a normal
- * window close and must not reload.
+ * window close and must not reload. `loop` is true when the crash is refused
+ * because crashes keep repeating, which is when the user must be told.
  */
 export function planRendererCrashRecovery(
   details: RendererGoneDetails,
   state: RendererReloadState,
   now: number,
-): { reload: boolean; next: RendererReloadState } {
+): { reload: boolean; loop: boolean; next: RendererReloadState } {
   if (details.reason === 'clean-exit') {
-    return { reload: false, next: state }
+    return { reload: false, loop: false, next: state }
   }
-  const recentCrashes =
-    state.lastReloadAt > 0 && now - state.lastReloadAt < RENDERER_RELOAD_WINDOW_MS
-      ? state.recentCrashes + 1
-      : 1
-  const next: RendererReloadState = { lastReloadAt: now, recentCrashes }
-  return { reload: recentCrashes <= RENDERER_RELOAD_MAX, next }
+  const crashes = [...state.crashes.filter((at) => now - at < RENDERER_CRASH_LOOP_WINDOW_MS), now]
+  const burst = crashes.filter((at) => now - at < RENDERER_RELOAD_WINDOW_MS).length
+  const reload = burst <= RENDERER_RELOAD_MAX && crashes.length <= RENDERER_CRASH_LOOP_MAX
+  return { reload, loop: !reload, next: { crashes } }
 }
 
 export interface RendererCrashTarget {
@@ -65,17 +71,33 @@ export interface RendererCrashTarget {
   reload(): void
 }
 
+export interface RendererCrashRecoveryOptions {
+  log?: (message: string) => void
+  now?: () => number
+  /**
+   * What the window was doing when it died, for the log line. The exit code
+   * alone does not say which call an out-of-memory abort was serializing.
+   */
+  context?: () => string | null
+  /** Called for every death except a clean exit, after the decision is made. */
+  record?: (record: {
+    at: number
+    reason: RendererGoneReason
+    exitCode: number
+    context: string | null
+    action: 'reloaded' | 'stopped' | 'none'
+  }) => void
+  /**
+   * Called once when recovery stops because the crash keeps repeating. The
+   * window is left down; `retry` clears the crash history and reloads it, for a
+   * user who chooses to try again.
+   */
+  onCrashLoop?: (retry: () => void) => void
+}
+
 export function attachRendererCrashRecovery(
   contents: RendererCrashTarget,
-  options: {
-    log?: (message: string) => void
-    now?: () => number
-    /**
-     * What the window was doing when it died, for the log line. The exit code
-     * alone does not say which call an out-of-memory abort was serializing.
-     */
-    context?: () => string | null
-  } = {},
+  options: RendererCrashRecoveryOptions = {},
 ): void {
   const log =
     options.log ??
@@ -85,15 +107,44 @@ export function attachRendererCrashRecovery(
   const now = options.now ?? Date.now
   let state = initialRendererReloadState()
   contents.on('render-process-gone', (_event, details) => {
-    const decision = planRendererCrashRecovery(details, state, now())
+    const at = now()
+    const decision = planRendererCrashRecovery(details, state, at)
     state = decision.next
-    const context = details.reason === 'clean-exit' ? null : (options.context?.() ?? null)
+    const crashed = details.reason !== 'clean-exit'
+    const context = crashed ? (options.context?.() ?? null) : null
     log(
       `[renderer] process gone reason=${details.reason} exitCode=${String(details.exitCode)}` +
         (context ? ` ${context}` : '') +
-        (decision.reload ? ' — reloading' : ''),
+        (decision.reload
+          ? ' — reloading'
+          : decision.loop
+            ? ` — not reloading: ${String(state.crashes.length)} crashes in ${String(RENDERER_CRASH_LOOP_WINDOW_MS / 60_000)} minutes`
+            : ''),
     )
-    if (!decision.reload || contents.isDestroyed()) return
-    contents.reload()
+    const destroyed = contents.isDestroyed()
+    if (crashed) {
+      try {
+        options.record?.({
+          at,
+          reason: details.reason,
+          exitCode: details.exitCode,
+          context,
+          action: destroyed ? 'none' : decision.reload ? 'reloaded' : 'stopped',
+        })
+      } catch {
+        // A diagnostic must never stop the recovery it describes.
+      }
+    }
+    if (destroyed) return
+    if (decision.reload) {
+      contents.reload()
+      return
+    }
+    if (decision.loop) {
+      options.onCrashLoop?.(() => {
+        state = initialRendererReloadState()
+        if (!contents.isDestroyed()) contents.reload()
+      })
+    }
   })
 }

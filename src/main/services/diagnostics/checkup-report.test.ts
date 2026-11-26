@@ -34,6 +34,7 @@ function baseSnapshot(overrides: Partial<CheckupSnapshot> = {}): CheckupSnapshot
     permissions: { autoRun: true, mcpAutoAllowReadOnly: false, trustedCommandCount: 2 },
     spawnHelperExecutable: true,
     agentOpenFiles: null,
+    rendererCrashes: { path: '/profile/user-data/renderer-crashes.jsonl', recent: [] },
     ...overrides,
   }
 }
@@ -249,6 +250,40 @@ describe('buildCheckupReport', () => {
 
   it('says nothing about file descriptors when no agent has hit the ceiling', () => {
     assert.equal(hasCheck(buildCheckupReport(baseSnapshot()), 'agent-open-files'), false)
+  })
+
+  it('reports recent window crashes with the latest reason and where the record is', () => {
+    const report = buildCheckupReport(
+      baseSnapshot({
+        rendererCrashes: {
+          path: '/profile/user-data/renderer-crashes.jsonl',
+          recent: [
+            {
+              at: Date.UTC(2026, 10, 20, 23, 53, 38),
+              reason: 'crashed',
+              exitCode: 5,
+              context: null,
+            },
+            {
+              at: Date.UTC(2026, 10, 20, 23, 54, 22),
+              reason: 'crashed',
+              exitCode: 5,
+              context: 'lastLargeIpc=threads:create estimated<=612MB ago=1200ms',
+            },
+          ],
+        },
+      }),
+    )
+    const check = getCheck(report, 'renderer-crashes')
+    assert.equal(check.status, 'warn')
+    assert.match(check.detail, /^2 window crashes in the last 7 days/)
+    assert.ok(check.detail.includes('2026-11-20T23:54:22.000Z'))
+    assert.ok(check.detail.includes('lastLargeIpc=threads:create'))
+    assert.ok(check.detail.includes('/profile/user-data/renderer-crashes.jsonl'))
+  })
+
+  it('says nothing about window crashes when none were recorded', () => {
+    assert.equal(hasCheck(buildCheckupReport(baseSnapshot()), 'renderer-crashes'), false)
   })
 
   it('warns when no folder is open', () => {
