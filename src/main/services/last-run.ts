@@ -9,8 +9,11 @@ import { z } from 'zod'
  *
  * Each launch records when it started. An orderly quit then adds how it ended:
  * `update` when the updater relaunches the app to install, `quit` for every other
- * quit (the menu, a confirmed close, SIGINT/SIGTERM/SIGHUP). A crash or a kill
- * leaves the record without an ending.
+ * quit (the menu, a confirmed close, SIGINT/SIGTERM/SIGHUP, and the quit after an
+ * uncaught exception or lost stdio, so a turn that may have caused a fault is not
+ * rerun unattended). A crash or a kill leaves the record without an ending, and
+ * so does a Windows shutdown or logoff, which skips `before-quit`; those are
+ * continued.
  *
  * A quit the user chose stops the run, which is what the close dialog tells
  * them, so its turns are not continued. A crash or an update relaunch was not
@@ -101,6 +104,15 @@ export class RunRecorder {
     this.updating = true
   }
 
+  /** The update relaunch did not happen; the next quit is the user's own. */
+  clearUpdateRelaunch(): void {
+    this.updating = false
+  }
+
+  get updateRelaunchNoted(): boolean {
+    return this.updating
+  }
+
   /**
    * Record how this run ends. Only the first call counts. `handsOff` is true when
    * the quit gives its turns to background workers rather than stopping them.
@@ -131,6 +143,15 @@ export function startRunRecorder(userDataPath: string, startedAt: number): RunRe
 /** The updater is about to relaunch the app to install an update. */
 export function noteUpdateRelaunch(): void {
   recorder?.noteUpdateRelaunch()
+}
+
+/** The update relaunch was abandoned. */
+export function clearUpdateRelaunch(): void {
+  recorder?.clearUpdateRelaunch()
+}
+
+export function updateRelaunchNoted(): boolean {
+  return recorder?.updateRelaunchNoted ?? false
 }
 
 /** Record that this run is ending in an orderly quit. */

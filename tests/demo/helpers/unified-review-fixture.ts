@@ -34,6 +34,8 @@ const pr: GhPrDetails = {
     headSha: 'abc123',
     commentsTruncated: false,
     checksTruncated: false,
+    reviewThreads: [],
+    reviewThreadsTruncated: false,
   },
 }
 const store = createStore({

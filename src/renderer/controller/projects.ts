@@ -696,6 +696,7 @@ function applyProjectSelection(
     panelTab: view.panelTab,
     filesPaneOpen: view.filesPaneOpen,
     rightPanelMode: view.rightPanelMode,
+    rightPanelSplitMode: view.rightPanelSplitMode,
     // Opening succeeded — lift any prior "folder missing" quarantine (#997).
     projects: projectsWithMissingCleared(store.getState().projects, id),
   })

@@ -361,6 +361,15 @@ client-name branch.
 This phase delivers the central promise for agents that can resume or load while
 keeping the existing history-preamble fallback for all others.
 
+Imported CLI sessions (implemented) reuse this binding with
+`createdBy: "external"`: the thread is created from the CLI's own session file,
+its provider history is seeded with a labelled text record and a
+`transcriptCheckpoint`, so resuming sends nothing the agent already holds. See
+`importedSession` and `acp-session.json` in
+[thread-store-format.md](../thread-store-format.md) for the guards that keep a
+resume off the user's original Claude Code session and off a Codex session the
+CLI has carried on since.
+
 ### Phase 2 — Replay reconciliation
 
 - Add replay mode to the update adapter.

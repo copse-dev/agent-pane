@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -38,9 +38,6 @@ function fakeEnv(
     owner: { id, host: options.host ?? 'host-a', pid: options.pid ?? 100 },
     now: () => clock.at,
     isAlive: options.alive ?? ((): boolean => true),
-    sleep: async (): Promise<void> => {
-      await Promise.resolve()
-    },
   }
 }
 
@@ -130,7 +127,8 @@ describe('writer lease', () => {
     const b = fakeEnv('b', clock, { pid: 200 })
     const next = await acquireWriterLease(dir, 't1', b, 30_000)
     assert.ok(next.status === 'acquired')
-    assert.equal(next.lease.epoch, 1)
+    // The epoch never goes back, so a late write from the first holder stays fenced.
+    assert.equal(next.lease.epoch, held.lease.epoch + 1)
   })
 
   it('ignores a lease copied in from another thread', async () => {
@@ -144,7 +142,7 @@ describe('writer lease', () => {
 
   it('treats an unreadable lease file as free', async () => {
     const dir = await threadDir()
-    await writeFile(join(dir, WRITER_LEASE_FILE), '{"v":1,', 'utf8')
+    await writeFile(join(dir, `${WRITER_LEASE_FILE}.1`), '{"v":1,', 'utf8')
     const clock = { at: 1_000 }
     assert.equal(
       (await acquireWriterLease(dir, 't1', fakeEnv('a', clock), 30_000)).status,
@@ -152,17 +150,45 @@ describe('writer lease', () => {
     )
   })
 
-  it('reclaims a guard left behind by a process that died inside it', async () => {
+  it('does not let a heartbeat from a clock far ahead hold the thread', async () => {
     const dir = await threadDir()
-    const guard = join(dir, `${WRITER_LEASE_FILE}.lock`)
-    await mkdir(guard)
-    const old = new Date(Date.now() - 60_000)
-    await utimes(guard, old, old)
-    const clock = { at: Date.now() }
-    assert.equal(
-      (await acquireWriterLease(dir, 't1', fakeEnv('a', clock), 30_000)).status,
-      'acquired',
-    )
+    await acquireWriterLease(dir, 't1', fakeEnv('a', { at: 1_000_000 }, { host: 'ahead' }), 30_000)
+    const local = fakeEnv('b', { at: 1_000 }, { pid: 200 })
+    assert.equal((await acquireWriterLease(dir, 't1', local, 30_000)).status, 'acquired')
+  })
+
+  it('gives an expired lease to exactly one of several contenders', async () => {
+    for (let trial = 0; trial < 20; trial += 1) {
+      const dir = await threadDir()
+      const clock = { at: 1_000 }
+      await acquireWriterLease(dir, 't1', fakeEnv('old', clock, { host: 'gone' }), 30_000)
+      clock.at += 60_000
+      const results = await Promise.all(
+        Array.from({ length: 6 }, (_, index) =>
+          acquireWriterLease(
+            dir,
+            't1',
+            fakeEnv(`c${String(index)}`, clock, { pid: 200 + index }),
+            30_000,
+          ),
+        ),
+      )
+      const winners = results.filter((result) => result.status === 'acquired')
+      assert.equal(winners.length, 1, `trial ${String(trial)}`)
+      assert.equal(winners[0]?.lease.epoch, 2)
+    }
+  })
+
+  it('keeps only the newest epoch on disk', async () => {
+    const dir = await threadDir()
+    const clock = { at: 1_000 }
+    for (const id of ['a', 'b', 'c']) {
+      const result = await acquireWriterLease(dir, 't1', fakeEnv(id, clock), 30_000)
+      assert.ok(result.status === 'acquired')
+      await releaseWriterLease(dir, result.lease, fakeEnv(id, clock))
+    }
+    const names = (await readdir(dir)).filter((name) => name.startsWith(WRITER_LEASE_FILE))
+    assert.deepEqual(names, [`${WRITER_LEASE_FILE}.3`])
   })
 })
 

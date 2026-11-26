@@ -7,6 +7,8 @@ import {
 } from '@copse/thread-store/writer-lease.ts'
 import { parseChatGptPlanModel } from '@copse/llm/chatgpt-plan.ts'
 import type { StreamChunk } from '@shared/types'
+import { isAcpModel } from '@shared/acp.ts'
+import { isRemoteAgentModel } from '@shared/remote-agent.ts'
 import { AgentDispatcher } from '../agent-dispatcher.ts'
 import { runWithApprovalHandler } from '../approval.ts'
 import { beginDeferralMode, endDeferralMode } from '../security/deferral-mode.ts'
@@ -102,8 +104,14 @@ async function workerCannotRun(projectId: string, threadId: string): Promise<str
   const thread = await getProjectThread(projectId, threadId)
   const setting = getSetting<unknown>('model', undefined)
   const model = thread?.model ?? (typeof setting === 'string' ? setting : undefined)
-  if (model !== undefined && isChatGptPlanModel(model))
+  if (model === undefined) return null
+  if (isChatGptPlanModel(model))
     return 'its model signs in with ChatGPT, whose tokens only the app can save'
+  // The worker runs Copse's own loop and hosts no external agent CLI
+  // (local-turn-worker.md): it could not stop one, or the processes it starts,
+  // once it exits. The next launch continues these, as the hand-off record says.
+  if (isAcpModel(model)) return 'it runs on an external coding agent, which only the app hosts'
+  if (isRemoteAgentModel(model)) return 'it runs on a remote agent, which only the app connects to'
   return null
 }
 

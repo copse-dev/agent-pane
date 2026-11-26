@@ -86,6 +86,67 @@ const MOCK_PR_DETAILS: GhPrDetails = {
     headSha: '7ba912ec78436f43cc47cbd44a0bcfe1dcba9208',
     commentsTruncated: false,
     checksTruncated: false,
+    reviewThreadsTruncated: false,
+    reviewThreads: [
+      {
+        id: 'PRRT_mock_failed_first',
+        path: 'src/renderer/views/pr-pane.ts',
+        line: 214,
+        isResolved: false,
+        isOutdated: false,
+        commentsTruncated: false,
+        comments: [
+          {
+            id: 'thread-comment-1',
+            author: 'reviewer',
+            createdAt: '2026-09-09T09:12:00Z',
+            url: `${MOCK_GH_PR_URL}#discussion_r1`,
+            body: 'Sort failed checks before running ones here, so a red job is never pushed below the fold.',
+          },
+        ],
+      },
+      {
+        id: 'PRRT_mock_empty_state',
+        path: 'src/renderer/views/pr-pane-activity.ts',
+        line: 88,
+        isResolved: false,
+        isOutdated: false,
+        commentsTruncated: false,
+        comments: [
+          {
+            id: 'thread-comment-2',
+            author: 'octo-dev',
+            createdAt: '2026-09-09T09:20:00Z',
+            url: `${MOCK_GH_PR_URL}#discussion_r2`,
+            body: 'An unavailable response should not read as "No checks". Can this say so explicitly?',
+          },
+          {
+            id: 'thread-comment-3',
+            author: 'mock-user',
+            createdAt: '2026-09-09T09:28:00Z',
+            url: `${MOCK_GH_PR_URL}#discussion_r3`,
+            body: 'Agreed, I will label it as unavailable.',
+          },
+        ],
+      },
+      {
+        id: 'PRRT_mock_resolved',
+        path: 'src/renderer/styles/global/layout.css',
+        line: null,
+        isResolved: true,
+        isOutdated: true,
+        commentsTruncated: false,
+        comments: [
+          {
+            id: 'thread-comment-4',
+            author: 'reviewer',
+            createdAt: '2026-09-09T09:05:00Z',
+            url: `${MOCK_GH_PR_URL}#discussion_r4`,
+            body: 'Use the shared spacing tokens instead of pixel values.',
+          },
+        ],
+      },
+    ],
     comments: [
       {
         id: 'comment-1',
@@ -295,6 +356,8 @@ export function mockGetGhPrDetails(ref: {
         headSha: 'b3219fceb1aa4c0f7472312ac3c4ee6f876320aa',
         commentsTruncated: false,
         checksTruncated: false,
+        reviewThreads: [],
+        reviewThreadsTruncated: false,
         comments: [],
         checks: [
           { name: 'Typecheck and lint', state: 'SUCCESS', url: `${MOCK_WORKSPACE_PR.url}/checks` },

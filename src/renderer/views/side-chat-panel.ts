@@ -11,7 +11,7 @@ import {
   restoreThread,
 } from '@shared/store/thread-helpers.ts'
 import { excerptText, sideChatsOf, type SideChatRow } from '@shared/threads/side-chat.ts'
-import { openRightPanel, selectRightPanelMode } from '../controller/panels.ts'
+import { openRightPanel, selectRightPanelMode, rightPanelShows } from '../controller/panels.ts'
 import { promoteSideChat, sendSideChatMessage, startSideChat } from '../controller/side-chat.ts'
 import {
   ensureThreadMessages,
@@ -346,8 +346,7 @@ export function mountSideChatPane(
   let frame = 0
 
   function paneVisible(): boolean {
-    const { filesPaneOpen, rightPanelMode } = store.getState()
-    return filesPaneOpen && rightPanelMode === 'side-chat'
+    return rightPanelShows(store.getState(), 'side-chat')
   }
 
   function ask(text: string): void {

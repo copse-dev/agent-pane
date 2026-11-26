@@ -32,7 +32,7 @@ import {
 } from '@shared/browser-session.ts'
 import { firstNonEmptyString, nonEmptyStringOr } from '@shared/unknown-value.ts'
 import type { PluginBrowserTabRequest } from '@shared/types/plugin-browser.ts'
-import { openRightPanel, selectRightPanelMode } from '../controller/panels.ts'
+import { openRightPanel, selectRightPanelMode, rightPanelShows } from '../controller/panels.ts'
 import {
   createBrowserSessionWriter,
   loadBrowserPaneSession,
@@ -227,8 +227,7 @@ function isBrowserPopoutSeed(seed: unknown): seed is BrowserPopoutSeed {
 }
 
 function browserModeActive(store: AppStore): boolean {
-  const { filesPaneOpen, rightPanelMode } = store.getState()
-  return filesPaneOpen && rightPanelMode === 'browser'
+  return rightPanelShows(store.getState(), 'browser')
 }
 
 function loopbackWorkspacePath(rawUrl: string): string | null {

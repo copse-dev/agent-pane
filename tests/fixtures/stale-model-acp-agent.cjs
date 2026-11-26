@@ -29,7 +29,15 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       agentInfo: { name: 'Fixture', version: '1' },
     })
   } else if (message.method === 'session/new') {
-    reply({ sessionId: SESSION_ID, configOptions: [MODEL_OPTION] })
+    // Connect to the tool servers Copse offers, as a real agent does, so the
+    // thread shows no "Copse's tools aren't available" notice.
+    void import('./acp-mount-stdio-servers.mjs')
+      .then(({ mountStdioServers }) =>
+        mountStdioServers(message.params?.mcpServers, 'stale-model-fixture'),
+      )
+      .then(() => {
+        reply({ sessionId: SESSION_ID, configOptions: [MODEL_OPTION] })
+      })
   } else if (message.method === 'session/prompt') {
     const text = REPLIES[turns] ?? `Reply ${String(turns + 1)}.`
     turns += 1
