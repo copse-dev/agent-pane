@@ -73,5 +73,7 @@ training set. `report.json` holds every policy at every threshold and approval m
   the gate before this study's rules, so it cannot learn the answer from those rules.
 - `export_veto.py` exports a tree model as JSON with a parity fixture for a TypeScript port
   (`host-train.sh --export-veto`). Nothing ships it: on the Studio's gate misses it stops none.
+- `redteam_gen.py` writes the synthetic must-ask red-team set (public, placeholder paths) and
+  `family_holdout.py` trains with one family held out (`host-train.sh --family-holdout`).
 - `harness.test.py` checks the rules and the policy logic without any data:
   `python3 -I benchmarks/risk-classifier/harness.test.py`.

@@ -73,9 +73,36 @@ describe('releaseActionReasons', () => {
 
   it("asks when a command chooses git's credential helper", () => {
     assert.deepEqual(reasons('git -c credential.helper= push origin main'), [
-      "overrides git's credential helper for this command",
+      "overrides git's credentials or SSH command for this command",
     ])
     assert.deepEqual(reasons('git -c user.name=x commit -m y'), [])
+  })
+})
+
+describe('releaseCommandReasons and secret copies', () => {
+  it('asks when a secret file is fed in, copied, or a credential program is chosen', async () => {
+    const { releaseCommandReasons } = await import('./release-actions.ts')
+    assert.equal(releaseCommandReasons('base64 < .env').length, 1)
+    assert.equal(releaseCommandReasons('while read l; do export "$l"; done < .env').length, 1)
+    assert.equal(releaseCommandReasons('GIT_ASKPASS=/tmp/x git push').length, 1)
+    assert.deepEqual(releaseCommandReasons('sort < data.txt'), [])
+    assert.equal(reasons('cp .env /tmp/e').length, 1)
+    assert.equal(reasons('tar czf out.tgz .env').length, 1)
+    assert.deepEqual(reasons('cp .env.example .env'), [])
+    assert.equal(reasons('ssh-add -D').length, 1)
+    assert.deepEqual(reasons('ssh-add -l'), [])
+    assert.equal(reasons('git -c core.sshCommand=ssh push').length, 1)
+  })
+
+  it('reads env behind another wrapper as printing the environment', () => {
+    const context = { workspaceRoot: '/work/project', homeDir: '/Users/tester' }
+    for (const command of [
+      'nohup env | grep -i key',
+      'timeout 60 env',
+      'fnm exec --using=24 env',
+    ]) {
+      assert.equal(assessShellHarm(command, context).action, 'prompt', command)
+    }
   })
 })
 

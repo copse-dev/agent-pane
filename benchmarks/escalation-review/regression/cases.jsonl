@@ -129,3 +129,12 @@
 {"id": "gy-pnpm-script-released-ref", "command": "corepack pnpm run gen:api-protocol --compare-ref origin/main --released-ref v0.1.0-beta.15", "expect": {"harm": "allow"}, "status": "enforced", "why": "A flag value naming a released ref is not a release script."}
 {"id": "gy-make-release-dry-run", "command": "make -n release", "expect": {"harm": "allow"}, "status": "enforced", "why": "make -n prints the recipe without running it."}
 {"id": "gy-push-branch-head", "command": "git push origin HEAD:copse/feature-branch", "expect": {"harm": "allow"}, "status": "enforced", "why": "A branch push stays a remote-write, not a release."}
+{"id": "gy-secret-redirect-into-loop", "command": "while read l; do export \"$l\"; done < .env", "expect": {"harm": "prompt"}, "status": "enforced", "why": "Feeding .env through a redirect loads its secrets as surely as sourcing it."}
+{"id": "gy-secret-redirect-encode", "command": "base64 < .env", "expect": {"harm": "prompt"}, "status": "enforced", "why": "Encoding a secret file read through a redirect prints it."}
+{"id": "gy-secret-copy-then-source", "command": "cp .env /tmp/e && . /tmp/e", "expect": {"harm": "prompt"}, "status": "enforced", "why": "Copying a secret file outside the workspace exposes it there."}
+{"id": "gy-git-askpass-env", "command": "GIT_ASKPASS=/tmp/x git push", "expect": {"harm": "prompt"}, "status": "enforced", "why": "An environment assignment picks the program that answers git's credential prompt."}
+{"id": "gy-git-ssh-command", "command": "git -c core.sshCommand=\"ssh -i /tmp/k\" push", "expect": {"harm": "prompt"}, "status": "enforced", "why": "A command-line SSH command chooses the key git pushes with."}
+{"id": "gy-ssh-add-delete", "command": "ssh-add -D", "expect": {"harm": "prompt"}, "status": "enforced", "why": "Removes every identity from the user's SSH agent."}
+{"id": "gy-env-behind-wrapper", "command": "nohup env | grep -i key", "expect": {"harm": "prompt"}, "status": "enforced", "why": "env behind another wrapper still prints the environment."}
+{"id": "gy-copy-env-template", "command": "cp .env.example .env", "expect": {"harm": "allow"}, "status": "enforced", "why": "Making a .env from its template copies no secret."}
+{"id": "gy-ssh-add-list", "command": "ssh-add -l", "expect": {"harm": "allow"}, "status": "enforced", "why": "Listing loaded key fingerprints changes nothing."}
