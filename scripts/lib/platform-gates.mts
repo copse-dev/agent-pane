@@ -300,12 +300,13 @@ function registration(node: ts.Node, ctx: Context): Registration | undefined {
   const kind = registrationKind(node)
   if (!kind) return undefined
   const skip = skipOption(node, ctx)
-  const body = node.arguments
-    .map(strip)
-    .find(
-      (argument): argument is ts.ArrowFunction | ts.FunctionExpression =>
-        ts.isArrowFunction(argument) || ts.isFunctionExpression(argument),
-    )
+  let body: ts.ArrowFunction | ts.FunctionExpression | undefined
+  for (const argument of node.arguments.map(strip)) {
+    if (ts.isArrowFunction(argument) || ts.isFunctionExpression(argument)) {
+      body = argument
+      break
+    }
+  }
   return {
     kind,
     call: node,
@@ -347,9 +348,9 @@ function earlyReturns(body: ts.FunctionLikeDeclaration, ctx: Context): ts.IfStat
   const visit = (node: ts.Node): void => {
     if (ts.isFunctionLike(node)) return
     if (ts.isIfStatement(node) && readsPlatform(node.expression, ctx)) {
-      const branches = [node.thenStatement, node.elseStatement].filter(
-        (branch): branch is ts.Statement => branch !== undefined,
-      )
+      const branches = node.elseStatement
+        ? [node.thenStatement, node.elseStatement]
+        : [node.thenStatement]
       if (branches.some((branch) => containsReturn(branch) && !callsSkip(branch))) found.push(node)
     }
     ts.forEachChild(node, visit)
@@ -364,15 +365,14 @@ function earlyReturns(body: ts.FunctionLikeDeclaration, ctx: Context): ts.IfStat
  */
 function skipGuards(body: ts.FunctionLikeDeclaration, ctx: Context): ts.Expression[] {
   if (!body.body || !ts.isBlock(body.body)) return []
-  return body.body.statements
-    .filter(
-      (statement): statement is ts.IfStatement =>
-        ts.isIfStatement(statement) &&
-        readsPlatform(statement.expression, ctx) &&
-        callsSkip(statement.thenStatement) &&
-        containsReturn(statement.thenStatement),
-    )
-    .map((statement) => statement.expression)
+  return body.body.statements.flatMap((statement) =>
+    ts.isIfStatement(statement) &&
+    readsPlatform(statement.expression, ctx) &&
+    callsSkip(statement.thenStatement) &&
+    containsReturn(statement.thenStatement)
+      ? [statement.expression]
+      : [],
+  )
 }
 
 function intersect(
