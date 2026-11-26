@@ -540,7 +540,8 @@
         "typescript/use-unknown-in-catch-callback-variable": "off",
         "typescript/explicit-function-return-type": "off",
         "no-undef": "error",
-        "typescript/no-unnecessary-condition": "off"
+        "typescript/no-unnecessary-condition": "off",
+        "typescript/explicit-module-boundary-types": "off"
       },
       "globals": {
         "process": "readonly",
