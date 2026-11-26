@@ -1601,7 +1601,9 @@ ASRT themselves (the port-binding, ACP session-host and ACP probe workers) start
 and get the same `PATH`. On Linux every ASRT config, and worktree preparation's direct bubblewrap
 wrap, also names `bwrap` and `socat` by absolute path (`sandbox-binaries.ts`): the first executable
 copy in `/usr/bin`, `/bin`, then the absolute entries of Copse's own `PATH`. When none exists the
-sandbox does not start, as when bubblewrap is not installed. macOS ASRT has no option for the path
+sandbox does not start, as when bubblewrap is not installed. The configs also name ASRT's
+`apply-seccomp` helper and its JVM proxy-agent jar explicitly; in a package both resolve to
+`app.asar.unpacked`, because bubblewrap cannot exec or bind a path inside `app.asar`. macOS ASRT has no option for the path
 of the `env` it starts with, so there that lookup searches the absolute `PATH` entries in order.
 
 On macOS the project seatbelt also allows writes to direct children of the per-user Darwin temp

@@ -289,7 +289,7 @@ describe('projects pane — drag to reorder (component)', () => {
     assert.equal(document.querySelectorAll('.is-dragging').length, 0)
   })
 
-  it('clears a list highlight when a redraw removes the dragged row', () => {
+  it('keeps a drag in progress across a redraw that leaves the dragged row alone', () => {
     mount([project('a', 'Alpha'), project('b', 'Beta')])
     const dataTransfer = new FakeDataTransfer()
     const alpha = projectRow('Alpha')
@@ -300,6 +300,30 @@ describe('projects pane — drag to reorder (component)', () => {
     assert.equal(list.classList.contains('drop-into'), true)
 
     store.emit('threads_changed')
+    assert.equal(projectRow('Alpha'), alpha, 'an unchanged row keeps its node')
+    assert.equal(list.classList.contains('drop-into'), true)
+    assert.equal(document.querySelectorAll('.is-dragging').length, 1)
+
+    // The same gesture can still finish: Chromium sends dragend to the source.
+    alpha.dispatchEvent(dragEvent('dragend', dataTransfer))
+    assert.equal(document.querySelectorAll('.is-dragging').length, 0)
+  })
+
+  it('clears a list highlight when a redraw replaces the dragged row', () => {
+    mount([project('a', 'Alpha'), project('b', 'Beta')])
+    const dataTransfer = new FakeDataTransfer()
+    const alpha = projectRow('Alpha')
+    const list = document.querySelector<HTMLElement>('.projects-list')
+    assert.ok(list)
+    alpha.dispatchEvent(dragEvent('dragstart', dataTransfer))
+    list.dispatchEvent(dragEvent('dragover', dataTransfer, 400))
+    assert.equal(list.classList.contains('drop-into'), true)
+
+    // Renaming the project rebuilds its row, so the old one can no longer
+    // receive the gesture's dragend.
+    store.setState({ projects: [project('a', 'Alpha renamed'), project('b', 'Beta')] })
+    store.emit('projects_changed')
+    assert.notEqual(projectRow('Alpha renamed'), alpha)
     assert.equal(document.querySelectorAll('.drop-before, .drop-after, .drop-into').length, 0)
     assert.equal(document.querySelectorAll('.is-dragging').length, 0)
   })
