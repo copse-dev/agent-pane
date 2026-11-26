@@ -685,8 +685,8 @@ function classifyGitSegment(
   if (GIT_NETWORK_SUBCOMMANDS.has(subcommand)) {
     // Pushing a tag publishes a release (`git push origin v1.7.0`, `--tags`): the
     // harm gate asks for it, and a tier must not approve what that gate would ask.
-    const release = releaseActionReasons(argv)
-    if (release.length > 0) return { tier: null, reason: `${release[0]}: ${segment}` }
+    const [release] = releaseActionReasons(argv)
+    if (release !== undefined) return { tier: null, reason: `${release}: ${segment}` }
     const outcome = classifyNetworkGitSubcommand(subcommand, args, context.configuredRemotes)
     return 'tier' in outcome
       ? { tier: outcome.tier, reason: `git ${subcommand} against a configured remote` }
